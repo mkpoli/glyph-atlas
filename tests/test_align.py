@@ -158,7 +158,7 @@ def test_run_directory_writes_only_its_own_units(tmp_path, monkeypatch):
     from PIL import Image
 
     from kuzushiji_atlas import align, images, koji, tables
-    from kuzushiji_atlas.schema import Box, Document, Line, Page, Unit
+    from kuzushiji_atlas.schema import Box, Document, Line, Page, ReviewState, Unit
 
     page_file = tmp_path / "page.jpg"
     Image.new("RGB", (100, 100), "white").save(page_file, format="JPEG")
@@ -193,12 +193,17 @@ def test_run_directory_writes_only_its_own_units(tmp_path, monkeypatch):
     assert [unit.box.x for unit in written] == [40, 10], "reading order is right to left on a vertical line"
     assert all(run.fingerprint() in unit.id for unit in written)
 
-    # A unit from another writer survives a second run of this one.
-    foreign = Unit(id="d1:0:L0:m1", document_id="d1", page_id="d1:0", line_id="d1:0:L0", seq=99,
-                   box=Box(x=70, y=10, w=5, h=5), method="manual")
-    tables.write(tmp_path / "units.parquet", [*written, foreign], Unit)
+    # A reviewed unit survives a rerun; a second run's units on the same page do not, so a rerun
+    # replaces what it wrote rather than doubling it.
+    reviewed = Unit(id="d1:0:L0:m1", document_id="d1", page_id="d1:0", line_id="d1:0:L0", seq=99,
+                    box=Box(x=70, y=10, w=5, h=5), method="manual", review=ReviewState.REVIEWED)
+    other = Unit(id="d1:0:L0:deadbeef:1", document_id="d1", page_id="d1:0", line_id="d1:0:L0", seq=98,
+                 box=Box(x=72, y=10, w=5, h=5), method="detect-align")
+    tables.write(tmp_path / "units.parquet", [*written, reviewed, other], Unit)
     with monkeypatch.context() as patched:
         patched.setenv("KUZUSHIJI_ATLAS_CACHE", str(tmp_path / "cache"))
         align.run_directory(tmp_path, run, detector=Stub(), classifier=Stub())
     ids = [unit.id for unit in tables.read(tmp_path / "units.parquet", Unit)]
-    assert "d1:0:L0:m1" in ids and len(ids) == 3, "the run does not touch what it did not write"
+    assert "d1:0:L0:m1" in ids, "a reviewed unit is never dropped by an alignment"
+    assert "d1:0:L0:deadbeef:1" not in ids, "the pages just aligned are re-aligned, not accumulated"
+    assert len(ids) == 3

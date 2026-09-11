@@ -591,6 +591,7 @@ def run_directory(
     limit: int | None = None,
     detector: Detector | None = None,
     classifier: Classifier | None = None,
+    replace: bool = True,
 ) -> dict[str, int]:
     """Align every line of `directory` with boxes from the detector and write the units back.
 
@@ -668,7 +669,8 @@ def run_directory(
         if limit is not None and counts["lines"] >= limit:
             break
     if written:
-        _write_units(directory, written, groups, run, fingerprint)
+        _write_units(directory, written, groups, run, fingerprint, replace=replace,
+                     pages={unit.page_id for unit in written if unit.page_id})
     return counts
 
 
@@ -691,27 +693,49 @@ def _crop_reader(dataset: Any, pages: dict[str, Any]) -> Any:
     return read
 
 
+KEEP_REVIEW = {
+    ReviewState.REVIEWED,
+    ReviewState.DOUBLE_REVIEWED,
+    ReviewState.ADJUDICATED,
+    ReviewState.DISPUTED,
+}
+
+
 def _write_units(
     directory: Path,
     units: list[Unit],
     groups: list[Group],
     run: Run,
     fingerprint: str,
+    *,
+    replace: bool = True,
+    pages: set[str] | None = None,
 ) -> None:
-    """Replace this run's units and groups, keeping everything another writer left."""
+    """Write this run's units and groups, keeping what must survive.
+
+    Two rules fix what survives. A unit of another run stays, so two configurations can be compared
+    on one directory, and a unit a person has reviewed or adjudicated stays whatever run wrote it,
+    because an alignment is not allowed to throw away editorial work. With `replace`, the units this
+    run left on the pages it just aligned are dropped first, so a rerun does not double them.
+    """
     from . import tables
 
     dataset = tables.Dataset(directory)
+    marker = f":{fingerprint}:"
     keep_units: list[Unit] = []
     if dataset.tables["units"] is not None:
-        marker = f":{fingerprint}:"
         for batch in dataset.scan("units"):
             for unit in batch:
-                if marker not in unit.id:
+                if marker in unit.id:
+                    continue
+                if unit.review in KEEP_REVIEW:
                     keep_units.append(unit)
+                    continue
+                if not replace or pages is None or unit.page_id in pages:
+                    continue
+                keep_units.append(unit)
     keep_groups: list[Group] = []
     if dataset.tables["groups"] is not None:
-        marker = f":{fingerprint}:"
         for batch in dataset.scan("groups"):
             for group in batch:
                 if marker not in group.id:
