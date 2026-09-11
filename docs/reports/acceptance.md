@@ -242,9 +242,18 @@ pipeline and human review.
 
 ### T50 Release export and T51 Documentation
 
+T50's acceptance is `out/0.1/` for the pilot builds; the pilot has no reviewed units yet, so no such
+release exists and the default filter refuses loudly rather than writing an empty directory. What is
+measured instead: `atlas export work/kokatsuji --out out/verify-0.1 --review transcriber
+--include-machine` writes 36,869 units, 3,400 lines and 340 pages with `modern_kana` and `shinji`
+appended, and a capped run with crops wrote 4,000 crops whose 4,009 checksums all verify, 482 units
+carrying `modern_kana` and 7 carrying `shinji`. The release holds `ATTRIBUTION.md`, `COUNTS.md`,
+`datasheet.md` with all 22 placeholders filled, `README.md`, `zenodo.json`, `CHECKSUMS.txt` and
+`MANIFEST.json` with the policy name and version. A HI Lab crop run needs `atlas import hilab
+--download` first: those crops have never been materialised locally.
+
 T51's deliverables are committed: `docs/datasheet-template.md` with 22 placeholders,
-`README.ja.md`, `CITATION.cff` (validated) and `docs/reports/README.md`. T50 is in progress; its
-numbers belong here when the export runs.
+`README.ja.md`, `CITATION.cff` (validated) and `docs/reports/README.md`.
 
 ## What is not done
 
