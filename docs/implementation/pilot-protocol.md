@@ -74,6 +74,17 @@ diplomatic reading, with historical spelling kept: けふ stays けふ, ゐ stay
    stays append-only.
 8. Space moves to the next line.
 
+## Known limits of the interface
+
+- Undoing a split or a merge is partial. The review service refuses any change to a retired unit, so
+  the outputs of a split can be retired but its inputs cannot be brought back: draw the unit again
+  with `c` instead. This is a property of the store, not of the interface, and it is recorded here
+  because the calibration flow leans on undo.
+- A page whose image is not in the cache shows its IIIF URL and can be skipped; nothing is annotated
+  on it and the page is counted as skipped rather than as annotated.
+- Timing is posted when a line is opened and when it is left, with the dwell in milliseconds. Timing
+  events are recorded but are not part of the undo stack.
+
 ## Calibration and held-out pages
 
 - **Calibration** (the first two pages of each item) is annotated twice: two reviewers work the same
