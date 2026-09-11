@@ -220,13 +220,28 @@ detection; whether they are enough is what T23's acceptance will show, and it ha
 
 ### T22 Coarse character classifier
 
-Status: the manifests are built on the full CODH tables — 917,309 train, 44,782 val and 124,196
-test crops over 1,594 classes (1,593 code points with at least 20 train crops, plus `other`), with
-1,086,287 crops on disk, 1,077,621 cut from the materialised tiles and 8,666 from page images. The
-preprocessing is grey, padded to square and resized to 96x96. A smoke-trained model exported to
-ONNX agrees with PyTorch on 200 test crops to 1.9e-6 and top-1 for all 200. Training is queued
-behind the detector (12 epochs, about nine minutes an epoch, 1.2 GiB peak) and its metrics will be
-filled in here.
+Acceptance: on `test` crops whose class is in `classes.json`, top-1 ≥ 0.93 and top-5 ≥ 0.99, accuracy
+over all test crops reported beside it, calibration error below 0.03, macro F1 reported.
+
+Measured over all 124,196 test crops from the checkpoint with the best val top-1 (epoch 11 of
+12), with the temperature 0.8685 fitted on val:
+
+| measure | value | card |
+| --- | ---: | ---: |
+| top-1 | 0.9348 | ≥ 0.93, met |
+| top-5 | 0.9887 | ≥ 0.99, short by 0.0013 |
+| macro F1 | 0.8900 | reported |
+| calibration error | 0.0151 | < 0.03, met |
+| accuracy over all test crops | 0.9140 | reported |
+
+The class list is 1,594 entries (1,593 code points with at least 20 training crops, plus `other`), and
+the export carries the same width — the earlier smoke export was 1,329 wide against that list and only
+`Classifier`'s own check caught it. The ONNX is 116,269,614 bytes with outputs `logits` and `probs`;
+its parity over 200 test crops agrees with PyTorch to 4.1e-6 on the maximum probability and gives the
+same top-1 for all 200.
+
+The data the run used: 917,309 train, 44,782 val and 124,196 test crops over 1,086,287 crops on disk,
+1,077,621 cut from the materialised tiles and 8,666 from page images.
 
 ### T23 Alignment
 
