@@ -455,6 +455,23 @@ def import_honkoku_data(
     typer.echo(f"-> {out}")
 
 
+@import_app.command("ainu-records")
+def import_ainu_records(
+    out: Annotated[Path, typer.Option(help="directory for the tables")] = Path("work/ainu-records"),
+    limit: Annotated[int | None, typer.Option(help="stop after this many entries")] = None,
+    only: Annotated[str | None, typer.Option(help="comma-separated entry ids")] = None,
+) -> None:
+    """Import the アイヌ関連資料 project of みんなで翻刻."""
+    from .importers import ainu_records
+
+    counts = ainu_records.import_all(
+        out, limit=limit, only=only.split(",") if only else None
+    )
+    for name, rows in counts.items():
+        typer.echo(f"{name:<14} {rows:>10}")
+    typer.echo(f"-> {out}")
+
+
 @import_app.command("hilab")
 def import_hilab(
     download: Annotated[bool, typer.Option("--download", help="extract the crops into the cache")] = False,
