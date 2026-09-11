@@ -1,0 +1,29 @@
+# Citation metadata for the dataset.
+#
+# The Zenodo concept DOI is minted at the first deposit and is not known yet, so `doi` is absent
+# from this file. The deposit steps are in docs/reports/README.md.
+cff-version: 1.2.0
+message: "If you use Kuzushiji Atlas, cite the release you used; every deposited version has its own DOI."
+title: "Kuzushiji Atlas: a character-shape dataset of pre-modern Japanese writing"
+type: dataset
+authors:
+  - name: "mkpoli"
+    website: "https://github.com/mkpoli"
+repository-code: "https://github.com/mkpoli/kuzushiji-atlas"
+url: "https://github.com/mkpoli/kuzushiji-atlas"
+abstract: >-
+  Kuzushiji Atlas is a character-shape dataset of pre-modern Japanese writing. One record is one
+  graphic occurrence, in most cases one written character on a page image: its rectangle, the
+  transcriber's string, a diplomatic reading, the Unicode code points including hentaigana, the 字母
+  of kana forms, a variant key for kanji, and the document's production type, genre, register and
+  date. Records come from open transcriptions aligned to open page images and from existing
+  character-level datasets, with the licence of every image and text recorded per record. The
+  annotations and the compilation are released under CC BY-SA 4.0; the code is MIT.
+keywords:
+  - kuzushiji
+  - character-shape dataset
+  - Japanese
+  - hentaigana
+  - IIIF
+  - transcription
+license: CC-BY-SA-4.0

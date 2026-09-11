@@ -18,10 +18,11 @@ dependencies = [
 atlas = "kuzushiji_atlas.cli:app"
 
 [project.optional-dependencies]
+data = ["odfpy>=1.4"]
 ocr = ["onnxruntime-gpu>=1.22", "numpy>=2", "opencv-python-headless>=4.11"]
 
 [dependency-groups]
-dev = ["pytest>=8", "ruff>=0.12"]
+dev = ["pytest>=8", "ruff>=0.12", "cffconvert>=2.0"]
 
 [build-system]
 requires = ["hatchling"]
