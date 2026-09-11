@@ -48,13 +48,16 @@ def fetch_page_images(
     items: list[str] | None = None,
     pages: list[str] | None = None,
     pause: float | None = None,
+    per_item: int | None = None,
     selection_path: Path = PILOT_ITEMS,
 ) -> dict[str, int]:
     """Fetch the full-size page image of every selected page into the cache.
 
     The selection is the one `export` uses, so a page that travels in a package is in the cache
-    before the package is built. Requests to one host wait the document pause apart, which is what
-    makes this slow across ten holders; the fetched pages are counted apart from the failures.
+    before the package is built. `per_item` keeps the first n pages of each item, which is how the
+    held-out group is bounded: a reviewer works through the calibration pages first, and a few pages
+    an item are enough to measure on. Requests to one host wait the document pause apart, which is
+    what makes this slow across ten holders; the fetched pages are counted apart from the failures.
     """
     from . import images, net
 
@@ -62,6 +65,15 @@ def fetch_page_images(
     if dataset.tables["pages"] is None:
         raise ValueError(f"{directory} needs a pages table")
     selected = pages_for(group, items, selection_path)
+    if per_item is not None:
+        kept: list[dict[str, str]] = []
+        seen: dict[str, int] = {}
+        for row in selected:
+            count = seen.get(row["item_id"], 0)
+            if count < per_item:
+                kept.append(row)
+                seen[row["item_id"]] = count + 1
+        selected = kept
     wanted = {row["page_id"] for row in selected}
     if pages:
         wanted &= set(pages)

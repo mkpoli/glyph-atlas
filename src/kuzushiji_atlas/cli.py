@@ -290,12 +290,17 @@ def pilot_images(
     group: Annotated[str | None, typer.Option(help="calibration or heldout")] = None,
     items: Annotated[str | None, typer.Option(help="comma-separated item ids")] = None,
     pause: Annotated[float | None, typer.Option(help="seconds between requests to one host")] = None,
+    per_item: Annotated[int | None, typer.Option(help="keep the first n pages of each item")] = None,
 ) -> None:
     """Fetch the page images of the selected pilot pages into the cache."""
     from . import pilot
 
     counts = pilot.fetch_page_images(
-        directory, group=group, items=items.split(",") if items else None, pause=pause
+        directory,
+        group=group,
+        items=items.split(",") if items else None,
+        pause=pause,
+        per_item=per_item,
     )
     for name, value in counts.items():
         typer.echo(f"{name:<8} {value:>6}")
