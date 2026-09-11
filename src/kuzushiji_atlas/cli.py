@@ -507,6 +507,38 @@ def audit_report(
         typer.echo(markdown)
 
 
+@app.command()
+def export(
+    datasets: Annotated[list[Path], typer.Argument(help="dataset directories to merge into the release")],
+    out: Annotated[Path, typer.Option(help="release directory to write")],
+    licence: Annotated[str, typer.Option(help="licence the release claims")] = "CC-BY-SA-4.0",
+    review: Annotated[str, typer.Option(help="comma-separated review states to admit")] = "reviewed,double-reviewed,adjudicated",
+    include_machine: Annotated[bool, typer.Option("--include-machine", help="also admit machine units")] = False,
+    crops: Annotated[bool, typer.Option("--crops", help="materialise crops where the image rights allow")] = False,
+    normalisation: Annotated[str, typer.Option(help="named normalisation policy")] = "export-v1",
+    version: Annotated[str | None, typer.Option(help="release version, e.g. 0.1")] = None,
+    limit: Annotated[int | None, typer.Option(help="cap the units, for a scratch build")] = None,
+) -> None:
+    """Write a release directory: the tables, the crops, and the release documents."""
+    from . import export as export_module
+
+    counts = export_module.release(
+        list(datasets),
+        out,
+        licence=licence,
+        review=[state.strip() for state in review.split(",") if state.strip()],
+        include_machine=include_machine,
+        crops=crops,
+        normalisation=normalisation,
+        version=version,
+        limit=limit,
+        command="atlas export " + " ".join(str(path) for path in datasets) + f" --out {out}",
+    )
+    for name, value in sorted(counts.items()):
+        typer.echo(f"{name:<14} {value:>10}")
+    typer.echo(f"-> {out}")
+
+
 for name, module in (
     ("tables", tables_app),
     ("images", images_app),
