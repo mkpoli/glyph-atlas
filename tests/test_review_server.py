@@ -641,3 +641,23 @@ def test_rewritten_units_are_seen_by_a_reopened_store(fixture: Fixture) -> None:
     ids = [unit.id for unit in reopened.units_of_line(fixture.line)]
     assert len(ids) == before + 1
     assert f"{fixture.line}:deadbeef:99" in ids
+
+
+def test_apply_reaches_events_a_changed_table_would_hide(fixture: Fixture) -> None:
+    """`apply` is the way out of the state the staleness guard describes, so it must still run.
+
+    The guard tells a reader to run `apply`; if `apply` tripped it too, the events would be
+    unreachable and the only exit would be deleting the database and losing them.
+    """
+    client = TestClient(create_app(fixture.directory))
+    review(client, target_type="unit", target_id=fixture.unit, field="reading", new="き",
+           base_revision=0, client_id="reviewer-1")
+    # Rewrite the units table under the open store, as an alignment run would.
+    path = fixture.directory / "units.parquet"
+    records = tables.read(path, Unit)
+    tables.write(path, [unit.model_copy(update={"active": True}) for unit in records], Unit)
+
+    applied = apply(fixture.directory)
+    assert applied["reviews"] >= 1
+    log = fixture.directory / "reviews.jsonl"
+    assert log.is_file() and log.read_text(encoding="utf-8").strip()

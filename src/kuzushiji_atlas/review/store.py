@@ -276,7 +276,13 @@ class Store:
     the events. `replay` rebuilds the state from the tables plus the log.
     """
 
-    def __init__(self, directory: Path, *, rebuild: bool = False) -> None:
+    def __init__(self, directory: Path, *, rebuilding: bool = False, exporting: bool = False) -> None:
+        # A rebuild reads the tables and replays the events over them, so it does its own reload and
+        # keeps the events it holds; an export has to reach the events that a changed table would
+        # otherwise hide, because writing them to the log is the way out of that state. Every other
+        # open guards against a table another writer changed.
+        self.rebuilding = rebuilding
+        self.exporting = exporting
         self.directory = Path(directory)
         self.path = self.directory / STORE_NAME
         self.dataset = tables.Dataset(self.directory)
@@ -288,7 +294,7 @@ class Store:
             stamp = self._source_stamp()
             if self._meta(conn, "loaded") is None:
                 self._load(conn, stamp)
-            elif not rebuild and self._meta(conn, "source_stamp") != stamp:
+            elif not (rebuilding or exporting) and self._meta(conn, "source_stamp") != stamp:
                 # The tables changed under the store, which happens when an alignment writes new
                 # units into a directory that has been reviewed before. Review events are kept and
                 # replayed over the new tables, so no decision is lost; what the store refuses is a
@@ -1025,7 +1031,7 @@ def apply(directory: Path) -> dict[str, int]:
 
     Returns the rows written per table and the number of events, `{"lines", "units", "reviews"}`.
     """
-    return Store(Path(directory)).export()
+    return Store(Path(directory), exporting=True).export()
 
 
 def replay(directory: Path) -> dict[str, int]:
@@ -1035,7 +1041,7 @@ def replay(directory: Path) -> dict[str, int]:
     rebuilt state, the rows repaired, the events taken from `reviews.jsonl`, and the events that
     were already in effect.
     """
-    return Store(Path(directory), rebuild=True).rebuild()
+    return Store(Path(directory), rebuilding=True).rebuild()
 
 
 # -- the change an event makes -------------------------------------------------------------------
