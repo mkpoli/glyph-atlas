@@ -1,0 +1,4 @@
+# The screenshots of the review interface are deliverables of T41, not fetched material: the
+# repository's `.gitignore` excludes `*.png` for the crops under `cache/` and `work/`, and a pattern
+# in a deeper file wins over a shallower one, so the shots are tracked again here.
+!*.png
