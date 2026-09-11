@@ -37,6 +37,28 @@ def sources() -> None:
         typer.echo(f"{source.id:<20} {source.licence.value:<14} {source.name}")
 
 
+@app.command()
+def coverage(
+    out: Annotated[Path, typer.Option(help="write the coverage table here")] = Path("work/coverage.tsv"),
+    directories: Annotated[
+        list[Path] | None,
+        typer.Argument(help="dataset directories to join; the three transcription sets by default"),
+    ] = None,
+) -> None:
+    """Join the entry ids of the transcription datasets and count the pages without lines."""
+    from . import coverage as coverage_module
+
+    wanted = directories or [
+        Path("work/honkoku-lines"),
+        Path("work/ndl-minhon"),
+        Path("work/honkoku-data"),
+    ]
+    counts = coverage_module.build(list(wanted), out)
+    for name, value in counts.items():
+        typer.echo(f"{name:<40} {value:>8}")
+    typer.echo(f"-> {out}")
+
+
 # Tables -----------------------------------------------------------------------------------------
 
 
