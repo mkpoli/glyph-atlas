@@ -1,7 +1,7 @@
 # Kuzushiji Atlas
 
-A character-shape dataset (字形データセット) of pre-modern Japanese writing. Each record is one written
-character on a page image: its rectangle, the transcriber's text, a diplomatic reading, the Unicode
+A character-shape dataset (字形データセット) of pre-modern Japanese writing. Each record is one graphic
+occurrence, in most cases one written character on a page image: its rectangle, the transcriber's text, a diplomatic reading, the Unicode
 code points including hentaigana, the 字母 of kana forms, a variant key for kanji, and the document's
 production type, genre, register and date. The data licence is CC BY-SA 4.0, with the rights of every
 image and text recorded per record so that a user can take the subset whose terms fit.

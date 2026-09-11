@@ -12,6 +12,6 @@ counts:
   blocks: 36869
   works: 1
 format:
-  coordinates: x1, y1, x2, y2 per movable-type block, with 文字 and 字母 columns
+  coordinates: x1, y1, x2, y2 per movable-type block, with 文字 and 字母 columns; 連彫活字 blocks hold several characters
 notes:
   - Movable-type (古活字) printing; every kana block carries its 字母, the labelling this dataset uses for all kana.

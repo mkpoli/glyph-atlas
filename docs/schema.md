@@ -29,7 +29,7 @@ One physical exemplar (a copy, a manuscript, an archival document).
 | `production` | `manuscript`, `woodblock`, `movable-type`, `mixed`, `unknown` |
 | `genre` | one or more ids from `data/vocab/genre.yaml` |
 | `text_register` | `wabun`, `kanbun`, `kanbun-kundoku`, `sorobun`, `mixed`, `unknown` |
-| `dating` | `literal` as written (文政3), `start` and `end` years, `kind` (composition, copying, publication, impression), `evidence` |
+| `dating` | list; each with `literal` as written (文政3), `start` and `end` years, `kind` (composition, copying, publication, impression), `evidence` |
 | `hands` | free-text notes on scribes where known |
 | `image_rights`, `text_rights` | licence, holder, attribution string, evidence URL, date checked |
 
@@ -63,15 +63,19 @@ One graphic unit: a character, a ligature, a mark, a gap.
 
 | Field | Meaning |
 | --- | --- |
-| `id`, `page_id`, `line_id`, `seq` | |
-| `box` | rectangle on the page image |
+| `id`, `page_id`, `line_id`, `seq` | `page_id` is null for a standalone crop |
+| `box` | rectangle on the page image; null for a standalone crop |
+| `crop`, `crop_sha256` | URL or archive path of a standalone crop image, and its checksum |
+| `granularity` | `char`, `sequence` (an unresolved run), `block` (a type block holding several characters) |
 | `kind` | `char`, `ligature`, `iteration-mark`, `voicing-mark`, `punctuation`, `gap`, `unreadable` |
 | `text_source` | the transcriber's string for this unit |
 | `reading` | diplomatic reading, historical spelling kept |
 | `unicode` | code point sequence, `U+1B002` or `U+304B U+3099`; null when no code point fits |
+| `classification` | `unassessed`, `identified`, `ambiguous` (several candidates remain), `unencoded` (identified, no code point exists), `unidentified` |
 | `script` | `hiragana`, `hentaigana`, `katakana`, `kanji`, `symbol`, `latin`, `unknown` |
 | `jibo` | 字母 as one kanji |
-| `variant` | `{scheme, id}` with scheme `mj`, `ivs`, `glyphwiki` or `local` |
+| `variants` | list of `{scheme, id, version}` with scheme `mj`, `ivs`, `glyphwiki` or `local`; several may apply |
+| `antecedent_ids` | for an iteration mark, the units it repeats, across a line break if needed |
 | `group_id` | 連綿 group |
 | `voicing` | mark present on the page: `none`, `dakuten`, `handakuten` |
 | `method` | `import`, `detect-align`, `manual` |
@@ -82,7 +86,7 @@ One graphic unit: a character, a ligature, a mark, a gap.
 
 `unicode` and `reading` answer different questions. A hentaigana form of か derived from 可 has
 `reading` か, `unicode` U+1B019 (KA-3), `jibo` 可, `script` hentaigana. U+1B01A (KA-4) derives from 可
-as well, so a record of this pair also carries a local shape id in `variant`. The modern spelling is
+as well, so a record of this pair also carries a local shape id in `variants`. The modern spelling is
 derived at export.
 
 ### groups
@@ -91,8 +95,10 @@ derived at export.
 
 ### reviews
 
-Append-only log: `unit_id`, `field`, `old`, `new`, `role` (model, transcriber, reviewer, adjudicator),
-`evidence`, `at`.
+Append-only log: `id`, `target_type`, `target_id`, `field`, `old`, `new` (JSON values, so a box or a
+list can be recorded), `role` (model, transcriber, reviewer, adjudicator), `actor`, `evidence`, `at`.
+When several reviewers work at once, the log is written by one service and exported; clients never
+append to a shared file.
 
 ## Vocabularies
 

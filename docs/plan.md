@@ -5,8 +5,9 @@ State of the field and the route to a first release. Figures were read from the 
 
 ## 1. The dataset
 
-One record per written character on a page image. A record holds the rectangle on the full-size
-image, the transcriber's string, a diplomatic reading, Unicode code points (hentaigana code points
+One record per graphic occurrence: in most cases one written character on a page image, and
+otherwise a standalone crop without page placement or a block holding several characters, with
+the granularity stated on the record. A record holds the rectangle on the full-size image, the transcriber's string, a diplomatic reading, Unicode code points (hentaigana code points
 for kana forms that Unicode encodes), the 字母 of kana, a variant key for kanji written in a form
 other than the transcribed one, the line and the neighbours, and the document's production type,
 genre, register and date. Every record also carries the licence of its image and of its text, and
@@ -22,8 +23,8 @@ the URL.
 | --- | ---: | ---: | --- | --- | --- | --- | --- |
 | CODH 日本古典籍くずし字データセット v2 | 1,086,326 | 4,328 | yes | no, modern kana only | 書誌ID only | CC BY-SA 4.0 | unchanged since 2019-11-11 |
 | 東京大学史料編纂所 くずし字データセット | 325,261 | 5,887 | crops only, no coordinates | no | in the 電子くずし字字典 database only | CC BY 4.0 | 2023-03-27 |
-| CODH 古活字データセット | 36,869 blocks | 1 work | yes | yes | none | CC BY 4.0 | 2023-10-03 |
-| Honkoku-Lines v2.0 (橋本雄太) | 1,169,304 lines, 18.2M characters | n/a | line boxes | no | holder and image licence per line | text CC BY-SA 4.0, images per holder | 2026-08-05 |
+| CODH 古活字データセット | 36,869 blocks from 1 work | n/a | block boxes, some 連彫 blocks hold several characters | yes | none | CC BY 4.0 | 2023-10-03 |
+| Honkoku-Lines v2.0 (橋本雄太) | 1,169,304 lines, 18.2M characters | n/a | line boxes | no | holder and image licence per line, bibliography per item | text CC BY-SA 4.0, images per holder | 2026-08-05 |
 | NDL古典籍OCR学習用データセット（みんなで翻刻加工データ） | 523,283 lines | n/a | line boxes | no | attribution per book | CC BY-SA 4.0 | 2024-02-07 |
 | みんなで翻刻データ v3 | 46.87M characters | n/a | none | no | manifest URL per entry | CC BY-SA 4.0 | growing |
 | 国語研変体仮名字形データベース | about 42,000 at launch, 15 works by 2025 | n/a | crops | yes | none | unstated | 2020– |
@@ -36,8 +37,8 @@ https://cid.ninjal.ac.jp/hentaiganaDB/ · https://github.com/rois-codh/kmnist
 
 Outside Japan, the largest character-level historical sets are MTHv2 (1,081,663 characters, research
 use only, https://github.com/HCIILAB/MTHv2_Datasets_Release) and AI Hub's Joseon Hanja set
-(10,142,816 characters, access limited to Korean entities, https://aihub.or.kr/aidata/30753). No
-character-level set of that size is under a CC licence without NC or ND.
+(10,142,816 characters, access limited to Korean entities, https://aihub.or.kr/aidata/30753). Among
+the sets examined, none of that size is under a CC licence without NC or ND.
 
 Hobbyist merges exist on Hugging Face (DimV-Ai/kuzushiji-character-dataset-v1 combines CODH with
 28,862 annotated characters from two 小城藩 manuscripts; Kotomiya07 republishes CODH in COCO and YOLO
@@ -53,10 +54,10 @@ form). Their rights documentation is thin.
   stated licence.
 - Kanji variants as written. Version 2 of the CODH dataset merged 旧字 into 新字 in the 常用漢字 range.
 - Document metadata. CODH carries only the 書誌ID; the HI Lab zip carries nothing; Honkoku-Lines
-  carries holder and licence and no dating or genre.
+  carries holder, licence and an item bibliography, without dating intervals or genre.
 - Character-level data from crowd transcriptions. NDL (2024) and Honkoku-Lines (2026) reached line
   level. 橋本雄太 named the character-level step as open in 2022
-  (https://current.ndl.go.jp/ca2015). No published work takes it further.
+  (https://current.ndl.go.jp/ca2015). None of the releases examined goes further.
 - Per-record rights across sources, so that a mixed dataset can be filtered to what a user may
   redistribute.
 
@@ -66,10 +67,11 @@ Imported as they are, with identifiers kept:
 
 - CODH くずし字データセット: coordinates CSV per book, crops addressable through CODH's IIIF server
   (`/char-shape/iiif/{bid}/{bid}_{page}_{half}.tif/{x},{y},{w},{h}/full/0/default.jpg`).
-- CODH 古活字データセット: blocks with 字母, the seed for 字母 classification.
+- CODH 古活字データセット: type blocks with 文字 and 字母, the seed for 字母 classification; some blocks are
+  連彫活字 carrying two or three kana.
 - 東京大学史料編纂所 くずし字データセット: 325,261 crops without page coordinates. The record fields
-  (文書名, 和暦年月日, 史料群名 and others) exist in the 電子くずし字字典 database; getting them needs
-  an agreement with the institute.
+  (文書名, 和暦年月日, 史料群名 and others) exist in the 電子くずし字字典 database, whose search API
+  refuses anonymous requests; a route to them has to come from the institute.
 
 Line-level inputs for the alignment pipeline:
 
@@ -113,16 +115,20 @@ Four layers, each fillable on its own:
 4. Normalisation: modern kana, 新字, voicing supplied by an editor. Computed at export from the
    layers above and a named policy; never stored on the record.
 
-Kana. The reading comes from the transcription. Unicode's names list and the MJ table give the code points that share that
+Kana. The reading starts from the transcription, which is evidence and not the diplomatic reading:
+a transcriber may have written い for a form that reads ゐ on the page, so the candidate set includes
+the historical spellings that the source's normalisation maps onto the transcribed kana. Unicode's names list and the MJ table give the code points that share that
 reading (か has twelve, KA-KE included). A classifier and, where reviewed, a person choose among them from the
 image, and the 字母 follows from the code point. For the 52 (音価, 字母) pairs that Unicode split across
 several code points, and for shapes Unicode never encoded, the record gets a local shape id in
 addition to the closest code point. Katakana keeps its own script value; a 字母 may still be
 recorded, as for the 子-shaped ネ.
 
-Kanji. The base code point is the transcribed one. When the written form is identified as a
-registered glyph, the record carries the Moji_Joho IVS or MJ文字図形名; otherwise a local variant id
-or nothing. 旧字 and 新字 are never merged.
+Kanji. The transcriber's string stays in the source layer (国 when the guidelines asked for 当用漢字).
+The classification layer records the character as written: `unicode` U+570B when the page shows 國,
+and, when the written form matches a registered glyph, the Moji_Joho IVS or MJ文字図形名 on its own
+registered base; otherwise a local variant id or nothing. 旧字 and 新字 are never merged in the
+classification layer; the modern form is derived at export.
 
 Marks and joins. Voicing marks are recorded as present or absent with their own rectangle. 踊り字
 keep their mark and link to the repeated span. 合字 (ゟ, ヿ, 𬼂 U+2CF02 for なり) are one unit with a
@@ -141,8 +147,9 @@ interval and its kind (composition, copying, publication, impression), holder, s
 3. Lines. Honkoku-Lines and the NDL dataset supply line boxes and text for most pages. For pages
    without them, NDL古典籍OCR-Lite (RTMDet + PARSeq) detects lines and the transcription is matched to
    them by normalised edit distance, as in Honkoku-Lines.
-4. Characters. A class-agnostic character detector, trained on the 1,086,326 CODH boxes and the
-   古活字 blocks and later on reviewed pilot pages, proposes boxes inside each line.
+4. Characters. A class-agnostic character detector, trained on the 1,086,326 CODH boxes, the
+   single-character 古活字 blocks (連彫活字 blocks hold several characters and are left out) and later
+   on reviewed pilot pages, proposes boxes inside each line.
 5. Alignment. The transcription line, markup parsed, is aligned to the ordered detections by dynamic
    programming. The score is a character classifier's probability of the transcribed character for
    the detection, computed over an equivalence class (hentaigana forms of the same kana, 旧字 and
@@ -162,17 +169,19 @@ Evaluation splits are by item, so that two scans of one print never straddle a s
 
 ## 7. Milestones
 
-- M0. Repository, schema, source registry, importer for one CODH book.
-- M1. Importers for the CODH dataset, the 古活字 dataset, the HI Lab crops and the Honkoku-Lines
-  metadata. The imported tables alone put about 1.4 million character records with provenance into
-  one schema.
-- M2. Detector and alignment on a pilot of 100 to 200 pages from PDM and CC BY 4.0 items in
-  Honkoku-Lines, reviewed in full; joint box-and-label precision measured and published.
-- M3. 字母 classifier; release 0.1 with at least 50,000 reviewed new characters from ten or more
-  exemplars, a reviewed 字母 subset, rights evidence per record and a held-out benchmark.
-- M4. Alignment over every clear-rights line (several million characters), a public review tool,
-  contact with CODH, NDL, NINJAL and the 史料編纂所 about their data and about carrying corrections
-  back; release 1.0.
+- M0. Repository, schema, source registry, importer for one CODH book. First contact with 橋本雄太,
+  CODH and the 史料編纂所 (section 9).
+- M1. CODH importer over all 44 books; ingestion of the Honkoku-Lines lines and images for a pilot
+  of about ten exemplars; a minimal review interface (move a box, split, merge, anchor text, mark
+  a group unresolved). HI Lab and 古活字 imports wait until the schema has survived the pilot.
+- M2. Character detection and alignment on 100 to 200 complete pages from PDM and CC BY 4.0 items,
+  a calibration tranche of 10 to 20 pages first; review time measured; joint box-and-label
+  precision, coverage and split or merge errors published with the pilot as a benchmark.
+- M3. Release 0.1: at least 50,000 reviewed new characters from ten or more exemplars, a smaller
+  expert-reviewed 字母 subset, rights evidence per record. The 字母 classifier is trained on this
+  release and is not a condition for it.
+- M4. Source by source expansion under measured precision and coverage thresholds, the HI Lab and
+  古活字 imports, a public review service separate from bulk processing; release 1.0.
 
 ## 8. Risks
 
@@ -191,8 +200,9 @@ Evaluation splits are by item, so that two scans of one print never straddle a s
 
 - Ask 東京大学史料編纂所 for the record table behind the HI Lab crops, or for coordinates.
 - Ask 国語研 about the licence of the 変体仮名字形データベース and bulk access.
-- Confirm with Creative Commons guidance that CC BY-SA 2.1 JP material (MJ table, NINJAL images)
-  may be carried in a CC BY-SA 4.0 adaptation.
+- Ask 京都大学附属図書館 whether a bulk crop package under its reuse terms is within what the terms
+  intend.
 - Read the ColBase terms in a browser; the page is a client-rendered application.
-- Tell 橋本雄太 about the project before the first release; Honkoku-Lines and the platform are the
-  main upstream.
+- Tell 橋本雄太 about the project at the start; Honkoku-Lines and the platform are the main
+  upstream. Offer a character-level extension keyed to Honkoku-Lines line ids and reviewed
+  alignment corrections. Ask about revision ids and the preferred correction format.

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -96,7 +96,7 @@ class Document(BaseModel):
     production: Production = Production.UNKNOWN
     genre: list[str] = Field(default_factory=list, description="terms from data/vocab/genre.yaml")
     text_register: Register = Register.UNKNOWN
-    dating: Dating | None = None
+    dating: list[Dating] = Field(default_factory=list, description="several dates may apply, e.g. composition and copying")
     hands: list[str] = Field(default_factory=list)
     image_rights: Rights | None = None
     text_rights: Rights | None = None
@@ -160,6 +160,15 @@ class Script(StrEnum):
 class VariantRef(BaseModel):
     scheme: Literal["mj", "ivs", "glyphwiki", "local"]
     id: str
+    version: str | None = Field(default=None, description="registry version the id was taken from")
+
+
+class Classification(StrEnum):
+    UNASSESSED = "unassessed"
+    IDENTIFIED = "identified"
+    AMBIGUOUS = "ambiguous"
+    UNENCODED = "unencoded"
+    UNIDENTIFIED = "unidentified"
 
 
 class Confidence(BaseModel):
@@ -184,17 +193,22 @@ class Unit(BaseModel):
     """One graphic unit on a page: usually a character, sometimes a ligature or a mark."""
 
     id: str
-    page_id: str
+    page_id: str | None = Field(default=None, description="null for a standalone crop with no page placement")
     line_id: str | None = None
     seq: int | None = Field(default=None, description="position in the line, 0-based")
-    box: Box
+    box: Box | None = Field(default=None, description="rectangle on the page image; null for a standalone crop")
+    crop: str | None = Field(default=None, description="URL or archive path of a standalone crop image")
+    crop_sha256: str | None = None
     kind: UnitKind = UnitKind.CHAR
+    granularity: Literal["char", "sequence", "block"] = "char"
     text_source: str | None = Field(default=None, description="the transcriber's string for this unit")
     reading: str | None = Field(default=None, description="diplomatic reading, historical spelling kept")
     unicode: str | None = Field(default=None, description="code point sequence, e.g. U+1B002 or U+304B U+3099")
+    classification: Classification = Classification.UNASSESSED
     script: Script = Script.UNKNOWN
     jibo: str | None = Field(default=None, description="字母, the kanji the kana form derives from")
-    variant: VariantRef | None = None
+    variants: list[VariantRef] = Field(default_factory=list, description="MJ, IVS, GlyphWiki or local shape ids")
+    antecedent_ids: list[str] = Field(default_factory=list, description="units an iteration mark repeats")
     group_id: str | None = Field(default=None, description="連綿 group this unit belongs to")
     voicing: Literal["none", "dakuten", "handakuten"] | None = Field(
         default=None, description="mark actually present on the page"
@@ -219,10 +233,13 @@ class Group(BaseModel):
 class Review(BaseModel):
     """One editorial decision, appended to the review log."""
 
-    unit_id: str
+    id: str
+    target_type: Literal["unit", "line", "page", "document", "group"] = "unit"
+    target_id: str
     field: str
-    old: str | None
-    new: str | None
+    old: Any = None
+    new: Any = None
     role: Literal["model", "transcriber", "reviewer", "adjudicator"]
+    actor: str | None = Field(default=None, description="model name or anonymous reviewer id")
     evidence: str | None = None
     at: datetime

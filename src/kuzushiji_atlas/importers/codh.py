@@ -16,7 +16,9 @@ from pathlib import Path
 
 from PIL import Image
 
-from ..schema import Box, Document, Licence, Page, Production, ReviewState, Rights, Script, Unit, UnitKind
+from ..schema import (
+    Box, Classification, Document, Licence, Page, Production, ReviewState, Rights, Script, Unit, UnitKind,
+)
 
 SOURCE = "codh-char-shape"
 ATTRIBUTION = "『日本古典籍くずし字データセット』（国文研ほか所蔵／CODH加工）doi:10.20676/00000340"
@@ -87,7 +89,7 @@ def read(zip_path: Path, title: str | None = None) -> tuple[Document, list[Page]
             id=f"codh:{bid}:{image}:{block}:{char_id}", page_id=pages[image].id, line_id=None, seq=None,
             box=Box(x=int(row["X"]), y=int(row["Y"]), w=int(row["Width"]), h=int(row["Height"])),
             kind=kind_of(cp), text_source=char, reading=char, unicode=f"U+{cp:04X}", script=script_of(cp),
-            method="import", review=ReviewState.TRANSCRIBER,
+            classification=Classification.IDENTIFIED, method="import", review=ReviewState.TRANSCRIBER,
             upstream={"source": SOURCE, "ref": f"{bid}/{image}/{block}/{char_id}", "block": block},
         ))
     return document, list(pages.values()), units
