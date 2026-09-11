@@ -1,0 +1,109 @@
+# The classifier: the backbone, the preprocessing and the hyperparameters that train.py,
+# train_with_hilab.py, export_onnx.py and glyph_atlas.classify read. The framework versions are
+# the ones the 2026-09-11 installation spike verified on the workstation (see SPIKE.md); the
+# training hyperparameters below are the starting point, and the ones the profile fitted.
+
+framework: timm
+# ConvNeXt-tiny through timm, Apache-2.0. torchvision's ConvNeXt is the same architecture but timm
+# carries the ImageNet-22k checkpoint that is fine-tuned on ImageNet-1k (`fb_in22k_ft_in1k`), which
+# is the starting point named here. See SPIKE.md for what was tried and what it measured.
+
+model:
+  checkpoint: convnext_tiny.fb_in22k_ft_in1k
+  architecture: convnext_tiny
+  # the checkpoint's 1000-class head is replaced by one linear layer over the class list
+  pretrained: true
+  licence: Apache-2.0
+
+preprocessing:
+  # one crop is one character; the class list fixes the size and src/glyph_atlas/classify.py
+  # repeats it, because a model trained at one size and served at another is a different model
+  size: 96
+  # grey: the CODH crops carry no colour the classifier uses, and the pages are bitonal scans
+  grey: true
+  # aspect preserved by padding to a square with white, then resized; never stretched
+  pad: 255
+  # the ImageNet statistics averaged over the three channels, which the grey channel is normalised
+  # with; classify.MEAN and classify.STD are the same two numbers
+  mean: 0.449
+  std: 0.226
+
+data:
+  # written by models/classifier/build_manifests.py
+  directory: work/classifier
+  splits:
+    train: train.parquet
+    val: val.parquet
+    test: test.parquet
+  # the class order, and the source tables the manifests were cut from
+  classes: models/classifier/classes.json
+  dataset: work/codh-full
+  split_table: data/splits/codh.tsv
+  detector: work/detector
+  image_cache: cache/images
+  # a code point with fewer crops than this in train is not a class: it is trained as `other`
+  min_train_crops: 20
+  other: other
+  # HI Lab crops are a separate experiment, never mixed into the baseline
+  hilab: work/hilab
+  hilab_crops: cache/hilab
+
+training:
+  # 16 GB VRAM, batch 64 at 96 square, mixed precision, within the workstation's budget
+  epochs: 12
+  batch_size: 64
+  optimizer: adamw
+  lr: 0.001
+  backbone_lr: 0.0001
+  weight_decay: 0.05
+  warmup_steps: 500
+  scheduler: cosine
+  precision: bf16
+  grad_clip: 1.0
+  label_smoothing: 0.1
+  # every class is drawn as often as every other, so a class with 20 crops is not drowned by one
+  # with 22,000; the sampler weight of a crop is 1 / (crops of its class in train)
+  sampler: class_balanced
+  # scans differ in contrast and exposure and a character keeps its shape under both; a character
+  # mirrored or rotated is a different character, so neither is used
+  augment: brightness_contrast
+  num_workers: 8
+  seed: 0
+  checkpoint_every: 1
+
+calibration:
+  # temperature scaling on the val crops, which are drawn in proportion to their frequency: the
+  # training sampler is class-balanced and the served distribution is not, so the temperature is the
+  # one correction the two need
+  method: temperature
+  fit_on: val
+  # expected calibration error, top-1 confidence against accuracy
+  bins: 15
+
+evaluation:
+  top_k: 5
+
+artifacts:
+  # checkpoints and exports are not committed
+  directory: models/classifier/artifacts
+  export: models/classifier/artifacts/classifier.onnx
+  # a crop is always 96 square, so the export fixes the batch and the size instead of making them
+  # dynamic; the legacy exporter writes one self-contained file
+  batch: 1
+  exporter: legacy
+  opset: 17
+
+versions:
+  python: "3.14.0"
+  torch: "2.14.0+cu130"
+  torchvision: "0.29.0+cu130"
+  timm: "1.0.29"
+  onnx: "1.22.0"
+  onnxscript: "0.7.2"
+  onnxruntime-gpu: "1.30.0"
+  numpy: "2.5.3"
+  pillow: "12.3.0"
+  pyarrow: "21.0.0"
+  pyyaml: "6.0.3"
+  cuda: "13.0"
+  driver: "580.97"
