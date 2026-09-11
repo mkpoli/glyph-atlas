@@ -1,0 +1,42 @@
+# Matching policies for character equivalence, read by glyph_atlas.refs.
+#
+# A policy names the relations it composes; the relations themselves are defined in
+# src/glyph_atlas/refs.py and draw on data/vocab/{hentaigana,mj-hentaigana,kanji-equivalents}
+# .tsv. A published policy is never edited: a change to what a name means is a new name.
+#
+# Relations
+#   kana-reading    kana forms that share one reading: the modern hiragana, its katakana, and every
+#                   hentaigana whose 音価 includes that kana (shared-reading letters such as KA-KE
+#                   included). The reading comes from the Unicode names list and the MJ table.
+#   compatibility   a CJK compatibility ideograph and the CJK unified ideograph its decomposition
+#                   names, plus every other <compat> decomposition to a single unified ideograph
+#                   (UnicodeData.txt).
+#   shinji-kyuji    a 旧字 and the 常用漢字 新字 the 戸籍統一文字情報 親字・正字 relation unifies it
+#                   into, where the two are separately encoded JIS X 0213 characters
+#                   (MJ縮退マップ Ver.1.2.0 and MJ文字情報一覧表 Ver.006.02).
+#   itaiji          two characters JIS X 0213:2012 places at one 面区点, so its 包摂規準 read one
+#                   for the other (MJ文字情報一覧表 Ver.006.02).
+#   voicing         a kana and its voiced form, and a voiced kana and its semi-voiced form.
+#   small-kana      a small kana and its full-size kana.
+
+align-v1:
+  version: 1
+  description: >
+    Forms a transcriber may have written for one another on a page: kana of one reading, Unicode
+    compatibility characters, 旧字 and 新字, JIS X 0213 包摂 variants, and kana that differ only in
+    voicing or in size. Use where a transcription and a page image have to meet.
+  relations:
+    - kana-reading
+    - compatibility
+    - shinji-kyuji
+    - itaiji
+    - voicing
+    - small-kana
+
+strict:
+  version: 1
+  description: >
+    Only the mappings Unicode itself declares through a compatibility decomposition. Characters
+    that differ by form, script or encoding stay distinct.
+  relations:
+    - compatibility

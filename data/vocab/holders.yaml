@@ -1,0 +1,16 @@
+# Holding institutions and the terms of their page images. `terms` is the page that states them.
+- id: nijl
+  ja: 国文学研究資料館
+  terms: https://kokusho.nijl.ac.jp/
+- id: ndl
+  ja: 国立国会図書館
+  terms: https://www.ndl.go.jp/jp/use/reproduction/index.html
+- id: hi-utokyo
+  ja: 東京大学史料編纂所
+  terms: https://www.hi.u-tokyo.ac.jp/faq/kitei.html
+- id: naj
+  ja: 国立公文書館
+  terms: https://www.digital.archives.go.jp/secondary-use
+- id: hokudai
+  ja: 北海道大学附属図書館
+  terms: https://www.lib.hokudai.ac.jp/

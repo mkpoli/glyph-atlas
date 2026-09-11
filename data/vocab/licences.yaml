@@ -1,0 +1,606 @@
+# Licence statements the upstreams use, one entry per statement.
+#
+# `match` lists every spelling of the statement: the licence id an upstream field carries, the
+# label a page prints, and the URL of the page itself. Two matches that name the same statement
+# stay in one entry, so http and https, `deed.ja` and `deed.en`, and the `page/` and `vocab/`
+# spellings of a RightsStatements identifier all resolve alike.
+# `licence` is the value recorded on the record. `evidence` is the page that states it.
+# `eligible` says whether material under the statement may go into the CC BY-SA 4.0 release;
+# `per-item` means the holder states the licence of each item on the item's own page, so the
+# statement alone grants nothing. `checked` is the date the statement was last read.
+
+- match:
+    - CC0-1.0
+    - CC0 1.0
+    - CC0
+    - Creative Commons Zero 1.0 Universal
+    - https://creativecommons.org/publicdomain/zero/1.0/
+    - https://creativecommons.org/publicdomain/zero/1.0/deed.ja
+    - https://creativecommons.org/publicdomain/zero/1.0/deed.en
+    - http://creativecommons.org/publicdomain/zero/1.0/
+    - http://creativecommons.org/publicdomain/zero/1.0/deed.ja
+  licence: CC0-1.0
+  label: CC0 1.0 Universal
+  evidence: https://creativecommons.org/publicdomain/zero/1.0/
+  eligible: true
+  obligations: "No conditions. The waiver is recorded as such; a notice the source supplies is kept."
+  checked: 2026-09-11
+
+- match:
+    - CC-BY-4.0
+    - CC BY 4.0
+    - Creative Commons Attribution 4.0 International
+    - https://creativecommons.org/licenses/by/4.0/
+    - https://creativecommons.org/licenses/by/4.0/deed.ja
+    - https://creativecommons.org/licenses/by/4.0/deed.en
+    - http://creativecommons.org/licenses/by/4.0/
+    - http://creativecommons.org/licenses/by/4.0/deed.ja
+  licence: CC-BY-4.0
+  label: CC BY 4.0
+  evidence: https://creativecommons.org/licenses/by/4.0/
+  eligible: true
+  obligations: "Credit the creator and the holding institution, link to the licence, and state that changes were made."
+  checked: 2026-09-11
+
+- match:
+    - CC-BY-SA-4.0
+    - CC BY-SA 4.0
+    - Creative Commons Attribution ShareAlike 4.0 International
+    - https://creativecommons.org/licenses/by-sa/4.0/
+    - https://creativecommons.org/licenses/by-sa/4.0/deed.ja
+    - https://creativecommons.org/licenses/by-sa/4.0/deed.en
+    - http://creativecommons.org/licenses/by-sa/4.0/
+    - http://creativecommons.org/licenses/by-sa/4.0/deed.ja
+  licence: CC-BY-SA-4.0
+  label: CC BY-SA 4.0
+  evidence: https://creativecommons.org/licenses/by-sa/4.0/
+  eligible: true
+  obligations: "Credit, link to the licence, state changes, and keep the share-alike terms on adaptations."
+  checked: 2026-09-11
+
+- match:
+    - CC-BY-SA-3.0
+    - CC BY-SA 3.0
+    - Creative Commons Attribution ShareAlike 3.0 Unported
+    - https://creativecommons.org/licenses/by-sa/3.0/
+    - https://creativecommons.org/licenses/by-sa/3.0/deed.ja
+    - https://creativecommons.org/licenses/by-sa/3.0/deed.en
+    - http://creativecommons.org/licenses/by-sa/3.0/
+    - http://creativecommons.org/licenses/by-sa/3.0/deed.ja
+  licence: CC-BY-SA-3.0
+  label: CC BY-SA 3.0
+  evidence: https://creativecommons.org/licenses/by-sa/3.0/
+  eligible: true
+  obligations: "Credit, link to the licence, state changes, and keep the 3.0 notice on adaptations."
+  checked: 2026-09-11
+
+- match:
+    - CC-BY-SA-2.1-JP
+    - CC BY-SA 2.1 JP
+    - CC BY-SA 2.1 日本
+    - Creative Commons Attribution ShareAlike 2.1 Japan
+    - https://creativecommons.org/licenses/by-sa/2.1/jp/
+    - https://creativecommons.org/licenses/by-sa/2.1/jp/deed.ja
+    - https://creativecommons.org/licenses/by-sa/2.1/jp/deed.en
+    - http://creativecommons.org/licenses/by-sa/2.1/jp/
+    - http://creativecommons.org/licenses/by-sa/2.1/jp/deed.ja
+  licence: CC-BY-SA-2.1-JP
+  label: CC BY-SA 2.1 Japan
+  evidence: https://creativecommons.org/licenses/by-sa/2.1/jp/
+  eligible: true
+  obligations: "Credit, link to the licence, state changes, and keep the 2.1 JP notice. Article 5 lets an adaptation go out under a later version or another jurisdiction's licence with the same elements; the modifications are recorded."
+  checked: 2026-09-11
+
+- match:
+    - CC-BY-NC-4.0
+    - CC BY-NC 4.0
+    - 表示 - 非営利 4.0 国際
+    - https://creativecommons.org/licenses/by-nc/4.0/
+    - https://creativecommons.org/licenses/by-nc/4.0/deed.ja
+    - https://creativecommons.org/licenses/by-nc/4.0/deed.en
+    - http://creativecommons.org/licenses/by-nc/4.0/
+    - http://creativecommons.org/licenses/by-nc/4.0/deed.ja
+  licence: CC-BY-NC-4.0
+  label: CC BY-NC 4.0
+  evidence: https://creativecommons.org/licenses/by-nc/4.0/
+  eligible: false
+  obligations: "Non-commercial use only. Never in a release build; the holder is named in the report for follow-up."
+  checked: 2026-09-11
+
+- match:
+    - CC-BY-ND-4.0
+    - CC BY-ND 4.0
+    - https://creativecommons.org/licenses/by-nd/4.0/
+    - https://creativecommons.org/licenses/by-nd/4.0/deed.ja
+    - https://creativecommons.org/licenses/by-nd/4.0/deed.en
+    - http://creativecommons.org/licenses/by-nd/4.0/
+    - http://creativecommons.org/licenses/by-nd/4.0/deed.ja
+  licence: CC-BY-ND-4.0
+  label: CC BY-ND 4.0
+  evidence: https://creativecommons.org/licenses/by-nd/4.0/
+  eligible: false
+  obligations: "No derivative works. A release that crops or re-aligns the image is a derivative, so the item is excluded and the holder named for follow-up."
+  checked: 2026-09-11
+
+- match:
+    - CC-BY-NC-SA-4.0
+    - CC BY-NC-SA 4.0
+    - https://creativecommons.org/licenses/by-nc-sa/4.0/
+    - https://creativecommons.org/licenses/by-nc-sa/4.0/deed.ja
+    - https://creativecommons.org/licenses/by-nc-sa/4.0/deed.en
+    - http://creativecommons.org/licenses/by-nc-sa/4.0/
+    - http://creativecommons.org/licenses/by-nc-sa/4.0/deed.ja
+  licence: CC-BY-NC-SA-4.0
+  label: CC BY-NC-SA 4.0
+  evidence: https://creativecommons.org/licenses/by-nc-sa/4.0/
+  eligible: false
+  obligations: "Non-commercial use only, with share-alike. Never in a release build; the holder is named in the report for follow-up."
+  checked: 2026-09-11
+
+- match:
+    - CC-BY-NC-ND-4.0
+    - CC BY-NC-ND 4.0
+    - https://creativecommons.org/licenses/by-nc-nd/4.0/
+    - https://creativecommons.org/licenses/by-nc-nd/4.0/deed.ja
+    - https://creativecommons.org/licenses/by-nc-nd/4.0/deed.en
+    - http://creativecommons.org/licenses/by-nc-nd/4.0/
+    - http://creativecommons.org/licenses/by-nc-nd/4.0/deed.ja
+  licence: CC-BY-NC-ND-4.0
+  label: CC BY-NC-ND 4.0
+  evidence: https://creativecommons.org/licenses/by-nc-nd/4.0/
+  eligible: false
+  obligations: "Non-commercial use only, with no derivative works. Never in a release build; the holder is named in the report for follow-up."
+  checked: 2026-09-11
+
+- match:
+    - Unicode-3.0
+    - Unicode License v3
+    - Unicode License V3
+    - Unicode License 3.0
+    - https://www.unicode.org/license.txt
+    - https://www.unicode.org/license.html
+  licence: Unicode-3.0
+  label: Unicode License v3
+  evidence: https://www.unicode.org/license.txt
+  eligible: true
+  obligations: "Reproduce the copyright notice and the licence text in ATTRIBUTION.md."
+  checked: 2026-09-11
+
+- match:
+    - PD
+    - Public Domain
+    - public domain
+    - パブリックドメイン
+    - 保護期間満了
+  licence: PD
+  label: Public domain
+  evidence: null
+  eligible: true
+  obligations: "No conditions. The public-domain status is recorded as such and is never replaced by the dataset licence."
+  checked: 2026-09-11
+
+- match:
+    - PDM-1.0
+    - Public Domain Mark 1.0
+    - Public Domain Mark
+    - https://creativecommons.org/publicdomain/mark/1.0/
+    - https://creativecommons.org/publicdomain/mark/1.0/deed.ja
+    - https://creativecommons.org/publicdomain/mark/1.0/deed.en
+    - http://creativecommons.org/publicdomain/mark/1.0/
+    - http://creativecommons.org/publicdomain/mark/1.0/deed.ja
+  licence: PDM-1.0
+  label: Public Domain Mark 1.0
+  evidence: https://creativecommons.org/publicdomain/mark/1.0/
+  eligible: true
+  obligations: "No conditions. The record keeps the public-domain mark, which describes a status and is never replaced by the dataset licence."
+  checked: 2026-09-11
+
+- match:
+    - bespoke-free
+    - free reuse
+  licence: bespoke-free
+  label: Bespoke free-reuse terms
+  evidence: null
+  eligible: true
+  obligations: "The holder's own terms allow copying, modification and redistribution: credit the holder, link to the terms URI stored on the record, and state changes. The image itself is never described as CC BY-SA."
+  checked: 2026-09-11
+
+- match:
+    - restricted
+    - all rights reserved
+    - All rights reserved
+    - permission required
+    - research-only
+    - 研究利用のみ
+    - 要相談
+    - 権利保留
+  licence: restricted
+  label: Restricted, permission required
+  evidence: null
+  eligible: false
+  obligations: "Permission required. Ask the holder; the record may exist with coordinates and no crop, never in a release build."
+  checked: 2026-09-11
+
+- match:
+    - unknown
+    - Unknown
+    - UNKNOWN
+    - unspecified
+    - Unspecified
+    - (unspecified)
+    - (指定なし)
+    - 指定なし
+    - 不明
+  licence: unknown
+  label: Unstated
+  evidence: null
+  eligible: false
+  obligations: "No licence statement. The raw strings are kept on the rights record for review; ask the holder before any reuse and keep the item out of a release build."
+  checked: 2026-09-11
+
+- match:
+    - GPL-2.0-or-later
+    - GPL-2.0
+    - https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
+  licence: restricted
+  label: GNU GPL 2.0 or later
+  evidence: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
+  eligible: false
+  obligations: "Copyleft, excluded from the CC BY-SA core. A separately licensed aggregate is possible in principle and is not planned."
+  checked: 2026-09-11
+
+# RightsStatements.org identifiers: the label the holding institution prints and the URI of the
+# statement. `page/` and `vocab/` are the same statement and both spellings appear upstream.
+
+- match:
+    - RS-NOC-CR
+    - No Copyright - Contractual Restrictions
+    - No Copyright – Contractual Restrictions
+    - https://rightsstatements.org/vocab/NoC-CR/1.0/
+    - https://rightsstatements.org/page/NoC-CR/1.0/
+    - http://rightsstatements.org/vocab/NoC-CR/1.0/
+    - http://rightsstatements.org/page/NoC-CR/1.0/
+  licence: RS-NOC-CR
+  label: No Copyright - Contractual Restrictions
+  evidence: https://rightsstatements.org/vocab/NoC-CR/1.0/
+  eligible: false
+  obligations: "No copyright, but contractual restrictions bind the images. Never in a release build; the holder is named in the report for follow-up."
+  checked: 2026-09-11
+
+- match:
+    - No Copyright - Non-Commercial Use Only
+    - https://rightsstatements.org/vocab/NoC-NC/1.0/
+    - https://rightsstatements.org/page/NoC-NC/1.0/
+  licence: restricted
+  label: No Copyright - Non-Commercial Use Only
+  evidence: https://rightsstatements.org/vocab/NoC-NC/1.0/
+  eligible: false
+  obligations: "No copyright, but the providing institution limits use to non-commercial purposes. Never in a release build; the holder is named in the report for follow-up."
+  checked: 2026-09-11
+
+- match:
+    - No Copyright - Other Known Legal Restrictions
+    - https://rightsstatements.org/vocab/NoC-OKLR/1.0/
+    - https://rightsstatements.org/page/NoC-OKLR/1.0/
+  licence: restricted
+  label: No Copyright - Other Known Legal Restrictions
+  evidence: https://rightsstatements.org/vocab/NoC-OKLR/1.0/
+  eligible: false
+  obligations: "No copyright, but other legal restrictions apply. Ask the holder; never in a release build."
+  checked: 2026-09-11
+
+- match:
+    - No Copyright - United States
+    - https://rightsstatements.org/vocab/NoC-US/1.0/
+    - https://rightsstatements.org/page/NoC-US/1.0/
+  licence: PD
+  label: No Copyright - United States
+  evidence: https://rightsstatements.org/vocab/NoC-US/1.0/
+  eligible: true
+  obligations: "No conditions in the United States. The record keeps the statement, which describes a status and is never replaced by the dataset licence."
+  checked: 2026-09-11
+
+- match:
+    - In Copyright
+    - https://rightsstatements.org/vocab/InC/1.0/
+    - https://rightsstatements.org/page/InC/1.0/
+  licence: restricted
+  label: In Copyright
+  evidence: https://rightsstatements.org/vocab/InC/1.0/
+  eligible: false
+  obligations: "In copyright, no permission granted. Ask the rights holder; never in a release build."
+  checked: 2026-09-11
+
+- match:
+    - In Copyright - Educational Use Permitted
+    - https://rightsstatements.org/vocab/InC-EDU/1.0/
+    - https://rightsstatements.org/page/InC-EDU/1.0/
+  licence: restricted
+  label: In Copyright - Educational Use Permitted
+  evidence: https://rightsstatements.org/vocab/InC-EDU/1.0/
+  eligible: false
+  obligations: "In copyright with educational use permitted. A research dataset is not covered by that permission; ask the rights holder and keep the item out of a release build."
+  checked: 2026-09-11
+
+- match:
+    - In Copyright - Non-Commercial Use Permitted
+    - https://rightsstatements.org/vocab/InC-NC/1.0/
+    - https://rightsstatements.org/page/InC-NC/1.0/
+  licence: restricted
+  label: In Copyright - Non-Commercial Use Permitted
+  evidence: https://rightsstatements.org/vocab/InC-NC/1.0/
+  eligible: false
+  obligations: "In copyright with non-commercial use permitted. Never in a release build; the holder is named in the report for follow-up."
+  checked: 2026-09-11
+
+- match:
+    - In Copyright - EU Orphan Work
+    - https://rightsstatements.org/vocab/InC-OW-EU/1.0/
+    - https://rightsstatements.org/page/InC-OW-EU/1.0/
+  licence: restricted
+  label: In Copyright - EU Orphan Work
+  evidence: https://rightsstatements.org/vocab/InC-OW-EU/1.0/
+  eligible: false
+  obligations: "In copyright as an orphan work under the EU directive. Ask the holder; never in a release build."
+  checked: 2026-09-11
+
+- match:
+    - In Copyright - Rights-Holder(s) Unlocatable or Unidentifiable
+    - https://rightsstatements.org/vocab/InC-RUU/1.0/
+    - https://rightsstatements.org/page/InC-RUU/1.0/
+  licence: restricted
+  label: In Copyright - Rights-Holder(s) Unlocatable or Unidentifiable
+  evidence: https://rightsstatements.org/vocab/InC-RUU/1.0/
+  eligible: false
+  obligations: "In copyright with the rights holder unlocatable. Ask the providing institution; never in a release build."
+  checked: 2026-09-11
+
+- match:
+    - Copyright Not Evaluated
+    - https://rightsstatements.org/vocab/CNE/1.0/
+    - https://rightsstatements.org/page/CNE/1.0/
+  licence: unknown
+  label: Copyright Not Evaluated
+  evidence: https://rightsstatements.org/vocab/CNE/1.0/
+  eligible: false
+  obligations: "The rights have not been evaluated. Ask the holder and keep the item out of a release build."
+  checked: 2026-09-11
+
+- match:
+    - Copyright Undetermined
+    - https://rightsstatements.org/vocab/UND/1.0/
+    - https://rightsstatements.org/page/UND/1.0/
+  licence: unknown
+  label: Copyright Undetermined
+  evidence: https://rightsstatements.org/vocab/UND/1.0/
+  eligible: false
+  obligations: "The rights could not be determined. Ask the holder and keep the item out of a release build."
+  checked: 2026-09-11
+
+# Holding institutions and the pages that state their terms.
+
+- match:
+    - https://dl.ndl.go.jp/ja/iiif_license.html
+  licence: PDM-1.0
+  label: 国立国会図書館 IIIF images (インターネット公開, 保護期間満了)
+  evidence: https://dl.ndl.go.jp/ja/iiif_license.html
+  eligible: true
+  obligations: "The protection term of the material has expired, so the images can be used without an application. Credit 国立国会図書館デジタルコレクション; keep the public-domain mark."
+  checked: 2026-09-11
+
+- match:
+    - https://www.ndl.go.jp/jp/use/reproduction/index.html
+  licence: PDM-1.0
+  label: 国立国会図書館 複製・転載 (free use, no application)
+  evidence: https://www.ndl.go.jp/jp/use/reproduction/index.html
+  eligible: true
+  obligations: "Material that 国立国会図書館 publishes on the internet with an expired protection term may be used without an application. Credit 国立国会図書館."
+  checked: 2026-09-11
+
+- match:
+    - https://kokusho.nijl.ac.jp/page/terms.html
+    - https://kokusho.nijl.ac.jp/page/usage.html
+    - http://kokusho.nijl.ac.jp/page/usage.html
+    - https://kokusho.nijl.ac.jp/page/list-tshb.html
+    - https://kokusho.nijl.ac.jp/page/list-tsukuba.html
+    - https://kokusho.nijl.ac.jp/page/list-ympl.html
+    - https://kokusho.nijl.ac.jp/
+  licence: restricted
+  label: 国文学研究資料館 国書データベース (licence stated per item)
+  evidence: https://kokusho.nijl.ac.jp/page/terms.html
+  eligible: per-item
+  obligations: "国書データベース states the licence of each item on the item's own page: PDM, CC BY, CC BY-SA, CC BY-NC, CC BY-NC-SA, CC BY-ND, CC BY-NC-ND, a RightsStatements identifier, or all rights reserved. An item that states no licence is permission-required, so ask the holding library or 国文学研究資料館; keep it out of a release build until the item's own statement is read."
+  checked: 2026-09-11
+
+- match:
+    - https://rmda.kulib.kyoto-u.ac.jp/reuse
+    - FREE LICENSE with Attribution
+  licence: bespoke-free
+  label: 京都大学貴重資料デジタルアーカイブ (free licence with attribution)
+  evidence: https://rmda.kulib.kyoto-u.ac.jp/reuse
+  eligible: true
+  obligations: "Credit 京都大学貴重資料デジタルアーカイブ as the source, link to the terms, and state changes. Some holdings need the library's approval; a bulk crop package is to be confirmed with the library."
+  checked: 2026-09-11
+
+- match:
+    - https://www.digital.archives.go.jp/secondary-use
+  licence: bespoke-free
+  label: 国立公文書館デジタルアーカイブ (free reuse)
+  evidence: https://www.digital.archives.go.jp/secondary-use
+  eligible: true
+  obligations: "Credit 国立公文書館デジタルアーカイブ, link to the terms, and state changes. The metadata is CC0."
+  checked: 2026-09-11
+
+- match:
+    - https://mokkanko.nabunken.go.jp/ja/?c=help
+    - https://mokkanko.nabunken.go.jp/ja/
+  licence: bespoke-free
+  label: 奈良文化財研究所 木簡庫 (free reuse, commercial included)
+  evidence: https://mokkanko.nabunken.go.jp/ja/?c=help
+  eligible: true
+  obligations: "Images surveyed by 奈良文化財研究所 may be reused, commercial use included, with a source line and a modification notice. Tablets held by other institutions follow those holders' own terms."
+  checked: 2026-09-11
+
+- match:
+    - https://dcollections.lib.keio.ac.jp/ja/about
+  licence: restricted
+  label: 慶應義塾大学メディアセンター (all rights reserved)
+  evidence: https://dcollections.lib.keio.ac.jp/ja/about
+  eligible: false
+  obligations: "All rights reserved. Ask 慶應義塾大学メディアセンター for permission; never in a release build."
+  checked: 2026-09-11
+
+- match:
+    - https://www.waseda.jp/library/user/using-images/
+  licence: restricted
+  label: 早稲田大学図書館 (permission required)
+  evidence: https://www.waseda.jp/library/user/using-images/
+  eligible: false
+  obligations: "Permission required for the use of images. Ask 早稲田大学図書館; never in a release build."
+  checked: 2026-09-11
+
+- match:
+    - https://www.lib.u-tokyo.ac.jp/ja/library/contents/archives-top/reuse
+  licence: restricted
+  label: 東京大学附属図書館 (terms page, no standard licence identifier)
+  evidence: https://www.lib.u-tokyo.ac.jp/ja/library/contents/archives-top/reuse
+  eligible: false
+  obligations: "The page states the library's terms and Honkoku-Lines derives no standard licence identifier from it. Ask 東京大学附属図書館 before reuse; never in a release build."
+  checked: 2026-09-11
+
+- match:
+    - https://da.library.ryukoku.ac.jp/support2.html
+  licence: restricted
+  label: 龍谷大学図書館 (terms page, no standard licence identifier)
+  evidence: https://da.library.ryukoku.ac.jp/support2.html
+  eligible: false
+  obligations: "The page states the library's terms and Honkoku-Lines derives no standard licence identifier from it. Ask 龍谷大学図書館 before reuse; never in a release build."
+  checked: 2026-09-11
+
+- match:
+    - https://library.u-gakugei.ac.jp/digitalarchive/riyotop.html
+  licence: restricted
+  label: 東京学芸大学教育コンテンツアーカイブ (terms page, no standard licence identifier)
+  evidence: https://library.u-gakugei.ac.jp/digitalarchive/riyotop.html
+  eligible: false
+  obligations: "The page states the archive's terms and Honkoku-Lines derives no standard licence identifier from it. Ask 東京学芸大学附属図書館 before reuse; never in a release build."
+  checked: 2026-09-11
+
+- match:
+    - https://www.arc.ritsumei.ac.jp/j/database/guide.html
+  licence: restricted
+  label: 立命館大学アート・リサーチセンター (terms page, no standard licence identifier)
+  evidence: https://www.arc.ritsumei.ac.jp/j/database/guide.html
+  eligible: false
+  obligations: "The page states the database terms and Honkoku-Lines derives no standard licence identifier from it. Ask 立命館大学アート・リサーチセンター before reuse; never in a release build."
+  checked: 2026-09-11
+
+- match:
+    - https://collectie.wereldculturen.nl
+  licence: restricted
+  label: Nationaal Museum van Wereldculturen (terms page, no standard licence identifier)
+  evidence: https://collectie.wereldculturen.nl
+  eligible: false
+  obligations: "The collection portal states the museum's terms and Honkoku-Lines derives no standard licence identifier from it. Ask the museum before reuse; never in a release build."
+  checked: 2026-09-11
+
+- match:
+    - https://www.hi.u-tokyo.ac.jp/faq/kitei.html
+  licence: restricted
+  label: 東京大学史料編纂所 所蔵資料 (permission required)
+  evidence: https://www.hi.u-tokyo.ac.jp/faq/kitei.html
+  eligible: false
+  obligations: "The institute's holdings page states the terms for use of its material; ask 東京大学史料編纂所 before reusing a holdings image. The くずし字データセット as published is CC BY 4.0 (https://lab.hi.u-tokyo.ac.jp/datasets/kuzushiji)."
+  checked: 2026-09-11
+
+- match:
+    - https://www.lib.hokudai.ac.jp/
+  licence: restricted
+  label: 北海道大学附属図書館 (terms page, no standard licence identifier)
+  evidence: https://www.lib.hokudai.ac.jp/
+  eligible: false
+  obligations: "The library site states its terms and no standard licence identifier is derived from the entry. Ask 北海道大学附属図書館 before reuse; never in a release build."
+  checked: 2026-09-11
+
+# Statements of the sources' own text and metadata.
+
+- match:
+    - https://codh.rois.ac.jp/pmjt/
+  licence: CC-BY-SA-4.0
+  label: CODH 日本古典籍データセット (PMJT)
+  evidence: https://codh.rois.ac.jp/pmjt/
+  eligible: true
+  obligations: "Credit 『日本古典籍くずし字データセット』（国文研ほか所蔵／CODH加工）doi:10.20676/00000340."
+  checked: 2026-09-11
+
+- match:
+    - http://codh.rois.ac.jp/char-shape/#license
+  licence: CC-BY-SA-4.0
+  label: CODH くずし字データセット (char-shape)
+  evidence: http://codh.rois.ac.jp/char-shape/#license
+  eligible: true
+  obligations: "Credit 『日本古典籍くずし字データセット』（国文研ほか所蔵／CODH加工）doi:10.20676/00000340."
+  checked: 2026-09-11
+
+- match:
+    - https://codh.rois.ac.jp/omt/dataset/
+  licence: CC-BY-4.0
+  label: CODH 古活字データセット (omt)
+  evidence: https://codh.rois.ac.jp/omt/dataset/
+  eligible: true
+  obligations: "Credit the dataset and CODH, link to the licence, and state changes."
+  checked: 2026-09-11
+
+- match:
+    - https://lab.hi.u-tokyo.ac.jp/datasets/kuzushiji
+  licence: CC-BY-4.0
+  label: 東京大学史料編纂所 くずし字データセット
+  evidence: https://lab.hi.u-tokyo.ac.jp/datasets/kuzushiji
+  eligible: true
+  obligations: "Credit 東京大学史料編纂所, link to the licence, and state changes."
+  checked: 2026-09-11
+
+- match:
+    - https://moji.or.jp/mojikiban/mjlist/
+  licence: CC-BY-SA-2.1-JP
+  label: 文字情報基盤データベース MJ 文字リスト
+  evidence: https://moji.or.jp/mojikiban/mjlist/
+  eligible: true
+  obligations: "Credit 独立行政法人情報処理推進機構 文字情報基盤, link to the licence, state changes, and keep the 2.1 JP notice."
+  checked: 2026-09-11
+
+- match:
+    - https://cid.ninjal.ac.jp/kana/licence/
+  licence: CC-BY-4.0
+  label: 国立国語研究所 変体仮名画像データセット
+  evidence: https://cid.ninjal.ac.jp/kana/licence/
+  eligible: true
+  obligations: "Credit 国立国語研究所, link to the licence, and state changes."
+  checked: 2026-09-11
+
+- match:
+    - https://github.com/yuta1984/honkoku-data/blob/master/README.md
+  licence: CC-BY-SA-4.0
+  label: みんなで翻刻データ (honkoku-data)
+  evidence: https://github.com/yuta1984/honkoku-data/blob/master/README.md
+  eligible: true
+  obligations: "Credit the みんなで翻刻 community and 橋本雄太, link to the licence, and state changes."
+  checked: 2026-09-11
+
+- match:
+    - https://huggingface.co/datasets/yuta1984/honkoku-lines
+  licence: CC-BY-SA-4.0
+  label: Honkoku-Lines
+  evidence: https://huggingface.co/datasets/yuta1984/honkoku-lines
+  eligible: true
+  obligations: "Credit 橋本雄太, Honkoku-Lines v2.0, doi:10.5281/zenodo.21801040, and the transcriptions from みんなで翻刻; images per holder."
+  checked: 2026-09-11
+
+- match:
+    - https://github.com/ndl-lab/ndl-minhon-ocrdataset/blob/main/LICENSE
+  licence: CC-BY-SA-4.0
+  label: NDL古典籍OCR学習用データセット（みんなで翻刻加工データ）
+  evidence: https://github.com/ndl-lab/ndl-minhon-ocrdataset/blob/main/LICENSE
+  eligible: true
+  obligations: "Credit the みんなで翻刻 community and 国立国会図書館, link to the licence, and state changes."
+  checked: 2026-09-11
