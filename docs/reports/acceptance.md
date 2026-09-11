@@ -182,8 +182,18 @@ filled in here.
 Acceptance: on the held-out pilot pages, joint precision of accepted units ≥ 0.95 at coverage ≥ 0.80
 on printed main text.
 
-Status: the aligner and its 11 tests are in place; the acceptance needs the trained classifier, the
-calibration truth and the pilot run.
+Status: the aligner, its runner (`atlas align`), the pilot run configuration and 12 tests are in
+place, and the whole path has been exercised on a real calibration page with ONNX models: the
+detector returned 551 boxes on the page, the runner aligned both lines and wrote 22 units with boxes
+and detector scores. The acceptance itself needs three things that do not exist yet: the trained
+classifier, the calibration truth (T25, human) and the pilot run.
+
+One dependency is worth stating plainly, because it decides whether M2 can be measured at all: the
+pilot pages come from Honkoku-Lines, which carries line boxes and text but no character boxes, so
+the character boxes can only come from this detector. The CODH books do carry their own boxes, but
+none of them is a pilot page, so a detector that cannot find characters leaves the pilot without a
+prediction to score. If the six-epoch run does not reach a usable detector, the honest outcome is
+that M2's measured pilot is blocked on training, not that the measurement is skipped.
 
 ### T24 Pilot selection, packages, evaluator
 
