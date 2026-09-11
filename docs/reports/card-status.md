@@ -41,16 +41,20 @@ catalogue in `source_refs` and rights resolved per witness through the vocabular
 restricted). The lines carry no boxes, which is exactly the gap step 2 fills — and step 2 needs one thing the plan
 never had to build. Honkoku-Lines ships line boxes, so an alignment only has to place characters inside
 boxes that already exist; the Ainu records ship transcription text and nothing else, so there are no
-lines to align to. Measured on one page (蝦夷紀行, 1350×1000): 10 transcribed lines against 195 detected character boxes,
-which cluster into 13 columns and 16 runs once the vertical gaps are split, so the line boxes would
-have to be derived from the detected characters before anything could be aligned — and on this page the
-counts do not agree, because 10 transcribed lines against 13 ink columns is not a mapping. Deriving
-them would mean deciding how the transcription's lines correspond to ink the detector groups
-differently, which is a guess, and a guess is what the atlas is not allowed to publish as a box. The
-honest state is therefore that the Ainu records come in as documents, pages and transcribed lines with
-no boxes, which is what the source itself provides; their character boxes wait on a decision about how
-to place a page-level transcription on a page whose writing direction differs from the rest of the
-corpus.
+lines to align to. The transcription is page-level, so there are no line boxes to align to, and the first attempt to
+derive them failed for a reason worth recording: splitting ink at its vertical gaps produced 16 runs
+against 10 transcribed lines on the first page measured, because the detector breaks a line wherever
+the ink pauses. The measurement that followed says the derivation is possible after all, on a
+different rule: **one line per ink column**, ordered right to left. Over 24 pages of two witnesses
+that rule gives the transcribed line count exactly on 8 pages, within 25% on 15, and misses on one
+(ratios mostly 0.95 to 1.10). One witness, 龍谷大学's 蝦夷紀行, is nearly exact throughout (19 or 20
+columns against 19 or 20 lines); the other, 立命館's copy, is worse (8 against 8, 10 against 16, 24
+against 20), which suggests its pages are not laid out as one column per transcribed line.
+
+So: the Ainu records come in as documents, pages and transcribed lines with no boxes, and their
+character boxes wait on a per-page decision — derive line boxes from the columns where the count
+agrees, and leave the page unresolved where it does not, because a line box that stands for a
+different number of lines than the transcription has is worse than no box.
 
 ## Cards that cannot be finished without people
 
