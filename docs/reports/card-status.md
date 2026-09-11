@@ -21,7 +21,7 @@ machine, and which cannot be finished without people.
 | T16 rights reconciliation | done | reconciled over all 4,140 documents: 3,955 manifests read, 75 fetched, 202 unreachable upstream; 4,101 documents carry evidence and 39 state nothing. `net` now slows a host that answers 429 for the rest of the process, which is what made the full pass possible |
 | T20 detector data | done | 53,238 tiles, 1,086,287 unique boxes, none lost |
 | T21 detector | partial | the six-epoch run is complete, the test split measured and the ONNX exported with a passing parity check: precision 0.700, recall 0.928, F1 0.798, mean IoU 0.875, and recall 0.968 on the printed books against the card's 0.95. Precision 0.639 there does not meet it and three quarters of the false positives sit on ink CODH never annotated, so the figure is a floor. What remains is a longer schedule, not a defect to fix |
-| T22 classifier | running | manifests and crops built on the full tables; 12 epochs on the card, five done. Val top-1 0.917 and top-5 0.992 at epoch 2, the card's targets being 0.93 and 0.99; calibration and the test split follow |
+| T22 classifier | running | manifests and crops built on the full tables; 12 epochs on the card, five done. Val top-1 0.927 and top-5 0.994 at epoch 7 of 12, the card's targets being 0.93 and 0.99; calibration and the test split follow |
 | T23 alignment | partial | the aligner, its runner, its run configuration and 12 tests are done; the acceptance needs the classifier, the calibration truth and the pilot run |
 | T24 pilot | done | selection, protocol, packages for both groups, the evaluator and its tests |
 | T30 synthetic kana | done | 286 of 287 code points; U+1B11F is in neither font |
