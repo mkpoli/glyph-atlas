@@ -1,0 +1,21 @@
+# The alignment run the pilot is measured with. Every value here is part of the run's hash, so
+# changing one writes a new set of unit ids rather than overwriting the old ones.
+name: pilot-v1
+detector: models/detector/artifacts/detector.onnx
+classifier: models/classifier/artifacts/classifier.onnx
+detector_version: rtdetr_r18vd-6e
+classifier_version: convnext_tiny-12e
+# align-v1 composes the kana readings, compatibility ideographs, 新旧字体, 異体字, voicing and
+# small-kana relations; see data/vocab/equivalence-policies.yaml.
+policy: align-v1
+weights:
+  skip-token: 8.0
+  skip-detection: 6.0
+  split: 12.0
+  merge: 14.0
+  gap: 3.0
+# A unit is accepted when its match probability is at least this and the best path beats the second
+# best by this margin; the pilot tunes both on the calibration pages.
+accept: 0.9
+margin: 1.0
+ruby: false
