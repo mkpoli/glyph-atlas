@@ -215,9 +215,21 @@ the service and its page is served from the package's own image checksum.
 
 Acceptance: the browser script passes; the screenshots reviewed.
 
-Measured: the Svelte application builds to 128 KB and is mounted by the service at `/`; the page
-view, line view, queue, key map and event panel render; screenshots at desktop and 400 px in light
-and dark are committed under `apps/review/shots/`.
+Measured: the Svelte application builds to 128 KB (103.8 kB JS, 11.8 kB CSS) and the service mounts
+it at `/` with every API path unchanged. `tools/check.mjs` passes 24 of 24 checks over the HTTP and
+event contract — 2 documents, a cached page served from `/images/{sha}`, an uncached page showing
+its IIIF URL, open and leave timing, accept, box move, split with the inputs retired, 字母 with its
+reference glyphs and the four-event chain, undo by compensating review, merge and its undo, a 409 on
+a stale revision and one on a retired unit, an idempotent repeat, `POST /lines` and `POST /units`,
+and 16 events written to `reviews.jsonl` by `atlas review apply`. `tools/browser-check.mjs` passes
+15 of 15 in a real Chromium over the DevTools protocol: clicking a character selects its unit,
+`a`/`s`/`j`/`z`/space act and repaint, a drag posts a box review, a 240-unit line renders 103 boxes
+and 93 characters with the window at 101–193, and the page view draws a line box per line. 17
+screenshots at 1440×900 and 400×820 in light and dark are committed under `apps/review/shots/`,
+including 割書, a virtualised long line, the 字母 picker and the 409 dialog.
+
+What the browser script does not cover: non-Chromium browsers, touch and IME input, screen readers,
+and real upstream image servers.
 
 ### T42 Audit sampling
 
