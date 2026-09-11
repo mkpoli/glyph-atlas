@@ -216,6 +216,23 @@ def pilot_export(
     typer.echo(f"-> {out}")
 
 
+@pilot_app.command("images")
+def pilot_images(
+    directory: Annotated[Path, typer.Argument(help="dataset directory holding the pages")],
+    group: Annotated[str | None, typer.Option(help="calibration or heldout")] = None,
+    items: Annotated[str | None, typer.Option(help="comma-separated item ids")] = None,
+    pause: Annotated[float | None, typer.Option(help="seconds between requests to one host")] = None,
+) -> None:
+    """Fetch the page images of the selected pilot pages into the cache."""
+    from . import pilot
+
+    counts = pilot.fetch_page_images(
+        directory, group=group, items=items.split(",") if items else None, pause=pause
+    )
+    for name, value in counts.items():
+        typer.echo(f"{name:<8} {value:>6}")
+
+
 @eval_app.command("alignment")
 def eval_alignment(
     truth: Annotated[Path, typer.Option(help="dataset directory of adjudicated units")],
@@ -291,6 +308,93 @@ def review_replay(directory: Annotated[Path, typer.Argument(help="dataset direct
     counts = store.replay(directory)
     for name, rows in counts.items():
         typer.echo(f"{name:<12} {rows:>10}")
+
+
+@import_app.command("honkoku-lines")
+def import_honkoku_lines(
+    out: Annotated[Path, typer.Option(help="directory for documents, pages and lines")] = Path("work/honkoku-lines"),
+    items: Annotated[str | None, typer.Option(help="comma-separated item ids")] = None,
+    licence: Annotated[str | None, typer.Option(help="comma-separated image licences to keep")] = None,
+    limit: Annotated[int | None, typer.Option(help="stop after this many lines")] = None,
+) -> None:
+    """Import Honkoku-Lines from the cached Hugging Face files."""
+    from .importers import honkoku_lines
+
+    counts = honkoku_lines.import_all(
+        out,
+        items=items.split(",") if items else None,
+        licences=licence.split(",") if licence else None,
+        limit=limit,
+    )
+    for name, rows in counts.items():
+        typer.echo(f"{name:<16} {rows:>10}")
+    typer.echo(f"-> {out}")
+
+
+@import_app.command("kokatsuji")
+def import_kokatsuji(
+    zip_path: Annotated[Path | None, typer.Option("--zip", help="the archive of the 古活字データセット")] = None,
+    out: Annotated[Path, typer.Option(help="directory for the tables")] = Path("work/kokatsuji"),
+) -> None:
+    """Import the 古活字データセット."""
+    from .importers import kokatsuji
+
+    counts = kokatsuji.import_all(out, zip_path=zip_path)
+    for name, rows in counts.items():
+        typer.echo(f"{name:<12} {rows:>10}")
+    typer.echo(f"-> {out}")
+
+
+@import_app.command("ndl-minhon")
+def import_ndl_minhon(
+    zip_path: Annotated[Path | None, typer.Option("--zip", help="the NDL archive")] = None,
+    unpacked: Annotated[Path | None, typer.Option(help="an unpacked copy of the archive")] = None,
+    out: Annotated[Path, typer.Option(help="directory for the tables")] = Path("work/ndl-minhon"),
+    limit: Annotated[int | None, typer.Option(help="stop after this many pages")] = None,
+) -> None:
+    """Import the NDL古典籍OCR学習用データセット."""
+    from .importers import ndl_minhon
+
+    counts = ndl_minhon.import_all(out, zip_path=zip_path, unpacked=unpacked, limit=limit)
+    for name, rows in counts.items():
+        typer.echo(f"{name:<12} {rows:>10}")
+    typer.echo(f"-> {out}")
+
+
+@import_app.command("honkoku-data")
+def import_honkoku_data(
+    clone: Annotated[Path | None, typer.Option(help="a clone of honkoku-data")] = None,
+    projects: Annotated[str | None, typer.Option(help="comma-separated project ids")] = None,
+    limit: Annotated[int | None, typer.Option(help="stop after this many entries")] = None,
+    out: Annotated[Path, typer.Option(help="directory for the tables")] = Path("work/honkoku-data"),
+) -> None:
+    """Import みんなで翻刻データ v3 and the manifests."""
+    from .importers import honkoku_data
+
+    counts = honkoku_data.import_all(
+        out,
+        clone=clone,
+        projects=projects.split(",") if projects else None,
+        limit=limit,
+    )
+    for name, rows in counts.items():
+        typer.echo(f"{name:<12} {rows:>10}")
+    typer.echo(f"-> {out}")
+
+
+@import_app.command("hilab")
+def import_hilab(
+    download: Annotated[bool, typer.Option("--download", help="extract the crops into the cache")] = False,
+    limit: Annotated[int | None, typer.Option(help="stop after this many members")] = None,
+    out: Annotated[Path, typer.Option(help="directory for the table")] = Path("work/hilab"),
+) -> None:
+    """Import the 東京大学史料編纂所 くずし字データセット."""
+    from .importers import hilab
+
+    counts = hilab.import_all(out, download=download, limit=limit)
+    for name, rows in counts.items():
+        typer.echo(f"{name:<16} {rows:>10}")
+    typer.echo(f"-> {out}")
 
 
 for name, module in (

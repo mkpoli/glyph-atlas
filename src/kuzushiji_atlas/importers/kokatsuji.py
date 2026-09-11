@@ -10,8 +10,9 @@ block carries a 連彫活字, and `jibo` holds one 字母 per character in the s
 itself where the character is 〱 or ゝ. `OCR` is a machine reading and is ignored.
 
 Every block becomes a unit `codh-omt:{bid}:{ID}`: `granularity` `char` for one character and `block`
-for a 連彫活字, `text_source` and `reading` the `character` column, `seq` the `count` column,
-`review=transcriber`. A block of one kana is classified from its 字母: the code points of
+for a 連彫活字, `text_source` and `reading` the `character` column, `seq` the position of the block
+along its line counted from zero, which is the 1-based `count` column less one and is kept as given
+in `upstream["count"]`, `review=transcriber`. A block of one kana is classified from its 字母: the code points of
 `refs.candidates(character)` whose 字母 is the same one, one candidate giving `unicode` and
 `identified` and several giving `ambiguous` with equal `p`. Every other block keeps the code points
 of its transcription and stays `unassessed`, and its 字母 column is kept in
@@ -261,7 +262,10 @@ def document_of(record_rights: Rights) -> Document:
 
 
 def unit_of(row: dict) -> Unit:
-    """One block row of `dataset.csv` as a unit."""
+    """One block row of `dataset.csv` as a unit.
+
+    `seq` counts from zero along the line, so the 1-based `count` column is kept in `upstream`.
+    """
     character = row["character"]
     stem = Path(row["page"]).stem
     labels = labels_of(character, row["jibo"])
@@ -270,7 +274,7 @@ def unit_of(row: dict) -> Unit:
         document_id=DOCUMENT_ID,
         page_id=page_id(stem),
         line_id=line_id(stem, row["line"]),
-        seq=int(row["count"]),
+        seq=int(row["count"]) - 1,
         box=box_of(int(row["x1"]), int(row["y1"]), int(row["x2"]), int(row["y2"])),
         kind=kind_of(character),
         granularity=labels.granularity,
@@ -287,6 +291,7 @@ def unit_of(row: dict) -> Unit:
             "source": SOURCE,
             "ref": row["ID"],
             "block": row["block"],
+            "count": row["count"],
             "jibo_sequence": row["jibo"],
         },
     )

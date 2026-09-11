@@ -41,6 +41,48 @@ def pages_for(group: str | None = None, items: list[str] | None = None, path: Pa
     return rows
 
 
+def fetch_page_images(
+    directory: Path,
+    *,
+    group: str | None = None,
+    items: list[str] | None = None,
+    pages: list[str] | None = None,
+    pause: float | None = None,
+    selection_path: Path = PILOT_ITEMS,
+) -> dict[str, int]:
+    """Fetch the full-size page image of every selected page into the cache.
+
+    The selection is the one `export` uses, so a page that travels in a package is in the cache
+    before the package is built. Requests to one host wait the document pause apart, which is what
+    makes this slow across ten holders; the fetched pages are counted apart from the failures.
+    """
+    from . import images, net
+
+    dataset = tables.Dataset(directory)
+    if dataset.tables["pages"] is None:
+        raise ValueError(f"{directory} needs a pages table")
+    selected = pages_for(group, items, selection_path)
+    wanted = {row["page_id"] for row in selected}
+    if pages:
+        wanted &= set(pages)
+    counts = {"pages": 0, "fetched": 0, "cached": 0, "failed": 0}
+    for page in dataset.scan("pages"):
+        for record in page:
+            if record.id not in wanted:
+                continue
+            counts["pages"] += 1
+            if images.path_for(record.image) is not None:
+                counts["cached"] += 1
+                continue
+            try:
+                images.fetch(record.image, pause=pause)
+            except (images.ImageError, net.DownloadError):
+                counts["failed"] += 1
+                continue
+            counts["fetched"] += 1
+    return counts
+
+
 def export(
     out: Path,
     directory: Path,
@@ -63,6 +105,11 @@ def export(
     if pages:
         wanted = {page: row for page, row in wanted.items() if page in set(pages)}
     page_records = {page.id: page for page in dataset.read("pages") if page.id in wanted}
+    documents = (
+        {document.id: document for document in dataset.read("documents")}
+        if dataset.tables["documents"] is not None
+        else {}
+    )
     lines: dict[str, list[Line]] = {page: [] for page in wanted}
     for line in dataset.scan("lines"):
         for record in line:
@@ -82,6 +129,14 @@ def export(
             continue
         folder = out / page_id.replace(":", "_")
         folder.mkdir(parents=True, exist_ok=True)
+        checksum = _fetch_image(page, folder / "image.jpg") if images else ""
+        counts["images"] += int(bool(checksum))
+        if checksum:
+            page.sha256 = checksum
+        document = documents.get(page.document_id)
+        if document is not None:
+            tables.write(folder / "documents.parquet", [document], type(document))
+        tables.write(folder / "pages.parquet", [page], Page)
         (folder / "page.json").write_text(
             json.dumps(
                 {"page": page.model_dump(mode="json"), "group": row["group"], "reason": row["reason"],
@@ -97,25 +152,33 @@ def export(
         counts["pages"] += 1
         counts["lines"] += len(lines[page_id])
         counts["units"] += len(units[page_id])
-        if images and _fetch_image(page, folder / "image.jpg"):
-            counts["images"] += 1
     return counts
 
 
-def _fetch_image(page: Page, target: Path) -> bool:
+def _fetch_image(page: Page, target: Path) -> str:
+    """Put the page image in the package and return its sha256, or an empty string.
+
+    The page record is left as the upstream wrote it; the package states the checksum of the copy it
+    carries, which is what lets the review service serve the local file instead of the IIIF URL.
+    """
+    import hashlib
+
     from . import images, net
 
-    if target.exists():
-        return True
-    try:
-        record = images.fetch(page.image)
-    except (images.ImageError, net.DownloadError):
-        return False
-    source = images.path_for(record.url)
-    if source is None:
-        return False
-    target.write_bytes(source.read_bytes())
-    return True
+    if not target.exists():
+        try:
+            record = images.fetch(page.image)
+        except (images.ImageError, net.DownloadError):
+            return ""
+        source = images.path_for(record.url)
+        if source is None:
+            return ""
+        target.write_bytes(source.read_bytes())
+    digest = hashlib.sha256()
+    with target.open("rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def truth_pages(directory: Path) -> dict[str, int]:

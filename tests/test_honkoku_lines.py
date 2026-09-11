@@ -357,20 +357,20 @@ def test_limit_stops_after_that_many_lines(tmp_path):
     assert counts == {"documents": 1, "pages": 1, "lines": 3, "koji_mismatches": 0}
 
 
-def test_rerun_writes_the_same_tables(tmp_path):
-    counts, _, out = imported(tmp_path)
-    before = _digests(out)
-    cache = tmp_path / "cache"
-    assert honkoku_lines.import_from(cache, out) == counts
-    assert _digests(out) == before
-
-
 def _digests(directory: Path) -> dict[str, str]:
     """The sha256 of every table file, keyed by its path inside the dataset directory."""
     return {
         str(path.relative_to(directory)): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted(directory.rglob("*.parquet"))
     }
+
+
+def test_rerun_writes_the_same_tables(tmp_path):
+    counts, _, out = imported(tmp_path)
+    before = _digests(out)
+    cache = tmp_path / "cache"
+    assert honkoku_lines.import_from(cache, out) == counts
+    assert _digests(out) == before
 
 
 def test_filters_leave_nothing_of_the_previous_import(tmp_path):

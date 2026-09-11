@@ -26,7 +26,7 @@ from kuzushiji_atlas.importers import kokatsuji
 from kuzushiji_atlas.schema import Classification, Production, Register, Script, UnitKind
 
 PAGE_SIZE = (130, 200)
-COLUMNS = ["ID", "character", "jibo", "block", "page", "x1", "y1", "x2", "y2", "line", "count", "old_ID", "OCR"]
+COLUMNS = [*kokatsuji.FIELDS, "old_ID", "OCR"]
 
 #: ID, character, jibo, block, page, x1, y1, x2, y2, line, count, old_ID, OCR
 ROWS = [
@@ -156,6 +156,7 @@ def test_a_renji_block_keeps_its_aligned_jibo_sequence(tmp_path, cache, archive)
         "source": "codh-kokatsuji",
         "ref": "3",
         "block": "001_001_2_02_01_000003.jpg",
+        "count": "1",
         "jibo_sequence": "徒連〱",
     }
 
@@ -174,8 +175,11 @@ def test_units_carry_their_box_line_and_count(tmp_path, cache, archive):
     by_id = {unit.id: unit for unit in units}
     first = by_id["codh-omt:001:1"]
     assert first.box.iiif_region() == "10,10,20,30"
-    assert first.seq == 2 and first.line_id == "codh-omt:001:001_001_2:L1"
+    # `seq` counts from zero along the line; the 1-based upstream `count` stays in `upstream`.
+    assert first.seq == 1 and first.upstream["count"] == "2"
+    assert first.line_id == "codh-omt:001:001_001_2:L1"
     assert first.page_id == "codh-omt:001:001_001_2"
+    assert {unit.seq for unit in units if unit.line_id == first.line_id} == {0, 1}
     assert {unit.page_id for unit in units} == {page.id for page in pages}
     assert by_id["codh-omt:001:4"].box.iiif_region() == "50,90,60,70"
 
