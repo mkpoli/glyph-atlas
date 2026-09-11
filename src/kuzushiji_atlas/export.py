@@ -366,7 +366,9 @@ def _apply_filters(
     page_texts_all = dataset.read("page_texts") if dataset.tables["page_texts"] is not None else []
     unit_rows: list[dict[str, Any]] = []
     units_seen = 0
-    for batch in dataset.scan("units"):
+    # A dataset may hold lines and text without units, as the platform transcriptions do before an
+    # alignment has run over their pages; such a release carries the lines and no unit rows.
+    for batch in dataset.scan("units") if dataset.tables["units"] is not None else ():
         for unit in batch:
             # A unit is a record of its document; the page is where its rectangle points, and a
             # unit without a page, as a standalone crop, still belongs to its document.
@@ -380,24 +382,28 @@ def _apply_filters(
             if limit is not None and units_seen > limit:
                 continue
             unit_rows.append(_unit_row(unit, normaliser, columns))
-    if not unit_rows:
+    holds_units = dataset.tables["units"] is not None
+    if holds_units and not unit_rows:
         raise ExportError(
             "no unit of this dataset is admitted by the filters, so the release would hold no "
             "record; widen --review, ask for machine units, or check the document rights"
         )
     kept_units = {str(row["id"]) for row in unit_rows}
     kept_lines = {str(row["line_id"]) for row in unit_rows if row.get("line_id")}
+    # A dataset with no units at all, such as a platform transcription before an alignment has run
+    # over its pages, releases its lines whole: there are no units to say which line is used, and a
+    # line without a unit is still a record of the page it sits on.
     line_rows = (
         [
             line
             for batch in dataset.scan("lines")
             for line in batch
-            if line.page_id in kept_page_ids and line.id in kept_lines
+            if line.page_id in kept_page_ids and (not holds_units or line.id in kept_lines)
         ]
         if dataset.tables["lines"] is not None
         else []
     )
-    # A page is in the release because a record of it is: a unit on it, or a line whose units are.
+    # A page is in the release because a record of it is: a unit on it, or a line.
     used_pages = {str(row["page_id"]) for row in unit_rows if row.get("page_id")} | {
         line.page_id for line in line_rows
     }
@@ -416,7 +422,8 @@ def _apply_filters(
         tables.write(work / "pages.parquet", pages, Page)
     if line_rows:
         tables.write(work / "lines.parquet", line_rows, Line)
-    _write_unit_rows(work / "units.parquet", unit_rows, columns)
+    if holds_units:
+        _write_unit_rows(work / "units.parquet", unit_rows, columns)
     tables.write(work / "groups.parquet", groups, Group)
     tables.write(work / "page_texts.parquet", page_texts, PageText)
     return {

@@ -440,3 +440,36 @@ def test_a_standalone_crop_unit_keeps_its_crop_column(dataset: Path, tmp_path: P
     assert tables.Dataset(out).validate() == []
     row = units_of(out)[0]
     assert row["page_id"] is None and row["crop"].endswith("34000001.jpg")
+
+
+def test_a_dataset_without_units_releases_its_lines(tmp_path):
+    """A platform transcription has lines and text but no units until an alignment runs.
+
+    Such a release carries every line of a kept document; there are no units to say which line is
+    used, and refusing the build would mean the atlas could not publish the transcription at all.
+    """
+    from kuzushiji_atlas import export as export_module
+    from kuzushiji_atlas import koji, tables
+    from kuzushiji_atlas.schema import Document, Line, Page, PageText, ReviewState, Rights
+
+    document = Document(
+        id="hk:d1", title="t",
+        image_rights=Rights(licence="CC-BY-SA-4.0", attribution="a"),
+        text_rights=Rights(licence="CC-BY-SA-4.0", attribution="a"),
+    )
+    page = Page(id="hk:d1:0", document_id="hk:d1", seq=0, image="file:p.jpg", width=100, height=100)
+    line = Line(id="hk:d1:0:L0", page_id="hk:d1:0", seq=0, box=None,
+                text_raw="あ", text=koji.plain("あ"), match_method="ainu-records-2026-09")
+    source = tmp_path / "ainu"
+    tables.write(source / "documents.parquet", [document], Document)
+    tables.write(source / "pages.parquet", [page], Page)
+    tables.write(source / "lines.parquet", [line], Line)
+    tables.write(source / "page_texts.parquet",
+                 [PageText(page_id="hk:d1:0", source="ainu-records", text_raw="あ")], PageText)
+
+    out = tmp_path / "release"
+    counts = export_module.release([source], out, review=[ReviewState.TRANSCRIBER.value])
+    assert counts["lines"] == 1 and counts["pages"] == 1 and counts["documents"] == 1
+    assert not (out / "units.parquet").exists(), "a dataset without units releases none"
+    kept = tables.read(out / "lines.parquet", Line)
+    assert [row.id for row in kept] == ["hk:d1:0:L0"]
