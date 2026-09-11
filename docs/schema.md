@@ -5,10 +5,13 @@ Tables are Parquet files under `out/<release>/`; editorial logs are JSON Lines. 
 
 ## Identifiers
 
-Ids are opaque strings, assigned once. Imported records take a deterministic id from the upstream
-identity, so that re-importing a source changes nothing (CODH: `codh:{bid}:{image}:{block}:{char}`).
-Records created by the pipeline take a random id. When a unit is re-segmented, the old record stays
-with `split_into` or `merged_into` filled and its review state set to `rejected`.
+Ids are strings, assigned once. Imported records take a deterministic id from the upstream identity,
+so that re-importing a source changes nothing (CODH: `codh:{bid}:{image}:{block}:{char}`). Units that
+the alignment pipeline creates take `{line_id}:{run}:{seq}`, where `run` is a short hash of the model
+versions and the configuration, so a rerun with the same inputs produces the same ids. Units created
+by a reviewer take `{line_id}:m{n}` with `n` counting up per line. When a unit is re-segmented, the
+old record stays with `active` false and `split_into` or `merged_into` filled; its review state is
+left as it was, since retirement says nothing about whether its labels were wrong.
 
 ## Tables
 
@@ -55,7 +58,8 @@ spread is still one page; the spread relation is recorded through `canvas`.
 | `role` | `main`, `ruby`, `warigaki`, `note`, `marginal`, `title`, `other` |
 | `text_raw` | the transcription line as written, markup included |
 | `text` | plain text after markup removal |
-| `match_method`, `match_confidence` | how the box was assigned to the text |
+| `match_method`, `match_confidence` | how the box was assigned to the text; the confidence is a similarity score in [0, 1], never a calibrated probability |
+| `meta` | upstream fields with no column of their own (a split label, a detector score) |
 
 ### units
 
@@ -63,7 +67,7 @@ One graphic unit: a character, a ligature, a mark, a gap.
 
 | Field | Meaning |
 | --- | --- |
-| `id`, `page_id`, `line_id`, `seq` | `page_id` is null for a standalone crop |
+| `id`, `document_id`, `page_id`, `line_id`, `seq` | `document_id` is always set; `page_id` is null for a standalone crop |
 | `box` | rectangle on the page image; null for a standalone crop |
 | `crop`, `crop_sha256` | URL or archive path of a standalone crop image, and its checksum |
 | `granularity` | `char`, `sequence` (an unresolved run), `block` (a type block holding several characters) |
@@ -75,6 +79,7 @@ One graphic unit: a character, a ligature, a mark, a gap.
 | `script` | `hiragana`, `hentaigana`, `katakana`, `kanji`, `symbol`, `latin`, `unknown` |
 | `jibo` | 字母 as one kanji |
 | `variants` | list of `{scheme, id, version}` with scheme `mj`, `ivs`, `glyphwiki` or `local`; several may apply |
+| `candidates` | scored alternatives `{unicode, p, jibo}` when `classification` is `ambiguous` |
 | `antecedent_ids` | for an iteration mark, the units it repeats, across a line break if needed |
 | `group_id` | 連綿 group |
 | `voicing` | mark present on the page: `none`, `dakuten`, `handakuten` |
@@ -82,12 +87,18 @@ One graphic unit: a character, a ligature, a mark, a gap.
 | `confidence` | `detection`, `segmentation`, `text`, `jibo`, and the model that produced them |
 | `review` | `machine`, `transcriber`, `reviewed`, `double-reviewed`, `adjudicated`, `disputed`, `rejected` |
 | `upstream` | source id and upstream identifier |
+| `active` | false once a split or merge retired the unit |
 | `split_into`, `merged_into` | segmentation history |
 
 `unicode` and `reading` answer different questions. A hentaigana form of か derived from 可 has
 `reading` か, `unicode` U+1B019 (KA-3), `jibo` 可, `script` hentaigana. U+1B01A (KA-4) derives from 可
 as well, so a record of this pair also carries a local shape id in `variants`. The modern spelling is
 derived at export.
+
+### page_texts
+
+Whole-page transcriptions for pages without line records: `page_id`, `source`, `revision`,
+`text_raw`.
 
 ### groups
 

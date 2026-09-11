@@ -96,7 +96,7 @@ def read(zip_path: Path, title: str | None = None) -> tuple[Document, list[Page]
         char = chr(cp)
         block, char_id = row["Block ID"], row["Char ID"]
         units.append(Unit(
-            id=f"codh:{bid}:{image}:{block}:{char_id}", page_id=pages[image].id, line_id=None, seq=None,
+            id=f"codh:{bid}:{image}:{block}:{char_id}", document_id=document.id, page_id=pages[image].id, line_id=None, seq=None,
             box=Box(x=int(row["X"]), y=int(row["Y"]), w=int(row["Width"]), h=int(row["Height"])),
             kind=kind_of(cp), text_source=char, reading=char, unicode=f"U+{cp:04X}", script=script_of(cp),
             classification=Classification.IDENTIFIED, method="import", review=ReviewState.TRANSCRIBER,

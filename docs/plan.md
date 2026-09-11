@@ -120,8 +120,9 @@ a transcriber may have written い for a form that reads ゐ on the page, so the
 the historical spellings that the source's normalisation maps onto the transcribed kana. Unicode's names list and the MJ table give the code points that share that
 reading (か has twelve, KA-KE included). A classifier and, where reviewed, a person choose among them from the
 image, and the 字母 follows from the code point. For the 52 (音価, 字母) pairs that Unicode split across
-several code points, and for shapes Unicode never encoded, the record gets a local shape id in
-addition to the closest code point. Katakana keeps its own script value; a 字母 may still be
+several code points, the record carries the code point once the form is identified and a local
+shape id where a finer distinction is needed; a shape Unicode never encoded gets `unicode` null,
+its 字母 where known, and a local shape id. Katakana keeps its own script value; a 字母 may still be
 recorded, as for the 子-shaped ネ.
 
 Kanji. The transcriber's string stays in the source layer (国 when the guidelines asked for 当用漢字).

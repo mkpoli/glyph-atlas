@@ -1,32 +1,39 @@
-# T02 IIIF client and image cache
+# T02 Downloads, IIIF images and the image cache
 
-Goal: fetch full-size page images once, know their size without downloading when possible, and
-address them by checksum.
+Goal: fetch files politely once, know page image sizes without downloading when possible, and
+address every image by checksum.
 
-Read first: `docs/schema.md` (pages), `~/projects/Philology/honkoku-collate/collate/harvest.py` for
-the polite-fetch pattern (browser User-Agent for hosts that require it, backoff).
+Read first: `docs/schema.md` (pages), `docs/implementation/README.md` (rate limits).
 
 Outputs
-- `src/kuzushiji_atlas/images.py`: `service_of(url)` (strip an Image API request suffix such as
-  `/full/full/0/default.jpg` to the service base), `info(service)` (parse `info.json` for width,
-  height, API version, tile sizes), `full_url(service, version)` (`/full/max/0/default.jpg` for
-  version 3, `/full/full/0/default.jpg` for 2), `fetch(url) -> Path` (cache hit by URL, sha256 on
-  disk, index in `cache/images/index.parquet` with url, sha256, width, height, fetched_at, status).
-- Per-host rate limit (`--pause`, default 3 s; 1 s for `codh.rois.ac.jp` and `huggingface.co`),
-  five retries with exponential backoff, resume of partial files, HTTP 429 and 503 honoured.
-- CLI: `atlas images info <pages.parquet>` fills `width` and `height` from `info.json` and writes the
-  table back; `atlas images fetch <pages.parquet> [--limit N] [--document ID]` downloads full-size
-  images into the cache; `atlas images crop <units.parquet> --out <dir>` cuts unit boxes from cached
-  pages (used by T50).
+- `src/kuzushiji_atlas/net.py`: `download(url, dest, *, pause=None, retries=5) -> Path` with a
+  per-host pause (3 s default; 1 s for `codh.rois.ac.jp` and `huggingface.co`), exponential
+  backoff, HTTP 429 and 503 honoured with `Retry-After`, resume through `Range` when the server
+  allows it, the project User-Agent, and a browser User-Agent fallback for hosts that refuse the
+  first (kept in a small host list). A 200 with an HTML body where an image or JSON was expected
+  is a failure.
+- `src/kuzushiji_atlas/images.py`: `service_of(url)` strips an Image API request suffix
+  (`/{region}/{size}/{rotation}/{quality}.{format}`) to the service base and returns None for a
+  plain file URL; `info(service)` parses `info.json` for width, height, API version (1, 2 or 3),
+  tile sizes; `full_url(service, version)` gives `/full/max/0/default.jpg` for 3 and
+  `/full/full/0/default.jpg` for 1 and 2; `fetch(url) -> ImageRecord` downloads into
+  `cache/images/<sha256[:2]>/<sha256>.<ext>` and appends to `cache/images/index.parquet`
+  (url, service, sha256, width, height, bytes, fetched_at, etag, last_modified); `register(path,
+  url)` inserts a local file (a page image taken from a zip) under a URL key without a download;
+  `path_for(url) -> Path | None`; `crop(url, box) -> PIL.Image`.
+- CLI: `atlas images info <pages.parquet>` fills width and height from `info.json` and rewrites
+  the table; `atlas images fetch <pages.parquet> [--limit N] [--document ID] [--pages a,b]`;
+  `atlas images crop <units.parquet> --out <dir>` writes `<id with ':' replaced by '_'>.jpg`.
 
-Edge cases: hosts that serve only Image API 1; direct JPEG URLs with no service (`info` returns
-None, size read after download); images larger than 10,000 px on a side (kept, never resized);
-a server that answers 200 with an HTML error page (detect by content type and treat as failure).
+Edge cases: Image API 1 (`info.json` with `@context` of version 1, sizes absent); an `etag` change
+on refetch (new checksum, old row kept with `superseded_by`); images over 10,000 px on a side
+(never resized); a service that redirects.
 
-Tests: a local HTTP server fixture serving a `info.json` and a JPEG; rate limit measured with a
-fake clock; cache hit does not touch the network; a corrupt partial file is re-fetched.
+Tests: a local HTTP server fixture serving `info.json`, a JPEG, a 429 then 200 sequence, and a
+range-supporting partial download; the pause measured with an injected clock; a cache hit makes no
+request; `register` then `fetch` of the same URL makes no request.
 
-Acceptance: `atlas images fetch work/codh/pages.parquet --document codh:200006663` stores 10 images
-and the index rows carry their checksums and sizes.
+Acceptance: `atlas images fetch work/codh/pages.parquet --document codh:200006663` after T01's
+acceptance stores 10 images with checksums and sizes in the index.
 
 Size: medium. Depends on: nothing.

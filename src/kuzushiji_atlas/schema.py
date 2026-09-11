@@ -21,8 +21,15 @@ class Licence(StrEnum):
     CC_BY_SA_3 = "CC-BY-SA-3.0"
     CC_BY_SA_4 = "CC-BY-SA-4.0"
     CC_BY_SA_2_1_JP = "CC-BY-SA-2.1-JP"
+    CC_BY_NC_4 = "CC-BY-NC-4.0"
+    CC_BY_ND_4 = "CC-BY-ND-4.0"
+    CC_BY_NC_SA_4 = "CC-BY-NC-SA-4.0"
+    CC_BY_NC_ND_4 = "CC-BY-NC-ND-4.0"
     UNICODE = "Unicode-3.0"
     PUBLIC_DOMAIN = "PD"
+    PDM = "PDM-1.0"
+    RS_NOC_CR = "RS-NOC-CR"
+    BESPOKE_FREE = "bespoke-free"
     RESTRICTED = "restricted"
     UNKNOWN = "unknown"
 
@@ -100,6 +107,7 @@ class Document(BaseModel):
     hands: list[str] = Field(default_factory=list)
     image_rights: Rights | None = None
     text_rights: Rights | None = None
+    meta: dict[str, Any] = Field(default_factory=dict, description="upstream fields with no column of their own")
 
 
 class Page(BaseModel):
@@ -112,6 +120,16 @@ class Page(BaseModel):
     height: int
     sha256: str | None = None
     transcription: dict[str, str] = Field(default_factory=dict, description="source id, entry id, revision")
+    meta: dict[str, Any] = Field(default_factory=dict)
+
+
+class PageText(BaseModel):
+    """Whole-page transcription text, for pages that have no line records yet."""
+
+    page_id: str
+    source: str
+    revision: str | None = None
+    text_raw: str
 
 
 class LineRole(StrEnum):
@@ -134,7 +152,8 @@ class Line(BaseModel):
     text_raw: str = Field(description="transcription line as written, markup included")
     text: str = Field(description="plain text after markup removal")
     match_method: str | None = Field(default=None, description="how the box was assigned")
-    match_confidence: float | None = None
+    match_confidence: float | None = Field(default=None, description="similarity of text and box in [0, 1]; a score, not a calibrated probability")
+    meta: dict[str, Any] = Field(default_factory=dict)
 
 
 class UnitKind(StrEnum):
@@ -171,6 +190,14 @@ class Classification(StrEnum):
     UNIDENTIFIED = "unidentified"
 
 
+class Candidate(BaseModel):
+    """One scored alternative for a unit's code point."""
+
+    unicode: str
+    p: float
+    jibo: str | None = None
+
+
 class Confidence(BaseModel):
     detection: float | None = None
     segmentation: float | None = None
@@ -193,6 +220,7 @@ class Unit(BaseModel):
     """One graphic unit on a page: usually a character, sometimes a ligature or a mark."""
 
     id: str
+    document_id: str | None = Field(default=None, description="set on every unit, so that a standalone crop still reaches its rights")
     page_id: str | None = Field(default=None, description="null for a standalone crop with no page placement")
     line_id: str | None = None
     seq: int | None = Field(default=None, description="position in the line, 0-based")
@@ -208,6 +236,7 @@ class Unit(BaseModel):
     script: Script = Script.UNKNOWN
     jibo: str | None = Field(default=None, description="字母, the kanji the kana form derives from")
     variants: list[VariantRef] = Field(default_factory=list, description="MJ, IVS, GlyphWiki or local shape ids")
+    candidates: list[Candidate] = Field(default_factory=list, description="scored alternatives when classification is ambiguous")
     antecedent_ids: list[str] = Field(default_factory=list, description="units an iteration mark repeats")
     group_id: str | None = Field(default=None, description="連綿 group this unit belongs to")
     voicing: Literal["none", "dakuten", "handakuten"] | None = Field(
@@ -217,6 +246,7 @@ class Unit(BaseModel):
     confidence: Confidence | None = None
     review: ReviewState = ReviewState.MACHINE
     upstream: dict[str, str] = Field(default_factory=dict, description="source id and upstream identifier")
+    active: bool = Field(default=True, description="false once a split or merge retired this unit")
     split_into: list[str] = Field(default_factory=list)
     merged_into: str | None = None
 

@@ -1,25 +1,33 @@
 # T20 Training data for the character detector
 
-Goal: class-agnostic character boxes from the CODH tables as a detection dataset with a split by
-book.
+Goal: class-agnostic character boxes from the CODH tables as a detection dataset with a frozen
+split by book that T22 shares.
 
-Read first: `work/codh` tables (T10), `docs/plan.md` section 6.
+Read first: `work/codh` tables (T10), the image cache (T02), `docs/plan.md` section 6.
 
 Outputs
-- `scripts/build_detector_data.py` → `work/detector/{train,val,test}.json` in COCO format with one
-  category `character`, images referenced by cache path, and `work/detector/split.tsv` (bid, split).
-  Held-out books: four chosen by a fixed hash of the bid, listed in the TSV; `val` takes two more.
-- Tiling: pages cut into 1024×1024 tiles with 128 px overlap; boxes clipped, boxes with less than
-  40% of their area inside a tile dropped; tile coordinates recorded so predictions map back.
-- Units with `kind=unreadable` are excluded from targets and their regions marked as ignore.
-- Statistics printed: images, tiles, boxes, box size percentiles.
+- `data/splits/codh.tsv`, committed: bid, production (from the CODH book page: 版本 or 写本), split
+  (`train`, `val`, `test`); the split is by book, stratified by production, four books in `test`
+  and two in `val`, chosen by `sha1(bid)` order within each stratum so the choice is reproducible.
+- `scripts/build_detector_data.py` → `work/detector/{train,val,test}.json` (COCO, one category
+  `character`, images = tiles referenced by cache path plus tile origin), `work/detector/tiles/`
+  generated on demand with `--materialise`, else tiles are cut at training time from the cached
+  pages using the recorded origins.
+- Tiling: 1024×1024 with 128 px overlap, pages padded with white at the right and bottom; a
+  source box is assigned to every tile it overlaps and clipped; the clipped part is dropped when
+  under 40% of the source box's area; each tile annotation keeps `source_unit_id`, so unique
+  source boxes and tile annotations are counted apart.
+- Units with `kind=unreadable` become `ignore` regions (COCO `iscrowd=1`); tiles without any
+  annotation are kept at most as 5% of tiles per split.
+- `work/detector/stats.md`: pages, tiles, unique boxes, tile annotations, box size deciles per
+  split.
 
-Edge cases: pages with zero boxes (kept as negatives, at most 5% of tiles); very small boxes
-(voicing marks) kept.
+Edge cases: a page with no boxes; a box larger than a tile (kept in the tile holding its centre).
 
-Tests: tiling of a synthetic page with three boxes, including one on a tile boundary.
+Tests: tiling of a synthetic 1500×1200 page with three boxes, one across a tile border, one
+unreadable; the split file is deterministic.
 
-Acceptance: 6,151 pages processed, 1,086,326 boxes assigned, no box lost except by the clipping rule
-(count reported).
+Acceptance: 6,151 pages processed; unique boxes 1,086,326 minus the dropped-by-clipping count,
+both printed; `data/splits/codh.tsv` committed.
 
 Size: small. Depends on: T10, T02.
