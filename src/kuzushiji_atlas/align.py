@@ -335,7 +335,44 @@ def align_line(
             sequence += 1
             units.append(_unit_of(line, placement.token, placement.detections, run, fingerprint, sequence,
                                   placement))
+    # 振り仮名 is a reading of its base rather than text of the line, so it is not aligned to a
+    # detection; it is still a record of the page and a reviewer has to be able to see and correct it.
+    for index, token in enumerate(ruby_tokens(line), start=1):
+        units.append(
+            Unit(
+                id=f"{line.id}:{fingerprint}:r{index}",
+                document_id=None,
+                page_id=line.page_id,
+                line_id=line.id,
+                seq=sequence + index,
+                box=None,
+                kind=UnitKind.CHAR,
+                text_source=token.text,
+                reading=token.text,
+                unicode=token.unicode,
+                classification=Classification.UNASSESSED,
+                script=token.script,
+                method="detect-align",
+                review=ReviewState.MACHINE,
+                upstream={"source": "detect-align", "run": run.name, "role": token.role},
+            )
+        )
     return units, groups
+
+
+def ruby_tokens(line: Line) -> list[Token]:
+    """The 振り仮名 of a line, in reading order, as tokens with no box.
+
+    `tokens_of` leaves ruby out because an alignment cannot place it on a detection; the record still
+    needs it, so the caller asks for it separately and the unit ids carry an `r` where an aligned unit
+    carries its sequence number.
+    """
+    parsed = koji.parse(line.text_raw)
+    return [
+        _token_of(char.text, char.start, char.end, char.role, None, "align-v1")
+        for char in parsed.chars
+        if char.role in {"ruby", "ruby-left"}
+    ]
 
 
 def _unit_of(

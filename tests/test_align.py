@@ -207,3 +207,23 @@ def test_run_directory_writes_only_its_own_units(tmp_path, monkeypatch):
     assert "d1:0:L0:m1" in ids, "a reviewed unit is never dropped by an alignment"
     assert "d1:0:L0:deadbeef:1" not in ids, "the pages just aligned are re-aligned, not accumulated"
     assert len(ids) == 3
+
+
+def test_ruby_is_recorded_without_a_box():
+    """A 振り仮名 is a reading of its base, so it is not aligned; it is still recorded."""
+    from kuzushiji_atlas.schema import Box, Line, ReviewState
+
+    parsed_line = Line(
+        id="d1:0:L0", page_id="d1:0", seq=0, box=Box(x=0, y=0, w=200, h=40),
+        text_raw="漢字（かんじ）", text="漢字",
+    )
+    detections = [align.Detection(box=box(x), score=0.9) for x in (10, 30)]
+    units, _ = align.align_line(parsed_line, detections, run=run(accept=0.0, margin=0.0))
+
+    aligned = [unit for unit in units if unit.box is not None]
+    ruby = [unit for unit in units if unit.box is None]
+    assert len(aligned) == 2, "the two base characters take the two detections"
+    assert [unit.text_source for unit in ruby] == ["か", "ん", "じ"]
+    assert all(unit.id.endswith(f":r{n}") for n, unit in enumerate(ruby, start=1))
+    assert all(unit.review is ReviewState.MACHINE for unit in ruby)
+    assert all(unit.upstream["role"] == "ruby" for unit in ruby)
