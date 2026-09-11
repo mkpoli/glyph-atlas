@@ -1,0 +1,582 @@
+"""Align a transcription line to the character boxes detected on its page.
+
+The line comes from the transcription, the boxes from the detector. The two are aligned by dynamic
+programming over the tokens of the line and the detections inside its container: a token may take one
+detection (a match), two adjacent detections (a split), or none; two tokens may share one detection
+(a merge) when a cut through the detected ink scores well; and a detection may be skipped when the
+transcription has no token for it. The cost of a match is the classifier's negative log probability
+of the token's code points over the detection's crop, so the alignment leans on the same evidence the
+reviewer will see.
+
+Every decision is recorded on the unit it produces: `confidence.detection` from the detector,
+`confidence.text` from the match, and `confidence.segmentation` from how the box was formed. A unit
+whose best path is not clearly better than the second best is kept with `review=rejected` rather than
+being called accepted, because a confident-looking box on the wrong ink is the failure this pipeline
+is most exposed to.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Protocol
+
+from pydantic import BaseModel, Field
+
+from . import koji, refs
+from .schema import (
+    Box,
+    Candidate,
+    Classification,
+    Confidence,
+    Group,
+    Line,
+    ReviewState,
+    Script,
+    Unit,
+    UnitKind,
+)
+
+KANA = Script.HIRAGANA
+FLAG_SCRIPTS = {Script.HIRAGANA, Script.HENTAIGANA, Script.KATAKANA}
+MARK_KINDS = {UnitKind.ITERATION_MARK, UnitKind.VOICING_MARK, UnitKind.PUNCTUATION, UnitKind.LIGATURE}
+# A match costs at least this much, so that a classifier that answers zero for everything cannot make
+# an impossible alignment free.
+PROBABILITY_FLOOR = 1e-4
+
+
+class Detector(Protocol):
+    """What the alignment needs from the detector: boxes and scores on a page image."""
+
+    def boxes(self, image: str | Path) -> Sequence[tuple[Box, float]]: ...
+
+
+class Classifier(Protocol):
+    """What the alignment needs from the character classifier."""
+
+    def score_set(self, crop: Any, code_points: set[str]) -> float: ...
+
+
+@dataclass
+class Detection:
+    """One detected box with its score, in page coordinates."""
+
+    box: Box
+    score: float
+    image: str | Path | None = None
+
+    @property
+    def centre(self) -> tuple[float, float]:
+        return (self.box.x + self.box.w / 2, self.box.y + self.box.h / 2)
+
+
+class Token(BaseModel):
+    """One unit of transcription the alignment can place: a character, a mark or a gap."""
+
+    text: str
+    start: int
+    end: int
+    reading: str | None = None
+    unicode: str | None = None
+    code_points: set[str] = Field(default_factory=set)
+    kind: UnitKind = UnitKind.CHAR
+    script: Script = Script.UNKNOWN
+    role: str = "main"
+    column: int | None = None
+
+
+@dataclass
+class Container:
+    """A run of tokens that share one geometric region of the line, with its detections."""
+
+    tokens: list[Token]
+    detections: list[Detection]
+    column: int | None = None
+
+
+@dataclass
+class Decision:
+    """One transition of the alignment, kept so the second-best path can be told from the best."""
+
+    kind: str
+    tokens: tuple[int, ...]
+    detections: tuple[int, ...]
+    cost: float
+    probability: float = 1.0
+
+
+@dataclass
+class Placement:
+    """The result for one token: its boxes and how they were formed."""
+
+    token: Token
+    detections: list[Detection] = field(default_factory=list)
+    segmentation: float = 1.0
+    text_probability: float = 1.0
+    kind: str = "match"
+    accepted: bool = True
+    group: bool = False
+
+
+class Run(BaseModel):
+    """A named alignment configuration; its hash names the units it writes."""
+
+    name: str
+    detector: str = "models/detector/artifacts/detector.onnx"
+    classifier: str = "models/classifier/artifacts/classifier.onnx"
+    detector_version: str = "unset"
+    classifier_version: str = "unset"
+    policy: str = "align-v1"
+    weights: dict[str, float] = Field(
+        default_factory=lambda: {
+            "skip-token": 8.0,
+            "skip-detection": 6.0,
+            "split": 12.0,
+            "merge": 14.0,
+            "gap": 3.0,
+        }
+    )
+    accept: float = 0.9
+    margin: float = 1.0
+    ruby: bool = False
+
+    def fingerprint(self) -> str:
+        payload = self.model_dump(mode="json")
+        payload.pop("name", None)
+        return hashlib.sha1(
+            json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()[:12]
+
+
+def load_run(path: Path, name: str | None = None) -> Run:
+    """Read a run configuration from `models/align/runs/<name>.yaml`."""
+    import yaml
+
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    raw.setdefault("name", name or path.stem)
+    return Run.model_validate(raw)
+
+
+def tokens_of(line: Line, policy: str = "align-v1") -> list[Token]:
+    """The tokens of a line in reading order, with the code points each may stand for."""
+    parsed = koji.parse(line.text_raw)
+    tokens: list[Token] = []
+    columns: dict[int, int] = {}
+    for char in parsed.chars:
+        if char.role in {"ruby", "ruby-left", "note", "okurigana", "kaeriten", "cancelled", "inserted"}:
+            continue
+        column = None
+        for element in char.path:
+            column = columns.get(element)
+            if column is not None:
+                break
+        token = _token_of(char.text, char.start, char.end, char.role, column, policy)
+        if tokens and tokens[-1].kind is UnitKind.VOICING_MARK and tokens[-1].end == char.start:
+            # A combining mark belongs to the character it follows.
+            base = tokens[-1]
+            base.text += char.text
+            base.end = char.end
+            base.code_points |= token.code_points
+            base.reading = (base.reading or "") + char.text
+            continue
+        tokens.append(token)
+    return tokens
+
+
+def _token_of(text: str, start: int, end: int, role: str, column: int | None, policy: str) -> Token:
+    if role == "gap":
+        return Token(text="", start=start, end=end, kind=UnitKind.GAP, role=role)
+    if role == "unreadable":
+        return Token(text=text, start=start, end=end, kind=UnitKind.UNREADABLE, role=role)
+    code_points = refs.to_code_points(text)
+    ordinary = code_points[0] if code_points else None
+    candidates = refs.candidates(text) if len(text) == 1 else []
+    if candidates:
+        code_points = set(candidates)
+    script = _script_of(text, candidates)
+    kind = _kind_of(text, script)
+    return Token(
+        text=text,
+        start=start,
+        end=end,
+        reading=text,
+        unicode=ordinary,
+        code_points=code_points,
+        kind=kind,
+        script=script,
+        role=role,
+        column=column,
+    )
+
+
+def _script_of(text: str, candidates: list[str]) -> Script:
+    if len(text) != 1:
+        return Script.UNKNOWN
+    point = ord(text)
+    if 0x3041 <= point <= 0x3096:
+        return Script.HIRAGANA
+    if 0x30A1 <= point <= 0x30FA:
+        return Script.KATAKANA
+    if point in (0x3099, 0x309A):
+        return Script.SYMBOL
+    if candidates:
+        return Script.HENTAIGANA
+    if 0x4E00 <= point <= 0x9FFF or 0x3400 <= point <= 0x4DBF or 0xF900 <= point <= 0xFAFF:
+        return Script.KANJI
+    if 0x1B001 <= point <= 0x1B11F:
+        return Script.HENTAIGANA
+    return Script.UNKNOWN
+
+
+def _kind_of(text: str, script: Script) -> UnitKind:
+    point = ord(text) if len(text) == 1 else None
+    if point is not None and point in (0x3005, 0x3031, 0x3032, 0x309D, 0x309E, 0x30FD, 0x30FE):
+        return UnitKind.ITERATION_MARK
+    if point is not None and point in (0x3099, 0x309A, 0x309B, 0x309C):
+        return UnitKind.VOICING_MARK
+    if point is not None and point in (0x309F, 0x30FF):
+        return UnitKind.LIGATURE
+    if point is not None and (0x3001 <= point <= 0x3003 or point in (0x30FB, 0xFF0C, 0xFF0E)):
+        return UnitKind.PUNCTUATION
+    if text in {"ゟ", "ヿ", "𬼂"}:
+        return UnitKind.LIGATURE
+    if script is Script.UNKNOWN and len(text) > 1:
+        return UnitKind.LIGATURE
+    return UnitKind.CHAR
+
+
+def containers_of(line: Line, detections: Sequence[Detection], policy: str = "align-v1") -> list[Container]:
+    """Group the tokens and the detections into the regions of the line they share.
+
+    A 割書 line splits into columns by the token's column and the detection's x; a line without one is
+    a single container. A detection whose centre falls outside the line box and outside every column
+    is not part of the line.
+    """
+    tokens = tokens_of(line, policy)
+    inside = [
+        detection
+        for detection in detections
+        if line.box is None or _inside(line.box, detection.centre)
+    ]
+    order = (lambda detection: _reading_order(detection)) if line.vertical else (
+        lambda detection: (detection.centre[0], detection.centre[1])
+    )
+    columns = sorted({token.column for token in tokens if token.column is not None})
+    if not columns:
+        return [Container(tokens=tokens, detections=sorted(inside, key=order))]
+    groups: list[Container] = []
+    for column in columns:
+        column_tokens = [token for token in tokens if token.column == column]
+        groups.append(Container(tokens=column_tokens, detections=[], column=column))
+    loose = [token for token in tokens if token.column is None]
+    if loose:
+        groups.append(Container(tokens=loose, detections=[]))
+    for detection in inside:
+        target = min(groups, key=lambda group: abs(_column_x(group, tokens) - detection.centre[0]))
+        target.detections.append(detection)
+    for group in groups:
+        group.detections.sort(key=order)
+    return [group for group in groups if group.tokens or group.detections]
+
+
+def _column_x(group: Container, tokens: Sequence[Token]) -> float:
+    if group.column is None:
+        return float("inf")
+    return float(group.column)
+
+
+def _inside(box: Box, point: tuple[float, float]) -> bool:
+    return box.x <= point[0] <= box.x + box.w and box.y <= point[1] <= box.y + box.h
+
+
+def _reading_order(detection: Detection) -> tuple[float, float]:
+    return (-detection.centre[0], detection.centre[1])
+
+
+def align_line(
+    line: Line,
+    detections: Sequence[Detection],
+    *,
+    run: Run,
+    classifier: Classifier | None = None,
+    crop_of: Any = None,
+) -> tuple[list[Unit], list[Group]]:
+    """Align one line and return its units and groups.
+
+    `crop_of` turns a detection into the crop the classifier scores, and must accept
+    `(page_id, box)`; when it is None every match costs the probability floor, which is what a run
+    without a classifier does.
+    """
+    fingerprint = run.fingerprint()
+    units: list[Unit] = []
+    groups: list[Group] = []
+    sequence = 0
+    for container in containers_of(line, detections, run.policy):
+        placements = _align_container(container, run, classifier, crop_of, line)
+        for placement in placements:
+            if placement.group:
+                group_id = f"{line.id}:{fingerprint}:g{len(groups)}"
+                member_ids = []
+                for detection in placement.detections:
+                    sequence += 1
+                    member = _unit_of(line, placement.token, [detection], run, fingerprint, sequence,
+                                      placement, granularity="sequence")
+                    member.group_id = group_id
+                    units.append(member)
+                    member_ids.append(member.id)
+                groups.append(
+                    Group(id=group_id, page_id=line.page_id, box=_union([d.box for d in placement.detections]),
+                          unit_ids=member_ids)
+                )
+                continue
+            sequence += 1
+            units.append(_unit_of(line, placement.token, placement.detections, run, fingerprint, sequence,
+                                  placement))
+    return units, groups
+
+
+def _unit_of(
+    line: Line,
+    token: Token,
+    detections: Sequence[Detection],
+    run: Run,
+    fingerprint: str,
+    sequence: int,
+    placement: Placement,
+    granularity: str = "char",
+) -> Unit:
+    box = _union([detection.box for detection in detections]) if detections else None
+    unicode = token.unicode
+    classification = Classification.UNASSESSED
+    candidates: list[Candidate] = []
+    if token.script is not Script.HIRAGANA and token.code_points:
+        if len(token.code_points) == 1:
+            unicode = next(iter(token.code_points))
+            classification = Classification.IDENTIFIED
+        else:
+            classification = Classification.AMBIGUOUS
+    if token.script is Script.HIRAGANA and token.unicode:
+        classification = Classification.UNASSESSED
+    if token.script is Script.UNKNOWN and len(token.text) == 1:
+        classification = Classification.IDENTIFIED
+    if token.kind in MARK_KINDS and token.unicode:
+        classification = Classification.IDENTIFIED
+    if token.code_points:
+        candidates = [
+            Candidate(unicode=point, p=1.0 / len(token.code_points), jibo=refs.jibo(point))
+            for point in sorted(token.code_points)
+        ]
+    confidence = Confidence(
+        detection=max((detection.score for detection in detections), default=None),
+        segmentation=placement.segmentation if detections else None,
+        text=placement.text_probability if detections else None,
+        model=run.classifier_version,
+    )
+    return Unit(
+        id=f"{line.id}:{fingerprint}:{sequence}",
+        document_id=None,
+        page_id=line.page_id,
+        line_id=line.id,
+        seq=sequence,
+        box=box,
+        kind=token.kind,
+        granularity=granularity,  # type: ignore[arg-type]
+        text_source=token.text or None,
+        reading=token.reading,
+        unicode=unicode,
+        classification=classification,
+        script=token.script,
+        jibo=refs.jibo(unicode) if unicode else None,
+        candidates=candidates,
+        method="detect-align",
+        confidence=confidence,
+        review=ReviewState.MACHINE if placement.accepted else ReviewState.REJECTED,
+        upstream={"source": "detect-align", "run": run.name},
+    )
+
+
+def _union(boxes: Sequence[Box]) -> Box:
+    x = min(box.x for box in boxes)
+    y = min(box.y for box in boxes)
+    right = max(box.x + box.w for box in boxes)
+    bottom = max(box.y + box.h for box in boxes)
+    return Box(x=x, y=y, w=right - x, h=bottom - y)
+
+
+def _align_container(
+    container: Container,
+    run: Run,
+    classifier: Classifier | None,
+    crop_of: Any,
+    line: Line,
+) -> list[Placement]:
+    """Align one container and return its placements in token order."""
+    tokens = container.tokens
+    detections = container.detections
+    n, m = len(tokens), len(detections)
+    if n == 0:
+        return []
+    if m == 0:
+        return _placements(
+            tokens,
+            detections,
+            [Decision("skip-token", (index,), (), 0.0) for index in range(n)],
+            run,
+            0.0,
+        )
+
+    costs = _match_costs(tokens, detections, classifier, crop_of, line)
+    weights = run.weights
+    # At every state the two cheapest paths are kept, so the winner can be told from the runner-up;
+    # two paths that differ early may rejoin later, and only comparing both at the end sees that.
+    best: list[list[tuple[float, tuple[Decision, ...]]]] = [
+        [(float("inf"), ())] * (m + 1) for _ in range(n + 1)
+    ]
+    second: list[list[tuple[float, tuple[Decision, ...]]]] = [
+        [(float("inf"), ())] * (m + 1) for _ in range(n + 1)
+    ]
+    best[0][0] = (0.0, ())
+    for i in range(n + 1):
+        for j in range(m + 1):
+            cost, decisions = best[i][j]
+            if cost == float("inf"):
+                continue
+            moves: list[tuple[int, int, float, Decision]] = []
+            # A state counts the placements produced and the cells consumed, so that every transition
+            # moves both counters forward by the same amount: these are alignments of two sequences,
+            # not sequences against each other. A placement that carries two tokens consumes two
+            # token cells; a placement that carries two detections consumes two detection cells.
+            if i < n:
+                moves.append((i + 1, j, weights["skip-token"], Decision("skip-token", (i,), (), weights["skip-token"])))
+            if j < m:
+                moves.append((i, j + 1, weights["skip-detection"], Decision("skip-detection", (), (j,), weights["skip-detection"])))
+            if i < n and j < m:
+                match = costs[i][j]
+                moves.append((i + 1, j + 1, match, Decision("match", (i,), (j,), match, _probability(match))))
+            if i + 1 < n and j < m:
+                split = (costs[i][j] + costs[i + 1][j]) / 2 + weights["split"]
+                moves.append((i + 2, j + 1, split, Decision("split", (i, i + 1), (j,), split,
+                                                            _probability(split - weights["split"]))))
+            if i < n and j + 1 < m:
+                merge = min(costs[i][j], costs[i][j + 1]) + weights["merge"]
+                moves.append((i + 1, j + 2, merge, Decision("merge", (i,), (j, j + 1), merge,
+                                                            _probability(merge - weights["merge"]))))
+            if i < n and tokens[i].kind is UnitKind.GAP:
+                moves.append((i + 1, j, weights["gap"], Decision("gap", (i,), (), weights["gap"])))
+            for next_i, next_j, step, decision in moves:
+                _relax(best, second, next_i, next_j, cost + step, decisions + (decision,))
+    total, decisions = best[n][m]
+    runner_up = second[n][m][0]
+    margin = runner_up - total if runner_up != float("inf") else float("inf")
+    return _placements(tokens, detections, decisions, run, margin)
+
+
+def _relax(
+    best: list[list[tuple[float, tuple[Decision, ...]]]],
+    second: list[list[tuple[float, tuple[Decision, ...]]]],
+    i: int,
+    j: int,
+    cost: float,
+    decisions: tuple[Decision, ...],
+) -> None:
+    """Offer a path to a state: it becomes the best, the second best, or neither."""
+    current, current_decisions = best[i][j]
+    if cost < current:
+        best[i][j] = (cost, decisions)
+        if current != float("inf") and current_decisions != decisions:
+            _keep_second(second, i, j, current, current_decisions)
+    elif decisions != current_decisions:
+        _keep_second(second, i, j, cost, decisions)
+
+
+def _keep_second(
+    second: list[list[tuple[float, tuple[Decision, ...]]]],
+    i: int,
+    j: int,
+    cost: float,
+    decisions: tuple[Decision, ...],
+) -> None:
+    current, current_decisions = second[i][j]
+    if decisions == current_decisions:
+        return
+    if cost < current:
+        second[i][j] = (cost, decisions)
+
+
+def _probability(cost: float) -> float:
+    import math
+
+    return math.exp(-max(cost, 0.0))
+
+
+def _match_costs(
+    tokens: Sequence[Token],
+    detections: Sequence[Detection],
+    classifier: Classifier | None,
+    crop_of: Any,
+    line: Line,
+) -> list[list[float]]:
+    import math
+
+    costs: list[list[float]] = []
+    for token in tokens:
+        row: list[float] = []
+        for detection in detections:
+            probability = PROBABILITY_FLOOR
+            if classifier is not None and crop_of is not None and token.code_points:
+                try:
+                    probability = max(
+                        float(classifier.score_set(crop_of(line.page_id, detection.box), token.code_points)),
+                        PROBABILITY_FLOOR,
+                    )
+                except (OSError, ValueError):  # a crop that cannot be read is scored at the floor
+                    probability = PROBABILITY_FLOOR
+            row.append(-math.log(probability))
+        costs.append(row)
+    return costs
+
+
+def _placements(
+    tokens: Sequence[Token],
+    detections: Sequence[Detection],
+    decisions: Iterable[Decision],
+    run: Run,
+    margin: float,
+) -> list[Placement]:
+    placements: list[Placement] = []
+    for decision in decisions:
+        if decision.kind == "skip-detection":
+            continue
+        if decision.kind == "skip-token":
+            token = tokens[decision.tokens[0]]
+            placements.append(
+                Placement(token=token, detections=[], kind="skip", accepted=False,
+                          segmentation=0.0, text_probability=0.0)
+            )
+            continue
+        if decision.kind == "gap":
+            token = tokens[decision.tokens[0]]
+            placements.append(Placement(token=token, detections=[], kind="gap", accepted=True))
+            continue
+        boxes = [detections[index] for index in decision.detections]
+        accepted = decision.probability >= run.accept and margin >= run.margin
+        placements.append(
+            Placement(
+                token=tokens[decision.tokens[0]],
+                detections=boxes,
+                kind=decision.kind,
+                segmentation=_segmentation(decision),
+                text_probability=decision.probability,
+                accepted=accepted,
+            )
+        )
+    return placements
+
+
+def _segmentation(decision: Decision) -> float:
+    if decision.kind == "match":
+        return decision.probability
+    return max(0.0, min(1.0, decision.probability))
