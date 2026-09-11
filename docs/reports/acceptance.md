@@ -164,8 +164,19 @@ Acceptance: recall ≥ 0.95 and precision ≥ 0.95 at IoU 0.5 on the printed tes
 numbers reported.
 
 Status: the framework spike rejected mmdetection on four reproduced blockers and accepted RT-DETR
-through `transformers`; `detect.py` serves the exported ONNX model over the T20 geometry. Training
-is running with the real numbers to be filled in here when the bounded run finishes.
+through `transformers`; `detect.py` serves the exported ONNX model over the T20 geometry. The run is
+bounded at six epochs of the configured 24 (0.30 s/iteration x 5,646 iterations x 24 would be 31
+hours). The curve is measured on a dense score grid, because the head's scores live between 0.005 and
+0.05 at the start of training and a fixed threshold reads zero there. Dense curve, val split:
+
+| epoch | best F1 | at score | precision | recall | mean IoU |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 0.531 | 0.030 | 0.457 | 0.632 | 0.861 |
+| 1 | 0.735 | 0.030 | 0.616 | 0.910 | 0.889 |
+
+Recall moves from 0.63 to 0.91 in one epoch at a slightly better precision, so the head is learning.
+The card's targets are precision and recall of 0.95 at IoU 0.5 on the printed test books; the test
+split is measured once, at the end, from the checkpoint with the best dense-curve F1.
 
 ### T22 Coarse character classifier
 
@@ -254,13 +265,17 @@ pipeline and human review.
 
 T50's acceptance is `out/0.1/` for the pilot builds; the pilot has no reviewed units yet, so no such
 release exists and the default filter refuses loudly rather than writing an empty directory. What is
-measured instead: `atlas export work/kokatsuji --out out/verify-0.1 --review transcriber
---include-machine` writes 36,869 units, 3,400 lines and 340 pages with `modern_kana` and `shinji`
-appended, and a capped run with crops wrote 4,000 crops whose 4,009 checksums all verify, 482 units
-carrying `modern_kana` and 7 carrying `shinji`. The release holds `ATTRIBUTION.md`, `COUNTS.md`,
-`datasheet.md` with all 22 placeholders filled, `README.md`, `zenodo.json`, `CHECKSUMS.txt` and
-`MANIFEST.json` with the policy name and version. A HI Lab crop run needs `atlas import hilab
---download` first: those crops have never been materialised locally.
+measured instead is a full release over `work/kokatsuji`:
+
+`atlas export work/kokatsuji --out out/verify-0.1 --review transcriber --include-machine --crops`
+wrote **36,869 units, 3,400 lines, 340 pages, 1 document and 36,869 crops**, with `modern_kana` and
+`shinji` appended to the units table under policy `export-v1` version 1. The release holds
+`ATTRIBUTION.md`, `COUNTS.md`, `datasheet.md` (all 22 placeholders filled), `README.md` (dataset
+card), `zenodo.json`, `CHECKSUMS.txt` with 36,878 entries, and `MANIFEST.json` naming the policy and
+the input's tables. The first 4,000 checksums verify against the files on disk.
+
+A HI Lab crop run needs `atlas import hilab --download` first: those crops have never been
+materialised locally, and the export never reaches the network.
 
 T51's deliverables are committed: `docs/datasheet-template.md` with 22 placeholders,
 `README.ja.md`, `CITATION.cff` (validated) and `docs/reports/README.md`.
