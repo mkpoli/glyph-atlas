@@ -178,15 +178,36 @@ hours). The curve is measured on a dense score grid, because the head's scores l
 | 4 | 0.737 | 0.020 | 0.622 | 0.903 | 0.893 |
 | 5 | 0.744 | 0.030 | 0.756 | 0.732 | 0.891 |
 
-The peak does not climb monotonically: between epoch 1 and epoch 2 the optimum trades recall for
-precision at the same F1, while the training loss keeps falling. That is calibration rather than
-capability, and it is why the curve, not one threshold, is what the run reports. At this rate three
-more epochs land near F1 0.8, well short of the card's 0.95 precision and recall at IoU 0.5, so the
-honest expectation for that acceptance is a bounded-run result with the curve and the hypotheses for
-a longer one. Two things keep it from being the end of the matter: the pilot's acceptance is a
-different measurement — joint precision of *accepted* units at a coverage, where the alignment's own
-accept threshold decides which units are published — and the test split is measured once, at the end,
-from the checkpoint with the best dense-curve F1, never tuned on.
+The peak does not climb monotonically: the optimum trades recall for precision at the same F1, while
+the training loss keeps falling. That is calibration rather than capability, and it is why the curve,
+not one threshold, is what the run reports.
+
+The test split, measured once from the checkpoint with the best dense-curve F1 (epoch 5) at the score
+chosen on val (0.02), IoU 0.5, over 5,363 tiles and 477 pages:
+
+| measure | value |
+| --- | ---: |
+| precision | 0.700 |
+| recall | 0.928 |
+| F1 | 0.798 |
+| mean IoU of matches | 0.875 |
+| true positives | 115,293 |
+| false positives | 49,463 |
+| false negatives | 8,903 |
+
+By production type: manuscript (433 tiles) precision 0.634, recall 0.967; woodblock (2,187) precision
+0.639, recall 0.968; the `unknown` stratum (2,743) precision 0.750, recall 0.903. Recall by box size
+runs from 0.812 in the smallest decile to 0.982 in the largest, so the boxes the detector misses are
+the small ones.
+
+The card's acceptance is precision and recall of 0.95 at IoU 0.5, and this run does not reach it: the
+recall side of the card is met, the precision side is not. The run was bounded at six epochs of the
+configured 24 for time, and the honest reading is that the head had not finished calibrating. What
+keeps this from being the end of the matter is that the pilot's acceptance is a different measurement:
+joint precision of *accepted* units at a coverage, where the alignment's own accept threshold decides
+which units are published. A detector with 0.93 recall and 0.70 precision is a workable front end for
+that, because the alignment's match probability and the classifier's agreement are what reject a
+detection; whether they are enough is what T23's acceptance will show, and it has not been measured.
 
 ### T22 Coarse character classifier
 
