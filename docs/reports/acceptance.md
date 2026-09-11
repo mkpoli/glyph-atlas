@@ -238,9 +238,22 @@ font's cmap and the script reports it rather than drawing a `.notdef` box.
 Acceptance: a box move, a split, a merge, a reading change and a 字母 choice round-trip through
 `POST /reviews`, `apply` and `replay`.
 
-Measured: 21 tests over a fixture dataset including a stale `base_revision`, an idempotent repeat, a
-split then a merge, and a replay that repairs a state a crash left behind; a pilot package loads in
-the service and its page is served from the package's own image checksum.
+Measured: 22 tests over a fixture dataset including a stale `base_revision`, an idempotent repeat, a
+split then a merge, a replay that repairs a state a crash left behind, and a store reopening on
+tables another writer rewrote. Driving the live service over a calibration package that `atlas align`
+had just written: `/queue` listed both lines with their unit counts, `/lines/{id}/units` returned
+units with boxes, readings and revisions, posting a reading change answered 200 with event
+`rv00000001` at revision 1, an idempotent repeat answered `duplicate: true` without a second event,
+and a stale `base_revision` was refused with 409. `/units/{id}/candidates` returned the 13 kana forms
+of か with their 字母 and reference URLs, and for a kanji unit the single entry that is the unit
+itself, marked `current` — the 字母 list belongs to kana, and the response's `classification` field
+is what tells the interface which case it has.
+
+The defect this driving found is worth recording: the store copies `lines` and `units` into SQLite on
+first open and served that copy for ever, so a dataset whose units an alignment had just written
+still reported zero units per line. The store now fingerprints those two tables, reloads them when
+they change and replays the review events it holds; the one case it refuses is a store holding events
+`reviews.jsonl` has never seen, where reloading would throw them away, and it says so.
 
 ### T41 Review interface
 
