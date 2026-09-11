@@ -81,8 +81,9 @@ One graphic unit: a character, a ligature, a mark, a gap.
 | `split_into`, `merged_into` | segmentation history |
 
 `unicode` and `reading` answer different questions. A hentaigana form of か derived from 可 has
-`reading` か, `unicode` U+1B045, `jibo` 可, `script` hentaigana. Its modern spelling is derived at
-export.
+`reading` か, `unicode` U+1B019 (KA-3), `jibo` 可, `script` hentaigana. U+1B01A (KA-4) derives from 可
+as well, so a record of this pair also carries a local shape id in `variant`. The modern spelling is
+derived at export.
 
 ### groups
 
@@ -96,7 +97,8 @@ Append-only log: `unit_id`, `field`, `old`, `new`, `role` (model, transcriber, r
 ## Vocabularies
 
 `data/vocab/genre.yaml`, `data/vocab/style.yaml` and `data/vocab/holders.yaml` hold the controlled
-values with Japanese labels. A new value is added by a pull request that also states its source.
+values with Japanese labels. `data/vocab/hentaigana.tsv` lists every hentaigana code point with its
+readings and 字母, generated from Unicode's NamesList.txt by `scripts/build_hentaigana_table.py`. A new value is added by a pull request that also states its source.
 
 ## Exports
 

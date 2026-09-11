@@ -113,8 +113,8 @@ Four layers, each fillable on its own:
 4. Normalisation: modern kana, 新字, voicing supplied by an editor. Computed at export from the
    layers above and a named policy; never stored on the record.
 
-Kana. The reading comes from the transcription. The MJ table lists the code points that share that
-reading (か has eleven). A classifier and, where reviewed, a person choose among them from the
+Kana. The reading comes from the transcription. Unicode's names list and the MJ table give the code points that share that
+reading (か has twelve, KA-KE included). A classifier and, where reviewed, a person choose among them from the
 image, and the 字母 follows from the code point. For the 52 (音価, 字母) pairs that Unicode split across
 several code points, and for shapes Unicode never encoded, the record gets a local shape id in
 addition to the closest code point. Katakana keeps its own script value; a 字母 may still be
