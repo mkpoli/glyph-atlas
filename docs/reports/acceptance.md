@@ -333,6 +333,14 @@ the input's tables. The first 4,000 checksums verify against the files on disk.
 A HI Lab crop run needs `atlas import hilab --download` first: those crops have never been
 materialised locally, and the export never reaches the network.
 
+Exporting the アイヌ関連資料 records found a case the plan's own datasets never reach: they hold
+documents, pages, lines and text but **no units**, because no alignment has run over their pages, and
+the export refused them with a `FileNotFoundError` on a table that was never meant to exist. Such a
+dataset now releases every line of a kept document, and a test pins it. Measured over
+`work/ainu-records`: 9 documents, 520 pages, 8,212 lines, 520 page texts, every release document
+written. A sample of 400 checksums drawn at random from the full kokatsuji release verifies with no
+mismatch, and all 36,869 crops are on disk.
+
 T51's deliverables are committed: `docs/datasheet-template.md` with 22 placeholders,
 `README.ja.md`, `CITATION.cff` (validated) and `docs/reports/README.md`.
 
