@@ -34,6 +34,12 @@ character. It becomes a unit `codh:{bid}:{image}:report:{n}` of kind `unreadable
 `upstream["x"]` and `upstream["y"]`. The CSV gives a point, not a box, so the unit carries no box.
 Report units are counted apart from the character units.
 
+A coordinate box that reaches past its page image is cut at the page edge, since a table validates
+that a box lies inside its page; the coordinates upstream states stay in the unit's
+`upstream["box"]`. One box of the first 589,084 units does:
+`codh:200003076:200003076_00027_2:B0001:C0017`, stated as 2035,2368,129,122 on a 2159×3158 page,
+5 px past the right edge.
+
 Every code point of the coordinate CSV is a modern one: CODH files every hentaigana under the
 hiragana or katakana code point of its reading, so the form behind the crop is unknown (section 3 of
 `docs/plan.md`, `data/sources/codh-char-shape.yaml`). A hiragana or katakana letter is therefore
@@ -372,7 +378,7 @@ def read_archive(
     index = registered() if known is None else known
     found = _extract_images(archive, prefix, book.bid, images_dir, index)
     document = document_of(book, source_rights(), manifest)
-    return document, _pages(book, rows, reports, found), [*_units(book, rows), *_reports(book, reports)]
+    return document, _pages(book, rows, reports, found), [*_units(book, rows, found), *_reports(book, reports)]
 
 
 def import_all(
@@ -817,14 +823,25 @@ def page_seq(image: str, fallback: int) -> int:
     return int(match["page"]) * 2 - (2 - int(match["half"]))
 
 
-def _units(book: Book, rows: list[dict[str, str]]) -> list[Unit]:
-    """One unit per row of the coordinate CSV, as the one-book importer makes them."""
+def _units(book: Book, rows: list[dict[str, str]], sizes: dict[str, tuple[Path | None, int, int]]) -> list[Unit]:
+    """One unit per row of the coordinate CSV, as the one-book importer makes them.
+
+    A box that reaches past its page image is cut at the edge, and the coordinates upstream states
+    stay in its `upstream["box"]`, since the tables validate that a box lies inside its page.
+    """
     units = []
+    cut = 0
     for row in rows:
         image = row["Image"]
         code_point = int(row["Unicode"].removeprefix("U+"), 16)
         char = chr(code_point)
         block, char_id = row["Block ID"], row["Char ID"]
+        found = sizes.get(image)
+        box, clipped = box_of(row, (found[1], found[2]) if found is not None else (0, 0))
+        cut += clipped
+        upstream = {"source": SOURCE, "ref": f"{book.bid}/{image}/{block}/{char_id}", "block": block}
+        if clipped:
+            upstream["box"] = ",".join(row[column] for column in ("X", "Y", "Width", "Height"))
         units.append(
             Unit(
                 id=f"codh:{book.bid}:{image}:{block}:{char_id}",
@@ -832,7 +849,7 @@ def _units(book: Book, rows: list[dict[str, str]]) -> list[Unit]:
                 page_id=f"codh:{book.bid}:{image}",
                 line_id=None,
                 seq=None,
-                box=Box(x=int(row["X"]), y=int(row["Y"]), w=int(row["Width"]), h=int(row["Height"])),
+                box=box,
                 kind=codh.kind_of(code_point),
                 text_source=char,
                 reading=char,
@@ -841,14 +858,39 @@ def _units(book: Book, rows: list[dict[str, str]]) -> list[Unit]:
                 classification=classification_of(code_point),
                 method="import",
                 review=ReviewState.TRANSCRIBER,
-                upstream={
-                    "source": SOURCE,
-                    "ref": f"{book.bid}/{image}/{block}/{char_id}",
-                    "block": block,
-                },
+                upstream=upstream,
             )
         )
+    if cut:
+        warnings.warn(
+            f"{cut} boxes of {book.bid} reach past their page image and were cut at its edge; "
+            f"the coordinates upstream states are in upstream[\"box\"]",
+            UserWarning,
+            stacklevel=3,
+        )
     return units
+
+
+def box_of(row: dict[str, str], size: tuple[int, int]) -> tuple[Box | None, bool]:
+    """The box of one coordinate row, cut where it reaches past the page image.
+
+    `codh:200003076:200003076_00027_2:B0001:C0017` of the 63,959 units of `200003076` is stated as
+    2035,2368,129,122 on a 2159×3158 page, 5 px past the right edge, and the tables validate that a
+    box lies inside its page. A box that reaches past the edge is therefore cut there and reported; a
+    box that lies outside the page altogether keeps no box at all, its position staying in
+    `upstream`. The second value says whether the box was cut.
+    """
+    x, y, w, h = int(row["X"]), int(row["Y"]), int(row["Width"]), int(row["Height"])
+    width, height = size
+    if not width or not height:
+        return Box(x=x, y=y, w=w, h=h), False
+    left, top = max(x, 0), max(y, 0)
+    right, bottom = min(x + w, width), min(y + h, height)
+    if (left, top, right - left, bottom - top) == (x, y, w, h):
+        return Box(x=x, y=y, w=w, h=h), False
+    if right <= left or bottom <= top:
+        return None, True
+    return Box(x=left, y=top, w=right - left, h=bottom - top), True
 
 
 def _reports(book: Book, rows: list[dict[str, str]]) -> list[Unit]:

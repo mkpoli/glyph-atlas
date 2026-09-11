@@ -249,6 +249,17 @@ def test_a_page_the_csv_names_without_an_image_is_kept_with_no_size(tmp_path, ca
     assert tables.Dataset(tmp_path / "out").validate() == []
 
 
+def test_a_box_that_reaches_past_its_page_is_cut_at_the_edge(tmp_path, cache, books_file):
+    rows = [["U+6F22", "900000001_00003_1", 100, 10, "B0001", "C0001", 40, 40]]
+    make_zip(cache / codh_all.ZIP_DIR, "900000001", rows=rows)
+    with pytest.warns(UserWarning, match="cut at its edge"):
+        fixture_import(tmp_path, books=["900000001"])
+    unit = tables.Dataset(tmp_path / "out").read("units")[0]
+    assert unit.box.iiif_region() == "100,10,20,40"
+    assert unit.upstream["box"] == "100,10,40,40"
+    assert tables.Dataset(tmp_path / "out").validate() == []
+
+
 def test_a_book_without_a_zip_is_skipped(tmp_path, cache, books_file, zips):
     with pytest.warns(UserWarning, match="not in the cache yet; 900000003 skipped"):
         counts = fixture_import(tmp_path)
