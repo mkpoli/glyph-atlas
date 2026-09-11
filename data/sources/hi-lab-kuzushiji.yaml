@@ -10,8 +10,8 @@ licence_evidence: https://lab.hi.u-tokyo.ac.jp/datasets/kuzushiji
 attribution: 東京大学史料編纂所「くずし字データセット」doi:10.57459/hi.34.kuzushiji
 counts:
   characters: 325261
-  code_points: 5887
-  kana_characters: 47477
+  code_points: 5896
+  kana_characters: 47477  # both kana blocks whole: ゝゞゟ hiragana, ヽヾヿ katakana
 access:
   zip: https://data.lab.hi.u-tokyo.ac.jp/kuzushiji/2023-03-27/all.zip
   zip_bytes: 4025813993
@@ -29,3 +29,10 @@ notes:
   - Crops come from documents (古文書・古記録); hands and dates differ from the printed books behind the CODH material.
   - No hentaigana code points; kana folders use ordinary hiragana and katakana.
   - Page coordinates and the per-record fields above exist only in the database; its search API answers 403 to plain requests.
+
+counts_note: >
+  The archive holds 5,896 code point folders. The published page states 325,261 crops and no
+  code point count; 5,887 in the earlier revision of this file came from a count that missed the
+  ten code points the root `characters/` subtree does not carry (ゟ U+309F and nine single-crop
+  kanji). The kana count takes both kana blocks whole, iteration marks included, as the card's
+  acceptance figure does; CODH's own range rule leaves those marks `symbol` and gives 47,198.

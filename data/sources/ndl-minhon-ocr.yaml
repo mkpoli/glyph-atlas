@@ -15,7 +15,8 @@ counts:
   v2_images: 28134
 access:
   zip: https://lab.ndl.go.jp/dataset/ndlkotensekiocr/ndl-minhon-ocrdataset_20240207.zip
-  zip_bytes_approx: 47000000
+  zip_bytes: 46644649
+  zip_sha256: 260b1379c4f9250f6ca0578680ac8074374f2c61eb4e5722272d0180738d16c7
   metadata_v2: https://github.com/ndl-lab/ndl-minhon-ocrdataset/blob/main/src/v2_metadata.csv
 format:
   pages: "v1/{book}/{image}.json and v2/{project}/{book}/{page}.json; each a list of {boundingBox: 4 points, id, isVertical, text, isTextline, confidence}"
@@ -25,3 +26,9 @@ notes:
   - Line boxes were matched to みんなで翻刻 lines automatically; only confident matches are kept, so pages are rarely complete.
   - Text is the transcription line as written on the platform, markup included.
   - Images come from several holders (NDL, 東京大学地震研究所 and others named in Attribution); the image rights are the holder's, the text is CC BY-SA 4.0.
+
+counts_note: >
+  The 20240207 archive holds 641,632 line rows: 66,537 in v1, as its release note states, and
+  575,095 in v2 against the 456,746 the note states. The 2023 release matches its own note exactly
+  on both counts, so the 20240207 note does not describe its own archive; the importer reads the
+  archive as it stands and the difference is reported.
