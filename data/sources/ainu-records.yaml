@@ -1,0 +1,173 @@
+# The アイヌ関連資料 project of みんなで翻刻: the platform's own transcriptions of nine witnesses,
+# with the bibliographic fields the platform does not state, read from the curation at
+# https://github.com/mkpoli/ainu-records (`data/sources.yaml`) and cross-checked against each
+# holder's catalogue record there.
+#
+# `entry` is the platform's entry id, which is also Honkoku-Lines' item id for eight of the nine.
+# `work` and `witness` are the curation's slugs; `catalogue` is its db.aynu.org record. The platform
+# label carries the volume and the holder in parentheses, so `title` here is the work's title without
+# them and the importer keeps the label as the document's title.
+#
+# Read on 2026-09-11 from https://app.honkoku.org/api/projects/ainu and one
+# https://app.honkoku.org/api/entries/{entry} per entry. The platform publishes no entry list for a
+# project; the ids below come from the curation and scripts/check_ainu_records.py enumerates the
+# project's collections to compare the two.
+
+id: ainu-records
+name: アイヌ関連資料
+publisher: みんなで翻刻
+kind: transcription-corpus
+url: https://app.honkoku.org/ainu
+licence: CC-BY-SA-4.0
+licence_evidence: https://wiki.honkoku.org/doku.php?id=guideline
+attribution: みんなで翻刻（https://honkoku.org/）翻刻データ, CC BY-SA 4.0
+counts:
+  entries: 9
+  canvases: 658
+  pages_with_text: 520
+  pages_without_text: 138
+  characters: 167132
+  characters_as_of: 2026-09-11
+access:
+  project_api: https://app.honkoku.org/api/projects/ainu
+  entry_api: https://app.honkoku.org/api/entries/{entry}
+  collection_api: https://app.honkoku.org/api/collections/{collection}
+  platform_entry: https://app.honkoku.org/transcription/{entry}/{page}
+  curation: https://github.com/mkpoli/ainu-records
+format:
+  entry_record: label, size, license, attribution, manifestUrl, metadata, canvases, transcriptions
+  canvas: id, width, height, imageUrl, infoJsonUrl, thumbnailUrl
+  transcription: index, canvasId, text, updatedAt, status, notes, annotations
+  text: "one string per canvas; newlines are the transcriber's, physical lines in prose and one
+    dictionary entry per line in 藻汐草 and 蝦夷方言"
+  markup: https://wiki.honkoku.org/doku.php?id=howto_markup
+notes:
+  - The platform's project record says 80 entries and 5,581 images in total; this file covers the
+    nine that the curation has read, which the project's collections also hold.
+  - No transcription in this project carries an annotation, so the atlas gains no character box from
+    it; the boxes come from the alignment stage, which runs the detector on the page images.
+  - "Holding institutions and terms: 国立国語研究所 CC BY 4.0 (two witnesses), 国文学研究資料館 PDM
+    1.0, 北海道大学附属図書館 CC BY-SA 4.0 (two witnesses, both photographed by 国文学研究資料館),
+    龍谷大学図書館 and 筑波大学附属図書館 (via 国書データベース) and Wereldmuseum Leiden: reuse terms
+    that the rights vocabulary records as restricted."
+
+entries:
+  - id: 0916dafb80cdc48ca7687afcad4a4f35
+    work: ezo-kiko
+    witness: ryukoku
+    title: 蝦夷紀行
+    titleLatin: Ezo kikō
+    authors: [間宮林蔵]
+    kind: prose
+    language: ja
+    catalogue: mamiya-ezoki-gyo
+    holder: 龍谷大学図書館
+    shelfmark: 491.7-26-W-3
+    image_licence: https://da.library.ryukoku.ac.jp/support2.html
+  - id: 28556c9ece7f2b208437d213ad5f7dd8
+    work: hokkai-zuihitsu
+    witness: tsukuba
+    title: 北海随筆
+    titleLatin: Hokkai zuihitsu
+    authors: [板倉源次郎]
+    date: "1739"
+    kind: prose
+    language: ja
+    catalogue: 1739-itakura-hokkai-zuihitsu
+    holder: 筑波大学附属図書館
+    images_via: 国書データベース
+    image_licence: https://kokusho.nijl.ac.jp/page/list-tsukuba.html
+  - id: 3daea514503efa7c8ec5ccc61c9be9d8
+    work: moshiogusa
+    witness: ninjal
+    part: 乾巻
+    title: 蝦夷方言藻汐草
+    titleLatin: Ezo hōgen moshiogusa
+    authors: [上原熊次郎, 阿部長三郎]
+    date: "1792"
+    kind: wordlist
+    language: ain-Kana
+    catalogue: 1792-uehara-moshiogusa
+    holder: 国立国語研究所
+    shelfmark: W57-2/U36
+    image_licence: https://creativecommons.org/licenses/by/4.0/deed.ja
+  - id: 60cea8fb013aea6ece937dde8bffc2bb
+    work: ezo-soshi
+    witness: nijl
+    title: 蝦夷草紙
+    titleLatin: Ezo sōshi
+    authors: [最上徳内]
+    date: "1790"
+    copied: 寛政10
+    kind: prose
+    language: ja
+    catalogue: 1790-mogami-ezo-soshi
+    holder: 国文学研究資料館
+    image_licence: https://creativecommons.org/publicdomain/mark/1.0/deed.ja
+  - id: 62c6743982041882d0aefd6582ac6a84
+    work: moshiogusa
+    witness: ninjal
+    part: 坤巻
+    title: 蝦夷方言藻汐草
+    titleLatin: Ezo hōgen moshiogusa
+    authors: [上原熊次郎, 阿部長三郎]
+    date: "1792"
+    kind: wordlist
+    language: ain-Kana
+    catalogue: 1792-uehara-moshiogusa
+    holder: 国立国語研究所
+    shelfmark: W57-2/U36
+    image_licence: https://creativecommons.org/licenses/by/4.0/deed.ja
+  - id: 83b29132c6d01a596a847de5ba3b0b0d
+    work: moshiogusa
+    witness: leiden
+    title: 蝦夷方言
+    titleLatin: Ezo hōgen
+    authors: [上原熊次郎, 阿部長三郎]
+    date: "1792"
+    kind: wordlist
+    language: ain-Kana
+    catalogue: 1792-uehara-ezo-hogen
+    holder: Wereldmuseum Leiden
+    shelfmark: RV-578-131
+    images_via: 立命館大学アート・リサーチセンター
+    image_licence: https://collectie.wereldculturen.nl
+  - id: 91e9d7edfbcead11d8bc83a6fc83183c
+    work: ezo-yabubanashi
+    witness: hokudai
+    title: 蝦夷薮話
+    titleLatin: Ezo yabubanashi
+    date: null
+    copied: "1938"
+    kind: prose
+    language: ja
+    catalogue: anon-ezo-yabu-hanashi
+    holder: 北海道大学附属図書館
+    images_via: 国書データベース
+    image_licence: https://creativecommons.org/licenses/by-sa/4.0/deed.ja
+  - id: 9987c791c64b854f7fadde0412de937a
+    work: ezo-soshi
+    witness: ryukoku
+    title: 蝦夷草紙
+    titleLatin: Ezo sōshi
+    authors: [最上徳内]
+    date: "1790"
+    kind: prose
+    language: ja
+    catalogue: 1790-mogami-ezo-soshi
+    holder: 龍谷大学図書館
+    shelfmark: 491.7-4-W-2
+    image_licence: https://da.library.ryukoku.ac.jp/support2.html
+  - id: a3013422bbda9107097d0fa32db5da97
+    work: ezoto-kikan
+    witness: hokudai
+    title: 蝦夷島奇観
+    titleLatin: Ezotō kikan
+    authors: [秦檍丸]
+    copied: 嘉永
+    kind: illustrated
+    language: ja
+    catalogue: hata-ezo-kikan
+    holder: 北海道大学附属図書館
+    images_via: 国書データベース
+    image_licence: https://creativecommons.org/licenses/by-sa/4.0/deed.ja

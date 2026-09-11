@@ -1,0 +1,28 @@
+id: honkoku-data
+name: みんなで翻刻データ
+publisher: 橋本雄太（みんなで翻刻）
+kind: transcription-corpus
+url: https://github.com/yuta1984/honkoku-data
+revision: be63dc209b65ed81d1f51ea5cd10bc09be261640
+licence: CC-BY-SA-4.0
+licence_evidence: https://github.com/yuta1984/honkoku-data/blob/master/README.md
+attribution: みんなで翻刻（https://honkoku.org/）翻刻データ, CC BY-SA 4.0
+counts:
+  v1_characters: 5000000
+  v3_characters: 46870000
+  v3_characters_as_of: 2025-11
+  v3_projects: 70
+access:
+  repository: https://github.com/yuta1984/honkoku-data
+  platform_entry: https://app.honkoku.org/transcription/{entry}/{page}
+  platform_api: https://app.honkoku.org/api/entries/{entry}
+format:
+  layout: "v3/{project}/{entry}/{NNN}.txt, one file per page; v3/{project}/info.tsv per project"
+  info_tsv: [id, label, manifestUrl, projectId, size, progress, attribution, thumbnail]
+  markup: https://wiki.honkoku.org/doku.php?id=howto_markup
+  markup_elements: [人物, 場所, 日時, 題, 割書, 振り仮名, 圏点, 返り点, 送り仮名, 見せ消ち, 注釈, 脚注, 虫損, 難読, 字下げ, 表紙]
+quality: 1.5 errors or spelling inconsistencies per 100 characters in a 100,000-character expert audit (https://repository.kulib.kyoto-u.ac.jp/dspace/handle/2433/233817)
+notes:
+  - Each entry's manifestUrl is a IIIF Presentation manifest on the holder's server; page N of an entry is canvas N of that manifest.
+  - Page text has one transcription line per physical line, with 【右丁】/【左丁】 markers on some spreads and no coordinates.
+  - Image rights follow the holder named in attribution; they are separate from the CC BY-SA 4.0 text.

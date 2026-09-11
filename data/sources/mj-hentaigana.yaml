@@ -1,0 +1,24 @@
+id: mj-hentaigana
+name: MJ文字情報一覧表 変体仮名編
+publisher: 文字情報技術促進協議会（IPA 文字情報基盤）
+kind: reference-table
+url: https://moji.or.jp/mojikiban/mjlist/
+version: "002.01"
+licence: CC-BY-SA-2.1-JP
+licence_evidence: https://moji.or.jp/mojikiban/mjlist/
+attribution: 文字情報基盤 MJ文字情報一覧表 変体仮名編（IPA）, CC BY-SA 2.1 JP
+access:
+  ods: https://moji.or.jp/wp-content/mojikiban/oscdl/MJIH00201-ods.zip
+  xlsx: https://moji.or.jp/wp-content/mojikiban/oscdl/MJIH00201-xlsx.zip
+format:
+  columns: [MJ文字図形名, font文字, 図形, CharacterName, UCS符号位置, 字母, 字母のUCS符号位置, 音価１, 音価２, 音価３, 戸籍統一文字番号, 学術用変体仮名番号, 国語研URL, 備考]
+counts:
+  rows: 299
+  with_code_point: 286
+  unified_away: 13
+  jibo: 224
+  reading_jibo_pairs: 224
+  pairs_with_several_code_points: 52
+notes:
+  - The 13 rows without a code point name in 備考 the code point they were unified into.
+  - MJ090151 is HENTAIGANA LETTER NE-KO, 字母 子, U+1B098.
