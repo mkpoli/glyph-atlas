@@ -173,10 +173,17 @@ hours). The curve is measured on a dense score grid, because the head's scores l
 | ---: | ---: | ---: | ---: | ---: | ---: |
 | 0 | 0.531 | 0.030 | 0.457 | 0.632 | 0.861 |
 | 1 | 0.735 | 0.030 | 0.616 | 0.910 | 0.889 |
+| 2 | 0.687 | 0.030 | 0.712 | 0.663 | 0.888 |
 
-Recall moves from 0.63 to 0.91 in one epoch at a slightly better precision, so the head is learning.
-The card's targets are precision and recall of 0.95 at IoU 0.5 on the printed test books; the test
-split is measured once, at the end, from the checkpoint with the best dense-curve F1.
+The peak does not climb monotonically: between epoch 1 and epoch 2 the optimum trades recall for
+precision at the same F1, while the training loss keeps falling. That is calibration rather than
+capability, and it is why the curve, not one threshold, is what the run reports. At this rate three
+more epochs land near F1 0.8, well short of the card's 0.95 precision and recall at IoU 0.5, so the
+honest expectation for that acceptance is a bounded-run result with the curve and the hypotheses for
+a longer one. Two things keep it from being the end of the matter: the pilot's acceptance is a
+different measurement — joint precision of *accepted* units at a coverage, where the alignment's own
+accept threshold decides which units are published — and the test split is measured once, at the end,
+from the checkpoint with the best dense-curve F1, never tuned on.
 
 ### T22 Coarse character classifier
 
