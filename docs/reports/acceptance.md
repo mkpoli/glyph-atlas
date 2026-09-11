@@ -200,9 +200,18 @@ By production type: manuscript (433 tiles) precision 0.634, recall 0.967; woodbl
 runs from 0.812 in the smallest decile to 0.982 in the largest, so the boxes the detector misses are
 the small ones.
 
-The card's acceptance is precision and recall of 0.95 at IoU 0.5, and this run does not reach it: the
-recall side of the card is met, the precision side is not. The run was bounded at six epochs of the
-configured 24 for time, and the honest reading is that the head had not finished calibrating. What
+The card's acceptance is precision and recall of 0.95 at IoU 0.5: **recall 0.968 on the printed books
+meets it and precision 0.639 does not.** The precision figure is a floor rather than a settled number,
+because 74.4% of the false positives sit on ink CODH never annotated — by the card's own note that
+includes ruby — and the split carries no ruby boxes to exclude them with; the remaining 25.6% are a
+duplicate or a split of a real character, which is what a tighter NMS and the alignment's own scoring
+are for. Mean IoU of 0.86 to 0.88 says the boxes it reports are well placed, so the miss is extra
+detections rather than bad geometry. The run was bounded at six epochs of the
+configured 24 for time — at 0.30 s a step the full schedule is about 11.6 hours of GPU — and the honest
+reading is that the head had not finished calibrating: the whole operating range still sits between
+score 0.005 and 0.05 while the matched boxes have a mean IoU of 0.89, and the last epoch improved the
+best F1 by 0.007. The ONNX export passes its parity check (79 detections matched over ten tiles, none
+beyond 1 px) and serves a real 2,011×3,203 page in 1.13 s on CUDA. What
 keeps this from being the end of the matter is that the pilot's acceptance is a different measurement:
 joint precision of *accepted* units at a coverage, where the alignment's own accept threshold decides
 which units are published. A detector with 0.93 recall and 0.70 precision is a workable front end for
