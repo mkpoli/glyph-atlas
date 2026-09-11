@@ -539,6 +539,32 @@ def export(
     typer.echo(f"-> {out}")
 
 
+@app.command()
+def align(
+    directory: Annotated[Path, typer.Argument(help="dataset directory holding the lines to align")],
+    run: Annotated[str, typer.Option(help="run configuration under models/align/runs/<name>.yaml")] = "pilot-v1",
+    document: Annotated[str | None, typer.Option(help="only this document id")] = None,
+    page_ids: Annotated[str | None, typer.Option("--pages", help="comma-separated page ids")] = None,
+    limit: Annotated[int | None, typer.Option(help="stop after this many lines")] = None,
+) -> None:
+    """Align the transcription lines of a dataset to the character boxes a detector finds."""
+    from . import align as align_module
+
+    run_path = Path("models/align/runs") / f"{run}.yaml"
+    if not run_path.exists():
+        raise typer.BadParameter(f"{run_path} does not exist")
+    config = align_module.load_run(run_path, run)
+    counts = align_module.run_directory(
+        directory,
+        config,
+        document=document,
+        pages=page_ids.split(",") if page_ids else None,
+        limit=limit,
+    )
+    for name, value in counts.items():
+        typer.echo(f"{name:<14} {value:>10}")
+
+
 for name, module in (
     ("tables", tables_app),
     ("images", images_app),

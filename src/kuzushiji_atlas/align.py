@@ -580,3 +580,154 @@ def _segmentation(decision: Decision) -> float:
     if decision.kind == "match":
         return decision.probability
     return max(0.0, min(1.0, decision.probability))
+
+
+def run_directory(
+    directory: Path,
+    run: Run,
+    *,
+    document: str | None = None,
+    pages: list[str] | None = None,
+    limit: int | None = None,
+    detector: Detector | None = None,
+    classifier: Classifier | None = None,
+) -> dict[str, int]:
+    """Align every line of `directory` with boxes from the detector and write the units back.
+
+    The page image is taken from the cache when it is there and fetched when it is not, so a run over
+    a dataset whose pages were never downloaded still works. `units.parquet` is rewritten with the
+    units of this run and the groups that go with them; units another run or a reviewer wrote are
+    left where they are. Returns the counts.
+    """
+    from . import images, net, tables
+
+    dataset = tables.Dataset(directory)
+    if dataset.tables["lines"] is None or dataset.tables["pages"] is None:
+        raise ValueError(f"{directory} needs lines and pages to align")
+    wanted_pages = set(pages) if pages else None
+    lines_by_page: dict[str, list[Line]] = {}
+    for batch in dataset.scan("lines"):
+        for line in batch:
+            if line.box is None:
+                continue
+            if wanted_pages is not None and line.page_id not in wanted_pages:
+                continue
+            lines_by_page.setdefault(line.page_id, []).append(line)
+    page_records = {page.id: page for page in dataset.read("pages")}
+    if document is not None:
+        lines_by_page = {
+            page: found
+            for page, found in lines_by_page.items()
+            if page_records.get(page) is not None and page_records[page].document_id == document
+        }
+    if detector is None:
+        from .detect import Detector as OnnxDetector
+
+        detector = OnnxDetector(run.detector)
+    if classifier is None:
+        from .classify import Classifier as OnnxClassifier
+
+        classifier = OnnxClassifier(run.classifier)
+    crop_of = _crop_reader(dataset, page_records)
+
+    counts = {"pages": 0, "lines": 0, "units": 0, "groups": 0, "accepted": 0, "rejected": 0, "failed": 0}
+    written: list[Unit] = []
+    groups: list[Group] = []
+    fingerprint = run.fingerprint()
+    for index, (page_id, found) in enumerate(sorted(lines_by_page.items())):
+        page = page_records.get(page_id)
+        if page is None:
+            counts["failed"] += len(found)
+            continue
+        path = images.path_for(page.image)
+        if path is None:
+            try:
+                images.fetch(page.image)
+            except (images.ImageError, net.DownloadError):
+                counts["failed"] += len(found)
+                continue
+            path = images.path_for(page.image)
+        if path is None:
+            counts["failed"] += len(found)
+            continue
+        try:
+            detections = [Detection(box=box, score=score) for box, score in detector.boxes(path)]
+        except (OSError, ValueError, RuntimeError):  # a page the detector cannot read does not stop the run
+            counts["failed"] += len(found)
+            continue
+        counts["pages"] += 1
+        for line in found:
+            units, page_groups = align_line(line, detections, run=run, classifier=classifier, crop_of=crop_of)
+            written.extend(units)
+            groups.extend(page_groups)
+            counts["lines"] += 1
+            counts["units"] += len(units)
+            counts["groups"] += len(page_groups)
+            counts["accepted"] += sum(1 for unit in units if unit.review is ReviewState.MACHINE)
+            counts["rejected"] += sum(1 for unit in units if unit.review is ReviewState.REJECTED)
+        if limit is not None and counts["lines"] >= limit:
+            break
+    if written:
+        _write_units(directory, written, groups, run, fingerprint)
+    return counts
+
+
+def _crop_reader(dataset: Any, pages: dict[str, Any]) -> Any:
+    """A callable `(page_id, box) -> PIL image` that cuts from the cached page image."""
+    from PIL import Image
+
+    from . import images
+
+    def read(page_id: str | None, box: Box) -> Any:
+        page = pages.get(page_id or "")
+        if page is None:
+            raise ValueError(f"{page_id}: no such page")
+        path = images.path_for(page.image)
+        if path is None:
+            raise ValueError(f"{page_id}: the page image is not cached")
+        with Image.open(path) as image:
+            return image.crop((box.x, box.y, box.x + box.w, box.y + box.h)).convert("RGB")
+
+    return read
+
+
+def _write_units(
+    directory: Path,
+    units: list[Unit],
+    groups: list[Group],
+    run: Run,
+    fingerprint: str,
+) -> None:
+    """Replace this run's units and groups, keeping everything another writer left."""
+    from . import tables
+
+    dataset = tables.Dataset(directory)
+    keep_units: list[Unit] = []
+    if dataset.tables["units"] is not None:
+        marker = f":{fingerprint}:"
+        for batch in dataset.scan("units"):
+            for unit in batch:
+                if marker not in unit.id:
+                    keep_units.append(unit)
+    keep_groups: list[Group] = []
+    if dataset.tables["groups"] is not None:
+        marker = f":{fingerprint}:"
+        for batch in dataset.scan("groups"):
+            for group in batch:
+                if marker not in group.id:
+                    keep_groups.append(group)
+    for unit in units:
+        if unit.document_id is None:
+            unit.document_id = _document_of(dataset, unit.page_id)
+    tables.write(directory / "units.parquet", [*keep_units, *units], Unit)
+    if keep_groups or groups:
+        tables.write(directory / "groups.parquet", [*keep_groups, *groups], Group)
+
+
+def _document_of(dataset: Any, page_id: str | None) -> str | None:
+    if page_id is None or dataset.tables["pages"] is None:
+        return None
+    for page in dataset.read("pages"):
+        if page.id == page_id:
+            return page.document_id
+    return None
