@@ -89,6 +89,7 @@ One graphic unit: a character, a ligature, a mark, a gap.
 | `upstream` | source id and upstream identifier |
 | `active` | false once a split or merge retired the unit |
 | `split_into`, `merged_into` | segmentation history |
+| `meta` | fields with no column of their own, such as the audit sample the unit belongs to (`sample`, `p`, `stratum`, `predicted`, `hidden`) |
 
 `unicode` and `reading` answer different questions. A hentaigana form of か derived from 可 has
 `reading` か, `unicode` U+1B019 (KA-3), `jibo` 可, `script` hentaigana. U+1B01A (KA-4) derives from 可

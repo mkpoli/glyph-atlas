@@ -249,6 +249,10 @@ class Unit(BaseModel):
     active: bool = Field(default=True, description="false once a split or merge retired this unit")
     split_into: list[str] = Field(default_factory=list)
     merged_into: str | None = None
+    meta: dict[str, Any] = Field(
+        default_factory=dict,
+        description="fields with no column of their own, such as the audit sample a unit belongs to",
+    )
 
 
 class Group(BaseModel):

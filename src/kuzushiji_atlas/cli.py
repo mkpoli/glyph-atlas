@@ -22,6 +22,7 @@ import_app = typer.Typer(help="Import an upstream dataset into the tables.", no_
 pilot_app = typer.Typer(help="Assemble and measure the pilot packages.", no_args_is_help=True)
 eval_app = typer.Typer(help="Measure a prediction against adjudicated truth.", no_args_is_help=True)
 review_app = typer.Typer(help="Serve and apply editorial reviews.", no_args_is_help=True)
+audit_app = typer.Typer(help="Draw a blind audit sample and publish its precision.", no_args_is_help=True)
 
 
 @app.callback()
@@ -442,6 +443,48 @@ def import_hilab(
     typer.echo(f"-> {out}")
 
 
+@audit_app.command("sample")
+def audit_sample(
+    directory: Annotated[Path, typer.Argument(help="dataset directory holding the run's units")],
+    n: Annotated[int, typer.Option(help="units to draw")] = 2000,
+    strata: Annotated[str, typer.Option(help="comma-separated strata: document, script, kind")] = "document,script",
+    seed: Annotated[int, typer.Option(help="seed of the draw")] = 0,
+    run: Annotated[str | None, typer.Option(help="only units of this alignment run")] = None,
+    sample_id: Annotated[str | None, typer.Option("--id", help="name of the sample")] = None,
+    replace: Annotated[bool, typer.Option("--replace", help="redraw over an existing sample")] = False,
+) -> None:
+    """Draw a blind audit sample of the units the pipeline accepted."""
+    from . import audit
+
+    counts = audit.sample(
+        directory,
+        n=n,
+        strata=[name.strip() for name in strata.split(",") if name.strip()],
+        seed=seed,
+        run=run,
+        sample_id=sample_id,
+        replace=replace,
+    )
+    for name, value in counts.items():
+        typer.echo(f"{name:<18} {value:>8}")
+
+
+@audit_app.command("report")
+def audit_report(
+    directory: Annotated[Path, typer.Argument(help="dataset directory the sample was drawn from")],
+    sample: Annotated[str, typer.Option(help="sample id")],
+    out: Annotated[Path | None, typer.Option(help="write the Markdown here instead of stdout")] = None,
+) -> None:
+    """Score a stored audit sample and print the precision it shows."""
+    from . import audit
+
+    markdown = audit.report(directory, sample=sample, out=out)
+    if out:
+        typer.echo(f"-> {out}")
+    else:
+        typer.echo(markdown)
+
+
 for name, module in (
     ("tables", tables_app),
     ("images", images_app),
@@ -450,6 +493,7 @@ for name, module in (
     ("pilot", pilot_app),
     ("eval", eval_app),
     ("review", review_app),
+    ("audit", audit_app),
 ):
     app.add_typer(module, name=name)
 
