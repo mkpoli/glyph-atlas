@@ -1,0 +1,41 @@
+# Normalisation policies, read by kuzushiji_atlas.export.
+#
+# A record keeps the values it was given: `text_source`, `reading`, `unicode`, `script`, `jibo` and
+# `variants` are the classification layer and never change. A policy adds derived columns to the
+# units table at export, so that the modern spellings a user wants can be recomputed under a
+# different policy without touching a record. The policy name and version are written into the
+# release `MANIFEST.json`, and a published policy is never edited: a change to what a name means is
+# a new name.
+#
+# Relations a column may name:
+#   hentaigana-to-modern-kana  a hentaigana code point and the modern kana of its first 音価, from
+#                              data/vocab/hentaigana.tsv: U+1B019 (KA-3, 字母 可) reads か. A unit
+#                              whose code point has no entry keeps the character it has; a unit with
+#                              no hentaigana code point gets no value, because an ordinary hiragana
+#                              already is the modern kana.
+#   kanji-to-shinji            a 旧字 and the 新字 the equivalence table relates it to, from the
+#                              shinji-kyuji rows of data/vocab/kanji-equivalents.tsv: 國 reads 国. A
+#                              character with no row keeps the character it has.
+#
+# A column is a string of the same length as the text it normalises, one character per code point of
+# the record; a null cell says the policy has nothing to say about that unit.
+
+export-v1:
+  version: 1
+  description: >
+    Modern kana for hentaigana forms, and 新字 for kanji written in a 旧字 form. The reading layer is
+    untouched: けふ stays けふ and ゐ stays ゐ, and only the classification layer's code points are
+    mapped to the forms a modern reader looks for. Use where a user wants to match the dataset
+    against modern text; the variant as written stays in `unicode`.
+  columns:
+    - column: modern_kana
+      relation: hentaigana-to-modern-kana
+    - column: shinji
+      relation: kanji-to-shinji
+
+none:
+  version: 1
+  description: >
+    No derived columns. A release that ships the record fields alone, for a user who wants to apply
+    a normalisation of their own.
+  columns: []
