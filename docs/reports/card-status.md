@@ -38,8 +38,12 @@ brought into the atlas in three steps: get the data, improve it with the detecto
 it here. Step 1 is done — `atlas import ainu-records` writes 9 documents, 658 pages, 658 page texts
 and 8,212 lines, validated, with the platform entry, the project, the witness slug and the db.aynu.org
 catalogue in `source_refs` and rights resolved per witness through the vocabulary (five eligible, four
-restricted). The lines carry no boxes, which is exactly the gap step 2 fills once the classifier is
-trained.
+restricted). The lines carry no boxes, which is exactly the gap step 2 fills — and step 2 needs one thing the plan
+never had to build. Honkoku-Lines ships line boxes, so an alignment only has to place characters inside
+boxes that already exist; the Ainu records ship transcription text and nothing else, so there are no
+lines to align to. Measured on one page: 10 transcribed lines against 195 detected character boxes, so
+the line boxes have to be derived from the detected characters before anything can be aligned. That
+derivation is the next piece of work, and it comes before the alignment, not with it.
 
 ## Cards that cannot be finished without people
 
