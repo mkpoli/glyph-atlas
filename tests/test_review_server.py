@@ -21,7 +21,7 @@ from fastapi.testclient import TestClient
 
 from kuzushiji_atlas import tables
 from kuzushiji_atlas.review import create_app
-from kuzushiji_atlas.review.store import apply, replay
+from kuzushiji_atlas.review.store import Store, apply, replay
 from kuzushiji_atlas.schema import (
     Box,
     Candidate,
@@ -620,3 +620,24 @@ def test_replay_takes_events_from_the_log_when_the_store_is_gone(
     assert client.app.state.store.unit(fixture.unit).box == Box(x=510, y=80, w=40, h=40)
     assert apply(fixture.directory) == {"lines": 6, "units": 21, "reviews": 3}
     assert digests(fixture.directory) == before
+
+
+def test_rewritten_units_are_seen_by_a_reopened_store(fixture: Fixture) -> None:
+    """A store opened on a dataset whose units were rewritten shows the new units, not its old copy.
+
+    This is the case that made a served dataset report zero units after `atlas align` wrote the
+    units the alignment had just produced.
+    """
+    original = Store(fixture.directory)
+    assert original.units_of_line(fixture.line)
+    before = len(original.units_of_line(fixture.line))
+
+    path = fixture.directory / "units.parquet"
+    records = tables.read(path, Unit)
+    extra = records[0].model_copy(update={"id": f"{fixture.line}:deadbeef:99", "method": "detect-align"})
+    tables.write(path, [*records, extra], Unit)
+
+    reopened = Store(fixture.directory)
+    ids = [unit.id for unit in reopened.units_of_line(fixture.line)]
+    assert len(ids) == before + 1
+    assert f"{fixture.line}:deadbeef:99" in ids

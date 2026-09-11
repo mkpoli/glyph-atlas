@@ -167,6 +167,15 @@ class Conflict(StoreError):
         super().__init__(f"{reason}: {detail.get('target_id', '')}".strip(": "))
 
 
+class StaleTables(StoreError):
+    """The store holds events but the tables under it were rewritten by another writer.
+
+    Serving the store's copy would hide whatever the other writer did, and reloading would throw the
+    events away, so the store refuses and names the way out: export the events to `reviews.jsonl`,
+    delete the database, and let the next open build the state from the tables plus the log.
+    """
+
+
 class BadRequest(StoreError):
     """A review whose field or value does not fit the target."""
 
@@ -267,7 +276,7 @@ class Store:
     the events. `replay` rebuilds the state from the tables plus the log.
     """
 
-    def __init__(self, directory: Path) -> None:
+    def __init__(self, directory: Path, *, rebuild: bool = False) -> None:
         self.directory = Path(directory)
         self.path = self.directory / STORE_NAME
         self.dataset = tables.Dataset(self.directory)
@@ -276,8 +285,27 @@ class Store:
         self._documents: list[Document] | None = None
         with self._lock, self._connection() as conn:
             self._schema(conn)
+            stamp = self._source_stamp()
             if self._meta(conn, "loaded") is None:
-                self._load(conn)
+                self._load(conn, stamp)
+            elif not rebuild and self._meta(conn, "source_stamp") != stamp:
+                # The tables changed under the store, which happens when an alignment writes new
+                # units into a directory that has been reviewed before. Review events are kept and
+                # replayed over the new tables, so no decision is lost; what the store refuses is a
+                # store holding events the log has never seen, because rebuilding would be the only
+                # way to serve the new tables and that would throw those events away.
+                pending = self._unexported_events(conn)
+                if pending:
+                    raise StaleTables(
+                        f"{self.directory}: the tables changed under a store holding {pending} review "
+                        f"events that are not in {LOG_NAME}; run `atlas review apply` to write them, "
+                        f"then delete {self.path.name} and reopen"
+                    )
+                conn.execute("DELETE FROM lines")
+                conn.execute("DELETE FROM units")
+                conn.execute("DELETE FROM revisions")
+                self._load(conn, stamp)
+                self._replay_events(conn)
 
     # -- reading the dataset ---------------------------------------------------------------------
 
@@ -552,6 +580,8 @@ class Store:
             for event in events:
                 handle.write(json.dumps(event.model_dump(mode="json"), ensure_ascii=False, sort_keys=True) + "\n")
         counts["reviews"] = len(events)
+        with self._lock, self._connection() as conn:
+            self._set_meta(conn, "exported_events", str(len(events)))
         return counts
 
     def rebuild(self) -> dict[str, int]:
@@ -627,7 +657,53 @@ class Store:
             return []
         return list(tables.read(path, tables.TABLES[name]))
 
-    def _load(self, conn: sqlite3.Connection) -> None:
+    def _source_stamp(self) -> str:
+        """A fingerprint of the tables the store copies: their file names, sizes and mtimes."""
+        parts: list[str] = []
+        for name in ("lines", "units"):
+            path = self.dataset.tables[name]
+            if path is None:
+                parts.append(f"{name}:-")
+                continue
+            if path.is_dir():
+                files = sorted(path.glob("*.parquet"))
+                detail = ";".join(f"{file.name}:{file.stat().st_size}:{int(file.stat().st_mtime)}" for file in files)
+            else:
+                detail = f"{path.stat().st_size}:{int(path.stat().st_mtime)}"
+            parts.append(f"{name}:{detail}")
+        return "|".join(parts)
+
+    def _event_count(self, conn: sqlite3.Connection) -> int:
+        row = conn.execute("SELECT COUNT(*) AS n FROM events").fetchone()
+        return int(row["n"]) if row else 0
+
+    def _unexported_events(self, conn: sqlite3.Connection) -> int:
+        """Review events the store holds that `reviews.jsonl` does not.
+
+        `apply` writes the state to the tables and the events to the log, and records how many events
+        it exported. When that count matches what the store holds, every decision is already in the
+        log and the store can be rebuilt from the tables without losing one; anything else means work
+        the log has never seen, which is what the store refuses to throw away. File times are not used
+        for this: the database is written when the store closes, so it is routinely newer than the
+        log it agrees with.
+        """
+        count = self._event_count(conn)
+        if not count:
+            return 0
+        exported = self._meta(conn, "exported_events")
+        return 0 if exported is not None and int(exported) == count else count
+
+    def _replay_events(self, conn: sqlite3.Connection) -> None:
+        """Apply the events the store already holds to the state that was just loaded."""
+        events = self._events(conn)
+        if not events:
+            return
+        state = State(self._all_lines(conn), self._all_units(conn))
+        for event in events:
+            _change(state, event, guard=True)
+        self._write_state(conn, state, events, self._last_seq(conn))
+
+    def _load(self, conn: sqlite3.Connection, stamp: str) -> None:
         """Copy the dataset tables into the store, once."""
         lines = self._table_records("lines")
         units = self._table_records("units")
@@ -637,6 +713,7 @@ class Store:
             for unit in units:
                 self._insert_unit(conn, unit)
             self._set_meta(conn, "loaded", "1")
+            self._set_meta(conn, "source_stamp", stamp)
             self._set_meta(conn, "schema_version", str(SCHEMA_VERSION))
             self._set_meta(conn, "state_seq", self._meta(conn, "state_seq") or "0")
             self._set_meta(conn, "created_at", datetime.now(UTC).isoformat(timespec="seconds"))
@@ -958,7 +1035,7 @@ def replay(directory: Path) -> dict[str, int]:
     rebuilt state, the rows repaired, the events taken from `reviews.jsonl`, and the events that
     were already in effect.
     """
-    return Store(Path(directory)).rebuild()
+    return Store(Path(directory), rebuild=True).rebuild()
 
 
 # -- the change an event makes -------------------------------------------------------------------
