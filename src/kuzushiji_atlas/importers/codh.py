@@ -11,13 +11,23 @@ import csv
 import io
 import re
 import zipfile
-from datetime import date
+from datetime import UTC, datetime
 from pathlib import Path
 
 from PIL import Image
 
 from ..schema import (
-    Box, Classification, Document, Licence, Page, Production, ReviewState, Rights, Script, Unit, UnitKind,
+    Box,
+    Classification,
+    Document,
+    Licence,
+    Page,
+    Production,
+    ReviewState,
+    Rights,
+    Script,
+    Unit,
+    UnitKind,
 )
 
 SOURCE = "codh-char-shape"
@@ -60,7 +70,7 @@ def read(zip_path: Path, title: str | None = None) -> tuple[Document, list[Page]
         csv_name = next(n for n in names if n.endswith("_coordinate.csv"))
         bid = Path(csv_name).name.split("_")[0]
         rights = Rights(licence=Licence.CC_BY_SA_4, holder="国文学研究資料館ほか", attribution=ATTRIBUTION,
-                        evidence="http://codh.rois.ac.jp/char-shape/#license", checked=date.today())
+                        evidence="http://codh.rois.ac.jp/char-shape/#license", checked=datetime.now(tz=UTC).date())
         document = Document(
             id=f"codh:{bid}", title=title or bid, source_refs={SOURCE: bid, "nijl-bid": bid},
             production=Production.UNKNOWN, image_rights=rights, text_rights=rights,

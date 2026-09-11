@@ -104,7 +104,7 @@ append to a shared file.
 
 `data/vocab/genre.yaml`, `data/vocab/style.yaml` and `data/vocab/holders.yaml` hold the controlled
 values with Japanese labels. `data/vocab/hentaigana.tsv` lists every hentaigana code point with its
-readings and 字母, generated from Unicode's NamesList.txt by `scripts/build_hentaigana_table.py`. A new value is added by a pull request that also states its source.
+readings and 字母, generated from Unicode's NamesList.txt by `scripts/build_hentaigana_table.py`. A new value enters through a pull request that states its source.
 
 ## Exports
 

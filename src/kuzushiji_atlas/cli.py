@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Annotated
 
 import typer
 
@@ -31,9 +32,9 @@ app.add_typer(import_app, name="import")
 
 @import_app.command("codh")
 def import_codh(
-    zip_path: Path = typer.Argument(..., help="per-book zip from codh.rois.ac.jp/char-shape"),
-    out: Path = typer.Option(Path("work/codh"), help="directory for documents, pages and units"),
-    title: str | None = typer.Option(None, help="book title, when known"),
+    zip_path: Annotated[Path, typer.Argument(help="per-book zip from codh.rois.ac.jp/char-shape")],
+    out: Annotated[Path, typer.Option(help="directory for documents, pages and units")] = Path("work/codh"),
+    title: Annotated[str | None, typer.Option(help="book title, when known")] = None,
 ) -> None:
     """Import one book of the 日本古典籍くずし字データセット."""
     from .importers import codh
