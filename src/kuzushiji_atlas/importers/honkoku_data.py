@@ -7,10 +7,13 @@ included; `v3/<project>/<entry>/info.tsv` and `translations/` beside it are not 
 is canvas `NNN` of the entry's manifest: the canvases of the first sequence for IIIF Presentation 2,
 the canvas items for Presentation 3.
 
-A manifest is fetched once into `cache/manifests/<sha256 of url>.json` through `net.download`. An
-entry whose manifest cannot be fetched keeps its pages, with an empty `image` and the failure in
-`meta.manifest_error`. Text files beyond the manifest's canvases become pages with a null `canvas`
-and a warning.
+A manifest is fetched once into `cache/manifests/<sha256 of url>.json` through `net.download`, each
+manifest is attempted `MANIFEST_RETRIES` times, and a host that fails `HOST_FAILURES` manifests in a
+row is left alone for the rest of the run: 資料編纂所 answers HTTP 500 for the manifest of every
+entry of a project, and five attempts at each of 941 manifests is hours of retrying a server that
+says no. An entry whose manifest cannot be fetched keeps its pages, with an empty `image` and the
+failure in `meta.manifest_error`; a later run retries it, since a manifest that failed is not in the
+cache. Text files beyond the manifest's canvases become pages with a null `canvas` and a warning.
 
 The images belong to the holder that `attribution` names, read from the manifest where it states its
 own rights; the transcription is CC BY-SA 4.0. `refresh` asks the platform API for the current text
@@ -38,7 +41,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from .. import net, rights, tables
-from ..images import service_of
+from ..images import INFO_SUFFIX, REQUEST_SUFFIX, service_of
 from ..schema import Document, Licence, Page, PageText, Rights
 
 SOURCE = "honkoku-data"
@@ -50,11 +53,18 @@ LICENCE_EVIDENCE = "https://github.com/yuta1984/honkoku-data/blob/master/README.
 API = "https://app.honkoku.org/api/entries/{entry}"
 INFO_COLUMNS = ("id", "label", "manifestUrl", "projectId", "size", "progress", "attribution", "thumbnail")
 PAGE_FILE = re.compile(r"^(\d+)\.txt$")
-REPO_ROOT = Path(__file__).resolve().parents[2]
+#: `src/kuzushiji_atlas/importers/honkoku_data.py` sits three directories below the repository root.
+REPO_ROOT = Path(__file__).resolve().parents[3]
 ENV_CACHE = "KUZUSHIJI_ATLAS_CACHE"
 #: Manifest hosts each answer at their own pace, so a run keeps one worker per host and several
 #: hosts in flight; the requests to one host stay `net.host_pause` apart inside its worker.
 WORKERS = 12
+#: Attempts per manifest. Three cover the intermittent 429 that Gallica answers; a host that keeps
+#: failing is dropped by `_fetch_host` instead of being asked five times for each of its manifests.
+MANIFEST_RETRIES = 3
+#: Manifests one host may fail in a row before the run leaves it alone. 資料編纂所 answered 500 for
+#: 941 manifests of a project, and retrying each of them five times would have taken hours.
+HOST_FAILURES = 5
 #: Branches of a canvas that hold no page image.
 NOT_AN_IMAGE = frozenset({"thumbnail", "rendering", "otherContent", "seeAlso", "logo", "service"})
 
@@ -221,17 +231,32 @@ def _image_nodes(value: Any) -> Iterator[dict]:
 
 
 def canvas_image(canvas: dict) -> str:
-    """The image service of a canvas's first image, or the image URL when it names no service."""
+    """The image service of a canvas's first image, or the image URL when it names no service.
+
+    A service the manifest states is kept as it stands apart from a trailing `info.json` or image
+    request: 龍谷大学 carries the image path in a query string, which `images.service_of` drops. An
+    image that names no service is cut back to the service it belongs to.
+    """
     nodes = list(image_nodes(canvas))
     for node in nodes:
         service = identifier(node.get("service"))
         if service:
-            return service_of(service) or service
+            return _service_base(service)
     for node in nodes:
         url = identifier(node.get("id") if node.get("id") else node.get("@id"))
         if url:
             return service_of(url) or url
     return ""
+
+
+def _service_base(url: str) -> str:
+    """A service URL without a trailing `info.json` or image request, keeping any query string."""
+    cleaned = url.split("#", 1)[0]
+    for pattern in (INFO_SUFFIX, REQUEST_SUFFIX):
+        found = pattern.search(cleaned)
+        if found:
+            return cleaned[: found.start()].rstrip("/") or cleaned
+    return cleaned.rstrip("/") or url
 
 
 def canvas_size(canvas: dict) -> tuple[int, int]:
@@ -282,36 +307,45 @@ def _pixels(value: Any) -> int:
     return 0
 
 
-def fetch_manifest(url: str, *, cache: Path | None = None, client: httpx.Client | None = None) -> dict:
+def fetch_manifest(
+    url: str, *, cache: Path | None = None, client: httpx.Client | None = None, retries: int = MANIFEST_RETRIES
+) -> dict:
     """Fetch one manifest into the manifest cache and parse it.
 
-    A URL already in the cache is read from disk without a request. Raises `net.DownloadError` for a
-    response that is not a JSON manifest.
+    A URL already in the cache is read from disk without a request. The body decides what the
+    manifest is: ADEAC serves it with a byte order mark and 龍谷大学 labels a JSON body `text/html`,
+    so the content type is not checked and a body that does not parse as a JSON object fails as a
+    `net.DownloadError` and is left out of the cache.
     """
     path = manifest_path(url, cache)
-    net.download(url, path, expected="json", client=client)
-    with path.open(encoding="utf-8") as handle:
-        document = json.load(handle)
+    net.download(url, path, client=client, retries=retries)
+    try:
+        document = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (UnicodeDecodeError, ValueError) as error:
+        path.unlink(missing_ok=True)
+        raise net.DownloadError(f"{url}: the manifest does not parse ({error})") from error
     if not isinstance(document, dict):
+        path.unlink(missing_ok=True)
         raise net.DownloadError(f"{url}: the manifest is not a JSON object")
     return document
 
 
 def manifests(
     urls: Iterable[str], *, cache: Path | None = None, client: httpx.Client | None = None, workers: int = WORKERS
-) -> dict[str, tuple[dict | None, str | None]]:
-    """Fetch every manifest once and return `url -> (manifest, error)`.
+) -> tuple[dict[str, tuple[dict | None, str | None]], list[str]]:
+    """Fetch every manifest once and return `url -> (manifest, error)` and the hosts left alone.
 
     Hosts are fetched in parallel, one worker per host, so that no host sees two requests closer
     together than its pause; the returned mapping is keyed by URL and holds the failure instead of
-    raising it.
+    raising it. A host that fails `HOST_FAILURES` manifests in a row is abandoned after that, and
+    the rest of its manifests carry the failure it answered with.
     """
     wanted = sorted({url for url in urls if url})
     queues: dict[str, list[str]] = {}
     for url in wanted:
         queues.setdefault(urlsplit(url).netloc.lower(), []).append(url)
     if not queues:
-        return {}
+        return {}, []
     if client is not None:
         return _across_hosts(queues, cache, client, workers)
     with httpx.Client(timeout=60.0, follow_redirects=True) as shared:
@@ -320,24 +354,45 @@ def manifests(
 
 def _across_hosts(
     queues: dict[str, list[str]], cache: Path | None, client: httpx.Client, workers: int
-) -> dict[str, tuple[dict | None, str | None]]:
+) -> tuple[dict[str, tuple[dict | None, str | None]], list[str]]:
+    """Fetch the hosts with the longest queues first, so that a large host does not start last."""
     found: dict[str, tuple[dict | None, str | None]] = {}
-    with ThreadPoolExecutor(max_workers=max(1, min(workers, len(queues)))) as pool:
-        futures = [pool.submit(_fetch_host, queue, cache, client) for queue in queues.values()]
-        for future in futures:
-            found.update(future.result())
-    return found
+    abandoned: list[str] = []
+    order = sorted(queues.items(), key=lambda item: len(item[1]), reverse=True)
+    with ThreadPoolExecutor(max_workers=max(1, min(workers, len(order)))) as pool:
+        futures = {host: pool.submit(_fetch_host, queue, cache, client) for host, queue in order}
+        for host, future in futures.items():
+            fetched, gave_up = future.result()
+            found.update(fetched)
+            if gave_up:
+                abandoned.append(host)
+    return found, sorted(abandoned)
 
 
-def _fetch_host(urls: list[str], cache: Path | None, client: httpx.Client) -> dict[str, tuple[dict | None, str | None]]:
-    """Fetch the manifests of one host in turn, so that its pause holds."""
+def _fetch_host(
+    urls: list[str], cache: Path | None, client: httpx.Client
+) -> tuple[dict[str, tuple[dict | None, str | None]], bool]:
+    """Fetch the manifests of one host in turn, so that its pause holds.
+
+    The host is abandoned once `HOST_FAILURES` of its manifests fail in a row; every manifest left
+    in its queue records the failure the host answered with, so that the entries it belongs to say
+    why they have no image.
+    """
     found: dict[str, tuple[dict | None, str | None]] = {}
+    failure = "no attempt was made"
+    failed = 0
     for url in urls:
+        if failed >= HOST_FAILURES:
+            found[url] = (None, f"{HOST_FAILURES} manifests of this host failed in a row; left alone ({failure})")
+            continue
         try:
             found[url] = (fetch_manifest(url, cache=cache, client=client), None)
+            failed = 0
         except (net.DownloadError, OSError, ValueError) as error:
-            found[url] = (None, f"{error.__class__.__name__}: {error}")
-    return found
+            failure = f"{error.__class__.__name__}: {error}"
+            found[url] = (None, failure)
+            failed += 1
+    return found, failed >= HOST_FAILURES
 
 
 def import_all(
@@ -357,19 +412,23 @@ def import_all(
     project ids and `limit` to that many entries, in project and entry id order. `cache` names the
     directory that holds `manifests/`, `$KUZUSHIJI_ATLAS_CACHE` by default. The tables hold one
     document per entry, one page per `NNN.txt`, and one `page_texts` row per page with the clone's
-    commit as the revision; `command` is recorded in the dataset manifest.
+    commit as the revision; `command` is recorded in the dataset manifest. `projects` counts the
+    project directories read, `projects_with_entries` those that hold an entry, since a project may
+    ship a `info.tsv` with no rows.
     """
     clone = Path(clone) if clone is not None else default_clone()
     root = clone / "v3"
     if not root.is_dir():
         raise FileNotFoundError(f"{clone}: no v3 directory; expected a clone of honkoku-data")
     revision = clone_revision(clone)
+    wanted = set(projects) if projects else None
+    selected = [path for path in root.iterdir() if path.is_dir() and (wanted is None or path.name in wanted)]
     rows, skipped, unlisted = entries(clone, projects)
     if limit is not None:
         rows = rows[: max(0, limit)]
 
     urls = [(row.get("manifestUrl") or "").strip() for _, row in rows]
-    fetched = manifests(urls, cache=cache, client=client, workers=workers)
+    fetched, abandoned = manifests(urls, cache=cache, client=client, workers=workers)
     documents: list[Document] = []
     pages: list[Page] = []
     texts: list[PageText] = []
@@ -387,13 +446,13 @@ def import_all(
         pages.extend(entry_pages)
         texts.extend(entry_texts)
 
-    _write(out, documents, pages, texts, command or f"atlas import honkoku-data --clone {clone}")
-    counts["projects"] = len(seen)
-    counts["documents"] = len(documents)
-    counts["pages"] = len(pages)
-    counts["page_texts"] = len(texts)
+    written = _write(out, documents, pages, texts, command or f"atlas import honkoku-data --clone {clone}")
+    counts["projects"] = len(selected)
+    counts["projects_with_entries"] = len(seen)
+    counts.update(written)
     counts["entries_skipped"] = skipped
     counts["entries_unlisted"] = unlisted
+    counts["hosts_abandoned"] = len(abandoned)
     return {name: counts[name] for name in sorted(counts)}
 
 
@@ -598,11 +657,23 @@ def _whole(value: Any) -> int | None:
     return None
 
 
-def _write(out: Path, documents: list[Document], pages: list[Page], texts: list[PageText], command: str) -> None:
-    """Write the three tables and leave the dataset manifest holding their row counts and checksums."""
+def _write(
+    out: Path, documents: list[Document], pages: list[Page], texts: list[PageText], command: str
+) -> dict[str, int]:
+    """Write the three tables and return their row counts, leaving the dataset manifest consistent.
+
+    Each list is emptied once its table is on disk, since the merge that follows reads the tables
+    back and the whole corpus does not fit in memory twice.
+    """
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
-    tables.write(out / "documents.parquet", documents, Document)
-    tables.write(out / "pages.parquet", pages, Page)
-    tables.write(out / "page_texts.parquet", texts, PageText)
+    written = {}
+    for name, records, model in (
+        ("documents", documents, Document),
+        ("pages", pages, Page),
+        ("page_texts", texts, PageText),
+    ):
+        written[name] = tables.write(out / f"{name}.parquet", records, model)
+        records.clear()
     tables.Dataset(out).merge([], out, command=command)
+    return written

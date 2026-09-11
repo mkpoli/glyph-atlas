@@ -3,6 +3,7 @@ name: みんなで翻刻データ
 publisher: 橋本雄太（みんなで翻刻）
 kind: transcription-corpus
 url: https://github.com/yuta1984/honkoku-data
+revision: be63dc209b65ed81d1f51ea5cd10bc09be261640
 licence: CC-BY-SA-4.0
 licence_evidence: https://github.com/yuta1984/honkoku-data/blob/master/README.md
 attribution: みんなで翻刻（https://honkoku.org/）翻刻データ, CC BY-SA 4.0
