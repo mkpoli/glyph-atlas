@@ -169,17 +169,20 @@ Evaluation splits are by item, so that two scans of one print never straddle a s
 
 ## 7. Milestones
 
+The task cards in `docs/implementation/tasks/` carry the detail; the ids below refer to them.
+
 - M0. Repository, schema, source registry, importer for one CODH book. First contact with 橋本雄太,
-  CODH and the 史料編纂所 (section 9).
-- M1. CODH importer over all 44 books; ingestion of the Honkoku-Lines lines and images for a pilot
-  of about ten exemplars; a minimal review interface (move a box, split, merge, anchor text, mark
-  a group unresolved). HI Lab and 古活字 imports wait until the schema has survived the pilot.
-- M2. Character detection and alignment on 100 to 200 complete pages from PDM and CC BY 4.0 items,
-  a calibration tranche of 10 to 20 pages first; review time measured; joint box-and-label
-  precision, coverage and split or merge errors published with the pilot as a benchmark.
-- M3. Release 0.1: at least 50,000 reviewed new characters from ten or more exemplars, a smaller
-  expert-reviewed 字母 subset, rights evidence per record. The 字母 classifier is trained on this
-  release and is not a condition for it.
+  CODH and the 史料編纂所 (section 9). Done on 2026-09-11 except the contacts.
+- M1 (T01–T05, T10, T13, T16, T40, T41). Foundation modules; CODH importer over all 44 books;
+  Honkoku-Lines lines and rights; the review service and interface. HI Lab and 古活字 imports
+  (T11, T12) and the other importers (T14, T15) can run in parallel since they touch nothing else.
+- M2 (T20–T24). Character detection and alignment on 100 to 200 complete pages from PDM and
+  CC BY 4.0 items, a calibration tranche of 10 to 20 pages first; review time measured; joint
+  box-and-label precision, coverage and split or merge errors published with the pilot as a
+  benchmark.
+- M3 (T42, T50, T51, with T30 and T31 in parallel). Release 0.1: at least 50,000 reviewed new
+  characters from ten or more exemplars, a smaller expert-reviewed 字母 subset, rights evidence per
+  record. The 字母 classifier is trained on this release and is not a condition for it.
 - M4. Source by source expansion under measured precision and coverage thresholds, the HI Lab and
   古活字 imports, a public review service separate from bulk processing; release 1.0.
 

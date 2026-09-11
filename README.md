@@ -13,7 +13,8 @@ as written, and bibliographic metadata usable for filtering by period, genre and
 
 Status: planning. `docs/plan.md` has the survey of existing datasets, the goals and the pipeline;
 `docs/schema.md` the data model; `docs/licensing.md` how upstream licences compose;
-`data/sources/` one file per upstream with its licence evidence and format.
+`data/sources/` one file per upstream with its licence evidence and format;
+`docs/implementation/` the task cards, one per unit of work, with their dependencies.
 
 ## Layout
 
