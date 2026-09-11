@@ -324,3 +324,36 @@ def test_arguments_are_checked(tmp_path: Path) -> None:
         net.download("https://example.org/x", tmp_path / "x", expected="audio")
     with pytest.raises(net.DownloadError, match="http"):
         net.download("example.org/x.bin", tmp_path / "x")
+
+
+def test_a_429_slows_the_host_down_for_the_rest_of_the_process(http_server):
+    """A host that answers 429 keeps a longer interval instead of being asked at the same rate."""
+    from kuzushiji_atlas import net
+
+    net.reset_pauses()
+    try:
+        body = b"payload"
+        http_server.put("data.json", body)
+        url = http_server.url("data.json")
+        http_server.script["/data.json"] = [net_test_scripted(429)]
+
+        assert net.host_pause(url) == net.DEFAULT_PAUSE
+        dest = tmp_path_file(http_server.root, "out.json")
+        assert net.download(url, dest, pause=0.0) == dest
+        assert net.host_pause(url) == net.SLOW_PAUSE
+        assert dest.read_bytes() == body
+    finally:
+        net.reset_pauses()
+
+
+def net_test_scripted(status: int):
+    """A canned response for the fixture's scripted sequence."""
+    from tests.conftest import Scripted
+
+    return Scripted(status=status, body=b"", headers={"Retry-After": "0"})
+
+
+def tmp_path_file(root, name):
+    from pathlib import Path
+
+    return Path(root) / name

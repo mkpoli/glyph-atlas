@@ -100,13 +100,27 @@ class _Retry(Exception):
         self.reason = reason
 
 
+# A host that answered 429 to the default pace is given a longer one for the rest of the process.
+# `SLOW_PAUSE` is what the license-reconciliation pass needs: gallica.bnf.fr answers 429 at 3 s and
+# 200 at 10 s, which is a rate limit rather than a refusal.
+SLOW_PAUSE = 10.0
+_SLOW_HOSTS: dict[str, float] = {}
+
+
+def slow_down(url: str, pause: float = SLOW_PAUSE) -> None:
+    """Ask for a longer interval before the next request to this host."""
+    _SLOW_HOSTS[_host_of(url)] = max(pause, _SLOW_HOSTS.get(_host_of(url), 0.0))
+
+
 def host_pause(url: str) -> float:
     """The least interval in seconds between two requests to the host of `url`.
 
     A host name may be given instead of a URL. The default is 3 s; `codh.rois.ac.jp` and any
-    `*.huggingface.co` host get 1 s.
+    `*.huggingface.co` host get 1 s, and a host named by `slow_down` keeps the interval it was given.
     """
     host = _host_of(url)
+    if host in _SLOW_HOSTS:
+        return _SLOW_HOSTS[host]
     for entry in FAST_HOSTS:
         if host == entry or host.endswith(f".{entry}"):
             return FAST_PAUSE
@@ -116,6 +130,7 @@ def host_pause(url: str) -> float:
 def reset_pauses() -> None:
     """Forget which host was asked last. Tests call this between cases."""
     _LAST_REQUEST.clear()
+    _SLOW_HOSTS.clear()
 
 
 def download(
@@ -255,6 +270,11 @@ def _receive(
     status = response.status_code
     if status in RETRY_STATUS:
         _drain(response)
+        if status == 429:
+            # A 429 is the host asking for a slower pace, not a transient failure, so the host keeps
+            # the longer interval for the rest of the process instead of being asked again at the
+            # same rate and refused again.
+            slow_down(url)
         raise _Retry(_retry_delay(response, attempt), f"HTTP {status}")
     if status == 416:
         _drain(response)
