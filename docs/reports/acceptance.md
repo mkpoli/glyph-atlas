@@ -175,6 +175,8 @@ hours). The curve is measured on a dense score grid, because the head's scores l
 | 1 | 0.735 | 0.030 | 0.616 | 0.910 | 0.889 |
 | 2 | 0.687 | 0.030 | 0.712 | 0.663 | 0.888 |
 | 3 | 0.714 | 0.020 | 0.608 | 0.864 | 0.889 |
+| 4 | 0.737 | 0.020 | 0.622 | 0.903 | 0.893 |
+| 5 | 0.744 | 0.030 | 0.756 | 0.732 | 0.891 |
 
 The peak does not climb monotonically: between epoch 1 and epoch 2 the optimum trades recall for
 precision at the same F1, while the training loss keeps falling. That is calibration rather than
