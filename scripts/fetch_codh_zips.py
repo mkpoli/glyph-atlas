@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import argparse
 import csv
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import httpx
@@ -38,30 +40,56 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=ROOT / "cache" / "codh")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--books", default=None, help="comma-separated bids")
+    parser.add_argument("--workers", type=int, default=3, help="books fetched at the same time")
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     wanted = books(args.limit, args.books.split(",") if args.books else None)
-    total = 0
-    with httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=120, follow_redirects=True) as client:
-        for index, bid in enumerate(wanted, 1):
-            target = args.out / f"{bid}.zip"
-            head = client.head(URL.format(bid=bid))
-            size = int(head.headers.get("content-length", 0))
-            if target.exists() and target.stat().st_size == size:
-                print(f"[{index}/{len(wanted)}] {bid} cached ({size} bytes)", flush=True)
-                total += size
-                continue
-            headers = {"Range": f"bytes={target.stat().st_size}-"} if target.exists() else {}
-            time.sleep(PAUSE)
-            with client.stream("GET", URL.format(bid=bid), headers=headers) as response:
-                response.raise_for_status()
-                mode = "ab" if response.status_code == 206 else "wb"
-                with target.open(mode) as handle:
-                    for chunk in response.iter_bytes(1 << 20):
-                        handle.write(chunk)
-            print(f"[{index}/{len(wanted)}] {bid} {target.stat().st_size} bytes", flush=True)
-            total += target.stat().st_size
-    print(f"{len(wanted)} books, {total} bytes under {args.out}")
+    lock = threading.Lock()
+    last = [0.0]
+    done = [0]
+    total = [0]
+
+    def polite() -> None:
+        """Wait out the pause between two requests to codh.rois.ac.jp, across the workers."""
+        with lock:
+            wait = PAUSE - (time.monotonic() - last[0])
+            if wait > 0:
+                time.sleep(wait)
+            last[0] = time.monotonic()
+
+    def one(client: httpx.Client, index: int, bid: str) -> None:
+        target = args.out / f"{bid}.zip"
+        polite()
+        head = client.head(URL.format(bid=bid))
+        size = int(head.headers.get("content-length", 0))
+        if target.exists() and target.stat().st_size == size:
+            note(index, f"{bid} cached ({size} bytes)", size)
+            return
+        headers = {"Range": f"bytes={target.stat().st_size}-"} if target.exists() else {}
+        polite()
+        with client.stream("GET", URL.format(bid=bid), headers=headers) as response:
+            response.raise_for_status()
+            mode = "ab" if response.status_code == 206 else "wb"
+            with target.open(mode) as handle:
+                for chunk in response.iter_bytes(1 << 20):
+                    handle.write(chunk)
+        note(index, f"{bid} {target.stat().st_size} bytes", target.stat().st_size)
+
+    def note(index: int, message: str, size: int) -> None:
+        with lock:
+            done[0] += 1
+            total[0] += size
+            print(f"[{done[0]}/{len(wanted)}] {message}", flush=True)
+
+    def run(index: int, bid: str) -> None:
+        with httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=300, follow_redirects=True) as client:
+            one(client, index, bid)
+
+    with ThreadPoolExecutor(max_workers=args.workers) as pool:
+        futures = [pool.submit(run, index, bid) for index, bid in enumerate(wanted, 1)]
+        for future in futures:
+            future.result()
+    print(f"{len(wanted)} books, {total[0]} bytes under {args.out}")
     with (ROOT / "work" / "codh-downloads.tsv").open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
         writer.writerow(["bid", "bytes"])

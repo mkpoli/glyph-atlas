@@ -16,5 +16,5 @@ counts:
   ivd_moji_joho_sequences: 11392
 notes:
   - The 字母 of each hentaigana is an informative `derived from` note in NamesList.txt; the UCD XML has no such attribute.
-  - U+1B001 HIRAGANA LETTER ARCHAIC YE carries the alias HENTAIGANA LETTER E-1; U+1B11F HIRAGANA LETTER ARCHAIC WU (Unicode 14.0) has 字母 江.
+  - U+1B001 HIRAGANA LETTER ARCHAIC YE carries the alias HENTAIGANA LETTER E-1; U+1B11F HIRAGANA LETTER ARCHAIC WU (Unicode 14.0) has 字母 汙 (U+6C59); 江 (U+6C5F) belongs to U+1B001.
   - Moji_Joho glyph ids in the IVD are MJ文字図形名, so an IVS and an MJ id name the same glyph.

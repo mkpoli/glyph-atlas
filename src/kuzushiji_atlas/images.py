@@ -388,9 +388,9 @@ def write_crops(
 ) -> tuple[int, int]:
     """Write one JPEG per unit that has a box, named after the unit id with `:` replaced by `_`.
 
-    `units` is a units table, or a dataset directory that holds one beside its pages, from which the
-    image URL of each page is read. `images` supplies page id to image URL for a table that travels
-    alone. A unit with no box, whose page image is not cached, or whose crop is already on disk, is
+    `units` is a units table, or a dataset directory that holds one beside its pages, and the image
+    URL of each page is read from that pages table; `images` supplies page id to image URL when there
+    is none. A unit with no box, whose page image is not cached, or whose crop is already on disk, is
     skipped and counted. Returns the numbers written and skipped.
     """
     records, page_images = _units_of(units, images)
@@ -430,18 +430,20 @@ def _pages_of(path: Path) -> list[Page]:
 def _units_of(path: Path, images: dict[str, str] | None) -> tuple[list[Unit], dict[str, str]]:
     """The units of a units table or dataset, and the image URL of each page they sit on.
 
-    A dataset directory is read for both tables; a units table that travels alone has no pages, so
-    `images` supplies them, and it overrides what the directory said.
+    A dataset directory is read for both tables; a units file takes the pages table beside it, which
+    is where the importer leaves one. `images` overrides both, for a table that travels alone.
     """
     path = Path(path)
-    page_images: dict[str, str] = {}
     if path.is_dir():
         dataset = tables.Dataset(path)
         records = list(dataset.read("units"))
-        if dataset.tables["pages"] is not None:
-            page_images = {page.id: page.image for page in dataset.read("pages")}
+        pages = dataset.tables["pages"]
     else:
         records = list(tables.read(path, Unit))
+        pages = path.with_name("pages.parquet")
+    page_images: dict[str, str] = {}
+    if pages is not None and Path(pages).is_file():
+        page_images = {page.id: page.image for page in tables.read(pages, Page)}
     page_images.update(images or {})
     return records, page_images
 

@@ -121,7 +121,7 @@ def images_fetch(
     from . import images
 
     wanted = pages_filter.split(",") if pages_filter else None
-    fetched, skipped, failed = images.fetch_pages(pages, limit=limit, document=document, pages=wanted)
+    fetched, skipped, failed = images.fetch_pages(pages, limit=limit, document=document, pages_filter=wanted)
     typer.echo(f"{fetched} fetched, {skipped} already cached, {failed} failed")
     if failed:
         raise typer.Exit(1)
@@ -186,6 +186,111 @@ def import_codh(
     tables.write_table(out / "units.parquet", units)
     tables.Dataset(out).merge([], out, command=f"atlas import codh {zip_path}")
     typer.echo(f"{document.id}: {len(pages)} pages, {len(units)} units -> {out}")
+
+
+# Pilot and evaluation ---------------------------------------------------------------------------
+
+
+@pilot_app.command("export")
+def pilot_export(
+    out: Annotated[Path, typer.Argument(help="directory for the page packages")],
+    directory: Annotated[Path, typer.Option(help="dataset directory holding the lines")] = Path("work/honkoku-lines"),
+    group: Annotated[str | None, typer.Option(help="calibration or heldout")] = None,
+    items: Annotated[str | None, typer.Option(help="comma-separated item ids")] = None,
+    page_ids: Annotated[str | None, typer.Option("--pages", help="comma-separated page ids")] = None,
+    no_images: Annotated[bool, typer.Option("--no-images", help="leave the page images out")] = False,
+) -> None:
+    """Write one package per selected pilot page."""
+    from . import pilot
+
+    counts = pilot.export(
+        out,
+        directory,
+        group=group,
+        items=items.split(",") if items else None,
+        pages=page_ids.split(",") if page_ids else None,
+        images=not no_images,
+    )
+    for name, value in counts.items():
+        typer.echo(f"{name:<8} {value:>6}")
+    typer.echo(f"-> {out}")
+
+
+@eval_app.command("alignment")
+def eval_alignment(
+    truth: Annotated[Path, typer.Option(help="dataset directory of adjudicated units")],
+    pred: Annotated[Path, typer.Option(help="dataset directory of predicted units")],
+    pages: Annotated[str | None, typer.Option(help="comma-separated page ids")] = None,
+    policy: Annotated[str, typer.Option(help="equivalence policy for the label comparison")] = "align-v1",
+    out: Annotated[Path | None, typer.Option(help="write the Markdown here instead of stdout")] = None,
+) -> None:
+    """Match predicted units to truth units and print the measures."""
+    from . import evaluate, refs, tables
+
+    wanted = set(pages.split(",")) if pages else None
+    truth_units = _units_of(tables.Dataset(truth), wanted)
+    predicted_units = _units_of(tables.Dataset(pred), wanted)
+
+    def label(unit: object) -> str:
+        text = unit.unicode or unit.reading or ""
+        if not unit.unicode:
+            return text
+        try:
+            chars = refs.from_code_points([unit.unicode])
+        except (ValueError, KeyError):
+            return text
+        return min(refs.equivalents(chars, policy) or {chars}, default=chars)
+
+    report = evaluate.compare(truth_units, predicted_units, label_of=label)
+    markdown = report.markdown()
+    if out:
+        out.write_text(markdown + "\n", encoding="utf-8")
+        typer.echo(f"-> {out}")
+    else:
+        typer.echo(markdown)
+
+
+def _units_of(dataset: tables.Dataset, pages: set[str] | None) -> list:
+    if dataset.tables["units"] is None:
+        raise typer.BadParameter("the directory has no units table")
+    found = []
+    for batch in dataset.scan("units"):
+        found.extend(unit for unit in batch if pages is None or unit.page_id in pages)
+    return found
+
+
+# Review -----------------------------------------------------------------------------------------
+
+
+@review_app.command("serve")
+def review_serve(
+    directory: Annotated[Path, typer.Argument(help="dataset directory to review")],
+    port: Annotated[int, typer.Option(help="port to listen on")] = 8770,
+    host: Annotated[str, typer.Option(help="interface to bind")] = "127.0.0.1",
+) -> None:
+    """Serve the review interface and its API over one dataset directory."""
+    from .review import server
+
+    server.serve(directory, port=port, host=host)
+
+
+@review_app.command("apply")
+def review_apply(directory: Annotated[Path, typer.Argument(help="dataset directory to write back")]) -> None:
+    """Write the reviewed state to the tables and the events to reviews.jsonl."""
+    from .review import store
+
+    for name, rows in store.apply(directory).items():
+        typer.echo(f"{name:<12} {rows:>10}")
+
+
+@review_app.command("replay")
+def review_replay(directory: Annotated[Path, typer.Argument(help="dataset directory to rebuild")]) -> None:
+    """Rebuild the review state from the tables and the log and check that it matches."""
+    from .review import store
+
+    counts = store.replay(directory)
+    for name, rows in counts.items():
+        typer.echo(f"{name:<12} {rows:>10}")
 
 
 for name, module in (

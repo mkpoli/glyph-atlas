@@ -506,21 +506,35 @@ def test_write_crops_writes_one_jpeg_per_boxed_unit(tmp_path: Path) -> None:
     page.write_bytes(png_quadrants())
     url = "https://example.org/page.png"
     images.register(page, url)
-    table = tmp_path / "units.parquet"
     tables.write(
-        table,
-        [
-            Unit(id="codh:1:2:0", document_id="codh:1", page_id="codh:1:2", box=Box(x=45, y=5, w=10, h=10)),
-            Unit(id="codh:1:2:1", document_id="codh:1", page_id="codh:1:2"),
-        ],
-        Unit,
+        tmp_path / "pages.parquet",
+        [Page(id="codh:1:2", document_id="codh:1", seq=0, image=url, width=80, height=80)],
+        Page,
     )
+    units = [
+        Unit(id="codh:1:2:0", document_id="codh:1", page_id="codh:1:2", box=Box(x=45, y=5, w=10, h=10)),
+        Unit(id="codh:1:2:1", document_id="codh:1", page_id="codh:1:2"),
+    ]
+    table = tmp_path / "units.parquet"
+    tables.write(table, units, Unit)
     out = tmp_path / "crops"
 
-    written, skipped = images.write_crops(table, out, images={"codh:1:2": url})
+    written, skipped = images.write_crops(table, out)  # the pages table beside the units table
 
     assert (written, skipped) == (1, 1)
     crop_path = out / "codh_1_2_0.jpg"
     with Image.open(crop_path) as cut:
         assert cut.size == (10, 10)
     assert images.write_crops(table, out, images={"codh:1:2": url}) == (0, 2)  # both skipped now
+
+
+def test_write_crops_of_a_units_table_alone_skips_everything(tmp_path: Path) -> None:
+    alone = tmp_path / "alone" / "units.parquet"
+    alone.parent.mkdir()
+    tables.write(
+        alone,
+        [Unit(id="codh:1:2:0", document_id="codh:1", page_id="codh:1:2", box=Box(x=0, y=0, w=4, h=4))],
+        Unit,
+    )
+
+    assert images.write_crops(alone, tmp_path / "crops") == (0, 1)

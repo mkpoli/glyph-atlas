@@ -13,7 +13,9 @@ script that writes it, so importing the module never fails over a table that has
 
 A policy is a row of `data/vocab/equivalence-policies.yaml` naming the relations it composes;
 `strict` keeps only Unicode compatibility mappings, `align-v1` adds the kana, 新旧字体 and 異体字
-relations the alignment uses. `to_code_points` and `from_code_points` convert between text and
+relations the alignment uses. A relation links characters pairwise and the links carry across a
+policy, except that a kana form with several readings stands for each of them without making the
+readings stand for one another. `to_code_points` and `from_code_points` convert between text and
 `U+XXXX` strings.
 """
 
@@ -415,7 +417,11 @@ def _components(name: str) -> dict[str, frozenset[str]]:
 
 
 def equivalents(char: str, policy: str) -> set[str]:
-    """The characters `char` may stand for under `policy`, itself included."""
+    """The characters `char` may stand for under `policy`, itself included.
+
+    A character that no table has stands only for itself. A string of several characters stands
+    for itself alone.
+    """
     if len(char) != 1:
         return {char} if char else set()
     result = set(_components(policy).get(char, ())) | {char}

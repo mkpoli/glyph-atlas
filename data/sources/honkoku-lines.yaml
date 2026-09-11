@@ -5,6 +5,7 @@ kind: line-dataset
 url: https://huggingface.co/datasets/yuta1984/honkoku-lines
 doi: 10.5281/zenodo.20656128
 version: "2.0"
+revision: 39a343d44e5b87018315eba3eadb97136a48cc9a
 released: 2026-08-05
 licence: CC-BY-SA-4.0
 licence_evidence: https://huggingface.co/datasets/yuta1984/honkoku-lines
