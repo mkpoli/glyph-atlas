@@ -78,19 +78,28 @@ class Tile:
 
 
 def read_splits(path: Path) -> dict[str, str]:
-    """`bid` to production type, from the split table T20 commits."""
+    """`bid` to production type, from the split table T20 commits.
+
+    The file opens with comment lines, then a tab separated `bid, title, production, split` header,
+    as `scripts/build_codh_split.py` writes it.
+    """
     if not path.exists():
         return {}
     rows: dict[str, str] = {}
+    columns: dict[str, int] | None = None
     with path.open(encoding="utf-8", newline="") as handle:
-        header = handle.readline().rstrip("\n").split("\t")
-        if "bid" not in header or "production" not in header:
-            return {}
-        bid, production = header.index("bid"), header.index("production")
         for line in handle:
-            fields = line.rstrip("\n").split("\t")
-            if len(fields) > max(bid, production):
-                rows[fields[bid]] = fields[production]
+            line = line.rstrip("\n")
+            if not line or line.startswith("#"):
+                continue
+            fields = line.split("\t")
+            if columns is None:
+                if "bid" not in fields or "production" not in fields:
+                    return {}
+                columns = {name: index for index, name in enumerate(fields)}
+                continue
+            if len(fields) > max(columns["bid"], columns["production"]):
+                rows[fields[columns["bid"]]] = fields[columns["production"]]
     return rows
 
 
@@ -172,7 +181,9 @@ def read_split(
 
     A tile whose annotations carry `source_unit_id` can be joined back into the source boxes of its
     page. A split that lists materialised tiles instead of pages is read from them; otherwise the
-    page and the origin are kept and the tile is cut when the run reaches it.
+    page and the origin are kept and the tile is cut when the run reaches it. `splits` is the table
+    of `bid` to production type; a tile whose book the table disagrees about stops the run, since
+    the production breakdown of the metrics rests on it.
     """
     document = json.loads(path.read_text(encoding="utf-8"))
     images = {int(entry["id"]): entry for entry in document.get("images", [])}
@@ -184,6 +195,12 @@ def read_split(
     for key, entry in images.items():
         size = int(entry.get("tile_size", entry.get("width", detect.TILE)))
         origin = _origin_of(entry)
+        stated = entry.get("production")
+        listed = tables.get(str(entry.get("bid")))
+        if stated and listed and str(stated) != listed:
+            raise ValueError(
+                f"{path}: {entry.get('bid')} is {stated} in the split and {listed} in data/splits/codh.tsv"
+            )
         page: Path | None = None
         file: Path | None = None
         named = entry.get("tile_path") or entry.get("tile_file")
@@ -423,6 +440,74 @@ def page_extent(tiles: list[Tile]) -> tuple[int, int]:
     )
 
 
+def tile_curve(
+    tiles: list[Tile],
+    detections: list[tuple[np.ndarray, np.ndarray]],
+    grid: list[float],
+) -> list[dict[str, float]]:
+    """Tile precision, recall, F1 and mean IoU at every score of `grid`.
+
+    The matching runs once per tile, in descending score order, and every grid point reads a prefix
+    of it, so a whole curve costs one pass. The scores of a freshly initialised classification head
+    are compressed near zero and climb as the head learns, so a curve at a fixed threshold says
+    little about a run; the curve says where the model is.
+    """
+    curves = {float(score): Tally() for score in grid}
+    for tile, (boxes, scores) in zip(tiles, detections, strict=True):
+        truth = tile.boxes
+        if len(scores) == 0:
+            for tally in curves.values():
+                tally.fn += len(truth)
+            continue
+        taken = np.zeros(len(truth), dtype=bool)
+        order = np.argsort(-scores, kind="stable")
+        matched = np.zeros(len(order), dtype=bool)
+        ious = np.zeros(len(order), dtype=np.float64)
+        for position, index in enumerate(order):
+            if not len(truth):
+                break
+            overlaps = detect.iou(boxes[index], truth)
+            overlaps[taken] = 0.0
+            best = int(np.argmax(overlaps))
+            if overlaps[best] >= IOU:
+                taken[best] = True
+                matched[position] = True
+                ious[position] = float(overlaps[best])
+        # Compare in float32, the width the scores and the thresholds are used at everywhere else,
+        # so that a detection scored exactly at a grid point is kept rather than lost to the last
+        # bit of a float64 conversion.
+        ordered = np.asarray(scores, dtype=np.float32)[order]
+        hits = np.cumsum(matched)
+        for score, tally in curves.items():
+            count = int(np.searchsorted(-ordered, -np.float32(score), side="right"))
+            tp = int(hits[count - 1]) if count else 0
+            tally.tp += tp
+            tally.fp += count - tp
+            tally.fn += len(truth) - tp
+            if tp:
+                tally.ious.extend(ious[:count][matched[:count]].tolist())
+    return [{"score": float(score), **curves[float(score)].rates()} for score in grid]
+
+
+def recall_at(curve: list[dict[str, float]], precision: float) -> dict[str, float]:
+    """The largest recall on the curve among the points whose precision reaches `precision`.
+
+    This is the shape the pilot's acceptance is written in, joint precision at a coverage, so a
+    curve reported this way is what the alignment is tuned against. When no point reaches the
+    precision, the recall is zero and `score` is None.
+    """
+    reaching = [row for row in curve if row["precision"] >= precision]
+    if not reaching:
+        return {"precision_target": precision, "recall": 0.0, "score": None, "precision": 0.0}
+    best = max(reaching, key=lambda row: (row["recall"], row["score"]))
+    return {
+        "precision_target": precision,
+        "recall": best["recall"],
+        "score": best["score"],
+        "precision": best["precision"],
+    }
+
+
 def tile_metrics(tiles: list[Tile], detections: list[tuple[np.ndarray, np.ndarray]]) -> Tally:
     """Matches of the tile detections against the tile annotations."""
     tally = Tally()
@@ -543,6 +628,19 @@ def build_model(config: dict[str, Any]) -> Any:
         num_queries=int(model["num_queries"]),
         ignore_mismatched_sizes=bool(model["ignore_mismatched_sizes"]),
     )
+
+
+def read_state(path: Path) -> dict[str, Any]:
+    """What a checkpoint holds: the model state, and for a run of this script the rest of the run.
+
+    A bare state dictionary is accepted as well, so that weights saved by hand can be measured.
+    """
+    if not path.exists():
+        raise SystemExit(f"{path} is missing")
+    state = torch.load(path, map_location="cpu", weights_only=False)
+    if isinstance(state, dict) and "model" in state:
+        return state
+    return {"model": state}
 
 
 def optimizer_for(model: Any, config: dict[str, Any]) -> torch.optim.Optimizer:
@@ -692,6 +790,12 @@ def main() -> None:
     parser.add_argument("--precision", choices=["bf16", "fp16", "fp32"], default=None)
     parser.add_argument("--device", default=None, help="cuda, cuda:1, cpu")
     parser.add_argument("--resume", type=Path, default=None)
+    parser.add_argument(
+        "--weights",
+        type=Path,
+        default=None,
+        help="checkpoint to measure with --test; --resume names one too",
+    )
     parser.add_argument("--test", action="store_true", help="measure the val and test splits and stop")
     parser.add_argument("--profile", action="store_true", help="time a few steps and stop")
     parser.add_argument("--profile-steps", type=int, default=10)
@@ -737,15 +841,36 @@ def main() -> None:
         device = torch.device(args.device or "cuda")
     else:
         device = torch.device("cpu")
-    model = build_model(config).to(device)
+    state = read_state(args.resume) if args.resume is not None else None
+    if args.test and state is None:
+        if args.weights is None:
+            raise SystemExit(
+                "--test measures a trained detector: pass --weights <checkpoint>, or --resume "
+                "<checkpoint> to name the run's last one. Without either the numbers would come "
+                "from the untrained checkpoint."
+            )
+        state = read_state(args.weights)
+    model = build_model(config)
+    if state is not None and (args.test or args.resume is not None):
+        model.load_state_dict(state["model"])
+    model = model.to(device)
     print(
         f"{config['model']['checkpoint']} on {device}, "
         f"{sum(p.numel() for p in model.parameters()) / 1e6:.1f}M parameters, "
-        f"num_queries {config['model']['num_queries']}, {precision}",
+        f"num_queries {config['model']['num_queries']}, {precision}"
+        + (f", weights {args.weights or args.resume}" if args.test else ""),
         flush=True,
     )
     metrics_path = out / "metrics.json"
     report: dict[str, Any] = {"config": str(args.config), "epochs": [], "test": None}
+    if metrics_path.exists():
+        # A resumed run keeps the epochs an earlier one wrote, so the curve in the file is the whole
+        # curve rather than the part since the last restart.
+        previous = json.loads(metrics_path.read_text(encoding="utf-8"))
+        report["epochs"] = previous.get("epochs", [])
+        report["test"] = previous.get("test")
+        if "dense" in previous:
+            report["dense"] = previous["dense"]
 
     if args.test:
         if metrics_path.exists():
@@ -822,9 +947,7 @@ def main() -> None:
     scheduler = scheduler_for(optimizer, config, steps)
     scaler = torch.amp.GradScaler("cuda", enabled=precision == "fp16")
     start = 0
-    if args.resume is not None:
-        state = torch.load(args.resume, map_location=device, weights_only=False)
-        model.load_state_dict(state["model"])
+    if state is not None and args.resume is not None:
         optimizer.load_state_dict(state["optimizer"])
         scheduler.load_state_dict(state["scheduler"])
         start = int(state["epoch"]) + 1
@@ -851,7 +974,7 @@ def main() -> None:
                 scaler.update()
                 optimizer.zero_grad(set_to_none=True)
                 scheduler.step()
-            if step % 50 == 0 or step == len(train_loader):
+            if step % 50 == 0 or step == len(train_loader) or args.profile:
                 print(
                     f"epoch {epoch} step {step}/{len(train_loader)} loss {running / seen:.4f} "
                     f"{(time.time() - started) / seen:.2f}s/it {peak_vram()}",
@@ -860,35 +983,53 @@ def main() -> None:
             if args.profile and step >= args.profile_steps:
                 break
         if args.profile:
+            done = min(args.profile_steps, len(train_loader))
             print(
-                f"profiled {min(args.profile_steps, len(train_loader))} steps at batch "
-                f"{batch_size}, precision {precision}, {peak_vram()}",
+                f"profiled {done} steps at batch {batch_size}, precision {precision}, "
+                f"{(time.time() - started) / max(done, 1):.2f}s/it, {peak_vram()}",
                 flush=True,
             )
             return
 
+        floor = min(float(value) for value in evaluation["score_grid"])
         detections = model_boxes(
             model,
             val_tiles,
             val_loader,
             precision=precision,
-            score=float(evaluation["score"]),
+            score=floor,
             max_per_tile=max_per_tile,
         )
-        rates = tile_metrics(val_tiles, detections).rates()
-        rates["loss"] = running / seen
-        rates["seconds"] = time.time() - started
+        curve = tile_curve(val_tiles, detections, [float(v) for v in evaluation["score_grid"]])
+        chosen = max(curve, key=lambda row: (row["f1"], row["score"]))
+        joint = recall_at(curve, float(evaluation["precision_target"]))
+        rates = {
+            **chosen,
+            "loss": running / seen,
+            "seconds": time.time() - started,
+            "recall_at_precision": joint,
+            "curve": curve,
+        }
+        report["epochs"] = [row for row in report["epochs"] if row.get("epoch") != epoch]
         report["epochs"].append({"epoch": epoch, **rates})
+        report["epochs"].sort(key=lambda row: row["epoch"])
         print(
-            f"epoch {epoch}: loss {rates['loss']:.4f} precision {rates['precision']:.4f} "
-            f"recall {rates['recall']:.4f} f1 {rates['f1']:.4f} mean IoU {rates['mean_iou']:.4f}",
+            f"epoch {epoch}: loss {rates['loss']:.4f} | best F1 {rates['f1']:.4f} at score "
+            f"{rates['score']:.3f}: precision {rates['precision']:.4f} recall {rates['recall']:.4f} "
+            f"mean IoU {rates['mean_iou']:.4f} | recall {joint['recall']:.4f} at precision "
+            f"{joint['precision']:.4f}",
             flush=True,
         )
-        torch.save(snapshot(model, optimizer, scheduler, config, epoch, rates), out / "last.pt")
+        state_now = snapshot(model, optimizer, scheduler, config, epoch, rates)
+        torch.save(state_now, out / f"epoch-{epoch:02d}.pt")
+        torch.save(state_now, out / "last.pt")
         if rates["f1"] > best:
             best = rates["f1"]
-            torch.save(snapshot(model, optimizer, scheduler, config, epoch, rates), out / "best.pt")
-            print(f"epoch {epoch}: best F1 {best:.4f} -> {out / 'best.pt'}", flush=True)
+            torch.save(state_now, out / "best.pt")
+            print(
+                f"epoch {epoch}: best F1 {best:.4f} at score {rates['score']:.2f} -> {out / 'best.pt'}",
+                flush=True,
+            )
         metrics_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(f"-> {metrics_path}", flush=True)
 

@@ -64,9 +64,16 @@ training:
   checkpoint_every: 1
 
 evaluation:
-  # the operating point, chosen on val before the test split is looked at
-  score: 0.3
-  score_grid: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+  # the operating point, chosen on val before the test split is looked at. The grid is dense below
+  # 0.2 because RT-DETR's class head starts at a 0.01 prior and its scores climb toward the IoU,
+  # so in the early epochs almost all of the head's mass is under 0.2 and a coarse grid would put
+  # the best F1 off the grid entirely. 0.7 and 0.9 stay in to bracket a converged head.
+  # the operating point for the shipped checkpoint, chosen on val by --test (Detector's own default
+  # of 0.3 is the card's signature, not this checkpoint's operating point)
+  score: 0.02
+  score_grid: [0.005, 0.01, 0.015, 0.02, 0.03, 0.05, 0.075, 0.1, 0.15, 0.2, 0.3, 0.5, 0.7, 0.9]
+  # the curve is also read as recall at this precision, the form the pilot is measured in
+  precision_target: 0.9
   nms: 0.5
   max_per_tile: 1500
   iou: 0.5
