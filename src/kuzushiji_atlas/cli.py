@@ -158,6 +158,51 @@ def rights_table(
         typer.echo(markdown)
 
 
+@rights_app.command("resolve")
+def rights_resolve(
+    directory: Annotated[Path, typer.Argument(help="dataset directory to reconcile")],
+    limit: Annotated[int | None, typer.Option(help="most manifests to fetch in this run")] = None,
+    recheck: Annotated[bool, typer.Option("--recheck", help="refetch the holder terms pages")] = False,
+    out: Annotated[Path | None, typer.Option(help="write the recheck details here")] = None,
+) -> None:
+    """Gather the rights evidence of every document and set its image rights by precedence."""
+    from . import reconcile
+
+    counts = reconcile.resolve_directory(directory, limit=limit, recheck=recheck, out=out)
+    for name, value in counts.items():
+        typer.echo(f"{name:<18} {value:>8}")
+
+
+@rights_app.command("report")
+def rights_report(
+    directory: Annotated[Path, typer.Argument(help="dataset directory to report on")],
+    out: Annotated[Path | None, typer.Option(help="write the Markdown here instead of stdout")] = None,
+    limit: Annotated[int | None, typer.Option(help="most disagreement rows to list")] = None,
+) -> None:
+    """Print the records by licence and by eligibility, with the disagreements listed."""
+    from . import reconcile
+
+    markdown = reconcile.report(directory, limit=limit)
+    if out:
+        out.write_text(markdown, encoding="utf-8")
+        typer.echo(f"-> {out}")
+    else:
+        typer.echo(markdown)
+
+
+@rights_app.command("attribution")
+def rights_attribution(
+    directory: Annotated[Path, typer.Argument(help="dataset directory to credit")],
+    out: Annotated[Path, typer.Option(help="write ATTRIBUTION.md here")] = Path("ATTRIBUTION.md"),
+) -> None:
+    """Write the credit lines and obligations of every source and holder present."""
+    from . import reconcile
+
+    markdown = reconcile.attribution(directory)
+    out.write_text(markdown, encoding="utf-8")
+    typer.echo(f"{len(markdown.splitlines())} lines -> {out}")
+
+
 # Import -----------------------------------------------------------------------------------------
 
 

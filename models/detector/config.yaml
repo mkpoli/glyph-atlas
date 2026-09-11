@@ -1,0 +1,98 @@
+# Character detector: the framework, the checkpoint and the preprocessing that train.py,
+# export_onnx.py and kuzushiji_atlas.detect read. The versions are the ones the 2026-09-11
+# installation spike verified on the workstation (see SPIKE.md); the training hyperparameters are
+# the starting point the card names and are to be raised after profiling.
+
+framework: transformers
+# RT-DETR through transformers, Apache-2.0. mmdetection with RTMDet-s was tried first and rejected:
+# mmcv 2.1.0 has no wheel for Python 3.14 and its source build fails on this machine. See SPIKE.md.
+
+model:
+  checkpoint: PekingU/rtdetr_r18vd
+  revision: ac77a11ff0170a41b771c03264987f8ce2b0d753
+  architecture: RTDetrForObjectDetection
+  backbone: resnet18
+  # class-agnostic: one label, "character"
+  num_labels: 1
+  # raised above the densest tile's box count of the T20 statistics; train.py refuses to start when
+  # the training split holds a tile with more annotations than this
+  num_queries: 600
+  # the checkpoint's classification head is dropped and reinitialised for one label
+  ignore_mismatched_sizes: true
+  licence: Apache-2.0
+
+preprocessing:
+  # T20 geometry, shared with src/kuzushiji_atlas/detect.py
+  tile: 1024
+  overlap: 128
+  pad: 255
+  # RGB, scaled to [0, 1], ImageNet statistics, no resizing: a tile is already 1024 square
+  mean: [0.485, 0.456, 0.406]
+  std: [0.229, 0.224, 0.225]
+
+data:
+  # written by scripts/build_detector_data.py (T20)
+  directory: work/detector
+  splits:
+    train: train.json
+    val: val.json
+    test: test.json
+  # the frozen split by book, for the print and manuscript breakdown of the test metrics
+  split_table: data/splits/codh.tsv
+  image_cache: cache/images
+  # tiles are cut from the cached page at the recorded origin unless the split points at a
+  # materialised tile under work/detector/tiles/
+  augment: brightness_contrast
+
+training:
+  # RT-DETR converges with far fewer epochs than a from-scratch detector; the card's budget is
+  # 16 GB VRAM and mixed precision. 8 x 2 is the profiled point: 7.77 GiB peak against 4.14 GiB at
+  # batch 4 and 11.40 GiB at batch 12, on 1024 tiles with num_queries 600
+  epochs: 24
+  batch_size: 8
+  grad_accumulation: 2
+  optimizer: adamw
+  lr: 0.0001
+  backbone_lr: 0.00001
+  weight_decay: 0.0001
+  warmup_steps: 500
+  scheduler: cosine
+  precision: bf16
+  grad_clip: 0.1
+  num_workers: 8
+  seed: 0
+  checkpoint_every: 1
+
+evaluation:
+  # the operating point, chosen on val before the test split is looked at
+  score: 0.3
+  score_grid: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+  nms: 0.5
+  max_per_tile: 1500
+  iou: 0.5
+
+artifacts:
+  # checkpoints and exports are not committed
+  directory: models/detector/artifacts
+  export: models/detector/artifacts/detector.onnx
+  # a tile is always 1024 square, so the export fixes the batch and the size instead of making them
+  # dynamic; the legacy exporter writes one self-contained file, the dynamo one a separate .data
+  batch: 1
+  exporter: legacy
+  opset: 17
+
+versions:
+  python: "3.14.0"
+  torch: "2.14.0+cu130"
+  torchvision: "0.29.0+cu130"
+  transformers: "5.17.0"
+  tokenizers: "0.23.2"
+  safetensors: "0.8.0"
+  onnx: "1.22.0"
+  onnxscript: "0.7.2"
+  onnxruntime-gpu: "1.30.0"
+  numpy: "2.5.3"
+  pillow: "12.3.0"
+  pyyaml: "6.0.3"
+  cuda: "13.0"
+  driver: "580.97"

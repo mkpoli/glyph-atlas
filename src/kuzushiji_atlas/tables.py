@@ -255,12 +255,13 @@ def write_table(
     needed for an empty table, whose file must carry every column.
     """
     if model is None:
-        for record in records:
-            model = type(record)
-            records = _prepend(record, records)
-            break
-        else:
-            raise ValueError("write_table needs a model when there are no records")
+        iterator = iter(records)
+        try:
+            first = next(iterator)
+        except StopIteration:
+            raise ValueError("write_table needs a model when there are no records") from None
+        model = type(first)
+        records = _prepend(first, iterator)
     return write(path, records, model, **kwargs)
 
 

@@ -22,6 +22,20 @@ atlas = "kuzushiji_atlas.cli:app"
 [project.optional-dependencies]
 data = ["odfpy>=1.4"]
 ocr = ["onnxruntime-gpu>=1.22", "numpy>=2", "opencv-python-headless>=4.11"]
+# T21: RT-DETR through transformers, export to ONNX and the parity check. torch 2.14 is the first
+# build with a cp314 wheel that runs on the Blackwell card (CUDA 13.0 wheels); see
+# models/detector/SPIKE.md.
+detector = [
+    "torch>=2.14",
+    "torchvision>=0.29",
+    "transformers>=5.17",
+    "onnx>=1.20",
+    "onnxscript>=0.7",
+    "onnxruntime-gpu>=1.22",
+    "numpy>=2",
+    # the RT-DETR Hungarian matcher
+    "scipy>=1.16",
+]
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.12", "cffconvert>=2.0"]
