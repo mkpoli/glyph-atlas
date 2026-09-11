@@ -38,10 +38,14 @@ USER_AGENT = "kuzushiji-atlas (+https://github.com/mkpoli/kuzushiji-atlas)"
 PAUSE = 3.0
 LICENCES = {"PDM-1.0", "CC-BY-4.0"}
 BANDS = [(0, 12, "sparse"), (12, 22, "medium"), (22, 10_000, "dense")]
+# The production type of a book, as a manifest states it. A word has to stand on its own: 写 alone
+# is 写本 and 刊 alone is 版本, while 写植 or 週刊 are not, so a match is the whole value or a word
+# separated from the rest by a space or one of the marks the manifests use.
+STANDALONE = r"(?:^|[\s・，,（）()／/]){}(?:$|[\s・，,（）()／/])"
 PRODUCTION = [
     (re.compile(r"活字|活版"), "movable-type"),
-    (re.compile(r"写本|自筆|稿本|模写|筆写"), "manuscript"),
-    (re.compile(r"版本|刊本|整版|板本|刊"), "woodblock"),
+    (re.compile(r"写本|自筆|稿本|模写|筆写|" + STANDALONE.format("写")), "manuscript"),
+    (re.compile(r"版本|刊本|整版|板本|" + STANDALONE.format("刊")), "woodblock"),
 ]
 STOP = {"の", "に", "は", "を", "と", "て", "し", "た", "、", "。"}
 
@@ -98,14 +102,25 @@ def manifest_fields(document: dict | None) -> dict[str, str]:
     return fields
 
 
-def production_of(fields: dict[str, str], title: str) -> str:
+def production_of(fields: dict[str, str], title: str, document: dict | None = None) -> str:
+    """The production type the manifest or the title states, else `unknown`.
+
+    The metadata labels are read first (a NIJL manifest says 写 or 刊 in `type`, a 国文研 one in
+    `comment`), then the whole manifest text, then the title. Anything else stays unknown rather than
+    being guessed: a page whose production nobody states is not evidence either way.
+    """
+    for pattern, name in PRODUCTION:
+        if pattern.search(title):
+            return name
     statement = " ".join(f"{key} {value}" for key, value in fields.items())
     for pattern, name in PRODUCTION:
         if pattern.search(statement):
             return name
-    for pattern, name in PRODUCTION:
-        if pattern.search(title):
-            return name
+    if document is not None:
+        blob = json.dumps(document, ensure_ascii=False)
+        for pattern, name in PRODUCTION:
+            if pattern.search(blob):
+                return name
     return "unknown"
 
 
@@ -182,8 +197,9 @@ def main() -> None:
         # to fill the groups: a stratum is taken before it repeats, and a host is taken before it
         # repeats, until the round is full or the candidates run out.
         for row in ordered:
-            fields = manifest_fields(manifest(client, row["iiif_manifest_url"], pauses))
-            row["production"] = production_of(fields, row["title"])
+            document = manifest(client, row["iiif_manifest_url"], pauses)
+            fields = manifest_fields(document)
+            row["production"] = production_of(fields, row["title"], document)
             row["manifest_holder"] = fields.get("DCTERMS.relation", "")
             row["pages"] = [
                 (index, count, url)
