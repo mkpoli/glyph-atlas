@@ -169,8 +169,12 @@ is running with the real numbers to be filled in here when the bounded run finis
 
 ### T22 Coarse character classifier
 
-Status: the manifests and crops are built (1,329 classes, 559,925 train crops, 29,159 test crops)
-and the training code exists; training waits for the detector to release the GPU. Metrics to be
+Status: the manifests are built on the full CODH tables — 917,309 train, 44,782 val and 124,196
+test crops over 1,594 classes (1,593 code points with at least 20 train crops, plus `other`), with
+1,086,287 crops on disk, 1,077,621 cut from the materialised tiles and 8,666 from page images. The
+preprocessing is grey, padded to square and resized to 96x96. A smoke-trained model exported to
+ONNX agrees with PyTorch on 200 test crops to 1.9e-6 and top-1 for all 200. Training is queued
+behind the detector (12 epochs, about nine minutes an epoch, 1.2 GiB peak) and its metrics will be
 filled in here.
 
 ### T23 Alignment
