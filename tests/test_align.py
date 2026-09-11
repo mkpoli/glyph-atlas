@@ -151,3 +151,54 @@ def _weights(**overrides) -> dict[str, float]:
     base = {"skip-token": 8.0, "skip-detection": 6.0, "split": 12.0, "merge": 14.0, "gap": 3.0}
     base.update(overrides)
     return base
+
+
+def test_run_directory_writes_only_its_own_units(tmp_path, monkeypatch):
+    """The runner replaces its own run's units and leaves another writer's alone."""
+    from PIL import Image
+
+    from kuzushiji_atlas import align, images, koji, tables
+    from kuzushiji_atlas.schema import Box, Document, Line, Page, Unit
+
+    page_file = tmp_path / "page.jpg"
+    Image.new("RGB", (100, 100), "white").save(page_file, format="JPEG")
+    images.register(page_file, "file:page.jpg", root=tmp_path / "cache" / "images")
+
+    document = Document(id="d1", title="t")
+    page = Page(id="d1:0", document_id="d1", seq=0, image="file:page.jpg", width=100, height=100)
+    line = Line(
+        id="d1:0:L0", page_id="d1:0", seq=0, box=Box(x=0, y=0, w=100, h=100),
+        text_raw="漢字", text=koji.plain("漢字"),
+    )
+    tables.write(tmp_path / "documents.parquet", [document], Document)
+    tables.write(tmp_path / "pages.parquet", [page], Page)
+    tables.write(tmp_path / "lines.parquet", [line], Line)
+
+    class Stub:
+        def boxes(self, image):
+            return [(Box(x=40, y=10, w=18, h=18), 0.9), (Box(x=10, y=10, w=18, h=18), 0.9)]
+
+        def score_set(self, crop, code_points):
+            return 0.5
+
+    run = align.Run(name="runner", accept=0.0, margin=0.0)
+    with monkeypatch.context() as patched:
+        patched.setenv("KUZUSHIJI_ATLAS_CACHE", str(tmp_path / "cache"))
+        first = align.run_directory(tmp_path, run, detector=Stub(), classifier=Stub())
+    assert first["pages"] == 1 and first["lines"] == 1 and first["units"] == 2
+
+    written = tables.read(tmp_path / "units.parquet", Unit)
+    assert len(written) == 2
+    assert all(unit.document_id == "d1" for unit in written), "the runner fills document_id from the page"
+    assert [unit.box.x for unit in written] == [40, 10], "reading order is right to left on a vertical line"
+    assert all(run.fingerprint() in unit.id for unit in written)
+
+    # A unit from another writer survives a second run of this one.
+    foreign = Unit(id="d1:0:L0:m1", document_id="d1", page_id="d1:0", line_id="d1:0:L0", seq=99,
+                   box=Box(x=70, y=10, w=5, h=5), method="manual")
+    tables.write(tmp_path / "units.parquet", [*written, foreign], Unit)
+    with monkeypatch.context() as patched:
+        patched.setenv("KUZUSHIJI_ATLAS_CACHE", str(tmp_path / "cache"))
+        align.run_directory(tmp_path, run, detector=Stub(), classifier=Stub())
+    ids = [unit.id for unit in tables.read(tmp_path / "units.parquet", Unit)]
+    assert "d1:0:L0:m1" in ids and len(ids) == 3, "the run does not touch what it did not write"
