@@ -212,9 +212,12 @@ Acceptance: `data/pilot/items.tsv` and the protocol committed; `atlas pilot expo
 packages for the calibration pages.
 
 Measured: `data/pilot/items.tsv` selects 10 items and 472 pages across both eligible licences and
-six hosts; `docs/implementation/pilot-protocol.md` is committed; `atlas pilot export
-/tmp/pilot-calibration --group calibration` wrote 20 packages holding 212 lines with their images,
-and `atlas pilot images` fetched the 20 page images (4.3 MB each on average).
+six hosts, and now carries the production type its manifests state, which gives the pilot two
+manuscripts alongside the prints; `docs/implementation/pilot-protocol.md` is committed with the
+interface's known limits. `atlas pilot export --group calibration` wrote 20 packages holding 212
+lines with their images, and `atlas pilot images --group calibration` fetched those 20 pages (4.3 MB
+each on average). For the held-out group `atlas pilot images --per-item 10` fetched 100 pages (64
+new, 36 already in the cache, none failed) and their packages are written the same way.
 
 ### T30 Synthetic hentaigana renderings
 
