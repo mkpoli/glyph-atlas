@@ -1,0 +1,22 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+node_modules/
+dist/
+build/
+# fetched upstream material and derived crops live outside git
+cache/
+work/
+out/
+logs/
+*.zip
+*.parquet
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.tif
+*.tiff
+.DS_Store

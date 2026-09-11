@@ -1,0 +1,56 @@
+[project]
+name = "glyph-atlas"
+version = "0.0.1"
+description = "Character-shape dataset of pre-modern books of the Sinosphere, built from open transcriptions aligned to open page images"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = [
+    "fastapi>=0.115",
+    "httpx>=0.28",
+    "pillow>=11",
+    "pyyaml>=6",
+    "pyarrow>=21",
+    "pydantic>=2.11",
+    "typer>=0.16",
+    "uvicorn[standard]>=0.34",
+]
+
+[project.scripts]
+atlas = "glyph_atlas.cli:app"
+
+[project.optional-dependencies]
+data = ["odfpy>=1.4"]
+ocr = ["onnxruntime-gpu>=1.22", "numpy>=2", "opencv-python-headless>=4.11"]
+# The detector: RT-DETR through transformers, export to ONNX and the parity check. torch 2.14 is the first
+# build with a cp314 wheel that runs on the Blackwell card (CUDA 13.0 wheels); see
+# models/detector/SPIKE.md.
+detector = [
+    "torch>=2.14",
+    "torchvision>=0.29",
+    "transformers>=5.17",
+    "onnx>=1.20",
+    "onnxscript>=0.7",
+    "onnxruntime-gpu>=1.22",
+    "numpy>=2",
+    # the RT-DETR Hungarian matcher
+    "scipy>=1.16",
+    # The character classifier: ConvNeXt-tiny, with the ImageNet-22k checkpoint
+    "timm>=1.0",
+]
+
+[dependency-groups]
+# The tests of the detector's ONNX path and of the synthetic renderings run on CPU; the training
+# extra above carries torch, which CI does not need.
+dev = ["pytest>=8", "ruff>=0.12", "cffconvert>=2.0", "numpy>=2", "onnx>=1.20", "onnxruntime>=1.22"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/glyph_atlas"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
