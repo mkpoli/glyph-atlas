@@ -41,9 +41,16 @@ catalogue in `source_refs` and rights resolved per witness through the vocabular
 restricted). The lines carry no boxes, which is exactly the gap step 2 fills — and step 2 needs one thing the plan
 never had to build. Honkoku-Lines ships line boxes, so an alignment only has to place characters inside
 boxes that already exist; the Ainu records ship transcription text and nothing else, so there are no
-lines to align to. Measured on one page: 10 transcribed lines against 195 detected character boxes, so
-the line boxes have to be derived from the detected characters before anything can be aligned. That
-derivation is the next piece of work, and it comes before the alignment, not with it.
+lines to align to. Measured on one page (蝦夷紀行, 1350×1000): 10 transcribed lines against 195 detected character boxes,
+which cluster into 13 columns and 16 runs once the vertical gaps are split, so the line boxes would
+have to be derived from the detected characters before anything could be aligned — and on this page the
+counts do not agree, because 10 transcribed lines against 13 ink columns is not a mapping. Deriving
+them would mean deciding how the transcription's lines correspond to ink the detector groups
+differently, which is a guess, and a guess is what the atlas is not allowed to publish as a box. The
+honest state is therefore that the Ainu records come in as documents, pages and transcribed lines with
+no boxes, which is what the source itself provides; their character boxes wait on a decision about how
+to place a page-level transcription on a page whose writing direction differs from the rest of the
+corpus.
 
 ## Cards that cannot be finished without people
 
