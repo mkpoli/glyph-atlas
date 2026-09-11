@@ -1,0 +1,14 @@
+id: ninjal-hentaigana
+name: 学術情報交換用変体仮名
+publisher: 国立国語研究所
+kind: reference-table
+url: https://cid.ninjal.ac.jp/kana/
+licence: CC-BY-4.0
+licence_evidence: https://cid.ninjal.ac.jp/kana/licence/
+attribution: 国立国語研究所「学術情報交換用変体仮名」; 文字画像 IPA・国立国語研究所 CC BY-SA 2.1 JP, 文字情報 国立国語研究所 CC BY 4.0
+format:
+  record: one page per code point with glyph image, 平仮名, 字母, Unicode, MJ文字図形名 and cross-references to printed kana dictionaries
+  font: https://cid.ninjal.ac.jp/kana/ninjal_hentaigana.zip (Apache-2.0, U+1B001 to U+1B11E)
+notes:
+  - The glyph images are CC BY-SA 2.1 JP and the character information CC BY 4.0; the two parts are licensed separately.
+  - The 変体仮名字形データベース at https://cid.ninjal.ac.jp/hentaiganaDB/ is a different resource with per-instance crops from printed books and no stated licence.

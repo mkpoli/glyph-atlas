@@ -1,0 +1,35 @@
+[project]
+name = "kuzushiji-atlas"
+version = "0.0.1"
+description = "Character-shape dataset of pre-modern Japanese writing, built from open transcriptions aligned to open page images"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = [
+    "httpx>=0.28",
+    "pillow>=11",
+    "pyyaml>=6",
+    "pyarrow>=21",
+    "pydantic>=2.11",
+    "typer>=0.16",
+]
+
+[project.scripts]
+atlas = "kuzushiji_atlas.cli:app"
+
+[project.optional-dependencies]
+ocr = ["onnxruntime-gpu>=1.22", "numpy>=2", "opencv-python-headless>=4.11"]
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.12"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kuzushiji_atlas"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"

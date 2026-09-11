@@ -1,0 +1,30 @@
+id: honkoku-lines
+name: Honkoku-Lines
+publisher: 橋本雄太
+kind: line-dataset
+url: https://huggingface.co/datasets/yuta1984/honkoku-lines
+doi: 10.5281/zenodo.20656128
+version: "2.0"
+released: 2026-08-05
+licence: CC-BY-SA-4.0
+licence_evidence: https://huggingface.co/datasets/yuta1984/honkoku-lines
+attribution: 橋本雄太, Honkoku-Lines v2.0, doi:10.5281/zenodo.21801040; transcriptions from みんなで翻刻 (CC BY-SA 4.0); images per holder
+counts:
+  lines: 1169304
+  lines_bundled: 1018511
+  characters: 18200000
+  items: 4140
+  pages: 79086
+  holders: 29
+  lines_pdm: 603739
+  lines_cc_by: 414772
+format:
+  layout: WebDataset, 103 tar shards of about 1 GB, JPEG line crops 256 px tall rotated to horizontal
+  fields: [bbox, iiif_image_url, iiif_region_url, text, plain_text, ocr_text, edit_distance, length_ratio, det_score, image_license, image_license_url, holding_institution, split]
+  splits: {train: 1061121, val: 52095, test: 56088}
+method: RTMDet-s line detection, PARSeq recognition, normalised Levenshtein match to the page's transcription lines, accepted at distance <= 0.4 and length ratio 0.85 to 1.20
+quality: 98.3% of a random sample of 2,000 lines aligned correctly (Wilson 95% interval 97.6 to 98.7); CER 0.86% on correctly aligned lines
+notes:
+  - Only lines on PDM 1.0 and CC BY 4.0 images are bundled; other lines ship as metadata with a IIIF region URL.
+  - Two IIIF endpoints and four platform projects whose terms forbid this use are excluded.
+  - Transcription text keeps the platform's Koji markup; plain_text has it removed.

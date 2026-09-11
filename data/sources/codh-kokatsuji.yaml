@@ -1,0 +1,17 @@
+id: codh-kokatsuji
+name: 古活字データセット
+publisher: ROIS-DS CODH
+kind: character-dataset
+url: https://codh.rois.ac.jp/omt/dataset/
+doi: 10.20676/00000416
+released: 2023-10-03
+licence: CC-BY-4.0
+licence_evidence: https://codh.rois.ac.jp/omt/dataset/
+attribution: 『古活字データセット』（国立国会図書館所蔵／CODH加工）doi:10.20676/00000416
+counts:
+  blocks: 36869
+  works: 1
+format:
+  coordinates: x1, y1, x2, y2 per movable-type block, with 文字 and 字母 columns
+notes:
+  - Movable-type (古活字) printing; every kana block carries its 字母, the labelling this dataset uses for all kana.

@@ -1,0 +1,35 @@
+id: codh-char-shape
+name: 日本古典籍くずし字データセット
+publisher: 情報・システム研究機構 データサイエンス共同利用基盤施設 人文学オープンデータ共同利用センター (ROIS-DS CODH)
+kind: character-dataset
+url: http://codh.rois.ac.jp/char-shape/
+doi: 10.20676/00000340
+version: "2"
+released: 2019-11-11
+licence: CC-BY-SA-4.0
+licence_evidence: http://codh.rois.ac.jp/char-shape/#license
+attribution: 『日本古典籍くずし字データセット』（国文研ほか所蔵／CODH加工）doi:10.20676/00000340
+counts:
+  characters: 1086326
+  code_points: 4328
+  page_images: 6151
+  books: 44
+access:
+  book_zip: http://codh.rois.ac.jp/char-shape/dataset/v2/{bid}.zip
+  book_list: http://codh.rois.ac.jp/char-shape/book/
+  iiif_image: https://codh.rois.ac.jp/char-shape/iiif/{bid}/{bid}_{page}_{half}.tif/{x},{y},{w},{h}/full/0/default.jpg
+  iiif_manifest: https://codh.rois.ac.jp/char-shape/book/{bid}/manifest.json
+format:
+  coordinates: "{bid}_coordinate.csv with columns Unicode, Image, X, Y, Block ID, Char ID, Width, Height"
+  reports: "{bid}_report.csv with columns Image, X, Y, Report"
+  crops: characters/U+XXXX/*.jpg, tight boxes at page resolution
+  specification: https://www.nijl.ac.jp/pages/cijproject/info/img/dataset/kuzushiji-specification.pdf
+labels:
+  hentaigana: modern hiragana code point only; the 字母 is not recorded
+  kanji: 旧字 in the 常用漢字 range merged into 新字 since version 2
+  excluded: ruby, 訓点, 丁付, covers, marginalia, illustrations
+metadata: none beyond the NIJL 書誌ID; era, genre and holder come from 国書データベース
+notes:
+  - Content unchanged since 2019-11-11; the 2022-05-08 repackaging did not change the data.
+  - 41 books carry NIJL 書誌ID; brsk00000, hnsd00000 and umgy00000 are CODH-local identifiers.
+  - Mostly Edo-period woodblock prints of literary works, with a few manuscripts.

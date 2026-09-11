@@ -1,0 +1,11 @@
+# Script style of a page or a document. Each value names one recognisable style; a page can be mixed.
+- id: kaisho
+  ja: 楷書
+- id: gyosho
+  ja: 行書
+- id: sosho
+  ja: 草書
+- id: mixed
+  ja: 混在
+- id: unassessed
+  ja: 未判定
