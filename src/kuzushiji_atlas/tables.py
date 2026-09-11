@@ -284,13 +284,26 @@ def scan(
     """Yield batches of a table without loading the file whole.
 
     `path` is a file or a directory of shards. `columns` reads a subset of the columns; the fields
-    left out keep their defaults.
+    left out keep their defaults. A field the model requires is read even when the caller leaves it
+    out, because a record without it cannot be validated; the row the caller gets therefore always
+    holds every field the model requires, and the fields that have defaults keep them.
     """
+    if columns is not None:
+        columns = _projection(model, columns)
     for file in _table_files(Path(path)):
         for batch in pq.ParquetFile(file).iter_batches(batch_size=batch_size, columns=columns):
             rows = batch.to_pylist()
             if rows:
                 yield [_row_to_model(row, model) for row in rows]
+
+
+def _projection(model: type[BaseModel], columns: list[str]) -> list[str]:
+    """The columns to read: what the caller asked for, plus every field the model requires."""
+    wanted = list(dict.fromkeys(columns))
+    for name, field in model.model_fields.items():
+        if field.is_required() and name not in wanted:
+            wanted.append(name)
+    return wanted
 
 
 def _table_from_records(records: Iterable[BaseModel] | Iterable[dict], model: type[BaseModel]) -> pa.Table:
