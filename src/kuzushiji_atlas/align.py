@@ -743,7 +743,10 @@ def run_directory(
         raise ValueError(f"{directory} needs lines and pages to align")
     wanted_pages = set(pages) if pages else None
     lines_by_page: dict[str, list[Line]] = {}
-    for batch in dataset.scan("lines"):
+    # A run over a handful of pages should not validate a million lines: the filter is applied to the
+    # raw rows, and the row groups whose statistics cannot hold one of the pages are skipped.
+    keep_lines = tables.In("page_id", wanted_pages) if wanted_pages else None
+    for batch in dataset.scan("lines", keep=keep_lines):
         for line in batch:
             if line.box is None:
                 continue

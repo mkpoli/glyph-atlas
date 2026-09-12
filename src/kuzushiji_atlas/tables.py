@@ -280,6 +280,7 @@ def scan(
     model: type[BaseModel],
     columns: list[str] | None = None,
     batch_size: int = BATCH_SIZE,
+    keep: Callable[[dict], bool] | None = None,
 ) -> Iterator[list[BaseModel]]:
     """Yield batches of a table without loading the file whole.
 
@@ -287,14 +288,81 @@ def scan(
     left out keep their defaults. A field the model requires is read even when the caller leaves it
     out, because a record without it cannot be validated; the row the caller gets therefore always
     holds every field the model requires, and the fields that have defaults keep them.
+
+    `keep` is applied to the raw row before the model is built, and a row it rejects is never turned
+    into one. That is what makes a scan of a narrow slice of a large table cheap: validating a record
+    runs Pydantic over every field of it, and a caller that wants the lines of one page out of a
+    million should not pay for the million. A row group whose statistics already exclude every value
+    of the column is skipped without reading it.
     """
     if columns is not None:
         columns = _projection(model, columns)
+    if isinstance(keep, In):
+        # A set membership is applied by Arrow, so a scan of one page out of a million rows reads
+        # only the row groups whose statistics can hold one of the values; converting every row to a
+        # Python object first cost 19 s for two lines of a 1.17M-row table.
+        import pyarrow.dataset as ds
+
+        for file in _table_files(Path(path)):
+            scanner = ds.dataset(file, format="parquet").scanner(
+                columns=columns, filter=pc.field(keep.column).isin(list(keep.values)), batch_size=batch_size
+            )
+            for batch in scanner.to_batches():
+                rows = batch.to_pylist()
+                if rows:
+                    yield [_row_to_model(row, model) for row in rows]
+        return
     for file in _table_files(Path(path)):
         for batch in pq.ParquetFile(file).iter_batches(batch_size=batch_size, columns=columns):
             rows = batch.to_pylist()
+            if not rows:
+                continue
+            if keep is not None:
+                rows = [row for row in rows if keep(row)]
             if rows:
                 yield [_row_to_model(row, model) for row in rows]
+
+
+class In:
+    """A filter for `scan`: the rows whose column holds one of these values.
+
+    It is callable, so it works as a plain predicate, and it carries the column and the values for
+    the row-group statistics check.
+    """
+
+    __slots__ = ("column", "values")
+
+    def __init__(self, column: str, values: Iterable[Any]) -> None:
+        self.column = column
+        self.values = set(values)
+
+    def __call__(self, row: dict) -> bool:
+        return row.get(self.column) in self.values
+
+
+def _group_may_hold(group: Any, keep: Callable[[dict], bool] | None) -> bool:
+    """Whether a row group can hold a row `keep` accepts, judged by its column statistics.
+
+    Only the interval of the first column is consulted, which is enough for a scan over one page or
+    one document: the sort order inside a file puts equal values together, so the row groups that
+    hold them are contiguous and the rest are excluded by their minimum and maximum.
+    """
+    values = getattr(keep, "values", None)
+    column = getattr(keep, "column", None)
+    if keep is None or values is None or column is None or group.num_columns == 0:
+        return True
+    position = None
+    for index in range(group.num_columns):
+        if group.column(index).path_in_schema == column:
+            position = index
+            break
+    if position is None:
+        return True
+    stats = group.column(position).statistics
+    if stats is None or not stats.has_min_max:
+        return True
+    low, high = stats.min, stats.max
+    return any(low <= value <= high for value in values if isinstance(value, type(low)))
 
 
 def _projection(model: type[BaseModel], columns: list[str]) -> list[str]:
@@ -585,9 +653,10 @@ class Dataset:
         """Every row of one table, as validated models."""
         return read(self._path(name), TABLES[name])
 
-    def scan(self, name: str, columns: list[str] | None = None) -> Iterator[list[BaseModel]]:
-        """Batches of one table, without loading it whole."""
-        return scan(self._path(name), TABLES[name], columns=columns)
+    def scan(self, name: str, columns: list[str] | None = None,
+             keep: Callable[[dict], bool] | None = None) -> Iterator[list[BaseModel]]:
+        """Batches of one table, without loading it whole; `keep` filters raw rows."""
+        return scan(self._path(name), TABLES[name], columns=columns, keep=keep)
 
     def validate(self) -> list[str]:
         """Every rule the tables break, as human-readable lines; empty when the dataset is valid.
