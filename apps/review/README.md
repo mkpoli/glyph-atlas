@@ -14,6 +14,11 @@ bun run browser-check              # the same, driven through a real Chromium
 bun run shots                      # regenerate apps/review/shots
 ```
 
+In this environment the development command is `devrun bun run dev` (from `apps/review`), which runs
+Vite inside a memory-capped cgroup; `ATLAS_REVIEW_API=http://127.0.0.1:<port>` points the dev proxy at
+a service on another port. The two check tools need Chromium: they take the one in
+`~/.cache/ms-playwright`, or `--chrome /path/to/chrome`.
+
 `atlas review serve <dataset> --port 8770` serves the API and, once `bun run build` has run, this
 interface at `/`: `server.create_app` mounts `apps/review/dist` last, so `/documents`, `/pages`,
 `/lines`, `/units`, `/images`, `/queue` and `/reviews` keep their own routes and everything else

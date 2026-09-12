@@ -169,7 +169,8 @@ let written = 0
 for (const shot of shots) {
   await browser.setViewport(shot.viewport.width, shot.viewport.height)
   await browser.setColorScheme(shot.scheme)
-  await browser.goto(url(shot.hash), { waitFor: shot.waitFor })
+  // A 1200×7000 page image and a 240-unit line take a moment to lay out on a loaded machine.
+  await browser.goto(url(shot.hash), { waitFor: shot.waitFor, timeout: 60000 })
   if (shot.before) await shot.before(browser)
   await Bun.sleep(250)
   const path = join(SHOTS, `${shot.name}.png`)
