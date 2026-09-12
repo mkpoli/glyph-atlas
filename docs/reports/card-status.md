@@ -56,6 +56,36 @@ character boxes wait on a per-page decision — derive line boxes from the colum
 agrees, and leave the page unresolved where it does not, because a line box that stands for a
 different number of lines than the transcription has is worse than no box.
 
+### The census that decides how many pages can be derived
+
+`scripts/ainu_columns.py --all` measures every page the cache holds: it detects the characters,
+groups them into columns, and prints the column count beside the transcribed line count. The grouping
+rule is the one this section settled on, with the parameters the census fixed: a column is a run of
+characters that follow one another by at most half the median character width, two runs belong to one
+column when their centres are under nine tenths of that width apart, and the columns come back right
+to left. Both thresholds were measured rather than chosen — on a page of 蝦夷紀行 with ten visible
+lines and 195 detections, whose neighbouring columns of ink stand 8 to 22 px apart against a median
+character width of 30 px and whose line centres are 50 px apart. Two rules that look reasonable were
+tried on that geometry and rejected: comparing the facing edges of two runs merged all ten lines into
+one, because the white space between columns is only 12 px, and comparing every pair across runs did
+the same. Measured over all 658 pages (389 s, 0.59 s a page on the GPU):
+
+- 658 pages, 9 witnesses: 334 within 25% of the transcribed line count, 119 exactly.
+- 477 pages carry a **body** transcription (four lines or more): 329 within 25%, **117 exactly**, and
+  the median ratio is 1.13. The other 181 pages carry a title, a shelfmark or nothing, and are not
+  evidence for or against the rule.
+- Per witness, the exact share is spread: 龍谷大学's 蝦夷紀行 12/15 exact (median 1.00), 立命館's copy
+  34/94 (1.07), the 9987c7 witness 51/55 (1.00) whose "lines" are catalogue entries, and one witness
+  0/38 (2.56), where the transcription covers a fraction of what the page shows.
+
+So the derivation is good enough to propose line boxes on **117 of the 477 body pages as they stand**,
+and on 329 of them within a quarter — which is not the same as being right. A page whose column count
+matches can still pair the wrong column with the wrong line, and the rule cannot tell. That is why the
+step-2 implementation, when it is written, writes the derived boxes as machine units for a reviewer
+rather than as line boxes the transcription then trusts: the count is a filter for which pages to
+propose on, and the reviewer's answer is what settles each page. The per-page numbers are in
+`work/ainu-records/columns.tsv`.
+
 ## Cards that cannot be finished without people
 
 T23's acceptance, T25 and T26 are annotation work: the alignment's joint precision at a coverage is

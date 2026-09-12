@@ -57,30 +57,40 @@ def columns_of(boxes: list[Box], gap_ratio: float = GAP_RATIO,
     A column is a run of detections whose centres follow one another by no more than `gap_ratio` of
     the page's median character width, which is the step from one character to the next inside a
     line. Two runs are then merged when their centres are closer than `merge_ratio` of that width,
-    because a line whose characters lean or thin out can pause by more than the step without ending.
+    because a line whose characters lean or thin out pauses by more than a step without ending.
     The distance is a share of the width rather than a count of pixels because the witnesses are
     scanned at 1,000 to 6,500 pixels across. Runs come back in reading order: rightmost first.
     """
     if not boxes:
         return []
     width = statistics.median(box.w for box in boxes)
-    order = sorted(range(len(boxes)), key=lambda index: boxes[index].x + boxes[index].w / 2)
+    centre_of = lambda index: boxes[index].x + boxes[index].w / 2
+    order = sorted(range(len(boxes)), key=centre_of)
     runs: list[list[int]] = [[order[0]]]
     for index in order[1:]:
-        centre = boxes[index].x + boxes[index].w / 2
-        previous = boxes[runs[-1][-1]]
-        if centre - (previous.x + previous.w / 2) <= width * gap_ratio:
+        if centre_of(index) - centre_of(runs[-1][-1]) <= width * gap_ratio:
             runs[-1].append(index)
         else:
             runs.append([index])
+    # Two runs are one line when their centres are less than a character apart. The comparison is
+    # between the runs' means, and the threshold is a whole median width rather than the step, because
+    # a line whose characters lean or thin out pauses by more than a step without ending.
+    #
+    # Two other rules were measured on a page of 蝦夷紀行 with ten visible lines and 195 detections,
+    # whose neighbouring columns of ink stand 8 to 22 px apart against a median character width of 30:
+    # comparing the facing edges merged all ten lines into one column (the inter-column white space is
+    # only 12 px), and comparing every pair across runs did the same. The centres of those ten lines
+    # are 50 px apart, which is what separates them.
     merged: list[list[int]] = [runs[0]]
     for run in runs[1:]:
-        here = statistics.mean(boxes[index].x + boxes[index].w / 2 for index in run)
-        there = statistics.mean(boxes[index].x + boxes[index].w / 2 for index in merged[-1])
+        here = statistics.mean(centre_of(index) for index in run)
+        there = statistics.mean(centre_of(index) for index in merged[-1])
         if here - there < width * merge_ratio:
             merged[-1].extend(run)
         else:
             merged.append(run)
+    # The runs were built from the left, and a vertical line is read from the right.
+    merged.reverse()
     return merged
 
 
