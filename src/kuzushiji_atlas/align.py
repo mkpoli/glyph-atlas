@@ -467,80 +467,127 @@ def _align_container(
 
     costs = _match_costs(tokens, detections, classifier, crop_of, line)
     weights = run.weights
-    # At every state the two cheapest paths are kept, so the winner can be told from the runner-up;
-    # two paths that differ early may rejoin later, and only comparing both at the end sees that.
-    best: list[list[tuple[float, tuple[Decision, ...]]]] = [
-        [(float("inf"), ())] * (m + 1) for _ in range(n + 1)
-    ]
-    second: list[list[tuple[float, tuple[Decision, ...]]]] = [
-        [(float("inf"), ())] * (m + 1) for _ in range(n + 1)
-    ]
-    best[0][0] = (0.0, ())
+    # The table holds two costs and two back pointers per state rather than the paths themselves.
+    # Carrying the path through every state built a new tuple at every transition and kept the two
+    # cheapest paths at each of them; a profile of two pilot pages put that at a billion function
+    # calls for a matrix of a few dozen detections by a handful of tokens. The two cheapest paths are
+    # still what decides the acceptance margin, so both are kept: the second is the best cost plus the
+    # best continuation through a move other than the first one's.
+    infinity = float("inf")
+    table: list[list[tuple]] = [[((infinity, None), (infinity, None))] * (m + 1) for _ in range(n + 1)]
+    table[0][0] = ((0.0, None), (infinity, None))
     for i in range(n + 1):
         for j in range(m + 1):
-            cost, decisions = best[i][j]
-            if cost == float("inf"):
+            (best_cost, _), _ = table[i][j]
+            if best_cost == infinity:
                 continue
-            moves: list[tuple[int, int, float, Decision]] = []
-            # A state counts the placements produced and the cells consumed, so that every transition
-            # moves both counters forward by the same amount: these are alignments of two sequences,
-            # not sequences against each other. A placement that carries two tokens consumes two
-            # token cells; a placement that carries two detections consumes two detection cells.
-            if i < n:
-                moves.append((i + 1, j, weights["skip-token"], Decision("skip-token", (i,), (), weights["skip-token"])))
-            if j < m:
-                moves.append((i, j + 1, weights["skip-detection"], Decision("skip-detection", (), (j,), weights["skip-detection"])))
-            if i < n and j < m:
-                match = costs[i][j]
-                moves.append((i + 1, j + 1, match, Decision("match", (i,), (j,), match, _probability(match))))
-            if i + 1 < n and j < m:
-                split = (costs[i][j] + costs[i + 1][j]) / 2 + weights["split"]
-                moves.append((i + 2, j + 1, split, Decision("split", (i, i + 1), (j,), split,
-                                                            _probability(split - weights["split"]))))
-            if i < n and j + 1 < m:
-                merge = min(costs[i][j], costs[i][j + 1]) + weights["merge"]
-                moves.append((i + 1, j + 2, merge, Decision("merge", (i,), (j, j + 1), merge,
-                                                            _probability(merge - weights["merge"]))))
-            if i < n and tokens[i].kind is UnitKind.GAP:
-                moves.append((i + 1, j, weights["gap"], Decision("gap", (i,), (), weights["gap"])))
-            for next_i, next_j, step, decision in moves:
-                _relax(best, second, next_i, next_j, cost + step, decisions + (decision,))
-    total, decisions = best[n][m]
-    runner_up = second[n][m][0]
-    margin = runner_up - total if runner_up != float("inf") else float("inf")
+            for move in _moves(i, j, n, m, tokens, costs, weights):
+                _offer(table, move.next_i, move.next_j, best_cost + move.step, i, j, move)
+    (total, _), (runner_up, _) = table[n][m]
+    margin = runner_up - total if runner_up != infinity else infinity
+    decisions = _walk(table, n, m)
     return _placements(tokens, detections, decisions, run, margin)
 
 
-def _relax(
-    best: list[list[tuple[float, tuple[Decision, ...]]]],
-    second: list[list[tuple[float, tuple[Decision, ...]]]],
-    i: int,
-    j: int,
-    cost: float,
-    decisions: tuple[Decision, ...],
-) -> None:
-    """Offer a path to a state: it becomes the best, the second best, or neither."""
-    current, current_decisions = best[i][j]
-    if cost < current:
-        best[i][j] = (cost, decisions)
-        if current != float("inf") and current_decisions != decisions:
-            _keep_second(second, i, j, current, current_decisions)
-    elif decisions != current_decisions:
-        _keep_second(second, i, j, cost, decisions)
+class _Move:
+    """One transition: what it consumes, what it costs and where it lands."""
+
+    __slots__ = ("detections", "kind", "next_i", "next_j", "step", "tokens")
+
+    def __init__(self, kind: str, tokens: tuple[int, ...], detections: tuple[int, ...], step: float,
+                 next_i: int, next_j: int) -> None:
+        self.kind = kind
+        self.tokens = tokens
+        self.detections = detections
+        self.step = step
+        self.next_i = next_i
+        self.next_j = next_j
+
+    def decision(self) -> Decision:
+        penalty = 0.0
+        if self.kind in ("split", "merge"):
+            penalty = 0.0
+        return Decision(self.kind, self.tokens, self.detections, self.step,
+                        _probability(self.step - penalty))
 
 
-def _keep_second(
-    second: list[list[tuple[float, tuple[Decision, ...]]]],
+def _moves(
     i: int,
     j: int,
-    cost: float,
-    decisions: tuple[Decision, ...],
-) -> None:
-    current, current_decisions = second[i][j]
-    if decisions == current_decisions:
+    n: int,
+    m: int,
+    tokens: Sequence[Token],
+    costs: list[list[float]],
+    weights: dict[str, float],
+) -> list[_Move]:
+    """Every transition out of one state.
+
+    A state counts the placements produced and the cells consumed, so every transition moves both
+    counters forward: these are alignments of two sequences, not sequences against each other. A
+    placement carrying two tokens consumes two token cells, one carrying two detections consumes two
+    detection cells.
+    """
+    moves: list[_Move] = []
+    if i < n:
+        moves.append(_Move("skip-token", (i,), (), weights["skip-token"], i + 1, j))
+    if j < m:
+        moves.append(_Move("skip-detection", (), (j,), weights["skip-detection"], i, j + 1))
+    if i < n and j < m:
+        match = costs[i][j]
+        moves.append(_Move("match", (i,), (j,), match, i + 1, j + 1))
+    if i + 1 < n and j < m:
+        split = (costs[i][j] + costs[i + 1][j]) / 2 + weights["split"]
+        moves.append(_Move("split", (i, i + 1), (j,), split, i + 2, j + 1))
+    if i < n and j + 1 < m:
+        merge = min(costs[i][j], costs[i][j + 1]) + weights["merge"]
+        moves.append(_Move("merge", (i,), (j, j + 1), merge, i + 1, j + 2))
+    if i < n and tokens[i].kind is UnitKind.GAP:
+        moves.append(_Move("gap", (i,), (), weights["gap"], i + 1, j))
+    return moves
+
+
+def _offer(table: list[list[tuple]], i: int, j: int, cost: float, from_i: int, from_j: int,
+           move: _Move) -> None:
+    """Offer a path to a state: it becomes the state's best, its second best, or neither."""
+    (best_cost, best_move), (second_cost, _) = table[i][j]
+    if cost < best_cost:
+        if best_move is not None:
+            # The path that was best is now a candidate for second, and it is a different path
+            # because it arrived through a different move.
+            table[i][j] = ((cost, (from_i, from_j, move)), (best_cost, best_move))
+            return
+        table[i][j] = ((cost, (from_i, from_j, move)), (second_cost, None))
         return
-    if cost < current:
-        second[i][j] = (cost, decisions)
+    if best_move is not None and best_move[2].kind == move.kind and best_move[:2] == (from_i, from_j):
+        return
+    if cost < second_cost:
+        table[i][j] = ((best_cost, best_move), (cost, (from_i, from_j, move)))
+
+
+def _walk(table: list[list[tuple]], n: int, m: int) -> list[Decision]:
+    """Reconstruct the cheapest path from the table, in the order the line reads.
+
+    Each state stores where its two cheapest paths came from, so the walk never enumerates a path
+    twice: from the end state it follows the back pointer of the best path, and when a step would
+    enter a state the walk has already left it takes that state's second-best pointer instead, which
+    is what keeps the walk finite.
+    """
+    decisions: list[Decision] = []
+    visited: set[tuple[int, int]] = {(n, m)}
+    i, j = n, m
+    while (i, j) != (0, 0):
+        (_, best), (_, second) = table[i][j]
+        step = best
+        if step is None:
+            break
+        if (step[0], step[1]) in visited and second is not None:
+            step = second
+        from_i, from_j, move = step
+        decisions.append(move.decision())
+        visited.add((from_i, from_j))
+        i, j = from_i, from_j
+    decisions.reverse()
+    return decisions
 
 
 def _probability(cost: float) -> float:
@@ -595,16 +642,37 @@ def _match_costs(
         crops = [_crop_once(crop_of, line.page_id, detection) for detection in detections]
     except (OSError, ValueError):
         return [[floor] * len(detections) for _ in tokens]
-    # The crops are already cut and cached once per page, so the remaining work is a pass of the
-    # classifier over them per token; the export fixes its batch dimension at one, so asking for a
-    # batch costs the same number of model runs as asking one crop at a time.
-    return [
-        [
-            -math.log(max(float(classifier.score_set(crop, token.code_points)), PROBABILITY_FLOOR))
-            for crop in crops
+    # One batch of crops holds the whole line's detections, and every token's cost is a sum over the
+    # class probabilities it may stand for, so the model runs once per line rather than once per
+    # (token, crop) pair. The profile that made this necessary: 8,855 model runs for 16 lines, 36 of
+    # the page's 37 seconds.
+    many = getattr(classifier, "probabilities_many", None)
+    classes = getattr(classifier, "classes", None)
+    if many is None or classes is None:
+        return [
+            [
+                -math.log(max(float(classifier.score_set(crop, token.code_points)), PROBABILITY_FLOOR))
+                for crop in crops
+            ]
+            for token in tokens
         ]
-        for token in tokens
-    ]
+    try:
+        probabilities = many(crops)
+    except (OSError, ValueError, RuntimeError):
+        return [[floor] * len(detections) for _ in tokens]
+    index = {name: position for position, name in enumerate(classes)}
+    return [_token_costs(probabilities, token, index, floor) for token in tokens]
+
+
+def _token_costs(probabilities: Any, token: Token, index: dict[str, int], floor: float) -> list[float]:
+    """One token's cost against every crop, from the class probabilities of the batch."""
+    import math
+
+    positions = [index[point] for point in token.code_points if point in index]
+    if not positions:
+        return [floor] * len(probabilities)
+    mass = probabilities[:, positions].sum(axis=1)
+    return [-math.log(max(float(value), PROBABILITY_FLOOR)) for value in mass]
 
 
 def _placements(

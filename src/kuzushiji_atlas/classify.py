@@ -54,6 +54,10 @@ OTHER = "other"
 CLASSES_NAME = "classes.json"
 
 
+# What `batch_width` answers for a graph whose first dimension is symbolic.
+SYMBOLIC_BATCH = 1_000_000
+
+
 class ClassifierError(RuntimeError):
     """An export or a class list that cannot be used."""
 
@@ -216,11 +220,44 @@ class Classifier:
         return self.probabilities_many([crop])[0]
 
     def probabilities_many(self, crops: Iterable[Image.Image | np.ndarray]) -> np.ndarray:
-        """The class probabilities of a batch of crops, as an (n, classes) array."""
+        """The class probabilities of crops, as an (n, classes) array.
+
+        The exported graph may fix its batch dimension at one, which is what the export writes; a
+        caller that hands over hundreds of crops still gets one array back, because the crops are run
+        in as many batches as the graph accepts.
+        """
         images = [self._pixels(crop) for crop in crops]
         if not images:
             return np.zeros((0, len(self.classes)), dtype=np.float64)
-        batch = np.concatenate(images, axis=0)
+        width = self.batch_width()
+        if width == 1 or len(images) <= width:
+            return self._probabilities_of(np.concatenate(images, axis=0))
+        parts = [
+            self._probabilities_of(np.concatenate(images[start : start + width], axis=0))
+            for start in range(0, len(images), width)
+        ]
+        return np.concatenate(parts, axis=0)
+
+    def batch_width(self) -> int:
+        """How many crops one run of the exported graph accepts, or a large number when it is free."""
+        described = getattr(self._session, "get_inputs", None)
+        if described is None:
+            return 1
+        for item in described():
+            if item.name != self.input_name:
+                continue
+            shape = list(item.shape or [])
+            if not shape:
+                break
+            first = shape[0]
+            if isinstance(first, int) and first > 0:
+                return first
+            # A symbolic dimension is a graph that accepts whatever it is given.
+            return SYMBOLIC_BATCH
+        return 1
+
+    def _probabilities_of(self, batch: np.ndarray) -> np.ndarray:
+        """The probabilities of one input batch, which the graph has to accept as it stands."""
         outputs = self._session.run(None, {self.input_name: batch})
         described = getattr(self._session, "get_outputs", None)
         names = [item.name for item in described()] if described is not None else []
@@ -234,7 +271,7 @@ class Classifier:
             if logits is None:
                 logits = np.asarray(outputs[0], dtype=np.float64)
             values = softmax(logits)
-        values = values.reshape(len(images), -1)
+        values = values.reshape(batch.shape[0], -1)
         if values.shape[1] != len(self.classes):
             raise ClassifierError(
                 f"{self.onnx_path}: the model returns {values.shape[1]} classes and "

@@ -85,6 +85,10 @@ def export(model: Any, path: Path, temperature: float, size: int, opset: int, dy
         output_names=list(OUTPUT_NAMES),
         opset_version=opset,
         dynamo=dynamo,
+        # The batch dimension is free: an alignment scores every detection on a line at once, and a
+        # graph fixed at one would run the model once per crop through a Python call, which measured
+        # 72 ms a crop against 3 ms for a batch.
+        dynamic_axes={"pixel_values": {0: "batch"}, **{name: {0: "batch"} for name in OUTPUT_NAMES}},
     )
     return {
         "path": str(path),
