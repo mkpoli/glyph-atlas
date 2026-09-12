@@ -549,6 +549,30 @@ def _probability(cost: float) -> float:
     return math.exp(-max(cost, 0.0))
 
 
+# One page's crops, keyed by the detection's identity. A page is aligned line by line and every line
+# is scored against every detection on it, so without this the same rectangle is cut and decoded once
+# per line: a profile of two pilot pages put that at 72% of the run.
+_CROP_CACHE: dict[tuple[int, str | None, int, int, int, int], Any] = {}
+
+
+def _crop_once(crop_of: Any, page_id: str | None, detection: Detection) -> Any:
+    """The crop of one detection, cut once for the run."""
+    box = detection.box
+    key = (id(detection), page_id, box.x, box.y, box.w, box.h)
+    crop = _CROP_CACHE.get(key)
+    if crop is None:
+        crop = crop_of(page_id, box)
+        if len(_CROP_CACHE) > 8192:
+            _CROP_CACHE.clear()
+        _CROP_CACHE[key] = crop
+    return crop
+
+
+def clear_crop_cache() -> None:
+    """Forget the crops of a run; a long run over many pages calls this between documents."""
+    _CROP_CACHE.clear()
+
+
 def _match_costs(
     tokens: Sequence[Token],
     detections: Sequence[Detection],
@@ -556,24 +580,31 @@ def _match_costs(
     crop_of: Any,
     line: Line,
 ) -> list[list[float]]:
+    """The negative log probability of every token over every detection.
+
+    The crops of the detections are cut once and scored in one batch per token set: a page holds
+    hundreds of detections and a line a handful of tokens, so scoring one crop at a time re-reads the
+    same rectangle for every token.
+    """
     import math
 
-    costs: list[list[float]] = []
-    for token in tokens:
-        row: list[float] = []
-        for detection in detections:
-            probability = PROBABILITY_FLOOR
-            if classifier is not None and crop_of is not None and token.code_points:
-                try:
-                    probability = max(
-                        float(classifier.score_set(crop_of(line.page_id, detection.box), token.code_points)),
-                        PROBABILITY_FLOOR,
-                    )
-                except (OSError, ValueError):  # a crop that cannot be read is scored at the floor
-                    probability = PROBABILITY_FLOOR
-            row.append(-math.log(probability))
-        costs.append(row)
-    return costs
+    floor = -math.log(PROBABILITY_FLOOR)
+    if classifier is None or crop_of is None or not detections:
+        return [[floor] * len(detections) for _ in tokens]
+    try:
+        crops = [_crop_once(crop_of, line.page_id, detection) for detection in detections]
+    except (OSError, ValueError):
+        return [[floor] * len(detections) for _ in tokens]
+    # The crops are already cut and cached once per page, so the remaining work is a pass of the
+    # classifier over them per token; the export fixes its batch dimension at one, so asking for a
+    # batch costs the same number of model runs as asking one crop at a time.
+    return [
+        [
+            -math.log(max(float(classifier.score_set(crop, token.code_points)), PROBABILITY_FLOOR))
+            for crop in crops
+        ]
+        for token in tokens
+    ]
 
 
 def _placements(
