@@ -163,6 +163,14 @@ def export(
         counts["images"] += int(bool(checksum))
         if checksum:
             page.sha256 = checksum
+            if not page.width or not page.height:
+                # The Honkoku-Lines import states no pixel size — its images are IIIF URLs whose
+                # `info.json` was never read — and the package is the place the size becomes known,
+                # because the package holds the image. The review interface scales a line's boxes by
+                # `page.width`, and with a zero there every box on every pilot page was drawn at the
+                # wrong scale. The size is taken from the image the package carries, so the boxes the
+                # detector measured in that image's pixels stay anchored to it.
+                page.width, page.height = _image_size(folder / "image.jpg")
         document = documents.get(page.document_id)
         if document is not None:
             tables.write(folder / "documents.parquet", [document], type(document))
@@ -209,6 +217,17 @@ def _fetch_image(page: Page, target: Path) -> str:
         for block in iter(lambda: handle.read(1 << 20), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _image_size(path: Path) -> tuple[int, int]:
+    """The pixel size of a written page image, or `(0, 0)` when Pillow cannot read it."""
+    from PIL import Image
+
+    try:
+        with Image.open(path) as image:
+            return int(image.width), int(image.height)
+    except (OSError, ValueError):
+        return 0, 0
 
 
 def truth_pages(directory: Path) -> dict[str, int]:

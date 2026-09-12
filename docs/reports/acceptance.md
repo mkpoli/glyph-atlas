@@ -260,6 +260,11 @@ configuration `models/align/runs/pilot-v1.yaml` (fingerprint `7a0d3267f64e`):
   failures, 7,440 units with a box. The run took **7 m 15 s, 0.96 s a page**, and the packages under
   `/tmp/pilot-heldout` hold all 452 pages, their images (1.6 GB) and these units.
 
+Both groups sit in one dataset, `work/honkoku-lines`, which holds 168,978 units: the held-out run
+added its 166,058, and a calibration re-run afterwards added 2,920 without dropping any of them. That
+re-run is also the test of the table lock, which exists because two overlapped runs did drop the
+calibration units once.
+
 The acceptance itself still needs the calibration truth (T25, human), because the joint precision is
 measured against adjudicated character annotations on pages the pipeline never tuned on. What the runs
 establish is that the machine half is finished and fast enough to be re-run: an earlier 20-page run
@@ -279,17 +284,27 @@ packages for the calibration pages.
 Measured: `data/pilot/items.tsv` selects 10 items and 472 pages across both eligible licences and
 six hosts, and now carries the production type its manifests state, which gives the pilot two
 manuscripts alongside the prints; `docs/implementation/pilot-protocol.md` is committed with the
-interface's known limits. `atlas pilot export --group calibration` wrote 20 packages holding 212
-lines with their images, and `atlas pilot images --group calibration` fetched those 20 pages (4.3 MB
-each on average). The held-out group is exported whole: `atlas pilot export --group heldout` wrote
-**452 packages, 7,635 lines, 166,058 units and 452 images** — every page of the group, with no empty
-package and no missing image.
+interface's known limits. Both groups are exported whole, and every package carries its page image,
+its page record, its lines and the machine units the alignment proposed:
+
+| group | packages | lines | units | accepted | with a box | images |
+| --- | --- | --- | --- | --- | --- | --- |
+| calibration | 20 | 212 | 2,920 | 424 | 2,693 | 20 |
+| held-out | 452 | 7,635 | 166,058 | 28,306 | 7,440 | 452 |
+
+Every package states its page's pixel size, read from the image it carries. That matters because the
+Honkoku-Lines import records a IIIF URL and no size, and the review interface scales every line box by
+`page.width`: with the zero the import left, all 472 pages drew their boxes at the wrong scale. The
+export fills the size in from the packaged image and leaves a size a dataset already states alone,
+which three tests pin.
 
 The protocol's held-out group is the rest of each item, which is 452 pages and not the 100-page
 `--per-item 10` sample an earlier run used to gauge the cost. That sample is what made the first
 held-out export look wrong: it held 45,159 units over 100 pages while an export without `--pages`
 produced 7,362 over the same 100, because 352 of the packages were stale directories from the
-sampled run. The full group is aligned and packaged now.
+sampled run. The full group is aligned and packaged now. The dataset behind the packages holds
+**168,978 units**: the 166,058 held-out units survived the calibration re-run that added the 2,920,
+which is the merge the table lock exists to protect.
 
 ### T30 Synthetic hentaigana renderings
 
