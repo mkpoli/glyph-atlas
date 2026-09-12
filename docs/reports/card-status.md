@@ -66,7 +66,16 @@ the audit sampler — and the pages are fetched, but the annotations themselves 
 T16's remaining half is not human work but machine time: the full manifest pass needs a longer
 per-host pause than `net.download` exposes today, which is a change to weigh rather than a quick run.
 
-## What is waiting on the classifier
+## The pilot's calibration pages now carry machine units
+
+The alignment has run over all 20 calibration pages with the trained detector and classifier: **2,920
+units, 424 accepted, 2,496 rejected, no failures**, and the packages have been re-exported so a
+reviewer opens a page and sees the proposed boxes and readings. A reviewer's job is therefore to
+correct what the pipeline proposed rather than to draw everything, which is what the protocol
+assumes. The held-out pages are not aligned yet; at the measured rate they need several hours of
+compute.
+
+## What was waiting on the classifier
 
 The pilot's 472 pages are fetched and packaged — 20 calibration pages holding 212 lines and 452
 held-out pages holding 7,635 — and every one of their page images is in the cache, which is the
