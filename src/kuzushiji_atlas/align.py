@@ -751,6 +751,7 @@ def run_directory(
                 continue
             lines_by_page.setdefault(line.page_id, []).append(line)
     page_records = {page.id: page for page in dataset.read("pages")}
+    page_documents = {page_id: page.document_id for page_id, page in page_records.items()}
     if document is not None:
         lines_by_page = {
             page: found
@@ -802,11 +803,16 @@ def run_directory(
             counts["groups"] += len(page_groups)
             counts["accepted"] += sum(1 for unit in units if unit.review is ReviewState.MACHINE)
             counts["rejected"] += sum(1 for unit in units if unit.review is ReviewState.REJECTED)
+        # The crops of a page are dead once its lines are aligned, and a page can hold more
+        # detections than the cache's ceiling, so the cache is cleared per page rather than left to
+        # evict: leaving it cost a 20-page run 21 minutes against 22 seconds.
+        clear_crop_cache()
         if limit is not None and counts["lines"] >= limit:
             break
     if written:
         _write_units(directory, written, groups, run, fingerprint, replace=replace,
-                     pages={unit.page_id for unit in written if unit.page_id})
+                     pages={unit.page_id for unit in written if unit.page_id},
+                     page_documents=page_documents)
     return counts
 
 
@@ -846,6 +852,7 @@ def _write_units(
     *,
     replace: bool = True,
     pages: set[str] | None = None,
+    page_documents: dict[str, str] | None = None,
 ) -> None:
     """Write this run's units and groups, keeping what must survive.
 
@@ -877,7 +884,9 @@ def _write_units(
                 if marker not in group.id:
                     keep_groups.append(group)
     for unit in units:
-        if unit.document_id is None:
+        if unit.document_id is None and page_documents is not None:
+            unit.document_id = page_documents.get(unit.page_id or "")
+        elif unit.document_id is None:
             unit.document_id = _document_of(dataset, unit.page_id)
     tables.write(directory / "units.parquet", [*keep_units, *units], Unit)
     if keep_groups or groups:
