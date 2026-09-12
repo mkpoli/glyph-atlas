@@ -568,6 +568,8 @@ def align(
     document: Annotated[str | None, typer.Option(help="only this document id")] = None,
     page_ids: Annotated[str | None, typer.Option("--pages", help="comma-separated page ids")] = None,
     limit: Annotated[int | None, typer.Option(help="stop after this many lines")] = None,
+    group: Annotated[str | None, typer.Option(help="a pilot group: calibration or heldout")] = None,
+    per_item: Annotated[int | None, typer.Option(help="with a group, the first n pages of each item")] = None,
 ) -> None:
     """Align the transcription lines of a dataset to the character boxes a detector finds."""
     from . import align as align_module
@@ -576,11 +578,16 @@ def align(
     if not run_path.exists():
         raise typer.BadParameter(f"{run_path} does not exist")
     config = align_module.load_run(run_path, run)
+    chosen = page_ids.split(",") if page_ids else None
+    if group:
+        from . import pilot
+
+        chosen = [row["page_id"] for row in pilot.pages_for(group, per_item=per_item)]
     counts = align_module.run_directory(
         directory,
         config,
         document=document,
-        pages=page_ids.split(",") if page_ids else None,
+        pages=chosen,
         limit=limit,
     )
     for name, value in counts.items():

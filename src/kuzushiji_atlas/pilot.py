@@ -30,14 +30,32 @@ def selection(path: Path = PILOT_ITEMS) -> list[dict[str, str]]:
     return list(csv.DictReader(rows, delimiter="\t"))
 
 
-def pages_for(group: str | None = None, items: list[str] | None = None, path: Path = PILOT_ITEMS) -> list[dict[str, str]]:
-    """The selected pages, optionally one group of them or a list of items."""
+def pages_for(
+    group: str | None = None,
+    items: list[str] | None = None,
+    path: Path = PILOT_ITEMS,
+    per_item: int | None = None,
+) -> list[dict[str, str]]:
+    """The selected pages, optionally one group of them, a list of items, or the first n an item.
+
+    `per_item` is how a run is bounded: the calibration group is annotated whole, and a held-out
+    group of a few pages an item measures the same thing without aligning every page of every item.
+    """
     rows = selection(path)
     if group:
         rows = [row for row in rows if row["group"] == group]
     if items:
         wanted = set(items)
         rows = [row for row in rows if row["item_id"] in wanted]
+    if per_item is not None:
+        kept: list[dict[str, str]] = []
+        seen: dict[str, int] = {}
+        for row in rows:
+            count = seen.get(row["item_id"], 0)
+            if count < per_item:
+                kept.append(row)
+                seen[row["item_id"]] = count + 1
+        rows = kept
     return rows
 
 
