@@ -66,6 +66,18 @@ the audit sampler — and the pages are fetched, but the annotations themselves 
 T16's remaining half is not human work but machine time: the full manifest pass needs a longer
 per-host pause than `net.download` exposes today, which is a change to weigh rather than a quick run.
 
+## Timing, measured and partly explained
+
+The alignment has been made fast in three passes — the classifier scores a line's detections in one
+CUDA batch (531 crops in 0.69 s, against 72 ms a crop when each was a separate call), the crops of a
+page are cut once, and the dynamic program keeps back pointers instead of carrying a path through
+every state. What is measured per page: detection 1.3 s, alignment 0.6 s for 16 lines, the line scan
+19 s once per run, the pages table 0.7 s, model loading 1.1 s, the image index 48 ms a lookup.
+
+The 20-page run still takes about 840 s, roughly 42 s a page, and the stages above do not account for
+all of it. That gap is recorded rather than explained away: the next person should profile the
+per-page loop with a sampling profiler, which is the tool that found the three costs that were fixed.
+
 ## The pilot's calibration pages now carry machine units
 
 The alignment has run over all 20 calibration pages with the trained detector and classifier: **2,920
