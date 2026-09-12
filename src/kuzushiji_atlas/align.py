@@ -820,20 +820,32 @@ def run_directory(
 
 
 def _crop_reader(dataset: Any, pages: dict[str, Any]) -> Any:
-    """A callable `(page_id, box) -> PIL image` that cuts from the cached page image."""
+    """A callable `(page_id, box) -> PIL image` that cuts from the cached page image.
+
+    The page is decoded once and held while its lines are aligned. Opening the file per crop is what
+    the first version did, and on a 9 MB, 4,288x2,848 scan the decode of the same image hundreds of
+    times is the difference between a page taking about a second and a page taking tens of seconds.
+    """
     from PIL import Image
 
     from . import images
+
+    state: dict[str, Any] = {"page_id": None, "image": None}
 
     def read(page_id: str | None, box: Box) -> Any:
         page = pages.get(page_id or "")
         if page is None:
             raise ValueError(f"{page_id}: no such page")
-        path = images.path_for(page.image)
-        if path is None:
-            raise ValueError(f"{page_id}: the page image is not cached")
-        with Image.open(path) as image:
-            return image.crop((box.x, box.y, box.x + box.w, box.y + box.h)).convert("RGB")
+        if state["page_id"] != page_id or state["image"] is None:
+            path = images.path_for(page.image)
+            if path is None:
+                raise ValueError(f"{page_id}: the page image is not cached")
+            with Image.open(path) as handle:
+                handle.load()
+                state["image"] = handle.copy()
+            state["page_id"] = page_id
+        image = state["image"]
+        return image.crop((box.x, box.y, box.x + box.w, box.y + box.h)).convert("RGB")
 
     return read
 
