@@ -22,8 +22,8 @@ machine, and which cannot be finished without people.
 | T20 detector data | done | 53,238 tiles, 1,086,287 unique boxes, none lost |
 | T21 detector | partial | the six-epoch run is complete, the test split measured and the ONNX exported with a passing parity check: precision 0.700, recall 0.928, F1 0.798, mean IoU 0.875, and recall 0.968 on the printed books against the card's 0.95. Precision 0.639 there does not meet it and three quarters of the false positives sit on ink CODH never annotated, so the figure is a floor. What remains is a longer schedule, not a defect to fix |
 | T22 classifier | done | twelve epochs; test top-1 **0.9348** and calibration error **0.0151** against the card's 0.93 and 0.03, top-5 0.9887 against 0.99 (short by 0.0013), macro F1 0.89; ONNX exported at 116 MB with the same 1,594 classes as the list and parity 4.1e-6 over 200 test crops |
-| T23 alignment | partial | the aligner, its runner, its run configuration and 12 tests are done; the acceptance needs the classifier, the calibration truth and the pilot run |
-| T24 pilot | done | selection, protocol, packages for both groups, the evaluator and its tests |
+| T23 alignment | partial | the aligner, its runner, its run configuration and 18 tests are done, and both pilot groups are aligned and packaged: 20 calibration pages with 2,920 units and 452 held-out pages with 166,058 units (28,306 accepted, no failures, 7 m 15 s for the held-out run). The acceptance needs the calibration truth, which is human |
+| T24 pilot | done | selection, protocol, packages for both groups (20 calibration, 452 held-out pages, images and units), the evaluator and its tests |
 | T30 synthetic kana | done | 286 of 287 code points; U+1B11F is in neither font |
 | T40 review service | done | 22 tests and a live run over an alignment's own output |
 | T41 review interface | done | 24 contract checks, 15 in a real browser, 17 screenshots |
@@ -66,38 +66,49 @@ the audit sampler — and the pages are fetched, but the annotations themselves 
 T16's remaining half is not human work but machine time: the full manifest pass needs a longer
 per-host pause than `net.download` exposes today, which is a change to weigh rather than a quick run.
 
-## Timing, measured and partly explained
+## Timing, measured and explained
 
-The alignment has been made fast in three passes — the classifier scores a line's detections in one
+The alignment has been made fast in four passes — the classifier scores a line's detections in one
 CUDA batch (531 crops in 0.69 s, against 72 ms a crop when each was a separate call), the crops of a
-page are cut once, and the dynamic program keeps back pointers instead of carrying a path through
-every state. What is measured per page: detection 1.3 s, alignment 0.6 s for 16 lines, the line scan
-19 s once per run, the pages table 0.7 s, model loading 1.1 s, the image index 48 ms a lookup.
+page are cut once, the dynamic program keeps back pointers instead of carrying a path through every
+state, and the page image is decoded once per page instead of once per crop. The last one was the gap
+three rounds could not account for: a 9 MB 4,288x2,848 scan was opened and decoded hundreds of times
+per page, so the measured stages summed to seconds while a page took tens of seconds.
 
-The 20-page run still takes about 840 s, roughly 42 s a page, and the stages above do not account for
-all of it. That gap is recorded rather than explained away: the next person should profile the
-per-page loop with a sampling profiler, which is the tool that found the three costs that were fixed.
+What that buys: the 20 calibration pages went from 843 s to 31 s, and the full held-out group — **452
+pages, 7,635 lines, 166,058 units** — took **7 m 15 s, 0.96 s a page**, with no failed page. The
+stages that remain are detection 1.3 s a page, alignment 0.6 s for 16 lines, the line scan once per
+run, the pages table 0.7 s, model loading 1.1 s.
 
-## The pilot's calibration pages now carry machine units
+## The pilot's two groups carry machine units
 
-The alignment has run over all 20 calibration pages with the trained detector and classifier: **2,920
-units, 424 accepted, 2,496 rejected, no failures**, and the packages have been re-exported so a
-reviewer opens a page and sees the proposed boxes and readings. A reviewer's job is therefore to
-correct what the pipeline proposed rather than to draw everything, which is what the protocol
-assumes. The held-out pages are not aligned yet; at the measured rate they need several hours of
-compute.
+The alignment has run over both groups with the trained detector and classifier and the packages have
+been re-exported, so a reviewer opens a page and sees the proposed boxes and readings rather than a
+blank page. A reviewer's job is therefore to correct what the pipeline proposed, which is what the
+protocol assumes:
 
-## What was waiting on the classifier
+- **Calibration, 20 pages**, 212 lines: 2,920 units, 424 accepted, 2,496 rejected, 2,693 with a box.
+  These are the pages annotated twice and adjudicated (T25).
+- **Held-out, 452 pages**, 7,635 lines: 166,058 units, 28,306 accepted, 137,752 rejected, 7,440 with
+  a box. These are the pages annotated once with the machine output hidden (T26), and the published
+  precision and coverage come from them.
 
-The pilot's 472 pages are fetched and packaged — 20 calibration pages holding 212 lines and 452
-held-out pages holding 7,635 — and every one of their page images is in the cache, which is the
-pre-flight check the alignment needs. The alignment over the calibration pages runs first, then the
-packages are re-exported so a reviewer sees the proposed units, and the held-out pages follow.
+The held-out group is the rest of each item, not the 100-page `--per-item 10` sample used to gauge
+the cost; the sampled run is what made the first export look wrong, because its 100 packages sat
+beside 352 stale directories. Both groups are exported whole now.
+
+## Two writers on one dataset
+
+Two alignment runs overlapped on `work/honkoku-lines` and the later writer's read-modify-write dropped
+the earlier run's 2,920 calibration units — the packages survived, the dataset's units table did not.
+The fix is a lock: `tables.locked(directory)` is held across the read and the write in `_write_units`,
+so a second run queues behind the first and merges with what it left, and `tables.write` takes the
+same lock on its own. Six tests pin the merge rules and the lock, including one that holds the lock
+here and watches a second process time out.
 
 ## What is running
 
-The detector is on epoch 3 of 6 (dense-curve F1 0.687 at epoch 2, rising from 0.531 at epoch 0). The
-classifier's gate starts it once the detector's process is gone, `free -g` available is at least
-12 GB, and the detector's log has been quiet for three minutes — twice in a row, 150 seconds apart.
-That gate exists because two runs competing for this machine's memory have already cost the detector
-two processes tonight.
+Nothing on the alignment: both pilot groups are aligned and packaged. The detector's six-epoch run is
+complete and its ONNX artifact is what the alignment used. The open machine work is T21's longer
+detector schedule — precision 0.700 against the card's target — and the Ainu column census, which is
+a measurement and not a training run.

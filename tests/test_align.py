@@ -193,8 +193,9 @@ def test_run_directory_writes_only_its_own_units(tmp_path, monkeypatch):
     assert [unit.box.x for unit in written] == [40, 10], "reading order is right to left on a vertical line"
     assert all(run.fingerprint() in unit.id for unit in written)
 
-    # A reviewed unit survives a rerun; a second run's units on the same page do not, so a rerun
-    # replaces what it wrote rather than doubling it.
+    # Three things are decided here. A reviewed unit survives a rerun. This run's own units on the
+    # page are replaced rather than doubled. And another run's units on that page are left alone,
+    # because they are the evidence of a different configuration.
     reviewed = Unit(id="d1:0:L0:m1", document_id="d1", page_id="d1:0", line_id="d1:0:L0", seq=99,
                     box=Box(x=70, y=10, w=5, h=5), method="manual", review=ReviewState.REVIEWED)
     other = Unit(id="d1:0:L0:deadbeef:1", document_id="d1", page_id="d1:0", line_id="d1:0:L0", seq=98,
@@ -205,8 +206,8 @@ def test_run_directory_writes_only_its_own_units(tmp_path, monkeypatch):
         align.run_directory(tmp_path, run, detector=Stub(), classifier=Stub())
     ids = [unit.id for unit in tables.read(tmp_path / "units.parquet", Unit)]
     assert "d1:0:L0:m1" in ids, "a reviewed unit is never dropped by an alignment"
-    assert "d1:0:L0:deadbeef:1" not in ids, "the pages just aligned are re-aligned, not accumulated"
-    assert len(ids) == 3
+    assert "d1:0:L0:deadbeef:1" in ids, "another run's units on the page stay, so two runs can be compared"
+    assert len([ident for ident in ids if run.fingerprint() in ident]) == 2, "a rerun does not double its own units"
 
 
 def test_ruby_is_recorded_without_a_box():

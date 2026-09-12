@@ -248,18 +248,28 @@ The data the run used: 917,309 train, 44,782 val and 124,196 test crops over 1,0
 Acceptance: on the held-out pilot pages, joint precision of accepted units ≥ 0.95 at coverage ≥ 0.80
 on printed main text.
 
-Status: the aligner, its runner (`atlas align`), the pilot run configuration and 12 tests are in
-place, and the whole path has been exercised on a real calibration page with ONNX models: the
-detector returned 551 boxes on the page, the runner aligned both lines and wrote 22 units with boxes
-and detector scores. The acceptance itself needs three things that do not exist yet: the trained
-classifier, the calibration truth (T25, human) and the pilot run.
+Status: the aligner, its runner (`atlas align`), the pilot run configuration and 18 tests are in place,
+and both pilot groups have been aligned with the trained detector and classifier and the run
+configuration `models/align/runs/pilot-v1.yaml` (fingerprint `7a0d3267f64e`):
+
+- **Calibration, 20 pages.** 212 lines, **2,920 units**, 424 accepted, 2,496 rejected, no failures.
+  The pages hold 2,693 units with a box. The packages under `/tmp/pilot-calibration` were exported
+  from this alignment, so a reviewer opens a page and corrects the pipeline's proposals rather than
+  drawing every character.
+- **Held-out, 452 pages.** 7,635 lines, **166,058 units**, 28,306 accepted, 137,752 rejected, no
+  failures, 7,440 units with a box. The run took **7 m 15 s, 0.96 s a page**, and the packages under
+  `/tmp/pilot-heldout` hold all 452 pages, their images (1.6 GB) and these units.
+
+The acceptance itself still needs the calibration truth (T25, human), because the joint precision is
+measured against adjudicated character annotations on pages the pipeline never tuned on. What the runs
+establish is that the machine half is finished and fast enough to be re-run: an earlier 20-page run
+took 843 s and this one 31 s after the page image stopped being decoded once per crop.
 
 One dependency is worth stating plainly, because it decides whether M2 can be measured at all: the
 pilot pages come from Honkoku-Lines, which carries line boxes and text but no character boxes, so
 the character boxes can only come from this detector. The CODH books do carry their own boxes, but
 none of them is a pilot page, so a detector that cannot find characters leaves the pilot without a
-prediction to score. If the six-epoch run does not reach a usable detector, the honest outcome is
-that M2's measured pilot is blocked on training, not that the measurement is skipped.
+prediction to score.
 
 ### T24 Pilot selection, packages, evaluator
 
@@ -271,8 +281,15 @@ six hosts, and now carries the production type its manifests state, which gives 
 manuscripts alongside the prints; `docs/implementation/pilot-protocol.md` is committed with the
 interface's known limits. `atlas pilot export --group calibration` wrote 20 packages holding 212
 lines with their images, and `atlas pilot images --group calibration` fetched those 20 pages (4.3 MB
-each on average). For the held-out group `atlas pilot images --per-item 10` fetched 100 pages (64
-new, 36 already in the cache, none failed) and their packages are written the same way.
+each on average). The held-out group is exported whole: `atlas pilot export --group heldout` wrote
+**452 packages, 7,635 lines, 166,058 units and 452 images** — every page of the group, with no empty
+package and no missing image.
+
+The protocol's held-out group is the rest of each item, which is 452 pages and not the 100-page
+`--per-item 10` sample an earlier run used to gauge the cost. That sample is what made the first
+held-out export look wrong: it held 45,159 units over 100 pages while an export without `--pages`
+produced 7,362 over the same 100, because 352 of the packages were stale directories from the
+sampled run. The full group is aligned and packaged now.
 
 ### T30 Synthetic hentaigana renderings
 

@@ -871,41 +871,58 @@ def _write_units(
 ) -> None:
     """Write this run's units and groups, keeping what must survive.
 
-    Two rules fix what survives. A unit of another run stays, so two configurations can be compared
-    on one directory, and a unit a person has reviewed or adjudicated stays whatever run wrote it,
-    because an alignment is not allowed to throw away editorial work. With `replace`, the units this
-    run left on the pages it just aligned are dropped first, so a rerun does not double them.
+    Three rules fix what survives. A unit of another run stays, so two configurations can be compared
+    on one directory. A unit a person has reviewed or adjudicated stays whatever run wrote it,
+    because an alignment is not allowed to throw away editorial work. And with `replace`, this run's
+    own units are dropped only on the pages it is about to write, so a run over one group of pages
+    adds to the pages outside the group rather than clearing the directory — which is what a
+    held-out run over 452 pages did to the calibration pages aligned before it.
     """
     from . import tables
 
-    dataset = tables.Dataset(directory)
-    marker = f":{fingerprint}:"
-    keep_units: list[Unit] = []
-    if dataset.tables["units"] is not None:
-        for batch in dataset.scan("units"):
-            for unit in batch:
-                if marker in unit.id:
-                    continue
-                if unit.review in KEEP_REVIEW:
-                    keep_units.append(unit)
-                    continue
-                if not replace or pages is None or unit.page_id in pages:
-                    continue
-                keep_units.append(unit)
-    keep_groups: list[Group] = []
-    if dataset.tables["groups"] is not None:
-        for batch in dataset.scan("groups"):
-            for group in batch:
-                if marker not in group.id:
-                    keep_groups.append(group)
-    for unit in units:
-        if unit.document_id is None and page_documents is not None:
-            unit.document_id = page_documents.get(unit.page_id or "")
-        elif unit.document_id is None:
-            unit.document_id = _document_of(dataset, unit.page_id)
-    tables.write(directory / "units.parquet", [*keep_units, *units], Unit)
-    if keep_groups or groups:
-        tables.write(directory / "groups.parquet", [*keep_groups, *groups], Group)
+    # The read and the write are one step: two alignments that ran at once over this directory each
+    # read the units, each wrote its own back, and the later write threw the earlier run's units
+    # away. The lock is held across both, so the second run merges with what the first left.
+    with tables.locked(directory):
+        dataset = tables.Dataset(directory)
+        marker = f":{fingerprint}:"
+        keep_units: list[Unit] = []
+        if dataset.tables["units"] is not None:
+            for batch in dataset.scan("units"):
+                for unit in batch:
+                    if _keep_unit(unit, marker, replace=replace, pages=pages):
+                        keep_units.append(unit)
+        keep_groups: list[Group] = []
+        if dataset.tables["groups"] is not None:
+            for batch in dataset.scan("groups"):
+                for group in batch:
+                    if marker not in group.id:
+                        keep_groups.append(group)
+        for unit in units:
+            if unit.document_id is None and page_documents is not None:
+                unit.document_id = page_documents.get(unit.page_id or "")
+            elif unit.document_id is None:
+                unit.document_id = _document_of(dataset, unit.page_id)
+        tables._write_unlocked(directory / "units.parquet", [*keep_units, *units], Unit)
+        if keep_groups or groups:
+            tables._write_unlocked(directory / "groups.parquet", [*keep_groups, *groups], Group)
+
+
+def _keep_unit(unit: Unit, marker: str, *, replace: bool, pages: set[str] | None) -> bool:
+    """Whether a unit already in the directory survives the write that is about to happen.
+
+    A unit written by another run (its id does not carry this run's fingerprint) is never this run's
+    to drop. A unit a person touched is never dropped by a machine. What is left is this run's own
+    output, and with `replace` it goes when its page is one of the pages being written — the pages it
+    is not writing keep it, so a group-by-group run accumulates.
+    """
+    if marker not in unit.id:
+        return True
+    if unit.review in KEEP_REVIEW:
+        return True
+    if not replace or pages is None:
+        return not replace
+    return unit.page_id not in pages
 
 
 def _document_of(dataset: Any, page_id: str | None) -> str | None:

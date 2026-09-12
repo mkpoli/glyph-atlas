@@ -27,7 +27,7 @@ from enum import Enum, IntEnum
 from functools import cache
 from pathlib import Path
 from types import UnionType
-from typing import Any, Literal, Union, get_args, get_origin
+from typing import Any, Literal, Self, Union, get_args, get_origin
 
 import pyarrow as pa
 import pyarrow.compute as pc
@@ -226,8 +226,25 @@ def write(
     `records` are models of `model` or dictionaries that validate as one. `path` is a file, or a
     directory when `shard=True`; only `units` and `lines` are sharded. A directory write replaces
     the shards it holds and writes `MANIFEST.json`.
+
+    The write takes the table's lock for the whole call, so two processes writing the same table
+    serialize instead of one losing the other's rows. A read-modify-write that spans several
+    operations still has to hold the lock itself, which is what `locked` is for.
     """
     path = Path(path)
+    with locked(path):
+        return _write_unlocked(path, records, model, shard=shard, command=command)
+
+
+def _write_unlocked(
+    path: Path,
+    records: Iterable[BaseModel] | Iterable[dict],
+    model: type[BaseModel],
+    *,
+    shard: bool = False,
+    command: str | None = None,
+) -> int:
+    """`write` without taking the lock, for a caller that already holds it."""
     if shard:
         name = _table_name(model)
         if name not in SHARDED_TABLES:
@@ -241,6 +258,64 @@ def write(
     if path.is_dir():
         _write_manifest(path, {_table_name(model): table.num_rows}, files, command)
     return table.num_rows
+
+
+class locked:
+    """Hold a table's lock for a block of work.
+
+    Two processes can read a table, each add its rows and each write the result back; the second
+    write then holds only its own contribution, and the first process's rows are gone. The lock is a
+    sidecar file beside the table, so it covers a whole dataset directory as well as one file, and it
+    is taken with `flock`, which the kernel releases when the process dies — a killed run does not
+    leave the table unusable.
+
+    `poll` and `timeout` bound the wait: a run that cannot take the lock within `timeout` seconds
+    raises `TimeoutError` rather than hanging behind a stuck process.
+    """
+
+    def __init__(self, path: Path, *, poll: float = 0.2, timeout: float | None = 3600.0) -> None:
+        self.path = Path(path)
+        self.poll = poll
+        self.timeout = timeout
+        self._handle: Any = None
+
+    @property
+    def lock_path(self) -> Path:
+        """Where the sidecar lives: beside the table, named for it."""
+        name = self.path.name if self.path.suffix else (self.path.name or "root")
+        return self.path.with_name(f".{name}.lock")
+
+    def __enter__(self) -> Self:
+        import fcntl
+        import time
+
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        handle = self.lock_path.open("a+")
+        started = time.monotonic()
+        while True:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self._handle = handle
+                return self
+            except OSError:
+                if self.timeout is not None and time.monotonic() - started > self.timeout:
+                    handle.close()
+                    raise TimeoutError(
+                        f"waited {self.timeout:.0f} s for the lock on {self.path}; "
+                        f"another process is writing it"
+                    ) from None
+                time.sleep(self.poll)
+
+    def __exit__(self, *_: object) -> None:
+        import fcntl
+
+        if self._handle is None:
+            return
+        try:
+            fcntl.flock(self._handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            self._handle.close()
+            self._handle = None
 
 
 def write_table(
