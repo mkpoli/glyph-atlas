@@ -99,8 +99,12 @@ def test_works_and_witnesses_are_read_with_their_parts(source: AinuSource) -> No
     assert set(works) == {"ezo-kiko", "moshiogusa"}
     ninjal = next(w for w in works["moshiogusa"].witnesses if w.slug == "ninjal")
     assert [part.label for part in ninjal.parts] == ["乾巻", "坤巻"]
-    assert ninjal.unit == "moshiogusa/ninjal"
     assert source.entries()["3daea514503efa7c8ec5ccc61c9be9d8"][2].label == "乾巻"
+    # The publishing unit is not the witness: a witness with several parts is addressed by
+    # `<slug>-<n>`, so `moshiogusa/ninjal` names no corrections directory and no character key.
+    assert ninjal.unit_of("3daea514503efa7c8ec5ccc61c9be9d8") == "moshiogusa/ninjal-1"
+    assert ninjal.unit_of("62c6743982041882d0aefd6582ac6a84") == "moshiogusa/ninjal-2"
+    assert ninjal.unit_of("ffff0000ffff0000ffff0000ffff0000") is None
 
 
 def test_a_document_maps_by_entry_id_not_by_title(source: AinuSource) -> None:
@@ -108,8 +112,12 @@ def test_a_document_maps_by_entry_id_not_by_title(source: AinuSource) -> None:
     first = source.map_document(Document("d1", "3daea514503efa7c8ec5ccc61c9be9d8"))
     second = source.map_document(Document("d2", "62c6743982041882d0aefd6582ac6a84"))
     assert first is not None and second is not None
-    assert first.unit == second.unit == "moshiogusa/ninjal", "one witness"
+    assert first.witness == second.witness == "ninjal", "one witness"
+    assert first.unit == "moshiogusa/ninjal-1" and second.unit == "moshiogusa/ninjal-2", (
+        "different publishing units, which is what a corrections path and a character key use"
+    )
     assert first.part.label == "乾巻" and second.part.label == "坤巻", "different parts"
+    assert first.part_index == 1 and second.part_index == 2 and first.parts == 2
     assert first.holder == "国立国語研究所"
 
 
@@ -122,12 +130,49 @@ def test_a_document_the_source_does_not_publish_maps_to_nothing(source: AinuSour
 def test_the_parser_line_count_skips_structural_markers() -> None:
     """Corrections are placed by the source's own one-based count of transcription lines.
 
-    The 右丁 marker and the blank line are skipped, so the first transcription line below the marker is
-    line 1 and not line 3 — which is why an atlas `page.seq + 1` cannot be used for placement.
+    The blank line is skipped, and so is a ［…］ line whose label is structural (右丁, 左丁, 丁), so
+    the first transcription line below the marker is line 1 and not line 3 — which is why an atlas
+    `page.seq + 1` cannot be used for placement.
     """
-    text = "［右丁］\n\n最初の行\n二番目の行\n［左丁］\n三番目の行\n"
+    text = "【右丁】\n\n最初の行\n二番目の行\n【左丁】\n三番目の行\n"
     lines = ainu_source.transcription_lines(text)
     assert lines == ["最初の行", "二番目の行", "三番目の行"]
+
+
+def test_only_the_two_structural_labels_are_skipped() -> None:
+    """`右丁` and `左丁` open a leaf and are not numbered; every other 【…】 line is content.
+
+    This is the case the first two versions of `transcription_lines` got wrong, in opposite
+    directions: one skipped a ママ marker, and both matched the wrong brackets. The native regex is
+    `^【([^】]+)】$` with `STRUCTURAL = {右丁, 左丁}`, so 【ママ】, 【丁】 and 【十二丁】 are all
+    numbered lines, and a correction after one would be aimed a line too early.
+    """
+    text = "【右丁】\n一行目\n【ママ】\n二行目\n【丁】\n三行目\n【十二丁】\n四行目\n【左丁】\n五行目\n"
+    lines = ainu_source.transcription_lines(text)
+    assert lines == ["一行目", "【ママ】", "二行目", "【丁】", "三行目", "【十二丁】", "四行目", "五行目"]
+    assert ainu_source.place(lines, line=2, original="ママ") is None
+    assert ainu_source.place(lines, line=8, original="五行目") is None
+    assert "does not contain" in (ainu_source.place(lines, line=2, original="二行目") or "")
+
+
+def test_a_correction_that_changes_nothing_is_refused() -> None:
+    """The source's loader rejects `original === corrected`, so this does too."""
+    lines = ["テシンとテレン"]
+    assert "unchanged" in (ainu_source.place(lines, line=1, original="テシン", corrected="テシン") or "")
+    assert ainu_source.place(lines, line=1, original="テシン", corrected="テレン") is None
+
+
+def test_ruby_needs_the_field_named_and_the_base_unchanged() -> None:
+    """A plain substring inside a ruby field can never match natively; the field must be named."""
+    line = "《振り仮名：蝦夷｜えぞ》の国"
+    lines = [line]
+    inside = ainu_source.place(lines, line=1, original="えぞ", corrected="えぞう")
+    assert inside and "ruby field" in inside
+    assert ainu_source.place(lines, line=1, original="えぞ", corrected="えぞう",
+                             ruby_field="rt", ruby_base="蝦夷") is None
+    wrong_base = ainu_source.place(lines, line=1, original="えぞ", corrected="えぞう",
+                                   ruby_field="rt", ruby_base="別")
+    assert wrong_base and "with base" in wrong_base
 
 
 def test_an_original_must_match_exactly_once() -> None:

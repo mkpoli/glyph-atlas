@@ -46,9 +46,14 @@ SOURCES = Path("data") / "sources.yaml"
 UNIT = re.compile(r"^[a-z0-9-]+/[a-z0-9-]+$")
 #: A correction file, whose name is the one-based reader page.
 PAGE_FILE = re.compile(r"^p([1-9][0-9]*)\.json$")
-#: A structural line the source's parser skips when it counts transcription lines.
-STRUCTURAL = frozenset({"右丁", "左丁", "丁"})
-_PHYSICAL = re.compile(r"^［(.+?)］\s*$")
+#: A ruby field as the source writes it: `《振り仮名：base｜reading｜left》`, the third part optional.
+_RUBY = re.compile(r"《振り仮名：([^｜《》]*)｜([^｜《》]*)(?:｜([^｜《》]*))?》")
+#: The labels the source's parser treats as structure rather than content (`scripts/lib/markup.ts`).
+STRUCTURAL = frozenset({"右丁", "左丁"})
+#: A physical-metadata line, in the black lenticular brackets the source's parser matches: 【…】.
+#: It is not ［…］. A line whose label is structural opens a leaf and is not numbered; every other
+#: physical label, ママ and 丁 and 十二丁 included, is a numbered content line.
+_PHYSICAL = re.compile(r"^【([^】]+)】\s*$")
 
 
 class AinuSourceError(RuntimeError):
@@ -79,10 +84,20 @@ class Witness:
     catalogue: str | None = None
     parts: list[Part] = field(default_factory=list)
 
-    @property
-    def unit(self) -> str:
-        """The slug the source uses in paths and character keys: `<work>/<witness>`."""
-        return f"{self.work}/{self.slug}"
+    def unit_of(self, entry: str) -> str | None:
+        """The publishing unit one platform entry belongs to, or None when this witness lacks it.
+
+        The rule is the source's own (`scripts/lib/sources.ts`, `loadUnits`): a witness with one part
+        is addressed by its slug, and a witness with several is addressed by `<slug>-<n>` with a
+        one-based part index. Parts are separate units there — separate corrections directories,
+        separate character keys — so `moshiogusa/ninjal` addresses nothing at all, and neither does
+        `ezo-kiko/ryukoku` when the copies are `ryukoku-1`, `ryukoku-2`, `ryukoku-3`.
+        """
+        for index, part in enumerate(self.parts, start=1):
+            if part.entry == entry:
+                suffix = f"-{index}" if len(self.parts) > 1 else ""
+                return f"{self.work}/{self.slug}{suffix}"
+        return None
 
     def part_of(self, entry: str) -> Part | None:
         return next((part for part in self.parts if part.entry == entry), None)
@@ -112,6 +127,9 @@ class Mapping:
     witness: str
     part: Part | None
     entry: str
+    #: The one-based part index when the witness has more than one part, and the count either way.
+    part_index: int | None = None
+    parts: int = 1
     holder: str | None = None
     title: str | None = None
     catalogue: str | None = None
@@ -171,10 +189,14 @@ class Proposal:
 def transcription_lines(text: str) -> list[str]:
     """The lines the source's parser counts, in its own order.
 
-    `parsePage` drops blank lines, drops a ［…］ marker whose label is structural (右丁, 左丁, 丁) and
-    keeps any other marker in `physical`, and then numbers what is left from one. This reproduces that
-    count for corrections, which are placed by it, and it is the reason a correction cannot be placed
-    with `page.seq + 1`: the atlas's lines come from its own reading of the markup.
+    `parsePage` drops blank lines and drops a 【…】 line whose label is structural (右丁, 左丁); any
+    other 【…】 line — ママ, 丁, 十二丁 — is a numbered content line, and the rest are numbered from
+    one. This reproduces that count for corrections, which are placed by it, and it is the reason a
+    correction cannot be placed with `page.seq + 1`: the atlas's lines come from its own reading of
+    the markup.
+
+    This is a reading of the source's parser, not the parser itself. `ainu_source.validate` runs the
+    real one through `scripts/native/validate_corrections.ts` when it can, and says so when it cannot.
     """
     lines: list[str] = []
     for raw in text.splitlines():
@@ -182,15 +204,52 @@ def transcription_lines(text: str) -> list[str]:
         if not line.strip():
             continue
         marker = _PHYSICAL.match(line.strip())
-        if marker:
-            label = marker.group(1).strip()
-            if label in STRUCTURAL or label == "ママ":
-                continue
+        if marker and marker.group(1).strip() in STRUCTURAL:
+            continue
         lines.append(line)
     return lines
 
 
-def place(lines: Iterable[str], *, line: int, original: str) -> str | None:
+def ruby_parts(text: str) -> list[tuple[str, str, str | None]]:
+    """Every ruby field in a line, as (base, reading, left) — the source's three correction targets."""
+    return [(match.group(1), match.group(2), match.group(3)) for match in _RUBY.finditer(text)]
+
+
+def ruby_target(*, original: str, ruby_field: str | None, ruby_base: str | None,
+                line_text: str) -> str | None:
+    """Why a ruby correction cannot be placed, or None when it can.
+
+    The source's loader walks parsed nodes and only ever matches a ruby field when `rubyField` says
+    which one; a plain substring inside `《振り仮名：…》` can never match, because that text is a node
+    field rather than a text node. So a correction whose original sits inside a ruby field and which
+    does not name that field is refused here rather than accepted and left to fail the source's build.
+    """
+    fields = ruby_parts(line_text)
+    if ruby_field is None:
+        for base, reading, left in fields:
+            if original in (base, reading) or (left is not None and original == left):
+                return (
+                    f"{original!r} is inside a ruby field; a ruby correction needs ruby_field "
+                    f"(rb, rt or left) and the unchanged ruby_base"
+                )
+        return None
+    if ruby_field not in ("rb", "rt", "left"):
+        return f"invalid ruby field: {ruby_field!r}"
+    wanted = {"rb": 0, "rt": 1, "left": 2}[ruby_field]
+    for parts in fields:
+        value = parts[wanted]
+        if value is None or value != original:
+            continue
+        if ruby_base is not None and parts[0] != ruby_base:
+            continue
+        return None
+    return f"no ruby field {ruby_field} in the line reads {original!r}" + (
+        f" with base {ruby_base!r}" if ruby_base else ""
+    )
+
+
+def place(lines: Iterable[str], *, line: int, original: str, corrected: str | None = None,
+          ruby_field: str | None = None, ruby_base: str | None = None) -> str | None:
     """Why `original` cannot be placed on `line`, or None when it can.
 
     The source requires an exact, unique match inside the named line, and the reason matters to a
@@ -200,10 +259,19 @@ def place(lines: Iterable[str], *, line: int, original: str) -> str | None:
     lines = list(lines)
     if line < 1:
         return f"line {line} is not a one-based transcription line"
+    if original and original == corrected:
+        return "the correction leaves the text unchanged, which the source's loader rejects"
     if line > len(lines):
         return f"line {line} does not exist; the page has {len(lines)} transcription lines"
     if not original:
         return "a correction needs the original text it replaces"
+    if ruby_field is not None or ruby_parts(lines[line - 1]):
+        problem = ruby_target(original=original, ruby_field=ruby_field, ruby_base=ruby_base,
+                              line_text=lines[line - 1])
+        if problem:
+            return problem
+        if ruby_field is not None:
+            return None
     found = lines[line - 1].count(original)
     if found == 0:
         return f"line {line} does not contain {original!r}"
@@ -296,12 +364,17 @@ class AinuSource:
         if placed is None:
             return None
         work, witness, part = placed
+        unit = witness.unit_of(str(entry))
+        if unit is None:
+            return None
         return Mapping(
             document_id=document.id,
-            unit=witness.unit,
+            unit=unit,
             work=work.slug,
             witness=witness.slug,
             part=part,
+            part_index=witness.parts.index(part) + 1 if len(witness.parts) > 1 else None,
+            parts=len(witness.parts),
             entry=str(entry),
             holder=witness.holder,
             title=witness.title or work.title,
@@ -402,7 +475,8 @@ class AinuSource:
                 problems.append(f"{proposal.id}: no transcription supplied for {proposal.unit} p{proposal.page}")
                 continue
             reason = place(transcription_lines(text), line=proposal.line or 0,
-                           original=proposal.original or "")
+                           original=proposal.original or "", corrected=proposal.corrected,
+                           ruby_field=proposal.ruby_field, ruby_base=proposal.ruby_base)
             if reason:
                 problems.append(f"{proposal.id}: {reason}")
         return problems

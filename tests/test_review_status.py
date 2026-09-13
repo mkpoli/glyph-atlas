@@ -185,3 +185,110 @@ def test_quality_is_unmeasured_until_an_audit_is_scored() -> None:
     assert measured["state"] == "measured" and measured["rate"] == 0.9
     low, high = measured["interval"]
     assert low < 0.9 < high and 0.0 <= low and high <= 1.0
+
+
+# -- against the real schema, because fake units hid the bug these cover -------------------------
+
+
+def schema_unit(**overrides: Any):
+    """A `schema.Unit` as the detector and the import actually write one."""
+    from kuzushiji_atlas.schema import Box, ReviewState, Unit, UnitKind
+
+    fields: dict[str, Any] = {
+        "id": "hk:d:0:L0:f:1",
+        "page_id": "hk:d:0",
+        "document_id": "hk:d",
+        "line_id": "hk:d:0:L0",
+        "seq": 1,
+        "box": Box(x=10, y=20, w=30, h=40),
+        "text_source": "あ",
+        "reading": "あ",
+        "unicode": "U+3042",
+        "kind": UnitKind.CHAR,
+        "method": "detect-align",
+        "review": ReviewState.MACHINE,
+    }
+    fields.update(overrides)
+    return Unit(**fields)
+
+
+def test_a_machine_box_and_reading_are_not_a_verification() -> None:
+    """The bug the fake units hid: every imported row was reported as checked.
+
+    A detector box, a classifier reading and an upstream `text_source` are all nonempty on an
+    untouched machine unit, and the first version recorded each as a decision because it only asked
+    whether the value was empty. Sixteen hundred such units would have shown as reviewed work.
+    """
+    unit = schema_unit()
+    standing = status.unit_reviews([unit], [])[unit.id]
+    assert standing.kind == "machine"
+    assert standing.verified == [] and standing.adjusted == []
+    assert standing.fields["reading"].value == "あ", "the value is still readable"
+    assert standing.fields["reading"].kinds == [], "it is a baseline, not a decision"
+    assert standing.fields["box"].kinds == []
+
+
+def test_an_imported_review_state_is_standing_and_an_edit_is_still_a_draft() -> None:
+    """Editorial standing can be imported; editing a value is a draft until it is confirmed."""
+    imported = schema_unit(review="reviewed")
+    assert status.unit_reviews([imported], [])[imported.id].kind == "checked"
+
+    edited = schema_unit()
+    events = [Event(edited.id, "box", {"x": 1, "y": 2, "w": 3, "h": 4}, actor="r1")]
+    standing = status.unit_reviews([edited], events)[edited.id]
+    assert standing.kind == "draft", "moving a box is not confirming a reading"
+    assert standing.adjusted == ["box"]
+
+    confirmed = schema_unit()
+    events = [
+        Event(confirmed.id, "box", {"x": 1, "y": 2, "w": 3, "h": 4}, actor="r1"),
+        Event(confirmed.id, "review", "reviewed", actor="r1", old="machine"),
+    ]
+    assert status.unit_reviews([confirmed], events)[confirmed.id].kind == "checked"
+
+
+def test_undo_restores_the_machine_baseline_not_a_verification() -> None:
+    """A reading restored to what the pipeline wrote is the pipeline's value again.
+
+    Two undos have to be told apart from a decision. Editing a reading and then putting the original
+    back leaves the value the machine produced, so the field's last provenance is a restoration and
+    not a person confirming the reading. Clearing a reading takes the verification away entirely.
+    """
+    restored = schema_unit()
+    events = [
+        Event(restored.id, "reading", "い", actor="r1", old="あ"),
+        Event(restored.id, "reading", "あ", actor="r1", old="い"),
+    ]
+    standing = status.unit_reviews([restored], events)[restored.id]
+    assert standing.fields["reading"].value == "あ", "the detector's reading is back"
+    assert standing.fields["reading"].kinds[-1] == "restored", "and it is recorded as a restoration"
+    assert standing.kind == "machine", "so the unit is not counted as reviewed"
+    assert standing.verified == []
+
+    cleared = schema_unit(reading=None, unicode=None, text_source=None)
+    assert cleared.unicode is None and cleared.text_source is None
+    events = [
+        Event(cleared.id, "reading", "い", actor="r1"),
+        Event(cleared.id, "reading", None, actor="r1", old="い"),
+    ]
+    after = status.unit_reviews([cleared], events)[cleared.id]
+    assert after.kind == "machine" and after.verified == []
+
+    undone_by_pipeline = [
+        Event(restored.id, "review", "reviewed", actor="r1", old="machine"),
+        Event(restored.id, "review", "machine", actor=None, old="reviewed"),
+    ]
+    replayed = status.unit_reviews([restored], undone_by_pipeline)[restored.id]
+    assert replayed.kind == "machine" and replayed.verified == []
+    assert replayed.review_state == "machine", "the effective state follows the journal"
+
+
+def test_the_effective_review_state_and_activity_follow_the_journal() -> None:
+    """Replay updates the record's own state, so it cannot disagree with its events."""
+    unit = schema_unit()
+    checked = [Event(unit.id, "review", "reviewed", actor="r1", old="machine")]
+    standing = status.unit_reviews([unit], checked)[unit.id]
+    assert standing.review_state == "reviewed" and standing.kind == "checked"
+
+    retired = status.unit_reviews([unit], [Event(unit.id, "active", False, actor="r1")])[unit.id]
+    assert retired.active is False and retired.kind == "retired"

@@ -195,6 +195,40 @@ class ReviewRequest(BaseModel):
     evidence: str | None = None
 
 
+class CorrectionRequest(BaseModel):
+    """One editorial correction a client asks the server to record.
+
+    `base_revision` is the page revision the client edited from, so a tab that has been open since
+    before somebody else's correction is told rather than silently overwriting.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(description="stable id of the correction, as the publishing project uses one")
+    target_id: str = Field(description="the page the corrected text is on")
+    #: One-based transcription line, as the source's parser counts them. Left untyped on purpose:
+    #: a line that is not a positive integer is a placement problem, and `review.corrections` owns
+    #: that rule, so the answer is its message rather than FastAPI's schema error.
+    line: Any = Field(description="one-based transcription line, as the source's parser counts them")
+    original: str = Field(description="the text as published, which must appear exactly once")
+    corrected: str = Field(description="what it should say")
+    note: str = Field(description="why, in the reviewer's words; the source's schema requires one")
+    kind: str = "transcription"
+    ruby_field: Literal["rb", "rt", "left"] | None = None
+    ruby_base: str | None = None
+    entry: dict[str, Any] | None = None
+    base_revision: int | None = None
+
+
+class RetractRequest(BaseModel):
+    """A correction taken back, with the page it was recorded on."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    page_id: str
+    reason: str = ""
+
+
 class LineRequest(BaseModel):
     """A line the detector missed, drawn by a reviewer."""
 
@@ -335,6 +369,34 @@ class Store:
 
     def page(self, page_id: str) -> Page | None:
         return self.pages().get(page_id)
+
+    def iter_units(self) -> Iterable[Unit]:
+        """Every unit in the store, active or retired, in table order.
+
+        A dashboard counts what is outstanding, and a retired unit is not outstanding work, so the
+        caller gets both and decides; the standing derivation is what tells them apart.
+        """
+        with self._lock, self._connection() as conn:
+            for row in conn.execute("SELECT data FROM units ORDER BY page_id, line_id, seq, id"):
+                yield Unit.model_validate_json(row["data"])
+
+    def exported_ids(self) -> set[str]:
+        """The units whose present state was written back into the tables by an apply.
+
+        `apply` marks what it writes, and a unit carrying that mark arrived reviewed rather than
+        machine-produced. A dashboard needs the distinction: an applied review is a decision the
+        record holds, and counting it as untouched machine output would understate the work done.
+        """
+        from ..schema import ReviewState
+
+        written: set[str] = set()
+        with self._lock, self._connection() as conn:
+            for row in conn.execute("SELECT id, data FROM units"):
+                unit = Unit.model_validate_json(row["data"])
+                if unit.review in (ReviewState.MACHINE, ReviewState.REJECTED):
+                    continue
+                written.add(str(row["id"]))
+        return written
 
     def page_text(self, page_id: str) -> str | None:
         """A page's transcription as the import wrote it, or None when the dataset holds none.

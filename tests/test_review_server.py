@@ -661,3 +661,118 @@ def test_apply_reaches_events_a_changed_table_would_hide(fixture: Fixture) -> No
     assert applied["reviews"] >= 1
     log = fixture.directory / "reviews.jsonl"
     assert log.is_file() and log.read_text(encoding="utf-8").strip()
+
+
+# -- the dashboard's own endpoints, which had no test when they were written ---------------------
+
+
+@pytest.fixture
+def ainu_dataset(tmp_path: Path) -> Path:
+    """One document, one page with a unit and one page with only a transcription."""
+    from kuzushiji_atlas import koji
+    from kuzushiji_atlas.schema import (
+        Box,
+        Document,
+        Line,
+        Page,
+        PageText,
+        ReviewState,
+        Unit,
+        UnitKind,
+    )
+
+    directory = tmp_path / "ainu"
+    directory.mkdir()
+    tables.write(directory / "documents.parquet",
+                 [Document(id="hk:d", title="蝦夷紀行", holder="龍谷大学図書館")], Document)
+    pages = [
+        Page(id="hk:d:0", document_id="hk:d", seq=0, image="file:a.jpg", width=100, height=100),
+        # A page the alignment never reached: transcription, no lines, no boxes.
+        Page(id="hk:d:1", document_id="hk:d", seq=1, image="file:b.jpg", width=100, height=100),
+    ]
+    line = Line(id="hk:d:0:L0", page_id="hk:d:0", seq=0, box=Box(x=1, y=2, w=3, h=4),
+                text_raw="あ", text=koji.plain("あ"))
+    unit = Unit(id="hk:d:0:L0:f:1", page_id="hk:d:0", document_id="hk:d", line_id=line.id, seq=1,
+                box=Box(x=1, y=2, w=3, h=4), text_source="あ", kind=UnitKind.CHAR,
+                method="detect-align", review=ReviewState.MACHINE)
+    tables.write(directory / "pages.parquet", pages, Page)
+    tables.write(directory / "lines.parquet", [line], Line)
+    tables.write(directory / "units.parquet", [unit], Unit)
+    tables.write(directory / "page_texts.parquet",
+                 [PageText(page_id="hk:d:1", source="ainu-records", text_raw="【右丁】\nテシンを出\n")],
+                 PageText)
+    return directory
+
+
+def test_the_project_endpoint_answers(ainu_dataset: Path):
+    """`GET /project` returns counts derived from decisions, not from revision rows."""
+    client = TestClient(create_app(ainu_dataset))
+    answer = client.get("/project")
+    assert answer.status_code == 200, answer.text
+    body = answer.json()
+    assert body["imported"] == {"documents": 1, "pages": 2, "units": 1}
+    assert body["counts"]["machine"] == 1 and body["counts"]["checked"] == 0
+    assert body["quality"]["state"] == "unmeasured", "an unscored page has no measured precision"
+    assert body["documents"][0]["counts"]["machine"] == 1
+    assert body["documents"][0]["pages"] == 2
+
+
+def test_the_project_endpoint_reports_an_unreadable_source(ainu_dataset: Path, tmp_path: Path):
+    """A source path that is not a checkout is reported, not fatal: the atlas works without it."""
+    client = TestClient(create_app(ainu_dataset))
+    missing = tmp_path / "not-a-checkout"
+    missing.mkdir()
+    body = client.get("/project", params={"source": str(missing)}).json()
+    assert body["source"] == {"readable": False, "path": "not-a-checkout"}
+
+
+def test_the_page_listing_reaches_a_page_with_no_boxes(ainu_dataset: Path):
+    """The page the alignment never reached is browsable, which no other route allowed."""
+    client = TestClient(create_app(ainu_dataset))
+    answer = client.get("/pages")
+    assert answer.status_code == 200, answer.text
+    body = answer.json()
+    assert body["total"] == 2
+    empty = next(item for item in body["items"] if item["id"] == "hk:d:1")
+    assert empty["lines"] == 0 and empty["counts"]["total"] == 0
+    assert empty["transcribed"] is True, "its transcription is what makes it reviewable"
+    assert "image_url" in empty
+
+    only_pending = client.get("/pages", params={"pending": True}).json()
+    assert [item["id"] for item in only_pending["items"]] == ["hk:d:0"], (
+        "the pending filter keeps the page with machine output to check, and drops the empty one"
+    )
+
+
+def test_corrections_round_trip_through_the_api(ainu_dataset: Path):
+    """Post a correction, read it back, retract it, and see the effective text follow."""
+    client = TestClient(create_app(ainu_dataset))
+    payload = {
+        "id": "ezo-kiko-ryukoku-1-teshin", "target_id": "hk:d:1", "line": 1,
+        "original": "テシン", "corrected": "テレン", "note": "原画像を確認。",
+    }
+    created = client.post("/corrections", json=payload)
+    assert created.status_code == 201, created.text
+
+    read = client.get("/pages/hk:d:1/corrections").json()
+    assert read["total"] == 1 and read["items"][0]["status"] == "proposed"
+    assert "テレン" in read["text"] and "テシン" not in read["text"]
+    assert read["base"].startswith("【右丁】"), "the published text is still what it was"
+    assert any(line.startswith("+") for line in read["items"][0]["diff"])
+
+    retracted = client.post("/corrections/ezo-kiko-ryukoku-1-teshin/retract",
+                            json={"page_id": "hk:d:1", "reason": "読み直した"})
+    assert retracted.status_code == 200, retracted.text
+    after = client.get("/pages/hk:d:1/corrections").json()
+    assert after["total"] == 0 and "テシン" in after["text"]
+
+
+def test_a_correction_that_cannot_be_placed_is_refused_with_its_reason(ainu_dataset: Path):
+    """The API refuses what the source's build would refuse, and says why."""
+    client = TestClient(create_app(ainu_dataset))
+    answer = client.post("/corrections", json={
+        "id": "bad-line", "target_id": "hk:d:1", "line": 9,
+        "original": "テシン", "corrected": "テレン", "note": "n",
+    })
+    assert answer.status_code == 400
+    assert "does not exist" in answer.json()["detail"]

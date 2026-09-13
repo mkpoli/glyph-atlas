@@ -71,7 +71,7 @@ ADJUSTING_FIELDS = frozenset(
 )
 
 Kind = Literal["machine", "checked", "draft", "unresolved", "retired"]
-DecisionKind = Literal["verified", "adjusted", "state", "context"]
+DecisionKind = Literal["verified", "adjusted", "state", "restored", "context"]
 
 
 def is_decision(field_name: str) -> bool:
@@ -85,7 +85,7 @@ def _value_of(record: Any, field_name: str) -> Any:
     return getattr(value, "value", value)
 
 
-def _kind_of(field_name: str, value: Any) -> DecisionKind | None:
+def _kind_of(field_name: str, value: Any, initial: Any = None, *, seen: bool = False) -> DecisionKind | None:
     """What a value written into `field_name` says, or None when it says nothing about the record.
 
     A review state is the clearest case: `reviewed`, `adjudicated` and `disputed` are choices a person
@@ -93,7 +93,15 @@ def _kind_of(field_name: str, value: Any) -> DecisionKind | None:
     when it carries a value and undoes when it is cleared, which is how removing a reading takes a
     verification away. A crop or a metadata write adjusts the record without claiming anything was
     read, and a change to something outside both sets says nothing at all.
+
+    `initial` is the value the record started with. Writing that value back is an undo rather than a
+    decision, which is the case that decides whether the dashboard can be trusted after one: undoing a
+    reading the pipeline wrote must restore the pipeline's provenance, not claim a person confirmed it.
+    `seen` says whether the field has had a human decision already, so the first write of a value is a
+    decision and only a later return to the baseline is an undo.
     """
+    if seen and field_name in VERIFYING_FIELDS and value == initial and value not in (None, "", [], {}):
+        return "restored"
     if field_name == "review":
         return "verified" if str(value) in HUMAN_REVIEW_STATES else "state"
     if field_name in VERIFYING_FIELDS:
@@ -124,8 +132,13 @@ class FieldStanding:
 
     @property
     def decided_locally(self) -> bool:
-        """A person decided this: either here, or wherever the record was reviewed before."""
-        return self.author == "human" or self.author in LOCAL_AUTHORS
+        """A decision this field currently carries, whoever recorded it.
+
+        An imported or applied *review state* is editorial standing and counts; a baseline value from
+        the detector or the classifier does not, which is why `kinds` has to carry a decision as well
+        as `author` saying where it came from.
+        """
+        return bool(self.kinds) and (self.author == "human" or self.author in LOCAL_AUTHORS)
 
     @property
     def last(self) -> DecisionKind | None:
@@ -144,6 +157,10 @@ class UnitReview:
     active: bool = True
     actor: str | None = None
     fields: dict[str, FieldStanding] = field(default_factory=dict)
+    #: What each field held before any event touched it: the pipeline's own value, or what the record
+    #: arrived with. A person writing this value back has undone their edit rather than decided
+    #: anything, and the distinction cannot be made from the previous value alone.
+    baseline: dict[str, Any] = field(default_factory=dict)
     context: list[str] = field(default_factory=list)
 
     @property
@@ -241,13 +258,15 @@ def unit_reviews(
             author="export" if unit.id in written_back else "import",
             kinds=["verified" if review in HUMAN_REVIEW_STATES else "state"],
         )
-        for name in ("reading", "unicode", "text_source", "box"):
+        # A field's value is a baseline, not evidence. The detector put a box there and the
+        # classifier put a reading there; neither is a person confirming anything, so these fields
+        # start with no decision recorded. Only an explicit review state the record already carries
+        # is editorial standing, and only a journal event can make a field a decision.
+        for name in ("reading", "unicode", "text_source", "box", "jibo", "classification"):
             if hasattr(unit, name):
                 value = _value_of(unit, name)
-                record.fields[name] = FieldStanding(
-                    value=value,
-                    kinds=["verified"] if value not in (None, "", [], {}) else [],
-                )
+                record.fields[name] = FieldStanding(value=value, kinds=[])
+                record.baseline[name] = value
         standing[unit.id] = record
 
     for event in events:
@@ -260,7 +279,9 @@ def unit_reviews(
             continue
         if field_name not in DECISION_FIELDS:
             continue
-        kind = _kind_of(field_name, event.new)
+        before = record.fields.get(field_name)
+        seen = bool(before.kinds) if before else False
+        kind = _kind_of(field_name, event.new, record.baseline.get(field_name), seen=seen)
         if kind is None:
             # Clearing a reading or an identity is how a decision is taken back, so an empty value on
             # a verifying field is an undo rather than an event with nothing to say. Any other field
@@ -272,16 +293,27 @@ def unit_reviews(
         # An event with no actor is the pipeline writing its own conclusion — an apply, a rebuild, a
         # classifier pass. It changes the record and takes the field back from whoever had it.
         author = "human" if event.actor else "machine"
-        before = record.fields.get(field_name)
-        history = list(before.kinds) if before else []
         if author == "human" and kind == "state" and before is not None and before.value == event.new:
             # A human event that writes the state the record already shows changes nothing, so it
             # does not become the last word on the field.
             continue
-        record.fields[field_name] = FieldStanding(value=event.new, author=author,
-                                                  kinds=[*history, kind])
-        if author == "human" and event.actor:
-            record.actor = event.actor
+        if author == "machine":
+            # The pipeline's own value carries no decision, so restoring one removes whatever
+            # verification stood there — including an imported review the new state replaces.
+            record.fields[field_name] = FieldStanding(value=event.new, author="machine", kinds=[])
+        else:
+            history = list(before.kinds) if before else []
+            record.fields[field_name] = FieldStanding(value=event.new, author="human",
+                                                      kinds=[*history, kind])
+            if event.actor:
+                record.actor = event.actor
+        if field_name == "review":
+            # The record's effective review state follows the journal: this is what `human_review`
+            # and `kind` read, and leaving it at the imported value made a replayed record disagree
+            # with its own events.
+            record.review_state = "machine" if event.new is None else str(event.new)
+        elif field_name == "active":
+            record.active = bool(event.new)
     return standing
 
 
