@@ -16,6 +16,17 @@ python scripts/build_kanji_equivalents.py    # data/vocab/kanji-equivalents.tsv 
 Both generated tables are committed and byte-identical on a rerun; the scripts are only needed when
 the upstream release changes.
 
+**Running the tests behind a proxy.** The suite serves its own pages from `127.0.0.1`, and `httpx`
+reads the proxy environment. A machine that sets `all_proxy` to a SOCKS URL needs the proxy variables
+cleared for the run, or `httpx` reaches for a SOCKS transport it may not have installed; one that
+puts a bracketed IPv6 entry such as `[::1]` in `NO_PROXY` fails earlier, because `httpx` parses it as
+a port and raises `InvalidURL` before any test starts. Neither is a defect in this repository:
+
+```sh
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+    -u NO_PROXY -u no_proxy .venv/bin/python -m pytest -q
+```
+
 ## 2. Imports
 
 Each importer is a command, and each validates afterwards. The zips and clones they read are

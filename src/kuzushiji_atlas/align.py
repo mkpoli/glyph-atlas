@@ -148,6 +148,9 @@ class Run(BaseModel):
     #: detector at the library default of 0.3 found nothing on pages where every detection sits near
     #: the cut, which is what happened to the Ainu records' cursive columns.
     score: float | None = None
+    #: The IoU above which the detector's cross-tile suppression drops a duplicate. Part of the run
+    #: for the same reason `score` is: it decides which boxes the alignment ever sees.
+    nms: float | None = None
 
     def fingerprint(self) -> str:
         """The id every unit of this run carries, from the configuration that decides the output.
@@ -784,7 +787,11 @@ def run_directory(
     if detector is None:
         from .detect import Detector as OnnxDetector
 
-        detector = OnnxDetector(run.detector, **({"score": run.score} if run.score is not None else {}))
+        detector = OnnxDetector(
+            run.detector,
+            **({"score": run.score} if run.score is not None else {}),
+            **({"nms": run.nms} if run.nms is not None else {}),
+        )
     if classifier is None:
         from .classify import Classifier as OnnxClassifier
 

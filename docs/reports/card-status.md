@@ -22,7 +22,7 @@ machine, and which cannot be finished without people.
 | T20 detector data | done | 53,238 tiles, 1,086,287 unique boxes, none lost |
 | T21 detector | partial | the six-epoch run is complete, the test split measured and the ONNX exported with a passing parity check: precision 0.700, recall 0.928, F1 0.798, mean IoU 0.875, and recall 0.968 on the printed books against the card's 0.95. Precision 0.639 there does not meet it and three quarters of the false positives sit on ink CODH never annotated, so the figure is a floor. The card's ruby exclusion cannot be applied to this data at all, and the longer 24-epoch schedule was run for two epochs and measured **worse** (F1 0.696, precision 0.569), so it is not the remedy the curve suggested. What remains is a filled or calibrated head, an `nms` sweep, and finer tiles for the smallest decile |
 | T22 classifier | done | twelve epochs; test top-1 **0.9348** and calibration error **0.0151** against the card's 0.93 and 0.03, top-5 0.9887 against 0.99 (short by 0.0013), macro F1 0.89; ONNX exported at 116 MB with the same 1,594 classes as the list and parity 4.1e-6 over 200 test crops |
-| T23 alignment | partial | the aligner, its runner, its run configuration and 18 tests are done, and both pilot groups are aligned and packaged: 20 calibration pages with 2,920 units and 452 held-out pages with 166,058 units (28,306 accepted, no failures, 7 m 15 s for the held-out run). The acceptance needs the calibration truth, which is human |
+| T23 alignment | partial | the aligner, its runner, its run configuration and 18 tests are done, and both pilot groups are aligned and packaged: 20 calibration pages with 2,920 units and 452 held-out pages with 166,058 units (**42,533 accepted**, no failures, 6 m 54 s for the held-out run). The acceptance needs the calibration truth, which is human |
 | T24 pilot | done | selection, protocol, packages for both groups (20 calibration, 452 held-out pages, images and units), the evaluator and its tests |
 | T30 synthetic kana | done | 286 of 287 code points; U+1B11F is in neither font |
 | T40 review service | done | 22 tests and a live run over an alignment's own output |
@@ -106,10 +106,10 @@ been re-exported, so a reviewer opens a page and sees the proposed boxes and rea
 blank page. A reviewer's job is therefore to correct what the pipeline proposed, which is what the
 protocol assumes:
 
-- **Calibration, 20 pages**, 212 lines: 2,920 units, 424 accepted, 2,496 rejected, 2,693 with a box.
+- **Calibration, 20 pages**, 212 lines: 2,920 units, 358 accepted, 2,562 rejected, 2,560 with a box.
   These are the pages annotated twice and adjudicated (T25).
-- **Held-out, 452 pages**, 7,635 lines: 166,058 units, 28,306 accepted, 137,752 rejected, 7,440 with
-  a box. These are the pages annotated once with the machine output hidden (T26), and the published
+- **Held-out, 452 pages**, 7,635 lines: 166,058 units, **42,175 accepted**, 123,883 rejected, 119,635
+  with a box. These are the pages annotated once with the machine output hidden (T26), and the published
   precision and coverage come from them.
 
 The held-out group is the rest of each item, not the 100-page `--per-item 10` sample used to gauge

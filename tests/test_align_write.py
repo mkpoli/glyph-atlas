@@ -169,3 +169,36 @@ def align_module_detector():
     from kuzushiji_atlas.detect import Detector
 
     return Detector
+
+
+def test_a_run_carries_the_detectors_suppression(tmp_path: Path, monkeypatch) -> None:
+    """A run states the detector's `nms`, so the boxes it aligns are the boxes it names.
+
+    The suppression decides which boxes survive a tile border, and the alignment only ever sees those.
+    A run that did not state it took the constructor's 0.5 whatever the measured value was, which is
+    how the pilot's units were produced under one suppression while `models/detector/config.yaml`
+    recorded another.
+    """
+    seen: dict[str, float] = {}
+    from kuzushiji_atlas.detect import Detector as RealDetector
+
+    def spy(onnx, **options):
+        seen.update(options)
+        return RealDetector(onnx, **options)
+
+    monkeypatch.setattr("kuzushiji_atlas.detect.Detector", spy)
+    page = Page(id="hl:one:0", document_id="doc", seq=0, canvas="c", image="i", width=10, height=10)
+    tables.write(tmp_path / "pages.parquet", [page], Page)
+    tables.write(tmp_path / "lines.parquet", [line(0)], Line)
+
+    align.run_directory(tmp_path, align.Run(name="suppressed", score=0.02, nms=0.2))
+    assert seen.get("score") == 0.02 and seen.get("nms") == 0.2, (
+        "both the operating point and the suppression reach the detector"
+    )
+
+
+def test_the_pilot_configuration_states_both_numbers() -> None:
+    """The run the pilot is measured with names the operating point and the suppression."""
+    run = align.load_run(ROOT / "models" / "align" / "runs" / "pilot-v1.yaml")
+    assert run.score == 0.02, "the measured operating point of the detector"
+    assert run.nms == 0.2, "the val-chosen suppression from models/detector/nms-sweep.json"

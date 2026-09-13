@@ -274,18 +274,24 @@ Status: the aligner, its runner (`atlas align`), the pilot run configuration and
 and both pilot groups have been aligned with the trained detector and classifier and the run
 configuration `models/align/runs/pilot-v1.yaml` (fingerprint `7a0d3267f64e`):
 
-- **Calibration, 20 pages.** 212 lines, **2,920 units**, 424 accepted, 2,496 rejected, no failures.
-  The pages hold 2,693 units with a box. The packages under `/tmp/pilot-calibration` were exported
+- **Calibration, 20 pages.** 212 lines, **2,920 units**, 358 accepted, 2,562 rejected, no failures.
+  The pages hold 2,560 units with a box. The packages under `/tmp/pilot-calibration` were exported
   from this alignment, so a reviewer opens a page and corrects the pipeline's proposals rather than
   drawing every character.
-- **Held-out, 452 pages.** 7,635 lines, **166,058 units**, 28,306 accepted, 137,752 rejected, no
-  failures, 7,440 units with a box. The run took **7 m 15 s, 0.96 s a page**, and the packages under
+- **Held-out, 452 pages.** 7,635 lines, **166,058 units**, 42,175 accepted, 123,883 rejected, no
+  failures, 119,635 units with a box. The run took **6 m 54 s, 0.92 s a page**, and the packages under
   `/tmp/pilot-heldout` hold all 452 pages, their images (1.6 GB) and these units.
 
-Both groups sit in one dataset, `work/honkoku-lines`, which holds 168,978 units: the held-out run
-added its 166,058, and a calibration re-run afterwards added 2,920 without dropping any of them. That
-re-run is also the test of the table lock, which exists because two overlapped runs did drop the
-calibration units once.
+Both groups sit in one dataset, `work/honkoku-lines`, which holds 168,978 units under one run
+fingerprint, `be9c7f9d3d4d`: the held-out run added its 166,058 and the calibration run before it had
+added 2,920, neither dropping the other's. That is also the test of the table lock, which exists
+because two overlapped runs once dropped the calibration units.
+
+The alignment was re-run after the detector's suppression was measured on `val` and changed from 0.5 to
+0.2 (`models/detector/nms-sweep.json`, `docs/reports/card-status.md`). The accepted placements rose from
+28,306 to **42,175** on the held-out group and from 424 to 358 on the calibration pages — the pilot's
+proposals are now the ones the measured suppression produces, and both groups carry the same run
+fingerprint.
 
 The acceptance itself still needs the calibration truth (T25, human), because the joint precision is
 measured against adjudicated character annotations on pages the pipeline never tuned on. What the runs
@@ -311,8 +317,8 @@ its page record, its lines and the machine units the alignment proposed:
 
 | group | packages | lines | units | accepted | with a box | images |
 | --- | --- | --- | --- | --- | --- | --- |
-| calibration | 20 | 212 | 2,920 | 424 | 2,693 | 20 |
-| held-out | 452 | 7,635 | 166,058 | 28,306 | 7,440 | 452 |
+| calibration | 20 | 212 | 2,920 | 358 | 2,560 | 20 |
+| held-out | 452 | 7,635 | 166,058 | 42,175 | 119,635 | 452 |
 
 Every package states its page's pixel size, read from the image it carries. That matters because the
 Honkoku-Lines import records a IIIF URL and no size, and the review interface scales every line box by
@@ -325,8 +331,8 @@ The protocol's held-out group is the rest of each item, which is 452 pages and n
 held-out export look wrong: it held 45,159 units over 100 pages while an export without `--pages`
 produced 7,362 over the same 100, because 352 of the packages were stale directories from the
 sampled run. The full group is aligned and packaged now. The dataset behind the packages holds
-**168,978 units**: the 166,058 held-out units survived the calibration re-run that added the 2,920,
-which is the merge the table lock exists to protect.
+**168,978 units** under one run fingerprint, `be9c7f9d3d4d`: the 166,058 held-out units and the 2,920
+calibration units, neither run dropping the other's, which is the merge the table lock protects.
 
 ### T30 Synthetic hentaigana renderings
 

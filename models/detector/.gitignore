@@ -1,2 +1,4 @@
 artifacts/
 artifacts-*/
+# Cached detections of the nms sweep: 19 MB of arrays any run can regenerate.
+nms-cache/
