@@ -289,6 +289,7 @@ class Store:
         self._lock = threading.RLock()
         self._pages: dict[str, Page] | None = None
         self._documents: list[Document] | None = None
+        self._page_texts: dict[str, str] | None = None
         with self._lock, self._connection() as conn:
             self._schema(conn)
             stamp = self._source_stamp()
@@ -334,6 +335,22 @@ class Store:
 
     def page(self, page_id: str) -> Page | None:
         return self.pages().get(page_id)
+
+    def page_text(self, page_id: str) -> str | None:
+        """A page's transcription as the import wrote it, or None when the dataset holds none.
+
+        The transcription is not part of the review projection and no event changes it: a correction
+        is a layer that names what it replaces (see `review.corrections`), so this reads the table and
+        the text stays exactly what was imported.
+        """
+        from ..schema import PageText
+
+        if self._page_texts is None:
+            path = self.dataset.tables.get("page_texts")
+            self._page_texts = (
+                {row.page_id: row.text_raw for row in tables.read(path, PageText)} if path else {}
+            )
+        return self._page_texts.get(page_id)
 
     def line(self, line_id: str) -> Line | None:
         with self._lock, self._connection() as conn:
