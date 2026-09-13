@@ -138,6 +138,32 @@ of which **23,718 are on entries a line dataset reaches** and 23,963 on the 1,76
 reaches. 1,739 entry manifests failed upstream (gallica 429, honkoku.org 404, khirin-a 500, DNS
 failures) and are retried on a later run; the coverage file says so above its header.
 
+Those failures were counted from the clone and the manifest cache, which is what a retry would face:
+of 7,587 entry rows, **6,026 carry a readable manifest (79.4%)**, 3 state no `manifestUrl`, and 1,558
+name a manifest the cache does not hold. Grouped by host, and by what the host answers when asked
+again:
+
+| host | entries | what it answers |
+| --- | --- | --- |
+| khirin-a.rekihaku.ac.jp | 941 | HTTP 500 for every manifest, every time |
+| gallica.bnf.fr | 243 | HTTP 429 at a 3 s pace, with no `Retry-After` header |
+| iiif.khirin-labs.org | 210 | the name no longer resolves |
+| honkoku.org | 103 | a 404 page, for URLs its own `info.tsv` files name |
+| www.dheq.org | 50 | HTTP 200 |
+| five smaller hosts | 11 | mixed |
+
+The three largest are not one problem. The 1,151 entries on 資料編纂所 and khirin-labs sit behind hosts
+that refuse everything, so no number of retries reaches them and the importer's `HOST_FAILURES` rule is
+right to leave them alone. Gallica differs in kind: it answers 200 to a single request and 429 to every
+request of a burst, which is a rate limit rather than a refusal — the behaviour `net.slow_down` was
+written for, after T16 measured that host answering 200 at a 10 s pace and 429 at 3 s.
+`scripts/retry_manifests.py` fetches only the uncached manifests, through the importer's own
+`fetch_manifest`, and skips the hosts that refuse; a run against the hosts that answer read 18
+manifests before Gallica began refusing at 3 s, so its 243 need a pace of tens of seconds an entry
+rather than the module default, and were left for a later pass rather than hammered. What a recovery
+buys is a stronger rights evidence row: every imported document already carries a source reference, and
+a manifest is a better source than the platform metadata that the ones without it fall back to.
+
 ### T16 Rights reconciliation
 
 Acceptance: the report's per-licence line counts equal the card's provider table, and every
