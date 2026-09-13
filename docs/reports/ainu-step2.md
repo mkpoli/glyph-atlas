@@ -58,6 +58,8 @@ point or with another export does not silently reuse them.
    `match_method = "ainu-ink-columns-v1"` on the line,
 3. withdraws the box a previous derivation wrote on any page this run refuses, so a stricter run
    leaves nothing of a looser one behind, and never touches a box a person set,
+3b. fills a page's pixel size from its cached image when the import states none, because the review
+   interface scales every box by it,
 4. writes `columns.tsv` beside the dataset with one row a page, including the reason a page was not
    paired and the effective parameters of the run,
 5. unless `--no-align`, runs the aligner over the directory with the pilot run's detector and

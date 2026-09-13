@@ -431,9 +431,14 @@ def derive_dataset(
     # and `match_method`. Everything else on the line is read again under the lock, so an edit a
     # reviewer made while the detector was running is not thrown away by replacing the whole row.
     updates: dict[str, dict[str, Any]] = {}
+    page_sizes: dict[str, tuple[int, int]] = {}
     for page in sorted(dataset.read("pages"), key=lambda page: page.id):
         if wanted is not None and page.id not in wanted:
             continue
+        if not page.width or not page.height:
+            size = _cached_size(page)
+            if size is not None:
+                page_sizes[page.id] = size
         boxes = found_map.get(page.id)
         if boxes is None:
             if detector is None:
@@ -490,20 +495,40 @@ def derive_dataset(
         _write_cache(cache, found_map, [page.id for page in dataset.read("pages")], settings=settings)
         counts["cache-entries"] = len(found_map)
         counts["cache-reused"] = cached_pages
-    if updates:
-        counts["units-retired"] = _commit(directory, updates)
+    counts["pages-sized"] = 0
+    if updates or page_sizes:
+        counts["units-retired"] = _commit(directory, updates, page_sizes=page_sizes)
+        counts["pages-sized"] = len(page_sizes)
     write_columns(out if out is not None else directory / "columns.tsv", rows)
     return counts
 
 
-def _commit(directory: Path, updates: dict[str, dict[str, Any]]) -> int:
+def _cached_size(page: Page) -> tuple[int, int] | None:
+    """The pixel size of a page's cached image, or None when it is not cached or not readable."""
+    from PIL import Image
+
+    from . import images
+
+    path = images.path_for(page.image)
+    if path is None:
+        return None
+    try:
+        with Image.open(path) as image:
+            return int(image.width), int(image.height)
+    except (OSError, ValueError):
+        return None
+
+
+def _commit(directory: Path, updates: dict[str, dict[str, Any]],
+            page_sizes: dict[str, tuple[int, int]] | None = None) -> int:
     """Apply this run's line updates under the table lock and retire the units they invalidate.
 
     The lines are read again here rather than reused from the loop: the detector ran for minutes, and
     a row that changed in the meantime belongs to whoever changed it. Only the fields this run owns
     are written, and a line whose box is withdrawn loses the machine units the alignment placed in it
-    — but never a unit a person reviewed, and never another run's units. Returns how many units were
-    retired.
+    — but never a unit a person reviewed, and never another run's units. A page whose record states
+    no pixel size has it filled from the image the cache holds, because the review interface scales
+    every box by that size. Returns how many units were retired.
     """
     from . import tables
 
@@ -517,6 +542,14 @@ def _commit(directory: Path, updates: dict[str, dict[str, Any]]) -> int:
             line.meta = update["meta"]
             line.match_method = update["match_method"]
         tables._write_unlocked(directory / "lines.parquet", lines, Line)
+
+        if page_sizes:
+            pages = tables.read(directory / "pages.parquet", Page)
+            for page in pages:
+                size = page_sizes.get(page.id)
+                if size is not None and (not page.width or not page.height):
+                    page.width, page.height = size
+            tables._write_unlocked(directory / "pages.parquet", pages, Page)
 
         withdrawn = {line.id for line in lines if line.id in updates and updates[line.id]["box"] is None}
         retired = 0
