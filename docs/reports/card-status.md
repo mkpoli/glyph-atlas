@@ -77,8 +77,13 @@ measured against adjudicated character annotations on pages the pipeline never t
 machinery for it exists — packages, the protocol, the review service and interface, the evaluator and
 the audit sampler — and the pages are fetched, but the annotations themselves are human.
 
-T16's remaining half is not human work but machine time: the full manifest pass needs a longer
-per-host pause than `net.download` exposes today, which is a change to weigh rather than a quick run.
+T16 is as finished as the upstream data allows. Its full pass reconciled all 4,140 documents: 3,955
+manifests read from the cache, 75 fetched, **202 that could not be read**. Those 202 are not
+documents without rights — every document in the table carries evidence, and the ones without a
+manifest row (761) stand on the platform's own metadata (364 upstream, 272 per-item, 86 holder) — they
+are documents whose licence rests on a weaker source than the holder's manifest. `atlas rights
+resolve` exposes `pause` for a slower pass, so re-reading them is a run rather than a code change;
+what it would buy is a stronger evidence row for those documents, not a different licence.
 
 ## Timing, measured and explained
 

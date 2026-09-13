@@ -173,11 +173,26 @@ Every false positive of the test measurement, at the shipped operating point (49
 - CODH does not annotate ruby, punctuation or decoration, and 74% of the false positives sit on ink
   with no box near it. The card excludes detections inside known ruby line boxes from the metrics;
   T20's split carries no ruby boxes, so that exclusion is not in these numbers and the true
-  precision on annotated ink is higher than 0.70. Measuring it needs the ruby line boxes from
-  T10/Honkoku-Lines, which is the first thing to wire before these numbers are compared with the
-  pilot's.
+  precision on annotated ink is higher than 0.70. The exclusion cannot be applied to this data at
+  all: the four `test` books are CODH books, whose import carries units and no lines, and no table in
+  the repository holds a line layout for them — `work/honkoku-lines` covers different books and
+  shares no page with the 477 test pages. Ruby line boxes for these books would have to be obtained
+  from CODH or annotated; until then every precision figure here is a floor, and the size of the
+  floor is unknown.
 
 ### What a longer run should test
+
+A second run of the full 24-epoch schedule is running into `models/detector/artifacts-24e/` (the
+shipped artifact stays where it is, because the pilot run names it and its units are fingerprinted to
+it). It checkpoints an epoch at a time, so its `epoch-00.pt`, `metrics.json` and the table above can be
+compared as they appear.
+
+Its rate depends on what else holds the machine. Measured at the start of the run: **1.35 to 2.26 s a
+step** with the load average at 26 to 31 and the GPU at 0%, because another project on this workstation
+was running `vite build` and `svelte-check` across 16 cores. At the rate the six-epoch run achieved on
+an idle machine (0.30 s a step) the 24 epochs are 11.6 hours; at the rate measured under that load they
+are several days. The run is left to checkpoint an epoch at a time rather than killed, and the numbers
+it produces are only comparable with the table above if the machine is quiet while it trains.
 
 The run was bounded at six of the configured 24 epochs, and the curve says it was still moving:
 the loss fell from 6.11 to 3.30, the best F1 from 0.531 to 0.744, and the last epoch still improved
