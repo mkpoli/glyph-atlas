@@ -1,40 +1,34 @@
 """What a review actually decided, as opposed to what it touched.
 
-The store's own counters could not answer "how much has a person checked", and the reason is worth
-recording because the mistake is easy to repeat. `Store.counts` counted rows in the `revisions` table,
-and that table is written by every event: a note, a dwell time, an opened line, a draft box mid-edit.
-So a reviewer who wrote one note on a page of four hundred units made the page look reviewed, and an
-unfinished draft counted as progress.
+The first version of this module had three ways of being wrong, and they are worth stating because
+each is a plausible shortcut.
 
-This module derives the answer from the events themselves instead, under one rule: a unit is
-**human checked** only when a person changed a field that carries a decision — a box they drew, a
-reading they set, a review state they chose, an identity they confirmed. Notes, timings and drafts are
-kept, because they are useful, but they are not evidence that anything was verified.
+* It ignored the review state a record already carries. A unit the atlas imported as `reviewed`, or
+  one an `atlas review apply` wrote back, has no local event at all, so it was reported as untouched
+  machine output.
+* It treated every event on a decision field as a person deciding. A metadata write or a crop
+  adjustment is not a reading, and an event with no actor is not evidence that anybody looked.
+* It accumulated the fields ever touched, so an undo could not take `checked` away: the history kept
+  saying a person had been there even after the record was back to what the pipeline wrote.
 
-The counts a dashboard shows, and what each means:
+The lesson in all three is that a status is a statement about the *current* record, so this module
+replays the journal to the state the record is in now and asks what that state is made of. Undo is
+then an ordinary case rather than a special one: the value a person set is no longer the value, so
+their decision is no longer what the record says.
 
-* `machine` — the pipeline accepted the unit and no person has decided anything about it. This is
-  machine output, and its accuracy is the pipeline's measured precision, not a promise.
-* `checked` — a person recorded an explicit decision on it. How many of those decisions are right is
-  a separate question that only an audit answers.
-* `draft` — events exist (a box moved, a note written) but no decision field was confirmed. Work in
-  progress, deliberately not counted as progress.
-* `unresolved` — rejected units on pages somebody has not resolved: the queue.
-* `retired` — a later operation retired the unit.
-
-**No percentage is derived here.** A page with nothing checked is not a page with zero precision; it
-is a page whose quality is unmeasured, and the dashboard says so rather than showing 0%.
+An **atlas review is an editorial decision**, in the words of the publishing project's own README: it
+records that a decision was made, not that the person who made it was human. Nothing here claims
+authorship; `actor` carries whoever the client said it was, or nothing.
 """
 
 from __future__ import annotations
 
-from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-#: The fields a decision is made in. A change to one of these is a person saying what the record is;
-#: everything else the journal holds — `note`, `timing`, a crop preview, an opened line — is context.
+#: Fields whose value a person can decide. A change to one of these *may* be a decision; whether it
+#: is one depends on what the value says, which is what `_kind_of` settles.
 DECISION_FIELDS = frozenset(
     {
         "box",
@@ -54,22 +48,88 @@ DECISION_FIELDS = frozenset(
         "antecedent_ids",
         "voicing",
         "crop",
+        "crop_sha256",
         "meta",
     }
 )
 
-#: Events that are context by construction, whatever field they name.
+#: Events that are context by construction, whatever field they name: they record that somebody
+#: looked, wrote, or spent time, and none of them changes what the record says.
 CONTEXT_FIELDS = frozenset({"note", "timing", "open", "leave"})
 
-#: The review states a person can set on a unit, as opposed to the ones the pipeline writes.
+#: The review states a person can choose. The value the pipeline writes is not one of them.
 HUMAN_REVIEW_STATES = frozenset({"reviewed", "double-reviewed", "adjudicated", "disputed"})
 
+#: Fields that verify a reading, a boundary or an identity, as opposed to tidying the record.
+VERIFYING_FIELDS = frozenset(
+    {"reading", "unicode", "text_source", "jibo", "classification", "script", "voicing"}
+)
+#: Fields that describe the crop or the bookkeeping. A change to one is not a reading.
+ADJUSTING_FIELDS = frozenset(
+    {"box", "crop", "crop_sha256", "meta", "group_id", "granularity", "antecedent_ids",
+     "split_into", "merged_into", "active"}
+)
+
 Kind = Literal["machine", "checked", "draft", "unresolved", "retired"]
+DecisionKind = Literal["verified", "adjusted", "state", "context"]
 
 
-def is_decision(field: str) -> bool:
-    """Whether a change to `field` is a person deciding something about the record."""
-    return field in DECISION_FIELDS and field not in CONTEXT_FIELDS
+def is_decision(field_name: str) -> bool:
+    """Whether a change to `field_name` can decide something about the record."""
+    return field_name in DECISION_FIELDS and field_name not in CONTEXT_FIELDS
+
+
+def _value_of(record: Any, field_name: str) -> Any:
+    """One field of a record, as a plain value for comparison."""
+    value = getattr(record, field_name, None)
+    return getattr(value, "value", value)
+
+
+def _kind_of(field_name: str, value: Any) -> DecisionKind | None:
+    """What a value written into `field_name` says, or None when it says nothing about the record.
+
+    A review state is the clearest case: `reviewed`, `adjudicated` and `disputed` are choices a person
+    makes, while `machine` and `rejected` are what the pipeline concluded. A reading field verifies
+    when it carries a value and undoes when it is cleared, which is how removing a reading takes a
+    verification away. A crop or a metadata write adjusts the record without claiming anything was
+    read, and a change to something outside both sets says nothing at all.
+    """
+    if field_name == "review":
+        return "verified" if str(value) in HUMAN_REVIEW_STATES else "state"
+    if field_name in VERIFYING_FIELDS:
+        return None if value in (None, "", [], {}) else "verified"
+    if field_name in ADJUSTING_FIELDS:
+        return "adjusted"
+    return None
+
+
+#: Where a field's current value came from. `human` is a person deciding through a client; the other
+#: two are states the record arrived with, from an import or from an earlier apply, and they are the
+#: record's own value rather than machine output to be ignored.
+LOCAL_AUTHORS = frozenset({"import", "export"})
+
+
+@dataclass
+class FieldStanding:
+    """What a field currently says and who last wrote it."""
+
+    value: Any = None
+    author: str = "import"
+    kinds: list[DecisionKind] = field(default_factory=list)
+
+    @property
+    def decided_by_person(self) -> bool:
+        """A person decided this, through a client, in this store."""
+        return self.author == "human"
+
+    @property
+    def decided_locally(self) -> bool:
+        """A person decided this: either here, or wherever the record was reviewed before."""
+        return self.author == "human" or self.author in LOCAL_AUTHORS
+
+    @property
+    def last(self) -> DecisionKind | None:
+        return self.kinds[-1] if self.kinds else None
 
 
 @dataclass
@@ -79,21 +139,64 @@ class UnitReview:
     unit_id: str
     page_id: str | None = None
     document_id: str | None = None
-    machine_review: str = "machine"
+    #: The `review` value the record currently carries, whatever wrote it.
+    review_state: str = "machine"
     active: bool = True
-    decisions: list[str] = field(default_factory=list)
-    context: list[str] = field(default_factory=list)
     actor: str | None = None
+    fields: dict[str, FieldStanding] = field(default_factory=dict)
+    context: list[str] = field(default_factory=list)
+
+    @property
+    def verified(self) -> list[str]:
+        """The decisions the record currently shows a person made.
+
+        A field counts when the value standing there is one a person could have chosen and the last
+        word on it was not the pipeline's own. That includes a state the record arrived with: an
+        imported `reviewed` is a decision somebody made, whether or not this store made it.
+        """
+        return sorted(
+            name
+            for name, standing in self.fields.items()
+            if standing.decided_locally and standing.last == "verified"
+        )
+
+    @property
+    def adjusted(self) -> list[str]:
+        """Fields a person changed without verifying anything: a crop, metadata, a group."""
+        return sorted(
+            name
+            for name, standing in self.fields.items()
+            if standing.decided_by_person and standing.last == "adjusted"
+        )
+
+    @property
+    def human_review(self) -> str | None:
+        """The review state the record currently shows, if a person chose it.
+
+        `None` means the record does not stand reviewed — not that nobody ever looked. The record can
+        carry a review state the pipeline wrote (`rejected`, or `machine` after an undo), and neither
+        of those is somebody's decision.
+        """
+        value = self.review_state
+        standing = self.fields.get("review")
+        if standing is not None and not standing.decided_locally:
+            return None
+        return value if value in HUMAN_REVIEW_STATES else None
 
     @property
     def checked(self) -> bool:
-        """A person decided something here."""
-        return bool(self.decisions)
+        """A decision is what the record currently says.
+
+        Either a person's reading or identity stands, or the review state itself is one a person
+        chose. The state has to count on its own: a record can be marked reviewed with no field-level
+        detail, which is exactly what an import or an apply writes.
+        """
+        return self.human_review is not None or bool(self.verified)
 
     @property
     def drafted(self) -> bool:
-        """Something was touched but nothing was decided."""
-        return not self.decisions and bool(self.context)
+        """Something was touched but nothing currently stands as a decision."""
+        return not self.checked and (bool(self.adjusted) or bool(self.context))
 
     @property
     def kind(self) -> Kind:
@@ -103,57 +206,94 @@ class UnitReview:
             return "checked"
         if self.drafted:
             return "draft"
-        if self.machine_review == "rejected":
+        if self.review_state == "rejected":
             return "unresolved"
         return "machine"
 
 
 def unit_reviews(
-    units: Iterable[Any], events: Iterable[Any]
+    units: Iterable[Any], events: Iterable[Any], *, exported: Iterable[str] = ()
 ) -> dict[str, UnitReview]:
-    """Every unit's standing, from the units and the journal.
+    """Every unit's standing, from the units and the journal, replayed to the present.
 
-    `units` are the records as they now stand (anything with `id`, `page_id`, `document_id`,
-    `review` and `active`), and `events` the journal rows (`target_id`, `field`, `actor`). A unit with
-    no event is either accepted machine output or a rejection waiting to be resolved, and the two are
-    told apart by the state the pipeline wrote, not by whether anyone looked at it.
+    `units` are the records as they now stand and `events` the journal rows, oldest first, each with
+    `target_id`, `field`, `new` and an optional `actor`. `exported` names units whose present state was
+    written by an apply rather than imported, which is recorded in the standing's author so a caller
+    can tell the two apart. A unit whose journal ends with a person's reading, or with a review state
+    a person chose, is checked; one whose last word on every decision field is machine output or a
+    reverted value is not, whether or not a person was there earlier.
     """
+    written_back = set(exported)
     standing: dict[str, UnitReview] = {}
     for unit in units:
-        review = getattr(unit.review, "value", unit.review)
-        standing[unit.id] = UnitReview(
+        review = str(getattr(unit.review, "value", unit.review))
+        record = UnitReview(
             unit_id=unit.id,
             page_id=getattr(unit, "page_id", None),
             document_id=getattr(unit, "document_id", None),
-            machine_review=str(review),
+            review_state=review,
             active=bool(getattr(unit, "active", True)),
         )
+        # What the record already says: an imported review is a state the record carries, not an
+        # absence of one, so it is the baseline the journal is applied over.
+        record.fields["review"] = FieldStanding(
+            value=review,
+            author="export" if unit.id in written_back else "import",
+            kinds=["verified" if review in HUMAN_REVIEW_STATES else "state"],
+        )
+        for name in ("reading", "unicode", "text_source", "box"):
+            if hasattr(unit, name):
+                value = _value_of(unit, name)
+                record.fields[name] = FieldStanding(
+                    value=value,
+                    kinds=["verified"] if value not in (None, "", [], {}) else [],
+                )
+        standing[unit.id] = record
+
     for event in events:
         record = standing.get(event.target_id)
         if record is None:
             continue
-        if is_decision(event.field):
-            record.decisions.append(event.field)
-            if event.actor:
-                record.actor = event.actor
-        else:
-            record.context.append(event.field)
+        field_name = event.field
+        if field_name in CONTEXT_FIELDS:
+            record.context.append(field_name)
+            continue
+        if field_name not in DECISION_FIELDS:
+            continue
+        kind = _kind_of(field_name, event.new)
+        if kind is None:
+            # Clearing a reading or an identity is how a decision is taken back, so an empty value on
+            # a verifying field is an undo rather than an event with nothing to say. Any other field
+            # an event writes nothing into is not a decision at all.
+            if field_name in VERIFYING_FIELDS and event.new in (None, "", [], {}):
+                kind = "state"
+            else:
+                continue
+        # An event with no actor is the pipeline writing its own conclusion — an apply, a rebuild, a
+        # classifier pass. It changes the record and takes the field back from whoever had it.
+        author = "human" if event.actor else "machine"
+        before = record.fields.get(field_name)
+        history = list(before.kinds) if before else []
+        if author == "human" and kind == "state" and before is not None and before.value == event.new:
+            # A human event that writes the state the record already shows changes nothing, so it
+            # does not become the last word on the field.
+            continue
+        record.fields[field_name] = FieldStanding(value=event.new, author=author,
+                                                  kinds=[*history, kind])
+        if author == "human" and event.actor:
+            record.actor = event.actor
     return standing
 
 
 def summarize(standing: Iterable[UnitReview]) -> dict[str, int]:
     """The counts a dashboard shows, with machine output and human decisions kept apart."""
-    counts: Counter[str] = Counter()
+    counts: dict[str, int] = dict.fromkeys(
+        ("machine", "checked", "draft", "unresolved", "retired", "total"), 0
+    )
     for record in standing:
         counts[record.kind] += 1
-    return {
-        "machine": counts["machine"],
-        "checked": counts["checked"],
-        "draft": counts["draft"],
-        "unresolved": counts["unresolved"],
-        "retired": counts["retired"],
-        "total": sum(counts.values()),
-    }
+        counts["total"] += 1
+    return counts
 
 
 def by_page(standing: Iterable[UnitReview]) -> dict[str, dict[str, int]]:
@@ -162,6 +302,14 @@ def by_page(standing: Iterable[UnitReview]) -> dict[str, dict[str, int]]:
     for record in standing:
         grouped.setdefault(record.page_id or "", []).append(record)
     return {page_id: summarize(records) for page_id, records in grouped.items()}
+
+
+def by_document(standing: Iterable[UnitReview]) -> dict[str, dict[str, int]]:
+    """The same summary, per document, so a work list can show what is left to do."""
+    grouped: dict[str, list[UnitReview]] = {}
+    for record in standing:
+        grouped.setdefault(record.document_id or "", []).append(record)
+    return {document_id: summarize(records) for document_id, records in grouped.items()}
 
 
 def quality(checked: int, decided_correct: int | None) -> dict[str, Any]:
