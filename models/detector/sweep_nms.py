@@ -32,7 +32,9 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
 CACHE = ROOT / "models" / "detector" / "nms-cache"
-NMS_GRID = (0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8)
+#: The grid, denser at the low end: the first sweep chose 0.2, which was the lowest value it tested,
+#: so the low end is where the curve has to be extended before the choice can be called a maximum.
+NMS_GRID = (0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8)
 
 _spec = importlib.util.spec_from_file_location("detector_train", ROOT / "models" / "detector" / "train.py")
 assert _spec is not None and _spec.loader is not None
@@ -42,7 +44,15 @@ _spec.loader.exec_module(train)
 
 
 def dump(checkpoint: Path, splits: list[str]) -> None:
-    """One forward pass a split, with the raw detections written beside the checkpoints."""
+    """One forward pass a split, with the raw detections and what produced them written beside them.
+
+    Everything a later sweep needs to know that the cache belongs to *this* measurement goes into
+    `provenance.json` beside the arrays: the checkpoint's own hash, the operating point the detections
+    were collected at, the suppression the metrics will apply, the tile geometry, and the identity of
+    each split file. Without it, dumping with one checkpoint and sweeping with another — or mixing a
+    val dump from one run with a test dump from another — produces a comparison that looks fine and
+    means nothing.
+    """
     config = train.load_config(ROOT / "models" / "detector" / "config.yaml")
     training, evaluation = config["training"], config["evaluation"]
     data = ROOT / config["data"]["directory"]
@@ -50,6 +60,26 @@ def dump(checkpoint: Path, splits: list[str]) -> None:
     model = train.build_model(config).to("cuda")
     model.load_state_dict(train.read_state(checkpoint)["model"])
     floor = min(float(value) for value in evaluation["score_grid"])
+    provenance = {
+        "checkpoint": train.relative_to_root(checkpoint),
+        "checkpoint_sha256": train.file_sha256(checkpoint),
+        "model": str(config["model"]["checkpoint"]),
+        "model_revision": str(config["model"].get("revision")),
+        "collection": {
+            "score": floor,
+            "max_per_tile": int(evaluation["max_per_tile"]),
+            "precision": "bf16",
+            "batch_size": int(training["batch_size"]),
+            "tile": train.detect.TILE,
+            "overlap": train.detect.OVERLAP,
+        },
+        "measurement": {
+            "iou": float(evaluation["iou"]),
+            "nms_grid": [float(value) for value in NMS_GRID],
+            "unit": "whole page, tiles merged",
+        },
+        "splits": {},
+    }
     for name in splits:
         tiles = train.read_split(data / config["data"]["splits"][name],
                                  cache=ROOT / config["data"]["image_cache"],
@@ -61,7 +91,8 @@ def dump(checkpoint: Path, splits: list[str]) -> None:
                                   max_per_tile=int(evaluation["max_per_tile"]))
         target = CACHE / f"{name}.npz"
         # Written in the split's own order and read back positionally: `key` repeats across tiles of
-        # one page, so a cache keyed by it cannot be reassembled into the split.
+        # one page, so a cache keyed by it cannot be reassembled into the split. The origin and size
+        # travel with it because a reordered tile of the same page shares its key.
         np.savez_compressed(
             target,
             keys=np.asarray([tile.key for tile in tiles]),
@@ -70,53 +101,136 @@ def dump(checkpoint: Path, splits: list[str]) -> None:
             boxes=np.asarray([row[0] for row in found], dtype=object),
             scores=np.asarray([row[1] for row in found], dtype=object),
         )
+        split_path = data / config["data"]["splits"][name]
+        provenance["splits"][name] = {
+            "file": train.relative_to_root(split_path),
+            "sha256": train.file_sha256(split_path),
+            "tiles": len(tiles),
+            "detections": int(sum(len(row[1]) for row in found)),
+        }
         print(f"{name}: {len(tiles)} tiles -> {target}", flush=True)
         del tiles, loader, found
+    (CACHE / "provenance.json").write_text(
+        json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
+    print(f"provenance -> {CACHE / 'provenance.json'}", flush=True)
 
 
-def load(name: str) -> dict[str, Any]:
-    """The cached detections of one split, as the arrays `page_metrics` wants."""
-    path = CACHE / f"{name}.npz"
+def provenance_of(cache_dir: Path = CACHE) -> dict[str, Any]:
+    """What wrote the cache, or a refusal when it states nothing."""
+    path = cache_dir / "provenance.json"
+    if not path.exists():
+        raise SystemExit(
+            f"{path} is missing: a cache without provenance cannot be attributed to a checkpoint, so "
+            f"run --dump again rather than sweeping it"
+        )
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def load(name: str, cache_dir: Path = CACHE) -> dict[str, Any]:
+    """The cached detections of one split, as the arrays `page_metrics` wants.
+
+    The arrays are checked for shape and internal consistency here: `boxes` and `scores` are object
+    arrays of one entry a tile, so a cache written for a different split length cannot be read as this
+    one, and a sweep that would silently mis-pair detections with truth fails instead.
+    """
+    path = cache_dir / f"{name}.npz"
     if not path.exists():
         raise SystemExit(f"{path} is missing; run --dump first")
     with np.load(path, allow_pickle=True) as data:
-        return {
-            "keys": [str(key) for key in data["keys"]],
-            "origins": data["origins"],
-            "sizes": data["sizes"],
-            "boxes": list(data["boxes"]),
-            "scores": list(data["scores"]),
-        }
+        keys = [str(key) for key in data["keys"]]
+        origins = np.asarray(data["origins"])
+        sizes = np.asarray(data["sizes"])
+        boxes = list(data["boxes"])
+        scores = list(data["scores"])
+    shapes = {
+        "keys": len(keys),
+        "origins": len(origins),
+        "sizes": len(sizes),
+        "boxes": len(boxes),
+        "scores": len(scores),
+    }
+    if len(set(shapes.values())) != 1:
+        raise SystemExit(f"{path}: the arrays disagree on length: {shapes}")
+    if origins.ndim != 2 or origins.shape[1] != 2:
+        raise SystemExit(f"{path}: origins should be (tiles, 2), got {origins.shape}")
+    if sizes.ndim != 1:
+        raise SystemExit(f"{path}: sizes should be (tiles,), got {sizes.shape}")
+    for index, (box, score) in enumerate(zip(boxes, scores, strict=True)):
+        if len(box) != len(score):
+            raise SystemExit(
+                f"{path}: tile {index} has {len(box)} boxes and {len(score)} scores"
+            )
+    return {"keys": keys, "origins": origins, "sizes": sizes, "boxes": boxes, "scores": scores}
 
 
 def tiles_for(name: str, config: dict[str, Any], cache: dict[str, Any]) -> list[Any]:
-    """The real `Tile` objects of a split, checked against the cache's own record of them.
+    """The real `Tile` objects of a split, checked tile by tile against the cache's own record.
 
-    Both come from the same reading of the same split file, so the check is that the cache still
-    describes exactly this split — same length, same keys in the same order — rather than a
-    reconstruction that could pair a detection with another tile's truth.
+    The check is the identity of every tile, not just the page it belongs to: a tile's `key` is its
+    page and kind, so two tiles of one page share it, and a split reordered within a page would pass a
+    key-only check while every detection of those two tiles was paired with the other's truth. Origin
+    and size are what distinguish them, so all three are compared, in order.
     """
     data = ROOT / config["data"]["directory"]
     tiles = train.read_split(data / config["data"]["splits"][name],
                              cache=ROOT / config["data"]["image_cache"],
                              splits=train.read_splits(ROOT / config["data"]["split_table"]),
                              materialised=data / "tiles")
-    cached = cache["keys"]
-    if len(cached) != len(tiles):
-        raise SystemExit(f"{name}: the cache holds {len(cached)} tiles, the split has {len(tiles)}")
-    for index, (key, tile) in enumerate(zip(cached, tiles, strict=True)):
-        if key != tile.key:
-            raise SystemExit(f"{name}: tile {index} is {tile.key} in the split and {key} in the cache")
+    if len(cache["keys"]) != len(tiles):
+        raise SystemExit(
+            f"{name}: the cache holds {len(cache['keys'])} tiles, the split has {len(tiles)}"
+        )
+    for index, tile in enumerate(tiles):
+        key, origin, size = cache["keys"][index], cache["origins"][index], cache["sizes"][index]
+        if key != tile.key or tuple(int(value) for value in origin) != tuple(tile.origin) \
+                or int(size) != int(tile.size):
+            raise SystemExit(
+                f"{name}: tile {index} differs — the split has {tile.key} at {tuple(tile.origin)} "
+                f"size {tile.size}, the cache {key} at {tuple(int(v) for v in origin)} size {int(size)}"
+            )
     return tiles
 
 
-def sweep(nms_grid: tuple[float, ...], score: float | None) -> dict[str, Any]:
+def verify(checkpoint: Path | None, splits: list[str], cache_dir: Path = CACHE) -> dict[str, Any]:
+    """Refuse to sweep a cache that does not describe this checkpoint and these split files.
+
+    Three ways a sweep can be wrong without looking wrong: the cache was written by another
+    checkpoint, one split's cache came from another dump, or the split file itself changed since the
+    dump. Each is checked here, against the file's own hash rather than its timestamp, so the sweep
+    either reports a comparison it can justify or stops.
+    """
+    provenance = provenance_of(cache_dir)
+    recorded = provenance.get("checkpoint_sha256")
+    if checkpoint is not None:
+        current = train.file_sha256(checkpoint)
+        if current != recorded:
+            raise SystemExit(
+                f"the cache was written by {provenance.get('checkpoint')} "
+                f"({str(recorded)[:12]}), not by {train.relative_to_root(checkpoint)} "
+                f"({current[:12]}); run --dump again"
+            )
+    for name in splits:
+        entry = (provenance.get("splits") or {}).get(name)
+        if entry is None:
+            raise SystemExit(f"the cache holds no {name} split; run --dump for it")
+        config = train.load_config(ROOT / "models" / "detector" / "config.yaml")
+        path = ROOT / config["data"]["directory"] / config["data"]["splits"][name]
+        if train.file_sha256(path) != entry["sha256"]:
+            raise SystemExit(
+                f"the {name} split file changed since the dump ({entry['sha256'][:12]} -> "
+                f"{train.file_sha256(path)[:12]}); run --dump again"
+            )
+    return provenance
+
+
+def sweep(nms_grid: tuple[float, ...], score: float | None,
+          cache_dir: Path = CACHE) -> dict[str, Any]:
     """Whole-page precision, recall and F1 over `nms`, and the split of the false positives."""
     config = train.load_config(ROOT / "models" / "detector" / "config.yaml")
     evaluation = config["evaluation"]
     out: dict[str, Any] = {"grid": list(nms_grid), "splits": {}}
     for name in ("val", "test"):
-        cache = load(name)
+        cache = load(name, cache_dir)
         tiles = tiles_for(name, config, cache)
         found = list(zip(cache["boxes"], cache["scores"], strict=True))
         at = float(evaluation["score"]) if score is None else float(score)
@@ -161,6 +275,7 @@ def main() -> int:
     if args.dump:
         dump(args.checkpoint, args.split or ["val", "test"])
     if args.sweep:
+        verify(args.checkpoint, args.split or ["val", "test"])
         result = sweep(NMS_GRID, args.score)
         args.out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
         chosen, at = result["chosen_on_val"], result["test_at_chosen"]

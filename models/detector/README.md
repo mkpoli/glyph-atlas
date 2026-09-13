@@ -148,30 +148,35 @@ Recall by decile of truth box area, smallest first:
 The card asks for recall ≥ 0.95 and precision ≥ 0.95 at IoU 0.5 on the printed `test` books. It is a
 joint target: raising precision by lowering recall does not meet it, and vice versa.
 
-Measured on the whole `test` split at two suppressions, the second chosen on `val` by the sweep the
+Measured on the whole `test` split at three suppressions, the third chosen on `val` by the sweep the
 card asks for (`models/detector/sweep_nms.py`, results in `models/detector/nms-sweep.json`):
 
-| Whole test split (477 pages) | `nms` 0.5, as shipped | `nms` 0.2, chosen on val |
-| --- | --- | --- |
-| precision | 0.6998 | **0.8575** |
-| recall | **0.9283** | 0.8824 |
-| F1 | 0.7980 | **0.8698** |
-| false positives | 49,463 | 18,210 |
-| printed books: precision / recall | 0.6394 / 0.9679 | **0.8350** / 0.8993 |
+| Whole test split (477 pages) | `nms` 0.5, as shipped | `nms` 0.2 | `nms` 0.1, chosen on val |
+| --- | --- | --- | --- |
+| precision | 0.6998 | 0.8575 | **0.9010** |
+| recall | 0.9283 | 0.8824 | 0.8533 |
+| F1 | 0.7980 | 0.8698 | **0.8765** |
+| false positives | 49,463 | 18,210 | 11,646 |
+| printed books: precision / recall | 0.6394 / 0.9679 | 0.8350 / 0.8993 | — |
 
 The suppression is the largest single improvement measured on this card: the duplicate and split false
-positives it removes were most of the gap, and the val and test curves agree on the direction (val F1
-0.8995 at 0.2 against 0.8309 at 0.5). It is still short of the joint target, and the trade is explicit
-— **recall at the measured setting is 0.8824 overall and 0.8993 on the printed books, both below the
-card's 0.95**, where the shipped setting met the recall bar (0.9283 and 0.9679) and missed precision
-badly. Neither column meets both halves, so the card's acceptance is not reached either way.
+positives it removes were a large part of the gap, and the val and test curves agree on the shape. The
+first grid stopped at 0.2 and chose it, which was its own boundary; the extended grid puts the val
+maximum at 0.1 (val F1 0.9158 against 0.8995 at 0.2 and 0.8309 at 0.5), and the test split orders the
+same way. It is still short of the joint target, and the trade is explicit — **recall at the measured
+setting is 0.8533, below the card's 0.95**, where the shipped setting met the recall bar (0.9283) and
+missed precision badly. No tested setting meets both halves.
 
-What the two settings together show is where the remaining gap is. Requiring recall 0.95 puts the
-operating point back near where precision collapses, and three quarters of the false positives there
-sit on ink CODH never annotated (see Failure cases), so precision at that recall cannot approach 0.95
-by thresholding alone. The honest reading is that the missing ruby and decoration annotations, not the
-suppression and not the number of epochs, are what stand between this detector and the card's target;
-that is a data problem, and the section below says what obtaining it would take.
+What the measurements establish is bounded, and worth stating precisely. Over the score points and
+suppression values tested, precision and recall trade against each other, and no tested pair reaches
+0.95 on both; the best F1 is at `nms` 0.1. What they do **not** establish is the cause of the
+remaining gap. A false positive whose IoU against every annotated box is below 0.1 is a detection on
+unannotated ink, which is consistent with ruby, punctuation and decoration that CODH never annotated —
+but nothing here labels those regions independently, so "the missing annotations are the binding
+constraint" is a hypothesis this experiment cannot confirm. Nor do these points show that no
+score/suppression combination can meet the target: the grid is finite and the score was fixed at the
+value chosen earlier. Testing either claim needs annotations that do not exist yet (see Failure cases)
+or a joint sweep over both axes.
 - Mean IoU of the matches, 0.86-0.88, says the misses are not badly placed boxes; the model finds
   the characters and then reports more of them than CODH annotates.
 

@@ -75,10 +75,11 @@ evaluation:
   # the curve is also read as recall at this precision, the form the pilot is measured in
   precision_target: 0.9
   # Chosen on val by `models/detector/sweep_nms.py`, which is the card's "val-chosen sweep of nms,
-  # not of the test numbers". At 0.2 the whole-page val F1 is 0.8995 against 0.8309 at the 0.5 this
-  # file used to carry, and on the test split that is precision 0.8575 against 0.6998 with F1 0.8698
-  # against 0.7980 — the duplicate and split false positives the card names were most of the gap.
-  nms: 0.2
+  # not of the test numbers". The first grid stopped at 0.2 and chose it, which was the boundary; the
+  # extended grid (`models/detector/nms-sweep.json`) puts the val maximum at 0.1: val F1 0.9158
+  # against 0.8995 at 0.2 and 0.8309 at the 0.5 this file used to carry. On the test split that is
+  # precision 0.9010, recall 0.8533, F1 0.8765, against 0.6998 / 0.9283 / 0.7980 at 0.5.
+  nms: 0.1
   max_per_tile: 1500
   iou: 0.5
 
