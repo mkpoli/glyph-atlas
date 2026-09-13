@@ -187,12 +187,29 @@ shipped artifact stays where it is, because the pilot run names it and its units
 it). It checkpoints an epoch at a time, so its `epoch-00.pt`, `metrics.json` and the table above can be
 compared as they appear.
 
-Its rate depends on what else holds the machine. Measured at the start of the run: **1.35 to 2.26 s a
-step** with the load average at 26 to 31 and the GPU at 0%, because another project on this workstation
-was running `vite build` and `svelte-check` across 16 cores. At the rate the six-epoch run achieved on
-an idle machine (0.30 s a step) the 24 epochs are 11.6 hours; at the rate measured under that load they
-are several days. The run is left to checkpoint an epoch at a time rather than killed, and the numbers
-it produces are only comparable with the table above if the machine is quiet while it trains.
+Its rate depends on what else holds the machine. Measured over its first epoch: **0.97 to 2.26 s a
+step**, the first steps at 2.26 with the load average at 26 to 31 and the GPU at 0% because another
+project on this workstation was running `vite build` and `svelte-check` across 16 cores, the last at
+0.97 as that load fell away. Epoch 0 took **1 h 42 min** against the shipped run's 30 min, so the 24
+epochs are about 41 hours at this rate rather than the 11.6 the earlier measurement suggested. The run
+checkpoints an epoch at a time and is left to it; a reader comparing its numbers with the table above
+should know the machine was shared.
+
+**Epoch 0 is already well ahead of the shipped run's epoch 0**, at the same loss:
+
+| Epoch 0, tile-level on `val` | seconds | loss | best F1 | at score | precision | recall | mean IoU |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| shipped six-epoch run | 1,814 | 6.11 | 0.531 | 0.03 | 0.457 | 0.632 | 0.861 |
+| 24-epoch run | 6,124 | 6.11 | **0.646** | 0.03 | **0.595** | **0.706** | 0.879 |
+
+The loss is identical to two decimals, so this is the same training problem solved to the same depth;
+what differs is the confidence head. The new run's curve puts precision 0.595 at score 0.03 where the
+shipped run had 0.457, and reaches precision 0.722 at 0.05 with recall 0.252 — the head has caught up
+with the boxes, which the six-epoch run's flat 0.02-0.03 optimum said it had not. Two explanations fit
+and the evidence here cannot separate them: the extra epochs are not it (this is epoch 0 of both
+runs), so either the software stack moved between the two runs, or the shipped artifact's own epoch 0
+is not the one this schedule produces from the same seed. `models/detector/compare_checkpoints.sh
+<checkpoint>` measures a checkpoint on val and test and prints it beside the shipped artifact.
 
 The run was bounded at six of the configured 24 epochs, and the curve says it was still moving:
 the loss fell from 6.11 to 3.30, the best F1 from 0.531 to 0.744, and the last epoch still improved
