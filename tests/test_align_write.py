@@ -128,3 +128,44 @@ def test_an_empty_page_selection_aligns_nothing(tmp_path: Path) -> None:
     counts = align.run_directory(tmp_path, align.Run(name="empty"), pages=[])
     assert counts["pages"] == 0 and counts["lines"] == 0 and counts["units"] == 0
     assert not (tmp_path / "units.parquet").exists(), "nothing is detected and nothing is written"
+
+
+def test_the_run_carries_the_detectors_operating_point(tmp_path: Path, monkeypatch) -> None:
+    """A run detects at its own score, not at whatever the Detector's default happens to be.
+
+    The aligner built its detector with no score, so it used 0.3 while the derivation had found the
+    boxes at 0.02: on the Ainu records' cursive columns every detection sits near 0.02, so the aligner
+    found nothing and wrote boxless units. The score is part of the run now, and the fingerprint
+    leaves it out because the pilot's units were measured at 0.02 before it was written down.
+    """
+    seen: dict[str, float] = {}
+    real = align_module_detector()
+
+    def spy(onnx, **options):
+        seen.update(options)
+        return real(onnx, **options)
+
+    monkeypatch.setattr("kuzushiji_atlas.detect.Detector", spy)
+    page = Page(id="hl:one:0", document_id="doc", seq=0, canvas="c", image="i", width=10, height=10)
+    tables.write(tmp_path / "pages.parquet", [page], Page)
+    tables.write(tmp_path / "lines.parquet", [line(0)], Line)
+
+    run = align.Run(name="scored", score=0.02)
+    align.run_directory(tmp_path, run)
+    assert seen.get("score") == 0.02, "the aligner's detector takes the run's operating point"
+    assert align.Run(name="scored").fingerprint() == align.Run(name="other", score=0.02).fingerprint(), (
+        "the name and the operating point are not part of the id"
+    )
+
+
+def line(seq: int) -> Line:
+    """One transcribed line with a box, which is what the runner needs to align anything."""
+    return Line(id=f"hl:one:0:L{seq}", page_id="hl:one:0", seq=seq, box=Box(x=0, y=0, w=10, h=10),
+                text_raw="あ", text="あ")
+
+
+def align_module_detector():
+    """The real `Detector` class, which the spy replaces inside the module."""
+    from kuzushiji_atlas.detect import Detector
+
+    return Detector

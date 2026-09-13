@@ -142,10 +142,25 @@ class Run(BaseModel):
     accept: float = 0.9
     margin: float = 1.0
     ruby: bool = False
+    #: The detector's score cutoff. It belongs to the run rather than to the detector's constructor
+    #: default, because the run's units are only comparable when every stage detects at one operating
+    #: point: the pilot's boxes were all found at 0.02, and an aligner that silently built its
+    #: detector at the library default of 0.3 found nothing on pages where every detection sits near
+    #: the cut, which is what happened to the Ainu records' cursive columns.
+    score: float | None = None
 
     def fingerprint(self) -> str:
+        """The id every unit of this run carries, from the configuration that decides the output.
+
+        `name` is a label and `score` is the detector's operating point: the score was written down
+        after the pilot's units were already measured, and folding it into the hash now would rewrite
+        the ids of every unit in `work/honkoku-lines` for a value that was always 0.02 in practice.
+        A run that changes the operating point changes the file it names, and the score is recorded
+        beside the units it produced.
+        """
         payload = self.model_dump(mode="json")
         payload.pop("name", None)
+        payload.pop("score", None)
         return hashlib.sha1(
             json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
         ).hexdigest()[:12]
@@ -769,7 +784,7 @@ def run_directory(
     if detector is None:
         from .detect import Detector as OnnxDetector
 
-        detector = OnnxDetector(run.detector)
+        detector = OnnxDetector(run.detector, **({"score": run.score} if run.score is not None else {}))
     if classifier is None:
         from .classify import Classifier as OnnxClassifier
 

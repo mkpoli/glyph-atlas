@@ -54,10 +54,15 @@ person set is never touched. Pages the derivation cannot pair keep their transcr
 box, because a line box standing for a different number of lines than the transcription has is worse
 than none.
 
-Step 3 — the character units the aligner places inside those boxes land in `work/ainu-records/units.parquet`
-under the pilot run's fingerprint, with the run's own confidence. The acceptance report records what
-they are worth; the derived line boxes are what this step delivers, and they are what a reviewer and a
-later alignment tuned on these pages need.
+Step 3 — the character units the aligner places inside those boxes land in
+`work/ainu-records/units.parquet` under the pilot run's fingerprint, with the run's own confidence.
+Measured: 658 pages derived in 1 m 16 s with the detections cached (16 m 35 s when they had to be
+computed), **788 line boxes on 53 pages**, and **10,872 units of which 1,000 are accepted**, every
+accepted one with a box inside its own line box. The accepted share is 9.2% against the pilot's 17%,
+because the detector and classifier were trained on printed books and these are cursive manuscripts —
+on one line of 25 characters the detector finds 27 detections in that line's column, at scores of 0.03
+to 0.05 against a 0.02 cut. The units are proposals with their confidences, and
+`docs/reports/ainu-step2.md` says so, including the operating-point defect that measuring them found.
 
 Step 2's measured limits, in short: of the 477 pages whose transcription is a body rather than a title,
 117 have exactly as many ink columns as transcribed lines and 329 are within a quarter, and the

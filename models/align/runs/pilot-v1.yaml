@@ -5,6 +5,9 @@ detector: models/detector/artifacts/detector.onnx
 classifier: models/classifier/artifacts/classifier.onnx
 detector_version: rtdetr_r18vd-6e
 classifier_version: convnext_tiny-12e
+# The operating point every stage of this run detects at, including the aligner's own detector. It is
+# unset in the run's hash: the pilot's units were found at this score before it was written down.
+score: 0.02
 # align-v1 composes the kana readings, compatibility ideographs, 新旧字体, 異体字, voicing and
 # small-kana relations; see data/vocab/equivalence-policies.yaml.
 policy: align-v1

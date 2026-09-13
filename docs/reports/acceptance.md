@@ -391,9 +391,29 @@ mismatch, and all 36,869 crops are on disk.
 T51's deliverables are committed: `docs/datasheet-template.md` with 22 placeholders,
 `README.ja.md`, `CITATION.cff` (validated) and `docs/reports/README.md`.
 
+### The Ainu records' derived line boxes, which are not one of the plan's cards
+
+The アイヌ関連資料 records arrive as page transcriptions with no line boxes, so an alignment has nothing
+to place characters in. `atlas ainu derive` derives them — a vertical line is a column of ink, the
+detector's characters group into columns read right to left, and a page's columns are paired with its
+transcribed lines when the counts agree and every column holds enough ink for its line. Measured over
+all 658 pages: **117 of the 477 body pages have exactly as many columns as transcribed lines** and 329
+are within a quarter, and the per-column evidence gate leaves **53 pages** that get boxes. The run
+itself took 1 m 16 s with the detections cached (16 m 35 s when they had to be computed) and wrote 788
+line boxes on those 53 pages, then 10,872 character units of which **1,000 are accepted**, every
+accepted one with a box inside its own line box — 9.2 percent against the pilot's 17, because the
+detector and the classifier were trained on printed books and these are cursive manuscripts. The boxes
+and the units are proposals with their confidences, a box a person sets is never replaced or
+withdrawn, and `docs/reports/ainu-step2.md` is the full report.
+
 ## What is not done
 
 - The pilot's human annotation (T25, T26) is the part that sets the pace and needs people.
 - The published precision and coverage of the pipeline therefore do not exist yet; the machinery
   that measures them does.
 - T30's U+1B11F has no font; T50's release cannot contain reviewed units until T25 happens.
+- The Ainu records' character units are weaker than the pilot's: 1,000 of 10,872 placements are
+  accepted (9.2%), the detector finds 27 characters in a column that holds 25 transcribed characters
+  at scores near its cut, and the classifier is weakest exactly on the cursive forms these witnesses
+  use. A model trained on these manuscripts is what would change that; the derived line boxes are what
+  such a run needs.

@@ -105,13 +105,34 @@ boxes are therefore proposals: they are recorded as derived, a reviewer is the o
 and the pages the derivation refuses keep their transcriptions with no box rather than a guessed one,
 which is what the plan asked for.
 
-**Unit-level alignment of the Ainu pages is not the pilot's task.** The pilot's aligner places
-characters inside line boxes that Honkoku-Lines ships, on printed books the classifier was trained on.
-The Ainu witnesses are cursive manuscripts at a different scale and hand, so the alignment over the
-derived boxes produces character units with a box and a reading whose confidence is low, and the run
-accepts few or none of them. The measured evidence is in the acceptance report; the derived line boxes
-are what this step delivers, and they are what a reviewer — and a later alignment tuned on these pages
-— needs.
+**Unit-level alignment is weaker here than on the pilot, and the models show it.** The pilot's aligner
+places characters inside line boxes that Honkoku-Lines ships, on printed books the classifier was
+trained on; the Ainu witnesses are cursive manuscripts at a different scale and hand. Measured over
+the whole derivation, with the detections cached:
+
+| stage | result |
+| --- | --- |
+| pages derived | 658 in 1 m 16 s (the first run, which had to detect, took 16 m 35 s) |
+| line boxes written | 788 on 53 pages |
+| character units placed | 10,872, of which 8,487 carry a box |
+| accepted | **1,000** (9.2%), every one of them with a box inside its own line box |
+
+The accepted share is 9.2 percent against the pilot's 17, and the reason is the models rather than the
+alignment: on one 立命館 line of 25 characters the detector finds 439 characters on the page and only
+27 whose centre falls in that line's column, at scores of 0.03 to 0.05 against the 0.02 cut, and the
+classifier's probability for the right reading is near zero. The characters and readings that were
+accepted are ordinary running text — の, に, り, を, る lead the list — which is what a coarse
+classifier does best. Everything is recorded as a machine proposal with its confidences, and nothing
+in this step claims it is right: a model trained on these manuscripts, or a reviewer, is what would
+make the unit level real, and the derived line boxes are what such a run needs.
+
+One defect found while measuring this is worth recording, because it was invisible in the counts. The
+aligner built its detector without a score, so it used the library's default of 0.3 while the
+derivation had found the boxes at 0.02. On printed pages, where detections score well above both, the
+difference never showed; on these cursive columns every detection sits near the cut, so the aligner
+found nothing and wrote 10,872 boxless units while reporting 59 accepted. The operating point is part
+of the run configuration now (`Run.score`), the fingerprint leaves it out so the pilot's existing unit
+ids do not move, and a test pins both.
 
 ## What this step does not do
 
