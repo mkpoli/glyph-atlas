@@ -89,6 +89,17 @@ which pages to propose on, not a verdict. Measured over all 658 pages, 9 witness
   or nothing and are not evidence either way.
 - Of the 477 body pages, **117 have exactly as many ink columns as transcribed lines** and 329 are
   within a quarter; the median ratio is 1.13.
+- The mismatch runs one way. Of the 360 body pages whose counts differ, **347 show more ink columns
+  than transcribed lines and 13 show fewer** — and the 13 are spread over five of the nine witnesses
+  rather than concentrated in one, so no single hand explains them. One extra column accounts for 72
+  pages and two extra for 61, so 133 pages sit within two columns of pairing; 60 are ten or more out,
+  and the largest is 28. On these pages the segmenter is splitting columns rather than missing them,
+  which is a defect in the derivation's own step and not in the transcription it is being paired with.
+  The sharpest case is a 112-page witness with no exact page at all and a median of 1.35 columns to a
+  line, while its transcription is ordinary text by every other measure — a median of 20 lines and 396
+  characters a page at 1.11 detections a character, the same order as the witnesses that do pair, whose
+  ratio is 1.00 to 1.15. Its ratio is the outlier, not its transcription. And 153 of the 658 pages
+  carry no transcribed line to pair with at all, which no threshold can recover.
 - The per-column evidence gate leaves **53 pages** the derivation will write boxes for. The 64 pages
   the gate refuses are the ones whose weakest column holds 0.04 to 0.47 detections for each character
   of its line — most of one witness, whose pages are torn at the leaf edge — while every paired page's
@@ -96,8 +107,8 @@ which pages to propose on, not a verdict. Measured over all 658 pages, 9 witness
   not a tuning knob: 113 pages would pair if the gate averaged the page instead of each column, and
   the page that motivated the gate is among them.
 - The per-witness spread is wide: 龍谷大学's 蝦夷紀行 12 exactly of 15 (median 1.00), 立命館's copy 34
-  of 98 (1.07), one witness 51 of 56 (1.00) whose "lines" are catalogue entries, and one 0 of 38
-  (2.56) whose transcription covers a fraction of what its pages show.
+  of 98 (1.07), 蝦夷草紙 51 of 56 (1.00) on the densest transcription here at 413 characters a page,
+  and one 0 of 38 (2.56) whose transcription covers a fraction of what its pages show.
 
 Two further limits are worth stating plainly.
 

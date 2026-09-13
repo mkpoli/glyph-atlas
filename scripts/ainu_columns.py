@@ -55,6 +55,36 @@ def measure_page(page: Page, lines: list[Line], detector: detect.Detector,
     return row, boxes
 
 
+def _mismatch_lines(body: list[dict]) -> list[str]:
+    """How the count mismatches are shaped, because the shape says which step is wrong.
+
+    A page whose column count differs from its line count is the derivation's largest single reason to
+    refuse one, and the direction of the difference is the diagnosis: too many columns means the
+    segmenter split something, too few means it missed something, and a near miss means a threshold
+    rather than a method. Reported separately so a report can quote it without re-deriving the census.
+    """
+    differing = [row for row in body if row["columns"] != row["lines"]]
+    if not differing:
+        return ["body pages whose counts differ 0"]
+    over = [row for row in differing if row["columns"] > row["lines"]]
+    under = [row for row in differing if row["columns"] < row["lines"]]
+    excess = Counter(row["columns"] - row["lines"] for row in over)
+    missing = Counter(row["lines"] - row["columns"] for row in under)
+    out = [(
+        f"body pages whose counts differ {len(differing)}: more ink columns {len(over)}, "
+        f"fewer {len(under)}"
+    )]
+    if excess:
+        out.append(f"  over-counts: one extra {excess[1]}, two extra {excess[2]}, "
+                   f"within two {excess[1] + excess[2]}, ten or more "
+                   f"{sum(count for delta, count in excess.items() if delta >= 10)}, "
+                   f"largest {max(excess)}")
+    if missing:
+        out.append(f"  under-counts: largest {max(missing)}, "
+                   f"over {len({row['document_id'] for row in under})} witnesses")
+    return out
+
+
 def summarize(rows: list[dict], args: argparse.Namespace) -> str:
     """The measured agreement, as the lines a report can quote."""
     body = [row for row in rows if row["body"]]
@@ -74,6 +104,7 @@ def summarize(rows: list[dict], args: argparse.Namespace) -> str:
     counters = Counter((row["columns"] == row["lines"], row["body"]) for row in rows)
     out.append(f"exact on body pages {counters[(True, 1)]}/{counters[(True, 1)] + counters[(False, 1)]}, "
                f"exact on title-only pages {counters[(True, 0)]}/{counters[(True, 0)] + counters[(False, 0)]}")
+    out.extend(_mismatch_lines(body))
     out.append(f"pages the derivation would pair {sum(row['paired'] for row in rows)} "
                f"(count match {sum(1 for row in rows if row['columns'] == row['lines'] and row['body'])}, "
                f"evidence gate {args.min_per_character} detections a character)")
