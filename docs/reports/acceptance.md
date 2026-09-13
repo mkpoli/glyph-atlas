@@ -218,6 +218,28 @@ which units are published. A detector with 0.93 recall and 0.70 precision is a w
 that, because the alignment's match probability and the classifier's agreement are what reject a
 detection; whether they are enough is what T23's acceptance will show, and it has not been measured.
 
+### T21's longer schedule, measured and rejected
+
+The card's remedy for the precision gap was a longer schedule: 24 epochs are configured and the
+shipped artifact is six. Two epochs of a second run were trained and measured at the user's direction,
+with the whole validation split choosing the operating point and the whole `test` split measured at it,
+against the shipped artifact in the same run:
+
+| Whole test split (477 pages) | shipped, 6 epochs | epoch 1 of 24 |
+| --- | --- | --- |
+| operating point chosen on val | 0.02 | 0.03 |
+| precision | **0.6998** | 0.5692 |
+| recall | **0.9283** | 0.8947 |
+| F1 | **0.7980** | 0.6958 |
+| mean IoU | **0.8753** | 0.8682 |
+
+The longer run is worse on every measure, and the false positives are where it shows: 84,103 against
+49,463, with 4,173 fewer true positives. Its `val` F1 also went backwards, 0.646 at epoch 0 to 0.570
+at epoch 1, while the shipped run's rose monotonically to 0.744 over six. Two epochs cannot prove that
+24 would not help, but they do retire "more epochs" as the cheap first thing to try, and two runs of
+one schedule from one seed disagreeing this early is a question about the training loop rather than
+about the data. The shipped artifact is unchanged and the experiment's checkpoints are out of git.
+
 ### T22 Coarse character classifier
 
 Acceptance: on `test` crops whose class is in `classes.json`, top-1 ≥ 0.93 and top-5 ≥ 0.99, accuracy

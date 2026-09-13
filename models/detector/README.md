@@ -180,83 +180,55 @@ Every false positive of the test measurement, at the shipped operating point (49
   from CODH or annotated; until then every precision figure here is a floor, and the size of the
   floor is unknown.
 
-### What a longer run should test
+### The longer schedule was run, and it did not help
 
-A second run of the full 24-epoch schedule is running into `models/detector/artifacts-24e/` (the
-shipped artifact stays where it is, because the pilot run names it and its units are fingerprinted to
-it). It checkpoints an epoch at a time, so its `epoch-00.pt`, `metrics.json` and the table above can be
-compared as they appear.
+A second run of the configured 24-epoch schedule was trained into `models/detector/artifacts-24e/`,
+two epochs of it, and then stopped and measured at the user's direction. The shipped artifact stays
+where it is: the pilot's run names `artifacts/detector.onnx` and its unit ids are fingerprinted to
+`rtdetr_r18vd-6e`, so the experiment never touched it.
 
-Its rate depends on what else holds the machine. Measured over its first epoch: **0.97 to 2.26 s a
-step**, the first steps at 2.26 with the load average at 26 to 31 and the GPU at 0% because another
-project on this workstation was running `vite build` and `svelte-check` across 16 cores, the last at
-0.97 as that load fell away. Epoch 0 took **1 h 42 min** against the shipped run's 30 min, so the 24
-epochs are about 41 hours at this rate rather than the 11.6 the earlier measurement suggested. The run
-checkpoints an epoch at a time and is left to it; a reader comparing its numbers with the table above
-should know the machine was shared.
+**Epoch 1 is worse than the shipped six-epoch model on every headline measure**, measured on the whole
+validation split for the operating point and the whole `test` split at IoU 0.5:
 
-**Epoch 0 is already well ahead of the shipped run's epoch 0**, at the same loss:
+| Whole test split (477 pages) | shipped, 6 epochs | epoch 1 of 24 |
+| --- | --- | --- |
+| operating point chosen on val | 0.02 | 0.03 |
+| precision | **0.6998** | 0.5692 |
+| recall | **0.9283** | 0.8947 |
+| F1 | **0.7980** | 0.6958 |
+| mean IoU | **0.8753** | 0.8682 |
+| true / false / missed | 115,293 / 49,463 / 8,903 | 111,120 / 84,103 / 13,076 |
+| woodblock precision / recall | 0.6394 / **0.9679** | 0.5479 / 0.8832 |
+| manuscript precision / recall | 0.6341 / **0.9671** | 0.5402 / 0.8628 |
 
-| Epoch 0, tile-level on `val` | seconds | loss | best F1 | at score | precision | recall | mean IoU |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| shipped six-epoch run | 1,814 | 6.11 | 0.531 | 0.03 | 0.457 | 0.632 | 0.861 |
-| 24-epoch run | 6,124 | 6.11 | **0.646** | 0.03 | **0.595** | **0.706** | 0.879 |
+The false positives are what moved: 84,103 against 49,463, while true positives fell by 4,173. The
+model at epoch 1 finds slightly fewer characters and claims far more that are not annotated, so its
+precision is 0.13 lower and its F1 0.10 lower. Recall by box size decile says the same thing in
+detail — epoch 1 is better only on the smallest boxes (0.854 against 0.812 in decile 1) and worse in
+every decile above the third, by 0.14 in the largest.
 
-The loss is identical to two decimals, so this is the same training problem solved to the same depth;
-what differs is the confidence head. The new run's curve puts precision 0.595 at score 0.03 where the
-shipped run had 0.457, and reaches precision 0.722 at 0.05 with recall 0.252 — the head has caught up
-with the boxes, which the six-epoch run's flat 0.02-0.03 optimum said it had not. Two explanations fit
-and the evidence here cannot separate them: the extra epochs are not it (this is epoch 0 of both
-runs), so either the software stack moved between the two runs, or the shipped artifact's own epoch 0
-is not the one this schedule produces from the same seed. `models/detector/compare_checkpoints.sh
-<checkpoint>` measures a checkpoint on val and test and prints it beside the shipped artifact.
+What this does not establish is that 24 epochs would not help: the run stopped after two, and a curve
+that is worse at epoch 1 can still pass the six-epoch result later. What it does establish is that
+this schedule is not the cheap win the six-epoch curve suggested — the six-epoch run's own best F1
+rose monotonically to 0.744 on `val`, while this run's `val` F1 went 0.646 at epoch 0 and 0.570 at
+epoch 1, backwards. Two runs of the same schedule from the same seed disagreeing this early is itself
+the finding, and the honest next step is to find out why — a fixed data order, a scheduler restarted
+per epoch, or a warmup that never completes — before spending 41 more hours on it.
 
-The run was bounded at six of the configured 24 epochs, and the curve says it was still moving:
-the loss fell from 6.11 to 3.30, the best F1 from 0.531 to 0.744, and the last epoch still improved
-on the best by 0.007. The confidence scale is the clearest sign of what more training buys: the best
-F1 sits at score 0.02-0.03 in every epoch, while the matched boxes have a mean IoU of 0.89, and
-RT-DETR's class head is trained to predict that IoU. The head has not caught up with the boxes yet.
+What the evidence still supports trying, in order: a denser score grid or a calibrated head, since the
+whole operating range of the shipped model lies between 0.005 and 0.05; a val-chosen sweep of `nms`
+rather than of the score, for the quarter of false positives that are duplicates or splits of a real
+character; and finer tiles or more queries for the smallest decile, the weakest one. More epochs of
+this schedule is no longer first on that list.
 
-In order of what the evidence supports:
+`models/detector/compare_checkpoints.sh <checkpoint>` runs this measurement for any checkpoint into
+`models/detector/eval-<name>-<hash>/`, with the shipped baseline checksummed before and after; the
+report is rendered by `models/detector/compare_report.py`, which `tests/test_detector_report.py`
+covers without a GPU. The epoch-1 report is kept at `models/detector/eval-epoch-01-37e7513273c8/`.
 
-1. **More epochs on the same schedule.** 24 epochs is about 11.6 hours at the measured 0.30 s a step.
-   The curve is monotone after epoch 2, so this is the cheapest thing to try, and it is what the
-   configured ceiling was for.
-2. **A denser score grid or a calibrated head**, since the whole operating range of the shipped
-   model lies between 0.005 and 0.05.
-3. **Tightening the suppression rather than the score**, for the quarter of false positives that are
-   duplicates or splits of a real character: a val-chosen sweep of `nms`, not of the test numbers.
-4. **Smaller characters**, the weakest decile: finer tiles or more queries, at more VRAM and time.
-
-The production type comes from the `production` field every tile carries, cross-checked against
-`data/splits/codh.tsv` (`bid, title, production, split`, written by `scripts/build_codh_split.py`),
-which `train.py` refuses to disagree with. The `test` split holds three groups, not two:
-
-| Group | Books | Pages | Tiles | Unique boxes |
-| --- | --- | --- | --- | --- |
-| woodblock | 200021063 うすゆき物語, 200021802 料理物語 | 161 | 2,187 | 37,168 |
-| unknown | brsk00000 物類称呼 | 238 | 2,743 | 75,462 |
-| manuscript | 200010454 源氏物語 | 78 | 433 | 11,566 |
-
-`unknown` is not a third kind of book: it is the stratum whose NIJL IIIF manifest does not exist, so
-neither the CODH book page nor a manifest states whether the book is a woodblock print or a
-manuscript. Its numbers are reported apart rather than folded into the printed group, because a
-detector's behaviour on it cannot be attributed to either production.
-
-`epoch-NN.pt` checkpoints were deleted once the dense curves were in `metrics.json`; `best.pt` and
-`last.pt` remain.
-
-`export_onnx.py` writes one self-contained ONNX file with the legacy exporter, named `logits` and
-`pred_boxes`, and compares PyTorch against it on ten tiles of `val`. The comparison is between the
-two sets of detections rather than between query indexes: the decoder's queries have no fixed
-meaning, and the encoder picks its `topk` tokens from scores that trace to within about 1e-4 but not
-exactly, so a near tie can send one query to a different reference point on either side. A pair
-counts as the same box above IoU 0.99, and the check passes when no pair differs by more than 1 px
-and at most two detections (or 2%, whichever is larger) are on one side only. On the shipped
-checkpoint, over ten tiles of `val`, it matches 79 detections, none beyond the 1 px tolerance, with
-a largest corner difference of 0.44 px and one detection the PyTorch side had and the export did
-not (`logs/export-t21.log`). The export is 80,845,313 bytes, opset 17, with the two outputs the
-detector decodes.
+Its rate depended on what else held the machine: 0.97 to 2.26 s a step, epoch 0 taking 1 h 42 min
+against the shipped run's 30 min because another project held all 16 cores for part of it. At that
+rate the 24 epochs were about 41 hours, which is why the run was bounded rather than left to finish.
 
 ## Serving
 
