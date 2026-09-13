@@ -99,11 +99,17 @@ which pages to propose on, not a verdict. Measured over all 658 pages, 9 witness
   the extra columns are" below. And 153 of the 658 pages carry no transcribed line to pair with at
   all, which no threshold can recover.
 - The per-column evidence gate leaves **53 pages** the derivation will write boxes for. The 64 pages
-  the gate refuses are the ones whose weakest column holds 0.04 to 0.47 detections for each character
+  the gate refuses are the ones whose weakest column holds 0.04 to 0.48 detections for each character
   of its line — most of one witness, whose pages are torn at the leaf edge — while every paired page's
   weakest column stands at 0.50 or better (median 0.71). The threshold is a floor on the evidence and
-  not a tuning knob: 113 pages would pair if the gate averaged the page instead of each column, and
+  not a tuning knob: 114 pages would pair if the gate averaged the page instead of each column, and
   the page that motivated the gate is among them.
+- The gate's exact value decides how many pages pair, and there is no natural break to choose it at.
+  Over the 117 pages whose column count already matches their line count, the number that pairs is 115
+  at a floor of 0.05, 107 at 0.10, 95 at 0.20, 77 at 0.30, 63 at 0.40 and 53 at 0.50: a smooth ramp
+  from 0.48 downward, because the measured values run 0.04, 0.06, 0.08, 0.09 and so on without a gap.
+  0.50 is a policy — a column has to hold about one detection for every two characters of its line —
+  and the report should say so rather than imply the data chose it.
 - The per-witness spread is wide: 龍谷大学's 蝦夷紀行 12 exactly of 15 (median 1.00), 立命館's copy 34
   of 98 (1.07), 蝦夷草紙 51 of 56 (1.00) on the densest transcription here at 413 characters a page,
   and one 0 of 38 (2.56) whose transcription covers a fraction of what its pages show.
@@ -150,6 +156,33 @@ pages where the transcription covers one leaf of a spread need the region split 
 the pages with lone edge detections need those detections excluded by position and not by count. Both
 are changes to which columns are considered at all, and both want a human check on a handful of pages
 first, which is the one thing this run cannot supply for itself.
+
+### The evidence gate, measured against the pages it decides
+
+The gate is the other place the derivation refuses work, and unlike the count it can be checked
+against every page it decides rather than only the ones it refuses. `scripts/ainu_evidence.py`
+reproduces everything below from the cached detections. Two things came out of doing that.
+
+**The floor admits a relative rule almost exactly.** The gate compares each column against a fixed 0.5
+detections a character. Comparing the weakest column against the page's own middle column instead
+decides the same 52 of the 53 pages that pair today, and its union with the absolute rule covers 64 of
+the 117 count-matched pages: the two rules differ on 12. Eleven of those are pages the relative rule
+would pair and the absolute one refuses, and they are two 龍谷大学 witnesses — 蝦夷草紙 第1冊 for ten of
+them and 蝦夷紀行 第1冊 for the eleventh — whose weakest columns sit at 0.30 to 0.48 while their middle
+column sits at 0.49 to 0.91. On those pages the page is not thin, one column is. The twelfth is the
+reverse: a column at 0.50 on a page whose middle column is 1.25, which is exactly the column a relative
+rule exists to catch. A relative floor is therefore a real candidate rather than a loosening, and it is
+the one change here whose effect on the pages that already pair is measurable and small — 52 of 53
+unchanged, with the one exception being a page the relative rule catches and the absolute one does not.
+
+**The saved census cannot show the gate's own refusals.** `derive_page` clears `Derivation.evidence`
+when the gate refuses and `page_row` reads that list, so `weakest_column` is empty for exactly the 64
+pages a reader would look at to judge the threshold — the report's figures for them come from
+recomputing against the cached detections, not from `columns.tsv`. Anyone tuning the gate should fix
+that first: a census that cannot report the value it decided on cannot support a decision about it.
+Recomputed, the refusals run 0.04 to 0.48 and the paired pages 0.50 to 1.32, so the two sets do not
+overlap; and the number that pairs is 115 at a floor of 0.05, 107 at 0.10, 95 at 0.20, 77 at 0.30, 63
+at 0.40 and 53 at 0.50, a smooth ramp with no break to choose the value at.
 
 Two further limits are worth stating plainly.
 
