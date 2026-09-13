@@ -1,144 +1,40 @@
 <script>
-  /**
-   * The page view: the page image with the line boxes the detector produced.
-   *
-   * A click on a box opens the line view. `l` (or the button) starts drawing a line the detector
-   * missed: drag a rectangle, and `POST /lines` records it. A page whose image is not in the local
-   * cache shows the IIIF URL it would be fetched from and offers to skip the page.
-   */
   import Crop from '../components/Crop.svelte'
-
+  import PageFeedback from '../components/PageFeedback.svelte'
+  import api from '../lib/api.js'
   let { session } = $props()
-
-  let canvas = $state(null)
-  let availW = $state(0)
-  let availH = $state(0)
-
+  let availW = $state(0), zoom = $state(1), showBoxes = $state(true), siblings = $state([])
   const page = $derived(session.page)
-  const uncached = $derived(page ? !page.sha256 : false)
+  const volume = $derived(session.documents.find(d => d.id === page?.document_id))
   const drawing = $derived(session.mode === 'draw-line')
-
-  const scale = $derived.by(() => {
-    if (!page || !availW) return 0.2
-    const byWidth = availW / page.width
-    const byHeight = availH ? availH / page.height : byWidth
-    return Math.max(0.05, Math.min(byWidth, byHeight, 1.5))
+  const scale = $derived(page && availW ? Math.max(0.03, availW / page.width * zoom) : 0.2)
+  const index = $derived(siblings.findIndex(p => p.id === page?.id))
+  $effect(() => {
+    const documentId = page?.document_id
+    let cancelled = false
+    if (documentId) api.pages({ document: documentId, limit: 2000 }).then(result => {
+      if (!cancelled) siblings = result.items
+    }).catch(() => {})
+    return () => { cancelled = true }
   })
-
-  function percent(value) {
-    return `${Math.round(value * 100)}%`
-  }
 </script>
 
-{#if page}
-  <div class="page-grid" style="display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:16px;align-items:start">
-    <div class="stack">
-      <div class="panel">
-        <div class="row">
-          <button onclick={() => session.openQueue()}>← queue</button>
-          <strong>{page.id}</strong>
-          <span class="muted small">{page.document_id} · seq {page.seq}</span>
-          <span class="badge">{page.lines} lines</span>
-          <span class="badge">{page.units} units</span>
-          <span class="badge ok">{page.reviewed} reviewed</span>
-          {#if uncached}
-            <span class="badge warn">image not in the local cache</span>
-          {/if}
-          <span style="flex:1"></span>
-          <button class="primary" onclick={() => session.beginDrawLine()} disabled={drawing || session.imageFailed}>
-            new line (l)
-          </button>
-        </div>
-        {#if drawing}
-          <p class="small" style="margin:8px 0 0">
-            drag a rectangle over the page for the line the detector missed; <kbd>escape</kbd> cancels.
-          </p>
-        {/if}
-      </div>
-
-      {#if session.imageFailed}
-        <div class="unavailable">
-          <h3 style="margin-top:0">the page image could not be loaded</h3>
-          <p class="small">
-            The page is skipped. The image this page names is not in <code>cache/images</code>, and the
-            upstream URL did not answer. Fetch it with <code>atlas images fetch</code>, or open it
-            directly:
-          </p>
-          <p class="small"><a href={page.image_url} target="_blank" rel="noreferrer">{page.image_url}</a></p>
-          <div class="row">
-            <button class="primary" onclick={() => session.skipPage()}>skip this page</button>
-            <button onclick={() => session.openQueue()}>back to the queue</button>
-          </div>
-        </div>
-      {:else}
-        {#if uncached}
-          <div class="panel small">
-            <strong>not cached:</strong>
-            <a href={page.image_url} target="_blank" rel="noreferrer">{page.image_url}</a>
-            <button style="margin-left:8px" onclick={() => session.skipPage()}>skip this page</button>
-          </div>
-        {/if}
-        <div
-          class="page-canvas"
-          bind:this={canvas}
-          bind:clientWidth={availW}
-          bind:clientHeight={availH}
-          style="max-height:calc(100vh - 260px);overflow:auto;display:flex;justify-content:center"
-        >
-          <Crop
-            src={page.image_url}
-            box={{ x: 0, y: 0, w: page.width, h: page.height }}
-            page={page}
-            {scale}
-            draw={drawing}
-            minimum={12}
-            oncreate={(box) => session.createLine(box)}
-            onfail={() => session.markImageFailed()}
-            title={`${page.id} (${page.width}×${page.height})`}
-          >
-            {#each session.lines as line (line.id)}
-              <div
-                class="box {session.line?.id === line.id ? 'selected' : ''}"
-                class:ghost={line.role !== 'main'}
-                style="left:{line.box.x * scale}px;top:{line.box.y * scale}px;width:{line.box.w * scale}px;height:{line.box.h * scale}px;pointer-events:{drawing ? 'none' : 'auto'}"
-                role="button"
-                tabindex="0"
-                title={`${line.id} · ${line.box.w}×${line.box.h} · ${line.units} units · rev ${line.revision}`}
-                onpointerdown={(event) => event.stopPropagation()}
-                onclick={() => session.openLine(line.id)}
-                onkeydown={(event) => {
-                  if (event.key === 'Enter') session.openLine(line.id)
-                }}
-              >
-                <span
-                  class="badge"
-                  style="position:absolute;left:1px;top:1px;font-size:10px;padding:0 4px;background:var(--surface)">{line.seq}</span
-                >
-              </div>
-            {/each}
-          </Crop>
-        </div>
-      {/if}
-    </div>
-
-    <div class="panel">
-      <h2>lines of the page</h2>
-      <div class="list">
-        {#each session.lines as line (line.id)}
-          <button
-            class="item {session.line?.id === line.id ? 'current' : ''}"
-            onclick={() => session.openLine(line.id)}
-          >
-            <div class="tagline">{line.text_raw || line.text || '—'}</div>
-            <div class="line-id">{line.id}</div>
-            <div class="small muted">
-              seq {line.seq} · {line.units} units · rev {line.revision}
-              {#if line.role !== 'main'}· {line.role}{/if}
-              {#if line.match_confidence != null}· {percent(line.match_confidence)}{/if}
-            </div>
-          </button>
-        {/each}
-      </div>
-    </div>
+{#if page}<div class="page-reader workspace">
+  <div class="reader-heading"><div><a class="small text-link" href="#/pages/{encodeURIComponent(page.document_id)}">← Back to volume</a><h1>{volume?.title || 'Source page'}</h1><p class="muted">{volume?.holder || ''}{volume?.shelfmark ? ` · ${volume.shelfmark}` : ''}</p></div><div class="page-navigation"><button disabled={index < 1} onclick={() => session.openPage(siblings[index - 1].id)} aria-label="Previous page">←</button><label>Page<select value={page.id} onchange={(e) => session.openPage(e.currentTarget.value)}>{#each siblings as sibling}<option value={sibling.id}>{sibling.seq + 1}</option>{/each}{#if !siblings.length}<option value={page.id}>{page.seq + 1}</option>{/if}</select></label><button disabled={index < 0 || index >= siblings.length - 1} onclick={() => session.openPage(siblings[index + 1].id)} aria-label="Next page">→</button></div></div>
+  <div class="reader-columns">
+    <button class="jump-to-text" onclick={() => document.querySelector('.feedback-pane')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Go to transcription and feedback ↓</button>
+    <section class="scan-pane">
+      <div class="scan-toolbar"><strong>Facsimile</strong><label class="small">Zoom <input aria-label="Scan zoom" type="range" min="0.5" max="2.5" step="0.1" bind:value={zoom} /></label><label class="small"><input type="checkbox" bind:checked={showBoxes} /> Line boxes</label><button onclick={() => session.beginDrawLine()} disabled={drawing || session.imageFailed}>Add line</button></div>
+      {#if drawing}<p class="notice">Drag a rectangle around the missing line. Press Escape to cancel.</p>{/if}
+      {#if session.imageFailed}<div class="empty-state"><h3>The scan could not be loaded</h3><p>Your transcription and feedback remain available.</p><a href={page.image_url} target="_blank" rel="noreferrer">Open the source image →</a></div>
+      {:else}<div class="scan-scroll" bind:clientWidth={availW}>
+        <Crop src={page.image_url} box={{ x: 0, y: 0, w: page.width, h: page.height }} {page} {scale} draw={drawing} minimum={12} oncreate={(box) => session.createLine(box)} onfail={() => session.markImageFailed()} title={`Page ${page.seq + 1}`}>
+          {#if showBoxes}{#each session.lines.filter(line => line.box) as line (line.id)}<div class="box" class:ghost={line.role !== 'main'} style="left:{line.box.x * scale}px;top:{line.box.y * scale}px;width:{line.box.w * scale}px;height:{line.box.h * scale}px;pointer-events:{drawing ? 'none' : 'auto'}" role="button" tabindex="0" aria-label={`Review character boxes in line ${line.seq + 1}`} onpointerdown={(e) => e.stopPropagation()} onclick={() => session.openLine(line.id)} onkeydown={(e) => { if (e.key === 'Enter') session.openLine(line.id) }}><span class="box-label">{line.seq + 1}</span></div>{/each}{/if}
+        </Crop>
+      </div>{/if}
+      <div class="scan-caption"><span>Page {page.seq + 1} · {session.lines.filter(line => line.box).length} mapped lines</span><a href={page.image_url} target="_blank" rel="noreferrer">Full image ↗</a></div>
+      <details class="line-details"><summary>Character review by line</summary><div class="list">{#each session.lines as line}<button class="item" disabled={!line.box} onclick={() => session.openLine(line.id)}><span>{line.seq + 1}. {line.text || line.text_raw || 'Untranscribed line'}</span><small>{line.box ? `${line.units} characters` : 'No line box yet'}</small></button>{/each}</div></details>
+    </section>
+    {#key page.id}<PageFeedback {page} {session} />{/key}
   </div>
-{/if}
+</div>{/if}

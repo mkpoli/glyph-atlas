@@ -57,7 +57,7 @@ export class Session {
   queue = $state({ items: [], total: 0, limit: 50, offset: 0, loading: false })
 
   // -- the open records ----------------------------------------------------------------------
-  route = $state({ name: 'queue', id: null })
+  route = $state({ name: 'project', id: null })
   page = $state(null)
   lines = $state([])
   line = $state(null)
@@ -155,6 +155,15 @@ export class Session {
   async #applyHash(initial = false) {
     const hash = location.hash.replace(/^#\/?/, '')
     const [name, id] = hash.split('/')
+    if (name === 'project' || name === 'pages' || !name) {
+      await this.leaveLine()
+      this.page = null
+      this.line = null
+      this.units = []
+      this.selection = []
+      this.route = { name: name || 'project', id: id ? decodeURIComponent(id) : null }
+      return
+    }
     if (name === 'page' && id) {
       const pageId = decodeURIComponent(id)
       if (this.route.name === 'page' && this.page?.id === pageId) return
@@ -235,6 +244,8 @@ export class Session {
     this.route = { name: 'page', id: pageId }
     this.imageFailed = false
     this.selection = []
+    this.line = null
+    this.units = []
     try {
       const [page, lines] = await Promise.all([
         api.page(pageId),

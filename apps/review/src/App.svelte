@@ -2,8 +2,7 @@
   /**
    * The shell: the top bar, the view the hash route names, the client's own event log, and the keys.
    *
-   * Routes are `#/queue`, `#/page/<page id>` and `#/line/<line id>`; they can be linked to and are
-   * what the screenshot tool drives.
+   * Routes cover the project overview, page catalogue, page reader and character review.
    */
   import { onMount } from 'svelte'
   import { Session } from './lib/session.svelte.js'
@@ -14,6 +13,8 @@
   import CandidatePicker from './components/CandidatePicker.svelte'
   import ConflictDialog from './components/ConflictDialog.svelte'
   import Help from './components/Help.svelte'
+  import ProjectView from './views/ProjectView.svelte'
+  import PagesView from './views/PagesView.svelte'
 
   const session = new Session()
 
@@ -29,6 +30,7 @@
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
     if (event.metaKey || event.ctrlKey || event.altKey) return
     if (session.mode === 'candidates') return
+    if (!['page', 'line', 'queue'].includes(session.route.name)) return
 
     switch (event.key) {
       case 'a':
@@ -104,16 +106,11 @@
 
 <div class="app">
   <header class="topbar">
-    <h1>kuzushiji-atlas review</h1>
-    <span class="sep">·</span>
-    <nav class="crumb">
-      <a href="#/queue" style="color:inherit">queue</a>
-      {#if session.page}
-        · <a href="#/page/{encodeURIComponent(session.page.id)}" style="color:inherit">{session.page.id}</a>
-      {/if}
-      {#if session.line}
-        · <strong>{session.line.id}</strong>
-      {/if}
+    <a class="brand" href="#/project"><span class="seal" aria-hidden="true">字</span><span>くずし字 Atlas<small>Manuscripts · transcription · review</small></span></a>
+    <nav class="primary-nav" aria-label="Main navigation">
+      <a href="#/project" aria-current={session.route.name === 'project' ? 'page' : undefined}>Overview</a>
+      <a href="#/pages" aria-current={['pages', 'page'].includes(session.route.name) ? 'page' : undefined}>Sources</a>
+      <a href="#/queue" aria-current={['queue', 'line'].includes(session.route.name) ? 'page' : undefined}>Character review</a>
     </nav>
     <span class="spacer"></span>
     {#if session.status === 'loading'}
@@ -122,7 +119,7 @@
       <span class="badge bad">no service: {session.error}</span>
     {/if}
     <label class="small muted hide-narrow">
-      reviewer
+      Reviewer
       <input
         type="text"
         bind:value={clientDraft}
@@ -133,24 +130,29 @@
         }}
       />
     </label>
-    <button class="hide-narrow" onclick={() => session.toggleTheme()} title="light, dark, or the system's choice">
-      {session.theme}
+    <button onclick={() => session.toggleTheme()} title="Change color theme" aria-label="Change color theme">
+      {session.theme === 'dark' ? 'Dark' : session.theme === 'light' ? 'Light' : 'Auto'}
     </button>
-    <button onclick={() => (session.help = true)}>keys (?)</button>
+    <button class="hide-narrow" onclick={() => (session.help = true)}>Shortcuts</button>
   </header>
 
-  <div class="main">
+  <div class="main" class:reading-workspace={session.route.name !== 'line'}>
     <main class="pane">
       {#if session.status === 'error'}
         <div class="panel">
-          <h2>the review service did not answer</h2>
-          <p class="small">
-            Start it with <code>atlas review serve &lt;dataset&gt; --port 8770</code> and reload. In
-            development the Vite proxy forwards the API paths to that port.
-          </p>
+          <h2>The review service is unavailable</h2>
+          <p>Reconnect to the local review service to continue.</p>
           <p class="small muted">{session.error}</p>
-          <button onclick={() => location.reload()}>try again</button>
+          <button onclick={() => location.reload()}>Try again</button>
         </div>
+      {:else if session.status === 'loading'}
+        <div class="empty-state" role="status">Loading the collection…</div>
+      {:else if session.route.name === 'project'}
+        <ProjectView />
+      {:else if session.route.name === 'pages'}
+        {#key session.route.id}
+          <PagesView {session} documentId={session.route.id ?? ''} />
+        {/key}
       {:else if session.route.name === 'page'}
         <PageView {session} />
       {:else if session.route.name === 'line'}
@@ -159,7 +161,7 @@
         <QueueView {session} />
       {/if}
     </main>
-    <aside class="side">
+    {#if session.route.name === 'line'}<aside class="side">
       <EventLog {session} />
       <div class="panel small">
         <h2>keys</h2>
@@ -169,12 +171,12 @@
           <kbd>space</kbd> next line <kbd>?</kbd> all of them
         </p>
       </div>
-    </aside>
+    </aside>{/if}
   </div>
 
   <footer class="bottom">
     <span>{session.clientId}</span>
-    <span>{session.documents.length} documents</span>
+    <span>{session.documents.length} imported volumes</span>
     {#if session.queue.total}<span>{session.queue.total} lines in the {session.strategy} queue</span>{/if}
     {#if session.line}<span>line {session.line.id}</span>{/if}
     <span style="flex:1"></span>

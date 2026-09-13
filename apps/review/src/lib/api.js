@@ -28,10 +28,13 @@ export class ConflictError extends ApiError {
   }
 }
 
-async function request(path, { method = 'GET', body, signal } = {}) {
+async function request(path, { method = 'GET', body, signal, clientId } = {}) {
   const response = await fetch(`${base}${path}`, {
     method,
-    headers: body === undefined ? undefined : { 'content-type': 'application/json' },
+    headers: {
+      ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      ...(clientId ? { 'x-atlas-client': clientId } : {}),
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
     signal,
   })
@@ -63,6 +66,14 @@ function query(params) {
 }
 
 export const api = {
+  project: () => request('/project'),
+  pages: (params = {}) => request(`/pages${query(params)}`),
+  corrections: (pageId) => request(`/pages/${encodeURIComponent(pageId)}/corrections`),
+  saveCorrection: (body, clientId) => request('/corrections', { method: 'POST', body, clientId }),
+  retractCorrection: (id, body, clientId) => request(`/corrections/${encodeURIComponent(id)}/retract`, {
+    method: 'POST', body, clientId,
+  }),
+  sourceUpdates: (pageIds) => request('/source-updates', { method: 'POST', body: { page_ids: pageIds } }),
   /** `GET /documents` — every document with its page, line, unit and reviewed counts. */
   documents: (params = {}) => request(`/documents${query(params)}`),
 

@@ -302,10 +302,10 @@ try {
 
   await step('the page view draws a box for every line', async () => {
     await browser.goto(url(`#/page/${encodeURIComponent(fixture.cached_page)}`), {
-      waitFor: 'document.querySelectorAll(".page-canvas .crop .box").length > 0',
+      waitFor: 'document.querySelectorAll(".scan-scroll .crop .box").length > 0',
     })
     const view = await browser.evaluate(`(() => ({
-      boxes: document.querySelectorAll('.page-canvas .crop .box').length,
+      boxes: document.querySelectorAll('.scan-scroll .crop .box').length,
       rows: document.querySelectorAll('.list button.item').length,
       badge: [...document.querySelectorAll('.badge')].map(b => b.textContent.trim()).join(' '),
     }))()`)
@@ -316,8 +316,8 @@ try {
 
   await step('drawing a line (l) records a line the detector missed', async () => {
     await browser.key('l')
-    await browser.waitFor('document.querySelector(".page-canvas .crop.picking") !== null')
-    const canvas = await browser.centre('.page-canvas .crop')
+    await browser.waitFor('document.querySelector(".scan-scroll .crop.picking") !== null')
+    const canvas = await browser.centre('.scan-scroll .crop')
     await browser.drag({ x: canvas.x - 120, y: canvas.y - 160 }, { x: canvas.x - 40, y: canvas.y + 160 })
     const created = await until('the created line', () =>
       events(config.directory).find((row) => row.field === 'create' && row.target_type === 'line'),
@@ -331,27 +331,14 @@ try {
     return `${created.target_id} created and opened; the panel now lists ${rows} lines`
   })
 
-  await step('a page whose image is not cached shows the IIIF URL and can be skipped', async () => {
+  await step('a missing image keeps transcription and feedback reachable', async () => {
     await browser.goto(url(`#/page/${encodeURIComponent(fixture.uncached_page)}`), {
-      waitFor: 'document.querySelector(".unavailable, .panel.small") !== null',
+      waitFor: 'document.querySelector(".feedback-pane") !== null',
     })
-    const shown = await browser.evaluate(`(() => {
-      const panel = document.querySelector('.unavailable') ?? document.querySelector('.panel.small')
-      return { text: panel.innerText.replace(/\\s+/g, ' ').trim(), link: panel.querySelector('a')?.href ?? null }
-    })()`)
-    assert(shown.link?.startsWith('https://example.org'), `the panel does not show the URL (${shown.link})`)
-    assert(/not cached|skipped/i.test(shown.text), `the panel says: ${shown.text}`)
-    const centre = await browser.evaluate(`(() => {
-      const button = [...document.querySelectorAll('button')].find(b => b.textContent.includes('skip this page'))
-      if (!button) return null
-      const rect = button.getBoundingClientRect()
-      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
-    })()`)
-    assert(centre, 'the skip button is not on the page')
-    await browser.click(centre.x, centre.y)
-    await browser.waitFor('location.hash !== "#/page/doc-1:p2"')
-    const hash = await browser.evaluate('location.hash')
-    return `the URL was shown and the page skipped → ${hash}`
+    const link = await browser.evaluate('document.querySelector(".scan-caption a")?.href')
+    assert(link?.startsWith('https://example.org'), 'the original image link is available')
+    assert(await browser.evaluate('!!document.querySelector(".page-notes textarea")'), 'page feedback remains usable')
+    return 'original image link and page notes available'
   })
 
   await step('the browser console stayed clean', async () => {

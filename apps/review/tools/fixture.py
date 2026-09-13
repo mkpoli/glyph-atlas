@@ -39,6 +39,7 @@ from kuzushiji_atlas.schema import (
     Line,
     LineRole,
     Page,
+    PageText,
     Script,
     Unit,
 )
@@ -183,6 +184,14 @@ def build(directory: Path, *, long_units: int = 240) -> dict:
             height=1800,
         ),
     ]
+    for page in pages:
+        page.seq -= 1
+    pages.extend([
+        Page(id="doc-2:p2", document_id="doc-2", seq=1,
+             image="https://example.org/iiif/doc-2/2.jpg", width=1200, height=1800),
+        Page(id="doc-2:p3", document_id="doc-2", seq=2,
+             image="https://example.org/iiif/doc-2/3.jpg", width=1200, height=1800),
+    ])
 
     lines: list[Line] = []
     units: list[Unit] = []
@@ -279,6 +288,11 @@ def build(directory: Path, *, long_units: int = 240) -> dict:
         ("units", units, Unit),
     ):
         tables.write(directory / f"{name}.parquet", records, model)
+    tables.write(directory / "page_texts.parquet", [
+        PageText(page_id="doc-1:p1", source="fixture", text_raw="【右丁】\nあいうえ\nおかきく\nけこあい"),
+        PageText(page_id="doc-2:p2", source="fixture", text_raw="【右丁】\n天　アイヌ\n地　モシリ"),
+        PageText(page_id="doc-2:p3", source="fixture", text_raw=""),
+    ], PageText)
 
     return {
         "directory": str(directory),
@@ -294,6 +308,8 @@ def build(directory: Path, *, long_units: int = 240) -> dict:
         "long_units": long_units,
         "uncached_page": "doc-1:p2",
         "cached_page": "doc-1:p1",
+        "text_only_page": "doc-2:p2",
+        "empty_page": "doc-2:p3",
     }
 
 

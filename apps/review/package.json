@@ -10,7 +10,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "bun tools/check.mjs",
-    "shots": "bun tools/shots.mjs"
+    "shots": "bun tools/shots.mjs",
+    "browser-check": "bun tools/browser-check.mjs",
+    "workspace-check": "bun tools/workspace-check.mjs"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^6.2.4",
