@@ -362,6 +362,24 @@ def _apply_filters(
         else []
     )
     kept_page_ids = {page.id for page in pages}
+    # Every line any unit names, admitted or not. A line here waits for a unit of it to be admitted;
+    # a line that is nowhere in this set has no unit at all, and is a record of the page on its own.
+    # A dataset that mixes resolved and unresolved pages — the Ainu records, where an alignment has
+    # run over 53 of 658 — must keep the unresolved ones, so this is decided per line rather than by
+    # whether the dataset holds a units table at all.
+    lines_with_units = {
+        str(unit.line_id)
+        for batch in dataset.scan("units", columns=["line_id"]) if dataset.tables["units"] is not None
+        for unit in batch
+        if unit.line_id
+    } if dataset.tables["units"] is not None else set()
+    # The lines that no unit names, which are records of their pages on their own.
+    all_line_ids = {
+        str(line.id)
+        for batch in dataset.scan("lines", columns=["id"]) if dataset.tables["lines"] is not None
+        for line in batch
+    } if dataset.tables["lines"] is not None else set()
+    lines_without_units = all_line_ids - lines_with_units
     groups_all = dataset.read("groups") if dataset.tables["groups"] is not None else []
     page_texts_all = dataset.read("page_texts") if dataset.tables["page_texts"] is not None else []
     unit_rows: list[dict[str, Any]] = []
@@ -378,27 +396,41 @@ def _apply_filters(
                 continue
             if str(unit.review) not in review:
                 continue
+            if not unit.active:
+                # A unit a later run retired is not a record of the page any more: withdrawing a
+                # derived line box retires the machine units that were placed in it, and a release
+                # must not resurrect them.
+                continue
             units_seen += 1
             if limit is not None and units_seen > limit:
                 continue
             unit_rows.append(_unit_row(unit, normaliser, columns))
-    holds_units = dataset.tables["units"] is not None
-    if holds_units and not unit_rows:
+    dataset_holds_units = dataset.tables["units"] is not None
+    if not unit_rows and not lines_without_units:
+        # A dataset whose units are all filtered out can still have records to publish — the lines
+        # that carry no unit at all — and that is the case the Ainu records reach when the review
+        # filter admits nothing. The failure is only when the release would hold no record of any
+        # kind: no unit and no unit-less line.
         raise ExportError(
-            "no unit of this dataset is admitted by the filters, so the release would hold no "
-            "record; widen --review, ask for machine units, or check the document rights"
+            "no unit of this dataset is admitted by the filters and it holds no line without one, "
+            "so the release would hold no record; widen --review, ask for machine units, or check "
+            "the document rights"
         )
     kept_units = {str(row["id"]) for row in unit_rows}
     kept_lines = {str(row["line_id"]) for row in unit_rows if row.get("line_id")}
     # A dataset with no units at all, such as a platform transcription before an alignment has run
     # over its pages, releases its lines whole: there are no units to say which line is used, and a
-    # line without a unit is still a record of the page it sits on.
+    # line without a unit is still a record of the page it sits on. A line that carries no units
+    # anywhere still has no unit to be admitted by, so it is kept too — that is what keeps the
+    # unresolved pages of a mixed dataset in the release. A line that was aligned keeps only the
+    # units the filters admitted, so the release stays the closure of those units.
     line_rows = (
         [
             line
             for batch in dataset.scan("lines")
             for line in batch
-            if line.page_id in kept_page_ids and (not holds_units or line.id in kept_lines)
+            if line.page_id in kept_page_ids
+            and (line.id in kept_lines or line.id not in lines_with_units)
         ]
         if dataset.tables["lines"] is not None
         else []
@@ -422,7 +454,7 @@ def _apply_filters(
         tables.write(work / "pages.parquet", pages, Page)
     if line_rows:
         tables.write(work / "lines.parquet", line_rows, Line)
-    if holds_units:
+    if dataset_holds_units:
         _write_unit_rows(work / "units.parquet", unit_rows, columns)
     tables.write(work / "groups.parquet", groups, Group)
     tables.write(work / "page_texts.parquet", page_texts, PageText)

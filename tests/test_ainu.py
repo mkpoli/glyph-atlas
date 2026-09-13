@@ -438,3 +438,109 @@ def test_columns_tsv_holds_every_field_the_report_quotes(tmp_path) -> None:
     assert list(read[0]) == list(ainu.COLUMNS_FIELDS)
     assert read[0]["page_id"] == "hk:d:0" and read[0]["columns"] == "2" and read[0]["lines"] == "2"
     assert read[0]["paired"] == "1"
+
+
+class EditsDuringDetection:
+    """A detector that, while it runs, does what a reviewer would do to one line."""
+
+    def __init__(self, boxes: list[Box], directory, edit) -> None:
+        self.found = boxes
+        self.directory = directory
+        self.edit = edit
+        self.calls = 0
+
+    def __call__(self, page: Page) -> list[Box]:
+        self.calls += 1
+        if self.calls == 1:
+            self.edit(self.directory)
+        return list(self.found)
+
+
+def four_columns(page_id: str = "hk:d:0") -> list[Box]:
+    """Four complete columns, which is what a page of four lines needs to pair."""
+    boxes = column(1300)
+    for index in range(1, 4):
+        boxes.extend(column(1300 - index * 50))
+    return boxes
+
+
+def test_an_edit_during_detection_is_not_overwritten(tmp_path) -> None:
+    """A reviewer who sets a box while the detector runs keeps it, and keeps their note.
+
+    `derive_dataset` reads the lines, runs the detector for minutes and only then writes. The write
+    re-reads the table under the lock, so it sees the edit — the old version saw it and applied the
+    stale proposal anyway, replacing the box, the method and the whole `meta` dict.
+    """
+    from kuzushiji_atlas import tables
+
+    directory = tmp_path / "ainu"
+    directory.mkdir()
+    lines = [line(seq, "あ" * 3) for seq in range(4)]
+    tables.write(directory / "pages.parquet", [page()], Page)
+    tables.write(directory / "lines.parquet", lines, Line)
+
+    def edit(path):
+        saved = tables.read(path / "lines.parquet", Line)
+        saved[1].box = Box(x=1, y=2, w=3, h=4)
+        saved[1].match_method = "manual"
+        saved[1].meta = {"source": "review", "note": "saved during detection"}
+        tables.write(path / "lines.parquet", saved, Line)
+
+    detector = EditsDuringDetection(four_columns(), directory, edit)
+    counts = ainu.derive_dataset(directory, detector=detector, out=tmp_path / "c.tsv")
+    assert counts["paired"] == 1
+    assert counts["stale"] == 1, "the edited line's proposal is dropped rather than applied"
+
+    after = {item.id: item for item in tables.read(directory / "lines.parquet", Line)}
+    edited = after[lines[1].id]
+    assert edited.box == Box(x=1, y=2, w=3, h=4), "the reviewer's box stands"
+    assert edited.match_method == "manual"
+    assert edited.meta == {"source": "review", "note": "saved during detection"}, (
+        "the note survives: only the derivation's own meta key is merged"
+    )
+    assert all(ainu.derived_by_atlas(after[lines[index].id]) for index in (0, 2, 3)), (
+        "the other three lines get the proposal"
+    )
+
+
+def test_a_note_added_during_detection_survives_the_proposal(tmp_path) -> None:
+    """A line whose box the derivation may set keeps any other meta key added while it ran."""
+    from kuzushiji_atlas import tables
+
+    directory = tmp_path / "ainu"
+    directory.mkdir()
+    lines = [line(seq, "あ" * 3) for seq in range(4)]
+    tables.write(directory / "pages.parquet", [page()], Page)
+    tables.write(directory / "lines.parquet", lines, Line)
+
+    def edit(path):
+        saved = tables.read(path / "lines.parquet", Line)
+        saved[2].meta = {**(saved[2].meta or {}), "note": "left during detection"}
+        tables.write(path / "lines.parquet", saved, Line)
+
+    detector = EditsDuringDetection(four_columns(), directory, edit)
+    counts = ainu.derive_dataset(directory, detector=detector, out=tmp_path / "c.tsv")
+    assert counts["boxes"] == 4 and counts["stale"] == 0
+    after = {item.id: item for item in tables.read(directory / "lines.parquet", Line)}
+    assert after[lines[2].id].meta.get("note") == "left during detection"
+    assert ainu.derived_by_atlas(after[lines[2].id]), "the proposal is still applied"
+
+
+def test_an_untagged_imported_box_is_never_replaced(tmp_path) -> None:
+    """An import's box carries no method tag and no provenance, and is still not a proposal's to take."""
+    from kuzushiji_atlas import tables
+
+    directory = tmp_path / "ainu"
+    directory.mkdir()
+    lines = [line(seq, "あ" * 3) for seq in range(4)]
+    lines[0].box = Box(x=7, y=8, w=9, h=10)  # no match_method, no meta: what an import writes
+    tables.write(directory / "pages.parquet", [page()], Page)
+    tables.write(directory / "lines.parquet", lines, Line)
+
+    counts = ainu.derive_dataset(directory, detections={page().id: four_columns()},
+                                 out=tmp_path / "c.tsv")
+    assert counts["paired"] == 1
+    after = {item.id: item for item in tables.read(directory / "lines.parquet", Line)}
+    assert after[lines[0].id].box == Box(x=7, y=8, w=9, h=10), "the import's box stands"
+    assert not ainu.derived_by_atlas(after[lines[0].id])
+    assert all(after[lines[index].id].box is not None for index in (1, 2, 3))

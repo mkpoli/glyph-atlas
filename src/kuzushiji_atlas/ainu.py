@@ -350,20 +350,16 @@ def derived_by_atlas(line: Line) -> bool:
 
 
 def human_box(line: Line) -> bool:
-    """Whether a person set this line's box, which no machine run may replace or withdraw.
+    """Whether this line's box is anybody's but this derivation's, and so not a proposal's to touch.
 
-    The line model records a person's work in `match_method` (`manual` or `review`) and in a `meta`
-    entry that does not name a machine source. A line the derivation itself wrote carries the
-    derivation's own provenance, so this returns False for it and True for everything else that has a
-    box — an import's box, a reviewer's box, an adjudicator's.
+    A box the derivation wrote carries its provenance, and only such a box may be replaced on a paired
+    page or withdrawn on an unpaired one. Everything else with a box is left alone: a reviewer's
+    (`match_method` of `manual` or `review`, or a `meta` that names a person's source), and equally an
+    import's box, which carries no provenance and no method tag at all. The first version of this
+    function required one of those markers and so treated an untagged imported box as the
+    derivation's, which is exactly the mistake this docstring exists to prevent.
     """
-    if line.box is None:
-        return False
-    if derived_by_atlas(line):
-        return False
-    return line.match_method in HUMAN_MATCH_METHODS or (line.meta or {}).get("source") not in (
-        None, "ainu-derive",
-    )
+    return line.box is not None and not derived_by_atlas(line)
 
 
 def _unit_is_machine(unit: Unit) -> bool:
@@ -458,29 +454,27 @@ def derive_dataset(
                                  body_lines=body_lines, min_per_character=min_per_character)
         pairing = {line.id: index for index, line in enumerate(derivation.pairing)}
         for line in lines:
+            proposal: dict[str, Any] | None = None
             if derivation.paired and line.id in pairing:
                 if human_box(line):
-                    # A person's box is the answer for this line; a proposal does not replace it.
+                    # Somebody's box, not this derivation's: a proposal does not replace it.
                     continue
                 box = derivation.line_box(pairing[line.id])
-                if box is None:
-                    continue
-                updates[line.id] = {
-                    "box": box,
-                    "meta": {**(line.meta or {}), "derivation": provenance()},
-                    "match_method": provenance()["method"],
-                }
-                counts["boxes"] += 1
+                if box is not None:
+                    proposal = {"box": box, "derivation": provenance()}
             elif derived_by_atlas(line):
                 # This run did not pair the page, so the box the last run wrote here is withdrawn
                 # rather than left standing as the import's own.
-                updates[line.id] = {
-                    "box": None,
-                    "meta": {key: value for key, value in (line.meta or {}).items()
-                             if key != "derivation"},
-                    "match_method": None,
-                }
-                counts["withdrawn"] += 1
+                proposal = {"box": None, "derivation": None}
+            if proposal is None:
+                continue
+            # What the proposal was computed from. The commit compares this against the row it finds
+            # under the lock, so an edit made while the detector was running wins.
+            updates[line.id] = {
+                **proposal,
+                "was": (line.box, line.match_method, derived_by_atlas(line)),
+            }
+            counts["boxes" if proposal["box"] is not None else "withdrawn"] += 1
         counts["pages"] += 1
         counts["lines"] += len(lines)
         counts["paired"] += int(derivation.paired)
@@ -496,8 +490,13 @@ def derive_dataset(
         counts["cache-entries"] = len(found_map)
         counts["cache-reused"] = cached_pages
     counts["pages-sized"] = 0
+    counts["stale"] = 0
     if updates or page_sizes:
-        counts["units-retired"] = _commit(directory, updates, page_sizes=page_sizes)
+        commit = _commit(directory, updates, page_sizes=page_sizes)
+        counts["units-retired"] = commit["units-retired"]
+        counts["stale"] = commit["stale"]
+        counts["boxes"] -= len(commit["stale-boxes"])
+        counts["withdrawn"] -= len(commit["stale-withdrawn"])
         counts["pages-sized"] = len(page_sizes)
     write_columns(out if out is not None else directory / "columns.tsv", rows)
     return counts
@@ -520,27 +519,42 @@ def _cached_size(page: Page) -> tuple[int, int] | None:
 
 
 def _commit(directory: Path, updates: dict[str, dict[str, Any]],
-            page_sizes: dict[str, tuple[int, int]] | None = None) -> int:
+            page_sizes: dict[str, tuple[int, int]] | None = None) -> dict[str, Any]:
     """Apply this run's line updates under the table lock and retire the units they invalidate.
 
-    The lines are read again here rather than reused from the loop: the detector ran for minutes, and
-    a row that changed in the meantime belongs to whoever changed it. Only the fields this run owns
-    are written, and a line whose box is withdrawn loses the machine units the alignment placed in it
-    — but never a unit a person reviewed, and never another run's units. A page whose record states
-    no pixel size has it filled from the image the cache holds, because the review interface scales
-    every box by that size. Returns how many units were retired.
+    The lines are read again here rather than reused from the loop, and every proposal is checked
+    against the row as it stands now: the detector ran for minutes, and a box that changed in the
+    meantime is somebody's answer, not this run's to overwrite. A proposal whose baseline moved is
+    dropped and counted as stale. What is written is the box, the match method and the derivation's
+    own `meta` key — the rest of the line's `meta` is the row's, so a note a reviewer added while the
+    detector ran survives. A line whose box is withdrawn loses the machine units the alignment placed
+    in it, but never a unit a person reviewed and never another run's units. A page whose record
+    states no pixel size has it filled from the image the cache holds. Returns how many units were
+    retired; the stale count is written into `counts` by the caller through `_commit_counts`.
     """
     from . import tables
 
+    applied: set[str] = set()
+    stale: set[str] = set()
     with tables.locked(directory):
         lines = tables.read(directory / "lines.parquet", Line)
         for line in lines:
             update = updates.get(line.id)
             if update is None:
                 continue
+            was = update["was"]
+            if human_box(line) or (line.box, line.match_method, derived_by_atlas(line)) != was:
+                # Somebody set a box, or changed the one the proposal was computed from, after the
+                # page was read. The row as it stands now is the answer.
+                stale.add(line.id)
+                continue
             line.box = update["box"]
-            line.meta = update["meta"]
-            line.match_method = update["match_method"]
+            line.match_method = (update["derivation"] or {}).get("method")
+            meta = {key: value for key, value in (line.meta or {}).items() if key != "derivation"}
+            if update["derivation"] is not None:
+                meta["derivation"] = update["derivation"]
+            line.meta = meta
+            applied.add(line.id)
         tables._write_unlocked(directory / "lines.parquet", lines, Line)
 
         if page_sizes:
@@ -551,7 +565,8 @@ def _commit(directory: Path, updates: dict[str, dict[str, Any]],
                     page.width, page.height = size
             tables._write_unlocked(directory / "pages.parquet", pages, Page)
 
-        withdrawn = {line.id for line in lines if line.id in updates and updates[line.id]["box"] is None}
+        withdrawn = {line.id for line in lines
+                     if line.id in applied and updates[line.id]["box"] is None}
         retired = 0
         if withdrawn and (directory / "units.parquet").exists():
             units = tables.read(directory / "units.parquet", Unit)
@@ -565,7 +580,12 @@ def _commit(directory: Path, updates: dict[str, dict[str, Any]],
                 kept.append(unit)
             if retired:
                 tables._write_unlocked(directory / "units.parquet", kept, Unit)
-    return retired
+    return {
+        "units-retired": retired,
+        "stale": len(stale),
+        "stale-boxes": [line_id for line_id in stale if updates[line_id]["box"] is not None],
+        "stale-withdrawn": [line_id for line_id in stale if updates[line_id]["box"] is None],
+    }
 
 
 def _nothing() -> dict[str, int]:

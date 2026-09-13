@@ -1,57 +1,51 @@
 #!/usr/bin/env bash
-# Measure a detector checkpoint on the test split and print it beside the shipped artifact.
+# Measure a detector checkpoint on the val and test splits, in its own output directory.
 #
-# The card's numbers come from `train.py --test`, which reads the val and test splits, chooses the
-# operating point on val and reports the whole-page measurement at IoU 0.5. This script runs it once
-# for a checkpoint, keeps the JSON it wrote, and prints the four headline measures next to the shipped
-# 6-epoch artifact's, so a reader sees whether more epochs moved anything.
+# `train.py --test` writes its report to `--out`, and the default is `config.artifacts.directory` —
+# the shipped artifact's own `metrics.json`. Running it without `--out` therefore overwrites the
+# baseline this script exists to compare against. Every write here goes to a directory named after
+# the checkpoint, and the shipped artifact is checksummed before and after so a run that touches it
+# fails loudly.
 #
-#   models/detector/compare_checkpoints.sh models/detector/artifacts-24e/epoch-03.pt
+#   models/detector/compare_checkpoints.sh models/detector/artifacts-24e/epoch-01.pt
 #
-# Run it when nothing else is training: it needs the GPU and takes about ten minutes. It writes into
-# the checkpoint's own directory, which is where `train.py` keeps its per-epoch curve too.
+# The measurement runs the same protocol the shipped baseline did: the whole validation split chooses
+# the operating point and the whole test split is measured at it. A `--val-limit` would confound the
+# comparison, because a different subset picks a different threshold, so this script does not offer
+# one. Use `train.py --test --val-limit N --out <scratch>` for a labelled smoke test instead.
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
 checkpoint="${1:?usage: compare_checkpoints.sh <checkpoint.pt>}"
 name="$(basename "$checkpoint" .pt)"
-directory="$(dirname "$checkpoint")"
+# The checkpoint's own hash names the output directory, so two runs that both have an `epoch-01.pt`
+# cannot write over each other's measurement.
+digest="$(sha256sum "$checkpoint" | cut -c1-12)"
+evaluation="models/detector/eval-$name-$digest"
+shipped="models/detector/artifacts/metrics.json"
 
-echo "== measuring $checkpoint on val and test"
-.venv/bin/python -u models/detector/train.py --test --weights "$checkpoint" \
-  --config models/detector/config.yaml 2>&1 | tail -30
-
-if [ ! -f "$directory/metrics.json" ]; then
-  echo "$directory/metrics.json was not written" >&2
+if [ ! -f "$checkpoint" ]; then
+  echo "$checkpoint does not exist" >&2
   exit 1
 fi
-cp "$directory/metrics.json" "$directory/metrics-$name.json"
+if pgrep -f "models/detector/train.py" >/dev/null; then
+  echo "train.py is running; stop it before measuring, or the two compete for the GPU" >&2
+  exit 1
+fi
 
-echo
-.venv/bin/python - "$directory/metrics-$name.json" "$name" <<'PY'
-import json
-import sys
-from pathlib import Path
+before="$(sha256sum "$shipped" | cut -d' ' -f1)"
+mkdir -p "$evaluation"
+echo "== shipped baseline $shipped sha256 $before"
+echo "== measuring $checkpoint into $evaluation (whole val and test splits)"
 
-measured = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["test"]
-shipped = json.loads(Path("models/detector/artifacts/metrics.json").read_text(encoding="utf-8"))["test"]
-label = sys.argv[2]
+.venv/bin/python -u models/detector/train.py --test --weights "$checkpoint" \
+  --config models/detector/config.yaml --out "$evaluation" 2>&1 | tail -30
 
-print(f"{'whole test split':<24}{'shipped 6e':>12}{label:>14}")
-for key in ("score", "precision", "recall", "f1", "mean_iou"):
-    print(f"{key:<24}{shipped['overall'].get(key, float('nan')):>12.4f}"
-          f"{measured['overall'].get(key, float('nan')):>14.4f}")
-for production in ("woodblock", "manuscript", "unknown"):
-    left = shipped["by_production"].get(production, {})
-    right = measured["by_production"].get(production, {})
-    for key in ("precision", "recall"):
-        print(f"{production + ' ' + key:<24}{left.get(key, float('nan')):>12.4f}"
-              f"{right.get(key, float('nan')):>14.4f}")
-print()
-print("recall by box size decile, small to large")
-left = shipped["recall_by_size_decile"]
-right = measured["recall_by_size_decile"]
-print(f"{'decile':<8}" + "".join(f"{index:>7}" for index in range(len(right))))
-print(f"{'shipped':<8}" + "".join(f"{value:>7.3f}" for value in left))
-print(f"{label:<8}" + "".join(f"{value:>7.3f}" for value in right))
-PY
+after="$(sha256sum "$shipped" | cut -d' ' -f1)"
+if [ "$before" != "$after" ]; then
+  echo "the shipped baseline changed during the measurement: $before -> $after" >&2
+  exit 1
+fi
+echo "== shipped baseline unchanged"
+
+.venv/bin/python models/detector/compare_report.py "$evaluation/metrics.json" "$shipped" "$name"

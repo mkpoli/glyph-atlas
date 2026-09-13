@@ -473,3 +473,68 @@ def test_a_dataset_without_units_releases_its_lines(tmp_path):
     assert not (out / "units.parquet").exists(), "a dataset without units releases none"
     kept = tables.read(out / "lines.parquet", Line)
     assert [row.id for row in kept] == ["hk:d1:0:L0"]
+
+
+def test_a_mixed_dataset_keeps_its_unresolved_pages(tmp_path):
+    """One dataset, one aligned page and one the alignment never reached.
+
+    The Ainu records are this shape: 53 of 658 pages have derived line boxes and machine units, the
+    rest are transcription and nothing else. The filter used to ask whether the dataset held a units
+    table at all, so the 605 unresolved pages were dropped from the release along with their text —
+    measured as 361 lines and 52 pages out of 8,212 and 658 before the fix.
+    """
+    from kuzushiji_atlas import export as export_module
+    from kuzushiji_atlas import koji, tables
+    from kuzushiji_atlas.schema import (
+        Box,
+        Classification,
+        Document,
+        Line,
+        Page,
+        PageText,
+        ReviewState,
+        Rights,
+        Script,
+        Unit,
+        UnitKind,
+    )
+
+    rights = Rights(licence="CC-BY-SA-4.0", attribution="a")
+    document = Document(id="hk:d1", title="t", image_rights=rights, text_rights=rights)
+    pages = [
+        Page(id="hk:d1:0", document_id="hk:d1", seq=0, image="file:p0.jpg", width=100, height=100),
+        Page(id="hk:d1:1", document_id="hk:d1", seq=1, image="file:p1.jpg", width=100, height=100),
+    ]
+    aligned = Line(id="hk:d1:0:L0", page_id="hk:d1:0", seq=0, box=Box(x=1, y=1, w=10, h=10),
+                   text_raw="あ", text=koji.plain("あ"), match_method="ainu-ink-columns-v1",
+                   meta={"derivation": {"source": "ainu-derive", "method": "ainu-ink-columns-v1"}})
+    unresolved = Line(id="hk:d1:1:L0", page_id="hk:d1:1", seq=0, box=None,
+                      text_raw="い", text=koji.plain("い"))
+    unit = Unit(id="hk:d1:0:L0:f:1", page_id="hk:d1:0", document_id="hk:d1", line_id=aligned.id,
+                seq=1, box=Box(x=1, y=1, w=10, h=10), text_source="あ", unicode="U+3042",
+                kind=UnitKind.CHAR, classification=Classification.IDENTIFIED, script=Script.HIRAGANA,
+                method="detect-align", review=ReviewState.MACHINE)
+    retired = Unit(id="hk:d1:0:L0:f:2", page_id="hk:d1:0", document_id="hk:d1", line_id=aligned.id,
+                   seq=2, box=Box(x=20, y=1, w=10, h=10), text_source="い", kind=UnitKind.CHAR,
+                   method="detect-align", review=ReviewState.MACHINE, active=False)
+    source = tmp_path / "mixed"
+    tables.write(source / "documents.parquet", [document], Document)
+    tables.write(source / "pages.parquet", pages, Page)
+    tables.write(source / "lines.parquet", [aligned, unresolved], Line)
+    tables.write(source / "units.parquet", [unit, retired], Unit)
+    tables.write(source / "page_texts.parquet",
+                 [PageText(page_id=page.id, source="ainu-records", text_raw="あ") for page in pages],
+                 PageText)
+
+    out = tmp_path / "release"
+    counts = export_module.release([source], out, review=[ReviewState.MACHINE.value],
+                                   include_machine=True)
+
+    assert counts["pages"] == 2, "the unresolved page is a page of the release"
+    assert counts["lines"] == 2, "its transcription line travels with it"
+    assert counts["units"] == 1, "the retired unit is not a record of the page any more"
+    assert counts["page_texts"] == 2
+    kept_units = [row["id"] for row in units_of(out)]
+    assert kept_units == [unit.id]
+    kept_lines = {row.id for row in tables.read(out / "lines.parquet", Line)}
+    assert kept_lines == {aligned.id, unresolved.id}
