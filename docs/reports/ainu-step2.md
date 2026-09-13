@@ -184,6 +184,53 @@ Recomputed, the refusals run 0.04 to 0.48 and the paired pages 0.50 to 1.32, so 
 overlap; and the number that pairs is 115 at a floor of 0.05, 107 at 0.10, 95 at 0.20, 77 at 0.30, 63
 at 0.40 and 53 at 0.50, a smooth ramp with no break to choose the value at.
 
+### A line's characters are right, but their boxes are not
+
+The aligner's job is to put each transcribed character on the ink it names. It matches a line's tokens
+to that line's detections with a monotone dynamic program — both sequences are walked forward together
+— so the order the detections arrive in decides which character gets which box. The step before it
+orders them with
+
+    sorted(inside, key=lambda detection: (-detection.centre[0], detection.centre[1]))
+
+which is meant to be columns right to left and, inside a column, top to bottom. It sorts on the raw
+float x centre, so two detections whose x centres differ by a pixel are ordered by that difference and
+the y key almost never decides anything. On these manuscripts most of a line's detections sit within a
+few pixels of the same x, and the detector's own output is in no order at all, so the detections reach
+the dynamic program in an order that is neither. It is faithful to what it is given.
+
+The effect is measurable without any ground truth, because a line's reading order is known: a unit's
+`seq` is its position in the line and a vertical line is read down the column, so the boxes of a line
+should advance downward as `seq` advances. Measured over the corpus (`scripts/ainu_reading_order.py`):
+
+| | |
+| --- | --- |
+| lines with two or more boxed units | 784 |
+| boxes strictly advancing in `seq` order | **39** |
+| lines with at least one step back up | **745** |
+
+One line makes it concrete. `hk:9987c791…:25:L16` transcribes 普く天下万郡にもかゝる妙泉も又と類ひあるまし
+and its 21 boxed units join to exactly that text, so the line and the reading are right. Their y
+centres run 874, 855, 890, 792, 710, 776, 755, 560, 267, 352, 612, 293, 820, 650 … for consecutive
+`seq` values, inside a column 770 px tall: the characters are paired with the line's detections in an
+essentially arbitrary order. Quantising x into column buckets and sorting by y inside a bucket returns
+the same detections in strictly increasing y — true at 0.5, 1.0 and 2.0 character widths — which is
+what a line of vertical text should already have been.
+
+What this does and does not touch. The line a character belongs to is right, the text of the line is
+right, and the ink of the line is right; what is wrong is which character of the line each detection
+is. So the line boxes the derivation writes are unaffected, the page and line levels are unaffected,
+and a task that asks "does this character read い" still has a right answer. What is affected is every
+consumer that treats a unit's box as *that character's* ink: the character crops in the review
+workspace, any per-character bounding-box export, and character-level measurement of the alignment.
+That is most of what M2's alignment acceptance would rest on, so this is worth fixing before any
+character-level figure is quoted.
+
+The fix belongs in `align.containers_of`, and this project already has the rule it needs: the Ainu
+derivation groups detections into columns by a gap measured against the page's median character width
+(`ainu.columns_of`), which is the same operation done properly. Sorting by column and then by y, using
+a bucket no narrower than the character width, restores reading order on the pages checked.
+
 Two further limits are worth stating plainly.
 
 **A count match can still be wrong.** A page whose column count equals its line count may pair the
