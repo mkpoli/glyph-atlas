@@ -886,6 +886,154 @@ def test_a_locally_conflicted_correction_is_refused_before_the_native_validator(
     assert empty["validated"] is False and empty["files"] == []
 
 
+def test_a_stale_tab_cannot_withdraw_a_correction_over_the_api(ainu_dataset: Path):
+    """The retraction carries `base_revision`, so a tab that missed an edit is answered 409.
+
+    The editor sends the revision it read the page at. Without it in the request, the server would
+    apply an undo aimed at a page state the client never saw — which is a decision nobody made.
+    """
+    client = TestClient(create_app(ainu_dataset))
+    payload = {
+        "id": "ezo-kiko-ryukoku-1-teshin", "target_id": "hk:d:1", "line": 2,
+        "original": "テシン", "corrected": "テレン", "note": "原画像を確認。",
+    }
+    assert client.post("/corrections", json=payload).status_code == 201
+    stale_revision = client.get("/pages/hk:d:1/corrections").json()["revision"]
+
+    # Somebody else records another correction on the same page, moving the revision on.
+    later = client.post("/corrections", json={**payload, "id": "ezo-kiko-ryukoku-1-mama",
+                                             "line": 1, "original": "【ママ】", "corrected": "ママ",
+                                             "note": "校訂注記を本文から外す。"})
+    assert later.status_code == 201, later.text
+
+    refused = client.post("/corrections/ezo-kiko-ryukoku-1-teshin/retract",
+                          json={"page_id": "hk:d:1", "reason": "古いタブから",
+                                "base_revision": stale_revision})
+    assert refused.status_code == 409, refused.text
+    detail = refused.json()["detail"]
+    assert detail["error"] == "stale-revision"
+    assert detail["base_revision"] == stale_revision < detail["revision"]
+
+    read = client.get("/pages/hk:d:1/corrections").json()
+    assert read["total"] == 2, "the correction the stale tab never saw is untouched"
+
+    current = client.post("/corrections/ezo-kiko-ryukoku-1-teshin/retract",
+                          json={"page_id": "hk:d:1", "reason": "読み直した",
+                                "base_revision": read["revision"]})
+    assert current.status_code == 200, current.text
+    assert client.get("/pages/hk:d:1/corrections").json()["total"] == 1
+
+
+def test_the_corrections_endpoint_reports_whether_the_review_is_still_anchored(ainu_dataset: Path):
+    """A reviewer is told, per correction, that the text they read is the text now imported."""
+    client = TestClient(create_app(ainu_dataset))
+    created = client.post("/corrections", json={
+        "id": "ezo-kiko-ryukoku-1-teshin", "target_id": "hk:d:1", "line": 2,
+        "original": "テシン", "corrected": "テレン", "note": "原画像を確認。",
+    })
+    assert created.status_code == 201, created.text
+    item = client.get("/pages/hk:d:1/corrections").json()["items"][0]
+    assert item["status"] == "proposed" and item["verified"] is True
+    assert item["sourceTextSha256"], "the record carries the checksum it was reviewed against"
+    assert item["current_text_sha256"] == item["sourceTextSha256"]
+
+    # A reimport that rewrites the page around the target: the substring stays unique, so only the
+    # checksum detects the changed context. This case also checks opening a fresh service.
+    from kuzushiji_atlas import tables
+    from kuzushiji_atlas.schema import PageText
+
+    tables.write(ainu_dataset / "page_texts.parquet",
+                 [PageText(page_id="hk:d:1", source="ainu-records",
+                           text_raw="【右丁】\n【ママ】\nテシンをば出")], PageText)
+    after = TestClient(create_app(ainu_dataset)).get("/pages/hk:d:1/corrections").json()
+    item = after["items"][0]
+    assert item["status"] == "conflicted" and item["verified"] is False
+    assert "imported text has changed" in item["reason"]
+    assert item["sourceTextSha256"] != item["current_text_sha256"], "the two checksums differ"
+    assert item["diff"] == [], "a correction nobody can vouch for is not shown as an edit"
+
+    # Reviewing it again against the reimported text is what makes it applicable once more.
+    again = TestClient(create_app(ainu_dataset)).post("/corrections", json={
+        "id": "ezo-kiko-ryukoku-1-teshin", "target_id": "hk:d:1", "line": 2,
+        "original": "テシン", "corrected": "テレン", "note": "新しい本文で確認し直した。",
+    })
+    assert again.status_code == 201, again.text
+    rechecked = TestClient(create_app(ainu_dataset)).get("/pages/hk:d:1/corrections").json()
+    assert rechecked["items"][0]["verified"] is True
+
+
+def test_a_draft_opened_before_reimport_cannot_be_stamped_as_a_fresh_review(ainu_dataset: Path):
+    from kuzushiji_atlas.schema import PageText
+
+    client = TestClient(create_app(ainu_dataset))
+    opened = client.get("/pages/hk:d:1/corrections").json()
+    tables.write(ainu_dataset / "page_texts.parquet", [
+        PageText(page_id="hk:d:1", source="ainu-records", text_raw="【右丁】\n【ママ】\nテシンをば出"),
+    ], PageText)
+    response = client.post("/corrections", json={
+        "id": "stale-draft", "target_id": "hk:d:1", "line": 2,
+        "original": "テシン", "corrected": "テレン", "note": "Draft from the previous text",
+        "source_text_sha256": opened["text_sha256"], "base_revision": opened["revision"],
+    })
+    assert response.status_code == 400
+    assert "transcription changed" in response.json()["detail"]
+    current = client.get("/pages/hk:d:1/corrections").json()
+    assert current["text_sha256"] != opened["text_sha256"]
+    assert current["items"] == []
+
+
+def test_a_correction_whose_review_moved_is_refused_by_the_source_update_bridge(
+    ainu_dataset: Path, tmp_path: Path
+):
+    """The export refuses an unanchored review, and the native validator never sees it.
+
+    This is the failure the anchor exists for. The correction still places — `テシン` is still unique on
+    its line — so every rule the publishing project's own loader checks would pass, and the submission
+    would silently assert that a person reviewed the reimported text. It is refused here instead.
+    """
+    from kuzushiji_atlas import tables
+    from kuzushiji_atlas.review.store import ReviewRequest
+    from kuzushiji_atlas.schema import Document, PageText
+
+    root = checkout(tmp_path)
+    # The page maps to the unit the fixture checkout publishes, so mapping is not what refuses it.
+    tables.write(ainu_dataset / "documents.parquet",
+                 [Document(id="hk:d", title="蝦夷紀行", holder="龍谷大学図書館",
+                           source_refs={"honkoku-data": "0916dafb80cdc48ca7687afcad4a4f35"})],
+                 Document)
+    client = TestClient(create_app(ainu_dataset, source=root))
+
+    # A correction from before anchors existed: the journal holds the source's fields and no checksum.
+    client.post("/corrections", json={
+        "id": "ezo-kiko-ryukoku-1-teshin", "target_id": "hk:d:1", "line": 2,
+        "original": "テシン", "corrected": "テレン", "note": "原画像を確認。",
+    })
+    tables.write(ainu_dataset / "page_texts.parquet",
+                 [PageText(page_id="hk:d:1", source="ainu-records",
+                           text_raw="【右丁】\n【ママ】\nテシンをば出")], PageText)
+    store = Store(ainu_dataset, rebuilding=True)
+    store.record(ReviewRequest(
+        target_type="page", target_id="hk:d:1", field="correction",
+        new={"id": "legacy", "line": 2, "original": "テシン", "corrected": "テレン",
+             "note": "むかしの記録。"},
+        client_id="r1",
+    ))
+    store.close() if hasattr(store, "close") else None
+
+    read = client.get("/pages/hk:d:1/corrections").json()
+    legacy = next(item for item in read["items"] if item["id"] == "legacy")
+    assert legacy["verified"] is False and "before the atlas kept a checksum" in legacy["reason"]
+
+    answer = client.post("/source-updates", json={"page_ids": ["hk:d:1"]}).json()
+    assert answer["validated"] is False
+    assert answer["files"] == [], "nothing is offered for download"
+    reasons = {conflict["id"]: conflict["reason"] for conflict in answer["conflicts"]}
+    assert "before the atlas kept a checksum" in reasons["legacy"], (
+        "the legacy record asks for a re-review rather than being stamped with today's text"
+    )
+    assert "review the correction again" in reasons["ezo-kiko-ryukoku-1-teshin"]
+
+
 def test_a_page_with_text_and_no_boxes_is_not_reported_as_nothing_to_do(ainu_dataset: Path):
     """`state` separates "waiting on the step before review" from "empty".
 

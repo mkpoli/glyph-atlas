@@ -122,8 +122,107 @@ def test_a_reimport_that_moves_the_text_makes_the_correction_conflicted(dataset:
     after = Store(dataset, rebuilding=True)
     page = corrections_module.page_corrections(after, "hk:d1:0", moved)
     assert page.conflicted and not page.applied
-    assert "no longer contains" in (page.conflicted[0].reason or "")
+    assert "imported text has changed" in (page.conflicted[0].reason or "")
+    assert not page.conflicted[0].verified
     assert page.text() == "\n".join(ainu_source.transcription_lines(moved)), "nothing is applied"
+
+
+def test_a_reimport_that_leaves_the_original_unique_still_conflicts(dataset: Path) -> None:
+    """The case placement alone cannot catch, and the reason the anchor exists.
+
+    A correction aims at a substring that appears exactly once. A reimport can rewrite the whole rest
+    of the page — a re-transcription, a different edition, a fixed neighbouring character — and leave
+    that substring unique, so every rule the source itself checks still passes while the review
+    describes a page nobody read. The saved checksum is the only thing that sees it, and it is
+    compared before placement rather than after, so "it still places" cannot be mistaken for "it is
+    still about this text".
+    """
+    store = Store(dataset)
+    corrections_module.record(store, correction(), client_id="r1")
+
+    # The corrected line keeps ソウヤ exactly once; everything around it becomes other text.
+    rewritten = TEXT.replace("其年の七月十三日", "其年七月十三日").replace("至る此所土着の住夷多",
+                                                        "至れり此処の土着住夷多")
+    assert rewritten.count(ORIGINAL) == 1, "the target substring is still unique on its line"
+    tables.write(dataset / "page_texts.parquet",
+                 [PageText(page_id="hk:d1:0", source="ainu-records", text_raw=rewritten)], PageText)
+    after = Store(dataset, rebuilding=True)
+    page = corrections_module.page_corrections(after, "hk:d1:0", rewritten)
+
+    judged = page.conflicted[0]
+    assert not page.applied, "a correction whose reviewed text is gone is not applied"
+    assert "imported text has changed" in (judged.reason or "")
+    line = ainu_source.transcription_lines(rewritten)[judged.correction.line - 1]
+    assert line.count(judged.correction.original) == 1, "the source's own placement rule still passes"
+    assert judged.verified is False
+
+
+def test_reviewing_again_re_anchors_the_correction(dataset: Path) -> None:
+    """Re-recording the same id is the re-review, and it makes the correction applicable again."""
+    store = Store(dataset)
+    corrections_module.record(store, correction(), client_id="r1")
+    rewritten = TEXT.replace("文化五辰年の秋", "文化五辰年の秋、")
+    tables.write(dataset / "page_texts.parquet",
+                 [PageText(page_id="hk:d1:0", source="ainu-records", text_raw=rewritten)], PageText)
+    after = Store(dataset, rebuilding=True)
+    assert corrections_module.page_corrections(
+        after, "hk:d1:0", rewritten).conflicted, "the reimport is reported first"
+
+    corrections_module.record(after, correction(note="新しい本文で確認し直した。"), client_id="r2")
+    page = corrections_module.page_corrections(after, "hk:d1:0", rewritten)
+    assert page.applied and not page.conflicted
+    assert page.applied[0].verified is True
+    assert CORRECTED in page.text()
+
+
+def test_a_correction_without_an_anchor_is_unverified_not_stamped(dataset: Path) -> None:
+    """A correction recorded before anchors existed is not silently given today's checksum.
+
+    This is a legacy journal's state, written here the way the old code wrote it: an event with the
+    source's five fields and nothing else. It must not become verified by being read — the checksum
+    would then assert that a person reviewed text they never saw — so it asks for a re-review instead.
+    """
+    from kuzushiji_atlas.review.store import ReviewRequest
+
+    store = Store(dataset)
+    legacy = correction().source_record()
+    assert "sourceTextSha256" not in legacy
+    store.record(ReviewRequest(target_type="page", target_id="hk:d1:0", field="correction",
+                              new=legacy, client_id="r1"))
+
+    page = corrections_module.page_corrections(store, "hk:d1:0", store.page_text("hk:d1:0") or "")
+    judged = page.judgements[0]
+    assert page.conflicted and not page.applied
+    assert "before the atlas kept a checksum" in (judged.reason or "")
+    assert judged.correction.source_text_sha256 is None, "reading it must not invent an anchor"
+    assert judged.verified is False
+    assert judged.current_text_sha256 is not None, "the client is told what to anchor to"
+
+
+def test_a_retraction_can_be_aimed_from_a_stale_tab(dataset: Path) -> None:
+    """A stale tab must not withdraw a correction it never saw.
+
+    The retraction is an edit like any other, so it carries the page revision it was read at: a tab
+    open since before another reviewer's correction withdraws nothing and is told the page moved.
+    """
+    from kuzushiji_atlas.review.store import Conflict
+
+    store = Store(dataset)
+    corrections_module.record(store, correction(), client_id="r1")
+    stale = store.revision("hk:d1:0")
+    corrections_module.record(store, correction(note="someone else's later edit"), client_id="r2")
+
+    with pytest.raises(Conflict) as raised:
+        corrections_module.retract(store, "hk:d1:0", "ezo-kiko-ryukoku-souya", reason="stale undo",
+                                   client_id="r1", base_revision=stale)
+    assert raised.value.reason == "stale-revision"
+    page = corrections_module.page_corrections(store, "hk:d1:0", store.page_text("hk:d1:0") or "")
+    assert page.applied, "the correction the stale tab never saw is still there"
+
+    corrections_module.retract(store, "hk:d1:0", "ezo-kiko-ryukoku-souya", reason="read it again",
+                               client_id="r1", base_revision=store.revision("hk:d1:0"))
+    after = corrections_module.page_corrections(store, "hk:d1:0", store.page_text("hk:d1:0") or "")
+    assert after.judgements == [], "a current retraction withdraws it"
 
 
 def test_the_text_is_left_alone_when_the_correction_cannot_be_placed(dataset: Path) -> None:
@@ -205,7 +304,8 @@ def test_a_conflicted_correction_becomes_an_unmappable_proposal(dataset: Path) -
     moved = TEXT.replace(ORIGINAL, "別の語")
     page = corrections_module.page_corrections(store, "hk:d1:0", moved)
     proposals = corrections_module.to_proposals(page, unit="ezo-kiko/ryukoku", page_number=16)
-    assert proposals[0].unmappable and "no longer contains" in proposals[0].unmappable
+    assert proposals[0].unmappable, "a correction that cannot be placed is still reported"
+    assert "imported text has changed" in proposals[0].unmappable
     with pytest.raises(ainu_source.AinuSourceError):
         proposals[0].record()
 

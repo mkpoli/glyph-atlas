@@ -74,13 +74,11 @@ def _page_notes(store: Store, page_id: str) -> list[dict[str, Any]]:
     ]
 
 
-def _source_proposal(store: Store, source: Path, correction: Any, page_id: str,
-                     base: str) -> dict[str, Any] | None:
-    """One correction as the adapter's proposal, or None when the page has no publishing unit.
+def _source_proposal(store: Store, source: Path, correction: Any, page_id: str) -> dict[str, Any] | None:
+    """Map a correction to its native source identity, or return None if unmappable.
 
-    The identity is the page's own: the entry id, the atlas's zero-based page index, the canvas and
-    the checksum of the transcription the reviewer read. The checksum is what makes a source that has
-    moved since the import a *conflict* rather than a patch aimed at text nobody saw.
+    Preserve the saved checksum so native validation compares the source with the
+    text the reviewer saw. Recomputing it here would hide intervening text changes.
     """
     opened = _opened(source)
     if opened is None:
@@ -97,12 +95,14 @@ def _source_proposal(store: Store, source: Path, correction: Any, page_id: str,
     entry = (document.source_refs or {}).get("honkoku-data")
     if not entry:
         return None
+    if not correction.source_text_sha256:
+        return None
     return {
         "entry": str(entry),
         "page_index": page.seq,
         "canvas": page.canvas,
-        "text_sha256": ainu_native.text_sha256(base),
-        "correction": correction.payload(),
+        "text_sha256": correction.source_text_sha256,
+        "correction": correction.source_record(),
     }
 
 
@@ -254,6 +254,10 @@ def create_app(directory: Path, *, source: Path | str | None = None) -> FastAPI:
         so a tab that has been open a while is told instead of overwriting. `notes` are the durable
         notes recorded against the page — a page whose transcription exists but has no lines is
         reviewable through them.
+
+        `verified` means the correction's saved checksum matches the imported text.
+        `base` is the imported text; `text` includes applicable local corrections.
+        Clients retain `text_sha256` with their draft and return it on save.
         """
         if store.page(page_id) is None:
             raise HTTPException(status_code=404, detail=f"no page {page_id}")
@@ -263,6 +267,7 @@ def create_app(directory: Path, *, source: Path | str | None = None) -> FastAPI:
             "page_id": page_id,
             "revision": store.revision(page_id),
             "base": base,
+            "text_sha256": ainu_native.text_sha256(base),
             "text": page.text(),
             "total": len(page.judgements),
             "lines": [
@@ -275,6 +280,8 @@ def create_app(directory: Path, *, source: Path | str | None = None) -> FastAPI:
                     **item.correction.payload(),
                     "status": item.status,
                     "reason": item.reason,
+                    "verified": item.verified,
+                    "current_text_sha256": item.current_text_sha256,
                     "actor": item.correction.actor,
                     "diff": corrections.diff(item.correction, base) if item.applicable else [],
                 }
@@ -310,6 +317,10 @@ def create_app(directory: Path, *, source: Path | str | None = None) -> FastAPI:
         drafts a reviewer can download, and a page whose corrections are conflicted locally is refused
         before the native validator ever sees it: a correction that cannot be placed on the text this
         project holds is not a candidate for a source patch.
+
+        A correction whose saved anchor no longer matches the imported text is refused here as well,
+        and this is the case that would otherwise pass silently: its `original` can still be unique on
+        its line, so placement succeeds while the review describes text that is no longer imported.
         """
         if source_root is None:
             raise StoreError("no source checkout is configured; start the service with --source")
@@ -323,7 +334,14 @@ def create_app(directory: Path, *, source: Path | str | None = None) -> FastAPI:
             for item in page.conflicted:
                 refused.append({"id": item.correction.id, "reason": item.reason or "conflicted"})
             for item in page.applied:
-                proposal = _source_proposal(store, source_root, item.correction, page_id, base)
+                if not item.verified:
+                    refused.append({
+                        "id": item.correction.id,
+                        "reason": "the review's saved text no longer matches the imported text; "
+                                  "review the correction again before submitting it",
+                    })
+                    continue
+                proposal = _source_proposal(store, source_root, item.correction, page_id)
                 if proposal is None:
                     refused.append({
                         "id": item.correction.id,
@@ -370,6 +388,7 @@ def create_app(directory: Path, *, source: Path | str | None = None) -> FastAPI:
                 ),
                 client_id=request.headers.get("x-atlas-client"),
                 base_revision=correction.base_revision,
+                expected_text_sha256=correction.source_text_sha256,
             )
         except corrections.CorrectionError as exc:
             # A placement problem is the client's to fix and the answer names which: the store's
@@ -381,12 +400,17 @@ def create_app(directory: Path, *, source: Path | str | None = None) -> FastAPI:
     def retract_correction(
         correction_id: str, request: Request, retraction: RetractRequest
     ) -> dict[str, Any]:
-        """Take a correction back. The journal keeps both the record and the retraction."""
+        """Take a correction back. The journal keeps both the record and the retraction.
+
+        A stale `base_revision` is refused like any other stale edit: withdrawing a correction that a
+        tab never saw is not an undo, and the store answers 409 with the page's current revision.
+        """
         if store.page(retraction.page_id) is None:
             raise NotFound(f"no page {retraction.page_id}")
         return corrections.retract(
             store, retraction.page_id, correction_id,
             client_id=request.headers.get("x-atlas-client"), reason=retraction.reason,
+            base_revision=retraction.base_revision,
         )
 
     @app.get("/documents")

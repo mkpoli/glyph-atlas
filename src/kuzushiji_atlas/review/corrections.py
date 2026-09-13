@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from difflib import unified_diff
 from typing import Any, Literal
 
@@ -41,6 +41,8 @@ from .store import ReviewRequest, Store
 CORRECTION = "correction"
 #: An event that takes a correction back, for undo. The record it names is retired, not deleted.
 RETRACTION = "correction-retracted"
+#: The journal key holding the checksum of the text a correction was reviewed against.
+SOURCE_TEXT_SHA256 = "sourceTextSha256"
 
 #: What a correction targets. The source's `corrections.ts` accepts `transcription` only.
 CORRECTION_KINDS = ("transcription",)
@@ -73,6 +75,8 @@ class Correction:
     ruby_field: str | None = None
     ruby_base: str | None = None
     entry: dict[str, Any] | None = None
+    #: SHA-256 of the page text seen by the reviewer. Legacy records without it need re-review.
+    source_text_sha256: str | None = None
     actor: str | None = None
     created_at: str | None = None
 
@@ -108,7 +112,7 @@ class Correction:
                 raise CorrectionError("correcting a whole heading means original equals the gloss")
 
     def payload(self) -> dict[str, Any]:
-        """The record as the journal stores it, and as the source's file holds it."""
+        """Source fields plus the reviewed text checksum, for journal persistence."""
         record: dict[str, Any] = {
             "id": self.id,
             "line": self.line,
@@ -124,7 +128,13 @@ class Correction:
             record["rubyBase"] = self.ruby_base
         if self.entry is not None:
             record["entry"] = self.entry
+        if self.source_text_sha256 is not None:
+            record[SOURCE_TEXT_SHA256] = self.source_text_sha256
         return record
+
+    def source_record(self) -> dict[str, Any]:
+        """The source correction record, excluding the internal text checksum."""
+        return {key: value for key, value in self.payload().items() if key != SOURCE_TEXT_SHA256}
 
     @classmethod
     def from_payload(cls, page_id: str, payload: dict[str, Any], **extra: Any) -> Correction:
@@ -139,21 +149,48 @@ class Correction:
             ruby_field=payload.get("rubyField"),
             ruby_base=payload.get("rubyBase"),
             entry=payload.get("entry"),
+            source_text_sha256=payload.get(SOURCE_TEXT_SHA256),
             **extra,
         )
 
 
 @dataclass
 class Judgement:
-    """Whether a correction can be placed on the page text as it now stands."""
+    """Placement and reviewed-text checks against the current transcription.
+
+    A missing or mismatched checksum sets `verified=False` and `status="conflicted"`,
+    even when the original substring still matches. The correction requires re-review.
+    """
 
     correction: Correction
     status: Status
     reason: str | None = None
+    #: Whether the saved checksum matches the current imported text.
+    verified: bool = False
+    #: SHA-256 of the imported text now, so a client can store it for a re-review.
+    current_text_sha256: str | None = None
 
     @property
     def applicable(self) -> bool:
         return self.status in ("proposed", "applied")
+
+
+def anchor(correction: Correction, text: str) -> tuple[bool, str | None]:
+    """Compare the reviewed page checksum before checking substring placement.
+
+    A reimport can preserve the target substring while changing its surrounding text.
+    """
+    from ..ainu_native import text_sha256
+
+    current = text_sha256(text)
+    if correction.source_text_sha256 is None:
+        return False, ("recorded before the atlas kept a checksum of the reviewed text; "
+                       "review it again to anchor it")
+    if correction.source_text_sha256 != current:
+        return False, ("the imported text has changed since this was reviewed "
+                       f"(reviewed {correction.source_text_sha256[:12]}, now {current[:12]}); "
+                       "review the correction again before submitting it")
+    return True, None
 
 
 def judge(correction: Correction, text: str) -> Judgement:
@@ -164,24 +201,35 @@ def judge(correction: Correction, text: str) -> Judgement:
     there: a correction that changes how many lines the page has would move every later line number
     with it, so it is refused rather than accepted and then quietly mis-aimed.
     """
+    from ..ainu_native import text_sha256
     from ..ainu_source import transcription_lines
 
+    current = text_sha256(text)
+    verified, stale = anchor(correction, text)
+    if not verified:
+        # A matching substring cannot establish that the current page was reviewed.
+        return Judgement(correction, "conflicted", stale, verified=False,
+                         current_text_sha256=current)
     lines = transcription_lines(text)
     if correction.line > len(lines):
         return Judgement(correction, "conflicted",
-                         f"line {correction.line} does not exist; the page has {len(lines)} lines")
+                         f"line {correction.line} does not exist; the page has {len(lines)} lines",
+                         verified=True, current_text_sha256=current)
     target = lines[correction.line - 1]
     found = target.count(correction.original)
     if found == 0:
         return Judgement(correction, "conflicted",
-                         f"line {correction.line} no longer contains {correction.original!r}")
+                         f"line {correction.line} no longer contains {correction.original!r}",
+                         verified=True, current_text_sha256=current)
     if found > 1:
         return Judgement(correction, "conflicted",
-                         f"{correction.original!r} appears {found} times on line {correction.line}")
+                         f"{correction.original!r} appears {found} times on line {correction.line}",
+                         verified=True, current_text_sha256=current)
     if "\n" in correction.corrected or "\r" in correction.corrected:
         return Judgement(correction, "conflicted",
-                         "a correction cannot add or remove lines; the source places them by line")
-    return Judgement(correction, "proposed")
+                         "a correction cannot add or remove lines; the source places them by line",
+                         verified=True, current_text_sha256=current)
+    return Judgement(correction, "proposed", verified=True, current_text_sha256=current)
 
 
 def diff(correction: Correction, text: str) -> list[str]:
@@ -267,37 +315,42 @@ def page_corrections(store: Store, page_id: str, base: str) -> PageCorrections:
 
 
 def record(store: Store, correction: Correction, *, client_id: str | None = None,
-           base_revision: int | None = None) -> dict[str, Any]:
-    """Record a correction in the store's journal, refusing one that cannot be placed.
+           base_revision: int | None = None, expected_text_sha256: str | None = None) -> dict[str, Any]:
+    """Check the draft's text snapshot and placement, then append it to the journal.
 
-    The placement is checked here rather than at export, because a correction recorded against text
-    that does not hold it is worse than none: it looks like work and would fail the source's build.
+    Saving a reviewed correction with the same ID updates its text checksum.
     """
+    from ..ainu_native import text_sha256
+
     text = store.page_text(correction.page_id)
     if text is None:
         raise CorrectionError(f"{correction.page_id} has no transcription to correct")
-    verdict = judge(correction, text)
+    if expected_text_sha256 is not None and expected_text_sha256 != text_sha256(text):
+        raise CorrectionError("The transcription changed while this draft was open. Reload the page and review it again.")
+    stamped = replace(correction, source_text_sha256=text_sha256(text))
+    verdict = judge(stamped, text)
     if not verdict.applicable:
         raise CorrectionError(verdict.reason or "the correction cannot be placed")
     return store.record(ReviewRequest(
         target_type="page",
-        target_id=correction.page_id,
+        target_id=stamped.page_id,
         field=CORRECTION,
-        new=correction.payload(),
+        new=stamped.payload(),
         client_id=client_id,
         base_revision=base_revision,
     ))
 
 
 def retract(store: Store, page_id: str, correction_id: str, *, client_id: str | None = None,
-            reason: str = "") -> dict[str, Any]:
-    """Take a correction back. The journal keeps both, so an undo is itself reviewable."""
+            reason: str = "", base_revision: int | None = None) -> dict[str, Any]:
+    """Append a withdrawal, rejecting a stale page revision."""
     return store.record(ReviewRequest(
         target_type="page",
         target_id=page_id,
         field=RETRACTION,
         new={"id": correction_id, "reason": reason},
         client_id=client_id,
+        base_revision=base_revision,
     ))
 
 
@@ -328,6 +381,6 @@ def to_proposals(page: PageCorrections, unit: str, page_number: int) -> list[Any
 
 
 def as_json(corrections: Iterable[Correction]) -> str:
-    """The records as the source's file holds them: a JSON array, one object a correction."""
-    return json.dumps([correction.payload() for correction in corrections], ensure_ascii=False,
-                      indent=2) + "\n"
+    """Serialize source correction records without internal text checksums."""
+    return json.dumps([correction.source_record() for correction in corrections],
+                      ensure_ascii=False, indent=2) + "\n"

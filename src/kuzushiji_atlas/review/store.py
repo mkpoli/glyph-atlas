@@ -217,6 +217,7 @@ class CorrectionRequest(BaseModel):
     ruby_field: Literal["rb", "rt", "left"] | None = None
     ruby_base: str | None = None
     entry: dict[str, Any] | None = None
+    source_text_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     base_revision: int | None = None
 
 
@@ -229,12 +230,17 @@ class SourceUpdateRequest(BaseModel):
 
 
 class RetractRequest(BaseModel):
-    """A correction taken back, with the page it was recorded on."""
+    """A correction taken back, with the page it was recorded on.
+
+    `base_revision` is the page revision the client was looking at, so a tab that has been open since
+    before another reviewer's correction cannot withdraw work it never saw.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     page_id: str
     reason: str = ""
+    base_revision: int | None = None
 
 
 class LineRequest(BaseModel):
@@ -332,6 +338,7 @@ class Store:
         self._pages: dict[str, Page] | None = None
         self._documents: list[Document] | None = None
         self._page_texts: dict[str, str] | None = None
+        self._page_texts_stamp: tuple = ()
         with self._lock, self._connection() as conn:
             self._schema(conn)
             stamp = self._source_stamp()
@@ -415,12 +422,17 @@ class Store:
         """
         from ..schema import PageText
 
-        if self._page_texts is None:
-            path = self.dataset.tables.get("page_texts")
-            self._page_texts = (
-                {row.page_id: row.text_raw for row in tables.read(path, PageText)} if path else {}
-            )
-        return self._page_texts.get(page_id)
+        path = self.dataset.tables.get("page_texts")
+        with self._lock:
+            files = sorted(path.glob("*.parquet")) if path and path.is_dir() else [path] if path else []
+            stamp = tuple((file.name, file.stat().st_ino, file.stat().st_mtime_ns, file.stat().st_size)
+                          for file in files)
+            if self._page_texts is None or stamp != self._page_texts_stamp:
+                self._page_texts = (
+                    {row.page_id: row.text_raw for row in tables.read(path, PageText)} if path else {}
+                )
+                self._page_texts_stamp = stamp
+            return self._page_texts.get(page_id)
 
     def line(self, line_id: str) -> Line | None:
         with self._lock, self._connection() as conn:
