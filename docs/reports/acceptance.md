@@ -456,6 +456,16 @@ adapter's answer including the file drafts; a page whose corrections are conflic
 before the native validator sees it, and a validator that cannot run returns `unverified` rather than
 looking validated.
 
+**Five of the nine witnesses have nothing to align to, and the dashboard says so.** Measured per
+document: 4 witnesses are reviewable (2,042 derived lines on 53 pages, 1,000 machine-accepted units
+among 10,872) and **5 are transcribed with no boxes at all** — 蝦夷紀行 (294 lines), 蝦夷双紙 (2,357),
+藻汐草 Leiden (124), 蝦夷藪話 (81) and 蝦夷島奇観 (493), 3,349 lines between them. Their pages are not
+empty and not unresolved: they carry a transcription and a scan, and no line of theirs has a rectangle,
+so no reviewer can place a character on them until the derivation step runs over those pages. The page
+listing therefore carries a `state` (`aligned`, `text-only`, `empty`) and the document listing a
+`boxed_pages` count, because "zero machine units, zero pending" describes both a witness that is
+finished and one that has not been started, and those need to look different.
+
 **Counts are derived from decisions.** A unit is human-checked only when the record currently shows a
 person's reading, identity or chosen review state; a detector box, a classifier reading and an imported
 `text_source` are baselines, not evidence, and a note, a dwell time or a crop adjustment is activity

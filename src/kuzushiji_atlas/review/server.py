@@ -209,6 +209,7 @@ def create_app(directory: Path, *, source: Path | str | None = None) -> FastAPI:
         items = []
         for document in store.documents():
             counts = per_document.get(document.id, status.summarize([]))
+            own = [page for page in store.pages().values() if page.document_id == document.id]
             item = {
                 "id": document.id,
                 "title": document.title,
@@ -216,7 +217,13 @@ def create_app(directory: Path, *, source: Path | str | None = None) -> FastAPI:
                 "shelfmark": document.shelfmark,
                 "source_refs": document.source_refs,
                 "counts": counts,
-                "pages": sum(1 for page in store.pages().values() if page.document_id == document.id),
+                "pages": len(own),
+                # The lines and pages a reviewer could work on, and the ones waiting on the step
+                # before review. Without these apart, a witness nobody has aligned looks the same as
+                # a witness with nothing in it.
+                "lines": sum(len(store.lines_of_page(page.id)) for page in own),
+                "boxed_pages": sum(1 for page in own
+                                   if any(line.box for line in store.lines_of_page(page.id))),
             }
             if source_root is not None:
                 placement = _placement(source_root, document)
@@ -427,16 +434,25 @@ def create_app(directory: Path, *, source: Path | str | None = None) -> FastAPI:
                 # the kind a reviewer wants to find again.
                 continue
             lines = store.lines_of_page(page_id)
+            transcribed = bool(store.page_text(page_id))
+            boxed = sum(1 for line in lines if line.box is not None)
             items.append({
                 "id": page_id,
                 "document_id": page.document_id,
                 "seq": page.seq,
                 "image_url": f"/images/{page.sha256}" if page.sha256 else page.image,
-                "transcribed": bool(store.page_text(page_id)),
+                "transcribed": transcribed,
                 "lines": len(lines),
-                "boxed_lines": sum(1 for line in lines if line.box is not None),
+                "boxed_lines": boxed,
                 "notes": len(notes),
                 "revision": store.revision(page_id),
+                # What can be done with this page, which the unit counts alone do not say. A page can
+                # be transcribed and have nothing to align to, in which case it is not "nothing to
+                # do" — it is waiting on the step that gives its lines boxes, and a reviewer cannot
+                # act on it until that happens.
+                "state": ("empty" if not transcribed and not lines
+                          else "text-only" if not boxed
+                          else "aligned"),
                 "counts": counts,
             })
         return {"total": len(items), "limit": limit, "offset": offset,

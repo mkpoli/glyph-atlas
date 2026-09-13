@@ -884,3 +884,23 @@ def test_a_locally_conflicted_correction_is_refused_before_the_native_validator(
     # The page has no mapped entry and no correction, so there is nothing to submit.
     empty = client.post("/source-updates", json={"page_ids": ["hk:d:1"]}).json()
     assert empty["validated"] is False and empty["files"] == []
+
+
+def test_a_page_with_text_and_no_boxes_is_not_reported_as_nothing_to_do(ainu_dataset: Path):
+    """`state` separates "waiting on the step before review" from "empty".
+
+    Five of the nine Ainu witnesses are transcribed and have no boxes at all, which is 5,314 lines
+    that no reviewer can act on yet. A dashboard that showed them as zero machine, zero pending would
+    have said there was nothing to do, which is the opposite of the truth.
+    """
+    client = TestClient(create_app(ainu_dataset))
+    listed = {item["id"]: item for item in client.get("/pages").json()["items"]}
+    assert listed["hk:d:0"]["state"] == "aligned"
+    assert listed["hk:d:1"]["state"] == "text-only"
+    assert listed["hk:d:1"]["transcribed"] is True and listed["hk:d:1"]["boxed_lines"] == 0
+
+    document = client.get("/project").json()["documents"][0]
+    assert document["boxed_pages"] == 1 and document["pages"] == 2, (
+        "one page of the two has a box, which is what says whether the witness can be reviewed"
+    )
+    assert document["lines"] == 1
