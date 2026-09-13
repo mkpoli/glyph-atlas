@@ -93,13 +93,11 @@ which pages to propose on, not a verdict. Measured over all 658 pages, 9 witness
   than transcribed lines and 13 show fewer** — and the 13 are spread over five of the nine witnesses
   rather than concentrated in one, so no single hand explains them. One extra column accounts for 72
   pages and two extra for 61, so 133 pages sit within two columns of pairing; 60 are ten or more out,
-  and the largest is 28. On these pages the segmenter is splitting columns rather than missing them,
-  which is a defect in the derivation's own step and not in the transcription it is being paired with.
-  The sharpest case is a 112-page witness with no exact page at all and a median of 1.35 columns to a
-  line, while its transcription is ordinary text by every other measure — a median of 20 lines and 396
-  characters a page at 1.11 detections a character, the same order as the witnesses that do pair, whose
-  ratio is 1.00 to 1.15. Its ratio is the outlier, not its transcription. And 153 of the 658 pages
-  carry no transcribed line to pair with at all, which no threshold can recover.
+  and the largest is 28. The extra columns have no single cause: most are lone detections outside the
+  text block, and a second leaf the transcription does not cover accounts for some of the rest, so no
+  threshold rule over the current pipeline is proposed here. The measurement behind that is in "What
+  the extra columns are" below. And 153 of the 658 pages carry no transcribed line to pair with at
+  all, which no threshold can recover.
 - The per-column evidence gate leaves **53 pages** the derivation will write boxes for. The 64 pages
   the gate refuses are the ones whose weakest column holds 0.04 to 0.47 detections for each character
   of its line — most of one witness, whose pages are torn at the leaf edge — while every paired page's
@@ -109,6 +107,49 @@ which pages to propose on, not a verdict. Measured over all 658 pages, 9 witness
 - The per-witness spread is wide: 龍谷大学's 蝦夷紀行 12 exactly of 15 (median 1.00), 立命館's copy 34
   of 98 (1.07), 蝦夷草紙 51 of 56 (1.00) on the densest transcription here at 413 characters a page,
   and one 0 of 38 (2.56) whose transcription covers a fraction of what its pages show.
+
+### What the extra columns are
+
+The count mismatch is the derivation's largest single reason to refuse a page, so it is worth knowing
+what the extra columns are before writing a rule to remove them. `scripts/ainu_mismatch.py` measures
+that against the cached detections, and the answer is that there is no single cause.
+
+**They are not split lines.** A column that the segmenter had wrongly split would sit close to the
+column it was split from. Of the 1,422 thin columns (two detections or fewer) on over-counting pages,
+53 percent stand five or more median character widths from any body column and only 6 percent stand
+under one; the median is 5.58. Their median height is 4 percent of the text block, and 73 percent are
+under a tenth of it. These are lone detections out at the page edge, below the block, or over the
+cradle and the colour patch — a detector running at a score of 0.02 firing on something that is not a
+character, each one its own "column" by construction. One page of 藻汐草 was rendered with its columns
+marked to confirm it: the kept columns cover the text block and the five candidates sit at the top of
+the frame and off the bottom-left edge of the leaf. The remaining 28 percent do sit within two widths
+of a body column, so a split character is the explanation for some minority of them and not the
+mechanism behind the counts.
+
+**Part of it is a spread the transcription only half covers.** The same page is a scan of two facing
+leaves: 214 of its 460 detections and 11 substantial columns lie on the right leaf, which its
+transcription does not cover at all, because the transcription is addressed per leaf while the image
+holds both. The module's own region split is what separates them, so a count taken over the whole
+image cannot agree with one leaf's line count. That is a modelling problem and not a threshold, so the
+region split was measured as a repair too: of the 360 mismatched pages, 7 have a region whose own
+columns match the line count and pass the evidence gate. Where the extra columns are a second leaf,
+pairing already refuses the page, which is the safe outcome.
+
+**A rule that removes them is worth more than it costs, but not by enough to ship on this evidence.**
+Dropping thin columns that stand clear of the block, applied at every page, would newly pair 52 to 128
+pages depending on the gap; at the same time it takes a column away from 5 to 8 of the 53 pages that
+pair today, which is the outcome that matters more, because those pages' line boxes and unit ids
+already exist. Applying it only where the count is already wrong costs those 53 nothing and would pair
+**131** more pages — but 146 of the 162 pages it repairs need the *smallest* gap tried, which says the
+line count is doing the choosing rather than the geometry. That is a page fitted to a known number, not
+a rule that was measured, and the honest place for it is behind a reviewer looking at the page.
+
+What follows from this is a note for whoever works on the derivation next: on this corpus the count
+mismatch is a mixture, and no threshold over the current pipeline separates the mixture cleanly. The
+pages where the transcription covers one leaf of a spread need the region split to be used in pairing;
+the pages with lone edge detections need those detections excluded by position and not by count. Both
+are changes to which columns are considered at all, and both want a human check on a handful of pages
+first, which is the one thing this run cannot supply for itself.
 
 Two further limits are worth stating plainly.
 
