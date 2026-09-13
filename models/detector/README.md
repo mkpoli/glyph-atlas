@@ -180,7 +180,79 @@ Every false positive of the test measurement, at the shipped operating point (49
   from CODH or annotated; until then every precision figure here is a floor, and the size of the
   floor is unknown.
 
-### The longer schedule was run, and it did not help
+### The longer schedule: measured, and not finished
+
+Two epochs of the configured 24-epoch schedule were trained into `models/detector/artifacts-24e/` and
+then stopped and measured at the user's direction. The shipped artifact is untouched: the pilot's run
+names `artifacts/detector.onnx` and its unit ids are fingerprinted to `rtdetr_r18vd-6e`.
+
+Measured on the whole validation split for the operating point and the whole `test` split at IoU 0.5:
+
+| Whole test split (477 pages) | shipped, 6 epochs | epoch 1 of 24 |
+| --- | --- | --- |
+| operating point chosen on val | 0.02 | 0.03 |
+| precision | **0.6998** | 0.5692 |
+| recall | **0.9283** | 0.8947 |
+| F1 | **0.7980** | 0.6958 |
+| mean IoU | **0.8753** | 0.8682 |
+| true / false / missed | 115,293 / 49,463 / 8,903 | 111,120 / 84,103 / 13,076 |
+
+On a fixed 25-page subset of `val`, measured with the same detections, the two epochs of the new run
+are `f1 0.7554` (epoch 0) and `f1 0.6971` (epoch 1), against `f1 0.8570` for the shipped final
+checkpoint. So within the new run the second epoch is worse than its first, and both are behind the
+shipped model. **What this establishes is that this particular run is not an improvement, not that 24
+epochs cannot be**: the run stopped after two of twenty-four, and a curve that dips at epoch 1 can
+pass its starting point later. The dip is real and repeatable; whether it is a property of the
+schedule or of this run's first two epochs is not something two epochs can tell.
+
+#### Why the two runs are not the same schedule
+
+The stored `training.epochs` is 24 in both checkpoints, because it comes from the YAML, but the
+scheduler's horizon comes from the resolved `--epochs`. The shipped run was invoked with `--epochs 6`
+and resumed twice, and the checkpoints say so in their own state:
+
+| | shipped `best.pt` | `24e/epoch-01.pt` |
+| --- | --- | --- |
+| checkpoint epoch | 5 | 1 |
+| `scheduler.last_epoch` | 16,938 | 5,646 |
+| `_last_lr` | `[0.0, 0.0]` | `[9.8562e-05, 9.8562e-06]` |
+
+With 45,162 training tiles at batch 8 and `grad_accumulation` 2, an epoch is 2,823 optimizer steps, so
+six epochs is 16,938 steps and 24 epochs is 67,752. The step counts in the table are what the
+checkpoints recorded; the loss of the shipped run's last epoch is 3.3010, and the experiment's second
+is 3.7636. The earlier stored curves for the shipped run's epochs 0 and 1 were re-derived after its
+grid changed, so its per-epoch rows and the experiment's are not the same measurement and are not
+compared here.
+
+That the horizons differ is arithmetic. Whether the horizon is *why* the F1s differ is not established
+by these numbers: the two runs also resume differently, were measured at different times, and differ
+in every one of the 2,823 steps after the first epoch. The concrete thing the difference cost is
+provenance, which is fixed — `train.py` now records the resolved runtime (resolved and configured
+epochs, accumulation, scheduler steps an epoch and in total, warmup, precision, seed, relative paths)
+in both `metrics.json` and every checkpoint, and `tests/test_detector_runtime.py` pins it.
+
+#### What is repeatable, and what is not yet known
+
+Measured, not assumed: one checkpoint loaded once, one fixed batch of four tiles, `model.eval()`, the
+batch run twice — raw logits and `pred_boxes` are **bit-identical** (max absolute difference 0.0, equal
+SHA-256 over both arrays). Re-scoring the same cached detections twice gives the same F1 to four
+decimals. So the scoring path and the forward pass repeat for that checkpoint, input and precision;
+what is *not* established is repeatability across a fresh process for the full pipeline, which would
+need the same measurement run twice end to end.
+
+What the evidence still supports trying, in order: a denser score grid or a calibrated head, since the
+whole operating range of the shipped model lies between 0.005 and 0.05; a val-chosen sweep of `nms`
+rather than of the score, for the quarter of false positives that are duplicates or splits of a real
+character; and finer tiles or more queries for the smallest decile, the weakest one. More epochs of
+this schedule is no longer first on that list, and finishing it would need the machine to itself for
+about 41 hours.
+
+`models/detector/compare_checkpoints.sh <checkpoint>` runs this measurement for any checkpoint into
+`models/detector/eval-<name>-<hash>/`, with the shipped baseline checksummed before and after, and
+refuses to run while a trainer is live. The epoch-1 report is kept at
+`models/detector/eval-epoch-01-37e7513273c8/`.
+
+## The longer schedule was run, and it did not help
 
 A second run of the configured 24-epoch schedule was trained into `models/detector/artifacts-24e/`,
 two epochs of it, and then stopped and measured at the user's direction. The shipped artifact stays

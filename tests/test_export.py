@@ -538,3 +538,43 @@ def test_a_mixed_dataset_keeps_its_unresolved_pages(tmp_path):
     assert kept_units == [unit.id]
     kept_lines = {row.id for row in tables.read(out / "lines.parquet", Line)}
     assert kept_lines == {aligned.id, unresolved.id}
+
+
+def test_a_page_whose_only_record_is_its_text_is_released(tmp_path):
+    """A page can carry a transcription and no line at all, and that text is still a record.
+
+    The Ainu records have 658 pages, 520 with lines and 138 without; every one of those 138 carries an
+    empty `PageText`, so nothing is lost there. The contract decides the general case: `page_texts`
+    row is a record of its page on its own, exactly as a unit-less line is, so a nonempty one must
+    travel into the release even when the page has no line and no unit. `used_pages` is built from
+    units and lines, so this is the case that would silently drop it.
+    """
+    from kuzushiji_atlas import export as export_module
+    from kuzushiji_atlas import koji, tables
+    from kuzushiji_atlas.schema import Document, Line, Page, PageText, ReviewState, Rights
+
+    rights = Rights(licence="CC-BY-SA-4.0", attribution="a")
+    document = Document(id="hk:d1", title="t", image_rights=rights, text_rights=rights)
+    pages = [
+        Page(id="hk:d1:0", document_id="hk:d1", seq=0, image="file:p0.jpg", width=100, height=100),
+        Page(id="hk:d1:1", document_id="hk:d1", seq=1, image="file:p1.jpg", width=100, height=100),
+    ]
+    line = Line(id="hk:d1:0:L0", page_id="hk:d1:0", seq=0, box=None,
+                text_raw="あ", text=koji.plain("あ"))
+    texts = [
+        PageText(page_id="hk:d1:0", source="ainu-records", text_raw="あ"),
+        # The page with no line: its text is its only record.
+        PageText(page_id="hk:d1:1", source="ainu-records", text_raw="ゐろは"),
+    ]
+    source = tmp_path / "textonly"
+    tables.write(source / "documents.parquet", [document], Document)
+    tables.write(source / "pages.parquet", pages, Page)
+    tables.write(source / "lines.parquet", [line], Line)
+    tables.write(source / "page_texts.parquet", texts, PageText)
+
+    out = tmp_path / "release"
+    counts = export_module.release([source], out, review=[ReviewState.TRANSCRIBER.value])
+    assert counts["pages"] == 2, "the page whose only record is its text travels too"
+    assert counts["page_texts"] == 2
+    released = {row.page_id: row for row in tables.read(out / "page_texts.parquet", PageText)}
+    assert released["hk:d1:1"].text_raw == "ゐろは"

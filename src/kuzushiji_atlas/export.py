@@ -435,10 +435,16 @@ def _apply_filters(
         if dataset.tables["lines"] is not None
         else []
     )
-    # A page is in the release because a record of it is: a unit on it, or a line.
-    used_pages = {str(row["page_id"]) for row in unit_rows if row.get("page_id")} | {
-        line.page_id for line in line_rows
-    }
+    # A page is in the release because a record of it is: a unit on it, a line, or a page text. A
+    # transcription-only page has no line to admit it — the Ainu records have 138 pages whose only
+    # record is a `page_texts` row — and a row of that table is as much a record of its page as a
+    # unit-less line is. Whether the page may be redistributed is a separate question, asked per
+    # document above, so this is where the record's own existence decides and nothing else.
+    used_pages = (
+        {str(row["page_id"]) for row in unit_rows if row.get("page_id")}
+        | {line.page_id for line in line_rows}
+        | {str(row.page_id) for row in page_texts_all if row.page_id in kept_page_ids}
+    )
     groups = [group for group in groups_all if group.unit_ids and set(group.unit_ids) <= kept_units]
     page_texts = [row for row in page_texts_all if row.page_id in used_pages]
     pages = [page for page in pages if page.id in used_pages]

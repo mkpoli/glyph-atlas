@@ -1598,6 +1598,6 @@
   "other": "other",
   "size": 96,
   "min_train_crops": 20,
-  "source": "work/classifier/{train,val,test}.parquet",
+  "source": "./work/classifier/{train,val,test}.parquet",
   "built_at": "2026-09-11T11:54:59Z"
 }

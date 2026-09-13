@@ -25,6 +25,7 @@ under `cache/`, as the conventions ask.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import random
@@ -736,14 +737,17 @@ def loader_for(
 
 
 def snapshot(
-    model: Any, optimizer: Any, scheduler: Any, config: dict[str, Any], epoch: int, metrics: dict
+    model: Any, optimizer: Any, scheduler: Any, config: dict[str, Any], epoch: int, metrics: dict,
+    runtime: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """What a checkpoint holds: the state of the run, and the arguments that produced it."""
     return {
         "model": model.state_dict(),
         "optimizer": optimizer.state_dict(),
         "scheduler": scheduler.state_dict(),
         "epoch": epoch,
         "config": config,
+        "runtime": runtime,
         "metrics": metrics,
     }
 
@@ -752,6 +756,79 @@ def peak_vram() -> str:
     if not torch.cuda.is_available():
         return "no cuda"
     return f"peak {torch.cuda.max_memory_allocated() / 2**30:.2f}GiB"
+
+
+def relative_to_root(path: Path | str | None) -> str | None:
+    """A path as the repository sees it, so a report never carries an absolute home directory.
+
+    A path outside the repository is written as its name alone rather than its full path: a metrics
+    file is a durable record, and the machine's layout is not part of the measurement.
+    """
+    if path is None:
+        return None
+    candidate = Path(path)
+    try:
+        return str(candidate.resolve().relative_to(ROOT))
+    except ValueError:
+        return candidate.name
+
+
+def file_sha256(path: Path | str) -> str:
+    """The checksum of a file, so a measured checkpoint can be identified exactly."""
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def runtime_of(
+    args: Any,
+    *,
+    config: dict[str, Any],
+    epochs: int,
+    batch_size: int,
+    precision: str,
+    workers: int,
+    seed: int,
+    splits: dict[str, str],
+    cache: Path,
+    materialised: Path,
+) -> dict[str, Any]:
+    """The arguments a run is actually using, resolved and path-normalised.
+
+    `--epochs` on the command line sets the scheduler's horizon, and `training.epochs` in a stored
+    config kept the YAML's 24 through a six-epoch run, so a checkpoint's own config could not say
+    which schedule trained it. This is what both the metrics file and every checkpoint carry instead.
+    `steps_per_epoch` and `scheduler_total_steps` are left null here and filled by the caller that
+    knows the loader's length, from this same object rather than a second calculation.
+    """
+    training = config["training"]
+    return {
+        "epochs": int(epochs),
+        "epochs_configured": int(training["epochs"]),
+        "batch_size": int(batch_size),
+        "grad_accumulation": int(training["grad_accumulation"]),
+        "workers": int(workers),
+        "steps_per_epoch": None,
+        "scheduler_total_steps": None,
+        "warmup_steps": int(training["warmup_steps"]),
+        "scheduler": str(training["scheduler"]),
+        "lr": float(training["lr"]),
+        "backbone_lr": float(training["backbone_lr"]),
+        "precision": str(precision),
+        "seed": int(seed),
+        "seed_argument": getattr(args, "seed", None),
+        "val_limit": getattr(args, "val_limit", None),
+        "train_limit": getattr(args, "limit", None),
+        "resumed_from": relative_to_root(getattr(args, "resume", None)),
+        "weights": relative_to_root(getattr(args, "weights", None)),
+        "config": relative_to_root(getattr(args, "config", None)),
+        "data": relative_to_root(config["data"]["directory"]),
+        "image_cache": relative_to_root(cache),
+        "materialised_tiles": relative_to_root(materialised),
+        "splits": {name: str(value) for name, value in splits.items()},
+    }
 
 
 def choose_score(
@@ -862,20 +939,60 @@ def main() -> None:
         flush=True,
     )
     metrics_path = out / "metrics.json"
-    report: dict[str, Any] = {"config": str(args.config), "epochs": [], "test": None}
+    report: dict[str, Any] = {"config": relative_to_root(args.config), "epochs": [], "test": None}
+    runtime = runtime_of(
+        args,
+        config=config,
+        epochs=epochs,
+        batch_size=batch_size,
+        precision=precision,
+        workers=workers,
+        seed=seed,
+        splits=splits,
+        cache=cache,
+        materialised=materialised,
+    )
+    report["runtime"] = runtime
+    if args.test:
+        # What the measurement itself used: which checkpoint, on which split files, at which
+        # operating point, chosen by which protocol. `--val-limit 2` still measures the whole test
+        # split, so the counts are the only honest statement of what was measured.
+        measured = args.weights if args.weights is not None else args.resume
+        report["evaluation"] = {
+            "checkpoint": relative_to_root(measured),
+            "checkpoint_sha256": file_sha256(measured) if measured is not None else None,
+            "device": str(device),
+            "precision": precision,
+            "batch_size": batch_size,
+            "workers": workers,
+            "score_selection": {
+                "split": splits["val"],
+                "limit": args.val_limit,
+                "grid": [float(value) for value in evaluation["score_grid"]],
+                "rule": "highest F1 on val, highest score on a tie",
+            },
+            "measurement": {
+                "split": splits["test"],
+                "iou": float(evaluation["iou"]),
+                "nms": float(evaluation["nms"]),
+                "max_per_tile": int(evaluation["max_per_tile"]),
+                "unit": "whole page, tiles merged",
+            },
+        }
+
     if metrics_path.exists():
         # A resumed run keeps the epochs an earlier one wrote, so the curve in the file is the whole
-        # curve rather than the part since the last restart.
+        # curve rather than the part since the last restart. The runtime and the evaluation record are
+        # this run's and are written after this merge, never before it: reading the file over the
+        # report would otherwise leave the previous run's weights named as the current measurement.
         previous = json.loads(metrics_path.read_text(encoding="utf-8"))
         report["epochs"] = previous.get("epochs", [])
-        report["test"] = previous.get("test")
+        if not args.test:
+            report["test"] = previous.get("test")
         if "dense" in previous:
             report["dense"] = previous["dense"]
 
     if args.test:
-        if metrics_path.exists():
-            report = json.loads(metrics_path.read_text(encoding="utf-8"))
-            report.setdefault("epochs", [])
         lowest = min(float(value) for value in evaluation["score_grid"])
         val_tiles = read("val", args.val_limit)
         val_loader = loader_for(val_tiles, augment=False, batch_size=batch_size, workers=workers, seed=seed)
@@ -923,9 +1040,17 @@ def main() -> None:
 
     train_tiles = read("train", args.limit)
     val_tiles = read("val", args.val_limit)
+    # The runtime object built before the report existed is the same one filled here: the loader's
+    # real length is known now, and nothing recomputes it into a second dict that could disagree.
+    accumulation = runtime["grad_accumulation"]
+    runtime["steps_per_epoch"] = max(1, math.ceil(len(train_tiles) / batch_size / accumulation))
+    runtime["scheduler_total_steps"] = runtime["steps_per_epoch"] * epochs
+    print(f"runtime: epochs {epochs} (configured {training['epochs']}), "
+          f"{runtime['steps_per_epoch']} scheduler steps an epoch, "
+          f"{runtime['scheduler_total_steps']} in total, warmup {runtime['warmup_steps']}", flush=True)
     densest = max((len(tile.boxes) for tile in train_tiles), default=0)
     report["data"] = {
-        "directory": str(data),
+        "directory": relative_to_root(data),
         "tiles": {"train": len(train_tiles), "val": len(val_tiles)},
         "boxes": {
             "train": int(sum(len(tile.boxes) for tile in train_tiles)),
@@ -945,6 +1070,12 @@ def main() -> None:
     accumulation = int(training["grad_accumulation"])
     steps = max(1, math.ceil(len(train_loader) / accumulation)) * epochs
     scheduler = scheduler_for(optimizer, config, steps)
+    # What the run actually used. `--epochs` on the command line sets the scheduler's horizon, and a
+    # stored config kept the YAML's 24 through a six-epoch run, so a checkpoint's own config could not
+    # say which schedule trained it. The report and every checkpoint carry this instead.
+    runtime["scheduler_total_steps"] = steps
+    runtime["steps_per_epoch"] = max(1, math.ceil(len(train_loader) / accumulation))
+    report["runtime"] = runtime
     scaler = torch.amp.GradScaler("cuda", enabled=precision == "fp16")
     start = 0
     if state is not None and args.resume is not None:
@@ -1020,7 +1151,7 @@ def main() -> None:
             f"{joint['precision']:.4f}",
             flush=True,
         )
-        state_now = snapshot(model, optimizer, scheduler, config, epoch, rates)
+        state_now = snapshot(model, optimizer, scheduler, config, epoch, rates, runtime)
         torch.save(state_now, out / f"epoch-{epoch:02d}.pt")
         torch.save(state_now, out / "last.pt")
         if rates["f1"] > best:
