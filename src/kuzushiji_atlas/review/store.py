@@ -220,6 +220,14 @@ class CorrectionRequest(BaseModel):
     base_revision: int | None = None
 
 
+class SourceUpdateRequest(BaseModel):
+    """The pages whose corrections a reviewer wants validated for the publishing project."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    page_ids: list[str] = Field(min_length=1, max_length=100)
+
+
 class RetractRequest(BaseModel):
     """A correction taken back, with the page it was recorded on."""
 

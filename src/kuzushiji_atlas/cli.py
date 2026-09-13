@@ -358,11 +358,14 @@ def review_serve(
     directory: Annotated[Path, typer.Argument(help="dataset directory to review")],
     port: Annotated[int, typer.Option(help="port to listen on")] = 8770,
     host: Annotated[str, typer.Option(help="interface to bind")] = "127.0.0.1",
+    source: Annotated[Path | None, typer.Option(
+        help="checkout of the publishing project, for the source correspondence"
+    )] = None,
 ) -> None:
     """Serve the review interface and its API over one dataset directory."""
     from .review import server
 
-    server.serve(directory, port=port, host=host)
+    server.serve(directory, port=port, host=host, source=source)
 
 
 @review_app.command("apply")

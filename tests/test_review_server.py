@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import sqlite3
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -699,7 +700,8 @@ def ainu_dataset(tmp_path: Path) -> Path:
     tables.write(directory / "lines.parquet", [line], Line)
     tables.write(directory / "units.parquet", [unit], Unit)
     tables.write(directory / "page_texts.parquet",
-                 [PageText(page_id="hk:d:1", source="ainu-records", text_raw="【右丁】\nテシンを出\n")],
+                 [PageText(page_id="hk:d:1", source="ainu-records",
+                           text_raw="【右丁】\n【ママ】\nテシンを出\n")],
                  PageText)
     return directory
 
@@ -718,12 +720,49 @@ def test_the_project_endpoint_answers(ainu_dataset: Path):
 
 
 def test_the_project_endpoint_reports_an_unreadable_source(ainu_dataset: Path, tmp_path: Path):
-    """A source path that is not a checkout is reported, not fatal: the atlas works without it."""
-    client = TestClient(create_app(ainu_dataset))
+    """A source that is not a checkout is reported, not fatal: the atlas works without it.
+
+    The checkout is served configuration, not a query parameter: it is a path on the server's disk,
+    and the browser has no business naming it.
+    """
     missing = tmp_path / "not-a-checkout"
     missing.mkdir()
-    body = client.get("/project", params={"source": str(missing)}).json()
+    body = TestClient(create_app(ainu_dataset, source=missing)).get("/project").json()
     assert body["source"] == {"readable": False, "path": "not-a-checkout"}
+
+    silent = TestClient(create_app(ainu_dataset)).get("/project").json()
+    assert silent["source"] is None, "no source configured means no source claims"
+
+
+def test_the_project_endpoint_reads_a_real_checkout(ainu_dataset: Path, tmp_path: Path):
+    """With a checkout configured, each document is placed in the publishing project by entry id."""
+    if shutil.which("git") is None:
+        pytest.skip("git is needed to build the fixture checkout")
+    body = TestClient(create_app(ainu_dataset, source=checkout(tmp_path))).get("/project").json()
+    assert body["source"]["readable"] is True
+    assert body["source"]["works"] == 1 and body["source"]["parts"] == 1
+    # The fixture document carries no `honkoku-data`, so it maps to nothing and is reported as is.
+    assert "source" not in body["documents"][0]
+
+
+def checkout(tmp_path: Path) -> Path:
+    """A one-work ainu-records checkout, in the shape `AinuSource` reads."""
+    import yaml
+
+    root = tmp_path / "ainu-records"
+    (root / "data" / "editorial" / "corrections").mkdir(parents=True)
+    (root / "scripts" / "lib").mkdir(parents=True)
+    (root / "scripts" / "lib" / "corrections.ts").write_text("// stub\n", encoding="utf-8")
+    (root / "data" / "sources.yaml").write_text(yaml.safe_dump({
+        "sources": [{
+            "slug": "ezo-kiko", "title": "蝦夷紀行", "date": "1800",
+            "witnesses": [{
+                "slug": "ryukoku",
+                "parts": [{"label": "第1冊", "entry": "0916dafb80cdc48ca7687afcad4a4f35"}],
+            }],
+        }],
+    }, allow_unicode=True), encoding="utf-8")
+    return root
 
 
 def test_the_page_listing_reaches_a_page_with_no_boxes(ainu_dataset: Path):
@@ -748,7 +787,7 @@ def test_corrections_round_trip_through_the_api(ainu_dataset: Path):
     """Post a correction, read it back, retract it, and see the effective text follow."""
     client = TestClient(create_app(ainu_dataset))
     payload = {
-        "id": "ezo-kiko-ryukoku-1-teshin", "target_id": "hk:d:1", "line": 1,
+        "id": "ezo-kiko-ryukoku-1-teshin", "target_id": "hk:d:1", "line": 2,
         "original": "テシン", "corrected": "テレン", "note": "原画像を確認。",
     }
     created = client.post("/corrections", json=payload)
@@ -776,3 +815,72 @@ def test_a_correction_that_cannot_be_placed_is_refused_with_its_reason(ainu_data
     })
     assert answer.status_code == 400
     assert "does not exist" in answer.json()["detail"]
+
+
+def test_the_corrections_endpoint_carries_the_line_numbering_and_revision(ainu_dataset: Path):
+    """The editor needs the source's own line numbers, the page revision, and durable notes."""
+    client = TestClient(create_app(ainu_dataset))
+    body = client.get("/pages/hk:d:1/corrections").json()
+    assert [line["number"] for line in body["lines"]] == [1, 2], "one-based, as the source counts"
+    assert body["lines"][0]["raw"] == "【ママ】", "ママ is content, so it is numbered"
+    assert body["lines"][1]["raw"] == "テシンを出"
+    assert all("右丁" not in line["raw"] for line in body["lines"]), "a structural marker is skipped"
+    assert body["revision"] == 0, "nothing has been recorded on this page yet"
+
+    created = client.post("/corrections", json={
+        "id": "ezo-kiko-ryukoku-1-teshin", "target_id": "hk:d:1", "line": 2,
+        "original": "テシン", "corrected": "テレン", "note": "原画像を確認。",
+    })
+    assert created.status_code == 201, created.text
+    after = client.get("/pages/hk:d:1/corrections").json()
+    assert after["revision"] == 1, "the revision moves so a stale tab can be told"
+
+
+def test_a_durable_note_is_returned_and_keeps_the_page_in_the_queue(ainu_dataset: Path):
+    """A page with no lines is reviewable through a note, and the note keeps it findable."""
+    client = TestClient(create_app(ainu_dataset))
+    empty = "hk:d:1"
+    assert client.get("/pages", params={"pending": True}).json()["total"] == 1, "only the aligned page"
+
+    client.post("/reviews", json={"target_type": "page", "target_id": empty, "field": "note",
+                                 "new": "transcription missing; needs a transcriber",
+                                 "client_id": "reviewer"})
+    body = client.get(f"/pages/{empty}/corrections").json()
+    assert len(body["notes"]) == 1
+    assert body["notes"][0]["text"].startswith("transcription missing")
+    assert body["notes"][0]["actor"] == "reviewer"
+    assert body["notes"][0]["at"]
+
+    pending = client.get("/pages", params={"pending": True}).json()
+    assert sorted(item["id"] for item in pending["items"]) == ["hk:d:0", empty], (
+        "a note is a reason to visit a page, so it survives the pending filter"
+    )
+    listed = next(item for item in client.get("/pages").json()["items"] if item["id"] == empty)
+    assert listed["notes"] == 1 and listed["boxed_lines"] == 0
+
+
+def test_the_source_update_status_says_when_there_is_no_checkout(ainu_dataset: Path):
+    """Without a checkout the bridge reports itself unconfigured rather than failing a submission."""
+    client = TestClient(create_app(ainu_dataset))
+    body = client.get("/source-updates").json()
+    assert body["configured"] is False and body["readable"] is False
+    assert "no source checkout" in body["reason"]
+
+    refused = client.post("/source-updates", json={"page_ids": ["hk:d:1"]})
+    assert refused.status_code == 400
+    assert "no source checkout" in refused.json()["detail"]
+
+
+def test_a_locally_conflicted_correction_is_refused_before_the_native_validator(
+    ainu_dataset: Path, tmp_path: Path
+):
+    """A correction that cannot be placed on the text here is not a candidate for a source patch."""
+    root = checkout(tmp_path)
+    client = TestClient(create_app(ainu_dataset, source=root))
+    status_body = client.get("/source-updates").json()
+    assert status_body["configured"] is True
+    assert status_body["readable"] is True, "the fixture checkout has the validator file"
+
+    # The page has no mapped entry and no correction, so there is nothing to submit.
+    empty = client.post("/source-updates", json={"page_ids": ["hk:d:1"]}).json()
+    assert empty["validated"] is False and empty["files"] == []

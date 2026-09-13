@@ -57,6 +57,11 @@ DECISION_FIELDS = frozenset(
 #: looked, wrote, or spent time, and none of them changes what the record says.
 CONTEXT_FIELDS = frozenset({"note", "timing", "open", "leave"})
 
+#: The event roles a person writes. `model` is a model — `schema.Review` says `actor` is "model name
+#: or anonymous reviewer id", so a nonempty actor on its own says nothing about who decided; the role
+#: is what does. A model's event is the pipeline's own conclusion whatever it is called.
+HUMAN_ROLES = frozenset({"transcriber", "reviewer", "adjudicator"})
+
 #: The review states a person can choose. The value the pipeline writes is not one of them.
 HUMAN_REVIEW_STATES = frozenset({"reviewed", "double-reviewed", "adjudicated", "disputed"})
 
@@ -240,6 +245,20 @@ def unit_reviews(
     a person chose, is checked; one whose last word on every decision field is machine output or a
     reverted value is not, whether or not a person was there earlier.
     """
+    journal = list(events)
+    # What each field held before any event touched it. A record handed over is its *present* state,
+    # so its value cannot be its own baseline: after two edits the current value is the second edit,
+    # and comparing a field against it would call the last write a restoration. The earliest event's
+    # `old` is the value the field really started from, and a field no event names keeps the value the
+    # record carries, because nothing has changed it.
+    earliest: dict[str, dict[str, Any]] = {}
+    for event in journal:
+        if event.field not in DECISION_FIELDS:
+            continue
+        record = earliest.setdefault(event.target_id, {})
+        if event.field not in record:
+            record[event.field] = event.old
+
     written_back = set(exported)
     standing: dict[str, UnitReview] = {}
     for unit in units:
@@ -262,14 +281,16 @@ def unit_reviews(
         # classifier put a reading there; neither is a person confirming anything, so these fields
         # start with no decision recorded. Only an explicit review state the record already carries
         # is editorial standing, and only a journal event can make a field a decision.
+        opened = earliest.get(unit.id, {})
         for name in ("reading", "unicode", "text_source", "box", "jibo", "classification"):
-            if hasattr(unit, name):
-                value = _value_of(unit, name)
-                record.fields[name] = FieldStanding(value=value, kinds=[])
-                record.baseline[name] = value
+            if not hasattr(unit, name):
+                continue
+            value = _value_of(unit, name)
+            record.fields[name] = FieldStanding(value=value, kinds=[])
+            record.baseline[name] = opened.get(name, value) if name in opened else value
         standing[unit.id] = record
 
-    for event in events:
+    for event in journal:
         record = standing.get(event.target_id)
         if record is None:
             continue
@@ -292,7 +313,15 @@ def unit_reviews(
                 continue
         # An event with no actor is the pipeline writing its own conclusion — an apply, a rebuild, a
         # classifier pass. It changes the record and takes the field back from whoever had it.
-        author = "human" if event.actor else "machine"
+        # `Session.undo` sends `evidence: "undo of <event_id>"` with the compensating event, so a
+        # client that undoes says so. That mark is what makes an undo an undo; equality with a
+        # baseline is a fallback for events that carry no such mark.
+        explicit_undo = isinstance(getattr(event, "evidence", None), str) and \
+            str(event.evidence).startswith("undo of ")
+        if explicit_undo:
+            kind = "restored"
+        role = str(getattr(event, "role", "model") or "model")
+        author = "human" if (event.actor and role in HUMAN_ROLES) else "machine"
         if author == "human" and kind == "state" and before is not None and before.value == event.new:
             # A human event that writes the state the record already shows changes nothing, so it
             # does not become the last word on the field.

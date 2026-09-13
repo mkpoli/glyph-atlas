@@ -31,7 +31,7 @@ from kuzushiji_atlas.schema import Document, Line, Page, PageText
 #: A page whose transcription has the source's shape: a 右丁 marker that its parser skips, a blank
 #: line, and four transcription lines, the third of which holds the text to correct.
 TEXT = (
-    "［右丁］\n\n蝦夷紀行巻之上\n"
+    "【右丁】\n\n蝦夷紀行巻之上\n"
     "文化五辰年の秋再ひ間宮林蔵をして北蝦夷の奥地に\n"
     "至らしむるに其年の七月十三日本蝦夷ソウヤを出\n"
     "帆して其日シラヌシに至る此所土着の住夷多\n"

@@ -12,6 +12,7 @@ exist, which is worse than reporting none.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from kuzushiji_atlas.review import status
@@ -34,7 +35,12 @@ class Unit:
 
 @dataclass
 class Event:
-    """One journal row."""
+    """One journal row.
+
+    `role` defaults to `reviewer` because every event in these tests is a person deciding; the
+    production model makes the role explicit precisely so a model's event cannot pass for one, which
+    `test_a_model_actor_is_not_a_decision` covers.
+    """
 
     target_id: str
     field: str
@@ -42,6 +48,7 @@ class Event:
     actor: str | None = None
     old: Any = None
     note: str = ""
+    role: str = "reviewer"
 
 
 def review_of(unit: Unit, events: list[Event], **kwargs: Any) -> status.UnitReview:
@@ -292,3 +299,105 @@ def test_the_effective_review_state_and_activity_follow_the_journal() -> None:
 
     retired = status.unit_reviews([unit], [Event(unit.id, "active", False, actor="r1")])[unit.id]
     assert retired.active is False and retired.kind == "retired"
+
+
+# -- through the real store, because the bug these cover was in what it hands over -------------
+
+
+def test_two_reading_edits_through_the_store_are_both_decisions(tmp_path: Path) -> None:
+    """The regression: `/project` passes the store's *effective* records, so a baseline taken from
+    them makes the last of any two edits equal its own starting point.
+
+    Two ordinary reading edits in a row must both count as decisions. The earlier version derived the
+    baseline from the record it was handed — which is the final value — so the second edit looked like
+    a restoration and the unit fell back to `machine` while its reading was the reviewer's.
+    """
+    from kuzushiji_atlas import tables
+    from kuzushiji_atlas.review.store import ReviewRequest, Store
+    from kuzushiji_atlas.schema import Box, Document, Line, Page, ReviewState, Unit, UnitKind
+
+    directory = tmp_path / "d"
+    directory.mkdir()
+    tables.write(directory / "documents.parquet", [Document(id="d", title="t")], Document)
+    tables.write(directory / "pages.parquet",
+                 [Page(id="d:0", document_id="d", seq=0, image="i", width=10, height=10)], Page)
+    tables.write(directory / "lines.parquet",
+                 [Line(id="d:0:L0", page_id="d:0", seq=0, box=Box(x=1, y=1, w=5, h=5),
+                       text_raw="あ", text="あ")], Line)
+    tables.write(directory / "units.parquet",
+                 [Unit(id="d:0:L0:f:1", page_id="d:0", document_id="d", line_id="d:0:L0", seq=1,
+                       box=Box(x=1, y=1, w=5, h=5), reading="あ", text_source="あ",
+                       kind=UnitKind.CHAR, review=ReviewState.MACHINE)], Unit)
+
+    store = Store(directory)
+    for reading in ("い", "う"):
+        store.record(ReviewRequest(target_type="unit", target_id="d:0:L0:f:1", field="reading",
+                                   new=reading, client_id="reviewer"))
+    # What `GET /project` does: hand the standing derivation the effective records.
+    standing = status.unit_reviews(list(store.iter_units()), store.events())[  # type: ignore[attr-defined]
+        "d:0:L0:f:1"
+    ]
+    assert standing.fields["reading"].value == "う", "the reviewer's last reading is the record"
+    assert standing.kind == "checked", "two edits are decisions, not restorations"
+    assert standing.verified == ["reading"]
+
+
+def test_an_undo_through_the_store_reverses_the_counter(tmp_path: Path) -> None:
+    """The client marks its compensating event, and that mark is what makes it an undo."""
+    from kuzushiji_atlas import tables
+    from kuzushiji_atlas.review.store import ReviewRequest, Store
+    from kuzushiji_atlas.schema import Box, Document, Line, Page, ReviewState, Unit, UnitKind
+
+    directory = tmp_path / "d"
+    directory.mkdir()
+    tables.write(directory / "documents.parquet", [Document(id="d", title="t")], Document)
+    tables.write(directory / "pages.parquet",
+                 [Page(id="d:0", document_id="d", seq=0, image="i", width=10, height=10)], Page)
+    tables.write(directory / "lines.parquet",
+                 [Line(id="d:0:L0", page_id="d:0", seq=0, box=Box(x=1, y=1, w=5, h=5),
+                       text_raw="あ", text="あ")], Line)
+    tables.write(directory / "units.parquet",
+                 [Unit(id="d:0:L0:f:1", page_id="d:0", document_id="d", line_id="d:0:L0", seq=1,
+                       box=Box(x=1, y=1, w=5, h=5), reading="あ", text_source="あ",
+                       kind=UnitKind.CHAR, review=ReviewState.MACHINE)], Unit)
+
+    store = Store(directory)
+    first = store.record(ReviewRequest(target_type="unit", target_id="d:0:L0:f:1", field="reading",
+                                       new="い", client_id="reviewer"))
+    before = status.summarize(status.unit_reviews(list(store.iter_units()), store.events()).values())
+    assert before["checked"] == 1
+
+    # `Session.undo` posts the compensating event with the id of the event it reverses.
+    store.record(ReviewRequest(target_type="unit", target_id="d:0:L0:f:1", field="reading",
+                               new="あ", client_id="reviewer",
+                               evidence=f"undo of {first['review']['id']}"))
+    after = status.unit_reviews(list(store.iter_units()), store.events())["d:0:L0:f:1"]
+    assert after.kind == "machine", "the undo put the record back to what the detector wrote"
+    assert after.verified == []
+    assert status.summarize([after])["checked"] == 0
+
+    # And it survives a reload, because it is in the journal rather than in memory.
+    reloaded = Store(directory)
+    again = status.unit_reviews(list(reloaded.iter_units()), reloaded.events())["d:0:L0:f:1"]
+    assert again.kind == "machine" and again.verified == []
+
+
+def test_a_model_actor_is_not_a_decision() -> None:
+    """`schema.Review` says `actor` is a model name or a reviewer id, so the role is what decides.
+
+    A pipeline pass that records itself with the checkpoint's name as its actor has a nonempty actor
+    and is still not a person; counting it as one would let a rerun mark its own output reviewed.
+    """
+    from datetime import UTC, datetime
+
+    from kuzushiji_atlas.schema import Review
+
+    unit = schema_unit()
+    event = Review(id="e1", target_id=unit.id, field="reading", new="い", role="model",
+                   actor="rtdetr_r18vd-6e", at=datetime.now(UTC))
+    standing = status.unit_reviews([unit], [event])[unit.id]
+    assert standing.kind == "machine" and standing.verified == []
+
+    adjudicated = Review(id="e2", target_id=unit.id, field="review", new="adjudicated",
+                         role="adjudicator", actor="a1", at=datetime.now(UTC))
+    assert status.unit_reviews([unit], [adjudicated])[unit.id].kind == "checked"
