@@ -68,7 +68,12 @@ Step 2's measured limits, in short: of the 477 pages whose transcription is a bo
 117 have exactly as many ink columns as transcribed lines and 329 are within a quarter, and the
 per-column evidence gate leaves 53 pages that actually get boxes. A count match can still pair
 the wrong column with the wrong line, which is why the boxes are proposals and a reviewer settles them.
-The full numbers, the rejected rules and the reproduction commands are in `docs/reports/ainu-step2.md`.
+Of the 360 pages whose counts differ, 347 show more columns than lines; those extra columns were
+measured and have no single cause — most are lone detections outside the text block, and a second leaf
+the transcription does not cover accounts for part of the rest — so no threshold rule is proposed for
+them and the next step is a human check rather than another filter. The full numbers, the rejected
+rules, the candidate repairs and their costs, and the reproduction commands are in
+`docs/reports/ainu-step2.md`.
 
 ## The Ainu review workspace, which is not one of the plan's cards
 
