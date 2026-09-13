@@ -419,6 +419,56 @@ mismatch, and all 36,869 crops are on disk.
 T51's deliverables are committed: `docs/datasheet-template.md` with 22 placeholders,
 `README.ja.md`, `CITATION.cff` (validated) and `docs/reports/README.md`.
 
+### The Ainu review workspace, which is not one of the plan's cards either
+
+The human asked for a browsable project status, a workspace for manual feedback, and better source
+data, with corrections that can travel back to the project that publishes the records. The service
+side of that is built and measured; the interface is being built separately.
+
+**The correspondence is by identifier, and it resolves.** Every curated part in the source's
+`data/sources.yaml` carries the みんなで翻刻 `entry` id that the atlas stores in
+`source_refs["honkoku-data"]`, so a document maps to its publishing unit by looking that id up. All
+nine imported witnesses resolve, and the unit is the source's own addressing rule
+(`scripts/lib/sources.ts`: a witness with several parts is `<slug>-<part index>`), so `moshiogusa`'s two
+乾巻/坤巻 parts are `moshiogusa/ninjal-1` and `moshiogusa/ninjal-2`, and 龍谷大学's 蝦夷紀行 is
+`ezo-kiko/ryukoku-1`. Six of the nine already carry editorial corrections upstream.
+
+**The imported text is byte-identical to the source's.** Three pages of 蝦夷紀行 were compared against
+the source's own `data/raw/transcriptions/0916dafb…/`: the same characters, the same length, no
+transformation. The source identity a correction carries — the canvas and the checksum of the text —
+is therefore a real check rather than a formality, and a correction placed here is placed against text
+the source holds.
+
+**One correction was validated by the source's own code, end to end.** A correction to line 2 of that
+page (`林蔵` → `林藏`, the kind of thing a reviewer reads off the scan) was submitted to
+`aynumosir/ainu-records` at `f4ef768b` through its own `loadUnits`, `readCorrections` and
+`validateCorrections`:
+
+- `validated: true`, no conflicts;
+- the proposal resolved to unit `ezo-kiko/ryukoku-1`, page 2, canvas from the source's own entry
+  record;
+- the file draft is `data/editorial/corrections/ezo-kiko/ryukoku-1/p2.json`, containing the new
+  record with the records already there preserved;
+- the source revision is named, and no source file was written.
+
+The service exposes this as `POST /source-updates` with the selected page ids, which returns the
+adapter's answer including the file drafts; a page whose corrections are conflicted locally is refused
+before the native validator sees it, and a validator that cannot run returns `unverified` rather than
+looking validated.
+
+**Counts are derived from decisions.** A unit is human-checked only when the record currently shows a
+person's reading, identity or chosen review state; a detector box, a classifier reading and an imported
+`text_source` are baselines, not evidence, and a note, a dwell time or a crop adjustment is activity
+rather than verification. Authorship is gated on the event's role, because `schema.Review` records an
+`actor` as "model name or anonymous reviewer id" and a pipeline pass that names its checkpoint is not a
+person. Undo is recognised from the client's own `undo of <event id>` mark, so the counters move back
+with the record. The dashboard's quality figure is `unmeasured` until an audit sample is scored: an
+unchecked page has no measured precision, and printing 0% for it would invent one.
+
+**What is not measured yet.** The interface, and the human review that would turn these counts into
+scored decisions. The workspace can record corrections and a reviewer's notes today; whether the
+corrections are *right* is what T25/T26 annotate, and nothing here claims otherwise.
+
 ### The Ainu records' derived line boxes, which are not one of the plan's cards
 
 The アイヌ関連資料 records arrive as page transcriptions with no line boxes, so an alignment has nothing

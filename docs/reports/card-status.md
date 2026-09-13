@@ -70,6 +70,28 @@ per-column evidence gate leaves 53 pages that actually get boxes. A count match 
 the wrong column with the wrong line, which is why the boxes are proposals and a reviewer settles them.
 The full numbers, the rejected rules and the reproduction commands are in `docs/reports/ainu-step2.md`.
 
+## The Ainu review workspace, which is not one of the plan's cards
+
+The human asked for an intuitive project status, a workspace for manual feedback and better source
+data, with approved corrections representable in the publishing project's own review format. The
+service side is built; the interface is being built separately and is not counted here.
+
+What exists and is tested: the correspondence between the two projects by みんなで翻刻 entry id, which
+resolves all nine imported witnesses to the units the source actually addresses (`moshiugusa/ninjal-1`,
+`ezo-kiko/ryukoku-1`); a page-transcription correction layer that records what a correction replaces
+rather than rewriting the imported text, so it survives `apply`, `replay` and a reimport and renders as
+a one-line diff; status counts derived from decisions rather than activity, with an audit-scored rate or
+`unmeasured` and nothing in between; and endpoints for the dashboard, the page browser (including the
+pages the alignment never reached), the corrections editor and the source submission.
+
+Measured against the real project: the imported page text is byte-identical to
+`aynumosir/ainu-records`'s own, and one correction on a real page was validated by that project's own
+`validateCorrections` at `f4ef768b`, resolving to `ezo-kiko/ryukoku-1` page 2 and producing the file
+draft `data/editorial/corrections/ezo-kiko/ryukoku-1/p2.json` with the records already there preserved.
+No source file is written by any of it, and nothing is published: a human opens the pull request.
+
+What is missing is the interface and the reviewers, in that order.
+
 ## Cards that cannot be finished without people
 
 T23's acceptance, T25 and T26 are annotation work: the alignment's joint precision at a coverage is
