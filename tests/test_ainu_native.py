@@ -28,6 +28,10 @@ def source(tmp_path: Path) -> Path:
         target = root / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(upstream / relative, target)
+    adjustment_module = upstream / "scripts/lib/conversion-adjustments.ts"
+    if adjustment_module.exists():
+        shutil.copyfile(adjustment_module, root / "scripts/lib/conversion-adjustments.ts")
+        write_json(root / "data/editorial/conversion-adjustments.json", [])
     write_json(root / "data/editorial/transcriptions.json", [])
     write_json(root / "data/editorial/wordlist-layouts.json", {})
     write_json(root / "data/raw/manifest.json", {"harvestedAt": "fixture"})
