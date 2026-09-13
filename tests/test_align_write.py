@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from kuzushiji_atlas import align, tables
-from kuzushiji_atlas.schema import Box, Unit, UnitKind
+from kuzushiji_atlas.schema import Box, Line, Page, Unit, UnitKind
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -113,3 +113,18 @@ def test_a_write_takes_the_lock_and_writes(tmp_path: Path) -> None:
     assert tables.write(tmp_path / "units.parquet", rows, Unit) == 1
     assert tables.locked(tmp_path / "units.parquet").lock_path.name == ".units.parquet.lock"
     assert len(tables.read(tmp_path / "units.parquet", Unit)) == 1
+
+
+def test_an_empty_page_selection_aligns_nothing(tmp_path: Path) -> None:
+    """`pages=[]` selects no page: the `--limit 0` case must not run the whole dataset."""
+    page = Page(id="hl:one:0", document_id="doc", seq=0, canvas="c", image="i", width=10, height=10)
+    lines = [
+        Line(id="hl:one:0:L0", page_id="hl:one:0", seq=0, box=Box(x=0, y=0, w=10, h=10),
+             text_raw="あ", text="あ"),
+    ]
+    tables.write(tmp_path / "pages.parquet", [page], Page)
+    tables.write(tmp_path / "lines.parquet", lines, Line)
+
+    counts = align.run_directory(tmp_path, align.Run(name="empty"), pages=[])
+    assert counts["pages"] == 0 and counts["lines"] == 0 and counts["units"] == 0
+    assert not (tmp_path / "units.parquet").exists(), "nothing is detected and nothing is written"

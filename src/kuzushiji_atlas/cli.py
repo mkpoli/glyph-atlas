@@ -23,6 +23,7 @@ pilot_app = typer.Typer(help="Assemble and measure the pilot packages.", no_args
 eval_app = typer.Typer(help="Measure a prediction against adjudicated truth.", no_args_is_help=True)
 review_app = typer.Typer(help="Serve and apply editorial reviews.", no_args_is_help=True)
 audit_app = typer.Typer(help="Draw a blind audit sample and publish its precision.", no_args_is_help=True)
+ainu_app = typer.Typer(help="Derive line boxes for the アイヌ関連資料 records.", no_args_is_help=True)
 
 
 @app.callback()
@@ -529,6 +530,51 @@ def audit_report(
         typer.echo(markdown)
 
 
+@ainu_app.command("derive")
+def ainu_derive(
+    directory: Annotated[Path, typer.Argument(help="dataset directory of the imported records")] = Path("work/ainu-records"),
+    run: Annotated[str, typer.Option(help="run configuration under models/align/runs/<name>.yaml")] = "pilot-v1",
+    onnx: Annotated[Path | None, typer.Option(help="detector export to derive the columns with")] = None,
+    score: Annotated[float | None, typer.Option(help="detector score cutoff")] = None,
+    limit: Annotated[int | None, typer.Option(help="stop after this many pages")] = None,
+    align: Annotated[bool, typer.Option("--align/--no-align", help="place characters in the derived boxes")] = True,
+    cache: Annotated[Path | None, typer.Option(help="read and write the page detections here")] = None,
+) -> None:
+    """Give the transcribed lines boxes, then align them: the plan's step 2.
+
+    The boxes are a proposal: each one is the union of the ink columns the detector found, it is
+    written only where every column holds enough ink for the line it is paired with, and the line
+    records that the atlas derived it. A run that refuses a page withdraws the box an earlier run
+    wrote there, so a stricter run leaves nothing of a looser one behind.
+    """
+    from . import ainu
+    from . import align as align_module
+
+    if limit is not None and limit < 0:
+        raise typer.BadParameter(f"--limit must not be negative, got {limit}")
+    onnx_path = onnx or ainu.DEFAULT_ONNX
+    detector_score = score if score is not None else ainu.SCORE
+    pages = None
+    if limit is not None:
+        # `--limit 0` selects no page and derives nothing, rather than everything.
+        pages = [page.id for page in tables.Dataset(directory).read("pages")][:limit]
+        if not pages:
+            typer.echo("no page selected")
+            return
+    counts = ainu.derive_dataset(directory, pages=pages, cache=cache, onnx_path=onnx_path,
+                                 score=detector_score)
+    for name, value in counts.items():
+        typer.echo(f"{name:<14} {value:>10}")
+    if not align:
+        return
+    run_path = Path("models/align/runs") / f"{run}.yaml"
+    if not run_path.exists():
+        raise typer.BadParameter(f"{run_path} does not exist")
+    config = align_module.load_run(run_path, run)
+    for name, value in sorted(align_module.run_directory(directory, config, pages=pages).items()):
+        typer.echo(f"{name:<14} {value:>10}")
+
+
 @app.command()
 def export(
     datasets: Annotated[list[Path], typer.Argument(help="dataset directories to merge into the release")],
@@ -603,6 +649,7 @@ for name, module in (
     ("eval", eval_app),
     ("review", review_app),
     ("audit", audit_app),
+    ("ainu", ainu_app),
 ):
     app.add_typer(module, name=name)
 

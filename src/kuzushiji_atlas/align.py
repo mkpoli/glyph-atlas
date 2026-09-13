@@ -741,7 +741,12 @@ def run_directory(
     dataset = tables.Dataset(directory)
     if dataset.tables["lines"] is None or dataset.tables["pages"] is None:
         raise ValueError(f"{directory} needs lines and pages to align")
-    wanted_pages = set(pages) if pages else None
+    # `pages=[]` selects nothing and `pages=None` selects everything; `if pages` conflated them, so
+    # an empty selection — which is what `--limit 0` produces — ran the whole dataset.
+    wanted_pages = set(pages) if pages is not None else None
+    if wanted_pages is not None and not wanted_pages:
+        return {"pages": 0, "lines": 0, "units": 0, "groups": 0, "accepted": 0, "rejected": 0,
+                "failed": 0}
     lines_by_page: dict[str, list[Line]] = {}
     # A run over a handful of pages should not validate a million lines: the filter is applied to the
     # raw rows, and the row groups whose statistics cannot hold one of the pages are skipped.

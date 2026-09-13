@@ -35,56 +35,35 @@ machine, and which cannot be finished without people.
 
 The human asked for the アイヌ関連資料 project of みんなで翻刻 (nine witnesses, 658 canvases) to be
 brought into the atlas in three steps: get the data, improve it with the detector and classifier, add
-it here. Step 1 is done — `atlas import ainu-records` writes 9 documents, 658 pages, 658 page texts
-and 8,212 lines, validated, with the platform entry, the project, the witness slug and the db.aynu.org
-catalogue in `source_refs` and rights resolved per witness through the vocabulary (five eligible, four
-restricted). The lines carry no boxes, which is exactly the gap step 2 fills — and step 2 needs one thing the plan
-never had to build. Honkoku-Lines ships line boxes, so an alignment only has to place characters inside
-boxes that already exist; the Ainu records ship transcription text and nothing else, so there are no
-lines to align to. The transcription is page-level, so there are no line boxes to align to, and the first attempt to
-derive them failed for a reason worth recording: splitting ink at its vertical gaps produced 16 runs
-against 10 transcribed lines on the first page measured, because the detector breaks a line wherever
-the ink pauses. The measurement that followed says the derivation is possible after all, on a
-different rule: **one line per ink column**, ordered right to left. Over 24 pages of two witnesses
-that rule gives the transcribed line count exactly on 8 pages, within 25% on 15, and misses on one
-(ratios mostly 0.95 to 1.10). One witness, 龍谷大学's 蝦夷紀行, is nearly exact throughout (19 or 20
-columns against 19 or 20 lines); the other, 立命館's copy, is worse (8 against 8, 10 against 16, 24
-against 20), which suggests its pages are not laid out as one column per transcribed line.
+it here. **All three are done**, and `docs/reports/ainu-step2.md` is the report on the second.
 
-So: the Ainu records come in as documents, pages and transcribed lines with no boxes, and their
-character boxes wait on a per-page decision — derive line boxes from the columns where the count
-agrees, and leave the page unresolved where it does not, because a line box that stands for a
-different number of lines than the transcription has is worse than no box.
+Step 1 — `atlas import ainu-records` writes 9 documents, 658 pages, 658 page texts and 8,212 lines,
+validated, with the platform entry, the project, the witness slug and the db.aynu.org catalogue in
+`source_refs` and rights resolved per witness through the vocabulary (five eligible, four restricted).
+The lines carry no boxes, which is exactly the gap step 2 fills: Honkoku-Lines ships line boxes, so an
+alignment only has to place characters inside boxes that already exist, while the Ainu records ship
+transcription text and nothing else.
 
-### The census that decides how many pages can be derived
+Step 2 — `atlas ainu derive` derives those boxes. A vertical line of a woodblock print is a column of
+ink: the detector's characters group into columns read right to left, and a page's columns are paired
+with its transcribed lines when the counts agree and every column holds enough ink for its line. The
+rule and its two thresholds were measured on the pages, the census over all 658 pages is in
+`docs/reports/ainu-step2.md`, and the boxes are written as proposals — a line records that the atlas
+derived its box, a run that refuses a page withdraws what an earlier run wrote there, and a box a
+person set is never touched. Pages the derivation cannot pair keep their transcriptions and get no
+box, because a line box standing for a different number of lines than the transcription has is worse
+than none.
 
-`scripts/ainu_columns.py --all` measures every page the cache holds: it detects the characters,
-groups them into columns, and prints the column count beside the transcribed line count. The grouping
-rule is the one this section settled on, with the parameters the census fixed: a column is a run of
-characters that follow one another by at most half the median character width, two runs belong to one
-column when their centres are under nine tenths of that width apart, and the columns come back right
-to left. Both thresholds were measured rather than chosen — on a page of 蝦夷紀行 with ten visible
-lines and 195 detections, whose neighbouring columns of ink stand 8 to 22 px apart against a median
-character width of 30 px and whose line centres are 50 px apart. Two rules that look reasonable were
-tried on that geometry and rejected: comparing the facing edges of two runs merged all ten lines into
-one, because the white space between columns is only 12 px, and comparing every pair across runs did
-the same. Measured over all 658 pages (389 s, 0.59 s a page on the GPU):
+Step 3 — the character units the aligner places inside those boxes land in `work/ainu-records/units.parquet`
+under the pilot run's fingerprint, with the run's own confidence. The acceptance report records what
+they are worth; the derived line boxes are what this step delivers, and they are what a reviewer and a
+later alignment tuned on these pages need.
 
-- 658 pages, 9 witnesses: 334 within 25% of the transcribed line count, 119 exactly.
-- 477 pages carry a **body** transcription (four lines or more): 329 within 25%, **117 exactly**, and
-  the median ratio is 1.13. The other 181 pages carry a title, a shelfmark or nothing, and are not
-  evidence for or against the rule.
-- Per witness, the exact share is spread: 龍谷大学's 蝦夷紀行 12/15 exact (median 1.00), 立命館's copy
-  34/94 (1.07), the 9987c7 witness 51/55 (1.00) whose "lines" are catalogue entries, and one witness
-  0/38 (2.56), where the transcription covers a fraction of what the page shows.
-
-So the derivation is good enough to propose line boxes on **117 of the 477 body pages as they stand**,
-and on 329 of them within a quarter — which is not the same as being right. A page whose column count
-matches can still pair the wrong column with the wrong line, and the rule cannot tell. That is why the
-step-2 implementation, when it is written, writes the derived boxes as machine units for a reviewer
-rather than as line boxes the transcription then trusts: the count is a filter for which pages to
-propose on, and the reviewer's answer is what settles each page. The per-page numbers are in
-`work/ainu-records/columns.tsv`.
+Step 2's measured limits, in short: of the 477 pages whose transcription is a body rather than a title,
+117 have exactly as many ink columns as transcribed lines and 329 are within a quarter, and the
+per-column evidence gate leaves 53 pages that actually get boxes. A count match can still pair
+the wrong column with the wrong line, which is why the boxes are proposals and a reviewer settles them.
+The full numbers, the rejected rules and the reproduction commands are in `docs/reports/ainu-step2.md`.
 
 ## Cards that cannot be finished without people
 

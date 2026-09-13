@@ -1,15 +1,8 @@
-"""Derive line boxes for the アイヌ関連資料 transcriptions, and measure the derivation.
+"""Measure whether the transcribed lines of an アイヌ関連資料 page can be recovered as ink columns.
 
-The Ainu records arrive as page transcriptions: 8,212 lines of text and no boxes, because the platform
-transcribes a page and the atlas has nothing to align to. The plan's step 2 is to give those lines
-boxes. This script is the measurement that decides whether that is possible, and it is the one the
-plan's card status quotes.
-
-The rule: a vertical line of a woodblock print is a column of ink. The detector finds the characters,
-the characters group into columns that share a horizontal band, and the columns are read right to left.
-A page is then compared with its own transcription, which the platform splits into lines. The
-comparison is only meaningful for a page whose transcription covers the page; some pages carry a title
-and nothing else, and those are separated out rather than counted as failures.
+The rule, its thresholds and the reasons they are what they are live in `kuzushiji_atlas.ainu`; this
+script is the report over a dataset — how many pages' column counts match their transcribed line
+counts, witness by witness — and it is the measurement `docs/reports/card-status.md` quotes.
 
 Run from the repository root:
 
@@ -17,144 +10,48 @@ Run from the repository root:
     .venv/bin/python scripts/ainu_columns.py --pages 18 --histogram
     .venv/bin/python scripts/ainu_columns.py --witness hk:0916dafb80cdc48ca7687afcad4a4f35 --pages 8
 
-The script is a report: it writes no table and changes no import. Nothing here is a test, and the
-tests never reach the network or the detector.
+It writes no table and changes no import; `atlas ainu derive` is the command that writes line boxes.
+Nothing here is a test, and the tests never reach the network or the detector.
 """
 
 from __future__ import annotations
 
 import argparse
-import csv
 import statistics
 import sys
 import time
 from collections import Counter
 from pathlib import Path
 
-from kuzushiji_atlas import detect, images, tables
+from kuzushiji_atlas import ainu, detect, images, tables
 from kuzushiji_atlas.schema import Box, Line, Page
 
-ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_DATASET = ROOT / "work" / "ainu-records"
-DEFAULT_ONNX = ROOT / "models" / "detector" / "artifacts" / "detector.onnx"
-#: The operating point of the pilot run: the detector's score cutoff.
-SCORE = 0.02
-#: A column is a run of detections whose centres step by no more than this share of the median width.
-GAP_RATIO = 0.5
-#: Two such runs are one column when their centres are closer than this share of the median width.
-MERGE_RATIO = 0.9
-#: A gap of this share of the page's width or more separates two blocks of text, such as a spread's
-#: two leaves. Only the widest gaps are cut, so a crowded text block stays one region.
-REGION_SHARE = 0.05
-#: A transcription of fewer than this many lines names a title or a caption rather than the page.
-BODY_LINES = 4
+SCORE = ainu.SCORE
+GAP_RATIO = ainu.GAP_RATIO
+MERGE_RATIO = ainu.MERGE_RATIO
+REGION_SHARE = ainu.REGION_SHARE
+BODY_LINES = ainu.BODY_LINES
+columns_of = ainu.columns_of
+regions_of = ainu.regions_of
+histogram = ainu.histogram
 
 
-def columns_of(boxes: list[Box], gap_ratio: float = GAP_RATIO,
-               merge_ratio: float = MERGE_RATIO) -> list[list[int]]:
-    """The detection indices grouped into columns, right to left.
+def measure_page(page: Page, lines: list[Line], detector: detect.Detector,
+                 args: argparse.Namespace, boxes: list[Box] | None = None) -> tuple[dict, list[Box]]:
+    """One measured page: what the transcription holds, what the columns say, and the detections.
 
-    A column is a run of detections whose centres follow one another by no more than `gap_ratio` of
-    the page's median character width, which is the step from one character to the next inside a
-    line. Two runs are then merged when their centres are closer than `merge_ratio` of that width,
-    because a line whose characters lean or thin out pauses by more than a step without ending.
-    The distance is a share of the width rather than a count of pixels because the witnesses are
-    scanned at 1,000 to 6,500 pixels across. Runs come back in reading order: rightmost first.
+    `boxes` are detections already in hand, from a cache or from the caller, and the detector is left
+    alone when they are given: comparing two grouping rules should not run the detector twice.
     """
-    if not boxes:
-        return []
-    width = statistics.median(box.w for box in boxes)
-    centre_of = lambda index: boxes[index].x + boxes[index].w / 2
-    order = sorted(range(len(boxes)), key=centre_of)
-    runs: list[list[int]] = [[order[0]]]
-    for index in order[1:]:
-        if centre_of(index) - centre_of(runs[-1][-1]) <= width * gap_ratio:
-            runs[-1].append(index)
-        else:
-            runs.append([index])
-    # Two runs are one line when their centres are less than a character apart. The comparison is
-    # between the runs' means, and the threshold is a whole median width rather than the step, because
-    # a line whose characters lean or thin out pauses by more than a step without ending.
-    #
-    # Two other rules were measured on a page of 蝦夷紀行 with ten visible lines and 195 detections,
-    # whose neighbouring columns of ink stand 8 to 22 px apart against a median character width of 30:
-    # comparing the facing edges merged all ten lines into one column (the inter-column white space is
-    # only 12 px), and comparing every pair across runs did the same. The centres of those ten lines
-    # are 50 px apart, which is what separates them.
-    merged: list[list[int]] = [runs[0]]
-    for run in runs[1:]:
-        here = statistics.mean(centre_of(index) for index in run)
-        there = statistics.mean(centre_of(index) for index in merged[-1])
-        if here - there < width * merge_ratio:
-            merged[-1].extend(run)
-        else:
-            merged.append(run)
-    # The runs were built from the left, and a vertical line is read from the right.
-    merged.reverse()
-    return merged
-
-
-def regions_of(boxes: list[Box], gap_ratio: float, share: float) -> list[list[Box]]:
-    """The page's detections split where the columns stop, so a spread's leaves are counted apart.
-
-    A double-page scan holds a text block on one leaf and often cataloguing marks on the other, and a
-    capture of two facing pages holds two text blocks. A gap of `share` of the page width or more
-    between neighbouring columns separates them, which no space inside a line reaches.
-    """
-    if not boxes:
-        return []
-    width = statistics.median(box.w for box in boxes)
-    right = max(box.x + box.w for box in boxes)
-    cut = max(width * 3.0, right * share)
-    order = sorted(boxes, key=lambda box: -(box.x + box.w / 2))
-    chunks: list[list[Box]] = [[order[0]]]
-    edge = order[0].x + order[0].w / 2
-    for box in order[1:]:
-        centre = box.x + box.w / 2
-        if centre < edge - cut:
-            chunks.append([])
-        chunks[-1].append(box)
-        edge = centre
-    return chunks
-
-
-def histogram(boxes: list[Box], width: int = 100) -> str:
-    """A one-line picture of where the ink sits across the page, for eyeballing a grouping."""
-    if not boxes:
-        return "(no detections)"
-    right = max(box.x + box.w for box in boxes)
-    bins = [0] * width
-    for box in boxes:
-        bins[min(width - 1, int((box.x + box.w / 2) / max(1, right) * width))] += 1
-    peak = max(bins) or 1
-    return "".join(" .:-=+*#@"[min(8, round(value / peak * 8))] for value in bins)
-
-
-def page_rows(page: Page, lines: list[Line], detector: detect.Detector,
-              args: argparse.Namespace) -> tuple[dict, list[Box]]:
-    """One measured page: what the transcription holds, what the columns say, and the detections."""
-    text_lines = [line for line in lines if (line.text or "").strip()]
-    found = detector.boxes(images.path_for(page.image))
-    boxes = [box for box, _ in found if box.w > 0 and box.h > 0]
-    grouped = columns_of(boxes, args.gap_ratio, args.merge_ratio)
-    regions = regions_of(boxes, args.gap_ratio, args.region_share)
-    region_columns = [len(columns_of(region, args.gap_ratio, args.merge_ratio)) for region in regions]
-    row = {
-        "page_id": page.id,
-        "document_id": page.document_id,
-        "width": page.width,
-        "height": page.height,
-        "characters": len(boxes),
-        "columns": len(grouped),
-        "regions": len(regions),
-        "region_columns": ",".join(str(value) for value in region_columns),
-        "largest_region_columns": max(region_columns) if region_columns else 0,
-        "lines": len(text_lines),
-        "text_lines": sum(len(line.text or "") for line in text_lines),
-        "text_characters": sum(len(line.text or "") for line in text_lines),
-        "body": int(len(text_lines) >= args.body_lines),
-        "title": (text_lines[0].text or "")[:40] if text_lines else "",
-    }
+    if boxes is None:
+        found = detector.boxes(images.path_for(page.image))
+        boxes = [box for box, _ in found if box.w > 0 and box.h > 0]
+    derivation = ainu.derive_page(page, lines, boxes, gap_ratio=args.gap_ratio,
+                                  merge_ratio=args.merge_ratio, body_lines=args.body_lines,
+                                  min_per_character=args.min_per_character)
+    row = ainu.page_row(derivation, page, lines, body_lines=args.body_lines,
+                        min_per_character=args.min_per_character, gap_ratio=args.gap_ratio,
+                        merge_ratio=args.merge_ratio, region_share=args.region_share)
     return row, boxes
 
 
@@ -177,6 +74,14 @@ def summarize(rows: list[dict], args: argparse.Namespace) -> str:
     counters = Counter((row["columns"] == row["lines"], row["body"]) for row in rows)
     out.append(f"exact on body pages {counters[(True, 1)]}/{counters[(True, 1)] + counters[(False, 1)]}, "
                f"exact on title-only pages {counters[(True, 0)]}/{counters[(True, 0)] + counters[(False, 0)]}")
+    out.append(f"pages the derivation would pair {sum(row['paired'] for row in rows)} "
+               f"(count match {sum(1 for row in rows if row['columns'] == row['lines'] and row['body'])}, "
+               f"evidence gate {args.min_per_character} detections a character)")
+    paired = [row for row in rows if row["paired"]]
+    if paired:
+        evidence = sorted(row["detections_per_character"] for row in paired)
+        out.append(f"paired pages: median evidence {statistics.median(evidence):.2f} detections a "
+                   f"character, from {evidence[0]:.2f} to {evidence[-1]:.2f}")
     out.append("")
     out.append("per witness, body pages: exact / within 25% / pages, median ratio")
     for document in sorted({row["document_id"] for row in rows}):
@@ -195,8 +100,8 @@ def summarize(rows: list[dict], args: argparse.Namespace) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
-    parser.add_argument("--onnx", type=Path, default=DEFAULT_ONNX)
+    parser.add_argument("--dataset", type=Path, default=ainu.DEFAULT_DATASET)
+    parser.add_argument("--onnx", type=Path, default=ainu.DEFAULT_ONNX)
     parser.add_argument("--pages", type=int, default=18, help="how many pages to measure")
     parser.add_argument("--all", action="store_true", help="measure every page the cache holds")
     parser.add_argument("--witness", action="append", default=[], help="only this document id")
@@ -205,10 +110,15 @@ def main() -> int:
     parser.add_argument("--region-share", type=float, default=REGION_SHARE)
     parser.add_argument("--body-lines", type=int, default=BODY_LINES,
                         help="a transcription of at least this many lines counts as a body")
+    parser.add_argument("--min-per-character", type=float, default=ainu.MIN_DETECTIONS_PER_CHARACTER,
+                        help="detections a transcribed character needs before a page is paired")
     parser.add_argument("--score", type=float, default=SCORE)
     parser.add_argument("--histogram", action="store_true", help="print the ink profile of each page")
     parser.add_argument("--out", type=Path, default=None, help="write the per-page rows here as TSV")
     parser.add_argument("--providers", default=None, help="comma-separated onnxruntime providers")
+    parser.add_argument("--cache", type=Path, default=None,
+                        help="read and write the page detections here, so rules can be compared "
+                             "without running the detector again")
     args = parser.parse_args()
 
     dataset = tables.Dataset(args.dataset)
@@ -219,6 +129,8 @@ def main() -> int:
     lines_by_page: dict[str, list[Line]] = {}
     for line in dataset.read("lines"):
         lines_by_page.setdefault(line.page_id, []).append(line)
+    for found in lines_by_page.values():
+        found.sort(key=lambda line: (line.seq if line.seq is not None else 0))
 
     if not args.all:
         # One page per document first, so a sample of n pages covers as many witnesses as it can.
@@ -233,18 +145,52 @@ def main() -> int:
                 chosen.append(page)
         pages = chosen[: args.pages]
 
-    detector = detect.Detector(
-        args.onnx,
-        score=args.score,
-        providers=args.providers.split(",") if args.providers else None,
-    )
-    print(f"{len(pages)} pages from {len({p.document_id for p in pages})} witnesses, score {args.score}, "
-          f"gap {args.gap_ratio} x median width, merge {args.merge_ratio}, providers {detector.providers()}")
+    settings = ainu.detector_settings(args.onnx, score=args.score)
+    found_map = ainu._read_cache(args.cache, settings=settings)
+    stated = ainu.settings_of(args.cache)
+    if args.cache is not None and args.cache.exists():
+        if stated is None and found_map:
+            # A cache written before headers existed states nothing. It is used, because refusing it
+            # would mean re-running the detector over a dataset that already paid for it, and the run
+            # records the settings it is now filed under so the next check is a real one.
+            print(f"{args.cache} states no settings; filed under score {args.score}", file=sys.stderr)
+        elif stated != settings:
+            print(f"{args.cache} states {stated}, not {settings}; not read", file=sys.stderr)
+            found_map = {}
+    if found_map:
+        print(f"{len(found_map)} pages of detections read from {args.cache}", file=sys.stderr)
+    detector: detect.Detector | None = None
+    missing = [page for page in pages if found_map.get(page.id) is None]
+    if missing:
+        detector = detect.Detector(
+            args.onnx,
+            score=args.score,
+            providers=args.providers.split(",") if args.providers else None,
+        )
+    # Every parameter the counts depend on is printed, because two censuses that differ in one of
+    # them are not comparable and a TSV alone cannot say which rule wrote it.
+    parameters = (f"score {args.score} gap {args.gap_ratio} merge {args.merge_ratio} "
+                  f"body {args.body_lines} min-per-character {args.min_per_character} "
+                  f"region-share {args.region_share} onnx {settings['sha256'][:12] or 'missing'} "
+                  f"providers {detector.providers() if detector else 'cache covers every page'}")
+    print(f"{len(pages)} pages from {len({p.document_id for p in pages})} witnesses, {parameters}")
+    print(f"parameters: {parameters}")
+    if found_map:
+        print(f"detections: {len(found_map)} cached of {len(pages)} requested, "
+              f"{len(missing)} to detect")
 
     rows: list[dict] = []
     started = time.monotonic()
     for index, page in enumerate(pages, start=1):
-        row, boxes = page_rows(page, lines_by_page.get(page.id, []), detector, args)
+        fresh = found_map.get(page.id) is None
+        row, boxes = measure_page(page, lines_by_page.get(page.id, []), detector, args,
+                                  boxes=found_map.get(page.id))
+        if fresh and args.cache is not None:
+            # Persisted as it is computed, so an interrupted census is still worth something.
+            if not args.cache.exists():
+                ainu._write_cache(args.cache, {}, settings=settings)
+            ainu.append_cache(args.cache, page.id, boxes)
+        found_map[page.id] = boxes
         rows.append(row)
         if args.all:
             if index % 25 == 0 or index == len(pages):
@@ -255,7 +201,7 @@ def main() -> int:
         print(f"{row['page_id']} {row['width']}x{row['height']} chars {row['characters']:>4} "
               f"columns {row['columns']:>3} lines {row['lines']:>3} "
               f"ratio {row['columns'] / row['lines'] if row['lines'] else float('nan'):5.2f} "
-              f"body {row['body']}")
+              f"body {row['body']} paired {row['paired']}")
         if args.histogram:
             print("   " + histogram(boxes))
     if args.all:
@@ -266,12 +212,11 @@ def main() -> int:
     print()
     print(summarize(rows, args))
     if args.out:
-        args.out.parent.mkdir(parents=True, exist_ok=True)
-        with args.out.open("w", encoding="utf-8", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=list(rows[0]), delimiter="\t", lineterminator="\n")
-            writer.writeheader()
-            writer.writerows(rows)
-        print(f"-> {args.out}")
+        written = ainu.write_columns(args.out, rows)
+        print(f"-> {args.out} ({written} rows)")
+    if args.cache is not None:
+        ainu._write_cache(args.cache, found_map, [page.id for page in pages], settings=settings)
+        print(f"-> {args.cache} ({len(found_map)} pages of detections)")
     return 0
 
 
