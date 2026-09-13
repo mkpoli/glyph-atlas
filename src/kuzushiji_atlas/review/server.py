@@ -601,6 +601,10 @@ def create_app(directory: Path, *, source: Path | str | None = None) -> FastAPI:
         """Record a unit drawn on a line. The id is `{line_id}:m{n}`."""
         return store.create_unit(request)
 
+    from .atlas import router as atlas_router
+
+    app.include_router(atlas_router(store))
+
     # The built review interface (`apps/review`, `bun run build`), mounted last so that every API
     # path above keeps its own route; without a build the service is the API alone.
     interface = Path(__file__).resolve().parents[3] / "apps" / "review" / "dist"

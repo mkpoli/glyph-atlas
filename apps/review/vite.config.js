@@ -2,7 +2,7 @@ import { defineConfig } from 'vite'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 
 /** The API paths the review service owns; the dev server forwards them to it. */
-const API = ['/project', '/source-updates', '/corrections', '/documents', '/pages', '/images', '/lines', '/units', '/queue', '/reviews', '/openapi.json']
+const API = ['/atlas', '/lines', '/openapi.json']
 
 const target = process.env.ATLAS_REVIEW_API ?? 'http://127.0.0.1:8770'
 

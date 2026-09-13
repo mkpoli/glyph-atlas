@@ -491,6 +491,16 @@ class Store:
     def revision(self, target_id: str) -> int:
         return self.revisions([target_id]).get(target_id, 0)
 
+    def unit_snapshot(self, unit_id: str | None = None) -> list[tuple[Unit, int]]:
+        """Read each unit and its revision from the same database snapshot."""
+        with self._lock, self._connection() as conn:
+            rows = conn.execute(
+                "SELECT units.data, coalesce(revisions.revision, 0) AS revision FROM units "
+                "LEFT JOIN revisions ON revisions.target_id = units.id "
+                "WHERE (? IS NULL OR units.id = ?) ORDER BY units.id", (unit_id, unit_id),
+            )
+            return [(Unit.model_validate_json(row["data"]), row["revision"]) for row in rows]
+
     def counts(self) -> dict[str, dict[str, int]]:
         """Per document: pages, lines, active units and active units a reviewer has touched."""
         lines, units, reviewed = self._group_counts()
@@ -594,6 +604,59 @@ class Store:
             state = self._state_for(conn, event)
             change = _change(state, event, guard=False)
             return self._commit(conn, change, state, request.client_id, request.idempotency_key)
+
+    def record_batch(self, requests: list[ReviewRequest]) -> list[dict[str, Any]]:
+        """Record an entire review round atomically, including its projected state."""
+        results = []
+        with self._lock, self._connection() as conn, self._transaction(conn):
+            for request in requests:
+                duplicate = self._by_key(conn, request.client_id, request.idempotency_key)
+                if duplicate is not None:
+                    if (duplicate["target_id"] != request.target_id
+                            or duplicate["field"] != request.field
+                            or json.loads(duplicate["new"]) != request.new
+                            or duplicate["evidence"] != request.evidence):
+                        raise BadRequest("This submission ID already belongs to another answer.")
+                    results.append(self._result(conn, duplicate, duplicate=True))
+                    continue
+                revision = self._revision(conn, request.target_id)
+                if request.base_revision is not None and request.base_revision != revision:
+                    raise Conflict("stale-revision", target_type=request.target_type,
+                                   target_id=request.target_id, base_revision=request.base_revision,
+                                   revision=revision,
+                                   state=self._state_dump(conn, request.target_type, request.target_id))
+                self._check_target(conn, request)
+                event = Review(id="", target_type=request.target_type, target_id=request.target_id,
+                               field=request.field, new=request.new, role="reviewer",
+                               actor=request.client_id, evidence=request.evidence, at=datetime.now(UTC))
+                state = self._state_for(conn, event)
+                change = _change(state, event, guard=False)
+                seq = self._last_seq(conn) + 1
+                event = change.event.model_copy(update={"id": f"rv{seq:08d}"})
+                change.event = event
+                conn.execute(
+                    "INSERT INTO events (id, target_type, target_id, field, old, new, role, actor, "
+                    "evidence, at, client_id, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (event.id, event.target_type, event.target_id, event.field, _json(event.old),
+                     _json(event.new), event.role, event.actor, event.evidence, event.at.isoformat(),
+                     request.client_id or "", request.idempotency_key),
+                )
+                self._persist(conn, state, change)
+                self._bump(conn, event.target_id)
+                result = self._build_result(conn, event, change, state)
+                conn.execute("UPDATE events SET result = ? WHERE id = ?", (_json(result), event.id))
+                self._set_meta(conn, "state_seq", str(seq))
+                results.append(result)
+        return results
+
+    def submission_results(self, client_id: str, prefix: str) -> list[dict[str, Any]]:
+        """Read persisted results for one client's submission, including after a restart."""
+        with self._lock, self._connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM events WHERE client_id = ? AND substr(idempotency_key, 1, ?) = ? "
+                "ORDER BY seq", (client_id, len(prefix), prefix),
+            )
+            return [json.loads(row["result"]) for row in rows if row["result"]]
 
     def create_line(self, request: LineRequest) -> dict[str, Any]:
         """Record a line a detector missed and return it with its revision."""
