@@ -228,8 +228,26 @@ character-level figure is quoted.
 
 The fix belongs in `align.containers_of`, and this project already has the rule it needs: the Ainu
 derivation groups detections into columns by a gap measured against the page's median character width
-(`ainu.columns_of`), which is the same operation done properly. Sorting by column and then by y, using
-a bucket no narrower than the character width, restores reading order on the pages checked.
+(`ainu.columns_of`), which is the same operation done properly. Ordering a line's detections by
+`columns_of`'s own grouping and then by y inside each column, and leaving them as they are when no
+column can be formed, is the whole change. Measured over the 759 lines that hold four or more in-line
+detections, the detections advance down the column for **5 of them today and 738 under the fix** — 1
+percent against 97. The 21 that still do not are lines the grouping reads as two columns, which is a
+different question from this one.
+
+Two things make this worth trusting rather than asserting. It is checked against the derivation's own
+grouping, not only against the y sequence: over all 186,943 detections on the 658 pages, sorting by
+`columns_of`'s columns breaks the columns' right-to-left order nowhere, so the change cannot move a
+detection into the neighbouring column. And on the same crops the classifier's top class is the unit's
+own code point for **66 of 393 today and 98 of 393 under the fix** — 17 percent against 25. The
+classifier is weak on this hand, which the suggestion note below measures separately, so the second
+figure corroborates the first rather than carrying it: the same crops, re-paired by the fix, are read as
+the characters they claim to be more often, and the geometric evidence is the one that does not depend
+on a model at all.
+
+What the fix costs is a re-alignment: unit ids carry the run fingerprint, so every unit's id moves and
+the held-out group's 166,058 units are rebuilt with it. That is a decision about the M2 numbers, not a
+correction to them, and it is why this is recorded with its measurements rather than applied.
 
 Two further limits are worth stating plainly.
 

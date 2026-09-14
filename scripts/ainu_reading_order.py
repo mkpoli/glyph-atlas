@@ -85,10 +85,68 @@ def column_bucketed(boxes: list[Box], width: float, share: float) -> list[Box]:
             for box in sorted(buckets[key], key=lambda b: b.y + b.h / 2)]
 
 
+def column_order(boxes: list[Box]) -> list[Box]:
+    """The candidate fix: the derivation's own column grouping, then y inside each column.
+
+    `ainu.columns_of` is the grouping this project already trusts for the same job — a column is a run
+    of detections whose centres follow one another by no more than a share of the page's median
+    character width — so the fix reuses it rather than inventing a second threshold. `containers_of`
+    would call it on the line's detections instead of sorting them by raw x.
+    """
+    from kuzushiji_atlas import ainu
+
+    ordered: list[Box] = []
+    for column in ainu.columns_of(boxes):
+        ordered.extend(sorted((boxes[index] for index in column), key=lambda b: b.y + b.h / 2))
+    return ordered
+
+
+def candidate_fix(lines: dict[str, Line], detections: dict[str, list[Box]],
+                  units: list[Unit]) -> None:
+    """What the fix changes, over every line that holds four or more detections."""
+    by_line: dict[str, list[Unit]] = defaultdict(list)
+    for unit in units:
+        if unit.box is not None and unit.line_id:
+            by_line[unit.line_id].append(unit)
+
+    before = after = sample = 0
+    for line_id in by_line:
+        line = lines.get(line_id)
+        if line is None or line.box is None:
+            continue
+        boxes = [box for box in detections.get(line.page_id, [])
+                 if line.box.x <= box.x + box.w / 2 <= line.box.x + line.box.w
+                 and line.box.y <= box.y + box.h / 2 <= line.box.y + line.box.h]
+        if len(boxes) < 4:
+            continue
+        sample += 1
+        if _advancing(sorted(boxes, key=lambda b: (-(b.x + b.w / 2), b.y + b.h / 2))):
+            before += 1
+        if _advancing(column_order(boxes)):
+            after += 1
+
+    print("the candidate fix, over the lines whose units and detections correspond:")
+    print(f"  lines with four or more in-line detections: {sample}")
+    print(f"  detections advancing as they arrive today:  {before} ({before / sample:.0%})")
+    print(f"  detections advancing in column order:       {after} ({after / sample:.0%})")
+    residual = sample - after
+    if residual:
+        print(f"  {residual} still do not advance, which is what a line split into two columns looks "
+              f"like when the two are read one after the other")
+    print()
+
+
+def _advancing(boxes: list[Box]) -> bool:
+    ys = [box.y + box.h / 2 for box in boxes]
+    return all(b >= a for a, b in pairwise(ys))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", type=Path, default=Path("work/ainu-records"))
     parser.add_argument("--page", default=None, help="a page to show in detail")
+    parser.add_argument("--fix", action="store_true",
+                        help="also report what the candidate fix would change")
     args = parser.parse_args()
 
     lines, units, detections, _pages = load(args.dataset)
@@ -105,6 +163,8 @@ def main() -> int:
     for line_id, backtracks, steps in worst[:5]:
         print(f"  {line_id[-24:]}  {backtracks}/{steps} steps go back up")
     print()
+    if args.fix:
+        candidate_fix(lines, detections, units)
 
     page_id = args.page
     if page_id is None:
