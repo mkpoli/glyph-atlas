@@ -91,6 +91,8 @@ export async function boot(config) {
           ...process.env,
           KUZUSHIJI_ATLAS_CACHE: join(config.directory, 'cache'),
           PYTHONPATH: join(ROOT, 'src'),
+          ATLAS_OCR_MODEL_DIR: join(config.directory, 'models'),
+          ATLAS_CLASSIFIER_MODEL: join(config.directory, 'no-classifier.onnx'),
         },
         stdout: 'pipe',
         stderr: 'pipe',

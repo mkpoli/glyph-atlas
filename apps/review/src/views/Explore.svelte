@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte'
   import Glyph from '../components/Glyph.svelte'
-  import { catalogue, randomSeed, number } from '../lib/client.js'
+  import { catalogue, character, randomSeed, number } from '../lib/client.js'
   let { flagged = false, inspect } = $props()
   let data = $state(null), items = $state([]), error = $state(''), loading = $state(true)
   let reading = $state(''), search = $state(''), offset = $state(0), seed = $state(randomSeed())
@@ -16,6 +16,14 @@
       data = result; items = append ? [...items, ...result.items] : result.items
     } catch (e) { if (!closed) error = e.message }
     finally { if (!closed && id === requestId) loading = false }
+  }
+  async function updateItem(id) {
+    try {
+      const updated = await character(id)
+      items = items.flatMap(item => item.id !== id ? [item] : flagged && updated.state !== 'flagged' ? [] : [updated])
+      const summary = await catalogue({ reading, group: filter, state: flagged ? 'flagged' : 'all', limit: 1 })
+      if (!closed) data = { ...data, counts: summary.counts, categories: summary.categories, total: summary.total, available: summary.available }
+    } catch (e) { if (!closed) error = e.message }
   }
   function select(value) { reading = value; offset = 0; categoryOpen = false; load() }
   function shuffle() { seed = randomSeed(); offset = 0; load() }
@@ -39,7 +47,7 @@
   {#if error}<div class="error-message" role="alert">{error}<button onclick={() => load()}>Retry</button></div>{/if}
   <div class="glyph-grid" aria-label={flagged ? 'Flagged characters' : 'Character collection'} aria-busy={loading}>
     {#if loading && !items.length}{#each Array(32) as _}<div class="glyph-skeleton"></div>{/each}
-    {:else}{#each display as item, i (item.id)}<button class="glyph-tile" onclick={() => inspect(item.id)} aria-label={`Inspect ${item.label}`}><span class="tile-reading">{item.label}</span><Glyph {item} eager={i < 24} /><span class="tile-footer"><span class="status-dot" class:checked={item.state === 'checked'} class:flagged={item.state === 'flagged'}></span><span>{String(i + 1).padStart(2, '0')}</span><span class="tile-arrow">↗</span></span></button>{/each}{/if}
+    {:else}{#each display as item, i (item.id)}<button class="glyph-tile" onclick={() => inspect(item.id, null, items, updateItem)} aria-label={`Inspect ${item.label}`}><span class="tile-reading">{item.label}</span><Glyph {item} eager={i < 24} /><span class="tile-footer"><span class="status-dot" class:checked={item.state === 'checked'} class:flagged={item.state === 'flagged'}></span><span>{String(i + 1).padStart(2, '0')}</span><span class="tile-arrow">↗</span></span></button>{/each}{/if}
   </div>
   {#if !loading && !display.length}<div class="empty"><span class="empty-mark">{flagged ? '✓' : '∅'}</span><h2>{flagged ? 'Nothing flagged.' : 'No characters here.'}</h2><a href="#/review" class="primary">Start a round →</a></div>{/if}
   {#if data && items.length < data.total && !loading}<div class="load-more"><button onclick={() => { offset = items.length; load(true) }}>More characters ↓</button></div>{/if}

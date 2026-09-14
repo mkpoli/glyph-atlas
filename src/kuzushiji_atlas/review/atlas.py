@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import random
 import threading
 import unicodedata
@@ -87,6 +88,8 @@ class Answer(BaseModel):
     revision: int = Field(ge=0)
     image_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     verdict: Literal["match", "wrong", "unsure"]
+    issue: Literal["reading", "crop", "merged", "blank", "unclear", "other"] | None = None
+    correction: str | None = Field(default=None, max_length=32)
 
 
 class Round(BaseModel):
@@ -108,9 +111,10 @@ class CharacterEdit(BaseModel):
     client_id: str = Field(min_length=1, max_length=128)
     revision: int = Field(ge=0)
     image_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    reading: str = Field(min_length=1, max_length=32)
+    reading: str | None = Field(default=None, min_length=1, max_length=32)
     verdict: Literal["match", "wrong", "unsure"]
-    issue: Literal["reading", "crop", "merged", "blank", "other"] = "reading"
+    issue: Literal["reading", "crop", "merged", "blank", "unclear", "other"] = "reading"
+    correction: str | None = Field(default=None, max_length=32)
     note: str = Field(default="", max_length=2000)
     box: Box | None = None
 
@@ -120,6 +124,7 @@ def router(store: Store) -> APIRouter:
 
     api = APIRouter()
     image_root = images.images_root()
+    inference_failures: set[str] = set()
 
     @lru_cache(maxsize=2)
     def url_index(stamp: int) -> dict:
@@ -167,6 +172,7 @@ def router(store: Store) -> APIRouter:
             standing = status.unit_reviews([unit], store.events())[unit.id]
             state = review_state(standing.human_review)
         source = image_source(unit)
+        # Page-backed crops share a source checksum; revision and box pin the crop itself.
         digest = source[0].stem if source else None
         return {"id": unit.id, "label": label(unit), "reading": unit.reading,
                 "script": unit.script, "jibo": unit.jibo, "revision": revision,
@@ -266,39 +272,89 @@ def router(store: Store) -> APIRouter:
             raise HTTPException(404, "This line is unavailable.")
         return {**line.model_dump(mode="json"), "revision": store.revision(line_id)}
 
+    @api.get("/atlas/characters/{unit_id}/suggestions")
+    def suggestions(unit_id: str, revision: int, image_sha256: str) -> dict:
+        unit, current = one(unit_id)
+        source = image_source(unit)
+        if current != revision or not source or source[0].stem != image_sha256:
+            raise HTTPException(409, "This crop changed. Reload the character.")
+        try:
+            from .suggestions import infer
+            path, box = source
+            result = infer(str(path), path.stat().st_mtime_ns, box)
+        except Exception as error:  # noqa: BLE001 — optional inference must not block review
+            kind = type(error).__name__
+            if kind not in inference_failures:
+                inference_failures.add(kind)
+                # Log a diagnostic once without exception text, which can contain private paths.
+                logging.getLogger(__name__).warning("OCR suggestions unavailable (%s)", kind)
+            return {"status": "unavailable", "candidates": [], "engines": []}
+        return {**result, "revision": revision, "image_sha256": image_sha256}
+
+    def correction_text(value: str | None, issue: str | None) -> str | None:
+        text = unicodedata.normalize("NFC", value.strip()) if value else None
+        if text and (not single_character(text) and issue != "merged"):
+            raise BadRequest("Choose one character, or report joined characters.")
+        if text and issue not in ("reading", "merged"):
+            raise BadRequest("A reading suggestion belongs to a reading or joined-character issue.")
+        return text
+
+    def repeat(previous: list[dict]) -> dict:
+        return {"results": [{**r, "duplicate": True} for r in previous]}
+
     @api.post("/atlas/rounds")
     def submit(round: Round) -> dict:
         if len({answer.id for answer in round.answers}) != len(round.answers):
             raise BadRequest("A character can appear only once in a round.")
         prefix = f"quiz:{round.id}:"
         previous = store.submission_results(round.client_id, prefix)
-        if previous and {r["target_id"] for r in previous} != {a.id for a in round.answers}:
-            raise BadRequest("This round was already submitted with different characters.")
+        if previous:
+            reviews = [r for r in previous if r["field"] == "review"]
+            if {r["target_id"] for r in reviews} != {a.id for a in round.answers}:
+                raise BadRequest("This round was already submitted with different characters.")
+            for answer in round.answers:
+                old = json.loads(next(r for r in reviews if r["target_id"] == answer.id)["review"]["evidence"])
+                if (old["label"] != round.label or old["verdict"] != answer.verdict
+                        or old.get("issue") != answer.issue
+                        or old.get("suggested_reading") != correction_text(answer.correction, answer.issue)
+                        or old["snapshot"]["image_sha256"] != answer.image_sha256):
+                    raise BadRequest("This round was already saved with different answers.")
+            return {"id": str(round.id), **repeat(previous)}
         requests = []
         for answer in round.answers:
             unit, revision = one(answer.id)
-            if not previous and not eligible(unit):
+            if not eligible(unit):
                 raise BadRequest("This character has no available crop to review.")
-            if not previous and answer.image_sha256 != image_source(unit)[0].stem:
+            if answer.image_sha256 != image_source(unit)[0].stem:
                 raise HTTPException(409, "The source image changed. Reload this round.")
-            if label(unit) != round.label and not previous:
-                raise BadRequest("A character's reading changed. Reload this round.")
+            if label(unit) != round.label:
+                raise HTTPException(409, "A character's reading changed. Reload this round.")
+            correction = correction_text(answer.correction, answer.issue)
+            if answer.verdict == "match" and (answer.issue or correction):
+                raise BadRequest("A matching character cannot also have an unresolved issue.")
+            resolved = bool(answer.issue == "reading" and correction and single_character(correction))
+            if resolved and correction == round.label:
+                raise BadRequest("Choose a different reading or mark the character as matching.")
+            base = answer.revision
             evidence = json.dumps({"kind": "visual-quiz", "round": str(round.id),
-                                   "label": round.label, "verdict": answer.verdict,
-                                   "snapshot": snapshot(unit, revision)}, ensure_ascii=False)
-            if previous:
-                old = next(r for r in previous if r["target_id"] == answer.id)
-                original = json.loads(old["review"]["evidence"])
-                if (original["label"] != round.label or original["verdict"] != answer.verdict
-                        or original["snapshot"]["image_sha256"] != answer.image_sha256):
-                    raise BadRequest("This round was already saved with different answers.")
-                evidence = old["review"]["evidence"]
+                                   "label": round.label, "verdict": answer.verdict, "issue": answer.issue,
+                                   "suggested_reading": correction,
+                                   "snapshot": snapshot(unit, revision),
+                                   "correction": {"reading": correction if resolved else label(unit),
+                                                  "box": unit.box.model_dump() if unit.box else None}},
+                                  ensure_ascii=False)
+            if resolved:
+                requests.append(ReviewRequest(
+                    target_type="unit", target_id=answer.id, field="reading", new=correction,
+                    base_revision=base, client_id=round.client_id,
+                    idempotency_key=prefix + answer.id + ":reading", evidence=evidence,
+                ))
+                base += 1
             requests.append(ReviewRequest(
                 target_type="unit", target_id=answer.id, field="review",
-                new="reviewed" if answer.verdict == "match" else "disputed",
-                base_revision=answer.revision, client_id=round.client_id,
-                idempotency_key=prefix + answer.id,
-                evidence=evidence,
+                new="reviewed" if answer.verdict == "match" or resolved else "disputed",
+                base_revision=base, client_id=round.client_id,
+                idempotency_key=prefix + answer.id, evidence=evidence,
             ))
         return {"id": str(round.id), "results": store.record_batch(requests)}
 
@@ -307,23 +363,37 @@ def router(store: Store) -> APIRouter:
         previous = store.submission_results(request.client_id, f"quiz:{round_id}:")
         if not previous:
             raise HTTPException(404, "No saved round belongs to this reviewer.")
-        requests = [ReviewRequest(
-            target_type="unit", target_id=r["target_id"], field="review", new=r["review"]["old"],
-            base_revision=r["revision"], client_id=request.client_id,
-            idempotency_key=f"quiz-undo:{round_id}:{r['target_id']}", evidence=f"undo of {r['id']}",
-        ) for r in previous]
+        revisions = {r["target_id"]: r["revision"] for r in previous}
+        requests = []
+        for r in reversed(previous):
+            target = r["target_id"]
+            requests.append(ReviewRequest(
+                target_type="unit", target_id=target, field=r["field"], new=r["review"]["old"],
+                base_revision=revisions[target], client_id=request.client_id,
+                idempotency_key=f"quiz-undo:{round_id}:{r['id']}", evidence=f"undo of {r['id']}",
+            ))
+            revisions[target] += 1
         return {"id": str(round_id), "results": store.record_batch(requests)}
 
     @api.post("/atlas/characters/{unit_id}")
     def edit(unit_id: str, edit: CharacterEdit) -> dict:
         unit, current_revision = one(unit_id)
+        correction = correction_text(edit.correction, edit.issue)
+        supplied = unicodedata.normalize("NFC", edit.reading.strip()) if edit.reading else None
+        if supplied is not None and not single_character(supplied):
+            raise BadRequest("Use one character for the reading, or report joined characters.")
+        previous = store.submission_results(edit.client_id, f"edit:{edit.id}:")
+        if previous:
+            old = json.loads(next(r for r in previous if r["field"] == "review")["review"]["evidence"])
+            if old.get("request") != edit.model_dump(mode="json"):
+                raise BadRequest("This edit was already saved with different values.")
+            return repeat(previous)
         if not eligible(unit):
             raise BadRequest("This character has no available crop to review.")
         if edit.image_sha256 != image_source(unit)[0].stem:
             raise HTTPException(409, "The source image changed. Reload this character.")
-        reading = unicodedata.normalize("NFC", edit.reading.strip())
-        if not single_character(reading):
-            raise BadRequest("Use one character for the reading; put longer observations in a note.")
+        resolved = bool(edit.issue == "reading" and correction and single_character(correction))
+        reading = correction if resolved else supplied or label(unit)
         requests = []
         revision = edit.revision
         if edit.box is not None:
@@ -345,24 +415,15 @@ def router(store: Store) -> APIRouter:
             ))
             revision += 1
         evidence = json.dumps({"kind": "character-review", "verdict": edit.verdict,
-                               "issue": edit.issue, "note": edit.note,
+                               "issue": edit.issue, "note": edit.note, "suggested_reading": correction,
+                               "request": edit.model_dump(mode="json"),
                                "snapshot": snapshot(unit, current_revision),
                                "correction": {"reading": reading, "box": edit.box.model_dump()
                                               if edit.box else unit.box.model_dump() if unit.box else None}},
                               ensure_ascii=False)
-        previous = store.submission_results(edit.client_id, f"edit:{edit.id}:")
-        if previous:
-            review = next((r for r in previous if r["field"] == "review"), None)
-            if review:
-                old = json.loads(review["review"]["evidence"])
-                if (old["verdict"] != edit.verdict or old["issue"] != edit.issue or old["note"] != edit.note
-                        or old["correction"]["reading"] != reading
-                        or (edit.box and old["correction"]["box"] != edit.box.model_dump())):
-                    raise BadRequest("This edit was already saved with different values.")
-                evidence = review["review"]["evidence"]
         requests.append(ReviewRequest(
             target_type="unit", target_id=unit_id, field="review",
-            new="reviewed" if edit.verdict == "match" else "disputed",
+            new="reviewed" if edit.verdict == "match" or resolved else "disputed",
             base_revision=revision, client_id=edit.client_id, idempotency_key=f"edit:{edit.id}:review",
             evidence=evidence,
         ))

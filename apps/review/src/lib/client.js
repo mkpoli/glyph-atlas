@@ -32,3 +32,15 @@ export function download(value, name) {
   const link = document.createElement('a'); link.href = url; link.download = name; link.click()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
+
+const suggestionCache = new Map()
+export function suggestionsFor(item) {
+  const key = item.id + ':' + item.revision + ':' + item.image_sha256
+  if (!suggestionCache.has(key)) {
+    if (suggestionCache.size > 256) suggestionCache.delete(suggestionCache.keys().next().value)
+    const query = new URLSearchParams({ revision: item.revision, image_sha256: item.image_sha256 })
+    suggestionCache.set(key, request('/atlas/characters/' + encodeURIComponent(item.id) + '/suggestions?' + query)
+      .catch(() => ({ status: 'unavailable', candidates: [] })))
+  }
+  return suggestionCache.get(key)
+}
