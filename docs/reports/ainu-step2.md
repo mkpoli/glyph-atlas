@@ -245,9 +245,15 @@ figure corroborates the first rather than carrying it: the same crops, re-paired
 the characters they claim to be more often, and the geometric evidence is the one that does not depend
 on a model at all.
 
-What the fix costs is a re-alignment: unit ids carry the run fingerprint, so every unit's id moves and
-the held-out group's 166,058 units are rebuilt with it. That is a decision about the M2 numbers, not a
-correction to them, and it is why this is recorded with its measurements rather than applied.
+What the fix costs was measured rather than assumed, and the assumption was wrong in the useful
+direction. A unit's id is `{line id}:{run fingerprint}:{sequence}`, and the fingerprint hashes the run
+configuration rather than the code, so the fix does not move an id: aligning six lines of 蝦夷草紙 第1冊
+both ways with the classifier scoring the crops gives **0 of 143 units a different id and 109 of 143 a
+different box**. Identity is positional — sequence 7 of line L3 is sequence 7 of line L3 either way —
+and what changes is which ink that id points at, which is the whole defect. So a review or an audit
+keyed by unit id survives the fix, while anything that recorded a box, a crop or a per-character
+measurement does not and has to be re-derived. That is a smaller decision than changing every id and a
+larger one than changing nothing: the re-aligned units keep their names and change their meaning.
 
 Two further limits are worth stating plainly.
 
