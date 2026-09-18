@@ -257,6 +257,22 @@ larger one than changing nothing: the re-aligned units keep their names and chan
 
 Two further limits are worth stating plainly.
 
+**The units' fingerprint cannot be reproduced from the current code, and not because anything they
+contain changed.** These units carry `7a0d3267f64e` in their ids; `pilot-v1.yaml` as it stands hashes to
+`be9c7f9d3d4d`. `Run.fingerprint()` hashes `model_dump(mode="json")` minus `name` and `score`, so a
+field that did not exist contributes no key at all — and adding one changes the hash even when the new
+field is itself excluded from it. That is exactly what happened: `nms` was added to `Run` and excluded
+from the hash in the same commit, `be2d075`, and the units were found before it existed. Removing `nms`
+from today's payload reproduces `7a0d3267f64e` exactly. Nothing is wrong with the units or with the
+exclusion; the problem is that the fingerprint is a hash of a *schema* as well as of values, so it
+cannot be recomputed by any later version of the code that has gained a field. Nothing fails loudly
+when it happens — no code compares a stored id against a freshly computed fingerprint — so the cost is
+that a run can no longer be reconstructed from its reported fingerprint, and that checking one means
+reproducing the `Run` field set of the day. It happened while this report was being written: the
+fingerprint above was first written down as `be9c7f9d3d4d`, which is what today's code computes for
+these same units. A fingerprint drawn over an explicit list of the fields that decide output would hash
+values only, and would leave this set of units reproducible.
+
 **A count match can still be wrong.** A page whose column count equals its line count may pair the
 wrong column with the wrong line, and a page with a thin column can pass the gate on luck. The derived
 boxes are therefore proposals: they are recorded as derived, a reviewer is the one who settles them,
