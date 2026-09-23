@@ -1,0 +1,104 @@
+# Sync the transcription platforms into the collection store on a schedule.
+#
+# Collection is courtesy-bound: the upstreams are third-party IIIF hosts and the
+# collectors pace themselves (host and book pauses). A run is bounded so a stuck
+# upstream cannot hold a runner, and it writes only what changed.
+#
+# State lives in object storage, not in git: the collection is bulk images and
+# tables that this repository keeps out of version control. Each run pulls the
+# current store, advances it, and pushes it back.
+#
+# A silent harvest failure looks exactly like a week with nothing new to
+# transcribe, so the report job opens an issue on failure and closes it again
+# when a run recovers.
+name: harvest
+
+on:
+  schedule:
+    - cron: "23 0 * * 1,4"   # 09:23 JST, Monday and Thursday
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: "Seconds to spend collecting"
+        default: "1500"
+        required: false
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  UV_LOCKED: "1"
+
+jobs:
+  harvest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install
+        run: uv sync --all-extras --group dev
+
+      - name: Restore the collection store
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: ./scripts/r2-sync.sh restore collections
+
+      - name: Collect from みんなで翻刻
+        run: |
+          uv run python scripts/collect_honkoku.py \
+            --root work/honkoku-collection \
+            --seconds "${{ github.event.inputs.seconds || '1500' }}" \
+            | tee harvest-honkoku.log
+
+      - name: Collect from Japanese Wikisource
+        run: |
+          uv run python scripts/collect_wikisource.py \
+            --root work/wikisource-collection \
+            --seconds "${{ github.event.inputs.seconds || '1500' }}" \
+            | tee harvest-wikisource.log
+
+      - name: Summarise
+        id: summary
+        run: |
+          {
+            echo 'body<<EOF'
+            echo '```'
+            echo 'みんなで翻刻'
+            tail -n 30 harvest-honkoku.log
+            echo
+            echo 'Wikisource'
+            tail -n 30 harvest-wikisource.log
+            echo '```'
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish the summary
+        if: always()
+        run: echo "${{ steps.summary.outputs.body }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save the collection store
+        if: success()
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: ./scripts/r2-sync.sh save collections
+
+  # A run that collects nothing and a run that never started leave the same
+  # trace. This job makes the difference visible.
+  report:
+    needs: harvest
+    if: always()
+    permissions:
+      issues: write
+    uses: ./.github/workflows/report-state.yml
+    with:
+      state: ${{ needs.harvest.result == 'success' && 'recovered' || 'failed' }}
