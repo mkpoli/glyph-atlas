@@ -852,6 +852,14 @@ def test_malformed_pages_are_quarantined_without_losing_text(change):
         hq.book_record(data, entry_id=ENTRY_A)
 
 
+def test_a_canvas_named_by_its_json_document_pairs_with_the_manifest_canvas():
+    data = entry_payload(ENTRY_A)
+    for item in data["transcriptions"]:
+        item["canvasId"] += ".json"
+    record = hq.book_record(data, entry_id=ENTRY_A)
+    assert [page["canvas_id"] for page in record["pages"]] == [c["id"] for c in data["canvases"]]
+
+
 def test_collection_entry_objects_are_enumerated(tmp_path):
     data = dict(COLLECTION, entries=[{"id": ENTRY_A}, {"id": ENTRY_B}])
     collector, _, _ = build(tmp_path, FakeAPI(collections={COLLECTION["id"]: data}))
