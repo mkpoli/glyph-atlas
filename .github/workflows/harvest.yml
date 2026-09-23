@@ -6,11 +6,13 @@
 #
 # State lives in object storage, not in git: the collection is bulk images and
 # tables that this repository keeps out of version control. Each run pulls the
-# current store, advances it, and pushes it back.
+# current store, advances it, and pushes it back. A run that dies halfway still
+# saves whatever it finished, so a long polite harvest is never thrown away.
 #
 # A silent harvest failure looks exactly like a week with nothing new to
 # transcribe, so the report job opens an issue on failure and closes it again
-# when a run recovers.
+# when a run recovers. Collector exits are propagated, never swallowed by a
+# logging pipeline, so "recovered" means the collectors really ran.
 name: harvest
 
 on:
@@ -19,13 +21,19 @@ on:
   workflow_dispatch:
     inputs:
       seconds:
-        description: "Seconds to spend collecting"
-        default: "1500"
+        description: "Seconds to spend collecting (integer)"
+        default: "1200"
         required: false
+        type: string
+
+# Two overlapping runs would both restore, both collect, and both save; the
+# later save would clobber the earlier one's work. Queue instead.
+concurrency:
+  group: harvest
+  cancel-in-progress: false
 
 permissions:
   contents: read
-  issues: write
 
 env:
   UV_LOCKED: "1"
@@ -33,13 +41,43 @@ env:
 jobs:
   harvest:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    # Two collectors, each allowed `seconds`, plus install, restore and upload.
+    timeout-minutes: 75
+    env:
+      # Never interpolate this into shell source: a dispatch input is
+      # attacker-controllable. It reaches the collectors only as an argument
+      # built from this variable, after the integer check below.
+      SECONDS_INPUT: ${{ github.event.inputs.seconds }}
     steps:
       - uses: actions/checkout@v7
 
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+
+      # r2-sync.sh drives rclone; hosted runners do not ship it.
+      - name: Install rclone
+        run: |
+          set -euo pipefail
+          curl -fsSL https://rclone.org/install.sh | sudo bash
+          rclone version
+
+      - name: Require a whole number of seconds
+        shell: bash
+        run: |
+          set -euo pipefail
+          value="${SECONDS_INPUT:-1200}"
+          case "$value" in
+            ''|*[!0-9]*)
+              echo "seconds must be a whole number, got: $value" >&2
+              exit 1
+              ;;
+          esac
+          if [ "$value" -lt 1 ] || [ "$value" -gt 1800 ]; then
+            echo "seconds must be between 1 and 1800, got: $value" >&2
+            exit 1
+          fi
+          echo "COLLECT_SECONDS=$value" >> "$GITHUB_ENV"
 
       - name: Install
         run: uv sync --all-extras --group dev
@@ -52,45 +90,58 @@ jobs:
         run: ./scripts/r2-sync.sh restore collections
 
       - name: Collect from みんなで翻刻
+        shell: bash
         run: |
+          set -euo pipefail
           uv run python scripts/collect_honkoku.py \
             --root work/honkoku-collection \
-            --seconds "${{ github.event.inputs.seconds || '1500' }}" \
-            | tee harvest-honkoku.log
+            --seconds "$COLLECT_SECONDS" 2>&1 | tee harvest-honkoku.log
 
       - name: Collect from Japanese Wikisource
+        shell: bash
         run: |
+          set -euo pipefail
           uv run python scripts/collect_wikisource.py \
             --root work/wikisource-collection \
-            --seconds "${{ github.event.inputs.seconds || '1500' }}" \
-            | tee harvest-wikisource.log
+            --seconds "$COLLECT_SECONDS" 2>&1 | tee harvest-wikisource.log
 
-      - name: Summarise
-        id: summary
-        run: |
-          {
-            echo 'body<<EOF'
-            echo '```'
-            echo 'みんなで翻刻'
-            tail -n 30 harvest-honkoku.log
-            echo
-            echo 'Wikisource'
-            tail -n 30 harvest-wikisource.log
-            echo '```'
-            echo EOF
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Publish the summary
-        if: always()
-        run: echo "${{ steps.summary.outputs.body }}" >> "$GITHUB_STEP_SUMMARY"
-
+      # Save whatever was collected, even when a later step failed: a partial
+      # harvest is worth keeping and re-running is how it finishes.
       - name: Save the collection store
-        if: success()
+        if: ${{ !cancelled() }}
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: ./scripts/r2-sync.sh save collections
+
+      # The body carries log text from third-party hosts, so it is passed as an
+      # environment variable and printed with printf. Expanding `${{ }}` inside
+      # shell source would let a backtick or $( ) in a title run as a command.
+      - name: Summarise
+        id: summary
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo 'body<<HARVEST_EOF'
+            echo '```'
+            echo 'みんなで翻刻'
+            tail -n 30 harvest-honkoku.log 2>/dev/null || echo '(no log)'
+            echo
+            echo 'Wikisource'
+            tail -n 30 harvest-wikisource.log 2>/dev/null || echo '(no log)'
+            echo '```'
+            echo 'HARVEST_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish the summary
+        if: ${{ !cancelled() }}
+        env:
+          body: ${{ steps.summary.outputs.body }}
+        shell: bash
+        run: printf '%s\n' "$body" >> "$GITHUB_STEP_SUMMARY"
 
   # A run that collects nothing and a run that never started leave the same
   # trace. This job makes the difference visible.
