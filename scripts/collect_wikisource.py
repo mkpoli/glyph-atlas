@@ -16,10 +16,12 @@ def main():
     parser.add_argument("--seconds", type=float, default=3600)
     parser.add_argument("--books", type=int)
     parser.add_argument("--discover-batches", type=int)
+    parser.add_argument("--book-pause", type=float, default=60.0,
+                        help="seconds between works (default: 60)")
     args = parser.parse_args()
     try:
         with process_lock(args.root):
-            collector = Collector(args.root)
+            collector = Collector(args.root, book_pause=args.book_pause)
             result = collector.run(seconds=args.seconds, max_books=args.books,
                                    discover_batches=args.discover_batches)
             print(json.dumps(result, ensure_ascii=False), flush=True)
