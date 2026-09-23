@@ -27,34 +27,16 @@ Evidence rules that the rest of the atlas depends on:
   by the API's thumbnail path. An evenly divided line box is not a glyph crop.
 * ``confirmed`` is true only when a *human* review event covers that rectangle.
   Machine localisation and AI visual inspection both stay ``confirmed=False``.
+
+Each name is imported on first access rather than at package import. The
+collection queues need the occurrence layer and each other and nothing else; an
+eager import here would drag every subpackage into every collector run.
 """
 
-from .api import CorpusAPI, Router
-from .fastapi_router import build_query, corpus_api, corpus_router
-from .glyphs import GlyphEntry, GlyphRegistry
-from .glyphs import build as build_glyph_registry
-from .index import (
-    CHARS_FILE,
-    INDEX_DIR,
-    OCC_DIR,
-    CorpusIndex,
-    IndexStats,
-    build_chars,
-    build_occurrences,
-)
-from .occurrence import (
-    TOMO,
-    Occurrence,
-    Rect,
-    Source,
-    advisory_char_rect,
-    classify,
-    codepoint,
-    deduplicate,
-    find_occurrences,
-)
-from .review import CorpusReview
-from .sources import DEFAULT_ROOT, Corpus, discover
+from __future__ import annotations
+
+import importlib
+from typing import Any
 
 __all__ = [
     "CHARS_FILE",
@@ -86,3 +68,54 @@ __all__ = [
     "discover",
     "find_occurrences",
 ]
+
+#: Where each name is defined, as `name -> module` or `name -> (module, attribute)`.
+_SOURCES: dict[str, str | tuple[str, str]] = {
+    "CHARS_FILE": ".index",
+    "DEFAULT_ROOT": ".sources",
+    "INDEX_DIR": ".index",
+    "OCC_DIR": ".index",
+    "TOMO": ".occurrence",
+    "Corpus": ".sources",
+    "CorpusAPI": ".api",
+    "CorpusIndex": ".index",
+    "CorpusReview": ".review",
+    "GlyphEntry": ".glyphs",
+    "GlyphRegistry": ".glyphs",
+    "IndexStats": ".index",
+    "Occurrence": ".occurrence",
+    "Rect": ".occurrence",
+    "Router": ".api",
+    "Source": ".occurrence",
+    "advisory_char_rect": ".occurrence",
+    "build_chars": ".index",
+    "build_glyph_registry": (".glyphs", "build"),
+    "build_occurrences": ".index",
+    "build_query": ".fastapi_router",
+    "classify": ".occurrence",
+    "codepoint": ".occurrence",
+    "corpus_api": ".fastapi_router",
+    "corpus_router": ".fastapi_router",
+    "deduplicate": ".occurrence",
+    "discover": ".sources",
+    "find_occurrences": ".occurrence",
+}
+
+
+def __getattr__(name: str) -> Any:
+    where = _SOURCES.get(name)
+    if where is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module_name, attribute = where if isinstance(where, tuple) else (where, name)
+    try:
+        module = importlib.import_module(module_name, __name__)
+    except ModuleNotFoundError as error:
+        raise ImportError(
+            f"{__name__}.{name} is defined in {module_name.lstrip('.')}, "
+            "which this repository does not hold yet"
+        ) from error
+    return getattr(module, attribute)
+
+
+def __dir__() -> list[str]:
+    return sorted(__all__)
