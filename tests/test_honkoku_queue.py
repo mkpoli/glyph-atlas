@@ -857,7 +857,14 @@ def test_a_canvas_named_by_its_json_document_pairs_with_the_manifest_canvas():
     for item in data["transcriptions"]:
         item["canvasId"] += ".json"
     record = hq.book_record(data, entry_id=ENTRY_A)
-    assert [page["canvas_id"] for page in record["pages"]] == [c["id"] for c in data["canvases"]]
+    assert [page["text"] for page in record["pages"]] == [t["text"] for t in data["transcriptions"]]
+
+
+def test_a_json_document_of_another_canvas_is_still_a_mismatch():
+    data = entry_payload(ENTRY_A)
+    data["transcriptions"][0]["canvasId"] = data["canvases"][1]["id"] + ".json"
+    with pytest.raises(hq.AlignmentError):
+        hq.book_record(data, entry_id=ENTRY_A)
 
 
 def test_collection_entry_objects_are_enumerated(tmp_path):

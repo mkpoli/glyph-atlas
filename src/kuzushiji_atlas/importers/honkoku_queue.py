@@ -753,6 +753,8 @@ def _same_canvas(named: str, held: str) -> bool:
     and the platform records that document's URL, `…/canvas/p1.json`, where the
     manifest's id is `…/canvas/p1`. Any other difference is a real mismatch.
     """
+    if not (isinstance(named, str) and isinstance(held, str)):
+        return named == held
     return named.removesuffix(".json") == held.removesuffix(".json")
 
 
