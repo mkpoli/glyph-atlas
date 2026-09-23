@@ -11,7 +11,7 @@ than left stale.
 from kuzushiji_atlas import tables
 from kuzushiji_atlas.corpus.wikisource import WikisourcePage
 from kuzushiji_atlas.corpus.wikisource_queue import Collector, work_of
-from kuzushiji_atlas.schema import Document, Page, PageText
+from kuzushiji_atlas.schema import Page
 
 
 class Client:
