@@ -71,6 +71,22 @@ MIN_HOST_PAUSE = 3.0
 BOOK_PAUSE = 60.0
 #: Free space below which the run stops instead of filling the volume.
 MIN_FREE_BYTES = 5 * 1024**3
+# A completed walk leaves every project and collection `done`, so a later walk
+# would queue nothing and entries added under known collections would never be
+# seen. Walks are therefore gated by an epoch: when the last walk finished and
+# the interval has passed, walked rows reopen and the walk runs again.
+# Re-walking is cheap because record_project, record_collection and record_book
+# are INSERT OR IGNORE.
+DISCOVERY_EPOCH_SECONDS = 7 * 24 * 3600
+
+
+def _meta_stamp(db, key: str) -> float | None:
+    """A wall-clock stamp stored in `meta`, or None when absent or unreadable."""
+    row = db.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+    try:
+        return float(row["value"]) if row else None
+    except (TypeError, ValueError):
+        return None
 #: Attempts per request before the book is left for a later run.
 RETRIES = 3
 #: Responses kept in memory. An entry body can be large and there are thousands of
@@ -990,6 +1006,8 @@ class Collector:
     now: Callable[[], str] = _now
     on_book: Callable[[str, Path, Mapping[str, Any]], None] | None = None
     command: str = "atlas collect honkoku"
+    discovery_epoch_seconds: float = DISCOVERY_EPOCH_SECONDS
+    wall: Callable[[], float] = time.time
 
     def __post_init__(self) -> None:
         self.root = Path(self.root)
@@ -1084,9 +1102,49 @@ class Collector:
             db.execute("UPDATE collections SET state='done' WHERE id=?", (collection_id,))
         return {"entries": len(entries), "added": added}
 
+    def _open_discovery_epoch(self) -> bool:
+        """Reopen walked rows when the last walk finished and the interval passed.
+
+        An interrupted walk resumes instead: rows reopen only when the previous
+        walk completed, or has been open longer than the interval and counts as
+        abandoned. `skipped` rows stay skipped — they record deliberate refusals
+        of private or hidden material, not walk progress.
+        """
+        now = self.wall()
+        with self.queue.transaction() as db:
+            started = _meta_stamp(db, "discovery_started_at")
+            finished = _meta_stamp(db, "discovery_finished_at")
+            if started is not None and (finished is None or finished < started):
+                if now - started < self.discovery_epoch_seconds:
+                    return False
+            elif finished is not None and now - finished < self.discovery_epoch_seconds:
+                return False
+            db.execute(
+                "INSERT INTO meta(key, value) VALUES('discovery_started_at', ?)"
+                " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (str(now),),
+            )
+            db.execute("UPDATE projects SET state='pending' WHERE state='done'")
+            db.execute("UPDATE collections SET state='pending' WHERE state='done'")
+        return True
+
+    def _close_discovery_epoch(self) -> None:
+        """Stamp the walk complete, when this call is the one that finished it."""
+        with self.queue.transaction() as db:
+            started = _meta_stamp(db, "discovery_started_at")
+            finished = _meta_stamp(db, "discovery_finished_at")
+            if started is None or (finished is not None and finished >= started):
+                return
+            db.execute(
+                "INSERT INTO meta(key, value) VALUES('discovery_finished_at', ?)"
+                " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (str(self.wall()),),
+            )
+
     def discover(self) -> dict[str, Any]:
         """Walk projects, then their collections, then their entries."""
         self.check_space()
+        self._open_discovery_epoch()
         with self.queue.transaction() as db:
             db.execute("UPDATE projects SET state='pending' WHERE state='failed'")
             db.execute("UPDATE collections SET state='pending' WHERE state='failed'")
@@ -1118,6 +1176,7 @@ class Collector:
                 continue
             result["entries"] += found["entries"]
             self.write_outputs()
+        self._close_discovery_epoch()
         return result
 
     def recover(self) -> int:
@@ -1493,6 +1552,7 @@ def make_collector(
     sleeper: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
     disk_free: Callable[[Path], int] | None = None,
+    discovery_epoch_seconds: float = DISCOVERY_EPOCH_SECONDS,
 ) -> Collector:
     """A collector with an httpx client, for the CLI and for root's own runs."""
     if client is None:
@@ -1502,5 +1562,6 @@ def make_collector(
     pacer = Pacer(host_pause=host_pause, book_pause=book_pause, clock=clock, sleeper=sleeper)
     fetcher = Fetcher(client=client, pacer=pacer, sleeper=sleeper)
     return Collector(
-        Path(root), fetcher, min_free_bytes=min_free_bytes, disk_free=disk_free, sleeper=sleeper, clock=clock
+        Path(root), fetcher, min_free_bytes=min_free_bytes, disk_free=disk_free, sleeper=sleeper, clock=clock,
+        discovery_epoch_seconds=discovery_epoch_seconds,
     )

@@ -17,11 +17,20 @@ from pathlib import Path
 from urllib.parse import quote
 
 from .. import tables
-from ..importers.honkoku_queue import MIN_FREE_BYTES, OutOfSpace, write_json
+from ..importers.honkoku_queue import DISCOVERY_EPOCH_SECONDS, MIN_FREE_BYTES, OutOfSpace, write_json
 from ..schema import Document, Page, PageText
 from .wikisource import DEFAULT_HOST, Wikisource, WikisourcePage, document_of, page_of, page_text_of
 
 NAMESPACES = (250, 0)
+
+
+def _stamp(db, key: str) -> float | None:
+    """A wall-clock stamp stored in `metadata`, or None when absent or unreadable."""
+    row = db.execute("SELECT value FROM metadata WHERE key=?", (key,)).fetchone()
+    try:
+        return float(row["value"]) if row else None
+    except (TypeError, ValueError):
+        return None
 
 
 def work_of(title: str, namespace: int) -> tuple[str, str]:
@@ -36,8 +45,10 @@ def work_of(title: str, namespace: int) -> tuple[str, str]:
 
 
 class Collector:
-    def __init__(self, root: Path, *, client=None, book_pause=60.0, min_free_bytes=MIN_FREE_BYTES):
+    def __init__(self, root: Path, *, client=None, book_pause=60.0, min_free_bytes=MIN_FREE_BYTES,
+                 discovery_epoch_seconds=DISCOVERY_EPOCH_SECONDS):
         self.root = Path(root)
+        self.discovery_epoch_seconds = discovery_epoch_seconds
         self.root.mkdir(parents=True, exist_ok=True)
         self.client = client or Wikisource(cache=self.root / "cache", pause=3.0)
         self.book_pause = max(0.0, book_pause)
@@ -69,6 +80,66 @@ class Collector:
     def recover(self):
         with closing(self.connect()) as db, db:
             db.execute("UPDATE works SET state='pending' WHERE state='in_progress'")
+
+    def _maybe_open_discovery_epoch(self) -> bool:
+        """Reset the walk when the last one finished and the epoch interval passed.
+
+        Same gating as the Honkoku queue: a walk interrupted mid-run resumes from
+        its stored cursor, and rows reset only between walks, so a pass that
+        outlasts one job is never restarted from the beginning.
+        """
+        now = time.time()
+        with closing(self.connect()) as db:
+            started = _stamp(db, "discovery_started_at")
+            finished = _stamp(db, "discovery_finished_at")
+        if started is not None and (finished is None or finished < started):
+            if now - started < self.discovery_epoch_seconds:
+                return False
+        elif finished is not None and now - finished < self.discovery_epoch_seconds:
+            return False
+        # The allpages cache would replay the previous walk's first batch and
+        # pages added since would never be seen; drop just that bucket. The
+        # page-body cache stays: it is keyed by revision and still saves requests.
+        cache = getattr(self.client, "cache", None)
+        if cache is not None:
+            shutil.rmtree(Path(cache) / "discovery", ignore_errors=True)
+        with closing(self.connect()) as db, db:
+            db.execute("INSERT OR REPLACE INTO metadata VALUES('discovery_started_at',?)", (str(now),))
+            db.execute("UPDATE discovery SET cursor=NULL, done=0")
+        return True
+
+    def _close_discovery_epoch(self) -> None:
+        """Stamp the walk complete, when this run is the one that finished it."""
+        with closing(self.connect()) as db:
+            started = _stamp(db, "discovery_started_at")
+            finished = _stamp(db, "discovery_finished_at")
+        if started is None or (finished is not None and finished >= started):
+            return
+        with closing(self.connect()) as db, db:
+            db.execute("INSERT OR REPLACE INTO metadata VALUES('discovery_finished_at',?)", (str(time.time()),))
+
+    def _reopen_works_with_new_pages(self) -> int:
+        """Done works whose source gained pages go back to pending, dataset removed.
+
+        `collect_work` leaves an existing dataset alone — that guard is how a
+        crash between the rename and the queue commit completes the same book
+        safely — so the old dataset is removed first and the work is rebuilt from
+        every page the queue holds. A crash between the removal and the state
+        update self-heals: the work still matches this query on the next run.
+        """
+        with closing(self.connect()) as db:
+            rows = db.execute(
+                "SELECT id FROM works WHERE state='done'"
+                " AND EXISTS(SELECT 1 FROM pages p WHERE p.work_id=works.id AND p.state='pending')"
+            ).fetchall()
+        for row in rows:
+            shutil.rmtree(self.root / "books" / row["id"], ignore_errors=True)
+        if rows:
+            with closing(self.connect()) as db, db:
+                marks = ",".join("?" * len(rows))
+                db.execute(f"UPDATE works SET state='pending', finished_at=NULL WHERE id IN ({marks})",
+                           [row["id"] for row in rows])
+        return len(rows)
 
     def discover_batch(self) -> bool:
         """Commit discovered pages and their continuation together; never lose a boundary page."""
@@ -176,6 +247,7 @@ class Collector:
         started = time.monotonic()
         discovered = completed = 0
         try:
+            self._maybe_open_discovery_epoch()
             while time.monotonic() - started < seconds:
                 if discover_batches is not None and discovered >= discover_batches:
                     break
@@ -185,7 +257,9 @@ class Collector:
             with closing(self.connect()) as db:
                 incomplete = db.execute("SELECT count(*) FROM discovery WHERE done=0").fetchone()[0]
             if incomplete:
-                return {"discovery_batches": discovered, "collected": 0}
+                return {"discovery_batches": discovered, "collected": 0, "reopened": 0}
+            reopened = self._reopen_works_with_new_pages()
+            self._close_discovery_epoch()
             attempted = set()
             while time.monotonic() - started < seconds and (max_books is None or completed < max_books):
                 with closing(self.connect()) as db:
@@ -211,7 +285,7 @@ class Collector:
                                    (type(error).__name__, row["id"]))
                         db.execute("INSERT OR REPLACE INTO metadata VALUES('last_attempt',?)", (str(time.time()),))
                     self.write_outputs()
-            return {"discovery_batches": discovered, "collected": completed}
+            return {"discovery_batches": discovered, "collected": completed, "reopened": reopened}
         finally:
             self.write_outputs()
 
