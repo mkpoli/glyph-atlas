@@ -25,6 +25,7 @@ review_app = typer.Typer(help="Serve and apply editorial reviews.", no_args_is_h
 audit_app = typer.Typer(help="Draw a blind audit sample and publish its precision.", no_args_is_help=True)
 ainu_app = typer.Typer(help="Derive line boxes for the アイヌ関連資料 records.", no_args_is_help=True)
 repair_app = typer.Typer(help="Diagnose and repair systematic character-to-detection misassignment.", no_args_is_help=True)
+forms_app = typer.Typer(help="Cluster CODH glyphs by shape so their forms can be assigned.", no_args_is_help=True)
 
 
 @app.callback()
@@ -850,6 +851,22 @@ def align(
         typer.echo(f"{name:<14} {value:>10}")
 
 
+@forms_app.command("cluster")
+def forms_cluster(
+    root: Annotated[Path, typer.Option(help="corpus root holding codh-full")] = Path("work"),
+    out: Annotated[Path, typer.Option(help="directory the revisions and `current` are written to")] = Path("work/forms"),
+    checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
+    classes: Annotated[Path, typer.Option(help="classifier class list")] = Path("models/classifier/classes.json"),
+    workers: Annotated[int, typer.Option(help="processes cutting crops from the page scans")] = 8,
+) -> None:
+    """Embed the glyphs of every multi-form CODH family and cluster them by shape (needs CUDA)."""
+    from . import form_clusters
+
+    summary = form_clusters.run(root, out, checkpoint=checkpoint, classes=classes, workers=workers)
+    for name, value in summary.items():
+        typer.echo(f"{name:<18} {value:>10}")
+
+
 for name, module in (
     ("tables", tables_app),
     ("images", images_app),
@@ -861,6 +878,7 @@ for name, module in (
     ("audit", audit_app),
     ("ainu", ainu_app),
     ("repair", repair_app),
+    ("forms", forms_app),
 ):
     app.add_typer(module, name=name)
 
