@@ -264,7 +264,24 @@ class TestSnapshotSeeding:
         queue = hq.Queue(tmp_path / "queue.sqlite")
         queue.seed_from_snapshot(self.snapshot(tmp_path))
         row = queue.book("e1")
-        assert row["label"] == "素人名手" and row["size"] == 10
+        assert row["label"] == "素人名手" and row["size"] == 10 and row["progress"] == 0
+
+    def test_a_listing_that_names_only_the_id_keeps_the_known_progress(self, tmp_path):
+        queue = hq.Queue(tmp_path / "queue.sqlite")
+        queue.record_book("e1", project_id="p", collection_id=None, position=None, origin="snapshot",
+                          fields={"size": 10, "progress": 7})
+        assert not queue.record_book("e1", project_id="p", collection_id="c", position=0, origin="live")
+        row = queue.book("e1")
+        assert (row["size"], row["progress"], row["origin"]) == (10, 7, "both")
+
+    def test_a_later_listing_that_states_progress_updates_it(self, tmp_path):
+        queue = hq.Queue(tmp_path / "queue.sqlite")
+        queue.record_book("e1", project_id="p", collection_id=None, position=None, origin="live")
+        assert queue.book("e1")["progress"] is None
+        queue.record_book("e1", project_id="p", collection_id=None, position=None, origin="snapshot",
+                          fields={"label": "素人名手", "size": 10, "progress": 10})
+        row = queue.book("e1")
+        assert (row["label"], row["size"], row["progress"]) == ("素人名手", 10, 10)
 
 
 class TestDiscovery:
