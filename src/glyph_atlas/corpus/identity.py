@@ -12,7 +12,8 @@ NORMALIZATION_EVIDENCE = "https://codh.rois.ac.jp/char-shape/#version"
 IDENTITY_FIELDS = (
     "source_label", "source_code_point", "written_character", "identity_basis",
     "identity_status", "identity_evidence", "grapheme", "family_members",
-    "requires_family_scope", "visual_assignment", "visual_group", "production", "production_label", "production_evidence",
+    "requires_family_scope", "visual_assignment", "visual_group", "form_cluster", "form_decision",
+    "production", "production_label", "production_evidence",
 )
 
 
@@ -38,15 +39,23 @@ def identity_fields(
     basis = "normalized_transcription" if normalized else "source_transcription"
     written = None if ambiguous else encoded or source_label
     assignment = None
+    identity = row.get("unit_id") or row.get("identity_key") or row.get("id")
+    from .. import forms
+
+    decided = forms.form_for(identity) if identity else None
     if human_character:
         written, basis = human_character, "human_review"
         family = family_of(" ".join(refs.to_code_points(human_character)))
+    elif decided is not None:
+        # A person named this glyph's form, directly or through its cluster; a glyph marked as not
+        # having its cluster's form stays unassigned rather than falling back to the visual model.
+        written, basis = decided["form"], decided["basis"]
+        ambiguous = written is None
     else:
         try:
             from ..visual_families import assignment_for, evidence_signature
         except ImportError:
             assignment_for = None
-        identity = row.get("unit_id") or row.get("identity_key") or row.get("id")
         if assignment_for and identity:
             signature = row.get("source_signature") or evidence_signature(
                 identity, cp, row.get("page_id") or (row.get("source") or {}).get("page_id"),
@@ -73,6 +82,8 @@ def identity_fields(
         "requires_family_scope": ambiguous,
         "visual_assignment": assignment,
         "visual_group": (assignment or {}).get("visual_group"),
+        "form_cluster": forms.cluster_of(identity) if identity else None,
+        "form_decision": decided,
     }
 
 
