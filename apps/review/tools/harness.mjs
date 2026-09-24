@@ -26,7 +26,7 @@ export function options(argv = process.argv.slice(2)) {
   return {
     keep: argv.includes('--keep'),
     python: value('python', join(ROOT, '.venv', 'bin', 'python')),
-    port: Number(value('port', String(8800 + Math.floor(Math.random() * 400)))),
+    port: Number(value('port', '0')),
     directory: resolve(value('directory', mkdtempSync(join(tmpdir(), 'atlas-review-')))),
     external: value('server', null),
     headless: value('chrome', null),
@@ -60,6 +60,13 @@ export function chromePath(explicit = null) {
 
 /** Build the fixture dataset and start the service over it. */
 export async function boot(config) {
+  if (!config.external) {
+    // Let the kernel select a free port; an explicit occupied port must fail before a test can
+    // accidentally attach to an older fixture server.
+    const probe = Bun.listen({ hostname: '127.0.0.1', port: config.port, socket: { data() {} } })
+    config.port = probe.port
+    probe.stop(true)
+  }
   const base = config.external ? config.external.replace(/\/$/, '') : `http://127.0.0.1:${config.port}`
   let fixture = null
   let server = null
@@ -121,8 +128,12 @@ export async function boot(config) {
     base,
     fixture,
     log,
-    stop({ keep = false } = {}) {
-      server?.kill()
+    async stop({ keep = false } = {}) {
+      if (server && server.exitCode === null) {
+        server.kill()
+        const deadline = setTimeout(() => { if (server.exitCode === null) server.kill('SIGKILL') }, 5000)
+        try { await server.exited } finally { clearTimeout(deadline) }
+      }
       if (!keep && !config.external) rmSync(config.directory, { recursive: true, force: true })
     },
   }

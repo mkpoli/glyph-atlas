@@ -26,7 +26,7 @@ try {
   }) })
   async function click(selector) { await browser.evaluate(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'center'})`); const p = await browser.centre(selector); await browser.click(p.x, p.y) }
   async function route(hash, ready) { await browser.evaluate(`location.hash=${JSON.stringify(hash)}`); await browser.waitFor(ready) }
-  const roundReady = 'document.querySelectorAll(".quiz-choice").length === 12 && !document.querySelector(".quiz-submit .primary")?.disabled'
+  const roundReady = 'document.querySelectorAll(".quiz-choice").length > 0 && !document.querySelector(".quiz-submit .primary")?.disabled'
   const inspectorReady = 'document.querySelector("dialog[open] .inspector-crop img")?.naturalWidth > 0 && !document.querySelector(".save-character")?.disabled'
   await browser.goto(service.base + '/#/', { waitFor: 'document.querySelectorAll(".glyph-tile").length > 0' })
   await browser.waitFor('Array.from(document.querySelectorAll(".glyph-grid img")).slice(0,12).every(i => i.complete && i.naturalWidth)')
@@ -40,7 +40,8 @@ try {
   await browser.waitFor(inspectorReady)
   const originalImage = await browser.evaluate('document.querySelector(".inspector-crop img").getAttribute("src")')
   const originalId = decodeURIComponent(originalImage.split('/characters/')[1].split('/image')[0])
-  const order = await browser.evaluate('Array.from(document.querySelectorAll(".glyph-grid img")).map(i=>i.getAttribute("src").split("?")[0])')
+  const originalReading = units(config.directory)[originalId].reading
+  const order = await browser.evaluate('Array.from(document.querySelectorAll(".glyph-grid [data-unit]")).map(i=>i.dataset.unit)')
   const scroll = await browser.evaluate('scrollY')
   await browser.evaluate('window.sameReviewDialog = document.querySelector("dialog");window.sameCollection = document.querySelector(".glyph-grid")')
   assert(!await browser.evaluate('document.querySelector(".advanced-edit").open'), 'manual typing should be optional')
@@ -52,7 +53,7 @@ try {
   await browser.waitFor(`document.querySelector('.inspector-crop img')?.getAttribute('src') !== ${JSON.stringify(originalImage)} && !document.querySelector('.save-character')?.disabled`)
   assert(await browser.evaluate('document.querySelector("dialog[open]") === window.sameReviewDialog'), 'save must keep the reviewer open')
   assert(await browser.evaluate('document.querySelector(".glyph-grid") === window.sameCollection'), 'save must not remount the collection')
-  assert(await browser.evaluate('JSON.stringify(Array.from(document.querySelectorAll(".glyph-grid img")).map(i=>i.getAttribute("src").split("?")[0]))') === JSON.stringify(order), 'save must preserve crop order')
+  assert(await browser.evaluate('JSON.stringify(Array.from(document.querySelectorAll(".glyph-grid [data-unit]")).map(i=>i.dataset.unit))') === JSON.stringify(order), 'save must preserve crop order')
   assert(await browser.evaluate('scrollY') === scroll, 'save must preserve collection scroll position')
   const firstReport = events(config.directory).find(e => e.target_id === originalId && e.field === 'review')
   assert(firstReport?.new === 'disputed' && JSON.parse(firstReport.evidence).issue === 'merged', 'joined report must persist without text')
@@ -63,9 +64,14 @@ try {
   await click('dialog .issue-card[data-issue="reading"]')
   await browser.waitFor('document.querySelector("dialog .suggestion-options button")?.innerText === "カ"')
   await click('dialog .suggestion-options button')
+  await click('dialog .no-suggestion')
+  assert(await browser.evaluate('document.querySelector(".written-input input").value === document.querySelector(".inspector-title h2").textContent'),
+    'None of these cancels the proposed identity')
+  await click('dialog .suggestion-options button')
   await click('.save-character')
   await browser.waitFor('document.querySelector(".inspector-navigation > span")?.innerText.startsWith("11 /")')
-  assert(units(config.directory)[originalId].reading === 'カ', 'choosing an OCR suggestion updates the reading')
+  assert(units(config.directory)[originalId].unicode === 'U+30AB', 'choosing an OCR suggestion updates the written identity')
+  assert(units(config.directory)[originalId].reading === originalReading, 'an identity correction preserves the reading')
   console.log('PASS optional correction by clicking a suggestion')
 
   await browser.waitFor(inspectorReady)
@@ -83,28 +89,47 @@ try {
   console.log('PASS optional crop adjustment retains next navigation')
 
   await route('#/review?reading=あ', roundReady)
-  await click('.quiz-tile:nth-child(1) .quiz-choice')
-  await click('.quiz-tile:nth-child(2) .quiz-choice')
+  const availableTiles = await browser.evaluate('Array.from(document.querySelectorAll(".quiz-tile")).flatMap((tile, index) => tile.classList.contains("unavailable") ? [] : [index + 1])')
+  assert(availableTiles.length >= 4, 'fixture has four viewable crops')
+  const tile = n => `.quiz-tile:nth-child(${availableTiles[n]})`
+  await click(tile(0) + ' .quiz-choice')
+  await click(tile(1) + ' .quiz-choice')
   assert(await browser.evaluate('document.querySelectorAll(".quiz-tile.selected").length === 2'), 'multiple crops selected')
   assert(await browser.evaluate('document.querySelector(".quiz-submit .primary").disabled'), 'untyped selection must not silently confirm')
   await click('.quiz-workspace .issue-card[data-issue="merged"]')
   assert(await browser.evaluate('document.querySelectorAll(".quiz-tile.wrong").length === 2'), 'one error type applies to both selected crops')
   assert(!await browser.evaluate('document.querySelector(".quiz-submit .primary").disabled'), 'suggestions must not be required to save')
-  await click('.quiz-tile:nth-child(3) .quiz-choice')
+  await click(tile(2) + ' .quiz-choice')
   await browser.key('5')
-  await click('.quiz-tile:nth-child(4) .quiz-choice')
+  const skippedId = await browser.evaluate(`document.querySelector('${tile(2)}').dataset.unit`)
+  assert(await browser.evaluate(`document.querySelector('${tile(2)}').classList.contains('skipped')`), 'Can’t tell skips the crop')
+  await click(tile(3) + ' .quiz-choice')
   await browser.key('1')
-  await browser.waitFor('document.querySelector(".quiz-tile:nth-child(4) .suggestion-options button")?.innerText === "カ"')
-  await click('.quiz-tile:nth-child(4) .suggestion-options button')
+  await browser.waitFor(`document.querySelector('${tile(3)} .suggestion-options button')?.innerText === "カ"`)
+  const roundImage = await browser.evaluate(`document.querySelector('${tile(3)} img').getAttribute("src")`)
+  const correctedId = decodeURIComponent(roundImage.split('/characters/')[1].split('/image')[0])
+  const beforeCorrection = units(config.directory)[correctedId]
+  await click(tile(3) + ' .suggestion-options button')
+  await click(tile(3) + ' .no-suggestion')
+  await click(tile(3) + ' .suggestion-options button')
   await browser.screenshot(join(screenshots, 'error-quiz-desktop.png'))
-  await browser.evaluate('document.querySelector(".quiz-choice").focus()')
+  await browser.evaluate('document.activeElement.blur()')
   await browser.key('Enter')
-  await browser.waitFor('document.querySelector(".round-count")?.innerText.includes("12 reviewed")')
+  await browser.waitFor(`document.querySelector(".round-count")?.innerText.includes("${availableTiles.length - 1} reviewed")`)
   const rounds = events(config.directory).filter(e => e.field === 'review' && e.evidence?.includes('"kind": "visual-quiz"'))
-  assert(rounds.length === 12, 'exactly twelve decisions saved')
-  assert(rounds.filter(e => e.new === 'disputed').length === 3, 'joined and uncertain remain flagged')
-  assert(rounds.filter(e => e.new === 'reviewed').length === 9, 'matches and explicit correction confirmed')
+  assert(rounds.length === availableTiles.length - 1, 'only decided viewable crops are saved')
+  assert(!rounds.some(e => e.target_id === skippedId), 'Can’t tell wrote no review')
+  assert(rounds.filter(e => e.new === 'disputed').length === 2, 'joined crops remain flagged')
+  assert(rounds.filter(e => e.new === 'reviewed').length === availableTiles.length - 3, 'matches and explicit correction confirmed')
   assert(rounds.filter(e => JSON.parse(e.evidence).issue === 'merged').length === 2, 'distinct error types retained')
+  const corrected = units(config.directory)[correctedId]
+  assert(corrected.unicode === 'U+30AB' && corrected.reading === beforeCorrection.reading,
+    'the round changes the selected identity while preserving its reading')
+  const exported = await (await fetch(service.base + '/atlas/reviews')).json()
+  const correctionReview = exported.reviews.filter(row => row.event.target_id === correctedId).pop()
+  assert(correctionReview?.current, 'the round identity correction is current in the export')
+  assert(JSON.parse(correctionReview.event.evidence).correction.unicode === 'U+30AB',
+    'the export carries the corrected identity')
   console.log('PASS multi-select, illustrated error types, optional suggestion, keyboard save and advance')
 
   await browser.send('Page.reload')
@@ -112,17 +137,21 @@ try {
   assert(await browser.evaluate('document.querySelector(".undo-round") !== null'), 'last round retained after reload')
   await click('.undo-round')
   await browser.waitFor('document.querySelector(".undo-round") === null')
-  assert(events(config.directory).filter(e => e.evidence?.startsWith('undo of ')).length === 13, 'undo includes optional reading correction')
-  console.log('PASS durable undo restores reading as well as decisions')
+  assert(events(config.directory).filter(e => e.evidence?.startsWith('undo of ')).length === availableTiles.length, 'undo includes the identity correction and excludes the skip')
+  const restored = units(config.directory)[correctedId]
+  assert(restored.unicode === beforeCorrection.unicode && restored.reading === beforeCorrection.reading,
+    'undo restores identity and reading')
+  console.log('PASS exported identity correction and durable undo preserve the reading')
 
   await browser.waitFor(roundReady)
-  await click('.selection-toolbar .bulk-toggle')
-  assert(await browser.evaluate('document.querySelectorAll(".quiz-tile.selected").length === 12'), 'select all')
-  await click('.selection-toolbar .bulk-toggle')
+  const nextAvailable = await browser.evaluate('document.querySelectorAll(".quiz-tile:not(.unavailable)").length')
+  await click('.stage-toolbar .bulk-toggle')
+  assert(await browser.evaluate('document.querySelectorAll(".quiz-tile.selected").length') === nextAvailable, 'select all viewable crops')
+  await click('.stage-toolbar .bulk-toggle')
   assert(await browser.evaluate('document.querySelectorAll(".quiz-tile.selected").length === 0'), 'deselect all')
-  await click('.quiz-tile:first-child .quiz-choice')
+  await click('.quiz-tile:not(.unavailable) .quiz-choice')
   await click('.quiz-workspace .issue-card[data-issue="blank"]')
-  const lastImage = await browser.evaluate('document.querySelector(".quiz-tile:last-child img").getAttribute("src")')
+  const lastImage = await browser.evaluate('Array.from(document.querySelectorAll(".quiz-tile:not(.unavailable) img")).at(-1).getAttribute("src")')
   const lastId = decodeURIComponent(lastImage.split('/characters/')[1].split('/image')[0])
   const mark = events(config.directory).length
   await fetch(service.base + '/reviews', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target_type:'unit', target_id:lastId, field:'note', new:'Concurrent edit', client_id:'other' }) })
@@ -148,10 +177,16 @@ try {
   await browser.send('Network.setBlockedURLs', { urls: ['*/atlas/characters/*/image*'] })
   await browser.send('Network.setCacheDisabled', { cacheDisabled: true })
   await route('#/review?reading=い', 'document.querySelectorAll(".quiz-tile.unavailable").length > 0')
-  assert(await browser.evaluate('document.querySelector(".quiz-submit .primary").disabled'), 'unseen crops cannot be confirmed')
+  await browser.waitFor('document.querySelectorAll(".quiz-tile.unavailable").length === document.querySelectorAll(".quiz-tile").length')
+  assert(await browser.evaluate('document.querySelector(".quiz-submit .primary").classList.contains("next-round")'), 'unseen crops offer only Next round')
+  const beforeUnavailable = events(config.directory).length
+  await click('.next-round')
+  await browser.waitFor('document.querySelectorAll(".quiz-tile.unavailable").length > 0')
+  assert(events(config.directory).length === beforeUnavailable, 'unseen crops cannot be confirmed')
   assert(errors.length === 0, 'browser exceptions: ' + errors.join(', '))
   console.log('PASS unavailable images and no browser exceptions')
 } catch (error) {
   if (browser) { console.log('Failure detail:', await browser.evaluate('Array.from(document.querySelectorAll(".error-message")).map(e=>e.innerText).join("; ")')); await browser.screenshot(join(screenshots, 'failure.png')) }
+  console.log('Service failure:', service.log.slice(-8).join('').slice(-10000))
   throw error
-} finally { await browser?.close(); service.stop() }
+} finally { await browser?.close(); await service.stop() }
