@@ -41,7 +41,7 @@ from pydantic import BaseModel
 
 from . import reconcile, refs, registry, tables
 from . import rights as rights_module
-from .schema import Document, Group, Licence, Line, Page, PageText, ReviewState, Rights, Unit
+from .schema import Document, Group, Licence, Line, Page, PageText, ReviewState, Rights, Script, Unit
 
 ROOT = Path(__file__).resolve().parents[2]
 VOCAB = ROOT / "data" / "vocab"
@@ -58,6 +58,10 @@ WORK = ".release-work"
 PLACEHOLDER = re.compile(r"\{\{([^{}]+)\}\}")
 # The columns the units table carries before the derived ones are added, in the store's order.
 DERIVED_KEYS = ("modern_kana", "shinji")
+#: The scripts whose forms have a modern kana. A kanji's grapheme is its family's representative
+#: rather than a reading — 國 and 国 are one family, and the shinji column is the one that says
+#: so — so a han character is never rewritten by the modern_kana policy.
+KANA_FORMS = frozenset({Script.HIRAGANA, Script.HENTAIGANA, Script.KATAKANA})
 
 
 class ExportError(RuntimeError):
@@ -110,24 +114,22 @@ def policy(name: str = "export-v1", path: Path | None = None) -> Policy:
 
 @dataclass
 class Normaliser:
-    """The tables a policy's columns are computed from, read once."""
+    """The tables a policy's columns are computed from, read once.
 
-    hentaigana: dict[str, str] = field(default_factory=dict)
+    The modern kana of a form is not read here: the character layer states it as the grapheme of
+    the form, and `refs.grapheme` is the one place that answers which kana a form is a form of.
+    """
+
     shinji: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def load(cls) -> Normaliser:
-        """The hentaigana reading of each code point, and each 旧字 to its 新字."""
-        hentaigana: dict[str, str] = {}
-        for row in refs._read_tsv("hentaigana.tsv"):
-            readings = [reading for reading in (row.get("readings") or "").split("/") if reading]
-            if readings:
-                hentaigana[row["code_point"].strip().upper()] = readings[0]
+        """Each 旧字 to its 新字."""
         shinji: dict[str, str] = {}
         for row in refs._read_tsv("kanji-equivalents.tsv"):
             if row.get("kind") == "shinji-kyuji":
                 shinji[row["a"]] = row["b"]
-        return cls(hentaigana=hentaigana, shinji=shinji)
+        return cls(shinji=shinji)
 
     def value(self, column: str, unit: Unit) -> str | None:
         """One derived cell, or None when the policy has nothing to say about this unit."""
@@ -138,13 +140,17 @@ class Normaliser:
         raise ExportError(f"no implementation for the derived column {column!r}")
 
     def _modern_kana(self, unit: Unit) -> str | None:
-        """The modern kana a unit's form reads as, where the form is a hentaigana.
+        """The modern kana a unit's form reads as, where the form is not already the modern kana.
 
-        A unit whose code point is a hentaigana is written in the kana of its first 音価: か for
-        U+1B019. A unit with several code points, as a kana with a combining voicing mark, is
-        rewritten per code point and left alone where a code point has no entry. A unit that is not
-        a hentaigana gets nothing: the column says what the form reads as, and an ordinary hiragana
-        already says it.
+        A unit whose code point is a hentaigana is written in the kana of its first 音価 - か for
+        U+1B019 - and one whose code point is the alternate katakana of Unicode 18.0 is written as
+        ネ. The grapheme is what says so: it is the modern kana a form is a form of, which the
+        character layer states for every kana, so this asks it rather than keeping a second table.
+        Only a kana form is rewritten: a kanji's grapheme names its old/new family, which is the
+        shinji column's business, and a symbol answers as itself. A unit with several code points,
+        as a kana with a combining voicing mark, is rewritten per code point and left alone where a
+        code point has no grapheme. A unit that is already the modern kana of its grapheme gets
+        nothing: the column says what the form reads as.
         """
         if not unit.unicode:
             return None
@@ -154,12 +160,12 @@ class Normaliser:
         changed = False
         words = []
         for point in points:
-            reading = self.hentaigana.get(point)
-            if reading is None:
-                words.append(refs.to_char(point))
-            else:
-                words.append(reading)
-                changed = True
+            char = refs.to_char(point)
+            # U+306D is ね, the grapheme of the ね-forms; a code point the character layer does not
+            # hold, or that is not a kana form, is written as itself.
+            grapheme = refs.grapheme(point) if refs.script_of(char) in KANA_FORMS else None
+            words.append(refs.to_char(grapheme) if grapheme else char)
+            changed = changed or (grapheme is not None and grapheme != point)
         return "".join(words) if changed else None
 
     def _shinji(self, unit: Unit) -> str | None:
@@ -780,7 +786,7 @@ def figures_of(
                 units_by_classification[str(unit.classification)] += 1
                 units_by_label_coverage["reading" if unit.reading else "no reading"] += 1
                 units_by_label_coverage["unicode" if unit.unicode else "no unicode"] += 1
-                units_by_label_coverage["jibo" if unit.jibo else "no jibo"] += 1
+                units_by_label_coverage["jibo" if refs.jibo_of(unit.unicode) else "no jibo"] += 1
                 units_by_label_coverage["variants" if unit.variants else "no variants"] += 1
                 document = licences.get(unit.document_id or "")
                 units_by_image[_licence_of(document.image_rights if document else None)] += 1

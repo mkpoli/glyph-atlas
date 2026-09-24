@@ -224,7 +224,7 @@ def test_the_manifest_counts_the_rows_written_and_checksums_the_files(tmp_path):
     rows = [unit(f"u{i}", document_id=f"d{i % 2}") for i in range(3)]
     assert tables.write(directory, rows, Unit, shard=True, command="atlas import codh") == 3
     manifest = json.loads((directory / "MANIFEST.json").read_text(encoding="utf-8"))
-    assert manifest["schema_version"] == 1
+    assert manifest["schema_version"] == tables.SCHEMA_VERSION
     assert manifest["tables"] == {"units": 3}
     assert manifest["command"] == "atlas import codh"
     assert manifest["writer"].startswith("glyph-atlas ")

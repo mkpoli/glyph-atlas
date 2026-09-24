@@ -107,6 +107,10 @@ Left out, and why:
 
 ## 5. Labelling
 
+Browsing has three levels: a curated grapheme family (仮 = 假), separate written characters (仮 and
+假), and the exact forms visible in source occurrences. Grouping never changes a character label
+or a saved correction. 字母, readings, and registry variant identifiers remain attached metadata.
+
 Four layers, each fillable on its own:
 
 1. Source: the transcriber's string for the unit, verbatim.
@@ -128,8 +132,9 @@ recorded, as for the 子-shaped ネ.
 Kanji. The transcriber's string stays in the source layer (国 when the guidelines asked for 当用漢字).
 The classification layer records the character as written: `unicode` U+570B when the page shows 國,
 and, when the written form matches a registered glyph, the Moji_Joho IVS or MJ文字図形名 on its own
-registered base; otherwise a local variant id or nothing. 旧字 and 新字 are never merged in the
-classification layer; the modern form is derived at export.
+registered base; otherwise a local variant id or nothing. 旧字 and 新字 retain distinct identities in
+the classification layer. Cited orthographic pairs share a browsing family, and export normalisation
+remains a separate policy.
 
 Marks and joins. Voicing marks are recorded as present or absent with their own rectangle. 踊り字
 keep their mark and link to the repeated span. 合字 (ゟ, ヿ, 𬼂 U+2CF02 for なり) are one unit with a

@@ -1,13 +1,27 @@
-from glyph_atlas.schema import Box, Classification, Script, Unit, VariantRef
+from glyph_atlas import refs
+from glyph_atlas.schema import Box, Character, Classification, Script, Unit, VariantRef
 
 
-def test_unit_keeps_hentaigana_and_jibo_apart_from_the_modern_reading():
+def test_unit_keeps_hentaigana_and_the_modern_reading_apart():
     unit = Unit(
         id="u1", page_id="p1", box=Box(x=10, y=20, w=30, h=40),
-        text_source="あ", reading="あ", unicode="U+1B003", script=Script.HENTAIGANA, jibo="愛",
+        text_source="あ", reading="あ", unicode="U+1B003", script=Script.HENTAIGANA,
     )
     assert unit.box.iiif_region() == "10,20,30,40"
-    assert unit.unicode == "U+1B003" and unit.jibo == "愛" and unit.reading == "あ"
+    assert unit.unicode == "U+1B003" and unit.reading == "あ"
+    # The 字母 is not a field of the unit: it belongs to the character, and the layer has it.
+    assert refs.jibo_of_unit(unit.unicode) == "愛"
+    assert refs.character("U+1B003").jibo == ["愛"]
+
+
+def test_a_character_is_the_middle_layer():
+    character = Character(
+        code_point="U+1B127", char="𛄧", name="KATAKANA LETTER ALTERNATE NE", script=Script.KATAKANA,
+        age="18.0", block="Kana Extended-A", jibo=["子"], readings=["ね"], grapheme="U+306D",
+        confusables=["U+5B50"],
+    )
+    assert character.jibo == ["子"] and character.readings == ["ね"]
+    assert character.grapheme == "U+306D" and character.confusables == ["U+5B50"]
 
 
 def test_a_standalone_crop_needs_no_page():

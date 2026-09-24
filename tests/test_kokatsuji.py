@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from glyph_atlas import images, tables
+from glyph_atlas import images, refs, tables
 from glyph_atlas.importers import kokatsuji
 from glyph_atlas.schema import Classification, Production, Register, Script, UnitKind
 
@@ -122,25 +122,29 @@ def test_a_char_block_takes_its_code_point_from_its_jibo(tmp_path, cache, archiv
 
     single = by_id["codh-omt:001:1"]  # は from 八: one code point carries that 字母
     assert single.granularity == "char" and single.classification is Classification.IDENTIFIED
-    assert single.unicode == "U+1B09E" and single.jibo == "八"
+    assert single.unicode == "U+1B09E" and refs.jibo_of_unit(single.unicode) == "八"
     assert single.script is Script.HENTAIGANA and single.kind is UnitKind.CHAR
-    assert [(c.unicode, c.p, c.jibo) for c in single.candidates] == [("U+1B09E", 1.0, "八")]
+    assert [(c.unicode, c.p) for c in single.candidates] == [("U+1B09E", 1.0)]
+    assert refs.character("U+1B09E").jibo == ["八"]
 
     several = by_id["codh-omt:001:2"]  # な from 奈: three code points, all equally likely
     assert several.classification is Classification.AMBIGUOUS and several.unicode is None
-    assert several.jibo == "奈" and several.script is Script.HENTAIGANA
+    assert several.script is Script.HENTAIGANA
     assert [c.unicode for c in several.candidates] == ["U+1B080", "U+1B081", "U+1B082"]
     assert len({c.p for c in several.candidates}) == 1
     assert sum(c.p for c in several.candidates) == pytest.approx(1.0)
 
     unmatched = by_id["codh-omt:001:6"]  # と from 止: no code point of the table carries it
     assert unmatched.classification is Classification.UNASSESSED and unmatched.unicode == "U+3068"
-    assert unmatched.jibo == "止" and unmatched.candidates == []
-    assert unmatched.script is Script.HIRAGANA
+    assert unmatched.candidates == [] and unmatched.script is Script.HIRAGANA
+    # 止 is the 字母 the source states for と; no code point of the layer carries it, so the unit
+    # names the transcribed code point and the upstream sequence keeps what the source wrote.
+    assert unmatched.upstream["jibo_sequence"] == "止"
+    assert refs.jibo_of_unit(unmatched.unicode) is None
 
     kanji = by_id["codh-omt:001:5"]
     assert kanji.classification is Classification.IDENTIFIED and kanji.unicode == "U+884C"
-    assert kanji.jibo is None and kanji.script is Script.KANJI
+    assert refs.jibo_of_unit(kanji.unicode) is None and kanji.script is Script.KANJI
 
 
 def test_a_renji_block_keeps_its_aligned_jibo_sequence(tmp_path, cache, archive):
@@ -149,7 +153,7 @@ def test_a_renji_block_keeps_its_aligned_jibo_sequence(tmp_path, cache, archive)
 
     block = by_id["codh-omt:001:3"]  # 連彫活字 of three characters
     assert block.granularity == "block" and block.kind is UnitKind.LIGATURE
-    assert block.classification is Classification.UNASSESSED and block.jibo is None
+    assert block.classification is Classification.UNASSESSED
     assert block.text_source == block.reading == "つれ〱"
     assert block.unicode == "U+3064 U+308C U+3031" and block.candidates == []
     assert block.upstream == {

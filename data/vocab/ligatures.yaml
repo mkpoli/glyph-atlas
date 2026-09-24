@@ -1,0 +1,79 @@
+# The ligature layer: a character that is two kana set as one.
+#
+# A ligature is one encoded identity that is made of other characters, and the character table
+# cannot say so. `characters.tsv` is built from Unicode's names and properties, and the name of
+# U+2A708 is `CJK UNIFIED IDEOGRAPH-2A708`: nothing in the UCD says that the shape is ト and モ set
+# as one character and that it reads トモ. The name of U+1B126 is `KATAKANA DIGRAPH YORI`, which says
+# the reading and not the two characters it is made of. So the relation is hand-written here, one row
+# per character, each citing what states it.
+#
+# This is not the grapheme layer. ゟ is not a form of よ or of り: it is a character of its own that
+# is made of the two, exactly as 子 is confusable with 𛄧 without being a form of it. The components
+# are therefore their own characters, and a search for ヨ does not find 𛄦 unless the reader asks for
+# the ligatures of ヨ (the API's `components` relation), the way a search for 子 does not find the
+# kana that derive from it unless the reader asks for forms.
+#
+# Fields of a row:
+#   components  the characters the ligature is made of, in writing order, as characters
+#   reading     what the two together read as, in the script of the components
+#   kind        `katakana-ligature` or `hiragana-ligature`
+#   evidence    one line naming what states the pair; the comments above a row carry the detail
+#
+# A row with no evidence is a guess about a shape and does not belong here.
+ligatures:
+  # 合略仮名 トモ. The UCD states the shape in two places and the reading in neither:
+  #   Unihan 18.0 `kStrange  K:U+30E2` - the character includes a component that visually resembles
+  #     katakana モ (UAX #38, kStrange category K, "Katakana Component"); the ト half is a Han
+  #     component and is not listed there.
+  #   Unihan 18.0 `kIRG_JSource  JK-65004` - the character is a Japanese-sourced ideograph.
+  #   ja.wikipedia 「とも (仮名)」: 字源 トモ, Unicode U+2A708, 合略仮名 (a kana ligature).
+  # The モ half is what Unicode states; the pair is what the character is read as, and it is the
+  # reason a Meiji-period とも is not two characters and not ト + モ typed separately.
+  U+2A708:
+    components: [ト, モ]
+    reading: トモ
+    kind: katakana-ligature
+    evidence: Unihan kStrange K:U+30E2 (katakana component モ) and kIRG_JSource JK-65004; read トモ as 合略仮名
+
+  # ゟ and ヿ, the two digraphs Unicode 3.2 encoded. Their names state the reading - `HIRAGANA
+  # DIGRAPH YORI`, `KATAKANA DIGRAPH KOTO` - and a digraph of a reading two kana long is made of
+  # those two kana. ヿ is the katakana コト and not the hiragana こと: a katakana digraph is made of
+  # katakana.
+  U+309F:
+    components: [よ, り]
+    reading: より
+    kind: hiragana-ligature
+    evidence: Unicode name HIRAGANA DIGRAPH YORI (UnicodeData.txt 18.0.0)
+  U+30FF:
+    components: [コ, ト]
+    reading: コト
+    kind: katakana-ligature
+    evidence: Unicode name KATAKANA DIGRAPH KOTO (UnicodeData.txt 18.0.0)
+
+  # The four digraphs Unicode 18.0 added to Kana Extended-A. The names state the reading, as the two
+  # above do, and the script says which kana the components are: 𛄣 is the hiragana こと, 𛄤 𛄥 are
+  # the katakana とき and とて, and 𛄦 is the katakana ヨリ that ゟ is the hiragana of.
+  #   UnicodeData.txt 18.0.0: 1B123;HIRAGANA DIGRAPH KOTO, 1B124;KATAKANA DIGRAPH TOKI,
+  #   1B125;KATAKANA DIGRAPH TOTE, 1B126;KATAKANA DIGRAPH YORI.
+  #   L2/25-151R ("Proposal on two alternate Katakana letters", Eiso Chan) and the Unicode 18.0
+  #   chart place the four on the Kana Extended-A chart with the two letters below.
+  U+1B123:
+    components: [こ, と]
+    reading: こと
+    kind: hiragana-ligature
+    evidence: Unicode name HIRAGANA DIGRAPH KOTO (UnicodeData.txt 18.0.0)
+  U+1B124:
+    components: [ト, キ]
+    reading: トキ
+    kind: katakana-ligature
+    evidence: Unicode name KATAKANA DIGRAPH TOKI (UnicodeData.txt 18.0.0)
+  U+1B125:
+    components: [ト, テ]
+    reading: トテ
+    kind: katakana-ligature
+    evidence: Unicode name KATAKANA DIGRAPH TOTE (UnicodeData.txt 18.0.0)
+  U+1B126:
+    components: [ヨ, リ]
+    reading: ヨリ
+    kind: katakana-ligature
+    evidence: Unicode name KATAKANA DIGRAPH YORI (UnicodeData.txt 18.0.0)

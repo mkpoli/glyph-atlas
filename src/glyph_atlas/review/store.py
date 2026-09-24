@@ -69,7 +69,6 @@ SPLIT_KEYS = frozenset(
         "reading",
         "text_source",
         "unicode",
-        "jibo",
         "kind",
         "granularity",
         "script",
@@ -273,7 +272,6 @@ class UnitRequest(BaseModel):
     reading: str | None = None
     text_source: str | None = None
     unicode: str | None = None
-    jibo: str | None = None
     kind: UnitKind = UnitKind.CHAR
     granularity: Literal["char", "sequence", "block"] = "char"
     classification: Classification = Classification.UNASSESSED
@@ -709,7 +707,6 @@ class Store:
                 reading=request.reading,
                 text_source=request.text_source,
                 unicode=request.unicode,
-                jibo=request.jibo,
                 kind=request.kind,
                 granularity=request.granularity,
                 classification=request.classification,
@@ -1382,7 +1379,6 @@ def _merge(state: State, event: Review, ids: Any, *, guard: bool) -> Change:
             "reading": readings or None,
             "text_source": texts or None,
             "unicode": " ".join(unicodes) if all(unicodes) else None,
-            "jibo": None,
             "kind": UnitKind.LIGATURE.value,
             "granularity": "char",
             "classification": Classification.UNASSESSED.value,

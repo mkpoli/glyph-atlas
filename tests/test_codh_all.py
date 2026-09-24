@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from glyph_atlas import images, tables
+from glyph_atlas import images, refs, tables
 from glyph_atlas.importers import codh_all
 from glyph_atlas.schema import Classification, Production, ReviewState, UnitKind
 
@@ -211,6 +211,9 @@ def test_two_books_merge_into_one_directory(tmp_path, cache, books_file, zips, m
         "source": "codh-char-shape",
         "ref": "900000001/900000001_00003_1/B0001/C0001",
         "block": "B0001",
+        "identity_basis": "normalized_transcription",
+        "source_code_point": "U+6F22",
+        "normalization_evidence": "https://codh.rois.ac.jp/char-shape/#version",
     }
 
 
@@ -219,7 +222,9 @@ def test_a_kana_unit_is_unassessed_and_a_kanji_identified(tmp_path, cache, books
     units = {unit.id: unit for unit in tables.Dataset(tmp_path / "out").read("units")}
     kana = units["codh:900000001:900000001_00003_1:B0001:C0002"]
     assert kana.unicode == "U+304B" and kana.script.value == "hiragana"
-    assert kana.classification is Classification.UNASSESSED and kana.jibo is None
+    # か carries no 字母: the layer states one for the kana forms of a source, not for the modern
+    # kana, whose derivation every reader of Japanese knows and no record of it needs.
+    assert kana.classification is Classification.UNASSESSED and refs.jibo_of_unit(kana.unicode) is None
     assert units["codh:900000001:900000001_00003_1:B0001:C0001"].classification is Classification.IDENTIFIED
 
 

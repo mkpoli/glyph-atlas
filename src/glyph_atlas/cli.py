@@ -39,6 +39,80 @@ def sources() -> None:
 
 
 @app.command()
+def character(
+    code_point: Annotated[
+        list[str] | None,
+        typer.Argument(help="code points to look up, U+1B127 or 1b127; the whole layer when none"),
+    ] = None,
+    grapheme: Annotated[
+        bool, typer.Option("--grapheme", "-g", help="list one grapheme and every form of it")
+    ] = False,
+    limit: Annotated[int, typer.Option(help="how many rows to print when listing the layer")] = 40,
+) -> None:
+    """Show the character layer: what each code point is, its 字母 and its grapheme.
+
+    Three layers, three questions. A grapheme is one shape as the writing system distinguishes
+    shapes; a character is one encoded identity, named by a code point; the 字母 is metadata on a
+    character, the kanji a kana form derives from. `atlas character U+1B127` answers all three for
+    one character, and `atlas character --grapheme U+1B127` lists every character written as the
+    same shape, which is how a reviewer finds the other ways a source may have printed ね.
+    """
+    from . import refs
+
+    if grapheme:
+        if not code_point:
+            raise typer.BadParameter("--grapheme needs a code point")
+        head = refs.grapheme(code_point[0])
+        if head is None:
+            typer.echo(f"{code_point[0]} is not in the character layer")
+            raise typer.Exit(code=1)
+        members = refs.graphemes().get(head) or []
+        typer.echo(f"{head} {refs.to_char(head)} is written as {len(members)} characters:")
+        for member in members:
+            row = refs.character(member)
+            script = row.script.value if row else "?"
+            typer.echo(f"  {member:<9} {refs.to_char(member)}  {script:<10} {_character_note(row)}")
+        return
+    if not code_point:
+        rows = refs.characters()
+        typer.echo(f"{len(rows)} characters, {len(refs.graphemes())} graphemes")
+        for row in rows[:limit]:
+            typer.echo(f"{row.code_point:<9} {row.char}  {row.script.value:<10} {_character_note(row)}")
+        return
+    for value in code_point:
+        row = refs.character(value)
+        if row is None:
+            typer.echo(f"{value} is not in the character layer")
+            continue
+        head = refs.grapheme(value) or value
+        fields = [
+            ("char", row.char),
+            ("name", row.name),
+            ("alias", row.alias),
+            ("script", row.script.value),
+            ("block", row.block),
+            ("age", row.age),
+            ("jibo", " ".join(row.jibo)),
+            ("readings", " ".join(row.readings)),
+            ("grapheme", f"{head} {refs.to_char(head)}"),
+            ("confusables", " ".join(row.confusables)),
+        ]
+        typer.echo(row.code_point)
+        for name, value_of in fields:
+            if value_of:
+                typer.echo(f"  {name:<11} {value_of}")
+
+
+def _character_note(row: object) -> str:
+    """One line about a character: its 字母 and what it reads as."""
+    if row is None:
+        return ""
+    jibo = " ".join(row.jibo)
+    readings = " ".join(row.readings)
+    return " ".join(part for part in (f"字母 {jibo}" if jibo else "", f"読 {readings}" if readings else "") if part)
+
+
+@app.command()
 def coverage(
     out: Annotated[Path, typer.Option(help="write the coverage table here")] = Path("work/coverage.tsv"),
     directories: Annotated[

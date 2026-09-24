@@ -2,7 +2,9 @@
 
 A dataset is one file per model of `glyph_atlas.schema`: `documents.parquet` and the optional
 `pages`, `page_texts`, `lines`, `units` and `groups`. Every file carries the full schema of its
-model, so an empty table still has every column. `units` and `lines` may instead be a directory of
+model, so an empty table still has every column. `Character` is a model too but not a dataset table:
+the character layer is one generated vocabulary under `data/vocab/`, read through `refs`, and a
+release refers to it rather than copying it. `units` and `lines` may instead be a directory of
 shards named after the first two hex digits of `sha1(document_id)`; a row without a `document_id`
 lands in shard `00`. Rows inside a file are sorted by `document_id`, `page_id`, `seq` and `id`, using
 the fields the model has, with nulls first.
@@ -37,7 +39,9 @@ from pydantic import BaseModel, ValidationError
 from . import __version__
 from .schema import Box, Document, Group, Line, Page, PageText, Unit
 
-SCHEMA_VERSION = 1
+#: The version of the dataset tables' schema, written into every `MANIFEST.json`. Version 2 removed
+#: `Unit.jibo`: the 字母 is metadata on a character now, and `data/vocab/characters.tsv` states it.
+SCHEMA_VERSION = 2
 BATCH_SIZE = 65_536
 MANIFEST_NAME = "MANIFEST.json"
 

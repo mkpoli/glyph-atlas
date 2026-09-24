@@ -58,9 +58,11 @@ records with coordinates and receives no crops.
 ### Missing information
 
 Fields are filled independently, so partial records are expected. Units carrying a `reading`, a
-`unicode` value, a `jibo` and a `variants` entry: {{counts.units_by_label_coverage}}. A unit whose
-form is identified and has no code point keeps `unicode` null, its 字母 where known, and a local shape
-id. Documents by production type, genre and dating coverage: {{counts.documents_by_metadata}}.
+`unicode` value, a 字母 resolved from the character layer and a `variants` entry:
+{{counts.units_by_label_coverage}}. A unit whose form is identified and has no code point keeps
+`unicode` null and a local shape id; the 字母 follows from the code point, so it is present exactly
+when `unicode` names a kana the character layer has one for. Documents by production type, genre and
+dating coverage: {{counts.documents_by_metadata}}.
 
 ### Splits
 
@@ -111,8 +113,17 @@ Four layers are recorded, each fillable on its own:
 | --- | --- | --- |
 | Source | `text_source` | the transcriber's string for the unit, verbatim |
 | Reading | `reading` | the diplomatic reading, historical spelling kept (けふ stays けふ) |
-| Classification | `unicode`, `script`, `jibo`, `variants` | code points, script, 字母, variant key |
+| Classification | `unicode`, `script`, `variants` | the code point, the script, the variant key |
 | Normalisation | derived columns | modern kana and 新字, computed at export under a named policy |
+
+The 字母 is not a field of a unit, because it is not a property of an occurrence: it belongs to the
+character, and `data/vocab/characters.tsv` states it once per code point. A unit reaches it through
+`unicode`. The same table states which characters are forms of one grapheme, so a search for ね
+reaches ネ, the 変体仮名 of 年 and root, heat and 禰, and 𛄧, the alternate katakana Unicode 18.0
+added. Three layers answer three questions: a **grapheme** is one shape as the writing system
+distinguishes shapes, a **character** is one encoded identity, and the **字母** is what a form
+derives from. 𛄧, ネ and 子 are one confusable shape and three characters, and a record that stored
+子 for the first would no longer say which of them a source printed.
 
 The transcription keeps its Koji markup in `lines.text_raw` and is stripped into `lines.text` for
 matching and display.
@@ -120,7 +131,7 @@ matching and display.
 ### Labelling
 
 The reading starts from the transcription. For a kana unit the classifier scores the code points of
-that reading and the 字母 follows from the chosen code point. Kanji are recorded as written, so 旧字
+that reading and the 字母 then follows from the chosen code point. Kanji are recorded as written, so 旧字
 and 新字 stay apart in the classification layer. Voicing marks are recorded as present or absent with
 their own rectangle, iteration marks link to the units they repeat, and units joined by continuous
 strokes carry a 連綿 group id. A label is machine-assigned (`method=detect-align`) or set by a person
@@ -240,7 +251,7 @@ tables of a released version do not change. The upstream pins of each version ar
 | `{{counts.units_by_review}}` | units by `review` state | `COUNTS.md` |
 | `{{counts.units_by_script}}` | units by `script` | `COUNTS.md` |
 | `{{counts.units_by_classification}}` | units by `classification` | `COUNTS.md` |
-| `{{counts.units_by_label_coverage}}` | units carrying `reading`, `unicode`, `jibo` and `variants` | `COUNTS.md` |
+| `{{counts.units_by_label_coverage}}` | units carrying `reading`, `unicode`, a 字母 from the character layer and `variants` | `COUNTS.md` |
 | `{{counts.units_by_rights}}` | units by image licence and by text licence | `COUNTS.md` |
 | `{{counts.documents_by_metadata}}` | documents by production type, genre and dating coverage | `COUNTS.md` |
 | `{{counts.crops}}` | materialised crops by bucket | `COUNTS.md` |
