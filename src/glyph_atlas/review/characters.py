@@ -55,7 +55,16 @@ from .. import images, refs, visual_families
 from ..production import production_info
 from ..schema import Box, Character, Document, Page, Unit
 from . import corpus_source, status
-from .atlas import identity_text, label, review_state, single_character, written_identity
+from .atlas import (
+    canonical_identity,
+    identity_text,
+    label,
+    review_state,
+    script_of_identity,
+    single_character,
+    stored_identity,
+    written_identity,
+)
 from .request_cache import file_stamp, lookup_scope, memoize
 from .store import BadRequest, ReviewRequest, Store, StoreError
 
@@ -124,29 +133,6 @@ class LayerEdit(BaseModel):
     note: str = Field(default="", max_length=2000)
     verdict: Literal["match", "wrong", "unsure"] = "wrong"
     issue: Literal["character", "reading", "crop", "merged", "blank", "unclear", "other"] = "character"
-
-
-def canonical_identity(value: str) -> str:
-    """The stored form of a written identity: `"𪜈"` and `"U+2A708"` both answer `"U+2A708"`.
-
-    `Unit.unicode` is a code point sequence, space separated when a character is written with
-    combining marks, so the same character typed and pasted must land on the same string or two
-    spellings of one identity would look like two different corrections.
-    """
-    points = identity_text(value).split()
-    if not points:
-        raise BadRequest("A character correction needs a character or a code point.")
-    return " ".join(refs.to_code_points(points[0])) if len(points) == 1 else " ".join(points)
-
-
-def _stored(unit: Unit) -> str | None:
-    """The identity already stored on a unit, canonically spelled, or `None` when it has none.
-
-    A unit may carry no code point at all — an unreadable mark, a gap — and correcting only its
-    reading must not need an identity to compare against.
-    """
-    value = (unit.unicode or written_identity(unit) or "").strip()
-    return canonical_identity(value) if value else None
 
 
 def _source_digest(store: Store, unit: Unit) -> str | None:
@@ -252,7 +238,7 @@ def _row(character: Character, counts: dict[str, int], *, reason: str | None = N
         "occurrence_count": counts.get(character.code_point, 0),
         "url": f"/layers/characters/{character.code_point}",
         "grapheme": _grapheme_head(character, counts),
-        "default_scope": ("grapheme" if refs.grapheme_info(character.code_point)["relation"]
+        "default_scope": ("grapheme" if _family(character)["relation"]
                           == "shinjitai-kyujitai" else "character"),
     }
     if reason:
@@ -438,12 +424,25 @@ def _showable(store: Store, unit: Unit) -> bool:
 
 
 def _grapheme_head(character: Character, counts: dict[str, int]) -> dict[str, Any]:
-    info = refs.grapheme_info(character.code_point)
+    info = _family(character)
     return {
         **info,
         "is_self": info["code_point"] == character.code_point,
         "occurrence_count": sum(counts.get(member["code_point"], 0) for member in info["members"]),
     }
+
+
+def _family(character: Character) -> dict[str, Any]:
+    """The grapheme family of a character, or a family of itself when no grapheme names it."""
+    return refs.grapheme_info(character.code_point) or _own_family(character)
+
+
+def _own_family(character: Character) -> dict[str, Any]:
+    """The family of a character no grapheme names, such as ツ + U+309A: itself alone."""
+    return {"code_point": character.code_point, "char": character.char, "name": character.name,
+            "script": str(character.script), "label": character.char,
+            "members": [{"code_point": character.code_point, "char": character.char}],
+            "character_count": 1, "relation": "self", "evidence": [], "url": None}
 
 
 def character_view(character: Character, layer: Layers, *, expand: str = "none", state: str = "all",
@@ -773,9 +772,16 @@ def router(store: Store) -> APIRouter:
 
     def known(code_point: str) -> Character:
         row = refs.character(code_point)
-        if row is None:
-            raise HTTPException(404, f"{refs.normalise(code_point)} is not in the character table.")
-        return row
+        if row is not None:
+            return row
+        # A character written with a mark, such as ツ + U+309A, has no row of its own in the table,
+        # but once a unit records it the layer holds it, and it is browsed like any other.
+        current = cached_layer()
+        key = " ".join(point.upper() for point in code_point.split())
+        if current is not None and key in current.per_character:
+            text = refs.from_code_points(key.split())
+            return Character(code_point=key, char=text, script=script_of_identity(text))
+        raise HTTPException(404, f"{refs.normalise(code_point)} is not in the character table.")
 
     @api.get("/layers/summary")
     def summary() -> dict[str, Any]:
@@ -1054,7 +1060,7 @@ def router(store: Store) -> APIRouter:
                     or edit.box.x + edit.box.w > page.width or edit.box.y + edit.box.h > page.height):
                 raise BadRequest("The crop must stay inside the source image.")
 
-        before = {"code_point": _stored(unit), "character": written_identity(unit), "reading": label(unit),
+        before = {"code_point": stored_identity(unit), "character": written_identity(unit), "reading": label(unit),
                   "script": str(unit.script), "box": unit.box.model_dump() if unit.box else None}
         evidence_base = {"kind": "character-review", "request": edit.model_dump(mode="json"),
                          "issue": edit.issue, "note": edit.note, "before": before,
@@ -1080,7 +1086,7 @@ def router(store: Store) -> APIRouter:
             identity = canonical_identity(edit.character)
             if not single_character(identity_text(identity)):
                 raise BadRequest("A character correction is one character; a ligature is one code point too.")
-            if identity != _stored(unit):
+            if identity != stored_identity(unit):
                 requests.append(ReviewRequest(
                     target_type="unit", target_id=unit_id, field="unicode", new=identity,
                     base_revision=revision, client_id=edit.client_id,
@@ -1094,8 +1100,8 @@ def router(store: Store) -> APIRouter:
                 changed.append("character")
                 # The script of an occurrence is a fact of the character layer, so it is corrected by
                 # correcting the character, not by typing a script into a unit.
-                script = refs.script_of(identity_text(identity))
-                if str(script) != "unknown" and str(unit.script) != str(script):
+                script = script_of_identity(identity_text(identity))
+                if script != "unknown" and str(unit.script) != script:
                     requests.append(ReviewRequest(
                         target_type="unit", target_id=unit_id, field="script", new=str(script),
                         base_revision=revision, client_id=edit.client_id,
@@ -1109,7 +1115,7 @@ def router(store: Store) -> APIRouter:
 
         if edit.reading is not None:
             reading = identity_text(edit.reading)
-            if not reading_is_allowed(reading, identity or _stored(unit)):
+            if not reading_is_allowed(reading, identity or stored_identity(unit)):
                 raise BadRequest("A reading is one character, or the two a ligature reads as.")
             if reading != label(unit):
                 requests.append(ReviewRequest(
@@ -1132,7 +1138,7 @@ def router(store: Store) -> APIRouter:
         # whose character is the one already stored, which is a contradiction and not a correction.
         resolved = (edit.verdict == "wrong" and edit.issue == "character" and "character" in changed)
 
-        written = identity if "character" in changed else _stored(unit)
+        written = identity if "character" in changed else stored_identity(unit)
         correction = {
             "code_point": written if written and len(identity_text(written)) == 1 else None,
             "character": identity_text(written) if written else None,

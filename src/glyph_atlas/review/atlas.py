@@ -120,15 +120,36 @@ def repair_withheld(unit: Unit) -> bool:
     return bool(recorded and recorded.get("quiz") is False)
 
 
+#: The CJK compatibility ideographs. NFC maps each to its unified twin, but here each is a character
+#: of its own with its own row in the character layer, so identity text keeps it as written.
+_COMPATIBILITY_IDEOGRAPHS = ((0xF900, 0xFAFF), (0x2F800, 0x2FA1F))
+
+
+def _compose(text: str) -> str:
+    """NFC, except that a compatibility ideograph stays the character it is."""
+    parts: list[str] = []
+    run: list[str] = []
+    for char in text:
+        if any(low <= ord(char) <= high for low, high in _COMPATIBILITY_IDEOGRAPHS):
+            parts.append(unicodedata.normalize("NFC", "".join(run)))
+            parts.append(char)
+            run = []
+        else:
+            run.append(char)
+    parts.append(unicodedata.normalize("NFC", "".join(run)))
+    return "".join(parts)
+
+
 def identity_text(value: str) -> str:
-    """The characters a written identity names, in NFC: notation read out, or the input as it stands.
+    """The characters a written identity names, composed: notation read out, or the input as it stands.
 
     One helper for both sides of a search, so a query and a recorded identity arrive at the same
     shape by the same route. An explicit `U+XXXX` — or several of them separated by spaces, which is
     how a character written with a combining mark is recorded — is read into characters; anything
     else is kept literally, so `A` is the letter and `1` is the digit rather than U+000A and U+0001.
     NFC then makes one character of either spelling of a voiced kana, so が, U+304C and か + U+3099
-    are one value without any of them being re-encoded.
+    are one value without any of them being re-encoded. A compatibility ideograph is the exception
+    NFC would get wrong: U+FA10 is not U+585A, so it is kept.
 
     The notation is recognised before any case folding: upper-casing first would turn the `u` of
     `u+2a708` into a `U`, which is harmless, but it would also rewrite the hex digits of a literal
@@ -141,10 +162,10 @@ def identity_text(value: str) -> str:
             # Base 16 explicitly: `base=0` reads only `0x`-prefixed literals and raises on `2A708`,
             # which would make every `U+XXXX` query match nothing at all.
             text = "".join(chr(int(point[2:], 16)) for point in points)  # noqa: FURB166
-            return unicodedata.normalize("NFC", text)
+            return _compose(text)
         except ValueError:
-            return unicodedata.normalize("NFC", term)
-    return unicodedata.normalize("NFC", term)
+            return _compose(term)
+    return _compose(term)
 
 
 def search_term(q: str) -> str:
@@ -197,9 +218,21 @@ def canonical_identity(value: str) -> str:
 
 
 def stored_identity(unit: Unit) -> str | None:
-    """The identity already recorded on a unit, canonically spelled, or `None` when it has none."""
-    value = (unit.unicode or written_identity(unit) or "").strip()
-    return canonical_identity(value) if value else None
+    """The identity already recorded on a unit, canonically spelled, or `None` when it has none.
+
+    A recorded identity is read as the code points it is, not parsed like typed input: U+3000 is
+    whitespace, and parsing it would leave nothing to compare a correction with.
+    """
+    if unit.unicode and unit.unicode.strip():
+        return " ".join(point.upper() for point in unit.unicode.split())
+    written = written_identity(unit)
+    return " ".join(refs.to_code_points(written)) if written else None
+
+
+def script_of_identity(text: str) -> str:
+    """The script of a written identity: that of its base character, whatever marks it carries."""
+    base = "".join(char for char in text if not unicodedata.combining(char))
+    return str(refs.script_of(base)) if len(base) == 1 else "unknown"
 
 
 def is_space_identity(text: str) -> bool:

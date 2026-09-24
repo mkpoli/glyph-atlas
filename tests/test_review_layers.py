@@ -828,3 +828,41 @@ def test_normalized_kana_family_defaults_to_overview_with_family_count(dataset):
     assert card["candidates"]["family_glyphs"] == 17
     assert card["candidates"]["source_glyphs"] == 3
     assert card["candidates"]["requires_family_scope"] is True
+
+
+def correct(api, unit_id: str, revision: int, dataset: Path, **fields):
+    """Post one correction with the fixture's defaults."""
+    return api.post(f"/layers/units/{unit_id}", json={
+        "id": str(uuid4()), "client_id": "fixture-reviewer", "revision": revision,
+        "image_sha256": digest_of(dataset), "character": None, "reading": None,
+        "verdict": "wrong", "issue": "character", "note": "", **fields})
+
+
+def test_a_unit_written_as_an_ideographic_space_can_still_be_corrected(dataset):
+    store = Store(dataset)
+    store.record(ReviewRequest(target_id=f"{LINE}:u0", field="unicode", new="U+3000", client_id="reviewer-1"))
+    answer = correct(client(dataset), f"{LINE}:u0", store.revision(f"{LINE}:u0"), dataset,
+                     reading="あ", issue="reading")
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["changed"] == ["reading"]
+
+
+def test_a_compatibility_ideograph_is_stored_as_itself(dataset):
+    api = client(dataset)
+    unit = api.get("/layers/characters/U+5B50").json()["samples"][0]
+    answer = correct(api, unit["id"], unit["revision"], dataset, character="U+FA10")
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["layers"]["code_point"] == "U+FA10"
+
+
+def test_a_character_with_a_mark_takes_its_script_and_can_be_browsed(dataset):
+    api = client(dataset)
+    unit = api.get("/layers/characters/U+5B50").json()["samples"][0]
+    answer = correct(api, unit["id"], unit["revision"], dataset, character="U+30C4 U+309A")
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["changed"] == ["character", "script"]
+    stored = next(row for row, _ in Store(dataset).unit_snapshot(unit["id"]) if row.active)
+    assert str(stored.script) == "katakana"
+    card = client(dataset).get("/layers/characters/U+30C4 U+309A")
+    assert card.status_code == 200, card.text
+    assert card.json()["occurrence_count"] == 1
