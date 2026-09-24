@@ -1,7 +1,9 @@
 # Plan
 
-State of the field and the route to a first release. Figures were read from the cited pages on
-2026-09-11.
+The archive covers historical Japanese writing across works, genres, and collections. The first
+Hokkaido works are a pilot. Source acquisition continues across Honkoku and Japanese Wikisource;
+coverage is measured separately for discovered works, collected transcriptions, scanned pages,
+extracted characters, and human-reviewed forms. The resource survey below dates to 2026-09-11.
 
 ## 1. The dataset
 
@@ -95,10 +97,15 @@ Reference tables:
 - IVD 2026-08-03, Moji_Joho collection, 11,392 sequences, whose glyph ids are MJ文字図形名. Unicode
   License v3. https://www.unicode.org/ivd/
 
-Left out, and why:
+Japanese Wikisource is included in full discovery. Main-namespace works and scan-backed Page
+records are collected through resumable, paced requests. Text-only works remain searchable text
+evidence. Character extraction requires a traceable image and usable alignment; a collected text
+never counts as a character crop. Honkoku discovery covers every listed book, with one-book-at-a-time
+acquisition and periodic rediscovery. Extraction rotates across works to broaden coverage before
+finishing every page of the pilot.
 
-- Japanese Wikisource: 477 index pages, of which an estimated 10 to 20 are manuscript or woodblock,
-  most barely transcribed, all page-level.
+Outside the current acquisition scope:
+
 - 早稲田大学古典籍総合データベース and 慶應義塾大学 digital collections: reuse needs permission, and
   Waseda names partial use that hides the original as grounds for refusal.
 - 木簡庫 / MOJIZO and the 電子くずし字字典 record images: retrieval services under all-rights-reserved
