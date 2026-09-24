@@ -1,0 +1,8 @@
+version: 1
+documents:
+  68eb3417ed31bd40b47322289459eeec:
+    production: movable-type
+    evidence:
+      - source: holding_library
+        url: https://da.dl.itc.u-tokyo.ac.jp/portal/assets/06b66451-9f03-33e4-4321-5f36ec7e38aa
+        note: 刊行方式：活字版（一部カラー）
