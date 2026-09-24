@@ -1,0 +1,245 @@
+<script>
+  import { onMount } from 'svelte'
+  import ReferenceGlyph from '../components/ReferenceGlyph.svelte'
+  import { families as loadFamilies, family as loadFamily, members as loadMembers, decide } from '../lib/forms.js'
+  import { number } from '../lib/client.js'
+
+  let { initialFamily = '' } = $props()
+  let list = $state([]), filter = $state(''), current = $state(null), code = $state('')
+  let active = $state(0), open = $state(null), glyphs = $state([]), total = $state(0), order = $state('typical')
+  let chosen = $state(new Set()), anchor = null, busy = $state(false), error = $state(''), notice = $state('')
+  const cluster = $derived(current?.items[active] ?? null)
+  const shown = $derived(list.filter(f => !filter.trim() || f.char.includes(filter.trim()) || f.label.includes(filter.trim())
+    || f.code_point.toLowerCase().includes(filter.trim().toLowerCase())))
+  const byForm = $derived(new Map((current?.forms ?? []).map(f => [f.char, f])))
+  const target = $derived(chosen.size ? `${number(chosen.size)} selected glyph${chosen.size === 1 ? '' : 's'}`
+    : cluster ? `${cluster.label} (${number(cluster.count)} glyphs)` : '')
+
+  async function refreshList() { list = (await loadFamilies()).items }
+  async function pick(codePoint, keep = false) {
+    error = ''
+    code = codePoint
+    history.replaceState(null, '', '#/forms?family=' + encodeURIComponent(codePoint))
+    current = await loadFamily(codePoint)
+    if (!keep) { active = Math.max(0, current.items.findIndex(c => !c.form && c.assigned < c.count)); close() }
+  }
+  async function show(index) {
+    active = index; open = current.items[index].id; chosen = new Set(); anchor = null
+    const page = await loadMembers(open, 0, 240, order)
+    glyphs = page.items; total = page.total
+  }
+  async function reorder(value) { order = value; chosen = new Set(); anchor = null; const page = await loadMembers(open, 0, 240, order); glyphs = page.items }
+  async function more() {
+    const page = await loadMembers(open, glyphs.length, 240, order)
+    glyphs = [...glyphs, ...page.items]
+  }
+  function close() { open = null; glyphs = []; chosen = new Set(); anchor = null }
+  function toggle(index, event) {
+    const next = new Set(chosen)
+    if (event.shiftKey && anchor != null) {
+      const [from, to] = [Math.min(anchor, index), Math.max(anchor, index)]
+      for (let i = from; i <= to; i++) next.add(glyphs[i].id)
+    } else if (next.has(glyphs[index].id)) next.delete(glyphs[index].id)
+    else next.add(glyphs[index].id)
+    anchor = index; chosen = next
+  }
+  async function apply(form, kind = null) {
+    if (busy || (!cluster && !chosen.size)) return
+    busy = true; error = ''
+    try {
+      const units = [...chosen]
+      const decision = units.length ? { kind: kind ?? 'glyph', units, ...(kind === 'inherit' ? {} : { form }) }
+        : { kind: 'cluster', cluster: cluster.id, form }
+      const result = await decide(decision)
+      notice = form ? `${form} → ${number(result.count)} glyph${result.count === 1 ? '' : 's'}`
+        : kind === 'inherit' ? `${number(result.count)} now follow the cluster` : `Cleared ${number(result.count)}`
+      setTimeout(() => notice = '', 2200)
+      const wasOpen = open, index = active
+      await pick(code, true)
+      await refreshList()
+      if (wasOpen) { const page = await loadMembers(wasOpen, 0, Math.min(500, Math.max(240, glyphs.length)), order); glyphs = page.items; chosen = new Set() }
+      else if (!units.length) active = nextOpen(index)
+    } catch (e) { error = e.message } finally { busy = false }
+  }
+  function nextOpen(from) {
+    const after = current.items.findIndex((c, i) => i > from && !c.form && c.assigned < c.count)
+    return after >= 0 ? after : Math.min(from + 1, current.items.length - 1)
+  }
+  function keydown(event) {
+    if (!current || event.target.closest?.('input, textarea') || event.metaKey || event.ctrlKey || event.altKey) return
+    const keys = '1234567890'
+    if (keys.includes(event.key) && current.forms[keys.indexOf(event.key)]) { event.preventDefault(); apply(current.forms[keys.indexOf(event.key)].char) }
+    else if (!open && (event.key === 'j' || event.key === 'ArrowDown')) { event.preventDefault(); active = Math.min(active + 1, current.items.length - 1); scrollActive() }
+    else if (!open && (event.key === 'k' || event.key === 'ArrowUp')) { event.preventDefault(); active = Math.max(active - 1, 0); scrollActive() }
+    else if (event.key === 'Enter' && !open) { event.preventDefault(); show(active) }
+    else if (event.key === 'Escape' && open) { event.preventDefault(); close() }
+    // Clearing gives selected glyphs back to their cluster, or a cluster its unnamed state.
+    else if (event.key === 'Backspace' && chosen.size) { event.preventDefault(); apply(null, 'inherit') }
+    else if (event.key === 'Backspace' && cluster?.form) { event.preventDefault(); apply(null) }
+  }
+  function scrollActive() { requestAnimationFrame(() => document.querySelector('.form-cluster.active')?.scrollIntoView({ block: 'nearest' })) }
+  onMount(async () => {
+    try {
+      await refreshList()
+      await pick(initialFamily || list[0]?.code_point)
+    } catch (e) { error = e.message }
+  })
+</script>
+
+<svelte:window onkeydown={keydown} />
+
+<section class="forms">
+  <header class="forms-heading">
+    <p class="overline">CODH FORMS</p>
+    <h1>Assign forms.</h1>
+    <p class="forms-lede">CODH writes every form of a character under one code point. Glyphs are grouped by shape; name the form of a cluster, then correct the glyphs that differ.</p>
+  </header>
+  {#if error}<p class="error-message">{error}</p>{/if}
+  <div class="forms-layout">
+    <aside class="family-list" aria-label="Families">
+      <input type="search" placeholder="Find a family…" bind:value={filter} aria-label="Find a family" />
+      <ol>
+        {#each shown as f (f.code_point)}
+          <li><button class:current={f.code_point === code} onclick={() => pick(f.code_point)}>
+            <span class="family-char">{f.char}</span>
+            <span class="family-meta"><span>{number(f.count)}</span><small>{f.clusters} clusters</small></span>
+            <span class="family-progress" aria-label={`${Math.round(100 * f.assigned / f.count)}% assigned`}><i style={`width:${100 * f.assigned / f.count}%`}></i></span>
+          </button></li>
+        {/each}
+      </ol>
+    </aside>
+
+    {#if current}
+      <div class="family-panel">
+        <div class="family-title">
+          <h2>{current.char}</h2>
+          <p><strong>{number(current.count)}</strong> glyphs · {current.clusters} clusters · <strong>{number(current.assigned)}</strong> assigned</p>
+        </div>
+
+        <div class="form-palette" aria-label="Forms of this family">
+          <p class="palette-target">{#if target}Applies to <strong>{target}</strong>{:else}Choose a cluster{/if}</p>
+          <div class="palette-forms">
+            {#each current.forms as form, i (form.char)}
+              <button class="form-choice" disabled={busy || !target} onclick={() => apply(form.char)} title={form.name ?? form.code_point}>
+                <ReferenceGlyph char={form.char} code_point={form.code_point} size="lg" script={form.script} />
+                <span class="form-source">{form.jibo ?? ''}</span>
+                <small>{form.code_point}</small>
+                {#if i < 10}<kbd>{'1234567890'[i]}</kbd>{/if}
+              </button>
+            {/each}
+            <div class="palette-other">
+              {#if chosen.size}
+                <button disabled={busy} onclick={() => apply(null)}>Not this form</button>
+                <button disabled={busy} onclick={() => apply(null, 'inherit')}>Follow cluster <kbd>⌫</kbd></button>
+              {:else}
+                <button disabled={busy || !cluster?.form} onclick={() => apply(null)}>Clear cluster <kbd>⌫</kbd></button>
+              {/if}
+            </div>
+          </div>
+        </div>
+
+        {#if open}
+          <div class="cluster-members">
+            <div class="members-heading">
+              <button class="quiet-link" onclick={close}>← All clusters</button>
+              <h3>{cluster.label} <small>{number(total)} glyphs</small></h3>
+              <div class="filter-tabs" role="group" aria-label="Order">
+                <button class:active={order === 'typical'} aria-pressed={order === 'typical'} onclick={() => reorder('typical')}>Most typical first</button>
+                <button class:active={order === 'unusual'} aria-pressed={order === 'unusual'} onclick={() => reorder('unusual')}>Least typical first</button>
+              </div>
+              {#if cluster.form}<span class="cluster-form">{cluster.form} <small>{byForm.get(cluster.form)?.jibo ?? ''}</small></span>{/if}
+              {#if chosen.size}<button class="quiet-link" onclick={() => chosen = new Set()}>Clear selection</button>{/if}
+            </div>
+            <div class="member-grid">
+              {#each glyphs as glyph, i (glyph.id)}
+                <button class="member" class:selected={chosen.has(glyph.id)} class:own={glyph.basis === 'form_glyph'}
+                        aria-pressed={chosen.has(glyph.id)} onclick={event => toggle(i, event)} title={glyph.id}>
+                  {#if glyph.image}<img class="glyph-image" src={glyph.image} alt="" loading="lazy" />{/if}
+                  {#if glyph.basis === 'form_glyph'}<span class="member-form">{glyph.form ?? '×'}</span>{/if}
+                </button>
+              {/each}
+            </div>
+            {#if glyphs.length < total}<div class="load-more"><button onclick={more}>Show more ({number(total - glyphs.length)} left)</button></div>{/if}
+          </div>
+        {:else}
+          <p class="keyboard-hint forms-keys"><kbd>J</kbd><kbd>K</kbd> move · <kbd>1</kbd>–<kbd>0</kbd> assign · <kbd>Enter</kbd> open · <kbd>⌫</kbd> clear</p>
+          <ol class="cluster-grid">
+            {#each current.items as c, i (c.id)}
+              <li class="form-cluster" class:active={i === active} class:assigned={c.form}>
+                <button class="cluster-select" onclick={() => active = i} ondblclick={() => show(i)} aria-pressed={i === active}>
+                  <span class="cluster-head">
+                    <strong>{c.label}</strong><span>{number(c.count)}</span>
+                    {#if c.form}<span class="cluster-form"><span class="inline-glyph">{c.form}</span> {byForm.get(c.form)?.jibo ?? ''}</span>
+                    {:else if c.assigned}<span class="cluster-open">{number(c.assigned)} have a form, mostly <span class="inline-glyph">{c.majority}</span></span>
+                    {:else}<span class="cluster-open">Unassigned</span>{/if}
+                  </span>
+                  <span class="cluster-samples">{#each c.representatives as r (r.id)}{#if r.image}<img class="glyph-image" src={r.image} alt="" loading="lazy" />{/if}{/each}</span>
+                </button>
+                <span class="cluster-foot">
+                  {#if c.exceptions}<small>{number(c.exceptions)} set individually</small>{/if}
+                  <button class="quiet-link" onclick={() => show(i)}>Open {number(c.count)} →</button>
+                </span>
+              </li>
+            {/each}
+          </ol>
+        {/if}
+      </div>
+    {/if}
+  </div>
+  {#if notice}<div class="save-toast" role="status">{notice}</div>{/if}
+</section>
+
+<style>
+  .forms{padding:52px 4.4vw 60px;max-width:1920px;margin:auto}
+  .forms-heading{padding-bottom:30px}
+  .forms-heading h1{font-size:clamp(40px,5vw,76px);letter-spacing:-.06em;font-weight:500;line-height:1.15;margin-top:13px}
+  .forms-lede{max-width:640px;font-size:13px;line-height:1.6;color:var(--muted);margin-top:8px}
+  .forms-layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:32px;align-items:start}
+  .family-list{position:sticky;top:16px;max-height:calc(100dvh - 32px);display:flex;flex-direction:column;gap:10px}
+  .family-list input{width:100%;font-size:13px;padding:9px 11px}
+  .family-list ol{list-style:none;margin:0;padding:0;overflow:auto;border-top:1px solid var(--line)}
+  .family-list button{display:grid;grid-template-columns:40px 1fr;grid-template-rows:auto 3px;gap:4px 10px;width:100%;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;padding:9px 6px;text-align:left}
+  .family-list button.current{background:var(--accent-light)}
+  .family-char{grid-row:1/3;font-size:24px;line-height:1.3;font-family:"Noto Sans CJK JP","Yu Gothic",sans-serif}
+  .family-meta{display:flex;justify-content:space-between;font-size:12px;font-variant-numeric:tabular-nums}
+  .family-meta small{font-size:10px;color:var(--muted)}
+  .family-progress{background:#ececef;border-radius:2px;overflow:hidden}.family-progress i{display:block;height:100%;background:var(--accent)}
+  .family-title{display:flex;align-items:baseline;gap:18px;border-bottom:1px solid var(--line);padding-bottom:12px}
+  .family-title h2{font-size:48px;font-weight:500;font-family:"Noto Sans CJK JP","Yu Gothic",sans-serif}
+  .family-title p{font-size:12px;color:var(--muted)}.family-title strong{color:var(--ink);font-weight:500}
+  .form-palette{position:sticky;top:0;z-index:3;background:#fafafaf2;backdrop-filter:blur(12px);padding:14px 0;border-bottom:1px solid var(--line)}
+  .palette-target{font-size:12px;color:var(--muted);margin-bottom:10px}.palette-target strong{color:var(--ink);font-weight:500}
+  .palette-forms{display:flex;flex-wrap:wrap;gap:6px;align-items:stretch}
+  .form-choice{position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:66px;padding:8px 8px 6px;background:#fff}
+  .form-choice:not(:disabled):hover{border-color:var(--accent);background:#f6f4ff}
+  .form-source{font-size:12px;min-height:16px;font-family:"Noto Sans CJK JP","Yu Gothic",sans-serif}
+  .form-choice small{font-size:8px;color:var(--muted);font-family:ui-monospace,monospace}
+  .form-choice kbd{position:absolute;top:4px;right:5px;font-size:8px;color:#a0a0a7;font-family:ui-monospace,monospace}
+  .palette-other{display:flex;flex-direction:column;gap:6px;margin-left:auto}.palette-other button{font-size:11px;padding:8px 11px}
+  .palette-other kbd{font-size:9px;color:var(--muted)}
+  .forms-keys{margin:14px 0}
+  .cluster-grid{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px}
+  .form-cluster{border:1.5px solid var(--line);border-radius:9px;background:#fff;overflow:hidden}
+  .form-cluster.active{border-color:var(--accent);box-shadow:0 0 0 3px #6356e51f}
+  .form-cluster.assigned{background:#fbfbfe}
+  .cluster-select{display:block;width:100%;border:0;border-radius:0;background:transparent;padding:12px 12px 8px;text-align:left}
+  .cluster-head{display:flex;align-items:center;gap:10px;font-size:12px;margin-bottom:8px}
+  .cluster-head>span:nth-child(2){color:var(--muted);font-variant-numeric:tabular-nums}
+  .cluster-form{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--accent);background:var(--accent-light);border-radius:14px;padding:2px 10px}
+  .cluster-form .inline-glyph{font-size:18px}
+  .cluster-open{margin-left:auto;font-size:10px;color:var(--muted)}
+  .cluster-samples{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px}
+  .cluster-samples img{aspect-ratio:1;background:#f4f4f5;border-radius:3px;padding:3px}
+  .cluster-foot{display:flex;align-items:center;justify-content:space-between;padding:0 12px 10px;font-size:10px;color:var(--muted)}
+  .cluster-foot .quiet-link{margin-left:auto;font-size:11px}
+  .cluster-members{margin-top:16px}
+  .members-heading{display:flex;align-items:center;gap:18px;margin-bottom:12px}
+  .members-heading h3{font-size:16px;font-weight:500}.members-heading small{font-size:11px;color:var(--muted);font-weight:400;margin-left:6px}
+  .member-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:4px}
+  .member{position:relative;aspect-ratio:1;padding:6px;border:1.5px solid transparent;border-radius:5px;background:#f1f1f3}
+  .member.selected{border-color:var(--accent);background:#e7e3ff}
+  .member.own{border-style:dashed;border-color:#b3acd9}
+  .member-form{position:absolute;top:3px;right:5px;font-size:14px;color:var(--accent);font-family:"Kureedo Kata","Noto Serif Hentaigana",system-ui,sans-serif}
+  @media(max-width:900px){.forms-layout{grid-template-columns:1fr}.family-list{position:static;max-height:260px}.cluster-grid{grid-template-columns:1fr}}
+  @media(max-width:700px){.forms{padding:30px 16px 40px}.form-choice{min-width:54px}.palette-other{flex-direction:row;margin-left:0;width:100%}}
+</style>

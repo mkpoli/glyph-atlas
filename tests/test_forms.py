@@ -122,3 +122,14 @@ def test_a_cluster_is_labelled_only_by_decisions_of_the_current_clustering(clust
     forms._CLUSTERS.invalidate()
     # The glyphs keep their form; the new clustering's cluster has not been named.
     assert forms.cluster_decisions() == {} and forms.form_for(A)["form"] == "𛂥"
+def test_cluster_members_can_be_listed_least_typical_first(clustering, tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from glyph_atlas.review.forms import router
+
+    app = FastAPI()
+    app.include_router(router(media=None, corpus_root=tmp_path))
+    client = TestClient(app)
+    unusual = client.get("/forms/clusters/U+306F:one", params={"order": "unusual", "limit": 2}).json()
+    assert [m["id"] for m in unusual["items"]] == [C, B] and unusual["total"] == 3

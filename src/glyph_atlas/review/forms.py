@@ -109,11 +109,15 @@ def router(media, corpus_root: Path) -> APIRouter:
 
     @api.get("/forms/clusters/{cluster_id:path}")
     def cluster(cluster_id: str, offset: Annotated[int, Query(ge=0)] = 0,
-                limit: Annotated[int, Query(ge=1, le=500)] = 120) -> dict[str, Any]:
+                limit: Annotated[int, Query(ge=1, le=500)] = 120,
+                order: Literal["typical", "unusual"] = "typical") -> dict[str, Any]:
         data = forms.clusters()
         members = data["members"].get(cluster_id)
         if members is None:
             raise HTTPException(404, "Unknown cluster.")
+        if order == "unusual":
+            # The glyphs least like the cluster centre are where a different form hides.
+            members = members[::-1]
         decided = forms.resolved()
         items = []
         for identity in members[offset:offset + limit]:
@@ -121,7 +125,8 @@ def router(media, corpus_root: Path) -> APIRouter:
             decision = decided.get(identity) or {}
             items.append({"id": identity, "image": image(identity), "rank": rank, "similarity": similarity,
                           "form": decision.get("form"), "basis": decision.get("basis")})
-        return {"id": cluster_id, "total": len(members), "offset": offset, "form": forms.cluster_decisions().get(cluster_id),
+        return {"id": cluster_id, "total": len(members), "offset": offset, "order": order,
+                "form": forms.cluster_decisions().get(cluster_id),
                 "items": items}
 
     @api.post("/forms/decisions")
