@@ -93,17 +93,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          status=0
           uv run python scripts/collect_honkoku.py \
             --root work/honkoku-collection \
-            --seconds "$COLLECT_SECONDS" 2>&1 | tee harvest-honkoku.log
+            --seconds "$COLLECT_SECONDS" 2>&1 | tee harvest-honkoku.log || status=$?
+          # 75 means the run reached its deadline with work left, which is how a
+          # scheduled run is meant to end.
+          [ "$status" -eq 0 ] || [ "$status" -eq 75 ] || exit "$status"
 
       - name: Collect from Japanese Wikisource
         shell: bash
         run: |
           set -euo pipefail
+          status=0
           uv run python scripts/collect_wikisource.py \
             --root work/wikisource-collection \
-            --seconds "$COLLECT_SECONDS" 2>&1 | tee harvest-wikisource.log
+            --seconds "$COLLECT_SECONDS" 2>&1 | tee harvest-wikisource.log || status=$?
+          # 75 means the run reached its deadline with work left, which is how a
+          # scheduled run is meant to end.
+          [ "$status" -eq 0 ] || [ "$status" -eq 75 ] || exit "$status"
 
       # Save whatever was collected, even when a later step failed: a partial
       # harvest is worth keeping and re-running is how it finishes.
