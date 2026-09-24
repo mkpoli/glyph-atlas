@@ -16,7 +16,17 @@ root = Path("work") / f"ndl-{args.pid}"
 config = Path("data/sources") / f"ndl-{args.pid}.yaml"
 if not config.is_file():
     parser.error("Add the book's IIIF manifest to its source configuration first")
-if not (root / "pages.parquet").is_file():
+
+
+def collected(root: Path) -> bool:
+    """Whether every volume of the book was collected; a volume whose manifest failed is fetched again."""
+    manifest = root / "MANIFEST.json"
+    if not (root / "pages.parquet").is_file() or not manifest.is_file():
+        return False
+    return not json.loads(manifest.read_text(encoding="utf-8"))["collection"]["unavailable"]
+
+
+if not collected(root):
     collect(config, root)
 cached = root / "upstream" / "ocr.json"
 if not cached.exists():

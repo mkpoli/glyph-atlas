@@ -50,7 +50,7 @@ def collect(source: Path, out: Path, *, cache: Path | None = None) -> dict:
                "source_url": config["url"], "stage": "scan references collected",
                "transcribed_pages": 0, "character_crops": 0,
                "unavailable": unavailable}
-    payload = {"schema_version": 1, "tables": {"documents": len(documents), "pages": len(pages)},
+    payload = {"schema_version": tables.SCHEMA_VERSION, "tables": {"documents": len(documents), "pages": len(pages)},
                "command": "collect IIIF book manifests", "collection": summary,
                "references": config.get("references", [])}
     staging = out / ".MANIFEST.json"
