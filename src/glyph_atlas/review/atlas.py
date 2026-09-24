@@ -452,8 +452,8 @@ class Seen(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str
     image_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    #: The crop image the round showed. The local check compares the crop digest in `image_sha256`
-    #: already; the hosted Worker, whose hash names the page, compares this.
+    #: The crop image the round showed. `image_sha256` names the page for a crop drawn from its page,
+    #: so this is what tells a re-cut crop from the one the reader saw.
     image: str | None = Field(default=None, max_length=256)
 
 
@@ -611,6 +611,19 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         """
         return eligible(unit) and not repair_withheld(unit)
 
+    def crop_url(unit: Unit, revision: int, source=None) -> str:
+        """The URL of the crop as it stands: a new cut of the unit gives a new URL.
+
+        The media key hashes the source file and the box, and the fallback carries the revision,
+        which a box change moves. `image_sha256` cannot tell cuts apart when a crop is drawn from its
+        page, because it names the page.
+        """
+        source = source if source is not None else image_source(unit)
+        digest = source[0].stem if source else None
+        return (media.local(source[0], source[1]) if source and media else
+                f"/atlas/characters/{quote(unit.id, safe='')}/image?revision={revision}"
+                + (f"&image_sha256={digest}" if digest else ""))
+
     def item(unit: Unit, revision: int, state: str | None = None) -> dict:
         if state is None:
             standing = status.unit_reviews([unit], store.events())[unit.id]
@@ -623,9 +636,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             page = store.page(unit.page_id)
             document_id = page.document_id if page else None
         production = production_info(store.document(document_id) if document_id else None)
-        image_url = (media.local(source[0], source[1]) if source and media else
-                     f"/atlas/characters/{quote(unit.id, safe='')}/image?revision={revision}"
-                     + (f"&image_sha256={digest}" if digest else ""))
+        image_url = crop_url(unit, revision, source)
         return {"id": unit.id, "label": shown(unit), "reading": unit.reading,
                 **production,
                 "script": unit.script, "jibo": refs.jibo_of_unit(unit.unicode), "revision": revision,
@@ -939,12 +950,15 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             ))
         for crop in round.seen:
             try:
-                unit, _ = one(crop.id)
+                unit, current = one(crop.id)
             except HTTPException:
                 continue
-            # A crop that cannot be dealt any more, or whose pixels changed since the round was
-            # drawn, was not seen as it stands; it is skipped rather than failing the round.
+            # A crop that cannot be dealt any more, or that was re-cut or whose pixels changed since
+            # the round was drawn, was not seen as it stands; it is skipped rather than failing the
+            # round. The image the round showed is what tells cuts of one page apart.
             if not eligible(unit) or repair_withheld(unit) or image_source(unit)[0].stem != crop.image_sha256:
+                continue
+            if crop.image is not None and crop.image != crop_url(unit, current):
                 continue
             requests.append(ReviewRequest(
                 target_type="unit", target_id=crop.id, field=SEEN, new=True, base_revision=None,
