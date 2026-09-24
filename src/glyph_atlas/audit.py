@@ -395,7 +395,7 @@ def _reviewed_units(directory: Path) -> dict[str, dict[str, Any]]:
         if event.get("target_type") != "unit":
             continue
         field = event.get("field")
-        if field in {None, "timing", "note"}:
+        if field in {None, "timing", "note", "seen"}:
             continue
         latest[event["target_id"]][field] = event.get("new")
     return latest

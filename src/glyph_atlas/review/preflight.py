@@ -50,6 +50,7 @@ from .. import refs
 from ..schema import Box, ReviewState, Unit
 from ..split_proposals import ink_profile
 from . import atlas
+from .store import SEEN
 
 #: The policy the records carry; part of every fingerprint, so a change to how a verdict is reached
 #: invalidates a scan rather than silently mixing two rules in one state file.
@@ -503,7 +504,8 @@ class PageCropReader:
 
 def _human_targets(store: Any) -> set[str]:
     events = store.events()
-    return {event.target_id for event in events if event.role != "model"}
+    # A crop a reviewer only saw was not decided about, so it stays open to the scan.
+    return {event.target_id for event in events if event.role != "model" and event.field != SEEN}
 
 
 def _identity(unit: Unit) -> tuple[str, str | None]:

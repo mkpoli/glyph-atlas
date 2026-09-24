@@ -10,6 +10,7 @@ import random
 import threading
 import unicodedata
 from collections import Counter
+from collections.abc import Iterable
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -27,7 +28,7 @@ from ..production import production_info
 from ..schema import Box, ReviewState, Script, Unit
 from . import status
 from .request_cache import file_stamp, memoize
-from .store import BadRequest, ReviewRequest, Store
+from .store import SEEN, BadRequest, ReviewRequest, Store
 
 _IMAGE_SLOTS = threading.BoundedSemaphore(2)
 CONFIRMED = {ReviewState.REVIEWED, ReviewState.DOUBLE_REVIEWED, ReviewState.ADJUDICATED}
@@ -43,6 +44,26 @@ def review_state(decision: str | None) -> str:
     if decision == ReviewState.DISPUTED:
         return "flagged"
     return "pending"
+
+
+def seen_boxes(events: Iterable[Any]) -> dict[str, dict | None]:
+    """The box each unit was last shown in a quiz round without being flagged, oldest event first.
+
+    A later `seen` event with no value is the undo of a round, and the unit is pending again. The box
+    is kept because a crop that moved since is a different crop, and it has not been seen.
+    """
+    boxes: dict[str, dict | None] = {}
+    for event in events:
+        if event.field != SEEN:
+            continue
+        if not event.new:
+            boxes.pop(event.target_id, None)
+            continue
+        try:
+            boxes[event.target_id] = json.loads(event.evidence or "{}").get("box")
+        except ValueError:
+            continue
+    return boxes
 
 
 def single_character(text: str) -> bool:
@@ -425,12 +446,23 @@ class Answer(BaseModel):
     character: str | None = Field(default=None, max_length=32)
 
 
+class Seen(BaseModel):
+    """A crop the round showed and the reviewer left unflagged: seen, and nothing more."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    image_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
 class Round(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: UUID
     client_id: str = Field(min_length=1, max_length=128)
     label: str = Field(min_length=1, max_length=32)
-    answers: list[Answer] = Field(min_length=1, max_length=4096)
+    answers: list[Answer] = Field(default_factory=list, max_length=4096)
+    #: The crops left unflagged. They are not answers: a crop nobody marked is not a confirmation,
+    #: so it is recorded as seen, which keeps it out of the next round and out of every count.
+    seen: list[Seen] = Field(default_factory=list, max_length=4096)
 
 
 class Undo(BaseModel):
@@ -623,7 +655,9 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         # Row parsing and review-journal decoding are shared across shuffles.
         # Source files are still checked by eligible() on every request.
         units = store.unit_snapshot()
-        standing = status.unit_reviews([u for u, _ in units], store.events())
+        events = store.events()
+        standing = status.unit_reviews([u for u, _ in units], events)
+        seen = seen_boxes(events)
         documents = {doc.id: production_info(doc)["production"] for doc in store.documents()}
         pages = store.pages()
         kinds = {}
@@ -631,14 +665,19 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             page = pages.get(unit.page_id)
             document_id = unit.document_id or (page.document_id if page else None)
             kinds[unit.id] = documents.get(document_id, "unknown")
-        return units, {key: review_state(value.human_review) for key, value in standing.items()}, kinds
+        states = {key: review_state(value.human_review) for key, value in standing.items()}
+        for unit, _ in units:
+            if states.get(unit.id) == "pending" and unit.id in seen and seen[unit.id] == (
+                    unit.box.model_dump(mode="json") if unit.box else None):
+                states[unit.id] = "seen"
+        return units, states, kinds
 
     @api.get("/atlas")
     def catalogue(
         reading: str | None = None,
         q: str | None = None,
         group: Literal["all", "kana", "kanji"] = "all",
-        state: Literal["all", "pending", "checked", "flagged"] = "all",
+        state: Literal["all", "pending", "seen", "checked", "flagged"] = "all",
         purpose: Literal["browse", "review"] = "browse",
         production: Literal["all", "non-movable-type", "manuscript", "woodblock", "movable-type", "mixed", "unknown"] | None = None,
         seed: int = 0,
@@ -689,7 +728,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 "purpose": purpose, "production": scope, "review_epoch": store.review_epoch(),
                 "query": q or None, "matched": len(searched) if q else None,
                 "categories": [{"label": name, **{key: c[key] for key in
-                                  ("total", "pending", "checked", "flagged")}}
+                                  ("total", "pending", "seen", "checked", "flagged")}}
                                for name, c in sorted(categories.items(), key=lambda x: (-x[1]["total"], x[0]))],
                 "items": [item(u, rev, states[u.id]) for u, rev in selected[offset:offset + limit]]}
 
@@ -817,7 +856,10 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
 
     @api.post("/atlas/rounds")
     def submit(round: Round) -> dict:
-        if len({answer.id for answer in round.answers}) != len(round.answers):
+        ids = [answer.id for answer in round.answers] + [crop.id for crop in round.seen]
+        if not ids:
+            raise BadRequest("A round needs at least one answer or one seen crop.")
+        if len(set(ids)) != len(ids):
             raise BadRequest("A character can appear only once in a round.")
         prefix = f"quiz:{round.id}:"
         previous = store.submission_results(round.client_id, prefix)
@@ -892,6 +934,23 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 base_revision=base, client_id=round.client_id,
                 idempotency_key=prefix + answer.id, evidence=evidence,
             ))
+        for crop in round.seen:
+            try:
+                unit, _ = one(crop.id)
+            except HTTPException:
+                continue
+            # A crop that cannot be dealt any more, or whose pixels changed since the round was
+            # drawn, was not seen as it stands; it is skipped rather than failing the round.
+            if not eligible(unit) or repair_withheld(unit) or image_source(unit)[0].stem != crop.image_sha256:
+                continue
+            requests.append(ReviewRequest(
+                target_type="unit", target_id=crop.id, field=SEEN, new=True, base_revision=None,
+                client_id=round.client_id, idempotency_key=prefix + crop.id + ":seen",
+                evidence=json.dumps({"kind": "visual-quiz-seen", "round": str(round.id),
+                                     "label": round.label, "image_sha256": crop.image_sha256,
+                                     "box": unit.box.model_dump() if unit.box else None},
+                                    ensure_ascii=False),
+            ))
         results = store.record_batch(requests)
         return {"id": str(round.id), "results": results}
 
@@ -906,10 +965,12 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             target = r["target_id"]
             requests.append(ReviewRequest(
                 target_type="unit", target_id=target, field=r["field"], new=r["review"]["old"],
-                base_revision=revisions[target], client_id=request.client_id,
+                # A seen record changed nothing, so its undo has nothing to be stale against.
+                base_revision=None if r["field"] == SEEN else revisions[target], client_id=request.client_id,
                 idempotency_key=f"quiz-undo:{round_id}:{r['id']}", evidence=f"undo of {r['id']}",
             ))
-            revisions[target] += 1
+            if r["field"] != SEEN:
+                revisions[target] += 1
         return {"id": str(round_id), "results": store.record_batch(requests)}
 
     @api.post("/atlas/characters/{unit_id}")

@@ -18,7 +18,7 @@ from ..split_proposals import Limits, propose_split
 from .atlas import identity_text, script_of_identity, single_character
 from .characters import _source_digest, written_identity
 from .receipts import fingerprint
-from .store import BadRequest, Conflict, ReviewRequest, Store
+from .store import SEEN, BadRequest, Conflict, ReviewRequest, Store
 
 POLICY = "feedback-extraction-v1"
 
@@ -404,7 +404,7 @@ def repair_adjacent_labels(store: Store, *, limit=128, apply=False, engine=None)
 
     from .suggestions import LOCK
 
-    human = {e.target_id for e in store.events() if e.role != "model"}
+    human = {e.target_id for e in store.events() if e.role != "model" and e.field != SEEN}
     rows = [(u, rev) for u, rev in store.unit_snapshot()
             if u.active and u.id not in human and u.box and u.line_id
             and str(u.review) in ("machine", "rejected") and str(u.kind) == "char"

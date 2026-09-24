@@ -61,8 +61,13 @@ SCHEMA_VERSION = 1
 SEGMENTATION = "segmentation"
 #: The field that carries a record a reviewer drew.
 CREATE = "create"
-#: Events that are recorded and change no state: how long a line was open, and free notes.
-STATELESS = frozenset({"timing", "note"})
+#: A quiz crop the reviewer was shown and did not flag. It is recorded so the crop is not dealt
+#: again, and it is no decision: nothing is confirmed, no pass may read it as a person's touch, and
+#: the unit's revision does not move, so a reviewer's answer on it is never stale because of it.
+SEEN = "seen"
+#: Events that are recorded and change no state: how long a line was open, free notes, and crops
+#: seen without a flag.
+STATELESS = frozenset({"timing", "note", SEEN})
 #: The keys a split entry may carry. The identity and lifecycle fields belong to the server.
 SPLIT_KEYS = frozenset(
     {
@@ -750,7 +755,8 @@ class Store:
                      request.client_id or "", request.idempotency_key),
                 )
                 self._persist(conn, state, change)
-                self._bump(conn, event.target_id)
+                if event.field != SEEN:
+                    self._bump(conn, event.target_id)
                 result = self._build_result(conn, event, change, state)
                 conn.execute("UPDATE events SET result = ? WHERE id = ?", (_json(result), event.id))
                 self._set_meta(conn, "state_seq", str(seq))
@@ -1207,7 +1213,8 @@ class Store:
         change.event = event
         with self._transaction(conn):
             self._persist(conn, state, change)
-            self._bump(conn, event.target_id)
+            if event.field != SEEN:
+                self._bump(conn, event.target_id)
             result = self._build_result(conn, event, change, state)
             conn.execute("UPDATE events SET result = ? WHERE id = ?", (_json(result), event.id))
             self._set_meta(conn, "state_seq", str(seq))
@@ -1316,7 +1323,9 @@ class Store:
         self, conn: sqlite3.Connection, state: State, events: list[Review], state_seq: int
     ) -> None:
         """Replace the state and the revisions with what the log says they are."""
-        revisions = Counter(event.target_id for event in events)
+        # A seen crop was not changed, so its event is not a revision: counting it here would give a
+        # rebuilt store other revisions than the live one handed out.
+        revisions = Counter(event.target_id for event in events if event.field != SEEN)
         with self._transaction(conn):
             conn.execute("DELETE FROM lines")
             conn.execute("DELETE FROM units")
