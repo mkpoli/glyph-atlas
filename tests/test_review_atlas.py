@@ -1437,3 +1437,71 @@ def test_a_round_that_corrects_the_character_carries_its_reading(searched: Path)
     assert after["label"] == "り" and after["reading"] == "り"
     retry = client.post("/atlas/rounds", json=payload)
     assert retry.status_code == 200 and all(r["duplicate"] for r in retry.json()["results"])
+
+
+def seen_round(client, shown, flagged=()):
+    """A round that flags `flagged` and records every other shown crop as seen."""
+    answers = [{"id": item['id'], "revision": item['revision'], "image_sha256": item['image_sha256'],
+                "verdict": "wrong", "issue": "crop"} for item in shown if item['id'] in flagged]
+    seen = [{"id": item['id'], "image_sha256": item['image_sha256']}
+            for item in shown if item['id'] not in flagged]
+    return {"id": str(uuid4()), "client_id": "seen-reviewer", "label": "あ", "answers": answers, "seen": seen}
+
+
+def test_a_seen_crop_is_not_dealt_again_and_is_no_confirmation(dataset):
+    client = TestClient(create_app(dataset))
+    shown = client.get('/atlas?reading=あ&state=pending&limit=4').json()['items']
+    payload = seen_round(client, shown, flagged={shown[0]['id']})
+    assert client.post('/atlas/rounds', json=payload).status_code == 200
+    counts = client.get('/atlas').json()['counts']
+    assert counts == {"flagged": 1, "seen": 3, "pending": 12}
+    pending = {i['id'] for i in client.get('/atlas?reading=あ&state=pending&limit=96').json()['items']}
+    assert not pending & {item['id'] for item in shown}
+    store = Store(dataset)
+    seen = [e for e in store.events() if e.field == "seen"]
+    assert len(seen) == 3 and all(json.loads(e.evidence)['kind'] == 'visual-quiz-seen' for e in seen)
+    # Nothing about a seen crop is a decision: its review state is untouched and it is not exported.
+    assert all(store.unit(e.target_id).review == ReviewState.MACHINE for e in seen)
+    exported = {r['event']['target_id'] for r in client.get('/atlas/reviews').json()['reviews']}
+    assert exported == {shown[0]['id']}
+
+
+def test_undoing_a_round_makes_its_seen_crops_pending_again(dataset):
+    client = TestClient(create_app(dataset))
+    shown = client.get('/atlas?reading=あ&state=pending&limit=4').json()['items']
+    payload = seen_round(client, shown)
+    assert payload['answers'] == []
+    assert client.post('/atlas/rounds', json=payload).status_code == 200
+    assert client.get('/atlas').json()['counts'] == {"seen": 4, "pending": 12}
+    assert client.post('/atlas/rounds/' + payload['id'] + '/undo',
+                       json={"client_id": payload['client_id']}).status_code == 200
+    assert client.get('/atlas').json()['counts'] == {"pending": 16}
+
+
+def test_a_crop_whose_box_moved_since_it_was_seen_is_pending_again(dataset):
+    client = TestClient(create_app(dataset))
+    shown = client.get('/atlas?reading=あ&state=pending&limit=1').json()['items']
+    assert client.post('/atlas/rounds', json=seen_round(client, shown)).status_code == 200
+    store = Store(dataset)
+    unit = store.unit(shown[0]['id'])
+    moved = unit.box.model_copy(update={"x": unit.box.x + 2}).model_dump()
+    store.record(ReviewRequest(target_id=unit.id, field="box", new=moved, base_revision=store.revision(unit.id),
+                               client_id="fixture", idempotency_key="move"))
+    assert TestClient(create_app(dataset)).get('/atlas').json()['counts'] == {"pending": 16}
+
+
+def test_a_round_must_carry_an_answer_or_a_seen_crop(dataset):
+    client = TestClient(create_app(dataset))
+    empty = {"id": str(uuid4()), "client_id": "seen-reviewer", "label": "あ", "answers": [], "seen": []}
+    assert client.post('/atlas/rounds', json=empty).status_code == 422
+
+
+def test_a_seen_crop_pins_nothing_for_the_repair_or_the_scan(dataset):
+    from glyph_atlas import repair
+    from glyph_atlas.review import preflight
+
+    client = TestClient(create_app(dataset))
+    shown = client.get('/atlas?reading=あ&state=pending&limit=2').json()['items']
+    assert client.post('/atlas/rounds', json=seen_round(client, shown)).status_code == 200
+    assert repair.human_state(dataset).units == {}
+    assert preflight._human_targets(Store(dataset)) == set()

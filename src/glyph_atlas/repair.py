@@ -1456,7 +1456,11 @@ def human_state(directory: Path | str) -> HumanState:
         state.events = len(rows)
         state.rows = [dict(row) for row in rows]
         state.targets = Counter(row["target_type"] for row in rows)
-        unit_ids = {row["target_id"] for row in rows if row["target_type"] == "unit"}
+        # A crop a reviewer was shown and left unflagged holds no decision, so it pins nothing.
+        from .review.store import SEEN
+
+        unit_ids = {row["target_id"] for row in rows if row["target_type"] == "unit"
+                    and row["field"] != SEEN}
         line_ids = {row["target_id"] for row in rows if row["target_type"] == "line"}
         for unit_id in unit_ids:
             row = connection.execute("SELECT data FROM units WHERE id = ?", (unit_id,)).fetchone()

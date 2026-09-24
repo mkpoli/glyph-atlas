@@ -61,8 +61,12 @@ SCHEMA_VERSION = 1
 SEGMENTATION = "segmentation"
 #: The field that carries a record a reviewer drew.
 CREATE = "create"
-#: Events that are recorded and change no state: how long a line was open, and free notes.
-STATELESS = frozenset({"timing", "note"})
+#: A quiz crop the reviewer was shown and did not flag. It is recorded so the crop is not dealt
+#: again, and it is no decision: nothing is confirmed, and no pass may read it as a person's touch.
+SEEN = "seen"
+#: Events that are recorded and change no state: how long a line was open, free notes, and crops
+#: seen without a flag.
+STATELESS = frozenset({"timing", "note", SEEN})
 #: The keys a split entry may carry. The identity and lifecycle fields belong to the server.
 SPLIT_KEYS = frozenset(
     {

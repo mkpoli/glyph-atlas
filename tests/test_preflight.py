@@ -59,7 +59,7 @@ class StubStore:
         return [row for row in rows if unit_id is None or row[0].id == unit_id]
 
     def events(self):
-        return [type("E", (), {"target_id": target, "role": "reviewer"})() for target in self._human]
+        return [type("E", (), {"target_id": target, "role": "reviewer", "field": "review"})() for target in self._human]
 
     def page(self, page_id: str):
         size = self._pages.get(page_id)
