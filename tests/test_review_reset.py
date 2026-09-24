@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import time
 from pathlib import Path
 
 import pytest
@@ -851,10 +852,14 @@ class TestCompletedResetIsIdempotent:
         root = build_dataset(tmp_path / "work" / "honkoku-lines")
         review_the_dataset(root)
         reset_reviews(root)
-        # A new correction lands in the tables, so the recorded baseline is stale.
+        # A new correction lands in the tables, so the recorded baseline is stale. The store is
+        # reconciled first, as the reset requires: without it the outcome turned on whether the
+        # rewrite fell in the same second as the first reset, which the table stamp cannot see.
         units = tables.read(root / "units.parquet", Unit)
         units[0] = units[0].model_copy(update={"text_source": "か"})
+        time.sleep(1.1)
         tables.write(root / "units.parquet", units, Unit)
+        Store(root)
         again = reset_reviews(root)
         assert "skipped" not in again.phases
 
@@ -1045,3 +1050,4 @@ def test_reset_removes_embedded_feedback_history():
     result, _, _ = reset_module._reset_unit(unit)
     assert result.reading == "を" and "feedback_repair" not in result.meta
     assert result.meta["alignment_repair"]["withheld"]
+
