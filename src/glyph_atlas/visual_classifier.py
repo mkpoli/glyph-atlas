@@ -42,7 +42,9 @@ class VisualClassifier:
         margin = float(similarity - similarities[order[1]]) if len(order) > 1 else 1.0
         supported = 1 - similarity <= float(self.radii[best]) and margin >= .025
         group = self.groups[best]
-        written = group.get("written_character") if supported else None
+        # A group whose assignment an inspected counterexample withheld proposes nothing.
+        enabled = group.get("assignment_enabled", True)
+        written = group.get("written_character") if supported and enabled else None
         return {"family": family, "status": "proposed" if written else "unassigned",
                 "group_id": group["id"], "written_character": written,
                 "similarity": round(similarity, 6), "margin": round(margin, 6),
