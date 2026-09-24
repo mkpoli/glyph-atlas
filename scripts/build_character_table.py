@@ -79,6 +79,10 @@ BLOCKS = (
     "CJK Unified Ideographs Extension G",
     "CJK Unified Ideographs Extension H",
     "CJK Unified Ideographs Extension I",
+    # The compatibility ideographs are written in sources too (﨑 for 崎), and each is its own code
+    # point with its own name in UnicodeData.txt.
+    "CJK Compatibility Ideographs",
+    "CJK Compatibility Ideographs Supplement",
 )
 
 #: The name Unicode gives the ideographs of a CJK block, as a format over the hex code point.

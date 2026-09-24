@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from glyph_atlas import refs
+from glyph_atlas.schema import Script
 
 VOCAB = Path(__file__).resolve().parents[1] / "data" / "vocab"
 CHARACTERS = VOCAB / "characters.tsv"
@@ -270,3 +271,9 @@ def test_a_missing_table_names_the_script_that_writes_it(tmp_path, monkeypatch):
         refs.equivalents("国", "strict")
     (tmp_path / "kanji-equivalents.tsv").write_bytes(EQUIVALENTS.read_bytes())
     assert refs.same("国", "國", "align-v1")
+
+
+def test_a_compatibility_ideograph_is_a_han_character():
+    """﨑 and the other compatibility ideographs are written in sources, so the layer holds them."""
+    assert refs.script_of("﨑") is Script.HAN
+    assert refs.script_of(chr(0x2F800)) is Script.HAN
