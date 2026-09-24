@@ -1561,3 +1561,13 @@ def test_the_audit_does_not_read_a_seen_crop_as_reviewed(dataset):
     assert client.post('/atlas/rounds', json=seen_round(client, shown)).status_code == 200
     apply(dataset)
     assert not set(audit._reviewed_units(dataset)) & {item['id'] for item in shown}
+
+
+def test_a_seen_crop_may_name_the_image_the_round_showed(dataset):
+    """The quiz sends the crop image it dealt; the local check compares the crop digest, so it is accepted."""
+    client = TestClient(create_app(dataset))
+    shown = client.get('/atlas?reading=あ&state=pending&limit=1').json()['items']
+    payload = seen_round(client, shown)
+    payload['seen'][0]['image'] = shown[0]['image']
+    assert client.post('/atlas/rounds', json=payload).status_code == 200
+    assert client.get('/atlas').json()['counts']['seen'] == 1

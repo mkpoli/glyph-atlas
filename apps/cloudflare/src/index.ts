@@ -79,6 +79,7 @@ export function validRound(input: Json, target?: string): { answers: Json[]; see
   for (const crop of seen) {
     text(crop?.id, 512, 'character id', true);
     if (typeof crop.image_sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(crop.image_sha256)) throw new Problem(422, 'Invalid image hash.');
+    if (crop.image !== undefined) text(crop.image, 256, 'crop image', true);
   }
   return { answers, seen };
 }
@@ -318,7 +319,9 @@ async function submit(env: Env, request: Request, target?: string) {
     const row=await env.DB.prepare("SELECT * FROM units WHERE id=? AND origin='local'").bind(crop.id).first<UnitRow>();
     if(!row||!row.quiz)continue;
     const data=parse(row.data);
-    if(data.image_sha256===crop.image_sha256&&data.label===input.label)shown.push(crop);
+    // `image_sha256` names the page here, so a crop re-cut on the same page would still match it;
+    // the crop's own image is what the reader saw. A client that does not send it is held to the rest.
+    if(data.image_sha256===crop.image_sha256&&data.label===input.label&&(crop.image===undefined||crop.image===data.image))shown.push(crop);
   }
   const result=corpus?{...(changes[0].next),origin:'corpus',event:changes[0].event}
     :{id,results:[...changes.map(c=>({id:c.event.id,target_id:c.row.id,field:'review',revision:c.next.revision,review:c.event})),

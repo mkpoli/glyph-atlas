@@ -348,7 +348,7 @@
     // Every other crop the round showed was seen and left unflagged. That is not a confirmation,
     // but it is recorded, so the crop is not dealt again.
     const flagged = new Set(answers.map(answer => answer.id))
-    const seen = remaining.filter(i => !flagged.has(i.id) && viewed[i.id]).map(i => ({ id: i.id, image_sha256: i.image_sha256 }))
+    const seen = remaining.filter(i => !flagged.has(i.id) && viewed[i.id]).map(i => ({ id: i.id, image_sha256: i.image_sha256, image: i.image }))
     if (!answers.length && !seen.length) { await load(); return }
     saving = true; error = ''
     try {
@@ -366,7 +366,7 @@
   // as seen before the next round is dealt. Crops that failed to load or were skipped were not seen.
   async function pass() {
     if (saving || loading || loadingMore) return
-    const seen = remaining.filter(i => viewed[i.id]).map(i => ({ id: i.id, image_sha256: i.image_sha256 }))
+    const seen = remaining.filter(i => viewed[i.id]).map(i => ({ id: i.id, image_sha256: i.image_sha256, image: i.image }))
     if (!seen.length || selection.length) { await load(); return }
     saving = true; error = ''
     try {

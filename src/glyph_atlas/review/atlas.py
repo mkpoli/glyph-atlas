@@ -452,6 +452,9 @@ class Seen(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str
     image_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    #: The crop image the round showed. The local check compares the crop digest in `image_sha256`
+    #: already; the hosted Worker, whose hash names the page, compares this.
+    image: str | None = Field(default=None, max_length=256)
 
 
 class Round(BaseModel):
