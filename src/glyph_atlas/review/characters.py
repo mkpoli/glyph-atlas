@@ -1036,6 +1036,8 @@ def router(store: Store) -> APIRouter:
         # occurrence has moved on since would make a lost response unrecoverable, and the first
         # request's answer is still the answer. The same id with a *different* body is a client bug.
         previous = store.submission_results(edit.client_id, f"layer:{edit.id}:")
+        if any(row["review"]["target_id"] != unit_id for row in previous):
+            raise HTTPException(409, "This submission id was already used for another occurrence.")
         if previous:
             evidence = next((json.loads(row["review"]["evidence"]) for row in previous
                              if row["field"] == "review" and row["review"]["evidence"]), {})

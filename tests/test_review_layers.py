@@ -855,6 +855,17 @@ def test_a_compatibility_ideograph_is_stored_as_itself(dataset):
     assert answer.json()["layers"]["code_point"] == "U+FA10"
 
 
+def test_a_submission_id_answers_only_for_its_own_occurrence(dataset):
+    api = client(dataset)
+    first, second = api.get("/layers/characters/U+1B127").json()["samples"][:2]
+    payload = {"id": str(uuid4()), "client_id": "fixture-reviewer", "revision": first["revision"],
+               "image_sha256": digest_of(dataset), "character": "U+30CD", "reading": None,
+               "verdict": "wrong", "issue": "character", "note": ""}
+    assert api.post(f"/layers/units/{first['id']}", json=payload).status_code == 200
+    reused = api.post(f"/layers/units/{second['id']}", json={**payload, "revision": second["revision"]})
+    assert reused.status_code == 409
+
+
 def test_a_character_with_a_mark_takes_its_script_and_can_be_browsed(dataset):
     api = client(dataset)
     unit = api.get("/layers/characters/U+5B50").json()["samples"][0]
