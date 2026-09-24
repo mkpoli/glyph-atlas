@@ -1358,7 +1358,7 @@ def _split(state: State, event: Review, entries: Any, *, guard: bool) -> Change:
             }
         )
         if machine:
-            data.update(_machine_child(data, unit, event, evidence_sha))
+            data.update(_machine_child(data, entry, unit, event, evidence_sha))
         output = Unit.model_validate(data)
         boxes.append((output, box))
         outputs.append(output)
@@ -1472,7 +1472,7 @@ def _run_key(parent_id: str, evidence: str | None) -> tuple[str, str]:
     return run, digest
 
 
-def _machine_child(data: dict[str, Any], parent: Unit, event: Review,
+def _machine_child(data: dict[str, Any], entry: dict[str, Any], parent: Unit, event: Review,
                    evidence_sha: str | None) -> dict[str, Any]:
     """What a machine-split child carries that a reviewer's child does not.
 
@@ -1480,11 +1480,15 @@ def _machine_child(data: dict[str, Any], parent: Unit, event: Review,
     parent's crop is not the child's picture), the parent's scoring is dropped because it was never
     measured on this box, the repair note the parent may carry is cleared because the split is what
     answers it, and the link back to the run that produced it is written where a reader can find it.
-    The event's own evidence is left exactly as the caller sent it.
+    The transcription and the script are the child's own: stated by the entry, or else its reading
+    and the script of its one character. The event's own evidence is left exactly as the caller sent it.
     """
+    from .. import refs
     from ..unit_scope import character_count, encoded_text
 
-    single = character_count(encoded_text(data.get("unicode")) or data.get("reading", "")) == 1
+    text = encoded_text(data.get("unicode")) or data.get("reading", "")
+    single = character_count(text) == 1
+    script = entry.get("script") or (refs.script_of(text) if single else Script.UNKNOWN).value
     meta = {key: value for key, value in (data.get("meta") or {}).items()
             if key not in ("alignment_repair", "feedback_repair", "feedback_split", "segmentation_scan")}
     meta["feedback_split"] = {"parent_id": parent.id, "evidence_sha256": evidence_sha,
@@ -1492,6 +1496,7 @@ def _machine_child(data: dict[str, Any], parent: Unit, event: Review,
     return {"meta": meta, "crop": None, "crop_sha256": None, "candidates": [], "confidence": None,
             "variants": [], "group_id": None, "antecedent_ids": [], "voicing": None,
             "classification": Classification.UNASSESSED.value,
+            "text_source": entry.get("text_source", data.get("reading")), "script": script,
             "kind": UnitKind.CHAR.value if single else UnitKind.SEQUENCE.value,
             "granularity": "char" if single else "sequence"}
 

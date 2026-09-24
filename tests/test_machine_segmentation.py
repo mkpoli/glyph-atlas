@@ -295,3 +295,8 @@ def test_a_split_the_new_tables_leave_no_room_for_is_skipped_on_replay(dataset):
     store = Store(dataset)  # opens, and leaves the split that no longer fits unapplied
     assert store.unit(JOINED).active and store.unit(f"{OTHER_LINE}:u0").active
 
+
+def test_a_machine_child_carries_its_own_text_and_script(dataset):
+    Store(dataset).record_batch([split_request()], role="model")
+    children = sorted(children_of(dataset), key=lambda unit: unit.box.x)
+    assert [(child.text_source, child.script.value) for child in children] == [("ト", "katakana"), ("モ", "katakana")]
