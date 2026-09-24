@@ -1,0 +1,16 @@
+{
+  "name": "glyph-atlas-cloudflare",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "types": "wrangler types",
+    "check": "tsc --noEmit",
+    "test": "bun test",
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev"
+  },
+  "devDependencies": {
+    "wrangler": "4.135.0",
+    "typescript": "~5.9.3"
+  }
+}
