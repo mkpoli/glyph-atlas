@@ -109,29 +109,29 @@ def test_an_explicit_character_correction_resolves_the_occurrence(dataset):
 
     answer = client.post(f"/layers/units/{unit}", json=edit(unit, 0, digest)).json()
     assert answer["resolved"] is True
-    assert answer["changed"] == ["character", "script"], "the identity and the script it implies"
-    assert [row["field"] for row in answer["results"]] == ["unicode", "script", "review"]
+    assert answer["changed"] == ["character", "script", "reading"], "the identity, its script and its reading"
+    assert [row["field"] for row in answer["results"]] == ["unicode", "script", "reading", "review"]
     assert answer["results"][-1]["review"]["new"] == "reviewed", "the review confirms the record"
     assert answer["layers"]["code_point"] == KO_POINT and answer["layers"]["character"] == KO
 
     detail = sample(client, unit)
-    assert detail["label"] == KO and detail["reading"] == "ち", "the reading is untouched"
+    assert detail["label"] == KO and detail["reading"] == KO, "the reading follows the corrected character"
     assert detail["state"] == "checked", "a resolved occurrence leaves the queue"
     names = [event.field for event in events_for(client, unit, characters)]
-    assert names == ["unicode", "script", "review"]
+    assert names == ["unicode", "script", "reading", "review"]
     review = next(event for event in events_for(client, unit, characters) if event.field == "review")
     evidence = json.loads(review.evidence)
     assert evidence["resolved"] is True and evidence["issue"] == "character"
     assert evidence["layer_correction"]["code_point"] == KO_POINT
-    assert evidence["layer_correction"]["reading"] == "ち", "the reading layer is recorded as it was"
+    assert evidence["layer_correction"]["reading"] == KO, "the reading follows the corrected character"
 
 
-def test_the_reading_is_written_only_when_it_is_edited(dataset):
+def test_the_reading_follows_the_character_unless_one_is_typed(dataset):
     client, digest = dataset["client"], dataset["digest"]
     unit = f"{LINE}:u0"
     client.post(f"/layers/units/{unit}", json=edit(unit, 0, digest))
     stored = events_for(client, unit, characters)
-    assert not [event for event in stored if event.field == "reading"]
+    assert [event.new for event in stored if event.field == "reading"] == ["こ"], "ち corrected to こ reads こ"
 
     other = f"{LINE}:u1"
     answer = client.post(f"/layers/units/{other}", json=edit(
@@ -217,7 +217,7 @@ def test_the_export_reports_the_resolution_and_the_retry_answers_it(dataset):
     assert replay.status_code == 200, replay.text
     assert replay.json()["duplicate"] is True and replay.json()["resolved"] is True
     assert replay.json()["layers"]["code_point"] == KO_POINT
-    assert len(events_for(client, unit, characters)) == 3, "a retry writes no event"
+    assert len(events_for(client, unit, characters)) == 4, "a retry writes no event"
 
     exported = client.get("/atlas/reviews").json()["reviews"]
     row = next(row for row in exported if row["event"]["target_id"] == unit)

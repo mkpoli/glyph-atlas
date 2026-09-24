@@ -624,10 +624,13 @@ def test_a_correction_records_the_issues_the_reviewer_offers(dataset):
         "id": str(uuid4()), "client_id": "fixture-reviewer", "revision": unit["revision"],
         "image_sha256": digest_of(dataset), "character": "U+2A708", "reading": None,
         "verdict": "wrong", "issue": "merged", "note": "two characters in one crop"}).json()
-    assert answer["changed"] == ["character", "script"]
+    # 𪜈 is the ligature ト + モ, so the reading follows the corrected character to とも.
+    assert answer["changed"] == ["character", "script", "reading"]
     review = json.loads(next(e for e in Store(dataset).events()
                              if e.target_id == unit["id"] and e.field == "review").evidence)
-    assert review["issue"] == "merged" and review["layer_correction"]["changed"] == ["character", "script"]
+    assert review["issue"] == "merged"
+    assert review["layer_correction"]["changed"] == ["character", "script", "reading"]
+    assert review["layer_correction"]["reading"] == "とも"
 
 
 def test_a_retried_correction_answers_the_first_result(dataset):
@@ -880,3 +883,25 @@ def test_a_character_with_a_mark_takes_its_script_and_can_be_browsed(dataset):
     card = client(dataset).get("/layers/characters/U+30C4 U+309A")
     assert card.status_code == 200, card.text
     assert card.json()["occurrence_count"] == 1
+
+
+def test_a_corrected_character_carries_its_reading_and_keeps_the_transcription(dataset):
+    """い corrected to り reads り; what the transcriber typed stays in `text_source`."""
+    store = Store(dataset)
+    target = f"{LINE}:u4"
+    store.record(ReviewRequest(target_id=target, field="unicode", new="U+3044", client_id="reviewer-1"))
+    store.record(ReviewRequest(target_id=target, field="reading", new="い", client_id="reviewer-1"))
+    source = store.unit(target).text_source
+    answer = correct(client(dataset), target, store.revision(target), dataset, character="り")
+    assert answer.status_code == 200, answer.text
+    assert {"character", "reading"} <= set(answer.json()["changed"])
+    stored = next(row for row, _ in Store(dataset).unit_snapshot(target) if row.active)
+    assert stored.unicode == "U+308A" and stored.reading == "り" and stored.text_source == source
+
+
+def test_a_typed_reading_wins_over_the_one_the_character_carries(dataset):
+    store = Store(dataset)
+    target = f"{LINE}:u4"
+    answer = correct(client(dataset), target, store.revision(target), dataset, character="り", reading="ね")
+    assert answer.status_code == 200, answer.text
+    assert next(row for row, _ in Store(dataset).unit_snapshot(target) if row.active).reading == "ね"
