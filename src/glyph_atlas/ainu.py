@@ -634,13 +634,15 @@ def detector_settings(onnx: Path | str = DEFAULT_ONNX, *, score: float = SCORE) 
 
     The model file's own hash, not its path: an export can be rebuilt in place, and boxes computed
     with the old weights would then be silently attributed to the new ones. A `--score` change is a
-    different operating point and therefore different boxes.
+    different operating point and therefore different boxes, and so is the detector's ink gate.
     """
     import hashlib
 
+    from .detect import INK
+
     path = Path(onnx)
     digest = hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else ""
-    return {"onnx": str(path), "sha256": digest, "score": score, "tile": 1024, "overlap": 128}
+    return {"onnx": str(path), "sha256": digest, "score": score, "tile": 1024, "overlap": 128, "ink": INK}
 
 
 def _cache_header(settings: dict[str, Any] | None) -> dict[str, Any]:

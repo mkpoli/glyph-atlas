@@ -8,6 +8,13 @@ straddles a tile border comes out once, and a detection a border cut, which hold
 character whose rest is in the tile next door, loses to a kept box that contains it. `boxes_in` runs
 the tiles that meet a region only.
 
+A kept box then has to hold ink. On thin manuscript paper the detector also answers the text of the
+reverse side showing through, and a box on that grey takes a character in the alignment like any
+other. A box's ink is how far its darkest pixels, specks filtered out, fall below the paper of the
+box itself; a box whose ink is less than `INK` of the page's typical box, the 75th percentile of its
+detections, is dropped. The measure is relative to the page because scans differ in contrast: a pale
+scan's real ink is as light as a dark scan's show-through.
+
 The model takes one float32 tensor, `pixel_values`, of shape (1, 3, 1024, 1024): RGB, scaled to
 [0, 1], normalised with the ImageNet mean and standard deviation, and no resizing. It returns
 either the RT-DETR pair `logits` (1, queries, classes) and `pred_boxes` (1, queries, 4, centre form,
@@ -46,6 +53,19 @@ MIN_SIZE = 2
 # be dropped as the same character. A corner of four tiles leaves a sliver whose IoU is too low for
 # the score threshold to reach.
 CONTAIN = 0.9
+
+# A kept box holds at least this share of the page's typical ink. Measured on 186,943 detections of
+# 658 Ainu manuscript pages: the gate drops 3.0% of them, and a sample of those was blank paper,
+# show-through, scanner mat, rule lines and a few faint strokes. Of 330 crops reviewers judged, it
+# drops 13 of the 22 marked blank and none of the others, 54 confirmed crops among them.
+INK = 0.4
+# The percentile of a box's pixels its ink is read from, after a 3x3 median filter has removed
+# specks. A thin brush stroke covers well under a hundredth of a large box, so the percentile is low.
+INK_PERCENTILE = 0.5
+# The percentile of a box's pixels read as its paper.
+PAPER_PERCENTILE = 90
+# The percentile of a page's box inks taken as its typical box.
+INK_REFERENCE = 75
 
 
 def tile_origins(length: int, tile: int = TILE, overlap: int = OVERLAP) -> list[int]:
@@ -99,6 +119,35 @@ def tile_array(page: Image.Image, tile: Box) -> np.ndarray:
     array = np.asarray(canvas, dtype=np.float32) / 255.0
     array = (array - np.asarray(MEAN, dtype=np.float32)) / np.asarray(STD, dtype=np.float32)
     return np.ascontiguousarray(array.transpose(2, 0, 1)[None])
+
+
+def ink(grey: np.ndarray, box: Box) -> float:
+    """How far the darkest pixels of `box` fall below its paper, in grey levels.
+
+    The paper is the box's own bright end, its `PAPER_PERCENTILE`: it follows the paper's local tone
+    where a page median would read the scanner's mat or a shadow, and a bold character that covers
+    most of its box still leaves that much paper.
+    """
+    region = grey[box.y : box.y + box.h, box.x : box.x + box.w]
+    if region.size == 0:
+        return 0.0
+    paper, darkest = np.percentile(region, (PAPER_PERCENTILE, INK_PERCENTILE))
+    return max(0.0, float(paper) - float(darkest))
+
+
+def inked(page: Image.Image, boxes: Sequence[Box], share: float = INK) -> list[bool]:
+    """Whether each box holds at least `share` of the page's typical ink.
+
+    A page whose boxes hold no ink at all has nothing to compare against, and every box is kept.
+    """
+    if not boxes or share <= 0:
+        return [True] * len(boxes)
+    from PIL import ImageFilter
+
+    grey = np.asarray(page.convert("L").filter(ImageFilter.MedianFilter(3)), dtype=np.float32)
+    inks = [ink(grey, box) for box in boxes]
+    typical = float(np.percentile(inks, INK_REFERENCE))
+    return [value >= share * typical for value in inks]
 
 
 def _area(boxes: np.ndarray) -> np.ndarray:
@@ -233,8 +282,9 @@ class Detector:
     """A detector over an exported ONNX model.
 
     `score` is the lowest score a detection keeps, `nms` the IoU above which a lower-scoring
-    duplicate is dropped, and `max_per_tile` the number of detections one tile may contribute, taken
-    by descending score. `session` replaces the onnxruntime session, which tests use to run a stub;
+    duplicate is dropped, `max_per_tile` the number of detections one tile may contribute, taken
+    by descending score, and `ink` the share of the page's typical ink a kept box must hold (0 keeps
+    every box). `session` replaces the onnxruntime session, which tests use to run a stub;
     `tile`, `overlap` and `format` override the geometry and the output layout.
     """
 
@@ -244,6 +294,7 @@ class Detector:
         score: float = 0.3,
         nms: float = 0.5,
         max_per_tile: int = 1500,
+        ink: float = INK,
         *,
         session: Any | None = None,
         providers: Sequence[str] | None = None,
@@ -257,12 +308,15 @@ class Detector:
             raise ValueError(f"nms must lie in [0, 1], got {nms}")
         if max_per_tile < 1:
             raise ValueError(f"max_per_tile must be positive, got {max_per_tile}")
+        if not 0.0 <= ink <= 1.0:
+            raise ValueError(f"ink must lie in [0, 1], got {ink}")
         if format not in (None, "rtdetr", "dets"):
             raise ValueError(f"unknown output format {format!r}")
         self.onnx_path = Path(onnx_path)
         self.score = float(score)
         self.nms = float(nms)
         self.max_per_tile = int(max_per_tile)
+        self.ink = float(ink)
         self.tile = int(tile)
         self.overlap = int(overlap)
         self.format = format
@@ -350,6 +404,8 @@ class Detector:
             box = _to_box(stack[index], page.width, page.height)
             if box is not None:
                 out.append((box, float(score_array[index])))
+        kept = inked(page, [box for box, _ in out], self.ink)
+        out = [pair for pair, keep in zip(out, kept, strict=True) if keep]
         out.sort(key=lambda pair: (-pair[1], pair[0].y, pair[0].x, pair[0].h, pair[0].w))
         return out
 
