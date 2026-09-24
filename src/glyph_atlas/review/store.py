@@ -1163,7 +1163,10 @@ class Store:
         return [_review(row) for row in conn.execute("SELECT * FROM events ORDER BY seq")]
 
     def _last_seq(self, conn: sqlite3.Connection) -> int:
-        row = conn.execute("SELECT COALESCE(MAX(seq), 0) AS seq FROM events").fetchone()
+        # The AUTOINCREMENT watermark survives a deliberate history reset. Event ids
+        # must never recycle an earlier rv id when the event table has been emptied.
+        row = conn.execute("SELECT MAX(COALESCE((SELECT MAX(seq) FROM events), 0), "
+                           "COALESCE((SELECT seq FROM sqlite_sequence WHERE name='events'), 0)) AS seq").fetchone()
         return int(row["seq"])
 
     def _commit(
