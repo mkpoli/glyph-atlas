@@ -103,3 +103,24 @@ def test_a_split_entry_is_migrated_and_a_candidate_s_jibo_is_left_alone():
     assert migrated["split"] == [{"box": {"x": 0, "y": 0, "w": 1, "h": 1}, "unicode": "U+56FD", "script": "han"}]
     assert migrated["candidates"] == value["candidates"]
 
+
+def test_a_store_with_jibo_decisions_is_left_for_a_person(tmp_path, capsys):
+    import sqlite3
+
+    from glyph_atlas.review.store import ReviewRequest, Store
+    from glyph_atlas.schema import Document, Page
+
+    root = tmp_path / "dataset"
+    root.mkdir()
+    tables.write(root / "documents.parquet", [Document(id="d", title="t")], Document)
+    tables.write(root / "pages.parquet", [Page(id="p", document_id="d", seq=0, image="x", width=10, height=10)], Page)
+    tables.write(root / "units.parquet", [Unit(id="ni", document_id="d", page_id="p",
+                 box=Box(x=0, y=0, w=1, h=1), unicode="U+306B")], Unit)
+    Store(root).record(ReviewRequest(target_id="ni", field="reading", new="に", client_id="reviewer"))
+    with sqlite3.connect(root / "review.sqlite") as conn:
+        conn.execute("UPDATE events SET field = 'jibo', new = '\"尓\"'")
+        before = conn.execute("SELECT data FROM units").fetchall()
+    assert migrate.main([str(tmp_path), "--apply"]) == 1
+    assert "jibo decisions" in capsys.readouterr().err
+    with sqlite3.connect(root / "review.sqlite") as conn:
+        assert conn.execute("SELECT data FROM units").fetchall() == before

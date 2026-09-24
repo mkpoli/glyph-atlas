@@ -142,6 +142,10 @@ def review_stores(root: Path) -> list[Path]:
     return sorted(path for path in root.rglob("review.sqlite") if path.is_file())
 
 
+class JiboEvents(RuntimeError):
+    """A store records 字母 decisions of its own, which version 2 has no field for."""
+
+
 def migrate_store(path: Path, *, apply: bool) -> dict[str, int]:
     """Rewrite the v1 units a review store holds; return how many rows of each kind change.
 
@@ -169,6 +173,12 @@ def migrate_store(path: Path, *, apply: bool) -> dict[str, int]:
                     updates.append(("UPDATE imported_records SET data = ? WHERE table_name = 'units' AND id = ?",
                                     (new, record_id)))
         if "events" in tables_present:
+            decided = conn.execute("SELECT COUNT(*) FROM events WHERE field = 'jibo'").fetchone()[0]
+            if decided:
+                # A reviewer chose a 字母 for these units. The character layer states the 字母 of a
+                # code point now, so there is no field to replay them onto; a person decides.
+                conn.execute("ROLLBACK")
+                raise JiboEvents(f"{path} records {decided} jibo decisions; migrate them by hand first")
             for seq, field, old, new in conn.execute("SELECT seq, field, old, new FROM events"):
                 old_after = _json_rewrite(old, lambda value, field=field: migrate_event_value(field, value))
                 new_after = _json_rewrite(new, lambda value, field=field: migrate_event_value(field, value))
@@ -211,17 +221,23 @@ def main(argv: list[str] | None = None) -> int:
     if not pending:
         print("every units table is already version 2")
     stores = 0
+    refused = 0
     for root in arguments.roots:
         for store in review_stores(root):
-            counts = migrate_store(store, apply=arguments.apply)
+            try:
+                counts = migrate_store(store, apply=arguments.apply)
+            except JiboEvents as error:
+                refused += 1
+                print(f"left unchanged: {error}", file=sys.stderr)
+                continue
             if any(counts.values()):
                 stores += 1
                 verb = "migrated" if arguments.apply else "would migrate"
                 print(f"{verb} {store} ({counts['units']} units, {counts['imported']} imported, "
                       f"{counts['events']} events)")
-    if not stores:
+    if not stores and not refused:
         print("every review store is already version 2")
-    return 0
+    return 1 if refused else 0
 
 
 if __name__ == "__main__":
