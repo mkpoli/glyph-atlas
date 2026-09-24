@@ -59,6 +59,7 @@ from .atlas import (
     canonical_identity,
     identity_text,
     label,
+    reading_of,
     review_state,
     script_of_identity,
     single_character,
@@ -1115,6 +1116,20 @@ def router(store: Store) -> APIRouter:
                     revision += 1
                     changed.append("script")
 
+        # A corrected character carries its reading along unless the reviewer typed one: い corrected
+        # to り reads り. What the transcriber typed stays in `text_source`.
+        derived = reading_of(identity_text(identity)) if "character" in changed and edit.reading is None else None
+        if derived is not None and derived != label(unit):
+            reading = derived
+            requests.append(ReviewRequest(
+                target_type="unit", target_id=unit_id, field="reading", new=derived,
+                base_revision=revision, client_id=edit.client_id,
+                idempotency_key=f"layer:{edit.id}:reading",
+                evidence=json.dumps({**evidence_base, "layer": "reading", "from": unit.reading,
+                                     "to": derived, "authority": "character layer"}, ensure_ascii=False),
+            ))
+            revision += 1
+            changed.append("reading")
         if edit.reading is not None:
             reading = identity_text(edit.reading)
             if not reading_is_allowed(reading, identity or stored_identity(unit)):
