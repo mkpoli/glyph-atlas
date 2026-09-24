@@ -38,3 +38,11 @@ def test_alias_refuses_changed_bytes_source_signature_family_or_existing_assignm
     assignments, duplicates = records()
     assignments["alias"] = {"written_character": "another reviewed identity"}
     assert alias_assignments(assignments, duplicates) == {}
+
+
+def test_an_alias_does_not_inherit_the_kept_source_s_inspection():
+    assignments, duplicates = records()
+    assignments["original"].update(inspection={"id": "original", "source_signature": "original-signature"},
+                                   assignment_method="visual_inspection")
+    row = alias_assignments(assignments, duplicates)["alias"]
+    assert row["inspection"] is None and row["assignment_method"] == "identical_crop"

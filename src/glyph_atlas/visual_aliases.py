@@ -25,6 +25,8 @@ def alias_assignments(assignments: dict, duplicates: list[dict]) -> dict:
                       "corpus", "document_id", "page_id", "box", "source_crop", "source_url",
                       "production", "production_evidence"):
             row[field] = alias.get(field)
+        # The kept row's inspection was of that source, not this one; an alias shares the pixels only.
+        row.update(inspection=None, assignment_method="identical_crop")
         row.update(id=identity, crop_sha256=sha, verified=False, confirmed_by_human=False,
                    identity_basis="visual_model", identical_crop_of=alias["kept_id"],
                    duplicate_evidence="sha256-identical crop bytes")
