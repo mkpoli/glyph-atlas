@@ -85,7 +85,7 @@
         <details class="corpus-pick"><summary>Choose another character</summary><CharacterSearch bind:value={search} label="Correct character" placeholder="Character or reading…" onselect={item => choose(item.char)} />{#if correction}<p class="corpus-choice" role="status">{data.label} → <b>{correction}</b><button disabled={busy} onclick={() => choose(null)}>Clear</button></p>{/if}</details>
       {/if}
       <details class="advanced-edit"><summary>Add a note</summary><textarea aria-label="Review note" bind:value={note} rows="2" maxlength="2000" placeholder="Optional note" disabled={busy}></textarea></details>
-      <div class="corpus-credit"><span>{data.source?.title}</span><small>{[data.source?.holder, data.licence].filter(Boolean).join(' · ')}</small>{#if data.record_url}<a href={data.record_url} target="_blank" rel="noreferrer">Source record ↗</a>{/if}</div>
+      <div class="corpus-credit"><span>{data.source?.title}</span><small>{[data.source?.holder, data.licence].filter(Boolean).join(' · ')}</small>{#if /^https?:\/\//i.test(data.record_url ?? '')}<a href={data.record_url} target="_blank" rel="noreferrer">Source record ↗</a>{/if}</div>
     {:else if !error}<div class="inspector-skeleton"></div>{/if}
   </div>
   <footer class="inspector-savebar">
