@@ -20,7 +20,7 @@ from fastapi.responses import Response
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field
 
-from .. import images
+from .. import images, refs
 from ..schema import Box, ReviewState, Unit
 from . import status
 from .store import BadRequest, ReviewRequest, Store
@@ -175,7 +175,7 @@ def router(store: Store) -> APIRouter:
         # Page-backed crops share a source checksum; revision and box pin the crop itself.
         digest = source[0].stem if source else None
         return {"id": unit.id, "label": label(unit), "reading": unit.reading,
-                "script": unit.script, "jibo": unit.jibo, "revision": revision,
+                "script": unit.script, "jibo": refs.jibo_of_unit(unit.unicode), "revision": revision,
                 "state": state, "page_id": unit.page_id, "line_id": unit.line_id,
                 "box": unit.box.model_dump() if unit.box else None,
                 "image_sha256": digest,

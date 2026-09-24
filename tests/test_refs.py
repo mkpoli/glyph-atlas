@@ -9,8 +9,11 @@ from pathlib import Path
 import pytest
 
 from glyph_atlas import refs
+from glyph_atlas.schema import Script
 
 VOCAB = Path(__file__).resolve().parents[1] / "data" / "vocab"
+CHARACTERS = VOCAB / "characters.tsv"
+HENTAIGANA = VOCAB / "hentaigana.tsv"
 MJ_TABLE = VOCAB / "mj-hentaigana.tsv"
 EQUIVALENTS = VOCAB / "kanji-equivalents.tsv"
 
@@ -32,14 +35,26 @@ def fresh_tables():
 
 def test_candidates_of_ka_start_with_the_ordinary_kana():
     candidates = refs.candidates("か")
-    assert len(candidates) == 13
     assert candidates[0] == "U+304B"
     assert {"U+1B019", "U+1B01A", "U+1B022"} <= set(candidates)  # KA-3, KA-4, KA-KE
+    assert candidates[1:-1] == sorted(candidates[1:-1]), "the hentaigana follow in code point order"
+    assert candidates[-1] == "U+30AB", "the katakana is a form of the reading and comes last"
 
 
-def test_candidates_are_in_code_point_order_after_the_ordinary_kana():
-    candidates = refs.candidates("か")
-    assert candidates[1:] == sorted(candidates[1:])
+def test_candidates_reach_a_kana_no_kana_table_lists():
+    """U+1B127 was published in Unicode 18.0 and is in no hentaigana table."""
+    candidates = refs.candidates("ね")
+    assert candidates[0] == "U+306D"
+    assert "U+1B127" in candidates and "U+30CD" in candidates
+    assert candidates.index("U+1B127") > candidates.index("U+1B098"), "the hentaigana come first"
+
+
+def test_forms_is_every_character_written_for_a_reading():
+    forms = refs.forms("ね")
+    assert {"U+306D", "U+30CD", "U+1B092", "U+1B127"} <= set(forms)
+    assert forms[0] == "U+306D" and forms[-1] == "U+30CD", "the modern kana come first and last"
+    assert set(forms) == set(refs.candidates("ね")) | {"U+30CD"}, "a form no kana table lists is a form"
+    assert refs.forms("あき") == [] and refs.forms("") == []
 
 
 def test_candidates_include_shared_reading_letters():
@@ -234,12 +249,20 @@ def test_equivalence_header_records_the_columns_that_were_read():
 
 
 def test_a_missing_table_names_the_script_that_writes_it(tmp_path, monkeypatch):
+    """Each table a call needs is asked for in turn, and the message names the script that writes it.
+
+    The character layer is the base: a hentaigana row is joined with it, so a call that needs a
+    hentaigana row stops at `characters.tsv` before it reaches the kana tables.
+    """
     monkeypatch.setattr(refs, "VOCAB", tmp_path)
+    with pytest.raises(refs.MissingTable, match="build_character_table.py"):
+        refs.readings("U+1B098")
+    (tmp_path / "characters.tsv").write_bytes(CHARACTERS.read_bytes())
     with pytest.raises(refs.MissingTable, match="build_hentaigana_table.py"):
-        refs.readings("U+1B098")
-    (tmp_path / "hentaigana.tsv").write_bytes((VOCAB / "hentaigana.tsv").read_bytes())
+        refs.hentaigana()
+    (tmp_path / "hentaigana.tsv").write_bytes(HENTAIGANA.read_bytes())
     with pytest.raises(refs.MissingTable, match="build_mj_table.py"):
-        refs.readings("U+1B098")
+        refs.hentaigana()
     (tmp_path / "mj-hentaigana.tsv").write_bytes(MJ_TABLE.read_bytes())
     with pytest.raises(refs.MissingTable, match="equivalence-policies.yaml"):
         refs.policy("strict")
@@ -248,3 +271,9 @@ def test_a_missing_table_names_the_script_that_writes_it(tmp_path, monkeypatch):
         refs.equivalents("国", "strict")
     (tmp_path / "kanji-equivalents.tsv").write_bytes(EQUIVALENTS.read_bytes())
     assert refs.same("国", "國", "align-v1")
+
+
+def test_a_compatibility_ideograph_is_a_han_character():
+    """﨑 and the other compatibility ideographs are written in sources, so the layer holds them."""
+    assert refs.script_of("﨑") is Script.HAN
+    assert refs.script_of(chr(0x2F800)) is Script.HAN

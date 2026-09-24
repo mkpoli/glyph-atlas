@@ -43,14 +43,14 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from . import tables
+from . import refs, tables
 from .evaluate import iou, wilson
 from .schema import ReviewState, Unit
 
 AUDIT_DIR = "audit"
 AUDIT_INDEX = "audit/index.json"
 DESIGN_FIELDS = ("document", "script", "kind")
-HIDDEN_FIELDS = ("confidence", "reading", "unicode", "jibo", "candidates")
+HIDDEN_FIELDS = ("confidence", "reading", "unicode", "candidates")
 LABEL_IOU = 0.5
 BOOTSTRAP_SAMPLES = 2000
 
@@ -298,7 +298,7 @@ def _prediction_of(unit: Unit) -> dict[str, Any]:
         "box": unit.box.model_dump(mode="json") if unit.box else None,
         "reading": unit.reading,
         "unicode": unit.unicode,
-        "jibo": unit.jibo,
+        "jibo": refs.jibo_of_unit(unit.unicode),
         "classification": unit.classification.value,
         "review": unit.review.value,
         "confidence": unit.confidence.model_dump(mode="json") if unit.confidence else None,

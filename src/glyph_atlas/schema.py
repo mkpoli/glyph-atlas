@@ -3,7 +3,18 @@
 Every image is addressed, never copied: a page is a IIIF image or a plain URL plus a checksum, and a
 unit is a rectangle on that page. Crops are materialised only for releases. Labels sit in layers that
 can be filled independently: the transcriber's text, the diplomatic reading, the classification
-(code points, script, 字母, variant), and the review state.
+(code points, script, variant), and the review state.
+
+The three browsing layers retain different identities:
+
+- Grapheme: a curated orthographic family, such as 仮 and 假.
+- Character: one written character with its own encoded identity.
+- Form: the exact ink of a source occurrence, represented by a Unit and its crop.
+
+`Character.grapheme` points to the family's representative; `Unit.unicode` points
+at the written character. Readings remain independent. 字母 is character metadata
+in `Character.jibo`; sharing a 字母 alone does not establish a grapheme family.
+
 """
 
 from __future__ import annotations
@@ -12,7 +23,7 @@ from datetime import date, datetime
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Licence(StrEnum):
@@ -167,10 +178,16 @@ class UnitKind(StrEnum):
 
 
 class Script(StrEnum):
+    """The script of a character, as the character layer states it.
+
+    `han` is Unicode's name for the script of the kanji and is what `data/vocab/characters.tsv`
+    holds.
+    """
+
     HIRAGANA = "hiragana"
     HENTAIGANA = "hentaigana"
     KATAKANA = "katakana"
-    KANJI = "kanji"
+    HAN = "han"
     SYMBOL = "symbol"
     LATIN = "latin"
     UNKNOWN = "unknown"
@@ -180,6 +197,61 @@ class VariantRef(BaseModel):
     scheme: Literal["mj", "ivs", "glyphwiki", "local"]
     id: str
     version: str | None = Field(default=None, description="registry version the id was taken from")
+
+
+class Ligature(BaseModel):
+    """Two kana set as one character: the characters it is made of and what they read as.
+
+    合略仮名 such as 𪜈 (ト + モ) are one encoded identity made of two characters. The relation is
+    not the grapheme relation and not the 字母 relation: the components are characters of their own,
+    and the ligature is not a form of either. It is stated by `data/vocab/ligatures.yaml`, because a
+    Unicode name states it for ゟ and not for 𪜈, whose name is `CJK UNIFIED IDEOGRAPH-2A708`.
+
+    `components` are code points, as everywhere else in the layer, in writing order.
+    """
+
+    components: list[str] = Field(description="the characters the ligature is made of, in writing order")
+    reading: str | None = Field(default=None, description="what the components read as together")
+    kind: Literal["katakana-ligature", "hiragana-ligature"] = "katakana-ligature"
+    evidence: str | None = Field(default=None, description="what states the pair, one line")
+
+
+class Character(BaseModel):
+    """One encoded character: the middle layer of the three.
+
+    A row of `data/vocab/characters.tsv`, keyed by its code point, which is the Unicode scalar value
+    and needs no id of its own. The row states what the character *is*: its name, script, block, the
+    age of the assignment, the 字母 it derives from, what it reads as, the grapheme it is a form of,
+    and the characters it is confusable with. Nothing here is a property of one written occurrence,
+    so no unit and no crop repeats it.
+
+    A form that is two kana set as one character carries `ligature`, the characters it is made of:
+    ゟ is not a form of よ or of り, it is made of them, and 𪜈 is ト and モ set as one character.
+
+    `script` is `schema.Script`, and hentaigana is one of its values: a hentaigana is a kana form
+    Unicode encodes under that name, not a script of its own.
+
+    `jibo` can name several derivations. `grapheme` names the representative of
+    an explicitly curated family; it never replaces the character's own identity.
+    Kana families follow the vocabulary, while cited Japanese old/new orthographic
+    pairs can share a family. Unstated characters represent themselves.
+
+    """
+
+    code_point: str = Field(description="U+XXXX, four to six hex digits and uppercase")
+    char: str = Field(description="the character itself")
+    name: str | None = Field(default=None, description="the Unicode name, as UnicodeData.txt states it")
+    alias: str | None = Field(default=None, description="a second name for the same code point, such as an MJ figure name")
+    script: Script = Script.UNKNOWN
+    category: str | None = Field(default=None, description="the Unicode general category, e.g. Lo")
+    age: str | None = Field(default=None, description="the Unicode version that assigned the code point, e.g. 18.0")
+    block: str | None = Field(default=None, description="the Unicode block name")
+    jibo: list[str] = Field(default_factory=list, description="字母, the kanji the form derives from; empty when the form has none")
+    readings: list[str] = Field(default_factory=list, description="what the character reads as, historical spelling kept; empty when it is not a kana")
+    grapheme: str | None = Field(default=None, description="the representative code point of the curated grapheme family; null means itself")
+    confusables: list[str] = Field(default_factory=list, description="code points Unicode's confusables table pairs this one with, both directions")
+    ligature: Ligature | None = Field(default=None, description="the characters this one is made of, when it is two kana set as one; null when it is not a ligature")
+    variants: list[VariantRef] = Field(default_factory=list, description="MJ, IVS, GlyphWiki or local shape ids")
 
 
 class Classification(StrEnum):
@@ -219,6 +291,8 @@ class ReviewState(StrEnum):
 class Unit(BaseModel):
     """One graphic unit on a page: usually a character, sometimes a ligature or a mark."""
 
+    model_config = ConfigDict(extra="forbid")
+
     id: str
     document_id: str | None = Field(default=None, description="set on every unit, so that a standalone crop still reaches its rights")
     page_id: str | None = Field(default=None, description="null for a standalone crop with no page placement")
@@ -231,10 +305,13 @@ class Unit(BaseModel):
     granularity: Literal["char", "sequence", "block"] = "char"
     text_source: str | None = Field(default=None, description="the transcriber's string for this unit")
     reading: str | None = Field(default=None, description="diplomatic reading, historical spelling kept")
-    unicode: str | None = Field(default=None, description="code point sequence, e.g. U+1B002 or U+304B U+3099")
+    unicode: str | None = Field(
+        default=None,
+        description="code point sequence naming the character layer, e.g. U+1B002 or U+304B U+3099; "
+        "U+1B127 and U+30CD are two characters, so the code point is what says which one was written",
+    )
     classification: Classification = Classification.UNASSESSED
     script: Script = Script.UNKNOWN
-    jibo: str | None = Field(default=None, description="字母, the kanji the kana form derives from")
     variants: list[VariantRef] = Field(default_factory=list, description="MJ, IVS, GlyphWiki or local shape ids")
     candidates: list[Candidate] = Field(default_factory=list, description="scored alternatives when classification is ambiguous")
     antecedent_ids: list[str] = Field(default_factory=list, description="units an iteration mark repeats")

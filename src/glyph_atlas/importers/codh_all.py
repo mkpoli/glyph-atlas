@@ -333,10 +333,9 @@ def document_of(book: Book, record_rights: Rights, manifest: dict | None = None)
 def classification_of(code_point: int) -> Classification:
     """`unassessed` for a kana letter, whose hentaigana form the source does not record.
 
-    A kanji, a repeat mark, a ligature or punctuation is the character it is, so it stays
-    `identified`, which is what the one-book importer gives every unit.
+    Kanji classes spanning several curated written forms stay unassessed too.
     """
-    return Classification.UNASSESSED if is_kana(code_point) else Classification.IDENTIFIED
+    return Classification.UNASSESSED if is_kana(code_point) else codh.classification_of(code_point)
 
 
 def is_kana(code_point: int) -> bool:
@@ -839,7 +838,9 @@ def _units(book: Book, rows: list[dict[str, str]], sizes: dict[str, tuple[Path |
         found = sizes.get(image)
         box, clipped = box_of(row, (found[1], found[2]) if found is not None else (0, 0))
         cut += clipped
-        upstream = {"source": SOURCE, "ref": f"{book.bid}/{image}/{block}/{char_id}", "block": block}
+        upstream = {"source": SOURCE, "ref": f"{book.bid}/{image}/{block}/{char_id}", "block": block,
+                    "identity_basis": "normalized_transcription", "source_code_point": f"U+{code_point:04X}",
+                    "normalization_evidence": "https://codh.rois.ac.jp/char-shape/#version"}
         if clipped:
             upstream["box"] = ",".join(row[column] for column in ("X", "Y", "Width", "Height"))
         units.append(

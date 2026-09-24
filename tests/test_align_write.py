@@ -28,7 +28,7 @@ def unit(page_id: str, seq: int, *, run: str, review: str = "rejected") -> Unit:
         page_id=page_id,
         document_id="doc",
         box=Box(x=seq * 10, y=0, w=8, h=8),
-        text=chr(0x4E00 + seq),
+        text_source=chr(0x4E00 + seq),
         kind=UnitKind.CHAR,
         method="detect-align",
         review=review,

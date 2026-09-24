@@ -35,7 +35,6 @@ DECISION_FIELDS = frozenset(
         "reading",
         "text_source",
         "unicode",
-        "jibo",
         "kind",
         "granularity",
         "script",
@@ -66,9 +65,10 @@ HUMAN_ROLES = frozenset({"transcriber", "reviewer", "adjudicator"})
 HUMAN_REVIEW_STATES = frozenset({"reviewed", "double-reviewed", "adjudicated", "disputed"})
 
 #: Fields that verify a reading, a boundary or an identity, as opposed to tidying the record.
-VERIFYING_FIELDS = frozenset(
-    {"reading", "unicode", "text_source", "jibo", "classification", "script", "voicing"}
-)
+#: Fields that verify a reading, a boundary or an identity, as opposed to tidying the record. The
+#: 字母 is not one: it is metadata on the character a unit names, so a reviewer changes it by
+#: changing `unicode`, and the character layer states it.
+VERIFYING_FIELDS = frozenset({"reading", "unicode", "text_source", "classification", "script", "voicing"})
 #: Fields that describe the crop or the bookkeeping. A change to one is not a reading.
 ADJUSTING_FIELDS = frozenset(
     {"box", "crop", "crop_sha256", "meta", "group_id", "granularity", "antecedent_ids",
@@ -282,7 +282,7 @@ def unit_reviews(
         # start with no decision recorded. Only an explicit review state the record already carries
         # is editorial standing, and only a journal event can make a field a decision.
         opened = earliest.get(unit.id, {})
-        for name in ("reading", "unicode", "text_source", "box", "jibo", "classification"):
+        for name in ("reading", "unicode", "text_source", "box", "classification"):
             if not hasattr(unit, name):
                 continue
             value = _value_of(unit, name)

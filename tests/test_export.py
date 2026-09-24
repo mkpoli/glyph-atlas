@@ -161,7 +161,7 @@ def dataset(tmp_path: Path) -> Path:
              code_point="U+1B019", script=Script.HENTAIGANA, review=ReviewState.MACHINE,
              method="detect-align", document_id="codh:A"),
         unit("codh:A:u2", "codh:A:p1", "codh:A:p1:L2", 1, text="國", reading="くに",
-             code_point="U+570B", script=Script.KANJI, review=ReviewState.MACHINE,
+             code_point="U+570B", script=Script.HAN, review=ReviewState.MACHINE,
              method="detect-align", document_id="codh:A"),
         unit("codh:A:u3", "codh:A:p2", "codh:A:p2:L1", 1, text="あ", reading="あ",
              code_point="U+3042", script=Script.HIRAGANA, review=ReviewState.TRANSCRIBER,
@@ -426,7 +426,7 @@ def test_a_standalone_crop_unit_keeps_its_crop_column(dataset: Path, tmp_path: P
                 crop="all.zip!all/characters/U+4E00/34000001.jpg",
                 unicode="U+4E00",
                 reading="一",
-                script=Script.KANJI,
+                script=Script.HAN,
                 review=ReviewState.TRANSCRIBER,
                 kind=UnitKind.CHAR,
                 upstream={"source": "hi-lab-kuzushiji", "ref": "34000001"},
@@ -578,3 +578,13 @@ def test_a_page_whose_only_record_is_its_text_is_released(tmp_path):
     assert counts["page_texts"] == 2
     released = {row.page_id: row for row in tables.read(out / "page_texts.parquet", PageText)}
     assert released["hk:d1:1"].text_raw == "ゐろは"
+
+
+@pytest.mark.parametrize(("unicode", "expected"), [
+    ("U+30CD", None),  # ネ is already a modern kana
+    ("U+1B127", "ね"),  # 𛄧, the alternate katakana, is a form of ね
+    ("U+1B098", "ね"),  # a hentaigana of ね
+])
+def test_modern_kana_rewrites_old_forms_and_leaves_modern_katakana(unicode, expected):
+    unit = Unit(id="u", unicode=unicode, classification=Classification.IDENTIFIED)
+    assert export.Normaliser.load().value("modern_kana", unit) == expected

@@ -231,22 +231,18 @@ def _token_of(text: str, start: int, end: int, role: str, column: int | None, po
 
 
 def _script_of(text: str, candidates: list[str]) -> Script:
+    """The script of a token, from the character layer.
+
+    The layer is what knows: a transcription may hold a character this project never saw, such as
+    the alternate katakana of Unicode 18.0, and a range list written here would not. A token that
+    is a kana with more than one candidate code point is a hentaigana whatever the layer says about
+    the character transcribed, because the alternatives are what the reading leaves open.
+    """
     if len(text) != 1:
         return Script.UNKNOWN
-    point = ord(text)
-    if 0x3041 <= point <= 0x3096:
-        return Script.HIRAGANA
-    if 0x30A1 <= point <= 0x30FA:
-        return Script.KATAKANA
-    if point in (0x3099, 0x309A):
-        return Script.SYMBOL
-    if candidates:
+    if candidates and refs.script_of(text) not in (Script.KATAKANA, Script.HIRAGANA):
         return Script.HENTAIGANA
-    if 0x4E00 <= point <= 0x9FFF or 0x3400 <= point <= 0x4DBF or 0xF900 <= point <= 0xFAFF:
-        return Script.KANJI
-    if 0x1B001 <= point <= 0x1B11F:
-        return Script.HENTAIGANA
-    return Script.UNKNOWN
+    return refs.script_of(text)
 
 
 def _kind_of(text: str, script: Script) -> UnitKind:
@@ -455,8 +451,7 @@ def _unit_of(
         classification = Classification.IDENTIFIED
     if token.code_points:
         candidates = [
-            Candidate(unicode=point, p=1.0 / len(token.code_points), jibo=refs.jibo(point))
-            for point in sorted(token.code_points)
+            Candidate(unicode=point, p=1.0 / len(token.code_points)) for point in sorted(token.code_points)
         ]
     confidence = Confidence(
         detection=max((detection.score for detection in detections), default=None),
@@ -478,7 +473,6 @@ def _unit_of(
         unicode=unicode,
         classification=classification,
         script=token.script,
-        jibo=refs.jibo(unicode) if unicode else None,
         candidates=candidates,
         method="detect-align",
         confidence=confidence,

@@ -636,20 +636,43 @@ def cached_image(sha256: str) -> Path | None:
 
 
 def candidates_for(unit: Unit) -> dict[str, Any]:
-    """The candidates of a unit's reading, with 字母, reference glyphs and scores."""
+    """The candidates of a unit's reading, with 字母, grapheme, reference glyphs and scores.
+
+    The row names the unit's own character first, when the table holds it, so that a reviewer sees
+    the letter the record carries even where no reading reaches it. The list is `refs.forms`, which
+    is every character written for the reading: the ordinary kana, every hentaigana of the 音価 and
+    the historic kana of Unicode 18.0. Each candidate carries what the character layer says about
+    it, which is where the 字母 and the modern kana come from; a candidate the layer does not hold
+    keeps only its code point.
+    """
     reading = unit.reading or unit.text_source or ""
-    code_points = refs.candidates(reading)
+    code_points = refs.forms(reading)
     scored = {candidate.unicode: candidate for candidate in unit.candidates}
     extras = [candidate.unicode for candidate in unit.candidates if candidate.unicode not in code_points]
+    if unit.unicode and unit.unicode not in code_points and unit.unicode not in extras:
+        extras.insert(0, unit.unicode)
     entries = []
     for code_point in [*code_points, *extras]:
         entry: dict[str, Any] = {"unicode": code_point}
         char = _char(code_point)
         if char is not None:
             entry["char"] = char
-        jibo = refs.jibo(code_point)
-        if jibo:
-            entry["jibo"] = jibo
+        row = refs.character(code_point)
+        if row is not None:
+            if row.jibo:
+                entry["jibo"] = row.jibo[0]
+            if row.name:
+                entry["name"] = row.name
+            if row.block:
+                entry["block"] = row.block
+            if row.age:
+                entry["age"] = row.age
+            if row.confusables:
+                entry["confusables"] = list(row.confusables)
+        grapheme = refs.grapheme(code_point)
+        if grapheme and grapheme != code_point:
+            entry["grapheme"] = grapheme
+            entry["grapheme_char"] = _char(grapheme)
         entry.update(references().get(code_point, {}))
         candidate = scored.get(code_point)
         if candidate is not None:
@@ -663,7 +686,8 @@ def candidates_for(unit: Unit) -> dict[str, Any]:
         "unit_id": unit.id,
         "reading": reading or None,
         "unicode": unit.unicode,
-        "jibo": unit.jibo,
+        "jibo": refs.jibo_of_unit(unit.unicode),
+        "grapheme": refs.grapheme(unit.unicode) if unit.unicode else None,
         "classification": unit.classification.value,
         "candidates": entries,
     }

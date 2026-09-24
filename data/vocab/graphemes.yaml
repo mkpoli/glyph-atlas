@@ -1,0 +1,433 @@
+# The grapheme layer and the character rows the UCD files cannot settle.
+#
+# `scripts/build_character_table.py` reads this file and writes `characters.tsv`. The grapheme of a
+# kana is the modern kana it is a form of, so that ね, ネ and every 変体仮名 of ね are one
+# grapheme: that is the 音価 the writing system distinguishes the shapes by. `kana` is the list of
+# those modern kana. Everything else follows from the Unicode names: `HENTAIGANA LETTER WE-3`,
+# `KATAKANA LETTER SMALL WE` and `KATAKANA LETTER ALTERNATE NE` all name the kana they are a form
+# of, and a name that names no kana is its own grapheme unless an explicit family below groups it.
+#
+# Every row must cite where it comes from. A row with no evidence is a guess about the writing
+# system and does not belong here.
+#
+# `kana` maps a code point to its reading. It is the standard hiragana, which is what the rest of
+# the project reads a kana by - `refs.to_hiragana` maps a katakana through hiragana, and the
+# alignment reads a line's kana the same way. Katakana is not listed: a katakana letter and its
+# hiragana are one grapheme, and the hiragana names it.
+kana:
+  U+3042: あ
+  U+3044: い
+  U+3046: う
+  U+3048: え
+  U+304A: お
+  U+304B: か
+  U+304D: き
+  U+304F: く
+  U+3051: け
+  U+3053: こ
+  U+3055: さ
+  U+3057: し
+  U+3059: す
+  U+305B: せ
+  U+305D: そ
+  U+305F: た
+  U+3061: ち
+  U+3064: つ
+  U+3066: て
+  U+3068: と
+  U+306A: な
+  U+306B: に
+  U+306C: ぬ
+  U+306D: ね
+  U+306E: の
+  U+306F: は
+  U+3072: ひ
+  U+3075: ふ
+  U+3078: へ
+  U+307B: ほ
+  U+307E: ま
+  U+307F: み
+  U+3080: む
+  U+3081: め
+  U+3082: も
+  U+3084: や
+  U+3086: ゆ
+  U+3088: よ
+  U+3089: ら
+  U+308A: り
+  U+308B: る
+  U+308C: れ
+  U+308D: ろ
+  U+308F: わ
+  U+3090: ゐ
+  U+3091: ゑ
+  U+3092: を
+  U+3093: ん
+  U+3094: ゔ
+  # The small kana. A small letter is a letter and not a form of the full-size one - っ is not つ -
+  # so each is its own grapheme, and this map is what says so: a character listed here is a grapheme
+  # of its own, and ゕ reads ゕ rather than か. ゕ and ゖ are the small か and け of the Ainu
+  # orthography and the rest are the small kana of the 五十音.
+  U+3041: ぁ
+  U+3043: ぃ
+  U+3045: ぅ
+  U+3047: ぇ
+  U+3049: ぉ
+  U+3063: っ
+  U+3083: ゃ
+  U+3085: ゅ
+  U+3087: ょ
+  U+308E: ゎ
+  U+3095: ゕ
+  U+3096: ゖ
+  # The small katakana are forms of the small hiragana: ァ is ぁ, which is not あ. Unicode
+  # decomposes ヵ and ヶ to か and け rather than to ゕ and ゖ, so all twelve are listed here.
+  U+30A1: ぁ
+  U+30A3: ぃ
+  U+30A5: ぅ
+  U+30A7: ぇ
+  U+30A9: ぉ
+  U+30C3: っ
+  U+30E3: ゃ
+  U+30E5: ゅ
+  U+30E7: ょ
+  U+30EE: ゎ
+  U+30F5: ゕ
+  U+30F6: ゖ
+  # The small kana of the historic blocks, which nothing else maps. 𛅦 is a small 𛀁, which is
+  # neither 𛀁 nor え.
+  U+1B132: 𛄲
+  U+1B150: 𛅐
+  U+1B151: 𛅑
+  U+1B152: 𛅒
+  U+1B155: 𛅕
+  U+1B164: 𛅤
+  U+1B165: 𛅥
+  U+1B166: 𛅦
+  U+1B167: 𛅧
+  U+1B168: 𛅨
+  # Kana Extended-A, the historic kana of the 五十音. A name such as ARCHAIC YE or ALTERNATE NE
+  # says which kana the letter is, but the reading is not the letter, so the map states both. A
+  # digraph (𛄣 is こと) is not a kana of the 五十音 and is its own grapheme.
+  U+1B001: え
+  U+1B11F: う
+  U+1B120: い
+  U+1B121: え
+  U+1B122: う
+
+# Fields of a `characters` row, all optional, overriding what the build found:
+#   jibo      the 字母, the kanji the form derives from
+#   letter    the kana a name that names none is a form of, as when several readings disagree
+#   grapheme  the code point of the grapheme this character is a form of
+#   readings  what the character reads as, when the name spells no reading
+#   alias     a second name, such as the MJ figure name
+#   script    the script, when the UCD property is not the label this dataset uses
+#   age       the Unicode release that assigned the code point
+#   block     the Unicode block
+characters:
+  # Unicode 18.0, Kana Extended-A. The chart's NamesList carries no "derived from" note for these
+  # two, because the note is about kana forms rather than about encodings, but the proposal that
+  # added them states the 字母 in words.
+  #   L2/25-151R, "Proposal on two alternate Katakana letters" (Eiso Chan, 2025-07-05), §2:
+  #     "For the proposed alternate Katakana letter NE, it is derived from Kanji 子."
+  #     "For the proposed alternate Katakana letter WI, it is derived from Kanji 井."
+  # Provisionally assigned by UTC #184, consensus 184-C38, and published in Unicode 18.0.
+  U+1B127:
+    jibo: [子]
+  U+1B128:
+    jibo: [井]
+
+  # HENTAIGANA LETTER N-MU-MO-1 and -2 read ん, む and も, and the first reading is the one that
+  # would name their grapheme. They are not ん first: the character is a む form, and the two are
+  # the last of the む hentaigana. Unicode puts them after WO-7 in Kana Extended-A and before
+  # WU, which is the position of a ん form, so the reading order alone does not settle it.
+  #   `data/vocab/mj-hentaigana.tsv` gives both the 音価 ん/む/も and no reading order.
+  # The name does: `N-MU-MO` is the reading of 无, whose 音価 the MJ table lists in that order,
+  # and 無, the same kanji, is not a ん form. Both are read む in the 五十音 order the kana follow.
+  U+1B11D:
+    letter: む
+  U+1B11E:
+    letter: む
+
+# Explicit orthographic families. Only unambiguous one-modern/one-old pairs in the
+# first (character) cell of the official table are included. Multi-character old-form
+# entries, compatibility ideographs and semantic/phonetic equivalences stay separate.
+# The representative labels a family; it never replaces an occurrence's code point.
+sources:
+  joyo-2010:
+    title: 文化庁 常用漢字表の音訓索引（平成22年内閣告示）
+    url: https://www.bunka.go.jp/kokugo_nihongo/sisaku/joho/joho/kijun/naikaku/kanji/joyokanjisakuin/
+    retrieved: '2026-09-21'
+    sha256: 33cb7b99d88d069a5e6e228a71f587285c9fa3cc6937e74022928524569f26f3
+families:
+  U+4E07: {members: [万, 萬], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+4E0E: {members: [与, 與], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+4E21: {members: [両, 兩], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+4E26: {members: [並, 竝], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+4E57: {members: [乗, 乘], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+4E71: {members: [乱, 亂], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+4E80: {members: [亀, 龜], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+4E88: {members: [予, 豫], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+4E89: {members: [争, 爭], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+4E9C: {members: [亜, 亞], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+4ECF: {members: [仏, 佛], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+4EEE: {members: [仮, 假], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+4F1A: {members: [会, 會], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+4F1D: {members: [伝, 傳], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+4F53: {members: [体, 體], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+4F59: {members: [余, 餘], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+4FA1: {members: [価, 價], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5039: {members: [倹, 儉], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+507D: {members: [偽, 僞], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5150: {members: [児, 兒], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+515A: {members: [党, 黨], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5186: {members: [円, 圓], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5199: {members: [写, 寫], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+51E6: {members: [処, 處], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5263: {members: [剣, 劍], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5264: {members: [剤, 劑], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5270: {members: [剰, 剩], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+52B1: {members: [励, 勵], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+52B4: {members: [労, 勞], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+52B9: {members: [効, 效], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+52C5: {members: [勅, 敕], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+52E7: {members: [勧, 勸], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+52F2: {members: [勲, 勳], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+533A: {members: [区, 區], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+533B: {members: [医, 醫], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5358: {members: [単, 單], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+53B3: {members: [厳, 嚴], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+53C2: {members: [参, 參], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+53CC: {members: [双, 雙], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+53CE: {members: [収, 收], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+53D9: {members: [叙, 敍], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+53F0: {members: [台, 臺], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+53F7: {members: [号, 號], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+55B6: {members: [営, 營], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5631: {members: [嘱, 囑], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+56E3: {members: [団, 團], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+56F2: {members: [囲, 圍], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+56F3: {members: [図, 圖], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+56FD: {members: [国, 國], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+570F: {members: [圏, 圈], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5727: {members: [圧, 壓], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5815: {members: [堕, 墮], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5841: {members: [塁, 壘], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5869: {members: [塩, 鹽], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5897: {members: [増, 增], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+58CA: {members: [壊, 壞], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+58CC: {members: [壌, 壤], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+58EE: {members: [壮, 壯], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+58F0: {members: [声, 聲], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+58F1: {members: [壱, 壹], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+58F2: {members: [売, 賣], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5909: {members: [変, 變], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5965: {members: [奥, 奧], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5968: {members: [奨, 奬], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5B22: {members: [嬢, 孃], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5B66: {members: [学, 學], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5B9D: {members: [宝, 寶], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5B9F: {members: [実, 實], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5BDB: {members: [寛, 寬], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5BDD: {members: [寝, 寢], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5BFE: {members: [対, 對], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5BFF: {members: [寿, 壽], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5C02: {members: [専, 專], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5C06: {members: [将, 將], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5C3D: {members: [尽, 盡], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5C4A: {members: [届, 屆], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5C5E: {members: [属, 屬], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5CB3: {members: [岳, 嶽], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5CE1: {members: [峡, 峽], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5DFB: {members: [巻, 卷], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5E2F: {members: [帯, 帶], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5E30: {members: [帰, 歸], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5E81: {members: [庁, 廳], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5E83: {members: [広, 廣], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5EC3: {members: [廃, 廢], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5F10: {members: [弐, 貳], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5F25: {members: [弥, 彌], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5F3E: {members: [弾, 彈], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5F53: {members: [当, 當], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5F84: {members: [径, 徑], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5F93: {members: [従, 從], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5FB3: {members: [徳, 德], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+5FDC: {members: [応, 應], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+604B: {members: [恋, 戀], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6052: {members: [恒, 恆], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6075: {members: [恵, 惠], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+60A9: {members: [悩, 惱], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+60AA: {members: [悪, 惡], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+60E8: {members: [惨, 慘], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+614E: {members: [慎, 愼], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+61D0: {members: [懐, 懷], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6226: {members: [戦, 戰], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+622F: {members: [戯, 戲], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6255: {members: [払, 拂], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+629C: {members: [抜, 拔], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+629E: {members: [択, 擇], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+62C5: {members: [担, 擔], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+62DD: {members: [拝, 拜], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+62E0: {members: [拠, 據], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+62E1: {members: [拡, 擴], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6319: {members: [挙, 擧], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+631F: {members: [挟, 挾], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+633F: {members: [挿, 插], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+635C: {members: [捜, 搜], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+63FA: {members: [揺, 搖], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6442: {members: [摂, 攝], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6570: {members: [数, 數], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6589: {members: [斉, 齊], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+658E: {members: [斎, 齋], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+65AD: {members: [断, 斷], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+65E7: {members: [旧, 舊], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+663C: {members: [昼, 晝], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6681: {members: [暁, 曉], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+66FD: {members: [曽, 曾], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6761: {members: [条, 條], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6765: {members: [来, 來], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+67A2: {members: [枢, 樞], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6804: {members: [栄, 榮], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+685C: {members: [桜, 櫻], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+685F: {members: [桟, 棧], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+691C: {members: [検, 檢], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+697C: {members: [楼, 樓], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+697D: {members: [楽, 樂], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+69D8: {members: [様, 樣], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6A29: {members: [権, 權], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6A2A: {members: [横, 橫], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6B20: {members: [欠, 缺], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6B27: {members: [欧, 歐], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6B53: {members: [歓, 歡], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6B6F: {members: [歯, 齒], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6B8B: {members: [残, 殘], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6BB4: {members: [殴, 毆], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6BBB: {members: [殻, 殼], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6C17: {members: [気, 氣], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6CA2: {members: [沢, 澤], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6D44: {members: [浄, 淨], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6D45: {members: [浅, 淺], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6D5C: {members: [浜, 濱], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6E08: {members: [済, 濟], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6E0B: {members: [渋, 澁], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6E13: {members: [渓, 溪], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6E7E: {members: [湾, 灣], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6E7F: {members: [湿, 濕], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6E80: {members: [満, 滿], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6EDD: {members: [滝, 瀧], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6EDE: {members: [滞, 滯], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+6F5C: {members: [潜, 潛], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+702C: {members: [瀬, 瀨], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+706F: {members: [灯, 燈], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+7089: {members: [炉, 爐], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+70B9: {members: [点, 點], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+70BA: {members: [為, 爲], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+713C: {members: [焼, 燒], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+72A0: {members: [犠, 犧], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+72EC: {members: [独, 獨], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+72ED: {members: [狭, 狹], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+731F: {members: [猟, 獵], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+732E: {members: [献, 獻], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+7363: {members: [獣, 獸], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+74F6: {members: [瓶, 甁], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+753B: {members: [画, 畫], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+7573: {members: [畳, 疊], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+75F4: {members: [痴, 癡], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+767A: {members: [発, 發], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+76D7: {members: [盗, 盜], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+770C: {members: [県, 縣], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+771F: {members: [真, 眞], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+7815: {members: [砕, 碎], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+793C: {members: [礼, 禮], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+7985: {members: [禅, 禪], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+79D8: {members: [秘, 祕], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+79F0: {members: [称, 稱], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+7A32: {members: [稲, 稻], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+7A42: {members: [穂, 穗], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+7A4F: {members: [穏, 穩], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+7A83: {members: [窃, 竊], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+7ADC: {members: [竜, 龍], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+7C8B: {members: [粋, 粹], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+7C9B: {members: [粛, 肅], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+7CF8: {members: [糸, 絲], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+7D4C: {members: [経, 經], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+7D75: {members: [絵, 繪], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+7D99: {members: [継, 繼], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+7D9A: {members: [続, 續], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+7DCF: {members: [総, 總], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+7DD1: {members: [緑, 綠], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+7DD2: {members: [緒, 緖], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+7E04: {members: [縄, 繩], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+7E26: {members: [縦, 縱], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+7E4A: {members: [繊, 纖], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+7F36: {members: [缶, 罐], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+7FFB: {members: [翻, 飜], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+8074: {members: [聴, 聽], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+80C6: {members: [胆, 膽], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+8133: {members: [脳, 腦], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+81D3: {members: [臓, 臟], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+8276: {members: [艶, 艷], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+82B8: {members: [芸, 藝], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+830E: {members: [茎, 莖], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+8358: {members: [荘, 莊], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+8535: {members: [蔵, 藏], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+85AB: {members: [薫, 薰], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+85AC: {members: [薬, 藥], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+866B: {members: [虫, 蟲], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+8695: {members: [蚕, 蠶], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+86CD: {members: [蛍, 螢], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+86EE: {members: [蛮, 蠻], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+885B: {members: [衛, 衞], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+88C5: {members: [装, 裝], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+8912: {members: [褒, 襃], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+8987: {members: [覇, 霸], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+899A: {members: [覚, 覺], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+89A7: {members: [覧, 覽], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+89B3: {members: [観, 觀], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+89E6: {members: [触, 觸], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+8A33: {members: [訳, 譯], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+8A3C: {members: [証, 證], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+8A89: {members: [誉, 譽], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+8AAD: {members: [読, 讀], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+8B21: {members: [謡, 謠], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+8B72: {members: [譲, 讓], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+8C4A: {members: [豊, 豐], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+8CDB: {members: [賛, 贊], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+8DF5: {members: [践, 踐], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+8EE2: {members: [転, 轉], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+8EFD: {members: [軽, 輕], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+8F9E: {members: [辞, 辭], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+8FBA: {members: [辺, 邊], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+9013: {members: [逓, 遞], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+9045: {members: [遅, 遲], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+90CE: {members: [郎, 郞], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+90F7: {members: [郷, 鄕], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+9154: {members: [酔, 醉], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+91B8: {members: [醸, 釀], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+91C8: {members: [釈, 釋], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+9244: {members: [鉄, 鐵], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+9271: {members: [鉱, 鑛], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+92AD: {members: [銭, 錢], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+92F3: {members: [鋳, 鑄], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+93AE: {members: [鎮, 鎭], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+95A2: {members: [関, 關], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+9665: {members: [陥, 陷], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+967A: {members: [険, 險], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+968F: {members: [随, 隨], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+96A0: {members: [隠, 隱], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+96D1: {members: [雑, 雜], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+970A: {members: [霊, 靈], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+9759: {members: [静, 靜], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+983C: {members: [頼, 賴], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+9855: {members: [顕, 顯], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+99C5: {members: [駅, 驛], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+99C6: {members: [駆, 驅], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+9A12: {members: [騒, 騷], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+9A13: {members: [験, 驗], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+9AC4: {members: [髄, 髓], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+9AEA: {members: [髪, 髮], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+9D8F: {members: [鶏, 鷄], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+9EA6: {members: [麦, 麥], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+9ED2: {members: [黒, 黑], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+9ED9: {members: [黙, 默], relation: shinjitai-kyujitai, sources: [joyo-2010]}
+  U+9F62: {members: [齢, 齡], relation: shinjitai-kyujitai, sources: [joyo-2010]}

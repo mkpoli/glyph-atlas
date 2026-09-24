@@ -12,12 +12,14 @@ itself where the character is 〱 or ゝ. `OCR` is a machine reading and is igno
 Every block becomes a unit `codh-omt:{bid}:{ID}`: `granularity` `char` for one character and `block`
 for a 連彫活字, `text_source` and `reading` the `character` column, `seq` the position of the block
 along its line counted from zero, which is the 1-based `count` column less one and is kept as given
-in `upstream["count"]`, `review=transcriber`. A block of one kana is classified from its 字母: the code points of
-`refs.candidates(character)` whose 字母 is the same one, one candidate giving `unicode` and
-`identified` and several giving `ambiguous` with equal `p`. Every other block keeps the code points
-of its transcription and stays `unassessed`, and its 字母 column is kept in
-`upstream["jibo_sequence"]`. The blocks of one line become a line `{page_id}:L{line}` whose box is
-the union of theirs, and the page images go into the image cache through
+in `upstream["count"]`, `review=transcriber`. A block of one kana is classified from its 字母: the
+code points of `refs.candidates(character)` whose 字母 is the same one, one candidate giving
+`unicode` and `identified` and several giving `ambiguous` with equal `p`. Every other block keeps
+the code points of its transcription and stays `unassessed`, and its 字母 column is kept in
+`upstream["jibo_sequence"]`. The unit carries a code point and not a 字母: 字母 belongs to a
+character, the character layer keeps it once per code point, and `refs.jibo_of(unit.unicode)` reads
+it back. The blocks of one line become a line `{page_id}:L{line}` whose box is the union of theirs,
+and the page images go into the image cache through
 `images.register(path, url)` under a `file:` key, so a page is addressed by the key rather than by
 the archive it came from.
 """
@@ -97,7 +99,7 @@ class Labels(NamedTuple):
     unicode: str | None
     classification: Classification
     candidates: list[Candidate]
-    jibo: str | None
+    jibo: list[str]
     script: Script
 
 
@@ -108,16 +110,22 @@ def script_of(text: str) -> Script:
 
 
 def _script_of_char(char: str) -> Script:
+    """The script of one character: the movable-type marks, then the character layer.
+
+    The dataset writes the iteration marks 〱〲 and ゝゞ as kana, so the two kana blocks and the 々
+    marks are taken here as the source counts them. Everything else is the character layer's to
+    answer, which reaches every kana Unicode assigns, hentaigana and the alternate katakana of
+    Unicode 18.0 included. A kanji is labelled `kanji`, which is what the records already say.
+    """
     code_point = ord(char)
     if 0x3041 <= code_point <= 0x3096 or code_point in HIRAGANA or code_point in (0x3031, 0x3032):
         return Script.HIRAGANA
     if 0x30A1 <= code_point <= 0x30FA or code_point in KATAKANA:
         return Script.KATAKANA
-    if 0x1B001 <= code_point <= 0x1B11F:
-        return Script.HENTAIGANA
     if 0x3005 <= code_point <= 0x3007 or _is_ideograph(code_point):
-        return Script.KANJI
-    return Script.SYMBOL
+        return Script.HAN
+    script = refs.script_of(char)
+    return Script.SYMBOL if script is Script.UNKNOWN else script
 
 
 def _is_ideograph(code_point: int) -> bool:
@@ -162,15 +170,19 @@ def labels_of(character: str, jibo: str) -> Labels:
     """
     aligned = jibo.strip()
     if len(character) > 1:
-        return Labels(BLOCK, sequence(character), Classification.UNASSESSED, [], None, script_of(character))
-    matched = [code_point for code_point in refs.candidates(character) if aligned and refs.jibo(code_point) == aligned]
+        return Labels(BLOCK, sequence(character), Classification.UNASSESSED, [], [], script_of(character))
+    # A 字母 names a hiragana or hentaigana form. The alternate katakana of Unicode 18.0 share the
+    # reading and can share the 字母 (𛄧 and 子), but a kana transcription never means one of them.
+    matched = [code_point for code_point in refs.candidates(character)
+               if aligned and refs.jibo(code_point) == aligned
+               and refs.script_of(refs.to_char(code_point)) in (Script.HIRAGANA, Script.HENTAIGANA)]
     if len(matched) == 1:
         return Labels(
             CHAR,
             matched[0],
             Classification.IDENTIFIED,
-            [Candidate(unicode=matched[0], p=1.0, jibo=aligned)],
-            aligned,
+            [Candidate(unicode=matched[0], p=1.0)],
+            refs.jibo_of(matched[0]),
             script_of(refs.from_code_points(matched)),
         )
     if matched:
@@ -179,8 +191,8 @@ def labels_of(character: str, jibo: str) -> Labels:
             CHAR,
             None,
             Classification.AMBIGUOUS,
-            [Candidate(unicode=code_point, p=equal, jibo=aligned) for code_point in matched],
-            aligned,
+            [Candidate(unicode=code_point, p=equal) for code_point in matched],
+            refs.jibo_of(matched[0]),
             script_of(refs.from_code_points(matched)),
         )
     kana = bool(refs.candidates(character))
@@ -189,7 +201,7 @@ def labels_of(character: str, jibo: str) -> Labels:
         sequence(character),
         Classification.UNASSESSED if kana else Classification.IDENTIFIED,
         [],
-        aligned if kana and len(aligned) == 1 else None,
+        refs.jibo_of(sequence(character)) if kana else [],
         script_of(character),
     )
 
@@ -283,7 +295,6 @@ def unit_of(row: dict) -> Unit:
         unicode=labels.unicode,
         classification=labels.classification,
         script=labels.script,
-        jibo=labels.jibo,
         candidates=labels.candidates,
         method="import",
         review=ReviewState.TRANSCRIBER,

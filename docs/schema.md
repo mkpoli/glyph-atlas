@@ -3,6 +3,34 @@
 Tables are Parquet files under `out/<release>/`; editorial logs are JSON Lines. The Pydantic models in
 `src/glyph_atlas/schema.py` are the reference; this page explains the fields.
 
+## Three layers
+
+The hierarchy is grapheme → character → form.
+
+| Layer | What it is | Where it lives |
+| --- | --- | --- |
+| Grapheme | A curated family, such as 仮 and 假 | `Character.grapheme` points to its representative |
+| Character | The written identity and its code point | `data/vocab/characters.tsv`, one row per code point |
+| Form | Exact ink in a source occurrence | `Unit`, its crop, placement and optional variant identifiers |
+
+仮 (`U+4EEE`) and 假 (`U+5047`) share a family represented by 仮. Their individual
+characters and occurrence counts remain separate. The 271 supported one-to-one
+Japanese old/new pairs are cited in `graphemes.yaml`; broader alignment equivalences
+and shared pronunciations do not create browsing families.
+
+Kana retain their curated families. For example, ね, ネ and 𛄧 share `U+306D`.
+The kanji 子 remains a separate character and family, while `Character.jibo` records
+its derivation relation to 𛄧. A shared 字母 alone does not establish a family.
+Small kana and ligatures retain distinct families.
+
+A unit's `unicode` identifies the written character; `reading` preserves its independent
+reading. `variants` can identify an MJ, IVS, GlyphWiki or local form. Grouping a character
+never rewrites these fields or the source transcription.
+
+`/layers/graphemes/{code_point}` resolves either member to its family and lists
+`characters`. Each character can be selected for exact occurrences; an explicit
+`expand=grapheme` query returns occurrences across the family.
+
 ## Identifiers
 
 Ids are strings, assigned once. Imported records take a deterministic id from the upstream identity,
@@ -76,10 +104,9 @@ One graphic unit: a character, a ligature, a mark, a gap.
 | `reading` | diplomatic reading, historical spelling kept |
 | `unicode` | code point sequence, `U+1B002` or `U+304B U+3099`; null when no code point fits |
 | `classification` | `unassessed`, `identified`, `ambiguous` (several candidates remain), `unencoded` (identified, no code point exists), `unidentified` |
-| `script` | `hiragana`, `hentaigana`, `katakana`, `kanji`, `symbol`, `latin`, `unknown` |
-| `jibo` | 字母 as one kanji |
+| `script` | `hiragana`, `hentaigana`, `katakana`, `han`, `symbol`, `latin`, `unknown`; the character layer is the authority |
 | `variants` | list of `{scheme, id, version}` with scheme `mj`, `ivs`, `glyphwiki` or `local`; several may apply |
-| `candidates` | scored alternatives `{unicode, p, jibo}` when `classification` is `ambiguous` |
+| `candidates` | scored alternatives `{unicode, p}` when `classification` is `ambiguous` |
 | `antecedent_ids` | for an iteration mark, the units it repeats, across a line break if needed |
 | `group_id` | 連綿 group |
 | `voicing` | mark present on the page: `none`, `dakuten`, `handakuten` |
@@ -92,9 +119,35 @@ One graphic unit: a character, a ligature, a mark, a gap.
 | `meta` | fields with no column of their own, such as the audit sample the unit belongs to (`sample`, `p`, `stratum`, `predicted`, `hidden`) |
 
 `unicode` and `reading` answer different questions. A hentaigana form of か derived from 可 has
-`reading` か, `unicode` U+1B019 (KA-3), `jibo` 可, `script` hentaigana. U+1B01A (KA-4) derives from 可
-as well, so a record of this pair also carries a local shape id in `variants`. The modern spelling is
-derived at export.
+`reading` か, `unicode` U+1B019 (KA-3), and 字母 可 in the character layer, `script` hentaigana.
+U+1B01A (KA-4) derives from 可 as well, so a record of this pair also carries a local shape id in
+`variants`. The modern spelling is derived at export.
+
+### characters
+
+One encoded character, from `data/vocab/characters.tsv`: the middle layer, and the only table of the
+dataset that is not about an occurrence of anything. Built by `scripts/build_character_table.py`
+from one Unicode release's `UnicodeData.txt`, `Blocks.txt`, `Scripts.txt`, `DerivedAge.txt`,
+`NamesList.txt` and `confusables.txt`, with `data/vocab/mj-hentaigana.tsv` and
+`data/vocab/graphemes.yaml` for the parts Unicode states for kana forms only.
+
+| Field | Meaning |
+| --- | --- |
+| `code_point`, `char` | `U+1B127`, 𛄧; the code point is the identity, so the table needs no id of its own |
+| `name`, `alias` | the Unicode name; a second name such as the MJ figure name, where it differs |
+| `script` | the script property, with hentaigana named as this project names it and `Han` written `han` |
+| `category`, `age`, `block` | the general category, the release that assigned the code point, the block |
+| `jibo` | 字母: the kanji the form derives from; empty for a kanji, and for a kana whose derivation no source states |
+| `readings` | what the character reads as, historical spelling kept; empty when it is not a kana |
+| `grapheme` | the representative of its curated family; its own code point when no family is stated |
+| `confusables` | the characters Unicode's confusables table pairs with this one, both directions |
+| `variants` | as on a unit, when a shape registry has an id for the character |
+
+The table covers every kana of the kana blocks and every CJK unified ideograph, because the ideographs
+are the 字母 the kana point at and the characters a source text is written in. It does not cover the
+kana of Enclosed CJK Letters and Months (㋕ and the like), which are enclosed forms rather than text,
+nor Kana Extended-B (the tone marks of Taiwanese kana), and a code point it does not hold is `None`
+rather than an error.
 
 ### page_texts
 
@@ -115,8 +168,29 @@ append to a shared file.
 ## Vocabularies
 
 `data/vocab/genre.yaml`, `data/vocab/style.yaml` and `data/vocab/holders.yaml` hold the controlled
-values with Japanese labels. `data/vocab/hentaigana.tsv` lists every hentaigana code point with its
-readings and 字母, generated from Unicode's NamesList.txt by `scripts/build_hentaigana_table.py`. A new value enters through a pull request that states its source.
+values with Japanese labels. `refs.forms(reading)` is every character written for a reading, from
+the layer, and `refs.candidates(reading)` is the same list ordered for a classifier and for a
+reviewer: the modern kana first, then the hentaigana in code point order, then the katakana. The
+last group is where the Unicode 18.0 letters fall, so a mask over `candidates("ね")` can score the
+alternate NE.
+`data/vocab/characters.tsv` is the character layer above, generated
+from one Unicode release by `scripts/build_character_table.py`; `data/vocab/hentaigana.tsv` lists
+the kana of Kana Supplement and Kana Extended-A with their readings and 字母, generated from
+Unicode's NamesList.txt by `scripts/build_hentaigana_table.py`, and `data/vocab/mj-hentaigana.tsv`
+carries the MJ figure, 戸籍統一文字番号 and 学術用変体仮名番号 of the same code points.
+`data/vocab/graphemes.yaml` states the curated kana assignments, 字母 overrides and cited
+orthographic families. A new value must state its source.
+
+Refresh the cached Unicode files before rebuilding the character table; they live in `cache/ucd/`
+and are not in git.
+
+```sh
+for f in UnicodeData.txt Blocks.txt Scripts.txt DerivedAge.txt NamesList.txt; do
+  curl -o cache/ucd/$f https://www.unicode.org/Public/18.0.0/ucd/$f
+done
+curl -o cache/ucd/confusables.txt https://www.unicode.org/Public/security/latest/confusables.txt
+uv run python scripts/build_character_table.py cache/ucd
+```
 
 ## Exports
 

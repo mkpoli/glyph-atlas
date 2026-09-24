@@ -16,6 +16,7 @@ from pathlib import Path
 
 from PIL import Image
 
+from .. import refs
 from ..schema import (
     Box,
     Classification,
@@ -31,6 +32,13 @@ from ..schema import (
 )
 
 SOURCE = "codh-char-shape"
+
+
+def classification_of(code_point: int) -> Classification:
+    """A merged source class does not identify one written form."""
+    family = refs.grapheme_info(f"U+{code_point:04X}")
+    return (Classification.UNASSESSED if family and family["character_count"] > 1
+            else Classification.IDENTIFIED)
 ATTRIBUTION = "『日本古典籍くずし字データセット』（国文研ほか所蔵／CODH加工）doi:10.20676/00000340"
 IIIF = "https://codh.rois.ac.jp/char-shape/iiif/{bid}/{image}.tif"
 IMAGE_NAME = re.compile(r"^(?P<bid>[^_]+)_(?P<page>\d{5})_(?P<half>[12])$")
@@ -39,17 +47,24 @@ LIGATURES = {0x309F, 0x30FF}
 
 
 def script_of(cp: int) -> Script:
+    """The script of a code point: the block it lies in, then the character layer.
+
+    The two kana blocks are taken whole, as the archive counts the iteration marks and the
+    ligatures with the letters. Everything else is a question for the character layer, which is
+    where a kana the blocks do not cover - a hentaigana, an alternate katakana of Unicode 18.0 - is
+    a katakana or a hentaigana rather than a symbol. A kanji is labelled `kanji`, which is what the
+    records of this source already say.
+    """
     if 0x3041 <= cp <= 0x3096:
         return Script.HIRAGANA
     if 0x30A1 <= cp <= 0x30FA:
         return Script.KATAKANA
     if 0x4E00 <= cp <= 0x9FFF or 0x3400 <= cp <= 0x4DBF or 0x20000 <= cp <= 0x3134F or 0xF900 <= cp <= 0xFAFF:
-        return Script.KANJI
-    if 0x1B002 <= cp <= 0x1B122 or cp == 0x1B001:
-        return Script.HENTAIGANA
+        return Script.HAN
     if 0x0020 <= cp <= 0x024F:
         return Script.LATIN
-    return Script.SYMBOL
+    script = refs.script_of(chr(cp))
+    return Script.SYMBOL if script is Script.UNKNOWN else script
 
 
 def kind_of(cp: int) -> UnitKind:
@@ -99,7 +114,9 @@ def read(zip_path: Path, title: str | None = None) -> tuple[Document, list[Page]
             id=f"codh:{bid}:{image}:{block}:{char_id}", document_id=document.id, page_id=pages[image].id, line_id=None, seq=None,
             box=Box(x=int(row["X"]), y=int(row["Y"]), w=int(row["Width"]), h=int(row["Height"])),
             kind=kind_of(cp), text_source=char, reading=char, unicode=f"U+{cp:04X}", script=script_of(cp),
-            classification=Classification.IDENTIFIED, method="import", review=ReviewState.TRANSCRIBER,
-            upstream={"source": SOURCE, "ref": f"{bid}/{image}/{block}/{char_id}", "block": block},
+            classification=classification_of(cp), method="import", review=ReviewState.TRANSCRIBER,
+            upstream={"source": SOURCE, "ref": f"{bid}/{image}/{block}/{char_id}", "block": block,
+                      "identity_basis": "normalized_transcription", "source_code_point": f"U+{cp:04X}",
+                      "normalization_evidence": "https://codh.rois.ac.jp/char-shape/#version"},
         ))
     return document, list(pages.values()), units

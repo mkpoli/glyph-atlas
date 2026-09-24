@@ -41,7 +41,7 @@ from typing import NamedTuple
 import yaml
 from PIL import Image
 
-from .. import rights, tables
+from .. import refs, rights, tables
 from ..registry import SOURCES
 from ..remotezip import Entry, RemoteZip
 from ..schema import (
@@ -124,24 +124,25 @@ def source_file() -> dict:
 
 
 def script_of(code_point: int) -> Script:
-    """The script of a code point, by the block it lies in.
+    """The script of a code point, by the block it lies in, with the character layer for the rest.
 
     The archive files the iteration marks ゝゞゟ beside the hiragana letters and ヽヾヿ beside the
     katakana ones, and its kana crops are counted with them, so both kana blocks are taken whole
-    apart from ・ and ー, which are punctuation and a sound mark rather than letters. The archive
-    holds no hentaigana code points.
+    apart from ・ and ー, which are punctuation and a sound mark rather than letters. What the two
+    blocks do not cover is a question for the character layer, which reaches every kana Unicode
+    assigns, a hentaigana and one of the alternate katakana of Unicode 18.0 alike. A kanji is
+    labelled `kanji` here, which is what the records of this source already say.
     """
     if 0x3041 <= code_point <= 0x3096 or code_point in HIRAGANA:
         return Script.HIRAGANA
     if 0x30A1 <= code_point <= 0x30FA or code_point in KATAKANA:
         return Script.KATAKANA
     if _is_ideograph(code_point):
-        return Script.KANJI
-    if code_point == 0x1B001 or 0x1B002 <= code_point <= 0x1B122:
-        return Script.HENTAIGANA
+        return Script.HAN
     if 0x0020 <= code_point <= 0x024F:
         return Script.LATIN
-    return Script.SYMBOL
+    script = refs.script_of(chr(code_point))
+    return Script.SYMBOL if script is Script.UNKNOWN else script
 
 
 def _is_ideograph(code_point: int) -> bool:

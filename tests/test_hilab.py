@@ -140,7 +140,7 @@ def test_import_reads_the_listing_and_leaves_the_crops_alone(tmp_path, http_serv
     kanji = units["hi:1003"]
     assert kanji.crop == f"all.zip!all/characters/{KANJI}/1003.jpg"
     assert kanji.unicode == KANJI and kanji.text_source == "一" and kanji.reading == "一"
-    assert kanji.script is Script.KANJI and kanji.classification is Classification.IDENTIFIED
+    assert kanji.script is Script.HAN and kanji.classification is Classification.IDENTIFIED
 
 
 def test_download_extracts_and_measures_the_crops_in_batches(tmp_path, http_server):
