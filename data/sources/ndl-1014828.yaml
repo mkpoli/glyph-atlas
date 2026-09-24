@@ -1,0 +1,14 @@
+id: ndl-1014828
+name: '成実論 : 天長点'
+publisher: 国立国会図書館
+holder: 国立国会図書館
+kind: image-collection
+url: https://lab.ndl.go.jp/dl/book/1014828
+licence: PDM-1.0
+licence_evidence: https://dl.ndl.go.jp/ja/iiif_license.html
+attribution: 国立国会図書館デジタルコレクション（https://dl.ndl.go.jp/pid/1014828）
+books:
+  - id: ndl:1014828
+    title: '成実論 : 天長点'
+    manifest: https://dl.ndl.go.jp/api/iiif/1014828/manifest.json
+    source_url: https://dl.ndl.go.jp/pid/1014828

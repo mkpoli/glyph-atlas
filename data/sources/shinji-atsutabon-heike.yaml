@@ -1,0 +1,75 @@
+id: shinji-atsutabon-heike
+name: '平家物語 : 真字熱田本'
+publisher: 国立国会図書館
+holder: 国立国会図書館
+kind: image-collection
+url: https://ndlsearch.ndl.go.jp/books/R100000002-I000000703325
+licence: PDM-1.0
+licence_evidence: https://dl.ndl.go.jp/ja/iiif_license.html
+attribution: 国立国会図書館デジタルコレクション（https://ndlsearch.ndl.go.jp/books/R100000002-I000000703325）
+books:
+- id: ndl:1142751
+  title: '平家物語 : 真字熱田本 巻第1'
+  manifest: https://dl.ndl.go.jp/api/iiif/1142751/manifest.json
+  source_url: https://dl.ndl.go.jp/pid/1142751
+- id: ndl:1142755
+  title: '平家物語 : 真字熱田本 巻第2'
+  manifest: https://dl.ndl.go.jp/api/iiif/1142755/manifest.json
+  source_url: https://dl.ndl.go.jp/pid/1142755
+- id: ndl:1142758
+  title: '平家物語 : 真字熱田本 巻第3'
+  manifest: https://dl.ndl.go.jp/api/iiif/1142758/manifest.json
+  source_url: https://dl.ndl.go.jp/pid/1142758
+- id: ndl:1142765
+  title: '平家物語 : 真字熱田本 巻第4'
+  manifest: https://dl.ndl.go.jp/api/iiif/1142765/manifest.json
+  source_url: https://dl.ndl.go.jp/pid/1142765
+- id: ndl:1142769
+  title: '平家物語 : 真字熱田本 巻第5'
+  manifest: https://dl.ndl.go.jp/api/iiif/1142769/manifest.json
+  source_url: https://dl.ndl.go.jp/pid/1142769
+- id: ndl:1142774
+  title: '平家物語 : 真字熱田本 巻第6'
+  manifest: https://dl.ndl.go.jp/api/iiif/1142774/manifest.json
+  source_url: https://dl.ndl.go.jp/pid/1142774
+- id: ndl:1142783
+  title: '平家物語 : 真字熱田本 巻第7'
+  manifest: https://dl.ndl.go.jp/api/iiif/1142783/manifest.json
+  source_url: https://dl.ndl.go.jp/pid/1142783
+- id: ndl:1142791
+  title: '平家物語 : 真字熱田本 巻第8'
+  manifest: https://dl.ndl.go.jp/api/iiif/1142791/manifest.json
+  source_url: https://dl.ndl.go.jp/pid/1142791
+- id: ndl:1142801
+  title: '平家物語 : 真字熱田本 巻第9'
+  manifest: https://dl.ndl.go.jp/api/iiif/1142801/manifest.json
+  source_url: https://dl.ndl.go.jp/pid/1142801
+- id: ndl:1142809
+  title: '平家物語 : 真字熱田本 巻第10'
+  manifest: https://dl.ndl.go.jp/api/iiif/1142809/manifest.json
+  source_url: https://dl.ndl.go.jp/pid/1142809
+- id: ndl:1142818
+  title: '平家物語 : 真字熱田本 巻第11'
+  manifest: https://dl.ndl.go.jp/api/iiif/1142818/manifest.json
+  source_url: https://dl.ndl.go.jp/pid/1142818
+- id: ndl:1142829
+  title: '平家物語 : 真字熱田本 巻第12'
+  manifest: https://dl.ndl.go.jp/api/iiif/1142829/manifest.json
+  source_url: https://dl.ndl.go.jp/pid/1142829
+- id: ndl:1142833
+  title: '平家物語 : 真字熱田本 解説'
+  manifest: https://dl.ndl.go.jp/api/iiif/1142833/manifest.json
+  source_url: https://dl.ndl.go.jp/pid/1142833
+references:
+- url: https://commons.wikimedia.org/wiki/File:Shinji_Atsutabon_Heike_monogatari_vol2_frame4_left_page.jpg
+  page_id: ndl:1142755:4
+  region:
+    x: 400
+    y: 150
+    w: 1500
+    h: 2500
+  reported_character: 𛄥
+  reading: トテ
+  basis: Commons description; page region, not a character bounding box
+  image_url: https://upload.wikimedia.org/wikipedia/commons/b/bb/Shinji_Atsutabon_Heike_monogatari_vol2_frame4_left_page.jpg
+  image_sha256: a082130218ea470f3a56b46d7d9f2507ab2026dc625f4a964a0e9d9f9c276488
