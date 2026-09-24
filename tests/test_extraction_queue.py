@@ -174,3 +174,41 @@ def test_committed_report_is_authoritative_and_validated(tmp_path):
         committed_report(tmp_path,"g",page)
     with pytest.raises(ValueError,match="identity mismatch"):
         committed_report(tmp_path,"changed",page)
+
+
+def test_a_page_that_keeps_stopping_the_worker_is_left_failed(tmp_path):
+    """A page that kills the process never reaches `fail`; recovery counts it so the queue moves on."""
+    from glyph_atlas.extraction_queue import MAX_ATTEMPTS
+
+    queue = Queue(tmp_path / "queue")
+    with queue.db:
+        for rank, ident in enumerate(("a:0", "a:1")):
+            queue.db.execute("INSERT INTO pages (id,document_id,title,source,cached,rank) VALUES(?,?,?,?,?,?)",
+                             (ident, "a", "t", "s", 1, rank))
+    for _ in range(MAX_ATTEMPTS):
+        assert queue.claim()["id"] == "a:0"
+        queue.recover()  # the worker died while extracting a:0
+    assert queue.claim()["id"] == "a:1"
+    assert queue.db.execute("SELECT status FROM pages WHERE id='a:0'").fetchone()[0] == "failed"
+
+
+def test_a_page_the_store_refuses_is_not_published_again(tmp_path, monkeypatch):
+    """A refused import is final: the crops are not rendered again on every pass."""
+    from glyph_atlas.extraction_queue import publish_completed
+    from glyph_atlas.review import media
+    from glyph_atlas.review.store import BadRequest
+
+    queue = Queue(tmp_path / "queue")
+    with queue.db:
+        queue.db.execute("""INSERT INTO pages (id,document_id,title,source,cached,rank,status,output)
+            VALUES('a:0','a','t','s',1,0,'complete','pages/a0')""")
+    prepared = []
+    monkeypatch.setattr(media, "prepare_dataset", lambda path: prepared.append(path))
+
+    class RefusingStore:
+        def import_dataset(self, path):
+            raise BadRequest("Conflicting imported pages record")
+
+    for _ in range(3):
+        assert publish_completed(queue, RefusingStore()) == 0
+    assert len(prepared) == 1

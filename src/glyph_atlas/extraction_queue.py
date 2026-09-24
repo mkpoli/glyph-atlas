@@ -42,6 +42,10 @@ def atomic_json(path, value):
         os.close(descriptor)
 
 
+#: How often a page is extracted, or published, before it is left failed for a person to look at.
+MAX_ATTEMPTS = 3
+
+
 class Queue:
     def __init__(self, root: Path):
         self.root = Path(root)
@@ -59,6 +63,8 @@ class Queue:
         for name in ("published_at", "publish_error", "retry_after"):
             if name not in columns:
                 self.db.execute(f"ALTER TABLE pages ADD COLUMN {name} TEXT")
+        if "publish_attempts" not in columns:
+            self.db.execute("ALTER TABLE pages ADD COLUMN publish_attempts INTEGER NOT NULL DEFAULT 0")
         self.db.commit()
 
     def seed(self, source: Path, *, include_ainu=False):
@@ -96,7 +102,16 @@ class Queue:
         return dict(row) if row else None
 
     def recover(self):
+        """Return pages a stopped worker left running, and stop retrying one that keeps stopping it.
+
+        A page that kills the process outright never reaches `fail`, so its attempts are counted
+        here; without that it would be claimed first after every restart and nothing else would run.
+        """
+        now = datetime.now(UTC).isoformat()
         with self.db:
+            self.db.execute("""UPDATE pages SET status='failed',updated_at=?,
+                error='the worker stopped while extracting this page ' || attempts || ' times'
+                WHERE status='running' AND attempts>=?""", (now, MAX_ATTEMPTS))
             self.db.execute("UPDATE pages SET status='pending' WHERE status='running'")
 
     def finish(self, ident, report, output):
@@ -108,7 +123,7 @@ class Queue:
 
     def fail(self, ident, reason, *, retryable=False):
         attempts = self.db.execute("SELECT attempts FROM pages WHERE id=?",(ident,)).fetchone()[0]
-        status = "retry" if retryable and attempts < 3 else "failed"
+        status = "retry" if retryable and attempts < MAX_ATTEMPTS else "failed"
         retry_after = time.time() + 30 * 2**max(0, attempts-1) if status == "retry" else None
         with self.db:
             self.db.execute("UPDATE pages SET status=?,error=?,updated_at=?,retry_after=? WHERE id=?",
@@ -349,19 +364,28 @@ def require_storage(root, *, minimum_gib=5):
 
 
 def publish_completed(queue, store):
-    """Retry insert-only imports after a crash, without repeating OCR or changing reviews."""
+    """Retry insert-only imports after a crash, without repeating OCR or changing reviews.
+
+    A page is tried at most `MAX_ATTEMPTS` times, and once only when the store refuses it outright,
+    so a page that can never be imported does not have its crops rendered again on every pass.
+    """
     from .review.media import prepare_dataset
+    from .review.store import BadRequest, Conflict
 
     published = 0
-    rows = list(queue.db.execute("SELECT id,output FROM pages WHERE status='complete' AND published_at IS NULL"))
+    rows = list(queue.db.execute("""SELECT id,output FROM pages WHERE status='complete'
+        AND published_at IS NULL AND publish_attempts<?""", (MAX_ATTEMPTS,)))
     for row in rows:
         try:
             prepare_dataset(queue.root / row["output"])
             store.import_dataset(queue.root / row["output"])
         except (ValueError, RuntimeError, OSError, sqlite3.Error) as exc:
+            attempts = MAX_ATTEMPTS if isinstance(exc, BadRequest | Conflict) else None
             with queue.db:
-                queue.db.execute("UPDATE pages SET publish_error=? WHERE id=?",
-                                 (type(exc).__name__+": "+str(exc).replace(str(Path.home()),"~")[:500],row["id"]))
+                queue.db.execute("""UPDATE pages SET publish_error=?,
+                    publish_attempts=COALESCE(?, publish_attempts + 1) WHERE id=?""",
+                                 (type(exc).__name__+": "+str(exc).replace(str(Path.home()),"~")[:500],
+                                  attempts, row["id"]))
             continue
         with queue.db:
             queue.db.execute("UPDATE pages SET published_at=?,publish_error=NULL WHERE id=?",
