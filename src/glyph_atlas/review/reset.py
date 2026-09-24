@@ -230,7 +230,11 @@ def _reset_unit(unit: Unit) -> tuple[Unit, bool, bool]:
         unit = unit.model_copy(update={"meta": {k: v for k, v in unit.meta.items()
                                                 if k != "feedback_repair"}})
     if _is_withheld(unit):
-        return unit.model_copy(update={"review": ReviewState.DISPUTED}), False, True
+        # The withhold is the pipeline's and lives in `alignment_repair`, which the quiz and the
+        # passes read. It is no review state: written as `disputed`, every withheld row read as a
+        # person's flag, filled the flagged list, and was pinned against the passes meant to fix it.
+        was_reviewed = unit.review.value in HUMAN_STATES
+        return unit.model_copy(update={"review": ReviewState.MACHINE}), was_reviewed, True
     if unit.review.value in HUMAN_STATES:
         return unit.model_copy(update={"review": ReviewState.MACHINE}), True, False
     return unit, False, False
