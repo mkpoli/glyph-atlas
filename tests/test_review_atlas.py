@@ -1387,3 +1387,37 @@ def test_the_export_is_the_same_payload_as_a_file(searched: Path):
     assert file.headers["content-type"].startswith("application/json")
     assert file.headers["content-disposition"] == 'attachment; filename="atlas-character-reviews.json"'
     assert json.loads(file.text) == api, "the download is the same document the API answers"
+
+
+def test_context_suggestions_are_independent_fresh_and_revision_bound(dataset, monkeypatch):
+    from glyph_atlas.review import suggestions
+    units = [Unit(id=LINE + f":ctx{i}", line_id=LINE, page_id=PAGE, seq=i + 1,
+                  text_source=text, reading=text, box=Box(x=20, y=20 + i * 100, w=65, h=80))
+             for i, text in enumerate("あいう")]
+    tables.write(dataset / "units.parquet", units, Unit)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("context must not load or wait on OCR")
+    monkeypatch.setattr(suggestions, "infer", forbidden)
+    client = TestClient(create_app(dataset))
+    item = client.get('/atlas/characters/' + units[0].id).json()
+    route = '/atlas/characters/' + units[0].id + '/suggestions/context'
+    params = {"revision": item['revision'], "image_sha256": item['image_sha256']}
+    store = Store(dataset)
+    events = list(store.events())
+    response = client.get(route, params=params)
+    assert response.status_code == 200
+    assert "あい" in [c['text'] for c in response.json()['candidates']]
+    assert "votes" not in response.json()
+    assert list(store.events()) == events
+    assert client.get(route, params={**params, "revision": 999}).status_code == 409
+    assert client.get(route, params={**params, "image_sha256": "stale"}).status_code == 409
+
+    # A line edit can change context without changing the crop revision. Do not cache it by crop.
+    with store._connection() as conn:
+        row = conn.execute("SELECT data FROM lines WHERE id = ?", (LINE,)).fetchone()
+        data = json.loads(row[0]); data['text_raw'] = 'あえう'; data['text'] = 'あえう'
+        conn.execute("UPDATE lines SET data = ? WHERE id = ?", (json.dumps(data), LINE))
+    updated = client.get(route, params=params).json()
+    assert "あえ" in [c['text'] for c in updated['candidates']]
+    assert "あい" not in [c['text'] for c in updated['candidates']]

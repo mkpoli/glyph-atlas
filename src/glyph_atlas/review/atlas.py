@@ -754,6 +754,19 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             return {"status": "unavailable", "candidates": [], "engines": []}
         return {**result, "revision": revision, "image_sha256": image_sha256}
 
+    @api.get("/atlas/characters/{unit_id}/suggestions/context")
+    def contextual_suggestions(unit_id: str, revision: int, image_sha256: str) -> dict:
+        unit, current = one(unit_id)
+        source = image_source(unit)
+        if current != revision or not source or source[0].stem != image_sha256:
+            raise HTTPException(409, "This crop changed. Reload the character.")
+        from .context_suggestions import context_guesses
+        line = store.line(unit.line_id) if unit.line_id else None
+        neighbors = store.units_of_line(unit.line_id) if line else []
+        result = context_guesses(unit, line, neighbors)
+        return {**result, "revision": revision, "image_sha256": image_sha256,
+                "line_revision": store.revision(line.id) if line else None}
+
     def correction_text(value: str | None, issue: str | None) -> str | None:
         text = unicodedata.normalize("NFC", value.strip()) if value else None
         if text and (not single_character(text) and issue != "merged"):
