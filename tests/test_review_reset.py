@@ -357,7 +357,8 @@ class TestReviewQueueIsFresh:
         review_the_dataset(root)
         report = reset_reviews(root)
         units = {u.id: u for u in tables.read(root / "units.parquet", Unit)}
-        assert units["u:3"].review == ReviewState.DISPUTED
+        # Withheld is the pipeline's refusal, carried by `alignment_repair`; it is not a person's flag.
+        assert units["u:3"].review == ReviewState.MACHINE
         assert units["u:3"].meta["alignment_repair"]["withheld"] is True
         assert report.withheld_kept == 1
 
@@ -1051,3 +1052,15 @@ def test_reset_removes_embedded_feedback_history():
     assert result.reading == "を" and "feedback_repair" not in result.meta
     assert result.meta["alignment_repair"]["withheld"]
 
+
+def test_a_withheld_row_is_neither_flagged_nor_dealt_after_a_reset():
+    """The reset keeps the withhold, and the withhold alone keeps the row out of review rounds."""
+    from glyph_atlas.review import atlas, status
+    from glyph_atlas.schema import Unit
+    unit = Unit(id="w", text_source="を", reading="を", unicode="U+3092", review=ReviewState.DISPUTED,
+                meta={"alignment_repair": {"withheld": True, "quiz": False, "status": "uncertain"}})
+    result, was_reset, kept = reset_module._reset_unit(unit)
+    assert result.review == ReviewState.MACHINE and was_reset and kept
+    standing = status.unit_reviews([result], [])[result.id]
+    assert atlas.review_state(standing.human_review) == "pending", "not in the flagged list"
+    assert atlas.repair_withheld(result), "still out of every round"
