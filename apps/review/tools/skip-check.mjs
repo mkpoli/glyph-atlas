@@ -76,8 +76,17 @@ try {
   assert(await browser.evaluate(`document.querySelectorAll('.quiz-tile.selected').length`)
     === before.length - 1, 'Select all did not take exactly the open crops')
 
-  // 2. It is out of the round that gets saved: select the rest, save, and the answers are the rest.
-  await click('.quiz-workspace .issue-card[data-issue="merged"]')
+  // 2. It is out of the round that gets saved: select the rest, give each the same problem, save, and
+  // the answers are the rest.
+  await click('.quiz-submit .review-selected')
+  for (let n = 0; n < before.length; n++) {
+    if (!/to decide/.test(await browser.evaluate(`document.querySelector('.round-selection')?.textContent ?? ''`))) break
+    await browser.waitFor(`document.querySelector('.quiz-workspace .issue-card[data-issue="crop"]') !== null`)
+    await click('.quiz-workspace .issue-card[data-issue="crop"]')
+    await sleep(150)
+    if (await browser.evaluate(`!!document.querySelector('.quiz-submit .next-crop:not(:disabled)')`)) await click('.quiz-submit .next-crop')
+    await sleep(150)
+  }
   await browser.waitFor(`document.querySelector('.quiz-submit .primary')?.disabled === false`)
   const skippedId = afterOne[0].id
   await click('.quiz-submit .primary')
@@ -91,20 +100,27 @@ try {
   assert(reviewEvents.length === before.length - 1,
     `the round saved ${reviewEvents.length} answers for ${before.length - 1} decided crops`)
 
-  // 3. Skip inside a crop's own review step is the same neutral skip as the grid control: it is a
-  // bulk action there too, so it takes the whole selection with it.
+  // 3. Skip inside a crop's own review step skips that crop alone: the decision already made for the
+  // other selected crop stays, and nothing is written.
   const beforeSecond = events(service.fixture.directory).length
   const reviewedSecond = await browser.evaluate(reviewedText)
-  await browser.waitFor(`document.querySelectorAll('.quiz-choice').length > 0`)
+  await browser.waitFor(`document.querySelectorAll('.quiz-choice').length > 1`)
   await click('.quiz-tile:nth-child(1) .quiz-choice')
+  await click('.quiz-tile:nth-child(2) .quiz-choice')
   await click('.quiz-submit .review-selected')
-  await browser.waitFor(`document.querySelector('.quiz-actionbar .skip-selected') !== null`)
-  await click('.quiz-actionbar .skip-selected')
+  await browser.waitFor(`document.querySelector('.issue-card[data-issue="crop"]') !== null`)
+  await click('.issue-card[data-issue="crop"]')
+  await click('.quiz-submit .next-crop')
+  await browser.waitFor(`document.querySelector('.skip-current') !== null`)
+  await click('.skip-current')
   await sleep(400)
   assert(events(service.fixture.directory).length === beforeSecond, 'skipping from the review step wrote to the journal')
   assert(await browser.evaluate(reviewedText) === reviewedSecond, 'skipping from the review step was counted as reviewed')
-  assert(/1 skipped/.test(await browser.evaluate(`document.querySelector('.round-selection')?.textContent ?? ''`)),
-    'skipping from the review step did not skip the crop')
+  const tally = await browser.evaluate(`document.querySelector('.round-selection')?.textContent ?? ''`)
+  assert(/1 skipped/.test(tally), 'skipping from the review step did not skip the crop')
+  assert(/1 issues/.test(tally), 'skipping one crop discarded the decision made for the other')
+  await click('.focus-back')
+  await browser.waitFor(`document.querySelector('.quiz-grid') !== null`)
 
   // 4. The Skip control in the reviewer closes without writing.
   const beforeInspector = events(service.fixture.directory).length

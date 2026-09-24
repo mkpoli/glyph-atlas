@@ -407,6 +407,7 @@
     if (e.key === 'ArrowRight') { e.preventDefault(); move(1); return }
     if (e.key === 'Escape') { e.preventDefault(); back(); return }
     if (step === 'issue' && /^[1-4]$/.test(e.key)) { e.preventDefault(); assignCurrent(issues[Number(e.key) - 1].id) }
+    if (step === 'issue' && e.key.toLowerCase() === 's' && current) { e.preventDefault(); skip([current.id]) }
     if (step === 'correct' && e.key.toLowerCase() === 'n' && !control) { e.preventDefault(); if (current) chooseSuggestion(current.id, null, true) }
   }
   onMount(() => { last = stored('atlas.last-round.' + clientId, null); load({ target: initialReading || null }); return () => { closed = true } })
@@ -455,6 +456,7 @@
     <QuizFocus items={queue} index={focusIndex} label={step === 'issue' ? 'Choose the problem' : 'Correction'} backLabel={step === 'issue' ? 'Change selection' : 'Change problem'} disabled={saving} onback={back} onjump={jump} onprev={() => move(-1)} onnext={() => move(1)}>
       {#if step === 'issue'}
         <IssuePicker value={choices[current.id]?.issue === 'character' ? 'reading' : choices[current.id]?.issue ?? null} choose={assignCurrent} disabled={saving} />
+        <button class="quiet-link skip-current" disabled={saving} onclick={() => skip([current.id])} title={SKIP_HINT}>{SKIP_LABEL} this crop</button>
       {:else}
         <p class="current-problem">{issueTitle(choices[current.id]?.issue === 'character' ? 'reading' : choices[current.id]?.issue)}</p>
         <ReadingSuggestions targetId={current.id} bind:element={suggestionsElement} result={suggestions[current.id]} loading={!suggestions[current.id]} contextResult={contextSuggestions[current.id] ?? null} contextLoading={!contextSuggestions[current.id]} issue={choices[current.id]?.issue === 'character' ? 'reading' : choices[current.id]?.issue} reading={current.label} value={choices[current.id]?.character || choices[current.id]?.correction} noneSelected={choices[current.id]?.noneSelected ?? false} disabled={saving} choose={(value, none) => chooseSuggestion(current.id, value, none)} />
@@ -464,7 +466,7 @@
 
   {#if step === 'select' && !loading && !items.length}<div class="empty"><span class="empty-mark">字</span><h2>{categories.length ? 'Choose a character to review.' : 'All caught up.'}</h2>{#if categories.length}<button class="primary" onclick={() => categoryOpen = true}>Choose character</button>{:else}<a href="#/flagged" class="primary">Review flagged characters →</a>{/if}</div>
   {:else}<div class="quiz-actionbar"><div class="round-selection"><span class="selection-dot" class:has-flags={decided > 0}></span><strong>{decided} issues</strong>{#if undecided}<span>{undecided} to decide</span>{/if}{#if Object.keys(skipped).length}<small>{Object.keys(skipped).length} skipped · not saved</small>{/if}{#if Object.keys(failed).length}<small>{Object.keys(failed).length} unavailable</small>{/if}</div><div class="quiz-submit">
-    <span class="keyboard-hint">{step === 'select' ? 'qwerty… · Ctrl/⌘+Enter continues' : step === 'issue' ? '1–4 problem · ←→ crop' : 'n no correction · ←→ crop'}</span>
+    <span class="keyboard-hint">{step === 'select' ? 'qwerty… · Ctrl/⌘+Enter continues' : step === 'issue' ? '1–4 problem · s skip · ←→ crop' : 'n no correction · ←→ crop'}</span>
     <button class="quiet-link skip-selected" disabled={loading || saving || exhausted || (!decidable.length && !selection.length)} onclick={() => skip(selection.length ? selection : decidable.map(i => i.id))} title={SKIP_HINT}>{selection.length ? `${SKIP_LABEL} selected` : SKIP_LABEL}</button>
     {#if exhausted || !selection.length}<button class="primary next-round" disabled={loading || saving || !canNext} onclick={() => exhausted ? load() : pass()}>Next character <span>→</span></button>
     {:else if step === 'select'}<button class="primary review-selected" disabled={loading || saving || loadingMore || !ready} onclick={reviewSelected}>Review selected ({selection.length}) <span>→</span></button>
@@ -475,6 +477,7 @@
 </section>
 
 <style>
+  .skip-current{display:block;margin:12px auto 0;font-size:12px}
   .review-material{display:flex;align-items:center;gap:10px;margin:0 0 20px;font-size:12px;color:var(--muted)}
   .review-material select{max-width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink);font:inherit}
   /* Scoped to this view on purpose: the skipped state is the round's own, and the tile keeps the
