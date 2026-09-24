@@ -62,6 +62,26 @@ function compact(row: UnitRow): Json {
   const { text, line, context_image, context_box, crop_box, ...rest } = d;
   return rest;
 }
+// A pending crop that a round showed and left unflagged, and that still has the box it was seen with,
+// is `seen`: out of the queue, and no decision. An undone round's rows stop counting.
+const EFFECTIVE_STATE = `iif(state='pending' AND EXISTS(SELECT 1 FROM seen s JOIN submissions b ON b.id=s.submission AND b.undone=0
+  WHERE s.target=units.id AND s.box IS json_extract(units.data,'$.box')),'seen',state)`;
+// The crops a round names: flagged answers, and crops it showed and left unflagged. A round carries
+// either or both; a single-crop review carries only its answer.
+export function validRound(input: Json, target?: string): { answers: Json[]; seen: Json[] } {
+  const round = !target;
+  if (!round && input.seen !== undefined) throw new Problem(422, 'Only a round records seen crops.');
+  const answers = round ? (input.answers ?? []) : [{ ...input, id: target }];
+  const seen = round ? (input.seen ?? []) : [];
+  if (!Array.isArray(answers) || !Array.isArray(seen)) throw new Problem(422, 'A round needs 1–96 distinct crops.');
+  const ids = [...answers, ...seen].map(crop => crop?.id);
+  if (ids.length < 1 || ids.length > 96 || new Set(ids).size !== ids.length) throw new Problem(422, 'A round needs 1–96 distinct crops.');
+  for (const crop of seen) {
+    text(crop?.id, 512, 'character id', true);
+    if (typeof crop.image_sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(crop.image_sha256)) throw new Problem(422, 'Invalid image hash.');
+  }
+  return { answers, seen };
+}
 async function catalogue(env: Env, q: URLSearchParams) {
   const purpose = q.get('purpose') || 'browse';
   const production = q.get('production') || (purpose === 'review' ? 'non-movable-type' : 'all');
@@ -70,29 +90,29 @@ async function catalogue(env: Env, q: URLSearchParams) {
   if (purpose === 'review') where.push('quiz=1');
   if (production === 'non-movable-type') where.push("production!='movable-type'");
   else if (production !== 'all') { where.push('production=?'); values.push(production) }
-  const groups = await env.DB.prepare(`SELECT character AS label,state,count(*) AS n FROM units WHERE ${where.join(' AND ')} GROUP BY character,state`).bind(...values).all<{label:string;state:string;n:number}>();
+  const groups = await env.DB.prepare(`SELECT character AS label,${EFFECTIVE_STATE} AS state,count(*) AS n FROM units WHERE ${where.join(' AND ')} GROUP BY 1,2`).bind(...values).all<{label:string;state:string;n:number}>();
   const categories = new Map<string, Json>();
-  const counts: Json = { pending: 0, flagged: 0, checked: 0 };
+  const counts: Json = { pending: 0, seen: 0, flagged: 0, checked: 0 };
   for (const row of groups.results) {
-    const category = categories.get(row.label) || { label: row.label, total: 0, pending: 0, checked: 0, flagged: 0 };
+    const category = categories.get(row.label) || { label: row.label, total: 0, pending: 0, seen: 0, checked: 0, flagged: 0 };
     category.total += row.n; category[row.state] += row.n; counts[row.state] += row.n;
     categories.set(row.label, category);
   }
   if (q.get('reading')) { where.push('character=?'); values.push(q.get('reading')!) }
   if (q.get('q')) { where.push('(character=? OR reading=?)'); values.push(literal(q.get('q')!), literal(q.get('q')!)) }
   if (q.get('group') && q.get('group') !== 'all') { where.push('category=?'); values.push(q.get('group')!) }
-  if (q.get('state') && q.get('state') !== 'all') { where.push('state=?'); values.push(q.get('state')!) }
+  if (q.get('state') && q.get('state') !== 'all') { where.push(`${EFFECTIVE_STATE}=?`); values.push(q.get('state')!) }
   const seed = integer(q, 'seed', 0, 2147483647);
   const limit = integer(q, 'limit', 60, 96), offset = integer(q, 'offset', 0);
   const order = purpose === 'review' && seed % 5 ? 'priority,' : '';
   const [count, window] = await env.DB.batch([
     env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${where.join(' AND ')}`).bind(...values),
-    env.DB.prepare(`SELECT * FROM units WHERE ${where.join(' AND ')} ORDER BY ${order} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...values, seed + 1, limit, offset),
+    env.DB.prepare(`SELECT *,${EFFECTIVE_STATE} AS effective FROM units WHERE ${where.join(' AND ')} ORDER BY ${order} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...values, seed + 1, limit, offset),
   ]);
   return { total: (count.results[0] as { n: number }).n, available: Object.values(counts).reduce((a:number,b:any) => a+b,0),
     counts, purpose, production, review_limit:96, review_epoch: await meta(env, 'review_epoch') || 0, query: q.get('q'),
     categories: [...categories.values()].sort((a,b) => b.total-a.total || a.label.localeCompare(b.label)),
-    items: (window.results as UnitRow[]).map(compact) };
+    items: (window.results as (UnitRow & { effective: string })[]).map(row => ({ ...compact(row), state: row.effective })) };
 }
 async function known(env: Env, value: string) {
   const key = cp(literal(value));
@@ -243,14 +263,16 @@ async function submit(env: Env, request: Request, target?: string) {
   if(corpus)target=text(input.identity,512,'corpus identity',true)!;
   const id=text(input.id,64,'submission id',true)!, actor=text(input.client_id,128,'reviewer',true)!;
   if(!/^[0-9a-f-]{36}$/i.test(id))throw new Problem(422,'Invalid submission id.');
-  const signature=canonical({target:target||null,input});
+  // A retry is the same submission whatever else came on screen meanwhile: the seen crops are left
+  // out of the signature, as the local server compares only the answers, and the first result stands.
+  const {seen:_,...signed}=input;
+  const signature=canonical({target:target||null,input:signed});
   const key=actor+':'+id;
   const previous=await env.DB.prepare('SELECT request,response FROM submissions WHERE id=?').bind(key).first<{request:string;response:string}>();
   if(previous){if(previous.request!==signature)throw new Problem(409,'This submission was already saved with different answers.');return parse(previous.response)}
   const round=!target;
-  const answers:Json[]=round?input.answers:[{...input,id:target}];
-  if(!Array.isArray(answers)||answers.length<1||answers.length>96||new Set(answers.map(a=>a.id)).size!==answers.length)
-    throw new Problem(422,'A round needs 1–96 distinct crops.');
+  if(round)text(input.label,32,'label',true);
+  const {answers,seen}=validRound(input,target);
   const changes=[];
   const at=new Date().toISOString();
   for(const answer of answers){
@@ -289,8 +311,18 @@ async function submit(env: Env, request: Request, target?: string) {
       new:resolved?'reviewed':'disputed',role:'reviewer',actor,evidence:JSON.stringify(evidence),at};
     changes.push({row,next,event,snapshot});
   }
+  // A crop that left the queue, changed its pixels or moved to another character since the round
+  // was dealt was not seen as it stands, so it is skipped rather than failing the round.
+  const shown:Json[]=[];
+  for(const crop of seen){
+    const row=await env.DB.prepare("SELECT * FROM units WHERE id=? AND origin='local'").bind(crop.id).first<UnitRow>();
+    if(!row||!row.quiz)continue;
+    const data=parse(row.data);
+    if(data.image_sha256===crop.image_sha256&&data.label===input.label)shown.push(crop);
+  }
   const result=corpus?{...(changes[0].next),origin:'corpus',event:changes[0].event}
-    :{id,results:changes.map(c=>({id:c.event.id,target_id:c.row.id,field:'review',revision:c.next.revision,review:c.event}))};
+    :{id,results:[...changes.map(c=>({id:c.event.id,target_id:c.row.id,field:'review',revision:c.next.revision,review:c.event})),
+      ...shown.map(crop=>({target_id:crop.id,field:'seen'}))]};
   const statements=[env.DB.prepare('INSERT INTO submissions(id,actor,request,response,at) VALUES (?,?,?,?,?)').bind(key,actor,signature,JSON.stringify(result),at)];
   for(const c of changes){
     if(corpus){const d=parse(c.row.data);statements.push(env.DB.prepare('INSERT OR IGNORE INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
@@ -298,6 +330,10 @@ async function submit(env: Env, request: Request, target?: string) {
     statements.push(env.DB.prepare(`INSERT INTO events(id,submission,target,actor,expected_revision,before_data,after_data,event,snapshot,kind,at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
       .bind(c.event.id,key,c.row.id,actor,c.row.revision,c.row.data,JSON.stringify(c.next),JSON.stringify(c.event),corpus?c.row.snapshot:JSON.stringify(c.snapshot),'review',at));
   }
+  // The box is copied from the row itself, so the queue compares it with the same JSON text.
+  for(const crop of shown)statements.push(env.DB.prepare(
+    "INSERT INTO seen(target,submission,box,image_sha256,at) SELECT id,?,json_extract(data,'$.box'),?,? FROM units WHERE id=?")
+    .bind(key,crop.image_sha256,at,crop.id));
   try{await env.DB.batch(statements)}catch(error){
     const repeat=await env.DB.prepare('SELECT request,response FROM submissions WHERE id=?').bind(key).first<{request:string;response:string}>();
     if(repeat?.request===signature)return parse(repeat.response);

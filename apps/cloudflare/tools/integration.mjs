@@ -1,6 +1,6 @@
 // Exercise the production Worker in workerd with real D1 transactions and R2 records.
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare'
 
 const mf = new Miniflare(convertV4MiniflareOptions({workers:[{
@@ -11,9 +11,13 @@ const mf = new Miniflare(convertV4MiniflareOptions({workers:[{
 }]}))
 try {
   const db = await mf.getD1Database('DB')
-  const schema = await readFile(new URL('../migrations/0001_catalogue.sql', import.meta.url), 'utf8')
-  const statements = schema.match(/CREATE TRIGGER[\s\S]*?\nEND;|CREATE (?:TABLE|(?:UNIQUE )?INDEX)[\s\S]*?;/g)
-  await db.batch(statements.map(sql => db.prepare(sql)))
+  // Every migration, in order, the way a new deployment applies them.
+  const migrations = (await readdir(new URL('../migrations/', import.meta.url))).filter(name => name.endsWith('.sql')).sort()
+  for (const name of migrations) {
+    const schema = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8')
+    const statements = schema.match(/CREATE TRIGGER[\s\S]*?\nEND;|CREATE (?:TABLE|(?:UNIQUE )?INDEX)[\s\S]*?;/g)
+    await db.batch(statements.map(sql => db.prepare(sql)))
+  }
   const hash = 'a'.repeat(64), sourceRevision = 'b'.repeat(64)
   for (const id of ['one', 'two']) {
     const d = { id, label: 'ア', reading: 'ア', state: 'pending', revision: 0, image_sha256: hash,
@@ -33,12 +37,15 @@ try {
   const bucket = await mf.getR2Bucket('MEDIA')
   await bucket.put('fixture', raw)
   await db.prepare('INSERT INTO corpus_units VALUES(?,?,?,?,?,?,?,?)').bind(corpus.id, null, 'U+4EEE', 'group-one', 1, 'fixture', 0, new TextEncoder().encode(raw).length).run()
+  // Miniflare hands the Worker its own loopback address, so the page origin a browser would send is
+  // that address; a fixed `http://localhost` fails the Worker's same-origin check on every POST.
+  const base = new URL(await mf.ready).origin
   async function call(path, value, status = 200) {
-    const response = await mf.dispatchFetch('http://localhost'+path, value ? {
-      method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://localhost' }, body: JSON.stringify(value),
+    const response = await mf.dispatchFetch(base + path, value ? {
+      method: 'POST', headers: { 'content-type': 'application/json', origin: base }, body: JSON.stringify(value),
     } : {})
     const json = await response.json()
-    assert.equal(response.status, status, JSON.stringify(json))
+    assert.equal(response.status, status, path + ' ' + JSON.stringify(json))
     return json
   }
   const decision = { id: 'one', revision: 0, image_sha256: hash, verdict: 'wrong', issue: 'merged', correction: 'アイ' }
@@ -90,7 +97,38 @@ try {
   await call('/atlas/corpus/reviews', moved)
   assert.equal((await call('/layers/candidates?code_point=U%2B2A708&scope=grapheme')).family_total, 1)
   assert.equal((await call('/layers/candidates?code_point=U%2B4EEE&scope=grapheme')).family_total, 0)
-  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export.')
+  // Seen crops: a round may record the crops it showed and left unflagged, and they leave the queue.
+  for (const id of ['seen-a', 'seen-b', 'seen-c']) {
+    const d = { id, label: 'セ', reading: 'セ', state: 'pending', revision: 0, image_sha256: hash,
+      production: 'manuscript', box: { x: 1, y: 2, w: 3, h: 4 }, repair: { quiz: true } }
+    await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
+      id, 'local', 'セ', 'セ', 'U+30BB', null, 'manuscript', 'kana', 'pending', 0, 1, 1, 1,
+      JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}').run()
+  }
+  const pendingSe = async () => (await call('/atlas?purpose=review&reading=セ&state=pending&limit=96')).items.map(i => i.id).sort()
+  const passed = { id: crypto.randomUUID(), client_id: 'integration', label: 'セ',
+    seen: [{ id: 'seen-a', image_sha256: hash }, { id: 'seen-b', image_sha256: hash }, { id: 'seen-c', image_sha256: 'c'.repeat(64) }] }
+  const recorded = await call('/atlas/rounds', passed)
+  assert.equal(recorded.results.filter(r => r.field === 'seen').length, 2, 'a crop whose pixels changed is skipped')
+  assert.deepEqual(await call('/atlas/rounds', passed), recorded, 'a retried pass is the same pass')
+  const scrolled = { ...passed, seen: [...passed.seen, { id: 'seen-extra', image_sha256: hash }] }
+  assert.deepEqual(await call('/atlas/rounds', scrolled), recorded, 'a retry with more crops on screen returns the first result')
+  await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'integration', seen: [{ id: 'seen-a', image_sha256: hash }] }, 422)
+  assert.deepEqual(await pendingSe(), ['seen-c'], 'seen crops leave the queue')
+  const summary = await call('/atlas?purpose=review&reading=セ')
+  assert.equal(summary.counts.seen, 2)
+  assert.equal(summary.items.find(i => i.id === 'seen-a').state, 'seen')
+  assert.equal((await call('/atlas/characters/seen-a')).revision, 0, 'seeing a crop changes nothing about it')
+  assert.ok(!(await call('/atlas/reviews.json?include_processed=true')).reviews.some(r => r.event?.target_id?.startsWith('seen-')), 'seen is not a review')
+  const flagOnSeen = { id: crypto.randomUUID(), client_id: 'second', label: 'セ',
+    answers: [{ id: 'seen-a', revision: 0, image_sha256: hash, verdict: 'wrong', issue: 'crop' }], seen: [{ id: 'seen-c', image_sha256: hash }] }
+  await call('/atlas/rounds', flagOnSeen)
+  assert.equal((await call('/atlas/characters/seen-a')).state, 'flagged', 'a seen crop can still be flagged at its revision')
+  assert.deepEqual(await pendingSe(), [], 'answers and seen crops save together')
+  await call(`/atlas/rounds/${passed.id}/undo`, { client_id: 'integration' })
+  assert.deepEqual(await pendingSe(), ['seen-b'], 'undoing a pass returns its crops to the queue')
+  await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'integration', label: 'セ', answers: [], seen: [] }, 422)
+  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops.')
 } finally {
   await mf.dispose()
 }
