@@ -152,7 +152,7 @@ def test_a_renji_block_keeps_its_aligned_jibo_sequence(tmp_path, cache, archive)
     by_id = {unit.id: unit for unit in units}
 
     block = by_id["codh-omt:001:3"]  # 連彫活字 of three characters
-    assert block.granularity == "block" and block.kind is UnitKind.LIGATURE
+    assert block.granularity == "block" and block.kind is UnitKind.SEQUENCE
     assert block.classification is Classification.UNASSESSED
     assert block.text_source == block.reading == "つれ〱"
     assert block.unicode == "U+3064 U+308C U+3031" and block.candidates == []

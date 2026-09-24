@@ -138,9 +138,9 @@ def _is_ideograph(code_point: int) -> bool:
 
 
 def kind_of(text: str) -> UnitKind:
-    """What a block is: one character, a repeat mark, or a 連彫活字 of several characters."""
+    """What a block contains: one character, a mark, or a sequence awaiting segmentation."""
     if len(text) > 1:
-        return UnitKind.LIGATURE
+        return UnitKind.SEQUENCE
     code_point = ord(text)
     if code_point in ITERATION_MARKS:
         return UnitKind.ITERATION_MARK
