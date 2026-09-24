@@ -109,6 +109,12 @@ def unit(
     )
 
 
+@pytest.fixture(autouse=True)
+def empty_image_cache(tmp_path, monkeypatch):
+    """Page scans held by the repository's image cache would turn holder rows local."""
+    monkeypatch.setenv("GLYPH_ATLAS_CACHE", str(tmp_path / "image-cache"))
+
+
 @pytest.fixture()
 def viewer(tmp_path: Path):
     """A Kokatsuji-shaped corpus with real local bytes, plus two other corpora."""

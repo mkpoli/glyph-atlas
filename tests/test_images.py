@@ -279,6 +279,21 @@ def test_fetch_with_a_box_requests_that_region(http_server: Server) -> None:
 
     assert http_server.requests[-1] == "GET /iiif/2/page/10,20,30,40/full/0/default.jpg"
     assert (record.width, record.height) == (30, 40)
+    assert record.url == http_server.url("iiif/2/page/10,20,30,40/full/0/default.jpg")
+    assert images.held(http_server.url("iiif/2/page")) is None
+
+
+def test_held_returns_only_a_whole_page_scan(tmp_path: Path) -> None:
+    service = "https://example.org/iiif/page"
+    scan = tmp_path / "scan.jpg"
+    scan.write_bytes(jpeg(40, 60))
+    images.register(scan, service + "/full/max/0/default.jpg", root=tmp_path / "cache")
+    root = tmp_path / "cache"
+    for whole in (service, service + "/info.json", service + "/full/full/0/default.jpg"):
+        assert images.held(whole, root=root) is not None
+    for part in (service + "/0,0,10,10/full/0/default.jpg", service + "/full/20,/0/default.jpg"):
+        assert images.held(part, root=root) is None
+    assert images.held("https://example.org/iiif/other", root=root) is None
 
 
 def test_a_box_needs_a_service(http_server: Server) -> None:

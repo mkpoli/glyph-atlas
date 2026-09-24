@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from PIL import Image
 
+from glyph_atlas import images
 from glyph_atlas.review import atlas
 from glyph_atlas.review.media import MediaCache, router
 
@@ -84,20 +85,16 @@ def test_registered_corpus_row_avoids_unit_lookup_and_honors_rights(media):
     assert cache.corpus_image({**row, "image_licence": None}, crops) is None
 
 
-def test_remote_cache_is_bounded_to_registered_codh_images(media, monkeypatch):
-    cache, _ = media
-    assert cache.remote("http://127.0.0.1/private") is None
-    assert cache.remote("https://codh.rois.ac.jp.evil.test/char-shape/iiif/x") is None
-    assert cache.remote("https://codh.rois.ac.jp/private") is None
-    url = cache.remote("https://codh.rois.ac.jp/char-shape/iiif/a/b.tif/1,2,30,40/240,/0/default.jpg")
-    calls = []
-    def download(remote):
-        calls.append(remote)
-        return Image.new("RGB", (30, 40), "white")
-    monkeypatch.setattr(cache, "_download", download)
-    cache.materialize(key(url))
-    MediaCache().materialize(key(url))
-    assert len(calls) == 1
+def test_holder_region_is_cut_from_the_held_scan(media, monkeypatch):
+    cache, source = media
+    service = "https://codh.rois.ac.jp/char-shape/iiif/a/b.tif"
+    images.register(source, service)
+    assert cache.region("https://codh.rois.ac.jp/char-shape/iiif/a/c.tif/1,2,30,40/240,/0/default.jpg") is None
+    assert cache.region("https://codh.rois.ac.jp/private") is None
+    url = MediaCache().region(f"{service}/100,200,300,50/240,/0/default.jpg")
+    monkeypatch.setattr("httpx.stream", lambda *_, **__: pytest.fail("a held scan was fetched"))
+    with Image.open(cache.materialize(key(url))) as picture:
+        assert picture.size == (240, 40)
 
 
 def test_source_path_must_be_inside_registered_roots(media, tmp_path):

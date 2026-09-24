@@ -28,6 +28,7 @@ import shutil
 import tempfile
 from collections.abc import Callable
 from datetime import UTC, datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -171,11 +172,11 @@ def fetch(
 
     A service base is resolved through `info.json` to the full-size request of its API version, and a
     URL that already names a request is downloaded as it stands. `box` asks the service for that
-    region instead of the whole image, and the row then describes the region. A URL already in the
-    index is returned without a request unless `refresh` is set.
+    region instead of the whole image; that row is stored under the region request, never under `url`.
+    A URL already in the index is returned without a request unless `refresh` is set.
     """
     cache = images_root(root)
-    if not refresh:
+    if box is None and not refresh:
         known = _current(cache, url)
         if known is not None and _file_for(cache, known).exists():
             return known
@@ -187,6 +188,13 @@ def fetch(
     if service is not None and (box is not None or _is_bare(url, service)):
         version = info(service, client=client, pause=pause, clock=clock, sleeper=sleeper)["version"]
     request_url = _request_url(url, service=service, version=version, box=box)
+    if box is not None:
+        # A region is kept under its own request, so the page URL always names the whole image.
+        url = request_url
+        if not refresh:
+            known = _current(cache, url)
+            if known is not None and _file_for(cache, known).exists():
+                return known
 
     scratch = cache / ".tmp"
     scratch.mkdir(parents=True, exist_ok=True)
@@ -308,6 +316,50 @@ def crop(url: str, box: Box, *, root: Path | None = None) -> Image.Image:
 def index(root: Path | None = None) -> list[ImageRecord]:
     """Every row of the cache index, superseded rows included, oldest first."""
     return _read_index(images_root(root))
+
+
+def held(url: str, *, root: Path | None = None) -> Path | None:
+    """The full-size file the cache holds for a page `url`, or None.
+
+    `url` has to name the whole image: a plain file, a bare service or a full-size request. The
+    file is the one stored under that URL, under its service base, or under a full-size request of
+    that service. A region or a scaled request names other pixels and resolves to nothing.
+
+    The map is read once per version of the cache index, so a scan fetched while a server runs is
+    found without a restart.
+    """
+    service = service_of(url)
+    if service is not None and not _names_whole_image(url, service):
+        return None
+    cache = images_root(root)
+    try:
+        stat = index_path(cache).stat()
+    except OSError:
+        return None
+    files = _held_files(str(cache.resolve()), (stat.st_mtime_ns, stat.st_ino, stat.st_size))
+    path = files.get(url) or (files.get(service) if service else None)
+    if path is None or not path.is_file() or not path.resolve().is_relative_to(cache.resolve()):
+        return None
+    return path
+
+
+def _names_whole_image(url: str, service: str) -> bool:
+    return _is_bare(url, service) or url.split("#", 1)[0].split("?", 1)[0].rstrip("/") in (
+        full_url(service, 2), full_url(service, 3))
+
+
+@lru_cache(maxsize=2)
+def _held_files(cache: str, stamp: tuple[int, int, int]) -> dict[str, Path]:
+    root = Path(cache)
+    files: dict[str, Path] = {}
+    for row in _read_index(root):
+        if row.superseded_by is not None:
+            continue
+        files[row.url] = _file_for(root, row)
+        # A full-size request is the scan of its service; a region or scaled one is not.
+        if row.service and _names_whole_image(row.url, row.service):
+            files[row.service] = files[row.url]
+    return files
 
 
 def fill_sizes(pages: Path, *, limit: int | None = None) -> tuple[int, int]:
