@@ -45,18 +45,18 @@ CREATE INDEX IF NOT EXISTS event_target ON events(target,at);
 CREATE INDEX IF NOT EXISTS event_submission ON events(submission);
 CREATE TRIGGER IF NOT EXISTS event_revision_guard BEFORE INSERT ON events
 BEGIN
- SELECT CASE WHEN (SELECT revision FROM units WHERE id=NEW.target) IS NOT NEW.expected_revision
- THEN RAISE(ABORT, 'review_revision_conflict') END;
+ SELECT RAISE(ABORT, 'review_revision_conflict')
+ WHERE (SELECT revision FROM units WHERE id=NEW.target) IS NOT NEW.expected_revision;
 END;
 CREATE TRIGGER IF NOT EXISTS event_apply AFTER INSERT ON events
 BEGIN
  UPDATE units SET data=NEW.after_data, revision=NEW.expected_revision+1,
- character=CASE WHEN origin='corpus' THEN json_extract(NEW.after_data,'$.written_character') ELSE json_extract(NEW.after_data,'$.label') END,
+ character=iif(origin='corpus',json_extract(NEW.after_data,'$.written_character'),json_extract(NEW.after_data,'$.label')),
  reading=json_extract(NEW.after_data,'$.reading'),
  family=coalesce(json_extract(NEW.after_data,'$.grapheme.code_point'),json_extract(NEW.after_data,'$.grapheme'),family),
  visual_group=json_extract(NEW.after_data,'$.visual_group.id'),
  category=coalesce(json_extract(NEW.after_data,'$.category'),category),
  state=json_extract(NEW.after_data,'$.state'),
- quiz=CASE WHEN json_extract(NEW.after_data,'$.state')='flagged' THEN 0 ELSE quiz END
+ quiz=iif(json_extract(NEW.after_data,'$.state')='flagged',0,quiz)
  WHERE id=NEW.target;
 END;
