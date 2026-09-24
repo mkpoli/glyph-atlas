@@ -259,3 +259,39 @@ def test_partial_split_keeps_connected_child_as_sequence(dataset):
     apply(dataset)
     replay(dataset)
     assert children_of(dataset)[0].granularity == "sequence"
+
+
+# Neighbours on other lines and the child's own fields --------------------------------------------
+
+OTHER_LINE = f"{PAGE}:l1"
+
+
+def add_other_line(dataset: Path, box: Box) -> None:
+    """A second line on the page, with one unit at `box`, as a later alignment could write it."""
+    lines = tables.read(dataset / "lines.parquet", Line)
+    tables.write(dataset / "lines.parquet", [*lines, Line(id=OTHER_LINE, page_id=PAGE, seq=1, text_raw="一",
+                 text="一", box=Box(x=100, y=100, w=40, h=40))], Line)
+    units = tables.read(dataset / "units.parquet", Unit)
+    tables.write(dataset / "units.parquet", [*units, Unit(id=f"{OTHER_LINE}:u0", document_id="doc", page_id=PAGE,
+                 line_id=OTHER_LINE, seq=0, unicode="U+4E00", reading="一", box=box)], Unit)
+
+
+def test_a_machine_child_may_not_cover_a_unit_of_another_line(dataset):
+    add_other_line(dataset, Box(x=110, y=110, w=10, h=10))
+    store = Store(dataset)
+    with pytest.raises(BadRequest, match="covers"):
+        store.record_batch([split_request()], role="model")
+    assert store.unit(JOINED).active
+
+
+def test_a_split_the_new_tables_leave_no_room_for_is_skipped_on_replay(dataset):
+    aligned = tables.read(dataset / "units.parquet", Unit)
+    Store(dataset).record_batch([split_request()], role="model")
+    apply(dataset)
+    # A re-alignment writes the page again: the joined unit as it was, and a unit of a new line
+    # where the split's first child would go.
+    tables.write(dataset / "units.parquet", aligned, Unit)
+    add_other_line(dataset, Box(x=110, y=110, w=10, h=10))
+    store = Store(dataset)  # opens, and leaves the split that no longer fits unapplied
+    assert store.unit(JOINED).active and store.unit(f"{OTHER_LINE}:u0").active
+

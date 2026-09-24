@@ -934,6 +934,10 @@ class Store:
         )
         return [Unit.model_validate_json(row["data"]) for row in rows]
 
+    def _units_of_page(self, conn: sqlite3.Connection, page_id: str) -> list[Unit]:
+        rows = conn.execute("SELECT data FROM units WHERE page_id = ? AND active = 1", (page_id,))
+        return [Unit.model_validate_json(row["data"]) for row in rows]
+
     def _all_lines(self, conn: sqlite3.Connection) -> list[Line]:
         return [Line.model_validate_json(row["data"]) for row in conn.execute("SELECT data FROM lines ORDER BY id")]
 
@@ -1005,7 +1009,12 @@ class Store:
                 raise NotFound(f"no unit {event.target_id}")
             line = self._line_row(conn, unit.line_id) if unit.line_id else None
             siblings = self._units_of_line(conn, unit.line_id, active=False) if unit.line_id else [unit]
-            return State([line] if line else [], siblings)
+            # A machine split may not cover a unit of another line either, and a replay over the
+            # whole dataset checks against the whole page, so the record checks the same neighbours.
+            page = self._units_of_page(conn, unit.page_id) if unit.page_id else []
+            by_id = {other.id: other for other in page}
+            by_id.update((sibling.id, sibling) for sibling in siblings)
+            return State([line] if line else [], list(by_id.values()))
         if event.target_type == "unit":
             unit = self._unit_row(conn, event.target_id)
             if unit is None:
@@ -1354,7 +1363,12 @@ def _split(state: State, event: Review, entries: Any, *, guard: bool) -> Change:
         boxes.append((output, box))
         outputs.append(output)
     if machine:
-        _refuse_overlap([box for _, box in boxes], state, unit)
+        try:
+            _refuse_overlap([box for _, box in boxes], state, unit)
+        except BadRequest:
+            if guard:
+                return Change(event=event, skipped=True)
+            raise
     retired = unit.model_copy(update={"active": False, "split_into": [output.id for output in outputs]})
     state.put(retired)
     for output in outputs:
