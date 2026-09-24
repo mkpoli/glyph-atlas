@@ -39,9 +39,18 @@ def test_the_box_keeps_its_stored_key_order():
 
 
 def test_a_crop_cut_from_the_same_page_but_a_new_box_is_a_changed_crop():
-    action, _ = refresh.plan(unit(box={"x": 10, "y": 99, "w": 30, "h": 60}, image="/atlas/media/b.webp"),
-                             live(reviewed=True))
+    action, _ = refresh.plan(unit(box={"x": 10, "y": 99, "w": 30, "h": 60}, image="/atlas/media/b.webp"), live())
     assert action == "replace"
+
+
+def test_a_reviewed_unit_whose_crop_changed_is_held_back():
+    assert refresh.plan(unit(box={"x": 10, "y": 99, "w": 30, "h": 60}, image="/atlas/media/b.webp"),
+                        live(reviewed=True)) == ("hold", None)
+
+
+def test_an_unreviewed_unit_whose_only_change_is_the_revision_is_replaced():
+    action, sql = refresh.plan(unit(revision=2), live(revision=1000001))
+    assert action == "replace" and "revision=2 WHERE" in sql
 
 
 def test_a_reviewed_unit_with_the_same_crop_keeps_its_review_and_may_leave_the_quiz():
@@ -54,7 +63,7 @@ def test_a_reviewed_crop_is_never_put_back_into_the_quiz():
 
 
 def test_an_unreviewed_unit_that_did_not_change_is_left_alone():
-    assert refresh.plan(unit(revision=1000001), live()) == ("skip", None)
+    assert refresh.plan(unit(revision=1000001), live(revision=1000001)) == ("skip", None)
 
 
 def test_a_catalogue_revision_equal_to_the_live_one_is_refused():
