@@ -10,7 +10,8 @@
 #   r2-sync.sh save collections      # work/ -> archive
 #
 # Credentials come from R2_ACCOUNT_ID, R2_ACCESS_KEY_ID and
-# R2_SECRET_ACCESS_KEY. R2_BUCKET names the archive bucket.
+# R2_SECRET_ACCESS_KEY. R2_BUCKET names the archive bucket, `glyph-atlas-harvest` by default.
+# The archive stays out of `glyph-atlas`, the bucket the site serves its media from.
 set -euo pipefail
 
 export RCLONE_CONFIG_R2_TYPE=s3
@@ -19,7 +20,7 @@ export RCLONE_CONFIG_R2_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:?R2_ACCESS_KEY_ID is r
 export RCLONE_CONFIG_R2_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:?R2_SECRET_ACCESS_KEY is required}"
 export RCLONE_CONFIG_R2_ENDPOINT="https://${R2_ACCOUNT_ID:?R2_ACCOUNT_ID is required}.r2.cloudflarestorage.com"
 
-bucket="${R2_BUCKET:-glyph-atlas}"
+bucket="${R2_BUCKET:-glyph-atlas-harvest}"
 action="${1:?usage: r2-sync.sh restore|save <group>}"
 group="${2:?usage: r2-sync.sh restore|save <group>}"
 
