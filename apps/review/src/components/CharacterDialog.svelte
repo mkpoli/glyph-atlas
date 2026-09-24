@@ -134,7 +134,9 @@
     busy = true; error = ''
     const correctingCharacter = writtenDirty && Boolean(written) && written !== data.label
     const readingEdit = readingDirty && reading !== data.reading ? { reading } : {}
-    const resolvedIssue = matches ? 'reading' : issue || (correctingCharacter ? 'character' : 'reading')
+    // `/atlas/characters` records reading issues; a character issue with no new character is one.
+    const resolvedIssue = matches || (issue === 'character' && !correctingCharacter) ? 'reading'
+      : issue || (correctingCharacter ? 'character' : 'reading')
     // Two routes with two contracts: the character editor takes the review request shape, and the
     // layer route takes the layers it records and nothing else (it forbids extra fields). The payload
     // is built for the route it is sent to rather than passed through from the other one.
