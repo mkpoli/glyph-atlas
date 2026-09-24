@@ -494,6 +494,33 @@ class TestAtomicityAndInterruption:
         assert not (tmp_path / "collection" / "books" / ENTRY_A).exists()
         assert not any((tmp_path / "collection" / ".staging").iterdir())
 
+    def test_every_file_of_a_book_is_on_disk_before_the_book_is_renamed_into_place(self, tmp_path, monkeypatch):
+        """A rename of unflushed files survives a VM reset as a book of empty files."""
+        import os
+
+        events = []
+        real_fsync, real_replace = os.fsync, os.replace
+
+        def fsync(descriptor):
+            events.append(("sync", os.readlink(f"/proc/self/fd/{descriptor}")))
+            real_fsync(descriptor)
+
+        def replace(source, target):
+            events.append(("replace", str(source), str(target)))
+            real_replace(source, target)
+
+        monkeypatch.setattr(os, "fsync", fsync)
+        monkeypatch.setattr(os, "replace", replace)
+        collector, _, _ = build(tmp_path)
+        collector.collect_book(ENTRY_A)
+        final = tmp_path / "collection" / "books" / ENTRY_A
+        rename = next(i for i, e in enumerate(events) if e[0] == "replace" and e[2] == str(final))
+        staging = Path(events[rename][1])
+        synced = {e[1] for e in events[:rename] if e[0] == "sync"}
+        assert {str(staging / p.name) for p in final.iterdir()} <= synced
+        assert str(staging) in synced
+        assert ("sync", str(final.parent)) in events[rename:]
+
     def test_the_manifest_digests_every_table(self, tmp_path):
         collector, _, _ = build(tmp_path)
         collector.collect_book(ENTRY_A)

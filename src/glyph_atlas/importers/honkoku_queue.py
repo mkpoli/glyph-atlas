@@ -877,11 +877,41 @@ def write_json(path: Path, payload: Any) -> str:
     """Write JSON through a temporary file, returning its digest."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".part")
-    temporary.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=1, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    with temporary.open("w", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, ensure_ascii=False, indent=1, sort_keys=True) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
     os.replace(temporary, path)
+    _sync_directory(path.parent)
     return digest_file(path)
+
+
+def _sync_directory(directory: Path) -> None:
+    descriptor = os.open(directory, os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def publish_directory(staging: Path, final: Path) -> None:
+    """Rename a finished dataset into place so that a crash leaves all of it or none of it.
+
+    A rename is atomic, but the file contents it points at are not on disk until they are
+    flushed: after a power loss or a VM reset, a book renamed from unflushed files comes back
+    with every file present and empty. Each file and the staging directory are flushed first,
+    and the parent after the rename.
+    """
+    for path in sorted(staging.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+        if path.is_dir():
+            _sync_directory(path)
+        else:
+            with path.open("rb") as handle:
+                os.fsync(handle.fileno())
+    _sync_directory(staging)
+    os.replace(staging, final)
+    _sync_directory(staging.parent)
+    _sync_directory(final.parent)
 
 
 def manifest_of(
@@ -1254,7 +1284,7 @@ class Collector:
         digest = digest_file(staging / "MANIFEST.json")
         if final.exists():
             shutil.rmtree(final)
-        os.replace(staging, final)
+        publish_directory(staging, final)
         result = {
             "entry_id": entry_id,
             "status": "collected",
