@@ -1,10 +1,20 @@
+<script module>
+  const labels = { handwritten: 'Handwritten', manuscript: 'Handwritten', woodblock: 'Woodblock',
+    movable_type: 'Movable type', 'movable-type': 'Movable type', printed: 'Printed', mixed: 'Mixed' }
+  export function productionKind(item) {
+    const production = item?.production ?? item?.source?.production ?? 'unknown'
+    return typeof production === 'string' ? production : production?.kind ?? production?.type ?? 'unknown'
+  }
+  /** How the record's page was made, or null when nobody has classified it. */
+  export function productionLabel(item) {
+    return labels[productionKind(item)] ?? null
+  }
+</script>
+
 <script>
   let { item = null } = $props()
-  const labels = { handwritten: 'Handwritten', manuscript: 'Handwritten', woodblock: 'Woodblock',
-    movable_type: 'Movable type', 'movable-type': 'Movable type', printed: 'Printed', mixed: 'Mixed', unknown: 'Not classified' }
-  const production = $derived(item?.production ?? item?.source?.production ?? 'unknown')
-  const kind = $derived(typeof production === 'string' ? production : production?.kind ?? production?.type ?? 'unknown')
-  const label = $derived(labels[kind] ?? 'Not classified')
+  const kind = $derived(productionKind(item))
+  const label = $derived(productionLabel(item) ?? 'Not classified')
 </script>
 
 <span class="production-badge" data-production={kind} aria-label={`Production: ${label}`}>{label}</span>

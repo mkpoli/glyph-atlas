@@ -1,6 +1,6 @@
 <script>
   import { onMount, untrack } from 'svelte'
-  import ProductionBadge from '../components/ProductionBadge.svelte'
+  import { productionLabel } from '../components/ProductionBadge.svelte'
   import VisualGroups from '../components/VisualGroups.svelte'
   import { isUnassigned, writtenLabel, visualGroup, matchesVisualGroup } from '../lib/identity.js'
   import Glyph from '../components/Glyph.svelte'
@@ -49,6 +49,22 @@
     if (item.origin === 'corpus' || item.requires_review) return { kind: 'machine', label: 'unconfirmed', reason: item.licence_note ?? 'the corpus has not confirmed this lead' }
     if (item.machine) return { kind: 'machine', label: 'machine', reason: 'a machine proposed this record' }
     return null
+  }
+  /** One state per tile, for its dot: checked, flagged, withheld or plain. */
+  function tileState(item) {
+    if (item.state === 'checked' || item.state === 'flagged') return item.state
+    const kind = repairOf(item)?.kind
+    return kind === 'verified' ? 'checked' : kind === 'withheld' ? 'withheld' : 'plain'
+  }
+  /** The tile's hover text: what the record is, how far it has been checked, and where it comes from. */
+  function tileTitle(item) {
+    const repair = repairOf(item)
+    const state = item.state === 'checked' ? 'Checked' : item.state === 'flagged' ? 'Flagged'
+      : repair?.kind === 'withheld' ? `Withheld: ${repair.reason}` : repair?.kind === 'verified' ? 'Checked'
+      : repair?.label === 'unconfirmed' ? 'Not yet confirmed' : repair ? 'Machine-aligned, not yet checked' : null
+    const origin = item.origin === 'corpus' ? ((item.source?.corpus ?? item.corpus) === 'codh-full' ? 'CODH dataset' : 'Corpus index') : null
+    return [item.label, productionLabel(item), state, origin, item.source?.title ?? item.title, item.source?.holder ?? item.holder]
+      .filter(Boolean).join(' · ')
   }
   // The units the inspector may step through: the character's own records when a gallery is open, the
   // collection's rows otherwise. It is never empty on the ordinary homepage, so Next keeps working.
@@ -308,7 +324,7 @@
   {/if}
   <div class="glyph-grid" aria-label={flagged ? 'Flagged characters' : 'Character collection'} aria-busy={loading}>
     {#if loading && !display.length}{#each Array(32) as _}<div class="glyph-skeleton"></div>{/each}
-    {:else}{#each display as item, i (item.id)}{#if picked && expand === 'grapheme' && (i === 0 || visualGroup(display[i - 1]).id !== visualGroup(item).id)}<div class="visual-grid-heading">{visualGroup(item).label}</div>{/if}{#if item.origin === 'corpus'}<button class="glyph-tile corpus" data-corpus={item.id} onclick={() => inspect(item.id, null, display, updateItem, 'corpus')} title={[item.source?.title ?? item.title, item.source?.holder ?? item.holder].filter(Boolean).join(' · ')} aria-label={`Inspect corpus ${item.label}`}><span class="tile-reading">{item.label}</span>{#if item.proxyable && item.image}<img class="glyph-image" src={item.image} alt={`Located ${item.label}`} loading={i < 24 ? "eager" : "lazy"} fetchpriority={i < 24 ? "high" : "auto"} decoding="async" />{:else}<span class="corpus-open"><b>{item.label}</b><small>Image unavailable</small></span>{/if}<span class="tile-production"><ProductionBadge {item} /></span><span class="tile-footer"><span class="status-dot" class:checked={item.state === 'checked'} class:flagged={item.state === 'flagged'}></span><span class="badge" class:badge-checked={item.state === 'checked'} class:badge-machine={item.state !== 'checked'}>{item.state === 'checked' ? 'checked' : item.state === 'flagged' ? 'flagged' : (item.source?.corpus ?? item.corpus) === 'codh-full' ? 'CODH' : 'corpus'}</span><span>{String(i + 1).padStart(2, '0')}</span><span class="tile-arrow">↗</span></span></button>{:else}<button class="glyph-tile" data-unit={item.id} onclick={() => inspect(item.id, null, display, updateItem)} aria-label={`Inspect ${item.label}`}><span class="tile-reading">{item.label}</span><Glyph {item} eager={i < 24} /><span class="tile-production"><ProductionBadge {item} /></span><span class="tile-footer"><span class="status-dot" class:checked={item.state === 'checked'} class:flagged={item.state === 'flagged'}></span>{#if repairOf(item)}<span class="badge" class:badge-machine={repairOf(item).kind !== 'verified'} class:badge-checked={repairOf(item).kind === 'verified'} title={repairOf(item).reason}>{repairOf(item).label}</span>{/if}<span>{String(i + 1).padStart(2, '0')}</span><span class="tile-arrow">↗</span></span></button>{/if}{/each}{/if}
+    {:else}{#each display as item, i (item.id)}{#if picked && expand === 'grapheme' && (i === 0 || visualGroup(display[i - 1]).id !== visualGroup(item).id)}<div class="visual-grid-heading">{visualGroup(item).label}</div>{/if}{#if item.origin === 'corpus'}<button class="glyph-tile corpus" data-corpus={item.id} onclick={() => inspect(item.id, null, display, updateItem, 'corpus')} title={tileTitle(item)} aria-label={`Inspect corpus ${item.label}`}><span class="tile-reading">{item.label}</span>{#if item.proxyable && item.image}<img class="glyph-image" src={item.image} alt={`Located ${item.label}`} loading={i < 24 ? "eager" : "lazy"} fetchpriority={i < 24 ? "high" : "auto"} decoding="async" />{:else}<span class="corpus-open"><b>{item.label}</b><small>Image unavailable</small></span>{/if}<span class="tile-footer"><span class="status-dot" class:checked={tileState(item) === 'checked'} class:flagged={tileState(item) === 'flagged'} class:withheld={tileState(item) === 'withheld'}></span>{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{String(i + 1).padStart(2, '0')}</span><span class="tile-arrow">↗</span></span></button>{:else}<button class="glyph-tile" data-unit={item.id} title={tileTitle(item)} onclick={() => inspect(item.id, null, display, updateItem)} aria-label={`Inspect ${item.label}`}><span class="tile-reading">{item.label}</span><Glyph {item} eager={i < 24} /><span class="tile-footer"><span class="status-dot" class:checked={tileState(item) === 'checked'} class:flagged={tileState(item) === 'flagged'} class:withheld={tileState(item) === 'withheld'}></span>{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{String(i + 1).padStart(2, '0')}</span><span class="tile-arrow">↗</span></span></button>{/if}{/each}{/if}
   </div>
   {#if !choosing && !loading && !display.length}<div class="empty"><span class="empty-mark">{picked || (settled && settled.total === 0) ? '∅' : flagged ? '✓' : '∅'}</span><h2>{picked && corpusFault ? `Samples of ${picked.char} could not load.` : picked ? `No occurrence of ${picked.char} here.` : settled && settled.total === 0 ? `No occurrence of ${readable}.` : flagged ? 'Nothing flagged.' : 'No characters here.'}</h2>{#if query}<button class="primary" onclick={clearQuery}>Clear search</button>{:else}<a href="#/review" class="primary">Start a round →</a>{/if}</div>{/if}
   {#if picked && (!visual && local.length < (data?.total ?? 0) || corpusOffset < corpusTotal) && !loading}
@@ -324,7 +340,12 @@
 
 <style>
   .visual-grid-heading{grid-column:1/-1;font-size:14px;padding:20px 2px 12px;color:var(--muted);background:var(--paper,#fafafa)}
-  .tile-production{display:block;text-align:left;padding:0 16px 4px}
+  .tile-production{font-family:system-ui,sans-serif;font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tile-number{margin-left:auto}
+  .tile-footer .tile-arrow{margin-left:0}
+  .tile-footer .status-dot{flex-shrink:0}
+  @media(max-width:700px){.tile-production{display:none}}
+  .status-dot.withheld{background:transparent;box-shadow:inset 0 0 0 1px #9b9ba3}
   .collection-progress-link{display:flex;align-items:center;flex-wrap:wrap;gap:12px 20px;border:0;border-top:1px solid var(--line);border-radius:0;background:transparent;width:100%;text-align:left;padding:16px 0;color:var(--muted);font-size:12px}
   .collection-progress-link b{font-weight:500;color:var(--ink)}
 </style>
