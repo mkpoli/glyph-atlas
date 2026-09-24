@@ -1505,3 +1505,59 @@ def test_a_seen_crop_pins_nothing_for_the_repair_or_the_scan(dataset):
     assert client.post('/atlas/rounds', json=seen_round(client, shown)).status_code == 200
     assert repair.human_state(dataset).units == {}
     assert preflight._human_targets(Store(dataset)) == set()
+
+
+def test_a_seen_crop_keeps_its_revision_so_an_answer_on_it_is_not_stale(dataset):
+    """Passing a crop changes nothing about it, so a second reviewer's flag on it still saves."""
+    client = TestClient(create_app(dataset))
+    shown = client.get('/atlas?reading=あ&state=pending&limit=2').json()['items']
+    assert client.post('/atlas/rounds', json=seen_round(client, shown)).status_code == 200
+    assert Store(dataset).revision(shown[0]['id']) == shown[0]['revision']
+    flag = {"id": str(uuid4()), "client_id": "second-reviewer", "label": "あ",
+            "answers": [{"id": shown[0]['id'], "revision": shown[0]['revision'],
+                         "image_sha256": shown[0]['image_sha256'], "verdict": "wrong", "issue": "crop"}]}
+    assert client.post('/atlas/rounds', json=flag).status_code == 200
+
+
+def test_undoing_a_round_survives_a_later_edit_of_a_seen_crop(dataset):
+    client = TestClient(create_app(dataset))
+    shown = client.get('/atlas?reading=あ&state=pending&limit=2').json()['items']
+    payload = seen_round(client, shown, flagged={shown[0]['id']})
+    assert client.post('/atlas/rounds', json=payload).status_code == 200
+    store = Store(dataset)
+    unit = store.unit(shown[1]['id'])
+    store.record(ReviewRequest(target_id=unit.id, field="note", new="later", base_revision=store.revision(unit.id),
+                               client_id="fixture", idempotency_key="later-note"))
+    assert client.post('/atlas/rounds/' + payload['id'] + '/undo',
+                       json={"client_id": payload['client_id']}).status_code == 200
+
+
+def test_a_seen_crop_retired_since_the_round_was_drawn_is_skipped(dataset):
+    client = TestClient(create_app(dataset))
+    shown = client.get('/atlas?reading=あ&state=pending&limit=2').json()['items']
+    store = Store(dataset)
+    store.record(ReviewRequest(target_id=shown[1]['id'], field="active", new=False,
+                               base_revision=store.revision(shown[1]['id']), client_id="fixture",
+                               idempotency_key="retire"))
+    assert client.post('/atlas/rounds', json=seen_round(client, shown)).status_code == 200
+    assert [e.target_id for e in Store(dataset).events() if e.field == "seen"] == [shown[0]['id']]
+
+
+def test_a_rebuilt_store_agrees_with_the_live_one_about_seen_crops(dataset):
+    client = TestClient(create_app(dataset))
+    shown = client.get('/atlas?reading=あ&state=pending&limit=3').json()['items']
+    assert client.post('/atlas/rounds', json=seen_round(client, shown)).status_code == 200
+    before = {item['id']: Store(dataset).revision(item['id']) for item in shown}
+    apply(dataset)
+    assert replay(dataset)['repaired'] == 0
+    assert {item['id']: Store(dataset).revision(item['id']) for item in shown} == before
+
+
+def test_the_audit_does_not_read_a_seen_crop_as_reviewed(dataset):
+    from glyph_atlas import audit
+
+    client = TestClient(create_app(dataset))
+    shown = client.get('/atlas?reading=あ&state=pending&limit=2').json()['items']
+    assert client.post('/atlas/rounds', json=seen_round(client, shown)).status_code == 200
+    apply(dataset)
+    assert not set(audit._reviewed_units(dataset)) & {item['id'] for item in shown}

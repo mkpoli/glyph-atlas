@@ -935,7 +935,10 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 idempotency_key=prefix + answer.id, evidence=evidence,
             ))
         for crop in round.seen:
-            unit, _ = one(crop.id)
+            try:
+                unit, _ = one(crop.id)
+            except HTTPException:
+                continue
             # A crop that cannot be dealt any more, or whose pixels changed since the round was
             # drawn, was not seen as it stands; it is skipped rather than failing the round.
             if not eligible(unit) or repair_withheld(unit) or image_source(unit)[0].stem != crop.image_sha256:
@@ -962,10 +965,12 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             target = r["target_id"]
             requests.append(ReviewRequest(
                 target_type="unit", target_id=target, field=r["field"], new=r["review"]["old"],
-                base_revision=revisions[target], client_id=request.client_id,
+                # A seen record changed nothing, so its undo has nothing to be stale against.
+                base_revision=None if r["field"] == SEEN else revisions[target], client_id=request.client_id,
                 idempotency_key=f"quiz-undo:{round_id}:{r['id']}", evidence=f"undo of {r['id']}",
             ))
-            revisions[target] += 1
+            if r["field"] != SEEN:
+                revisions[target] += 1
         return {"id": str(round_id), "results": store.record_batch(requests)}
 
     @api.post("/atlas/characters/{unit_id}")

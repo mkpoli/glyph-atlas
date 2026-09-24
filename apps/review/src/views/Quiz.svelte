@@ -362,6 +362,8 @@
       await request('/atlas/rounds', { id: roundId, client_id: clientId, label: reading, seen })
       last = { id: roundId, count: 0, label: reading, production }
       remember('atlas.last-round.' + clientId, last)
+      const seenIds = new Set(seen.map(crop => crop.id))
+      items = items.filter(item => !seenIds.has(item.id))
       choices = {}; selected = {}; step = 'select'; at = 0; roundId = crypto.randomUUID()
       await load()
     } catch (e) { error = e.message }
