@@ -16,7 +16,7 @@ from typing import Annotated, Any, Literal
 from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from fastapi.responses import Response
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field
@@ -875,23 +875,25 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         return {"id": str(round_id), "results": store.record_batch(requests)}
 
     @api.post("/atlas/characters/{unit_id}")
-    def edit(unit_id: str, edit: CharacterEdit) -> dict:
-        unit, current_revision = one(unit_id)
-        correction = correction_text(edit.correction, edit.issue)
-        supplied = unicodedata.normalize("NFC", edit.reading.strip()) if edit.reading else None
-        if supplied is not None and not single_character(supplied):
-            raise BadRequest("Use one character for the reading, or report joined characters.")
+    def edit(unit_id: str, edit: CharacterEdit, background: BackgroundTasks) -> dict:
         previous = store.submission_results(edit.client_id, f"edit:{edit.id}:")
         if previous:
             old = json.loads(next(r for r in previous if r["field"] == "review")["review"]["evidence"])
             if old.get("request") != edit.model_dump(mode="json"):
                 raise BadRequest("This edit was already saved with different values.")
             return repeat(previous)
+        unit, current_revision = one(unit_id)
+        correction = correction_text(edit.correction, edit.issue)
+        supplied = unicodedata.normalize("NFC", edit.reading.strip()) if edit.reading else None
+        if supplied is not None and not single_character(supplied):
+            raise BadRequest("Use one character for the reading, or report joined characters.")
         if not eligible(unit):
             raise BadRequest("This character has no available crop to review.")
         if edit.image_sha256 != image_source(unit)[0].stem:
             raise HTTPException(409, "The source image changed. Reload this character.")
         resolved = bool(edit.issue == "reading" and correction and single_character(correction))
+        if edit.verdict == "match" and edit.issue not in (None, "reading"):
+            raise BadRequest("A matching character cannot also have a crop or joined-character issue.")
         reading = correction if resolved else supplied or label(unit)
         requests = []
         revision = edit.revision
@@ -926,12 +928,27 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             base_revision=revision, client_id=edit.client_id, idempotency_key=f"edit:{edit.id}:review",
             evidence=evidence,
         ))
-        return {"results": store.record_batch(requests)}
+        results = store.record_batch(requests)
+        if edit.issue == "merged":
+            schedule_refinement(background, {unit_id})
+        return {"results": results}
 
-    @api.get("/atlas/reviews")
-    def export_reviews() -> dict:
+    def schedule_refinement(background: BackgroundTasks, unit_ids: set[str]) -> None:
+        from .refine import background_refine
+
+        payload = review_export()
+        payload["reviews"] = [r for r in payload["reviews"] if r["event"]["target_id"] in unit_ids]
+        background.add_task(background_refine, store, payload)
+
+    def review_export(*, include_processed: bool = False) -> dict:
+        """Every character review the journal holds, with what each one saw and whether it stands.
+
+        One builder for both doors: the JSON route a script reads and the attachment route the
+        browser saves. Two builders would eventually disagree about what a review record is.
+        """
         all_events = store.events()
-        latest = {e.target_id: e.id for e in all_events if e.field == "review"}
+        latest = {e.target_id: e.id for e in all_events if e.field == "review"
+                  and not (e.evidence and '"kind": "feedback-reconciliation"' in e.evidence)}
         events = [e for e in all_events if e.field == "review" and e.evidence and
                   ('"kind": "visual-quiz"' in e.evidence or '"kind": "character-review"' in e.evidence)]
         records = {u.id: (u, revision) for u, revision in store.unit_snapshot()}
@@ -946,12 +963,68 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             correction = evidence.get("correction", {})
             expected_label = correction.get("reading", evidence.get("label"))
             expected_box = correction.get("box", observed["character"]["box"] if observed else None)
+            # A written-identity correction, wherever the route that made it recorded one: a round
+            # writes `correction.unicode` and the layers route writes `layer_correction.character`,
+            # and both name `Unit.unicode`. It is compared only when the evidence says the identity
+            # was what changed — a round that corrected a reading also records the identity it left
+            # alone, and holding it to that would report every reading correction as stale the moment
+            # the identity moved for another reason.
+            changed_layers = {evidence.get("layer")} | set(
+                (evidence.get("layer_correction") or {}).get("changed") or ())
+            expected_unicode = None
+            if "character" in changed_layers:
+                layer = evidence.get("layer_correction") or {}
+                # `correction.unicode` is the stored form and already canonical; the layers route's
+                # `layer_correction.character` is the literal character, and the record holds a code
+                # point, so it goes through the same canonicaliser before the two are compared. A
+                # literal that is not one character is not a comparable identity and is left out
+                # rather than made to look like a mismatch.
+                recorded = correction.get("unicode") or layer.get("code_point")
+                if recorded:
+                    expected_unicode = canonical_identity(recorded)
+                elif layer.get("character"):
+                    try:
+                        expected_unicode = canonical_identity(str(layer["character"]))
+                    except BadRequest:
+                        expected_unicode = None
             image = image_source(unit)
-            current = bool(observed and latest.get(unit.id) == event.id and label(unit) == expected_label
+            # `evidence.correction.reading` records the unit's reading field, so the comparison is
+            # against the reading and not against the written identity a row is labelled with: the
+            # two differ on 340 units of this corpus, and a correction that changed the reading is
+            # current exactly when the record still reads that way.
+            current = bool(unit.active and observed and latest.get(unit.id) == event.id and label(unit) == expected_label
                            and image and image[0].stem == observed["image_sha256"]
-                           and (unit.box.model_dump() if unit.box else None) == expected_box)
+                           and (unit.box.model_dump() if unit.box else None) == expected_box
+                           and (not expected_unicode or stored_identity(unit) == expected_unicode))
+            processing = unit.meta.get("feedback_repair")
+            if unit.split_into:
+                split = next((e for e in reversed(all_events) if e.target_id == unit.id
+                              and e.field == "segmentation"), None)
+                processing = {"result": "split", "children": unit.split_into,
+                              "event_id": split.id if split else None, "automated": bool(split and split.role == "model")}
             output.append({"event": event.model_dump(mode="json"), "reviewed": observed,
-                           "current": current, "current_revision": revision})
-        return {"version": 1, "kind": "atlas-character-reviews", "reviews": output}
+                           "current": current, "current_revision": revision,
+                           **({"processing": processing} if processing else {})})
+        if corpus_reviews is not None:
+            output.extend(corpus_reviews.exports())
+        from .receipts import FeedbackReceipts
+
+        pending, counts = FeedbackReceipts(store.directory).filter(output)
+        return {"version": 1, "kind": "atlas-character-reviews",
+                "reviews": output if include_processed else pending,
+                "scope": "history" if include_processed else "unprocessed", "counts": counts}
+
+    @api.get("/atlas/reviews")
+    def export_reviews(include_processed: bool = False) -> dict:
+        """The reviews as JSON, for a client that reads them."""
+        return review_export(include_processed=include_processed)
+
+    @api.get("/atlas/reviews.json")
+    def export_reviews_file(include_processed: bool = False) -> Response:
+        """The same payload as a download, so the browser saves it rather than a script does."""
+        body = json.dumps(review_export(include_processed=include_processed), ensure_ascii=False, indent=2) + "\n"
+        return Response(
+            content=body, media_type="application/json",
+            headers={"Content-Disposition": 'attachment; filename="atlas-character-reviews.json"'})
 
     return api
