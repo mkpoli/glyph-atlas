@@ -34,7 +34,7 @@
   onMount(() => { clientId = reviewer(); navigate(); window.addEventListener('hashchange', navigate); return () => window.removeEventListener('hashchange', navigate) })
 </script>
 
-<header class="site-header"><a href="#/" class="wordmark" aria-label="Glyph Atlas home"><svg class="atlas-symbol" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M4 4h9v9H4zM19 4h9v9h-9zM4 19h9v9H4z" fill="currentColor"/><path d="M19 19h9v9h-9z" stroke="currentColor" stroke-width="2"/></svg><span>KUZUSHIJI <b>ATLAS</b></span></a>
+<header class="site-header"><a href="#/" class="wordmark" aria-label="Glyph Atlas home"><svg class="atlas-symbol" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M4 4h9v9H4zM19 4h9v9h-9zM4 19h9v9H4z" fill="currentColor"/><path d="M19 19h9v9h-9z" stroke="currentColor" stroke-width="2"/></svg><span>GLYPH <b>ATLAS</b></span><small class="slogan" lang="ja">Let's 集字!</small></a>
   <nav aria-label="Main navigation"><a class:active={route === '/'} href="#/">Explore</a><a class:active={route === '/flagged'} href="#/flagged">Flagged</a></nav>
   <div class="header-actions"><a class="review-link" class:current={route === '/review'} href="#/review">Quick review <span>↗</span></a><div class="header-menu"><button class="icon-button" aria-label="Review options" aria-expanded={menu} onclick={() => menu = !menu}>···</button>{#if menu}<div class="options-menu"><button onclick={exportReviews}>Export reviews ↓</button><small>{clientId}</small>{#if exportError}<p role="alert">{exportError}</p>{/if}</div>{/if}</div></div>
 </header>
