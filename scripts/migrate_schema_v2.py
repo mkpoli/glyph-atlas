@@ -98,12 +98,27 @@ def _is_unit(value: Any) -> bool:
     return isinstance(value, dict) and "id" in value and ("jibo" in value or value.get("script") == OLD_SCRIPT)
 
 
+def _is_split_entry(value: Any) -> bool:
+    """One child of a split, as a segmentation event records it: a box and what it holds, no id."""
+    return isinstance(value, dict) and "box" in value and "id" not in value
+
+
 def migrate_event_value(field: str, value: Any) -> Any:
-    """An event's `old` or `new` in version 2: its units migrated, and `kanji` as a script value renamed."""
+    """An event's `old` or `new` in version 2: its units migrated, and `kanji` as a script value renamed.
+
+    A split entry is migrated too, since replaying the split validates it, but it keeps no 字母 in
+    `upstream`: an entry cannot set that field. A candidate's or a confidence's `jibo` is a field of
+    version 2 and is left alone.
+    """
     if field == "script" and value == OLD_SCRIPT:
         return "han"
     if _is_unit(value):
         return migrate_unit_data(value)
+    if _is_split_entry(value):
+        entry = {key: item for key, item in value.items() if key != "jibo"}
+        if entry.get("script") == OLD_SCRIPT:
+            entry["script"] = "han"
+        return entry
     if isinstance(value, dict):
         return {key: migrate_event_value("", item) for key, item in value.items()}
     if isinstance(value, list):
@@ -120,18 +135,27 @@ def _json_rewrite(text: str | None, rewrite) -> str | None:
     except ValueError:
         return None
     changed = rewrite(value)
-    return None if changed == value else json.dumps(changed, ensure_ascii=False)
+    return None if changed == value else json.dumps(changed, ensure_ascii=False, sort_keys=True)
 
 
 def review_stores(root: Path) -> list[Path]:
     return sorted(path for path in root.rglob("review.sqlite") if path.is_file())
 
 
+class JiboEvents(RuntimeError):
+    """A store records 字母 decisions of its own, which version 2 has no field for."""
+
+
 def migrate_store(path: Path, *, apply: bool) -> dict[str, int]:
-    """Rewrite the v1 units a review store holds; return how many rows of each kind change."""
+    """Rewrite the v1 units a review store holds; return how many rows of each kind change.
+
+    The reads and the writes are one transaction, taken before the first read, so a store written in
+    between cannot have its new rows replaced by ones read before them.
+    """
     counts = {"units": 0, "imported": 0, "events": 0}
     uri = f"file:{path}" + ("" if apply else "?mode=ro")
-    with closing(sqlite3.connect(uri, uri=True)) as conn:
+    with closing(sqlite3.connect(uri, uri=True, isolation_level=None)) as conn:
+        conn.execute("BEGIN IMMEDIATE" if apply else "BEGIN")
         tables_present = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         updates: list[tuple[str, tuple]] = []
         if "units" in tables_present:
@@ -149,6 +173,12 @@ def migrate_store(path: Path, *, apply: bool) -> dict[str, int]:
                     updates.append(("UPDATE imported_records SET data = ? WHERE table_name = 'units' AND id = ?",
                                     (new, record_id)))
         if "events" in tables_present:
+            decided = conn.execute("SELECT COUNT(*) FROM events WHERE field = 'jibo'").fetchone()[0]
+            if decided:
+                # A reviewer chose a 字母 for these units. The character layer states the 字母 of a
+                # code point now, so there is no field to replay them onto; a person decides.
+                conn.execute("ROLLBACK")
+                raise JiboEvents(f"{path} records {decided} jibo decisions; migrate them by hand first")
             for seq, field, old, new in conn.execute("SELECT seq, field, old, new FROM events"):
                 old_after = _json_rewrite(old, lambda value, field=field: migrate_event_value(field, value))
                 new_after = _json_rewrite(new, lambda value, field=field: migrate_event_value(field, value))
@@ -156,10 +186,9 @@ def migrate_store(path: Path, *, apply: bool) -> dict[str, int]:
                     counts["events"] += 1
                     updates.append(("UPDATE events SET old = COALESCE(?, old), new = COALESCE(?, new) WHERE seq = ?",
                                     (old_after, new_after, seq)))
-        if apply and updates:
-            with conn:
-                for statement, parameters in updates:
-                    conn.execute(statement, parameters)
+        for statement, parameters in updates if apply else ():
+            conn.execute(statement, parameters)
+        conn.execute("COMMIT")
     return counts
 
 
@@ -192,17 +221,23 @@ def main(argv: list[str] | None = None) -> int:
     if not pending:
         print("every units table is already version 2")
     stores = 0
+    refused = 0
     for root in arguments.roots:
         for store in review_stores(root):
-            counts = migrate_store(store, apply=arguments.apply)
+            try:
+                counts = migrate_store(store, apply=arguments.apply)
+            except JiboEvents as error:
+                refused += 1
+                print(f"left unchanged: {error}", file=sys.stderr)
+                continue
             if any(counts.values()):
                 stores += 1
                 verb = "migrated" if arguments.apply else "would migrate"
                 print(f"{verb} {store} ({counts['units']} units, {counts['imported']} imported, "
                       f"{counts['events']} events)")
-    if not stores:
+    if not stores and not refused:
         print("every review store is already version 2")
-    return 0
+    return 1 if refused else 0
 
 
 if __name__ == "__main__":
