@@ -75,12 +75,17 @@ def classifier_path() -> Path:
     return features if features.is_file() else directory / "classifier.onnx"
 
 
+#: The families whose forms CODH trained as one class. A kana family is not one of them: か, its
+#: hentaigana and カ are separate classes, and a vote for か is a vote for か alone.
+MERGED_RELATIONS = frozenset({"shinjitai-kyujitai"})
+
+
 @lru_cache(maxsize=8192)
 def _class_family(name: str) -> tuple[str, tuple[str, ...]]:
     if not name.startswith("U+"):
         return name, ()
     info = refs.grapheme_info(name)
-    if info is None:
+    if info is None or info["relation"] not in MERGED_RELATIONS:
         return name, (refs.to_char(name),)
     return info["code_point"], tuple(member["char"] for member in info["members"])
 

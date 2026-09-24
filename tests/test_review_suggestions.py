@@ -121,3 +121,11 @@ def test_anchored_visual_proposal_has_distances_without_probability(tmp_path, mo
     assert candidate["visual_prediction"]["similarity"] == 1
     assert visual_candidate(classifier, image, vote, [{"name": "Atlas classifier", "sha256": "changed"}]) is None
     assert visual_candidate(SimpleNamespace(features=lambda _: np.array([.7, .7])), image, vote, engines) is None
+
+
+def test_a_kana_class_votes_for_that_kana_and_not_its_family():
+    from glyph_atlas.review.suggestions import classifier_results
+
+    candidates, vote = classifier_results(["U+30AB", "U+304B", "U+3055", "other"], [.9, .04, .03, .03])
+    assert vote["identity_scope"] == "character" and vote["text"] == "カ"
+    assert [c["text"] for c in candidates][:2] == ["カ", "か"]
