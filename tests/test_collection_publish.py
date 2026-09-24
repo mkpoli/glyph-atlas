@@ -83,3 +83,19 @@ def test_archive_counts_exclude_duplicate_codh_and_joined_rows(tmp_path):
     # Honkoku page and line datasets describe the same source work.
     assert result["text_works"] == 2
     assert "codh" not in result["sources"]
+
+
+def test_a_publication_waits_for_no_one_while_another_holds_the_index(tmp_path):
+    """Two sources rebuild one index; the second is refused rather than installing a stale one."""
+    import pytest
+
+    from glyph_atlas.corpus.collection import publication_lock
+
+    book = tmp_path / "honkoku-collection/books/one"
+    dataset(book, "one", "NEW")
+    (tmp_path / "honkoku-collection/index.json").write_text(
+        json.dumps({"books": [{"entry_id": "one", "dataset": "books/one"}]}))
+    (tmp_path / "corpus-index").mkdir()
+    with publication_lock(tmp_path / "corpus-index"), pytest.raises(BlockingIOError):
+        publish(tmp_path, rebuild_index=False, min_free_bytes=0)
+
