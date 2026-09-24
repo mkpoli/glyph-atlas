@@ -30,7 +30,9 @@
     return { destroy() { observer.disconnect(); nearEnd = false } }
   }
   $effect(() => {
-    if (nearEnd && hasMore && !loading && !saving && !loadingMore && items.length < roundLimit) loadMore()
+    // Never while an error is showing: a failed batch would otherwise be retried at once, forever,
+    // and an error from another action would be cleared before anyone could read it.
+    if (nearEnd && hasMore && !error && !loading && !saving && !loadingMore && items.length < roundLimit) loadMore()
   })
   const roundLimit = $derived(data?.review_limit ?? 4096)
   let production = $state('non-movable-type')
