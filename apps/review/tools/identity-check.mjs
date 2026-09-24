@@ -12,10 +12,11 @@ const assigned = { ...unresolved, written_character: '假', identity_status: 'as
 assert.equal(isUnassigned(assigned), false)
 assert.equal(writtenLabel(assigned), '假')
 assert.equal(matchesVisualGroup(assigned, 'unassigned'), false)
-for (const [text, key] of [['ム', 'katakana'], ['厶', 'kanji'], ['あ', 'hiragana'], ['𛀂', 'hiragana'], ['𪜈', 'katakana'], ['𛄧', 'katakana'], ['𛄣', 'hiragana'], ['↔', 'symbol'], ['が', 'hiragana'], ['假ム', 'mixed']]) {
+for (const [text, key] of [['ム', 'katakana'], ['厶', 'kanji'], ['あ', 'hiragana'], ['𛀂', 'hiragana'], ['𪜈', 'katakana'], ['𛄧', 'katakana'], ['𛄣', 'hiragana'], ['↔', 'symbol'], ['が', 'hiragana'], ['假ム', 'mixed'], ['ー', 'katakana'], ['カー', 'katakana']]) {
   assert.equal(scriptInfo(text).key, key, text)
 }
 assert.deepEqual(scriptInfo('𪜈', 'katakana'), { key: 'katakana', label: 'Katakana' })
+assert.deepEqual(scriptInfo('ー', 'symbol'), { key: 'katakana', label: 'Katakana' })
 assert.equal(encodeURIComponent('𪜈'), '%F0%AA%9C%88')
 assert.deepEqual(scriptParts('假ムが※').map(part => [part.text, part.key]),
   [['假', 'kanji'], ['ム', 'katakana'], ['が', 'hiragana'], ['※', 'symbol']])
