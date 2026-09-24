@@ -39,7 +39,8 @@ def reviewed_baselines(db, corpus):
         written = current.get("written_character")
         if written:
             from glyph_atlas import refs
-            current["grapheme"] = refs.grapheme(refs.to_code_point(written))
+            # A character written with a mark is several code points; `grapheme` takes the whole sequence.
+            current["grapheme"] = refs.grapheme(" ".join(refs.to_code_points(written)))
         db.execute("INSERT OR REPLACE INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
             identity, "corpus", written, current.get("reading"), current.get("grapheme"),
             (current.get("visual_group") or {}).get("id"), current.get("production") or "unknown", "other",
