@@ -53,7 +53,7 @@ import re
 import shutil
 import sqlite3
 from collections import Counter
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from itertools import pairwise
@@ -378,7 +378,8 @@ class LineView:
 
 def view_line(line: Line, detections: Sequence[Detection], *, run: Run,
               classifier: Any = None, crop_of: Any = None, units: Sequence[Unit] = (),
-              scores: ScoreCache | None = None, limit: int = MAX_PHASE) -> list[LineView]:
+              scores: ScoreCache | None = None, limit: int = MAX_PHASE,
+              min_phase_margin: float = MIN_PHASE_MARGIN) -> list[LineView]:
     """Score one line under the corrected reading order and return one view a container.
 
     The detections are ordered by `align.reading_order`; the placement is the cheapest rigid phase of
@@ -395,6 +396,7 @@ def view_line(line: Line, detections: Sequence[Detection], *, run: Run,
     by_token = _units_by_token(units)
     offset = 0
     for number, container in enumerate(containers):
+        start, offset = offset, offset + len(container.tokens)
         if not container.tokens or not container.detections:
             continue
         costs = _costs(container.tokens, list(container.detections), classifier=classifier,
@@ -403,13 +405,13 @@ def view_line(line: Line, detections: Sequence[Detection], *, run: Run,
         phases = phase_costs(costs, ink, len(container.detections), run.weights, limit=limit)
         if not phases:
             continue
-        chosen, unshifted, reason = choose_phase(phases, costs, ink)
+        chosen, unshifted, reason = choose_phase(phases, costs, ink, min_total=min_phase_margin)
         views.append(
             LineView(
                 line=line,
                 tokens=list(container.tokens),
                 detections=list(container.detections),
-                units=_unit_views(container, costs, chosen, by_token, offset),
+                units=_unit_views(container, costs, chosen, by_token, start),
                 phases=phases,
                 chosen=chosen,
                 unshifted=unshifted,
@@ -420,7 +422,6 @@ def view_line(line: Line, detections: Sequence[Detection], *, run: Run,
                 container=number,
             )
         )
-        offset += len(container.tokens)
     return views
 
 
@@ -691,7 +692,8 @@ def collisions(units: Iterable[Unit]) -> dict[str, list[str]]:
 def decide(views: Sequence[LineView], *, line: Line | None = None,
            confirm_margin: float = MIN_UNIT_MARGIN,
            contradiction_margin: float = CONTRADICTION_MARGIN,
-           place_missing: bool = False) -> tuple[LineDecision, list[RepairRecord]]:
+           place_missing: bool = False,
+           pinned: Collection[str] = ()) -> tuple[LineDecision, list[RepairRecord]]:
     """Turn one line's views into a decision and one record a unit.
 
     The deterministic layer moves a character onto the ink the corrected reading order gives it: the
@@ -739,13 +741,16 @@ def decide(views: Sequence[LineView], *, line: Line | None = None,
     )
     # Which boxes the corrected order gives to a character, so a character the phase leaves without
     # ink knows whether the box it holds is one another character now owns.
-    taken = {_box_key(view.detection.box) for view in merged.units if view.detection is not None}
+    # A pinned unit keeps its own box, so the ink the order would give it is not taken by anyone.
+    taken = {_box_key(view.detection.box) for view in merged.units
+             if view.detection is not None and not _human(view, pinned)}
     records: list[RepairRecord] = []
+    unpaired: list[RepairRecord] = []
     for view in merged.units:
         record = _record(merged, view, line)
         old_box = view.old_box
         new_box = record.new_box
-        if _human(view):
+        if _human(view, pinned):
             record.status = "human"
             record.layer = "human"
             record.hypothesis = "keep"
@@ -758,6 +763,15 @@ def decide(views: Sequence[LineView], *, line: Line | None = None,
                 decision.conflicts += 1
             decision.human_units += 1
             records.append(record)
+            continue
+        if view.unit is not None and not _human(view, pinned) and (
+                view.unit.text_source or "") != (view.token.text or ""):
+            record.status = "uncertain"
+            record.reason = (f"the unit reads {view.unit.text_source!r} where the token is "
+                             f"{view.token.text!r}: the line's units do not pair one for one with its "
+                             "tokens, so no box of it can be placed")
+            records.append(record)
+            unpaired.append(record)
             continue
         if not view.ink:
             # Deterministic: a space is not written, so it holds no box whatever the run wrote.
@@ -835,7 +849,8 @@ def decide(views: Sequence[LineView], *, line: Line | None = None,
     # line back to a proposal. A space's box is freed regardless: that is not a placement. A character
     # whose box already agreed keeps it, but the pass no longer vouches for it: agreeing with an order
     # the line cannot be placed in is no evidence, and an unvouched crop stays out of the quiz.
-    blockers = [record for record in records if record.ink and record.status == "uncertain"]
+    blockers = unpaired + [record for record in records
+                           if record.ink and record.status == "uncertain" and record not in unpaired]
     demoted = 0
     if blockers:
         for record in records:
@@ -919,9 +934,13 @@ def _merge(views: Sequence[LineView]) -> LineView:
     )
 
 
-def _human(view: UnitView) -> bool:
-    """Whether a person, not the pipeline, wrote what this unit says now."""
-    return view.unit is not None and view.unit.review in HUMAN_REVIEW
+def _human(view: UnitView, pinned: Collection[str] = ()) -> bool:
+    """Whether a person, not the pipeline, wrote what this unit says now.
+
+    `pinned` names the units the review store holds events for. `apply_plan` lays the store's row
+    over each of them, so a move decided for one would be logged and then silently overwritten.
+    """
+    return view.unit is not None and (view.unit.review in HUMAN_REVIEW or view.unit.id in pinned)
 
 
 def _record(view: LineView, unit: UnitView, line: Line) -> RepairRecord:
@@ -1187,13 +1206,11 @@ def plan_directory(
     for unit in dataset.read("units"):
         if unit.active:
             units_by_line.setdefault(unit.line_id or "", []).append(unit)
+    pinned = frozenset(human.units)
     for unit_id, unit in human.units.items():
         line_units = units_by_line.setdefault(unit.line_id or "", [])
-        for position, existing in enumerate(line_units):
-            if existing.id == unit_id:
-                line_units[position] = unit
-                break
-        else:
+        line_units[:] = [existing for existing in line_units if existing.id != unit_id]
+        if unit.active:
             line_units.append(unit)
     page_documents = {page.id: page.document_id for page in dataset.read("pages")}
     wanted = set(pages) if pages is not None else None
@@ -1239,13 +1256,14 @@ def plan_directory(
             continue
         try:
             views = view_line(line, [Detection(box=box, score=0.0) for box in boxes], run=run,
-                              classifier=classifier, crop_of=crop_of, units=units, scores=store)
+                              classifier=classifier, crop_of=crop_of, units=units, scores=store,
+                              min_phase_margin=min_phase_margin)
         except RepairError:
             counts["skipped-no-detection"] += 1
             continue
         decision, records = decide(views, line=line, confirm_margin=confirm_margin,
                                    contradiction_margin=contradiction_margin,
-                                   place_missing=place_missing)
+                                   place_missing=place_missing, pinned=pinned)
         document = page_documents.get(line.page_id or "")
         decision.document_id = document
         for record in records:
@@ -1557,14 +1575,16 @@ def apply_plan(plan: RepairPlan, out: Path | str, *, source: Path | str | None =
         counts[f"copied-{name}"] = 1
     # The lines a person changed are written as the store has them, box included, so the derived
     # dataset states the same editorial facts as the source it came from.
-    lines_path = out / "lines.parquet"
+    source_lines = dataset.tables.get("lines")
+    lines_path = out / Path(source_lines).name if source_lines is not None else out / "lines.parquet"
     if human.lines and lines_path.exists():
         lines = list(tables.read(lines_path, Line))
         for position, line in enumerate(lines):
             edited = human.lines.get(line.id)
             if edited is not None:
                 lines[position] = edited
-        tables.write(lines_path, lines, Line, command=f"atlas repair apply {source}")
+        tables.write(lines_path, lines, Line, shard=lines_path.is_dir(),
+                     command=f"atlas repair apply {source}")
         counts["lines-with-human"] = len(human.lines)
     if has_units:
         tables.write(out / "units.parquet", units, Unit, command=f"atlas repair apply {source}")
@@ -1632,7 +1652,7 @@ def enforce_injective(units: Sequence[Unit]) -> dict[str, Any]:
             break
         progress = False
         for group in clashing:
-            repaired = [unit for unit in group if _note_of(unit) is not None]
+            repaired = [unit for unit in group if _moved(unit)]
             for unit in repaired:
                 note = _note_of(unit) or {}
                 old = note.get("old_box")
@@ -1652,6 +1672,19 @@ def enforce_injective(units: Sequence[Unit]) -> dict[str, Any]:
         if not progress:
             break
     return {"reverted": reverted, "baseline": baseline}
+
+
+def _moved(unit: Unit) -> bool:
+    """Whether this pass moved the unit off the box it had, so that putting it back changes it.
+
+    A withheld unit carries a note too, but it still holds its own box and its own crop; treating it
+    as a move would wipe a crop the log never recorded, and undo could not bring it back.
+    """
+    note = _note_of(unit)
+    if note is None or note.get("status") not in ("applied", "confirmed"):
+        return False
+    old = note.get("old_box")
+    return _box_key(unit.box) != _box_key(Box.model_validate(old) if old else None)
 
 
 def _note_of(unit: Unit) -> dict[str, Any] | None:

@@ -573,3 +573,102 @@ def test_a_page_correction_is_carried_into_the_derived_journal(tmp_path: Path) -
                                              reopened.page_text("hk:d1:0") or "")
     assert [item.correction.corrected for item in read_back.applied] == ["ソウヤ湾"]
     assert "ソウヤ湾" in read_back.text()
+
+
+# --- review findings -----------------------------------------------------------------------------
+
+
+def _store_with_line(directory: Path, line: Line) -> None:
+    """A review store holding one person's edit of a line, as `human_state` reads it."""
+    import sqlite3
+
+    with sqlite3.connect(directory / repair.STORE_NAME) as db:
+        db.execute("CREATE TABLE events (seq INTEGER, id TEXT, target_type TEXT, target_id TEXT, "
+                   "field TEXT, old TEXT, new TEXT, role TEXT, actor TEXT, evidence TEXT, at TEXT, "
+                   "client_id TEXT, idempotency_key TEXT, result TEXT)")
+        db.execute("CREATE TABLE lines (id TEXT, data TEXT)")
+        db.execute("CREATE TABLE units (id TEXT, data TEXT)")
+        db.execute("INSERT INTO events VALUES (1, 'rv00000001', 'line', ?, 'box', 'null', 'null', "
+                   "'reviewer', 'r1', NULL, '2026-09-24T00:00:00+00:00', 'r1', 'k1', NULL)", (line.id,))
+        db.execute("INSERT INTO lines VALUES (?, ?)", (line.id, line.model_dump_json()))
+
+
+def test_a_withheld_unit_on_a_shared_box_keeps_its_crop() -> None:
+    """Only a move is put back; a withheld unit still holds its own box and its own crop."""
+    box = Box(x=0, y=0, w=10, h=10)
+    kept = unit_of(1, "あ", box, crop="https://example.invalid/a.png")
+    kept.meta = {repair.META_KEY: {"status": "uncertain", "old_box": box.model_dump()}}
+    other = unit_of(2, "い", box)
+    result = repair.enforce_injective([kept, other])
+    assert result == {"reverted": 0, "baseline": 1}
+    assert kept.crop == "https://example.invalid/a.png"
+    assert "put back" not in kept.meta[repair.META_KEY].get("reason", "")
+
+
+def test_a_unit_the_store_holds_is_pinned_whatever_its_review_state() -> None:
+    """The store's row is laid over every unit it holds, so none of them may be moved."""
+    boxes = [Box(x=0, y=120, w=10, h=10), Box(x=0, y=0, w=10, h=10), Box(x=0, y=60, w=10, h=10)]
+    units = [unit_of(seq, text, boxes[seq - 1]) for seq, text in enumerate("あいう", start=1)]
+    line = line_of("あいう", Box(x=0, y=0, w=10, h=130))
+    views = repair.view_line(line, [Detection(box=box, score=0.5) for box in boxes], run=RUN,
+                             units=units)
+    _, records = repair.decide(views, line=line, pinned={units[0].id})
+    assert records[0].status == "human"
+    assert repair.final_box(records[0]) == boxes[0]
+
+
+def test_a_line_whose_units_do_not_pair_with_its_tokens_is_not_placed() -> None:
+    """A split in the old run leaves fewer units than tokens, and pairing by rank drifts after it."""
+    boxes = [Box(x=0, y=120, w=10, h=10), Box(x=0, y=0, w=10, h=10), Box(x=0, y=60, w=10, h=10)]
+    units = [unit_of(1, "あ", boxes[0]), unit_of(2, "う", boxes[1])]
+    line = line_of("あいう", Box(x=0, y=0, w=10, h=130))
+    views = repair.view_line(line, [Detection(box=box, score=0.5) for box in boxes], run=RUN,
+                             units=units)
+    decision, records = repair.decide(views, line=line, place_missing=True)
+    assert decision.status == "uncertain"
+    assert all(repair.final_box(record) == record.old_box for record in records)
+    assert any("one for one" in record.reason for record in records)
+
+
+def test_a_pinned_units_ink_is_not_given_away() -> None:
+    """The box the order would give a pinned unit stays with whoever holds it now."""
+    ink, hand = Box(x=0, y=0, w=10, h=10), Box(x=2, y=2, w=6, h=6)
+    units = [unit_of(1, "あ", hand, review=ReviewState.REVIEWED), unit_of(2, "い", ink)]
+    line = line_of("あい", Box(x=0, y=0, w=10, h=130))
+    views = repair.view_line(line, [Detection(box=ink, score=0.5)], run=RUN, units=units)
+    _, records = repair.decide(views, line=line)
+    assert repair.final_box(records[1]) == ink
+
+
+def test_the_phase_margin_reaches_the_phase_choice(monkeypatch) -> None:
+    """A threshold recorded in the plan is a threshold that was applied."""
+    seen: list[float] = []
+    real = repair.choose_phase
+
+    def spy(*args, **kwargs):
+        seen.append(kwargs.get("min_total"))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(repair, "choose_phase", spy)
+    boxes = [Box(x=0, y=0, w=10, h=10), Box(x=0, y=60, w=10, h=10)]
+    line = line_of("あい", Box(x=0, y=0, w=10, h=130))
+    repair.view_line(line, [Detection(box=box, score=0.5) for box in boxes], run=RUN,
+                     units=[unit_of(1, "あ", boxes[0]), unit_of(2, "い", boxes[1])],
+                     min_phase_margin=7.5)
+    assert seen == [7.5]
+
+
+def test_a_person_edited_line_is_overlaid_on_a_sharded_lines_table(tmp_path: Path) -> None:
+    """A dataset whose lines are shards still gets the line a person corrected."""
+    source = tmp_path / "source"
+    small_dataset(source)
+    plan = plan_for(source)
+    line = tables.read(source / "lines.parquet", Line)[0]
+    (source / "lines.parquet").unlink()
+    tables.write(source / "lines", [line], Line, shard=True)
+    edited = line.model_copy(update={"box": Box(x=1, y=1, w=9, h=129)})
+    _store_with_line(source, edited)
+    derived = tmp_path / "derived"
+    counts = repair.apply_plan(plan, derived, source=source)
+    assert counts.get("lines-with-human") == 1
+    assert tables.read(derived / "lines", Line)[0].box == edited.box
