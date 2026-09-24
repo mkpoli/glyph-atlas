@@ -39,14 +39,14 @@ def store(tmp_path, monkeypatch):
 
 
 def feedback(store, *, verdict="wrong", issue="reading", proposal="を", kind="character-review",
-             suggested_character=None):
+             suggested_character=None, requested_character=None):
     unit = store.unit("u")
     digest = refine._source_digest(store, unit)
     character = {"id": unit.id, "label": "手", "reading": "手", "revision": 0,
                  "box": unit.box.model_dump(), "page_id": "p", "image_sha256": digest}
     snapshot = {"character": character, "image_sha256": digest}
     evidence = {"kind": kind, "verdict": verdict, "issue": issue,
-                "request": {"correction": proposal, "reading": None},
+                "request": {"correction": proposal, "reading": None, "character": requested_character},
                 "suggested_reading": proposal, "snapshot": snapshot,
                 "correction": {"reading": "手", "box": unit.box.model_dump()}}
     if suggested_character is not None:
@@ -149,6 +149,7 @@ def test_base_plus_mark_identity_resolves_rather_than_going_stale(store):
     assert result["counts"] == {"resolved": 1}
     assert store.unit("u").unicode == "U+30C4 U+309A"
     assert store.unit("u").review == "reviewed"
+    assert store.unit("u").script == "katakana", "the script of ツ゚ is that of ツ"
 
 
 @pytest.mark.parametrize("change", ["revision", "pixels", "body", "missing-revision"])
@@ -337,3 +338,10 @@ def test_join_reuses_only_matching_spatial_occurrence(store, existing_identity, 
         assert store.events()[-1].role == "model"
     else:
         assert store.unit("u").box == unit.box
+
+
+def test_an_identity_typed_as_code_points_resolves(store):
+    payload = feedback(store, issue="character", proposal=None, requested_character="U+FA10")
+    assert refine.refine_feedback(store, payload, apply=True)["counts"] == {"resolved": 1}
+    assert store.unit("u").unicode == "U+FA10"
+

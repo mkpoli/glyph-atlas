@@ -15,7 +15,7 @@ from .. import refs
 from ..feedback import QUARANTINE_IMPLICIT_QUIZ_MATCH, normalize_export
 from ..schema import Box
 from ..split_proposals import Limits, propose_split
-from .atlas import single_character
+from .atlas import identity_text, script_of_identity, single_character
 from .characters import _source_digest, written_identity
 from .receipts import fingerprint
 from .store import BadRequest, Conflict, ReviewRequest, Store
@@ -70,7 +70,7 @@ class SplitEngine:
             votes = result.get("votes", result["candidates"])
             best = next((c for c in votes if c["engine"] == "NDLkotenOCR"), None)
             results.append({encoded(best["text"]): best["score"]}
-                           if best and best.get("text") and len(best["text"]) == 1 else {})
+                           if best and best.get("text") and single_character(best["text"]) else {})
         return results
 
     def assess_unit(self, unit, crop: Image.Image, expected: str | None = None) -> dict:
@@ -240,7 +240,7 @@ def split_unit(store, unit, assessment, *, base_revision, source_event_id=None, 
     from ..unit_scope import character_count
 
     entries = [{"box": b.model_dump(), "unicode": encoded(char), "reading": char,
-                "text_source": char, "script": str(refs.script_of(char)),
+                "text_source": char, "script": script_of_identity(char),
                 "kind": "char" if character_count(char) == 1 else "sequence",
                 "granularity": "char" if character_count(char) == 1 else "sequence"} for b, char in zip(boxes, assessment["text"], strict=True)]
     evidence = {"kind": "feedback-split", "policy": POLICY, "source_event_id": source_event_id,
@@ -311,12 +311,17 @@ def refine_feedback(store: Store, payload: dict, *, apply=False, engine=None, ma
             evidence["reason"] = "unselected quick-review crops were never explicitly confirmed"
         elif f.decision == "accepted-identity":
             proposed = f.proposed_text or f.effective_text
+            # A reviewer may type the identity as code points; U+30C4 U+309A is ツ゚.
+            proposed = identity_text(proposed) if proposed else proposed
             # One character, counted as the character layer counts it: a base and
             # its mark is one identity, however many code points it is written with.
             if not proposed or not single_character(proposed) or written_identity(unit) not in (f.original_identity, proposed):
                 item["status"] = "stale"
                 continue
-            values.update(unicode=encoded(proposed), script=str(refs.script_of(proposed)), review="reviewed")
+            values.update(unicode=encoded(proposed), review="reviewed")
+            script = script_of_identity(proposed)
+            if script != "unknown":
+                values["script"] = script
             evidence["character"] = proposed
             item["status"] = "resolved"
         elif f.decision == "accepted-match":
@@ -440,7 +445,7 @@ def repair_adjacent_labels(store: Store, *, limit=128, apply=False, engine=None)
                     item["status"] = "stale"
                     continue
                 values = {"unicode": encoded(prediction), "reading": prediction,
-                          "script": str(refs.script_of(prediction)), "review": "machine",
+                          "script": script_of_identity(prediction), "review": "machine",
                           "meta": {**unit.meta, "feedback_identity": evidence}}
                 _changes(store, unit, values, evidence, base_revision=revision)
                 item["status"] = "identity-repaired"

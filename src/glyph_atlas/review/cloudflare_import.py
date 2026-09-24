@@ -8,7 +8,8 @@ from copy import deepcopy
 
 from .. import refs
 from ..schema import Review
-from .atlas import identity_text, label, single_character
+from ..unit_scope import character_count
+from .atlas import identity_text, label, script_of_identity, single_character
 from .characters import _source_digest, reading_is_allowed, written_identity
 from .receipts import fingerprint
 from .store import _change
@@ -226,13 +227,15 @@ def ingest_cloudflare(store, payload: dict, *, apply=False) -> tuple[dict, dict]
                     # the explicit sequence available to the split assessor even
                     # though the identity has higher proposal precedence.
                     selected = answer.get("correction")
-                    if evidence.get("issue") == "merged" and isinstance(selected, str) and len(selected.strip()) >= 2:
+                    if evidence.get("issue") == "merged" and isinstance(selected, str) and character_count(selected) >= 2:
                         evidence["suggestions"] = [{"text": selected.strip(), "selected": True}]
                     encoded = _json(evidence)
                     values = {}
                     if before["label"] != actual["label"]:
-                        values.update(unicode=" ".join(refs.to_code_points(before["label"])),
-                                      script=str(refs.script_of(before["label"])))
+                        values["unicode"] = " ".join(refs.to_code_points(before["label"]))
+                        script = script_of_identity(before["label"])
+                        if script != "unknown":
+                            values["script"] = script
                     if before["reading"] != actual["reading"]:
                         values["reading"] = before["reading"]
                     for field, value in values.items():
