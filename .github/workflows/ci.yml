@@ -14,3 +14,14 @@ jobs:
       - run: uv sync --group dev --extra data
       - run: uv run ruff check src tests scripts models
       - run: uv run pytest -q
+  migrations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+        working-directory: apps/cloudflare
+      # Wrangler splits a migration into statements itself, so a schema SQLite accepts can still fail
+      # here; applying every migration to a fresh local database is what a new deployment does.
+      - run: bunx wrangler d1 migrations apply glyph-atlas --local
+        working-directory: apps/cloudflare
