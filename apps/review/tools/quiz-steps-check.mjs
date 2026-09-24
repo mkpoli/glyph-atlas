@@ -90,21 +90,8 @@ try {
     assert(posted.length === 0, 'navigation wrote reviews')
     assert(!/match/.test(await browser.evaluate('document.querySelector(".round-selection").innerText')), 'inferred matches in footer')
   })
-  await check('load more appends same-character crops without duplicates or losing selection', async () => {
-    const before = await browser.evaluate('[...document.querySelectorAll(".quiz-tile")].map(t => t.dataset.unit)')
-    await click('.quiz-choice:not(:disabled)')
-    await click('.load-more')
-    await browser.waitFor(`document.querySelectorAll(".quiz-tile").length > ${before.length}`)
-    await browser.waitFor('!document.querySelector(".review-selected").disabled')
-    const after = await browser.evaluate('[...document.querySelectorAll(".quiz-tile")].map(t => t.dataset.unit)')
-    assert(await browser.evaluate('document.querySelector(".target-character").innerText') === startReading, 'Load more changed character')
-    assert(new Set(after).size === after.length, 'Load more repeated crops')
-    assert(JSON.stringify(after.slice(0, before.length)) === JSON.stringify(before), 'Load more replaced old crops')
-    assert(await browser.evaluate('document.querySelectorAll(".quiz-tile.selected").length') === 1, 'Load more lost selection')
-    await click('.quiz-tile.selected .quiz-choice')
-  })
-  await check('scrolling to the end loads more crops without a click', async () => {
-    // Settle first: at the top, automatic loading stops once the load-more row is well off screen.
+  await check('scrolling to the end appends same-character crops without duplicates, a click, or losing selection', async () => {
+    // Settle at the top first: automatic loading stops once the load-more row is well off screen.
     await browser.evaluate('window.scrollTo(0, 0)')
     const settled = 'document.querySelector(".load-more") && !document.querySelector(".load-more").innerText.startsWith("Loading")'
     let count = -1
@@ -117,13 +104,20 @@ try {
     }
     const label = await browser.evaluate('document.querySelector(".load-more").innerText')
     assert(!/All .* loaded|Save this round/.test(label), 'the round was fully loaded before scrolling; the check needs a larger character')
+    const before = await browser.evaluate('[...document.querySelectorAll(".quiz-tile")].map(t => t.dataset.unit)')
+    await click('.quiz-choice:not(:disabled)')
     await browser.evaluate('window.__loadMoreClicked = false; document.querySelector(".load-more").addEventListener("click", () => window.__loadMoreClicked = true)')
     await browser.evaluate('window.scrollTo(0, document.body.scrollHeight)')
-    await browser.waitFor(`document.querySelectorAll(".quiz-tile").length > ${count}`)
+    await browser.waitFor(`document.querySelectorAll(".quiz-tile").length > ${before.length}`)
+    await browser.waitFor(settled)
+    const after = await browser.evaluate('[...document.querySelectorAll(".quiz-tile")].map(t => t.dataset.unit)')
     assert(!(await browser.evaluate('window.__loadMoreClicked')), 'the button was clicked')
-    const ids = await browser.evaluate('[...document.querySelectorAll(".quiz-tile")].map(t => t.dataset.unit)')
-    assert(new Set(ids).size === ids.length, 'scrolling repeated crops')
+    assert(await browser.evaluate('document.querySelector(".target-character").innerText') === startReading, 'loading more changed character')
+    assert(new Set(after).size === after.length, 'loading more repeated crops')
+    assert(JSON.stringify(after.slice(0, before.length)) === JSON.stringify(before), 'loading more replaced old crops')
+    assert(await browser.evaluate('document.querySelectorAll(".quiz-tile.selected").length') === 1, 'loading more lost the selection')
     assert(posted.length === 0, 'loading more wrote reviews')
+    await click('.quiz-tile.selected .quiz-choice')
     await browser.evaluate('window.scrollTo(0, 0)')
   })
   await check('branching from an earlier character preserves forward drafts', async () => {
