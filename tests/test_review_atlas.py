@@ -1561,3 +1561,28 @@ def test_the_audit_does_not_read_a_seen_crop_as_reviewed(dataset):
     assert client.post('/atlas/rounds', json=seen_round(client, shown)).status_code == 200
     apply(dataset)
     assert not set(audit._reviewed_units(dataset)) & {item['id'] for item in shown}
+
+
+def test_a_seen_crop_may_name_the_image_the_round_showed(dataset):
+    """The quiz sends the crop image it dealt; the local check compares the crop digest, so it is accepted."""
+    client = TestClient(create_app(dataset))
+    shown = client.get('/atlas?reading=あ&state=pending&limit=1').json()['items']
+    payload = seen_round(client, shown)
+    payload['seen'][0]['image'] = shown[0]['image']
+    assert client.post('/atlas/rounds', json=payload).status_code == 200
+    assert client.get('/atlas').json()['counts']['seen'] == 1
+
+
+def test_a_crop_re_cut_after_the_round_was_dealt_is_not_seen(dataset):
+    """A crop drawn from its page keeps the page's hash when it is re-cut; its image does not."""
+    client = TestClient(create_app(dataset))
+    shown = client.get('/atlas?reading=あ&state=pending&limit=1').json()['items']
+    store = Store(dataset)
+    unit = store.unit(shown[0]['id'])
+    moved = unit.box.model_copy(update={"y": unit.box.y + 3}).model_dump()
+    store.record(ReviewRequest(target_id=unit.id, field="box", new=moved, base_revision=store.revision(unit.id),
+                               client_id="fixture", idempotency_key="re-cut"))
+    payload = seen_round(client, shown)
+    payload['seen'][0]['image'] = shown[0]['image']
+    assert client.post('/atlas/rounds', json=payload).status_code == 200
+    assert not [e for e in Store(dataset).events() if e.field == "seen"], "the new cut was never shown"

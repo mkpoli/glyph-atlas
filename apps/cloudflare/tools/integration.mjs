@@ -100,7 +100,7 @@ try {
   // Seen crops: a round may record the crops it showed and left unflagged, and they leave the queue.
   for (const id of ['seen-a', 'seen-b', 'seen-c']) {
     const d = { id, label: 'セ', reading: 'セ', state: 'pending', revision: 0, image_sha256: hash,
-      production: 'manuscript', box: { x: 1, y: 2, w: 3, h: 4 }, repair: { quiz: true } }
+      image: `/atlas/media/${id}.webp`, production: 'manuscript', box: { x: 1, y: 2, w: 3, h: 4 }, repair: { quiz: true } }
     await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
       id, 'local', 'セ', 'セ', 'U+30BB', null, 'manuscript', 'kana', 'pending', 0, 1, 1, 1,
       JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}').run()
@@ -128,6 +128,13 @@ try {
   await call(`/atlas/rounds/${passed.id}/undo`, { client_id: 'integration' })
   assert.deepEqual(await pendingSe(), ['seen-b'], 'undoing a pass returns its crops to the queue')
   await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'integration', label: 'セ', answers: [], seen: [] }, 422)
+  // A crop re-cut after the round was dealt shows another image; the reader never saw that one.
+  const recut = await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'integration', label: 'セ',
+    seen: [{ id: 'seen-b', image_sha256: hash, image: '/atlas/media/an-older-cut.webp' }] })
+  assert.equal(recut.results.filter(r => r.field === 'seen').length, 0, 'a crop re-cut since the round was dealt is not seen')
+  const dealt = await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'integration', label: 'セ',
+    seen: [{ id: 'seen-b', image_sha256: hash, image: '/atlas/media/seen-b.webp' }] })
+  assert.equal(dealt.results.filter(r => r.field === 'seen').length, 1, 'the crop the round showed is seen')
   console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops.')
 } finally {
   await mf.dispose()
