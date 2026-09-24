@@ -9,22 +9,30 @@ directories, this script:
 - relabels the script `kanji` as `han`;
 - sets `schema_version` to 2 in the dataset's `MANIFEST.json`.
 
-A table that needs none of this is left untouched, so the script can run again.
+It does the same for every review store (`review.sqlite`) under the directories: the units the store
+holds, the units it imported, and the units and script values its events carry, because a store
+rebuilds units from its events when it replays them. What an event recorded as evidence, and the
+answer it returned, are history and stay as they were written.
+
+A table or store that needs none of this is left untouched, so the script can run again.
 
     uv run python scripts/migrate_schema_v2.py work            # report what would change
     uv run python scripts/migrate_schema_v2.py work --apply    # rewrite
 
-A review store beside a migrated table reloads the table the next time it opens and replays its
-events. A store holding events that are not yet in `reviews.jsonl` refuses to open instead, so run
-`atlas review apply` on it before migrating.
+Stop every process that opens a review store first. A store holding events that are not yet in
+`reviews.jsonl` refuses to open after its tables change, so run `atlas review apply` on it before
+migrating.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import sys
+from contextlib import closing
 from pathlib import Path
+from typing import Any
 
 import pyarrow.parquet as pq
 
@@ -73,6 +81,88 @@ def migrate_table(path: Path) -> int:
         return tables._write_unlocked(path, units, Unit, shard=path.is_dir(), command="scripts/migrate_schema_v2.py")
 
 
+def migrate_unit_data(data: dict[str, Any]) -> dict[str, Any]:
+    """One stored unit, as JSON, in version 2: the same rule `migrate_row` applies to a table row."""
+    data = dict(data)
+    jibo = data.pop("jibo", None)
+    if data.get("script") == OLD_SCRIPT:
+        data["script"] = "han"
+    if jibo and jibo != refs.jibo_of_unit(data.get("unicode")):
+        upstream = dict(data.get("upstream") or {})
+        upstream.setdefault("jibo", jibo)
+        data["upstream"] = upstream
+    return data
+
+
+def _is_unit(value: Any) -> bool:
+    return isinstance(value, dict) and "id" in value and ("jibo" in value or value.get("script") == OLD_SCRIPT)
+
+
+def migrate_event_value(field: str, value: Any) -> Any:
+    """An event's `old` or `new` in version 2: its units migrated, and `kanji` as a script value renamed."""
+    if field == "script" and value == OLD_SCRIPT:
+        return "han"
+    if _is_unit(value):
+        return migrate_unit_data(value)
+    if isinstance(value, dict):
+        return {key: migrate_event_value("", item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [migrate_event_value("", item) for item in value]
+    return value
+
+
+def _json_rewrite(text: str | None, rewrite) -> str | None:
+    """`text` with `rewrite` applied to its decoded value, or None when nothing changes."""
+    if text is None:
+        return None
+    try:
+        value = json.loads(text)
+    except ValueError:
+        return None
+    changed = rewrite(value)
+    return None if changed == value else json.dumps(changed, ensure_ascii=False)
+
+
+def review_stores(root: Path) -> list[Path]:
+    return sorted(path for path in root.rglob("review.sqlite") if path.is_file())
+
+
+def migrate_store(path: Path, *, apply: bool) -> dict[str, int]:
+    """Rewrite the v1 units a review store holds; return how many rows of each kind change."""
+    counts = {"units": 0, "imported": 0, "events": 0}
+    uri = f"file:{path}" + ("" if apply else "?mode=ro")
+    with closing(sqlite3.connect(uri, uri=True)) as conn:
+        tables_present = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        updates: list[tuple[str, tuple]] = []
+        if "units" in tables_present:
+            for unit_id, data in conn.execute("SELECT id, data FROM units"):
+                new = _json_rewrite(data, lambda value: migrate_unit_data(value) if _is_unit(value) else value)
+                if new is not None:
+                    counts["units"] += 1
+                    updates.append(("UPDATE units SET data = ? WHERE id = ?", (new, unit_id)))
+        if "imported_records" in tables_present:
+            rows = conn.execute("SELECT id, data FROM imported_records WHERE table_name = 'units'")
+            for record_id, data in rows:
+                new = _json_rewrite(data, lambda value: migrate_unit_data(value) if _is_unit(value) else value)
+                if new is not None:
+                    counts["imported"] += 1
+                    updates.append(("UPDATE imported_records SET data = ? WHERE table_name = 'units' AND id = ?",
+                                    (new, record_id)))
+        if "events" in tables_present:
+            for seq, field, old, new in conn.execute("SELECT seq, field, old, new FROM events"):
+                old_after = _json_rewrite(old, lambda value, field=field: migrate_event_value(field, value))
+                new_after = _json_rewrite(new, lambda value, field=field: migrate_event_value(field, value))
+                if old_after is not None or new_after is not None:
+                    counts["events"] += 1
+                    updates.append(("UPDATE events SET old = COALESCE(?, old), new = COALESCE(?, new) WHERE seq = ?",
+                                    (old_after, new_after, seq)))
+        if apply and updates:
+            with conn:
+                for statement, parameters in updates:
+                    conn.execute(statement, parameters)
+    return counts
+
+
 def migrate_manifest(dataset: Path) -> bool:
     """Set the dataset manifest's schema version; return whether it changed."""
     target = dataset / tables.MANIFEST_NAME
@@ -101,6 +191,17 @@ def main(argv: list[str] | None = None) -> int:
             print(f"would migrate {path}")
     if not pending:
         print("every units table is already version 2")
+    stores = 0
+    for root in arguments.roots:
+        for store in review_stores(root):
+            counts = migrate_store(store, apply=arguments.apply)
+            if any(counts.values()):
+                stores += 1
+                verb = "migrated" if arguments.apply else "would migrate"
+                print(f"{verb} {store} ({counts['units']} units, {counts['imported']} imported, "
+                      f"{counts['events']} events)")
+    if not stores:
+        print("every review store is already version 2")
     return 0
 
 
