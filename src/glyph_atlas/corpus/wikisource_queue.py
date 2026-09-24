@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import shutil
 import sqlite3
 import time
@@ -17,7 +16,13 @@ from pathlib import Path
 from urllib.parse import quote
 
 from .. import tables
-from ..importers.honkoku_queue import DISCOVERY_EPOCH_SECONDS, MIN_FREE_BYTES, OutOfSpace, write_json
+from ..importers.honkoku_queue import (
+    DISCOVERY_EPOCH_SECONDS,
+    MIN_FREE_BYTES,
+    OutOfSpace,
+    publish_directory,
+    write_json,
+)
 from ..schema import Document, Page, PageText
 from .wikisource import DEFAULT_HOST, Wikisource, WikisourcePage, document_of, page_of, page_text_of
 
@@ -226,15 +231,7 @@ class Collector:
             # A rename succeeded before the queue commit; complete the same book safely.
             shutil.rmtree(staging)
         else:
-            for path in staging.glob("*.parquet"):
-                with path.open("rb") as handle:
-                    os.fsync(handle.fileno())
-            os.replace(staging, destination)
-            descriptor = os.open(destination.parent, os.O_DIRECTORY)
-            try:
-                os.fsync(descriptor)
-            finally:
-                os.close(descriptor)
+            publish_directory(staging, destination)
         with closing(self.connect()) as db, db:
             db.execute("UPDATE works SET state='done',dataset=?,pages=?,text_pages=?,finished_at=?,error=NULL WHERE id=?",
                        (f"books/{key}", len(pages), sum(bool(p.wikitext.strip()) for p in pages), time.time(), key))
