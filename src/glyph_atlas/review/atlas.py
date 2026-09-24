@@ -24,7 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .. import images, refs
 from .. import production as production_metadata
 from ..production import production_info
-from ..schema import Box, ReviewState, Unit
+from ..schema import Box, ReviewState, Script, Unit
 from . import status
 from .request_cache import file_stamp, memoize
 from .store import BadRequest, ReviewRequest, Store
@@ -227,6 +227,25 @@ def stored_identity(unit: Unit) -> str | None:
         return " ".join(point.upper() for point in unit.unicode.split())
     written = written_identity(unit)
     return " ".join(refs.to_code_points(written)) if written else None
+
+
+def reading_of(identity: str) -> str | None:
+    """What a corrected written identity reads as, when the character layer says so in one way.
+
+    A kana with one stated reading reads that (リ reads り), a ligature reads what its components read
+    (𪜈 reads とも), and a kanji, which the layer gives no kana reading, reads as itself. A character
+    with several stated readings (𛄝: ん, む, も) leaves the choice to a person, so none is derived.
+    """
+    character = refs.character(" ".join(refs.to_code_points(identity))) if identity else None
+    if character is None:
+        return None
+    if character.ligature and character.ligature.reading:
+        return refs.to_hiragana(character.ligature.reading)
+    if len(character.readings) == 1:
+        return character.readings[0]
+    if not character.readings and character.script == Script.HAN:
+        return character.char
+    return None
 
 
 def script_of_identity(text: str) -> str:
@@ -834,16 +853,22 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             resolved = bool(answer.issue == "reading" and correction and single_character(correction))
             if resolved and correction == shown(unit):
                 raise BadRequest("Choose a different reading or mark the character as matching.")
-            # The written identity is a different layer from the reading, so it is a separate event:
-            # correcting what the crop is must not touch what it reads.
+            # The written identity is a different layer from the reading, so it is a separate event. A
+            # corrected character carries its reading along: い corrected to り reads り, and what the
+            # transcriber typed stays in `text_source`.
             written = bool(identity and identity != stored_identity(unit))
+            # `correction` stays what the reviewer sent, which a retry is compared against.
+            reading = correction if resolved else None
+            if written and not resolved:
+                derived = reading_of(identity_text(identity))
+                reading = derived if derived and derived != label(unit) else None
             base = answer.revision
             evidence = json.dumps({"kind": "visual-quiz", "round": str(round.id),
                                    "label": round.label, "verdict": answer.verdict, "issue": answer.issue,
                                    "suggested_reading": correction,
                                    "suggested_character": identity,
                                    "snapshot": snapshot(unit, revision),
-                                   "correction": {"reading": correction if resolved else label(unit),
+                                   "correction": {"reading": reading or label(unit),
                                                   "unicode": identity if written else stored_identity(unit),
                                                   "box": unit.box.model_dump() if unit.box else None}},
                                   ensure_ascii=False)
@@ -854,9 +879,9 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                     idempotency_key=prefix + answer.id + ":character", evidence=evidence,
                 ))
                 base += 1
-            if resolved:
+            if reading:
                 requests.append(ReviewRequest(
-                    target_type="unit", target_id=answer.id, field="reading", new=correction,
+                    target_type="unit", target_id=answer.id, field="reading", new=reading,
                     base_revision=base, client_id=round.client_id,
                     idempotency_key=prefix + answer.id + ":reading", evidence=evidence,
                 ))

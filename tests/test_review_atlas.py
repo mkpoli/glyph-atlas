@@ -1421,3 +1421,19 @@ def test_context_suggestions_are_independent_fresh_and_revision_bound(dataset, m
     updated = client.get(route, params=params).json()
     assert "あえ" in [c['text'] for c in updated['candidates']]
     assert "あい" not in [c['text'] for c in updated['candidates']]
+
+
+def test_a_round_that_corrects_the_character_carries_its_reading(searched: Path):
+    """A crop read ね corrected to り reads り, and a retry of the same round is still one save."""
+    client = TestClient(create_app(searched))
+    unit = client.get("/atlas/characters/" + f"{LINE}:k0").json()
+    payload = {"id": str(uuid4()), "client_id": "reviewer", "label": "ね",
+               "answers": [{"id": unit["id"], "revision": unit["revision"], "image_sha256": unit["image_sha256"],
+                            "verdict": "wrong", "issue": "character", "character": "り"}]}
+    answer = client.post("/atlas/rounds", json=payload)
+    assert answer.status_code == 200, answer.text
+    assert {row["field"] for row in answer.json()["results"]} == {"unicode", "reading", "review"}
+    after = client.get("/atlas/characters/" + unit["id"]).json()
+    assert after["label"] == "り" and after["reading"] == "り"
+    retry = client.post("/atlas/rounds", json=payload)
+    assert retry.status_code == 200 and all(r["duplicate"] for r in retry.json()["results"])
