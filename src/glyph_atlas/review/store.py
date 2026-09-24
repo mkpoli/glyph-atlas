@@ -143,6 +143,12 @@ CREATE TABLE IF NOT EXISTS units (
 );
 CREATE INDEX IF NOT EXISTS units_line ON units (line_id);
 CREATE INDEX IF NOT EXISTS units_page ON units (page_id);
+CREATE TABLE IF NOT EXISTS imported_records (
+    table_name TEXT NOT NULL,
+    id TEXT NOT NULL,
+    data TEXT NOT NULL,
+    PRIMARY KEY (table_name, id)
+);
 """
 
 
@@ -338,6 +344,8 @@ class Store:
         self._documents: list[Document] | None = None
         self._page_texts: dict[str, str] | None = None
         self._page_texts_stamp: tuple = ()
+        self._imports_stamp: tuple = ()
+        self._imports_generation: str | None = None
         with self._lock, self._connection() as conn:
             self._schema(conn)
             stamp = self._source_stamp()
@@ -366,17 +374,19 @@ class Store:
 
     def pages(self) -> dict[str, Page]:
         """Every page by id, read from the tables once."""
-        if self._pages is None:
-            path = self.dataset.tables["pages"]
-            self._pages = {page.id: page for page in tables.read(path, Page)} if path else {}
-        return self._pages
+        with self._lock:
+            self._refresh_imports()
+            if self._pages is None:
+                self._pages = {page.id: page for page in self._table_records("pages")}
+            return self._pages
 
     def documents(self) -> list[Document]:
         """Every document, in table order."""
-        if self._documents is None:
-            path = self.dataset.tables["documents"]
-            self._documents = list(tables.read(path, Document)) if path else []
-        return self._documents
+        with self._lock:
+            self._refresh_imports()
+            if self._documents is None:
+                self._documents = self._table_records("documents")
+            return self._documents
 
     def document(self, document_id: str) -> Document | None:
         return next((document for document in self.documents() if document.id == document_id), None)
@@ -474,6 +484,11 @@ class Store:
             for line in records
         ]
 
+    def review_epoch(self) -> str | None:
+        """Invalidate browser undo state after a deliberate history reset."""
+        with self._connection() as conn:
+            return self._meta(conn, "reset_at")
+
     def events(self) -> list[Review]:
         """The event log, oldest first."""
         with self._lock, self._connection() as conn:
@@ -493,11 +508,12 @@ class Store:
     def unit_snapshot(self, unit_id: str | None = None) -> list[tuple[Unit, int]]:
         """Read each unit and its revision from the same database snapshot."""
         with self._lock, self._connection() as conn:
-            rows = conn.execute(
-                "SELECT units.data, coalesce(revisions.revision, 0) AS revision FROM units "
-                "LEFT JOIN revisions ON revisions.target_id = units.id "
-                "WHERE (? IS NULL OR units.id = ?) ORDER BY units.id", (unit_id, unit_id),
-            )
+            query = ("SELECT units.data, coalesce(revisions.revision, 0) AS revision FROM units "
+                     "LEFT JOIN revisions ON revisions.target_id = units.id ")
+            # Keep the single-item lookup indexable; the nullable OR made SQLite
+            # scan every unit for each crop and character-detail request.
+            rows = conn.execute(query + ("WHERE units.id = ?" if unit_id is not None else "ORDER BY units.id"),
+                                (unit_id,) if unit_id is not None else ())
             return [(Unit.model_validate_json(row["data"]), row["revision"]) for row in rows]
 
     def counts(self) -> dict[str, dict[str, int]]:
@@ -570,6 +586,89 @@ class Store:
         return items
 
     # -- writing ---------------------------------------------------------------------------------
+
+    def import_generation(self) -> int:
+        """Revision of appended source inputs, shared across live Store instances."""
+        with self._connection() as conn:
+            return int(self._meta(conn, "imports_generation") or "0")
+
+    def import_dataset(self, directory: Path) -> dict[str, int]:
+        """Append immutable extraction inputs without replacing any reviewed state.
+
+        Repeating an identical import is harmless, including after its units have been reviewed.
+        Any conflicting input or missing parent rejects the whole import. Original imported rows
+        are retained separately so replay can reconstruct them before applying review events.
+        """
+        dataset = tables.Dataset(directory)
+        names = ("documents", "pages", "lines", "units")
+        incoming = {name: list(tables.read(dataset.tables[name], tables.TABLES[name]))
+                    if dataset.tables[name] else [] for name in names}
+        wanted = {name: {row.id for row in incoming[name]} for name in names}
+        wanted["documents"].update(page.document_id for page in incoming["pages"])
+        wanted["pages"].update(line.page_id for line in incoming["lines"])
+        wanted["pages"].update(unit.page_id for unit in incoming["units"] if unit.page_id)
+        wanted["lines"].update(unit.line_id for unit in incoming["units"] if unit.line_id)
+        with self._lock, self._connection() as conn, self._transaction(conn):
+            # Only incoming IDs and their parents are needed. Loading every prior import
+            # here makes the cost of each page grow with the entire archive.
+            baseline = {}
+            for name in names:
+                baseline[name] = {
+                    row.id: row for batch in self.dataset.scan(name, keep=tables.In("id", wanted[name]))
+                    for row in batch
+                } if wanted[name] and self.dataset.tables[name] else {}
+                ids = list(wanted[name])
+                for start in range(0, len(ids), 500):
+                    batch = ids[start:start + 500]
+                    marks = ",".join("?" for _ in batch)
+                    for saved in conn.execute(
+                        f"SELECT id, data FROM imported_records WHERE table_name = ? AND id IN ({marks})",
+                        [name, *batch],
+                    ):
+                        baseline[name][saved["id"]] = tables.TABLES[name].model_validate_json(saved["data"])
+            additions = {name: {} for name in names}
+            for name in names:
+                for row in incoming[name]:
+                    existing = baseline[name].get(row.id)
+                    if existing is not None and existing != row:
+                        raise BadRequest(f"Conflicting imported {name} record: {row.id}")
+                    if existing is None:
+                        if name in ("lines", "units") and conn.execute(
+                            f"SELECT 1 FROM {name} WHERE id = ?", (row.id,),
+                        ).fetchone():
+                            raise BadRequest(f"Imported ID already belongs to a review: {row.id}")
+                        baseline[name][row.id] = row
+                        additions[name][row.id] = row
+            for page in incoming["pages"]:
+                if page.document_id not in baseline["documents"]:
+                    raise BadRequest(f"Missing imported page document: {page.id}")
+            for line in incoming["lines"]:
+                if line.page_id not in baseline["pages"]:
+                    raise BadRequest(f"Missing imported line page: {line.id}")
+            for unit in incoming["units"]:
+                page = baseline["pages"].get(unit.page_id)
+                line = baseline["lines"].get(unit.line_id)
+                if (page is None or line is None or line.page_id != unit.page_id
+                        or unit.document_id not in (None, page.document_id)):
+                    raise BadRequest(f"Inconsistent imported unit parents: {unit.id}")
+            for name in names:
+                for row in additions[name].values():
+                    conn.execute("INSERT INTO imported_records VALUES (?, ?, ?)",
+                                 (name, row.id, row.model_dump_json()))
+            for line in additions["lines"].values():
+                conn.execute("INSERT INTO lines VALUES (?, ?, ?, ?, ?)",
+                             (line.id, baseline["pages"][line.page_id].document_id,
+                              line.page_id, line.seq, _dump(line)))
+            for unit in additions["units"].values():
+                conn.execute("INSERT INTO units VALUES (?, ?, ?, ?, ?, ?, ?)",
+                             (unit.id, baseline["pages"][unit.page_id].document_id,
+                              unit.page_id, unit.line_id, unit.seq, int(unit.active), _dump(unit)))
+            counts = {name: len(rows) for name, rows in additions.items()}
+            if any(counts.values()):
+                self._set_meta(conn, "imports_generation",
+                               str(int(self._meta(conn, "imports_generation") or "0") + 1))
+        self._refresh_imports()
+        return counts
 
     def record(self, request: ReviewRequest) -> dict[str, Any]:
         """Record one review and return the result a client sees."""
@@ -738,19 +837,23 @@ class Store:
             units = self._all_units(conn)
             events = self._events(conn)
         counts: dict[str, int] = {}
-        for name, records, model in (("lines", lines, Line), ("units", units, Unit)):
+        for name, records, model in (("documents", self.documents(), Document),
+                                     ("pages", list(self.pages().values()), Page),
+                                     ("lines", lines, Line), ("units", units, Unit)):
             path = self.dataset.tables[name]
             if path is None and not records:
                 counts[name] = 0
                 continue
             target = path if path is not None else self.directory / f"{name}.parquet"
-            counts[name] = tables.write(
+            written = tables.write(
                 target,
                 records,
                 model,
                 shard=target.is_dir(),
                 command=f"atlas review apply {self.directory}",
             )
+            if name in ("lines", "units"):
+                counts[name] = written
         log = self.directory / LOG_NAME
         with log.open("w", encoding="utf-8") as handle:
             for event in events:
@@ -829,9 +932,31 @@ class Store:
 
     def _table_records(self, name: str) -> list[Any]:
         path = self.dataset.tables[name]
-        if path is None:
-            return []
-        return list(tables.read(path, tables.TABLES[name]))
+        records = list(tables.read(path, tables.TABLES[name])) if path else []
+        known = {row.id for row in records}
+        with self._connection() as conn:
+            records.extend(tables.TABLES[name].model_validate_json(row["data"])
+                           for row in conn.execute(
+                               "SELECT id, data FROM imported_records WHERE table_name = ? ORDER BY id",
+                               (name,),
+                           ) if row["id"] not in known)
+        return records
+
+    def _refresh_imports(self) -> None:
+        """Notice a background publisher without requiring a server restart."""
+        with self._lock:
+            files = (self.path, Path(str(self.path) + "-wal"))
+            stamp = tuple((path.stat().st_mtime_ns, path.stat().st_size) if path.exists() else None
+                          for path in files)
+            if stamp == self._imports_stamp:
+                return
+            with self._connection() as conn:
+                generation = self._meta(conn, "imports_generation")
+            if generation != self._imports_generation:
+                self._pages = None
+                self._documents = None
+                self._imports_generation = generation
+            self._imports_stamp = stamp
 
     def _source_stamp(self) -> str:
         """A fingerprint of the tables the store copies: their file names, sizes and mtimes."""

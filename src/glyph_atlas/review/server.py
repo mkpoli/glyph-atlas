@@ -28,6 +28,7 @@ The collection endpoints answer `{"total", "limit", "offset", "items"}`. A confl
 
 from __future__ import annotations
 
+import logging
 import re
 import shutil
 from functools import cache
@@ -42,6 +43,7 @@ from fastapi.staticfiles import StaticFiles
 from .. import __version__, ainu_native, ainu_source, images, refs
 from ..schema import Unit
 from . import corrections, status
+from .request_cache import lookup_scope, memoize
 from .store import (
     BadRequest,
     Conflict,
@@ -158,7 +160,8 @@ def _source_summary(source: Path) -> dict[str, Any] | None:
     }
 
 
-def create_app(directory: Path, *, source: Path | str | None = None) -> FastAPI:
+def create_app(directory: Path, *, source: Path | str | None = None,
+               corpus: Any | None = None, corpus_index: Path | str | None = None) -> FastAPI:
     """Build the review service over one dataset directory.
 
     `source` is a checkout of the publishing project, configured once for the service rather than sent
@@ -177,6 +180,13 @@ def create_app(directory: Path, *, source: Path | str | None = None) -> FastAPI:
     app.state.store = store
     app.state.directory = store.directory
     app.state.source = source_root
+
+    @app.middleware("http")
+    async def image_lookup_scope(request: Request, call_next):
+        # Sync endpoints inherit this context in their worker thread. Each request checks files
+        # anew, while thousands of characters sharing a page reuse that request's lookup.
+        with lookup_scope():
+            return await call_next(request)
 
     @app.exception_handler(NotFound)
     async def not_found(request: Request, exc: NotFound) -> JSONResponse:
@@ -500,7 +510,8 @@ def create_app(directory: Path, *, source: Path | str | None = None) -> FastAPI:
         path = cached_image(sha256)
         if path is None:
             raise HTTPException(status_code=404, detail=f"{sha256} is not in the image cache")
-        return FileResponse(path)
+        return FileResponse(path, headers={"Cache-Control": "public, max-age=31536000, immutable",
+                                           "ETag": f'"{sha256}"'})
 
     @app.get("/pages/{page_id}/lines")
     def page_lines(
@@ -602,9 +613,46 @@ def create_app(directory: Path, *, source: Path | str | None = None) -> FastAPI:
         """Record a unit drawn on a line. The id is `{line_id}:m{n}`."""
         return store.create_unit(request)
 
+    from . import corpus_source
     from .atlas import router as atlas_router
+    from .characters import router as characters_router
 
-    app.include_router(atlas_router(store))
+    # One corpus API for the process, built here and nowhere else. `corpus` may be passed in — an
+    # embedding application's own API, or a test double — and is otherwise built from the dataset's
+    # work directory, where the index sits beside the dataset. An index that is not there leaves the
+    # layer without corpus leads, which is a deployment state and not an error.
+    if corpus is None:
+        corpus = corpus_source.open_api(store.directory.parent,
+                                        corpus_index or store.directory.parent / "corpus-index")
+    corpus_source.connect(corpus)
+    corpus_reviews = None
+    if corpus is not None and hasattr(corpus, "directory") and hasattr(corpus, "crops"):
+        from .corpus_reviews import CorpusReviews
+        from .corpus_reviews import router as corpus_review_router
+
+        corpus_reviews = CorpusReviews(corpus)
+        corpus._atlas_reviews = corpus_reviews
+        app.include_router(corpus_review_router(corpus_reviews))
+    if corpus is not None:
+        try:
+            from ..corpus.fastapi_router import corpus_router
+
+            app.include_router(corpus_router(api=corpus))
+        except Exception:  # noqa: BLE001 — the corpus routes are the corpus worker's to mount
+            logging.getLogger(__name__).info("corpus package present without a router; layers only")
+
+    from .media import MediaCache
+    from .media import router as media_router
+    media = MediaCache(corpus_root=getattr(corpus, "root", None))
+    app.state.media = media
+    if corpus is not None:
+        corpus.media = media
+    app.include_router(media_router(media))
+    app.include_router(atlas_router(store, corpus_reviews=corpus_reviews, media=media))
+    # The character layer, mounted beside the collection: identity, grapheme, 字母, ligature and the
+    # ink that carries them, with the one write that keeps a character correction and a reading
+    # correction in separate events. See `review/characters.py`.
+    app.include_router(characters_router(store))
 
     # The built review interface (`apps/review`, `bun run build`), mounted last so that every API
     # path above keeps its own route; without a build the service is the API alone.
@@ -621,6 +669,7 @@ def serve(directory: Path, *, port: int = 8770, host: str = "127.0.0.1",
     uvicorn.run(create_app(Path(directory), source=source), host=host, port=port, log_level="info")
 
 
+@memoize
 def cached_image(sha256: str) -> Path | None:
     """The cached file of a checksum: `cache/images/<sha256[:2]>/<sha256>.*`, or None."""
     digest = sha256.strip().lower()
