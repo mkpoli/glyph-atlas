@@ -18,6 +18,9 @@ def reviewed_baselines(db, corpus):
     """Carry reviewed identities and outstanding issues into the published baseline."""
     from glyph_atlas.corpus.api import CorpusAPI
     from glyph_atlas.review.corpus_reviews import CorpusReviews
+    # Sealing reads the review journal and never creates one: with no journal there is nothing to carry.
+    if not Path("work/corpus-index/reviews.sqlite").is_file():
+        return {"applied": 0, "stale": 0}
     api = CorpusAPI("work", "work/corpus-index", autobuild=False)
     reviews = CorpusReviews(api)
     latest, baseline = reviews.latest(), reviews.baseline()
