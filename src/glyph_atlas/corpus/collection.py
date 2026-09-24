@@ -105,6 +105,13 @@ def archive_statistics(root: Path) -> dict:
     return result
 
 
+def listing_digest(records: list[dict]) -> str:
+    """What a collection's committed listing holds, so a changed set is published even at the same size."""
+    import hashlib
+
+    return hashlib.sha256(json.dumps(records, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
 @contextmanager
 def publication_lock(collection):
     with (collection / "publish.lock").open("w") as lock:
@@ -213,7 +220,8 @@ def publish(root: Path, *, source: str = "honkoku", rebuild_index: bool = True,
                 # Keep unrelated rare-character searches warm.
                 for char in changed_chars:
                     (index_dir / OCC_DIR / f"{codepoint(char)}.parquet").unlink(missing_ok=True)
-            report = {"source": source, "published": len(records), "tables": counts, "at": time.time()}
+            report = {"source": source, "published": len(records), "tables": counts, "at": time.time(),
+                      "listing_sha256": listing_digest(records)}
             (collection / "published.json.tmp").write_text(json.dumps(report)+"\n")
             os.replace(collection / "published.json.tmp", collection / "published.json")
             # The exact committed generation, not whatever the collector finishes next.
