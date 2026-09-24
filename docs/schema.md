@@ -104,7 +104,7 @@ One graphic unit: a character, a ligature, a mark, a gap.
 | `reading` | diplomatic reading, historical spelling kept |
 | `unicode` | code point sequence, `U+1B002` or `U+304B U+3099`; null when no code point fits |
 | `classification` | `unassessed`, `identified`, `ambiguous` (several candidates remain), `unencoded` (identified, no code point exists), `unidentified` |
-| `script` | `hiragana`, `hentaigana`, `katakana`, `han`, `kanji`, `symbol`, `latin`, `unknown`; the character layer is the authority, and `kanji` is what older records write for `han` |
+| `script` | `hiragana`, `hentaigana`, `katakana`, `han`, `symbol`, `latin`, `unknown`; the character layer is the authority |
 | `variants` | list of `{scheme, id, version}` with scheme `mj`, `ivs`, `glyphwiki` or `local`; several may apply |
 | `candidates` | scored alternatives `{unicode, p}` when `classification` is `ambiguous` |
 | `antecedent_ids` | for an iteration mark, the units it repeats, across a line break if needed |

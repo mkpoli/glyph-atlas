@@ -123,7 +123,7 @@ def _script_of_char(char: str) -> Script:
     if 0x30A1 <= code_point <= 0x30FA or code_point in KATAKANA:
         return Script.KATAKANA
     if 0x3005 <= code_point <= 0x3007 or _is_ideograph(code_point):
-        return Script.KANJI
+        return Script.HAN
     script = refs.script_of(char)
     return Script.SYMBOL if script is Script.UNKNOWN else script
 

@@ -32,6 +32,6 @@ def test_codh_rows_become_pages_and_units(tmp_path):
     assert [u.unicode for u in units] == ["U+304B", "U+3005", "U+6F22"]
     assert units[0].script is Script.HIRAGANA and refs.jibo_of_unit(units[0].unicode) is None
     assert units[1].kind is UnitKind.ITERATION_MARK
-    assert units[2].script is Script.KANJI and units[2].box.iiif_region() == "50,20,30,40"
+    assert units[2].script is Script.HAN and units[2].box.iiif_region() == "50,20,30,40"
     assert units[0].id == "codh:900000001:900000001_00003_1:B0001:C0001"
     assert all(u.document_id == document.id and u.active for u in units)

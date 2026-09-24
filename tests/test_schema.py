@@ -25,7 +25,7 @@ def test_a_character_is_the_middle_layer():
 
 
 def test_a_standalone_crop_needs_no_page():
-    unit = Unit(id="hi:34010096", crop="all/characters/U+755B/34010096.jpg", unicode="U+755B", script=Script.KANJI,
+    unit = Unit(id="hi:34010096", crop="all/characters/U+755B/34010096.jpg", unicode="U+755B", script=Script.HAN,
                 classification=Classification.IDENTIFIED)
     assert unit.page_id is None and unit.box is None
 

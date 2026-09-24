@@ -144,7 +144,7 @@ def test_a_char_block_takes_its_code_point_from_its_jibo(tmp_path, cache, archiv
 
     kanji = by_id["codh-omt:001:5"]
     assert kanji.classification is Classification.IDENTIFIED and kanji.unicode == "U+884C"
-    assert refs.jibo_of_unit(kanji.unicode) is None and kanji.script is Script.KANJI
+    assert refs.jibo_of_unit(kanji.unicode) is None and kanji.script is Script.HAN
 
 
 def test_a_renji_block_keeps_its_aligned_jibo_sequence(tmp_path, cache, archive):

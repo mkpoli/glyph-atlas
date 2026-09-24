@@ -138,7 +138,7 @@ def script_of(code_point: int) -> Script:
     if 0x30A1 <= code_point <= 0x30FA or code_point in KATAKANA:
         return Script.KATAKANA
     if _is_ideograph(code_point):
-        return Script.KANJI
+        return Script.HAN
     if 0x0020 <= code_point <= 0x024F:
         return Script.LATIN
     script = refs.script_of(chr(code_point))

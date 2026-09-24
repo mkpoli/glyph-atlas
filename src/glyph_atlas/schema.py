@@ -181,15 +181,13 @@ class Script(StrEnum):
     """The script of a character, as the character layer states it.
 
     `han` is Unicode's name for the script of the kanji and is what `data/vocab/characters.tsv`
-    holds; `kanji` is the label older records of this project write for the same script, and is kept
-    so that a record written before the character layer still reads.
+    holds.
     """
 
     HIRAGANA = "hiragana"
     HENTAIGANA = "hentaigana"
     KATAKANA = "katakana"
     HAN = "han"
-    KANJI = "kanji"
     SYMBOL = "symbol"
     LATIN = "latin"
     UNKNOWN = "unknown"

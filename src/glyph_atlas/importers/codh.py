@@ -60,7 +60,7 @@ def script_of(cp: int) -> Script:
     if 0x30A1 <= cp <= 0x30FA:
         return Script.KATAKANA
     if 0x4E00 <= cp <= 0x9FFF or 0x3400 <= cp <= 0x4DBF or 0x20000 <= cp <= 0x3134F or 0xF900 <= cp <= 0xFAFF:
-        return Script.KANJI
+        return Script.HAN
     if 0x0020 <= cp <= 0x024F:
         return Script.LATIN
     script = refs.script_of(chr(cp))

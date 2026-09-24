@@ -25,7 +25,7 @@ def unit(
     *,
     box: Box | None = None,
     review: ReviewState = ReviewState.MACHINE,
-    script: Script = Script.KANJI,
+    script: Script = Script.HAN,
     unicode: str | None = "U+4E00",
     document: str = "d1",
     page: str = "p1",
