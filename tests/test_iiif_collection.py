@@ -22,6 +22,8 @@ def test_collect_full_volume_without_fabricated_text(tmp_path, monkeypatch):
     assert pages[0].image == "https://example.org/image/1"
     assert not (out / "page_texts.parquet").exists()
     assert not (out / "units.parquet").exists()
+    import json
+    assert json.loads((out / "MANIFEST.json").read_text())["schema_version"] == tables.SCHEMA_VERSION
     manifest["metadata"] = []
     subject.collect(source, out)
     assert next(iter(tables.read(out / "documents.parquet", Document))).image_rights.licence == Licence.UNKNOWN
