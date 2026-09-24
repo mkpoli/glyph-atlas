@@ -25,15 +25,18 @@ Run development servers through `devrun`.
 ## Review
 
 Select any crops that do not match the target. Choose **Wrong character**, **Joined characters**,
-**Cut off**, **Not a character**, or **Can’t tell**. One choice applies to all selected crops.
+**Cut off**, or **Not a character**. One choice applies to all selected crops.
 Save the round to record those errors and confirm the remaining loaded crops.
 Images that fail to load are excluded. Selections without an error type cannot be submitted.
+
+**Skip** leaves a crop unjudged: too faint to read, or set aside for later. Nothing is written and
+the crop stays pending for a later round.
 
 OCR suggestions appear for wrong readings and joined characters. Selecting a suggestion is optional;
 **None of these** leaves the issue ready to save. Joined text is evidence for later segmentation,
 so reporting it never requires typing several characters into a single-character reading field.
 
-The keyboard positions are `Q W E R T Y A S D F G H`. Use `1`–`5` for the five error types,
+The keyboard positions are `Q W E R T Y A S D F G H`. Use `1`–`4` for the four error types,
 Enter to save, and Escape to clear the selection.
 
 Opening a crop starts continuous review. Choose an error and **Save issue & next**, or use
