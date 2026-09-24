@@ -62,6 +62,16 @@ from .store import (
 SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
+class ReviewInterface(StaticFiles):
+    """Revalidate the entry page so a refresh loads the current hashed assets."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        if path in (".", "index.html"):
+            response.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return response
+
+
 def _page_notes(store: Store, page_id: str) -> list[dict[str, Any]]:
     """The notes recorded against a page, oldest first.
 
@@ -660,7 +670,7 @@ def create_app(directory: Path, *, source: Path | str | None = None,
     # path above keeps its own route; without a build the service is the API alone.
     interface = Path(__file__).resolve().parents[3] / "apps" / "review" / "dist"
     if (interface / "index.html").is_file():
-        app.mount("/", StaticFiles(directory=interface, html=True), name="review-interface")
+        app.mount("/", ReviewInterface(directory=interface, html=True), name="review-interface")
 
     return app
 
