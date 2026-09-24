@@ -9,7 +9,7 @@
   import QuizFocus from '../components/QuizFocus.svelte'
   import { catalogue, randomSeed, request, remember, stored, number, suggestionsFor } from '../lib/client.js'
   import { issues, issueTitle, suggestsReading, isSingle, isSkip, greetSuggestions, SKIP_LABEL } from '../lib/issues.js'
-  import { automaticCategories, nextCharacter } from '../lib/reviewRounds.js'
+  import { nextCharacter } from '../lib/reviewRounds.js'
   let { clientId, initialReading = '', inspect } = $props()
   let data = $state(null), items = $state([]), choices = $state({}), selected = $state({})
   let loaded = $state({}), failed = $state({}), suggestions = $state({}), contextSuggestions = $state({})
@@ -46,7 +46,7 @@
   const exhausted = $derived(items.length > 0 && settled && !remaining.length)
   const categories = $derived((data?.categories ?? []).filter(c => c.pending > 0 && c.label.includes(search)))
 
-  const canNext = $derived(automaticCategories(data?.categories ?? []).some(c => c.label !== reading))
+  const canNext = $derived((data?.categories ?? []).some(c => c.pending > 0 && c.label !== reading))
   function snapshot() {
     return $state.snapshot({ reading, items, choices, selected, skipped, suggestions, contextSuggestions,
       roundId, roundSeed, hasMore, production, summary: data })
