@@ -1,9 +1,11 @@
-"""Calibrated character probabilities from an ONNX classifier.
+"""Source-class probabilities and image features from an ONNX classifier.
 
 One crop is one written character. The module turns it into the tensor the exported model takes and
-returns a probability for every class of `classes.json`: a code point the model identifies, or the
-residual class `other`. `score_set` sums those probabilities over a set of code points, which is what
-the alignment scores a detection with: hentaigana forms of one kana and 旧字/新字 pairs are
+returns a probability for every source class of `classes.json`, or the residual class `other`.
+CODH training labels merge some old/new forms; these probabilities cannot distinguish the written
+characters in such a family. The optional feature output supports separate visual grouping.
+`score_set` sums probabilities over a set of code points, which is what the alignment scores a
+detection with: hentaigana forms of one kana and 旧字/新字 pairs are
 several code points, and the transcribed character is one of them.
 
 Preprocessing is the one `models/classifier/train.py` trains with: the crop is converted to grey, the
@@ -218,6 +220,18 @@ class Classifier:
     def probabilities(self, crop: Image.Image | np.ndarray) -> np.ndarray:
         """The class probabilities of one crop, in the order of `self.classes`."""
         return self.probabilities_many([crop])[0]
+
+    def features(self, crop: Image.Image | np.ndarray) -> np.ndarray | None:
+        """Normalized visual embedding when the export exposes its penultimate layer."""
+        outputs = getattr(self._session, "get_outputs", list)()
+        if "features" not in [item.name for item in outputs]:
+            return None
+        values = np.asarray(self._session.run(["features"], {self.input_name: self._pixels(crop)})[0],
+                            dtype=np.float32).reshape(-1)
+        norm = float(np.linalg.norm(values))
+        if not np.isfinite(values).all() or norm < 1e-9:
+            raise ClassifierError("The visual embedding is invalid")
+        return values / norm
 
     def probabilities_many(self, crops: Iterable[Image.Image | np.ndarray]) -> np.ndarray:
         """The class probabilities of crops, as an (n, classes) array.
