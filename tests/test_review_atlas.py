@@ -1476,7 +1476,7 @@ def test_a_flagged_crop_is_dealt_first_until_it_is_seen_and_keeps_its_flag(datas
     due = client.get(listing).json()
     # The flagged crop leads the next round, ahead of the pending crops nobody has seen; the three
     # shown and left unmarked are not dealt again.
-    assert [i['id'] for i in due['items']][0] == flagged and due['total'] == before - 3
+    assert due['items'][0]['id'] == flagged and due['total'] == before - 3
     category = next(c for c in due['categories'] if c['label'] == 'あ')
     assert (category['due'], category['due_flagged']) == (before - 3, 1)
     # Left unmarked in that round, it is seen: no longer dealt, and still flagged.
