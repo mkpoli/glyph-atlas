@@ -842,6 +842,9 @@ def apply_records(store, records, *, engine=None, split_limit=64) -> dict:
         meta = {**unit.meta, "alignment_repair": repair, "segmentation_scan": evidence}
         _changes(store, unit, {"meta": meta}, {"kind": POLICY, "scan": evidence},
                  base_revision=record.revision)
+        # The split is made against the unit as it stood before inference: an edit a reviewer
+        # saves while the model reads makes the split a conflict, not a split of their new box.
+        parent, parent_revision = store.unit(unit.id), store.revision(unit.id)
         outcome = {"unit_id": unit.id, "status": "withheld"}
         partition = record.ocr.symbol_partition if record.ocr else None
         can_split = bool(partition and partition.get("accepted")) if partition else bool(
@@ -856,8 +859,7 @@ def apply_records(store, records, *, engine=None, split_limit=64) -> dict:
                     proposal = propose_partial(crop, record.ocr.text, engine.model.read)
             outcome["assessment"] = proposal
             if proposal.get("accepted"):
-                outcome.update(split_unit(store, store.unit(unit.id), proposal,
-                                          base_revision=store.revision(unit.id)))
+                outcome.update(split_unit(store, parent, proposal, base_revision=parent_revision))
         outcomes.append(outcome)
     return {"counts": dict(Counter(row["status"] for row in outcomes)),
             "split_attempts": attempted, "items": outcomes}
