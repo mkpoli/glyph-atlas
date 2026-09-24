@@ -142,3 +142,10 @@ def test_inspected_conflicting_source_remains_unassigned_until_human_review(monk
     assert result["identity_basis"] == "visual_model" and result["requires_family_scope"]
     assert result["source_label"] == "假"
     assert identity_fields(source, "hilab", human_character="仮")["written_character"] == "仮"
+
+
+def test_a_code_point_sequence_is_an_identity_without_a_family():
+    fields = identity_fields({"unicode": "U+30C4 U+309A", "text_source": "ツ゚"}, "codh")
+    assert fields["written_character"] == "ツ゚" and fields["family_members"] == []
+    reviewed = identity_fields({"unicode": "U+30C4"}, "codh", human_character="ツ゚")
+    assert reviewed["written_character"] == "ツ゚"

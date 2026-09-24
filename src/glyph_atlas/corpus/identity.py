@@ -18,7 +18,8 @@ IDENTITY_FIELDS = (
 
 @lru_cache(maxsize=8192)
 def family_of(code_point: str | None) -> dict[str, Any] | None:
-    return refs.grapheme_info(code_point) if code_point else None
+    """The grapheme family of one code point; a sequence such as ツ + U+309A has none of its own."""
+    return refs.grapheme_info(code_point) if code_point and len(code_point.split()) == 1 else None
 
 
 def identity_fields(
@@ -28,7 +29,7 @@ def identity_fields(
     """Resolve identity without rewriting the source's own class or transcription."""
     cp = row.get("source_code_point") or row.get("unicode") or row.get("codepoint") or row.get("code_point")
     family = family_of(cp)
-    encoded = refs.to_char(cp) if cp and cp.startswith("U+") else None
+    encoded = refs.from_code_points(cp.split()) if cp and cp.startswith("U+") else None
     source_label = row.get("source_label")
     if source_label is None:
         source_label = row.get("text_source") or encoded or row.get("char") or row.get("label")
@@ -39,7 +40,7 @@ def identity_fields(
     assignment = None
     if human_character:
         written, basis = human_character, "human_review"
-        family = family_of(refs.to_code_point(human_character))
+        family = family_of(" ".join(refs.to_code_points(human_character)))
     else:
         try:
             from ..visual_families import assignment_for, evidence_signature
