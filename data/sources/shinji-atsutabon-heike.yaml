@@ -56,10 +56,6 @@ books:
   title: '平家物語 : 真字熱田本 巻第12'
   manifest: https://dl.ndl.go.jp/api/iiif/1142829/manifest.json
   source_url: https://dl.ndl.go.jp/pid/1142829
-- id: ndl:1142833
-  title: '平家物語 : 真字熱田本 解説'
-  manifest: https://dl.ndl.go.jp/api/iiif/1142833/manifest.json
-  source_url: https://dl.ndl.go.jp/pid/1142833
 references:
 - url: https://commons.wikimedia.org/wiki/File:Shinji_Atsutabon_Heike_monogatari_vol2_frame4_left_page.jpg
   page_id: ndl:1142755:4
