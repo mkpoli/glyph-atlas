@@ -1592,7 +1592,7 @@ def sample_units(
     cache = directory / SAMPLE_FILE
     if cache.exists() and not rebuild:
         payload = json.loads(cache.read_text(encoding="utf-8"))
-        if payload.get("version") == SAMPLE_VERSION:
+        if payload.get("version") == SAMPLE_VERSION and payload.get("corpora") == sorted(corpora or SAMPLE_CORPORA):
             return [r for r in payload.get("items", []) if _character_unit_row(r)][:limit], payload.get("meta", {})
 
     import pyarrow.parquet as pq
@@ -1680,7 +1680,7 @@ def sample_units(
     from uuid import uuid4
     temporary = cache.with_name(cache.name + "." + uuid4().hex + ".tmp")
     try:
-        temporary.write_text(json.dumps({"version": SAMPLE_VERSION, "items": items, "meta": meta}, ensure_ascii=False), encoding="utf-8")
+        temporary.write_text(json.dumps({"version": SAMPLE_VERSION, "corpora": sorted(wanted), "items": items, "meta": meta}, ensure_ascii=False), encoding="utf-8")
         temporary.replace(cache)
     finally:
         temporary.unlink(missing_ok=True)
