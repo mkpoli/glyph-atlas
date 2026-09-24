@@ -354,3 +354,13 @@ def test_stale_baseline_never_overrides_changed_source(corpus):
         db.execute("INSERT INTO glyph_baseline VALUES (?, ?, ?)", (UNIT, NU, "0" * 64))
     assert reviews.detail(UNIT)["label"] == NE
     assert reviews.corrections() == {}
+
+
+@pytest.mark.parametrize(("character", "code_point"), [
+    ("ツ゚", "U+30C4 U+309A"),  # a base and its mark are one character
+    ("欄", "U+F91D"),  # a compatibility ideograph is not rewritten as its unified twin
+])
+def test_a_reviewer_s_character_is_kept_as_written(corpus, character, code_point):
+    accepted, _ = save(corpus["client"], ALT_UNIT, character=character)
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["code_point"] == code_point

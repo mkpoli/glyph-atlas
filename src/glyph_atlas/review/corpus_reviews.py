@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from .. import refs
+from ..unit_scope import character_count
 
 
 class CorpusEdit(BaseModel):
@@ -132,9 +133,11 @@ class CorpusReviews:
 
     def record(self, edit: CorpusEdit, *, actor_kind: str = "human", suggestions: list | None = None) -> dict:
         payload = edit.model_dump(mode="json")
-        character = unicodedata.normalize("NFC", edit.character) if edit.character is not None else None
-        if character is not None and (len(character) != 1 or character.isspace()
-                                      or unicodedata.category(character) in ("Cc", "Cf", "Cs")):
+        # The character is kept as the reviewer wrote it: NFC would turn a compatibility ideograph
+        # such as U+F91D into its unified twin, which is a different character.
+        character = edit.character
+        if character is not None and (character_count(character) != 1 or character.isspace()
+                                      or any(unicodedata.category(c) in ("Cc", "Cf", "Cs") for c in character)):
             raise HTTPException(422, "Choose one character, or report joined characters.")
         if edit.verdict == "match" and (edit.issue or edit.character or edit.correction):
             raise HTTPException(422, "A match cannot also carry an error or correction.")
