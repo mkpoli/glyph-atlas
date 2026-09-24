@@ -50,14 +50,10 @@ def seen_boxes(events: Iterable[Any]) -> dict[str, dict | None]:
     """The box each unit was last shown in a quiz round without being flagged, oldest event first.
 
     A later `seen` event with no value is the undo of a round, and the unit is pending again. The box
-    is kept because a crop that moved since is a different crop, and it has not been seen. A later
-    review decision starts the unit over: a crop flagged after it was seen has not been seen flagged.
+    is kept because a crop that moved since is a different crop, and it has not been seen.
     """
     boxes: dict[str, dict | None] = {}
     for event in events:
-        if event.field == "review":
-            boxes.pop(event.target_id, None)
-            continue
         if event.field != SEEN:
             continue
         if not event.new:
@@ -68,6 +64,42 @@ def seen_boxes(events: Iterable[Any]) -> dict[str, dict | None]:
         except ValueError:
             continue
     return boxes
+
+
+_UNDO = "undo of "
+
+
+def flag_looks(events: Iterable[Any]) -> dict[str, list[dict | None]]:
+    """The boxes each flagged unit has been looked at in since it was flagged, oldest event first.
+
+    A round looks at a flagged crop when it shows it and leaves it unmarked (`seen`) or marks it again
+    (a `visual-quiz` review that keeps it disputed). Becoming flagged starts the list over, and the undo
+    of a round takes that round's look back. A look from a marked answer carries no box: it counts for
+    the crop wherever it stands.
+    """
+    looks: dict[str, dict[str, dict | None]] = {}
+    for event in events:
+        target = event.target_id
+        evidence = event.evidence or ""
+        if evidence.startswith(_UNDO):
+            looks.get(target, {}).pop(evidence.removeprefix(_UNDO), None)
+            continue
+        if event.field == "review":
+            if event.new == ReviewState.DISPUTED and event.old != ReviewState.DISPUTED:
+                looks[target] = {}
+            elif event.new == ReviewState.DISPUTED and target in looks:
+                try:
+                    kind = json.loads(evidence).get("kind")
+                except ValueError:
+                    kind = None
+                if kind == "visual-quiz":
+                    looks[target][event.id] = None
+        elif event.field == SEEN and event.new and target in looks:
+            try:
+                looks[target][event.id] = json.loads(evidence or "{}").get("box")
+            except ValueError:
+                continue
+    return {target: list(boxes.values()) for target, boxes in looks.items()}
 
 
 def single_character(text: str) -> bool:
@@ -662,6 +694,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         events = store.events()
         standing = status.unit_reviews([u for u, _ in units], events)
         seen = seen_boxes(events)
+        looks = flag_looks(events)
         documents = {doc.id: production_info(doc)["production"] for doc in store.documents()}
         pages = store.pages()
         kinds = {}
@@ -674,10 +707,14 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         # since it was flagged. A flagged crop left unmarked stays flagged; it is only not dealt again.
         due: set[str] = set()
         for unit, _ in units:
-            looked = unit.id in seen and seen[unit.id] == (unit.box.model_dump(mode="json") if unit.box else None)
-            if states.get(unit.id) == "pending" and looked:
-                states[unit.id] = "seen"
-            elif states.get(unit.id) in ("pending", "flagged") and not looked:
+            box = unit.box.model_dump(mode="json") if unit.box else None
+            if states.get(unit.id) == "pending":
+                if unit.id in seen and seen[unit.id] == box:
+                    states[unit.id] = "seen"
+                else:
+                    due.add(unit.id)
+            elif states.get(unit.id) == "flagged" and not any(
+                    look is None or look == box for look in looks.get(unit.id, [])):
                 due.add(unit.id)
         return units, states, kinds, due
 
