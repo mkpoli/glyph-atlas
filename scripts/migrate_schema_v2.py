@@ -120,7 +120,7 @@ def _json_rewrite(text: str | None, rewrite) -> str | None:
     except ValueError:
         return None
     changed = rewrite(value)
-    return None if changed == value else json.dumps(changed, ensure_ascii=False)
+    return None if changed == value else json.dumps(changed, ensure_ascii=False, sort_keys=True)
 
 
 def review_stores(root: Path) -> list[Path]:
@@ -128,10 +128,15 @@ def review_stores(root: Path) -> list[Path]:
 
 
 def migrate_store(path: Path, *, apply: bool) -> dict[str, int]:
-    """Rewrite the v1 units a review store holds; return how many rows of each kind change."""
+    """Rewrite the v1 units a review store holds; return how many rows of each kind change.
+
+    The reads and the writes are one transaction, taken before the first read, so a store written in
+    between cannot have its new rows replaced by ones read before them.
+    """
     counts = {"units": 0, "imported": 0, "events": 0}
     uri = f"file:{path}" + ("" if apply else "?mode=ro")
-    with closing(sqlite3.connect(uri, uri=True)) as conn:
+    with closing(sqlite3.connect(uri, uri=True, isolation_level=None)) as conn:
+        conn.execute("BEGIN IMMEDIATE" if apply else "BEGIN")
         tables_present = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         updates: list[tuple[str, tuple]] = []
         if "units" in tables_present:
@@ -156,10 +161,9 @@ def migrate_store(path: Path, *, apply: bool) -> dict[str, int]:
                     counts["events"] += 1
                     updates.append(("UPDATE events SET old = COALESCE(?, old), new = COALESCE(?, new) WHERE seq = ?",
                                     (old_after, new_after, seq)))
-        if apply and updates:
-            with conn:
-                for statement, parameters in updates:
-                    conn.execute(statement, parameters)
+        for statement, parameters in updates if apply else ():
+            conn.execute(statement, parameters)
+        conn.execute("COMMIT")
     return counts
 
 
