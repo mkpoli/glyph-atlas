@@ -13,13 +13,21 @@ const parse = (value: string): Json => JSON.parse(value);
 const unavailable = { status: 'unavailable', candidates: [] };
 const categoryOf=(value:string)=>/[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(value)?'kana':/\p{Script=Han}/u.test(value)?'kanji':'other';
 const cp = (value: string) => [...value].map(c => 'U+' + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')).join(' ');
+// NFC composes a voiced kana, but it also maps each CJK compatibility ideograph to its unified twin,
+// and those are characters of their own here; they are kept as written.
+const COMPATIBILITY = /[\uF900-\uFAFF\u{2F800}-\u{2FA1F}]/u;
+export function compose(value: string): string {
+  let out = '', run = '';
+  for (const c of value) { if (COMPATIBILITY.test(c)) { out += run.normalize('NFC') + c; run = '' } else run += c }
+  return out + run.normalize('NFC');
+}
 export function literal(value: string): string {
   const trimmed = value.trim();
   if (/^(U\+[0-9a-f]{4,6})(\s+U\+[0-9a-f]{4,6})*$/i.test(trimmed)) {
-    try { return trimmed.split(/\s+/).map(v => String.fromCodePoint(parseInt(v.slice(2), 16))).join('').normalize('NFC') }
+    try { return compose(trimmed.split(/\s+/).map(v => String.fromCodePoint(parseInt(v.slice(2), 16))).join('')) }
     catch { throw new Problem(422, 'Invalid code point.') }
   }
-  return trimmed.normalize('NFC');
+  return compose(trimmed);
 }
 export const hira = (value: string) => [...literal(value)].map(c => {
   const n = c.codePointAt(0)!; return n >= 0x30a1 && n <= 0x30f6 ? String.fromCodePoint(n - 0x60) : c;
@@ -198,7 +206,7 @@ async function body(request: Request): Promise<Json> {
 function text(value: unknown, max: number, name: string, required=false): string | null {
   if(value==null && !required) return null;
   if(typeof value!=='string'||value.length>max||(required&&!value.trim()))throw new Problem(422,`Invalid ${name}.`);
-  return value.trim().normalize('NFC');
+  return compose(value.trim());
 }
 export function canonical(value: unknown): string {
   if(value===null||typeof value!=='object')return JSON.stringify(value);

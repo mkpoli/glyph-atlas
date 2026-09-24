@@ -19,3 +19,9 @@ describe('historical character identities', () => {
     expect(canonical({ character:'ム' })).not.toBe(canonical({ character:'厶' }));
   });
 });
+
+it('a compatibility ideograph stays the character it is, and a voiced kana still composes', () => {
+  expect(literal('U+FA30')).toBe('侮')
+  expect(literal('侮')).toBe('侮')
+  expect(literal('が')).toBe('が')
+})
