@@ -98,12 +98,27 @@ def _is_unit(value: Any) -> bool:
     return isinstance(value, dict) and "id" in value and ("jibo" in value or value.get("script") == OLD_SCRIPT)
 
 
+def _is_split_entry(value: Any) -> bool:
+    """One child of a split, as a segmentation event records it: a box and what it holds, no id."""
+    return isinstance(value, dict) and "box" in value and "id" not in value
+
+
 def migrate_event_value(field: str, value: Any) -> Any:
-    """An event's `old` or `new` in version 2: its units migrated, and `kanji` as a script value renamed."""
+    """An event's `old` or `new` in version 2: its units migrated, and `kanji` as a script value renamed.
+
+    A split entry is migrated too, since replaying the split validates it, but it keeps no 字母 in
+    `upstream`: an entry cannot set that field. A candidate's or a confidence's `jibo` is a field of
+    version 2 and is left alone.
+    """
     if field == "script" and value == OLD_SCRIPT:
         return "han"
     if _is_unit(value):
         return migrate_unit_data(value)
+    if _is_split_entry(value):
+        entry = {key: item for key, item in value.items() if key != "jibo"}
+        if entry.get("script") == OLD_SCRIPT:
+            entry["script"] = "han"
+        return entry
     if isinstance(value, dict):
         return {key: migrate_event_value("", item) for key, item in value.items()}
     if isinstance(value, list):

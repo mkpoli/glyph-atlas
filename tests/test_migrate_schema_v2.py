@@ -93,3 +93,13 @@ def test_a_review_store_holding_schema_1_units_is_migrated_and_replays(tmp_path)
     units = {unit.id: unit for unit, _ in Store(root).unit_snapshot()}
     assert units["ni"].reading == "に", "the recorded event replays over the migrated store"
     assert units["koku"].script is Script.HAN
+
+
+def test_a_split_entry_is_migrated_and_a_candidate_s_jibo_is_left_alone():
+    value = {"split": [{"box": {"x": 0, "y": 0, "w": 1, "h": 1}, "unicode": "U+56FD", "script": "kanji",
+                        "jibo": "国"}],
+             "candidates": [{"unicode": "U+1B002", "p": 1.0, "jibo": "安"}]}
+    migrated = migrate.migrate_event_value("segmentation", value)
+    assert migrated["split"] == [{"box": {"x": 0, "y": 0, "w": 1, "h": 1}, "unicode": "U+56FD", "script": "han"}]
+    assert migrated["candidates"] == value["candidates"]
+
