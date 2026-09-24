@@ -124,6 +124,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS events_idempotency ON events (client_id, idemp
     WHERE idempotency_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS events_target ON events (target_id);
 CREATE TABLE IF NOT EXISTS revisions (target_id TEXT PRIMARY KEY, revision INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS revision_bases (target_id TEXT PRIMARY KEY, base INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS lines (
     id TEXT PRIMARY KEY,
     document_id TEXT,
@@ -508,8 +509,10 @@ class Store:
     def unit_snapshot(self, unit_id: str | None = None) -> list[tuple[Unit, int]]:
         """Read each unit and its revision from the same database snapshot."""
         with self._lock, self._connection() as conn:
-            query = ("SELECT units.data, coalesce(revisions.revision, 0) AS revision FROM units "
-                     "LEFT JOIN revisions ON revisions.target_id = units.id ")
+            query = ("SELECT units.data, coalesce(revision_bases.base, 0) + coalesce(revisions.revision, 0) "
+                     "AS revision FROM units "
+                     "LEFT JOIN revisions ON revisions.target_id = units.id "
+                     "LEFT JOIN revision_bases ON revision_bases.target_id = units.id ")
             # Keep the single-item lookup indexable; the nullable OR made SQLite
             # scan every unit for each crop and character-detail request.
             rows = conn.execute(query + ("WHERE units.id = ?" if unit_id is not None else "ORDER BY units.id"),
@@ -559,10 +562,13 @@ class Store:
             )
             lines = [Line.model_validate_json(row["data"]) for row in rows]
             revisions = self._revision_map(conn)
+            # A revision carries the base a history reset left, so only an event row marks a target
+            # somebody touched.
+            events = {row["target_id"] for row in conn.execute("SELECT target_id FROM revisions")}
             items = []
             for line in lines:
                 units = self._units_of_line(conn, line.id)
-                touched = [unit for unit in units if revisions.get(unit.id)]
+                touched = [unit for unit in units if unit.id in events]
                 items.append(
                     {
                         "line": line,
@@ -575,7 +581,7 @@ class Store:
                     }
                 )
         if strategy == "unreviewed":
-            items = [item for item in items if not item["reviewed"] and not item["revision"]]
+            items = [item for item in items if not item["reviewed"] and item["line"].id not in events]
         elif strategy == "disagreement":
             items = [item for item in items if item["disagreements"]]
             items.sort(key=lambda item: (-item["disagreements"], item["line"].id))
@@ -1070,11 +1076,19 @@ class Store:
         return [Unit.model_validate_json(row["data"]) for row in conn.execute("SELECT data FROM units ORDER BY id")]
 
     def _revision_map(self, conn: sqlite3.Connection) -> dict[str, int]:
-        return {row["target_id"]: row["revision"] for row in conn.execute("SELECT * FROM revisions")}
+        """Every target's revision: its base from the last history reset plus its events since."""
+        found = {row["target_id"]: row["base"] for row in conn.execute("SELECT * FROM revision_bases")}
+        for row in conn.execute("SELECT * FROM revisions"):
+            found[row["target_id"]] = found.get(row["target_id"], 0) + row["revision"]
+        return found
 
     def _revision(self, conn: sqlite3.Connection, target_id: str) -> int:
-        row = conn.execute("SELECT revision FROM revisions WHERE target_id = ?", (target_id,)).fetchone()
-        return row["revision"] if row else 0
+        row = conn.execute(
+            "SELECT coalesce((SELECT base FROM revision_bases WHERE target_id = ?), 0)"
+            " + coalesce((SELECT revision FROM revisions WHERE target_id = ?), 0) AS revision",
+            (target_id, target_id),
+        ).fetchone()
+        return row["revision"]
 
     def _group_counts(self) -> tuple[dict[str, int], dict[str, int], dict[str, int]]:
         with self._connection() as conn:

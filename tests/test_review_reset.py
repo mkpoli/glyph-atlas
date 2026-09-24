@@ -8,6 +8,7 @@ here touches a live dataset, a server or the user's own export.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from pathlib import Path
 
@@ -280,7 +281,7 @@ def counts(path: Path) -> dict[str, int]:
     with sqlite3.connect(path) as connection:
         return {
             name: connection.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0]
-            for name in ("events", "revisions", "units", "lines")
+            for name in ("events", "revisions", "revision_bases", "units", "lines")
         }
 
 
@@ -493,10 +494,33 @@ class TestStaleClientsAreRefused:
         review_the_dataset(root)
         reset_reviews(root)
         Store(root)  # the guard would wipe revisions here
-        assert counts(root / "review.sqlite")["revisions"] > 0
+        assert counts(root / "review.sqlite")["revision_bases"] > 0
         with sqlite3.connect(root / "review.sqlite") as connection:
-            lowest = connection.execute("SELECT MIN(revision) FROM revisions").fetchone()[0]
+            lowest = connection.execute("SELECT MIN(base) FROM revision_bases").fetchone()[0]
         assert lowest >= REVISION_BUMP
+
+    def test_the_raised_revision_survives_a_table_change(self, tmp_path):
+        """A store rebuilt from changed tables keeps the revisions the reset raised."""
+        root = build_dataset(tmp_path / "work" / "honkoku-lines")
+        review_the_dataset(root)
+        reset_reviews(root)
+        raised = Store(root).revision("u:2")
+        units = tables.read(root / "units.parquet", Unit)
+        units[0] = units[0].model_copy(update={"text_source": "か"})
+        tables.write(root / "units.parquet", units, Unit)
+        # The store notices a table by its size and mtime; move the mtime past this second.
+        later = (root / "units.parquet").stat().st_mtime + 10
+        os.utime(root / "units.parquet", (later, later))
+        assert raised >= REVISION_BUMP
+        assert Store(root).revision("u:2") == raised
+
+    def test_a_reset_unit_is_unreviewed_again(self, tmp_path):
+        root = build_dataset(tmp_path / "work" / "honkoku-lines")
+        review_the_dataset(root)
+        reset_reviews(root)
+        store = Store(root)
+        assert store.queue("unreviewed")
+        assert store.page_counts("d:1:1")["reviewed"] == 0
 
     def test_event_sequence_is_not_recycled(self, tmp_path):
         """`sqlite_sequence` keeps the high-water mark, so `seq` never repeats.
@@ -806,13 +830,13 @@ class TestCompletedResetIsIdempotent:
         first = reset_reviews(root)
         assert first.revisions_bumped > 0
         with sqlite3.connect(root / "review.sqlite") as connection:
-            before = connection.execute("SELECT MIN(revision) FROM revisions").fetchone()[0]
+            before = connection.execute("SELECT MIN(base) FROM revision_bases").fetchone()[0]
 
         second = reset_reviews(root)
         assert "skipped" in second.phases
         assert second.revisions_bumped == 0
         with sqlite3.connect(root / "review.sqlite") as connection:
-            after = connection.execute("SELECT MIN(revision) FROM revisions").fetchone()[0]
+            after = connection.execute("SELECT MIN(base) FROM revision_bases").fetchone()[0]
         assert after == before
 
     def test_a_changed_baseline_is_reset_again(self, tmp_path):
@@ -850,13 +874,13 @@ class TestCompletedResetIsIdempotent:
         marker = read_marker(root)
         assert marker["phase"] == "erased" and marker.get("bumped") is True
         with sqlite3.connect(root / "review.sqlite") as connection:
-            bumped = connection.execute("SELECT MIN(revision) FROM revisions").fetchone()[0]
+            bumped = connection.execute("SELECT MIN(base) FROM revision_bases").fetchone()[0]
 
         monkeypatch.setattr(reset_module, "_verify", real)
         resumed = reset_reviews(root)
         assert resumed.verified["events"] == 0
         with sqlite3.connect(root / "review.sqlite") as connection:
-            after = connection.execute("SELECT MIN(revision) FROM revisions").fetchone()[0]
+            after = connection.execute("SELECT MIN(base) FROM revision_bases").fetchone()[0]
         assert after == bumped  # the bump happened exactly once
         assert in_progress(root) is False
 
@@ -937,13 +961,13 @@ class TestEraseCrashGap:
         assert counts(root / "review.sqlite")["events"] == 0
         assert reset_module.reset_phase(root / "review.sqlite") == "erased"
         with sqlite3.connect(root / "review.sqlite") as connection:
-            bumped = connection.execute("SELECT MIN(revision) FROM revisions").fetchone()[0]
+            bumped = connection.execute("SELECT MIN(base) FROM revision_bases").fetchone()[0]
 
         monkeypatch.setattr(reset_module, "_write_marker", real)
         resumed = reset_reviews(root)
         assert resumed.verified["events"] == 0
         with sqlite3.connect(root / "review.sqlite") as connection:
-            after = connection.execute("SELECT MIN(revision) FROM revisions").fetchone()[0]
+            after = connection.execute("SELECT MIN(base) FROM revision_bases").fetchone()[0]
         assert after == bumped, "the resume bumped revisions a second time"
         assert in_progress(root) is False
 
@@ -997,12 +1021,12 @@ def test_erase_phase_is_committed_before_return(tmp_path, monkeypatch):
     with pytest.raises(KeyboardInterrupt):
         reset_reviews(root)
     with sqlite3.connect(root / "review.sqlite") as db:
-        before = db.execute("SELECT MIN(revision) FROM revisions").fetchone()[0]
+        before = db.execute("SELECT MIN(base) FROM revision_bases").fetchone()[0]
     assert reset_module.reset_phase(root / "review.sqlite") == "erased"
     monkeypatch.setattr(reset_module, "_erase_store", real)
     reset_reviews(root)
     with sqlite3.connect(root / "review.sqlite") as db:
-        assert db.execute("SELECT MIN(revision) FROM revisions").fetchone()[0] == before
+        assert db.execute("SELECT MIN(base) FROM revision_bases").fetchone()[0] == before
 
 
 def test_reset_removes_embedded_feedback_history():

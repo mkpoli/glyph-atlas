@@ -21,8 +21,8 @@ What it does, in order:
 4. **Erases the history.** Review events, idempotency keys, stored results, the
    exported ``reviews.jsonl`` journal and the corpus decision log.
 5. **Invalidates stale clients.** Every current target's revision is *raised*, never
-   zeroed, and the store's table fingerprint is rewritten so the next open does not
-   discard the new revisions. A browser holding the old revision is refused.
+   zeroed, into a base the store keeps when it rebuilds from changed tables. A browser
+   holding the old revision is refused.
 6. **Leaves no copy behind.** No backup of the deleted history, ``VACUUM`` and a WAL
    truncation on both databases, then a verification that the journals are empty.
 
@@ -823,20 +823,27 @@ def _erase_store(
 
 
 def _bump_revisions(connection: sqlite3.Connection, units: Sequence[Unit], lines: Sequence[Line]) -> int:
-    """Raise every current target's revision so an in-flight client is refused."""
+    """Raise every current target's revision so an in-flight client is refused.
+
+    The raised value is the target's base in ``revision_bases``, and its event count in
+    ``revisions`` starts again from none. The store rebuilds ``revisions`` from the
+    events whenever its tables change, so a revision held there would fall back to the
+    event count; the base is never rebuilt, and an event row keeps meaning that somebody
+    touched the target since the reset.
+    """
     targets = {record.id for record in units} | {record.id for record in lines}
-    if not table_exists(connection, "revisions"):
-        connection.execute("CREATE TABLE revisions (target_id TEXT PRIMARY KEY, revision INTEGER NOT NULL)")
-        current: dict[str, int] = {}
-    else:
-        current = {
-            row["target_id"]: row["revision"]
-            for row in connection.execute("SELECT target_id, revision FROM revisions")
-        }
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS revision_bases (target_id TEXT PRIMARY KEY, base INTEGER NOT NULL)"
+    )
+    current = {row["target_id"]: row["base"] for row in connection.execute("SELECT * FROM revision_bases")}
+    if table_exists(connection, "revisions"):
+        for row in connection.execute("SELECT target_id, revision FROM revisions"):
+            current[row["target_id"]] = current.get(row["target_id"], 0) + row["revision"]
+        connection.execute("DELETE FROM revisions")
     for target in targets:
         connection.execute(
-            "INSERT INTO revisions (target_id, revision) VALUES (?, ?)"
-            " ON CONFLICT(target_id) DO UPDATE SET revision = excluded.revision",
+            "INSERT INTO revision_bases (target_id, base) VALUES (?, ?)"
+            " ON CONFLICT(target_id) DO UPDATE SET base = excluded.base",
             (target, current.get(target, 0) + REVISION_BUMP),
         )
     return len(targets)
@@ -956,13 +963,13 @@ def _verify(dataset: Path, store: Path, corpus: Path | None, *, dry_run: bool = 
                 else 0
             )
             verified["revisions"] = (
-                connection.execute("SELECT COUNT(*) FROM revisions").fetchone()[0]
-                if table_exists(connection, "revisions")
+                connection.execute("SELECT COUNT(*) FROM revision_bases").fetchone()[0]
+                if table_exists(connection, "revision_bases")
                 else 0
             )
             verified["lowest_revision"] = (
-                connection.execute("SELECT MIN(revision) FROM revisions").fetchone()[0]
-                if table_exists(connection, "revisions")
+                connection.execute("SELECT MIN(base) FROM revision_bases").fetchone()[0]
+                if table_exists(connection, "revision_bases")
                 else None
             )
     verified["journal"] = log_path(dataset).is_file()
