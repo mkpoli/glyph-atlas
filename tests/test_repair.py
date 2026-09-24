@@ -419,6 +419,44 @@ def test_a_review_event_is_written_as_the_store_reads_it() -> None:
     Review.model_validate(decoded)
 
 
+def test_a_line_is_placed_as_one_sequence_or_not_at_all(tmp_path: Path) -> None:
+    """A half-placed line puts the moved characters beside the wrong neighbours.
+
+    One line of three characters: the first already holds its ink, the middle one has no box, and the
+    last holds the middle one's ink. A move is only correct together with the moves its neighbours
+    make under the same phase, so the pass takes the move back, and the first character keeps its box
+    without being vouched for. Asked to place new ink, the same line places as a whole.
+    """
+    source = tmp_path / "source"
+    units = [unit_of(1, "あ", Box(x=0, y=0, w=10, h=10)),
+             unit_of(2, "い", None),
+             unit_of(3, "う", Box(x=0, y=60, w=10, h=10))]
+    line = line_of("あいう", Box(x=0, y=0, w=10, h=130))
+    tables.write(source / "pages.parquet",
+                 [Page(id="doc:0", document_id="doc", seq=0, canvas="a4", image="i",
+                       width=100, height=200)], Page)
+    tables.write(source / "lines.parquet", [line], Line)
+    tables.write(source / "units.parquet", units, Unit)
+    scattered = [Box(x=0, y=120, w=10, h=10), Box(x=0, y=0, w=10, h=10),
+                 Box(x=0, y=60, w=10, h=10)]
+    views = repair.view_line(
+        line, [Detection(box=box, score=0.5) for box in scattered],
+        run=RUN, classifier=None, crop_of=None, units=units)
+
+    decision, records = repair.decide(views, line=line)
+    ink = [record for record in records if record.ink]
+    assert decision.status == "uncertain"
+    assert all(record.status == "uncertain" for record in ink)
+    assert all(repair.final_box(record) == record.old_box for record in records)
+    assert any("one sequence or not at all" in record.reason for record in ink)
+    assert ink[2].new_box is not None, "the box it wanted stays on the record as the proposal it is"
+    assert all(not record.reliable for record in ink), "a withheld line vouches for none of its crops"
+
+    decision, records = repair.decide(views, line=line, place_missing=True)
+    assert decision.status == "reorder"
+    assert [record.status for record in records if record.ink] == ["unchanged", "applied", "applied"]
+
+
 def test_a_locked_box_blocks_the_moves_that_would_land_on_it(tmp_path: Path) -> None:
     """The three-cycle again, at the dataset level: locking one box locks the rotation.
 

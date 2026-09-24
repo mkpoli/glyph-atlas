@@ -704,6 +704,14 @@ def decide(views: Sequence[LineView], *, line: Line | None = None,
     to place new ink, or when a person reviewed it. Withheld is not a failure: it is the pass declining
     to make a decision it cannot support, so that a reviewer is asked once about a real question
     instead of about every crop.
+
+    A line is placed as one sequence or it is not placed. The moves of a line are only correct
+    together: under one phase, character k takes detection k, so moving two characters while a third
+    keeps its old box leaves the moved ones beside the wrong neighbours. A reviewer sees exactly that
+    as a crop showing the neighbouring character, measured on the quiz where 26 of 47 wrong-character
+    answers named the previous or next unit. So one unsettled character of a line takes the line's
+    moves back to proposals. Freeing a box from a whitespace token survives that rule: a space is not
+    ink whatever the sequence does.
     """
     rows = [view for view in views if view.units]
     if not rows:
@@ -821,6 +829,27 @@ def decide(views: Sequence[LineView], *, line: Line | None = None,
             decision.moved += 1
         records.append(record)
     resolved = resolve_collisions(records)
+    # A line is read as one sequence, so it is placed as one sequence. `resolve_collisions` keeps one
+    # box one owner; this keeps one line one decision. A move is only correct together with the moves
+    # the same phase makes to its neighbours, so one unsettled character takes every ink move of the
+    # line back to a proposal. A space's box is freed regardless: that is not a placement. A character
+    # whose box already agreed keeps it, but the pass no longer vouches for it: agreeing with an order
+    # the line cannot be placed in is no evidence, and an unvouched crop stays out of the quiz.
+    blockers = [record for record in records if record.ink and record.status == "uncertain"]
+    demoted = 0
+    if blockers:
+        for record in records:
+            if record.ink and record.status in ("applied", "confirmed"):
+                record.status = "uncertain"
+                record.layer = "deterministic"
+                record.hypothesis = "reading-order"
+                record.reason = ("the line is placed as one sequence or not at all; this move stays "
+                                 "a proposal: " + blockers[0].reason)
+                demoted += 1
+            elif record.ink and record.status == "unchanged":
+                record.status = "uncertain"
+                record.reason = ("the line is placed as one sequence or not at all; this box is kept "
+                                 "but not vouched for: " + blockers[0].reason)
     decision.moved = sum(1 for record in records if record.status in ("applied", "confirmed"))
     decision.confirmed = sum(1 for record in records
                              if record.status == "confirmed" and record.machine)
@@ -828,14 +857,16 @@ def decide(views: Sequence[LineView], *, line: Line | None = None,
     decision.human_units = sum(1 for record in records if record.status == "human")
     decision.conflicts = sum(1 for record in records
                              if record.status == "human" and record.changed)
-    decision.reverted = resolved["reverted"]  # type: ignore[attr-defined]
+    decision.reverted = resolved["reverted"] + demoted  # type: ignore[attr-defined]
     decision.collisions = resolved["baseline-duplicates"]  # type: ignore[attr-defined]
-    if decision.moved and merged.shift:
+    moved_ink = sum(1 for record in records
+                    if record.ink and record.status in ("applied", "confirmed"))
+    if moved_ink and merged.shift:
         decision.status = "shift"
         decision.reason = f"a {merged.shift:+d} detection shift: {merged.reason}"
-    elif decision.moved:
+    elif moved_ink:
         decision.status = "reorder"
-        decision.reason = (f"{decision.moved} characters placed on the ink the corrected order names "
+        decision.reason = (f"{moved_ink} characters placed on the ink the corrected order names "
                            f"({decision.confirmed} confirmed by the classifier)")
     elif decision.conflicts:
         decision.status = "human"
@@ -843,6 +874,11 @@ def decide(views: Sequence[LineView], *, line: Line | None = None,
     elif decision.human_units:
         decision.status = "human"
         decision.reason = "the line's differing characters are all human-reviewed"
+    elif demoted:
+        decision.status = "uncertain"
+        decision.reason = ("the line cannot be placed as one sequence: "
+                           f"{decision.withheld} of its characters are unsettled, so every box of "
+                           "it stays as it is")
     elif decision.withheld:
         decision.status = "uncertain"
         decision.reason = f"{decision.withheld} characters differ but nothing settles them"
