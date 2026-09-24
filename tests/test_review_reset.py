@@ -514,6 +514,14 @@ class TestStaleClientsAreRefused:
         assert raised >= REVISION_BUMP
         assert Store(root).revision("u:2") == raised
 
+    def test_a_target_outside_the_tables_is_raised_too(self, tmp_path):
+        root = build_dataset(tmp_path / "work" / "honkoku-lines")
+        review_the_dataset(root)
+        with sqlite3.connect(root / "review.sqlite") as connection:
+            connection.execute("INSERT INTO revisions (target_id, revision) VALUES ('d:1:1', 3)")
+        reset_reviews(root)
+        assert Store(root).revision("d:1:1") == 3 + REVISION_BUMP
+
     def test_a_reset_unit_is_unreviewed_again(self, tmp_path):
         root = build_dataset(tmp_path / "work" / "honkoku-lines")
         review_the_dataset(root)

@@ -840,13 +840,14 @@ def _bump_revisions(connection: sqlite3.Connection, units: Sequence[Unit], lines
         for row in connection.execute("SELECT target_id, revision FROM revisions"):
             current[row["target_id"]] = current.get(row["target_id"], 0) + row["revision"]
         connection.execute("DELETE FROM revisions")
-    for target in targets:
+    # A target with events outside the reset tables, a page or a unit a split made, is raised too.
+    for target in targets | current.keys():
         connection.execute(
             "INSERT INTO revision_bases (target_id, base) VALUES (?, ?)"
             " ON CONFLICT(target_id) DO UPDATE SET base = excluded.base",
             (target, current.get(target, 0) + REVISION_BUMP),
         )
-    return len(targets)
+    return len(targets | current.keys())
 
 
 def _erase_corpus(path: Path, corrections: Sequence[Mapping[str, Any]]) -> int:
