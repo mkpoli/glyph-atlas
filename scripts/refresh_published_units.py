@@ -75,7 +75,9 @@ def plan(new: dict, live: dict) -> tuple[str, str | None]:
         return "skip", None
     # The revision is part of the comparison: a unit left at the old lineage's revision could not
     # have its later site reviews imported.
-    if new["data"] == live["data"] and int(new["revision"]) == int(live["revision"]) and int(new["quiz"]) == int(live["quiz"]):
+    # Compared as JSON: D1 and the catalogue may write the same object with different spacing.
+    if (json.loads(new["data"]) == json.loads(live["data"]) and int(new["revision"]) == int(live["revision"])
+            and int(new["quiz"]) == int(live["quiz"])):
         return "skip", None
     if int(new["revision"]) == int(live["revision"]):
         raise Collision(f"{new['id']}: catalogue revision {new['revision']} equals the live one")

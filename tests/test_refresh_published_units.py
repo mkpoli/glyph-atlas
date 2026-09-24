@@ -81,3 +81,9 @@ def test_quotes_in_values_are_escaped():
     row = unit(image="/atlas/media/b.webp"); row["character"] = "it's"
     _, sql = refresh.plan(row, live())
     assert "character='it''s'" in sql
+
+
+def test_the_same_json_written_differently_is_unchanged():
+    row = live(revision=1000001)
+    row["data"] = json.dumps(json.loads(row["data"]), ensure_ascii=True, indent=1)
+    assert refresh.plan(unit(revision=1000001), row) == ("skip", None)
