@@ -100,6 +100,15 @@ async function known(env: Env, value: string) {
   if (!row) throw new Problem(404, 'Character not found.');
   return { data: parse(row.data), detail: parse(row.detail) };
 }
+// What a corrected character reads as, by the review server's rule: a kana's one stated reading, a
+// ligature's reading, a kanji itself; several stated readings are a person's choice, so none.
+export function readingFrom(data: Json | null | undefined): string | null {
+  if (!data) return null;
+  if (data.ligature?.reading) return hira(data.ligature.reading);
+  const readings: string[] = data.readings || [];
+  if (readings.length === 1) return readings[0];
+  return !readings.length && data.script === 'han' ? data.char : null;
+}
 async function suggest(env: Env, q: URLSearchParams) {
   const term = (q.get('q') || '').slice(0, 128).trim();
   if (!term) return { items: [], total: 0, status: 'idle' };
@@ -260,7 +269,10 @@ async function submit(env: Env, request: Request, target?: string) {
       throw new Problem(422,'Choose a written character or report an issue.');
     if(round&&(!row.quiz||current.label!==input.label))throw new Problem(409,'This round changed. Reload it.');
     const written=answer.character?literal(answer.character):null;
-    const reading=answer.reading || (answer.issue==='reading'&&answer.correction&&single(answer.correction)?answer.correction:null);
+    // A corrected character carries its reading along unless one was typed: い corrected to り reads り.
+    const derived=written&&!answer.reading?readingFrom((await known(env,written).catch(()=>null))?.data):null;
+    const reading=answer.reading || (answer.issue==='reading'&&answer.correction&&single(answer.correction)?answer.correction:null)
+      || (derived&&derived!==current.reading?derived:null);
     const resolved=answer.verdict==='match'||Boolean(answer.issue==='character'&&written)||Boolean(answer.issue==='reading'&&reading);
     const family=written?(await known(env,written).catch(()=>null))?.data.grapheme?.code_point:null;
     const next:Json={...current,revision:current.revision+1,state:resolved?'checked':'flagged',

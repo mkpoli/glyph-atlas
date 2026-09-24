@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { canonical, literal, hira, single } from './index';
+import { canonical, literal, hira, single, readingFrom } from './index';
 
 describe('historical character identities', () => {
   it('keeps supplementary characters intact', () => {
@@ -24,4 +24,11 @@ it('a compatibility ideograph stays the character it is, and a voiced kana still
   expect(literal('U+FA30')).toBe('侮')
   expect(literal('侮')).toBe('侮')
   expect(literal('が')).toBe('が')
+})
+
+it('a corrected character carries the reading the character layer states', () => {
+  expect(readingFrom({ char: 'り', script: 'hiragana', readings: ['り'] })).toBe('り')
+  expect(readingFrom({ char: '𪜈', script: 'han', readings: [], ligature: { reading: 'トモ' } })).toBe('とも')
+  expect(readingFrom({ char: '国', script: 'han', readings: [] })).toBe('国')
+  expect(readingFrom({ char: '𛄝', script: 'hentaigana', readings: ['ん', 'む', 'も'] })).toBe(null)
 })
