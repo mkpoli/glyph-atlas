@@ -1,0 +1,9 @@
+/* Character colors remain stable when a surrounding option is selected. */
+.script-char[data-script="hiragana"] { color: #176456; }
+.script-char[data-script="katakana"] { color: #275991; }
+.script-char[data-script="kanji"] { color: #80521a; }
+.script-char[data-script="symbol"] { color: #74406a; }
+.script-char[data-script="unknown"] { color: #53515b; }
+@media (forced-colors: active) {
+  .script-char[data-script] { color: inherit; }
+}

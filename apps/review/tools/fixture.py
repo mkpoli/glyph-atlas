@@ -207,6 +207,33 @@ def build(directory: Path, *, long_units: int = 240) -> dict:
         units.extend(made)
         images.setdefault("doc-1:p1", []).extend(made)
 
+    # doc-1:p1 — two units written as one character and read as another. The supplementary-plane
+    # 𪜈 (U+2A708) is the character the search box has to handle: Python indexes it as one character
+    # and JavaScript as two UTF-16 units. No imported corpus records an occurrence, so this fixture
+    # is the only place a search for it can find one; ゐ read as い is the case that tells a search
+    # on the written character from a search on the reading.
+    written_line = line_of("doc-1:p1", 3, Box(x=980, y=120, w=200, h=1500), "𪜈ゐ")
+    lines.append(written_line)
+    written = [
+        Unit(id="doc-1:p1:l3:u0", document_id="doc-1", page_id="doc-1:p1", line_id=written_line.id,
+             seq=0, box=Box(x=1000, y=160, w=160, h=300), reading="い", text_source="い",
+             unicode="U+2A708", script=Script.HAN, classification=Classification.IDENTIFIED,
+             method="detect-align"),
+        Unit(id="doc-1:p1:l3:u1", document_id="doc-1", page_id="doc-1:p1", line_id=written_line.id,
+             seq=1, box=Box(x=1000, y=560, w=160, h=300), reading="い", text_source="い",
+             unicode="U+3090", script=Script.HIRAGANA, classification=Classification.IDENTIFIED,
+             method="detect-align"),
+        # The three layers on one record, which is what the reviewer has to keep apart: written ネ
+        # (U+30CD), read ね. A correction of the character changes `unicode`; the reading stays ね
+        # unless a reviewer changes the reading too, so the fixture makes the two visibly different.
+        Unit(id="doc-1:p1:l3:u2", document_id="doc-1", page_id="doc-1:p1", line_id=written_line.id,
+             seq=2, box=Box(x=1000, y=960, w=160, h=300), reading="ね", text_source="ね",
+             unicode="U+30CD", script=Script.KATAKANA, classification=Classification.IDENTIFIED,
+             method="detect-align"),
+    ]
+    units.extend(written)
+    images.setdefault("doc-1:p1", []).extend(written)
+
     # doc-1:p2 — not cached: the interface must show the URL and skip the page.
     for seq in range(2):
         box = Box(x=180 + 400 * seq, y=150, w=220, h=1400)
