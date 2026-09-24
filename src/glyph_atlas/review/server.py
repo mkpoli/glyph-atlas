@@ -649,6 +649,8 @@ def create_app(directory: Path, *, source: Path | str | None = None,
         corpus.media = media
     app.include_router(media_router(media))
     app.include_router(atlas_router(store, corpus_reviews=corpus_reviews, media=media))
+    from .collection import router as collection_router
+    app.include_router(collection_router(store.directory.parent))
     # The character layer, mounted beside the collection: identity, grapheme, 字母, ligature and the
     # ink that carries them, with the one write that keeps a character correction and a reading
     # correction in separate events. See `review/characters.py`.
