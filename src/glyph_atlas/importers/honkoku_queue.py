@@ -902,12 +902,15 @@ def publish_directory(staging: Path, final: Path) -> None:
     with every file present and empty. Each file and the staging directory are flushed first,
     and the parent after the rename.
     """
-    for path in staging.iterdir():
-        if path.is_file():
+    for path in sorted(staging.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+        if path.is_dir():
+            _sync_directory(path)
+        else:
             with path.open("rb") as handle:
                 os.fsync(handle.fileno())
     _sync_directory(staging)
     os.replace(staging, final)
+    _sync_directory(staging.parent)
     _sync_directory(final.parent)
 
 
