@@ -5,7 +5,7 @@
   import ZiLink from './ZiLink.svelte'
   import { onMount, untrack, tick } from 'svelte'
   import { request, corpusCharacter } from '../lib/client.js'
-  import { isSkip, isSingle, suggestsReading, greetSuggestions } from '../lib/issues.js'
+  import { isSingle, suggestsReading, greetSuggestions, SKIP_HINT } from '../lib/issues.js'
   import IssuePicker from './IssuePicker.svelte'
   import ReadingSuggestions from './ReadingSuggestions.svelte'
   import CharacterSearch from './CharacterSearch.svelte'
@@ -31,7 +31,6 @@
   onMount(() => { dialog.showModal(); return () => { closed = true; generation++ } })
   function skip() { if (!busy) { if (next) next(); else close() } }
   async function chooseIssue(value) {
-    if (isSkip(value)) { skip(); return }
     issue = value; correction = null; noneSelected = false; submission = null; search = ''
     if (suggestsReading(value)) { await tick(); greetSuggestions(suggestionsElement, { focus: true }) }
   }
@@ -92,7 +91,7 @@
     {#if imageFailed}<span role="alert">Image unavailable</span>{/if}
     <button class="primary save-character" disabled={busy || !data || !loaded || imageFailed || !data.proxyable || ((data.needs_segmentation || data.identity_status === 'unassigned') && !issue)} onclick={() => save()}>{busy ? 'Saving…' : data?.identity_status === 'unassigned' && !issue ? 'Choose a character or issue' : data?.needs_segmentation && !issue ? 'Awaiting segmentation' : issue ? (next ? 'Save issue & next' : 'Save issue') : (next ? 'Looks right & next' : 'Looks right')} <span>{issue ? '→' : '✓'}</span></button>
     {#if issue && !data?.needs_segmentation && data?.identity_status !== 'unassigned'}<button class="quiet-link looks-right" disabled={busy || !loaded || imageFailed} onclick={() => save(true)}>It looks right</button>{/if}
-    <button class="skip-character" disabled={busy} onclick={skip}>Skip →</button>
+    <button class="skip-character" disabled={busy} onclick={skip} title={SKIP_HINT}>Skip →</button>
   </footer>
 </dialog>
 

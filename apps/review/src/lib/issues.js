@@ -3,24 +3,16 @@ export const issues = [
   { id: 'merged', title: 'Joined characters', example: 'アカ', hint: 'Two or more in one crop', key: '2' },
   { id: 'crop', title: 'Bad crop', example: 'ア', hint: 'Missing strokes, extra ink, or misplaced edges', key: '3' },
   { id: 'blank', title: 'Not a character', example: '', hint: 'Blank paper, a mark or noise', key: '4' },
-  { id: 'unclear', title: 'Can’t tell', example: '?', hint: 'Too faint or hard to read', key: '5' },
 ]
 export const issueTitle = id => issues.find(i => i.id === id)?.title || 'Selected'
-export const decision = issue => issue === 'unclear' ? { skip: true } : { verdict: 'wrong', issue, correction: null }
+export const decision = issue => ({ verdict: 'wrong', issue, correction: null })
 export const isSingle = text => [...new Intl.Segmenter('ja', { granularity: 'grapheme' }).segment(text)].length === 1
-
-/**
- * Whether choosing this issue is a decision or a skip.
- *
- * "Can't tell" is an honest answer and not a review: the reader is saying this crop cannot be judged,
- * which is what Skip says. Recording it as a dispute would put words in their mouth and count a crop
- * they declined to judge as work done, so it advances the queue and writes nothing — in the reviewer
- * and in a round alike.
- */
-export const isSkip = issue => issue === 'unclear'
 
 /** What the controls call the action that is not a decision. */
 export const SKIP_LABEL = 'Skip'
+
+/** The hint shown on every Skip control: it is also the honest answer for a crop nobody can judge. */
+export const SKIP_HINT = 'Can’t tell, or leave it for later'
 
 /** Whether the reader asked for no motion; scrolling and focus jumps follow their choice. */
 export const prefersReducedMotion = () =>

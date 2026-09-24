@@ -6,8 +6,9 @@
  * the reader on. So every assertion about a skip is paired with a count of the events the service
  * recorded and the number the interface says it has reviewed.
  *
- * "Can't tell" is the same action wearing an issue's name, and it is checked in both places it can
- * be chosen: on a crop in a round, and in the reviewer that opens from a crop.
+ * Skip is the only way to leave a crop unjudged, and it is checked across every surface it appears
+ * on: a crop's own control in the grid, the round's bulk controls, a crop's own review step, and the
+ * reviewer that opens from a crop.
  *
  * Run through devrun:
  *   devrun bun apps/review/tools/skip-check.mjs
@@ -75,8 +76,17 @@ try {
   assert(await browser.evaluate(`document.querySelectorAll('.quiz-tile.selected').length`)
     === before.length - 1, 'Select all did not take exactly the open crops')
 
-  // 2. It is out of the round that gets saved: select the rest, save, and the answers are the rest.
-  await click('.quiz-workspace .issue-card[data-issue="merged"]')
+  // 2. It is out of the round that gets saved: select the rest, give each the same problem, save, and
+  // the answers are the rest.
+  await click('.quiz-submit .review-selected')
+  for (let n = 0; n < before.length; n++) {
+    if (!/to decide/.test(await browser.evaluate(`document.querySelector('.round-selection')?.textContent ?? ''`))) break
+    await browser.waitFor(`document.querySelector('.quiz-workspace .issue-card[data-issue="crop"]') !== null`)
+    await click('.quiz-workspace .issue-card[data-issue="crop"]')
+    await sleep(150)
+    if (await browser.evaluate(`!!document.querySelector('.quiz-submit .next-crop:not(:disabled)')`)) await click('.quiz-submit .next-crop')
+    await sleep(150)
+  }
   await browser.waitFor(`document.querySelector('.quiz-submit .primary')?.disabled === false`)
   const skippedId = afterOne[0].id
   await click('.quiz-submit .primary')
@@ -90,38 +100,38 @@ try {
   assert(reviewEvents.length === before.length - 1,
     `the round saved ${reviewEvents.length} answers for ${before.length - 1} decided crops`)
 
-  // 3. "Can't tell" in a round is the same neutral skip.
+  // 3. Skip inside a crop's own review step skips that crop alone: the decision already made for the
+  // other selected crop stays, and nothing is written.
   const beforeSecond = events(service.fixture.directory).length
   const reviewedSecond = await browser.evaluate(reviewedText)
-  await browser.waitFor(`document.querySelectorAll('.quiz-choice').length > 0`)
+  await browser.waitFor(`document.querySelectorAll('.quiz-choice').length > 1`)
   await click('.quiz-tile:nth-child(1) .quiz-choice')
-  await click('.quiz-workspace .issue-card[data-issue="unclear"]')
+  await click('.quiz-tile:nth-child(2) .quiz-choice')
+  await click('.quiz-submit .review-selected')
+  await browser.waitFor(`document.querySelector('.issue-card[data-issue="crop"]') !== null`)
+  await click('.issue-card[data-issue="crop"]')
+  await click('.quiz-submit .next-crop')
+  await browser.waitFor(`document.querySelector('.skip-current') !== null`)
+  await click('.skip-current')
   await sleep(400)
-  assert(events(service.fixture.directory).length === beforeSecond, '"Can\'t tell" wrote to the journal')
-  assert(await browser.evaluate(reviewedText) === reviewedSecond, '"Can\'t tell" was counted as reviewed')
-  assert(await browser.evaluate(`document.querySelectorAll('.quiz-tile.skipped').length`) >= 1,
-    '"Can\'t tell" did not skip the crop')
-  assert(await browser.evaluate(`document.querySelectorAll('.quiz-tile.wrong, .quiz-tile.unsure').length`) === 0,
-    '"Can\'t tell" stored a verdict')
+  assert(events(service.fixture.directory).length === beforeSecond, 'skipping from the review step wrote to the journal')
+  assert(await browser.evaluate(reviewedText) === reviewedSecond, 'skipping from the review step was counted as reviewed')
+  const tally = await browser.evaluate(`document.querySelector('.round-selection')?.textContent ?? ''`)
+  assert(/1 skipped/.test(tally), 'skipping from the review step did not skip the crop')
+  assert(/1 issues/.test(tally), 'skipping one crop discarded the decision made for the other')
+  await click('.focus-back')
+  await browser.waitFor(`document.querySelector('.quiz-grid') !== null`)
 
-  // 4. "Can't tell" in the reviewer: the dialog closes and nothing is written.
+  // 4. The Skip control in the reviewer closes without writing.
   const beforeInspector = events(service.fixture.directory).length
   await click('.quiz-tile:nth-child(2) .inspect-choice')
-  await browser.waitFor(`document.querySelector('dialog[open] .issue-card') !== null`)
-  await click('dialog[open] .issue-card[data-issue="unclear"]')
-  await browser.waitFor(`document.querySelector('dialog[open]') === null`, 10000)
-  const afterInspector = events(service.fixture.directory).length
-  assert(afterInspector === beforeInspector,
-    `the reviewer wrote ${afterInspector - beforeInspector} events for a skip`)
-
-  // 5. The explicit Skip control in the reviewer does the same, and advances.
-  await click('.quiz-tile:nth-child(3) .inspect-choice')
   await browser.waitFor(`document.querySelector('dialog[open] .skip-character') !== null`)
   await click('dialog[open] .skip-character')
-  await browser.waitFor(`document.querySelector('dialog[open]') === null`)
-  assert(events(service.fixture.directory).length === afterInspector, 'the Skip control wrote a review')
+  await browser.waitFor(`document.querySelector('dialog[open]') === null`, 10000)
+  const afterInspector = events(service.fixture.directory).length
+  assert(afterInspector === beforeInspector, `the reviewer's Skip control wrote ${afterInspector - beforeInspector} events`)
 
-  // 6. A round in which every crop is skipped posts nothing at all.
+  // 5. A round in which every crop is skipped posts nothing at all.
   const beforeAll = events(service.fixture.directory).length
   await click('.quiz-actionbar .skip-selected')
   await browser.waitFor(`document.querySelector('.quiz-tile.skipped') !== null`, 15000)
@@ -148,7 +158,8 @@ try {
   assert(await browser.evaluate(`document.querySelectorAll('.quiz-tile').length`) > 0,
     'the next round is empty')
 
-  // 7. In the collection inspector, Skip and Can't tell advance the existing queue in place.
+  // 6. In the collection inspector, Skip advances the existing queue in place, however many times
+  // in a row it is pressed.
   await browser.evaluate(`location.hash = '#/'`)
   await browser.waitFor(`document.querySelectorAll('.glyph-tile[data-unit]').length > 3`)
   const order = await browser.evaluate(`[...document.querySelectorAll('.glyph-tile[data-unit]')].map(t => t.dataset.unit)`)
@@ -156,8 +167,7 @@ try {
   await browser.waitFor(`document.querySelector('.inspector-navigation > span')?.textContent.startsWith('1 /')`)
   await click('.skip-character')
   await browser.waitFor(`document.querySelector('.inspector-navigation > span')?.textContent.startsWith('2 /')`)
-  await browser.waitFor(`document.querySelector('dialog .issue-card[data-issue="unclear"]')`)
-  await click('dialog .issue-card[data-issue="unclear"]')
+  await click('.skip-character')
   await browser.waitFor(`document.querySelector('.inspector-navigation > span')?.textContent.startsWith('3 /')`)
   await click('.close-inspector')
   assert(events(service.fixture.directory).length === beforeAll, 'queue skipping wrote an event')
@@ -165,7 +175,7 @@ try {
 
   assert(errors.length === 0, `page errors: ${errors.join('; ')}`)
   console.log(`skip: ${reviewEvents.length} answers saved for ${before.length} crops offered, skipped crop excluded`)
-  console.log('      no journal write and no reviewed-count change for skip, Can\'t tell in round or reviewer')
+  console.log('      no journal write and no reviewed-count change for a skip in the grid, the review step or the reviewer')
 } finally {
   if (browser) await browser.close()
   await service.stop()

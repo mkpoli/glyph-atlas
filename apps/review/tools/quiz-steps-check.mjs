@@ -247,13 +247,19 @@ try {
     assert(await browser.evaluate('document.querySelector(".reset-crop").disabled'), 'pan enabled for mismatched context')
     mismatchDetail = null
   })
-  await check('bad crop needs no text; Can’t tell skips without saving', async () => {
+  await check('bad crop needs no text; Skip skips without saving', async () => {
     await click('[data-issue=crop]')
     assert(!await browser.evaluate('!!document.querySelector(".reading-suggestions")'), 'bad crop demands text')
     await click('.next-crop')
     assert(await currentId() === selected[3], 'wrong fourth crop')
-    await click('[data-issue=unclear]')
+    // Skip is a grid control, not an issue: leaving the fourth crop's own decision means going back
+    // to the grid, skipping it there, and returning to the three crops that already have one.
+    await click('.focus-back')
+    await browser.waitFor('document.querySelectorAll(".quiz-choice:not(:disabled)").length > 0')
+    await click(`.quiz-tile[data-unit="${selected[3]}"] .skip-choice`)
+    await click('.review-selected')
     await browser.waitFor('document.querySelectorAll(".focus-thumb").length === 3')
+    await click('.focus-thumb[data-index="2"]')
     assert(await currentId() === selected[2], 'skip left stale crop')
     assert(posted.length === 0, 'skip or issue selection saved')
   })

@@ -62,9 +62,9 @@ try {
   if (await browser.evaluate(`!!document.querySelector('dialog')`)) await click('.close-inspector')
   await browser.evaluate(`location.hash = '#/corpus/' + encodeURIComponent(${JSON.stringify(fixture.next)})`)
   await browser.waitFor(`document.querySelector('.corpus-dialog .save-character')?.disabled === false`)
-  await click('.corpus-dialog [data-issue="unclear"]')
+  await click('.skip-character')
   await browser.waitFor(`!document.querySelector('dialog')`)
-  assert((await exportRows()).length === beforeSkip, 'Can’t tell wrote a review')
+  assert((await exportRows()).length === beforeSkip, 'Skip wrote a review for a deep-linked character')
   // Deep link, flag without typing, and a fresh navigation back to the durable queue.
   await browser.evaluate(`location.hash = '#/'`)
   await Bun.sleep(100)

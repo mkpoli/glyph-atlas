@@ -3,7 +3,7 @@
   import ZiLink from './ZiLink.svelte'
   import { onMount, untrack, tick } from 'svelte'
   import { character, request, suggestionsFor } from '../lib/client.js'
-  import { decision, isSingle, isSkip, suggestsReading, greetSuggestions } from '../lib/issues.js'
+  import { decision, isSingle, suggestsReading, greetSuggestions, SKIP_HINT } from '../lib/issues.js'
   import CropContext from './CropContext.svelte'
   import IssuePicker from './IssuePicker.svelte'
   import ReadingSuggestions from './ReadingSuggestions.svelte'
@@ -65,9 +65,6 @@
   $effect(() => { const target = id; untrack(() => load(target)) })
   onMount(() => { dialog.showModal(); return () => { closed = true; generation++ } })
   function chooseIssue(value) {
-    // "Can't tell" is the skip in an issue's clothing: it must not select an error type at all, or
-    // the reader has to press something else to leave the crop unjudged.
-    if (isSkip(value)) { skip(); return }
     if (issue === 'character') { written = data?.label ?? ''; writtenDirty = false }
     issue = value; correction = null; noneSelected = false; submission = null
     // The suggestion area appears with this choice, so the next action is the one focused. An issue
@@ -146,7 +143,7 @@
     const payload = correctingCharacter
       ? { client_id: clientId, revision: data.revision, image_sha256: data.image_sha256,
           verdict: matches ? 'match' : decision(issue || 'character').verdict,
-          issue: ['character', 'reading', 'crop', 'merged', 'blank', 'unclear', 'other'].includes(issue)
+          issue: ['character', 'reading', 'crop', 'merged', 'blank', 'other'].includes(issue)
             ? issue : 'character',
           note, character: written, ...readingEdit, ...(box ? { box } : {}) }
       : { client_id: clientId, revision: data.revision, image_sha256: data.image_sha256,
@@ -224,7 +221,7 @@
     {#if imageFailed}<span role="alert">Image unavailable</span>{/if}
     <button class="primary save-character" disabled={busy || !data || !loaded || imageFailed} onclick={() => save()}>{busy ? 'Saving…' : issue ? (onVerdict ? 'Use this error' : next ? 'Save issue & next' : 'Save issue') : (onVerdict ? 'Back to selection' : next ? 'Looks right & next' : 'Looks right')} <span>{issue || onVerdict ? '→' : '✓'}</span></button>
     {#if issue}<button class="quiet-link looks-right" disabled={busy || !loaded || imageFailed} onclick={() => { discardProposals(); save(true) }}>{onVerdict ? 'Remove selection' : 'It looks right'}</button>{/if}
-    <button class="skip-character" disabled={busy} onclick={skip} title="Leave this occurrence unjudged">Skip →</button>
+    <button class="skip-character" disabled={busy} onclick={skip} title={SKIP_HINT}>Skip →</button>
   </footer>
 </dialog>
 
