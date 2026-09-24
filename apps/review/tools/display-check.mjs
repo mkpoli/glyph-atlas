@@ -84,7 +84,7 @@ try {
     const image = [...view.querySelectorAll('.crop-plane img')].find(i => getComputedStyle(i).visibility === 'visible')
     const mask = view.querySelector('.crop-mask')
     const i = image.getBoundingClientRect(), m = mask.getBoundingClientRect()
-    const source = ${JSON.stringify(source)}
+    const source = ${JSON.stringify(reviewSource)}
     const bounds = image.classList.contains('page-photo')
       ? { x: 0, y: 0, w: image.naturalWidth, h: image.naturalHeight } : source.context_box
     const crop = source.crop_box, scale = i.width / bounds.w

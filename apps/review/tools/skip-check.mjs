@@ -68,7 +68,7 @@ try {
 
   // Select all is where a skip used to be erased: it takes every crop still open, and a skipped one
   // is not open.
-  await click('.selection-toolbar .bulk-toggle')
+  await click('.stage-toolbar .bulk-toggle')
   await sleep(200)
   assert(await browser.evaluate(`document.querySelectorAll('.quiz-tile.skipped.selected').length`) === 0,
     'Select all selected a skipped crop')

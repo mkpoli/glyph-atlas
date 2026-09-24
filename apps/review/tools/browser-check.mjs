@@ -145,9 +145,9 @@ try {
 
   await browser.waitFor(roundReady)
   const nextAvailable = await browser.evaluate('document.querySelectorAll(".quiz-tile:not(.unavailable)").length')
-  await click('.selection-toolbar .bulk-toggle')
+  await click('.stage-toolbar .bulk-toggle')
   assert(await browser.evaluate('document.querySelectorAll(".quiz-tile.selected").length') === nextAvailable, 'select all viewable crops')
-  await click('.selection-toolbar .bulk-toggle')
+  await click('.stage-toolbar .bulk-toggle')
   assert(await browser.evaluate('document.querySelectorAll(".quiz-tile.selected").length === 0'), 'deselect all')
   await click('.quiz-tile:not(.unavailable) .quiz-choice')
   await click('.quiz-workspace .issue-card[data-issue="blank"]')
