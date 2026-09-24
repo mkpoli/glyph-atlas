@@ -1363,3 +1363,27 @@ def test_a_page_file_that_changes_under_a_cached_record_is_judged_again(repaired
         assert {item["id"] for item in restored["items"]} == before, "the restore is seen too"
 
 
+
+
+def test_the_export_is_the_same_payload_as_a_file(searched: Path):
+    """The JSON route and the download route answer with one payload, and the file is attached.
+
+    A browser saves what the server marks as an attachment, which is a download the reader can see
+    happen; the two routes share one builder so they cannot describe a review differently.
+    """
+    client = TestClient(create_app(searched))
+    item = client.get("/atlas", params={"q": SUPPLEMENTARY}).json()["items"][0]
+    saved = client.post("/atlas/rounds", json={
+        "id": str(uuid4()), "client_id": "exporter", "label": SUPPLEMENTARY,
+        "answers": [{"id": item["id"], "revision": item["revision"],
+                     "image_sha256": item["image_sha256"], "verdict": "match"}]})
+    assert saved.status_code == 200, saved.text
+
+    api = client.get("/atlas/reviews").json()
+    assert api["kind"] == "atlas-character-reviews" and len(api["reviews"]) == 1
+
+    file = client.get("/atlas/reviews.json")
+    assert file.status_code == 200
+    assert file.headers["content-type"].startswith("application/json")
+    assert file.headers["content-disposition"] == 'attachment; filename="atlas-character-reviews.json"'
+    assert json.loads(file.text) == api, "the download is the same document the API answers"

@@ -119,7 +119,7 @@ def _kind_of(field_name: str, value: Any, initial: Any = None, *, seen: bool = F
 #: Where a field's current value came from. `human` is a person deciding through a client; the other
 #: two are states the record arrived with, from an import or from an earlier apply, and they are the
 #: record's own value rather than machine output to be ignored.
-LOCAL_AUTHORS = frozenset({"import", "export"})
+LOCAL_AUTHORS = frozenset({"import", "export", "review-derived"})
 
 
 @dataclass
@@ -233,6 +233,40 @@ class UnitReview:
         return "machine"
 
 
+def _from_saved_review(event, sources, latest_review) -> bool:
+    """Recognize an automated transfer of an explicit, still-current human decision."""
+    import json
+
+    from ..feedback import normalize_export
+
+    try:
+        evidence = json.loads(event.evidence or "{}")
+        if evidence.get("kind") != "feedback-reconciliation":
+            return False
+        source = sources.get(evidence.get("source_event_id"))
+        if (not source or source.target_id != event.target_id
+                or latest_review.get(event.target_id) != source.id or source.role not in HUMAN_ROLES):
+            return False
+        parsed = normalize_export({"reviews": [{"event": source.model_dump(mode="json"), "current": True}]})
+        if not parsed or not parsed[0].trusted_human:
+            return False
+        feedback = parsed[0]
+        if event.field == "review":
+            if event.new == "disputed":
+                return feedback.issue in ("crop", "merged")
+            return event.new == "reviewed" and feedback.decision == "accepted-identity"
+        if feedback.decision != "accepted-identity" or not feedback.proposed_text:
+            return False
+        if event.field == "unicode":
+            return event.new == " ".join(f"U+{ord(c):04X}" for c in feedback.proposed_text)
+        if event.field == "script":
+            from ..refs import script_of
+            return event.new == str(script_of(feedback.proposed_text))
+        return False
+    except (ValueError, TypeError, AttributeError):
+        return False
+
+
 def unit_reviews(
     units: Iterable[Any], events: Iterable[Any], *, exported: Iterable[str] = ()
 ) -> dict[str, UnitReview]:
@@ -290,6 +324,8 @@ def unit_reviews(
             record.baseline[name] = opened.get(name, value) if name in opened else value
         standing[unit.id] = record
 
+    sources = {e.id: e for e in journal if getattr(e, "id", None)}
+    latest_review: dict[str, str] = {}
     for event in journal:
         record = standing.get(event.target_id)
         if record is None:
@@ -322,6 +358,10 @@ def unit_reviews(
             kind = "restored"
         role = str(getattr(event, "role", "model") or "model")
         author = "human" if (event.actor and role in HUMAN_ROLES) else "machine"
+        if author == "machine" and _from_saved_review(event, sources, latest_review):
+            author = "review-derived"
+        if field_name == "review" and author != "review-derived":
+            latest_review[event.target_id] = getattr(event, "id", "")
         if author == "human" and kind == "state" and before is not None and before.value == event.new:
             # A human event that writes the state the record already shows changes nothing, so it
             # does not become the last word on the field.
@@ -332,7 +372,7 @@ def unit_reviews(
             record.fields[field_name] = FieldStanding(value=event.new, author="machine", kinds=[])
         else:
             history = list(before.kinds) if before else []
-            record.fields[field_name] = FieldStanding(value=event.new, author="human",
+            record.fields[field_name] = FieldStanding(value=event.new, author=author,
                                                       kinds=[*history, kind])
             if event.actor:
                 record.actor = event.actor
