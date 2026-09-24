@@ -33,12 +33,15 @@ try {
   const bucket = await mf.getR2Bucket('MEDIA')
   await bucket.put('fixture', raw)
   await db.prepare('INSERT INTO corpus_units VALUES(?,?,?,?,?,?,?,?)').bind(corpus.id, null, 'U+4EEE', 'group-one', 1, 'fixture', 0, new TextEncoder().encode(raw).length).run()
+  // Miniflare hands the Worker its own loopback address, so the page origin a browser would send is
+  // that address; a fixed `http://localhost` fails the Worker's same-origin check on every POST.
+  const base = new URL(await mf.ready).origin
   async function call(path, value, status = 200) {
-    const response = await mf.dispatchFetch('http://localhost'+path, value ? {
-      method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://localhost' }, body: JSON.stringify(value),
+    const response = await mf.dispatchFetch(base + path, value ? {
+      method: 'POST', headers: { 'content-type': 'application/json', origin: base }, body: JSON.stringify(value),
     } : {})
     const json = await response.json()
-    assert.equal(response.status, status, JSON.stringify(json))
+    assert.equal(response.status, status, path + ' ' + JSON.stringify(json))
     return json
   }
   const decision = { id: 'one', revision: 0, image_sha256: hash, verdict: 'wrong', issue: 'merged', correction: 'アイ' }
