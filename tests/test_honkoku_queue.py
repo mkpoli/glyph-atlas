@@ -852,6 +852,21 @@ def test_malformed_pages_are_quarantined_without_losing_text(change):
         hq.book_record(data, entry_id=ENTRY_A)
 
 
+def test_a_canvas_named_by_its_json_document_pairs_with_the_manifest_canvas():
+    data = entry_payload(ENTRY_A)
+    for item in data["transcriptions"]:
+        item["canvasId"] += ".json"
+    record = hq.book_record(data, entry_id=ENTRY_A)
+    assert [page["text"] for page in record["pages"]] == [t["text"] for t in data["transcriptions"]]
+
+
+def test_a_json_document_of_another_canvas_is_still_a_mismatch():
+    data = entry_payload(ENTRY_A)
+    data["transcriptions"][0]["canvasId"] = data["canvases"][1]["id"] + ".json"
+    with pytest.raises(hq.AlignmentError):
+        hq.book_record(data, entry_id=ENTRY_A)
+
+
 def test_collection_entry_objects_are_enumerated(tmp_path):
     data = dict(COLLECTION, entries=[{"id": ENTRY_A}, {"id": ENTRY_B}])
     collector, _, _ = build(tmp_path, FakeAPI(collections={COLLECTION["id"]: data}))

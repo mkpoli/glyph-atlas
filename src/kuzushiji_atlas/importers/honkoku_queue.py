@@ -746,6 +746,18 @@ def _text_of(transcription: Mapping[str, Any] | None) -> str:
     return text if isinstance(text, str) else ""
 
 
+def _same_canvas(named: str, held: str) -> bool:
+    """Whether a transcription's `canvasId` and a manifest canvas id are one canvas.
+
+    Some IIIF servers (adeac.jp among them) serve each canvas as a JSON document,
+    and the platform records that document's URL, `…/canvas/p1.json`, where the
+    manifest's id is `…/canvas/p1`. Any other difference is a real mismatch.
+    """
+    if not (isinstance(named, str) and isinstance(held, str)):
+        return named == held
+    return named.removesuffix(".json") == held.removesuffix(".json")
+
+
 def book_record(entry: Mapping[str, Any], *, entry_id: str) -> dict[str, Any]:
     """One book, normalised: rights, revisions, canvases and pages.
 
@@ -769,7 +781,7 @@ def book_record(entry: Mapping[str, Any], *, entry_id: str) -> dict[str, Any]:
         transcription = transcriptions.get(position)
         canvas_id = canvas.get("id")
         named = (transcription or {}).get("canvasId")
-        if named and canvas_id and named != canvas_id:
+        if named and canvas_id and not _same_canvas(named, canvas_id):
             # Positional pairing is the API's own order, but when a transcription
             # names a different canvas the two lists disagree. Guessing would write a
             # page's text under another page's image.
