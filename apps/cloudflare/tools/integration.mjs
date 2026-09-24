@@ -125,8 +125,18 @@ try {
   await call('/atlas/rounds', flagOnSeen)
   assert.equal((await call('/atlas/characters/seen-a')).state, 'flagged', 'a seen crop can still be flagged at its revision')
   assert.deepEqual(await pendingSe(), [], 'answers and seen crops save together')
+  // A flagged crop stays in the quiz and leads the next round until someone has seen it since.
+  const dueSe = async () => (await call('/atlas?purpose=review&reading=セ&state=due&seed=3&limit=96'))
+  let due = await dueSe()
+  assert.deepEqual(due.items.map(i => i.id), ['seen-a'], 'a flagged crop is dealt again')
+  assert.deepEqual([due.categories[0].due, due.categories[0].due_flagged], [1, 1])
+  await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'third', label: 'セ', seen: [{ id: 'seen-a', image_sha256: hash }] })
+  due = await dueSe()
+  assert.deepEqual(due.items, [], 'a flagged crop seen since its flag is not dealt again')
+  assert.equal((await call('/atlas/characters/seen-a')).state, 'flagged', 'leaving a flagged crop unmarked keeps its flag')
   await call(`/atlas/rounds/${passed.id}/undo`, { client_id: 'integration' })
   assert.deepEqual(await pendingSe(), ['seen-b'], 'undoing a pass returns its crops to the queue')
+  assert.deepEqual((await dueSe()).items.map(i => i.id), ['seen-b'], 'the queue of due crops follows the undo')
   await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'integration', label: 'セ', answers: [], seen: [] }, 422)
   console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops.')
 } finally {

@@ -50,10 +50,14 @@ def seen_boxes(events: Iterable[Any]) -> dict[str, dict | None]:
     """The box each unit was last shown in a quiz round without being flagged, oldest event first.
 
     A later `seen` event with no value is the undo of a round, and the unit is pending again. The box
-    is kept because a crop that moved since is a different crop, and it has not been seen.
+    is kept because a crop that moved since is a different crop, and it has not been seen. A later
+    review decision starts the unit over: a crop flagged after it was seen has not been seen flagged.
     """
     boxes: dict[str, dict | None] = {}
     for event in events:
+        if event.field == "review":
+            boxes.pop(event.target_id, None)
+            continue
         if event.field != SEEN:
             continue
         if not event.new:
@@ -666,18 +670,23 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             document_id = unit.document_id or (page.document_id if page else None)
             kinds[unit.id] = documents.get(document_id, "unknown")
         states = {key: review_state(value.human_review) for key, value in standing.items()}
+        # What a round may deal: a pending crop nobody has seen, and a flagged crop nobody has seen
+        # since it was flagged. A flagged crop left unmarked stays flagged; it is only not dealt again.
+        due: set[str] = set()
         for unit, _ in units:
-            if states.get(unit.id) == "pending" and unit.id in seen and seen[unit.id] == (
-                    unit.box.model_dump(mode="json") if unit.box else None):
+            looked = unit.id in seen and seen[unit.id] == (unit.box.model_dump(mode="json") if unit.box else None)
+            if states.get(unit.id) == "pending" and looked:
                 states[unit.id] = "seen"
-        return units, states, kinds
+            elif states.get(unit.id) in ("pending", "flagged") and not looked:
+                due.add(unit.id)
+        return units, states, kinds, due
 
     @api.get("/atlas")
     def catalogue(
         reading: str | None = None,
         q: str | None = None,
         group: Literal["all", "kana", "kanji"] = "all",
-        state: Literal["all", "pending", "seen", "checked", "flagged"] = "all",
+        state: Literal["all", "pending", "seen", "checked", "flagged", "due"] = "all",
         purpose: Literal["browse", "review"] = "browse",
         production: Literal["all", "non-movable-type", "manuscript", "woodblock", "movable-type", "mixed", "unknown"] | None = None,
         seed: int = 0,
@@ -702,7 +711,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         scope = production or ("non-movable-type" if purpose == "review" else "all")
         generation = (file_stamp(store.path), file_stamp(Path(str(store.path) + "-wal")),
                       file_stamp(production_metadata.OVERRIDES))
-        units, all_states, kinds = catalogue_snapshot(generation)
+        units, all_states, kinds, all_due = catalogue_snapshot(generation)
         records = [(u, rev) for u, rev in units
                    if (scope == "all" or (kinds[u.id] != "movable-type" if scope == "non-movable-type"
                                          else kinds[u.id] == scope)) and considered(u)]
@@ -712,23 +721,29 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             counts = categories.setdefault(shown(unit), Counter())
             counts["total"] += 1
             counts[states[unit.id]] += 1
+            if unit.id in all_due:
+                counts["due"] += 1
+                counts["due_flagged"] += states[unit.id] == "flagged"
         counts = Counter(states[u.id] for u, _ in records)
         searched = matches(records, q) if q else records
         selected = [(u, rev) for u, rev in searched if (reading is None or shown(u) == reading)
                     and (group == "all" or character_group(u) == group)
-                    and (state == "all" or states[u.id] == state)]
+                    and (state == "all" or (u.id in all_due if state == "due" else states[u.id] == state))]
         random.Random(seed).shuffle(selected)
         if purpose == "review" and seed % 5:
             # Keep one in five shuffles as a random audit. The other rounds show uncertain
             # measurements first, with ties retaining their seeded order and stable pagination.
             selected.sort(key=lambda row: review_priority(row[0]))
+        if state == "due":
+            # Flagged crops are dealt before pending ones; the order within each is kept.
+            selected.sort(key=lambda row: states[row[0].id] != "flagged")
         return {"total": len(selected), "available": len(records), "counts": dict(counts),
                 # Which question this answer is: a caller reading `available` has to know whether it
                 # counts the collection or only the queue.
                 "purpose": purpose, "production": scope, "review_epoch": store.review_epoch(),
                 "query": q or None, "matched": len(searched) if q else None,
                 "categories": [{"label": name, **{key: c[key] for key in
-                                  ("total", "pending", "seen", "checked", "flagged")}}
+                                  ("total", "pending", "seen", "checked", "flagged", "due", "due_flagged")}}
                                for name, c in sorted(categories.items(), key=lambda x: (-x[1]["total"], x[0]))],
                 "items": [item(u, rev, states[u.id]) for u, rev in selected[offset:offset + limit]]}
 

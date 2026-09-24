@@ -56,7 +56,6 @@ BEGIN
  family=coalesce(json_extract(NEW.after_data,'$.grapheme.code_point'),json_extract(NEW.after_data,'$.grapheme'),family),
  visual_group=json_extract(NEW.after_data,'$.visual_group.id'),
  category=coalesce(json_extract(NEW.after_data,'$.category'),category),
- state=json_extract(NEW.after_data,'$.state'),
- quiz=iif(json_extract(NEW.after_data,'$.state')='flagged',0,quiz)
+ state=json_extract(NEW.after_data,'$.state')
  WHERE id=NEW.target;
 END;

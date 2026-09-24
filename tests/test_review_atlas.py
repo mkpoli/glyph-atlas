@@ -1466,6 +1466,30 @@ def test_a_seen_crop_is_not_dealt_again_and_is_no_confirmation(dataset):
     assert exported == {shown[0]['id']}
 
 
+def test_a_flagged_crop_is_dealt_first_until_it_is_seen_and_keeps_its_flag(dataset):
+    client = TestClient(create_app(dataset))
+    listing = '/atlas?reading=あ&state=due&purpose=review&seed=3&limit=96'
+    before = client.get(listing).json()['total']
+    shown = client.get(listing).json()['items'][:4]
+    flagged = shown[0]['id']
+    assert client.post('/atlas/rounds', json=seen_round(client, shown, flagged={flagged})).status_code == 200
+    due = client.get(listing).json()
+    # The flagged crop leads the next round, ahead of the pending crops nobody has seen; the three
+    # shown and left unmarked are not dealt again.
+    assert [i['id'] for i in due['items']][0] == flagged and due['total'] == before - 3
+    category = next(c for c in due['categories'] if c['label'] == 'あ')
+    assert (category['due'], category['due_flagged']) == (before - 3, 1)
+    # Left unmarked in that round, it is seen: no longer dealt, and still flagged.
+    item = next(i for i in due['items'] if i['id'] == flagged)
+    again = {"id": str(uuid4()), "client_id": "seen-reviewer", "label": "あ", "answers": [],
+             "seen": [{"id": flagged, "image_sha256": item['image_sha256']}]}
+    assert client.post('/atlas/rounds', json=again).status_code == 200
+    after = client.get(listing).json()
+    assert flagged not in {i['id'] for i in after['items']} and after['total'] == before - 4
+    assert client.get('/atlas/characters/' + flagged).json()['state'] == 'flagged'
+    assert client.get('/atlas').json()['counts']['flagged'] == 1
+
+
 def test_undoing_a_round_makes_its_seen_crops_pending_again(dataset):
     client = TestClient(create_app(dataset))
     shown = client.get('/atlas?reading=あ&state=pending&limit=4').json()['items']
