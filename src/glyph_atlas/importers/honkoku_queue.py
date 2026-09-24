@@ -234,6 +234,30 @@ def _now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
+#: How the next book is chosen. A book whose pages are all marked finished comes first, then
+#: one with some finished pages, then one whose progress is unknown (the live listing does not
+#: state it), then one with none. Within a tier the project with the fewest collected books goes
+#: first, so an early harvest spreads over many projects; then the larger finished share; then
+#: the older project; then the order of discovery.
+CLAIM_ORDER = """
+WITH collected AS (SELECT project_id, count(*) AS n FROM books WHERE state='done' GROUP BY project_id)
+SELECT b.* FROM books b
+LEFT JOIN collected c ON c.project_id = b.project_id
+LEFT JOIN projects p ON p.id = b.project_id
+WHERE b.state='pending'{marks}
+ORDER BY
+  CASE WHEN b.size > 0 AND b.progress >= b.size THEN 0
+       WHEN b.progress > 0 THEN 1
+       WHEN b.progress IS NULL THEN 2
+       ELSE 3 END,
+  coalesce(c.n, 0),
+  CASE WHEN b.size > 0 THEN CAST(b.progress AS REAL) / b.size END DESC,
+  coalesce(json_extract(p.source, '$.createdAt._seconds'), 9e18),
+  b.discovered_at, b.entry_id
+LIMIT 1
+"""
+
+
 class Queue:
     """The durable work list. Every mutation is a single transaction."""
 
@@ -383,7 +407,11 @@ class Queue:
 
     # --------------------------------------------------------------- claiming
     def claim_next(self, exclude: Iterable[str] | None = None) -> sqlite3.Row | None:
-        """Mark the oldest pending book in progress, or return None.
+        """Mark the next pending book in progress, or return None.
+
+        The next book is chosen by `CLAIM_ORDER`: complete transcriptions first, then books
+        with the largest share of finished pages, spreading across projects so an early
+        harvest covers many kinds of material, and older projects before newer ones.
 
         The UPDATE is guarded by ``state='pending'`` inside an immediate transaction,
         and the partial unique index is the backstop: if a second process ever raced
@@ -395,13 +423,8 @@ class Queue:
             if running:
                 return None
             skip = [e for e in (exclude or ()) if e]
-            marks = f" AND entry_id NOT IN ({','.join('?' * len(skip))})" if skip else ""
-            row = db.execute(
-                "SELECT * FROM books WHERE state='pending'"
-                + marks
-                + " ORDER BY discovered_at, entry_id LIMIT 1",
-                tuple(skip),
-            ).fetchone()
+            marks = f" AND b.entry_id NOT IN ({','.join('?' * len(skip))})" if skip else ""
+            row = db.execute(CLAIM_ORDER.format(marks=marks), tuple(skip)).fetchone()
             if row is None:
                 return None
             db.execute(

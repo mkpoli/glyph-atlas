@@ -917,3 +917,43 @@ def test_collection_entry_objects_are_enumerated(tmp_path):
     collector, _, _ = build(tmp_path, FakeAPI(collections={COLLECTION["id"]: data}))
     collector.discover()
     assert len(collector.queue.books()) == 2
+
+
+class TestCollectionOrder:
+    """Complete books first, spread over projects, the larger finished share next, older projects first."""
+
+    def queue(self, tmp_path, books, projects=()):
+        queue = hq.Queue(tmp_path / "queue.sqlite")
+        for project_id, seconds in projects:
+            queue.record_project({"id": project_id, "createdAt": {"_seconds": seconds}})
+        for entry_id, project_id, size, progress in books:
+            queue.record_book(entry_id, project_id=project_id, collection_id=None, position=None,
+                              origin="snapshot", fields={"size": size, "progress": progress})
+        return queue
+
+    def order(self, queue):
+        picked = []
+        while (row := queue.claim_next()) is not None:
+            picked.append(row["entry_id"])
+            with queue.transaction() as db:
+                db.execute("UPDATE books SET state='done' WHERE entry_id=?", (row["entry_id"],))
+        return picked
+
+    def test_complete_then_partial_then_unknown_then_untouched(self, tmp_path):
+        queue = self.queue(tmp_path, [("none", "p", 10, 0), ("unknown", "p", 10, None),
+                                      ("partial", "p", 10, 3), ("complete", "p", 10, 10)])
+        assert self.order(queue) == ["complete", "partial", "unknown", "none"]
+
+    def test_a_tier_is_spread_over_projects_before_a_project_repeats(self, tmp_path):
+        queue = self.queue(tmp_path, [("a1", "a", 5, 5), ("a2", "a", 5, 5), ("b1", "b", 5, 5)],
+                           projects=[("a", 100), ("b", 200)])
+        assert self.order(queue) == ["a1", "b1", "a2"]
+
+    def test_the_larger_finished_share_goes_first(self, tmp_path):
+        queue = self.queue(tmp_path, [("low", "a", 10, 2), ("high", "b", 10, 9)])
+        assert self.order(queue) == ["high", "low"]
+
+    def test_an_older_project_goes_first_when_all_else_is_equal(self, tmp_path):
+        queue = self.queue(tmp_path, [("new", "young", 4, 4), ("old", "aged", 4, 4)],
+                           projects=[("young", 2_000), ("aged", 1_000)])
+        assert self.order(queue) == ["old", "new"]
