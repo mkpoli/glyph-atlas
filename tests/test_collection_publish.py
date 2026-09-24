@@ -99,3 +99,10 @@ def test_a_publication_waits_for_no_one_while_another_holds_the_index(tmp_path):
     with publication_lock(tmp_path / "corpus-index"), pytest.raises(BlockingIOError):
         publish(tmp_path, rebuild_index=False, min_free_bytes=0)
 
+
+def test_the_receipt_names_the_set_it_published_not_its_size():
+    from glyph_atlas.corpus.collection import listing_digest
+
+    before = [{"entry_id": "one", "dataset": "books/one"}, {"entry_id": "two", "dataset": "books/two"}]
+    after = [{"entry_id": "one", "dataset": "books/one"}, {"entry_id": "three", "dataset": "books/three"}]
+    assert len(before) == len(after) and listing_digest(before) != listing_digest(after)

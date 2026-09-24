@@ -3,7 +3,7 @@ import json
 import sys
 from pathlib import Path
 
-from glyph_atlas.corpus.collection import archive_statistics, publish
+from glyph_atlas.corpus.collection import archive_statistics, listing_digest, publish
 
 
 def main():
@@ -15,10 +15,11 @@ def main():
         listing = collection / "index.json"
         if not listing.exists():
             continue
-        count = json.loads(listing.read_text()).get("count", 0)
+        # The set of committed books, not their number: a reopened work and a new one keep the count.
+        books = json.loads(listing.read_text()).get("books", [])
         receipt = collection / "published.json"
-        previous = json.loads(receipt.read_text()).get("published", 0) if receipt.exists() else 0
-        if count <= previous:
+        previous = json.loads(receipt.read_text()).get("listing_sha256") if receipt.exists() else None
+        if not books or listing_digest(books) == previous:
             continue
         try:
             print(json.dumps(publish(root, source=source), ensure_ascii=False), flush=True)
