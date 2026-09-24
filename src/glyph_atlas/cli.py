@@ -24,6 +24,7 @@ eval_app = typer.Typer(help="Measure a prediction against adjudicated truth.", n
 review_app = typer.Typer(help="Serve and apply editorial reviews.", no_args_is_help=True)
 audit_app = typer.Typer(help="Draw a blind audit sample and publish its precision.", no_args_is_help=True)
 ainu_app = typer.Typer(help="Derive line boxes for the アイヌ関連資料 records.", no_args_is_help=True)
+repair_app = typer.Typer(help="Diagnose and repair systematic character-to-detection misassignment.", no_args_is_help=True)
 
 
 @app.callback()
@@ -578,6 +579,133 @@ def ainu_derive(
         typer.echo(f"{name:<14} {value:>10}")
 
 
+@repair_app.command("diagnose")
+def repair_diagnose(
+    directory: Annotated[Path, typer.Argument(help="dataset directory to diagnose")] = Path("work/ainu-records"),
+    out: Annotated[Path | None, typer.Option(help="where to write the plan")] = None,
+    derived: Annotated[Path | None, typer.Option(help="write the derived dataset here as well")] = None,
+    run: Annotated[str, typer.Option(help="run configuration under models/align/runs/<name>.yaml")] = "pilot-v1",
+    cache: Annotated[Path | None, typer.Option(help="the detections the units came from")] = None,
+    image_cache: Annotated[Path | None, typer.Option(help="the image cache to cut crops from")] = None,
+    scores: Annotated[Path | None, typer.Option(help="keep the classifier's crop scores here and reuse them")] = None,
+    backend: Annotated[str, typer.Option(help="classifier backend: torch (a device) or onnx (the run's export)")] = "torch",
+    checkpoint: Annotated[Path | None, typer.Option(help="the checkpoint the ONNX export was made from")] = None,
+    device: Annotated[str, typer.Option(help="torch device, cuda or cpu")] = "cuda",
+    batch: Annotated[int, typer.Option(help="crops one forward pass takes")] = 256,
+    pages: Annotated[str | None, typer.Option(help="comma-separated page ids, or one document id")] = None,
+    limit: Annotated[int | None, typer.Option(help="stop after this many lines")] = None,
+    confirm_margin: Annotated[float, typer.Option(help="nats by which a crop confirms its own character")] = 1.0,
+    contradiction_margin: Annotated[float, typer.Option(help="nats by which a crop may contradict it")] = -1.0,
+    min_phase_margin: Annotated[float, typer.Option(help="nats by which a rigid phase must win")] = 2.0,
+    place_missing: Annotated[bool, typer.Option("--place/--no-place", help="place characters that have no box now")] = False,
+) -> None:
+    """Score every boxed line against the corrected reading order and write the repair plan.
+
+    The plan is a proposal and nothing else: this command reads the source tables, the detections the
+    units were aligned against and the cached page images, and writes a JSON file naming every box it
+    would move, why, and what it was computed from. `--derived DIR` writes the derived dataset in the
+    same run; the source is never written to.
+    """
+    from . import align as align_module
+    from . import repair
+
+    run_path = Path("models/align/runs") / f"{run}.yaml"
+    if not run_path.exists():
+        raise typer.BadParameter(f"{run_path} does not exist")
+    config = align_module.load_run(run_path, run)
+    found = repair.detections_for(directory, cache)
+    classifier = repair.classifier_for(config, backend=backend, checkpoint=checkpoint, device=device,
+                                       batch=batch)
+    evidence = classifier.describe() if hasattr(classifier, "describe") else {
+        "backend": "onnx", "path": str(getattr(classifier, "onnx_path", "")),
+        "classes": len(getattr(classifier, "classes", ())),
+        "providers": classifier.providers() if hasattr(classifier, "providers") else [],
+    }
+    if backend == "torch":
+        onnx = repair.classifier_for(config, backend="onnx")
+        crops = repair.sample_crops(directory, found, image_cache=image_cache)
+        evidence["parity"] = repair.parity(onnx, classifier, crops)
+        typer.echo(f"parity: {evidence['parity']}")
+    selected = pages.split(",") if pages else None
+    plan = repair.plan_directory(directory, run=config, classifier=classifier, cache=cache,
+                                 image_cache=image_cache, scores=scores, pages=selected, limit=limit,
+                                 confirm_margin=confirm_margin,
+                                 contradiction_margin=contradiction_margin,
+                                 min_phase_margin=min_phase_margin, place_missing=place_missing)
+    plan.classifier = evidence
+    target = out or Path(directory) / repair.PLAN_NAME
+    target.write_text(plan.model_dump_json(indent=2), encoding="utf-8")
+    typer.echo(f"-> {target}")
+    for name, value in plan.counts.items():
+        typer.echo(f"{name:<22} {value}")
+    if derived is not None:
+        counts = repair.apply_plan(plan, derived, source=directory)
+        for name, value in counts.items():
+            typer.echo(f"derived {name:<14} {value}")
+
+
+@repair_app.command("apply")
+def repair_apply(
+    plan: Annotated[Path, typer.Argument(help="the plan to apply")],
+    out: Annotated[Path, typer.Option(help="the derived dataset to write")],
+    source: Annotated[Path | None, typer.Option(help="the dataset the plan was made from")] = None,
+    statuses: Annotated[str, typer.Option(help="comma-separated record statuses to apply")] = "applied,confirmed",
+) -> None:
+    """Write a derived dataset with a reviewed plan's corrections applied."""
+    from . import repair
+
+    chosen = repair.read_plan(Path(plan))
+    counts = repair.apply_plan(chosen, out, source=source, statuses=tuple(statuses.split(",")))
+    for name, value in counts.items():
+        typer.echo(f"{name:<18} {value}")
+
+
+@repair_app.command("verify")
+def repair_verify(
+    directory: Annotated[Path, typer.Argument(help="the derived dataset to check")],
+) -> None:
+    """Check that a derived dataset keeps the invariants a repair must not break.
+
+    Two active units of one line holding one box, a repaired unit still naming a crop file of the box
+    it no longer has, and a human-reviewed unit whose recorded box disagrees with the corrected order
+    are the three ways a repair can be wrong in a way its own plan would not show.
+    """
+    from . import repair
+
+    result = repair.verify_dataset(directory)
+    for name, value in result.items():
+        if name in ("collisions", "stale-crops"):
+            typer.echo(f"{name:<18} {len(value)}")
+            for key, ids in list(value.items())[:5] if isinstance(value, dict) else []:
+                typer.echo(f"    {key}: {ids}")
+            for item in (value if isinstance(value, list) else [])[:5]:
+                typer.echo(f"    {item}")
+        else:
+            typer.echo(f"{name:<18} {value}")
+
+
+@repair_app.command("undo")
+def repair_undo(
+    directory: Annotated[Path, typer.Argument(help="the derived dataset to reverse")],
+) -> None:
+    """Reverse this pass's box corrections in a derived dataset, from its own log."""
+    from . import repair
+
+    for name, value in repair.undo_plan(directory).items():
+        typer.echo(f"{name:<18} {value}")
+
+
+@repair_app.command("replay")
+def repair_replay(
+    directory: Annotated[Path, typer.Argument(help="the derived dataset to apply again")],
+) -> None:
+    """Apply a derived dataset's undone corrections again, from the same log."""
+    from . import repair
+
+    for name, value in repair.replay_plan(directory).items():
+        typer.echo(f"{name:<18} {value}")
+
+
 @app.command()
 def export(
     datasets: Annotated[list[Path], typer.Argument(help="dataset directories to merge into the release")],
@@ -620,7 +748,12 @@ def align(
     group: Annotated[str | None, typer.Option(help="a pilot group: calibration or heldout")] = None,
     per_item: Annotated[int | None, typer.Option(help="with a group, the first n pages of each item")] = None,
 ) -> None:
-    """Align the transcription lines of a dataset to the character boxes a detector finds."""
+    """Align the transcription lines of a dataset to the character boxes a detector finds.
+
+    A vertical line's detections are matched in the order the line is read — columns right to left,
+    down each — which is what `atlas repair diagnose` repairs on units that were aligned before that
+    was the order.
+    """
     from . import align as align_module
 
     run_path = Path("models/align/runs") / f"{run}.yaml"
@@ -653,6 +786,7 @@ for name, module in (
     ("review", review_app),
     ("audit", audit_app),
     ("ainu", ainu_app),
+    ("repair", repair_app),
 ):
     app.add_typer(module, name=name)
 

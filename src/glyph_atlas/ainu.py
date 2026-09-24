@@ -665,6 +665,16 @@ def settings_of(cache: Path | None) -> dict[str, Any] | None:
     return record.get("settings")
 
 
+def read_detections(cache: Path) -> dict[str, list[Box]]:
+    """The detections a census cached, keyed by page id.
+
+    A repair pass has to see the boxes the detector found when the units were written, not today's
+    detections: a box that moved since would make every comparison between a recorded unit and a
+    corrected one a comparison of two different pages. The cache is the run's own record of them.
+    """
+    return _read_cache(cache)
+
+
 def _read_cache(cache: Path | None, *, settings: dict[str, Any] | None = None) -> dict[str, list[Box]]:
     """The detections a previous run cached, or an empty map when there is no cache.
 

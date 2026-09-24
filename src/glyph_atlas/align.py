@@ -272,6 +272,10 @@ def containers_of(line: Line, detections: Sequence[Detection], policy: str = "al
     A 割書 line splits into columns by the token's column and the detection's x; a line without one is
     a single container. A detection whose centre falls outside the line box and outside every column
     is not part of the line.
+
+    A vertical line's detections are walked in `reading_order`, because the alignment is monotone in
+    the order it is given and that is the order the line is read in. A horizontal line keeps the
+    detector's own sequence sorted left to right.
     """
     tokens = tokens_of(line, policy)
     inside = [
@@ -279,12 +283,10 @@ def containers_of(line: Line, detections: Sequence[Detection], policy: str = "al
         for detection in detections
         if line.box is None or _inside(line.box, detection.centre)
     ]
-    order = (lambda detection: _reading_order(detection)) if line.vertical else (
-        lambda detection: (detection.centre[0], detection.centre[1])
-    )
     columns = sorted({token.column for token in tokens if token.column is not None})
     if not columns:
-        return [Container(tokens=tokens, detections=sorted(inside, key=order))]
+        found = _line_order(line, inside)
+        return [Container(tokens=tokens, detections=found)]
     groups: list[Container] = []
     for column in columns:
         column_tokens = [token for token in tokens if token.column == column]
@@ -296,8 +298,44 @@ def containers_of(line: Line, detections: Sequence[Detection], policy: str = "al
         target = min(groups, key=lambda group: abs(_column_x(group, tokens) - detection.centre[0]))
         target.detections.append(detection)
     for group in groups:
-        group.detections.sort(key=order)
+        group.detections = _line_order(line, group.detections)
     return [group for group in groups if group.tokens or group.detections]
+
+
+def _line_order(line: Line, detections: Sequence[Detection]) -> list[Detection]:
+    """One line's detections in the order the line is read."""
+    if line.vertical:
+        return reading_order(detections)
+    return sorted(detections, key=lambda detection: (detection.centre[0], detection.centre[1]))
+
+
+def reading_order(detections: Sequence[Detection]) -> list[Detection]:
+    """A vertical line's detections in the order the line is read: columns right to left, down each.
+
+    The aligner matches the tokens of a transcription to a line's detections with a monotone dynamic
+    program, so both sequences are walked forward together and the order the detections arrive in
+    decides which character gets which box. Sorting on the raw float x centre fails on these
+    manuscripts: most of a line's detections sit within a few pixels of the same x, so the y key
+    almost never decides anything and the detector's own output is in no order at all. Measured over
+    the 759 derived lines that hold four or more in-box detections, the detections advance down the
+    column for 5 of them under the x sort and for 724 under this order, and a unit labelled 手 held
+    the crop of を until this became the order the aligner walks in.
+
+    The rule is the derivation's own: `ainu.columns_of` groups detections into columns by a gap
+    measured against the page's median character width, and a column is read top to bottom. The
+    grouping is what keeps the order safe — a detection cannot move into the neighbouring column,
+    only within its own from one y to the next.
+    """
+    from . import ainu
+
+    if len(detections) < 2:
+        return list(detections)
+    columns = ainu.columns_of([detection.box for detection in detections])
+    return [
+        detections[index]
+        for column in columns
+        for index in sorted(column, key=lambda position: detections[position].centre[1])
+    ]
 
 
 def _column_x(group: Container, tokens: Sequence[Token]) -> float:
@@ -308,10 +346,6 @@ def _column_x(group: Container, tokens: Sequence[Token]) -> float:
 
 def _inside(box: Box, point: tuple[float, float]) -> bool:
     return box.x <= point[0] <= box.x + box.w and box.y <= point[1] <= box.y + box.h
-
-
-def _reading_order(detection: Detection) -> tuple[float, float]:
-    return (-detection.centre[0], detection.centre[1])
 
 
 def align_line(
@@ -680,6 +714,17 @@ def _match_costs(
         return [[floor] * len(detections) for _ in tokens]
     index = {name: position for position, name in enumerate(classes)}
     return [_token_costs(probabilities, token, index, floor) for token in tokens]
+
+
+def token_costs(probabilities: Any, token: Token, index: dict[str, int], floor: float) -> list[float]:
+    """One token's cost against every crop, from a batch of class probabilities.
+
+    The token's cost is the negative log of the probability mass its code points carry on that crop:
+    a kana with several candidate forms asks for the sum of their probabilities, because the
+    transcription leaves open which form was written. A token whose code points are all outside the
+    class list costs the floor, since the classifier was not trained on it and has nothing to say.
+    """
+    return _token_costs(probabilities, token, index, floor)
 
 
 def _token_costs(probabilities: Any, token: Token, index: dict[str, int], floor: float) -> list[float]:
