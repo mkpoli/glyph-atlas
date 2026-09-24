@@ -9,7 +9,6 @@ import re
 import threading
 from functools import lru_cache
 from pathlib import Path
-from urllib.parse import urlsplit
 from uuid import uuid4
 
 from fastapi import Request
@@ -18,9 +17,10 @@ from PIL import Image
 from .. import images
 
 VERSION = 1
+#: A IIIF region request of a service whose full-size scan the image cache may hold.
+_REGION = re.compile(r"(?P<service>https://.+)/(?P<x>\d+),(?P<y>\d+),(?P<w>\d+),(?P<h>\d+)/(?P<edge>\d+),/0/default\.jpg")
 CACHE_CONTROL = "public, max-age=31536000, immutable"
 _LOCKS = [threading.Lock() for _ in range(64)]
-_REMOTE_SLOTS = threading.BoundedSemaphore(3)
 
 
 @lru_cache(maxsize=8192)
@@ -61,24 +61,31 @@ class MediaCache:
         finally:
             temp.unlink(missing_ok=True)
 
-    def local(self, path, box=None, *, context=False, edge=None):
+    def local(self, path, box=None, *, context=False, edge=None, exact=False):
         path = Path(path)
         stat = path.stat()
         path = _resolved(str(path), stat.st_dev, stat.st_ino)
         for name, root in self.roots.items():
             if path.is_relative_to(root):
-                return self._register({"source": name, "path": path.relative_to(root).as_posix(),
+                spec = {"source": name, "path": path.relative_to(root).as_posix(),
                     "stamp": stat.st_mtime_ns, "size": stat.st_size,
-                    "box": list(box) if box else None, "context": context, "edge": edge})
+                    "box": list(box) if box else None, "context": context, "edge": edge}
+                if exact:
+                    # A requested region is cut as given, without the display margin.
+                    spec["exact"] = True
+                return self._register(spec)
         raise ValueError("display crop outside registered image roots")
 
-    def remote(self, url):
-        # This is a registered CODH image cache, never an arbitrary URL proxy.
-        parsed = urlsplit(url)
-        if (parsed.scheme != "https" or parsed.netloc != "codh.rois.ac.jp"
-                or not parsed.path.startswith("/char-shape/iiif/") or parsed.query or parsed.fragment):
+    def region(self, url):
+        """A holder IIIF region request, cut from the full-size scan the image cache holds."""
+        found = _REGION.fullmatch(url or "")
+        if not found:
             return None
-        return self._register({"source": "codh", "url": url})
+        path = images.held(found["service"])
+        if path is None:
+            return None
+        box = [int(found[k]) for k in ("x", "y", "w", "h")]
+        return self.local(path, box, exact=True, edge=int(found["edge"]))
 
     def materialize(self, key):
         if not re.fullmatch(r"[0-9a-f]{64}", key):
@@ -90,43 +97,33 @@ class MediaCache:
             if output.is_file():
                 return output
             spec = json.loads(output.with_suffix(".json").read_text())
-            if spec["source"] == "codh":
-                picture = self._download(spec["url"])
-            else:
-                from .atlas import _IMAGE_SLOTS, crop_bounds, decoded_image
-                root = self.roots[spec["source"]]
-                source = (root / spec["path"]).resolve()
-                if not source.is_relative_to(root):
-                    raise ValueError("invalid display source")
-                stat = source.stat()
-                if (stat.st_mtime_ns, stat.st_size) != (spec["stamp"], spec["size"]):
-                    raise ValueError("display source changed before rendering")
-                with _IMAGE_SLOTS:
-                    page = decoded_image(str(source), spec["stamp"])
-                    picture = page.crop(crop_bounds(page, spec["box"], spec["context"])) if spec["box"] else page.copy()
-                edge = spec["edge"]
-                bounds = (edge, edge) if edge else (640, 640) if spec["context"] else (240, 280)
-                picture.thumbnail(bounds, Image.Resampling.LANCZOS)
+            from .atlas import _IMAGE_SLOTS, crop_bounds, decoded_image
+            root = self.roots[spec["source"]]
+            source = (root / spec["path"]).resolve()
+            if not source.is_relative_to(root):
+                raise ValueError("invalid display source")
+            stat = source.stat()
+            if (stat.st_mtime_ns, stat.st_size) != (spec["stamp"], spec["size"]):
+                raise ValueError("display source changed before rendering")
+            with _IMAGE_SLOTS:
+                page = decoded_image(str(source), spec["stamp"])
+                if not spec["box"]:
+                    picture = page.copy()
+                elif spec.get("exact"):
+                    x, y, w, h = spec["box"]
+                    bounds = (max(0, x), max(0, y), min(page.width, x + w), min(page.height, y + h))
+                    if bounds[2] <= bounds[0] or bounds[3] <= bounds[1]:
+                        raise ValueError("The region falls outside the image.")
+                    picture = page.crop(bounds)
+                else:
+                    picture = page.crop(crop_bounds(page, spec["box"], spec["context"]))
+            edge = spec["edge"]
+            bounds = (edge, edge) if edge else (640, 640) if spec["context"] else (240, 280)
+            picture.thumbnail(bounds, Image.Resampling.LANCZOS)
             buffer = io.BytesIO()
             picture.save(buffer, format="WEBP", quality=90, method=4)
             self._write(output, buffer.getvalue())
             return output
-
-    @staticmethod
-    def _download(url):
-        import httpx
-
-        with _REMOTE_SLOTS, httpx.stream("GET", url, timeout=15, follow_redirects=False) as response:
-            response.raise_for_status()
-            data = bytearray()
-            for chunk in response.iter_bytes():
-                data.extend(chunk)
-                if len(data) > 8 * 1024 * 1024:
-                    raise ValueError("remote crop exceeds display limit")
-        with Image.open(io.BytesIO(data)) as image:
-            if image.width * image.height > 4_000_000:
-                raise ValueError("remote crop exceeds pixel limit")
-            return image.convert("RGB")
 
     def corpus_image(self, row, crops, *, edge=240):
         """Register a decorated corpus row directly, avoiding a table scan per image."""
@@ -134,8 +131,6 @@ class MediaCache:
         from ..corpus.api import PROXYABLE
         if row.get("image_licence") not in PROXYABLE or not thumb.get("available"):
             return None
-        if thumb.get("mode") == "remote_iiif":
-            return self.remote(thumb.get("iiif_url") or "")
         path = crops.archive_member_path(row.get("crop")) if row.get("crop") else None
         if path:
             return self.local(path, edge=edge)
@@ -197,11 +192,6 @@ def router(media):
             raise HTTPException(404, "Display crop unavailable") from None
         except (OSError, ValueError, KeyError, Image.DecompressionBombError):
             raise HTTPException(422, "Display crop could not be prepared") from None
-        except Exception as error:
-            import httpx
-            if isinstance(error, httpx.HTTPError):
-                raise HTTPException(502, "Image provider did not answer; try again") from None
-            raise
         headers = {"Cache-Control": CACHE_CONTROL, "ETag": f'"{key}"'}
         if request.headers.get("if-none-match") in (headers["ETag"], f'W/{headers["ETag"]}', "*"):
             return Response(status_code=304, headers=headers)

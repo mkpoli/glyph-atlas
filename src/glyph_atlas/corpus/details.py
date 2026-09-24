@@ -602,8 +602,8 @@ class DetailResolver:
     ) -> dict[str, Any]:
         media = getattr(self.api, "media", None)
         if media is not None and proxyable:
-            image = (media.remote(image) or image) if image else image
-            context_image = (media.remote(context_image) or context_image) if context_image else context_image
+            image = (media.region(image) or image) if image else image
+            context_image = (media.region(context_image) or context_image) if context_image else context_image
         payload = {
             "id": identity,
             "unit_id": unit_id,

@@ -272,32 +272,18 @@ class CropResolver:
         edge: int = DEFAULT_CROP_EDGE,
         corpus_name: str | None = None,
     ) -> tuple[bytes | None, str | None, str | None]:
-        """Crop `box` out of a locally registered page image.
+        """Crop `box` out of a locally held page image.
 
         Returns ``(bytes, media_type, reason)``. The path comes from the corpus row
-        and is still checked against the allow list.
+        and is resolved by `page_image_path`, which applies the allow list.
         """
-        if not image or not image.startswith("file:"):
-            return None, None, "page image is not a registered local file"
-        raw = Path(image[len("file:") :])
-        # The registered path is relative to wherever the import ran, which is not
-        # necessarily where the corpus is read from now. Try the literal path against
-        # each base, then fall back to the corpus's own image directory by filename —
-        # every candidate is still allow-listed, so this widens *where* we look, never
-        # *what* may be served.
-        candidates: list[Path] = [raw] if raw.is_absolute() else [b / raw for b in self.file_bases]
-        directory = self.image_dir(corpus_name or "")
-        if directory is not None:
-            candidates.append(directory / raw.name)
-            candidates.append(directory / raw.parent.name / raw.name)
-        candidates.append(self.root / raw)
-        candidate = next((c for c in candidates if self.allowed(c, corpus_name)), None)
+        candidate = self.page_image_path(image, corpus_name)
         if candidate is None:
             return (
                 None,
                 None,
                 (
-                    "page image is outside the served crop roots"
+                    "page image is not held locally"
                     + (f" for {corpus_name}" if corpus_name else "")
                 ),
             )
@@ -350,13 +336,19 @@ class CropResolver:
 
     # ------------------------------------------------- per-row availability
     def page_image_path(self, image: str | None, corpus_name: str | None) -> Path | None:
-        """The local file behind a ``file:`` page image, if it is servable.
+        """The local file behind a page image, if it is servable.
 
-        Cached by the image reference, which every unit of a page shares, so a page of
-        results costs one check rather than one per row.
+        A ``file:`` reference resolves under this corpus's image directory. A holder URL
+        resolves to the full-size scan the image cache holds for it, which the cache itself
+        keeps current.
+
+        A ``file:`` result is cached by the image reference, which every unit of a page
+        shares, so a page of results costs one check rather than one per row.
         """
         if not image:
             return None
+        if image.startswith("https://"):
+            return self._held_page(image)
         key = f"{corpus_name}|{image}"
         if key in self._page_paths:
             return self._page_paths[key]
@@ -374,6 +366,17 @@ class CropResolver:
             self._page_paths.clear()
         self._page_paths[key] = found
         return found
+
+    def _held_page(self, url: str) -> Path | None:
+        from .. import images
+
+        path = images.held(url)
+        try:
+            if path is None or path.stat().st_size > MAX_SOURCE_BYTES:
+                return None
+        except OSError:
+            return None
+        return path
 
     def archive_member_path(self, crop: str | None) -> Path | None:
         """The extracted file behind an archive reference, if it is on disk."""
@@ -419,6 +422,12 @@ class CropResolver:
                 return True, None, "local_crop"
             return False, "page image is outside the served crop roots", mode
         if has_box and image and str(image).startswith("http"):
+            from .api import PROXYABLE
+
+            # Only an image this API may re-serve is cut from the held scan; any other
+            # stays with the holder, which the browser loads directly.
+            if row.get("image_licence") in PROXYABLE and self.page_image_path(str(image), corpus_name) is not None:
+                return True, None, "local_crop"
             base = _service_base(image)
             if base:
                 return True, None, "remote_iiif"
@@ -510,7 +519,8 @@ class CropResolver:
             # The row's own fields decide whether this exact unit can be shown, and
             # the endpoint and the descriptor must agree: both call row_availability.
             available, why, how = self.row_availability(
-                {"box": box, "crop": row.get("crop"), "image": page.get("image")}, corpus.name, page
+                {"box": box, "crop": row.get("crop"), "image": page.get("image"), "image_licence": licence},
+                corpus.name, page
             )
             result.mode = how
             if not available:

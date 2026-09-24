@@ -343,3 +343,35 @@ class TestCapabilityIsVerified:
         assert verdict["verified"] is False
         assert "not been extracted" in (verdict["reason"] or "")
 
+
+def test_a_holder_page_held_in_the_image_cache_is_cropped_locally(tmp_path, monkeypatch):
+    from glyph_atlas import images
+
+    monkeypatch.setenv("GLYPH_ATLAS_CACHE", str(tmp_path / "cache"))
+    service = "https://codh.rois.ac.jp/char-shape/iiif/a/b.tif"
+    row = {"box": {"x": 10, "y": 20, "w": 30, "h": 40}, "image": service, "image_licence": "CC-BY-SA-4.0"}
+    resolver = CropResolver(tmp_path)
+    assert resolver.row_availability(row, "codh-full") == (True, None, "remote_iiif")
+    scan = tmp_path / "scan.jpg"
+    scan.write_bytes(jpeg())
+    images.register(scan, service)
+    # The same resolver sees a scan the cache gained after it started.
+    assert resolver.row_availability(row, "codh-full") == (True, None, "local_crop")
+    data, media_type, reason = resolver.local_page_crop(service, row["box"], corpus_name="codh-full")
+    assert data and (media_type, reason) == ("image/jpeg", None)
+    # A page named by a full-size request of the held service is the same scan.
+    request = {**row, "image": service + "/full/max/0/default.jpg"}
+    assert resolver.row_availability(request, "codh-full") == (True, None, "local_crop")
+    assert resolver.page_image_path("https://codh.rois.ac.jp/char-shape/iiif/a/c.tif", "codh-full") is None
+
+
+def test_a_held_page_the_licence_forbids_serving_stays_with_the_holder(tmp_path, monkeypatch):
+    from glyph_atlas import images
+
+    monkeypatch.setenv("GLYPH_ATLAS_CACHE", str(tmp_path / "cache"))
+    service = "https://example.org/iiif/page"
+    scan = tmp_path / "scan.jpg"
+    scan.write_bytes(jpeg())
+    images.register(scan, service)
+    row = {"box": {"x": 10, "y": 20, "w": 30, "h": 40}, "image": service, "image_licence": "restricted"}
+    assert CropResolver(tmp_path).row_availability(row, "ainu-records") == (True, None, "remote_iiif")
