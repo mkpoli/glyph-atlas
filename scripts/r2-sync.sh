@@ -19,6 +19,10 @@ export RCLONE_CONFIG_R2_PROVIDER=Cloudflare
 export RCLONE_CONFIG_R2_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:?R2_ACCESS_KEY_ID is required}"
 export RCLONE_CONFIG_R2_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:?R2_SECRET_ACCESS_KEY is required}"
 export RCLONE_CONFIG_R2_ENDPOINT="https://${R2_ACCOUNT_ID:?R2_ACCOUNT_ID is required}.r2.cloudflarestorage.com"
+# The token is limited to one bucket's objects, so rclone must not try to check or create the
+# bucket itself; these are the settings Cloudflare documents for such a token.
+export RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true
+export RCLONE_CONFIG_R2_ACL=private
 
 bucket="${R2_BUCKET:-glyph-atlas-harvest}"
 action="${1:?usage: r2-sync.sh restore|save <group>}"
