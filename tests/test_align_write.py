@@ -203,6 +203,13 @@ def test_a_run_carries_the_detectors_suppression(tmp_path: Path, monkeypatch) ->
     )
 
 
+def test_the_ink_gate_is_part_of_a_run_only_when_set() -> None:
+    """An unset gate keeps a run's hash, so its units keep their ids; a set gate names new ones."""
+    assert "ink" not in align.Run(name="plain").model_dump(exclude_none=True)
+    assert align.Run(name="plain").fingerprint() == align.Run(name="plain", ink=None).fingerprint()
+    assert align.Run(name="plain").fingerprint() != align.Run(name="plain", ink=0.4).fingerprint()
+
+
 def test_the_pilot_configuration_states_both_numbers() -> None:
     """The run the pilot is measured with names the operating point and the suppression."""
     run = align.load_run(ROOT / "models" / "align" / "runs" / "pilot-v1.yaml")

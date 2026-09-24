@@ -367,8 +367,9 @@ class Detector:
     def boxes_in(self, image: Image.Image | str | Path, region: Box) -> list[tuple[Box, float]]:
         """The boxes that meet `region`, in page coordinates, highest score first.
 
-        Only the tiles that meet the region are run, so the boxes are the ones a whole-page run
-        would return inside it and the geometry the model sees is unchanged.
+        Only the tiles that meet the region are run, so the geometry the model sees is unchanged.
+        The ink gate judges a box against the boxes of those tiles, so a region whose tiles hold
+        only pale ink, or only show-through, can keep a box a whole-page run would drop.
         """
         page = _open(image)
         wanted = [
