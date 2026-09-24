@@ -31,16 +31,46 @@ class FrozenResolver(DetailResolver):
         return self.export_stamp
 
 
-def export(output, *, resume=False):
+class Published:
+    """Stands in for `Packs` when only records are exported: every image must already be public.
+
+    `keys` is the set of display crops an earlier publication packed, read from that export's
+    `corpus.sqlite` or from a list of D1's `media` keys. A record whose image is not in it is left
+    out rather than published pointing at an image R2 does not hold.
+    """
+
+    file = None
+
+    def __init__(self, keys):
+        self.keys = keys
+
+    def add(self, key, path):
+        if key not in self.keys:
+            raise ValueError(f"display crop {key} was never published")
+
+    def close(self):
+        pass
+
+
+def published_keys(path: Path) -> set[str]:
+    """Media keys from an earlier export's `corpus.sqlite`, or from a text file, one per line."""
+    if path.suffix == ".sqlite":
+        with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as db:
+            return {key for (key,) in db.execute("SELECT key FROM media")}
+    return {line.strip() for line in path.read_text().splitlines() if line.strip()}
+
+
+def export(output, *, resume=False, published=None):
     output.mkdir(parents=True, exist_ok=resume)
     db = sqlite3.connect(output / "corpus.sqlite")
     db.executescript(Path("apps/cloudflare/migrations/0001_catalogue.sql").read_text())
     media = MediaCache(corpus_root=Path("work"))
     api = CorpusAPI("work", "work/corpus-index", autobuild=False)
     resolver = FrozenResolver(api)
-    packs = Packs(output, db)
+    packs = Published(published) if published is not None else Packs(output, db)
     # Distinct names allow catalogue and corpus exports to be combined safely.
-    packs.index = max(packs.index, 10000)
+    if published is None:
+        packs.index = max(packs.index, 10000)
     record_file = None
     pack_index = max([int(p.stem.split("-")[-1]) for p in output.glob("corpus-*.bin")], default=0)
     for name, in db.execute("SELECT DISTINCT object FROM corpus_units"):
@@ -100,7 +130,11 @@ def export(output, *, resume=False):
                         path = media.roots[spec["source"]] / spec["path"]
                         context_image = media.local(path, spec["box"], context=True)
                         context_key = context_image.rsplit("/", 1)[-1].removesuffix(".webp")
-                        packs.add(context_key, media.materialize(context_key))
+                        try:
+                            packs.add(context_key, media.materialize(context_key))
+                        except (OSError, ValueError):
+                            counts["unavailable"] += 1
+                            continue
                         from PIL import Image
 
                         from glyph_atlas.review.atlas import crop_bounds
@@ -155,5 +189,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--records-only", type=Path, metavar="PUBLISHED",
+                        help="write records only; PUBLISHED lists the media keys already in D1 "
+                             "(an earlier export's corpus.sqlite, or a text file of keys)")
     args = parser.parse_args()
-    export(args.output, resume=args.resume)
+    export(args.output, resume=args.resume,
+           published=published_keys(args.records_only) if args.records_only else None)
