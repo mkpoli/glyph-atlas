@@ -263,11 +263,15 @@ async function submit(env: Env, request: Request, target?: string) {
   if(corpus)target=text(input.identity,512,'corpus identity',true)!;
   const id=text(input.id,64,'submission id',true)!, actor=text(input.client_id,128,'reviewer',true)!;
   if(!/^[0-9a-f-]{36}$/i.test(id))throw new Problem(422,'Invalid submission id.');
-  const signature=canonical({target:target||null,input});
+  // A retry is the same submission whatever else came on screen meanwhile: the seen crops are left
+  // out of the signature, as the local server compares only the answers, and the first result stands.
+  const {seen:_,...signed}=input;
+  const signature=canonical({target:target||null,input:signed});
   const key=actor+':'+id;
   const previous=await env.DB.prepare('SELECT request,response FROM submissions WHERE id=?').bind(key).first<{request:string;response:string}>();
   if(previous){if(previous.request!==signature)throw new Problem(409,'This submission was already saved with different answers.');return parse(previous.response)}
   const round=!target;
+  if(round)text(input.label,32,'label',true);
   const {answers,seen}=validRound(input,target);
   const changes=[];
   const at=new Date().toISOString();

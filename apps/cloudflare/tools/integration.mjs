@@ -111,12 +111,15 @@ try {
   const recorded = await call('/atlas/rounds', passed)
   assert.equal(recorded.results.filter(r => r.field === 'seen').length, 2, 'a crop whose pixels changed is skipped')
   assert.deepEqual(await call('/atlas/rounds', passed), recorded, 'a retried pass is the same pass')
+  const scrolled = { ...passed, seen: [...passed.seen, { id: 'seen-extra', image_sha256: hash }] }
+  assert.deepEqual(await call('/atlas/rounds', scrolled), recorded, 'a retry with more crops on screen returns the first result')
+  await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'integration', seen: [{ id: 'seen-a', image_sha256: hash }] }, 422)
   assert.deepEqual(await pendingSe(), ['seen-c'], 'seen crops leave the queue')
   const summary = await call('/atlas?purpose=review&reading=セ')
   assert.equal(summary.counts.seen, 2)
   assert.equal(summary.items.find(i => i.id === 'seen-a').state, 'seen')
   assert.equal((await call('/atlas/characters/seen-a')).revision, 0, 'seeing a crop changes nothing about it')
-  assert.ok(!(await call('/atlas/reviews.json?all=1')).reviews.some(r => r.event?.target_id?.startsWith('seen-')), 'seen is not a review')
+  assert.ok(!(await call('/atlas/reviews.json?include_processed=true')).reviews.some(r => r.event?.target_id?.startsWith('seen-')), 'seen is not a review')
   const flagOnSeen = { id: crypto.randomUUID(), client_id: 'second', label: 'セ',
     answers: [{ id: 'seen-a', revision: 0, image_sha256: hash, verdict: 'wrong', issue: 'crop' }], seen: [{ id: 'seen-c', image_sha256: hash }] }
   await call('/atlas/rounds', flagOnSeen)

@@ -5,4 +5,3 @@ CREATE TABLE IF NOT EXISTS seen (
  target TEXT NOT NULL REFERENCES units(id), submission TEXT NOT NULL REFERENCES submissions(id),
  box TEXT, image_sha256 TEXT NOT NULL, at TEXT NOT NULL, PRIMARY KEY(target,submission)
 );
-CREATE INDEX IF NOT EXISTS seen_target ON seen(target);
