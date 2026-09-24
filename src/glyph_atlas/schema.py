@@ -23,7 +23,7 @@ from datetime import date, datetime
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Licence(StrEnum):
@@ -290,6 +290,8 @@ class ReviewState(StrEnum):
 
 class Unit(BaseModel):
     """One graphic unit on a page: usually a character, sometimes a ligature or a mark."""
+
+    model_config = ConfigDict(extra="forbid")
 
     id: str
     document_id: str | None = Field(default=None, description="set on every unit, so that a standalone crop still reaches its rights")

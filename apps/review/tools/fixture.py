@@ -133,7 +133,6 @@ def units_of(line: Line, boxes: list[Box], offset: int = 0, kind: str = "char") 
                 reading=KANA[index],
                 text_source=KANA[index],
                 unicode=CODE_POINTS[index],
-                jibo="安" if script is Script.HENTAIGANA else None,
                 classification=Classification.IDENTIFIED,
                 script=script,
                 method="detect-align",

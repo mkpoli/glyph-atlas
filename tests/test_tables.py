@@ -82,7 +82,7 @@ def unit(ident: str = "u1", **overrides) -> Unit:
     fields = {"id": ident, "document_id": "d1", "page_id": "p1", "line_id": None, "seq": 0,
               "box": Box(x=10, y=20, w=30, h=40), "crop": None, "kind": UnitKind.CHAR, "granularity": "char",
               "text_source": "か", "reading": "か", "unicode": "U+304B",
-              "classification": Classification.IDENTIFIED, "script": Script.HIRAGANA, "jibo": "可"}
+              "classification": Classification.IDENTIFIED, "script": Script.HIRAGANA}
     return Unit(**{**fields, **overrides})
 
 
@@ -118,7 +118,7 @@ SAMPLES = {
         id="u1", document_id="d1", page_id="p1", line_id="l1", seq=2, box=Box(x=1, y=2, w=3, h=4),
         crop="crops/u1.jpg", crop_sha256="b" * 64, kind=UnitKind.ITERATION_MARK, granularity="sequence",
         text_source="ゝ", reading="か", unicode="U+304B", classification=Classification.AMBIGUOUS,
-        script=Script.HENTAIGANA, jibo="可", variants=[VariantRef(scheme="mj", id="MJ090024"),
+        script=Script.HENTAIGANA, variants=[VariantRef(scheme="mj", id="MJ090024"),
                                                        VariantRef(scheme="local", id="ka-3")],
         candidates=[Candidate(unicode="U+304B", p=0.6, jibo="可"), Candidate(unicode="U+1B019", p=0.3)],
         antecedent_ids=["u0"], group_id="g1", voicing="dakuten", method="detect-align",

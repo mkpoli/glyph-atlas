@@ -31,6 +31,6 @@ def test_a_standalone_crop_needs_no_page():
 
 
 def test_a_split_pair_keeps_a_local_shape_id_beside_the_code_point():
-    unit = Unit(id="u2", page_id="p1", box=Box(x=0, y=0, w=1, h=1), reading="か", unicode="U+1B019", jibo="可",
+    unit = Unit(id="u2", page_id="p1", box=Box(x=0, y=0, w=1, h=1), reading="か", unicode="U+1B019",
                 script=Script.HENTAIGANA, variants=[VariantRef(scheme="mj", id="MJ090024"), VariantRef(scheme="local", id="ka-ka-a")])
     assert [v.scheme for v in unit.variants] == ["mj", "local"]

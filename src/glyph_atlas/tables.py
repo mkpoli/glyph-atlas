@@ -208,8 +208,40 @@ def _json_row(record: BaseModel, model: type[BaseModel]) -> dict[str, Any]:
     return row
 
 
+class SchemaMismatch(ValueError):
+    """A table was written by an older schema: it holds a column the current one removed."""
+
+
+#: The columns a schema version removed, by model. A table that still holds one was written before
+#: that version and is refused rather than read with the column silently dropped.
+RETIRED_COLUMNS: dict[str, frozenset[str]] = {"Unit": frozenset({"jibo"})}
+
+
+def _known_columns(file: Path, model: type[BaseModel]) -> list[str]:
+    """The columns of `file` the model defines; refuse a table an older schema wrote.
+
+    A column the model does not define and no schema retired is left unread: a release adds derived
+    columns such as `modern_kana` beside the stored ones, and they are not part of the model.
+    """
+    names = pq.read_schema(file).names
+    retired = sorted(RETIRED_COLUMNS.get(model.__name__, frozenset()) & set(names))
+    if retired:
+        raise SchemaMismatch(
+            f"{file} has {', '.join(retired)}, which schema version {SCHEMA_VERSION} removed; "
+            "migrate the dataset with scripts/migrate_schema_v2.py"
+        )
+    return [name for name in names if name in model.model_fields]
+
+
 def _row_to_model(row: dict[str, Any], model: type[BaseModel]) -> BaseModel:
-    """A Parquet row as a validated record, with JSON text columns decoded."""
+    """A Parquet row as a validated record, with JSON text columns decoded.
+
+    Columns the model does not define are left out, as a release's derived columns are, except a
+    column a schema retired: that one reaches validation and fails it, so old data is never read
+    as if it were current.
+    """
+    retired = RETIRED_COLUMNS.get(model.__name__, frozenset())
+    row = {name: value for name, value in row.items() if name in model.model_fields or name in retired}
     _, decoders = _codecs(model)
     for name, decode in decoders.items():
         if row.get(name) is not None:
@@ -383,8 +415,9 @@ def scan(
         import pyarrow.dataset as ds
 
         for file in _table_files(Path(path)):
+            known = _known_columns(file, model)
             scanner = ds.dataset(file, format="parquet").scanner(
-                columns=columns, filter=pc.field(keep.column).isin(list(keep.values)), batch_size=batch_size
+                columns=columns if columns is not None else known, filter=pc.field(keep.column).isin(list(keep.values)), batch_size=batch_size
             )
             for batch in scanner.to_batches():
                 rows = batch.to_pylist()
@@ -392,7 +425,9 @@ def scan(
                     yield [_row_to_model(row, model) for row in rows]
         return
     for file in _table_files(Path(path)):
-        for batch in pq.ParquetFile(file).iter_batches(batch_size=batch_size, columns=columns):
+        known = _known_columns(file, model)
+        read = columns if columns is not None else known
+        for batch in pq.ParquetFile(file).iter_batches(batch_size=batch_size, columns=read):
             rows = batch.to_pylist()
             if not rows:
                 continue
