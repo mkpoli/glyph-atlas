@@ -169,6 +169,7 @@ class Line(BaseModel):
 
 class UnitKind(StrEnum):
     CHAR = "char"
+    SEQUENCE = "sequence"
     LIGATURE = "ligature"
     ITERATION_MARK = "iteration-mark"
     VOICING_MARK = "voicing-mark"

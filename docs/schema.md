@@ -91,7 +91,7 @@ spread is still one page; the spread relation is recorded through `canvas`.
 
 ### units
 
-One graphic unit: a character, a ligature, a mark, a gap.
+One located unit: a character, a ligature, a mark, a gap, or a sequence awaiting segmentation.
 
 | Field | Meaning |
 | --- | --- |
@@ -99,7 +99,7 @@ One graphic unit: a character, a ligature, a mark, a gap.
 | `box` | rectangle on the page image; null for a standalone crop |
 | `crop`, `crop_sha256` | URL or archive path of a standalone crop image, and its checksum |
 | `granularity` | `char`, `sequence` (an unresolved run), `block` (a type block holding several characters) |
-| `kind` | `char`, `ligature`, `iteration-mark`, `voicing-mark`, `punctuation`, `gap`, `unreadable` |
+| `kind` | `char`, `sequence`, `ligature`, `iteration-mark`, `voicing-mark`, `punctuation`, `gap`, `unreadable` |
 | `text_source` | the transcriber's string for this unit |
 | `reading` | diplomatic reading, historical spelling kept |
 | `unicode` | code point sequence, `U+1B002` or `U+304B U+3099`; null when no code point fits |

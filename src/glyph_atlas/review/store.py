@@ -22,6 +22,7 @@ client that repeats an `idempotency_key` gets the earlier result instead of a se
 
 from __future__ import annotations
 
+import hashlib
 import json
 import random
 import re
@@ -603,8 +604,18 @@ class Store:
             change = _change(state, event, guard=False)
             return self._commit(conn, change, state, request.client_id, request.idempotency_key)
 
-    def record_batch(self, requests: list[ReviewRequest]) -> list[dict[str, Any]]:
-        """Record an entire review round atomically, including its projected state."""
+    def record_batch(self, requests: list[ReviewRequest], *,
+                     role: Literal["reviewer", "model"] = "reviewer") -> list[dict[str, Any]]:
+        """Record an entire review round atomically, including its projected state.
+
+        `role` is the server's own statement of who is answering, and it is deliberately not a field
+        of `ReviewRequest`: a request body may not claim to be a model, and a machine caller reaches
+        this argument only by calling the store in process. `model` marks what a pipeline produced —
+        a machine split, for one — so the children it writes are `detect-align`/`machine` rather than
+        a transcriber's work. Every other caller keeps the reviewer role and manual behaviour.
+        """
+        if role not in ("reviewer", "model"):
+            raise BadRequest(f"unknown role {role!r}; the store records reviewer or model work")
         results = []
         with self._lock, self._connection() as conn, self._transaction(conn):
             for request in requests:
@@ -625,7 +636,7 @@ class Store:
                                    state=self._state_dump(conn, request.target_type, request.target_id))
                 self._check_target(conn, request)
                 event = Review(id="", target_type=request.target_type, target_id=request.target_id,
-                               field=request.field, new=request.new, role="reviewer",
+                               field=request.field, new=request.new, role=role,
                                actor=request.client_id, evidence=request.evidence, at=datetime.now(UTC))
                 state = self._state_for(conn, event)
                 change = _change(state, event, guard=False)
@@ -923,6 +934,10 @@ class Store:
         )
         return [Unit.model_validate_json(row["data"]) for row in rows]
 
+    def _units_of_page(self, conn: sqlite3.Connection, page_id: str) -> list[Unit]:
+        rows = conn.execute("SELECT data FROM units WHERE page_id = ? AND active = 1", (page_id,))
+        return [Unit.model_validate_json(row["data"]) for row in rows]
+
     def _all_lines(self, conn: sqlite3.Connection) -> list[Line]:
         return [Line.model_validate_json(row["data"]) for row in conn.execute("SELECT data FROM lines ORDER BY id")]
 
@@ -994,7 +1009,12 @@ class Store:
                 raise NotFound(f"no unit {event.target_id}")
             line = self._line_row(conn, unit.line_id) if unit.line_id else None
             siblings = self._units_of_line(conn, unit.line_id, active=False) if unit.line_id else [unit]
-            return State([line] if line else [], siblings)
+            # A machine split may not cover a unit of another line either, and a replay over the
+            # whole dataset checks against the whole page, so the record checks the same neighbours.
+            page = self._units_of_page(conn, unit.page_id) if unit.page_id else []
+            by_id = {other.id: other for other in page}
+            by_id.update((sibling.id, sibling) for sibling in siblings)
+            return State([line] if line else [], list(by_id.values()))
         if event.target_type == "unit":
             unit = self._unit_row(conn, event.target_id)
             if unit is None:
@@ -1293,9 +1313,19 @@ def _split(state: State, event: Review, entries: Any, *, guard: bool) -> Change:
         )
     if not isinstance(entries, list) or len(entries) < 2:
         raise BadRequest("a split needs at least two entries, each with a box")
+    machine = event.role == "model"
+    if machine:
+        from .. import refs
+
+        if unit.kind == UnitKind.LIGATURE or (unit.unicode and refs.ligature(unit.unicode)):
+            raise BadRequest("An encoded ligature cannot be split automatically.")
+    # A machine split is reproducible from the parent and the evidence it was made on, so the same
+    # run over the same evidence mints the same children instead of a second generation of ids.
+    run, evidence_sha = _run_key(unit.id, event.evidence) if machine else (None, None)
     number = _next_number(state.units, f"{unit.line_id}:m") - 1
     outputs = []
-    for entry in entries:
+    boxes: list[tuple[Unit, Box]] = []
+    for index, entry in enumerate(entries):
         if not isinstance(entry, dict) or "box" not in entry:
             raise BadRequest("every split entry needs a box")
         unknown = set(entry) - SPLIT_KEYS
@@ -1307,20 +1337,38 @@ def _split(state: State, event: Review, entries: Any, *, guard: bool) -> Change:
             raise BadRequest(f"box: {_problem(exc)}") from exc
         if box.w <= 0 or box.h <= 0:
             raise BadRequest(f"box {box.x},{box.y},{box.w},{box.h}: w and h must be positive")
+        if machine:
+            # A machine split says what each child is; inheriting the parent's one character would
+            # put the same identity on two boxes, which is the corruption a split exists to undo.
+            for field in ("unicode", "reading"):
+                if field not in entry:
+                    raise BadRequest(f"a machine split entry must state its own {field}")
+            _inside_parent(box, unit.box)
         number += 1
         data = unit.model_dump(mode="json")
         data.update(entry)
         data.update(
             {
-                "id": f"{unit.line_id}:m{number}",
+                "id": f"{unit.line_id}:{run}:{index}" if machine else f"{unit.line_id}:m{number}",
                 "active": True,
                 "split_into": [],
                 "merged_into": None,
-                "method": MANUAL,
-                "review": ReviewState.TRANSCRIBER.value,
+                "method": "detect-align" if machine else MANUAL,
+                "review": (ReviewState.MACHINE if machine else ReviewState.TRANSCRIBER).value,
             }
         )
-        outputs.append(Unit.model_validate(data))
+        if machine:
+            data.update(_machine_child(data, entry, unit, event, evidence_sha))
+        output = Unit.model_validate(data)
+        boxes.append((output, box))
+        outputs.append(output)
+    if machine:
+        try:
+            _refuse_overlap([box for _, box in boxes], state, unit)
+        except BadRequest:
+            if guard:
+                return Change(event=event, skipped=True)
+            raise
     retired = unit.model_copy(update={"active": False, "split_into": [output.id for output in outputs]})
     state.put(retired)
     for output in outputs:
@@ -1415,6 +1463,71 @@ def _missing(event: Review, guard: bool, message: str | None = None) -> Change:
     if guard:
         return Change(event=event, skipped=True)
     raise NotFound(message or f"no {event.target_type} {event.target_id}")
+
+
+def _run_key(parent_id: str, evidence: str | None) -> tuple[str, str]:
+    """The run digest of a machine split: short id fragment, and the evidence it was made on."""
+    digest = hashlib.sha256((evidence or "").encode("utf-8")).hexdigest()
+    run = hashlib.sha256(f"{parent_id}:{digest}".encode()).hexdigest()[:8]
+    return run, digest
+
+
+def _machine_child(data: dict[str, Any], entry: dict[str, Any], parent: Unit, event: Review,
+                   evidence_sha: str | None) -> dict[str, Any]:
+    """What a machine-split child carries that a reviewer's child does not.
+
+    The child is a pipeline's proposal, not a transcriber's record: its own crop is cleared (the
+    parent's crop is not the child's picture), the parent's scoring is dropped because it was never
+    measured on this box, the repair note the parent may carry is cleared because the split is what
+    answers it, and the link back to the run that produced it is written where a reader can find it.
+    The transcription and the script are the child's own: stated by the entry, or else its reading
+    and the script of its one character. The event's own evidence is left exactly as the caller sent it.
+    """
+    from .. import refs
+    from ..unit_scope import character_count, encoded_text
+
+    text = encoded_text(data.get("unicode")) or data.get("reading", "")
+    single = character_count(text) == 1
+    script = entry.get("script") or (refs.script_of(text) if single else Script.UNKNOWN).value
+    meta = {key: value for key, value in (data.get("meta") or {}).items()
+            if key not in ("alignment_repair", "feedback_repair", "feedback_split", "segmentation_scan")}
+    meta["feedback_split"] = {"parent_id": parent.id, "evidence_sha256": evidence_sha,
+                             "model": event.actor, "automated": True}
+    return {"meta": meta, "crop": None, "crop_sha256": None, "candidates": [], "confidence": None,
+            "variants": [], "group_id": None, "antecedent_ids": [], "voicing": None,
+            "classification": Classification.UNASSESSED.value,
+            "text_source": entry.get("text_source", data.get("reading")), "script": script,
+            "kind": UnitKind.CHAR.value if single else UnitKind.SEQUENCE.value,
+            "granularity": "char" if single else "sequence"}
+
+
+def _inside_parent(box: Box, parent: Box | None) -> None:
+    """A machine child stays inside the box it was split from; anything else is not that glyph."""
+    if parent is None:
+        raise BadRequest("A machine split needs the parent box.")
+    if (box.x < parent.x or box.y < parent.y
+            or box.x + box.w > parent.x + parent.w or box.y + box.h > parent.y + parent.h):
+        raise BadRequest(f"box {box.x},{box.y},{box.w},{box.h} leaves the box of {parent.x},{parent.y},{parent.w},{parent.h}")
+
+
+def _refuse_overlap(boxes: list[Box], state: State, parent: Unit) -> None:
+    """Two boxes of one split, or a child and a neighbour, may not cover the same pixels."""
+    for index, box in enumerate(boxes):
+        for other in boxes[index + 1:]:
+            if _overlaps(box, other):
+                raise BadRequest("two boxes of one machine split overlap")
+    for unit in state.units.values():
+        if unit.id == parent.id or not unit.active or unit.page_id != parent.page_id or unit.box is None:
+            continue
+        for box in boxes:
+            if _overlaps(box, unit.box):
+                raise BadRequest(f"box {box.x},{box.y},{box.w},{box.h} covers {unit.id}")
+
+
+def _overlaps(first: Box, second: Box) -> bool:
+    """Whether two boxes share pixels; touching edges do not count."""
+    return (first.x < second.x + second.w and second.x < first.x + first.w
+            and first.y < second.y + second.h and second.y < first.y + first.h)
 
 
 def _renumber(state: State, line_id: str, vertical: bool) -> list[Unit]:
