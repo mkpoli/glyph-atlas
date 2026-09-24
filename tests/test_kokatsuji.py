@@ -237,3 +237,10 @@ def test_a_second_import_writes_the_same_tables(tmp_path, cache, archive):
 def test_import_reports_a_missing_archive(tmp_path, cache):
     with pytest.raises(FileNotFoundError, match="古活字データセット"):
         kokatsuji.import_all(tmp_path / "out", zip_path=tmp_path / "001.zip")
+
+
+def test_a_kana_jibo_never_resolves_to_an_alternate_katakana():
+    """ね from 子 is the hentaigana U+1B098; 𛄧 shares the 字母 but is a katakana, not what was read."""
+    labels = kokatsuji.labels_of("ね", "子")
+    assert labels.classification is Classification.IDENTIFIED
+    assert labels.unicode == "U+1B098" and labels.script is Script.HENTAIGANA

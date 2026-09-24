@@ -171,7 +171,11 @@ def labels_of(character: str, jibo: str) -> Labels:
     aligned = jibo.strip()
     if len(character) > 1:
         return Labels(BLOCK, sequence(character), Classification.UNASSESSED, [], [], script_of(character))
-    matched = [code_point for code_point in refs.candidates(character) if aligned and refs.jibo(code_point) == aligned]
+    # A 字母 names a hiragana or hentaigana form. The alternate katakana of Unicode 18.0 share the
+    # reading and can share the 字母 (𛄧 and 子), but a kana transcription never means one of them.
+    matched = [code_point for code_point in refs.candidates(character)
+               if aligned and refs.jibo(code_point) == aligned
+               and refs.script_of(refs.to_char(code_point)) in (Script.HIRAGANA, Script.HENTAIGANA)]
     if len(matched) == 1:
         return Labels(
             CHAR,
