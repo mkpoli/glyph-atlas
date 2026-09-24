@@ -1,0 +1,345 @@
+"""Controlled crop bytes: resolution by registered id, never by path."""
+
+from __future__ import annotations
+
+import io
+import json
+from pathlib import Path
+
+import pytest
+
+from glyph_atlas import tables
+from glyph_atlas.corpus import CorpusAPI, build_chars
+from glyph_atlas.corpus.crops import CropResolver, sniff
+from glyph_atlas.schema import Box, Document, Page, Unit
+
+PAGE_W, PAGE_H = 400, 600
+
+
+def jpeg(width=400, height=600, colour=(220, 210, 190)) -> bytes:
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), colour).save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
+def build_crop_corpus(root: Path, images_dir: Path, *, licence="CC-BY-4.0") -> Path:
+    """A corpus shaped like Kokatsuji: page image on disk, units with boxes."""
+    out = root / "kokatsuji"
+    out.mkdir(parents=True, exist_ok=True)
+    images_dir.mkdir(parents=True, exist_ok=True)
+    (images_dir / "001_001_1.jpg").write_bytes(jpeg())
+
+    doc = Document(
+        id="codh-omt:001",
+        title="Test source",
+        holder="Test holder",
+        shelfmark="001",
+        image_rights={"licence": licence, "holder": "Test holder", "attribution": "Test holder"},
+    )
+    page = Page(
+        id="codh-omt:001:001_001_1",
+        document_id="codh-omt:001",
+        seq=1,
+        image=f"file:{images_dir.relative_to(images_dir.parents[1])}/001_001_1.jpg",
+        width=PAGE_W,
+        height=PAGE_H,
+    )
+    units = [
+        Unit(
+            id="codh-omt:001:U1",
+            document_id="codh-omt:001",
+            page_id="codh-omt:001:001_001_1",
+            seq=1,
+            box=Box(x=20, y=30, w=80, h=90),
+            text_source="一",
+            unicode="U+4E00",
+            kind="char",
+            method="import",
+            active=True,
+            upstream={"source": "test", "url": "https://example.org/record/1"},
+        ),
+        Unit(
+            id="codh-omt:001:U2",
+            document_id="codh-omt:001",
+            page_id="codh-omt:001:001_001_1",
+            seq=2,
+            box=None,
+            crop=None,
+            text_source="二",
+            unicode="U+4E8C",
+            kind="char",
+            method="import",
+            active=True,
+        ),
+        Unit(
+            id="codh-omt:001:U3",
+            document_id="codh-omt:001",
+            page_id="codh-omt:001:001_001_1",
+            seq=3,
+            box=Box(x=200, y=300, w=60, h=70),
+            crop="all.zip!all/characters/U+4E09/9.jpg",
+            text_source="三",
+            unicode="U+4E09",
+            kind="char",
+            method="import",
+            active=True,
+        ),
+    ]
+    tables.write(out / "documents.parquet", [doc], Document, command="test")
+    tables.write(out / "pages.parquet", [page], Page)
+    tables.write(out / "units.parquet", units, Unit)
+    (out / "MANIFEST.json").write_text(
+        json.dumps(
+            {
+                "schema_version": tables.SCHEMA_VERSION,
+                "tables": {"documents": 1, "pages": 1, "units": len(units)},
+                "files": {},
+                "writer": "test",
+                "command": "test",
+            }
+        ),
+        encoding="utf-8",
+    )
+    return out
+
+
+@pytest.fixture()
+def crop_api(tmp_path: Path):
+    """A corpus whose images live under the corpus root, as Kokatsuji's do."""
+    root = tmp_path / "work"
+    root.mkdir()
+    build_crop_corpus(root, root / "kokatsuji" / "images")
+    directory = tmp_path / "index"
+    build_chars(root, directory)
+    return CorpusAPI(root, directory, file_bases=[root]), root
+
+
+class TestSniff:
+    @pytest.mark.parametrize(
+        "payload,expected",
+        [
+            (b"\xff\xd8\xff\xe0rest", "image/jpeg"),
+            (b"\x89PNG\r\n\x1a\nrest", "image/png"),
+            (b"GIF89arest", "image/gif"),
+            (b"not an image", None),
+            (b"", None),
+        ],
+    )
+    def test_media_type_comes_from_the_bytes(self, payload, expected):
+        assert sniff(payload) == expected
+
+
+class TestAllowList:
+    def test_a_file_inside_the_corpus_image_dir_is_allowed(self, tmp_path):
+        root = tmp_path / "work"
+        root.mkdir()
+        build_crop_corpus(root, root / "kokatsuji" / "images")
+        resolver = CropResolver(root, file_bases=[root])
+        assert resolver.allowed(root / "kokatsuji" / "images" / "001_001_1.jpg", "kokatsuji") is True
+
+    def test_a_file_outside_is_refused(self, tmp_path):
+        root = tmp_path / "work"
+        root.mkdir()
+        build_crop_corpus(root, root / "kokatsuji" / "images")
+        secret = tmp_path / "secret.jpg"
+        secret.write_bytes(jpeg(20, 20))
+        resolver = CropResolver(root, file_bases=[root])
+        assert resolver.allowed(secret, "kokatsuji") is False
+
+    def test_a_traversal_path_is_refused(self, tmp_path):
+        root = tmp_path / "work"
+        root.mkdir()
+        build_crop_corpus(root, root / "kokatsuji" / "images")
+        secret = tmp_path / "secret.jpg"
+        secret.write_bytes(jpeg(20, 20))
+        resolver = CropResolver(root, file_bases=[root])
+        escape = root / "kokatsuji" / "images" / ".." / ".." / ".." / "secret.jpg"
+        assert resolver.allowed(escape, "kokatsuji") is False
+
+    def test_one_corpus_cannot_reach_another_corpus_images(self, tmp_path):
+        root = tmp_path / "work"
+        root.mkdir()
+        build_crop_corpus(root, root / "kokatsuji" / "images")
+        other = root / "codh-full" / "images"
+        other.mkdir(parents=True)
+        (other / "x.jpg").write_bytes(jpeg(20, 20))
+        resolver = CropResolver(root, file_bases=[root])
+        assert resolver.allowed(other / "x.jpg", "kokatsuji") is False
+
+
+class TestArchiveCrops:
+    reference = "all.zip!all/characters/U+5047/34000647.jpg"
+
+    @pytest.mark.parametrize("repository_cache", [False, True])
+    def test_extracted_hilab_crop_is_served_without_imported_hash(self, tmp_path, repository_cache):
+        root = tmp_path / "work"
+        out = root / "hilab"
+        out.mkdir(parents=True)
+        tables.write(out / "documents.parquet", [Document(
+            id="hi:dataset", title="HI Lab", holder="HI",
+            image_rights={"licence": "CC-BY-4.0", "holder": "HI", "attribution": "HI"},
+        )], Document)
+        tables.write(out / "units.parquet", [Unit(
+            id="hi:34000647", document_id="hi:dataset", crop=self.reference,
+            unicode="U+5047", text_source="假", kind="char", method="import",
+        )], Unit)
+        base = tmp_path if repository_cache else root
+        member = base / "cache/hilab/all/characters/U+5047/34000647.jpg"
+        resolver = CropResolver(root, file_bases=[root, tmp_path])
+        row = {"crop": self.reference}
+        assert resolver.row_availability(row, "hilab")[0] is False
+        assert resolver.for_unit("hi:34000647").render_available is False
+        member.parent.mkdir(parents=True)
+        original = jpeg(41, 73)
+        member.write_bytes(original)
+        assert resolver.row_availability(row, "hilab") == (True, None, "local_crop")
+        result = resolver.for_unit("hi:34000647")
+        assert result.render_available is True
+        assert result.media_type == "image/jpeg"
+        assert result.bytes_data == original
+        assert result.crop_url == "/api/corpus/crop?unit_id=hi%3A34000647&w=256"
+        assert resolver.row_availability(row, "kokatsuji")[0] is False
+
+    def test_archive_member_cannot_escape_its_extraction_root(self, tmp_path):
+        resolver = CropResolver(tmp_path, file_bases=[tmp_path])
+        outside = tmp_path / "outside.jpg"
+        outside.write_bytes(jpeg(20, 20))
+        member = tmp_path / "cache/hilab/all/characters/U+5047/34000647.jpg"
+        member.parent.mkdir(parents=True)
+        member.symlink_to(outside)
+        assert resolver.archive_member(self.reference) is None
+        assert resolver.archive_member("all.zip!../../outside.jpg") is None
+        assert resolver.archive_member("unregistered.zip!all/characters/U+5047/34000647.jpg") is None
+
+
+class TestCropEndpoint:
+    def test_a_registered_unit_serves_real_image_bytes(self, crop_api):
+        api, _ = crop_api
+        status, content_type, body = api.handle_get("/api/corpus/crop?unit_id=codh-omt%3A001%3AU1&w=64")
+        assert status == 200
+        assert content_type == "image/jpeg"
+        assert body.startswith(b"\xff\xd8\xff")  # a real JPEG
+        assert len(body) > 200
+
+    def test_the_served_crop_is_the_requested_box(self, crop_api):
+        """A 80x90 box must not come back as the whole 400x600 page."""
+        from PIL import Image
+
+        api, _ = crop_api
+        _, _, small = api.handle_get("/api/corpus/crop?unit_id=codh-omt%3A001%3AU1&w=64")
+        with Image.open(io.BytesIO(small)) as image:
+            assert max(image.size) <= 64
+            assert image.width / image.height > 0.5  # box is taller than wide
+
+    @pytest.mark.parametrize(
+        "unit_id,status",
+        [
+            ("codh-omt%3A001%3AU2", 404),  # no box and no crop
+            ("codh-omt%3A001%3AU3", 404),  # archive member, not extracted
+            ("nope%3A1", 403),  # unknown id
+            ("..%2F..%2Fetc%2Fpasswd", 403),  # a path is not an id
+            ("%2Fetc%2Fpasswd", 403),
+            ("file%3A%2Fetc%2Fpasswd", 403),
+        ],
+    )
+    def test_everything_that_is_not_a_registered_unit_is_refused(self, crop_api, unit_id, status):
+        api, _ = crop_api
+        got, _, body = api.handle_get(f"/api/corpus/crop?unit_id={unit_id}")
+        assert got == status
+        assert json.loads(body).get("reason") or json.loads(body).get("error")
+
+    def test_a_missing_id_is_a_400_not_a_path_lookup(self, crop_api):
+        api, _ = crop_api
+        status, _, body = api.handle_get("/api/corpus/crop")
+        assert status == 400
+        assert "unit_id" in json.loads(body)["error"]
+
+
+class TestLicenceGate:
+    def test_a_non_proxyable_crop_is_not_served_by_this_api(self, tmp_path):
+        root = tmp_path / "work"
+        root.mkdir()
+        build_crop_corpus(root, root / "kokatsuji" / "images", licence="CC-BY-NC-ND-4.0")
+        directory = tmp_path / "index"
+        build_chars(root, directory)
+        api = CorpusAPI(root, directory, file_bases=[root])
+        status, _, body = api.handle_get("/api/corpus/crop?unit_id=codh-omt%3A001%3AU1")
+        assert status in (403, 404)
+        payload = json.loads(body)
+        assert payload["render_available"] is False
+        assert "CC-BY-NC-ND-4.0" in (payload["reason"] or "")
+
+
+class TestGlyphDescriptorHonesty:
+    def test_render_available_is_true_only_with_verified_bytes(self, crop_api):
+        api, _ = crop_api
+        status, _, body = api.handle_get("/api/corpus/glyphs?char=%E4%B8%80&limit=5")
+        payload = json.loads(body)
+        assert status == 200
+        served = [i for i in payload["items"] if i["thumbnail"].get("crop_url")]
+        assert served, "a corpus with local bytes must offer a crop url"
+        for item in served:
+            assert item["render_available"] is True
+            assert item["thumbnail"]["available"] is True
+
+    def test_a_unit_without_bytes_is_not_advertised_as_renderable(self, crop_api):
+        api, _ = crop_api
+        # A page corpus cannot claim the standalone HI Lab archive.
+        _, _, body = api.handle_get("/api/corpus/glyphs?char=%E4%B8%89&limit=5")
+        for item in json.loads(body)["items"]:
+            if item["unit_id"] == "codh-omt:001:U3":
+                assert item["render_available"] is False
+                assert item["thumbnail"]["available"] is False
+                assert "not registered for this corpus" in (item["thumbnail"]["reason"] or "")
+
+    def test_the_homepage_sample_never_claims_unavailable_bytes(self, crop_api):
+        api, _ = crop_api
+        _, _, body = api.handle_get("/api/corpus/glyphs?limit=10")
+        for item in json.loads(body)["items"]:
+            if item["thumbnail"]["available"]:
+                assert item["thumbnail"].get("crop_url") or item["thumbnail"].get("iiif_url")
+
+
+class TestCapabilityIsVerified:
+    def test_capability_is_proven_by_resolving_a_real_unit(self, crop_api):
+        api, _ = crop_api
+        corpus = api._corpus("kokatsuji")
+        verdict = api.crops.verify(corpus)
+        assert verdict["mode"] == "local_crop"
+        assert verdict["verified"] is True
+        assert verdict["unit_id"]
+
+    def test_an_unverifiable_corpus_reports_why(self, tmp_path):
+        root = tmp_path / "work"
+        root.mkdir()
+        # A HI Lab shaped corpus: units carry archive members and no local bytes.
+        out = root / "hilab"
+        out.mkdir()
+        doc = Document(
+            id="hi:1",
+            title="HI Lab",
+            holder="HI",
+            image_rights={"licence": "CC-BY-SA-4.0", "holder": "HI", "attribution": "HI"},
+        )
+        unit = Unit(
+            id="hi:1",
+            document_id="hi:1",
+            page_id=None,
+            crop="all.zip!all/characters/U+4E00/1.jpg",
+            text_source="一",
+            unicode="U+4E00",
+            kind="char",
+            method="import",
+            active=True,
+        )
+        tables.write(out / "documents.parquet", [doc], Document)
+        tables.write(out / "units.parquet", [unit], Unit)
+        resolver = CropResolver(root, file_bases=[root])
+        verdict = resolver.verify(
+            __import__("glyph_atlas.corpus.sources", fromlist=["_describe"])._describe(out, None)
+        )
+        assert verdict["verified"] is False
+        assert "not been extracted" in (verdict["reason"] or "")
+
