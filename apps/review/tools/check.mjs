@@ -256,14 +256,13 @@ await step('choose a 字母 (j): the candidates carry 字母 and reference glyph
   return `${body.payload.candidates.length} candidates, U+1B002 字母 安 ${hentaigana.reference_url}`
 })
 
-await step('choose a 字母 (j): unicode, jibo and script are recorded in order', async () => {
+await step('choose a character (j): unicode, script and classification are recorded in order', async () => {
   let revision = (await request(`/lines/${encodeURIComponent(lineId)}/units`)).payload.items.find(
     (item) => item.id === `${lineId}:m1`,
   ).revision
   const posted = []
   for (const [field, value] of [
     ['unicode', 'U+1B002'],
-    ['jibo', '安'],
     ['script', 'hentaigana'],
     ['classification', 'identified'],
   ]) {
@@ -284,7 +283,8 @@ await step('choose a 字母 (j): unicode, jibo and script are recorded in order'
   letterResult = posted[posted.length - 1]
   const units = unitsInState()
   const unit = units[`${lineId}:m1`]
-  assert(unit.unicode === 'U+1B002' && unit.jibo === '安', `unicode ${unit.unicode}, jibo ${unit.jibo}`)
+  // The 字母 of U+1B002 is the character layer's to state; a unit records the code point.
+  assert(unit.unicode === 'U+1B002' && !('jibo' in unit), `unicode ${unit.unicode}`)
   assert(unit.script === 'hentaigana' && unit.classification === 'identified', 'script or classification')
   return `${posted.map((result) => result.id).join(', ')} → revision ${revision}`
 })
@@ -399,7 +399,8 @@ await step('create a line (l): POST /lines', async () => {
   assert(created.status === 201, `status ${created.status}`)
   assert(created.payload.state.match_method === 'manual', 'the line is not manual')
   const lines = await request(`/pages/${encodeURIComponent(pageId)}/lines`)
-  assert(lines.payload.total === 4, `the page has ${lines.payload.total} lines`)
+  // Three detected lines, the fixture's line of written-identity cases, and the one just created.
+  assert(lines.payload.total === 5, `the page has ${lines.payload.total} lines`)
   return `${created.payload.target_id}`
 })
 
@@ -564,7 +565,7 @@ await step('the reviewed state is what `apply` would write', async () => {
 
 // -- the report -----------------------------------------------------------------------------------
 
-service.stop({ keep: config.keep })
+await service.stop({ keep: config.keep })
 console.log(
   `\n${results.length - failures}/${results.length} checks passed` +
     (config.keep ? `\nthe dataset is kept at ${config.directory}` : ''),
