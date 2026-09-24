@@ -153,7 +153,11 @@ def publish(root: Path, *, source: str = "honkoku", rebuild_index: bool = True,
     corpus_name = "honkoku-data" if source == "honkoku" else "wikisource"
     collection = root / f"{source}-collection"
     collection.mkdir(parents=True, exist_ok=True)
-    with publication_lock(collection):
+    index_dir = root / "corpus-index"
+    index_dir.mkdir(exist_ok=True)
+    # The index is rebuilt from every source, so two sources publishing at once would each install an
+    # index built before the other's tables; one publication holds the index from snapshot to install.
+    with publication_lock(collection), publication_lock(index_dir):
         if shutil.disk_usage(collection).free < min_free_bytes:
             raise RuntimeError("Collection publication paused: less than 5 GiB free")
         listing = json.loads((collection / "index.json").read_text())
@@ -201,8 +205,6 @@ def publish(root: Path, *, source: str = "honkoku", rebuild_index: bool = True,
             link.symlink_to(generation.relative_to(collection), target_is_directory=True)
             os.replace(link, current)
             if rebuild_index:
-                index_dir = root / "corpus-index"
-                index_dir.mkdir(exist_ok=True)
                 for name in ("chars.parquet", "index.json"):
                     promote_file(index_stage / name, index_dir / name)
                 shutil.rmtree(index_stage)
