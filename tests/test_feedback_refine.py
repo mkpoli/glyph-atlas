@@ -345,3 +345,10 @@ def test_an_identity_typed_as_code_points_resolves(store):
     assert refine.refine_feedback(store, payload, apply=True)["counts"] == {"resolved": 1}
     assert store.unit("u").unicode == "U+FA10"
 
+
+def test_a_review_whose_image_is_not_cached_stays_pending(store, monkeypatch):
+    payload = feedback(store)
+    with monkeypatch.context() as patched:
+        patched.setattr(refine, "_source_digest", lambda store, unit: None)
+        assert refine.refine_feedback(store, payload, apply=True)["counts"] == {"unavailable": 1}
+    assert refine.refine_feedback(store, payload, apply=True)["counts"] == {"resolved": 1}

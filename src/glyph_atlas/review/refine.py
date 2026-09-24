@@ -289,6 +289,11 @@ def refine_feedback(store: Store, payload: dict, *, apply=False, engine=None, ma
         continuation = bool(isinstance(latest_evidence, dict)
                             and latest_evidence.get("kind") == "feedback-reconciliation"
                             and latest_evidence.get("source_event_id") == f.event_id)
+        if _source_digest(store, unit) is None:
+            # Not stale: the image is simply not in this checkout's cache. The review stays pending,
+            # so a run where the image is present still applies it.
+            item.update(status="unavailable", reason="the source image is not in the local image cache")
+            continue
         if (not isinstance(expected_revision, int) or not original
                 or (latest.get(unit.id) != f.event_id and not continuation)
                 or (expected_revision is not None and store.revision(unit.id) != expected_revision)
