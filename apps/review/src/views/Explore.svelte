@@ -53,14 +53,15 @@
   /** One state per tile, for its dot: checked, flagged, withheld or plain. */
   function tileState(item) {
     if (item.state === 'checked' || item.state === 'flagged') return item.state
-    return repairOf(item)?.kind === 'withheld' ? 'withheld' : 'plain'
+    const kind = repairOf(item)?.kind
+    return kind === 'verified' ? 'checked' : kind === 'withheld' ? 'withheld' : 'plain'
   }
   /** The tile's hover text: what the record is, how far it has been checked, and where it comes from. */
   function tileTitle(item) {
     const repair = repairOf(item)
     const state = item.state === 'checked' ? 'Checked' : item.state === 'flagged' ? 'Flagged'
       : repair?.kind === 'withheld' ? `Withheld: ${repair.reason}` : repair?.kind === 'verified' ? 'Checked'
-      : repair ? 'Machine-aligned, not yet checked' : null
+      : repair?.label === 'unconfirmed' ? 'Not yet confirmed' : repair ? 'Machine-aligned, not yet checked' : null
     const origin = item.origin === 'corpus' ? ((item.source?.corpus ?? item.corpus) === 'codh-full' ? 'CODH dataset' : 'Corpus index') : null
     return [item.label, productionLabel(item), state, origin, item.source?.title ?? item.title, item.source?.holder ?? item.holder]
       .filter(Boolean).join(' · ')
