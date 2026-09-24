@@ -40,9 +40,9 @@ detector = [
 ]
 
 [dependency-groups]
-# The tests of the detector's ONNX path and of the synthetic renderings run on CPU; the training
-# extra above carries torch, which CI does not need.
-dev = ["pytest>=8", "ruff>=0.12", "cffconvert>=2.0", "numpy>=2", "onnx>=1.20", "onnxruntime>=1.22"]
+# The GPU wheel also runs CPU tests. Installing both ONNX runtime distributions
+# overwrites their shared Python package and can silently remove CUDA support.
+dev = ["pytest>=8", "ruff>=0.12", "cffconvert>=2.0", "numpy>=2", "onnx>=1.20", "onnxruntime-gpu>=1.22"]
 
 [build-system]
 requires = ["hatchling"]
