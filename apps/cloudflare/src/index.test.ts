@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { canonical, literal, hira, single, readingFrom } from './index';
+import { canonical, literal, hira, single, readingFrom, validRound } from './index';
 
 describe('historical character identities', () => {
   it('keeps supplementary characters intact', () => {
@@ -31,4 +31,22 @@ it('a corrected character carries the reading the character layer states', () =>
   expect(readingFrom({ char: '𪜈', script: 'han', readings: [], ligature: { reading: 'トモ' } })).toBe('とも')
   expect(readingFrom({ char: '国', script: 'han', readings: [] })).toBe('国')
   expect(readingFrom({ char: '𛄝', script: 'hentaigana', readings: ['ん', 'む', 'も'] })).toBe(null)
+})
+
+describe('a round names flagged answers, seen crops, or both', () => {
+  const hash = 'a'.repeat(64)
+  it('accepts a round that only records seen crops', () => {
+    expect(validRound({ seen: [{ id: 'one', image_sha256: hash }] }).seen).toHaveLength(1)
+    expect(validRound({ seen: [{ id: 'one', image_sha256: hash }] }).answers).toHaveLength(0)
+  })
+  it('refuses an empty round, a crop named twice, or more than 96 crops', () => {
+    expect(() => validRound({ answers: [], seen: [] })).toThrow('1–96')
+    expect(() => validRound({ answers: [{ id: 'one' }], seen: [{ id: 'one', image_sha256: hash }] })).toThrow('1–96')
+    const many = Array.from({ length: 97 }, (_, i) => ({ id: `u${i}`, image_sha256: hash }))
+    expect(() => validRound({ seen: many })).toThrow('1–96')
+  })
+  it('refuses a seen crop without an image hash, and seen crops outside a round', () => {
+    expect(() => validRound({ seen: [{ id: 'one', image_sha256: 'nope' }] })).toThrow('image hash')
+    expect(() => validRound({ seen: [{ id: 'one', image_sha256: hash }] }, 'one')).toThrow('Only a round')
+  })
 })
