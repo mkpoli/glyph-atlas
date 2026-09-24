@@ -315,10 +315,22 @@ class Queue:
         """Queue a book once, whatever door it arrived through."""
         fields = dict(fields or {})
         with self.transaction() as db:
-            cursor = db.execute(
-                "INSERT OR IGNORE INTO books(entry_id, project_id, collection_id,"
-                " position, label, size, manifest_url, attribution, state,"
-                " discovered_at, origin) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            known = db.execute("SELECT 1 FROM books WHERE entry_id=?", (entry_id,)).fetchone() is not None
+            # A later listing can know what an earlier one did not (the snapshot carries progress, the
+            # live collection listing does not), so a known book keeps each catalogue field until a
+            # listing states it, and then takes the stated value.
+            db.execute(
+                "INSERT INTO books(entry_id, project_id, collection_id, position, label, size, progress,"
+                " manifest_url, attribution, state, discovered_at, origin) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)"
+                " ON CONFLICT(entry_id) DO UPDATE SET"
+                " label=coalesce(excluded.label, books.label),"
+                " size=coalesce(excluded.size, books.size),"
+                " progress=coalesce(excluded.progress, books.progress),"
+                " manifest_url=coalesce(excluded.manifest_url, books.manifest_url),"
+                " attribution=coalesce(excluded.attribution, books.attribution),"
+                # Seen through both doors: the snapshot knew it and the live platform still lists
+                # it. `both` is what makes coverage honest about that.
+                " origin=CASE WHEN books.origin IN (excluded.origin, 'both') THEN books.origin ELSE 'both' END",
                 (
                     entry_id,
                     project_id,
@@ -326,6 +338,7 @@ class Queue:
                     position,
                     fields.get("label"),
                     fields.get("size"),
+                    fields.get("progress"),
                     fields.get("manifestUrl"),
                     fields.get("attribution"),
                     "pending",
@@ -333,15 +346,7 @@ class Queue:
                     origin,
                 ),
             )
-            added = cursor.rowcount > 0
-            if not added:
-                # Seen through both doors: the snapshot knew it and the live platform
-                # still lists it. `both` is what makes coverage honest about that.
-                db.execute(
-                    "UPDATE books SET origin='both' WHERE entry_id=? AND origin<>? AND origin<>'both'",
-                    (entry_id, origin),
-                )
-            return added
+            return not known
 
     def seed_from_snapshot(self, clone: Path) -> int:
         """Queue every row of every ``v3/<project>/info.tsv`` in a checkout.
@@ -368,6 +373,7 @@ class Queue:
                     fields={
                         "label": row.get("label"),
                         "size": _whole(row.get("size")),
+                        "progress": _whole(row.get("progress")),
                         "manifestUrl": row.get("manifestUrl"),
                         "attribution": row.get("attribution"),
                     },
