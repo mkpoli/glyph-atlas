@@ -152,3 +152,11 @@ def http_server(tmp_path: Path):
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+@pytest.fixture(autouse=True)
+def empty_form_data(tmp_path_factory, monkeypatch):
+    """No test reads the working copy's form clusters or the recorded form decisions."""
+    root = tmp_path_factory.mktemp("forms")
+    monkeypatch.setenv("ATLAS_FORM_CLUSTERS", str(root / "clusters"))
+    monkeypatch.setenv("ATLAS_FORM_DECISIONS", str(root / "decisions.jsonl"))

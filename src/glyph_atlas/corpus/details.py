@@ -213,9 +213,11 @@ class DetailResolver:
         for corpus in self._corpora.values():
             for table in PROVENANCE_TABLES:
                 files.extend(corpus.parquet_files(table))
+        from .. import forms
         from ..production import OVERRIDES
         from ..visual_families import directory as visual_directory
-        files.extend((OVERRIDES, visual_directory() / "assignments.json"))
+        files.extend((OVERRIDES, visual_directory() / "assignments.json",
+                      forms.decisions_path(), forms.clusters_dir() / "clusters.json"))
         return files
 
     def _provenance_stamp(self) -> tuple:
