@@ -578,3 +578,13 @@ def test_a_page_whose_only_record_is_its_text_is_released(tmp_path):
     assert counts["page_texts"] == 2
     released = {row.page_id: row for row in tables.read(out / "page_texts.parquet", PageText)}
     assert released["hk:d1:1"].text_raw == "ゐろは"
+
+
+@pytest.mark.parametrize(("unicode", "expected"), [
+    ("U+30CD", None),  # ネ is already a modern kana
+    ("U+1B127", "ね"),  # 𛄧, the alternate katakana, is a form of ね
+    ("U+1B098", "ね"),  # a hentaigana of ね
+])
+def test_modern_kana_rewrites_old_forms_and_leaves_modern_katakana(unicode, expected):
+    unit = Unit(id="u", unicode=unicode, classification=Classification.IDENTIFIED)
+    assert export.Normaliser.load().value("modern_kana", unit) == expected

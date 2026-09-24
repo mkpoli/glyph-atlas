@@ -62,6 +62,17 @@ DERIVED_KEYS = ("modern_kana", "shinji")
 #: rather than a reading — 國 and 国 are one family, and the shinji column is the one that says
 #: so — so a han character is never rewritten by the modern_kana policy.
 KANA_FORMS = frozenset({Script.HIRAGANA, Script.HENTAIGANA, Script.KATAKANA})
+#: The blocks of the modern katakana. A letter there is already a modern kana, so the column leaves
+#: it alone; its grapheme is the hiragana of the same reading, which is not what was written.
+MODERN_KATAKANA_BLOCKS = frozenset({"Katakana", "Katakana Phonetic Extensions"})
+
+
+def _has_modern_kana(point: str, char: str) -> bool:
+    """Whether a code point is a kana form the modern_kana column rewrites."""
+    if refs.script_of(char) not in KANA_FORMS:
+        return False
+    character = refs.character(point)
+    return not (character and character.block in MODERN_KATAKANA_BLOCKS)
 
 
 class ExportError(RuntimeError):
@@ -163,7 +174,7 @@ class Normaliser:
             char = refs.to_char(point)
             # U+306D is ね, the grapheme of the ね-forms; a code point the character layer does not
             # hold, or that is not a kana form, is written as itself.
-            grapheme = refs.grapheme(point) if refs.script_of(char) in KANA_FORMS else None
+            grapheme = refs.grapheme(point) if _has_modern_kana(point, char) else None
             words.append(refs.to_char(grapheme) if grapheme else char)
             changed = changed or (grapheme is not None and grapheme != point)
         return "".join(words) if changed else None
