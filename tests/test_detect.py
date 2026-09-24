@@ -301,6 +301,44 @@ def test_the_score_threshold_drops_weak_detections(tmp_path: Path) -> None:
     assert weak == [(Box(x=100, y=100, w=100, h=100), pytest.approx(0.1192, abs=1e-4))]
 
 
+def test_a_box_on_show_through_is_dropped(tmp_path: Path) -> None:
+    queries = [
+        (100.0, 100.0, 160.0, 160.0, 2.0),
+        (100.0, 300.0, 160.0, 360.0, 2.0),
+        (100.0, 500.0, 160.0, 560.0, 2.0),
+        (100.0, 700.0, 160.0, 760.0, 2.0),
+    ]
+    path = write_tiny_detector(tmp_path / "tiny.onnx", queries)
+    image = page(1024, 1024, [(110, 110, 40, 40), (110, 310, 40, 40), (110, 510, 40, 40)])
+    # The reverse side's text: a grey an eighth of the way from paper to ink.
+    ImageDraw.Draw(image).rectangle((110, 710, 149, 749), fill=(225, 225, 225))
+    kept = Detector(path, score=0.3, providers=["CPUExecutionProvider"]).boxes(image)
+    assert [box.y for box, _ in kept] == [100, 300, 500]
+    every = Detector(path, score=0.3, ink=0.0, providers=["CPUExecutionProvider"]).boxes(image)
+    assert len(every) == 4
+
+
+def test_ink_is_relative_to_the_page() -> None:
+    pale = Image.new("RGB", (400, 200), (WHITE, WHITE, WHITE))
+    draw = ImageDraw.Draw(pale)
+    # A pale scan: its real ink is as light as a dark scan's show-through.
+    for x in (20, 120, 220):
+        draw.rectangle((x, 20, x + 39, 59), fill=(180, 180, 180))
+    draw.rectangle((320, 20, 359, 59), fill=(245, 245, 245))
+    boxes = [Box(x=x, y=10, w=60, h=60) for x in (10, 110, 210, 310)]
+    assert detect.inked(pale, boxes) == [True, True, True, False]
+
+
+def test_a_page_without_ink_keeps_its_boxes() -> None:
+    blank = page(200, 200, [])
+    assert detect.inked(blank, [Box(x=10, y=10, w=50, h=50)]) == [True]
+
+
+def test_ink_must_be_a_share() -> None:
+    with pytest.raises(ValueError, match="ink"):
+        detector(ThresholdSession(), ink=1.5)
+
+
 def test_the_stub_can_speak_the_rtdetr_layout() -> None:
     class RtdetrSession(ThresholdSession):
         def get_outputs(self) -> list[SimpleNamespace]:

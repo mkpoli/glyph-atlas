@@ -151,6 +151,10 @@ class Run(BaseModel):
     #: The IoU above which the detector's cross-tile suppression drops a duplicate. Part of the run
     #: for the same reason `score` is: it decides which boxes the alignment ever sees.
     nms: float | None = None
+    #: The share of the page's typical ink a detection must hold (`detect.INK`). Unset, the run's
+    #: detector keeps every box, as every run did before the gate existed, and the run's hash is the
+    #: one it always had; set, it is part of the hash, because it decides which boxes the alignment sees.
+    ink: float | None = None
 
     def fingerprint(self) -> str:
         """The id every unit of this run carries, from the configuration that decides the output.
@@ -164,6 +168,8 @@ class Run(BaseModel):
         payload = self.model_dump(mode="json")
         payload.pop("name", None)
         payload.pop("score", None)
+        if payload.get("ink") is None:
+            payload.pop("ink", None)
         return hashlib.sha1(
             json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
         ).hexdigest()[:12]
@@ -830,6 +836,7 @@ def run_directory(
             run.detector,
             **({"score": run.score} if run.score is not None else {}),
             **({"nms": run.nms} if run.nms is not None else {}),
+            ink=run.ink if run.ink is not None else 0.0,
         )
     if classifier is None:
         from .classify import Classifier as OnnxClassifier
