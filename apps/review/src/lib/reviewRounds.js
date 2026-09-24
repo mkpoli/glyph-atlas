@@ -1,5 +1,7 @@
 // Full rounds come first; smaller characters follow before any character repeats.
 export const MIN_ROUND_SIZE = 6
+// Crops a round loads at a time, first batch and each further one alike.
+export const ROUND_BATCH = 48
 export const automaticCategories = categories => categories.filter(c => c.pending >= MIN_ROUND_SIZE)
 
 /** The next character to review: an unvisited full round, then an unvisited smaller one, largest first. */
