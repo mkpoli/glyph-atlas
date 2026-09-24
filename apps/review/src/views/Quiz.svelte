@@ -21,6 +21,19 @@
   let roundSeed = randomSeed()
   let history = $state([]), historyIndex = $state(-1)
   let loadingMore = $state(false), hasMore = $state(false)
+  // True while the load-more row is on screen or close to it: scrolling down loads the next batch.
+  let nearEnd = $state(false)
+  function watchEnd(node) {
+    const observer = new IntersectionObserver(entries => { nearEnd = entries.some(entry => entry.isIntersecting) },
+      { rootMargin: '0px 0px 600px 0px' })
+    observer.observe(node)
+    return { destroy() { observer.disconnect(); nearEnd = false } }
+  }
+  $effect(() => {
+    // Never while an error is showing: a failed batch would otherwise be retried at once, forever,
+    // and an error from another action would be cleared before anyone could read it.
+    if (nearEnd && hasMore && !error && !loading && !saving && !loadingMore && items.length < roundLimit) loadMore()
+  })
   const roundLimit = $derived(data?.review_limit ?? 4096)
   let production = $state('non-movable-type')
   // The workflow state: which step, and where in the selected crops the reader is.
@@ -405,7 +418,7 @@
       {/each}{/if}
     </div>
     {/key}
-    {#if items.length}<div class="load-more-row"><button class="load-more" disabled={loading || saving || loadingMore || !hasMore || items.length >= roundLimit} onclick={loadMore}>{loadingMore ? 'Loading…' : items.length >= roundLimit ? 'Save this round to load more' : hasMore ? `Load more ${reading}` : `All ${reading} loaded`}</button></div>{/if}
+    {#if items.length}<div class="load-more-row" use:watchEnd><button class="load-more" disabled={loading || saving || loadingMore || !hasMore || items.length >= roundLimit} onclick={loadMore}>{loadingMore ? 'Loading…' : items.length >= roundLimit ? 'Save this round to load more' : hasMore ? `Load more ${reading}` : `All ${reading} loaded`}</button></div>{/if}
   {:else if current}
     <QuizFocus items={queue} index={focusIndex} label={step === 'issue' ? 'Choose the problem' : 'Correction'} backLabel={step === 'issue' ? 'Change selection' : 'Change problem'} disabled={saving} onback={back} onjump={jump} onprev={() => move(-1)} onnext={() => move(1)}>
       {#if step === 'issue'}

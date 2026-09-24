@@ -103,6 +103,29 @@ try {
     assert(await browser.evaluate('document.querySelectorAll(".quiz-tile.selected").length') === 1, 'Load more lost selection')
     await click('.quiz-tile.selected .quiz-choice')
   })
+  await check('scrolling to the end loads more crops without a click', async () => {
+    // Settle first: at the top, automatic loading stops once the load-more row is well off screen.
+    await browser.evaluate('window.scrollTo(0, 0)')
+    const settled = 'document.querySelector(".load-more") && !document.querySelector(".load-more").innerText.startsWith("Loading")'
+    let count = -1
+    for (let i = 0; i < 20; i++) {
+      await browser.waitFor(settled)
+      await new Promise(resolve => setTimeout(resolve, 500))
+      const now = await browser.evaluate('document.querySelectorAll(".quiz-tile").length')
+      if (now === count) break
+      count = now
+    }
+    const label = await browser.evaluate('document.querySelector(".load-more").innerText')
+    assert(!/All .* loaded|Save this round/.test(label), 'the round was fully loaded before scrolling; the check needs a larger character')
+    await browser.evaluate('window.__loadMoreClicked = false; document.querySelector(".load-more").addEventListener("click", () => window.__loadMoreClicked = true)')
+    await browser.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+    await browser.waitFor(`document.querySelectorAll(".quiz-tile").length > ${count}`)
+    assert(!(await browser.evaluate('window.__loadMoreClicked')), 'the button was clicked')
+    const ids = await browser.evaluate('[...document.querySelectorAll(".quiz-tile")].map(t => t.dataset.unit)')
+    assert(new Set(ids).size === ids.length, 'scrolling repeated crops')
+    assert(posted.length === 0, 'loading more wrote reviews')
+    await browser.evaluate('window.scrollTo(0, 0)')
+  })
   await check('branching from an earlier character preserves forward drafts', async () => {
     await click('.forward-reading')
     await browser.waitFor('document.querySelectorAll(".quiz-choice:not(:disabled)").length > 0')
