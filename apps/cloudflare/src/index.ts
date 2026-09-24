@@ -68,6 +68,17 @@ const EFFECTIVE_STATE = `iif(state='pending' AND EXISTS(SELECT 1 FROM seen s JOI
   WHERE s.target=units.id AND s.box IS json_extract(units.data,'$.box')),'seen',state)`;
 // The crops a round names: flagged answers, and crops it showed and left unflagged. A round carries
 // either or both; a single-crop review carries only its answer.
+// What a round may deal: a pending crop nobody has seen, and a flagged crop no round has looked at
+// since it became flagged. A round looks at a flagged crop by showing it and leaving it unmarked, or
+// by marking it again; an undone round's look stops counting. The flag itself is never changed here.
+const FLAGGED_AT = `coalesce((SELECT max(e.at) FROM events e JOIN submissions f ON f.id=e.submission AND f.undone=0
+  WHERE e.target=units.id AND e.kind='review' AND json_extract(e.event,'$.new')='disputed' AND json_extract(e.event,'$.old')!='disputed'),'')`;
+const LOOKED = `(EXISTS(SELECT 1 FROM seen s JOIN submissions b ON b.id=s.submission AND b.undone=0
+  WHERE s.target=units.id AND s.box IS json_extract(units.data,'$.box') AND s.at > ${FLAGGED_AT})
+  OR EXISTS(SELECT 1 FROM events e JOIN submissions f ON f.id=e.submission AND f.undone=0 WHERE e.target=units.id
+  AND e.kind='review' AND json_extract(e.event,'$.old')='disputed' AND json_extract(e.event,'$.new')='disputed'
+  AND json_extract(json_extract(e.event,'$.evidence'),'$.kind')='visual-quiz' AND e.at > ${FLAGGED_AT}))`;
+const DUE = `(${EFFECTIVE_STATE}='pending' OR (state='flagged' AND NOT ${LOOKED}))`;
 export function validRound(input: Json, target?: string): { answers: Json[]; seen: Json[] } {
   const round = !target;
   if (!round && input.seen !== undefined) throw new Problem(422, 'Only a round records seen crops.');
@@ -91,26 +102,30 @@ async function catalogue(env: Env, q: URLSearchParams) {
   if (purpose === 'review') where.push('quiz=1');
   if (production === 'non-movable-type') where.push("production!='movable-type'");
   else if (production !== 'all') { where.push('production=?'); values.push(production) }
-  const groups = await env.DB.prepare(`SELECT character AS label,${EFFECTIVE_STATE} AS state,count(*) AS n FROM units WHERE ${where.join(' AND ')} GROUP BY 1,2`).bind(...values).all<{label:string;state:string;n:number}>();
+  const groups = await env.DB.prepare(`SELECT character AS label,${EFFECTIVE_STATE} AS state,${DUE} AS due,count(*) AS n FROM units WHERE ${where.join(' AND ')} GROUP BY 1,2,3`).bind(...values).all<{label:string;state:string;due:number;n:number}>();
   const categories = new Map<string, Json>();
   const counts: Json = { pending: 0, seen: 0, flagged: 0, checked: 0 };
   for (const row of groups.results) {
-    const category = categories.get(row.label) || { label: row.label, total: 0, pending: 0, seen: 0, checked: 0, flagged: 0 };
+    const category = categories.get(row.label) || { label: row.label, total: 0, pending: 0, seen: 0, checked: 0, flagged: 0, due: 0, due_flagged: 0 };
     category.total += row.n; category[row.state] += row.n; counts[row.state] += row.n;
+    if (row.due) category.due += row.n;
+    if (row.due && row.state === 'flagged') category.due_flagged += row.n;
     categories.set(row.label, category);
   }
   if (q.get('reading')) { where.push('character=?'); values.push(q.get('reading')!) }
   if (q.get('q')) { where.push('(character=? OR reading=?)'); values.push(literal(q.get('q')!), literal(q.get('q')!)) }
   if (q.get('group') && q.get('group') !== 'all') { where.push('category=?'); values.push(q.get('group')!) }
-  if (q.get('state') && q.get('state') !== 'all') { where.push(`${EFFECTIVE_STATE}=?`); values.push(q.get('state')!) }
+  const state = q.get('state') || 'all';
+  if (state === 'due') where.push(DUE);
+  else if (state !== 'all') { where.push(`${EFFECTIVE_STATE}=?`); values.push(state) }
   const seed = integer(q, 'seed', 0, 2147483647);
   const limit = integer(q, 'limit', 60, 96), offset = integer(q, 'offset', 0);
-  const order = purpose === 'review' && seed % 5 ? 'priority,' : '';
+  const order = (state === 'due' ? "state='flagged' DESC," : '') + (purpose === 'review' && seed % 5 ? 'priority,' : '');
   const [count, window] = await env.DB.batch([
     env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${where.join(' AND ')}`).bind(...values),
     env.DB.prepare(`SELECT *,${EFFECTIVE_STATE} AS effective FROM units WHERE ${where.join(' AND ')} ORDER BY ${order} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...values, seed + 1, limit, offset),
   ]);
-  return { total: (count.results[0] as { n: number }).n, available: Object.values(counts).reduce((a:number,b:any) => a+b,0),
+  return { total: (count.results[0] as { n: number }).n, available: counts.pending + counts.seen + counts.flagged + counts.checked,
     counts, purpose, production, review_limit:96, review_epoch: await meta(env, 'review_epoch') || 0, query: q.get('q'),
     categories: [...categories.values()].sort((a,b) => b.total-a.total || a.label.localeCompare(b.label)),
     items: (window.results as (UnitRow & { effective: string })[]).map(row => ({ ...compact(row), state: row.effective })) };

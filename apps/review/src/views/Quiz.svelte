@@ -68,9 +68,9 @@
   const settled = $derived(items.every(i => skipped[i.id] || failed[i.id] || (loaded[i.id] && !failed[i.id])))
   const ready = $derived(items.length > 0 && settled && remaining.length > 0)
   const exhausted = $derived(items.length > 0 && settled && !remaining.length)
-  const categories = $derived((data?.categories ?? []).filter(c => c.pending > 0 && c.label.includes(search)))
+  const categories = $derived((data?.categories ?? []).filter(c => c.due > 0 && c.label.includes(search)))
 
-  const canNext = $derived((data?.categories ?? []).some(c => c.pending > 0 && c.label !== reading))
+  const canNext = $derived((data?.categories ?? []).some(c => c.due > 0 && c.label !== reading))
   function snapshot() {
     return $state.snapshot({ reading, items, choices, selected, skipped, suggestions, contextSuggestions,
       roundId, roundSeed, hasMore, production, summary: data })
@@ -104,7 +104,7 @@
     const id = ++requestId
     loading = true; loadingMore = false; error = ''; categoryOpen = false
     try {
-      const summary = await catalogue({ purpose: 'review', production: scope, limit: 1, state: 'pending' })
+      const summary = await catalogue({ purpose: 'review', production: scope, limit: 1, state: 'due' })
       if (closed || id !== requestId) return
       data = summary
       const epochKey = 'atlas.review-epoch.' + clientId
@@ -113,7 +113,7 @@
         remember('atlas.last-round.' + clientId, null)
         remember(epochKey, summary.review_epoch ?? null)
       }
-      const available = summary.categories.filter(c => c.pending > 0)
+      const available = summary.categories.filter(c => c.due > 0)
       const chosen = target && available.some(c => c.label === target) ? target
         : nextCharacter(available, scope === production ? reading : '', history.filter(r => r.production === scope), randomSeed())
       if (!chosen) {
@@ -127,7 +127,7 @@
         return
       }
       const seed = randomSeed()
-      const result = await catalogue({ purpose: 'review', production: scope, reading: chosen, state: 'pending', limit: ROUND_BATCH, seed })
+      const result = await catalogue({ purpose: 'review', production: scope, reading: chosen, state: 'due', limit: ROUND_BATCH, seed })
       if (closed || id !== requestId) return
       restoreRound({ reading: chosen, items: result.items, choices: {}, selected: {}, skipped: {},
         suggestions: {}, contextSuggestions: {}, roundId: crypto.randomUUID(), roundSeed: seed,
@@ -151,7 +151,7 @@
       // Deduplicate by occurrence instead of treating an old offset as a permanent position.
       const batchLimit = Math.min(ROUND_BATCH, roundLimit - items.length)
       while (additions.length < batchLimit) {
-        const result = await catalogue({ purpose: 'review', production, reading, state: 'pending', limit: 96, offset, seed: roundSeed })
+        const result = await catalogue({ purpose: 'review', production, reading, state: 'due', limit: 96, offset, seed: roundSeed })
         if (closed || id !== requestId || round !== roundId) return
         const fresh = result.items.filter(item => !seen.has(item.id))
         const room = batchLimit - additions.length
@@ -417,7 +417,7 @@
 <section class="quiz-workspace">
   <div class="quiz-topline"><a href="#/" class="quiet-link">← Collection</a><div class="round-count"><span class="live-dot"></span>{number(completed)} issues saved this session</div>{#if last}<button class="undo-round" disabled={saving} onclick={undo}>↶ Undo last round</button>{/if}</div>
   <div class="quiz-heading"><div class="target-character" aria-label={`Target reading ${reading}`}>{reading || '字'}</div><div class="quiz-title"><p class="overline">QUICK REVIEW · {step === 'select' ? 'SELECT' : 'REVIEW'}</p><h1>{step === 'select' ? 'Which crops need fixing?' : step === 'issue' ? 'What’s wrong with this crop?' : choices[current?.id]?.issue === 'merged' ? 'What’s in this crop?' : 'Which character is this?'}</h1>{#if step === 'select'}<p>One complete <b>{reading || "…"}</b> per crop. Select extra characters, bad cuts, or a different character.</p>{/if}</div><div class="round-switch"><button class="category-toggle" disabled={saving || loading} onclick={() => categoryOpen = !categoryOpen}>Change character ⌄</button><button class="quiet-link" disabled={saving || loading || !canNext} onclick={() => load()}>Next character →</button></div></div>
-  {#if categoryOpen}<div class="round-categories"><input aria-label="Find a category" placeholder="Find a reading…" bind:value={search}/><div class="category-options">{#each categories as c}<button disabled={saving} onclick={() => chooseCategory(c.label)}><span>{c.label}</span><small>{c.pending}</small></button>{/each}</div></div>{/if}
+  {#if categoryOpen}<div class="round-categories"><input aria-label="Find a category" placeholder="Find a reading…" bind:value={search}/><div class="category-options">{#each categories as c}<button disabled={saving} onclick={() => chooseCategory(c.label)}><span>{c.label}</span><small>{c.due}</small></button>{/each}</div></div>{/if}
   <label class="review-material">Material
     <select aria-label="Review material" value={production} disabled={saving || loading || loadingMore}
       onchange={event => load({ scope: event.currentTarget.value, target: reading })}>
@@ -446,7 +446,7 @@
       {:else}{#each items as item, i (item.id)}
         <div class="quiz-tile" use:watchSeen={item.id} data-unit={item.id} class:selected={selected[item.id]} class:wrong={choices[item.id]?.verdict === 'wrong'} class:unavailable={failed[item.id]} class:skipped={skipped[item.id]}>
           <button class="quiz-choice" aria-label={`Select character ${i + 1}`} aria-pressed={!!selected[item.id]} disabled={saving || !loaded[item.id] || skipped[item.id]} onclick={() => toggle(item.id)}><Glyph {item} eager onload={id => loaded = { ...loaded, [id]: true }} onerror={id => { failed = { ...failed, [id]: true }; if (selected[id]) skip([id]) }} /><span class="choice-mark">{selected[item.id] ? '✓' : choices[item.id]?.verdict === 'wrong' ? '×' : ''}</span></button>
-          <div class="quiz-production"><ProductionBadge {item} /></div><div class="quiz-tile-tools">{#if keys[i]}<kbd>{keys[i]}</kbd>{/if}<span class="choice-label">{failed[item.id] ? 'Unavailable' : skipped[item.id] ? 'Skipped' : ''}</span><button class="inspect-choice" aria-label={`Inspect character ${i + 1}`} disabled={saving} onclick={() => inspectChoice(item)}>↗</button>{#if skipped[item.id]}<button class="restore-choice" aria-label={`Restore character ${i + 1}`} disabled={saving} onclick={() => restore(item.id)}>restore</button>{:else}<button class="skip-choice" aria-label={`Skip character ${i + 1}`} disabled={saving} onclick={() => skip([item.id])}>–</button>{/if}</div>
+          <div class="quiz-production"><ProductionBadge {item} />{#if item.state === 'flagged'}<span class="flagged-before" title="Someone flagged this crop earlier. Leave it unmarked to keep that flag, or mark what is wrong.">Flagged earlier</span>{/if}</div><div class="quiz-tile-tools">{#if keys[i]}<kbd>{keys[i]}</kbd>{/if}<span class="choice-label">{failed[item.id] ? 'Unavailable' : skipped[item.id] ? 'Skipped' : ''}</span><button class="inspect-choice" aria-label={`Inspect character ${i + 1}`} disabled={saving} onclick={() => inspectChoice(item)}>↗</button>{#if skipped[item.id]}<button class="restore-choice" aria-label={`Restore character ${i + 1}`} disabled={saving} onclick={() => restore(item.id)}>restore</button>{:else}<button class="skip-choice" aria-label={`Skip character ${i + 1}`} disabled={saving} onclick={() => skip([item.id])}>–</button>{/if}</div>
         </div>
       {/each}{/if}
     </div>
@@ -480,7 +480,8 @@
   .review-material select{max-width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink);font:inherit}
   /* Scoped to this view on purpose: the skipped state is the round's own, and the tile keeps the
      size and position it had so declining a crop does not reflow the grid under the reader. */
-  .quiz-production{padding:0 12px 4px}
+  .quiz-production{padding:0 12px 4px;display:flex;gap:8px;align-items:baseline}
+  .flagged-before{font-size:10px;color:var(--wrong)}
   .quiz-tile.skipped { background: #eceaf0; border-style: dashed; }
   .quiz-tile.skipped .quiz-choice { opacity: .35; }
   .restore-choice { font-size: 9px; padding: 1px 7px; }
