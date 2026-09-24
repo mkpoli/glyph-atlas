@@ -21,7 +21,7 @@ from pathlib import Path
 
 from . import index as index_module
 from . import sources as corpus_sources
-from .api import CorpusAPI, Router
+from .api import CorpusAPI, Router, _resolve
 from .occurrence import TOMO
 
 
@@ -56,8 +56,11 @@ def _find(args: argparse.Namespace) -> int:
 
 def _build_char(args: argparse.Namespace) -> int:
     """Index one character, bounded. The only way a per-character file is created."""
+    char = _resolve(args.char)
+    if char is None:
+        raise SystemExit(f"not a character or a code point: {args.char!r}")
     status = index_module.build_occurrences(
-        args.char, args.root, args.out, corpora=args.corpus or None, max_records=args.max_records
+        char, args.root, args.out, corpora=args.corpus or None, max_records=args.max_records
     )
     status["path"] = Path(status["path"]).name
     print(json.dumps(status, ensure_ascii=False, indent=1))
