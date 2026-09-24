@@ -54,8 +54,8 @@ const settled = () => browser.waitFor(`document.querySelector('.glyph-grid')?.ge
 try {
   await browser.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] })
   await browser.goto(base + '/', { waitFor: 'document.querySelector(".collection-progress-link")' })
-  await browser.waitFor(`document.querySelector('[data-unit="${citedId}"] .production-badge')`)
-  assert(await browser.evaluate(`document.querySelector('[data-unit="${citedId}"] .production-badge').textContent === 'Movable type'`), 'cited occurrence lacks Movable type label')
+  await browser.waitFor(`document.querySelector('[data-unit="${citedId}"] .tile-production')`)
+  assert(await browser.evaluate(`document.querySelector('[data-unit="${citedId}"] .tile-production').textContent === 'Movable type'`), 'cited occurrence lacks Movable type label')
   await click(`[data-unit="${citedId}"]`)
   await browser.waitFor(`document.querySelector('.character-dialog[open] .production-badge')`)
   assert(await browser.evaluate(`document.querySelector('.character-dialog[open] .production-badge').textContent === 'Movable type'`), 'inspector lost production metadata')
