@@ -283,17 +283,17 @@
 </script>
 
 <section class="explore">
-  <div class="explore-heading">
-    <div><p class="overline">{flagged ? 'YOUR REVIEW QUEUE' : 'THE COLLECTION'}</p><h1>{flagged ? 'A closer look.' : 'Character atlas.'}</h1></div>
+  <div class="explore-status">
+    <h1 class="visually-hidden">{flagged ? 'Flagged characters' : 'Character atlas'}</h1>
+    {#if !flagged}
+      <button class="collection-progress-link" onclick={onprogress}>
+        <span class="live-dot"></span> Collection progress
+        {#each collection?.sources ?? [] as source}<span>{source.name} <b>{number(source.completed)}</b>{#if source.total} / {number(source.total)}{/if}</span>{/each}
+        <span>↗</span>
+      </button>
+    {/if}
     <div class="collection-meta"><span class="live-dot"></span>{#if picked}<span>{number(display.length)} {display.length === 1 ? 'glyph' : 'glyphs'}</span><span class="meta-divider">/</span><span>{expand === "grapheme" ? `${number(picked.grapheme?.character_count ?? 1)} characters` : "1 character"}</span>{:else if !flagged && collection?.archive}<span>{number(collection.archive.character_crops)} indexed crops</span><span class="meta-divider">/</span><span>{number(collection.archive.works_with_crops)} works with crops</span>{:else}<span>{number(flagged ? (data?.total ?? 0) + sample.length : data?.available)} glyphs</span><span class="meta-divider">/</span><span>{number(data?.categories.length)} readings</span>{/if}</div>
   </div>
-  {#if !flagged}
-    <button class="collection-progress-link" onclick={onprogress}>
-      <span class="live-dot"></span> Collection progress
-      {#each collection?.sources ?? [] as source}<span>{source.name} <b>{number(source.completed)}</b>{#if source.total} / {number(source.total)}{/if}</span>{/each}
-      <span>↗</span>
-    </button>
-  {/if}
   <div class="collection-toolbar">
     <CharacterSearch bind:value={query} oninput={seek} onselect={pick}
                      onsubmit={() => { clearTimeout(searchTimer); offset = 0; submitQuery() }} />
@@ -346,6 +346,8 @@
   .tile-footer .status-dot{flex-shrink:0}
   @media(max-width:700px){.tile-production{display:none}}
   .status-dot.withheld{background:transparent;box-shadow:inset 0 0 0 1px #9b9ba3}
-  .collection-progress-link{display:flex;align-items:center;flex-wrap:wrap;gap:12px 20px;border:0;border-top:1px solid var(--line);border-radius:0;background:transparent;width:100%;text-align:left;padding:16px 0;color:var(--muted);font-size:12px}
+  .explore-status{display:flex;align-items:center;flex-wrap:wrap;gap:8px 24px;padding:4px 0 14px}
+  .explore-status .collection-meta{margin-left:auto;padding:0}
+  .collection-progress-link{display:flex;align-items:center;flex-wrap:wrap;gap:12px 20px;border:0;border-radius:0;background:transparent;text-align:left;padding:0;color:var(--muted);font-size:12px}
   .collection-progress-link b{font-weight:500;color:var(--ink)}
 </style>
