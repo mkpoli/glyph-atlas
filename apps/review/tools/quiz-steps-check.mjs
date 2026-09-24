@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
 import Browser from './browser.mjs'
+import { ROUND_BATCH } from '../src/lib/reviewRounds.js'
 const index = process.argv.indexOf('--server')
 const server = index >= 0 ? process.argv[index + 1] : null
 const build = spawnSync('bunx', ['vite', 'build', '--outDir', 'dist-next', '--emptyOutDir'],
@@ -20,8 +21,8 @@ let mismatchDetail = null
 let pagePhotoRequests = 0
 const base = server.replace(/\/$/, '')
 const catalogue = await (await fetch(base + '/atlas?purpose=review&state=pending&limit=1')).json()
-const startReading = catalogue.categories.find(c => c.pending >= 24)?.label
-assert(startReading, 'test needs a character with at least 24 pending crops')
+const startReading = catalogue.categories.find(c => c.pending > ROUND_BATCH)?.label
+assert(startReading, `test needs a character with more than ${ROUND_BATCH} pending crops`)
 const sampleImage = Buffer.from(await (await fetch(base + catalogue.items[0].image)).arrayBuffer()).toString('base64')
 const respond = (requestId, value) => browser.send('Fetch.fulfillRequest', {
   requestId, responseCode: 200,
@@ -93,7 +94,7 @@ try {
     const before = await browser.evaluate('[...document.querySelectorAll(".quiz-tile")].map(t => t.dataset.unit)')
     await click('.quiz-choice:not(:disabled)')
     await click('.load-more')
-    await browser.waitFor('document.querySelectorAll(".quiz-tile").length > 12')
+    await browser.waitFor(`document.querySelectorAll(".quiz-tile").length > ${before.length}`)
     await browser.waitFor('!document.querySelector(".review-selected").disabled')
     const after = await browser.evaluate('[...document.querySelectorAll(".quiz-tile")].map(t => t.dataset.unit)')
     assert(await browser.evaluate('document.querySelector(".target-character").innerText') === startReading, 'Load more changed character')

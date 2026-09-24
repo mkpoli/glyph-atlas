@@ -9,7 +9,7 @@
   import QuizFocus from '../components/QuizFocus.svelte'
   import { catalogue, randomSeed, request, remember, stored, number, suggestionsFor } from '../lib/client.js'
   import { issues, issueTitle, suggestsReading, isSingle, isSkip, greetSuggestions, SKIP_LABEL } from '../lib/issues.js'
-  import { nextCharacter } from '../lib/reviewRounds.js'
+  import { nextCharacter, ROUND_BATCH } from '../lib/reviewRounds.js'
   let { clientId, initialReading = '', inspect } = $props()
   let data = $state(null), items = $state([]), choices = $state({}), selected = $state({})
   let loaded = $state({}), failed = $state({}), suggestions = $state({}), contextSuggestions = $state({})
@@ -103,7 +103,7 @@
         return
       }
       const seed = randomSeed()
-      const result = await catalogue({ purpose: 'review', production: scope, reading: chosen, state: 'pending', limit: 12, seed })
+      const result = await catalogue({ purpose: 'review', production: scope, reading: chosen, state: 'pending', limit: ROUND_BATCH, seed })
       if (closed || id !== requestId) return
       restoreRound({ reading: chosen, items: result.items, choices: {}, selected: {}, skipped: {},
         suggestions: {}, contextSuggestions: {}, roundId: crypto.randomUUID(), roundSeed: seed,
@@ -125,7 +125,7 @@
     try {
       // Re-read this character with a stable shuffle: concurrent reviews may have removed rows.
       // Deduplicate by occurrence instead of treating an old offset as a permanent position.
-      const batchLimit = Math.min(12, roundLimit - items.length)
+      const batchLimit = Math.min(ROUND_BATCH, roundLimit - items.length)
       while (additions.length < batchLimit) {
         const result = await catalogue({ purpose: 'review', production, reading, state: 'pending', limit: 96, offset, seed: roundSeed })
         if (closed || id !== requestId || round !== roundId) return
