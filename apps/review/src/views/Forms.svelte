@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte'
   import ReferenceGlyph from '../components/ReferenceGlyph.svelte'
-  import { families as loadFamilies, family as loadFamily, members as loadMembers, decide, report } from '../lib/forms.js'
+  import { families as loadFamilies, family as loadFamily, members as loadMembers, decide, report, split as loadSplit } from '../lib/forms.js'
   import { number, reviewer } from '../lib/client.js'
 
   let { initialFamily = '' } = $props()
@@ -11,6 +11,8 @@
   let correcting = $state(false), correction = $state('')
   // Clusters picked together with ctrl/cmd-click, shift-click or X; one form then names them all.
   let picked = $state(new Set()), pickAnchor = null, arrange = $state('shape')
+  // A cluster divided by shape on request; groups are a way to select glyphs, not a stored result.
+  let splitK = $state(0), groups = $state([])
   const cluster = $derived(current?.items[active] ?? null)
   const shown = $derived(list.filter(f => !filter.trim() || f.char.includes(filter.trim()) || f.label.includes(filter.trim())
     || f.code_point.toLowerCase().includes(filter.trim().toLowerCase())))
@@ -41,7 +43,24 @@
     const page = await loadMembers(open, glyphs.length, 240, order)
     glyphs = [...glyphs, ...page.items]
   }
-  function close() { open = null; glyphs = []; chosen = new Set(); anchor = null }
+  function close() { open = null; glyphs = []; chosen = new Set(); anchor = null; splitK = 0; groups = [] }
+  async function divide(k) {
+    splitK = k; chosen = new Set(); anchor = null
+    const cluster = open, result = k ? (await loadSplit(cluster, k)).groups : []
+    // Only the answer for the split still asked for is shown.
+    if (splitK === k && open === cluster) groups = result
+  }
+  function selectGroup(group) {
+    const next = new Set(chosen)
+    const all = group.ids.every(id => next.has(id))
+    for (const id of group.ids) all ? next.delete(id) : next.add(id)
+    chosen = next
+  }
+  function toggleId(id) {
+    const next = new Set(chosen)
+    next.has(id) ? next.delete(id) : next.add(id)
+    chosen = next
+  }
   function toggle(index, event) {
     const next = new Set(chosen)
     if (event.shiftKey && anchor != null) {
@@ -58,7 +77,9 @@
       const units = [...chosen]
       const targets = units.length ? [] : pickedClusters.length ? pickedClusters.map(c => c.id) : [cluster.id]
       let result = { count: 0 }
-      if (units.length) result = await decide({ kind: kind ?? 'glyph', units, ...(kind === 'inherit' ? {} : { form }) })
+      // A decision covers at most 5,000 glyphs; a larger selection is sent in parts.
+      for (let i = 0; i < units.length; i += 5000)
+        result = { count: result.count + (await decide({ kind: kind ?? 'glyph', units: units.slice(i, i + 5000), ...(kind === 'inherit' ? {} : { form }) })).count }
       // One decision per cluster, so each keeps its own record and can be withdrawn on its own.
       for (const id of targets) result = { count: result.count + (await decide({ kind: 'cluster', cluster: id, form })).count }
       picked = new Set(); pickAnchor = null
@@ -68,7 +89,7 @@
       const wasOpen = open, index = active
       await pick(code, true)
       await refreshList()
-      if (wasOpen) { const page = await loadMembers(wasOpen, 0, Math.min(500, Math.max(240, glyphs.length)), order); glyphs = page.items; chosen = new Set() }
+      if (wasOpen) { const page = await loadMembers(wasOpen, 0, Math.min(500, Math.max(240, glyphs.length)), order); glyphs = page.items; chosen = new Set(); if (splitK) groups = (await loadSplit(wasOpen, splitK)).groups }
       else if (!units.length) active = nextOpen(index)
     } catch (e) { error = e.message } finally { busy = false }
   }
@@ -90,6 +111,7 @@
       await pick(code, true)
       await refreshList()
       const page = await loadMembers(open, 0, Math.min(500, Math.max(240, glyphs.length)), order); glyphs = page.items; chosen = new Set()
+      if (splitK) groups = (await loadSplit(open, splitK)).groups
     } catch (e) { error = e.message } finally { busy = false }
   }
   function nextOpen(from) {
@@ -204,13 +226,37 @@
             <div class="members-heading">
               <button class="quiet-link" onclick={close}>← All clusters</button>
               <h3>{cluster.label} <small>{number(total)} glyphs</small></h3>
-              <div class="filter-tabs" role="group" aria-label="Order">
+              <label class="split-control">Split into
+                <select value={splitK} onchange={event => divide(Number(event.currentTarget.value))}>
+                  <option value={0}>—</option>{#each [2, 3, 4, 5, 6, 8] as k (k)}<option value={k}>{k}</option>{/each}
+                </select>
+              </label>
+              {#if !splitK}<div class="filter-tabs" role="group" aria-label="Order">
                 <button class:active={order === 'typical'} aria-pressed={order === 'typical'} onclick={() => reorder('typical')}>Most typical first</button>
                 <button class:active={order === 'unusual'} aria-pressed={order === 'unusual'} onclick={() => reorder('unusual')}>Least typical first</button>
-              </div>
+              </div>{/if}
               {#if cluster.form}<span class="cluster-form">{cluster.form} <small>{byForm.get(cluster.form)?.jibo ?? ''}</small></span>{/if}
               {#if chosen.size}<button class="quiet-link" onclick={() => chosen = new Set()}>Clear selection</button>{/if}
             </div>
+            {#if splitK}
+              {#each groups as group, g (g)}
+                <section class="split-group">
+                  <header><strong>Group {g + 1}</strong><span>{number(group.count)} glyphs</span>
+                    <button class="quiet-link" onclick={() => selectGroup(group)}>{group.ids.every(id => chosen.has(id)) ? 'Deselect' : 'Select'} all {number(group.count)}</button></header>
+                  <div class="member-grid">
+                    {#each group.items as glyph (glyph.id)}
+                      <button class="member" class:selected={chosen.has(glyph.id)} class:own={glyph.basis === 'form_glyph'}
+                              aria-pressed={chosen.has(glyph.id)} onclick={() => toggleId(glyph.id)} title={glyph.id}>
+                        {#if glyph.image}<img class="glyph-image" src={glyph.image} alt="" loading="lazy" />{/if}
+                        {#if glyph.reported}<span class="member-flag" title={`Reported: ${glyph.reported}`}>⚠</span>
+                        {:else if glyph.basis === 'form_glyph'}<span class="member-form">{glyph.form ?? '×'}</span>{/if}
+                      </button>
+                    {/each}
+                  </div>
+                  {#if group.count > group.items.length}<p class="split-more">and {number(group.count - group.items.length)} more like these, included in Select all</p>{/if}
+                </section>
+              {/each}
+            {:else}
             <div class="member-grid">
               {#each glyphs as glyph, i (glyph.id)}
                 <button class="member" class:selected={chosen.has(glyph.id)} class:own={glyph.basis === 'form_glyph'}
@@ -222,6 +268,7 @@
               {/each}
             </div>
             {#if glyphs.length < total}<div class="load-more"><button onclick={more}>Show more ({number(total - glyphs.length)} left)</button></div>{/if}
+            {/if}
           </div>
         {:else}
           <div class="forms-toolbar">
@@ -308,6 +355,8 @@
   .member{position:relative;aspect-ratio:1;padding:6px;border:1.5px solid transparent;border-radius:5px;background:#f1f1f3}
   .member.selected{border-color:var(--accent);background:#e7e3ff}
   .member.own{border-style:dashed;border-color:#b3acd9}
+  .split-control{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}.split-control select{font-size:12px;padding:4px 6px;border:1px solid var(--line);border-radius:5px;background:#fff}
+  .split-group{margin-bottom:22px}.split-group header{display:flex;align-items:baseline;gap:12px;font-size:13px;margin-bottom:8px}.split-group header span{color:var(--muted);font-size:11px}.split-more{font-size:11px;color:var(--muted);margin-top:6px}
   .member-flag{position:absolute;top:3px;right:5px;font-size:12px;color:var(--wrong)}
   .correct-char{display:flex;gap:4px}.correct-char input{width:64px;padding:6px 8px;font-size:14px}.correct-char button{font-size:11px;padding:6px 9px}
   .member-form{position:absolute;top:3px;right:5px;font-size:14px;color:var(--accent);font-family:"Kureedo Kata","Noto Serif Hentaigana",system-ui,sans-serif}

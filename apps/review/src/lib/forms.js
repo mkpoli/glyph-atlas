@@ -14,3 +14,5 @@ export const members = (cluster, offset = 0, limit = 120, order = 'typical') =>
   request('/forms/clusters/' + cluster.split('/').map(encodeURIComponent).join('/') + '?' + new URLSearchParams({ offset, limit, order }))
 export const decide = decision => request('/forms/decisions', decision)
 export const report = body => request('/forms/reports', body)
+export const split = (cluster, k) =>
+  request('/forms/split/' + cluster.split('/').map(encodeURIComponent).join('/') + '?' + new URLSearchParams({ k }))

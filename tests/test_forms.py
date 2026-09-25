@@ -223,3 +223,22 @@ def test_shape_runs_put_the_heaviest_run_of_similar_clusters_first():
     clusters = [{"id": i, "count": n} for i, n in (("odd", 2), ("faint", 3), ("big", 900), ("near", 400), ("far", 50))]
     near = {"order": ["odd", "faint", "near", "big", "far"], "adjacent": [0.2, 0.3, 0.95, 0.4]}
     assert shape_runs(near, clusters) == ["big", "near", "far", "faint", "odd"]
+
+
+def test_a_cluster_splits_by_shape_into_groups_of_its_own_glyphs(clustering, tmp_path):
+    import numpy as np
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from glyph_atlas.review.forms import router
+
+    # Rows follow units.parquet: A and B share a shape, C differs; D is the other cluster.
+    np.save(clustering / "embeddings.npy", np.array([[1, 0, 0], [0.99, 0.1, 0], [0, 1, 0], [0, 0, 1]], np.float16))
+    forms._CLUSTERS.invalidate()
+    app = FastAPI()
+    app.include_router(router(media=None, corpus_root=tmp_path))
+    client = TestClient(app)
+    split = client.get("/forms/split/U+306F:one", params={"k": 2}).json()
+    assert [sorted(g["ids"]) for g in split["groups"]] == [[A, B], [C]]
+    assert split == client.get("/forms/split/U+306F:one", params={"k": 2}).json()
+    assert client.get("/forms/split/U+306F:none", params={"k": 2}).status_code == 404
