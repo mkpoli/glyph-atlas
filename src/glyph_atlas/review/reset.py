@@ -107,6 +107,10 @@ class UnsafeReset(ResetError):
     """Proceeding would lose corrections, so nothing was changed."""
 
 
+class StaleForErase(ResetError):
+    """The store changed after the baseline was materialised; nothing was erased."""
+
+
 @dataclass
 class Report:
     """What the reset did, or what it would do."""
@@ -679,53 +683,39 @@ def reset_reviews(
 
     # ---- materialise: the corrections become the baseline before anything is deleted
     if phase == "started":
-        staging = dataset / STAGING_NAME
-        if staging.exists():
-            shutil.rmtree(staging)
-        staging.mkdir(parents=True)
-        try:
-            if reset_units:
-                staged = _write_table(dataset, "units", reset_units, Unit, staging)
-                _move_into_place(dataset, "units", staged)
-            if lines:
-                staged = _write_table(dataset, "lines", lines, Line, staging)
-                _move_into_place(dataset, "lines", staged)
-
-        finally:
-            shutil.rmtree(staging, ignore_errors=True)
-        stamp = _stamp(dataset)
-        _set_reset_phase(store, "materialised")
-        _write_marker(
-            dataset,
-            {
-                "phase": "materialised",
-                "at": _now(),
-                "dataset": dataset.name,
-                "stamp": stamp,
-                "baseline_digest": baseline_digest(dataset),
-                "units": report.units,
-                "lines": report.lines,
-            },
-        )
+        _do_materialise(dataset, store, report)
         report.phases.append("materialised")
         phase = "materialised"
-    stamp = _stamp(dataset)
 
     # ---- erase: the history, and only the history
+    #
+    # `_erase_store` re-reads the store itself and refuses unless it is still exactly
+    # what `_do_materialise` last wrote as the baseline. A `Store.record` that commits
+    # between the two is the reason for the refusal, not a bug in it: erasing over a
+    # correction the baseline never saw would drop it for good. Redoing the materialise
+    # picks that correction up — the retry's baseline includes it — so one retry is
+    # enough unless the store keeps changing underneath the reset.
     if phase == "materialised":
-        # The baseline is exactly what `materialised` just wrote (or, on a resume from
-        # that phase, what it wrote in an earlier call); recomputed fresh rather than
-        # trusted from the marker, since this digest is what makes the erase safe.
-        digest = baseline_digest(dataset)
-        report.events_erased = _erase_store(store, raw_units, reset_units, raw_lines, lines, stamp, report)
+        for attempt in (1, 2):
+            try:
+                report.events_erased = _erase_store(store, report)
+                break
+            except StaleForErase:
+                if attempt == 2:
+                    raise UnsafeReset(
+                        "a review kept being recorded while the reset tried to erase its"
+                        " history; nothing was erased — run the reset again once the"
+                        " writer is quiet"
+                    ) from None
+                _do_materialise(dataset, store, report)
         _write_marker(
             dataset,
             {
                 "phase": "erased",
                 "at": _now(),
                 "dataset": dataset.name,
-                "stamp": stamp,
-                "baseline_digest": digest,
+                "stamp": _stamp(dataset),
+                "baseline_digest": baseline_digest(dataset),
                 "bumped": True,
             },
         )
@@ -838,16 +828,110 @@ def _already_reset(dataset: Path, store: Path, corpus: Path | None) -> bool:
     return recorded.get("baseline_digest") == baseline_digest(dataset)
 
 
-def _erase_store(
-    store: Path,
-    raw_units: Sequence[sqlite3.Row],
-    units: Sequence[Unit],
-    raw_lines: Sequence[sqlite3.Row],
-    lines: Sequence[Line],
-    stamp: str,
-    report: Report,
-) -> int:
-    """Clear the events, keep the ids monotonic, raise every revision.
+def _snapshot_digest(raw_units: Sequence[sqlite3.Row], raw_lines: Sequence[sqlite3.Row]) -> str:
+    """A content digest of exactly the rows a materialise read out of the store.
+
+    `_erase_store` recomputes this from the store's current ``units`` and ``lines``
+    tables and refuses to erase unless it matches: a mismatch means a `Store.record`
+    committed after the baseline was written, and erasing anyway would drop that
+    correction from the baseline as well as the history.
+    """
+    hasher = hashlib.sha256()
+    for rows in (raw_units, raw_lines):
+        for row_id, data in sorted((row["id"], row["data"]) for row in rows):
+            hasher.update(row_id.encode("utf-8"))
+            hasher.update(b"\0")
+            hasher.update(data.encode("utf-8"))
+            hasher.update(b"\0")
+        hasher.update(b"|")
+    return hasher.hexdigest()
+
+
+def _do_materialise(dataset: Path, store: Path, report: Report) -> None:
+    """Read the store's current state and write it as the baseline, right before writing it.
+
+    The read happens here rather than once at the top of `reset_reviews`, so the gap
+    between reading and writing is as small as it can be: a `Store.record` that commits
+    during that gap is picked up by the next materialise instead of being baked out of
+    the baseline. What was read is fingerprinted into the store's own meta
+    (``materialised_seq``, ``materialised_digest``), and `_erase_store` refuses to erase
+    the history unless the store still holds exactly that snapshot.
+    """
+    with closing(sqlite3.connect(store)) as connection:
+        connection.row_factory = sqlite3.Row
+        raw_units = _rows(connection, "units")
+        raw_lines = _rows(connection, "lines")
+        seq = (
+            connection.execute("SELECT COALESCE(MAX(seq), 0) FROM events").fetchone()[0]
+            if table_exists(connection, "events")
+            else 0
+        )
+    units = [_model(row, Unit) for row in raw_units]
+    lines = [_model(row, Line) for row in raw_lines]
+
+    reset_units: list[Unit] = []
+    units_reset = 0
+    withheld_kept = 0
+    for unit in units:
+        replacement, was_reset, withheld = _reset_unit(unit)
+        reset_units.append(replacement)
+        units_reset += int(was_reset)
+        withheld_kept += int(withheld)
+    report.units = len(reset_units)
+    report.lines = len(lines)
+    report.units_reset = units_reset
+    report.withheld_kept = withheld_kept
+
+    staging = dataset / STAGING_NAME
+    if staging.exists():
+        shutil.rmtree(staging)
+    staging.mkdir(parents=True)
+    try:
+        if reset_units:
+            staged = _write_table(dataset, "units", reset_units, Unit, staging)
+            _move_into_place(dataset, "units", staged)
+        if lines:
+            staged = _write_table(dataset, "lines", lines, Line, staging)
+            _move_into_place(dataset, "lines", staged)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+    digest = _snapshot_digest(raw_units, raw_lines)
+    with connect(store) as connection:
+        connection.row_factory = sqlite3.Row
+        if table_exists(connection, "meta"):
+            for key, value in (
+                ("reset_phase", "materialised"),
+                ("materialised_seq", str(seq)),
+                ("materialised_digest", digest),
+            ):
+                connection.execute(
+                    "INSERT INTO meta (key, value) VALUES (?, ?)"
+                    " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    (key, value),
+                )
+    _write_marker(
+        dataset,
+        {
+            "phase": "materialised",
+            "at": _now(),
+            "dataset": dataset.name,
+            "stamp": _stamp(dataset),
+            "baseline_digest": baseline_digest(dataset),
+            "units": report.units,
+            "lines": report.lines,
+        },
+    )
+    # `report.phases` records "materialised" once, at the call site: a retry from the
+    # erase loop redoes the materialise but must not log the phase a second time.
+
+
+def _erase_store(store: Path, report: Report) -> int:
+    """Refuse unless the store still matches the materialised baseline, then erase.
+
+    The check and the delete run inside the one locked transaction below, so nothing
+    can commit between them either: `connect` opens with ``BEGIN IMMEDIATE``, which
+    blocks a `Store.record` trying to start its own write until this transaction ends.
 
     ``sqlite_sequence`` is left alone: the next event id continues from where the
     erased ones stopped, so an id is never reused for a different decision. The store's
@@ -857,9 +941,33 @@ def _erase_store(
     """
     if not store.is_file():
         return 0
+    dataset = store.parent
     highest = 0
     with connect(store) as connection:
         connection.row_factory = sqlite3.Row
+        raw_units = _rows(connection, "units")
+        raw_lines = _rows(connection, "lines")
+        current_seq = (
+            connection.execute("SELECT COALESCE(MAX(seq), 0) FROM events").fetchone()[0]
+            if table_exists(connection, "events")
+            else 0
+        )
+        expected_seq = connection.execute("SELECT value FROM meta WHERE key='materialised_seq'").fetchone()
+        expected_digest = connection.execute(
+            "SELECT value FROM meta WHERE key='materialised_digest'"
+        ).fetchone()
+        if (
+            expected_seq is None
+            or expected_digest is None
+            or str(current_seq) != expected_seq["value"]
+            or _snapshot_digest(raw_units, raw_lines) != expected_digest["value"]
+        ):
+            raise StaleForErase(
+                "the store changed after the baseline was materialised; nothing was erased"
+            )
+        units = [_reset_unit(_model(row, Unit))[0] for row in raw_units]
+        lines = [_model(row, Line) for row in raw_lines]
+        stamp = _stamp(dataset)
         erased = 0
         if table_exists(connection, "events"):
             erased = connection.execute("SELECT COUNT(*) FROM events").fetchone()[0]

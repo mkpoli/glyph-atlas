@@ -983,6 +983,82 @@ class TestStoreWritesAreAtomic:
         assert ids <= stored_ids  # both survived the write
 
 
+class TestConcurrentWrites:
+    """A write committed in the reset's own read-to-erase window.
+
+    `_erase_store` is the seam: it runs once the baseline has been materialised and
+    right before the history is deleted, so patching it is how a test lands a write
+    exactly in the window the reset is supposed to protect.
+    """
+
+    def test_a_write_recorded_after_the_baseline_is_written_is_not_lost(self, tmp_path, monkeypatch):
+        root = build_dataset(tmp_path / "work" / "honkoku-lines")
+        store = review_the_dataset(root)
+        real_erase = reset_module._erase_store
+
+        def erase_after_a_late_write(*args, **kwargs):
+            # A reviewer's browser commits a correction after the baseline was written
+            # from the pre-write snapshot, and before the history built from that
+            # snapshot is erased.
+            store.record_batch(
+                [
+                    ReviewRequest(
+                        target_type="unit",
+                        target_id="u:2",
+                        field="unicode",
+                        new="U+304C",
+                        base_revision=None,
+                        client_id="reviewer-2",
+                        idempotency_key="edit:2:late",
+                        evidence="late correction",
+                    )
+                ]
+            )
+            return real_erase(*args, **kwargs)
+
+        monkeypatch.setattr(reset_module, "_erase_store", erase_after_a_late_write)
+        report = reset_reviews(root)
+        monkeypatch.setattr(reset_module, "_erase_store", real_erase)
+
+        # The late write was picked up by a redone materialise, not dropped by the erase.
+        units = {u.id: u for u in tables.read(root / "units.parquet", Unit)}
+        assert units["u:2"].unicode == "U+304C"
+        assert report.verified["events"] == 0  # and the history is still gone
+
+    def test_a_store_that_keeps_changing_refuses_instead_of_losing_the_write(self, tmp_path, monkeypatch):
+        root = build_dataset(tmp_path / "work" / "honkoku-lines")
+        store = review_the_dataset(root)
+        real_erase = reset_module._erase_store
+        calls = {"n": 0}
+
+        def always_late(*args, **kwargs):
+            calls["n"] += 1
+            store.record_batch(
+                [
+                    ReviewRequest(
+                        target_type="unit",
+                        target_id="u:2",
+                        field="unicode",
+                        new="U+304C",
+                        base_revision=None,
+                        client_id="reviewer-2",
+                        idempotency_key=f"edit:2:late-{calls['n']}",
+                        evidence="late correction",
+                    )
+                ]
+            )
+            return real_erase(*args, **kwargs)
+
+        monkeypatch.setattr(reset_module, "_erase_store", always_late)
+        with pytest.raises(UnsafeReset):
+            reset_reviews(root)
+        monkeypatch.setattr(reset_module, "_erase_store", real_erase)
+
+        # Refused rather than erased: the history it would have dropped is still there.
+        assert counts(root / "review.sqlite")["events"] > 0
+        assert calls["n"] == 2  # the one retry, then giving up
+
+
 class TestRefusals:
     def test_a_missing_directory_is_refused(self, tmp_path):
         with pytest.raises(ResetError):
