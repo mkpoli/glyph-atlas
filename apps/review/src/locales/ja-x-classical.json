@@ -463,7 +463,6 @@
   "quiz.shapeToggle.dealt": "◧ 配ラレシ順",
   "quiz.skipCharacter": "第{number}字ヲ保留ス",
   "quiz.skipSelected": "選ビタルヲ{skip}",
-  "quiz.skipThisCrop": "此截片ヲ{skip}",
   "quiz.skippedNotSaved": "保留{count} · 保存セズ",
   "quiz.targetReading": "目當ノ讀{reading}",
   "quiz.unavailableCount": "{count}ハ得ラレズ",

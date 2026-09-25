@@ -457,7 +457,6 @@
   "quiz.shapeToggle.dealt": "◧ 依發放順序",
   "quiz.skipCharacter": "略過字符{number}",
   "quiz.skipSelected": "{skip}已選取項目",
-  "quiz.skipThisCrop": "{skip}此裁切",
   "quiz.skippedNotSaved": "已略過{count}個 · 未儲存",
   "quiz.targetReading": "目標讀音{reading}",
   "quiz.unavailableCount": "{count}項無法使用",

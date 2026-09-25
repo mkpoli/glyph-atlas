@@ -183,16 +183,16 @@ function decoded(segment: string, tools: FormTools) {
 
 export async function formsRoute(env: Env, request: Request, path: string, q: URLSearchParams, tools: FormTools): Promise<Response | Json | null> {
   // A publication is reloading the clustering; the migration's trigger refuses a decision meanwhile.
-  if (path !== '/forms/decisions.jsonl' && await env.DB.prepare('SELECT 1 FROM form_loading LIMIT 1').first())
+  if (path !== '/atlas/forms/decisions.jsonl' && await env.DB.prepare('SELECT 1 FROM form_loading LIMIT 1').first())
     tools.fail(503, 'The forms are being republished. Try again in a few minutes.');
-  if (request.method === 'POST') return path === '/forms/decisions' ? decide(env, request, tools) : null;
-  if (path === '/forms/families') return (await families(env)) ?? tools.fail(404, 'No clustering has been published.');
-  if (path === '/forms/decisions.jsonl') return decisionLog(env);
-  const familyPath = path.match(/^\/forms\/families\/([^/]+)$/);
+  if (request.method === 'POST') return path === '/atlas/forms/decisions' ? decide(env, request, tools) : null;
+  if (path === '/atlas/forms/families') return (await families(env)) ?? tools.fail(404, 'No clustering has been published.');
+  if (path === '/atlas/forms/decisions.jsonl') return decisionLog(env);
+  const familyPath = path.match(/^\/atlas\/forms\/families\/([^/]+)$/);
   if (familyPath) return family(env, decoded(familyPath[1], tools), q, tools);
-  const clusterPath = path.match(/^\/forms\/clusters\/(.+)$/);
+  const clusterPath = path.match(/^\/atlas\/forms\/clusters\/(.+)$/);
   if (clusterPath) return members(env, decoded(clusterPath[1], tools), q, tools);
-  const splitPath = path.match(/^\/forms\/split\/(.+)$/);
+  const splitPath = path.match(/^\/atlas\/forms\/split\/(.+)$/);
   if (splitPath) return split(env, decoded(splitPath[1], tools), q, tools);
   return null;
 }

@@ -70,9 +70,7 @@ def classifier_path() -> Path:
     override = os.environ.get("ATLAS_CLASSIFIER_MODEL")
     if override:
         return Path(override)
-    directory = ROOT / "models/classifier/artifacts"
-    features = directory / "classifier-with-features.onnx"
-    return features if features.is_file() else directory / "classifier.onnx"
+    return ROOT / "models/classifier/artifacts/classifier.onnx"
 
 
 #: The families whose forms CODH trained as one class. A kana family is not one of them: か, its
@@ -120,29 +118,31 @@ def classifier_results(classes, probabilities) -> tuple[list[dict], dict]:
     return candidates, vote
 
 
-@lru_cache(maxsize=2)
+@lru_cache(maxsize=1)
 def _visual_classifier(directory: str, stamp: int, size: int):
+    """The families' head and encoder, or None when they cannot be loaded; either is kept until
+    `classifier.json` changes, so a broken encoder is not reread on every request."""
     from ..visual_classifier import VisualClassifier
-    return VisualClassifier(Path(directory))
+    try:
+        return VisualClassifier(Path(directory))
+    except Exception:  # noqa: BLE001 — onnxruntime's errors derive from Exception alone
+        return None
 
 
-def visual_candidate(classifier, image: Image.Image, vote: dict, engines: list[dict]) -> dict | None:
+def visual_candidate(image: Image.Image, vote: dict) -> dict | None:
     """An anchored embedding result remains a proposal, with distances kept separate."""
-    if vote.get("identity_scope") != "family" or not hasattr(classifier, "features"):
+    if vote.get("identity_scope") != "family":
         return None
     from ..visual_families import directory
     path = directory() / "classifier.json"
     try:
         stat = path.stat()
         head = _visual_classifier(str(path.parent), stat.st_mtime_ns, stat.st_size)
-        encoder = next((engine.get("sha256") for engine in engines if engine["name"] == "Atlas classifier"), None)
-        if not encoder or head.metadata.get("encoder_sha256") != encoder:
+        if head is None:
             return None
-        embedding = classifier.features(image)
-        if embedding is None:
-            return None
+        embedding = head.embed(image)
         prediction = head.predict(embedding, vote["family"])
-    except (OSError, ValueError, KeyError, RuntimeError):
+    except Exception:  # noqa: BLE001 — a visual form is extra; its failure keeps the other suggestions
         return None
     text = prediction.get("written_character")
     if not text or text not in vote["members"] or not prediction.get("within_support"):
@@ -239,7 +239,7 @@ class Recognizer:
             probabilities = self.classifier.probabilities(image)
             alternatives, vote = classifier_results(self.classifier.classes, probabilities)
             votes.append(vote)
-            visual = visual_candidate(self.classifier, image, vote, self.engines)
+            visual = visual_candidate(image, vote)
             if visual:
                 alternatives.insert(0, visual)
             for candidate in alternatives:

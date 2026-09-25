@@ -1,7 +1,8 @@
 <script>
-  import { issues, issueTitle, issueHint } from '../lib/issues.js'
+  import { issues, issueTitle, issueHint, skipLabel, skipHint } from '../lib/issues.js'
   import { t } from '../lib/i18n.svelte.js'
-  let { value = null, choose, disabled = false, suggested = null, compact = false } = $props()
+  // `skip`, when given, adds a Skip card: not a problem, and chosen only while the crop is skipped.
+  let { value = null, choose, disabled = false, suggested = null, compact = false, skip = null, skipped = false } = $props()
 </script>
 <div class="issue-picker" class:compact aria-label={t('issue.picker.label')}>
   {#each issues as issue}
@@ -16,4 +17,10 @@
       {#if suggested === issue.id}<span class="suggested-tag">{t('issue.suggested')}</span>{/if}
     </button>
   {/each}
+  {#if skip}
+    <button type="button" class="issue-card skip-card" class:chosen={skipped} data-issue="skip" {disabled} aria-pressed={skipped} onclick={skip}>
+      <span class="issue-example" aria-hidden="true">?</span>
+      <span class="issue-name">{skipLabel()}</span><span class="issue-hint">{skipHint()}</span>
+    </button>
+  {/if}
 </div>

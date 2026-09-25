@@ -463,7 +463,6 @@
   "quiz.shapeToggle.dealt": "◧ 配付 順",
   "quiz.skipCharacter": "文字 {number} 건너뛰기",
   "quiz.skipSelected": "選擇 項目 {skip}",
-  "quiz.skipThisCrop": "이 크롭 {skip}",
   "quiz.skippedNotSaved": "{count}件 건너뜀 · 貯藏 안 됨",
   "quiz.targetReading": "對象 讀音 {reading}",
   "quiz.unavailableCount": "{count}件 利用 不可",

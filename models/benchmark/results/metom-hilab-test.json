@@ -1,0 +1,140 @@
+{
+  "set": "hilab-test",
+  "crops": 37606,
+  "models": {
+    "metom": {
+      "seconds": 861.8,
+      "scores": {
+        "all": {
+          "n": 37606,
+          "top1": 0.4135,
+          "top5": 0.6134,
+          "family1": 0.4156,
+          "family5": 0.6169,
+          "empty": 0.0
+        },
+        "hiragana": {
+          "n": 4767,
+          "top1": 0.6853,
+          "top5": 0.8422,
+          "family1": 0.6853,
+          "family5": 0.8422,
+          "empty": 0.0
+        },
+        "kanji": {
+          "n": 31967,
+          "top1": 0.3799,
+          "top5": 0.5844,
+          "family1": 0.3825,
+          "family5": 0.5884,
+          "empty": 0.0
+        },
+        "katakana": {
+          "n": 529,
+          "top1": 0.1456,
+          "top5": 0.4631,
+          "family1": 0.1456,
+          "family5": 0.4631,
+          "empty": 0.0
+        },
+        "symbol": {
+          "n": 343,
+          "top1": 0.1749,
+          "top5": 0.3732,
+          "family1": 0.1749,
+          "family5": 0.3732,
+          "empty": 0.0
+        }
+      }
+    },
+    "atlas": {
+      "seconds": 23.8,
+      "scores": {
+        "all": {
+          "n": 37606,
+          "top1": 0.467,
+          "top5": 0.5984,
+          "family1": 0.4697,
+          "family5": 0.6019,
+          "empty": 0.0
+        },
+        "hiragana": {
+          "n": 4767,
+          "top1": 0.7139,
+          "top5": 0.8821,
+          "family1": 0.7139,
+          "family5": 0.8821,
+          "empty": 0.0
+        },
+        "kanji": {
+          "n": 31967,
+          "top1": 0.4385,
+          "top5": 0.5586,
+          "family1": 0.4417,
+          "family5": 0.5627,
+          "empty": 0.0
+        },
+        "katakana": {
+          "n": 529,
+          "top1": 0.1248,
+          "top5": 0.518,
+          "family1": 0.1248,
+          "family5": 0.518,
+          "empty": 0.0
+        },
+        "symbol": {
+          "n": 343,
+          "top1": 0.2128,
+          "top5": 0.4956,
+          "family1": 0.2128,
+          "family5": 0.4956,
+          "empty": 0.0
+        }
+      }
+    },
+    "atlas+metom": {
+      "scores": {
+        "all": {
+          "n": 37606,
+          "top1": 0.467,
+          "top5": 0.6442,
+          "family1": 0.4697,
+          "family5": 0.6481,
+          "empty": 0.0
+        },
+        "hiragana": {
+          "n": 4767,
+          "top1": 0.7139,
+          "top5": 0.892,
+          "family1": 0.7139,
+          "family5": 0.892,
+          "empty": 0.0
+        },
+        "kanji": {
+          "n": 31967,
+          "top1": 0.4385,
+          "top5": 0.6111,
+          "family1": 0.4417,
+          "family5": 0.6157,
+          "empty": 0.0
+        },
+        "katakana": {
+          "n": 529,
+          "top1": 0.1248,
+          "top5": 0.5539,
+          "family1": 0.1248,
+          "family5": 0.5539,
+          "empty": 0.0
+        },
+        "symbol": {
+          "n": 343,
+          "top1": 0.2128,
+          "top5": 0.4286,
+          "family1": 0.2128,
+          "family5": 0.4286,
+          "empty": 0.0
+        }
+      }
+    }
+  }
+}

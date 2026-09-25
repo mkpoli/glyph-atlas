@@ -704,7 +704,7 @@ export default {
       const image=path.match(/^\/atlas\/media\/([a-f0-9]{64})\.webp$/);
       if(image)return await media(env,request,image[1],ctx);
       if(path==='/atlas')return json(await catalogue(env,q));
-      if(path==='/history')return json(await history(env,q));
+      if(path==='/atlas/history')return json(await history(env,q));
       if(path==='/atlas/corpus/character')return json(parse((await unit(env,q.get('id')||'')).data));
       if(path==='/atlas/collection/status')return json(await meta(env,'collection'));
       const document=path.match(/^\/atlas\/documents\/([^/]+)\/characters$/);
@@ -750,9 +750,9 @@ export default {
       if(path==='/atlas/corpus/reviews'){
         const rows=await env.DB.prepare("SELECT * FROM units WHERE origin='corpus' AND state='flagged' ORDER BY id LIMIT 96").all<UnitRow>();
         return json({items:rows.results.map(compact),total:rows.results.length})}
-      if(path.startsWith('/forms/')){const formed=await formsRoute(env,request,path,q,formTools);
+      if(path.startsWith('/atlas/forms/')){const formed=await formsRoute(env,request,path,q,formTools);
         if(formed)return formed instanceof Response?formed:json(formed)}
-      if(path.startsWith('/atlas')||path.startsWith('/layers')||path.startsWith('/forms')||path.startsWith('/images/'))throw new Problem(404,'Unknown endpoint.');
+      if(path.startsWith('/atlas')||path.startsWith('/layers')||path.startsWith('/images/'))throw new Problem(404,'Unknown endpoint.');
       return await env.ASSETS.fetch(request);
     }catch(error){
       const open=path.startsWith('/atlas/documents/')?OPEN:{};

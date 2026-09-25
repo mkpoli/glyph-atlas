@@ -106,7 +106,7 @@ def run(root, anchors_path=None):
     if (metadata.get("manifest_sha256") != manifest_sha
             or metadata.get("embeddings_sha256") != embedding_sha):
         raise ValueError("Embedding provenance does not match the current sample manifest and vectors")
-    encoder = Path("models/classifier/artifacts/classifier-with-features.onnx")
+    encoder = root / "encoder.onnx"
     encoder_sha = hashlib.sha256(encoder.read_bytes()).hexdigest()
     parity = json.loads((root / "onnx-parity.json").read_text())
     if (not parity.get("passed") or parity.get("manifest_sha256") != manifest_sha

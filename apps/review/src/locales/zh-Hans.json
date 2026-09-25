@@ -457,7 +457,6 @@
   "quiz.shapeToggle.dealt": "◧ 发放顺序",
   "quiz.skipCharacter": "跳过字符{number}",
   "quiz.skipSelected": "{skip}所选",
-  "quiz.skipThisCrop": "{skip}此裁切",
   "quiz.skippedNotSaved": "已跳过{count}个 · 未保存",
   "quiz.targetReading": "目标读音{reading}",
   "quiz.unavailableCount": "{count}个不可用",
