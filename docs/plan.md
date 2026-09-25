@@ -92,6 +92,8 @@ Reference tables:
 - MJ文字情報一覧表 変体仮名編 Ver.002.01: 299 rows, 286 with code points, with 字母, 音価,
   戸籍統一文字番号, 学術用変体仮名番号 and the NINJAL URL. CC BY-SA 2.1 JP.
   https://moji.or.jp/mojikiban/mjlist/
+- MJ文字情報一覧表 Ver.006.02: 58,862 rows, 58,859 with a corresponding UCS code point (対応するUCS),
+  5,072 code points held by more than one MJ figure. CC BY-SA 2.1 JP. https://moji.or.jp/mojikiban/mjlist/
 - 学術情報交換用変体仮名 (NINJAL): one reference glyph per code point with dictionary cross-references.
   Images CC BY-SA 2.1 JP, data CC BY 4.0. https://cid.ninjal.ac.jp/kana/
 - IVD 2026-08-03, Moji_Joho collection, 11,392 sequences, whose glyph ids are MJ文字図形名. Unicode
