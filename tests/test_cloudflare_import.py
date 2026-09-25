@@ -5,7 +5,7 @@ from copy import deepcopy
 from uuid import uuid4
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from glyph_atlas import tables
 from glyph_atlas.review import cloudflare_import as bridge
@@ -22,7 +22,12 @@ def store(tmp_path, monkeypatch):
     cache = tmp_path / "cache"
     monkeypatch.setenv("GLYPH_ATLAS_CACHE", str(cache))
     image = tmp_path / "page.png"
-    Image.new("RGB", (200, 200), "white").save(image)
+    page = Image.new("RGB", (200, 200), "white")
+    # Two characters' worth of ink inside `u` (y 10–50), a blank gap between.
+    draw = ImageDraw.Draw(page)
+    draw.rectangle((14, 13, 35, 26), fill="black")
+    draw.rectangle((14, 34, 35, 47), fill="black")
+    page.save(image)
     digest = hashlib.sha256(image.read_bytes()).hexdigest()
     path = cache / "images" / digest[:2] / (digest + ".png")
     path.parent.mkdir(parents=True)
@@ -209,18 +214,15 @@ def test_crop_with_identity_edit_stays_flagged_after_refinement(store):
 
 @pytest.mark.parametrize("round_review", [False, True])
 def test_joined_identity_and_sequence_reach_refinement_without_confirming_parent(store, round_review):
-    class Uncertain:
-        def assess(self, crop, expected):
-            assert expected == "を手"
-            assert crop.size == (30, 40)
-            return {"accepted": False, "reason": "fixture needs a boundary"}
-
     record, _ = remote(baseline(store), issue="merged", correction="を手", round_review=round_review)
     bound, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
     assert report["counts"] == {"imported": 1}
-    result = refine_feedback(store, bound, apply=True, engine=Uncertain())
-    assert result["counts"] == {"withheld": 1} and result["items"][0]["decision"] == "joined"
-    assert store.unit("u").unicode == "U+3092" and store.unit("u").review == "disputed"
+    result = refine_feedback(store, bound, apply=True)
+    assert result["counts"] == {"split": 1} and result["items"][0]["decision"] == "joined"
+    assert result["items"][0]["assessment"]["reading"] == "を手"
+    parent = store.unit("u")
+    assert parent.unicode == "U+3092" and parent.review == "disputed" and not parent.active
+    assert all(store.unit(child).review == "machine" for child in parent.split_into)
     assert json.loads(bound["reviews"][0]["event"]["evidence"])["cloudflare_import"]["remote_event"] == record["event"]
 
 
@@ -232,23 +234,19 @@ def test_phonetic_correction_keeps_written_identity(store):
     assert store.unit("u").unicode == "U+624B" and store.unit("u").reading == "て"
 
 
-def test_joined_import_can_split_with_supported_boundaries(store):
-    class Supported:
-        def assess(self, crop, expected):
-            assert expected == "を手"
-            return {"accepted": True, "text": ["を", "手"], "sequence": {"text": "を手", "score": .999},
-                    "boxes": [{"x": 0, "y": 0, "w": 30, "h": 20}, {"x": 0, "y": 20, "w": 30, "h": 20}]}
-
+def test_joined_import_splits_by_the_typed_reading(store):
     record, _ = remote(baseline(store), issue="merged", correction="を手", round_review=True)
     bound, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
     assert report["counts"] == {"imported": 1}
-    result = refine_feedback(store, bound, apply=True, engine=Supported())
+    result = refine_feedback(store, bound, apply=True)
     assert result["counts"] == {"split": 1}
     parent = store.unit("u")
     assert not parent.active
     children = [store.unit(identity) for identity in parent.split_into]
     assert [unit.reading for unit in children] == ["を", "手"]
     assert all(unit.review == "machine" for unit in children)
+    local_event = bound["reviews"][0]["event"]["id"]
+    assert all(unit.meta["feedback_split"]["source_event_id"] == local_event for unit in children)
 
 
 def test_encoded_identity_is_canonicalized_only_in_local_event(store):
