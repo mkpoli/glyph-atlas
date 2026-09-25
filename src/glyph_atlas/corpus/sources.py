@@ -134,6 +134,7 @@ ID_FAMILIES = {
     "kokatsuji": "codh-omt",
     "hilab": "hilab",
     "hng": "hng",
+    "hng-kiridashi": "hng-kiridashi",
 }
 
 #: Known corpora, with the rights and shape a caller needs before showing a result.
@@ -171,6 +172,10 @@ KNOWN: tuple[dict[str, Any], ...] = (
     {
         "name": "hng",
         "note": "HNG char dataset: 49.8k located character crops, no page images.",
+    },
+    {
+        "name": "hng-kiridashi",
+        "note": "HNG 切り出しデータ: 10.3k character boxes on Gallica pages of Pelliot chinois 2334 and 2195.",
     },
 )
 

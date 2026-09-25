@@ -22,6 +22,7 @@ from glyph_atlas.corpus.details import (
     CONTEXT_PAD,
     DETAIL_EDGE,
     UNIT_CORPORA,
+    UNIT_ID_PREFIXES,
     DetailResolver,
     detail,
     resolver_for,
@@ -912,6 +913,7 @@ class TestLookupIsRoutedNotBudgeted:
         assert resolver._corpus_order("hl:abc") == ["honkoku-lines"]
         assert resolver._corpus_order("codh:1:x") == ["codh-full"]
         assert resolver._corpus_order("hng:jou:00350") == ["hng"]
+        assert UNIT_ID_PREFIXES["hng-kiridashi:"] == "hng-kiridashi"
 
     def test_an_unfamiliar_prefix_still_looks_everywhere(self, viewer):
         api, _, _ = viewer

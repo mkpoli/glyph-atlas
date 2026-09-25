@@ -642,6 +642,7 @@ class TestShape:
         record = normalize_export(export(local_record()))[0]
         assert record.source_corpus == "ainu-records"
         assert source_corpus_of("codh-omt:001:1") == "kokatsuji"
+        assert source_corpus_of("hng-kiridashi:myz:23166") == "hng-kiridashi"
         assert source_corpus_of("nonsense") is None
 
 
