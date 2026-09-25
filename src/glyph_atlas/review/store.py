@@ -30,7 +30,7 @@ import re
 import sqlite3
 import threading
 from collections import Counter
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from dataclasses import field as dc_field
@@ -45,6 +45,7 @@ from ..schema import (
     PAGE_SCOPE,
     Box,
     Classification,
+    Confidence,
     Document,
     Line,
     LineRole,
@@ -92,6 +93,8 @@ SPLIT_KEYS = frozenset(
     }
 )
 MANUAL = "manual"
+#: The method of a box a detector proposed with no text aligned to it (`review.propose_units`).
+DETECT = "detect"
 
 _EVENT_COLUMNS = (
     "id",
@@ -891,29 +894,126 @@ class Store:
             if (box.w <= 0 or box.h <= 0 or box.x < 0 or box.y < 0
                     or box.x + box.w > page.width or box.y + box.h > page.height):
                 raise BadRequest("The box must lie inside the page image.")
-            lines = self._lines_of_page(conn, page_id)
-            line = next((line for line in lines if line.page_scope), None)
-            created = None
-            if line is None:
-                line = Line(
-                    id=f"{page_id}:l{_next_number([record.id for record in lines], f'{page_id}:l')}",
-                    page_id=page_id,
-                    seq=max((record.seq for record in lines), default=-1) + 1,
-                    box=Box(x=0, y=0, w=page.width, h=page.height),
-                    role=LineRole.OTHER,
-                    text_raw="",
-                    text="",
-                    match_method=MANUAL,
-                    meta={"scope": PAGE_SCOPE},
-                )
-                event = _created("line", line, request.client_id)
-                state = self._state_for(conn, event)
-                key = f"{request.idempotency_key}:line" if request.idempotency_key else None
-                created = self._commit_within(conn, _change(state, event, guard=False), state,
-                                              request.client_id, key)
+            key = f"{request.idempotency_key}:line" if request.idempotency_key else None
+            line, created = self._page_line(conn, page, request.client_id, key)
             unit = self._new_unit(conn, UnitRequest(line_id=line.id, box=box, client_id=request.client_id,
                                                     idempotency_key=request.idempotency_key))
             return {"line": created, "unit": unit}
+
+    def _page_line(self, conn: sqlite3.Connection, page: Page, client_id: str | None,
+                   key: str | None, *, role: Literal["transcriber", "model"] = "transcriber"
+                   ) -> tuple[Line, dict[str, Any] | None]:
+        """The page's own line, created inside the caller's transaction when the page has none yet.
+
+        Returns the line and the result of its creation, or None when it already existed.
+        """
+        lines = self._lines_of_page(conn, page.id)
+        line = next((line for line in lines if line.page_scope), None)
+        if line is not None:
+            return line, None
+        line = Line(
+            id=f"{page.id}:l{_next_number([record.id for record in lines], f'{page.id}:l')}",
+            page_id=page.id,
+            seq=max((record.seq for record in lines), default=-1) + 1,
+            box=Box(x=0, y=0, w=page.width, h=page.height),
+            role=LineRole.OTHER,
+            text_raw="",
+            text="",
+            match_method=MANUAL,
+            meta={"scope": PAGE_SCOPE},
+        )
+        event = _created("line", line, client_id, role=role)
+        state = self._state_for(conn, event)
+        return line, self._commit_within(conn, _change(state, event, guard=False), state, client_id, key)
+
+    def propose_units(self, page_id: str, proposals: Sequence[Any], proposer: str, *,
+                      image_size: tuple[int, int]) -> dict[str, Any]:
+        """Record the boxes a detector proposed on a page photo as machine units on the page's own line.
+
+        `proposals` carry `x`, `y`, `w`, `h` in pixels of the image the detector read, `kind` (`mark`
+        or `circle`), `score` and `features`; `image_size` is that image's (width, height), and the
+        boxes are scaled to the pixels of the page record, as a drawn box is. Each becomes a unit with
+        method `detect`, review `machine`, no character, kind `char` for a mark and `punctuation` for
+        a circle, and `meta.proposer` naming the proposer's version; its id is
+        `{line_id}:{run}:{n}`, with `run` a short hash of that version.
+
+        The proposals of one version are recorded once per page: when any unit of the page, active
+        or retired, already carries this version, nothing is written, so a proposal a reviewer
+        removed does not come back. Proposals of an earlier version that nobody has touched (still
+        `machine`, still active, still without a character) are retired first; manual units and
+        units a reviewer confirmed are never changed, and a proposal overlapping any active unit of
+        the page by more than half its area is left out. Every write is an event of the review log,
+        role `model`, so `atlas review apply` reproduces the units.
+
+        Returns `{"page", "created", "retired", "skipped"}`: the page id, the units created, the
+        earlier proposals retired, and `skipped` true when this version had already been recorded.
+        """
+        page = self.page(page_id)
+        if page is None:
+            raise NotFound(f"no page {page_id}")
+        if not page.width or not page.height:
+            raise BadRequest(f"page {page_id} records no image size, so a box has nothing to lie on")
+        width, height = image_size
+        sx, sy = page.width / width, page.height / height
+        run = hashlib.sha256(proposer.encode()).hexdigest()[:8]
+        client = f"proposer:{proposer}"
+        with self._lock, self._connection() as conn, self._transaction(conn):
+            rows = conn.execute("SELECT data FROM units WHERE page_id = ?", (page_id,))
+            units = [Unit.model_validate_json(row["data"]) for row in rows]
+            if any(unit.meta.get("proposer") == proposer for unit in units):
+                return {"page": page_id, "created": [], "retired": [], "skipped": True}
+            # The proposals a person removed: retired by an event that no model wrote.
+            gone = [unit.id for unit in units if not unit.active and unit.method == DETECT]
+            rejected = {row["target_id"] for row in conn.execute(
+                f"SELECT target_id FROM events WHERE field = 'active' AND role != 'model' "
+                f"AND target_id IN ({','.join('?' * len(gone))})", gone)} if gone else set()
+            retired = []
+            for unit in units:
+                if (unit.active and unit.method == DETECT and unit.review == ReviewState.MACHINE
+                        and not unit.unicode and unit.meta.get("proposer") not in (None, proposer)):
+                    event = Review(id="", target_type="unit", target_id=unit.id, field="active", new=False,
+                                   role="model", actor=client, evidence=json.dumps({"superseded_by": proposer}),
+                                   at=datetime.now(UTC))
+                    state = self._state_for(conn, event)
+                    self._commit_within(conn, _change(state, event, guard=False), state, client, None)
+                    retired.append(unit.id)
+            # A box stands against new proposals while it is active, and after a reviewer removed it:
+            # a proposal someone rejected does not come back with the next version of the proposer.
+            standing = [unit.box for unit in units if unit.box and unit.id not in retired
+                        and (unit.active or (unit.method == DETECT and unit.id in rejected))]
+            boxes = []
+            for proposal in proposals:
+                x0, y0 = max(0, round(proposal.x * sx)), max(0, round(proposal.y * sy))
+                x1 = min(page.width, round((proposal.x + proposal.w) * sx))
+                y1 = min(page.height, round((proposal.y + proposal.h) * sy))
+                box = Box(x=x0, y=y0, w=x1 - x0, h=y1 - y0)
+                if box.w <= 0 or box.h <= 0 or any(_covered(box, other) > 0.5 for other in standing):
+                    continue
+                boxes.append((box, proposal))
+            if not boxes:
+                return {"page": page_id, "created": [], "retired": retired, "skipped": False}
+            line, _ = self._page_line(conn, page, client, None, role="model")
+            created = []
+            for number, (box, proposal) in enumerate(boxes):
+                circle = proposal.kind == "circle"
+                unit = Unit(
+                    id=f"{line.id}:{run}:{number}",
+                    document_id=page.document_id,
+                    page_id=page_id,
+                    line_id=line.id,
+                    box=box,
+                    kind=UnitKind.PUNCTUATION if circle else UnitKind.CHAR,
+                    classification=Classification.UNASSESSED,
+                    method=DETECT,
+                    confidence=Confidence(detection=proposal.score, model=proposer),
+                    review=ReviewState.MACHINE,
+                    meta={"proposer": proposer, "proposal": proposal.kind, **dict(proposal.features)},
+                )
+                event = _created("unit", unit, client, role="model")
+                state = self._state_for(conn, event)
+                self._commit_within(conn, _change(state, event, guard=False), state, client, None)
+                created.append(unit.id)
+            return {"page": page_id, "created": created, "retired": retired, "skipped": False}
 
     def _new_unit(self, conn: sqlite3.Connection, request: UnitRequest) -> dict[str, Any]:
         """Create a unit on an existing line inside the caller's transaction."""
@@ -1870,6 +1970,13 @@ def _union(boxes: list[Box]) -> Box:
     return Box(x=left, y=top, w=right - left, h=bottom - top)
 
 
+def _covered(box: Box, other: Box) -> float:
+    """The share of `box` that `other` covers."""
+    w = min(box.x + box.w, other.x + other.w) - max(box.x, other.x)
+    h = min(box.y + box.h, other.y + other.h) - max(box.y, other.y)
+    return max(0, w) * max(0, h) / (box.w * box.h)
+
+
 def _next_number(ids: Iterable[str], prefix: str) -> int:
     """One past the highest number an id with this prefix carries."""
     pattern = re.compile(rf"^{re.escape(prefix)}(\d+)$")
@@ -1893,8 +2000,9 @@ def _differences(before: dict[str, Any], after: dict[str, Any]) -> int:
     return changed + sum(1 for ident in before if ident not in after)
 
 
-def _created(target_type: Literal["unit", "line"], record: Line | Unit, client_id: str | None) -> Review:
-    """The event that brings a record a reviewer drew into the log."""
+def _created(target_type: Literal["unit", "line"], record: Line | Unit, client_id: str | None, *,
+             role: Literal["transcriber", "model"] = "transcriber") -> Review:
+    """The event that brings a record a reviewer drew, or a detector proposed, into the log."""
     return Review(
         id="",
         target_type=target_type,
@@ -1902,7 +2010,7 @@ def _created(target_type: Literal["unit", "line"], record: Line | Unit, client_i
         field=CREATE,
         old=None,
         new=record.model_dump(mode="json"),
-        role="transcriber",
+        role=role,
         actor=client_id,
         at=datetime.now(UTC),
     )

@@ -386,7 +386,7 @@ class Unit(BaseModel):
     voicing: Literal["none", "dakuten", "handakuten"] | None = Field(
         default=None, description="mark actually present on the page"
     )
-    method: Literal["import", "detect-align", "manual"] = "import"
+    method: Literal["import", "detect-align", "detect", "manual"] = "import"
     confidence: Confidence | None = None
     review: ReviewState = ReviewState.MACHINE
     upstream: dict[str, str] = Field(default_factory=dict, description="source id and upstream identifier")

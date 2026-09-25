@@ -466,6 +466,62 @@ def review_apply(directory: Annotated[Path, typer.Argument(help="dataset directo
         typer.echo(f"{name:<12} {rows:>10}")
 
 
+@review_app.command("propose-marks")
+def review_propose_marks(
+    directory: Annotated[Path, typer.Argument(help="dataset directory whose pages are searched")],
+    page: Annotated[list[str] | None, typer.Option("--page", help="page id; repeat for several")] = None,
+    document: Annotated[list[str] | None, typer.Option("--document", help="document id; repeat for several")] = None,
+) -> None:
+    """Propose the interlinear marks and circles of page photos, for a reviewer to confirm.
+
+    Searches every page with a cached photo, or the pages named and the pages of the documents named.
+    A page already searched by this version of the proposer is left as it is."""
+    from PIL import Image
+
+    try:
+        import cv2  # noqa: F401
+        import numpy  # noqa: F401
+
+        from . import interlinear
+    except ImportError as error:
+        typer.echo(f"propose-marks needs the `marks` extra ({error.name} is missing): uv sync --extra marks", err=True)
+        raise typer.Exit(2) from error
+    from .review.characters import page_digest
+    from .review.server import cached_image
+    from .review.store import Store
+
+    store = Store(directory)
+    pages = sorted(store.pages().values(), key=lambda record: (record.document_id, record.seq, record.id))
+    missing = set(page or ()) - {record.id for record in pages}
+    if missing:
+        raise typer.BadParameter(f"no page {', '.join(sorted(missing))}")
+    if page or document:
+        pages = [record for record in pages
+                 if record.id in set(page or ()) or record.document_id in set(document or ())]
+    totals = {"created": 0, "retired": 0}
+    for record in pages:
+        digest = page_digest(record)
+        path = cached_image(digest) if digest else None
+        if path is None or not record.width or not record.height:
+            typer.echo(f"{record.id:<40} no cached photo")
+            continue
+        with Image.open(path) as image:
+            proposals = interlinear.propose(image)
+            size = image.size
+        result = store.propose_units(record.id, proposals, interlinear.PROPOSER, image_size=size)
+        if result["skipped"]:
+            typer.echo(f"{record.id:<40} already proposed by {interlinear.PROPOSER}")
+            continue
+        marks = sum(1 for proposal in proposals if proposal.kind == "mark")
+        typer.echo(f"{record.id:<40} {marks:>4} marks {len(proposals) - marks:>4} circles "
+                   f"{len(result['created']):>4} recorded {len(result['retired']):>4} retired")
+        totals["created"] += len(result["created"])
+        totals["retired"] += len(result["retired"])
+    typer.echo(f"{'recorded':<40} {totals['created']:>4}")
+    if totals["retired"]:
+        typer.echo(f"{'retired':<40} {totals['retired']:>4}")
+
+
 @review_app.command("replay")
 def review_replay(directory: Annotated[Path, typer.Argument(help="dataset directory to rebuild")]) -> None:
     """Rebuild the review state from the tables and the log and check that it matches."""
