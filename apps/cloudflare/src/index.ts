@@ -66,7 +66,7 @@ const productionOf=(data:Json)=>typeof data.production==='string'?data.productio
 function materialise(env:Env,row:UnitRow&{fresh:CorpusRow}){
   const d=parse(row.data);
   return env.DB.prepare('INSERT OR IGNORE INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
-    .bind(row.id,'corpus',d.written_character||null,d.reading||null,d.grapheme||null,d.visual_group?.id||null,productionOf(d),
+    .bind(row.id,'corpus',d.written_character||null,d.reading||null,d.grapheme||null,d.visual_group?.id||null,row.fresh.production,
       row.category||categoryOf(d.label),d.state,d.revision,row.quiz,1,row.fresh.shuffle,row.data,row.snapshot,row.context,row.visual);
 }
 async function corpusData(env:Env,row:CorpusRow):Promise<Json>{
@@ -131,18 +131,21 @@ export function validRound(input: Json, target?: string): { answers: Json[]; see
   return { answers, seen, skipped };
 }
 // A production is a node of the tree in `data/vocab/production.yaml`, written as its path
-// (`printed/type/wood`). A material scope is `all`, a node with everything under it, or `not:` and a node.
+// (`printed/type/wood`); `tests/test_production.py` holds this list to the file. A material scope is
+// `all`, a node with everything under it, or `not:` and a node.
+export const PRODUCTIONS = ['handwritten','inscribed','inscribed/stone','inscribed/metal','inscribed/bone','inscribed/wood','printed','printed/woodblock','printed/type','printed/type/wood','printed/type/ceramic','printed/type/metal','printed/type/metal/copper','printed/type/metal/iron','printed/type/metal/lead','printed/engraved','printed/lithograph','printed/stencil','printed/phototype','printed/digital','typewritten','mixed','unknown'];
 // A Quick review round leaves movable type out unless asked: it fills whole books with near-identical glyphs.
 const REVIEW_SCOPE = 'not:printed/type';
-const SCOPE = /^(all|(not:)?[a-z]+(\/[a-z]+)*)$/;
+const validScope = (scope: string) => scope === 'all' || PRODUCTIONS.includes(scope.replace(/^not:/, ''));
 const within = (value: string, node: string) => value === node || value.startsWith(node + '/');
-// A material filter on a `production` column. A node's descendants are the range from `node/` up to
-// `node0`, '0' being the character after '/'.
+// A material filter on a `production` column. A node and everything under it are one index range, from
+// `node` up to `node0`: ids are lower-case letters and '/', and '0' sorts right after '/', so nothing
+// else falls in it.
 function material(scope: string, column: string): [string, string[]] {
   if (scope === 'all') return ['1=1', []];
   const negated = scope.startsWith('not:'), node = negated ? scope.slice(4) : scope;
-  const test = `(${column}=? OR (${column}>=? AND ${column}<?))`;
-  return [negated ? `NOT ${test}` : test, [node, node + '/', node + '0']];
+  const test = `${column}>=? AND ${column}<?`;
+  return [negated ? `NOT (${test})` : `(${test})`, [node, node + '0']];
 }
 const inMaterial = (scope: string, value: string) =>
   scope === 'all' || (scope.startsWith('not:') ? !within(value, scope.slice(4)) : within(value, scope));
@@ -157,7 +160,7 @@ const NAMED_WINDOW = 256;
 async function catalogue(env: Env, q: URLSearchParams) {
   const purpose = q.get('purpose') || 'browse';
   const production = q.get('production') || (purpose === 'review' ? REVIEW_SCOPE : 'all');
-  if (!SCOPE.test(production)) throw new Problem(400, 'Invalid production scope.');
+  if (!validScope(production)) throw new Problem(400, 'Invalid production scope.');
   const review = purpose === 'review';
   const seed = integer(q, 'seed', 0, 2147483647);
   const limit = integer(q, 'limit', 60, 96), offset = integer(q, 'offset', 0);
