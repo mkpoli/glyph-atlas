@@ -1,5 +1,6 @@
 // Catalogue snapshots are published offline. All online review mutations use D1 transactions.
 import { ROUND_MAX } from './rounds';
+import { formsRoute, withForm, type FormTools } from './forms';
 type Json = Record<string, any>;
 type UnitRow = { id: string; origin: string; character: string | null; state: string; revision: number;
   quiz: number; category?: string; data: string; snapshot: string; context: string; visual: string;
@@ -75,7 +76,7 @@ async function corpusData(env:Env,row:CorpusRow):Promise<Json>{
   if(row.size>128*1024)throw new Problem(503,'Invalid published record.');
   const object=await env.MEDIA.get(row.object,{range:{offset:row.offset,length:row.size}});
   if(!object)throw new Problem(503,'The corpus publication is incomplete.');
-  return object.json<Json>();
+  return withForm(env,await object.json<Json>(),formTools);
 }
 function compact(row: UnitRow): Json {
   return listing(parse(row.data));
@@ -446,6 +447,7 @@ function text(value: unknown, max: number, name: string, required=false): string
   if(typeof value!=='string'||value.length>max||(required&&!value.trim()))throw new Problem(422,`Invalid ${name}.`);
   return compose(value.trim());
 }
+const formTools: FormTools = {fail:(status,message)=>{throw new Problem(status,message)},body,text,codePoints:cp};
 export function canonical(value: unknown): string {
   if(value===null||typeof value!=='object')return JSON.stringify(value);
   if(Array.isArray(value))return '['+value.map(canonical).join(',')+']';
@@ -676,6 +678,8 @@ export default {
         if(undone)return json(await undo(env,request,decodeURIComponent(undone[1])));
         const edit=path.match(/^\/(?:atlas\/characters|layers\/units)\/([^/]+)$/);
         if(edit)return json(await submit(env,request,decodeURIComponent(edit[1])));
+        const formed=await formsRoute(env,request,path,q,formTools);
+        if(formed)return formed instanceof Response?formed:json(formed);
         throw new Problem(404,'Unknown endpoint.');
       }
       if(!['GET','HEAD'].includes(request.method))throw new Problem(405,'Method not allowed.');
@@ -729,7 +733,9 @@ export default {
       if(path==='/atlas/corpus/reviews'){
         const rows=await env.DB.prepare("SELECT * FROM units WHERE origin='corpus' AND state='flagged' ORDER BY id LIMIT 96").all<UnitRow>();
         return json({items:rows.results.map(compact),total:rows.results.length})}
-      if(path.startsWith('/atlas')||path.startsWith('/layers')||path.startsWith('/images/'))throw new Problem(404,'Unknown endpoint.');
+      if(path.startsWith('/forms/')){const formed=await formsRoute(env,request,path,q,formTools);
+        if(formed)return formed instanceof Response?formed:json(formed)}
+      if(path.startsWith('/atlas')||path.startsWith('/layers')||path.startsWith('/forms')||path.startsWith('/images/'))throw new Problem(404,'Unknown endpoint.');
       return await env.ASSETS.fetch(request);
     }catch(error){
       const open=path.startsWith('/atlas/documents/')?OPEN:{};

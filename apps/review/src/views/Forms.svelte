@@ -85,11 +85,11 @@
       const units = [...chosen]
       const targets = units.length ? [] : pickedClusters.length ? pickedClusters.map(c => c.id) : [cluster.id]
       let result = { count: 0 }
-      // A decision covers at most 5,000 glyphs; a larger selection is sent in parts.
-      for (let i = 0; i < units.length; i += 5000)
-        result = { count: result.count + (await decide({ kind: kind ?? 'glyph', units: units.slice(i, i + 5000), ...(kind === 'inherit' ? {} : { form }) })).count }
+      // A decision covers at most 1,000 glyphs; a larger selection is sent in parts.
+      for (let i = 0; i < units.length; i += 1000)
+        result = { count: result.count + (await decide({ kind: kind ?? 'glyph', units: units.slice(i, i + 1000), client_id: reviewer(), ...(kind === 'inherit' ? {} : { form }) })).count }
       // One decision per cluster, so each keeps its own record and can be withdrawn on its own.
-      for (const id of targets) result = { count: result.count + (await decide({ kind: 'cluster', cluster: id, form })).count }
+      for (const id of targets) result = { count: result.count + (await decide({ kind: 'cluster', cluster: id, form, client_id: reviewer() })).count }
       picked = new Set(); pickAnchor = null
       notice = form ? t('forms.notice.assigned', { form, count: result.count })
         : kind === 'inherit' ? t('forms.notice.inherited', { count: result.count }) : t('forms.notice.cleared', { count: result.count })
@@ -216,13 +216,13 @@
             <div class="palette-other">
               {#if chosen.size}
                 <button disabled={busy} onclick={() => apply(null)}>{t('forms.notThisForm')}</button>
-                <button disabled={busy} onclick={() => flag('crop')}>{t('issue.crop.title')}</button>
+                {#if current.capabilities?.reports !== false}<button disabled={busy} onclick={() => flag('crop')}>{t('issue.crop.title')}</button>
                 {#if correcting}
                   <form class="correct-char" onsubmit={event => { event.preventDefault(); flag('character') }}>
                     <input bind:value={correction} maxlength="4" placeholder={t('forms.actual.placeholder')} aria-label={t('forms.actual.aria')} />
                     <button disabled={busy}>{t('forms.report')}</button>
                   </form>
-                {:else}<button disabled={busy} onclick={() => correcting = true}>{t('forms.wrongCharacter')}</button>{/if}
+                {:else}<button disabled={busy} onclick={() => correcting = true}>{t('forms.wrongCharacter')}</button>{/if}{/if}
                 <button disabled={busy} onclick={() => apply(null, 'inherit')}>{t('forms.followCluster')} <kbd>⌫</kbd></button>
               {:else}
                 <button disabled={busy || !cluster?.form} onclick={() => apply(null)}>{t('forms.clearCluster')} <kbd>⌫</kbd></button>

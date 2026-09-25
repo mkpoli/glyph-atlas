@@ -1,7 +1,7 @@
 import { request } from './client.js'
 
-// The form-assignment API exists only on the local review server. The published site answers this
-// path with its single-page HTML, so a JSON answer is what shows the view is available.
+// Both the local review server and the hosted Worker serve form assignment once a clustering exists;
+// without one the path answers 404 and the view stays hidden.
 export async function formsAvailable() {
   try {
     const response = await fetch('/forms/families', { method: 'GET' })
