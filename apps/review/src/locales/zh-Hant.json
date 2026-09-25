@@ -351,6 +351,8 @@
   "quiz.reviewRemaining": "審核剩餘項目",
   "quiz.reviewSelected": "審核已選取項目（{count}）",
   "quiz.roundChanged": "此輪已變更。你的選擇已保留，請重新載入此輪以繼續。",
+  "quiz.roundSaved.one": "已儲存「{reading}」的{count}個裁切",
+  "quiz.roundSaved.other": "已儲存「{reading}」的{count}個裁切",
   "quiz.saveIssues": "儲存問題",
   "quiz.select.selectProblems": "選取問題",
   "quiz.select.selectedCount": "已選取{count}個",

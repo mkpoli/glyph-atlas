@@ -356,6 +356,8 @@
   "quiz.reviewRemaining": "Review remaining",
   "quiz.reviewSelected": "Review selected ({count})",
   "quiz.roundChanged": "This round changed. Your choices are kept. Reload the round to continue.",
+  "quiz.roundSaved.one": "Saved {count} crop of {reading}",
+  "quiz.roundSaved.other": "Saved {count} crops of {reading}",
   "quiz.saveIssues": "Save issues",
   "quiz.select.selectProblems": "Select the problems",
   "quiz.select.selectedCount": "{count} selected",

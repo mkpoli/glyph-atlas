@@ -356,6 +356,8 @@
   "quiz.reviewRemaining": "校其餘",
   "quiz.reviewSelected": "校所擇（{count}）",
   "quiz.roundChanged": "此輪已改，所擇猶存。復載此輪以續",
+  "quiz.roundSaved.one": "已存「{reading}」截{count}",
+  "quiz.roundSaved.other": "已存「{reading}」截{count}",
   "quiz.saveIssues": "存誤",
   "quiz.select.selectProblems": "擇有誤者",
   "quiz.select.selectedCount": "已擇{count}",
