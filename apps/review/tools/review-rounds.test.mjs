@@ -2,14 +2,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { nextCharacter } from '../src/lib/reviewRounds.js'
 
-const categories = [{ label: '仮', due: 1 }, { label: '假', due: 5 },
-  { label: 'あ', due: 6 }, { label: 'い', due: 12 }, { label: 'う', due: 8 }]
-
-test('a character with unseen flagged crops comes first, the one with most of them', () => {
-  const flagged = [...categories, { label: 'え', due: 2, due_flagged: 1 }, { label: 'お', due: 3, due_flagged: 2 }]
-  for (let seed = 0; seed < 20; seed++) assert.equal(nextCharacter(flagged, 'あ', [{ reading: 'お' }], seed), 'お')
-  assert.equal(nextCharacter(flagged, 'お', [], 0), 'え')
-})
+const categories = [{ label: '仮', pending: 1 }, { label: '假', pending: 5 },
+  { label: 'あ', pending: 6 }, { label: 'い', pending: 12 }, { label: 'う', pending: 8 }]
 
 test('automatic rounds prefer a different unvisited full round', () => {
   for (let seed = 0; seed < 100; seed++) {
@@ -29,5 +23,5 @@ test('once every character is visited, full rounds repeat', () => {
   for (let seed = 0; seed < 20; seed++) {
     assert.ok(['い', 'う'].includes(nextCharacter(categories, 'あ', seen, seed)))
   }
-  assert.equal(nextCharacter([{ label: '仮', due: 1 }], '仮', [], 0), null)
+  assert.equal(nextCharacter([{ label: '仮', pending: 1 }], '仮', [], 0), null)
 })
