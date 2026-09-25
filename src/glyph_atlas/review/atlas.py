@@ -792,7 +792,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         state: Literal["all", "pending", "seen", "checked", "flagged", "hard", "skipped", "attention"] = "all",
         reviewer: str | None = Query(default=None, max_length=128),
         purpose: Literal["browse", "review"] = "browse",
-        production: Literal["all", "non-movable-type", "manuscript", "woodblock", "movable-type", "mixed", "unknown"] | None = None,
+        production: Annotated[str | None, Query(description="`all`, a production node, or `not:` and a node")] = None,
         reported: Literal["show", "hide"] = "show",
         seed: int = 0,
         limit: Annotated[int, Query(ge=1, le=96)] = 60,
@@ -813,13 +813,15 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         caller that wants the queue says so.
         """
         considered = quizzable if purpose == "review" else eligible
-        scope = production or ("non-movable-type" if purpose == "review" else "all")
+        try:
+            scope = production_metadata.check_scope(production or (production_metadata.REVIEW_SCOPE if purpose == "review" else "all"))
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
         generation = (file_stamp(store.path), file_stamp(Path(str(store.path) + "-wal")),
                       file_stamp(production_metadata.OVERRIDES))
         units, all_states, kinds, skips, reviewed = catalogue_snapshot(generation)
         records = [(u, rev) for u, rev in units
-                   if (scope == "all" or (kinds[u.id] != "movable-type" if scope == "non-movable-type"
-                                         else kinds[u.id] == scope)) and considered(u)]
+                   if production_metadata.in_scope(kinds[u.id], scope) and considered(u)]
         states = {u.id: all_states[u.id] for u, _ in records}
         if reviewer:
             # A crop this reviewer skipped lately is `skipped` for them: it is not dealt back yet.

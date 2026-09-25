@@ -38,8 +38,8 @@ def report(*, score: float, precision: float, deciles: int = 3) -> dict:
                 "tp": 1, "fp": 2, "fn": 3,
             },
             "by_production": {
-                "woodblock": {"precision": precision, "recall": 0.95, "f1": 0.9},
-                "manuscript": {"precision": 0.5, "recall": 0.6, "f1": 0.55},
+                "printed": {"precision": precision, "recall": 0.95, "f1": 0.9},
+                "handwritten": {"precision": 0.5, "recall": 0.6, "f1": 0.55},
                 "unknown": {"precision": 0.4, "recall": 0.3, "f1": 0.34},
             },
             "recall_by_size_decile": [
@@ -103,5 +103,5 @@ def test_the_shipped_report_renders() -> None:
     )
     rendered = compare_report.render(shipped, shipped, "shipped")
     assert "0.7000" in rendered or "0.6998" in rendered
-    assert "woodblock recall" in rendered
+    assert "printed recall" in rendered
     assert "recall by box size decile" in rendered

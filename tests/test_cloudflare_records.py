@@ -48,7 +48,7 @@ def test_a_records_only_export_seals_into_packs_and_ordered_sql(scripts, tmp_pat
         db.executescript(SCHEMA)
         db.execute("INSERT INTO corpus_units VALUES('codh:2',NULL,'U+306F',NULL,2,'corpus-0001.bin',?,?,'unknown',0)",
                    (len(records[0]), len(records[1])))
-        db.execute("INSERT INTO corpus_units VALUES('codh:1','𛂥','U+306F',NULL,1,'corpus-0001.bin',0,?,'woodblock',0)",
+        db.execute("INSERT INTO corpus_units VALUES('codh:1','𛂥','U+306F',NULL,1,'corpus-0001.bin',0,?,'printed/woodblock',0)",
                    (len(records[0]),))
     summary = seal.seal(corpus, tmp_path / "sealed")
     assert summary["corpus_units"] == 2 and summary["objects"] == 1
@@ -61,28 +61,28 @@ def test_a_records_only_export_seals_into_packs_and_ordered_sql(scripts, tmp_pat
         "object=excluded.object,offset=excluded.offset,size=excluded.size,production=excluded.production"
     columns = "id,character,family,visual_group,shuffle,object,offset,size,production"
     assert lines[:2] == [
-        (f"INSERT INTO corpus_units({columns}) VALUES('codh:1','𛂥','U+306F',NULL,1,'{key}',0,{len(records[0])},'woodblock') "
+        (f"INSERT INTO corpus_units({columns}) VALUES('codh:1','𛂥','U+306F',NULL,1,'{key}',0,{len(records[0])},'printed/woodblock') "
          f"ON CONFLICT(id) DO UPDATE SET {updates};"),
         (f"INSERT INTO corpus_units({columns}) VALUES('codh:2',NULL,'U+306F',NULL,2,'{key}',{len(records[0])},{len(records[1])},'unknown') "
          f"ON CONFLICT(id) DO UPDATE SET {updates};")]
     # A part applied before the last one leaves a named glyph named and the counts as they were.
     partial = sqlite3.connect(":memory:")
     partial.executescript(SCHEMA)
-    partial.execute("INSERT INTO corpus_units VALUES('codh:1','𛂥','U+306F',NULL,1,'old',0,1,'woodblock',1)")
-    partial.execute("INSERT INTO corpus_characters VALUES('𛂥','woodblock',1,1)")
+    partial.execute("INSERT INTO corpus_units VALUES('codh:1','𛂥','U+306F',NULL,1,'old',0,1,'printed/woodblock',1)")
+    partial.execute("INSERT INTO corpus_characters VALUES('𛂥','printed/woodblock',1,1)")
     partial.executescript("\n".join(line for line in lines if line.startswith("INSERT INTO corpus_units")))
     assert partial.execute("SELECT object,named FROM corpus_units WHERE id='codh:1'").fetchone() == (key, 1)
-    assert partial.execute("SELECT * FROM corpus_characters").fetchall() == [("𛂥", "woodblock", 1, 1)]
+    assert partial.execute("SELECT * FROM corpus_characters").fetchall() == [("𛂥", "printed/woodblock", 1, 1)]
     replayed = sqlite3.connect(":memory:")
     replayed.executescript(SCHEMA)
     replayed.execute("INSERT INTO corpus_characters VALUES('gone','unknown',9,0)")
     # A glyph a review named before this publication stays named after its row is rewritten.
     replayed.execute("INSERT INTO corpus_units VALUES('codh:1','𛂥','U+306F',NULL,1,'old',0,1,'unknown',0)")
-    replayed.execute("INSERT INTO units VALUES('codh:1','corpus','𛂥',NULL,NULL,NULL,'woodblock','kana','checked',1,1,1,1,'{}','{}','{}','{}')")
+    replayed.execute("INSERT INTO units VALUES('codh:1','corpus','𛂥',NULL,NULL,NULL,'printed/woodblock','kana','checked',1,1,1,1,'{}','{}','{}','{}')")
     replayed.executescript(sql)
     assert replayed.execute("SELECT character,named FROM corpus_units WHERE id='codh:1'").fetchone() == ("𛂥", 1)
     # The last part regenerates the per-character counts from the rows D1 then holds.
-    assert replayed.execute("SELECT * FROM corpus_characters").fetchall() == [("𛂥", "woodblock", 1, 1)]
+    assert replayed.execute("SELECT * FROM corpus_characters").fetchall() == [("𛂥", "printed/woodblock", 1, 1)]
 
 
 def test_an_export_that_packed_images_is_refused(scripts, tmp_path):

@@ -20,7 +20,7 @@ def api(tmp_path, monkeypatch):
     out = root / "codh-full"
     out.mkdir(parents=True)
     tables.write(out / "documents.parquet", [Document(
-        id="codh:book", title="Book", production="woodblock",
+        id="codh:book", title="Book", production="printed/woodblock",
         image_rights={"licence": "CC-BY-4.0", "holder": "Library", "attribution": "Library"},
     )], Document)
     tables.write(out / "pages.parquet", [Page(
@@ -53,7 +53,7 @@ def test_family_search_unions_bins_without_asserting_exact_identity(api):
     assert {row["source_code_point"] for row in family["items"]} == {"U+4EEE", "U+5047"}
     assert all(row["written_character"] is None for row in family["items"])
     assert all(row["identity_basis"] == "normalized_transcription" for row in family["items"])
-    assert all(row["production"] == "woodblock" for row in family["items"])
+    assert all(row["production"] == "printed/woodblock" for row in family["items"])
     assert get(api, "仮")["total"] == 3
     assert get(api, scope="character")["total"] == 0
     assert get(api, scope="character")["unassigned_count"] == 3

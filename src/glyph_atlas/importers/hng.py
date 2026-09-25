@@ -52,7 +52,6 @@ from ..schema import (
     Dating,
     Document,
     Licence,
-    Production,
     Register,
     ReviewState,
     Rights,
@@ -139,13 +138,19 @@ def interval(literal: str) -> tuple[int | None, int | None]:
     return None, None
 
 
-def production_of(category: str) -> Production:
-    """写本 is a manuscript and 版 a woodblock print; 開成石経, cut in stone, is neither."""
+def production_of(category: str) -> str:
+    """写本 is handwritten and 版, 刊本 or 印刻本 printed; 開成石経 is cut in stone.
+
+    A 版 names a print without saying whether from blocks or from type (慶長勅版 is wooden type), so
+    it stays `printed` unless `data/vocab/production-overrides.yaml` cites more.
+    """
     if "写本" in category or "寫本" in category:
-        return Production.MANUSCRIPT
+        return "handwritten"
     if "版" in category or "刊本" in category or "印刻本" in category:
-        return Production.WOODBLOCK
-    return Production.UNKNOWN
+        return "printed"
+    if "石経" in category:
+        return "inscribed/stone"
+    return "unknown"
 
 
 def rights_of(raw: dict) -> Rights:
@@ -164,7 +169,7 @@ def document_of(entry: dict, raw: dict) -> Document:
     literal = str(entry.get("date") or "")
     start, end = interval(literal)
     production = production_of(entry["category"])
-    kind = {Production.MANUSCRIPT: "copying", Production.WOODBLOCK: "publication"}.get(production, "unknown")
+    kind = {"handwritten": "copying", "printed": "publication"}.get(production, "unknown")
     dating = [
         Dating(literal=literal, start=start, end=end, kind=kind, evidence=raw["access"]["source_list"])
     ] if literal else []

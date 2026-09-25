@@ -23,7 +23,6 @@ from glyph_atlas.schema import (
     LineRole,
     Page,
     PageText,
-    Production,
     Register,
     Review,
     ReviewState,
@@ -52,7 +51,7 @@ def rights() -> Rights:
 
 def document(ident: str = "d1", **overrides) -> Document:
     fields = {"id": ident, "title": "源氏物語", "source_refs": {"codh-char-shape": "200006663"}, "holder": "国文研",
-              "shelfmark": "甲-1", "production": Production.MANUSCRIPT, "genre": ["monogatari"],
+              "shelfmark": "甲-1", "production": "handwritten", "genre": ["monogatari"],
               "text_register": Register.WABUN,
               "dating": [Dating(literal="文政3", start=1820, end=1820, kind="copying", evidence="奥書")],
               "hands": ["筆者"], "image_rights": rights(), "text_rights": rights(), "meta": {"note": "写本"}}

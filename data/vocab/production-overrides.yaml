@@ -1,7 +1,9 @@
+# Production stated by a holder or a reference work where the source dataset states less. Keys are
+# document ids or upstream ids; `production` is a node of `data/vocab/production.yaml`.
 version: 1
 documents:
   68eb3417ed31bd40b47322289459eeec:
-    production: movable-type
+    production: printed/type
     evidence:
       - source: holding_library
         url: https://da.dl.itc.u-tokyo.ac.jp/portal/assets/06b66451-9f03-33e4-4321-5f36ec7e38aa

@@ -1,0 +1,76 @@
+# How the letterforms of a document reached its surface. The tree sorts by the letterforms'
+# making, not by the press: a phototypeset book printed by offset is `printed/phototype`, a hand
+# drawn on stone and printed from it is `printed/lithograph`. An id is its path from the root, and a
+# document takes the deepest node its evidence states, so a print whose method nobody records stays
+# `printed`. A reproduction (a rubbing, a photographic facsimile, a re-cut edition) is classed by
+# what it reproduces. `mixed` holds a document made by more than one of these, `unknown` one whose
+# making is not stated.
+- id: handwritten
+  en: Handwritten
+  definition: Written directly on the surface with a brush, pen or stylus.
+- id: inscribed
+  en: Inscribed
+  definition: Carved, cut or cast into the object itself.
+- id: inscribed/stone
+  en: Stone inscription
+  definition: Cut into stone, e.g. a stele or the 開成石経.
+- id: inscribed/metal
+  en: Metal inscription
+  definition: Cast or cut into metal, e.g. a bronze vessel or a bell.
+- id: inscribed/bone
+  en: Bone or shell inscription
+  definition: Cut into bone or shell, e.g. oracle bones.
+- id: inscribed/wood
+  en: Wood inscription
+  definition: Carved into wood as the object itself, e.g. a signboard; a woodblock for printing is `printed/woodblock`.
+- id: printed
+  en: Printed
+  definition: Printed from a prepared matrix.
+- id: printed/woodblock
+  en: Woodblock
+  definition: Each page or leaf carved as one block (整版).
+- id: printed/type
+  en: Movable type
+  definition: Set from separate pieces of type, one or a few characters each.
+- id: printed/type/wood
+  en: Wooden type
+  definition: Movable type carved in wood.
+- id: printed/type/ceramic
+  en: Ceramic type
+  definition: Movable type of fired clay or porcelain.
+- id: printed/type/metal
+  en: Metal type
+  definition: Movable type cast in metal.
+- id: printed/type/metal/copper
+  en: Copper type
+  definition: Metal type of copper or a copper alloy such as bronze.
+- id: printed/type/metal/iron
+  en: Iron type
+  definition: Metal type of iron.
+- id: printed/type/metal/lead
+  en: Lead type
+  definition: Metal type of a lead alloy, cast from matrices at a type foundry.
+- id: printed/engraved
+  en: Engraved plate
+  definition: Printed from an engraved or etched plate (銅版).
+- id: printed/lithograph
+  en: Lithograph
+  definition: Written or drawn on stone or a transfer and printed from it (石版).
+- id: printed/stencil
+  en: Stencil
+  definition: Written through a cut stencil, e.g. mimeograph (謄写版).
+- id: printed/phototype
+  en: Phototypeset
+  definition: Composed photographically from glyph negatives (写植).
+- id: printed/digital
+  en: Digital type
+  definition: Composed from digital fonts, e.g. laser phototypesetting (激光照排) or desktop publishing.
+- id: typewritten
+  en: Typewritten
+  definition: Struck one character at a time on a typewriter.
+- id: mixed
+  en: Mixed
+  definition: Made by more than one of these methods.
+- id: unknown
+  en: Not classified
+  definition: The making is not stated.

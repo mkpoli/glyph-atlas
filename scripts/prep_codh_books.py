@@ -84,9 +84,9 @@ def manifest(client: httpx.Client, folder: Path, bid: str, refresh: bool) -> dic
 
 def production_of(kind: str | None) -> str:
     if kind == "刊":
-        return "woodblock"
+        return "printed"
     if kind == "写":
-        return "manuscript"
+        return "handwritten"
     return "unknown"
 
 

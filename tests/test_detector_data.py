@@ -19,7 +19,7 @@ import pytest
 from PIL import Image
 
 from glyph_atlas import images, tables
-from glyph_atlas.schema import Box, Document, Page, Production, Unit
+from glyph_atlas.schema import Box, Document, Page, Unit
 
 ROOT = Path(__file__).resolve().parents[1]
 TILE = 1024
@@ -72,7 +72,7 @@ def write_tables(
     (root / "images").mkdir(exist_ok=True)
     (root / "cache").mkdir(exist_ok=True)
     documents = [
-        Document(id=page.document_id, title=f"book {page.document_id}", production=Production.WOODBLOCK)
+        Document(id=page.document_id, title=f"book {page.document_id}", production="printed/woodblock")
         for page in pages
     ]
     units = [
@@ -178,7 +178,7 @@ def synthetic(tmp_path: Path) -> Path:
     root = tmp_path / "codh-full"
     write_tables(
         root,
-        books={BID: ("woodblock", "train")},
+        books={BID: ("printed", "train")},
         pages=[page_of(BID)],
         boxes={PAGE: BOXES},
     )
@@ -292,7 +292,7 @@ def test_empty_tiles_are_kept_at_most_five_percent(tmp_path: Path) -> None:
         boxes = tuple(
             ("char", Box(x=tile.x + 492, y=tile.y + 492, w=40, h=40)) for tile in tiles[:count]
         )
-        write_tables(root, books={BID: ("woodblock", "train")}, pages=[page], boxes={page.id: boxes}, width=1500, height=9000)
+        write_tables(root, books={BID: ("printed", "train")}, pages=[page], boxes={page.id: boxes}, width=1500, height=9000)
         out = tmp_path / f"out{count}"
         assert run(root, out) == 0
         document = read(out / "train.json")
@@ -324,8 +324,8 @@ def test_committed_split_is_fixed_by_sha1_order() -> None:
     assert len(books) == 44
     assert Counter(book.split for book in books.values()) == {"train": 38, "val": 2, "test": 4}
     assert {book.production for bid, book in books.items() if book.split == "test"} == {
-        "woodblock",
-        "manuscript",
+        "printed",
+        "handwritten",
         "unknown",
     }
     strata: dict[str, list[str]] = defaultdict(list)
@@ -341,7 +341,7 @@ def test_committed_split_is_fixed_by_sha1_order() -> None:
 def test_split_is_by_book_and_the_output_is_reproducible(tmp_path: Path) -> None:
     """Every tile of a book lands in that book's split, and two runs write the same bytes."""
     root = tmp_path / "codh-full"
-    books = {"b1": ("woodblock", "train"), "b2": ("woodblock", "val"), "b3": ("manuscript", "test")}
+    books = {"b1": ("printed", "train"), "b2": ("printed", "val"), "b3": ("handwritten", "test")}
     pages = [page_of(bid) for bid in books]
     boxes = {page.id: (("char", Box(x=100 + 10 * seq, y=100, w=60, h=60)),) for seq, page in enumerate(pages)}
     write_tables(root, books=books, pages=pages, boxes=boxes)
@@ -435,7 +435,7 @@ def test_a_page_with_no_image_is_left_out(tmp_path: Path) -> None:
     """A page whose image is nowhere is counted and holds no tiles."""
     root = tmp_path / "codh-full"
     page = page_of(BID)
-    write_tables(root, books={BID: ("woodblock", "train")}, pages=[page], boxes={page.id: BOXES})
+    write_tables(root, books={BID: ("printed", "train")}, pages=[page], boxes={page.id: BOXES})
     (root / "images" / "b1_0001.jpg").unlink()
     out = tmp_path / "detector"
     assert run(root, out) == 0

@@ -18,7 +18,7 @@ import pytest
 from PIL import Image
 
 from glyph_atlas import pilot, tables
-from glyph_atlas.schema import Box, Document, Line, Page, Production, Unit, UnitKind
+from glyph_atlas.schema import Box, Document, Line, Page, Unit, UnitKind
 
 ROOT = Path(__file__).resolve().parents[1]
 SELECTION = ROOT / "data" / "pilot" / "items.tsv"
@@ -36,7 +36,7 @@ def dataset(tmp_path: Path) -> Path:
     """A one-page dataset: a line with a box and two units, and no page size stated."""
     directory = tmp_path / "dataset"
     directory.mkdir()
-    document = Document(id="d1", title="a book", production=Production.WOODBLOCK, source="test")
+    document = Document(id="d1", title="a book", production="printed/woodblock", source="test")
     page = Page(id="hl:d1:0", document_id="d1", seq=0, canvas="c", image=f"{tmp_path.name}/0.png",
                 width=0, height=0)
     line = Line(id="hl:d1:0:L0", page_id="hl:d1:0", seq=0, box=Box(x=10, y=10, w=100, h=20),

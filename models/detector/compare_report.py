@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Any
 
 MEASURES = ("precision", "recall", "f1", "mean_iou")
-PRODUCTIONS = ("woodblock", "manuscript", "unknown")
 
 
 def _number(value: Any) -> float:
@@ -68,7 +67,8 @@ def render(measured: dict[str, Any], shipped: dict[str, Any], label: str) -> str
             f"{key:<24}{_number((right.get('overall') or {}).get(key)):>12.4f}"
             f"{_number((left.get('overall') or {}).get(key)):>14.4f}"
         )
-    for production in PRODUCTIONS:
+    productions = sorted({*(right.get("by_production") or {}), *(left.get("by_production") or {})})
+    for production in productions:
         for key in ("precision", "recall"):
             row = f"{production} {key}"
             out.append(

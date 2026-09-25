@@ -38,14 +38,23 @@ USER_AGENT = "glyph-atlas (+https://github.com/mkpoli/glyph-atlas)"
 PAUSE = 3.0
 LICENCES = {"PDM-1.0", "CC-BY-4.0"}
 BANDS = [(0, 12, "sparse"), (12, 22, "medium"), (22, 10_000, "dense")]
-# The production type of a book, as a manifest states it. A word has to stand on its own: 写 alone
-# is 写本 and 刊 alone is 版本, while 写植 or 週刊 are not, so a match is the whole value or a word
-# separated from the rest by a space or one of the marks the manifests use.
+# The production of a book, as a manifest states it, as a node of `data/vocab/production.yaml`. The
+# first pattern that matches decides, so a narrower term comes before the one it narrows. A word has
+# to stand on its own: 写 alone is 写本 and 刊 alone is 版本, while 写植 or 週刊 are not, so a match
+# is the whole value or a word separated from the rest by a space or one of the marks the manifests use.
 STANDALONE = r"(?:^|[\s・，,（）()／/]){}(?:$|[\s・，,（）()／/])"
 PRODUCTION = [
-    (re.compile(r"活字|活版"), "movable-type"),
-    (re.compile(r"写本|自筆|稿本|模写|筆写|" + STANDALONE.format("写")), "manuscript"),
-    (re.compile(r"版本|刊本|整版|板本|" + STANDALONE.format("刊")), "woodblock"),
+    (re.compile(r"木活字"), "printed/type/wood"),
+    (re.compile(r"銅活字"), "printed/type/metal/copper"),
+    (re.compile(r"鉛活字"), "printed/type/metal/lead"),
+    (re.compile(r"活字|活版"), "printed/type"),
+    (re.compile(r"写植|写真植字"), "printed/phototype"),
+    (re.compile(r"謄写版"), "printed/stencil"),
+    (re.compile(r"銅版"), "printed/engraved"),
+    (re.compile(r"石版|石印"), "printed/lithograph"),
+    (re.compile(r"写本|自筆|稿本|模写|筆写|" + STANDALONE.format("写")), "handwritten"),
+    (re.compile(r"整版"), "printed/woodblock"),
+    (re.compile(r"版本|刊本|板本|" + STANDALONE.format("刊")), "printed"),
 ]
 STOP = {"の", "に", "は", "を", "と", "て", "し", "た", "、", "。"}
 

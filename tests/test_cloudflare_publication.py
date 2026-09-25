@@ -29,7 +29,7 @@ def publication(tmp_path, monkeypatch):
     data = json.dumps({"id": "one", "label": "ア", "image": f"/atlas/media/{key}.webp"})
     with database(local / "catalogue.sqlite") as db:
         db.execute("INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
-            "one", "local", "ア", "ア", None, None, "manuscript", "kana", "pending", 0, 1, 1, 0,
+            "one", "local", "ア", "ア", None, None, "handwritten", "kana", "pending", 0, 1, 1, 0,
             data, "{}", "{}", "{}"))
         db.executemany("INSERT INTO media VALUES(?,?,?,?,?)", [
             (key, "pack-0001.bin", 0, 7, "image/webp"),
@@ -38,7 +38,7 @@ def publication(tmp_path, monkeypatch):
     record = json.dumps({"id": "corpus-one", "label": "イ"}, ensure_ascii=False).encode()
     with database(corpus / "corpus.sqlite") as db:
         db.execute("INSERT INTO corpus_units VALUES(?,?,?,?,?,?,?,?,?,?)", (
-            "corpus-one", "イ", None, None, 1, "records.bin", 0, len(record), "manuscript", 0))
+            "corpus-one", "イ", None, None, 1, "records.bin", 0, len(record), "handwritten", 0))
     (corpus / "records.bin").write_bytes(record)
     return module, local, corpus, output
 
@@ -76,7 +76,7 @@ def test_publication_sql_does_not_overwrite_online_review(publication):
         assert db.execute("SELECT character,state,revision FROM units").fetchone() == ("カ", "checked", 3)
         assert db.execute("SELECT count(*) FROM submissions").fetchone()[0] == 1
         assert db.execute("SELECT named FROM corpus_units").fetchone() == (1,), "a publication never resets named"
-        assert db.execute("SELECT * FROM corpus_characters").fetchall() == [("イ", "manuscript", 1, 1)]
+        assert db.execute("SELECT * FROM corpus_characters").fetchall() == [("イ", "handwritten", 1, 1)]
 
 
 def test_truncated_publication_is_rejected(publication):
