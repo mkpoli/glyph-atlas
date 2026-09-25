@@ -3,17 +3,22 @@
 Its first output is a visual group. A written character is returned only when
 that group has explicit visual anchors and the image lies inside its measured
 support. Similarity and margin are distances, never calibrated probabilities.
+Each classifier keeps the encoder its groups were built with, beside them.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
+from .classify import SIZE, crop_array
+
 
 class VisualClassifier:
-    def __init__(self, directory: Path):
+    def __init__(self, directory: Path, *, session: Any | None = None):
         self.directory = Path(directory)
         self.metadata = json.loads((self.directory / "classifier.json").read_text())
         # One atomic file keeps labels and vectors from different revisions apart.
@@ -26,6 +31,36 @@ class VisualClassifier:
                 or not np.allclose(np.linalg.norm(self.centroids, axis=1), 1, atol=1e-4)
                 or np.any((self.radii < 0) | (self.radii > .35))):
             raise ValueError("Visual classifier metadata and prototypes disagree")
+        self._session = session if session is not None else self._build_session()
+
+    def _build_session(self) -> Any:
+        import onnxruntime as ort
+
+        path = self.directory / "encoder.onnx"
+        with path.open("rb") as handle:
+            digest = hashlib.file_digest(handle, "sha256").hexdigest()
+        if digest != self.metadata.get("encoder_sha256"):
+            raise ValueError("Visual encoder does not match the groups it built")
+        available = ort.get_available_providers()
+        providers = ["CPUExecutionProvider"]
+        if "CUDAExecutionProvider" in available:
+            preload = getattr(ort, "preload_dlls", None)
+            if preload is not None:
+                preload()
+            providers = [("CUDAExecutionProvider", {"gpu_mem_limit": 512 * 1024 * 1024,
+                                                   "arena_extend_strategy": "kSameAsRequested"}),
+                         "CPUExecutionProvider"]
+        options = ort.SessionOptions()
+        options.log_severity_level = 3
+        return ort.InferenceSession(str(path), sess_options=options, providers=providers)
+
+    def embed(self, image) -> np.ndarray:
+        """The normalized visual embedding of one crop, in the groups' own feature space."""
+        input = self._session.get_inputs()[0]
+        side = input.shape[2] if isinstance(input.shape[2], int) else SIZE
+        pixels = crop_array(image, size=side)
+        values = self._session.run(["features"], {input.name: pixels})[0]
+        return np.asarray(values, dtype=np.float32).reshape(-1)
 
     def predict(self, embedding: np.ndarray, family: str) -> dict:
         vector = np.asarray(embedding, dtype=np.float32).reshape(-1)

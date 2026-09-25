@@ -59,8 +59,7 @@ def small_run(grouping, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     root = tmp_path / "data"
     root.mkdir()
-    encoder = Path("models/classifier/artifacts/classifier-with-features.onnx")
-    encoder.parent.mkdir(parents=True)
+    encoder = root / "encoder.onnx"
     encoder.write_bytes(b"test encoder")
     rows = [{"id": str(i), "row_index": i, "family": "U+4EEE", "corpus": "codh-full",
              "source_label": "仮", "source_code_point": "U+4EEE", "crop_sha256": f"crop-{i}",
