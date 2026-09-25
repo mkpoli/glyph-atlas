@@ -61,7 +61,7 @@
   "common.retry": "重試",
   "common.saving": "儲存中…",
   "common.skip": "略過",
-  "common.skip.arrow": "略過 →",
+  "common.skip.arrow": "不確定 · 略過→",
   "common.skip.hint": "無法判斷，或稍後再處理",
   "common.tryAgain": "再試一次",
   "corpus.addNote": "新增備註",

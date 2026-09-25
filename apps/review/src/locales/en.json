@@ -58,7 +58,7 @@
   "common.retry": "Retry",
   "common.saving": "Saving…",
   "common.skip": "Skip",
-  "common.skip.arrow": "Skip →",
+  "common.skip.arrow": "Not sure · Skip →",
   "common.skip.hint": "Can’t tell, or leave it for later",
   "common.tryAgain": "Try again",
   "corpus.addNote": "Add a note",

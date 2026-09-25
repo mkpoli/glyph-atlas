@@ -61,7 +61,7 @@
   "common.retry": "重试",
   "common.saving": "正在保存…",
   "common.skip": "跳过",
-  "common.skip.arrow": "跳过 →",
+  "common.skip.arrow": "不确定 · 跳过→",
   "common.skip.hint": "无法判断，或留到以后处理",
   "common.tryAgain": "重试",
   "corpus.addNote": "添加备注",
