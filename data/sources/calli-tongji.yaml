@@ -1,0 +1,23 @@
+id: calli-tongji
+name: "云墨济心：历代书法风格数据集 (Calli-Tongji: A Dataset of Historical Calligraphy Styles)"
+publisher: 同济大学计算机科学与技术学院 叶晨团队; 以观书法
+kind: character-dataset
+url: https://www.modelscope.cn/datasets/CalliTongji/Calli-Tongji_A_Dataset_of_Historical_Calligraphy_Styles
+version: Beta, open subset
+licence: CC-BY-NC-4.0
+licence_evidence: https://www.modelscope.cn/datasets/CalliTongji/Calli-Tongji_A_Dataset_of_Historical_Calligraphy_Styles
+attribution: 云墨济心：历代书法风格数据集 (Calli-Tongji), Tongji University, Ye Chen's Team; Yiguan Shufa, 2025, ModelScope. Data source https://ygsf.com
+counts:
+  images: 5000
+  classes: 50
+  full_dataset_images: 317574
+format:
+  archive: Calli-Tongji.zip, 84361819 bytes, sha256 bae995df68a3469fe486939dd42b209145ab56d10f580990380e25dcf9e2fbe9
+  images: one 256x256 binarised PNG per character, dark ink on white, in a folder named 作者-书体
+  metadata: dataset.txt, tab-separated 编号, 路径, 类别 (作者-书体), Unicode, 朝代
+notes:
+  - Read on 2026-09-25 from the ModelScope page and its README; downloading needs a ModelScope login.
+  - The open subset holds 50 calligrapher-style classes of 100 images each. The full 317,574-image set is released on a named application to the team.
+  - Built by the team from 以观书法's scans of rubbings and ink originals. Rubbings were inverted and every image binarised and denoised by the team's pipeline, so the images carry no paper, colour or stone texture.
+  - Styles are 篆, 隶, 楷, 行 and 草. Per style in the open subset, images (calligraphers) are 行 1300 (13), 楷 1300 (13), 草 1500 (15), 篆 500 (5), 隶 400 (4).
+  - CC BY-NC 4.0, 「仅供学术研究和教育用途，禁止用于商业目的」. Its images, and anything trained on them, stay out of this project's CC BY-SA releases.
