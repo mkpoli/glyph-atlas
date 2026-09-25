@@ -43,3 +43,11 @@ def test_a_scope_takes_a_node_with_everything_under_it():
     assert not production.in_scope("printed/type/wood", production.REVIEW_SCOPE)
     assert production.in_scope("handwritten", "all")
 
+
+def test_every_node_has_one_interface_label_and_no_more():
+    import json
+    from pathlib import Path
+
+    catalogue = json.loads((Path(__file__).parents[1] / "apps/review/src/locales/en.json").read_text(encoding="utf-8"))
+    keys = {key.removeprefix("production.kind.") for key in catalogue if key.startswith("production.kind.")}
+    assert keys == {node.replace("/", "_") for node in production.vocabulary()}

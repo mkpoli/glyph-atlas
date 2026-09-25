@@ -50,7 +50,7 @@
     if (nearEnd && hasMore && !error && !loading && !saving && !loadingMore && items.length < roundLimit) loadMore()
   })
   const roundLimit = $derived(data?.review_limit ?? 4096)
-  let production = $state('non-movable-type')
+  let production = $state('not:printed/type')
   // The workflow state: which step, and where in the selected crops the reader is.
   let step = $state('select'), at = $state(0)
   let suggestionsElement = $state(null)
@@ -492,12 +492,15 @@
   <label class="review-material">{t('quiz.material.label')}
     <select aria-label={t('quiz.material.aria')} value={production} disabled={saving || loading || loadingMore}
       onchange={event => load({ scope: event.currentTarget.value, target: reading })}>
-      <option value="non-movable-type">{t('quiz.material.excludeMovableType')}</option>
-      <option value="manuscript">{t('production.handwritten')}</option>
-      <option value="woodblock">{t('production.woodblock')}</option>
-      <option value="movable-type">{t('production.movableType')}</option>
-      <option value="mixed">{t('production.mixed')}</option>
-      <option value="unknown">{t('production.notClassified')}</option>
+      <option value="not:printed/type">{t('quiz.material.excludeMovableType')}</option>
+      <option value="handwritten">{t('production.kind.handwritten')}</option>
+      <option value="inscribed">{t('production.kind.inscribed')}</option>
+      <option value="printed">{t('production.kind.printed')}</option>
+      <option value="printed/woodblock">{t('production.kind.printed_woodblock')}</option>
+      <option value="printed/type">{t('production.kind.printed_type')}</option>
+      <option value="typewritten">{t('production.kind.typewritten')}</option>
+      <option value="mixed">{t('production.kind.mixed')}</option>
+      <option value="unknown">{t('production.kind.unknown')}</option>
       <option value="all">{t('quiz.material.all')}</option>
     </select>
   </label>
