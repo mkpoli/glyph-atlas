@@ -599,13 +599,14 @@ def import_hng(
 @import_app.command("hng-kiridashi")
 def import_hng_kiridashi(
     clone: Annotated[Path | None, typer.Option(help="a clone of hng-kiridashi-data")] = None,
+    basic: Annotated[Path | None, typer.Option(help="a clone of hng-basic-data")] = None,
     limit: Annotated[int | None, typer.Option(help="stop after this many rows")] = None,
     out: Annotated[Path, typer.Option(help="directory for the tables")] = Path("work/hng-kiridashi"),
 ) -> None:
     """Import the HNG 切り出しデータ: character boxes on Gallica pages."""
     from .importers import hng_kiridashi
 
-    counts = hng_kiridashi.import_all(out, clone=clone, limit=limit)
+    counts = hng_kiridashi.import_all(out, clone=clone, basic=basic, limit=limit)
     for name, rows in counts.items():
         typer.echo(f"{name:<12} {rows:>10}")
     typer.echo(f"-> {out}")
