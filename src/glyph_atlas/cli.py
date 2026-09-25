@@ -681,15 +681,14 @@ def ainu_merge(
     occurrence; occurrences only ainu-records has are imported. The source dataset is never written to.
     """
     from . import ainu_characters
-    from .repair import human_state
 
-    human = human_state(atlas)
-    result = ainu_characters.plan(atlas, records, min_iou=min_iou, human=human)
+    log = ainu_characters.read_log(atlas)
+    result = ainu_characters.plan(atlas, records, min_iou=min_iou, log=log)
     for name, value in result.counts().items():
         typer.echo(f"{name:<40} {value}")
     if out is None:
         return
-    for name, value in ainu_characters.build(result, atlas, records, out, human=human).items():
+    for name, value in ainu_characters.build(result, atlas, records, out, log=log).items():
         typer.echo(f"{name:<40} {value}")
     typer.echo(f"-> {out}")
 

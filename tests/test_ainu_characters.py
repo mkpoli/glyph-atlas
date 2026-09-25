@@ -8,8 +8,7 @@ from pathlib import Path
 import pytest
 
 from glyph_atlas import ainu_characters, refs, tables
-from glyph_atlas.repair import HumanState
-from glyph_atlas.review import store
+from glyph_atlas.review.store import ReviewRequest, Store
 from glyph_atlas.schema import Box, Line, Page, ReviewState, Unit
 
 ENTRY = "3daea514503efa7c8ec5ccc61c9be9d8"
@@ -110,8 +109,8 @@ def test_the_merged_dataset_keeps_confirms_replaces_and_imports(world, tmp_path)
     out = tmp_path / "merged"
     counts = ainu_characters.build(ainu_characters.plan(atlas, records), atlas, records, out)
     assert counts == {"atlas kept": 2, "atlas confirmed": 1, "atlas replaced": 2, "imported": 1, "units": 9,
-                      "active": 7}
-    assert units_of(out) and not (out / "review.sqlite").exists()
+                      "active": 7, "replay repaired": 0}
+    assert (out / "review.sqlite").exists(), "the store is rebuilt from the merged log"
     units = units_of(out)
     assert units[uid(1)].meta["alignment_repair"]["quiz"] is True
     assert units[uid(1)].meta["ainu_records"]["id"] == "1-l1-1"
@@ -131,19 +130,43 @@ def test_the_merge_never_writes_over_a_dataset(world, tmp_path):
         ainu_characters.build(ainu_characters.plan(atlas, records), atlas, records, atlas)
 
 
-def test_a_unit_a_person_acted_on_stays_as_the_store_has_it(world, tmp_path):
+def record(atlas: Path, target: str, name: str, new, role: str = "reviewer") -> None:
+    Store(atlas).record_batch([ReviewRequest(target_id=target, field=name, new=new, client_id="reviewer-1")], role=role)
+
+
+def test_a_unit_a_person_acted_on_keeps_its_reading_and_replay_agrees(world, tmp_path):
     atlas, records = world
-    touched = tables.read(atlas / "units.parquet", Unit)[1]
-    withheld = touched.model_copy(update={"meta": {"alignment_repair": {"withheld": True, "quiz": False}}})
-    human = HumanState(units={uid(1): withheld}, readable=True,
-                       rows=[event(1, uid(1), "meta", {}, withheld.meta, role="model")])
-    result = ainu_characters.plan(atlas, records, human=human)
-    assert uid(1) in [u for u, _ in result.keep_atlas] and not result.confirm, "agreement does not undo a decision"
+    record(atlas, uid(1), "unicode", "U+30C4")  # a person names the ink ツ, where ainu-records reads ト
+    result = ainu_characters.plan(atlas, records)
+    assert uid(1) in [u for u, _ in result.keep_atlas] and uid(1) not in [u for u, _ in result.replace]
     out = tmp_path / "merged"
-    ainu_characters.build(result, atlas, records, out, human=human)
-    assert units_of(out)[uid(1)].meta == withheld.meta
-    store.replay(out)
-    assert units_of(out)[uid(1)].meta == withheld.meta, "replaying the log agrees with the merge"
+    counts = ainu_characters.build(result, atlas, records, out)
+    assert counts["replay repaired"] == 0 and counts["merge events"] == 1
+    kept = units_of(out)[uid(1)]
+    assert (kept.unicode, kept.meta["ainu_records"]["id"]) == ("U+30C4", "1-l1-1")
+
+
+def test_a_machine_event_is_no_decision_and_replay_keeps_the_merge(world, tmp_path):
+    atlas, records = world
+    record(atlas, uid(1), "meta", {"alignment_repair": {"withheld": True, "quiz": False}}, role="model")
+    result = ainu_characters.plan(atlas, records)
+    assert [u for u, _ in result.confirm] == [uid(1)]
+    counts = ainu_characters.build(result, atlas, records, tmp_path / "merged")
+    assert counts["replay repaired"] == 0
+    assert units_of(tmp_path / "merged")[uid(1)].meta["alignment_repair"]["quiz"] is True
+
+
+def test_a_split_a_person_made_survives_the_merge(world, tmp_path):
+    atlas, records = world
+    record(atlas, uid(4), "segmentation", {"split": [
+        {"box": {"x": 900, "y": 100, "w": 20, "h": 50}, "unicode": "U+30AB", "reading": "カ", "text_source": "カ"},
+        {"box": {"x": 920, "y": 100, "w": 20, "h": 50}, "unicode": "U+30AB", "reading": "カ", "text_source": "カ"}]})
+    children = [u.id for u in ainu_characters.read_log(atlas).units.values() if u.active and u.id.startswith(f"{PAGE}:L0:m")]
+    assert len(children) == 2
+    out = tmp_path / "merged"
+    ainu_characters.build(ainu_characters.plan(atlas, records), atlas, records, out)
+    merged = units_of(out)
+    assert not merged[uid(4)].active and all(merged[c].active for c in children)
 
 
 def test_a_flagged_unit_ainu_records_reads_the_same_stays_flagged(world):
@@ -165,6 +188,15 @@ def test_ink_ainu_records_rejected_withholds_the_machine_unit_on_it(world, tmp_p
     assert units_of(tmp_path / "merged")[uid(6)].meta["alignment_repair"]["quiz"] is False
 
 
+def test_a_reading_a_person_doubted_does_not_replace_a_label(world):
+    atlas, records = world
+    folder = records / "data/characters/moshiogusa--ninjal-1"
+    reviews = json.loads((folder / "reviews.json").read_text(encoding="utf-8"))
+    reviews["edits"].append({"id": "1-l1-2", "label": "ユ", "reading": "uncertain", "boundary": "confirmed"})
+    (folder / "reviews.json").write_text(json.dumps(reviews), encoding="utf-8")
+    assert uid(2) in [u for u, _ in ainu_characters.plan(atlas, records).keep_withheld]
+
+
 def test_a_blank_reading_never_replaces_a_label(world):
     atlas, records = world
     folder = records / "data/characters/moshiogusa--ninjal-1"
@@ -182,6 +214,21 @@ def test_merging_its_own_output_again_imports_nothing_twice(world, tmp_path):
     again = ainu_characters.plan(first, records)
     assert again.import_new == [] and again.replace == []
     assert sorted(again.imported_before) == sorted(u for u in units_of(first) if u.startswith("ar:"))
+    ainu_characters.build(again, first, records, tmp_path / "second")
+
+
+def test_an_import_retired_or_rejected_since_is_handled_on_the_next_merge(world, tmp_path):
+    atlas, records = world
+    first = tmp_path / "first"
+    ainu_characters.build(ainu_characters.plan(atlas, records), atlas, records, first)
+    record(first, "ar:moshiogusa--ninjal-1:1-l1-4", "segmentation", {"merge": [
+        "ar:moshiogusa--ninjal-1:1-l1-4", "ar:moshiogusa--ninjal-1:1-l1-2"]})
+    folder = records / "data/characters/moshiogusa--ninjal-1"
+    reviews = json.loads((folder / "reviews.json").read_text(encoding="utf-8"))
+    reviews["edits"].append({"id": "1-ocr0-3", "label": "ス", "reading": "rejected", "boundary": "rejected"})
+    (folder / "reviews.json").write_text(json.dumps(reviews), encoding="utf-8")
+    again = ainu_characters.plan(first, records)
+    assert again.import_new == [], "a merged-away import is not imported again"
     ainu_characters.build(again, first, records, tmp_path / "second")
 
 

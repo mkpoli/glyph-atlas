@@ -6,11 +6,13 @@ reviewed. The atlas holds far fewer, aligned only where it could box a line, and
 review rounds. Neither is complete or right everywhere, so this module decides, occurrence by
 occurrence, which one the atlas keeps. `plan` only reads and counts; nothing is written.
 
-The two are paired by ink: the same page, boxes overlapping by at least `MIN_IOU`, one to one. A unit
-an earlier merge imported is paired with its own occurrence by id instead. Then:
+Units are read as the review store beside the atlas has them, so a person's latest decisions, splits
+and merges included, are what the merge sees. The two are paired by ink: the same page, boxes
+overlapping by at least `MIN_IOU`, one to one. A unit an earlier merge imported is paired with its
+own occurrence by id instead. Then:
 
-* a unit a person decided, or acted on in the review store, stays exactly as the store has it: that
-  is a decision about this crop, compared by the identity the review gave it;
+* a unit a person decided, or acted on in the review store, keeps its reading: that is a decision
+  about this crop, compared by the identity the review gave it;
 * a machine unit whose reading ainu-records confirms from its transcription or a review is kept, and
   the agreement lifts a withhold: two independent pairings naming the same character is the
   evidence the withhold was waiting for;
@@ -18,28 +20,34 @@ an earlier merge imported is paired with its own occurrence by id instead. Then:
   transcription or a review gives way to ainu-records' occurrence: the atlas's machine pairing is
   where the neighbour's name ends up on the ink. A flagged unit ainu-records reads the same stays
   flagged, since the agreement is with the reading the person doubted;
-* where ainu-records has only an OCR reading, or none, the atlas unit stays as it is, since its label
-  comes from the transcription;
-* a machine unit on ink ainu-records rejected as not a character, or measured empty, is withheld;
+* where ainu-records has only an OCR reading, none, or one a person marked uncertain, the atlas unit
+  stays as it is, since its label comes from the transcription;
+* a machine unit on ink ainu-records rejected as not a character, or measured empty, is withheld,
+  a unit an earlier merge imported included;
 * an occurrence only ainu-records has is imported, with the source of its label;
 * a unit only the atlas has stays.
 
-An occurrence ainu-records rejected or measured empty is not imported.
+An occurrence ainu-records rejected or measured empty is not imported. What the merge changes on a
+unit the review log names is appended to the log as the merge's own event, so replaying the log over
+the merged tables arrives at the same units.
 """
 from __future__ import annotations
 
 import json
 import shutil
+import sqlite3
 import unicodedata
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from . import refs, tables
-from .repair import REVIEWS_NAME, STORE_NAME, HumanState, decode_event, human_state
+from .repair import REVIEWS_NAME, STORE_NAME, decode_event
+from .review.store import SEEN
 from .schema import Box, Line, ReviewState, Script, Unit
 
 MIN_IOU = 0.5
@@ -73,7 +81,7 @@ def entries(records: Path) -> dict[str, str]:
     found: dict[str, str] = {}
     for source in yaml.safe_load((records / "data/sources.yaml").read_text(encoding="utf-8"))["sources"]:
         for witness in source.get("witnesses") or []:
-            parts = [witness] if witness.get("entry") else witness.get("parts") or []
+            parts = witness.get("parts") or []
             for index, part in enumerate(parts, start=1):
                 if part.get("entry"):
                     suffix = f"-{index}" if len(parts) > 1 else ""
@@ -91,6 +99,7 @@ class Occurrence:
     origin: str  # transcription, ocr, manual, or review when a published review changed or confirmed it
     rejected: bool
     checked: bool = False  # a person confirmed both its reading and its box
+    doubted: bool = False  # a person marked its reading or its box uncertain
 
     @property
     def id(self) -> str:
@@ -123,9 +132,10 @@ def occurrences(records: Path) -> dict[str, list[Occurrence]]:
                 origin = "review"
             rejected = bool(edit and ("rejected" in (edit.get("reading"), edit.get("boundary")))) or sample["id"] in empty
             checked = bool(edit and edit.get("reading") == "confirmed" and edit.get("boundary") == "confirmed")
+            doubted = bool(edit and "uncertain" in (edit.get("reading"), edit.get("boundary")))
             box = edit["box"] if edit and edit.get("box") else sample["box"]
             rows.append(Occurrence(key=unit["key"], sample={**sample, "box": list(box)}, label=label, origin=origin,
-                                   rejected=rejected, checked=checked))
+                                   rejected=rejected, checked=checked, doubted=doubted))
         found[unit["key"]] = rows
     return found
 
@@ -145,6 +155,38 @@ def unit_id(row: Occurrence) -> str:
 
 
 @dataclass
+class ReviewLog:
+    """The review store beside a dataset, read read-only: every unit as it stands, and the events."""
+
+    units: dict[str, Unit]
+    events: list[dict[str, Any]] = field(default_factory=list)
+    decided: set[str] = field(default_factory=set)  # units a person acted on
+    logged: set[str] = field(default_factory=set)  # units any event names
+
+
+def read_log(atlas: Path) -> ReviewLog:
+    """Every unit as the store beside `atlas` has it; the tables alone where there is no store."""
+    table = {u.id: u for u in tables.read(atlas / "units.parquet", Unit)}
+    path = atlas / STORE_NAME
+    if not path.exists():
+        return ReviewLog(units=table)
+    connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        connection.row_factory = sqlite3.Row
+        events = [dict(row) for row in connection.execute("SELECT * FROM events ORDER BY seq")]
+        units = {row["id"]: Unit.model_validate_json(row["data"]) for row in connection.execute("SELECT id, data FROM units")}
+    finally:
+        connection.close()
+    missing = set(table) - set(units)
+    if missing:
+        raise RuntimeError(f"the review store beside {atlas} lacks {len(missing)} units of its tables; "
+                           "run `atlas review replay` on it first")
+    named = [e for e in events if e["target_type"] == "unit" and e["field"] != SEEN]
+    return ReviewLog(units=units, events=events, decided={e["target_id"] for e in named if e["role"] != "model"},
+                     logged={e["target_id"] for e in named})
+
+
+@dataclass
 class Plan:
     keep_atlas: list[tuple[str, Occurrence]] = field(default_factory=list)  # atlas unit id, its ainu-records partner
     confirm: list[tuple[str, Occurrence]] = field(default_factory=list)  # kept, and the agreement lifts a withhold
@@ -154,7 +196,6 @@ class Plan:
     import_new: list[Occurrence] = field(default_factory=list)
     imported_before: list[str] = field(default_factory=list)  # units an earlier merge imported
     atlas_only: list[str] = field(default_factory=list)
-    touched: set[str] = field(default_factory=set)  # units a person acted on in the review store
     skipped: Counter = field(default_factory=Counter)
     agree: Counter = field(default_factory=Counter)
 
@@ -172,30 +213,33 @@ class Plan:
                 "shared ink, labels agree": dict(self.agree)}
 
 
-def plan(atlas: Path, records: Path, *, min_iou: float = MIN_IOU, human: HumanState | None = None) -> Plan:
-    """Decide, for every occurrence and unit, what the merged atlas holds. Reads only.
-
-    `human` is what people decided in the review store beside `atlas`; it is read when not given.
-    """
-    human = human if human is not None else human_state(atlas)
-    table = {u.id: u for u in tables.read(atlas / "units.parquet", Unit)}
-    # The store's copy of a unit a person acted on is the current one.
-    table.update(human.units)
-    units = [u for u in table.values() if u.active and u.box and u.page_id]
-    earlier = {u.upstream["id"]: u.id for u in units if u.upstream.get("source") == UPSTREAM}
+def plan(atlas: Path, records: Path, *, min_iou: float = MIN_IOU, log: ReviewLog | None = None) -> Plan:
+    """Decide, for every occurrence and unit, what the merged atlas holds. Reads only."""
+    log = log if log is not None else read_log(atlas)
+    units = [u for u in log.units.values() if u.active and u.box and u.page_id]
+    # An import a reviewer since retired still names its occurrence, which is not imported again.
+    earlier = {u.upstream["id"]: u for u in log.units.values() if u.upstream.get("source") == UPSTREAM}
     by_page: dict[str, list[Unit]] = defaultdict(list)
     for unit in units:
         if unit.upstream.get("source") != UPSTREAM:
             by_page[unit.page_id].append(unit)
     by_key = entries(records)
-    result = Plan(touched=set(human.units))
+    result = Plan()
     matched_units: set[str] = set()
+
+    def decided(unit: Unit) -> bool:
+        return unit.review in DECIDED or (unit.id in log.decided and unit.review != ReviewState.DISPUTED)
+
     for key, rows in occurrences(records).items():
         entry = by_key.get(key)
         pages: dict[int, list[Occurrence]] = defaultdict(list)
         for row in rows:
-            if f"{key}#{row.id}" in earlier:
-                result.imported_before.append(earlier[f"{key}#{row.id}"])
+            before = earlier.get(f"{key}#{row.id}")
+            if before is not None:
+                if row.rejected and before.active and not decided(before):
+                    result.withhold.append((before.id, row))
+                else:
+                    result.imported_before.append(before.id)
                 continue
             if not entry:
                 result.skipped["no みんなで翻刻 entry"] += 1
@@ -214,13 +258,12 @@ def plan(atlas: Path, records: Path, *, min_iou: float = MIN_IOU, human: HumanSt
                 taken_r.add(rid)
                 matched_units.add(uid)
                 same = written(unit) == row.label
-                person = unit.review in DECIDED or (uid in result.touched and unit.review != ReviewState.DISPUTED)
-                if person:
+                if decided(unit):
                     result.keep_atlas.append((uid, row))
                     result.agree["decided, same" if same else "decided, different"] += 1
                 elif row.rejected:
                     result.withhold.append((uid, row))
-                elif row.origin not in TRUSTED_ORIGINS or not row.label:
+                elif row.origin not in TRUSTED_ORIGINS or not row.label or row.doubted:
                     result.keep_withheld.append((uid, row))
                 elif same:
                     (result.keep_atlas if unit.review == ReviewState.DISPUTED else result.confirm).append((uid, row))
@@ -278,27 +321,21 @@ def copy_dataset(atlas: Path, out: Path) -> None:
             shutil.copy2(path, target)
 
 
-def build(result: Plan, atlas: Path, records: Path, out: Path, *, human: HumanState | None = None) -> dict[str, int]:
-    """Write the merged dataset to `out`: the atlas's files, the store's log, and the merged units.
+def build(result: Plan, atlas: Path, records: Path, out: Path, *, log: ReviewLog | None = None) -> dict[str, int]:
+    """Write the merged dataset to `out`: the atlas's files, the merged units and the review log.
 
-    A unit a person acted on is written as the review store has it, and the store's events become the
-    new dataset's `reviews.jsonl`, so a store opened on it replays the same decisions.
+    The units are the store's, with the merge's changes. The log is the store's events, followed by one
+    event of the merge for each unit the log names whose `meta` the merge changed, so that replaying
+    the log over the merged tables arrives at the same units. The store is then rebuilt from them.
     """
-    human = human if human is not None else human_state(atlas)
-    if (atlas / STORE_NAME).exists() and not human.readable:
-        raise RuntimeError(f"cannot read the review store beside {atlas}: {human.reason}")
+    from .review import store as review_store
+
+    log = log if log is not None else read_log(atlas)
     out.mkdir(parents=True, exist_ok=False)
     copy_dataset(atlas, out)
-    if human.readable:
-        with (out / REVIEWS_NAME).open("w", encoding="utf-8") as handle:
-            for row in human.rows:
-                handle.write(json.dumps(decode_event(row), ensure_ascii=False, sort_keys=True) + "\n")
-    elif (atlas / REVIEWS_NAME).exists():
-        shutil.copy2(atlas / REVIEWS_NAME, out / REVIEWS_NAME)
     lines = {line.id for line in tables.read(atlas / "lines.parquet", Line)}
     by_key = entries(records)
-    units = {u.id: u for u in tables.read(atlas / "units.parquet", Unit)}
-    units.update(human.units)
+    units = dict(log.units)
     counts: Counter = Counter()
 
     def note(uid: str, row: Occurrence, **meta: Any) -> None:
@@ -306,8 +343,7 @@ def build(result: Plan, atlas: Path, records: Path, out: Path, *, human: HumanSt
         units[uid] = unit.model_copy(update={"meta": {**unit.meta, **meta, META: provenance(row)}})
 
     for uid, row in result.keep_atlas + result.keep_withheld:
-        if uid not in result.touched:
-            note(uid, row)
+        note(uid, row)
         counts["atlas kept"] += 1
     for uid, row in result.confirm:
         repair = {**(units[uid].meta.get("alignment_repair") or {}), "status": "confirmed", "reliable": True,
@@ -337,6 +373,18 @@ def build(result: Plan, atlas: Path, records: Path, out: Path, *, human: HumanSt
         raise RuntimeError(f"{len(clash)} imported ids already exist, e.g. {min(clash)}")
     merged = list(units.values()) + new
     tables.write(out / "units.parquet", merged, Unit, command="atlas ainu merge")
+    at = datetime.now(UTC).isoformat()
+    rows = [decode_event(row) for row in log.events]
+    for uid in sorted(log.logged):
+        if uid in units and units[uid].meta != log.units[uid].meta:
+            rows.append({"id": f"rv{len(rows) + 1:08d}", "target_type": "unit", "target_id": uid, "field": "meta",
+                         "old": log.units[uid].meta, "new": units[uid].meta, "role": "model", "actor": "ainu-records-merge",
+                         "evidence": json.dumps({"source": UPSTREAM}), "at": at})
+            counts["merge events"] += 1
+    with (out / REVIEWS_NAME).open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
     counts["units"] = len(merged)
     counts["active"] = sum(1 for u in merged if u.active)
+    counts["replay repaired"] = review_store.replay(out)["repaired"]
     return dict(counts)
