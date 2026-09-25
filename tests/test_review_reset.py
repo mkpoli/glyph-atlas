@@ -465,6 +465,47 @@ class TestCorpusCorrectionsArePreserved:
             columns = [row[1] for row in connection.execute(f"PRAGMA table_info({CORPUS_BASELINE_TABLE})")]
         assert columns == ["identity", "character", "source_revision"]
 
+    def test_an_issue_report_after_a_correction_keeps_the_correction(self, tmp_path):
+        """A later decision with no character (a plain issue report) must not clear an
+        earlier accepted correction: `_corpus_overlay` should walk back to it, the same
+        way `CorpusReviews.overlay` does for the live view."""
+        root = build_dataset(tmp_path / "work" / "honkoku-lines")
+        review_the_dataset(root)
+        identity = "corpus|d:1|p:1|-|U+4E00|3|literal_text"
+        corpus_db(
+            root / "reviews.sqlite",
+            rows=[
+                (
+                    identity,
+                    "rv1",
+                    {
+                        "verdict": "wrong",
+                        "issue": "character",
+                        "character": "こ",
+                        "correction": None,
+                        "note": "",
+                        "suggestions": [],
+                    },
+                ),
+                (
+                    identity,
+                    "rv2",
+                    {
+                        "verdict": "wrong",
+                        "issue": "crop",
+                        "character": None,
+                        "correction": None,
+                        "note": "cropped badly",
+                        "suggestions": [],
+                    },
+                ),
+            ],
+        )
+        reset_reviews(root)
+        baseline = corpus_baseline(root / "reviews.sqlite")
+        assert len(baseline) == 1
+        assert baseline[0]["character"] == "こ"
+
     def test_an_explicit_corpus_path_is_used(self, tmp_path):
         root = build_dataset(tmp_path / "work" / "honkoku-lines")
         review_the_dataset(root)
@@ -828,7 +869,10 @@ class TestOverlayIsCorrectionNotHistory:
         assert report.overlay is None
         assert corpus_baseline(root / "reviews.sqlite") == []
 
-    def test_a_later_decision_that_clears_the_value_removes_the_earlier_one(self, tmp_path):
+    def test_a_later_match_with_no_character_of_its_own_keeps_the_earlier_correction(self, tmp_path):
+        """A ``match`` carries no character of its own here (no corpus-inherent identity
+        to affirm), same as ``CorpusReviews.overlay`` would see it against this same
+        source revision. It is not an explicit clear: the earlier correction stands."""
         root = build_dataset(tmp_path / "work" / "honkoku-lines")
         review_the_dataset(root)
         identity = "corpus|d:1|p:1|-|U+4E00|3|literal_text"
@@ -854,8 +898,10 @@ class TestOverlayIsCorrectionNotHistory:
             ],
         )
         report = reset_reviews(root)
-        assert report.corpus_corrections_preserved == 0
-        assert corpus_baseline(root / "reviews.sqlite") == []
+        assert report.corpus_corrections_preserved == 1
+        baseline = corpus_baseline(root / "reviews.sqlite")
+        assert len(baseline) == 1
+        assert baseline[0]["character"] == "こ"
 
     def test_the_latest_accepted_character_wins(self, tmp_path):
         root = build_dataset(tmp_path / "work" / "honkoku-lines")

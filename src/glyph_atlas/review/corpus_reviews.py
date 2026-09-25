@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import unicodedata
+from collections.abc import Iterable, Mapping
 from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
@@ -34,6 +35,27 @@ class CorpusEdit(BaseModel):
 
 def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def last_human_character(events: Iterable[Mapping[str, Any]], source_revision: str | None) -> str | None:
+    """Walk parsed review events, newest first, for the last human character.
+
+    Each event is ``{"source": <parsed source>, "decision": <parsed decision>,
+    "actor_kind": str}``. An issue report, a match against nothing or an unapplied
+    proposal carries no character and is skipped rather than treated as clearing an
+    earlier correction: only an explicit human character (a correction, or a match that
+    affirms one) stops the walk.
+    """
+    for event in events:
+        original, decision = event["source"], event["decision"]
+        if original.get("source_revision") != source_revision or event.get("actor_kind") != "human":
+            continue
+        candidate = decision.get("character")
+        if not candidate and decision.get("verdict") == "match":
+            candidate = original.get("written_character")
+        if candidate:
+            return candidate
+    return None
 
 
 class CorpusReviews:
@@ -95,16 +117,14 @@ class CorpusReviews:
             with closing(self.connect()) as db:
                 events = db.execute("SELECT source,decision,actor_kind FROM glyph_reviews WHERE identity=? AND revision<=? ORDER BY revision DESC",
                                     (identity, record["revision"]))
-                for event in events:
-                    original, decision = json.loads(event["source"]), json.loads(event["decision"])
-                    if original["source_revision"] != source["source_revision"] or event["actor_kind"] != "human":
-                        continue
-                    candidate = decision.get("character")
-                    if not candidate and decision.get("verdict") == "match":
-                        candidate = original.get("written_character")
-                    if candidate:
-                        human = candidate
-                        break
+                parsed = (
+                    {"source": json.loads(event["source"]), "decision": json.loads(event["decision"]),
+                     "actor_kind": event["actor_kind"]}
+                    for event in events
+                )
+                candidate = last_human_character(parsed, source["source_revision"])
+                if candidate:
+                    human = candidate
         written = human or source["label"]
         result = {**source, "label": written, "char": written,
                   "code_point": " ".join(refs.to_code_points(written)),
