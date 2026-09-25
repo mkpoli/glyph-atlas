@@ -101,7 +101,6 @@
   "explore.empty.noOccurrenceOf": "여기에는 {char}의 用例가 없습니다.",
   "explore.empty.noOccurrenceOfTerm": "{term}의 用例가 없습니다.",
   "explore.empty.nothingFlagged": "標示된 것이 없습니다.",
-  "explore.empty.nothingHard": "難讀 文字가 없습니다.",
   "explore.empty.samplesFailed": "{char}의 用例를 불러오지 못했습니다.",
   "explore.filter.all": "全體",
   "explore.filter.kana": "가나",
@@ -112,7 +111,6 @@
   "explore.grid.collection": "文字 蒐集",
   "explore.heading.atlas": "文字 圖譜",
   "explore.heading.flagged": "標示된 文字",
-  "explore.heading.hard": "難讀",
   "explore.meta.characters.one": "{count}字",
   "explore.meta.characters.other": "{count}字",
   "explore.meta.glyphs.one": "字形 {count}個",
@@ -242,8 +240,6 @@
   "nav.explore": "探索",
   "nav.flagged": "標示",
   "nav.forms": "字形",
-  "nav.hard": "難讀",
-  "nav.hard.title": "檢討者 두 名이 건너뛴 크롭",
   "nav.quickReview": "迅速 檢討",
   "production.aria": "製作: {label}",
   "production.handwritten": "筆寫",
@@ -412,5 +408,6 @@
   "quiz.reference.heading": "參考: 確認됨 / 본 것",
   "quiz.reference.inspect": "參考 {label} 살피기, {state}",
   "quiz.reference.confirmed": "確認됨",
-  "quiz.reference.seen": "봄"
+  "quiz.reference.seen": "봄",
+  "state.hard": "難讀: 檢討者 두 名이 건너뜀"
 }
