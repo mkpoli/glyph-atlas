@@ -1,7 +1,9 @@
 """The local form-assignment API: families, their shape clusters, and the decisions on them."""
 from __future__ import annotations
 
+import json
 import threading
+import uuid
 from collections import Counter
 from functools import lru_cache
 from pathlib import Path
@@ -11,6 +13,15 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from .. import forms, images, refs
+
+
+class Report(BaseModel):
+    """Glyphs whose crop or transcription is wrong, sent to the review queue from the Forms view."""
+    model_config = ConfigDict(extra="forbid")
+    units: list[str] = Field(min_length=1, max_length=200)
+    issue: Literal["crop", "character", "merged", "blank", "other"]
+    character: str | None = Field(default=None, max_length=32)
+    client_id: str = Field(min_length=1, max_length=128)
 
 
 class Decision(BaseModel):
@@ -50,7 +61,7 @@ def _form_entry(char: str) -> dict[str, Any]:
     return entry
 
 
-def router(media, corpus_root: Path) -> APIRouter:
+def router(media, corpus_root: Path, reviews=None) -> APIRouter:
     api = APIRouter()
     codh = corpus_root / "codh-full"
 
@@ -119,15 +130,56 @@ def router(media, corpus_root: Path) -> APIRouter:
             # The glyphs least like the cluster centre are where a different form hides.
             members = members[::-1]
         decided = forms.resolved()
+        issues = reported()
         items = []
         for identity in members[offset:offset + limit]:
             _family, _cluster, similarity, rank = data["units"][identity]
             decision = decided.get(identity) or {}
             items.append({"id": identity, "image": image(identity), "rank": rank, "similarity": similarity,
-                          "form": decision.get("form"), "basis": decision.get("basis")})
+                          "form": decision.get("form"), "basis": decision.get("basis"),
+                          "reported": issues.get(identity)})
         return {"id": cluster_id, "total": len(members), "offset": offset, "order": order,
                 "form": forms.cluster_decisions().get(cluster_id),
                 "items": items}
+
+    def reported() -> dict[str, str]:
+        if reviews is None:
+            return {}
+        return {identity: json.loads(row["decision"]).get("issue") for identity, row in reviews.latest().items()
+                if json.loads(row["decision"]).get("verdict") == "wrong"}
+
+    @api.post("/forms/reports")
+    def report(request: Report) -> dict[str, Any]:
+        """Flag glyphs as wrong in the corpus review queue, and take them out of their cluster's form."""
+        if reviews is None:
+            raise HTTPException(404, "The corpus review queue is not available on this server.")
+        from .corpus_reviews import CorpusEdit
+
+        data = forms.clusters()
+        unknown = [identity for identity in request.units if identity not in data["units"]]
+        if unknown or len(set(request.units)) != len(request.units):
+            raise HTTPException(422, "Report distinct glyphs of the current clustering.")
+        # Every glyph is resolved before any is flagged, so a glyph that cannot be reviewed stops
+        # the batch before it starts.
+        current = {}
+        for identity in request.units:
+            detail = reviews.detail(identity)
+            if not detail.get("image") or not detail.get("proxyable"):
+                raise HTTPException(422, f"{identity} has no image that can be reviewed here.")
+            current[identity] = detail
+        flagged = []
+        try:
+            for identity, detail in current.items():
+                reviews.record(CorpusEdit(id=uuid.uuid4(), identity=identity, client_id=request.client_id,
+                                          revision=detail["revision"], source_revision=detail["source_revision"],
+                                          verdict="wrong", issue=request.issue, character=request.character,
+                                          note="reported from the Forms view"))
+                flagged.append(identity)
+        finally:
+            # Whatever reached the review queue also leaves its cluster's form, even if a later glyph failed.
+            if flagged:
+                forms.record("glyph", units=flagged, form=None, note=f"reported: {request.issue}")
+        return {"count": len(flagged), "issue": request.issue}
 
     @api.post("/forms/decisions")
     def decide(decision: Decision) -> dict[str, Any]:
