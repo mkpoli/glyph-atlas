@@ -702,7 +702,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 "image": image_url,
                 # Where this crop sits among its character's crops by shape; a round is shown in
                 # this order so that a crop unlike its neighbours stands out.
-                "shape_order": quiz_shapes.load().get(unit.id)}
+                "shape_order": quiz_shapes.load(store.directory).get(unit.id)}
 
     def one(unit_id: str) -> tuple[Unit, int]:
         records = store.unit_snapshot(unit_id)
