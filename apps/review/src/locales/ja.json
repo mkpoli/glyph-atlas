@@ -409,5 +409,7 @@
   "quiz.reference.inspect": "参考{label}（{state}）を調べる",
   "quiz.reference.confirmed": "確認済み",
   "quiz.reference.seen": "閲覧済み",
-  "state.hard": "難読：2人のレビュアーがスキップ"
+  "state.hard": "難読：2人のレビュアーがスキップ",
+  "suggestions.type.label": "または入力（任意）",
+  "suggestions.type.placeholder": "文字…"
 }

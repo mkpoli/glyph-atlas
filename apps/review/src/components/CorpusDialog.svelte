@@ -80,7 +80,7 @@
       {/if}
       <div class="inspector-question"><strong>{t('character.question.whatsWrong')}</strong><span>{t('character.question.chooseOne')}</span></div>
       <IssuePicker value={issue} choose={chooseIssue} disabled={busy} suggested={data.state === 'flagged' ? data.issue : null} />
-      <ReadingSuggestions targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={{ candidates: data.suggestions }} {issue} reading={data.label} value={correction} disabled={busy} {choose} />
+      <ReadingSuggestions typing={false} targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={{ candidates: data.suggestions }} {issue} reading={data.label} value={correction} disabled={busy} {choose} />
       {#if ['reading', 'character'].includes(issue)}
         <details class="corpus-pick"><summary>{t('corpus.chooseAnother')}</summary><CharacterSearch bind:value={search} label={t('corpus.correctCharacter.label')} placeholder={t('corpus.correctCharacter.placeholder')} onselect={item => choose(item.char)} />{#if correction}<p class="corpus-choice" role="status">{data.label} → <b>{correction}</b><button disabled={busy} onclick={() => choose(null)}>{t('common.clear')}</button></p>{/if}</details>
       {/if}

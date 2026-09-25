@@ -401,6 +401,8 @@
   "suggestions.label": "Suggestions",
   "suggestions.none": "No clear suggestion.",
   "suggestions.noneOfThese": "None of these / not sure",
+  "suggestions.type.label": "Or type it (optional)",
+  "suggestions.type.placeholder": "Character…",
   "tile.machineAligned": "Machine-aligned, not yet checked",
   "tile.notYetConfirmed": "Not yet confirmed",
   "tile.origin.codh": "CODH dataset",
