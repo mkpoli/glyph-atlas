@@ -1,7 +1,11 @@
 <script>
   import { scriptParts } from '../lib/identity.js'
+  import { t } from '../lib/i18n.svelte.js'
   let { text = '', script = '' } = $props()
-  const parts = $derived(scriptParts(text, script))
+  // `scriptParts` returns a fixed English `label` for use outside a Svelte context (it is also
+  // called directly by a plain-Node check); the label shown here is looked up again from `key` so
+  // it follows the interface language.
+  const parts = $derived(scriptParts(text, script).map(part => ({ ...part, label: t(`script.${part.key}`) })))
   const description = $derived(parts.map(part => `${part.text} · ${part.label}`).join(', '))
 </script>
 

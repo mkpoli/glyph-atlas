@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte'
+  import { t, formatNumber as number } from '../lib/i18n.svelte.js'
   let { close } = $props()
   /** A click on the backdrop closes the dialog. The backdrop has no element of its own, so a click on
    * it lands on the dialog; its position outside the dialog's box is what tells it apart. */
@@ -10,8 +11,8 @@
   }
   let dialog, data = $state(null), error = $state(''), loading = $state(true)
   const controller = new AbortController()
-  const phases = { discovering: 'Finding works', collecting: 'Collecting', publishing: 'Updating search', complete: 'Collected' }
-  const number = value => Number(value ?? 0).toLocaleString()
+  const phases = { discovering: () => t('progress.phase.discovering'), collecting: () => t('progress.phase.collecting'),
+    publishing: () => t('progress.phase.publishing'), complete: () => t('progress.phase.complete') }
   const clock = value => value ? new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''
   const percent = source => source.total ? Math.min(100, Math.round(source.completed / source.total * 100)) : 0
 
@@ -21,10 +22,10 @@
         signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]),
         redirect: 'error', headers: { accept: 'application/json' },
       })
-      if (!response.ok) throw new Error(`Could not read progress (${response.status}).`)
+      if (!response.ok) throw new Error(t('progress.readError', { status: response.status }))
       data = await response.json(); error = ''
     } catch (e) {
-      if (e.name !== 'AbortError') error = e.name === 'TimeoutError' ? 'Progress check timed out. Showing the last update.' : e.message
+      if (e.name !== 'AbortError') error = e.name === 'TimeoutError' ? t('progress.timedOut') : e.message
     } finally { loading = false }
   }
 
@@ -37,72 +38,72 @@
 
 <dialog class="progress-dialog" bind:this={dialog} oncancel={close} onclick={outside} aria-labelledby="progress-title">
   <div class="progress-heading">
-    <h2 id="progress-title">Collection</h2>
-    <button class="icon-button" aria-label="Close collection progress" onclick={close}>×</button>
+    <h2 id="progress-title">{t('progress.title')}</h2>
+    <button class="icon-button" aria-label={t('progress.close')} onclick={close}>×</button>
   </div>
-  {#if error}<p class="progress-error" role="alert">{error} <button onclick={read}>Try again</button></p>{/if}
-  {#if loading && !data}<p class="progress-note" role="status">Loading progress…</p>{/if}
+  {#if error}<p class="progress-error" role="alert">{error} <button onclick={read}>{t('common.tryAgain')}</button></p>{/if}
+  {#if loading && !data}<p class="progress-note" role="status">{t('progress.loading')}</p>{/if}
   {#if data}
     {#if data.archive}
       <div class="archive-counts">
-        <p><strong>{number(data.archive.character_crops)}</strong><span>character crops</span></p>
-        <p><strong>{number(data.archive.works_with_crops)}</strong><span>works with crops</span></p>
+        <p><strong>{number(data.archive.character_crops)}</strong><span>{t('progress.archive.crops')}</span></p>
+        <p><strong>{number(data.archive.works_with_crops)}</strong><span>{t('progress.archive.works')}</span></p>
       </div>
-      <p class="progress-note">{number(data.archive.text_works)} works with searchable text</p>
+      <p class="progress-note">{t('progress.archive.textWorks', { count: data.archive.text_works })}</p>
     {/if}
     <div class="sources">
       {#if data.extraction}
-        <section class="source extraction" aria-label="New character extraction progress">
-          <div class="source-heading"><h3>New character crops</h3><span class="state">{data.extraction.state === 'running' ? 'Extracting' : data.extraction.state?.startsWith('paused') ? 'Paused' : 'Waiting'}</span></div>
+        <section class="source extraction" aria-label={t('progress.extraction.label')}>
+          <div class="source-heading"><h3>{t('progress.extraction.heading')}</h3><span class="state">{data.extraction.state === 'running' ? t('progress.state.extracting') : data.extraction.state?.startsWith('paused') ? t('progress.state.paused') : t('progress.state.waiting')}</span></div>
           <dl class="stages">
-            <div><dt>Machine crops published</dt><dd>{number(data.extraction.published_crops)}</dd></div>
-            <div><dt>Works with new crops</dt><dd>{number(data.extraction.books_with_crops)}</dd></div>
-            <div><dt>Pages extracted</dt><dd>{number(data.extraction.counts?.complete)}</dd></div>
-            <div><dt>Located pages queued</dt><dd>{number((data.extraction.counts?.pending ?? 0) + (data.extraction.counts?.running ?? 0) + (data.extraction.counts?.retry ?? 0))}</dd></div>
+            <div><dt>{t('progress.extraction.publishedCrops')}</dt><dd>{number(data.extraction.published_crops)}</dd></div>
+            <div><dt>{t('progress.extraction.booksWithCrops')}</dt><dd>{number(data.extraction.books_with_crops)}</dd></div>
+            <div><dt>{t('progress.extraction.pagesExtracted')}</dt><dd>{number(data.extraction.counts?.complete)}</dd></div>
+            <div><dt>{t('progress.extraction.pagesQueued')}</dt><dd>{number((data.extraction.counts?.pending ?? 0) + (data.extraction.counts?.running ?? 0) + (data.extraction.counts?.retry ?? 0))}</dd></div>
           </dl>
-          {#if data.extraction.counts?.failed}<p class="progress-note">{number(data.extraction.counts.failed)} pages need another pass</p>{/if}
-          <p class="progress-note">From transcriptions with image positions</p>
+          {#if data.extraction.counts?.failed}<p class="progress-note">{t('progress.extraction.needAnotherPass', { count: data.extraction.counts.failed })}</p>{/if}
+          <p class="progress-note">{t('progress.extraction.fromTranscriptions')}</p>
         </section>
       {/if}
       {#each data.sources ?? [data] as source}
-        <section class="source" aria-label={`${source.name ?? 'Honkoku'} collection progress`}>
+        <section class="source" aria-label={t('progress.source.label', { name: source.name ?? 'Honkoku' })}>
           <div class="source-heading">
             <h3>{source.name ?? 'Honkoku'}</h3>
             <span class:paused={source.status === 'paused'} class="state">
-              {#if source.status === 'running'}<i class="live-dot"></i>{phases[source.phase] ?? source.phase}
-              {:else if source.status === 'waiting'}Waiting
-              {:else if source.status === 'paused'}Paused
-              {:else if source.phase === 'complete'}Collected
-              {:else}Stopped{/if}
+              {#if source.status === 'running'}<i class="live-dot"></i>{phases[source.phase]?.() ?? source.phase}
+              {:else if source.status === 'waiting'}{t('progress.state.waiting')}
+              {:else if source.status === 'paused'}{t('progress.state.paused')}
+              {:else if source.phase === 'complete'}{t('progress.phase.complete')}
+              {:else}{t('progress.state.stopped')}{/if}
             </span>
           </div>
           {#if source.discovery_complete}
-            <div class="bar" role="img" aria-label={`${percent(source)}% of discovered works collected`}><span style={`width:${percent(source)}%`}></span></div>
-            <p class="book-count"><strong>{number(source.completed)}</strong> / {number(source.total)} works collected</p>
+            <div class="bar" role="img" aria-label={t('progress.bar.percentCollected', { percent: percent(source) })}><span style={`width:${percent(source)}%`}></span></div>
+            <p class="book-count"><strong>{number(source.completed)}</strong> {t('progress.worksCollected.suffix', { total: number(source.total) })}</p>
           {:else}
-            <div class="bar discovering" role="img" aria-label="Work discovery is still in progress"><span></span></div>
-            <p class="book-count"><strong>{number(source.total)}</strong> works found · discovery continuing</p>
-            {#if source.discovered_pages}<p class="progress-note">{number(source.discovered_pages)} pages found</p>{/if}
+            <div class="bar discovering" role="img" aria-label={t('progress.bar.discovering')}><span></span></div>
+            <p class="book-count"><strong>{number(source.total)}</strong> {t('progress.worksFound.suffix')}</p>
+            {#if source.discovered_pages}<p class="progress-note">{t('progress.pagesFound', { count: source.discovered_pages })}</p>{/if}
           {/if}
           <dl class="stages">
-            <div><dt>Searchable works published</dt><dd>{number(source.published_books)}</dd></div>
-            <div><dt>Text pages collected</dt><dd>{number(source.text_pages)}</dd></div>
-            <div><dt>Character crops</dt><dd>{number(source.character_crops)}</dd></div>
+            <div><dt>{t('progress.source.publishedBooks')}</dt><dd>{number(source.published_books)}</dd></div>
+            <div><dt>{t('progress.source.textPages')}</dt><dd>{number(source.text_pages)}</dd></div>
+            <div><dt>{t('progress.source.characterCrops')}</dt><dd>{number(source.character_crops)}</dd></div>
           </dl>
-          {#if source.import_geometry === 'page_text_only'}<p class="progress-note alignment">Text imports · image alignment still needed</p>{/if}
+          {#if source.import_geometry === 'page_text_only'}<p class="progress-note alignment">{t('progress.source.alignmentNeeded')}</p>{/if}
           {#if source.current}<p class="current" title={source.current.title}>{source.current.title ?? source.current.id}</p>{/if}
           {#if source.status === 'paused' && source.pause_reason}<p class="progress-note paused">{source.pause_reason}</p>
-          {:else if source.next_at}<p class="progress-note">Next work at {clock(source.next_at)}</p>{/if}
+          {:else if source.next_at}<p class="progress-note">{t('progress.source.nextWorkAt', { time: clock(source.next_at) })}</p>{/if}
           <div class="source-foot">
-            <span>{source.failed ? `${number(source.failed)} unavailable` : `${source.pause_seconds ?? 60}s between works`}</span>
-            <span>{source.updated_at ? `Updated ${clock(source.updated_at)}` : ''}</span>
+            <span>{source.failed ? t('progress.source.unavailable', { count: source.failed }) : t('progress.source.pauseSeconds', { seconds: source.pause_seconds ?? 60 })}</span>
+            <span>{source.updated_at ? t('progress.source.updatedAt', { time: clock(source.updated_at) }) : ''}</span>
           </div>
         </section>
       {/each}
     </div>
     {#if data.additions?.length}
       <ul class="additions">
-        {#each data.additions.slice(0, 3) as addition}<li><span>{addition.title}</span><small>{number(addition.pages)} scan references</small></li>{/each}
+        {#each data.additions.slice(0, 3) as addition}<li><span>{addition.title}</span><small>{t('progress.additions.scanReferences', { count: addition.pages })}</small></li>{/each}
       </ul>
     {/if}
   {/if}

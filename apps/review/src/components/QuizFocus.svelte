@@ -4,7 +4,8 @@
   // Keep the same crop and context visible while its issue and correction are chosen.
   import Glyph from './Glyph.svelte'
   import CropContext from './CropContext.svelte'
-  let { items = [], index = 0, label = '', backLabel = 'Change selection',
+  import { t } from '../lib/i18n.svelte.js'
+  let { items = [], index = 0, label = '', backLabel = t('quiz.focus.changeSelection'),
         disabled = false, onback, onjump, onprev, onnext, children } = $props()
   // The caller clamps too; this is the last line of defence, so a stage never shows a blank crop while
   // the queue is being rebuilt under it.
@@ -26,17 +27,17 @@
     </div>
   {/if}
   <div class="focus-body">{@render children?.()}</div>
-  <nav class="focus-nav" aria-label="Selected crops">
-    <button type="button" class="focus-step" aria-label="Previous crop" disabled={disabled || position <= 0} onclick={onprev}>←</button>
+  <nav class="focus-nav" aria-label={t('quiz.focus.selectedCrops')}>
+    <button type="button" class="focus-step" aria-label={t('quiz.focus.previousCrop')} disabled={disabled || position <= 0} onclick={onprev}>←</button>
     <div class="focus-strip">
       {#each items as entry, i (entry.id)}
         <button type="button" class="focus-thumb" class:current={i === position} data-index={i}
-                aria-label={`Crop ${i + 1}`} aria-current={i === position} {disabled} onclick={() => onjump(i)}>
+                aria-label={t('quiz.focus.cropNumber', { number: i + 1 })} aria-current={i === position} {disabled} onclick={() => onjump(i)}>
           <Glyph item={entry} />
         </button>
       {/each}
     </div>
-    <button type="button" class="focus-step" aria-label="Next crop" disabled={disabled || position >= items.length - 1} onclick={onnext}>→</button>
+    <button type="button" class="focus-step" aria-label={t('quiz.focus.nextCrop')} disabled={disabled || position >= items.length - 1} onclick={onnext}>→</button>
   </nav>
 </section>
 

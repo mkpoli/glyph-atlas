@@ -1,18 +1,23 @@
+import { t } from './i18n.svelte.js'
+
+// Ids and examples are data; the title and hint shown for each are looked up at render time so a
+// language switch is reflected without rebuilding this list.
 export const issues = [
-  { id: 'reading', title: 'Wrong character', example: 'ア → カ', hint: 'One character, a different reading', key: '1' },
-  { id: 'merged', title: 'Joined characters', example: 'アカ', hint: 'Two or more in one crop', key: '2' },
-  { id: 'crop', title: 'Bad crop', example: 'ア', hint: 'Missing strokes, extra ink, or misplaced edges', key: '3' },
-  { id: 'blank', title: 'Not a character', example: '', hint: 'Blank paper, a mark or noise', key: '4' },
+  { id: 'reading', example: 'ア → カ', key: '1' },
+  { id: 'merged', example: 'アカ', key: '2' },
+  { id: 'crop', example: 'ア', key: '3' },
+  { id: 'blank', example: '', key: '4' },
 ]
-export const issueTitle = id => issues.find(i => i.id === id)?.title || 'Selected'
+export const issueTitle = id => issues.some(i => i.id === id) ? t(`issue.${id}.title`) : t('issue.selected')
+export const issueHint = id => t(`issue.${id}.hint`)
 export const decision = issue => ({ verdict: 'wrong', issue, correction: null })
 export const isSingle = text => [...new Intl.Segmenter('ja', { granularity: 'grapheme' }).segment(text)].length === 1
 
 /** What the controls call the action that is not a decision. */
-export const SKIP_LABEL = 'Skip'
+export const skipLabel = () => t('common.skip')
 
 /** The hint shown on every Skip control: it is also the honest answer for a crop nobody can judge. */
-export const SKIP_HINT = 'Can’t tell, or leave it for later'
+export const skipHint = () => t('common.skip.hint')
 
 /** Whether the reader asked for no motion; scrolling and focus jumps follow their choice. */
 export const prefersReducedMotion = () =>

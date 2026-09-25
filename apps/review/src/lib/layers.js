@@ -1,3 +1,5 @@
+import { t } from './i18n.svelte.js'
+
 /** The character layer's API: candidate search, exact characters, graphemes and ligatures. */
 async function get(path, params = {}, options = {}) {
   const query = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== '' && v != null))
@@ -7,7 +9,7 @@ async function get(path, params = {}, options = {}) {
   })
   const value = await response.json().catch(() => ({}))
   if (!response.ok) {
-    const error = new Error(typeof value.detail === 'string' ? value.detail : 'The character layer could not be read.')
+    const error = new Error(typeof value.detail === 'string' ? value.detail : t('layers.readError'))
     error.status = response.status
     throw error
   }
@@ -28,16 +30,17 @@ export const layerSummary = () => get('/layers/summary')
 /** `2 crops · 212 line matches` — the two evidence kinds, never added into one number. */
 export function countsLabel(counts) {
   if (!counts) return ''
-  if (counts.requires_family_scope) return counts.family_glyphs != null ? `${counts.family_glyphs} family samples` : 'Family samples'
+  if (counts.requires_family_scope) return counts.family_glyphs != null
+    ? t('layers.familySamples.count', { count: counts.family_glyphs }) : t('layers.familySamples')
   const parts = []
-  if (counts.glyphs != null) parts.push(`${counts.glyphs} ${counts.glyphs === 1 ? 'crop' : 'crops'}`)
-  if (counts.lines) parts.push(`${counts.lines} line ${counts.lines === 1 ? 'match' : 'matches'}`)
-  if (counts.pages) parts.push(`${counts.pages} page ${counts.pages === 1 ? 'match' : 'matches'}`)
-  if (!parts.length && counts.imported) parts.push(`${counts.imported} in this collection`)
+  if (counts.glyphs != null) parts.push(t('layers.crops.count', { count: counts.glyphs }))
+  if (counts.lines) parts.push(t('layers.lineMatches.count', { count: counts.lines }))
+  if (counts.pages) parts.push(t('layers.pageMatches.count', { count: counts.pages }))
+  if (!parts.length && counts.imported) parts.push(t('layers.inCollection.count', { count: counts.imported }))
   return parts.join(' · ')
 }
 
 /** What a row's own collection holds, when the corpus knows nothing about the character. */
 export function ownLabel(row) {
-  return row?.occurrence_count ? `${row.occurrence_count} in this collection` : 'no occurrence yet'
+  return row?.occurrence_count ? t('layers.inCollection.count', { count: row.occurrence_count }) : t('layers.noOccurrenceYet')
 }

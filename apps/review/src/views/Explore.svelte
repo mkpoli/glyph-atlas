@@ -9,6 +9,7 @@
   import CharacterChips from '../components/CharacterChips.svelte'
   import { catalogue, character, request, randomSeed, number } from '../lib/client.js'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery } from '../lib/layers.js'
+  import { t } from '../lib/i18n.svelte.js'
   let { queue = '', inspect, ink = 'original', onink = () => {}, onprogress = () => {} } = $props()
   let data = $state(null), items = $state([]), error = $state(''), loading = $state(true)
   let reading = $state(''), search = $state(''), offset = $state(0), seed = $state(randomSeed())
@@ -38,18 +39,23 @@
   function repairOf(item) {
     const repair = item.repair
     if (repair) {
-      if (item.withheld || repair.withheld) return { kind: 'withheld', label: 'withheld', reason: repair.reason ?? 'held back from review rounds' }
-      if (repair.verified) return { kind: 'verified', label: 'checked', reason: repair.reason ?? 'a person has checked this record' }
+      if (item.withheld || repair.withheld) return { kind: 'withheld', label: 'withheld', reason: repair.reason ?? t('repair.reason.heldBack') }
+      if (repair.verified) return { kind: 'verified', label: 'checked', reason: repair.reason ?? t('repair.reason.personChecked') }
       if (repair.machine || repair.reliable === false) {
-        return { kind: 'machine', label: 'machine', reason: repair.reason ?? 'a machine proposed this record' }
+        return { kind: 'machine', label: 'machine', reason: repair.reason ?? t('repair.reason.machineProposed') }
       }
       return null
     }
     // The corpus states its own case: a lead nobody has confirmed is not a verified example.
-    if (item.origin === 'corpus' || item.requires_review) return { kind: 'machine', label: 'unconfirmed', reason: item.licence_note ?? 'the corpus has not confirmed this lead' }
-    if (item.machine) return { kind: 'machine', label: 'machine', reason: 'a machine proposed this record' }
+    if (item.origin === 'corpus' || item.requires_review) return { kind: 'machine', label: 'unconfirmed', reason: item.licence_note ?? t('repair.reason.corpusUnconfirmed') }
+    if (item.machine) return { kind: 'machine', label: 'machine', reason: t('repair.reason.machineProposed') }
     return null
   }
+  /** The label a tile shows. `identity.js` names an unassigned crop and a group without a label in
+   * English, because it also runs outside the interface; the interface says it in the reader's language. */
+  const shownLabel = item => isUnassigned(item) ? t('corpus.unassigned') : item.label
+  const groupLabel = group => group.id === 'unassigned' ? t('corpus.unassigned')
+    : group.label === 'Similar forms' ? t('explore.similarForms') : group.label
   /** One state per tile, for its dot: checked, flagged, withheld or plain. */
   function tileState(item) {
     if (item.state === 'checked' || item.state === 'flagged') return item.state
@@ -59,11 +65,11 @@
   /** The tile's hover text: what the record is, how far it has been checked, and where it comes from. */
   function tileTitle(item) {
     const repair = repairOf(item)
-    const state = item.state === 'checked' ? 'Checked' : item.state === 'flagged' ? 'Flagged'
-      : repair?.kind === 'withheld' ? `Withheld: ${repair.reason}` : repair?.kind === 'verified' ? 'Checked'
-      : repair?.label === 'unconfirmed' ? 'Not yet confirmed' : repair ? 'Machine-aligned, not yet checked' : null
-    const origin = item.origin === 'corpus' ? ((item.source?.corpus ?? item.corpus) === 'codh-full' ? 'CODH dataset' : 'Corpus index') : null
-    return [item.label, productionLabel(item), state, origin, item.source?.title ?? item.title, item.source?.holder ?? item.holder]
+    const state = item.state === 'checked' ? t('state.checked') : item.state === 'flagged' ? t('state.flagged')
+      : repair?.kind === 'withheld' ? t('tile.withheldReason', { reason: repair.reason }) : repair?.kind === 'verified' ? t('state.checked')
+      : repair?.label === 'unconfirmed' ? t('tile.notYetConfirmed') : repair ? t('tile.machineAligned') : null
+    const origin = item.origin === 'corpus' ? ((item.source?.corpus ?? item.corpus) === 'codh-full' ? t('tile.origin.codh') : t('tile.origin.corpus')) : null
+    return [shownLabel(item), productionLabel(item), state, origin, item.source?.title ?? item.title, item.source?.holder ?? item.holder]
       .filter(Boolean).join(' · ')
   }
   // The units the inspector may step through: the character's own records when a gallery is open, the
@@ -284,58 +290,58 @@
 
 <section class="explore">
   <div class="explore-status">
-    <h1 class="visually-hidden">{queue === 'flagged' ? 'Flagged characters' : queue === 'hard' ? 'Hard to read' : 'Character atlas'}</h1>
+    <h1 class="visually-hidden">{queue === 'flagged' ? t('explore.heading.flagged') : queue === 'hard' ? t('explore.heading.hard') : t('explore.heading.atlas')}</h1>
     {#if !queue}
       <button class="collection-progress-link" onclick={onprogress}>
-        <span class="live-dot"></span> Collection progress
+        <span class="live-dot"></span> {t('explore.collectionProgress')}
         {#each collection?.sources ?? [] as source}<span>{source.name} <b>{number(source.completed)}</b>{#if source.total} / {number(source.total)}{/if}</span>{/each}
         <span>↗</span>
       </button>
     {/if}
-    <div class="collection-meta"><span class="live-dot"></span>{#if picked}<span>{number(display.length)} {display.length === 1 ? 'glyph' : 'glyphs'}</span><span class="meta-divider">/</span><span>{expand === "grapheme" ? `${number(picked.grapheme?.character_count ?? 1)} characters` : "1 character"}</span>{:else if !queue && collection?.archive}<span>{number(collection.archive.character_crops)} indexed crops</span><span class="meta-divider">/</span><span>{number(collection.archive.works_with_crops)} works with crops</span>{:else}<span>{number(queue ? (data?.total ?? 0) + sample.length : data?.available)} glyphs</span><span class="meta-divider">/</span><span>{number(data?.categories.length)} readings</span>{/if}</div>
+    <div class="collection-meta"><span class="live-dot"></span>{#if picked}<span>{t('explore.meta.glyphs', { count: display.length })}</span><span class="meta-divider">/</span><span>{expand === "grapheme" ? t('explore.meta.characters', { count: picked.grapheme?.character_count ?? 1 }) : t('explore.meta.characters', { count: 1 })}</span>{:else if !queue && collection?.archive}<span>{t('explore.meta.indexedCrops', { count: collection.archive.character_crops })}</span><span class="meta-divider">/</span><span>{t('explore.meta.worksWithCrops', { count: collection.archive.works_with_crops })}</span>{:else}<span>{t('explore.meta.glyphsTotal', { count: queue ? (data?.total ?? 0) + sample.length : data?.available })}</span><span class="meta-divider">/</span><span>{t('explore.meta.readings', { count: data?.categories.length })}</span>{/if}</div>
   </div>
   <div class="collection-toolbar">
     <CharacterSearch bind:value={query} oninput={seek} onselect={pick}
                      onsubmit={() => { clearTimeout(searchTimer); offset = 0; submitQuery() }} />
-    <div class="filter-tabs" aria-label="Character type">{#each [['all', 'All'], ['kana', 'Kana'], ['kanji', 'Kanji']] as [value, text]}<button class:active={filter === value} onclick={() => { filter = value; offset = 0; load() }}>{text}</button>{/each}</div>
-    <div class="category-control"><button class="category-toggle" aria-expanded={categoryOpen} onclick={() => categoryOpen = !categoryOpen}>{reading || 'Any reading'} <span>⌄</span></button>
-      {#if categoryOpen}<div class="category-menu"><input aria-label="Find a reading" bind:value={search} placeholder="Find a reading…" /><button class="all-readings" onclick={() => select('')}>All readings</button><div class="category-options">{#each categories as c}<button class:chosen={reading === c.label} onclick={() => select(c.label)}><span>{c.label}</span><small>{number(queue ? c[queue] : c.total)}</small></button>{/each}</div></div>{/if}
+    <div class="filter-tabs" aria-label={t('explore.filter.label')}>{#each [['all', () => t('explore.filter.all')], ['kana', () => t('explore.filter.kana')], ['kanji', () => t('explore.filter.kanji')]] as [value, text]}<button class:active={filter === value} onclick={() => { filter = value; offset = 0; load() }}>{text()}</button>{/each}</div>
+    <div class="category-control"><button class="category-toggle" aria-expanded={categoryOpen} onclick={() => categoryOpen = !categoryOpen}>{reading || t('explore.anyReading')} <span>⌄</span></button>
+      {#if categoryOpen}<div class="category-menu"><input aria-label={t('explore.findReading.aria')} bind:value={search} placeholder={t('explore.findReading.placeholder')} /><button class="all-readings" onclick={() => select('')}>{t('explore.allReadings')}</button><div class="category-options">{#each categories as c}<button class:chosen={reading === c.label} onclick={() => select(c.label)}><span>{c.label}</span><small>{number(queue ? c[queue] : c.total)}</small></button>{/each}</div></div>{/if}
     </div>
     <span class="toolbar-space"></span>
     <ImageStyleToggle {ink} onchange={onink} />
-    {#if reading && !queue}<a class="quiet-link" href={`#/review?reading=${encodeURIComponent(reading)}`}>Review {reading} ↗</a>{/if}
-    <button class="shuffle" onclick={shuffle} disabled={loading} aria-label="Shuffle characters"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h3c4 0 8 12 12 12h3M17 14l4 4-4 4M3 18h3c1.7 0 3.5-2.3 5-5M14 8c1.5-1.4 2.6-2 4-2h3M17 2l4 4-4 4"/></svg>Shuffle</button>
+    {#if reading && !queue}<a class="quiet-link" href={`#/review?reading=${encodeURIComponent(reading)}`}>{t('explore.reviewReading', { reading })}</a>{/if}
+    <button class="shuffle" onclick={shuffle} disabled={loading} aria-label={t('explore.shuffle.aria')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h3c4 0 8 12 12 12h3M17 14l4 4-4 4M3 18h3c1.7 0 3.5-2.3 5-5M14 8c1.5-1.4 2.6-2 4-2h3M17 2l4 4-4 4"/></svg>{t('explore.shuffle')}</button>
   </div>
-  {#if error}<div class="error-message" role="alert">{error}<button onclick={() => load()}>Retry</button></div>{/if}
+  {#if error}<div class="error-message" role="alert">{error}<button onclick={() => load()}>{t('common.retry')}</button></div>{/if}
   {#if picked}
     <CharacterChips card={picked} bind:expand onselect={item => pick({ code_point: item }, true)} />
     {#if expand === 'grapheme'}<VisualGroups {analysis} count={familyTotal} unassigned={unassignedCount} value={visual} onchange={value => { visual = value; load() }} />{/if}
     <p class="find-count" role="status">
-      {number(display.length)} {display.length === 1 ? 'glyph' : 'glyphs'}
-      {#if editable.length}<span class="separator">·</span> {number(editable.length)} here{/if}
-      {#if corpusOnly.length}<span class="separator">·</span> {number(corpusOnly.length)} from the corpus{/if}
-      {#if corpusFault}<span class="separator">·</span> <span class="corpus-fault" role="status">More samples unavailable</span> <button class="quiet-link" onclick={() => load()}>Retry</button>{/if}
+      {t('explore.meta.glyphs', { count: display.length })}
+      {#if editable.length}<span class="separator">·</span> {t('explore.count.here', { count: editable.length })}{/if}
+      {#if corpusOnly.length}<span class="separator">·</span> {t('explore.count.fromCorpus', { count: corpusOnly.length })}{/if}
+      {#if corpusFault}<span class="separator">·</span> <span class="corpus-fault" role="status">{t('explore.samplesUnavailable')}</span> <button class="quiet-link" onclick={() => load()}>{t('common.retry')}</button>{/if}
       {#if loading}<span class="find-pending"> …</span>{/if}
     </p>
   {:else if !query && sample.length}
-    <p class="find-count" role="status">{number(items.length)} here<span class="separator">·</span> {number(sample.length)} from the corpus{#if sampleFault}<span class="corpus-fault"> · corpus {sampleFault === 'error' ? 'error' : 'not loaded'}</span>{/if}</p>
+    <p class="find-count" role="status">{t('explore.count.here', { count: items.length })}<span class="separator">·</span> {t('explore.count.fromCorpus', { count: sample.length })}{#if sampleFault}<span class="corpus-fault"> · {sampleFault === 'error' ? t('explore.corpus.error') : t('explore.corpus.notLoaded')}</span>{/if}</p>
   {:else if query && settled}
-    <p class="find-count" role="status">{number(settled.total)} {settled.total === 1 ? 'occurrence' : 'occurrences'} of <b>{readable}</b>{#if loading}<span class="find-pending"> …</span>{/if}</p>
+    <p class="find-count" role="status">{t('explore.occurrencesOf', { count: settled.total })} <b>{readable}</b>{#if loading}<span class="find-pending"> …</span>{/if}</p>
   {/if}
-  <div class="glyph-grid" aria-label={queue === 'flagged' ? 'Flagged characters' : queue === 'hard' ? 'Hard to read' : 'Character collection'} aria-busy={loading}>
+  <div class="glyph-grid" aria-label={queue === 'flagged' ? t('explore.heading.flagged') : queue === 'hard' ? t('explore.heading.hard') : t('explore.grid.collection')} aria-busy={loading}>
     {#if loading && !display.length}{#each Array(32) as _}<div class="glyph-skeleton"></div>{/each}
-    {:else}{#each display as item, i (item.id)}{#if picked && expand === 'grapheme' && (i === 0 || visualGroup(display[i - 1]).id !== visualGroup(item).id)}<div class="visual-grid-heading">{visualGroup(item).label}</div>{/if}{#if item.origin === 'corpus'}<button class="glyph-tile corpus" data-corpus={item.id} onclick={() => inspect(item.id, null, display, updateItem, 'corpus')} title={tileTitle(item)} aria-label={`Inspect corpus ${item.label}`}><span class="tile-reading">{item.label}</span>{#if item.proxyable && item.image}<img class="glyph-image" src={item.image} alt={`Located ${item.label}`} loading={i < 24 ? "eager" : "lazy"} fetchpriority={i < 24 ? "high" : "auto"} decoding="async" />{:else}<span class="corpus-open"><b>{item.label}</b><small>Image unavailable</small></span>{/if}<span class="tile-footer"><span class="status-dot" class:checked={tileState(item) === 'checked'} class:flagged={tileState(item) === 'flagged'} class:withheld={tileState(item) === 'withheld'}></span>{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{String(i + 1).padStart(2, '0')}</span><span class="tile-arrow">↗</span></span></button>{:else}<button class="glyph-tile" data-unit={item.id} title={tileTitle(item)} onclick={() => inspect(item.id, null, display, updateItem)} aria-label={`Inspect ${item.label}`}><span class="tile-reading">{item.label}</span><Glyph {item} eager={i < 24} /><span class="tile-footer"><span class="status-dot" class:checked={tileState(item) === 'checked'} class:flagged={tileState(item) === 'flagged'} class:withheld={tileState(item) === 'withheld'}></span>{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{String(i + 1).padStart(2, '0')}</span><span class="tile-arrow">↗</span></span></button>{/if}{/each}{/if}
+    {:else}{#each display as item, i (item.id)}{#if picked && expand === 'grapheme' && (i === 0 || visualGroup(display[i - 1]).id !== visualGroup(item).id)}<div class="visual-grid-heading">{groupLabel(visualGroup(item))}</div>{/if}{#if item.origin === 'corpus'}<button class="glyph-tile corpus" data-corpus={item.id} onclick={() => inspect(item.id, null, display, updateItem, 'corpus')} title={tileTitle(item)} aria-label={t('explore.tile.inspectCorpus', { label: item.label })}><span class="tile-reading">{shownLabel(item)}</span>{#if item.proxyable && item.image}<img class="glyph-image" src={item.image} alt={t('explore.tile.located', { label: item.label })} loading={i < 24 ? "eager" : "lazy"} fetchpriority={i < 24 ? "high" : "auto"} decoding="async" />{:else}<span class="corpus-open"><b>{shownLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}<span class="tile-footer"><span class="status-dot" class:checked={tileState(item) === 'checked'} class:flagged={tileState(item) === 'flagged'} class:withheld={tileState(item) === 'withheld'}></span>{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{String(i + 1).padStart(2, '0')}</span><span class="tile-arrow">↗</span></span></button>{:else}<button class="glyph-tile" data-unit={item.id} title={tileTitle(item)} onclick={() => inspect(item.id, null, display, updateItem)} aria-label={t('explore.tile.inspect', { label: item.label })}><span class="tile-reading">{shownLabel(item)}</span><Glyph {item} eager={i < 24} /><span class="tile-footer"><span class="status-dot" class:checked={tileState(item) === 'checked'} class:flagged={tileState(item) === 'flagged'} class:withheld={tileState(item) === 'withheld'}></span>{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{String(i + 1).padStart(2, '0')}</span><span class="tile-arrow">↗</span></span></button>{/if}{/each}{/if}
   </div>
-  {#if !choosing && !loading && !display.length}<div class="empty"><span class="empty-mark">{picked || (settled && settled.total === 0) ? '∅' : queue ? '✓' : '∅'}</span><h2>{picked && corpusFault ? `Samples of ${picked.char} could not load.` : picked ? `No occurrence of ${picked.char} here.` : settled && settled.total === 0 ? `No occurrence of ${readable}.` : queue === 'flagged' ? 'Nothing flagged.' : queue === 'hard' ? 'Nothing hard to read.' : 'No characters here.'}</h2>{#if query}<button class="primary" onclick={clearQuery}>Clear search</button>{:else}<a href="#/review" class="primary">Start a round →</a>{/if}</div>{/if}
+  {#if !choosing && !loading && !display.length}<div class="empty"><span class="empty-mark">{picked || (settled && settled.total === 0) ? '∅' : queue ? '✓' : '∅'}</span><h2>{picked && corpusFault ? t('explore.empty.samplesFailed', { char: picked.char }) : picked ? t('explore.empty.noOccurrenceOf', { char: picked.char }) : settled && settled.total === 0 ? t('explore.empty.noOccurrenceOfTerm', { term: readable }) : queue === 'flagged' ? t('explore.empty.nothingFlagged') : queue === 'hard' ? t('explore.empty.nothingHard') : t('explore.empty.noCharacters')}</h2>{#if query}<button class="primary" onclick={clearQuery}>{t('explore.clearSearch')}</button>{:else}<a href="#/review" class="primary">{t('explore.startRound')}</a>{/if}</div>{/if}
   {#if picked && (!visual && local.length < (data?.total ?? 0) || corpusOffset < corpusTotal) && !loading}
     <div class="load-more">
-      {#if corpusOffset < corpusTotal}<button onclick={moreCorpus}>More from the corpus ↓</button>{/if}
-      {#if !visual && local.length < (data?.total ?? 0)}<button onclick={() => load(true)}>More here ↓</button>{/if}
+      {#if corpusOffset < corpusTotal}<button onclick={moreCorpus}>{t('explore.moreFromCorpus')}</button>{/if}
+      {#if !visual && local.length < (data?.total ?? 0)}<button onclick={() => load(true)}>{t('explore.moreHere')}</button>{/if}
     </div>
   {:else if !choosing && !picked && data && items.length < data.total && !loading}
-    <div class="load-more"><button onclick={() => { offset = items.length; load(true) }}>More characters ↓</button></div>
+    <div class="load-more"><button onclick={() => { offset = items.length; load(true) }}>{t('explore.moreCharacters')}</button></div>
   {/if}
-  <div class="collection-bottom"><span>GLYPH ATLAS</span><span>{number(data?.counts.checked)} checked <span class="separator">·</span> {number(data?.counts.flagged)} flagged</span></div>
+  <div class="collection-bottom"><span>GLYPH ATLAS</span><span>{t('explore.bottom.checked', { count: data?.counts.checked })} <span class="separator">·</span> {t('explore.bottom.flagged', { count: data?.counts.flagged })}</span></div>
 </section>
 
 <style>
