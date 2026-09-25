@@ -409,5 +409,7 @@
   "quiz.reference.inspect": "參考{label}（{state}）ヲ檢ス",
   "quiz.reference.confirmed": "確認濟",
   "quiz.reference.seen": "一覽濟",
-  "state.hard": "難讀：二人ノ校閱者保留セリ"
+  "state.hard": "難讀：二人ノ校閱者保留セリ",
+  "suggestions.type.label": "或ハ書入ル（任意）",
+  "suggestions.type.placeholder": "字…"
 }
