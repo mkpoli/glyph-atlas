@@ -24,7 +24,9 @@ own occurrence by id instead. Then:
   label comes from the transcription. One the atlas does not stand behind (withheld by the alignment
   repair, rejected by the aligner, or flagged) is confirmed by an OCR reading of the same character
   and gives way to one of another: its label is an unverified pairing, and the OCR reads the ink;
-* where ainu-records has no reading, or one a person marked uncertain, the atlas unit stays;
+* where ainu-records has no reading, or one a person marked uncertain, a unit the atlas stands behind
+  stays, and one it does not stand behind gives way to ainu-records' occurrence;
+* a confirmation lifts the aligner's refusal of a placement, since two readings of the ink agree;
 * a machine unit on ink ainu-records rejected as not a character, or measured empty, is withheld,
   a unit an earlier merge imported included;
 * an occurrence only ainu-records has is imported, with the source of its label;
@@ -294,10 +296,17 @@ def plan(atlas: Path, records: Path, *, min_iou: float = MIN_IOU, log: ReviewLog
                     # A unit a person flagged is theirs to settle; an event from the merge would bar the
                     # site's later review of it.
                     (result.keep_atlas if uid in log.decided else result.withhold).append((uid, row))
-                elif not row.label or row.doubted or (row.origin not in TRUSTED_ORIGINS and trusted(unit)):
+                elif trusted(unit) and (not row.label or row.doubted or row.origin not in TRUSTED_ORIGINS):
                     result.keep_withheld.append((uid, row))
+                elif not row.label or row.doubted:
+                    # A flag stays for its person. Otherwise the atlas does not stand behind its label
+                    # either, so ainu-records' occurrence stays.
+                    (result.keep_withheld if unit.review == ReviewState.DISPUTED else result.replace).append((uid, row))
+                elif same and unit.review == ReviewState.DISPUTED:
+                    # A flag stays for its person.
+                    result.keep_atlas.append((uid, row))
                 elif same:
-                    (result.keep_atlas if unit.review == ReviewState.DISPUTED else result.confirm).append((uid, row))
+                    result.confirm.append((uid, row))
                 else:
                     result.replace.append((uid, row))
             for row in (r for r in result.replace if r[1].key == key and r[1].sample["page"] == n):
@@ -404,6 +413,9 @@ def build(result: Plan, atlas: Path, records: Path, out: Path, *, log: ReviewLog
                   "withheld": False, "quiz": True,
                   "reason": f"ainu-records reads this ink as the same character from {source}"}
         note(uid, row, alignment_repair=repair)
+        if units[uid].review == ReviewState.REJECTED:
+            # The aligner refused this placement; two readings of the ink naming the same character settle it.
+            units[uid] = units[uid].model_copy(update={"review": ReviewState.MACHINE})
         counts["atlas confirmed"] += 1
     for uid, row in result.withhold:
         repair = {**(units[uid].meta.get("alignment_repair") or {}), "status": "withheld", "reliable": False,
@@ -431,10 +443,15 @@ def build(result: Plan, atlas: Path, records: Path, out: Path, *, log: ReviewLog
     rows = [decode_event(row) for row in log.events]
     seq = log.last_seq
     for uid in sorted(log.logged):
-        if uid in units and units[uid].meta != log.units[uid].meta:
+        if uid not in units:
+            continue
+        for name in ("meta", "review"):
+            before, after = getattr(log.units[uid], name), getattr(units[uid], name)
+            if before == after:
+                continue
             seq += 1
-            rows.append({"id": f"rv{seq:08d}", "target_type": "unit", "target_id": uid, "field": "meta",
-                         "old": log.units[uid].meta, "new": units[uid].meta, "role": "model", "actor": "ainu-records-merge",
+            rows.append({"id": f"rv{seq:08d}", "target_type": "unit", "target_id": uid, "field": name,
+                         "old": before, "new": after, "role": "model", "actor": "ainu-records-merge",
                          "evidence": json.dumps({"source": UPSTREAM}), "at": at})
             counts["merge events"] += 1
     with (out / REVIEWS_NAME).open("w", encoding="utf-8") as handle:

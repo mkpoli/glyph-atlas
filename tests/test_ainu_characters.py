@@ -382,3 +382,47 @@ def test_a_second_occurrence_on_ink_the_atlas_keeps_is_not_imported(world):
     (folder / "samples.json").write_text(json.dumps(samples), encoding="utf-8")
     result = ainu_characters.plan(atlas, records)
     assert "1-ocr0-8" not in [o.id for o in result.import_new]
+
+
+def test_a_confirmation_lifts_the_aligners_refusal(world, tmp_path):
+    atlas, records = world
+    units = tables.read(atlas / "units.parquet", Unit)
+    units[1] = units[1].model_copy(update={"review": ReviewState.REJECTED})  # ainu-records reads ト too
+    tables.write(atlas / "units.parquet", units, Unit)
+    result = ainu_characters.plan(atlas, records)
+    assert uid(1) in [u for u, _ in result.confirm]
+    ainu_characters.build(result, atlas, records, tmp_path / "merged")
+    confirmed = units_of(tmp_path / "merged")[uid(1)]
+    assert confirmed.review == ReviewState.MACHINE and ainu_characters.trusted(confirmed), "rec.aynu.org lists it"
+
+
+def test_an_unverified_unit_gives_way_to_a_doubted_occurrence(world):
+    atlas, records = world
+    units = tables.read(atlas / "units.parquet", Unit)
+    units[2] = units[2].model_copy(update={"meta": {"alignment_repair": {"withheld": True}}})
+    tables.write(atlas / "units.parquet", units, Unit)
+    folder = records / "data/characters/moshiogusa--ninjal-1"
+    reviews = json.loads((folder / "reviews.json").read_text(encoding="utf-8"))
+    reviews["edits"].append({"id": "1-l1-2", "label": "ユ", "reading": "uncertain", "boundary": "confirmed"})
+    (folder / "reviews.json").write_text(json.dumps(reviews), encoding="utf-8")
+    assert uid(2) in [u for u, _ in ainu_characters.plan(atlas, records).replace], "neither is hidden in the other's favour"
+
+
+def test_a_flag_stays_when_ainu_records_doubts_its_own_reading(world):
+    atlas, records = world
+    folder = records / "data/characters/moshiogusa--ninjal-1"
+    reviews = json.loads((folder / "reviews.json").read_text(encoding="utf-8"))
+    reviews["edits"] = [e for e in reviews["edits"] if e["id"] != "1-ocr0-7"]
+    reviews["edits"].append({"id": "1-ocr0-7", "label": "ル", "reading": "uncertain", "boundary": "confirmed"})
+    (folder / "reviews.json").write_text(json.dumps(reviews), encoding="utf-8")
+    result = ainu_characters.plan(atlas, records)
+    assert uid(5) in [u for u, _ in result.keep_withheld] and uid(5) not in [u for u, _ in result.replace]
+
+
+def test_a_confirmation_lifts_the_refusal_of_a_unit_the_log_names(world, tmp_path):
+    atlas, records = world
+    record(atlas, uid(1), "review", "rejected", role="model")  # a pipeline refused the placement in the log
+    out = tmp_path / "merged"
+    ainu_characters.build(ainu_characters.plan(atlas, records), atlas, records, out)
+    lifted = units_of(out)[uid(1)]
+    assert lifted.review == ReviewState.MACHINE and ainu_characters.trusted(lifted), "replay keeps the lift"
