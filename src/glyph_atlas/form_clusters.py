@@ -1,9 +1,14 @@
-"""Cluster CODH glyphs by shape within each character family, for form assignment.
+"""Cluster glyphs by shape within each character family, for form assignment.
 
-CODH transcribes every form of a family under one code point: a hentaigana は and the 波-derived
-は are both U+306F, and 假 is transcribed 仮. Within each family that has more than one member,
-the glyphs are embedded with the character classifier's penultimate features and grouped by
-spherical k-means. A cluster is a proposal of shape, never an identity; a person names its form.
+Some corpora transcribe every form of a family under one code point: a hentaigana は and the
+波-derived は are both U+306F, and CODH transcribes 假 as 仮. The glyphs of those corpora (`CORPORA`)
+are pooled per family, so one set of clusters covers a family across all of them. Within each
+family that has more than one member, the glyphs are embedded with the character classifier's
+penultimate features and grouped by spherical k-means. A cluster is a proposal of shape, never an
+identity; a person names its form.
+
+A glyph is clustered when its pixels are on disk: a held page scan and its box, or a pre-cut crop.
+The others wait for their pages to be harvested; the manifest counts them.
 
 One run writes `<out>/<revision>/`:
 
@@ -45,6 +50,12 @@ MAX_CLUSTERS = 48
 #: Most central glyphs listed per cluster.
 REPRESENTATIVES = 24
 METHOD = "classifier-penultimate/spherical-kmeans-v1"
+#: Corpora whose labels never record which form a glyph takes: none of their 1.59M labels uses a
+#: hentaigana code point (checked 2026-09-25), and a kana glyph carries only its modern kana. The CODH
+#: and HI Lab source records say so; Honkoku-Lines and the Ainu records align transcriptions from
+#: みんなで翻刻, whose labels show the same. 古活字 records each kana's 字母 (4,417 hentaigana labels)
+#: and HNG sorts each character by 字体 itself, so neither is clustered.
+CORPORA = ("codh-full", "hilab", "honkoku-lines", "ainu-records")
 
 
 def cluster_count(n: int) -> int:
@@ -67,6 +78,68 @@ def _digest(path: Path) -> str:
         return hashlib.file_digest(handle, "sha256").hexdigest()
 
 
+def _corpora(root: Path) -> list:
+    from .corpus import sources
+
+    found = {corpus.name: corpus for corpus in sources.discover(root)}
+    return [found[name] for name in CORPORA if name in found and found[name].parquet_files("units")]
+
+
+def units_stamp(root: Path) -> tuple:
+    """Changes whenever a clustered corpus's units change."""
+    return tuple((str(path), path.stat().st_mtime_ns, path.stat().st_size)
+                 for corpus in _corpora(root) for path in corpus.parquet_files("units"))
+
+
+def glyphs(root: Path, wanted: set[str] | None = None) -> Iterator[dict]:
+    """Every character glyph of a multi-form family in `CORPORA`, or of those in `wanted`.
+
+    Each is `{id, corpus, family, page, box, crop}`: a boxed glyph names its page image, any other
+    its pre-cut crop.
+    """
+    import pyarrow.dataset as ds
+
+    for corpus in _corpora(root):
+        pages = {}
+        if corpus.parquet_files("pages"):
+            table = ds.dataset([str(p) for p in corpus.parquet_files("pages")], format="parquet")
+            pages = dict(zip(*table.to_table(columns=["id", "image"]).to_pydict().values(), strict=True))
+        table = ds.dataset([str(p) for p in corpus.parquet_files("units")], format="parquet")
+        for unit in table.to_table(columns=["id", "page_id", "box", "crop", "unicode", "kind", "active"]).to_pylist():
+            if wanted is not None and unit["id"] not in wanted:
+                continue
+            if not unit["active"] or unit["kind"] != "char" or not (unit["box"] or unit["crop"]):
+                continue
+            info = family_of(unit["unicode"])
+            if info is None:
+                continue
+            boxed = bool(unit["box"] and pages.get(unit["page_id"]))
+            yield {"id": unit["id"], "corpus": corpus.name, "family": info["code_point"], "info": info,
+                   "page": pages.get(unit["page_id"]) if boxed else None, "box": unit["box"] if boxed else None,
+                   "crop": None if boxed else unit["crop"]}
+
+
+class Pixels:
+    """Where a glyph's pixels are on disk: its page scan and box, or its crop file and no box."""
+
+    def __init__(self, root: Path):
+        from . import images
+        from .corpus.crops import CropResolver
+
+        # HI Lab crops are extracted to `cache/hilab` beside the image cache, wherever that is.
+        self.resolver = CropResolver(root, file_bases=(root, images.cache_root().parent, Path.cwd()))
+        self.pages: dict[tuple[str, str], Path | None] = {}
+
+    def __call__(self, glyph: dict) -> tuple[Path, dict | None] | None:
+        if glyph["box"]:
+            key = (glyph["corpus"], glyph["page"])
+            if key not in self.pages:
+                self.pages[key] = self.resolver.page_image_path(glyph["page"], glyph["corpus"])
+            return (self.pages[key], glyph["box"]) if self.pages[key] else None
+        path = self.resolver.archive_member_path(glyph["crop"])
+        return (path, None) if path else None
+
+
 def _crops(job: tuple[str, list[tuple[str, dict]]]) -> tuple[list[str], np.ndarray | None]:
     """Cut every box of one page, preprocessed for the classifier."""
     from PIL import Image
@@ -78,6 +151,11 @@ def _crops(job: tuple[str, list[tuple[str, dict]]]) -> tuple[list[str], np.ndarr
         scan = scan.convert("L")
         ids, arrays = [], []
         for identity, box in boxes:
+            if box is None:
+                # A pre-cut crop is the glyph whole.
+                ids.append(identity)
+                arrays.append(np.asarray(preprocess(scan), dtype=np.uint8))
+                continue
             right = min(scan.width, box["x"] + box["w"])
             bottom = min(scan.height, box["y"] + box["h"])
             if right <= box["x"] or bottom <= box["y"]:
@@ -134,18 +212,12 @@ def _embed(jobs: list[tuple[str, list[tuple[str, dict]]]], encoder: Encoder, *, 
         yield pending_ids, encoder(np.concatenate(pending))
 
 
-def _page_jobs(corpus: Path, units: list[dict], resolve) -> list[tuple[str, list[tuple[str, dict]]]]:
-    pages = {p["id"]: p["image"] for p in pq.read_table(corpus / "pages.parquet", columns=["id", "image"]).to_pylist()}
-    by_page: dict[str, list[tuple[str, dict]]] = defaultdict(list)
-    for unit in units:
-        by_page[unit["page_id"]].append((unit["id"], unit["box"]))
-    jobs = []
-    for page, boxes in sorted(by_page.items()):
-        path = resolve(pages.get(page))
-        if path is None:
-            raise FileNotFoundError(f"{page}: page scan is not held locally")
-        jobs.append((str(path), boxes))
-    return jobs
+def _file_jobs(located: dict[str, tuple[Path, dict | None]]) -> list[tuple[str, list[tuple[str, dict | None]]]]:
+    """One job per file on disk: a page scan with its boxes, or a crop file with none."""
+    by_file: dict[str, list[tuple[str, dict | None]]] = defaultdict(list)
+    for identity, (path, box) in located.items():
+        by_file[str(path)].append((identity, box))
+    return sorted(by_file.items())
 
 
 def _kmeans(x, k: int, seed: int):
@@ -174,13 +246,12 @@ def _kmeans(x, k: int, seed: int):
 
 
 def run(root: Path, out: Path, *, checkpoint: Path, classes: Path, workers: int = 8) -> dict:
-    """Embed, cluster and publish one revision. `root` is the corpus root holding `codh-full`."""
+    """Embed, cluster and publish one revision. `root` is the corpus root holding `CORPORA`."""
     import torch
 
-    from . import images
-
-    codh = root / "codh-full"
-    inputs = {"codh_units": _digest(codh / "units.parquet"), "checkpoint": _digest(checkpoint),
+    corpora = _corpora(root)
+    inputs = {"units": {corpus.name: [_digest(path) for path in corpus.parquet_files("units")] for corpus in corpora},
+              "checkpoint": _digest(checkpoint),
               "classes": _digest(classes), "vocab": _digest(Path(refs.__file__).parents[2] / "data/vocab/characters.tsv"),
               "method": METHOD, "max_clusters": MAX_CLUSTERS, "min_family_units": MIN_FAMILY_UNITS}
     revision = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()[:16]
@@ -191,21 +262,25 @@ def run(root: Path, out: Path, *, checkpoint: Path, classes: Path, workers: int 
         return {k: v for k, v in json.loads((target / "manifest.json").read_text()).items() if k != "inputs"}
 
     families: dict[str, dict] = {}
-    units = []
-    for unit in pq.read_table(codh / "units.parquet", columns=["id", "page_id", "box", "unicode", "kind", "active"]).to_pylist():
-        if not unit["active"] or unit["kind"] != "char" or not unit["box"]:
+    family_of_unit: dict[str, str] = {}
+    corpus_of_unit: dict[str, str] = {}
+    located: dict[str, tuple[Path, dict | None]] = {}
+    pixels = Pixels(root)
+    unheld = defaultdict(int)
+    for glyph in glyphs(root):
+        found = pixels(glyph)
+        if found is None:
+            unheld[glyph["corpus"]] += 1
             continue
-        info = family_of(unit["unicode"])
-        if info is None:
-            continue
-        families.setdefault(info["code_point"], info)
-        units.append({**unit, "family": info["code_point"]})
+        families.setdefault(glyph["family"], glyph["info"])
+        family_of_unit[glyph["id"]] = glyph["family"]
+        corpus_of_unit[glyph["id"]] = glyph["corpus"]
+        located[glyph["id"]] = found
 
     encoder = Encoder(checkpoint, classes)
-    family_of_unit = {u["id"]: u["family"] for u in units}
     ids: list[str] = []
     vectors: list[np.ndarray] = []
-    for batch_ids, batch_vectors in _embed(_page_jobs(codh, units, images.held), encoder, workers=workers):
+    for batch_ids, batch_vectors in _embed(_file_jobs(located), encoder, workers=workers):
         ids.extend(batch_ids)
         vectors.append(batch_vectors.astype(np.float16))
     matrix = np.concatenate(vectors)
@@ -255,8 +330,12 @@ def run(root: Path, out: Path, *, checkpoint: Path, classes: Path, workers: int 
     np.save(staging / "embeddings.npy", matrix[order], allow_pickle=False)
     (staging / "clusters.json").write_text(json.dumps(
         {"revision": revision, "method": METHOD, "families": published}, ensure_ascii=False, indent=1) + "\n")
+    by_corpus = defaultdict(int)
+    for identity in ids:
+        by_corpus[corpus_of_unit[identity]] += 1
     summary = {"revision": revision, "families": len(published), "units": len(ids),
-               "clusters": sum(len(f["clusters"]) for f in published.values())}
+               "clusters": sum(len(f["clusters"]) for f in published.values()),
+               "by_corpus": dict(sorted(by_corpus.items())), "unheld": dict(sorted(unheld.items()))}
     (staging / "manifest.json").write_text(json.dumps({**summary, "inputs": inputs}, indent=1) + "\n")
     os.replace(staging, target)
     write_neighbours(target)

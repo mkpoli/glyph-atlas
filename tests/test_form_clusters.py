@@ -42,3 +42,28 @@ def test_shape_order_puts_similar_centres_next_to_each_other():
     assert sorted(order) == [0, 1, 2, 3, 4]
     near_a = {order.index(i) for i in (0, 2, 4)}
     assert max(near_a) - min(near_a) == 2
+
+
+def test_glyphs_pool_the_corpora_that_leave_the_form_unrecorded(form_corpora):
+    root, ids = form_corpora
+    found = {glyph["id"]: glyph for glyph in form_clusters.glyphs(root)}
+    assert set(found) == {*ids["held"], ids["unheld"], ids["crop"]}, "古活字 names its forms and is left out"
+    assert {glyph["family"] for glyph in found.values()} == {"U+306F"}
+    pixels = form_clusters.Pixels(root)
+    page, box = pixels(found[ids["held"][0]])
+    assert page.is_file() and box == {"x": 0, "y": 0, "w": 50, "h": 50}
+    crop, none = pixels(found[ids["crop"]])
+    assert crop.name == "1.jpg" and none is None
+    assert pixels(found[ids["unheld"]]) is None
+
+
+def test_a_crop_file_is_embedded_whole(form_corpora):
+    pytest.importorskip("torch")
+    root, _ = form_corpora
+    pixels = form_clusters.Pixels(root)
+    located = {g["id"]: pixels(g) for g in form_clusters.glyphs(root) if pixels(g)}
+    jobs = form_clusters._file_jobs(located)
+    assert sorted(len(boxes) for _, boxes in jobs) == [1, 2], "one job per page scan and per crop file"
+    for job in jobs:
+        ids_done, arrays = form_clusters._crops(job)
+        assert len(ids_done) == len(job[1]) and arrays.shape[0] == len(ids_done)
