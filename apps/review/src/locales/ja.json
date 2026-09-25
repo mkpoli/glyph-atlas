@@ -101,7 +101,6 @@
   "explore.empty.noOccurrenceOf": "ここに{char}の用例はありません。",
   "explore.empty.noOccurrenceOfTerm": "{term}の用例はありません。",
   "explore.empty.nothingFlagged": "フラグされた項目はありません。",
-  "explore.empty.nothingHard": "読みにくい文字はありません。",
   "explore.empty.samplesFailed": "{char}のサンプルを読み込めませんでした。",
   "explore.filter.all": "すべて",
   "explore.filter.kana": "かな",
@@ -112,7 +111,6 @@
   "explore.grid.collection": "文字コレクション",
   "explore.heading.atlas": "文字アトラス",
   "explore.heading.flagged": "フラグ付きの文字",
-  "explore.heading.hard": "読みにくい文字",
   "explore.meta.characters.one": "{count}文字",
   "explore.meta.characters.other": "{count}文字",
   "explore.meta.glyphs.one": "{count}字形",
@@ -242,8 +240,6 @@
   "nav.explore": "探索",
   "nav.flagged": "フラグ",
   "nav.forms": "字形",
-  "nav.hard": "難読",
-  "nav.hard.title": "2人のレビュアーがスキップした切り出し",
   "nav.quickReview": "クイックレビュー",
   "production.aria": "製法：{label}",
   "production.handwritten": "手書き",
@@ -412,5 +408,6 @@
   "quiz.reference.heading": "参考：確認済み・閲覧済み",
   "quiz.reference.inspect": "参考{label}（{state}）を調べる",
   "quiz.reference.confirmed": "確認済み",
-  "quiz.reference.seen": "閲覧済み"
+  "quiz.reference.seen": "閲覧済み",
+  "state.hard": "難読：2人のレビュアーがスキップ"
 }

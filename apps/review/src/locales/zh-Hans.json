@@ -104,7 +104,6 @@
   "explore.empty.noOccurrenceOf": "此处没有{char}的出现记录。",
   "explore.empty.noOccurrenceOfTerm": "没有{term}的出现记录。",
   "explore.empty.nothingFlagged": "没有被标记的内容。",
-  "explore.empty.nothingHard": "没有难以辨认的内容。",
   "explore.empty.samplesFailed": "无法加载{char}的样本。",
   "explore.filter.all": "全部",
   "explore.filter.kana": "假名",
@@ -115,7 +114,6 @@
   "explore.grid.collection": "字符集合",
   "explore.heading.atlas": "字符图谱",
   "explore.heading.flagged": "已标记字符",
-  "explore.heading.hard": "难以辨认",
   "explore.meta.characters.one": "{count}个字符",
   "explore.meta.characters.other": "{count}个字符",
   "explore.meta.glyphs.one": "{count}个字形",
@@ -245,8 +243,6 @@
   "nav.explore": "探索",
   "nav.flagged": "已标记",
   "nav.forms": "字形",
-  "nav.hard": "疑难",
-  "nav.hard.title": "两位审阅者都跳过的裁切",
   "nav.quickReview": "快速审阅",
   "production.aria": "制作方式：{label}",
   "production.handwritten": "手写",
@@ -415,5 +411,6 @@
   "quiz.reference.heading": "参考：已确认/已查看",
   "quiz.reference.inspect": "查看参考{label}（{state}）",
   "quiz.reference.confirmed": "已确认",
-  "quiz.reference.seen": "已查看"
+  "quiz.reference.seen": "已查看",
+  "state.hard": "难读：两位审阅者已跳过"
 }

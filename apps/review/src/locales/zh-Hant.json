@@ -104,7 +104,6 @@
   "explore.empty.noOccurrenceOf": "這裡沒有{char}的用例。",
   "explore.empty.noOccurrenceOfTerm": "沒有{term}的用例。",
   "explore.empty.nothingFlagged": "沒有已標記的項目。",
-  "explore.empty.nothingHard": "沒有難以辨識的字符。",
   "explore.empty.samplesFailed": "{char}的範例無法載入。",
   "explore.filter.all": "全部",
   "explore.filter.kana": "假名",
@@ -115,7 +114,6 @@
   "explore.grid.collection": "字符收藏",
   "explore.heading.atlas": "字符圖譜",
   "explore.heading.flagged": "已標記字符",
-  "explore.heading.hard": "難以辨識",
   "explore.meta.characters.one": "{count}個字符",
   "explore.meta.characters.other": "{count}個字符",
   "explore.meta.glyphs.one": "{count}個字形",
@@ -245,8 +243,6 @@
   "nav.explore": "探索",
   "nav.flagged": "已標記",
   "nav.forms": "字形",
-  "nav.hard": "困難",
-  "nav.hard.title": "兩位審核者都略過的裁切",
   "nav.quickReview": "快速審核",
   "production.aria": "製作方式：{label}",
   "production.handwritten": "手寫",
@@ -415,5 +411,6 @@
   "quiz.reference.heading": "參考：已確認／已檢視",
   "quiz.reference.inspect": "檢視參考{label}（{state}）",
   "quiz.reference.confirmed": "已確認",
-  "quiz.reference.seen": "已檢視"
+  "quiz.reference.seen": "已檢視",
+  "state.hard": "難讀：兩位審核者已略過"
 }
