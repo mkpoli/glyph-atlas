@@ -1,36 +1,30 @@
-import en from '../locales/en.json'
-import ja from '../locales/ja.json'
-import jaClassical from '../locales/ja-x-classical.json'
-import zhHans from '../locales/zh-Hans.json'
-import zhHant from '../locales/zh-Hant.json'
-import ko from '../locales/ko.json'
-import koKore from '../locales/ko-Kore.json'
+/**
+ * The interface languages: every catalogue in `src/locales`, named after its BCP 47 tag. Its
+ * `@locale` entry gives the language's own name, the `base` language the number and plural rules
+ * come from, and the browser languages it `matches` on a first visit.
+ */
+export const LOCALES = Object.entries(import.meta.glob('../locales/*.json', { eager: true, import: 'default' }))
+  .map(([path, { '@locale': about, ...messages }]) => ({ tag: path.slice(11, -5), ...about, messages }))
+  .sort((a, b) => a.tag.localeCompare(b.tag))
+const byTag = Object.fromEntries(LOCALES.map(locale => [locale.tag, locale]))
+const en = byTag.en.messages
 
 /**
- * The interface languages, each named in itself. `ja-x-classical` is Japanese in the old character
- * forms and historical kana with literary grammar; `ko-Kore` is Korean in mixed Hangul and Hanja.
- * `base` is the language the number and plural rules come from.
+ * The interface language for the browser's preferences: an exact tag first, then the language whose
+ * `matches` holds the longest prefix of one the browser asks for, then English.
  */
-export const LOCALES = [
-  { tag: 'en', name: 'English', base: 'en', messages: en },
-  { tag: 'ja', name: '日本語', base: 'ja', messages: ja },
-  { tag: 'ja-x-classical', name: '日本語（文語）', base: 'ja', messages: jaClassical },
-  { tag: 'zh-Hans', name: '简体中文', base: 'zh-Hans', messages: zhHans },
-  { tag: 'zh-Hant', name: '繁體中文', base: 'zh-Hant', messages: zhHant },
-  { tag: 'ko', name: '한국어', base: 'ko', messages: ko },
-  { tag: 'ko-Kore', name: '韓國語（國漢文）', base: 'ko', messages: koKore },
-]
-const byTag = Object.fromEntries(LOCALES.map(locale => [locale.tag, locale]))
-
-/** The first interface language the browser asks for, or English. */
 function detect() {
-  for (const wanted of typeof navigator === 'undefined' ? [] : navigator.languages ?? [navigator.language]) {
-    const tag = wanted.toLowerCase()
-    if (tag.startsWith('ja')) return 'ja'
-    if (tag.startsWith('ko')) return 'ko'
-    if (/^zh-(hant|tw|hk|mo)/.test(tag)) return 'zh-Hant'
-    if (tag.startsWith('zh')) return 'zh-Hans'
-    if (tag.startsWith('en')) return 'en'
+  const wanted = (typeof navigator === 'undefined' ? [] : navigator.languages ?? [navigator.language]).map(tag => tag.toLowerCase())
+  for (const tag of wanted) {
+    const exact = LOCALES.find(locale => locale.tag.toLowerCase() === tag)
+    if (exact) return exact.tag
+    let best = null, length = 0
+    for (const locale of LOCALES) {
+      for (const prefix of locale.matches ?? []) {
+        if ((tag === prefix || tag.startsWith(`${prefix}-`)) && prefix.length > length) { best = locale.tag; length = prefix.length }
+      }
+    }
+    if (best) return best
   }
   return 'en'
 }

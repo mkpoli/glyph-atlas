@@ -1,4 +1,11 @@
 {
+  "@locale": {
+    "name": "English",
+    "base": "en",
+    "matches": [
+      "en"
+    ]
+  },
   "app.home.aria": "Glyph Atlas home",
   "app.nav.aria": "Main navigation",
   "app.reviewOptions": "Review options",

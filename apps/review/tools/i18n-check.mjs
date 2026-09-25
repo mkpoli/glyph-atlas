@@ -12,7 +12,8 @@
  *   - a literal key the source calls is missing from en.json (a plural key counts as present when
  *     either the bare key or both `.one` and `.other` exist);
  *   - en.json holds a key that no source file's literal or wildcard use reaches;
- *   - a non-English locale holds a key that is not in en.json.
+ *   - a non-English locale holds a key that is not in en.json;
+ *   - a catalogue lacks the `@locale` entry that names it and gives its `base` language.
  * Reports, per non-English locale, how many of en.json's keys it does not yet have — informational,
  * not a failure, since translation happens on its own schedule.
  *
@@ -92,11 +93,21 @@ function isUsed(key) {
   return usedPatterns.some(p => p.test(key) || (base && p.test(base)))
 }
 
-const en = JSON.parse(readFileSync(join(LOCALES_DIR, 'en.json'), 'utf8'))
+let failed = false
+
+/** A catalogue's messages, without the `@locale` entry that describes it. */
+function catalogue(file) {
+  const { '@locale': about, ...messages } = JSON.parse(readFileSync(join(LOCALES_DIR, file), 'utf8'))
+  if (typeof about?.name !== 'string' || typeof about?.base !== 'string') {
+    failed = true
+    console.error(`${file} lacks an @locale entry with a name and a base language.`)
+  }
+  return messages
+}
+
+const en = catalogue('en.json')
 const enKeys = Object.keys(en)
 const enKeySet = new Set(enKeys)
-
-let failed = false
 
 // 1. Every literal key the source calls must resolve in en.json (bare, or a complete plural pair).
 const missing = []
@@ -123,7 +134,7 @@ if (unused.length) {
 for (const file of readdirSync(LOCALES_DIR)) {
   if (file === 'en.json') continue
   const tag = file.replace(/\.json$/, '')
-  const messages = JSON.parse(readFileSync(join(LOCALES_DIR, file), 'utf8'))
+  const messages = catalogue(file)
   const localeKeys = Object.keys(messages)
   const foreign = localeKeys.filter(key => !enKeySet.has(key))
   if (foreign.length) {
