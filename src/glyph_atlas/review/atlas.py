@@ -1183,6 +1183,88 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         payload["reviews"] = [r for r in payload["reviews"] if r["event"]["target_id"] in unit_ids]
         background.add_task(background_refine, store, payload)
 
+    def judgement_info(event: Any) -> dict[str, Any]:
+        """What a reviewer `review` event decided, read from its evidence.
+
+        One reader for both shapes of evidence a `review` event carries: a round's `visual-quiz`
+        and the character editor's `character-review`. Neither always carries every field, so a
+        caller sees `None` for what that event never recorded.
+        """
+        try:
+            evidence = json.loads(event.evidence) if event.evidence else {}
+        except ValueError:
+            evidence = {}
+        if not isinstance(evidence, dict):
+            evidence = {}
+        crop_label = evidence.get("label")
+        if crop_label is None:
+            crop_label = ((evidence.get("snapshot") or {}).get("character") or {}).get("label")
+        points = evidence.get("suggested_character")
+        return {
+            "label": crop_label,
+            "verdict": evidence.get("verdict"),
+            "issue": evidence.get("issue"),
+            "character": identity_text(points) if points else None,
+            "reading": evidence.get("suggested_reading"),
+            "round": evidence.get("round"),
+        }
+
+    def history_entry(seq: int, event: Any, by_id: dict[str, Any]) -> dict[str, Any]:
+        evidence = event.evidence or ""
+        if evidence.startswith(_UNDO):
+            undone_id = evidence.removeprefix(_UNDO)
+            undone = by_id.get(undone_id)
+            info = judgement_info(undone) if undone is not None else {}
+            kind, undoes = "undo", undone_id
+        else:
+            info = judgement_info(event)
+            kind, undoes = "review", None
+        return {"id": event.id, "at": event.at.isoformat(), "actor": event.actor,
+                "target": event.target_id, "label": info.get("label"), "kind": kind,
+                "verdict": info.get("verdict"), "issue": info.get("issue"),
+                "character": info.get("character"), "reading": info.get("reading"),
+                "round": info.get("round"), "undoes": undoes}
+
+    @api.get("/history")
+    def history(
+        limit: Annotated[int, Query(ge=1, le=100)] = 40,
+        before: str | None = None,
+        actor: str | None = None,
+        label: str | None = None,
+    ) -> dict:
+        """A reviewer's own decisions, newest first: one item per `review` event, undos included.
+
+        The cursor is the event's own place in the log (its `seq`), so paging keeps working while
+        new reviews are recorded. `actor` and `label` narrow it to one reviewer or one crop's
+        judgements; an undo is matched by the judgement it undoes.
+        """
+        all_events = store.events()
+        by_id = {event.id: event for event in all_events}
+        reviews = [(seq, event) for seq, event in enumerate(all_events, start=1)
+                   if event.role == "reviewer" and event.field == "review"
+                   and (actor is None or event.actor == actor)]
+        if before is not None:
+            try:
+                cursor = int(before)
+            except ValueError:
+                raise HTTPException(400, "Bad cursor.") from None
+            reviews = [(seq, event) for seq, event in reviews if seq < cursor]
+        reviews.sort(key=lambda pair: pair[0], reverse=True)
+        items: list[dict[str, Any]] = []
+        next_cursor: str | None = None
+        for seq, event in reviews:
+            if len(items) >= limit:
+                next_cursor = str(items[-1]["seq"])
+                break
+            entry = history_entry(seq, event, by_id)
+            if label is not None and entry["label"] != label:
+                continue
+            items.append({**entry, "seq": seq})
+        else:
+            next_cursor = None
+        return {"items": [{k: v for k, v in entry.items() if k != "seq"} for entry in items],
+                "next": next_cursor}
+
     def review_export(*, include_processed: bool = False) -> dict:
         """Every character review the journal holds, with what each one saw and whether it stands.
 

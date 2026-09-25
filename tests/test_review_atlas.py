@@ -1777,3 +1777,58 @@ def test_a_crop_re_cut_after_the_round_was_dealt_is_not_seen(dataset):
     payload['seen'][0]['image'] = shown[0]['image']
     assert client.post('/atlas/rounds', json=payload).status_code == 200
     assert not [e for e in Store(dataset).events() if e.field == "seen"], "the new cut was never shown"
+
+
+def test_history_lists_reviewer_decisions_newest_first_with_paging_and_filters(dataset):
+    client = TestClient(create_app(dataset))
+    pending = client.get('/atlas', params={"reading": "あ", "state": "pending", "limit": 7}).json()['items']
+    alice_answers, seen_crop, untouched = pending[:4], pending[4], pending[5]
+    alice = {"id": str(uuid4()), "client_id": "alice", "label": "あ",
+             "answers": [{"id": item["id"], "revision": item["revision"], "image_sha256": item["image_sha256"],
+                          "verdict": "match"} for item in alice_answers],
+             "seen": [{"id": seen_crop["id"], "image_sha256": seen_crop["image_sha256"]}]}
+    assert client.post('/atlas/rounds', json=alice).status_code == 200
+
+    shi = client.get('/atlas', params={"reading": "シ", "state": "pending", "limit": 2}).json()['items']
+    bob = {"id": str(uuid4()), "client_id": "bob", "label": "シ",
+           "answers": [{"id": item["id"], "revision": item["revision"], "image_sha256": item["image_sha256"],
+                        "verdict": "wrong", "issue": "character", "character": "ミ"} for item in shi]}
+    assert client.post('/atlas/rounds', json=bob).status_code == 200
+
+    # A model event never belongs to a reviewer's history.
+    Store(dataset).record_batch([ReviewRequest(
+        target_type="unit", target_id=untouched["id"], field="review", new="disputed",
+        client_id="pipeline", idempotency_key="model:1", evidence="{}")], role="model")
+
+    assert client.post('/atlas/rounds/' + alice['id'] + '/undo', json={"client_id": "alice"}).status_code == 200
+
+    full = client.get('/history', params={"limit": 100}).json()
+    kinds = [item["kind"] for item in full["items"]]
+    assert kinds.count("undo") == 4 and kinds.count("review") == 6, kinds
+    assert full["next"] is None
+    # Newest first: the four undos (one per undone answer) lead; a seen mark's own undo is not
+    # a `review` event and a model event is not a reviewer's, so neither appears here.
+    assert kinds[:4] == ["undo"] * 4
+    ats = [item["at"] for item in full["items"]]
+    assert ats == sorted(ats, reverse=True)
+    assert {item["actor"] for item in full["items"]} == {"alice", "bob"}
+
+    undo_item = full["items"][0]
+    assert undo_item["undoes"] and undo_item["label"] == "あ" and undo_item["verdict"] == "match"
+
+    bob_review = next(i for i in full["items"] if i["kind"] == "review" and i["actor"] == "bob")
+    assert bob_review["issue"] == "character" and bob_review["character"] == "ミ" and bob_review["label"] == "シ"
+
+    only_bob = client.get('/history', params={"actor": "bob"}).json()
+    assert {i["actor"] for i in only_bob["items"]} == {"bob"}
+    assert len(only_bob["items"]) == 2
+
+    only_a_label = client.get('/history', params={"label": "あ"}).json()
+    assert len(only_a_label["items"]) == 8, only_a_label  # 4 originals + their 4 undos
+    assert all(i["label"] == "あ" for i in only_a_label["items"])
+
+    page1 = client.get('/history', params={"limit": 3}).json()
+    assert len(page1["items"]) == 3 and page1["next"] is not None
+    page2 = client.get('/history', params={"limit": 100, "before": page1["next"]}).json()
+    assert ([i["id"] for i in page1["items"]] + [i["id"] for i in page2["items"]]
+            == [i["id"] for i in full["items"]])
