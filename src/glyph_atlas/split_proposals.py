@@ -40,6 +40,9 @@ The character model is injected, so this module holds no model and runs none:
         in both Unicode spellings — が is U+304C and U+304B U+3099, one character — and not the other
         forms that read the same; `variant_candidates` is the phonetic set for a caller that wants it.
 
+`divide_by_reading` is the other way to choose a cut: for a reading a person typed, the reading is
+taken as settled and only the ink decides the boundaries, with no model consulted.
+
 Nothing here touches a dataset, a store or a model. It reads one crop and returns a proposal; whether
 to apply it, and how to record it, belongs to the caller.
 """
@@ -49,6 +52,7 @@ from __future__ import annotations
 import math
 import unicodedata
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 from PIL import Image
@@ -116,6 +120,9 @@ class Limits(BaseModel):
     max_candidates: int = 64
     #: Rows are smoothed over this window before the runs are read, so a one-row speck is not one.
     smooth: int = 3
+    #: In a division by a person's reading, the share of the crop's ink every child has to hold, so
+    #: a speck of dust at the end of a box is not taken for a character.
+    min_child_ink_share: float = 0.03
 
 
 class LigatureCheck(BaseModel):
@@ -194,12 +201,13 @@ def graphemes(text: str) -> list[str]:
     The text is normalised to NFC first, so か + U+3099 and が are the same character and a caller
     does not have to know which spelling its OCR or its reviewer produced. Marks NFC leaves
     decomposed — a combination Unicode has no precomposed form for — are then folded into the base
-    they follow, and so are zero-width joiners and variation selectors: a mark is not ink of its own,
-    and the splitter cuts ink.
+    they follow, and so are zero-width joiners and every variation selector (U+FE00–U+FE0F and
+    U+E0100–U+E01EF): a mark is not ink of its own, and the splitter cuts ink.
     """
     found: list[str] = []
     for char in unicodedata.normalize("NFC", text):
-        if found and (unicodedata.combining(char) or char in "\u200d\ufe00\ufe0f"):
+        if found and (unicodedata.combining(char) or char == "\u200d"
+                      or 0xFE00 <= ord(char) <= 0xFE0F or 0xE0100 <= ord(char) <= 0xE01EF):
             found[-1] = unicodedata.normalize("NFC", found[-1] + char)
         else:
             found.append(char)
@@ -489,24 +497,26 @@ def _text_cost(children: Sequence[ChildScore], floor: float) -> float:
     return total
 
 
-def propose_split(
-    crop: Image.Image,
-    expected: str,
-    *,
-    scorer: CharacterScorer,
-    ligature: LigatureGuard = default_ligature_guard,
-    candidates_of: Callable[[str], Sequence[str]] = default_candidates,
-    limits: Limits | None = None,
-) -> SplitProposal:
-    """Propose where `crop` divides into the characters of `expected`.
+@dataclass(frozen=True)
+class _Measured:
+    """The ink of a crop measured for a reading: everything both ways of choosing a cut need."""
 
-    The reading is the caller's: a reviewer's feedback or an OCR sequence. What this decides is the
-    boundaries — by the ink first and the character model second — and it returns `accepted=False`
-    with a reason whenever the ink does not show them, the cut would cross a stroke, a child would be
-    empty or clipped, the model does not read the children as the expected characters, or two
-    boundaries explain the crop about equally well.
+    reading: list[str]
+    raw: list[float]
+    profile: list[float]
+    reference: float
+    boundaries: list[tuple[int, float, float]]
+    cuts: list[list[int]]
+    evidence: dict[str, Any]
+
+
+def _measure(crop: Image.Image, expected: str, ligature: LigatureGuard,
+             limits: Limits) -> _Measured | SplitProposal:
+    """The reading's characters and the low-ink cuts that divide the crop into that many, or a refusal.
+
+    Shared by the model-scored proposal and the reading-led division, so both refuse the same crops
+    for the same reasons before either chooses a cut.
     """
-    limits = limits or Limits()
     reading = graphemes(expected)
     check = ligature(expected)
     evidence: dict[str, Any] = {
@@ -554,13 +564,46 @@ def propose_split(
         return SplitProposal(accepted=False, text=reading, evidence=evidence,
                              reason="no row of the crop holds less ink than the rows around it, so "
                                     "the ink shows no boundary; an equal division is not proposed")
-    by_row = {y: (depth, prominence) for y, depth, prominence in boundaries}
     cuts = _candidates(boundaries, len(reading), height, limits)
     evidence["candidates"] = len(cuts)
     if not cuts:
         return SplitProposal(accepted=False, text=reading, evidence=evidence,
                              reason="every low-ink row would leave a child too small or too large to "
                                     "be a character")
+    return _Measured(reading=reading, raw=raw, profile=profile, reference=reference,
+                     boundaries=boundaries, cuts=cuts, evidence=evidence)
+
+
+def _cut_scores(measured: _Measured, cuts: Sequence[int]) -> list[CutScore]:
+    chosen = set(cuts)
+    return [CutScore(y=y, ink_share=round(measured.profile[y] / measured.reference, 3),
+                     depth=round(depth, 3), prominence=round(prominence, 3))
+            for y, depth, prominence in measured.boundaries if y in chosen]
+
+
+def propose_split(
+    crop: Image.Image,
+    expected: str,
+    *,
+    scorer: CharacterScorer,
+    ligature: LigatureGuard = default_ligature_guard,
+    candidates_of: Callable[[str], Sequence[str]] = default_candidates,
+    limits: Limits | None = None,
+) -> SplitProposal:
+    """Propose where `crop` divides into the characters of `expected`.
+
+    The reading is the caller's: a reviewer's feedback or an OCR sequence. What this decides is the
+    boundaries — by the ink first and the character model second — and it returns `accepted=False`
+    with a reason whenever the ink does not show them, the cut would cross a stroke, a child would be
+    empty or clipped, the model does not read the children as the expected characters, or two
+    boundaries explain the crop about equally well.
+    """
+    limits = limits or Limits()
+    measured = _measure(crop, expected, ligature, limits)
+    if isinstance(measured, SplitProposal):
+        return measured
+    reading, raw, evidence, cuts = measured.reading, measured.raw, measured.evidence, measured.cuts
+    width, height = crop.size
     scored: list[tuple[float, list[int], list[ChildScore], list[CutScore]]] = []
     for combination in cuts:
         edges = [0, *combination, height]
@@ -580,10 +623,7 @@ def propose_split(
                 canonical=bool(top) and top in code_points,
                 ink=round(sum(raw[box.y:top_edge])),
             ))
-        cut_scores = [CutScore(y=y, ink_share=round(profile[y] / reference, 3) if reference else 0.0,
-                               depth=round(depth, 3), prominence=round(prominence, 3))
-                      for y, (depth, prominence) in by_row.items() if y in set(combination)]
-        scored.append((_text_cost(scores, 1e-4), combination, scores, cut_scores))
+        scored.append((_text_cost(scores, 1e-4), combination, scores, _cut_scores(measured, combination)))
     scored.sort(key=lambda item: item[0])
     best_cost, best_cuts, best_children, best_cut_scores = scored[0]
     runner = scored[1] if len(scored) > 1 else None
@@ -617,6 +657,84 @@ def propose_split(
                        f"{len(best_cuts)} low-ink cut"
                        f"{'s' if len(best_cuts) != 1 else ''}")
     return proposal
+
+
+def divide_by_reading(
+    crop: Image.Image,
+    expected: str,
+    *,
+    ligature: LigatureGuard = default_ligature_guard,
+    limits: Limits | None = None,
+) -> SplitProposal:
+    """Divide `crop` into exactly the characters a person read in it, by the ink alone.
+
+    A reviewer's typed reading settles how many characters the crop holds and what each one is, so no
+    character model is asked to agree with it. What is left is where the boundaries run, and that
+    comes from the same low-ink rows `propose_split` measures. The division is refused, with a reason,
+    exactly when the ink cannot be cut into that many characters:
+
+    - the reading is not 2 to 4 characters, or the character layer says it is one encoded ligature;
+    - no row holds less ink than the rows around it;
+    - no choice of low-ink rows leaves every child between `min_child_share` and `max_child_share`
+      of the mean character height;
+    - a stroke runs out of the crop's first or last row, so the child at that end would be clipped;
+    - every remaining division leaves a child with less than `min_child_ink_share` of the crop's ink.
+
+    Among the divisions left, the one whose cuts cross the least ink is taken: each cut is measured
+    as the mean ink of a band of rows around it (a tenth of a character high), so a wide blank gap
+    beats a thin one, and a tie goes to the division with the most even children. The others are
+    kept as alternatives, with their costs.
+    """
+    limits = limits or Limits()
+    measured = _measure(crop, expected, ligature, limits)
+    if isinstance(measured, SplitProposal):
+        return measured
+    reading, raw, profile, evidence = measured.reading, measured.raw, measured.profile, measured.evidence
+    width, height = crop.size
+    evidence["basis"] = "reviewer-reading"
+    clipped = _clipped(raw, max(raw), limits.max_edge_ink_share)
+    if clipped is not None:
+        return SplitProposal(accepted=False, text=reading, evidence=evidence,
+                             reason=f"the ink reaches {clipped} of the crop, so a child is cut off by "
+                                    f"the box")
+    total = sum(raw)
+    half = max(1, round(height / len(reading) * 0.05))
+
+    def band(y: int) -> float:
+        rows = profile[max(0, y - half):min(height, y + half + 1)]
+        return _mean(rows) / measured.reference
+
+    scored: list[tuple[float, float, list[int], list[float]]] = []
+    for combination in measured.cuts:
+        edges = [0, *combination, height]
+        shares = [sum(raw[edges[index]:edges[index + 1]]) / total for index in range(len(edges) - 1)]
+        if min(shares) < limits.min_child_ink_share:
+            continue
+        mean_height = height / len(reading)
+        imbalance = sum(abs(edges[index + 1] - edges[index] - mean_height)
+                        for index in range(len(edges) - 1)) / height
+        scored.append((round(sum(band(y) for y in combination), 4), round(imbalance, 4),
+                       list(combination), shares))
+    if not scored:
+        return SplitProposal(accepted=False, text=reading, evidence=evidence,
+                             reason=f"every division into {len(reading)} leaves a child with less than "
+                                    f"{limits.min_child_ink_share:g} of the ink")
+    scored.sort(key=lambda item: (item[0], item[1], item[2]))
+    cost, _, cuts, shares = scored[0]
+    edges = [0, *cuts, height]
+    boxes = [Box(x=0, y=edges[index], w=width, h=edges[index + 1] - edges[index])
+             for index in range(len(edges) - 1)]
+    evidence.update({"child_ink_share": [round(share, 3) for share in shares], "band_rows": 2 * half + 1,
+                     "best_cost": cost})
+    return SplitProposal(
+        accepted=True, text=reading, boxes=boxes, cuts=cuts, cut_scores=_cut_scores(measured, cuts),
+        alternatives=[Alternative(cuts=item[2], cost=item[0], margin=round(item[0] - cost, 4))
+                      for item in scored[1:4]],
+        margin=round(scored[1][0] - cost, 4) if len(scored) > 1 else None,
+        evidence=evidence,
+        reason=f"{len(reading)} characters as the reviewer read them, cut at {len(cuts)} low-ink "
+               f"row{'s' if len(cuts) != 1 else ''}",
+    )
 
 
 def child_refusal(children: Sequence[ChildScore], *, min_mass: float) -> str | None:

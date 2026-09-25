@@ -504,3 +504,34 @@ def test_the_text_cost_is_a_log_mass_and_not_a_shape() -> None:
             sp.ChildScore(text="イ", box=Box(x=0, y=1, w=1, h=1), mass=0.01)]
     assert sp._text_cost(cheap, 1e-4) < sp._text_cost(dear, 1e-4)
     assert sp._text_cost(cheap, 1e-4) == pytest.approx(-2 * math.log(0.5))
+
+
+# --- a division by a person's reading ------------------------------------------------------------
+
+
+def _blocks(*spans: tuple[int, int], height: int = 100) -> Image.Image:
+    crop = Image.new("RGB", (30, height), "white")
+    draw = ImageDraw.Draw(crop)
+    for top, bottom in spans:
+        draw.rectangle((5, top, 24, bottom), fill="black")
+    return crop
+
+
+def test_reading_division_cuts_the_widest_blank_gap_without_a_model():
+    # A narrow gap inside the first character (like the two strokes of ニ) and a wide one after it.
+    crop = _blocks((5, 20), (24, 40), (60, 94))
+    proposal = sp.divide_by_reading(crop, "ニシ", ligature=lambda _: sp.LigatureCheck())
+    assert proposal.accepted and proposal.text == ["ニ", "シ"]
+    assert 41 <= proposal.cuts[0] <= 59
+    assert [box.h for box in proposal.boxes] == [proposal.cuts[0], 100 - proposal.cuts[0]]
+
+
+def test_reading_division_refuses_a_child_with_only_a_speck_of_ink():
+    crop = _blocks((5, 60), (84, 84))
+    proposal = sp.divide_by_reading(crop, "ニシ", ligature=lambda _: sp.LigatureCheck())
+    assert not proposal.accepted
+    assert proposal.reason == "every division into 2 leaves a child with less than 0.03 of the ink"
+
+
+def test_a_variation_selector_belongs_to_its_base():
+    assert sp.graphemes("葛\U000E0100シ︎") == ["葛\U000E0100", "シ︎"]

@@ -166,6 +166,9 @@ class Feedback:
     proposed_box: dict[str, int] | None = None
     #: The reviewer's typed correction, before any precedence was applied.
     requested_text: str | None = None
+    #: What the reviewer wrote the crop as reading: the typed correction, else the saved
+    #: suggested reading. A local review's own words, never a model's offer.
+    typed_reading: str | None = None
     #: The saved unit reading. The effective state, not the proposal.
     effective_text: str | None = None
 
@@ -267,6 +270,7 @@ def _local_parts(event: Mapping[str, Any], record: Mapping[str, Any]) -> dict[st
         "proposed_text": explicit or requested or suggested,
         "requested_text": requested,
         "suggested_reading": suggested,
+        "typed_reading": requested or suggested,
         # The saved state, kept for audit and usable as an identity only in the legacy
         # wrong+reading case, where the correction was what got resolved into the unit.
         "effective_text": _text(correction.get("reading")),
@@ -525,6 +529,7 @@ def _one(record: Mapping[str, Any]) -> Feedback:
         proposed_text=proposal if proposal is not None else parts.get("proposed_text"),
         proposed_box=parts.get("proposed_box"),
         requested_text=parts.get("requested_text"),
+        typed_reading=parts.get("typed_reading"),
         effective_text=parts.get("effective_text"),
         door=parts.get("door", "unknown"),
         target_type=_text(event.get("target_type")),

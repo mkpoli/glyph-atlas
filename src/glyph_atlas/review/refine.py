@@ -2,6 +2,14 @@
 
 The journal is append-only. Human-selected text remains attached to its original
 review; inferred boundaries and labels retain model provenance.
+
+A joined crop whose reviewer typed its reading is split by that reading: the text
+sets how many children there are and what each one is, and the ink places the cuts
+(`split_proposals.divide_by_reading`). No OCR runs on that path. The split is
+withheld only when the ink cannot be cut into that many characters, for the reasons
+`divide_by_reading` lists, or when the reading is one encoded ligature. Without a
+typed reading the OCR-gated `SplitEngine` decides, as before. Either way the
+children are machine proposals, dealt again in Quick review.
 """
 from __future__ import annotations
 
@@ -137,6 +145,38 @@ class SplitEngine:
             return assessed if assessed["accepted"] else self._blank_gap_fallback(crop, fallback_text, assessed)
 
 
+def reviewer_reading(feedback) -> str | None:
+    """The reading a reviewer typed for a joined crop, when the joined decision rests on it.
+
+    Two or more characters, counted with a combining mark or a variation selector as part
+    of its base. Whitespace is not ink and is dropped. `None` means the OCR-gated path
+    applies: no typed reading, one character, or a decision taken from some other text.
+    """
+    from ..unit_scope import character_count
+
+    if feedback.decision != "joined" or not feedback.typed_reading or not feedback.proposed_text:
+        return None
+    typed = "".join(identity_text(feedback.typed_reading).split())
+    if typed != "".join(identity_text(feedback.proposed_text).split()):
+        return None
+    return typed if character_count(typed) >= 2 else None
+
+
+def assess_reading(unit, crop: Image.Image, reading: str) -> dict:
+    """Child boxes for the characters a reviewer read: the reading decides, the ink cuts.
+
+    The ligature guard is always asked: a typed トモ may be the one encoded character 𪜈,
+    and a reading cannot tell the two apart.
+    """
+    from ..split_proposals import divide_by_reading
+
+    basis = {"basis": "reviewer-reading", "reading": reading}
+    if unit.unicode and refs.ligature(unit.unicode):
+        return {"accepted": False, "reason": "the parent is an encoded ligature", "identity": unit.unicode,
+                **basis}
+    return {**divide_by_reading(crop, reading).model_dump(mode="json"), **basis}
+
+
 def _changes(store, unit, values, evidence, *, base_revision, role="model"):
     revision = base_revision
     body = json.dumps(evidence, ensure_ascii=False, sort_keys=True)
@@ -247,6 +287,8 @@ def split_unit(store, unit, assessment, *, base_revision, source_event_id=None, 
                 "source_event_fingerprint": source_event_fingerprint,
                 "source_image_sha256": _source_digest(store, unit), "parent_box": unit.box.model_dump(),
                 "human_selected_text": bool(source_event_id), "assessment": assessment}
+    if assessment.get("basis"):
+        evidence["basis"] = assessment["basis"]
     try:
         results = _changes(store, unit, {"segmentation": {"split": entries}}, evidence,
                            base_revision=base_revision, role="model")
@@ -342,10 +384,14 @@ def refine_feedback(store: Store, payload: dict, *, apply=False, engine=None, ma
             if f.issue == "merged":
                 try:
                     crop, _ = crop_for(store, unit)
-                    engine = engine or SplitEngine()
-                    expected = f.proposed_text if f.decision == "joined" else None
-                    assessment = (engine.assess_unit(unit, crop, expected) if hasattr(engine, "assess_unit")
-                                  else engine.assess(crop, expected))
+                    reading = reviewer_reading(f)
+                    if reading:
+                        assessment = assess_reading(unit, crop, reading)
+                    else:
+                        engine = engine or SplitEngine()
+                        expected = f.proposed_text if f.decision == "joined" else None
+                        assessment = (engine.assess_unit(unit, crop, expected) if hasattr(engine, "assess_unit")
+                                      else engine.assess(crop, expected))
                     item["assessment"] = assessment
                     if assessment["accepted"]:
                         item["status"] = "split-proposed"

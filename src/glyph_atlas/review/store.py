@@ -1664,6 +1664,13 @@ def _machine_child(data: dict[str, Any], entry: dict[str, Any], parent: Unit, ev
             if key not in ("alignment_repair", "feedback_repair", "feedback_split", "segmentation_scan")}
     meta["feedback_split"] = {"parent_id": parent.id, "evidence_sha256": evidence_sha,
                              "model": event.actor, "automated": True}
+    try:
+        stated = json.loads(event.evidence or "{}")
+    except ValueError:
+        stated = {}
+    if isinstance(stated, dict) and stated.get("basis"):
+        # The split followed what a reviewer typed; name that review so the child can be traced to it.
+        meta["feedback_split"].update(basis=stated["basis"], source_event_id=stated.get("source_event_id"))
     return {"meta": meta, "crop": None, "crop_sha256": None, "candidates": [], "confidence": None,
             "variants": [], "group_id": None, "antecedent_ids": [], "voicing": None,
             "classification": Classification.UNASSESSED.value,
