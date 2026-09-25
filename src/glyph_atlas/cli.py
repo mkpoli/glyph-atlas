@@ -444,6 +444,20 @@ def review_serve(
     server.serve(directory, port=port, host=host, source=source)
 
 
+@review_app.command("shapes")
+def review_shapes(
+    directory: Annotated[Path, typer.Argument(help="dataset directory whose Quick review crops are ordered")],
+    out: Annotated[Path, typer.Option(help="directory the revisions and `current` are written to")] = Path("work/quiz-shapes"),
+    checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
+    classes: Annotated[Path, typer.Option(help="classifier class list")] = Path("models/classifier/classes.json"),
+) -> None:
+    """Order each character's Quick review crops by shape (needs CUDA)."""
+    from .review import quiz_shapes
+
+    for name, value in quiz_shapes.compute(directory, out, checkpoint=checkpoint, classes=classes).items():
+        typer.echo(f"{name:<12} {value:>10}")
+
+
 @review_app.command("apply")
 def review_apply(directory: Annotated[Path, typer.Argument(help="dataset directory to write back")]) -> None:
     """Write the reviewed state to the tables and the events to reviews.jsonl."""

@@ -26,7 +26,7 @@ from .. import images, refs
 from .. import production as production_metadata
 from ..production import production_info
 from ..schema import Box, ReviewState, Script, Unit
-from . import status
+from . import quiz_shapes, status
 from .request_cache import file_stamp, memoize
 from .store import SEEN, BadRequest, ReviewRequest, Store
 
@@ -654,7 +654,10 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 "repair": repair_metadata(unit),
                 "box": unit.box.model_dump() if unit.box else None,
                 "image_sha256": digest,
-                "image": image_url}
+                "image": image_url,
+                # Where this crop sits among its character's crops by shape; a round is shown in
+                # this order so that a crop unlike its neighbours stands out.
+                "shape_order": quiz_shapes.load().get(unit.id)}
 
     def one(unit_id: str) -> tuple[Unit, int]:
         records = store.unit_snapshot(unit_id)

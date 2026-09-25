@@ -129,7 +129,7 @@
       const seed = randomSeed()
       const result = await catalogue({ purpose: 'review', production: scope, reading: chosen, state: 'pending', limit: ROUND_BATCH, seed })
       if (closed || id !== requestId) return
-      restoreRound({ reading: chosen, items: result.items, choices: {}, selected: {}, skipped: {},
+      restoreRound({ reading: chosen, items: arranged(numbered(result.items)), choices: {}, selected: {}, skipped: {},
         suggestions: {}, contextSuggestions: {}, roundId: crypto.randomUUID(), roundSeed: seed,
         hasMore: result.total > result.items.length, production: scope, summary })
       if (replace && historyIndex >= 0) history[historyIndex] = snapshot()
@@ -165,7 +165,8 @@
         }
         if (!result.items.length || offset >= result.total) { more = false; break }
       }
-      items = [...items, ...additions]; hasMore = more
+      // Added crops follow the ones already on screen, so nothing the reviewer is looking at moves.
+      items = [...items, ...arranged(numbered(additions, items.length))]; hasMore = more
     } catch (e) { if (id === requestId) error = e.message }
     finally { if (id === requestId) loadingMore = false }
   }
@@ -410,12 +411,22 @@
     if (step === 'issue' && e.key.toLowerCase() === 's' && current) { e.preventDefault(); skip([current.id]) }
     if (step === 'correct' && e.key.toLowerCase() === 'n' && !control) { e.preventDefault(); if (current) chooseSuggestion(current.id, null, true) }
   }
+  // A round is dealt as before; shown in shape order, the crops of one form sit together and a crop
+  // unlike its neighbours stands out. `dealt` keeps the dealt order for switching back.
+  let byShape = $state(stored('atlas.quiz.shape-order', true) !== false)
+  function numbered(list, from = 0) { return list.map((item, i) => ({ ...item, dealt: item.dealt ?? from + i })) }
+  function arranged(list) {
+    return [...list].sort((a, b) => byShape
+      ? (a.shape_order ?? Infinity) - (b.shape_order ?? Infinity) || a.dealt - b.dealt
+      : a.dealt - b.dealt)
+  }
+  function toggleShape() { byShape = !byShape; remember('atlas.quiz.shape-order', byShape); items = arranged(items) }
   onMount(() => { last = stored('atlas.last-round.' + clientId, null); load({ target: initialReading || null }); return () => { closed = true } })
 </script>
 
 <svelte:window onkeydown={keydown} />
 <section class="quiz-workspace">
-  <div class="quiz-topline"><a href="#/" class="quiet-link">← Collection</a><div class="round-count"><span class="live-dot"></span>{number(completed)} issues saved this session</div>{#if last}<button class="undo-round" disabled={saving} onclick={undo}>↶ Undo last round</button>{/if}</div>
+  <div class="quiz-topline"><a href="#/" class="quiet-link">← Collection</a><div class="round-count"><span class="live-dot"></span>{number(completed)} issues saved this session</div><button class="undo-round shape-toggle" aria-pressed={byShape} onclick={toggleShape}>{byShape ? '◧ Similar shapes together' : '◧ Dealt order'}</button>{#if last}<button class="undo-round" disabled={saving} onclick={undo}>↶ Undo last round</button>{/if}</div>
   <div class="quiz-heading"><div class="target-character" aria-label={`Target reading ${reading}`}>{reading || '字'}</div><div class="quiz-title"><p class="overline">QUICK REVIEW · {step === 'select' ? 'SELECT' : 'REVIEW'}</p><h1>{step === 'select' ? 'Which crops need fixing?' : step === 'issue' ? 'What’s wrong with this crop?' : choices[current?.id]?.issue === 'merged' ? 'What’s in this crop?' : 'Which character is this?'}</h1>{#if step === 'select'}<p>One complete <b>{reading || "…"}</b> per crop. Select extra characters, bad cuts, or a different character.</p>{/if}</div><div class="round-switch"><button class="category-toggle" disabled={saving || loading} onclick={() => categoryOpen = !categoryOpen}>Change character ⌄</button><button class="quiet-link" disabled={saving || loading || !canNext} onclick={() => load()}>Next character →</button></div></div>
   {#if categoryOpen}<div class="round-categories"><input aria-label="Find a category" placeholder="Find a reading…" bind:value={search}/><div class="category-options">{#each categories as c}<button disabled={saving} onclick={() => chooseCategory(c.label)}><span>{c.label}</span><small>{c.pending}</small></button>{/each}</div></div>{/if}
   <label class="review-material">Material
