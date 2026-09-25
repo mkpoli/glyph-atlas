@@ -116,9 +116,18 @@
         remember('atlas.last-round.' + clientId, null)
         remember(epochKey, summary.review_epoch ?? null)
       }
-      const available = summary.categories.filter(c => c.pending > 0)
-      const chosen = target && available.some(c => c.label === target) ? target
-        : nextCharacter(available, scope === production ? reading : '', history.filter(r => r.production === scope), randomSeed())
+      // A character whose count promised crops that cannot be dealt gives way to the next one.
+      let available = summary.categories.filter(c => c.pending > 0), chosen = null, seed = randomSeed(), result = null
+      for (let tries = 0; tries < 8; tries++) {
+        chosen = tries === 0 && target && available.some(c => c.label === target) ? target
+          : nextCharacter(available, scope === production ? reading : '', history.filter(r => r.production === scope), randomSeed())
+        if (!chosen) break
+        result = await catalogue({ purpose: 'review', reviewer: clientId, production: scope, reading: chosen, state: 'pending', limit: ROUND_BATCH, seed })
+        if (closed || id !== requestId) return
+        if (result.items.length) break
+        available = available.filter(c => c.label !== chosen)
+        chosen = null
+      }
       if (!chosen) {
         if (scope !== production) {
           restoreRound({ reading: '', items: [], choices: {}, selected: {}, skipped: {}, suggestions: {},
@@ -129,12 +138,9 @@
         else error = 'No other characters are ready. You can load more of this character or go back.'
         return
       }
-      const seed = randomSeed()
-      const result = await catalogue({ purpose: 'review', reviewer: clientId, production: scope, reading: chosen, state: 'pending', limit: ROUND_BATCH, seed })
-      if (closed || id !== requestId) return
       restoreRound({ reading: chosen, items: arranged(numbered(result.items)), choices: {}, selected: {}, skipped: {},
         suggestions: {}, contextSuggestions: {}, roundId: crypto.randomUUID(), roundSeed: seed,
-        hasMore: result.total > result.items.length, production: scope, summary })
+        hasMore: (result.next_offset ?? result.items.length) < result.total, production: scope, summary })
       if (replace && historyIndex >= 0) history[historyIndex] = snapshot()
       else {
         history = [...history.slice(0, historyIndex + 1), snapshot(), ...history.slice(historyIndex + 1)]
@@ -161,12 +167,14 @@
         const batch = fresh.slice(0, room)
         additions.push(...batch)
         batch.forEach(item => seen.add(item.id))
-        offset += result.items.length
+        // The service may pass over crops it will not deal, so its next offset can run ahead of the items.
+        const next = result.next_offset ?? offset + result.items.length, moved = next > offset
+        offset = next
         if (additions.length >= batchLimit) {
           more = fresh.length > room || offset < result.total
           break
         }
-        if (!result.items.length || offset >= result.total) { more = false; break }
+        if (!moved || offset >= result.total) { more = false; break }
       }
       // Added crops follow the ones already on screen, so nothing the reviewer is looking at moves.
       items = [...items, ...arranged(numbered(additions, items.length))]; hasMore = more
