@@ -4,16 +4,20 @@ ainu-records publishes its own crops of the Ainu sources and no longer reviews t
 character page links an occurrence to the atlas, where it is reviewed. An occurrence is linked
 only to a unit the hosted atlas publishes, on the same page, whose box overlaps it by at least
 `--min-iou`, one unit per occurrence. Both sides measure boxes in the pixels of the same witness
-image; a page whose image has a different size on the two sides is not linked at all. Anything less
-certain is left without a link rather than sent to the wrong crop.
+image; a page whose image has a different size on the two sides is not linked at all. A matched
+pair is linked only when the two agree on the character: where the atlas labels that ink as another
+character, a reader following the link would open a crop named for its neighbour. Those pairs are
+returned as disagreements, the evidence for correcting the atlas's pairing, and `--report` writes
+them out. Anything less certain is left without a link rather than sent to the wrong crop.
 
-    .venv/bin/python scripts/export_ainu_atlas_links.py CATALOGUE ATLAS_PAGES AINU_RECORDS [--write]
+    .venv/bin/python scripts/export_ainu_atlas_links.py CATALOGUE ATLAS_PAGES AINU_RECORDS [--write] [--report FILE]
 """
 from __future__ import annotations
 
 import argparse
 import json
 import sqlite3
+import unicodedata
 from collections import defaultdict
 from pathlib import Path
 
@@ -36,6 +40,10 @@ def entries(records: Path) -> dict[str, str]:
     return found
 
 
+def normal(text: str | None) -> str:
+    return unicodedata.normalize("NFC", text or "").strip()
+
+
 def iou(a, b) -> float:
     ax, ay, aw, ah = a
     bx, by, bw, bh = b
@@ -53,8 +61,10 @@ def links(catalogue: Path, atlas_pages: Path, records: Path, min_iou: float) -> 
     sizes = {page.id: (page.width, page.height) for page in tables.read(atlas_pages, Page)}
     db = sqlite3.connect(catalogue)
     units_by_page: dict[str, list] = defaultdict(list)
+    labels: dict[str, str] = {}
     for (data,) in db.execute("SELECT data FROM units WHERE origin='local' AND id LIKE 'hk:%'"):
         d = json.loads(data)
+        labels[d["id"]] = normal(d.get("label"))
         box = d.get("box")
         if box and d.get("page_id"):
             units_by_page[d["page_id"]].append((d["id"], (box["x"], box["y"], box["w"], box["h"])))
@@ -66,9 +76,15 @@ def links(catalogue: Path, atlas_pages: Path, records: Path, min_iou: float) -> 
             continue
         unit = json.loads(samples_path.read_text(encoding="utf-8"))
         entry = by_key.get(unit["key"])
+        # ainu-records' reading of an occurrence: its published review, else the proposed label.
+        reviews_path = folder / "reviews.json"
+        reviewed = ({e["id"]: e.get("label") for e in json.loads(reviews_path.read_text(encoding="utf-8")).get("edits", [])}
+                    if reviews_path.is_file() else {})
         linked: dict[str, str] = {}
+        disagree: list[dict] = []
         if entry:
             pages = {p["n"]: p for p in unit["pages"]}
+            by_id = {sample["id"]: sample for sample in unit["samples"]}
             by_page: dict[int, list] = defaultdict(list)
             for sample in unit["samples"]:
                 by_page[sample["page"]].append(sample)
@@ -85,10 +101,15 @@ def links(catalogue: Path, atlas_pages: Path, records: Path, min_iou: float) -> 
                         break
                     if sid in taken_s or uid in taken_u:
                         continue
-                    linked[sid] = uid
                     taken_s.add(sid)
                     taken_u.add(uid)
-        out[unit["key"]] = {"entry": entry, "samples": len(unit["samples"]), "links": linked}
+                    ours = normal(reviewed.get(sid) or by_id[sid]["proposed"])
+                    if ours == labels.get(uid):
+                        linked[sid] = uid
+                    else:
+                        disagree.append({"sample": sid, "unit": uid, "records": ours, "atlas": labels.get(uid),
+                                         "box": by_id[sid]["box"], "iou": round(score, 3)})
+        out[unit["key"]] = {"entry": entry, "samples": len(unit["samples"]), "links": linked, "disagree": disagree}
     return out
 
 
@@ -99,10 +120,12 @@ if __name__ == "__main__":
     parser.add_argument("records", type=Path)
     parser.add_argument("--min-iou", type=float, default=0.5)
     parser.add_argument("--write", action="store_true")
+    parser.add_argument("--report", type=Path, help="write the pairs whose labels disagree here")
     args = parser.parse_args()
     result = links(args.catalogue, args.atlas_pages, args.records, args.min_iou)
     for key, value in result.items():
-        print(f"{key:28} entry={value['entry'] or '-':34} samples={value['samples']:6} linked={len(value['links']):6}")
+        print(f"{key:28} entry={value['entry'] or '-':34} samples={value['samples']:6} "
+              f"linked={len(value['links']):6} disagree={len(value['disagree']):6}")
         if args.write:
             # A copy with no counterpart on the atlas gets no file, and the page shows it without links.
             target = args.records / "data/characters" / key.replace("/", "--") / "atlas.json"
@@ -111,3 +134,6 @@ if __name__ == "__main__":
                                              ensure_ascii=False, indent=0) + "\n", encoding="utf-8")
             else:
                 target.unlink(missing_ok=True)
+    if args.report:
+        args.report.write_text(json.dumps({key: value["disagree"] for key, value in result.items() if value["disagree"]},
+                                          ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
