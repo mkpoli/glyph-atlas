@@ -4,11 +4,14 @@ import json
 from pathlib import Path
 
 from glyph_atlas import tables
-from glyph_atlas.extraction_queue import Engine, Queue, publish_completed, run
+from glyph_atlas.extraction_queue import Engine, Queue, load_char_counts, publish_completed, run
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--root",type=Path,default=Path("work/character-extraction"))
 parser.add_argument("--source",type=Path,default=Path("work/honkoku-lines"))
+parser.add_argument("--counts",type=Path,default=Path("work/corpus-index/chars.parquet"))
+parser.add_argument("--no-prioritize",action="store_true",
+                     help="skip coverage-first re-scoring of the queue before this run")
 parser.add_argument("--publish-to",type=Path)
 parser.add_argument("--publish-only",action="store_true")
 parser.add_argument("--seed",action="store_true")
@@ -37,6 +40,9 @@ with tables.locked(args.root/"worker",timeout=0):
         print(json.dumps(queue.status(),ensure_ascii=False,indent=2))
     else:
         queue.status(state="initializing")
+        if not args.no_prioritize:
+            counts = load_char_counts(args.counts) if args.counts.exists() else {}
+            queue.prioritize(args.source, counts)
         try:
             result = run(queue,Engine(),pages=args.pages,seconds=args.seconds,
                          pause=args.pause,max_lines=args.max_lines,store=store)
