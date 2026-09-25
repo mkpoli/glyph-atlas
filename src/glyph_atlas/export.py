@@ -667,8 +667,10 @@ def _standalone_crop(unit: Unit) -> Path | None:
 
     A unit whose `crop` names a member of an archive (the HI Lab form `all.zip!all/characters/...`)
     is found either in the directory the importer extracted it to or in a cache of that member's
-    name; a unit whose `crop` is a URL is looked up in the image cache. A crop that is nowhere on
-    disk is skipped rather than fetched: the export command does not reach the network.
+    name. A unit whose `crop` is a URL (HNG's GitHub mirror) is looked up in a local clone of that
+    dataset, through the same resolution the corpus API uses, and failing that in the image cache.
+    A crop that is nowhere on disk is skipped rather than fetched: the export command does not
+    reach the network.
     """
     from . import images
 
@@ -680,6 +682,12 @@ def _standalone_crop(unit: Unit) -> Path | None:
                 if candidate.is_file():
                     return candidate
         return None
+    if unit.crop and unit.crop.startswith("http"):
+        from .corpus.crops import CropResolver
+
+        found = CropResolver(ROOT, file_bases=[ROOT]).archive_member(unit.crop)
+        if found is not None:
+            return found
     cached = images.path_for(unit.crop or "") if unit.crop else None
     return cached if cached is not None and cached.is_file() else None
 

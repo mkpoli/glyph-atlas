@@ -133,6 +133,7 @@ ID_FAMILIES = {
     "codh-full": "codh-omt",
     "kokatsuji": "codh-omt",
     "hilab": "hilab",
+    "hng": "hng",
 }
 
 #: Known corpora, with the rights and shape a caller needs before showing a result.
@@ -166,6 +167,10 @@ KNOWN: tuple[dict[str, Any], ...] = (
     {
         "name": "kokatsuji",
         "note": "Kokatsuji dataset: 36.8k located character units with page images.",
+    },
+    {
+        "name": "hng",
+        "note": "HNG char dataset: 49.8k located character crops, no page images.",
     },
 )
 

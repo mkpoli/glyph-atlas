@@ -53,7 +53,25 @@ MAGIC = {
     b"RIFF": "image/webp",
     b"II*\x00": "image/tiff",
     b"MM\x00*": "image/tiff",
+    b"BM": "image/bmp",
 }
+
+
+@lru_cache(maxsize=1)
+def _hng_crop_prefix() -> str | None:
+    """The fixed prefix of every HNG crop URL: the GitHub mirror plus the pinned commit.
+
+    Read from `data/sources/hng-basic-data.yaml` rather than hard-coded, so a change of
+    mirror or a re-pin stays a data change. None when the source file is unreadable.
+    """
+    try:
+        from ..importers import hng
+
+        raw = hng.source_file()
+        template = str(raw["access"]["crop"])
+        return template.split("{revision}", 1)[0] + raw["revision"] + "/"
+    except (OSError, KeyError, ValueError, TypeError):
+        return None
 
 
 def sniff(data: bytes) -> str | None:
@@ -187,7 +205,7 @@ class CropResolver:
         directory = self.image_dir(corpus.name)
         if directory is not None and any(directory.glob("*")):
             mode = "local_crop"
-        if mode == "none" and corpus.name == "hilab":
+        if mode == "none" and corpus.name in ("hilab", "hng"):
             mode = "archive_member"
         if mode == "none":
             # No local bytes. A units row still often carries a IIIF service through
@@ -313,18 +331,35 @@ class CropResolver:
             return None, None, f"could not crop the page image: {type(exc).__name__}"
 
     def archive_member(self, crop: str | None) -> Path | None:
-        """The extracted file behind an ``<archive>!<member>`` crop reference."""
-        if not crop or "!" not in crop:
+        """The local file behind a standalone crop reference, when one is on disk.
+
+        Two shapes are registered, told apart by the crop string itself: an HI Lab
+        ``<archive>!<member>`` reference, resolved under the extracted archive, and an
+        HNG crop URL, resolved under a local clone of the dataset at the commit it
+        names. Neither fetches anything; a crop that is nowhere on disk is None.
+        """
+        if not crop:
             return None
-        archive, member = crop.split("!", 1)
-        if archive != "all.zip" or not re.fullmatch(
-            r"all/characters/U\+[0-9A-Fa-f]{4,6}/[0-9]+\.jpg", member
-        ):
-            return None
-        # The importer writes standalone crops below cache/hilab, not a page-image
-        # directory. It may run from the corpus root or the repository root.
-        for base in dict.fromkeys((self.root, *self.file_bases)):
-            directory = base / HILAB_EXTRACTION
+        if "!" in crop:
+            archive, member = crop.split("!", 1)
+            if archive != "all.zip" or not re.fullmatch(
+                r"all/characters/U\+[0-9A-Fa-f]{4,6}/[0-9]+\.jpg", member
+            ):
+                return None
+            # The importer writes standalone crops below cache/hilab, not a page-image
+            # directory. It may run from the corpus root or the repository root.
+            directories = [base / HILAB_EXTRACTION for base in dict.fromkeys((self.root, *self.file_bases))]
+        else:
+            prefix = _hng_crop_prefix()
+            if not prefix or not crop.startswith(prefix):
+                return None
+            from urllib.parse import unquote
+
+            from ..importers.hng import default_clone as hng_default_clone
+
+            member = unquote(crop[len(prefix) :])
+            directories = [hng_default_clone(), *(base / "hng-basic-data" for base in (self.root, *self.file_bases))]
+        for directory in dict.fromkeys(directories):
             try:
                 candidate = (directory / member).resolve()
                 candidate.relative_to(directory.resolve())
@@ -379,8 +414,8 @@ class CropResolver:
         return path
 
     def archive_member_path(self, crop: str | None) -> Path | None:
-        """The extracted file behind an archive reference, if it is on disk."""
-        if not crop or "!" not in crop:
+        """The local file behind a standalone crop reference, if it is on disk (cached)."""
+        if not crop:
             return None
         if crop in self._members:
             return self._members[crop]
@@ -417,6 +452,14 @@ class CropResolver:
             archive = str(crop).split("!", 1)[0]
             reason = f"crop bytes are not present: {archive} has not been extracted to {HILAB_EXTRACTION}"
             return False, reason, "archive_member"
+        if crop and str(crop).startswith("http") and _hng_crop_prefix() and str(crop).startswith(_hng_crop_prefix() or ""):
+            if corpus_name != "hng":
+                return False, "standalone crops are not registered for this corpus", "none"
+            member = self.archive_member_path(str(crop))
+            if member is not None:
+                return True, None, "local_crop"
+            # No local clone: the GitHub mirror serves the same bytes directly.
+            return True, None, "remote_iiif"
         if has_box and image and str(image).startswith("file:"):
             if self.page_image_path(str(image), corpus_name) is not None:
                 return True, None, "local_crop"
@@ -546,7 +589,8 @@ class CropResolver:
                 )
                 return result
 
-            if row.get("crop") and "!" in str(row["crop"]):
+            if row.get("crop") and not box:
+                # A standalone crop: no page image, so the crop itself is the pixels.
                 member = self.archive_member_path(str(row["crop"]))
                 data = member.read_bytes() if member else None
                 media = sniff(data) if data else None
@@ -555,6 +599,11 @@ class CropResolver:
                     result.media_type = media
                     result.sha256 = hashlib.sha256(data).hexdigest()
                     result.crop_url = self.serve_url(unit_id, edge)
+                    result.render_available = True
+                    return result
+                if how == "remote_iiif":
+                    # No local clone: the row's own crop URL is a direct, servable link.
+                    result.iiif_url = str(row["crop"])
                     result.render_available = True
                     return result
                 result.reason = why or "crop file is not present"

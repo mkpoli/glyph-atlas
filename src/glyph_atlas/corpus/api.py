@@ -819,10 +819,18 @@ def _pick_rect(occurrence: Occurrence, wanted: str) -> Rect | None:
 
 
 def _unit_iiif_url(row: dict[str, Any], width: int) -> str | None:
-    """A IIIF region URL for a unit, straight from its page service and box."""
-    service = row.get("image_service")
+    """A holder-hosted URL for a unit: a IIIF region of its page, or its own crop URL.
+
+    A boxed unit is cut from its page service. A box-less unit (HI Lab, HNG) is a
+    pre-cut crop the holder already serves whole; its own ``crop`` is that link, when
+    it is a plain URL rather than an archive member reference.
+    """
     box = row.get("box")
-    if not service or not box:
+    if not box:
+        crop = row.get("crop")
+        return crop if isinstance(crop, str) and crop.startswith("http") else None
+    service = row.get("image_service")
+    if not service:
         return None
     region = f"{box['x']},{box['y']},{box['w']},{box['h']}"
     return f"{service}/{region}/{width},/0/default.jpg"
