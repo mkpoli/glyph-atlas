@@ -596,6 +596,21 @@ def import_hng(
     typer.echo(f"-> {out}")
 
 
+@import_app.command("hng-kiridashi")
+def import_hng_kiridashi(
+    clone: Annotated[Path | None, typer.Option(help="a clone of hng-kiridashi-data")] = None,
+    limit: Annotated[int | None, typer.Option(help="stop after this many rows")] = None,
+    out: Annotated[Path, typer.Option(help="directory for the tables")] = Path("work/hng-kiridashi"),
+) -> None:
+    """Import the HNG 切り出しデータ: character boxes on Gallica pages."""
+    from .importers import hng_kiridashi
+
+    counts = hng_kiridashi.import_all(out, clone=clone, limit=limit)
+    for name, rows in counts.items():
+        typer.echo(f"{name:<12} {rows:>10}")
+    typer.echo(f"-> {out}")
+
+
 @audit_app.command("sample")
 def audit_sample(
     directory: Annotated[Path, typer.Argument(help="dataset directory holding the run's units")],

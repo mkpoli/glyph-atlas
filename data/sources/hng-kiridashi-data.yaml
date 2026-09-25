@@ -1,0 +1,26 @@
+id: hng-kiridashi-data
+name: 漢字字体規範史データセット（HNG）切り出しデータ
+publisher: 漢字字体規範史データセット保存会
+kind: character-dataset
+url: https://www.hng-data.org/dataset.ja.html
+revision: 346bc74071b9a8393b841b171bbdd6c8e82774a7
+licence: CC-BY-SA-4.0
+licence_evidence: https://github.com/chise/hng-kiridashi-data/blob/346bc74071b9a8393b841b171bbdd6c8e82774a7/README.md
+attribution: 漢字字体規範史データセット保存会『漢字字体規範史データセット（HNG）』切り出しデータ, CC BY-SA 4.0
+image_terms: https://gallica.bnf.fr/edit/und/conditions-dutilisation-des-contenus-de-gallica
+image_attribution: Source gallica.bnf.fr / Bibliothèque nationale de France
+counts:
+  rows: 10316
+  files: 2
+access:
+  repository: https://github.com/chise/hng-kiridashi-data
+  upstream_repository: https://gitlab.hng-data.org/HNG/hng-kiridashi-data
+format:
+  files: "H{code}_{id}_{short}.tsv, one per source, with `# manifest`, `# HNG code` and `# HNG source ID` header lines"
+  columns: [osid, sid, page, ln, cn, x, y, w, h, char, hng-gid, flg, remarks, img, mx, my, canvas]
+  boxes: pixels on the full-size IIIF image (`mx` × `my`), which matched the images Gallica served on 2026-09-25
+  hng-gid: 代表字形ID of the source in the HNG basic dataset; flg 0 = unspecified, 1 = a, 2 = b…
+notes:
+  - Boxes were drawn in 切り出しくん (International Institute for Digital Humanities) on the Gallica images of Pelliot chinois 2334 and 2195.
+  - The coordinates and characters are CC BY-SA 4.0 or GPL-2.0-or-later; the atlas takes CC BY-SA 4.0. The page images follow Gallica's conditions of use, which make commercial reuse subject to a licence, so crops of these pages stay out of release builds.
+  - Some boxes were entered twice with the same page, box and character under two sids.
