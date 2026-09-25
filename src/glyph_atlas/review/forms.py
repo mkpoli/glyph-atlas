@@ -31,6 +31,8 @@ class Decision(BaseModel):
     units: list[str] | None = Field(default=None, max_length=5000)
     form: str | None = Field(default=None, max_length=8)
     note: str = Field(default="", max_length=2000)
+    # The hosted site records who decided; the local server has one person and ignores it.
+    client_id: str | None = Field(default=None, max_length=128)
 
 
 _BOX_LOCK = threading.Lock()

@@ -497,7 +497,56 @@ try {
   assert.equal(overLimit.status, 422, 'limit is bounded at 100')
   const badCursor = await mf.dispatchFetch(base + '/history?before=not-a-cursor')
   assert.equal(badCursor.status, 422, 'an unreadable cursor is rejected rather than silently ignored')
-  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history.')
+  // Hosted form assignment: a published clustering, a named cluster, a glyph's own decision and
+  // following the cluster again; search and the record follow each step.
+  await db.batch([
+    db.prepare("INSERT INTO form_families VALUES('U+4EEE','仮','仮 = 假',2,1,?,0,'r1')").bind(JSON.stringify([{ char: '仮', code_point: 'U+4EEE' }, { char: '假', code_point: 'U+5047' }])),
+    db.prepare("INSERT INTO form_clusters VALUES('U+4EEE:c1','U+4EEE','Cluster 1',2,0.9,0,0,'[]',NULL,NULL)"),
+    db.prepare("INSERT INTO form_units(id,family,cluster,rank,similarity,image,split) VALUES('codh:plain','U+4EEE','U+4EEE:c1',0,0.95,NULL,'0000000')"),
+    db.prepare("INSERT INTO form_units(id,family,cluster,rank,similarity,image,split) VALUES('codh:fixture','U+4EEE','U+4EEE:c1',1,0.9,NULL,'1111111')"),
+  ])
+  const plain = JSON.stringify({ ...corpus, id: 'codh:plain' })
+  await bucket.put('plain', plain)
+  await db.prepare('INSERT INTO corpus_units VALUES(?,?,?,?,?,?,?,?,?,?)').bind('codh:plain', '假', 'U+4EEE', null, 2, 'plain', 0, new TextEncoder().encode(plain).length, 'unknown', 0).run()
+  await db.prepare("INSERT INTO corpus_characters VALUES('假','unknown',1,0) ON CONFLICT DO UPDATE SET n=n+1").run()
+  // Quick review's per-character counts agree with a recount of the rows after every decision.
+  const counted = async () => {
+    const kept = (await db.prepare('SELECT character,production,n,named FROM corpus_characters ORDER BY 1,2').all()).results
+    const recount = (await db.prepare('SELECT character,production,count(*) AS n,sum(named) AS named FROM corpus_units WHERE character IS NOT NULL GROUP BY 1,2 ORDER BY 1,2').all()).results
+    assert.deepEqual(kept, recount, 'corpus_characters follows the forms')
+  }
+  await counted()
+  assert.equal((await call('/forms/families')).items[0].code_point, 'U+4EEE')
+  await call('/forms/decisions', { kind: 'cluster', cluster: 'U+4EEE:c1', form: 'あ', client_id: 'integration' }, 422)
+  const named = await call('/forms/decisions', { kind: 'cluster', cluster: 'U+4EEE:c1', form: '仮', client_id: 'integration' })
+  assert.equal(named.count, 2)
+  const family = await call('/forms/families/U%2B4EEE')
+  assert.deepEqual([family.assigned, family.items[0].form, family.items[0].assigned], [2, '仮', 2])
+  assert.equal((await db.prepare("SELECT character FROM corpus_units WHERE id='codh:plain'").first()).character, '仮')
+  await counted()
+  assert.equal((await call('/atlas/corpus/character?id=codh%3Aplain')).identity_basis, 'form_cluster')
+  assert.equal((await call('/atlas/corpus/character?id=codh%3Afixture')).identity_basis, 'human_review', 'a human review outranks a form')
+  await call('/forms/decisions', { kind: 'glyph', units: ['codh:plain'], form: '假', client_id: 'integration' })
+  const record = await call('/atlas/corpus/character?id=codh%3Aplain')
+  assert.deepEqual([record.written_character, record.identity_basis], ['假', 'form_glyph'], 'a glyph decision overrides its cluster')
+  const members = await call('/forms/clusters/U%2B4EEE%3Ac1')
+  assert.deepEqual(members.items.map(m => [m.id, m.form, m.basis]), [['codh:plain', '假', 'form_glyph'], ['codh:fixture', '仮', 'form_cluster']])
+  await call('/forms/decisions', { kind: 'inherit', units: ['codh:plain'], client_id: 'integration' })
+  assert.equal((await call('/atlas/corpus/character?id=codh%3Aplain')).written_character, '仮', 'following the cluster again')
+  await counted()
+  await call('/forms/decisions', { kind: 'cluster', cluster: 'U+4EEE:c1', form: null, client_id: 'integration' })
+  assert.equal((await db.prepare("SELECT character FROM corpus_units WHERE id='codh:plain'").first()).character, '假',
+    'withdrawing the form restores the character the glyph had before')
+  await counted()
+  const split = await call('/forms/split/U%2B4EEE%3Ac1?k=2')
+  assert.deepEqual(split.groups.map(g => g.ids), [['codh:plain'], ['codh:fixture']])
+  assert.equal((await mf.dispatchFetch(base + '/forms/families/%E0')).status, 404, 'a malformed escape names no family')
+  await db.prepare("INSERT INTO form_loading VALUES('now')").run()
+  await call('/forms/decisions', { kind: 'glyph', units: ['codh:plain'], form: '假', client_id: 'integration' }, 503)
+  await db.prepare('DELETE FROM form_loading').run()
+  const log = await (await mf.dispatchFetch(base + '/forms/decisions.jsonl')).text()
+  assert.equal(log.trim().split('\n').length, 4, 'every accepted decision is logged, the refused one is not')
+  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms.')
 } finally {
   await mf.dispose()
 }
