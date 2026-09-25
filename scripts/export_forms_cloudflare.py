@@ -128,12 +128,13 @@ class Tiles:
 
 def tiles(corpus_root: Path, out: Path, workers: int) -> tuple[dict[str, str], Tiles, Counter]:
     """A tile URL for every clustered glyph whose pixels are on disk, the tiles packed under `out`."""
-    from glyph_atlas import forms
-    from glyph_atlas.review.forms import located
+    from glyph_atlas import form_clusters, forms
     from glyph_atlas.review.media import MediaCache
 
     media = MediaCache(corpus_root=corpus_root)
-    found = located(corpus_root)
+    pixels = form_clusters.Pixels(corpus_root)
+    found = {glyph["id"]: at for glyph in form_clusters.glyphs(corpus_root, set(forms.clusters()["units"]))
+             if (at := pixels(glyph)) is not None}
     counts = Counter(tile_unheld=len(forms.clusters()["units"]) - len(found))
     keys: dict[str, str] = {}
     # File by file, so each scan is decoded once.
