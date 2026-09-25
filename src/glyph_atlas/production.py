@@ -19,7 +19,10 @@ REVIEW_SCOPE = "not:printed/type"
 @lru_cache(maxsize=1)
 def vocabulary() -> dict[str, dict]:
     """Every node by id, in the file's order; a node's parent is the id less its last segment."""
-    nodes = {row["id"]: row for row in yaml.safe_load(VOCAB.read_text(encoding="utf-8"))}
+    rows = yaml.safe_load(VOCAB.read_text(encoding="utf-8"))
+    nodes = {row["id"]: row for row in rows}
+    if len(nodes) != len(rows):
+        raise ValueError(f"{VOCAB}: an id is listed twice")
     for node in nodes:
         parent = node.rpartition("/")[0]
         if parent and parent not in nodes:
