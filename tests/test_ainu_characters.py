@@ -316,3 +316,24 @@ def test_the_merged_store_keeps_the_ledgers_no_event_rebuilds(world, tmp_path):
     with sqlite3.connect(out / "review.sqlite") as db:
         assert db.execute("SELECT base FROM revision_bases").fetchall() == [(2000000,)]
         assert db.execute("SELECT remote_id FROM cloudflare_imports").fetchall() == [("remote-1",)]
+
+
+def test_one_ink_is_imported_once_and_two_readings_of_it_are_withheld(world, tmp_path):
+    atlas, records = world
+    folder = records / "data/characters/moshiogusa--ninjal-1"
+    samples = json.loads((folder / "samples.json").read_text(encoding="utf-8"))
+    samples["samples"] += [sample(8, 601, "ア", "ocr", None),  # the same ink as 1-l1-4, read the same
+                           sample(9, 1301, "キ", "transcription", 2), sample(10, 1300, "ケ", "transcription", 3)]
+    samples["samples"][-2]["id"], samples["samples"][-1]["id"] = "1-l2-9", "1-l3-10"
+    (folder / "samples.json").write_text(json.dumps(samples), encoding="utf-8")
+    result = ainu_characters.plan(atlas, records)
+    assert "1-ocr0-8" not in [o.id for o in result.import_new]
+    assert result.skipped["same ink as another occurrence"] == 1
+    assert result.contested == {"moshiogusa/ninjal-1#1-l2-9", "moshiogusa/ninjal-1#1-l3-10"}
+    out = tmp_path / "merged"
+    ainu_characters.build(result, atlas, records, out)
+    units = units_of(out)
+    assert all(units[f"ar:moshiogusa--ninjal-1:{i}"].meta["alignment_repair"]["withheld"] for i in ("1-l2-9", "1-l3-10"))
+    assert not ainu_characters.trusted(units["ar:moshiogusa--ninjal-1:1-l2-9"]), "rec.aynu.org leaves them out"
+    again = ainu_characters.plan(out, records)
+    assert again.import_new == [], "a duplicate left out stays out when the merge runs on its own output"

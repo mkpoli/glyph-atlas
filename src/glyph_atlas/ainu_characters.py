@@ -30,7 +30,9 @@ own occurrence by id instead. Then:
 * an occurrence only ainu-records has is imported, with the source of its label;
 * a unit only the atlas has stays.
 
-An occurrence ainu-records rejected or measured empty is not imported. What the merge changes on a
+An occurrence ainu-records rejected or measured empty is not imported. Where ainu-records gives one
+ink two occurrences, the ink is imported once under one reading, and under two it is imported with
+both withheld. What the merge changes on a
 unit the review log names is appended to the log as the merge's own event, so replaying the log over
 the merged tables arrives at the same units.
 """
@@ -210,6 +212,7 @@ class Plan:
     keep_withheld: list[tuple[str, Occurrence]] = field(default_factory=list)  # ainu-records has no reading to weigh against it
     withhold: list[tuple[str, Occurrence]] = field(default_factory=list)  # on ink ainu-records rejected
     import_new: list[Occurrence] = field(default_factory=list)
+    contested: set[str] = field(default_factory=set)  # `key#id` of occurrences sharing ink under two readings
     imported_before: list[str] = field(default_factory=list)  # units an earlier merge imported
     atlas_only: list[str] = field(default_factory=list)
     skipped: Counter = field(default_factory=Counter)
@@ -223,6 +226,7 @@ class Plan:
                 "atlas withheld, ainu-records rejected the ink": len(self.withhold),
                 "imported from ainu-records": len(self.import_new),
                 "imported by label source": dict(Counter(o.origin for o in self.import_new)),
+                "imported withheld, two readings of one ink": len(self.contested),
                 "imported by an earlier merge": len(self.imported_before),
                 "atlas only": len(self.atlas_only),
                 "not imported": dict(self.skipped),
@@ -249,9 +253,12 @@ def plan(atlas: Path, records: Path, *, min_iou: float = MIN_IOU, log: ReviewLog
     for key, rows in occurrences(records).items():
         entry = by_key.get(key)
         pages: dict[int, list[Occurrence]] = defaultdict(list)
+        held: dict[int, list[Occurrence]] = defaultdict(list)  # occurrences an earlier merge imported
         for row in rows:
             before = earlier.get(f"{key}#{row.id}")
             if before is not None:
+                if before.active:
+                    held[row.sample["page"]].append(row)
                 if row.rejected and before.active and not decided(before):
                     result.withhold.append((before.id, row))
                 else:
@@ -285,13 +292,23 @@ def plan(atlas: Path, records: Path, *, min_iou: float = MIN_IOU, log: ReviewLog
                     (result.keep_atlas if unit.review == ReviewState.DISPUTED else result.confirm).append((uid, row))
                 else:
                     result.replace.append((uid, row))
+            arriving = [*held[n], *(row for uid, row in result.replace if row.key == key and row.sample["page"] == n)]
             for row in page_rows:
                 if row.id in taken_r:
                     continue
                 if row.rejected:
                     result.skipped["rejected or empty in ainu-records"] += 1
-                else:
-                    result.import_new.append(row)
+                    continue
+                # ainu-records can give one ink two occurrences: overlapping OCR blocks, or one box under
+                # two lines. Under one reading it is one character; under two, neither can be trusted.
+                twin = next((a for a in arriving if iou(a.sample["box"], row.sample["box"]) >= min_iou), None)
+                if twin is not None and twin.label == row.label:
+                    result.skipped["same ink as another occurrence"] += 1
+                    continue
+                if twin is not None:
+                    result.contested.update({f"{twin.key}#{twin.id}", f"{row.key}#{row.id}"})
+                arriving.append(row)
+                result.import_new.append(row)
     result.atlas_only = [u.id for u in units if u.id not in matched_units and u.upstream.get("source") != UPSTREAM]
     return result
 
@@ -307,7 +324,7 @@ def provenance(row: Occurrence) -> dict[str, Any]:
             "revision": s.get("revision")}
 
 
-def imported(row: Occurrence, entry: str, lines: set[str]) -> Unit:
+def imported(row: Occurrence, entry: str, lines: set[str], contested: frozenset[str] | set[str] = frozenset()) -> Unit:
     """An ainu-records occurrence as an atlas unit, with where its label came from."""
     s = row.sample
     page = s["page"] - 1
@@ -321,7 +338,10 @@ def imported(row: Occurrence, entry: str, lines: set[str]) -> Unit:
         script=refs.script_of(row.label[:1]) if row.label else Script.UNKNOWN,
         method="import", review=ReviewState.REVIEWED if row.checked else ReviewState.MACHINE,
         upstream={"source": UPSTREAM, "id": f"{row.key}#{row.id}"},
-        meta={META: provenance(row)},
+        meta={META: provenance(row), **({"alignment_repair": {
+            "status": "contested", "reliable": False, "withheld": True, "quiz": False,
+            "reason": "ainu-records reads this ink as two different characters"}}
+            if f"{row.key}#{row.id}" in contested else {})},
     )
 
 
@@ -378,14 +398,14 @@ def build(result: Plan, atlas: Path, records: Path, out: Path, *, log: ReviewLog
         counts["atlas withheld"] += 1
     new: list[Unit] = []
     for uid, row in result.replace:
-        replacement = imported(row, by_key[row.key], lines)
+        replacement = imported(row, by_key[row.key], lines, result.contested)
         unit = units[uid]
         units[uid] = unit.model_copy(update={"active": False, "meta": {**unit.meta, META: {
             "replaced_by": replacement.id, "reason": "ainu-records reads this ink as another character"}}})
         new.append(replacement)
         counts["atlas replaced"] += 1
     for row in result.import_new:
-        new.append(imported(row, by_key[row.key], lines))
+        new.append(imported(row, by_key[row.key], lines, result.contested))
         counts["imported"] += 1
     clash = {u.id for u in new} & set(units)
     if clash:
