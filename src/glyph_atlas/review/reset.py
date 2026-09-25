@@ -82,6 +82,11 @@ REWRITTEN = ("lines", "units")
 PHASES = ("started", "materialised", "erased", "sealed")
 
 #: Review states a person authored. Any of them returns to machine on a reset.
+#:
+#: `REJECTED` is deliberately absent: `align.py` and the CODH importer write it for
+#: placements the aligner or the import itself did not accept, never a person. A reset
+#: that folded it into `machine` would turn the aligner's rejections into accepted
+#: crops.
 HUMAN_STATES = frozenset(
     {
         ReviewState.TRANSCRIBER.value,
@@ -89,7 +94,6 @@ HUMAN_STATES = frozenset(
         ReviewState.DOUBLE_REVIEWED.value,
         ReviewState.ADJUDICATED.value,
         ReviewState.DISPUTED.value,
-        ReviewState.REJECTED.value,
     }
 )
 
