@@ -51,6 +51,7 @@ from typing import Any
 
 from .. import tables
 from ..schema import Line, ReviewState, Unit
+from .corpus_reviews import last_human_character
 
 #: The store and the exported journal inside a dataset directory.
 STORE_NAME = "review.sqlite"
@@ -324,19 +325,22 @@ def _corpus_overlay(path: Path | None) -> tuple[list[dict[str, Any]], list[str]]
     reached and do not survive; a proposal that was never accepted as a character does
     not either.
 
-    The latest decision per identity wins, including when it removes the value: an
-    earlier character is not kept alive by a later decision that cleared it.
+    Per identity, the last decision's own character wins when it has one. An issue
+    report, a bare match or an unapplied proposal carries none and does not erase an
+    earlier correction: the walk back follows ``CorpusReviews.overlay``, so a reset
+    agrees with the live review view. An identity with no human character carries
+    nothing forward.
     """
     if path is None or not path.is_file():
         return [], []
-    latest: dict[str, dict[str, Any] | None] = {}
+    per_identity: dict[str, list[dict[str, Any]]] = {}
     problems: list[str] = []
     with closing(sqlite3.connect(path)) as connection:
         connection.row_factory = sqlite3.Row
         if not table_exists(connection, CORPUS_TABLE):
             return [], []
         rows = connection.execute(
-            f"SELECT identity, source, decision FROM {CORPUS_TABLE} ORDER BY revision"
+            f"SELECT identity, source, decision, actor_kind FROM {CORPUS_TABLE} ORDER BY revision"
         ).fetchall()
     for row in rows:
         identity = row["identity"]
@@ -349,11 +353,20 @@ def _corpus_overlay(path: Path | None) -> tuple[list[dict[str, Any]], list[str]]
         if not isinstance(source, Mapping) or not isinstance(decision, Mapping):
             problems.append(f"{identity}: source or decision is not an object")
             continue
-        revision = source.get("source_revision")
-        character = decision.get("character")
+        per_identity.setdefault(identity, []).append(
+            {"source": source, "decision": decision, "actor_kind": row["actor_kind"]}
+        )
+    latest: dict[str, dict[str, Any] | None] = {}
+    for identity in sorted(per_identity):
+        events = per_identity[identity]
+        last = events[-1]
+        revision = last["source"].get("source_revision")
+        character = last["decision"].get("character")
         if character is None:
-            # A report, a match, an unapplied proposal: no accepted character, so
-            # nothing to carry forward — and it clears anything earlier.
+            character = last_human_character(reversed(events), revision)
+        if character is None:
+            # No decision ever landed an explicit human character for this identity:
+            # nothing to carry forward.
             latest[identity] = None
             continue
         if not isinstance(character, str) or len(character) != 1:
