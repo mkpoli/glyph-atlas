@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import threading
 import time
 from pathlib import Path
 
@@ -27,7 +28,7 @@ from glyph_atlas.review.reset import (
     read_marker,
     reset_reviews,
 )
-from glyph_atlas.review.store import ReviewRequest, Store, apply
+from glyph_atlas.review.store import Conflict, ReviewRequest, Store, UnitRequest, apply
 from glyph_atlas.schema import Box, Document, Line, Page, PageText, ReviewState, Unit
 
 
@@ -791,6 +792,195 @@ class TestCrashSafety:
         # Refusing must not clear the marker or touch the store further.
         assert in_progress(root) is True
         assert reset_module.reset_phase(root / "review.sqlite") == "erased"
+
+
+class TestStoreWritesAreAtomic:
+    """A store write reads, checks and commits in one transaction, so no other writer lands in between."""
+
+    def test_a_record_commits_the_event_and_its_state_together(self, tmp_path, monkeypatch):
+        """`Store._commit_within` writes the event and the state it implies in one transaction.
+
+        The old `_commit` wrote them as two separate commits: a concurrent reader — a
+        reset's own snapshot read, for one — could see MAX(seq) already counting the new
+        event while the unit it corrected was still unwritten. The reset's digest check
+        does not cover events, so it passed, and the erase deleted that event without the
+        baseline ever having captured what it corrected.
+        """
+        root = build_dataset(tmp_path / "work" / "honkoku-lines")
+        store = review_the_dataset(root)
+        with sqlite3.connect(root / "review.sqlite") as connection:
+            before = connection.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+
+        real_persist = Store._persist
+        paused = threading.Event()
+        resume = threading.Event()
+
+        def slow_persist(self, conn, state, change):
+            paused.set()
+            resume.wait(timeout=5)
+            return real_persist(self, conn, state, change)
+
+        monkeypatch.setattr(Store, "_persist", slow_persist)
+        thread = threading.Thread(
+            target=store.record,
+            args=(
+                ReviewRequest(
+                    target_type="unit",
+                    target_id="u:2",
+                    field="unicode",
+                    new="U+304C",
+                    base_revision=None,
+                    client_id="reviewer-2",
+                    idempotency_key="edit:2:torn",
+                    evidence="race",
+                ),
+            ),
+        )
+        thread.start()
+        try:
+            assert paused.wait(timeout=5)  # the event insert has run; the state write has not
+
+            # A fresh connection must not see the event yet: the transaction that inserted
+            # it has not committed. The old two-transaction `_commit` let this read see the
+            # event alone, with the unit it corrected still in its pre-write state.
+            with sqlite3.connect(root / "review.sqlite") as connection:
+                during = connection.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+            assert during == before
+        finally:
+            resume.set()
+            thread.join(timeout=5)
+            monkeypatch.setattr(Store, "_persist", real_persist)
+
+        with sqlite3.connect(root / "review.sqlite") as connection:
+            connection.row_factory = sqlite3.Row
+            after = connection.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+            unit = json.loads(connection.execute("SELECT data FROM units WHERE id='u:2'").fetchone()["data"])
+        assert after == before + 1
+        assert unit["unicode"] == "U+304C"  # the event and its state landed together
+
+    def test_a_record_checked_before_a_concurrent_reset_is_refused_after_it(self, tmp_path, monkeypatch):
+        """A revision read before a reset must not be trusted once the reset has run.
+
+        `record` now holds one locked transaction across the duplicate check, the
+        revision check and the write. If a reset already holds the store's write lock
+        when `record` tries to start, `record` waits behind it: its revision check runs
+        only once the reset has committed and bumped every revision, so a `base_revision`
+        that predates the reset is refused instead of being written over the reset state.
+        """
+        root = build_dataset(tmp_path / "work" / "honkoku-lines")
+        store = review_the_dataset(root)
+        stale_revision = store.revision("u:2")
+
+        real_bump = reset_module._bump_revisions
+        holding = threading.Event()
+
+        def slow_bump(connection, units, lines):
+            holding.set()
+            time.sleep(0.3)
+            return real_bump(connection, units, lines)
+
+        monkeypatch.setattr(reset_module, "_bump_revisions", slow_bump)
+        thread = threading.Thread(target=reset_reviews, args=(root,))
+        thread.start()
+        try:
+            assert holding.wait(timeout=5)  # the reset holds the store's write lock here
+
+            with pytest.raises(Conflict):
+                store.record(
+                    ReviewRequest(
+                        target_type="unit",
+                        target_id="u:2",
+                        field="unicode",
+                        new="U+304C",
+                        base_revision=stale_revision,
+                        client_id="reviewer-2",
+                        idempotency_key="edit:2:racing-the-reset",
+                        evidence="stale",
+                    )
+                )
+        finally:
+            thread.join(timeout=5)
+            monkeypatch.setattr(reset_module, "_bump_revisions", real_bump)
+
+        assert Store(root).revision("u:2") >= REVISION_BUMP
+
+    def test_two_concurrent_creates_on_the_same_line_get_distinct_ids(self, tmp_path, monkeypatch):
+        """`create_unit` reads its siblings, picks an id from them, and writes — as one call.
+
+        The read and the write used to run outside any transaction, guarded only by
+        `Store._lock` — a per-*instance* `threading.RLock` that two independent `Store`
+        objects (two server workers, or two processes) never share. Two writers drawing
+        on the same line, each through its own `Store`, could both read the same
+        siblings and both pick `l:1:m0`: depending on which one's own re-read (inside
+        `_state_for`, right before the write) lands first, either the second's
+        `INSERT OR REPLACE` silently drops the first, or the second is refused with a
+        spurious "exists already" over an id collision that was never the requester's
+        doing. Locking the whole call in one `BEGIN IMMEDIATE` transaction, the way
+        `record` is locked, serialises them at the database itself: the second
+        writer's read of its siblings happens only once the first has committed and is
+        in them, so both succeed with distinct ids. The two `Store` instances below are
+        what makes the test exercise that database-level lock instead of the harmless
+        same-instance `threading.RLock`.
+        """
+        root = build_dataset(tmp_path / "work" / "honkoku-lines")
+        store_a = Store(root)
+        store_b = Store(root)
+
+        real_units_of_line = Store._units_of_line
+        paused = threading.Event()
+        resume = threading.Event()
+        calls = {"n": 0}
+
+        def hooked(self, conn, line_id, *, active=True):
+            calls["n"] += 1
+            result = real_units_of_line(self, conn, line_id, active=active)
+            if calls["n"] == 1:
+                # The first reader — the id-picking read in `create_unit`, not the one
+                # `_state_for` does afterwards for the commit — pauses here, holding
+                # whatever lock (if any) `create_unit` has already taken.
+                paused.set()
+                resume.wait(timeout=5)
+            return result
+
+        monkeypatch.setattr(Store, "_units_of_line", hooked)
+
+        outcomes: dict[str, dict] = {}
+        errors: dict[str, BaseException] = {}
+
+        def draw(name: str, writer: Store, x: int) -> None:
+            try:
+                outcomes[name] = writer.create_unit(
+                    UnitRequest(
+                        line_id="l:1",
+                        box=Box(x=x, y=2, w=10, h=40),
+                        client_id=name,
+                        idempotency_key=f"draw:{name}",
+                    )
+                )
+            except BaseException as error:  # noqa: BLE001 - captured for the assertion below
+                errors[name] = error
+
+        first = threading.Thread(target=draw, args=("a", store_a, 90))
+        first.start()
+        try:
+            assert paused.wait(timeout=5)  # `a` has read its siblings, paused before writing
+
+            second = threading.Thread(target=draw, args=("b", store_b, 100))
+            second.start()
+            try:
+                time.sleep(0.2)  # `b` would race ahead here if the call were not locked
+            finally:
+                resume.set()
+                second.join(timeout=5)
+        finally:
+            first.join(timeout=5)
+            monkeypatch.setattr(Store, "_units_of_line", real_units_of_line)
+
+        assert not errors, errors  # neither draw was refused over a collision it didn't cause
+        ids = {outcomes["a"]["target_id"], outcomes["b"]["target_id"]}
+        assert len(ids) == 2  # distinct: neither overwrote the other
+        stored_ids = {unit.id for unit in store_a.iter_units() if unit.line_id == "l:1"}
+        assert ids <= stored_ids  # both survived the write
 
 
 class TestRefusals:

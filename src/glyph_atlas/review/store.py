@@ -2,8 +2,9 @@
 
 The store lives beside the tables it reviews, at `<directory>/review.sqlite`. It holds the review
 events, the current state of the lines and units those events produced, and the revision of every
-target. The event log is the source of truth: a review is appended before the state it implies is
-written, so a crash between the two leaves an event whose effect the state does not show yet.
+target. The event log is the source of truth: an event and the state it implies are written in one
+transaction, so a reader never sees one without the other, and a crash before it commits leaves
+neither.
 
 `apply` writes the state back to `lines.parquet` and `units.parquet` and the events to
 `reviews.jsonl`. `replay` rebuilds the state from the tables and the log, compares it with what the
@@ -682,8 +683,16 @@ class Store:
         return counts
 
     def record(self, request: ReviewRequest) -> dict[str, Any]:
-        """Record one review and return the result a client sees."""
-        with self._lock, self._connection() as conn:
+        """Record one review and return the result a client sees.
+
+        The duplicate check, the revision check and the write all run inside the one
+        locked transaction below, the way `record_batch` already does its whole round.
+        A `base_revision` that was still current when the call started but has since
+        moved — a history reset's own bump, for one — is caught here rather than
+        earlier: `BEGIN IMMEDIATE` blocks until any such reset's own transaction has
+        committed, so the revision this reads is never stale by the time it is checked.
+        """
+        with self._lock, self._connection() as conn, self._transaction(conn):
             duplicate = self._by_key(conn, request.client_id, request.idempotency_key)
             if duplicate is not None:
                 return self._result(conn, duplicate, duplicate=True)
@@ -712,7 +721,7 @@ class Store:
             )
             state = self._state_for(conn, event)
             change = _change(state, event, guard=False)
-            return self._commit(conn, change, state, request.client_id, request.idempotency_key)
+            return self._commit_within(conn, change, state, request.client_id, request.idempotency_key)
 
     def record_batch(self, requests: list[ReviewRequest], *,
                      role: Literal["reviewer", "model"] = "reviewer") -> list[dict[str, Any]]:
@@ -779,8 +788,16 @@ class Store:
             return [json.loads(row["result"]) for row in rows if row["result"]]
 
     def create_line(self, request: LineRequest) -> dict[str, Any]:
-        """Record a line a detector missed and return it with its revision."""
-        with self._lock, self._connection() as conn:
+        """Record a line a detector missed and return it with its revision.
+
+        The duplicate check, the id it picks from its siblings and the write all run
+        inside the one locked transaction below, the way `record` is now wrapped too:
+        `_lock` is only a per-process guard, so two writers in different processes — or
+        a writer racing a history reset — could otherwise both read the same sibling
+        rows and pick the same id, or write a fresh line back over a reset's own
+        rewrite. `BEGIN IMMEDIATE` serialises them instead.
+        """
+        with self._lock, self._connection() as conn, self._transaction(conn):
             duplicate = self._by_key(conn, request.client_id, request.idempotency_key)
             if duplicate is not None:
                 return self._result(conn, duplicate, duplicate=True)
@@ -806,11 +823,15 @@ class Store:
             event = _created("line", line, request.client_id)
             state = self._state_for(conn, event)
             change = _change(state, event, guard=False)
-            return self._commit(conn, change, state, request.client_id, request.idempotency_key)
+            return self._commit_within(conn, change, state, request.client_id, request.idempotency_key)
 
     def create_unit(self, request: UnitRequest) -> dict[str, Any]:
-        """Record a unit drawn on an existing line and return it with its revision."""
-        with self._lock, self._connection() as conn:
+        """Record a unit drawn on an existing line and return it with its revision.
+
+        See `create_line`: the duplicate check, the id it picks from its siblings and
+        the write all run inside the one locked transaction below, for the same reason.
+        """
+        with self._lock, self._connection() as conn, self._transaction(conn):
             duplicate = self._by_key(conn, request.client_id, request.idempotency_key)
             if duplicate is not None:
                 return self._result(conn, duplicate, duplicate=True)
@@ -840,7 +861,7 @@ class Store:
             event = _created("unit", unit, request.client_id)
             state = self._state_for(conn, event)
             change = _change(state, event, guard=False)
-            return self._commit(conn, change, state, request.client_id, request.idempotency_key)
+            return self._commit_within(conn, change, state, request.client_id, request.idempotency_key)
 
     def export(self) -> dict[str, int]:
         """Write the state back to the dataset tables and the events to `reviews.jsonl`."""
@@ -1189,7 +1210,7 @@ class Store:
                            "COALESCE((SELECT seq FROM sqlite_sequence WHERE name='events'), 0)) AS seq").fetchone()
         return int(row["seq"])
 
-    def _commit(
+    def _commit_within(
         self,
         conn: sqlite3.Connection,
         change: Change,
@@ -1197,41 +1218,40 @@ class Store:
         client_id: str | None,
         idempotency_key: str | None,
     ) -> dict[str, Any]:
-        """Append the event, then write the state it implies, in two transactions.
+        """Append the event and write the state it implies, inside the caller's own transaction.
 
-        The two steps are what makes the log the source of truth: a crash after the first leaves an
-        event whose effect `replay` can add. The result is stored with the state, so a repeated
-        `idempotency_key` needs no work beyond reading it back.
+        Both land in the one transaction the caller holds, the way `record_batch` writes an entire
+        round: a reader — including a history reset's own locked read — sees the event with its
+        state, or sees neither, never one without the other. The result is stored with the state, so
+        a repeated `idempotency_key` needs no work beyond reading it back.
         """
-        with self._transaction(conn):
-            seq = self._last_seq(conn) + 1
-            event = change.event.model_copy(update={"id": f"rv{seq:08d}"})
-            conn.execute(
-                "INSERT INTO events (id, target_type, target_id, field, old, new, role, actor, evidence, at, "
-                "client_id, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    event.id,
-                    event.target_type,
-                    event.target_id,
-                    event.field,
-                    _json(event.old),
-                    _json(event.new),
-                    event.role,
-                    event.actor,
-                    event.evidence,
-                    event.at.isoformat(),
-                    client_id or "",
-                    idempotency_key,
-                ),
-            )
+        seq = self._last_seq(conn) + 1
+        event = change.event.model_copy(update={"id": f"rv{seq:08d}"})
+        conn.execute(
+            "INSERT INTO events (id, target_type, target_id, field, old, new, role, actor, evidence, at, "
+            "client_id, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                event.id,
+                event.target_type,
+                event.target_id,
+                event.field,
+                _json(event.old),
+                _json(event.new),
+                event.role,
+                event.actor,
+                event.evidence,
+                event.at.isoformat(),
+                client_id or "",
+                idempotency_key,
+            ),
+        )
         change.event = event
-        with self._transaction(conn):
-            self._persist(conn, state, change)
-            if event.field != SEEN:
-                self._bump(conn, event.target_id)
-            result = self._build_result(conn, event, change, state)
-            conn.execute("UPDATE events SET result = ? WHERE id = ?", (_json(result), event.id))
-            self._set_meta(conn, "state_seq", str(seq))
+        self._persist(conn, state, change)
+        if event.field != SEEN:
+            self._bump(conn, event.target_id)
+        result = self._build_result(conn, event, change, state)
+        conn.execute("UPDATE events SET result = ? WHERE id = ?", (_json(result), event.id))
+        self._set_meta(conn, "state_seq", str(seq))
         return result
 
     def _persist(self, conn: sqlite3.Connection, state: State, change: Change) -> None:
