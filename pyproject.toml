@@ -22,6 +22,8 @@ atlas = "glyph_atlas.cli:app"
 [project.optional-dependencies]
 data = ["odfpy>=1.4"]
 ocr = ["onnxruntime-gpu>=1.22", "numpy>=2", "opencv-python-headless>=4.11"]
+# The interlinear mark proposer (`atlas review propose-marks`)
+marks = ["numpy>=2", "opencv-python-headless>=4.11"]
 # The detector: RT-DETR through transformers, export to ONNX and the parity check. torch 2.14 is the first
 # build with a cp314 wheel that runs on the Blackwell card (CUDA 13.0 wheels); see
 # models/detector/SPIKE.md.
