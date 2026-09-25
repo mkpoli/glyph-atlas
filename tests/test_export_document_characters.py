@@ -89,3 +89,20 @@ def test_only_the_documents_ainu_records_covers_are_replaced(tmp_path):
     counts = load().export(dataset(tmp_path), out)
     assert counts == {DOC: 6}, "retired, flagged and withheld units, and documents ainu-records has no say on, stay out"
     assert out.read_text(encoding="utf-8").startswith(f"DELETE FROM document_characters WHERE document IN ('{DOC}');")
+
+
+def test_a_unit_a_person_corrected_in_the_review_store_is_listed(tmp_path):
+    from glyph_atlas.review.store import ReviewRequest, Store
+    from glyph_atlas.schema import Page
+
+    directory = dataset(tmp_path)
+    units = tables.read(directory / "units.parquet", Unit)
+    rejected = aligned(f"{DOC}:0:L1:r:1", 0, 1, 1, "ロ", review=ReviewState.REJECTED)
+    tables.write(directory / "units.parquet", [*units, rejected], Unit)
+    tables.write(directory / "pages.parquet", [Page(id=f"{DOC}:{n}", document_id=DOC, seq=n, image="i", width=100,
+                                                    height=100) for n in (0, 1)], Page)
+    Store(directory).record_batch([ReviewRequest(target_id=rejected.id, field="text_source", new="ロ",
+                                                 client_id="reviewer-1")])
+    out = tmp_path / "out.sql"
+    load().export(directory, out)
+    assert rejected.id in out.read_text(encoding="utf-8"), "the aligner rejected it, and a person has since settled it"

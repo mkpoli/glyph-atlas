@@ -18,8 +18,8 @@ from pathlib import Path
 from typing import Any
 
 from glyph_atlas import tables
-from glyph_atlas.ainu_characters import DECIDED, META, trusted, written
-from glyph_atlas.schema import Line, Unit
+from glyph_atlas.ainu_characters import DECIDED, META, read_log, trusted, written
+from glyph_atlas.schema import Line, ReviewState, Unit
 
 BATCH = 200
 
@@ -64,12 +64,15 @@ def quoted(value: str) -> str:
 
 
 def export(dataset: Path, out: Path, documents: set[str] | None = None) -> dict[str, int]:
-    units = [u for u in tables.read(dataset / "units.parquet", Unit) if u.active and u.box and u.page_id]
+    # Units as the review store has them, so a correction a person made there counts as their decision.
+    log = read_log(dataset)
+    units = [u for u in log.units.values() if u.active and u.box and u.page_id]
     documents = documents or documents_of(units)
-    lines = {line.id: line for line in tables.read(dataset / "lines.parquet", Line)}
+    lines = {line.id: line for line in tables.Dataset(dataset).read("lines")}
     rows: dict[str, list[tuple[tuple, str, dict]]] = {d: [] for d in sorted(documents)}
     for unit in units:
-        if unit.document_id in rows and trusted(unit):
+        decided = unit.id in log.decided and unit.review != ReviewState.DISPUTED
+        if unit.document_id in rows and (trusted(unit) or decided):
             data = row(unit, lines)
             rows[unit.document_id].append((order(data, unit.id), unit.id, data))
     statements = [f"DELETE FROM document_characters WHERE document IN ({','.join(map(quoted, rows))});"]
