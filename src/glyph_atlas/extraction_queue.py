@@ -1,7 +1,10 @@
 """Bounded, restartable extraction from transcribed page rectangles.
 
 Each page is committed as an immutable dataset. The review store imports completed
-pages separately; this worker never rewrites its baseline or review history.
+pages separately; this worker never rewrites its baseline or review history. `Queue.claim`
+takes pending work coverage-first: a page holding characters the atlas still lacks is claimed
+ahead of a page of characters it already has plenty of, as `Queue.prioritize` scores it; see
+`Queue`'s docstring for the full claim order.
 """
 from __future__ import annotations
 
@@ -46,7 +49,38 @@ def atomic_json(path, value):
 MAX_ATTEMPTS = 3
 
 
+def scorable_chars(text: str) -> set[str]:
+    """The distinct characters of `text` worth prioritizing: no whitespace, punctuation or marks.
+
+    Whitespace (including the common full-width U+3000) and every Unicode punctuation category
+    (P*) carry no glyph to extract. Combining marks and variation selectors (Unicode category
+    M*, which includes both) never stand alone as their own crop, so they are skipped too; see
+    also `single_character` in `.review.atlas` for a related, string-level check.
+    """
+    return {c for c in text if not c.isspace() and not unicodedata.category(c).startswith(("P", "M"))}
+
+
+def load_char_counts(path: Path) -> dict[str, int]:
+    """Crops the atlas already holds per character, from a corpus-index characters table.
+
+    Reads only the `char` and `n_units` columns of the parquet table at `path` (by default
+    `work/corpus-index/chars.parquet`); the caller decides which path to pass to `Queue.prioritize`.
+    """
+    import pyarrow.parquet as pq
+
+    table = pq.read_table(path, columns=["char", "n_units"])
+    return dict(zip(table.column("char").to_pylist(), table.column("n_units").to_pylist(), strict=True))
+
+
 class Queue:
+    """A durable, restartable queue of pages to extract, claimed one at a time.
+
+    `claim` orders pending work by coverage priority first — a page scores higher the more its
+    characters are still scarce in the atlas, as `prioritize` computes it — then by whether its
+    image is already cached, then by the page's original rank within its book, then by document
+    and page id as a stable tie-break for equal scores.
+    """
+
     def __init__(self, root: Path):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
@@ -65,6 +99,10 @@ class Queue:
                 self.db.execute(f"ALTER TABLE pages ADD COLUMN {name} TEXT")
         if "publish_attempts" not in columns:
             self.db.execute("ALTER TABLE pages ADD COLUMN publish_attempts INTEGER NOT NULL DEFAULT 0")
+        if "priority" not in columns:
+            self.db.execute("ALTER TABLE pages ADD COLUMN priority REAL NOT NULL DEFAULT 0")
+        self.db.execute("""CREATE INDEX IF NOT EXISTS idx_pages_claim_order
+            ON pages(priority DESC, cached DESC, rank, document_id, id)""")
         self.db.commit()
 
     def seed(self, source: Path, *, include_ainu=False):
@@ -92,14 +130,51 @@ class Queue:
         return self.db.total_changes - before
 
     def claim(self):
+        """Take the next page to extract, in the order this class's docstring describes."""
         with self.db:
             row = self.db.execute("""SELECT * FROM pages WHERE status='pending' OR
                 (status='retry' AND CAST(retry_after AS REAL)<=?)
-                ORDER BY cached DESC, rank, document_id, id LIMIT 1""", (time.time(),)).fetchone()
+                ORDER BY priority DESC, cached DESC, rank, document_id, id LIMIT 1""", (time.time(),)).fetchone()
             if row:
                 self.db.execute("UPDATE pages SET status='running',attempts=attempts+1,updated_at=? WHERE id=?",
                                 (datetime.now(UTC).isoformat(), row["id"]))
         return dict(row) if row else None
+
+    def prioritize(self, source: Path, counts: dict[str, int]) -> int:
+        """Score every pending or retry page by how much the atlas still lacks its characters.
+
+        A page's score is the sum, over the distinct scorable characters in its transcription
+        lines, of `1 / (1 + counts.get(char, 0))`: a character with no crops yet in `counts`
+        contributes 1, one the atlas already has plenty of contributes close to 0. Whitespace,
+        punctuation and combining marks are not scored. `counts` maps a character to the crops
+        the atlas already holds for it, typically loaded from a corpus-index characters table
+        with `load_char_counts`; `source` is the transcribed-lines dataset (e.g. `work/honkoku-lines`)
+        that `seed` read pages from. Complete, running and failed pages are left alone, and only
+        `page_id` and `text` are read from the lines table to keep this cheap at tens of thousands
+        of pages. Returns how many pages were scored.
+        """
+        import pyarrow.dataset as ds
+
+        pending = [r[0] for r in self.db.execute(
+            "SELECT id FROM pages WHERE status IN ('pending','retry')")]
+        if not pending:
+            return 0
+        chars_by_page: dict[str, set[str]] = {page_id: set() for page_id in pending}
+        lines_path = Path(source) / "lines"
+        if not lines_path.exists():
+            lines_path = Path(source) / "lines.parquet"
+        scanner = ds.dataset(lines_path, format="parquet").scanner(columns=["page_id", "text"])
+        for batch in scanner.to_batches():
+            for page_id, text in zip(batch.column("page_id").to_pylist(),
+                                     batch.column("text").to_pylist(), strict=True):
+                found = chars_by_page.get(page_id)
+                if found is not None and text:
+                    found.update(scorable_chars(text))
+        scores = [(sum(1 / (1 + counts.get(ch, 0)) for ch in chars), page_id)
+                  for page_id, chars in chars_by_page.items()]
+        with self.db:
+            self.db.executemany("UPDATE pages SET priority=? WHERE id=?", scores)
+        return len(scores)
 
     def recover(self):
         """Return pages a stopped worker left running, and stop retrying one that keeps stopping it.

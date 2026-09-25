@@ -1,6 +1,6 @@
 from glyph_atlas import tables
-from glyph_atlas.extraction_queue import Queue, quality_reason, run, unique_units
-from glyph_atlas.schema import Box, Document, Page, ReviewState, Unit
+from glyph_atlas.extraction_queue import Queue, quality_reason, run, scorable_chars, unique_units
+from glyph_atlas.schema import Box, Document, Line, Page, ReviewState, Unit
 
 
 def unit(**kwargs):
@@ -212,3 +212,77 @@ def test_a_page_the_store_refuses_is_not_published_again(tmp_path, monkeypatch):
     for _ in range(3):
         assert publish_completed(queue, RefusingStore()) == 0
     assert len(prepared) == 1
+
+
+def lines_source(tmp_path, lines, name="lines-source"):
+    directory = tmp_path / name
+    directory.mkdir()
+    tables.write(directory / "lines.parquet", lines, Line)
+    return directory
+
+
+def test_scorable_chars_skips_whitespace_punctuation_and_marks():
+    assert scorable_chars("あ、　ヿ゙") == {"あ", "ヿ"}
+
+
+def test_prioritize_claims_a_zero_crop_character_before_an_earlier_common_page(tmp_path, monkeypatch):
+    monkeypatch.setattr("glyph_atlas.images.index_path", lambda: tmp_path / "missing")
+    queue = Queue(tmp_path / "queue")
+    with queue.db:
+        queue.db.execute("INSERT INTO pages(id,document_id,title,source,cached,rank) VALUES('a','d','A','s',0,0)")
+        queue.db.execute("INSERT INTO pages(id,document_id,title,source,cached,rank) VALUES('b','d','B','s',0,1)")
+    lines = [
+        Line(id="l1", page_id="a", seq=0, text_raw="のの", text="のの"),
+        Line(id="l2", page_id="b", seq=0, text_raw="ヿ", text="ヿ"),
+    ]
+    source = lines_source(tmp_path, lines)
+    assert queue.prioritize(source, {"の": 1000}) == 2
+    assert queue.claim()["id"] == "b"
+
+
+def test_prioritize_ties_keep_the_original_claim_order(tmp_path, monkeypatch):
+    monkeypatch.setattr("glyph_atlas.images.index_path", lambda: tmp_path / "missing")
+    queue = Queue(tmp_path / "queue")
+    with queue.db:
+        queue.db.execute("INSERT INTO pages(id,document_id,title,source,cached,rank) VALUES('a','d','A','s',0,1)")
+        queue.db.execute("INSERT INTO pages(id,document_id,title,source,cached,rank) VALUES('b','d','B','s',0,0)")
+    lines = [
+        Line(id="l1", page_id="a", seq=0, text_raw="字", text="字"),
+        Line(id="l2", page_id="b", seq=0, text_raw="字", text="字"),
+    ]
+    source = lines_source(tmp_path, lines)
+    queue.prioritize(source, {})
+    assert queue.claim()["id"] == "b"
+
+
+def test_prioritize_leaves_complete_pages_alone(tmp_path, monkeypatch):
+    monkeypatch.setattr("glyph_atlas.images.index_path", lambda: tmp_path / "missing")
+    queue = Queue(tmp_path / "queue")
+    with queue.db:
+        queue.db.execute("""INSERT INTO pages(id,document_id,title,source,cached,rank,status,priority)
+            VALUES('a','d','A','s',0,0,'complete',5.0)""")
+    lines = [Line(id="l1", page_id="a", seq=0, text_raw="ヿ", text="ヿ")]
+    source = lines_source(tmp_path, lines)
+    assert queue.prioritize(source, {}) == 0
+    assert queue.db.execute("SELECT priority FROM pages WHERE id='a'").fetchone()[0] == 5.0
+
+
+def test_priority_column_upgrades_an_old_queue_file_without_it(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "queue"
+    path.mkdir()
+    db = sqlite3.connect(path / "queue.sqlite")
+    db.execute("""CREATE TABLE pages (
+        id TEXT PRIMARY KEY, document_id TEXT NOT NULL, title TEXT NOT NULL,
+        source TEXT NOT NULL, cached INTEGER NOT NULL, rank INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
+        output TEXT, accepted INTEGER NOT NULL DEFAULT 0, examined INTEGER NOT NULL DEFAULT 0,
+        error TEXT, updated_at TEXT)""")
+    db.execute("INSERT INTO pages(id,document_id,title,source,cached,rank) VALUES('a','d','A','s',1,0)")
+    db.commit()
+    db.close()
+    queue = Queue(path)
+    columns = {r[1] for r in queue.db.execute("PRAGMA table_info(pages)")}
+    assert "priority" in columns
+    assert queue.claim()["id"] == "a"
