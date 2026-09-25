@@ -1238,32 +1238,38 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         new reviews are recorded. `actor` and `label` narrow it to one reviewer or one crop's
         judgements; an undo is matched by the judgement it undoes.
         """
-        all_events = store.events()
-        by_id = {event.id: event for event in all_events}
-        reviews = [(seq, event) for seq, event in enumerate(all_events, start=1)
-                   if event.role == "reviewer" and event.field == "review"
-                   and (actor is None or event.actor == actor)]
+        cursor: int | None = None
         if before is not None:
             try:
                 cursor = int(before)
             except ValueError:
                 raise HTTPException(400, "Bad cursor.") from None
-            reviews = [(seq, event) for seq, event in reviews if seq < cursor]
-        reviews.sort(key=lambda pair: pair[0], reverse=True)
         items: list[dict[str, Any]] = []
-        next_cursor: str | None = None
-        for seq, event in reviews:
-            if len(items) >= limit:
-                next_cursor = str(items[-1]["seq"])
+        # A label filter is checked after reading, so a page is read in batches until it fills.
+        # Batches are bounded, and so is the number read per request.
+        read, reached = 0, cursor
+        while len(items) < limit and read < 5000:
+            batch = store.reviewer_judgements(before=reached, actor=actor, limit=200)
+            if not batch:
+                reached = None
                 break
-            entry = history_entry(seq, event, by_id)
-            if label is not None and entry["label"] != label:
-                continue
-            items.append({**entry, "seq": seq})
-        else:
-            next_cursor = None
-        return {"items": [{k: v for k, v in entry.items() if k != "seq"} for entry in items],
-                "next": next_cursor}
+            read += len(batch)
+            undone = store.events_by_id(
+                event.evidence.removeprefix(_UNDO) for _, event in batch
+                if (event.evidence or "").startswith(_UNDO))
+            for seq, event in batch:
+                reached = seq
+                entry = history_entry(seq, event, undone)
+                if label is None or entry["label"] == label:
+                    items.append(entry)
+                    if len(items) == limit:
+                        break
+            else:
+                if len(batch) < 200:
+                    reached = None
+                    break
+        # `reached` is the last event read, or None once the log ran out.
+        return {"items": items, "next": str(reached) if reached is not None else None}
 
     def review_export(*, include_processed: bool = False) -> dict:
         """Every character review the journal holds, with what each one saw and whether it stands.

@@ -1200,6 +1200,32 @@ class Store:
             "SELECT * FROM events WHERE client_id = ? AND idempotency_key = ?", (client_id or "", key)
         ).fetchone()
 
+    def reviewer_judgements(self, *, before: int | None = None, actor: str | None = None,
+                            limit: int = 100) -> list[tuple[int, Review]]:
+        """Reviewer `review` events, newest first, as (seq, event): a page of the edit history.
+
+        `before` is a `seq` from an earlier page, so a page stays put while new events arrive.
+        """
+        where, values = ["role = 'reviewer'", "field = 'review'"], []
+        if before is not None:
+            where.append("seq < ?")
+            values.append(before)
+        if actor is not None:
+            where.append("actor = ?")
+            values.append(actor)
+        sql = f"SELECT * FROM events WHERE {' AND '.join(where)} ORDER BY seq DESC LIMIT ?"
+        with self._lock, self._connection() as conn:
+            return [(int(row["seq"]), _review(row)) for row in conn.execute(sql, (*values, limit))]
+
+    def events_by_id(self, ids: Iterable[str]) -> dict[str, Review]:
+        """The events named, by id; at most one page of history asks at a time."""
+        wanted = list(dict.fromkeys(ids))[:500]
+        if not wanted:
+            return {}
+        marks = ",".join("?" * len(wanted))
+        with self._lock, self._connection() as conn:
+            return {row["id"]: _review(row) for row in conn.execute(f"SELECT * FROM events WHERE id IN ({marks})", wanted)}
+
     def _events(self, conn: sqlite3.Connection) -> list[Review]:
         return [_review(row) for row in conn.execute("SELECT * FROM events ORDER BY seq")]
 
