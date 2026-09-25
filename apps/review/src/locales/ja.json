@@ -58,7 +58,7 @@
   "common.retry": "再試行",
   "common.saving": "保存中…",
   "common.skip": "スキップ",
-  "common.skip.arrow": "スキップ→",
+  "common.skip.arrow": "わからない・スキップ→",
   "common.skip.hint": "判断できない、または後で",
   "common.tryAgain": "もう一度試す",
   "corpus.addNote": "メモを追加",

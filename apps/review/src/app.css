@@ -95,3 +95,7 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 }
 .options-menu button[aria-pressed="true"]{color:var(--accent);font-weight:500}
 .options-menu button[aria-pressed="true"]::after{content:" ✓"}
+/* Skip is the other way out of a crop, so it is as tall and as legible as the button beside it. */
+.inspector-savebar .skip-character{padding:14px 22px;font-size:13px;border-radius:7px;background:#fff}
+.inspector-savebar .skip-character,.inspector-savebar .save-character{min-height:52px}
+@media(min-width:1000px){.character-dialog .inspector-savebar{align-items:stretch}.character-dialog .inspector-savebar .looks-right{align-self:center}}
