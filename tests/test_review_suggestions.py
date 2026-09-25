@@ -143,9 +143,12 @@ def test_a_failing_encoder_costs_only_the_visual_form(tmp_path, monkeypatch):
     monkeypatch.setattr(visual_families, "directory", lambda: tmp_path)
     suggestions._visual_classifier.cache_clear()
 
+    class Fail(Exception):
+        """Shaped like onnxruntime's errors, which derive from Exception alone."""
+
     class Broken:
         def embed(self, image):
-            raise Exception("onnxruntime Fail")
+            raise Fail
 
     monkeypatch.setattr(suggestions, "_visual_classifier", lambda *_: Broken())
     vote = {"identity_scope": "family", "family": "U+4EEE", "members": ["仮", "假"]}
