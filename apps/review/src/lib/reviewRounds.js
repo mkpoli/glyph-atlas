@@ -2,6 +2,9 @@
 export const MIN_ROUND_SIZE = 6
 // Crops a round loads at a time, first batch and each further one alike.
 export const ROUND_BATCH = 48
+// Reference crops of one reading shown alongside a round: this many already-confirmed crops,
+// then up to this many more already-seen crops.
+export const REFERENCE_LIMIT = 12
 export const automaticCategories = categories => categories.filter(c => c.pending >= MIN_ROUND_SIZE)
 
 /** The next character to review: an unvisited full round, then an unvisited smaller one, largest first. */
@@ -14,4 +17,19 @@ export function nextCharacter(categories, current, history, seed) {
   if (fresh.length) return fresh.reduce((best, c) => c.pending > best.pending ? c : best).label
   const pool = automaticCategories(others).length ? automaticCategories(others) : others
   return pool.length ? pool[seed % pool.length].label : null
+}
+
+/**
+ * The reference strip for one reading: already-confirmed crops, then already-seen crops that
+ * were not already counted as confirmed, each tagged with the state it stands for.
+ *
+ * A crop counted once: a crop that is both checked and seen (a stale `seen` record from before
+ * it was confirmed) shows only as confirmed.
+ */
+export function mergeReferences(checked, seen, limit = REFERENCE_LIMIT) {
+  const checkedIds = new Set(checked.map(item => item.id))
+  const confirmed = checked.slice(0, limit).map(item => ({ ...item, referenceState: 'checked' }))
+  const others = seen.filter(item => !checkedIds.has(item.id)).slice(0, limit)
+    .map(item => ({ ...item, referenceState: 'seen' }))
+  return [...confirmed, ...others]
 }
