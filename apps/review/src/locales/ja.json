@@ -348,6 +348,8 @@
   "quiz.reviewRemaining": "残りをレビュー",
   "quiz.reviewSelected": "選択をレビュー（{count}件）",
   "quiz.roundChanged": "このラウンドは更新されました。選択内容は保持されています。続けるにはラウンドを再読み込みしてください。",
+  "quiz.roundSaved.one": "「{reading}」の切り出し{count}件を保存しました",
+  "quiz.roundSaved.other": "「{reading}」の切り出し{count}件を保存しました",
   "quiz.saveIssues": "問題を保存",
   "quiz.select.selectProblems": "問題を選択",
   "quiz.select.selectedCount": "{count}件選択",

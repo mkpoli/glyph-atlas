@@ -29,6 +29,13 @@
   let references = $state([])
   let history = $state([]), historyIndex = $state(-1)
   let loadingMore = $state(false), hasMore = $state(false), loadMoreFailed = $state(false)
+  // A saved round says so, since the next character replaces it at once.
+  let savedNotice = $state(''), savedTimer
+  function announceSaved(count, label) {
+    clearTimeout(savedTimer)
+    savedNotice = t('quiz.roundSaved', { count, reading: label })
+    savedTimer = setTimeout(() => savedNotice = '', 3500)
+  }
   // True while the load-more row is on screen or close to it: scrolling down loads the next batch.
   let nearEnd = $state(false)
   function watchSeen(node, id) {
@@ -406,6 +413,7 @@
       await request('/atlas/rounds', { id: roundId, client_id: clientId, label: reading, answers, seen, skipped: passed })
       last = { id: roundId, count: answers.length, label: reading, production }
       remember('atlas.last-round.' + clientId, last); completed += answers.length
+      announceSaved(answers.length + seen.length + passed.length, reading)
       const savedIds = new Set([...answers, ...seen, ...passed].map(answer => answer.id))
       items = items.filter(item => !savedIds.has(item.id))
       choices = {}; selected = {}; step = 'select'; at = 0; roundId = crypto.randomUUID()
@@ -427,6 +435,7 @@
       await request('/atlas/rounds', { id: roundId, client_id: clientId, label: reading, seen, skipped: passed })
       last = { id: roundId, count: 0, label: reading, production }
       remember('atlas.last-round.' + clientId, last)
+      announceSaved(seen.length + passed.length, reading)
       const seenIds = new Set([...seen, ...passed].map(crop => crop.id))
       items = items.filter(item => !seenIds.has(item.id))
       choices = {}; selected = {}; step = 'select'; at = 0; roundId = crypto.randomUUID()
@@ -567,6 +576,7 @@
   </div></div>{/if}
 </section>
 
+{#if savedNotice}<div class="save-toast quiz-saved" role="status">✓ {savedNotice}</div>{/if}
 <style>
   .skip-current{display:block;margin:12px auto 0;font-size:12px}
   .review-material{display:flex;align-items:center;gap:10px;margin:0 0 20px;font-size:12px;color:var(--muted)}
@@ -604,4 +614,6 @@
   .reference-tag { display:flex; align-items:center; gap:4px; font-size:8px; color:var(--muted); white-space:nowrap; }
   .status-dot.seen { background:#8d8d95; }
   .current-problem { color: var(--muted); font-size: 12px; margin: 0 0 14px; }
+  /* Above the sticky save bar, which would otherwise sit behind it. */
+  .save-toast.quiz-saved { bottom:108px; }
 </style>

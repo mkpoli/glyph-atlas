@@ -356,6 +356,8 @@
   "quiz.reviewRemaining": "殘ヲ校閱ス",
   "quiz.reviewSelected": "選ビタルヲ校閱ス（{count}）",
   "quiz.roundChanged": "此一巡ハ改メラレタリ　選ビタルモノハ存ス　續クルニハ一巡ヲ開キ直スベシ",
+  "quiz.roundSaved.one": "「{reading}」ノ截片{count}件ヲ保存セリ",
+  "quiz.roundSaved.other": "「{reading}」ノ截片{count}件ヲ保存セリ",
   "quiz.saveIssues": "誤ヲ保存ス",
   "quiz.select.selectProblems": "誤アルモノヲ選ブベシ",
   "quiz.select.selectedCount": "{count}ヲ選ブ",
