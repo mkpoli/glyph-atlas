@@ -235,6 +235,17 @@
   checked: 2026-09-11
 
 - match:
+    - https://gallica.bnf.fr/html/und/conditions-dutilisation-des-contenus-de-gallica
+    - https://gallica.bnf.fr/edit/und/conditions-dutilisation-des-contenus-de-gallica
+    - Source gallica.bnf.fr / Bibliothèque nationale de France
+  licence: restricted
+  label: Gallica, conditions d'utilisation (non-commercial reuse free, commercial reuse licensed)
+  evidence: https://gallica.bnf.fr/edit/und/conditions-dutilisation-des-contenus-de-gallica
+  eligible: false
+  obligations: "Non-commercial reuse is free with the source line « Source gallica.bnf.fr / Bibliothèque nationale de France »; commercial reuse needs a paid licence, so the record may exist with coordinates and no crop, never in a release build. Metadata is under the Etalab open licence."
+  checked: 2026-09-25
+
+- match:
     - unknown
     - Unknown
     - UNKNOWN

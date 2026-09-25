@@ -29,6 +29,7 @@ because a scan of a public-domain page may carry no copyright of its own.
 | 東京大学史料編纂所 くずし字データセット | CC BY 4.0 | https://lab.hi.u-tokyo.ac.jp/datasets/kuzushiji |
 | 漢字字体規範史データセット（HNG）基本データセット | CC BY-SA 4.0, or GPL-2.0-or-later at the user's choice; the atlas takes CC BY-SA 4.0 | https://github.com/chise/hng-basic-data/blob/e2174a30844b8100c34af1c0dbe1e301f186883e/README.md |
 | 京都大学貴重資料デジタルアーカイブ | free reuse with credit, change notice and link; some holdings need approval; a bulk crop package is to be confirmed with the library | https://rmda.kulib.kyoto-u.ac.jp/reuse |
+| Gallica (Bibliothèque nationale de France) | non-commercial reuse free with the source line; commercial reuse under a paid licence; metadata Etalab open licence | https://gallica.bnf.fr/edit/und/conditions-dutilisation-des-contenus-de-gallica |
 | 国立公文書館デジタルアーカイブ | free reuse; metadata CC0 | https://www.digital.archives.go.jp/secondary-use |
 | 早稲田大学古典籍総合データベース | permission required | https://www.waseda.jp/library/user/using-images/ |
 | 慶應義塾大学 | all rights reserved | https://dcollections.lib.keio.ac.jp/ja/about |
