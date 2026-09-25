@@ -13,12 +13,15 @@ One run writes `<out>/<revision>/`:
   its most central glyphs.
 - `embeddings.npy`: the float16 unit vectors, row-aligned with `units.parquet`.
 - `manifest.json`: the inputs the revision is derived from.
+- `neighbours.json`: per family, its clusters ordered so that similar shapes are adjacent, the
+  similarity of each adjacent pair, and each cluster's most similar other cluster.
 
 `<out>/current` then points at the revision.
 """
 from __future__ import annotations
 
 import hashlib
+import itertools
 import json
 import math
 import os
@@ -183,6 +186,7 @@ def run(root: Path, out: Path, *, checkpoint: Path, classes: Path, workers: int 
     revision = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()[:16]
     target = out / revision
     if target.is_dir():
+        write_neighbours(target)
         _point_current(out, revision)
         return {k: v for k, v in json.loads((target / "manifest.json").read_text()).items() if k != "inputs"}
 
@@ -255,8 +259,70 @@ def run(root: Path, out: Path, *, checkpoint: Path, classes: Path, workers: int 
                "clusters": sum(len(f["clusters"]) for f in published.values())}
     (staging / "manifest.json").write_text(json.dumps({**summary, "inputs": inputs}, indent=1) + "\n")
     os.replace(staging, target)
+    write_neighbours(target)
     _point_current(out, revision)
     return summary
+
+
+def shape_order(centres: np.ndarray) -> list[int]:
+    """An order of unit-length centres in which similar ones sit next to each other.
+
+    Average-linkage merging; each merge joins two runs end to end, turned so that their closest
+    ends meet. A family has at most `MAX_CLUSTERS` centres, so the quadratic loop is cheap.
+    """
+    similarity = centres @ centres.T
+    runs = [[i] for i in range(len(centres))]
+    while len(runs) > 1:
+        best = None
+        for a in range(len(runs)):
+            for b in range(a + 1, len(runs)):
+                score = float(similarity[np.ix_(runs[a], runs[b])].mean())
+                if best is None or score > best[0]:
+                    best = (score, a, b)
+        _, a, b = best
+        left, right = runs[a], runs[b]
+        joins = [(left, right), (left, right[::-1]), (left[::-1], right), (left[::-1], right[::-1])]
+        first, second = max(joins, key=lambda pair: similarity[pair[0][-1], pair[1][0]])
+        runs = [run for i, run in enumerate(runs) if i not in (a, b)] + [first + second]
+    return runs[0] if runs else []
+
+
+def write_neighbours(directory: Path) -> Path:
+    """Write `neighbours.json` beside a clustering: per family, its clusters in shape order.
+
+    The centres are the normalised means of each cluster's embeddings, which `run` stores
+    row-aligned with `units.parquet`; a clustering written before this file existed gets it here.
+    """
+    target = directory / "neighbours.json"
+    if target.is_file():
+        return target
+    table = pq.read_table(directory / "units.parquet", columns=["family", "cluster"]).to_pydict()
+    vectors = np.load(directory / "embeddings.npy", mmap_mode="r")
+    rows: dict[str, list[int]] = defaultdict(list)
+    family_of_cluster = {}
+    for index, (family, cluster) in enumerate(zip(table["family"], table["cluster"], strict=True)):
+        rows[cluster].append(index)
+        family_of_cluster[cluster] = family
+    by_family: dict[str, list[str]] = defaultdict(list)
+    for cluster in rows:
+        by_family[family_of_cluster[cluster]].append(cluster)
+    result = {}
+    for family, clusters in sorted(by_family.items()):
+        clusters.sort()
+        centres = np.stack([vectors[rows[c]].astype(np.float32).mean(0) for c in clusters])
+        centres /= np.linalg.norm(centres, axis=1, keepdims=True)
+        order = shape_order(centres)
+        similarity = centres @ centres.T
+        np.fill_diagonal(similarity, -1)
+        result[family] = {"order": [clusters[i] for i in order],
+                          "adjacent": [round(float(similarity[a, b]), 4) for a, b in itertools.pairwise(order)],
+                          "nearest": {clusters[i]: {"id": clusters[int(similarity[i].argmax())],
+                                                    "similarity": round(float(similarity[i].max()), 4)}
+                                      for i in range(len(clusters)) if len(clusters) > 1}}
+    staging = directory / ".neighbours.json.next"
+    staging.write_text(json.dumps(result, indent=1) + "\n")
+    os.replace(staging, target)
+    return target
 
 
 def _point_current(out: Path, revision: str) -> None:

@@ -51,6 +51,34 @@ def _boxes(codh: str, stamp: tuple, clustering: str) -> tuple[list[str], dict[st
     return pages["image"], boxes
 
 
+#: Adjacent clusters less similar than this start a new run of shapes.
+RUN_SIMILARITY = 0.8
+
+
+def shape_runs(near: dict, clusters: list[dict]) -> list[str]:
+    """Clusters in shape order, cut into runs of similar shapes, the runs largest first.
+
+    The shape chain puts similar clusters next to each other but leaves the faint and odd ones at
+    either end. Cutting it where neighbours differ and listing the heaviest runs first puts the
+    main forms at the top; each run starts from its largest cluster's end.
+    """
+    count = {c["id"]: c["count"] for c in clusters}
+    chain, adjacent = near["order"], near.get("adjacent") or []
+    runs, run = [], [chain[0]] if chain else []
+    for cluster, similarity in zip(chain[1:], adjacent, strict=False):
+        if similarity < RUN_SIMILARITY:
+            runs.append(run)
+            run = []
+        run.append(cluster)
+    if run:
+        runs.append(run)
+    ordered = []
+    for run in sorted(runs, key=lambda r: -sum(count.get(c, 0) for c in r)):
+        largest = max(range(len(run)), key=lambda i: count.get(run[i], 0))
+        ordered.extend(run if largest <= (len(run) - 1) / 2 else run[::-1])
+    return ordered
+
+
 def _form_entry(char: str) -> dict[str, Any]:
     code_point = refs.to_code_points(char)[0]
     row = refs.character(code_point)
@@ -94,7 +122,7 @@ def router(media, corpus_root: Path, reviews=None) -> APIRouter:
         return {"revision": data["revision"], "items": items}
 
     @api.get("/forms/families/{code_point}")
-    def family(code_point: str) -> dict[str, Any]:
+    def family(code_point: str, order: Literal["shape", "size"] = "shape") -> dict[str, Any]:
         data = forms.clusters()
         found = data["families"].get(code_point)
         if found is None:
@@ -102,7 +130,12 @@ def router(media, corpus_root: Path, reviews=None) -> APIRouter:
         decided = forms.resolved()
         named = forms.cluster_decisions()
         clusters = []
-        for cluster in found["clusters"]:
+        near = data["neighbours"].get(code_point, {})
+        ranked = found["clusters"]
+        if order == "shape" and near.get("order"):
+            position = {cluster_id: i for i, cluster_id in enumerate(shape_runs(near, found["clusters"]))}
+            ranked = sorted(found["clusters"], key=lambda c: position.get(c["id"], len(position)))
+        for cluster in ranked:
             members = data["members"][cluster["id"]]
             own = sum(1 for identity in members if (decided.get(identity) or {}).get("basis") == "form_glyph")
             # Decisions list glyphs, so glyphs keep their forms across a re-clustering; a cluster
@@ -113,9 +146,12 @@ def router(media, corpus_root: Path, reviews=None) -> APIRouter:
                              "form": named.get(cluster["id"]), "exceptions": own,
                              "assigned": sum(assigned.values()),
                              "majority": assigned.most_common(1)[0][0] if assigned else None,
+                             "nearest": ({**near["nearest"][cluster["id"]],
+                                          "label": data["labels"].get(near["nearest"][cluster["id"]]["id"])}
+                                         if cluster["id"] in near.get("nearest", {}) else None),
                              "representatives": [{"id": identity, "image": image(identity)}
                                                  for identity in cluster["representatives"][:12]]})
-        return {"revision": data["revision"], **summary(found, decided),
+        return {"revision": data["revision"], **summary(found, decided), "order": order,
                 "forms": [_form_entry(char) for char in forms.family_members(code_point)], "items": clusters}
 
     @api.get("/forms/clusters/{cluster_id:path}")

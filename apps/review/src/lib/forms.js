@@ -9,7 +9,7 @@ export async function formsAvailable() {
   } catch { return false }
 }
 export const families = () => request('/forms/families')
-export const family = codePoint => request('/forms/families/' + encodeURIComponent(codePoint))
+export const family = (codePoint, order = 'shape') => request('/forms/families/' + encodeURIComponent(codePoint) + '?' + new URLSearchParams({ order }))
 export const members = (cluster, offset = 0, limit = 120, order = 'typical') =>
   request('/forms/clusters/' + cluster.split('/').map(encodeURIComponent).join('/') + '?' + new URLSearchParams({ offset, limit, order }))
 export const decide = decision => request('/forms/decisions', decision)

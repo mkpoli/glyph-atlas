@@ -3,8 +3,6 @@ import pytest
 
 from glyph_atlas import form_clusters
 
-torch = pytest.importorskip("torch")
-
 
 def test_only_families_with_several_members_are_clustered():
     assert form_clusters.family_of("U+306F")["code_point"] == "U+306F"
@@ -20,6 +18,7 @@ def test_cluster_count_grows_slowly_and_is_capped():
 
 
 def test_kmeans_separates_distinct_shapes_and_is_deterministic():
+    torch = pytest.importorskip("torch")
     generator = torch.Generator().manual_seed(0)
     axes = torch.eye(8)[:3]
     points = torch.cat([axes[i] + 0.05 * torch.randn(50, 8, generator=generator) for i in range(3)])
@@ -31,3 +30,15 @@ def test_kmeans_separates_distinct_shapes_and_is_deterministic():
         assert len(set(labels[i * 50:(i + 1) * 50].tolist())) == 1
     assert len(set(labels.tolist())) == 3
     assert torch.allclose(centres.norm(dim=1), torch.ones(3), atol=1e-5)
+
+
+def test_shape_order_puts_similar_centres_next_to_each_other():
+    import numpy as np
+
+    a, b = np.eye(4)[0], np.eye(4)[1]
+    centres = np.stack([a, b, a + 0.1 * b, b + 0.1 * a, a + 0.2 * b])
+    centres /= np.linalg.norm(centres, axis=1, keepdims=True)
+    order = form_clusters.shape_order(centres)
+    assert sorted(order) == [0, 1, 2, 3, 4]
+    near_a = {order.index(i) for i in (0, 2, 4)}
+    assert max(near_a) - min(near_a) == 2
