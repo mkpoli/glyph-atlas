@@ -160,3 +160,4 @@ def empty_form_data(tmp_path_factory, monkeypatch):
     root = tmp_path_factory.mktemp("forms")
     monkeypatch.setenv("ATLAS_FORM_CLUSTERS", str(root / "clusters"))
     monkeypatch.setenv("ATLAS_FORM_DECISIONS", str(root / "decisions.jsonl"))
+    monkeypatch.setenv("ATLAS_QUIZ_SHAPES", str(root / "quiz-shapes"))
