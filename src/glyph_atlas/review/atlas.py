@@ -79,13 +79,15 @@ def seen_boxes(events: Iterable[Any]) -> dict[str, dict | None]:
     return boxes
 
 
-def skip_marks(events: Iterable[Any]) -> dict[str, dict[str, tuple[datetime, dict | None]]]:
-    """Who skipped each unit in a round, when last, and at which box, oldest event first.
+def skip_marks(events: Iterable[Any]) -> dict[str, dict[str, list[tuple[datetime, dict | None]]]]:
+    """Every skip of each unit that still stands, by reviewer: when, and at which box.
 
     A skip is a `seen` event whose value is `skipped`: the reader was shown the crop and could not
-    judge it. It is no decision and changes nothing about the unit; the undo of its round takes it back.
+    judge it. It is no decision and changes nothing about the unit. The undo of its round takes that
+    one skip back, and an earlier skip by the same reviewer still stands.
     """
-    marks: dict[str, dict[str, tuple[datetime, dict | None, str]]] = {}
+    marks: dict[str, dict[str, dict[str, tuple[datetime, dict | None]]]] = {}
+    owners: dict[str, tuple[str, str]] = {}
     for event in events:
         if event.field != SEEN:
             continue
@@ -94,15 +96,16 @@ def skip_marks(events: Iterable[Any]) -> dict[str, dict[str, tuple[datetime, dic
                 box = json.loads(event.evidence or "{}").get("box")
             except ValueError:
                 box = None
-            marks.setdefault(event.target_id, {})[event.actor or ""] = (event.at, box, event.id)
+            actor = event.actor or ""
+            marks.setdefault(event.target_id, {}).setdefault(actor, {})[event.id] = (event.at, box)
+            owners[event.id] = (event.target_id, actor)
         elif not event.new and (event.evidence or "").startswith(_UNDO):
             undone = event.evidence.removeprefix(_UNDO)
-            actors = marks.get(event.target_id, {})
-            for actor, mark in list(actors.items()):
-                if mark[2] == undone:
-                    del actors[actor]
-    return {target: {actor: (at, box) for actor, (at, box, _) in actors.items()}
-            for target, actors in marks.items() if actors}
+            if undone in owners:
+                target, actor = owners.pop(undone)
+                marks[target][actor].pop(undone, None)
+    return {target: {actor: list(skips.values()) for actor, skips in actors.items() if skips}
+            for target, actors in marks.items() if any(actors.values())}
 
 
 def single_character(text: str) -> bool:
@@ -737,7 +740,11 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         skips: dict[str, dict[str, datetime]] = {}
         for unit, _ in units:
             box = unit.box.model_dump(mode="json") if unit.box else None
-            current = {actor: at for actor, (at, at_box) in marks.get(unit.id, {}).items() if at_box == box}
+            current = {}
+            for actor, made in marks.get(unit.id, {}).items():
+                times = [at for at, at_box in made if at_box == box]
+                if times:
+                    current[actor] = max(times)
             if current:
                 skips[unit.id] = current
             if states.get(unit.id) != "pending":

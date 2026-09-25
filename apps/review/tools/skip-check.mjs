@@ -157,13 +157,15 @@ try {
   await browser.waitFor(`document.querySelectorAll('.quiz-tile.skipped').length === 0`, 20000)
   await sleep(500)
   const recorded = events(service.fixture.directory).slice(beforeAll)
-  assert(recorded.length === skippedAll.length && recorded.every(row => row.field === 'seen' && row.new === 'skipped'),
-    `moving on recorded ${recorded.map(row => row.field + ':' + row.new).join(', ')} for ${skippedAll.length} skipped crops`)
+  // Only a crop that was on screen counts as skipped: a skip of the whole round leaves the crops
+  // nobody scrolled to as they were.
+  assert(recorded.length > 0 && recorded.every(row => row.field === 'seen' && row.new === 'skipped'),
+    `moving on recorded ${recorded.map(row => row.field + ':' + row.new).join(', ') || 'nothing'} for ${skippedAll.length} skipped crops`)
   assert(recorded.every(row => skippedAll.includes(row.target_id)), 'a skip was recorded for a crop that was not skipped')
   assert(await browser.evaluate(reviewedText) === reviewedSecond, 'recording skips changed the reviewed count')
   // They rest for this reviewer: the next round does not deal them back.
   const next = (await browser.evaluate(rows)).map(row => row.id)
-  assert(!next.some(id => skippedAll.includes(id)), 'a crop the reviewer just skipped was dealt back to them')
+  assert(!next.some(id => recorded.some(row => row.target_id === id)), 'a crop the reviewer just skipped was dealt back to them')
   const afterPass = events(service.fixture.directory).length
 
   // 6. In the collection inspector, Skip advances the existing queue in place, however many times

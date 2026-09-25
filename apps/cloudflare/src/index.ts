@@ -68,9 +68,10 @@ function compact(row: UnitRow): Json {
 const SKIPS = `FROM skips k JOIN submissions b ON b.id=k.submission AND b.undone=0
   WHERE k.target=units.id AND k.box IS json_extract(units.data,'$.box')`;
 // A pending crop two reviewers skipped is `hard`: it leaves the rounds for its own list.
-const EFFECTIVE_STATE = `iif(state='pending' AND (SELECT count(DISTINCT k.actor) ${SKIPS})>=2,'hard',
-  iif(state='pending' AND EXISTS(SELECT 1 FROM seen s JOIN submissions b ON b.id=s.submission AND b.undone=0
-  WHERE s.target=units.id AND s.box IS json_extract(units.data,'$.box')),'seen',state))`;
+const HARD = `(SELECT count(DISTINCT k.actor) ${SKIPS})>=2`;
+const SEEN = `EXISTS(SELECT 1 FROM seen s JOIN submissions b ON b.id=s.submission AND b.undone=0
+  WHERE s.target=units.id AND s.box IS json_extract(units.data,'$.box'))`;
+const EFFECTIVE_STATE = `iif(state='pending' AND ${HARD},'hard',iif(state='pending' AND ${SEEN},'seen',state))`;
 // How long a crop a reviewer skipped stays out of that reviewer's own rounds.
 const SKIP_REST_MS = 3 * 24 * 60 * 60 * 1000;
 const quoted = (value: string) => `'${value.replaceAll("'", "''")}'`;
@@ -78,7 +79,10 @@ const quoted = (value: string) => `'${value.replaceAll("'", "''")}'`;
 function stateFor(reviewer: string | null): string {
   if (!reviewer) return EFFECTIVE_STATE;
   const since = new Date(Date.now() - SKIP_REST_MS).toISOString();
-  return `iif(${EFFECTIVE_STATE}='pending' AND EXISTS(SELECT 1 ${SKIPS} AND k.actor=${quoted(reviewer)} AND k.at>${quoted(since)}),'skipped',${EFFECTIVE_STATE})`;
+  // The reviewer's own recent skip is tested first: it is one indexed probe and false for most rows,
+  // so the full state is evaluated once per row.
+  return `iif(state='pending' AND EXISTS(SELECT 1 ${SKIPS} AND k.actor=${quoted(reviewer)} AND k.at>${quoted(since)})
+    AND NOT ${HARD} AND NOT ${SEEN},'skipped',${EFFECTIVE_STATE})`;
 }
 // The crops a round names: flagged answers, and crops it showed and left unflagged. A round carries
 // either or both; a single-crop review carries only its answer.

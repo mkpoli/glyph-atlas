@@ -4,7 +4,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -12,6 +14,7 @@ from fastapi.testclient import TestClient
 from PIL import Image, ImageDraw
 
 from glyph_atlas import tables
+from glyph_atlas.review import atlas as atlas_module
 from glyph_atlas.review.atlas import image_size, readable_image
 from glyph_atlas.review.server import create_app
 from glyph_atlas.review.store import ReviewRequest, Store, apply, replay
@@ -1528,6 +1531,20 @@ def test_a_crop_two_reviewers_skip_is_hard_and_an_undo_takes_a_skip_back(dataset
     assert client.get('/atlas').json()['counts'] == {"hard": 1, "pending": 15}
     assert client.post('/atlas/rounds/' + second['id'] + '/undo', json={"client_id": "bob"}).status_code == 200
     assert client.get('/atlas').json()['counts'] == {"pending": 16}
+
+
+def test_undoing_a_second_skip_keeps_the_same_reviewers_first():
+    at = datetime(2026, 9, 20, tzinfo=UTC)
+    box = {"x": 1, "y": 2, "w": 3, "h": 4}
+
+    def event(id, new, evidence, day):
+        return SimpleNamespace(id=id, field="seen", new=new, evidence=evidence, actor="alice",
+                               target_id="u", at=at + timedelta(days=day))
+
+    first = event("e1", "skipped", json.dumps({"box": box}), 0)
+    second = event("e2", "skipped", json.dumps({"box": box}), 4)
+    undo = event("e3", None, "undo of e2", 5)
+    assert atlas_module.skip_marks([first, second, undo]) == {"u": {"alice": [(at, box)]}}
 
 
 def test_undoing_a_skip_leaves_an_earlier_seen_record(dataset):
