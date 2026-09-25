@@ -593,7 +593,7 @@ async function undo(env:Env,request:Request,id:string){
 // correction); evidence is itself a JSON string, parsed once. An undo's own evidence is the plain string
 // 'undo of <event id>', not JSON, so its label comes from the row's own snapshot column instead — the
 // CASE only evaluates the branch for the row's own kind, so a future kind touches neither column.
-// This text is repeated verbatim in migration 0010's expression index; keep the two in sync.
+// This text is repeated verbatim in migration 0011's expression index; keep the two in sync.
 export const historyLabelExpr = () => `(CASE kind WHEN 'review' THEN coalesce(json_extract(json_extract(event,'$.evidence'),'$.label'),json_extract(json_extract(event,'$.evidence'),'$.snapshot.character.label')) WHEN 'undo' THEN json_extract(snapshot,'$.character.label') END)`;
 // Newest first, keyset-paged on (at,id): `before` is strictly older than that pair, in index order.
 export function historyQuery(actor: string | null, label: string | null, cursor: { at: string; id: string } | null): { sql: string; values: (string | number)[] } {

@@ -362,7 +362,8 @@ try {
   function served(details, index) {
     assert.ok(!details.some(d => /^SCAN (c|corpus_units)\b/.test(d) && !/USING (COVERING )?INDEX/.test(d)), details.join('; '))
     assert.ok(!details.some(d => d.includes('USE TEMP B-TREE FOR ORDER BY')), details.join('; '))
-    if (index) assert.ok(details.some(d => d.includes(`USING INDEX ${index} `) || d.includes(`USING COVERING INDEX ${index} `)), `${index}: ${details.join('; ')}`)
+    // The index is named as a whole word: a search is followed by its terms, a full index walk by nothing.
+    if (index) assert.ok(details.some(d => new RegExp(`USING (COVERING )?INDEX ${index}\\b`).test(d)), `${index}: ${details.join('; ')}`)
   }
   const shapes = []
   for (const production of [null, 'printed/woodblock'])
