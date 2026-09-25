@@ -38,7 +38,7 @@
   <div class="reading-suggestions" bind:this={element} tabindex="-1" aria-label={t('suggestions.label')}>
     <div class="suggestions-heading">{t('suggestions.heading')}</div>
     {#if candidates.length}
-      <div class="suggestion-options" lang="ja">
+      <div class="suggestion-options">
         {#each candidates as text (text)}
           <span class="suggestion-choice"><button type="button" class:chosen={value === text} {disabled} aria-pressed={value === text}
             onclick={() => choose(value === text ? null : text, false)}><ScriptText {text} script={scripts[text]} /></button><ZiLink character={text} compact /></span>
