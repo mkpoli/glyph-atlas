@@ -66,6 +66,7 @@ def measured(dataset: Path) -> list[tuple[str, float, float]]:
             continue
         derivation = ainu.Derivation(page_id=page_id, columns=columns, boxes=list(boxes))
         derivation.pairing = text_lines
+        derivation.spans = [[index] for index in range(len(columns))]
         evidence = ainu.evidence_per_column(derivation)
         rows.append((page_id, min(evidence), statistics.median(evidence)))
     return rows

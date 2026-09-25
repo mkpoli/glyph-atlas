@@ -7,9 +7,11 @@ machinery the plan never had to build.
 
 The rule is the one `scripts/ainu_columns.py` measures: a vertical line of a woodblock print is
 a column of ink, so the detector's character boxes are grouped into columns read right to left, and a
-page's columns are paired with its transcribed lines when the two counts agree. A page where they do
-not agree is left unresolved rather than guessed at, because a line box that stands for a different
-number of lines than the transcription has is worse than no box at all.
+page's transcribed lines are placed on those columns in reading order. A line may take the pieces of a
+column that splits where it leans, and a thin column no line accounts for, such as a gloss or a stamp,
+is left unread. A page where the ink and the lines do not fit is left unresolved rather than guessed
+at, because a line box that stands for a different line than the transcription names is worse than no
+box at all.
 
 `derive_directory` writes the columns it found to `columns.tsv` beside the dataset and sets the box of
 every line it could pair. It stages nothing and runs no alignment: a caller that wants character units
@@ -62,15 +64,21 @@ MAX_DETECTIONS_PER_CHARACTER = 2.0
 MAX_SPAN = 3
 #: What pairing a line with one more column costs, against the ink it accounts for.
 SPAN_COST = 0.3
-#: What leaving a column unread costs at its fullest. A column holding as much ink as a median line is
-#: charged in full, and a thin one, such as a gloss beside a word or a stamp, a quarter of it.
+#: What leaving a column unread costs: a quarter of this for any column, and up to the whole of it more
+#: for one holding as much ink as a median line. A gloss beside a word or a stamp is thin and cheap.
 SKIP_COST = 1.0
+#: A column left unread may hold at most this share of a median line's characters. A column that full
+#: is a line of text, and leaving it unread would pair every line after it one column off.
+MAX_UNREAD_SHARE = 0.5
+#: Columns one line takes follow one another down the page: they may overlap vertically by at most this
+#: share of the shorter one. Two lines of text stand side by side and overlap almost entirely.
+MAX_SPAN_OVERLAP = 0.3
 #: The columns of `columns.tsv`, which is the measurement this module's rule was fixed on.
 COLUMNS_FIELDS = (
     "page_id", "document_id", "width", "height", "characters", "columns", "regions",
     "region_columns", "largest_region_columns", "lines", "text_lines", "text_characters", "body",
-    "title", "detections_per_character", "weakest_column", "median_column", "paired", "reason",
-    "options",
+    "title", "detections_per_character", "weakest_column", "median_column", "strongest_column",
+    "unread_columns", "paired", "reason", "options",
 )
 
 
@@ -243,20 +251,35 @@ def transcribed_lines(lines: Sequence[Line]) -> list[Line]:
     return sorted(text_lines, key=lambda line: (line.seq is None, line.seq if line.seq is not None else 0))
 
 
-def pair_columns(columns: Sequence[Sequence[int]], lines: Sequence[Line]) -> list[list[int]] | None:
+def pair_columns(columns: Sequence[Sequence[int]], boxes: Sequence[Box],
+                 lines: Sequence[Line]) -> list[list[int]] | None:
     """The columns each line takes, in order, at the least cost; None when the lines cannot all be placed.
 
     Columns and lines are both in reading order, right to left, and the pairing keeps that order. A
-    line takes one to `MAX_SPAN` neighbouring columns, and costs the distance, in log ratio, between the
-    detections they hold and the characters it names, plus `SPAN_COST` for every column past the
-    first. A column no line takes is left unread for `SKIP_COST`, scaled by its ink. A page scanned with
+    line takes one to `MAX_SPAN` neighbouring columns that follow one another down the page, and costs
+    the distance, in log ratio, between the detections they hold and the characters it names, plus
+    `SPAN_COST` for every column past the first. A column no line takes is left unread for `SKIP_COST`,
+    scaled by its ink, and only while it holds no more than `MAX_UNREAD_SHARE` of a median line. A page scanned with
     a gloss column beside a word list, a stamp, or a line that splits where it leans has more columns
     than lines, and pairing only pages whose counts are equal left four pages in five unpaired.
     """
     held = [len(column) for column in columns]
     wanted = [max(1, characters_of(line)) for line in lines]
     median = statistics.median(wanted)
-    skip = [SKIP_COST * (0.25 + min(1.0, count / median)) for count in held]
+    skip = [SKIP_COST * (0.25 + min(1.0, count / median)) if count <= MAX_UNREAD_SHARE * median else math.inf
+            for count in held]
+    extent = [(min(boxes[i].y for i in column), max(boxes[i].y + boxes[i].h for i in column)) for column in columns]
+
+    def follows(first: int, last: int) -> bool:
+        """Whether columns `first`..`last` read as the pieces of one line, one below another."""
+        for a in range(first, last + 1):
+            for b in range(a + 1, last + 1):
+                overlap = min(extent[a][1], extent[b][1]) - max(extent[a][0], extent[b][0])
+                shorter = min(extent[a][1] - extent[a][0], extent[b][1] - extent[b][0])
+                if overlap > MAX_SPAN_OVERLAP * shorter:
+                    return False
+        return True
+
     count, total = len(wanted), len(held)
     best = [[math.inf] * (total + 1) for _ in range(count + 1)]
     step: list[list[int]] = [[0] * (total + 1) for _ in range(count + 1)]  # 0 skips a column, n > 0 takes n
@@ -268,6 +291,8 @@ def pair_columns(columns: Sequence[Sequence[int]], lines: Sequence[Line]) -> lis
             if not placed:
                 continue
             for width in range(1, min(MAX_SPAN, used) + 1):
+                if width > 1 and not follows(used - width, used - 1):
+                    break
                 ink = sum(held[used - width:used])
                 cost = best[placed - 1][used - width] + abs(math.log(ink / wanted[placed - 1])) + SPAN_COST * (width - 1)
                 if cost < best[placed][used]:
@@ -315,7 +340,7 @@ def derive_page(page: Page, lines: Sequence[Line], boxes: Sequence[Box],
     if len(text_lines) < body_lines:
         derivation.reason = f"{len(text_lines)} lines is a title, not a page"
         return derivation
-    spans = pair_columns(found, text_lines)
+    spans = pair_columns(found, boxes, text_lines)
     if spans is None:
         derivation.reason = f"{len(found)} columns for {len(text_lines)} lines"
         return derivation
@@ -336,20 +361,21 @@ def derive_page(page: Page, lines: Sequence[Line], boxes: Sequence[Box],
 
 def page_row(derivation: Derivation, page: Page, lines: Sequence[Line], *,
              body_lines: int = BODY_LINES, min_per_character: float = MIN_DETECTIONS_PER_CHARACTER,
+             max_per_character: float = MAX_DETECTIONS_PER_CHARACTER,
              gap_ratio: float = GAP_RATIO, merge_ratio: float = MERGE_RATIO,
              region_share: float = REGION_SHARE) -> dict[str, Any]:
     """One measured page, in the columns `columns.tsv` holds.
 
     Every parameter the row depends on is passed in rather than read from the module, so a census run
     with `--body-lines` or `--merge-ratio` reports what it actually ran with. The per-column evidence
-    of a paired page is reported as its weakest, median and strongest, because the page's mean is
-    exactly the number that hid the thin column the gate now refuses.
+    of a paired page is reported per line, as its weakest, median and strongest, because the page's mean
+    is exactly the number that hid the thin column the gate refuses.
     """
     text_lines = transcribed_lines(lines)
     regions = regions_of(derivation.boxes, region_share)
     region_columns = [len(columns_of(region, gap_ratio, merge_ratio)) for region in regions]
     evidence = sorted(derivation.evidence)
-    options = f"body>={body_lines} min={min_per_character} gap={gap_ratio} merge={merge_ratio} " \
+    options = f"body>={body_lines} min={min_per_character} max={max_per_character} gap={gap_ratio} merge={merge_ratio} " \
               f"region={region_share}"
     return {
         "page_id": page.id,
@@ -369,6 +395,8 @@ def page_row(derivation: Derivation, page: Page, lines: Sequence[Line], *,
         "detections_per_character": round(evidence_per_character(derivation, text_lines), 3),
         "weakest_column": round(evidence[0], 3) if evidence else "",
         "median_column": round(evidence[len(evidence) // 2], 3) if evidence else "",
+        "strongest_column": round(evidence[-1], 3) if evidence else "",
+        "unread_columns": derivation.column_count - sum(len(span) for span in derivation.spans) if derivation.paired else "",
         "paired": int(derivation.paired),
         "reason": derivation.reason,
         "options": options,
@@ -438,6 +466,7 @@ def derive_dataset(
     merge_ratio: float = MERGE_RATIO,
     body_lines: int = BODY_LINES,
     min_per_character: float = MIN_DETECTIONS_PER_CHARACTER,
+    max_per_character: float = MAX_DETECTIONS_PER_CHARACTER,
     region_share: float = REGION_SHARE,
     pages: Sequence[str] | None = None,
     detections: dict[str, list[Box]] | None = None,
@@ -465,9 +494,11 @@ def derive_dataset(
     wanted = set(pages) if pages is not None else None
     if wanted is not None and not wanted:
         return _nothing()
-    if any(value < 0 for value in (body_lines, min_per_character)) or gap_ratio < 0 or merge_ratio < 0:
+    if any(value < 0 for value in (body_lines, min_per_character, max_per_character)) or gap_ratio < 0 \
+            or merge_ratio < 0:
         raise ValueError(
             f"negative option: body_lines={body_lines} min_per_character={min_per_character} "
+            f"max_per_character={max_per_character} "
             f"gap_ratio={gap_ratio} merge_ratio={merge_ratio}"
         )
     settings = detector_settings(onnx_path, score=score)
@@ -513,7 +544,8 @@ def derive_dataset(
                 append_cache(cache, page.id, boxes)
         lines = lines_by_page.get(page.id, [])
         derivation = derive_page(page, lines, boxes, gap_ratio=gap_ratio, merge_ratio=merge_ratio,
-                                 body_lines=body_lines, min_per_character=min_per_character)
+                                 body_lines=body_lines, min_per_character=min_per_character,
+                                 max_per_character=max_per_character)
         pairing = {line.id: index for index, line in enumerate(derivation.pairing)}
         for line in lines:
             proposal: dict[str, Any] | None = None
@@ -542,7 +574,8 @@ def derive_dataset(
         counts["paired"] += int(derivation.paired)
         counts["unpaired"] += int(not derivation.paired)
         rows.append(page_row(derivation, page, lines, body_lines=body_lines,
-                             min_per_character=min_per_character, gap_ratio=gap_ratio,
+                             min_per_character=min_per_character, max_per_character=max_per_character,
+                             gap_ratio=gap_ratio,
                              merge_ratio=merge_ratio, region_share=region_share))
 
     if cache is not None:
