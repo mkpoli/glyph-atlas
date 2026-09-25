@@ -42,6 +42,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .. import tables
 from ..schema import (
+    PAGE_SCOPE,
     Box,
     Classification,
     Document,
@@ -91,8 +92,6 @@ SPLIT_KEYS = frozenset(
     }
 )
 MANUAL = "manual"
-#: `Line.meta["scope"]` of the one line per page that boxes drawn on the page photo go on.
-PAGE_SCOPE = "page"
 
 _EVENT_COLUMNS = (
     "id",
@@ -474,6 +473,10 @@ class Store:
         with self._lock, self._connection() as conn:
             return self._lines_of_page(conn, page_id)
 
+    def text_lines_of_page(self, page_id: str) -> list[Line]:
+        """The transcription lines of a page, without the line drawn boxes go on."""
+        return [line for line in self.lines_of_page(page_id) if not line.page_scope]
+
     def units_of_page(self, page_id: str) -> list[Unit]:
         """The active units of a page, whatever line they are on."""
         with self._lock, self._connection() as conn:
@@ -568,7 +571,7 @@ class Store:
     def page_counts(self, page_id: str) -> dict[str, int]:
         """Lines, active units and reviewed units of one page."""
         with self._lock, self._connection() as conn:
-            lines = conn.execute("SELECT count(*) FROM lines WHERE page_id = ?", (page_id,)).fetchone()[0]
+            lines = sum(1 for line in self._lines_of_page(conn, page_id) if not line.page_scope)
             units = conn.execute(
                 "SELECT count(*) FROM units WHERE page_id = ? AND active = 1", (page_id,)
             ).fetchone()[0]
@@ -889,7 +892,7 @@ class Store:
                     or box.x + box.w > page.width or box.y + box.h > page.height):
                 raise BadRequest("The box must lie inside the page image.")
             lines = self._lines_of_page(conn, page_id)
-            line = next((line for line in lines if line.meta.get("scope") == PAGE_SCOPE), None)
+            line = next((line for line in lines if line.page_scope), None)
             created = None
             if line is None:
                 line = Line(

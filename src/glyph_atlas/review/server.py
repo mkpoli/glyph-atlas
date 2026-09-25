@@ -242,9 +242,9 @@ def create_app(directory: Path, *, source: Path | str | None = None,
                 # The lines and pages a reviewer could work on, and the ones waiting on the step
                 # before review. Without these apart, a witness nobody has aligned looks the same as
                 # a witness with nothing in it.
-                "lines": sum(len(store.lines_of_page(page.id)) for page in own),
+                "lines": sum(len(store.text_lines_of_page(page.id)) for page in own),
                 "boxed_pages": sum(1 for page in own
-                                   if any(line.box for line in store.lines_of_page(page.id))),
+                                   if any(line.box for line in store.text_lines_of_page(page.id))),
             }
             if source_root is not None:
                 placement = _placement(source_root, document)
@@ -478,7 +478,7 @@ def create_app(directory: Path, *, source: Path | str | None = None,
                 # in the queue. A note keeps it there: a page waiting on a transcription is exactly
                 # the kind a reviewer wants to find again.
                 continue
-            lines = store.lines_of_page(page_id)
+            lines = store.text_lines_of_page(page_id)
             transcribed = bool(store.page_text(page_id))
             boxed = sum(1 for line in lines if line.box is not None)
             items.append({
@@ -532,7 +532,7 @@ def create_app(directory: Path, *, source: Path | str | None = None,
         """The lines of a page in reading order, with the number of active units of each."""
         if store.page(page_id) is None:
             raise HTTPException(status_code=404, detail=f"no page {page_id}")
-        summaries = store.line_summaries(store.lines_of_page(page_id))
+        summaries = store.line_summaries(store.text_lines_of_page(page_id))
         items = [
             {**summary["line"].model_dump(mode="json"), "units": summary["units"], "revision": summary["revision"]}
             for summary in summaries[offset : offset + limit]

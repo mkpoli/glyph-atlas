@@ -150,3 +150,21 @@ def test_a_retired_box_leaves_the_page_and_apply_writes_it(api: TestClient, data
     assert lines[0].meta == {"scope": "page"}
     assert units[kept["id"]].active and not units[mistaken["id"]].active
     assert replay(dataset)["repaired"] == 0
+
+
+def test_a_drawn_box_does_not_make_the_page_look_transcribed_or_aligned(api: TestClient) -> None:
+    """The page line holds drawn boxes, not text: the page queue and the document totals still show
+    a photograph nobody has transcribed or aligned."""
+    assert draw(api, {"x": 40, "y": 40, "w": 20, "h": 30}).status_code == 201
+    (item,) = [page for page in api.get("/pages").json()["items"] if page["id"] == PAGE]
+    assert (item["state"], item["lines"], item["boxed_lines"]) == ("empty", 0, 0)
+    assert api.get(f"/pages/{PAGE}").json()["lines"] == 0
+    project = api.get("/project").json()
+    (document,) = [d for d in project["documents"] if d["id"] == DOCUMENT]
+    assert (document["lines"], document["boxed_pages"]) == (0, 0)
+
+
+def test_the_page_line_is_not_a_text_line() -> None:
+    page_line = Line(id=f"{PAGE}:l1", page_id=PAGE, seq=1, text_raw="", text="", meta={"scope": "page"})
+    text_line = Line(id=f"{PAGE}:l2", page_id=PAGE, seq=2, text_raw="天", text="天")
+    assert page_line.page_scope and not text_line.page_scope

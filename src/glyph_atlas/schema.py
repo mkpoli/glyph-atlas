@@ -199,6 +199,10 @@ class LineRole(StrEnum):
     OTHER = "other"
 
 
+#: `Line.meta["scope"]` of the one line per page that boxes drawn on the page photo go on.
+PAGE_SCOPE = "page"
+
+
 class Line(BaseModel):
     id: str
     page_id: str
@@ -211,6 +215,13 @@ class Line(BaseModel):
     match_method: str | None = Field(default=None, description="how the box was assigned")
     match_confidence: float | None = Field(default=None, description="similarity of text and box in [0, 1]; a score, not a calibrated probability")
     meta: dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def page_scope(self) -> bool:
+        """Whether this is the line that boxes drawn on the page photo go on. It spans the whole
+        page and holds no transcription, so it is never a text line: not counted as one, not
+        aligned against, not a sign that the page has been located."""
+        return self.meta.get("scope") == PAGE_SCOPE
 
 
 class UnitKind(StrEnum):
