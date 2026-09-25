@@ -6,8 +6,8 @@
       "ko"
     ]
   },
-  "app.name": "字形大圖譜",
-  "app.home.aria": "字形大圖譜 홈",
+  "app.name": "자형대도보",
+  "app.home.aria": "자형대도보 홈",
   "app.nav.aria": "메인 내비게이션",
   "app.reviewOptions": "검토 옵션",
   "app.saved": "저장됨",
@@ -63,7 +63,7 @@
   "common.tryAgain": "다시 시도",
   "corpus.addNote": "메모 추가",
   "corpus.assign.label": "쓰인 글자 지정",
-  "corpus.atlasCorrection": "字形大圖譜 수정",
+  "corpus.atlasCorrection": "자형대도보 수정",
   "corpus.characterCount": "글자 {count}개",
   "corpus.chooseAnother": "다른 글자 선택",
   "corpus.correctCharacter.label": "올바른 글자",
