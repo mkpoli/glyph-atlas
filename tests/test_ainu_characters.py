@@ -406,3 +406,23 @@ def test_an_unverified_unit_gives_way_to_a_doubted_occurrence(world):
     reviews["edits"].append({"id": "1-l1-2", "label": "ユ", "reading": "uncertain", "boundary": "confirmed"})
     (folder / "reviews.json").write_text(json.dumps(reviews), encoding="utf-8")
     assert uid(2) in [u for u, _ in ainu_characters.plan(atlas, records).replace], "neither is hidden in the other's favour"
+
+
+def test_a_flag_stays_when_ainu_records_doubts_its_own_reading(world):
+    atlas, records = world
+    folder = records / "data/characters/moshiogusa--ninjal-1"
+    reviews = json.loads((folder / "reviews.json").read_text(encoding="utf-8"))
+    reviews["edits"] = [e for e in reviews["edits"] if e["id"] != "1-ocr0-7"]
+    reviews["edits"].append({"id": "1-ocr0-7", "label": "ル", "reading": "uncertain", "boundary": "confirmed"})
+    (folder / "reviews.json").write_text(json.dumps(reviews), encoding="utf-8")
+    result = ainu_characters.plan(atlas, records)
+    assert uid(5) in [u for u, _ in result.keep_withheld] and uid(5) not in [u for u, _ in result.replace]
+
+
+def test_a_confirmation_lifts_the_refusal_of_a_unit_the_log_names(world, tmp_path):
+    atlas, records = world
+    record(atlas, uid(1), "review", "rejected", role="model")  # a pipeline refused the placement in the log
+    out = tmp_path / "merged"
+    ainu_characters.build(ainu_characters.plan(atlas, records), atlas, records, out)
+    lifted = units_of(out)[uid(1)]
+    assert lifted.review == ReviewState.MACHINE and ainu_characters.trusted(lifted), "replay keeps the lift"
