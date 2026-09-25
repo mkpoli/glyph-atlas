@@ -21,6 +21,6 @@
 
 <span class="reference-glyph {size}" class:uncovered={!shown} style="font-family:{family}"
       title={code_point ? `${char} ${code_point}` : char}>
-  {#if shown}<ScriptText text={char} {script} />{:else}<span class="glyph-fallback">{label}</span>{/if}
+  {#if shown}<ScriptText text={char} {script} />{:else}<span class="glyph-fallback" lang="ja">{label}</span>{/if}
 </span>
 {#if showCodePoint && shown && code_point}<small class="glyph-codepoint">{code_point}</small>{/if}
