@@ -253,9 +253,12 @@ def plan(atlas: Path, records: Path, *, min_iou: float = MIN_IOU, log: ReviewLog
     for key, rows in occurrences(records).items():
         entry = by_key.get(key)
         pages: dict[int, list[Occurrence]] = defaultdict(list)
+        held: dict[int, list[Occurrence]] = defaultdict(list)  # occurrences an earlier merge imported
         for row in rows:
             before = earlier.get(f"{key}#{row.id}")
             if before is not None:
+                if before.active:
+                    held[row.sample["page"]].append(row)
                 if row.rejected and before.active and not decided(before):
                     result.withhold.append((before.id, row))
                 else:
@@ -289,7 +292,7 @@ def plan(atlas: Path, records: Path, *, min_iou: float = MIN_IOU, log: ReviewLog
                     (result.keep_atlas if unit.review == ReviewState.DISPUTED else result.confirm).append((uid, row))
                 else:
                     result.replace.append((uid, row))
-            arriving = [row for uid, row in result.replace if row.key == key and row.sample["page"] == n]
+            arriving = [*held[n], *(row for uid, row in result.replace if row.key == key and row.sample["page"] == n)]
             for row in page_rows:
                 if row.id in taken_r:
                     continue

@@ -335,3 +335,5 @@ def test_one_ink_is_imported_once_and_two_readings_of_it_are_withheld(world, tmp
     units = units_of(out)
     assert all(units[f"ar:moshiogusa--ninjal-1:{i}"].meta["alignment_repair"]["withheld"] for i in ("1-l2-9", "1-l3-10"))
     assert not ainu_characters.trusted(units["ar:moshiogusa--ninjal-1:1-l2-9"]), "rec.aynu.org leaves them out"
+    again = ainu_characters.plan(out, records)
+    assert again.import_new == [], "a duplicate left out stays out when the merge runs on its own output"
