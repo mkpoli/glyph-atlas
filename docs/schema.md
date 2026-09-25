@@ -89,6 +89,9 @@ spread is still one page; the spread relation is recorded through `canvas`.
 | `match_method`, `match_confidence` | how the box was assigned to the text; the confidence is a similarity score in [0, 1], never a calibrated probability |
 | `meta` | upstream fields with no column of their own (a split label, a detector score) |
 
+Boxes a reviewer draws on a page photo go on one line per page with role `other`, `meta.scope`
+`page` and the whole page as its box, created by the first box drawn on that page.
+
 ### units
 
 One located unit: a character, a ligature, a mark, a gap, or a sequence awaiting segmentation.
