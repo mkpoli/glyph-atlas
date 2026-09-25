@@ -63,6 +63,43 @@ class Packs:
             self.file.close()
 
 
+def read_crops(db, media):
+    """Store image-only OCR for every crop without it; a publication never ships a crop unread.
+
+    Results are cached per image and model signature, so a resumed or repeated export reads
+    only new crops.
+    """
+    from glyph_atlas.review.suggestions import Recognizer
+
+    rows = db.execute("SELECT id,data FROM units WHERE origin='local' "
+                      "AND json_extract(visual,'$.status') IS NOT 'ready'").fetchall()
+    if not rows:
+        return
+    model = Recognizer()
+    if not model.engines or any(engine["provider"] != "CUDAExecutionProvider" for engine in model.engines):
+        raise RuntimeError("Reading crops for publication requires the configured CUDA models")
+    signature = hashlib.sha256(json.dumps(model.engines, sort_keys=True).encode()).hexdigest()[:16]
+    cache = Path("cache/cloudflare-suggestions") / signature
+    cache.mkdir(parents=True, exist_ok=True)
+    print(encoded({"stage": "image-suggestions", "total": len(rows)}), flush=True)
+    for index, (identity, raw) in enumerate(rows):
+        image = json.loads(raw)["image"]
+        key = image.rsplit("/", 1)[-1].removesuffix(".webp")
+        saved = cache / (key + ".json")
+        if saved.exists():
+            result = json.loads(saved.read_text())
+        else:
+            with Image.open(media.materialize(key)) as picture:
+                result = model.read(picture.convert("RGB"))
+            result.update(input_image=image, verified=False)
+            saved.write_text(json.dumps(result, ensure_ascii=False))
+        db.execute("UPDATE units SET visual=? WHERE id=?", (encoded(result), identity))
+        if index % 500 == 0:
+            db.commit()
+            print(encoded({"stage": "image-suggestions", "done": index}), flush=True)
+    db.commit()
+
+
 def export(dataset: Path, output: Path, *, resume=False):
     output.mkdir(parents=True, exist_ok=resume)
     frozen = output / "source"
@@ -142,6 +179,7 @@ def export(dataset: Path, output: Path, *, resume=False):
                         "canvas": page.canvas if page else None,
                         "page_index": page.seq if page else None, "image_sha256": item["image_sha256"]}
             context = context_guesses(unit, line, neighbors.get(unit.line_id, []))
+            # Filled by read_crops below, which also covers rows kept from a resumed export.
             visual = {"status": "unavailable", "candidates": []}
             cp = refs.to_code_point(item["label"]) if len(item["label"]) == 1 else None
             counts[cp] += 1
@@ -156,6 +194,7 @@ def export(dataset: Path, output: Path, *, resume=False):
                 db.commit()
                 print(encoded({"stage": "local-crops", "done": i}), flush=True)
         db.commit()
+        read_crops(db, media)
         counts = Counter({refs.to_code_point(char): n for char, n in db.execute(
             "SELECT character,count(*) FROM units GROUP BY character") if len(char) == 1})
         print(encoded({"stage": "characters"}), flush=True)
