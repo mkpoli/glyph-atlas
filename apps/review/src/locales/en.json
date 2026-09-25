@@ -109,6 +109,8 @@
   "explore.filter.label": "Character type",
   "explore.findReading.aria": "Find a reading",
   "explore.findReading.placeholder": "Find a reading…",
+  "explore.flagged.hideReported": "Hide already reported",
+  "explore.flagged.showReported": "Show {count} already reported",
   "explore.grid.collection": "Character collection",
   "explore.heading.atlas": "Character atlas",
   "explore.heading.flagged": "Characters that need fixing",

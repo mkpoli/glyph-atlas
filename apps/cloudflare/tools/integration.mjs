@@ -156,8 +156,19 @@ try {
     image_sha256: hash, verdict: 'wrong', issue: 'crop' }
   await call('/atlas/characters/flag-a', inspected)
   assert.deepEqual(await flaggedOrder(), ['flag-b', 'flag-a'], 'a crop reviewed in the inspector moves behind one nobody has looked at')
+  // `reported=hide` leaves the crop reviewed in the inspector out, and counts it; `reported=show`,
+  // the default, leaves every other caller unaffected.
+  const flagged = async (reported) => call('/atlas?reading=ラ&state=flagged' + (reported ? `&reported=${reported}` : ''))
+  assert.equal((await flagged()).reported_count, 1, 'reported=show is the default, and counts what it would hide')
+  assert.equal((await flagged('show')).reported_count, 1)
+  const hiddenView = await flagged('hide')
+  assert.deepEqual(hiddenView.items.map(i => i.id), ['flag-b'], 'reported=hide leaves the reviewed crop out')
+  assert.equal(hiddenView.total, 1)
+  assert.equal(hiddenView.reported_count, 1)
   await call(`/atlas/rounds/${inspected.id}/undo`, { client_id: 'inspector' })
   assert.deepEqual(await flaggedOrder(), ['flag-a', 'flag-b'], 'undoing the inspector review restores the order')
+  assert.equal((await flagged('hide')).reported_count, 0, 'undoing the review brings the crop back')
+  assert.deepEqual((await flagged('hide')).items.map(i => i.id).sort(), ['flag-a', 'flag-b'])
   const ligature = { char: '𪜈', code_point: 'U+2A708', grapheme: { code_point: 'U+2A708' }, ligature: { reading: 'トモ' }, candidates: {} }
   await db.prepare('INSERT INTO characters VALUES(?,?,?,?,?)').bind('U+2A708', '𪜈', '', JSON.stringify(ligature), JSON.stringify(ligature)).run()
   const reading = { id: crypto.randomUUID(), client_id: 'integration', revision: 0,
@@ -357,6 +368,12 @@ try {
   served(documentPlan, null)
   assert.ok(documentPlan.includes('SEARCH c USING PRIMARY KEY (document=?)'), documentPlan.join('; '))
   assert.ok(documentPlan.some(d => /^SEARCH u USING INDEX sqlite_autoindex_units_1 \(id=\?\)/.test(d)), documentPlan.join('; '))
+  // `reported=hide`'s `NOT EXISTS` filter: the flagged set is small, but events and submissions are
+  // still read through their own indexes, one correlated lookup per candidate row, never a scan.
+  const reportedPlan = await plan({ sql: `SELECT count(*) AS n FROM units WHERE origin='local' AND state='flagged' AND NOT ${worker.reviewedInInspectorQuery()}`, values: [] }, [])
+  assert.ok(!reportedPlan.some(d => /^SCAN \w+/.test(d) && !/USING (COVERING )?INDEX/.test(d)), reportedPlan.join('; '))
+  assert.ok(reportedPlan.some(d => d.includes('SEARCH e USING INDEX event_target')), reportedPlan.join('; '))
+  assert.ok(reportedPlan.some(d => /SEARCH f USING (COVERING )?INDEX sqlite_autoindex_submissions_1/.test(d)), reportedPlan.join('; '))
   for (const [shape, bound, index] of shapes) {
     const details = await plan(shape, bound)
     if (process.env.SHOW_PLANS) console.log(index, JSON.stringify(details))

@@ -7,7 +7,7 @@
   import ImageStyleToggle from '../components/ImageStyleToggle.svelte'
   import CharacterSearch from '../components/CharacterSearch.svelte'
   import CharacterChips from '../components/CharacterChips.svelte'
-  import { catalogue, character, request, randomSeed, number } from '../lib/client.js'
+  import { catalogue, character, request, randomSeed, number, stored, remember } from '../lib/client.js'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery } from '../lib/layers.js'
   import { t, around, localName, locale } from '../lib/i18n.svelte.js'
   let { flagged = false, inspect, ink = 'original', onink = () => {}, onprogress = () => {} } = $props()
@@ -16,6 +16,14 @@
   let query = $state('')
   let choosing = $state(false), catalogueRequest = null
   let categoryOpen = $state(false), filter = $state('all'), requestId = 0, closed = false
+  // The Flagged view hides crops already reviewed in the inspector by default; the choice is
+  // remembered across visits.
+  let showReported = $state(stored('atlas.showReported', false))
+  function toggleReported() {
+    showReported = !showReported
+    remember('atlas.showReported', showReported)
+    offset = 0; load()
+  }
   // A picked character has a gallery of its own: the occurrences this collection holds and the
   // located glyphs the corpus index knows about. They are separate lists with separate paging —
   // different services page them — and they are merged for display only.
@@ -144,7 +152,8 @@
         return
       }
       catalogueRequest = new AbortController()
-      const result = await catalogue({ reading, q: query, group: filter, state: flagged ? 'attention' : 'all', seed, offset, limit: 60 }, { signal: catalogueRequest.signal, priority: 'low' })
+      const result = await catalogue({ reading, q: query, group: filter, state: flagged ? 'attention' : 'all',
+        reported: flagged ? (showReported ? 'show' : 'hide') : null, seed, offset, limit: 60 }, { signal: catalogueRequest.signal, priority: 'low' })
       if (closed || id !== requestId) return
       data = result; items = append ? [...items, ...result.items] : result.items
       if (!append) await loadSample(id, result.items)
@@ -282,8 +291,9 @@
       const replace = item => item.id !== id ? [item] : (flagged && !waiting(updated.state)) || !fitsGallery(updated) ? [] : [updated]
       if (picked) local = local.flatMap(replace)
       else items = items.flatMap(replace)
-      const summary = await catalogue({ reading, q: query, group: filter, state: flagged ? 'attention' : 'all', limit: 1 })
-      if (!closed) data = { ...data, counts: summary.counts, categories: summary.categories, total: summary.total, available: summary.available }
+      const summary = await catalogue({ reading, q: query, group: filter, state: flagged ? 'attention' : 'all',
+        reported: flagged ? (showReported ? 'show' : 'hide') : null, limit: 1 })
+      if (!closed) data = { ...data, counts: summary.counts, categories: summary.categories, total: summary.total, available: summary.available, reported_count: summary.reported_count }
     } catch (e) { if (!closed) error = e.message }
   }
   function select(value) { reading = value; offset = 0; categoryOpen = false; load() }
@@ -316,6 +326,7 @@
     <span class="toolbar-space"></span>
     <ImageStyleToggle {ink} onchange={onink} />
     {#if reading && !flagged}<a class="quiet-link" href={`#/review?reading=${encodeURIComponent(reading)}`}>{t('explore.reviewReading', { reading })}</a>{/if}
+    {#if flagged && data?.reported_count}<button class="quiet-link" onclick={toggleReported}>{showReported ? t('explore.flagged.hideReported') : t('explore.flagged.showReported', { count: data.reported_count })}</button>{/if}
     <button class="shuffle" onclick={shuffle} disabled={loading} aria-label={t('explore.shuffle.aria')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h3c4 0 8 12 12 12h3M17 14l4 4-4 4M3 18h3c1.7 0 3.5-2.3 5-5M14 8c1.5-1.4 2.6-2 4-2h3M17 2l4 4-4 4"/></svg>{t('explore.shuffle')}</button>
   </div>
   {#if error}<div class="error-message" role="alert">{error}<button onclick={() => load()}>{t('common.retry')}</button></div>{/if}
