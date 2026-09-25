@@ -136,15 +136,20 @@ try {
     const response = await mf.dispatchFetch(base + '/atlas/documents/hk%3Adoc/characters')
     assert.equal(response.status, 200)
     assert.equal(response.headers.get('access-control-allow-origin'), '*', 'other sites read it from the browser')
+    assert.equal(response.headers.get('cache-control'), 'no-cache', 'a browser asks again, so a review shows')
     return (await response.json()).characters
   }
   const before = await listed()
+  assert.deepEqual(await listed(), before, 'the edge copy answers the same, with the same headers')
   assert.deepEqual(before.map(c => [c.unit, c.atlas, c.label, c.state ?? null]),
     [['ar:doc:1-l1-0', false, 'ア', null], ['flag-a', true, 'ラ', 'pending']])
   await call('/atlas/rounds', flagRound)
   const after = (await listed())[1]
   assert.deepEqual([after.state, after.issue, after.revision], ['flagged', 'blank', 1], 'a review shows at once, past the cache')
-  await call('/atlas/documents/hk%3Anone/characters', null, 404)
+  for (const missing of ['hk%3Anone', '%E0']) {
+    const response = await mf.dispatchFetch(base + `/atlas/documents/${missing}/characters`)
+    assert.deepEqual([response.status, response.headers.get('access-control-allow-origin')], [404, '*'], 'a page can tell a missing document apart')
+  }
   const flaggedOrder = async () => (await call('/atlas?reading=ラ&state=flagged')).items.map(i => i.id)
   assert.deepEqual(await flaggedOrder(), ['flag-a', 'flag-b'], 'flagged crops nobody has reviewed keep their shuffled order')
   const inspected = { id: crypto.randomUUID(), client_id: 'inspector', revision: 1,
@@ -159,6 +164,8 @@ try {
     image_sha256: hash, verdict: 'wrong', issue: 'character', character: '𪜈', reading: 'とも' }
   await call('/atlas/characters/two', reading)
   assert.equal((await call('/atlas/characters/two')).reading, 'とも')
+  const renamed = (await call('/atlas/documents/hk%3Aother/characters')).characters[0]
+  assert.deepEqual([renamed.label, renamed.source], ['𪜈', 'review'], 'a label corrected on the site is the review\'s')
   const moved = { ...correction, id: crypto.randomUUID(), revision: 1, character: '𪜈' }
   await call('/atlas/corpus/reviews', moved)
   assert.equal((await call('/layers/candidates?code_point=U%2B2A708&scope=grapheme')).family_total, 1)
