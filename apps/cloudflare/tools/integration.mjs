@@ -125,31 +125,37 @@ try {
   await call('/atlas/rounds', flagOnSeen)
   assert.equal((await call('/atlas/characters/seen-a')).state, 'flagged', 'a seen crop can still be flagged at its revision')
   assert.deepEqual(await pendingSe(), [], 'answers and seen crops save together')
-  // A flagged crop stays in the quiz and leads the next round until someone has seen it since.
+  // Flagging a crop is looking at it: it stays flagged and is not dealt again.
   const dueSe = async () => (await call('/atlas?purpose=review&reading=セ&state=due&seed=3&limit=96'))
+  assert.deepEqual((await dueSe()).items, [], 'a crop flagged in a round is not dealt again')
+  assert.equal((await call('/atlas/characters/seen-a')).state, 'flagged')
+  // A crop that came flagged with the catalogue leads the next round until someone has seen it.
+  const unit = (id, state) => { const d = { id, label: 'セ', reading: 'セ', state, revision: 0, image_sha256: hash,
+    image: `/atlas/media/${id}.webp`, production: 'manuscript', box: { x: 1, y: 2, w: 3, h: 4 } }
+    return db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(id, 'local', 'セ', 'セ', 'U+30BB', null,
+      'manuscript', 'kana', state, 0, 1, 1, 1, JSON.stringify(d), '{}', '{}', '{}').run() }
+  await unit('came-flagged', 'flagged')
+  await unit('flag-b', 'pending')
   let due = await dueSe()
-  assert.deepEqual(due.items.map(i => i.id), ['seen-a'], 'a flagged crop is dealt again')
-  assert.deepEqual([due.categories[0].due, due.categories[0].due_flagged], [1, 1])
-  await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'third', label: 'セ', seen: [{ id: 'seen-a', image_sha256: hash }] })
-  due = await dueSe()
-  assert.deepEqual(due.items, [], 'a flagged crop seen since its flag is not dealt again')
-  assert.equal((await call('/atlas/characters/seen-a')).state, 'flagged', 'leaving a flagged crop unmarked keeps its flag')
-  // Marking a flagged crop again is a look too, and undoing that round takes the look back.
-  await db.prepare("INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind('flag-b', 'local', 'セ', 'セ', 'U+30BB', null,
-    'manuscript', 'kana', 'pending', 0, 1, 1, 1, JSON.stringify({ id: 'flag-b', label: 'セ', reading: 'セ', state: 'pending', revision: 0,
-    image_sha256: hash, production: 'manuscript', box: { x: 1, y: 2, w: 3, h: 4 } }), '{}', '{}', '{}').run()
-  const mark = (client, revision) => ({ id: crypto.randomUUID(), client_id: client, label: 'セ',
-    answers: [{ id: 'flag-b', revision, image_sha256: hash, verdict: 'wrong', issue: 'crop' }] })
-  await call('/atlas/rounds', mark('fourth', 0))
-  assert.ok((await dueSe()).items.some(i => i.id === 'flag-b'), 'a newly flagged crop is due for another look')
-  const agree = mark('fifth', 1)
-  await call('/atlas/rounds', agree)
-  assert.ok(!(await dueSe()).items.some(i => i.id === 'flag-b'), 'marking a flagged crop again is a look')
-  await call(`/atlas/rounds/${agree.id}/undo`, { client_id: 'fifth' })
-  assert.ok((await dueSe()).items.some(i => i.id === 'flag-b'), 'undoing the round takes the look back')
+  assert.deepEqual(due.items.map(i => i.id), ['came-flagged', 'flag-b'], 'an imported flag is dealt first')
+  assert.deepEqual([due.categories[0].due, due.categories[0].due_flagged], [2, 1])
+  const looked = { id: crypto.randomUUID(), client_id: 'third', label: 'セ', seen: [{ id: 'came-flagged', image_sha256: hash }] }
+  await call('/atlas/rounds', looked)
+  assert.deepEqual((await dueSe()).items.map(i => i.id), ['flag-b'], 'a flagged crop seen here is not dealt again')
+  assert.equal((await call('/atlas/characters/came-flagged')).state, 'flagged', 'leaving a flagged crop unmarked keeps its flag')
+  await call(`/atlas/rounds/${looked.id}/undo`, { client_id: 'third' })
+  assert.deepEqual((await dueSe()).items.map(i => i.id), ['came-flagged', 'flag-b'], 'undoing the round takes the look back')
+  await call('/atlas/rounds', { ...looked, id: crypto.randomUUID() })
+  // Undoing the round that flagged a crop returns it to the queue.
+  const flag = { id: crypto.randomUUID(), client_id: 'fourth', label: 'セ',
+    answers: [{ id: 'flag-b', revision: 0, image_sha256: hash, verdict: 'wrong', issue: 'crop' }] }
+  await call('/atlas/rounds', flag)
+  assert.deepEqual((await dueSe()).items, [], 'the flagging round is the look')
+  await call(`/atlas/rounds/${flag.id}/undo`, { client_id: 'fourth' })
+  assert.deepEqual((await dueSe()).items.map(i => i.id), ['flag-b'], 'undoing the flag deals the crop again')
   await call(`/atlas/rounds/${passed.id}/undo`, { client_id: 'integration' })
-  assert.deepEqual(await pendingSe(), ['seen-b'], 'undoing a pass returns its crops to the queue')
-  assert.deepEqual((await dueSe()).items.map(i => i.id), ['flag-b', 'seen-b'], 'the queue of due crops follows the undo, flagged first')
+  assert.deepEqual(await pendingSe(), ['flag-b', 'seen-b'], 'undoing a pass returns its crops to the queue')
+  assert.deepEqual((await dueSe()).items.map(i => i.id).sort(), ['flag-b', 'seen-b'], 'the queue of due crops follows the undo')
   await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'integration', label: 'セ', answers: [], seen: [] }, 422)
   // A crop re-cut after the round was dealt shows another image; the reader never saw that one.
   const recut = await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'integration', label: 'セ',
