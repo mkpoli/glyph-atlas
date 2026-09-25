@@ -61,10 +61,20 @@
       notified = 'failed'; onerror(item.id)
     }
   })
-  // The first view shows the whole context image: about five neighbours above and below the character
-  // and three columns to each side, measured in its own size, so a reading can be checked against its line.
+  // The first view centres the character and shows the whole context image around it, up to five
+  // neighbours above and below and three columns to each side, measured in the character's own size,
+  // so a reading can be checked against its line. A crop without a context shows with a margin.
   const unit = $derived(crop ? Math.max(crop.w, crop.h) : 1)
-  const baseScale = $derived(crop ? Math.min(size.width / (unit * 7), size.height / (unit * 11), 8) : 1)
+  const reach = $derived.by(() => {
+    const c = contextual ? data.context_box : null
+    if (!crop || !c) return { x: unit * 1.8, y: unit * 2.8 }
+    const cx = crop.x + crop.w / 2, cy = crop.y + crop.h / 2
+    return {
+      x: Math.min(unit * 3.5, Math.max(crop.w / 2, cx - c.x, c.x + c.w - cx)),
+      y: Math.min(unit * 5.5, Math.max(crop.h / 2, cy - c.y, c.y + c.h - cy)),
+    }
+  })
+  const baseScale = $derived(crop ? Math.min(size.width / (reach.x * 2), size.height / (reach.y * 2), 8) : 1)
   const scale = $derived(baseScale * zoom)
   // Both images and the crop mask use source-image pixels, not the page's metadata scale.
   const origin = $derived(crop ? {
