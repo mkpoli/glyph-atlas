@@ -70,12 +70,11 @@ _UNDO = "undo of "
 
 
 def flag_looks(events: Iterable[Any]) -> dict[str, list[dict | None]]:
-    """The boxes each flagged unit has been looked at in since it was flagged, oldest event first.
+    """The boxes each unit has been looked at in, oldest event first.
 
-    A round looks at a flagged crop when it shows it and leaves it unmarked (`seen`) or marks it again
-    (a `visual-quiz` review that keeps it disputed). Becoming flagged starts the list over, and the undo
-    of a round takes that round's look back. A look from a marked answer carries no box: it counts for
-    the crop wherever it stands.
+    Flagging a crop is looking at it, and so is marking it again or showing it in a round and leaving
+    it unmarked (`seen`). The undo of a round takes that round's look back. A look from a review
+    carries no box: it counts for the crop wherever it stands.
     """
     looks: dict[str, dict[str, dict | None]] = {}
     for event in events:
@@ -84,19 +83,11 @@ def flag_looks(events: Iterable[Any]) -> dict[str, list[dict | None]]:
         if evidence.startswith(_UNDO):
             looks.get(target, {}).pop(evidence.removeprefix(_UNDO), None)
             continue
-        if event.field == "review":
-            if event.new == ReviewState.DISPUTED and event.old != ReviewState.DISPUTED:
-                looks[target] = {}
-            elif event.new == ReviewState.DISPUTED and target in looks:
-                try:
-                    kind = json.loads(evidence).get("kind")
-                except ValueError:
-                    kind = None
-                if kind == "visual-quiz":
-                    looks[target][event.id] = None
-        elif event.field == SEEN and event.new and target in looks:
+        if event.field == "review" and event.new == ReviewState.DISPUTED:
+            looks.setdefault(target, {})[event.id] = None
+        elif event.field == SEEN and event.new:
             try:
-                looks[target][event.id] = json.loads(evidence or "{}").get("box")
+                looks.setdefault(target, {})[event.id] = json.loads(evidence or "{}").get("box")
             except ValueError:
                 continue
     return {target: list(boxes.values()) for target, boxes in looks.items()}
@@ -717,8 +708,8 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             document_id = unit.document_id or (page.document_id if page else None)
             kinds[unit.id] = documents.get(document_id, "unknown")
         states = {key: review_state(value.human_review) for key, value in standing.items()}
-        # What a round may deal: a pending crop nobody has seen, and a flagged crop nobody has seen
-        # since it was flagged. A flagged crop left unmarked stays flagged; it is only not dealt again.
+        # What a round may deal: a pending crop nobody has seen, and a flagged crop nobody has looked
+        # at, such as one flagged before it came here. A flagged crop left unmarked stays flagged.
         due: set[str] = set()
         for unit, _ in units:
             box = unit.box.model_dump(mode="json") if unit.box else None

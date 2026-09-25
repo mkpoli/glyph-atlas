@@ -68,16 +68,14 @@ const EFFECTIVE_STATE = `iif(state='pending' AND EXISTS(SELECT 1 FROM seen s JOI
   WHERE s.target=units.id AND s.box IS json_extract(units.data,'$.box')),'seen',state)`;
 // The crops a round names: flagged answers, and crops it showed and left unflagged. A round carries
 // either or both; a single-crop review carries only its answer.
-// What a round may deal: a pending crop nobody has seen, and a flagged crop no round has looked at
-// since it became flagged. A round looks at a flagged crop by showing it and leaving it unmarked, or
-// by marking it again; an undone round's look stops counting. The flag itself is never changed here.
-const FLAGGED_AT = `coalesce((SELECT max(e.at) FROM events e JOIN submissions f ON f.id=e.submission AND f.undone=0
-  WHERE e.target=units.id AND e.kind='review' AND json_extract(e.event,'$.new')='disputed' AND json_extract(e.event,'$.old')!='disputed'),'')`;
+// What a round may deal: a pending crop nobody has seen, and a flagged crop nobody here has looked at,
+// such as one that came flagged with the catalogue. Flagging a crop is looking at it, and so is marking
+// it again or showing it in a round and leaving it unmarked; an undone round's look stops counting.
+// The flag itself is never changed here.
 const LOOKED = `(EXISTS(SELECT 1 FROM seen s JOIN submissions b ON b.id=s.submission AND b.undone=0
-  WHERE s.target=units.id AND s.box IS json_extract(units.data,'$.box') AND s.at > ${FLAGGED_AT})
+  WHERE s.target=units.id AND s.box IS json_extract(units.data,'$.box'))
   OR EXISTS(SELECT 1 FROM events e JOIN submissions f ON f.id=e.submission AND f.undone=0 WHERE e.target=units.id
-  AND e.kind='review' AND json_extract(e.event,'$.old')='disputed' AND json_extract(e.event,'$.new')='disputed'
-  AND json_extract(json_extract(e.event,'$.evidence'),'$.kind')='visual-quiz' AND e.at > ${FLAGGED_AT}))`;
+  AND e.kind='review' AND json_extract(e.event,'$.new')='disputed'))`;
 const DUE = `(${EFFECTIVE_STATE}='pending' OR (state='flagged' AND NOT ${LOOKED}))`;
 export function validRound(input: Json, target?: string): { answers: Json[]; seen: Json[] } {
   const round = !target;

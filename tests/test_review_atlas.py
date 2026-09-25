@@ -1466,46 +1466,55 @@ def test_a_seen_crop_is_not_dealt_again_and_is_no_confirmation(dataset):
     assert exported == {shown[0]['id']}
 
 
-def test_a_flagged_crop_is_dealt_first_until_it_is_seen_and_keeps_its_flag(dataset):
+def test_flagging_a_crop_is_its_look_and_it_keeps_its_flag(dataset):
     client = TestClient(create_app(dataset))
     listing = '/atlas?reading=あ&state=due&purpose=review&seed=3&limit=96'
     before = client.get(listing).json()['total']
     shown = client.get(listing).json()['items'][:4]
     flagged = shown[0]['id']
     assert client.post('/atlas/rounds', json=seen_round(client, shown, flagged={flagged})).status_code == 200
+    # The reviewer who flagged it has looked at it: none of the four is dealt again.
     due = client.get(listing).json()
-    # The flagged crop leads the next round, ahead of the pending crops nobody has seen; the three
-    # shown and left unmarked are not dealt again.
-    assert due['items'][0]['id'] == flagged and due['total'] == before - 3
+    assert flagged not in {i['id'] for i in due['items']} and due['total'] == before - 4
     category = next(c for c in due['categories'] if c['label'] == 'あ')
-    assert (category['due'], category['due_flagged']) == (before - 3, 1)
-    # Left unmarked in that round, it is seen: no longer dealt, and still flagged.
-    item = next(i for i in due['items'] if i['id'] == flagged)
-    again = {"id": str(uuid4()), "client_id": "seen-reviewer", "label": "あ", "answers": [],
-             "seen": [{"id": flagged, "image_sha256": item['image_sha256']}]}
-    assert client.post('/atlas/rounds', json=again).status_code == 200
-    after = client.get(listing).json()
-    assert flagged not in {i['id'] for i in after['items']} and after['total'] == before - 4
+    assert (category['due'], category['due_flagged']) == (before - 4, 0)
     assert client.get('/atlas/characters/' + flagged).json()['state'] == 'flagged'
     assert client.get('/atlas').json()['counts']['flagged'] == 1
 
 
-def test_marking_a_flagged_crop_again_is_a_look_and_an_undo_takes_it_back(dataset):
+def test_a_crop_that_came_flagged_is_dealt_first_until_a_round_shows_it(dataset):
+    units = tables.read(dataset / "units.parquet", Unit)
+    arrived = LINE + ":u5"
+    tables.write(dataset / "units.parquet", [u.model_copy(update={"review": ReviewState.DISPUTED})
+                                             if u.id == arrived else u for u in units], Unit)
     client = TestClient(create_app(dataset))
     listing = '/atlas?reading=あ&state=due&purpose=review&seed=3&limit=96'
-    shown = client.get(listing).json()['items'][:2]
-    flagged = shown[0]['id']
-    assert client.post('/atlas/rounds', json=seen_round(client, shown, flagged={flagged})).status_code == 200
-    item = client.get('/atlas/characters/' + flagged).json()
-    # A second reviewer agrees and marks it again: that is a look, so it is not dealt a third time.
-    agree = {"id": str(uuid4()), "client_id": "second", "label": "あ", "seen": [],
-             "answers": [{"id": flagged, "revision": item['revision'], "image_sha256": item['image_sha256'],
-                          "verdict": "wrong", "issue": "crop"}]}
-    assert client.post('/atlas/rounds', json=agree).status_code == 200
-    assert flagged not in {i['id'] for i in client.get(listing).json()['items']}
-    # Undoing that round takes the look back: the crop is flagged and due again.
-    assert client.post('/atlas/rounds/' + agree['id'] + '/undo', json={"client_id": "second"}).status_code == 200
-    assert client.get(listing).json()['items'][0]['id'] == flagged
+    due = client.get(listing).json()
+    assert due['items'][0]['id'] == arrived
+    category = next(c for c in due['categories'] if c['label'] == 'あ')
+    assert category['due_flagged'] == 1
+    item = due['items'][0]
+    shown = {"id": str(uuid4()), "client_id": "second", "label": "あ", "answers": [],
+             "seen": [{"id": arrived, "image_sha256": item['image_sha256']}]}
+    assert client.post('/atlas/rounds', json=shown).status_code == 200
+    assert arrived not in {i['id'] for i in client.get(listing).json()['items']}
+    assert client.get('/atlas/characters/' + arrived).json()['state'] == 'flagged'
+    assert client.post('/atlas/rounds/' + shown['id'] + '/undo', json={"client_id": "second"}).status_code == 200
+    assert client.get(listing).json()['items'][0]['id'] == arrived
+
+
+def test_undoing_the_round_that_flagged_a_crop_deals_it_again(dataset):
+    client = TestClient(create_app(dataset))
+    listing = '/atlas?reading=あ&state=due&purpose=review&seed=3&limit=96'
+    item = client.get(listing).json()['items'][0]
+    flag = {"id": str(uuid4()), "client_id": "second", "label": "あ", "seen": [],
+            "answers": [{"id": item['id'], "revision": item['revision'], "image_sha256": item['image_sha256'],
+                         "verdict": "wrong", "issue": "crop"}]}
+    assert client.post('/atlas/rounds', json=flag).status_code == 200
+    assert item['id'] not in {i['id'] for i in client.get(listing).json()['items']}
+    assert client.post('/atlas/rounds/' + flag['id'] + '/undo', json={"client_id": "second"}).status_code == 200
+    assert item['id'] in {i['id'] for i in client.get(listing).json()['items']}
+    assert client.get('/atlas/characters/' + item['id']).json()['state'] == 'pending'
 
 
 def test_undoing_a_round_that_flagged_a_seen_crop_leaves_it_seen(dataset):
