@@ -144,8 +144,13 @@ def _source_digest(store: Store, unit: Unit) -> str | None:
         path = cached_image(unit.crop_sha256)
         return path.stem if path else None
     page = _page(store, unit.page_id) if unit.page_id else None
-    if page is None:
-        return None
+    return page_digest(page) if page is not None else None
+
+
+def page_digest(page: Page) -> str | None:
+    """The checksum of a page's image: its own when cached, else the one the image index holds for its URL."""
+    from .server import cached_image
+
     if page.sha256 and cached_image(page.sha256):
         return page.sha256
     record = _url_index(_index_stamp()).get(page.image)

@@ -668,6 +668,9 @@ def create_app(directory: Path, *, source: Path | str | None = None,
     # ink that carries them, with the one write that keeps a character correction and a reading
     # correction in separate events. See `review/characters.py`.
     app.include_router(characters_router(store))
+    # The page photos and the boxes on them, where a reviewer draws a box the dataset lacks.
+    from .pages import router as pages_router
+    app.include_router(pages_router(store))
 
     # The built review interface (`apps/review`, `bun run build`), mounted last so that every API
     # path above keeps its own route; without a build the service is the API alone.

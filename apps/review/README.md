@@ -5,8 +5,9 @@ A character atlas over the local Atlas review journal.
 - **Explore** shows shuffled character crops, with reading filters and kana/kanji groups.
 - **Quick review** groups up to twelve crops by their proposed reading. Select mismatches, choose an illustrated error type, then save. **Select all** handles rounds with widespread errors.
 - **Flagged** collects unresolved human decisions. The character reviewer advances through the visible collection after each save, preserving its order and scroll position.
+- **Pages** lists the page photos of the dataset and shows each one with its boxes. It appears only on the local review service.
 
-The inspector shows the character and a small surrounding region. There is no book reader or page catalogue.
+The inspector shows the character and a small surrounding region.
 
 ## Run
 
@@ -50,6 +51,24 @@ available after reloading and refuses to overwrite intervening edits.
 
 Imported model rejections remain pending. Human mismatches and uncertainty appear in **Flagged**.
 Counts describe available cached crops and editorial decisions; they are not an accuracy estimate.
+
+## Drawing boxes
+
+Pages without units, such as photographs whose interlinear marks were never boxed, are boxed by hand.
+Open a page under **Pages**, turn on **Draw** (or press `D`) and drag across a mark. Scroll to zoom,
+drag to move, `+`/`-` to zoom and `0` to fit the page. Boxes are stored in page pixels.
+
+The box is saved as soon as it is drawn, as a `manual` unit that is not yet identified. The dialog that
+opens then takes its character: search as in the collection, choose, and save. The character goes
+through the character layer like any identity correction, so its script follows the character. **Leave
+unidentified** keeps the box without one; open it again from the photo or the list beside it later.
+**Remove box** retires a drawn box. It stays in the journal with `active` false.
+
+Every drawn box goes on one line per page: role `other`, `meta.scope` `page`, the whole page as its box.
+The first box on a page creates it. A drawn box never joins a line an alignment found, since an
+interlinear mark is not part of that line's text. `atlas review apply` writes the line and the units to
+`lines.parquet` and `units.parquet`. An unidentified box is not listed in Explore, which shows
+occurrences of a character.
 
 ## OCR setup
 

@@ -91,6 +91,8 @@ SPLIT_KEYS = frozenset(
     }
 )
 MANUAL = "manual"
+#: `Line.meta["scope"]` of the one line per page that boxes drawn on the page photo go on.
+PAGE_SCOPE = "page"
 
 _EVENT_COLUMNS = (
     "id",
@@ -295,6 +297,16 @@ class UnitRequest(BaseModel):
     idempotency_key: str | None = None
 
 
+class DrawRequest(BaseModel):
+    """A character box a reviewer drew on a page photo, in page pixels."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    box: Box
+    client_id: str | None = None
+    idempotency_key: str | None = None
+
+
 class State:
     """The lines and units a change may touch, keyed by id."""
 
@@ -461,6 +473,20 @@ class Store:
     def lines_of_page(self, page_id: str) -> list[Line]:
         with self._lock, self._connection() as conn:
             return self._lines_of_page(conn, page_id)
+
+    def units_of_page(self, page_id: str) -> list[Unit]:
+        """The active units of a page, whatever line they are on."""
+        with self._lock, self._connection() as conn:
+            return self._units_of_page(conn, page_id)
+
+    def unit_counts_by_page(self) -> dict[str, int]:
+        """The number of active units of every page that has any."""
+        with self._lock, self._connection() as conn:
+            rows = conn.execute(
+                "SELECT page_id, count(*) AS n FROM units WHERE active = 1 AND page_id IS NOT NULL "
+                "GROUP BY page_id"
+            )
+            return {row["page_id"]: row["n"] for row in rows}
 
     def units_of_line(self, line_id: str, *, active: bool = True) -> list[Unit]:
         with self._lock, self._connection() as conn:
@@ -835,33 +861,86 @@ class Store:
             duplicate = self._by_key(conn, request.client_id, request.idempotency_key)
             if duplicate is not None:
                 return self._result(conn, duplicate, duplicate=True)
-            line = self._line_row(conn, request.line_id)
+            return self._new_unit(conn, request)
+
+    def draw_unit(self, page_id: str, request: DrawRequest) -> dict[str, Any]:
+        """Record a character box drawn on a page photo, on the page's own line.
+
+        A drawn box belongs to the page rather than to a line of its text: an interlinear mark sits
+        between the lines an alignment found, and a unit added to one of those would change what that
+        line says. So every drawn box goes on one line per page, role `other` with `meta.scope`
+        `page` and the whole page as its box, created by the first box drawn on the page. Creating
+        that line is its own event, written in the same transaction as the unit.
+
+        The answer is `{"line", "unit"}`: the result of the line's creation, or None when the page
+        already had its line, and the result of the unit's.
+        """
+        with self._lock, self._connection() as conn, self._transaction(conn):
+            duplicate = self._by_key(conn, request.client_id, request.idempotency_key)
+            if duplicate is not None:
+                return {"line": None, "unit": self._result(conn, duplicate, duplicate=True)}
+            page = self.page(page_id)
+            if page is None:
+                raise NotFound(f"no page {page_id}")
+            if not page.width or not page.height:
+                raise BadRequest(f"page {page_id} records no image size, so a box has nothing to lie on")
+            box = request.box
+            if (box.w <= 0 or box.h <= 0 or box.x < 0 or box.y < 0
+                    or box.x + box.w > page.width or box.y + box.h > page.height):
+                raise BadRequest("The box must lie inside the page image.")
+            lines = self._lines_of_page(conn, page_id)
+            line = next((line for line in lines if line.meta.get("scope") == PAGE_SCOPE), None)
+            created = None
             if line is None:
-                raise NotFound(f"no line {request.line_id}")
-            existing = self._units_of_line(conn, request.line_id, active=False)
-            page = self.page(line.page_id)
-            unit = Unit(
-                id=f"{request.line_id}:m{_next_number([record.id for record in existing], f'{request.line_id}:m')}",
-                document_id=page.document_id if page else None,
-                page_id=line.page_id,
-                line_id=request.line_id,
-                seq=request.seq,
-                box=request.box,
-                reading=request.reading,
-                text_source=request.text_source,
-                unicode=request.unicode,
-                kind=request.kind,
-                granularity=request.granularity,
-                classification=request.classification,
-                script=request.script,
-                voicing=request.voicing,
-                method=MANUAL,
-                review=ReviewState.TRANSCRIBER,
-            )
-            event = _created("unit", unit, request.client_id)
-            state = self._state_for(conn, event)
-            change = _change(state, event, guard=False)
-            return self._commit_within(conn, change, state, request.client_id, request.idempotency_key)
+                line = Line(
+                    id=f"{page_id}:l{_next_number([record.id for record in lines], f'{page_id}:l')}",
+                    page_id=page_id,
+                    seq=max((record.seq for record in lines), default=-1) + 1,
+                    box=Box(x=0, y=0, w=page.width, h=page.height),
+                    role=LineRole.OTHER,
+                    text_raw="",
+                    text="",
+                    match_method=MANUAL,
+                    meta={"scope": PAGE_SCOPE},
+                )
+                event = _created("line", line, request.client_id)
+                state = self._state_for(conn, event)
+                key = f"{request.idempotency_key}:line" if request.idempotency_key else None
+                created = self._commit_within(conn, _change(state, event, guard=False), state,
+                                              request.client_id, key)
+            unit = self._new_unit(conn, UnitRequest(line_id=line.id, box=box, client_id=request.client_id,
+                                                    idempotency_key=request.idempotency_key))
+            return {"line": created, "unit": unit}
+
+    def _new_unit(self, conn: sqlite3.Connection, request: UnitRequest) -> dict[str, Any]:
+        """Create a unit on an existing line inside the caller's transaction."""
+        line = self._line_row(conn, request.line_id)
+        if line is None:
+            raise NotFound(f"no line {request.line_id}")
+        existing = self._units_of_line(conn, request.line_id, active=False)
+        page = self.page(line.page_id)
+        unit = Unit(
+            id=f"{request.line_id}:m{_next_number([record.id for record in existing], f'{request.line_id}:m')}",
+            document_id=page.document_id if page else None,
+            page_id=line.page_id,
+            line_id=request.line_id,
+            seq=request.seq,
+            box=request.box,
+            reading=request.reading,
+            text_source=request.text_source,
+            unicode=request.unicode,
+            kind=request.kind,
+            granularity=request.granularity,
+            classification=request.classification,
+            script=request.script,
+            voicing=request.voicing,
+            method=MANUAL,
+            review=ReviewState.TRANSCRIBER,
+        )
+        event = _created("unit", unit, request.client_id)
+        state = self._state_for(conn, event)
+        change = _change(state, event, guard=False)
+        return self._commit_within(conn, change, state, request.client_id, request.idempotency_key)
 
     def export(self) -> dict[str, int]:
         """Write the state back to the dataset tables and the events to `reviews.jsonl`."""

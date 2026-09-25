@@ -4,6 +4,8 @@
   import Quiz from './views/Quiz.svelte'
   import Forms from './views/Forms.svelte'
   import History from './views/History.svelte'
+  import Pages from './views/Pages.svelte'
+  import { pagesAvailable } from './lib/pages.js'
   import { formsAvailable } from './lib/forms.js'
   import CharacterDialog from './components/CharacterDialog.svelte'
   import CorpusDialog from './components/CorpusDialog.svelte'
@@ -17,6 +19,8 @@
   let queue = $state([]), savedNotice = $state(''), updateItem = null
   // null until the service has answered whether it has a form clustering to assign.
   let forms = $state(null), formFamily = $state('')
+  // Only the local review service serves page photos, so only there does the Pages view appear.
+  let pages = $state(null), pageId = $state('')
   let selectedOrigin = $state('collection')
   // One display preference for the whole interface: a manuscript scan is a colour photograph of
   // paper and ink, so Original is the default and B&W is the reader's choice. It lives here rather
@@ -29,7 +33,9 @@
   let lastFocus
   function navigate() {
     const url = new URL(location.hash.slice(1) || '/', location.origin)
-    route = ['/review', '/flagged', '/forms', '/history'].includes(url.pathname) ? url.pathname : '/'
+    route = ['/review', '/flagged', '/forms', '/history', '/pages'].includes(url.pathname) ? url.pathname
+      : url.pathname.startsWith('/pages/') ? '/pages' : '/'
+    pageId = url.pathname.startsWith('/pages/') ? decodeURIComponent(url.pathname.slice(7)) : ''
     formFamily = url.searchParams.get('family') || ''
     reading = url.searchParams.get('reading') || ''
     selected = url.pathname.startsWith('/character/') ? decodeURIComponent(url.pathname.slice(11)) : null
@@ -50,17 +56,18 @@
   function close() { selected = null; onVerdict = null; lastFocus?.focus() }
   function exportReviews() { menu = false; exporting = true }
   function showProgress() { menu = false; progress = true }
-  onMount(() => { clientId = reviewer(); navigate(); formsAvailable().then(value => forms = value); window.addEventListener('hashchange', navigate); return () => window.removeEventListener('hashchange', navigate) })
+  onMount(() => { clientId = reviewer(); navigate(); formsAvailable().then(value => forms = value); pagesAvailable().then(value => pages = value); window.addEventListener('hashchange', navigate); return () => window.removeEventListener('hashchange', navigate) })
 </script>
 
 <header class="site-header"><a href="#/" class="wordmark" aria-label={t('app.home.aria')}><svg class="atlas-symbol" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M4 4h9v9H4zM19 4h9v9h-9zM4 19h9v9H4z" fill="currentColor"/><path d="M19 19h9v9h-9z" stroke="currentColor" stroke-width="2"/></svg>{#if localName()}<span class="local-name" lang={locale()}>{localName()}</span>{:else}<span lang="en">GLYPH <b>ATLAS</b></span>{/if}<small class="slogan" lang="ja">Let's 集字!</small></a>
-  <nav aria-label={t('app.nav.aria')}><a class:active={route === '/'} href="#/">{t('nav.explore')}</a>{#if forms}<a class:active={route === '/forms'} href="#/forms">{t('nav.forms')}</a>{/if}<a class:active={route === '/flagged'} href="#/flagged">{t('nav.flagged')}</a><a class:active={route === '/history'} href="#/history">{t('nav.history')}</a></nav>
+  <nav aria-label={t('app.nav.aria')}><a class:active={route === '/'} href="#/">{t('nav.explore')}</a>{#if forms}<a class:active={route === '/forms'} href="#/forms">{t('nav.forms')}</a>{/if}{#if pages}<a class:active={route === '/pages'} href="#/pages">{t('nav.pages')}</a>{/if}<a class:active={route === '/flagged'} href="#/flagged">{t('nav.flagged')}</a><a class:active={route === '/history'} href="#/history">{t('nav.history')}</a></nav>
   <div class="header-actions"><a class="review-link" class:current={route === '/review'} href="#/review">{t('nav.quickReview')} <span>↗</span></a><div class="header-menu"><button bind:this={menuButton} class="icon-button" aria-label={t('app.reviewOptions')} aria-expanded={menu} onclick={() => menu = !menu}>···</button>{#if menu}<div class="options-menu"><button onclick={showProgress}>{t('explore.collectionProgress')}</button><button onclick={exportReviews}>{t('export.menuItem')}</button>{#if LOCALES.length > 1}<div class="language-group"><small>{t('menu.language')}</small><div class="language-options">{#each LOCALES as loc (loc.tag)}<button lang={loc.tag} class:active={locale() === loc.tag} aria-pressed={locale() === loc.tag} onclick={() => setLocale(loc.tag)}>{loc.name}</button>{/each}</div></div>{/if}<small>{clientId}</small></div>{/if}</div></div>
 </header>
 <main>
   {#if clientId}{#if route === '/review'}{#key reading}<Quiz {clientId} initialReading={reading} {inspect} />{/key}
   {:else if route === '/forms' && forms !== false}{#if forms}<Forms initialFamily={formFamily} />{/if}
   {:else if route === '/history'}<History {clientId} {inspect} />
+  {:else if route === '/pages' && pages !== false}{#if pages}<Pages {clientId} {pageId} {inspect} />{/if}
   {:else}{#key route}<Explore flagged={route === '/flagged'} {inspect} {ink} onink={setInk} onprogress={showProgress} />{/key}{/if}{/if}
 </main>
 <!-- The dataset's own licence covers the records and annotations made here; images and texts keep the
