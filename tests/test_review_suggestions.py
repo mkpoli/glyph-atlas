@@ -84,7 +84,7 @@ def test_sequence_vote_remains_independent_of_normalized_classifier():
     assert [c["engine"] for c in result["candidates"][:2]] == ["Atlas classifier", "NDLkotenOCR"]
 
 
-def test_preferred_feature_model_and_explicit_override(tmp_path, monkeypatch):
+def test_classifier_path_defaults_and_explicit_override(tmp_path, monkeypatch):
     from glyph_atlas.review import suggestions
 
     monkeypatch.setattr(suggestions, "ROOT", tmp_path)
@@ -92,9 +92,6 @@ def test_preferred_feature_model_and_explicit_override(tmp_path, monkeypatch):
     artifacts = tmp_path / "models/classifier/artifacts"
     artifacts.mkdir(parents=True)
     assert suggestions.classifier_path() == artifacts / "classifier.onnx"
-    features = artifacts / "classifier-with-features.onnx"
-    features.touch()
-    assert suggestions.classifier_path() == features
     monkeypatch.setenv("ATLAS_CLASSIFIER_MODEL", "custom.onnx")
     assert str(suggestions.classifier_path()) == "custom.onnx"
 
@@ -103,24 +100,31 @@ def test_anchored_visual_proposal_has_distances_without_probability(tmp_path, mo
     import json
     from types import SimpleNamespace
 
-    from glyph_atlas.review.suggestions import visual_candidate
+    from glyph_atlas.review import suggestions
+    from glyph_atlas.visual_classifier import VisualClassifier
 
     monkeypatch.setenv("ATLAS_VISUAL_FAMILIES_DIR", str(tmp_path))
-    path = tmp_path / "classifier.json"
-    path.write_text(json.dumps({"model_revision": "test", "encoder_sha256": "encoder",
+    (tmp_path / "classifier.json").write_text(json.dumps({"model_revision": "test", "encoder_sha256": "encoder",
         "centroids": [[1, 0], [0, 1]], "radii": [.1, .1], "groups": [
             {"id": "old", "family": "U+4EEE", "written_character": "假"},
             {"id": "modern", "family": "U+4EEE", "written_character": "仮"}]}))
-    classifier = SimpleNamespace(features=lambda _: np.array([1., 0.]))
     vote = {"family": "U+4EEE", "members": ["仮", "假"], "identity_scope": "family"}
     image = Image.new("RGB", (8, 8))
-    engines = [{"name": "Atlas classifier", "sha256": "encoder"}]
-    candidate = visual_candidate(classifier, image, vote, engines)
+
+    def head(embedding):
+        session = SimpleNamespace(
+            get_inputs=lambda: [SimpleNamespace(shape=[1, 3, 8, 8], name="pixel_values")],
+            run=lambda names, feed: [np.array(embedding)])
+        return VisualClassifier(tmp_path, session=session)
+
+    monkeypatch.setattr(suggestions, "_visual_classifier", lambda *args: head([1., 0.]))
+    candidate = suggestions.visual_candidate(image, vote)
     assert candidate["text"] == "假" and candidate["engine"] == "Atlas visual form"
     assert "score" not in candidate and candidate["verified"] is False
     assert candidate["visual_prediction"]["similarity"] == 1
-    assert visual_candidate(classifier, image, vote, [{"name": "Atlas classifier", "sha256": "changed"}]) is None
-    assert visual_candidate(SimpleNamespace(features=lambda _: np.array([.7, .7])), image, vote, engines) is None
+
+    monkeypatch.setattr(suggestions, "_visual_classifier", lambda *args: head([.7, .7]))
+    assert suggestions.visual_candidate(image, vote) is None
 
 
 def test_a_kana_class_votes_for_that_kana_and_not_its_family():
@@ -129,3 +133,23 @@ def test_a_kana_class_votes_for_that_kana_and_not_its_family():
     candidates, vote = classifier_results(["U+30AB", "U+304B", "U+3055", "other"], [.9, .04, .03, .03])
     assert vote["identity_scope"] == "character" and vote["text"] == "カ"
     assert [c["text"] for c in candidates][:2] == ["カ", "か"]
+
+
+def test_a_failing_encoder_costs_only_the_visual_form(tmp_path, monkeypatch):
+    from glyph_atlas import visual_families
+    from glyph_atlas.review import suggestions
+
+    (tmp_path / "classifier.json").write_text("{}")
+    monkeypatch.setattr(visual_families, "directory", lambda: tmp_path)
+    suggestions._visual_classifier.cache_clear()
+
+    class Fail(Exception):
+        """Shaped like onnxruntime's errors, which derive from Exception alone."""
+
+    class Broken:
+        def embed(self, image):
+            raise Fail
+
+    monkeypatch.setattr(suggestions, "_visual_classifier", lambda *_: Broken())
+    vote = {"identity_scope": "family", "family": "U+4EEE", "members": ["仮", "假"]}
+    assert suggestions.visual_candidate(Image.new("RGB", (8, 8)), vote) is None
