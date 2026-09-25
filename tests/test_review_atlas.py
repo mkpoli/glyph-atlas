@@ -1482,6 +1482,27 @@ def test_flagging_a_crop_is_its_look_and_it_keeps_its_flag(dataset):
     assert client.get('/atlas').json()['counts']['flagged'] == 1
 
 
+def test_a_crop_that_came_flagged_is_dealt_first_until_a_round_shows_it(dataset):
+    units = tables.read(dataset / "units.parquet", Unit)
+    arrived = LINE + ":u5"
+    tables.write(dataset / "units.parquet", [u.model_copy(update={"review": ReviewState.DISPUTED})
+                                             if u.id == arrived else u for u in units], Unit)
+    client = TestClient(create_app(dataset))
+    listing = '/atlas?reading=あ&state=due&purpose=review&seed=3&limit=96'
+    due = client.get(listing).json()
+    assert due['items'][0]['id'] == arrived
+    category = next(c for c in due['categories'] if c['label'] == 'あ')
+    assert category['due_flagged'] == 1
+    item = due['items'][0]
+    shown = {"id": str(uuid4()), "client_id": "second", "label": "あ", "answers": [],
+             "seen": [{"id": arrived, "image_sha256": item['image_sha256']}]}
+    assert client.post('/atlas/rounds', json=shown).status_code == 200
+    assert arrived not in {i['id'] for i in client.get(listing).json()['items']}
+    assert client.get('/atlas/characters/' + arrived).json()['state'] == 'flagged'
+    assert client.post('/atlas/rounds/' + shown['id'] + '/undo', json={"client_id": "second"}).status_code == 200
+    assert client.get(listing).json()['items'][0]['id'] == arrived
+
+
 def test_undoing_the_round_that_flagged_a_crop_deals_it_again(dataset):
     client = TestClient(create_app(dataset))
     listing = '/atlas?reading=あ&state=due&purpose=review&seed=3&limit=96'
