@@ -1,0 +1,229 @@
+{
+ "set": "codh-test",
+ "crops": 8000,
+ "models": {
+  "atlas": {
+   "seconds": 10.7,
+   "scores": {
+    "all": {
+     "n": 8000,
+     "top1": 0.8844,
+     "top5": 0.9286,
+     "family1": 0.8844,
+     "family5": 0.9286,
+     "empty": 0.0
+    },
+    "hiragana": {
+     "n": 1988,
+     "top1": 0.9422,
+     "top5": 0.9965,
+     "family1": 0.9422,
+     "family5": 0.9965,
+     "empty": 0.0
+    },
+    "kanji": {
+     "n": 5879,
+     "top1": 0.8765,
+     "top5": 0.9153,
+     "family1": 0.8765,
+     "family5": 0.9153,
+     "empty": 0.0
+    },
+    "katakana": {
+     "n": 19,
+     "top1": 0.4211,
+     "top5": 0.8947,
+     "family1": 0.4211,
+     "family5": 0.8947,
+     "empty": 0.0
+    },
+    "symbol": {
+     "n": 114,
+     "top1": 0.3596,
+     "top5": 0.4386,
+     "family1": 0.3596,
+     "family5": 0.4386,
+     "empty": 0.0
+    }
+   }
+  },
+  "ndl": {
+   "seconds": 1757.1,
+   "scores": {
+    "all": {
+     "n": 8000,
+     "top1": 0.5262,
+     "top5": 0.6141,
+     "family1": 0.5286,
+     "family5": 0.6159,
+     "empty": 0.0003
+    },
+    "hiragana": {
+     "n": 1988,
+     "top1": 0.5161,
+     "top5": 0.6087,
+     "family1": 0.5161,
+     "family5": 0.6087,
+     "empty": 0.0
+    },
+    "kanji": {
+     "n": 5879,
+     "top1": 0.5375,
+     "top5": 0.6249,
+     "family1": 0.5407,
+     "family5": 0.6273,
+     "empty": 0.0003
+    },
+    "katakana": {
+     "n": 19,
+     "top1": 0.4211,
+     "top5": 0.6316,
+     "family1": 0.4211,
+     "family5": 0.6316,
+     "empty": 0.0
+    },
+    "symbol": {
+     "n": 114,
+     "top1": 0.1404,
+     "top5": 0.1491,
+     "family1": 0.1404,
+     "family5": 0.1491,
+     "empty": 0.0
+    }
+   }
+  },
+  "ndl-pad": {
+   "seconds": 1178.3,
+   "scores": {
+    "all": {
+     "n": 8000,
+     "top1": 0.4402,
+     "top5": 0.5035,
+     "family1": 0.4494,
+     "family5": 0.5104,
+     "empty": 0.0008
+    },
+    "hiragana": {
+     "n": 1988,
+     "top1": 0.4467,
+     "top5": 0.5206,
+     "family1": 0.4467,
+     "family5": 0.5206,
+     "empty": 0.001
+    },
+    "kanji": {
+     "n": 5879,
+     "top1": 0.4445,
+     "top5": 0.5055,
+     "family1": 0.4569,
+     "family5": 0.5149,
+     "empty": 0.0007
+    },
+    "katakana": {
+     "n": 19,
+     "top1": 0.2632,
+     "top5": 0.2632,
+     "family1": 0.2632,
+     "family5": 0.2632,
+     "empty": 0.0
+    },
+    "symbol": {
+     "n": 114,
+     "top1": 0.1404,
+     "top5": 0.1404,
+     "family1": 0.1404,
+     "family5": 0.1404,
+     "empty": 0.0
+    }
+   }
+  },
+  "served": {
+   "scores": {
+    "all": {
+     "n": 8000,
+     "top1": 0.5264,
+     "top5": 0.947,
+     "family1": 0.5288,
+     "family5": 0.9471,
+     "empty": 0.0
+    },
+    "hiragana": {
+     "n": 1988,
+     "top1": 0.5161,
+     "top5": 0.994,
+     "family1": 0.5161,
+     "family5": 0.994,
+     "empty": 0.0
+    },
+    "kanji": {
+     "n": 5879,
+     "top1": 0.5377,
+     "top5": 0.9415,
+     "family1": 0.5409,
+     "family5": 0.9417,
+     "empty": 0.0
+    },
+    "katakana": {
+     "n": 19,
+     "top1": 0.4211,
+     "top5": 0.8421,
+     "family1": 0.4211,
+     "family5": 0.8421,
+     "empty": 0.0
+    },
+    "symbol": {
+     "n": 114,
+     "top1": 0.1404,
+     "top5": 0.4298,
+     "family1": 0.1404,
+     "family5": 0.4298,
+     "empty": 0.0
+    }
+   }
+  },
+  "interleave": {
+   "scores": {
+    "all": {
+     "n": 8000,
+     "top1": 0.8844,
+     "top5": 0.9486,
+     "family1": 0.8844,
+     "family5": 0.9487,
+     "empty": 0.0
+    },
+    "hiragana": {
+     "n": 1988,
+     "top1": 0.9422,
+     "top5": 0.9955,
+     "family1": 0.9422,
+     "family5": 0.9955,
+     "empty": 0.0
+    },
+    "kanji": {
+     "n": 5879,
+     "top1": 0.8765,
+     "top5": 0.943,
+     "family1": 0.8765,
+     "family5": 0.9432,
+     "empty": 0.0
+    },
+    "katakana": {
+     "n": 19,
+     "top1": 0.4211,
+     "top5": 0.8947,
+     "family1": 0.4211,
+     "family5": 0.8947,
+     "empty": 0.0
+    },
+    "symbol": {
+     "n": 114,
+     "top1": 0.3596,
+     "top5": 0.4298,
+     "family1": 0.3596,
+     "family5": 0.4298,
+     "empty": 0.0
+    }
+   }
+  }
+ }
+}

@@ -1,0 +1,116 @@
+{
+ "set": "atlas-reviewed",
+ "crops": 158,
+ "models": {
+  "metom": {
+   "seconds": 0.7,
+   "scores": {
+    "all": {
+     "n": 158,
+     "top1": 0.8228,
+     "top5": 0.943,
+     "family1": 0.8228,
+     "family5": 0.943,
+     "empty": 0.0
+    },
+    "han": {
+     "n": 109,
+     "top1": 0.8807,
+     "top5": 0.9908,
+     "family1": 0.8807,
+     "family5": 0.9908,
+     "empty": 0.0
+    },
+    "hiragana": {
+     "n": 18,
+     "top1": 0.8889,
+     "top5": 0.9444,
+     "family1": 0.8889,
+     "family5": 0.9444,
+     "empty": 0.0
+    },
+    "katakana": {
+     "n": 31,
+     "top1": 0.5806,
+     "top5": 0.7742,
+     "family1": 0.5806,
+     "family5": 0.7742,
+     "empty": 0.0
+    }
+   }
+  },
+  "atlas": {
+   "seconds": 0.6,
+   "scores": {
+    "all": {
+     "n": 158,
+     "top1": 0.8481,
+     "top5": 0.8797,
+     "family1": 0.8481,
+     "family5": 0.8797,
+     "empty": 0.0
+    },
+    "han": {
+     "n": 109,
+     "top1": 0.945,
+     "top5": 0.9541,
+     "family1": 0.945,
+     "family5": 0.9541,
+     "empty": 0.0
+    },
+    "hiragana": {
+     "n": 18,
+     "top1": 0.8889,
+     "top5": 0.9444,
+     "family1": 0.8889,
+     "family5": 0.9444,
+     "empty": 0.0
+    },
+    "katakana": {
+     "n": 31,
+     "top1": 0.4839,
+     "top5": 0.5806,
+     "family1": 0.4839,
+     "family5": 0.5806,
+     "empty": 0.0
+    }
+   }
+  },
+  "atlas+metom": {
+   "scores": {
+    "all": {
+     "n": 158,
+     "top1": 0.8481,
+     "top5": 0.9367,
+     "family1": 0.8481,
+     "family5": 0.9367,
+     "empty": 0.0
+    },
+    "han": {
+     "n": 109,
+     "top1": 0.945,
+     "top5": 0.9817,
+     "family1": 0.945,
+     "family5": 0.9817,
+     "empty": 0.0
+    },
+    "hiragana": {
+     "n": 18,
+     "top1": 0.8889,
+     "top5": 0.9444,
+     "family1": 0.8889,
+     "family5": 0.9444,
+     "empty": 0.0
+    },
+    "katakana": {
+     "n": 31,
+     "top1": 0.4839,
+     "top5": 0.7742,
+     "family1": 0.4839,
+     "family5": 0.7742,
+     "empty": 0.0
+    }
+   }
+  }
+ }
+}

@@ -1,0 +1,184 @@
+{
+ "set": "hilab-test",
+ "crops": 8000,
+ "models": {
+  "atlas": {
+   "seconds": 9.8,
+   "scores": {
+    "all": {
+     "n": 8000,
+     "top1": 0.4662,
+     "top5": 0.6009,
+     "family1": 0.4689,
+     "family5": 0.6041,
+     "empty": 0.0
+    },
+    "hiragana": {
+     "n": 1027,
+     "top1": 0.7137,
+     "top5": 0.9017,
+     "family1": 0.7137,
+     "family5": 0.9017,
+     "empty": 0.0
+    },
+    "kanji": {
+     "n": 6778,
+     "top1": 0.4382,
+     "top5": 0.5583,
+     "family1": 0.4413,
+     "family5": 0.5621,
+     "empty": 0.0
+    },
+    "katakana": {
+     "n": 120,
+     "top1": 0.1083,
+     "top5": 0.5083,
+     "family1": 0.1083,
+     "family5": 0.5083,
+     "empty": 0.0
+    },
+    "symbol": {
+     "n": 75,
+     "top1": 0.1867,
+     "top5": 0.48,
+     "family1": 0.1867,
+     "family5": 0.48,
+     "empty": 0.0
+    }
+   }
+  },
+  "ndl": {
+   "seconds": 1587.3,
+   "scores": {
+    "all": {
+     "n": 8000,
+     "top1": 0.1628,
+     "top5": 0.2131,
+     "family1": 0.1644,
+     "family5": 0.215,
+     "empty": 0.0
+    },
+    "hiragana": {
+     "n": 1027,
+     "top1": 0.2308,
+     "top5": 0.2921,
+     "family1": 0.2308,
+     "family5": 0.2921,
+     "empty": 0.0
+    },
+    "kanji": {
+     "n": 6778,
+     "top1": 0.1571,
+     "top5": 0.2058,
+     "family1": 0.159,
+     "family5": 0.208,
+     "empty": 0.0
+    },
+    "katakana": {
+     "n": 120,
+     "top1": 0.0,
+     "top5": 0.0833,
+     "family1": 0.0,
+     "family5": 0.0833,
+     "empty": 0.0
+    },
+    "symbol": {
+     "n": 75,
+     "top1": 0.0,
+     "top5": 0.0,
+     "family1": 0.0,
+     "family5": 0.0,
+     "empty": 0.0
+    }
+   }
+  },
+  "served": {
+   "scores": {
+    "all": {
+     "n": 8000,
+     "top1": 0.1628,
+     "top5": 0.5916,
+     "family1": 0.1644,
+     "family5": 0.595,
+     "empty": 0.0
+    },
+    "hiragana": {
+     "n": 1027,
+     "top1": 0.2308,
+     "top5": 0.8666,
+     "family1": 0.2308,
+     "family5": 0.8666,
+     "empty": 0.0
+    },
+    "kanji": {
+     "n": 6778,
+     "top1": 0.1571,
+     "top5": 0.5555,
+     "family1": 0.159,
+     "family5": 0.5595,
+     "empty": 0.0
+    },
+    "katakana": {
+     "n": 120,
+     "top1": 0.0,
+     "top5": 0.4333,
+     "family1": 0.0,
+     "family5": 0.4333,
+     "empty": 0.0
+    },
+    "symbol": {
+     "n": 75,
+     "top1": 0.0,
+     "top5": 0.3467,
+     "family1": 0.0,
+     "family5": 0.3467,
+     "empty": 0.0
+    }
+   }
+  },
+  "interleave": {
+   "scores": {
+    "all": {
+     "n": 8000,
+     "top1": 0.4662,
+     "top5": 0.599,
+     "family1": 0.4689,
+     "family5": 0.6022,
+     "empty": 0.0
+    },
+    "hiragana": {
+     "n": 1027,
+     "top1": 0.7137,
+     "top5": 0.8793,
+     "family1": 0.7137,
+     "family5": 0.8793,
+     "empty": 0.0
+    },
+    "kanji": {
+     "n": 6778,
+     "top1": 0.4382,
+     "top5": 0.5612,
+     "family1": 0.4413,
+     "family5": 0.5651,
+     "empty": 0.0
+    },
+    "katakana": {
+     "n": 120,
+     "top1": 0.1083,
+     "top5": 0.4833,
+     "family1": 0.1083,
+     "family5": 0.4833,
+     "empty": 0.0
+    },
+    "symbol": {
+     "n": 75,
+     "top1": 0.1867,
+     "top5": 0.36,
+     "family1": 0.1867,
+     "family5": 0.36,
+     "empty": 0.0
+    }
+   }
+  }
+ }
+}
