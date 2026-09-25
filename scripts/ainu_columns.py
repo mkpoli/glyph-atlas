@@ -48,9 +48,11 @@ def measure_page(page: Page, lines: list[Line], detector: detect.Detector,
         boxes = [box for box, _ in found if box.w > 0 and box.h > 0]
     derivation = ainu.derive_page(page, lines, boxes, gap_ratio=args.gap_ratio,
                                   merge_ratio=args.merge_ratio, body_lines=args.body_lines,
-                                  min_per_character=args.min_per_character)
+                                  min_per_character=args.min_per_character,
+                                  max_per_character=args.max_per_character)
     row = ainu.page_row(derivation, page, lines, body_lines=args.body_lines,
-                        min_per_character=args.min_per_character, gap_ratio=args.gap_ratio,
+                        min_per_character=args.min_per_character, max_per_character=args.max_per_character,
+                        gap_ratio=args.gap_ratio,
                         merge_ratio=args.merge_ratio, region_share=args.region_share)
     return row, boxes
 
@@ -143,6 +145,8 @@ def main() -> int:
                         help="a transcription of at least this many lines counts as a body")
     parser.add_argument("--min-per-character", type=float, default=ainu.MIN_DETECTIONS_PER_CHARACTER,
                         help="detections a transcribed character needs before a page is paired")
+    parser.add_argument("--max-per-character", type=float, default=ainu.MAX_DETECTIONS_PER_CHARACTER,
+                        help="detections a transcribed character may have at most before a page is refused")
     parser.add_argument("--score", type=float, default=SCORE)
     parser.add_argument("--histogram", action="store_true", help="print the ink profile of each page")
     parser.add_argument("--out", type=Path, default=None, help="write the per-page rows here as TSV")

@@ -587,3 +587,17 @@ def test_a_column_holding_far_more_than_its_line_is_not_paired() -> None:
     derivation = ainu.derive_page(page(), lines, boxes)
     assert not derivation.paired and "fullest column" in derivation.reason
     assert ainu.derive_page(page(), lines, boxes, max_per_character=5.0).paired
+
+
+def test_a_transcription_short_of_a_line_is_not_paired_one_column_off() -> None:
+    """Six full columns and five transcribed lines: one line of ink is not in the transcription.
+
+    Joining two side-by-side columns into one line, or leaving a full column unread, would pair every
+    line after it one column off, so the page is refused.
+    """
+    boxes: list[Box] = []
+    for index in range(6):
+        boxes.extend(column(1300 - index * 60, ys=tuple(100 + 40 * step for step in range(6))))
+    lines = [line(seq, "あ" * 6) for seq in range(5)]
+    derivation = ainu.derive_page(page(), lines, boxes)
+    assert not derivation.paired and derivation.line_box(0) is None

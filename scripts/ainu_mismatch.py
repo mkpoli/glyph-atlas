@@ -101,6 +101,7 @@ def paired_with(boxes: list[Box], columns: list[list[int]], text_lines: list[Lin
         return None
     derivation = ainu.Derivation(page_id="", columns=columns, boxes=list(boxes))
     derivation.pairing = text_lines
+    derivation.spans = [[index] for index in range(len(columns))]
     derivation.evidence = ainu.evidence_per_column(derivation)
     weakest = min(derivation.evidence)
     return weakest if weakest >= ainu.MIN_DETECTIONS_PER_CHARACTER else None
