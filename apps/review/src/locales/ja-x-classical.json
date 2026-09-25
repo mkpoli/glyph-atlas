@@ -6,7 +6,8 @@
       "ja-x-classical"
     ]
   },
-  "app.home.aria": "Glyph Atlas首頁",
+  "app.name": "字形大圖譜",
+  "app.home.aria": "字形大圖譜首頁",
   "app.nav.aria": "主要案內",
   "app.reviewOptions": "校閱の設定",
   "app.saved": "保存濟",
