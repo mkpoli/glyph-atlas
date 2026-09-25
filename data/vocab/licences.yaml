@@ -153,6 +153,19 @@
   checked: 2026-09-11
 
 - match:
+    - KOGL-1
+    - KOGL Type 1
+    - 공공누리 제1유형
+    - 공공누리 제1유형(출처표시)
+    - https://www.kogl.or.kr/info/licenseType1.do
+  licence: KOGL-1
+  label: 공공누리 제1유형(출처표시)
+  evidence: https://www.kogl.or.kr/info/licenseType1.do
+  eligible: true
+  obligations: "Name the source, e.g. 국립한글박물관, 공공누리 제1유형(출처표시), and link to the item; commercial use and derivatives are allowed. The KOGL notice stays with the material and is never replaced by the dataset licence."
+  checked: 2026-09-25
+
+- match:
     - Unicode-3.0
     - Unicode License v3
     - Unicode License V3

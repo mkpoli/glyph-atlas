@@ -382,7 +382,7 @@ def manifest_rights(manifest: dict) -> Rights | None:
 def eligible(rights: Rights | None, target: Licence | str = Licence.CC_BY_SA_4) -> bool:
     """Whether material with these rights may go into a release licensed as `target`.
 
-    PD, PDM, CC0, CC BY 4.0, CC BY-SA 3.0, 4.0 and 2.1 JP, the Unicode licence and `bespoke-free`
+    PD, PDM, CC0, CC BY 4.0, CC BY-SA 3.0, 4.0 and 2.1 JP, KOGL Type 1, the Unicode licence and `bespoke-free`
     are eligible; NC, ND, RS-NOC-CR, restricted, unknown and a per-item statement are not, and
     neither is a record with no rights at all. A share-alike source needs a share-alike target.
     """

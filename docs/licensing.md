@@ -14,6 +14,7 @@ because a scan of a public-domain page may carry no copyright of its own.
 | CC BY-SA 4.0 | included with attribution |
 | CC BY-SA 3.0 | included as an adaptation, attribution and the 3.0 notice kept |
 | CC BY-SA 2.1 JP (MJ table, NINJAL images) | included as an adaptation: article 5 of that licence allows derivative works under a newer version or another jurisdiction's licence with the same elements; notices and modifications recorded |
+| 공공누리 제1유형(출처표시), KOGL Type 1 (국립한글박물관) | included with the source named; the record keeps the KOGL notice, and the image itself is never described as CC BY-SA |
 | Bespoke free-reuse terms (京都大学 RMDA, 国立公文書館, 木簡庫) | included when the terms allow copying, modification and redistribution; the terms URI and the obligations are stored on the record, and the image itself is never described as CC BY-SA |
 | NC, ND, research-only, permission-required | never in a release build; the record may exist with coordinates and no crop, provided the text and metadata it carries are themselves clear |
 | Unstated | treated as permission-required until the holder answers |

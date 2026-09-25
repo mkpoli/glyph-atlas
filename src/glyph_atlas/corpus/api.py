@@ -55,6 +55,7 @@ PROXYABLE = frozenset(
         "CC-BY-SA-3.0",
         "CC-BY-SA-4.0",
         "CC-BY-SA-2.1-JP",
+        "KOGL-1",
         "Unicode-3.0",
         "bespoke-free",
     }
