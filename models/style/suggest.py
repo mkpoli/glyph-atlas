@@ -2,14 +2,18 @@
 
 The teacher is the checkpoint `models/style/train.py` writes. A crop is the display crop the site
 serves (`MediaCache.corpus_image`, 480 pixels), prepared by `glyph_atlas.style_teacher`. The sample
-is every Han unit whose `sha1(id)` falls under a threshold, so the same crops are drawn on every run,
-and a later run over more of the corpus keeps the earlier ones.
+is every Han unit whose `sha1(id)` falls under a threshold, so the same crops are drawn on every run
+and a larger share keeps the crops of a smaller one. That holds while `--limit` is not reached; when
+it is, the sample is cut in the order the table is stored, and the run says so. A unit whose crop
+cannot be rendered or read is skipped and counted.
 
 The output goes to `work/style-suggestions/{corpus}/`, outside the dataset tables:
 `suggestions.jsonl` holds one line per crop with the style, the probability of each style and the
 checkpoint's SHA-256, and `sheet.html` shows the crops grouped by suggested style, most confident
 first, beside what the teacher saw. The suggestions derive from a CC BY-NC 4.0 dataset
 (`models/style/README.md`) and are not published.
+
+Run it from the repository root, which holds `work/`:
 
     python models/style/suggest.py hng --share 0.02
 """
@@ -19,8 +23,9 @@ import argparse
 import hashlib
 import html
 import json
+import os
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 import numpy as np
@@ -35,8 +40,11 @@ def sampled(row_id: str, share: float) -> bool:
     return int(hashlib.sha1(row_id.encode()).hexdigest()[:8], 16) < share * 0x100000000
 
 
-def crops(corpus_name: str, share: float, limit: int):
-    """(unit id, display-crop path, source document) for the sampled Han units that have an image."""
+def crops(corpus_name: str, share: float, limit: int, skipped: Counter):
+    """(unit id, character, display-crop path, source document) for the sampled Han units.
+
+    A unit with no rendered crop is counted in `skipped` under the reason.
+    """
     import pyarrow.dataset as ds
 
     from glyph_atlas.corpus import sources
@@ -62,15 +70,18 @@ def crops(corpus_name: str, share: float, limit: int):
             api._decorate_unit(joined, width=480)
             image = media.corpus_image(joined, api.crops, edge=480) if joined.get("render_available") else None
             if not image:
+                skipped["no crop"] += 1
                 continue
             try:
                 path = media.materialize(image.rsplit("/", 1)[-1].removesuffix(".webp"))
-            except (OSError, ValueError):
+            except (OSError, ValueError, KeyError) as error:
+                skipped[f"render: {type(error).__name__}"] += 1
                 continue
+            if found >= limit:
+                skipped["over --limit"] += 1
+                return
             yield row["id"], char, path, joined.get("document_id")
             found += 1
-            if found >= limit:
-                return
 
 
 def main() -> None:
@@ -83,6 +94,8 @@ def main() -> None:
     parser.add_argument("--per-style", type=int, default=60, help="crops shown per style on the sheet")
     args = parser.parse_args()
 
+    if not Path("work").is_dir():
+        raise SystemExit("run this from the repository root, which holds work/")
     import timm
     import torch
 
@@ -92,8 +105,9 @@ def main() -> None:
     checkpoint_sha = hashlib.sha256(args.checkpoint.read_bytes()).hexdigest()
     out = args.out / args.corpus
     (out / "seen").mkdir(parents=True, exist_ok=True)
-    rows = []
-    batch = []
+    for stale in (out / "seen").glob("*.png"):
+        stale.unlink()
+    rows, batch, skipped = [], [], Counter()
 
     def flush():
         with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16):
@@ -101,15 +115,19 @@ def main() -> None:
         for (unit, char, path, document, prepared), p in zip(batch, torch.softmax(logits, 1).cpu().numpy(), strict=True):
             seen = out / "seen" / (hashlib.sha1(unit.encode()).hexdigest() + ".png")
             prepared.save(seen)
-            rows.append({"id": unit, "character": char, "document_id": document, "crop": str(path),
+            rows.append({"id": unit, "character": char, "document_id": document, "crop": os.path.relpath(path),
                          "seen": seen.name, "style": CLASSES[int(p.argmax())],
                          "p": {name: round(float(v), 4) for name, v in zip(CLASSES, p, strict=True)},
                          "basis": "calli-tongji-teacher", "checkpoint_sha256": checkpoint_sha})
         batch.clear()
 
-    for unit, char, path, document in crops(args.corpus, args.share, args.limit):
-        with Image.open(path) as image:
-            batch.append((unit, char, path, document, prepare(image)))
+    for unit, char, path, document in crops(args.corpus, args.share, args.limit, skipped):
+        try:
+            with Image.open(path) as image:
+                batch.append((unit, char, path, document, prepare(image)))
+        except (OSError, ValueError) as error:
+            skipped[f"read: {type(error).__name__}"] += 1
+            continue
         if len(batch) == 64:
             flush()
     if batch:
@@ -126,17 +144,20 @@ def main() -> None:
         group = sorted(by[style], key=lambda r: -r["p"][style])
         parts.append(f"<h2>{style}: {len(group)}</h2><div class=grid>")
         for row in group[:args.per_style]:
-            crop = Path(row["crop"]).resolve().as_uri()
+            crop = html.escape(os.path.relpath(row["crop"], out))
             parts.append(f'<figure><img src="{crop}"><img src="seen/{row["seen"]}"><figcaption>{html.escape(row["character"])} '
                          f'{row["p"][style]:.2f}<br>{html.escape(row["document_id"] or "")}</figcaption></figure>')
         parts.append("</div>")
     style = ("body{font:13px system-ui;margin:16px}.grid{display:flex;flex-wrap:wrap;gap:8px}"
              "figure{margin:0;width:150px}img{width:72px;height:72px;object-fit:contain;background:#fff;border:1px solid #ccc}"
              "figcaption{font-size:11px;word-break:break-all}")
-    (out / "sheet.html").write_text(f"<!doctype html><meta charset=utf-8><title>{args.corpus} styles</title><style>{style}</style>"
+    (out / "sheet.html").write_text(f"<!doctype html><meta charset=utf-8><title>{html.escape(args.corpus)} styles</title><style>{style}</style>"
                                     + "".join(parts), encoding="utf-8")
     counts = {name: len(by[name]) for name in CLASSES}
-    print(json.dumps({"corpus": args.corpus, "crops": len(rows), "styles": counts}, ensure_ascii=False), file=sys.stderr)
+    print(json.dumps({"corpus": args.corpus, "crops": len(rows), "styles": counts, "skipped": dict(skipped)},
+                     ensure_ascii=False), file=sys.stderr)
+    if skipped["over --limit"]:
+        print(f"--limit {args.limit} was reached: the sample is cut in table order, not drawn evenly", file=sys.stderr)
 
 
 if __name__ == "__main__":
