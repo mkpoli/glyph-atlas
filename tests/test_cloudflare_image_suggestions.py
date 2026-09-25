@@ -75,3 +75,12 @@ def test_publication_refuses_without_cuda(export, monkeypatch):
     monkeypatch.setattr(suggestions, "Recognizer", lambda: Model("CPUExecutionProvider"))
     with pytest.raises(RuntimeError):
         module.read_crops(db, media)
+
+
+def test_stored_results_take_the_current_order(export, monkeypatch):
+    module, db, media = export
+    monkeypatch.setattr(suggestions, "Recognizer", Model)
+    old = [{"text": "大", "engine": "NDLkotenOCR"}, {"text": "天", "engine": "Atlas classifier"}]
+    db.execute("UPDATE units SET visual=? WHERE id='read'", (json.dumps({**READY, "candidates": old}),))
+    module.read_crops(db, media)
+    assert [c["text"] for c in visual(db, "read")["candidates"]] == ["天", "大"]

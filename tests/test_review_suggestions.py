@@ -81,7 +81,7 @@ def test_sequence_vote_remains_independent_of_normalized_classifier():
     assert result["votes"][0]["text"] == "假"
     assert result["votes"][1]["text"] is None
     assert result["votes"][1]["identity_scope"] == "family"
-    assert result["candidates"][0]["engine"] == "NDLkotenOCR"
+    assert [c["engine"] for c in result["candidates"][:2]] == ["Atlas classifier", "NDLkotenOCR"]
 
 
 def test_preferred_feature_model_and_explicit_override(tmp_path, monkeypatch):

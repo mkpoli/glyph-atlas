@@ -67,17 +67,23 @@ def read_crops(db, media):
     """Store image-only OCR for every crop; a publication never ships a crop unread.
 
     A crop read by other models than the current ones is read again, so one publication never
-    mixes models. Results are cached per image and model signature.
+    mixes models. Results are cached per image and model signature. Every result, stored or
+    cached, is put in the current `rank` order.
     """
-    from glyph_atlas.review.suggestions import Recognizer
+    from glyph_atlas.review.suggestions import Recognizer, rank
 
     model = Recognizer()
     if not model.engines or any(engine["provider"] != "CUDAExecutionProvider" for engine in model.engines):
         raise RuntimeError("Reading crops for publication requires the configured CUDA models")
     current = encoded(model.engines)
-    rows = [(identity, raw) for identity, raw, status, engines in db.execute(
-        "SELECT id,data,json_extract(visual,'$.status'),json_extract(visual,'$.engines') "
-        "FROM units WHERE origin='local'") if status != "ready" or engines != current]
+    rows = []
+    for identity, raw, visual in db.execute("SELECT id,data,visual FROM units WHERE origin='local'").fetchall():
+        stored = json.loads(visual)
+        if stored.get("status") != "ready" or encoded(stored.get("engines")) != current:
+            rows.append((identity, raw))
+        elif (ranked := rank(stored["candidates"])) != stored["candidates"]:
+            db.execute("UPDATE units SET visual=? WHERE id=?", (encoded({**stored, "candidates": ranked}), identity))
+    db.commit()
     if not rows:
         return
     signature = hashlib.sha256(json.dumps(model.engines, sort_keys=True).encode()).hexdigest()[:16]
@@ -90,6 +96,7 @@ def read_crops(db, media):
         saved = cache / (key + ".json")
         if saved.exists():
             result = json.loads(saved.read_text())
+            result["candidates"] = rank(result["candidates"])
         else:
             with Image.open(media.materialize(key)) as picture:
                 result = model.read(picture.convert("RGB"))

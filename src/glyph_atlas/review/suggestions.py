@@ -151,6 +151,22 @@ def visual_candidate(classifier, image: Image.Image, vote: dict, engines: list[d
             "verified": False, "family": vote["family"], "visual_prediction": prediction}
 
 
+def rank(candidates: list[dict]) -> list[dict]:
+    """The order a reviewer sees: symbol readings, then the two models' answers alternately.
+
+    On single crops the Atlas classifier's first answer is right far more often than NDL's, whose
+    model reads lines (on CODH's held-out books, 88% against 53% top-1; see
+    `models/benchmark/`), so the classifier leads each pair. NDL's answers stay in the list,
+    where they add characters the classifier cannot name. Ranking a stored result again gives the
+    same order.
+    """
+    symbols = [c for c in candidates if c.get("basis") == "symbol-parts"]
+    atlas = [c for c in candidates if c.get("basis") != "symbol-parts" and c.get("engine") != "NDLkotenOCR"]
+    ndl = [c for c in candidates if c.get("basis") != "symbol-parts" and c.get("engine") == "NDLkotenOCR"]
+    pairs = [c for i in range(max(len(atlas), len(ndl))) for c in (atlas[i:i + 1] + ndl[i:i + 1])]
+    return symbols + pairs
+
+
 class Recognizer:
     def __init__(self):
         import onnxruntime as ort
@@ -197,6 +213,7 @@ class Recognizer:
             combined = [*partition["candidates"], *result["candidates"]]
             seen = set()
             result["candidates"] = [c for c in combined if not (c["text"] in seen or seen.add(c["text"]))][:6]
+        result["candidates"] = rank(result["candidates"])
         return result
 
     def _read_base(self, image: Image.Image) -> dict:
