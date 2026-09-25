@@ -177,3 +177,17 @@ def test_a_withdrawn_figure_with_no_code_point_maps_to_nothing(tmp_path, monkeyp
         encoding="utf-8",
     )
     assert refs.character("U+342A").variants == []
+
+
+def test_a_hentaigana_gets_its_mj_figure_with_its_table_version(tmp_path, monkeypatch):
+    monkeypatch.setattr(refs, "VOCAB", tmp_path)
+    (tmp_path / "characters.tsv").write_text(
+        CHARACTERS_HEADER + _characters_row("U+1B002", "𛀂"), encoding="utf-8"
+    )
+    (tmp_path / "mj-hentaigana.tsv").write_text(
+        "# MJ文字情報一覧表 変体仮名編 Ver.002.01\n"
+        "mj\tcode_point\tname\tjibo\tjibo_code_point\treadings\tkoseki\tgakujutsu\tninjal_url\tnote\n"
+        "MJ090001\tU+1B002\tHENTAIGANA LETTER A-1\t安\tU+5B89\tあ\t900010\t010010010\t\t\n",
+        encoding="utf-8",
+    )
+    assert refs.character("U+1B002").variants == [VariantRef(scheme="mj", id="MJ090001", version="002.01")]
