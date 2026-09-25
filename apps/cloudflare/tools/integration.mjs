@@ -33,12 +33,12 @@ try {
   const reviewed = { id: 'codh:legacy', origin: 'corpus', label: 'ト', written_character: 'ト', proxyable: true, state: 'checked', revision: 1 }
   await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind('codh:legacy', 'corpus', 'ト', null, null, null,
     'unknown', 'other', 'checked', 1, 0, 1, 0, JSON.stringify(reviewed), JSON.stringify(reviewed), '{}', '{}').run()
-  for (const name of migrations.filter(name => name >= '0006' && name < '0009')) await apply(name)
-  // A crop published before 0009 carries an old production value in its row, its data and its snapshot.
+  for (const name of migrations.filter(name => name >= '0006' && name < '0010')) await apply(name)
+  // A crop published before 0010 carries an old production value in its row, its data and its snapshot.
   const oldPrint = { id: 'old-print', label: 'ト', reading: 'ト', state: 'pending', revision: 0, production: 'woodblock', production_label: 'Woodblock' }
   await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind('old-print', 'local', 'ト', 'ト', null, null,
     'woodblock', 'kana', 'pending', 0, 0, 1, 1, JSON.stringify(oldPrint), JSON.stringify({ character: oldPrint }), '{}', '{}').run()
-  for (const name of migrations.filter(name => name >= '0009')) await apply(name)
+  for (const name of migrations.filter(name => name >= '0010')) await apply(name)
   assert.deepEqual((await db.prepare("SELECT id,production,named FROM corpus_units WHERE character='ト' ORDER BY id").all()).results, [
     { id: 'codh-omt:1', production: 'printed/type', named: 0 },
     { id: 'codh-omtz:1', production: 'unknown', named: 0 },
