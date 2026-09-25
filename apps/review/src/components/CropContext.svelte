@@ -61,10 +61,10 @@
       notified = 'failed'; onerror(item.id)
     }
   })
-  // The first view shows the character with about two neighbours above and below it and a column to
-  // each side, measured in the character's own size, so a reading can be checked against its line.
+  // The first view shows the whole context image: about five neighbours above and below the character
+  // and three columns to each side, measured in its own size, so a reading can be checked against its line.
   const unit = $derived(crop ? Math.max(crop.w, crop.h) : 1)
-  const baseScale = $derived(crop ? Math.min(size.width / (unit * 3.6), size.height / (unit * 5.6), 8) : 1)
+  const baseScale = $derived(crop ? Math.min(size.width / (unit * 7), size.height / (unit * 11), 8) : 1)
   const scale = $derived(baseScale * zoom)
   // Both images and the crop mask use source-image pixels, not the page's metadata scale.
   const origin = $derived(crop ? {
