@@ -6,7 +6,8 @@
       "ko"
     ]
   },
-  "app.home.aria": "Glyph Atlas 홈",
+  "app.name": "字形大圖譜",
+  "app.home.aria": "字形大圖譜 홈",
   "app.nav.aria": "메인 내비게이션",
   "app.reviewOptions": "검토 옵션",
   "app.saved": "저장됨",
