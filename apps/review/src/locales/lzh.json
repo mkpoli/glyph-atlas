@@ -58,7 +58,7 @@
   "common.retry": "復試",
   "common.saving": "方存…",
   "common.skip": "暫置",
-  "common.skip.arrow": "暫置 →",
+  "common.skip.arrow": "未能辨 · 暫置 →",
   "common.skip.hint": "未能辨，或俟後",
   "common.tryAgain": "請復試",
   "corpus.addNote": "加附記",
