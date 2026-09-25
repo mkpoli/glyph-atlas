@@ -393,6 +393,7 @@
   "suggestions.noneOfThese": "どれでもない・わからない",
   "tile.machineAligned": "機械が位置合わせ・未確認",
   "tile.notYetConfirmed": "未確認",
+  "tile.page": "{page}頁",
   "tile.origin.codh": "CODHデータセット",
   "tile.origin.corpus": "コーパス索引",
   "tile.withheldReason": "保留：{reason}",
