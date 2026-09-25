@@ -1,4 +1,5 @@
 <script>
+  import { graphemeChar } from '../lib/identity.js'
   import ScriptText from './ScriptText.svelte'
   import ScriptLegend from './ScriptLegend.svelte'
   import ProductionBadge from './ProductionBadge.svelte'
@@ -62,7 +63,7 @@
     {#if error}<div class="error-message" role="alert">{error}<button disabled={busy} onclick={() => load(id)}>{t('character.reload')}</button></div>{/if}
     {#if data}
       <div class="inspector-production"><ProductionBadge item={data} /></div>
-      <div class="inspector-title"><h2 class:unassigned-title={data.identity_status === 'unassigned'}>{#if data.identity_status === 'unassigned'}{t('corpus.unassigned')}{:else}<ReferenceGlyph char={data.written_character ?? data.label} code_point={data.code_point} size="lg" />{/if}</h2>{#if data.identity_status !== 'unassigned'}<ZiLink character={data.written_character ?? data.label} />{/if}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.needs_segmentation ? t('corpus.state.needsSplitting') : data.state === 'checked' ? t('corpus.state.checkedHere') : data.state === 'flagged' ? t('state.flagged') : data.state === 'stale' ? t('corpus.state.sourceChanged') : t('state.unreviewed')}</span></div><p class="record-id"><code>{data.id}</code><button type="button" class="copy-id" onclick={() => navigator.clipboard?.writeText(data.id)} aria-label={t('inspector.copyId')}>{t('inspector.copyId')}</button></p>
+      <div class="inspector-title"><h2 class:unassigned-title={data.identity_status === 'unassigned'}>{#if data.identity_status === 'unassigned'}{t('corpus.unassigned')}{#if graphemeChar(data)}<span class="title-grapheme" lang="ja" title={t('chips.grapheme')}>{graphemeChar(data)}</span>{/if}{:else}<ReferenceGlyph char={data.written_character ?? data.label} code_point={data.code_point} size="lg" />{/if}</h2>{#if data.identity_status !== 'unassigned'}<ZiLink character={data.written_character ?? data.label} />{/if}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.needs_segmentation ? t('corpus.state.needsSplitting') : data.state === 'checked' ? t('corpus.state.checkedHere') : data.state === 'flagged' ? t('state.flagged') : data.state === 'stale' ? t('corpus.state.sourceChanged') : t('state.unreviewed')}</span></div><p class="record-id"><code>{data.id}</code><button type="button" class="copy-id" onclick={() => navigator.clipboard?.writeText(data.id)} aria-label={t('inspector.copyId')}>{t('inspector.copyId')}</button></p>
       <p class="corpus-source-label">{#if data.needs_segmentation}<span>{t('corpus.characterCount', { count: data.character_count })} · </span>{/if}{t('corpus.sourceLabel', { source: sourceName })} <b lang="ja">{data.source_label}</b> <ZiLink character={data.source_label} compact />{#if data.identity_status !== 'unassigned' && data.label !== data.source_label}<span> → <b lang="ja">{data.label}</b> · {t('corpus.atlasCorrection')}</span>{/if}</p>
       <div class="inspector-figure">
         {#if data.image && data.proxyable}
@@ -99,6 +100,7 @@
 <style>
   .assignment-options{display:flex;gap:12px;margin:18px 0}.assignment-options>span{display:flex;flex-direction:column;align-items:center;gap:4px}.assignment-options button{font-size:28px;padding:10px 18px}.assignment-options button.chosen{border-color:var(--accent);background:var(--accent-light)}
   .unassigned-title{font-size:28px}
+  .title-grapheme{margin-left:12px;font-size:40px;color:var(--muted)}
   .corpus-source-label{font-size:12px;color:var(--muted);margin:-6px 0 18px}.corpus-source-label b{font-size:17px;color:var(--ink);margin-left:6px}
   .corpus-pick{margin-top:18px;font-size:12px}.corpus-pick summary{cursor:pointer;padding:8px 0}.corpus-pick :global(.character-search){margin-top:8px;width:100%}.corpus-choice{display:flex;align-items:center;gap:12px;margin-top:12px}.corpus-choice b{font-size:24px}.corpus-choice button{margin-left:auto;padding:5px 10px}
   .corpus-credit{display:flex;flex-direction:column;gap:6px;margin-top:24px;color:var(--muted);font-size:12px}.corpus-credit a{align-self:flex-start;text-decoration:underline;text-underline-offset:3px;font-size:11px}

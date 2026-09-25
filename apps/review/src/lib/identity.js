@@ -2,6 +2,13 @@
 export const isUnassigned = item => item?.identity_status === 'unassigned'
   || (item?.written_character === null && item?.identity_basis === 'normalized_transcription')
 
+/** The grapheme a crop belongs to, as a character ('U+3042' → 'あ'), or null when it is not known.
+ * A crop can know its grapheme while its written form is still unassigned. */
+export function graphemeChar(item) {
+  const point = item?.grapheme?.code_point ?? item?.grapheme
+  const match = typeof point === 'string' && /^U\+([0-9A-F]{4,6})$/i.exec(point)
+  return match ? String.fromCodePoint(parseInt(match[1], 16)) : null
+}
 export const writtenLabel = item => isUnassigned(item) ? 'Unassigned'
   : item?.written_character ?? item?.label ?? item?.char ?? ''
 
