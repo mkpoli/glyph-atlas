@@ -9,7 +9,8 @@
       "zh-sg"
     ]
   },
-  "app.home.aria": "Glyph Atlas首页",
+  "app.name": "字形大图谱",
+  "app.home.aria": "字形大图谱首页",
   "app.nav.aria": "主导航",
   "app.reviewOptions": "审阅选项",
   "app.saved": "已保存",
