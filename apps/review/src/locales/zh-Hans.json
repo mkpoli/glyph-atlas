@@ -396,6 +396,7 @@
   "suggestions.noneOfThese": "都不是 / 不确定",
   "tile.machineAligned": "机器对齐，尚未核对",
   "tile.notYetConfirmed": "尚未确认",
+  "tile.page": "第{page}页",
   "tile.origin.codh": "CODH数据集",
   "tile.origin.corpus": "语料库索引",
   "tile.withheldReason": "保留原因：{reason}",

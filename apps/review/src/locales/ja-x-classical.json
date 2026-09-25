@@ -393,6 +393,7 @@
   "suggestions.noneOfThese": "何レニモ非ズ又ハ定カナラズ",
   "tile.machineAligned": "機械照合　未確認",
   "tile.notYetConfirmed": "未確認",
+  "tile.page": "第{page}頁",
   "tile.origin.codh": "CODHノ資料",
   "tile.origin.corpus": "集成索引",
   "tile.withheldReason": "保留：{reason}",

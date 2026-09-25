@@ -405,6 +405,7 @@
   "suggestions.type.placeholder": "字…",
   "tile.machineAligned": "機所對，未校",
   "tile.notYetConfirmed": "未定",
+  "tile.page": "第{page}頁",
   "tile.origin.codh": "CODH",
   "tile.origin.corpus": "群籍索引",
   "tile.withheldReason": "暫留：{reason}",

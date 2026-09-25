@@ -405,6 +405,7 @@
   "suggestions.type.placeholder": "Character…",
   "tile.machineAligned": "Machine-aligned, not yet checked",
   "tile.notYetConfirmed": "Not yet confirmed",
+  "tile.page": "p. {page}",
   "tile.origin.codh": "CODH dataset",
   "tile.origin.corpus": "Corpus index",
   "tile.withheldReason": "Withheld: {reason}",
