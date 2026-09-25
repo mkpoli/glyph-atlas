@@ -101,7 +101,6 @@
   "explore.empty.noOccurrenceOf": "此無{char}之例。",
   "explore.empty.noOccurrenceOfTerm": "無{term}之例。",
   "explore.empty.nothingFlagged": "無所標。",
-  "explore.empty.nothingHard": "無難辨者。",
   "explore.empty.samplesFailed": "{char}之樣未能載。",
   "explore.filter.all": "全",
   "explore.filter.kana": "假名",
@@ -112,7 +111,6 @@
   "explore.grid.collection": "字之集",
   "explore.heading.atlas": "字譜",
   "explore.heading.flagged": "已標之字",
-  "explore.heading.hard": "難辨",
   "explore.meta.characters.one": "{count}字",
   "explore.meta.characters.other": "{count}字",
   "explore.meta.glyphs.one": "字形{count}",
@@ -242,8 +240,6 @@
   "nav.explore": "覽",
   "nav.flagged": "已標",
   "nav.forms": "字體",
-  "nav.hard": "難辨",
-  "nav.hard.title": "二校者皆置之截片",
   "nav.quickReview": "速校",
   "production.aria": "製法：{label}",
   "production.handwritten": "寫本",
@@ -412,5 +408,6 @@
   "visualGroups.allForms": "諸體",
   "visualGroups.label": "以形分群",
   "ziLink.aria": "於zi.tools查{char}",
-  "ziLink.text": "zi.tools ↗"
+  "ziLink.text": "zi.tools ↗",
+  "state.hard": "難辨：二校者皆置之"
 }
