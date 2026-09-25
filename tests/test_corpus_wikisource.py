@@ -149,10 +149,10 @@ class TestRights:
     def test_the_transcription_is_cc_by_sa(self):
         assert ws.document_of().text_rights.licence.value == "CC-BY-SA-4.0"
 
-    def test_the_scans_unstated_licence_is_kept_beside_pd(self):
-        rights = ws.document_of().image_rights
-        assert (rights.licence.value, rights.holder_terms.value) == ("PD", "unknown")
-        assert "does not imply PD" in (rights.evidence or "")
+    def test_the_scans_carry_no_image_rights_of_the_whole_site(self):
+        document = ws.document_of()
+        assert document.image_rights is None
+        assert "does not imply PD" in document.meta["image_rights"]
 
     def test_an_unknown_scan_licence_is_not_proxyable(self):
         from glyph_atlas.corpus.api import PROXYABLE

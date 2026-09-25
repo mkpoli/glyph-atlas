@@ -26,4 +26,6 @@ Out: modern print (明治 typefaces are covered by NDL and CODH datasets already
 
 Data licence CC BY-SA 4.0, the licence of the two largest upstreams (CODH, みんなで翻刻). Code MIT.
 CC BY 4.0 material composes into BY-SA; CC BY-SA 3.0 material composes into 4.0 as an adaptation;
-non-commercial or permission-only material stays out of release builds.
+page images of pre-modern works are public domain whatever terms their holder attaches, with the
+holder's statement kept on the record (`docs/licensing.md`, Copyright in crops); non-commercial or
+permission-only material on works dated after 1900 stays out of release builds.

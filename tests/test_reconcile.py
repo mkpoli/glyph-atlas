@@ -671,3 +671,32 @@ def test_terms_diff_reads_a_page():
         "names": False,
         "changed": False,
     }
+
+
+def test_attribution_cites_pd_and_the_holder_terms_apart(tmp_path, monkeypatch):
+    monkeypatch.setattr(reconcile, "SOURCES", tmp_path / "missing")
+    nc_deed = "https://creativecommons.org/licenses/by-nc/4.0/"
+    directory = dataset(
+        tmp_path / "ds",
+        [document("hl:a", holder="例書館",
+                  image_rights=Rights(licence=Licence.CC_BY_NC_4, attribution="例書館", evidence=nc_deed))],
+    )
+
+    text = reconcile.attribution(directory)
+
+    assert f"- Licence: PD — {nc_deed}" not in text
+    assert "- Licence: PD — " in text
+    assert f"- Holder's own terms, kept beside PD: CC-BY-NC-4.0 — {nc_deed} (1 documents)" in text
+
+
+def test_a_converted_document_whose_evidence_agrees_is_no_disagreement(tmp_path):
+    nc = Rights(licence=Licence.CC_BY_NC_4, attribution="例書館")
+    doc = document("hl:a", holder="例書館", image_rights=nc)
+    doc.meta[reconcile.EVIDENCE] = [
+        {"source": "upstream", "licence": "CC-BY-NC-4.0", "url": None, "fetched": "2026-09-25"}
+    ]
+    directory = dataset(tmp_path / "ds", [doc], pages=[page("p1", "hl:a")])
+
+    text = reconcile.report(directory)
+
+    assert "No document carries a statement that disagrees" in text
