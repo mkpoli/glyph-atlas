@@ -101,7 +101,6 @@
   "explore.empty.noOccurrenceOf": "여기에 {char}의 용례가 없습니다.",
   "explore.empty.noOccurrenceOfTerm": "{term}의 용례가 없습니다.",
   "explore.empty.nothingFlagged": "표시된 것이 없습니다.",
-  "explore.empty.nothingHard": "읽기 어려운 것이 없습니다.",
   "explore.empty.samplesFailed": "{char}의 예시를 불러올 수 없습니다.",
   "explore.filter.all": "전체",
   "explore.filter.kana": "가나",
@@ -112,7 +111,6 @@
   "explore.grid.collection": "글자 모음",
   "explore.heading.atlas": "글자 아틀라스",
   "explore.heading.flagged": "표시된 글자",
-  "explore.heading.hard": "읽기 어려운 글자",
   "explore.meta.characters.one": "글자 {count}개",
   "explore.meta.characters.other": "글자 {count}개",
   "explore.meta.glyphs.one": "자형 {count}개",
@@ -242,8 +240,6 @@
   "nav.explore": "탐색",
   "nav.flagged": "표시됨",
   "nav.forms": "자형",
-  "nav.hard": "어려움",
-  "nav.hard.title": "두 검토자가 건너뛴 크롭",
   "nav.quickReview": "빠른 검토",
   "production.aria": "제작 방식: {label}",
   "production.handwritten": "필사",
@@ -412,5 +408,6 @@
   "quiz.reference.heading": "참고: 확인됨 / 본 것",
   "quiz.reference.inspect": "참고 {label} 살펴보기, {state}",
   "quiz.reference.confirmed": "확인됨",
-  "quiz.reference.seen": "봄"
+  "quiz.reference.seen": "봄",
+  "state.hard": "판독 어려움: 검토자 두 명이 건너뜀"
 }
