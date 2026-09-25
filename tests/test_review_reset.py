@@ -94,6 +94,22 @@ def build_dataset(root: Path) -> Path:
             active=True,
             meta={"alignment_repair": {"withheld": True, "status": "uncertain"}},
         ),
+        # A placement the aligner itself did not accept: a machine state, not a
+        # person's decision, even though it shares its name with `ReviewState.REJECTED`.
+        Unit(
+            id="u:4",
+            document_id="d:1",
+            page_id="d:1:1",
+            line_id="l:1",
+            seq=4,
+            box=Box(x=110, y=2, w=30, h=40),
+            text_source="え",
+            unicode="U+3048",
+            kind="char",
+            method="detect-align",
+            active=True,
+            review=ReviewState.REJECTED,
+        ),
     ]
     tables.write(root / "documents.parquet", [document], Document, command="test")
     tables.write(root / "pages.parquet", [page], Page)
@@ -361,6 +377,16 @@ class TestReviewQueueIsFresh:
         assert units["u:3"].review == ReviewState.MACHINE
         assert units["u:3"].meta["alignment_repair"]["withheld"] is True
         assert report.withheld_kept == 1
+
+    def test_an_aligner_rejection_stays_rejected(self, tmp_path):
+        """`REJECTED` is the aligner's own state, not a person's; a reset must not
+        turn it into `machine`, which would read as an accepted crop.
+        """
+        root = build_dataset(tmp_path / "work" / "honkoku-lines")
+        review_the_dataset(root)
+        reset_reviews(root)
+        units = {u.id: u for u in tables.read(root / "units.parquet", Unit)}
+        assert units["u:4"].review == ReviewState.REJECTED
 
     def test_the_store_reopens_on_the_fresh_queue(self, tmp_path):
         root = build_dataset(tmp_path / "work" / "honkoku-lines")
