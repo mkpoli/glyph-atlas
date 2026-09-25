@@ -8,7 +8,8 @@ glyphs are clustered again:
   glyphs. `"form": null` withdraws the cluster's form.
 - `{"kind": "glyph", "units": [...], "form": "𛂞"}` sets the form of single glyphs, whatever their
   cluster says. `"form": null` marks them as not having the cluster's form, which leaves them
-  unassigned.
+  unassigned. With `"issue": "character"` the glyphs are not this family's character at all, and
+  `"character"` may say what they are; with `"issue": "crop"` the crop does not show one glyph.
 - `{"kind": "inherit", "units": [...]}` removes those glyphs' own decisions, so that they follow
   their cluster again.
 
@@ -155,7 +156,8 @@ def _load_decisions(paths) -> tuple[list[dict], dict[str, dict]]:
                                 "cluster": event["cluster"], "at": event["at"]}
     for identity, event in by_glyph.items():
         result[identity] = {"form": event["form"], "basis": "form_glyph", "decision": event["id"],
-                            "cluster": None, "at": event["at"]}
+                            "cluster": None, "at": event["at"], "issue": event.get("issue"),
+                            "character": event.get("character")}
     return events, result
 
 
@@ -255,10 +257,18 @@ class DecisionError(ValueError):
     pass
 
 
+ISSUES = ("character", "crop")
+
+
 def record(kind: str, *, form: str | None = None, cluster: str | None = None,
-           units: list[str] | None = None, note: str = "") -> dict:
+           units: list[str] | None = None, note: str = "", issue: str | None = None,
+           character: str | None = None) -> dict:
     """Validate and append one decision; returns it as written."""
     data = clusters()
+    if issue is not None and (kind != "glyph" or form is not None or issue not in ISSUES):
+        raise DecisionError("Only glyphs without a form can be reported, as a wrong character or a bad crop.")
+    if character is not None and issue != "character":
+        raise DecisionError("Only a wrong character names what the glyph is.")
     if kind == "cluster":
         if cluster not in data["members"]:
             raise DecisionError("Unknown cluster.")
@@ -281,7 +291,8 @@ def record(kind: str, *, form: str | None = None, cluster: str | None = None,
         raise DecisionError(f"{form} is not a form of this family.")
     event = {"id": str(uuid.uuid4()), "at": datetime.now(UTC).isoformat(timespec="seconds"),
              "kind": kind, "family": family, "form": form, "cluster": cluster,
-             "revision": data["revision"], "units": units, "note": note}
+             "revision": data["revision"], "units": units, "note": note,
+             **({"issue": issue} if issue else {}), **({"character": character} if character else {})}
     path = decisions_path()
     line = (json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n").encode()
     path.parent.mkdir(parents=True, exist_ok=True)

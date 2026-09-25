@@ -55,7 +55,7 @@ def clustering(tmp_path, monkeypatch, form_corpora):
 def test_the_publication_packs_tiles_and_resolves_decisions(tmp_path, monkeypatch, form_corpora):
     clustering(tmp_path, monkeypatch, form_corpora)
     forms.record("cluster", cluster="U+306F:one", form="𛂥")
-    forms.record("glyph", units=[C], form=None)
+    forms.record("glyph", units=[C], issue="character", character="テ")
     summary = publish(tmp_path, monkeypatch, "out")
     assert (summary["units"], summary["clusters"], summary["families"], summary["decisions"]) == (4, 1, 1, 2)
     assert (summary["tiles"], summary["tile_unheld"], summary["objects"]) == (3, 1, 1)
@@ -65,7 +65,8 @@ def test_the_publication_packs_tiles_and_resolves_decisions(tmp_path, monkeypatc
     publication = load(db, tmp_path / "out")
     rows = {r[0]: r[1:] for r in db.execute("SELECT id,cluster_form,glyph_set,glyph_form,form,length(split) FROM form_units")}
     assert rows[A] == ("𛂥", 0, None, "𛂥", 7) and rows[C] == ("𛂥", 1, None, None, 7)
-    assert db.execute("SELECT form,assigned FROM form_clusters JOIN form_families ON family=code_point").fetchone() == ("𛂥", 3)
+    assert db.execute("SELECT form,assigned,rejected FROM form_clusters JOIN form_families ON family=code_point").fetchone() == ("𛂥", 3, 1)
+    assert db.execute("SELECT glyph_issue,glyph_character FROM form_units WHERE id=?", (C,)).fetchone() == ("character", "テ")
     # Each tile the rows name is in a pack the publication uploads.
     images = {r[0]: r[1] for r in db.execute("SELECT id,image FROM form_units")}
     assert images[C] is None

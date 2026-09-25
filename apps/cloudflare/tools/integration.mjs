@@ -500,7 +500,7 @@ try {
   // Hosted form assignment: a published clustering, a named cluster, a glyph's own decision and
   // following the cluster again; search and the record follow each step.
   await db.batch([
-    db.prepare("INSERT INTO form_families VALUES('U+4EEE','仮','仮 = 假',2,1,?,0,'r1')").bind(JSON.stringify([{ char: '仮', code_point: 'U+4EEE' }, { char: '假', code_point: 'U+5047' }])),
+    db.prepare("INSERT INTO form_families(code_point,char,label,count,cluster_count,forms,assigned,revision) VALUES('U+4EEE','仮','仮 = 假',2,1,?,0,'r1')").bind(JSON.stringify([{ char: '仮', code_point: 'U+4EEE' }, { char: '假', code_point: 'U+5047' }])),
     db.prepare("INSERT INTO form_clusters VALUES('U+4EEE:c1','U+4EEE','Cluster 1',2,0.9,0,0,'[]',NULL,NULL)"),
     db.prepare("INSERT INTO form_units(id,family,cluster,rank,similarity,image,split) VALUES('codh:plain','U+4EEE','U+4EEE:c1',0,0.95,NULL,'0000000')"),
     db.prepare("INSERT INTO form_units(id,family,cluster,rank,similarity,image,split) VALUES('codh:fixture','U+4EEE','U+4EEE:c1',1,0.9,NULL,'1111111')"),
@@ -538,6 +538,23 @@ try {
   assert.equal((await db.prepare("SELECT character FROM corpus_units WHERE id='codh:plain'").first()).character, '假',
     'withdrawing the form restores the character the glyph had before')
   await counted()
+  // A glyph reported as another character leaves the family: search, counts and the record show
+  // that character, the family counts it as rejected, and following the cluster again takes it back.
+  await call('/forms/decisions', { kind: 'glyph', units: ['codh:plain'], form: '假', issue: 'character', client_id: 'integration' }, 422)
+  await call('/forms/decisions', { kind: 'glyph', units: ['codh:plain'], issue: 'crop', character: 'テ', client_id: 'integration' }, 422)
+  await call('/forms/decisions', { kind: 'glyph', units: ['codh:plain'], issue: 'character', character: 'テ', client_id: 'integration' })
+  assert.equal((await db.prepare("SELECT character FROM corpus_units WHERE id='codh:plain'").first()).character, 'テ')
+  assert.equal((await call('/atlas/corpus/character?id=codh%3Aplain')).written_character, 'テ')
+  const reported = await call('/forms/families/U%2B4EEE')
+  assert.deepEqual([reported.rejected, reported.items[0].rejected], [1, 1])
+  assert.equal((await call('/forms/families')).items[0].rejected, 1)
+  assert.deepEqual((await call('/forms/clusters/U%2B4EEE%3Ac1')).items.map(m => [m.id, m.reported, m.character]),
+    [['codh:plain', 'character', 'テ'], ['codh:fixture', null, null]])
+  await counted()
+  await call('/forms/decisions', { kind: 'inherit', units: ['codh:plain'], client_id: 'integration' })
+  assert.equal((await db.prepare("SELECT character FROM corpus_units WHERE id='codh:plain'").first()).character, '假')
+  assert.equal((await call('/forms/families/U%2B4EEE')).rejected, 0)
+  await counted()
   const split = await call('/forms/split/U%2B4EEE%3Ac1?k=2')
   assert.deepEqual(split.groups.map(g => g.ids), [['codh:plain'], ['codh:fixture']])
   assert.equal((await mf.dispatchFetch(base + '/forms/families/%E0')).status, 404, 'a malformed escape names no family')
@@ -545,7 +562,8 @@ try {
   await call('/forms/decisions', { kind: 'glyph', units: ['codh:plain'], form: '假', client_id: 'integration' }, 503)
   await db.prepare('DELETE FROM form_loading').run()
   const log = await (await mf.dispatchFetch(base + '/forms/decisions.jsonl')).text()
-  assert.equal(log.trim().split('\n').length, 4, 'every accepted decision is logged, the refused one is not')
+  assert.equal(log.trim().split('\n').length, 6, 'every accepted decision is logged, the refused ones are not')
+  assert.deepEqual(log.trim().split('\n').map(JSON.parse).filter(d => d.issue).map(d => [d.issue, d.character]), [['character', 'テ']])
   // A retired crop names the crop that replaced it: deleted, kept for its history, or through a chain.
   const retiredCrop = { id: 'retired-kept', label: 'ア', reading: 'ア', state: 'flagged', revision: 1, image_sha256: hash, production: 'handwritten' }
   await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
