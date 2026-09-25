@@ -1,0 +1,387 @@
+{
+ "data": {
+  "source": "calli-tongji",
+  "archive_sha256": "bae995df68a3469fe486939dd42b209145ab56d10f580990380e25dcf9e2fbe9",
+  "images": {
+   "train": 3200,
+   "val": 600,
+   "test": 1200
+  },
+  "calligraphers": {
+   "train": [
+    "于右任",
+    "何绍基",
+    "傅山",
+    "康里巎巎",
+    "张旭",
+    "怀素",
+    "文征明",
+    "智永",
+    "朱耷",
+    "李阳冰",
+    "林散之",
+    "柯九思",
+    "柳公权",
+    "梁诗正",
+    "王宠",
+    "王献之",
+    "王铎",
+    "白蕉",
+    "皇象",
+    "祝允明",
+    "苏轼",
+    "蔡襄",
+    "虞世南",
+    "褚遂良",
+    "赵孟頫",
+    "邓石如",
+    "金农",
+    "钟繇",
+    "鲜于枢",
+    "黄庭坚"
+   ],
+   "val": [
+    "吴昌硕",
+    "吴让之",
+    "王羲之",
+    "米芾",
+    "顾仲安"
+   ],
+   "test": [
+    "伊秉绶",
+    "姜夔",
+    "孙过庭",
+    "徐渭",
+    "欧阳询",
+    "沈尹默",
+    "董其昌",
+    "谭延闿",
+    "赵之谦",
+    "赵构",
+    "颜真卿"
+   ]
+  },
+  "classes": {
+   "train": [
+    "于右任-草",
+    "何绍基-篆",
+    "傅山-草",
+    "康里巎巎-草",
+    "张旭-草",
+    "怀素-草",
+    "文征明-行",
+    "智永-楷",
+    "朱耷-草",
+    "李阳冰-篆",
+    "林散之-隶",
+    "柯九思-楷",
+    "柳公权-楷",
+    "梁诗正-行",
+    "王宠-行",
+    "王献之-草",
+    "王铎-草",
+    "白蕉-行",
+    "皇象-草",
+    "祝允明-草",
+    "苏轼-行",
+    "蔡襄-楷",
+    "蔡襄-行",
+    "虞世南-楷",
+    "褚遂良-楷",
+    "赵孟頫-楷",
+    "赵孟頫-行",
+    "邓石如-篆",
+    "金农-隶",
+    "钟繇-楷",
+    "鲜于枢-行",
+    "黄庭坚-草"
+   ],
+   "val": [
+    "吴昌硕-篆",
+    "吴让之-隶",
+    "王羲之-草",
+    "王羲之-行",
+    "米芾-行",
+    "顾仲安-楷"
+   ],
+   "test": [
+    "伊秉绶-隶",
+    "姜夔-楷",
+    "孙过庭-草",
+    "徐渭-草",
+    "欧阳询-楷",
+    "欧阳询-行",
+    "沈尹默-楷",
+    "董其昌-行",
+    "谭延闿-行",
+    "赵之谦-篆",
+    "赵构-草",
+    "颜真卿-楷"
+   ]
+  }
+ },
+ "model": {
+  "checkpoint": "convnext_tiny.fb_in22k_ft_in1k",
+  "size": 128,
+  "epochs": 20,
+  "seed": 0,
+  "best_val_macro_f1": 0.823,
+  "device": "NVIDIA GeForce RTX 5070 Ti",
+  "seconds": 116.1
+ },
+ "history": [
+  {
+   "epoch": 1,
+   "mean_train_loss": 1.1549,
+   "val_macro_f1": 0.7208
+  },
+  {
+   "epoch": 2,
+   "mean_train_loss": 0.79,
+   "val_macro_f1": 0.7602
+  },
+  {
+   "epoch": 3,
+   "mean_train_loss": 0.6991,
+   "val_macro_f1": 0.7711
+  },
+  {
+   "epoch": 4,
+   "mean_train_loss": 0.6224,
+   "val_macro_f1": 0.8067
+  },
+  {
+   "epoch": 5,
+   "mean_train_loss": 0.6098,
+   "val_macro_f1": 0.7743
+  },
+  {
+   "epoch": 6,
+   "mean_train_loss": 0.5617,
+   "val_macro_f1": 0.8115
+  },
+  {
+   "epoch": 7,
+   "mean_train_loss": 0.5525,
+   "val_macro_f1": 0.8065
+  },
+  {
+   "epoch": 8,
+   "mean_train_loss": 0.511,
+   "val_macro_f1": 0.7999
+  },
+  {
+   "epoch": 9,
+   "mean_train_loss": 0.5033,
+   "val_macro_f1": 0.7969
+  },
+  {
+   "epoch": 10,
+   "mean_train_loss": 0.4754,
+   "val_macro_f1": 0.7999
+  },
+  {
+   "epoch": 11,
+   "mean_train_loss": 0.4525,
+   "val_macro_f1": 0.802
+  },
+  {
+   "epoch": 12,
+   "mean_train_loss": 0.4379,
+   "val_macro_f1": 0.823
+  },
+  {
+   "epoch": 13,
+   "mean_train_loss": 0.421,
+   "val_macro_f1": 0.7978
+  },
+  {
+   "epoch": 14,
+   "mean_train_loss": 0.4144,
+   "val_macro_f1": 0.7928
+  },
+  {
+   "epoch": 15,
+   "mean_train_loss": 0.4134,
+   "val_macro_f1": 0.8027
+  },
+  {
+   "epoch": 16,
+   "mean_train_loss": 0.4086,
+   "val_macro_f1": 0.8091
+  },
+  {
+   "epoch": 17,
+   "mean_train_loss": 0.404,
+   "val_macro_f1": 0.8175
+  },
+  {
+   "epoch": 18,
+   "mean_train_loss": 0.4061,
+   "val_macro_f1": 0.816
+  },
+  {
+   "epoch": 19,
+   "mean_train_loss": 0.4026,
+   "val_macro_f1": 0.8177
+  },
+  {
+   "epoch": 20,
+   "mean_train_loss": 0.4037,
+   "val_macro_f1": 0.8153
+  }
+ ],
+ "test": {
+  "accuracy": 0.735,
+  "macro_f1": 0.7579,
+  "recall": {
+   "seal": 0.84,
+   "clerical": 0.87,
+   "regular": 0.86,
+   "running": 0.7433,
+   "cursive": 0.48
+  },
+  "confusion": {
+   "rows_truth_columns_prediction": [
+    "seal",
+    "clerical",
+    "regular",
+    "running",
+    "cursive"
+   ],
+   "matrix": [
+    [
+     84,
+     15,
+     0,
+     1,
+     0
+    ],
+    [
+     12,
+     87,
+     1,
+     0,
+     0
+    ],
+    [
+     0,
+     1,
+     344,
+     51,
+     4
+    ],
+    [
+     0,
+     1,
+     36,
+     223,
+     40
+    ],
+    [
+     0,
+     0,
+     7,
+     149,
+     144
+    ]
+   ]
+  }
+ },
+ "test_per_calligrapher": {
+  "伊秉绶-隶": {
+   "accuracy": 0.87,
+   "predicted": {
+    "seal": 12,
+    "clerical": 87,
+    "regular": 1
+   }
+  },
+  "姜夔-楷": {
+   "accuracy": 0.93,
+   "predicted": {
+    "regular": 93,
+    "running": 7
+   }
+  },
+  "孙过庭-草": {
+   "accuracy": 0.53,
+   "predicted": {
+    "regular": 6,
+    "running": 41,
+    "cursive": 53
+   }
+  },
+  "徐渭-草": {
+   "accuracy": 0.43,
+   "predicted": {
+    "running": 57,
+    "cursive": 43
+   }
+  },
+  "欧阳询-楷": {
+   "accuracy": 0.94,
+   "predicted": {
+    "regular": 94,
+    "running": 5,
+    "cursive": 1
+   }
+  },
+  "欧阳询-行": {
+   "accuracy": 0.78,
+   "predicted": {
+    "regular": 21,
+    "running": 78,
+    "cursive": 1
+   }
+  },
+  "沈尹默-楷": {
+   "accuracy": 0.69,
+   "predicted": {
+    "regular": 69,
+    "running": 31
+   }
+  },
+  "董其昌-行": {
+   "accuracy": 0.75,
+   "predicted": {
+    "regular": 15,
+    "running": 75,
+    "cursive": 10
+   }
+  },
+  "谭延闿-行": {
+   "accuracy": 0.7,
+   "predicted": {
+    "clerical": 1,
+    "running": 70,
+    "cursive": 29
+   }
+  },
+  "赵之谦-篆": {
+   "accuracy": 0.84,
+   "predicted": {
+    "seal": 84,
+    "clerical": 15,
+    "running": 1
+   }
+  },
+  "赵构-草": {
+   "accuracy": 0.48,
+   "predicted": {
+    "regular": 1,
+    "running": 51,
+    "cursive": 48
+   }
+  },
+  "颜真卿-楷": {
+   "accuracy": 0.88,
+   "predicted": {
+    "clerical": 1,
+    "regular": 88,
+    "running": 8,
+    "cursive": 3
+   }
+  }
+ }
+}
