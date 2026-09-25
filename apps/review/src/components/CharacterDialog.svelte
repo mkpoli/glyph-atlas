@@ -44,8 +44,10 @@
   // Results stored before votes were recorded carry NDL's reading only among the candidates.
   const lineReading = $derived([...(suggestions?.votes || []), ...(suggestions?.candidates || [])].find(vote => vote.engine === 'NDLkotenOCR'))
   const suggestedIssue = $derived(lineReading && lineReading.score >= .65 && !isSingle(lineReading.text) ? 'merged' : null)
-  async function load(target) {
+  let replaced = $state(false)
+  async function load(target, redirected = false) {
     const current = ++generation
+    replaced = redirected
     dialog?.scrollTo({ top: 0 })
     data = null; error = ''; issue = null; correction = null; noneSelected = false; note = ''; box = null; start = null; editingBox = false
     written = ''; writtenDirty = false; readingDirty = false
@@ -64,7 +66,16 @@
       suggestionsFor(result, 'context').then(value => { if (!closed && current === generation) { contextSuggestions = value; contextSuggesting = false } })
       suggesting = true
       suggestionsFor(result).then(value => { if (!closed && current === generation) { suggestions = value; suggesting = false } })
-    } catch (e) { if (!closed && current === generation) error = e.message }
+    } catch (e) {
+      if (closed || current !== generation) return
+      if (e.replacedBy) {
+        // A link to a retired crop opens the crop that replaced it, and the address follows.
+        const link = '#/character/' + encodeURIComponent(target)
+        if (location.hash === link) history.replaceState(history.state, '', '#/character/' + encodeURIComponent(e.replacedBy))
+        return load(e.replacedBy, true)
+      }
+      error = e.message
+    }
   }
   $effect(() => { const target = id; untrack(() => load(target)) })
   onMount(() => { dialog.showModal(); return () => { closed = true; generation++ } })
@@ -121,7 +132,8 @@
 
   async function save(matches = false) {
     if (busy || !data || !loaded || imageFailed) return
-    const target = id, current = generation
+    // A replaced crop is saved as the crop on screen, not the retired one the link named.
+    const target = data.id ?? id, current = generation
     if (matches) discardProposals()
     const value = matches || !issue ? { verdict: 'match' } : { ...decision(issue), correction }
     if (onVerdict) {
@@ -197,6 +209,7 @@
 <dialog class="character-dialog" bind:this={dialog} oncancel={close} onclick={e => { if (e.target === dialog) close() }} aria-label={t('character.dialog.label')}>
   <div class="inspector">
     <header class="inspector-header"><span class="overline">{t('character.overline')}</span><div class="inspector-navigation"><span>{position}</span><button class="icon-button previous-character" aria-label={t('common.previousCharacter')} disabled={busy || !previous} onclick={() => previous?.()}>←</button><button class="icon-button next-character" aria-label={t('common.nextCharacter')} disabled={busy || !next} onclick={() => next?.()}>→</button><button class="icon-button close-inspector" aria-label={t('common.closeReviewer')} onclick={close}>×</button></div></header>
+    {#if replaced}<p class="replaced-note" role="status">{t('character.replaced')}</p>{/if}
     {#if error}<div class="error-message" role="alert">{error}<button disabled={busy} onclick={() => load(id)}>{t('character.reload')}</button></div>{/if}
     {#if data}
       <div class="inspector-production"><ProductionBadge item={data} /></div>

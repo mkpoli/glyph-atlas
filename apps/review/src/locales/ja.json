@@ -14,6 +14,7 @@
   "character.advancedEdit.summary": "文字・切り出し・読みを調整",
   "character.context.alt": "この文字の周辺の筆画",
   "character.context.loadError": "周辺画像を読み込めませんでした。",
+  "character.replaced": "この切り出しは差し替えられました。差し替え後のものを表示しています。",
   "character.crop.adjust": "切り出しを調整↗",
   "character.crop.adjusted": "切り出しを調整しました",
   "character.crop.doneAdjusting": "調整完了",

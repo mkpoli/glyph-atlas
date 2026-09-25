@@ -11,6 +11,8 @@ export async function request(path, body, options = {}) {
     const error = new Error(typeof value.detail === 'string' ? value.detail : listed ? listed : response.status === 409
       ? t('client.changed') : t('client.saveFailed'))
     error.status = response.status
+    // A crop a publication retired names the crop that replaced it.
+    if (typeof value.replaced_by === 'string') error.replacedBy = value.replaced_by
     throw error
   }
   return value
