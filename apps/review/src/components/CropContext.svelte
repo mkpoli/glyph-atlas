@@ -144,7 +144,7 @@
   <!-- This bounded image widget supplies arrow/Home/zoom keyboard controls alongside pointer panning. -->
   <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
   <div class="crop-viewport" class:ready class:dragging bind:this={viewport} tabindex="0"
-       role="application" aria-roledescription="image viewer" aria-label={t('crop.viewer.label')}
+       role="application" aria-label={t('crop.viewer.label')}
        aria-busy={loading} data-ready={ready} data-pan-x={pan.x} data-pan-y={pan.y} data-zoom={zoom}
        onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up}
        onlostpointercapture={() => { pointer = null; dragging = false }} onkeydown={keydown}>
