@@ -87,3 +87,55 @@ def test_the_same_json_written_differently_is_unchanged():
     row = live(revision=1000001)
     row["data"] = json.dumps(json.loads(row["data"]), ensure_ascii=True, indent=1)
     assert refresh.plan(unit(revision=1000001), row) == ("skip", None)
+
+
+WIDE = {"x": 0, "y": 0, "w": 90, "h": 120}
+
+
+def with_context(row, image="/atlas/media/wide.webp", box=WIDE):
+    row["data"] = json.dumps({**json.loads(row["data"]), "context_image": image, "context_box": box},
+                             ensure_ascii=False, separators=(",", ":"))
+    return row
+
+
+def test_a_new_context_alone_is_set_in_place_and_keeps_the_revision():
+    old = with_context(live(revision=1000001), "/atlas/media/narrow.webp", {"x": 5, "y": 10, "w": 40, "h": 60})
+    action, sql = refresh.plan(with_context(unit(revision=1000001)), old)
+    assert action == "context"
+    assert sql == ("UPDATE units SET data=json_set(data, '$.context_image', json('\"/atlas/media/wide.webp\"'), "
+                   "'$.context_box', json('{\"x\":0,\"y\":0,\"w\":90,\"h\":120}')) WHERE id='hk:1' AND revision=1000001;")
+    assert "revision=" not in sql.split(" WHERE ")[0]
+
+
+def test_a_reviewed_unit_takes_a_new_context_and_may_leave_the_quiz_in_the_same_statement():
+    old = with_context(live(reviewed=True, quiz=1), "/atlas/media/narrow.webp")
+    action, sql = refresh.plan(with_context(unit(quiz=0)), old)
+    assert action == "context" and "json_set(data" in sql and ", quiz=0 WHERE" in sql
+
+
+def test_a_reviewed_unit_whose_crop_changed_is_held_back_even_with_a_new_context():
+    old = with_context(live(reviewed=True), "/atlas/media/narrow.webp")
+    assert refresh.plan(with_context(unit(image="/atlas/media/b.webp")), old) == ("hold", None)
+
+
+def test_an_unreviewed_unit_with_other_changes_is_replaced_whole():
+    old = with_context(live(), "/atlas/media/narrow.webp")
+    action, sql = refresh.plan(with_context(unit(image="/atlas/media/b.webp")), old)
+    assert action == "replace" and "wide.webp" in sql
+
+
+def test_a_context_that_did_not_change_is_left_alone():
+    assert refresh.plan(with_context(unit(revision=1000001)), with_context(live(revision=1000001))) == ("skip", None)
+
+
+def test_the_statement_runs_in_sqlite_and_keeps_the_key_order():
+    import sqlite3
+    old = with_context(live(revision=1000001), "/atlas/media/narrow.webp", {"x": 5, "y": 10, "w": 40, "h": 60})
+    _, sql = refresh.plan(with_context(unit(revision=1000001)), old)
+    db = sqlite3.connect(":memory:")
+    db.execute("CREATE TABLE units (id TEXT, revision INTEGER, quiz INTEGER, data TEXT)")
+    db.execute("INSERT INTO units VALUES ('hk:1', 1000001, 1, ?)", (old["data"],))
+    db.execute(sql)
+    stored = db.execute("SELECT data FROM units").fetchone()[0]
+    assert list(json.loads(stored)) == list(json.loads(old["data"]))
+    assert json.loads(stored)["context_box"] == WIDE and json.loads(stored)["context_image"] == "/atlas/media/wide.webp"
