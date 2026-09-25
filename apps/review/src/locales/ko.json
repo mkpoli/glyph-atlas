@@ -451,7 +451,6 @@
   "quiz.shapeToggle.dealt": "◧ 제시된 순서",
   "quiz.skipCharacter": "글자 {number} 건너뛰기",
   "quiz.skipSelected": "선택한 항목 {skip}",
-  "quiz.skipThisCrop": "이 크롭 {skip}",
   "quiz.skippedNotSaved": "{count}개 건너뜀 · 저장되지 않음",
   "quiz.targetReading": "목표 독음 {reading}",
   "quiz.unavailableCount": "{count}개 사용 불가",

@@ -451,7 +451,6 @@
   "quiz.shapeToggle.dealt": "◧ Dealt order",
   "quiz.skipCharacter": "Skip character {number}",
   "quiz.skipSelected": "{skip} selected",
-  "quiz.skipThisCrop": "{skip} this crop",
   "quiz.skippedNotSaved": "{count} skipped · not saved",
   "quiz.targetReading": "Target reading {reading}",
   "quiz.unavailableCount": "{count} unavailable",

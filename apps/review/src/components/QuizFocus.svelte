@@ -5,7 +5,7 @@
   import Glyph from './Glyph.svelte'
   import CropContext from './CropContext.svelte'
   import { t } from '../lib/i18n.svelte.js'
-  let { items = [], index = 0, label = '', backLabel = t('quiz.focus.changeSelection'),
+  let { items = [], skipped = {}, index = 0, label = '', backLabel = t('quiz.focus.changeSelection'),
         disabled = false, onback, onjump, onprev, onnext, children } = $props()
   // The caller clamps too; this is the last line of defence, so a stage never shows a blank crop while
   // the queue is being rebuilt under it.
@@ -31,7 +31,7 @@
     <button type="button" class="focus-step" aria-label={t('quiz.focus.previousCrop')} disabled={disabled || position <= 0} onclick={onprev}>←</button>
     <div class="focus-strip">
       {#each items as entry, i (entry.id)}
-        <button type="button" class="focus-thumb" class:current={i === position} data-index={i}
+        <button type="button" class="focus-thumb" class:current={i === position} class:skipped={skipped[entry.id]} data-index={i}
                 aria-label={t('quiz.focus.cropNumber', { number: i + 1 })} aria-current={i === position} {disabled} onclick={() => onjump(i)}>
           <Glyph item={entry} />
         </button>
@@ -55,6 +55,8 @@
   .focus-step:disabled{opacity:.4;cursor:default}
   .focus-strip{display:flex;gap:8px;overflow-x:auto;padding:3px;flex:1;justify-content:center}
   .focus-thumb{padding:6px;border:1px solid var(--line);border-radius:7px;background:#fff;cursor:pointer;line-height:0}
+  .focus-thumb.skipped{border-style:dashed;background:#eceaf0}
+  .focus-thumb.skipped :global(img){opacity:.45}
   .focus-thumb.current{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-light)}
   .focus-thumb :global(img){width:44px;height:44px;object-fit:contain}
   @media(max-width:760px){
