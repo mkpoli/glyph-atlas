@@ -262,9 +262,9 @@ def document_of(host: str = DEFAULT_HOST):
     """The one document every Wikisource page belongs to.
 
     Rights are recorded, never inferred. The transcription is CC BY-SA 4.0 under the
-    site's own terms. The underlying scan is **not** assumed to be public domain just
-    because Wikisource hosts it: it is left ``unknown``, which the API refuses to
-    proxy, so an unresolved scan can never be re-served as if it were free.
+    site's own terms. The document stands for every Wikisource page, scans of modern
+    editions among them, so it has no image rights of its own: `image_rights` is empty,
+    which the API refuses to proxy, and the licence of each scan is a question for its file.
     """
     from ..schema import Document
 
@@ -274,13 +274,8 @@ def document_of(host: str = DEFAULT_HOST):
         holder="Wikimedia Foundation",
         shelfmark=host,
         source_refs={"wikisource": f"https://{host}", "licence": SITE_LICENCE_URL},
-        image_rights={
-            "licence": "unknown",
-            "holder": None,
-            "attribution": "per-file; not resolved",
-            "evidence": "Wikisource hosting does not imply PD",
-            "checked": None,
-        },
+        meta={"image_rights": "per file; Wikisource hosting does not imply PD"},
+        image_rights=None,
         text_rights={
             "licence": "CC-BY-SA-4.0",
             "holder": "Wikisource contributors",

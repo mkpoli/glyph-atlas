@@ -62,7 +62,7 @@ One physical exemplar (a copy, a manuscript, an archival document).
 | `text_register` | `wabun`, `kanbun`, `kanbun-kundoku`, `sorobun`, `mixed`, `unknown` |
 | `dating` | list; each with `literal` as written (文政3), `start` and `end` years, `kind` (composition, copying, publication, impression), `evidence` |
 | `hands` | free-text notes on scribes where known |
-| `image_rights`, `text_rights` | licence, holder, attribution string, evidence URL, date checked |
+| `image_rights`, `text_rights` | licence, holder, attribution string, evidence URL, date checked; `holder_terms` keeps the holder's own statement where the images of a public-domain work are recorded as PD (`docs/licensing.md`) |
 
 ### pages
 

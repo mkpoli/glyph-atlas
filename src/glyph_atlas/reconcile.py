@@ -314,14 +314,16 @@ def upstream_fields(document: Document) -> tuple[str | None, str | None]:
     """The upstream licence string and licence URL of a document.
 
     The fields the importer recorded in `meta` come first; a document that carries none falls back to
-    the statement already resolved onto `image_rights`, which is what the importer read upstream.
+    the statement already resolved onto `image_rights`, which is what the importer read upstream:
+    the holder's own statement, `holder_terms`, where the record keeps one beside a PD licence.
     """
     licence = _first_text(document.meta, LICENCE_FIELDS)
     url = _first_text(document.meta, URL_FIELDS)
     if licence is None and url is None:
         recorded = document.image_rights
-        if recorded is not None and (recorded.licence is not Licence.UNKNOWN or recorded.evidence):
-            return recorded.licence.value, recorded.evidence
+        statement = _statement(recorded)
+        if statement is not None and (statement is not Licence.UNKNOWN or recorded.evidence):
+            return statement.value, recorded.evidence
     return licence, url
 
 
@@ -631,7 +633,7 @@ def resolve_directory(
     counts: Counter[str] = Counter(dict.fromkeys(COUNTS, 0))
     for document in documents:
         counts["documents"] += 1
-        previous = document.image_rights
+        previous = _statement(document.image_rights)
         rows = evidence_of(document, manifests)
         counts["evidence"] += len(rows)
         if not rows:
@@ -641,7 +643,7 @@ def resolve_directory(
         counts["resolved"] += 1
         pick = chosen_row(rows)
         resolved = rights_of(pick, document)
-        if previous is None or previous.licence is not resolved.licence:
+        if previous is None or previous is not resolved.licence:
             counts["changed"] += 1
         if len({row.rights.licence for row in rows}) > 1:
             counts["disagreements"] += 1
@@ -713,6 +715,13 @@ def write_summary(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
     return path
+
+
+def _statement(recorded: Rights | None) -> Licence | None:
+    """The holder's statement on a record: `holder_terms` beside a PD licence, else the licence."""
+    if recorded is None:
+        return None
+    return recorded.holder_terms or recorded.licence
 
 
 def _label(resolved: Rights | None) -> str:
@@ -831,8 +840,8 @@ def _follow_up(documents: list[Document], eligible: dict[str, bool], target: Lic
         "",
         (
             f"{len({holder for holder, _ in holders})} holders carry material that is not eligible for "
-            f"{target.value}. RS-NOC-CR binds the images by contract, and NC, ND, restricted and unstated "
-            f"material needs the holder's answer before any reuse."
+            f"{target.value}: works dated after 1900, whose holder's NC, ND, RS-NOC-CR, restricted or "
+            f"unstated terms stand, so the holder's answer is needed before any reuse."
         ),
         "",
         "| Holder | Licence | Documents |",
@@ -848,7 +857,8 @@ def _disagreements(documents: list[Document], limit: int | None) -> list[str]:
     rows: list[tuple[str, str, str, str, str, str, str]] = []
     documents_with = 0
     for document in documents:
-        chosen = _label(document.image_rights)
+        statement = _statement(document.image_rights)
+        chosen = statement.value if statement is not None else NO_RIGHTS
         evidence = document.meta.get(EVIDENCE)
         if not isinstance(evidence, list):
             continue
@@ -1013,12 +1023,18 @@ def attribution(directory: Path) -> str:
         licences: Counter[str] = Counter(_label(document.image_rights) for document in group)
         credits: Counter[str] = Counter(_credit(document.image_rights, holder) for document in group)
         urls: dict[str, Counter[str]] = {}
+        kept_terms: Counter[tuple[str, str]] = Counter()
         for document in group:
             resolved = document.image_rights
-            url = resolved.evidence if resolved is not None else None
-            entry = entry_for_rights(resolved)
-            if url is None and entry is not None:
-                url = entry["evidence"]
+            if resolved is not None and resolved.holder_terms is not None:
+                # The record is PD; the evidence URL is the holder's own statement, cited apart.
+                kept_terms[(resolved.holder_terms.value, resolved.evidence or "")] += 1
+                url = (vocabulary_index().get(resolved.licence.value) or {}).get("evidence")
+            else:
+                url = resolved.evidence if resolved is not None else None
+                entry = entry_for_rights(resolved)
+                if url is None and entry is not None:
+                    url = entry["evidence"]
             urls.setdefault(_label(resolved), Counter())[url or ""] += 1
         lines += [f"### {_line(holder)}", "", f"- Credit: {_line(credits.most_common(1)[0][0])}"]
         for licence, count in sorted(licences.items(), key=lambda item: (-item[1], item[0])):
@@ -1027,6 +1043,10 @@ def attribution(directory: Path) -> str:
             obligations = entry["obligations"] if entry else NO_STATEMENT
             lines.append(f"- Licence: {licence} — {url or '(no URL)'} ({count} documents)")
             lines.append(f"  - Obligations: {obligations}")
+        for (terms, url), count in sorted(kept_terms.items(), key=lambda item: (-item[1], item[0])):
+            lines.append(
+                f"- Holder's own terms, kept beside PD: {terms} — {url or '(no URL)'} ({count} documents)"
+            )
         lines += [
             (
                 "- Material unchanged: the page image as the holder serves it, which this dataset "

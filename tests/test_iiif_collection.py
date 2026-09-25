@@ -26,4 +26,4 @@ def test_collect_full_volume_without_fabricated_text(tmp_path, monkeypatch):
     assert json.loads((out / "MANIFEST.json").read_text())["schema_version"] == tables.SCHEMA_VERSION
     manifest["metadata"] = []
     subject.collect(source, out)
-    assert next(iter(tables.read(out / "documents.parquet", Document))).image_rights.licence == Licence.UNKNOWN
+    assert next(iter(tables.read(out / "documents.parquet", Document))).image_rights.holder_terms == Licence.UNKNOWN

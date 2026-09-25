@@ -28,7 +28,7 @@ from glyph_atlas.schema import (
 
 # The fixture's arithmetic, in one place.
 #   codh:A  images CC BY 4.0, text bespoke-free   3 units (2 machine, 1 transcriber), 2 pages
-#   codh:B  images CC BY-NC 4.0, text CC BY 4.0   1 unit  (transcriber), 1 page
+#   codh:B  images CC BY-NC 4.0 on a work of 1950, text CC BY 4.0   1 unit  (transcriber), 1 page
 #   codh:C  no rights at all                      1 unit, and never in a release, because a
 #                                                  document that states no terms is not admitted
 TRANSCRIBER = {"units": 2, "lines": 2, "pages": 2, "documents": 2}
@@ -137,6 +137,7 @@ def dataset(tmp_path: Path) -> Path:
             title="reviewed book",
             holder="例",
             production="handwritten",
+            dating=[{"literal": "1950", "start": 1950, "end": 1950, "kind": "publication"}],
             image_rights=NC,
             text_rights=FREE,
         ),

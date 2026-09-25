@@ -251,7 +251,8 @@ def test_document_takes_its_item_row(tmp_path):
 def test_unspecified_licence_resolves_to_unknown(tmp_path):
     _, dataset, _ = imported(tmp_path)
     document = documents(dataset)[f"hl:{ITEM_B}"]
-    assert document.image_rights.licence is Licence.UNKNOWN
+    assert document.image_rights.holder_terms is Licence.UNKNOWN
+    assert document.image_rights.licence is Licence.PUBLIC_DOMAIN
     assert "(unspecified)" in document.image_rights.attribution
     assert document.text_rights.licence is Licence.CC_BY_SA_4
 

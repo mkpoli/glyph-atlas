@@ -73,7 +73,8 @@ def test_document_rights(imported) -> None:
     _, [document], _, _, _ = imported
     assert document.id == "hng-kiridashi:myz"
     assert (document.holder, document.shelfmark, document.production) == (kd.BNF, "P.2334", "handwritten")
-    assert document.image_rights.licence == Licence.RESTRICTED and not rights.eligible(document.image_rights)
+    assert document.image_rights.holder_terms == Licence.RESTRICTED
+    assert document.image_rights.licence == Licence.PUBLIC_DOMAIN and rights.eligible(document.image_rights)
     assert document.text_rights.licence == Licence.CC_BY_SA_4
     assert document.source_refs["iiif-manifest"] == f"{BASE}/manifest.json"
 

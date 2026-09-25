@@ -164,16 +164,16 @@ def test_entries_become_documents_pages_texts_and_lines(tmp_path: Path, platform
     assert body.text_raw.startswith("【右丁】"), "the markup is kept raw"
 
 
-def test_a_licence_that_does_not_resolve_is_recorded_as_restricted(tmp_path: Path, platform: dict[str, Any]) -> None:
+def test_a_licence_that_does_not_resolve_is_kept_as_restricted_holder_terms(tmp_path: Path, platform: dict[str, Any]) -> None:
     out = tmp_path / "out"
     ainu.import_all(out, cache=platform["cache"], source_path=platform["source"])
     documents = {document.id: document for document in tables.read(out / "documents.parquet", Document)}
     rights = documents[f"hk:{SECOND}"].image_rights
-    assert rights is not None and rights.licence.value == "restricted"
+    assert rights is not None and rights.holder_terms.value == "restricted" and rights.licence.value == "PD"
     assert rights.holder == "龍谷大学図書館"
     assert rights.evidence is None or "ryukoku" in (rights.evidence or "") or rights.evidence == RESTRICTED
     leiden = documents[f"hk:{THIRD}"].image_rights
-    assert leiden is not None and leiden.licence.value == "restricted"
+    assert leiden is not None and leiden.holder_terms.value == "restricted" and leiden.licence.value == "PD"
     assert "Wereldmuseum" in (leiden.holder or "") or "Leiden" in (leiden.attribution or "")
 
 

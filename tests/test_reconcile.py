@@ -191,7 +191,10 @@ def test_evidence_agrees_disagrees_and_is_missing(tmp_path, http_server):
 
     # The document no source states anything about keeps what its importer wrote.
     missing = documents["hl:c"]
-    assert missing.image_rights == unresolved
+    # An undated document is pre-modern: the unresolved statement is kept beside a PD licence.
+    assert missing.image_rights == unresolved.model_copy(
+        update={"licence": Licence.PUBLIC_DOMAIN, "holder_terms": Licence.UNKNOWN}
+    )
     assert reconcile.EVIDENCE not in missing.meta
 
     # The manifest was fetched into the cache through the server, once, and nothing else was fetched.
@@ -242,7 +245,7 @@ def test_precedence_per_item_then_manifest_then_upstream_then_holder(tmp_path, m
 
     def chosen(ident: str) -> tuple[str, str]:
         found = documents[ident]
-        licence = found.image_rights.licence.value
+        licence = (found.image_rights.holder_terms or found.image_rights.licence).value
         row = next(row for row in found.meta[reconcile.EVIDENCE] if row["licence"] == licence)
         return row["source"], licence
 
@@ -262,6 +265,7 @@ def test_precedence_per_item_then_manifest_then_upstream_then_holder(tmp_path, m
     # A per-item holder whose manifest states no licence keeps the holder row, which is its terms
     # page; the upstream claim of a licence stands beside it and is reported as a disagreement.
     assert chosen("hl:per-item-blank") == ("holder", "restricted")
+    assert documents["hl:per-item-blank"].image_rights.licence is Licence.PUBLIC_DOMAIN
     assert chosen("hl:per-item-unread") == ("upstream", "CC-BY-SA-4.0")
     assert [(row["source"], row["licence"]) for row in documents["hl:per-item-unread"].meta[reconcile.EVIDENCE]] == [
         ("upstream", "CC-BY-SA-4.0"),
@@ -422,11 +426,11 @@ def test_report_counts_documents_pages_lines_and_units_by_licence(tmp_path):
     assert "`" + str(directory) + "`: 3 documents, 3 pages, 4 lines, 2 units." in text
     assert "| PDM-1.0 | 1 | 1 | 2 | 1 | yes |" in text
     assert "| CC-BY-SA-4.0 | 1 | 1 | 1 | 1 | yes |" in text
-    assert "| restricted | 1 | 1 | 1 | 0 | no |" in text
+    # The restricted holder's book is pre-modern, so its images are recorded and counted as PD.
+    assert "| PD | 1 | 1 | 1 | 0 | yes |" in text
     assert "| **Total** | 3 | 3 | 4 | 2 | |" in text
-    assert "| yes | 2 | 2 | 2 | 3 | 2 |" in text
-    assert "| no | 1 | 1 | 1 | 1 | 0 |" in text
-    assert "| 未登録館 | restricted | 1 |" in text
+    assert "| yes | 3 | 3 | 3 | 4 | 2 |" in text
+    assert "| no | 0 | 0 | 0 | 0 | 0 |" in text
     assert "No document carries a statement that disagrees" in text
 
 
@@ -667,3 +671,32 @@ def test_terms_diff_reads_a_page():
         "names": False,
         "changed": False,
     }
+
+
+def test_attribution_cites_pd_and_the_holder_terms_apart(tmp_path, monkeypatch):
+    monkeypatch.setattr(reconcile, "SOURCES", tmp_path / "missing")
+    nc_deed = "https://creativecommons.org/licenses/by-nc/4.0/"
+    directory = dataset(
+        tmp_path / "ds",
+        [document("hl:a", holder="例書館",
+                  image_rights=Rights(licence=Licence.CC_BY_NC_4, attribution="例書館", evidence=nc_deed))],
+    )
+
+    text = reconcile.attribution(directory)
+
+    assert f"- Licence: PD — {nc_deed}" not in text
+    assert "- Licence: PD — " in text
+    assert f"- Holder's own terms, kept beside PD: CC-BY-NC-4.0 — {nc_deed} (1 documents)" in text
+
+
+def test_a_converted_document_whose_evidence_agrees_is_no_disagreement(tmp_path):
+    nc = Rights(licence=Licence.CC_BY_NC_4, attribution="例書館")
+    doc = document("hl:a", holder="例書館", image_rights=nc)
+    doc.meta[reconcile.EVIDENCE] = [
+        {"source": "upstream", "licence": "CC-BY-NC-4.0", "url": None, "fetched": "2026-09-25"}
+    ]
+    directory = dataset(tmp_path / "ds", [doc], pages=[page("p1", "hl:a")])
+
+    text = reconcile.report(directory)
+
+    assert "No document carries a statement that disagrees" in text

@@ -246,9 +246,11 @@ def test_image_rights_come_from_the_manifest_and_fall_back_to_the_holder(
     assert p3.image_rights.licence is Licence.PDM
     assert p3.image_rights.attribution == ELSEWHERE
     failed = documents[f"hk:{ENTRY_MISSING}"]
-    assert failed.image_rights.licence is Licence.UNKNOWN
+    assert (failed.image_rights.licence, failed.image_rights.holder_terms) == (Licence.PUBLIC_DOMAIN, Licence.UNKNOWN)
     assert failed.image_rights.holder == ELSEWHERE
-    assert failed.image_rights == rights.resolve(holder=ELSEWHERE)
+    assert failed.image_rights == rights.resolve(holder=ELSEWHERE).model_copy(
+        update={"licence": Licence.PUBLIC_DOMAIN, "holder_terms": Licence.UNKNOWN}
+    )
 
 
 def test_page_maps_to_the_canvas_of_its_number(imported: tuple[Path, dict[str, int]], http_server: Server) -> None:

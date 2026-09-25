@@ -64,6 +64,7 @@ def write_units(
     licence: str = "CC-BY-4.0",
     lines: list[Line] | None = None,
     page_id: str | None = None,
+    dating: list[dict] | None = None,
 ) -> Path:
     out = root / name
     out.mkdir(parents=True, exist_ok=True)
@@ -73,6 +74,7 @@ def write_units(
         title=f"{name} source",
         holder="Holding body",
         shelfmark=f"S-{name}",
+        dating=dating or [],
         image_rights={"licence": licence, "holder": "Holding body", "attribution": "Holding body"},
     )
     page = Page(
@@ -271,12 +273,14 @@ def viewer(tmp_path: Path):
     clone_file.parent.mkdir(parents=True)
     clone_file.write_bytes(bmp())
 
-    # A corpus whose licence forbids us serving its images.
+    # A corpus whose licence forbids us serving its images: a work dated after 1900 keeps its
+    # holder's terms.
     write_units(
         root,
         "honkoku-lines",
         image="https://example.invalid/iiif/restricted.tif",
         licence="restricted",
+        dating=[{"literal": "1950", "start": 1950, "end": 1950, "kind": "publication"}],
         units=[
             Unit(
                 id="hl:u1",
