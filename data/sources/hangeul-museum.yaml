@@ -1,0 +1,17 @@
+id: hangeul-museum
+name: 국립한글박물관 아카이브
+publisher: 국립한글박물관
+holder: 국립한글박물관
+kind: image-collection
+url: https://archives.hangeul.go.kr/ko/M000000591
+licence: KOGL-1
+licence_evidence: https://archives.hangeul.go.kr/ko/M000000614/html/view
+attribution: 국립한글박물관, 공공누리 제1유형(출처표시)
+access:
+  record: https://archives.hangeul.go.kr/ko/M000000591/api/archv/ot/view?rcrdId={id}
+  image: https://archives.hangeul.go.kr/ko/M000000591/api/archv/image/{atchFileSn}
+  item_page: https://archives.hangeul.go.kr/ko/M000000591/archv/ot/view?rcrdId={id}
+notes:
+  - The licence is stated per record in koglCdId. The item template renders CD00167 as 공공누리 제1유형(출처표시); only those records are collected.
+  - orgItptr is the 판독 of the whole record, with no page positions; some records give none.
+  - Collected with scripts/collect_hangeul_museum.py.
