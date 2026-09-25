@@ -580,6 +580,22 @@ def import_hilab(
     typer.echo(f"-> {out}")
 
 
+@import_app.command("hng")
+def import_hng(
+    clone: Annotated[Path | None, typer.Option(help="a clone of hng-basic-data")] = None,
+    sources: Annotated[str | None, typer.Option(help="comma-separated HNG source ids")] = None,
+    limit: Annotated[int | None, typer.Option(help="stop after this many crops")] = None,
+    out: Annotated[Path, typer.Option(help="directory for the tables")] = Path("work/hng"),
+) -> None:
+    """Import the 漢字字体規範史データセット (HNG) basic dataset."""
+    from .importers import hng
+
+    counts = hng.import_all(out, clone=clone, sources=sources.split(",") if sources else None, limit=limit)
+    for name, rows in counts.items():
+        typer.echo(f"{name:<12} {rows:>10}")
+    typer.echo(f"-> {out}")
+
+
 @audit_app.command("sample")
 def audit_sample(
     directory: Annotated[Path, typer.Argument(help="dataset directory holding the run's units")],
