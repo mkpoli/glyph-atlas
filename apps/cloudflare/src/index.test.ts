@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { canonical, literal, hira, single, readingFrom, validRound } from './index';
+import { canonical, literal, hira, single, readingFrom, validRound, categoryOf } from './index';
 
 describe('historical character identities', () => {
   it('keeps supplementary characters intact', () => {
@@ -54,3 +54,9 @@ describe('a round names flagged answers, seen crops, or both', () => {
     expect(() => validRound({ seen: [{ id: 'one', image_sha256: hash }] }, 'one')).toThrow('Only a round')
   })
 })
+
+describe('categoryOf', () => {
+  it('names a label by the script of its first character', () => {
+    expect(['ア', '仮', 'ㅿ', 'ᄫ', '한', 'A', ''].map(categoryOf)).toEqual(['kana', 'kanji', 'hangul', 'hangul', 'hangul', 'other', 'other']);
+  });
+});

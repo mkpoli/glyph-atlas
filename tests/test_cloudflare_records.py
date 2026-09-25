@@ -135,7 +135,33 @@ def test_the_migration_and_the_publication_scripts_agree_on_a_label_category(scr
     rows = db.execute(f"WITH RECURSIVE n(c) AS (SELECT 0 UNION ALL SELECT c+1 FROM n WHERE c<1114111) "
                       f"SELECT c,{case} FROM n WHERE {case}!='other'").fetchall()
     expected = [(c, cloudflare_schema.category_of(chr(c))) for c in range(0x110000)
-                if not 0xD800 <= c <= 0xDFFF and cloudflare_schema.category_of(chr(c)) != "other"]
+                if not 0xD800 <= c <= 0xDFFF and cloudflare_schema.category_of(chr(c)) in ("kana", "kanji")]
     assert rows == expected
     assert [cloudflare_schema.category_of(v) for v in ("ア", "𛀁", "仮", "々", "〆", "A", "")] == \
         ["kana", "kana", "kanji", "kanji", "other", "other", "other"]
+
+
+def test_the_hangul_migration_and_the_publication_scripts_agree_on_a_hangul_label(scripts):
+    """0008 names the Hangul ranges the publication scripts and the Worker give `hangul`."""
+    cloudflare_schema = importlib.import_module("cloudflare_schema")
+    migration = Path("apps/cloudflare/migrations/0008_hangul_category.sql").read_text()
+    case = re.search(r"CASE\n[\s\S]*?END", migration).group(0)
+    db = sqlite3.connect(":memory:")
+    rows = db.execute(f"WITH RECURSIVE n(c) AS (SELECT 0 UNION ALL SELECT c+1 FROM n WHERE c<1114111) "
+                      f"SELECT c FROM n WHERE {case}='hangul'").fetchall()
+    assert [c for (c,) in rows] == [c for c in range(0x110000) if not 0xD800 <= c <= 0xDFFF
+                                    and cloudflare_schema.category_of(chr(c)) == "hangul"]
+    assert [cloudflare_schema.category_of(v) for v in ("ㅿ", "ᄫ", "한", "㉠")] == ["hangul"] * 4
+
+
+def test_the_hangul_migration_moves_a_row_published_as_other(scripts):
+    cloudflare_schema = importlib.import_module("cloudflare_schema")
+    db = sqlite3.connect(":memory:")
+    cloudflare_schema.schema(db)
+    for unit_id, label, category in (("jamo", "ㅿ", "other"), ("kana", "あ", "kana"), ("latin", "A", "other")):
+        db.execute("INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                   (unit_id, "corpus", label, None, None, None, "unknown", category, "pending", 0, 1, 1, 0,
+                    json.dumps({"label": label, "category": category}), "{}", "{}", "{}"))
+    db.executescript(Path("apps/cloudflare/migrations/0008_hangul_category.sql").read_text())
+    assert dict(db.execute("SELECT id,category FROM units")) == {"jamo": "hangul", "kana": "kana", "latin": "other"}
+    assert json.loads(db.execute("SELECT data FROM units WHERE id='jamo'").fetchone()[0])["category"] == "hangul"

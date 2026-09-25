@@ -309,7 +309,7 @@
   <div class="collection-toolbar">
     <CharacterSearch bind:value={query} oninput={seek} onselect={pick}
                      onsubmit={() => { clearTimeout(searchTimer); offset = 0; submitQuery() }} />
-    <div class="filter-tabs" aria-label={t('explore.filter.label')}>{#each [['all', () => t('explore.filter.all')], ['kana', () => t('explore.filter.kana')], ['kanji', () => t('explore.filter.kanji')]] as [value, text]}<button class:active={filter === value} onclick={() => { filter = value; offset = 0; load() }}>{text()}</button>{/each}</div>
+    <div class="filter-tabs" aria-label={t('explore.filter.label')}>{#each [['all', () => t('explore.filter.all')], ['kana', () => t('explore.filter.kana')], ['kanji', () => t('explore.filter.kanji')], ['hangul', () => t('explore.filter.hangul')]] as [value, text]}<button class:active={filter === value} onclick={() => { filter = value; offset = 0; load() }}>{text()}</button>{/each}</div>
     <div class="category-control"><button class="category-toggle" aria-expanded={categoryOpen} onclick={() => categoryOpen = !categoryOpen}>{reading || t('explore.anyReading')} <span>⌄</span></button>
       {#if categoryOpen}<div class="category-menu"><input aria-label={t('explore.findReading.aria')} bind:value={search} placeholder={t('explore.findReading.placeholder')} /><button class="all-readings" onclick={() => select('')}>{t('explore.allReadings')}</button><div class="category-options">{#each categories as c}<button class:chosen={reading === c.label} onclick={() => select(c.label)}><span lang="ja">{c.label}</span><small>{number(flagged ? c.flagged + c.hard : c.total)}</small></button>{/each}</div></div>{/if}
     </div>

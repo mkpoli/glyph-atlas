@@ -14,7 +14,7 @@ const json = (value: unknown, status = 200, headers: HeadersInit = {}) => Respon
 const parse = (value: string): Json => JSON.parse(value);
 const unavailable = { status: 'unavailable', candidates: [] };
 // A label's category is its first character's script, as the migrations and publication scripts compute it.
-export const categoryOf=(value:string)=>{const first=[...value][0]??'';return /[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(first)?'kana':/\p{Script=Han}/u.test(first)?'kanji':'other'};
+export const categoryOf=(value:string)=>{const first=[...value][0]??'';return /[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(first)?'kana':/\p{Script=Han}/u.test(first)?'kanji':/\p{Script=Hangul}/u.test(first)?'hangul':'other'};
 const cp = (value: string) => [...value].map(c => 'U+' + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')).join(' ');
 // NFC composes a voiced kana, but it also maps each CJK compatibility ideograph to its unified twin,
 // and those are characters of their own here; they are kept as written.
@@ -481,7 +481,7 @@ async function submit(env: Env, request: Request, target?: string) {
     const resolved=answer.verdict==='match'||Boolean(answer.issue==='character'&&written)||Boolean(answer.issue==='reading'&&reading);
     const family=written?(await known(env,written).catch(()=>null))?.data.grapheme?.code_point:null;
     const next:Json={...current,revision:current.revision+1,state:resolved?'checked':'flagged',
-      ...(written?{label:written,char:written,code_point:cp(written),written_character:written,identity_status:'assigned',identity_basis:'human_review',script:/\p{Script=Katakana}/u.test(written)?'katakana':/\p{Script=Hiragana}/u.test(written)?'hiragana':/\p{Script=Han}/u.test(written)?'han':'symbol'}:{}),
+      ...(written?{label:written,char:written,code_point:cp(written),written_character:written,identity_status:'assigned',identity_basis:'human_review',script:/\p{Script=Katakana}/u.test(written)?'katakana':/\p{Script=Hiragana}/u.test(written)?'hiragana':/\p{Script=Han}/u.test(written)?'han':/\p{Script=Hangul}/u.test(written)?'hangul':'symbol'}:{}),
       ...(written?{grapheme:family||cp(written),visual_group:null,category:categoryOf(written)}:{}),
       ...(reading?{reading}:{}),issue:resolved?null:answer.issue};
     const snapshot={...parse(row.snapshot),character:compact(row)};

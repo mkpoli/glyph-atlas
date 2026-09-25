@@ -155,6 +155,8 @@ def character_group(unit: Unit) -> str:
     name = unicodedata.name(label(unit)[0], "") if label(unit) else ""
     if name.startswith(("HIRAGANA", "KATAKANA", "HENTAIGANA")):
         return "kana"
+    if "HANGUL" in name or name.startswith(("PARENTHESIZED KOREAN", "CIRCLED KOREAN")):
+        return "hangul"
     return "kanji" if name.startswith("CJK") else "other"
 
 
@@ -786,7 +788,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
     def catalogue(
         reading: str | None = None,
         q: str | None = None,
-        group: Literal["all", "kana", "kanji"] = "all",
+        group: Literal["all", "kana", "kanji", "hangul"] = "all",
         state: Literal["all", "pending", "seen", "checked", "flagged", "hard", "skipped", "attention"] = "all",
         reviewer: str | None = Query(default=None, max_length=128),
         purpose: Literal["browse", "review"] = "browse",

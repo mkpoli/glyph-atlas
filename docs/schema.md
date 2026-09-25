@@ -104,7 +104,7 @@ One located unit: a character, a ligature, a mark, a gap, or a sequence awaiting
 | `reading` | diplomatic reading, historical spelling kept |
 | `unicode` | code point sequence, `U+1B002` or `U+304B U+3099`; null when no code point fits |
 | `classification` | `unassessed`, `identified`, `ambiguous` (several candidates remain), `unencoded` (identified, no code point exists), `unidentified` |
-| `script` | `hiragana`, `hentaigana`, `katakana`, `han`, `symbol`, `latin`, `unknown`; the character layer is the authority |
+| `script` | `hiragana`, `hentaigana`, `katakana`, `han`, `hangul`, `symbol`, `latin`, `unknown`; the character layer is the authority |
 | `variants` | list of `{scheme, id, version}` with scheme `mj`, `ivs`, `glyphwiki` or `local`; several may apply |
 | `candidates` | scored alternatives `{unicode, p}` when `classification` is `ambiguous` |
 | `antecedent_ids` | for an iteration mark, the units it repeats, across a line break if needed |
@@ -128,7 +128,7 @@ U+1B01A (KA-4) derives from 可 as well, so a record of this pair also carries a
 One encoded character, from `data/vocab/characters.tsv`: the middle layer, and the only table of the
 dataset that is not about an occurrence of anything. Built by `scripts/build_character_table.py`
 from one Unicode release's `UnicodeData.txt`, `Blocks.txt`, `Scripts.txt`, `DerivedAge.txt`,
-`NamesList.txt` and `confusables.txt`, with `data/vocab/mj-hentaigana.tsv` and
+`NamesList.txt`, `Jamo.txt` and `confusables.txt`, with `data/vocab/mj-hentaigana.tsv` and
 `data/vocab/graphemes.yaml` for the parts Unicode states for kana forms only.
 
 | Field | Meaning |
@@ -138,7 +138,7 @@ from one Unicode release's `UnicodeData.txt`, `Blocks.txt`, `Scripts.txt`, `Deri
 | `script` | the script property, with hentaigana named as this project names it and `Han` written `han` |
 | `category`, `age`, `block` | the general category, the release that assigned the code point, the block |
 | `jibo` | 字母: the kanji the form derives from; empty for a kanji, and for a kana whose derivation no source states |
-| `readings` | what the character reads as, historical spelling kept; empty when it is not a kana |
+| `readings` | what the character reads as, historical spelling kept; empty when it is not a kana; a Hangul compatibility jamo reads as itself, a syllable or conjoining jamo has none |
 | `grapheme` | the representative of its curated family; its own code point when no family is stated |
 | `confusables` | the characters Unicode's confusables table pairs with this one, both directions |
 | `variants` | as on a unit, when a shape registry has an id for the character |
@@ -185,7 +185,7 @@ Refresh the cached Unicode files before rebuilding the character table; they liv
 and are not in git.
 
 ```sh
-for f in UnicodeData.txt Blocks.txt Scripts.txt DerivedAge.txt NamesList.txt; do
+for f in UnicodeData.txt Blocks.txt Scripts.txt DerivedAge.txt NamesList.txt Jamo.txt; do
   curl -o cache/ucd/$f https://www.unicode.org/Public/18.0.0/ucd/$f
 done
 curl -o cache/ucd/confusables.txt https://www.unicode.org/Public/security/latest/confusables.txt

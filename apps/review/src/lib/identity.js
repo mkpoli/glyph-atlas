@@ -20,7 +20,7 @@ export function matchesVisualGroup(item, group) {
 
 
 const SCRIPT_NAMES = { hiragana: 'Hiragana', hentaigana: 'Hiragana', katakana: 'Katakana',
-  han: 'Kanji', kanji: 'Kanji', symbol: 'Symbol', mixed: 'Mixed', unknown: 'Unknown' }
+  han: 'Kanji', kanji: 'Kanji', hangul: 'Hangul', symbol: 'Symbol', mixed: 'Mixed', unknown: 'Unknown' }
 
 // ー belongs to Unicode's Common script and to `symbol` in the character table; it is coloured as katakana.
 const KATAKANA_MARKS = new Set(['ー'])
@@ -39,6 +39,7 @@ export function scriptInfo(text, stated = '') {
     if (/\p{Script=Katakana}/u.test(char) || cp === 0x2A708 || cp === 0x1B000 || (cp >= 0x1B120 && cp <= 0x1B122)
       || (cp >= 0x1B124 && cp <= 0x1B128) || cp === 0x1B168 || (cp >= 0x1AFF0 && cp <= 0x1AFFF)) return 'katakana'
     if (/\p{Script=Han}/u.test(char) || (cp >= 0x20000 && cp <= 0x2FFFF) || (cp >= 0x30000 && cp <= 0x3347F)) return 'kanji'
+    if (/\p{Script=Hangul}/u.test(char)) return 'hangul'
     if (/[\p{Symbol}\p{Punctuation}]/u.test(char)) return 'symbol'
     return 'unknown'
   }))
