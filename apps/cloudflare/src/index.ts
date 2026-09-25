@@ -111,6 +111,10 @@ function stateFor(reviewer: string | null): string {
 }
 // What a shown crop's pixels are named by: a local crop's page hash, a corpus glyph's source revision.
 const pixels = (crop: Json) => crop.image_sha256 ?? crop.source_revision;
+// The most crops one round deals and saves. A saved crop costs at most five D1 queries (two to find a
+// corpus glyph's row, one character lookup, its event and its new row) and one R2 read, so a full round
+// of corrected, never-reviewed corpus glyphs stays near 870 of the 1,000 a Worker invocation may run.
+export const ROUND_MAX = 144
 // The crops a round names: flagged answers, and crops it showed and left unflagged. A round carries
 // either or both; a single-crop review carries only its answer.
 export function validRound(input: Json, target?: string): { answers: Json[]; seen: Json[]; skipped: Json[] } {
@@ -119,9 +123,9 @@ export function validRound(input: Json, target?: string): { answers: Json[]; see
   const answers = round ? (input.answers ?? []) : [{ ...input, id: target }];
   const seen = round ? (input.seen ?? []) : [];
   const skipped = round ? (input.skipped ?? []) : [];
-  if (!Array.isArray(answers) || !Array.isArray(seen) || !Array.isArray(skipped)) throw new Problem(422, 'A round needs 1–96 distinct crops.');
+  if (!Array.isArray(answers) || !Array.isArray(seen) || !Array.isArray(skipped)) throw new Problem(422, `A round needs 1–${ROUND_MAX} distinct crops.`);
   const ids = [...answers, ...seen, ...skipped].map(crop => crop?.id);
-  if (ids.length < 1 || ids.length > 96 || new Set(ids).size !== ids.length) throw new Problem(422, 'A round needs 1–96 distinct crops.');
+  if (ids.length < 1 || ids.length > ROUND_MAX || new Set(ids).size !== ids.length) throw new Problem(422, `A round needs 1–${ROUND_MAX} distinct crops.`);
   for (const crop of [...seen, ...skipped]) {
     text(crop?.id, 512, 'character id', true);
     if (typeof pixels(crop) !== 'string' || !/^[a-f0-9]{64}$/.test(pixels(crop))) throw new Problem(422, 'Invalid image hash.');
@@ -225,7 +229,7 @@ async function catalogue(env: Env, q: URLSearchParams) {
     }
   }
   return { total, next_offset: next, available: Object.values(counts).reduce((a:number,b:any) => a+b,0),
-    counts, purpose, production, review_limit:96, review_epoch: await meta(env, 'review_epoch') || 0, query: q.get('q'),
+    counts, purpose, production, review_limit:ROUND_MAX, review_epoch: await meta(env, 'review_epoch') || 0, query: q.get('q'),
     categories: [...categories.values()].sort((a,b) => b.total-a.total || a.label.localeCompare(b.label)),
     reported_count: reportedCount ? (reportedCount.results[0] as { n: number }).n : 0,
     items };
@@ -466,6 +470,9 @@ async function submit(env: Env, request: Request, target?: string) {
   const round=!target;
   if(round)text(input.label,32,'label',true);
   const {answers,seen,skipped}=validRound(input,target);
+  // One round usually corrects many crops to the same few characters; each is read once.
+  const lookups=new Map<string,Promise<{data:Json;detail:Json}|null>>();
+  const lookup=(value:string)=>{let key:string;try{key=cp(literal(value))}catch{key='\u0000'+value}if(!lookups.has(key))lookups.set(key,known(env,value).catch(()=>null));return lookups.get(key)!};
   const changes=[];
   // Corpus glyphs this submission names for the first time; each gets its `units` row first.
   const fresh:(UnitRow&{fresh:CorpusRow})[]=[];
@@ -478,7 +485,7 @@ async function submit(env: Env, request: Request, target?: string) {
     validateAnswer(answer,current,round,glyph);
     if(answer.reading&&!single(answer.reading)){
       const identity=answer.character||current.written_character||current.label;
-      const registered=await known(env,identity).catch(()=>null);
+      const registered=await lookup(identity);
       if(!registered?.data.ligature?.reading||hira(registered.data.ligature.reading)!==hira(answer.reading))
         throw new Problem(422,'Use the registered ligature reading or one character.');
     }
@@ -487,11 +494,11 @@ async function submit(env: Env, request: Request, target?: string) {
     if(round&&(!row.quiz||current.label!==input.label))throw new Problem(409,'This round changed. Reload it.');
     const written=answer.character?literal(answer.character):null;
     // A corrected character carries its reading along unless one was typed: い corrected to り reads り.
-    const derived=written&&!answer.reading?readingFrom((await known(env,written).catch(()=>null))?.data):null;
+    const derived=written&&!answer.reading?readingFrom((await lookup(written))?.data):null;
     const reading=answer.reading || (answer.issue==='reading'&&answer.correction&&single(answer.correction)?answer.correction:null)
       || (derived&&derived!==current.reading?derived:null);
     const resolved=answer.verdict==='match'||Boolean(answer.issue==='character'&&written)||Boolean(answer.issue==='reading'&&reading);
-    const family=written?(await known(env,written).catch(()=>null))?.data.grapheme?.code_point:null;
+    const family=written?(await lookup(written))?.data.grapheme?.code_point:null;
     const next:Json={...current,revision:current.revision+1,state:resolved?'checked':'flagged',
       ...(written?{label:written,char:written,code_point:cp(written),written_character:written,identity_status:'assigned',identity_basis:'human_review',script:/\p{Script=Katakana}/u.test(written)?'katakana':/\p{Script=Hiragana}/u.test(written)?'hiragana':/\p{Script=Han}/u.test(written)?'han':/\p{Script=Hangul}/u.test(written)?'hangul':'symbol'}:{}),
       ...(written?{grapheme:family||cp(written),visual_group:null,category:categoryOf(written)}:{}),
