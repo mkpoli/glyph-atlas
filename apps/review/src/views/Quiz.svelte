@@ -57,6 +57,19 @@
     if (nearEnd && hasMore && !error && !loading && !saving && !loadingMore && items.length < roundLimit) loadMore()
   })
   const roundLimit = $derived(data?.review_limit ?? 4096)
+  // The scopes a round can be dealt from, in the order the material menu lists them.
+  const MATERIALS = [
+    ['not:printed/type', () => t('quiz.material.excludeMovableType')],
+    ['handwritten', () => t('production.kind.handwritten')],
+    ['inscribed', () => t('production.kind.inscribed')],
+    ['printed', () => t('production.kind.printed')],
+    ['printed/woodblock', () => t('production.kind.printed_woodblock')],
+    ['printed/type', () => t('production.kind.printed_type')],
+    ['typewritten', () => t('production.kind.typewritten')],
+    ['mixed', () => t('production.kind.mixed')],
+    ['unknown', () => t('production.kind.unknown')],
+    ['all', () => t('quiz.material.all')],
+  ]
   let production = $state('not:printed/type')
   // The workflow state: which step, and where in the selected crops the reader is.
   let step = $state('select'), at = $state(0)
@@ -452,7 +465,8 @@
     saving = true; error = ''; errorStatus = 0
     try {
       await request(`/atlas/rounds/${last.id}/undo`, { client_id: clientId })
-      const target = last.label, scope = last.production ?? production
+      // A round stored by an older version may name a scope the menu no longer offers.
+      const target = last.label, scope = MATERIALS.some(([value]) => value === last.production) ? last.production : production
       completed = Math.max(0, completed - last.count); last = null
       remember('atlas.last-round.' + clientId, null); await load({ target, scope })
     } catch (e) { error = e.message; errorStatus = e.status ?? 0 }
@@ -501,16 +515,7 @@
   <label class="review-material">{t('quiz.material.label')}
     <select aria-label={t('quiz.material.aria')} value={production} disabled={saving || loading || loadingMore}
       onchange={event => load({ scope: event.currentTarget.value, target: reading })}>
-      <option value="not:printed/type">{t('quiz.material.excludeMovableType')}</option>
-      <option value="handwritten">{t('production.kind.handwritten')}</option>
-      <option value="inscribed">{t('production.kind.inscribed')}</option>
-      <option value="printed">{t('production.kind.printed')}</option>
-      <option value="printed/woodblock">{t('production.kind.printed_woodblock')}</option>
-      <option value="printed/type">{t('production.kind.printed_type')}</option>
-      <option value="typewritten">{t('production.kind.typewritten')}</option>
-      <option value="mixed">{t('production.kind.mixed')}</option>
-      <option value="unknown">{t('production.kind.unknown')}</option>
-      <option value="all">{t('quiz.material.all')}</option>
+      {#each MATERIALS as [value, label]}<option {value}>{label()}</option>{/each}
     </select>
   </label>
   {#if history.length > 1}
