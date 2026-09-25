@@ -294,7 +294,7 @@
               <li class="form-cluster" class:active={i === active} class:picked={picked.has(c.id)} class:assigned={c.form}>
                 <button class="cluster-select" onclick={event => choose(i, event)} ondblclick={() => show(i)} aria-pressed={i === active || picked.has(c.id)}>
                   <span class="cluster-head">
-                    <strong>{c.label}</strong><span>{number(c.count)}</span>
+                    <strong lang="ja">{c.label}</strong><span>{number(c.count)}</span>
                     {#if c.form}<span class="cluster-form"><span class="inline-glyph">{c.form}</span> {byForm.get(c.form)?.jibo ?? ''}</span>
                     {:else if c.assigned}<span class="cluster-open">{around('forms.haveForm', 'glyph', { count: c.assigned })[0]}<span class="inline-glyph">{c.majority}</span>{around('forms.haveForm', 'glyph', { count: c.assigned })[1]}</span>
                     {:else}<span class="cluster-open">{t('corpus.unassigned')}</span>{/if}
