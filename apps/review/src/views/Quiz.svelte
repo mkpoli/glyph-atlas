@@ -119,9 +119,18 @@
         remember('atlas.last-round.' + clientId, null)
         remember(epochKey, summary.review_epoch ?? null)
       }
-      const available = summary.categories.filter(c => c.pending > 0)
-      const chosen = target && available.some(c => c.label === target) ? target
-        : nextCharacter(available, scope === production ? reading : '', history.filter(r => r.production === scope), randomSeed())
+      // A character whose count promised crops that cannot be dealt gives way to the next one.
+      let available = summary.categories.filter(c => c.pending > 0), chosen = null, seed = randomSeed(), result = null
+      for (let tries = 0; tries < 8; tries++) {
+        chosen = tries === 0 && target && available.some(c => c.label === target) ? target
+          : nextCharacter(available, scope === production ? reading : '', history.filter(r => r.production === scope), randomSeed())
+        if (!chosen) break
+        result = await catalogue({ purpose: 'review', reviewer: clientId, production: scope, reading: chosen, state: 'pending', limit: ROUND_BATCH, seed })
+        if (closed || id !== requestId) return
+        if (result.items.length) break
+        available = available.filter(c => c.label !== chosen)
+        chosen = null
+      }
       if (!chosen) {
         if (scope !== production) {
           restoreRound({ reading: '', items: [], choices: {}, selected: {}, skipped: {}, suggestions: {},
@@ -132,12 +141,9 @@
         else error = 'No other characters are ready. You can load more of this character or go back.'
         return
       }
-      const seed = randomSeed()
-      const result = await catalogue({ purpose: 'review', reviewer: clientId, production: scope, reading: chosen, state: 'pending', limit: ROUND_BATCH, seed })
-      if (closed || id !== requestId) return
       restoreRound({ reading: chosen, items: arranged(numbered(result.items)), choices: {}, selected: {}, skipped: {},
         suggestions: {}, contextSuggestions: {}, roundId: crypto.randomUUID(), roundSeed: seed,
-        hasMore: result.total > result.items.length, production: scope, summary })
+        hasMore: (result.next_offset ?? result.items.length) < result.total, production: scope, summary })
       if (replace && historyIndex >= 0) history[historyIndex] = snapshot()
       else {
         history = [...history.slice(0, historyIndex + 1), snapshot(), ...history.slice(historyIndex + 1)]
@@ -164,12 +170,14 @@
         const batch = fresh.slice(0, room)
         additions.push(...batch)
         batch.forEach(item => seen.add(item.id))
-        offset += result.items.length
+        // The service may pass over crops it will not deal, so its next offset can run ahead of the items.
+        const next = result.next_offset ?? offset + result.items.length, moved = next > offset
+        offset = next
         if (additions.length >= batchLimit) {
           more = fresh.length > room || offset < result.total
           break
         }
-        if (!result.items.length || offset >= result.total) { more = false; break }
+        if (!moved || offset >= result.total) { more = false; break }
       }
       // Added crops follow the ones already on screen, so nothing the reviewer is looking at moves.
       items = [...items, ...arranged(numbered(additions, items.length))]; hasMore = more
@@ -305,7 +313,17 @@
     error = ''
     if (removedCurrent) jump(Math.min(at, Math.max(selectedItems.length - 1, 0)))
   }
+  // A crop names the pixels it was shown with: a local crop by its page hash, a corpus glyph by its
+  // source revision, which covers its box and image.
+  const pixels = i => i.origin === 'corpus' ? { source_revision: i.source_revision } : { image_sha256: i.image_sha256 }
+  /** Take a crop out of the round: a review saved elsewhere has decided it. */
+  function drop(id) {
+    items = items.filter(i => i.id !== id)
+    choices = without(choices, [id]); selected = without(selected, [id]); skipped = without(skipped, [id])
+  }
   function inspectChoice(item) {
+    // A corpus glyph opens in the corpus reviewer, which saves its own review; the round then drops it.
+    if (item.origin === 'corpus') { inspect(item.id, null, [], drop, 'corpus'); return }
     inspect(item.id, value => {
       if (!value) return
       if (value.skip) { skip([item.id]); return }
@@ -361,7 +379,7 @@
   /** The crops this round skipped. A skip is recorded against the reviewer, not as a decision: other
    * reviewers are dealt the crop first, and it comes back to this one only after a rest. */
   function skippedCrops() {
-    return items.filter(i => skipped[i.id] && !failed[i.id] && viewed[i.id]).map(i => ({ id: i.id, image_sha256: i.image_sha256, image: i.image }))
+    return items.filter(i => skipped[i.id] && !failed[i.id] && viewed[i.id]).map(i => ({ id: i.id, ...pixels(i), image: i.image }))
   }
   async function submit() {
     if (saving || loadingMore || !ready) return
@@ -371,13 +389,13 @@
     const marked = new Set(selection)
     const answers = remaining.filter(i => marked.has(i.id) && choices[i.id]?.verdict === 'wrong').map(i => {
       const { character, noneSelected, ...rest } = choices[i.id]
-      return { id: i.id, revision: i.revision, image_sha256: i.image_sha256, ...rest,
+      return { id: i.id, revision: i.revision, ...pixels(i), ...rest,
                ...(character ? { character } : {}) }
     })
     // Every other crop the round showed was seen and left unflagged. That is not a confirmation,
     // but it is recorded, so the crop is not dealt again.
     const flagged = new Set(answers.map(answer => answer.id))
-    const seen = remaining.filter(i => !flagged.has(i.id) && viewed[i.id]).map(i => ({ id: i.id, image_sha256: i.image_sha256, image: i.image }))
+    const seen = remaining.filter(i => !flagged.has(i.id) && viewed[i.id]).map(i => ({ id: i.id, ...pixels(i), image: i.image }))
     const passed = skippedCrops()
     if (!answers.length && !seen.length && !passed.length) { await load(); return }
     saving = true; error = ''
@@ -398,7 +416,7 @@
   /** Record what a round with nothing selected showed: the crops seen, and the crops skipped. Every
    * way out of such a round goes through here, so none of them drops the round's record. */
   async function record() {
-    const seen = remaining.filter(i => viewed[i.id]).map(i => ({ id: i.id, image_sha256: i.image_sha256, image: i.image }))
+    const seen = remaining.filter(i => viewed[i.id]).map(i => ({ id: i.id, ...pixels(i), image: i.image }))
     const passed = skippedCrops()
     if ((!seen.length && !passed.length) || selection.length) return true
     saving = true; error = ''
@@ -494,7 +512,7 @@
       {:else}{#each items as item, i (item.id)}
         <div class="quiz-tile" use:watchSeen={item.id} data-unit={item.id} class:selected={selected[item.id]} class:wrong={choices[item.id]?.verdict === 'wrong'} class:unavailable={failed[item.id]} class:skipped={skipped[item.id]}>
           <button class="quiz-choice" aria-label={`Select character ${i + 1}`} aria-pressed={!!selected[item.id]} disabled={saving || !loaded[item.id] || skipped[item.id]} onclick={() => toggle(item.id)}><Glyph {item} eager onload={id => loaded = { ...loaded, [id]: true }} onerror={id => { failed = { ...failed, [id]: true }; if (selected[id]) skip([id]) }} /><span class="choice-mark">{selected[item.id] ? '✓' : choices[item.id]?.verdict === 'wrong' ? '×' : ''}</span></button>
-          <div class="quiz-production"><ProductionBadge {item} /></div><div class="quiz-tile-tools">{#if keys[i]}<kbd>{keys[i]}</kbd>{/if}<span class="choice-label">{failed[item.id] ? 'Unavailable' : skipped[item.id] ? 'Skipped' : ''}</span><button class="inspect-choice" aria-label={`Inspect character ${i + 1}`} disabled={saving} onclick={() => inspectChoice(item)}>↗</button>{#if skipped[item.id]}<button class="restore-choice" aria-label={`Restore character ${i + 1}`} disabled={saving} onclick={() => restore(item.id)}>restore</button>{:else}<button class="skip-choice" aria-label={`Skip character ${i + 1}`} title={SKIP_HINT} disabled={saving} onclick={() => skip([item.id])}>–</button>{/if}</div>
+          <div class="quiz-production"><ProductionBadge {item} />{#if item.origin === 'corpus'}<span class="quiz-source" title={item.source?.title}>{item.source?.title ?? 'Corpus'}</span>{/if}</div><div class="quiz-tile-tools">{#if keys[i]}<kbd>{keys[i]}</kbd>{/if}<span class="choice-label">{failed[item.id] ? 'Unavailable' : skipped[item.id] ? 'Skipped' : ''}</span><button class="inspect-choice" aria-label={`Inspect character ${i + 1}`} disabled={saving} onclick={() => inspectChoice(item)}>↗</button>{#if skipped[item.id]}<button class="restore-choice" aria-label={`Restore character ${i + 1}`} disabled={saving} onclick={() => restore(item.id)}>restore</button>{:else}<button class="skip-choice" aria-label={`Skip character ${i + 1}`} title={SKIP_HINT} disabled={saving} onclick={() => skip([item.id])}>–</button>{/if}</div>
         </div>
       {/each}{/if}
     </div>
@@ -543,7 +561,8 @@
   .review-material select{max-width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink);font:inherit}
   /* Scoped to this view on purpose: the skipped state is the round's own, and the tile keeps the
      size and position it had so declining a crop does not reflow the grid under the reader. */
-  .quiz-production{padding:0 12px 4px}
+  .quiz-production{display:flex;gap:6px;min-width:0;padding:0 12px 4px}
+  .quiz-source{flex:1;min-width:0;overflow:hidden;font-size:10px;line-height:1.5;color:var(--muted);text-overflow:ellipsis;white-space:nowrap}
   .quiz-tile.skipped { background: #eceaf0; border-style: dashed; }
   .quiz-tile.skipped .quiz-choice { opacity: .35; }
   .restore-choice { font-size: 9px; padding: 1px 7px; }

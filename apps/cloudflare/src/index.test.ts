@@ -45,6 +45,10 @@ describe('a round names flagged answers, seen crops, or both', () => {
     const many = Array.from({ length: 97 }, (_, i) => ({ id: `u${i}`, image_sha256: hash }))
     expect(() => validRound({ seen: many })).toThrow('1–96')
   })
+  it('names a corpus glyph by its source revision', () => {
+    expect(validRound({ skipped: [{ id: 'codh:1', source_revision: hash }] }).skipped).toHaveLength(1)
+    expect(() => validRound({ seen: [{ id: 'codh:1', source_revision: 'nope' }] })).toThrow('image hash')
+  })
   it('refuses a seen crop without an image hash, and seen crops outside a round', () => {
     expect(() => validRound({ seen: [{ id: 'one', image_sha256: 'nope' }] })).toThrow('image hash')
     expect(() => validRound({ seen: [{ id: 'one', image_sha256: hash }] }, 'one')).toThrow('Only a round')

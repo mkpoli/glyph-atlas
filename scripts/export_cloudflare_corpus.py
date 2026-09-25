@@ -9,6 +9,7 @@ from collections import Counter
 from pathlib import Path
 
 import pyarrow.dataset as ds
+from cloudflare_schema import CORPUS_REFRESH, schema
 from export_cloudflare import Packs, encoded
 
 from glyph_atlas.corpus import sources
@@ -63,7 +64,7 @@ def published_keys(path: Path) -> set[str]:
 def export(output, *, resume=False, published=None):
     output.mkdir(parents=True, exist_ok=resume)
     db = sqlite3.connect(output / "corpus.sqlite")
-    db.executescript(Path("apps/cloudflare/migrations/0001_catalogue.sql").read_text())
+    schema(db)
     media = MediaCache(corpus_root=Path("work"))
     api = CorpusAPI("work", "work/corpus-index", autobuild=False)
     resolver = FrozenResolver(api)
@@ -166,9 +167,10 @@ def export(output, *, resume=False, published=None):
                 raw = encoded(detail).encode()
                 family = detail.get("grapheme")
                 visual = detail.get("visual_group") or {}
-                db.execute("INSERT OR IGNORE INTO corpus_units VALUES(?,?,?,?,?,?,?,?)", (
+                db.execute("INSERT OR IGNORE INTO corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production) VALUES(?,?,?,?,?,?,?,?,?)", (
                     row["id"], detail.get("written_character"), family, visual.get("id"),
-                    int(hashlib.sha256(row["id"].encode()).hexdigest()[:7], 16), record_name, record_file.tell(), len(raw)))
+                    int(hashlib.sha256(row["id"].encode()).hexdigest()[:7], 16), record_name, record_file.tell(), len(raw),
+                    detail.get("production") or "unknown"))
                 record_file.write(raw)
                 counts[corpus.name] += 1
             if record_file:
@@ -181,6 +183,7 @@ def export(output, *, resume=False, published=None):
     if record_file:
         record_file.close()
     packs.close()
+    db.executescript(CORPUS_REFRESH)
     db.close()
     print(encoded({"complete": True, "counts": dict(counts)}), flush=True)
 

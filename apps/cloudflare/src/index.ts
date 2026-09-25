@@ -1,8 +1,10 @@
 // Catalogue snapshots are published offline. All online review mutations use D1 transactions.
 type Json = Record<string, any>;
-type UnitRow = { id: string; origin: string; character: string; state: string; revision: number;
-  quiz: number; category?: string; data: string; snapshot: string; context: string; visual: string };
-type CorpusRow = {id:string;character:string|null;family:string|null;visual_group:string|null;shuffle:number;object:string;offset:number;size:number};
+type UnitRow = { id: string; origin: string; character: string | null; state: string; revision: number;
+  quiz: number; category?: string; data: string; snapshot: string; context: string; visual: string;
+  // A corpus glyph nothing has named yet: it has no `units` row, and this is where it is published.
+  fresh?: CorpusRow };
+type CorpusRow = {id:string;character:string|null;family:string|null;visual_group:string|null;production:string;shuffle:number;object:string;offset:number;size:number};
 class Problem extends Error {
   constructor(public status: number, message: string) { super(message) }
 }
@@ -11,7 +13,8 @@ const json = (value: unknown, status = 200, headers: HeadersInit = {}) => Respon
 });
 const parse = (value: string): Json => JSON.parse(value);
 const unavailable = { status: 'unavailable', candidates: [] };
-const categoryOf=(value:string)=>/[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(value)?'kana':/\p{Script=Han}/u.test(value)?'kanji':'other';
+// A label's category is its first character's script, as the migrations and publication scripts compute it.
+export const categoryOf=(value:string)=>{const first=[...value][0]??'';return /[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(first)?'kana':/\p{Script=Han}/u.test(first)?'kanji':'other'};
 const cp = (value: string) => [...value].map(c => 'U+' + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')).join(' ');
 // NFC composes a voiced kana, but it also maps each CJK compatibility ideograph to its unified twin,
 // and those are characters of their own here; they are kept as written.
@@ -48,8 +51,22 @@ async function unit(env: Env, id: string): Promise<UnitRow> {
   const pointer=await env.DB.prepare('SELECT * FROM corpus_units WHERE id=?').bind(id).first<CorpusRow>();
   if(!pointer)throw new Problem(404, 'This character is not in the published collection.');
   const data=await corpusData(env,pointer);
-  return {id,origin:'corpus',character:data.label,state:data.state,revision:data.revision,quiz:0,
-    data:JSON.stringify(data),snapshot:JSON.stringify(data),context:JSON.stringify(unavailable),visual:JSON.stringify(unavailable)};
+  return {id,origin:'corpus',character:data.written_character??null,state:data.state,revision:data.revision,quiz:dealable('corpus',data)?1:0,
+    category:categoryOf(data.label),data:JSON.stringify(data),snapshot:JSON.stringify(data),
+    context:JSON.stringify(unavailable),visual:JSON.stringify(unavailable),fresh:pointer};
+}
+// Whether a crop may be dealt in Quick review at all; its review state says whether it is due now.
+// A local crop is withheld only by the alignment repair. A corpus glyph needs an image this site may
+// serve and a written character, since a round asks whether the crop is that character.
+const dealable=(origin:string,data:Json)=>origin==='corpus'?Boolean(data.proxyable&&data.written_character):data.repair?.quiz!==false;
+const productionOf=(data:Json)=>typeof data.production==='string'?data.production:'unknown';
+// The first round or review that names a corpus glyph writes its `units` row from the published record,
+// in the same batch and before the rows that reference it.
+function materialise(env:Env,row:UnitRow&{fresh:CorpusRow}){
+  const d=parse(row.data);
+  return env.DB.prepare('INSERT OR IGNORE INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+    .bind(row.id,'corpus',d.written_character||null,d.reading||null,d.grapheme||null,d.visual_group?.id||null,productionOf(d),
+      row.category||categoryOf(d.label),d.state,d.revision,row.quiz,1,row.fresh.shuffle,row.data,row.snapshot,row.context,row.visual);
 }
 async function corpusData(env:Env,row:CorpusRow):Promise<Json>{
   if(row.size>128*1024)throw new Problem(503,'Invalid published record.');
@@ -58,7 +75,10 @@ async function corpusData(env:Env,row:CorpusRow):Promise<Json>{
   return object.json<Json>();
 }
 function compact(row: UnitRow): Json {
-  const d = parse(row.data);
+  return listing(parse(row.data));
+}
+// A record as a listing shows it, without the fields only its inspector needs.
+function listing(d: Json): Json {
   const { text, line, context_image, context_box, crop_box, ...rest } = d;
   return rest;
 }
@@ -84,6 +104,8 @@ function stateFor(reviewer: string | null): string {
   return `iif(state='pending' AND EXISTS(SELECT 1 ${SKIPS} AND k.actor=${quoted(reviewer)} AND k.at>${quoted(since)})
     AND NOT ${HARD} AND NOT ${SEEN},'skipped',${EFFECTIVE_STATE})`;
 }
+// What a shown crop's pixels are named by: a local crop's page hash, a corpus glyph's source revision.
+const pixels = (crop: Json) => crop.image_sha256 ?? crop.source_revision;
 // The crops a round names: flagged answers, and crops it showed and left unflagged. A round carries
 // either or both; a single-crop review carries only its answer.
 export function validRound(input: Json, target?: string): { answers: Json[]; seen: Json[]; skipped: Json[] } {
@@ -97,50 +119,146 @@ export function validRound(input: Json, target?: string): { answers: Json[]; see
   if (ids.length < 1 || ids.length > 96 || new Set(ids).size !== ids.length) throw new Problem(422, 'A round needs 1–96 distinct crops.');
   for (const crop of [...seen, ...skipped]) {
     text(crop?.id, 512, 'character id', true);
-    if (typeof crop.image_sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(crop.image_sha256)) throw new Problem(422, 'Invalid image hash.');
+    if (typeof pixels(crop) !== 'string' || !/^[a-f0-9]{64}$/.test(pixels(crop))) throw new Problem(422, 'Invalid image hash.');
     if (crop.image !== undefined) text(crop.image, 256, 'crop image', true);
   }
   return { answers, seen, skipped };
 }
+// A material filter on a `production` column: every material, all but movable type, or one.
+function material(production: string, column: string): [string, string[]] {
+  if (production === 'all') return ['1=1', []];
+  if (production === 'non-movable-type') return [`${column}!='movable-type'`, []];
+  return [`${column}=?`, [production]];
+}
+const inMaterial = (production: string, value: string) =>
+  production === 'all' || (production === 'non-movable-type' ? value !== 'movable-type' : value === production);
+// How far a round pages. Rounds are dealt from the front and a saved crop leaves the queue, so a
+// reader never gets this deep; the bound keeps a crawler from reading a character's whole corpus.
+const ROUND_OFFSET_MAX = 4096;
+// Named corpus glyphs come back due after an undo, or when a skip's rest ends. Only a round of their
+// own character deals them, from its most recently named pending rows, and the category counts leave
+// them out: either way no request reads every named glyph. Should a character hold more named
+// pending rows than this, mostly glyphs already seen, an older one that is due again waits outside it.
+const NAMED_WINDOW = 256;
+// The materials that are not movable type, each read through its own index range.
+const NON_MOVABLE = ['manuscript', 'woodblock', 'mixed', 'unknown'];
 async function catalogue(env: Env, q: URLSearchParams) {
   const purpose = q.get('purpose') || 'browse';
   const production = q.get('production') || (purpose === 'review' ? 'non-movable-type' : 'all');
+  const review = purpose === 'review';
+  const seed = integer(q, 'seed', 0, 2147483647);
+  const limit = integer(q, 'limit', 60, 96), offset = integer(q, 'offset', 0);
+  if (review && offset > ROUND_OFFSET_MAX) throw new Problem(404, 'A round does not page this far.');
   const where = ["origin='local'"];
   const values: (string | number)[] = [];
-  if (purpose === 'review') where.push('quiz=1');
-  if (production === 'non-movable-type') where.push("production!='movable-type'");
-  else if (production !== 'all') { where.push('production=?'); values.push(production) }
+  if (review) where.push('quiz=1');
+  const [materials, materialValues] = material(production, 'production');
+  where.push(materials); values.push(...materialValues);
   const reviewer = q.get('reviewer') ? text(q.get('reviewer'), 128, 'reviewer', true)! : null;
   const state = stateFor(reviewer);
-  const groups = await env.DB.prepare(`SELECT character AS label,${state} AS state,count(*) AS n FROM units WHERE ${where.join(' AND ')} GROUP BY 1,2`).bind(...values).all<{label:string;state:string;n:number}>();
+  const [groups, published] = await env.DB.batch([
+    env.DB.prepare(`SELECT character AS label,${state} AS state,count(*) AS n FROM units WHERE ${where.join(' AND ')} GROUP BY 1,2`).bind(...values),
+    ...(review ? [corpusCountQuery(production)].map(({ sql, values }) => env.DB.prepare(sql).bind(...values)) : []),
+  ]) as D1Result<{label:string;state?:string;n:number}>[];
   const categories = new Map<string, Json>();
   const counts: Json = { pending: 0, seen: 0, flagged: 0, checked: 0, hard: 0, skipped: 0 };
-  for (const row of groups.results) {
-    const category = categories.get(row.label) || { label: row.label, total: 0, pending: 0, seen: 0, checked: 0, flagged: 0, hard: 0, skipped: 0 };
-    category.total += row.n; category[row.state] += row.n; counts[row.state] += row.n;
-    categories.set(row.label, category);
-  }
-  if (q.get('reading')) { where.push('character=?'); values.push(q.get('reading')!) }
+  const add = (label: string, state: string, n: number) => {
+    const category = categories.get(label) || { label, total: 0, pending: 0, seen: 0, checked: 0, flagged: 0, hard: 0, skipped: 0 };
+    category.total += n; category[state] += n; counts[state] += n;
+    categories.set(label, category);
+  };
+  for (const row of groups.results) add(row.label, row.state!, row.n);
+  // A corpus glyph nothing has named is pending for everyone, and the table counts them per character.
+  const corpus = new Map<string, number>();
+  if (review) for (const row of published.results) if (row.n > 0) { corpus.set(row.label, row.n); add(row.label, 'pending', row.n) }
+  const reading = q.get('reading');
+  if (reading) { where.push('character=?'); values.push(reading) }
   if (q.get('q')) { where.push('(character=? OR reading=?)'); values.push(literal(q.get('q')!), literal(q.get('q')!)) }
   if (q.get('group') && q.get('group') !== 'all') { where.push('category=?'); values.push(q.get('group')!) }
   if (q.get('state') && q.get('state') !== 'all') { where.push(`${state}=?`); values.push(q.get('state')!) }
-  const seed = integer(q, 'seed', 0, 2147483647);
-  const limit = integer(q, 'limit', 60, 96), offset = integer(q, 'offset', 0);
-  // A crop another reviewer skipped comes first in a round: it needs a second pair of eyes.
-  const others = purpose === 'review' ? `EXISTS(SELECT 1 ${SKIPS}${reviewer ? ` AND k.actor!=${quoted(reviewer)}` : ''}) DESC,` : '';
-  const order = others + (purpose === 'review' && seed % 5 ? 'priority,' : '');
+  // A round of one character deals its named and then its untouched corpus glyphs after its local crops.
+  const dealt = review && reading !== null && ['all', 'pending'].includes(q.get('state') || 'all') && !q.get('q')
+    && ['all', categoryOf(reading)].includes(q.get('group') || 'all');
+  const named = dealt ? { sql: namedRoundQuery(materials, state), values: [reading, ...materialValues] } : null;
+  const from = named ? `(SELECT * FROM units WHERE ${where.join(' AND ')} UNION ALL ${named.sql}) AS units` : `units WHERE ${where.join(' AND ')}`;
+  const fromValues = named ? [...values, ...named.values] : values;
+  // A crop another reviewer skipped comes first in a round: it needs a second pair of eyes. Then a
+  // character's local crops, then its named corpus glyphs.
+  const others = review ? `EXISTS(SELECT 1 ${SKIPS}${reviewer ? ` AND k.actor!=${quoted(reviewer)}` : ''}) DESC,origin='corpus',` : '';
+  const order = others + (review && seed % 5 ? 'priority,' : '');
   // Flagged view: a crop already looked at in the inspector queues behind the ones nobody has reviewed yet.
   const reviewedLast = q.get('state') === 'flagged' ? `EXISTS(SELECT 1 FROM events e JOIN submissions f ON f.id=e.submission AND f.undone=0
     WHERE e.target=units.id AND e.kind='review' AND json_extract(json_extract(e.event,'$.evidence'),'$.kind')='character-review'),` : '';
   const [count, window] = await env.DB.batch([
-    env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${where.join(' AND ')}`).bind(...values),
-    env.DB.prepare(`SELECT *,${state} AS effective,(SELECT shape_order FROM unit_shapes s WHERE s.id=units.id) AS shape_order FROM units WHERE ${where.join(' AND ')} ORDER BY ${order}${reviewedLast} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...values, seed + 1, limit, offset),
+    env.DB.prepare(`SELECT count(*) AS n FROM ${from}`).bind(...fromValues),
+    env.DB.prepare(`SELECT *,${state} AS effective,(SELECT shape_order FROM unit_shapes s WHERE s.id=units.id) AS shape_order FROM ${from} ORDER BY ${order}${reviewedLast} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...fromValues, seed + 1, limit, offset),
   ]);
-  return { total: (count.results[0] as { n: number }).n, available: Object.values(counts).reduce((a:number,b:any) => a+b,0),
+  const listed = (count.results[0] as { n: number }).n;
+  const items: Json[] = (window.results as (UnitRow & { effective: string; shape_order: number | null })[])
+    .map(row => ({ ...compact(row), state: row.effective, shape_order: row.shape_order }));
+  // Positions run through the `units` rows and then the untouched corpus glyphs. A glyph its record
+  // keeps out still takes its position, so `next_offset` can run ahead of the items, and once the
+  // glyphs run out `total` is what was there to deal.
+  let total = listed, next = offset + items.length;
+  const unnamed = dealt ? corpus.get(reading) || 0 : 0;
+  if (dealt && unnamed) {
+    total += unnamed;
+    if (items.length < limit) {
+      const round = await corpusRound(env, reading, production, seed, Math.max(offset - listed, 0), limit - items.length);
+      items.push(...round.items); next += round.read;
+      if (round.exhausted) total = next;
+    }
+  }
+  return { total, next_offset: next, available: Object.values(counts).reduce((a:number,b:any) => a+b,0),
     counts, purpose, production, review_limit:96, review_epoch: await meta(env, 'review_epoch') || 0, query: q.get('q'),
     categories: [...categories.values()].sort((a,b) => b.total-a.total || a.label.localeCompare(b.label)),
-    items: (window.results as (UnitRow & { effective: string; shape_order: number | null })[])
-      .map(row => ({ ...compact(row), state: row.effective, shape_order: row.shape_order })) };
+    items };
+}
+// Untouched assigned corpus glyphs per character in this material.
+export function corpusCountQuery(production: string) {
+  const [materials, values] = material(production, 'production');
+  return { sql: `SELECT character AS label,sum(n-named) AS n FROM corpus_characters WHERE ${materials} GROUP BY character`, values };
+}
+// The round character's named corpus glyphs that are due, from its most recently named pending rows.
+export function namedRoundQuery(materials: string, state: string) {
+  return `SELECT * FROM (SELECT * FROM units WHERE origin='corpus' AND character=? AND state='pending' ORDER BY rowid DESC LIMIT ${NAMED_WINDOW}) AS units
+    WHERE quiz=1 AND ${materials} AND ${state}='pending'`;
+}
+// One character's untouched corpus glyphs of one material, or of every material, in shuffle order
+// from a point the seed picks.
+export function corpusRoundQuery(production: string | null, side: '>=' | '<') {
+  return `SELECT * FROM corpus_units WHERE character=?${production ? ' AND production=?' : ''} AND named=0 AND shuffle${side}?
+    ORDER BY shuffle LIMIT ?`;
+}
+// The glyphs wrap round from the seeded point, so each seed deals a different but stable order that
+// the index serves as it stands. Several materials are read one index range each and merged.
+async function corpusRound(env: Env, character: string, production: string, seed: number, offset: number, limit: number) {
+  // `shuffle` is the first 28 bits of the id's SHA-256.
+  const start = seed % 268435456, wanted = offset + limit;
+  const kinds = production === 'all' ? [null] : production === 'non-movable-type' ? NON_MOVABLE : [production];
+  const page = async (side: '>=' | '<', n: number) => {
+    const results = await env.DB.batch(kinds.map(kind => env.DB.prepare(corpusRoundQuery(kind, side))
+      .bind(character, ...(kind ? [kind] : []), start, n)));
+    return results.flatMap(r => r.results as CorpusRow[]).sort((a, b) => a.shuffle - b.shuffle || (a.id < b.id ? -1 : 1)).slice(0, n);
+  };
+  const rows = await page('>=', wanted);
+  if (rows.length < wanted) rows.push(...await page('<', wanted - rows.length));
+  const read = rows.slice(offset), items: Json[] = [];
+  // Bound simultaneous R2 streams, as for a corpus search page.
+  for (const batch of chunks(read, 8)) {
+    for (const data of await Promise.all(batch.map(row => corpusData(env, row)))) {
+      // The record decides: a glyph whose image this site may not serve, or whose record disagrees
+      // with its published row about the character or the material, is not dealt.
+      if (dealable('corpus', data) && data.label === character && inMaterial(production, productionOf(data)))
+        items.push({ ...listing(data), origin: 'corpus', state: 'pending', shape_order: null });
+    }
+  }
+  return { items, read: read.length, exhausted: rows.length < wanted };
+}
+function chunks<T>(list: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
+  return out;
 }
 async function known(env: Env, value: string) {
   const key = cp(literal(value));
@@ -302,20 +420,22 @@ async function submit(env: Env, request: Request, target?: string) {
   if(round)text(input.label,32,'label',true);
   const {answers,seen,skipped}=validRound(input,target);
   const changes=[];
+  // Corpus glyphs this submission names for the first time; each gets its `units` row first.
+  const fresh:(UnitRow&{fresh:CorpusRow})[]=[];
   const at=new Date().toISOString();
   for(const answer of answers){
     text(answer.id,512,'character id',true);
-    const row=await unit(env,answer.id), stored=parse(row.data);
+    const row=await unit(env,answer.id), stored=parse(row.data), glyph=row.origin==='corpus';
     const current:Json={...stored,category:row.category||categoryOf(stored.label)};
     row.data=JSON.stringify(current);
-    validateAnswer(answer,current,round,corpus);
+    validateAnswer(answer,current,round,glyph);
     if(answer.reading&&!single(answer.reading)){
       const identity=answer.character||current.written_character||current.label;
       const registered=await known(env,identity).catch(()=>null);
       if(!registered?.data.ligature?.reading||hira(registered.data.ligature.reading)!==hira(answer.reading))
         throw new Problem(422,'Use the registered ligature reading or one character.');
     }
-    if(corpus&&(!current.proxyable||(current.identity_status==='unassigned'&&answer.verdict==='match')))
+    if(glyph&&(!current.proxyable||(current.identity_status==='unassigned'&&answer.verdict==='match')))
       throw new Problem(422,'Choose a written character or report an issue.');
     if(round&&(!row.quiz||current.label!==input.label))throw new Problem(409,'This round changed. Reload it.');
     const written=answer.character?literal(answer.character):null;
@@ -338,36 +458,46 @@ async function submit(env: Env, request: Request, target?: string) {
       old:current.state==='checked'?'reviewed':current.state==='flagged'?'disputed':'machine',
       new:resolved?'reviewed':'disputed',role:'reviewer',actor,evidence:JSON.stringify(evidence),at};
     changes.push({row,next,event,snapshot});
+    if(row.fresh)fresh.push(row as UnitRow&{fresh:CorpusRow});
   }
   // A crop that left the queue, changed its pixels or moved to another character since the round
   // was dealt was not seen as it stands, so it is skipped rather than failing the round.
   const shown:Json[]=[];
   const passed:Json[]=[];
-  for(const [crop,list] of [...seen.map(crop=>[crop,shown]),...skipped.map(crop=>[crop,passed])] as [Json,Json[]][]){
-    const row=await env.DB.prepare("SELECT * FROM units WHERE id=? AND origin='local'").bind(crop.id).first<UnitRow>();
-    if(!row||!row.quiz)continue;
-    const data=parse(row.data);
-    // `image_sha256` names the page here, so a crop re-cut on the same page would still match it;
-    // the crop's own image is what the reader saw. A client that does not send it is held to the rest.
-    if(data.image_sha256===crop.image_sha256&&data.label===input.label&&(crop.image===undefined||crop.image===data.image))list.push(crop);
+  const named=[...seen.map(crop=>[crop,shown]),...skipped.map(crop=>[crop,passed])] as [Json,Json[]][];
+  for(const batch of chunks(named,8)){
+    const rows=await Promise.all(batch.map(([crop])=>unit(env,crop.id).catch(error=>{if(error instanceof Problem&&error.status===404)return null;throw error})));
+    batch.forEach(([crop,list],i)=>{
+      const row=rows[i];
+      if(!row||!row.quiz)return;
+      const data=parse(row.data);
+      // `image_sha256` names the page here, so a crop re-cut on the same page would still match it;
+      // the crop's own image is what the reader saw. A client that does not send it is held to the rest.
+      // A corpus glyph's source revision covers its box and image reference.
+      const same=row.origin==='corpus'?data.source_revision===crop.source_revision:data.image_sha256===crop.image_sha256;
+      if(same&&data.label===input.label&&(crop.image===undefined||crop.image===data.image)){
+        list.push(crop);
+        if(row.fresh)fresh.push(row as UnitRow&{fresh:CorpusRow});
+      }
+    });
   }
   const result=corpus?{...(changes[0].next),origin:'corpus',event:changes[0].event}
     :{id,results:[...changes.map(c=>({id:c.event.id,target_id:c.row.id,field:'review',revision:c.next.revision,review:c.event})),
       ...shown.map(crop=>({target_id:crop.id,field:'seen'})),...passed.map(crop=>({target_id:crop.id,field:'skip'}))]};
   const statements=[env.DB.prepare('INSERT INTO submissions(id,actor,request,response,at) VALUES (?,?,?,?,?)').bind(key,actor,signature,JSON.stringify(result),at)];
+  for(const row of fresh)statements.push(materialise(env,row));
   for(const c of changes){
-    if(corpus){const d=parse(c.row.data);statements.push(env.DB.prepare('INSERT OR IGNORE INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
-      .bind(c.row.id,'corpus',d.written_character||null,d.reading||null,d.grapheme||null,d.visual_group?.id||null,d.production||'unknown','other',d.state,d.revision,0,1,0,c.row.data,c.row.snapshot,c.row.context,c.row.visual))}
     statements.push(env.DB.prepare(`INSERT INTO events(id,submission,target,actor,expected_revision,before_data,after_data,event,snapshot,kind,at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-      .bind(c.event.id,key,c.row.id,actor,c.row.revision,c.row.data,JSON.stringify(c.next),JSON.stringify(c.event),corpus?c.row.snapshot:JSON.stringify(c.snapshot),'review',at));
+      .bind(c.event.id,key,c.row.id,actor,c.row.revision,c.row.data,JSON.stringify(c.next),JSON.stringify(c.event),c.row.origin==='corpus'?c.row.snapshot:JSON.stringify(c.snapshot),'review',at));
   }
-  // The box is copied from the row itself, so the queue compares it with the same JSON text.
+  // The box is copied from the row itself, so the queue compares it with the same JSON text. A corpus
+  // glyph is recorded with its source revision in place of the page hash.
   for(const crop of shown)statements.push(env.DB.prepare(
     "INSERT INTO seen(target,submission,box,image_sha256,at) SELECT id,?,json_extract(data,'$.box'),?,? FROM units WHERE id=?")
-    .bind(key,crop.image_sha256,at,crop.id));
+    .bind(key,pixels(crop),at,crop.id));
   for(const crop of passed)statements.push(env.DB.prepare(
     "INSERT INTO skips(target,submission,actor,box,image_sha256,at) SELECT id,?,?,json_extract(data,'$.box'),?,? FROM units WHERE id=?")
-    .bind(key,actor,crop.image_sha256,at,crop.id));
+    .bind(key,actor,pixels(crop),at,crop.id));
   try{await env.DB.batch(statements)}catch(error){
     const repeat=await env.DB.prepare('SELECT request,response FROM submissions WHERE id=?').bind(key).first<{request:string;response:string}>();
     if(repeat?.request===signature)return parse(repeat.response);
@@ -390,8 +520,8 @@ async function undo(env:Env,request:Request,id:string){
     const event={...parse(r.event),id:'cf:'+crypto.randomUUID(),old:parse(r.event).new,new:parse(r.event).old,evidence:'undo of '+r.id,at};
     statements.push(env.DB.prepare('INSERT INTO events(id,submission,target,actor,expected_revision,before_data,after_data,event,snapshot,kind,at) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
       .bind(event.id,key,r.target,actor,current.revision,current.data,JSON.stringify(restored),JSON.stringify(event),r.snapshot,'undo',at));
-    // Restore queue eligibility from the published record when undoing an issue.
-    statements.push(env.DB.prepare('UPDATE units SET quiz=? WHERE id=?').bind(current.origin==='corpus'||parse(r.before_data).repair?.quiz===false?0:1,r.target));
+    // Restore queue eligibility from the record the undo restores.
+    statements.push(env.DB.prepare('UPDATE units SET quiz=? WHERE id=?').bind(dealable(current.origin,parse(r.before_data))?1:0,r.target));
     results.push({id:event.id,target_id:r.target,revision:restored.revision,review:event});
   }
   statements.push(env.DB.prepare('UPDATE submissions SET undone=1 WHERE id=?').bind(key));

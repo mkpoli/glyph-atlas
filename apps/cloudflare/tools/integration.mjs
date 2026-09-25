@@ -1,6 +1,7 @@
 // Exercise the production Worker in workerd with real D1 transactions and R2 records.
 import assert from 'node:assert/strict'
 import { readFile, readdir } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare'
 
 const mf = new Miniflare(convertV4MiniflareOptions({workers:[{
@@ -11,13 +12,36 @@ const mf = new Miniflare(convertV4MiniflareOptions({workers:[{
 }]}))
 try {
   const db = await mf.getD1Database('DB')
-  // Every migration, in order, the way a new deployment applies them.
+  // Every migration, in order, the way a new deployment applies them. Rows published and reviewed
+  // before 0006 are written first, to show what it makes of them.
   const migrations = (await readdir(new URL('../migrations/', import.meta.url))).filter(name => name.endsWith('.sql')).sort()
-  for (const name of migrations) {
+  const apply = async name => {
     const schema = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8')
-    const statements = schema.match(/CREATE TRIGGER[\s\S]*?\nEND;|(?:CREATE (?:TABLE|(?:UNIQUE )?INDEX)|DROP TRIGGER|UPDATE) [\s\S]*?;/g)
+    const statements = schema.match(/CREATE TRIGGER[\s\S]*?\nEND;|(?:CREATE (?:TABLE|(?:UNIQUE )?INDEX)|DROP TRIGGER|UPDATE|ALTER TABLE|DELETE FROM|INSERT INTO) [\s\S]*?;/g)
     await db.batch(statements.map(sql => db.prepare(sql)))
   }
+  for (const name of migrations.filter(name => name < '0006')) await apply(name)
+  const legacyBucket = await mf.getR2Bucket('MEDIA')
+  let legacyPack = ''
+  for (const [id, shuffle] of [['codh-omt:1', 77], ['codh-omtz:1', 78], ['codh:legacy', 79]]) {
+    const bytes = JSON.stringify({ id, origin: 'corpus', label: 'ト', written_character: 'ト', proxyable: true, state: 'pending', revision: 0 })
+    await db.prepare('INSERT INTO corpus_units VALUES(?,?,?,?,?,?,?,?)').bind(id, 'ト', null, null, shuffle, 'legacy',
+      new TextEncoder().encode(legacyPack).length, new TextEncoder().encode(bytes).length).run()
+    legacyPack += bytes
+  }
+  await legacyBucket.put('legacy', legacyPack)
+  const reviewed = { id: 'codh:legacy', origin: 'corpus', label: 'ト', written_character: 'ト', proxyable: true, state: 'checked', revision: 1 }
+  await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind('codh:legacy', 'corpus', 'ト', null, null, null,
+    'unknown', 'other', 'checked', 1, 0, 1, 0, JSON.stringify(reviewed), JSON.stringify(reviewed), '{}', '{}').run()
+  for (const name of migrations.filter(name => name >= '0006')) await apply(name)
+  assert.deepEqual((await db.prepare("SELECT id,production,named FROM corpus_units WHERE character='ト' ORDER BY id").all()).results, [
+    { id: 'codh-omt:1', production: 'movable-type', named: 0 },
+    { id: 'codh-omtz:1', production: 'unknown', named: 0 },
+    { id: 'codh:legacy', production: 'unknown', named: 1 }], 'the old movable-type set is marked, and a reviewed glyph is named')
+  assert.deepEqual((await db.prepare("SELECT * FROM corpus_characters WHERE character='ト'").all()).results, [
+    { character: 'ト', production: 'movable-type', n: 1, named: 0 }, { character: 'ト', production: 'unknown', n: 2, named: 1 }])
+  assert.deepEqual(await db.prepare("SELECT quiz,category,shuffle FROM units WHERE id='codh:legacy'").first(),
+    { quiz: 1, category: 'kana', shuffle: 79 }, 'a reviewed corpus row gets the quiz, category and shuffle the Worker gives one')
   const hash = 'a'.repeat(64), sourceRevision = 'b'.repeat(64)
   for (const id of ['one', 'two']) {
     const d = { id, label: 'ア', reading: 'ア', state: 'pending', revision: 0, image_sha256: hash,
@@ -36,7 +60,7 @@ try {
   const raw = JSON.stringify(corpus)
   const bucket = await mf.getR2Bucket('MEDIA')
   await bucket.put('fixture', raw)
-  await db.prepare('INSERT INTO corpus_units VALUES(?,?,?,?,?,?,?,?)').bind(corpus.id, null, 'U+4EEE', 'group-one', 1, 'fixture', 0, new TextEncoder().encode(raw).length).run()
+  await db.prepare('INSERT INTO corpus_units VALUES(?,?,?,?,?,?,?,?,?,?)').bind(corpus.id, null, 'U+4EEE', 'group-one', 1, 'fixture', 0, new TextEncoder().encode(raw).length, 'unknown', 0).run()
   // Miniflare hands the Worker its own loopback address, so the page origin a browser would send is
   // that address; a fixed `http://localhost` fails the Worker's same-origin check on every POST.
   const base = new URL(await mf.ready).origin
@@ -180,7 +204,148 @@ try {
   assert.ok(!(await dealtTo('carol')).includes('skip-b'), 'a hard crop leaves the rounds')
   await call(`/atlas/rounds/${second.id}/undo`, { client_id: 'bob' })
   assert.deepEqual((await call('/atlas?state=hard&reading=ソ')).items, [], 'an undo takes a skip back')
-  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order.')
+  // Corpus glyphs in Quick review: a character's local crops first, then its assigned, proxyable
+  // corpus glyphs, until a round names them and they become `units` rows like any other crop.
+  const worker = await import('/tmp/atlas-worker-test.mjs')
+  const glyph = (id, fields = {}) => ({ id, origin: 'corpus', label: 'ナ', char: 'ナ', written_character: 'ナ',
+    identity_status: 'assigned', source_label: 'ナ', reading: 'ナ', grapheme: 'U+30CA', state: 'pending', revision: 0,
+    proxyable: true, production: 'woodblock', image: `/atlas/media/${id}.webp`, box: { x: 1, y: 2, w: 3, h: 4 },
+    source: { corpus: 'codh-full', title: 'A woodblock book' }, source_revision: createHash('sha256').update(id).digest('hex'), ...fields })
+  // shuffle 50,10,40,20,30: from seed 0 the order is na-2, na-4, na-5, na-3, na-1.
+  const glyphs = [['na-1', 50], ['na-2', 10], ['na-3', 40], ['na-4', 20], ['na-5', 30]].map(([id, shuffle]) => [glyph(id), shuffle, 'ナ'])
+  glyphs.push([glyph('na-movable', { production: 'movable-type' }), 15, 'ナ'],
+    [glyph('na-unassigned', { written_character: null, identity_status: 'unassigned' }), 5, null],
+    [glyph('nu-private', { label: 'ヌ', char: 'ヌ', written_character: 'ヌ', proxyable: false }), 5, 'ヌ'],
+    [glyph('nu-shown', { label: 'ヌ', char: 'ヌ', written_character: 'ヌ' }), 6, 'ヌ'])
+  let packed = ''
+  for (const [record, shuffle, character] of glyphs) {
+    const bytes = JSON.stringify(record), offset = new TextEncoder().encode(packed).length
+    packed += bytes
+    await db.prepare('INSERT INTO corpus_units VALUES(?,?,?,?,?,?,?,?,?,?)').bind(record.id, character, 'U+30CA', null, shuffle,
+      'pack-na', offset, new TextEncoder().encode(bytes).length, record.production, 0).run()
+  }
+  await bucket.put('pack-na', packed)
+  // The publication scripts restore `named` and regenerate the counts with the migration's own statements.
+  const migration = await readFile(new URL('../migrations/0006_corpus_rounds.sql', import.meta.url), 'utf8')
+  const refresh = migration.match(/UPDATE corpus_units SET named=1 WHERE id IN [\s\S]*?;|DELETE FROM corpus_characters;|INSERT INTO corpus_characters [\s\S]*?;/g)
+  assert.equal(refresh.length, 3)
+  await db.batch(refresh.map(sql => db.prepare(sql)))
+  for (const id of ['na-local-a', 'na-local-b']) {
+    const d = { id, label: 'ナ', reading: 'ナ', state: 'pending', revision: 0, image_sha256: hash,
+      production: 'manuscript', box: { x: 1, y: 2, w: 3, h: 4 }, repair: { quiz: true } }
+    await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
+      id, 'local', 'ナ', 'ナ', 'U+30CA', null, 'manuscript', 'kana', 'pending', 0, 1, 1, 1,
+      JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}').run()
+  }
+  const roundOf = async (params = '') => call(`/atlas?purpose=review&reading=ナ&state=pending${params.includes('limit=') ? '' : '&limit=96'}${params}`)
+  const ids = async params => (await roundOf(params)).items.map(i => i.id)
+  const dealtNa = await ids('&seed=0')
+  assert.deepEqual(dealtNa.slice(0, 2).sort(), ['na-local-a', 'na-local-b'], 'local crops come first')
+  assert.deepEqual(dealtNa.slice(2), ['na-2', 'na-4', 'na-5', 'na-3', 'na-1'], 'then corpus glyphs in shuffle order')
+  assert.deepEqual((await ids('&seed=25')).slice(2), ['na-5', 'na-3', 'na-1', 'na-2', 'na-4'], 'the seed picks where the shuffle starts')
+  const paged = []
+  for (let offset = 0; offset < 7; offset += 3) paged.push(...await ids(`&seed=0&limit=3&offset=${offset}`))
+  assert.deepEqual(paged, dealtNa, 'paging runs on from the local crops into the corpus glyphs')
+  assert.equal((await roundOf('&seed=0')).total, 7)
+  await call('/atlas?purpose=review&reading=ナ&offset=5000', undefined, 404)
+  assert.ok(!dealtNa.includes('na-movable') && !dealtNa.includes('na-unassigned'), 'movable type and unassigned glyphs are not dealt')
+  assert.ok((await ids('&seed=0&production=all')).includes('na-movable'), 'every material includes movable type')
+  assert.deepEqual((await ids('&seed=0&production=woodblock')), ['na-2', 'na-4', 'na-5', 'na-3', 'na-1'], 'one material deals only its glyphs')
+  assert.deepEqual((await call('/atlas?purpose=review&reading=ヌ&state=pending')).items.map(i => i.id), ['nu-shown'], 'a glyph this site may not serve is not dealt')
+  // A glyph passed over still takes its position: the next offset runs ahead of the items, and once
+  // the glyphs run out the total is what there was to deal.
+  const passedOver = await call('/atlas?purpose=review&reading=ヌ&state=pending&limit=1')
+  assert.deepEqual([passedOver.items.length, passedOver.next_offset, passedOver.total], [0, 1, 2])
+  const rest = await call('/atlas?purpose=review&reading=ヌ&state=pending&limit=2&offset=1')
+  assert.deepEqual([rest.items.map(i => i.id), rest.next_offset, rest.total], [['nu-shown'], 2, 2])
+  const first = (await roundOf('&seed=0')).items.find(i => i.id === 'na-2')
+  assert.equal(first.origin, 'corpus')
+  assert.equal(first.source.title, 'A woodblock book', 'a corpus tile can name its source')
+  const category = async (reviewer = '') => (await call(`/atlas?purpose=review&limit=1${reviewer}`)).categories.find(c => c.label === 'ナ')
+  assert.deepEqual(await category(), { label: 'ナ', total: 7, pending: 7, seen: 0, checked: 0, flagged: 0, hard: 0, skipped: 0 }, 'counts include corpus glyphs')
+  assert.equal((await call('/atlas?purpose=review&limit=1&production=all')).categories.find(c => c.label === 'ナ').pending, 8)
+  const na = Object.fromEntries((await roundOf('&seed=0')).items.map(i => [i.id, i]))
+  const cropRound = { id: crypto.randomUUID(), client_id: 'alice', label: 'ナ',
+    answers: [{ id: 'na-2', revision: 0, source_revision: na['na-2'].source_revision, verdict: 'wrong', issue: 'crop' }],
+    seen: [{ id: 'na-4', source_revision: na['na-4'].source_revision, image: na['na-4'].image }],
+    skipped: [{ id: 'na-5', source_revision: na['na-5'].source_revision, image: na['na-5'].image }] }
+  const cropSaved = await call('/atlas/rounds', cropRound)
+  assert.deepEqual(cropSaved.results.map(r => r.field), ['review', 'seen', 'skip'])
+  assert.deepEqual(await call('/atlas/rounds', cropRound), cropSaved, 'a retried corpus round is the same round')
+  const aliceIds = await ids('&seed=0&reviewer=alice')
+  assert.deepEqual(aliceIds.slice(2), ['na-3', 'na-1'], 'flagged, seen and skipped glyphs leave the next round')
+  assert.equal((await ids('&seed=0&reviewer=bob'))[0], 'na-5', 'another reviewer is dealt a skipped corpus glyph first')
+  // Counts cover local crops and untouched glyphs; named corpus glyphs are no longer counted anywhere.
+  assert.deepEqual(await category('&reviewer=alice'), { label: 'ナ', total: 4, pending: 4, seen: 0, checked: 0, flagged: 0, hard: 0, skipped: 0 })
+  assert.deepEqual((await db.prepare("SELECT id FROM corpus_units WHERE character='ナ' AND named=1 ORDER BY id").all()).results.map(r => r.id),
+    ['na-2', 'na-4', 'na-5'], 'naming a glyph marks its published row')
+  assert.deepEqual(await db.prepare("SELECT n,named FROM corpus_characters WHERE character='ナ' AND production='woodblock'").first(), { n: 5, named: 3 })
+  assert.equal((await call('/atlas/rounds', cropRound)).id, cropSaved.id)
+  assert.equal((await db.prepare("SELECT named FROM corpus_characters WHERE character='ナ' AND production='woodblock'").first()).named, 3, 'a retried round names nothing twice')
+  const materialised = await db.prepare("SELECT id,origin,quiz,state,shuffle FROM units WHERE id LIKE 'na-%' AND origin='corpus' ORDER BY id").all()
+  assert.deepEqual(materialised.results, [
+    { id: 'na-2', origin: 'corpus', quiz: 1, state: 'flagged', shuffle: 10 },
+    { id: 'na-4', origin: 'corpus', quiz: 1, state: 'pending', shuffle: 20 },
+    { id: 'na-5', origin: 'corpus', quiz: 1, state: 'pending', shuffle: 30 }], 'a round writes the units rows it names')
+  assert.equal((await call('/atlas/corpus/character?id=na-2')).state, 'flagged')
+  await call(`/atlas/rounds/${cropRound.id}/undo`, { client_id: 'alice' })
+  const undone = await ids('&seed=0&reviewer=alice')
+  assert.deepEqual(undone.slice(0, 2).sort(), ['na-local-a', 'na-local-b'], 'local crops still come first')
+  assert.deepEqual(undone.slice(2).sort(), ['na-1', 'na-2', 'na-3', 'na-4', 'na-5'], 'undo returns the glyphs to the round')
+  assert.equal((await roundOf('&seed=0&reviewer=alice')).total, 7, 'the round of their own character counts them again')
+  assert.equal((await db.prepare("SELECT quiz FROM units WHERE id='na-2'").first()).quiz, 1, 'undo keeps a dealable glyph in the quiz')
+  // A glyph the site may not serve cannot be named by a round, nor answered in one.
+  const refused = await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'alice', label: 'ヌ',
+    seen: [{ id: 'nu-private', source_revision: createHash('sha256').update('nu-private').digest('hex') }] })
+  assert.equal(refused.results.length, 0)
+  await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'alice', label: 'ナ', answers: [{ id: 'na-unassigned', revision: 0,
+    source_revision: createHash('sha256').update('na-unassigned').digest('hex'), verdict: 'wrong', issue: 'crop' }] }, 409)
+  // Every new query shape reads corpus_units through an index, in index order. Each check is shown to
+  // fail once its index is gone.
+  const plan = async ({ sql, values }, bound) => (await db.prepare('EXPLAIN QUERY PLAN ' + sql).bind(...bound, ...values).all()).results.map(r => r.detail)
+  function served(details, index) {
+    assert.ok(!details.some(d => /^SCAN (c|corpus_units)\b/.test(d) && !/USING (COVERING )?INDEX/.test(d)), details.join('; '))
+    assert.ok(!details.some(d => d.includes('USE TEMP B-TREE FOR ORDER BY')), details.join('; '))
+    if (index) assert.ok(details.some(d => d.includes(`USING INDEX ${index} `) || d.includes(`USING COVERING INDEX ${index} `)), `${index}: ${details.join('; ')}`)
+  }
+  const shapes = []
+  for (const production of [null, 'woodblock'])
+    for (const side of ['>=', '<'])
+      shapes.push([{ sql: worker.corpusRoundQuery(production, side), values: [] }, ['ナ', ...(production ? [production] : []), 0, 96],
+        production ? 'corpus_material' : 'corpus_round'])
+  // corpus_characters is small and read whole, in its key's order.
+  for (const production of ['all', 'non-movable-type', 'woodblock']) shapes.push([worker.corpusCountQuery(production), [], null])
+  shapes.push([{ sql: worker.namedRoundQuery("production!='movable-type'", 'state'), values: [] }, ['ナ'], 'unit_character'])
+  // What a publication runs after it rewrites corpus_units, and what the trigger runs on each naming.
+  shapes.push([{ sql: refresh[0], values: [] }, [], 'sqlite_autoindex_corpus_units_1'])
+  shapes.push([{ sql: "UPDATE corpus_characters SET named=named+1 WHERE (character,production)=(SELECT character,production FROM corpus_units WHERE id=? AND named=0)", values: [] },
+    ['na-1'], 'sqlite_autoindex_corpus_units_1'])
+  for (const [shape, bound, index] of shapes) {
+    const details = await plan(shape, bound)
+    if (process.env.SHOW_PLANS) console.log(index, JSON.stringify(details))
+    served(details, index)
+  }
+  const keys = {
+    corpus_round: 'CREATE INDEX corpus_round ON corpus_units(character,named,shuffle)',
+    corpus_material: 'CREATE INDEX corpus_material ON corpus_units(character,production,named,shuffle)',
+    unit_character: 'CREATE INDEX unit_character ON units(origin,character,state)',
+  }
+  for (const [index, create] of Object.entries(keys)) {
+    await db.prepare(`DROP INDEX ${index}`).run()
+    for (const [shape, bound] of shapes.filter(s => s[2] === index))
+      await assert.rejects(async () => served(await plan(shape, bound), index), `the check on ${index} fails without it`)
+    await db.prepare(create).run()
+  }
+  // The migration names the label categories the Worker computes, code point by code point.
+  const ranges = kind => [...migration.split(`THEN '${kind}'`)[0].split('WHEN').at(-1).matchAll(/c BETWEEN (0x[0-9A-F]+) AND (0x[0-9A-F]+)|c=(0x[0-9A-F]+)/g)]
+    .map(m => m[3] ? [Number(m[3]), Number(m[3])] : [Number(m[1]), Number(m[2])])
+  const kana = ranges('kana'), han = ranges('kanji'), within = (list, c) => list.some(([a, b]) => a <= c && c <= b)
+  for (let c = 0; c <= 0x10FFFF; c++) {
+    if (c >= 0xD800 && c <= 0xDFFF) continue
+    const sql = within(kana, c) ? 'kana' : within(han, c) ? 'kanji' : 'other'
+    if (worker.categoryOf(String.fromCodePoint(c)) !== sql) assert.fail(`U+${c.toString(16)}: ${worker.categoryOf(String.fromCodePoint(c))} vs ${sql}`)
+  }
+  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds.')
 } finally {
   await mf.dispose()
 }
