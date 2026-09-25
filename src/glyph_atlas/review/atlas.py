@@ -787,7 +787,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         reading: str | None = None,
         q: str | None = None,
         group: Literal["all", "kana", "kanji"] = "all",
-        state: Literal["all", "pending", "seen", "checked", "flagged", "hard", "skipped"] = "all",
+        state: Literal["all", "pending", "seen", "checked", "flagged", "hard", "skipped", "attention"] = "all",
         reviewer: str | None = Query(default=None, max_length=128),
         purpose: Literal["browse", "review"] = "browse",
         production: Literal["all", "non-movable-type", "manuscript", "woodblock", "movable-type", "mixed", "unknown"] | None = None,
@@ -834,7 +834,9 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         searched = matches(records, q) if q else records
         selected = [(u, rev) for u, rev in searched if (reading is None or shown(u) == reading)
                     and (group == "all" or character_group(u) == group)
-                    and (state == "all" or states[u.id] == state)]
+                    and (state == "all" or states[u.id] == state
+                         # The Flagged view: every crop waiting for a person, flagged or hard to read.
+                         or (state == "attention" and states[u.id] in ("flagged", "hard")))]
         random.Random(seed).shuffle(selected)
         if purpose == "review" and seed % 5:
             # Keep one in five shuffles as a random audit. The other rounds show uncertain
@@ -843,7 +845,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         if purpose == "review":
             # A crop another reviewer skipped comes first: it needs a second pair of eyes.
             selected.sort(key=lambda row: not any(actor != reviewer for actor in skips.get(row[0].id, {})))
-        if state == "flagged":
+        if state in ("flagged", "attention"):
             # A flagged crop someone already looked at in the inspector queues behind the ones
             # nobody has reviewed yet, keeping the earlier order among ties.
             selected.sort(key=lambda row: row[0].id in reviewed)
