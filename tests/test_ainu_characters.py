@@ -109,7 +109,7 @@ def test_the_merged_dataset_keeps_confirms_replaces_and_imports(world, tmp_path)
     out = tmp_path / "merged"
     counts = ainu_characters.build(ainu_characters.plan(atlas, records), atlas, records, out)
     assert counts == {"atlas kept": 2, "atlas confirmed": 1, "atlas replaced": 2, "imported": 1, "units": 9,
-                      "active": 7, "replay repaired": 0}
+                      "active": 7}
     assert (out / "review.sqlite").exists(), "the store is rebuilt from the merged log"
     units = units_of(out)
     assert units[uid(1)].meta["alignment_repair"]["quiz"] is True
@@ -141,7 +141,7 @@ def test_a_unit_a_person_acted_on_keeps_its_reading_and_replay_agrees(world, tmp
     assert uid(1) in [u for u, _ in result.keep_atlas] and uid(1) not in [u for u, _ in result.replace]
     out = tmp_path / "merged"
     counts = ainu_characters.build(result, atlas, records, out)
-    assert counts["replay repaired"] == 0 and counts["merge events"] == 1
+    assert counts["merge events"] == 1
     kept = units_of(out)[uid(1)]
     assert (kept.unicode, kept.meta["ainu_records"]["id"]) == ("U+30C4", "1-l1-1")
 
@@ -151,8 +151,7 @@ def test_a_machine_event_is_no_decision_and_replay_keeps_the_merge(world, tmp_pa
     record(atlas, uid(1), "meta", {"alignment_repair": {"withheld": True, "quiz": False}}, role="model")
     result = ainu_characters.plan(atlas, records)
     assert [u for u, _ in result.confirm] == [uid(1)]
-    counts = ainu_characters.build(result, atlas, records, tmp_path / "merged")
-    assert counts["replay repaired"] == 0
+    ainu_characters.build(result, atlas, records, tmp_path / "merged")
     assert units_of(tmp_path / "merged")[uid(1)].meta["alignment_repair"]["quiz"] is True
 
 
@@ -247,3 +246,25 @@ def test_parts_are_numbered_as_ainu_records_numbers_them(tmp_path):
         "sources:\n  - slug: s\n    witnesses:\n      - slug: w\n        parts:\n"
         "          - wikisource: {index: a.pdf}\n          - entry: e2\n", encoding="utf-8")
     assert ainu_characters.entries(tmp_path) == {"s/w-2": "e2"}
+
+
+def test_a_store_loaded_from_other_tables_is_refused(world):
+    atlas, _ = world
+    record(atlas, uid(1), "unicode", "U+30C4")
+    units = tables.read(atlas / "units.parquet", Unit)
+    tables.write(atlas / "units.parquet", units[:-1], Unit)  # an alignment rewrites the tables
+    with pytest.raises(RuntimeError, match="other tables"):
+        ainu_characters.read_log(atlas)
+
+
+def test_merge_events_never_reuse_an_event_number(world, tmp_path):
+    atlas, records = world
+    record(atlas, uid(1), "meta", {"note": "x"}, role="model")
+    record(atlas, uid(2), "meta", {"note": "y"}, role="model")
+    log = ainu_characters.read_log(atlas)
+    log.events = log.events[1:]  # as a reset leaves it: the first number was handed out and erased
+    out = tmp_path / "merged"
+    ainu_characters.build(ainu_characters.plan(atlas, records, log=log), atlas, records, out, log=log)
+    ids = [json.loads(line)["id"] for line in (out / "reviews.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert len(ids) == len(set(ids)) and "rv00000001" not in ids[1:]
+    assert Store(out)  # the rebuilt store opens over the merged tables without a stale-table refusal

@@ -48,7 +48,7 @@ import yaml
 from . import refs, tables
 from .repair import REVIEWS_NAME, STORE_NAME, decode_event
 from .review.store import SEEN
-from .schema import Box, Line, ReviewState, Script, Unit
+from .schema import Box, ReviewState, Script, Unit
 
 MIN_IOU = 0.5
 #: The review states a person gave and stands behind. A flag (`disputed`) says the crop is wrong.
@@ -162,28 +162,33 @@ class ReviewLog:
     events: list[dict[str, Any]] = field(default_factory=list)
     decided: set[str] = field(default_factory=set)  # units a person acted on
     logged: set[str] = field(default_factory=set)  # units any event names
+    last_seq: int = 0  # the highest event number the store has handed out, erased ones included
 
 
 def read_log(atlas: Path) -> ReviewLog:
     """Every unit as the store beside `atlas` has it; the tables alone where there is no store."""
-    table = {u.id: u for u in tables.read(atlas / "units.parquet", Unit)}
+    from .review.reset import _stamp
+
     path = atlas / STORE_NAME
     if not path.exists():
-        return ReviewLog(units=table)
+        return ReviewLog(units={u.id: u for u in tables.Dataset(atlas).read("units")})
     connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     try:
         connection.row_factory = sqlite3.Row
+        meta = {row["key"]: row["value"] for row in connection.execute("SELECT key, value FROM meta")}
         events = [dict(row) for row in connection.execute("SELECT * FROM events ORDER BY seq")]
         units = {row["id"]: Unit.model_validate_json(row["data"]) for row in connection.execute("SELECT id, data FROM units")}
+        issued = connection.execute("SELECT seq FROM sqlite_sequence WHERE name = 'events'").fetchone()
     finally:
         connection.close()
-    missing = set(table) - set(units)
-    if missing:
-        raise RuntimeError(f"the review store beside {atlas} lacks {len(missing)} units of its tables; "
-                           "run `atlas review replay` on it first")
+    # A store loaded from other tables than those beside it holds units they no longer have.
+    if meta.get("source_stamp") != _stamp(atlas):
+        raise RuntimeError(f"the review store beside {atlas} was loaded from other tables; open it once "
+                           "(`atlas review replay`) so that it reloads them")
     named = [e for e in events if e["target_type"] == "unit" and e["field"] != SEEN]
+    last_seq = max([issued[0] if issued else 0, int(meta.get("reset_seq") or 0), *(e["seq"] for e in events)])
     return ReviewLog(units=units, events=events, decided={e["target_id"] for e in named if e["role"] != "model"},
-                     logged={e["target_id"] for e in named})
+                     logged={e["target_id"] for e in named}, last_seq=last_seq)
 
 
 @dataclass
@@ -333,7 +338,7 @@ def build(result: Plan, atlas: Path, records: Path, out: Path, *, log: ReviewLog
     log = log if log is not None else read_log(atlas)
     out.mkdir(parents=True, exist_ok=False)
     copy_dataset(atlas, out)
-    lines = {line.id for line in tables.read(atlas / "lines.parquet", Line)}
+    lines = {line.id for line in tables.Dataset(atlas).read("lines")}
     by_key = entries(records)
     units = dict(log.units)
     counts: Counter = Counter()
@@ -375,9 +380,11 @@ def build(result: Plan, atlas: Path, records: Path, out: Path, *, log: ReviewLog
     tables.write(out / "units.parquet", merged, Unit, command="atlas ainu merge")
     at = datetime.now(UTC).isoformat()
     rows = [decode_event(row) for row in log.events]
+    seq = log.last_seq
     for uid in sorted(log.logged):
         if uid in units and units[uid].meta != log.units[uid].meta:
-            rows.append({"id": f"rv{len(rows) + 1:08d}", "target_type": "unit", "target_id": uid, "field": "meta",
+            seq += 1
+            rows.append({"id": f"rv{seq:08d}", "target_type": "unit", "target_id": uid, "field": "meta",
                          "old": log.units[uid].meta, "new": units[uid].meta, "role": "model", "actor": "ainu-records-merge",
                          "evidence": json.dumps({"source": UPSTREAM}), "at": at})
             counts["merge events"] += 1
@@ -386,5 +393,9 @@ def build(result: Plan, atlas: Path, records: Path, out: Path, *, log: ReviewLog
             handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
     counts["units"] = len(merged)
     counts["active"] = sum(1 for u in merged if u.active)
-    counts["replay repaired"] = review_store.replay(out)["repaired"]
+    repaired = review_store.replay(out)["repaired"]
+    if repaired:
+        raise RuntimeError(f"replaying the merged log changed {repaired} units of the merged tables")
+    # The log already holds every event; exporting marks it so, and writes the tables the store holds.
+    review_store.Store(out).export()
     return dict(counts)
