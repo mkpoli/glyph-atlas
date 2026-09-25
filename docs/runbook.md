@@ -11,9 +11,10 @@ uv sync --group dev --extra data     # pytest, ruff, odfpy
 python scripts/build_hentaigana_table.py     # data/vocab/hentaigana.tsv   (287 rows)
 python scripts/build_mj_table.py             # data/vocab/mj-hentaigana.tsv (299 rows, 286 with a code point)
 python scripts/build_kanji_equivalents.py    # data/vocab/kanji-equivalents.tsv (2,026 rows)
+python scripts/build_mj_kanji_table.py       # data/vocab/mj-kanji.tsv (58,862 rows, 58,859 with a code point)
 ```
 
-Both generated tables are committed and byte-identical on a rerun; the scripts are only needed when
+The generated tables are committed and byte-identical on a rerun; the scripts are only needed when
 the upstream release changes.
 
 **Running the tests behind a proxy.** The suite serves its own pages from `127.0.0.1`, and `httpx`
@@ -40,14 +41,27 @@ atlas import kokatsuji                  --out work/kokatsuji      # 36,869 units
 atlas import ndl-minhon                 --out work/ndl-minhon     # 641,632 lines, 2 min
 atlas import hilab                      --out work/hilab          # listing only, 25 s
 atlas import honkoku-data --clone cache/honkoku-data --out work/honkoku-data   # 7,584 documents, 16 min
+atlas import hng                        --out work/hng            # 49,786 crops, 63 documents, 19 s
+atlas import hng-kiridashi              --out work/hng-kiridashi  # 10,307 boxes on 26 Gallica pages, 2 s
 atlas coverage                          --out work/coverage.tsv
-for d in codh-full honkoku-lines kokatsuji ndl-minhon hilab honkoku-data; do
+for d in codh-full honkoku-lines kokatsuji ndl-minhon hilab honkoku-data hng hng-kiridashi; do
   atlas tables validate work/$d
 done
 ```
 
 `atlas import hilab --download` extracts the 325,261 crops instead of only listing them; it is needed
 before a release can materialise HI Lab crops.
+
+The two HNG importers read clones at the commits their source files pin, and refuse a clone at any
+other commit. `atlas import hng-kiridashi` also reads `cache/hng-basic-data` (or `--basic`) to link
+each box to its representative crop:
+
+```sh
+git clone https://github.com/chise/hng-basic-data cache/hng-basic-data
+git -C cache/hng-basic-data checkout e2174a30844b8100c34af1c0dbe1e301f186883e
+git clone https://github.com/chise/hng-kiridashi-data cache/hng-kiridashi-data
+git -C cache/hng-kiridashi-data checkout 346bc74071b9a8393b841b171bbdd6c8e82774a7
+```
 
 ## 3. Images
 
@@ -148,6 +162,7 @@ unit in a sample is never drawn again and is documented as unusable for tuning.
 | --- | --- | --- |
 | `import codh --all` | 61 min (44 downloads) | 7.5 GB of zips, then 5.1 GB of cached page images |
 | `import honkoku-lines` | 4 min, 2.6 GB peak RSS | 178 MB |
+| HNG basic dataset clone | minutes, network-bound | 3.1 GB checkout, 1.5 GB history |
 | `build_detector_data --materialise` | 7.5 min | 7.8 GB |
 | detector training, one epoch | 28–38 min | 241 MB a checkpoint |
 | classifier training, one epoch | ~11 min | 116 MB a checkpoint |
