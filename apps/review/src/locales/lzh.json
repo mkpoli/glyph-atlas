@@ -6,7 +6,8 @@
       "lzh"
     ]
   },
-  "app.home.aria": "Glyph Atlas首頁",
+  "app.name": "字形大圖譜",
+  "app.home.aria": "字形大圖譜首頁",
   "app.nav.aria": "導覽",
   "app.reviewOptions": "校之設",
   "app.saved": "已存",
