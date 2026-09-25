@@ -46,7 +46,10 @@ class VisualClassifier:
         if "CUDAExecutionProvider" in available:
             preload = getattr(ort, "preload_dlls", None)
             if preload is not None:
-                preload()
+                try:
+                    preload()
+                except (ImportError, OSError, RuntimeError):
+                    pass  # the CUDA provider then fails and the CPU provider serves
             providers = [("CUDAExecutionProvider", {"gpu_mem_limit": 512 * 1024 * 1024,
                                                    "arena_extend_strategy": "kSameAsRequested"}),
                          "CPUExecutionProvider"]

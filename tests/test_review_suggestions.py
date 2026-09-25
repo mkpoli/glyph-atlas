@@ -133,3 +133,20 @@ def test_a_kana_class_votes_for_that_kana_and_not_its_family():
     candidates, vote = classifier_results(["U+30AB", "U+304B", "U+3055", "other"], [.9, .04, .03, .03])
     assert vote["identity_scope"] == "character" and vote["text"] == "カ"
     assert [c["text"] for c in candidates][:2] == ["カ", "か"]
+
+
+def test_a_failing_encoder_costs_only_the_visual_form(tmp_path, monkeypatch):
+    from glyph_atlas import visual_families
+    from glyph_atlas.review import suggestions
+
+    (tmp_path / "classifier.json").write_text("{}")
+    monkeypatch.setattr(visual_families, "directory", lambda: tmp_path)
+    suggestions._visual_classifier.cache_clear()
+
+    class Broken:
+        def embed(self, image):
+            raise Exception("onnxruntime Fail")
+
+    monkeypatch.setattr(suggestions, "_visual_classifier", lambda *_: Broken())
+    vote = {"identity_scope": "family", "family": "U+4EEE", "members": ["仮", "假"]}
+    assert suggestions.visual_candidate(Image.new("RGB", (8, 8)), vote) is None

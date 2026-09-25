@@ -118,10 +118,15 @@ def classifier_results(classes, probabilities) -> tuple[list[dict], dict]:
     return candidates, vote
 
 
-@lru_cache(maxsize=2)
+@lru_cache(maxsize=1)
 def _visual_classifier(directory: str, stamp: int, size: int):
+    """The families' head and encoder, or None when they cannot be loaded; either is kept until
+    `classifier.json` changes, so a broken encoder is not reread on every request."""
     from ..visual_classifier import VisualClassifier
-    return VisualClassifier(Path(directory))
+    try:
+        return VisualClassifier(Path(directory))
+    except Exception:  # onnxruntime's errors derive from Exception alone
+        return None
 
 
 def visual_candidate(image: Image.Image, vote: dict) -> dict | None:
@@ -133,9 +138,12 @@ def visual_candidate(image: Image.Image, vote: dict) -> dict | None:
     try:
         stat = path.stat()
         head = _visual_classifier(str(path.parent), stat.st_mtime_ns, stat.st_size)
+        if head is None:
+            return None
         embedding = head.embed(image)
         prediction = head.predict(embedding, vote["family"])
-    except (OSError, ValueError, KeyError, RuntimeError):
+    # A visual form is an extra proposal; its failure never costs the crop its other suggestions.
+    except Exception:
         return None
     text = prediction.get("written_character")
     if not text or text not in vote["members"] or not prediction.get("within_support"):
