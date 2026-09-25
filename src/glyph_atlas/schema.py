@@ -23,7 +23,7 @@ from datetime import date, datetime
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
 from . import production
 
@@ -66,6 +66,22 @@ class Rights(BaseModel):
     attribution: str
     evidence: str | None = Field(default=None, description="URL of the page that states the licence")
     checked: date | None = None
+    holder_terms: Licence | None = Field(
+        default=None,
+        description="the holder's own statement, kept when `licence` records a reproduction of a "
+        "public-domain work instead (see Document)",
+    )
+
+
+#: Holder statements that restrict reuse of an image. On a faithful reproduction of a public-domain
+#: work they bind no one through copyright, since the reproduction has none of its own.
+RESTRICTING = frozenset({
+    Licence.CC_BY_NC_4, Licence.CC_BY_ND_4, Licence.CC_BY_NC_SA_4, Licence.CC_BY_NC_ND_4,
+    Licence.RS_NOC_CR, Licence.RESTRICTED, Licence.UNKNOWN,
+})
+
+#: A document dated after this year may be a work still in copyright, and keeps its holder's terms.
+PUBLIC_DOMAIN_UNTIL = 1900
 
 
 class Source(BaseModel):
@@ -105,6 +121,8 @@ class Dating(BaseModel):
 
 
 class Document(BaseModel):
+    model_config = ConfigDict(validate_assignment=True)
+
     id: str
     title: str
     source_refs: dict[str, str] = Field(default_factory=dict, description="upstream ids by source id")
@@ -118,6 +136,35 @@ class Document(BaseModel):
     image_rights: Rights | None = None
     text_rights: Rights | None = None
     meta: dict[str, Any] = Field(default_factory=dict, description="upstream fields with no column of their own")
+
+    @model_validator(mode="after")
+    def _public_domain_reproduction(self) -> Document:
+        """Record the page images of a public-domain work as public domain.
+
+        The dataset's books are pre-modern, and a faithful photograph of a flat original is no work
+        of its own (東京地判平成10年11月30日, 版画写真事件), so a holder's restriction on reusing
+        the photograph carries no copyright. Where the holder states one, `licence` becomes PD and
+        the statement moves to `holder_terms`. A document dated after `PUBLIC_DOMAIN_UNTIL` keeps
+        its holder's terms; an undated one is taken as pre-modern, which is the dataset's scope.
+        The rule runs again whenever a field is assigned, so rights set after construction follow it.
+        """
+        rights = self.image_rights
+        if rights is None:
+            return self
+        ends = [dating.end or dating.start for dating in self.dating if dating.end or dating.start]
+        if ends and max(ends) > PUBLIC_DOMAIN_UNTIL:
+            if rights.holder_terms is not None:
+                self.__dict__["image_rights"] = rights.model_copy(
+                    update={"licence": rights.holder_terms, "holder_terms": None}
+                )
+            return self
+        if rights.licence not in RESTRICTING:
+            return self
+        # Written to __dict__ so that the assignment does not run this validator again.
+        self.__dict__["image_rights"] = rights.model_copy(
+            update={"licence": Licence.PUBLIC_DOMAIN, "holder_terms": rights.licence}
+        )
+        return self
 
 
 class Page(BaseModel):

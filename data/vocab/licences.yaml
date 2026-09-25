@@ -8,6 +8,10 @@
 # `eligible` says whether material under the statement may go into the CC BY-SA 4.0 release;
 # `per-item` means the holder states the licence of each item on the item's own page, so the
 # statement alone grants nothing. `checked` is the date the statement was last read.
+# `eligible` and `obligations` describe the statement as it applies to a work in copyright. On the
+# page images of a public-domain work (dated up to 1900, or undated) a statement that is not
+# eligible binds no copyright: the record keeps it in `holder_terms` and its images are PD
+# (docs/licensing.md, Copyright in crops).
 
 - match:
     - CC0-1.0

@@ -33,7 +33,10 @@ def bmp(width=41, height=73, colour=(30, 60, 90)) -> bytes:
     return buffer.getvalue()
 
 
-def build_crop_corpus(root: Path, images_dir: Path, *, licence="CC-BY-4.0") -> Path:
+MODERN = [{"literal": "1950", "start": 1950, "end": 1950, "kind": "publication"}]
+
+
+def build_crop_corpus(root: Path, images_dir: Path, *, licence="CC-BY-4.0", dating=()) -> Path:
     """A corpus shaped like Kokatsuji: page image on disk, units with boxes."""
     out = root / "kokatsuji"
     out.mkdir(parents=True, exist_ok=True)
@@ -45,6 +48,7 @@ def build_crop_corpus(root: Path, images_dir: Path, *, licence="CC-BY-4.0") -> P
         title="Test source",
         holder="Test holder",
         shelfmark="001",
+        dating=list(dating),
         image_rights={"licence": licence, "holder": "Test holder", "attribution": "Test holder"},
     )
     page = Page(
@@ -355,7 +359,8 @@ class TestLicenceGate:
     def test_a_non_proxyable_crop_is_not_served_by_this_api(self, tmp_path):
         root = tmp_path / "work"
         root.mkdir()
-        build_crop_corpus(root, root / "kokatsuji" / "images", licence="CC-BY-NC-ND-4.0")
+        # A work dated after 1900 keeps its holder's terms, which this API then refuses to proxy.
+        build_crop_corpus(root, root / "kokatsuji" / "images", licence="CC-BY-NC-ND-4.0", dating=MODERN)
         directory = tmp_path / "index"
         build_chars(root, directory)
         api = CorpusAPI(root, directory, file_bases=[root])

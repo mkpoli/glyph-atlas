@@ -191,7 +191,10 @@ def test_evidence_agrees_disagrees_and_is_missing(tmp_path, http_server):
 
     # The document no source states anything about keeps what its importer wrote.
     missing = documents["hl:c"]
-    assert missing.image_rights == unresolved
+    # An undated document is pre-modern: the unresolved statement is kept beside a PD licence.
+    assert missing.image_rights == unresolved.model_copy(
+        update={"licence": Licence.PUBLIC_DOMAIN, "holder_terms": Licence.UNKNOWN}
+    )
     assert reconcile.EVIDENCE not in missing.meta
 
     # The manifest was fetched into the cache through the server, once, and nothing else was fetched.
@@ -242,7 +245,7 @@ def test_precedence_per_item_then_manifest_then_upstream_then_holder(tmp_path, m
 
     def chosen(ident: str) -> tuple[str, str]:
         found = documents[ident]
-        licence = found.image_rights.licence.value
+        licence = (found.image_rights.holder_terms or found.image_rights.licence).value
         row = next(row for row in found.meta[reconcile.EVIDENCE] if row["licence"] == licence)
         return row["source"], licence
 
@@ -262,6 +265,7 @@ def test_precedence_per_item_then_manifest_then_upstream_then_holder(tmp_path, m
     # A per-item holder whose manifest states no licence keeps the holder row, which is its terms
     # page; the upstream claim of a licence stands beside it and is reported as a disagreement.
     assert chosen("hl:per-item-blank") == ("holder", "restricted")
+    assert documents["hl:per-item-blank"].image_rights.licence is Licence.PUBLIC_DOMAIN
     assert chosen("hl:per-item-unread") == ("upstream", "CC-BY-SA-4.0")
     assert [(row["source"], row["licence"]) for row in documents["hl:per-item-unread"].meta[reconcile.EVIDENCE]] == [
         ("upstream", "CC-BY-SA-4.0"),
@@ -422,11 +426,11 @@ def test_report_counts_documents_pages_lines_and_units_by_licence(tmp_path):
     assert "`" + str(directory) + "`: 3 documents, 3 pages, 4 lines, 2 units." in text
     assert "| PDM-1.0 | 1 | 1 | 2 | 1 | yes |" in text
     assert "| CC-BY-SA-4.0 | 1 | 1 | 1 | 1 | yes |" in text
-    assert "| restricted | 1 | 1 | 1 | 0 | no |" in text
+    # The restricted holder's book is pre-modern, so its images are recorded and counted as PD.
+    assert "| PD | 1 | 1 | 1 | 0 | yes |" in text
     assert "| **Total** | 3 | 3 | 4 | 2 | |" in text
-    assert "| yes | 2 | 2 | 2 | 3 | 2 |" in text
-    assert "| no | 1 | 1 | 1 | 1 | 0 |" in text
-    assert "| 未登録館 | restricted | 1 |" in text
+    assert "| yes | 3 | 3 | 3 | 4 | 2 |" in text
+    assert "| no | 0 | 0 | 0 | 0 | 0 |" in text
     assert "No document carries a statement that disagrees" in text
 
 

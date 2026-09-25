@@ -16,8 +16,8 @@ because a scan of a public-domain page may carry no copyright of its own.
 | CC BY-SA 2.1 JP (MJ table, NINJAL images) | included as an adaptation: article 5 of that licence allows derivative works under a newer version or another jurisdiction's licence with the same elements; notices and modifications recorded |
 | 공공누리 제1유형(출처표시), KOGL Type 1 (국립한글박물관) | included with the source named; the record keeps the KOGL notice, and the image itself is never described as CC BY-SA |
 | Bespoke free-reuse terms (京都大学 RMDA, 国立公文書館, 木簡庫) | included when the terms allow copying, modification and redistribution; the terms URI and the obligations are stored on the record, and the image itself is never described as CC BY-SA |
-| NC, ND, research-only, permission-required | never in a release build; the record may exist with coordinates and no crop, provided the text and metadata it carries are themselves clear |
-| Unstated | treated as permission-required until the holder answers |
+| NC, ND, research-only, permission-required or unstated, on a work dated up to 1900 or undated | included as public domain (see below); the holder's statement is kept in `holder_terms` |
+| NC, ND, research-only, permission-required or unstated, on a work dated after 1900 | never in a release build; the record may exist with coordinates and no crop, provided the text and metadata it carries are themselves clear |
 
 ## Image holders seen in the upstreams
 
@@ -60,11 +60,23 @@ holder present in the release, with the attribution string the holder asks for. 
 
 ## Copyright in crops
 
-A faithful scan of a public-domain page and a rectangle cut from it by coordinates add no creative
-expression under Article 2 of the Japanese Copyright Act, so the crop itself is probably
-unprotected, though no court decision is cited here and a particular photograph may differ; a
-compilation may be protected under Articles 12 and 12-2. CC BY-SA 4.0 claims nothing over material
-that needs no permission (its section 2(a)(2)). The dataset therefore states its own rights as
-applying to the annotations and the compilation. Contributors agree to CC BY-SA 4.0 for their
-annotations; a correction and withdrawal procedure for holders and contributors is in
-`CONTRIBUTING.md`. This is a reading of the statute, not legal advice.
+A faithful photograph of a flat original is not a work under Article 2 of the Japanese Copyright
+Act: the Tokyo District Court held so for photographs reproducing prints (東京地判平成10年11月30日,
+版画写真事件; summary at https://ja.wikipedia.org/wiki/版画写真事件 and
+https://iplaw.hatenadiary.org/entry/19981130/p1). A scan of a page of a pre-modern book, and a
+rectangle cut from it by coordinates, is such a reproduction of a public-domain work, so it carries
+no copyright of its own. In the EU, Article 14 of Directive (EU) 2019/790 states the same for
+reproductions of public-domain visual works.
+
+The dataset therefore records the page images of its books as public domain whatever terms their
+holder attaches to the photographs. `Document` applies the rule: where `image_rights` holds a
+restricting statement (NC, ND, RS-NOC-CR, restricted or unstated), `licence` becomes PD and the
+statement moves to `holder_terms`, where it stays as evidence of what the holder asks. A document
+dated after 1900 may be a work still in copyright and keeps its holder's terms; an undated document
+is taken as pre-modern, which is the dataset's scope. Holder terms are contractual and bind those who
+accepted them; the attribution and source lines holders ask for are kept on every record.
+
+A compilation may be protected under Articles 12 and 12-2. CC BY-SA 4.0 claims nothing over material
+that needs no permission (its section 2(a)(2)). The dataset states its own rights as applying to the
+annotations and the compilation. Contributors agree to CC BY-SA 4.0 for their annotations; a
+correction and withdrawal procedure for holders and contributors is in `CONTRIBUTING.md`.

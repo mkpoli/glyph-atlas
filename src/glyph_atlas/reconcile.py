@@ -314,14 +314,16 @@ def upstream_fields(document: Document) -> tuple[str | None, str | None]:
     """The upstream licence string and licence URL of a document.
 
     The fields the importer recorded in `meta` come first; a document that carries none falls back to
-    the statement already resolved onto `image_rights`, which is what the importer read upstream.
+    the statement already resolved onto `image_rights`, which is what the importer read upstream:
+    the holder's own statement, `holder_terms`, where the record keeps one beside a PD licence.
     """
     licence = _first_text(document.meta, LICENCE_FIELDS)
     url = _first_text(document.meta, URL_FIELDS)
     if licence is None and url is None:
         recorded = document.image_rights
-        if recorded is not None and (recorded.licence is not Licence.UNKNOWN or recorded.evidence):
-            return recorded.licence.value, recorded.evidence
+        statement = _statement(recorded)
+        if statement is not None and (statement is not Licence.UNKNOWN or recorded.evidence):
+            return statement.value, recorded.evidence
     return licence, url
 
 
@@ -631,7 +633,7 @@ def resolve_directory(
     counts: Counter[str] = Counter(dict.fromkeys(COUNTS, 0))
     for document in documents:
         counts["documents"] += 1
-        previous = document.image_rights
+        previous = _statement(document.image_rights)
         rows = evidence_of(document, manifests)
         counts["evidence"] += len(rows)
         if not rows:
@@ -641,7 +643,7 @@ def resolve_directory(
         counts["resolved"] += 1
         pick = chosen_row(rows)
         resolved = rights_of(pick, document)
-        if previous is None or previous.licence is not resolved.licence:
+        if previous is None or previous is not resolved.licence:
             counts["changed"] += 1
         if len({row.rights.licence for row in rows}) > 1:
             counts["disagreements"] += 1
@@ -713,6 +715,13 @@ def write_summary(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
     return path
+
+
+def _statement(recorded: Rights | None) -> Licence | None:
+    """The holder's statement on a record: `holder_terms` beside a PD licence, else the licence."""
+    if recorded is None:
+        return None
+    return recorded.holder_terms or recorded.licence
 
 
 def _label(resolved: Rights | None) -> str:

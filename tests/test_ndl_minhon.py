@@ -161,7 +161,7 @@ def test_import_writes_both_versions_with_reading_order_and_rights(tmp_path):
 
     assert documents[V2_ID].image_rights.licence is Licence.PDM
     assert documents[V2_ID].image_rights.evidence == NDL_LICENCE
-    assert documents[V1_ID].image_rights.licence is Licence.UNKNOWN
+    assert documents[V1_ID].image_rights.holder_terms is Licence.UNKNOWN
     assert documents[V1_ID].image_rights.evidence is None
     for document in documents.values():
         assert document.text_rights.licence is Licence.CC_BY_SA_4
@@ -222,4 +222,4 @@ def test_page_file_without_a_metadata_row_keeps_an_unknown_url(tmp_path):
     assert pages[V2_PAGE_ID].image == "unknown" and pages[V2_PAGE_ID].meta["url_unknown"] is True
     documents = {record.id: record for record in tables.read(tmp_path / "out" / "documents.parquet", Document)}
     assert documents[V2_ID].title == V2_BOOK
-    assert documents[V2_ID].holder is None and documents[V2_ID].image_rights.licence is Licence.UNKNOWN
+    assert documents[V2_ID].holder is None and documents[V2_ID].image_rights.holder_terms is Licence.UNKNOWN

@@ -108,10 +108,7 @@ finishing every page of the pilot.
 
 Outside the current acquisition scope:
 
-- 早稲田大学古典籍総合データベース and 慶應義塾大学 digital collections: reuse needs permission, and
-  Waseda names partial use that hides the original as grounds for refusal.
-- 木簡庫 / MOJIZO and the 電子くずし字字典 record images: retrieval services under all-rights-reserved
-  terms.
+- 木簡庫 / MOJIZO: 木簡 are out of scope (decision 0001).
 - CHISE IDS: GPL-2.0-or-later, which cannot sit inside a CC BY-SA dataset.
 
 ## 5. Labelling
