@@ -32,6 +32,7 @@ because a scan of a public-domain page may carry no copyright of its own.
 | 早稲田大学古典籍総合データベース | permission required | https://www.waseda.jp/library/user/using-images/ |
 | 慶應義塾大学 | all rights reserved | https://dcollections.lib.keio.ac.jp/ja/about |
 | 奈良文化財研究所 木簡庫 | images surveyed by 奈良文化財研究所: free reuse including commercial, with a source line and a modification notice; other institutions' tablets follow their own terms | https://mokkanko.nabunken.go.jp/ja/?c=help |
+| 국립한글박물관 아카이브 | per record in `koglCdId`; `CD00167` is 공공누리 제1유형(출처표시), and only those records are collected | https://archives.hangeul.go.kr/ko/M000000614/html/view |
 
 Honkoku-Lines' provider table lists 29 institutions with the licence of each
 (https://huggingface.co/datasets/yuta1984/honkoku-lines); it is the reference for holders reached
