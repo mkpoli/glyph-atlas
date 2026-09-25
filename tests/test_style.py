@@ -51,3 +51,23 @@ def test_a_written_style_reads_back(tmp_path):
     tables.write(tmp_path / "pages.parquet", [page(style="mixed")], Page)
     assert tables.read(tmp_path / "units.parquet", Unit)[0].style == "seal"
     assert tables.read(tmp_path / "pages.parquet", Page)[0].style == "mixed"
+
+
+def test_a_confirmed_document_style_is_used_and_checked(tmp_path, monkeypatch):
+    confirmed = tmp_path / "document-styles.yaml"
+    confirmed.write_text("documents:\n  d:\n    style: cursive\n    evidence: [{source: reviewer}]\n", encoding="utf-8")
+    monkeypatch.setattr(style, "DOCUMENTS", confirmed)
+    book = Document(id="d", title="t")
+    assert style.document_style(book) == "cursive"
+    assert style.style_of(Unit(id="u"), page(), book) == "cursive"
+    assert style.document_style(Document(id="other", title="t", style="running")) == "running"
+    confirmed.write_text("documents:\n  d:\n    style: sosho\n    evidence: [{source: reviewer}]\n", encoding="utf-8")
+    with pytest.raises(ValueError):
+        style.document_style(book)
+    confirmed.write_text("documents:\n  d:\n    style: cursive\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="no evidence"):
+        style.document_style(book)
+
+
+def test_the_confirmed_file_in_the_repository_is_valid():
+    style.confirmed()

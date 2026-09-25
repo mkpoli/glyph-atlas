@@ -95,3 +95,17 @@ def test_the_suggestion_sample_is_stable_and_nested():
     small = {i for i in ids if suggest.sampled(i, 0.05)}
     large = {i for i in ids if suggest.sampled(i, 0.2)}
     assert small < large and 40 < len(small) < 160
+
+
+def test_a_document_proposal_needs_enough_crops_and_is_clear_only_above_the_line():
+    spec = importlib.util.spec_from_file_location("style_propose", ROOT / "models" / "style" / "propose_documents.py")
+    propose = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(propose)
+    rows = ([{"document_id": "a", "style": "regular", "checkpoint_sha256": "x"}] * 9
+            + [{"document_id": "a", "style": "running", "checkpoint_sha256": "x"}]
+            + [{"document_id": "b", "style": s, "checkpoint_sha256": "x"} for s in ["running"] * 6 + ["cursive"] * 4]
+            + [{"document_id": "c", "style": "regular", "checkpoint_sha256": "x"}] * 3)
+    found = {doc["document_id"]: doc for doc in propose.proposals(rows, min_crops=10, clear=0.8)}
+    assert set(found) == {"a", "b"}
+    assert (found["a"]["style"], found["a"]["clear"]) == ("regular", True)
+    assert (found["b"]["style"], found["b"]["clear"], found["b"]["counts"]) == ("running", False, {"running": 6, "cursive": 4})
