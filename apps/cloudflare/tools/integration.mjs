@@ -411,6 +411,22 @@ try {
     const sql = within(kana, c) ? 'kana' : within(han, c) ? 'kanji' : within(hangul, c) ? 'hangul' : 'other'
     if (worker.categoryOf(String.fromCodePoint(c)) !== sql) assert.fail(`U+${c.toString(16)}: ${worker.categoryOf(String.fromCodePoint(c))} vs ${sql}`)
   }
+  // A context widened in place survives a review and its undo.
+  const framed = { id: 'framed', label: 'カ', reading: 'カ', state: 'pending', revision: 0, image_sha256: hash, production: 'manuscript',
+    repair: { quiz: true }, context: true, context_image: '/atlas/media/narrow.webp', context_box: { x: 5, y: 5, w: 40, h: 60 } }
+  await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
+    framed.id, 'local', 'カ', 'カ', 'U+30AB', null, 'manuscript', 'kana', 'pending', 0, 1, 1, 1,
+    JSON.stringify(framed), JSON.stringify({ character: framed }), '{}', '{}').run()
+  const wide = { x: 0, y: 0, w: 90, h: 120 }
+  const framedRound = { id: crypto.randomUUID(), client_id: 'integration', label: 'カ',
+    answers: [{ id: 'framed', revision: 0, image_sha256: hash, verdict: 'wrong', issue: 'blank' }] }
+  await call('/atlas/rounds', framedRound)
+  await db.prepare(`UPDATE units SET data=json_set(data,'$.context_image',json('"/atlas/media/wide.webp"'),'$.context_box',json(?)) WHERE id='framed' AND revision=1`)
+    .bind(JSON.stringify(wide)).run()
+  await call(`/atlas/rounds/${framedRound.id}/undo`, { client_id: 'integration' })
+  const unframed = await call('/atlas/characters/framed')
+  assert.deepEqual([unframed.state, unframed.context_image, unframed.context_box], ['pending', '/atlas/media/wide.webp', wide],
+    'undo restores the review state and keeps the wider context')
   console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds.')
 } finally {
   await mf.dispose()

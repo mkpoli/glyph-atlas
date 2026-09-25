@@ -13,6 +13,8 @@ This writes the UPDATE statements that bring such units up to date:
 - a unit whose only change is its context image (the page around the crop, cut again at a new
   reach) takes the new context_image and context_box in place, reviewed or not, and keeps its
   revision: nothing a reviewer judged has changed, so an open page may still save against it.
+  The Worker's event trigger (migration 0009) keeps a row's context through later reviews and
+  undos, so an undo does not bring back the old context.
 
 A crop is the same when its box, crop box and image (the crop's media key) are unchanged; the
 image hash names the page the crop was cut from, so it cannot tell two crops apart.
