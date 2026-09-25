@@ -51,3 +51,12 @@ def test_every_node_has_one_interface_label_and_no_more():
     catalogue = json.loads((Path(__file__).parents[1] / "apps/review/src/locales/en.json").read_text(encoding="utf-8"))
     keys = {key.removeprefix("production.kind.") for key in catalogue if key.startswith("production.kind.")}
     assert keys == {node.replace("/", "_") for node in production.vocabulary()}
+
+
+def test_the_worker_knows_every_node():
+    import re
+    from pathlib import Path
+
+    worker = (Path(__file__).parents[1] / "apps/cloudflare/src/index.ts").read_text(encoding="utf-8")
+    listed = re.search(r"export const PRODUCTIONS = \[(.*?)\];", worker).group(1)
+    assert re.findall(r"'([^']+)'", listed) == list(production.vocabulary())
