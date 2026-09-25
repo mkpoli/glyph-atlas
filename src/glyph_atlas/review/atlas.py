@@ -108,6 +108,31 @@ def skip_marks(events: Iterable[Any]) -> dict[str, dict[str, list[tuple[datetime
             for target, actors in marks.items() if any(actors.values())}
 
 
+def reviewed_targets(events: Iterable[Any]) -> set[str]:
+    """Units with a standing review from the character inspector (`/atlas/characters`, `/layers/units`).
+
+    Only a `review` event whose evidence carries `kind: character-review` counts; a round's own
+    `visual-quiz` verdict is a different question. An `undo of <event id>` event names the review it
+    takes back, the same mark `Store` writes for any reversed decision.
+    """
+    reviews: dict[str, str] = {}
+    undone: set[str] = set()
+    for event in events:
+        if event.field != "review":
+            continue
+        evidence = getattr(event, "evidence", None)
+        if isinstance(evidence, str) and evidence.startswith("undo of "):
+            undone.add(evidence[len("undo of "):])
+            continue
+        try:
+            kind = json.loads(evidence or "{}").get("kind")
+        except ValueError:
+            continue
+        if kind == "character-review":
+            reviews[event.id] = event.target_id
+    return {target for event_id, target in reviews.items() if event_id not in undone}
+
+
 def single_character(text: str) -> bool:
     bases = [c for c in text if not unicodedata.combining(c)
              and not 0xFE00 <= ord(c) <= 0xFE0F and not 0xE0100 <= ord(c) <= 0xE01EF]
@@ -727,6 +752,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         events = store.events()
         standing = status.unit_reviews([u for u, _ in units], events)
         seen = seen_boxes(events)
+        reviewed = reviewed_targets(events)
         documents = {doc.id: production_info(doc)["production"] for doc in store.documents()}
         pages = store.pages()
         kinds = {}
@@ -754,7 +780,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 states[unit.id] = "hard"
             elif unit.id in seen and seen[unit.id] == box:
                 states[unit.id] = "seen"
-        return units, states, kinds, skips
+        return units, states, kinds, skips, reviewed
 
     @api.get("/atlas")
     def catalogue(
@@ -787,7 +813,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         scope = production or ("non-movable-type" if purpose == "review" else "all")
         generation = (file_stamp(store.path), file_stamp(Path(str(store.path) + "-wal")),
                       file_stamp(production_metadata.OVERRIDES))
-        units, all_states, kinds, skips = catalogue_snapshot(generation)
+        units, all_states, kinds, skips, reviewed = catalogue_snapshot(generation)
         records = [(u, rev) for u, rev in units
                    if (scope == "all" or (kinds[u.id] != "movable-type" if scope == "non-movable-type"
                                          else kinds[u.id] == scope)) and considered(u)]
@@ -817,6 +843,10 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         if purpose == "review":
             # A crop another reviewer skipped comes first: it needs a second pair of eyes.
             selected.sort(key=lambda row: not any(actor != reviewer for actor in skips.get(row[0].id, {})))
+        if state == "flagged":
+            # A flagged crop someone already looked at in the inspector queues behind the ones
+            # nobody has reviewed yet, keeping the earlier order among ties.
+            selected.sort(key=lambda row: row[0].id in reviewed)
         return {"total": len(selected), "available": len(records), "counts": dict(counts),
                 # Which question this answer is: a caller reading `available` has to know whether it
                 # counts the collection or only the queue.

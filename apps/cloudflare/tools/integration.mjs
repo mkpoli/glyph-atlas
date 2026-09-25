@@ -90,6 +90,27 @@ try {
   await db.prepare('INSERT INTO unit_shapes VALUES(?,?)').bind('two', 7).run()
   const shaped = Object.fromEntries((await call('/atlas?purpose=review&production=all')).items.map(i => [i.id, i.shape_order]))
   assert.deepEqual(shaped, { one: null, two: 7 }, 'a crop carries its shape order, or null without one')
+  // Flagged order: a crop already reviewed in the character inspector queues behind one nobody has.
+  for (const id of ['flag-a', 'flag-b']) {
+    const d = { id, label: 'ラ', reading: 'ラ', state: 'pending', revision: 0, image_sha256: hash,
+      production: 'manuscript', repair: { quiz: true } }
+    await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
+      id, 'local', 'ラ', 'ラ', 'U+3042', null, 'manuscript', 'kana', 'pending', 0, 1, 1, 1,
+      JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}').run()
+  }
+  const flagRound = { id: crypto.randomUUID(), client_id: 'integration', label: 'ラ', answers: [
+    { id: 'flag-a', revision: 0, image_sha256: hash, verdict: 'wrong', issue: 'blank' },
+    { id: 'flag-b', revision: 0, image_sha256: hash, verdict: 'wrong', issue: 'blank' },
+  ] }
+  await call('/atlas/rounds', flagRound)
+  const flaggedOrder = async () => (await call('/atlas?reading=ラ&state=flagged')).items.map(i => i.id)
+  assert.deepEqual(await flaggedOrder(), ['flag-a', 'flag-b'], 'flagged crops nobody has reviewed keep their shuffled order')
+  const inspected = { id: crypto.randomUUID(), client_id: 'inspector', revision: 1,
+    image_sha256: hash, verdict: 'wrong', issue: 'crop' }
+  await call('/atlas/characters/flag-a', inspected)
+  assert.deepEqual(await flaggedOrder(), ['flag-b', 'flag-a'], 'a crop reviewed in the inspector moves behind one nobody has looked at')
+  await call(`/atlas/rounds/${inspected.id}/undo`, { client_id: 'inspector' })
+  assert.deepEqual(await flaggedOrder(), ['flag-a', 'flag-b'], 'undoing the inspector review restores the order')
   const ligature = { char: '𪜈', code_point: 'U+2A708', grapheme: { code_point: 'U+2A708' }, ligature: { reading: 'トモ' }, candidates: {} }
   await db.prepare('INSERT INTO characters VALUES(?,?,?,?,?)').bind('U+2A708', '𪜈', '', JSON.stringify(ligature), JSON.stringify(ligature)).run()
   const reading = { id: crypto.randomUUID(), client_id: 'integration', revision: 0,
@@ -159,7 +180,7 @@ try {
   assert.ok(!(await dealtTo('carol')).includes('skip-b'), 'a hard crop leaves the rounds')
   await call(`/atlas/rounds/${second.id}/undo`, { client_id: 'bob' })
   assert.deepEqual((await call('/atlas?state=hard&reading=ソ')).items, [], 'an undo takes a skip back')
-  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops.')
+  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order.')
 } finally {
   await mf.dispose()
 }

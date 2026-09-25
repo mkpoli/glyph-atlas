@@ -129,9 +129,12 @@ async function catalogue(env: Env, q: URLSearchParams) {
   // A crop another reviewer skipped comes first in a round: it needs a second pair of eyes.
   const others = purpose === 'review' ? `EXISTS(SELECT 1 ${SKIPS}${reviewer ? ` AND k.actor!=${quoted(reviewer)}` : ''}) DESC,` : '';
   const order = others + (purpose === 'review' && seed % 5 ? 'priority,' : '');
+  // Flagged view: a crop already looked at in the inspector queues behind the ones nobody has reviewed yet.
+  const reviewedLast = q.get('state') === 'flagged' ? `EXISTS(SELECT 1 FROM events e JOIN submissions f ON f.id=e.submission AND f.undone=0
+    WHERE e.target=units.id AND e.kind='review' AND json_extract(json_extract(e.event,'$.evidence'),'$.kind')='character-review'),` : '';
   const [count, window] = await env.DB.batch([
     env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${where.join(' AND ')}`).bind(...values),
-    env.DB.prepare(`SELECT *,${state} AS effective,(SELECT shape_order FROM unit_shapes s WHERE s.id=units.id) AS shape_order FROM units WHERE ${where.join(' AND ')} ORDER BY ${order} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...values, seed + 1, limit, offset),
+    env.DB.prepare(`SELECT *,${state} AS effective,(SELECT shape_order FROM unit_shapes s WHERE s.id=units.id) AS shape_order FROM units WHERE ${where.join(' AND ')} ORDER BY ${order}${reviewedLast} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...values, seed + 1, limit, offset),
   ]);
   return { total: (count.results[0] as { n: number }).n, available: Object.values(counts).reduce((a:number,b:any) => a+b,0),
     counts, purpose, production, review_limit:96, review_epoch: await meta(env, 'review_epoch') || 0, query: q.get('q'),
