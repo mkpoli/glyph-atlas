@@ -28,7 +28,7 @@
   let lastFocus
   function navigate() {
     const url = new URL(location.hash.slice(1) || '/', location.origin)
-    route = ['/review', '/flagged', '/hard', '/forms'].includes(url.pathname) ? url.pathname : '/'
+    route = ['/review', '/flagged', '/forms'].includes(url.pathname) ? url.pathname : '/'
     formFamily = url.searchParams.get('family') || ''
     reading = url.searchParams.get('reading') || ''
     selected = url.pathname.startsWith('/character/') ? decodeURIComponent(url.pathname.slice(11)) : null
@@ -53,13 +53,13 @@
 </script>
 
 <header class="site-header"><a href="#/" class="wordmark" aria-label={t('app.home.aria')}><svg class="atlas-symbol" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M4 4h9v9H4zM19 4h9v9h-9zM4 19h9v9H4z" fill="currentColor"/><path d="M19 19h9v9h-9z" stroke="currentColor" stroke-width="2"/></svg>{#if localName()}<span class="local-name" lang={locale()}>{localName()}</span>{:else}<span>GLYPH <b>ATLAS</b></span>{/if}<small class="slogan" lang="ja">Let's 集字!</small></a>
-  <nav aria-label={t('app.nav.aria')}><a class:active={route === '/'} href="#/">{t('nav.explore')}</a><a class:active={route === '/flagged'} href="#/flagged">{t('nav.flagged')}</a><a class:active={route === '/hard'} href="#/hard" title={t('nav.hard.title')}>{t('nav.hard')}</a>{#if forms}<a class:active={route === '/forms'} href="#/forms">{t('nav.forms')}</a>{/if}</nav>
+  <nav aria-label={t('app.nav.aria')}><a class:active={route === '/'} href="#/">{t('nav.explore')}</a><a class:active={route === '/flagged'} href="#/flagged">{t('nav.flagged')}</a>{#if forms}<a class:active={route === '/forms'} href="#/forms">{t('nav.forms')}</a>{/if}</nav>
   <div class="header-actions"><a class="review-link" class:current={route === '/review'} href="#/review">{t('nav.quickReview')} <span>↗</span></a><div class="header-menu"><button bind:this={menuButton} class="icon-button" aria-label={t('app.reviewOptions')} aria-expanded={menu} onclick={() => menu = !menu}>···</button>{#if menu}<div class="options-menu"><button onclick={showProgress}>{t('explore.collectionProgress')}</button><button onclick={exportReviews}>{t('export.menuItem')}</button>{#if LOCALES.length > 1}<div class="language-group"><small>{t('menu.language')}</small><div class="language-options">{#each LOCALES as loc (loc.tag)}<button class:active={locale() === loc.tag} aria-pressed={locale() === loc.tag} onclick={() => setLocale(loc.tag)}>{loc.name}</button>{/each}</div></div>{/if}<small>{clientId}</small></div>{/if}</div></div>
 </header>
 <main>
   {#if clientId}{#if route === '/review'}{#key reading}<Quiz {clientId} initialReading={reading} {inspect} />{/key}
   {:else if route === '/forms' && forms !== false}{#if forms}<Forms initialFamily={formFamily} />{/if}
-  {:else}{#key route}<Explore queue={route === '/flagged' ? 'flagged' : route === '/hard' ? 'hard' : ''} {inspect} {ink} onink={setInk} onprogress={showProgress} />{/key}{/if}{/if}
+  {:else}{#key route}<Explore flagged={route === '/flagged'} {inspect} {ink} onink={setInk} onprogress={showProgress} />{/key}{/if}{/if}
 </main>
 {#if selected}{#if selectedOrigin === 'corpus'}<CorpusDialog id={selected} {clientId} {close} {saved} previous={selectedIndex > 0 ? () => step(-1) : null} next={selectedIndex >= 0 && selectedIndex + 1 < queue.length ? () => step(1) : null} position={queue.length ? `${selectedIndex + 1} / ${queue.length}` : ''} />{:else}<CharacterDialog id={selected} {clientId} {close} {onVerdict} {saved} previous={selectedIndex > 0 ? () => step(-1) : null} next={selectedIndex >= 0 && selectedIndex + 1 < queue.length ? () => step(1) : null} position={queue.length ? `${selectedIndex + 1} / ${queue.length}` : ''} />{/if}{/if}
 {#if savedNotice}<div class="save-toast" role="status">✓ {savedNotice}</div>{/if}

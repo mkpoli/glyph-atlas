@@ -175,7 +175,9 @@ async function catalogue(env: Env, q: URLSearchParams) {
   if (reading) { where.push('character=?'); values.push(reading) }
   if (q.get('q')) { where.push('(character=? OR reading=?)'); values.push(literal(q.get('q')!), literal(q.get('q')!)) }
   if (q.get('group') && q.get('group') !== 'all') { where.push('category=?'); values.push(q.get('group')!) }
-  if (q.get('state') && q.get('state') !== 'all') { where.push(`${state}=?`); values.push(q.get('state')!) }
+  // `attention` is the Flagged view: every crop waiting for a person, flagged or hard to read.
+  if (q.get('state') === 'attention') where.push(`${state} IN ('flagged','hard')`);
+  else if (q.get('state') && q.get('state') !== 'all') { where.push(`${state}=?`); values.push(q.get('state')!) }
   // A round of one character deals its named and then its untouched corpus glyphs after its local crops.
   const dealt = review && reading !== null && ['all', 'pending'].includes(q.get('state') || 'all') && !q.get('q')
     && ['all', categoryOf(reading)].includes(q.get('group') || 'all');
@@ -187,7 +189,7 @@ async function catalogue(env: Env, q: URLSearchParams) {
   const others = review ? `EXISTS(SELECT 1 ${SKIPS}${reviewer ? ` AND k.actor!=${quoted(reviewer)}` : ''}) DESC,origin='corpus',` : '';
   const order = others + (review && seed % 5 ? 'priority,' : '');
   // Flagged view: a crop already looked at in the inspector queues behind the ones nobody has reviewed yet.
-  const reviewedLast = q.get('state') === 'flagged' ? `EXISTS(SELECT 1 FROM events e JOIN submissions f ON f.id=e.submission AND f.undone=0
+  const reviewedLast = ['flagged', 'attention'].includes(q.get('state') ?? '') ? `EXISTS(SELECT 1 FROM events e JOIN submissions f ON f.id=e.submission AND f.undone=0
     WHERE e.target=units.id AND e.kind='review' AND json_extract(json_extract(e.event,'$.evidence'),'$.kind')='character-review'),` : '';
   const [count, window] = await env.DB.batch([
     env.DB.prepare(`SELECT count(*) AS n FROM ${from}`).bind(...fromValues),

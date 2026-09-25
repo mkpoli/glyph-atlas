@@ -1558,6 +1558,8 @@ def test_a_crop_two_reviewers_skip_is_hard_and_an_undo_takes_a_skip_back(dataset
     second = skip_round(shown, "bob", {crop})
     assert client.post('/atlas/rounds', json=second).status_code == 200
     assert client.get('/atlas?state=hard&limit=96').json()['items'][0]['id'] == crop
+    # The Flagged view lists it with the flagged crops.
+    assert crop in {i['id'] for i in client.get('/atlas?state=attention&limit=96').json()['items']}
     assert crop not in {i['id'] for i in client.get(
         '/atlas?reading=あ&state=pending&purpose=review&reviewer=carol&limit=96').json()['items']}
     assert client.get('/atlas').json()['counts'] == {"hard": 1, "pending": 15}

@@ -226,6 +226,7 @@ try {
   const second = skipBy('bob', 'skip-b')
   await call('/atlas/rounds', second)
   assert.deepEqual((await call('/atlas?state=hard&reading=ソ')).items.map(i => i.id), ['skip-b'], 'two skips make a crop hard')
+  assert.ok((await call('/atlas?state=attention&reading=ソ')).items.some(i => i.id === 'skip-b'), 'the Flagged view lists hard crops')
   assert.ok(!(await dealtTo('carol')).includes('skip-b'), 'a hard crop leaves the rounds')
   await call(`/atlas/rounds/${second.id}/undo`, { client_id: 'bob' })
   assert.deepEqual((await call('/atlas?state=hard&reading=ソ')).items, [], 'an undo takes a skip back')
