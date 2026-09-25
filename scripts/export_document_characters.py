@@ -1,10 +1,11 @@
 """Write D1 SQL that replaces `document_characters` for the documents ainu-records' character pages show.
 
-The input is a dataset `atlas ainu merge` wrote. Every active unit with a box on those documents is
-listed in source order: page, then the transcribed lines in order, then the OCR blocks, then position.
+The input is a dataset `atlas ainu merge` wrote. Every active unit with a box on those documents whose
+label the atlas stands behind is listed in source order: page, then the transcribed lines in order, then the OCR blocks, then position.
 A unit the atlas aligned is placed by its own line; one imported from ainu-records keeps the block and
 context its character page gave it. The label is the character the unit is, and `source` says where
-it came from. Run the output with `wrangler d1 execute glyph-atlas --remote --file <out>` after
+it came from. A unit withheld by the alignment repair, rejected by the aligner or flagged is left out
+until a review settles it. Run the output with `wrangler d1 execute glyph-atlas --remote --file <out>` after
 migration 0007 is applied; it replaces only the documents it lists.
 """
 from __future__ import annotations
@@ -17,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from glyph_atlas import tables
-from glyph_atlas.ainu_characters import DECIDED, META, written
+from glyph_atlas.ainu_characters import DECIDED, META, trusted, written
 from glyph_atlas.schema import Line, Unit
 
 BATCH = 200
@@ -68,7 +69,7 @@ def export(dataset: Path, out: Path, documents: set[str] | None = None) -> dict[
     lines = {line.id: line for line in tables.read(dataset / "lines.parquet", Line)}
     rows: dict[str, list[tuple[tuple, str, dict]]] = {d: [] for d in sorted(documents)}
     for unit in units:
-        if unit.document_id in rows:
+        if unit.document_id in rows and trusted(unit):
             data = row(unit, lines)
             rows[unit.document_id].append((order(data, unit.id), unit.id, data))
     statements = [f"DELETE FROM document_characters WHERE document IN ({','.join(map(quoted, rows))});"]

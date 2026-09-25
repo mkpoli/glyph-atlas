@@ -43,6 +43,8 @@ def dataset(tmp_path: Path) -> Path:
                 meta={"ainu_records": {"id": "1-l1-1"}}),
         aligned(f"{DOC}:0:L0:r:0", 0, 0, 0, "ア"),
         aligned(f"{DOC}:0:L0:r:9", 0, 0, 9, "ウ", active=False),
+        aligned(f"{DOC}:0:L0:r:7", 0, 0, 7, "ヲ", review=ReviewState.DISPUTED),
+        aligned(f"{DOC}:0:L0:r:8", 0, 0, 8, "ヰ", meta={"alignment_repair": {"withheld": True}}),
         imported("2-l1-0", 2, "l1", 0, "エ", "transcription"),
         aligned("hk:other:0:L0:r:0", 0, 0, 0, "オ", document_id="hk:other"),
     ]
@@ -85,5 +87,5 @@ def test_an_imported_occurrence_keeps_the_block_and_label_source_ainu_records_ga
 def test_only_the_documents_ainu_records_covers_are_replaced(tmp_path):
     out = tmp_path / "out.sql"
     counts = load().export(dataset(tmp_path), out)
-    assert counts == {DOC: 6}, "retired units and documents ainu-records has no say on stay out"
+    assert counts == {DOC: 6}, "retired, flagged and withheld units, and documents ainu-records has no say on, stay out"
     assert out.read_text(encoding="utf-8").startswith(f"DELETE FROM document_characters WHERE document IN ('{DOC}');")
