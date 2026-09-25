@@ -70,6 +70,10 @@ class MediaCache:
                 spec = {"source": name, "path": path.relative_to(root).as_posix(),
                     "stamp": stat.st_mtime_ns, "size": stat.st_size,
                     "box": list(box) if box else None, "context": context, "edge": edge}
+                if context:
+                    # The reach is part of what a context image is, so a wider reach is a new image.
+                    from .atlas import CONTEXT_REACH
+                    spec["reach"] = list(CONTEXT_REACH)
                 if exact:
                     # A requested region is cut as given, without the display margin.
                     spec["exact"] = True
@@ -118,7 +122,7 @@ class MediaCache:
                 else:
                     picture = page.crop(crop_bounds(page, spec["box"], spec["context"]))
             edge = spec["edge"]
-            bounds = (edge, edge) if edge else (640, 640) if spec["context"] else (240, 280)
+            bounds = (edge, edge) if edge else (960, 1280) if spec["context"] else (240, 280)
             picture.thumbnail(bounds, Image.Resampling.LANCZOS)
             buffer = io.BytesIO()
             picture.save(buffer, format="WEBP", quality=90, method=4)

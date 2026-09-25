@@ -301,6 +301,11 @@ def matches(records: list[tuple[Unit, int]], q: str) -> list[tuple[Unit, int]]:
 
 
 
+#: How far a crop's context reaches past the character, in character sizes, across and along the
+#: line: two neighbours above and below in a vertical column, and a column to each side.
+CONTEXT_REACH = (1.5, 2.5)
+
+
 def crop_bounds(image: Image.Image, box: Box | tuple[float, ...] | None,
                 context: bool = False) -> tuple[int, int, int, int]:
     """The source pixels a crop is drawn from: the same bounds the thumbnail actually cuts.
@@ -317,9 +322,11 @@ def crop_bounds(image: Image.Image, box: Box | tuple[float, ...] | None,
         x, y, w, h = box.x, box.y, box.w, box.h
     else:
         x, y, w, h = box
-    margin = max(w, h) * (0.65 if context else 0.08)
-    bounds = (max(0, int(x - margin)), max(0, int(y - margin)),
-              min(image.width, int(x + w + margin)), min(image.height, int(y + h + margin)))
+    size = max(w, h)
+    across, along = CONTEXT_REACH if context else (0.08, 0.08)
+    mx, my = size * across, size * along
+    bounds = (max(0, int(x - mx)), max(0, int(y - my)),
+              min(image.width, int(x + w + mx)), min(image.height, int(y + h + my)))
     if bounds[2] <= bounds[0] or bounds[3] <= bounds[1]:
         raise ValueError("The crop falls outside the image.")
     return bounds
