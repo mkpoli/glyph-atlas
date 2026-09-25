@@ -125,7 +125,7 @@ def _visual_classifier(directory: str, stamp: int, size: int):
     from ..visual_classifier import VisualClassifier
     try:
         return VisualClassifier(Path(directory))
-    except Exception:  # onnxruntime's errors derive from Exception alone
+    except Exception:  # noqa: BLE001 — onnxruntime's errors derive from Exception alone
         return None
 
 
@@ -142,8 +142,7 @@ def visual_candidate(image: Image.Image, vote: dict) -> dict | None:
             return None
         embedding = head.embed(image)
         prediction = head.predict(embedding, vote["family"])
-    # A visual form is an extra proposal; its failure never costs the crop its other suggestions.
-    except Exception:
+    except Exception:  # noqa: BLE001 — a visual form is extra; its failure keeps the other suggestions
         return None
     text = prediction.get("written_character")
     if not text or text not in vote["members"] or not prediction.get("within_support"):
