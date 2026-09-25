@@ -194,3 +194,32 @@ def test_a_report_with_an_unreviewable_glyph_flags_nothing(clustering, tmp_path)
     app.include_router(router(media=None, corpus_root=tmp_path, reviews=reviews))
     response = TestClient(app).post("/forms/reports", json={"units": [A, C], "issue": "crop", "client_id": "me"})
     assert response.status_code == 422 and reviews.edits == [] and forms.form_for(A) is None
+
+
+def test_clusters_can_be_listed_with_similar_shapes_together(clustering, tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from glyph_atlas.review.forms import router
+
+    (clustering / "neighbours.json").write_text(json.dumps({"U+306F": {
+        "order": ["U+306F:two", "U+306F:one"],
+        "nearest": {"U+306F:one": {"id": "U+306F:two", "similarity": 0.8},
+                    "U+306F:two": {"id": "U+306F:one", "similarity": 0.8}}}}))
+    forms._CLUSTERS.invalidate()
+    app = FastAPI()
+    app.include_router(router(media=None, corpus_root=tmp_path))
+    client = TestClient(app)
+    shape = client.get("/forms/families/U+306F").json()
+    assert [c["id"] for c in shape["items"]] == ["U+306F:two", "U+306F:one"]
+    assert shape["items"][1]["nearest"] == {"id": "U+306F:two", "similarity": 0.8, "label": "Cluster 2"}
+    size = client.get("/forms/families/U+306F", params={"order": "size"}).json()
+    assert [c["id"] for c in size["items"]] == ["U+306F:one", "U+306F:two"]
+
+
+def test_shape_runs_put_the_heaviest_run_of_similar_clusters_first():
+    from glyph_atlas.review.forms import shape_runs
+
+    clusters = [{"id": i, "count": n} for i, n in (("odd", 2), ("faint", 3), ("big", 900), ("near", 400), ("far", 50))]
+    near = {"order": ["odd", "faint", "near", "big", "far"], "adjacent": [0.2, 0.3, 0.95, 0.4]}
+    assert shape_runs(near, clusters) == ["big", "near", "far", "faint", "odd"]

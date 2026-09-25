@@ -9,11 +9,16 @@
   let active = $state(0), open = $state(null), glyphs = $state([]), total = $state(0), order = $state('typical')
   let chosen = $state(new Set()), anchor = null, busy = $state(false), error = $state(''), notice = $state('')
   let correcting = $state(false), correction = $state('')
+  // Clusters picked together with ctrl/cmd-click, shift-click or X; one form then names them all.
+  let picked = $state(new Set()), pickAnchor = null, arrange = $state('shape')
   const cluster = $derived(current?.items[active] ?? null)
   const shown = $derived(list.filter(f => !filter.trim() || f.char.includes(filter.trim()) || f.label.includes(filter.trim())
     || f.code_point.toLowerCase().includes(filter.trim().toLowerCase())))
   const byForm = $derived(new Map((current?.forms ?? []).map(f => [f.char, f])))
+  const pickedClusters = $derived((current?.items ?? []).filter(c => picked.has(c.id)))
   const target = $derived(chosen.size ? `${number(chosen.size)} selected glyph${chosen.size === 1 ? '' : 's'}`
+    : pickedClusters.length > 1 ? `${pickedClusters.length} clusters (${number(pickedClusters.reduce((n, c) => n + c.count, 0))} glyphs)`
+    : pickedClusters.length === 1 ? `${pickedClusters[0].label} (${number(pickedClusters[0].count)} glyphs)`
     : cluster ? `${cluster.label} (${number(cluster.count)} glyphs)` : '')
 
   async function refreshList() { list = (await loadFamilies()).items }
@@ -21,11 +26,13 @@
     error = ''
     code = codePoint
     history.replaceState(null, '', '#/forms?family=' + encodeURIComponent(codePoint))
-    current = await loadFamily(codePoint)
-    if (!keep) { active = Math.max(0, current.items.findIndex(c => !c.form && c.assigned < c.count)); close() }
+    current = await loadFamily(codePoint, arrange)
+    if (!keep) { picked = new Set(); pickAnchor = null; active = Math.max(0, current.items.findIndex(c => !c.form && c.assigned < c.count)); close() }
   }
   async function show(index) {
     active = index; open = current.items[index].id; chosen = new Set(); anchor = null
+    // An opened cluster is the only target; clusters picked on the grid are let go.
+    picked = new Set(); pickAnchor = null
     const page = await loadMembers(open, 0, 240, order)
     glyphs = page.items; total = page.total
   }
@@ -49,9 +56,12 @@
     busy = true; error = ''
     try {
       const units = [...chosen]
-      const decision = units.length ? { kind: kind ?? 'glyph', units, ...(kind === 'inherit' ? {} : { form }) }
-        : { kind: 'cluster', cluster: cluster.id, form }
-      const result = await decide(decision)
+      const targets = units.length ? [] : pickedClusters.length ? pickedClusters.map(c => c.id) : [cluster.id]
+      let result = { count: 0 }
+      if (units.length) result = await decide({ kind: kind ?? 'glyph', units, ...(kind === 'inherit' ? {} : { form }) })
+      // One decision per cluster, so each keeps its own record and can be withdrawn on its own.
+      for (const id of targets) result = { count: result.count + (await decide({ kind: 'cluster', cluster: id, form })).count }
+      picked = new Set(); pickAnchor = null
       notice = form ? `${form} → ${number(result.count)} glyph${result.count === 1 ? '' : 's'}`
         : kind === 'inherit' ? `${number(result.count)} now follow the cluster` : `Cleared ${number(result.count)}`
       setTimeout(() => notice = '', 2200)
@@ -93,11 +103,34 @@
     else if (!open && (event.key === 'j' || event.key === 'ArrowDown')) { event.preventDefault(); active = Math.min(active + 1, current.items.length - 1); scrollActive() }
     else if (!open && (event.key === 'k' || event.key === 'ArrowUp')) { event.preventDefault(); active = Math.max(active - 1, 0); scrollActive() }
     else if (event.key === 'Enter' && !open) { event.preventDefault(); show(active) }
+    else if (!open && (event.key === 'x' || event.key === 'X')) { event.preventDefault(); togglePick() }
+    else if (event.key === 'Escape' && !open && picked.size) { event.preventDefault(); picked = new Set() }
     else if (event.key === 'Escape' && open) { event.preventDefault(); close() }
     // Clearing gives selected glyphs back to their cluster, or a cluster its unnamed state.
     else if (event.key === 'Backspace' && chosen.size) { event.preventDefault(); apply(null, 'inherit') }
     else if (event.key === 'Backspace' && cluster?.form) { event.preventDefault(); apply(null) }
   }
+  function choose(index, event) {
+    const id = current.items[index].id
+    const from0 = pickAnchor == null ? -1 : current.items.findIndex(c => c.id === pickAnchor)
+    if (event.shiftKey && from0 >= 0) {
+      const next = new Set(picked)
+      const [from, to] = [Math.min(from0, index), Math.max(from0, index)]
+      for (let i = from; i <= to; i++) next.add(current.items[i].id)
+      picked = next
+    } else if (event.ctrlKey || event.metaKey) {
+      const next = new Set(picked.size ? picked : [current.items[active].id])
+      next.has(id) ? next.delete(id) : next.add(id)
+      picked = next; pickAnchor = id
+    } else { picked = new Set(); pickAnchor = id }
+    active = index
+  }
+  function togglePick() {
+    const id = current.items[active].id, next = new Set(picked)
+    next.has(id) ? next.delete(id) : next.add(id)
+    picked = next; pickAnchor = id
+  }
+  async function rearrange(value) { arrange = value; const id = cluster?.id; await pick(code, true); active = Math.max(0, current.items.findIndex(c => c.id === id)) }
   function scrollActive() { requestAnimationFrame(() => document.querySelector('.form-cluster.active')?.scrollIntoView({ block: 'nearest' })) }
   onMount(async () => {
     try {
@@ -191,11 +224,17 @@
             {#if glyphs.length < total}<div class="load-more"><button onclick={more}>Show more ({number(total - glyphs.length)} left)</button></div>{/if}
           </div>
         {:else}
-          <p class="keyboard-hint forms-keys"><kbd>J</kbd><kbd>K</kbd> move · <kbd>1</kbd>–<kbd>0</kbd> assign · <kbd>Enter</kbd> open · <kbd>⌫</kbd> clear</p>
+          <div class="forms-toolbar">
+            <p class="keyboard-hint forms-keys"><kbd>J</kbd><kbd>K</kbd> move · <kbd>X</kbd> or ⌘/Ctrl-click add · Shift-click range · <kbd>1</kbd>–<kbd>0</kbd> assign · <kbd>Enter</kbd> open · <kbd>⌫</kbd> clear</p>
+            <div class="filter-tabs" role="group" aria-label="Cluster order">
+              <button class:active={arrange === 'shape'} aria-pressed={arrange === 'shape'} onclick={() => rearrange('shape')}>Similar shapes together</button>
+              <button class:active={arrange === 'size'} aria-pressed={arrange === 'size'} onclick={() => rearrange('size')}>Largest first</button>
+            </div>
+          </div>
           <ol class="cluster-grid">
             {#each current.items as c, i (c.id)}
-              <li class="form-cluster" class:active={i === active} class:assigned={c.form}>
-                <button class="cluster-select" onclick={() => active = i} ondblclick={() => show(i)} aria-pressed={i === active}>
+              <li class="form-cluster" class:active={i === active} class:picked={picked.has(c.id)} class:assigned={c.form}>
+                <button class="cluster-select" onclick={event => choose(i, event)} ondblclick={() => show(i)} aria-pressed={i === active || picked.has(c.id)}>
                   <span class="cluster-head">
                     <strong>{c.label}</strong><span>{number(c.count)}</span>
                     {#if c.form}<span class="cluster-form"><span class="inline-glyph">{c.form}</span> {byForm.get(c.form)?.jibo ?? ''}</span>
@@ -246,7 +285,8 @@
   .form-choice kbd{position:absolute;top:4px;right:5px;font-size:8px;color:#a0a0a7;font-family:ui-monospace,monospace}
   .palette-other{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto;align-content:flex-start;max-width:260px}.palette-other button{font-size:11px;padding:8px 11px}
   .palette-other kbd{font-size:9px;color:var(--muted)}
-  .forms-keys{margin:14px 0}
+  .forms-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:10px 0 12px}.forms-keys{margin:0}
+  .form-cluster.picked{border-color:var(--accent);background:#f3f1ff}
   .cluster-grid{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px}
   .form-cluster{border:1.5px solid var(--line);border-radius:9px;background:#fff;overflow:hidden}
   .form-cluster.active{border-color:var(--accent);box-shadow:0 0 0 3px #6356e51f}

@@ -81,9 +81,9 @@ class _Watched:
 def _load_clusters(paths) -> dict[str, Any]:
     import pyarrow.parquet as pq
 
-    summary, table = paths
+    summary, table, neighbours = paths
     if _stamp(summary) is None or _stamp(table) is None:
-        return {"revision": None, "families": {}, "units": {}, "members": {}, "labels": {}}
+        return {"revision": None, "families": {}, "units": {}, "members": {}, "labels": {}, "neighbours": {}}
     data = json.loads(summary.read_text())
     columns = pq.read_table(table, columns=["id", "family", "cluster", "similarity", "rank"]).to_pydict()
     units = {}
@@ -92,11 +92,14 @@ def _load_clusters(paths) -> dict[str, Any]:
         units[identity] = (family, cluster, similarity, rank)
         members.setdefault(cluster, []).append(identity)
     labels = {c["id"]: c["label"] for family in data["families"].values() for c in family["clusters"]}
+    # Written beside a clustering by `form_clusters.write_neighbours`; without it clusters keep size order.
+    near = json.loads(neighbours.read_text()) if _stamp(neighbours) else {}
     return {"revision": data["revision"], "families": data["families"], "units": units, "members": members,
-            "labels": labels}
+            "labels": labels, "neighbours": near}
 
 
-_CLUSTERS = _Watched(lambda: (clusters_dir() / "clusters.json", clusters_dir() / "units.parquet"), _load_clusters)
+_CLUSTERS = _Watched(lambda: (clusters_dir() / "clusters.json", clusters_dir() / "units.parquet",
+                              clusters_dir() / "neighbours.json"), _load_clusters)
 
 
 def clusters() -> dict[str, Any]:
