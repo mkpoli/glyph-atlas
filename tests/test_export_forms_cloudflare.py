@@ -98,12 +98,42 @@ def test_a_republication_keeps_decisions_made_online(tmp_path, monkeypatch):
     db = schema()
     load(db, tmp_path / "first")
     # Someone on the site gives B its own form, later than the local cluster decision.
-    db.execute("INSERT INTO form_decisions VALUES('online','2999-01-01T00:00:00+00:00','reviewer','glyph','U+306F',"
-               "'𛂞',NULL,'r1',?,'')", (json.dumps([B]),))
+    db.execute("INSERT INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,note) VALUES("
+               "'online','2999-01-01T00:00:00+00:00','reviewer','glyph','U+306F','𛂞',NULL,'r1',?,'')", (json.dumps([B]),))
     publish(tmp_path, monkeypatch, "second")
     load(db, tmp_path / "second")
     assert db.execute("SELECT count(*) FROM form_decisions").fetchone() == (2,)
+    assert db.execute("SELECT count(*) FROM form_loading").fetchone() == (0,), "the site takes decisions again"
     assert json.loads(db.execute("SELECT units FROM form_decisions WHERE kind='cluster'").fetchone()[0]) == [A, B, C], \
         "a decision written in parts is whole once, and a republication leaves it as it is"
     forms_now = dict(db.execute("SELECT id,form FROM form_units"))
     assert (forms_now[A], forms_now[B], forms_now[C]) == ("𛂥", "𛂞", "𛂥")
+
+
+def test_a_corpus_republication_keeps_the_forms(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
+    from cloudflare_schema import CORPUS_REFRESH, corpus_upsert
+
+    clustering(tmp_path, monkeypatch)
+    forms.record("cluster", cluster="U+306F:one", form="𛂥")
+    db = schema()
+    db.execute("INSERT INTO corpus_units(id,character,family,visual_group,shuffle,object,offset,size) VALUES(?,?,?,?,?,?,?,?)",
+               (A, "は", "U+306F", None, 1, "x", 0, 1))
+    publish(tmp_path, monkeypatch, "out")
+    load(db, tmp_path / "out")
+    # A corpus publication writes the source's character back, then refreshes.
+    db.executescript(corpus_upsert((A, "は", "U+306F", None, 1, "y", 0, 1, "unknown")) + "\n" + CORPUS_REFRESH)
+    assert db.execute("SELECT character FROM corpus_units WHERE id=?", (A,)).fetchone() == ("𛂥",)
+    assert db.execute("SELECT character,n FROM corpus_characters").fetchall() == [("𛂥", 1)]
+
+
+def test_the_site_refuses_decisions_while_a_clustering_reloads():
+    db = schema()
+    db.execute("INSERT INTO form_loading VALUES('now')")
+    try:
+        db.execute("INSERT INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,note) "
+                   "VALUES('d','t','a','glyph','U+306F',NULL,NULL,'r1','[]','')")
+    except sqlite3.IntegrityError as error:
+        assert "republished" in str(error)
+    else:
+        raise AssertionError("a decision was recorded during a reload")

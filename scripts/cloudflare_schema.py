@@ -6,13 +6,21 @@ from pathlib import Path
 
 MIGRATIONS = Path(__file__).resolve().parents[1] / "apps/cloudflare/migrations"
 
-# Marks the corpus glyphs that have a `units` row as named, then counts assigned glyphs per character
-# and material, with the statements the migration runs. Every publication that rewrites `corpus_units`
-# runs them after it, since a rewritten row starts unnamed.
-CORPUS_REFRESH = "\n".join(re.findall(
+# A decided glyph's corpus character is its form, or, with none decided, the character it had before
+# any decision covered it (the Worker applies one decision the same way). A rewritten corpus row
+# carries the source's character, so the forms are applied to it again.
+FORMS_REAPPLY = """INSERT OR IGNORE INTO form_bases SELECT c.id,c.character FROM corpus_units c JOIN form_units f ON f.id=c.id
+  WHERE f.glyph_set=1 OR f.cluster_form IS NOT NULL;
+UPDATE corpus_units SET character=CASE WHEN f.glyph_set=1 OR f.form IS NOT NULL THEN f.form ELSE b.character END
+  FROM form_units f JOIN form_bases b ON b.id=f.id WHERE f.id=corpus_units.id AND corpus_units.named=0;"""
+
+# Reapplies the forms, marks the corpus glyphs that have a `units` row as named, then counts assigned
+# glyphs per character and material, with the statements the migration runs. Every publication that
+# rewrites `corpus_units` runs them after it, since a rewritten row starts unnamed.
+CORPUS_REFRESH = FORMS_REAPPLY + "\n" + "\n".join(re.findall(
     r"UPDATE corpus_units SET named=1 WHERE id IN [\s\S]*?;|DELETE FROM corpus_characters;|INSERT INTO corpus_characters [\s\S]*?;",
     (MIGRATIONS / "0006_corpus_rounds.sql").read_text()))
-assert CORPUS_REFRESH.count(";") == 3, "0006 no longer restores and counts corpus_characters"
+assert CORPUS_REFRESH.count(";") == 5, "0006 no longer restores and counts corpus_characters"
 
 # Code points whose script makes a label kana, kanji or hangul, generated from the Unicode script
 # properties the Worker's `categoryOf` tests; 0006 names the kana and Han ranges in SQL and 0008 the

@@ -11,9 +11,10 @@ ordered SQL parts under `sql/`, and `publication.json` listing both.
    embeddings to split with.
 3. The local decisions are added to `form_decisions`, which keeps every decision made on the site.
    All of them are then replayed onto the new rows in the order they were made, so a republished
-   clustering keeps what people named online.
+   clustering keeps what people named online. From the reload until the replay the site refuses new
+   decisions, which would otherwise name the glyphs of a half-loaded cluster.
 4. `corpus_units.character` follows each decided glyph's form, and the per-character counts Quick
-   review deals from are recounted.
+   review deals from are recounted (`CORPUS_REFRESH`, which every corpus publication also runs).
 
 Apply the migrations first (`wrangler d1 migrations apply glyph-atlas --remote`).
 """
@@ -38,10 +39,10 @@ UNITS_PER_STATEMENT = 1000
 # Every decision stored in D1, replayed in the order it was made onto freshly loaded rows: a glyph's
 # cluster form is the latest cluster decision that listed it, its own decision the latest glyph or
 # inherit decision, and its form the second when it has one. The Worker applies one decision the
-# same way.
+# same way. The site takes no decision from the reload to here (`form_loading`).
 REPLAY = """
 DELETE FROM form_marks;
-INSERT INTO form_marks SELECT j.value,d.at,d.rowid,d.kind,d.form,d.id FROM form_decisions d,json_each(d.units) j;
+INSERT INTO form_marks SELECT j.value,d.at,d.seq,d.kind,d.form,d.id FROM form_decisions d,json_each(d.units) j;
 UPDATE form_units SET cluster_form=(SELECT m.form FROM form_marks m WHERE m.id=form_units.id AND m.kind='cluster'
   ORDER BY m.at DESC,m.seq DESC LIMIT 1) WHERE id IN (SELECT id FROM form_marks WHERE kind='cluster');
 UPDATE form_units SET (glyph_set,glyph_form,glyph_decision)=(SELECT m.kind='glyph',CASE WHEN m.kind='glyph' THEN m.form END,
@@ -51,12 +52,9 @@ UPDATE form_units SET form=CASE WHEN glyph_set=1 THEN glyph_form ELSE cluster_fo
 DELETE FROM form_marks;
 UPDATE form_clusters SET (form,decision)=(SELECT d.form,d.id FROM form_decisions d WHERE d.kind='cluster'
   AND d.cluster=form_clusters.id AND d.revision=(SELECT revision FROM form_families WHERE code_point=form_clusters.family)
-  ORDER BY d.at DESC,d.rowid DESC LIMIT 1);
+  ORDER BY d.at DESC,d.seq DESC LIMIT 1);
 UPDATE form_families SET assigned=(SELECT count(*) FROM form_units WHERE family=code_point AND form IS NOT NULL);
-INSERT OR IGNORE INTO form_bases SELECT c.id,c.character FROM corpus_units c JOIN form_units f ON f.id=c.id
-  WHERE f.glyph_set=1 OR f.cluster_form IS NOT NULL;
-UPDATE corpus_units SET character=CASE WHEN f.glyph_set=1 OR f.form IS NOT NULL THEN f.form ELSE b.character END
-  FROM form_units f JOIN form_bases b ON b.id=f.id WHERE f.id=corpus_units.id AND corpus_units.named=0;
+DELETE FROM form_loading;
 """
 
 
@@ -196,6 +194,20 @@ def export(corpus_root: Path, out: Path, workers: int = 8) -> dict:
     parts = Parts(out)
     for row in packed.rows:
         parts.write(f"INSERT OR IGNORE INTO media VALUES({_values(row)});")
+    # A run that stopped midway leaves the site refusing decisions; this one reloads everything anyway.
+    parts.write("DELETE FROM form_loading;")
+    for event in forms._events():
+        units = event["units"]
+        parts.write("INSERT OR IGNORE INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,note) "
+                    f"VALUES({_values((event['id'], event['at'], event.get('actor', 'local'), event['kind'], event['family'], event.get('form'), event.get('cluster'), event['revision'], json.dumps(units[:UNITS_PER_STATEMENT]), event.get('note', '')))});")
+        # D1 refuses a statement over 100 KB, so a large cluster's glyphs follow in parts. Each part
+        # extends only the list it follows, which leaves a decision already in D1 as it is.
+        for start in range(UNITS_PER_STATEMENT, len(units), UNITS_PER_STATEMENT):
+            chunk = json.dumps(units[start:start + UNITS_PER_STATEMENT])
+            parts.write(f"UPDATE form_decisions SET units=substr(units,1,length(units)-1)||','||substr({_quote(chunk)},2) "
+                        f"WHERE id={_quote(event['id'])} AND json_array_length(units)={start};")
+        counts["decisions"] += 1
+    parts.write("INSERT INTO form_loading VALUES(datetime('now'));")
     for table in ("form_units", "form_clusters", "form_families"):
         parts.write(f"DELETE FROM {table};")
     for code_point, family in sorted(data["families"].items()):
@@ -219,17 +231,6 @@ def export(corpus_root: Path, out: Path, workers: int = 8) -> dict:
         forms_of = json.dumps([_form_entry(char) for char in forms.family_members(code_point)], ensure_ascii=False)
         parts.write(f"INSERT INTO form_families VALUES({_values((code_point, family['char'], family['label'], family['count'], len(clusters), forms_of, 0, data['revision']))});")
         counts["families"] += 1
-    for event in forms._events():
-        units = event["units"]
-        parts.write("INSERT OR IGNORE INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,note) "
-                    f"VALUES({_values((event['id'], event['at'], event.get('actor', 'local'), event['kind'], event['family'], event.get('form'), event.get('cluster'), event['revision'], json.dumps(units[:UNITS_PER_STATEMENT]), event.get('note', '')))});")
-        # D1 refuses a statement over 100 KB, so a large cluster's glyphs follow in parts. Each part
-        # extends only the list it follows, which leaves a decision already in D1 as it is.
-        for start in range(UNITS_PER_STATEMENT, len(units), UNITS_PER_STATEMENT):
-            chunk = json.dumps(units[start:start + UNITS_PER_STATEMENT])
-            parts.write(f"UPDATE form_decisions SET units=substr(units,1,length(units)-1)||','||substr({_quote(chunk)},2) "
-                        f"WHERE id={_quote(event['id'])} AND json_array_length(units)={start};")
-        counts["decisions"] += 1
     parts.write(REPLAY.strip())
     parts.write(CORPUS_REFRESH)
     names = parts.close()

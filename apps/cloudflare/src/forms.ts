@@ -119,9 +119,9 @@ async function decide(env: Env, request: Request, tools: FormTools) {
   const unnamed = `FROM corpus_units WHERE named=0 AND character IS NOT NULL AND id IN (${touched})`;
   const statements = [
     kind === 'cluster'
-      ? env.DB.prepare(`INSERT INTO form_decisions SELECT ?,?,?,'cluster',?,?,?,?,json_group_array(id),? FROM (SELECT id FROM form_units WHERE cluster=? ORDER BY rank)`)
+      ? env.DB.prepare(`INSERT INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,note) SELECT ?,?,?,'cluster',?,?,?,?,json_group_array(id),? FROM (SELECT id FROM form_units WHERE cluster=? ORDER BY rank)`)
         .bind(id, at, actor, family!, form, clusterId, allowed!.revision, note, clusterId)
-      : env.DB.prepare('INSERT INTO form_decisions VALUES(?,?,?,?,?,?,?,?,?,?)').bind(id, at, actor, kind, family!, form, null, allowed!.revision, target, note),
+      : env.DB.prepare('INSERT INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,note) VALUES(?,?,?,?,?,?,?,?,?,?)').bind(id, at, actor, kind, family!, form, null, allowed!.revision, target, note),
     kind === 'cluster'
       ? env.DB.prepare('UPDATE form_units SET cluster_form=?1,form=CASE WHEN glyph_set=1 THEN glyph_form ELSE ?1 END WHERE cluster=?2').bind(form, clusterId)
       : kind === 'glyph'
@@ -145,7 +145,7 @@ async function decide(env: Env, request: Request, tools: FormTools) {
 }
 
 async function decisionLog(env: Env) {
-  const rows = await env.DB.prepare('SELECT * FROM form_decisions ORDER BY at,rowid').all<Json>();
+  const rows = await env.DB.prepare('SELECT * FROM form_decisions ORDER BY at,seq').all<Json>();
   const lines = rows.results.map(r => JSON.stringify({ id: r.id, at: r.at, actor: r.actor, kind: r.kind, family: r.family,
     form: r.form, cluster: r.cluster, revision: r.revision, units: JSON.parse(r.units), note: r.note }));
   return new Response(lines.join('\n') + (lines.length ? '\n' : ''), { headers: {
@@ -163,15 +163,22 @@ export async function withForm(env: Env, record: Json, tools: Pick<FormTools, 'c
     identity_status: 'assigned', identity_basis: basis(row) };
 }
 
+function decoded(segment: string, tools: FormTools) {
+  try { return decodeURIComponent(segment) } catch { return tools.fail(404, 'Unknown family or cluster.') }
+}
+
 export async function formsRoute(env: Env, request: Request, path: string, q: URLSearchParams, tools: FormTools): Promise<Response | Json | null> {
+  // A publication is reloading the clustering; the migration's trigger refuses a decision meanwhile.
+  if (path !== '/forms/decisions.jsonl' && await env.DB.prepare('SELECT 1 FROM form_loading LIMIT 1').first())
+    tools.fail(503, 'The forms are being republished. Try again in a few minutes.');
   if (request.method === 'POST') return path === '/forms/decisions' ? decide(env, request, tools) : null;
   if (path === '/forms/families') return (await families(env)) ?? tools.fail(404, 'No clustering has been published.');
   if (path === '/forms/decisions.jsonl') return decisionLog(env);
   const familyPath = path.match(/^\/forms\/families\/([^/]+)$/);
-  if (familyPath) return family(env, decodeURIComponent(familyPath[1]), q, tools);
+  if (familyPath) return family(env, decoded(familyPath[1], tools), q, tools);
   const clusterPath = path.match(/^\/forms\/clusters\/(.+)$/);
-  if (clusterPath) return members(env, decodeURIComponent(clusterPath[1]), q, tools);
+  if (clusterPath) return members(env, decoded(clusterPath[1], tools), q, tools);
   const splitPath = path.match(/^\/forms\/split\/(.+)$/);
-  if (splitPath) return split(env, decodeURIComponent(splitPath[1]), q, tools);
+  if (splitPath) return split(env, decoded(splitPath[1], tools), q, tools);
   return null;
 }
