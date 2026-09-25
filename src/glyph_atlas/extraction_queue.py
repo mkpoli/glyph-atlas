@@ -326,7 +326,7 @@ class Engine:
         page = next(p for p in dataset.read("pages") if p.id == job["id"])
         document = next(d for d in dataset.read("documents") if d.id == page.document_id)
         lines = [line for batch in dataset.scan("lines", keep=tables.In("page_id", {page.id}))
-                 for line in batch if line.box is not None]
+                 for line in batch if line.box is not None and not line.page_scope]
         lines = sorted(lines, key=lambda x:(x.seq,x.id))
         if len(lines) > max_lines:
             raise ValueError("page exceeds transcription-line resource cap")
