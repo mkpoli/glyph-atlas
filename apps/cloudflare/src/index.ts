@@ -640,7 +640,8 @@ async function history(env: Env, q: URLSearchParams) {
   const { sql, values } = historyQuery(actor, label, before);
   const rows = await env.DB.prepare(sql).bind(...values, limit + 1).all<HistoryRow>();
   const items = rows.results.slice(0, limit).map(historyItem);
-  const next = rows.results.length > limit ? encodeCursor(rows.results[limit].at, rows.results[limit].id) : null;
+  // The cursor is the last row returned; the next page starts strictly after it.
+  const next = rows.results.length > limit ? encodeCursor(rows.results[limit - 1].at, rows.results[limit - 1].id) : null;
   return { items, next };
 }
 async function reviews(env:Env,all:boolean){
