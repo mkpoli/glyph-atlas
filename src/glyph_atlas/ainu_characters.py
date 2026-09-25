@@ -273,6 +273,10 @@ def plan(atlas: Path, records: Path, *, min_iou: float = MIN_IOU, log: ReviewLog
             pairs = sorted(((iou(r.sample["box"], (u.box.x, u.box.y, u.box.w, u.box.h)), r.id, u.id, r, u)
                             for r in page_rows for u in atlas_units), key=lambda p: p[0], reverse=True)
             taken_r: set[str] = set()
+            # Every ink on the page that will carry a reading: (box, reading, confirmed by a person, the
+            # occurrence when this run imports it).
+            held_ink: list[tuple[Any, str, bool, Occurrence | None]] = [
+                (r.sample["box"], r.label, r.checked, None) for r in held[n]]
             for score, rid, uid, row, unit in pairs:
                 if score < min_iou:
                     break
@@ -281,6 +285,8 @@ def plan(atlas: Path, records: Path, *, min_iou: float = MIN_IOU, log: ReviewLog
                 taken_r.add(rid)
                 matched_units.add(uid)
                 same = written(unit) == row.label
+                if not row.rejected:
+                    held_ink.append((row.sample["box"], written(unit), unit.review in DECIDED, None))
                 if decided(unit):
                     result.keep_atlas.append((uid, row))
                     result.agree["decided, same" if same else "decided, different"] += 1
@@ -294,22 +300,28 @@ def plan(atlas: Path, records: Path, *, min_iou: float = MIN_IOU, log: ReviewLog
                     (result.keep_atlas if unit.review == ReviewState.DISPUTED else result.confirm).append((uid, row))
                 else:
                     result.replace.append((uid, row))
-            arriving = [*held[n], *(row for uid, row in result.replace if row.key == key and row.sample["page"] == n)]
-            for row in page_rows:
-                if row.id in taken_r:
-                    continue
+            for row in (r for r in result.replace if r[1].key == key and r[1].sample["page"] == n):
+                held_ink.append((row[1].sample["box"], row[1].label, row[1].checked, row[1]))
+            # A reading a person confirmed goes first, so an unconfirmed duplicate gives way to it.
+            for row in sorted((r for r in page_rows if r.id not in taken_r), key=lambda r: not r.checked):
                 if row.rejected:
                     result.skipped["rejected or empty in ainu-records"] += 1
                     continue
                 # ainu-records can give one ink two occurrences: overlapping OCR blocks, or one box under
-                # two lines. Under one reading it is one character; under two, neither can be trusted.
-                twin = next((a for a in arriving if iou(a.sample["box"], row.sample["box"]) >= min_iou), None)
-                if twin is not None and twin.label == row.label:
+                # two lines. Under one reading it is one character; under two, neither can be trusted
+                # unless a person confirmed one of them.
+                twins = [t for t in held_ink if iou(t[0], row.sample["box"]) >= min_iou]
+                other = [t for t in twins if t[1] != row.label]
+                if other and not row.checked and any(t[2] for t in other):
+                    result.skipped["another reading of the ink was confirmed"] += 1
+                    continue
+                if other:
+                    result.contested.add(f"{row.key}#{row.id}")
+                    result.contested.update(f"{t[3].key}#{t[3].id}" for t in other if t[3] is not None and not t[2])
+                elif twins:
                     result.skipped["same ink as another occurrence"] += 1
                     continue
-                if twin is not None:
-                    result.contested.update({f"{twin.key}#{twin.id}", f"{row.key}#{row.id}"})
-                arriving.append(row)
+                held_ink.append((row.sample["box"], row.label, row.checked, row))
                 result.import_new.append(row)
     result.atlas_only = [u.id for u in units if u.id not in matched_units and u.upstream.get("source") != UPSTREAM]
     return result
@@ -338,7 +350,8 @@ def imported(row: Occurrence, entry: str, lines: set[str], contested: frozenset[
         text_source=row.label or None, reading=row.label or None,
         unicode=" ".join(refs.to_code_points(row.label)) if row.label else None,
         script=refs.script_of(row.label[:1]) if row.label else Script.UNKNOWN,
-        method="import", review=ReviewState.REVIEWED if row.checked else ReviewState.MACHINE,
+        method="import",
+        review=ReviewState.REVIEWED if row.checked and f"{row.key}#{row.id}" not in contested else ReviewState.MACHINE,
         upstream={"source": UPSTREAM, "id": f"{row.key}#{row.id}"},
         meta={META: provenance(row), **({"alignment_repair": {
             "status": "contested", "reliable": False, "withheld": True, "quiz": False,
