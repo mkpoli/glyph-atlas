@@ -1,4 +1,4 @@
--- GET /history browses events(kind IN ('review','undo')) newest first, optionally by actor or by the
+-- GET /atlas/history browses events(kind IN ('review','undo')) newest first, optionally by actor or by the
 -- crop's label. Each index carries the same partial predicate as the queries that use it, so a review
 -- or undo row is found without touching any other kind, and the order is served by the index itself.
 CREATE INDEX IF NOT EXISTS event_history ON events(at DESC, id DESC) WHERE kind IN ('review','undo');
