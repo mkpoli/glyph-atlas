@@ -126,7 +126,30 @@ try {
     { id: 'flag-a', revision: 0, image_sha256: hash, verdict: 'wrong', issue: 'blank' },
     { id: 'flag-b', revision: 0, image_sha256: hash, verdict: 'wrong', issue: 'blank' },
   ] }
+  // A document's characters come in source order; a published unit shows its current review, and an
+  // occurrence the site does not publish keeps the label it was published with.
+  const occurrence = (page, position, label) => JSON.stringify({ sample: `${page}-l1-${position}`, page, line: 1, block: 'l1',
+    position, context: 'ラア', source: 'transcription', label, box: [1, 2, 3, 4] })
+  await db.batch([['hk:doc', 1, 'flag-a', occurrence(1, 1, 'ラ')], ['hk:doc', 0, 'ar:doc:1-l1-0', occurrence(1, 0, 'ア')],
+    ['hk:other', 0, 'two', occurrence(1, 0, 'ア')]].map(row => db.prepare('INSERT INTO document_characters VALUES(?,?,?,?)').bind(...row)))
+  const listed = async () => {
+    const response = await mf.dispatchFetch(base + '/atlas/documents/hk%3Adoc/characters')
+    assert.equal(response.status, 200)
+    assert.equal(response.headers.get('access-control-allow-origin'), '*', 'other sites read it from the browser')
+    assert.equal(response.headers.get('cache-control'), 'no-cache', 'a browser asks again, so a review shows')
+    return (await response.json()).characters
+  }
+  const before = await listed()
+  assert.deepEqual(await listed(), before, 'the edge copy answers the same, with the same headers')
+  assert.deepEqual(before.map(c => [c.unit, c.atlas, c.label, c.state ?? null]),
+    [['ar:doc:1-l1-0', false, 'ア', null], ['flag-a', true, 'ラ', 'pending']])
   await call('/atlas/rounds', flagRound)
+  const after = (await listed())[1]
+  assert.deepEqual([after.state, after.issue, after.revision], ['flagged', 'blank', 1], 'a review shows at once, past the cache')
+  for (const missing of ['hk%3Anone', '%E0']) {
+    const response = await mf.dispatchFetch(base + `/atlas/documents/${missing}/characters`)
+    assert.deepEqual([response.status, response.headers.get('access-control-allow-origin')], [404, '*'], 'a page can tell a missing document apart')
+  }
   const flaggedOrder = async () => (await call('/atlas?reading=ラ&state=flagged')).items.map(i => i.id)
   assert.deepEqual(await flaggedOrder(), ['flag-a', 'flag-b'], 'flagged crops nobody has reviewed keep their shuffled order')
   const inspected = { id: crypto.randomUUID(), client_id: 'inspector', revision: 1,
@@ -141,6 +164,8 @@ try {
     image_sha256: hash, verdict: 'wrong', issue: 'character', character: '𪜈', reading: 'とも' }
   await call('/atlas/characters/two', reading)
   assert.equal((await call('/atlas/characters/two')).reading, 'とも')
+  const renamed = (await call('/atlas/documents/hk%3Aother/characters')).characters[0]
+  assert.deepEqual([renamed.label, renamed.source], ['𪜈', 'review'], 'a label corrected on the site is the review\'s')
   const moved = { ...correction, id: crypto.randomUUID(), revision: 1, character: '𪜈' }
   await call('/atlas/corpus/reviews', moved)
   assert.equal((await call('/layers/candidates?code_point=U%2B2A708&scope=grapheme')).family_total, 1)
@@ -326,6 +351,11 @@ try {
   shapes.push([{ sql: refresh[0], values: [] }, [], 'sqlite_autoindex_corpus_units_1'])
   shapes.push([{ sql: "UPDATE corpus_characters SET named=named+1 WHERE (character,production)=(SELECT character,production FROM corpus_units WHERE id=? AND named=0)", values: [] },
     ['na-1'], 'sqlite_autoindex_corpus_units_1'])
+  // A document's characters are read along the table's own key, and each unit by its id.
+  const documentPlan = await plan({ sql: worker.documentCharactersQuery(), values: [] }, ['hk:doc'])
+  served(documentPlan, null)
+  assert.ok(documentPlan.includes('SEARCH c USING PRIMARY KEY (document=?)'), documentPlan.join('; '))
+  assert.ok(documentPlan.some(d => /^SEARCH u USING INDEX sqlite_autoindex_units_1 \(id=\?\)/.test(d)), documentPlan.join('; '))
   for (const [shape, bound, index] of shapes) {
     const details = await plan(shape, bound)
     if (process.env.SHOW_PLANS) console.log(index, JSON.stringify(details))
