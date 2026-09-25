@@ -81,7 +81,7 @@ def read_crops(db, media):
         stored = json.loads(visual)
         if stored.get("status") != "ready" or encoded(stored.get("engines")) != current:
             rows.append((identity, raw))
-        elif (ranked := rank(stored["candidates"])) != stored["candidates"]:
+        elif (ranked := rank(stored["candidates"], stored.get("votes", []))) != stored["candidates"]:
             db.execute("UPDATE units SET visual=? WHERE id=?", (encoded({**stored, "candidates": ranked}), identity))
     db.commit()
     if not rows:
@@ -96,7 +96,7 @@ def read_crops(db, media):
         saved = cache / (key + ".json")
         if saved.exists():
             result = json.loads(saved.read_text())
-            result["candidates"] = rank(result["candidates"])
+            result["candidates"] = rank(result["candidates"], result.get("votes", []))
         else:
             with Image.open(media.materialize(key)) as picture:
                 result = model.read(picture.convert("RGB"))
