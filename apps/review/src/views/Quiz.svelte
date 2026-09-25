@@ -10,7 +10,7 @@
   import QuizFocus from '../components/QuizFocus.svelte'
   import { catalogue, randomSeed, request, remember, stored, number, suggestionsFor } from '../lib/client.js'
   import { issues, issueTitle, suggestsReading, isSingle, greetSuggestions, SKIP_LABEL, SKIP_HINT } from '../lib/issues.js'
-  import { nextCharacter, ROUND_BATCH } from '../lib/reviewRounds.js'
+  import { nextCharacter, ROUND_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
   let { clientId, initialReading = '', inspect } = $props()
   let data = $state(null), items = $state([]), choices = $state({}), selected = $state({})
   let loaded = $state({}), failed = $state({}), suggestions = $state({}), contextSuggestions = $state({})
@@ -23,6 +23,9 @@
   let categoryOpen = $state(false), search = $state(''), completed = $state(0), last = $state(null)
   let roundId = $state(crypto.randomUUID()), requestId = 0, closed = false
   let roundSeed = randomSeed()
+  // Already-confirmed and already-seen crops of the current reading, for comparison against the
+  // round on screen. Loaded after the round itself, and a failure here never blocks the round.
+  let references = $state([])
   let history = $state([]), historyIndex = $state(-1)
   let loadingMore = $state(false), hasMore = $state(false)
   // True while the load-more row is on screen or close to it: scrolling down loads the next batch.
@@ -173,6 +176,24 @@
     } catch (e) { if (id === requestId) error = e.message }
     finally { if (id === requestId) loadingMore = false }
   }
+  /**
+   * The reference strip for the current reading: crops already confirmed, then crops already
+   * seen. Reloaded whenever the round changes; a failure here just leaves the strip empty, since
+   * it is a comparison aid, not a decision the round depends on.
+   */
+  async function loadReferences() {
+    const target = reading, scope = production, round = roundId
+    if (!target) { references = []; return }
+    try {
+      const [checked, seen] = await Promise.all([
+        catalogue({ purpose: 'review', reviewer: clientId, production: scope, reading: target, state: 'checked', limit: REFERENCE_LIMIT, seed: roundSeed }),
+        catalogue({ purpose: 'review', reviewer: clientId, production: scope, reading: target, state: 'seen', limit: REFERENCE_LIMIT, seed: roundSeed }),
+      ])
+      if (closed || round !== roundId) return
+      references = mergeReferences(checked.items ?? [], seen.items ?? [])
+    } catch { if (!closed && round === roundId) references = [] }
+  }
+  $effect(() => { void roundId; loadReferences() })
   const decidable = $derived(remaining)
   const available = $derived(decidable.length)
 
@@ -479,6 +500,19 @@
     </div>
     {/key}
     {#if items.length}<div class="load-more-row" use:watchEnd><button class="load-more" disabled={loading || saving || loadingMore || !hasMore || items.length >= roundLimit} onclick={loadMore}>{loadingMore ? 'Loading…' : items.length >= roundLimit ? 'Save this round to load more' : hasMore ? `Load more ${reading}` : `All ${reading} loaded`}</button></div>{/if}
+    {#if references.length}
+      <section class="quiz-reference" aria-label="Reference crops">
+        <p class="reference-heading">Reference: already confirmed / seen <span>{references.length}</span></p>
+        <div class="reference-strip">
+          {#each references as item (item.id)}
+            <button class="reference-tile" aria-label={`Inspect reference ${item.label}, ${item.referenceState === 'checked' ? 'confirmed' : 'seen'}`} onclick={() => inspect(item.id)}>
+              <span class="reference-glyph"><Glyph {item} /></span>
+              <span class="reference-tag"><span class="status-dot" class:checked={item.referenceState === 'checked'} class:seen={item.referenceState === 'seen'}></span>{item.referenceState === 'checked' ? 'Confirmed' : 'Seen'}</span>
+            </button>
+          {/each}
+        </div>
+      </section>
+    {/if}
   {:else if current}
     <QuizFocus items={queue} index={focusIndex} label={step === 'issue' ? 'Choose the problem' : 'Correction'} backLabel={step === 'issue' ? 'Change selection' : 'Change problem'} disabled={saving} onback={back} onjump={jump} onprev={() => move(-1)} onnext={() => move(1)}>
       {#if step === 'issue'}
@@ -523,5 +557,16 @@
   .history-character.current { color:var(--accent); background:var(--accent-light); border-color:var(--accent); }
   .load-more-row { display:flex; justify-content:center; padding:22px 0 0; }
   .load-more { min-width:170px; font-size:13px; }
+  /* Comparison aid, not part of the round: smaller tiles, no selection state, own inspect only. */
+  .quiz-reference { margin:26px 0 4px; }
+  .reference-heading { display:flex; align-items:center; gap:8px; font-size:11px; color:var(--muted); margin:0 0 10px; }
+  .reference-heading span { font-variant-numeric:tabular-nums; }
+  .reference-strip { display:flex; flex-wrap:wrap; gap:8px; }
+  .reference-tile { display:flex; flex-direction:column; align-items:center; gap:4px; width:68px; padding:6px 4px; background:#f1f1f3; border:1px solid transparent; border-radius:7px; }
+  .reference-tile:hover { border-color:#ceccd9; }
+  .reference-glyph { display:block; width:52px; height:52px; }
+  .reference-glyph :global(img) { width:100%; height:100%; object-fit:contain; }
+  .reference-tag { display:flex; align-items:center; gap:4px; font-size:8px; color:var(--muted); white-space:nowrap; }
+  .status-dot.seen { background:#8d8d95; }
   .current-problem { color: var(--muted); font-size: 12px; margin: 0 0 14px; }
 </style>
