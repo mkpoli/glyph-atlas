@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'bun:test';
-import { canonical, literal, hira, single, readingFrom, validRound, categoryOf } from './index';
+import { canonical, literal, hira, single, readingFrom, validRound, categoryOf,
+  encodeCursor, decodeCursor, historyItem, historyQuery } from './index';
 import { ROUND_MAX } from './rounds';
 
 describe('historical character identities', () => {
@@ -64,5 +65,62 @@ describe('a round names flagged answers, seen crops, or both', () => {
 describe('categoryOf', () => {
   it('names a label by the script of its first character', () => {
     expect(['ア', '仮', 'ㅿ', 'ᄫ', '한', 'A', ''].map(categoryOf)).toEqual(['kana', 'kanji', 'hangul', 'hangul', 'hangul', 'other', 'other']);
+  });
+});
+
+describe('history cursor', () => {
+  it('round-trips at and id, and rejects a cursor that is not one', () => {
+    const cursor = encodeCursor('2026-01-02T03:04:05.000Z', 'cf:one');
+    expect(decodeCursor(cursor)).toEqual({ at: '2026-01-02T03:04:05.000Z', id: 'cf:one' });
+    expect(() => decodeCursor('not-base64!!')).toThrow('Invalid cursor.');
+    expect(() => decodeCursor(btoa(JSON.stringify(['only-one'])))).toThrow('Invalid cursor.');
+    expect(() => decodeCursor(btoa(JSON.stringify([1, 'cf:one'])))).toThrow('Invalid cursor.');
+  });
+});
+
+describe('historyQuery', () => {
+  it('filters by kind and orders newest first, keyset-paged', () => {
+    const { sql, values } = historyQuery(null, null, null);
+    expect(sql).toContain(`kind IN ('review','undo')`);
+    expect(sql).toContain('ORDER BY at DESC,id DESC');
+    expect(values).toEqual([]);
+  });
+  it('adds actor, label and cursor filters as bound parameters', () => {
+    const { sql, values } = historyQuery('alice', 'ア', { at: '2026-01-02T00:00:00.000Z', id: 'cf:one' });
+    expect(sql).toContain('actor=?');
+    expect(sql).toContain('AS label');
+    expect(sql).toContain('(at,id)<(?,?)');
+    expect(values).toEqual(['alice', 'ア', '2026-01-02T00:00:00.000Z', 'cf:one']);
+  });
+});
+
+describe('historyItem', () => {
+  it('maps a review row, converting a suggested code point to its character', () => {
+    const event = JSON.stringify({ id: 'cf:e1', target_type: 'unit', target_id: 'one', field: 'review',
+      old: 'machine', new: 'reviewed', role: 'reviewer', actor: 'alice', at: '2026-01-02T00:00:00.000Z',
+      evidence: JSON.stringify({ kind: 'character-review', verdict: 'wrong', issue: 'character',
+        suggested_character: 'U+30D7', suggested_reading: 'ぷ', round: null }) });
+    expect(historyItem({ id: 'cf:e1', at: '2026-01-02T00:00:00.000Z', actor: 'alice', target: 'one',
+      kind: 'review', event, label: 'ア' })).toEqual({
+      id: 'cf:e1', at: '2026-01-02T00:00:00.000Z', actor: 'alice', target: 'one', label: 'ア', kind: 'review',
+      verdict: 'wrong', issue: 'character', character: 'プ', reading: 'ぷ', round: null, undoes: null,
+    });
+  });
+  it('maps an undo row, naming the event it reverses and leaving the review fields null', () => {
+    const event = JSON.stringify({ id: 'cf:e2', target_type: 'unit', target_id: 'one', field: 'review',
+      old: 'reviewed', new: 'machine', role: 'reviewer', actor: 'alice', at: '2026-01-03T00:00:00.000Z',
+      evidence: 'undo of cf:e1' });
+    expect(historyItem({ id: 'cf:e2', at: '2026-01-03T00:00:00.000Z', actor: 'alice', target: 'one',
+      kind: 'undo', event, label: null })).toEqual({
+      id: 'cf:e2', at: '2026-01-03T00:00:00.000Z', actor: 'alice', target: 'one', label: null, kind: 'undo',
+      verdict: null, issue: null, character: null, reading: null, round: null, undoes: 'cf:e1',
+    });
+  });
+  it('carries a round id when the review came from a visual quiz round', () => {
+    const event = JSON.stringify({ id: 'cf:e3', target_type: 'unit', target_id: 'two', field: 'review',
+      old: 'machine', new: 'reviewed', role: 'reviewer', actor: 'bob', at: '2026-01-04T00:00:00.000Z',
+      evidence: JSON.stringify({ kind: 'visual-quiz', round: 'round-1', label: 'ア', verdict: 'match', issue: null }) });
+    expect(historyItem({ id: 'cf:e3', at: '2026-01-04T00:00:00.000Z', actor: 'bob', target: 'two',
+      kind: 'review', event, label: 'ア' }).round).toBe('round-1');
   });
 });
