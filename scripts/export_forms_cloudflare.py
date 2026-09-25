@@ -42,13 +42,15 @@ UNITS_PER_STATEMENT = 1000
 # same way. The site takes no decision from the reload to here (`form_loading`).
 REPLAY = """
 DELETE FROM form_marks;
-INSERT INTO form_marks(id,at,seq,kind,form,decision,issue,character) SELECT j.value,d.at,d.seq,d.kind,d.form,d.id,d.issue,d.character
+INSERT INTO form_marks(id,at,seq,kind,form,decision,issue,character,character_family)
+  SELECT j.value,d.at,d.seq,d.kind,d.form,d.id,d.issue,d.character,d.character_family
   FROM form_decisions d,json_each(d.units) j;
 UPDATE form_units SET cluster_form=(SELECT m.form FROM form_marks m WHERE m.id=form_units.id AND m.kind='cluster'
   ORDER BY m.at DESC,m.seq DESC LIMIT 1) WHERE id IN (SELECT id FROM form_marks WHERE kind='cluster');
-UPDATE form_units SET (glyph_set,glyph_form,glyph_decision,glyph_issue,glyph_character)=(SELECT m.kind='glyph',
+UPDATE form_units SET (glyph_set,glyph_form,glyph_decision,glyph_issue,glyph_character,glyph_family)=(SELECT m.kind='glyph',
   CASE WHEN m.kind='glyph' THEN m.form END,CASE WHEN m.kind='glyph' THEN m.decision END,
-  CASE WHEN m.kind='glyph' THEN m.issue END,CASE WHEN m.kind='glyph' THEN m.character END
+  CASE WHEN m.kind='glyph' THEN m.issue END,CASE WHEN m.kind='glyph' THEN m.character END,
+  CASE WHEN m.kind='glyph' THEN m.character_family END
   FROM form_marks m WHERE m.id=form_units.id AND m.kind<>'cluster'
   ORDER BY m.at DESC,m.seq DESC LIMIT 1) WHERE id IN (SELECT id FROM form_marks WHERE kind<>'cluster');
 UPDATE form_units SET form=CASE WHEN glyph_set=1 THEN glyph_form ELSE cluster_form END;
@@ -60,6 +62,15 @@ UPDATE form_families SET assigned=(SELECT count(*) FROM form_units WHERE family=
   rejected=(SELECT count(*) FROM form_units WHERE family=code_point AND glyph_issue IS NOT NULL);
 DELETE FROM form_loading;
 """
+
+
+def character_family(character: str | None) -> str | None:
+    """The grapheme family of a character a glyph was reported as, as the Worker takes it."""
+    if not character:
+        return None
+    from glyph_atlas import refs
+    code_point = " ".join(refs.to_code_points(character))
+    return (refs.grapheme_info(code_point) or {}).get("code_point") or code_point
 
 
 def _quote(value) -> str:
@@ -188,8 +199,8 @@ def export(corpus_root: Path, out: Path, workers: int = 8) -> dict:
     parts.write("DELETE FROM form_loading;")
     for event in forms._events():
         units = event["units"]
-        parts.write("INSERT OR IGNORE INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,note,issue,character) "
-                    f"VALUES({_values((event['id'], event['at'], event.get('actor', 'local'), event['kind'], event['family'], event.get('form'), event.get('cluster'), event['revision'], json.dumps(units[:UNITS_PER_STATEMENT]), event.get('note', ''), event.get('issue'), event.get('character')))});")
+        parts.write("INSERT OR IGNORE INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,note,issue,character,character_family) "
+                    f"VALUES({_values((event['id'], event['at'], event.get('actor', 'local'), event['kind'], event['family'], event.get('form'), event.get('cluster'), event['revision'], json.dumps(units[:UNITS_PER_STATEMENT]), event.get('note', ''), event.get('issue'), event.get('character'), character_family(event.get('character'))))});")
         # D1 refuses a statement over 100 KB, so a large cluster's glyphs follow in parts. Each part
         # extends only the list it follows, which leaves a decision already in D1 as it is.
         for start in range(UNITS_PER_STATEMENT, len(units), UNITS_PER_STATEMENT):

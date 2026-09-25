@@ -543,7 +543,8 @@ try {
   await call('/atlas/forms/decisions', { kind: 'glyph', units: ['codh:plain'], form: '假', issue: 'character', client_id: 'integration' }, 422)
   await call('/atlas/forms/decisions', { kind: 'glyph', units: ['codh:plain'], issue: 'crop', character: 'テ', client_id: 'integration' }, 422)
   await call('/atlas/forms/decisions', { kind: 'glyph', units: ['codh:plain'], issue: 'character', character: 'テ', client_id: 'integration' })
-  assert.equal((await db.prepare("SELECT character FROM corpus_units WHERE id='codh:plain'").first()).character, 'テ')
+  assert.deepEqual({ ...(await db.prepare("SELECT character,family FROM corpus_units WHERE id='codh:plain'").first()) },
+    { character: 'テ', family: 'U+30C6' }, 'a glyph reported as テ joins テ\'s family (its own, as this catalogue lacks テ)')
   assert.equal((await call('/atlas/corpus/character?id=codh%3Aplain')).written_character, 'テ')
   const reported = await call('/atlas/forms/families/U%2B4EEE')
   assert.deepEqual([reported.rejected, reported.items[0].rejected], [1, 1])
@@ -552,7 +553,8 @@ try {
     [['codh:plain', 'character', 'テ'], ['codh:fixture', null, null]])
   await counted()
   await call('/atlas/forms/decisions', { kind: 'inherit', units: ['codh:plain'], client_id: 'integration' })
-  assert.equal((await db.prepare("SELECT character FROM corpus_units WHERE id='codh:plain'").first()).character, '假')
+  assert.deepEqual({ ...(await db.prepare("SELECT character,family FROM corpus_units WHERE id='codh:plain'").first()) },
+    { character: '假', family: 'U+4EEE' }, 'taking the report back restores its character and family')
   assert.equal((await call('/atlas/forms/families/U%2B4EEE')).rejected, 0)
   await counted()
   const split = await call('/atlas/forms/split/U%2B4EEE%3Ac1?k=2')
