@@ -63,7 +63,7 @@
   "common.tryAgain": "Try again",
   "corpus.addNote": "Add a note",
   "corpus.assign.label": "Assign written character",
-  "corpus.atlasCorrection": "Atlas correction",
+  "corpus.atlasCorrection": "Glyph Atlas correction",
   "corpus.characterCount": "{count} characters",
   "corpus.chooseAnother": "Choose another character",
   "corpus.correctCharacter.label": "Correct character",

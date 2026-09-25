@@ -63,7 +63,7 @@
   "common.tryAgain": "もう一度試す",
   "corpus.addNote": "メモを追加",
   "corpus.assign.label": "書かれた文字を割り当て",
-  "corpus.atlasCorrection": "Atlasによる修正",
+  "corpus.atlasCorrection": "字形大図譜による修正",
   "corpus.characterCount": "{count}文字",
   "corpus.chooseAnother": "別の文字を選ぶ",
   "corpus.correctCharacter.label": "正しい文字",
