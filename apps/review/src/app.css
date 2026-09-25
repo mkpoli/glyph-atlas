@@ -93,3 +93,5 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 .character-dialog .inspector-savebar .looks-right{align-self:auto}
 .character-dialog .inspector-savebar .skip-character{order:-1}
 }
+.options-menu button[aria-pressed="true"]{color:var(--accent);font-weight:500}
+.options-menu button[aria-pressed="true"]::after{content:" ✓"}

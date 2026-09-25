@@ -78,3 +78,13 @@ export function t(key, params = {}) {
 
 /** A number in the current language's format. */
 export const formatNumber = value => Number(value ?? 0).toLocaleString(base())
+
+/**
+ * A message split around one of its placeholders, for text that sets that part apart (a bold reading,
+ * a glyph): the words before it and after it, in the order the language puts them.
+ */
+export function around(key, name, params = {}) {
+  const text = t(key, params)
+  const at = text.indexOf(`{${name}}`)
+  return at < 0 ? [text, ''] : [text.slice(0, at), text.slice(at + name.length + 2)]
+}

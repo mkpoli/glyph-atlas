@@ -9,7 +9,7 @@
   import CharacterChips from '../components/CharacterChips.svelte'
   import { catalogue, character, request, randomSeed, number } from '../lib/client.js'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery } from '../lib/layers.js'
-  import { t } from '../lib/i18n.svelte.js'
+  import { t, around } from '../lib/i18n.svelte.js'
   let { queue = '', inspect, ink = 'original', onink = () => {}, onprogress = () => {} } = $props()
   let data = $state(null), items = $state([]), error = $state(''), loading = $state(true)
   let reading = $state(''), search = $state(''), offset = $state(0), seed = $state(randomSeed())
@@ -326,7 +326,7 @@
   {:else if !query && sample.length}
     <p class="find-count" role="status">{t('explore.count.here', { count: items.length })}<span class="separator">·</span> {t('explore.count.fromCorpus', { count: sample.length })}{#if sampleFault}<span class="corpus-fault"> · {sampleFault === 'error' ? t('explore.corpus.error') : t('explore.corpus.notLoaded')}</span>{/if}</p>
   {:else if query && settled}
-    <p class="find-count" role="status">{t('explore.occurrencesOf', { count: settled.total })} <b>{readable}</b>{#if loading}<span class="find-pending"> …</span>{/if}</p>
+    <p class="find-count" role="status">{around('explore.occurrencesOf', 'reading', { count: settled.total })[0]}<b>{readable}</b>{around('explore.occurrencesOf', 'reading', { count: settled.total })[1]}{#if loading}<span class="find-pending"> …</span>{/if}</p>
   {/if}
   <div class="glyph-grid" aria-label={queue === 'flagged' ? t('explore.heading.flagged') : queue === 'hard' ? t('explore.heading.hard') : t('explore.grid.collection')} aria-busy={loading}>
     {#if loading && !display.length}{#each Array(32) as _}<div class="glyph-skeleton"></div>{/each}

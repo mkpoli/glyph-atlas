@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte'
-  import { t, formatNumber as number } from '../lib/i18n.svelte.js'
+  import { t, formatNumber as number, around } from '../lib/i18n.svelte.js'
   let { close } = $props()
   /** A click on the backdrop closes the dialog. The backdrop has no element of its own, so a click on
    * it lands on the dialog; its position outside the dialog's box is what tells it apart. */
@@ -79,10 +79,10 @@
           </div>
           {#if source.discovery_complete}
             <div class="bar" role="img" aria-label={t('progress.bar.percentCollected', { percent: percent(source) })}><span style={`width:${percent(source)}%`}></span></div>
-            <p class="book-count"><strong>{number(source.completed)}</strong> {t('progress.worksCollected.suffix', { total: number(source.total) })}</p>
+            <p class="book-count">{around('progress.worksCollected', 'completed', { total: source.total })[0]}<strong>{number(source.completed)}</strong>{around('progress.worksCollected', 'completed', { total: source.total })[1]}</p>
           {:else}
             <div class="bar discovering" role="img" aria-label={t('progress.bar.discovering')}><span></span></div>
-            <p class="book-count"><strong>{number(source.total)}</strong> {t('progress.worksFound.suffix')}</p>
+            <p class="book-count">{around('progress.worksFound', 'total')[0]}<strong>{number(source.total)}</strong>{around('progress.worksFound', 'total')[1]}</p>
             {#if source.discovered_pages}<p class="progress-note">{t('progress.pagesFound', { count: source.discovered_pages })}</p>{/if}
           {/if}
           <dl class="stages">
