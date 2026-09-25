@@ -131,12 +131,13 @@ async function catalogue(env: Env, q: URLSearchParams) {
   const order = others + (purpose === 'review' && seed % 5 ? 'priority,' : '');
   const [count, window] = await env.DB.batch([
     env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${where.join(' AND ')}`).bind(...values),
-    env.DB.prepare(`SELECT *,${state} AS effective FROM units WHERE ${where.join(' AND ')} ORDER BY ${order} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...values, seed + 1, limit, offset),
+    env.DB.prepare(`SELECT *,${state} AS effective,(SELECT shape_order FROM unit_shapes s WHERE s.id=units.id) AS shape_order FROM units WHERE ${where.join(' AND ')} ORDER BY ${order} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...values, seed + 1, limit, offset),
   ]);
   return { total: (count.results[0] as { n: number }).n, available: Object.values(counts).reduce((a:number,b:any) => a+b,0),
     counts, purpose, production, review_limit:96, review_epoch: await meta(env, 'review_epoch') || 0, query: q.get('q'),
     categories: [...categories.values()].sort((a,b) => b.total-a.total || a.label.localeCompare(b.label)),
-    items: (window.results as (UnitRow & { effective: string })[]).map(row => ({ ...compact(row), state: row.effective })) };
+    items: (window.results as (UnitRow & { effective: string; shape_order: number | null })[])
+      .map(row => ({ ...compact(row), state: row.effective, shape_order: row.shape_order })) };
 }
 async function known(env: Env, value: string) {
   const key = cp(literal(value));

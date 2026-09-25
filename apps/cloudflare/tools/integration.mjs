@@ -87,6 +87,9 @@ try {
   assert.equal((await call('/atlas?group=kanji')).items[0].id, 'one', 'category follows the written identity')
   await call(`/atlas/rounds/${cropProblem.id}/undo`, { client_id: 'integration' })
   assert.equal((await call('/atlas?group=kana')).items.length, 2, 'undo restores the category')
+  await db.prepare('INSERT INTO unit_shapes VALUES(?,?)').bind('two', 7).run()
+  const shaped = Object.fromEntries((await call('/atlas?purpose=review&production=all')).items.map(i => [i.id, i.shape_order]))
+  assert.deepEqual(shaped, { one: null, two: 7 }, 'a crop carries its shape order, or null without one')
   const ligature = { char: '𪜈', code_point: 'U+2A708', grapheme: { code_point: 'U+2A708' }, ligature: { reading: 'トモ' }, candidates: {} }
   await db.prepare('INSERT INTO characters VALUES(?,?,?,?,?)').bind('U+2A708', '𪜈', '', JSON.stringify(ligature), JSON.stringify(ligature)).run()
   const reading = { id: crypto.randomUUID(), client_id: 'integration', revision: 0,
