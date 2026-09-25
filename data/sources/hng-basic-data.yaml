@@ -1,0 +1,92 @@
+id: hng-basic-data
+name: 漢字字体規範史データセット（HNG）基本データセット
+publisher: 漢字字体規範史データセット保存会
+kind: character-dataset
+url: https://www.hng-data.org/dataset.ja.html
+revision: e2174a30844b8100c34af1c0dbe1e301f186883e
+licence: CC-BY-SA-4.0
+licence_evidence: https://github.com/chise/hng-basic-data/blob/e2174a30844b8100c34af1c0dbe1e301f186883e/README.md
+attribution: 漢字字体規範史データセット保存会『漢字字体規範史データセット（HNG）』基本データセット, CC BY-SA 4.0
+counts:
+  sources: 63
+access:
+  repository: https://github.com/chise/hng-basic-data
+  upstream_repository: https://gitlab.hng-data.org/HNG/hng-basic-data
+  crop: https://raw.githubusercontent.com/chise/hng-basic-data/{revision}/{path}
+  source_list: https://www.hng-data.org/sources.ja.html
+  search: https://search.hng-data.org/
+format:
+  index: "all_table_v.5.0_2019-01-15.csv: one row per 字体 (統合ID, with b, c… for further 字体 of a character), then 代表字形ID, 字体数, 用例数 for each source code"
+  folder_index: "{folder}/char-card-info.csv: 統合ID (大字典番号 in H81), 文字, カード番号, 字体数, 用例数, 部首; read for H80 and H81, which the index does not cover"
+  crops: "{folder}/glyphs/BMP/{id}{glyph}.bmp or {glyph}.bmp, one representative crop per 字体 per source; PNG copies exist for some folders only"
+notes:
+  - HNG stands for Hanzi Normative Glyphs. The cards were made by 石塚晴通 and students at 北海道大学; about 400,000 occurrences in 67 sources by 2005.
+  - A crop stands for all occurrences of its 字体 in the source; 用例数 counts them. Page positions are not part of this dataset.
+  - The licence is CC BY-SA 4.0 or GPL-2.0-or-later at the user's choice; the atlas takes CC BY-SA 4.0.
+  - The GitHub repository mirrors gitlab.hng-data.org, which did not answer on 2026-09-25.
+  - The source list names 64 sources; H23 宝篋印陀羅尼經 has 679 entries in the index and no folder or crops in the dataset.
+  - Dates are HNG's 作成年代 as written; the importer reads them into year intervals by the rules in its module docstring.
+documents:
+  - {code: H01, id: jou, title: P2179誠実論巻八, short: P2179, category: 南北朝写本, date: "514", standard: true, sphere: 公的, genre: [religion], folder: 01_誠實論卷八（P.2179）}
+  - {code: H02, id: keg, title: S2067華厳経巻十六, short: S2067, category: 南北朝写本, date: "513", standard: true, sphere: 公的, genre: [religion], folder: 02_華嚴經卷十六（S.2067）}
+  - {code: H03, id: dng, title: S81大般涅槃経巻十一, short: S81, category: 南北朝写本, date: "506", standard: true, genre: [religion], folder: 03_大般涅槃經卷十一（S.81）}
+  - {code: H05, id: mam, title: P2160摩訶摩耶経巻上, short: P2160, category: 南北朝写本, date: "586", standard: true, genre: [religion], folder: 05_摩訶摩耶經卷上（P.2160）}
+  - {code: H06, id: drt, title: P2413大楼炭経巻三, short: P2413, category: 隋写本, date: "589", standard: true, genre: [religion], folder: 06_大樓炭經卷三（P.2413）}
+  - {code: H07, id: kgk, title: 賢劫経巻二, short: 賢劫経二, category: 隋写本, date: "610", sphere: 私的, genre: [religion], folder: 07_賢劫經卷二（正倉院本）}
+  - {code: H08, id: myz, title: P2334妙法蓮華経巻五, short: P2334, category: 隋写本, date: "617", standard: true, genre: [religion], folder: 08_妙法蓮華經卷五（P.2334）}
+  - {code: H09, id: kda, title: 大品経巻二十八, short: 京博大品, category: 高昌写本, date: "高昌期", standard: true, genre: [religion], folder: 09_大品經卷二十八（京都国立博物館本）}
+  - {code: H10, id: khi, title: 今西本妙法蓮華経巻五, short: 宮廷今西, category: 初唐写本, date: "671", standard: true, sphere: 公的, genre: [religion], folder: 10_妙法蓮華經卷五（今西本）}
+  - {code: H11, id: khm, title: 守屋本妙法蓮華経巻三, short: 宮廷守屋, category: 初唐写本, date: "675", standard: true, sphere: 公的, genre: [religion], folder: 11_妙法蓮華經卷三（守屋本）}
+  - {code: H12, id: fhs, title: P2195妙法蓮華経巻六, short: P2195, category: 初唐写本, date: "675", standard: true, sphere: 公的, genre: [religion], folder: 12_妙法蓮華經卷六（P.2195）}
+  - {code: H13, id: hok, title: S2577妙法蓮華経巻八, short: S2577, category: 初唐写本, date: "7C末", sphere: 私的, genre: [religion], folder: 13_妙法蓮華經卷八（S.2577）}
+  - {code: H14, id: kyd, title: 上野本漢書揚雄伝, short: 漢書揚雄, category: 初唐写本, date: "初唐", sphere: 私的, genre: [], folder: 14_漢書楊雄傳（上野本）}
+  - {code: H15, id: sok, title: 守屋本花厳経巻八, short: 華厳守屋, category: 則天写本, date: "則天期", sphere: 私的, genre: [religion], folder: 15_花嚴經卷八（守屋本）}
+  - {code: H16, id: yhk, title: S2423瑜伽法鏡経, short: S2423, category: 盛唐写本, date: "712", standard: true, genre: [religion], folder: 16_瑜伽法鏡經（S.2423）}
+  - {code: H17, id: kak, title: 開成石経孝経, short: 開成孝経, category: 開成石経, date: "837", standard: true, sphere: 公的, genre: [confucian], folder: 17_開成石經孝經}
+  - {code: H18, id: kar, title: 開成石経論語, short: 開成論語, category: 開成石経, date: "837", standard: true, sphere: 公的, genre: [confucian], folder: 18_開成石經論語}
+  - {code: H19, id: kae, title: 開成石経周易, short: 開成周易, category: 開成石経, date: "837", standard: true, sphere: 公的, genre: [confucian], folder: 19_開成石經周易}
+  - {code: H22, id: sys, title: S5309瑜伽師地論巻三十, short: S5309, category: 吐蕃写本, date: "857", sphere: 私的, genre: [religion], folder: 22_瑜伽師地論卷三十（S.5309）}
+  - {code: H24, id: tsu, title: 通典巻一, short: 通典巻一, category: 北宋版, date: "11C", standard: true, genre: [], folder: 24_通典卷一}
+  - {code: H25, id: tzj, title: 東禅寺版阿毘達磨大毘婆沙論巻百七, short: 東禅毘婆, category: 北宋版, date: "1100", standard: true, genre: [religion], folder: 25_阿毘達磨毘婆沙論卷百七（東禪寺版）}
+  - {code: H26, id: hos, title: 斉民要術, short: 斉民要術, category: 北宋版, date: "12C初", sphere: 私的, genre: [agriculture], folder: 26_齊民要術卷五（高山寺本）}
+  - {code: H27, id: kkh, title: 金剛般若経, short: 京博金般, category: 北宋版, date: "北宋期か", sphere: 私的, genre: [religion], folder: 27_金剛般若經（京都国立博物館本）}
+  - {code: H28, id: nak, title: 華厳経内章門等雑孔目巻一, short: 華厳孔目, category: 南宋版, date: "1146", standard: true, genre: [religion], folder: 28_華嚴孔目（高山寺本）}
+  - {code: H29, id: jhk, title: 開元寺版道神足無極変化経巻四, short: 開元神足, category: 北宋版, date: "1126", standard: true, genre: [religion], folder: 29_神足變化經（開元寺版）}
+  - {code: H30, id: hod, title: 法蔵和尚伝, short: 法蔵和尚, category: 南宋版, date: "1149", standard: true, genre: [religion], folder: 30_法藏和尚傳（高山寺本）}
+  - {code: H31, id: gok, title: 後漢書光武帝紀, short: 光武帝紀, category: 南宋版, date: "1198", standard: true, genre: [], folder: 31_後漢書光武帝紀}
+  - {code: H33, id: ink, title: 岩崎本日本書紀巻二十四, short: 岩崎紀24, category: 日本書紀写本, date: "10C", sphere: 私的, genre: [], folder: 33_卷二十四（岩崎本）}
+  - {code: H34, id: nto, title: 図書寮本日本書紀巻二十四, short: 図書紀24, category: 日本書紀写本, date: "1142頃", sphere: 私的, genre: [], folder: 34_卷二十四（圖書寮本）}
+  - {code: H36, id: nkm, title: 兼右本日本書紀巻二十四, short: 兼右紀24, category: 日本書紀写本, date: "1540", sphere: 私的, genre: [], folder: 36_卷二十四（兼右本）}
+  - {code: H37, id: k24, title: 寛文九年版日本書紀巻二十四, short: 寛文紀24, category: 日本書紀版本, date: "1669", sphere: 私的, genre: [], folder: 37_卷二十四（寛文九年版）}
+  - {code: H38, id: ini, title: 鴨脚本日本書紀巻二, short: 鴨脚紀2, category: 日本書紀写本, date: "1236", sphere: 私的, genre: [], folder: 38_卷二（鴨脚本）}
+  - {code: H39, id: nkk, title: 兼方本日本書紀巻二, short: 兼方紀2, category: 日本書紀写本, date: "1286", standard: true, sphere: 私的, genre: [], folder: 39_卷二（兼方本）}
+  - {code: H41, id: kcc, title: 慶長勅版日本書紀巻二, short: 勅版紀2, category: 日本書紀版本, date: "1599", standard: true, sphere: 公的, genre: [], folder: 41_卷二（慶長勅版）}
+  - {code: H42, id: kcj, title: 慶長十五年版日本書紀巻二, short: 慶長紀2, category: 日本書紀版本, date: "1610", sphere: 私的, genre: [], folder: 42_卷二（慶長十五年版）}
+  - {code: H43, id: kbk, title: 寛文九年版日本書紀巻二, short: 寛文紀2, category: 日本書紀版本, date: "1669", sphere: 私的, genre: [], folder: 43_卷二（寛文九年版）}
+  - {code: H44, id: sik, title: 新羅本花厳経巻八, short: 華厳新羅, category: 韓国写本, date: "754-755", standard: true, genre: [religion], folder: 44_花嚴經卷八（新羅本寫本）}
+  - {code: H46, id: skk, title: 晋本華厳経巻二十, short: 古麗華20, category: 韓国印刻本, date: "10C", standard: true, sphere: 私的, genre: [religion], folder: 46_華嚴經卷二十（晉本高麗古版）}
+  - {code: H47, id: kyu, title: 高麗初彫本瑜伽師地論巻五, short: 初麗瑜5, category: 韓国印刻本, date: "11C", standard: true, sphere: 公的, genre: [religion], folder: 47_瑜伽論卷五（高麗初彫本）}
+  - {code: H48, id: ksk, title: 高麗再彫本華厳経巻六, short: 再麗華6, category: 韓国印刻本, date: "13C", standard: true, sphere: 公的, genre: [religion], folder: 48_華嚴經卷六（高麗再彫本）}
+  - {code: H49, id: wan, title: 花厳経巻三十八, short: 和寧花38, category: 大和寧写本, date: "9-10C", standard: true, genre: [religion], folder: 49_華嚴經卷三十八（趙氏藏本）}
+  - {code: H50, id: okd, title: 小川本金剛場陀羅尼経, short: 金剛小川, category: 日本写本, date: "686", standard: true, genre: [religion], folder: 50_金剛場陀羅尼經（小川本）}
+  - {code: H54, id: wad, title: 和銅経大般若経巻二百五十, short: 和銅250, category: 日本写本, date: "712", standard: true, sphere: 公的, genre: [religion], folder: 54_大般若經卷二百五十（和銅經）}
+  - {code: H55, id: kmi, title: 高山寺本弥勒上生経, short: 弥勒上生, category: 日本写本, date: "738", standard: true, genre: [religion], folder: 55_弥勒上生經（高山寺本）}
+  - {code: H56, id: zkd, title: 守屋本五月一日経続高僧伝, short: 五一続高, category: 日本写本, date: "740", standard: true, sphere: 公的, genre: [religion], folder: 56_續高僧傳（五月一日經）（天平寫經）}
+  - {code: H57, id: doh, title: 高山寺本大教王経巻一, short: 金剛大教, category: 日本写本, date: "815", standard: true, sphere: 私的, genre: [religion], folder: 57_金剛大教王經卷一（高山寺本）}
+  - {code: H58, id: jyu, title: 寛治二年刊本成唯識論巻十, short: 成唯識10, category: 日本版本, date: "1088", sphere: 私的, genre: [religion], folder: 58_成唯識論卷十（寛治二年刊本）}
+  - {code: H60, id: tzs, title: 東禅寺版写大教王経巻一, short: 仏説大教, category: 日本写本, date: "12C", sphere: 私的, genre: [religion], folder: 60_佛説大教王經卷一（東禪寺版日本寫本）}
+  - {code: H61, id: sai, title: 東禅寺版写最上秘密那拏天経, short: 最上秘密, category: 日本写本, date: "12C", sphere: 私的, genre: [religion], folder: 61_最上秘密那拏天經（東禪寺版日本寫本）}
+  - {code: H62, id: kad, title: 春日版大般若経巻八十, short: 春日般若, category: 日本版本, date: "13C", standard: true, genre: [religion], folder: 62_大般若經卷八十（春日版）}
+  - {code: H64, id: kss, title: 明恵自筆華厳信種義, short: 華厳信種, category: 日本写本, date: "1221", standard: true, sphere: 私的, genre: [religion], folder: 64_華嚴信種義（明惠自筆）}
+  - {code: H66, id: kyo, title: 親鸞自筆教行信証巻四, short: 教行信証, category: 日本写本, date: "1224", sphere: 私的, genre: [religion], folder: 66_教行信証卷四（親鸞自筆）}
+  - {code: H68, id: ykk, title: 守屋本薬師功徳経, short: 薬師功徳, category: 日本版本, date: "1412", sphere: 私的, genre: [religion], folder: 68_藥師功徳經}
+  - {code: H70, id: saa, title: 阿毘達磨大毘婆沙論巻百七十, short: 正毘170, category: 盛唐写本, date: "8C初", sphere: 私的, genre: [religion], folder: 70_阿毘達磨大毘婆沙論卷百七十(正倉院本)}
+  - {code: H71, id: sab, title: 阿毘達磨大毘婆沙論巻百七十八, short: 正毘178, category: 盛唐写本, date: "8C初", sphere: 私的, genre: [religion], folder: 71_阿毘達磨大毘婆沙論卷百七十八(正倉院本)}
+  - {code: H72, id: wks, title: 守屋本花厳経巻六十七, short: 和寧花67, category: 大和寧写本, date: "9-10C", standard: true, genre: [religion], folder: 72_花嚴經卷六十七(守屋本)}
+  - {code: H73, id: wke, title: 守屋本花厳経巻六十八, short: 和寧花68, category: 大和寧写本, date: "9-10C", standard: true, genre: [religion], folder: 73_花嚴經卷六十八(守屋本)}
+  - {code: H74, id: smk, title: 妙法蓮華経巻一, short: 西夏法華, category: 西夏版, date: "1149", standard: true, genre: [religion], folder: 74_西夏版妙法蓮華經卷一}
+  - {code: H77, id: sgs, title: 五月一日経四分律巻十六, short: 正四分16, category: 日本写本, date: "740頃", standard: true, sphere: 公的, genre: [religion], folder: 77_四分律卷第十六(正倉院五月一日經)}
+  - {code: H78, id: sts, title: 四分律巻第二十, short: 正四分20, category: 盛唐写本, date: "740頃", standard: true, genre: [religion], folder: 78_四分律卷第二十(正倉院唐經)}
+  - {code: H79, id: kkd, title: 金剛大教王経巻二, short: 院政大教, category: 日本写本, date: "12C初", sphere: 私的, genre: [religion], folder: 79_金剛大教王經卷第二(高山寺本)}
+  - {code: H80, id: skj, title: 開宝蔵十誦律巻四十六, short: 開宝十誦, category: 北宋版, date: "974", standard: true, sphere: 公的, genre: [religion], folder: 80_十誦律巻四十六(開宝蔵)}
+  - {code: H81, id: wkf, title: 花厳経巻六, short: 和寧花6, category: 大和寧写本, date: "9-10C", standard: true, genre: [religion], folder: 81_花嚴經卷六(大和寧写本)}
