@@ -9,7 +9,7 @@
   import CharacterChips from '../components/CharacterChips.svelte'
   import { catalogue, character, request, randomSeed, number } from '../lib/client.js'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery } from '../lib/layers.js'
-  let { flagged = false, inspect, ink = 'original', onink = () => {}, onprogress = () => {} } = $props()
+  let { queue = '', inspect, ink = 'original', onink = () => {}, onprogress = () => {} } = $props()
   let data = $state(null), items = $state([]), error = $state(''), loading = $state(true)
   let reading = $state(''), search = $state(''), offset = $state(0), seed = $state(randomSeed())
   let query = $state('')
@@ -28,7 +28,7 @@
   async function readCollection() {
     try { collection = await request('/atlas/collection/status') } catch { /* retry on the next interval */ }
   }
-  const categories = $derived((data?.categories ?? []).filter(c => c.label.includes(search) && (!flagged || c.flagged)))
+  const categories = $derived((data?.categories ?? []).filter(c => c.label.includes(search) && (!queue || c[queue])))
   /** What a record says about its own reliability, in one badge: withheld, machine or confirmed.
    *
    * The words come from the record's `repair` block — `withheld`, `reliable`, `verified`, `reason` —
@@ -132,7 +132,7 @@
         return
       }
       catalogueRequest = new AbortController()
-      const result = await catalogue({ reading, q: query, group: filter, state: flagged ? 'flagged' : 'all', seed, offset, limit: 60 }, { signal: catalogueRequest.signal, priority: 'low' })
+      const result = await catalogue({ reading, q: query, group: filter, state: queue || 'all', seed, offset, limit: 60 }, { signal: catalogueRequest.signal, priority: 'low' })
       if (closed || id !== requestId) return
       data = result; items = append ? [...items, ...result.items] : result.items
       if (!append) await loadSample(id, result.items)
@@ -141,14 +141,14 @@
   }
   /** The homepage's corpus half: bounded, deduplicated against the local rows, never a scan. */
   async function loadSample(id, localRows) {
-    if (flagged) {
+    if (queue === 'flagged') {
       const result = await request('/atlas/corpus/reviews?state=flagged')
       if (closed || id !== requestId) return
       sample = result.items.filter(row => (!query || row.label.includes(query)) && (!reading || row.label === reading))
       sampleFault = null
       return
     }
-    const bare = !query && !picked && !flagged && filter === 'all' && !reading
+    const bare = !query && !picked && !queue && filter === 'all' && !reading
     if (!bare) { sample = []; sampleFault = null; return }
     try {
       const page = await layerGallery(60, seed)
@@ -258,7 +258,7 @@
       const replace = row => {
         if (row.id !== id) return [row]
         const updated = { ...row, ...result }
-        return (flagged && result.state !== 'flagged') || !fitsGallery(updated) ? [] : [updated]
+        return (queue && result.state !== queue) || !fitsGallery(updated) ? [] : [updated]
       }
       corpus = corpus.flatMap(replace); sample = sample.flatMap(replace)
       return
@@ -267,10 +267,10 @@
       const updated = await character(id)
       // The tile that was just saved is in one of two lists: the character's gallery, or the
       // collection's own rows. Updating the wrong one leaves the tile showing its old state.
-      const replace = item => item.id !== id ? [item] : (flagged && updated.state !== 'flagged') || !fitsGallery(updated) ? [] : [updated]
+      const replace = item => item.id !== id ? [item] : (queue && updated.state !== queue) || !fitsGallery(updated) ? [] : [updated]
       if (picked) local = local.flatMap(replace)
       else items = items.flatMap(replace)
-      const summary = await catalogue({ reading, q: query, group: filter, state: flagged ? 'flagged' : 'all', limit: 1 })
+      const summary = await catalogue({ reading, q: query, group: filter, state: queue || 'all', limit: 1 })
       if (!closed) data = { ...data, counts: summary.counts, categories: summary.categories, total: summary.total, available: summary.available }
     } catch (e) { if (!closed) error = e.message }
   }
@@ -284,26 +284,26 @@
 
 <section class="explore">
   <div class="explore-status">
-    <h1 class="visually-hidden">{flagged ? 'Flagged characters' : 'Character atlas'}</h1>
-    {#if !flagged}
+    <h1 class="visually-hidden">{queue === 'flagged' ? 'Flagged characters' : queue === 'hard' ? 'Hard to read' : 'Character atlas'}</h1>
+    {#if !queue}
       <button class="collection-progress-link" onclick={onprogress}>
         <span class="live-dot"></span> Collection progress
         {#each collection?.sources ?? [] as source}<span>{source.name} <b>{number(source.completed)}</b>{#if source.total} / {number(source.total)}{/if}</span>{/each}
         <span>↗</span>
       </button>
     {/if}
-    <div class="collection-meta"><span class="live-dot"></span>{#if picked}<span>{number(display.length)} {display.length === 1 ? 'glyph' : 'glyphs'}</span><span class="meta-divider">/</span><span>{expand === "grapheme" ? `${number(picked.grapheme?.character_count ?? 1)} characters` : "1 character"}</span>{:else if !flagged && collection?.archive}<span>{number(collection.archive.character_crops)} indexed crops</span><span class="meta-divider">/</span><span>{number(collection.archive.works_with_crops)} works with crops</span>{:else}<span>{number(flagged ? (data?.total ?? 0) + sample.length : data?.available)} glyphs</span><span class="meta-divider">/</span><span>{number(data?.categories.length)} readings</span>{/if}</div>
+    <div class="collection-meta"><span class="live-dot"></span>{#if picked}<span>{number(display.length)} {display.length === 1 ? 'glyph' : 'glyphs'}</span><span class="meta-divider">/</span><span>{expand === "grapheme" ? `${number(picked.grapheme?.character_count ?? 1)} characters` : "1 character"}</span>{:else if !queue && collection?.archive}<span>{number(collection.archive.character_crops)} indexed crops</span><span class="meta-divider">/</span><span>{number(collection.archive.works_with_crops)} works with crops</span>{:else}<span>{number(queue ? (data?.total ?? 0) + sample.length : data?.available)} glyphs</span><span class="meta-divider">/</span><span>{number(data?.categories.length)} readings</span>{/if}</div>
   </div>
   <div class="collection-toolbar">
     <CharacterSearch bind:value={query} oninput={seek} onselect={pick}
                      onsubmit={() => { clearTimeout(searchTimer); offset = 0; submitQuery() }} />
     <div class="filter-tabs" aria-label="Character type">{#each [['all', 'All'], ['kana', 'Kana'], ['kanji', 'Kanji']] as [value, text]}<button class:active={filter === value} onclick={() => { filter = value; offset = 0; load() }}>{text}</button>{/each}</div>
     <div class="category-control"><button class="category-toggle" aria-expanded={categoryOpen} onclick={() => categoryOpen = !categoryOpen}>{reading || 'Any reading'} <span>⌄</span></button>
-      {#if categoryOpen}<div class="category-menu"><input aria-label="Find a reading" bind:value={search} placeholder="Find a reading…" /><button class="all-readings" onclick={() => select('')}>All readings</button><div class="category-options">{#each categories as c}<button class:chosen={reading === c.label} onclick={() => select(c.label)}><span>{c.label}</span><small>{number(flagged ? c.flagged : c.total)}</small></button>{/each}</div></div>{/if}
+      {#if categoryOpen}<div class="category-menu"><input aria-label="Find a reading" bind:value={search} placeholder="Find a reading…" /><button class="all-readings" onclick={() => select('')}>All readings</button><div class="category-options">{#each categories as c}<button class:chosen={reading === c.label} onclick={() => select(c.label)}><span>{c.label}</span><small>{number(queue ? c[queue] : c.total)}</small></button>{/each}</div></div>{/if}
     </div>
     <span class="toolbar-space"></span>
     <ImageStyleToggle {ink} onchange={onink} />
-    {#if reading && !flagged}<a class="quiet-link" href={`#/review?reading=${encodeURIComponent(reading)}`}>Review {reading} ↗</a>{/if}
+    {#if reading && !queue}<a class="quiet-link" href={`#/review?reading=${encodeURIComponent(reading)}`}>Review {reading} ↗</a>{/if}
     <button class="shuffle" onclick={shuffle} disabled={loading} aria-label="Shuffle characters"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h3c4 0 8 12 12 12h3M17 14l4 4-4 4M3 18h3c1.7 0 3.5-2.3 5-5M14 8c1.5-1.4 2.6-2 4-2h3M17 2l4 4-4 4"/></svg>Shuffle</button>
   </div>
   {#if error}<div class="error-message" role="alert">{error}<button onclick={() => load()}>Retry</button></div>{/if}
@@ -322,11 +322,11 @@
   {:else if query && settled}
     <p class="find-count" role="status">{number(settled.total)} {settled.total === 1 ? 'occurrence' : 'occurrences'} of <b>{readable}</b>{#if loading}<span class="find-pending"> …</span>{/if}</p>
   {/if}
-  <div class="glyph-grid" aria-label={flagged ? 'Flagged characters' : 'Character collection'} aria-busy={loading}>
+  <div class="glyph-grid" aria-label={queue === 'flagged' ? 'Flagged characters' : queue === 'hard' ? 'Hard to read' : 'Character collection'} aria-busy={loading}>
     {#if loading && !display.length}{#each Array(32) as _}<div class="glyph-skeleton"></div>{/each}
     {:else}{#each display as item, i (item.id)}{#if picked && expand === 'grapheme' && (i === 0 || visualGroup(display[i - 1]).id !== visualGroup(item).id)}<div class="visual-grid-heading">{visualGroup(item).label}</div>{/if}{#if item.origin === 'corpus'}<button class="glyph-tile corpus" data-corpus={item.id} onclick={() => inspect(item.id, null, display, updateItem, 'corpus')} title={tileTitle(item)} aria-label={`Inspect corpus ${item.label}`}><span class="tile-reading">{item.label}</span>{#if item.proxyable && item.image}<img class="glyph-image" src={item.image} alt={`Located ${item.label}`} loading={i < 24 ? "eager" : "lazy"} fetchpriority={i < 24 ? "high" : "auto"} decoding="async" />{:else}<span class="corpus-open"><b>{item.label}</b><small>Image unavailable</small></span>{/if}<span class="tile-footer"><span class="status-dot" class:checked={tileState(item) === 'checked'} class:flagged={tileState(item) === 'flagged'} class:withheld={tileState(item) === 'withheld'}></span>{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{String(i + 1).padStart(2, '0')}</span><span class="tile-arrow">↗</span></span></button>{:else}<button class="glyph-tile" data-unit={item.id} title={tileTitle(item)} onclick={() => inspect(item.id, null, display, updateItem)} aria-label={`Inspect ${item.label}`}><span class="tile-reading">{item.label}</span><Glyph {item} eager={i < 24} /><span class="tile-footer"><span class="status-dot" class:checked={tileState(item) === 'checked'} class:flagged={tileState(item) === 'flagged'} class:withheld={tileState(item) === 'withheld'}></span>{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{String(i + 1).padStart(2, '0')}</span><span class="tile-arrow">↗</span></span></button>{/if}{/each}{/if}
   </div>
-  {#if !choosing && !loading && !display.length}<div class="empty"><span class="empty-mark">{picked || (settled && settled.total === 0) ? '∅' : flagged ? '✓' : '∅'}</span><h2>{picked && corpusFault ? `Samples of ${picked.char} could not load.` : picked ? `No occurrence of ${picked.char} here.` : settled && settled.total === 0 ? `No occurrence of ${readable}.` : flagged ? 'Nothing flagged.' : 'No characters here.'}</h2>{#if query}<button class="primary" onclick={clearQuery}>Clear search</button>{:else}<a href="#/review" class="primary">Start a round →</a>{/if}</div>{/if}
+  {#if !choosing && !loading && !display.length}<div class="empty"><span class="empty-mark">{picked || (settled && settled.total === 0) ? '∅' : queue ? '✓' : '∅'}</span><h2>{picked && corpusFault ? `Samples of ${picked.char} could not load.` : picked ? `No occurrence of ${picked.char} here.` : settled && settled.total === 0 ? `No occurrence of ${readable}.` : queue === 'flagged' ? 'Nothing flagged.' : queue === 'hard' ? 'Nothing hard to read.' : 'No characters here.'}</h2>{#if query}<button class="primary" onclick={clearQuery}>Clear search</button>{:else}<a href="#/review" class="primary">Start a round →</a>{/if}</div>{/if}
   {#if picked && (!visual && local.length < (data?.total ?? 0) || corpusOffset < corpusTotal) && !loading}
     <div class="load-more">
       {#if corpusOffset < corpusTotal}<button onclick={moreCorpus}>More from the corpus ↓</button>{/if}

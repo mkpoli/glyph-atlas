@@ -70,6 +70,8 @@
   const exhausted = $derived(items.length > 0 && settled && !remaining.length)
   const categories = $derived((data?.categories ?? []).filter(c => c.pending > 0 && c.label.includes(search)))
 
+  // Whether moving on would record something: a crop seen, or a crop skipped after it was seen.
+  const recordable = $derived(!selection.length && (remaining.some(i => viewed[i.id]) || items.some(i => skipped[i.id] && viewed[i.id] && !failed[i.id])))
   const canNext = $derived((data?.categories ?? []).some(c => c.pending > 0 && c.label !== reading))
   function snapshot() {
     return $state.snapshot({ reading, items, choices, selected, skipped, suggestions, contextSuggestions,
@@ -92,9 +94,10 @@
     historyIndex = index
     restoreRound($state.snapshot(history[index]))
   }
-  function chooseCategory(target) {
+  async function chooseCategory(target) {
     categoryOpen = false
-    if (target === reading) return
+    if (target === reading || saving) return
+    if (!(await record())) return
     const previous = history.findLastIndex(round => round.reading === target && round.production === production)
     if (previous >= 0) visit(previous)
     else load({ target })
@@ -104,7 +107,7 @@
     const id = ++requestId
     loading = true; loadingMore = false; error = ''; categoryOpen = false
     try {
-      const summary = await catalogue({ purpose: 'review', production: scope, limit: 1, state: 'pending' })
+      const summary = await catalogue({ purpose: 'review', reviewer: clientId, production: scope, limit: 1, state: 'pending' })
       if (closed || id !== requestId) return
       data = summary
       const epochKey = 'atlas.review-epoch.' + clientId
@@ -127,7 +130,7 @@
         return
       }
       const seed = randomSeed()
-      const result = await catalogue({ purpose: 'review', production: scope, reading: chosen, state: 'pending', limit: ROUND_BATCH, seed })
+      const result = await catalogue({ purpose: 'review', reviewer: clientId, production: scope, reading: chosen, state: 'pending', limit: ROUND_BATCH, seed })
       if (closed || id !== requestId) return
       restoreRound({ reading: chosen, items: arranged(numbered(result.items)), choices: {}, selected: {}, skipped: {},
         suggestions: {}, contextSuggestions: {}, roundId: crypto.randomUUID(), roundSeed: seed,
@@ -151,7 +154,7 @@
       // Deduplicate by occurrence instead of treating an old offset as a permanent position.
       const batchLimit = Math.min(ROUND_BATCH, roundLimit - items.length)
       while (additions.length < batchLimit) {
-        const result = await catalogue({ purpose: 'review', production, reading, state: 'pending', limit: 96, offset, seed: roundSeed })
+        const result = await catalogue({ purpose: 'review', reviewer: clientId, production, reading, state: 'pending', limit: 96, offset, seed: roundSeed })
         if (closed || id !== requestId || round !== roundId) return
         const fresh = result.items.filter(item => !seen.has(item.id))
         const room = batchLimit - additions.length
@@ -267,8 +270,8 @@
   /**
    * Decline to judge these crops: no choice, no review, no request.
    *
-   * A skip is not a verdict — it is not written, not counted, and the crop stays pending in the
-   * collection for a later round.
+   * A skip is not a verdict and is not counted: the crop stays pending. When the round is saved or
+   * passed, the skip is recorded against the reviewer, so other reviewers are dealt it first.
    */
   function skip(ids = selection) {
     if (saving || loading) return
@@ -334,6 +337,11 @@
     if (!answered) { jump(selectedItems.findIndex(i => !choices[i.id])); return }
     submit()
   }
+  /** The crops this round skipped. A skip is recorded against the reviewer, not as a decision: other
+   * reviewers are dealt the crop first, and it comes back to this one only after a rest. */
+  function skippedCrops() {
+    return items.filter(i => skipped[i.id] && !failed[i.id] && viewed[i.id]).map(i => ({ id: i.id, image_sha256: i.image_sha256, image: i.image }))
+  }
   async function submit() {
     if (saving || loadingMore || !ready) return
     if (step === 'select') return
@@ -349,13 +357,14 @@
     // but it is recorded, so the crop is not dealt again.
     const flagged = new Set(answers.map(answer => answer.id))
     const seen = remaining.filter(i => !flagged.has(i.id) && viewed[i.id]).map(i => ({ id: i.id, image_sha256: i.image_sha256, image: i.image }))
-    if (!answers.length && !seen.length) { await load(); return }
+    const passed = skippedCrops()
+    if (!answers.length && !seen.length && !passed.length) { await load(); return }
     saving = true; error = ''
     try {
-      await request('/atlas/rounds', { id: roundId, client_id: clientId, label: reading, answers, seen })
+      await request('/atlas/rounds', { id: roundId, client_id: clientId, label: reading, answers, seen, skipped: passed })
       last = { id: roundId, count: answers.length, label: reading, production }
       remember('atlas.last-round.' + clientId, last); completed += answers.length
-      const savedIds = new Set([...answers, ...seen].map(answer => answer.id))
+      const savedIds = new Set([...answers, ...seen, ...passed].map(answer => answer.id))
       items = items.filter(item => !savedIds.has(item.id))
       choices = {}; selected = {}; step = 'select'; at = 0; roundId = crypto.randomUUID()
       await load()
@@ -363,22 +372,29 @@
     finally { saving = false }
   }
   // Moving on from a round with nothing flagged: the crops it showed were seen, so they are recorded
-  // as seen before the next round is dealt. Crops that failed to load or were skipped were not seen.
-  async function pass() {
-    if (saving || loading || loadingMore) return
+  // as seen before the next round is dealt. Skipped crops are recorded as skipped; crops that failed
+  // to load were not seen at all.
+  /** Record what a round with nothing selected showed: the crops seen, and the crops skipped. Every
+   * way out of such a round goes through here, so none of them drops the round's record. */
+  async function record() {
     const seen = remaining.filter(i => viewed[i.id]).map(i => ({ id: i.id, image_sha256: i.image_sha256, image: i.image }))
-    if (!seen.length || selection.length) { await load(); return }
+    const passed = skippedCrops()
+    if ((!seen.length && !passed.length) || selection.length) return true
     saving = true; error = ''
     try {
-      await request('/atlas/rounds', { id: roundId, client_id: clientId, label: reading, seen })
+      await request('/atlas/rounds', { id: roundId, client_id: clientId, label: reading, seen, skipped: passed })
       last = { id: roundId, count: 0, label: reading, production }
       remember('atlas.last-round.' + clientId, last)
-      const seenIds = new Set(seen.map(crop => crop.id))
+      const seenIds = new Set([...seen, ...passed].map(crop => crop.id))
       items = items.filter(item => !seenIds.has(item.id))
       choices = {}; selected = {}; step = 'select'; at = 0; roundId = crypto.randomUUID()
-      await load()
-    } catch (e) { error = e.message }
+      return true
+    } catch (e) { error = e.message; return false }
     finally { saving = false }
+  }
+  async function pass() {
+    if (saving || loading || loadingMore) return
+    if (await record()) await load()
   }
   async function undo() {
     if (!last || saving) return
@@ -427,7 +443,7 @@
 <svelte:window onkeydown={keydown} />
 <section class="quiz-workspace">
   <div class="quiz-topline"><a href="#/" class="quiet-link">← Collection</a><div class="round-count"><span class="live-dot"></span>{number(completed)} issues saved this session</div><button class="undo-round shape-toggle" aria-pressed={byShape} onclick={toggleShape}>{byShape ? '◧ Similar shapes together' : '◧ Dealt order'}</button>{#if last}<button class="undo-round" disabled={saving} onclick={undo}>↶ Undo last round</button>{/if}</div>
-  <div class="quiz-heading"><div class="target-character" aria-label={`Target reading ${reading}`}>{reading || '字'}</div><div class="quiz-title"><p class="overline">QUICK REVIEW · {step === 'select' ? 'SELECT' : 'REVIEW'}</p><h1>{step === 'select' ? 'Which crops need fixing?' : step === 'issue' ? 'What’s wrong with this crop?' : choices[current?.id]?.issue === 'merged' ? 'What’s in this crop?' : 'Which character is this?'}</h1>{#if step === 'select'}<p>One complete <b>{reading || "…"}</b> per crop. Select extra characters, bad cuts, or a different character.</p>{/if}</div><div class="round-switch"><button class="category-toggle" disabled={saving || loading} onclick={() => categoryOpen = !categoryOpen}>Change character ⌄</button><button class="quiet-link" disabled={saving || loading || !canNext} onclick={() => load()}>Next character →</button></div></div>
+  <div class="quiz-heading"><div class="target-character" aria-label={`Target reading ${reading}`}>{reading || '字'}</div><div class="quiz-title"><p class="overline">QUICK REVIEW · {step === 'select' ? 'SELECT' : 'REVIEW'}</p><h1>{step === 'select' ? 'Which crops need fixing?' : step === 'issue' ? 'What’s wrong with this crop?' : choices[current?.id]?.issue === 'merged' ? 'What’s in this crop?' : 'Which character is this?'}</h1>{#if step === 'select'}<p>One complete <b>{reading || "…"}</b> per crop. Select extra characters, bad cuts, or a different character.</p>{/if}</div><div class="round-switch"><button class="category-toggle" disabled={saving || loading} onclick={() => categoryOpen = !categoryOpen}>Change character ⌄</button><button class="quiet-link" disabled={saving || loading || (!canNext && !recordable)} onclick={pass}>Next character →</button></div></div>
   {#if categoryOpen}<div class="round-categories"><input aria-label="Find a category" placeholder="Find a reading…" bind:value={search}/><div class="category-options">{#each categories as c}<button disabled={saving} onclick={() => chooseCategory(c.label)}><span>{c.label}</span><small>{c.pending}</small></button>{/each}</div></div>{/if}
   <label class="review-material">Material
     <select aria-label="Review material" value={production} disabled={saving || loading || loadingMore}
@@ -479,7 +495,7 @@
   {:else}<div class="quiz-actionbar"><div class="round-selection"><span class="selection-dot" class:has-flags={decided > 0}></span><strong>{decided} issues</strong>{#if undecided}<span>{undecided} to decide</span>{/if}{#if Object.keys(skipped).length}<small>{Object.keys(skipped).length} skipped · not saved</small>{/if}{#if Object.keys(failed).length}<small>{Object.keys(failed).length} unavailable</small>{/if}</div><div class="quiz-submit">
     <span class="keyboard-hint">{step === 'select' ? 'qwerty… · Ctrl/⌘+Enter continues' : step === 'issue' ? '1–4 problem · s skip · ←→ crop' : 'n no correction · ←→ crop'}</span>
     <button class="quiet-link skip-selected" disabled={loading || saving || exhausted || (!decidable.length && !selection.length)} onclick={() => skip(selection.length ? selection : decidable.map(i => i.id))} title={SKIP_HINT}>{selection.length ? `${SKIP_LABEL} selected` : SKIP_LABEL}</button>
-    {#if exhausted || !selection.length}<button class="primary next-round" disabled={loading || saving || !canNext} onclick={() => exhausted ? load() : pass()}>Next character <span>→</span></button>
+    {#if exhausted || !selection.length}<button class="primary next-round" disabled={loading || saving || (!canNext && !recordable)} onclick={pass}>Next character <span>→</span></button>
     {:else if step === 'select'}<button class="primary review-selected" disabled={loading || saving || loadingMore || !ready} onclick={reviewSelected}>Review selected ({selection.length}) <span>→</span></button>
     {:else if focusIndex < queue.length - 1}<button class="primary next-crop" disabled={loading || saving || !choices[current?.id]} onclick={primary}>Next crop <span>→</span></button>
     {:else if !answered}<button class="primary finish-issues" disabled={loading || saving || !choices[current?.id]} onclick={primary}>Review remaining <span>→</span></button>

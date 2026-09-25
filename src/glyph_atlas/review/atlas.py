@@ -11,6 +11,7 @@ import threading
 import unicodedata
 from collections import Counter
 from collections.abc import Iterable
+from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -46,6 +47,13 @@ def review_state(decision: str | None) -> str:
     return "pending"
 
 
+#: The value of a `seen` event that records a skip: shown in a round, and not judged.
+SKIPPED = "skipped"
+#: How long a crop a reviewer skipped stays out of that reviewer's own rounds.
+SKIP_REST = timedelta(days=3)
+_UNDO = "undo of "
+
+
 def seen_boxes(events: Iterable[Any]) -> dict[str, dict | None]:
     """The box each unit was last shown in a quiz round without being flagged, oldest event first.
 
@@ -53,17 +61,51 @@ def seen_boxes(events: Iterable[Any]) -> dict[str, dict | None]:
     is kept because a crop that moved since is a different crop, and it has not been seen.
     """
     boxes: dict[str, dict | None] = {}
+    skips: set[str] = set()
     for event in events:
         if event.field != SEEN:
             continue
+        if event.new == SKIPPED:
+            skips.add(event.id)
+            continue
         if not event.new:
-            boxes.pop(event.target_id, None)
+            if (event.evidence or "").removeprefix(_UNDO) not in skips:
+                boxes.pop(event.target_id, None)
             continue
         try:
             boxes[event.target_id] = json.loads(event.evidence or "{}").get("box")
         except ValueError:
             continue
     return boxes
+
+
+def skip_marks(events: Iterable[Any]) -> dict[str, dict[str, list[tuple[datetime, dict | None]]]]:
+    """Every skip of each unit that still stands, by reviewer: when, and at which box.
+
+    A skip is a `seen` event whose value is `skipped`: the reader was shown the crop and could not
+    judge it. It is no decision and changes nothing about the unit. The undo of its round takes that
+    one skip back, and an earlier skip by the same reviewer still stands.
+    """
+    marks: dict[str, dict[str, dict[str, tuple[datetime, dict | None]]]] = {}
+    owners: dict[str, tuple[str, str]] = {}
+    for event in events:
+        if event.field != SEEN:
+            continue
+        if event.new == SKIPPED:
+            try:
+                box = json.loads(event.evidence or "{}").get("box")
+            except ValueError:
+                box = None
+            actor = event.actor or ""
+            marks.setdefault(event.target_id, {}).setdefault(actor, {})[event.id] = (event.at, box)
+            owners[event.id] = (event.target_id, actor)
+        elif not event.new and (event.evidence or "").startswith(_UNDO):
+            undone = event.evidence.removeprefix(_UNDO)
+            if undone in owners:
+                target, actor = owners.pop(undone)
+                marks[target][actor].pop(undone, None)
+    return {target: {actor: list(skips.values()) for actor, skips in actors.items() if skips}
+            for target, actors in marks.items() if any(actors.values())}
 
 
 def single_character(text: str) -> bool:
@@ -473,6 +515,9 @@ class Round(BaseModel):
     #: The crops left unflagged. They are not answers: a crop nobody marked is not a confirmation,
     #: so it is recorded as seen, which keeps it out of the next round and out of every count.
     seen: list[Seen] = Field(default_factory=list, max_length=4096)
+    #: The crops the reviewer skipped: shown and not judged. They are recorded against the reviewer, so
+    #: the crop goes to other reviewers first and comes back to this one only after `SKIP_REST`.
+    skipped: list[Seen] = Field(default_factory=list, max_length=4096)
 
 
 class Undo(BaseModel):
@@ -690,18 +735,34 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             document_id = unit.document_id or (page.document_id if page else None)
             kinds[unit.id] = documents.get(document_id, "unknown")
         states = {key: review_state(value.human_review) for key, value in standing.items()}
+        marks = skip_marks(events)
+        # The skips that still apply: those made at the crop's current box.
+        skips: dict[str, dict[str, datetime]] = {}
         for unit, _ in units:
-            if states.get(unit.id) == "pending" and unit.id in seen and seen[unit.id] == (
-                    unit.box.model_dump(mode="json") if unit.box else None):
+            box = unit.box.model_dump(mode="json") if unit.box else None
+            current = {}
+            for actor, made in marks.get(unit.id, {}).items():
+                times = [at for at, at_box in made if at_box == box]
+                if times:
+                    current[actor] = max(times)
+            if current:
+                skips[unit.id] = current
+            if states.get(unit.id) != "pending":
+                continue
+            # Two reviewers who could not judge a crop make it hard: it leaves the rounds for its own list.
+            if len(current) >= 2:
+                states[unit.id] = "hard"
+            elif unit.id in seen and seen[unit.id] == box:
                 states[unit.id] = "seen"
-        return units, states, kinds
+        return units, states, kinds, skips
 
     @api.get("/atlas")
     def catalogue(
         reading: str | None = None,
         q: str | None = None,
         group: Literal["all", "kana", "kanji"] = "all",
-        state: Literal["all", "pending", "seen", "checked", "flagged"] = "all",
+        state: Literal["all", "pending", "seen", "checked", "flagged", "hard", "skipped"] = "all",
+        reviewer: str | None = Query(default=None, max_length=128),
         purpose: Literal["browse", "review"] = "browse",
         production: Literal["all", "non-movable-type", "manuscript", "woodblock", "movable-type", "mixed", "unknown"] | None = None,
         seed: int = 0,
@@ -726,11 +787,18 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         scope = production or ("non-movable-type" if purpose == "review" else "all")
         generation = (file_stamp(store.path), file_stamp(Path(str(store.path) + "-wal")),
                       file_stamp(production_metadata.OVERRIDES))
-        units, all_states, kinds = catalogue_snapshot(generation)
+        units, all_states, kinds, skips = catalogue_snapshot(generation)
         records = [(u, rev) for u, rev in units
                    if (scope == "all" or (kinds[u.id] != "movable-type" if scope == "non-movable-type"
                                          else kinds[u.id] == scope)) and considered(u)]
         states = {u.id: all_states[u.id] for u, _ in records}
+        if reviewer:
+            # A crop this reviewer skipped lately is `skipped` for them: it is not dealt back yet.
+            rested = datetime.now(UTC) - SKIP_REST
+            for u, _ in records:
+                at = skips.get(u.id, {}).get(reviewer)
+                if states[u.id] == "pending" and at is not None and at > rested:
+                    states[u.id] = "skipped"
         categories: dict[str, Counter] = {}
         for unit, _ in records:
             counts = categories.setdefault(shown(unit), Counter())
@@ -746,13 +814,16 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             # Keep one in five shuffles as a random audit. The other rounds show uncertain
             # measurements first, with ties retaining their seeded order and stable pagination.
             selected.sort(key=lambda row: review_priority(row[0]))
+        if purpose == "review":
+            # A crop another reviewer skipped comes first: it needs a second pair of eyes.
+            selected.sort(key=lambda row: not any(actor != reviewer for actor in skips.get(row[0].id, {})))
         return {"total": len(selected), "available": len(records), "counts": dict(counts),
                 # Which question this answer is: a caller reading `available` has to know whether it
                 # counts the collection or only the queue.
                 "purpose": purpose, "production": scope, "review_epoch": store.review_epoch(),
                 "query": q or None, "matched": len(searched) if q else None,
                 "categories": [{"label": name, **{key: c[key] for key in
-                                  ("total", "pending", "seen", "checked", "flagged")}}
+                                  ("total", "pending", "seen", "checked", "flagged", "hard", "skipped")}}
                                for name, c in sorted(categories.items(), key=lambda x: (-x[1]["total"], x[0]))],
                 "items": [item(u, rev, states[u.id]) for u, rev in selected[offset:offset + limit]]}
 
@@ -880,9 +951,10 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
 
     @api.post("/atlas/rounds")
     def submit(round: Round) -> dict:
-        ids = [answer.id for answer in round.answers] + [crop.id for crop in round.seen]
+        ids = ([answer.id for answer in round.answers] + [crop.id for crop in round.seen]
+               + [crop.id for crop in round.skipped])
         if not ids:
-            raise BadRequest("A round needs at least one answer or one seen crop.")
+            raise BadRequest("A round needs at least one answer, one seen crop or one skipped crop.")
         if len(set(ids)) != len(ids):
             raise BadRequest("A character can appear only once in a round.")
         prefix = f"quiz:{round.id}:"
@@ -958,7 +1030,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 base_revision=base, client_id=round.client_id,
                 idempotency_key=prefix + answer.id, evidence=evidence,
             ))
-        for crop in round.seen:
+        for crop, value in [(crop, True) for crop in round.seen] + [(crop, SKIPPED) for crop in round.skipped]:
             try:
                 unit, current = one(crop.id)
             except HTTPException:
@@ -971,9 +1043,10 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             if crop.image is not None and crop.image != crop_url(unit, current):
                 continue
             requests.append(ReviewRequest(
-                target_type="unit", target_id=crop.id, field=SEEN, new=True, base_revision=None,
-                client_id=round.client_id, idempotency_key=prefix + crop.id + ":seen",
-                evidence=json.dumps({"kind": "visual-quiz-seen", "round": str(round.id),
+                target_type="unit", target_id=crop.id, field=SEEN, new=value, base_revision=None,
+                client_id=round.client_id, idempotency_key=prefix + crop.id + (":seen" if value is True else ":skip"),
+                evidence=json.dumps({"kind": "visual-quiz-seen" if value is True else "visual-quiz-skip",
+                                     "round": str(round.id),
                                      "label": round.label, "image_sha256": crop.image_sha256,
                                      "box": unit.box.model_dump() if unit.box else None},
                                     ensure_ascii=False),
