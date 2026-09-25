@@ -58,6 +58,7 @@ One physical exemplar (a copy, a manuscript, an archival document).
 | `source_refs` | upstream ids by source: NIJL 書誌ID, NDL PID, みんなで翻刻 entry id, HI record id |
 | `holder`, `shelfmark` | holding institution and its call number |
 | `production` | a node of `data/vocab/production.yaml` written as its path, e.g. `handwritten`, `printed/woodblock`, `printed/type/metal/copper`; the deepest node the evidence states, with `data/vocab/production-overrides.yaml` citing more than a source says |
+| `style` | style of the letterforms throughout, a value of `data/vocab/style.yaml`; `mixed` when pages differ, `unassessed` until someone judges it |
 | `genre` | one or more ids from `data/vocab/genre.yaml` |
 | `text_register` | `wabun`, `kanbun`, `kanbun-kundoku`, `sorobun`, `mixed`, `unknown` |
 | `dating` | list; each with `literal` as written (文政3), `start` and `end` years, `kind` (composition, copying, publication, impression), `evidence` |
@@ -73,6 +74,7 @@ One physical exemplar (a copy, a manuscript, an archival document).
 | `image` | IIIF image service base, or the URL of the full-size image |
 | `width`, `height`, `sha256` | of the full-size image as fetched |
 | `transcription` | source id, entry id and revision of the text used |
+| `style` | style of the letterforms, a value of `data/vocab/style.yaml` such as `regular`, `cursive` or `ming`; `unassessed` takes the document's |
 
 Coordinates of lines and units are pixels on this image. A page that is one half of a photographed
 spread is still one page; the spread relation is recorded through `canvas`.
@@ -108,6 +110,7 @@ One located unit: a character, a ligature, a mark, a gap, or a sequence awaiting
 | `unicode` | code point sequence, `U+1B002` or `U+304B U+3099`; null when no code point fits |
 | `classification` | `unassessed`, `identified`, `ambiguous` (several candidates remain), `unencoded` (identified, no code point exists), `unidentified` |
 | `script` | `hiragana`, `hentaigana`, `katakana`, `han`, `hangul`, `gugyeol`, `symbol`, `latin`, `unknown`; the character layer is the authority |
+| `style` | style of this unit's letterforms, a value of `data/vocab/style.yaml`. `unassessed` takes the page's, then the document's; a `mixed` page or document passes nothing down, and the unit stays unassessed |
 | `variants` | list of `{scheme, id, version}` with scheme `mj`, `ivs`, `glyphwiki` or `local`; several may apply |
 | `candidates` | scored alternatives `{unicode, p}` when `classification` is `ambiguous` |
 | `antecedent_ids` | for an iteration mark, the units it repeats, across a line break if needed |
@@ -175,10 +178,13 @@ append to a shared file.
 
 ## Vocabularies
 
-`data/vocab/genre.yaml`, `data/vocab/style.yaml` and `data/vocab/holders.yaml` hold the controlled
-values with Japanese labels. `refs.forms(reading)` is every character written for a reading, from
-the layer, and `refs.candidates(reading)` is the same list ordered for a classifier and for a
-reviewer: the modern kana first, then the hentaigana in code point order, then the katakana. The
+`data/vocab/genre.yaml` and `data/vocab/holders.yaml` hold the controlled values with Japanese
+labels. `data/vocab/production.yaml` is a tree: an id is its path from the root
+(`printed/type/wood`). It and `data/vocab/style.yaml` give each value an English label and a
+definition.
+
+`refs.forms(reading)` is every character written for a reading, from the layer, and
+`refs.candidates(reading)` is the same list ordered for a classifier and for a reviewer: the modern kana first, then the hentaigana in code point order, then the katakana. The
 last group is where the Unicode 18.0 letters fall, so a mask over `candidates("ね")` can score the
 alternate NE.
 `data/vocab/characters.tsv` is the character layer above, generated

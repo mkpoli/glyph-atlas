@@ -10,54 +10,18 @@ from pathlib import Path
 
 import yaml
 
+from .vocab_tree import Tree
+
 VOCAB = Path(__file__).resolve().parents[2] / "data/vocab/production.yaml"
 OVERRIDES = Path(__file__).resolve().parents[2] / "data/vocab/production-overrides.yaml"
 #: What a Quick review round deals by default: movable type fills whole books with near-identical glyphs.
 REVIEW_SCOPE = "not:printed/type"
+TREE = Tree(VOCAB)
+check, label, within, in_scope, check_scope = TREE.check, TREE.label, TREE.within, TREE.in_scope, TREE.check_scope
 
 
-@lru_cache(maxsize=1)
 def vocabulary() -> dict[str, dict]:
-    """Every node by id, in the file's order; a node's parent is the id less its last segment."""
-    rows = yaml.safe_load(VOCAB.read_text(encoding="utf-8"))
-    nodes = {row["id"]: row for row in rows}
-    if len(nodes) != len(rows):
-        raise ValueError(f"{VOCAB}: an id is listed twice")
-    for node in nodes:
-        parent = node.rpartition("/")[0]
-        if parent and parent not in nodes:
-            raise ValueError(f"{VOCAB}: {node} has no parent {parent}")
-    return nodes
-
-
-def check(value: str) -> str:
-    """`value` if the vocabulary has it."""
-    if value not in vocabulary():
-        raise ValueError(f"production {value!r} is not in {VOCAB.name}")
-    return value
-
-
-def label(value: str) -> str:
-    return vocabulary()[value]["en"]
-
-
-def within(value: str, node: str) -> bool:
-    """Whether `value` is `node` or lies under it."""
-    return value == node or value.startswith(node + "/")
-
-
-def in_scope(value: str, scope: str) -> bool:
-    if scope == "all":
-        return True
-    if scope.startswith("not:"):
-        return not within(value, scope[4:])
-    return within(value, scope)
-
-
-def check_scope(scope: str) -> str:
-    if scope != "all":
-        check(scope.removeprefix("not:"))
-    return scope
+    return TREE.nodes
 
 
 @lru_cache(maxsize=4)

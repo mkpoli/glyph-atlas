@@ -1,11 +1,31 @@
-# Script style of a page or a document. Each value names one recognisable style; a page can be mixed.
-- id: kaisho
-  ja: 楷書
-- id: gyosho
-  ja: 行書
-- id: sosho
-  ja: 草書
+# The style of the letterforms, independent of how they reached the page (`production.yaml`): a
+# woodblock can be cut in cursive and a manuscript written in regular script. Documents, pages and
+# units carry a style; a unit or page that states none takes the style of what holds it. `mixed`
+# holds a document or page in more than one style, `unassessed` one nobody has judged.
+- id: seal
+  en: Seal script
+  definition: Seal script (篆書), large and small seal alike.
+- id: clerical
+  en: Clerical script
+  definition: Clerical script (隷書).
+- id: regular
+  en: Regular script
+  definition: Regular script (楷書), including type faces that follow it (楷体, 清朝体).
+- id: running
+  en: Running script
+  definition: Running script (行書).
+- id: cursive
+  en: Cursive script
+  definition: Cursive script (草書).
+- id: ming
+  en: Ming style
+  definition: The print style with thin horizontals and thick verticals (宋体, 明朝体).
+- id: gothic
+  en: Gothic style
+  definition: The print style with strokes of even width (黒体, ゴシック体).
 - id: mixed
-  ja: 混在
+  en: Mixed
+  definition: More than one of these styles.
 - id: unassessed
-  ja: 未判定
+  en: Not assessed
+  definition: Nobody has judged the style.
