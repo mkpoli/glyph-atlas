@@ -165,3 +165,29 @@ def test_the_hangul_migration_moves_a_row_published_as_other(scripts):
     db.executescript(Path("apps/cloudflare/migrations/0008_hangul_category.sql").read_text())
     assert dict(db.execute("SELECT id,category FROM units")) == {"jamo": "hangul", "kana": "kana", "latin": "other"}
     assert json.loads(db.execute("SELECT data FROM units WHERE id='jamo'").fetchone()[0])["category"] == "hangul"
+
+
+def test_the_gugyeol_migration_and_the_publication_scripts_agree_on_a_gugyeol_label(scripts):
+    """0012 names the gugyeol range the publication scripts and the Worker give `gugyeol`."""
+    cloudflare_schema = importlib.import_module("cloudflare_schema")
+    migration = Path("apps/cloudflare/migrations/0012_gugyeol_category.sql").read_text()
+    case = re.search(r"CASE\n[\s\S]*?END", migration).group(0)
+    db = sqlite3.connect(":memory:")
+    rows = db.execute(f"WITH RECURSIVE n(c) AS (SELECT 0 UNION ALL SELECT c+1 FROM n WHERE c<1114111) "
+                      f"SELECT c FROM n WHERE {case}='gugyeol'").fetchall()
+    assert [c for (c,) in rows] == [c for c in range(0x110000) if not 0xD800 <= c <= 0xDFFF
+                                    and cloudflare_schema.category_of(chr(c)) == "gugyeol"]
+    assert [cloudflare_schema.category_of(v) for v in ("", "", "")] == ["gugyeol"] * 3
+
+
+def test_the_gugyeol_migration_moves_a_row_published_as_other(scripts):
+    cloudflare_schema = importlib.import_module("cloudflare_schema")
+    db = sqlite3.connect(":memory:")
+    cloudflare_schema.schema(db)
+    for unit_id, label, category in (("gugyeol", "", "other"), ("kana", "あ", "kana"), ("latin", "A", "other")):
+        db.execute("INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                   (unit_id, "corpus", label, None, None, None, "unknown", category, "pending", 0, 1, 1, 0,
+                    json.dumps({"label": label, "category": category}), "{}", "{}", "{}"))
+    db.executescript(Path("apps/cloudflare/migrations/0012_gugyeol_category.sql").read_text())
+    assert dict(db.execute("SELECT id,category FROM units")) == {"gugyeol": "gugyeol", "kana": "kana", "latin": "other"}
+    assert json.loads(db.execute("SELECT data FROM units WHERE id='gugyeol'").fetchone()[0])["category"] == "gugyeol"

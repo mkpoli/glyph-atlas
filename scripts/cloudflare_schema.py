@@ -16,7 +16,8 @@ assert CORPUS_REFRESH.count(";") == 3, "0006 no longer restores and counts corpu
 
 # Code points whose script makes a label kana, kanji or hangul, generated from the Unicode script
 # properties the Worker's `categoryOf` tests; 0006 names the kana and Han ranges in SQL and 0008 the
-# Hangul ones.
+# Hangul ones. GUGYEOL has no Unicode script property: it is the Hanyang private-use range
+# `data/vocab/characters.tsv` holds the 구결자 at, and 0012 names it in SQL the same way.
 KANA = ((0x3041, 0x3096), (0x309D, 0x309F), (0x30A1, 0x30FA), (0x30FD, 0x30FF), (0x31F0, 0x31FF), (0x32D0, 0x32FE),
         (0x3300, 0x3357), (0xFF66, 0xFF6F), (0xFF71, 0xFF9D), (0x1AFF0, 0x1AFF3), (0x1AFF5, 0x1AFFB), (0x1AFFD, 0x1AFFE),
         (0x1B000, 0x1B122), (0x1B132, 0x1B132), (0x1B150, 0x1B152), (0x1B155, 0x1B155), (0x1B164, 0x1B167),
@@ -28,6 +29,7 @@ HAN = ((0x2E80, 0x2E99), (0x2E9B, 0x2EF3), (0x2F00, 0x2FD5), (0x3005, 0x3005), (
 HANGUL = ((0x1100, 0x11FF), (0x302E, 0x302F), (0x3131, 0x318E), (0x3200, 0x321E), (0x3260, 0x327E), (0xA960, 0xA97C),
           (0xAC00, 0xD7A3), (0xD7B0, 0xD7C6), (0xD7CB, 0xD7FB), (0xFFA0, 0xFFBE), (0xFFC2, 0xFFC7), (0xFFCA, 0xFFCF),
           (0xFFD2, 0xFFD7), (0xFFDA, 0xFFDC))
+GUGYEOL = ((0xF67E, 0xF77C),)
 
 
 # A published corpus row, in the order `corpus_upsert` takes it.
@@ -54,7 +56,9 @@ def category_of(label: str | None) -> str:
         return "kana"
     if any(a <= point <= b for a, b in HAN):
         return "kanji"
-    return "hangul" if any(a <= point <= b for a, b in HANGUL) else "other"
+    if any(a <= point <= b for a, b in HANGUL):
+        return "hangul"
+    return "gugyeol" if any(a <= point <= b for a, b in GUGYEOL) else "other"
 
 
 def schema(db):

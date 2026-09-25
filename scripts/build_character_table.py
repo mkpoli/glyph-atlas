@@ -26,10 +26,13 @@ Sources, all from one Unicode release:
   for the characters Unicode 18.0 added without a derivation note.
 - `data/vocab/graphemes.yaml`, hand-written, for the grapheme groupings and for the kana Unicode
   names but does not give a reading.
+- `data/vocab/gugyeol.tsv`, hand-kept, for the 구결자 of the Hanyang private-use convention
+  (U+F67E to U+F77C). Unicode assigns them nothing but a private-use code point, so the file is
+  what gives each its script, reading and 字母.
 
 Which code points are included: every character of every kana block that Unicode assigns, the CJK
-Unified Ideographs and their extensions, the Hangul jamo and syllable blocks, and always the code
-points `graphemes.yaml` names, so a grapheme is never a dangling reference. Kana and Hangul outside
+Unified Ideographs and their extensions, the Hangul jamo and syllable blocks, the 구결자 of
+`gugyeol.tsv`, and always the code points `graphemes.yaml` names, so a grapheme is never a dangling reference. Kana and Hangul outside
 those blocks, which is to say the letters on the Enclosed CJK Letters and Months chart (㋕, ㉠ and
 the like) and the halfwidth jamo, are not text characters and are left out.
 
@@ -55,6 +58,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 MJ_TABLE_NAME = "mj-hentaigana.tsv"
 OVERRIDES_NAME = "graphemes.yaml"
+GUGYEOL_NAME = "gugyeol.tsv"
 OUTPUT_NAME = "characters.tsv"
 
 #: The Unicode release the cached files and the generated table are from. Every file of the release
@@ -357,6 +361,27 @@ def mj_table(path: Path) -> dict[str, dict[str, str]]:
     return {row["code_point"]: row for row in csv.DictReader(lines, delimiter="\t") if row["code_point"]}
 
 
+def gugyeol_table(path: Path) -> dict[int, dict[str, str]]:
+    """`gugyeol.tsv` by code point, with the `#` header comments dropped.
+
+    Every row has to be a private-use code point: a 구결자 that Unicode encodes is a character of its
+    own block, and a row here would give it a second script.
+    """
+    with path.open(encoding="utf-8") as handle:
+        lines = [line for line in handle if not line.startswith("#")]
+    rows: dict[int, dict[str, str]] = {}
+    for row in csv.DictReader(lines, delimiter="\t"):
+        point = int(row["code_point"].removeprefix("U+"), 16)
+        if not 0xE000 <= point <= 0xF8FF:
+            raise ValueError(f"{path}: {row['code_point']} is not a private-use code point")
+        if row["char"] != chr(point):
+            raise ValueError(f"{path}: {row['code_point']} is written as {row['char']!r}")
+        if point in rows:
+            raise ValueError(f"{path}: {row['code_point']} is listed twice")
+        rows[point] = row
+    return rows
+
+
 def overrides(path: Path) -> dict[str, Any]:
     """`graphemes.yaml`: the 音価 of the kana under `kana`, the curated rows under `characters`."""
     document = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -466,6 +491,7 @@ def build(
     kana: dict[str, str] = document["kana"]
 
     characters = _stated_characters(blocks, scripts, ages, data, ranges, names, curated, kana, jamo)
+    _add_gugyeol(characters, gugyeol_table(vocab / GUGYEOL_NAME), blocks, ages, ranges)
     # The curated rows are applied before anything is derived from them, so that a 字母 stated by
     # hand reaches the graphemes and the confusable pairs like any other.
     for point, values in curated.items():
@@ -568,6 +594,31 @@ def _stated_characters(
     for point in sorted(stated - set(characters)):
         characters[point] = character(point, value_of(blocks, point))
     return characters
+
+
+def _add_gugyeol(
+    characters: dict[int, Character],
+    gugyeol: dict[int, dict[str, str]],
+    blocks: list[Range],
+    ages: list[Range],
+    ranges: list[Range],
+) -> None:
+    """One row per 구결자 of `gugyeol.tsv`, with the script, readings and 字母 it states.
+
+    Unicode names no private-use character, and its Scripts.txt gives them the script Unknown; the
+    block, category and age are still Unicode's, as for any other code point.
+    """
+    for point, row in gugyeol.items():
+        characters[point] = Character(
+            code_point=code_point(point),
+            char=chr(point),
+            script="gugyeol",
+            category=value_of(ranges, point),
+            age=value_of(ages, point),
+            block=value_of(blocks, point),
+            jibo=row["jibo"].split(),
+            readings=row["readings"].split(),
+        )
 
 
 def _add_jibo(

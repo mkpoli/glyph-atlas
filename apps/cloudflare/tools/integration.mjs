@@ -428,15 +428,27 @@ try {
   await apply('0008_hangul_category.sql')
   assert.deepEqual((await call('/atlas?group=hangul')).items.map(i => i.id), ['hangul'], 'a Hangul label is in the hangul group')
   assert.ok(!(await call('/atlas?group=kana')).items.some(i => i.id === 'hangul'), 'and in no other')
+  // A row published as `other` before gugyeol had a category reads `gugyeol` once 0012 has run, and
+  // the listing filters it by that group.
+  const gugyeol = { id: 'gugyeol', label: '', reading: '', state: 'pending', revision: 0, image_sha256: hash,
+    production: 'printed/woodblock', repair: { quiz: true } }
+  await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
+    gugyeol.id, 'local', '', '', 'U+F67F', null, 'printed/woodblock', 'other', 'pending', 0, 1, 1, 1,
+    JSON.stringify(gugyeol), JSON.stringify({ character: gugyeol }), '{}', '{}').run()
+  await apply('0012_gugyeol_category.sql')
+  assert.deepEqual((await call('/atlas?group=gugyeol')).items.map(i => i.id), ['gugyeol'], 'a gugyeol label is in the gugyeol group')
+  assert.ok(!(await call('/atlas?group=kana')).items.some(i => i.id === 'gugyeol'), 'and in no other')
   // The migration names the label categories the Worker computes, code point by code point.
   const hangulMigration = await readFile(new URL('../migrations/0008_hangul_category.sql', import.meta.url), 'utf8')
+  const gugyeolMigration = await readFile(new URL('../migrations/0012_gugyeol_category.sql', import.meta.url), 'utf8')
   const ranges = (kind, sql = migration) => [...sql.split(`THEN '${kind}'`)[0].split('WHEN').at(-1).matchAll(/c BETWEEN (0x[0-9A-F]+) AND (0x[0-9A-F]+)|c=(0x[0-9A-F]+)/g)]
     .map(m => m[3] ? [Number(m[3]), Number(m[3])] : [Number(m[1]), Number(m[2])])
-  const kana = ranges('kana'), han = ranges('kanji'), hangul = ranges('hangul', hangulMigration)
+  const kana = ranges('kana'), han = ranges('kanji'), hangul = ranges('hangul', hangulMigration), gugyeolRange = ranges('gugyeol', gugyeolMigration)
   const within = (list, c) => list.some(([a, b]) => a <= c && c <= b)
   for (let c = 0; c <= 0x10FFFF; c++) {
     if (c >= 0xD800 && c <= 0xDFFF) continue
-    const sql = within(kana, c) ? 'kana' : within(han, c) ? 'kanji' : within(hangul, c) ? 'hangul' : 'other'
+    const sql = within(kana, c) ? 'kana' : within(han, c) ? 'kanji' : within(hangul, c) ? 'hangul'
+      : within(gugyeolRange, c) ? 'gugyeol' : 'other'
     if (worker.categoryOf(String.fromCodePoint(c)) !== sql) assert.fail(`U+${c.toString(16)}: ${worker.categoryOf(String.fromCodePoint(c))} vs ${sql}`)
   }
   // A context widened in place survives a review and its undo.

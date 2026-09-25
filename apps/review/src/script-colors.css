@@ -3,6 +3,7 @@
 .script-char[data-script="katakana"] { color: #275991; }
 .script-char[data-script="kanji"] { color: #80521a; }
 .script-char[data-script="hangul"] { color: #9c2f3f; }
+.script-char[data-script="gugyeol"] { color: #4a7a1f; }
 .script-char[data-script="symbol"] { color: #74406a; }
 .script-char[data-script="unknown"] { color: #53515b; }
 @media (forced-colors: active) {

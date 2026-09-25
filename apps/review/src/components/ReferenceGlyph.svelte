@@ -11,8 +11,10 @@
   const bundled = [[0x3000, 0x303f], [0x3099, 0x309c], [0x30a1, 0x30fe], [0x31f0, 0x31ff],
                    [0x2a708, 0x2a708], [0x1b000, 0x1b11e], [0x1b120, 0x1b122], [0x1b127, 0x1b128]]
   // The blocks a reader's own fonts almost never reach, where a missing glyph is the likely outcome
-  // and the code point has to stand in for it.
-  const historic = [[0x1b000, 0x1b1ff]]
+  // and the code point has to stand in for it. U+F67E–U+F77C are the 구결자 of the Hanyang
+  // private-use convention: only a font made for it draws them, and another private-use font would
+  // draw an unrelated character there.
+  const historic = [[0x1b000, 0x1b1ff], [0xf67e, 0xf77c]]
   const points = $derived([...char].map(c => c.codePointAt(0)))
   const inRanges = (ranges, point) => ranges.some(([low, high]) => point >= low && point <= high)
   const shown = $derived(points.length > 0 && !points.some(p => inRanges(historic, p) && !inRanges(bundled, p)))

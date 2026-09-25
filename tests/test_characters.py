@@ -72,7 +72,7 @@ def test_the_table_is_one_row_per_code_point():
 def test_the_table_holds_the_kana_and_the_kanji():
     rows = rows_of(TABLE)
     scripts = {row["script"] for row in rows}
-    assert scripts == {"han", "hangul", "hiragana", "hentaigana", "katakana", "symbol"}
+    assert scripts == {"gugyeol", "han", "hangul", "hiragana", "hentaigana", "katakana", "symbol"}
     assert len([row for row in rows if row["script"] == "hentaigana"]) == 285
     assert len([row for row in rows if row["script"] == "han"]) > 90_000
 
@@ -95,6 +95,16 @@ def test_the_table_holds_every_assigned_code_point_of_the_hangul_blocks():
     rows = table()
     assert rows["U+AC00"]["name"] == "HANGUL SYLLABLE GA" and rows["U+D7A3"]["name"] == "HANGUL SYLLABLE HIH"
     assert rows["U+AC00"]["age"] == "2.0" and rows["U+AC00"]["readings"] == ""
+
+
+def test_the_table_holds_the_hanyang_gugyeol_block():
+    """한/글's 255 구결자, U+F67E to U+F77C, with no reading or 字母 until a source states one."""
+    rows = [row for row in rows_of(TABLE) if row["script"] == "gugyeol"]
+    assert [row["code_point"] for row in rows] == [f"U+{point:04X}" for point in range(0xF67E, 0xF77D)]
+    assert {(row["category"], row["age"], row["block"]) for row in rows} == {("Co", "1.1", "Private Use Area")}
+    assert all(row["name"] == "" and row["grapheme"] == row["code_point"] for row in rows)
+    assert all(row["readings"] == "" and row["jibo"] == "" for row in rows)
+    assert refs.script_of(chr(0xF67E)) == "gugyeol"
 
 
 def test_a_compatibility_jamo_reads_as_itself():
@@ -301,7 +311,7 @@ def write_release(directory: Path) -> Path:
     (directory / "Blocks.txt").write_text(
         "3040..309F; Hiragana\n30A0..30FF; Katakana\n4E00..9FFF; CJK Unified Ideographs\n"
         "1B000..1B0FF; Kana Supplement\n1B100..1B12F; Kana Extended-A\n"
-        "3130..318F; Hangul Compatibility Jamo\nAC00..D7AF; Hangul Syllables\n",
+        "3130..318F; Hangul Compatibility Jamo\nAC00..D7AF; Hangul Syllables\nE000..F8FF; Private Use Area\n",
         encoding="utf-8",
     )
     (directory / "Scripts.txt").write_text(
@@ -312,7 +322,8 @@ def write_release(directory: Path) -> Path:
     )
     (directory / "DerivedAge.txt").write_text(
         "3041..3096 ; 1.1 # Lo\n30A1..30FA ; 1.1 # Lo\n4E00..9FFF ; 1.1 # Lo\n"
-        "1B001..1B11F ; 10.0 # Lo\n1B127..1B128 ; 18.0 # Lo\n3131..318E ; 1.1 # Lo\nAC00..D7A3 ; 2.0 # Lo\n",
+        "1B001..1B11F ; 10.0 # Lo\n1B127..1B128 ; 18.0 # Lo\n3131..318E ; 1.1 # Lo\nAC00..D7A3 ; 2.0 # Lo\n"
+        "E000..F8FF ; 1.1 # Co\n",
         encoding="utf-8",
     )
     (directory / "UnicodeData.txt").write_text(
@@ -334,7 +345,9 @@ def write_release(directory: Path) -> Path:
         "3164;HANGUL FILLER;Lo;0;L;;;;;N;HANGUL CAE OM;;;;\n"
         "317F;HANGUL LETTER PANSIOS;Lo;0;L;<compat> 1140;;;;N;HANGUL LETTER BAN CHI EUM;;;;\n"
         "AC00;<Hangul Syllable, First>;Lo;0;L;;;;;N;;;;;\n"
-        "AC01;<Hangul Syllable, Last>;Lo;0;L;;;;;N;;;;;\n",
+        "AC01;<Hangul Syllable, Last>;Lo;0;L;;;;;N;;;;;\n"
+        "E000;<Private Use, First>;Co;0;L;;;;;N;;;;;\n"
+        "F8FF;<Private Use, Last>;Co;0;L;;;;;N;;;;;\n",
         encoding="utf-8",
     )
     # A cut of Jamo.txt: the short names the two fixture syllables are named from.
@@ -388,6 +401,11 @@ def tiny(tmp_path: Path) -> tuple[Path, Path]:
         "kana:\n  U+306D: ね\n  U+304B: か\n  U+3044: い\n  U+1B120: い\n"
         "  U+3041: ぁ\n  U+30A1: ぁ\n"
         "characters:\n  U+1B127:\n    jibo: [子]\n  U+1B128:\n    jibo: [井]\n",
+        encoding="utf-8",
+    )
+    (vocab / "gugyeol.tsv").write_text(
+        "# a comment the reader skips\ncode_point\tchar\treadings\tjibo\n"
+        f"U+F67F\t{chr(0xF67F)}\t가\t可\nU+F690\t{chr(0xF690)}\t\t\n",
         encoding="utf-8",
     )
     return release, vocab
@@ -622,3 +640,25 @@ def test_full_refresh_rebuilds_reading_and_jibo_reverse_lookups(monkeypatch):
     assert refs.derived("今") == [original.code_point]
     assert refs.search("ふるい") == []
     assert any(row.code_point == original.code_point for row in refs.search("あたらしい"))
+
+
+def test_the_build_holds_a_gugyeol_at_its_private_use_code_point(tiny):
+    rows = build(*tiny)
+    row = rows[0xF67F]
+    assert (row.name, row.script, row.category, row.age, row.block) == (
+        None, "gugyeol", "Co", "1.1", "Private Use Area"
+    )
+    assert row.readings == ["가"] and row.jibo == ["可"] and row.grapheme == "U+F67F"
+    assert rows[0xF690].readings == [] and 0xF691 not in rows
+
+
+@pytest.mark.parametrize("line", [
+    "U+4E00\t一\t가\t\n",
+    f"U+F67F\t{chr(0xF680)}\t가\t\n",
+    f"U+F67F\t{chr(0xF67F)}\t가\t\nU+F67F\t{chr(0xF67F)}\t가\t\n",
+])
+def test_the_build_refuses_a_gugyeol_row_it_cannot_trust(tiny, line):
+    release, vocab = tiny
+    (vocab / "gugyeol.tsv").write_text("code_point\tchar\treadings\tjibo\n" + line, encoding="utf-8")
+    with pytest.raises(ValueError):
+        build(release, vocab)
