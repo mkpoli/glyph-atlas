@@ -409,5 +409,7 @@
   "visualGroups.label": "以形分群",
   "ziLink.aria": "於zi.tools查{char}",
   "ziLink.text": "zi.tools ↗",
-  "state.hard": "難辨：二校者皆置之"
+  "state.hard": "難辨：二校者皆置之",
+  "suggestions.type.label": "或自書之（可略）",
+  "suggestions.type.placeholder": "字…"
 }
