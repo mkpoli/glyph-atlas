@@ -85,3 +85,13 @@ def test_transparent_paper_is_white():
     image = Image.new("RGBA", (80, 60), (0, 0, 0, 0))
     ImageDraw.Draw(image).rectangle([30, 20, 40, 45], fill=(0, 0, 0, 255))
     assert binarise(image).sum() == 11 * 26
+
+
+def test_the_suggestion_sample_is_stable_and_nested():
+    spec = importlib.util.spec_from_file_location("style_suggest", ROOT / "models" / "style" / "suggest.py")
+    suggest = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(suggest)
+    ids = [f"u{i}" for i in range(2000)]
+    small = {i for i in ids if suggest.sampled(i, 0.05)}
+    large = {i for i in ids if suggest.sampled(i, 0.2)}
+    assert small < large and 40 < len(small) < 160
