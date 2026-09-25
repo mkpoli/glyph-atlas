@@ -13,11 +13,12 @@ counts:
   full_dataset_images: 317574
 format:
   archive: Calli-Tongji.zip, 84361819 bytes, sha256 bae995df68a3469fe486939dd42b209145ab56d10f580990380e25dcf9e2fbe9
-  images: one 256x256 binarised PNG per character, dark ink on white, in a folder named 作者-书体
-  metadata: dataset.txt, tab-separated 编号, 路径, 类别 (作者-书体), Unicode, 朝代
+  images: one 256x256 RGB PNG per character, dark ink on white with anti-aliased edges, in a folder named 作者-书体
+  metadata: dataset.txt, space-separated 编号, 路径, 类别 (作者-书体), Unicode, 朝代, CRLF line ends, paths with backslashes
 notes:
   - Read on 2026-09-25 from the ModelScope page and its README; downloading needs a ModelScope login.
   - The open subset holds 50 calligrapher-style classes of 100 images each. The full 317,574-image set is released on a named application to the team.
-  - Built by the team from 以观书法's scans of rubbings and ink originals. Rubbings were inverted and every image binarised and denoised by the team's pipeline, so the images carry no paper, colour or stone texture.
+  - Built by the team from 以观书法's scans of rubbings and ink originals. By the README, an SVM sorts rubbings from ink originals; rubbings are inverted, ink originals thresholded by Otsu's method, and both denoised by connected components, so the images carry no paper, colour or stone texture.
+  - 王献之-草/台.png and 王献之-草/颱.png are byte-identical.
   - Styles are 篆, 隶, 楷, 行 and 草. Per style in the open subset, images (calligraphers) are 行 1300 (13), 楷 1300 (13), 草 1500 (15), 篆 500 (5), 隶 400 (4).
   - CC BY-NC 4.0, 「仅供学术研究和教育用途，禁止用于商业目的」. Its images, and anything trained on them, stay out of this project's CC BY-SA releases.

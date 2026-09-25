@@ -14,26 +14,29 @@ on crops. The checkpoint is written to `models/style/artifacts/best.pt` and not 
 
 ## Licence
 
-Calli-Tongji is CC BY-NC 4.0, for research and education only. The checkpoint and anything it
-predicts derive from it and stay out of this project's CC BY-SA releases. A style a reviewer
-confirms after seeing a suggestion is the reviewer's judgement.
+Calli-Tongji is CC BY-NC 4.0, for research and education only. The checkpoint stays out of the
+repository and out of this project's CC BY-SA releases. Whether a model's predictions are adaptations
+of its training data under that licence is uncertain; until that is settled, the teacher's
+suggestions are kept apart from the released data, and a style enters the data only when a person
+confirms it.
 
 ## Result
 
-One run (seed 0, 20 epochs, 93 s on an RTX 5070 Ti), tested on 11 calligraphers the model never
-saw (1,100 images; train 3,400 images of 34 calligraphers, val 500 of 5):
+One run (seed 0, 20 epochs, 116 s on an RTX 5070 Ti). Every calligrapher is in one split only:
+train 3,200 images by 30 calligraphers, val 600 by 5, test 1,200 by 11.
 
 | | seal | clerical | regular | running | cursive |
 | --- | --- | --- | --- | --- | --- |
-| recall | 0.97 | 0.88 | 0.88 | 0.56 | 0.71 |
+| recall | 0.84 | 0.87 | 0.86 | 0.74 | 0.48 |
 
-Accuracy 0.756, macro F1 0.799. Running script is the weak class: of its 300 test images, 60 go to
-regular and 71 to cursive, the two scripts it lies between. By held-out calligrapher, accuracy runs
-from 0.34 (皇象-草, whose 章草 keeps clerical features) to 0.98 (张旭-草); the running-script hands
-score 0.48 (谭延闿), 0.54 (欧阳询) and 0.66 (王羲之).
+Accuracy 0.735, macro F1 0.758. Cursive is the weak class: 149 of its 300 test images are called
+running. By held-out calligrapher and script, accuracy runs from 0.43 (徐渭-草, 57 of 100 called
+running) to 0.94 (欧阳询-楷); the three cursive hands score 0.43 (徐渭), 0.48 (赵构) and 0.53
+(孙过庭). `metrics.json` lists every held-out hand with what the model called its images.
 
-The test holds one calligrapher each for seal (李阳冰) and clerical (吴让之), so those two recalls
-say how the model does on one hand, not on the script.
+The test has one calligrapher for seal (赵之谦) and one for clerical (伊秉绶), so those recalls say
+how the model does on one hand, not on the script. The checkpoint is chosen on a val set of one or
+two hands per script, and the figures come from a single seed and a single split.
 
 ## Limits
 

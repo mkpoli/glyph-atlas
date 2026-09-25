@@ -3,17 +3,18 @@
 The data is the open subset of Calli-Tongji (`data/sources/calli-tongji.yaml`): 5,000 binarised
 characters in 50 folders named 作者-书体. The classes are the five scripts it labels, mapped onto
 `data/vocab/style.yaml` by `glyph_atlas.style_teacher.STYLES`; the calligrapher is only used to
-split. A split by image would put one hand in both train and test, and the test would then measure
-how well the model knows a calligrapher rather than a script, so whole calligraphers are held out:
-within each script, in `sha1(name)` order, the first fifth (at least one) goes to `test`, the next
-one to `val`, the rest to `train`.
+split. A split by image, or by calligrapher and script, would put one hand in two splits (欧阳询
+writes both 楷 and 行), and the test would then measure how well the model knows a calligrapher
+rather than a script. So every calligrapher goes to one split whole: taking the scripts with the
+fewest calligraphers first and the calligraphers in `sha1(name)` order, `test` receives a fifth of
+each script's calligraphers (at least one), `val` one more, and the rest go to `train`.
 
 The backbone is ConvNeXt-tiny from `timm`, started from `convnext_tiny.fb_in22k_ft_in1k`
-(Apache-2.0), with a five-way head. Training draws every script equally often, augments with small
-affine changes and with stroke thinning or thickening (the scans this teacher will be used on vary
+(Apache-2.0), with a five-way head. Training draws every script equally often, augments with a
+small rotation, scaling and shift and with stroke thinning or thickening (the scans this teacher will be used on vary
 in ink weight far more than the binarised training images), and keeps the checkpoint with the best
 macro F1 on `val`. The test report gives accuracy, macro F1, recall per script, the confusion
-matrix, and accuracy per held-out calligrapher.
+matrix, and each held-out calligrapher's accuracy and predictions.
 
 The images and the model derive from a CC BY-NC 4.0 dataset. The checkpoint stays under
 `models/style/artifacts/`, which is not committed, and nothing trained here enters a CC BY-SA
@@ -59,16 +60,30 @@ def records(archive: Path) -> list[dict]:
 
 
 def split(rows: list[dict]) -> dict[str, str]:
-    """Each calligrapher-script class to `train`, `val` or `test`, whole classes at a time."""
-    classes = defaultdict(set)
+    """Each calligrapher to `train`, `val` or `test`, with every script in each of the three."""
+    writers = defaultdict(set)
     for row in rows:
-        classes[row["style"]].add(f'{row["writer"]}-{row["script"]}')
-    assigned = {}
-    for names in classes.values():
-        ordered = sorted(names, key=lambda name: hashlib.sha1(name.encode()).hexdigest())
-        tests = max(1, round(len(ordered) / 5))
-        for index, name in enumerate(ordered):
-            assigned[name] = "test" if index < tests else "val" if index == tests else "train"
+        writers[row["style"]].add(row["writer"])
+    order = {style: sorted(names, key=lambda name: hashlib.sha1(name.encode()).hexdigest())
+             for style, names in writers.items()}
+    assigned: dict[str, str] = {}
+    for part in ("test", "val"):
+        for style in sorted(order, key=lambda style: (len(order[style]), style)):
+            wanted = max(1, round(len(order[style]) / 5)) if part == "test" else 1
+            held = sum(assigned.get(name) == part for name in order[style])
+            for name in order[style]:
+                if held >= wanted:
+                    break
+                if name not in assigned:
+                    assigned[name] = part
+                    held += 1
+    for names in order.values():
+        for name in names:
+            assigned.setdefault(name, "train")
+    for style, names in order.items():
+        missing = {"train", "val", "test"} - {assigned[name] for name in names}
+        if missing:
+            raise ValueError(f"{style} has no calligrapher left for {', '.join(sorted(missing))}")
     return assigned
 
 
@@ -83,11 +98,18 @@ def thicken(image: Image.Image, rng: random.Random) -> Image.Image:
 
 
 def augment(image: Image.Image, rng: random.Random) -> Image.Image:
+    """Stroke weight, then one affine map: a small rotation, a scaling about the centre and a shift."""
     image = thicken(image, rng)
-    angle, scale = rng.uniform(-6, 6), rng.uniform(0.85, 1.1)
-    shift = [rng.uniform(-0.06, 0.06) * image.width for _ in range(2)]
-    return image.rotate(angle, resample=Image.Resampling.BILINEAR, translate=shift, fillcolor=255).resize(
-        (int(image.width * scale),) * 2, Image.Resampling.BILINEAR).resize(image.size, Image.Resampling.BILINEAR)
+    angle, scale = math.radians(rng.uniform(-6, 6)), rng.uniform(0.85, 1.1)
+    dx, dy = (rng.uniform(-0.06, 0.06) * side for side in image.size)
+    cx, cy = image.width / 2, image.height / 2
+    # PIL maps each output pixel back to the input, so the matrix is the inverse of the transform.
+    a, b = math.cos(angle) / scale, math.sin(angle) / scale
+    c = cx - a * (cx + dx) - b * (cy + dy)
+    d, e = -math.sin(angle) / scale, math.cos(angle) / scale
+    f = cy - d * (cx + dx) - e * (cy + dy)
+    return image.transform(image.size, Image.Transform.AFFINE, (a, b, c, d, e, f),
+                           resample=Image.Resampling.BILINEAR, fillcolor=255)
 
 
 def load(archive: Path, rows: list[dict]) -> dict[int, Image.Image]:
@@ -154,7 +176,7 @@ def main() -> None:
     rows = records(args.zip)
     parts = split(rows)
     for row in rows:
-        row["split"] = parts[f'{row["writer"]}-{row["script"]}']
+        row["split"] = parts[row["writer"]]
     images = load(args.zip, rows)
     by = {name: [row for row in rows if row["split"] == name] for name in ("train", "val", "test")}
     device = "cuda"
@@ -167,6 +189,7 @@ def main() -> None:
     best, started, history = -1.0, time.time(), []
     for epoch in range(args.epochs):
         model.train()
+        losses = []
         for x, y in batches(by["train"], images, size=args.batch, rng=rng, train=True):
             with torch.autocast("cuda", dtype=torch.bfloat16):
                 loss = loss_of(model(torch.as_tensor(x, device=device)), torch.as_tensor(y, device=device))
@@ -174,8 +197,9 @@ def main() -> None:
             loss.backward()
             optimizer.step()
             schedule.step()
+            losses.append(loss.item())
         val = scores([CLASSES.index(r["style"]) for r in by["val"]], predict(model, by["val"], images, device))
-        history.append({"epoch": epoch + 1, "loss": round(loss.item(), 4), "val_macro_f1": val["macro_f1"]})
+        history.append({"epoch": epoch + 1, "mean_train_loss": round(sum(losses) / len(losses), 4), "val_macro_f1": val["macro_f1"]})
         print(json.dumps(history[-1]), flush=True)
         if val["macro_f1"] > best:
             best = val["macro_f1"]
@@ -184,20 +208,24 @@ def main() -> None:
     model.load_state_dict(torch.load(args.out / "best.pt", map_location=device)["model"])
     guesses = predict(model, by["test"], images, device)
     truth = [CLASSES.index(r["style"]) for r in by["test"]]
-    per_writer = defaultdict(list)
+    per_writer = defaultdict(Counter)
     for row, guess in zip(by["test"], guesses, strict=True):
-        per_writer[f'{row["writer"]}-{row["script"]}'].append(CLASSES[guess] == row["style"])
+        per_writer[f'{row["writer"]}-{row["script"]}'][CLASSES[guess]] += 1
     archive_sha = hashlib.sha256(args.zip.read_bytes()).hexdigest()
     report = {
         "data": {"source": "calli-tongji", "archive_sha256": archive_sha,
                  "images": {name: len(part) for name, part in by.items()},
+                 "calligraphers": {name: sorted({r["writer"] for r in part}) for name, part in by.items()},
                  "classes": {name: sorted({f'{r["writer"]}-{r["script"]}' for r in part}) for name, part in by.items()}},
         "model": {"checkpoint": CHECKPOINT, "size": 128, "epochs": args.epochs, "seed": args.seed,
                   "best_val_macro_f1": best, "device": torch.cuda.get_device_name(0),
                   "seconds": round(time.time() - started, 1)},
         "history": history,
         "test": scores(truth, guesses),
-        "test_per_calligrapher": {name: round(sum(hits) / len(hits), 4) for name, hits in sorted(per_writer.items())},
+        "test_per_calligrapher": {
+            name: {"accuracy": round(counts[STYLES[name.rsplit("-", 1)[1]]] / sum(counts.values()), 4),
+                   "predicted": {style: counts[style] for style in CLASSES if counts[style]}}
+            for name, counts in sorted(per_writer.items())},
     }
     args.metrics.write_text(json.dumps(report, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     print(json.dumps(report["test"], ensure_ascii=False))

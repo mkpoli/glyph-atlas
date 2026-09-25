@@ -1,8 +1,10 @@
 import importlib.util
+import random
 import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 from PIL import Image, ImageDraw
 
 from glyph_atlas import style
@@ -41,13 +43,45 @@ def test_a_blank_crop_prepares_to_blank_paper():
     assert (np.asarray(prepare(Image.new("L", (20, 20), 200))) == 255).all()
 
 
-def test_whole_calligraphers_are_held_out():
+def test_a_calligrapher_sits_in_one_split_and_every_script_in_all_three():
     rows = [{"writer": f"w{i}", "script": script, "style": train.STYLES[script]}
-            for script, n in (("行", 13), ("隶", 4)) for i in range(n)]
+            for script, n in (("行", 13), ("草", 6), ("隶", 3)) for i in range(n)]
+    rows += [{"writer": "w0", "script": "楷", "style": "regular"}, {"writer": "w1", "script": "楷", "style": "regular"},
+             {"writer": "w2", "script": "楷", "style": "regular"}]
     parts = train.split(rows)
     assert parts == train.split(list(reversed(rows)))
-    by_style = {}
-    for name, part in parts.items():
-        by_style.setdefault(name.rsplit("-", 1)[1], []).append(part)
-    assert sorted(by_style["行"]).count("test") == 3 and by_style["行"].count("val") == 1
-    assert sorted(by_style["隶"]) == ["test", "train", "train", "val"]
+    assert set(parts) == {row["writer"] for row in rows}
+    for script in ("行", "草", "隶", "楷"):
+        held = {parts[row["writer"]] for row in rows if row["script"] == script}
+        assert held == {"train", "val", "test"}, script
+
+
+def test_a_script_with_too_few_calligraphers_is_refused():
+    rows = [{"writer": f"w{i}", "script": "隶", "style": "clerical"} for i in range(2)]
+    with pytest.raises(ValueError, match="clerical has no calligrapher left for train"):
+        train.split(rows)
+
+
+def test_augmenting_keeps_the_canvas_and_the_paper():
+    image = prepare(glyph())
+    out = train.augment(image, random.Random(1))
+    assert out.size == image.size and np.asarray(out)[0, 0] == 255
+
+
+def test_a_bold_character_keeps_its_polarity():
+    image = Image.new("L", (40, 40), "white")
+    ImageDraw.Draw(image).rectangle([2, 2, 37, 37], fill="black")
+    assert binarise(image).mean() > 0.5
+
+
+def test_a_speck_is_not_part_of_the_character():
+    image = glyph()
+    ImageDraw.Draw(image).point((2, 2), fill="black")
+    assert np.asarray(prepare(image)).shape == np.asarray(prepare(glyph())).shape
+    assert (np.asarray(prepare(image)) == np.asarray(prepare(glyph()))).all()
+
+
+def test_transparent_paper_is_white():
+    image = Image.new("RGBA", (80, 60), (0, 0, 0, 0))
+    ImageDraw.Draw(image).rectangle([30, 20, 40, 45], fill=(0, 0, 0, 255))
+    assert binarise(image).sum() == 11 * 26

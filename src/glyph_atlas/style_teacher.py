@@ -2,9 +2,9 @@
 
 The teacher is trained on Calli-Tongji (`data/sources/calli-tongji.yaml`), whose images are
 binarised, dark ink on white, with no paper or stone texture. A crop from this project's scans is
-brought to the same form before the model sees it: grey, thresholded by Otsu's method, inverted
-when the dark side is the larger one (a rubbing's white characters on black), cut to the ink with a
-margin, padded to a square and resized.
+brought to the same form before the model sees it: flattened onto white, grey, thresholded by Otsu's
+method, inverted when the border is mostly dark (a rubbing's light characters on dark stone), rid of
+specks, cut to the ink with a margin, padded to a square and resized.
 """
 from __future__ import annotations
 
@@ -19,6 +19,8 @@ STYLES = {"篆": "seal", "隶": "clerical", "楷": "regular", "行": "running", 
 CLASSES = list(STYLES.values())
 #: The ink's box grows by this share of its longer side on every edge.
 MARGIN = 0.08
+#: An ink component smaller than this share of the largest one is a speck, not part of the character.
+SPECK = 0.01
 
 
 def otsu(values: np.ndarray) -> int:
@@ -33,18 +35,44 @@ def otsu(values: np.ndarray) -> int:
     return int(np.nanargmax(np.where(np.isfinite(between), between, np.nan)))
 
 
+def flatten(image: Image.Image) -> Image.Image:
+    """`image` in grey, with any transparent part shown as white paper."""
+    if image.mode in ("RGBA", "LA", "PA") or (image.mode == "P" and "transparency" in image.info):
+        rgba = image.convert("RGBA")
+        paper = Image.new("RGBA", rgba.size, "white")
+        return Image.alpha_composite(paper, rgba).convert("L")
+    return image.convert("L")
+
+
 def binarise(image: Image.Image) -> np.ndarray:
-    """A boolean ink mask of `image`: True where the ink is."""
-    grey = np.asarray(image.convert("L"), dtype=np.uint8)
+    """A boolean ink mask of `image`: True where the ink is.
+
+    The paper is the side that holds most of the border, so a bold character that covers more than
+    half of a tight crop keeps its polarity.
+    """
+    grey = np.asarray(flatten(image), dtype=np.uint8)
     if grey.max() == grey.min():
         return np.zeros(grey.shape, dtype=bool)
-    ink = grey <= otsu(grey)
-    return ~ink if ink.mean() > 0.5 else ink
+    dark = grey <= otsu(grey)
+    border = np.concatenate([dark[0], dark[-1], dark[1:-1, 0], dark[1:-1, -1]])
+    return ~dark if border.mean() > 0.5 else dark
+
+
+def despeck(ink: np.ndarray) -> np.ndarray:
+    """`ink` without the components smaller than `SPECK` of the largest one."""
+    from scipy import ndimage
+
+    labels, count = ndimage.label(ink, structure=np.ones((3, 3), dtype=bool))
+    if count < 2:
+        return ink
+    sizes = np.bincount(labels.ravel())[1:]
+    keep = np.flatnonzero(sizes >= SPECK * sizes.max()) + 1
+    return np.isin(labels, keep)
 
 
 def prepare(image: Image.Image, *, size: int = SIZE) -> Image.Image:
     """`image` as the grey square the teacher takes: black ink on white, cut to the ink."""
-    ink = binarise(image)
+    ink = despeck(binarise(image))
     rows, columns = np.flatnonzero(ink.any(axis=1)), np.flatnonzero(ink.any(axis=0))
     if len(rows):
         top, bottom, left, right = rows[0], rows[-1] + 1, columns[0], columns[-1] + 1
