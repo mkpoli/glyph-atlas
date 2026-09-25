@@ -104,7 +104,7 @@ One located unit: a character, a ligature, a mark, a gap, or a sequence awaiting
 | `reading` | diplomatic reading, historical spelling kept |
 | `unicode` | code point sequence, `U+1B002` or `U+304B U+3099`; null when no code point fits |
 | `classification` | `unassessed`, `identified`, `ambiguous` (several candidates remain), `unencoded` (identified, no code point exists), `unidentified` |
-| `script` | `hiragana`, `hentaigana`, `katakana`, `han`, `hangul`, `symbol`, `latin`, `unknown`; the character layer is the authority |
+| `script` | `hiragana`, `hentaigana`, `katakana`, `han`, `hangul`, `gugyeol`, `symbol`, `latin`, `unknown`; the character layer is the authority |
 | `variants` | list of `{scheme, id, version}` with scheme `mj`, `ivs`, `glyphwiki` or `local`; several may apply |
 | `candidates` | scored alternatives `{unicode, p}` when `classification` is `ambiguous` |
 | `antecedent_ids` | for an iteration mark, the units it repeats, across a line break if needed |
@@ -137,8 +137,8 @@ from one Unicode release's `UnicodeData.txt`, `Blocks.txt`, `Scripts.txt`, `Deri
 | `name`, `alias` | the Unicode name; a second name such as the MJ figure name, where it differs |
 | `script` | the script property, with hentaigana named as this project names it and `Han` written `han` |
 | `category`, `age`, `block` | the general category, the release that assigned the code point, the block |
-| `jibo` | 字母: the kanji the form derives from; empty for a kanji, and for a kana whose derivation no source states |
-| `readings` | what the character reads as, historical spelling kept; empty when it is not a kana; a Hangul compatibility jamo reads as itself, a syllable or conjoining jamo has none |
+| `jibo` | 字母: the kanji the form derives from; empty for a kanji, and for a kana or 구결자 whose derivation no source states |
+| `readings` | what the character reads as, historical spelling kept; empty when it is not a kana or a 구결자; a Hangul compatibility jamo reads as itself, a syllable or conjoining jamo has none |
 | `grapheme` | the representative of its curated family; its own code point when no family is stated |
 | `confusables` | the characters Unicode's confusables table pairs with this one, both directions |
 | `variants` | as on a unit, when a shape registry has an id for the character |
@@ -148,6 +148,11 @@ are the 字母 the kana point at and the characters a source text is written in.
 kana of Enclosed CJK Letters and Months (㋕ and the like), which are enclosed forms rather than text,
 nor Kana Extended-B (the tone marks of Taiwanese kana), and a code point it does not hold is `None`
 rather than an error.
+
+It also holds the 255 구결자 that 한/글 places in the Private Use Area, U+F67E to U+F77C, from
+`data/vocab/gugyeol.tsv`. Unicode encodes none of them, so the Hanyang private-use code point is their
+identity here, as it is in the documents and fonts that use the convention. Their script is `gugyeol`;
+their readings and 字母 stay empty until an openly licensed or cited source states them.
 
 ### page_texts
 
