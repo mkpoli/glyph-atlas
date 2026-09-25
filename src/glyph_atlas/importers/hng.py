@@ -11,7 +11,8 @@ counts them.
 
 H80 and H81 are not in the index. Their folders' `char-card-info.csv` has the same shape (統合ID in
 H80, 大字典番号 in H81; 文字, カード番号, 字体数, 用例数, 部首); a card number without a letter and
-with 字体数 above one stands for crops `a`, `b`… of that card. Their code point is looked up in the
+with 字体数 above one stands for crops `a`, `b`… of that card, filed under the index rows `{id}`,
+`{id}b`… and counted by the card table's 用例数, 用例数2… columns. Their code point is looked up in the
 index by 統合ID or 大字典, since some of their 文字 cells hold a number.
 
 Every crop becomes a unit with no page and no box, its `crop` the file at the pinned commit of the
@@ -298,6 +299,7 @@ def _folder_cells(
     with path.open(encoding="utf-8-sig", newline="") as handle:
         rows = list(csv.reader(handle))
     by_key = by_daijiten if rows[0][0].startswith("大字典") else by_id
+    per_form = _form_counts(path.parent / CARD_TABLE)
     for cells in rows[1:]:
         cells = [cell.strip() for cell in cells]
         if len(cells) < 5 or not GLYPH.match(cells[2]):
@@ -305,10 +307,22 @@ def _folder_cells(
         row = by_key.get(cells[0]) or _unindexed(cells[0], cells[1], by_key, daijiten)
         card, forms = GLYPH.match(cells[2]), cells[3]
         if not card["form"] and forms.isdigit() and int(forms) > 1:
-            for letter in "abcdefghij"[: int(forms)]:
-                yield f"{card['card']}{letter}", row, forms, cells[4]
+            counts = per_form.get(card["card"], [])
+            for index, letter in enumerate("abcdefghij"[: int(forms)]):
+                form_row = row if index == 0 else by_id.get(f"{row[2]}{letter}", row)
+                yield f"{card['card']}{letter}", form_row, forms, counts[index] if index < len(counts) else ""
         else:
             yield cells[2], row, forms, cells[4]
+
+
+def _form_counts(path: Path) -> dict[str, list[str]]:
+    """用例数 of each 字体 by card number, from the card table's 用例数, 用例数2… columns in order."""
+    if not path.is_file():
+        return {}
+    with path.open(encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv.reader(handle))
+    columns = [i for i, name in enumerate(rows[0]) if name.strip().startswith("用例数")]
+    return {row[0].strip(): [row[i].strip() for i in columns if i < len(row)] for row in rows[1:] if row}
 
 
 def _unindexed(key: str, written: str, by_key: dict[str, list[str]], daijiten: dict[str, str]) -> list[str]:
