@@ -31,6 +31,7 @@ readings stand for one another. `to_code_points` and `from_code_points` convert 
 from __future__ import annotations
 
 import csv
+import re
 from collections.abc import Iterable
 from functools import cache
 from pathlib import Path
@@ -45,8 +46,8 @@ CHARACTERS_TSV = "characters.tsv"
 HENTAIGANA_TSV = "hentaigana.tsv"
 MJ_TSV = "mj-hentaigana.tsv"
 MJ_KANJI_TSV = "mj-kanji.tsv"
-#: the MJ文字情報一覧表 version `mj-kanji.tsv` was built from; recorded on every `VariantRef` it feeds.
-MJ_KANJI_VERSION = "006.02"
+#: The version in a generated MJ table's first header line, `# MJ文字情報一覧表 Ver.006.02`.
+MJ_VERSION = re.compile(r"Ver\.(?P<version>[0-9.]+)")
 EQUIVALENTS_TSV = "kanji-equivalents.tsv"
 POLICIES_YAML = "equivalence-policies.yaml"
 LIGATURES_YAML = "ligatures.yaml"
@@ -200,25 +201,28 @@ def _ligature_rows() -> dict[str, Ligature]:
 
 
 @cache
-def _mj_kanji_variants() -> dict[str, list[VariantRef]]:
-    """`data/vocab/mj-kanji.tsv`'s MJ figures, by the code point they correspond to.
+def _mj_variants() -> dict[str, list[VariantRef]]:
+    """The MJ figures of `mj-kanji.tsv` and `mj-hentaigana.tsv`, by the code point they correspond to.
 
-    The overlay is optional like the ligature one: a tree without `mj-kanji.tsv` still has the
-    character layer, and an absent table answers no variants rather than an error. `code_point` is
-    対応するUCS, so a code point several MJ figures share gets every one of them, in MJ figure order.
+    Each figure carries the version its table was built from, read from the table's first header
+    line. The overlay is optional like the ligature one: a table that is missing adds nothing. The
+    kanji table's `code_point` is 対応するUCS, so a code point several MJ figures share gets every
+    one of them, in MJ figure order.
     """
-    path = VOCAB / MJ_KANJI_TSV
-    if not path.exists():
-        return {}
     variants: dict[str, list[VariantRef]] = {}
-    for row in _read_tsv(MJ_KANJI_TSV):
-        code_point = row["code_point"]
-        if not code_point:
+    for name in (MJ_KANJI_TSV, MJ_TSV):
+        path = VOCAB / name
+        if not path.exists():
             continue
-        variants.setdefault(code_point, []).append(
-            VariantRef(scheme="mj", id=row["mj"], version=MJ_KANJI_VERSION)
-        )
-    for code_point, refs_ in variants.items():
+        with path.open(encoding="utf-8") as handle:
+            match = MJ_VERSION.search(handle.readline())
+        version = match["version"] if match else None
+        for row in _read_tsv(name):
+            if row["code_point"]:
+                variants.setdefault(row["code_point"], []).append(
+                    VariantRef(scheme="mj", id=row["mj"], version=version)
+                )
+    for refs_ in variants.values():
         refs_.sort(key=lambda ref: ref.id)
     return variants
 
@@ -257,7 +261,7 @@ def clear_cache() -> None:
         _equivalence_rows,
         _policies,
         _ligature_rows,
-        _mj_kanji_variants,
+        _mj_variants,
         _definition,
         _hentaigana_rows,
         _characters,
@@ -384,7 +388,7 @@ def _characters() -> dict[str, Character]:
     # to name, and the hand-written ligature overlay is read only once the base is there.
     rows = _character_rows()
     ligatures = _ligature_rows()
-    mj_variants = _mj_kanji_variants()
+    mj_variants = _mj_variants()
     for row in rows:
         values = {
             name: (row[name] or None)
