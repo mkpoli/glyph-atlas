@@ -53,6 +53,18 @@ def test_every_node_has_one_interface_label_and_no_more():
     assert keys == {node.replace("/", "_") for node in production.vocabulary()}
 
 
+def test_a_repeated_id_is_refused(tmp_path, monkeypatch):
+    vocab = tmp_path / "production.yaml"
+    vocab.write_text("- {id: handwritten, en: A}\n- {id: handwritten, en: B}\n", encoding="utf-8")
+    monkeypatch.setattr(production, "VOCAB", vocab)
+    production.vocabulary.cache_clear()
+    try:
+        with pytest.raises(ValueError, match="twice"):
+            production.vocabulary()
+    finally:
+        production.vocabulary.cache_clear()
+
+
 def test_the_worker_knows_every_node():
     import re
     from pathlib import Path
