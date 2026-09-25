@@ -133,3 +133,64 @@ def test_cluster_members_can_be_listed_least_typical_first(clustering, tmp_path)
     client = TestClient(app)
     unusual = client.get("/forms/clusters/U+306F:one", params={"order": "unusual", "limit": 2}).json()
     assert [m["id"] for m in unusual["items"]] == [C, B] and unusual["total"] == 3
+
+
+def test_reported_glyphs_reach_the_review_queue_and_leave_their_cluster_form(clustering, tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from glyph_atlas.review.forms import router
+
+    class Reviews:
+        def __init__(self):
+            self.edits = []
+
+        def detail(self, identity):
+            return {"revision": 3, "source_revision": "f" * 64, "image": "/x.webp", "proxyable": True}
+
+        def record(self, edit):
+            self.edits.append(edit)
+
+        def latest(self):
+            return {edit.identity: {"decision": json.dumps({"verdict": edit.verdict, "issue": edit.issue})}
+                    for edit in self.edits}
+
+    reviews = Reviews()
+    app = FastAPI()
+    app.include_router(router(media=None, corpus_root=tmp_path, reviews=reviews))
+    client = TestClient(app)
+    forms.record("cluster", cluster="U+306F:one", form="𛂥")
+    response = client.post("/forms/reports", json={"units": [B], "issue": "character", "character": "に", "client_id": "me"})
+    assert response.status_code == 200 and response.json()["count"] == 1
+    edit = reviews.edits[0]
+    assert (edit.identity, edit.verdict, edit.issue, edit.character, edit.revision) == (B, "wrong", "character", "に", 3)
+    assert forms.form_for(B)["form"] is None and forms.form_for(A)["form"] == "𛂥"
+    members = client.get("/forms/clusters/U+306F:one").json()["items"]
+    assert {m["id"]: m["reported"] for m in members} == {A: None, B: "character", C: None}
+    assert client.post("/forms/reports", json={"units": ["codh:other"], "issue": "crop", "client_id": "me"}).status_code == 422
+
+
+def test_a_report_with_an_unreviewable_glyph_flags_nothing(clustering, tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from glyph_atlas.review.forms import router
+
+    class Reviews:
+        def __init__(self):
+            self.edits = []
+
+        def detail(self, identity):
+            return {"revision": 0, "source_revision": "f" * 64, "image": identity != C and "/x.webp", "proxyable": True}
+
+        def record(self, edit):
+            self.edits.append(edit)
+
+        def latest(self):
+            return {}
+
+    reviews = Reviews()
+    app = FastAPI()
+    app.include_router(router(media=None, corpus_root=tmp_path, reviews=reviews))
+    response = TestClient(app).post("/forms/reports", json={"units": [A, C], "issue": "crop", "client_id": "me"})
+    assert response.status_code == 422 and reviews.edits == [] and forms.form_for(A) is None

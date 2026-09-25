@@ -4,7 +4,9 @@ export async function request(path, body, options = {}) {
   }) })
   const value = await response.json()
   if (!response.ok) {
-    const error = new Error(typeof value.detail === 'string' ? value.detail : response.status === 409
+    // FastAPI reports a validation failure as a list of problems; show their messages.
+    const listed = Array.isArray(value.detail) ? value.detail.map(problem => problem.msg).filter(Boolean).join('; ') : ''
+    const error = new Error(typeof value.detail === 'string' ? value.detail : listed ? listed : response.status === 409
       ? 'This character changed. Reload to review the current version.' : 'The review could not be saved.')
     error.status = response.status
     throw error

@@ -1,13 +1,14 @@
 <script>
   import { onMount } from 'svelte'
   import ReferenceGlyph from '../components/ReferenceGlyph.svelte'
-  import { families as loadFamilies, family as loadFamily, members as loadMembers, decide } from '../lib/forms.js'
-  import { number } from '../lib/client.js'
+  import { families as loadFamilies, family as loadFamily, members as loadMembers, decide, report } from '../lib/forms.js'
+  import { number, reviewer } from '../lib/client.js'
 
   let { initialFamily = '' } = $props()
   let list = $state([]), filter = $state(''), current = $state(null), code = $state('')
   let active = $state(0), open = $state(null), glyphs = $state([]), total = $state(0), order = $state('typical')
   let chosen = $state(new Set()), anchor = null, busy = $state(false), error = $state(''), notice = $state('')
+  let correcting = $state(false), correction = $state('')
   const cluster = $derived(current?.items[active] ?? null)
   const shown = $derived(list.filter(f => !filter.trim() || f.char.includes(filter.trim()) || f.label.includes(filter.trim())
     || f.code_point.toLowerCase().includes(filter.trim().toLowerCase())))
@@ -59,6 +60,26 @@
       await refreshList()
       if (wasOpen) { const page = await loadMembers(wasOpen, 0, Math.min(500, Math.max(240, glyphs.length)), order); glyphs = page.items; chosen = new Set() }
       else if (!units.length) active = nextOpen(index)
+    } catch (e) { error = e.message } finally { busy = false }
+  }
+  // A bad crop or a wrong transcription is a data error, not a form: it goes to the review queue.
+  async function flag(issue) {
+    if (busy || !chosen.size) return
+    busy = true; error = ''
+    // About a second per glyph: each is resolved against its source before it is flagged.
+    notice = `Reporting ${number(chosen.size)} glyph${chosen.size === 1 ? '' : 's'}…`
+    try {
+      // The service takes 200 glyphs per report; a larger selection goes in parts.
+      const units = [...chosen], result = { count: 0 }
+      for (let i = 0; i < units.length; i += 200)
+        result.count += (await report({ units: units.slice(i, i + 200), issue, client_id: reviewer(),
+          ...(issue === 'character' && correction.trim() ? { character: correction.trim() } : {}) })).count
+      notice = `Reported ${number(result.count)} as ${issue === 'crop' ? 'bad crop' : 'wrong character'}`
+      setTimeout(() => notice = '', 2200)
+      correcting = false; correction = ''
+      await pick(code, true)
+      await refreshList()
+      const page = await loadMembers(open, 0, Math.min(500, Math.max(240, glyphs.length)), order); glyphs = page.items; chosen = new Set()
     } catch (e) { error = e.message } finally { busy = false }
   }
   function nextOpen(from) {
@@ -130,6 +151,13 @@
             <div class="palette-other">
               {#if chosen.size}
                 <button disabled={busy} onclick={() => apply(null)}>Not this form</button>
+                <button disabled={busy} onclick={() => flag('crop')}>Bad crop</button>
+                {#if correcting}
+                  <form class="correct-char" onsubmit={event => { event.preventDefault(); flag('character') }}>
+                    <input bind:value={correction} maxlength="4" placeholder="Actual" aria-label="The character it actually is (optional)" />
+                    <button disabled={busy}>Report</button>
+                  </form>
+                {:else}<button disabled={busy} onclick={() => correcting = true}>Wrong character…</button>{/if}
                 <button disabled={busy} onclick={() => apply(null, 'inherit')}>Follow cluster <kbd>⌫</kbd></button>
               {:else}
                 <button disabled={busy || !cluster?.form} onclick={() => apply(null)}>Clear cluster <kbd>⌫</kbd></button>
@@ -155,7 +183,8 @@
                 <button class="member" class:selected={chosen.has(glyph.id)} class:own={glyph.basis === 'form_glyph'}
                         aria-pressed={chosen.has(glyph.id)} onclick={event => toggle(i, event)} title={glyph.id}>
                   {#if glyph.image}<img class="glyph-image" src={glyph.image} alt="" loading="lazy" />{/if}
-                  {#if glyph.basis === 'form_glyph'}<span class="member-form">{glyph.form ?? '×'}</span>{/if}
+                  {#if glyph.reported}<span class="member-flag" title={`Reported: ${glyph.reported}`}>⚠</span>
+                  {:else if glyph.basis === 'form_glyph'}<span class="member-form">{glyph.form ?? '×'}</span>{/if}
                 </button>
               {/each}
             </div>
@@ -215,7 +244,7 @@
   .form-source{font-size:12px;min-height:16px;font-family:"Noto Sans CJK JP","Yu Gothic",sans-serif}
   .form-choice small{font-size:8px;color:var(--muted);font-family:ui-monospace,monospace}
   .form-choice kbd{position:absolute;top:4px;right:5px;font-size:8px;color:#a0a0a7;font-family:ui-monospace,monospace}
-  .palette-other{display:flex;flex-direction:column;gap:6px;margin-left:auto}.palette-other button{font-size:11px;padding:8px 11px}
+  .palette-other{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto;align-content:flex-start;max-width:260px}.palette-other button{font-size:11px;padding:8px 11px}
   .palette-other kbd{font-size:9px;color:var(--muted)}
   .forms-keys{margin:14px 0}
   .cluster-grid{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px}
@@ -239,6 +268,8 @@
   .member{position:relative;aspect-ratio:1;padding:6px;border:1.5px solid transparent;border-radius:5px;background:#f1f1f3}
   .member.selected{border-color:var(--accent);background:#e7e3ff}
   .member.own{border-style:dashed;border-color:#b3acd9}
+  .member-flag{position:absolute;top:3px;right:5px;font-size:12px;color:var(--wrong)}
+  .correct-char{display:flex;gap:4px}.correct-char input{width:64px;padding:6px 8px;font-size:14px}.correct-char button{font-size:11px;padding:6px 9px}
   .member-form{position:absolute;top:3px;right:5px;font-size:14px;color:var(--accent);font-family:"Kureedo Kata","Noto Serif Hentaigana",system-ui,sans-serif}
   @media(max-width:900px){.forms-layout{grid-template-columns:1fr}.family-list{position:static;max-height:260px}.cluster-grid{grid-template-columns:1fr}}
   @media(max-width:700px){.forms{padding:30px 16px 40px}.form-choice{min-width:54px}.palette-other{flex-direction:row;margin-left:0;width:100%}}

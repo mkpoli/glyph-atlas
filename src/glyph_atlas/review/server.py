@@ -661,7 +661,7 @@ def create_app(directory: Path, *, source: Path | str | None = None,
     app.include_router(atlas_router(store, corpus_reviews=corpus_reviews, media=media))
     if corpus is not None and getattr(corpus, "root", None) is not None:
         from .forms import router as forms_router
-        app.include_router(forms_router(media, Path(corpus.root)))
+        app.include_router(forms_router(media, Path(corpus.root), corpus_reviews))
     from .collection import router as collection_router
     app.include_router(collection_router(store.directory.parent))
     # The character layer, mounted beside the collection: identity, grapheme, 字母, ligature and the
