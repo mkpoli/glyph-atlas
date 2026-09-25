@@ -66,7 +66,7 @@
   "common.tryAgain": "重试",
   "corpus.addNote": "添加备注",
   "corpus.assign.label": "指定书写字符",
-  "corpus.atlasCorrection": "Atlas校正",
+  "corpus.atlasCorrection": "字形大图谱校正",
   "corpus.characterCount": "{count}个字符",
   "corpus.chooseAnother": "选择另一个字符",
   "corpus.correctCharacter.label": "正确字符",
