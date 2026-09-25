@@ -68,12 +68,15 @@
       suggestionsFor(result).then(value => { if (!closed && current === generation) { suggestions = value; suggesting = false } })
     } catch (e) {
       if (closed || current !== generation) return
-      if (e.replacedBy) {
-        // A link to a retired crop opens the crop that replaced it, and the address follows.
-        const link = '#/character/' + encodeURIComponent(target)
-        if (location.hash === link) history.replaceState(history.state, '', '#/character/' + encodeURIComponent(e.replacedBy))
+      // A link to a retired crop opens the crop that replaced it, and the address follows. A round's
+      // tile does not: its verdict belongs to the crop it was dealt, so the round reports the error.
+      if (e.replacedBy && !onVerdict && !redirected) {
+        const shown = new URL(location.hash.slice(1) || '/', location.origin).pathname
+        if (shown.startsWith('/character/') && decodeURIComponent(shown.slice(11)) === target)
+          history.replaceState(history.state, '', '#/character/' + encodeURIComponent(e.replacedBy))
         return load(e.replacedBy, true)
       }
+      replaced = false
       error = e.message
     }
   }
