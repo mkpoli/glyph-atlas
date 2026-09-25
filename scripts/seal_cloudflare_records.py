@@ -15,7 +15,7 @@ import os
 import sqlite3
 from pathlib import Path
 
-from cloudflare_schema import CORPUS_REFRESH
+from cloudflare_schema import CORPUS_COLUMNS, CORPUS_REFRESH, corpus_upsert
 
 PART_BYTES = 90 * 1024**2
 
@@ -42,11 +42,9 @@ def seal(corpus: Path, output: Path) -> dict:
                         "bytes": path.stat().st_size})
     parts: list[str] = []
     handle, size = None, 0
-    rows = db.execute("SELECT id,character,family,visual_group,shuffle,object,offset,size,production FROM corpus_units ORDER BY id")
-    for identity, character, family, group, shuffle, name, offset, length, production in rows:
-        line = "INSERT OR REPLACE INTO corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production) VALUES({},{},{},{},{},{},{},{},{});\n".format(
-            *(_quote(v) for v in (identity, character, family, group)), shuffle, _quote(names[name]), offset, length,
-            _quote(production))
+    rows = db.execute(f"SELECT {','.join(CORPUS_COLUMNS)} FROM corpus_units ORDER BY id")
+    for row in rows:
+        line = corpus_upsert((*row[:5], names[row[5]], *row[6:])) + "\n"
         if handle is None or size + len(line) > PART_BYTES:
             if handle:
                 handle.close()
@@ -54,7 +52,8 @@ def seal(corpus: Path, output: Path) -> dict:
             handle, size = (output / parts[-1]).open("w"), 0
         handle.write(line)
         size += len(line.encode())
-    # The last part counts the glyphs per character once every row is in.
+    # The last part names the glyphs reviewed since their rows were first published and counts them
+    # per character, once every row is in; until then the earlier counts stand.
     if handle is None:
         parts.append(f"sql/{len(parts) + 1:03}.sql")
         handle = (output / parts[-1]).open("w")
@@ -64,10 +63,6 @@ def seal(corpus: Path, output: Path) -> dict:
     summary = {"corpus_units": count, "objects": objects, "sql": parts}
     (output / "publication.json").write_text(json.dumps(summary, indent=1) + "\n")
     return {"corpus_units": count, "objects": len(objects), "bytes": sum(o["bytes"] for o in objects), "sql_parts": len(parts)}
-
-
-def _quote(value) -> str:
-    return "NULL" if value is None else "'" + str(value).replace("'", "''") + "'"
 
 
 if __name__ == "__main__":

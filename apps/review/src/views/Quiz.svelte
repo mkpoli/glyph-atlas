@@ -141,7 +141,7 @@
         else error = 'No other characters are ready. You can load more of this character or go back.'
         return
       }
-      restoreRound({ reading: chosen, items: arranged(numbered(result.items)), choices: {}, selected: {}, skipped: {},
+      restoreRound({ reading: chosen, items: arranged(numbered(unique(result.items))), choices: {}, selected: {}, skipped: {},
         suggestions: {}, contextSuggestions: {}, roundId: crypto.randomUUID(), roundSeed: seed,
         hasMore: (result.next_offset ?? result.items.length) < result.total, production: scope, summary })
       if (replace && historyIndex >= 0) history[historyIndex] = snapshot()
@@ -165,7 +165,7 @@
       while (additions.length < batchLimit) {
         const result = await catalogue({ purpose: 'review', reviewer: clientId, production, reading, state: 'pending', limit: 96, offset, seed: roundSeed })
         if (closed || id !== requestId || round !== roundId) return
-        const fresh = result.items.filter(item => !seen.has(item.id))
+        const fresh = unique(result.items).filter(item => !seen.has(item.id))
         const room = batchLimit - additions.length
         const batch = fresh.slice(0, room)
         additions.push(...batch)
@@ -469,6 +469,8 @@
   // A round is dealt as before; shown in shape order, the crops of one form sit together and a crop
   // unlike its neighbours stands out. `dealt` keeps the dealt order for switching back.
   let byShape = $state(stored('atlas.quiz.shape-order', true) !== false)
+  // One tile per crop: the grid is keyed by id, and a repeated id would stop the round rendering.
+  function unique(list) { const ids = new Set(); return list.filter(item => !ids.has(item.id) && ids.add(item.id)) }
   function numbered(list, from = 0) { return list.map((item, i) => ({ ...item, dealt: item.dealt ?? from + i })) }
   function arranged(list) {
     return [...list].sort((a, b) => byShape

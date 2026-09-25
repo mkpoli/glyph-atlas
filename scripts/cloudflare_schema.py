@@ -26,6 +26,23 @@ HAN = ((0x2E80, 0x2E99), (0x2E9B, 0x2EF3), (0x2F00, 0x2FD5), (0x3005, 0x3005), (
        (0x2EBF0, 0x2EE5D), (0x2F800, 0x2FA1D), (0x30000, 0x3134A), (0x31350, 0x33479))
 
 
+# A published corpus row, in the order `corpus_upsert` takes it.
+CORPUS_COLUMNS = ("id", "character", "family", "visual_group", "shuffle", "object", "offset", "size", "production")
+
+
+def corpus_upsert(values) -> str:
+    """One published corpus row as D1 SQL.
+
+    A rewrite updates every column but `named`, which records that a round or review reached the glyph
+    and is D1's own: a publication that reset it would deal a named glyph twice until its last part ran.
+    """
+    quoted = ("NULL" if v is None else str(v) if isinstance(v, int) else "'" + str(v).replace("'", "''") + "'"
+              for v in values)
+    updates = ",".join(f"{c}=excluded.{c}" for c in CORPUS_COLUMNS[1:])
+    return (f"INSERT INTO corpus_units({','.join(CORPUS_COLUMNS)}) VALUES({','.join(quoted)}) "
+            f"ON CONFLICT(id) DO UPDATE SET {updates};")
+
+
 def category_of(label: str | None) -> str:
     """A label's category, by its first character's script, as the Worker writes it."""
     point = ord(label[0]) if label else -1
@@ -43,9 +60,12 @@ def schema(db):
     """
     applied = db.execute("PRAGMA user_version").fetchone()[0]
     columns = {row[1] for row in db.execute("PRAGMA table_info(corpus_units)")}
+    names = sorted(MIGRATIONS.glob("*.sql"))
     if columns and "production" not in columns and db.execute("SELECT 1 FROM corpus_units LIMIT 1").fetchone():
         raise ValueError("this export's corpus rows predate their material; export them again")
-    names = sorted(MIGRATIONS.glob("*.sql"))
+    # A file counted past 0006 before 0006 gained `named` holds a schema no migration describes.
+    if applied >= 6 and "named" not in columns:
+        raise ValueError("this export was built with an earlier draft of migration 0006; rebuild this export")
     for path in names[applied:]:
         db.executescript(path.read_text())
     db.execute(f"PRAGMA user_version={len(names)}")

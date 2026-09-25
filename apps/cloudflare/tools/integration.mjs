@@ -293,6 +293,12 @@ try {
   assert.deepEqual(undone.slice(0, 2).sort(), ['na-local-a', 'na-local-b'], 'local crops still come first')
   assert.deepEqual(undone.slice(2).sort(), ['na-1', 'na-2', 'na-3', 'na-4', 'na-5'], 'undo returns the glyphs to the round')
   assert.equal((await roundOf('&seed=0&reviewer=alice')).total, 7, 'the round of their own character counts them again')
+  // Should a named glyph's published row read as untouched, it is still dealt once.
+  await db.prepare("UPDATE corpus_units SET named=0 WHERE id='na-2'").run()
+  const once = await ids('&seed=0&reviewer=alice')
+  assert.equal(once.length, new Set(once).size, 'a round never returns the same crop twice')
+  assert.equal(once.filter(id => id === 'na-2').length, 1)
+  await db.prepare("UPDATE corpus_units SET named=1 WHERE id='na-2'").run()
   assert.equal((await db.prepare("SELECT quiz FROM units WHERE id='na-2'").first()).quiz, 1, 'undo keeps a dealable glyph in the quiz')
   // A glyph the site may not serve cannot be named by a round, nor answered in one.
   const refused = await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'alice', label: 'ヌ',
