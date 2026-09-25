@@ -1,0 +1,78 @@
+id: mj-kanji
+name: MJ文字情報一覧表
+publisher: 文字情報技術促進協議会（IPA 文字情報基盤）
+kind: reference-table
+url: https://moji.or.jp/mojikiban/mjlist/
+version: "006.02"
+licence: CC-BY-SA-2.1-JP
+licence_evidence: https://moji.or.jp/mojikiban/mjlist/
+attribution: 文字情報基盤 MJ文字情報一覧表（IPA）, CC BY-SA 2.1 JP
+access:
+  xlsx: https://moji.or.jp/wp-content/uploads/2024/01/mji.00602.xlsx
+archive:
+  name: mji.00602.xlsx
+  bytes: 7290011
+  sha256: f79075bf006b66c5e57a6df60503c5a01679cabbcea2f124eb3758593cf6fd3f
+format:
+  sheet: MJ文字情報一覧表Ver.006.02
+  conformance: strict
+  columns:
+    - 図形ズケイ
+    - font
+    - MJ文字図形名
+    - 対応するUCS
+    - 実装したUCS
+    - 実装したMoji_JohoコレクションIVS
+    - 実装したSVS
+    - 戸籍統一文字番号
+    - 住基ネット統一文字コード
+    - 入管正字コード
+    - 入管外字コード
+    - 漢字施策
+    - 対応する互換漢字
+    - X0213
+    - X0213 包摂連番
+    - X0213 包摂区分
+    - X0212
+    - MJ文字図形バージョン
+    - 登記統一文字番号(参考)
+    - 部首1(参考)
+    - 内画数1(参考)
+    - 部首2(参考)
+    - 内画数2(参考)
+    - 部首3(参考)
+    - 内画数3(参考)
+    - 部首4(参考)
+    - 内画数4(参考)
+    - 総画数(参考)
+    - 読み(参考)
+    - 大漢和
+    - 日本語漢字辞典
+    - 新大字典
+    - 大字源
+    - 大漢語林
+    - 更新履歴
+    - 備考
+counts:
+  rows: 58862
+  with_code_point: 58859
+  without_code_point: 3
+  with_implemented_code_point: 52607
+  with_ivs: 11382
+  code_points_with_several_figures: 5072
+mapping:
+  column_used: 対応するUCS
+  reason: >-
+    対応するUCS states, for every MJ figure, the ISO/IEC 10646 code point it corresponds to. 5,072
+    code points have more than one MJ figure under this column, and every one of them belongs in
+    variants. 実装したUCS is kept alongside it but is not the mapping column, because it names only
+    the single figure IPAmj明朝フォントVer.006.01 chose as the default glyph for a code point shared
+    by several figures (52,607 of the 58,859 mapped rows carry it); using it instead would silently
+    drop the non-default figures. 実装したMoji_JohoコレクションIVS is kept as well, for the IVS a
+    figure was implemented with, where one exists.
+notes:
+  - The workbook mji.00602.xlsx declares conformance="strict" (Strict Open XML); common xlsx readers
+    such as openpyxl cannot open it, so the importer reads xl/sharedStrings.xml and
+    xl/worksheets/sheet1.xml with the standard library's xml.etree and zipfile instead.
+  - Three MJ figures (MJ037229, MJ040579, MJ042077) carry no 対応するUCS; their 備考 records that the
+    figure's Unicode correspondence was withdrawn and names the MJ figure that replaced it.

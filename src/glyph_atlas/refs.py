@@ -37,13 +37,16 @@ from pathlib import Path
 
 import yaml
 
-from .schema import Character, Ligature, Script
+from .schema import Character, Ligature, Script, VariantRef
 
 ROOT = Path(__file__).resolve().parents[2]
 VOCAB = ROOT / "data" / "vocab"
 CHARACTERS_TSV = "characters.tsv"
 HENTAIGANA_TSV = "hentaigana.tsv"
 MJ_TSV = "mj-hentaigana.tsv"
+MJ_KANJI_TSV = "mj-kanji.tsv"
+#: the MJ文字情報一覧表 version `mj-kanji.tsv` was built from; recorded on every `VariantRef` it feeds.
+MJ_KANJI_VERSION = "006.02"
 EQUIVALENTS_TSV = "kanji-equivalents.tsv"
 POLICIES_YAML = "equivalence-policies.yaml"
 LIGATURES_YAML = "ligatures.yaml"
@@ -196,6 +199,30 @@ def _ligature_rows() -> dict[str, Ligature]:
     return ligatures
 
 
+@cache
+def _mj_kanji_variants() -> dict[str, list[VariantRef]]:
+    """`data/vocab/mj-kanji.tsv`'s MJ figures, by the code point they correspond to.
+
+    The overlay is optional like the ligature one: a tree without `mj-kanji.tsv` still has the
+    character layer, and an absent table answers no variants rather than an error. `code_point` is
+    対応するUCS, so a code point several MJ figures share gets every one of them, in MJ figure order.
+    """
+    path = VOCAB / MJ_KANJI_TSV
+    if not path.exists():
+        return {}
+    variants: dict[str, list[VariantRef]] = {}
+    for row in _read_tsv(MJ_KANJI_TSV):
+        code_point = row["code_point"]
+        if not code_point:
+            continue
+        variants.setdefault(code_point, []).append(
+            VariantRef(scheme="mj", id=row["mj"], version=MJ_KANJI_VERSION)
+        )
+    for code_point, refs_ in variants.items():
+        refs_.sort(key=lambda ref: ref.id)
+    return variants
+
+
 def ligatures() -> dict[str, Ligature]:
     """Every ligature of the layer by code point, in code point order.
 
@@ -230,6 +257,7 @@ def clear_cache() -> None:
         _equivalence_rows,
         _policies,
         _ligature_rows,
+        _mj_kanji_variants,
         _definition,
         _hentaigana_rows,
         _characters,
@@ -356,6 +384,7 @@ def _characters() -> dict[str, Character]:
     # to name, and the hand-written ligature overlay is read only once the base is there.
     rows = _character_rows()
     ligatures = _ligature_rows()
+    mj_variants = _mj_kanji_variants()
     for row in rows:
         values = {
             name: (row[name] or None)
@@ -369,6 +398,7 @@ def _characters() -> dict[str, Character]:
             readings=_split(row["readings"]),
             confusables=_split(row["confusables"]),
             ligature=ligatures.get(row["code_point"]),
+            variants=mj_variants.get(row["code_point"], []),
             **values,
         )
     return characters
