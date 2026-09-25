@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { canonical, literal, hira, single, readingFrom, validRound, categoryOf } from './index';
+import { canonical, literal, hira, single, readingFrom, validRound, categoryOf, ROUND_MAX } from './index';
 
 describe('historical character identities', () => {
   it('keeps supplementary characters intact', () => {
@@ -39,11 +39,16 @@ describe('a round names flagged answers, seen crops, or both', () => {
     expect(validRound({ seen: [{ id: 'one', image_sha256: hash }] }).seen).toHaveLength(1)
     expect(validRound({ seen: [{ id: 'one', image_sha256: hash }] }).answers).toHaveLength(0)
   })
-  it('refuses an empty round, a crop named twice, or more than 96 crops', () => {
-    expect(() => validRound({ answers: [], seen: [] })).toThrow('1–96')
-    expect(() => validRound({ answers: [{ id: 'one' }], seen: [{ id: 'one', image_sha256: hash }] })).toThrow('1–96')
-    const many = Array.from({ length: 97 }, (_, i) => ({ id: `u${i}`, image_sha256: hash }))
-    expect(() => validRound({ seen: many })).toThrow('1–96')
+  it('accepts a round of 144 crops', () => {
+    expect(ROUND_MAX).toBe(144)
+    const full = Array.from({ length: ROUND_MAX }, (_, i) => ({ id: `u${i}`, image_sha256: hash }))
+    expect(validRound({ seen: full }).seen).toHaveLength(ROUND_MAX)
+  })
+  it('refuses an empty round, a crop named twice, or more than 144 crops', () => {
+    expect(() => validRound({ answers: [], seen: [] })).toThrow('1–144')
+    expect(() => validRound({ answers: [{ id: 'one' }], seen: [{ id: 'one', image_sha256: hash }] })).toThrow('1–144')
+    const many = Array.from({ length: ROUND_MAX + 1 }, (_, i) => ({ id: `u${i}`, image_sha256: hash }))
+    expect(() => validRound({ seen: many })).toThrow('1–144')
   })
   it('names a corpus glyph by its source revision', () => {
     expect(validRound({ skipped: [{ id: 'codh:1', source_revision: hash }] }).skipped).toHaveLength(1)

@@ -111,6 +111,9 @@ function stateFor(reviewer: string | null): string {
 }
 // What a shown crop's pixels are named by: a local crop's page hash, a corpus glyph's source revision.
 const pixels = (crop: Json) => crop.image_sha256 ?? crop.source_revision;
+// The most crops one round deals and saves. Saving costs about two D1 queries per crop, so a full
+// round stays near 300 of the 1,000 a Worker invocation may run.
+export const ROUND_MAX = 144
 // The crops a round names: flagged answers, and crops it showed and left unflagged. A round carries
 // either or both; a single-crop review carries only its answer.
 export function validRound(input: Json, target?: string): { answers: Json[]; seen: Json[]; skipped: Json[] } {
@@ -119,9 +122,9 @@ export function validRound(input: Json, target?: string): { answers: Json[]; see
   const answers = round ? (input.answers ?? []) : [{ ...input, id: target }];
   const seen = round ? (input.seen ?? []) : [];
   const skipped = round ? (input.skipped ?? []) : [];
-  if (!Array.isArray(answers) || !Array.isArray(seen) || !Array.isArray(skipped)) throw new Problem(422, 'A round needs 1–96 distinct crops.');
+  if (!Array.isArray(answers) || !Array.isArray(seen) || !Array.isArray(skipped)) throw new Problem(422, `A round needs 1–${ROUND_MAX} distinct crops.`);
   const ids = [...answers, ...seen, ...skipped].map(crop => crop?.id);
-  if (ids.length < 1 || ids.length > 96 || new Set(ids).size !== ids.length) throw new Problem(422, 'A round needs 1–96 distinct crops.');
+  if (ids.length < 1 || ids.length > ROUND_MAX || new Set(ids).size !== ids.length) throw new Problem(422, `A round needs 1–${ROUND_MAX} distinct crops.`);
   for (const crop of [...seen, ...skipped]) {
     text(crop?.id, 512, 'character id', true);
     if (typeof pixels(crop) !== 'string' || !/^[a-f0-9]{64}$/.test(pixels(crop))) throw new Problem(422, 'Invalid image hash.');
@@ -225,7 +228,7 @@ async function catalogue(env: Env, q: URLSearchParams) {
     }
   }
   return { total, next_offset: next, available: Object.values(counts).reduce((a:number,b:any) => a+b,0),
-    counts, purpose, production, review_limit:96, review_epoch: await meta(env, 'review_epoch') || 0, query: q.get('q'),
+    counts, purpose, production, review_limit:ROUND_MAX, review_epoch: await meta(env, 'review_epoch') || 0, query: q.get('q'),
     categories: [...categories.values()].sort((a,b) => b.total-a.total || a.label.localeCompare(b.label)),
     reported_count: reportedCount ? (reportedCount.results[0] as { n: number }).n : 0,
     items };
