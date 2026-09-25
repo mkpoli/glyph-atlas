@@ -65,7 +65,7 @@ from urllib.parse import urlsplit
 import yaml
 from PIL import Image
 
-from .. import images, rights, tables
+from .. import images, production, rights, tables
 from ..registry import SOURCES
 from ..schema import (
     Box,
@@ -73,7 +73,6 @@ from ..schema import (
     Document,
     Licence,
     Page,
-    Production,
     ReviewState,
     Rights,
     Unit,
@@ -113,7 +112,7 @@ _sleep = time.sleep
 
 
 class Book(NamedTuple):
-    """One book of the dataset: the row of the book list, with its type as `Production`."""
+    """One book of the dataset: the row of the book list, with its production."""
 
     bid: str
     title: str
@@ -121,7 +120,7 @@ class Book(NamedTuple):
     characters: str
     released: str
     kind: str
-    production: Production
+    production: str
     collection: str
     issued: str
 
@@ -154,20 +153,12 @@ def book_list(path: Path | None = None) -> list[Book]:
                 characters=row["characters"],
                 released=row["released"],
                 kind=row["type"],
-                production=_production(row["production"]),
+                production=production.check(row["production"]),
                 collection=row["collection"],
                 issued=row["issued"],
             )
         )
     return books
-
-
-def _production(value: str) -> Production:
-    """The production column as `Production`; a value the vocabulary does not carry is `unknown`."""
-    try:
-        return Production(value)
-    except ValueError:
-        return Production.UNKNOWN
 
 
 def unlisted(bid: str) -> Book:
@@ -179,7 +170,7 @@ def unlisted(bid: str) -> Book:
         characters="",
         released="",
         kind="",
-        production=Production.UNKNOWN,
+        production="unknown",
         collection="",
         issued="",
     )

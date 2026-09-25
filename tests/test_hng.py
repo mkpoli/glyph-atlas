@@ -12,7 +12,7 @@ from PIL import Image
 
 from glyph_atlas import tables
 from glyph_atlas.importers import hng
-from glyph_atlas.schema import Classification, Document, Licence, Production, Unit
+from glyph_atlas.schema import Classification, Document, Licence, Unit
 
 JOU = "01_誠實論卷八（P.2179）"
 SKJ = "80_十誦律巻四十六(開宝蔵)"
@@ -124,10 +124,10 @@ def test_folder_units(imported) -> None:
 def test_documents(imported) -> None:
     _, _, documents, _ = imported
     jou = documents["hng:jou"]
-    assert (jou.holder, jou.shelfmark, jou.production) == ("Bibliothèque nationale de France", "P.2179", Production.MANUSCRIPT)
+    assert (jou.holder, jou.shelfmark, jou.production) == ("Bibliothèque nationale de France", "P.2179", "handwritten")
     assert (jou.dating[0].literal, jou.dating[0].start, jou.dating[0].end) == ("514", 514, 514)
     assert jou.image_rights.licence == Licence.CC_BY_SA_4
-    assert documents["hng:skj"].production == Production.WOODBLOCK
+    assert documents["hng:skj"].production == "printed"
 
 
 def test_every_listed_document_parses() -> None:
@@ -158,9 +158,9 @@ def test_interval(literal: str, years: tuple[int | None, int | None]) -> None:
 
 
 def test_production() -> None:
-    assert hng.production_of("南北朝写本") == Production.MANUSCRIPT
-    assert hng.production_of("韓国印刻本") == Production.WOODBLOCK
-    assert hng.production_of("開成石経") == Production.UNKNOWN
+    assert hng.production_of("南北朝写本") == "handwritten"
+    assert hng.production_of("韓国印刻本") == "printed"
+    assert hng.production_of("開成石経") == "inscribed/stone"
 
 
 def test_revision_mismatch(tmp_path: Path) -> None:

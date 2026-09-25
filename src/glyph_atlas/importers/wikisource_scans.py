@@ -34,7 +34,7 @@ from uuid import uuid4
 import httpx
 
 from .. import images, net, rights, tables
-from ..schema import Dating, Document, Page, PageText, Production, Rights
+from ..schema import Dating, Document, Page, PageText, Rights
 
 USER_AGENT = "GlyphAtlas/0.1 (+https://github.com/mkpoli/glyph-atlas)"
 PAUSE = 1.0
@@ -417,7 +417,7 @@ def collect_index(
     scripts: Iterable[str] = (),
     language: str | None = None,
     contributors: str | None = None,
-    production: Production = Production.UNKNOWN,
+    production: str = "unknown",
     known: dict[str, images.ImageRecord] | None = None,
     checked: date | None = None,
 ) -> Collected:

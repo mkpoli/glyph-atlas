@@ -23,7 +23,7 @@ BOOKS = ROOT / "data" / "sources" / "codh-books.tsv"
 TEST_BOOKS = 4
 VAL_BOOKS = 2
 # The two kinds the manifest states, and the books it says nothing about.
-STRATA = ("woodblock", "manuscript", "unknown")
+STRATA = ("printed", "handwritten", "unknown")
 
 
 def books(path: Path) -> list[dict[str, str]]:

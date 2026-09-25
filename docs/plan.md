@@ -150,7 +150,7 @@ keep their mark and link to the repeated span. 合字 (ゟ, ヿ, 𬼂 U+2CF02 fo
 multi-character expansion. Units joined by continuous strokes form a 連綿 group with its own
 rectangle; unit rectangles may overlap.
 
-Documents. Production (manuscript, woodblock, movable type), genre (`data/vocab/genre.yaml`), register
+Documents. Production (the tree in `data/vocab/production.yaml`: handwritten, inscribed, printed from blocks or from type and so on), genre (`data/vocab/genre.yaml`), register
 (和文, 漢文, 漢文訓読, 候文), script style (`data/vocab/style.yaml`), dating as written plus an
 interval and its kind (composition, copying, publication, impression), holder, shelfmark, hands.
 

@@ -57,7 +57,7 @@ One physical exemplar (a copy, a manuscript, an archival document).
 | `id`, `title` | |
 | `source_refs` | upstream ids by source: NIJL 書誌ID, NDL PID, みんなで翻刻 entry id, HI record id |
 | `holder`, `shelfmark` | holding institution and its call number |
-| `production` | `manuscript`, `woodblock`, `movable-type`, `mixed`, `unknown` |
+| `production` | a node of `data/vocab/production.yaml` written as its path, e.g. `handwritten`, `printed/woodblock`, `printed/type/metal/copper`; the deepest node the evidence states, with `data/vocab/production-overrides.yaml` citing more than a source says |
 | `genre` | one or more ids from `data/vocab/genre.yaml` |
 | `text_register` | `wabun`, `kanbun`, `kanbun-kundoku`, `sorobun`, `mixed`, `unknown` |
 | `dating` | list; each with `literal` as written (文政3), `start` and `end` years, `kind` (composition, copying, publication, impression), `evidence` |

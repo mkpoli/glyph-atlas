@@ -8,7 +8,7 @@ import pytest
 
 from glyph_atlas import rights, tables
 from glyph_atlas.importers import hng_kiridashi as kd
-from glyph_atlas.schema import Document, Licence, Line, Page, Production, ReviewState, Unit
+from glyph_atlas.schema import Document, Licence, Line, Page, ReviewState, Unit
 
 BASE = "https://gallica.bnf.fr/iiif/ark:/12148/btv1b83019074"
 HEADER = [
@@ -72,7 +72,7 @@ def test_counts(imported) -> None:
 def test_document_rights(imported) -> None:
     _, [document], _, _, _ = imported
     assert document.id == "hng-kiridashi:myz"
-    assert (document.holder, document.shelfmark, document.production) == (kd.BNF, "P.2334", Production.MANUSCRIPT)
+    assert (document.holder, document.shelfmark, document.production) == (kd.BNF, "P.2334", "handwritten")
     assert document.image_rights.licence == Licence.RESTRICTED and not rights.eligible(document.image_rights)
     assert document.text_rights.licence == Licence.CC_BY_SA_4
     assert document.source_refs["iiif-manifest"] == f"{BASE}/manifest.json"

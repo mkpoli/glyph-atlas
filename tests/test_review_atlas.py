@@ -95,32 +95,35 @@ def test_character_group_follows_the_script_of_the_first_character():
 
 
 def test_quick_review_excludes_movable_type_until_explicitly_selected(dataset):
-    kinds = ['manuscript', 'woodblock', 'movable-type', 'mixed', 'unknown']
-    docs = [Document(id='d', title='Fixture')] + [Document(id=kind, title=kind, production=kind)
+    kinds = ['handwritten', 'printed/woodblock', 'printed/type', 'printed/type/metal/copper', 'mixed', 'unknown']
+    ids = {kind: kind.replace('/', '-') for kind in kinds}
+    docs = [Document(id='d', title='Fixture')] + [Document(id=ids[kind], title=kind, production=kind)
                                                 for kind in kinds]
     tables.write(dataset / 'documents.parquet', docs, Document)
     units = list(tables.read(dataset / 'units.parquet', Unit))
-    units.extend(Unit(id=kind, document_id=kind, page_id=PAGE, reading='字',
+    units.extend(Unit(id=ids[kind], document_id=ids[kind], page_id=PAGE, reading='字',
                       box=Box(x=10, y=10, w=20, h=30)) for kind in kinds)
     tables.write(dataset / 'units.parquet', units, Unit)
     client = TestClient(create_app(dataset))
     default = client.get('/atlas?purpose=review').json()
-    assert default['production'] == 'non-movable-type'
+    assert default['production'] == 'not:printed/type'
     assert default['total'] == default['available'] == 20
     assert default['counts'] == {'pending': 20}
     assert next(c for c in default['categories'] if c['label'] == '字')['pending'] == 4
-    assert {i['production'] for i in default['items']} == set(kinds) - {'movable-type'}
-    assert client.get('/atlas').json()['total'] == 21
-    assert client.get('/atlas?purpose=review&production=all').json()['total'] == 21
-    for kind in kinds:
-        result = client.get('/atlas', params={'purpose': 'review', 'production': kind}).json()
-        assert result['total'] == (17 if kind == 'unknown' else 1)
-        assert {i['production'] for i in result['items']} == {kind}
+    assert {i['production'] for i in default['items']} == {'handwritten', 'printed/woodblock', 'mixed', 'unknown'}
+    assert client.get('/atlas').json()['total'] == 22
+    assert client.get('/atlas?purpose=review&production=all').json()['total'] == 22
+    expected = {'handwritten': 1, 'printed': 3, 'printed/type': 2, 'printed/type/metal/copper': 1,
+                'not:printed': 19, 'unknown': 17}
+    for scope, total in expected.items():
+        result = client.get('/atlas', params={'purpose': 'review', 'production': scope}).json()
+        assert result['total'] == total, scope
+    assert client.get('/atlas?purpose=review&production=woodblock').status_code == 422
     paged = [client.get('/atlas', params={'purpose': 'review', 'reading': '字', 'limit': 1,
                                         'offset': offset, 'seed': 5}).json()['items'][0]
              for offset in range(4)]
     assert len({i['id'] for i in paged}) == 4
-    assert all(i['production'] != 'movable-type' for i in paged)
+    assert all(not i['production'].startswith('printed/type') for i in paged)
 
 
 def test_review_material_follows_page_document_and_updated_source_evidence(dataset, tmp_path, monkeypatch):
@@ -134,9 +137,9 @@ def test_review_material_follows_page_document_and_updated_source_evidence(datas
     monkeypatch.setattr(production, 'OVERRIDES', overrides)
     client = TestClient(create_app(dataset))
     assert client.get('/atlas?purpose=review').json()['total'] == 16
-    overrides.write_text('documents:\n  d:\n    production: movable-type\n')
+    overrides.write_text('documents:\n  d:\n    production: printed/type/wood\n')
     assert client.get('/atlas?purpose=review').json()['total'] == 0
-    explicit = client.get('/atlas?purpose=review&production=movable-type').json()
+    explicit = client.get('/atlas?purpose=review&production=printed/type').json()
     assert explicit['total'] == 16
     assert client.get('/atlas').json()['total'] == 16
 

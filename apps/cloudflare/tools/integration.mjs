@@ -33,21 +33,30 @@ try {
   const reviewed = { id: 'codh:legacy', origin: 'corpus', label: 'ト', written_character: 'ト', proxyable: true, state: 'checked', revision: 1 }
   await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind('codh:legacy', 'corpus', 'ト', null, null, null,
     'unknown', 'other', 'checked', 1, 0, 1, 0, JSON.stringify(reviewed), JSON.stringify(reviewed), '{}', '{}').run()
-  for (const name of migrations.filter(name => name >= '0006')) await apply(name)
+  for (const name of migrations.filter(name => name >= '0006' && name < '0010')) await apply(name)
+  // A crop published before 0010 carries an old production value in its row, its data and its snapshot.
+  const oldPrint = { id: 'old-print', label: 'ト', reading: 'ト', state: 'pending', revision: 0, production: 'woodblock', production_label: 'Woodblock' }
+  await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind('old-print', 'local', 'ト', 'ト', null, null,
+    'woodblock', 'kana', 'pending', 0, 0, 1, 1, JSON.stringify(oldPrint), JSON.stringify({ character: oldPrint }), '{}', '{}').run()
+  for (const name of migrations.filter(name => name >= '0010')) await apply(name)
   assert.deepEqual((await db.prepare("SELECT id,production,named FROM corpus_units WHERE character='ト' ORDER BY id").all()).results, [
-    { id: 'codh-omt:1', production: 'movable-type', named: 0 },
+    { id: 'codh-omt:1', production: 'printed/type', named: 0 },
     { id: 'codh-omtz:1', production: 'unknown', named: 0 },
     { id: 'codh:legacy', production: 'unknown', named: 1 }], 'the old movable-type set is marked, and a reviewed glyph is named')
   assert.deepEqual((await db.prepare("SELECT * FROM corpus_characters WHERE character='ト'").all()).results, [
-    { character: 'ト', production: 'movable-type', n: 1, named: 0 }, { character: 'ト', production: 'unknown', n: 2, named: 1 }])
+    { character: 'ト', production: 'printed/type', n: 1, named: 0 }, { character: 'ト', production: 'unknown', n: 2, named: 1 }])
+  assert.deepEqual(await db.prepare(`SELECT production,json_extract(data,'$.production') AS data,json_extract(data,'$.production_label') AS label,
+    json_extract(snapshot,'$.character.production') AS snapshot FROM units WHERE id='old-print'`).first(),
+    { production: 'printed', data: 'printed', label: 'Printed', snapshot: 'printed' }, 'a woodblock crop reads as printed everywhere')
+  await db.prepare("DELETE FROM units WHERE id='old-print'").run()
   assert.deepEqual(await db.prepare("SELECT quiz,category,shuffle FROM units WHERE id='codh:legacy'").first(),
     { quiz: 1, category: 'kana', shuffle: 79 }, 'a reviewed corpus row gets the quiz, category and shuffle the Worker gives one')
   const hash = 'a'.repeat(64), sourceRevision = 'b'.repeat(64)
   for (const id of ['one', 'two']) {
     const d = { id, label: 'ア', reading: 'ア', state: 'pending', revision: 0, image_sha256: hash,
-      production: 'manuscript', repair: { quiz: true } }
+      production: 'handwritten', repair: { quiz: true } }
     await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
-      id, 'local', 'ア', 'ア', 'U+3042', null, 'manuscript', 'kana', 'pending', 0, 1, 1, 1,
+      id, 'local', 'ア', 'ア', 'U+3042', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
       JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}').run()
   }
   for (const [char, code] of [['仮', 'U+4EEE'], ['假', 'U+5047']]) {
@@ -117,9 +126,9 @@ try {
   // Flagged order: a crop already reviewed in the character inspector queues behind one nobody has.
   for (const id of ['flag-a', 'flag-b']) {
     const d = { id, label: 'ラ', reading: 'ラ', state: 'pending', revision: 0, image_sha256: hash,
-      production: 'manuscript', repair: { quiz: true } }
+      production: 'handwritten', repair: { quiz: true } }
     await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
-      id, 'local', 'ラ', 'ラ', 'U+3042', null, 'manuscript', 'kana', 'pending', 0, 1, 1, 1,
+      id, 'local', 'ラ', 'ラ', 'U+3042', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
       JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}').run()
   }
   const flagRound = { id: crypto.randomUUID(), client_id: 'integration', label: 'ラ', answers: [
@@ -184,9 +193,9 @@ try {
   // Seen crops: a round may record the crops it showed and left unflagged, and they leave the queue.
   for (const id of ['seen-a', 'seen-b', 'seen-c']) {
     const d = { id, label: 'セ', reading: 'セ', state: 'pending', revision: 0, image_sha256: hash,
-      image: `/atlas/media/${id}.webp`, production: 'manuscript', box: { x: 1, y: 2, w: 3, h: 4 }, repair: { quiz: true } }
+      image: `/atlas/media/${id}.webp`, production: 'handwritten', box: { x: 1, y: 2, w: 3, h: 4 }, repair: { quiz: true } }
     await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
-      id, 'local', 'セ', 'セ', 'U+30BB', null, 'manuscript', 'kana', 'pending', 0, 1, 1, 1,
+      id, 'local', 'セ', 'セ', 'U+30BB', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
       JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}').run()
   }
   const pendingSe = async () => (await call('/atlas?purpose=review&reading=セ&state=pending&limit=96')).items.map(i => i.id).sort()
@@ -223,9 +232,9 @@ try {
   // skipped, hard once two reviewers skipped them, and taken back by an undo.
   for (const id of ['skip-a', 'skip-b', 'skip-c']) {
     const d = { id, label: 'ソ', reading: 'ソ', state: 'pending', revision: 0, image_sha256: hash,
-      production: 'manuscript', box: { x: 1, y: 2, w: 3, h: 4 }, repair: { quiz: true } }
+      production: 'handwritten', box: { x: 1, y: 2, w: 3, h: 4 }, repair: { quiz: true } }
     await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
-      id, 'local', 'ソ', 'ソ', 'U+30BD', null, 'manuscript', 'kana', 'pending', 0, 1, 1, 1,
+      id, 'local', 'ソ', 'ソ', 'U+30BD', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
       JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}').run()
   }
   const dealtTo = async reviewer => (await call(`/atlas?purpose=review&reading=ソ&state=pending&seed=3&limit=96&reviewer=${reviewer}`)).items.map(i => i.id)
@@ -246,11 +255,11 @@ try {
   const worker = await import('/tmp/atlas-worker-test.mjs')
   const glyph = (id, fields = {}) => ({ id, origin: 'corpus', label: 'ナ', char: 'ナ', written_character: 'ナ',
     identity_status: 'assigned', source_label: 'ナ', reading: 'ナ', grapheme: 'U+30CA', state: 'pending', revision: 0,
-    proxyable: true, production: 'woodblock', image: `/atlas/media/${id}.webp`, box: { x: 1, y: 2, w: 3, h: 4 },
+    proxyable: true, production: 'printed/woodblock', image: `/atlas/media/${id}.webp`, box: { x: 1, y: 2, w: 3, h: 4 },
     source: { corpus: 'codh-full', title: 'A woodblock book' }, source_revision: createHash('sha256').update(id).digest('hex'), ...fields })
   // shuffle 50,10,40,20,30: from seed 0 the order is na-2, na-4, na-5, na-3, na-1.
   const glyphs = [['na-1', 50], ['na-2', 10], ['na-3', 40], ['na-4', 20], ['na-5', 30]].map(([id, shuffle]) => [glyph(id), shuffle, 'ナ'])
-  glyphs.push([glyph('na-movable', { production: 'movable-type' }), 15, 'ナ'],
+  glyphs.push([glyph('na-movable', { production: 'printed/type/wood' }), 15, 'ナ'],
     [glyph('na-unassigned', { written_character: null, identity_status: 'unassigned' }), 5, null],
     [glyph('nu-private', { label: 'ヌ', char: 'ヌ', written_character: 'ヌ', proxyable: false }), 5, 'ヌ'],
     [glyph('nu-shown', { label: 'ヌ', char: 'ヌ', written_character: 'ヌ' }), 6, 'ヌ'])
@@ -269,9 +278,9 @@ try {
   await db.batch(refresh.map(sql => db.prepare(sql)))
   for (const id of ['na-local-a', 'na-local-b']) {
     const d = { id, label: 'ナ', reading: 'ナ', state: 'pending', revision: 0, image_sha256: hash,
-      production: 'manuscript', box: { x: 1, y: 2, w: 3, h: 4 }, repair: { quiz: true } }
+      production: 'handwritten', box: { x: 1, y: 2, w: 3, h: 4 }, repair: { quiz: true } }
     await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
-      id, 'local', 'ナ', 'ナ', 'U+30CA', null, 'manuscript', 'kana', 'pending', 0, 1, 1, 1,
+      id, 'local', 'ナ', 'ナ', 'U+30CA', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
       JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}').run()
   }
   const roundOf = async (params = '') => call(`/atlas?purpose=review&reading=ナ&state=pending${params.includes('limit=') ? '' : '&limit=96'}${params}`)
@@ -287,7 +296,11 @@ try {
   await call('/atlas?purpose=review&reading=ナ&offset=5000', undefined, 404)
   assert.ok(!dealtNa.includes('na-movable') && !dealtNa.includes('na-unassigned'), 'movable type and unassigned glyphs are not dealt')
   assert.ok((await ids('&seed=0&production=all')).includes('na-movable'), 'every material includes movable type')
-  assert.deepEqual((await ids('&seed=0&production=woodblock')), ['na-2', 'na-4', 'na-5', 'na-3', 'na-1'], 'one material deals only its glyphs')
+  assert.deepEqual((await ids('&seed=0&production=printed/woodblock')), ['na-2', 'na-4', 'na-5', 'na-3', 'na-1'], 'one material deals only its glyphs')
+  assert.deepEqual((await ids('&seed=0&production=printed/type')), ['na-movable'], 'a node deals what lies under it')
+  assert.deepEqual((await ids('&seed=0&production=printed')), ['na-2', 'na-movable', 'na-4', 'na-5', 'na-3', 'na-1'], 'a wider node merges its productions in shuffle order')
+  assert.deepEqual((await ids('&seed=0&production=inscribed')), [], 'a node the character has nothing under deals nothing')
+  await call('/atlas?purpose=review&reading=ナ&production=printed%20type', undefined, 400)
   assert.deepEqual((await call('/atlas?purpose=review&reading=ヌ&state=pending')).items.map(i => i.id), ['nu-shown'], 'a glyph this site may not serve is not dealt')
   // A glyph passed over still takes its position: the next offset runs ahead of the items, and once
   // the glyphs run out the total is what there was to deal.
@@ -316,9 +329,9 @@ try {
   assert.deepEqual(await category('&reviewer=alice'), { label: 'ナ', total: 4, pending: 4, seen: 0, checked: 0, flagged: 0, hard: 0, skipped: 0 })
   assert.deepEqual((await db.prepare("SELECT id FROM corpus_units WHERE character='ナ' AND named=1 ORDER BY id").all()).results.map(r => r.id),
     ['na-2', 'na-4', 'na-5'], 'naming a glyph marks its published row')
-  assert.deepEqual(await db.prepare("SELECT n,named FROM corpus_characters WHERE character='ナ' AND production='woodblock'").first(), { n: 5, named: 3 })
+  assert.deepEqual(await db.prepare("SELECT n,named FROM corpus_characters WHERE character='ナ' AND production='printed/woodblock'").first(), { n: 5, named: 3 })
   assert.equal((await call('/atlas/rounds', cropRound)).id, cropSaved.id)
-  assert.equal((await db.prepare("SELECT named FROM corpus_characters WHERE character='ナ' AND production='woodblock'").first()).named, 3, 'a retried round names nothing twice')
+  assert.equal((await db.prepare("SELECT named FROM corpus_characters WHERE character='ナ' AND production='printed/woodblock'").first()).named, 3, 'a retried round names nothing twice')
   const materialised = await db.prepare("SELECT id,origin,quiz,state,shuffle FROM units WHERE id LIKE 'na-%' AND origin='corpus' ORDER BY id").all()
   assert.deepEqual(materialised.results, [
     { id: 'na-2', origin: 'corpus', quiz: 1, state: 'flagged', shuffle: 10 },
@@ -352,13 +365,14 @@ try {
     if (index) assert.ok(details.some(d => d.includes(`USING INDEX ${index} `) || d.includes(`USING COVERING INDEX ${index} `)), `${index}: ${details.join('; ')}`)
   }
   const shapes = []
-  for (const production of [null, 'woodblock'])
+  for (const production of [null, 'printed/woodblock'])
     for (const side of ['>=', '<'])
       shapes.push([{ sql: worker.corpusRoundQuery(production, side), values: [] }, ['ナ', ...(production ? [production] : []), 0, 96],
         production ? 'corpus_material' : 'corpus_round'])
   // corpus_characters is small and read whole, in its key's order.
-  for (const production of ['all', 'non-movable-type', 'woodblock']) shapes.push([worker.corpusCountQuery(production), [], null])
-  shapes.push([{ sql: worker.namedRoundQuery("production!='movable-type'", 'state'), values: [] }, ['ナ'], 'unit_character'])
+  for (const production of ['all', 'not:printed/type', 'printed/woodblock']) shapes.push([worker.corpusCountQuery(production), [], null])
+  shapes.push([{ sql: worker.namedRoundQuery('NOT (production=? OR (production>=? AND production<?))', 'state'), values: [] },
+    ['ナ', 'printed/type', 'printed/type/', 'printed/type0'], 'unit_character'])
   // What a publication runs after it rewrites corpus_units, and what the trigger runs on each naming.
   shapes.push([{ sql: refresh[0], values: [] }, [], 'sqlite_autoindex_corpus_units_1'])
   shapes.push([{ sql: "UPDATE corpus_characters SET named=named+1 WHERE (character,production)=(SELECT character,production FROM corpus_units WHERE id=? AND named=0)", values: [] },
@@ -393,9 +407,9 @@ try {
   // A row published as `other` before Hangul had a category reads `hangul` once 0008 has run, and
   // the listing filters it by that group.
   const jamo = { id: 'hangul', label: 'ㅿ', reading: 'ㅿ', state: 'pending', revision: 0, image_sha256: hash,
-    production: 'woodblock', repair: { quiz: true } }
+    production: 'printed/woodblock', repair: { quiz: true } }
   await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
-    jamo.id, 'local', 'ㅿ', 'ㅿ', 'U+317F', null, 'woodblock', 'other', 'pending', 0, 1, 1, 1,
+    jamo.id, 'local', 'ㅿ', 'ㅿ', 'U+317F', null, 'printed/woodblock', 'other', 'pending', 0, 1, 1, 1,
     JSON.stringify(jamo), JSON.stringify({ character: jamo }), '{}', '{}').run()
   await apply('0008_hangul_category.sql')
   assert.deepEqual((await call('/atlas?group=hangul')).items.map(i => i.id), ['hangul'], 'a Hangul label is in the hangul group')
