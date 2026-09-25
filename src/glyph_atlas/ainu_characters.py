@@ -359,7 +359,9 @@ def build(result: Plan, atlas: Path, records: Path, out: Path, *, log: ReviewLog
         units[uid] = unit.model_copy(update={"meta": {**unit.meta, **meta, META: provenance(row)}})
 
     for uid, row in result.keep_atlas + result.keep_withheld:
-        note(uid, row)
+        # A unit the log names would need an event of its own to carry a note that changes nothing else.
+        if uid not in log.logged:
+            note(uid, row)
         counts["atlas kept"] += 1
     for uid, row in result.confirm:
         source = "its OCR" if row.origin == "ocr" else "its transcription"
@@ -410,6 +412,34 @@ def build(result: Plan, atlas: Path, records: Path, out: Path, *, log: ReviewLog
         raise RuntimeError(f"replaying the merged log changed {repaired} units of the merged tables")
     # The log already holds every event; exporting marks it so, and writes the tables the store holds.
     review_store.Store(out).export()
+    counts.update(carry_ledgers(atlas / STORE_NAME, out / STORE_NAME))
     # Exporting rewrites the tables under the store; opening it again records the tables it now holds.
     review_store.Store(out)
     return dict(counts)
+
+
+#: Tables of the review store that no event rebuilds: the revision baselines a reset raised, and the
+#: ledgers of the reviews and records imported into it, which keep a later import from applying twice.
+LEDGERS = ("revision_bases", "cloudflare_imports", "imported_records")
+
+
+def carry_ledgers(source: Path, target: Path) -> dict[str, int]:
+    """Copy the source store's ledgers into the store rebuilt beside the merged dataset."""
+    if not source.exists():
+        return {}
+    counts: dict[str, int] = {}
+    connection = sqlite3.connect(f"file:{target}", uri=True)
+    try:
+        connection.execute("ATTACH DATABASE ? AS source", (f"file:{source}?mode=ro",))
+        for name in LEDGERS:
+            found = connection.execute("SELECT sql FROM source.sqlite_master WHERE type='table' AND name=?", (name,)).fetchone()
+            if found is None:
+                continue
+            connection.execute(found[0].replace(f"CREATE TABLE {name}", f"CREATE TABLE IF NOT EXISTS main.{name}", 1))
+            connection.execute(f"INSERT OR REPLACE INTO main.{name} SELECT * FROM source.{name}")
+            counts[f"carried {name}"] = connection.execute(f"SELECT count(*) FROM main.{name}").fetchone()[0]
+        connection.commit()
+        connection.execute("DETACH DATABASE source")
+    finally:
+        connection.close()
+    return counts

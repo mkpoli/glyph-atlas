@@ -141,9 +141,9 @@ def test_a_unit_a_person_acted_on_keeps_its_reading_and_replay_agrees(world, tmp
     assert uid(1) in [u for u, _ in result.keep_atlas] and uid(1) not in [u for u, _ in result.replace]
     out = tmp_path / "merged"
     counts = ainu_characters.build(result, atlas, records, out)
-    assert counts["merge events"] == 1
+    assert "merge events" not in counts, "a kept unit the log names gets no event for a note"
     kept = units_of(out)[uid(1)]
-    assert (kept.unicode, kept.meta["ainu_records"]["id"]) == ("U+30C4", "1-l1-1")
+    assert (kept.unicode, "ainu_records" in kept.meta) == ("U+30C4", False)
 
 
 def test_a_machine_event_is_no_decision_and_replay_keeps_the_merge(world, tmp_path):
@@ -299,3 +299,20 @@ def test_the_merged_dataset_leaves_its_store_current(world, tmp_path, monkeypatc
     out = tmp_path / "merged"
     ainu_characters.build(ainu_characters.plan(atlas, records), atlas, records, out)
     assert ainu_characters.read_log(out).units, "a merge can read the dataset it wrote"
+
+
+def test_the_merged_store_keeps_the_ledgers_no_event_rebuilds(world, tmp_path):
+    import sqlite3
+
+    atlas, records = world
+    record(atlas, uid(1), "unicode", "U+30C4")
+    with sqlite3.connect(atlas / "review.sqlite") as db:
+        db.execute("INSERT INTO revision_bases VALUES (?, ?)", (uid(1), 2000000))
+        db.execute("CREATE TABLE cloudflare_imports(remote_id TEXT PRIMARY KEY, target_id TEXT NOT NULL)")
+        db.execute("INSERT INTO cloudflare_imports VALUES ('remote-1', ?)", (uid(1),))
+    out = tmp_path / "merged"
+    counts = ainu_characters.build(ainu_characters.plan(atlas, records), atlas, records, out)
+    assert "merge events" not in counts, "a note alone is no reason for an event"
+    with sqlite3.connect(out / "review.sqlite") as db:
+        assert db.execute("SELECT base FROM revision_bases").fetchall() == [(2000000,)]
+        assert db.execute("SELECT remote_id FROM cloudflare_imports").fetchall() == [("remote-1",)]
