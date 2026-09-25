@@ -80,6 +80,9 @@
   let suggestionsElement = $state(null)
   const keys = 'qwertyasdfgh'.split('')
   const selection = $derived(Object.keys(selected).filter(id => selected[id]))
+  // A crop skipped in the review step stays selected so the reader can go back to it, but it is no
+  // longer a problem to decide: whether the round still has one, and what moving on records, ask this.
+  const openSelection = $derived(selection.filter(id => !skipped[id]))
   const selectedItems = $derived(selection.map(id => items.find(i => i.id === id))
     .filter(item => item && !failed[item.id]))
   const queue = $derived(selectedItems)
@@ -99,7 +102,7 @@
   const categories = $derived((data?.categories ?? []).filter(c => c.pending > 0 && c.label.includes(search)))
 
   // Whether moving on would record something: a crop seen, or a crop skipped after it was seen.
-  const recordable = $derived(!selection.length && (remaining.some(i => viewed[i.id] && !recorded[i.id])
+  const recordable = $derived(!openSelection.length && (remaining.some(i => viewed[i.id] && !recorded[i.id])
     || items.some(i => skipped[i.id] && viewed[i.id] && !failed[i.id] && !recorded[i.id])))
   // A round or a crop changed under the reader: the error offers to reload the round in place.
   const stale = $derived(Boolean(error) && errorStatus === 409)
@@ -403,7 +406,7 @@
   /** The action the primary button offers, and the one Ctrl/Cmd+Enter performs. */
   function primary() {
     if (saving || loading || loadingMore) return
-    if (!selection.length) { pass(); return }
+    if (!openSelection.length) { pass(); return }
     if (step === 'select') { reviewSelected(); return }
     if (!current || !(choices[current.id] || skipped[current.id])) return
     if (focusIndex < queue.length - 1) { move(1); return }
@@ -453,7 +456,7 @@
   async function record() {
     const seen = remaining.filter(i => viewed[i.id] && !recorded[i.id]).map(i => ({ id: i.id, ...pixels(i), image: i.image }))
     const passed = skippedCrops()
-    if ((!seen.length && !passed.length) || selection.length) return true
+    if ((!seen.length && !passed.length) || openSelection.length) return true
     saving = true; error = ''; errorStatus = 0
     try {
       await request('/atlas/rounds', { id: roundId, client_id: clientId, label: reading, seen, skipped: passed })
@@ -538,7 +541,7 @@
   {#if error}<div class="error-message" role="alert"><span>{error}</span>{#if stale}<button disabled={saving} onclick={() => load({ target: reading, replace: true })}>{t('quiz.reloadRound')}</button>{/if}</div>{/if}
 
   {#if step === 'select'}
-    <div class="stage-toolbar"><strong>{selection.length ? t('quiz.select.selectedCount', { count: selection.length }) : t('quiz.select.selectProblems')}</strong><button class="bulk-toggle" disabled={saving || loading || !available} onclick={selectAll}>{selection.length === decidable.length && selection.length ? t('quiz.bulk.none') : t('quiz.bulk.all')}</button><button class="bulk-toggle skip-selection" disabled={saving || loading || !selection.length} onclick={() => skip()} title={skipHint()}>{t('quiz.skipSelected', { skip: skipLabel() })}</button><span class="keyboard-hint">{t('quiz.keyboardHint.pickCrop')}</span></div>
+    <div class="stage-toolbar"><strong>{openSelection.length ? t('quiz.select.selectedCount', { count: openSelection.length }) : t('quiz.select.selectProblems')}</strong><button class="bulk-toggle" disabled={saving || loading || !available} onclick={selectAll}>{decidable.length && decidable.every(i => selected[i.id]) ? t('quiz.bulk.none') : t('quiz.bulk.all')}</button><button class="bulk-toggle skip-selection" disabled={saving || loading || !selection.length} onclick={() => skip()} title={skipHint()}>{t('quiz.skipSelected', { skip: skipLabel() })}</button><span class="keyboard-hint">{t('quiz.keyboardHint.pickCrop')}</span></div>
     {#key roundId}<div class="quiz-grid" aria-label={t('quiz.grid.label')} aria-busy={loading}>
       {#if loading}{#each Array(12) as _}<div class="quiz-skeleton"></div>{/each}
       {:else}{#each items as item, i (item.id)}
@@ -586,7 +589,7 @@
   {:else}<div class="quiz-actionbar"><div class="round-selection"><span class="selection-dot" class:has-flags={decided > 0}></span><strong>{t('quiz.decided', { count: decided })}</strong>{#if undecided}<span>{t('quiz.undecided', { count: undecided })}</span>{/if}{#if Object.keys(skipped).length}<small>{t('quiz.skippedNotSaved', { count: Object.keys(skipped).length })}</small>{/if}{#if Object.keys(failed).length}<small>{t('quiz.unavailableCount', { count: Object.keys(failed).length })}</small>{/if}</div><div class="quiz-submit">
     <span class="keyboard-hint">{step === 'select' ? t('quiz.keyboardHint.select') : step === 'issue' ? t('quiz.keyboardHint.issue') : t('quiz.keyboardHint.correct')}</span>
     {#if step === 'select'}<button class="quiet-link skip-selected" disabled={loading || saving || exhausted || (!decidable.length && !selection.length)} onclick={() => skip(selection.length ? selection : decidable.map(i => i.id))} title={skipHint()}>{selection.length ? t('quiz.skipSelected', { skip: skipLabel() }) : skipLabel()}</button>{/if}
-    {#if exhausted || !selection.length}<button class="primary next-round" disabled={loading || saving || (!canNext && !recordable)} onclick={pass}>{t('quiz.nextCharacterLabel')} <span>→</span></button>
+    {#if exhausted || !openSelection.length}<button class="primary next-round" disabled={loading || saving || (!canNext && !recordable)} onclick={pass}>{t('quiz.nextCharacterLabel')} <span>→</span></button>
     {:else if step === 'select'}<button class="primary review-selected" disabled={loading || saving || loadingMore || !ready} onclick={reviewSelected}>{t('quiz.reviewSelected', { count: selection.length })} <span>→</span></button>
     {:else if focusIndex < queue.length - 1}<button class="primary next-crop" disabled={loading || saving || !(choices[current?.id] || skipped[current?.id])} onclick={primary}>{t('quiz.nextCrop')} <span>→</span></button>
     {:else if !answered}<button class="primary finish-issues" disabled={loading || saving || !(choices[current?.id] || skipped[current?.id])} onclick={primary}>{t('quiz.reviewRemaining')} <span>→</span></button>

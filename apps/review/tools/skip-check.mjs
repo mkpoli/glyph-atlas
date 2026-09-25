@@ -175,6 +175,22 @@ try {
   // They rest for this reviewer: the next round does not deal them back.
   const next = (await browser.evaluate(rows)).map(row => row.id)
   assert(!next.some(id => recorded.some(row => row.target_id === id)), 'a crop the reviewer just skipped was dealt back to them')
+  // 5b. A crop selected and then skipped in the review step is still a skip when the reader moves on:
+  // it keeps its place in the selection, but the round has nothing left to decide.
+  await browser.waitFor(`document.querySelectorAll('.quiz-choice:not(:disabled)').length > 0`, 20000)
+  const beforeReviewSkip = events(service.fixture.directory).length
+  const reviewSkipped = (await browser.evaluate(rows))[0].id
+  await click('.quiz-tile:nth-child(1) .quiz-choice')
+  await click('.quiz-submit .review-selected')
+  await browser.waitFor(`document.querySelector('.issue-card[data-issue="skip"]') !== null`)
+  await click('.issue-card[data-issue="skip"]')
+  await browser.waitFor(`document.querySelector('.quiz-submit .next-round') !== null`)
+  await click('.quiz-submit .next-round')
+  await browser.waitFor(`document.querySelector('.issue-card[data-issue="skip"]') === null`, 20000)
+  await sleep(500)
+  const reviewSkipRecords = events(service.fixture.directory).slice(beforeReviewSkip)
+  assert(reviewSkipRecords.some(row => row.target_id === reviewSkipped && row.field === 'seen' && row.new === 'skipped'),
+    `moving on after a review-step skip recorded ${reviewSkipRecords.map(row => row.field + ':' + row.new).join(', ') || 'nothing'}`)
   const afterPass = events(service.fixture.directory).length
 
   // 6. In the collection inspector, Skip advances the existing queue in place, however many times
