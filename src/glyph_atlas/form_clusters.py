@@ -34,6 +34,7 @@ import shutil
 from collections import defaultdict
 from collections.abc import Iterator
 from concurrent.futures import ProcessPoolExecutor
+from functools import cache
 from multiprocessing import get_context
 from pathlib import Path
 
@@ -94,9 +95,10 @@ def units_stamp(root: Path) -> tuple:
 def glyphs(root: Path, wanted: set[str] | None = None) -> Iterator[dict]:
     """Every character glyph of a multi-form family in `CORPORA`, or of those in `wanted`.
 
-    Each is `{id, corpus, family, page, box, crop}`: a boxed glyph names its page image, any other
-    its pre-cut crop.
+    Each is `{id, corpus, family, info, page, box, crop}`: a boxed glyph names its page image and
+    its box as `(x, y, w, h)`, any other its pre-cut crop.
     """
+    import pyarrow.compute as pc
     import pyarrow.dataset as ds
 
     for corpus in _corpora(root):
@@ -104,23 +106,34 @@ def glyphs(root: Path, wanted: set[str] | None = None) -> Iterator[dict]:
         if corpus.parquet_files("pages"):
             table = ds.dataset([str(p) for p in corpus.parquet_files("pages")], format="parquet")
             pages = dict(zip(*table.to_table(columns=["id", "image"]).to_pydict().values(), strict=True))
-        table = ds.dataset([str(p) for p in corpus.parquet_files("units")], format="parquet")
-        for unit in table.to_table(columns=["id", "page_id", "box", "crop", "unicode", "kind", "active"]).to_pylist():
-            if wanted is not None and unit["id"] not in wanted:
-                continue
-            if not unit["active"] or unit["kind"] != "char" or not (unit["box"] or unit["crop"]):
-                continue
-            info = family_of(unit["unicode"])
+        # Filtered in Arrow, so only candidate rows become Python objects.
+        where = (pc.field("active") & (pc.field("kind") == "char")
+                 & (pc.field("box").is_valid() | pc.field("crop").is_valid()))
+        if wanted is not None:
+            where &= pc.field("id").isin(pa.array(sorted(wanted), pa.string()))
+        table = ds.dataset([str(p) for p in corpus.parquet_files("units")], format="parquet").to_table(
+            columns=["id", "page_id", "box", "crop", "unicode"], filter=where)
+        # Box fields column by column: a struct per row as a Python dict costs more than the glyphs.
+        box = table.column("box").combine_chunks()
+        columns = [table.column(name).to_pylist() for name in ("id", "page_id", "crop", "unicode")]
+        corners = [box.field(k).to_pylist() for k in "xywh"]
+        valid = box.is_valid().to_pylist()
+        for row, (identity, page_id, crop, unicode) in enumerate(zip(*columns, strict=True)):
+            info = _family(unicode)
             if info is None:
                 continue
-            boxed = bool(unit["box"] and pages.get(unit["page_id"]))
-            yield {"id": unit["id"], "corpus": corpus.name, "family": info["code_point"], "info": info,
-                   "page": pages.get(unit["page_id"]) if boxed else None, "box": unit["box"] if boxed else None,
-                   "crop": None if boxed else unit["crop"]}
+            page = pages.get(page_id) if valid[row] else None
+            yield {"id": identity, "corpus": corpus.name, "family": info["code_point"], "info": info, "page": page,
+                   "box": tuple(c[row] for c in corners) if page else None, "crop": None if page else crop}
+
+
+@cache
+def _family(code_point: str | None) -> dict | None:
+    return family_of(code_point)
 
 
 class Pixels:
-    """Where a glyph's pixels are on disk: its page scan and box, or its crop file and no box."""
+    """Where a glyph's pixels are on disk: its page scan and `(x, y, w, h)`, or its crop file and None."""
 
     def __init__(self, root: Path):
         from . import images
@@ -128,14 +141,18 @@ class Pixels:
 
         # HI Lab crops are extracted to `cache/hilab` beside the image cache, wherever that is.
         self.resolver = CropResolver(root, file_bases=(root, images.cache_root().parent, Path.cwd()))
-        self.pages: dict[tuple[str, str], Path | None] = {}
+        # Only found files are remembered, so a page harvested or a crop extracted later is found.
+        self.pages: dict[tuple[str, str], Path] = {}
 
-    def __call__(self, glyph: dict) -> tuple[Path, dict | None] | None:
+    def __call__(self, glyph: dict) -> tuple[Path, tuple[int, int, int, int] | None] | None:
         if glyph["box"]:
             key = (glyph["corpus"], glyph["page"])
             if key not in self.pages:
-                self.pages[key] = self.resolver.page_image_path(glyph["page"], glyph["corpus"])
-            return (self.pages[key], glyph["box"]) if self.pages[key] else None
+                found = self.resolver.page_image_path(glyph["page"], glyph["corpus"])
+                if found is None:
+                    return None
+                self.pages[key] = found
+            return self.pages[key], glyph["box"]
         path = self.resolver.archive_member_path(glyph["crop"])
         return (path, None) if path else None
 
@@ -156,11 +173,11 @@ def _crops(job: tuple[str, list[tuple[str, dict]]]) -> tuple[list[str], np.ndarr
                 ids.append(identity)
                 arrays.append(np.asarray(preprocess(scan), dtype=np.uint8))
                 continue
-            right = min(scan.width, box["x"] + box["w"])
-            bottom = min(scan.height, box["y"] + box["h"])
-            if right <= box["x"] or bottom <= box["y"]:
+            x, y, w, h = box
+            right, bottom = min(scan.width, x + w), min(scan.height, y + h)
+            if right <= x or bottom <= y:
                 continue
-            crop = scan.crop((box["x"], box["y"], right, bottom))
+            crop = scan.crop((x, y, right, bottom))
             ids.append(identity)
             arrays.append(np.asarray(preprocess(crop), dtype=np.uint8))
     return ids, np.stack(arrays) if arrays else None
@@ -212,9 +229,9 @@ def _embed(jobs: list[tuple[str, list[tuple[str, dict]]]], encoder: Encoder, *, 
         yield pending_ids, encoder(np.concatenate(pending))
 
 
-def _file_jobs(located: dict[str, tuple[Path, dict | None]]) -> list[tuple[str, list[tuple[str, dict | None]]]]:
+def _file_jobs(located: dict[str, tuple[Path, tuple | None]]) -> list[tuple[str, list[tuple[str, dict | None]]]]:
     """One job per file on disk: a page scan with its boxes, or a crop file with none."""
-    by_file: dict[str, list[tuple[str, dict | None]]] = defaultdict(list)
+    by_file: dict[str, list[tuple[str, tuple | None]]] = defaultdict(list)
     for identity, (path, box) in located.items():
         by_file[str(path)].append((identity, box))
     return sorted(by_file.items())
@@ -249,22 +266,10 @@ def run(root: Path, out: Path, *, checkpoint: Path, classes: Path, workers: int 
     """Embed, cluster and publish one revision. `root` is the corpus root holding `CORPORA`."""
     import torch
 
-    corpora = _corpora(root)
-    inputs = {"units": {corpus.name: [_digest(path) for path in corpus.parquet_files("units")] for corpus in corpora},
-              "checkpoint": _digest(checkpoint),
-              "classes": _digest(classes), "vocab": _digest(Path(refs.__file__).parents[2] / "data/vocab/characters.tsv"),
-              "method": METHOD, "max_clusters": MAX_CLUSTERS, "min_family_units": MIN_FAMILY_UNITS}
-    revision = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()[:16]
-    target = out / revision
-    if target.is_dir():
-        write_neighbours(target)
-        _point_current(out, revision)
-        return {k: v for k, v in json.loads((target / "manifest.json").read_text()).items() if k != "inputs"}
-
     families: dict[str, dict] = {}
     family_of_unit: dict[str, str] = {}
     corpus_of_unit: dict[str, str] = {}
-    located: dict[str, tuple[Path, dict | None]] = {}
+    located: dict[str, tuple[Path, tuple | None]] = {}
     pixels = Pixels(root)
     unheld = defaultdict(int)
     for glyph in glyphs(root):
@@ -276,6 +281,22 @@ def run(root: Path, out: Path, *, checkpoint: Path, classes: Path, workers: int 
         family_of_unit[glyph["id"]] = glyph["family"]
         corpus_of_unit[glyph["id"]] = glyph["corpus"]
         located[glyph["id"]] = found
+
+    corpora = _corpora(root)
+    # The glyphs whose pixels are on disk are an input too: a page harvested since the last run
+    # brings its glyphs into a new revision.
+    inputs = {"units": {corpus.name: [_digest(path) for path in corpus.parquet_files("units")] for corpus in corpora},
+              "pages": {corpus.name: [_digest(path) for path in corpus.parquet_files("pages")] for corpus in corpora},
+              "located": hashlib.sha256("\n".join(sorted(located)).encode()).hexdigest(),
+              "checkpoint": _digest(checkpoint),
+              "classes": _digest(classes), "vocab": _digest(Path(refs.__file__).parents[2] / "data/vocab/characters.tsv"),
+              "method": METHOD, "max_clusters": MAX_CLUSTERS, "min_family_units": MIN_FAMILY_UNITS}
+    revision = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()[:16]
+    target = out / revision
+    if target.is_dir():
+        write_neighbours(target)
+        _point_current(out, revision)
+        return {k: v for k, v in json.loads((target / "manifest.json").read_text()).items() if k != "inputs"}
 
     encoder = Encoder(checkpoint, classes)
     ids: list[str] = []

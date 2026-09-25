@@ -39,20 +39,15 @@ _BOX_LOCK = threading.Lock()
 
 
 @lru_cache(maxsize=1)
-def _located(root: str, stamp: tuple, clustering: str) -> dict[str, tuple[Path, tuple[int, int, int, int] | None]]:
-    """Where the pixels of every clustered glyph are on disk: a page scan and box, or a crop file."""
-    pixels = form_clusters.Pixels(Path(root))
-    found = {}
-    for glyph in form_clusters.glyphs(Path(root), set(forms.clusters()["units"])):
-        at = pixels(glyph)
-        if at is not None:
-            found[glyph["id"]] = (at[0], tuple(at[1][k] for k in "xywh") if at[1] else None)
-    return found
+def _glyphs(root: str, stamp: tuple, clustering: str) -> dict[str, tuple]:
+    """Where each clustered glyph's pixels are named: `(corpus, page, box, crop)`."""
+    return {g["id"]: (g["corpus"], g["page"], g["box"], g["crop"])
+            for g in form_clusters.glyphs(Path(root), set(forms.clusters()["units"]))}
 
 
-def located(root: Path) -> dict[str, tuple[Path, tuple[int, int, int, int] | None]]:
+def glyph_sources(root: Path) -> dict[str, tuple]:
     with _BOX_LOCK:
-        return _located(str(root), form_clusters.units_stamp(root), forms.clusters()["revision"] or "")
+        return _glyphs(str(root), form_clusters.units_stamp(root), forms.clusters()["revision"] or "")
 
 
 #: Adjacent clusters less similar than this start a new run of shapes.
@@ -96,13 +91,20 @@ def _form_entry(char: str) -> dict[str, Any]:
 def router(media, corpus_root: Path, reviews=None) -> APIRouter:
     api = APIRouter()
 
+    pixels = form_clusters.Pixels(corpus_root)
+
     def image(identity: str) -> str | None:
-        found = located(corpus_root).get(identity)
+        source = glyph_sources(corpus_root).get(identity)
+        # Files are looked up per request, so a scan harvested while the server runs is shown.
+        found = pixels(dict(zip(("corpus", "page", "box", "crop"), source, strict=True))) if source else None
         if found is None:
             return None
         path, box = found
-        # The same edge the published crops use, so a crop rendered for publication is reused.
-        return media.local(path, list(box) if box else None, edge=480)
+        try:
+            # The same edge the published crops use, so a crop rendered for publication is reused.
+            return media.local(path, list(box) if box else None, edge=480)
+        except OSError:
+            return None
 
     def summary(family: dict, decided: dict[str, dict]) -> dict[str, Any]:
         members = forms.clusters()["members"]

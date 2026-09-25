@@ -51,7 +51,7 @@ def test_glyphs_pool_the_corpora_that_leave_the_form_unrecorded(form_corpora):
     assert {glyph["family"] for glyph in found.values()} == {"U+306F"}
     pixels = form_clusters.Pixels(root)
     page, box = pixels(found[ids["held"][0]])
-    assert page.is_file() and box == {"x": 0, "y": 0, "w": 50, "h": 50}
+    assert page.is_file() and box == (0, 0, 50, 50)
     crop, none = pixels(found[ids["crop"]])
     assert crop.name == "1.jpg" and none is None
     assert pixels(found[ids["unheld"]]) is None
@@ -67,3 +67,17 @@ def test_a_crop_file_is_embedded_whole(form_corpora):
     for job in jobs:
         ids_done, arrays = form_clusters._crops(job)
         assert len(ids_done) == len(job[1]) and arrays.shape[0] == len(ids_done)
+
+
+def test_a_page_harvested_later_is_found(form_corpora, tmp_path):
+    from PIL import Image
+
+    from glyph_atlas import images
+
+    root, ids = form_corpora
+    pixels = form_clusters.Pixels(root)
+    glyph = next(g for g in form_clusters.glyphs(root) if g["id"] == ids["unheld"])
+    assert pixels(glyph) is None
+    Image.new("RGB", (100, 100), "white").save(tmp_path / "other.png")
+    images.register(tmp_path / "other.png", "https://example.org/iiif/other.tif")
+    assert pixels(glyph) is not None
