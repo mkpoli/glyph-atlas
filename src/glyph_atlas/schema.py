@@ -25,7 +25,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
-from . import production
+from . import production, style
 
 
 class Licence(StrEnum):
@@ -99,6 +99,8 @@ class Source(BaseModel):
 
 #: A node of `data/vocab/production.yaml`, written as its path, e.g. `printed/type/metal/copper`.
 Production = Annotated[str, AfterValidator(production.check)]
+#: A value of `data/vocab/style.yaml`, e.g. `regular`, `cursive` or `ming`.
+Style = Annotated[str, AfterValidator(style.check)]
 
 
 class Register(StrEnum):
@@ -129,6 +131,7 @@ class Document(BaseModel):
     holder: str | None = None
     shelfmark: str | None = None
     production: Production = "unknown"
+    style: Style = Field(default=style.UNASSESSED, description="style of the letterforms throughout the document")
     genre: list[str] = Field(default_factory=list, description="terms from data/vocab/genre.yaml")
     text_register: Register = Register.UNKNOWN
     dating: list[Dating] = Field(default_factory=list, description="several dates may apply, e.g. composition and copying")
@@ -177,6 +180,7 @@ class Page(BaseModel):
     height: int
     sha256: str | None = None
     transcription: dict[str, str] = Field(default_factory=dict, description="source id, entry id, revision")
+    style: Style = Field(default=style.UNASSESSED, description="style of the letterforms on the page; unassessed takes the document's")
     meta: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -363,6 +367,7 @@ class Unit(BaseModel):
     )
     classification: Classification = Classification.UNASSESSED
     script: Script = Script.UNKNOWN
+    style: Style = Field(default=style.UNASSESSED, description="style of this unit's letterforms; unassessed takes the page's")
     variants: list[VariantRef] = Field(default_factory=list, description="MJ, IVS, GlyphWiki or local shape ids")
     candidates: list[Candidate] = Field(default_factory=list, description="scored alternatives when classification is ambiguous")
     antecedent_ids: list[str] = Field(default_factory=list, description="units an iteration mark repeats")

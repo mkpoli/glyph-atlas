@@ -41,7 +41,9 @@ from .schema import Box, Document, Group, Line, Page, PageText, Unit
 
 #: The version of the dataset tables' schema, written into every `MANIFEST.json`. Version 2 removed
 #: `Unit.jibo`: the 字母 is metadata on a character now, and `data/vocab/characters.tsv` states it.
-SCHEMA_VERSION = 2
+#: Version 3 added `Document.style`, `Page.style` and `Unit.style`; a table written before reads them
+#: as `unassessed`.
+SCHEMA_VERSION = 3
 BATCH_SIZE = 65_536
 MANIFEST_NAME = "MANIFEST.json"
 
@@ -227,7 +229,7 @@ def _known_columns(file: Path, model: type[BaseModel]) -> list[str]:
     retired = sorted(RETIRED_COLUMNS.get(model.__name__, frozenset()) & set(names))
     if retired:
         raise SchemaMismatch(
-            f"{file} has {', '.join(retired)}, which schema version {SCHEMA_VERSION} removed; "
+            f"{file} has {', '.join(retired)}, which schema version 2 removed; "
             "migrate the dataset with scripts/migrate_schema_v2.py"
         )
     return [name for name in names if name in model.model_fields]
