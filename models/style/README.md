@@ -38,6 +38,34 @@ The test has one calligrapher for seal (赵之谦) and one for clerical (伊秉�
 how the model does on one hand, not on the script. The checkpoint is chosen on a val set of one or
 two hands per script, and the figures come from a single seed and a single split.
 
+## On this project's crops
+
+`suggest.py` runs the teacher over a deterministic sample of one corpus's Han crops and writes
+`work/style-suggestions/{corpus}/`: `suggestions.jsonl` and a contact sheet. Nothing is written to
+the dataset tables. Two runs on 2026-09-26, with no crop reviewed yet:
+
+HNG (1,473 crops, share 0.03), by HNG's own source category:
+
+| category | crops | regular | running | cursive |
+| --- | --- | --- | --- | --- |
+| 石経 | 90 | 98% | 1% | 0% |
+| 版本・刊本 | 499 | 92% | 4% | 2% |
+| 写本 | 884 | 73% | 25% | 2% |
+
+The documents with the largest share of running and cursive calls are autographs and Japanese
+manuscripts: 明恵自筆華厳信種義 86% of 22 crops, 図書寮本日本書紀 67% of 42, 兼方本日本書紀 56%
+of 32, 親鸞自筆教行信証 50% of 20. S2067 華厳経 (513) is at 53% of 19, which its hand does not
+explain.
+
+CODH (999 crops, share 0.003): regular 19%, running 46%, cursive 35%, much the same for printed and
+handwritten books.
+
+Looking through the sheets, not a measurement: the most confident regular calls on both corpora
+and the most confident cursive calls on CODH look right. The running calls on HNG include many
+bold or heavily inked regular characters (大, 王, 周, 国) at 0.93 or more, and the cursive calls on
+HNG are mostly damaged or noisy scans with low probability. The per-document shares track the hands
+better than any single call. Measuring precision needs a reviewed sample.
+
 ## Limits
 
 - The training images are binarised brush calligraphy. Crops from this project's scans are
