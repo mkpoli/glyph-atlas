@@ -160,3 +160,42 @@ def empty_form_data(tmp_path_factory, monkeypatch):
     root = tmp_path_factory.mktemp("forms")
     monkeypatch.setenv("ATLAS_FORM_CLUSTERS", str(root / "clusters"))
     monkeypatch.setenv("ATLAS_FORM_DECISIONS", str(root / "decisions.jsonl"))
+
+
+@pytest.fixture
+def form_corpora(tmp_path, monkeypatch):
+    """Glyphs of は in three corpora: CODH boxes on a held and an unheld page, an HI Lab crop, and a
+    古活字 glyph whose label already names its form. Returns the corpus root and the glyph ids."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    from PIL import Image
+
+    from glyph_atlas import images
+
+    monkeypatch.setenv("GLYPH_ATLAS_CACHE", str(tmp_path / "cache"))
+    root = tmp_path / "corpus"
+    page = tmp_path / "page.png"
+    Image.new("RGB", (200, 100), "white").save(page)
+    images.register(page, "https://example.org/iiif/page.tif")
+    crop = tmp_path / "cache/hilab/all/characters/U+306F/1.jpg"
+    crop.parent.mkdir(parents=True)
+    Image.new("RGB", (40, 40), "white").save(crop)
+    box = pa.struct([("x", pa.int64()), ("y", pa.int64()), ("w", pa.int64()), ("h", pa.int64())])
+
+    def corpus(name, ids, page_ids, boxes, crops, unicode, pages=None):
+        directory = root / name
+        directory.mkdir(parents=True)
+        n = len(ids)
+        pq.write_table(pa.table({"id": ids, "page_id": pa.array(page_ids, pa.string()), "box": pa.array(boxes, box),
+                                 "crop": pa.array(crops, pa.string()), "unicode": [unicode] * n,
+                                 "kind": ["char"] * n, "active": [True] * n}), directory / "units.parquet")
+        if pages:
+            pq.write_table(pa.table({"id": list(pages), "image": list(pages.values())}), directory / "pages.parquet")
+
+    left, right = {"x": 0, "y": 0, "w": 50, "h": 50}, {"x": 60, "y": 0, "w": 50, "h": 50}
+    codh = ["codh:book:page:B0001:C0000", "codh:book:page:B0001:C0001", "codh:book:page:B0001:C0002"]
+    corpus("codh-full", codh, ["p1", "p1", "p2"], [left, right, left], [None] * 3, "U+306F",
+           {"p1": "https://example.org/iiif/page.tif", "p2": "https://example.org/iiif/other.tif"})
+    corpus("hilab", ["hi:1"], [None], [None], ["all.zip!all/characters/U+306F/1.jpg"], "U+306F")
+    corpus("kokatsuji", ["kk:1"], ["p1"], [left], [None], "U+1B09E", {"p1": "https://example.org/iiif/page.tif"})
+    return root, {"held": codh[:2], "unheld": codh[2], "crop": "hi:1", "named": "kk:1"}

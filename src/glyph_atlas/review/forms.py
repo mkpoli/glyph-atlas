@@ -12,7 +12,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from .. import forms, images, refs
+from .. import form_clusters, forms, refs
 
 
 class Report(BaseModel):
@@ -39,18 +39,20 @@ _BOX_LOCK = threading.Lock()
 
 
 @lru_cache(maxsize=1)
-def _boxes(codh: str, stamp: tuple, clustering: str) -> tuple[list[str], dict[str, tuple[int, int, int, int, int]]]:
-    """Page scan and box of every clustered glyph: the pages once, and five integers per glyph."""
-    import pyarrow.parquet as pq
+def _located(root: str, stamp: tuple, clustering: str) -> dict[str, tuple[Path, tuple[int, int, int, int] | None]]:
+    """Where the pixels of every clustered glyph are on disk: a page scan and box, or a crop file."""
+    pixels = form_clusters.Pixels(Path(root))
+    found = {}
+    for glyph in form_clusters.glyphs(Path(root), set(forms.clusters()["units"])):
+        at = pixels(glyph)
+        if at is not None:
+            found[glyph["id"]] = (at[0], tuple(at[1][k] for k in "xywh") if at[1] else None)
+    return found
 
-    wanted = forms.clusters()["units"]
-    pages = pq.read_table(Path(codh) / "pages.parquet", columns=["id", "image"]).to_pydict()
-    page_index = {page: i for i, page in enumerate(pages["id"])}
-    table = pq.read_table(Path(codh) / "units.parquet", columns=["id", "page_id", "box"]).to_pydict()
-    boxes = {identity: (page_index[page], box["x"], box["y"], box["w"], box["h"])
-             for identity, page, box in zip(table["id"], table["page_id"], table["box"], strict=True)
-             if box and identity in wanted and page in page_index}
-    return pages["image"], boxes
+
+def located(root: Path) -> dict[str, tuple[Path, tuple[int, int, int, int] | None]]:
+    with _BOX_LOCK:
+        return _located(str(root), form_clusters.units_stamp(root), forms.clusters()["revision"] or "")
 
 
 #: Adjacent clusters less similar than this start a new run of shapes.
@@ -93,18 +95,14 @@ def _form_entry(char: str) -> dict[str, Any]:
 
 def router(media, corpus_root: Path, reviews=None) -> APIRouter:
     api = APIRouter()
-    codh = corpus_root / "codh-full"
 
     def image(identity: str) -> str | None:
-        stamp = forms._stamp(codh / "units.parquet")
-        if stamp is None:
+        found = located(corpus_root).get(identity)
+        if found is None:
             return None
-        with _BOX_LOCK:
-            pages, boxes = _boxes(str(codh), stamp, forms.clusters()["revision"] or "")
-        found = boxes.get(identity)
-        path = images.held(pages[found[0]]) if found and pages[found[0]] else None
+        path, box = found
         # The same edge the published crops use, so a crop rendered for publication is reused.
-        return media.local(path, list(found[1:]), edge=480) if path else None
+        return media.local(path, list(box) if box else None, edge=480)
 
     def summary(family: dict, decided: dict[str, dict]) -> dict[str, Any]:
         members = forms.clusters()["members"]

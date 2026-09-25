@@ -1,4 +1,4 @@
-"""Forms a person assigned to clustered CODH glyphs, and the form each glyph resolves to.
+"""Forms a person assigned to clustered glyphs, and the form each glyph resolves to.
 
 Decisions are appended to `data/forms/decisions.jsonl`, one JSON object per line, and never
 rewritten. A decision names the glyphs it covers explicitly, so it keeps its meaning when the

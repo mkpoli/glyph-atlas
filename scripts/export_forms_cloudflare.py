@@ -4,7 +4,7 @@ Reads the current clustering (`work/forms/current`) and a decision log in the `f
 and writes a publication `scripts/publish_cloudflare.sh` uploads: tile packs under `objects/`,
 ordered SQL parts under `sql/`, and `publication.json` listing both.
 
-1. Every clustered glyph whose page scan is held gets a 240-pixel tile, packed into immutable
+1. Every clustered glyph whose pixels are on disk gets a 240-pixel tile, packed into immutable
    objects with a `media` row each, so the Worker serves it like any other crop.
 2. `form_families`, `form_clusters` and `form_units` are replaced. Each glyph carries its tile, its
    rank in its cluster and its group for every "Split into k" (k = 2..8), since the Worker has no
@@ -126,34 +126,19 @@ class Tiles:
             self._seal()
 
 
-def page_file(page: str) -> Path | None:
-    """The held scan of a page, or None."""
-    from glyph_atlas import images
-    return images.held(page)
-
-
-def tiles(corpus_root: Path, revision: str, out: Path, workers: int) -> tuple[dict[str, str], Tiles, Counter]:
-    """A tile URL for every clustered glyph whose page scan is held, the tiles packed under `out`."""
+def tiles(corpus_root: Path, out: Path, workers: int) -> tuple[dict[str, str], Tiles, Counter]:
+    """A tile URL for every clustered glyph whose pixels are on disk, the tiles packed under `out`."""
     from glyph_atlas import forms
-    from glyph_atlas.review.forms import _boxes
+    from glyph_atlas.review.forms import located
     from glyph_atlas.review.media import MediaCache
 
     media = MediaCache(corpus_root=corpus_root)
-    codh = corpus_root / "codh-full"
-    stamp = forms._stamp(codh / "units.parquet")
-    pages, boxes = _boxes(str(codh), stamp, revision) if stamp else ([], {})
-    counts = Counter()
-    held: dict[str, Path | None] = {}
+    found = located(corpus_root)
+    counts = Counter(tile_unheld=len(forms.clusters()["units"]) - len(found))
     keys: dict[str, str] = {}
-    # Page by page, so each scan is decoded once.
-    for identity, found in sorted(boxes.items(), key=lambda item: item[1][0]):
-        page = pages[found[0]]
-        if page not in held:
-            held[page] = page_file(page) if page else None
-        if held[page] is None:
-            counts["tile_unheld"] += 1
-            continue
-        keys[identity] = media.local(held[page], list(found[1:]), edge=TILE_EDGE).rsplit("/", 1)[-1].removesuffix(".webp")
+    # File by file, so each scan is decoded once.
+    for identity, (path, box) in sorted(found.items(), key=lambda item: str(item[1][0])):
+        keys[identity] = media.local(path, list(box) if box else None, edge=TILE_EDGE).rsplit("/", 1)[-1].removesuffix(".webp")
 
     def render(key):
         try:
@@ -189,7 +174,7 @@ def export(corpus_root: Path, out: Path, workers: int = 8) -> dict:
     if data["revision"] is None:
         raise SystemExit("No clustering: run `atlas forms cluster` first.")
     out.mkdir(parents=True, exist_ok=False)
-    urls, packed, counts = tiles(corpus_root, data["revision"], out, workers)
+    urls, packed, counts = tiles(corpus_root, out, workers)
 
     parts = Parts(out)
     for row in packed.rows:
