@@ -169,3 +169,18 @@ def test_revision_mismatch(tmp_path: Path) -> None:
     (clone / ".git" / "HEAD").write_text("0" * 40 + "\n")
     with pytest.raises(hng.RevisionError):
         hng.import_all(tmp_path / "out", clone=clone, sources=["jou"])
+
+
+@pytest.mark.parametrize(
+    ("glyph", "forms", "present", "found"),
+    [
+        ("1010c", "3", {"hos1010ｃ.bmp"}, "hos1010ｃ.bmp"),
+        ("0407a", "1", {"hos0407.bmp"}, "hos0407.bmp"),
+        ("0309", "1", {"hos0309a.bmp"}, "hos0309a.bmp"),
+        ("0960", "1", {"hos0960a.bmp", "hos0960b.bmp"}, None),
+        ("0624a", "2", {"hos0624.bmp"}, None),
+        ("0001", "0", {"0001.bmp"}, "0001.bmp"),
+    ],
+)
+def test_crop_file(glyph: str, forms: str, present: set[str], found: str | None) -> None:
+    assert hng.crop_file("hos", glyph, forms, present) == found

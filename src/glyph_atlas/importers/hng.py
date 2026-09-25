@@ -18,9 +18,11 @@ index by 統合ID or 大字典, since some of their 文字 cells hold a number.
 Every crop becomes a unit with no page and no box, its `crop` the file at the pinned commit of the
 GitHub mirror and `crop_sha256` the checksum of the file in the clone. The code point is the index's
 UCS, which is the character's standard form: the crop shows the 字体 of that source, which HNG
-describes by the row it files it under rather than by a code point of its own. A cell whose crop is
-not in its folder is counted under `missing` and skipped; a crop that no row names is counted under
-`unused`.
+describes by the row it files it under rather than by a code point of its own. A file name may
+write the letter full-width (`hos1010ｃ.bmp`); a cell of a character with one 字体 may name `0407a`
+for the file `0407.bmp` or `0309` for `0309a.bmp`, and takes that file when it is the only one of its
+card. A cell whose crop is still not in its folder is counted under `missing` and skipped; a crop
+that no row names is counted under `unused`.
 
 The 63 folders become 63 documents. Title, category, date, 標準 and 公／私 come from HNG's source
 list (`sources.ja.html`), copied into `data/sources/hng-basic-data.yaml`. The date is read into a
@@ -34,6 +36,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import re
+import unicodedata
 from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -220,7 +223,7 @@ def crops_of(clone: Path, entries: list[dict], counts: Counter[str]) -> Iterator
         else:
             cells = _folder_cells(clone / entry["folder"] / FOLDER_INDEX, by_id, by_daijiten, daijiten)
         for glyph, row, forms, occurrences in _one_row_per_crop(list(cells), clone / entry["folder"], counts):
-            name = next((n for n in (f"{entry['id']}{glyph}.bmp", f"{glyph}.bmp") if n in present), None)
+            name = crop_file(entry["id"], glyph, forms, present)
             if name is None:
                 counts["missing"] += 1
                 continue
@@ -239,6 +242,22 @@ def crops_of(clone: Path, entries: list[dict], counts: Counter[str]) -> Iterator
                 mark=row[10],
             )
         counts["unused"] += len(present - named)
+
+
+def crop_file(source: str, glyph: str, forms: str, present: set[str]) -> str | None:
+    """The file in `present` that a cell's 代表字形ID names, by the rules of the module docstring."""
+    files = {unicodedata.normalize("NFKC", name): name for name in present}
+    for name in (f"{source}{glyph}.bmp", f"{glyph}.bmp"):
+        if name in files:
+            return files[name]
+    if forms.isdigit() and int(forms) > 1:
+        return None
+    card = GLYPH.match(glyph)["card"]
+    for prefix in (source, ""):
+        same_card = [name for key, name in files.items() if re.fullmatch(rf"{prefix}{card}[a-z]?\.bmp", key)]
+        if len(same_card) == 1:
+            return same_card[0]
+    return None
 
 
 def _one_row_per_crop(
