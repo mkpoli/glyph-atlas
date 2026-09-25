@@ -93,14 +93,17 @@ def load_set(name: str) -> list[dict]:
             r = json.loads(line)
             key = r["image"].rsplit("/", 1)[-1].removesuffix(".webp")
             out.append({"id": r["id"], "path": ROOT / "cache/display-crops" / key[:2] / (key + ".webp"),
-                        "truth": code_point(r["truth"]), "script": r["script"]})
+                        "truth": code_point(r["truth"]), "script": r["script"], "corrected": r["corrected"]})
         return out
     raise ValueError(name)
 
 
 class NDL:
-    """NDLkotenOCR-Lite PARSeq over one crop. `pad` puts the crop on a line-shaped white canvas
-    instead of stretching it to the model's 12:1 input, which is how the served wrapper reads it."""
+    """NDLkotenOCR-Lite PARSeq over one crop, stretched to the model's 12:1 line input as the
+    served wrapper does (`suggestions.preprocess`); `pad` puts the crop on a white line-shaped
+    canvas instead. A reading longer than one character counts by its first character, and NDL
+    gives at most three answers, so its top-5 is a top-3.
+    """
 
     def __init__(self, *, pad: bool):
         import onnxruntime as ort
@@ -227,7 +230,8 @@ def score(rows: list[dict], answers: list[list[str]]) -> dict:
     for row, top in zip(rows, answers, strict=True):
         fam = family(row["truth"])
         fams = [family(a) for a in top]
-        for key in ("all", row["script"]):
+        # `corrected`: crops a person relabelled, where the suggestion is the whole point.
+        for key in ("all", row["script"], *(["corrected"] if row.get("corrected") else [])):
             g = groups[key]
             g["n"] += 1
             g["top1"] += bool(top) and top[0] == row["truth"]

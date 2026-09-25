@@ -1,13 +1,15 @@
 """Write `reviewed.jsonl`: crops whose character a person settled on the review site.
 
-A crop counts when its latest review confirms the label, or marks it a wrong reading and names one
-character. Reports of a bad crop, a merged crop, a blank, or a wrong reading with no character name
-no truth, so they are left out. The input is the site's review events, exported from D1:
+A crop counts when its latest review that was not undone confirms the label, or corrects the
+character (`issue` `character` with a written character). A corrected reading, a bad crop, a
+merged crop or a blank names no character, so it is left out. The label and the image are the ones
+the reviewer saw, from the event's snapshot; the unit may have changed since. The input is the
+site's review events, exported from D1:
 
     bunx wrangler d1 execute glyph-atlas --remote --json --command "SELECT e.target id,
-      u.character c, json_extract(u.data,'$.image') image, json_extract(e.event,'$.evidence') ev
-      FROM events e JOIN units u ON u.id=e.target WHERE e.kind='review' ORDER BY e.at" \\
-      | jq -c '.[0].results[]' > events.jsonl
+      json_extract(e.event,'$.evidence') ev FROM events e
+      JOIN submissions s ON s.id=e.submission AND s.undone=0
+      WHERE e.kind='review' ORDER BY e.at" | jq -c '.[0].results[]' > events.jsonl
     python models/benchmark/reviewed.py events.jsonl
 """
 from __future__ import annotations
@@ -30,18 +32,17 @@ def truths(lines):
         answer = request if evidence["kind"] == "character-review" else next(
             (a for a in request.get("answers", []) if a["id"] == row["id"]), None)
         if answer is not None:
-            latest[row["id"]] = (row, answer)
-    for identity, (row, answer) in latest.items():
-        named = answer.get("character") or answer.get("correction")
+            latest[row["id"]] = (evidence["snapshot"]["character"], answer)
+    for identity, (seen, answer) in latest.items():
         if answer.get("verdict") == "match":
-            truth = row["c"]
-        elif answer.get("verdict") == "wrong" and answer.get("issue") in ("reading", "character") and named:
-            truth = named
+            truth = seen["label"]
+        elif answer.get("verdict") == "wrong" and answer.get("issue") == "character" and answer.get("character"):
+            truth = answer["character"]
         else:
             continue
         if truth and len(truth) == 1:
-            yield {"id": identity, "image": row["image"], "truth": truth, "label": row["c"],
-                   "script": str(refs.script_of(truth)), "corrected": truth != row["c"]}
+            yield {"id": identity, "image": seen["image"], "truth": truth, "label": seen["label"],
+                   "script": str(refs.script_of(truth)), "corrected": truth != seen["label"]}
 
 
 def main():
