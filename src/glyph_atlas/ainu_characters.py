@@ -20,8 +20,11 @@ own occurrence by id instead. Then:
   transcription or a review gives way to ainu-records' occurrence: the atlas's machine pairing is
   where the neighbour's name ends up on the ink. A flagged unit ainu-records reads the same stays
   flagged, since the agreement is with the reading the person doubted;
-* where ainu-records has only an OCR reading, none, or one a person marked uncertain, the atlas unit
-  stays as it is, since its label comes from the transcription;
+* where ainu-records has only an OCR reading, a unit the atlas stands behind stays as it is, since its
+  label comes from the transcription. One the atlas does not stand behind (withheld by the alignment
+  repair, rejected by the aligner, or flagged) is confirmed by an OCR reading of the same character
+  and gives way to one of another: its label is an unverified pairing, and the OCR reads the ink;
+* where ainu-records has no reading, or one a person marked uncertain, the atlas unit stays;
 * a machine unit on ink ainu-records rejected as not a character, or measured empty, is withheld,
   a unit an earlier merge imported included;
 * an occurrence only ainu-records has is imported, with the source of its label;
@@ -150,6 +153,14 @@ def written(unit: Unit) -> str:
     return normal(unit.text_source)
 
 
+def trusted(unit: Unit) -> bool:
+    """Whether the atlas stands behind a unit's label: decided by a person, or aligned and not withheld."""
+    if unit.review in DECIDED:
+        return True
+    repair = unit.meta.get("alignment_repair") or {}
+    return unit.review not in (ReviewState.REJECTED, ReviewState.DISPUTED) and repair.get("withheld") is not True
+
+
 def unit_id(row: Occurrence) -> str:
     return f"ar:{row.key.replace('/', '--')}:{row.id}"
 
@@ -196,7 +207,7 @@ class Plan:
     keep_atlas: list[tuple[str, Occurrence]] = field(default_factory=list)  # atlas unit id, its ainu-records partner
     confirm: list[tuple[str, Occurrence]] = field(default_factory=list)  # kept, and the agreement lifts a withhold
     replace: list[tuple[str, Occurrence]] = field(default_factory=list)  # atlas unit id, the occurrence taking its place
-    keep_withheld: list[tuple[str, Occurrence]] = field(default_factory=list)  # ainu-records has no trusted reading
+    keep_withheld: list[tuple[str, Occurrence]] = field(default_factory=list)  # ainu-records has no reading to weigh against it
     withhold: list[tuple[str, Occurrence]] = field(default_factory=list)  # on ink ainu-records rejected
     import_new: list[Occurrence] = field(default_factory=list)
     imported_before: list[str] = field(default_factory=list)  # units an earlier merge imported
@@ -208,7 +219,7 @@ class Plan:
         return {"atlas kept, decided by a person": len(self.keep_atlas),
                 "atlas kept, confirmed by ainu-records": len(self.confirm),
                 "atlas replaced by ainu-records": len(self.replace),
-                "atlas kept, ainu-records has no trusted reading": len(self.keep_withheld),
+                "atlas kept, ainu-records has no reading to weigh": len(self.keep_withheld),
                 "atlas withheld, ainu-records rejected the ink": len(self.withhold),
                 "imported from ainu-records": len(self.import_new),
                 "imported by label source": dict(Counter(o.origin for o in self.import_new)),
@@ -268,7 +279,7 @@ def plan(atlas: Path, records: Path, *, min_iou: float = MIN_IOU, log: ReviewLog
                     result.agree["decided, same" if same else "decided, different"] += 1
                 elif row.rejected:
                     result.withhold.append((uid, row))
-                elif row.origin not in TRUSTED_ORIGINS or not row.label or row.doubted:
+                elif not row.label or row.doubted or (row.origin not in TRUSTED_ORIGINS and trusted(unit)):
                     result.keep_withheld.append((uid, row))
                 elif same:
                     (result.keep_atlas if unit.review == ReviewState.DISPUTED else result.confirm).append((uid, row))
@@ -351,9 +362,10 @@ def build(result: Plan, atlas: Path, records: Path, out: Path, *, log: ReviewLog
         note(uid, row)
         counts["atlas kept"] += 1
     for uid, row in result.confirm:
+        source = "its OCR" if row.origin == "ocr" else "its transcription"
         repair = {**(units[uid].meta.get("alignment_repair") or {}), "status": "confirmed", "reliable": True,
                   "withheld": False, "quiz": True,
-                  "reason": "ainu-records reads this ink as the same character from its transcription"}
+                  "reason": f"ainu-records reads this ink as the same character from {source}"}
         note(uid, row, alignment_repair=repair)
         counts["atlas confirmed"] += 1
     for uid, row in result.withhold:

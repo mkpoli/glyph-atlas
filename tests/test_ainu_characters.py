@@ -268,3 +268,16 @@ def test_merge_events_never_reuse_an_event_number(world, tmp_path):
     ids = [json.loads(line)["id"] for line in (out / "reviews.jsonl").read_text(encoding="utf-8").splitlines()]
     assert len(ids) == len(set(ids)) and "rv00000001" not in ids[1:]
     assert Store(out)  # the rebuilt store opens over the merged tables without a stale-table refusal
+
+
+def test_ocr_settles_a_unit_the_atlas_does_not_stand_behind(world):
+    atlas, records = world
+    units = tables.read(atlas / "units.parquet", Unit)
+    withheld = {"alignment_repair": {"status": "uncertain", "withheld": True, "quiz": False}}
+    units[3] = units[3].model_copy(update={"meta": withheld})  # OCR reads ス where the atlas says ヌ
+    tables.write(atlas / "units.parquet", units, Unit)
+    result = ainu_characters.plan(atlas, records)
+    assert uid(3) in [u for u, _ in result.replace], "an unverified pairing gives way to a reading of the ink"
+    units[3] = units[3].model_copy(update={"text_source": "ス", "unicode": " ".join(refs.to_code_points("ス"))})
+    tables.write(atlas / "units.parquet", units, Unit)
+    assert uid(3) in [u for u, _ in ainu_characters.plan(atlas, records).confirm], "the OCR agrees, so it is released"
