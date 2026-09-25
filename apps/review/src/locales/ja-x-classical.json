@@ -101,7 +101,6 @@
   "explore.empty.noOccurrenceOf": "此處ニ{char}ノ例ナシ",
   "explore.empty.noOccurrenceOfTerm": "{term}ノ例ナシ",
   "explore.empty.nothingFlagged": "指摘セラレタルモノナシ",
-  "explore.empty.nothingHard": "讀ミ難キモノナシ",
   "explore.empty.samplesFailed": "{char}ノ見本ヲ讀込ムコト能ハズ",
   "explore.filter.all": "總テ",
   "explore.filter.kana": "假名",
@@ -112,7 +111,6 @@
   "explore.grid.collection": "文字ノ集",
   "explore.heading.atlas": "文字字譜",
   "explore.heading.flagged": "指摘セラレタル字",
-  "explore.heading.hard": "難讀",
   "explore.meta.characters.one": "{count}字",
   "explore.meta.characters.other": "{count}字",
   "explore.meta.glyphs.one": "字形{count}",
@@ -242,8 +240,6 @@
   "nav.explore": "閱覽",
   "nav.flagged": "指摘",
   "nav.forms": "字體",
-  "nav.hard": "難讀",
-  "nav.hard.title": "二人ノ校閱者ノ保留セシ切出",
   "nav.quickReview": "速校",
   "production.aria": "製作：{label}",
   "production.handwritten": "手書",
@@ -412,5 +408,6 @@
   "quiz.reference.heading": "參考：確認濟・一覽濟",
   "quiz.reference.inspect": "參考{label}（{state}）ヲ檢ス",
   "quiz.reference.confirmed": "確認濟",
-  "quiz.reference.seen": "一覽濟"
+  "quiz.reference.seen": "一覽濟",
+  "state.hard": "難讀：二人ノ校閱者保留セリ"
 }
