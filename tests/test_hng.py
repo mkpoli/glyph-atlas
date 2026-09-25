@@ -184,3 +184,7 @@ def test_revision_mismatch(tmp_path: Path) -> None:
 )
 def test_crop_file(glyph: str, forms: str, present: set[str], found: str | None) -> None:
     assert hng.crop_file("hos", glyph, forms, present) == found
+
+
+def test_crop_file_prefers_the_exact_name() -> None:
+    assert hng.crop_file("myz", "0197", "1", {"myz019７.bmp", "myz0197.bmp"}) == "myz0197.bmp"
