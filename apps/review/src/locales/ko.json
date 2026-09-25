@@ -58,7 +58,7 @@
   "common.retry": "재시도",
   "common.saving": "저장 중…",
   "common.skip": "건너뛰기",
-  "common.skip.arrow": "건너뛰기 →",
+  "common.skip.arrow": "잘 모르겠음 · 건너뛰기 →",
   "common.skip.hint": "판단하기 어렵거나 나중으로 미루기",
   "common.tryAgain": "다시 시도",
   "corpus.addNote": "메모 추가",
