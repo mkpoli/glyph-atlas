@@ -250,7 +250,7 @@
   .page-stage:active{cursor:grabbing}
   .page-stage.drawing{cursor:crosshair}
   .page-sheet{position:absolute;left:0;top:0;transform-origin:0 0}
-  .page-sheet img{display:block;width:100%;height:100%;user-select:none;pointer-events:none}
+  .page-sheet img{display:block;width:100%;height:100%;user-select:none;pointer-events:none;image-orientation:none}
   .page-sheet svg{position:absolute;inset:0;width:100%;height:100%}
   .unit-box{fill:#d0890014;stroke:#c07c00;stroke-width:1.5;cursor:pointer}
   .unit-box.manual{fill:#6356e51f;stroke:var(--accent);stroke-width:2}
