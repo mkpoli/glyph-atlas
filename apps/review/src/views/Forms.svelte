@@ -2,7 +2,7 @@
   import { onMount } from 'svelte'
   import ReferenceGlyph from '../components/ReferenceGlyph.svelte'
   import { families as loadFamilies, family as loadFamily, members as loadMembers, decide, report, split as loadSplit } from '../lib/forms.js'
-  import { number, reviewer } from '../lib/client.js'
+  import { number, reviewer, stored, remember } from '../lib/client.js'
 
   let { initialFamily = '' } = $props()
   let list = $state([]), filter = $state(''), current = $state(null), code = $state('')
@@ -13,6 +13,9 @@
   let picked = $state(new Set()), pickAnchor = null, arrange = $state('shape')
   // A cluster divided by shape on request; groups are a way to select glyphs, not a stored result.
   let splitK = $state(0), groups = $state([])
+  // Clusters with glyphs still to name come first; finished ones keep their order below them.
+  let openFirst = $state(stored('atlas.forms.unassignedFirst', true) !== false)
+  const isOpen = c => !c.form && c.assigned < c.count
   const cluster = $derived(current?.items[active] ?? null)
   const shown = $derived(list.filter(f => !filter.trim() || f.char.includes(filter.trim()) || f.label.includes(filter.trim())
     || f.code_point.toLowerCase().includes(filter.trim().toLowerCase())))
@@ -28,8 +31,12 @@
     error = ''
     code = codePoint
     history.replaceState(null, '', '#/forms?family=' + encodeURIComponent(codePoint))
-    current = await loadFamily(codePoint, arrange)
-    if (!keep) { picked = new Set(); pickAnchor = null; active = Math.max(0, current.items.findIndex(c => !c.form && c.assigned < c.count)); close() }
+    const keepId = keep ? current?.items[active]?.id : null
+    const loaded = await loadFamily(codePoint, arrange)
+    if (openFirst) loaded.items = [...loaded.items.filter(isOpen), ...loaded.items.filter(c => !isOpen(c))]
+    current = loaded
+    if (keepId) active = Math.max(0, current.items.findIndex(c => c.id === keepId))
+    if (!keep) { picked = new Set(); pickAnchor = null; active = Math.max(0, current.items.findIndex(isOpen)); close() }
   }
   async function show(index) {
     active = index; open = current.items[index].id; chosen = new Set(); anchor = null
@@ -90,7 +97,8 @@
       await pick(code, true)
       await refreshList()
       if (wasOpen) { const page = await loadMembers(wasOpen, 0, Math.min(500, Math.max(240, glyphs.length)), order); glyphs = page.items; chosen = new Set(); if (splitK) groups = (await loadSplit(wasOpen, splitK)).groups }
-      else if (!units.length) active = nextOpen(index)
+      // With open clusters first, the one just named moved below, and the next took its place.
+      else if (!units.length) active = nextOpen(openFirst ? Math.max(-1, index - targets.length) : index)
     } catch (e) { error = e.message } finally { busy = false }
   }
   // A bad crop or a wrong transcription is a data error, not a form: it goes to the review queue.
@@ -115,7 +123,7 @@
     } catch (e) { error = e.message } finally { busy = false }
   }
   function nextOpen(from) {
-    const after = current.items.findIndex((c, i) => i > from && !c.form && c.assigned < c.count)
+    const after = current.items.findIndex((c, i) => i > from && isOpen(c))
     return after >= 0 ? after : Math.min(from + 1, current.items.length - 1)
   }
   function keydown(event) {
@@ -152,6 +160,7 @@
     next.has(id) ? next.delete(id) : next.add(id)
     picked = next; pickAnchor = id
   }
+  async function toggleOpenFirst() { openFirst = !openFirst; remember('atlas.forms.unassignedFirst', openFirst); await pick(code, true) }
   async function rearrange(value) { arrange = value; const id = cluster?.id; await pick(code, true); active = Math.max(0, current.items.findIndex(c => c.id === id)) }
   function scrollActive() { requestAnimationFrame(() => document.querySelector('.form-cluster.active')?.scrollIntoView({ block: 'nearest' })) }
   onMount(async () => {
@@ -276,6 +285,7 @@
             <div class="filter-tabs" role="group" aria-label="Cluster order">
               <button class:active={arrange === 'shape'} aria-pressed={arrange === 'shape'} onclick={() => rearrange('shape')}>Similar shapes together</button>
               <button class:active={arrange === 'size'} aria-pressed={arrange === 'size'} onclick={() => rearrange('size')}>Largest first</button>
+              <button class:active={openFirst} aria-pressed={openFirst} onclick={toggleOpenFirst}>Unassigned first</button>
             </div>
           </div>
           <ol class="cluster-grid">
