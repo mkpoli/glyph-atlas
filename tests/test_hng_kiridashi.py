@@ -120,3 +120,15 @@ def test_revision_mismatch(tmp_path: Path) -> None:
 )
 def test_targets(gid: str, flag: str, found: list[str]) -> None:
     assert kd.targets("myz", gid, flag, GLYPHS["myz"]) == found
+
+
+def test_a_box_past_the_page_edge_is_clamped(tmp_path: Path) -> None:
+    clone = tmp_path / "clone"
+    clone.mkdir()
+    rows = [row(1, "f2", 0, 0, (3300, 393, 60, 77), "妙", "0300")]
+    (clone / "H08_myz_P2334.tsv").write_text("\n".join(HEADER + rows) + "\n", encoding="utf-8")
+    counts = kd.import_all(tmp_path / "out", clone=clone)
+    [unit] = tables.read(tmp_path / "out" / "units.parquet", Unit)
+    assert counts["clamped"] == 1
+    assert (unit.box.x, unit.box.w, unit.upstream["box_drawn"]) == (3300, 40, "3300,393,60,77")
+    assert tables.Dataset(tmp_path / "out").validate() == []
