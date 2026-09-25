@@ -6,8 +6,11 @@ its crops were given, marked clear when that style holds at least `--clear` of t
 `review.html`, a self-contained page (the crops are embedded) that shows every document with its
 crops, the shares and a style menu. Every menu starts empty, and a proposal enters it only when the
 person presses its button, so no document is recorded as reviewed that nobody looked at. Its button copies the chosen entries in the
-form `data/vocab/document-styles.yaml` takes. The page records the teacher's checkpoint and the
-number of crops, not the shares, which derive from the teacher's CC BY-NC training data.
+form `data/vocab/document-styles.yaml` takes, to paste under its `documents:`. The page records the
+teacher's checkpoint and the number of crops, not the shares, which derive from the teacher's
+CC BY-NC training data. A document the file already confirms is left off the page, and choices are
+kept in the browser only for this exact page, so a page made from other suggestions starts empty.
+All suggestions must come from one checkpoint.
 
 Run it from the repository root:
 
@@ -17,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import html
 import io
 import json
@@ -70,15 +74,18 @@ def titles(corpora: list[str]) -> dict[str, str]:
 
 def page(documents: list[dict], names: dict[str, str], per_document: int) -> str:
     options = [value for value in style.vocabulary() if value != style.UNASSESSED]
+    digest = hashlib.sha256(json.dumps([[d["document_id"], d["style"], d["crops"], d["checkpoint_sha256"]]
+                                        for d in documents]).encode()).hexdigest()[:16]
+    attr = html.escape
     items = []
     for doc in documents:
         shares = ", ".join(f"{name} {doc['counts'].get(name, 0)}" for name in CLASSES if doc["counts"].get(name))
         menu = "".join(f'<option value="{value}">{value}</option>' for value in ["", *options])
-        crops = "".join(f'<img src="{thumbnail(row["crop"])}" title="{html.escape(row["character"])} {row["style"]}">'
+        crops = "".join(f'<img src="{thumbnail(row["crop"])}" title="{attr(row["character"])} {attr(row["style"])}">'
                         for row in sorted(doc["rows"], key=lambda r: r["id"])[:per_document])
         items.append(
-            f'<section data-id="{html.escape(doc["document_id"])}" data-crops="{doc["crops"]}" '
-            f'data-suggested="{doc["style"]}" data-checkpoint="{doc["checkpoint_sha256"]}">'
+            f'<section data-id="{attr(doc["document_id"])}" data-crops="{doc["crops"]}" '
+            f'data-suggested="{attr(doc["style"])}" data-checkpoint="{attr(doc["checkpoint_sha256"])}">'
             f'<h2>{html.escape(names.get(doc["document_id"], ""))} <code>{html.escape(doc["document_id"])}</code></h2>'
             f'<p>Suggested <b>{doc["style"]}</b> for {doc["crops"]} kanji crops ({shares})'
             f'{" (clear)" if doc["clear"] else " (split)"}</p>'
@@ -86,7 +93,7 @@ def page(documents: list[dict], names: dict[str, str], per_document: int) -> str
             f'<label>Style <select>{menu}</select></label> <button type=button class=use>Use {doc["style"]}</button> '
             f'<label>Note <input size=50></label></section>')
     script = """
-const KEY = 'document-styles-review';
+const KEY = 'document-styles-review:' + document.body.dataset.page;
 function save() {
   const state = {};
   for (const s of document.querySelectorAll('section'))
@@ -107,7 +114,7 @@ function yaml() {
   for (const s of document.querySelectorAll('section')) {
     const value = s.querySelector('select').value, note = s.querySelector('input').value.trim();
     if (!value) continue;
-    out.push(`  ${s.dataset.id}:`, `    style: ${value}`, `    evidence:`,
+    out.push(`  ${JSON.stringify(s.dataset.id)}:`, `    style: ${value}`, `    evidence:`,
       `      - source: reviewer`, `        reviewed: ${day}`,
       `        note: ${JSON.stringify(note || 'kanji crops compared with the style teacher suggestion')}`,
       `      - source: style-teacher`, `        checkpoint_sha256: ${s.dataset.checkpoint}`,
@@ -140,11 +147,13 @@ document.querySelector('#copy').addEventListener('click', async () => {
            "@media(prefers-color-scheme:dark){body{background:#1b1b1b;color:#eee}section{border-color:#444}}")
     header = ("<h1>Document styles to confirm</h1><p>The suggestions come from the style teacher "
               "(trained on Calli-Tongji, CC BY-NC 4.0) and nobody has reviewed them. Choose a style only "
-              "where the crops show it; leave the menu empty to record nothing. The button beside a menu fills in the suggestion. Choices are kept in this "
+              "where the crops show it; leave the menu empty to record nothing. Paste the copied entries under documents: in "
+              "data/vocab/document-styles.yaml, in place of {} while it is empty. The button beside a menu fills in the suggestion. Choices are kept in this "
               "browser. <button id=copy>Copy YAML</button> <span id=status></span></p>"
               "<textarea id=out readonly></textarea>")
     return (f"<!doctype html><html lang=en><meta charset=utf-8><meta name=viewport content='width=device-width'>"
-            f"<title>Document styles</title><style>{css}</style>{header}{''.join(items)}<script>{script}</script>")
+            f"<title>Document styles</title><style>{css}</style><body data-page={digest}>{header}{''.join(items)}"
+            f"<script>{script}</script>")
 
 
 def main() -> None:
@@ -161,11 +170,17 @@ def main() -> None:
     for corpus in args.corpora:
         path = Path("work/style-suggestions") / corpus / "suggestions.jsonl"
         rows.extend(json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line)
-    documents = proposals(rows, min_crops=args.min_crops, clear=args.clear)
+    checkpoints = {row["checkpoint_sha256"] for row in rows}
+    if len(checkpoints) != 1:
+        raise SystemExit(f"the suggestions come from {len(checkpoints)} checkpoints; rerun suggest.py for one")
+    done = style.confirmed()
+    documents = [doc for doc in proposals(rows, min_crops=args.min_crops, clear=args.clear)
+                 if doc["document_id"] not in done]
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(page(documents, titles(args.corpora), args.per_document), encoding="utf-8")
     clear = sum(doc["clear"] for doc in documents)
-    print(json.dumps({"documents": len(documents), "clear": clear, "split": len(documents) - clear,
+    print(json.dumps({"documents": len(documents), "already_confirmed": len(done), "clear": clear,
+                      "split": len(documents) - clear,
                       "styles": dict(Counter(doc["style"] for doc in documents if doc["clear"])),
                       "out": str(args.out)}, ensure_ascii=False))
 

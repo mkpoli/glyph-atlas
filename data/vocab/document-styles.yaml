@@ -1,6 +1,7 @@
 # Styles a person has confirmed for whole documents, keyed by document id. A document's own `style`
 # field holds what its source states; an entry here is used in its place. `style` is a value of
-# `style.yaml`. `evidence` lists what the decision rests on: the reviewer and the day, and any
-# suggestion that was shown to them (the style teacher, `models/style/`, with its checkpoint).
+# `style.yaml` other than `unassessed`. `evidence` lists what the decision rests on: exactly one
+# `reviewer` item with the day (`reviewed`), and any `style-teacher` suggestion shown to them
+# (`models/style/`, with its checkpoint) or `reference` that informed it.
 version: 1
 documents: {}

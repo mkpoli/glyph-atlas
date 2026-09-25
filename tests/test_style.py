@@ -53,20 +53,57 @@ def test_a_written_style_reads_back(tmp_path):
     assert tables.read(tmp_path / "pages.parquet", Page)[0].style == "mixed"
 
 
-def test_a_confirmed_document_style_is_used_and_checked(tmp_path, monkeypatch):
+REVIEWED = "evidence: [{source: reviewer, reviewed: 2026-09-26}]"
+
+
+def confirm(tmp_path, monkeypatch, body):
     confirmed = tmp_path / "document-styles.yaml"
-    confirmed.write_text("documents:\n  d:\n    style: cursive\n    evidence: [{source: reviewer}]\n", encoding="utf-8")
+    confirmed.write_text(body, encoding="utf-8")
     monkeypatch.setattr(style, "DOCUMENTS", confirmed)
+    return confirmed
+
+
+def test_a_confirmed_document_style_is_used(tmp_path, monkeypatch):
+    confirm(tmp_path, monkeypatch, f"documents:\n  d:\n    style: cursive\n    {REVIEWED}\n")
     book = Document(id="d", title="t")
     assert style.document_style(book) == "cursive"
     assert style.style_of(Unit(id="u"), page(), book) == "cursive"
     assert style.document_style(Document(id="other", title="t", style="running")) == "running"
-    confirmed.write_text("documents:\n  d:\n    style: sosho\n    evidence: [{source: reviewer}]\n", encoding="utf-8")
+
+
+@pytest.mark.parametrize("entry", [
+    f"style: sosho\n    {REVIEWED}",
+    f"style: unassessed\n    {REVIEWED}",
+    "style: cursive",
+    "style: cursive\n    evidence: nope",
+    "style: cursive\n    evidence: {a: 1}",
+    "style: cursive\n    evidence: [{source: style-teacher}]",
+    "style: cursive\n    evidence: [{source: reviewer}]",
+    "style: cursive\n    evidence: [{source: reviewer, reviewed: 2026-09-26}, {source: rumour}]",
+])
+def test_an_entry_that_is_not_a_reviewed_style_is_refused(tmp_path, monkeypatch, entry):
+    confirm(tmp_path, monkeypatch, f"documents:\n  d:\n    {entry}\n")
     with pytest.raises(ValueError):
-        style.document_style(book)
-    confirmed.write_text("documents:\n  d:\n    style: cursive\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="no evidence"):
-        style.document_style(book)
+        style.confirmed()
+
+
+@pytest.mark.parametrize("body", [
+    "documents: [a]\n",
+    "documents:\n  d: regular\n",
+    f"documents:\n  123:\n    style: cursive\n    {REVIEWED}\n",
+    f"documents:\n  d:\n    style: cursive\n    {REVIEWED}\n  d:\n    style: running\n    {REVIEWED}\n",
+])
+def test_a_malformed_file_names_itself(tmp_path, monkeypatch, body):
+    path = confirm(tmp_path, monkeypatch, body)
+    with pytest.raises(ValueError, match="document-styles.yaml|listed twice"):
+        style.confirmed()
+    assert path.exists()
+
+
+def test_a_caller_cannot_change_the_cached_entries(tmp_path, monkeypatch):
+    confirm(tmp_path, monkeypatch, f"documents:\n  d:\n    style: cursive\n    {REVIEWED}\n")
+    style.confirmed()["d"]["style"] = "running"
+    assert style.confirmed()["d"]["style"] == "cursive"
 
 
 def test_the_confirmed_file_in_the_repository_is_valid():
