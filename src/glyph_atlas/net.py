@@ -146,6 +146,7 @@ def download(
     sleeper: Callable[[float], None] | None = None,
     timeout: float = 30.0,
     meta: dict[str, Any] | None = None,
+    user_agent: str | None = None,
 ) -> Path:
     """Fetch `url` into `dest` and return `dest`.
 
@@ -157,7 +158,8 @@ def download(
     `refresh` is set. An interrupted download leaves `<dest>.part` and the next call resumes it when
     the server answers a `Range` request with 206. `clock` and `sleeper` stand in for `time.monotonic`
     and `time.sleep`, and the module-level `CLOCK` and `SLEEP` do the same for every caller. `meta`,
-    when given, takes the status line and headers of the request that succeeded.
+    when given, takes the status line and headers of the request that succeeded. `user_agent` replaces
+    the project User-Agent for a host whose policy asks for a client name and version.
     """
     dest = Path(dest)
     if dest.exists() and not refresh:
@@ -189,7 +191,10 @@ def download(
             headers = {"Accept": "*/*"}
             if start:
                 headers["Range"] = f"bytes={start}-"
-            agents = (BROWSER_USER_AGENT,) if browser_agent else _user_agents(url)
+            if user_agent is not None:
+                agents: tuple[str, ...] = (user_agent,)
+            else:
+                agents = (BROWSER_USER_AGENT,) if browser_agent else _user_agents(url)
             try:
                 response, agent = _get(
                     client, url, headers=headers, agents=agents, interval=interval, clock=now, sleeper=sleep
