@@ -58,9 +58,7 @@
 </script>
 
 <section class="explore history">
-  <div class="explore-status">
-    <h1 class="visually-hidden">{t('history.heading')}</h1>
-  </div>
+  <h1 class="visually-hidden">{t('history.heading')}</h1>
   <div class="collection-toolbar">
     <div class="filter-tabs" aria-label={t('history.onlyMine.aria')}>
       <button class:active={onlyMine} aria-pressed={onlyMine} onclick={toggleMine}>{t('history.onlyMine')}</button>
