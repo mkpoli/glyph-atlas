@@ -64,20 +64,22 @@ class Packs:
 
 
 def read_crops(db, media):
-    """Store image-only OCR for every crop without it; a publication never ships a crop unread.
+    """Store image-only OCR for every crop; a publication never ships a crop unread.
 
-    Results are cached per image and model signature, so a resumed or repeated export reads
-    only new crops.
+    A crop read by other models than the current ones is read again, so one publication never
+    mixes models. Results are cached per image and model signature.
     """
     from glyph_atlas.review.suggestions import Recognizer
 
-    rows = db.execute("SELECT id,data FROM units WHERE origin='local' "
-                      "AND json_extract(visual,'$.status') IS NOT 'ready'").fetchall()
-    if not rows:
-        return
     model = Recognizer()
     if not model.engines or any(engine["provider"] != "CUDAExecutionProvider" for engine in model.engines):
         raise RuntimeError("Reading crops for publication requires the configured CUDA models")
+    current = encoded(model.engines)
+    rows = [(identity, raw) for identity, raw, status, engines in db.execute(
+        "SELECT id,data,json_extract(visual,'$.status'),json_extract(visual,'$.engines') "
+        "FROM units WHERE origin='local'") if status != "ready" or engines != current]
+    if not rows:
+        return
     signature = hashlib.sha256(json.dumps(model.engines, sort_keys=True).encode()).hexdigest()[:16]
     cache = Path("cache/cloudflare-suggestions") / signature
     cache.mkdir(parents=True, exist_ok=True)
@@ -92,7 +94,10 @@ def read_crops(db, media):
             with Image.open(media.materialize(key)) as picture:
                 result = model.read(picture.convert("RGB"))
             result.update(input_image=image, verified=False)
-            saved.write_text(json.dumps(result, ensure_ascii=False))
+            # Renamed into place, so an interrupted export never leaves a partial cache entry.
+            partial = saved.with_suffix(".partial")
+            partial.write_text(json.dumps(result, ensure_ascii=False))
+            partial.replace(saved)
         db.execute("UPDATE units SET visual=? WHERE id=?", (encoded(result), identity))
         if index % 500 == 0:
             db.commit()
