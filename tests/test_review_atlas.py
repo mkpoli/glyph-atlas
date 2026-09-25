@@ -360,6 +360,38 @@ def test_model_rejections_are_pending_and_human_undo_restores_that_state(dataset
     assert client.get('/atlas').json()['counts'] == {'pending': 16}
 
 
+def test_flagged_view_puts_crops_already_reviewed_in_the_inspector_last(dataset):
+    """A flagged crop is a queue: one nobody has looked at yet still needs a person's eyes first."""
+    client = TestClient(create_app(dataset))
+    payload = round_payload(client, count=2)
+    for answer in payload['answers']:
+        answer.update(verdict='wrong', issue='blank')
+    assert client.post('/atlas/rounds', json=payload).status_code == 200
+    baseline = [item['id'] for item in client.get('/atlas?state=flagged').json()['items']]
+    assert len(baseline) == 2
+    target = baseline[0]
+
+    current = client.get('/atlas/characters/' + target).json()
+    edit = {'id': str(uuid4()), 'client_id': 'inspector', 'revision': current['revision'],
+            'image_sha256': current['image_sha256'], 'verdict': 'wrong', 'issue': 'crop'}
+    saved = client.post('/atlas/characters/' + target, json=edit)
+    assert saved.status_code == 200, saved.text
+
+    # A crop reviewed in the inspector moves behind the one nobody has looked at yet.
+    ordered = [item['id'] for item in client.get('/atlas?state=flagged').json()['items']]
+    assert ordered == [baseline[1], target]
+
+    # Undoing that review is the store's own compensating event, the same mark any other undo
+    # writes; taking it back makes the crop as unreviewed as it was before.
+    review = next(r for r in saved.json()['results'] if r['field'] == 'review')
+    Store(dataset).record_batch([ReviewRequest(
+        target_type='unit', target_id=target, field='review', new=review['review']['old'],
+        base_revision=review['revision'], client_id='inspector',
+        idempotency_key='undo:' + review['id'], evidence='undo of ' + review['id'])])
+    restored = [item['id'] for item in client.get('/atlas?state=flagged').json()['items']]
+    assert restored == baseline
+
+
 def test_changed_url_keyed_image_cannot_be_saved_as_the_image_seen(dataset, tmp_path):
     from glyph_atlas import images
 
