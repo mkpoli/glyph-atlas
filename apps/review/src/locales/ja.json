@@ -109,6 +109,8 @@
   "explore.filter.label": "文字種",
   "explore.findReading.aria": "読みを検索",
   "explore.findReading.placeholder": "読みを検索…",
+  "explore.flagged.hideReported": "報告済みを隠す",
+  "explore.flagged.showReported": "報告済み{count}件を表示",
   "explore.grid.collection": "文字コレクション",
   "explore.heading.atlas": "文字アトラス",
   "explore.heading.flagged": "フラグ付きの文字",

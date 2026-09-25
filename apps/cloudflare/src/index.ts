@@ -89,6 +89,11 @@ const SKIPS = `FROM skips k JOIN submissions b ON b.id=k.submission AND b.undone
   WHERE k.target=units.id AND k.box IS json_extract(units.data,'$.box')`;
 // A pending crop two reviewers skipped is `hard`: it leaves the rounds for its own list.
 const HARD = `(SELECT count(DISTINCT k.actor) ${SKIPS})>=2`;
+// A standing review from the character inspector (`character-review`), not a round's own verdict;
+// an undone review stops counting.
+export const reviewedInInspectorQuery = () => `EXISTS(SELECT 1 FROM events e JOIN submissions f ON f.id=e.submission AND f.undone=0
+  WHERE e.target=units.id AND e.kind='review' AND json_extract(json_extract(e.event,'$.evidence'),'$.kind')='character-review')`;
+const REVIEWED_IN_INSPECTOR = reviewedInInspectorQuery();
 const SEEN = `EXISTS(SELECT 1 FROM seen s JOIN submissions b ON b.id=s.submission AND b.undone=0
   WHERE s.target=units.id AND s.box IS json_extract(units.data,'$.box'))`;
 const EFFECTIVE_STATE = `iif(state='pending' AND ${HARD},'hard',iif(state='pending' AND ${SEEN},'seen',state))`;
@@ -178,6 +183,12 @@ async function catalogue(env: Env, q: URLSearchParams) {
   // `attention` is the Flagged view: every crop waiting for a person, flagged or hard to read.
   if (q.get('state') === 'attention') where.push(`${state} IN ('flagged','hard')`);
   else if (q.get('state') && q.get('state') !== 'all') { where.push(`${state}=?`); values.push(q.get('state')!) }
+  // The Flagged view hides crops already looked at in the inspector by default; `reported=show`
+  // (the default for every other caller) leaves them in. `reportedCountWhere` is captured before the
+  // hide filter, so the count is of what is hidden, not what remains.
+  const flaggedView = ['flagged', 'attention'].includes(q.get('state') ?? '');
+  const reportedCountWhere = flaggedView ? [...where, REVIEWED_IN_INSPECTOR] : null;
+  if (flaggedView && q.get('reported') === 'hide') where.push(`NOT ${REVIEWED_IN_INSPECTOR}`);
   // A round of one character deals its named and then its untouched corpus glyphs after its local crops.
   const dealt = review && reading !== null && ['all', 'pending'].includes(q.get('state') || 'all') && !q.get('q')
     && ['all', categoryOf(reading)].includes(q.get('group') || 'all');
@@ -189,11 +200,11 @@ async function catalogue(env: Env, q: URLSearchParams) {
   const others = review ? `EXISTS(SELECT 1 ${SKIPS}${reviewer ? ` AND k.actor!=${quoted(reviewer)}` : ''}) DESC,origin='corpus',` : '';
   const order = others + (review && seed % 5 ? 'priority,' : '');
   // Flagged view: a crop already looked at in the inspector queues behind the ones nobody has reviewed yet.
-  const reviewedLast = ['flagged', 'attention'].includes(q.get('state') ?? '') ? `EXISTS(SELECT 1 FROM events e JOIN submissions f ON f.id=e.submission AND f.undone=0
-    WHERE e.target=units.id AND e.kind='review' AND json_extract(json_extract(e.event,'$.evidence'),'$.kind')='character-review'),` : '';
-  const [count, window] = await env.DB.batch([
+  const reviewedLast = flaggedView ? `${REVIEWED_IN_INSPECTOR},` : '';
+  const [count, window, reportedCount] = await env.DB.batch([
     env.DB.prepare(`SELECT count(*) AS n FROM ${from}`).bind(...fromValues),
     env.DB.prepare(`SELECT *,${state} AS effective,(SELECT shape_order FROM unit_shapes s WHERE s.id=units.id) AS shape_order FROM ${from} ORDER BY ${order}${reviewedLast} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...fromValues, seed + 1, limit, offset),
+    ...(reportedCountWhere ? [env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${reportedCountWhere.join(' AND ')}`).bind(...values)] : []),
   ]);
   const listed = (count.results[0] as { n: number }).n;
   const items: Json[] = (window.results as (UnitRow & { effective: string; shape_order: number | null })[])
@@ -216,6 +227,7 @@ async function catalogue(env: Env, q: URLSearchParams) {
   return { total, next_offset: next, available: Object.values(counts).reduce((a:number,b:any) => a+b,0),
     counts, purpose, production, review_limit:96, review_epoch: await meta(env, 'review_epoch') || 0, query: q.get('q'),
     categories: [...categories.values()].sort((a,b) => b.total-a.total || a.label.localeCompare(b.label)),
+    reported_count: reportedCount ? (reportedCount.results[0] as { n: number }).n : 0,
     items };
 }
 // Untouched assigned corpus glyphs per character in this material.

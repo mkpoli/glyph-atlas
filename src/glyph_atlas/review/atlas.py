@@ -793,6 +793,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         reviewer: str | None = Query(default=None, max_length=128),
         purpose: Literal["browse", "review"] = "browse",
         production: Literal["all", "non-movable-type", "manuscript", "woodblock", "movable-type", "mixed", "unknown"] | None = None,
+        reported: Literal["show", "hide"] = "show",
         seed: int = 0,
         limit: Annotated[int, Query(ge=1, le=96)] = 60,
         offset: Annotated[int, Query(ge=0)] = 0,
@@ -847,10 +848,16 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         if purpose == "review":
             # A crop another reviewer skipped comes first: it needs a second pair of eyes.
             selected.sort(key=lambda row: not any(actor != reviewer for actor in skips.get(row[0].id, {})))
+        reported_count = 0
         if state in ("flagged", "attention"):
             # A flagged crop someone already looked at in the inspector queues behind the ones
             # nobody has reviewed yet, keeping the earlier order among ties.
             selected.sort(key=lambda row: row[0].id in reviewed)
+            reported_count = sum(1 for u, _ in selected if u.id in reviewed)
+            # The Flagged view hides those crops by default; `reported=show` (the default for every
+            # other caller) leaves them in.
+            if reported == "hide":
+                selected = [(u, rev) for u, rev in selected if u.id not in reviewed]
         return {"total": len(selected), "available": len(records), "counts": dict(counts),
                 # Which question this answer is: a caller reading `available` has to know whether it
                 # counts the collection or only the queue.
@@ -859,6 +866,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 "categories": [{"label": name, **{key: c[key] for key in
                                   ("total", "pending", "seen", "checked", "flagged", "hard", "skipped")}}
                                for name, c in sorted(categories.items(), key=lambda x: (-x[1]["total"], x[0]))],
+                "reported_count": reported_count,
                 "items": [item(u, rev, states[u.id]) for u, rev in selected[offset:offset + limit]]}
 
     @api.get("/atlas/characters/{unit_id}")

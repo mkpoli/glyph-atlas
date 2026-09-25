@@ -112,6 +112,8 @@
   "explore.filter.label": "字符類型",
   "explore.findReading.aria": "查找讀音",
   "explore.findReading.placeholder": "查找讀音…",
+  "explore.flagged.hideReported": "隱藏已回報",
+  "explore.flagged.showReported": "顯示已回報的{count}個",
   "explore.grid.collection": "字符收藏",
   "explore.heading.atlas": "字符圖譜",
   "explore.heading.flagged": "已標記字符",
