@@ -109,6 +109,8 @@
   "explore.filter.label": "字種",
   "explore.findReading.aria": "讀ヲ索ム",
   "explore.findReading.placeholder": "讀ヲ索ム…",
+  "explore.flagged.hideReported": "報告濟ヲ隱ス",
+  "explore.flagged.showReported": "報告濟{count}件ヲ示ス",
   "explore.grid.collection": "文字集",
   "explore.heading.atlas": "字譜",
   "explore.heading.flagged": "指摘セラレタル字",
