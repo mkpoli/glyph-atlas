@@ -61,7 +61,20 @@ def published_keys(path: Path) -> set[str]:
     return {line.strip() for line in path.read_text().splitlines() if line.strip()}
 
 
-def export(output, *, resume=False, published=None):
+def unit_corpora(names=None):
+    """Every unit corpus under `work`, or only those in `names`, which must all exist."""
+    found = [corpus for corpus in sources.discover("work") if corpus.name in UNIT_CORPORA]
+    if names is None:
+        return found
+    missing = set(names) - {corpus.name for corpus in found}
+    if missing:
+        raise ValueError(f"no unit corpus named {', '.join(sorted(missing))}")
+    return [corpus for corpus in found if corpus.name in names]
+
+
+def export(output, *, resume=False, published=None, corpora=None):
+    """Export every unit corpus, or only those named in `corpora`."""
+    found = unit_corpora(corpora)
     output.mkdir(parents=True, exist_ok=resume)
     db = sqlite3.connect(output / "corpus.sqlite")
     schema(db)
@@ -80,9 +93,7 @@ def export(output, *, resume=False, published=None):
     db.commit()
     existing = {r[0] for r in db.execute("SELECT id FROM corpus_units")}
     counts = Counter(json.loads((output / "progress.json").read_text()) if (output / "progress.json").exists() else {})
-    for corpus in sources.discover("work"):
-        if corpus.name not in UNIT_CORPORA:
-            continue
+    for corpus in found:
         paths = corpus.parquet_files("units")
         if not paths:
             continue
@@ -195,6 +206,8 @@ if __name__ == "__main__":
     parser.add_argument("--records-only", type=Path, metavar="PUBLISHED",
                         help="write records only; PUBLISHED lists the media keys already in D1 "
                              "(an earlier export's corpus.sqlite, or a text file of keys)")
+    parser.add_argument("--corpus", action="append", dest="corpora", metavar="NAME",
+                        help="export only this unit corpus; repeat for several (default: every one)")
     args = parser.parse_args()
-    export(args.output, resume=args.resume,
+    export(args.output, resume=args.resume, corpora=args.corpora,
            published=published_keys(args.records_only) if args.records_only else None)

@@ -5,6 +5,7 @@ import re
 import sqlite3
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -125,6 +126,18 @@ def test_resuming_an_export_whose_corpus_rows_predate_their_material_is_refused(
         export.export(tmp_path, resume=True, published=set())
     with sqlite3.connect(tmp_path / "corpus.sqlite") as db:
         assert "production" not in {r[1] for r in db.execute("PRAGMA table_info(corpus_units)")}
+
+
+def test_an_export_reads_only_the_corpora_it_names(scripts, tmp_path, monkeypatch):
+    export = importlib.import_module("export_cloudflare_corpus")
+    names = sorted(export.UNIT_CORPORA)[:2]
+    monkeypatch.setattr(export.sources, "discover",
+                        lambda root: [SimpleNamespace(name=name) for name in [*names, "not-a-unit-corpus"]])
+    assert [c.name for c in export.unit_corpora()] == names
+    assert [c.name for c in export.unit_corpora([names[1]])] == [names[1]]
+    with pytest.raises(ValueError, match="no unit corpus named nowhere"):
+        export.export(tmp_path / "out", corpora=["nowhere"], published=set())
+    assert not (tmp_path / "out").exists()
 
 
 def test_the_migration_and_the_publication_scripts_agree_on_a_label_category(scripts):
