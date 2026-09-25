@@ -412,5 +412,7 @@
   "quiz.reference.inspect": "查看参考{label}（{state}）",
   "quiz.reference.confirmed": "已确认",
   "quiz.reference.seen": "已查看",
-  "state.hard": "难读：两位审阅者已跳过"
+  "state.hard": "难读：两位审阅者已跳过",
+  "suggestions.type.label": "或直接输入（可选）",
+  "suggestions.type.placeholder": "字符…"
 }
