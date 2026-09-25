@@ -278,7 +278,9 @@ def plan(atlas: Path, records: Path, *, min_iou: float = MIN_IOU, log: ReviewLog
                     result.keep_atlas.append((uid, row))
                     result.agree["decided, same" if same else "decided, different"] += 1
                 elif row.rejected:
-                    result.withhold.append((uid, row))
+                    # A unit a person flagged is theirs to settle; an event from the merge would bar the
+                    # site's later review of it.
+                    (result.keep_atlas if uid in log.decided else result.withhold).append((uid, row))
                 elif not row.label or row.doubted or (row.origin not in TRUSTED_ORIGINS and trusted(unit)):
                     result.keep_withheld.append((uid, row))
                 elif same:
@@ -407,12 +409,16 @@ def build(result: Plan, atlas: Path, records: Path, out: Path, *, log: ReviewLog
             handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
     counts["units"] = len(merged)
     counts["active"] = sum(1 for u in merged if u.active)
+    # The new store gets the source's ledgers before it takes in the log: the records imported into it
+    # are part of the state the log is replayed over, and the number its events started after keeps
+    # them at the ids they have.
+    review_store.Store(out)
+    counts.update(carry_ledgers(atlas / STORE_NAME, out / STORE_NAME))
     repaired = review_store.replay(out)["repaired"]
     if repaired:
         raise RuntimeError(f"replaying the merged log changed {repaired} units of the merged tables")
     # The log already holds every event; exporting marks it so, and writes the tables the store holds.
     review_store.Store(out).export()
-    counts.update(carry_ledgers(atlas / STORE_NAME, out / STORE_NAME))
     # Exporting rewrites the tables under the store; opening it again records the tables it now holds.
     review_store.Store(out)
     return dict(counts)
@@ -438,6 +444,13 @@ def carry_ledgers(source: Path, target: Path) -> dict[str, int]:
             connection.execute(found[0].replace(f"CREATE TABLE {name}", f"CREATE TABLE IF NOT EXISTS main.{name}", 1))
             connection.execute(f"INSERT OR REPLACE INTO main.{name} SELECT * FROM source.{name}")
             counts[f"carried {name}"] = connection.execute(f"SELECT count(*) FROM main.{name}").fetchone()[0]
+        # A reset erased events whose numbers stay spent; the store numbers its next event after them.
+        spent = connection.execute("SELECT value FROM source.meta WHERE key='reset_seq'").fetchone()
+        if spent is not None:
+            connection.execute("INSERT OR REPLACE INTO main.meta (key, value) VALUES ('reset_seq', ?)", spent)
+            connection.execute("DELETE FROM main.sqlite_sequence WHERE name='events'")
+            connection.execute("INSERT INTO main.sqlite_sequence (name, seq) VALUES ('events', ?)", (int(spent[0]),))
+            counts["carried reset_seq"] = int(spent[0])
         connection.commit()
         connection.execute("DETACH DATABASE source")
     finally:
