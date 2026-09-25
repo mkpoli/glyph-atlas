@@ -350,6 +350,31 @@ async function corpusOccurrences(env:Env,data:Json,q:URLSearchParams){
     available:items.length,items,scope:family?'grapheme':'character',status:'ok',
     visual_analysis:info.detail.visual_analysis,family_total:familyCounts?.total||0,unassigned_count:familyCounts?.unassigned||0};
 }
+// A document's characters in source order. The primary key serves the filter and the order, and each
+// row joins its unit by id: a published unit gives its current reading, state and revision.
+export const documentCharactersQuery = () => `SELECT c.unit,c.data,u.character,u.state,u.revision,json_extract(u.data,'$.issue') AS issue
+  FROM document_characters c LEFT JOIN units u ON u.id=c.unit WHERE c.document=? ORDER BY c.ord`;
+// Other sites read this listing from the browser, so it is served to any origin. The cached copy is
+// keyed by the publication and the latest review, and a new review or publication makes a new key.
+async function documentCharacters(env: Env, url: URL, document: string, ctx: ExecutionContext) {
+  const version = await env.DB.prepare("SELECT (SELECT value FROM metadata WHERE key='published_at') AS published,(SELECT max(rowid) FROM events) AS event")
+    .first<{ published: string | null; event: number | null }>();
+  const key = new Request(`${url.origin}${url.pathname}?v=${encodeURIComponent(`${version?.published ?? ''}:${version?.event ?? 0}`)}`);
+  const cached = await caches.default.match(key);
+  if (cached) return cached;
+  const rows = await env.DB.prepare(documentCharactersQuery()).bind(document)
+    .all<{ unit: string; data: string; character: string | null; state: string | null; revision: number | null; issue: string | null }>();
+  if (!rows.results.length) throw new Problem(404, 'No characters are published for this document.');
+  const characters = rows.results.map(r => {
+    const d = parse(r.data);
+    return r.state === null ? { ...d, unit: r.unit, atlas: false }
+      : { ...d, unit: r.unit, atlas: true, label: r.character ?? d.label, state: r.state, revision: r.revision, issue: r.issue };
+  });
+  const response = json({ document, published_at: version?.published ? JSON.parse(version.published) : null, characters }, 200,
+    { 'cache-control': 'public, max-age=60', 'access-control-allow-origin': '*' });
+  ctx.waitUntil(caches.default.put(key, response.clone()));
+  return response;
+}
 async function media(env: Env, request: Request, key: string, ctx: ExecutionContext) {
   const cache = caches.default;
   const cached = await cache.match(request);
@@ -564,6 +589,8 @@ export default {
       if(path==='/atlas')return json(await catalogue(env,q));
       if(path==='/atlas/corpus/character')return json(parse((await unit(env,q.get('id')||'')).data));
       if(path==='/atlas/collection/status')return json(await meta(env,'collection'));
+      const document=path.match(/^\/atlas\/documents\/([^/]+)\/characters$/);
+      if(document)return await documentCharacters(env,url,decodeURIComponent(document[1]),ctx);
       const visualSample=path.match(/^\/layers\/visual-groups\/samples\/([^/]+)\/image$/);
       if(visualSample){const data=parse((await unit(env,decodeURIComponent(visualSample[1]))).data);
         if(!data.image)throw new Problem(404,'Image not found.');
