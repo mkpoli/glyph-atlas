@@ -17,4 +17,5 @@ notes:
   - A photograph whose caption credits a private publisher (경남신문, 한국민족대백과) is left out, since imageNuri cannot speak for that publisher's terms. Captions crediting a public body (청주시, 경상남도 문화재정보시스템) are taken at the portal's imageNuri.
   - The Open API masks private custodians' names with ＊; a masked name is not recorded as the holder.
   - A photograph shows the object as photographed (an opened spread, a partly unrolled scroll), not one scanned page, and most items have one or two.
+  - data/sources/khs-gugyeol.tsv lists the items whose record says the text carries 구결 in 구결자 (석독, 음독, 순독, 약체, 한자) or without naming the script, with the record's own sentence as evidence. Items whose record says the 구결 is in Hangul (the 언해 books), 각필-only items, and records using 구결 in another sense are not listed. The list came from a sweep of every 국보, 보물, 시도유형문화유산 and 문화유산자료 record on 2026-09-25.
   - Collected with scripts/collect_khs.py.

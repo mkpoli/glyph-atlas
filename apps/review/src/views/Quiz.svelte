@@ -28,7 +28,14 @@
   // round on screen. Loaded after the round itself, and a failure here never blocks the round.
   let references = $state([])
   let history = $state([]), historyIndex = $state(-1)
-  let loadingMore = $state(false), hasMore = $state(false)
+  let loadingMore = $state(false), hasMore = $state(false), loadMoreFailed = $state(false)
+  // A saved round says so, since the next character replaces it at once.
+  let savedNotice = $state(''), savedTimer
+  function announceSaved(count, label) {
+    clearTimeout(savedTimer)
+    savedNotice = t('quiz.roundSaved', { count, reading: label })
+    savedTimer = setTimeout(() => savedNotice = '', 3500)
+  }
   // True while the load-more row is on screen or close to it: scrolling down loads the next batch.
   let nearEnd = $state(false)
   function watchSeen(node, id) {
@@ -50,7 +57,7 @@
     if (nearEnd && hasMore && !error && !loading && !saving && !loadingMore && items.length < roundLimit) loadMore()
   })
   const roundLimit = $derived(data?.review_limit ?? 4096)
-  let production = $state('non-movable-type')
+  let production = $state('not:printed/type')
   // The workflow state: which step, and where in the selected crops the reader is.
   let step = $state('select'), at = $state(0)
   let suggestionsElement = $state(null)
@@ -158,7 +165,7 @@
   async function loadMore() {
     if (loading || saving || loadingMore || !hasMore || items.length >= roundLimit) return
     const id = requestId, round = roundId
-    loadingMore = true; error = ''; errorStatus = 0
+    loadingMore = true; loadMoreFailed = false; error = ''; errorStatus = 0
     const seen = new Set(items.map(item => item.id))
     let offset = 0, additions = [], more = false
     try {
@@ -184,7 +191,7 @@
       }
       // Added crops follow the ones already on screen, so nothing the reviewer is looking at moves.
       items = [...items, ...arranged(numbered(additions, items.length))]; hasMore = more
-    } catch (e) { if (id === requestId) { error = e.message; errorStatus = e.status ?? 0 } }
+    } catch (e) { if (id === requestId) { error = e.message; errorStatus = e.status ?? 0; loadMoreFailed = true } }
     finally { if (id === requestId) loadingMore = false }
   }
   /**
@@ -406,6 +413,7 @@
       await request('/atlas/rounds', { id: roundId, client_id: clientId, label: reading, answers, seen, skipped: passed })
       last = { id: roundId, count: answers.length, label: reading, production }
       remember('atlas.last-round.' + clientId, last); completed += answers.length
+      announceSaved(answers.length + seen.length + passed.length, reading)
       const savedIds = new Set([...answers, ...seen, ...passed].map(answer => answer.id))
       items = items.filter(item => !savedIds.has(item.id))
       choices = {}; selected = {}; step = 'select'; at = 0; roundId = crypto.randomUUID()
@@ -427,6 +435,7 @@
       await request('/atlas/rounds', { id: roundId, client_id: clientId, label: reading, seen, skipped: passed })
       last = { id: roundId, count: 0, label: reading, production }
       remember('atlas.last-round.' + clientId, last)
+      announceSaved(seen.length + passed.length, reading)
       const seenIds = new Set([...seen, ...passed].map(crop => crop.id))
       items = items.filter(item => !seenIds.has(item.id))
       choices = {}; selected = {}; step = 'select'; at = 0; roundId = crypto.randomUUID()
@@ -492,12 +501,15 @@
   <label class="review-material">{t('quiz.material.label')}
     <select aria-label={t('quiz.material.aria')} value={production} disabled={saving || loading || loadingMore}
       onchange={event => load({ scope: event.currentTarget.value, target: reading })}>
-      <option value="non-movable-type">{t('quiz.material.excludeMovableType')}</option>
-      <option value="manuscript">{t('production.handwritten')}</option>
-      <option value="woodblock">{t('production.woodblock')}</option>
-      <option value="movable-type">{t('production.movableType')}</option>
-      <option value="mixed">{t('production.mixed')}</option>
-      <option value="unknown">{t('production.notClassified')}</option>
+      <option value="not:printed/type">{t('quiz.material.excludeMovableType')}</option>
+      <option value="handwritten">{t('production.kind.handwritten')}</option>
+      <option value="inscribed">{t('production.kind.inscribed')}</option>
+      <option value="printed">{t('production.kind.printed')}</option>
+      <option value="printed/woodblock">{t('production.kind.printed_woodblock')}</option>
+      <option value="printed/type">{t('production.kind.printed_type')}</option>
+      <option value="typewritten">{t('production.kind.typewritten')}</option>
+      <option value="mixed">{t('production.kind.mixed')}</option>
+      <option value="unknown">{t('production.kind.unknown')}</option>
       <option value="all">{t('quiz.material.all')}</option>
     </select>
   </label>
@@ -522,7 +534,14 @@
       {/each}{/if}
     </div>
     {/key}
-    {#if items.length}<div class="load-more-row" use:watchEnd><button class="load-more" disabled={loading || saving || loadingMore || !hasMore || items.length >= roundLimit} onclick={loadMore}>{loadingMore ? t('quiz.loadMore.loading') : items.length >= roundLimit ? t('quiz.loadMore.saveToLoad') : hasMore ? t('quiz.loadMore.more', { reading }) : t('quiz.loadMore.allLoaded', { reading })}</button></div>{/if}
+    <!-- More crops load on their own as the reader nears the end; the row only says what is happening.
+         A button remains for the case scrolling cannot trigger (a failed batch waits for a retry). -->
+    {#if items.length}<div class="load-more-row" use:watchEnd role="status">
+      {#if loadingMore}<span class="load-more-status"><span class="load-more-spinner" aria-hidden="true"></span>{t('quiz.loadMore.loading')}</span>
+      {:else if hasMore && items.length >= roundLimit}<span class="load-more-status">{t('quiz.loadMore.saveToLoad')}</span>
+      {:else if hasMore}<button class="load-more" disabled={loading || saving} onclick={loadMore}>{loadMoreFailed && error ? t('common.retry') : t('quiz.loadMore.more', { reading })}</button>
+      {:else}<span class="load-more-status">{t('quiz.loadMore.allLoaded', { reading })}</span>{/if}
+    </div>{/if}
     {#if references.length}
       <section class="quiz-reference" aria-label={t('quiz.reference.label')}>
         <p class="reference-heading">{t('quiz.reference.heading')} <span>{references.length}</span></p>
@@ -560,6 +579,7 @@
   </div></div>{/if}
 </section>
 
+{#if savedNotice}<div class="save-toast quiz-saved" role="status">✓ {savedNotice}</div>{/if}
 <style>
   .skip-current{display:block;margin:12px auto 0;font-size:12px}
   .review-material{display:flex;align-items:center;gap:10px;margin:0 0 20px;font-size:12px;color:var(--muted)}
@@ -581,6 +601,10 @@
   .history-character.current { color:var(--accent); background:var(--accent-light); border-color:var(--accent); }
   .load-more-row { display:flex; justify-content:center; padding:22px 0 0; }
   .load-more { min-width:170px; font-size:13px; }
+  .load-more-status { display:inline-flex; align-items:center; gap:8px; min-height:38px; font-size:13px; color:var(--muted); }
+  .load-more-spinner { width:14px; height:14px; border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:load-more-spin .8s linear infinite; }
+  @keyframes load-more-spin { to { transform:rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .load-more-spinner { animation:none; } }
   /* Comparison aid, not part of the round: smaller tiles, no selection state, own inspect only. */
   .quiz-reference { margin:26px 0 4px; }
   .reference-heading { display:flex; align-items:center; gap:8px; font-size:11px; color:var(--muted); margin:0 0 10px; }
@@ -593,4 +617,6 @@
   .reference-tag { display:flex; align-items:center; gap:4px; font-size:8px; color:var(--muted); white-space:nowrap; }
   .status-dot.seen { background:#8d8d95; }
   .current-problem { color: var(--muted); font-size: 12px; margin: 0 0 14px; }
+  /* Above the sticky save bar, which would otherwise sit behind it. */
+  .save-toast.quiz-saved { bottom:108px; }
 </style>

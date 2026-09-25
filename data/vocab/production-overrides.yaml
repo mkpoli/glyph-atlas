@@ -1,8 +1,19 @@
+# Production stated by a holder or a reference work where the source dataset states less. Keys are
+# document ids or upstream ids; `production` is a node of `data/vocab/production.yaml`.
 version: 1
 documents:
   68eb3417ed31bd40b47322289459eeec:
-    production: movable-type
+    production: printed/type
     evidence:
       - source: holding_library
         url: https://da.dl.itc.u-tokyo.ac.jp/portal/assets/06b66451-9f03-33e4-4321-5f36ec7e38aa
         note: 刊行方式：活字版（一部カラー）
+  hng:kcc:
+    production: printed/type/wood
+    evidence:
+      - source: reference
+        url: https://knmdb.kyohaku.go.jp/27293.html
+        note: >-
+          京都国立博物館 館蔵品データベース「古活字版日本書紀神代巻（慶長勅版）」, read 2026-09-25:
+          「木活字による刻字は勅版にふさわしく濃く鮮明である。」 It describes the museum's copy of the same
+          edition (神代巻下 only), not the copy HNG crops, which HNG files as 日本書紀版本.

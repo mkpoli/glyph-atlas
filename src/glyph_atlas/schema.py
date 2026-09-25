@@ -21,9 +21,11 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+
+from . import production
 
 
 class Licence(StrEnum):
@@ -79,12 +81,8 @@ class Source(BaseModel):
     released: date | None = None
 
 
-class Production(StrEnum):
-    MANUSCRIPT = "manuscript"
-    WOODBLOCK = "woodblock"
-    MOVABLE_TYPE = "movable-type"
-    MIXED = "mixed"
-    UNKNOWN = "unknown"
+#: A node of `data/vocab/production.yaml`, written as its path, e.g. `printed/type/metal/copper`.
+Production = Annotated[str, AfterValidator(production.check)]
 
 
 class Register(StrEnum):
@@ -112,7 +110,7 @@ class Document(BaseModel):
     source_refs: dict[str, str] = Field(default_factory=dict, description="upstream ids by source id")
     holder: str | None = None
     shelfmark: str | None = None
-    production: Production = Production.UNKNOWN
+    production: Production = "unknown"
     genre: list[str] = Field(default_factory=list, description="terms from data/vocab/genre.yaml")
     text_register: Register = Register.UNKNOWN
     dating: list[Dating] = Field(default_factory=list, description="several dates may apply, e.g. composition and copying")

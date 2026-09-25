@@ -48,7 +48,6 @@ from ..schema import (
     Classification,
     Document,
     Licence,
-    Production,
     ReviewState,
     Rights,
     Script,
@@ -189,7 +188,7 @@ def document_of(raw: dict) -> Document:
         title=TITLE,
         source_refs={SOURCE: str(raw.get("released") or "")},
         holder=HOLDER,
-        production=Production.UNKNOWN,
+        production="unknown",
         image_rights=record_rights,
         text_rights=record_rights,
         meta={

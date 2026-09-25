@@ -23,7 +23,7 @@ from PIL import Image
 
 from glyph_atlas import images, refs, tables
 from glyph_atlas.importers import kokatsuji
-from glyph_atlas.schema import Classification, Production, Register, Script, UnitKind
+from glyph_atlas.schema import Classification, Register, Script, UnitKind
 
 PAGE_SIZE = (130, 200)
 COLUMNS = [*kokatsuji.FIELDS, "old_ID", "OCR"]
@@ -87,7 +87,7 @@ def test_document_carries_the_rights_of_the_source_file(tmp_path, cache, archive
     assert document.id == "codh-omt:001"
     assert document.title == "徒然草 2巻"
     assert document.holder == "国立国会図書館"
-    assert document.production is Production.MOVABLE_TYPE
+    assert document.production == "printed/type"
     assert document.text_register is Register.WABUN
     assert document.source_refs == {"codh-kokatsuji": "001", "ndl-pid": "2544701"}
     assert [(d.literal, d.start, d.end, d.kind) for d in document.dating] == [

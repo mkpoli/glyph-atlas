@@ -88,18 +88,5 @@ def identity_fields(
 
 
 def production_fields(document: dict[str, Any]) -> dict[str, Any]:
-    try:
-        from ..production import production_info
-    except ImportError:
-        production_info = None
-    if production_info:
-        return production_info(document)
-    value = document.get("production") or "unknown"
-    if value not in {"manuscript", "woodblock", "movable-type", "mixed", "unknown"}:
-        value = "unknown"
-    return {
-        "production": value,
-        "production_evidence": ({"basis": "document_metadata", "document_id": document.get("id"),
-                                 "source_refs": document.get("source_refs") or {}}
-                                if value != "unknown" else None),
-    }
+    from ..production import production_info
+    return production_info(document)

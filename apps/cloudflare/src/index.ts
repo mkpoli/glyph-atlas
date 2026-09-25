@@ -133,14 +133,22 @@ export function validRound(input: Json, target?: string): { answers: Json[]; see
   }
   return { answers, seen, skipped };
 }
-// A material filter on a `production` column: every material, all but movable type, or one.
-function material(production: string, column: string): [string, string[]] {
-  if (production === 'all') return ['1=1', []];
-  if (production === 'non-movable-type') return [`${column}!='movable-type'`, []];
-  return [`${column}=?`, [production]];
+// A production is a node of the tree in `data/vocab/production.yaml`, written as its path
+// (`printed/type/wood`). A material scope is `all`, a node with everything under it, or `not:` and a node.
+// A Quick review round leaves movable type out unless asked: it fills whole books with near-identical glyphs.
+const REVIEW_SCOPE = 'not:printed/type';
+const SCOPE = /^(all|(not:)?[a-z]+(\/[a-z]+)*)$/;
+const within = (value: string, node: string) => value === node || value.startsWith(node + '/');
+// A material filter on a `production` column. A node's descendants are the range from `node/` up to
+// `node0`, '0' being the character after '/'.
+function material(scope: string, column: string): [string, string[]] {
+  if (scope === 'all') return ['1=1', []];
+  const negated = scope.startsWith('not:'), node = negated ? scope.slice(4) : scope;
+  const test = `(${column}=? OR (${column}>=? AND ${column}<?))`;
+  return [negated ? `NOT ${test}` : test, [node, node + '/', node + '0']];
 }
-const inMaterial = (production: string, value: string) =>
-  production === 'all' || (production === 'non-movable-type' ? value !== 'movable-type' : value === production);
+const inMaterial = (scope: string, value: string) =>
+  scope === 'all' || (scope.startsWith('not:') ? !within(value, scope.slice(4)) : within(value, scope));
 // How far a round pages. Rounds are dealt from the front and a saved crop leaves the queue, so a
 // reader never gets this deep; the bound keeps a crawler from reading a character's whole corpus.
 const ROUND_OFFSET_MAX = 4096;
@@ -149,11 +157,10 @@ const ROUND_OFFSET_MAX = 4096;
 // them out: either way no request reads every named glyph. Should a character hold more named
 // pending rows than this, mostly glyphs already seen, an older one that is due again waits outside it.
 const NAMED_WINDOW = 256;
-// The materials that are not movable type, each read through its own index range.
-const NON_MOVABLE = ['manuscript', 'woodblock', 'mixed', 'unknown'];
 async function catalogue(env: Env, q: URLSearchParams) {
   const purpose = q.get('purpose') || 'browse';
-  const production = q.get('production') || (purpose === 'review' ? 'non-movable-type' : 'all');
+  const production = q.get('production') || (purpose === 'review' ? REVIEW_SCOPE : 'all');
+  if (!SCOPE.test(production)) throw new Problem(400, 'Invalid production scope.');
   const review = purpose === 'review';
   const seed = integer(q, 'seed', 0, 2147483647);
   const limit = integer(q, 'limit', 60, 96), offset = integer(q, 'offset', 0);
@@ -251,11 +258,14 @@ export function corpusRoundQuery(production: string | null, side: '>=' | '<') {
     ORDER BY shuffle LIMIT ?`;
 }
 // The glyphs wrap round from the seeded point, so each seed deals a different but stable order that
-// the index serves as it stands. Several materials are read one index range each and merged.
+// the index serves as it stands. A scope short of `all` reads each production the character holds in
+// it through its own index range, and merges them.
 async function corpusRound(env: Env, character: string, production: string, seed: number, offset: number, limit: number) {
   // `shuffle` is the first 28 bits of the id's SHA-256.
   const start = seed % 268435456, wanted = offset + limit;
-  const kinds = production === 'all' ? [null] : production === 'non-movable-type' ? NON_MOVABLE : [production];
+  const kinds = production === 'all' ? [null] : (await env.DB.prepare('SELECT production FROM corpus_characters WHERE character=?')
+    .bind(character).all<{ production: string }>()).results.map(row => row.production).filter(value => inMaterial(production, value));
+  if (!kinds.length) return { items: [], read: 0, exhausted: true };
   const page = async (side: '>=' | '<', n: number) => {
     const results = await env.DB.batch(kinds.map(kind => env.DB.prepare(corpusRoundQuery(kind, side))
       .bind(character, ...(kind ? [kind] : []), start, n)));

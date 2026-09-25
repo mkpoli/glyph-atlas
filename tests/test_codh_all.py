@@ -21,15 +21,15 @@ from PIL import Image
 
 from glyph_atlas import images, refs, tables
 from glyph_atlas.importers import codh_all
-from glyph_atlas.schema import Classification, Production, ReviewState, UnitKind
+from glyph_atlas.schema import Classification, ReviewState, UnitKind
 
 PAGE_SIZE = (120, 200)
 COLUMNS = ["Unicode", "Image", "X", "Y", "Block ID", "Char ID", "Width", "Height"]
-#: The book list of the fixtures: one woodblock book, one manuscript and one that has no zip.
+#: The book list of the fixtures: one printed book, one handwritten and one that has no zip.
 BOOKS = [
-    ("900000001", "試しの本", "12", "2", "2019-01", "刊", "woodblock", "国文研", "天保５"),
-    ("900000002", "例の写本", "3", "1", "2019-11", "写", "manuscript", "国文研貴重書", ""),
-    ("900000003", "無い本", "1", "1", "2019-11", "刊", "woodblock", "", ""),
+    ("900000001", "試しの本", "12", "2", "2019-01", "刊", "printed", "国文研", "天保５"),
+    ("900000002", "例の写本", "3", "1", "2019-11", "写", "handwritten", "国文研貴重書", ""),
+    ("900000003", "無い本", "1", "1", "2019-11", "刊", "printed", "", ""),
 ]
 #: 漢 and か on one page of the first book, 々 on the one page of the second.
 ROWS = {
@@ -72,9 +72,9 @@ def splits_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     path = tmp_path / "codh.tsv"
     path.write_text(
         "# bid\tproduction\tsplit\n"
-        "900000001\twoodblock\ttrain\n"
-        "900000002\tmanuscript\ttest\n"
-        "900000003\twoodblock\tval\n",
+        "900000001\tprinted\ttrain\n"
+        "900000002\thandwritten\ttest\n"
+        "900000003\tprinted\tval\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(codh_all, "SPLITS_FILE", path)
@@ -167,13 +167,13 @@ def test_two_books_merge_into_one_directory(tmp_path, cache, books_file, zips, m
     documents = {document.id: document for document in dataset.read("documents")}
     assert sorted(documents) == ["codh:900000001", "codh:900000002"]
     first = documents["codh:900000001"]
-    assert (first.title, first.production) == ("試しの本", Production.WOODBLOCK)
+    assert (first.title, first.production) == ("試しの本", "printed")
     assert first.source_refs == {"codh-char-shape": "900000001", "nijl-bid": "900000001"}
     assert first.holder == "国文研"
     assert first.image_rights.licence.value == "CC-BY-SA-4.0"
     assert first.meta["released"] == "2019-01" and first.meta["issued"] == "天保５"
     second = documents["codh:900000002"]
-    assert (second.title, second.production) == ("例の写本", Production.MANUSCRIPT)
+    assert (second.title, second.production) == ("例の写本", "handwritten")
     assert second.source_refs == {"codh-char-shape": "900000002"}
     assert second.holder is None
 
@@ -301,7 +301,7 @@ def test_a_book_the_list_does_not_carry_is_imported_under_its_identifier(tmp_pat
     assert counts["books"] == 1
     document = tables.Dataset(tmp_path / "out").read("documents")[0]
     assert (document.id, document.title) == ("codh:900000004", "900000004")
-    assert document.production is Production.UNKNOWN
+    assert document.production == "unknown"
     assert document.source_refs == {"codh-char-shape": "900000004"}
 
 
@@ -427,8 +427,8 @@ def test_splits_file_is_read_by_its_header(tmp_path, monkeypatch):
     path.write_text(
         "# CODH split by book.\n"
         "bid\ttitle\tproduction\tsplit\n"
-        "900000001\t試しの本\twoodblock\ttrain\n"
-        "900000002\t例の写本\tmanuscript\ttest\n",
+        "900000001\t試しの本\tprinted\ttrain\n"
+        "900000002\t例の写本\thandwritten\ttest\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(codh_all, "SPLITS_FILE", path)
@@ -439,7 +439,7 @@ def test_book_list_reads_the_columns_of_the_tsv(tmp_path, books_file):
     books = codh_all.book_list()
     assert [book.bid for book in books] == [row[0] for row in BOOKS]
     first = books[0]
-    assert (first.title, first.production, first.expected) == ("試しの本", Production.WOODBLOCK, 2)
+    assert (first.title, first.production, first.expected) == ("試しの本", "printed", 2)
     assert (first.collection, first.issued, first.kind) == ("国文研", "天保５", "刊")
     assert books[2].expected == 1
-    assert codh_all.unlisted("900000009").production is Production.UNKNOWN
+    assert codh_all.unlisted("900000009").production == "unknown"

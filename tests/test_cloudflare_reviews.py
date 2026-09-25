@@ -13,7 +13,7 @@ def database():
     for identity in ("one", "two"):
         data = json.dumps({"id": identity, "label": "ア", "reading": "ア", "state": "pending", "revision": 0})
         db.execute("INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
-            identity, "local", "ア", "ア", None, None, "manuscript", "kana", "pending", 0, 1, 1, 0,
+            identity, "local", "ア", "ア", None, None, "handwritten", "kana", "pending", 0, 1, 1, 0,
             data, "{}", "{}", "{}"))
     db.commit()
     return db

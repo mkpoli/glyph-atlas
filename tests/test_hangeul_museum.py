@@ -15,7 +15,7 @@ from glyph_atlas import images, net, tables
 from glyph_atlas.corpus import sources
 from glyph_atlas.corpus.api import PROXYABLE
 from glyph_atlas.importers import hangeul_museum as hm
-from glyph_atlas.schema import Document, Licence, Page, PageText, Production
+from glyph_atlas.schema import Document, Licence, Page, PageText
 
 CHECKED = date(2026, 9, 25)
 
@@ -94,7 +94,7 @@ def test_a_kogl_type_1_record_becomes_a_document_with_pages_text_and_licence(tmp
     assert document.id == "hangeul-museum:40712"
     assert document.holder == "국립한글박물관"
     assert document.shelfmark == "한구 40712"
-    assert document.production is Production.MANUSCRIPT
+    assert document.production == "handwritten"
     assert document.source_refs["catalogue"] == "https://archives.hangeul.go.kr/ko/M000000591/archv/ot/view?rcrdId=40712"
     for rights in (document.image_rights, document.text_rights):
         assert rights.licence is Licence.KOGL_1

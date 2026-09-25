@@ -24,7 +24,7 @@ from typing import Any
 import httpx
 
 from .. import images, net, tables
-from ..schema import Dating, Document, Licence, Page, PageText, Production, Rights
+from ..schema import Dating, Document, Licence, Page, PageText, Rights
 
 SOURCE = "hangeul-museum"
 HOLDER = "국립한글박물관"
@@ -38,7 +38,7 @@ KOGL_1_CODE = "CD00167"
 KOGL_1_WORDING = "공공누리 제1유형(출처표시)"
 ATTRIBUTION = f"{HOLDER}, {KOGL_1_WORDING}"
 
-PRODUCTION = {"필사본": Production.MANUSCRIPT, "목판본": Production.WOODBLOCK, "활자본": Production.MOVABLE_TYPE}
+PRODUCTION = {"필사본": "handwritten", "목판본": "printed/woodblock", "활자본": "printed/type"}
 #: `chctCdNm`, the record's statement of the scripts it is written in, as ISO 15924 codes.
 SCRIPTS = {"순한글": ["Hang"], "국한문 혼용": ["Hang", "Hani"], "순한문": ["Hani"]}
 HAN = re.compile(r"[㐀-䶿一-鿿豈-﫿\U00020000-\U0003134f]")
@@ -218,7 +218,7 @@ def build(
         source_refs={SOURCE: rid, "catalogue": ITEM_PAGE.format(id=rid), "record": RECORD_API.format(id=rid)},
         holder=HOLDER,
         shelfmark=relic.get("relicMngNum") or None,
-        production=PRODUCTION.get(relic.get("editionCdNm") or "", Production.UNKNOWN),
+        production=PRODUCTION.get(relic.get("editionCdNm") or "", "unknown"),
         dating=_dating(record),
         image_rights=rights,
         text_rights=text_rights,

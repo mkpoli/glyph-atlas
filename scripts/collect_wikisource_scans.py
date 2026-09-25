@@ -13,8 +13,8 @@ import argparse
 import json
 from pathlib import Path
 
+from glyph_atlas import production
 from glyph_atlas.importers.wikisource_scans import PAUSE, Http, collect
-from glyph_atlas.schema import Production
 
 
 def main() -> int:
@@ -29,14 +29,14 @@ def main() -> int:
     parser.add_argument("--scripts", default="", help="ISO 15924 codes, comma separated, e.g. Hani,Hang")
     parser.add_argument("--language", help="language code (default: the index's language field)")
     parser.add_argument("--contributors", help="text attribution (default: '<Language> Wikisource contributors')")
-    parser.add_argument("--production", choices=[p.value for p in Production], default=Production.UNKNOWN.value)
+    parser.add_argument("--production", choices=list(production.vocabulary()), default="unknown")
     parser.add_argument("--pause", type=float, default=PAUSE, help=f"seconds between requests (default: {PAUSE})")
     args = parser.parse_args()
     result = collect(
         args.out, args.wiki, args.indexes, http=Http(pause=args.pause), image_root=args.image_cache,
         command="scripts/collect_wikisource_scans.py --wiki " + args.wiki,
         native_width=args.native_width, native_width_evidence=args.native_width_evidence, scripts=[s for s in args.scripts.split(",") if s],
-        language=args.language, contributors=args.contributors, production=Production(args.production),
+        language=args.language, contributors=args.contributors, production=args.production,
     )
     print(json.dumps(result, ensure_ascii=False, indent=1), flush=True)
     return 0
