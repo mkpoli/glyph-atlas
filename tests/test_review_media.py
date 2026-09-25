@@ -105,11 +105,11 @@ def test_source_path_must_be_inside_registered_roots(media, tmp_path):
         cache.local(source)
 
 
-def test_a_context_reaches_two_characters_along_the_column_and_one_across():
+def test_a_context_reaches_five_characters_along_the_column_and_three_across():
     page = Image.new("RGB", (1000, 2000), "white")
     left, top, right, bottom = atlas.crop_bounds(page, (500, 1000, 40, 40), context=True)
-    # Two 40px neighbours above and below, with room to spare, and a column to each side.
-    assert 1000 - top >= 2 * 40 and bottom - 1040 >= 2 * 40
-    assert 500 - left >= 40 and right - 540 >= 40
+    # Five 40px neighbours above and below, and three columns to each side.
+    assert 1000 - top >= 5 * 40 and bottom - 1040 >= 5 * 40
+    assert 500 - left >= 3 * 40 and right - 540 >= 3 * 40
     # Near the edge of the page the reach stops at the page.
     assert atlas.crop_bounds(page, (0, 0, 40, 40), context=True)[:2] == (0, 0)

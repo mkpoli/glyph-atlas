@@ -371,8 +371,8 @@ def matches(records: list[tuple[Unit, int]], q: str) -> list[tuple[Unit, int]]:
 
 
 #: How far a crop's context reaches past the character, in character sizes, across and along the
-#: line: two neighbours above and below in a vertical column, and a column to each side.
-CONTEXT_REACH = (1.5, 2.5)
+#: line: five neighbours above and below in a vertical column, and three columns to each side.
+CONTEXT_REACH = (3, 5)
 
 
 def crop_bounds(image: Image.Image, box: Box | tuple[float, ...] | None,
