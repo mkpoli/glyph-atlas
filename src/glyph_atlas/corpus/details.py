@@ -44,6 +44,7 @@ UNIT_ID_PREFIXES = {
     "hk:": "ainu-records",
     "ws:": "wikisource",
     "hng:": "hng",
+    "hng-kiridashi:": "hng-kiridashi",
 }
 
 #: Tables whose content a resolved detail depends on. A change to any of them, or to
