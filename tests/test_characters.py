@@ -72,9 +72,40 @@ def test_the_table_is_one_row_per_code_point():
 def test_the_table_holds_the_kana_and_the_kanji():
     rows = rows_of(TABLE)
     scripts = {row["script"] for row in rows}
-    assert scripts == {"han", "hiragana", "hentaigana", "katakana", "symbol"}
+    assert scripts == {"han", "hangul", "hiragana", "hentaigana", "katakana", "symbol"}
     assert len([row for row in rows if row["script"] == "hentaigana"]) == 285
     assert len([row for row in rows if row["script"] == "han"]) > 90_000
+
+
+#: The Hangul blocks of the table and how many code points Unicode assigns in each.
+HANGUL_BLOCKS = {
+    "Hangul Jamo": 256,
+    "Hangul Compatibility Jamo": 94,
+    "Hangul Jamo Extended-A": 29,
+    "Hangul Syllables": 11_172,
+    "Hangul Jamo Extended-B": 72,
+}
+
+
+def test_the_table_holds_every_assigned_code_point_of_the_hangul_blocks():
+    rows = rows_of(TABLE)
+    counts = {block: sum(1 for row in rows if row["block"] == block) for block in HANGUL_BLOCKS}
+    assert counts == HANGUL_BLOCKS
+    assert all(row["script"] == "hangul" for row in rows if row["block"] in HANGUL_BLOCKS)
+    rows = table()
+    assert rows["U+AC00"]["name"] == "HANGUL SYLLABLE GA" and rows["U+D7A3"]["name"] == "HANGUL SYLLABLE HIH"
+    assert rows["U+AC00"]["age"] == "2.0" and rows["U+AC00"]["readings"] == ""
+
+
+def test_a_compatibility_jamo_reads_as_itself():
+    """ㅿ, 반치음, is a letter of 訓民正音 and resolves like any other character of the layer."""
+    row = refs.character("U+317F")
+    assert row.name == "HANGUL LETTER PANSIOS" and row.script.value == "hangul"
+    assert row.readings == ["ㅿ"] and row.grapheme == "U+317F"
+    assert (row.category, row.age, row.block) == ("Lo", "1.1", "Hangul Compatibility Jamo")
+    assert refs.script_of("ㅿ") == "hangul" and refs.script_of("ᄫ") == "hangul"
+    assert refs.character("U+3164").readings == [], "the filler is no letter"
+    assert refs.character("U+1140").readings == [], "no Unicode file states a reading for a conjoining jamo"
 
 
 def test_the_unicode_18_0_additions_are_in_the_table_with_their_age():
@@ -269,17 +300,19 @@ def write_release(directory: Path) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "Blocks.txt").write_text(
         "3040..309F; Hiragana\n30A0..30FF; Katakana\n4E00..9FFF; CJK Unified Ideographs\n"
-        "1B000..1B0FF; Kana Supplement\n1B100..1B12F; Kana Extended-A\n",
+        "1B000..1B0FF; Kana Supplement\n1B100..1B12F; Kana Extended-A\n"
+        "3130..318F; Hangul Compatibility Jamo\nAC00..D7AF; Hangul Syllables\n",
         encoding="utf-8",
     )
     (directory / "Scripts.txt").write_text(
         "3041..3096 ; Hiragana # Lo\n3099..309A ; Inherited # Mn\n30A1..30FA ; Katakana # Lo\n"
-        "4E00..9FFF ; Han # Lo\n1B001..1B11F ; Hiragana # Lo\n1B120..1B12F ; Katakana # Lo\n",
+        "4E00..9FFF ; Han # Lo\n1B001..1B11F ; Hiragana # Lo\n1B120..1B12F ; Katakana # Lo\n"
+        "3131..318E ; Hangul # Lo\nAC00..D7A3 ; Hangul # Lo\n",
         encoding="utf-8",
     )
     (directory / "DerivedAge.txt").write_text(
         "3041..3096 ; 1.1 # Lo\n30A1..30FA ; 1.1 # Lo\n4E00..9FFF ; 1.1 # Lo\n"
-        "1B001..1B11F ; 10.0 # Lo\n1B127..1B128 ; 18.0 # Lo\n",
+        "1B001..1B11F ; 10.0 # Lo\n1B127..1B128 ; 18.0 # Lo\n3131..318E ; 1.1 # Lo\nAC00..D7A3 ; 2.0 # Lo\n",
         encoding="utf-8",
     )
     (directory / "UnicodeData.txt").write_text(
@@ -297,7 +330,17 @@ def write_release(directory: Path) -> Path:
         "1B098;HENTAIGANA LETTER NE-KO;Lo;0;L;;;;;N;;;;;\n"
         "1B120;KATAKANA LETTER ARCHAIC YI;Lo;0;L;;;;;N;;;;;\n"
         "1B127;KATAKANA LETTER ALTERNATE NE;Lo;0;L;;;;;N;;;;;\n"
-        "1B128;KATAKANA LETTER ALTERNATE WI;Lo;0;L;;;;;N;;;;;\n",
+        "1B128;KATAKANA LETTER ALTERNATE WI;Lo;0;L;;;;;N;;;;;\n"
+        "3164;HANGUL FILLER;Lo;0;L;;;;;N;HANGUL CAE OM;;;;\n"
+        "317F;HANGUL LETTER PANSIOS;Lo;0;L;<compat> 1140;;;;N;HANGUL LETTER BAN CHI EUM;;;;\n"
+        "AC00;<Hangul Syllable, First>;Lo;0;L;;;;;N;;;;;\n"
+        "AC01;<Hangul Syllable, Last>;Lo;0;L;;;;;N;;;;;\n",
+        encoding="utf-8",
+    )
+    # A cut of Jamo.txt: the short names the two fixture syllables are named from.
+    (directory / "Jamo.txt").write_text(
+        "# Jamo.txt\n1100; G     # HANGUL CHOSEONG KIYEOK\n1161; A     # HANGUL JUNGSEONG A\n"
+        "11A8; G     # HANGUL JONGSEONG KIYEOK\n",
         encoding="utf-8",
     )
     (directory / "NamesList.txt").write_text(
@@ -358,6 +401,14 @@ def test_the_build_reads_the_age_script_and_block_of_a_code_point(tiny):
     )
     assert rows[0x3099].script == "symbol", "a combining mark belongs to no one script"
     assert rows[0x5B50].script == "han", "Unicode calls the script of a kanji Han"
+
+
+def test_the_build_names_a_hangul_syllable_as_unicode_derives_it(tiny):
+    rows = build(*tiny)
+    assert rows[0xAC00].name == "HANGUL SYLLABLE GA" and rows[0xAC01].name == "HANGUL SYLLABLE GAG"
+    assert (rows[0xAC01].script, rows[0xAC01].category, rows[0xAC01].age) == ("hangul", "Lo", "2.0")
+    assert 0xAC02 not in rows, "a code point outside the First/Last range is not assigned"
+    assert rows[0x317F].readings == ["ㅿ"] and rows[0x3164].readings == []
 
 
 def add_fixture_family(vocab: Path, *, members=None, sources=None):

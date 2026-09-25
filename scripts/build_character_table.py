@@ -15,6 +15,9 @@ Sources, all from one Unicode release:
 - `NamesList.txt` for the block name of each chart heading, and for the kana readings spelled by the
   character names. NamesList.txt is also what `scripts/build_hentaigana_table.py` reads; the two
   tables agree on names and disagree only in that this one is not limited to kana.
+- `Jamo.txt` for the short names of the conjoining jamo, from which Unicode derives the name of
+  each precomposed Hangul syllable (`HANGUL SYLLABLE GAG`); `UnicodeData.txt` writes the syllables
+  as one `First`/`Last` range and names none of them.
 - `confusables.txt` from the security directory, for the confusable pairs. The relation is
   directional in that table, which is why the column keeps its direction.
 - `data/vocab/mj-hentaigana.tsv` for the MJ figure name and for the 字母 and 音価 of the hentaigana.
@@ -25,9 +28,10 @@ Sources, all from one Unicode release:
   names but does not give a reading.
 
 Which code points are included: every character of every kana block that Unicode assigns, the CJK
-Unified Ideographs and their extensions, and always the code points `graphemes.yaml` names, so a
-grapheme is never a dangling reference. Kana outside those blocks, which is to say the kana on the
-Enclosed CJK Letters and Months chart (㋕ and the like), is not a text character and is left out.
+Unified Ideographs and their extensions, the Hangul jamo and syllable blocks, and always the code
+points `graphemes.yaml` names, so a grapheme is never a dangling reference. Kana and Hangul outside
+those blocks, which is to say the letters on the Enclosed CJK Letters and Months chart (㋕, ㉠ and
+the like) and the halfwidth jamo, are not text characters and are left out.
 
     uv run python scripts/build_character_table.py cache/ucd
 
@@ -83,6 +87,14 @@ BLOCKS = (
     # point with its own name in UnicodeData.txt.
     "CJK Compatibility Ideographs",
     "CJK Compatibility Ideographs Supplement",
+    # Korean writing: the compatibility jamo a corpus transcribes a letter with, the conjoining jamo
+    # of 옛한글 (Middle Korean spellings such as ᄫ and ᆞ are only encoded there), and the
+    # precomposed syllables of modern Hangul.
+    "Hangul Jamo",
+    "Hangul Compatibility Jamo",
+    "Hangul Jamo Extended-A",
+    "Hangul Syllables",
+    "Hangul Jamo Extended-B",
 )
 
 #: The name Unicode gives the ideographs of a CJK block, as a format over the hex code point.
@@ -94,6 +106,13 @@ CJK_NAME = "CJK UNIFIED IDEOGRAPH-{point}"
 
 #: The blocks whose characters are named after their own code point.
 CJK_NAME_BLOCKS = frozenset(name for name in BLOCKS if name.startswith("CJK Unified Ideographs"))
+
+#: The constants of the Hangul syllable name derivation in chapter 3.12 of the Unicode Standard: the
+#: first syllable, the first leading consonant, vowel and trailing consonant (one before the first,
+#: since a syllable may have none), and how many vowels and trailing consonants combine.
+HANGUL_SYLLABLES_BLOCK = "Hangul Syllables"
+S_BASE, L_BASE, V_BASE, T_BASE = 0xAC00, 0x1100, 0x1161, 0x11A7
+V_COUNT, T_COUNT = 21, 28
 
 #: The columns of the generated table, in order. `jibo` and `readings`
 #: hold several values joined by a space, because a form may derive from more than one 字母, read as
@@ -310,6 +329,27 @@ def confusables(path: Path) -> dict[int, list[str]]:
     return {source: sorted(targets) for source, targets in pairs.items()}
 
 
+def jamo_short_names(path: Path) -> dict[int, str]:
+    """`Jamo.txt` as code point -> the short name of a conjoining jamo (IEUNG's is empty)."""
+    names: dict[int, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        body = line.split("#", 1)[0].strip()
+        if not body:
+            continue
+        point, short = (cell.strip() for cell in body.split(";"))
+        names[int(point, 16)] = short
+    return names
+
+
+def hangul_syllable_name(point: int, short: dict[int, str]) -> str:
+    """The name Unicode derives for a precomposed Hangul syllable, as chapter 3.12 states it."""
+    index = point - S_BASE
+    lead, rest = divmod(index, V_COUNT * T_COUNT)
+    vowel, trail = divmod(rest, T_COUNT)
+    parts = [short[L_BASE + lead], short[V_BASE + vowel], short[T_BASE + trail] if trail else ""]
+    return "HANGUL SYLLABLE " + "".join(parts)
+
+
 def mj_table(path: Path) -> dict[str, dict[str, str]]:
     """`mj-hentaigana.tsv` by code point, with the `#` header comments dropped."""
     with path.open(encoding="utf-8") as handle:
@@ -393,6 +433,7 @@ def script_of(point: int, name: str | None, ranges: list[Range]) -> str:
     script = value_of(ranges, point, "Unknown") or "Unknown"
     return {
         "Han": "han",
+        "Hangul": "hangul",
         "Hiragana": "hiragana",
         "Katakana": "katakana",
         "Common": "symbol",
@@ -418,12 +459,13 @@ def build(
     data, ranges = unicode_data(ucd / "UnicodeData.txt")
     names, derived = names_list(ucd / "NamesList.txt")
     lookalikes = confusables(ucd / "confusables.txt")
+    jamo = jamo_short_names(ucd / "Jamo.txt")
     mj = mj_table(vocab / MJ_TABLE_NAME)
     document = overrides(vocab / OVERRIDES_NAME)
     curated: dict[str, dict] = document["characters"]
     kana: dict[str, str] = document["kana"]
 
-    characters = _stated_characters(blocks, scripts, ages, data, ranges, names, curated, kana)
+    characters = _stated_characters(blocks, scripts, ages, data, ranges, names, curated, kana, jamo)
     # The curated rows are applied before anything is derived from them, so that a 字母 stated by
     # hand reaches the graphemes and the confusable pairs like any other.
     for point, values in curated.items():
@@ -479,6 +521,7 @@ def _stated_characters(
     names: dict[int, str],
     curated: dict[str, dict],
     kana: dict[str, str],
+    jamo: dict[int, str],
 ) -> dict[int, Character]:
     """One row per assigned code point of the included blocks.
 
@@ -499,6 +542,8 @@ def _stated_characters(
             # A CJK block has holes in it: code points the block reserves and Unicode has not
             # assigned. Only the ones inside a First/Last range are characters.
             return CJK_NAME.format(point=f"{point:04X}")
+        if block == HANGUL_SYLLABLES_BLOCK and value_of(ranges, point) is not None:
+            return hangul_syllable_name(point, jamo)
         return None
 
     def character(point: int, block: str | None) -> Character:
@@ -552,10 +597,17 @@ def _add_jibo(
 
 
 def _add_readings(characters: dict[int, Character]) -> None:
-    """Fill what each kana reads as, from the table, from the name, then from the 字母."""
+    """Fill what each kana reads as, from the table, from the name, then from the 字母.
+
+    A Hangul compatibility jamo reads as itself, as a modern kana does: ㅿ is the letter ㅿ. The
+    conjoining jamo and the syllables are left without a reading, since no Unicode file states one.
+    """
     for row in characters.values():
         if row.code_point in READINGS:
             row.readings = list(READINGS[row.code_point])
+            continue
+        if row.name and row.name.startswith("HANGUL LETTER "):
+            row.readings = [row.char]
             continue
         readings = reading_of(row.name)
         if readings:
