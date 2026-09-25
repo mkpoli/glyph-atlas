@@ -64,7 +64,7 @@ describe('a round names flagged answers, seen crops, or both', () => {
 
 describe('categoryOf', () => {
   it('names a label by the script of its first character', () => {
-    expect(['ア', '仮', 'ㅿ', 'ᄫ', '한', 'A', ''].map(categoryOf)).toEqual(['kana', 'kanji', 'hangul', 'hangul', 'hangul', 'other', 'other']);
+    expect(['ア', '仮', 'ㅿ', 'ᄫ', '한', '', 'A', ''].map(categoryOf)).toEqual(['kana', 'kanji', 'hangul', 'hangul', 'hangul', 'gugyeol', 'other', 'other']);
   });
 });
 

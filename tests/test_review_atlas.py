@@ -89,9 +89,21 @@ def test_catalogue_filters_hangul_as_its_own_group(dataset):
 
 def test_character_group_follows_the_script_of_the_first_character():
     groups = {char: atlas_module.character_group(Unit(id=char, reading=char))
-              for char in ('あ', 'ア', '𛀁', '仮', 'ㅿ', 'ᄫ', '한', '㉠', 'A')}
+              for char in ('あ', 'ア', '𛀁', '仮', 'ㅿ', 'ᄫ', '한', '㉠', '', 'A')}
     assert groups == {'あ': 'kana', 'ア': 'kana', '𛀁': 'kana', '仮': 'kanji', 'ㅿ': 'hangul', 'ᄫ': 'hangul',
-                      '한': 'hangul', '㉠': 'hangul', 'A': 'other'}
+                      '한': 'hangul', '㉠': 'hangul', '': 'gugyeol', 'A': 'other'}
+
+
+def test_catalogue_filters_gugyeol_as_its_own_group(dataset):
+    units = list(tables.read(dataset / 'units.parquet', Unit))
+    units.extend(Unit(id=f'gugyeol-{char}', document_id='d', page_id=PAGE, reading=char, script='gugyeol',
+                      box=Box(x=10, y=10, w=20, h=30)) for char in ('', ''))
+    tables.write(dataset / 'units.parquet', units, Unit)
+    client = TestClient(create_app(dataset))
+    gugyeol = client.get('/atlas?group=gugyeol').json()
+    assert gugyeol['total'] == 2 and {i['label'] for i in gugyeol['items']} == {'', ''}
+    assert client.get('/atlas?group=kana').json()['total'] == 16
+    assert client.get('/atlas?group=kanji').json()['total'] == 0
 
 
 def test_quick_review_excludes_movable_type_until_explicitly_selected(dataset):

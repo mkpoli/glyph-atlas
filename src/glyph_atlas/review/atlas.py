@@ -152,11 +152,15 @@ def review_priority(unit: Unit) -> int:
 
 
 def character_group(unit: Unit) -> str:
-    name = unicodedata.name(label(unit)[0], "") if label(unit) else ""
+    char = label(unit)[0] if label(unit) else ""
+    name = unicodedata.name(char, "") if char else ""
     if name.startswith(("HIRAGANA", "KATAKANA", "HENTAIGANA")):
         return "kana"
     if "HANGUL" in name or name.startswith(("PARENTHESIZED KOREAN", "CIRCLED KOREAN")):
         return "hangul"
+    # 구결자 have no Unicode name; they are tested by their Hanyang private-use code point instead.
+    if char and 0xF67E <= ord(char) <= 0xF77C:
+        return "gugyeol"
     return "kanji" if name.startswith("CJK") else "other"
 
 
@@ -788,7 +792,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
     def catalogue(
         reading: str | None = None,
         q: str | None = None,
-        group: Literal["all", "kana", "kanji", "hangul"] = "all",
+        group: Literal["all", "kana", "kanji", "hangul", "gugyeol"] = "all",
         state: Literal["all", "pending", "seen", "checked", "flagged", "hard", "skipped", "attention"] = "all",
         reviewer: str | None = Query(default=None, max_length=128),
         purpose: Literal["browse", "review"] = "browse",

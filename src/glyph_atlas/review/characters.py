@@ -702,7 +702,8 @@ def suggest(term: str, layer: Layers, *, limit: int = 8) -> dict[str, Any]:
         item["rank"] = rank
         item["kind"] = ("ligature" if row.ligature
                         else "han" if str(row.script) == "han"
-                        else "hangul" if str(row.script) == "hangul" else "kana")
+                        else "hangul" if str(row.script) == "hangul"
+                        else "gugyeol" if str(row.script) == "gugyeol" else "kana")
         item["candidates"] = {**candidate_summary(
             row.char, live=live.get(row.char), local=counts.get(code_point, 0)),
             **({"status": fault} if fault else {})}

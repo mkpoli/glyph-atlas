@@ -1,11 +1,13 @@
 <script>
   import ScriptText from './ScriptText.svelte'
   import { t } from '../lib/i18n.svelte.js'
-  const types = [ ['あ', 'hiragana'], ['ア', 'katakana'], ['字', 'kanji'], ['한', 'hangul'], ['※', 'symbol'] ]
+  // A 구결자 has no glyph in the reader's fonts, so its sample is 口, the form of 古 that 구결 writes
+  // for 고, coloured by the script stated beside it.
+  const types = [ ['あ', 'hiragana'], ['ア', 'katakana'], ['字', 'kanji'], ['한', 'hangul'], ['口', 'gugyeol'], ['※', 'symbol'] ]
 </script>
 
 <div class="script-legend" role="note" aria-label={t('script.legend.label')}>
-  {#each types as [character, key]}<span><span aria-hidden="true"><ScriptText text={character} /></span><span>{t(`script.${key}`)}</span></span>{/each}
+  {#each types as [character, key]}<span><span aria-hidden="true"><ScriptText text={character} script={key} /></span><span>{t(`script.${key}`)}</span></span>{/each}
 </div>
 
 <style>
