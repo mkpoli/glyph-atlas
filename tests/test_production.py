@@ -63,3 +63,12 @@ def test_a_repeated_id_is_refused(tmp_path, monkeypatch):
             production.vocabulary()
     finally:
         production.vocabulary.cache_clear()
+
+
+def test_the_worker_knows_every_node():
+    import re
+    from pathlib import Path
+
+    worker = (Path(__file__).parents[1] / "apps/cloudflare/src/index.ts").read_text(encoding="utf-8")
+    listed = re.search(r"export const PRODUCTIONS = \[(.*?)\];", worker).group(1)
+    assert re.findall(r"'([^']+)'", listed) == list(production.vocabulary())
