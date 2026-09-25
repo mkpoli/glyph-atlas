@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 
 from glyph_atlas import ainu_characters, refs, tables
+from glyph_atlas.repair import HumanState
+from glyph_atlas.review import store
 from glyph_atlas.schema import Box, Line, Page, ReviewState, Unit
 
 ENTRY = "3daea514503efa7c8ec5ccc61c9be9d8"
@@ -56,7 +58,7 @@ def world(tmp_path: Path):
                                          encoding="utf-8")
     (folder / "reviews.json").write_text(json.dumps({"edits": [
         {"id": "1-l1-5", "label": "イ", "reading": "rejected"},
-        {"id": "1-ocr0-7", "label": "ロ", "reading": "confirmed"},  # a person relabelled the OCR reading
+        {"id": "1-ocr0-7", "label": "ロ", "reading": "confirmed", "boundary": "confirmed"},  # a person relabelled it
     ]}), encoding="utf-8")
     (folder / "empty-exclusions.json").write_text(json.dumps({"records": [{"id": "1-l1-6"}]}), encoding="utf-8")
     return atlas, records
@@ -64,6 +66,16 @@ def world(tmp_path: Path):
 
 def uid(n: int) -> str:
     return f"{PAGE}:L0:r:{n}"
+
+
+def units_of(directory: Path) -> dict[str, Unit]:
+    return {u.id: u for u in tables.read(directory / "units.parquet", Unit)}
+
+
+def event(n: int, target: str, name: str, old, new, role: str = "reviewer") -> dict:
+    return {"id": f"rv{n:08d}", "target_type": "unit", "target_id": target, "field": name, "old": json.dumps(old),
+            "new": json.dumps(new), "role": role, "actor": "reviewer-1", "evidence": None,
+            "at": "2026-09-24T00:00:00+00:00"}
 
 
 def test_every_occurrence_and_unit_gets_one_decision(world):
@@ -90,7 +102,7 @@ def test_a_reviewed_unit_is_compared_by_the_identity_its_review_gave(world):
     units = tables.read(atlas / "units.parquet", Unit)
     units[0] = units[0].model_copy(update={"text_source": "し", "unicode": " ".join(refs.to_code_points("ツ"))})
     tables.write(atlas / "units.parquet", units, Unit)
-    assert ainu_characters.plan(atlas, records).agree == {"reviewed, same": 1}
+    assert ainu_characters.plan(atlas, records).agree == {"decided, same": 1}
 
 
 def test_the_merged_dataset_keeps_confirms_replaces_and_imports(world, tmp_path):
@@ -99,7 +111,8 @@ def test_the_merged_dataset_keeps_confirms_replaces_and_imports(world, tmp_path)
     counts = ainu_characters.build(ainu_characters.plan(atlas, records), atlas, records, out)
     assert counts == {"atlas kept": 2, "atlas confirmed": 1, "atlas replaced": 2, "imported": 1, "units": 9,
                       "active": 7}
-    units = {u.id: u for u in tables.read(out / "units.parquet", Unit)}
+    assert units_of(out) and not (out / "review.sqlite").exists()
+    units = units_of(out)
     assert units[uid(1)].meta["alignment_repair"]["quiz"] is True
     assert units[uid(1)].meta["ainu_records"]["id"] == "1-l1-1"
     assert not units[uid(2)].active
@@ -116,3 +129,74 @@ def test_the_merge_never_writes_over_a_dataset(world, tmp_path):
     atlas, records = world
     with pytest.raises(FileExistsError):
         ainu_characters.build(ainu_characters.plan(atlas, records), atlas, records, atlas)
+
+
+def test_a_unit_a_person_acted_on_stays_as_the_store_has_it(world, tmp_path):
+    atlas, records = world
+    touched = tables.read(atlas / "units.parquet", Unit)[1]
+    withheld = touched.model_copy(update={"meta": {"alignment_repair": {"withheld": True, "quiz": False}}})
+    human = HumanState(units={uid(1): withheld}, readable=True,
+                       rows=[event(1, uid(1), "meta", {}, withheld.meta, role="model")])
+    result = ainu_characters.plan(atlas, records, human=human)
+    assert uid(1) in [u for u, _ in result.keep_atlas] and not result.confirm, "agreement does not undo a decision"
+    out = tmp_path / "merged"
+    ainu_characters.build(result, atlas, records, out, human=human)
+    assert units_of(out)[uid(1)].meta == withheld.meta
+    store.replay(out)
+    assert units_of(out)[uid(1)].meta == withheld.meta, "replaying the log agrees with the merge"
+
+
+def test_a_flagged_unit_ainu_records_reads_the_same_stays_flagged(world):
+    atlas, records = world
+    units = tables.read(atlas / "units.parquet", Unit)
+    units[5] = units[5].model_copy(update={"text_source": "ロ", "unicode": " ".join(refs.to_code_points("ロ"))})
+    tables.write(atlas / "units.parquet", units, Unit)
+    result = ainu_characters.plan(atlas, records)
+    assert uid(5) in [u for u, _ in result.keep_atlas] and uid(5) not in [u for u, _ in result.confirm]
+
+
+def test_ink_ainu_records_rejected_withholds_the_machine_unit_on_it(world, tmp_path):
+    atlas, records = world
+    units = tables.read(atlas / "units.parquet", Unit)
+    tables.write(atlas / "units.parquet", [*units, unit(6, 700, "イ")], Unit)
+    result = ainu_characters.plan(atlas, records)
+    assert [u for u, _ in result.withhold] == [uid(6)]
+    ainu_characters.build(result, atlas, records, tmp_path / "merged")
+    assert units_of(tmp_path / "merged")[uid(6)].meta["alignment_repair"]["quiz"] is False
+
+
+def test_a_blank_reading_never_replaces_a_label(world):
+    atlas, records = world
+    folder = records / "data/characters/moshiogusa--ninjal-1"
+    samples = json.loads((folder / "samples.json").read_text(encoding="utf-8"))
+    samples["samples"][2]["proposed"] = ""  # ainu-records writes 〓 as a blank
+    (folder / "samples.json").write_text(json.dumps(samples), encoding="utf-8")
+    result = ainu_characters.plan(atlas, records)
+    assert uid(2) in [u for u, _ in result.keep_withheld]
+
+
+def test_merging_its_own_output_again_imports_nothing_twice(world, tmp_path):
+    atlas, records = world
+    first = tmp_path / "first"
+    ainu_characters.build(ainu_characters.plan(atlas, records), atlas, records, first)
+    again = ainu_characters.plan(first, records)
+    assert again.import_new == [] and again.replace == []
+    assert sorted(again.imported_before) == sorted(u for u in units_of(first) if u.startswith("ar:"))
+    ainu_characters.build(again, first, records, tmp_path / "second")
+
+
+def test_the_merge_carries_the_datasets_other_files(world, tmp_path):
+    atlas, records = world
+    (atlas / "quiz-shapes.json").write_text('{"orders": {}}', encoding="utf-8")
+    (atlas / "repairs.jsonl").write_text("", encoding="utf-8")
+    out = tmp_path / "merged"
+    ainu_characters.build(ainu_characters.plan(atlas, records), atlas, records, out)
+    assert (out / "quiz-shapes.json").exists() and (out / "repairs.jsonl").exists()
+
+
+def test_parts_are_numbered_as_ainu_records_numbers_them(tmp_path):
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data/sources.yaml").write_text(
+        "sources:\n  - slug: s\n    witnesses:\n      - slug: w\n        parts:\n"
+        "          - wikisource: {index: a.pdf}\n          - entry: e2\n", encoding="utf-8")
+    assert ainu_characters.entries(tmp_path) == {"s/w-2": "e2"}
