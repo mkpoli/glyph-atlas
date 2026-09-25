@@ -337,3 +337,20 @@ def test_one_ink_is_imported_once_and_two_readings_of_it_are_withheld(world, tmp
     assert not ainu_characters.trusted(units["ar:moshiogusa--ninjal-1:1-l2-9"]), "rec.aynu.org leaves them out"
     again = ainu_characters.plan(out, records)
     assert again.import_new == [], "a duplicate left out stays out when the merge runs on its own output"
+
+
+def test_events_after_a_reset_keep_their_numbers_in_the_merged_store(world, tmp_path):
+    import sqlite3
+
+    atlas, records = world
+    Store(atlas)
+    with sqlite3.connect(atlas / "review.sqlite") as db:  # as a reset leaves it: ten numbers spent
+        db.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('reset_seq', '10')")
+        db.execute("DELETE FROM sqlite_sequence WHERE name='events'")
+        db.execute("INSERT INTO sqlite_sequence (name, seq) VALUES ('events', 10)")
+    record(atlas, uid(1), "unicode", "U+30C4")
+    out = tmp_path / "merged"
+    ainu_characters.build(ainu_characters.plan(atlas, records), atlas, records, out)
+    record(out, uid(0), "unicode", "U+30B7")  # the next review in the merged store
+    ids = [event.id for event in Store(out).events()]
+    assert ids == ["rv00000011", "rv00000012"], "numbers spent before a reset are never handed out again"
