@@ -1366,7 +1366,7 @@ def _char_of_codepoint(cp: str | None) -> str | None:
 
 # ------------------------------------------------------------- located units
 #: Unit tables that carry a real box, and the corpus that owns each.
-UNIT_CORPORA = ("codh-full", "hilab", "kokatsuji", "honkoku-lines", "ainu-records")
+UNIT_CORPORA = ("codh-full", "hilab", "kokatsuji", "honkoku-lines", "ainu-records", "hng")
 
 #: Rows read per scanner batch. Small enough that a common character's scan stays
 #: flat in memory while still amortising the Arrow round trip.
@@ -1558,7 +1558,7 @@ def _service_base(image: Any) -> str | None:
 
 #: Corpora a homepage sample may draw from. Ainu is excluded so the gallery is not
 #: dominated by one pilot, and every corpus here publishes located character units.
-SAMPLE_CORPORA = ("codh-full", "hilab", "kokatsuji", "honkoku-lines")
+SAMPLE_CORPORA = ("codh-full", "hilab", "kokatsuji", "honkoku-lines", "hng")
 
 #: How many rows to read per corpus per sample build. Bounded on purpose: a homepage
 #: must not scan a million-row table.

@@ -35,6 +35,7 @@ class MediaCache:
         self.directory = Path(directory) if directory else images.cache_root() / "display-crops"
         self.roots = {"images": images.images_root().resolve()}
         self.roots["hilab"] = (images.cache_root() / "hilab").resolve()
+        self.roots["hng"] = (images.cache_root() / "hng-basic-data").resolve()
         if corpus_root is not None:
             self.roots["corpus"] = Path(corpus_root).resolve()
         self._known = set()

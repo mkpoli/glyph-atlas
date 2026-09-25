@@ -11,11 +11,13 @@ from __future__ import annotations
 import io
 import json
 from pathlib import Path
+from urllib.parse import quote
 
 import pytest
 
 from glyph_atlas import tables
 from glyph_atlas.corpus import CorpusAPI, build_chars
+from glyph_atlas.corpus.crops import _hng_crop_prefix
 from glyph_atlas.corpus.details import (
     CONTEXT_PAD,
     DETAIL_EDGE,
@@ -29,6 +31,9 @@ from glyph_atlas.corpus.glyphs import build as build_registry
 from glyph_atlas.corpus.sources import ID_FAMILIES
 from glyph_atlas.schema import Box, Document, Line, Page, Unit
 
+#: The HNG mirror's real crop path (relative to a local clone) for one test unit.
+HNG_CROP_PATH = "01_誠實論卷八（P.2179）/glyphs/BMP/00350.bmp"
+
 TOMO = "\U0002a708"
 PAGE_W, PAGE_H = 400, 600
 
@@ -38,6 +43,14 @@ def jpeg(width=PAGE_W, height=PAGE_H, colour=(222, 212, 192)) -> bytes:
 
     buffer = io.BytesIO()
     Image.new("RGB", (width, height), colour).save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
+def bmp(width=41, height=73, colour=(30, 60, 90)) -> bytes:
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), colour).save(buffer, format="BMP")
     return buffer.getvalue()
 
 
@@ -230,6 +243,32 @@ def viewer(tmp_path: Path):
             )
         ],
     )
+
+    # An HNG-shaped corpus: a GitHub URL crop, resolved against a local clone.
+    hng_crop_url = _hng_crop_prefix() + quote(HNG_CROP_PATH)
+    write_units(
+        root,
+        "hng",
+        image="https://example.invalid/iiif/hng.tif",
+        units=[
+            Unit(
+                id="hng:jou:00350",
+                document_id="d:hng",
+                page_id=None,
+                seq=1,
+                box=None,
+                crop=hng_crop_url,
+                text_source="誠",
+                unicode="U+8AA0",
+                kind="char",
+                method="import",
+                active=True,
+            )
+        ],
+    )
+    clone_file = root / "hng-basic-data" / HNG_CROP_PATH
+    clone_file.parent.mkdir(parents=True)
+    clone_file.write_bytes(bmp())
 
     # A corpus whose licence forbids us serving its images.
     write_units(
@@ -481,6 +520,53 @@ class TestHonestAbsence:
         assert payload["image"] is None
         assert "not been extracted" in payload["image_unavailable_reason"]
 
+
+class TestHNGStandaloneCrop:
+    """An HNG unit: no page, no box, a GitHub URL resolved against a local clone."""
+
+    def test_a_cloned_crop_is_served_by_this_api(self, viewer):
+        api, _, _ = viewer
+        payload = detail(api, "hng:jou:00350")
+        assert payload["source"]["corpus"] == "hng"
+        assert payload["box"] is None
+        assert payload["image"] == "/api/corpus/crop?unit_id=hng%3Ajou%3A00350&w=480"
+        assert payload["image_is_served_by_this_api"] is True
+        assert payload["image_unavailable_reason"] is None
+
+    def test_without_a_clone_the_raw_mirror_url_is_used(self, tmp_path, monkeypatch):
+        """No local clone: the detail still resolves, pointing straight at the mirror."""
+        monkeypatch.setenv("GLYPH_ATLAS_CACHE", str(tmp_path / "image-cache"))
+        root = tmp_path / "work"
+        root.mkdir()
+        crop_url = _hng_crop_prefix() + quote(HNG_CROP_PATH)
+        write_units(
+            root,
+            "hng",
+            image="https://example.invalid/iiif/hng.tif",
+            units=[
+                Unit(
+                    id="hng:jou:00350",
+                    document_id="d:hng",
+                    page_id=None,
+                    seq=1,
+                    box=None,
+                    crop=crop_url,
+                    text_source="誠",
+                    unicode="U+8AA0",
+                    kind="char",
+                    method="import",
+                    active=True,
+                )
+            ],
+        )
+        directory = tmp_path / "index"
+        build_chars(root, directory)
+        api = CorpusAPI(root, directory, file_bases=[root, tmp_path])
+        payload = detail(api, "hng:jou:00350")
+        assert payload["image"] == crop_url
+        assert payload["image_is_served_by_this_api"] is False
+        assert payload["image_unavailable_reason"] is None
+
     def test_a_unit_that_is_not_a_grid_row_is_not_resolvable(self, viewer):
         """Only rows the glyph list can return have a detail, so the ids always agree."""
         api, _, _ = viewer
@@ -709,6 +795,7 @@ class TestBounded:
             ("codh:u1", "codh-full"),
             ("hi:1", "hilab"),
             ("hl:u1", "honkoku-lines"),
+            ("hng:jou:00350", "hng"),
         ):
             assert detail(api, identity, cache=resolver)["source"]["corpus"] == corpus
 
@@ -824,6 +911,7 @@ class TestLookupIsRoutedNotBudgeted:
         assert resolver._corpus_order("hi:1") == ["hilab"]
         assert resolver._corpus_order("hl:abc") == ["honkoku-lines"]
         assert resolver._corpus_order("codh:1:x") == ["codh-full"]
+        assert resolver._corpus_order("hng:jou:00350") == ["hng"]
 
     def test_an_unfamiliar_prefix_still_looks_everywhere(self, viewer):
         api, _, _ = viewer

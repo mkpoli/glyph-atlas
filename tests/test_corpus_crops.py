@@ -5,12 +5,13 @@ from __future__ import annotations
 import io
 import json
 from pathlib import Path
+from urllib.parse import quote
 
 import pytest
 
 from glyph_atlas import tables
 from glyph_atlas.corpus import CorpusAPI, build_chars
-from glyph_atlas.corpus.crops import CropResolver, sniff
+from glyph_atlas.corpus.crops import CropResolver, _hng_crop_prefix, sniff
 from glyph_atlas.schema import Box, Document, Page, Unit
 
 PAGE_W, PAGE_H = 400, 600
@@ -21,6 +22,14 @@ def jpeg(width=400, height=600, colour=(220, 210, 190)) -> bytes:
 
     buffer = io.BytesIO()
     Image.new("RGB", (width, height), colour).save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
+def bmp(width=41, height=73, colour=(30, 60, 90)) -> bytes:
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), colour).save(buffer, format="BMP")
     return buffer.getvalue()
 
 
@@ -214,6 +223,91 @@ class TestArchiveCrops:
         assert resolver.archive_member("unregistered.zip!all/characters/U+5047/34000647.jpg") is None
 
 
+class TestHNGCrops:
+    """HNG crops: a GitHub URL, resolved against a local clone when there is one."""
+
+    #: The real prefix computed from data/sources/hng-basic-data.yaml: mirror + pinned commit.
+    prefix = _hng_crop_prefix()
+    path = "01_誠實論卷八（P.2179）/glyphs/BMP/00350.bmp"
+    crop_url = prefix + quote(path)
+
+    @pytest.fixture(autouse=True)
+    def isolated_cache(self, tmp_path, monkeypatch):
+        """The default clone location must never see the repository's real cache."""
+        monkeypatch.setenv("GLYPH_ATLAS_CACHE", str(tmp_path / "isolated-cache"))
+
+    def test_prefix_is_read_from_the_source_file(self):
+        assert self.prefix == (
+            "https://raw.githubusercontent.com/chise/hng-basic-data/"
+            "e2174a30844b8100c34af1c0dbe1e301f186883e/"
+        )
+
+    def test_a_clone_under_the_corpus_root_is_served_without_a_fetch(self, tmp_path):
+        root = tmp_path / "work"
+        out = root / "hng"
+        out.mkdir(parents=True)
+        tables.write(out / "documents.parquet", [Document(
+            id="hng:jou", title="HNG source", holder="HNG",
+            image_rights={"licence": "CC-BY-SA-4.0", "holder": "HNG", "attribution": "HNG"},
+        )], Document)
+        tables.write(out / "units.parquet", [Unit(
+            id="hng:jou:00350", document_id="hng:jou", crop=self.crop_url,
+            unicode="U+8AA0", text_source="誠", kind="char", method="import",
+        )], Unit)
+        resolver = CropResolver(root, file_bases=[root])
+        row = {"crop": self.crop_url}
+        # No clone yet: the resolver has nothing local, but the row is still
+        # renderable through the mirror.
+        assert resolver.row_availability(row, "hng") == (True, None, "remote_iiif")
+        result = resolver.for_unit("hng:jou:00350")
+        assert result.render_available is True
+        assert result.mode == "remote_iiif"
+        assert result.iiif_url == self.crop_url
+        assert result.bytes_data is None
+
+        clone_file = root / "hng-basic-data" / self.path
+        clone_file.parent.mkdir(parents=True)
+        original = bmp()
+        clone_file.write_bytes(original)
+        resolver._cache.clear()  # the remote-fallback answer above must not stick
+        assert resolver.row_availability(row, "hng") == (True, None, "local_crop")
+        result = resolver.for_unit("hng:jou:00350")
+        assert result.render_available is True
+        assert result.mode == "local_crop"
+        assert result.media_type == "image/bmp"
+        assert result.bytes_data == original
+        assert result.crop_url == "/api/corpus/crop?unit_id=hng%3Ajou%3A00350&w=256"
+        # A crop registered for HNG is not served under any other corpus name.
+        assert resolver.row_availability(row, "kokatsuji")[0] is False
+
+    def test_the_default_clone_location_is_the_cache_directory(self, tmp_path, monkeypatch):
+        """`cache/hng-basic-data` (or $GLYPH_ATLAS_CACHE) is tried even off the corpus root."""
+        monkeypatch.setenv("GLYPH_ATLAS_CACHE", str(tmp_path / "cache"))
+        clone_file = tmp_path / "cache" / "hng-basic-data" / self.path
+        clone_file.parent.mkdir(parents=True)
+        original = bmp()
+        clone_file.write_bytes(original)
+        resolver = CropResolver(tmp_path / "elsewhere", file_bases=[tmp_path / "elsewhere"])
+        found = resolver.archive_member(self.crop_url)
+        assert found == clone_file
+        assert found.read_bytes() == original
+
+    def test_a_clone_path_cannot_escape_its_root(self, tmp_path):
+        resolver = CropResolver(tmp_path, file_bases=[tmp_path])
+        outside = tmp_path / "outside.bmp"
+        outside.write_bytes(bmp(20, 20))
+        member = tmp_path / "hng-basic-data" / self.path
+        member.parent.mkdir(parents=True)
+        member.symlink_to(outside)
+        assert resolver.archive_member(self.crop_url) is None
+        escape = self.prefix + quote("../../outside.bmp")
+        assert resolver.archive_member(escape) is None
+
+    def test_an_unrecognised_url_is_not_treated_as_a_crop_reference(self, tmp_path):
+        resolver = CropResolver(tmp_path, file_bases=[tmp_path])
+        assert resolver.archive_member("https://example.org/not-hng/foo.bmp") is None
+
+
 class TestCropEndpoint:
     def test_a_registered_unit_serves_real_image_bytes(self, crop_api):
         api, _ = crop_api
@@ -375,3 +469,58 @@ def test_a_held_page_the_licence_forbids_serving_stays_with_the_holder(tmp_path,
     images.register(scan, service)
     row = {"box": {"x": 10, "y": 20, "w": 30, "h": 40}, "image": service, "image_licence": "restricted"}
     assert CropResolver(tmp_path).row_availability(row, "ainu-records") == (True, None, "remote_iiif")
+
+
+@pytest.fixture()
+def hng_api(tmp_path, monkeypatch):
+    """An HNG-shaped corpus, browsable through the gallery API like HI Lab's."""
+    monkeypatch.setenv("GLYPH_ATLAS_CACHE", str(tmp_path / "isolated-cache"))
+    root = tmp_path / "work"
+    root.mkdir()
+    out = root / "hng"
+    out.mkdir()
+    path = "01_誠實論卷八（P.2179）/glyphs/BMP/00350.bmp"
+    crop_url = _hng_crop_prefix() + quote(path)
+    tables.write(out / "documents.parquet", [Document(
+        id="hng:jou", title="HNG source", holder="HNG",
+        image_rights={"licence": "CC-BY-SA-4.0", "holder": "HNG", "attribution": "HNG"},
+    )], Document, command="test")
+    tables.write(out / "units.parquet", [Unit(
+        id="hng:jou:00350", document_id="hng:jou", crop=crop_url,
+        unicode="U+8AA0", text_source="誠", kind="char", method="import",
+    )], Unit)
+    (out / "MANIFEST.json").write_text(
+        json.dumps(
+            {
+                "schema_version": tables.SCHEMA_VERSION,
+                "tables": {"documents": 1, "units": 1},
+                "files": {},
+                "writer": "test",
+                "command": "test",
+            }
+        ),
+        encoding="utf-8",
+    )
+    clone_file = root / "hng-basic-data" / path
+    clone_file.parent.mkdir(parents=True)
+    clone_file.write_bytes(bmp())
+    directory = tmp_path / "index"
+    build_chars(root, directory)
+    return CorpusAPI(root, directory, file_bases=[root]), root
+
+
+class TestHNGGlyphsEndpoint:
+    """HNG glyphs come back through the same gallery/search surface as HI Lab's."""
+
+    def test_a_cloned_crop_is_advertised_as_renderable(self, hng_api):
+        api, _ = hng_api
+        status, _, body = api.handle_get(f"/api/corpus/glyphs?char={quote('誠')}&limit=5")
+        assert status == 200
+        payload = json.loads(body)
+        items = [i for i in payload["items"] if i["unit_id"] == "hng:jou:00350"]
+        assert items, "the HNG unit must be a candidate for its character"
+        item = items[0]
+        assert item["render_available"] is True
+        assert item["render_capability"] == "local_crop"
+        assert item["thumbnail"]["available"] is True
+        assert item["thumbnail"].get("crop_url")
