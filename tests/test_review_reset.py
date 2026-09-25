@@ -658,6 +658,73 @@ class TestCrashSafety:
         monkeypatch.setattr(reset_module, "_verify", real)
         assert reset_reviews(root).verified["events"] == 0
 
+    def test_the_baseline_and_marker_are_fsynced_before_the_erase_commits(self, tmp_path, monkeypatch):
+        """A power loss must never find durable history-erasure beside a baseline or
+        marker that never made it to disk. Every ``os.fsync`` this reset issues for the
+        baseline files and the phase marker has to happen strictly before the erase
+        transaction commits.
+        """
+        root = build_dataset(tmp_path / "work" / "honkoku-lines")
+        review_the_dataset(root)
+        calls: list[str] = []
+        real_fsync = os.fsync
+        real_erase = reset_module._erase_store
+
+        def recording_fsync(fd, *args, **kwargs):
+            calls.append("fsync")
+            return real_fsync(fd, *args, **kwargs)
+
+        def recording_erase(*args, **kwargs):
+            calls.append("erase")
+            return real_erase(*args, **kwargs)
+
+        monkeypatch.setattr(reset_module.os, "fsync", recording_fsync)
+        monkeypatch.setattr(reset_module, "_erase_store", recording_erase)
+        reset_reviews(root)
+
+        assert "fsync" in calls, "no fsync was issued at all"
+        assert "erase" in calls
+        assert calls.index("fsync") < calls.index("erase"), (
+            "the erase committed before any baseline or marker file was fsynced"
+        )
+
+    def test_a_resume_at_erased_with_a_tampered_baseline_refuses(self, tmp_path, monkeypatch):
+        """Once the erase has committed, the digest recorded at ``materialised`` is the
+        only proof the baseline on disk is what this reset actually wrote — there is no
+        history left to fall back on if it is not.
+        """
+        root = build_dataset(tmp_path / "work" / "honkoku-lines")
+        review_the_dataset(root)
+        real_verify = reset_module._verify
+
+        def crash(*args, **kwargs):
+            raise KeyboardInterrupt("simulated crash")
+
+        monkeypatch.setattr(reset_module, "_verify", crash)
+        with pytest.raises(KeyboardInterrupt):
+            reset_reviews(root)
+        monkeypatch.setattr(reset_module, "_verify", real_verify)
+
+        marker = read_marker(root)
+        assert marker["phase"] == "erased"
+        assert marker.get("baseline_digest")
+        assert reset_module.reset_phase(root / "review.sqlite") == "erased"
+
+        # Corrupt the baseline that was materialised and fsynced before the erase, as a
+        # power loss with a half-written disk sector could.
+        units_path = root / "units.parquet"
+        original = units_path.read_bytes()
+        tampered = bytearray(original)
+        tampered[len(tampered) // 2] ^= 0xFF
+        units_path.write_bytes(bytes(tampered))
+
+        with pytest.raises(UnsafeReset) as error:
+            reset_reviews(root)
+        assert "does not match" in str(error.value)
+        # Refusing must not clear the marker or touch the store further.
+        assert in_progress(root) is True
+        assert reset_module.reset_phase(root / "review.sqlite") == "erased"
+
 
 class TestRefusals:
     def test_a_missing_directory_is_refused(self, tmp_path):

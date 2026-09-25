@@ -160,6 +160,49 @@ def digest_file(path: Path) -> str:
     return hasher.hexdigest()
 
 
+# ---------------------------------------------------------------------- fsync
+def _fsync_file(path: Path) -> None:
+    """Force a file's already-written bytes to durable storage.
+
+    The write that produced ``path`` may already have closed its handle; reopening it
+    read-only and syncing that descriptor still flushes whatever the kernel is holding
+    for the file, which is all ``fsync`` ever does.
+    """
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _fsync_dir(path: Path) -> None:
+    """Force a directory's entries — a create, a rename, a delete — to durable storage.
+
+    A crash can lose a rename that never reached disk even when the renamed file's own
+    bytes did; this is what makes ``os.replace`` durable rather than merely atomic.
+    """
+    descriptor = os.open(path, os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _fsync_tree(path: Path) -> None:
+    """Fsync a baseline write: every file it left behind, then the directory holding them.
+
+    ``path`` is either the single Parquet file a small table becomes, or the directory
+    of shards and ``MANIFEST.json`` a sharded one becomes.
+    """
+    if path.is_dir():
+        for child in sorted(path.iterdir()):
+            if child.is_file():
+                _fsync_file(child)
+        _fsync_dir(path)
+    else:
+        _fsync_file(path)
+
+
 # ---------------------------------------------------------------------- sqlite
 @contextmanager
 def connect(path: Path) -> Iterator[sqlite3.Connection]:
@@ -382,6 +425,14 @@ def _write_table(dataset: Path, name: str, records: Sequence[Any], model: type, 
 
 
 def _move_into_place(dataset: Path, name: str, staged: Path) -> None:
+    """Replace one baseline table and make the replacement durable before returning.
+
+    The staged file or shard directory is fsynced before the rename, so its bytes
+    cannot be lost even if ``os.replace`` itself is; the dataset directory is fsynced
+    after, so the rename that installed it is not lost either. Both have to hold before
+    the reset is allowed to erase the history this baseline is meant to replace.
+    """
+    _fsync_tree(staged)
     if staged.is_dir():
         destination = dataset / name
         if destination.exists():
@@ -390,6 +441,7 @@ def _move_into_place(dataset: Path, name: str, staged: Path) -> None:
     else:
         destination = (dataset / name).with_suffix(".parquet")
         os.replace(staged, destination)
+    _fsync_dir(dataset)
 
 
 def _stamp(dataset: Path) -> str:
@@ -434,6 +486,24 @@ def baseline_digest(dataset: Path) -> str:
     return hasher.hexdigest()
 
 
+def _verify_baseline_digest(dataset: Path, marker: Mapping[str, Any]) -> None:
+    """On resume from ``erased``, refuse rather than seal a baseline nobody can vouch for.
+
+    ``erased`` means the history is already gone: there is nothing left to rebuild the
+    baseline from if it turns out not to be what this reset actually wrote. The digest
+    recorded when it was materialised is the only thing left that can say so.
+    """
+    recorded = marker.get("baseline_digest")
+    current = baseline_digest(dataset)
+    if recorded is None or recorded != current:
+        raise UnsafeReset(
+            f"resuming a reset already at `erased`, but the baseline on disk does not match"
+            f" the digest recorded when it was materialised (recorded {recorded!r}, found"
+            f" {current!r}); the review history is already gone, so nothing further was"
+            f" changed — restore {REWRITTEN} from a backup before retrying"
+        )
+
+
 def read_marker(dataset: Path) -> dict[str, Any] | None:
     path = marker_path(dataset)
     if not path.is_file():
@@ -447,8 +517,12 @@ def read_marker(dataset: Path) -> dict[str, Any] | None:
 def _write_marker(dataset: Path, payload: Mapping[str, Any]) -> None:
     path = marker_path(dataset)
     temporary = path.with_suffix(".json.part")
-    temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    with temporary.open("w", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, ensure_ascii=False, indent=1) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
     os.replace(temporary, path)
+    _fsync_dir(dataset)
 
 
 def _clear_marker(dataset: Path) -> None:
@@ -579,6 +653,12 @@ def reset_reviews(
         phase = "started"
         _set_reset_phase(store, "started")
     report.phases.append(phase)
+    if phase == "erased":
+        # No `started`/`materialised` block below runs on this path — the reset already
+        # committed its erase in an earlier call, and this one is only resuming to seal
+        # it. Check now, before anything else, that the baseline it is about to seal is
+        # still the one that was actually written.
+        _verify_baseline_digest(dataset, marker)
 
     # ---- materialise: the corrections become the baseline before anything is deleted
     if phase == "started":
@@ -605,6 +685,7 @@ def reset_reviews(
                 "at": _now(),
                 "dataset": dataset.name,
                 "stamp": stamp,
+                "baseline_digest": baseline_digest(dataset),
                 "units": report.units,
                 "lines": report.lines,
             },
@@ -615,10 +696,21 @@ def reset_reviews(
 
     # ---- erase: the history, and only the history
     if phase == "materialised":
+        # The baseline is exactly what `materialised` just wrote (or, on a resume from
+        # that phase, what it wrote in an earlier call); recomputed fresh rather than
+        # trusted from the marker, since this digest is what makes the erase safe.
+        digest = baseline_digest(dataset)
         report.events_erased = _erase_store(store, raw_units, reset_units, raw_lines, lines, stamp, report)
         _write_marker(
             dataset,
-            {"phase": "erased", "at": _now(), "dataset": dataset.name, "stamp": stamp, "bumped": True},
+            {
+                "phase": "erased",
+                "at": _now(),
+                "dataset": dataset.name,
+                "stamp": stamp,
+                "baseline_digest": digest,
+                "bumped": True,
+            },
         )
         report.phases.append("erased")
     report.journal_erased = log_path(dataset).is_file()
