@@ -28,7 +28,7 @@
   // round on screen. Loaded after the round itself, and a failure here never blocks the round.
   let references = $state([])
   let history = $state([]), historyIndex = $state(-1)
-  let loadingMore = $state(false), hasMore = $state(false)
+  let loadingMore = $state(false), hasMore = $state(false), loadMoreFailed = $state(false)
   // True while the load-more row is on screen or close to it: scrolling down loads the next batch.
   let nearEnd = $state(false)
   function watchSeen(node, id) {
@@ -158,7 +158,7 @@
   async function loadMore() {
     if (loading || saving || loadingMore || !hasMore || items.length >= roundLimit) return
     const id = requestId, round = roundId
-    loadingMore = true; error = ''; errorStatus = 0
+    loadingMore = true; loadMoreFailed = false; error = ''; errorStatus = 0
     const seen = new Set(items.map(item => item.id))
     let offset = 0, additions = [], more = false
     try {
@@ -184,7 +184,7 @@
       }
       // Added crops follow the ones already on screen, so nothing the reviewer is looking at moves.
       items = [...items, ...arranged(numbered(additions, items.length))]; hasMore = more
-    } catch (e) { if (id === requestId) { error = e.message; errorStatus = e.status ?? 0 } }
+    } catch (e) { if (id === requestId) { error = e.message; errorStatus = e.status ?? 0; loadMoreFailed = true } }
     finally { if (id === requestId) loadingMore = false }
   }
   /**
@@ -522,7 +522,14 @@
       {/each}{/if}
     </div>
     {/key}
-    {#if items.length}<div class="load-more-row" use:watchEnd><button class="load-more" disabled={loading || saving || loadingMore || !hasMore || items.length >= roundLimit} onclick={loadMore}>{loadingMore ? t('quiz.loadMore.loading') : items.length >= roundLimit ? t('quiz.loadMore.saveToLoad') : hasMore ? t('quiz.loadMore.more', { reading }) : t('quiz.loadMore.allLoaded', { reading })}</button></div>{/if}
+    <!-- More crops load on their own as the reader nears the end; the row only says what is happening.
+         A button remains for the case scrolling cannot trigger (a failed batch waits for a retry). -->
+    {#if items.length}<div class="load-more-row" use:watchEnd role="status">
+      {#if loadingMore}<span class="load-more-status"><span class="load-more-spinner" aria-hidden="true"></span>{t('quiz.loadMore.loading')}</span>
+      {:else if hasMore && items.length >= roundLimit}<span class="load-more-status">{t('quiz.loadMore.saveToLoad')}</span>
+      {:else if hasMore}<button class="load-more" disabled={loading || saving} onclick={loadMore}>{loadMoreFailed && error ? t('common.retry') : t('quiz.loadMore.more', { reading })}</button>
+      {:else}<span class="load-more-status">{t('quiz.loadMore.allLoaded', { reading })}</span>{/if}
+    </div>{/if}
     {#if references.length}
       <section class="quiz-reference" aria-label={t('quiz.reference.label')}>
         <p class="reference-heading">{t('quiz.reference.heading')} <span>{references.length}</span></p>
@@ -581,6 +588,10 @@
   .history-character.current { color:var(--accent); background:var(--accent-light); border-color:var(--accent); }
   .load-more-row { display:flex; justify-content:center; padding:22px 0 0; }
   .load-more { min-width:170px; font-size:13px; }
+  .load-more-status { display:inline-flex; align-items:center; gap:8px; min-height:38px; font-size:13px; color:var(--muted); }
+  .load-more-spinner { width:14px; height:14px; border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:load-more-spin .8s linear infinite; }
+  @keyframes load-more-spin { to { transform:rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .load-more-spinner { animation:none; } }
   /* Comparison aid, not part of the round: smaller tiles, no selection state, own inspect only. */
   .quiz-reference { margin:26px 0 4px; }
   .reference-heading { display:flex; align-items:center; gap:8px; font-size:11px; color:var(--muted); margin:0 0 10px; }
