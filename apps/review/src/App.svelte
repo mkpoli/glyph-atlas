@@ -10,7 +10,7 @@
   import ExportReviews from './components/ExportReviews.svelte'
   import CollectionProgress from './components/CollectionProgress.svelte'
   import { reviewer, stored, remember } from './lib/client.js'
-  import { t, LOCALES, locale, localName, setLocale } from './lib/i18n.svelte.js'
+  import { t, around, LOCALES, locale, localName, setLocale } from './lib/i18n.svelte.js'
   $effect(() => { document.title = t('app.name') })
   let route = $state('/'), reading = $state(''), selected = $state(null), onVerdict = $state(null)
   let menuButton, clientId = $state(''), menu = $state(false), exporting = $state(false), progress = $state(false)
@@ -63,6 +63,14 @@
   {:else if route === '/history'}<History {clientId} {inspect} />
   {:else}{#key route}<Explore flagged={route === '/flagged'} {inspect} {ink} onink={setInk} onprogress={showProgress} />{/key}{/if}{/if}
 </main>
+<!-- The dataset's own licence covers the records and annotations made here; images and texts keep the
+     terms of their sources, which each crop's "Source & rights" link shows. -->
+<footer class="site-footer">
+  <p>{around('footer.data', 'license')[0]}<a href="https://creativecommons.org/licenses/by-sa/4.0/" rel="license noopener" target="_blank">CC BY-SA 4.0</a>{around('footer.data', 'license')[1]}
+    · {t('footer.images')}
+    · {around('footer.code', 'license')[0]}<a href="https://github.com/mkpoli/glyph-atlas/blob/main/LICENSE" rel="noopener" target="_blank">MIT</a>{around('footer.code', 'license')[1]}
+    · <a href="https://github.com/mkpoli/glyph-atlas" rel="noopener" target="_blank">GitHub ↗</a></p>
+</footer>
 {#if selected}{#if selectedOrigin === 'corpus'}<CorpusDialog id={selected} {clientId} {close} {saved} previous={selectedIndex > 0 ? () => step(-1) : null} next={selectedIndex >= 0 && selectedIndex + 1 < queue.length ? () => step(1) : null} position={queue.length ? `${selectedIndex + 1} / ${queue.length}` : ''} />{:else}<CharacterDialog id={selected} {clientId} {close} {onVerdict} {saved} previous={selectedIndex > 0 ? () => step(-1) : null} next={selectedIndex >= 0 && selectedIndex + 1 < queue.length ? () => step(1) : null} position={queue.length ? `${selectedIndex + 1} / ${queue.length}` : ''} />{/if}{/if}
 {#if savedNotice}<div class="save-toast" role="status">✓ {savedNotice}</div>{/if}
 {#if exporting}<ExportReviews close={() => { exporting = false; menuButton?.focus() }} />{/if}
