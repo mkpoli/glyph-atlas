@@ -15,7 +15,8 @@ characters, and each row a unit with its box. A row that repeats the page, box a
 earlier row is a second entry of the same box and is counted under `duplicates`; a row with no
 character is counted under `blank`. Where two characters share one box, one of them was saved with
 its neighbour's box: both units are `disputed` and name each other in `upstream["shares_box_with"]`,
-and `shared_boxes` counts them.
+and `shared_boxes` counts them. A box drawn past the edge of its page is cut back to the page, the
+drawn box kept in `upstream["box_drawn"]`, and counted under `clamped`.
 
 A unit whose hng-gid is set keeps it in `upstream["hng_gid"]` and names the crops of the basic dataset
 it was filed under in `upstream["hng_unit"]`, comma-separated. A gid may list several cards
@@ -152,6 +153,8 @@ def records_of(
             pages[row["page"]] = page
         column = int(row["ln"])
         unit = unit_of(row, sheet, page, column, glyphs)
+        if clamp(unit, page):
+            counts["clamped"] += 1
         columns.setdefault((row["page"], column), []).append(unit)
         boxes.setdefault(key[:5], []).append(unit)
         units.append(unit)
@@ -208,6 +211,18 @@ def unit_of(row: dict[str, str], sheet: Sheet, page: Page, column: int, glyphs: 
     )
 
 
+def clamp(unit: Unit, page: Page) -> bool:
+    """Cut a box that runs past the page edge back to the page, keeping the drawn box in upstream."""
+    box = unit.box
+    left, top = max(0, box.x), max(0, box.y)
+    right, bottom = min(page.width, box.x + box.w), min(page.height, box.y + box.h)
+    if (left, top, right, bottom) == (box.x, box.y, box.x + box.w, box.y + box.h):
+        return False
+    unit.upstream["box_drawn"] = f"{box.x},{box.y},{box.w},{box.h}"
+    unit.box = Box(x=left, y=top, w=right - left, h=bottom - top)
+    return True
+
+
 def line_of(page: Page, column: int, units: list[Unit]) -> Line:
     """A column: the box that encloses its characters and their text in reading order."""
     ordered = sorted(units, key=lambda unit: (unit.seq, unit.box.y))
@@ -253,7 +268,7 @@ def import_all(
     if found is not None and found != raw["revision"]:
         raise RevisionError(f"{clone} is at {found}; {SOURCE_FILE.name} pins {raw['revision']}")
     entries = {entry["id"]: entry for entry in hng.source_file()["documents"]}
-    counts: Counter[str] = Counter(duplicates=0, blank=0, shared_boxes=0)
+    counts: Counter[str] = Counter(duplicates=0, blank=0, shared_boxes=0, clamped=0)
     documents: list[Document] = []
     pages: list[Page] = []
     lines: list[Line] = []
