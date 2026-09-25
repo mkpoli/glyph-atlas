@@ -7,7 +7,7 @@ ALTER TABLE corpus_units ADD COLUMN named INTEGER NOT NULL DEFAULT 0;
 -- is certain is the old movable-type set; the rest read as unknown. The key range is every id that
 -- starts with `codh-omt:` (char(59) is the ';' that follows ':').
 UPDATE corpus_units SET production='movable-type' WHERE id>='codh-omt:' AND id<'codh-omt'||char(59);
-UPDATE corpus_units SET named=1 WHERE id IN (SELECT id FROM units WHERE origin='corpus');
+UPDATE corpus_units SET named=1 WHERE id IN (SELECT id FROM units WHERE origin='corpus') AND named=0;
 -- A round reads one character's untouched glyphs in shuffle order from a seeded point, across all
 -- materials or one of them, so LIMIT bounds what it reads however many glyphs are named.
 CREATE INDEX IF NOT EXISTS corpus_round ON corpus_units(character,named,shuffle);

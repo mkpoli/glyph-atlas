@@ -9,7 +9,7 @@ import re
 import sqlite3
 from pathlib import Path
 
-from cloudflare_schema import CORPUS_REFRESH, category_of, schema
+from cloudflare_schema import CORPUS_COLUMNS, CORPUS_REFRESH, category_of, corpus_upsert, schema
 from export_cloudflare import encoded
 
 IMMUTABLE = ("metadata", "characters", "aliases", "corpus_units", "media")
@@ -135,6 +135,8 @@ def seal(catalogue: Path, corpus: Path, output: Path):
             if not statement.startswith("INSERT INTO "):
                 continue
             table = statement.split('"', 2)[1]
+            if table == "corpus_units":
+                continue
             if table in IMMUTABLE:
                 statement = statement.replace("INSERT INTO", "INSERT OR REPLACE INTO", 1)
             elif table == "units":
@@ -145,6 +147,11 @@ def seal(catalogue: Path, corpus: Path, output: Path):
             if size > 100_000:
                 raise ValueError(f"D1 statement exceeds 100 KB in {table}")
             max_statement = max(max_statement, size)
+            sql.write(statement + "\n")
+        # Corpus rows keep the `named` flag D1 holds; see `corpus_upsert`.
+        for row in db.execute(f"SELECT {','.join(CORPUS_COLUMNS)} FROM corpus_units ORDER BY id"):
+            statement = corpus_upsert(row)
+            max_statement = max(max_statement, len(statement.encode()))
             sql.write(statement + "\n")
         # Counted in D1 from the rows it now holds, which may include rows earlier publications left.
         sql.write(CORPUS_REFRESH + "\n")

@@ -57,9 +57,22 @@ def test_a_records_only_export_seals_into_packs_and_ordered_sql(scripts, tmp_pat
     assert (tmp_path / "sealed" / publication["objects"][0]["file"]).read_bytes() == b"".join(records)
     sql = (tmp_path / "sealed" / publication["sql"][0]).read_text()
     lines = sql.splitlines()
+    updates = "character=excluded.character,family=excluded.family,visual_group=excluded.visual_group,shuffle=excluded.shuffle," \
+        "object=excluded.object,offset=excluded.offset,size=excluded.size,production=excluded.production"
+    columns = "id,character,family,visual_group,shuffle,object,offset,size,production"
     assert lines[:2] == [
-        f"INSERT OR REPLACE INTO corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production) VALUES('codh:1','𛂥','U+306F',NULL,1,'{key}',0,{len(records[0])},'woodblock');",
-        f"INSERT OR REPLACE INTO corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production) VALUES('codh:2',NULL,'U+306F',NULL,2,'{key}',{len(records[0])},{len(records[1])},'unknown');"]
+        (f"INSERT INTO corpus_units({columns}) VALUES('codh:1','𛂥','U+306F',NULL,1,'{key}',0,{len(records[0])},'woodblock') "
+         f"ON CONFLICT(id) DO UPDATE SET {updates};"),
+        (f"INSERT INTO corpus_units({columns}) VALUES('codh:2',NULL,'U+306F',NULL,2,'{key}',{len(records[0])},{len(records[1])},'unknown') "
+         f"ON CONFLICT(id) DO UPDATE SET {updates};")]
+    # A part applied before the last one leaves a named glyph named and the counts as they were.
+    partial = sqlite3.connect(":memory:")
+    partial.executescript(SCHEMA)
+    partial.execute("INSERT INTO corpus_units VALUES('codh:1','𛂥','U+306F',NULL,1,'old',0,1,'woodblock',1)")
+    partial.execute("INSERT INTO corpus_characters VALUES('𛂥','woodblock',1,1)")
+    partial.executescript("\n".join(line for line in lines if line.startswith("INSERT INTO corpus_units")))
+    assert partial.execute("SELECT object,named FROM corpus_units WHERE id='codh:1'").fetchone() == (key, 1)
+    assert partial.execute("SELECT * FROM corpus_characters").fetchall() == [("𛂥", "woodblock", 1, 1)]
     replayed = sqlite3.connect(":memory:")
     replayed.executescript(SCHEMA)
     replayed.execute("INSERT INTO corpus_characters VALUES('gone','unknown',9,0)")
@@ -91,6 +104,16 @@ def test_a_publication_file_gets_the_migrations_it_has_not_had(scripts, tmp_path
         cloudflare_schema.schema(db)
         assert {r[1] for r in db.execute("PRAGMA table_info(corpus_units)")} >= {"production", "named"}
         assert db.execute("PRAGMA user_version").fetchone()[0] == len(list(Path("apps/cloudflare/migrations").glob("*.sql")))
+
+
+def test_a_file_built_with_an_earlier_draft_of_0006_is_refused(scripts, tmp_path):
+    cloudflare_schema = importlib.import_module("cloudflare_schema")
+    with sqlite3.connect(tmp_path / "corpus.sqlite") as db:
+        db.executescript(Path("apps/cloudflare/migrations/0001_catalogue.sql").read_text())
+        db.execute("ALTER TABLE corpus_units ADD COLUMN production TEXT NOT NULL DEFAULT 'unknown'")
+        db.execute("PRAGMA user_version=6")
+        with pytest.raises(ValueError, match="rebuild this export"):
+            cloudflare_schema.schema(db)
 
 
 def test_resuming_an_export_whose_corpus_rows_predate_their_material_is_refused(scripts, tmp_path):

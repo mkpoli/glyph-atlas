@@ -205,7 +205,9 @@ async function catalogue(env: Env, q: URLSearchParams) {
     total += unnamed;
     if (items.length < limit) {
       const round = await corpusRound(env, reading, production, seed, Math.max(offset - listed, 0), limit - items.length);
-      items.push(...round.items); next += round.read;
+      // A glyph is one crop whichever list deals it, even should its published row read as untouched.
+      const shown = new Set(items.map(item => item.id));
+      items.push(...round.items.filter(item => !shown.has(item.id))); next += round.read;
       if (round.exhausted) total = next;
     }
   }
