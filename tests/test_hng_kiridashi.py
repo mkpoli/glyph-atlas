@@ -42,6 +42,14 @@ def build(clone: Path) -> Path:
     return clone
 
 
+GLYPHS = {"myz": {"0300", "0435", "0539", "0504a", "0504b"}}
+
+
+@pytest.fixture(autouse=True)
+def basic(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(kd, "basic_glyphs", lambda _basic, sources: {s: GLYPHS.get(s, set()) for s in sources})
+
+
 @pytest.fixture
 def imported(tmp_path: Path):
     counts = kd.import_all(tmp_path / "out", clone=build(tmp_path / "clone"))
@@ -57,6 +65,7 @@ def test_counts(imported) -> None:
     counts, documents, pages, lines, units = imported
     assert (counts["documents"], counts["pages"], counts["lines"], counts["units"]) == (1, 2, 3, 5)
     assert (counts["duplicates"], counts["blank"], counts["shared_boxes"], counts["linked"]) == (1, 1, 2, 4)
+    assert counts["unlinked"] == 0
     assert len(documents) == 1 and len(pages) == 2 and len(lines) == 3 and len(units) == 5
 
 
@@ -96,3 +105,18 @@ def test_revision_mismatch(tmp_path: Path) -> None:
     (clone / ".git" / "HEAD").write_text("0" * 40 + "\n")
     with pytest.raises(kd.RevisionError):
         kd.import_all(tmp_path / "out", clone=clone)
+
+
+@pytest.mark.parametrize(
+    ("gid", "flag", "found"),
+    [
+        ("0300", "0", ["hng:myz:0300"]),
+        ("0504", "2", ["hng:myz:0504b"]),
+        ("0504a", "1", ["hng:myz:0504a"]),
+        ("0504a/0504b", "0", ["hng:myz:0504a", "hng:myz:0504b"]),
+        ("0504", "0", []),
+        ("0999", "0", []),
+    ],
+)
+def test_targets(gid: str, flag: str, found: list[str]) -> None:
+    assert kd.targets("myz", gid, flag, GLYPHS["myz"]) == found
