@@ -10,7 +10,7 @@
   import QuizFocus from '../components/QuizFocus.svelte'
   import { catalogue, randomSeed, request, remember, stored, number, suggestionsFor } from '../lib/client.js'
   import { issues, issueTitle, suggestsReading, isSingle, greetSuggestions, skipLabel, skipHint } from '../lib/issues.js'
-  import { nextCharacter, ROUND_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
+  import { nextCharacter, ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
   import { t, around } from '../lib/i18n.svelte.js'
   let { clientId, initialReading = '', inspect } = $props()
   let data = $state(null), items = $state([]), choices = $state({}), selected = $state({})
@@ -31,7 +31,7 @@
   // round on screen. Loaded after the round itself, and a failure here never blocks the round.
   let references = $state([])
   let history = $state([]), historyIndex = $state(-1)
-  let loadingMore = $state(false), hasMore = $state(false), loadMoreFailed = $state(false)
+  let loadingMore = $state(false), hasMore = $state(false), nextOffset = $state(0), loadMoreFailed = $state(false)
   // A saved round says so, since the next character replaces it at once.
   let savedNotice = $state(''), savedTimer
   function announceSaved(count, label) {
@@ -50,7 +50,8 @@
   }
   function watchEnd(node) {
     const observer = new IntersectionObserver(entries => { nearEnd = entries.some(entry => entry.isIntersecting) },
-      { rootMargin: '0px 0px 600px 0px' })
+      // About two screens ahead, so the next crops are usually in before the reader gets there.
+      { rootMargin: '0px 0px 1600px 0px' })
     observer.observe(node)
     return { destroy() { observer.disconnect(); nearEnd = false } }
   }
@@ -105,7 +106,7 @@
   const canNext = $derived((data?.categories ?? []).some(c => c.pending > 0 && c.label !== reading))
   function snapshot() {
     return $state.snapshot({ reading, items, choices, selected, skipped, recorded, suggestions, contextSuggestions,
-      roundId, roundSeed, hasMore, production, summary: data })
+      roundId, roundSeed, hasMore, nextOffset, production, summary: data })
   }
   function checkpoint() {
     if (historyIndex >= 0) history[historyIndex] = snapshot()
@@ -114,7 +115,7 @@
     production = round.production; data = round.summary
     reading = round.reading; items = round.items; choices = round.choices; selected = round.selected
     skipped = round.skipped; recorded = round.recorded ?? {}; suggestions = round.suggestions; contextSuggestions = round.contextSuggestions
-    roundId = round.roundId; roundSeed = round.roundSeed; hasMore = round.hasMore
+    roundId = round.roundId; roundSeed = round.roundSeed; hasMore = round.hasMore; nextOffset = round.nextOffset ?? 0
     loaded = {}; failed = {}; viewed = {}; step = 'select'; at = 0; error = ''; errorStatus = 0; categoryOpen = false
   }
   function visit(index) {
@@ -170,7 +171,8 @@
       }
       restoreRound({ reading: chosen, items: arranged(numbered(unique(result.items))), choices: {}, selected: {}, skipped: {},
         suggestions: {}, contextSuggestions: {}, roundId: crypto.randomUUID(), roundSeed: seed,
-        hasMore: (result.next_offset ?? result.items.length) < result.total, production: scope, summary })
+        hasMore: (result.next_offset ?? result.items.length) < result.total, nextOffset: result.next_offset ?? result.items.length,
+        production: scope, summary })
       if (replace && historyIndex >= 0) history[historyIndex] = snapshot()
       else {
         history = [...history.slice(0, historyIndex + 1), snapshot(), ...history.slice(historyIndex + 1)]
@@ -184,13 +186,13 @@
     const id = requestId, round = roundId
     loadingMore = true; loadMoreFailed = false; error = ''; errorStatus = 0
     const seen = new Set(items.map(item => item.id))
-    let offset = 0, additions = [], more = false
+    // Continue from where the last load stopped, a batch early: reviews saved meanwhile may have moved
+    // rows forward. Crops already on screen are dropped by occurrence, so the overlap costs nothing.
+    let offset = Math.max(0, nextOffset - MORE_BATCH), additions = [], more = false
     try {
-      // Re-read this character with a stable shuffle: concurrent reviews may have removed rows.
-      // Deduplicate by occurrence instead of treating an old offset as a permanent position.
-      const batchLimit = Math.min(ROUND_BATCH, roundLimit - items.length)
+      const batchLimit = Math.min(MORE_BATCH, roundLimit - items.length)
       while (additions.length < batchLimit) {
-        const result = await catalogue({ purpose: 'review', reviewer: clientId, production, reading, state: 'pending', limit: 96, offset, seed: roundSeed })
+        const result = await catalogue({ purpose: 'review', reviewer: clientId, production, reading, state: 'pending', limit: 48, offset, seed: roundSeed })
         if (closed || id !== requestId || round !== roundId) return
         const fresh = unique(result.items).filter(item => !seen.has(item.id))
         const room = batchLimit - additions.length
@@ -207,7 +209,7 @@
         if (!moved || offset >= result.total) { more = false; break }
       }
       // Added crops follow the ones already on screen, so nothing the reviewer is looking at moves.
-      items = [...items, ...arranged(numbered(additions, items.length))]; hasMore = more
+      items = [...items, ...arranged(numbered(additions, items.length))]; hasMore = more; nextOffset = offset
     } catch (e) { if (id === requestId) { error = e.message; errorStatus = e.status ?? 0; loadMoreFailed = true } }
     finally { if (id === requestId) loadingMore = false }
   }
@@ -539,7 +541,7 @@
           <button class="quiz-choice" aria-label={t('quiz.selectCharacter', { number: i + 1 })} aria-pressed={!!selected[item.id]} disabled={saving || !loaded[item.id] || skipped[item.id] || recorded[item.id] === 'flagged'} onclick={() => toggle(item.id)}><Glyph {item} eager onload={id => loaded = { ...loaded, [id]: true }} onerror={id => { failed = { ...failed, [id]: true }; if (selected[id]) skip([id]) }} /><span class="choice-mark">{selected[item.id] ? '✓' : choices[item.id]?.verdict === 'wrong' ? '×' : ''}</span></button>
           <div class="quiz-production"><ProductionBadge {item} />{#if recorded[item.id]}<span class="recorded-badge">✓ {t('app.saved')}</span>{/if}{#if item.origin === 'corpus'}<span class="quiz-source" lang={item.source?.title ? 'ja' : undefined} title={item.source?.title}>{item.source?.title ?? t('quiz.corpusSource')}</span>{/if}</div><div class="quiz-tile-tools">{#if keys[i]}<kbd>{keys[i]}</kbd>{/if}<span class="choice-label">{failed[item.id] ? t('quiz.choiceLabel.unavailable') : skipped[item.id] ? t('quiz.choiceLabel.skipped') : ''}</span><button class="inspect-choice" aria-label={t('quiz.inspectCharacter', { number: i + 1 })} disabled={saving} onclick={() => inspectChoice(item)}>↗</button>{#if skipped[item.id]}<button class="restore-choice" aria-label={t('quiz.restoreCharacter', { number: i + 1 })} disabled={saving} onclick={() => restore(item.id)}>{t('quiz.restore')}</button>{:else}<button class="skip-choice" aria-label={t('quiz.skipCharacter', { number: i + 1 })} title={skipHint()} disabled={saving} onclick={() => skip([item.id])}>–</button>{/if}</div>
         </div>
-      {/each}{/if}
+      {/each}{#if loadingMore}{#each Array(6) as _}<div class="quiz-skeleton" aria-hidden="true"></div>{/each}{/if}{/if}
     </div>
     {/key}
     <!-- More crops load on their own as the reader nears the end; the row only says what is happening.

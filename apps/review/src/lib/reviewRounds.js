@@ -1,7 +1,9 @@
 // Full rounds come first; smaller characters follow before any character repeats.
 export const MIN_ROUND_SIZE = 6
-// Crops a round loads at a time, first batch and each further one alike.
+// Crops a round deals at first.
 export const ROUND_BATCH = 48
+// Crops each further load adds as the reader scrolls: small enough to arrive quickly and often.
+export const MORE_BATCH = 24
 // Reference crops of one reading shown alongside a round: this many already-confirmed crops,
 // then up to this many more already-seen crops.
 export const REFERENCE_LIMIT = 12
