@@ -246,7 +246,12 @@ def crops_of(clone: Path, entries: list[dict], counts: Counter[str]) -> Iterator
 
 def crop_file(source: str, glyph: str, forms: str, present: set[str]) -> str | None:
     """The file in `present` that a cell's 代表字形ID names, by the rules of the module docstring."""
-    files = {unicodedata.normalize("NFKC", name): name for name in present}
+    for name in (f"{source}{glyph}.bmp", f"{glyph}.bmp"):
+        if name in present:
+            return name
+    files: dict[str, str] = {}
+    for name in sorted(present):
+        files.setdefault(unicodedata.normalize("NFKC", name), name)
     for name in (f"{source}{glyph}.bmp", f"{glyph}.bmp"):
         if name in files:
             return files[name]
