@@ -1493,6 +1493,53 @@ def test_undoing_a_round_that_flagged_a_seen_crop_leaves_it_seen(dataset):
     assert item['id'] not in {i['id'] for i in client.get('/atlas?reading=あ&state=pending&limit=96').json()['items']}
 
 
+def skip_round(shown, reviewer, skipped):
+    """A round in which `reviewer` skips the `skipped` crops and records nothing else."""
+    return {"id": str(uuid4()), "client_id": reviewer, "label": "あ", "answers": [], "seen": [],
+            "skipped": [{"id": item['id'], "image_sha256": item['image_sha256']}
+                        for item in shown if item['id'] in skipped]}
+
+
+def test_a_skipped_crop_rests_for_its_reviewer_and_comes_first_for_others(dataset):
+    client = TestClient(create_app(dataset))
+    shown = client.get('/atlas?reading=あ&state=pending&limit=4').json()['items']
+    crop = shown[1]['id']
+    assert client.post('/atlas/rounds', json=skip_round(shown, "alice", {crop})).status_code == 200
+    # Nothing about the crop changed: it is still pending for everyone, and nothing is exported.
+    assert client.get('/atlas/characters/' + crop).json()['state'] == 'pending'
+    assert crop not in {r['event']['target_id'] for r in client.get('/atlas/reviews').json()['reviews']}
+    mine = client.get('/atlas?reading=あ&state=pending&purpose=review&reviewer=alice&limit=96').json()
+    assert crop not in {i['id'] for i in mine['items']}
+    assert next(c for c in mine['categories'] if c['label'] == 'あ')['skipped'] == 1
+    theirs = client.get('/atlas?reading=あ&state=pending&purpose=review&reviewer=bob&seed=3&limit=96').json()
+    assert theirs['items'][0]['id'] == crop
+
+
+def test_a_crop_two_reviewers_skip_is_hard_and_an_undo_takes_a_skip_back(dataset):
+    client = TestClient(create_app(dataset))
+    shown = client.get('/atlas?reading=あ&state=pending&limit=4').json()['items']
+    crop = shown[0]['id']
+    assert client.post('/atlas/rounds', json=skip_round(shown, "alice", {crop})).status_code == 200
+    second = skip_round(shown, "bob", {crop})
+    assert client.post('/atlas/rounds', json=second).status_code == 200
+    assert client.get('/atlas?state=hard&limit=96').json()['items'][0]['id'] == crop
+    assert crop not in {i['id'] for i in client.get(
+        '/atlas?reading=あ&state=pending&purpose=review&reviewer=carol&limit=96').json()['items']}
+    assert client.get('/atlas').json()['counts'] == {"hard": 1, "pending": 15}
+    assert client.post('/atlas/rounds/' + second['id'] + '/undo', json={"client_id": "bob"}).status_code == 200
+    assert client.get('/atlas').json()['counts'] == {"pending": 16}
+
+
+def test_undoing_a_skip_leaves_an_earlier_seen_record(dataset):
+    client = TestClient(create_app(dataset))
+    shown = client.get('/atlas?reading=あ&state=pending&limit=2').json()['items']
+    assert client.post('/atlas/rounds', json=seen_round(client, shown[:1])).status_code == 200
+    skip = skip_round(shown, "bob", {shown[0]['id']})
+    assert client.post('/atlas/rounds', json=skip).status_code == 200
+    assert client.post('/atlas/rounds/' + skip['id'] + '/undo', json={"client_id": "bob"}).status_code == 200
+    assert client.get('/atlas').json()['counts'] == {"seen": 1, "pending": 15}
+
+
 def test_undoing_a_round_makes_its_seen_crops_pending_again(dataset):
     client = TestClient(create_app(dataset))
     shown = client.get('/atlas?reading=あ&state=pending&limit=4').json()['items']

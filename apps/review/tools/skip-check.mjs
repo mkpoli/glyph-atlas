@@ -131,7 +131,7 @@ try {
   const afterInspector = events(service.fixture.directory).length
   assert(afterInspector === beforeInspector, `the reviewer's Skip control wrote ${afterInspector - beforeInspector} events`)
 
-  // 5. A round in which every crop is skipped posts nothing at all.
+  // 5. A round in which every crop is skipped posts nothing until the reader moves on.
   const beforeAll = events(service.fixture.directory).length
   await click('.quiz-actionbar .skip-selected')
   await browser.waitFor(`document.querySelector('.quiz-tile.skipped') !== null`, 15000)
@@ -151,12 +151,20 @@ try {
     'a round with everything skipped is a dead end')
   assert(await browser.evaluate(`document.querySelector('.quiz-submit .next-round')?.disabled`) === false,
     'the way out of an all-skipped round is disabled')
+  // Moving on records the skips against the reviewer, and nothing else: no decision, no count.
+  const skippedAll = (await browser.evaluate(rows)).filter(row => row.skipped).map(row => row.id)
   await click('.quiz-submit .next-round')
   await browser.waitFor(`document.querySelectorAll('.quiz-tile.skipped').length === 0`, 20000)
-  assert(events(service.fixture.directory).length === beforeAll,
-    'moving to the next round posted something')
-  assert(await browser.evaluate(`document.querySelectorAll('.quiz-tile').length`) > 0,
-    'the next round is empty')
+  await sleep(500)
+  const recorded = events(service.fixture.directory).slice(beforeAll)
+  assert(recorded.length === skippedAll.length && recorded.every(row => row.field === 'seen' && row.new === 'skipped'),
+    `moving on recorded ${recorded.map(row => row.field + ':' + row.new).join(', ')} for ${skippedAll.length} skipped crops`)
+  assert(recorded.every(row => skippedAll.includes(row.target_id)), 'a skip was recorded for a crop that was not skipped')
+  assert(await browser.evaluate(reviewedText) === reviewedSecond, 'recording skips changed the reviewed count')
+  // They rest for this reviewer: the next round does not deal them back.
+  const next = (await browser.evaluate(rows)).map(row => row.id)
+  assert(!next.some(id => skippedAll.includes(id)), 'a crop the reviewer just skipped was dealt back to them')
+  const afterPass = events(service.fixture.directory).length
 
   // 6. In the collection inspector, Skip advances the existing queue in place, however many times
   // in a row it is pressed.
@@ -170,12 +178,12 @@ try {
   await click('.skip-character')
   await browser.waitFor(`document.querySelector('.inspector-navigation > span')?.textContent.startsWith('3 /')`)
   await click('.close-inspector')
-  assert(events(service.fixture.directory).length === beforeAll, 'queue skipping wrote an event')
+  assert(events(service.fixture.directory).length === afterPass, 'queue skipping wrote an event')
   assert(JSON.stringify(await browser.evaluate(`[...document.querySelectorAll('.glyph-tile[data-unit]')].map(t => t.dataset.unit)`)) === JSON.stringify(order), 'skipping refreshed or reordered the collection')
 
   assert(errors.length === 0, `page errors: ${errors.join('; ')}`)
   console.log(`skip: ${reviewEvents.length} answers saved for ${before.length} crops offered, skipped crop excluded`)
-  console.log('      no journal write and no reviewed-count change for a skip in the grid, the review step or the reviewer')
+  console.log('      a skip writes nothing until the reader moves on, then only a skip record: no decision, no reviewed-count change, and the crop is not dealt back to them')
 } finally {
   if (browser) await browser.close()
   await service.stop()
