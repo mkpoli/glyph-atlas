@@ -6,6 +6,7 @@
       "en"
     ]
   },
+  "app.name": "Glyph Atlas",
   "app.home.aria": "Glyph Atlas home",
   "app.nav.aria": "Main navigation",
   "app.reviewOptions": "Review options",

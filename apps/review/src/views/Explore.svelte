@@ -9,7 +9,7 @@
   import CharacterChips from '../components/CharacterChips.svelte'
   import { catalogue, character, request, randomSeed, number } from '../lib/client.js'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery } from '../lib/layers.js'
-  import { t, around } from '../lib/i18n.svelte.js'
+  import { t, around, localName, locale } from '../lib/i18n.svelte.js'
   let { queue = '', inspect, ink = 'original', onink = () => {}, onprogress = () => {} } = $props()
   let data = $state(null), items = $state([]), error = $state(''), loading = $state(true)
   let reading = $state(''), search = $state(''), offset = $state(0), seed = $state(randomSeed())
@@ -341,7 +341,7 @@
   {:else if !choosing && !picked && data && items.length < data.total && !loading}
     <div class="load-more"><button onclick={() => { offset = items.length; load(true) }}>{t('explore.moreCharacters')}</button></div>
   {/if}
-  <div class="collection-bottom"><span>GLYPH ATLAS</span><span>{t('explore.bottom.checked', { count: data?.counts.checked })} <span class="separator">·</span> {t('explore.bottom.flagged', { count: data?.counts.flagged })}</span></div>
+  <div class="collection-bottom">{#if localName()}<span lang={locale()}>{localName()}</span>{:else}<span>GLYPH ATLAS</span>{/if}<span>{t('explore.bottom.checked', { count: data?.counts.checked })} <span class="separator">·</span> {t('explore.bottom.flagged', { count: data?.counts.flagged })}</span></div>
 </section>
 
 <style>
