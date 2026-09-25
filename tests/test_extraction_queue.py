@@ -286,3 +286,20 @@ def test_priority_column_upgrades_an_old_queue_file_without_it(tmp_path):
     columns = {r[1] for r in queue.db.execute("PRAGMA table_info(pages)")}
     assert "priority" in columns
     assert queue.claim()["id"] == "a"
+
+
+def test_the_pause_follows_only_a_page_that_fetched_its_image(tmp_path, monkeypatch):
+    monkeypatch.setattr("glyph_atlas.extraction_queue.require_storage", lambda _: None)
+    slept=[]
+    monkeypatch.setattr("glyph_atlas.extraction_queue.time.sleep", slept.append)
+    queue=Queue(tmp_path/"queue")
+    # Claimed a, c (cached), then b, d: only b both fetched its image and has a page after it.
+    for ident,cached,rank in (("a",1,0),("b",0,1),("c",1,2),("d",0,3)):
+        queue.db.execute("INSERT INTO pages(id,document_id,title,source,cached,rank) VALUES(?,?,?,?,?,?)",
+                         (ident,ident,ident.upper(),"s",cached,rank))
+    queue.db.commit()
+    class Broken:
+        def extract(self,*args,**kwargs):
+            raise ValueError("unavailable")
+    run(queue,Broken(),pages=4,pause=7)
+    assert slept == [7]

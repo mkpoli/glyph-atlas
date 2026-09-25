@@ -500,6 +500,8 @@ def run(queue, engine, *, pages=3, seconds=600, pause=10, max_lines=64, store=No
             publish_completed(queue, store)
         done += 1
         queue.status(state="running")
-        if done < pages and time.monotonic()-started+pause < seconds:
+        # The pause spaces out requests to the image hosts; a page whose image was already
+        # cached asked them for nothing, so the next page follows at once.
+        if not job["cached"] and done < pages and time.monotonic()-started+pause < seconds:
             time.sleep(pause)
     return queue.status()
