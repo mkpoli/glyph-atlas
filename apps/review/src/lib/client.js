@@ -1,3 +1,5 @@
+import { t } from './i18n.svelte.js'
+
 export async function request(path, body, options = {}) {
   const response = await fetch(path, { ...options, ...(body === undefined ? {} : {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
@@ -7,7 +9,7 @@ export async function request(path, body, options = {}) {
     // FastAPI reports a validation failure as a list of problems; show their messages.
     const listed = Array.isArray(value.detail) ? value.detail.map(problem => problem.msg).filter(Boolean).join('; ') : ''
     const error = new Error(typeof value.detail === 'string' ? value.detail : listed ? listed : response.status === 409
-      ? 'This character changed. Reload to review the current version.' : 'The review could not be saved.')
+      ? t('client.changed') : t('client.saveFailed'))
     error.status = response.status
     throw error
   }
@@ -22,7 +24,7 @@ export const catalogue = ({ purpose = 'browse', ...params } = {}, options = {}) 
 export const character = id => request('/atlas/characters/' + encodeURIComponent(id))
 export const corpusCharacter = id => request('/atlas/corpus/character?' + new URLSearchParams({ id }))
 export const randomSeed = () => Math.floor(Math.random() * 2147483647)
-export const number = n => Number(n ?? 0).toLocaleString()
+export { formatNumber as number } from './i18n.svelte.js'
 export function stored(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback } catch { return fallback }
 }

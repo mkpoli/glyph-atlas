@@ -9,7 +9,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "bun tools/check.mjs",
+    "check": "bun tools/i18n-check.mjs && bun tools/check.mjs",
     "browser-check": "bun tools/browser-check.mjs"
   },
   "devDependencies": {

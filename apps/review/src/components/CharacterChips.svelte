@@ -3,24 +3,25 @@
   import ZiLink from './ZiLink.svelte'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import { countsLabel } from '../lib/layers.js'
+  import { t } from '../lib/i18n.svelte.js'
   let { card = null, expand = $bindable('none'), onselect = () => {}, onreview = null } = $props()
   const members = $derived(card?.grapheme?.members ?? [{code_point: card?.code_point, char: card?.char}])
 </script>
 
 {#if card}
-  <div class="character-layers" aria-label="Character layers">
+  <div class="character-layers" aria-label={t('chips.layers.label')}>
     <div class="layer-row">
-      <span class="layer-label">Grapheme</span>
+      <span class="layer-label">{t('chips.grapheme')}</span>
       <button class="family" class:active={expand === 'grapheme'} aria-pressed={expand === 'grapheme'}
         onclick={() => expand = 'grapheme'}>{card.grapheme?.label ?? card.char}</button>
     </div>
     <div class="layer-row">
-      <span class="layer-label">Characters</span>
+      <span class="layer-label">{t('chips.characters')}</span>
       <div class="character-members">
         {#each members as member (member.code_point)}
           <div class="member-choice"><button class="member" class:active={expand !== 'grapheme' && member.code_point === card.code_point}
             aria-pressed={expand !== 'grapheme' && member.code_point === card.code_point}
-            aria-label={`Show character ${member.char}`} onclick={() => onselect(member.code_point)}>
+            aria-label={t('chips.showCharacter', { char: member.char })} onclick={() => onselect(member.code_point)}>
             <ReferenceGlyph char={member.char} code_point={member.code_point} script={member.script} size="md" />
           </button><ZiLink character={member.char} compact /></div>
         {/each}
@@ -28,8 +29,8 @@
     </div>
     <div class="layer-legend"><ScriptLegend /></div>
     <div class="layer-row forms-row">
-      <span class="layer-label">Forms</span>
-      <span>{expand === 'grapheme' ? 'All forms' : card.char}</span>
+      <span class="layer-label">{t('chips.forms')}</span>
+      <span>{expand === 'grapheme' ? t('chips.allForms') : card.char}</span>
       {#if expand !== 'grapheme' && card.candidates?.known && countsLabel(card.candidates)}<small>{countsLabel(card.candidates)}</small>{/if}
     </div>
     {#if card.ligature || card.jibo?.length || card.derived?.length || card.expansions?.some(o => o.key !== 'grapheme') || onreview}
@@ -40,7 +41,7 @@
           <button class="chip chip-action" class:active={expand === option.key}
             onclick={() => expand = expand === option.key ? 'none' : option.key}>{option.label} <small>{option.count}</small></button>
         {/each}
-        {#if onreview}<button class="chip chip-action" onclick={() => onreview(card)}>Review ↗</button>{/if}
+        {#if onreview}<button class="chip chip-action" onclick={() => onreview(card)}>{t('chips.review')}</button>{/if}
       </div>
     {/if}
   </div>

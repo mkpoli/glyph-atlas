@@ -3,7 +3,8 @@
   import ZiLink from './ZiLink.svelte'
   import { onMount, untrack, tick } from 'svelte'
   import { character, request, suggestionsFor } from '../lib/client.js'
-  import { decision, isSingle, suggestsReading, greetSuggestions, SKIP_HINT } from '../lib/issues.js'
+  import { decision, isSingle, suggestsReading, greetSuggestions, skipHint } from '../lib/issues.js'
+  import { t } from '../lib/i18n.svelte.js'
   import CropContext from './CropContext.svelte'
   import IssuePicker from './IssuePicker.svelte'
   import ReadingSuggestions from './ReadingSuggestions.svelte'
@@ -190,38 +191,38 @@
   }
 </script>
 
-<dialog class="character-dialog" bind:this={dialog} oncancel={close} onclick={e => { if (e.target === dialog) close() }} aria-label="Character reviewer">
+<dialog class="character-dialog" bind:this={dialog} oncancel={close} onclick={e => { if (e.target === dialog) close() }} aria-label={t('character.dialog.label')}>
   <div class="inspector">
-    <header class="inspector-header"><span class="overline">CHARACTER</span><div class="inspector-navigation"><span>{position}</span><button class="icon-button previous-character" aria-label="Previous character" disabled={busy || !previous} onclick={() => previous?.()}>←</button><button class="icon-button next-character" aria-label="Next character" disabled={busy || !next} onclick={() => next?.()}>→</button><button class="icon-button close-inspector" aria-label="Close reviewer" onclick={close}>×</button></div></header>
-    {#if error}<div class="error-message" role="alert">{error}<button disabled={busy} onclick={() => load(id)}>Reload character</button></div>{/if}
+    <header class="inspector-header"><span class="overline">{t('character.overline')}</span><div class="inspector-navigation"><span>{position}</span><button class="icon-button previous-character" aria-label={t('common.previousCharacter')} disabled={busy || !previous} onclick={() => previous?.()}>←</button><button class="icon-button next-character" aria-label={t('common.nextCharacter')} disabled={busy || !next} onclick={() => next?.()}>→</button><button class="icon-button close-inspector" aria-label={t('common.closeReviewer')} onclick={close}>×</button></div></header>
+    {#if error}<div class="error-message" role="alert">{error}<button disabled={busy} onclick={() => load(id)}>{t('character.reload')}</button></div>{/if}
     {#if data}
       <div class="inspector-production"><ProductionBadge item={data} /></div>
-      <div class="inspector-title"><h2>{data.label}</h2><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? 'withheld' : data.repair.verified ? 'checked' : 'machine'}</span>{/if}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.state === 'checked' ? 'Checked' : data.state === 'flagged' ? 'Flagged' : 'Unreviewed'}</span></div>
+      <div class="inspector-title"><h2 lang="ja">{data.label}</h2><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{/if}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.state === 'checked' ? t('state.checked') : data.state === 'flagged' ? t('state.flagged') : t('state.unreviewed')}</span></div>
       <div class="inspector-figure">
         {#if editingBox && data.context && data.context_box}
           <figure class="nearby crop-adjustment" bind:this={nearby}>
-            <div class="context-region drawing" bind:this={contextElement} onpointerdown={down} onpointermove={move} onpointerup={() => start = null} onpointercancel={() => start = null} role="img" aria-label="Drag to adjust the crop">
-              <img src={data.context_image} alt="Strokes near this character" draggable="false" onload={() => { loaded = true; imageFailed = false }} onerror={() => { editingBox = false; error = 'The context image could not be loaded.' }} />
+            <div class="context-region drawing" bind:this={contextElement} onpointerdown={down} onpointermove={move} onpointerup={() => start = null} onpointercancel={() => start = null} role="img" aria-label={t('character.crop.dragToAdjust')}>
+              <img src={data.context_image} alt={t('character.context.alt')} draggable="false" onload={() => { loaded = true; imageFailed = false }} onerror={() => { editingBox = false; error = t('character.context.loadError') }} />
               {#if boxStyle}<span class="context-outline" style={boxStyle}></span>{/if}
             </div>
-            <figcaption><button type="button" disabled={busy} onclick={() => editingBox = false}>Done adjusting</button></figcaption>
+            <figcaption><button type="button" disabled={busy} onclick={() => editingBox = false}>{t('character.crop.doneAdjusting')}</button></figcaption>
           </figure>
         {:else}
           {#key data.image}<CropContext item={data} detail={data} cropBox={box ? toSource(box) : null} disabled={busy} onload={() => { loaded = true; imageFailed = false }} onerror={() => imageFailed = true} />{/key}
         {/if}
       </div>
-      {#if data.licence}<div class="image-credit"><span>{data.source}</span><small>{[data.attribution || data.holder, data.licence].filter(Boolean).join(' · ')}</small>{#if data.rights_url}<a href={data.rights_url} target="_blank" rel="noreferrer">Source & rights ↗</a>{/if}</div>{/if}
-      <div class="inspector-question"><strong>What’s wrong?</strong><span>Choose one</span></div>
+      {#if data.licence}<div class="image-credit"><span>{data.source}</span><small>{[data.attribution || data.holder, data.licence].filter(Boolean).join(' · ')}</small>{#if data.rights_url}<a href={data.rights_url} target="_blank" rel="noreferrer">{t('character.sourceRights')}</a>{/if}</div>{/if}
+      <div class="inspector-question"><strong>{t('character.question.whatsWrong')}</strong><span>{t('character.question.chooseOne')}</span></div>
       <IssuePicker value={issue} choose={chooseIssue} suggested={suggestedIssue} disabled={busy} />
       <ReadingSuggestions targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={suggestions} loading={suggesting} contextResult={contextSuggestions} contextLoading={contextSuggesting} {issue} reading={data.label} value={issue === 'character' ? written : correction} disabled={busy} choose={chooseSuggestion} />
-      {#if !onVerdict}<details class="advanced-edit"><summary>Adjust character, crop or reading</summary><label class="written-input">Character<input aria-label="Character the source printed" bind:value={written} oninput={() => writtenDirty = true} maxlength="8" disabled={busy} placeholder={data.label} /></label>{#if writtenDirty && written && written !== data.label}<p class="written-note" role="status">Records the written character, not the reading.</p>{/if}<label class="reading-input">Reading<input aria-label="Character reading" bind:value={reading} oninput={() => readingDirty = true} maxlength="32" disabled={busy} /></label>{#if data.context && data.crop_editable !== false}<button type="button" class="quiet-link adjust-crop" onclick={beginCrop}>Adjust crop ↗</button>{/if}<textarea aria-label="Review note" bind:value={note} rows="2" maxlength="2000" placeholder="Optional note" disabled={busy}></textarea>{#if box}<div class="crop-change">Crop adjusted<button type="button" onclick={() => box = null}>Reset</button></div>{/if}</details>{/if}
+      {#if !onVerdict}<details class="advanced-edit"><summary>{t('character.advancedEdit.summary')}</summary><label class="written-input">{t('character.field.character')}<input aria-label={t('character.field.character.aria')} bind:value={written} oninput={() => writtenDirty = true} maxlength="8" disabled={busy} placeholder={data.label} /></label>{#if writtenDirty && written && written !== data.label}<p class="written-note" role="status">{t('character.field.character.note')}</p>{/if}<label class="reading-input">{t('character.field.reading')}<input aria-label={t('character.field.reading.aria')} bind:value={reading} oninput={() => readingDirty = true} maxlength="32" disabled={busy} /></label>{#if data.context && data.crop_editable !== false}<button type="button" class="quiet-link adjust-crop" onclick={beginCrop}>{t('character.crop.adjust')}</button>{/if}<textarea aria-label={t('character.note.aria')} bind:value={note} rows="2" maxlength="2000" placeholder={t('character.note.placeholder')} disabled={busy}></textarea>{#if box}<div class="crop-change">{t('character.crop.adjusted')}<button type="button" onclick={() => box = null}>{t('common.reset')}</button></div>{/if}</details>{/if}
     {:else if !error}<div class="inspector-skeleton"></div>{/if}
   </div>
   <footer class="inspector-savebar">
-    {#if imageFailed}<span role="alert">Image unavailable</span>{/if}
-    <button class="primary save-character" disabled={busy || !data || !loaded || imageFailed} onclick={() => save()}>{busy ? 'Saving…' : issue ? (onVerdict ? 'Use this error' : next ? 'Save issue & next' : 'Save issue') : (onVerdict ? 'Back to selection' : next ? 'Looks right & next' : 'Looks right')} <span>{issue || onVerdict ? '→' : '✓'}</span></button>
-    {#if issue}<button class="quiet-link looks-right" disabled={busy || !loaded || imageFailed} onclick={() => { discardProposals(); save(true) }}>{onVerdict ? 'Remove selection' : 'It looks right'}</button>{/if}
-    <button class="skip-character" disabled={busy} onclick={skip} title={SKIP_HINT}>Skip →</button>
+    {#if imageFailed}<span role="alert">{t('character.image.unavailable')}</span>{/if}
+    <button class="primary save-character" disabled={busy || !data || !loaded || imageFailed} onclick={() => save()}>{busy ? t('common.saving') : issue ? (onVerdict ? t('character.save.useError') : next ? t('character.save.issueNext') : t('character.save.issue')) : (onVerdict ? t('character.save.backToSelection') : next ? t('character.save.looksRightNext') : t('character.save.looksRight'))} <span>{issue || onVerdict ? '→' : '✓'}</span></button>
+    {#if issue}<button class="quiet-link looks-right" disabled={busy || !loaded || imageFailed} onclick={() => { discardProposals(); save(true) }}>{onVerdict ? t('character.save.removeSelection') : t('character.save.itLooksRight')}</button>{/if}
+    <button class="skip-character" disabled={busy} onclick={skip} title={skipHint()}>{t('common.skip.arrow')}</button>
   </footer>
 </dialog>
 

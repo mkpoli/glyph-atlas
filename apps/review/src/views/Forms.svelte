@@ -3,6 +3,7 @@
   import ReferenceGlyph from '../components/ReferenceGlyph.svelte'
   import { families as loadFamilies, family as loadFamily, members as loadMembers, decide, report, split as loadSplit } from '../lib/forms.js'
   import { number, reviewer, stored, remember } from '../lib/client.js'
+  import { t, around } from '../lib/i18n.svelte.js'
 
   let { initialFamily = '' } = $props()
   let list = $state([]), filter = $state(''), current = $state(null), code = $state('')
@@ -21,10 +22,10 @@
     || f.code_point.toLowerCase().includes(filter.trim().toLowerCase())))
   const byForm = $derived(new Map((current?.forms ?? []).map(f => [f.char, f])))
   const pickedClusters = $derived((current?.items ?? []).filter(c => picked.has(c.id)))
-  const target = $derived(chosen.size ? `${number(chosen.size)} selected glyph${chosen.size === 1 ? '' : 's'}`
-    : pickedClusters.length > 1 ? `${pickedClusters.length} clusters (${number(pickedClusters.reduce((n, c) => n + c.count, 0))} glyphs)`
-    : pickedClusters.length === 1 ? `${pickedClusters[0].label} (${number(pickedClusters[0].count)} glyphs)`
-    : cluster ? `${cluster.label} (${number(cluster.count)} glyphs)` : '')
+  const target = $derived(chosen.size ? t('forms.target.selectedGlyphs', { count: chosen.size })
+    : pickedClusters.length > 1 ? t('forms.target.clusters', { clusters: pickedClusters.length, glyphs: number(pickedClusters.reduce((n, c) => n + c.count, 0)) })
+    : pickedClusters.length === 1 ? t('forms.target.clusterGlyphs', { label: pickedClusters[0].label, count: pickedClusters[0].count })
+    : cluster ? t('forms.target.clusterGlyphs', { label: cluster.label, count: cluster.count }) : '')
 
   async function refreshList() { list = (await loadFamilies()).items }
   async function pick(codePoint, keep = false) {
@@ -90,8 +91,8 @@
       // One decision per cluster, so each keeps its own record and can be withdrawn on its own.
       for (const id of targets) result = { count: result.count + (await decide({ kind: 'cluster', cluster: id, form })).count }
       picked = new Set(); pickAnchor = null
-      notice = form ? `${form} → ${number(result.count)} glyph${result.count === 1 ? '' : 's'}`
-        : kind === 'inherit' ? `${number(result.count)} now follow the cluster` : `Cleared ${number(result.count)}`
+      notice = form ? t('forms.notice.assigned', { form, count: result.count })
+        : kind === 'inherit' ? t('forms.notice.inherited', { count: result.count }) : t('forms.notice.cleared', { count: result.count })
       setTimeout(() => notice = '', 2200)
       const wasOpen = open, index = active
       await pick(code, true)
@@ -106,14 +107,14 @@
     if (busy || !chosen.size) return
     busy = true; error = ''
     // About a second per glyph: each is resolved against its source before it is flagged.
-    notice = `Reporting ${number(chosen.size)} glyph${chosen.size === 1 ? '' : 's'}…`
+    notice = t('forms.notice.reporting', { count: chosen.size })
     try {
       // The service takes 200 glyphs per report; a larger selection goes in parts.
       const units = [...chosen], result = { count: 0 }
       for (let i = 0; i < units.length; i += 200)
         result.count += (await report({ units: units.slice(i, i + 200), issue, client_id: reviewer(),
           ...(issue === 'character' && correction.trim() ? { character: correction.trim() } : {}) })).count
-      notice = `Reported ${number(result.count)} as ${issue === 'crop' ? 'bad crop' : 'wrong character'}`
+      notice = t('forms.notice.reported', { count: result.count, issue: issue === 'crop' ? t('forms.reportIssue.crop') : t('forms.reportIssue.character') })
       setTimeout(() => notice = '', 2200)
       correcting = false; correction = ''
       await pick(code, true)
@@ -175,20 +176,20 @@
 
 <section class="forms">
   <header class="forms-heading">
-    <p class="overline">CODH FORMS</p>
-    <h1>Assign forms.</h1>
-    <p class="forms-lede">CODH writes every form of a character under one code point. Glyphs are grouped by shape; name the form of a cluster, then correct the glyphs that differ.</p>
+    <p class="overline">{t('forms.overline')}</p>
+    <h1>{t('forms.heading')}</h1>
+    <p class="forms-lede">{t('forms.lede')}</p>
   </header>
   {#if error}<p class="error-message">{error}</p>{/if}
   <div class="forms-layout">
-    <aside class="family-list" aria-label="Families">
-      <input type="search" placeholder="Find a family…" bind:value={filter} aria-label="Find a family" />
+    <aside class="family-list" aria-label={t('forms.families.label')}>
+      <input type="search" placeholder={t('forms.findFamily.placeholder')} bind:value={filter} aria-label={t('forms.findFamily.aria')} />
       <ol>
         {#each shown as f (f.code_point)}
           <li><button class:current={f.code_point === code} onclick={() => pick(f.code_point)}>
             <span class="family-char">{f.char}</span>
-            <span class="family-meta"><span>{number(f.count)}</span><small>{f.clusters} clusters</small></span>
-            <span class="family-progress" aria-label={`${Math.round(100 * f.assigned / f.count)}% assigned`}><i style={`width:${100 * f.assigned / f.count}%`}></i></span>
+            <span class="family-meta"><span>{number(f.count)}</span><small>{t('forms.clusters.count', { count: f.clusters })}</small></span>
+            <span class="family-progress" aria-label={t('forms.percentAssigned', { percent: Math.round(100 * f.assigned / f.count) })}><i style={`width:${100 * f.assigned / f.count}%`}></i></span>
           </button></li>
         {/each}
       </ol>
@@ -198,11 +199,11 @@
       <div class="family-panel">
         <div class="family-title">
           <h2>{current.char}</h2>
-          <p><strong>{number(current.count)}</strong> glyphs · {current.clusters} clusters · <strong>{number(current.assigned)}</strong> assigned</p>
+          <p><strong>{number(current.count)}</strong> {t('forms.glyphsLabel')} · {current.clusters} {t('forms.clustersLabel')} · <strong>{number(current.assigned)}</strong> {t('forms.assignedLabel')}</p>
         </div>
 
-        <div class="form-palette" aria-label="Forms of this family">
-          <p class="palette-target">{#if target}Applies to <strong>{target}</strong>{:else}Choose a cluster{/if}</p>
+        <div class="form-palette" aria-label={t('forms.palette.label')}>
+          <p class="palette-target">{#if target}{t('forms.appliesTo')} <strong>{target}</strong>{:else}{t('forms.chooseCluster')}{/if}</p>
           <div class="palette-forms">
             {#each current.forms as form, i (form.char)}
               <button class="form-choice" disabled={busy || !target} onclick={() => apply(form.char)} title={form.name ?? form.code_point}>
@@ -214,17 +215,17 @@
             {/each}
             <div class="palette-other">
               {#if chosen.size}
-                <button disabled={busy} onclick={() => apply(null)}>Not this form</button>
-                <button disabled={busy} onclick={() => flag('crop')}>Bad crop</button>
+                <button disabled={busy} onclick={() => apply(null)}>{t('forms.notThisForm')}</button>
+                <button disabled={busy} onclick={() => flag('crop')}>{t('issue.crop.title')}</button>
                 {#if correcting}
                   <form class="correct-char" onsubmit={event => { event.preventDefault(); flag('character') }}>
-                    <input bind:value={correction} maxlength="4" placeholder="Actual" aria-label="The character it actually is (optional)" />
-                    <button disabled={busy}>Report</button>
+                    <input bind:value={correction} maxlength="4" placeholder={t('forms.actual.placeholder')} aria-label={t('forms.actual.aria')} />
+                    <button disabled={busy}>{t('forms.report')}</button>
                   </form>
-                {:else}<button disabled={busy} onclick={() => correcting = true}>Wrong character…</button>{/if}
-                <button disabled={busy} onclick={() => apply(null, 'inherit')}>Follow cluster <kbd>⌫</kbd></button>
+                {:else}<button disabled={busy} onclick={() => correcting = true}>{t('forms.wrongCharacter')}</button>{/if}
+                <button disabled={busy} onclick={() => apply(null, 'inherit')}>{t('forms.followCluster')} <kbd>⌫</kbd></button>
               {:else}
-                <button disabled={busy || !cluster?.form} onclick={() => apply(null)}>Clear cluster <kbd>⌫</kbd></button>
+                <button disabled={busy || !cluster?.form} onclick={() => apply(null)}>{t('forms.clearCluster')} <kbd>⌫</kbd></button>
               {/if}
             </div>
           </div>
@@ -233,36 +234,36 @@
         {#if open}
           <div class="cluster-members">
             <div class="members-heading">
-              <button class="quiet-link" onclick={close}>← All clusters</button>
-              <h3>{cluster.label} <small>{number(total)} glyphs</small></h3>
-              <label class="split-control">Split into
+              <button class="quiet-link" onclick={close}>{t('forms.allClusters')}</button>
+              <h3>{cluster.label} <small>{t('forms.glyphs.count', { count: total })}</small></h3>
+              <label class="split-control">{t('forms.splitInto')}
                 <select value={splitK} onchange={event => divide(Number(event.currentTarget.value))}>
                   <option value={0}>—</option>{#each [2, 3, 4, 5, 6, 8] as k (k)}<option value={k}>{k}</option>{/each}
                 </select>
               </label>
-              {#if !splitK}<div class="filter-tabs" role="group" aria-label="Order">
-                <button class:active={order === 'typical'} aria-pressed={order === 'typical'} onclick={() => reorder('typical')}>Most typical first</button>
-                <button class:active={order === 'unusual'} aria-pressed={order === 'unusual'} onclick={() => reorder('unusual')}>Least typical first</button>
+              {#if !splitK}<div class="filter-tabs" role="group" aria-label={t('forms.order.label')}>
+                <button class:active={order === 'typical'} aria-pressed={order === 'typical'} onclick={() => reorder('typical')}>{t('forms.order.typical')}</button>
+                <button class:active={order === 'unusual'} aria-pressed={order === 'unusual'} onclick={() => reorder('unusual')}>{t('forms.order.unusual')}</button>
               </div>{/if}
               {#if cluster.form}<span class="cluster-form">{cluster.form} <small>{byForm.get(cluster.form)?.jibo ?? ''}</small></span>{/if}
-              {#if chosen.size}<button class="quiet-link" onclick={() => chosen = new Set()}>Clear selection</button>{/if}
+              {#if chosen.size}<button class="quiet-link" onclick={() => chosen = new Set()}>{t('forms.clearSelection')}</button>{/if}
             </div>
             {#if splitK}
               {#each groups as group, g (g)}
                 <section class="split-group">
-                  <header><strong>Group {g + 1}</strong><span>{number(group.count)} glyphs</span>
-                    <button class="quiet-link" onclick={() => selectGroup(group)}>{group.ids.every(id => chosen.has(id)) ? 'Deselect' : 'Select'} all {number(group.count)}</button></header>
+                  <header><strong>{t('forms.group', { number: g + 1 })}</strong><span>{t('forms.glyphs.count', { count: group.count })}</span>
+                    <button class="quiet-link" onclick={() => selectGroup(group)}>{group.ids.every(id => chosen.has(id)) ? t('forms.selectAll.deselect', { count: group.count }) : t('forms.selectAll.select', { count: group.count })}</button></header>
                   <div class="member-grid">
                     {#each group.items as glyph (glyph.id)}
                       <button class="member" class:selected={chosen.has(glyph.id)} class:own={glyph.basis === 'form_glyph'}
                               aria-pressed={chosen.has(glyph.id)} onclick={() => toggleId(glyph.id)} title={glyph.id}>
                         {#if glyph.image}<img class="glyph-image" src={glyph.image} alt="" loading="lazy" />{/if}
-                        {#if glyph.reported}<span class="member-flag" title={`Reported: ${glyph.reported}`}>⚠</span>
+                        {#if glyph.reported}<span class="member-flag" title={t('forms.reported', { reason: glyph.reported })}>⚠</span>
                         {:else if glyph.basis === 'form_glyph'}<span class="member-form">{glyph.form ?? '×'}</span>{/if}
                       </button>
                     {/each}
                   </div>
-                  {#if group.count > group.items.length}<p class="split-more">and {number(group.count - group.items.length)} more like these, included in Select all</p>{/if}
+                  {#if group.count > group.items.length}<p class="split-more">{t('forms.moreLikeThese', { count: group.count - group.items.length })}</p>{/if}
                 </section>
               {/each}
             {:else}
@@ -271,21 +272,21 @@
                 <button class="member" class:selected={chosen.has(glyph.id)} class:own={glyph.basis === 'form_glyph'}
                         aria-pressed={chosen.has(glyph.id)} onclick={event => toggle(i, event)} title={glyph.id}>
                   {#if glyph.image}<img class="glyph-image" src={glyph.image} alt="" loading="lazy" />{/if}
-                  {#if glyph.reported}<span class="member-flag" title={`Reported: ${glyph.reported}`}>⚠</span>
+                  {#if glyph.reported}<span class="member-flag" title={t('forms.reported', { reason: glyph.reported })}>⚠</span>
                   {:else if glyph.basis === 'form_glyph'}<span class="member-form">{glyph.form ?? '×'}</span>{/if}
                 </button>
               {/each}
             </div>
-            {#if glyphs.length < total}<div class="load-more"><button onclick={more}>Show more ({number(total - glyphs.length)} left)</button></div>{/if}
+            {#if glyphs.length < total}<div class="load-more"><button onclick={more}>{t('forms.showMore', { count: total - glyphs.length })}</button></div>{/if}
             {/if}
           </div>
         {:else}
           <div class="forms-toolbar">
-            <p class="keyboard-hint forms-keys"><kbd>J</kbd><kbd>K</kbd> move · <kbd>X</kbd> or ⌘/Ctrl-click add · Shift-click range · <kbd>1</kbd>–<kbd>0</kbd> assign · <kbd>Enter</kbd> open · <kbd>⌫</kbd> clear</p>
-            <div class="filter-tabs" role="group" aria-label="Cluster order">
-              <button class:active={arrange === 'shape'} aria-pressed={arrange === 'shape'} onclick={() => rearrange('shape')}>Similar shapes together</button>
-              <button class:active={arrange === 'size'} aria-pressed={arrange === 'size'} onclick={() => rearrange('size')}>Largest first</button>
-              <button class:active={openFirst} aria-pressed={openFirst} onclick={toggleOpenFirst}>Unassigned first</button>
+            <p class="keyboard-hint forms-keys">{t('forms.keyboardHint')}</p>
+            <div class="filter-tabs" role="group" aria-label={t('forms.clusterOrder.label')}>
+              <button class:active={arrange === 'shape'} aria-pressed={arrange === 'shape'} onclick={() => rearrange('shape')}>{t('forms.arrange.shape')}</button>
+              <button class:active={arrange === 'size'} aria-pressed={arrange === 'size'} onclick={() => rearrange('size')}>{t('forms.arrange.size')}</button>
+              <button class:active={openFirst} aria-pressed={openFirst} onclick={toggleOpenFirst}>{t('forms.unassignedFirst')}</button>
             </div>
           </div>
           <ol class="cluster-grid">
@@ -295,14 +296,14 @@
                   <span class="cluster-head">
                     <strong>{c.label}</strong><span>{number(c.count)}</span>
                     {#if c.form}<span class="cluster-form"><span class="inline-glyph">{c.form}</span> {byForm.get(c.form)?.jibo ?? ''}</span>
-                    {:else if c.assigned}<span class="cluster-open">{number(c.assigned)} have a form, mostly <span class="inline-glyph">{c.majority}</span></span>
-                    {:else}<span class="cluster-open">Unassigned</span>{/if}
+                    {:else if c.assigned}<span class="cluster-open">{around('forms.haveForm', 'glyph', { count: c.assigned })[0]}<span class="inline-glyph">{c.majority}</span>{around('forms.haveForm', 'glyph', { count: c.assigned })[1]}</span>
+                    {:else}<span class="cluster-open">{t('corpus.unassigned')}</span>{/if}
                   </span>
                   <span class="cluster-samples">{#each c.representatives as r (r.id)}{#if r.image}<img class="glyph-image" src={r.image} alt="" loading="lazy" />{/if}{/each}</span>
                 </button>
                 <span class="cluster-foot">
-                  {#if c.exceptions}<small>{number(c.exceptions)} set individually</small>{/if}
-                  <button class="quiet-link" onclick={() => show(i)}>Open {number(c.count)} →</button>
+                  {#if c.exceptions}<small>{t('forms.setIndividually', { count: c.exceptions })}</small>{/if}
+                  <button class="quiet-link" onclick={() => show(i)}>{t('forms.open', { count: c.count })}</button>
                 </span>
               </li>
             {/each}

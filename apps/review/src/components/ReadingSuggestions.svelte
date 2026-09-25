@@ -3,6 +3,7 @@
   import ScriptLegend from './ScriptLegend.svelte'
   import ZiLink from './ZiLink.svelte'
   import { isSingle, suggestsReading } from '../lib/issues.js'
+  import { t } from '../lib/i18n.svelte.js'
   let { result = null, loading = false, contextResult = undefined, contextLoading = false,
     targetId = '', issue, reading, value = null, noneSelected = false, choose, disabled = false,
     element = $bindable(null) } = $props()
@@ -27,10 +28,10 @@
 </script>
 
 {#if suggestsReading(issue)}
-  <div class="reading-suggestions" bind:this={element} tabindex="-1" aria-label="Suggestions">
-    <div class="suggestions-heading">Suggestions</div>
+  <div class="reading-suggestions" bind:this={element} tabindex="-1" aria-label={t('suggestions.label')}>
+    <div class="suggestions-heading">{t('suggestions.heading')}</div>
     {#if candidates.length}
-      <div class="suggestion-options">
+      <div class="suggestion-options" lang="ja">
         {#each candidates as text (text)}
           <span class="suggestion-choice"><button type="button" class:chosen={value === text} {disabled} aria-pressed={value === text}
             onclick={() => choose(value === text ? null : text, false)}><ScriptText {text} script={scripts[text]} /></button><ZiLink character={text} compact /></span>
@@ -38,9 +39,9 @@
       </div>
       <ScriptLegend />
     {/if}
-    {#if loading || contextLoading}<p class="suggestions-loading" role="status">Finding suggestions…</p>
-    {:else if !candidates.length}<p class="suggestions-empty">No clear suggestion.</p>{/if}
-    <button type="button" class="no-suggestion" class:chosen={noneSelected} aria-pressed={noneSelected} {disabled} onclick={() => choose(null, true)}>{#if noneSelected}<span aria-hidden="true">✓ </span>{/if}None of these / not sure</button>
+    {#if loading || contextLoading}<p class="suggestions-loading" role="status">{t('suggestions.finding')}</p>
+    {:else if !candidates.length}<p class="suggestions-empty">{t('suggestions.none')}</p>{/if}
+    <button type="button" class="no-suggestion" class:chosen={noneSelected} aria-pressed={noneSelected} {disabled} onclick={() => choose(null, true)}>{#if noneSelected}<span aria-hidden="true">✓ </span>{/if}{t('suggestions.noneOfThese')}</button>
   </div>
 {/if}
 

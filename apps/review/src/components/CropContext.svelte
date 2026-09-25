@@ -1,6 +1,7 @@
 <script>
   import { request } from '../lib/client.js'
   import Glyph from './Glyph.svelte'
+  import { t } from '../lib/i18n.svelte.js'
   let { item, detail = null, corpus = false, cropBox = null, disabled = false,
     onload = () => {}, onerror = () => {} } = $props()
   let viewport = $state(null), data = $state(null), loading = $state(true), detailFailed = $state(false)
@@ -143,7 +144,7 @@
   <!-- This bounded image widget supplies arrow/Home/zoom keyboard controls alongside pointer panning. -->
   <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
   <div class="crop-viewport" class:ready class:dragging bind:this={viewport} tabindex="0"
-       role="application" aria-roledescription="image viewer" aria-label="Character in context. Drag or use arrow keys to move; Home returns to the crop."
+       role="application" aria-roledescription="image viewer" aria-label={t('crop.viewer.label')}
        aria-busy={loading} data-ready={ready} data-pan-x={pan.x} data-pan-y={pan.y} data-zoom={zoom}
        onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up}
        onlostpointercapture={() => { pointer = null; dragging = false }} onkeydown={keydown}>
@@ -163,14 +164,14 @@
         <span class="crop-mask" style={mask} aria-hidden="true"></span>
       {/if}
     {/if}
-    {#if !loading && !ready && (detailFailed || !contextual || (contextFailed && (!fullPage || fullFailed)))}<span class="crop-only">Crop only</span>{/if}
-    <div class="crop-tools" aria-label="Image controls">
-      <button type="button" class="zoom-out" aria-label="Zoom out" title="Zoom out" disabled={disabled || !ready || zoom <= .6} onclick={() => magnify(1 / 1.25)}>−</button>
-      <button type="button" class="reset-crop" aria-label="Return to crop" title="Return to crop (Home)" disabled={disabled || !ready} onclick={reset}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H4v4m12-4h4v4M4 16v4h4m12-4v4h-4M9 9h6v6H9z"/></svg></button>
-      <button type="button" class="zoom-in" aria-label="Zoom in" title="Zoom in" disabled={disabled || !ready || zoom >= 4} onclick={() => magnify(1.25)}>+</button>
+    {#if !loading && !ready && (detailFailed || !contextual || (contextFailed && (!fullPage || fullFailed)))}<span class="crop-only">{t('crop.only')}</span>{/if}
+    <div class="crop-tools" aria-label={t('crop.tools.label')}>
+      <button type="button" class="zoom-out" aria-label={t('crop.zoomOut')} title={t('crop.zoomOut')} disabled={disabled || !ready || zoom <= .6} onclick={() => magnify(1 / 1.25)}>−</button>
+      <button type="button" class="reset-crop" aria-label={t('crop.returnToCrop')} title={t('crop.returnToCrop.title')} disabled={disabled || !ready} onclick={reset}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H4v4m12-4h4v4M4 16v4h4m12-4v4h-4M9 9h6v6H9z"/></svg></button>
+      <button type="button" class="zoom-in" aria-label={t('crop.zoomIn')} title={t('crop.zoomIn')} disabled={disabled || !ready || zoom >= 4} onclick={() => magnify(1.25)}>+</button>
     </div>
   </div>
-  {#if data?.text}<details class="context-text"><summary>Transcription</summary><p lang="ja">{data.text}</p></details>{/if}
+  {#if data?.text}<details class="context-text"><summary>{t('crop.transcription')}</summary><p lang="ja">{data.text}</p></details>{/if}
 </div>
 
 <style>

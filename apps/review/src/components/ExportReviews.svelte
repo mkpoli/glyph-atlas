@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte'
+  import { t } from '../lib/i18n.svelte.js'
   let { close } = $props()
   let dialog, preview = $state(null)
   let text = $state(''), count = $state(0), error = $state(''), status = $state(''), ready = $state(false)
@@ -23,23 +24,23 @@
         signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]),
         redirect: 'error', headers: { accept: 'application/json' },
       })
-      if (!response.ok) throw new Error(`Could not export reviews (${response.status}).`)
+      if (!response.ok) throw new Error(t('export.readError', { status: response.status }))
       const data = await response.json()
       if (current !== generation || controller.signal.aborted) return
-      if (!Array.isArray(data.reviews)) throw new Error('The export did not contain reviews.')
+      if (!Array.isArray(data.reviews)) throw new Error(t('export.noReviews'))
       text = JSON.stringify(data, null, 2) + '\n'
       count = data.reviews.length
       ready = true
-    } catch (e) { if (current === generation && e.name !== 'AbortError') error = e.name === 'TimeoutError' ? 'The export timed out. Try again.' : e.message }
+    } catch (e) { if (current === generation && e.name !== 'AbortError') error = e.name === 'TimeoutError' ? t('export.timedOut') : e.message }
   }
 
   async function copy() {
     try {
       await navigator.clipboard.writeText(text)
-      status = 'Copied'
+      status = t('export.copied')
     } catch {
       preview.focus(); preview.select()
-      status = 'Press Ctrl+C to copy the selected JSON.'
+      status = t('export.copyManually')
     }
   }
 
@@ -55,29 +56,29 @@
       writable = await handle.createWritable()
       await writable.write(text)
       await writable.close()
-      status = `Saved ${handle.name}`
+      status = t('export.saved', { name: handle.name })
     } catch (e) {
       if (writable) await writable.abort().catch(() => {})
-      status = e.name === 'AbortError' ? 'Save cancelled' : 'Could not save. Try Download JSON or Copy JSON.'
+      status = e.name === 'AbortError' ? t('export.cancelled') : t('export.saveFailed')
     } finally { saving = false }
   }
 </script>
 
 <dialog class="export-dialog" bind:this={dialog} oncancel={close} aria-labelledby="export-title">
-  <div class="export-heading"><h2 id="export-title">Export reviews</h2><button class="icon-button" aria-label="Close export" onclick={close}>×</button></div>
-  <label class="export-history"><input type="checkbox" checked={includeProcessed} onchange={e => { includeProcessed = e.currentTarget.checked; prepare() }} disabled={saving} />Include processed reviews</label>
-  {#if error}<p role="alert">{error}</p><button onclick={prepare}>Try again</button>
-  {:else if !ready}<p role="status">Preparing export…</p>
+  <div class="export-heading"><h2 id="export-title">{t('export.title')}</h2><button class="icon-button" aria-label={t('export.close')} onclick={close}>×</button></div>
+  <label class="export-history"><input type="checkbox" checked={includeProcessed} onchange={e => { includeProcessed = e.currentTarget.checked; prepare() }} disabled={saving} />{t('export.includeProcessed')}</label>
+  {#if error}<p role="alert">{error}</p><button onclick={prepare}>{t('common.tryAgain')}</button>
+  {:else if !ready}<p role="status">{t('export.preparing')}</p>
   {:else}
-    <p class="export-count">{count ? `${count} ${includeProcessed ? 'saved' : 'new'} ${count === 1 ? 'review' : 'reviews'}` : 'No new reviews to export.'}</p>
+    <p class="export-count">{count ? t(includeProcessed ? 'export.count.saved' : 'export.count.new', { count }) : t('export.empty')}</p>
     {#if count}
     <div class="export-actions">
-      <a class="primary" href={'/atlas/reviews.json' + query} download="atlas-character-reviews.json">Download JSON ↓</a>
-      {#if canSave}<button class="save-export" onclick={saveAs} disabled={saving}>{saving ? 'Saving…' : 'Save as…'}</button>{/if}
-      <button class="copy-export" onclick={copy}>Copy JSON</button>
+      <a class="primary" href={'/atlas/reviews.json' + query} download="atlas-character-reviews.json">{t('export.download')}</a>
+      {#if canSave}<button class="save-export" onclick={saveAs} disabled={saving}>{saving ? t('common.saving') : t('export.saveAs')}</button>{/if}
+      <button class="copy-export" onclick={copy}>{t('export.copyJson')}</button>
     </div>
-    <textarea bind:this={preview} aria-label="Reviews JSON" readonly value={text} spellcheck="false"></textarea>
-    <div class="export-foot"><span role="status">{status}</span><a href={'/atlas/reviews' + query} target="_blank" rel="noreferrer">Open JSON ↗</a></div>
+    <textarea bind:this={preview} aria-label={t('export.jsonTextarea')} readonly value={text} spellcheck="false"></textarea>
+    <div class="export-foot"><span role="status">{status}</span><a href={'/atlas/reviews' + query} target="_blank" rel="noreferrer">{t('export.openJson')}</a></div>
     {/if}
   {/if}
 </dialog>

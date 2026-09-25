@@ -1,10 +1,11 @@
 <script>
   import ScriptText from './ScriptText.svelte'
-  const types = [ ['あ', 'Hiragana'], ['ア', 'Katakana'], ['字', 'Kanji'], ['※', 'Symbol'] ]
+  import { t } from '../lib/i18n.svelte.js'
+  const types = [ ['あ', 'hiragana'], ['ア', 'katakana'], ['字', 'kanji'], ['※', 'symbol'] ]
 </script>
 
-<div class="script-legend" role="note" aria-label="Character color legend">
-  {#each types as [character, label]}<span><span aria-hidden="true"><ScriptText text={character} /></span><span>{label}</span></span>{/each}
+<div class="script-legend" role="note" aria-label={t('script.legend.label')}>
+  {#each types as [character, key]}<span><span aria-hidden="true"><ScriptText text={character} /></span><span>{t(`script.${key}`)}</span></span>{/each}
 </div>
 
 <style>

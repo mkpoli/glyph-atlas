@@ -12,11 +12,12 @@
   import ZiLink from './ZiLink.svelte'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import { suggest, countsLabel, ownLabel } from '../lib/layers.js'
+  import { t } from '../lib/i18n.svelte.js'
 
   let {
     value = $bindable(''),
-    placeholder = 'Find a character…',
-    label = 'Find a character',
+    placeholder = t('search.placeholder'),
+    label = t('search.label'),
     autofocus = false,
     onselect = () => {},
     oninput = () => {},
@@ -161,13 +162,13 @@
            oninput={e => { if (!composing && !e.isComposing) typed(e.currentTarget.value) }}
            onfocus={() => { if (value.trim() && !items.length) seek(value) ; else if (items.length) open = true }}
            onblur={blurred} onkeydown={keys} />
-    {#if value}<button type="button" class="find-clear" aria-label="Clear search" onclick={clear}>×</button>{/if}
+    {#if value}<button type="button" class="find-clear" aria-label={t('search.clear')} onclick={clear}>×</button>{/if}
   </form>
 
   {#if open}
-    <div class="candidate-list" id={listId} role="listbox" aria-label="Character candidates">
-      {#if loading}<p class="candidate-status" role="status">Searching…</p>{/if}
-      {#if failed}<p class="candidate-status" role="alert">Search did not respond. <button type="button" onclick={() => seek(value)}>Try again</button></p>{/if}
+    <div class="candidate-list" id={listId} role="listbox" aria-label={t('search.candidates.label')}>
+      {#if loading}<p class="candidate-status" role="status">{t('search.searching')}</p>{/if}
+      {#if failed}<p class="candidate-status" role="alert">{t('search.failed')} <button type="button" onclick={() => seek(value)}>{t('common.tryAgain')}</button></p>{/if}
       {#each items as item, index (item.code_point)}
         <div class="candidate-row"><button type="button" class="candidate" id={`${listId}-${index}`} role="option"
                 bind:this={options[index]}
@@ -179,7 +180,7 @@
             <span class="candidate-line">
               <b class="candidate-char"><ReferenceGlyph char={item.char} code_point={item.code_point} script={item.script} size="sm" /></b>
               <span class="candidate-reading">{item.reading ?? item.code_point}</span>
-              {#if item.kind === 'ligature'}<span class="tag">ligature</span>{/if}
+              {#if item.kind === 'ligature'}<span class="tag">{t('search.ligature')}</span>{/if}
             </span>
             <span class="candidate-counts">{countsLabel(item.candidates) || ownLabel(item)}{#if item.grapheme?.character_count > 1}<span> · {item.grapheme.label}</span>{/if}</span>
           </span>
@@ -187,14 +188,14 @@
       {/each}
       {#if items.length}<div class="candidate-legend"><ScriptLegend /></div>{/if}
       {#if !loading && !failed && !items.length && answer}
-        <p class="candidate-status">{answer.hint ?? 'No character matches that.'}</p>
+        <p class="candidate-status">{answer.hint ?? t('search.noMatch')}</p>
       {/if}
       {#if answer?.more > 0 && limit < CEILING}
         <button type="button" class="candidate-more" onclick={more} disabled={loading}>
-          {loading ? 'Reading…' : 'More candidates ↓'}
+          {loading ? t('search.reading') : t('search.moreCandidates')}
         </button>
       {:else if answer?.more > 0}
-        <p class="candidate-status">Narrow the query to see the rest.</p>
+        <p class="candidate-status">{t('search.narrowQuery')}</p>
       {/if}
     </div>
   {/if}
