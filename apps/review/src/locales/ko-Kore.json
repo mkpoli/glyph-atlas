@@ -6,7 +6,8 @@
       "ko-kore"
     ]
   },
-  "app.home.aria": "Glyph Atlas 첫 畫面",
+  "app.name": "字形大圖譜",
+  "app.home.aria": "字形大圖譜 첫 畫面",
   "app.nav.aria": "主 메뉴",
   "app.reviewOptions": "檢討 設定",
   "app.saved": "貯藏됨",
