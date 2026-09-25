@@ -47,9 +47,10 @@ def identity_fields(
         written, basis = human_character, "human_review"
         family = family_of(" ".join(refs.to_code_points(human_character)))
     elif decided is not None:
-        # A person named this glyph's form, directly or through its cluster; a glyph marked as not
-        # having its cluster's form stays unassigned rather than falling back to the visual model.
-        written, basis = decided["form"], decided["basis"]
+        # A person named this glyph's form, directly or through its cluster, or reported what
+        # character it is; a glyph marked as not having its cluster's form stays unassigned rather
+        # than falling back to the visual model.
+        written, basis = decided["form"] or decided.get("character"), decided["basis"]
         ambiguous = written is None
     else:
         try:

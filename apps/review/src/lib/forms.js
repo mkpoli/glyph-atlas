@@ -13,6 +13,5 @@ export const family = (codePoint, order = 'shape') => request('/atlas/forms/fami
 export const members = (cluster, offset = 0, limit = 120, order = 'typical') =>
   request('/atlas/forms/clusters/' + cluster.split('/').map(encodeURIComponent).join('/') + '?' + new URLSearchParams({ offset, limit, order }))
 export const decide = decision => request('/atlas/forms/decisions', decision)
-export const report = body => request('/atlas/forms/reports', body)
 export const split = (cluster, k) =>
   request('/atlas/forms/split/' + cluster.split('/').map(encodeURIComponent).join('/') + '?' + new URLSearchParams({ k }))
