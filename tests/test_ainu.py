@@ -544,3 +544,46 @@ def test_an_untagged_imported_box_is_never_replaced(tmp_path) -> None:
     assert after[lines[0].id].box == Box(x=7, y=8, w=9, h=10), "the import's box stands"
     assert not ainu.derived_by_atlas(after[lines[0].id])
     assert all(after[lines[index].id].box is not None for index in (1, 2, 3))
+
+
+def test_a_gloss_column_beside_the_lines_is_left_unread() -> None:
+    """A thin column between two lines, such as a gloss beside a word, is skipped, not paired.
+
+    Five lines of six characters stand 60 px apart, and a column of two small marks sits between the
+    second and the third. Pairing only equal counts refused this page; the pairing reads past it.
+    """
+    boxes: list[Box] = []
+    for index in range(5):
+        boxes.extend(column(1300 - index * 60, ys=tuple(100 + 40 * step for step in range(6))))
+    boxes.extend(column(1300 - 90, ys=(100, 140), w=10, h=20))
+    lines = [line(seq, "あ" * 6) for seq in range(5)]
+    derivation = ainu.derive_page(page(), lines, boxes)
+    assert derivation.paired and derivation.reason == "paired, 1 columns unread"
+    assert [len(span) for span in derivation.spans] == [1, 1, 1, 1, 1]
+    third = derivation.line_box(2)
+    assert third is not None and third.x < 1300 - 90 - 15, "the third line is the column past the gloss"
+
+
+def test_a_line_split_in_two_columns_takes_both() -> None:
+    """A line whose ink splits into two neighbouring columns is given both, and one box over them."""
+    boxes: list[Box] = []
+    for index in range(4):
+        boxes.extend(column(1300 - index * 100, ys=tuple(100 + 40 * step for step in range(8))))
+    boxes.extend(column(1300 - 4 * 100, ys=tuple(100 + 40 * step for step in range(4))))
+    boxes.extend(column(1300 - 4 * 100 - 45, ys=tuple(260 + 40 * step for step in range(4))))
+    lines = [line(seq, "あ" * 8) for seq in range(5)]
+    derivation = ainu.derive_page(page(), lines, boxes)
+    assert derivation.paired and [len(span) for span in derivation.spans] == [1, 1, 1, 1, 2]
+    last = derivation.line_box(4)
+    assert last is not None and last.w > 60, "the box holds both halves"
+
+
+def test_a_column_holding_far_more_than_its_line_is_not_paired() -> None:
+    """Twice the ink a line names is the ink of more than that line; the page is refused."""
+    boxes: list[Box] = []
+    for index in range(4):
+        boxes.extend(column(1300 - index * 50, ys=tuple(100 + 40 * step for step in range(12))))
+    lines = [line(seq, "あ" * 4) for seq in range(4)]
+    derivation = ainu.derive_page(page(), lines, boxes)
+    assert not derivation.paired and "fullest column" in derivation.reason
+    assert ainu.derive_page(page(), lines, boxes, max_per_character=5.0).paired
