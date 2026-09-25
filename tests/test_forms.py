@@ -173,7 +173,7 @@ def test_a_character_reported_for_a_glyph_is_what_it_shows(clustering):
 
     forms.record("glyph", units=[A], issue="character", character="テ")
     fields = identity_fields({"id": A, "unicode": "U+306F"}, "codh-full")
-    assert (fields["written_character"], fields["identity_basis"]) == ("テ", "form_glyph")
+    assert (fields["written_character"], fields["identity_basis"], fields["grapheme"]) == ("テ", "form_glyph", "U+3066")
 
 
 def test_clusters_can_be_listed_with_similar_shapes_together(clustering, tmp_path):

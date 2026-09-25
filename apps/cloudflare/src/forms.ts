@@ -8,8 +8,10 @@ export type FormTools = {
   body: (request: Request) => Promise<Json>;
   text: (value: unknown, max: number, name: string, required?: boolean) => string | null;
   codePoints: (value: string) => string;
+  family: (env: Env, char: string) => Promise<string>;
 };
-type UnitForm = { id: string; cluster: string; form: string | null; glyph_set: number; cluster_form: string | null; glyph_character: string | null };
+type UnitForm = { id: string; cluster: string; form: string | null; glyph_set: number; cluster_form: string | null;
+  glyph_character: string | null; glyph_family: string | null };
 
 // A glyph decision names at most this many glyphs; the view sends larger selections in parts.
 export const GLYPHS_PER_DECISION = 1000;
@@ -100,6 +102,8 @@ async function decide(env: Env, request: Request, tools: FormTools) {
     tools.fail(422, 'Only glyphs without a form can be reported, as a wrong character or a bad crop.');
   const character = input.character == null ? null : tools.text(input.character, 8, 'character') || null;
   if (character != null && issue !== 'character') tools.fail(422, 'Only a wrong character names what the glyph is.');
+  // A glyph reported as another character joins that character's family.
+  const characterFamily = character ? await tools.family(env, character) : null;
   let family: string, clusterId: string | null = null, units: string[] = [];
   if (kind === 'cluster') {
     const cluster = await env.DB.prepare('SELECT id,family FROM form_clusters WHERE id=?').bind(tools.text(input.cluster, 200, 'cluster', true)).first<Json>();
@@ -129,18 +133,19 @@ async function decide(env: Env, request: Request, tools: FormTools) {
     kind === 'cluster'
       ? env.DB.prepare(`INSERT INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,note) SELECT ?,?,?,'cluster',?,?,?,?,json_group_array(id),? FROM (SELECT id FROM form_units WHERE cluster=? ORDER BY rank)`)
         .bind(id, at, actor, family!, form, clusterId, allowed!.revision, note, clusterId)
-      : env.DB.prepare('INSERT INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,note,issue,character) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
-        .bind(id, at, actor, kind, family!, form, null, allowed!.revision, target, note, issue, character),
+      : env.DB.prepare('INSERT INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,note,issue,character,character_family) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)')
+        .bind(id, at, actor, kind, family!, form, null, allowed!.revision, target, note, issue, character, characterFamily),
     kind === 'cluster'
       ? env.DB.prepare('UPDATE form_units SET cluster_form=?1,form=CASE WHEN glyph_set=1 THEN glyph_form ELSE ?1 END WHERE cluster=?2').bind(form, clusterId)
       : kind === 'glyph'
-        ? env.DB.prepare('UPDATE form_units SET glyph_set=1,glyph_form=?1,glyph_decision=?2,form=?1,glyph_issue=?4,glyph_character=?5 WHERE id IN (SELECT value FROM json_each(?3))')
-          .bind(form, id, target, issue, character)
-        : env.DB.prepare('UPDATE form_units SET glyph_set=0,glyph_form=NULL,glyph_decision=NULL,form=cluster_form,glyph_issue=NULL,glyph_character=NULL WHERE id IN (SELECT value FROM json_each(?))').bind(target),
-    env.DB.prepare(`INSERT OR IGNORE INTO form_bases SELECT id,character FROM corpus_units WHERE id IN (${touched})`).bind(target),
+        ? env.DB.prepare('UPDATE form_units SET glyph_set=1,glyph_form=?1,glyph_decision=?2,form=?1,glyph_issue=?4,glyph_character=?5,glyph_family=?6 WHERE id IN (SELECT value FROM json_each(?3))')
+          .bind(form, id, target, issue, character, characterFamily)
+        : env.DB.prepare('UPDATE form_units SET glyph_set=0,glyph_form=NULL,glyph_decision=NULL,form=cluster_form,glyph_issue=NULL,glyph_character=NULL,glyph_family=NULL WHERE id IN (SELECT value FROM json_each(?))').bind(target),
+    env.DB.prepare(`INSERT OR IGNORE INTO form_bases(id,character,family) SELECT id,character,family FROM corpus_units WHERE id IN (${touched})`).bind(target),
     env.DB.prepare(`UPDATE corpus_characters SET n=n-t.k FROM (SELECT character,production,count(*) AS k ${unnamed} GROUP BY character,production) AS t
       WHERE corpus_characters.character=t.character AND corpus_characters.production=t.production`).bind(target),
-    env.DB.prepare(`UPDATE corpus_units SET character=CASE WHEN f.glyph_set=1 OR f.form IS NOT NULL THEN coalesce(f.glyph_character,f.form) ELSE b.character END
+    env.DB.prepare(`UPDATE corpus_units SET character=CASE WHEN f.glyph_set=1 OR f.form IS NOT NULL THEN coalesce(f.glyph_character,f.form) ELSE b.character END,
+      family=coalesce(f.glyph_family,b.family)
       FROM form_units f JOIN form_bases b ON b.id=f.id WHERE f.id=corpus_units.id AND corpus_units.named=0 AND corpus_units.id IN (${touched})`).bind(target),
     env.DB.prepare(`INSERT INTO corpus_characters(character,production,n,named) SELECT character,production,count(*),0 ${unnamed}
       GROUP BY character,production ON CONFLICT(character,production) DO UPDATE SET n=n+excluded.n`).bind(target),
@@ -167,14 +172,14 @@ async function decisionLog(env: Env) {
 
 // A CODH record as published, shown with the form a person has since named for it.
 export async function withForm(env: Env, record: Json, tools: Pick<FormTools, 'codePoints'>): Promise<Json> {
-  const row = await env.DB.prepare('SELECT id,cluster,form,glyph_set,cluster_form,glyph_character FROM form_units WHERE id=?').bind(record.id).first<UnitForm>();
+  const row = await env.DB.prepare('SELECT id,cluster,form,glyph_set,cluster_form,glyph_character,glyph_family FROM form_units WHERE id=?').bind(record.id).first<UnitForm>();
   if (!row || (!row.form && !row.glyph_set)) return row ? { ...record, form_cluster: { id: row.cluster } } : record;
   const decided = { form_cluster: { id: row.cluster }, form_decision: { form: row.form, basis: basis(row) } };
   // A glyph reported as another character shows that character; one only marked off its form shows none.
   const written = row.form ?? row.glyph_character;
   if (!written) return { ...record, ...decided, written_character: null, identity_status: 'unassigned', identity_basis: 'form_glyph' };
   return { ...record, ...decided, written_character: written, label: written, char: written, code_point: tools.codePoints(written),
-    identity_status: 'assigned', identity_basis: basis(row) ?? 'form_glyph' };
+    identity_status: 'assigned', identity_basis: basis(row) ?? 'form_glyph', ...(row.glyph_family ? { grapheme: row.glyph_family } : {}) };
 }
 
 function decoded(segment: string, tools: FormTools) {

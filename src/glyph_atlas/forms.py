@@ -23,6 +23,7 @@ import json
 import os
 import threading
 import time
+import unicodedata
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -267,6 +268,8 @@ def record(kind: str, *, form: str | None = None, cluster: str | None = None,
     data = clusters()
     if issue is not None and (kind != "glyph" or form is not None or issue not in ISSUES):
         raise DecisionError("Only glyphs without a form can be reported, as a wrong character or a bad crop.")
+    if character is not None:
+        character = unicodedata.normalize("NFC", character.strip()) or None
     if character is not None and issue != "character":
         raise DecisionError("Only a wrong character names what the glyph is.")
     if kind == "cluster":
