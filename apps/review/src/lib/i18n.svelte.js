@@ -82,3 +82,9 @@ export function around(key, name, params = {}) {
   const at = text.indexOf(`{${name}}`)
   return at < 0 ? [text, ''] : [text.slice(0, at), text.slice(at + name.length + 2)]
 }
+
+/** The project's name in the interface language, or null where that language uses the English wordmark. */
+export function localName() {
+  const name = byTag[current].messages['app.name']
+  return current !== 'en' && name && name !== en['app.name'] ? name : null
+}
