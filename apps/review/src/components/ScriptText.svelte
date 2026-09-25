@@ -9,4 +9,4 @@
   const description = $derived(parts.map(part => `${part.text} · ${part.label}`).join(', '))
 </script>
 
-<span class="script-text" lang="ja" role="img" aria-label={description}>{#each parts as part, index (index)}<span class="script-char" data-script={part.key} lang={part.key === 'hangul' ? 'ko' : undefined} title={`${part.text} · ${part.label}`} aria-hidden="true">{part.text}</span>{/each}</span>
+<span class="script-text" role="img" aria-label={description}>{#each parts as part, index (index)}<span class="script-char" data-script={part.key} lang={part.key === 'hangul' ? 'ko' : 'ja'} title={`${part.text} · ${part.label}`} aria-hidden="true">{part.text}</span>{/each}</span>
