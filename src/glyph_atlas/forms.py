@@ -83,19 +83,24 @@ def _load_clusters(paths) -> dict[str, Any]:
 
     summary, table, neighbours = paths
     if _stamp(summary) is None or _stamp(table) is None:
-        return {"revision": None, "families": {}, "units": {}, "members": {}, "labels": {}, "neighbours": {}}
+        return {"revision": None, "families": {}, "units": {}, "members": {}, "labels": {}, "neighbours": {},
+                "rows": {}}
     data = json.loads(summary.read_text())
     columns = pq.read_table(table, columns=["id", "family", "cluster", "similarity", "rank"]).to_pydict()
     units = {}
     members: dict[str, list[str]] = {}
-    for identity, family, cluster, similarity, rank in zip(*columns.values(), strict=True):
+    # `form_clusters.run` writes each cluster as one run of rows, row-aligned with embeddings.npy.
+    rows: dict[str, tuple[int, int] | None] = {}
+    for index, (identity, family, cluster, similarity, rank) in enumerate(zip(*columns.values(), strict=True)):
         units[identity] = (family, cluster, similarity, rank)
         members.setdefault(cluster, []).append(identity)
+        span = rows.get(cluster, (index, index))
+        rows[cluster] = (span[0], index + 1) if span is not None and span[1] == index else None
     labels = {c["id"]: c["label"] for family in data["families"].values() for c in family["clusters"]}
     # Written beside a clustering by `form_clusters.write_neighbours`; without it clusters keep size order.
     near = json.loads(neighbours.read_text()) if _stamp(neighbours) else {}
     return {"revision": data["revision"], "families": data["families"], "units": units, "members": members,
-            "labels": labels, "neighbours": near}
+            "labels": labels, "neighbours": near, "rows": rows}
 
 
 _CLUSTERS = _Watched(lambda: (clusters_dir() / "clusters.json", clusters_dir() / "units.parquet",
@@ -164,6 +169,52 @@ def _events() -> list[dict]:
 def resolved() -> dict[str, dict]:
     """Every decided glyph's form: `{"form", "basis", "decision", "cluster", "at"}`, by glyph id."""
     return _DECISIONS.get()[1]
+
+
+def split(cluster: str, k: int) -> list[list[str]]:
+    """A cluster's glyphs divided into `k` groups by shape, largest group first.
+
+    Spherical k-means over the cluster's own embeddings, seeded by the cluster id, so the same
+    split comes back on every request. The groups are a view for choosing glyphs; nothing is stored.
+    """
+    import hashlib
+
+    import numpy as np
+
+    data = clusters()
+    span = data["rows"].get(cluster)
+    if span is None:
+        raise DecisionError("This cluster cannot be split.")
+    members = data["members"][cluster]
+    vectors = np.load(clusters_dir() / "embeddings.npy", mmap_mode="r")[span[0]:span[1]].astype(np.float32)
+    vectors /= np.linalg.norm(vectors, axis=1, keepdims=True)
+    k = max(1, min(k, len(members)))
+    generator = np.random.default_rng(int(hashlib.sha256(cluster.encode()).hexdigest()[:8], 16))
+    centres = [vectors[generator.integers(len(vectors))]]
+    closest = 1 - vectors @ centres[0]
+    for _ in range(1, k):
+        weights = np.clip(closest, 0, None) ** 2
+        index = generator.choice(len(vectors), p=weights / weights.sum()) if weights.sum() > 0 else 0
+        centres.append(vectors[index])
+        closest = np.minimum(closest, 1 - vectors @ vectors[index])
+    c = np.stack(centres)
+    labels = None
+    for _ in range(100):
+        updated = (vectors @ c.T).argmax(1)
+        if labels is not None and np.array_equal(updated, labels):
+            break
+        labels = updated
+        for j in range(k):
+            if (labels == j).any():
+                mean = vectors[labels == j].mean(0)
+                c[j] = mean / np.linalg.norm(mean)
+    similarity = (vectors * c[labels]).sum(1)
+    groups = []
+    for j in range(k):
+        local = np.where(labels == j)[0]
+        if len(local):
+            groups.append([members[i] for i in local[np.argsort(-similarity[local])]])
+    return sorted(groups, key=len, reverse=True)
 
 
 def cluster_decisions() -> dict[str, str | None]:

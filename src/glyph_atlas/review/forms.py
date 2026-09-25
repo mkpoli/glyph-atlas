@@ -154,6 +154,25 @@ def router(media, corpus_root: Path, reviews=None) -> APIRouter:
         return {"revision": data["revision"], **summary(found, decided), "order": order,
                 "forms": [_form_entry(char) for char in forms.family_members(code_point)], "items": clusters}
 
+    @api.get("/forms/split/{cluster_id:path}")
+    def split(cluster_id: str, k: Annotated[int, Query(ge=2, le=8)] = 4,
+              shown: Annotated[int, Query(ge=1, le=240)] = 60) -> dict[str, Any]:
+        """A cluster divided by shape into `k` groups; each lists every id and shows its first crops."""
+        if cluster_id not in forms.clusters()["members"]:
+            raise HTTPException(404, "Unknown cluster.")
+        try:
+            groups = forms.split(cluster_id, k)
+        except forms.DecisionError as error:
+            raise HTTPException(422, str(error)) from None
+        decided = forms.resolved()
+        issues = reported()
+        return {"id": cluster_id, "k": k, "groups": [
+            {"count": len(ids), "ids": ids,
+             "items": [{"id": identity, "image": image(identity), "form": (decided.get(identity) or {}).get("form"),
+                        "basis": (decided.get(identity) or {}).get("basis"), "reported": issues.get(identity)}
+                       for identity in ids[:shown]]}
+            for ids in groups]}
+
     @api.get("/forms/clusters/{cluster_id:path}")
     def cluster(cluster_id: str, offset: Annotated[int, Query(ge=0)] = 0,
                 limit: Annotated[int, Query(ge=1, le=500)] = 120,
