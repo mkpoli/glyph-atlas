@@ -9,7 +9,7 @@ from copy import deepcopy
 from .. import refs
 from ..schema import Review
 from ..unit_scope import character_count
-from .atlas import identity_text, label, script_of_identity, single_character
+from .atlas import identity_text, label, reading_of, script_of_identity, single_character
 from .characters import _source_digest, reading_is_allowed, written_identity
 from .receipts import fingerprint
 from .store import _change
@@ -84,6 +84,11 @@ def _step(record, before):
     reading = answer.get("reading")
     if not reading and issue == "reading" and answer.get("correction") and single_character(answer["correction"]):
         reading = answer["correction"]
+    if not reading and written:
+        # The Worker carries a corrected character's registered reading along: い corrected to り reads り.
+        derived = reading_of(written)
+        if derived and derived != before["reading"]:
+            reading = derived
     after = {**before, "revision": revision + 1}
     if written:
         after["label"] = written

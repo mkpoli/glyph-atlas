@@ -54,9 +54,11 @@ def remote(publication, *, before=None, issue="character", character="を", corr
         request["correction"] = correction
     if reading:
         request["reading"] = reading
-    saved_reading = reading or (correction if issue == "reading" else None) or shown["reading"]
-    after = {**shown, "label": bridge.identity_text(character) if character else shown["label"],
-             "reading": saved_reading, "revision": shown["revision"] + 1}
+    label = bridge.identity_text(character) if character else shown["label"]
+    # As the Worker saves it: a corrected character brings its registered reading unless one was given.
+    saved_reading = (reading or (correction if issue == "reading" else None)
+                     or (bridge.reading_of(label) if character else None) or shown["reading"])
+    after = {**shown, "label": label, "reading": saved_reading, "revision": shown["revision"] + 1}
     snapshot = {**deepcopy(publication), "character": shown}
     evidence = {"kind": "character-review", "verdict": "wrong", "issue": issue, "request": request,
                 "snapshot": snapshot, "suggested_character": " ".join(f"U+{ord(c):04X}" for c in after["label"]) if character else None,
@@ -89,7 +91,7 @@ def test_preview_import_refinement_and_original_receipts(store, tmp_path):
     assert not store.events() and store.revision("u") == 0
     bound, report = bridge.ingest_cloudflare(store, source, apply=True)
     assert report["counts"] == {"imported": 1}
-    assert store.unit("u").unicode == "U+3092" and store.unit("u").reading == "手"
+    assert store.unit("u").unicode == "U+3092" and store.unit("u").reading == "を"
     assert store.events()[-1].id == record["event"]["id"]
     event = bound["reviews"][0]["event"]
     provenance = json.loads(event["evidence"])["cloudflare_import"]
@@ -134,6 +136,62 @@ def test_full_remote_chain_imports_only_current_review(store):
     assert first["event"]["id"] not in {event.id for event in store.events()}
     assert store.unit("u").unicode == "U+3092" and store.unit("u").review == "disputed"
     assert len(json.loads(store.events()[-1].evidence)["cloudflare_import"]["remote_chain"]) == 2
+
+
+@pytest.mark.parametrize("round_review", [False, True])
+def test_site_character_correction_imports_as_reviewed_with_its_reading(store, round_review):
+    record, after = remote(baseline(store), character="ナ", round_review=round_review)
+    assert after["reading"] == "な" and record["event"]["new"] == "reviewed"
+    _, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
+    assert report["counts"] == {"imported": 1}
+    unit = store.unit("u")
+    assert (unit.unicode, unit.reading, unit.review) == ("U+30CA", "な", "reviewed")
+
+
+def test_character_correction_whose_saved_reading_is_not_the_workers_is_rejected(store):
+    record, _ = remote(baseline(store), character="ナ")
+    evidence = json.loads(record["event"]["evidence"])
+    evidence["correction"]["reading"] = "手"
+    record["event"]["evidence"] = json.dumps(evidence, ensure_ascii=False)
+    _, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
+    assert report["items"][0]["reason"] == "saved effective state disagrees with the explicit correction"
+    assert not store.events()
+
+
+def test_two_review_site_chain_imports_in_order(store):
+    publication = baseline(store)
+    first, after = remote(publication, character="ナ", current=False)
+    second, _ = remote(publication, before=after, issue="reading", character=None, correction="に")
+    _, report = bridge.ingest_cloudflare(store, payload(second, first), apply=True)
+    assert report["counts"] == {"imported": 1}
+    unit = store.unit("u")
+    assert (unit.unicode, unit.reading, unit.review) == ("U+30CA", "に", "reviewed")
+    chain = json.loads(store.events()[-1].evidence)["cloudflare_import"]["remote_chain"]
+    assert [event["id"] for event in chain] == [first["event"]["id"], second["event"]["id"]]
+
+
+def test_site_chain_with_a_gap_is_rejected(store):
+    publication = baseline(store)
+    first, after = remote(publication, character="ナ", current=False)
+    middle, after_middle = remote(publication, before=after, issue="crop", character=None, current=False)
+    last, _ = remote(publication, before=after_middle, issue="crop", character=None)
+    _, report = bridge.ingest_cloudflare(store, payload(first, last), apply=True)
+    assert report["items"][0]["reason"] == "remote revision chain or reviewed pixels changed"
+    assert not store.events()
+    _, report = bridge.ingest_cloudflare(store, payload(middle, last), apply=True)
+    assert report["items"][0]["reason"] == "remote revision chain or reviewed pixels changed"
+    assert not store.events()
+
+
+def test_local_event_between_publication_and_site_chain_is_rejected(store):
+    publication = baseline(store)
+    first, after = remote(publication, character="ナ", current=False)
+    second, _ = remote(publication, before=after, issue="crop", character=None)
+    store.record(ReviewRequest(target_id="u", field="review", new="reviewed", client_id="local"))
+    count = len(store.events())
+    _, report = bridge.ingest_cloudflare(store, payload(first, second), apply=True)
+    assert report["items"][0]["reason"] == "local revision differs from the published baseline"
+    assert len(store.events()) == count and store.unit("u").unicode == "U+624B"
 
 
 def test_later_batch_can_follow_own_refinement_but_not_later_local_review(store):
