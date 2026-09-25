@@ -291,13 +291,20 @@ class Site:
 
 
 def read_site(http: Http, wiki: str) -> Site:
+    """The wiki's Page and Index namespaces and its licence.
+
+    ProofreadPage names its namespace ids per wiki (250 and 252 on ja and ko, 104 and 106 on zh), so
+    the ids come from `proofreadinfo` and the local names from `siteinfo`.
+    """
     host = f"{wiki}.wikisource.org"
-    params = {"meta": "siteinfo", "siprop": "rightsinfo|namespaces"}
+    params = {"meta": "siteinfo|proofreadinfo", "siprop": "rightsinfo|namespaces", "piprop": "namespaces"}
     answer = http.query(host, params)
     spaces = answer.get("namespaces") or {}
+    proofread = answer.get("proofreadnamespaces") or {}
     rightsinfo = answer.get("rightsinfo") or {}
     try:
-        page_ns, index_ns = spaces["250"]["name"], spaces["252"]["name"]
+        page_ns = spaces[str(proofread["page"]["id"])]["name"]
+        index_ns = spaces[str(proofread["index"]["id"])]["name"]
     except KeyError:
         raise WikiError(f"{host}: no ProofreadPage namespaces") from None
     return Site(host=host, page_ns=page_ns, index_ns=index_ns, licence_url=rightsinfo.get("url") or "",

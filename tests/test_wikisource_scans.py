@@ -48,8 +48,9 @@ def revision(content: str, revid: int) -> list[dict]:
 
 
 def answer(params: dict[str, str]) -> dict:
-    if params.get("meta") == "siteinfo":
+    if params.get("meta") == "siteinfo|proofreadinfo":
         return {"query": {"namespaces": {"250": {"name": "페이지"}, "252": {"name": "색인"}},
+                          "proofreadnamespaces": {"page": {"id": 250}, "index": {"id": 252}},
                           "rightsinfo": {"url": "https://creativecommons.org/licenses/by-sa/4.0/deed.ko",
                                          "text": "Creative Commons Attribution-Share Alike 4.0"}}}
     if params.get("list") == "proofreadpagesinindex":
@@ -222,3 +223,24 @@ def test_split_page_keeps_only_the_body():
     assert footer == "F"
     assert scans.quality_of(header) == (4, "X")
     assert scans.split_page("plain") == ("", "plain", "")
+
+
+def test_read_site_takes_the_namespace_ids_proofreadpage_names():
+    class ZhHttp:
+        def query(self, host, params):
+            assert params["piprop"] == "namespaces"
+            return {"namespaces": {"104": {"name": "Page"}, "106": {"name": "Index"}, "250": {"name": "Other"}},
+                    "proofreadnamespaces": {"page": {"id": 104}, "index": {"id": 106}},
+                    "rightsinfo": {"url": "https://creativecommons.org/licenses/by-sa/4.0/deed.zh", "text": "CC BY-SA 4.0"}}
+
+    site = scans.read_site(ZhHttp(), "zh")
+    assert (site.page_ns, site.index_ns) == ("Page", "Index")
+
+
+def test_read_site_without_proofreadpage_is_an_error():
+    class Bare:
+        def query(self, host, params):
+            return {"namespaces": {}, "rightsinfo": {}}
+
+    with pytest.raises(scans.WikiError):
+        scans.read_site(Bare(), "xx")
