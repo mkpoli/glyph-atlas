@@ -409,5 +409,7 @@
   "quiz.reference.inspect": "參考 {label} 살피기, {state}",
   "quiz.reference.confirmed": "確認됨",
   "quiz.reference.seen": "봄",
-  "state.hard": "難讀: 檢討者 두 名이 건너뜀"
+  "state.hard": "難讀: 檢討者 두 名이 건너뜀",
+  "suggestions.type.label": "또는 直接 入力 (選擇)",
+  "suggestions.type.placeholder": "文字…"
 }
