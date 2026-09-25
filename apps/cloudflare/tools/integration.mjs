@@ -373,13 +373,25 @@ try {
       await assert.rejects(async () => served(await plan(shape, bound), index), `the check on ${index} fails without it`)
     await db.prepare(create).run()
   }
+  // A row published as `other` before Hangul had a category reads `hangul` once 0008 has run, and
+  // the listing filters it by that group.
+  const jamo = { id: 'hangul', label: 'ㅿ', reading: 'ㅿ', state: 'pending', revision: 0, image_sha256: hash,
+    production: 'woodblock', repair: { quiz: true } }
+  await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
+    jamo.id, 'local', 'ㅿ', 'ㅿ', 'U+317F', null, 'woodblock', 'other', 'pending', 0, 1, 1, 1,
+    JSON.stringify(jamo), JSON.stringify({ character: jamo }), '{}', '{}').run()
+  await apply('0008_hangul_category.sql')
+  assert.deepEqual((await call('/atlas?group=hangul')).items.map(i => i.id), ['hangul'], 'a Hangul label is in the hangul group')
+  assert.ok(!(await call('/atlas?group=kana')).items.some(i => i.id === 'hangul'), 'and in no other')
   // The migration names the label categories the Worker computes, code point by code point.
-  const ranges = kind => [...migration.split(`THEN '${kind}'`)[0].split('WHEN').at(-1).matchAll(/c BETWEEN (0x[0-9A-F]+) AND (0x[0-9A-F]+)|c=(0x[0-9A-F]+)/g)]
+  const hangulMigration = await readFile(new URL('../migrations/0008_hangul_category.sql', import.meta.url), 'utf8')
+  const ranges = (kind, sql = migration) => [...sql.split(`THEN '${kind}'`)[0].split('WHEN').at(-1).matchAll(/c BETWEEN (0x[0-9A-F]+) AND (0x[0-9A-F]+)|c=(0x[0-9A-F]+)/g)]
     .map(m => m[3] ? [Number(m[3]), Number(m[3])] : [Number(m[1]), Number(m[2])])
-  const kana = ranges('kana'), han = ranges('kanji'), within = (list, c) => list.some(([a, b]) => a <= c && c <= b)
+  const kana = ranges('kana'), han = ranges('kanji'), hangul = ranges('hangul', hangulMigration)
+  const within = (list, c) => list.some(([a, b]) => a <= c && c <= b)
   for (let c = 0; c <= 0x10FFFF; c++) {
     if (c >= 0xD800 && c <= 0xDFFF) continue
-    const sql = within(kana, c) ? 'kana' : within(han, c) ? 'kanji' : 'other'
+    const sql = within(kana, c) ? 'kana' : within(han, c) ? 'kanji' : within(hangul, c) ? 'hangul' : 'other'
     if (worker.categoryOf(String.fromCodePoint(c)) !== sql) assert.fail(`U+${c.toString(16)}: ${worker.categoryOf(String.fromCodePoint(c))} vs ${sql}`)
   }
   console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds.')

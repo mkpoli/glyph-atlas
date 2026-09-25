@@ -166,7 +166,8 @@ def export(dataset: Path, output: Path, *, resume=False):
             info = characters._row(row, counts)
             info["candidates"] = characters.candidate_summary(row.char, live=live_counts.get(row.char),
                                                                local=counts.get(row.code_point, 0))
-            info["kind"] = "ligature" if row.ligature else "han" if str(row.script) == "han" else "kana"
+            info["kind"] = ("ligature" if row.ligature else "han" if str(row.script) == "han"
+                            else "hangul" if str(row.script) == "hangul" else "kana")
             info["default_scope"] = "grapheme" if info["candidates"].get("requires_family_scope") else info["default_scope"]
             detail = {**info, "alias": row.alias, "category": row.category,
                       "confusables": [characters.to_row(refs.character(cp)) for cp in row.confusables],

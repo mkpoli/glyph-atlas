@@ -1,7 +1,7 @@
 <script>
   import ScriptText from './ScriptText.svelte'
   import { t } from '../lib/i18n.svelte.js'
-  const types = [ ['あ', 'hiragana'], ['ア', 'katakana'], ['字', 'kanji'], ['※', 'symbol'] ]
+  const types = [ ['あ', 'hiragana'], ['ア', 'katakana'], ['字', 'kanji'], ['한', 'hangul'], ['※', 'symbol'] ]
 </script>
 
 <div class="script-legend" role="note" aria-label={t('script.legend.label')}>

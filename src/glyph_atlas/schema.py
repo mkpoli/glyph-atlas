@@ -183,13 +183,14 @@ class Script(StrEnum):
     """The script of a character, as the character layer states it.
 
     `han` is Unicode's name for the script of the kanji and is what `data/vocab/characters.tsv`
-    holds.
+    holds. `hangul` is the Korean alphabet, its jamo and its precomposed syllables alike.
     """
 
     HIRAGANA = "hiragana"
     HENTAIGANA = "hentaigana"
     KATAKANA = "katakana"
     HAN = "han"
+    HANGUL = "hangul"
     SYMBOL = "symbol"
     LATIN = "latin"
     UNKNOWN = "unknown"
