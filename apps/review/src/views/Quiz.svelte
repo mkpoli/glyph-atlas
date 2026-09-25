@@ -91,7 +91,7 @@
     reading = round.reading; items = round.items; choices = round.choices; selected = round.selected
     skipped = round.skipped; suggestions = round.suggestions; contextSuggestions = round.contextSuggestions
     roundId = round.roundId; roundSeed = round.roundSeed; hasMore = round.hasMore
-    loaded = {}; failed = {}; viewed = {}; step = 'select'; at = 0; error = ''; categoryOpen = false
+    loaded = {}; failed = {}; viewed = {}; step = 'select'; at = 0; error = ''; errorStatus = 0; categoryOpen = false
   }
   function visit(index) {
     if (saving || loading || index < 0 || index >= history.length || index === historyIndex) return
@@ -111,7 +111,7 @@
   async function load({ target = null, replace = false, scope = production } = {}) {
     checkpoint()
     const id = ++requestId
-    loading = true; loadingMore = false; error = ''; categoryOpen = false
+    loading = true; loadingMore = false; error = ''; errorStatus = 0; categoryOpen = false
     try {
       const summary = await catalogue({ purpose: 'review', reviewer: clientId, production: scope, limit: 1, state: 'pending' })
       if (closed || id !== requestId) return
@@ -141,7 +141,7 @@
             production: scope, summary })
           historyIndex = -1
         } else if (!reading) items = []
-        else error = t('quiz.noOtherCharacters')
+        else { error = t('quiz.noOtherCharacters'); errorStatus = 0 }
         return
       }
       restoreRound({ reading: chosen, items: arranged(numbered(unique(result.items))), choices: {}, selected: {}, skipped: {},
@@ -158,7 +158,7 @@
   async function loadMore() {
     if (loading || saving || loadingMore || !hasMore || items.length >= roundLimit) return
     const id = requestId, round = roundId
-    loadingMore = true; error = ''
+    loadingMore = true; error = ''; errorStatus = 0
     const seen = new Set(items.map(item => item.id))
     let offset = 0, additions = [], more = false
     try {
@@ -264,7 +264,7 @@
     const kept = compatible(choices[id], issue, previous)
     choices = { ...choices, [id]: { verdict: 'wrong', issue, ...kept } }
     if (suggestsReading(issue)) suggest(items.find(i => i.id === id))
-    error = ''
+    error = ''; errorStatus = 0
   }
   async function assignCurrent(issue) {
     if (!current) return
@@ -313,7 +313,7 @@
     skipped = { ...skipped, ...Object.fromEntries(wanted.map(id => [id, true])) }
     choices = without(choices, wanted)
     selected = without(selected, wanted)
-    error = ''
+    error = ''; errorStatus = 0
     if (removedCurrent) jump(Math.min(at, Math.max(selectedItems.length - 1, 0)))
   }
   // A crop names the pixels it was shown with: a local crop by its page hash, a corpus glyph by its
@@ -358,14 +358,14 @@
   function back() {
     step = step === 'correct' ? 'issue' : 'select'
     at = Math.min(at, Math.max(queue.length - 1, 0))
-    error = ''
+    error = ''; errorStatus = 0
   }
   function jump(i) {
     at = Math.max(0, Math.min(queue.length - 1, i))
     const item = queue[at], choice = choices[item?.id]
     step = suggestsReading(choice?.issue) ? 'correct' : 'issue'
     if (item && step === 'correct' && (!suggestions[item.id] || !contextSuggestions[item.id])) suggest(item)
-    error = ''
+    error = ''; errorStatus = 0
   }
   const move = delta => jump(focusIndex + delta)
 
@@ -387,7 +387,7 @@
   async function submit() {
     if (saving || loadingMore || !ready) return
     if (step === 'select') return
-    if (selection.length && !answered) { error = t('quiz.giveEachProblem'); return }
+    if (selection.length && !answered) { error = t('quiz.giveEachProblem'); errorStatus = 0; return }
     // Build an atomic request from explicit problems only; UI choice state never enters the API.
     const marked = new Set(selection)
     const answers = remaining.filter(i => marked.has(i.id) && choices[i.id]?.verdict === 'wrong').map(i => {
@@ -401,7 +401,7 @@
     const seen = remaining.filter(i => !flagged.has(i.id) && viewed[i.id]).map(i => ({ id: i.id, ...pixels(i), image: i.image }))
     const passed = skippedCrops()
     if (!answers.length && !seen.length && !passed.length) { await load(); return }
-    saving = true; error = ''
+    saving = true; error = ''; errorStatus = 0
     try {
       await request('/atlas/rounds', { id: roundId, client_id: clientId, label: reading, answers, seen, skipped: passed })
       last = { id: roundId, count: answers.length, label: reading, production }
@@ -422,7 +422,7 @@
     const seen = remaining.filter(i => viewed[i.id]).map(i => ({ id: i.id, ...pixels(i), image: i.image }))
     const passed = skippedCrops()
     if ((!seen.length && !passed.length) || selection.length) return true
-    saving = true; error = ''
+    saving = true; error = ''; errorStatus = 0
     try {
       await request('/atlas/rounds', { id: roundId, client_id: clientId, label: reading, seen, skipped: passed })
       last = { id: roundId, count: 0, label: reading, production }
@@ -440,7 +440,7 @@
   }
   async function undo() {
     if (!last || saving) return
-    saving = true; error = ''
+    saving = true; error = ''; errorStatus = 0
     try {
       await request(`/atlas/rounds/${last.id}/undo`, { client_id: clientId })
       const target = last.label, scope = last.production ?? production
