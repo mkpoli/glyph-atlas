@@ -337,3 +337,31 @@ def test_one_ink_is_imported_once_and_two_readings_of_it_are_withheld(world, tmp
     assert not ainu_characters.trusted(units["ar:moshiogusa--ninjal-1:1-l2-9"]), "rec.aynu.org leaves them out"
     again = ainu_characters.plan(out, records)
     assert again.import_new == [], "a duplicate left out stays out when the merge runs on its own output"
+
+
+def test_a_confirmed_reading_of_an_ink_wins_over_an_unconfirmed_one(world):
+    atlas, records = world
+    folder = records / "data/characters/moshiogusa--ninjal-1"
+    samples = json.loads((folder / "samples.json").read_text(encoding="utf-8"))
+    samples["samples"] += [sample(8, 601, "マ", "ocr", None), sample(9, 1300, "キ", "transcription", 2),
+                           sample(10, 1301, "キ", "transcription", 3)]
+    samples["samples"][-2]["id"], samples["samples"][-1]["id"] = "1-l2-9", "1-l3-10"
+    (folder / "samples.json").write_text(json.dumps(samples), encoding="utf-8")
+    reviews = json.loads((folder / "reviews.json").read_text(encoding="utf-8"))
+    reviews["edits"] += [{"id": "1-l1-4", "label": "ア", "reading": "confirmed", "boundary": "confirmed"},
+                         {"id": "1-l3-10", "label": "キ", "reading": "confirmed", "boundary": "confirmed"}]
+    (folder / "reviews.json").write_text(json.dumps(reviews), encoding="utf-8")
+    result = ainu_characters.plan(atlas, records)
+    imported = {o.id for o in result.import_new}
+    assert "1-ocr0-8" not in imported and not result.contested, "a person's ア stands over the OCR's マ"
+    assert "1-l3-10" in imported and "1-l2-9" not in imported, "the confirmed duplicate is the one kept"
+
+
+def test_a_second_occurrence_on_ink_the_atlas_keeps_is_not_imported(world):
+    atlas, records = world
+    folder = records / "data/characters/moshiogusa--ninjal-1"
+    samples = json.loads((folder / "samples.json").read_text(encoding="utf-8"))
+    samples["samples"].append(sample(8, 202, "ト", "ocr", None))  # the ink of the confirmed atlas unit uid(1)
+    (folder / "samples.json").write_text(json.dumps(samples), encoding="utf-8")
+    result = ainu_characters.plan(atlas, records)
+    assert "1-ocr0-8" not in [o.id for o in result.import_new]
