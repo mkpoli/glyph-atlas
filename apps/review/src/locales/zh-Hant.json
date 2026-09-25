@@ -9,7 +9,8 @@
       "zh-mo"
     ]
   },
-  "app.home.aria": "Glyph Atlas首頁",
+  "app.name": "字形大圖譜",
+  "app.home.aria": "字形大圖譜首頁",
   "app.nav.aria": "主導覽",
   "app.reviewOptions": "審核選項",
   "app.saved": "已儲存",
