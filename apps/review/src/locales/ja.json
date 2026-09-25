@@ -212,6 +212,7 @@
   "forms.target.selectedGlyphs.other": "選択した字形{count}件",
   "forms.unassignedFirst": "未割り当てを先に",
   "forms.wrongCharacter": "文字違い…",
+  "inspector.copyId": "IDをコピー",
   "ink.bw": "白黒",
   "ink.group.label": "画像の色",
   "ink.original": "元画像",

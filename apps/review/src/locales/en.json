@@ -212,6 +212,7 @@
   "forms.target.selectedGlyphs.other": "{count} selected glyphs",
   "forms.unassignedFirst": "Unassigned first",
   "forms.wrongCharacter": "Wrong character…",
+  "inspector.copyId": "Copy id",
   "ink.bw": "B&W",
   "ink.group.label": "Image colour",
   "ink.original": "Original",

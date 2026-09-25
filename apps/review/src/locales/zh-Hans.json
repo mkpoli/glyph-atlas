@@ -215,6 +215,7 @@
   "forms.target.selectedGlyphs.other": "已选{count}个字形",
   "forms.unassignedFirst": "未指定的在前",
   "forms.wrongCharacter": "字符错误…",
+  "inspector.copyId": "复制ID",
   "ink.bw": "黑白",
   "ink.group.label": "图像颜色",
   "ink.original": "原始",

@@ -215,6 +215,7 @@
   "forms.target.selectedGlyphs.other": "已選取{count}個字形",
   "forms.unassignedFirst": "未指定優先",
   "forms.wrongCharacter": "字符錯誤…",
+  "inspector.copyId": "複製ID",
   "ink.bw": "黑白",
   "ink.group.label": "影像色彩",
   "ink.original": "原色",
