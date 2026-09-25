@@ -45,6 +45,8 @@ def build(clone: Path) -> Path:
         ["末", "", "04712", "04712", "M14421", "075", "末", "", "672B", "", "", "0003", "0", "1", "", "", ""],
         ["丈", "", "00006", "00006", "M00011", "001", "丈", "", "4E08", "", "", "0004", "0", "1", "", "", ""],
         ["伏", "", "00217", "00217", "M00456", "009", "伏", "", "4F0F", "", "", "", "", "", "", "", ""],
+        ["乞", "", "00108", "00108", "M00210", "005", "乞", "", "4E5E", "", "", "", "", "", "", "", ""],
+        ["乞", "", "00108b", "00108", "M00210", "005", "乞", "", "4E5E", "", "＊", "", "", "", "", "", ""],
         ["鎣", "", "12592", "12592", "M40767", "167", "", "", "93A3", "", "", "", "", "", "", "", ""],
     ]
     labels = [""] * len(FIXED) + ["jou_P2179"] * 3 + ["khh_宝篋天理"] * 3
@@ -63,6 +65,10 @@ def build(clone: Path) -> Path:
         ["00108", "乞", "0002", "2", "5", "005"],
         ["06324", "06324", "0003", "0", "1", "085"],
         ["12592y", "〓", "0004", "0", "1", "167"],
+    ])
+    write_csv(clone / SKJ / hng.CARD_TABLE, [
+        ["カード番号", "文字", "字体数", "用例数1", "用例数2"],
+        ["0002", "乞", "2", "4", "1"],
     ])
     for index, name in enumerate(["0001.bmp", "0002a.bmp", "0002b.bmp", "0003.bmp", "0004.bmp"]):
         bmp(clone / SKJ / "glyphs" / "BMP" / name, 30 + 20 * index)
@@ -108,6 +114,8 @@ def test_folder_units(imported) -> None:
     _, units, _, _ = imported
     assert units["hng:skj:0001"].unicode == "U+4F0F"
     assert {units[f"hng:skj:0002{x}"].unicode for x in "ab"} == {"U+4E5E"}
+    forms = [units[f"hng:skj:0002{x}"].upstream for x in "ab"]
+    assert [(f["integrated_id"], f["occurrences"]) for f in forms] == [("00108", "4"), ("00108b", "1")]
     assert (units["hng:skj:0003"].unicode, units["hng:skj:0003"].text_source) == ("U+6E27", "渧")
     unencoded = units["hng:skj:0004"]
     assert unencoded.unicode is None and unencoded.classification == Classification.UNENCODED
