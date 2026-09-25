@@ -335,3 +335,13 @@ def test_markdown_table_lists_every_entry_and_match():
     assert "| Statement | Licence | Eligible | Evidence | Obligations | Checked |" in lines
     assert "| Match | Licence |" in lines
     assert "CC-BY-4.0" in table and "per-item" in table
+
+
+def test_gallica_terms_are_not_eligible() -> None:
+    for url in (
+        "https://gallica.bnf.fr/html/und/conditions-dutilisation-des-contenus-de-gallica",
+        "https://gallica.bnf.fr/edit/und/conditions-dutilisation-des-contenus-de-gallica",
+    ):
+        resolved = rights.resolve(url=url)
+        assert resolved.licence == Licence.RESTRICTED
+        assert not rights.eligible(resolved)
