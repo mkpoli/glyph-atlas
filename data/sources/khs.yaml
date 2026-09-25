@@ -1,0 +1,20 @@
+id: khs
+name: 국가유산청 국가유산 검색 Open API
+publisher: 국가유산청
+holder: 국가유산청
+kind: image-collection
+url: https://www.khs.go.kr/html/HtmlPage.do?pg=/publicinfo/pbinfo3_0202.jsp&mn=NS_04_04_02
+licence: KOGL-1
+licence_evidence: https://www.khs.go.kr/html/HtmlPage.do?pg=/publicinfo/pbinfo3_0202.jsp&mn=NS_04_04_02
+attribution: 국가유산청, 공공누리 제1유형(출처표시)
+access:
+  record: https://www.khs.go.kr/cha/SearchKindOpenapiDt.do?ccbaKdcd={kind}&ccbaAsno={number}&ccbaCtcd={province}
+  images: https://www.khs.go.kr/cha/SearchImageOpenapi.do?ccbaKdcd={kind}&ccbaAsno={number}&ccbaCtcd={province}
+  item_page: https://www.heritage.go.kr/heri/cul/culSelectDetail.do?ccbaCpno={ccbaCpno}
+notes:
+  - The licence is stated per photograph in imageNuri; the Open API page reads A as 공공누리 제1유형. Only those photographs are collected.
+  - The copyright policy (https://www.khs.go.kr/html/HtmlPage.do?pg=/guide/copyright.jsp&mn=NS_08_03) frees only works that carry a 공공누리 mark; the item pages of the heritage portal show none, so imageNuri is the only statement.
+  - A photograph whose caption credits a private publisher (경남신문, 한국민족대백과) is left out, since imageNuri cannot speak for that publisher's terms. Captions crediting a public body (청주시, 경상남도 문화재정보시스템) are taken at the portal's imageNuri.
+  - The Open API masks private custodians' names with ＊; a masked name is not recorded as the holder.
+  - A photograph shows the object as photographed (an opened spread, a partly unrolled scroll), not one scanned page, and most items have one or two.
+  - Collected with scripts/collect_khs.py.
