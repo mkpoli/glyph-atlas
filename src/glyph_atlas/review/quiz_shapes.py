@@ -10,7 +10,9 @@ comparable only with crops of the same character.
 
 The order changes only how a round is displayed. Which crops a round deals is decided as before.
 
-One run writes `<out>/<revision>/shapes.json` and points `<out>/current` at it.
+The order is kept with the dataset it was computed from, as `<dataset>/quiz-shapes.json`: crop ids
+are the dataset's own, and the local review queue and a hosted publication may deal from different
+datasets.
 """
 from __future__ import annotations
 
@@ -20,7 +22,6 @@ import itertools
 import json
 import os
 import re
-import shutil
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -30,14 +31,12 @@ import numpy as np
 METHOD = "classifier-penultimate/quiz-shape-order-v1"
 
 
-def shapes_dir() -> Path:
-    root = Path(__file__).resolve().parents[3]
-    return Path(os.environ.get("ATLAS_QUIZ_SHAPES", root / "work/quiz-shapes/current"))
+FILE = "quiz-shapes.json"
 
 
-def load(directory: Path | None = None) -> dict[str, int]:
-    """Each crop's `shape_order` by unit id, or nothing when no order has been computed."""
-    path = (directory or shapes_dir()) / "shapes.json"
+def load(dataset: Path) -> dict[str, int]:
+    """Each crop's `shape_order` by unit id, or nothing when no order was computed for `dataset`."""
+    path = Path(dataset) / FILE
     try:
         stat = path.stat()
     except OSError:
@@ -121,8 +120,8 @@ def order_group(vectors: np.ndarray) -> list[int]:
     return positions
 
 
-def compute(dataset: Path, out: Path, *, checkpoint: Path, classes: Path) -> dict[str, Any]:
-    """Order every Quick review crop of `dataset` by shape, and publish the order."""
+def compute(dataset: Path, *, checkpoint: Path, classes: Path) -> dict[str, Any]:
+    """Order every crop of `dataset` by shape, and write the order into the dataset."""
     from PIL import Image
 
     from ..classify import preprocess
@@ -140,20 +139,12 @@ def compute(dataset: Path, out: Path, *, checkpoint: Path, classes: Path) -> dic
         vectors.append(encoder(np.stack(batch)))
     embedded = dict(zip(ids, np.concatenate(vectors), strict=True))
     orders: dict[str, int] = {}
-    for label, members in sorted(groups.items()):
+    for _label, members in sorted(groups.items()):
         for position, index in enumerate(order_group(np.stack([embedded[m] for m in members]))):
             orders[members[index]] = position
-    digest = hashlib.sha256(json.dumps({"method": METHOD, "orders": orders}, sort_keys=True).encode()).hexdigest()[:16]
-    target = out / digest
-    staging = out / f".{digest}.partial"
-    shutil.rmtree(staging, ignore_errors=True)
-    staging.mkdir(parents=True)
-    (staging / "shapes.json").write_text(json.dumps({"revision": digest, "method": METHOD, "dataset": dataset.name,
-                                                     "orders": orders}, ensure_ascii=False) + "\n")
-    shutil.rmtree(target, ignore_errors=True)
+    revision = hashlib.sha256(json.dumps({"method": METHOD, "orders": orders}, sort_keys=True).encode()).hexdigest()[:16]
+    target = Path(dataset) / FILE
+    staging = target.with_name(f".{FILE}.next")
+    staging.write_text(json.dumps({"revision": revision, "method": METHOD, "orders": orders}, ensure_ascii=False) + "\n")
     os.replace(staging, target)
-    link = out / ".current.next"
-    link.unlink(missing_ok=True)
-    link.symlink_to(digest)
-    os.replace(link, out / "current")
-    return {"revision": digest, "characters": len(groups), "crops": len(orders)}
+    return {"revision": revision, "characters": len(groups), "crops": len(orders)}
