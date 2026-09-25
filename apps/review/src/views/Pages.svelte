@@ -100,11 +100,13 @@
     finally { busy = false }
   }
 
+  // A box drawn here or proposed by the mark detector is named in the dialog; a box that came with
+  // the dataset has its own reviewer.
+  const onPage = unit => unit.manual || unit.detected
   function choose(unit) {
     if (!unit) return
-    // A box that came with the dataset has its own reviewer; a drawn box opens the naming dialog.
-    if (unit.manual) open = unit
-    else inspect(unit.id, null, data.units.filter(item => item.character && !item.manual).map(item => ({ id: item.id })))
+    if (onPage(unit)) open = unit
+    else inspect(unit.id, null, data.units.filter(item => item.character && !onPage(item)).map(item => ({ id: item.id })))
   }
   function changed(message) {
     notice = message
@@ -139,6 +141,9 @@
   })
   // The code point names the character even where no font draws it, as with the 구결자 of the private-use area.
   const unitLabel = unit => unit.code_point || unit.character || t('pages.box.unidentified')
+  const origin = unit => unit.proposed ? t('pages.box.proposed') : unit.detected ? t('pages.box.confirmed')
+    : unit.manual ? t('pages.box.drawn') : t('pages.box.imported')
+  const proposedCount = $derived(data ? data.units.filter(unit => unit.proposed).length : 0)
 </script>
 
 <svelte:window onkeydown={keys} />
@@ -177,7 +182,7 @@
               <svg viewBox="0 0 {data.width} {data.height}" aria-hidden="true">
                 {#each data.units as unit (unit.id)}
                   {#if unit.box}
-                    <rect data-unit={unit.id} class="unit-box" class:manual={unit.manual} class:unidentified={!unit.character}
+                    <rect data-unit={unit.id} class="unit-box" class:manual={unit.manual || (unit.detected && !unit.proposed)} class:proposed={unit.proposed} class:unidentified={!unit.character}
                           x={unit.box.x} y={unit.box.y} width={unit.box.w} height={unit.box.h} vector-effect="non-scaling-stroke" />
                   {/if}
                 {/each}
@@ -190,15 +195,15 @@
           {#if busy}<p class="stage-status" role="status">{t('common.saving')}</p>{/if}
         </div>
         <aside class="page-boxes">
-          <h2>{t('pages.boxes.count', { count: data.units.length })}</h2>
+          <h2>{t('pages.boxes.count', { count: data.units.length })}{#if proposedCount}<span class="proposed-count">{t('pages.boxes.proposed', { count: proposedCount })}</span>{/if}</h2>
           {#if data.drawable}<p class="page-note">{t('pages.draw.hint')}</p>{/if}
           {#if data.units.length}
             <ul>
               {#each data.units as unit (unit.id)}
-                <li><button onclick={() => choose(unit)} class:manual={unit.manual}>
+                <li><button onclick={() => choose(unit)} class:manual={onPage(unit) && !unit.proposed} class:proposed={unit.proposed}>
                   <span class="box-glyph">{#if unit.character}<ReferenceGlyph char={unit.character} code_point={unit.code_point ?? ''} size="sm" />{:else}<span class="box-none">?</span>{/if}</span>
                   <span class="box-name">{unitLabel(unit)}</span>
-                  <small>{unit.manual ? t('pages.box.drawn') : t('pages.box.imported')}</small>
+                  <small>{origin(unit)}</small>
                 </button></li>
               {/each}
             </ul>
@@ -255,6 +260,7 @@
   .unit-box{fill:#d0890014;stroke:#c07c00;stroke-width:1.5;cursor:pointer}
   .unit-box.manual{fill:#6356e51f;stroke:var(--accent);stroke-width:2}
   .unit-box.unidentified{stroke-dasharray:5 3}
+  .unit-box.proposed{fill:#0e8a7a2e;stroke:#0e8a7a;stroke-width:2.5;stroke-dasharray:3 2}
   .page-stage.drawing .unit-box{pointer-events:none}
   .draft-box{fill:#6356e526;stroke:var(--accent);stroke-width:2;stroke-dasharray:4 3}
   .stage-status{position:absolute;left:12px;bottom:12px;background:#24212f;color:#fff;border-radius:20px;padding:6px 14px;font-size:12px}
@@ -270,6 +276,8 @@
   .box-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .page-boxes small{color:var(--muted);font-size:10px}
   .page-boxes .manual small{color:var(--accent)}
+  .page-boxes .proposed small,.proposed-count{color:#0e8a7a}
+  .proposed-count::before{content:'·';margin:0 6px;color:var(--muted)}
   .pages-index{padding-bottom:40px}
   .page-document{border-top:1px solid var(--line);padding:18px 0}
   .page-document h2{font-size:17px;font-weight:500;margin-bottom:4px}
