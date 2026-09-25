@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte'
-  import { t, formatNumber as number, around } from '../lib/i18n.svelte.js'
+  import { t, formatNumber as number, around, base } from '../lib/i18n.svelte.js'
   let { close } = $props()
   /** A click on the backdrop closes the dialog. The backdrop has no element of its own, so a click on
    * it lands on the dialog; its position outside the dialog's box is what tells it apart. */
@@ -13,7 +13,7 @@
   const controller = new AbortController()
   const phases = { discovering: () => t('progress.phase.discovering'), collecting: () => t('progress.phase.collecting'),
     publishing: () => t('progress.phase.publishing'), complete: () => t('progress.phase.complete') }
-  const clock = value => value ? new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''
+  const clock = value => value ? new Date(value).toLocaleTimeString(base(), { hour: '2-digit', minute: '2-digit' }) : ''
   const percent = source => source.total ? Math.min(100, Math.round(source.completed / source.total * 100)) : 0
 
   async function read() {

@@ -11,7 +11,7 @@
   import { reviewer, stored, remember } from './lib/client.js'
   import { t, LOCALES, locale, setLocale } from './lib/i18n.svelte.js'
   let route = $state('/'), reading = $state(''), selected = $state(null), onVerdict = $state(null)
-  let clientId = $state(''), menu = $state(false), exporting = $state(false), progress = $state(false)
+  let menuButton, clientId = $state(''), menu = $state(false), exporting = $state(false), progress = $state(false)
   let queue = $state([]), savedNotice = $state(''), updateItem = null
   // null until the service has answered whether it holds the form-assignment API.
   let forms = $state(null), formFamily = $state('')
@@ -53,7 +53,7 @@
 
 <header class="site-header"><a href="#/" class="wordmark" aria-label={t('app.home.aria')}><svg class="atlas-symbol" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M4 4h9v9H4zM19 4h9v9h-9zM4 19h9v9H4z" fill="currentColor"/><path d="M19 19h9v9h-9z" stroke="currentColor" stroke-width="2"/></svg><span>GLYPH <b>ATLAS</b></span><small class="slogan" lang="ja">Let's 集字!</small></a>
   <nav aria-label={t('app.nav.aria')}><a class:active={route === '/'} href="#/">{t('nav.explore')}</a><a class:active={route === '/flagged'} href="#/flagged">{t('nav.flagged')}</a><a class:active={route === '/hard'} href="#/hard" title={t('nav.hard.title')}>{t('nav.hard')}</a>{#if forms}<a class:active={route === '/forms'} href="#/forms">{t('nav.forms')}</a>{/if}</nav>
-  <div class="header-actions"><a class="review-link" class:current={route === '/review'} href="#/review">{t('nav.quickReview')} <span>↗</span></a><div class="header-menu"><button class="icon-button" aria-label={t('app.reviewOptions')} aria-expanded={menu} onclick={() => menu = !menu}>···</button>{#if menu}<div class="options-menu"><button onclick={showProgress}>{t('explore.collectionProgress')}</button><button onclick={exportReviews}>{t('export.menuItem')}</button><div class="language-group"><small>{t('menu.language')}</small><div class="language-options">{#each LOCALES as loc (loc.tag)}<button class:active={locale() === loc.tag} aria-pressed={locale() === loc.tag} onclick={() => setLocale(loc.tag)}>{loc.name}</button>{/each}</div></div><small>{clientId}</small></div>{/if}</div></div>
+  <div class="header-actions"><a class="review-link" class:current={route === '/review'} href="#/review">{t('nav.quickReview')} <span>↗</span></a><div class="header-menu"><button bind:this={menuButton} class="icon-button" aria-label={t('app.reviewOptions')} aria-expanded={menu} onclick={() => menu = !menu}>···</button>{#if menu}<div class="options-menu"><button onclick={showProgress}>{t('explore.collectionProgress')}</button><button onclick={exportReviews}>{t('export.menuItem')}</button><div class="language-group"><small>{t('menu.language')}</small><div class="language-options">{#each LOCALES as loc (loc.tag)}<button class:active={locale() === loc.tag} aria-pressed={locale() === loc.tag} onclick={() => setLocale(loc.tag)}>{loc.name}</button>{/each}</div></div><small>{clientId}</small></div>{/if}</div></div>
 </header>
 <main>
   {#if clientId}{#if route === '/review'}{#key reading}<Quiz {clientId} initialReading={reading} {inspect} />{/key}
@@ -62,5 +62,5 @@
 </main>
 {#if selected}{#if selectedOrigin === 'corpus'}<CorpusDialog id={selected} {clientId} {close} {saved} previous={selectedIndex > 0 ? () => step(-1) : null} next={selectedIndex >= 0 && selectedIndex + 1 < queue.length ? () => step(1) : null} position={queue.length ? `${selectedIndex + 1} / ${queue.length}` : ''} />{:else}<CharacterDialog id={selected} {clientId} {close} {onVerdict} {saved} previous={selectedIndex > 0 ? () => step(-1) : null} next={selectedIndex >= 0 && selectedIndex + 1 < queue.length ? () => step(1) : null} position={queue.length ? `${selectedIndex + 1} / ${queue.length}` : ''} />{/if}{/if}
 {#if savedNotice}<div class="save-toast" role="status">✓ {savedNotice}</div>{/if}
-{#if exporting}<ExportReviews close={() => { exporting = false; document.querySelector('[aria-label="Review options"]')?.focus() }} />{/if}
-{#if progress}<CollectionProgress close={() => { progress = false; document.querySelector('[aria-label="Review options"]')?.focus() }} />{/if}
+{#if exporting}<ExportReviews close={() => { exporting = false; menuButton?.focus() }} />{/if}
+{#if progress}<CollectionProgress close={() => { progress = false; menuButton?.focus() }} />{/if}
