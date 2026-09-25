@@ -9,6 +9,10 @@ unidentified; the character is set through `POST /layers/units/{id}`, and a box 
 retired through `POST /reviews` with `field` `active` and `new` false. Every write goes through the
 review log, so `atlas review apply` writes it to `lines.parquet` and `units.parquet`.
 
+A box `atlas review propose-marks` proposed is a unit with `method` `detect` on the same line,
+`proposed` while its review is still `machine`. The reviewer names it, leaves it, or retires it the
+same way; naming it makes it reviewed.
+
 These routes exist on the local review service only, which is how the interface knows it may offer
 drawing.
 """
@@ -19,10 +23,10 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from ..schema import Page, Unit
+from ..schema import Page, ReviewState, Unit
 from .atlas import label, written_identity
 from .characters import page_digest
-from .store import MANUAL, DrawRequest, Store
+from .store import DETECT, MANUAL, DrawRequest, Store
 
 
 def router(store: Store) -> APIRouter:
@@ -45,6 +49,8 @@ def router(store: Store) -> APIRouter:
             "code_point": unit.unicode,
             "reading": label(unit) or None,
             "manual": unit.method == MANUAL,
+            "detected": unit.method == DETECT,
+            "proposed": unit.method == DETECT and unit.review == ReviewState.MACHINE,
             "revision": revision,
         }
 

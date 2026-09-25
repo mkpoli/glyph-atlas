@@ -86,7 +86,8 @@ def test_the_first_box_creates_the_page_line_and_later_boxes_reuse_it(api: TestC
     assert unit["classification"] == "unassessed" and unit["unicode"] is None
     assert body["item"] == {"id": unit["id"], "line_id": f"{PAGE}:l1",
                             "box": {"x": 100, "y": 50, "w": 30, "h": 40}, "character": None,
-                            "code_point": None, "reading": None, "manual": True, "revision": 1}
+                            "code_point": None, "reading": None, "manual": True, "detected": False,
+                            "proposed": False, "revision": 1}
 
     second = draw(api, {"x": 200, "y": 50, "w": 30, "h": 40}).json()
     assert second["line"] is None and second["unit"]["target_id"] == f"{PAGE}:l1:m2"

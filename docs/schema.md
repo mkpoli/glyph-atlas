@@ -93,6 +93,9 @@ spread is still one page; the spread relation is recorded through `canvas`.
 
 Boxes a reviewer draws on a page photo go on one line per page with role `other`, `meta.scope`
 `page` and the whole page as its box, created by the first box drawn on that page.
+`atlas review propose-marks` puts the interlinear marks and circles it proposes on the same line, as
+units with `method` `detect`, `review` `machine`, no character, and `meta.proposer` naming the
+proposer's version. A reviewer names, keeps or removes each one.
 
 ### units
 
@@ -116,7 +119,7 @@ One located unit: a character, a ligature, a mark, a gap, or a sequence awaiting
 | `antecedent_ids` | for an iteration mark, the units it repeats, across a line break if needed |
 | `group_id` | 連綿 group |
 | `voicing` | mark present on the page: `none`, `dakuten`, `handakuten` |
-| `method` | `import`, `detect-align`, `manual` |
+| `method` | `import`; `detect-align`, a detected box aligned to the transcription; `detect`, a box a detector proposed with no text aligned to it; `manual` |
 | `confidence` | `detection`, `segmentation`, `text`, `jibo`, and the model that produced them |
 | `review` | `machine`, `transcriber`, `reviewed`, `double-reviewed`, `adjudicated`, `disputed`, `rejected` |
 | `upstream` | source id and upstream identifier |

@@ -247,7 +247,7 @@ tables of a released version do not change. The upstream pins of each version ar
 | `{{counts.lines}}` | lines | `COUNTS.md` |
 | `{{counts.units}}` | units | `COUNTS.md` |
 | `{{counts.units_by_source}}` | units by upstream source | `COUNTS.md` |
-| `{{counts.units_by_method}}` | units by `method` (`import`, `detect-align`, `manual`) | `COUNTS.md` |
+| `{{counts.units_by_method}}` | units by `method` (`import`, `detect-align`, `detect`, `manual`) | `COUNTS.md` |
 | `{{counts.units_by_review}}` | units by `review` state | `COUNTS.md` |
 | `{{counts.units_by_script}}` | units by `script` | `COUNTS.md` |
 | `{{counts.units_by_classification}}` | units by `classification` | `COUNTS.md` |

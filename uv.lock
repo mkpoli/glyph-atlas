@@ -383,6 +383,10 @@ detector = [
     { name = "torchvision" },
     { name = "transformers" },
 ]
+marks = [
+    { name = "numpy" },
+    { name = "opencv-python-headless" },
+]
 ocr = [
     { name = "numpy" },
     { name = "onnxruntime-gpu" },
@@ -404,12 +408,14 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "numpy", marker = "extra == 'detector'", specifier = ">=2" },
+    { name = "numpy", marker = "extra == 'marks'", specifier = ">=2" },
     { name = "numpy", marker = "extra == 'ocr'", specifier = ">=2" },
     { name = "odfpy", marker = "extra == 'data'", specifier = ">=1.4" },
     { name = "onnx", marker = "extra == 'detector'", specifier = ">=1.20" },
     { name = "onnxruntime-gpu", marker = "extra == 'detector'", specifier = ">=1.22" },
     { name = "onnxruntime-gpu", marker = "extra == 'ocr'", specifier = ">=1.22" },
     { name = "onnxscript", marker = "extra == 'detector'", specifier = ">=0.7" },
+    { name = "opencv-python-headless", marker = "extra == 'marks'", specifier = ">=4.11" },
     { name = "opencv-python-headless", marker = "extra == 'ocr'", specifier = ">=4.11" },
     { name = "pillow", specifier = ">=11" },
     { name = "pyarrow", specifier = ">=21" },
@@ -423,7 +429,7 @@ requires-dist = [
     { name = "typer", specifier = ">=0.16" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34" },
 ]
-provides-extras = ["data", "ocr", "detector"]
+provides-extras = ["data", "ocr", "marks", "detector"]
 
 [package.metadata.requires-dev]
 dev = [

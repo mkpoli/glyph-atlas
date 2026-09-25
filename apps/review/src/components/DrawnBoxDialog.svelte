@@ -2,10 +2,12 @@
   import { onMount } from 'svelte'
   import CharacterSearch from './CharacterSearch.svelte'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
-  import { nameCharacter, retireBox } from '../lib/pages.js'
+  import { keepBox, nameCharacter, retireBox } from '../lib/pages.js'
   import { t } from '../lib/i18n.svelte.js'
   // One box on a page photo: name the character it holds, leave it unidentified, or retire a box
-  // drawn by mistake. `changed` is called after a write so the page reloads its boxes.
+  // drawn by mistake or proposed where there is no mark. A proposal can also be kept unnamed, which
+  // records that a person saw a mark there; closing leaves it proposed. `changed` is called after a write so the
+  // page reloads its boxes.
   let { unit, page, clientId, close, changed } = $props()
   let dialog, query = $state(''), chosen = $state(null), busy = $state(false), error = $state('')
   let submission = null
@@ -29,6 +31,17 @@
     finally { busy = false }
   }
 
+  async function keep() {
+    if (busy) return
+    busy = true; error = ''
+    try {
+      await keepBox(unit, clientId)
+      changed(t('pages.box.kept'))
+      close()
+    } catch (e) { error = e.message }
+    finally { busy = false }
+  }
+
   async function retire() {
     if (busy) return
     busy = true; error = ''
@@ -47,7 +60,7 @@
 <dialog class="drawn-box-dialog" bind:this={dialog} oncancel={e => { e.preventDefault(); close() }}
         onclick={e => { if (e.target === dialog) close() }} aria-labelledby="drawn-box-title">
   <header>
-    <span class="overline" id="drawn-box-title">{unit.manual ? t('pages.box.drawnTitle') : t('pages.box.title')}</span>
+    <span class="overline" id="drawn-box-title">{unit.proposed ? t('pages.box.proposedTitle') : unit.manual ? t('pages.box.drawnTitle') : t('pages.box.title')}</span>
     <button class="icon-button" aria-label={t('pages.box.close')} onclick={close}>×</button>
   </header>
   <div class="box-summary">
@@ -61,6 +74,7 @@
       <p class="record-id"><code>{unit.id}</code></p>
     </div>
   </div>
+  {#if unit.proposed}<p class="box-note">{t('pages.box.proposedNote')}</p>{/if}
   <p class="box-prompt">{t('pages.box.prompt')}</p>
   <CharacterSearch bind:value={query} label={t('pages.box.searchLabel')} onselect={select} />
   {#if chosen}
@@ -68,9 +82,14 @@
   {/if}
   {#if error}<div class="error-message" role="alert">{error}</div>{/if}
   <footer>
-    {#if unit.manual}<button class="negative" disabled={busy} onclick={retire}>{t('pages.box.remove')}</button>{/if}
+    {#if unit.manual || unit.detected}<button class="negative" disabled={busy} onclick={retire}>{t('pages.box.remove')}</button>{/if}
     <span class="spacer"></span>
-    <button disabled={busy} onclick={close}>{unit.character ? t('pages.box.keep') : t('pages.box.leaveUnidentified')}</button>
+    {#if unit.proposed}
+      <button disabled={busy} onclick={close}>{t('pages.box.close')}</button>
+      <button disabled={busy} onclick={keep}>{t('pages.box.keepMark')}</button>
+    {:else}
+      <button disabled={busy} onclick={close}>{unit.character ? t('pages.box.keep') : t('pages.box.leaveUnidentified')}</button>
+    {/if}
     <button class="primary" disabled={busy || !chosen} onclick={save}>{busy ? t('common.saving') : t('pages.box.save')}</button>
   </footer>
 </dialog>
@@ -86,6 +105,7 @@
   .box-current{font-size:34px}
   .box-unidentified{font-size:15px;color:var(--muted)}
   .record-id{margin-top:6px;font-size:11px;color:var(--muted);word-break:break-all}
+  .box-note{font-size:12px;color:var(--muted);margin-bottom:12px}
   .box-prompt{font-size:13px;margin-bottom:10px}
   .box-chosen{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:13px}
   .box-chosen code{font-size:11px;color:var(--muted)}
