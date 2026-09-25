@@ -86,18 +86,18 @@ def test_the_api_lists_clusters_and_records_decisions(clustering, tmp_path):
     app = FastAPI()
     app.include_router(router(media=None, corpus_root=tmp_path))
     client = TestClient(app)
-    assert client.get("/forms/families").json()["items"][0] == {
+    assert client.get("/atlas/forms/families").json()["items"][0] == {
         "code_point": "U+306F", "char": "は", "label": "は", "count": 4, "clusters": 2, "assigned": 0}
-    family = client.get("/forms/families/U+306F").json()
+    family = client.get("/atlas/forms/families/U+306F").json()
     assert [c["id"] for c in family["items"]] == ["U+306F:one", "U+306F:two"]
     assert {"char": "𛂥", "code_point": "U+1B0A5"}.items() <= next(f for f in family["forms"] if f["char"] == "𛂥").items()
-    response = client.post("/forms/decisions", json={"kind": "cluster", "cluster": "U+306F:one", "form": "𛂥"})
+    response = client.post("/atlas/forms/decisions", json={"kind": "cluster", "cluster": "U+306F:one", "form": "𛂥"})
     assert response.status_code == 200 and response.json()["count"] == 3 and "units" not in response.json()
-    assert client.post("/forms/decisions", json={"kind": "glyph", "units": [D], "form": "あ"}).status_code == 422
-    members = client.get("/forms/clusters/U+306F:one", params={"limit": 2}).json()
+    assert client.post("/atlas/forms/decisions", json={"kind": "glyph", "units": [D], "form": "あ"}).status_code == 422
+    members = client.get("/atlas/forms/clusters/U+306F:one", params={"limit": 2}).json()
     assert members["form"] == "𛂥" and members["total"] == 3
     assert [(m["id"], m["form"], m["basis"]) for m in members["items"]] == [(A, "𛂥", "form_cluster"), (B, "𛂥", "form_cluster")]
-    assert client.get("/forms/families").json()["items"][0]["assigned"] == 3
+    assert client.get("/atlas/forms/families").json()["items"][0]["assigned"] == 3
 
 
 def test_an_unfinished_last_line_is_not_a_decision_but_a_broken_one_is_reported(clustering):
@@ -131,7 +131,7 @@ def test_cluster_members_can_be_listed_least_typical_first(clustering, tmp_path)
     app = FastAPI()
     app.include_router(router(media=None, corpus_root=tmp_path))
     client = TestClient(app)
-    unusual = client.get("/forms/clusters/U+306F:one", params={"order": "unusual", "limit": 2}).json()
+    unusual = client.get("/atlas/forms/clusters/U+306F:one", params={"order": "unusual", "limit": 2}).json()
     assert [m["id"] for m in unusual["items"]] == [C, B] and unusual["total"] == 3
 
 
@@ -160,14 +160,14 @@ def test_reported_glyphs_reach_the_review_queue_and_leave_their_cluster_form(clu
     app.include_router(router(media=None, corpus_root=tmp_path, reviews=reviews))
     client = TestClient(app)
     forms.record("cluster", cluster="U+306F:one", form="𛂥")
-    response = client.post("/forms/reports", json={"units": [B], "issue": "character", "character": "に", "client_id": "me"})
+    response = client.post("/atlas/forms/reports", json={"units": [B], "issue": "character", "character": "に", "client_id": "me"})
     assert response.status_code == 200 and response.json()["count"] == 1
     edit = reviews.edits[0]
     assert (edit.identity, edit.verdict, edit.issue, edit.character, edit.revision) == (B, "wrong", "character", "に", 3)
     assert forms.form_for(B)["form"] is None and forms.form_for(A)["form"] == "𛂥"
-    members = client.get("/forms/clusters/U+306F:one").json()["items"]
+    members = client.get("/atlas/forms/clusters/U+306F:one").json()["items"]
     assert {m["id"]: m["reported"] for m in members} == {A: None, B: "character", C: None}
-    assert client.post("/forms/reports", json={"units": ["codh:other"], "issue": "crop", "client_id": "me"}).status_code == 422
+    assert client.post("/atlas/forms/reports", json={"units": ["codh:other"], "issue": "crop", "client_id": "me"}).status_code == 422
 
 
 def test_a_report_with_an_unreviewable_glyph_flags_nothing(clustering, tmp_path):
@@ -192,7 +192,7 @@ def test_a_report_with_an_unreviewable_glyph_flags_nothing(clustering, tmp_path)
     reviews = Reviews()
     app = FastAPI()
     app.include_router(router(media=None, corpus_root=tmp_path, reviews=reviews))
-    response = TestClient(app).post("/forms/reports", json={"units": [A, C], "issue": "crop", "client_id": "me"})
+    response = TestClient(app).post("/atlas/forms/reports", json={"units": [A, C], "issue": "crop", "client_id": "me"})
     assert response.status_code == 422 and reviews.edits == [] and forms.form_for(A) is None
 
 
@@ -210,10 +210,10 @@ def test_clusters_can_be_listed_with_similar_shapes_together(clustering, tmp_pat
     app = FastAPI()
     app.include_router(router(media=None, corpus_root=tmp_path))
     client = TestClient(app)
-    shape = client.get("/forms/families/U+306F").json()
+    shape = client.get("/atlas/forms/families/U+306F").json()
     assert [c["id"] for c in shape["items"]] == ["U+306F:two", "U+306F:one"]
     assert shape["items"][1]["nearest"] == {"id": "U+306F:two", "similarity": 0.8, "label": "Cluster 2"}
-    size = client.get("/forms/families/U+306F", params={"order": "size"}).json()
+    size = client.get("/atlas/forms/families/U+306F", params={"order": "size"}).json()
     assert [c["id"] for c in size["items"]] == ["U+306F:one", "U+306F:two"]
 
 
@@ -238,7 +238,7 @@ def test_a_cluster_splits_by_shape_into_groups_of_its_own_glyphs(clustering, tmp
     app = FastAPI()
     app.include_router(router(media=None, corpus_root=tmp_path))
     client = TestClient(app)
-    split = client.get("/forms/split/U+306F:one", params={"k": 2}).json()
+    split = client.get("/atlas/forms/split/U+306F:one", params={"k": 2}).json()
     assert [sorted(g["ids"]) for g in split["groups"]] == [[A, B], [C]]
-    assert split == client.get("/forms/split/U+306F:one", params={"k": 2}).json()
-    assert client.get("/forms/split/U+306F:none", params={"k": 2}).status_code == 404
+    assert split == client.get("/atlas/forms/split/U+306F:one", params={"k": 2}).json()
+    assert client.get("/atlas/forms/split/U+306F:none", params={"k": 2}).status_code == 404

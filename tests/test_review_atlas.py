@@ -1814,7 +1814,7 @@ def test_history_lists_reviewer_decisions_newest_first_with_paging_and_filters(d
 
     assert client.post('/atlas/rounds/' + alice['id'] + '/undo', json={"client_id": "alice"}).status_code == 200
 
-    full = client.get('/history', params={"limit": 100}).json()
+    full = client.get('/atlas/history', params={"limit": 100}).json()
     kinds = [item["kind"] for item in full["items"]]
     assert kinds.count("undo") == 4 and kinds.count("review") == 6, kinds
     assert full["next"] is None
@@ -1831,16 +1831,16 @@ def test_history_lists_reviewer_decisions_newest_first_with_paging_and_filters(d
     bob_review = next(i for i in full["items"] if i["kind"] == "review" and i["actor"] == "bob")
     assert bob_review["issue"] == "character" and bob_review["character"] == "ミ" and bob_review["label"] == "シ"
 
-    only_bob = client.get('/history', params={"actor": "bob"}).json()
+    only_bob = client.get('/atlas/history', params={"actor": "bob"}).json()
     assert {i["actor"] for i in only_bob["items"]} == {"bob"}
     assert len(only_bob["items"]) == 2
 
-    only_a_label = client.get('/history', params={"label": "あ"}).json()
+    only_a_label = client.get('/atlas/history', params={"label": "あ"}).json()
     assert len(only_a_label["items"]) == 8, only_a_label  # 4 originals + their 4 undos
     assert all(i["label"] == "あ" for i in only_a_label["items"])
 
-    page1 = client.get('/history', params={"limit": 3}).json()
+    page1 = client.get('/atlas/history', params={"limit": 3}).json()
     assert len(page1["items"]) == 3 and page1["next"] is not None
-    page2 = client.get('/history', params={"limit": 100, "before": page1["next"]}).json()
+    page2 = client.get('/atlas/history', params={"limit": 100, "before": page1["next"]}).json()
     assert ([i["id"] for i in page1["items"]] + [i["id"] for i in page2["items"]]
             == [i["id"] for i in full["items"]])

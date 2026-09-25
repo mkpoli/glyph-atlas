@@ -113,7 +113,7 @@ def router(media, corpus_root: Path, reviews=None) -> APIRouter:
         return {"code_point": family["family"], "char": family["char"], "label": family["label"],
                 "count": family["count"], "clusters": len(family["clusters"]), "assigned": count}
 
-    @api.get("/forms/families")
+    @api.get("/atlas/forms/families")
     def families() -> dict[str, Any]:
         data = forms.clusters()
         if data["revision"] is None:
@@ -123,7 +123,7 @@ def router(media, corpus_root: Path, reviews=None) -> APIRouter:
                        key=lambda f: -f["count"])
         return {"revision": data["revision"], "items": items}
 
-    @api.get("/forms/families/{code_point}")
+    @api.get("/atlas/forms/families/{code_point}")
     def family(code_point: str, order: Literal["shape", "size"] = "shape") -> dict[str, Any]:
         data = forms.clusters()
         found = data["families"].get(code_point)
@@ -156,7 +156,7 @@ def router(media, corpus_root: Path, reviews=None) -> APIRouter:
         return {"revision": data["revision"], **summary(found, decided), "order": order,
                 "forms": [_form_entry(char) for char in forms.family_members(code_point)], "items": clusters}
 
-    @api.get("/forms/split/{cluster_id:path}")
+    @api.get("/atlas/forms/split/{cluster_id:path}")
     def split(cluster_id: str, k: Annotated[int, Query(ge=2, le=8)] = 4,
               shown: Annotated[int, Query(ge=1, le=240)] = 60) -> dict[str, Any]:
         """A cluster divided by shape into `k` groups; each lists every id and shows its first crops."""
@@ -175,7 +175,7 @@ def router(media, corpus_root: Path, reviews=None) -> APIRouter:
                        for identity in ids[:shown]]}
             for ids in groups]}
 
-    @api.get("/forms/clusters/{cluster_id:path}")
+    @api.get("/atlas/forms/clusters/{cluster_id:path}")
     def cluster(cluster_id: str, offset: Annotated[int, Query(ge=0)] = 0,
                 limit: Annotated[int, Query(ge=1, le=500)] = 120,
                 order: Literal["typical", "unusual"] = "typical") -> dict[str, Any]:
@@ -205,7 +205,7 @@ def router(media, corpus_root: Path, reviews=None) -> APIRouter:
         return {identity: json.loads(row["decision"]).get("issue") for identity, row in reviews.latest().items()
                 if json.loads(row["decision"]).get("verdict") == "wrong"}
 
-    @api.post("/forms/reports")
+    @api.post("/atlas/forms/reports")
     def report(request: Report) -> dict[str, Any]:
         """Flag glyphs as wrong in the corpus review queue, and take them out of their cluster's form."""
         if reviews is None:
@@ -238,7 +238,7 @@ def router(media, corpus_root: Path, reviews=None) -> APIRouter:
                 forms.record("glyph", units=flagged, form=None, note=f"reported: {request.issue}")
         return {"count": len(flagged), "issue": request.issue}
 
-    @api.post("/forms/decisions")
+    @api.post("/atlas/forms/decisions")
     def decide(decision: Decision) -> dict[str, Any]:
         try:
             event = forms.record(decision.kind, form=decision.form, cluster=decision.cluster,

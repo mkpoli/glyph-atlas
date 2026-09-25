@@ -25,7 +25,7 @@ export const catalogue = ({ purpose = 'browse', ...params } = {}, options = {}) 
   request('/atlas?' + new URLSearchParams(Object.entries({ purpose, ...params }).filter(([, v]) => v !== '' && v != null)), undefined, options)
 export const character = id => request('/atlas/characters/' + encodeURIComponent(id))
 export const history = (params = {}, options = {}) =>
-  request('/history?' + new URLSearchParams(Object.entries(params).filter(([, v]) => v !== '' && v != null)), undefined, options)
+  request('/atlas/history?' + new URLSearchParams(Object.entries(params).filter(([, v]) => v !== '' && v != null)), undefined, options)
 export const corpusCharacter = id => request('/atlas/corpus/character?' + new URLSearchParams({ id }))
 export const randomSeed = () => Math.floor(Math.random() * 2147483647)
 export { formatNumber as number } from './i18n.svelte.js'

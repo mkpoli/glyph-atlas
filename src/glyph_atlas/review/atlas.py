@@ -1229,7 +1229,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 "character": info.get("character"), "reading": info.get("reading"),
                 "round": info.get("round"), "undoes": undoes}
 
-    @api.get("/history")
+    @api.get("/atlas/history")
     def history(
         limit: Annotated[int, Query(ge=1, le=100)] = 40,
         before: str | None = None,
