@@ -23,7 +23,7 @@ pilot_app = typer.Typer(help="Assemble and measure the pilot packages.", no_args
 eval_app = typer.Typer(help="Measure a prediction against adjudicated truth.", no_args_is_help=True)
 review_app = typer.Typer(help="Serve and apply editorial reviews.", no_args_is_help=True)
 audit_app = typer.Typer(help="Draw a blind audit sample and publish its precision.", no_args_is_help=True)
-ainu_app = typer.Typer(help="Derive line boxes for the アイヌ関連資料 records.", no_args_is_help=True)
+ainu_app = typer.Typer(help="The アイヌ関連資料 records: line boxes, and the characters ainu-records publishes.", no_args_is_help=True)
 repair_app = typer.Typer(help="Diagnose and repair systematic character-to-detection misassignment.", no_args_is_help=True)
 forms_app = typer.Typer(help="Cluster CODH glyphs by shape so their forms can be assigned.", no_args_is_help=True)
 
@@ -665,6 +665,31 @@ def ainu_derive(
     config = align_module.load_run(run_path, run)
     for name, value in sorted(align_module.run_directory(directory, config, pages=pages).items()):
         typer.echo(f"{name:<14} {value:>10}")
+
+
+@ainu_app.command("merge")
+def ainu_merge(
+    atlas: Annotated[Path, typer.Argument(help="atlas dataset directory holding the Ainu records' units")],
+    records: Annotated[Path, typer.Argument(help="ainu-records checkout whose character pages to merge")],
+    out: Annotated[Path | None, typer.Option(help="write the merged dataset here; without it only the plan is printed")] = None,
+    min_iou: Annotated[float, typer.Option(help="overlap at which an occurrence and a unit are the same ink")] = 0.5,
+) -> None:
+    """Merge ainu-records' character occurrences into the atlas, occurrence by occurrence.
+
+    A unit a person reviewed is kept; a machine unit ainu-records confirms from its transcription is
+    kept and released for review; one it reads differently gives way to its occurrence; occurrences
+    only ainu-records has are imported. The source dataset is never written to.
+    """
+    from . import ainu_characters
+
+    result = ainu_characters.plan(atlas, records, min_iou=min_iou)
+    for name, value in result.counts().items():
+        typer.echo(f"{name:<40} {value}")
+    if out is None:
+        return
+    for name, value in ainu_characters.build(result, atlas, records, out).items():
+        typer.echo(f"{name:<40} {value}")
+    typer.echo(f"-> {out}")
 
 
 @repair_app.command("diagnose")
