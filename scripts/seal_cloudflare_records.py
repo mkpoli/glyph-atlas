@@ -15,7 +15,7 @@ import os
 import sqlite3
 from pathlib import Path
 
-from cloudflare_schema import CORPUS_CHARACTERS
+from cloudflare_schema import CORPUS_REFRESH
 
 PART_BYTES = 90 * 1024**2
 
@@ -44,7 +44,7 @@ def seal(corpus: Path, output: Path) -> dict:
     handle, size = None, 0
     rows = db.execute("SELECT id,character,family,visual_group,shuffle,object,offset,size,production FROM corpus_units ORDER BY id")
     for identity, character, family, group, shuffle, name, offset, length, production in rows:
-        line = "INSERT OR REPLACE INTO corpus_units VALUES({},{},{},{},{},{},{},{},{});\n".format(
+        line = "INSERT OR REPLACE INTO corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production) VALUES({},{},{},{},{},{},{},{},{});\n".format(
             *(_quote(v) for v in (identity, character, family, group)), shuffle, _quote(names[name]), offset, length,
             _quote(production))
         if handle is None or size + len(line) > PART_BYTES:
@@ -58,7 +58,7 @@ def seal(corpus: Path, output: Path) -> dict:
     if handle is None:
         parts.append(f"sql/{len(parts) + 1:03}.sql")
         handle = (output / parts[-1]).open("w")
-    handle.write(CORPUS_CHARACTERS + "\n")
+    handle.write(CORPUS_REFRESH + "\n")
     handle.close()
     count = db.execute("SELECT count(*) FROM corpus_units").fetchone()[0]
     summary = {"corpus_units": count, "objects": objects, "sql": parts}

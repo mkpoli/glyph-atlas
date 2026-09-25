@@ -1,6 +1,7 @@
 """A records-only publication points only at images already published, and seals in import order."""
 import importlib
 import json
+import re
 import sqlite3
 import subprocess
 from pathlib import Path
@@ -45,9 +46,9 @@ def test_a_records_only_export_seals_into_packs_and_ordered_sql(scripts, tmp_pat
     (corpus / "corpus-0001.bin").write_bytes(b"".join(records))
     with sqlite3.connect(corpus / "corpus.sqlite") as db:
         db.executescript(SCHEMA)
-        db.execute("INSERT INTO corpus_units VALUES('codh:2',NULL,'U+306F',NULL,2,'corpus-0001.bin',?,?,'unknown')",
+        db.execute("INSERT INTO corpus_units VALUES('codh:2',NULL,'U+306F',NULL,2,'corpus-0001.bin',?,?,'unknown',0)",
                    (len(records[0]), len(records[1])))
-        db.execute("INSERT INTO corpus_units VALUES('codh:1','𛂥','U+306F',NULL,1,'corpus-0001.bin',0,?,'woodblock')",
+        db.execute("INSERT INTO corpus_units VALUES('codh:1','𛂥','U+306F',NULL,1,'corpus-0001.bin',0,?,'woodblock',0)",
                    (len(records[0]),))
     summary = seal.seal(corpus, tmp_path / "sealed")
     assert summary["corpus_units"] == 2 and summary["objects"] == 1
@@ -57,15 +58,18 @@ def test_a_records_only_export_seals_into_packs_and_ordered_sql(scripts, tmp_pat
     sql = (tmp_path / "sealed" / publication["sql"][0]).read_text()
     lines = sql.splitlines()
     assert lines[:2] == [
-        f"INSERT OR REPLACE INTO corpus_units VALUES('codh:1','𛂥','U+306F',NULL,1,'{key}',0,{len(records[0])},'woodblock');",
-        f"INSERT OR REPLACE INTO corpus_units VALUES('codh:2',NULL,'U+306F',NULL,2,'{key}',{len(records[0])},{len(records[1])},'unknown');"]
+        f"INSERT OR REPLACE INTO corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production) VALUES('codh:1','𛂥','U+306F',NULL,1,'{key}',0,{len(records[0])},'woodblock');",
+        f"INSERT OR REPLACE INTO corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production) VALUES('codh:2',NULL,'U+306F',NULL,2,'{key}',{len(records[0])},{len(records[1])},'unknown');"]
     replayed = sqlite3.connect(":memory:")
     replayed.executescript(SCHEMA)
-    replayed.execute("INSERT INTO corpus_characters VALUES('gone','unknown',9)")
+    replayed.execute("INSERT INTO corpus_characters VALUES('gone','unknown',9,0)")
+    # A glyph a review named before this publication stays named after its row is rewritten.
+    replayed.execute("INSERT INTO corpus_units VALUES('codh:1','𛂥','U+306F',NULL,1,'old',0,1,'unknown',0)")
+    replayed.execute("INSERT INTO units VALUES('codh:1','corpus','𛂥',NULL,NULL,NULL,'woodblock','kana','checked',1,1,1,1,'{}','{}','{}','{}')")
     replayed.executescript(sql)
-    assert replayed.execute("SELECT character FROM corpus_units WHERE id='codh:1'").fetchone() == ("𛂥",)
+    assert replayed.execute("SELECT character,named FROM corpus_units WHERE id='codh:1'").fetchone() == ("𛂥", 1)
     # The last part regenerates the per-character counts from the rows D1 then holds.
-    assert replayed.execute("SELECT * FROM corpus_characters").fetchall() == [("𛂥", "woodblock", 1)]
+    assert replayed.execute("SELECT * FROM corpus_characters").fetchall() == [("𛂥", "woodblock", 1, 1)]
 
 
 def test_an_export_that_packed_images_is_refused(scripts, tmp_path):
@@ -81,11 +85,34 @@ def test_an_export_that_packed_images_is_refused(scripts, tmp_path):
 
 def test_a_publication_file_gets_the_migrations_it_has_not_had(scripts, tmp_path):
     cloudflare_schema = importlib.import_module("cloudflare_schema")
+    with sqlite3.connect(tmp_path / "catalogue.sqlite") as db:
+        db.executescript(Path("apps/cloudflare/migrations/0001_catalogue.sql").read_text())
+        cloudflare_schema.schema(db)
+        cloudflare_schema.schema(db)
+        assert {r[1] for r in db.execute("PRAGMA table_info(corpus_units)")} >= {"production", "named"}
+        assert db.execute("PRAGMA user_version").fetchone()[0] == len(list(Path("apps/cloudflare/migrations").glob("*.sql")))
+
+
+def test_resuming_an_export_whose_corpus_rows_predate_their_material_is_refused(scripts, tmp_path):
+    export = importlib.import_module("export_cloudflare_corpus")
     with sqlite3.connect(tmp_path / "corpus.sqlite") as db:
         db.executescript(Path("apps/cloudflare/migrations/0001_catalogue.sql").read_text())
-        db.execute("INSERT INTO corpus_units VALUES('codh:1','は','U+306F',NULL,1,'corpus-0001.bin',0,1)")
-        cloudflare_schema.schema(db)
-        cloudflare_schema.schema(db)
-        assert db.execute("SELECT production FROM corpus_units").fetchone() == ("unknown",)
-        assert db.execute("SELECT * FROM corpus_characters").fetchall() == [("は", "unknown", 1)]
-        assert db.execute("PRAGMA user_version").fetchone()[0] == len(list(Path("apps/cloudflare/migrations").glob("*.sql")))
+        db.execute("INSERT INTO corpus_units VALUES('codh-omt:1','と','U+3068',NULL,1,'corpus-0001.bin',0,1)")
+    with pytest.raises(ValueError, match="predate their material"):
+        export.export(tmp_path, resume=True, published=set())
+    with sqlite3.connect(tmp_path / "corpus.sqlite") as db:
+        assert "production" not in {r[1] for r in db.execute("PRAGMA table_info(corpus_units)")}
+
+
+def test_the_migration_and_the_publication_scripts_agree_on_a_label_category(scripts):
+    cloudflare_schema = importlib.import_module("cloudflare_schema")
+    migration = Path("apps/cloudflare/migrations/0006_corpus_rounds.sql").read_text()
+    case = re.search(r"CASE\n[\s\S]*?END", migration).group(0)
+    db = sqlite3.connect(":memory:")
+    rows = db.execute(f"WITH RECURSIVE n(c) AS (SELECT 0 UNION ALL SELECT c+1 FROM n WHERE c<1114111) "
+                      f"SELECT c,{case} FROM n WHERE {case}!='other'").fetchall()
+    expected = [(c, cloudflare_schema.category_of(chr(c))) for c in range(0x110000)
+                if not 0xD800 <= c <= 0xDFFF and cloudflare_schema.category_of(chr(c)) != "other"]
+    assert rows == expected
+    assert [cloudflare_schema.category_of(v) for v in ("ア", "𛀁", "仮", "々", "〆", "A", "")] == \
+        ["kana", "kana", "kanji", "kanji", "other", "other", "other"]

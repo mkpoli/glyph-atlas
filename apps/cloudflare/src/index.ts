@@ -13,7 +13,8 @@ const json = (value: unknown, status = 200, headers: HeadersInit = {}) => Respon
 });
 const parse = (value: string): Json => JSON.parse(value);
 const unavailable = { status: 'unavailable', candidates: [] };
-const categoryOf=(value:string)=>/[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(value)?'kana':/\p{Script=Han}/u.test(value)?'kanji':'other';
+// A label's category is its first character's script, as the migrations and publication scripts compute it.
+export const categoryOf=(value:string)=>{const first=[...value][0]??'';return /[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(first)?'kana':/\p{Script=Han}/u.test(first)?'kanji':'other'};
 const cp = (value: string) => [...value].map(c => 'U+' + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')).join(' ');
 // NFC composes a voiced kana, but it also maps each CJK compatibility ideograph to its unified twin,
 // and those are characters of their own here; they are kept as written.
@@ -134,6 +135,13 @@ const inMaterial = (production: string, value: string) =>
 // How far a round pages. Rounds are dealt from the front and a saved crop leaves the queue, so a
 // reader never gets this deep; the bound keeps a crawler from reading a character's whole corpus.
 const ROUND_OFFSET_MAX = 4096;
+// Named corpus glyphs come back due after an undo, or when a skip's rest ends. Only a round of their
+// own character deals them, from its most recently named pending rows, and the category counts leave
+// them out: either way no request reads every named glyph. Should a character hold more named
+// pending rows than this, mostly glyphs already seen, an older one that is due again waits outside it.
+const NAMED_WINDOW = 256;
+// The materials that are not movable type, each read through its own index range.
+const NON_MOVABLE = ['manuscript', 'woodblock', 'mixed', 'unknown'];
 async function catalogue(env: Env, q: URLSearchParams) {
   const purpose = q.get('purpose') || 'browse';
   const production = q.get('production') || (purpose === 'review' ? 'non-movable-type' : 'all');
@@ -141,17 +149,16 @@ async function catalogue(env: Env, q: URLSearchParams) {
   const seed = integer(q, 'seed', 0, 2147483647);
   const limit = integer(q, 'limit', 60, 96), offset = integer(q, 'offset', 0);
   if (review && offset > ROUND_OFFSET_MAX) throw new Problem(404, 'A round does not page this far.');
-  // A round also deals corpus glyphs a round or a review has named: from then on they are `units`.
-  const where = [review ? "origin IN ('local','corpus')" : "origin='local'"];
+  const where = ["origin='local'"];
   const values: (string | number)[] = [];
   if (review) where.push('quiz=1');
   const [materials, materialValues] = material(production, 'production');
   where.push(materials); values.push(...materialValues);
   const reviewer = q.get('reviewer') ? text(q.get('reviewer'), 128, 'reviewer', true)! : null;
   const state = stateFor(reviewer);
-  const [groups, published, named] = await env.DB.batch([
+  const [groups, published] = await env.DB.batch([
     env.DB.prepare(`SELECT character AS label,${state} AS state,count(*) AS n FROM units WHERE ${where.join(' AND ')} GROUP BY 1,2`).bind(...values),
-    ...(review ? corpusCounts(env, production) : []),
+    ...(review ? [corpusCountQuery(production)].map(({ sql, values }) => env.DB.prepare(sql).bind(...values)) : []),
   ]) as D1Result<{label:string;state?:string;n:number}>[];
   const categories = new Map<string, Json>();
   const counts: Json = { pending: 0, seen: 0, flagged: 0, checked: 0, hard: 0, skipped: 0 };
@@ -161,74 +168,84 @@ async function catalogue(env: Env, q: URLSearchParams) {
     categories.set(label, category);
   };
   for (const row of groups.results) add(row.label, row.state!, row.n);
-  // A corpus glyph nothing has named is pending for everyone: the precomputed count per character,
-  // less the glyphs that now have a `units` row and are counted above under their own state.
+  // A corpus glyph nothing has named is pending for everyone, and the table counts them per character.
   const corpus = new Map<string, number>();
-  if (review) {
-    for (const row of published.results) corpus.set(row.label, row.n);
-    for (const row of named.results) corpus.set(row.label, (corpus.get(row.label) || 0) - row.n);
-    for (const [label, n] of corpus) if (n > 0) add(label, 'pending', n);
-  }
+  if (review) for (const row of published.results) if (row.n > 0) { corpus.set(row.label, row.n); add(row.label, 'pending', row.n) }
   const reading = q.get('reading');
   if (reading) { where.push('character=?'); values.push(reading) }
   if (q.get('q')) { where.push('(character=? OR reading=?)'); values.push(literal(q.get('q')!), literal(q.get('q')!)) }
   if (q.get('group') && q.get('group') !== 'all') { where.push('category=?'); values.push(q.get('group')!) }
   if (q.get('state') && q.get('state') !== 'all') { where.push(`${state}=?`); values.push(q.get('state')!) }
+  // A round of one character deals its named and then its untouched corpus glyphs after its local crops.
+  const dealt = review && reading !== null && ['all', 'pending'].includes(q.get('state') || 'all') && !q.get('q')
+    && ['all', categoryOf(reading)].includes(q.get('group') || 'all');
+  const named = dealt ? { sql: namedRoundQuery(materials, state), values: [reading, ...materialValues] } : null;
+  const from = named ? `(SELECT * FROM units WHERE ${where.join(' AND ')} UNION ALL ${named.sql}) AS units` : `units WHERE ${where.join(' AND ')}`;
+  const fromValues = named ? [...values, ...named.values] : values;
   // A crop another reviewer skipped comes first in a round: it needs a second pair of eyes. Then a
-  // character's local crops, then its corpus glyphs.
+  // character's local crops, then its named corpus glyphs.
   const others = review ? `EXISTS(SELECT 1 ${SKIPS}${reviewer ? ` AND k.actor!=${quoted(reviewer)}` : ''}) DESC,origin='corpus',` : '';
   const order = others + (review && seed % 5 ? 'priority,' : '');
   // Flagged view: a crop already looked at in the inspector queues behind the ones nobody has reviewed yet.
   const reviewedLast = q.get('state') === 'flagged' ? `EXISTS(SELECT 1 FROM events e JOIN submissions f ON f.id=e.submission AND f.undone=0
     WHERE e.target=units.id AND e.kind='review' AND json_extract(json_extract(e.event,'$.evidence'),'$.kind')='character-review'),` : '';
   const [count, window] = await env.DB.batch([
-    env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${where.join(' AND ')}`).bind(...values),
-    env.DB.prepare(`SELECT *,${state} AS effective,(SELECT shape_order FROM unit_shapes s WHERE s.id=units.id) AS shape_order FROM units WHERE ${where.join(' AND ')} ORDER BY ${order}${reviewedLast} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...values, seed + 1, limit, offset),
+    env.DB.prepare(`SELECT count(*) AS n FROM ${from}`).bind(...fromValues),
+    env.DB.prepare(`SELECT *,${state} AS effective,(SELECT shape_order FROM unit_shapes s WHERE s.id=units.id) AS shape_order FROM ${from} ORDER BY ${order}${reviewedLast} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...fromValues, seed + 1, limit, offset),
   ]);
   const listed = (count.results[0] as { n: number }).n;
   const items: Json[] = (window.results as (UnitRow & { effective: string; shape_order: number | null })[])
     .map(row => ({ ...compact(row), state: row.effective, shape_order: row.shape_order }));
-  // The unnamed corpus glyphs of the round's character follow its `units` rows, paged as one list.
-  const dealt = review && reading !== null && ['all', 'pending'].includes(q.get('state') || 'all') && !q.get('q')
-    && ['all', categoryOf(reading)].includes(q.get('group') || 'all');
-  const unnamed = dealt ? Math.max(corpus.get(reading) || 0, 0) : 0;
-  if (dealt && unnamed && items.length < limit)
-    items.push(...await corpusRound(env, reading, production, seed, Math.max(offset - listed, 0), limit - items.length));
-  return { total: listed + unnamed, available: Object.values(counts).reduce((a:number,b:any) => a+b,0),
+  // Positions run through the `units` rows and then the untouched corpus glyphs. A glyph its record
+  // keeps out still takes its position, so `next_offset` can run ahead of the items, and once the
+  // glyphs run out `total` is what was there to deal.
+  let total = listed, next = offset + items.length;
+  const unnamed = dealt ? corpus.get(reading) || 0 : 0;
+  if (dealt && unnamed) {
+    total += unnamed;
+    if (items.length < limit) {
+      const round = await corpusRound(env, reading, production, seed, Math.max(offset - listed, 0), limit - items.length);
+      items.push(...round.items); next += round.read;
+      if (round.exhausted) total = next;
+    }
+  }
+  return { total, next_offset: next, available: Object.values(counts).reduce((a:number,b:any) => a+b,0),
     counts, purpose, production, review_limit:96, review_epoch: await meta(env, 'review_epoch') || 0, query: q.get('q'),
     categories: [...categories.values()].sort((a,b) => b.total-a.total || a.label.localeCompare(b.label)),
     items };
 }
-// Assigned corpus glyphs per character in this material, and those of them that have a `units` row.
-export function corpusCountQueries(production: string) {
-  const [published, values] = material(production, 'production'), [named, namedValues] = material(production, 'c.production');
-  return [
-    { sql: `SELECT character AS label,sum(n) AS n FROM corpus_characters WHERE ${published} GROUP BY character`, values },
-    { sql: `SELECT c.character AS label,count(*) AS n FROM units u JOIN corpus_units c ON c.id=u.id
-      WHERE u.origin='corpus' AND c.character IS NOT NULL AND ${named} GROUP BY c.character`, values: namedValues },
-  ];
+// Untouched assigned corpus glyphs per character in this material.
+export function corpusCountQuery(production: string) {
+  const [materials, values] = material(production, 'production');
+  return { sql: `SELECT character AS label,sum(n-named) AS n FROM corpus_characters WHERE ${materials} GROUP BY character`, values };
 }
-const corpusCounts = (env: Env, production: string) =>
-  corpusCountQueries(production).map(({ sql, values }) => env.DB.prepare(sql).bind(...values));
-// One character's unnamed corpus glyphs in shuffle order, starting from a point the seed picks and
-// wrapping round, so each seed deals a different but stable order that the index serves as it stands.
-export function corpusRoundQuery(production: string, side: '>=' | '<') {
-  const [materials, values] = production === 'all' ? ['', []] : material(production, 'production');
-  return { sql: `SELECT * FROM corpus_units c WHERE character=? AND shuffle${side}?${materials ? ' AND ' + materials : ''}
-    AND NOT EXISTS(SELECT 1 FROM units u WHERE u.id=c.id) ORDER BY shuffle LIMIT ?`, values };
+// The round character's named corpus glyphs that are due, from its most recently named pending rows.
+export function namedRoundQuery(materials: string, state: string) {
+  return `SELECT * FROM (SELECT * FROM units WHERE origin='corpus' AND character=? AND state='pending' ORDER BY rowid DESC LIMIT ${NAMED_WINDOW}) AS units
+    WHERE quiz=1 AND ${materials} AND ${state}='pending'`;
 }
+// One character's untouched corpus glyphs of one material, or of every material, in shuffle order
+// from a point the seed picks.
+export function corpusRoundQuery(production: string | null, side: '>=' | '<') {
+  return `SELECT * FROM corpus_units WHERE character=?${production ? ' AND production=?' : ''} AND named=0 AND shuffle${side}?
+    ORDER BY shuffle LIMIT ?`;
+}
+// The glyphs wrap round from the seeded point, so each seed deals a different but stable order that
+// the index serves as it stands. Several materials are read one index range each and merged.
 async function corpusRound(env: Env, character: string, production: string, seed: number, offset: number, limit: number) {
   // `shuffle` is the first 28 bits of the id's SHA-256.
   const start = seed % 268435456, wanted = offset + limit;
+  const kinds = production === 'all' ? [null] : production === 'non-movable-type' ? NON_MOVABLE : [production];
   const page = async (side: '>=' | '<', n: number) => {
-    const { sql, values } = corpusRoundQuery(production, side);
-    return (await env.DB.prepare(sql).bind(character, start, ...values, n).all<CorpusRow>()).results;
+    const results = await env.DB.batch(kinds.map(kind => env.DB.prepare(corpusRoundQuery(kind, side))
+      .bind(character, ...(kind ? [kind] : []), start, n)));
+    return results.flatMap(r => r.results as CorpusRow[]).sort((a, b) => a.shuffle - b.shuffle || (a.id < b.id ? -1 : 1)).slice(0, n);
   };
   const rows = await page('>=', wanted);
   if (rows.length < wanted) rows.push(...await page('<', wanted - rows.length));
-  const items: Json[] = [];
+  const read = rows.slice(offset), items: Json[] = [];
   // Bound simultaneous R2 streams, as for a corpus search page.
-  for (const batch of chunks(rows.slice(offset), 8)) {
+  for (const batch of chunks(read, 8)) {
     for (const data of await Promise.all(batch.map(row => corpusData(env, row)))) {
       // The record decides: a glyph whose image this site may not serve, or whose record disagrees
       // with its published row about the character or the material, is not dealt.
@@ -236,7 +253,7 @@ async function corpusRound(env: Env, character: string, production: string, seed
         items.push({ ...listing(data), origin: 'corpus', state: 'pending', shape_order: null });
     }
   }
-  return items;
+  return { items, read: read.length, exhausted: rows.length < wanted };
 }
 function chunks<T>(list: T[], size: number): T[][] {
   const out: T[][] = [];

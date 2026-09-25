@@ -9,7 +9,7 @@ import re
 import sqlite3
 from pathlib import Path
 
-from cloudflare_schema import CORPUS_CHARACTERS, schema
+from cloudflare_schema import CORPUS_REFRESH, category_of, schema
 from export_cloudflare import encoded
 
 IMMUTABLE = ("metadata", "characters", "aliases", "corpus_units", "media")
@@ -44,7 +44,8 @@ def reviewed_baselines(db, corpus):
             current["grapheme"] = refs.grapheme(" ".join(refs.to_code_points(written)))
         db.execute("INSERT OR REPLACE INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
             identity, "corpus", written, current.get("reading"), current.get("grapheme"),
-            (current.get("visual_group") or {}).get("id"), current.get("production") or "unknown", "other",
+            (current.get("visual_group") or {}).get("id"), current.get("production") or "unknown",
+            category_of(current.get("label")),
             # Dealt in Quick review, as the Worker decides, when its image may be served and it names a character.
             current["state"], current["revision"], int(bool(current.get("proxyable") and written)), 1, row[3],
             encoded(current), encoded(original), "{}", "{}"))
@@ -146,7 +147,7 @@ def seal(catalogue: Path, corpus: Path, output: Path):
             max_statement = max(max_statement, size)
             sql.write(statement + "\n")
         # Counted in D1 from the rows it now holds, which may include rows earlier publications left.
-        sql.write(CORPUS_CHARACTERS + "\n")
+        sql.write(CORPUS_REFRESH + "\n")
     counts = {table: db.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
               for table in ("units", "characters", "corpus_units", "media")}
     (output / "publication.json").write_text(encoded({"counts": counts, "objects": manifest, "review_baselines": baselines,

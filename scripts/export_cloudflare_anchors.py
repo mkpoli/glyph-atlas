@@ -6,7 +6,7 @@ from io import BytesIO
 from pathlib import Path
 
 import httpx
-from cloudflare_schema import CORPUS_CHARACTERS, schema
+from cloudflare_schema import CORPUS_REFRESH, schema
 from export_cloudflare import encoded
 from export_cloudflare_corpus import FrozenResolver
 from PIL import Image
@@ -49,10 +49,10 @@ with (args.output / "anchors-images.bin").open("wb") as media, (args.output / "a
         raw = encoded(detail).encode()
         offset = records.tell()
         records.write(raw)
-        db.execute("INSERT OR REPLACE INTO corpus_units VALUES(?,?,?,?,?,?,?,?,?)", (
+        db.execute("INSERT OR REPLACE INTO corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production) VALUES(?,?,?,?,?,?,?,?,?)", (
             detail["id"], detail["written_character"], detail["grapheme"], None,
             int(hashlib.sha256(detail["id"].encode()).hexdigest()[:7], 16), "anchors-records.bin", offset, len(raw),
             detail.get("production") or "unknown"))
 db.commit()
-db.executescript(CORPUS_CHARACTERS)
+db.executescript(CORPUS_REFRESH)
 print(encoded({"anchors": len(details), "hosted_images": len(images)}))
