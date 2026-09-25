@@ -1183,6 +1183,94 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         payload["reviews"] = [r for r in payload["reviews"] if r["event"]["target_id"] in unit_ids]
         background.add_task(background_refine, store, payload)
 
+    def judgement_info(event: Any) -> dict[str, Any]:
+        """What a reviewer `review` event decided, read from its evidence.
+
+        One reader for both shapes of evidence a `review` event carries: a round's `visual-quiz`
+        and the character editor's `character-review`. Neither always carries every field, so a
+        caller sees `None` for what that event never recorded.
+        """
+        try:
+            evidence = json.loads(event.evidence) if event.evidence else {}
+        except ValueError:
+            evidence = {}
+        if not isinstance(evidence, dict):
+            evidence = {}
+        crop_label = evidence.get("label")
+        if crop_label is None:
+            crop_label = ((evidence.get("snapshot") or {}).get("character") or {}).get("label")
+        points = evidence.get("suggested_character")
+        return {
+            "label": crop_label,
+            "verdict": evidence.get("verdict"),
+            "issue": evidence.get("issue"),
+            "character": identity_text(points) if points else None,
+            "reading": evidence.get("suggested_reading"),
+            "round": evidence.get("round"),
+        }
+
+    def history_entry(seq: int, event: Any, by_id: dict[str, Any]) -> dict[str, Any]:
+        evidence = event.evidence or ""
+        if evidence.startswith(_UNDO):
+            undone_id = evidence.removeprefix(_UNDO)
+            undone = by_id.get(undone_id)
+            info = judgement_info(undone) if undone is not None else {}
+            kind, undoes = "undo", undone_id
+        else:
+            info = judgement_info(event)
+            kind, undoes = "review", None
+        return {"id": event.id, "at": event.at.isoformat(), "actor": event.actor,
+                "target": event.target_id, "label": info.get("label"), "kind": kind,
+                "verdict": info.get("verdict"), "issue": info.get("issue"),
+                "character": info.get("character"), "reading": info.get("reading"),
+                "round": info.get("round"), "undoes": undoes}
+
+    @api.get("/history")
+    def history(
+        limit: Annotated[int, Query(ge=1, le=100)] = 40,
+        before: str | None = None,
+        actor: str | None = None,
+        label: str | None = None,
+    ) -> dict:
+        """A reviewer's own decisions, newest first: one item per `review` event, undos included.
+
+        The cursor is the event's own place in the log (its `seq`), so paging keeps working while
+        new reviews are recorded. `actor` and `label` narrow it to one reviewer or one crop's
+        judgements; an undo is matched by the judgement it undoes.
+        """
+        cursor: int | None = None
+        if before is not None:
+            try:
+                cursor = int(before)
+            except ValueError:
+                raise HTTPException(400, "Bad cursor.") from None
+        items: list[dict[str, Any]] = []
+        # A label filter is checked after reading, so a page is read in batches until it fills.
+        # Batches are bounded, and so is the number read per request.
+        read, reached = 0, cursor
+        while len(items) < limit and read < 5000:
+            batch = store.reviewer_judgements(before=reached, actor=actor, limit=200)
+            if not batch:
+                reached = None
+                break
+            read += len(batch)
+            undone = store.events_by_id(
+                event.evidence.removeprefix(_UNDO) for _, event in batch
+                if (event.evidence or "").startswith(_UNDO))
+            for seq, event in batch:
+                reached = seq
+                entry = history_entry(seq, event, undone)
+                if label is None or entry["label"] == label:
+                    items.append(entry)
+                    if len(items) == limit:
+                        break
+            else:
+                if len(batch) < 200:
+                    reached = None
+                    break
+        # `reached` is the last event read, or None once the log ran out.
+        return {"items": items, "next": str(reached) if reached is not None else None}
+
     def review_export(*, include_processed: bool = False) -> dict:
         """Every character review the journal holds, with what each one saw and whether it stands.
 
