@@ -1,6 +1,13 @@
 <script>
   import { onMount } from 'svelte'
   let { close } = $props()
+  /** A click on the backdrop closes the dialog. The backdrop has no element of its own, so a click on
+   * it lands on the dialog; its position outside the dialog's box is what tells it apart. */
+  function outside(event) {
+    const box = dialog.getBoundingClientRect()
+    if (event.target === dialog && (event.clientX < box.left || event.clientX > box.right
+        || event.clientY < box.top || event.clientY > box.bottom)) close()
+  }
   let dialog, data = $state(null), error = $state(''), loading = $state(true)
   const controller = new AbortController()
   const phases = { discovering: 'Finding works', collecting: 'Collecting', publishing: 'Updating search', complete: 'Collected' }
@@ -28,7 +35,7 @@
   })
 </script>
 
-<dialog class="progress-dialog" bind:this={dialog} oncancel={close} aria-labelledby="progress-title">
+<dialog class="progress-dialog" bind:this={dialog} oncancel={close} onclick={outside} aria-labelledby="progress-title">
   <div class="progress-heading">
     <h2 id="progress-title">Collection</h2>
     <button class="icon-button" aria-label="Close collection progress" onclick={close}>×</button>
