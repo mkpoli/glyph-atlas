@@ -301,6 +301,8 @@ try {
   assert.deepEqual((await ids('&seed=0&production=printed')), ['na-2', 'na-movable', 'na-4', 'na-5', 'na-3', 'na-1'], 'a wider node merges its productions in shuffle order')
   assert.deepEqual((await ids('&seed=0&production=inscribed')), [], 'a node the character has nothing under deals nothing')
   await call('/atlas?purpose=review&reading=ナ&production=printed%20type', undefined, 400)
+  await call('/atlas?purpose=review&reading=ナ&production=not:all', undefined, 400)
+  await call('/atlas?purpose=review&reading=ナ&production=printed/typo', undefined, 400)
   assert.deepEqual((await call('/atlas?purpose=review&reading=ヌ&state=pending')).items.map(i => i.id), ['nu-shown'], 'a glyph this site may not serve is not dealt')
   // A glyph passed over still takes its position: the next offset runs ahead of the items, and once
   // the glyphs run out the total is what there was to deal.
@@ -371,8 +373,8 @@ try {
         production ? 'corpus_material' : 'corpus_round'])
   // corpus_characters is small and read whole, in its key's order.
   for (const production of ['all', 'not:printed/type', 'printed/woodblock']) shapes.push([worker.corpusCountQuery(production), [], null])
-  shapes.push([{ sql: worker.namedRoundQuery('NOT (production=? OR (production>=? AND production<?))', 'state'), values: [] },
-    ['ナ', 'printed/type', 'printed/type/', 'printed/type0'], 'unit_character'])
+  shapes.push([{ sql: worker.namedRoundQuery('NOT (production>=? AND production<?)', 'state'), values: [] },
+    ['ナ', 'printed/type', 'printed/type0'], 'unit_character'])
   // What a publication runs after it rewrites corpus_units, and what the trigger runs on each naming.
   shapes.push([{ sql: refresh[0], values: [] }, [], 'sqlite_autoindex_corpus_units_1'])
   shapes.push([{ sql: "UPDATE corpus_characters SET named=named+1 WHERE (character,production)=(SELECT character,production FROM corpus_units WHERE id=? AND named=0)", values: [] },
@@ -426,10 +428,10 @@ try {
     if (worker.categoryOf(String.fromCodePoint(c)) !== sql) assert.fail(`U+${c.toString(16)}: ${worker.categoryOf(String.fromCodePoint(c))} vs ${sql}`)
   }
   // A context widened in place survives a review and its undo.
-  const framed = { id: 'framed', label: 'カ', reading: 'カ', state: 'pending', revision: 0, image_sha256: hash, production: 'manuscript',
+  const framed = { id: 'framed', label: 'カ', reading: 'カ', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten',
     repair: { quiz: true }, context: true, context_image: '/atlas/media/narrow.webp', context_box: { x: 5, y: 5, w: 40, h: 60 } }
   await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
-    framed.id, 'local', 'カ', 'カ', 'U+30AB', null, 'manuscript', 'kana', 'pending', 0, 1, 1, 1,
+    framed.id, 'local', 'カ', 'カ', 'U+30AB', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
     JSON.stringify(framed), JSON.stringify({ character: framed }), '{}', '{}').run()
   const wide = { x: 0, y: 0, w: 90, h: 120 }
   const framedRound = { id: crypto.randomUUID(), client_id: 'integration', label: 'カ',
