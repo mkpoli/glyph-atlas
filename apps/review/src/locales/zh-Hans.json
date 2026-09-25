@@ -17,6 +17,7 @@
   "character.advancedEdit.summary": "调整字符、裁切或读音",
   "character.context.alt": "该字符附近的笔画",
   "character.context.loadError": "无法加载上下文图像。",
+  "character.replaced": "此裁切已被替换，现显示替换后的裁切。",
   "character.crop.adjust": "调整裁切 ↗",
   "character.crop.adjusted": "裁切已调整",
   "character.crop.doneAdjusting": "调整完成",

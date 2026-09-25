@@ -546,6 +546,23 @@ try {
   await db.prepare('DELETE FROM form_loading').run()
   const log = await (await mf.dispatchFetch(base + '/forms/decisions.jsonl')).text()
   assert.equal(log.trim().split('\n').length, 4, 'every accepted decision is logged, the refused one is not')
+  // A retired crop names the crop that replaced it: deleted, kept for its history, or through a chain.
+  const retiredCrop = { id: 'retired-kept', label: 'ア', reading: 'ア', state: 'flagged', revision: 1, image_sha256: hash, production: 'handwritten' }
+  await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
+    retiredCrop.id, 'retired', 'ア', 'ア', 'U+30A2', null, 'handwritten', 'kana', 'flagged', 1, 0, 1, 1,
+    JSON.stringify(retiredCrop), JSON.stringify({ character: retiredCrop }), '{}', '{}').run()
+  await db.batch([['retired-gone', 'retired-kept'], ['retired-kept', 'two'], ['loop-a', 'loop-b'], ['loop-b', 'loop-a']]
+    .map(([id, target]) => db.prepare('INSERT INTO unit_redirects VALUES(?,?)').bind(id, target)))
+  for (const id of ['retired-gone', 'retired-kept']) {
+    const response = await mf.dispatchFetch(`${base}/atlas/characters/${id}`)
+    assert.equal(response.status, 404)
+    assert.equal((await response.json()).replaced_by, 'two', `${id} names its current replacement`)
+  }
+  const looped = await mf.dispatchFetch(`${base}/atlas/characters/loop-a`)
+  assert.equal(looped.status, 404)
+  assert.equal((await looped.json()).replaced_by, undefined, 'a redirect loop is answered as missing')
+  assert.ok(!(await call('/atlas?state=all&limit=96')).items.some(i => i.id === 'retired-kept'), 'a retired crop is in no listing')
+  assert.ok(!(await call('/atlas?state=attention&limit=96')).items.some(i => i.id === 'retired-kept'), 'nor in Needs fixing')
   console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms.')
 } finally {
   await mf.dispose()

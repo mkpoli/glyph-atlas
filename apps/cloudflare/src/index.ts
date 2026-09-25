@@ -8,7 +8,7 @@ type UnitRow = { id: string; origin: string; character: string | null; state: st
   fresh?: CorpusRow };
 type CorpusRow = {id:string;character:string|null;family:string|null;visual_group:string|null;production:string;shuffle:number;object:string;offset:number;size:number};
 class Problem extends Error {
-  constructor(public status: number, message: string) { super(message) }
+  constructor(public status: number, message: string, public extra: Json = {}) { super(message) }
 }
 const json = (value: unknown, status = 200, headers: HeadersInit = {}) => Response.json(value, {
   status, headers: { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', ...headers },
@@ -49,11 +49,28 @@ async function meta(env: Env, key: string): Promise<any> {
   const row = await env.DB.prepare('SELECT value FROM metadata WHERE key=?').bind(key).first<{ value: string }>();
   return row ? JSON.parse(row.value) : null;
 }
+// How many retirements a redirect follows; a publication points a retired crop at a current one, so
+// a longer chain is a loop.
+const REDIRECT_HOPS = 8;
+export async function replacement(env: Env, id: string): Promise<string | null> {
+  let target: string | null = null;
+  for (let hop = 0, current = id; hop < REDIRECT_HOPS; hop++) {
+    const next = await env.DB.prepare('SELECT target FROM unit_redirects WHERE id=?').bind(current).first<{ target: string }>();
+    if (!next) return target;
+    target = current = next.target;
+  }
+  return null;
+}
 async function unit(env: Env, id: string): Promise<UnitRow> {
   const row = await env.DB.prepare('SELECT * FROM units WHERE id=?').bind(id).first<UnitRow>();
-  if(row)return row;
-  const pointer=await env.DB.prepare('SELECT * FROM corpus_units WHERE id=?').bind(id).first<CorpusRow>();
-  if(!pointer)throw new Problem(404, 'This character is not in the published collection.');
+  if(row&&row.origin!=='retired')return row;
+  const pointer=row?null:await env.DB.prepare('SELECT * FROM corpus_units WHERE id=?').bind(id).first<CorpusRow>();
+  if(!pointer){
+    // A retired crop, kept for its history or deleted, is answered with the crop that replaced it.
+    const target=await replacement(env,id);
+    if(target)throw new Problem(404,'This crop was replaced.',{replaced_by:target});
+    throw new Problem(404, 'This character is not in the published collection.');
+  }
   const data=await corpusData(env,pointer);
   return {id,origin:'corpus',character:data.written_character??null,state:data.state,revision:data.revision,quiz:dealable('corpus',data)?1:0,
     category:categoryOf(data.label),data:JSON.stringify(data),snapshot:JSON.stringify(data),
@@ -739,7 +756,7 @@ export default {
       return await env.ASSETS.fetch(request);
     }catch(error){
       const open=path.startsWith('/atlas/documents/')?OPEN:{};
-      if(error instanceof Problem)return json({detail:error.message},error.status,open);
+      if(error instanceof Problem)return json({detail:error.message,...error.extra},error.status,open);
       console.error(JSON.stringify({event:'request_failed',path,error:error instanceof Error?error.name:'unknown'}));
       return json({detail:'The request could not be completed. Please retry.'},503,open);
     }

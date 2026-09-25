@@ -14,6 +14,7 @@
   "character.advancedEdit.summary": "Adjust character, crop or reading",
   "character.context.alt": "Strokes near this character",
   "character.context.loadError": "The context image could not be loaded.",
+  "character.replaced": "This crop was replaced. The one shown is its replacement.",
   "character.crop.adjust": "Adjust crop ↗",
   "character.crop.adjusted": "Crop adjusted",
   "character.crop.doneAdjusting": "Done adjusting",

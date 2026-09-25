@@ -14,6 +14,7 @@
   "character.advancedEdit.summary": "改字、截或讀",
   "character.context.alt": "字旁筆畫",
   "character.context.loadError": "旁圖不能載",
+  "character.replaced": "此截已易，今所示者其代也。",
   "character.crop.adjust": "改截 ↗",
   "character.crop.adjusted": "截已改",
   "character.crop.doneAdjusting": "改畢",

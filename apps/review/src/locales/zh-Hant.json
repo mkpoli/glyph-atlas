@@ -17,6 +17,7 @@
   "character.advancedEdit.summary": "調整字符、裁切範圍或讀音",
   "character.context.alt": "此字附近的筆畫",
   "character.context.loadError": "無法載入周邊影像。",
+  "character.replaced": "此裁切範圍已被替換，現顯示替換後的裁切範圍。",
   "character.crop.adjust": "調整裁切範圍 ↗",
   "character.crop.adjusted": "裁切範圍已調整",
   "character.crop.doneAdjusting": "調整完成",

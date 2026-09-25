@@ -14,6 +14,7 @@
   "character.advancedEdit.summary": "字・截片・讀ヲ改ム",
   "character.context.alt": "此字ノ近傍ノ筆畫",
   "character.context.loadError": "前後ノ畫像ヲ開クコト能ハズ",
+  "character.replaced": "此截片ハ差替ヘラレタリ　今示スハ新截片ナリ",
   "character.crop.adjust": "截片ヲ改ム ↗",
   "character.crop.adjusted": "截片ヲ改メタリ",
   "character.crop.doneAdjusting": "改メ了ル",

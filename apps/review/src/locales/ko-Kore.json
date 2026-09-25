@@ -14,6 +14,7 @@
   "character.advancedEdit.summary": "文字·크롭·讀音 修正",
   "character.context.alt": "이 文字 周邊의 劃",
   "character.context.loadError": "周邊 이미지를 불러오지 못했습니다.",
+  "character.replaced": "이 크롭은 交替되었습니다. 交替된 크롭을 表示합니다.",
   "character.crop.adjust": "크롭 調整 ↗",
   "character.crop.adjusted": "크롭 調整됨",
   "character.crop.doneAdjusting": "調整 完了",
