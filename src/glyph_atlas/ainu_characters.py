@@ -410,4 +410,6 @@ def build(result: Plan, atlas: Path, records: Path, out: Path, *, log: ReviewLog
         raise RuntimeError(f"replaying the merged log changed {repaired} units of the merged tables")
     # The log already holds every event; exporting marks it so, and writes the tables the store holds.
     review_store.Store(out).export()
+    # Exporting rewrites the tables under the store; opening it again records the tables it now holds.
+    review_store.Store(out)
     return dict(counts)

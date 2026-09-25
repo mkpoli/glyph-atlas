@@ -281,3 +281,21 @@ def test_ocr_settles_a_unit_the_atlas_does_not_stand_behind(world):
     units[3] = units[3].model_copy(update={"text_source": "ス", "unicode": " ".join(refs.to_code_points("ス"))})
     tables.write(atlas / "units.parquet", units, Unit)
     assert uid(3) in [u for u, _ in ainu_characters.plan(atlas, records).confirm], "the OCR agrees, so it is released"
+
+
+def test_the_merged_dataset_leaves_its_store_current(world, tmp_path, monkeypatch):
+    import os
+
+    atlas, records = world
+    export = Store.export
+
+    def later(self):  # an export that finishes in a later second than the store was loaded in
+        counts = export(self)
+        units = self.directory / "units.parquet"
+        os.utime(units, (units.stat().st_atime, units.stat().st_mtime + 5))
+        return counts
+
+    monkeypatch.setattr(Store, "export", later)
+    out = tmp_path / "merged"
+    ainu_characters.build(ainu_characters.plan(atlas, records), atlas, records, out)
+    assert ainu_characters.read_log(out).units, "a merge can read the dataset it wrote"
