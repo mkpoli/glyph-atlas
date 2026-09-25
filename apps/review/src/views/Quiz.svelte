@@ -28,7 +28,7 @@
   // round on screen. Loaded after the round itself, and a failure here never blocks the round.
   let references = $state([])
   let history = $state([]), historyIndex = $state(-1)
-  let loadingMore = $state(false), hasMore = $state(false)
+  let loadingMore = $state(false), hasMore = $state(false), loadMoreFailed = $state(false)
   // True while the load-more row is on screen or close to it: scrolling down loads the next batch.
   let nearEnd = $state(false)
   function watchSeen(node, id) {
@@ -158,7 +158,7 @@
   async function loadMore() {
     if (loading || saving || loadingMore || !hasMore || items.length >= roundLimit) return
     const id = requestId, round = roundId
-    loadingMore = true; error = ''; errorStatus = 0
+    loadingMore = true; loadMoreFailed = false; error = ''; errorStatus = 0
     const seen = new Set(items.map(item => item.id))
     let offset = 0, additions = [], more = false
     try {
@@ -184,7 +184,7 @@
       }
       // Added crops follow the ones already on screen, so nothing the reviewer is looking at moves.
       items = [...items, ...arranged(numbered(additions, items.length))]; hasMore = more
-    } catch (e) { if (id === requestId) { error = e.message; errorStatus = e.status ?? 0 } }
+    } catch (e) { if (id === requestId) { error = e.message; errorStatus = e.status ?? 0; loadMoreFailed = true } }
     finally { if (id === requestId) loadingMore = false }
   }
   /**
@@ -527,7 +527,7 @@
     {#if items.length}<div class="load-more-row" use:watchEnd role="status">
       {#if loadingMore}<span class="load-more-status"><span class="load-more-spinner" aria-hidden="true"></span>{t('quiz.loadMore.loading')}</span>
       {:else if hasMore && items.length >= roundLimit}<span class="load-more-status">{t('quiz.loadMore.saveToLoad')}</span>
-      {:else if hasMore}<button class="load-more" disabled={loading || saving} onclick={loadMore}>{error ? t('common.retry') : t('quiz.loadMore.more', { reading })}</button>
+      {:else if hasMore}<button class="load-more" disabled={loading || saving} onclick={loadMore}>{loadMoreFailed && error ? t('common.retry') : t('quiz.loadMore.more', { reading })}</button>
       {:else}<span class="load-more-status">{t('quiz.loadMore.allLoaded', { reading })}</span>{/if}
     </div>{/if}
     {#if references.length}
