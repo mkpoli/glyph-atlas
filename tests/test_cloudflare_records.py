@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-SCHEMA = Path("apps/cloudflare/migrations/0001_catalogue.sql").read_text()
+# Every migration, as a deployment applies them.
+SCHEMA = "\n".join(p.read_text() for p in sorted(Path("apps/cloudflare/migrations").glob("*.sql")))
 
 
 @pytest.fixture
@@ -44,21 +45,27 @@ def test_a_records_only_export_seals_into_packs_and_ordered_sql(scripts, tmp_pat
     (corpus / "corpus-0001.bin").write_bytes(b"".join(records))
     with sqlite3.connect(corpus / "corpus.sqlite") as db:
         db.executescript(SCHEMA)
-        db.execute("INSERT INTO corpus_units VALUES('codh:2',NULL,'U+306F',NULL,2,'corpus-0001.bin',?,?)",
+        db.execute("INSERT INTO corpus_units VALUES('codh:2',NULL,'U+306F',NULL,2,'corpus-0001.bin',?,?,'unknown')",
                    (len(records[0]), len(records[1])))
-        db.execute("INSERT INTO corpus_units VALUES('codh:1','𛂥','U+306F',NULL,1,'corpus-0001.bin',0,?)",
+        db.execute("INSERT INTO corpus_units VALUES('codh:1','𛂥','U+306F',NULL,1,'corpus-0001.bin',0,?,'woodblock')",
                    (len(records[0]),))
     summary = seal.seal(corpus, tmp_path / "sealed")
     assert summary["corpus_units"] == 2 and summary["objects"] == 1
     publication = json.loads((tmp_path / "sealed" / "publication.json").read_text())
     key = publication["objects"][0]["key"]
     assert (tmp_path / "sealed" / publication["objects"][0]["file"]).read_bytes() == b"".join(records)
-    lines = (tmp_path / "sealed" / publication["sql"][0]).read_text().splitlines()
-    assert lines == [f"INSERT OR REPLACE INTO corpus_units VALUES('codh:1','𛂥','U+306F',NULL,1,'{key}',0,{len(records[0])});",
-                     f"INSERT OR REPLACE INTO corpus_units VALUES('codh:2',NULL,'U+306F',NULL,2,'{key}',{len(records[0])},{len(records[1])});"]
+    sql = (tmp_path / "sealed" / publication["sql"][0]).read_text()
+    lines = sql.splitlines()
+    assert lines[:2] == [
+        f"INSERT OR REPLACE INTO corpus_units VALUES('codh:1','𛂥','U+306F',NULL,1,'{key}',0,{len(records[0])},'woodblock');",
+        f"INSERT OR REPLACE INTO corpus_units VALUES('codh:2',NULL,'U+306F',NULL,2,'{key}',{len(records[0])},{len(records[1])},'unknown');"]
     replayed = sqlite3.connect(":memory:")
-    replayed.executescript(SCHEMA + "\n".join(lines))
+    replayed.executescript(SCHEMA)
+    replayed.execute("INSERT INTO corpus_characters VALUES('gone','unknown',9)")
+    replayed.executescript(sql)
     assert replayed.execute("SELECT character FROM corpus_units WHERE id='codh:1'").fetchone() == ("𛂥",)
+    # The last part regenerates the per-character counts from the rows D1 then holds.
+    assert replayed.execute("SELECT * FROM corpus_characters").fetchall() == [("𛂥", "woodblock", 1)]
 
 
 def test_an_export_that_packed_images_is_refused(scripts, tmp_path):
@@ -70,3 +77,15 @@ def test_an_export_that_packed_images_is_refused(scripts, tmp_path):
         db.execute("INSERT INTO media VALUES(?, 'pack-10001.bin', 0, 1, 'image/webp')", ("c" * 64,))
     with pytest.raises(ValueError, match="packed images"):
         seal.seal(corpus, tmp_path / "sealed")
+
+
+def test_a_publication_file_gets_the_migrations_it_has_not_had(scripts, tmp_path):
+    cloudflare_schema = importlib.import_module("cloudflare_schema")
+    with sqlite3.connect(tmp_path / "corpus.sqlite") as db:
+        db.executescript(Path("apps/cloudflare/migrations/0001_catalogue.sql").read_text())
+        db.execute("INSERT INTO corpus_units VALUES('codh:1','は','U+306F',NULL,1,'corpus-0001.bin',0,1)")
+        cloudflare_schema.schema(db)
+        cloudflare_schema.schema(db)
+        assert db.execute("SELECT production FROM corpus_units").fetchone() == ("unknown",)
+        assert db.execute("SELECT * FROM corpus_characters").fetchall() == [("は", "unknown", 1)]
+        assert db.execute("PRAGMA user_version").fetchone()[0] == len(list(Path("apps/cloudflare/migrations").glob("*.sql")))

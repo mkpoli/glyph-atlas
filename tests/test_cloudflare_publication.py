@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-SCHEMA = Path("apps/cloudflare/migrations/0001_catalogue.sql").read_text()
+# Every migration, as a deployment applies them.
+SCHEMA = "\n".join(p.read_text() for p in sorted(Path("apps/cloudflare/migrations").glob("*.sql")))
 
 
 def database(path):
@@ -36,8 +37,8 @@ def publication(tmp_path, monkeypatch):
     (local / "pack-0001.bin").write_bytes(b"allowedPRIVATE")
     record = json.dumps({"id": "corpus-one", "label": "イ"}, ensure_ascii=False).encode()
     with database(corpus / "corpus.sqlite") as db:
-        db.execute("INSERT INTO corpus_units VALUES(?,?,?,?,?,?,?,?)", (
-            "corpus-one", "イ", None, None, 1, "records.bin", 0, len(record)))
+        db.execute("INSERT INTO corpus_units VALUES(?,?,?,?,?,?,?,?,?)", (
+            "corpus-one", "イ", None, None, 1, "records.bin", 0, len(record), "manuscript"))
     (corpus / "records.bin").write_bytes(record)
     return module, local, corpus, output
 
@@ -72,6 +73,7 @@ def test_publication_sql_does_not_overwrite_online_review(publication):
         db.executescript(sql)
         assert db.execute("SELECT character,state,revision FROM units").fetchone() == ("カ", "checked", 3)
         assert db.execute("SELECT count(*) FROM submissions").fetchone()[0] == 1
+        assert db.execute("SELECT * FROM corpus_characters").fetchall() == [("イ", "manuscript", 1)]
 
 
 def test_truncated_publication_is_rejected(publication):

@@ -9,6 +9,7 @@ import re
 import sqlite3
 from pathlib import Path
 
+from cloudflare_schema import CORPUS_CHARACTERS, schema
 from export_cloudflare import encoded
 
 IMMUTABLE = ("metadata", "characters", "aliases", "corpus_units", "media")
@@ -26,7 +27,7 @@ def reviewed_baselines(db, corpus):
     latest, baseline = reviews.latest(), reviews.baseline()
     applied, stale = 0, 0
     for identity in latest.keys() | baseline.keys():
-        row = db.execute("SELECT object,offset,size FROM corpus_units WHERE id=?", (identity,)).fetchone()
+        row = db.execute("SELECT object,offset,size,shuffle FROM corpus_units WHERE id=?", (identity,)).fetchone()
         if not row:
             continue
         with (corpus / row[0]).open("rb") as source:
@@ -44,7 +45,9 @@ def reviewed_baselines(db, corpus):
         db.execute("INSERT OR REPLACE INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
             identity, "corpus", written, current.get("reading"), current.get("grapheme"),
             (current.get("visual_group") or {}).get("id"), current.get("production") or "unknown", "other",
-            current["state"], current["revision"], 0, 1, 0, encoded(current), encoded(original), "{}", "{}"))
+            # Dealt in Quick review, as the Worker decides, when its image may be served and it names a character.
+            current["state"], current["revision"], int(bool(current.get("proxyable") and written)), 1, row[3],
+            encoded(current), encoded(original), "{}", "{}"))
         applied += 1
     return {"applied": applied, "stale": stale}
 
@@ -54,13 +57,15 @@ def seal(catalogue: Path, corpus: Path, output: Path):
     objects = output / "objects"
     objects.mkdir()
     db = sqlite3.connect(output / "atlas.sqlite")
-    db.executescript(Path("apps/cloudflare/migrations/0001_catalogue.sql").read_text())
+    schema(db)
     db.execute("ATTACH DATABASE ? AS local_source", (str(catalogue / "catalogue.sqlite"),))
     db.execute("ATTACH DATABASE ? AS corpus_source", (str(corpus / "corpus.sqlite"),))
     for table in ("metadata", "characters", "aliases", "units"):
         db.execute(f"INSERT INTO {table} SELECT * FROM local_source.{table}")
-    for table in ("corpus_units", "media"):
-        db.execute(f"INSERT INTO {table} SELECT * FROM corpus_source.{table}")
+    db.execute("INSERT INTO media SELECT * FROM corpus_source.media")
+    # Named columns: an export made before corpus rows carried their material is refused here.
+    columns = "id,character,family,visual_group,shuffle,object,offset,size,production"
+    db.execute(f"INSERT INTO corpus_units({columns}) SELECT {columns} FROM corpus_source.corpus_units")
     baselines = reviewed_baselines(db, corpus)
     # Earlier preparation may contain media for subsequently excluded sources.
     # Only references from the licence-filtered publication may enter its media index.
@@ -140,6 +145,8 @@ def seal(catalogue: Path, corpus: Path, output: Path):
                 raise ValueError(f"D1 statement exceeds 100 KB in {table}")
             max_statement = max(max_statement, size)
             sql.write(statement + "\n")
+        # Counted in D1 from the rows it now holds, which may include rows earlier publications left.
+        sql.write(CORPUS_CHARACTERS + "\n")
     counts = {table: db.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
               for table in ("units", "characters", "corpus_units", "media")}
     (output / "publication.json").write_text(encoded({"counts": counts, "objects": manifest, "review_baselines": baselines,

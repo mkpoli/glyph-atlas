@@ -1,6 +1,7 @@
 // Exercise the production Worker in workerd with real D1 transactions and R2 records.
 import assert from 'node:assert/strict'
 import { readFile, readdir } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare'
 
 const mf = new Miniflare(convertV4MiniflareOptions({workers:[{
@@ -15,7 +16,7 @@ try {
   const migrations = (await readdir(new URL('../migrations/', import.meta.url))).filter(name => name.endsWith('.sql')).sort()
   for (const name of migrations) {
     const schema = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8')
-    const statements = schema.match(/CREATE TRIGGER[\s\S]*?\nEND;|(?:CREATE (?:TABLE|(?:UNIQUE )?INDEX)|DROP TRIGGER|UPDATE) [\s\S]*?;/g)
+    const statements = schema.match(/CREATE TRIGGER[\s\S]*?\nEND;|(?:CREATE (?:TABLE|(?:UNIQUE )?INDEX)|DROP TRIGGER|UPDATE|ALTER TABLE|DELETE FROM|INSERT INTO) [\s\S]*?;/g)
     await db.batch(statements.map(sql => db.prepare(sql)))
   }
   const hash = 'a'.repeat(64), sourceRevision = 'b'.repeat(64)
@@ -36,7 +37,7 @@ try {
   const raw = JSON.stringify(corpus)
   const bucket = await mf.getR2Bucket('MEDIA')
   await bucket.put('fixture', raw)
-  await db.prepare('INSERT INTO corpus_units VALUES(?,?,?,?,?,?,?,?)').bind(corpus.id, null, 'U+4EEE', 'group-one', 1, 'fixture', 0, new TextEncoder().encode(raw).length).run()
+  await db.prepare('INSERT INTO corpus_units VALUES(?,?,?,?,?,?,?,?,?)').bind(corpus.id, null, 'U+4EEE', 'group-one', 1, 'fixture', 0, new TextEncoder().encode(raw).length, 'unknown').run()
   // Miniflare hands the Worker its own loopback address, so the page origin a browser would send is
   // that address; a fixed `http://localhost` fails the Worker's same-origin check on every POST.
   const base = new URL(await mf.ready).origin
@@ -180,7 +181,117 @@ try {
   assert.ok(!(await dealtTo('carol')).includes('skip-b'), 'a hard crop leaves the rounds')
   await call(`/atlas/rounds/${second.id}/undo`, { client_id: 'bob' })
   assert.deepEqual((await call('/atlas?state=hard&reading=ソ')).items, [], 'an undo takes a skip back')
-  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order.')
+  // Corpus glyphs in Quick review: a character's local crops first, then its assigned, proxyable
+  // corpus glyphs, until a round names them and they become `units` rows like any other crop.
+  const worker = await import('/tmp/atlas-worker-test.mjs')
+  const glyph = (id, fields = {}) => ({ id, origin: 'corpus', label: 'ナ', char: 'ナ', written_character: 'ナ',
+    identity_status: 'assigned', source_label: 'ナ', reading: 'ナ', grapheme: 'U+30CA', state: 'pending', revision: 0,
+    proxyable: true, production: 'woodblock', image: `/atlas/media/${id}.webp`, box: { x: 1, y: 2, w: 3, h: 4 },
+    source: { corpus: 'codh-full', title: 'A woodblock book' }, source_revision: createHash('sha256').update(id).digest('hex'), ...fields })
+  // shuffle 50,10,40,20,30: from seed 0 the order is na-2, na-4, na-5, na-3, na-1.
+  const glyphs = [['na-1', 50], ['na-2', 10], ['na-3', 40], ['na-4', 20], ['na-5', 30]].map(([id, shuffle]) => [glyph(id), shuffle, 'ナ'])
+  glyphs.push([glyph('na-movable', { production: 'movable-type' }), 15, 'ナ'],
+    [glyph('na-unassigned', { written_character: null, identity_status: 'unassigned' }), 5, null],
+    [glyph('nu-private', { label: 'ヌ', char: 'ヌ', written_character: 'ヌ', proxyable: false }), 5, 'ヌ'])
+  let packed = ''
+  for (const [record, shuffle, character] of glyphs) {
+    const bytes = JSON.stringify(record), offset = new TextEncoder().encode(packed).length
+    packed += bytes
+    await db.prepare('INSERT INTO corpus_units VALUES(?,?,?,?,?,?,?,?,?)').bind(record.id, character, 'U+30CA', null, shuffle,
+      'pack-na', offset, new TextEncoder().encode(bytes).length, record.production).run()
+  }
+  await bucket.put('pack-na', packed)
+  // The publication scripts regenerate the counts with the migration's own statement.
+  const migration = await readFile(new URL('../migrations/0006_corpus_rounds.sql', import.meta.url), 'utf8')
+  await db.batch(migration.match(/DELETE FROM corpus_characters;|INSERT INTO corpus_characters [\s\S]*?;/g).map(sql => db.prepare(sql)))
+  for (const id of ['na-local-a', 'na-local-b']) {
+    const d = { id, label: 'ナ', reading: 'ナ', state: 'pending', revision: 0, image_sha256: hash,
+      production: 'manuscript', box: { x: 1, y: 2, w: 3, h: 4 }, repair: { quiz: true } }
+    await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
+      id, 'local', 'ナ', 'ナ', 'U+30CA', null, 'manuscript', 'kana', 'pending', 0, 1, 1, 1,
+      JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}').run()
+  }
+  const roundOf = async (params = '') => call(`/atlas?purpose=review&reading=ナ&state=pending${params.includes('limit=') ? '' : '&limit=96'}${params}`)
+  const ids = async params => (await roundOf(params)).items.map(i => i.id)
+  const dealtNa = await ids('&seed=0')
+  assert.deepEqual(dealtNa.slice(0, 2).sort(), ['na-local-a', 'na-local-b'], 'local crops come first')
+  assert.deepEqual(dealtNa.slice(2), ['na-2', 'na-4', 'na-5', 'na-3', 'na-1'], 'then corpus glyphs in shuffle order')
+  assert.deepEqual((await ids('&seed=25')).slice(2), ['na-5', 'na-3', 'na-1', 'na-2', 'na-4'], 'the seed picks where the shuffle starts')
+  const paged = []
+  for (let offset = 0; offset < 7; offset += 3) paged.push(...await ids(`&seed=0&limit=3&offset=${offset}`))
+  assert.deepEqual(paged, dealtNa, 'paging runs on from the local crops into the corpus glyphs')
+  assert.equal((await roundOf('&seed=0')).total, 7)
+  await call('/atlas?purpose=review&reading=ナ&offset=5000', undefined, 404)
+  assert.ok(!dealtNa.includes('na-movable') && !dealtNa.includes('na-unassigned'), 'movable type and unassigned glyphs are not dealt')
+  assert.ok((await ids('&seed=0&production=all')).includes('na-movable'), 'every material includes movable type')
+  assert.deepEqual((await ids('&seed=0&production=woodblock')), ['na-2', 'na-4', 'na-5', 'na-3', 'na-1'], 'one material deals only its glyphs')
+  assert.deepEqual((await call('/atlas?purpose=review&reading=ヌ&state=pending')).items, [], 'a glyph this site may not serve is not dealt')
+  const first = (await roundOf('&seed=0')).items.find(i => i.id === 'na-2')
+  assert.equal(first.origin, 'corpus')
+  assert.equal(first.source.title, 'A woodblock book', 'a corpus tile can name its source')
+  const category = async (reviewer = '') => (await call(`/atlas?purpose=review&limit=1${reviewer}`)).categories.find(c => c.label === 'ナ')
+  assert.deepEqual(await category(), { label: 'ナ', total: 7, pending: 7, seen: 0, checked: 0, flagged: 0, hard: 0, skipped: 0 }, 'counts include corpus glyphs')
+  assert.equal((await call('/atlas?purpose=review&limit=1&production=all')).categories.find(c => c.label === 'ナ').pending, 8)
+  const na = Object.fromEntries((await roundOf('&seed=0')).items.map(i => [i.id, i]))
+  const cropRound = { id: crypto.randomUUID(), client_id: 'alice', label: 'ナ',
+    answers: [{ id: 'na-2', revision: 0, source_revision: na['na-2'].source_revision, verdict: 'wrong', issue: 'crop' }],
+    seen: [{ id: 'na-4', source_revision: na['na-4'].source_revision, image: na['na-4'].image }],
+    skipped: [{ id: 'na-5', source_revision: na['na-5'].source_revision, image: na['na-5'].image }] }
+  const cropSaved = await call('/atlas/rounds', cropRound)
+  assert.deepEqual(cropSaved.results.map(r => r.field), ['review', 'seen', 'skip'])
+  assert.deepEqual(await call('/atlas/rounds', cropRound), cropSaved, 'a retried corpus round is the same round')
+  const aliceIds = await ids('&seed=0&reviewer=alice')
+  assert.deepEqual(aliceIds.slice(2), ['na-3', 'na-1'], 'flagged, seen and skipped glyphs leave the next round')
+  assert.equal((await ids('&seed=0&reviewer=bob'))[0], 'na-5', 'another reviewer is dealt a skipped corpus glyph first')
+  assert.deepEqual(await category('&reviewer=alice'), { label: 'ナ', total: 7, pending: 4, seen: 1, checked: 0, flagged: 1, hard: 0, skipped: 1 })
+  const materialised = await db.prepare("SELECT id,origin,quiz,state,shuffle FROM units WHERE id LIKE 'na-%' AND origin='corpus' ORDER BY id").all()
+  assert.deepEqual(materialised.results, [
+    { id: 'na-2', origin: 'corpus', quiz: 1, state: 'flagged', shuffle: 10 },
+    { id: 'na-4', origin: 'corpus', quiz: 1, state: 'pending', shuffle: 20 },
+    { id: 'na-5', origin: 'corpus', quiz: 1, state: 'pending', shuffle: 30 }], 'a round writes the units rows it names')
+  assert.equal((await call('/atlas/corpus/character?id=na-2')).state, 'flagged')
+  await call(`/atlas/rounds/${cropRound.id}/undo`, { client_id: 'alice' })
+  const undone = await ids('&seed=0&reviewer=alice')
+  assert.deepEqual(undone.slice(0, 2).sort(), ['na-local-a', 'na-local-b'], 'local crops still come first')
+  assert.deepEqual(undone.slice(2).sort(), ['na-1', 'na-2', 'na-3', 'na-4', 'na-5'], 'undo returns the glyphs to the round')
+  assert.deepEqual(await category('&reviewer=alice'), { label: 'ナ', total: 7, pending: 7, seen: 0, checked: 0, flagged: 0, hard: 0, skipped: 0 })
+  assert.equal((await db.prepare("SELECT quiz FROM units WHERE id='na-2'").first()).quiz, 1, 'undo keeps a dealable glyph in the quiz')
+  // A glyph the site may not serve cannot be named by a round, nor answered in one.
+  const refused = await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'alice', label: 'ヌ',
+    seen: [{ id: 'nu-private', source_revision: createHash('sha256').update('nu-private').digest('hex') }] })
+  assert.equal(refused.results.length, 0)
+  await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'alice', label: 'ナ', answers: [{ id: 'na-unassigned', revision: 0,
+    source_revision: createHash('sha256').update('na-unassigned').digest('hex'), verdict: 'wrong', issue: 'crop' }] }, 409)
+  // Every new query shape reads corpus_units through an index, in index order. Each check is shown to
+  // fail once its index is gone.
+  const plan = async ({ sql, values }, bound) => (await db.prepare('EXPLAIN QUERY PLAN ' + sql).bind(...bound, ...values).all()).results.map(r => r.detail)
+  function served(details, index) {
+    assert.ok(!details.some(d => /^SCAN (c|corpus_units)\b/.test(d) && !/USING (COVERING )?INDEX/.test(d)), details.join('; '))
+    assert.ok(!details.some(d => d.includes('USE TEMP B-TREE FOR ORDER BY')), details.join('; '))
+    if (index) assert.ok(details.some(d => d.includes(`USING INDEX ${index} `) || d.includes(`USING COVERING INDEX ${index} `)), `${index}: ${details.join('; ')}`)
+  }
+  const shapes = []
+  for (const production of ['all', 'non-movable-type', 'woodblock'])
+    for (const side of ['>=', '<'])
+      shapes.push([worker.corpusRoundQuery(production, side), ['ナ', 0], production === 'woodblock' ? 'corpus_material' : 'corpus_round', 1])
+  for (const production of ['all', 'non-movable-type', 'woodblock']) {
+    const [published, named] = worker.corpusCountQueries(production)
+    // corpus_characters is small and read whole, in its key's order.
+    shapes.push([published, [], null, 0], [named, [], 'sqlite_autoindex_corpus_units_1', 0])
+  }
+  for (const [shape, bound, index, limited] of shapes) served(await plan(shape, limited ? [...bound, 96] : bound), index)
+  const keys = {
+    corpus_round: 'CREATE INDEX corpus_round ON corpus_units(character,shuffle)',
+    corpus_material: 'CREATE INDEX corpus_material ON corpus_units(character,production,shuffle)',
+  }
+  for (const [index, create] of Object.entries(keys)) {
+    await db.prepare(`DROP INDEX ${index}`).run()
+    const guarded = shapes.filter(s => s[2] === index)
+    for (const [shape, bound, , limited] of guarded)
+      await assert.rejects(async () => served(await plan(shape, limited ? [...bound, 96] : bound), index), `the check on ${index} fails without it`)
+    await db.prepare(create).run()
+  }
+  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds.')
 } finally {
   await mf.dispose()
 }

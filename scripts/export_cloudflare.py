@@ -15,6 +15,7 @@ from collections import Counter, defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
 
+from cloudflare_schema import schema
 from PIL import Image
 
 from glyph_atlas import refs
@@ -81,7 +82,7 @@ def export(dataset: Path, output: Path, *, resume=False):
     api = atlas.router(store, media=media)
     endpoints = {r.path: r.endpoint for r in api.routes if "GET" in r.methods}
     db = sqlite3.connect(output / "catalogue.sqlite")
-    db.executescript(Path("apps/cloudflare/migrations/0001_catalogue.sql").read_text())
+    schema(db)
     packs = Packs(output, db)
     with lookup_scope():
         existing = {r[0] for r in db.execute("SELECT id FROM units")}
