@@ -362,7 +362,8 @@ try {
   function served(details, index) {
     assert.ok(!details.some(d => /^SCAN (c|corpus_units)\b/.test(d) && !/USING (COVERING )?INDEX/.test(d)), details.join('; '))
     assert.ok(!details.some(d => d.includes('USE TEMP B-TREE FOR ORDER BY')), details.join('; '))
-    if (index) assert.ok(details.some(d => d.includes(`USING INDEX ${index} `) || d.includes(`USING COVERING INDEX ${index} `)), `${index}: ${details.join('; ')}`)
+    // The index is named as a whole word: a search is followed by its terms, a full index walk by nothing.
+    if (index) assert.ok(details.some(d => new RegExp(`USING (COVERING )?INDEX ${index}\\b`).test(d)), `${index}: ${details.join('; ')}`)
   }
   const shapes = []
   for (const production of [null, 'printed/woodblock'])
@@ -377,6 +378,14 @@ try {
   shapes.push([{ sql: refresh[0], values: [] }, [], 'sqlite_autoindex_corpus_units_1'])
   shapes.push([{ sql: "UPDATE corpus_characters SET named=named+1 WHERE (character,production)=(SELECT character,production FROM corpus_units WHERE id=? AND named=0)", values: [] },
     ['na-1'], 'sqlite_autoindex_corpus_units_1'])
+  // GET /history: all history newest first, by actor, and by label, each served by its own partial index.
+  shapes.push([{ sql: worker.historyQuery(null, null, null).sql, values: [] }, [41], 'event_history'])
+  shapes.push([{ sql: worker.historyQuery('integration', null, null).sql, values: [] }, ['integration', 41], 'event_actor_history'])
+  shapes.push([{ sql: worker.historyQuery(null, 'ア', null).sql, values: [] }, ['ア', 41], 'event_label_history'])
+  // The keyset cursor stays on the same index once a page is under way, for the plain and the actor shape.
+  const cursor = { at: '2026-01-01T00:00:00.000Z', id: 'cf:0' }
+  shapes.push([{ sql: worker.historyQuery(null, null, cursor).sql, values: [] }, [cursor.at, cursor.id, 41], 'event_history'])
+  shapes.push([{ sql: worker.historyQuery('integration', null, cursor).sql, values: [] }, ['integration', cursor.at, cursor.id, 41], 'event_actor_history'])
   // A document's characters are read along the table's own key, and each unit by its id.
   const documentPlan = await plan({ sql: worker.documentCharactersQuery(), values: [] }, ['hk:doc'])
   served(documentPlan, null)
@@ -397,6 +406,9 @@ try {
     corpus_round: 'CREATE INDEX corpus_round ON corpus_units(character,named,shuffle)',
     corpus_material: 'CREATE INDEX corpus_material ON corpus_units(character,production,named,shuffle)',
     unit_character: 'CREATE INDEX unit_character ON units(origin,character,state)',
+    event_history: "CREATE INDEX event_history ON events(at DESC, id DESC) WHERE kind IN ('review','undo')",
+    event_actor_history: "CREATE INDEX event_actor_history ON events(actor, at DESC, id DESC) WHERE kind IN ('review','undo')",
+    event_label_history: `CREATE INDEX event_label_history ON events(${worker.historyLabelExpr()}, at DESC, id DESC) WHERE kind IN ('review','undo')`,
   }
   for (const [index, create] of Object.entries(keys)) {
     await db.prepare(`DROP INDEX ${index}`).run()
@@ -441,7 +453,37 @@ try {
   const unframed = await call('/atlas/characters/framed')
   assert.deepEqual([unframed.state, unframed.context_image, unframed.context_box], ['pending', '/atlas/media/wide.webp', wide],
     'undo restores the review state and keeps the wider context')
-  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds.')
+  // GET /history: every review and undo, newest first, filterable by actor or by label; a kind outside
+  // ('review','undo') never appears even though its row sits in the same table.
+  const get = async path => { const response = await mf.dispatchFetch(base + path); assert.equal(response.status, 200); return response.json() }
+  const all = await get('/history?limit=100')
+  assert.ok(all.items.every(i => ['review', 'undo'].includes(i.kind)), 'only review and undo rows are ever listed')
+  const sorted = [...all.items].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : (a.id < b.id ? 1 : -1)))
+  assert.deepEqual(all.items.map(i => i.id), sorted.map(i => i.id), 'newest first, tied at ties broken by id')
+  const byLabel = await get('/history?label=%E3%83%A9&limit=100')
+  assert.equal(byLabel.items.length, 4, 'two flagged rounds, an inspector review and its undo all read ラ')
+  assert.ok(byLabel.items.every(i => i.label === 'ラ'))
+  const review = byLabel.items.find(i => i.kind === 'review' && i.actor === 'inspector')
+  assert.deepEqual([review.verdict, review.issue, review.undoes], ['wrong', 'crop', null])
+  const undoneEntry = byLabel.items.find(i => i.kind === 'undo')
+  assert.deepEqual([undoneEntry.actor, undoneEntry.verdict, undoneEntry.character, undoneEntry.undoes], ['inspector', null, null, review.id],
+    'an undo names the review it reverses and leaves the review-only fields null')
+  const byActor = await get('/history?actor=inspector&limit=100')
+  assert.equal(byActor.items.length, 2, 'the inspector review and its own undo')
+  assert.ok(byActor.items.every(i => i.actor === 'inspector'))
+  // Keyset pagination: a page of one, followed by `before`, walks the same list `limit=100` returned.
+  const historyPage1 = await get('/history?actor=inspector&limit=1')
+  assert.equal(historyPage1.items.length, 1)
+  assert.ok(historyPage1.next, 'a further page is signalled')
+  const historyPage2 = await get(`/history?actor=inspector&limit=1&before=${encodeURIComponent(historyPage1.next)}`)
+  assert.equal(historyPage2.items.length, 1)
+  assert.equal(historyPage2.next, null, 'the list ends once every actor row is read')
+  assert.deepEqual([historyPage1.items[0].id, historyPage2.items[0].id], byActor.items.map(i => i.id), 'paging one at a time visits the same rows in the same order')
+  const overLimit = await mf.dispatchFetch(base + '/history?limit=1000')
+  assert.equal(overLimit.status, 422, 'limit is bounded at 100')
+  const badCursor = await mf.dispatchFetch(base + '/history?before=not-a-cursor')
+  assert.equal(badCursor.status, 422, 'an unreadable cursor is rejected rather than silently ignored')
+  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history.')
 } finally {
   await mf.dispose()
 }

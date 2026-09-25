@@ -589,6 +589,61 @@ async function undo(env:Env,request:Request,id:string){
   try{await env.DB.batch(statements)}catch(error){if(String(error).includes('review_revision_conflict'))throw new Problem(409,'A later review changed this crop.');throw error}
   return {id,results};
 }
+// A review's label sits in evidence.label (a round) or evidence.snapshot.character.label (a single
+// correction); evidence is itself a JSON string, parsed once. An undo's own evidence is the plain string
+// 'undo of <event id>', not JSON, so its label comes from the row's own snapshot column instead — the
+// CASE only evaluates the branch for the row's own kind, so a future kind touches neither column.
+// This text is repeated verbatim in migration 0011's expression index; keep the two in sync.
+export const historyLabelExpr = () => `(CASE kind WHEN 'review' THEN coalesce(json_extract(json_extract(event,'$.evidence'),'$.label'),json_extract(json_extract(event,'$.evidence'),'$.snapshot.character.label')) WHEN 'undo' THEN json_extract(snapshot,'$.character.label') END)`;
+// Newest first, keyset-paged on (at,id): `before` is strictly older than that pair, in index order.
+export function historyQuery(actor: string | null, label: string | null, cursor: { at: string; id: string } | null): { sql: string; values: (string | number)[] } {
+  const where = [`kind IN ('review','undo')`];
+  const values: (string | number)[] = [];
+  if (actor) { where.push('actor=?'); values.push(actor) }
+  if (label !== null) { where.push(`${historyLabelExpr()}=?`); values.push(label) }
+  if (cursor) { where.push('(at,id)<(?,?)'); values.push(cursor.at, cursor.id) }
+  const sql = `SELECT id,at,actor,target,kind,event,${historyLabelExpr()} AS label FROM events WHERE ${where.join(' AND ')} ORDER BY at DESC,id DESC LIMIT ?`;
+  return { sql, values };
+}
+export function encodeCursor(at: string, id: string): string {
+  return btoa(JSON.stringify([at, id]));
+}
+export function decodeCursor(value: string): { at: string; id: string } {
+  try {
+    const decoded = JSON.parse(atob(value));
+    if (!Array.isArray(decoded) || decoded.length !== 2 || typeof decoded[0] !== 'string' || typeof decoded[1] !== 'string') throw 0;
+    return { at: decoded[0], id: decoded[1] };
+  } catch { throw new Problem(422, 'Invalid cursor.') }
+}
+type HistoryRow = { id: string; at: string; actor: string; target: string; kind: string; event: string; label: string | null };
+// A review's evidence names its own verdict, issue and correction; an undo's evidence is only the id
+// of the event it reverses, so those fields stay null and `undoes` names that event instead.
+export function historyItem(row: HistoryRow): Json {
+  const undo = row.kind === 'undo';
+  const parsedEvent = parse(row.event);
+  const evidence = undo ? null : parse(parsedEvent.evidence);
+  return {
+    id: row.id, at: row.at, actor: row.actor, target: row.target, label: row.label, kind: row.kind as 'review' | 'undo',
+    verdict: evidence?.verdict ?? null,
+    issue: evidence?.issue ?? null,
+    character: evidence?.suggested_character ? literal(evidence.suggested_character) : null,
+    reading: evidence?.suggested_reading ?? null,
+    round: evidence?.round ?? null,
+    undoes: undo ? String(parsedEvent.evidence).replace(/^undo of /, '') : null,
+  };
+}
+async function history(env: Env, q: URLSearchParams) {
+  const limit = Math.max(1, integer(q, 'limit', 40, 100));
+  const actor = q.get('actor') ? text(q.get('actor'), 128, 'actor', true) : null;
+  const label = q.get('label') ? text(q.get('label'), 32, 'label', true) : null;
+  const before = q.get('before') ? decodeCursor(q.get('before')!) : null;
+  const { sql, values } = historyQuery(actor, label, before);
+  const rows = await env.DB.prepare(sql).bind(...values, limit + 1).all<HistoryRow>();
+  const items = rows.results.slice(0, limit).map(historyItem);
+  // The cursor is the last row returned; the next page starts strictly after it.
+  const next = rows.results.length > limit ? encodeCursor(rows.results[limit - 1].at, rows.results[limit - 1].id) : null;
+  return { items, next };
+}
 async function reviews(env:Env,all:boolean){
   const rows=await env.DB.prepare(`SELECT e.event,e.snapshot,e.expected_revision,u.revision,u.origin,e.id,u.snapshot AS publication_snapshot,
     EXISTS(SELECT 1 FROM events newer WHERE newer.target=e.target AND newer.expected_revision>e.expected_revision) AS superseded
@@ -623,6 +678,7 @@ export default {
       const image=path.match(/^\/atlas\/media\/([a-f0-9]{64})\.webp$/);
       if(image)return await media(env,request,image[1],ctx);
       if(path==='/atlas')return json(await catalogue(env,q));
+      if(path==='/history')return json(await history(env,q));
       if(path==='/atlas/corpus/character')return json(parse((await unit(env,q.get('id')||'')).data));
       if(path==='/atlas/collection/status')return json(await meta(env,'collection'));
       const document=path.match(/^\/atlas\/documents\/([^/]+)\/characters$/);
