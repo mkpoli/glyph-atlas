@@ -676,18 +676,19 @@ def ainu_merge(
 ) -> None:
     """Merge ainu-records' character occurrences into the atlas, occurrence by occurrence.
 
-    A unit a person reviewed is kept; a machine unit ainu-records confirms from its transcription is
-    kept and released for review; one it reads differently gives way to its occurrence; occurrences
-    only ainu-records has are imported. The source dataset is never written to.
+    A unit a person decided is kept as the review store has it; a machine unit ainu-records confirms
+    from its transcription is kept and released for review; one it reads differently gives way to its
+    occurrence; occurrences only ainu-records has are imported. The source dataset is never written to.
     """
     from . import ainu_characters
 
-    result = ainu_characters.plan(atlas, records, min_iou=min_iou)
+    log = ainu_characters.read_log(atlas)
+    result = ainu_characters.plan(atlas, records, min_iou=min_iou, log=log)
     for name, value in result.counts().items():
         typer.echo(f"{name:<40} {value}")
     if out is None:
         return
-    for name, value in ainu_characters.build(result, atlas, records, out).items():
+    for name, value in ainu_characters.build(result, atlas, records, out, log=log).items():
         typer.echo(f"{name:<40} {value}")
     typer.echo(f"-> {out}")
 
