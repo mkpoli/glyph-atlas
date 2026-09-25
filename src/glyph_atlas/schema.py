@@ -36,6 +36,7 @@ class Licence(StrEnum):
     CC_BY_ND_4 = "CC-BY-ND-4.0"
     CC_BY_NC_SA_4 = "CC-BY-NC-SA-4.0"
     CC_BY_NC_ND_4 = "CC-BY-NC-ND-4.0"
+    KOGL_1 = "KOGL-1"
     UNICODE = "Unicode-3.0"
     PUBLIC_DOMAIN = "PD"
     PDM = "PDM-1.0"
