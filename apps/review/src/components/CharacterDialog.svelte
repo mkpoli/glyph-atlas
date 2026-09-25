@@ -40,7 +40,9 @@
     if (!b) return ''
     return `left:${100 * (b.x - c.x) / c.w}%;top:${100 * (b.y - c.y) / c.h}%;width:${100 * b.w / c.w}%;height:${100 * b.h / c.h}%`
   })() : '')
-  const suggestedIssue = $derived(suggestions?.candidates?.[0]?.engine === 'NDLkotenOCR' && suggestions.candidates[0].score >= .65 && !isSingle(suggestions.candidates[0].text) ? 'merged' : null)
+  // NDL reads lines, so a confident reading longer than one character hints at a merged crop.
+  const lineReading = $derived(suggestions?.votes?.find(vote => vote.engine === 'NDLkotenOCR'))
+  const suggestedIssue = $derived(lineReading && lineReading.score >= .65 && !isSingle(lineReading.text) ? 'merged' : null)
   async function load(target) {
     const current = ++generation
     dialog?.scrollTo({ top: 0 })
