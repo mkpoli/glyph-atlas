@@ -1,4 +1,5 @@
 // Catalogue snapshots are published offline. All online review mutations use D1 transactions.
+import { ROUND_MAX } from './rounds';
 type Json = Record<string, any>;
 type UnitRow = { id: string; origin: string; character: string | null; state: string; revision: number;
   quiz: number; category?: string; data: string; snapshot: string; context: string; visual: string;
@@ -111,10 +112,6 @@ function stateFor(reviewer: string | null): string {
 }
 // What a shown crop's pixels are named by: a local crop's page hash, a corpus glyph's source revision.
 const pixels = (crop: Json) => crop.image_sha256 ?? crop.source_revision;
-// The most crops one round deals and saves. A saved crop costs at most five D1 queries (two to find a
-// corpus glyph's row, one character lookup, its event and its new row) and one R2 read, so a full round
-// of corrected, never-reviewed corpus glyphs stays near 870 of the 1,000 a Worker invocation may run.
-export const ROUND_MAX = 144
 // The crops a round names: flagged answers, and crops it showed and left unflagged. A round carries
 // either or both; a single-crop review carries only its answer.
 export function validRound(input: Json, target?: string): { answers: Json[]; seen: Json[]; skipped: Json[] } {

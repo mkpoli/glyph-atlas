@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'bun:test';
-import { canonical, literal, hira, single, readingFrom, validRound, categoryOf, ROUND_MAX } from './index';
+import { canonical, literal, hira, single, readingFrom, validRound, categoryOf } from './index';
+import { ROUND_MAX } from './rounds';
 
 describe('historical character identities', () => {
   it('keeps supplementary characters intact', () => {
