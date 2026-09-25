@@ -109,6 +109,8 @@
   "explore.filter.label": "字類",
   "explore.findReading.aria": "尋讀",
   "explore.findReading.placeholder": "尋讀…",
+  "explore.flagged.hideReported": "藏已報者",
+  "explore.flagged.showReported": "示已報者{count}",
   "explore.grid.collection": "字集",
   "explore.heading.atlas": "字譜",
   "explore.heading.flagged": "已標字",
