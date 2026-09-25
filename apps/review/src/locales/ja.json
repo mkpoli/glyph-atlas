@@ -442,7 +442,6 @@
   "quiz.shapeToggle.dealt": "◧配布順",
   "quiz.skipCharacter": "文字{number}をスキップ",
   "quiz.skipSelected": "選択済みを{skip}",
-  "quiz.skipThisCrop": "この切り出しを{skip}",
   "quiz.skippedNotSaved": "{count}件スキップ · 未保存",
   "quiz.targetReading": "対象の読み{reading}",
   "quiz.unavailableCount": "{count}件利用不可",

@@ -451,7 +451,6 @@
   "quiz.shapeToggle.dealt": "◧ 依所發序",
   "quiz.skipCharacter": "置第{number}字",
   "quiz.skipSelected": "{skip}所擇",
-  "quiz.skipThisCrop": "{skip}此截",
   "quiz.skippedNotSaved": "置{count} · 未存",
   "quiz.targetReading": "所求讀{reading}",
   "quiz.unavailableCount": "{count}不可得",

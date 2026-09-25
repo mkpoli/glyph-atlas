@@ -237,7 +237,8 @@
   // Step one: choose the crops that are wrong. A selection is not a verdict, so nothing is assigned
   // here, and a crop taken out of the selection gives up the answer it had.
   function toggle(id) {
-    if (saving || loading || !loaded[id] || skipped[id] || failed[id] || recorded[id] === 'flagged') return
+    if (saving || loading || !loaded[id] || failed[id] || recorded[id] === 'flagged') return
+    if (skipped[id]) { skipped = without(skipped, [id]); selected = { ...selected, [id]: true }; at = 0; return }
     if (selected[id]) {
       selected = { ...selected, [id]: false }
       if (choices[id]) choices = without(choices, [id])
@@ -289,6 +290,7 @@
     const previous = choices[id]?.issue ?? null
     const kept = compatible(choices[id], issue, previous)
     choices = { ...choices, [id]: { verdict: 'wrong', issue, ...kept } }
+    if (skipped[id]) skipped = without(skipped, [id])
     if (suggestsReading(issue)) suggest(items.find(i => i.id === id))
     error = ''; errorStatus = 0
   }
@@ -335,12 +337,15 @@
     if (saving || loading) return
     const wanted = ids.filter(id => items.some(i => i.id === id))
     if (!wanted.length) return
-    const removedCurrent = current && wanted.includes(current.id)
+    const skippingCurrent = step !== 'select' && current && wanted.includes(current.id)
     skipped = { ...skipped, ...Object.fromEntries(wanted.map(id => [id, true])) }
     choices = without(choices, wanted)
-    selected = without(selected, wanted)
+    // On the selection screen a skip also leaves the selection; in the one-crop steps the crop keeps
+    // its place, so the reader can go back to it and choose a problem after all.
+    if (step === 'select') selected = without(selected, wanted)
     error = ''; errorStatus = 0
-    if (removedCurrent) jump(Math.min(at, Math.max(selectedItems.length - 1, 0)))
+    if (skippingCurrent && focusIndex < queue.length - 1) move(1)
+    else if (skippingCurrent) step = 'issue'
   }
   // A crop names the pixels it was shown with: a local crop by its page hash, a corpus glyph by its
   // source revision, which covers its box and image.
@@ -400,9 +405,9 @@
     if (saving || loading || loadingMore) return
     if (!selection.length) { pass(); return }
     if (step === 'select') { reviewSelected(); return }
-    if (!current || !choices[current.id]) return
+    if (!current || !(choices[current.id] || skipped[current.id])) return
     if (focusIndex < queue.length - 1) { move(1); return }
-    if (!answered) { jump(selectedItems.findIndex(i => !choices[i.id])); return }
+    if (!answered) { jump(selectedItems.findIndex(i => !choices[i.id] && !skipped[i.id])); return }
     submit()
   }
   /** The crops this round skipped. A skip is recorded against the reviewer, not as a decision: other
@@ -494,7 +499,7 @@
     if (e.key === 'ArrowRight') { e.preventDefault(); move(1); return }
     if (e.key === 'Escape') { e.preventDefault(); back(); return }
     if (step === 'issue' && /^[1-4]$/.test(e.key)) { e.preventDefault(); assignCurrent(issues[Number(e.key) - 1].id) }
-    if (step === 'issue' && e.key.toLowerCase() === 's' && current) { e.preventDefault(); skip([current.id]) }
+    if (step === 'issue' && (e.key.toLowerCase() === 's' || e.key === '5') && current) { e.preventDefault(); skip([current.id]) }
     if (step === 'correct' && e.key.toLowerCase() === 'n' && !control) { e.preventDefault(); if (current) chooseSuggestion(current.id, null, true) }
   }
   // A round is dealt as before; shown in shape order, the crops of one form sit together and a crop
@@ -538,7 +543,7 @@
       {#if loading}{#each Array(12) as _}<div class="quiz-skeleton"></div>{/each}
       {:else}{#each items as item, i (item.id)}
         <div class="quiz-tile" use:watchSeen={item.id} data-unit={item.id} class:selected={selected[item.id]} class:wrong={choices[item.id]?.verdict === 'wrong' || recorded[item.id] === 'flagged'} class:unavailable={failed[item.id]} class:skipped={skipped[item.id]} class:recorded={recorded[item.id]}>
-          <button class="quiz-choice" aria-label={t('quiz.selectCharacter', { number: i + 1 })} aria-pressed={!!selected[item.id]} disabled={saving || !loaded[item.id] || skipped[item.id] || recorded[item.id] === 'flagged'} onclick={() => toggle(item.id)}><Glyph {item} eager onload={id => loaded = { ...loaded, [id]: true }} onerror={id => { failed = { ...failed, [id]: true }; if (selected[id]) skip([id]) }} /><span class="choice-mark">{selected[item.id] ? '✓' : choices[item.id]?.verdict === 'wrong' ? '×' : ''}</span></button>
+          <button class="quiz-choice" aria-label={t('quiz.selectCharacter', { number: i + 1 })} aria-pressed={!!selected[item.id]} disabled={saving || !loaded[item.id] || recorded[item.id] === 'flagged'} onclick={() => toggle(item.id)}><Glyph {item} eager onload={id => loaded = { ...loaded, [id]: true }} onerror={id => { failed = { ...failed, [id]: true }; if (selected[id]) skip([id]) }} /><span class="choice-mark">{selected[item.id] ? '✓' : choices[item.id]?.verdict === 'wrong' ? '×' : ''}</span></button>
           <div class="quiz-production"><ProductionBadge {item} />{#if recorded[item.id]}<span class="recorded-badge">✓ {t('app.saved')}</span>{/if}{#if item.origin === 'corpus'}<span class="quiz-source" lang={item.source?.title ? 'ja' : undefined} title={item.source?.title}>{item.source?.title ?? t('quiz.corpusSource')}</span>{/if}</div><div class="quiz-tile-tools">{#if keys[i]}<kbd>{keys[i]}</kbd>{/if}<span class="choice-label">{failed[item.id] ? t('quiz.choiceLabel.unavailable') : skipped[item.id] ? t('quiz.choiceLabel.skipped') : ''}</span><button class="inspect-choice" aria-label={t('quiz.inspectCharacter', { number: i + 1 })} disabled={saving} onclick={() => inspectChoice(item)}>↗</button>{#if skipped[item.id]}<button class="restore-choice" aria-label={t('quiz.restoreCharacter', { number: i + 1 })} disabled={saving} onclick={() => restore(item.id)}>{t('quiz.restore')}</button>{:else}<button class="skip-choice" aria-label={t('quiz.skipCharacter', { number: i + 1 })} title={skipHint()} disabled={saving} onclick={() => skip([item.id])}>–</button>{/if}</div>
         </div>
       {/each}{#if loadingMore}{#each Array(6) as _}<div class="quiz-skeleton" aria-hidden="true"></div>{/each}{/if}{/if}
@@ -566,10 +571,10 @@
       </section>
     {/if}
   {:else if current}
-    <QuizFocus items={queue} index={focusIndex} label={step === 'issue' ? t('quiz.focus.chooseProblem') : t('quiz.focus.correction')} backLabel={step === 'issue' ? t('quiz.focus.changeSelection') : t('quiz.focus.changeProblem')} disabled={saving} onback={back} onjump={jump} onprev={() => move(-1)} onnext={() => move(1)}>
+    <QuizFocus items={queue} {skipped} index={focusIndex} label={step === 'issue' ? t('quiz.focus.chooseProblem') : t('quiz.focus.correction')} backLabel={step === 'issue' ? t('quiz.focus.changeSelection') : t('quiz.focus.changeProblem')} disabled={saving} onback={back} onjump={jump} onprev={() => move(-1)} onnext={() => move(1)}>
       {#if step === 'issue'}
-        <IssuePicker value={choices[current.id]?.issue === 'character' ? 'reading' : choices[current.id]?.issue ?? null} choose={assignCurrent} disabled={saving} />
-        <button class="quiet-link skip-current" disabled={saving} onclick={() => skip([current.id])} title={skipHint()}>{t('quiz.skipThisCrop', { skip: skipLabel() })}</button>
+        <IssuePicker value={choices[current.id]?.issue === 'character' ? 'reading' : choices[current.id]?.issue ?? null} choose={assignCurrent} disabled={saving}
+          skip={() => skip([current.id])} skipped={!!skipped[current.id]} />
       {:else}
         <p class="current-problem">{issueTitle(choices[current.id]?.issue === 'character' ? 'reading' : choices[current.id]?.issue)}</p>
         <ReadingSuggestions targetId={current.id} bind:element={suggestionsElement} result={suggestions[current.id]} loading={!suggestions[current.id]} contextResult={contextSuggestions[current.id] ?? null} contextLoading={!contextSuggestions[current.id]} issue={choices[current.id]?.issue === 'character' ? 'reading' : choices[current.id]?.issue} reading={current.label} value={choices[current.id]?.character || choices[current.id]?.correction} noneSelected={choices[current.id]?.noneSelected ?? false} disabled={saving} choose={(value, none) => chooseSuggestion(current.id, value, none)} />
@@ -580,18 +585,17 @@
   {#if step === 'select' && !loading && !items.length}<div class="empty"><span class="empty-mark">字</span><h2>{categories.length ? t('quiz.empty.chooseCharacter') : t('quiz.empty.allCaughtUp')}</h2>{#if categories.length}<button class="primary" onclick={() => categoryOpen = true}>{t('quiz.chooseCharacterButton')}</button>{:else}<a href="#/flagged" class="primary">{t('quiz.reviewFlagged')}</a>{/if}</div>
   {:else}<div class="quiz-actionbar"><div class="round-selection"><span class="selection-dot" class:has-flags={decided > 0}></span><strong>{t('quiz.decided', { count: decided })}</strong>{#if undecided}<span>{t('quiz.undecided', { count: undecided })}</span>{/if}{#if Object.keys(skipped).length}<small>{t('quiz.skippedNotSaved', { count: Object.keys(skipped).length })}</small>{/if}{#if Object.keys(failed).length}<small>{t('quiz.unavailableCount', { count: Object.keys(failed).length })}</small>{/if}</div><div class="quiz-submit">
     <span class="keyboard-hint">{step === 'select' ? t('quiz.keyboardHint.select') : step === 'issue' ? t('quiz.keyboardHint.issue') : t('quiz.keyboardHint.correct')}</span>
-    <button class="quiet-link skip-selected" disabled={loading || saving || exhausted || (!decidable.length && !selection.length)} onclick={() => skip(selection.length ? selection : decidable.map(i => i.id))} title={skipHint()}>{selection.length ? t('quiz.skipSelected', { skip: skipLabel() }) : skipLabel()}</button>
+    {#if step === 'select'}<button class="quiet-link skip-selected" disabled={loading || saving || exhausted || (!decidable.length && !selection.length)} onclick={() => skip(selection.length ? selection : decidable.map(i => i.id))} title={skipHint()}>{selection.length ? t('quiz.skipSelected', { skip: skipLabel() }) : skipLabel()}</button>{/if}
     {#if exhausted || !selection.length}<button class="primary next-round" disabled={loading || saving || (!canNext && !recordable)} onclick={pass}>{t('quiz.nextCharacterLabel')} <span>→</span></button>
     {:else if step === 'select'}<button class="primary review-selected" disabled={loading || saving || loadingMore || !ready} onclick={reviewSelected}>{t('quiz.reviewSelected', { count: selection.length })} <span>→</span></button>
-    {:else if focusIndex < queue.length - 1}<button class="primary next-crop" disabled={loading || saving || !choices[current?.id]} onclick={primary}>{t('quiz.nextCrop')} <span>→</span></button>
-    {:else if !answered}<button class="primary finish-issues" disabled={loading || saving || !choices[current?.id]} onclick={primary}>{t('quiz.reviewRemaining')} <span>→</span></button>
+    {:else if focusIndex < queue.length - 1}<button class="primary next-crop" disabled={loading || saving || !(choices[current?.id] || skipped[current?.id])} onclick={primary}>{t('quiz.nextCrop')} <span>→</span></button>
+    {:else if !answered}<button class="primary finish-issues" disabled={loading || saving || !(choices[current?.id] || skipped[current?.id])} onclick={primary}>{t('quiz.reviewRemaining')} <span>→</span></button>
     {:else}<button class="primary save-round" disabled={loading || saving || loadingMore || !ready} onclick={submit}>{saving ? t('common.saving') : t('quiz.saveIssues')} <span>✓</span></button>{/if}
   </div></div>{/if}
 </section>
 
 {#if savedNotice}<div class="save-toast quiz-saved" role="status">✓ {savedNotice}</div>{/if}
 <style>
-  .skip-current{display:block;margin:12px auto 0;font-size:12px}
   .review-material{display:flex;align-items:center;gap:10px;margin:0 0 20px;font-size:12px;color:var(--muted)}
   .review-material select{max-width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink);font:inherit}
   /* Scoped to this view on purpose: the skipped state is the round's own, and the tile keeps the
