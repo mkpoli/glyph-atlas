@@ -656,6 +656,20 @@ try {
   const [fromZero, later] = [await dealtFrom(0), await dealtFrom(5500)]
   assert.notEqual(fromZero[0], later[0], 'another seed starts elsewhere')
   assert.deepEqual(later.slice().sort(), fromZero.slice().sort(), 'and wraps round to the same crops')
+  // A grapheme lists its family's crops and its own character's, each once.
+  for (const [id, character, family] of [['fam-a', '假', 'U+4EEE'], ['fam-b', '仮', null], ['fam-c', '仮', 'U+4EEE'], ['fam-other', '何', 'U+4F55']]) {
+    const d = { id, label: character, reading: character, state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
+    await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(id, 'local', character, character, family, null,
+      'handwritten', 'kanji', 'pending', 0, 0, 1, 1, JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}').run()
+  }
+  const inGrapheme = async query => { const found = await call('/layers/occurrences?code_point=U%2B4EEE' + query); return [found.total, found.items.map(i => i.id).filter(id => id.startsWith('fam-'))] }
+  const localCount = async where => (await db.prepare(`SELECT count(*) AS n FROM units WHERE origin='local' AND ${where}`).first()).n
+  const [graphemeTotal, characterTotal] = [await localCount("(family='U+4EEE' OR character='仮')"), await localCount("character='仮'")]
+  assert.deepEqual(await inGrapheme('&scope=grapheme&limit=200'), [graphemeTotal, ['fam-a', 'fam-b', 'fam-c']], 'a grapheme lists its family and its character')
+  assert.deepEqual(await inGrapheme('&limit=200'), [characterTotal, ['fam-b', 'fam-c']], 'a character lists its own crops')
+  const ordered = (await call('/layers/occurrences?code_point=U%2B4EEE&scope=grapheme&limit=200')).items.map(i => i.id)
+  assert.deepEqual(ordered, ordered.slice().sort(), 'in id order')
+  assert.equal((await call(`/layers/occurrences?code_point=U%2B4EEE&scope=grapheme&limit=1&offset=${ordered.indexOf('fam-b')}`)).items[0].id, 'fam-b', 'and pages through them')
   console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms.')
 } finally {
   await mf.dispose()
