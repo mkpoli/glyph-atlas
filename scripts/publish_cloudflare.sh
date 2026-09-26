@@ -16,4 +16,12 @@ for part in "${parts[@]}"; do
   echo "d1 $part"
   bunx wrangler d1 execute glyph-atlas --remote --yes --file "$publication/$part"
 done
+# The homepage gallery deals copies of published records; bring them up to date with the rows just
+# written. The parts go beside the publication, in a directory of their own for each run.
+gallery="$publication/gallery-$(date -u +%Y%m%dT%H%M%SZ)"
+uv run ../../scripts/fill_corpus_gallery.py "$gallery"
+for part in "$gallery"/*.sql; do
+  echo "d1 $part"
+  bunx wrangler d1 execute glyph-atlas --remote --yes --file "$part"
+done
 echo "published"

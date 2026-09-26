@@ -106,3 +106,27 @@ def test_the_receipt_names_the_set_it_published_not_its_size():
     before = [{"entry_id": "one", "dataset": "books/one"}, {"entry_id": "two", "dataset": "books/two"}]
     after = [{"entry_id": "one", "dataset": "books/one"}, {"entry_id": "three", "dataset": "books/three"}]
     assert len(before) == len(after) and listing_digest(before) != listing_digest(after)
+
+
+def test_a_generation_written_before_a_field_was_added_is_published_with_its_default(tmp_path):
+    import pyarrow.parquet as pq
+
+    dataset(tmp_path / "honkoku-data", "old", "OLD")
+    base = tmp_path / "honkoku-data/documents.parquet"
+    pq.write_table(pq.read_table(base).drop_columns(["style"]), base)
+    dataset(tmp_path / "honkoku-collection/books/new", "new", "NEW")
+    (tmp_path / "honkoku-collection/index.json").write_text(json.dumps({"books": [{"entry_id": "new", "dataset": "books/new"}]}))
+    result = publish(tmp_path, rebuild_index=False, min_free_bytes=0)
+    assert result["tables"]["documents"] == 2
+    found = next(c for c in discover(tmp_path) if c.name == "honkoku-data")
+    assert {d.id: d.style for d in tables.read(found.table("documents"), Document)} == {"hk:old": "unassessed", "hk:new": "unassessed"}
+
+
+def test_a_missing_field_without_a_default_stops_the_merge():
+    import pyarrow as pa
+    import pytest
+
+    from glyph_atlas.corpus.collection import _conform
+
+    with pytest.raises(ValueError, match="documents.id is missing"):
+        _conform(pa.table({"title": ["x"]}), "documents")

@@ -119,6 +119,25 @@ def publication_lock(collection):
         yield
 
 
+def _conform(table: pa.Table, name: str) -> pa.Table:
+    """`table` in the current shape of table `name`: a published generation or a collected book written
+    before a field was added carries that field's default, as a record written now would. A missing
+    field without a default is an error."""
+    model = tables.TABLES[name]
+    schema = tables.schema_for(model)
+    for field in schema:
+        if field.name in table.column_names:
+            continue
+        declared = model.model_fields.get(field.name)
+        if declared is None or declared.is_required():
+            raise ValueError(f"{name}.{field.name} is missing and has no default")
+        default = declared.get_default(call_default_factory=True)
+        if default is not None and not isinstance(default, (str, int, float, bool)):
+            raise ValueError(f"{name}.{field.name} is missing and its default is not a plain value")
+        table = table.append_column(field.name, pa.array([default] * table.num_rows, field.type))
+    return table.select(schema.names).cast(schema)
+
+
 def _merge_table(base: Path, additions: list[Path], target: Path, name: str, ids: set[str],
                  changed_chars: set[str], *, by_row: bool = False) -> int:
     schema = tables.schema_for(tables.TABLES[name])
@@ -139,12 +158,12 @@ def _merge_table(base: Path, additions: list[Path], target: Path, name: str, ids
                     for kept, text in zip(keep, table["text_raw"].to_pylist(), strict=True):
                         if not kept:
                             changed_chars.update(text or "")
-                table = table.filter(pa.array(keep)).cast(schema)
+                table = _conform(table.filter(pa.array(keep)), name)
                 writer.write_table(table)
                 count += table.num_rows
         for path in additions:
             for batch in pq.ParquetFile(path / f"{name}.parquet").iter_batches(batch_size=4096):
-                table = pa.Table.from_batches([batch]).cast(schema)
+                table = _conform(pa.Table.from_batches([batch]), name)
                 if name == "page_texts":
                     for text in table["text_raw"].to_pylist():
                         changed_chars.update(text or "")

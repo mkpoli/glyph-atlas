@@ -246,7 +246,7 @@
   </div>
   <footer class="inspector-savebar">
     {#if imageFailed}<span role="alert">{t('character.image.unavailable')}</span>{/if}
-    <button class="primary save-character" disabled={busy || !data || !loaded || imageFailed} onclick={() => save()}>{busy ? t('common.saving') : issue ? (onVerdict ? t('character.save.useError') : next ? t('character.save.issueNext') : t('character.save.issue')) : (onVerdict ? t('character.save.backToSelection') : next ? t('character.save.looksRightNext') : t('character.save.looksRight'))} <span>{issue || onVerdict ? '→' : '✓'}</span></button>
+    <button class="primary save-character" disabled={busy || !data || !loaded || imageFailed} onclick={() => save()}>{busy ? t('common.saving') : issue ? (onVerdict ? t('character.save.useError') : t('character.save.issue')) : (onVerdict ? t('character.save.backToSelection') : t('character.save.looksRight'))} {#if onVerdict}<span>→</span>{:else if !issue}<span>✓</span>{/if}</button>
     {#if issue}<button class="quiet-link looks-right" disabled={busy || !loaded || imageFailed} onclick={() => { discardProposals(); save(true) }}>{onVerdict ? t('character.save.removeSelection') : t('character.save.itLooksRight')}</button>{/if}
     <button class="skip-character" disabled={busy} onclick={skip} title={skipHint()}>{t('common.skip.arrow')}</button>
   </footer>
