@@ -752,6 +752,11 @@ try {
   const checkedBefore = await checkedKa()
   await db.batch([db.prepare("UPDATE units SET state='checked' WHERE id='fam-b' AND state<>'checked'"), stamp('second refresh')])
   assert.equal(await checkedKa(), checkedBefore + 1, 'a refresh shows in the browse counts')
+  // A corpus glyph's suggestions are asked for by its source revision, which it has in place of a page hash.
+  const corpusSuggestions = (query) => mf.dispatchFetch(`${base}/atlas/characters/${encodeURIComponent('codh:fixture')}/suggestions?${query}`)
+  const glyphNow = await call(`/atlas/corpus/character?id=${encodeURIComponent('codh:fixture')}`)
+  assert.equal((await corpusSuggestions(`revision=${glyphNow.revision}&source_revision=${glyphNow.source_revision}`)).status, 200, 'a corpus glyph serves suggestions for its source revision')
+  assert.equal((await corpusSuggestions(`revision=${glyphNow.revision}&source_revision=${'c'.repeat(64)}`)).status, 409, 'and refuses another')
   console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms.')
 } finally {
   await mf.dispose()
