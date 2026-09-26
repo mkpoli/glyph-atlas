@@ -1,11 +1,11 @@
 """Export a trained classifier to ONNX and check it against the PyTorch model.
 
 The export takes the checkpoint `train.py` writes, rebuilds the model from the configuration stored
-in it, and writes one ONNX file with a fixed input, `pixel_values` of shape (1, 3, 96, 96) in
-float32, and two outputs: `logits` (1, classes) as the model returns them, and `probs` (1, classes),
-the same logits divided by the temperature the calibration fitted and passed through a softmax. That
-is the pair `glyph_atlas.classify.Classifier` reads, and a crop is always 96 square, so the batch
-and the size are fixed rather than dynamic.
+in it, and writes one ONNX file with one input, `pixel_values` of shape (batch, 3, size, size) in
+float32 at the configured size, and three outputs: `logits` (batch, classes) as the model returns
+them; `probs` (batch, classes), the same logits divided by the temperature the calibration fitted
+and passed through a softmax; and `features` (batch, width), the model's penultimate
+representation. `glyph_atlas.classify.Classifier` reads the file and takes the size from its input.
 
 The temperature is baked in, so the served probabilities are the calibrated ones and the class list
 beside the export is the only other file a caller needs.
@@ -35,7 +35,7 @@ import train
 from glyph_atlas import classify
 
 ROOT = Path(__file__).resolve().parents[2]
-OUTPUT_NAMES = ("logits", "probs")
+OUTPUT_NAMES = ("logits", "probs", "features")
 
 #: The largest difference between the two sets of probabilities a passing export may show.
 TOLERANCE = 1e-4
@@ -49,9 +49,13 @@ class Wrapper(torch.nn.Module):
         self.model = model
         self.register_buffer("temperature", torch.tensor(float(temperature), dtype=torch.float32))
 
-    def forward(self, pixel_values: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        logits = self.model(pixel_values)
-        return logits, torch.softmax(logits / self.temperature, dim=-1)
+    def forward(self, pixel_values: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        pooled = self.model.forward_features(pixel_values)
+        logits = self.model.forward_head(pooled)
+        # The penultimate representation keeps the shape information class logits discard; the
+        # visual families embed crops with it.
+        features = self.model.forward_head(pooled, pre_logits=True)
+        return logits, torch.softmax(logits / self.temperature, dim=-1), features
 
 
 def build(checkpoint: Path | None, device: torch.device, config_path: Path) -> tuple[Any, list[str], float, dict]:

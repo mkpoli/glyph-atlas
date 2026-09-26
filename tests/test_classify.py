@@ -277,3 +277,16 @@ def test_preprocessing_refuses_an_empty_crop() -> None:
         classify.preprocess(Image.new("L", (1, 1)).crop((0, 0, 0, 0)))
     with pytest.raises(ValueError):
         Classifier("stub.onnx", classes=CLASSES, session=object(), size=0)
+
+
+def test_the_size_is_read_from_the_export(tmp_path: Path) -> None:
+    """An export at 128 is fed 128-square crops; one whose input names no size gets the default."""
+    from types import SimpleNamespace
+
+    def session(shape):
+        return SimpleNamespace(get_inputs=lambda: [SimpleNamespace(name="pixel_values", shape=shape)])
+
+    wide = Classifier(tmp_path / "x.onnx", classes=CLASSES, session=session(["batch", 3, 128, 128]))
+    assert wide.size == 128
+    assert wide._pixels(crop(40, 60)).shape == (1, 3, 128, 128)
+    assert Classifier(tmp_path / "x.onnx", classes=CLASSES, session=session(["batch", 3, "h", "w"])).size == classify.SIZE

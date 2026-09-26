@@ -1,0 +1,51 @@
+{
+ "set": "atlas-reviewed",
+ "crops": 168,
+ "models": {
+  "onnx:work/experiments/final-caformer128/classifier.onnx": {
+   "seconds": 1.1,
+   "scores": {
+    "all": {
+     "n": 168,
+     "top1": 0.8988,
+     "top5": 0.9524,
+     "family1": 0.8988,
+     "family5": 0.9524,
+     "empty": 0.0
+    },
+    "corrected": {
+     "n": 49,
+     "top1": 0.6939,
+     "top5": 0.8571,
+     "family1": 0.6939,
+     "family5": 0.8571,
+     "empty": 0.0
+    },
+    "han": {
+     "n": 117,
+     "top1": 0.9658,
+     "top5": 1.0,
+     "family1": 0.9658,
+     "family5": 1.0,
+     "empty": 0.0
+    },
+    "hiragana": {
+     "n": 18,
+     "top1": 0.7778,
+     "top5": 0.9444,
+     "family1": 0.7778,
+     "family5": 0.9444,
+     "empty": 0.0
+    },
+    "katakana": {
+     "n": 33,
+     "top1": 0.7273,
+     "top5": 0.7879,
+     "family1": 0.7273,
+     "family5": 0.7879,
+     "empty": 0.0
+    }
+   }
+  }
+ }
+}

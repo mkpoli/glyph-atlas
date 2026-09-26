@@ -1915,7 +1915,7 @@ class TorchClassifier:
     probability than the alignment used is a repair that cannot be compared with it.
     """
 
-    def __init__(self, checkpoint: Path | str, *, device: str = "cuda", size: int = 96,
+    def __init__(self, checkpoint: Path | str, *, device: str = "cuda", size: int | None = None,
                  batch: int = 256, threads: int = 2) -> None:
         import torch
 
@@ -1928,17 +1928,17 @@ class TorchClassifier:
         if device.startswith("cuda") and not torch.cuda.is_available():
             raise RepairError("cuda was asked for and is not available")
         self.device = device
-        self.size = size
         self.batch = max(1, batch)
         state = torch.load(self.path, map_location="cpu", weights_only=False)
         self.classes = [str(name) for name in state["classes"]]
         self.temperature = float(state.get("temperature",
                                            state.get("metrics", {}).get("temperature", 1.0)))
         config = state["config"]
+        self.size = size or int(config["preprocessing"]["size"])
         import timm
 
-        model = timm.create_model(config["model"]["architecture"], pretrained=False,
-                                  num_classes=len(self.classes))
+        model = timm.create_model(config["model"]["checkpoint"], pretrained=False,
+                                  num_classes=len(self.classes), **config["model"].get("options", {}))
         model.load_state_dict(state["model"])
         model.eval()
         self._torch = torch
