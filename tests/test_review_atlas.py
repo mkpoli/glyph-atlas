@@ -87,6 +87,37 @@ def test_catalogue_filters_hangul_as_its_own_group(dataset):
     assert client.get('/atlas?group=kanji').json()['total'] == 0
 
 
+def test_catalogue_counts_and_filters_by_book(dataset):
+    tables.write(dataset / 'documents.parquet', [Document(id='d', title='Fixture'), Document(id='e', title='Second')], Document)
+    units = list(tables.read(dataset / 'units.parquet', Unit))
+    units.extend(Unit(id=f'second-{i}', document_id='e', page_id=PAGE, reading='あ', script='hiragana',
+                      box=Box(x=10, y=10, w=20, h=30)) for i in range(2))
+    tables.write(dataset / 'units.parquet', units, Unit)
+    client = TestClient(create_app(dataset))
+    shelf = client.get('/atlas').json()['documents']
+    assert [(b['id'], b['title'], b['total'], b['pending']) for b in shelf] == [('d', 'Fixture', 16, 16), ('e', 'Second', 2, 2)]
+    second = client.get('/atlas?document=e').json()
+    assert second['total'] == 2 and {i['id'] for i in second['items']} == {'second-0', 'second-1'}
+    assert client.get('/atlas?document=e&reading=シ').json()['total'] == 0
+    assert client.get('/atlas?document=missing').json()['total'] == 0
+    assert client.get('/atlas?document=').json()['total'] == 18
+
+
+def test_catalogue_files_labels_under_graphemes_and_filters_by_one(dataset):
+    units = list(tables.read(dataset / 'units.parquet', Unit))
+    units.extend(Unit(id=f'extra-{i}', document_id='d', page_id=PAGE, reading=char, script='hiragana',
+                      box=Box(x=10, y=10, w=20, h=30)) for i, char in enumerate(('\U0001B002', '\U0001B002', '※')))
+    tables.write(dataset / 'units.parquet', units, Unit)
+    client = TestClient(create_app(dataset))
+    filed = {c['label']: c['grapheme'] for c in client.get('/atlas').json()['categories']}
+    # 𛀂 is a hentaigana of あ, シ is filed under し, and ※ has no family, so it is its own grapheme.
+    assert filed == {'あ': 'U+3042', '\U0001B002': 'U+3042', 'シ': 'U+3057', '※': 'U+203B'}
+    family = client.get('/atlas', params={'grapheme': 'U+3042', 'limit': 96}).json()
+    assert family['total'] == 14 and {i['label'] for i in family['items']} == {'あ', '\U0001B002'}
+    assert client.get('/atlas', params={'grapheme': 'u+203b'}).json()['total'] == 1
+    assert client.get('/atlas', params={'grapheme': 'U+4EEE'}).json()['total'] == 0
+
+
 def test_character_group_follows_the_script_of_the_first_character():
     groups = {char: atlas_module.character_group(Unit(id=char, reading=char))
               for char in ('あ', 'ア', '𛀁', '仮', 'ㅿ', 'ᄫ', '한', '㉠', '', 'A')}

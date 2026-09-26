@@ -157,7 +157,8 @@ def export(dataset: Path, output: Path, *, resume=False):
                 detail = json.loads(db.execute("SELECT data FROM units WHERE id=?", (item["id"],)).fetchone()[0])
                 detail.update(licence=str(doc.image_rights.licence), holder=doc.holder,
                               attribution=doc.image_rights.attribution, rights_url=doc.image_rights.evidence)
-                db.execute("UPDATE units SET data=? WHERE id=?", (encoded(detail), item["id"]))
+                db.execute("UPDATE units SET data=?,document=?,family=? WHERE id=?",
+                           (encoded(detail), doc.id, atlas.grapheme_of(item["label"]), item["id"]))
                 continue
             if unit.line_id not in lines:
                 lines[unit.line_id] = store.line(unit.line_id) if unit.line_id else None
@@ -195,13 +196,14 @@ def export(dataset: Path, output: Path, *, resume=False):
             visual = {"status": "unavailable", "candidates": []}
             cp = refs.to_code_point(item["label"]) if len(item["label"]) == 1 else None
             counts[cp] += 1
-            family = refs.grapheme(cp) if cp else None
-            db.execute("INSERT INTO units VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+            # A label with no family is its own grapheme, so every named crop is one `family` lookup.
+            family = atlas.grapheme_of(item["label"])
+            db.execute("INSERT INTO units VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
                 item["id"], "local", item["label"], item["reading"], family, None,
                 item["production"], atlas.character_group(unit), item["state"], item["revision"],
                 int(not atlas.repair_withheld(unit)), atlas.review_priority(unit),
                 int(hashlib.sha256(item["id"].encode()).hexdigest()[:7], 16),
-                encoded(detail), encoded(snapshot), encoded(context), encoded(visual)))
+                encoded(detail), encoded(snapshot), encoded(context), encoded(visual), doc.id))
             if i % 500 == 0:
                 db.commit()
                 print(encoded({"stage": "local-crops", "done": i}), flush=True)

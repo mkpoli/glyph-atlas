@@ -44,6 +44,25 @@ try {
 
   await browser.goto(`${service.base}/`, { waitFor: `document.querySelectorAll('.glyph-tile').length > 0` })
 
+  // The work menu offers the works that have crops (the fixture's second work has none), and a chosen
+  // work shows in the toggle until "All works" clears it.
+  const units = `[...document.querySelectorAll('.glyph-tile[data-unit]')].map(tile => tile.dataset.unit)`
+  await browser.evaluate(`document.querySelector('.work-toggle').click()`)
+  await browser.waitFor(`document.querySelector('.work-menu input') !== null`)
+  const offered = await browser.evaluate(`[...document.querySelectorAll('.work-menu li button span')].map(s => s.textContent)`)
+  assert(JSON.stringify(offered) === '["Calibration book A"]', `the work menu offers ${JSON.stringify(offered)}`)
+  await browser.evaluate(typeInto('.work-menu input', 'no such work'))
+  await browser.waitFor(`document.querySelector('.work-none') !== null`)
+  await browser.evaluate(typeInto('.work-menu input', 'book a'))
+  await browser.waitFor(`document.querySelectorAll('.work-menu li button').length === 2`)
+  await browser.evaluate(`document.querySelectorAll('.work-menu li button')[1].click()`)
+  await browser.waitFor(`document.querySelector('.work-name').textContent === 'Calibration book A'`)
+  await browser.waitFor(`${units}.length > 0 && ${units}.every(id => id.startsWith('doc-1:'))`, 15000)
+  await browser.evaluate(`document.querySelector('.work-toggle').click()`)
+  await browser.waitFor(`document.querySelector('.work-menu li button') !== null`)
+  await browser.evaluate(`document.querySelector('.work-menu li button').click()`)
+  await browser.waitFor(`document.querySelector('.work-name').textContent === 'All works'`)
+
   // A reading filter is on, as a reviewer would have left it. A direct character search has to
   // answer its own question rather than intersect with it.
   // The empty box, focused, lists the readings; choosing one puts it in the box as a token.
