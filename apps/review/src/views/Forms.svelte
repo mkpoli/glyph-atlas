@@ -66,21 +66,23 @@
     picked = new Set(); pickAnchor = null
     await members(0)
   }
-  // An opened cluster's first glyphs, with its tiles shown as placeholders until they come.
+  // An opened cluster's first glyphs, with its tiles shown as placeholders until they come. Only the
+  // latest request is shown: another cluster or order asked for meanwhile replaces it.
+  let membersRequest = 0
   async function members(offset) {
-    const id = open
-    glyphs = []; loadingMembers = true
+    const request = ++membersRequest
+    glyphs = []; total = 0; loadingMembers = true
     try {
-      const page = await loadMembers(id, offset, 240, order)
-      if (open === id) { glyphs = page.items; total = page.total }
-    } finally { if (open === id) loadingMembers = false }
+      const page = await loadMembers(open, offset, 240, order)
+      if (request === membersRequest) { glyphs = page.items; total = page.total }
+    } finally { if (request === membersRequest) loadingMembers = false }
   }
   async function reorder(value) { order = value; chosen = new Set(); anchor = null; await members(0) }
   async function more() {
-    const page = await loadMembers(open, glyphs.length, 240, order)
-    glyphs = [...glyphs, ...page.items]
+    const request = membersRequest, page = await loadMembers(open, glyphs.length, 240, order)
+    if (request === membersRequest) glyphs = [...glyphs, ...page.items]
   }
-  function close() { open = null; glyphs = []; loadingMembers = false; chosen = new Set(); anchor = null; splitK = 0; groups = [] }
+  function close() { membersRequest++; open = null; glyphs = []; loadingMembers = false; chosen = new Set(); anchor = null; splitK = 0; groups = [] }
   async function divide(k) {
     splitK = k; chosen = new Set(); anchor = null; groups = []; loadingSplit = Boolean(k)
     const cluster = open
@@ -333,7 +335,7 @@
                 </button>
               {/each}
             </div>
-            {#if glyphs.length < total}<div class="load-more"><button onclick={more}>{t('forms.showMore', { count: total - glyphs.length })}</button></div>{/if}
+            {#if !loadingMembers && glyphs.length < total}<div class="load-more"><button onclick={more}>{t('forms.showMore', { count: total - glyphs.length })}</button></div>{/if}
             {/if}
           </div>
         {:else}
