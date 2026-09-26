@@ -573,7 +573,7 @@
     </div>{/if}
     {#if references.length}
       <section class="quiz-reference" aria-label={t('quiz.reference.label')}>
-        <p class="reference-heading">{t('quiz.reference.heading')} <span>{references.length}</span></p>
+        <p class="reference-heading">{t('quiz.reference.heading')} <span>{number(references.length)}</span></p>
         <div class="reference-strip">
           {#each references as item (item.id)}
             <button class="reference-tile" aria-label={t('quiz.reference.inspect', { label: item.label, state: item.referenceState === 'checked' ? t('quiz.reference.confirmed') : t('quiz.reference.seen') })} onclick={() => inspect(item.id)}>

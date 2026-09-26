@@ -221,7 +221,7 @@
       <div class="family-panel">
         <div class="family-title">
           <h2>{current.char}</h2>
-          <p><strong>{number(current.count)}</strong> {t('forms.glyphsLabel')} · {current.clusters} {t('forms.clustersLabel')} · <strong>{number(current.assigned)}</strong> {t('forms.assignedLabel')}{#if current.rejected}{' · '}<strong>{number(current.rejected)}</strong> {t('forms.rejectedLabel')}{/if}</p>
+          <p><strong>{number(current.count)}</strong> {t('forms.glyphsLabel')} · {number(current.clusters)} {t('forms.clustersLabel')} · <strong>{number(current.assigned)}</strong> {t('forms.assignedLabel')}{#if current.rejected}{' · '}<strong>{number(current.rejected)}</strong> {t('forms.rejectedLabel')}{/if}</p>
         </div>
 
         {#if reviewing}

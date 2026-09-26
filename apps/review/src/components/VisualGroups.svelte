@@ -1,5 +1,5 @@
 <script>
-  import { t } from '../lib/i18n.svelte.js'
+  import { t, formatNumber } from '../lib/i18n.svelte.js'
   let { analysis = null, count = null, unassigned = null, value = '', onchange = () => {} } = $props()
   const groups = $derived(analysis?.groups ?? [])
 </script>
@@ -7,7 +7,7 @@
 {#if groups.length || unassigned > 0}
   <nav class="visual-groups" aria-label={t('visualGroups.label')}>
     <button class:active={!value} aria-pressed={!value} onclick={() => onchange('')}>
-      <span>{t('visualGroups.allForms')}</span>{#if count != null}<small>{count}</small>{/if}
+      <span>{t('visualGroups.allForms')}</span>{#if count != null}<small>{formatNumber(count)}</small>{/if}
     </button>
     {#each groups as group (group.id)}
       <button class="shape-group" class:active={value === group.id} aria-pressed={value === group.id}
@@ -15,11 +15,11 @@
         <span class="group-examples">{#each (group.representatives ?? []).filter(sample => sample.image).slice(0, 3) as sample (sample.id)}
           <img src={sample.image} alt="" loading="lazy" />
         {/each}</span>
-        <span>{group.label}{#if group.written_character}<small> ≈ {group.written_character}</small>{/if}</span><small>{group.count}</small>
+        <span>{group.label}{#if group.written_character}<small> ≈ {group.written_character}</small>{/if}</span><small>{formatNumber(group.count)}</small>
       </button>
     {/each}
     {#if unassigned > 0}<button class:active={value === 'unassigned'} aria-pressed={value === 'unassigned'} onclick={() => onchange('unassigned')}>
-      <span>{t('corpus.unassigned')}</span><small>{unassigned}</small>
+      <span>{t('corpus.unassigned')}</span><small>{formatNumber(unassigned)}</small>
     </button>{/if}
   </nav>
 {/if}
