@@ -312,6 +312,7 @@ def document_of(book: Book, record_rights: Rights, manifest: dict | None = None)
     return Document(
         id=identifier,
         title=book.title or book.bid,
+        origin="japan",
         source_refs=refs,
         holder=relation_of(manifest),
         production=book.production,

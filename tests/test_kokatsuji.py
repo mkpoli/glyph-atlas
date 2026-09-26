@@ -88,6 +88,7 @@ def test_document_carries_the_rights_of_the_source_file(tmp_path, cache, archive
     assert document.title == "徒然草 2巻"
     assert document.holder == "国立国会図書館"
     assert document.production == "printed/type"
+    assert document.origin == "japan"
     assert document.text_register is Register.WABUN
     assert document.source_refs == {"codh-kokatsuji": "001", "ndl-pid": "2544701"}
     assert [(d.literal, d.start, d.end, d.kind) for d in document.dating] == [

@@ -87,7 +87,7 @@ def read(zip_path: Path, title: str | None = None) -> tuple[Document, list[Page]
                         evidence="http://codh.rois.ac.jp/char-shape/#license", checked=datetime.now(tz=UTC).date())
         document = Document(
             id=f"codh:{bid}", title=title or bid, source_refs={SOURCE: bid, "nijl-bid": bid},
-            production="unknown", image_rights=rights, text_rights=rights,
+            production="unknown", origin="japan", image_rights=rights, text_rights=rights,
         )
         sizes: dict[str, tuple[int, int]] = {}
         for name in names:

@@ -379,6 +379,7 @@ def document_of(
     return Document(
         id=f"hk:{entry}",
         title=label,
+        origin="japan",
         source_refs=refs,
         holder=holder,
         shelfmark=_str(row.get("shelfmark") if row else None),

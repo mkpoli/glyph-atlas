@@ -215,6 +215,7 @@ def build(
     document = Document(
         id=document_id,
         title=record["rcrdNm"],
+        origin="korea",
         source_refs={SOURCE: rid, "catalogue": ITEM_PAGE.format(id=rid), "record": RECORD_API.format(id=rid)},
         holder=HOLDER,
         shelfmark=relic.get("relicMngNum") or None,

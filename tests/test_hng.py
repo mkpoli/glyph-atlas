@@ -188,3 +188,14 @@ def test_crop_file(glyph: str, forms: str, present: set[str], found: str | None)
 
 def test_crop_file_prefers_the_exact_name() -> None:
     assert hng.crop_file("myz", "0197", "1", {"myz019７.bmp", "myz0197.bmp"}) == "myz0197.bmp"
+
+
+def test_origin_follows_the_source_category():
+    assert hng.origin_of("初唐写本") == "china"
+    assert hng.origin_of("西夏版") == "china"
+    assert hng.origin_of("日本書紀版本") == "japan"
+    assert hng.origin_of("韓国印刻本") == "korea"
+    assert hng.origin_of("大和寧写本") == "unknown"
+    raw = hng.source_file()
+    entry = next(e for e in raw["documents"] if e["id"] == "jou")
+    assert hng.document_of(entry, raw).origin == "china"
