@@ -438,7 +438,7 @@ def review_serve(
         help="checkout of the publishing project, for the source correspondence"
     )] = None,
 ) -> None:
-    """Serve the review interface and its API over one dataset directory."""
+    """Serve the review API over one dataset directory; `apps/review` renders the interface in front of it."""
     from .review import server
 
     server.serve(directory, port=port, host=host, source=source)
@@ -454,6 +454,34 @@ def review_shapes(
 
     for name, value in quiz_shapes.compute(directory, checkpoint=checkpoint).items():
         typer.echo(f"{name:<12} {value:>10}")
+
+
+@review_app.command("suspects")
+def review_suspects(
+    directory: Annotated[Path, typer.Argument(help="dataset directory whose crops are marked; the marks are written into it")],
+    checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
+) -> None:
+    """Mark the Quick review crops the classifier reads as another character (needs CUDA)."""
+    from .review import quiz_suspects
+
+    for name, value in quiz_suspects.compute(directory, checkpoint=checkpoint).items():
+        typer.echo(f"{name:<12} {value:>10}")
+
+
+@review_app.command("corpus-suspects")
+def review_corpus_suspects(
+    target: Annotated[Path, typer.Argument(help="file the corpus glyphs' marks are written to")],
+    root: Annotated[Path, typer.Option(help="corpus root")] = Path("work"),
+    corpus: Annotated[list[str] | None, typer.Option(help="only this unit corpus; repeat for several")] = None,
+    checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
+    workers: Annotated[int, typer.Option(help="processes cutting glyphs")] = 8,
+) -> None:
+    """Mark the published corpus glyphs the classifier reads as another character (needs CUDA)."""
+    from .review import quiz_suspects
+
+    result = quiz_suspects.compute_corpus(root, target, checkpoint=checkpoint,
+                                          corpora=corpus, workers=workers)
+    typer.echo(json.dumps(result, ensure_ascii=False))
 
 
 @review_app.command("apply")

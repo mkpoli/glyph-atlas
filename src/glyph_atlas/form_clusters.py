@@ -31,12 +31,13 @@ import json
 import math
 import os
 import shutil
-from collections import defaultdict
+from collections import defaultdict, deque
 from collections.abc import Iterator
 from concurrent.futures import ProcessPoolExecutor
 from functools import cache, partial
 from multiprocessing import get_context
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pyarrow as pa
@@ -194,27 +195,36 @@ class Encoder:
         if not torch.cuda.is_available():
             raise RuntimeError("form clustering needs CUDA; run gpu-check")
         trained = load_checkpoint(checkpoint)
-        self.size = trained.size
+        self.size, self.classes = trained.size, trained.classes
         self.model = trained.model.cuda()
         self.torch = torch
 
     def __call__(self, pixels: np.ndarray) -> np.ndarray:
+        return self.classify(pixels)[0]
+
+    def classify(self, pixels: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """The features, and the class probabilities the classifier's head gives them."""
         from .classify import MEAN, STD
 
         torch = self.torch
         with torch.inference_mode():
             x = torch.from_numpy(pixels).cuda().float().div_(255).sub_(MEAN).div_(STD)
             x = x[:, None].expand(-1, 3, -1, -1)
-            features = self.model.forward_head(self.model.forward_features(x), pre_logits=True).float()
-            return torch.nn.functional.normalize(features, dim=1).cpu().numpy()
+            pooled = self.model.forward_features(x)
+            features = self.model.forward_head(pooled, pre_logits=True)
+            probabilities = self.model.forward_head(pooled).float().softmax(1)
+            return (torch.nn.functional.normalize(features.float(), dim=1).cpu().numpy(),
+                    probabilities.cpu().numpy())
 
 
-def _embed(jobs: list[tuple[str, list[tuple[str, dict]]]], encoder: Encoder, *, workers: int,
-           batch: int = 512) -> Iterator[tuple[list[str], np.ndarray]]:
+def _embed(jobs: list[tuple[str, list[tuple[str, dict]]]], encoder, *, size: int, workers: int,
+           batch: int = 512) -> Iterator[tuple[list[str], Any]]:
+    """Cut the glyphs of every job in worker processes at `size`, and run `encoder` over them a batch
+    at a time."""
     pending_ids: list[str] = []
     pending: list[np.ndarray] = []
     with ProcessPoolExecutor(workers, mp_context=get_context("fork")) as pool:
-        for ids, arrays in pool.map(partial(_crops, size=encoder.size), jobs, chunksize=4):
+        for ids, arrays in _bounded_map(pool, partial(_crops, size=size), jobs, ahead=4 * workers):
             if arrays is None:
                 continue
             pending_ids.extend(ids)
@@ -225,6 +235,21 @@ def _embed(jobs: list[tuple[str, list[tuple[str, dict]]]], encoder: Encoder, *, 
                 pending_ids, pending = [], []
     if pending_ids:
         yield pending_ids, encoder(np.concatenate(pending))
+
+
+def _bounded_map(pool: ProcessPoolExecutor, fn, jobs, *, ahead: int) -> Iterator:
+    """`pool.map(fn, jobs)` with at most `ahead` jobs submitted and not yet consumed.
+
+    `Executor.map` submits every job at once, so when the consumer is slower than the workers
+    their finished results pile up in this process's memory until the run ends or runs out of it.
+    """
+    queued: deque = deque()
+    for job in jobs:
+        if len(queued) >= ahead:
+            yield queued.popleft().result()
+        queued.append(pool.submit(fn, job))
+    while queued:
+        yield queued.popleft().result()
 
 
 def _file_jobs(located: dict[str, tuple[Path, tuple | None]]) -> list[tuple[str, list[tuple[str, dict | None]]]]:
@@ -299,7 +324,7 @@ def run(root: Path, out: Path, *, checkpoint: Path, workers: int = 8) -> dict:
     encoder = Encoder(checkpoint)
     ids: list[str] = []
     vectors: list[np.ndarray] = []
-    for batch_ids, batch_vectors in _embed(_file_jobs(located), encoder, workers=workers):
+    for batch_ids, batch_vectors in _embed(_file_jobs(located), encoder, size=encoder.size, workers=workers):
         ids.extend(batch_ids)
         vectors.append(batch_vectors.astype(np.float16))
     matrix = np.concatenate(vectors)

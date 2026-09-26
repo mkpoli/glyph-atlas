@@ -117,6 +117,17 @@ export const reviewedInInspectorQuery = () => `EXISTS(SELECT 1 FROM events e JOI
 const REVIEWED_IN_INSPECTOR = reviewedInInspectorQuery();
 const SEEN = `EXISTS(SELECT 1 FROM seen s JOIN submissions b ON b.id=s.submission AND b.undone=0
   WHERE s.target=units.id AND s.box IS json_extract(units.data,'$.box'))`;
+// The classifier's doubt about a crop's label, as `atlas review suspects` computed it, or null.
+const SUSPECT = `(SELECT json_object('p',m.p,'reads_as',m.reads_as,'label',m.label,'box',json(m.box)) FROM unit_suspects m WHERE m.id=units.id)`;
+type Suspect = { p: number; reads_as: string | null; label: string; box: Json | null };
+// A mark holds while the crop keeps the label and box the classifier was shown; a crop relabelled or
+// re-cut since is no longer what it judged.
+export function suspectOf(mark: Suspect | null | undefined, item: Json): Json | null {
+  if (!mark || mark.label !== item.label) return null;
+  const a = mark.box, b = item.box ?? null;
+  const same = a === null || b === null ? a === b : ['x', 'y', 'w', 'h'].every(k => Math.abs(Number(a[k]) - Number(b[k])) < 1e-6);
+  return same ? { p: mark.p, reads_as: mark.reads_as } : null;
+}
 const EFFECTIVE_STATE = `iif(state='pending' AND ${HARD},'hard',iif(state='pending' AND ${SEEN},'seen',state))`;
 // How long a crop a reviewer skipped stays out of that reviewer's own rounds.
 const SKIP_REST_MS = 3 * 24 * 60 * 60 * 1000;
@@ -177,7 +188,28 @@ const ROUND_OFFSET_MAX = 4096;
 // them out: either way no request reads every named glyph. Should a character hold more named
 // pending rows than this, mostly glyphs already seen, an older one that is due again waits outside it.
 const NAMED_WINDOW = 256;
-async function catalogue(env: Env, q: URLSearchParams) {
+// `shuffle` is the first 28 bits of the id's SHA-256.
+const SHUFFLE_RANGE = 268435456;
+// Browse counts every local crop by character and state, which reads the whole table and takes
+// seconds, and every visitor gets the same answer. The edge keeps one copy per version of the data:
+// a publication, a review, a round and an undo each make a new key. A refresh that writes `units`
+// without a new publication shows once the copy expires.
+const FACETS_TTL = 3600;
+async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, production: string, facets: D1PreparedStatement) {
+  const version = await env.DB.prepare(`SELECT (SELECT value FROM metadata WHERE key='published_at') AS published,
+    (SELECT max(rowid) FROM events) AS event,(SELECT max(rowid) FROM submissions) AS submission,
+    (SELECT count(*) FROM submissions WHERE undone=1) AS undone`)
+    .first<{ published: string | null; event: number | null; submission: number | null; undone: number }>();
+  const key = new Request(`${url.origin}/atlas/facets?production=${encodeURIComponent(production)}&v=${encodeURIComponent(
+    [version?.published ?? '', version?.event ?? 0, version?.submission ?? 0, version?.undone ?? 0].join(':'))}`);
+  const cached = await caches.default.match(key);
+  if (cached) return { results: await cached.json() } as D1Result<{ label: string; state: string; n: number }>;
+  const groups = await facets.all<{ label: string; state: string; n: number }>();
+  ctx.waitUntil(caches.default.put(key, Response.json(groups.results, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
+  return groups;
+}
+async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
+  const q = url.searchParams;
   const purpose = q.get('purpose') || 'browse';
   const production = q.get('production') || (purpose === 'review' ? REVIEW_SCOPE : 'all');
   if (!validScope(production)) throw new Problem(400, 'Invalid production scope.');
@@ -192,10 +224,11 @@ async function catalogue(env: Env, q: URLSearchParams) {
   where.push(materials); values.push(...materialValues);
   const reviewer = q.get('reviewer') ? text(q.get('reviewer'), 128, 'reviewer', true)! : null;
   const state = stateFor(reviewer);
-  const [groups, published] = await env.DB.batch([
-    env.DB.prepare(`SELECT character AS label,${state} AS state,count(*) AS n FROM units WHERE ${where.join(' AND ')} GROUP BY 1,2`).bind(...values),
-    ...(review ? [corpusCountQuery(production)].map(({ sql, values }) => env.DB.prepare(sql).bind(...values)) : []),
-  ]) as D1Result<{label:string;state?:string;n:number}>[];
+  const facets = env.DB.prepare(`SELECT character AS label,${state} AS state,count(*) AS n FROM units WHERE ${where.join(' AND ')} GROUP BY 1,2`).bind(...values);
+  // Only counts that are the same for every visitor are cached; a reviewer's own skips are theirs.
+  const [groups, published] = review ? await env.DB.batch([facets,
+    ...[corpusCountQuery(production)].map(({ sql, values }) => env.DB.prepare(sql).bind(...values)),
+  ]) as D1Result<{label:string;state?:string;n:number}>[] : [reviewer ? await facets.all<{ label: string; state: string; n: number }>() : await browseFacets(env, ctx, url, production, facets)];
   const categories = new Map<string, Json>();
   const counts: Json = { pending: 0, seen: 0, flagged: 0, checked: 0, hard: 0, skipped: 0 };
   const add = (label: string, state: string, n: number) => {
@@ -232,14 +265,30 @@ async function catalogue(env: Env, q: URLSearchParams) {
   const order = others + (review && seed % 5 ? 'priority,' : '');
   // Flagged view: a crop already looked at in the inspector queues behind the ones nobody has reviewed yet.
   const reviewedLast = flaggedView ? `${REVIEWED_IN_INSPECTOR},` : '';
+  const columns = `*,${state} AS effective,(SELECT shape_order FROM unit_shapes s WHERE s.id=units.id) AS shape_order,${SUSPECT} AS suspect`;
+  // Browse deals crops in `shuffle` order from a point the seed picks, and wraps round past the
+  // highest: an index serves that order, where a seed-scrambled order sorts every row on each visit.
+  // A named character is found through `unit_character` instead, and its few crops sort in memory.
+  const rotated = !review && !flaggedView && !reading && !q.get('q');
+  const start = seed % SHUFFLE_RANGE;
+  const side = (test: '>=' | '<') => `SELECT ${columns} FROM units WHERE ${where.join(' AND ')} AND shuffle${test}? ORDER BY shuffle,rowid LIMIT ? OFFSET ?`;
   const [count, window, reportedCount] = await env.DB.batch([
     env.DB.prepare(`SELECT count(*) AS n FROM ${from}`).bind(...fromValues),
-    env.DB.prepare(`SELECT *,${state} AS effective,(SELECT shape_order FROM unit_shapes s WHERE s.id=units.id) AS shape_order FROM ${from} ORDER BY ${order}${reviewedLast} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...fromValues, seed + 1, limit, offset),
+    rotated ? env.DB.prepare(side('>=')).bind(...values, start, limit, offset)
+      : env.DB.prepare(`SELECT ${columns} FROM ${from} ORDER BY ${order}${reviewedLast} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...fromValues, seed + 1, limit, offset),
     ...(reportedCountWhere ? [env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${reportedCountWhere.join(' AND ')}`).bind(...values)] : []),
   ]);
   const listed = (count.results[0] as { n: number }).n;
-  const items: Json[] = (window.results as (UnitRow & { effective: string; shape_order: number | null })[])
-    .map(row => ({ ...compact(row), state: row.effective, shape_order: row.shape_order }));
+  const rows = window.results as (UnitRow & { effective: string; shape_order: number | null; suspect: string | null })[];
+  if (rotated && rows.length < limit) {
+    const above = rows.length ? offset + rows.length : (await env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${where.join(' AND ')} AND shuffle>=?`)
+      .bind(...values, start).first<{ n: number }>())!.n;
+    const wrapped = await env.DB.prepare(side('<')).bind(...values, start, limit - rows.length, Math.max(offset - above, 0)).all();
+    rows.push(...wrapped.results as typeof rows);
+  }
+  const items: Json[] = rows
+    .map(row => { const item = compact(row); return { ...item, state: row.effective, shape_order: row.shape_order,
+      suspect: suspectOf(row.suspect ? parse(row.suspect) as Suspect : null, item) } });
   // Positions run through the `units` rows and then the untouched corpus glyphs. A glyph its record
   // keeps out still takes its position, so `next_offset` can run ahead of the items, and once the
   // glyphs run out `total` is what was there to deal.
@@ -281,8 +330,7 @@ export function corpusRoundQuery(production: string | null, side: '>=' | '<') {
 // the index serves as it stands. A scope short of `all` reads each production the character holds in
 // it through its own index range, and merges them.
 async function corpusRound(env: Env, character: string, production: string, seed: number, offset: number, limit: number) {
-  // `shuffle` is the first 28 bits of the id's SHA-256.
-  const start = seed % 268435456, wanted = offset + limit;
+  const start = seed % SHUFFLE_RANGE, wanted = offset + limit;
   const kinds = production === 'all' ? [null] : (await env.DB.prepare('SELECT production FROM corpus_characters WHERE character=?')
     .bind(character).all<{ production: string }>()).results.map(row => row.production).filter(value => inMaterial(production, value));
   if (!kinds.length) return { items: [], read: 0, exhausted: true };
@@ -300,8 +348,14 @@ async function corpusRound(env: Env, character: string, production: string, seed
       // The record decides: a glyph whose image this site may not serve, or whose record disagrees
       // with its published row about the character or the material, is not dealt.
       if (dealable('corpus', data) && data.label === character && inMaterial(production, productionOf(data)))
-        items.push({ ...listing(data), origin: 'corpus', state: 'pending', shape_order: null });
+        items.push({ ...listing(data), origin: 'corpus', state: 'pending', shape_order: null, suspect: null });
     }
+  }
+  if (items.length) {
+    const marks = await env.DB.prepare('SELECT id,p,reads_as,label,box FROM unit_suspects WHERE id IN (SELECT value FROM json_each(?))')
+      .bind(JSON.stringify(items.map(item => item.id))).all<{ id: string; p: number; reads_as: string | null; label: string; box: string | null }>()
+    const found = new Map(marks.results.map(row => [row.id, { ...row, box: row.box === null ? null : parse(row.box) }]))
+    for (const item of items) item.suspect = suspectOf(found.get(item.id), item)
   }
   return { items, read: read.length, exhausted: rows.length < wanted };
 }
@@ -464,7 +518,9 @@ function text(value: unknown, max: number, name: string, required=false): string
   if(typeof value!=='string'||value.length>max||(required&&!value.trim()))throw new Problem(422,`Invalid ${name}.`);
   return compose(value.trim());
 }
-const formTools: FormTools = {fail:(status,message)=>{throw new Problem(status,message)},body,text,codePoints:cp};
+// A character's grapheme family, as a reviewed correction takes it; one the catalogue lacks is its own.
+const formTools: FormTools = {fail:(status,message)=>{throw new Problem(status,message)},body,text,codePoints:cp,
+  family:async(env,char)=>(await known(env,char).catch(()=>null))?.data.grapheme?.code_point||cp(char)};
 export function canonical(value: unknown): string {
   if(value===null||typeof value!=='object')return JSON.stringify(value);
   if(Array.isArray(value))return '['+value.map(canonical).join(',')+']';
@@ -703,8 +759,8 @@ export default {
       if(path==='/health')return json({ok:true,published_at:await meta(env,'published_at')});
       const image=path.match(/^\/atlas\/media\/([a-f0-9]{64})\.webp$/);
       if(image)return await media(env,request,image[1],ctx);
-      if(path==='/atlas')return json(await catalogue(env,q));
-      if(path==='/history')return json(await history(env,q));
+      if(path==='/atlas')return json(await catalogue(env,ctx,url));
+      if(path==='/atlas/history')return json(await history(env,q));
       if(path==='/atlas/corpus/character')return json(parse((await unit(env,q.get('id')||'')).data));
       if(path==='/atlas/collection/status')return json(await meta(env,'collection'));
       const document=path.match(/^\/atlas\/documents\/([^/]+)\/characters$/);
@@ -750,10 +806,9 @@ export default {
       if(path==='/atlas/corpus/reviews'){
         const rows=await env.DB.prepare("SELECT * FROM units WHERE origin='corpus' AND state='flagged' ORDER BY id LIMIT 96").all<UnitRow>();
         return json({items:rows.results.map(compact),total:rows.results.length})}
-      if(path.startsWith('/forms/')){const formed=await formsRoute(env,request,path,q,formTools);
+      if(path.startsWith('/atlas/forms/')){const formed=await formsRoute(env,request,path,q,formTools);
         if(formed)return formed instanceof Response?formed:json(formed)}
-      if(path.startsWith('/atlas')||path.startsWith('/layers')||path.startsWith('/forms')||path.startsWith('/images/'))throw new Problem(404,'Unknown endpoint.');
-      return await env.ASSETS.fetch(request);
+      throw new Problem(404,'Unknown endpoint.');
     }catch(error){
       const open=path.startsWith('/atlas/documents/')?OPEN:{};
       if(error instanceof Problem)return json({detail:error.message,...error.extra},error.status,open);

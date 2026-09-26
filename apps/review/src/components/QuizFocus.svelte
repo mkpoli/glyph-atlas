@@ -4,7 +4,7 @@
   // Keep the same crop and context visible while its issue and correction are chosen.
   import Glyph from './Glyph.svelte'
   import CropContext from './CropContext.svelte'
-  import { t } from '../lib/i18n.svelte.js'
+  import { t, formatNumber } from '../lib/i18n.svelte.js'
   let { items = [], skipped = {}, index = 0, label = '', backLabel = t('quiz.focus.changeSelection'),
         disabled = false, onback, onjump, onprev, onnext, children } = $props()
   // The caller clamps too; this is the last line of defence, so a stage never shows a blank crop while
@@ -16,7 +16,7 @@
 <section class="quiz-focus" aria-label={label}>
   <header class="focus-head">
     <button type="button" class="quiet-link focus-back" {disabled} onclick={onback}>← {backLabel}</button>
-    <span class="focus-progress" aria-live="polite">{position + 1} / {items.length}</span>
+    <span class="focus-progress" aria-live="polite">{formatNumber(position + 1)} / {formatNumber(items.length)}</span>
   </header>
   {#if item}
     <div class="focus-images">

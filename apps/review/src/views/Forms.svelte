@@ -1,12 +1,17 @@
 <script>
-  import { onMount } from 'svelte'
+  import { onMount, untrack } from 'svelte'
+  import { replaceState } from '$app/navigation'
+  import { page } from '$app/state'
   import ReferenceGlyph from '../components/ReferenceGlyph.svelte'
-  import { families as loadFamilies, family as loadFamily, members as loadMembers, decide, report, split as loadSplit } from '../lib/forms.js'
+  import FormReview from '../components/FormReview.svelte'
+  import { families as loadFamilies, family as loadFamily, members as loadMembers, decide, split as loadSplit } from '../lib/forms.js'
   import { number, reviewer, stored, remember } from '../lib/client.js'
-  import { t, around } from '../lib/i18n.svelte.js'
+  import { t, around, localize } from '../lib/i18n.svelte.js'
 
-  let { initialFamily = '' } = $props()
-  let list = $state([]), filter = $state(''), current = $state(null), code = $state('')
+  // `initial` is what the server rendered: the family list and the family on show, arranged by shape.
+  let { initialFamily = '', initial = null } = $props()
+  const first = untrack(() => initial)
+  let list = $state(first?.list ?? []), filter = $state(''), current = $state(null), code = $state(first?.family?.code_point ?? '')
   let active = $state(0), open = $state(null), glyphs = $state([]), total = $state(0), order = $state('typical')
   let chosen = $state(new Set()), anchor = null, busy = $state(false), error = $state(''), notice = $state('')
   let correcting = $state(false), correction = $state('')
@@ -16,7 +21,10 @@
   let splitK = $state(0), groups = $state([])
   // Clusters with glyphs still to name come first; finished ones keep their order below them.
   let openFirst = $state(stored('atlas.forms.unassignedFirst', true) !== false)
-  const isOpen = c => !c.form && c.assigned < c.count
+  // Cluster by cluster review of every glyph, entered from the cluster grid.
+  let reviewing = $state(false)
+  // A cluster is done once it is named, or every glyph has a form or was reported as not belonging.
+  const isOpen = c => !c.form && c.assigned + c.rejected < c.count
   const cluster = $derived(current?.items[active] ?? null)
   const shown = $derived(list.filter(f => !filter.trim() || f.char.includes(filter.trim()) || f.label.includes(filter.trim())
     || f.code_point.toLowerCase().includes(filter.trim().toLowerCase())))
@@ -28,16 +36,21 @@
     : cluster ? t('forms.target.clusterGlyphs', { label: cluster.label, count: cluster.count }) : '')
 
   async function refreshList() { list = (await loadFamilies()).items }
+  /** A family as the grid shows it: with open clusters first when the reader asks for that. */
+  function arranged(loaded) {
+    if (openFirst) loaded.items = [...loaded.items.filter(isOpen), ...loaded.items.filter(c => !isOpen(c))]
+    return loaded
+  }
+  if (first?.family) { const shown = arranged(first.family); current = shown; active = Math.max(0, shown.items.findIndex(isOpen)) }
   async function pick(codePoint, keep = false) {
     error = ''
     code = codePoint
-    history.replaceState(null, '', '#/forms?family=' + encodeURIComponent(codePoint))
+    const address = localize('/forms/' + codePoint)
+    if (page.url.pathname !== address) replaceState(address, page.state)
     const keepId = keep ? current?.items[active]?.id : null
-    const loaded = await loadFamily(codePoint, arrange)
-    if (openFirst) loaded.items = [...loaded.items.filter(isOpen), ...loaded.items.filter(c => !isOpen(c))]
-    current = loaded
+    current = arranged(await loadFamily(codePoint, arrange))
     if (keepId) active = Math.max(0, current.items.findIndex(c => c.id === keepId))
-    if (!keep) { picked = new Set(); pickAnchor = null; active = Math.max(0, current.items.findIndex(isOpen)); close() }
+    if (!keep) { picked = new Set(); pickAnchor = null; reviewing = false; active = Math.max(0, current.items.findIndex(isOpen)); close() }
   }
   async function show(index) {
     active = index; open = current.items[index].id; chosen = new Set(); anchor = null
@@ -102,17 +115,14 @@
       else if (!units.length) active = nextOpen(openFirst ? Math.max(-1, index - targets.length) : index)
     } catch (e) { error = e.message } finally { busy = false }
   }
-  // A bad crop or a wrong transcription is a data error, not a form: it goes to the review queue.
+  // A bad crop or a glyph of another character is not a form: it is reported, and leaves the family.
   async function flag(issue) {
     if (busy || !chosen.size) return
     busy = true; error = ''
-    // About a second per glyph: each is resolved against its source before it is flagged.
-    notice = t('forms.notice.reporting', { count: chosen.size })
     try {
-      // The service takes 200 glyphs per report; a larger selection goes in parts.
       const units = [...chosen], result = { count: 0 }
-      for (let i = 0; i < units.length; i += 200)
-        result.count += (await report({ units: units.slice(i, i + 200), issue, client_id: reviewer(),
+      for (let i = 0; i < units.length; i += 1000)
+        result.count += (await decide({ kind: 'glyph', units: units.slice(i, i + 1000), issue, client_id: reviewer(),
           ...(issue === 'character' && correction.trim() ? { character: correction.trim() } : {}) })).count
       notice = t('forms.notice.reported', { count: result.count, issue: issue === 'crop' ? t('forms.reportIssue.crop') : t('forms.reportIssue.character') })
       setTimeout(() => notice = '', 2200)
@@ -127,13 +137,23 @@
     const after = current.items.findIndex((c, i) => i > from && isOpen(c))
     return after >= 0 ? after : Math.min(from + 1, current.items.length - 1)
   }
+  async function reviewed({ reported, issue, form, count }) {
+    notice = [reported ? t('forms.notice.reported', { count: reported, issue: issue === 'crop' ? t('forms.reportIssue.crop') : t('forms.reportIssue.character') }) : '',
+      form ? t('forms.notice.assigned', { form, count }) : ''].filter(Boolean).join(' · ')
+    if (notice) setTimeout(() => notice = '', 2200)
+    await pick(code, true)
+    await refreshList()
+  }
+  function leaveReview(index) { reviewing = false; active = Math.min(index, current.items.length - 1); scrollActive() }
   function keydown(event) {
+    if (reviewing) return
     if (!current || event.target.closest?.('input, textarea') || event.metaKey || event.ctrlKey || event.altKey) return
     const keys = '1234567890'
     if (keys.includes(event.key) && current.forms[keys.indexOf(event.key)]) { event.preventDefault(); apply(current.forms[keys.indexOf(event.key)].char) }
     else if (!open && (event.key === 'j' || event.key === 'ArrowDown')) { event.preventDefault(); active = Math.min(active + 1, current.items.length - 1); scrollActive() }
     else if (!open && (event.key === 'k' || event.key === 'ArrowUp')) { event.preventDefault(); active = Math.max(active - 1, 0); scrollActive() }
     else if (event.key === 'Enter' && !open) { event.preventDefault(); show(active) }
+    else if (!open && (event.key === 'r' || event.key === 'R')) { event.preventDefault(); reviewing = true }
     else if (!open && (event.key === 'x' || event.key === 'X')) { event.preventDefault(); togglePick() }
     else if (event.key === 'Escape' && !open && picked.size) { event.preventDefault(); picked = new Set() }
     else if (event.key === 'Escape' && open) { event.preventDefault(); close() }
@@ -165,6 +185,8 @@
   async function rearrange(value) { arrange = value; const id = cluster?.id; await pick(code, true); active = Math.max(0, current.items.findIndex(c => c.id === id)) }
   function scrollActive() { requestAnimationFrame(() => document.querySelector('.form-cluster.active')?.scrollIntoView({ block: 'nearest' })) }
   onMount(async () => {
+    // The server arranged the family with open clusters first; a reader who turned that off gets theirs.
+    if (first?.family) { if (!openFirst) await pick(code, true); return }
     try {
       await refreshList()
       await pick(initialFamily || list[0]?.code_point)
@@ -189,7 +211,7 @@
           <li><button class:current={f.code_point === code} onclick={() => pick(f.code_point)}>
             <span class="family-char">{f.char}</span>
             <span class="family-meta"><span>{number(f.count)}</span><small>{t('forms.clusters.count', { count: f.clusters })}</small></span>
-            <span class="family-progress" aria-label={t('forms.percentAssigned', { percent: Math.round(100 * f.assigned / f.count) })}><i style={`width:${100 * f.assigned / f.count}%`}></i></span>
+            <span class="family-progress" aria-label={t('forms.percentDone', { percent: Math.round(100 * (f.assigned + f.rejected) / f.count) })}><i style={`width:${100 * f.assigned / f.count}%`}></i><i class="rejected" style={`width:${100 * f.rejected / f.count}%`}></i></span>
           </button></li>
         {/each}
       </ol>
@@ -199,8 +221,12 @@
       <div class="family-panel">
         <div class="family-title">
           <h2>{current.char}</h2>
-          <p><strong>{number(current.count)}</strong> {t('forms.glyphsLabel')} · {current.clusters} {t('forms.clustersLabel')} · <strong>{number(current.assigned)}</strong> {t('forms.assignedLabel')}</p>
+          <p><strong>{number(current.count)}</strong> {t('forms.glyphsLabel')} · {number(current.clusters)} {t('forms.clustersLabel')} · <strong>{number(current.assigned)}</strong> {t('forms.assignedLabel')}{#if current.rejected}{' · '}<strong>{number(current.rejected)}</strong> {t('forms.rejectedLabel')}{/if}</p>
         </div>
+
+        {#if reviewing}
+          <FormReview family={current} start={active} {isOpen} onsaved={reviewed} onexit={leaveReview} />
+        {:else}
 
         <div class="form-palette" aria-label={t('forms.palette.label')}>
           <p class="palette-target">{#if target}{t('forms.appliesTo')} <strong>{target}</strong>{:else}{t('forms.chooseCluster')}{/if}</p>
@@ -216,13 +242,13 @@
             <div class="palette-other">
               {#if chosen.size}
                 <button disabled={busy} onclick={() => apply(null)}>{t('forms.notThisForm')}</button>
-                {#if current.capabilities?.reports !== false}<button disabled={busy} onclick={() => flag('crop')}>{t('issue.crop.title')}</button>
+                <button disabled={busy} onclick={() => flag('crop')}>{t('issue.crop.title')}</button>
                 {#if correcting}
                   <form class="correct-char" onsubmit={event => { event.preventDefault(); flag('character') }}>
                     <input bind:value={correction} maxlength="4" placeholder={t('forms.actual.placeholder')} aria-label={t('forms.actual.aria')} />
                     <button disabled={busy}>{t('forms.report')}</button>
                   </form>
-                {:else}<button disabled={busy} onclick={() => correcting = true}>{t('forms.wrongCharacter')}</button>{/if}{/if}
+                {:else}<button disabled={busy} onclick={() => correcting = true}>{t('forms.wrongCharacter')}</button>{/if}
                 <button disabled={busy} onclick={() => apply(null, 'inherit')}>{t('forms.followCluster')} <kbd>⌫</kbd></button>
               {:else}
                 <button disabled={busy || !cluster?.form} onclick={() => apply(null)}>{t('forms.clearCluster')} <kbd>⌫</kbd></button>
@@ -258,7 +284,7 @@
                       <button class="member" class:selected={chosen.has(glyph.id)} class:own={glyph.basis === 'form_glyph'}
                               aria-pressed={chosen.has(glyph.id)} onclick={() => toggleId(glyph.id)} title={glyph.id}>
                         {#if glyph.image}<img class="glyph-image" src={glyph.image} alt="" loading="lazy" />{/if}
-                        {#if glyph.reported}<span class="member-flag" title={t('forms.reported', { reason: glyph.reported })}>⚠</span>
+                        {#if glyph.reported}<span class="member-flag" title={t('forms.reported', { reason: glyph.reported })}>{glyph.character ?? '⚠'}</span>
                         {:else if glyph.basis === 'form_glyph'}<span class="member-form">{glyph.form ?? '×'}</span>{/if}
                       </button>
                     {/each}
@@ -272,7 +298,7 @@
                 <button class="member" class:selected={chosen.has(glyph.id)} class:own={glyph.basis === 'form_glyph'}
                         aria-pressed={chosen.has(glyph.id)} onclick={event => toggle(i, event)} title={glyph.id}>
                   {#if glyph.image}<img class="glyph-image" src={glyph.image} alt="" loading="lazy" />{/if}
-                  {#if glyph.reported}<span class="member-flag" title={t('forms.reported', { reason: glyph.reported })}>⚠</span>
+                  {#if glyph.reported}<span class="member-flag" title={t('forms.reported', { reason: glyph.reported })}>{glyph.character ?? '⚠'}</span>
                   {:else if glyph.basis === 'form_glyph'}<span class="member-form">{glyph.form ?? '×'}</span>{/if}
                 </button>
               {/each}
@@ -283,6 +309,7 @@
         {:else}
           <div class="forms-toolbar">
             <p class="keyboard-hint forms-keys">{t('forms.keyboardHint')}</p>
+            <button class="review-start" onclick={() => reviewing = true}>{t('forms.review.start')} <kbd>R</kbd></button>
             <div class="filter-tabs" role="group" aria-label={t('forms.clusterOrder.label')}>
               <button class:active={arrange === 'shape'} aria-pressed={arrange === 'shape'} onclick={() => rearrange('shape')}>{t('forms.arrange.shape')}</button>
               <button class:active={arrange === 'size'} aria-pressed={arrange === 'size'} onclick={() => rearrange('size')}>{t('forms.arrange.size')}</button>
@@ -309,6 +336,7 @@
             {/each}
           </ol>
         {/if}
+        {/if}
       </div>
     {/if}
   </div>
@@ -329,7 +357,7 @@
   .family-char{grid-row:1/3;font-size:24px;line-height:1.3;font-family:"Noto Sans CJK JP","Yu Gothic",sans-serif}
   .family-meta{display:flex;justify-content:space-between;font-size:12px;font-variant-numeric:tabular-nums}
   .family-meta small{font-size:10px;color:var(--muted)}
-  .family-progress{background:#ececef;border-radius:2px;overflow:hidden}.family-progress i{display:block;height:100%;background:var(--accent)}
+  .family-progress{display:flex;background:#ececef;border-radius:2px;overflow:hidden}.family-progress i{display:block;height:100%;background:var(--accent)}.family-progress i.rejected{background:var(--wrong);opacity:.55}
   .family-title{display:flex;align-items:baseline;gap:18px;border-bottom:1px solid var(--line);padding-bottom:12px}
   .family-title h2{font-size:48px;font-weight:500;font-family:"Noto Sans CJK JP","Yu Gothic",sans-serif}
   .family-title p{font-size:12px;color:var(--muted)}.family-title strong{color:var(--ink);font-weight:500}
@@ -344,6 +372,7 @@
   .palette-other{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto;align-content:flex-start;max-width:260px}.palette-other button{font-size:11px;padding:8px 11px}
   .palette-other kbd{font-size:9px;color:var(--muted)}
   .forms-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:10px 0 12px}.forms-keys{margin:0}
+  .review-start{margin-left:auto;font-size:12px;padding:8px 13px;background:var(--ink);color:#fff;border-color:var(--ink)}.review-start kbd{font-size:9px;opacity:.7}
   .form-cluster.picked{border-color:var(--accent);background:#f3f1ff}
   .cluster-grid{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px}
   .form-cluster{border:1.5px solid var(--line);border-radius:9px;background:#fff;overflow:hidden}

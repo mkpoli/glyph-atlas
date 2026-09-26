@@ -44,7 +44,8 @@ detector = [
 [dependency-groups]
 # The GPU wheel also runs CPU tests. Installing both ONNX runtime distributions
 # overwrites their shared Python package and can silently remove CUDA support.
-dev = ["pytest>=8", "ruff>=0.12", "cffconvert>=2.0", "numpy>=2", "onnx>=1.20", "onnxruntime-gpu>=1.22"]
+# scipy: the style teacher's crop preparation (`despeck`), which its tests exercise.
+dev = ["pytest>=8", "ruff>=0.12", "cffconvert>=2.0", "numpy>=2", "onnx>=1.20", "onnxruntime-gpu>=1.22", "scipy>=1.16"]
 
 [build-system]
 requires = ["hatchling"]

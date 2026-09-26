@@ -42,20 +42,35 @@ UNITS_PER_STATEMENT = 1000
 # same way. The site takes no decision from the reload to here (`form_loading`).
 REPLAY = """
 DELETE FROM form_marks;
-INSERT INTO form_marks SELECT j.value,d.at,d.seq,d.kind,d.form,d.id FROM form_decisions d,json_each(d.units) j;
+INSERT INTO form_marks(id,at,seq,kind,form,decision,issue,character,character_family)
+  SELECT j.value,d.at,d.seq,d.kind,d.form,d.id,d.issue,d.character,d.character_family
+  FROM form_decisions d,json_each(d.units) j;
 UPDATE form_units SET cluster_form=(SELECT m.form FROM form_marks m WHERE m.id=form_units.id AND m.kind='cluster'
   ORDER BY m.at DESC,m.seq DESC LIMIT 1) WHERE id IN (SELECT id FROM form_marks WHERE kind='cluster');
-UPDATE form_units SET (glyph_set,glyph_form,glyph_decision)=(SELECT m.kind='glyph',CASE WHEN m.kind='glyph' THEN m.form END,
-  CASE WHEN m.kind='glyph' THEN m.decision END FROM form_marks m WHERE m.id=form_units.id AND m.kind<>'cluster'
+UPDATE form_units SET (glyph_set,glyph_form,glyph_decision,glyph_issue,glyph_character,glyph_family)=(SELECT m.kind='glyph',
+  CASE WHEN m.kind='glyph' THEN m.form END,CASE WHEN m.kind='glyph' THEN m.decision END,
+  CASE WHEN m.kind='glyph' THEN m.issue END,CASE WHEN m.kind='glyph' THEN m.character END,
+  CASE WHEN m.kind='glyph' THEN m.character_family END
+  FROM form_marks m WHERE m.id=form_units.id AND m.kind<>'cluster'
   ORDER BY m.at DESC,m.seq DESC LIMIT 1) WHERE id IN (SELECT id FROM form_marks WHERE kind<>'cluster');
 UPDATE form_units SET form=CASE WHEN glyph_set=1 THEN glyph_form ELSE cluster_form END;
 DELETE FROM form_marks;
 UPDATE form_clusters SET (form,decision)=(SELECT d.form,d.id FROM form_decisions d WHERE d.kind='cluster'
   AND d.cluster=form_clusters.id AND d.revision=(SELECT revision FROM form_families WHERE code_point=form_clusters.family)
   ORDER BY d.at DESC,d.seq DESC LIMIT 1);
-UPDATE form_families SET assigned=(SELECT count(*) FROM form_units WHERE family=code_point AND form IS NOT NULL);
+UPDATE form_families SET assigned=(SELECT count(*) FROM form_units WHERE family=code_point AND form IS NOT NULL),
+  rejected=(SELECT count(*) FROM form_units WHERE family=code_point AND glyph_issue IS NOT NULL);
 DELETE FROM form_loading;
 """
+
+
+def character_family(character: str | None) -> str | None:
+    """The grapheme family of a character a glyph was reported as, as the Worker takes it."""
+    if not character:
+        return None
+    from glyph_atlas import refs
+    code_point = " ".join(refs.to_code_points(character))
+    return (refs.grapheme_info(code_point) or {}).get("code_point") or code_point
 
 
 def _quote(value) -> str:
@@ -184,8 +199,8 @@ def export(corpus_root: Path, out: Path, workers: int = 8) -> dict:
     parts.write("DELETE FROM form_loading;")
     for event in forms._events():
         units = event["units"]
-        parts.write("INSERT OR IGNORE INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,note) "
-                    f"VALUES({_values((event['id'], event['at'], event.get('actor', 'local'), event['kind'], event['family'], event.get('form'), event.get('cluster'), event['revision'], json.dumps(units[:UNITS_PER_STATEMENT]), event.get('note', '')))});")
+        parts.write("INSERT OR IGNORE INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,note,issue,character,character_family) "
+                    f"VALUES({_values((event['id'], event['at'], event.get('actor', 'local'), event['kind'], event['family'], event.get('form'), event.get('cluster'), event['revision'], json.dumps(units[:UNITS_PER_STATEMENT]), event.get('note', ''), event.get('issue'), event.get('character'), character_family(event.get('character'))))});")
         # D1 refuses a statement over 100 KB, so a large cluster's glyphs follow in parts. Each part
         # extends only the list it follows, which leaves a decision already in D1 as it is.
         for start in range(UNITS_PER_STATEMENT, len(units), UNITS_PER_STATEMENT):
@@ -215,7 +230,7 @@ def export(corpus_root: Path, out: Path, workers: int = 8) -> dict:
                         f"representatives) VALUES({_values((cluster['id'], code_point, cluster['label'], cluster['count'], cluster['coherence'], shape.index(cluster['id']), size_position, json.dumps(representatives, ensure_ascii=False)))});")
             counts["clusters"] += 1
         forms_of = json.dumps([_form_entry(char) for char in forms.family_members(code_point)], ensure_ascii=False)
-        parts.write(f"INSERT INTO form_families VALUES({_values((code_point, family['char'], family['label'], family['count'], len(clusters), forms_of, 0, data['revision']))});")
+        parts.write(f"INSERT INTO form_families(code_point,char,label,count,cluster_count,forms,assigned,revision) VALUES({_values((code_point, family['char'], family['label'], family['count'], len(clusters), forms_of, 0, data['revision']))});")
         counts["families"] += 1
     parts.write(REPLAY.strip())
     parts.write(CORPUS_REFRESH)

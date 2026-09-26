@@ -55,8 +55,8 @@ def _load(path: str, stamp: int, size: int) -> dict[str, int]:
     return _CACHE[key]
 
 
-def _crops(dataset: Path) -> tuple[dict[str, list[str]], dict[str, bytes]]:
-    """Every crop that can be shown, grouped by the character it is dealt under.
+def _crops(dataset: Path) -> tuple[dict[str, list[str]], dict[str, bytes], dict[str, dict | None]]:
+    """Every crop that can be shown, grouped by the character it is dealt under, with its box.
 
     The collection's whole browse list is ordered, not only what this server deals now: a hosted
     round deals from the set fixed at its last export, which differs from the local review queue.
@@ -71,6 +71,7 @@ def _crops(dataset: Path) -> tuple[dict[str, list[str]], dict[str, bytes]]:
     summary = client.get("/atlas", params={"purpose": "browse", "production": "all", "limit": 1}).json()
     groups: dict[str, list[str]] = defaultdict(list)
     images: dict[str, bytes] = {}
+    boxes: dict[str, dict | None] = {}
     for category in summary["categories"]:
         offset = 0
         while True:
@@ -87,10 +88,11 @@ def _crops(dataset: Path) -> tuple[dict[str, list[str]], dict[str, bytes]]:
                     data = response.content
                 groups[category["label"]].append(item["id"])
                 images[item["id"]] = data
+                boxes[item["id"]] = item.get("box")
             offset += len(page["items"])
             if not page["items"] or offset >= page["total"]:
                 break
-    return groups, images
+    return groups, images, boxes
 
 
 def order_group(vectors: np.ndarray) -> list[int]:
@@ -127,7 +129,7 @@ def compute(dataset: Path, *, checkpoint: Path) -> dict[str, Any]:
     from ..classify import preprocess
     from ..form_clusters import Encoder
 
-    groups, images = _crops(dataset)
+    groups, images, _boxes = _crops(dataset)
     encoder = Encoder(checkpoint)
     ids = [identity for members in groups.values() for identity in members]
     vectors = []

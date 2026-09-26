@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { boot, DIST, events as readEvents, options, ROOT, units as readUnits } from './harness.mjs'
+import { boot, events as readEvents, options, ROOT, units as readUnits } from './harness.mjs'
 
 // -- arguments ------------------------------------------------------------------------------------
 
@@ -63,11 +63,9 @@ const key = () => crypto.randomUUID()
 // -- the run --------------------------------------------------------------------------------------
 
 const service = await boot(config)
-const base = service.base
-console.log(`check: ${base} over ${config.directory}`)
-if (!existsSync(DIST)) {
-  console.log(`note: ${DIST} does not exist; run \`bun run build\` in apps/review first`)
-}
+// The contract checks speak to the review service itself; the page server is checked on its own below.
+const base = service.api
+console.log(`check: ${service.base} (pages), ${base} (API) over ${config.directory}`)
 const fixture = service.fixture ?? {
   documents: ['doc-1', 'doc-2'],
   line: 'doc-1:p1:line0',
@@ -95,22 +93,24 @@ let letterResult = null
 let merged = null
 let undoEventId = null
 
-console.log('\nthe built interface')
+console.log('\nthe page server')
 
-await step('GET / serves the built index.html', async () => {
-  const { status, headers, text } = await request('/')
-  assert(status === 200, `status ${status}`)
-  assert(headers.get('content-type')?.includes('text/html'), `content-type ${headers.get('content-type')}`)
-  assert(text.includes('id="app"'), 'the page has no #app mount point')
-  const asset = /src="([^"]*assets\/[^"]+\.js)"/.exec(text)
-  assert(asset, 'index.html names no built script')
-  const script = await request(asset[1])
-  assert(script.status === 200, `asset ${asset[1]} answered ${script.status}`)
-  const css = await request(asset[1].replace(/\.js$/, '.css'))
-  return `${asset[1].split('/').pop()} ${script.text.length} B, css ${css.status}`
+await step('GET / renders the collection on the server', async () => {
+  const response = await fetch(`${service.base}/`)
+  const text = await response.text()
+  assert(response.status === 200, `status ${response.status}`)
+  assert(response.headers.get('content-type')?.includes('text/html'), `content-type ${response.headers.get('content-type')}`)
+  assert(/<html lang="[^"]+"/.test(text), 'the page names no language')
+  const tiles = (text.match(/class="glyph-tile/g) ?? []).length
+  assert(tiles > 0, 'the server rendered no crops')
+  return `${tiles} crops in the first response`
 })
 
-await step('the API keeps its own paths under the mount', async () => {
+await step('the page server forwards API paths and keeps page paths', async () => {
+  const proxied = await fetch(`${service.base}/atlas?purpose=browse&limit=1`)
+  assert(proxied.status === 200 && proxied.headers.get('content-type')?.includes('application/json'), `GET /atlas answered ${proxied.status}`)
+  const history = await fetch(`${service.base}/history`)
+  assert(history.headers.get('content-type')?.includes('text/html'), 'GET /history is not a page')
   const documents = await request('/documents')
   assert(documents.status === 200, `GET /documents answered ${documents.status}`)
   equal(documents.payload.total, 2, 'documents')
@@ -572,7 +572,7 @@ console.log(
 )
 console.log(
   'covered: the HTTP contract of every action the interface performs, the recorded events, ' +
-    'the 409 body, idempotency, and the mount of the built app.',
+    'the 409 body, idempotency, and the server-rendered collection.',
 )
 console.log(
   'not covered: rendering, pointer drag and resize, the key handler, screenshots — ' +

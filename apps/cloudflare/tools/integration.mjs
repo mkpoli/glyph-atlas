@@ -8,7 +8,6 @@ const mf = new Miniflare(convertV4MiniflareOptions({workers:[{
   name: 'atlas-test',
   modules: true, script: await readFile('/tmp/atlas-worker-test.mjs', 'utf8'), compatibilityDate: '2026-09-22',
   d1Databases: ['DB'], r2Buckets: ['MEDIA'],
-  serviceBindings: { ASSETS: () => new Response('assets') },
 }]}))
 try {
   const db = await mf.getD1Database('DB')
@@ -123,6 +122,13 @@ try {
   await db.prepare('INSERT INTO unit_shapes VALUES(?,?)').bind('two', 7).run()
   const shaped = Object.fromEntries((await call('/atlas?purpose=review&production=all')).items.map(i => [i.id, i.shape_order]))
   assert.deepEqual(shaped, { one: null, two: 7 }, 'a crop carries its shape order, or null without one')
+  await db.batch([db.prepare('INSERT INTO unit_suspects VALUES(?,?,?,?,?)').bind('two', 0.01, 'マ', 'ア', null),
+    db.prepare('INSERT INTO unit_suspects VALUES(?,?,?,?,?)').bind('one', 0.02, null, 'イ', null)])
+  const marked = Object.fromEntries((await call('/atlas?purpose=review&production=all')).items.map(i => [i.id, i.suspect]))
+  assert.deepEqual(marked, { one: null, two: { p: 0.01, reads_as: 'マ' } },
+    'a crop carries the classifier\'s doubt, or null without one or once relabelled')
+  const browsed = Object.fromEntries((await call('/atlas')).items.map(i => [i.id, i.suspect]))
+  assert.deepEqual(browsed, marked, 'browse carries the same doubt')
   // Flagged order: a crop already reviewed in the character inspector queues behind one nobody has.
   for (const id of ['flag-a', 'flag-b']) {
     const d = { id, label: 'ラ', reading: 'ラ', state: 'pending', revision: 0, image_sha256: hash,
@@ -198,6 +204,9 @@ try {
       id, 'local', 'セ', 'セ', 'U+30BB', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
       JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}').run()
   }
+  // Browse counts are cached per version of the data, so each write below must show in them at once.
+  const browseSe = async () => { const { pending, seen, flagged } = (await call('/atlas')).categories.find(c => c.label === 'セ'); return { pending, seen, flagged } }
+  assert.deepEqual(await browseSe(), { pending: 3, seen: 0, flagged: 0 })
   const pendingSe = async () => (await call('/atlas?purpose=review&reading=セ&state=pending&limit=96')).items.map(i => i.id).sort()
   const passed = { id: crypto.randomUUID(), client_id: 'integration', label: 'セ',
     seen: [{ id: 'seen-a', image_sha256: hash }, { id: 'seen-b', image_sha256: hash }, { id: 'seen-c', image_sha256: 'c'.repeat(64) }] }
@@ -208,6 +217,7 @@ try {
   assert.deepEqual(await call('/atlas/rounds', scrolled), recorded, 'a retry with more crops on screen returns the first result')
   await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'integration', seen: [{ id: 'seen-a', image_sha256: hash }] }, 422)
   assert.deepEqual(await pendingSe(), ['seen-c'], 'seen crops leave the queue')
+  assert.deepEqual(await browseSe(), { pending: 1, seen: 2, flagged: 0 }, 'a round shows in the browse counts')
   const summary = await call('/atlas?purpose=review&reading=セ')
   assert.equal(summary.counts.seen, 2)
   assert.equal(summary.items.find(i => i.id === 'seen-a').state, 'seen')
@@ -218,8 +228,10 @@ try {
   await call('/atlas/rounds', flagOnSeen)
   assert.equal((await call('/atlas/characters/seen-a')).state, 'flagged', 'a seen crop can still be flagged at its revision')
   assert.deepEqual(await pendingSe(), [], 'answers and seen crops save together')
+  assert.deepEqual(await browseSe(), { pending: 0, seen: 2, flagged: 1 })
   await call(`/atlas/rounds/${passed.id}/undo`, { client_id: 'integration' })
   assert.deepEqual(await pendingSe(), ['seen-b'], 'undoing a pass returns its crops to the queue')
+  assert.deepEqual(await browseSe(), { pending: 1, seen: 1, flagged: 1 }, 'undoing a round with no reviews shows in the browse counts')
   await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'integration', label: 'セ', answers: [], seen: [] }, 422)
   // A crop re-cut after the round was dealt shows another image; the reader never saw that one.
   const recut = await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'integration', label: 'セ',
@@ -241,6 +253,11 @@ try {
   const skipBy = (reviewer, id) => ({ id: crypto.randomUUID(), client_id: reviewer, label: 'ソ', skipped: [{ id, image_sha256: hash }] })
   await call('/atlas/rounds', skipBy('alice', 'skip-b'))
   assert.ok(!(await dealtTo('alice')).includes('skip-b'), 'a skip rests for the reviewer who made it')
+  // A reviewer's own skips show only in their counts, whichever request comes first.
+  const skippedSo = async (query = '') => (await call('/atlas' + query)).categories.find(c => c.label === 'ソ').skipped
+  assert.equal(await skippedSo(), 0)
+  assert.equal(await skippedSo('?reviewer=alice'), 1, 'a reviewer sees their own skip')
+  assert.equal(await skippedSo(), 0, 'nobody else sees it in the browse counts')
   assert.equal((await dealtTo('bob'))[0], 'skip-b', 'another reviewer is dealt a skipped crop first')
   assert.equal((await call('/atlas/characters/skip-b')).state, 'pending', 'a skip changes nothing about the crop')
   const second = skipBy('bob', 'skip-b')
@@ -289,6 +306,11 @@ try {
   assert.deepEqual(dealtNa.slice(0, 2).sort(), ['na-local-a', 'na-local-b'], 'local crops come first')
   assert.deepEqual(dealtNa.slice(2), ['na-2', 'na-4', 'na-5', 'na-3', 'na-1'], 'then corpus glyphs in shuffle order')
   assert.deepEqual((await ids('&seed=25')).slice(2), ['na-5', 'na-3', 'na-1', 'na-2', 'na-4'], 'the seed picks where the shuffle starts')
+  await db.batch([db.prepare('INSERT INTO unit_suspects VALUES(?,?,?,?,?)').bind('na-3', 0.02, null, 'ナ', '{"x":1,"y":2,"w":3,"h":4}'),
+    db.prepare('INSERT INTO unit_suspects VALUES(?,?,?,?,?)').bind('na-1', 0.02, null, 'ナ', '{"x":1,"y":2,"w":3,"h":9}')])
+  const doubted = Object.fromEntries((await roundOf('&seed=0')).items.map(i => [i.id, i.suspect]))
+  assert.deepEqual(doubted['na-3'], { p: 0.02, reads_as: null }, 'a corpus glyph carries its mark as well')
+  assert.equal(doubted['na-1'], null, 'a mark made for another box does not hold')
   const paged = []
   for (let offset = 0; offset < 7; offset += 3) paged.push(...await ids(`&seed=0&limit=3&offset=${offset}`))
   assert.deepEqual(paged, dealtNa, 'paging runs on from the local crops into the corpus glyphs')
@@ -380,7 +402,7 @@ try {
   shapes.push([{ sql: refresh[0], values: [] }, [], 'sqlite_autoindex_corpus_units_1'])
   shapes.push([{ sql: "UPDATE corpus_characters SET named=named+1 WHERE (character,production)=(SELECT character,production FROM corpus_units WHERE id=? AND named=0)", values: [] },
     ['na-1'], 'sqlite_autoindex_corpus_units_1'])
-  // GET /history: all history newest first, by actor, and by label, each served by its own partial index.
+  // GET /atlas/history: all history newest first, by actor, and by label, each served by its own partial index.
   shapes.push([{ sql: worker.historyQuery(null, null, null).sql, values: [] }, [41], 'event_history'])
   shapes.push([{ sql: worker.historyQuery('integration', null, null).sql, values: [] }, ['integration', 41], 'event_actor_history'])
   shapes.push([{ sql: worker.historyQuery(null, 'ア', null).sql, values: [] }, ['ア', 41], 'event_label_history'])
@@ -467,14 +489,14 @@ try {
   const unframed = await call('/atlas/characters/framed')
   assert.deepEqual([unframed.state, unframed.context_image, unframed.context_box], ['pending', '/atlas/media/wide.webp', wide],
     'undo restores the review state and keeps the wider context')
-  // GET /history: every review and undo, newest first, filterable by actor or by label; a kind outside
+  // GET /atlas/history: every review and undo, newest first, filterable by actor or by label; a kind outside
   // ('review','undo') never appears even though its row sits in the same table.
   const get = async path => { const response = await mf.dispatchFetch(base + path); assert.equal(response.status, 200); return response.json() }
-  const all = await get('/history?limit=100')
+  const all = await get('/atlas/history?limit=100')
   assert.ok(all.items.every(i => ['review', 'undo'].includes(i.kind)), 'only review and undo rows are ever listed')
   const sorted = [...all.items].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : (a.id < b.id ? 1 : -1)))
   assert.deepEqual(all.items.map(i => i.id), sorted.map(i => i.id), 'newest first, tied at ties broken by id')
-  const byLabel = await get('/history?label=%E3%83%A9&limit=100')
+  const byLabel = await get('/atlas/history?label=%E3%83%A9&limit=100')
   assert.equal(byLabel.items.length, 4, 'two flagged rounds, an inspector review and its undo all read ラ')
   assert.ok(byLabel.items.every(i => i.label === 'ラ'))
   const review = byLabel.items.find(i => i.kind === 'review' && i.actor === 'inspector')
@@ -482,25 +504,25 @@ try {
   const undoneEntry = byLabel.items.find(i => i.kind === 'undo')
   assert.deepEqual([undoneEntry.actor, undoneEntry.verdict, undoneEntry.character, undoneEntry.undoes], ['inspector', null, null, review.id],
     'an undo names the review it reverses and leaves the review-only fields null')
-  const byActor = await get('/history?actor=inspector&limit=100')
+  const byActor = await get('/atlas/history?actor=inspector&limit=100')
   assert.equal(byActor.items.length, 2, 'the inspector review and its own undo')
   assert.ok(byActor.items.every(i => i.actor === 'inspector'))
   // Keyset pagination: a page of one, followed by `before`, walks the same list `limit=100` returned.
-  const historyPage1 = await get('/history?actor=inspector&limit=1')
+  const historyPage1 = await get('/atlas/history?actor=inspector&limit=1')
   assert.equal(historyPage1.items.length, 1)
   assert.ok(historyPage1.next, 'a further page is signalled')
-  const historyPage2 = await get(`/history?actor=inspector&limit=1&before=${encodeURIComponent(historyPage1.next)}`)
+  const historyPage2 = await get(`/atlas/history?actor=inspector&limit=1&before=${encodeURIComponent(historyPage1.next)}`)
   assert.equal(historyPage2.items.length, 1)
   assert.equal(historyPage2.next, null, 'the list ends once every actor row is read')
   assert.deepEqual([historyPage1.items[0].id, historyPage2.items[0].id], byActor.items.map(i => i.id), 'paging one at a time visits the same rows in the same order')
-  const overLimit = await mf.dispatchFetch(base + '/history?limit=1000')
+  const overLimit = await mf.dispatchFetch(base + '/atlas/history?limit=1000')
   assert.equal(overLimit.status, 422, 'limit is bounded at 100')
-  const badCursor = await mf.dispatchFetch(base + '/history?before=not-a-cursor')
+  const badCursor = await mf.dispatchFetch(base + '/atlas/history?before=not-a-cursor')
   assert.equal(badCursor.status, 422, 'an unreadable cursor is rejected rather than silently ignored')
   // Hosted form assignment: a published clustering, a named cluster, a glyph's own decision and
   // following the cluster again; search and the record follow each step.
   await db.batch([
-    db.prepare("INSERT INTO form_families VALUES('U+4EEE','仮','仮 = 假',2,1,?,0,'r1')").bind(JSON.stringify([{ char: '仮', code_point: 'U+4EEE' }, { char: '假', code_point: 'U+5047' }])),
+    db.prepare("INSERT INTO form_families(code_point,char,label,count,cluster_count,forms,assigned,revision) VALUES('U+4EEE','仮','仮 = 假',2,1,?,0,'r1')").bind(JSON.stringify([{ char: '仮', code_point: 'U+4EEE' }, { char: '假', code_point: 'U+5047' }])),
     db.prepare("INSERT INTO form_clusters VALUES('U+4EEE:c1','U+4EEE','Cluster 1',2,0.9,0,0,'[]',NULL,NULL)"),
     db.prepare("INSERT INTO form_units(id,family,cluster,rank,similarity,image,split) VALUES('codh:plain','U+4EEE','U+4EEE:c1',0,0.95,NULL,'0000000')"),
     db.prepare("INSERT INTO form_units(id,family,cluster,rank,similarity,image,split) VALUES('codh:fixture','U+4EEE','U+4EEE:c1',1,0.9,NULL,'1111111')"),
@@ -516,36 +538,56 @@ try {
     assert.deepEqual(kept, recount, 'corpus_characters follows the forms')
   }
   await counted()
-  assert.equal((await call('/forms/families')).items[0].code_point, 'U+4EEE')
-  await call('/forms/decisions', { kind: 'cluster', cluster: 'U+4EEE:c1', form: 'あ', client_id: 'integration' }, 422)
-  const named = await call('/forms/decisions', { kind: 'cluster', cluster: 'U+4EEE:c1', form: '仮', client_id: 'integration' })
+  assert.equal((await call('/atlas/forms/families')).items[0].code_point, 'U+4EEE')
+  await call('/atlas/forms/decisions', { kind: 'cluster', cluster: 'U+4EEE:c1', form: 'あ', client_id: 'integration' }, 422)
+  const named = await call('/atlas/forms/decisions', { kind: 'cluster', cluster: 'U+4EEE:c1', form: '仮', client_id: 'integration' })
   assert.equal(named.count, 2)
-  const family = await call('/forms/families/U%2B4EEE')
+  const family = await call('/atlas/forms/families/U%2B4EEE')
   assert.deepEqual([family.assigned, family.items[0].form, family.items[0].assigned], [2, '仮', 2])
   assert.equal((await db.prepare("SELECT character FROM corpus_units WHERE id='codh:plain'").first()).character, '仮')
   await counted()
   assert.equal((await call('/atlas/corpus/character?id=codh%3Aplain')).identity_basis, 'form_cluster')
   assert.equal((await call('/atlas/corpus/character?id=codh%3Afixture')).identity_basis, 'human_review', 'a human review outranks a form')
-  await call('/forms/decisions', { kind: 'glyph', units: ['codh:plain'], form: '假', client_id: 'integration' })
+  await call('/atlas/forms/decisions', { kind: 'glyph', units: ['codh:plain'], form: '假', client_id: 'integration' })
   const record = await call('/atlas/corpus/character?id=codh%3Aplain')
   assert.deepEqual([record.written_character, record.identity_basis], ['假', 'form_glyph'], 'a glyph decision overrides its cluster')
-  const members = await call('/forms/clusters/U%2B4EEE%3Ac1')
+  const members = await call('/atlas/forms/clusters/U%2B4EEE%3Ac1')
   assert.deepEqual(members.items.map(m => [m.id, m.form, m.basis]), [['codh:plain', '假', 'form_glyph'], ['codh:fixture', '仮', 'form_cluster']])
-  await call('/forms/decisions', { kind: 'inherit', units: ['codh:plain'], client_id: 'integration' })
+  await call('/atlas/forms/decisions', { kind: 'inherit', units: ['codh:plain'], client_id: 'integration' })
   assert.equal((await call('/atlas/corpus/character?id=codh%3Aplain')).written_character, '仮', 'following the cluster again')
   await counted()
-  await call('/forms/decisions', { kind: 'cluster', cluster: 'U+4EEE:c1', form: null, client_id: 'integration' })
+  await call('/atlas/forms/decisions', { kind: 'cluster', cluster: 'U+4EEE:c1', form: null, client_id: 'integration' })
   assert.equal((await db.prepare("SELECT character FROM corpus_units WHERE id='codh:plain'").first()).character, '假',
     'withdrawing the form restores the character the glyph had before')
   await counted()
-  const split = await call('/forms/split/U%2B4EEE%3Ac1?k=2')
+  // A glyph reported as another character leaves the family: search, counts and the record show
+  // that character, the family counts it as rejected, and following the cluster again takes it back.
+  await call('/atlas/forms/decisions', { kind: 'glyph', units: ['codh:plain'], form: '假', issue: 'character', client_id: 'integration' }, 422)
+  await call('/atlas/forms/decisions', { kind: 'glyph', units: ['codh:plain'], issue: 'crop', character: 'テ', client_id: 'integration' }, 422)
+  await call('/atlas/forms/decisions', { kind: 'glyph', units: ['codh:plain'], issue: 'character', character: 'テ', client_id: 'integration' })
+  assert.deepEqual({ ...(await db.prepare("SELECT character,family FROM corpus_units WHERE id='codh:plain'").first()) },
+    { character: 'テ', family: 'U+30C6' }, 'a glyph reported as テ joins テ\'s family (its own, as this catalogue lacks テ)')
+  assert.equal((await call('/atlas/corpus/character?id=codh%3Aplain')).written_character, 'テ')
+  const reported = await call('/atlas/forms/families/U%2B4EEE')
+  assert.deepEqual([reported.rejected, reported.items[0].rejected], [1, 1])
+  assert.equal((await call('/atlas/forms/families')).items[0].rejected, 1)
+  assert.deepEqual((await call('/atlas/forms/clusters/U%2B4EEE%3Ac1')).items.map(m => [m.id, m.reported, m.character]),
+    [['codh:plain', 'character', 'テ'], ['codh:fixture', null, null]])
+  await counted()
+  await call('/atlas/forms/decisions', { kind: 'inherit', units: ['codh:plain'], client_id: 'integration' })
+  assert.deepEqual({ ...(await db.prepare("SELECT character,family FROM corpus_units WHERE id='codh:plain'").first()) },
+    { character: '假', family: 'U+4EEE' }, 'taking the report back restores its character and family')
+  assert.equal((await call('/atlas/forms/families/U%2B4EEE')).rejected, 0)
+  await counted()
+  const split = await call('/atlas/forms/split/U%2B4EEE%3Ac1?k=2')
   assert.deepEqual(split.groups.map(g => g.ids), [['codh:plain'], ['codh:fixture']])
-  assert.equal((await mf.dispatchFetch(base + '/forms/families/%E0')).status, 404, 'a malformed escape names no family')
+  assert.equal((await mf.dispatchFetch(base + '/atlas/forms/families/%E0')).status, 404, 'a malformed escape names no family')
   await db.prepare("INSERT INTO form_loading VALUES('now')").run()
-  await call('/forms/decisions', { kind: 'glyph', units: ['codh:plain'], form: '假', client_id: 'integration' }, 503)
+  await call('/atlas/forms/decisions', { kind: 'glyph', units: ['codh:plain'], form: '假', client_id: 'integration' }, 503)
   await db.prepare('DELETE FROM form_loading').run()
-  const log = await (await mf.dispatchFetch(base + '/forms/decisions.jsonl')).text()
-  assert.equal(log.trim().split('\n').length, 4, 'every accepted decision is logged, the refused one is not')
+  const log = await (await mf.dispatchFetch(base + '/atlas/forms/decisions.jsonl')).text()
+  assert.equal(log.trim().split('\n').length, 6, 'every accepted decision is logged, the refused ones are not')
+  assert.deepEqual(log.trim().split('\n').map(JSON.parse).filter(d => d.issue).map(d => [d.issue, d.character]), [['character', 'テ']])
   // A retired crop names the crop that replaced it: deleted, kept for its history, or through a chain.
   const retiredCrop = { id: 'retired-kept', label: 'ア', reading: 'ア', state: 'flagged', revision: 1, image_sha256: hash, production: 'handwritten' }
   await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
@@ -563,6 +605,21 @@ try {
   assert.equal((await looped.json()).replaced_by, undefined, 'a redirect loop is answered as missing')
   assert.ok(!(await call('/atlas?state=all&limit=96')).items.some(i => i.id === 'retired-kept'), 'a retired crop is in no listing')
   assert.ok(!(await call('/atlas?state=attention&limit=96')).items.some(i => i.id === 'retired-kept'), 'nor in Needs fixing')
+  // Browse starts from a point the seed picks and wraps round, so every page run deals each crop once.
+  await db.prepare('UPDATE units SET shuffle=rowid*1000').run()
+  const everyLocal = (await db.prepare("SELECT id FROM units WHERE origin='local'").all()).results.map(r => r.id).sort()
+  for (const seed of [0, 5500, 12345, 268435455, 268440000]) {
+    const dealt = []
+    for (let offset = 0, total = Infinity; offset < total;) {
+      const page = await call(`/atlas?seed=${seed}&offset=${offset}&limit=7`)
+      dealt.push(...page.items.map(i => i.id)); total = page.total; offset = page.next_offset
+    }
+    assert.deepEqual(dealt.slice().sort(), everyLocal, `seed ${seed} deals every crop once`)
+  }
+  const dealtFrom = async seed => (await call(`/atlas?seed=${seed}&limit=96`)).items.map(i => i.id)
+  const [fromZero, later] = [await dealtFrom(0), await dealtFrom(5500)]
+  assert.notEqual(fromZero[0], later[0], 'another seed starts elsewhere')
+  assert.deepEqual(later.slice().sort(), fromZero.slice().sort(), 'and wraps round to the same crops')
   console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms.')
 } finally {
   await mf.dispose()

@@ -1,7 +1,7 @@
 // Read-only browser check against the running Atlas. No review writes are allowed.
 import Browser from './browser.mjs'
 
-const base = process.argv[2] || 'http://127.0.0.1:8770'
+const base = process.argv[2] || 'http://127.0.0.1:4173'
 const browser = await Browser.launch({ width: 1440, height: 1000 })
 const writes = [], errors = [], requests = []
 const assert = (condition, message) => { if (!condition) throw new Error(message) }
@@ -34,7 +34,7 @@ const choose = async value => {
 }
 try {
   await browser.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] })
-  await browser.goto(base + '/#/review', { waitFor: 'document.querySelectorAll(".quiz-choice:not(:disabled)").length > 0' })
+  await browser.goto(base + '/review', { waitFor: 'document.querySelectorAll(".quiz-choice:not(:disabled)").length > 0' })
   await settled()
   assert(await material() === 'not:printed/type', 'initial review included movable type')
   assert(!await browser.evaluate('[...document.querySelectorAll(".quiz-tile [data-production]")].some(t => t.dataset.production.startsWith("printed/type"))'), 'movable type in default queue')

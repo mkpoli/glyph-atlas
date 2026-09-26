@@ -2,8 +2,9 @@
   import { onMount, tick } from 'svelte'
   import DrawnBoxDialog from '../components/DrawnBoxDialog.svelte'
   import ReferenceGlyph from '../components/ReferenceGlyph.svelte'
+  import { number } from '../lib/client.js'
   import { pageList, pageRecord, drawBox } from '../lib/pages.js'
-  import { t } from '../lib/i18n.svelte.js'
+  import { t, localize } from '../lib/i18n.svelte.js'
   // The page photos of the dataset, with every active box drawn over them. With Draw on, a drag on
   // the photo records a new box in page pixels; the box then asks for its character.
   let { clientId, pageId = '', inspect } = $props()
@@ -151,7 +152,7 @@
 {#if pageId}
   <section class="page-view">
     <div class="page-toolbar">
-      <a class="quiet-link" href="#/pages">← {t('pages.back')}</a>
+      <a class="quiet-link" href={localize('/pages')}>← {t('pages.back')}</a>
       {#if data}
         <strong class="page-title">{data.document_title ?? data.document_id} · {t('pages.pageNumber', { seq: data.seq })}</strong>
         <span class="toolbar-space"></span>
@@ -166,8 +167,8 @@
           <button aria-label={t('pages.zoom.fit')} onclick={fit}>{Math.round(scale * 100)}%</button>
           <button aria-label={t('pages.zoom.in')} onclick={() => zoomCentre(1.25)}>+</button>
         </div>
-        <a class="quiet-link" class:disabled={!data.previous} aria-disabled={!data.previous} href={data.previous ? '#/pages/' + encodeURIComponent(data.previous) : undefined}>{t('pages.previous')}</a>
-        <a class="quiet-link" class:disabled={!data.next} aria-disabled={!data.next} href={data.next ? '#/pages/' + encodeURIComponent(data.next) : undefined}>{t('pages.next')}</a>
+        <a class="quiet-link" class:disabled={!data.previous} aria-disabled={!data.previous} href={data.previous ? localize('/pages/' + encodeURIComponent(data.previous)) : undefined}>{t('pages.previous')}</a>
+        <a class="quiet-link" class:disabled={!data.next} aria-disabled={!data.next} href={data.next ? localize('/pages/' + encodeURIComponent(data.next)) : undefined}>{t('pages.next')}</a>
       {/if}
     </div>
     {#if error}<div class="error-message" role="alert">{error}<button onclick={() => loadPage(pageId)}>{t('common.retry')}</button></div>{/if}
@@ -227,7 +228,7 @@
           <p class="page-note">{t('pages.document.pages', { count: document.pages.length })} · {t('pages.boxes.count', { count: document.units })}</p>
           <ol>
             {#each document.pages as page (page.id)}
-              <li><a href={'#/pages/' + encodeURIComponent(page.id)}><span>{t('pages.pageNumber', { seq: page.seq })}</span>{#if page.units}<small>{page.units}</small>{/if}</a></li>
+              <li><a href={localize('/pages/' + encodeURIComponent(page.id))}><span>{t('pages.pageNumber', { seq: page.seq })}</span>{#if page.units}<small>{number(page.units)}</small>{/if}</a></li>
             {/each}
           </ol>
         </article>

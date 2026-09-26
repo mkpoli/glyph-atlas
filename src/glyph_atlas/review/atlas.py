@@ -27,7 +27,7 @@ from .. import images, refs
 from .. import production as production_metadata
 from ..production import production_info
 from ..schema import Box, ReviewState, Script, Unit
-from . import quiz_shapes, status
+from . import quiz_shapes, quiz_suspects, status
 from .request_cache import file_stamp, memoize
 from .store import SEEN, BadRequest, ReviewRequest, Store
 
@@ -733,7 +733,10 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 "image": image_url,
                 # Where this crop sits among its character's crops by shape; a round is shown in
                 # this order so that a crop unlike its neighbours stands out.
-                "shape_order": quiz_shapes.load(store.directory).get(unit.id)}
+                "shape_order": quiz_shapes.load(store.directory).get(unit.id),
+                # The classifier's doubt about the label (`quiz_suspects`): a round can show only these.
+                "suspect": quiz_suspects.current(quiz_suspects.load(store.directory).get(unit.id), shown(unit),
+                                                 unit.box.model_dump() if unit.box else None)}
 
     def one(unit_id: str) -> tuple[Unit, int]:
         records = store.unit_snapshot(unit_id)
@@ -1229,7 +1232,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 "character": info.get("character"), "reading": info.get("reading"),
                 "round": info.get("round"), "undoes": undoes}
 
-    @api.get("/history")
+    @api.get("/atlas/history")
     def history(
         limit: Annotated[int, Query(ge=1, le=100)] = 40,
         before: str | None = None,
