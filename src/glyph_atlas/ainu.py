@@ -21,6 +21,7 @@ runs the aligner over the directory afterwards, which is what `atlas ainu derive
 from __future__ import annotations
 
 import csv
+import itertools
 import math
 import statistics
 from collections.abc import Iterable, Sequence
@@ -46,6 +47,10 @@ REGION_SHARE = 0.05
 BODY_LINES = 4
 #: The name a derived box's provenance carries, so a later run can find and withdraw it.
 DERIVATION_METHOD = "ainu-ink-columns-v2"
+#: The method a box grouped by `columns_by_pitch` records.
+PITCH_METHOD = "ruled-pitch-columns-v1"
+#: Full-size characters are those at least this share of the median width of the wider half.
+MAIN_SHARE = 0.75
 #: How a line records that a person set its box. A machine run never replaces or withdraws those.
 HUMAN_MATCH_METHODS = ("manual", "review", "adjudicated")
 #: The review states a pipeline wrote. A unit a person reviewed is never retired by a machine run.
@@ -129,6 +134,51 @@ def columns_of(boxes: Sequence[Box], gap_ratio: float = GAP_RATIO,
     # The runs were built from the left, and a vertical line is read from the right.
     merged.reverse()
     return merged
+
+
+def columns_by_pitch(boxes: Sequence[Box], gap_ratio: float = GAP_RATIO,
+                     merge_ratio: float = MERGE_RATIO) -> list[list[int]]:
+    """Columns of a ruled print, read right to left, from the pitch of its full-size characters.
+
+    A print lays its text in ruled columns of one width, and a split annotation puts two narrow
+    sub-columns of small characters inside one of them. `columns_of` chains those sub-columns into
+    their neighbours; here only the full-size characters, the wider half of the page's boxes, fix the
+    column centres, the median step between neighbouring centres is the pitch, and every box, small
+    ones included, goes to the column nearest its centre on that pitch from the rightmost one. A
+    column centre needs at least two characters and three tenths of a typical column, so a stray mark
+    does not set the pitch. `merge_ratio` is unused and kept so both groupings take one signature.
+    """
+    if not boxes:
+        return []
+    widths = sorted(box.w for box in boxes)
+    main_width = statistics.median(widths[len(widths) // 2:])
+    centres = sorted(centre_of(box) for box in boxes if box.w >= MAIN_SHARE * main_width)
+    runs: list[list[float]] = [[centres[0]]]
+    for centre in centres[1:]:
+        if centre - runs[-1][-1] <= gap_ratio * main_width:
+            runs[-1].append(centre)
+        else:
+            runs.append([centre])
+    typical = statistics.median(len(run) for run in runs)
+    fixed = [statistics.median(run) for run in runs if len(run) >= max(2, 0.3 * typical)]
+    fixed = fixed or [statistics.median(run) for run in runs]
+    steps = [right - left for left, right in itertools.pairwise(fixed)]
+    if steps:
+        typical_step = statistics.median(steps)
+        pitch = statistics.median([step for step in steps if step < 1.6 * typical_step] or steps)
+    else:
+        pitch = main_width
+    rightmost = fixed[-1]
+    groups: dict[int, list[int]] = {}
+    for index, box in enumerate(boxes):
+        groups.setdefault(round((rightmost - centre_of(box)) / pitch), []).append(index)
+    return [sorted(groups[key], key=lambda index: boxes[index].y) for key in sorted(groups)]
+
+
+#: How a page's detections become columns: by the ink they leave, or by a ruled print's pitch.
+GROUPINGS = {"ink": columns_of, "pitch": columns_by_pitch}
+#: The method each grouping records on the boxes it writes.
+METHODS = {"ink": DERIVATION_METHOD, "pitch": PITCH_METHOD}
 
 
 def regions_of(boxes: Sequence[Box], share: float = REGION_SHARE) -> list[list[Box]]:
@@ -315,8 +365,12 @@ def derive_page(page: Page, lines: Sequence[Line], boxes: Sequence[Box],
                 *, gap_ratio: float = GAP_RATIO, merge_ratio: float = MERGE_RATIO,
                 body_lines: int = BODY_LINES,
                 min_per_character: float = MIN_DETECTIONS_PER_CHARACTER,
-                max_per_character: float = MAX_DETECTIONS_PER_CHARACTER) -> Derivation:
+                max_per_character: float = MAX_DETECTIONS_PER_CHARACTER,
+                grouping: str = "ink") -> Derivation:
     """Pair one page's transcribed lines with the ink columns the detector found.
+
+    `grouping` names how the detections become columns, one of `GROUPINGS`: `ink` for a manuscript or
+    a print whose columns vary, `pitch` for a ruled print whose split annotations `ink` would chain.
 
     The lines are placed on the columns in reading order by `pair_columns`, which may give a line more
     than one column and leave a column unread. There have to be enough lines for the transcription to
@@ -329,7 +383,7 @@ def derive_page(page: Page, lines: Sequence[Line], boxes: Sequence[Box],
     paired.
     """
     text_lines = transcribed_lines(lines)
-    found = columns_of(boxes, gap_ratio, merge_ratio)
+    found = GROUPINGS[grouping](boxes, gap_ratio, merge_ratio)
     derivation = Derivation(page_id=page.id, columns=found, boxes=list(boxes))
     if not found:
         derivation.reason = "no detection"
@@ -363,7 +417,7 @@ def page_row(derivation: Derivation, page: Page, lines: Sequence[Line], *,
              body_lines: int = BODY_LINES, min_per_character: float = MIN_DETECTIONS_PER_CHARACTER,
              max_per_character: float = MAX_DETECTIONS_PER_CHARACTER,
              gap_ratio: float = GAP_RATIO, merge_ratio: float = MERGE_RATIO,
-             region_share: float = REGION_SHARE) -> dict[str, Any]:
+             region_share: float = REGION_SHARE, grouping: str = "ink") -> dict[str, Any]:
     """One measured page, in the columns `columns.tsv` holds.
 
     Every parameter the row depends on is passed in rather than read from the module, so a census run
@@ -376,7 +430,7 @@ def page_row(derivation: Derivation, page: Page, lines: Sequence[Line], *,
     region_columns = [len(columns_of(region, gap_ratio, merge_ratio)) for region in regions]
     evidence = sorted(derivation.evidence)
     options = f"body>={body_lines} min={min_per_character} max={max_per_character} gap={gap_ratio} merge={merge_ratio} " \
-              f"region={region_share}"
+              f"region={region_share} grouping={grouping}"
     return {
         "page_id": page.id,
         "document_id": page.document_id,
@@ -423,7 +477,7 @@ def detector_for(onnx: Path | str = DEFAULT_ONNX, *, score: float = SCORE,
     return Detector(onnx, score=score, session=session)
 
 
-def provenance() -> dict[str, str]:
+def provenance(grouping: str = "ink") -> dict[str, str]:
     """What a derived box came from, for the line's own record.
 
     A line box is a claim about where a transcription's ink stands, and this one is a proposal rather
@@ -431,7 +485,7 @@ def provenance() -> dict[str, str]:
     later run find the boxes it wrote and withdraw them, and `match_method` is the summary a reader
     sees on the line itself. A box a person set carries neither and is never touched.
     """
-    return {"source": "ainu-derive", "method": DERIVATION_METHOD}
+    return {"source": "ainu-derive", "method": METHODS[grouping]}
 
 
 def derived_by_atlas(line: Line) -> bool:
@@ -468,6 +522,7 @@ def derive_dataset(
     min_per_character: float = MIN_DETECTIONS_PER_CHARACTER,
     max_per_character: float = MAX_DETECTIONS_PER_CHARACTER,
     region_share: float = REGION_SHARE,
+    grouping: str = "ink",
     pages: Sequence[str] | None = None,
     detections: dict[str, list[Box]] | None = None,
     cache: Path | None = None,
@@ -545,7 +600,7 @@ def derive_dataset(
         lines = lines_by_page.get(page.id, [])
         derivation = derive_page(page, lines, boxes, gap_ratio=gap_ratio, merge_ratio=merge_ratio,
                                  body_lines=body_lines, min_per_character=min_per_character,
-                                 max_per_character=max_per_character)
+                                 max_per_character=max_per_character, grouping=grouping)
         pairing = {line.id: index for index, line in enumerate(derivation.pairing)}
         for line in lines:
             proposal: dict[str, Any] | None = None
@@ -555,7 +610,7 @@ def derive_dataset(
                     continue
                 box = derivation.line_box(pairing[line.id])
                 if box is not None:
-                    proposal = {"box": box, "derivation": provenance()}
+                    proposal = {"box": box, "derivation": provenance(grouping)}
             elif derived_by_atlas(line):
                 # This run did not pair the page, so the box the last run wrote here is withdrawn
                 # rather than left standing as the import's own.
@@ -576,7 +631,7 @@ def derive_dataset(
         rows.append(page_row(derivation, page, lines, body_lines=body_lines,
                              min_per_character=min_per_character, max_per_character=max_per_character,
                              gap_ratio=gap_ratio,
-                             merge_ratio=merge_ratio, region_share=region_share))
+                             merge_ratio=merge_ratio, region_share=region_share, grouping=grouping))
 
     if cache is not None:
         # The whole-file write drops the duplicates the appends left and keeps the pages of an
