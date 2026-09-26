@@ -1035,23 +1035,53 @@ def align(
         typer.echo(f"{name:<14} {value:>10}")
 
 
+@forms_app.command("audit")
+def forms_audit(
+    root: Annotated[Path, typer.Option(help="corpus root")] = Path("work"),
+    reviews: Annotated[Path | None, typer.Option(help="current character-review export")] = None,
+    out: Annotated[Path | None, typer.Option(help="write the per-document report as JSON")] = None,
+) -> None:
+    """Explain which glyphs can enter form clustering; no image loading or inference."""
+    from .form_quality import audit
+
+    result = audit(root, reviews=reviews)
+    if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n")
+    typer.echo(json.dumps(result["counts"], ensure_ascii=False))
+
+
 @forms_app.command("cluster")
 def forms_cluster(
     root: Annotated[Path, typer.Option(help="corpus root holding the clustered corpora")] = Path("work"),
     out: Annotated[Path, typer.Option(help="directory the revisions and `current` are written to")] = Path("work/forms"),
     checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
     workers: Annotated[int, typer.Option(help="processes cutting crops from the page scans")] = 8,
+    reviews: Annotated[Path | None, typer.Option(help="current character-review export")] = None,
 ) -> None:
     """Embed the glyphs of every multi-form family and cluster them by shape (needs CUDA)."""
     from . import form_clusters
 
-    summary = form_clusters.run(root, out, checkpoint=checkpoint, workers=workers)
+    summary = form_clusters.run(root, out, checkpoint=checkpoint, workers=workers, reviews=reviews)
     for name, value in summary.items():
         if isinstance(value, dict):
             for corpus, count in value.items():
                 typer.echo(f"{name + ' ' + corpus:<32} {count:>10}")
         else:
             typer.echo(f"{name:<32} {value:>10}")
+
+
+@forms_app.command("clean")
+def forms_clean(
+    source: Annotated[Path, typer.Argument(help="existing clustering revision")],
+    out: Annotated[Path, typer.Option(help="directory for the filtered revision")],
+    root: Annotated[Path, typer.Option(help="corpus root")] = Path("work"),
+    reviews: Annotated[Path | None, typer.Option(help="current character-review export")] = None,
+) -> None:
+    """Remove unsafe crops from existing shape proposals without running a model."""
+    from .form_clusters import clean
+
+    typer.echo(json.dumps(clean(root, source, out, reviews=reviews), ensure_ascii=False))
 
 
 for name, module in (

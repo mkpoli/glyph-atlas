@@ -103,7 +103,8 @@ def _load_clusters(paths) -> dict[str, Any]:
     labels = {c["id"]: c["label"] for family in data["families"].values() for c in family["clusters"]}
     # Written beside a clustering by `form_clusters.write_neighbours`; without it clusters keep size order.
     near = json.loads(neighbours.read_text()) if _stamp(neighbours) else {}
-    return {"revision": data["revision"], "families": data["families"], "units": units, "members": members,
+    return {"revision": data["revision"], "parents": data.get("parents", []),
+            "families": data["families"], "units": units, "members": members,
             "labels": labels, "neighbours": near, "rows": rows}
 
 
@@ -226,10 +227,11 @@ def split(cluster: str, k: int) -> list[list[str]]:
 
 def cluster_decisions() -> dict[str, dict]:
     """What each cluster of the current clustering was last given, `{"form", "issue"}` by cluster id."""
-    revision = clusters()["revision"]
+    data = clusters()
+    revisions = {data["revision"], *data.get("parents", [])}
     named: dict[str, dict] = {}
     for event in _events():
-        if event["kind"] == "cluster" and event["revision"] == revision:
+        if event["kind"] == "cluster" and event["revision"] in revisions and event["cluster"] in data["members"]:
             named[event["cluster"]] = {"form": event["form"], "issue": event.get("issue")}
     return named
 
