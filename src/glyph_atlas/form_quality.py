@@ -15,6 +15,7 @@ import pyarrow.compute as pc
 import pyarrow.dataset as ds
 
 from . import forms, production, refs
+from .feedback import REPORT_ACTOR_KINDS
 
 POLICY = "reviewed-form-inputs-v1"
 HUMAN = {"reviewed", "double-reviewed", "adjudicated"}
@@ -62,7 +63,8 @@ class Admission:
                 raise ValueError("Expected an atlas-character-reviews export")
             for item in payload["reviews"]:
                 event = item["event"]
-                human = event.get("actor_kind") == "human" or event.get("role") == "reviewer"
+                human = (event.get("actor_kind") not in REPORT_ACTOR_KINDS
+                         and (event.get("actor_kind") == "human" or event.get("role") == "reviewer"))
                 if item.get("current") and human:
                     self.reviews[event["target_id"]] = item
         self.inputs = {"policy": POLICY, "decisions": digest(self.decisions), "reviews": digest(self.reviews),
@@ -107,13 +109,18 @@ class Admission:
                 decision_value = review["event"].get("new")
                 if isinstance(decision_value, dict):
                     evidence = {**evidence, **decision_value}
-                reading_only = evidence.get("issue") == "reading" and evidence.get("layer") == "reading"
+                request = mapping(evidence.get("request"))
+                reading_only = evidence.get("issue") == "reading" and (
+                    evidence.get("layer") or request.get("reading")
+                    or (snapshot.get("reading") and snapshot["reading"] != label))
                 if evidence.get("verdict") == "wrong" and not reading_only:
                     return "review-" + (evidence.get("issue") or "wrong")
                 if evidence.get("verdict") == "uncertain":
                     return "review-uncertain"
                 confirmed = (evidence.get("verdict") == "match" and evidence.get("kind") != "visual-quiz"
-                             and evidence.get("issue") not in {"character", "crop", "merged", "blank"})
+                             and evidence.get("issue") not in {"character", "crop", "merged", "blank"}
+                             and (evidence.get("character") or request.get("character")
+                                  or evidence.get("suggested_character")) in {None, label, row["unicode"]})
         document = self.documents.get(row.get("document_id"), {})
         kind = production.production_info(document)["production"]
         if not production.in_scope(kind, production.REVIEW_SCOPE):

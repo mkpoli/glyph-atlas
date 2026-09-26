@@ -96,6 +96,7 @@ def test_local_corpus_review_export_carries_its_actor_and_decision_differently(t
     path.write_text(json.dumps({"kind": "atlas-character-reviews", "reviews": [event]}))
     assert form_quality.Admission(tmp_path, path).reason(unit()) == "review-crop"
     event["event"]["actor_kind"] = "model"
+    event["event"]["role"] = "reviewer"
     path.write_text(json.dumps({"kind": "atlas-character-reviews", "reviews": [event]}))
     assert form_quality.Admission(tmp_path, path).reason(unit()) is None
 
