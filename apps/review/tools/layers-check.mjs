@@ -2,7 +2,7 @@
 // The character-layer flow the reader asked for: type トモ, see 𪜈 with its counts, click into the
 // exact glyph gallery, and survive an IME, a cleared box and a fast typist. Disposable dataset.
 import Browser from './browser.mjs'
-import { boot, options } from './harness.mjs'
+import { boot, events, options } from './harness.mjs'
 const config = options(), service = await boot(config)
 let browser, failures = 0
 const assert = (condition, message) => { if (!condition) throw new Error(message) }
@@ -72,8 +72,8 @@ try {
   })
 
   await step('widening to the grapheme renders the card and throws nothing', async () => {
-    // The chips pass a code point rather than a whole row, which is the path that used to render an
-    // incomplete card and throw. Escape and refocus repeat what a reader does between keystrokes.
+    // A second query after the first renders a whole card, and widening it to the grapheme changes
+    // the gallery without throwing. Escape and refocus repeat what a reader does between keystrokes.
     await browser.evaluate(`document.querySelector('.character-search input').blur()`)
     await browser.key('Escape').catch(() => {})
     await browser.evaluate(`document.querySelector('input[role=combobox]')?.dispatchEvent(new FocusEvent('focus'))`)
@@ -87,6 +87,8 @@ try {
     assert(card, 'the card rendered empty after choosing a candidate')
     assert(!errors.length, `an exception was thrown: ${errors.join(' | ').slice(0, 300)}`)
     // The grapheme button widens the gallery from this character to every form of its grapheme.
+    assert(await browser.evaluate(`document.querySelector('.character-layers .family')?.getAttribute('aria-pressed')`) === 'false',
+      'the card opened already widened, so widening cannot be tested')
     const family = await browser.centre('.character-layers .family')
     await browser.click(family.x, family.y)
     await browser.waitFor(`document.querySelector('.character-layers .family')?.getAttribute('aria-pressed') === 'true'`, 4000)
@@ -192,13 +194,33 @@ try {
     return `${correction.character} ${correction.code_point}, reading ${correction.reading}, current`
   })
 
+  await step('Back to a saved crop page reopens it current, and it saves again', async () => {
+    await openReviewer(LAYERED)
+    const before = events(service.fixture.directory).length
+    const save = await browser.centre('.save-character')
+    await browser.click(save.x, save.y)
+    await browser.waitFor('document.querySelector("dialog[open]") === null', 6000)
+    await browser.evaluate('history.back()')
+    await browser.waitFor('document.querySelector("dialog[open] .crop-viewport")?.dataset.ready === "true" && !document.querySelector(".save-character")?.disabled', 6000)
+    const again = await browser.centre('.save-character')
+    await browser.click(again.x, again.y)
+    await browser.waitFor('document.querySelector("dialog[open]") === null', 6000)
+    const reviews = events(service.fixture.directory).slice(before).filter(e => e.target_id === LAYERED && e.field === 'review')
+    assert(reviews.length === 2, `${reviews.length} of the two saves reached the journal`)
+    return 'two saves, no conflict'
+  })
+
   await step('the ordinary collection keeps its review queue after a correction', async () => {
     // The homepage inspector queue is the path a correction must not break: its Next steps through
     // the collection's own rows, not through a character gallery that may hold one record.
-    // A fresh load: a crop page draws the collection under its dialog, so after an in-app visit the
-    // same tiles are on screen before the navigation lands, and a click then is closed by it.
-    await browser.goto(service.base + '/', { waitFor: '"hydrated" in document.documentElement.dataset' })
+    // A crop page draws the collection under its dialog and closes to '/', so the path cannot tell
+    // the pages apart: a click before the visit lands would be closed by it. The title can.
+    const cropTitle = await browser.evaluate('document.title')
+    await browser.evaluate(`visit('/')`)
+    await browser.waitFor(`document.title !== ${JSON.stringify(cropTitle)} && document.querySelector('.glyph-grid')?.getAttribute('aria-busy') === 'false'`, 6000)
     await browser.waitFor('document.querySelector("dialog[open]") === null', 4000)
+    // The search box still holds the last query; the collection behind it is what is being tested.
+    await browser.evaluate(`document.querySelector('.find-clear')?.click()`)
     await browser.waitFor('document.querySelectorAll(".glyph-grid .glyph-tile").length > 1', 8000)
     const tiles = await browser.evaluate(`document.querySelectorAll('.glyph-grid .glyph-tile').length`)
     const first = await browser.centre('.glyph-grid .glyph-tile')
