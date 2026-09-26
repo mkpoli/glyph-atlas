@@ -82,7 +82,7 @@ try {
 
   await browser.waitFor(`${countText} !== null`, 15000)
   const count = await browser.evaluate(countText)
-  assert(/1 occurrence of/.test(count), `the count reads ${JSON.stringify(count)}`)
+  assert(/^1 glyph · 1 here/.test(count.trim()), `the count reads ${JSON.stringify(count)}`)
   assert(!/No occurrence/.test(count), 'the character has a recorded occurrence in the fixture')
 
   // The reading filter is cleared by the search, so the box no longer narrows the answer.
@@ -111,7 +111,7 @@ try {
   const empty = await browser.evaluate(`document.querySelector('.empty h2').textContent`)
   assert(/No occurrence of/.test(empty), `the empty state reads ${JSON.stringify(empty)}`)
   assert(await browser.evaluate(`document.querySelectorAll('.glyph-tile').length`) === 0, 'no rows')
-  assert(/0 occurrences of/.test(await browser.evaluate(countText)), 'the count says zero')
+  assert(/^0 glyphs/.test((await browser.evaluate(countText)).trim()), 'the count says zero')
   await browser.screenshot('/tmp/atlas-search-empty.png')
   await browser.evaluate(`document.querySelector('.empty button.primary').click()`)
   await browser.waitFor(`document.querySelectorAll('.glyph-tile').length > 1`)
@@ -120,7 +120,7 @@ try {
   // is the reading, which for this record is い, so the assertion is on the matched unit.
   await browser.evaluate(typeInto('.find input', 'ゐ'))
   await browser.waitFor(`${countText} !== null`, 15000)
-  assert(/1 occurrence of/.test(await browser.evaluate(countText)), 'ゐ is found by its character')
+  assert(/^1 glyph(?!s)/.test((await browser.evaluate(countText)).trim()), 'ゐ is found by its character')
   const katakana = await browser.evaluate(rows)
   assert(katakana.length === 1 && katakana[0].id === 'doc-1:p1:l3:u1',
     `ゐ matched ${JSON.stringify(katakana.map(row => row.id))}`)
