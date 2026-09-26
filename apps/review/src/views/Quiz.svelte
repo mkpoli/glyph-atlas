@@ -558,7 +558,7 @@
       {:else}{#each shown as item, i (item.id)}
         <div class="quiz-tile" use:watchSeen={item.id} data-unit={item.id} class:selected={selected[item.id]} class:wrong={choices[item.id]?.verdict === 'wrong' || recorded[item.id] === 'flagged'} class:unavailable={failed[item.id]} class:skipped={skipped[item.id]} class:recorded={recorded[item.id]}>
           <button class="quiz-choice" aria-label={t('quiz.selectCharacter', { number: i + 1 })} aria-pressed={!!selected[item.id]} disabled={saving || !loaded[item.id] || recorded[item.id] === 'flagged'} onclick={() => toggle(item.id)}><Glyph {item} eager onload={id => loaded = { ...loaded, [id]: true }} onerror={id => { failed = { ...failed, [id]: true }; if (selected[id]) skip([id]) }} /><span class="choice-mark">{selected[item.id] ? '✓' : choices[item.id]?.verdict === 'wrong' ? '×' : ''}</span></button>
-          <span class="tile-details quiz-tile-details">{#each cropDetails(item) as line}<span>{line}</span>{/each}<span class="tile-id">{item.id}</span></span>
+          <span class="tile-details quiz-tile-details" aria-hidden="true">{#each cropDetails(item) as line}<span>{line}</span>{/each}<span class="tile-id">{item.id}</span></span>
           <div class="quiz-production"><ProductionBadge {item} />{#if onlySuspects && item.suspect}<span class="suspect-badge" lang={item.suspect.reads_as ? 'ja' : undefined}>{item.suspect.reads_as ? t('quiz.suspect.readsAs', { character: item.suspect.reads_as }) : t('quiz.suspect.doubtful')}</span>{/if}{#if recorded[item.id]}<span class="recorded-badge">✓ {t('app.saved')}</span>{/if}{#if item.origin === 'corpus'}<span class="quiz-source" lang={item.source?.title ? 'ja' : undefined} title={item.source?.title}>{item.source?.title ?? t('quiz.corpusSource')}</span>{/if}</div><div class="quiz-tile-tools">{#if keys[i]}<kbd>{keys[i]}</kbd>{/if}<span class="choice-label">{failed[item.id] ? t('quiz.choiceLabel.unavailable') : skipped[item.id] ? t('quiz.choiceLabel.skipped') : ''}</span><button class="inspect-choice" aria-label={t('quiz.inspectCharacter', { number: i + 1 })} disabled={saving} onclick={() => inspectChoice(item)}>↗</button>{#if skipped[item.id]}<button class="restore-choice" aria-label={t('quiz.restoreCharacter', { number: i + 1 })} disabled={saving} onclick={() => restore(item.id)}>{t('quiz.restore')}</button>{:else}<button class="skip-choice" aria-label={t('quiz.skipCharacter', { number: i + 1 })} title={skipHint()} disabled={saving} onclick={() => skip([item.id])}>–</button>{/if}</div>
         </div>
       {/each}{#if loadingMore}{#each Array(6) as _}<div class="quiz-skeleton" aria-hidden="true"></div>{/each}{/if}{/if}
@@ -619,7 +619,8 @@
   .quiz-production{display:flex;gap:6px;min-width:0;padding:0 12px 4px}
   /* A tile's details sit above its tools, so the keys and buttons stay visible and clickable. */
   .quiz-tile-details{bottom:32px;padding-bottom:10px}
-  .quiz-tile:hover .quiz-tile-details,.quiz-tile:focus-within .quiz-tile-details{opacity:1;transform:none}
+  /* Keyboard focus shows it too; a click that leaves focus on the tile does not keep it open. */
+  .quiz-tile:hover .quiz-tile-details,.quiz-tile:has(:focus-visible) .quiz-tile-details{opacity:1;transform:none}
   .quiz-source{flex:1;min-width:0;overflow:hidden;font-size:10px;line-height:1.5;color:var(--muted);text-overflow:ellipsis;white-space:nowrap}
   .quiz-tile.skipped { background: #eceaf0; border-style: dashed; }
   .quiz-tile.skipped .quiz-choice { opacity: .35; }

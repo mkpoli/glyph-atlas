@@ -12,6 +12,8 @@
   // the queue is being rebuilt under it.
   const position = $derived(Math.max(0, Math.min(index, items.length - 1)))
   const item = $derived(items[position] ?? null)
+  // The material is left out: the badge beside the crop already shows it.
+  const details = $derived(item ? cropDetails(item).filter(line => line !== productionLabel(item)) : [])
 </script>
 
 <section class="quiz-focus" aria-label={label}>
@@ -25,7 +27,7 @@
         {#key item.id + ':' + item.revision + ':' + item.image_sha256}<CropContext {item} {disabled} />{/key}
       </div>
       <div class="focus-image-meta"><ProductionBadge {item} /><ZiLink character={item.written_character ?? item.label} /></div>
-      <p class="focus-details">{cropDetails(item).filter(line => line !== productionLabel(item)).join(' · ')}</p>
+      {#if details.length}<p class="focus-details">{details.join(' · ')}</p>{/if}
       <p class="focus-id">{item.id}</p>
     </div>
   {/if}
