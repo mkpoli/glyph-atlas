@@ -155,10 +155,13 @@
   }
   const corpusOnly = $derived(picked ? corpus.filter(lead => !visibleLocal.some(unit => sameInk(unit, lead))) : [])
   const homeCorpus = $derived(sample.filter(lead => !items.some(unit => sameInk(unit, lead))))
-  const mixedCorpus = $derived(homeCorpus.slice(lead))
+  // A lead crop the collection also holds keeps its place and shows the collection's record there.
+  const leadRows = $derived(sample.slice(0, lead).map(row => items.find(unit => sameInk(unit, row)) ?? row))
+  const mixedItems = $derived(lead ? items.filter(unit => !leadRows.includes(unit)) : items)
+  const mixedCorpus = $derived(homeCorpus.filter(row => sample.indexOf(row) >= lead))
   const baseDisplay = $derived(choosing ? [] : picked ? [...visibleLocal, ...corpusOnly]
-    : [...homeCorpus.slice(0, lead), ...items.flatMap((item, index) => mixedCorpus[index] ? [item, mixedCorpus[index]] : [item]),
-       ...mixedCorpus.slice(items.length)])
+    : [...leadRows, ...mixedItems.flatMap((item, index) => mixedCorpus[index] ? [item, mixedCorpus[index]] : [item]),
+       ...mixedCorpus.slice(mixedItems.length)])
   function groupOrder(item) {
     const group = visualGroup(item)
     const index = (analysis?.groups ?? []).findIndex(entry => entry.id === group.id)
@@ -407,12 +410,20 @@
   /** The rest of the homepage the server streams after its lead crops; a search started meanwhile wins. */
   async function receive(rest) {
     const id = ++requestId
-    // A response cut off before the rest arrived leaves the view to load it itself.
-    const { result = null, sample: page = null } = await rest.catch(() => ({}))
+    // A page whose response ended without the rest, cut off on the way, leaves the view to load it
+    // itself: the promise of a stream that stopped never settles. The rest, when it came, resolved
+    // while the page was still being read, before the end of the document is announced.
+    const ended = document.readyState === 'loading'
+      ? new Promise(resolve => addEventListener('DOMContentLoaded', () => resolve({}), { once: true })) : new Promise(() => {})
+    const { result = null, sample: page = null } = await Promise.race([rest.catch(() => ({})), ended])
     if (closed || id !== requestId) return
     if (!result) { load(); return }
     data = result; items = result.items
-    sample = sampleRows(page ?? streamed.lead, items)
+    // The lead crops stay as they are now, with any verdict saved on them meanwhile; the whole sample
+    // repeats them, as it was drawn before that verdict.
+    const drawn = new Set(streamed.lead.items.map(row => row.id))
+    lead = sample.length
+    sample = [...sample, ...sampleRows(page, items).filter(row => !drawn.has(row.id))]
     sampleFault = page ? (page.status === 'ok' ? null : page.status) : null
     loading = false
   }
