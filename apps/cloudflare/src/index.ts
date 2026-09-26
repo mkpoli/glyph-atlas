@@ -415,12 +415,15 @@ async function occurrences(env: Env, code: string, q: URLSearchParams, origin = 
   const { data } = await known(env, code);
   if(origin==='corpus')return corpusOccurrences(env,data,q);
   const limit = integer(q,'limit',24,200), offset=integer(q,'offset',0);
-  const values: (string | number)[] = [origin];
-  const where = ['origin=?'];
+  const values: (string | number)[] = [];
+  const where: string[] = [];
   if (q.get('scope') === 'grapheme' || q.get('expand') === 'grapheme') {
+    // A grapheme's crops are its family's and its own character's. Each is one range of its own index;
+    // an OR across the two columns would read every crop of the origin instead.
     const family = data.grapheme?.code_point || data.code_point;
-    where.push('(family=? OR character=?)'); values.push(family,data.char);
-  } else { where.push('character=?'); values.push(data.char) }
+    where.push('id IN (SELECT id FROM units WHERE origin=? AND family=? UNION SELECT id FROM units WHERE origin=? AND character=?)');
+    values.push(origin, family, origin, data.char);
+  } else { where.push('origin=? AND character=?'); values.push(origin, data.char) }
   if (q.get('visual_group')) {
     if(q.get('visual_group')==='unassigned') where.push('visual_group IS NULL');
     else { where.push('visual_group=?'); values.push(q.get('visual_group')!) }
