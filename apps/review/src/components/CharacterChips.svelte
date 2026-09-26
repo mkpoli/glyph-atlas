@@ -3,7 +3,7 @@
   import ZiLink from './ZiLink.svelte'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import { countsLabel } from '../lib/layers.js'
-  import { t } from '../lib/i18n.svelte.js'
+  import { t, formatNumber } from '../lib/i18n.svelte.js'
   let { card = null, expand = $bindable('none'), onselect = () => {}, onreview = null } = $props()
   const members = $derived(card?.grapheme?.members ?? [{code_point: card?.code_point, char: card?.char}])
 </script>
@@ -39,7 +39,7 @@
         {#if card.jibo?.length}<span class="chip">字母 {card.jibo.map(j => j.char).join(' ')}</span>{/if}
         {#each (card.expansions ?? []).filter(o => o.key !== 'grapheme') as option (option.key)}
           <button class="chip chip-action" class:active={expand === option.key}
-            onclick={() => expand = expand === option.key ? 'none' : option.key}>{option.label} <small>{option.count}</small></button>
+            onclick={() => expand = expand === option.key ? 'none' : option.key}>{option.label} <small>{formatNumber(option.count)}</small></button>
         {/each}
         {#if onreview}<button class="chip chip-action" onclick={() => onreview(card)}>{t('chips.review')}</button>{/if}
       </div>
