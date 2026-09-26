@@ -4,6 +4,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("build_vi_hani", ROOT / "scripts/build_vi_hani.py")
 build_vi_hani = importlib.util.module_from_spec(spec)
@@ -38,3 +40,22 @@ def test_webfont_draws_every_supplementary_character():
     text = "".join(v for v in catalogue.values() if isinstance(v, str)) + build_vi_hani.LOCALE["name"]
     cmap = TTFont(build_vi_hani.FONT_OUT).getBestCmap()
     assert {c for c in text if ord(c) >= 0x20000 and ord(c) not in cmap} == set()
+
+
+def test_vietnamese_has_every_message():
+    """Vietnamese has one plural form, so only the `.one` keys may be missing from vi.json."""
+    locales = ROOT / "apps/review/src/locales"
+    en, vi, hani = (json.loads((locales / f"{tag}.json").read_text(encoding="utf-8")) for tag in ("en", "vi", "vi-Hani"))
+    assert {key for key in en if not key.endswith(".one")} <= set(vi)
+    assert set(vi) == set(hani)
+
+
+def test_table_refuses_bad_rows(tmp_path, monkeypatch):
+    header = "word\thannom\tsource\tnote\n"
+    for rows in ("tải\t載\twiktionary\t\ntải\t載\twiktionary\t\n", "tải\t載\t?\t\n", "tải\t\twiktionary\t\n", "tải\t載\n"):
+        table = tmp_path / "vi-hani.tsv"
+        table.write_text(header + rows, encoding="utf-8")
+        monkeypatch.setattr(build_vi_hani, "TABLE", table)
+        monkeypatch.setattr(build_vi_hani, "ROOT", tmp_path)
+        with pytest.raises(SystemExit):
+            build_vi_hani.load_table()

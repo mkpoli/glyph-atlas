@@ -59,16 +59,27 @@ VIETNAMESE = "A-Za-zÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚÝàáâãèéêìíòóôõù
 WORD = re.compile(rf"\{{\w+\}}|[{VIETNAMESE}]+")
 
 
+HEADER = ["word", "hannom", "source", "note"]
+
+
 def load_table() -> dict[str, str]:
+    """The word table, refused when a row lacks a spelling or a known source, or repeats a word."""
     lines = [line.rstrip("\n") for line in TABLE.open(encoding="utf-8")]
-    rows = [line.split("\t") for line in lines if line and not line.startswith("#")][1:]  # after the header
-    for word, hannom, source, *_ in rows:
-        if not hannom or source not in SOURCES:
-            raise SystemExit(f"{TABLE.relative_to(ROOT)}: {word!r} needs a spelling and one of {sorted(SOURCES)}")
-    return {word: hannom for word, hannom, *_ in rows}
+    header, *rows = [line.split("\t") for line in lines if line and not line.startswith("#")]
+    where = TABLE.relative_to(ROOT)
+    if header != HEADER:
+        raise SystemExit(f"{where}: the first row must be the header {' '.join(HEADER)}")
+    table: dict[str, str] = {}
+    for row in rows:
+        if len(row) != len(HEADER) or not row[1] or row[2] not in SOURCES:
+            raise SystemExit(f"{where}: {row[0]!r} needs a spelling, one of {sorted(SOURCES)} and a note column")
+        if row[0] in table:
+            raise SystemExit(f"{where}: {row[0]!r} appears twice")
+        table[row[0]] = row[1]
+    return table
 
 
-def spell(text: str, table: dict[str, str], missing: set[str]) -> str:
+def spell(text: str, table: dict[str, str], missing: set[str], used: set[str] | None = None) -> str:
     """`text` with each run of Vietnamese words replaced by its chữ Hán-Nôm spelling."""
     text = unicodedata.normalize("NFC", text)
     pieces: list[str | list[str]] = []  # plain text, or a run of words separated by single spaces
@@ -97,6 +108,8 @@ def spell(text: str, table: dict[str, str], missing: set[str]) -> str:
                 key = " ".join(piece[i:i + n]).lower()
                 if key in table:
                     out.append(table[key])
+                    if used is not None:
+                        used.add(key)
                     i += n
                     break
             else:
@@ -117,14 +130,17 @@ def spell(text: str, table: dict[str, str], missing: set[str]) -> str:
 
 
 def build() -> tuple[dict, set[str]]:
+    """The catalogue, and the words it lacks a spelling for; a table row no message uses stops the run."""
     vi = json.loads((LOCALES / "vi.json").read_text(encoding="utf-8"))
-    table, missing = load_table(), set()
+    table, missing, used = load_table(), set(), set()
     catalogue = {"@locale": LOCALE}
     for key, text in vi.items():
         if key != "@locale":
             for short, full in EXPAND:
                 text = text.replace(short, full)
-            catalogue[key] = spell(text, table, missing)
+            catalogue[key] = spell(text, table, missing, used)
+    if not missing and (unused := sorted(set(table) - used)):
+        raise SystemExit(f"{TABLE.relative_to(ROOT)}: no message uses {', '.join(unused)}; remove those rows")
     return catalogue, missing
 
 
