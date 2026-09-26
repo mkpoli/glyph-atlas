@@ -596,6 +596,12 @@ try {
   assert.equal(named.count, 2)
   const family = await call('/atlas/forms/families/U%2B4EEE')
   assert.deepEqual([family.assigned, family.items[0].form, family.items[0].assigned, family.items[0].majority, family.items[0].majority_count], [2, '仮', 2, '仮', 2])
+  // A cluster of two has no glyphs past its typical twelve. Its least typical glyphs are read
+  // backwards along form_unit_cluster, a few rows a cluster.
+  assert.deepEqual(family.items[0].unusual, [])
+  const leastTypical = (await db.prepare('EXPLAIN QUERY PLAN ' + worker.leastTypicalQuery()).bind('U+4EEE').all()).results.map(r => r.detail)
+  assert.ok(leastTypical.some(d => /SEARCH form_units USING INDEX form_unit_cluster \(cluster=\? AND rank>\?\)/.test(d)), leastTypical.join('; '))
+  assert.ok(!leastTypical.some(d => /^SCAN|TEMP B-TREE/.test(d)), leastTypical.join('; '))
   assert.equal((await db.prepare("SELECT character FROM corpus_units WHERE id='codh:plain'").first()).character, '仮')
   await counted()
   assert.equal((await call('/atlas/corpus/character?id=codh%3Aplain')).identity_basis, 'form_cluster')

@@ -4,6 +4,7 @@ from __future__ import annotations
 import threading
 from collections import Counter
 from functools import lru_cache
+from itertools import islice
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -151,7 +152,12 @@ def router(media, corpus_root: Path) -> APIRouter:
                                           "label": data["labels"].get(near["nearest"][cluster["id"]]["id"])}
                                          if cluster["id"] in near.get("nearest", {}) else None),
                              "representatives": [{"id": identity, "image": image(identity)}
-                                                 for identity in cluster["representatives"][:12]]})
+                                                 for identity in cluster["representatives"][:12]],
+                             # The least typical glyphs past the twelve most typical, unreported: a
+                             # glyph of another form is most often among them.
+                             "unusual": [{"id": identity, "image": image(identity)} for identity in
+                                         islice((identity for identity in reversed(members[12:])
+                                                 if not (decided.get(identity) or {}).get("issue")), 12)]})
         return {"revision": data["revision"], **summary(found, decided), "order": order,
                 "forms": [_form_entry(char) for char in forms.family_members(code_point)], "items": clusters}
 
