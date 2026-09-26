@@ -25,6 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .. import images, refs
 from .. import production as production_metadata
+from .. import style as style_module
 from ..production import production_info
 from ..schema import Box, ReviewState, Script, Unit
 from . import quiz_shapes, quiz_suspects, status
@@ -579,6 +580,16 @@ class CharacterEdit(BaseModel):
     box: Box | None = None
 
 
+class StyleEdit(BaseModel):
+    """A reviewer's style for one crop; `unassessed` clears it, so the crop takes its page's or document's."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: UUID
+    client_id: str = Field(min_length=1, max_length=128)
+    revision: int = Field(ge=0)
+    style: str = Field(min_length=1, max_length=64)
+
+
 def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
     from .server import cached_image
 
@@ -915,7 +926,9 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         line = store.line(unit.line_id) if unit.line_id else None
         page = store.page(unit.page_id) if unit.page_id else None
         document = store.document(unit.document_id or page.document_id) if (unit.document_id or page) else None
+        value, basis = style_module.resolve(unit, page, document)
         result.update({"context_image": result["image"] + "&context=true",
+                       "style": value, "style_basis": basis, "style_editable": True,
                        "text": line.text if line else "", "source": document.title if document else "",
                        "page_number": page.seq + 1 if page else None,
                        "line": line.model_dump(mode="json") if line else None})
@@ -1212,6 +1225,21 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         if edit.issue == "merged":
             schedule_refinement(background, {unit_id})
         return {"results": results}
+
+    @api.post("/atlas/characters/{unit_id}/style")
+    def set_style(unit_id: str, edit: StyleEdit) -> dict:
+        """Record a reviewer's style for one crop as a `style` event, and return the crop as it now is."""
+        try:
+            style_module.check(edit.style)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
+        one(unit_id)
+        store.record(ReviewRequest(
+            target_type="unit", target_id=unit_id, field="style", new=edit.style,
+            base_revision=edit.revision, client_id=edit.client_id, idempotency_key=f"style:{edit.id}",
+            evidence=json.dumps({"kind": "style-review", "request": edit.model_dump(mode="json")}, ensure_ascii=False),
+        ))
+        return character(unit_id)
 
     def schedule_refinement(background: BackgroundTasks, unit_ids: set[str]) -> None:
         from .refine import background_refine

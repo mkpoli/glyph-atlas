@@ -7,6 +7,7 @@ import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import quote
 from uuid import uuid4
 
 import pytest
@@ -1904,3 +1905,29 @@ def test_a_crop_carries_its_suspect_mark(dataset):
     marks = {item["id"]: item["suspect"] for item in items}
     assert marks[first] == {"p": 0.01, "reads_as": "お"}
     assert {mark for identity, mark in marks.items() if identity != first} == {None}
+
+
+def test_a_crop_shows_its_style_and_where_it_comes_from(dataset, tmp_path, monkeypatch):
+    from glyph_atlas import style
+
+    confirmed = tmp_path / "document-styles.yaml"
+    confirmed.write_text("documents:\n  d:\n    style: cursive\n    evidence: [{source: reviewer, reviewed: 2026-09-26}]\n",
+                         encoding="utf-8")
+    monkeypatch.setattr(style, "DOCUMENTS", confirmed)
+    client = TestClient(create_app(dataset))
+    unit = LINE + ":u0"
+    detail = client.get(f"/atlas/characters/{quote(unit, safe='')}").json()
+    assert (detail["style"], detail["style_basis"], detail["style_editable"]) == ("cursive", "document-confirmed", True)
+    body = {"id": str(uuid4()), "client_id": "fixture-reviewer", "revision": detail["revision"], "style": "regular"}
+    saved = client.post(f"/atlas/characters/{quote(unit, safe='')}/style", json=body)
+    assert saved.status_code == 200, saved.text
+    assert (saved.json()["style"], saved.json()["style_basis"]) == ("regular", "unit")
+    assert saved.json()["revision"] == detail["revision"] + 1
+    assert client.post(f"/atlas/characters/{quote(unit, safe='')}/style", json=body).json()["style"] == "regular"
+    stale = {**body, "id": str(uuid4()), "style": "running"}
+    assert client.post(f"/atlas/characters/{quote(unit, safe='')}/style", json=stale).status_code == 409
+    wrong = {**body, "id": str(uuid4()), "revision": saved.json()["revision"], "style": "sosho"}
+    assert client.post(f"/atlas/characters/{quote(unit, safe='')}/style", json=wrong).status_code == 422
+    cleared = {**body, "id": str(uuid4()), "revision": saved.json()["revision"], "style": "unassessed"}
+    again = client.post(f"/atlas/characters/{quote(unit, safe='')}/style", json=cleared).json()
+    assert (again["style"], again["style_basis"]) == ("cursive", "document-confirmed")
