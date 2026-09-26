@@ -244,7 +244,7 @@
   .toolbar-space{flex:1}
   .quiet-link.disabled{opacity:.4;pointer-events:none}
   .draw-toggle{display:flex;align-items:center;gap:10px;font-size:12px;padding:8px 14px}
-  .draw-toggle.active{background:var(--accent);border-color:var(--accent);color:#fff}
+  .draw-toggle.active{background:var(--accent-solid);border-color:var(--accent-solid);color:var(--on-color)}
   .draw-toggle kbd{font:inherit;font-size:10px;border:1px solid currentColor;border-radius:3px;padding:1px 5px;opacity:.7}
   .zoom-controls{display:flex}
   .zoom-controls button{font-size:12px;padding:7px 11px;border-radius:0;min-width:36px;font-variant-numeric:tabular-nums}
@@ -252,39 +252,40 @@
   .zoom-controls button:last-child{border-radius:0 6px 6px 0}
   .zoom-controls button+button{margin-left:-1px}
   .page-workspace{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 240px;gap:16px}
-  .page-stage{position:relative;overflow:hidden;background:#e7e7ea;border:1px solid var(--line);border-radius:8px;touch-action:none;cursor:grab;min-height:320px}
+  /* Scan backing and annotations retain their source-viewing colours. */
+  .page-stage{position:relative;overflow:hidden;background:light-dark(#e7e7ea, #e7e7ea);border:1px solid var(--line);border-radius:8px;touch-action:none;cursor:grab;min-height:320px}
   .page-stage:active{cursor:grabbing}
   .page-stage.drawing{cursor:crosshair}
   .page-sheet{position:absolute;left:0;top:0;transform-origin:0 0}
   .page-sheet img{display:block;width:100%;height:100%;user-select:none;pointer-events:none;image-orientation:none}
   .page-sheet svg{position:absolute;inset:0;width:100%;height:100%}
-  .unit-box{fill:#d0890014;stroke:#c07c00;stroke-width:1.5;cursor:pointer}
-  .unit-box.manual{fill:#6356e51f;stroke:var(--accent);stroke-width:2}
+  .unit-box{fill:light-dark(#d0890014, #d0890014);stroke:light-dark(#c07c00, #c07c00);stroke-width:1.5;cursor:pointer}
+  .unit-box.manual{fill:light-dark(#6356e51f, #6356e51f);stroke:var(--accent-solid);stroke-width:2}
   .unit-box.unidentified{stroke-dasharray:5 3}
-  .unit-box.proposed{fill:#0e8a7a2e;stroke:#0e8a7a;stroke-width:2.5;stroke-dasharray:3 2}
+  .unit-box.proposed{fill:light-dark(#0e8a7a2e, #0e8a7a2e);stroke:light-dark(#0e8a7a, #0e8a7a);stroke-width:2.5;stroke-dasharray:3 2}
   .page-stage.drawing .unit-box{pointer-events:none}
-  .draft-box{fill:#6356e526;stroke:var(--accent);stroke-width:2;stroke-dasharray:4 3}
-  .stage-status{position:absolute;left:12px;bottom:12px;background:#24212f;color:#fff;border-radius:20px;padding:6px 14px;font-size:12px}
+  .draft-box{fill:light-dark(#6356e526, #6356e526);stroke:var(--accent-solid);stroke-width:2;stroke-dasharray:4 3}
+  .stage-status{position:absolute;left:12px;bottom:12px;background:var(--toast-surface);color:var(--on-color);border-radius:20px;padding:6px 14px;font-size:12px}
   .page-note{font-size:12px;color:var(--muted)}
   .page-note.missing{padding:40px;text-align:center}
   .page-boxes{overflow:auto;border-left:1px solid var(--line);padding-left:16px}
   .page-boxes h2{font-size:13px;font-weight:500;margin-bottom:6px}
   .page-boxes ul{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:4px}
   .page-boxes li button{display:flex;align-items:center;gap:10px;width:100%;padding:6px 8px;border:1px solid transparent;background:transparent;text-align:left;font-size:12px}
-  .page-boxes li button:hover{background:#f0f0f3}
-  .box-glyph{width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:20px;background:#f4f4f5;border-radius:5px}
+  .page-boxes li button:hover{background:var(--surface-badge)}
+  .box-glyph{width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:20px;background:var(--surface-tile);border-radius:5px}
   .box-none{color:var(--muted)}
   .box-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .page-boxes small{color:var(--muted);font-size:10px}
   .page-boxes .manual small{color:var(--accent)}
-  .page-boxes .proposed small,.proposed-count{color:#0e8a7a}
+  .page-boxes .proposed small,.proposed-count{color:var(--proposed)}
   .proposed-count::before{content:'·';margin:0 6px;color:var(--muted)}
   .pages-index{padding-bottom:40px}
   .page-document{border-top:1px solid var(--line);padding:18px 0}
   .page-document h2{font-size:17px;font-weight:500;margin-bottom:4px}
   .page-document ol{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
-  .page-document a{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:6px;padding:7px 11px;font-size:12px;background:#fff}
-  .page-document a:hover{border-color:#a6a6ae}
+  .page-document a{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:6px;padding:7px 11px;font-size:12px;background:var(--surface)}
+  .page-document a:hover{border-color:var(--line-strong)}
   .page-document small{background:var(--accent-light);color:var(--accent);border-radius:10px;padding:1px 7px;font-size:10px}
   @media(max-width:700px){
     .page-view{height:calc(100dvh - 73px);padding:0 16px 12px}

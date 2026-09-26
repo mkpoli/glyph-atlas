@@ -66,6 +66,6 @@
   .typed-choice{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--muted)}
   .typed-choice input{width:9em;font-size:20px;padding:7px 10px}
   .typed-choice input.chosen{border-color:var(--accent);background:var(--accent-light)}
-  .no-suggestion{font-size:12px;padding:11px 14px;color:var(--ink);border:1px solid var(--line);background:white;border-radius:7px;cursor:pointer}
+  .no-suggestion{font-size:12px;padding:11px 14px;color:var(--ink);border:1px solid var(--line);background:var(--surface);border-radius:7px;cursor:pointer}
   .no-suggestion.chosen{background:var(--accent-light);border-color:var(--accent);color:var(--accent)}
 </style>

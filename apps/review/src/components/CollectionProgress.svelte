@@ -110,21 +110,21 @@
 </dialog>
 
 <style>
-  .progress-dialog{width:min(500px,calc(100vw - 32px));max-height:calc(100dvh - 32px);margin:auto;padding:26px 28px;border:1px solid var(--line);border-radius:16px;color:var(--ink);background:#fff;box-shadow:0 24px 80px #0002;overflow:auto}
-  .progress-dialog::backdrop{background:#17171b66;backdrop-filter:blur(3px)}
+  .progress-dialog{width:min(500px,calc(100vw - 32px));max-height:calc(100dvh - 32px);margin:auto;padding:26px 28px;border:1px solid var(--line);border-radius:16px;color:var(--ink);background:var(--surface);box-shadow:0 24px 80px var(--shadow);overflow:auto}
+  .progress-dialog::backdrop{background:var(--backdrop);backdrop-filter:blur(3px)}
   .progress-heading,.source-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
   h2{font-size:22px;font-weight:500;letter-spacing:-.4px;margin:0}h3{font-size:15px;font-weight:500;margin:0}
   .archive-counts{display:grid;grid-template-columns:1.2fr 1fr;gap:20px;margin-top:22px}
   .archive-counts p{margin:0;display:flex;flex-direction:column;gap:4px}.archive-counts strong{font-size:28px;font-weight:400;font-variant-numeric:tabular-nums;letter-spacing:-.7px}.archive-counts span{font-size:12px;color:var(--muted)}
   .sources{display:grid;gap:14px;margin-top:22px}.source{padding:18px;border:1px solid var(--line);border-radius:12px}
-  .extraction{background:#faf9ff}.alignment{font-size:11px}
+  .extraction{background:light-dark(#faf9ff, rgb(156 146 255 / 6%))}.alignment{font-size:11px}
   .state{display:flex;gap:6px;align-items:center;color:var(--muted);font-size:11px;white-space:nowrap}.state i{width:5px;height:5px}
-  .bar{height:4px;border-radius:999px;background:#ececed;overflow:hidden;margin-top:16px}.bar span{display:block;height:100%;background:var(--accent,#6853e8);transition:width .4s}.bar.discovering span{width:24%;opacity:.45}
+  .bar{height:4px;border-radius:999px;background:light-dark(#ececed, #2e2e35);overflow:hidden;margin-top:16px}.bar span{display:block;height:100%;background:var(--accent);transition:width .4s}.bar.discovering span{width:24%;opacity:.45}
   .book-count{font-size:12px;margin:10px 0 0;color:var(--muted)}.book-count strong{color:var(--ink);font-weight:500}
   .stages{margin:16px 0 0;display:grid;gap:6px}.stages div{display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:12px}.stages dt{color:var(--muted)}.stages dd{margin:0;font-variant-numeric:tabular-nums}
-  .current{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:14px 0 0}.progress-note{margin:8px 0 0;font-size:12px;color:var(--muted)}.paused{color:#8a5a12}
+  .current{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:14px 0 0}.progress-note{margin:8px 0 0;font-size:12px;color:var(--muted)}.paused{color:light-dark(#8a5a12, #e3b967)}
   .source-foot{display:flex;justify-content:space-between;gap:12px;margin-top:14px;font-size:10px;color:var(--muted)}
   .additions{list-style:none;padding:0;margin:16px 0 0}.additions li{display:flex;justify-content:space-between;gap:12px;font-size:12px}.additions small{color:var(--muted);font-size:11px}
-  .progress-error{font-size:12px;color:#a3341f}.progress-error button{font:inherit;text-decoration:underline;background:none;border:0;color:inherit;cursor:pointer}
+  .progress-error{font-size:12px;color:light-dark(#a3341f, #ffab94)}.progress-error button{font:inherit;text-decoration:underline;background:none;border:0;color:inherit;cursor:pointer}
   @media(max-width:480px){.progress-dialog{padding:22px 18px}.source{padding:14px}.archive-counts strong{font-size:24px}}
 </style>

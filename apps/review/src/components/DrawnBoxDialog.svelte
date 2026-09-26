@@ -95,12 +95,12 @@
 </dialog>
 
 <style>
-  .drawn-box-dialog{width:min(520px,calc(100vw - 32px));border:1px solid var(--line);border-radius:12px;padding:22px 24px;background:#fff;color:var(--ink);box-shadow:0 20px 60px #0002;overflow:visible}
-  .drawn-box-dialog::backdrop{background:#16151f40}
+  .drawn-box-dialog{width:min(520px,calc(100vw - 32px));border:1px solid var(--line);border-radius:12px;padding:22px 24px;background:var(--surface);color:var(--ink);box-shadow:0 20px 60px var(--shadow);overflow:visible}
+  .drawn-box-dialog::backdrop{background:light-dark(#16151f40, rgb(0 0 0 / 50%))}
   header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
   header .icon-button{font-size:26px;color:var(--muted)}
   .box-summary{display:flex;gap:18px;align-items:center;margin-bottom:18px}
-  .box-crop{margin:0;width:96px;height:96px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:#f4f4f5;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .box-crop{margin:0;width:96px;height:96px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--surface-tile);border:1px solid var(--line);border-radius:8px;overflow:hidden}
   .box-crop img{width:100%;height:100%;object-fit:contain}
   .box-current{font-size:34px}
   .box-unidentified{font-size:15px;color:var(--muted)}

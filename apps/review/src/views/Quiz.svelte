@@ -613,7 +613,7 @@
 {#if savedNotice}<div class="save-toast quiz-saved" role="status">✓ {savedNotice}</div>{/if}
 <style>
   .review-material{display:flex;align-items:center;gap:10px;margin:0 0 20px;font-size:12px;color:var(--muted)}
-  .review-material select{max-width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink);font:inherit}
+  .review-material select{max-width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font:inherit}
   /* Scoped to this view on purpose: the skipped state is the round's own, and the tile keeps the
      size and position it had so declining a crop does not reflow the grid under the reader. */
   .quiz-production{display:flex;gap:6px;min-width:0;padding:0 12px 4px}
@@ -622,7 +622,7 @@
   /* Keyboard focus shows it too; a click that leaves focus on the tile does not keep it open. */
   .quiz-tile:hover .quiz-tile-details,.quiz-tile:has(:focus-visible) .quiz-tile-details{opacity:1;transform:none}
   .quiz-source{flex:1;min-width:0;overflow:hidden;font-size:10px;line-height:1.5;color:var(--muted);text-overflow:ellipsis;white-space:nowrap}
-  .quiz-tile.skipped { background: #eceaf0; border-style: dashed; }
+  .quiz-tile.skipped { background: var(--surface-skipped); border-style: dashed; }
   .quiz-tile.skipped .quiz-choice { opacity: .35; }
   .restore-choice { font-size: 9px; padding: 1px 7px; }
   /* One stage at a time: the selection toolbar belongs to step one and is not shown again. */
@@ -644,12 +644,12 @@
   .reference-heading { display:flex; align-items:center; gap:8px; font-size:11px; color:var(--muted); margin:0 0 10px; }
   .reference-heading span { font-variant-numeric:tabular-nums; }
   .reference-strip { display:flex; flex-wrap:wrap; gap:8px; }
-  .reference-tile { display:flex; flex-direction:column; align-items:center; gap:4px; width:68px; padding:6px 4px; background:#f1f1f3; border:1px solid transparent; border-radius:7px; }
-  .reference-tile:hover { border-color:#ceccd9; }
+  .reference-tile { display:flex; flex-direction:column; align-items:center; gap:4px; width:68px; padding:6px 4px; background:var(--surface-sunken); border:1px solid transparent; border-radius:7px; }
+  .reference-tile:hover { border-color:var(--line-hover); }
   .reference-glyph { display:block; width:52px; height:52px; }
   .reference-glyph :global(img) { width:100%; height:100%; object-fit:contain; }
   .reference-tag { display:flex; align-items:center; gap:4px; font-size:8px; color:var(--muted); white-space:nowrap; }
-  .status-dot.seen { background:#8d8d95; }
+  .status-dot.seen { background:light-dark(#8d8d95, #9d9da6); }
   .current-problem { color: var(--muted); font-size: 12px; margin: 0 0 14px; }
   /* Above the sticky save bar, which would otherwise sit behind it. */
   .save-toast.quiz-saved { bottom:108px; }
