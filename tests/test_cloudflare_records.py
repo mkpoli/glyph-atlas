@@ -207,17 +207,39 @@ def test_the_gugyeol_migration_moves_a_row_published_as_other(scripts):
 
 
 def test_the_document_migration_reads_the_book_from_the_page_id():
-    """0021 fills a published local crop's book from its page id, `<document>:<page>`."""
+    """0024 fills a published local crop's book from its page id, `<document>:<page>`."""
     db = sqlite3.connect(":memory:")
     for path in sorted(Path("apps/cloudflare/migrations").glob("*.sql")):
-        if path.name < "0021":
+        if path.name < "0024":
             db.executescript(path.read_text())
     rows = (("local-a", "local", {"page_id": "hl:00AB:12"}), ("local-b", "local", {"page_id": "hk:entry:with:separators:9"}),
             ("no-page", "local", {}), ("corpus", "corpus", {"page_id": "codh:1:2"}))
     for unit_id, origin, data in rows:
-        db.execute("INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        db.execute("INSERT INTO units(id,origin,character,reading,family,visual_group,production,category,state,"
+                   "revision,quiz,priority,shuffle,data,snapshot,context,visual) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                    (unit_id, origin, "あ", None, None, None, "unknown", "kana", "pending", 0, 1, 1, 0,
                     json.dumps(data), "{}", "{}", "{}"))
-    db.executescript(Path("apps/cloudflare/migrations/0021_unit_document.sql").read_text())
+    db.executescript(Path("apps/cloudflare/migrations/0024_unit_document.sql").read_text())
     assert dict(db.execute("SELECT id,document FROM units")) == {
         "local-a": "hl:00AB", "local-b": "hk:entry:with:separators", "no-page": None, "corpus": None}
+
+
+def test_the_family_migration_refiles_a_crop_left_under_another_family():
+    """0023 gives a local crop its character's family, or the character's own code points without one."""
+    db = sqlite3.connect(":memory:")
+    for path in sorted(Path("apps/cloudflare/migrations").glob("*.sql")):
+        if path.name < "0023":
+            db.executescript(path.read_text())
+    grapheme = json.dumps({"grapheme": {"code_point": "U+3042"}})
+    db.execute("INSERT INTO characters VALUES('U+30A2','ア','',?,?)", (grapheme, grapheme))
+    for unit_id, origin, label, family in (("undone", "local", "ア", "U+4EEE"), ("mark", "local", "※", "U+4EEE"),
+                                           ("kept", "local", "ア", "U+3042"), ("corpus", "corpus", "ア", "U+4EEE"),
+                                           ("marked", "local", "ツ\u309a", None), ("unnamed", "local", "", None)):
+        db.execute("INSERT INTO units(id,origin,character,reading,family,visual_group,production,category,state,"
+                   "revision,quiz,priority,shuffle,data,snapshot,context,visual) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                   (unit_id, origin, label, None, family, None, "unknown", "kana", "pending", 0, 1, 1, 0,
+                    "{}", "{}", "{}", "{}"))
+    db.executescript(Path("apps/cloudflare/migrations/0023_family_follows_character.sql").read_text())
+    assert dict(db.execute("SELECT id,family FROM units")) == {
+        "undone": "U+3042", "mark": "U+203B", "kept": "U+3042", "corpus": "U+4EEE",
+        "marked": "U+30C4 U+309A", "unnamed": None}

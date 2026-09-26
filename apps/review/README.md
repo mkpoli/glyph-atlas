@@ -47,9 +47,10 @@ so reporting it never requires typing several characters into a single-character
 The keyboard positions are `Q W E R T Y A S D F G H`. Use `1`–`4` for the four error types,
 Enter to save, and Escape to clear the selection.
 
-Opening a crop starts continuous review. Choose an error and **Save issue & next**, or use
-**Looks right & next**. The dialog stays open on the next crop. Previous/next arrows skip without
-saving. Reading input, crop adjustment and notes are under **Adjust crop or reading**.
+Opening a crop from a gallery shows it in the inspector. Choose an error and **Save problem**, or use
+**Looks right**; saving closes the inspector and returns to the gallery, where the tile shows its
+verdict. The previous/next arrows and Skip move between crops without saving. Reading input, crop
+adjustment and notes are under **Adjust crop or reading**.
 
 Each round is one atomic journal transaction. A conflicting edit refuses the entire round and
 preserves the browser's choices. Optional single-character corrections are part of that transaction.

@@ -62,6 +62,8 @@ try {
     const data = { char, code_point: code, grapheme: { code_point: 'U+4EEE' }, candidates: {} }
     await db.prepare('INSERT INTO characters VALUES(?,?,?,?,?)').bind(code, char, '', JSON.stringify(data), JSON.stringify(data)).run()
   }
+  const katakanaA = { char: 'ア', code_point: 'U+30A2', grapheme: { code_point: 'U+3042' }, candidates: {} }
+  await db.prepare('INSERT INTO characters VALUES(?,?,?,?,?)').bind('U+30A2', 'ア', '', JSON.stringify(katakanaA), JSON.stringify(katakanaA)).run()
   const corpus = { id: 'codh:fixture', origin: 'corpus', label: '仮', source_label: '仮', reading: '仮',
     written_character: null, identity_status: 'unassigned', grapheme: 'U+4EEE', visual_group: { id: 'group-one' },
     state: 'pending', revision: 0, proxyable: true, source_revision: sourceRevision }
@@ -127,6 +129,9 @@ try {
   assert.equal((await call('/atlas?group=kanji')).items[0].id, 'one', 'category follows the written identity')
   await call(`/atlas/rounds/${cropProblem.id}/undo`, { client_id: 'integration' })
   assert.equal((await call('/atlas?group=kana')).items.length, 2, 'undo restores the category')
+  // …and the family: the correction filed `one` under 仮's U+4EEE, and its undo files it back under ア's.
+  const familyOf = async id => (await db.prepare('SELECT family FROM units WHERE id=?').bind(id).first()).family
+  assert.equal(await familyOf('one'), 'U+3042', 'undo restores the family')
   await db.prepare('INSERT INTO unit_shapes VALUES(?,?)').bind('two', 7).run()
   const shaped = Object.fromEntries((await call('/atlas?purpose=review&production=all')).items.map(i => [i.id, i.shape_order]))
   assert.deepEqual(shaped, { one: null, two: 7 }, 'a crop carries its shape order, or null without one')
@@ -578,6 +583,11 @@ try {
   assert.deepEqual(members.items.map(m => [m.id, m.form, m.basis]), [['codh:plain', '假', 'form_glyph'], ['codh:fixture', '仮', 'form_cluster']])
   await call('/atlas/forms/decisions', { kind: 'inherit', units: ['codh:plain'], client_id: 'integration' })
   assert.equal((await call('/atlas/corpus/character?id=codh%3Aplain')).written_character, '仮', 'following the cluster again')
+  // A reload of the same clustering with no new decision still shows once it finishes.
+  assert.equal((await call('/atlas/forms/families')).items[0].label, '仮 = 假')
+  await db.batch([db.prepare("UPDATE form_families SET label='仮 = 假 = 叚' WHERE code_point='U+4EEE'"),
+    db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('forms_loaded_at','\"reloaded\"')")])
+  assert.equal((await call('/atlas/forms/families')).items[0].label, '仮 = 假 = 叚', 'a finished reload replaces the cached families')
   await counted()
   await call('/atlas/forms/decisions', { kind: 'cluster', cluster: 'U+4EEE:c1', form: null, client_id: 'integration' })
   assert.equal((await db.prepare("SELECT character FROM corpus_units WHERE id='codh:plain'").first()).character, '假',
@@ -670,6 +680,28 @@ try {
   const ordered = (await call('/layers/occurrences?code_point=U%2B4EEE&scope=grapheme&limit=200')).items.map(i => i.id)
   assert.deepEqual(ordered, ordered.slice().sort(), 'in id order')
   assert.equal((await call(`/layers/occurrences?code_point=U%2B4EEE&scope=grapheme&limit=1&offset=${ordered.indexOf('fam-b')}`)).items[0].id, 'fam-b', 'and pages through them')
+  // Search finds a crop by its character or by its reading, each once.
+  for (const [id, character, reading] of [['find-both', 'とも', 'とも'], ['find-reading', '𪜈', 'とも'], ['find-neither', '𪜈', '𪜈']]) {
+    const d = { id, label: character, reading, state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
+    await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(id, 'local', character, reading, null, null,
+      'handwritten', 'kana', 'pending', 0, 0, 1, 1, JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
+  }
+  const searched = async term => { const found = await call(`/atlas?q=${encodeURIComponent(term)}&limit=96`); return [found.total, found.items.map(i => i.id).filter(id => id.startsWith('find-')).sort()] }
+  const matching = async term => (await db.prepare("SELECT count(*) AS n FROM units WHERE origin='local' AND (character=? OR reading=?)").bind(term, term).first()).n
+  assert.deepEqual(await searched('とも'), [await matching('とも'), ['find-both', 'find-reading']], 'a search matches the character or the reading')
+  assert.deepEqual(await searched('𪜈'), [await matching('𪜈'), ['find-neither', 'find-reading']])
+  // A picked character within a script: the script still filters.
+  const pickedIn = async group => (await call(`/atlas?reading=${encodeURIComponent('仮')}&group=${group}&limit=96`)).items.map(i => i.id).filter(id => id.startsWith('fam-')).sort()
+  assert.deepEqual(await pickedIn('kanji'), ['fam-b', 'fam-c'], 'a picked character keeps its crops in its script')
+  assert.deepEqual(await pickedIn('kana'), [], 'and has none in another')
+  // A refresh rewrites `units` in place and stamps the catalogue; the cached browse counts follow.
+  // The crops above were written straight into D1, as a refresh writes them.
+  const stamp = stamped => db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at',?)").bind(JSON.stringify(stamped))
+  await stamp('first refresh').run()
+  const checkedKa = async () => (await call('/atlas')).categories.find(c => c.label === '仮').checked
+  const checkedBefore = await checkedKa()
+  await db.batch([db.prepare("UPDATE units SET state='checked' WHERE id='fam-b' AND state<>'checked'"), stamp('second refresh')])
+  assert.equal(await checkedKa(), checkedBefore + 1, 'a refresh shows in the browse counts')
   console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms.')
 } finally {
   await mf.dispose()
