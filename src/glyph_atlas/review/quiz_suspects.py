@@ -11,8 +11,9 @@ Two readings are expected rather than suspicious, and are not marks:
 
 - a look-alike: a pair the classifier itself confuses on at least `LOOKALIKE_RATE` of its held-out
   test crops of either character, `LOOKALIKE_MISREADS` times or more, as 太 read as 大 (`lookalikes`);
-- a kana the character layer derives from the label, as 於 read as お: in cursive the kanji and its
-  kana are one shape.
+- a kana derived from the label, as 於 read as お or 太 read as た: in cursive the kanji and its kana
+  are one shape. Hentaigana carry their 字母 in the character layer; the modern hiragana take theirs
+  from `refs.kana_origins`.
 
 Measured on 2026-09-26 against the hosted reviews of the Quick review dataset (149 crops a reviewer
 marked wrong, 2,151 left unflagged or confirmed), the rule marks 121 of the wrong crops and 9 of the
@@ -103,6 +104,8 @@ class Labels:
         for row in refs.characters():
             for letter in row.jibo or ():
                 self.kana[letter].update(row.readings or ())
+        # The modern hiragana each kanji is the cursive form of: 太 gives た, the hiragana itself.
+        self.cursive = refs.kana_origins()
 
         self.classes = classes
         self.chars = [refs.to_char(name) if name.startswith("U+") else None for name in classes]
@@ -141,7 +144,8 @@ class Labels:
         from .atlas import reading_of
 
         readings = {reads, reading_of(reads), *refs.readings(refs.to_code_point(reads))} - {None}
-        return frozenset((label, reads)) in self.lookalikes or bool(readings & self.kana.get(label, set()))
+        return (frozenset((label, reads)) in self.lookalikes or bool(readings & self.kana.get(label, set()))
+                or reads in self.cursive.get(label, ()))
 
     def judge(self, probabilities: np.ndarray, labels: list[str]) -> list[dict | None]:
         """A mark for each crop that is a suspect, `None` for each that is not.

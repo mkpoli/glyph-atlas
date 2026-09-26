@@ -6,12 +6,12 @@ import pytest
 
 from glyph_atlas.review import quiz_suspects
 
-CLASSES = ["U+30A2", "U+30A4", "U+4EEE", "U+5047", "U+3078", "U+304A", "U+592A", "U+5927", "other"]
+CLASSES = ["U+30A2", "U+30A4", "U+4EEE", "U+5047", "U+3078", "U+304A", "U+592A", "U+5927", "U+305F", "U+30BF", "other"]
 
 
 def row(**weights):
-    """One softmax row over `CLASSES`, from weights named ア, イ, 仮, 假, へ, お, 太, 大 and other."""
-    order = ["ア", "イ", "仮", "假", "へ", "お", "太", "大", "other"]
+    """One softmax row over `CLASSES`, from weights named ア, イ, 仮, 假, へ, お, 太, 大, た, タ and other."""
+    order = ["ア", "イ", "仮", "假", "へ", "お", "太", "大", "た", "タ", "other"]
     values = np.array([weights.get(name, 0.0) for name in order])
     return values / values.sum()
 
@@ -103,3 +103,18 @@ def test_look_alikes_measured_for_another_checkpoint_are_refused(tmp_path):
         quiz_suspects.load_lookalikes(path, checkpoint)
     with pytest.raises(RuntimeError, match="lookalikes"):
         quiz_suspects.load_lookalikes(tmp_path / "missing.json", checkpoint)
+
+
+def test_a_kanji_read_as_the_hiragana_it_is_the_cursive_of_is_not_a_suspect(labels):
+    # た is the cursive of 太; タ comes from 多, so a 太 read as タ is still a suspect.
+    assert labels.judge(np.stack([row(た=.99, 太=.01)]), ["太"]) == [None]
+    assert labels.judge(np.stack([row(タ=.99, 太=.01)]), ["太"]) == [{"p": 0.01, "reads_as": "タ"}]
+
+
+def test_the_kana_origins_table_covers_every_modern_hiragana():
+    from glyph_atlas import refs
+
+    origins = refs.kana_origins()
+    covered = {kana for kanas in origins.values() for kana in kanas}
+    assert covered == set("あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわゐゑをん")
+    assert origins["太"] == {"た"} and origins["曽"] == origins["曾"] == {"そ"}
