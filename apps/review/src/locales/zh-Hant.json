@@ -261,7 +261,7 @@
   "issue.merged.hint": "一個裁切中含兩個以上的字",
   "issue.merged.title": "字符相連",
   "issue.picker.label": "錯誤類型",
-  "issue.reading.hint": "單一字符，但讀音不同",
+  "issue.reading.hint": "是一個字，但是別的字",
   "issue.reading.title": "字符錯誤",
   "issue.selected": "已選取",
   "issue.suggested": "建議",

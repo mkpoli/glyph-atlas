@@ -258,7 +258,7 @@
   "issue.merged.hint": "一截含二字以上",
   "issue.merged.title": "連字",
   "issue.picker.label": "誤類",
-  "issue.reading.hint": "獨一字，而讀異",
+  "issue.reading.hint": "一字而訛爲他字",
   "issue.reading.title": "訛",
   "issue.selected": "已擇",
   "issue.suggested": "所薦",
