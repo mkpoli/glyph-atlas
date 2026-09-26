@@ -10,8 +10,9 @@
   import ExportReviews from '$components/ExportReviews.svelte'
   import CollectionProgress from '$components/CollectionProgress.svelte'
   import { createInspector, provideInspector } from '$lib/inspector.svelte.js'
+  import { number } from '$lib/client.js'
   import { createSession, provideSession } from '$lib/session.svelte.js'
-  import { t, around, formatNumber, LOCALES, locale, localName, setLocale, useLocale } from '$lib/i18n.svelte.js'
+  import { t, around, LOCALES, locale, localName, setLocale, useLocale } from '$lib/i18n.svelte.js'
   let { data, children } = $props()
   // Before anything renders, so the server and the browser draw the same words.
   useLocale(untrack(() => data.locale))
@@ -28,7 +29,7 @@
   const previous = $derived(index > 0 ? () => inspector.step(-1) : null)
   const next = $derived(index >= 0 && index + 1 < inspector.state.queue.length ? () => inspector.step(1) : null)
   const initial = $derived(routed && shown?.id === routed.id ? page.data.record : null)
-  const position = $derived(inspector.state.queue.length ? `${formatNumber(index + 1)} / ${formatNumber(inspector.state.queue.length)}` : '')
+  const position = $derived(inspector.state.queue.length ? `${number(index + 1)} / ${number(inspector.state.queue.length)}` : '')
   $effect(() => { document.documentElement.lang = locale() })
   // Set on the document so the single image rule in app.css reaches every view.
   $effect(() => { document.documentElement.dataset.ink = session.state.ink })

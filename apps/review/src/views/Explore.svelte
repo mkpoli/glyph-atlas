@@ -7,9 +7,9 @@
   import ImageStyleToggle from '../components/ImageStyleToggle.svelte'
   import CharacterSearch from '../components/CharacterSearch.svelte'
   import CharacterChips from '../components/CharacterChips.svelte'
-  import { catalogue, character, request, randomSeed, number, stored, remember } from '../lib/client.js'
+  import { catalogue, character, request, randomSeed, number, formatSerial, stored, remember } from '../lib/client.js'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery } from '../lib/layers.js'
-  import { t, around, formatSerial, localName, locale } from '../lib/i18n.svelte.js'
+  import { t, around, localName, locale } from '../lib/i18n.svelte.js'
   // `initial` is the first page the server rendered: the seed it shuffled with, the collection's rows,
   // the corpus sample and the progress line. Without it the view loads them itself.
   let { flagged = false, inspect, ink = 'original', onink = () => {}, onprogress = () => {}, initial = null } = $props()
