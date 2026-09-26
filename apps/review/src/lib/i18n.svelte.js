@@ -88,8 +88,8 @@ function hanziGroup(value) {
   return text
 }
 
-/** A whole number in Chinese numerals, grouped by 萬, 億 and 兆: 12345 is 一萬二千三百四十五, 15 is 十五. */
-export function hanziNumber(value) {
+/** A whole number below 10¹⁶ in Chinese numerals, grouped by 萬, 億 and 兆: 12345 is 一萬二千三百四十五, 15 is 十五. */
+function hanziNumber(value) {
   let n = Math.round(Math.abs(value))
   if (!n) return '零'
   const groups = []
@@ -104,22 +104,30 @@ export function hanziNumber(value) {
   return (value < 0 ? '負' : '') + text.replace(/^一十/, '十')
 }
 
-/** A number in the current language's format. */
-export const formatNumber = value => hanzi() ? hanziNumber(Number(value ?? 0)) : Number(value ?? 0).toLocaleString(base())
+/** A number in the current language's format; ∞, NaN and numbers past 兆 keep the base language's digits. */
+export function formatNumber(value) {
+  const n = Number(value ?? 0)
+  return hanzi() && Number.isFinite(n) && Math.abs(n) < 1e16 ? hanziNumber(n) : n.toLocaleString(base())
+}
 
 /** A running number on a tile: 01, 02 … in digits, 一, 二 … in Chinese numerals. */
-export const formatSerial = value => hanzi() ? hanziNumber(value) : String(value).padStart(2, '0')
+export const formatSerial = value => hanzi() ? formatNumber(value) : String(value).padStart(2, '0')
 
-/** A moment in the current language: date and time, or with `{ date: false }` the time alone. */
+const dateFormats = {}
+
+/** A moment in the current language: date and time, or with `{ date: false }` the time alone. Throws on an invalid date. */
 export function formatDateTime(value, { date = true } = {}) {
   const at = new Date(value)
+  if (Number.isNaN(at.getTime())) throw new RangeError(`Invalid time value: ${value}`)
   if (hanzi()) {
     const time = `${hanziNumber(at.getHours())}時${at.getMinutes() ? `${hanziNumber(at.getMinutes())}分` : ''}`
     if (!date) return time
     const year = [...String(at.getFullYear())].map(digit => '〇一二三四五六七八九'[digit]).join('')
     return `${year}年${hanziNumber(at.getMonth() + 1)}月${hanziNumber(at.getDate())}日 ${time}`
   }
-  return new Intl.DateTimeFormat(base(), date ? { dateStyle: 'medium', timeStyle: 'short' } : { hour: '2-digit', minute: '2-digit' }).format(at)
+  const key = `${base()} ${date}`
+  dateFormats[key] ??= new Intl.DateTimeFormat(base(), date ? { dateStyle: 'medium', timeStyle: 'short' } : { hour: '2-digit', minute: '2-digit' })
+  return dateFormats[key].format(at)
 }
 
 /**

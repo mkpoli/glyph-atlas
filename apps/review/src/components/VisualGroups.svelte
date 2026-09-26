@@ -19,7 +19,7 @@
       </button>
     {/each}
     {#if unassigned > 0}<button class:active={value === 'unassigned'} aria-pressed={value === 'unassigned'} onclick={() => onchange('unassigned')}>
-      <span>{t('corpus.unassigned')}</span><small>{unassigned}</small>
+      <span>{t('corpus.unassigned')}</span><small>{formatNumber(unassigned)}</small>
     </button>{/if}
   </nav>
 {/if}
