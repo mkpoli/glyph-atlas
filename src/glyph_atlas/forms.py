@@ -243,13 +243,14 @@ def _stated(form: str | None, issue: str | None, character: str | None) -> dict:
 def restoring(kind: str, *, cluster: str | None = None, units: list[str] | None = None) -> list[dict]:
     """The decisions that put back what a decision of `kind` on `cluster` or `units` would change.
 
-    A cluster gets back its last decision in this clustering, or none. Glyphs that followed their
+    A cluster gets back its last decision in this clustering's lineage, or none. Glyphs that followed their
     cluster follow it again; the others get back their own decision, one decision for each distinct one.
     """
     if kind == "cluster":
-        revision = clusters()["revision"]
+        data = clusters()
+        revisions = {data["revision"], *data.get("parents", [])}
         last = next((event for event in reversed(_events()) if event["kind"] == "cluster"
-                     and event["cluster"] == cluster and event["revision"] == revision), None) or {}
+                     and event["cluster"] == cluster and event["revision"] in revisions), None) or {}
         return [{"kind": "cluster", "cluster": cluster,
                  **_stated(last.get("form"), last.get("issue"), last.get("character"))}]
     decided = resolved()
