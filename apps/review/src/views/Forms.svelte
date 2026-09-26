@@ -153,6 +153,16 @@
       if (splitK) groups = (await loadSplit(open, splitK)).groups
     } catch (e) { error = e.message } finally { busy = false }
   }
+  // A cluster whose glyphs mostly have one form already is named with it. From an opened cluster the
+  // next open one opens, so a run of clusters is confirmed one key each.
+  async function accept() {
+    const target = cluster
+    if (busy || chosen.size || picked.size > 1 || !target?.majority || target.form) return
+    const wasOpen = open
+    if (wasOpen) close()
+    await apply(target.majority)
+    if (wasOpen && !error && isOpen(current.items[active] ?? {})) await show(active)
+  }
   function nextOpen(from) {
     const after = current.items.findIndex((c, i) => i > from && isOpen(c))
     return after >= 0 ? after : Math.min(from + 1, current.items.length - 1)
@@ -175,6 +185,7 @@
     else if (event.key === 'Enter' && !open) { event.preventDefault(); show(active) }
     else if (!open && (event.key === 'r' || event.key === 'R')) { event.preventDefault(); reviewing = true }
     else if (!open && (event.key === 'x' || event.key === 'X')) { event.preventDefault(); togglePick() }
+    else if (!chosen.size && (event.key === 'v' || event.key === 'V')) { event.preventDefault(); accept() }
     else if (event.key === 'Escape' && !open && picked.size) { event.preventDefault(); picked = new Set() }
     else if (event.key === 'Escape' && open) { event.preventDefault(); close() }
     // Clearing gives selected glyphs back to their cluster, or a cluster its unnamed state.
@@ -280,6 +291,7 @@
                 {:else}<button disabled={busy} onclick={() => correcting = true}>{t('forms.wrongCharacter')}</button>{/if}
                 <button disabled={busy} onclick={() => apply(null, 'inherit')}>{t('forms.followCluster')} <kbd>⌫</kbd></button>
               {:else}
+                {#if cluster?.majority && !cluster.form && picked.size < 2}<button class="accept-majority" disabled={busy} onclick={accept}>{t('forms.acceptMajority', { glyph: cluster.majority })} <kbd>V</kbd></button>{/if}
                 <button disabled={busy || !cluster?.form} onclick={() => apply(null)}>{t('forms.clearCluster')} <kbd>⌫</kbd></button>
               {/if}
             </div>
@@ -403,6 +415,7 @@
   .form-choice kbd{position:absolute;top:4px;right:5px;font-size:8px;color:#a0a0a7;font-family:ui-monospace,monospace}
   .palette-other{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto;align-content:flex-start;max-width:260px}.palette-other button{font-size:11px;padding:8px 11px}
   .palette-other kbd{font-size:9px;color:var(--muted)}
+  .palette-other .accept-majority{color:var(--accent);border-color:#cfc9f7;background:var(--accent-light)}
   .forms-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:10px 0 12px}.forms-keys{margin:0}
   .review-start{margin-left:auto;font-size:12px;padding:8px 13px;background:var(--ink);color:#fff;border-color:var(--ink)}.review-start kbd{font-size:9px;opacity:.7}
   .form-cluster.picked{border-color:var(--accent);background:#f3f1ff}
