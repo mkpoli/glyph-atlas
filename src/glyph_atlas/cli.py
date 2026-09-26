@@ -776,6 +776,8 @@ def ainu_derive(
     limit: Annotated[int | None, typer.Option(help="stop after this many pages")] = None,
     align: Annotated[bool, typer.Option("--align/--no-align", help="place characters in the derived boxes")] = True,
     cache: Annotated[Path | None, typer.Option(help="read and write the page detections here")] = None,
+    grouping: Annotated[str, typer.Option(help="how detections become columns: ink, or pitch for a ruled print")] = "ink",
+    body_lines: Annotated[int | None, typer.Option(help="fewest lines a page needs to be paired")] = None,
 ) -> None:
     """Give the transcribed lines boxes, then align them: the plan's step 2.
 
@@ -798,8 +800,11 @@ def ainu_derive(
         if not pages:
             typer.echo("no page selected")
             return
+    if grouping not in ainu.GROUPINGS:
+        raise typer.BadParameter(f"--grouping must be one of {', '.join(ainu.GROUPINGS)}, got {grouping}")
     counts = ainu.derive_dataset(directory, pages=pages, cache=cache, onnx_path=onnx_path,
-                                 score=detector_score)
+                                 score=detector_score, grouping=grouping,
+                                 body_lines=body_lines if body_lines is not None else ainu.BODY_LINES)
     for name, value in counts.items():
         typer.echo(f"{name:<14} {value:>10}")
     if not align:

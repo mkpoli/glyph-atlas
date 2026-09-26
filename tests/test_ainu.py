@@ -9,6 +9,7 @@ boxes and a synthetic page: no detector, no page image, no network.
 from __future__ import annotations
 
 import csv
+import itertools
 
 import pytest
 
@@ -601,3 +602,27 @@ def test_a_transcription_short_of_a_line_is_not_paired_one_column_off() -> None:
     lines = [line(seq, "あ" * 6) for seq in range(5)]
     derivation = ainu.derive_page(page(), lines, boxes)
     assert not derivation.paired and derivation.line_box(0) is None
+
+
+def _ruled_page() -> list[Box]:
+    """Three ruled columns 100 px apart; the middle one holds a split annotation of small characters."""
+    boxes = []
+    for x in (10, 210):
+        boxes += [Box(x=x, y=y, w=80, h=80) for y in range(0, 800, 100)]
+    boxes += [Box(x=110, y=y, w=80, h=80) for y in (0, 100, 200)]
+    boxes += [Box(x=x, y=y, w=35, h=40) for x in (112, 153) for y in range(300, 800, 50)]
+    return boxes
+
+
+def test_pitch_grouping_keeps_a_split_annotation_inside_its_ruled_column():
+    boxes = _ruled_page()
+    columns = ainu.columns_by_pitch(boxes)
+    assert [len(column) for column in columns] == [8, 23, 8]
+    assert {boxes[i].x for i in columns[0]} == {210}
+    assert {boxes[i].x for i in columns[1]} == {110, 112, 153}
+    assert all(boxes[a].y <= boxes[b].y for column in columns for a, b in itertools.pairwise(column))
+
+
+def test_a_pitch_derived_box_names_its_grouping():
+    assert ainu.provenance("pitch") == {"source": "ainu-derive", "method": ainu.PITCH_METHOD}
+    assert ainu.provenance() == {"source": "ainu-derive", "method": ainu.DERIVATION_METHOD}
