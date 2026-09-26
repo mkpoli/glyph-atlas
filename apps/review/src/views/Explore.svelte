@@ -8,6 +8,7 @@
   import CharacterSearch from '../components/CharacterSearch.svelte'
   import CharacterChips from '../components/CharacterChips.svelte'
   import WorkFilter from '../components/WorkFilter.svelte'
+  import GraphemeGrid from '../components/GraphemeGrid.svelte'
   import { catalogue, character, request, randomSeed, number, formatSerial, stored, remember } from '../lib/client.js'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery } from '../lib/layers.js'
   import { t, around, localName, locale, localize } from '../lib/i18n.svelte.js'
@@ -16,7 +17,7 @@
   let { flagged = false, inspect, ink = 'original', onink = () => {}, onprogress = () => {}, initial = null } = $props()
   const first = untrack(() => initial)
   let data = $state(first?.result ?? null), items = $state(first?.result.items ?? []), error = $state(''), loading = $state(!first)
-  let reading = $state(''), work = $state(''), offset = $state(0), seed = $state(first?.seed ?? randomSeed())
+  let grapheme = $state(''), work = $state(''), offset = $state(0), seed = $state(first?.seed ?? randomSeed())
   let query = $state('')
   let choosing = $state(false), catalogueRequest = null
   let filter = $state('all'), requestId = 0, closed = false
@@ -43,6 +44,26 @@
     try { collection = await request('/atlas/collection/status') } catch { /* retry on the next interval */ }
   }
   const categories = $derived((data?.categories ?? []).filter(c => !flagged || c.flagged || c.hard))
+  /** A grapheme key (`U+4EEE`, or a label's own code points) as the text it names. */
+  const charOf = key => /^U\+[0-9A-F]{4,6}( U\+[0-9A-F]{4,6})*$/i.test(key)
+    ? key.split(' ').map(point => String.fromCodePoint(parseInt(point.slice(2), 16))).join('') : key
+  // The readings the catalogue counts, gathered under their graphemes: 仮 and 假 are one tile.
+  const graphemes = $derived.by(() => {
+    const groups = new Map()
+    for (const c of categories) {
+      const key = c.grapheme ?? c.label
+      const group = groups.get(key) ?? { key, char: charOf(key), count: 0, members: [] }
+      const count = flagged ? c.flagged + c.hard : c.total
+      group.members.push({ label: c.label, count }); group.count += count
+      groups.set(key, group)
+    }
+    for (const group of groups.values()) group.members.sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+    return [...groups.values()].sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
+  })
+  const chosenGrapheme = $derived(graphemes.find(group => group.key === grapheme))
+  /** The grapheme a corpus row is filed under, as the catalogue files a label. */
+  const codesOf = text => [...text].map(c => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')).join(' ')
+  const rowGrapheme = row => row.grapheme?.code_point ?? row.grapheme ?? codesOf(row.label ?? '')
   const works = $derived((data?.documents ?? []).filter(w => !flagged || w.flagged || w.hard)
     .map(w => ({ ...w, count: flagged ? w.flagged + w.hard : w.total })))
   /** What a record says about its own reliability, in one badge: withheld, machine or confirmed.
@@ -163,7 +184,7 @@
       catalogueRequest = new AbortController()
       // The corpus half is requested alongside the crops, and deduplicated against them once both are in.
       const sampled = append ? null : requestSample()
-      const result = await catalogue({ reading, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
+      const result = await catalogue({ grapheme, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
         reported: flagged ? (showReported ? 'show' : 'hide') : null, seed, offset, limit: 60 }, { signal: catalogueRequest.signal, priority: 'low' })
       if (closed || id !== requestId) return
       data = result; items = append ? [...items, ...result.items] : result.items
@@ -173,7 +194,7 @@
   }
   /** The homepage's corpus half: bounded, deduplicated against the local rows, never a scan. */
   function requestSample() {
-    const bare = !query && !picked && filter === 'all' && !reading && !work
+    const bare = !query && !picked && filter === 'all' && !grapheme && !work
     const pending = flagged ? request('/atlas/corpus/reviews?state=flagged') : bare ? layerGallery(60, seed) : null
     // Settled here, so a failure waits for `showSample` instead of surfacing as unhandled.
     return pending?.then(page => ({ page }), error => ({ error })) ?? null
@@ -184,7 +205,7 @@
       if (error) throw error
       if (closed || id !== requestId) return
       // A corpus glyph belongs to no work of this collection, so choosing a work leaves them out.
-      sample = work ? [] : result.items.filter(row => (!query || row.label.includes(query)) && (!reading || row.label === reading))
+      sample = work ? [] : result.items.filter(row => (!query || row.label.includes(query)) && (!grapheme || rowGrapheme(row) === grapheme))
       sampleFault = null
       return
     }
@@ -218,10 +239,10 @@
     catalogueRequest?.abort()
     if (picked || expand !== 'none') { picked = null; expand = 'none'; local = []; corpus = []; corpusTotal = 0 }
     corpusOffset = 0
-    // A direct character search answers its own question, so it drops the reading, type and work filters
+    // A direct character search answers its own question, so it drops the grapheme, type and work filters
     // rather than intersecting with them: with シ selected, searching ア used to answer nothing and
     // say there was no such occurrence, when the filter was what excluded it.
-    if (value) { reading = ''; filter = 'all'; work = '' }
+    if (value) { grapheme = ''; filter = 'all'; work = '' }
     clearTimeout(searchTimer)
     // Readings such as トモ ask the candidate index first. Scanning the crop catalogue for every
     // intermediate spelling only competes with the list the reader is trying to choose from.
@@ -275,7 +296,7 @@
     // A chip passes a code point and a candidate row passes itself; whichever it is, the card is
     // given the fields the chips read so a half-known character never renders as undefined.
     const bare = { char: '', characters: [], derived: [], jibo: [], expansions: [], candidates: null }
-    query = item.char ?? ''; reading = ''; filter = 'all'; work = ''; offset = 0; expand = 'none'
+    query = item.char ?? ''; grapheme = ''; filter = 'all'; work = ''; offset = 0; expand = 'none'
     local = []; corpus = []; corpusTotal = 0; corpusOffset = 0; corpusFault = null
     visual = ''; analysis = null; familyTotal = null; unassignedCount = null
     if (item.code_point) {
@@ -325,12 +346,12 @@
       // collection's own rows. Updating the wrong one leaves the tile showing its old state.
       const replace = item => item.id !== id ? [item] : (flagged && !waiting(updated.state)) || !fitsGallery(updated) ? [] : [updated]
       keepPlace(id, () => { if (picked) local = local.flatMap(replace); else items = items.flatMap(replace) })
-      const summary = await catalogue({ reading, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
+      const summary = await catalogue({ grapheme, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
         reported: flagged ? (showReported ? 'show' : 'hide') : null, limit: 1 })
       if (!closed) data = { ...data, counts: summary.counts, categories: summary.categories, documents: summary.documents, total: summary.total, available: summary.available, reported_count: summary.reported_count }
     } catch (e) { if (!closed) error = e.message }
   }
-  function select(value) { reading = value; offset = 0; load() }
+  function select(value) { grapheme = value; offset = 0; load() }
   function shuffle() { seed = randomSeed(); offset = 0; load() }
   onMount(() => { if (!first) { load(); readCollection() } const timer = setInterval(readCollection, 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
   // Widening is the reader's choice and only it reloads the gallery; picking a character resets the
@@ -348,23 +369,26 @@
         <span>↗</span>
       </button>
     {/if}
-    <div class="collection-meta"><span class="live-dot"></span>{#if picked}<span>{t('explore.meta.glyphs', { count: display.length })}</span><span class="meta-divider">/</span><span>{expand === "grapheme" ? t('explore.meta.characters', { count: picked.grapheme?.character_count ?? 1 }) : t('explore.meta.characters', { count: 1 })}</span>{:else if !flagged && collection?.archive}<span>{t('explore.meta.indexedCrops', { count: collection.archive.character_crops })}</span><span class="meta-divider">/</span><span>{t('explore.meta.worksWithCrops', { count: collection.archive.works_with_crops })}</span>{:else}<span>{t('explore.meta.glyphsTotal', { count: flagged ? (data?.total ?? 0) + sample.length : data?.available })}</span><span class="meta-divider">/</span><span>{t('explore.meta.readings', { count: data?.categories.length })}</span>{/if}</div>
+    <div class="collection-meta"><span class="live-dot"></span>{#if picked}<span>{t('explore.meta.glyphs', { count: display.length })}</span><span class="meta-divider">/</span><span>{expand === "grapheme" ? t('explore.meta.characters', { count: picked.grapheme?.character_count ?? 1 }) : t('explore.meta.characters', { count: 1 })}</span>{:else if !flagged && collection?.archive}<span>{t('explore.meta.indexedCrops', { count: collection.archive.character_crops })}</span><span class="meta-divider">/</span><span>{t('explore.meta.worksWithCrops', { count: collection.archive.works_with_crops })}</span>{:else}<span>{t('explore.meta.glyphsTotal', { count: flagged ? (data?.total ?? 0) + sample.length : data?.available })}</span><span class="meta-divider">/</span><span>{t('explore.meta.graphemes', { count: graphemes.length })}</span>{/if}</div>
   </div>
   <div class="collection-toolbar">
-    <!-- The box, empty and focused, lists the collection's readings; one chosen narrows the grid. -->
-    {#snippet readings(close)}
-      <p class="candidate-status">{t('explore.readings')}</p>
-      <div class="category-options">{#each categories as c}<button type="button" class:chosen={reading === c.label} onclick={() => { close(); select(c.label) }}><span lang="ja">{c.label}</span><small>{number(flagged ? c.flagged + c.hard : c.total)}</small></button>{/each}</div>
+    <!-- The box, empty and focused, lists the collection's graphemes; one chosen narrows the grid, and a
+         form in a tile's popover opens that form's own gallery. -->
+    {#snippet browse(close)}
+      <p class="candidate-status">{t('explore.graphemes')}</p>
+      <GraphemeGrid groups={graphemes} value={grapheme} onchoose={key => { close(); select(key) }}
+                    onform={form => { close(); pick({ code_point: codesOf(form), char: form }, true) }} />
     {/snippet}
-    <CharacterSearch bind:value={query} oninput={seek} onselect={pick} browse={readings}
-                     token={reading} tokenLabel={t('explore.clearReading', { reading })} ontokenclear={() => select('')}
+    <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse}
+                     token={grapheme ? charOf(grapheme) : ''} tokenLabel={t('explore.clearGrapheme', { grapheme: charOf(grapheme) })} ontokenclear={() => select('')}
                      onsubmit={() => { clearTimeout(searchTimer); offset = 0; submitQuery() }} />
     <div class="filter-tabs" aria-label={t('explore.filter.label')}>{#each [['all', () => t('explore.filter.all')], ['kana', () => t('explore.filter.kana')], ['kanji', () => t('explore.filter.kanji')], ['hangul', () => t('explore.filter.hangul')], ['gugyeol', () => t('explore.filter.gugyeol')]] as [value, text]}<button class:active={filter === value} onclick={() => { filter = value; offset = 0; load() }}>{text()}</button>{/each}</div>
     <!-- A work narrows the collection's listing; choosing one leaves a picked character's gallery. -->
     <WorkFilter {works} value={work} onchange={value => { work = value; if (picked || query) clearQuery(); else { offset = 0; load() } }} />
     <span class="toolbar-space"></span>
     <ImageStyleToggle {ink} onchange={onink} />
-    {#if reading && !flagged}<a class="quiet-link" href={localize('/review') + `?reading=${encodeURIComponent(reading)}`}>{t('explore.reviewReading', { reading })}</a>{/if}
+    <!-- A round asks about one written character, so it is offered only for a grapheme of one form. -->
+    {#if chosenGrapheme?.members.length === 1 && !flagged}{@const reading = chosenGrapheme.members[0].label}<a class="quiet-link" href={localize('/review') + `?reading=${encodeURIComponent(reading)}`}>{t('explore.reviewReading', { reading })}</a>{/if}
     {#if flagged && data?.reported_count}<button class="quiet-link" onclick={toggleReported}>{showReported ? t('explore.flagged.hideReported') : t('explore.flagged.showReported', { count: data.reported_count })}</button>{/if}
     <button class="shuffle" onclick={shuffle} disabled={loading} aria-label={t('explore.shuffle.aria')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h3c4 0 8 12 12 12h3M17 14l4 4-4 4M3 18h3c1.7 0 3.5-2.3 5-5M14 8c1.5-1.4 2.6-2 4-2h3M17 2l4 4-4 4"/></svg>{t('explore.shuffle')}</button>
   </div>
