@@ -401,6 +401,7 @@ dev = [
     { name = "onnxruntime-gpu" },
     { name = "pytest" },
     { name = "ruff" },
+    { name = "scipy" },
 ]
 
 [package.metadata]
@@ -439,6 +440,7 @@ dev = [
     { name = "onnxruntime-gpu", specifier = ">=1.22" },
     { name = "pytest", specifier = ">=8" },
     { name = "ruff", specifier = ">=0.12" },
+    { name = "scipy", specifier = ">=1.16" },
 ]
 
 [[package]]
