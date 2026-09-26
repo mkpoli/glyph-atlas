@@ -1,6 +1,12 @@
 Copyright 2020 The Klee Project Authors (https://github.com/fontworks-fonts/Klee)
 Historical glyphs Copyright 2026 The Kureedo Project Authors (https://github.com/mkpoli/kureedo)
 
+GenZuiSans-Kana.woff2 (GenZui Sans, https://github.com/mkpoli/GenZui):
+Copyright 2023 The Noto Project Authors (https://github.com/notofonts/hentaigana)
+Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'. Source is a trademark of Adobe in the United States and/or other countries.
+Some Hentaigana glyphs are derived from ShokakiHentaiganaGothic and SukimaGothic. Other Kana glyphs are derived from GenSekiGothic.
+Copyright (c) 2020, Fredrick R. Brennan
+
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:
 https://scripts.sil.org/OFL

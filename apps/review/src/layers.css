@@ -3,11 +3,13 @@
    rules stay untouched. */
 
 @font-face {
-  font-family: "Noto Serif Hentaigana";
-  src: url("/fonts/NotoSerifHentaigana-Regular.ttf") format("truetype");
+  font-family: "GenZui Sans";
+  src: url("/fonts/GenZuiSans-Kana.woff2") format("woff2");
   font-display: swap;
-  /* The file's cmap: the hentaigana of Kana Supplement and Kana Extended-A. */
-  unicode-range: U+1B000-1B11E, U+1B120-1B122;
+  /* The subset's cmap, printed by `scripts/build_genzui_subset.py`: the supplementary kana blocks
+     and four kana ligatures. */
+  unicode-range: U+1AFF0-1AFF3, U+1AFF5-1AFFB, U+1AFFD-1AFFE, U+1B000-1B128, U+1B132, U+1B150-1B152,
+    U+1B155, U+1B164-1B168, U+2A708, U+2CEFF-2CF00, U+2CF02;
 }
 
 @font-face {
@@ -58,7 +60,7 @@
 .layer-name { margin: 0 0 8px; font-size: .82rem; color: var(--ink-soft, #6b625a); }
 .layer-facts { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; font-size: .9rem; }
 .fact.confusable { color: var(--ink-soft, #6b625a); }
-.inline-glyph { font-family: "Kureedo Kata", "Noto Serif Hentaigana", system-ui, sans-serif; font-size: 1.2rem;
+.inline-glyph { font-family: "Kureedo Kata", "GenZui Sans", system-ui, sans-serif; font-size: 1.2rem;
   background: none; border: 0; border-bottom: 1px dotted currentColor; cursor: pointer; padding: 0 2px; }
 .inline-glyph.big { font-size: 1.7rem; }
 .layer-close { margin-inline-start: auto; }
@@ -135,10 +137,10 @@
 .corpus-holder small { color: var(--ink-soft, #6b625a); }
 .corpus-open { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 4px;
   min-height: 96px; padding: 10px; font-size: .78rem; text-align: center; border: 1px dashed var(--line, #d8d2c8); border-radius: 8px; }
-.corpus-open b { font-family: "Kureedo Kata", "Noto Serif Hentaigana", system-ui, sans-serif; font-size: 1.6rem; }
+.corpus-open b { font-family: "Kureedo Kata", "GenZui Sans", system-ui, sans-serif; font-size: 1.6rem; }
 .corpus-open small { color: var(--ink-soft, #6b625a); }
 .written-input, .reading-input { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: .85rem; }
-.written-input input { font-family: "Kureedo Kata", "Noto Serif Hentaigana", system-ui, sans-serif; font-size: 1.2rem; width: 5.5rem; }
+.written-input input { font-family: "Kureedo Kata", "GenZui Sans", system-ui, sans-serif; font-size: 1.2rem; width: 5.5rem; }
 .written-note { margin: 2px 0 6px; font-size: .74rem; color: var(--ink-soft, #6b625a); }
 .candidate-more { display: block; width: 100%; padding: 8px 10px; margin-top: 2px; background: none; border: 0;
   border-top: 1px solid var(--line, #d8d2c8); font-size: .82rem; cursor: pointer; color: var(--ink-soft, #6b625a); }
