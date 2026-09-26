@@ -215,7 +215,7 @@
   "forms.reportIssue.crop": "잘못된 크롭",
   "forms.reported": "신고됨: {reason}",
   "forms.report": "신고",
-  "forms.percentDone": "{percent}% 완료",
+  "forms.percentDone": "{count}% 완료",
   "forms.rejectedLabel": "신고됨",
   "forms.review.start": "클러스터 차례로 검토",
   "forms.review.progress": "클러스터 {clusters}개 중 {reviewed}개 완료",

@@ -270,7 +270,7 @@
           <li><button class:current={f.code_point === code} onclick={() => pick(f.code_point)}>
             <span class="family-char">{f.char}</span>
             <span class="family-meta"><span>{number(f.count)}</span><small>{t('forms.clusters.count', { count: f.clusters })}</small></span>
-            <span class="family-progress" aria-label={t('forms.percentDone', { percent: Math.round(100 * (f.assigned + f.rejected) / f.count) })}><i style={`width:${100 * f.assigned / f.count}%`}></i><i class="rejected" style={`width:${100 * f.rejected / f.count}%`}></i></span>
+            <span class="family-progress" aria-label={t('forms.percentDone', { count: f.assigned + f.rejected ? Math.max(1, Math.round(100 * (f.assigned + f.rejected) / f.count)) : 0 })}><i style={`width:${100 * f.assigned / f.count}%`}></i><i class="rejected" style={`width:${100 * f.rejected / f.count}%`}></i></span>
           </button></li>
         {/each}
       </ol>
