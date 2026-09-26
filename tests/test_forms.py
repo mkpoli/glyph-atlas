@@ -289,6 +289,33 @@ def test_a_decision_answers_with_the_decisions_that_restore_what_it_changed(clus
     assert forms.form_for(B)["form"] == "𛂞" and forms.form_for(C)["issue"] == "crop"
 
 
+def test_undo_restores_a_review_inherited_by_a_filtered_clustering(clustering, tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from glyph_atlas.review.forms import router
+
+    forms.record("cluster", cluster="U+306F:one", issue="mixed")
+    manifest = clustering / "clusters.json"
+    data = json.loads(manifest.read_text())
+    manifest.write_text(json.dumps({**data, "revision": "filtered", "parents": ["r1"]}))
+    forms._CLUSTERS.invalidate()
+    assert forms.cluster_decisions()["U+306F:one"]["issue"] == "mixed"
+
+    app = FastAPI()
+    app.include_router(router(media=None, corpus_root=tmp_path))
+    client = TestClient(app)
+    response = client.post("/atlas/forms/decisions", json={
+        "kind": "cluster", "cluster": "U+306F:one", "form": "𛂥",
+    })
+    assert response.status_code == 200
+    assert forms.form_for(A)["form"] == "𛂥"
+    for decision in response.json()["undo"]:
+        assert client.post("/atlas/forms/decisions", json=decision).status_code == 200
+    assert forms.cluster_decisions()["U+306F:one"] == {"form": None, "issue": "mixed"}
+    assert forms.form_for(A) is None
+
+
 def test_a_cluster_lists_its_least_typical_glyphs_past_the_typical_twelve(tmp_path):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
