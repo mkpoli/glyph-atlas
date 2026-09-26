@@ -14,10 +14,12 @@ Two readings are expected rather than suspicious, and are not marks:
 - a kana derived from the label, as 於 read as お or 太 read as た: in cursive the kanji and its kana
   are one shape. Hentaigana carry their 字母 in the character layer; the modern hiragana take theirs
   from `refs.kana_origins`.
+- a reading reviewers checked on sample crops and found to be the label, as 可 read as 一
+  (`refs.suspect_forms`); a real swap between such a label and reading is then not marked either.
 
 Measured on 2026-09-26 against the hosted reviews of the Quick review dataset (149 crops a reviewer
-marked wrong, 2,151 left unflagged or confirmed), the rule marks 121 of the wrong crops and 9 of the
-others. Of the 19,291 crops it marks 4,397, and all but 79 of those the alignment-repair pass had
+marked wrong, 2,151 left unflagged or confirmed), the rule marks 121 of the wrong crops and 6 of the
+others. Of the 19,291 crops it marks 4,357, and all but 72 of those the alignment-repair pass had
 already withheld from rounds. Among the dealable marks about one in five is a plain error on
 inspection (a half character, a blank page edge, 知 filed as 如); reviewers found 5 errors among some
 1,900 dealt crops of the same dataset. The nearest-neighbour distance within a character was tried
@@ -106,6 +108,8 @@ class Labels:
                 self.kana[letter].update(row.readings or ())
         # The modern hiragana each kanji is the cursive form of: 太 gives た, the hiragana itself.
         self.cursive = refs.kana_origins()
+        # Readings whose sampled crops reviewers found to be the label (可 read as 一).
+        self.forms = refs.suspect_forms()
 
         self.classes = classes
         self.chars = [refs.to_char(name) if name.startswith("U+") else None for name in classes]
@@ -143,7 +147,8 @@ class Labels:
         from .. import refs
         from .atlas import reading_of
 
-        if frozenset((label, reads)) in self.lookalikes or reads in self.cursive.get(label, ()):
+        if (frozenset((label, reads)) in self.lookalikes or reads in self.cursive.get(label, ())
+                or (label, reads) in self.forms):
             return True
         # A hentaigana of the label, or the hiragana one reads as. A katakana is a part of some
         # kanji, not the label's cursive, so one that only sounds like it (以 read as イ) is not.
@@ -203,6 +208,13 @@ def _write(target: Path, suspects: dict[str, dict], scored: int, inputs: dict) -
     return {"scored": scored, "suspects": len(suspects), "revision": revision}
 
 
+def refs_table(name: str) -> Path:
+    """A table of the character layer that the rule reads, for recording which version was used."""
+    from .. import refs
+
+    return refs.VOCAB / name
+
+
 def _digest(path: Path) -> str:
     with path.open("rb") as handle:
         return hashlib.file_digest(handle, "sha256").hexdigest()
@@ -237,7 +249,8 @@ def compute(dataset: Path, *, checkpoint: Path, lookalikes: Path = LOOKALIKES) -
             if mark:
                 suspects[identity] = {**mark, "label": label_of[identity], "box": boxes[identity]}
     inputs = {"crops": hashlib.sha256("\n".join(sorted(ids)).encode()).hexdigest(),
-              "checkpoint": _digest(checkpoint), "lookalikes": _digest(lookalikes)}
+              "checkpoint": _digest(checkpoint), "lookalikes": _digest(lookalikes),
+              "kana_origins": _digest(refs_table("kana-origins.tsv")), "suspect_forms": _digest(refs_table("suspect-forms.tsv"))}
     return _write(Path(dataset) / FILE, suspects, len(ids), inputs)
 
 
@@ -316,7 +329,8 @@ def compute_corpus(root: Path, target: Path, *, checkpoint: Path, lookalikes: Pa
                 suspects[identity] = {**mark, "label": label_of[identity],
                                       "box": dict(zip("xywh", box, strict=True)) if box else None}
     inputs = {"corpora": list(corpora), "located": hashlib.sha256("\n".join(sorted(located)).encode()).hexdigest(),
-              "checkpoint": _digest(checkpoint), "lookalikes": _digest(lookalikes)}
+              "checkpoint": _digest(checkpoint), "lookalikes": _digest(lookalikes),
+              "kana_origins": _digest(refs_table("kana-origins.tsv")), "suspect_forms": _digest(refs_table("suspect-forms.tsv"))}
     target.parent.mkdir(parents=True, exist_ok=True)
     return {**_write(target, suspects, scored, inputs), "unheld": dict(unheld)}
 

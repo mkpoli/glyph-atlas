@@ -28,9 +28,9 @@ def publication(tmp_path, monkeypatch):
     key, denied = "a" * 64, "b" * 64
     data = json.dumps({"id": "one", "label": "ア", "image": f"/atlas/media/{key}.webp"})
     with database(local / "catalogue.sqlite") as db:
-        db.execute("INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+        db.execute("INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
             "one", "local", "ア", "ア", None, None, "handwritten", "kana", "pending", 0, 1, 1, 0,
-            data, "{}", "{}", "{}"))
+            data, "{}", "{}", "{}", None))
         db.executemany("INSERT INTO media VALUES(?,?,?,?,?)", [
             (key, "pack-0001.bin", 0, 7, "image/webp"),
             (denied, "pack-0001.bin", 7, 7, "image/webp")])

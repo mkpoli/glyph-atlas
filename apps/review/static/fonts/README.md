@@ -30,3 +30,20 @@ installed fonts rarely draw.
   Extended-B, Kana Supplement, Kana Extended-A and Small Kana Extension (U+1AFF0–U+1B16F), including
   the hentaigana, U+1B11F and the Unicode 18.0 digraphs U+1B123–U+1B128, and the kana ligatures
   𪜈 U+2A708, 𬻿 U+2CEFF, 𬼀 U+2CF00 and 𬼂 U+2CF02.
+
+## Interface font for chữ Hán-Nôm
+
+`Plangothic-vi-Hani.woff2` draws the Nôm characters of the `vi-Hani` interface that lie beyond the
+Basic Multilingual Plane (CJK Extensions B–G), which few installed fonts cover. It holds only those
+characters: `scripts/build_vi_hani.py --font` subsets them from the catalogue, so the file is
+rebuilt whenever `vi-Hani.json` gains one.
+
+- Family: Plangothic (遍黑体) P1 and P2, version V2.9.5795, by Fitzgerald P. Köeingsegg
+  (<https://github.com/Fitzgerald-Porthmouth-Koenigsegg/Plangothic-Project>), merged into one
+  subset; the source files' SHA-256 are pinned in the script.
+- Not covered: Extension A (㐌 đã, 㗂, 㨂, 䀡) and every other Han character in the Basic
+  Multilingual Plane come from the reader's own CJK font. Extension A is part of GB 18030, the
+  character set Chinese system fonts are built to cover, though that was not checked on each
+  platform; a machine with no CJK font at all shows boxes for the whole interface, 㐌 included.
+- Licence: SIL Open Font License 1.1, copied in `OFL-Plangothic.txt`. The font declares no Reserved
+  Font Name.

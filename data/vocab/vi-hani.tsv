@@ -1,0 +1,335 @@
+# Vietnamese words and their spelling in chữ Hán-Nôm, for the vi-Hani interface catalogue.
+#
+# scripts/build_vi_hani.py writes apps/review/src/locales/vi-Hani.json from vi.json by replacing
+# each word, longest match first, with its spelling here. A word missing from this table stops the
+# build; `--propose` suggests spellings for it from the sources below.
+#
+# source:
+#   wiktionary  the English Wiktionary Vietnamese entries (CC BY-SA 4.0), through the kaikki.org
+#               extract (https://kaikki.org/dictionary/Vietnamese/, file of 2026-09-20): a "CJK"
+#               form of the word, or a character glossed "chữ Nôm form of" it.
+#   unihan      the kVietnamese reading in Unihan 18.0.0 (Unicode, 2026-07-31).
+#   joined      a compound joined here from syllables each attested in one of those two; the whole
+#               word is not attested in that spelling.
+#   editorial   chosen here without one of those sources: Sino-Vietnamese words written with their
+#               Han etymon, and the script names.
+# Where the sources attest several spellings of a word, the choice among them is editorial: the one
+# for the sense the interface means (trong 𥪝 "in", theo 蹺 "along"), else the most attested.
+# The spellings are an editorial reconstruction of how modern interface wording would be written in
+# chữ Nôm; no Nôm text attests most of these phrases, and no native reader has reviewed them yet.
+word	hannom	source	note
+bao	包	wiktionary	
+buộc	纀	wiktionary	
+báo	報	wiktionary	
+bút	筆	wiktionary	
+bạn	伴	wiktionary	
+bản	本	wiktionary	
+bản in	本印	joined	each syllable attested
+bản khắc	版刻	joined	each syllable attested
+bản quyền	版權	wiktionary	
+bẩn	𪷪	wiktionary	
+bật	弼	wiktionary	
+bắt	扒	wiktionary	
+bằng	凴	wiktionary	
+bị	被	wiktionary	
+bỏ	𠬃	wiktionary	
+bộ	部	wiktionary	
+chia	𢺹	wiktionary	
+cho	朱	wiktionary	
+chuyển	轉	unihan	
+chuẩn bị	準備	wiktionary	
+chép	劄	wiktionary	
+chì	𨦥	wiktionary	
+chính	正	wiktionary	
+chú giải	註解	wiktionary	
+chưa	𣗓	wiktionary	
+chế tác	製作	joined	each syllable attested
+chỉ	只	wiktionary	
+chỉ mục	指目	joined	each syllable attested
+chỉnh	整	unihan	
+chọn	𫾗	wiktionary	
+chờ	徐	wiktionary	
+chứa	渚	wiktionary	
+chữ	𡨸	wiktionary	
+cuối	𣞄	wiktionary	
+cuộn	𦄣	wiktionary	
+các	各	unihan	
+còn	羣	wiktionary	
+có	𣎏	wiktionary	
+có thể	固體	wiktionary	
+công bố	公布	joined	each syllable attested
+công cụ	工具	wiktionary	
+cùng	共	wiktionary	
+cả	哿	wiktionary	
+cần	勤	wiktionary	
+cập nhật	及日	joined	each syllable attested
+cắt	割	wiktionary	
+cổ	古	wiktionary	
+của	𧵑	wiktionary	
+cửa	𨷯	wiktionary	
+danh sách	名冊	joined	each syllable attested
+di	移	wiktionary	
+duyệt	閱	editorial	Unihan gives the variant 閲
+dính	酩	wiktionary	
+dò	𠻀	wiktionary	
+dòng	𣳔	wiktionary	
+dùng	用	wiktionary	
+dư	餘	editorial	Wiktionary gives 餘 as the etymon; Unihan reads 余 dư too
+dấu	唒	wiktionary	
+dừng	亭	wiktionary	
+dữ liệu	與料	joined	each syllable attested
+ghi	𥱬	wiktionary	
+ghi chú	𥱬註	joined	each syllable attested
+ghép	扱	wiktionary	
+giáp cốt văn	甲骨文	wiktionary	
+giây	𣆰	wiktionary	
+giấy	紙	wiktionary	
+giống	種	wiktionary	
+giữ	𡨹	wiktionary	
+giữa	𡧲	wiktionary	
+gugyeol	口訣	editorial	the script names written in Han characters
+gán	檊	wiktionary	
+gì	之	wiktionary	
+gõ	𢱗	wiktionary	
+gốm	𡑲	wiktionary	
+gồm	𡗄	wiktionary	
+gỗ	楛	wiktionary	
+gợi	𢭮	wiktionary	
+hai	𠄩	wiktionary	
+hangul	諺文	editorial	the script names written in Han characters
+hiragana	平假名	editorial	the script names written in Han characters
+hiện	現	unihan	
+hoàn tác	還作	joined	each syllable attested
+hoạt tự	活字	joined	each syllable attested
+hoặc	或	wiktionary	
+hán	漢	wiktionary	
+hãy	唉	wiktionary	
+hình dạng	形樣	joined	each syllable attested
+hẹp	陿	wiktionary	
+hết	歇	wiktionary	
+hỗn hợp	混合	wiktionary	
+hủy	毀	wiktionary	spelled huỷ there
+in	印	wiktionary	
+kana	假名	editorial	the script names written in Han characters
+katakana	片假名	editorial	the script names written in Han characters
+khi	欺	wiktionary	
+kho ngữ liệu	庫語料	joined	each syllable attested
+khoảng	曠	wiktionary	
+khung	穹	wiktionary	
+khác	恪	wiktionary	
+khám phá	勘破	joined	each syllable attested
+khó	𧁷	wiktionary	
+khôi phục	恢復	wiktionary	
+không	空	wiktionary	
+không thể	空體	wiktionary	
+khớp	級	wiktionary	
+kim loại	金類	joined	each syllable attested
+kim văn	金文	joined	each syllable attested
+kiếm	劍	wiktionary	
+kiểm tra	檢查	wiktionary	
+kèm	兼	wiktionary	
+kém	劔	wiktionary	the variant of 劍, which spells kiếm here
+kéo	捁	wiktionary	
+kích thước	戟𢭑	editorial	Wiktionary gives no etymon for this kích; 戟 is the only character Unihan reads kích, so the spelling is uncertain
+ký hiệu	記號	wiktionary	spelled kí hiệu there
+kết quả	結果	wiktionary	
+kỹ thuật	技術	wiktionary	spelled kĩ thuật there
+liền	連	wiktionary	
+loại	類	wiktionary	
+là	羅	wiktionary	
+làm	𫜵	wiktionary	
+lên	𨖲	wiktionary	
+lúc	𣅶	wiktionary	
+lưu	留	wiktionary	
+lượt	𧙷	wiktionary	
+lại	吏	wiktionary	
+lấy	𥙩	wiktionary	
+lần	吝	wiktionary	
+lập	立	wiktionary	
+lệch	瀝	wiktionary	
+lịch sử	歷史	wiktionary	
+lọc	𤀓	wiktionary	
+lỗi	磊	wiktionary	
+lớn	𡘯	wiktionary	
+lớp	垃	wiktionary	
+lựa	攄	wiktionary	
+màu	牟	wiktionary	
+máy	𣛠	wiktionary	
+mã	碼	wiktionary	
+mép	𠲵	wiktionary	
+mũi tên	𪖫𥏍	joined	each syllable attested
+mẫu	母	wiktionary	
+mọi	每	wiktionary	
+mỗi	每	wiktionary	
+mộc bản	木版	joined	each syllable attested
+một	𠬠	wiktionary	
+mới	𡤓	wiktionary	
+mở	𨷑	wiktionary	
+mục	目	wiktionary	
+mục tiêu	目標	wiktionary	
+mực	墨	wiktionary	
+nay	尼	wiktionary	
+nguyên	原	wiktionary	
+nguyên bản	原本	wiktionary	
+nguồn	源	wiktionary	
+ngôn ngữ	言語	wiktionary	
+người	𠊛	wiktionary	
+ngữ cảnh	語境	joined	each syllable attested
+nhanh	伶	wiktionary	
+nhau	𦣗	wiktionary	
+nhiễu	擾	unihan	
+nhãn	眼	unihan	
+nhóm	佔	wiktionary	
+nhưng	仍	wiktionary	
+nhấn	刃	wiktionary	
+nhất	一	wiktionary	
+nhập	入	wiktionary	
+những	仍	wiktionary	
+nào	𱜢	wiktionary	
+này	呢	wiktionary	
+nét	涅	wiktionary	
+nó	伮	wiktionary	
+nếu	裊	wiktionary	
+nữa	女	wiktionary	
+phiên này	番呢	joined	each syllable attested
+phân loại	分類	wiktionary	
+phím	乏	wiktionary	
+phóng to	放𡚢	joined	each syllable attested
+phương thức	方式	joined	each syllable attested
+phải	沛	wiktionary	
+phản hồi	反回	joined	each syllable attested
+phần	分	wiktionary	
+qua	過	wiktionary	
+quanh	縈	wiktionary	
+quay	乖	wiktionary	
+quyết định	決定	wiktionary	
+ra	𠚢	wiktionary	
+riêng	𥢅	wiktionary	
+rõ	𠓑	wiktionary	
+rõ ràng	𤑟𤉜	wiktionary	
+rồi	耒	wiktionary	
+sai	差	wiktionary	
+sang	𨖅	wiktionary	
+sao chép	抄劄	joined	each syllable attested
+sau	𢖕	wiktionary	
+sàng	𬕌	wiktionary	
+sưu tập	搜集	joined	each syllable attested
+sắp	拉	wiktionary	
+sắt	𨫊	wiktionary	
+sẵn	𫤢	wiktionary	
+số	數	wiktionary	
+sổ	數	wiktionary	
+sử dụng	使用	wiktionary	
+sửa	𢯢	wiktionary	
+sự	事	wiktionary	
+tay	拪	wiktionary	
+tham chiếu	參照	wiktionary	
+thay	台	wiktionary	
+thay thế	台替	joined	each syllable attested
+theo	蹺	wiktionary	
+thiếu	少	wiktionary	
+thu	收	wiktionary	
+thu nhỏ	收𡮈	joined	each syllable attested
+thu thập	收拾	joined	each syllable attested
+thành	成	wiktionary	
+thêm	添	wiktionary	
+thạch bản	石版	joined	each syllable attested
+thấy	𧡊	wiktionary	
+thời gian	時間	wiktionary	
+thứ tự	次序	editorial	Sino-Vietnamese reading of the Han word
+thừa	乘	wiktionary	
+thử	試	wiktionary	
+thực	實	wiktionary	
+tiến độ	進度	wiktionary	
+tiếp	接	unihan	
+tiếp tục	接續	wiktionary	
+tra	查	wiktionary	
+trang	張	wiktionary	
+trang chủ	張主	joined	each syllable attested
+trong	𥪝	wiktionary	
+trên	𨕭	wiktionary	
+trích xuất	摘出	joined	each syllable attested
+trước	𠓀	wiktionary	
+trắng	𤽸	wiktionary	
+trọn	𠓻	wiktionary	
+trộn	遁	wiktionary	
+trở	𧿨	wiktionary	
+trừ	除	wiktionary	
+tác phẩm	作品	wiktionary	
+tách	索	wiktionary	
+tìm	尋	wiktionary	
+tôi	碎	wiktionary	
+tùy chọn	隨𫾗	editorial	tùy 隨 as in 隨意
+tương tự	相似	wiktionary	
+tạm	暫	unihan	
+tải	載	unihan	
+tất	悉	wiktionary	
+tắt	𢴑	wiktionary	
+từ	自	wiktionary	
+từ khóa	詞鎖	editorial	khoá 鎖 in Wiktionary
+từng	曾	wiktionary	
+tự dạng	字樣	joined	each syllable attested
+tự hình	字形	joined	each syllable attested
+tự hình đại đồ phổ	字形大圖譜	editorial	the project name 字形大圖譜
+tự tộc	字族	joined	each syllable attested
+tự vị	字位	joined	each syllable attested
+viết	曰	wiktionary	
+và	吧	wiktionary	
+vào	𠓨	wiktionary	
+vì	位	wiktionary	
+vòng	釯	wiktionary	
+vùng	塳	wiktionary	
+văn	文	wiktionary	
+văn khắc	文刻	joined	each syllable attested
+vấn đề	問題	wiktionary	
+vẫn	𫪏	wiktionary	
+vẹn	院	wiktionary	
+vẽ	𦘧	wiktionary	
+vết	𤵖	wiktionary	
+về	𡗅	wiktionary	
+vị trí	位置	wiktionary	
+với	貝	wiktionary	Wiktionary's Nôm for với "with"; 貝 is also Sino-Vietnamese bối
+vừa	𣃣	wiktionary	
+xem	䀡	wiktionary	
+xong	冲	wiktionary	
+xung quanh	沖縈	joined	each syllable attested
+xuất	出	wiktionary	
+xác nhận	確認	wiktionary	
+xác định	確定	wiktionary	
+xáo	𢫚	wiktionary	
+xóa	挅	wiktionary	spelled xoá there
+xếp	插	wiktionary	
+xử lý	處理	wiktionary	spelled xử lí there
+áp dụng	壓用	wiktionary	
+âm đọc	音讀	wiktionary	
+ý	意	wiktionary	
+đang	當	wiktionary	
+đen	顛	wiktionary	
+điều hướng	調向	joined	each syllable attested
+điều kiện	條件	wiktionary	
+điểm mã	點碼	joined	each syllable attested
+điển hình	典型	wiktionary	
+đá	𥒥	wiktionary	
+đáng ngờ	𠎬疑	joined	each syllable attested
+đánh	打	wiktionary	
+đây	低	wiktionary	
+đã	㐌	wiktionary	
+đó	妬	wiktionary	Wiktionary's Nôm for đó "that"; 妬 is also Sino-Vietnamese đố
+đóng	㨂	wiktionary	
+đúng	中	wiktionary	
+đưa	迻	wiktionary	
+được	特	wiktionary	
+đầu	頭	wiktionary	
+đặt	撻	wiktionary	
+đề xuất	提出	wiktionary	
+để	底	wiktionary	
+định vị	定位	wiktionary	
+đọc	讀	wiktionary	
+đồ phổ	圖譜	editorial	圖譜
+đồng	銅	wiktionary	
+đồng thời	同時	joined	each syllable attested
+đổi	對	wiktionary	
+độ	度	wiktionary	
+ảnh	影	unihan	
+ẩn	隱	wiktionary	
+ở	於	wiktionary	
