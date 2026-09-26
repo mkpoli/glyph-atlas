@@ -783,7 +783,7 @@ export default {
         if(undone)return json(await undo(env,request,decodeURIComponent(undone[1])));
         const edit=path.match(/^\/(?:atlas\/characters|layers\/units)\/([^/]+)$/);
         if(edit)return json(await submit(env,request,decodeURIComponent(edit[1])));
-        const formed=await formsRoute(env,request,path,q,formTools);
+        const formed=await formsRoute(env,request,path,q,formTools,ctx);
         if(formed)return formed instanceof Response?formed:json(formed);
         throw new Problem(404,'Unknown endpoint.');
       }
@@ -829,7 +829,7 @@ export default {
       if(path==='/atlas/corpus/reviews'){
         const rows=await env.DB.prepare("SELECT * FROM units WHERE origin='corpus' AND state='flagged' ORDER BY id LIMIT 96").all<UnitRow>();
         return json({items:rows.results.map(compact),total:rows.results.length})}
-      if(path.startsWith('/atlas/forms/')){const formed=await formsRoute(env,request,path,q,formTools);
+      if(path.startsWith('/atlas/forms/')){const formed=await formsRoute(env,request,path,q,formTools,ctx);
         if(formed)return formed instanceof Response?formed:json(formed)}
       throw new Problem(404,'Unknown endpoint.');
     }catch(error){
