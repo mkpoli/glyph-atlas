@@ -462,7 +462,7 @@
   "quiz.suspectToggle.only": "◆ 의심스러운 것만",
   "quiz.suspect.readsAs": "{character}처럼 보임",
   "quiz.suspect.doubtful": "확인 필요",
-  "quiz.suspect.none.other": "지금까지 받은 {count}개 중 의심스러운 것이 없습니다.",
+  "quiz.suspect.none.other": "지금까지 제시된 {count}개 중 의심스러운 것이 없습니다.",
   "quiz.skipCharacter": "글자 {number} 건너뛰기",
   "quiz.skipSelected": "선택한 항목 {skip}",
   "quiz.skippedNotSaved": "{count}개 건너뜀 · 저장되지 않음",
