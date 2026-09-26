@@ -153,8 +153,10 @@ def statements(text: str) -> list[str]:
 
 
 def status_row() -> str:
+    from export_cloudflare import public_status
+
     from glyph_atlas.review import collection
-    value = json.dumps(collection.status((ROOT / "work").resolve()), ensure_ascii=False, separators=(",", ":"))
+    value = json.dumps(public_status(collection.status((ROOT / "work").resolve())), ensure_ascii=False, separators=(",", ":"))
     return ("INSERT INTO metadata(key, value) VALUES('collection', " + refresh.quote(value)
             + ") ON CONFLICT(key) DO UPDATE SET value=excluded.value;\n")
 

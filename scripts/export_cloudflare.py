@@ -112,6 +112,20 @@ def read_crops(db, media):
     db.commit()
 
 
+PRIVATE_STATUS = frozenset({"root", "output", "path", "disk_free_bytes", "error", "errors"})
+
+
+def public_status(value):
+    """What the site may show of a collector's status: no local paths, disk space or error text, and
+    `status` as a publication snapshot, never a stale claim that a collector is running."""
+    if isinstance(value, dict):
+        return {k: ("snapshot" if k == "status" else public_status(v)) for k, v in value.items()
+                if k not in PRIVATE_STATUS}
+    if isinstance(value, list):
+        return [public_status(v) for v in value]
+    return value
+
+
 def export(dataset: Path, output: Path, *, resume=False):
     output.mkdir(parents=True, exist_ok=resume)
     frozen = output / "source"
@@ -246,14 +260,6 @@ def export(dataset: Path, output: Path, *, resume=False):
                 "published_at": datetime.now(UTC).isoformat(),
                 "corpus_index": json.loads(Path("work/corpus-index/index.json").read_text()),
                 "collection": collection.status(Path("work").resolve()), "review_epoch": store.review_epoch()}
-        # The public status reports publication, never a stale claim that a collector is running.
-        def public_status(value):
-            if isinstance(value, dict):
-                return {k: ("snapshot" if k == "status" else public_status(v)) for k, v in value.items()
-                        if k not in {"root", "output", "path", "disk_free_bytes", "error", "errors"}}
-            if isinstance(value, list):
-                return [public_status(v) for v in value]
-            return value
         for key, value in meta.items():
             db.execute("INSERT OR REPLACE INTO metadata VALUES (?,?)", (key, encoded(public_status(value))))
         db.commit()
