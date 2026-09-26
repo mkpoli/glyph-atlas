@@ -195,10 +195,10 @@ export class Browser {
     throw new Error(`waitFor timed out: ${expression} (last: ${JSON.stringify(last)})`)
   }
 
-  async key(key, { shift = false } = {}) {
+  async key(key, { shift = false, ctrl = false } = {}) {
     const description = keyDescription(key)
     const base = {
-      modifiers: shift ? 8 : 0,
+      modifiers: (shift ? 8 : 0) | (ctrl ? 2 : 0),
       key: key === ' ' ? ' ' : key,
       code: description.code,
       windowsVirtualKeyCode: description.keyCode,

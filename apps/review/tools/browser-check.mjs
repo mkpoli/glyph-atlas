@@ -36,9 +36,12 @@ try {
   await browser.waitFor(`document.querySelector('.glyph-grid img')?.src !== ${JSON.stringify(before)}`)
   console.log('PASS crop grid and shuffle')
 
-  await click('.glyph-tile:nth-child(10)')
+  // A crop not already read か, so the correction to カ below has a reading to carry.
+  const gridOrder = await browser.evaluate('Array.from(document.querySelectorAll(".glyph-grid [data-unit]")).map(i=>i.dataset.unit)')
+  const originalId = gridOrder.slice(9).find(id => units(config.directory)[id]?.reading !== 'か')
+  await click(`.glyph-grid [data-unit="${originalId}"]`)
   await browser.waitFor(inspectorReady)
-  const originalId = await browser.evaluate('document.querySelector("dialog[open] .record-id code").textContent')
+  assert(await browser.evaluate('document.querySelector("dialog[open] .record-id code").textContent') === originalId, 'the inspector opened another crop')
   const originalText = units(config.directory)[originalId].text_source
   const order = await browser.evaluate('Array.from(document.querySelectorAll(".glyph-grid [data-unit]")).map(i=>i.dataset.unit)')
   const scroll = await browser.evaluate('scrollY')
@@ -91,13 +94,18 @@ try {
 
   await route('/review?reading=あ', roundReady)
   // A round saves only the problems a reviewer picked; crops left unselected are not confirmed.
+  // A crop can be picked only once its image has loaded.
+  await browser.waitFor('[...document.querySelectorAll(".quiz-tile img")].every(i => i.complete)', 15000)
   const viewable = await browser.evaluate('Array.from(document.querySelectorAll(".quiz-tile:not(.unavailable)")).map(tile => tile.dataset.unit)')
   assert(viewable.length >= 4, 'fixture has four viewable crops')
-  const [joinedA, joinedB, skippedId, correctedId] = viewable
+  const [joinedA, joinedB, skippedId] = viewable
+  // Last in grid order, and not already read か, so the correction to カ has a reading to carry.
+  const correctedId = viewable.slice(3).find(id => units(config.directory)[id]?.reading !== 'か')
+  assert(correctedId, 'the fixture has a crop not read か')
   const tile = id => `.quiz-tile[data-unit="${id}"]`
   const beforeCorrection = units(config.directory)[correctedId]
   const roundMark = events(config.directory).length
-  for (const id of viewable.slice(0, 4)) await click(tile(id) + ' .quiz-choice')
+  for (const id of [joinedA, joinedB, skippedId, correctedId]) await click(tile(id) + ' .quiz-choice')
   assert(await browser.evaluate('document.querySelectorAll(".quiz-tile.selected").length === 4'), 'multiple crops selected')
   assert(!await browser.evaluate('!!document.querySelector(".issue-picker")'), 'selecting must not ask for a problem yet')
   await click(tile(skippedId) + ' .skip-choice')
@@ -109,8 +117,11 @@ try {
   await click('.quiz-workspace [data-issue="merged"]')
   await click('.next-crop')
   await browser.waitFor(`document.querySelector(".focus-figure")?.dataset.unit === ${JSON.stringify(joinedB)}`)
-  await click('.quiz-workspace [data-issue="merged"]')
-  await click('.next-crop')
+  // The keyboard path: 2 is Joined characters, and Ctrl+Enter moves on.
+  await browser.key('2')
+  // Joined characters offers the suggestions for what the crop reads; the problem is then chosen.
+  await browser.waitFor('!!document.querySelector(".quiz-workspace .reading-suggestions")')
+  await browser.key('Enter', { ctrl: true })
   await browser.waitFor(`document.querySelector(".focus-figure")?.dataset.unit === ${JSON.stringify(correctedId)}`)
   await click('.quiz-workspace [data-issue="reading"]')
   await browser.waitFor('document.querySelector(".quiz-workspace .suggestion-options button")?.innerText === "カ"')
@@ -118,16 +129,21 @@ try {
   await click('.quiz-workspace .no-suggestion')
   await click('.quiz-workspace .suggestion-options button')
   await browser.screenshot(join(screenshots, 'error-quiz-desktop.png'))
-  await click('.save-round')
+  await browser.evaluate('document.activeElement.blur()')
+  await browser.key('Enter', { ctrl: true })
   await browser.waitFor('document.querySelector(".round-count")?.innerText.includes("3 problems saved")')
   const written = events(config.directory).slice(roundMark)
   const rounds = written.filter(e => e.field === 'review')
   assert(rounds.length === 3, `only the picked problems are saved, got ${rounds.length}`)
   // A skip is recorded as seen, which counts toward "hard to read"; it is never a review.
-  assert(written.filter(e => e.target_id === skippedId).every(e => e.field === 'seen' && e.new === 'skipped'), 'Skip wrote a review')
+  const skipRows = written.filter(e => e.target_id === skippedId)
+  assert(skipRows.some(e => e.field === 'seen' && e.new === 'skipped'), 'the skip was not recorded')
+  assert(skipRows.every(e => e.field === 'seen'), 'Skip wrote a review')
   // Crops shown but not picked are recorded as seen, never judged.
-  assert(written.filter(e => !viewable.slice(0, 4).includes(e.target_id)).every(e => e.field === 'seen'), 'an unselected crop was judged')
+  const unpicked = written.filter(e => ![joinedA, joinedB, skippedId, correctedId].includes(e.target_id))
+  assert(unpicked.length > 0 && unpicked.every(e => e.field === 'seen'), 'crops shown but not picked are recorded as seen only')
   assert(rounds.filter(e => e.new === 'disputed' && JSON.parse(e.evidence).issue === 'merged').length === 2, 'joined crops remain flagged')
+  assert(rounds.find(e => e.target_id === correctedId)?.new === 'reviewed', 'an explicit correction confirms the crop')
   const corrected = units(config.directory)[correctedId]
   assert(corrected.unicode === 'U+30AB', 'the round changes the selected identity')
   assert(corrected.reading === 'か' && corrected.text_source === beforeCorrection.text_source,
@@ -135,7 +151,25 @@ try {
   const exported = await (await fetch(service.base + '/atlas/reviews')).json()
   const correctionReview = exported.reviews.filter(row => row.event.target_id === correctedId).pop()
   assert(correctionReview?.current, 'the round identity correction is current in the export')
-  console.log('PASS multi-select, one problem per crop, optional suggestion, only picked problems saved')
+  assert(JSON.parse(correctionReview.event.evidence).correction?.unicode === 'U+30AB', 'the export carries the corrected identity')
+  console.log('PASS multi-select, one problem per crop, keyboard pick and save, only picked problems saved')
+
+  // The last round survives a reload and can be undone whole: identity and reading come back.
+  const undoRound = '.undo-round:not(.shape-toggle):not(.suspect-toggle)'
+  await browser.send('Page.reload')
+  await browser.waitFor(roundReady)
+  assert(await browser.evaluate(`document.querySelector('${undoRound}') !== null`), 'last round retained after reload')
+  const undoMark = events(config.directory).length
+  await click(undoRound)
+  await browser.waitFor(`document.querySelector('${undoRound}') === null`)
+  const undone = events(config.directory).slice(undoMark)
+  // Undo compensates everything the round wrote, the seen and skip records included.
+  assert(undone.every(e => e.evidence?.startsWith('undo of ')), 'undo writes only compensating events')
+  assert(undone.length === written.length, `undo wrote ${undone.length} events for a round of ${written.length}`)
+  const restored = units(config.directory)[correctedId]
+  assert(restored.unicode === beforeCorrection.unicode && restored.reading === beforeCorrection.reading,
+    'undo restores identity and reading')
+  console.log('PASS durable undo restores identity and reading')
 
   await browser.waitFor(roundReady)
   // Select all takes every crop whose image has loaded, so the count is compared once every image
@@ -173,7 +207,7 @@ try {
   console.log('PASS mobile error choices and continuous reviewer')
 
   await browser.send('Network.enable')
-  await browser.send('Network.setBlockedURLs', { urls: ['*/atlas/media/*'] })
+  await browser.send('Network.setBlockedURLs', { urls: ['*/atlas/media/*', '*/atlas/characters/*/image*'] })
   await browser.send('Network.setCacheDisabled', { cacheDisabled: true })
   await route('/review?reading=い', 'document.querySelectorAll(".quiz-tile.unavailable").length > 0')
   await browser.waitFor('document.querySelectorAll(".quiz-tile.unavailable").length === document.querySelectorAll(".quiz-tile").length')
