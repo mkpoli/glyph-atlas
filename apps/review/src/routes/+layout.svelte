@@ -44,8 +44,7 @@
     inspector.update?.(id, result)
     savedNotice = t('app.saved')
     setTimeout(() => savedNotice = '', 2000)
-    if (next) next()
-    else close()
+    close()
   }
   function chooseLocale(tag) { setLocale(tag); menu = false; goto(localize(path, tag) + page.url.search, { noScroll: true, keepFocus: true }) }
   function exportReviews() { menu = false; exporting = true }
