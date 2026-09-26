@@ -38,7 +38,7 @@
   let limit = $state(PAGE)
   let loading = $state(false), failed = $state(false), answer = $state(null)
   let options = $state([]), closed = false, timer, generation = 0
-  let pending = null, composing = false
+  let pending = null, composing = false, quiet = false
 
   function searchSignal() {
     pending?.abort()
@@ -122,6 +122,12 @@
     // An IME committing とも sends Enter with isComposing true (229 on older engines). That Enter
     // belongs to the composition, not to this list.
     if (event.isComposing || event.keyCode === 229) return
+    if (event.key === 'Tab' && browsing) { open = false; return }
+    if (event.key === 'ArrowDown' && browsing) {
+      event.preventDefault()
+      root.querySelector('.browse-panel button')?.focus()
+      return
+    }
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       // The first arrow opens a closed list, and the page must not scroll while it does.
       event.preventDefault()
@@ -138,6 +144,16 @@
     }
     if (event.key === 'Escape') { if (open) { event.preventDefault(); open = false } }
     if (event.key === 'Backspace' && token && !value) { event.preventDefault(); ontokenclear() }
+  }
+
+  const browsing = $derived(open && Boolean(browse) && !value.trim())
+
+  /** Closes the browse panel and puts focus back in the box without opening the panel again. */
+  function done() {
+    open = false
+    quiet = true
+    input?.focus()
+    quiet = false
   }
 
   function blurred() {
@@ -170,13 +186,17 @@
            oncompositionstart={() => { composing = true; reset() }}
            oncompositionend={e => { composing = false; typed(e.currentTarget.value) }}
            oninput={e => { if (!composing && !e.isComposing) typed(e.currentTarget.value) }}
-           onfocus={() => { if (value.trim() && !items.length) seek(value); else if (items.length || browse) open = true }}
+           onfocus={() => { if (quiet) return; if (value.trim() && !items.length) seek(value); else if (items.length || browse) open = true }}
            onkeydown={keys} />
     {#if value}<button type="button" class="find-clear" aria-label={t('search.clear')} onclick={clear}>×</button>{/if}
   </form>
 
-  {#if open && browse && !value.trim()}
-    <div class="candidate-list browse-panel">{@render browse(() => open = false)}</div>
+  {#if browsing}
+    <!-- Pressing a button in the panel keeps focus in the box: Safari does not focus a clicked button,
+         and the box's blur would close the panel before the click lands. -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="candidate-list browse-panel" id={listId} onmousedown={e => e.preventDefault()}
+         onkeydown={e => { if (e.key === 'Escape') { e.preventDefault(); done() } }}>{@render browse(done)}</div>
   {:else if open}
     <div class="candidate-list" id={listId} role="listbox" aria-label={t('search.candidates.label')}>
       {#if loading}<p class="candidate-status" role="status">{t('search.searching')}</p>{/if}
