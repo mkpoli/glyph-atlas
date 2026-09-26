@@ -582,6 +582,21 @@ try {
   assert.equal((await looped.json()).replaced_by, undefined, 'a redirect loop is answered as missing')
   assert.ok(!(await call('/atlas?state=all&limit=96')).items.some(i => i.id === 'retired-kept'), 'a retired crop is in no listing')
   assert.ok(!(await call('/atlas?state=attention&limit=96')).items.some(i => i.id === 'retired-kept'), 'nor in Needs fixing')
+  // Browse starts from a point the seed picks and wraps round, so every page run deals each crop once.
+  await db.prepare('UPDATE units SET shuffle=rowid*1000').run()
+  const everyLocal = (await db.prepare("SELECT id FROM units WHERE origin='local'").all()).results.map(r => r.id).sort()
+  for (const seed of [0, 5500, 12345, 268435455, 268440000]) {
+    const dealt = []
+    for (let offset = 0, total = Infinity; offset < total;) {
+      const page = await call(`/atlas?seed=${seed}&offset=${offset}&limit=7`)
+      dealt.push(...page.items.map(i => i.id)); total = page.total; offset = page.next_offset
+    }
+    assert.deepEqual(dealt.slice().sort(), everyLocal, `seed ${seed} deals every crop once`)
+  }
+  const dealtFrom = async seed => (await call(`/atlas?seed=${seed}&limit=96`)).items.map(i => i.id)
+  const [fromZero, later] = [await dealtFrom(0), await dealtFrom(5500)]
+  assert.notEqual(fromZero[0], later[0], 'another seed starts elsewhere')
+  assert.deepEqual(later.slice().sort(), fromZero.slice().sort(), 'and wraps round to the same crops')
   console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms.')
 } finally {
   await mf.dispose()

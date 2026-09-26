@@ -177,6 +177,8 @@ const ROUND_OFFSET_MAX = 4096;
 // them out: either way no request reads every named glyph. Should a character hold more named
 // pending rows than this, mostly glyphs already seen, an older one that is due again waits outside it.
 const NAMED_WINDOW = 256;
+// `shuffle` is the first 28 bits of the id's SHA-256.
+const SHUFFLE_RANGE = 268435456;
 async function catalogue(env: Env, q: URLSearchParams) {
   const purpose = q.get('purpose') || 'browse';
   const production = q.get('production') || (purpose === 'review' ? REVIEW_SCOPE : 'all');
@@ -232,13 +234,28 @@ async function catalogue(env: Env, q: URLSearchParams) {
   const order = others + (review && seed % 5 ? 'priority,' : '');
   // Flagged view: a crop already looked at in the inspector queues behind the ones nobody has reviewed yet.
   const reviewedLast = flaggedView ? `${REVIEWED_IN_INSPECTOR},` : '';
+  const columns = `*,${state} AS effective,(SELECT shape_order FROM unit_shapes s WHERE s.id=units.id) AS shape_order`;
+  // Browse deals crops in `shuffle` order from a point the seed picks, and wraps round past the
+  // highest: an index serves that order, where a seed-scrambled order sorts every row on each visit.
+  // A named character is found through `unit_character` instead, and its few crops sort in memory.
+  const rotated = !review && !flaggedView && !reading && !q.get('q');
+  const start = seed % SHUFFLE_RANGE;
+  const side = (test: '>=' | '<') => `SELECT ${columns} FROM units WHERE ${where.join(' AND ')} AND shuffle${test}? ORDER BY shuffle,rowid LIMIT ? OFFSET ?`;
   const [count, window, reportedCount] = await env.DB.batch([
     env.DB.prepare(`SELECT count(*) AS n FROM ${from}`).bind(...fromValues),
-    env.DB.prepare(`SELECT *,${state} AS effective,(SELECT shape_order FROM unit_shapes s WHERE s.id=units.id) AS shape_order FROM ${from} ORDER BY ${order}${reviewedLast} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...fromValues, seed + 1, limit, offset),
+    rotated ? env.DB.prepare(side('>=')).bind(...values, start, limit, offset)
+      : env.DB.prepare(`SELECT ${columns} FROM ${from} ORDER BY ${order}${reviewedLast} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...fromValues, seed + 1, limit, offset),
     ...(reportedCountWhere ? [env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${reportedCountWhere.join(' AND ')}`).bind(...values)] : []),
   ]);
   const listed = (count.results[0] as { n: number }).n;
-  const items: Json[] = (window.results as (UnitRow & { effective: string; shape_order: number | null })[])
+  const rows = window.results as (UnitRow & { effective: string; shape_order: number | null })[];
+  if (rotated && rows.length < limit) {
+    const above = rows.length ? offset + rows.length : (await env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${where.join(' AND ')} AND shuffle>=?`)
+      .bind(...values, start).first<{ n: number }>())!.n;
+    const wrapped = await env.DB.prepare(side('<')).bind(...values, start, limit - rows.length, Math.max(offset - above, 0)).all();
+    rows.push(...wrapped.results as typeof rows);
+  }
+  const items: Json[] = rows
     .map(row => ({ ...compact(row), state: row.effective, shape_order: row.shape_order }));
   // Positions run through the `units` rows and then the untouched corpus glyphs. A glyph its record
   // keeps out still takes its position, so `next_offset` can run ahead of the items, and once the
@@ -281,8 +298,7 @@ export function corpusRoundQuery(production: string | null, side: '>=' | '<') {
 // the index serves as it stands. A scope short of `all` reads each production the character holds in
 // it through its own index range, and merges them.
 async function corpusRound(env: Env, character: string, production: string, seed: number, offset: number, limit: number) {
-  // `shuffle` is the first 28 bits of the id's SHA-256.
-  const start = seed % 268435456, wanted = offset + limit;
+  const start = seed % SHUFFLE_RANGE, wanted = offset + limit;
   const kinds = production === 'all' ? [null] : (await env.DB.prepare('SELECT production FROM corpus_characters WHERE character=?')
     .bind(character).all<{ production: string }>()).results.map(row => row.production).filter(value => inMaterial(production, value));
   if (!kinds.length) return { items: [], read: 0, exhausted: true };
