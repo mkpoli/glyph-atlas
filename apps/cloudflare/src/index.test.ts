@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { canonical, literal, hira, single, readingFrom, validRound, categoryOf,
+import { canonical, samePixels, literal, hira, single, readingFrom, validRound, categoryOf,
   encodeCursor, decodeCursor, historyItem, historyQuery } from './index';
 import { ROUND_MAX } from './rounds';
 
@@ -128,5 +128,22 @@ describe('historyItem', () => {
       evidence: JSON.stringify({ kind: 'visual-quiz', round: 'round-1', label: 'ア', verdict: 'match', issue: null }) });
     expect(historyItem({ id: 'cf:e3', at: '2026-01-04T00:00:00.000Z', actor: 'bob', target: 'two',
       kind: 'review', event, label: 'ア' }).round).toBe('round-1');
+  });
+});
+
+describe('samePixels', () => {
+  const hash = 'a'.repeat(64);
+  it('names a hashed crop by its page hash', () => {
+    expect(samePixels(new URLSearchParams({ image_sha256: hash }), 'local', { image_sha256: hash })).toBe(true);
+    expect(samePixels(new URLSearchParams({ image_sha256: 'b'.repeat(64) }), 'local', { image_sha256: hash })).toBe(false);
+  });
+  it('names a crop published without a hash by its image', () => {
+    const image = 'https://gallica.bnf.fr/iiif/ark:/12148/btv1b83018108/f7/1259,1470,91,98/480,/0/default.jpg';
+    expect(samePixels(new URLSearchParams({ image }), 'local', { image_sha256: null, image })).toBe(true);
+    expect(samePixels(new URLSearchParams({ image_sha256: 'null' }), 'local', { image_sha256: null, image })).toBe(false);
+    expect(samePixels(new URLSearchParams({ image: image + '?v=2' }), 'local', { image })).toBe(false);
+  });
+  it('names a corpus glyph by its source revision', () => {
+    expect(samePixels(new URLSearchParams({ source_revision: 'r1' }), 'corpus', { source_revision: 'r1' })).toBe(true);
   });
 });

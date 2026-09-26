@@ -51,8 +51,10 @@ export function download(value, name) {
 
 const suggestionCache = new Map()
 export function suggestionsFor(item, source = 'visual') {
-  // A corpus glyph names its pixels by its source revision, a local crop by its page hash.
-  const pixels = item.origin === 'corpus' ? { source_revision: item.source_revision } : { image_sha256: item.image_sha256 }
+  // A corpus glyph names its pixels by its source revision, a crop by its page hash, and a crop
+  // published without a hash by its image.
+  const pixels = item.origin === 'corpus' ? { source_revision: item.source_revision }
+    : item.image_sha256 ? { image_sha256: item.image_sha256 } : { image: item.image }
   const key = source + ':' + item.id + ':' + item.revision + ':' + Object.values(pixels)[0]
   if (!suggestionCache.has(key)) {
     if (suggestionCache.size > 256) suggestionCache.delete(suggestionCache.keys().next().value)
