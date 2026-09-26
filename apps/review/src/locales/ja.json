@@ -435,7 +435,7 @@
   "quiz.nextCrop": "次の切り出し",
   "quiz.noOtherCharacters": "他に用意された文字はありません。この文字をさらに読み込むか、戻ってください。",
   "quiz.overline": "クイックレビュー · {step}",
-  "quiz.overline.review": "レビュー",
+  "quiz.overline.review": "修正",
   "quiz.overline.select": "選択",
   "quiz.reloadRound": "ラウンドを再読み込み",
   "quiz.restore": "復元",

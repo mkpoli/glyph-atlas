@@ -456,7 +456,7 @@
   "quiz.nextCrop": "Next crop",
   "quiz.noOtherCharacters": "No other characters are ready. You can load more of this character or go back.",
   "quiz.overline": "QUICK REVIEW · {step}",
-  "quiz.overline.review": "REVIEW",
+  "quiz.overline.review": "FIX",
   "quiz.overline.select": "SELECT",
   "quiz.reference.confirmed": "Confirmed",
   "quiz.reference.heading": "Reference: already confirmed / seen",

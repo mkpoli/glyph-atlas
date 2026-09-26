@@ -438,7 +438,7 @@
   "quiz.nextCrop": "다음 크롭",
   "quiz.noOtherCharacters": "준비된 다른 글자가 없습니다. 이 글자를 더 불러오거나 돌아가세요.",
   "quiz.overline": "빠른 검토 · {step}",
-  "quiz.overline.review": "검토",
+  "quiz.overline.review": "수정",
   "quiz.overline.select": "선택",
   "quiz.reference.confirmed": "확인됨",
   "quiz.reference.heading": "참고: 확인됨 / 열람함",
