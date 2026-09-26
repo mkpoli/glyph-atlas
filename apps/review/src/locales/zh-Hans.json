@@ -164,6 +164,10 @@
   "export.saved": "已保存{name}",
   "export.timedOut": "导出超时。请重试。",
   "export.title": "导出审阅",
+  "meta.description": "从历史写本与刻本中裁切的文字图像，每字附有读音、来源与使用条款。",
+  "meta.formsIndex.description": "将CODH、HI Lab和みんなで翻刻的字形按字以相似形状分组，并标出各组所指定的字样。",
+  "meta.forms.description.other": "CODH、HI Lab和みんなで翻刻中“{character}”（{codePoint}）的{count}个字形，按相似形状分为{clusters}组，并标出各组所指定的字样。",
+  "meta.crop.description": "{source}中的“{character}”",
   "footer.code": "代码：{license}",
   "footer.data": "开放数据：记录与标注采用{license}",
   "footer.images": "图像与文本遵循各自来源的条款，见各裁切",
@@ -515,9 +519,5 @@
   "quiz.reference.seen": "已查看",
   "state.hard": "难读：两位审阅者已跳过",
   "suggestions.type.label": "或直接输入（可选）",
-  "suggestions.type.placeholder": "字符…",
-  "meta.description": "从历史写本与刻本中裁切的文字图像，每字附有读音、来源与使用条款。",
-  "meta.formsIndex.description": "将CODH、HI Lab和みんなで翻刻的字形按字以相似形状分组，并标出各组所指定的字样。",
-  "meta.forms.description.other": "CODH、HI Lab和みんなで翻刻中“{character}”（{codePoint}）的{count}个字形，按相似形状分为{clusters}组，并标出各组所指定的字样。",
-  "meta.crop.description": "{source}中的“{character}”"
+  "suggestions.type.placeholder": "字符…"
 }

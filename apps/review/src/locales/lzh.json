@@ -161,6 +161,10 @@
   "export.saved": "已存{name}",
   "export.timedOut": "輯出逾時，再試之",
   "export.title": "輯出校記",
+  "meta.description": "古寫本、刻本所截之字，各附其讀、出處與用約。",
+  "meta.formsIndex.description": "CODH、HI Lab、みんなで翻刻字形，每字以形近分群，各注所定之體。",
+  "meta.forms.description.other": "CODH、HI Lab、みんなで翻刻所收{character}（{codePoint}）字形{count}，以形近分爲{clusters}群，各注所定之體。",
+  "meta.crop.description": "{source}之「{character}」",
   "footer.code": "碼：{license}",
   "footer.data": "公開之資：錄與注從{license}",
   "footer.images": "圖文各從其源之約，見於每截",
@@ -512,9 +516,5 @@
   "visualGroups.allForms": "諸體",
   "visualGroups.label": "以形分群",
   "ziLink.aria": "於zi.tools查{char}",
-  "ziLink.text": "zi.tools ↗",
-  "meta.description": "古寫本、刻本所截之字，各附其讀、出處與用約。",
-  "meta.formsIndex.description": "CODH、HI Lab、みんなで翻刻字形，每字以形近分群，各注所定之體。",
-  "meta.forms.description.other": "CODH、HI Lab、みんなで翻刻所收{character}（{codePoint}）字形{count}，以形近分爲{clusters}群，各注所定之體。",
-  "meta.crop.description": "{source}之「{character}」"
+  "ziLink.text": "zi.tools ↗"
 }

@@ -161,6 +161,10 @@
   "export.saved": "{name}を保存しました",
   "export.timedOut": "エクスポートがタイムアウトしました。もう一度お試しください。",
   "export.title": "レビューのエクスポート",
+  "meta.description": "写本や版本から切り出した文字の画像集。一字ごとに読み・出典・利用条件を示します。",
+  "meta.formsIndex.description": "CODH・HI Lab・みんなで翻刻の字形を文字ごとに形の近さでクラスタに分け、各クラスタに割り当てた字体を示します。",
+  "meta.forms.description.other": "CODH・HI Lab・みんなで翻刻にある「{character}」（{codePoint}）の{count}字形を形の近い{clusters}クラスタに分け、各クラスタに割り当てた字体を示します。",
+  "meta.crop.description": "{source}の「{character}」",
   "footer.code": "コード：{license}",
   "footer.data": "オープンデータ：記録と注釈は{license}",
   "footer.images": "画像と本文は各出典の条件に従います（切り出しごとに表示）",
@@ -512,9 +516,5 @@
   "quiz.reference.seen": "閲覧済み",
   "state.hard": "難読：2人のレビュアーがスキップ",
   "suggestions.type.label": "または入力（任意）",
-  "suggestions.type.placeholder": "文字…",
-  "meta.description": "写本や版本から切り出した文字の画像集。一字ごとに読み・出典・利用条件を示します。",
-  "meta.formsIndex.description": "CODH・HI Lab・みんなで翻刻の字形を文字ごとに形の近さでクラスタに分け、各クラスタに割り当てた字体を示します。",
-  "meta.forms.description.other": "CODH・HI Lab・みんなで翻刻にある「{character}」（{codePoint}）の{count}字形を形の近い{clusters}クラスタに分け、各クラスタに割り当てた字体を示します。",
-  "meta.crop.description": "{source}の「{character}」"
+  "suggestions.type.placeholder": "文字…"
 }
