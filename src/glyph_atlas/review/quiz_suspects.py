@@ -110,22 +110,20 @@ class Labels:
 
         `probabilities` is one softmax row per crop, in class order.
         """
-        totals = np.zeros((len(probabilities), len(self.names)), dtype=np.float64)
-        np.add.at(totals.T, self.family, probabilities.T.astype(np.float64))
-        top = totals.argmax(1)
-        marks: list[dict | None] = []
-        for row, label in enumerate(labels):
-            accepted = self.mask(label)
-            if not accepted.any():
-                marks.append(None)
-                continue
-            p = float(probabilities[row][accepted].sum())
-            if p >= FLAG_BELOW:
-                marks.append(None)
-                continue
-            name = self.names[top[row]]
-            reads = name if name and name != label and totals[row, top[row]] >= READS_AS else None
-            marks.append({"p": round(p, 4), "reads_as": reads} if reads or kana(label) else None)
+        names = sorted(set(labels))
+        accepts = np.stack([self.mask(label) for label in names]).astype(probabilities.dtype)
+        index = {label: i for i, label in enumerate(names)}
+        which = np.array([index[label] for label in labels])
+        known = accepts.any(1)[which]
+        p = (probabilities @ accepts.T)[np.arange(len(labels)), which]
+        marks: list[dict | None] = [None] * len(labels)
+        for row in np.flatnonzero(known & (p < FLAG_BELOW)):
+            totals = np.bincount(self.family, weights=probabilities[row], minlength=len(self.names))
+            top = int(totals.argmax())
+            name, label = self.names[top], labels[row]
+            reads = name if name and name != label and totals[top] >= READS_AS else None
+            if reads or kana(label):
+                marks[row] = {"p": round(float(p[row]), 4), "reads_as": reads}
         return marks
 
 
