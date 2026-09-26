@@ -1,0 +1,140 @@
+{
+ "set": "atlas-reviewed",
+ "crops": 168,
+ "models": {
+  "atlas": {
+   "seconds": 0.6,
+   "scores": {
+    "all": {
+     "n": 168,
+     "top1": 0.8988,
+     "top5": 0.9524,
+     "family1": 0.8988,
+     "family5": 0.9524,
+     "empty": 0.0
+    },
+    "corrected": {
+     "n": 49,
+     "top1": 0.6939,
+     "top5": 0.8571,
+     "family1": 0.6939,
+     "family5": 0.8571,
+     "empty": 0.0
+    },
+    "han": {
+     "n": 117,
+     "top1": 0.9658,
+     "top5": 1.0,
+     "family1": 0.9658,
+     "family5": 1.0,
+     "empty": 0.0
+    },
+    "hiragana": {
+     "n": 18,
+     "top1": 0.7778,
+     "top5": 0.9444,
+     "family1": 0.7778,
+     "family5": 0.9444,
+     "empty": 0.0
+    },
+    "katakana": {
+     "n": 33,
+     "top1": 0.7273,
+     "top5": 0.7879,
+     "family1": 0.7273,
+     "family5": 0.7879,
+     "empty": 0.0
+    }
+   }
+  },
+  "soramaru": {
+   "seconds": 1.4,
+   "scores": {
+    "all": {
+     "n": 168,
+     "top1": 0.8452,
+     "top5": 0.9464,
+     "family1": 0.8452,
+     "family5": 0.9464,
+     "empty": 0.0
+    },
+    "corrected": {
+     "n": 49,
+     "top1": 0.5918,
+     "top5": 0.8776,
+     "family1": 0.5918,
+     "family5": 0.8776,
+     "empty": 0.0
+    },
+    "han": {
+     "n": 117,
+     "top1": 0.9487,
+     "top5": 0.9915,
+     "family1": 0.9487,
+     "family5": 0.9915,
+     "empty": 0.0
+    },
+    "hiragana": {
+     "n": 18,
+     "top1": 0.7778,
+     "top5": 0.8889,
+     "family1": 0.7778,
+     "family5": 0.8889,
+     "empty": 0.0
+    },
+    "katakana": {
+     "n": 33,
+     "top1": 0.5152,
+     "top5": 0.8182,
+     "family1": 0.5152,
+     "family5": 0.8182,
+     "empty": 0.0
+    }
+   }
+  },
+  "atlas+soramaru": {
+   "scores": {
+    "all": {
+     "n": 168,
+     "top1": 0.8988,
+     "top5": 0.9583,
+     "family1": 0.8988,
+     "family5": 0.9583,
+     "empty": 0.0
+    },
+    "corrected": {
+     "n": 49,
+     "top1": 0.6939,
+     "top5": 0.8776,
+     "family1": 0.6939,
+     "family5": 0.8776,
+     "empty": 0.0
+    },
+    "han": {
+     "n": 117,
+     "top1": 0.9658,
+     "top5": 1.0,
+     "family1": 0.9658,
+     "family5": 1.0,
+     "empty": 0.0
+    },
+    "hiragana": {
+     "n": 18,
+     "top1": 0.7778,
+     "top5": 0.9444,
+     "family1": 0.7778,
+     "family5": 0.9444,
+     "empty": 0.0
+    },
+    "katakana": {
+     "n": 33,
+     "top1": 0.7273,
+     "top5": 0.8182,
+     "family1": 0.7273,
+     "family5": 0.8182,
+     "empty": 0.0
+    }
+   }
+  }
+ }
+}

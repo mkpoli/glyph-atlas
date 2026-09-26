@@ -1,0 +1,140 @@
+{
+ "set": "hilab-test",
+ "crops": 37606,
+ "models": {
+  "atlas": {
+   "seconds": 31.1,
+   "scores": {
+    "all": {
+     "n": 37606,
+     "top1": 0.8086,
+     "top5": 0.9165,
+     "family1": 0.8122,
+     "family5": 0.9204,
+     "empty": 0.0
+    },
+    "hiragana": {
+     "n": 4767,
+     "top1": 0.6864,
+     "top5": 0.9102,
+     "family1": 0.6864,
+     "family5": 0.9102,
+     "empty": 0.0
+    },
+    "kanji": {
+     "n": 31967,
+     "top1": 0.8291,
+     "top5": 0.916,
+     "family1": 0.8333,
+     "family5": 0.9206,
+     "empty": 0.0
+    },
+    "katakana": {
+     "n": 529,
+     "top1": 0.8242,
+     "top5": 0.9622,
+     "family1": 0.8242,
+     "family5": 0.9622,
+     "empty": 0.0
+    },
+    "symbol": {
+     "n": 343,
+     "top1": 0.5773,
+     "top5": 0.9767,
+     "family1": 0.5773,
+     "family5": 0.9767,
+     "empty": 0.0
+    }
+   }
+  },
+  "soramaru": {
+   "seconds": 191.3,
+   "scores": {
+    "all": {
+     "n": 37606,
+     "top1": 0.9437,
+     "top5": 0.9796,
+     "family1": 0.9483,
+     "family5": 0.9797,
+     "empty": 0.0
+    },
+    "hiragana": {
+     "n": 4767,
+     "top1": 0.9008,
+     "top5": 0.9803,
+     "family1": 0.9008,
+     "family5": 0.9803,
+     "empty": 0.0
+    },
+    "kanji": {
+     "n": 31967,
+     "top1": 0.9514,
+     "top5": 0.979,
+     "family1": 0.9568,
+     "family5": 0.9792,
+     "empty": 0.0
+    },
+    "katakana": {
+     "n": 529,
+     "top1": 0.9584,
+     "top5": 0.9962,
+     "family1": 0.9584,
+     "family5": 0.9962,
+     "empty": 0.0
+    },
+    "symbol": {
+     "n": 343,
+     "top1": 0.793,
+     "top5": 0.9971,
+     "family1": 0.793,
+     "family5": 0.9971,
+     "empty": 0.0
+    }
+   }
+  },
+  "atlas+soramaru": {
+   "scores": {
+    "all": {
+     "n": 37606,
+     "top1": 0.8086,
+     "top5": 0.9809,
+     "family1": 0.8122,
+     "family5": 0.9811,
+     "empty": 0.0
+    },
+    "hiragana": {
+     "n": 4767,
+     "top1": 0.6864,
+     "top5": 0.978,
+     "family1": 0.6864,
+     "family5": 0.978,
+     "empty": 0.0
+    },
+    "kanji": {
+     "n": 31967,
+     "top1": 0.8291,
+     "top5": 0.9809,
+     "family1": 0.8333,
+     "family5": 0.9812,
+     "empty": 0.0
+    },
+    "katakana": {
+     "n": 529,
+     "top1": 0.8242,
+     "top5": 0.9981,
+     "family1": 0.8242,
+     "family5": 0.9981,
+     "empty": 0.0
+    },
+    "symbol": {
+     "n": 343,
+     "top1": 0.5773,
+     "top5": 0.9942,
+     "family1": 0.5773,
+     "family5": 0.9942,
+     "empty": 0.0
+    }
+   }
+  }
+ }
+}

@@ -193,10 +193,52 @@ class Metom:
         return [[code_point(t) for t in row if len(t) == 1] for row in labels]
 
 
+class Soramaru:
+    """Soramaru's classifier (https://huggingface.co/yuta1984/soramaru_kuzushiji_ai, CC BY-SA 4.0):
+    ConvNeXt-tiny at 384×384 over 3,673 characters, trained on the Kaggle Kuzushiji Recognition pages
+    (drawn from CODH's books) and the HI Lab crops, so `codh-test` and `hilab-test` may overlap its
+    training data. It crops the centre square of a crop as its demo does; `pad` pads the crop to a
+    white square instead. `SORAMARU` names the folder holding `convnext_v4.onnx` and its
+    `convnext_v4.meta.json`.
+    """
+
+    def __init__(self, *, pad: bool):
+        import os
+
+        import onnxruntime as ort
+        folder = Path(os.environ.get("SORAMARU", ROOT / "cache/models/soramaru"))
+        meta = json.loads((folder / "convnext_v4.meta.json").read_text())
+        self.classes, self.size = meta["classes"], meta["input_size"]
+        self.mean, self.std = np.array(meta["mean"], np.float32), np.array(meta["std"], np.float32)
+        ort.preload_dlls()
+        self.session = ort.InferenceSession(str(folder / "convnext_v4.onnx"), providers=["CUDAExecutionProvider"])
+        self.pad = pad
+
+    def pixels(self, image: Image.Image) -> np.ndarray:
+        image = image.convert("RGB")
+        side = max(image.size) if self.pad else min(image.size)
+        if self.pad:
+            square = Image.new("RGB", (side, side), "white")
+            square.paste(image, ((side - image.width) // 2, (side - image.height) // 2))
+        else:
+            left, top = (image.width - side) // 2, (image.height - side) // 2
+            square = image.crop((left, top, left + side, top + side))
+        array = np.asarray(square.resize((self.size, self.size), Image.Resampling.BILINEAR), np.float32) / 255
+        return ((array - self.mean) / self.std).transpose(2, 0, 1)
+
+    def top(self, images):
+        batch = np.stack([self.pixels(image) for image in images]).astype(np.float32)
+        out = []
+        for start in range(0, len(batch), 32):
+            logits = self.session.run(None, {"input": batch[start:start + 32]})[0]
+            out.extend([[self.classes[i] for i in np.argsort(row)[::-1][:5]] for row in logits])
+        return out
+
+
 #: Lists merged from two models' answers. `served` is the order the review panel shows: the first
 #: model's answers, then the second's it lacks. `interleave` alternates them, first model leading.
 MERGES = {"served": ("ndl", "atlas", "append"), "interleave": ("atlas", "ndl", "interleave"),
-          "atlas+metom": ("atlas", "metom", "interleave")}
+          "atlas+metom": ("atlas", "metom", "interleave"), "atlas+soramaru": ("atlas", "soramaru", "interleave")}
 
 
 def merge(first: list[str], second: list[str], how: str) -> list[str]:
@@ -217,6 +259,10 @@ def build(name: str, cache: dict):
         model = Classifier(ROOT / "models/classifier/artifacts/classifier.onnx")
     elif name == "metom":
         model = Metom()
+    elif name == "soramaru":
+        model = Soramaru(pad=False)
+    elif name == "soramaru-pad":
+        model = Soramaru(pad=True)
     elif name.startswith("onnx:"):
         model = Classifier(Path(name.removeprefix("onnx:")))
     else:

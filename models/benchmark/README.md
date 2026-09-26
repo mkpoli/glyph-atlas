@@ -29,10 +29,18 @@ a suggestion matters most.
 - `metom`: SakanaAI's Metom (https://huggingface.co/SakanaAI/Metom, Apache-2.0), a ViT over 2,703
   CODH characters. It was trained on a random split of all of CODH, so it has seen crops of CODH's
   test books; its `codh-test` score is not a held-out measure.
+- `soramaru`: Soramaru's classifier (https://huggingface.co/yuta1984/soramaru_kuzushiji_ai,
+  CC BY-SA 4.0), a ConvNeXt-tiny at 384×384 over 3,673 characters by Yuta Hashimoto (yuta1984),
+  trained on the Kaggle Kuzushiji Recognition pages and the HI Lab crops. Its README states no split
+  of the HI Lab crops, so `hilab-test` may overlap its training data. The Kaggle data differs from
+  CODH's dataset (https://codh.rois.ac.jp/competition/kaggle/), so whether `codh-test` overlaps it
+  is uncertain. `soramaru` crops the centre square, as its demo does; `soramaru-pad` pads to a white
+  square instead.
 - `onnx:PATH`: any exported classifier with its `classes.json` beside it.
 - Merged lists: `served` is NDL's answers followed by the classifier's (the panel's order before
   `suggestions.rank`); `interleave` alternates the classifier's and NDL's, classifier first (the
-  order `rank` gives); `atlas+metom` alternates the classifier's and Metom's.
+  order `rank` gives); `atlas+metom` and `atlas+soramaru` alternate the classifier's answers
+  with Metom's or Soramaru's.
 
 ```
 uv run python models/benchmark/bench.py --set codh-test --limit 8000 --model atlas ndl served interleave
@@ -78,3 +86,17 @@ notice, so neither is served. The CAFormer-S18 at 128, trained for ten full epoc
 classifier (`models/classifier/README.md`); its results are in `results/final-caformer128-*.json`:
 92.3 / 97.1 on `codh-test`, 80.9 / 91.7 on `hilab-test`, 89.9 / 95.2 on `atlas-reviewed` and
 69.4 / 85.7 on its corrected crops.
+
+## Soramaru (2026-09-27)
+
+The served CAFormer (`atlas`) against Soramaru, top-1 / top-5, percent:
+
+| model | codh-test | hilab-test | atlas-reviewed | corrected (49) |
+| --- | --- | --- | --- | --- |
+| `atlas` | 92.3 / 97.1 | 80.9 / 91.7 | 89.9 / 95.2 | 69.4 / 85.7 |
+| `soramaru` | 86.2 / 95.0 | 94.4 / 98.0 (may overlap its training) | 84.5 / 94.6 | 59.2 / 87.8 |
+| `soramaru-pad` | | | 75.0 / 86.9 | 49.0 / 73.5 |
+| `atlas+soramaru` | 92.3 / 98.3 | 80.9 / 98.1 | 89.9 / 95.8 | 69.4 / 87.8 |
+
+On `codh-test` hiragana, `atlas` reads 93.2 / 99.5 and `soramaru` 77.6 / 94.6. The full breakdowns
+are in `results/soramaru-*.json`.
