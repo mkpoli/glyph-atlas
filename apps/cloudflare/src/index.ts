@@ -133,7 +133,7 @@ const EFFECTIVE_STATE = `iif(state='pending' AND ${HARD},'hard',iif(state='pendi
 const SKIP_REST_MS = 3 * 24 * 60 * 60 * 1000;
 const quoted = (value: string) => `'${value.replaceAll("'", "''")}'`;
 // The state as one reviewer sees it: a crop they skipped lately is `skipped` for them.
-function stateFor(reviewer: string | null): string {
+export function stateFor(reviewer: string | null): string {
   if (!reviewer) return EFFECTIVE_STATE;
   const since = new Date(Date.now() - SKIP_REST_MS).toISOString();
   // The reviewer's own recent skip is tested first: it is one indexed probe and false for most rows,
@@ -232,7 +232,8 @@ export function listingFilter(review: boolean, production: string, character: st
 }
 // Counts by character and state, and for browsing by book as well; a book's title is the one its
 // crops were published with. Counting every character evaluates each crop's review state, which takes
-// seconds, so a round asks only for its own character's.
+// seconds, so a round asks only for its own character's: a review response that names a character
+// carries that character's `categories` and `counts` alone.
 export function facetsQuery(review: boolean, state: string, where: string[]) {
   return review
     ? `SELECT character AS label,max(family) AS family,NULL AS document,NULL AS title,${state} AS state,count(*) AS n FROM units WHERE ${where.join(' AND ')} GROUP BY 1,5`
@@ -250,7 +251,8 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   if (review && offset > ROUND_OFFSET_MAX) throw new Problem(404, 'A round does not page this far.');
   const reviewer = q.get('reviewer') ? text(q.get('reviewer'), 128, 'reviewer', true)! : null;
   const state = stateFor(reviewer);
-  const reading = q.get('reading');
+  // An empty `reading` names no character.
+  const reading = q.get('reading') || null;
   const scoped = review && reading !== null;
   const { where, values } = listingFilter(review, production, scoped ? reading : null);
   const [materials, materialValues] = material(production, 'production');

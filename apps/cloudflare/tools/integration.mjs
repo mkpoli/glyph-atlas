@@ -430,7 +430,7 @@ try {
   // A round and its reference strips count their own character only, through its index; the review
   // filter off its index keeps the planner from walking every crop that can be dealt.
   const roundFilter = worker.listingFilter(true, 'not:printed/type', 'ナ')
-  shapes.push([{ sql: worker.facetsQuery(true, 'state', roundFilter.where), values: [] }, roundFilter.values, 'unit_character'])
+  shapes.push([{ sql: worker.facetsQuery(true, worker.stateFor('integration'), roundFilter.where), values: [] }, roundFilter.values, 'unit_character'])
   shapes.push([worker.corpusCountQuery('not:printed/type', 'ナ'), [], null])
   // A document's characters are read along the table's own key, and each unit by its id.
   const documentPlan = await plan({ sql: worker.documentCharactersQuery(), values: [] }, ['hk:doc'])
