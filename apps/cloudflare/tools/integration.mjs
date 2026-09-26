@@ -677,6 +677,14 @@ try {
   const pickedIn = async group => (await call(`/atlas?reading=${encodeURIComponent('仮')}&group=${group}&limit=96`)).items.map(i => i.id).filter(id => id.startsWith('fam-')).sort()
   assert.deepEqual(await pickedIn('kanji'), ['fam-b', 'fam-c'], 'a picked character keeps its crops in its script')
   assert.deepEqual(await pickedIn('kana'), [], 'and has none in another')
+  // A refresh rewrites `units` in place and stamps the catalogue; the cached browse counts follow.
+  // The crops above were written straight into D1, as a refresh writes them.
+  const stamp = stamped => db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at',?)").bind(JSON.stringify(stamped))
+  await stamp('first refresh').run()
+  const checkedKa = async () => (await call('/atlas')).categories.find(c => c.label === '仮').checked
+  const checkedBefore = await checkedKa()
+  await db.batch([db.prepare("UPDATE units SET state='checked' WHERE id='fam-b' AND state<>'checked'"), stamp('second refresh')])
+  assert.equal(await checkedKa(), checkedBefore + 1, 'a refresh shows in the browse counts')
   console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms.')
 } finally {
   await mf.dispose()

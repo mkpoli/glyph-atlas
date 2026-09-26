@@ -190,18 +190,23 @@ const ROUND_OFFSET_MAX = 4096;
 const NAMED_WINDOW = 256;
 // `shuffle` is the first 28 bits of the id's SHA-256.
 const SHUFFLE_RANGE = 268435456;
-// Browse counts every local crop by character and state, which reads the whole table and takes
-// seconds, and every visitor gets the same answer. The edge keeps one copy per version of the data:
-// a publication, a review, a round and an undo each make a new key. A refresh that writes `units`
-// without a new publication shows once the copy expires.
-const FACETS_TTL = 3600;
-async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, production: string, facets: D1PreparedStatement) {
+// What the cached listings are keyed by: every way `units` and the review tables change moves it. A
+// publication stamps `published_at`, `refresh_published_units.py` stamps `units_refreshed_at`, a
+// review or undo adds an event, a round adds a submission, and an undo of a round with no review
+// only marks its submission undone.
+async function catalogueVersion(env: Env): Promise<string> {
   const version = await env.DB.prepare(`SELECT (SELECT value FROM metadata WHERE key='published_at') AS published,
+    (SELECT value FROM metadata WHERE key='units_refreshed_at') AS refreshed,
     (SELECT max(rowid) FROM events) AS event,(SELECT max(rowid) FROM submissions) AS submission,
     (SELECT count(*) FROM submissions WHERE undone=1) AS undone`)
-    .first<{ published: string | null; event: number | null; submission: number | null; undone: number }>();
-  const key = new Request(`${url.origin}/atlas/facets?production=${encodeURIComponent(production)}&v=${encodeURIComponent(
-    [version?.published ?? '', version?.event ?? 0, version?.submission ?? 0, version?.undone ?? 0].join(':'))}`);
+    .first<{ published: string | null; refreshed: string | null; event: number | null; submission: number | null; undone: number }>();
+  return [version?.published ?? '', version?.refreshed ?? '', version?.event ?? 0, version?.submission ?? 0, version?.undone ?? 0].join(':');
+}
+// Browse counts every local crop by character and state, which reads the whole table and takes
+// seconds, and every visitor gets the same answer. The edge keeps one copy per catalogue version.
+const FACETS_TTL = 3600;
+async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, production: string, facets: D1PreparedStatement) {
+  const key = new Request(`${url.origin}/atlas/facets?production=${encodeURIComponent(production)}&v=${encodeURIComponent(await catalogueVersion(env))}`);
   const cached = await caches.default.match(key);
   if (cached) return { results: await cached.json() } as D1Result<{ label: string; state: string; n: number }>;
   const groups = await facets.all<{ label: string; state: string; n: number }>();
@@ -489,13 +494,11 @@ async function corpusOccurrences(env:Env,data:Json,q:URLSearchParams){
 export const documentCharactersQuery = () => `SELECT c.unit,c.data,u.character,u.state,u.revision,json_extract(u.data,'$.issue') AS issue
   FROM document_characters c LEFT JOIN units u ON u.id=c.unit WHERE c.document=? ORDER BY c.ord`;
 // Other sites read this listing from the browser, so it is served to any origin, errors included. The
-// edge copy is keyed by the publication and the latest review, so a review makes a new key; browsers
-// revalidate every time. A refresh that writes `units` directly shows once the edge copy expires.
+// edge copy is keyed by the catalogue version, so any change to the units makes a new key; browsers
+// revalidate every time.
 const OPEN = { 'access-control-allow-origin': '*' };
 async function documentCharacters(env: Env, url: URL, document: string, ctx: ExecutionContext) {
-  const version = await env.DB.prepare("SELECT (SELECT value FROM metadata WHERE key='published_at') AS published,(SELECT max(rowid) FROM events) AS event")
-    .first<{ published: string | null; event: number | null }>();
-  const key = new Request(`${url.origin}${url.pathname}?v=${encodeURIComponent(`${version?.published ?? ''}:${version?.event ?? 0}`)}`);
+  const key = new Request(`${url.origin}${url.pathname}?v=${encodeURIComponent(await catalogueVersion(env))}`);
   const served = (body: BodyInit | null) => new Response(body, { headers: { 'content-type': 'application/json',
     'cache-control': 'no-cache', 'x-content-type-options': 'nosniff', ...OPEN } });
   const cached = await caches.default.match(key);
@@ -511,7 +514,7 @@ async function documentCharacters(env: Env, url: URL, document: string, ctx: Exe
     const source = label !== d.label || r.state === 'checked' ? 'review' : d.source;
     return { ...d, unit: r.unit, atlas: true, label, source, state: r.state, revision: r.revision, issue: r.issue };
   });
-  const body = JSON.stringify({ document, published_at: version?.published ? JSON.parse(version.published) : null, characters });
+  const body = JSON.stringify({ document, published_at: await meta(env, 'published_at'), characters });
   ctx.waitUntil(caches.default.put(key, new Response(body, { headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=60' } })));
   return served(body);
 }
