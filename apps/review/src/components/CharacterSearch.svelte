@@ -8,6 +8,9 @@
   // an IME composing とも (Enter commits the composition, it does not pick a candidate), a fast
   // typist whose earlier query answers after a later one, and a reader who clears the box and
   // expects the page behind it to come back.
+  //
+  // A page may give the box a `browse` snippet, shown while the box is empty and focused, and a
+  // `token`: the filter that snippet chose, shown in the box until the reader removes it or types.
   import { onMount } from 'svelte'
   import ZiLink from './ZiLink.svelte'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
@@ -23,10 +26,14 @@
     oninput = () => {},
     onsubmit = null,
     compact = false,
+    browse = null,
+    token = '',
+    tokenLabel = '',
+    ontokenclear = () => {},
   } = $props()
 
   const listId = `candidates-${Math.random().toString(36).slice(2, 9)}`
-  let input = $state(null), open = $state(false), active = $state(-1), items = $state([])
+  let root = $state(null), input = $state(null), open = $state(false), active = $state(-1), items = $state([])
   const PAGE = 8, CEILING = 48   // the service answers up to 48 candidates for one query
   let limit = $state(PAGE)
   let loading = $state(false), failed = $state(false), answer = $state(null)
@@ -53,7 +60,7 @@
     // Old rows go as soon as the query changes: Enter during the wait must not pick a character the
     // reader has already typed past.
     items = []; active = -1; answer = null; failed = false
-    if (!text.trim()) { loading = false; open = false; return }
+    if (!text.trim()) { loading = false; open = Boolean(browse) && document.activeElement === input; return }
     loading = true; open = true
     timer = setTimeout(async () => {
       try {
@@ -130,11 +137,13 @@
       return
     }
     if (event.key === 'Escape') { if (open) { event.preventDefault(); open = false } }
+    if (event.key === 'Backspace' && token && !value) { event.preventDefault(); ontokenclear() }
   }
 
   function blurred() {
-    // A tap on a row has to land before the list closes, so the close waits one turn.
-    setTimeout(() => { if (document.activeElement !== input) open = false }, 120)
+    // A tap on a row has to land before the list closes, so the close waits one turn. Focus moving
+    // into the list (a Tab into the browse panel) keeps it open.
+    setTimeout(() => { if (!root?.contains(document.activeElement)) open = false }, 120)
   }
 
   // Keep the highlighted row visible when the arrow keys walk past the bottom of the list.
@@ -150,9 +159,10 @@
   })
 </script>
 
-<div class="character-search" class:compact>
+<div class="character-search" class:compact bind:this={root} onfocusout={blurred}>
   <form class="find" role="search" onsubmit={e => { e.preventDefault(); if (onsubmit) onsubmit(value); else choose() }}>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+    {#if token}<button type="button" class="find-token" aria-label={tokenLabel} onclick={() => { ontokenclear(); input?.focus() }}><span lang="ja">{token}</span> ×</button>{/if}
     <input bind:this={input} aria-label={label} bind:value placeholder={placeholder}
            autocomplete="off" spellcheck="false" role="combobox" aria-expanded={open}
            aria-controls={listId} aria-autocomplete="list" aria-busy={loading}
@@ -160,12 +170,14 @@
            oncompositionstart={() => { composing = true; reset() }}
            oncompositionend={e => { composing = false; typed(e.currentTarget.value) }}
            oninput={e => { if (!composing && !e.isComposing) typed(e.currentTarget.value) }}
-           onfocus={() => { if (value.trim() && !items.length) seek(value) ; else if (items.length) open = true }}
-           onblur={blurred} onkeydown={keys} />
+           onfocus={() => { if (value.trim() && !items.length) seek(value); else if (items.length || browse) open = true }}
+           onkeydown={keys} />
     {#if value}<button type="button" class="find-clear" aria-label={t('search.clear')} onclick={clear}>×</button>{/if}
   </form>
 
-  {#if open}
+  {#if open && browse && !value.trim()}
+    <div class="candidate-list browse-panel">{@render browse(() => open = false)}</div>
+  {:else if open}
     <div class="candidate-list" id={listId} role="listbox" aria-label={t('search.candidates.label')}>
       {#if loading}<p class="candidate-status" role="status">{t('search.searching')}</p>{/if}
       {#if failed}<p class="candidate-status" role="alert">{t('search.failed')} <button type="button" onclick={() => seek(value)}>{t('common.tryAgain')}</button></p>{/if}
