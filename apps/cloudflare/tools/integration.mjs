@@ -246,6 +246,11 @@ try {
   const skipBy = (reviewer, id) => ({ id: crypto.randomUUID(), client_id: reviewer, label: 'ソ', skipped: [{ id, image_sha256: hash }] })
   await call('/atlas/rounds', skipBy('alice', 'skip-b'))
   assert.ok(!(await dealtTo('alice')).includes('skip-b'), 'a skip rests for the reviewer who made it')
+  // A reviewer's own skips show only in their counts, whichever request comes first.
+  const skippedSo = async (query = '') => (await call('/atlas' + query)).categories.find(c => c.label === 'ソ').skipped
+  assert.equal(await skippedSo(), 0)
+  assert.equal(await skippedSo('?reviewer=alice'), 1, 'a reviewer sees their own skip')
+  assert.equal(await skippedSo(), 0, 'nobody else sees it in the browse counts')
   assert.equal((await dealtTo('bob'))[0], 'skip-b', 'another reviewer is dealt a skipped crop first')
   assert.equal((await call('/atlas/characters/skip-b')).state, 'pending', 'a skip changes nothing about the crop')
   const second = skipBy('bob', 'skip-b')

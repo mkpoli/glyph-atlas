@@ -212,9 +212,10 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   const reviewer = q.get('reviewer') ? text(q.get('reviewer'), 128, 'reviewer', true)! : null;
   const state = stateFor(reviewer);
   const facets = env.DB.prepare(`SELECT character AS label,${state} AS state,count(*) AS n FROM units WHERE ${where.join(' AND ')} GROUP BY 1,2`).bind(...values);
+  // Only counts that are the same for every visitor are cached; a reviewer's own skips are theirs.
   const [groups, published] = review ? await env.DB.batch([facets,
     ...[corpusCountQuery(production)].map(({ sql, values }) => env.DB.prepare(sql).bind(...values)),
-  ]) as D1Result<{label:string;state?:string;n:number}>[] : [await browseFacets(env, ctx, url, production, facets)];
+  ]) as D1Result<{label:string;state?:string;n:number}>[] : [reviewer ? await facets.all<{ label: string; state: string; n: number }>() : await browseFacets(env, ctx, url, production, facets)];
   const categories = new Map<string, Json>();
   const counts: Json = { pending: 0, seen: 0, flagged: 0, checked: 0, hard: 0, skipped: 0 };
   const add = (label: string, state: string, n: number) => {
