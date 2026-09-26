@@ -137,6 +137,24 @@ uv run python models/classifier/train.py --config models/classifier/config.yaml
 uv run python models/classifier/export_onnx.py --parity 200
 ```
 
+## Retraining
+
+`retrain.py` runs a retrain end to end: the manifests, training into `work/classifier-runs/<stamp>/`,
+the export with its parity check, and the benchmark of the candidate against the served export on
+`codh-test`, `hilab-test` and `atlas-reviewed`. It installs the candidate only with `--install` and
+only when, on every set and on the crops people corrected, its top-1 and top-5 are no lower than the
+served model's by more than one crop of that set (or 0.2 points). The served files then move to
+`artifacts/<backbone>-<date>/`. `gate.json` beside the run records every comparison.
+
+```sh
+uv run python models/classifier/retrain.py --install
+uv run atlas review lookalikes                  # look-alike pairs are measured per checkpoint
+```
+
+The published crops' suggestions are read per model, so a new classifier reaches the site when they
+are read again. An alignment run that pins the previous export by `classifier_sha256` refuses the
+new one; aligning with the new model takes a new run.
+
 ## Cost
 
 Measured on the workstation (RTX 5070 Ti, 16 GB), 128×128 crops, CAFormer-S18, bfloat16, sharing
