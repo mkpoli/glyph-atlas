@@ -237,6 +237,7 @@ def build(
     document = Document(
         id=document_id,
         title=record["ccbaMnm1"],
+        origin="korea",
         source_refs={SOURCE: iid, "catalogue": ITEM_PAGE.format(cpno=record.get("ccbaCpno", "")),
                      "record": RECORD_API.format(**_keys(iid))},
         holder=_unmasked(record.get("ccbaAdmin")),

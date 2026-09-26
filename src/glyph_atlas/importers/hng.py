@@ -153,6 +153,20 @@ def production_of(category: str) -> str:
     return "unknown"
 
 
+#: Where HNG's source categories were made. A category names a period of China, a country or a book's
+#: place; 大和寧写本, which HNG itself marks as possibly 渤海, names no place and stays unknown.
+ORIGINS = (("日本", "japan"), ("韓国", "korea"), ("大和寧", "unknown"))
+
+
+def origin_of(category: str) -> str:
+    """Where a source of HNG's list was made, from its category: every category not Japanese, Korean
+    or 大和寧 is a Chinese one (南北朝, 隋, 唐, 則天, 高昌, 吐蕃 manuscripts, 開成石経, 宋 and 西夏 prints)."""
+    for marker, origin in ORIGINS:
+        if marker in category:
+            return origin
+    return "china"
+
+
 def rights_of(raw: dict) -> Rights:
     """CC BY-SA 4.0 with the attribution the source file states."""
     return Rights(
@@ -178,6 +192,7 @@ def document_of(entry: dict, raw: dict) -> Document:
     return Document(
         id=f"hng:{entry['id']}",
         title=entry["title"],
+        origin=origin_of(entry["category"]),
         source_refs={SOURCE: entry["code"]},
         holder=DUNHUANG[shelf["collection"]] if shelf else None,
         shelfmark=f"{shelf['collection']}.{shelf['number']}" if shelf else None,

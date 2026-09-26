@@ -187,6 +187,7 @@ def document_of(raw: dict) -> Document:
         id=DOCUMENT_ID,
         title=TITLE,
         source_refs={SOURCE: str(raw.get("released") or "")},
+        origin="japan",
         holder=HOLDER,
         production="unknown",
         image_rights=record_rights,

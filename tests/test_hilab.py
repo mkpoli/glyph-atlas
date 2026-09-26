@@ -113,6 +113,7 @@ def test_import_reads_the_listing_and_leaves_the_crops_alone(tmp_path, http_serv
     assert document.id == "hi:kuzushiji-2023"
     assert document.title == "くずし字データセット（東京大学史料編纂所）"
     assert document.holder == "東京大学史料編纂所"
+    assert document.origin == "japan"
     assert document.meta["kind"] == "dataset"
     assert document.image_rights is not None and document.text_rights is not None
     assert document.image_rights.licence is Licence.CC_BY_4

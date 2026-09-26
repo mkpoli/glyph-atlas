@@ -57,7 +57,7 @@ One physical exemplar (a copy, a manuscript, an archival document).
 | `id`, `title` | |
 | `source_refs` | upstream ids by source: NIJL 書誌ID, NDL PID, みんなで翻刻 entry id, HI record id |
 | `holder`, `shelfmark` | holding institution and its call number |
-| `origin` | where the exemplar was made, from `data/vocab/origin.yaml`: `china`, `korea`, `japan`, `vietnam`, `other` or `unknown`; the place its letterforms were written, printed or cut, named by present-day territory, which is neither the language of its text nor the place that holds it |
+| `origin` | where the exemplar was made, from `data/vocab/origin.yaml`: `china`, `korea`, `japan`, `vietnam`, `other` or `unknown`; the place its letterforms were written, printed or cut, named by present-day territory, which is neither the language of its text nor the place that holds it. An importer sets it where its source states it: CODH, HI Lab, 古活字 and the Ainu records are `japan`, the 국립한글박물관 and 국가유산청 collections `korea`, and HNG takes each source's category (a Chinese period, 日本 or 韓国; 大和寧 stays `unknown`) |
 | `production` | a node of `data/vocab/production.yaml` written as its path, e.g. `handwritten`, `printed/woodblock`, `printed/type/metal/copper`; the deepest node the evidence states, with `data/vocab/production-overrides.yaml` citing more than a source says |
 | `style` | style of the letterforms throughout, a value of `data/vocab/style.yaml`; `mixed` when pages differ, `unassessed` until someone judges it |
 | `genre` | one or more ids from `data/vocab/genre.yaml` |

@@ -95,6 +95,7 @@ def test_a_kogl_type_1_record_becomes_a_document_with_pages_text_and_licence(tmp
     assert document.holder == "국립한글박물관"
     assert document.shelfmark == "한구 40712"
     assert document.production == "handwritten"
+    assert document.origin == "korea"
     assert document.source_refs["catalogue"] == "https://archives.hangeul.go.kr/ko/M000000591/archv/ot/view?rcrdId=40712"
     for rights in (document.image_rights, document.text_rights):
         assert rights.licence is Licence.KOGL_1

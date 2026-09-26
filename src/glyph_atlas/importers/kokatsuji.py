@@ -262,6 +262,7 @@ def document_of(record_rights: Rights) -> Document:
         id=DOCUMENT_ID,
         title=TITLE,
         source_refs={SOURCE: "001", "ndl-pid": NDL_PID},
+        origin="japan",
         holder=HOLDER,
         production="printed/type",
         text_register=Register.WABUN,
