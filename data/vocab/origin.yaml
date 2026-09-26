@@ -1,0 +1,23 @@
+# Where the exemplar was made: the place its letterforms were written, printed or cut, not the
+# language of its text or the place that holds it. A Japanese copy of a Chinese book is `japan`, a
+# Tang manuscript kept in Paris is `china`. Places are named by present-day territory, so a region
+# is the same value across the dynasties and states that ruled it. A document takes the value its
+# evidence states and `unknown` otherwise.
+- id: china
+  en: China
+  definition: Made in the lands of present-day China, Dunhuang and Turfan included.
+- id: korea
+  en: Korea
+  definition: Made on the Korean peninsula.
+- id: japan
+  en: Japan
+  definition: Made in the lands of present-day Japan.
+- id: vietnam
+  en: Vietnam
+  definition: Made in the lands of present-day Vietnam.
+- id: other
+  en: Elsewhere
+  definition: Made in a place outside the four above.
+- id: unknown
+  en: Unknown
+  definition: No evidence states where the exemplar was made.

@@ -25,7 +25,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
-from . import production, style
+from . import origin, production, style
 
 
 class Licence(StrEnum):
@@ -99,6 +99,9 @@ class Source(BaseModel):
 
 #: A node of `data/vocab/production.yaml`, written as its path, e.g. `printed/type/metal/copper`.
 Production = Annotated[str, AfterValidator(production.check)]
+
+#: A node of `data/vocab/origin.yaml`: where the exemplar was made.
+Origin = Annotated[str, AfterValidator(origin.check)]
 #: A value of `data/vocab/style.yaml`, e.g. `regular`, `cursive` or `ming`.
 Style = Annotated[str, AfterValidator(style.check)]
 
@@ -131,6 +134,7 @@ class Document(BaseModel):
     holder: str | None = None
     shelfmark: str | None = None
     production: Production = "unknown"
+    origin: Origin = Field(default="unknown", description="where the exemplar was made, from data/vocab/origin.yaml")
     style: Style = Field(default=style.UNASSESSED, description="style of the letterforms throughout the document")
     genre: list[str] = Field(default_factory=list, description="terms from data/vocab/genre.yaml")
     text_register: Register = Register.UNKNOWN
