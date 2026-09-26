@@ -5,7 +5,9 @@ rewritten. A decision names the glyphs it covers explicitly, so it keeps its mea
 glyphs are clustered again:
 
 - `{"kind": "cluster", "cluster": ..., "units": [...], "form": "𛂥"}` names the form of a cluster's
-  glyphs. `"form": null` withdraws the cluster's form.
+  glyphs. `"form": null` withdraws the cluster's form. Instead of a form, `"issue": "mixed"` says the
+  cluster holds more than one form or character and names nothing for its glyphs, and `"issue":
+  "character"` or `"crop"` reports its glyphs as a glyph decision reports single ones.
 - `{"kind": "glyph", "units": [...], "form": "𛂞"}` sets the form of single glyphs, whatever their
   cluster says. `"form": null` marks them as not having the cluster's form, which leaves them
   unassigned. With `"issue": "character"` the glyphs are not this family's character at all, and
@@ -13,8 +15,8 @@ glyphs are clustered again:
 - `{"kind": "inherit", "units": [...]}` removes those glyphs' own decisions, so that they follow
   their cluster again.
 
-A glyph's form is its latest glyph decision when it has one, otherwise the latest decision of a
-cluster that listed it. A form is always a member of the glyph's family.
+A glyph's form or report is its latest glyph decision when it has one, otherwise the latest decision
+of a cluster that listed it. A form is always a member of the glyph's family.
 """
 from __future__ import annotations
 
@@ -152,9 +154,11 @@ def _load_decisions(paths) -> tuple[list[dict], dict[str, dict]]:
                 by_glyph.pop(identity, None)
     result = {}
     for identity, event in by_cluster.items():
-        if event["form"] is not None:
+        issue = event.get("issue")
+        if event["form"] is not None or issue in ISSUES:
             result[identity] = {"form": event["form"], "basis": "form_cluster", "decision": event["id"],
-                                "cluster": event["cluster"], "at": event["at"]}
+                                "cluster": event["cluster"], "at": event["at"],
+                                **({"issue": issue, "character": event.get("character")} if issue in ISSUES else {})}
     for identity, event in by_glyph.items():
         result[identity] = {"form": event["form"], "basis": "form_glyph", "decision": event["id"],
                             "cluster": None, "at": event["at"], "issue": event.get("issue"),
@@ -220,13 +224,13 @@ def split(cluster: str, k: int) -> list[list[str]]:
     return sorted(groups, key=len, reverse=True)
 
 
-def cluster_decisions() -> dict[str, str | None]:
-    """The form each cluster of the current clustering was last given, by cluster id."""
+def cluster_decisions() -> dict[str, dict]:
+    """What each cluster of the current clustering was last given, `{"form", "issue"}` by cluster id."""
     revision = clusters()["revision"]
-    named: dict[str, str | None] = {}
+    named: dict[str, dict] = {}
     for event in _events():
         if event["kind"] == "cluster" and event["revision"] == revision:
-            named[event["cluster"]] = event["form"]
+            named[event["cluster"]] = {"form": event["form"], "issue": event.get("issue")}
     return named
 
 
@@ -259,6 +263,7 @@ class DecisionError(ValueError):
 
 
 ISSUES = ("character", "crop")
+CLUSTER_ISSUES = ("mixed", *ISSUES)
 
 
 def record(kind: str, *, form: str | None = None, cluster: str | None = None,
@@ -266,8 +271,10 @@ def record(kind: str, *, form: str | None = None, cluster: str | None = None,
            character: str | None = None) -> dict:
     """Validate and append one decision; returns it as written."""
     data = clusters()
-    if issue is not None and (kind != "glyph" or form is not None or issue not in ISSUES):
-        raise DecisionError("Only glyphs without a form can be reported, as a wrong character or a bad crop.")
+    if issue is not None and (kind == "inherit" or form is not None
+                              or issue not in (CLUSTER_ISSUES if kind == "cluster" else ISSUES)):
+        raise DecisionError("Only glyphs or clusters without a form can be reported, as a wrong character or a bad crop; "
+                            "only a cluster can be mixed.")
     if character is not None:
         character = unicodedata.normalize("NFC", character.strip()) or None
     if character is not None and issue != "character":

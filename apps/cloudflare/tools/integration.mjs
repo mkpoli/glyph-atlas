@@ -16,7 +16,8 @@ try {
   const migrations = (await readdir(new URL('../migrations/', import.meta.url))).filter(name => name.endsWith('.sql')).sort()
   const apply = async name => {
     const schema = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8')
-    const statements = schema.match(/CREATE TRIGGER[\s\S]*?\nEND;|(?:CREATE (?:TABLE|(?:UNIQUE )?INDEX)|DROP TRIGGER|UPDATE|ALTER TABLE|DELETE FROM|INSERT INTO) [\s\S]*?;/g)
+    // Comments go first: a comment line that starts with a keyword would otherwise read as a statement.
+    const statements = schema.replace(/^\s*--.*$/gm, '').match(/CREATE TRIGGER[\s\S]*?\nEND;|(?:CREATE (?:TABLE|(?:UNIQUE )?INDEX)|DROP TRIGGER|UPDATE|ALTER TABLE|DELETE FROM|INSERT INTO) [\s\S]*?;/g)
     await db.batch(statements.map(sql => db.prepare(sql)))
   }
   for (const name of migrations.filter(name => name < '0006')) await apply(name)
@@ -568,7 +569,7 @@ try {
   // following the cluster again; search and the record follow each step.
   await db.batch([
     db.prepare("INSERT INTO form_families(code_point,char,label,count,cluster_count,forms,assigned,revision) VALUES('U+4EEE','仮','仮 = 假',2,1,?,0,'r1')").bind(JSON.stringify([{ char: '仮', code_point: 'U+4EEE' }, { char: '假', code_point: 'U+5047' }])),
-    db.prepare("INSERT INTO form_clusters VALUES('U+4EEE:c1','U+4EEE','Cluster 1',2,0.9,0,0,'[]',NULL,NULL)"),
+    db.prepare("INSERT INTO form_clusters(id,family,label,count,coherence,shape_position,size_position,representatives) VALUES('U+4EEE:c1','U+4EEE','Cluster 1',2,0.9,0,0,'[]')"),
     db.prepare("INSERT INTO form_units(id,family,cluster,rank,similarity,image,split) VALUES('codh:plain','U+4EEE','U+4EEE:c1',0,0.95,NULL,'0000000')"),
     db.prepare("INSERT INTO form_units(id,family,cluster,rank,similarity,image,split) VALUES('codh:fixture','U+4EEE','U+4EEE:c1',1,0.9,NULL,'1111111')"),
   ])
@@ -632,6 +633,29 @@ try {
     { character: '假', family: 'U+4EEE' }, 'taking the report back restores its character and family')
   assert.equal((await call('/atlas/forms/families/U%2B4EEE')).rejected, 0)
   await counted()
+  // A cluster marked mixed names nothing for its glyphs; one reported whole reports every glyph that
+  // follows it; clearing the cluster takes either back.
+  await call('/atlas/forms/decisions', { kind: 'cluster', cluster: 'U+4EEE:c1', form: '仮', client_id: 'integration' })
+  await call('/atlas/forms/decisions', { kind: 'cluster', cluster: 'U+4EEE:c1', form: '仮', issue: 'mixed', client_id: 'integration' }, 422)
+  await call('/atlas/forms/decisions', { kind: 'cluster', cluster: 'U+4EEE:c1', issue: 'mixed', character: 'テ', client_id: 'integration' }, 422)
+  await call('/atlas/forms/decisions', { kind: 'glyph', units: ['codh:plain'], issue: 'mixed', client_id: 'integration' }, 422)
+  await call('/atlas/forms/decisions', { kind: 'cluster', cluster: 'U+4EEE:c1', issue: 'mixed', client_id: 'integration' })
+  const mixed = await call('/atlas/forms/families/U%2B4EEE')
+  assert.deepEqual([mixed.items[0].form, mixed.items[0].issue, mixed.assigned, mixed.rejected], [null, 'mixed', 0, 0])
+  assert.equal((await db.prepare("SELECT character FROM corpus_units WHERE id='codh:plain'").first()).character, '假', 'a mixed cluster withdraws its form')
+  await counted()
+  await call('/atlas/forms/decisions', { kind: 'cluster', cluster: 'U+4EEE:c1', issue: 'character', character: 'テ', client_id: 'integration' })
+  assert.deepEqual({ ...(await db.prepare("SELECT character,family FROM corpus_units WHERE id='codh:plain'").first()) },
+    { character: 'テ', family: 'U+30C6' }, 'a cluster reported as テ reports its glyphs')
+  const wholly = await call('/atlas/forms/clusters/U%2B4EEE%3Ac1')
+  assert.deepEqual([wholly.issue, wholly.items.map(m => [m.reported, m.character, m.basis])], ['character', [['character', 'テ', 'form_cluster'], ['character', 'テ', 'form_cluster']]])
+  assert.deepEqual([(await call('/atlas/forms/families/U%2B4EEE')).rejected, (await call('/atlas/corpus/character?id=codh%3Aplain')).written_character], [2, 'テ'])
+  await counted()
+  await call('/atlas/forms/decisions', { kind: 'cluster', cluster: 'U+4EEE:c1', form: null, client_id: 'integration' })
+  assert.deepEqual({ ...(await db.prepare("SELECT character,family FROM corpus_units WHERE id='codh:plain'").first()) },
+    { character: '假', family: 'U+4EEE' }, 'clearing the cluster takes its report back')
+  assert.deepEqual([(await call('/atlas/forms/families/U%2B4EEE')).rejected, (await call('/atlas/forms/families/U%2B4EEE')).items[0].issue], [0, null])
+  await counted()
   const split = await call('/atlas/forms/split/U%2B4EEE%3Ac1?k=2')
   assert.deepEqual(split.groups.map(g => g.ids), [['codh:plain'], ['codh:fixture']])
   assert.equal((await mf.dispatchFetch(base + '/atlas/forms/families/%E0')).status, 404, 'a malformed escape names no family')
@@ -639,8 +663,9 @@ try {
   await call('/atlas/forms/decisions', { kind: 'glyph', units: ['codh:plain'], form: '假', client_id: 'integration' }, 503)
   await db.prepare('DELETE FROM form_loading').run()
   const log = await (await mf.dispatchFetch(base + '/atlas/forms/decisions.jsonl')).text()
-  assert.equal(log.trim().split('\n').length, 6, 'every accepted decision is logged, the refused ones are not')
-  assert.deepEqual(log.trim().split('\n').map(JSON.parse).filter(d => d.issue).map(d => [d.issue, d.character]), [['character', 'テ']])
+  assert.equal(log.trim().split('\n').length, 10, 'every accepted decision is logged, the refused ones are not')
+  assert.deepEqual(log.trim().split('\n').map(JSON.parse).filter(d => d.issue).map(d => [d.kind, d.issue, d.character]),
+    [['glyph', 'character', 'テ'], ['cluster', 'mixed', undefined], ['cluster', 'character', 'テ']])
   // A repair verdict changed in place survives a review and its undo, and so does the quiz it decides.
   const vetted = { id: 'vetted', label: 'キ', reading: 'キ', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten',
     repair: { status: 'joined', quiz: true } }

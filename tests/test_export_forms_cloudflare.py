@@ -128,3 +128,35 @@ def test_the_site_refuses_decisions_while_a_clustering_reloads():
         assert "republished" in str(error)
     else:
         raise AssertionError("a decision was recorded during a reload")
+
+
+def test_a_republication_keeps_cluster_marks(tmp_path, monkeypatch, form_corpora):
+    monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
+    from cloudflare_schema import CORPUS_REFRESH, corpus_upsert
+
+    clustering(tmp_path, monkeypatch, form_corpora)
+    forms.record("cluster", cluster="U+306F:one", form="𛂥")
+    forms.record("glyph", units=[B], form="𛂞")
+    forms.record("cluster", cluster="U+306F:one", issue="character", character="テ")
+    db = schema()
+    db.execute("INSERT INTO corpus_units(id,character,family,visual_group,shuffle,object,offset,size) VALUES(?,?,?,?,?,?,?,?)",
+               (A, "は", "U+306F", None, 1, "x", 0, 1))
+    publish(tmp_path, monkeypatch, "out")
+    load(db, tmp_path / "out")
+    # The report reaches every glyph that follows the cluster; B keeps its own form.
+    rows = {r[0]: r[1:] for r in db.execute("SELECT id,form,issue,issue_character,issue_family FROM form_units")}
+    assert rows[A] == (None, "character", "テ", "U+3066") and rows[B] == ("𛂞", None, None, None)
+    assert db.execute("SELECT form,issue,rejected FROM form_clusters JOIN form_families ON family=code_point").fetchone() == (
+        None, "character", 3)
+    db.executescript(corpus_upsert((A, "は", "U+306F", None, 1, "y", 0, 1, "unknown")) + "\n" + CORPUS_REFRESH)
+    assert db.execute("SELECT character,family FROM corpus_units WHERE id=?", (A,)).fetchone() == ("テ", "U+3066")
+    # Someone on the site then marks it mixed: nothing is named for its glyphs, and A's character comes back.
+    db.execute("INSERT INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,note,issue) VALUES("
+               "'online','2999-01-01T00:00:00+00:00','reviewer','cluster','U+306F',NULL,'U+306F:one','r1',?,'','mixed')",
+               (json.dumps([A, B, C, D]),))
+    publish(tmp_path, monkeypatch, "second")
+    load(db, tmp_path / "second")
+    rows = {r[0]: r[1:] for r in db.execute("SELECT id,form,issue FROM form_units")}
+    assert rows[A] == (None, None) and rows[B] == ("𛂞", None)
+    assert db.execute("SELECT issue,rejected FROM form_clusters JOIN form_families ON family=code_point").fetchone() == ("mixed", 0)
+    assert db.execute("SELECT character FROM corpus_units WHERE id=?", (A,)).fetchone() == ("は",)

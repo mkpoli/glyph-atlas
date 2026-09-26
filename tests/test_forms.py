@@ -119,7 +119,7 @@ def test_an_unfinished_last_line_is_not_a_decision_but_a_broken_one_is_reported(
 
 def test_a_cluster_is_labelled_only_by_decisions_of_the_current_clustering(clustering):
     forms.record("cluster", cluster="U+306F:one", form="𛂥")
-    assert forms.cluster_decisions() == {"U+306F:one": "𛂥"}
+    assert forms.cluster_decisions() == {"U+306F:one": {"form": "𛂥", "issue": None}}
     summary = json.loads((clustering / "clusters.json").read_text())
     summary["revision"] = "r2"
     (clustering / "clusters.json").write_text(json.dumps(summary))
@@ -163,10 +163,12 @@ def test_glyphs_reported_as_another_character_leave_the_family(clustering, tmp_p
     assert forms.form_for(B)["form"] == "𛂥" and forms.form_for(B).get("issue") is None
 
 
-def test_a_report_is_only_a_glyph_without_a_form(clustering):
+def test_a_report_is_only_a_glyph_or_cluster_without_a_form(clustering):
     import pytest as _pytest
 
-    for kind, fields in (("cluster", {"cluster": "U+306F:one"}), ("glyph", {"units": [A], "form": "𛂥"}),
+    for kind, fields in (("cluster", {"cluster": "U+306F:one", "form": "𛂥"}), ("glyph", {"units": [A], "form": "𛂥"}),
+                         ("glyph", {"units": [A], "issue": "mixed"}), ("inherit", {"units": [A]}),
+                         ("cluster", {"cluster": "U+306F:one", "issue": "mixed", "character": "テ"}),
                          ("glyph", {"units": [A], "issue": "other"}), ("glyph", {"units": [A], "issue": "crop", "character": "テ"})):
         with _pytest.raises(forms.DecisionError):
             forms.record(kind, **fields, **({"issue": "character"} if "issue" not in fields else {}))
@@ -226,3 +228,33 @@ def test_a_cluster_splits_by_shape_into_groups_of_its_own_glyphs(clustering, tmp
     assert [sorted(g["ids"]) for g in split["groups"]] == [[A, B], [C]]
     assert split == client.get("/atlas/forms/split/U+306F:one", params={"k": 2}).json()
     assert client.get("/atlas/forms/split/U+306F:none", params={"k": 2}).status_code == 404
+
+
+def test_a_cluster_is_marked_mixed_or_reported_whole(clustering, tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from glyph_atlas.review.forms import router
+
+    app = FastAPI()
+    app.include_router(router(media=None, corpus_root=tmp_path))
+    client = TestClient(app)
+    forms.record("cluster", cluster="U+306F:one", form="𛂥")
+    forms.record("glyph", units=[B], form="𛂞")
+    # Mixed withdraws the cluster's form and names nothing; a glyph's own decision stays.
+    assert client.post("/atlas/forms/decisions", json={"kind": "cluster", "cluster": "U+306F:one", "issue": "mixed"}).status_code == 200
+    assert forms.form_for(A) is None and forms.form_for(B)["form"] == "𛂞"
+    family = client.get("/atlas/forms/families/U+306F").json()
+    assert (family["items"][0]["form"], family["items"][0]["issue"], family["rejected"]) == (None, "mixed", 0)
+    # A cluster reported as another character reports every glyph that follows it.
+    forms.record("cluster", cluster="U+306F:one", issue="character", character="テ")
+    assert (forms.form_for(A)["issue"], forms.form_for(A)["character"], forms.form_for(A)["basis"]) == ("character", "テ", "form_cluster")
+    assert forms.form_for(B)["form"] == "𛂞" and forms.form_for(B).get("issue") is None
+    fields = identity_fields({"id": A, "unicode": "U+306F"}, "codh-full")
+    assert (fields["written_character"], fields["grapheme"]) == ("テ", "U+3066")
+    members = client.get("/atlas/forms/clusters/U+306F:one").json()
+    assert members["issue"] == "character" and {m["id"]: m["reported"] for m in members["items"]} == {A: "character", B: None, C: "character"}
+    assert client.get("/atlas/forms/families/U+306F").json()["rejected"] == 2
+    # Clearing the cluster takes the report back.
+    forms.record("cluster", cluster="U+306F:one", form=None)
+    assert forms.form_for(A) is None

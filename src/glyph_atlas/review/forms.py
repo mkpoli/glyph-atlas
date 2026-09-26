@@ -20,7 +20,7 @@ class Decision(BaseModel):
     units: list[str] | None = Field(default=None, max_length=5000)
     form: str | None = Field(default=None, max_length=8)
     note: str = Field(default="", max_length=2000)
-    issue: Literal["character", "crop"] | None = None
+    issue: Literal["mixed", "character", "crop"] | None = None
     character: str | None = Field(default=None, max_length=8)
     # The hosted site records who decided; the local server has one person and ignores it.
     client_id: str | None = Field(default=None, max_length=128)
@@ -141,7 +141,8 @@ def router(media, corpus_root: Path) -> APIRouter:
             assigned = Counter(decided[identity]["form"] for identity in members
                                if (decided.get(identity) or {}).get("form"))
             clusters.append({**{k: cluster[k] for k in ("id", "label", "count", "coherence")},
-                             "form": named.get(cluster["id"]), "exceptions": own,
+                             **{key: (named.get(cluster["id"]) or {}).get(key) for key in ("form", "issue")},
+                             "exceptions": own,
                              "assigned": sum(assigned.values()),
                              "rejected": sum(1 for identity in members if (decided.get(identity) or {}).get("issue")),
                              "majority": assigned.most_common(1)[0][0] if assigned else None,
@@ -186,7 +187,7 @@ def router(media, corpus_root: Path) -> APIRouter:
             _family, _cluster, similarity, rank = data["units"][identity]
             items.append({**member(identity, decided), "rank": rank, "similarity": similarity})
         return {"id": cluster_id, "total": len(members), "offset": offset, "order": order,
-                "form": forms.cluster_decisions().get(cluster_id),
+                **{key: (forms.cluster_decisions().get(cluster_id) or {}).get(key) for key in ("form", "issue")},
                 "items": items}
 
     @api.post("/atlas/forms/decisions")
