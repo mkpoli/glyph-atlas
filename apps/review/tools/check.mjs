@@ -106,6 +106,15 @@ await step('GET / renders the collection on the server', async () => {
   return `${tiles} crops in the first response`
 })
 
+await step('an /en/ address redirects to its unprefixed page on this site', async () => {
+  const cases = [['/en', '/'], ['/en/history?mine=1', '/history?mine=1'], ['/en//example.com/a', '/example.com/a']]
+  for (const [from, to] of cases) {
+    const response = await fetch(`${service.base}${from}`, { redirect: 'manual' })
+    assert(response.status === 301 && response.headers.get('location') === to, `${from} answered ${response.status} → ${response.headers.get('location')}`)
+  }
+  return cases.map(([from, to]) => `${from} → ${to}`).join(', ')
+})
+
 await step('the page server forwards API paths and keeps page paths', async () => {
   const proxied = await fetch(`${service.base}/atlas?purpose=browse&limit=1`)
   assert(proxied.status === 200 && proxied.headers.get('content-type')?.includes('application/json'), `GET /atlas answered ${proxied.status}`)
