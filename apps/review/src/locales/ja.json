@@ -522,5 +522,6 @@
   "quiz.reference.seen": "閲覧済み",
   "state.hard": "難読：2人のレビュアーがスキップ",
   "suggestions.type.label": "または入力（任意）",
-  "suggestions.type.placeholder": "文字…"
+  "suggestions.type.placeholder": "文字…",
+  "meta.character.description": "写本や版本から切り出した「{character}」（{codePoint}）の画像。一字ごとに出典と利用条件を示します。"
 }

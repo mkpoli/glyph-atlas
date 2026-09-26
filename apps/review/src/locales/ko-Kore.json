@@ -522,5 +522,6 @@
   "visualGroups.allForms": "모든 字形",
   "visualGroups.label": "模樣 그룹",
   "ziLink.aria": "zi.tools에서 {char} 찾기",
-  "ziLink.text": "zi.tools ↗"
+  "ziLink.text": "zi.tools ↗",
+  "meta.character.description": "옛 筆寫本과 版本에서 잘라 낸 {character}({codePoint}) 文字 이미지입니다. 文字마다 出處와 利用 條件을 함께 보여 줍니다."
 }

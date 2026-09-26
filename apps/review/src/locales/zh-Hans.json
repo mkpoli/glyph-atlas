@@ -525,5 +525,6 @@
   "quiz.reference.seen": "已查看",
   "state.hard": "难读：两位审阅者已跳过",
   "suggestions.type.label": "或直接输入（可选）",
-  "suggestions.type.placeholder": "字…"
+  "suggestions.type.placeholder": "字…",
+  "meta.character.description": "从历史写本与刻本中裁切的“{character}”（{codePoint}）图像，每字附有来源与使用条款。"
 }
