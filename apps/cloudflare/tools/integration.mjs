@@ -8,7 +8,6 @@ const mf = new Miniflare(convertV4MiniflareOptions({workers:[{
   name: 'atlas-test',
   modules: true, script: await readFile('/tmp/atlas-worker-test.mjs', 'utf8'), compatibilityDate: '2026-09-22',
   d1Databases: ['DB'], r2Buckets: ['MEDIA'],
-  serviceBindings: { ASSETS: () => new Response('assets') },
 }]}))
 try {
   const db = await mf.getD1Database('DB')

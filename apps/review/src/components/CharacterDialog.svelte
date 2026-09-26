@@ -2,6 +2,8 @@
   import ProductionBadge from './ProductionBadge.svelte'
   import ZiLink from './ZiLink.svelte'
   import { onMount, untrack, tick } from 'svelte'
+  import { replaceState } from '$app/navigation'
+  import { page } from '$app/state'
   import { character, request, suggestionsFor } from '../lib/client.js'
   import { decision, isSingle, suggestsReading, greetSuggestions, skipHint } from '../lib/issues.js'
   import { t } from '../lib/i18n.svelte.js'
@@ -12,17 +14,19 @@
   // means: it reports that the reader declined to judge this occurrence, and the caller advances,
   // closes, or does something else. Without the prop the sensible default is the same as finishing
   // with it — the next occurrence if the caller offered one, otherwise close.
+  // `initial` is the record the server rendered the page with, so the first load needs no request.
   let { id, clientId, close, saved, onVerdict = null, onskip = null,
-        previous = null, next = null, position = '' } = $props()
-  let dialog, data = $state(null), error = $state(''), busy = $state(false)
-  let reading = $state(''), note = $state(''), issue = $state(null), noneSelected = $state(false), correction = $state(null)
+        previous = null, next = null, position = '', initial = null } = $props()
+  const first = untrack(() => initial)
+  let dialog, data = $state(first), error = $state(''), busy = $state(false)
+  let reading = $state(first?.reading ?? first?.label ?? ''), note = $state(''), issue = $state(null), noneSelected = $state(false), correction = $state(null)
   // The character the source printed and the reading it has are two layers: this holds the encoded
   // written identity, which is corrected on `unicode`, while `reading` is corrected on `reading`.
   // A phonetic edit never rewrites the identity, and this never rewrites the reading. Each field
   // carries whether a reviewer touched it, because a field nobody edited must not be written: on
   // this corpus 340 units are written in hiragana and read in katakana, so the label is not the
   // reading and saving one over the other would silently rewrite the layer nobody looked at.
-  let written = $state(''), writtenDirty = $state(false), readingDirty = $state(false)
+  let written = $state(first?.label ?? ''), writtenDirty = $state(false), readingDirty = $state(false)
   let editingBox = $state(false), box = $state(null), start = null, contextElement = $state(null)
   let suggestions = $state(null), suggesting = $state(false), loaded = $state(false), imageFailed = $state(false)
   let contextSuggestions = $state(null), contextSuggesting = $state(false)
@@ -45,16 +49,16 @@
   const lineReading = $derived([...(suggestions?.votes || []), ...(suggestions?.candidates || [])].find(vote => vote.engine === 'NDLkotenOCR'))
   const suggestedIssue = $derived(lineReading && lineReading.score >= .65 && !isSingle(lineReading.text) ? 'merged' : null)
   let replaced = $state(false)
-  async function load(target, redirected = false) {
+  async function load(target, redirected = false, preloaded = null) {
     const current = ++generation
     replaced = redirected
     dialog?.scrollTo({ top: 0 })
-    data = null; error = ''; issue = null; correction = null; noneSelected = false; note = ''; box = null; start = null; editingBox = false
+    data = preloaded; error = ''; issue = null; correction = null; noneSelected = false; note = ''; box = null; start = null; editingBox = false
     written = ''; writtenDirty = false; readingDirty = false
     contextSuggestions = null; contextSuggesting = false
     loaded = false; imageFailed = false; suggestions = null; suggesting = false; submission = null
     try {
-      const result = await character(target)
+      const result = preloaded ?? await character(target)
       if (closed || current !== generation) return
       data = result
       // `label` is the character the record was written with and `reading` is what it reads; the
@@ -71,17 +75,20 @@
       // A link to a retired crop opens the crop that replaced it, and the address follows. A round's
       // tile does not: its verdict belongs to the crop it was dealt, so the round reports the error.
       if (e.replacedBy && !onVerdict && !redirected) {
-        const shown = new URL(location.hash.slice(1) || '/', location.origin).pathname
-        if (shown.startsWith('/character/') && decodeURIComponent(shown.slice(11)) === target)
-          history.replaceState(history.state, '', '#/character/' + encodeURIComponent(e.replacedBy))
+        if (page.route.id === '/character/[id]' && page.params.id === target)
+          replaceState('/character/' + encodeURIComponent(e.replacedBy), page.state)
         return load(e.replacedBy, true)
       }
       replaced = false
       error = e.message
     }
   }
-  $effect(() => { const target = id; untrack(() => load(target)) })
-  onMount(() => { dialog.showModal(); return () => { closed = true; generation++ } })
+  // Only the first load, of the crop the page was rendered for, starts from `initial`.
+  let preloaded = first
+  $effect(() => { const target = id; untrack(() => { load(target, false, preloaded); preloaded = null }) })
+  // The server renders the dialog open, so the page reads whole before any script runs; once it does,
+  // the dialog is reopened as a modal.
+  onMount(() => { if (dialog.open) dialog.close(); dialog.showModal(); return () => { closed = true; generation++ } })
   function chooseIssue(value) {
     if (issue === 'character') { written = data?.label ?? ''; writtenDirty = false }
     issue = value; correction = null; noneSelected = false; submission = null
@@ -209,7 +216,7 @@
   }
 </script>
 
-<dialog class="character-dialog" bind:this={dialog} oncancel={close} onclick={e => { if (e.target === dialog) close() }} aria-label={t('character.dialog.label')}>
+<dialog class="character-dialog" bind:this={dialog} open oncancel={close} onclick={e => { if (e.target === dialog) close() }} aria-label={t('character.dialog.label')}>
   <div class="inspector">
     <header class="inspector-header"><span class="overline">{t('character.overline')}</span><div class="inspector-navigation"><span>{position}</span><button class="icon-button previous-character" aria-label={t('common.previousCharacter')} disabled={busy || !previous} onclick={() => previous?.()}>←</button><button class="icon-button next-character" aria-label={t('common.nextCharacter')} disabled={busy || !next} onclick={() => next?.()}>→</button><button class="icon-button close-inspector" aria-label={t('common.closeReviewer')} onclick={close}>×</button></div></header>
     {#if replaced}<p class="replaced-note" role="status">{t('character.replaced')}</p>{/if}

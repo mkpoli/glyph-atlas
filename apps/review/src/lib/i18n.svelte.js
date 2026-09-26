@@ -10,12 +10,11 @@ const byTag = Object.fromEntries(LOCALES.map(locale => [locale.tag, locale]))
 const en = byTag.en.messages
 
 /**
- * The interface language for the browser's preferences: an exact tag first, then the language whose
- * `matches` holds the longest prefix of one the browser asks for, then English.
+ * The interface language for a list of preferred language tags, most wanted first: an exact tag first,
+ * then the language whose `matches` holds the longest prefix of a wanted tag, then English.
  */
-function detect() {
-  const wanted = (typeof navigator === 'undefined' ? [] : navigator.languages ?? [navigator.language]).map(tag => tag.toLowerCase())
-  for (const tag of wanted) {
+export function negotiate(tags) {
+  for (const tag of tags.map(tag => tag.toLowerCase())) {
     const exact = LOCALES.find(locale => locale.tag.toLowerCase() === tag)
     if (exact) return exact.tag
     let best = null, length = 0
@@ -29,24 +28,27 @@ function detect() {
   return 'en'
 }
 
-function saved() {
-  try { return localStorage.getItem('atlas.locale') } catch { return null }
-}
+/** The cookie that carries a reader's chosen language to the server. */
+export const LOCALE_COOKIE = 'atlas.locale'
 
-let current = $state(byTag[saved()] ? saved() : detect())
+// The server renders one request at a time and sets this at the start of each render, from the language
+// the request negotiated; the browser starts from the same value, so hydration sees the same words.
+let current = $state('en')
 
 export const locale = () => current
 export const base = () => byTag[current].base
+export const isLocale = tag => Boolean(byTag[tag])
+
+/** Render in `tag`: the language the request negotiated, set before anything is rendered. */
+export function useLocale(tag) {
+  if (byTag[tag]) current = tag
+}
 
 export function setLocale(tag) {
   if (!byTag[tag]) return
   current = tag
-  try { localStorage.setItem('atlas.locale', tag) } catch { /* the choice lasts this visit */ }
+  document.cookie = `${LOCALE_COOKIE}=${encodeURIComponent(tag)}; path=/; max-age=31536000; samesite=lax`
 }
-
-$effect.root(() => {
-  $effect(() => { document.documentElement.lang = current })
-})
 
 const plurals = {}
 const pluralOf = count => (plurals[base()] ??= new Intl.PluralRules(base())).select(count)

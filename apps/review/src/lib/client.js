@@ -1,7 +1,9 @@
 import { t } from './i18n.svelte.js'
 
-export async function request(path, body, options = {}) {
-  const response = await fetch(path, { ...options, ...(body === undefined ? {} : {
+// `options.fetch` is the fetch a page's load function was given, which answers API paths on the
+// server as well as in the browser.
+export async function request(path, body, { fetch: send = fetch, ...options } = {}) {
+  const response = await send(path, { ...options, ...(body === undefined ? {} : {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
   }) })
   const value = await response.json()
@@ -23,10 +25,10 @@ export async function request(path, body, options = {}) {
 // caller that wants round items says so.
 export const catalogue = ({ purpose = 'browse', ...params } = {}, options = {}) =>
   request('/atlas?' + new URLSearchParams(Object.entries({ purpose, ...params }).filter(([, v]) => v !== '' && v != null)), undefined, options)
-export const character = id => request('/atlas/characters/' + encodeURIComponent(id))
+export const character = (id, options) => request('/atlas/characters/' + encodeURIComponent(id), undefined, options)
 export const history = (params = {}, options = {}) =>
   request('/atlas/history?' + new URLSearchParams(Object.entries(params).filter(([, v]) => v !== '' && v != null)), undefined, options)
-export const corpusCharacter = id => request('/atlas/corpus/character?' + new URLSearchParams({ id }))
+export const corpusCharacter = (id, options) => request('/atlas/corpus/character?' + new URLSearchParams({ id }), undefined, options)
 export const randomSeed = () => Math.floor(Math.random() * 2147483647)
 export { formatNumber as number } from './i18n.svelte.js'
 export function stored(key, fallback) {
