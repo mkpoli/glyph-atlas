@@ -31,7 +31,11 @@
   const index = $derived(inspector.state.queue.findIndex(item => item.id === inspector.state.selected))
   const previous = $derived(index > 0 ? () => inspector.step(-1) : null)
   const next = $derived(index >= 0 && index + 1 < inspector.state.queue.length ? () => inspector.step(1) : null)
-  const initial = $derived(routed && shown?.id === routed.id ? page.data.record : null)
+  // A crop page's record is what its load read. Once this session writes to that crop the record is
+  // stale, and handing it to the dialog again (Back, or a link to the same crop) would reopen it at
+  // the old revision and have its next save refused; the dialog then reads the crop itself.
+  let written = $state({})
+  const initial = $derived(routed && shown?.id === routed.id && !written[routed.id] ? page.data.record : null)
   const position = $derived(inspector.state.queue.length ? `${number(index + 1)} / ${number(inspector.state.queue.length)}` : '')
   $effect(() => { document.documentElement.lang = locale() })
   // Set on the document so the single image rule in app.css reaches every view.
@@ -42,6 +46,7 @@
   }
   function saved(id, result) {
     inspector.update?.(id, result)
+    written = { ...written, [id]: true }
     savedNotice = t('app.saved')
     setTimeout(() => savedNotice = '', 2000)
     close()
