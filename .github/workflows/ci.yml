@@ -11,7 +11,8 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       # The registry scripts need odfpy; numpy, onnx and onnxruntime come with the dev group so the
       # detector's ONNX tests and the synthetic renderings run here rather than skipping.
-      - run: uv sync --group dev --extra data
+      # fonttools (the fonts extra) reads the vi-Hani webfont's cmap.
+      - run: uv sync --group dev --extra data --extra fonts
       - run: uv run ruff check src tests scripts models
       - run: uv run pytest -q
   migrations:

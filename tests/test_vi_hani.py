@@ -27,3 +27,13 @@ def test_spelling_joins_han_and_keeps_names():
     assert build_vi_hani.spell("Tải lại JSON.", table, missing) == "載吏JSON。"
     assert build_vi_hani.spell("Từ CODH, HI Lab và {name}", table, missing) == "自CODH，HI Lab吧{name}"
     assert not missing
+
+
+def test_webfont_draws_every_supplementary_character():
+    """Few installed fonts reach past the BMP, so each such Nôm character must be in the subset."""
+    from fontTools.ttLib import TTFont
+
+    catalogue, _ = build_vi_hani.build()
+    text = "".join(v for v in catalogue.values() if isinstance(v, str)) + build_vi_hani.LOCALE["name"]
+    cmap = TTFont(build_vi_hani.FONT_OUT).getBestCmap()
+    assert {c for c in text if ord(c) >= 0x20000 and ord(c) not in cmap} == set()
