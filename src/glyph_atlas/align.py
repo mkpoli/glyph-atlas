@@ -182,6 +182,9 @@ class Run(BaseModel):
         beside the units it produced.
         """
         payload = self.model_dump(mode="json")
+        # Geometry and whitespace handling change placements even with the same models.
+        # Keep their new crops distinct from the pilot's ids and saved review evidence.
+        payload["algorithm"] = "reading-order-ink-tokens-v2"
         payload.pop("name", None)
         payload.pop("score", None)
         payload.pop("classifier_sha256", None)
@@ -597,6 +600,10 @@ def _moves(
     detection cells.
     """
     moves: list[_Move] = []
+    if i < n and tokens[i].text.isspace():
+        # Transcription layout occupies no ink. Retain its token, without letting a
+        # match or a split consume the next character's detection.
+        return [_Move("skip-token", (i,), (), 0.0, i + 1, j)]
     if i < n:
         moves.append(_Move("skip-token", (i,), (), weights["skip-token"], i + 1, j))
     if j < m:
@@ -604,7 +611,7 @@ def _moves(
     if i < n and j < m:
         match = costs[i][j]
         moves.append(_Move("match", (i,), (j,), match, i + 1, j + 1))
-    if i + 1 < n and j < m:
+    if i + 1 < n and j < m and not tokens[i + 1].text.isspace():
         split = (costs[i][j] + costs[i + 1][j]) / 2 + weights["split"]
         moves.append(_Move("split", (i, i + 1), (j,), split, i + 2, j + 1))
     if i < n and j + 1 < m:

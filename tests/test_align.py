@@ -83,6 +83,35 @@ def test_a_faint_match_is_kept_but_rejected():
     assert units[0].box is not None
 
 
+def test_layout_spaces_never_consume_ink_even_when_a_classifier_prefers_them():
+    text = line("　漢 字　", vertical=False)
+    units, _ = align.align_line(
+        text, detections(10, 40), run=run(),
+        classifier=Fixed({"U+3000": 1.0, "U+0020": 1.0, "U+6F22": 0.8, "U+5B57": 0.8}),
+        crop_of=lambda page, b: b,
+    )
+    assert [u.text_source for u in units] == list("　漢 字　")
+    assert [u.box.x if u.box else None for u in units] == [None, 10, None, 40, None]
+
+
+def test_a_split_cannot_pair_ink_with_the_following_space():
+    # Make splitting cheaper than a match to exercise the transition before a space.
+    weights = {**run().weights, "split": -20.0}
+    units, _ = align.align_line(line("漢　", vertical=False), detections(10), run=run(weights=weights))
+    assert units[0].box == box(10)
+    assert units[1].box is None
+
+
+def test_spacing_algorithm_does_not_reuse_legacy_crop_identities():
+    import hashlib
+    import json
+
+    config = run()
+    legacy = config.model_dump(mode="json", exclude={"name", "score", "classifier_sha256", "ink"})
+    old = hashlib.sha1(json.dumps(legacy, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:12]
+    assert config.fingerprint() != old
+
+
 def test_a_split_takes_two_detections_for_one_token():
     # Two detections where the transcription has one character: the cheaper path is a match plus a
     # skipped detection only when the second detection scores poorly for the token.
