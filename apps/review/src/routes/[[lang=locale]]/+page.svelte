@@ -14,4 +14,4 @@
 {#if character}<Seo title={`${character.char} (${character.code_point})`} description={t('meta.character.description', { character: character.char, codePoint: character.code_point })} />
 {:else}<Seo data={{ '@type': 'WebSite', name: t('app.name'), url: page.url.origin + '/', inLanguage: locale() }} />{/if}
 
-<Explore initial={data.explore} bind:shown={character} inspect={inspector.inspect.bind(inspector)} ink={session.state.ink} onink={value => session.setInk(value)} onprogress={() => session.showProgress()} />
+<Explore initial={data.explore} addressed bind:shown={character} inspect={inspector.inspect.bind(inspector)} ink={session.state.ink} onink={value => session.setInk(value)} onprogress={() => session.showProgress()} />

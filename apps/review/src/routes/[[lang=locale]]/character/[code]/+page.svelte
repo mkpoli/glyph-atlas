@@ -19,5 +19,5 @@
 
 <!-- Each navigation brings a gallery of its own, so the view starts again from it. -->
 {#key data.gallery}
-  <Explore gallery={data.gallery} bind:shown={character} inspect={inspector.inspect.bind(inspector)} ink={session.state.ink} onink={value => session.setInk(value)} onprogress={() => session.showProgress()} />
+  <Explore gallery={data.gallery} addressed bind:shown={character} inspect={inspector.inspect.bind(inspector)} ink={session.state.ink} onink={value => session.setInk(value)} onprogress={() => session.showProgress()} />
 {/key}
