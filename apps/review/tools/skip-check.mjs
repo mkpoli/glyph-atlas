@@ -118,7 +118,7 @@ try {
   assert(await browser.evaluate(reviewedText) === reviewedSecond, 'skipping from the review step was counted as reviewed')
   const tally = await browser.evaluate(`document.querySelector('.round-selection')?.textContent ?? ''`)
   assert(/1 skipped/.test(tally), 'skipping from the review step did not skip the crop')
-  assert(/1 issues/.test(tally), 'skipping one crop discarded the decision made for the other')
+  assert(/1 problem(?!s)/.test(tally), 'skipping one crop discarded the decision made for the other')
   // 3b. A skipped crop keeps its place in the review step: going back reaches it with its Skip card
   // chosen, and choosing a problem takes it back into the round.
   assert(await browser.evaluate(`!!document.querySelector('.focus-thumb.skipped')`), 'the skipped crop left the review step')
@@ -127,7 +127,7 @@ try {
   await click('.issue-card[data-issue="blank"]')
   await sleep(200)
   const retaken = await browser.evaluate(`document.querySelector('.round-selection')?.textContent ?? ''`)
-  assert(!/skipped/.test(retaken) && /2 issues/.test(retaken), `choosing a problem for a skipped crop did not take it back: ${retaken}`)
+  assert(!/skipped/.test(retaken) && /2 problems/.test(retaken), `choosing a problem for a skipped crop did not take it back: ${retaken}`)
   await click('.focus-back')
   await browser.waitFor(`document.querySelector('.quiz-grid') !== null`)
 
