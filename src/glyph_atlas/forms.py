@@ -234,6 +234,32 @@ def cluster_decisions() -> dict[str, dict]:
     return named
 
 
+def _stated(form: str | None, issue: str | None, character: str | None) -> dict:
+    return {"form": form, **({"issue": issue} if issue else {}), **({"character": character} if character else {})}
+
+
+def restoring(kind: str, *, cluster: str | None = None, units: list[str] | None = None) -> list[dict]:
+    """The decisions that put back what a decision of `kind` on `cluster` or `units` would change.
+
+    A cluster gets back its last decision in this clustering, or none. Glyphs that followed their
+    cluster follow it again; the others get back their own decision, one decision for each distinct one.
+    """
+    if kind == "cluster":
+        revision = clusters()["revision"]
+        last = next((event for event in reversed(_events()) if event["kind"] == "cluster"
+                     and event["cluster"] == cluster and event["revision"] == revision), None) or {}
+        return [{"kind": "cluster", "cluster": cluster,
+                 **_stated(last.get("form"), last.get("issue"), last.get("character"))}]
+    decided = resolved()
+    groups: dict[str, dict] = {}
+    for identity in units or []:
+        own = decided.get(identity) or {}
+        decision = ({"kind": "glyph", **_stated(own["form"], own.get("issue"), own.get("character"))}
+                    if own.get("basis") == "form_glyph" else {"kind": "inherit"})
+        groups.setdefault(json.dumps(decision, sort_keys=True), {**decision, "units": []})["units"].append(identity)
+    return list(groups.values())
+
+
 def form_for(identity: str) -> dict | None:
     """The decided form of one glyph, or None when no decision covers it.
 

@@ -138,7 +138,13 @@ async function decide(env: Env, request: Request, tools: FormTools) {
   // leave their old count, take their form (or, with none decided, the character they had before any
   // decision covered them), and join the new count.
   const unnamed = `FROM corpus_units WHERE named=0 AND character IS NOT NULL AND id IN (${touched})`;
+  // What the touched rows held before, read in the same transaction: the decisions that restore it
+  // are returned as the decision's undo.
+  const before = kind === 'cluster'
+    ? env.DB.prepare('SELECT form,issue,(SELECT cluster_character FROM form_units WHERE cluster=?1 LIMIT 1) AS character FROM form_clusters WHERE id=?1').bind(clusterId)
+    : env.DB.prepare('SELECT id,glyph_set,glyph_form,glyph_issue,glyph_character FROM form_units WHERE id IN (SELECT value FROM json_each(?))').bind(target);
   const statements = [
+    before,
     kind === 'cluster'
       ? env.DB.prepare(`INSERT INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,note,issue,character,character_family) SELECT ?,?,?,'cluster',?,?,?,?,json_group_array(id),?,?,?,? FROM (SELECT id FROM form_units WHERE cluster=? ORDER BY rank)`)
         .bind(id, at, actor, family!, form, clusterId, allowed!.revision, note, issue, character, characterFamily, clusterId)
@@ -166,10 +172,28 @@ async function decide(env: Env, request: Request, tools: FormTools) {
       rejected=(SELECT count(*) FROM form_units WHERE family=?1 AND issue IS NOT NULL) WHERE code_point=?1`).bind(family!),
   ];
   if (kind === 'cluster') statements.push(env.DB.prepare('UPDATE form_clusters SET form=?,issue=?,decision=? WHERE id=?').bind(form, issue, id, clusterId));
-  await env.DB.batch(statements);
+  const [prior] = await env.DB.batch(statements);
   const covered = kind === 'cluster'
     ? (await env.DB.prepare('SELECT count FROM form_clusters WHERE id=?').bind(clusterId).first<Json>())!.count : units.length;
-  return { id, at, kind, family: family!, form, cluster: clusterId, count: covered, issue, character };
+  return { id, at, kind, family: family!, form, cluster: clusterId, count: covered, issue, character,
+    undo: kind === 'cluster' ? [restoreCluster(clusterId!, (prior.results as Json[])[0])] : restoreGlyphs(prior.results as Json[]) };
+}
+
+const stated = (form: string | null, issue: string | null, character: string | null) =>
+  ({ form, ...(issue ? { issue } : {}), ...(character ? { character } : {}) });
+function restoreCluster(cluster: string, was: Json) {
+  return { kind: 'cluster', cluster, ...stated(was.form, was.issue, was.issue === 'character' ? was.character : null) };
+}
+// Glyphs that followed their cluster follow it again; the others get back their own decision, one
+// decision for each distinct one.
+function restoreGlyphs(rows: Json[]) {
+  const groups = new Map<string, Json>();
+  for (const r of rows) {
+    const decision = r.glyph_set ? { kind: 'glyph', ...stated(r.glyph_form, r.glyph_issue, r.glyph_character) } : { kind: 'inherit' };
+    const key = JSON.stringify(decision);
+    groups.set(key, { ...decision, units: [...groups.get(key)?.units ?? [], r.id] });
+  }
+  return [...groups.values()];
 }
 
 async function decisionLog(env: Env) {
