@@ -58,6 +58,10 @@ def snapshot(export: Path, output: Path) -> Path:
     with sqlite3.connect(f"file:{export / 'catalogue.sqlite'}?mode=ro", uri=True, timeout=120) as src, \
             sqlite3.connect(target) as dst:
         src.backup(dst)
+    # An export made before a migration is brought up to it, as a resume of the export would be, so
+    # the seal copies rows of the shape the site holds.
+    with sqlite3.connect(target) as db:
+        schema(db)
     for pack in export.glob("pack-*.bin"):
         link = output / pack.name
         link.unlink(missing_ok=True)
