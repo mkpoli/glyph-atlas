@@ -14,7 +14,8 @@
    held and listed in OUTPUT/held.json. Only the image rows and packs of those crops are published;
    the rest are already on the site.
 4. The SQL parts hold, in order: image rows, new units, the refresh, each `--extra` file whole, and
-   with `--status` the collection status row. Each part stays under D1's upload size and every
+   with `--status` the collection status row, and last the row the Worker keys its cached listings
+   on (`units_refreshed_at`), so they change once the rest has. Each part stays under D1's upload size and every
    statement under its statement limit; `publication.json` lists the parts.
 
 Nothing is uploaded or written to D1 here: reading the live units is the only request.
@@ -241,7 +242,8 @@ def main() -> None:
                 UNIT_ID.match(line).group(1).replace("''", "'") in fresh:
             units.append(line)
     extras = [statements(path.read_text(encoding="utf-8")) for path in args.extra]
-    groups = [media, units, updates, *extras] + ([[status_row()]] if args.status else [])
+    # The version row goes last, so the Worker's cached listings change only once every row has.
+    groups = [media, units, updates, *extras] + ([[status_row()]] if args.status else []) + [[refresh.VERSION_BUMP]]
     parts = write_parts(sealed, groups)
 
     manifest = json.loads((sealed / "publication.json").read_text())
