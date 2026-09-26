@@ -172,7 +172,13 @@ async function decisionLog(env: Env) {
 
 // A CODH record as published, shown with the form a person has since named for it.
 export async function withForm(env: Env, record: Json, tools: Pick<FormTools, 'codePoints'>): Promise<Json> {
-  const row = await env.DB.prepare('SELECT id,cluster,form,glyph_set,cluster_form,glyph_character,glyph_family FROM form_units WHERE id=?').bind(record.id).first<UnitForm>();
+  const row = await env.DB.prepare(`SELECT ${FORM_COLUMNS} FROM form_units WHERE id=?`).bind(record.id).first<UnitForm>();
+  return formed(record, row, tools);
+}
+// The `form_units` columns `formed` reads, for a query that joins them to its own rows.
+export const FORM_COLUMNS = 'id,cluster,form,glyph_set,cluster_form,glyph_character,glyph_family';
+export type { UnitForm };
+export function formed(record: Json, row: UnitForm | null, tools: Pick<FormTools, 'codePoints'>): Json {
   if (!row || (!row.form && !row.glyph_set)) return row ? { ...record, form_cluster: { id: row.cluster } } : record;
   const decided = { form_cluster: { id: row.cluster }, form_decision: { form: row.form, basis: basis(row) } };
   // A glyph reported as another character shows that character; one only marked off its form shows none.
