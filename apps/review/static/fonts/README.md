@@ -37,5 +37,9 @@ rebuilt whenever `vi-Hani.json` gains one.
 - Family: Plangothic (遍黑体) P1 and P2, version V2.9.5795, by Fitzgerald P. Köeingsegg
   (<https://github.com/Fitzgerald-Porthmouth-Koenigsegg/Plangothic-Project>), merged into one
   subset; the source files' SHA-256 are pinned in the script.
+- Not covered: Extension A (㐌 đã, 㗂, 㨂, 䀡) and every other Han character in the Basic
+  Multilingual Plane come from the reader's own CJK font. Extension A is part of GB 18030, the character set
+  Chinese system fonts are built to cover, though that was not checked on each platform; a machine
+  with no CJK font at all shows boxes for the whole interface, 㐌 included.
 - Licence: SIL Open Font License 1.1, copied in `OFL-Plangothic.txt`. The font declares no Reserved
   Font Name.
