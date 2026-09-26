@@ -54,18 +54,19 @@
     if (busy || !cluster) return
     busy = true; error = ''
     try {
-      const units = mixed ? [] : [...marked], wrong = issue === 'character' && character.trim() ? { character: character.trim() } : {}
+      const units = [...marked], wrong = issue === 'character' && character.trim() ? { character: character.trim() } : {}
       // Every glyph of the cluster marked, none with a decision of its own: the cluster is reported
       // as a whole, in one decision that clearing the cluster takes back.
-      const whole = !form && units.length === total && glyphs.length === total && glyphs.every(g => g.basis !== 'form_glyph')
-      if (mixed) await decide({ kind: 'cluster', cluster: cluster.id, issue: 'mixed', client_id: reviewer() })
-      else if (whole) await decide({ kind: 'cluster', cluster: cluster.id, issue, client_id: reviewer(), ...wrong })
+      const whole = !form && !mixed && units.length === total && glyphs.length === total && glyphs.every(g => g.basis !== 'form_glyph')
+      if (whole) await decide({ kind: 'cluster', cluster: cluster.id, issue, client_id: reviewer(), ...wrong })
       // A decision covers at most 1,000 glyphs; a larger mark goes in parts.
       else for (let i = 0; i < units.length; i += 1000)
         await decide({ kind: 'glyph', units: units.slice(i, i + 1000), issue, client_id: reviewer(), ...wrong })
+      // Marked glyphs are reported first, so a cluster marked mixed keeps them.
+      if (mixed) await decide({ kind: 'cluster', cluster: cluster.id, issue: 'mixed', client_id: reviewer() })
       if (form) await decide({ kind: 'cluster', cluster: cluster.id, form, client_id: reviewer() })
       const from = index, order = family.items.map(c => c.id)
-      await onsaved({ reported: units.length, issue: mixed ? 'mixed' : issue, form, count: cluster.count - units.length })
+      await onsaved({ reported: units.length, issue, mixed, form, count: cluster.count - units.length })
       character = ''
       await load(following(from, order))
     } catch (e) { error = e.message } finally { busy = false }

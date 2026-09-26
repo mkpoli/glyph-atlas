@@ -148,9 +148,12 @@
       picked = new Set(); pickAnchor = null; correcting = false; correction = ''
       notice = issue === 'mixed' ? t('forms.notice.mixed', { count: targets.length }) : t('forms.notice.reported', { count, issue: issueName(issue) })
       setTimeout(() => notice = '', 2200)
+      const wasOpen = open
       await pick(code, true)
       await refreshList()
-      active = nextOpen(openFirst ? Math.max(-1, index - targets.length) : index)
+      // An opened cluster stays on show with its marks; from the grid, the next open cluster takes its place.
+      if (wasOpen) { const page = await loadMembers(wasOpen, 0, Math.min(500, Math.max(240, glyphs.length)), order); glyphs = page.items; chosen = new Set(); if (splitK) groups = (await loadSplit(wasOpen, splitK)).groups }
+      else active = nextOpen(openFirst ? Math.max(-1, index - targets.length) : index)
     } catch (e) { error = e.message } finally { busy = false }
   }
   const issueName = issue => issue === 'crop' ? t('forms.reportIssue.crop') : t('forms.reportIssue.character')
@@ -176,8 +179,8 @@
     const after = current.items.findIndex((c, i) => i > from && isOpen(c))
     return after >= 0 ? after : Math.min(from + 1, current.items.length - 1)
   }
-  async function reviewed({ reported, issue, form, count }) {
-    notice = [issue === 'mixed' ? t('forms.notice.mixed', { count: 1 }) : '',
+  async function reviewed({ reported, issue, mixed, form, count }) {
+    notice = [mixed ? t('forms.notice.mixed', { count: 1 }) : '',
       reported ? t('forms.notice.reported', { count: reported, issue: issueName(issue) }) : '',
       form ? t('forms.notice.assigned', { form, count }) : ''].filter(Boolean).join(' · ')
     if (notice) setTimeout(() => notice = '', 2200)
