@@ -50,6 +50,7 @@ MJ_KANJI_TSV = "mj-kanji.tsv"
 MJ_VERSION = re.compile(r"Ver\.(?P<version>[0-9.]+)")
 EQUIVALENTS_TSV = "kanji-equivalents.tsv"
 KANA_ORIGINS_TSV = "kana-origins.tsv"
+SUSPECT_FORMS_TSV = "suspect-forms.tsv"
 POLICIES_YAML = "equivalence-policies.yaml"
 LIGATURES_YAML = "ligatures.yaml"
 BUILT_BY = {
@@ -58,6 +59,7 @@ BUILT_BY = {
     MJ_TSV: "scripts/build_mj_table.py",
     EQUIVALENTS_TSV: "scripts/build_kanji_equivalents.py",
     KANA_ORIGINS_TSV: "scripts/build_kana_origins.py",
+    SUSPECT_FORMS_TSV: "nothing: it is kept by hand from reviewers' decisions",
 }
 #: hentaigana.tsv and mj-hentaigana.tsv joined, with the character layer for everything the two
 #: kana tables do not state: the Unicode name and 字母, the MJ figure, the 音価 merged into
@@ -557,6 +559,16 @@ def kana_origins() -> dict[str, frozenset[str]]:
         for member in members:
             found.setdefault(member, set()).add(row["kana"])
     return {kanji: frozenset(kana) for kanji, kana in found.items()}
+
+
+@cache
+def suspect_forms() -> frozenset[tuple[str, str]]:
+    """(label, reading) pairs where the classifier's reading is a cursive form of the label itself.
+
+    From suspect-forms.tsv, which reviewers keep: each pair was decided on sample crops that were all
+    the label, written in a shape the classifier takes for another character (可 read as 一).
+    """
+    return frozenset((row["label"], row["reads_as"]) for row in _read_tsv(SUSPECT_FORMS_TSV))
 
 
 def jibo_of(unicode: str | None) -> list[str]:
