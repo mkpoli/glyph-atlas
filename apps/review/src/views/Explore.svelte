@@ -15,10 +15,10 @@
   let { flagged = false, inspect, ink = 'original', onink = () => {}, onprogress = () => {}, initial = null } = $props()
   const first = untrack(() => initial)
   let data = $state(first?.result ?? null), items = $state(first?.result.items ?? []), error = $state(''), loading = $state(!first)
-  let reading = $state(''), search = $state(''), offset = $state(0), seed = $state(first?.seed ?? randomSeed())
+  let reading = $state(''), offset = $state(0), seed = $state(first?.seed ?? randomSeed())
   let query = $state('')
   let choosing = $state(false), catalogueRequest = null
-  let categoryOpen = $state(false), filter = $state('all'), requestId = 0, closed = false
+  let filter = $state('all'), requestId = 0, closed = false
   // The Flagged view hides crops already reviewed in the inspector by default; the choice is
   // remembered across visits.
   let showReported = $state(stored('atlas.showReported', false))
@@ -41,7 +41,7 @@
   async function readCollection() {
     try { collection = await request('/atlas/collection/status') } catch { /* retry on the next interval */ }
   }
-  const categories = $derived((data?.categories ?? []).filter(c => c.label.includes(search) && (!flagged || c.flagged || c.hard)))
+  const categories = $derived((data?.categories ?? []).filter(c => !flagged || c.flagged || c.hard))
   /** What a record says about its own reliability, in one badge: withheld, machine or confirmed.
    *
    * The words come from the record's `repair` block — `withheld`, `reliable`, `verified`, `reason` —
@@ -316,7 +316,7 @@
       if (!closed) data = { ...data, counts: summary.counts, categories: summary.categories, total: summary.total, available: summary.available, reported_count: summary.reported_count }
     } catch (e) { if (!closed) error = e.message }
   }
-  function select(value) { reading = value; offset = 0; categoryOpen = false; load() }
+  function select(value) { reading = value; offset = 0; load() }
   function shuffle() { seed = randomSeed(); offset = 0; load() }
   onMount(() => { if (!first) { load(); readCollection() } const timer = setInterval(readCollection, 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
   // Widening is the reader's choice and only it reloads the gallery; picking a character resets the
@@ -337,12 +337,15 @@
     <div class="collection-meta"><span class="live-dot"></span>{#if picked}<span>{t('explore.meta.glyphs', { count: display.length })}</span><span class="meta-divider">/</span><span>{expand === "grapheme" ? t('explore.meta.characters', { count: picked.grapheme?.character_count ?? 1 }) : t('explore.meta.characters', { count: 1 })}</span>{:else if !flagged && collection?.archive}<span>{t('explore.meta.indexedCrops', { count: collection.archive.character_crops })}</span><span class="meta-divider">/</span><span>{t('explore.meta.worksWithCrops', { count: collection.archive.works_with_crops })}</span>{:else}<span>{t('explore.meta.glyphsTotal', { count: flagged ? (data?.total ?? 0) + sample.length : data?.available })}</span><span class="meta-divider">/</span><span>{t('explore.meta.readings', { count: data?.categories.length })}</span>{/if}</div>
   </div>
   <div class="collection-toolbar">
-    <CharacterSearch bind:value={query} oninput={seek} onselect={pick}
+    <!-- The box, empty and focused, lists the collection's readings; one chosen narrows the grid. -->
+    {#snippet readings(close)}
+      <p class="candidate-status">{t('explore.readings')}</p>
+      <div class="category-options">{#each categories as c}<button type="button" class:chosen={reading === c.label} onclick={() => { close(); select(c.label) }}><span lang="ja">{c.label}</span><small>{number(flagged ? c.flagged + c.hard : c.total)}</small></button>{/each}</div>
+    {/snippet}
+    <CharacterSearch bind:value={query} oninput={seek} onselect={pick} browse={readings}
+                     token={reading} tokenLabel={t('explore.clearReading', { reading })} ontokenclear={() => select('')}
                      onsubmit={() => { clearTimeout(searchTimer); offset = 0; submitQuery() }} />
     <div class="filter-tabs" aria-label={t('explore.filter.label')}>{#each [['all', () => t('explore.filter.all')], ['kana', () => t('explore.filter.kana')], ['kanji', () => t('explore.filter.kanji')], ['hangul', () => t('explore.filter.hangul')], ['gugyeol', () => t('explore.filter.gugyeol')]] as [value, text]}<button class:active={filter === value} onclick={() => { filter = value; offset = 0; load() }}>{text()}</button>{/each}</div>
-    <div class="category-control"><button class="category-toggle" aria-expanded={categoryOpen} onclick={() => categoryOpen = !categoryOpen}>{reading || t('explore.anyReading')} <span>⌄</span></button>
-      {#if categoryOpen}<div class="category-menu"><input aria-label={t('explore.findReading.aria')} bind:value={search} placeholder={t('explore.findReading.placeholder')} /><button class="all-readings" onclick={() => select('')}>{t('explore.allReadings')}</button><div class="category-options">{#each categories as c}<button class:chosen={reading === c.label} onclick={() => select(c.label)}><span lang="ja">{c.label}</span><small>{number(flagged ? c.flagged + c.hard : c.total)}</small></button>{/each}</div></div>{/if}
-    </div>
     <span class="toolbar-space"></span>
     <ImageStyleToggle {ink} onchange={onink} />
     {#if reading && !flagged}<a class="quiet-link" href={localize('/review') + `?reading=${encodeURIComponent(reading)}`}>{t('explore.reviewReading', { reading })}</a>{/if}
