@@ -21,6 +21,8 @@ atlas = "glyph_atlas.cli:app"
 
 [project.optional-dependencies]
 data = ["odfpy>=1.4"]
+# Subsetting the vi-Hani webfont (`scripts/build_vi_hani.py --font`)
+fonts = ["fonttools>=4.60", "brotli>=1.1"]
 ocr = ["onnxruntime-gpu>=1.22", "numpy>=2", "opencv-python-headless>=4.11"]
 # The interlinear mark proposer (`atlas review propose-marks`)
 marks = ["numpy>=2", "opencv-python-headless>=4.11"]

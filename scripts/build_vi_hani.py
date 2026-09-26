@@ -1,4 +1,4 @@
-"""Write the chữ Hán-Nôm interface catalogue from the Vietnamese one.
+"""Write the chữ Hán-Nôm interface catalogue and its webfont from the Vietnamese one.
 
 `apps/review/src/locales/vi-Hani.json` is `vi.json` spelled in chữ Hán-Nôm: every Vietnamese word,
 longest match first, is replaced by its spelling in `data/vocab/vi-hani.tsv`, the spaces between
@@ -8,10 +8,13 @@ placeholders and symbols stay as they are. A word the table lacks stops the run 
     uv run python scripts/build_vi_hani.py            # write vi-Hani.json
     uv run python scripts/build_vi_hani.py --check    # fail if vi-Hani.json is out of date
     uv run python scripts/build_vi_hani.py --propose  # print table rows for the missing words
+    uv run --extra fonts python scripts/build_vi_hani.py --font
 
 `--propose` reads the Wiktionary extract and Unihan into `cache/vi-hani/` and suggests, for each
 missing word, the spellings they attest, most attested first; the row still has to be checked and
-added by hand.
+added by hand. `--font` subsets Plangothic (SIL OFL 1.1) to the catalogue's characters beyond the
+Basic Multilingual Plane, which few installed fonts draw, and writes
+`apps/review/static/fonts/Plangothic-vi-Hani.woff2`.
 """
 
 from __future__ import annotations
@@ -32,6 +35,8 @@ ROOT = Path(__file__).resolve().parents[1]
 LOCALES = ROOT / "apps/review/src/locales"
 TABLE = ROOT / "data/vocab/vi-hani.tsv"
 CACHE = ROOT / "cache/vi-hani"
+FONT_CACHE = ROOT / "cache/fonts"
+FONT_OUT = ROOT / "apps/review/static/fonts/Plangothic-vi-Hani.woff2"
 
 LOCALE = {"name": "㗂越（𡨸漢喃）", "base": "vi", "matches": ["vi-hani"], "numerals": "hanzi"}
 # Messages whose Vietnamese abbreviates or spells a unit the word table cannot carry.
@@ -42,6 +47,11 @@ KEEP = {"CODH", "HI", "Lab", "Minna", "de", "Honkoku", "JSON", "ID", "Ctrl", "Ho
 
 KAIKKI = "https://kaikki.org/dictionary/Vietnamese/kaikki.org-dictionary-Vietnamese.jsonl"
 UNIHAN = "https://www.unicode.org/Public/18.0.0/ucd/Unihan.zip"
+PLANGOTHIC = "https://github.com/Fitzgerald-Porthmouth-Koenigsegg/Plangothic-Project/releases/download/V2.9.5795"
+FONTS = {
+    "PlangothicP1-Regular.ttf": "550b5d0775b15405946b18f4843df439a51e69508d7e6778d94c1f7a53dc5ad6",
+    "PlangothicP2-Regular.ttf": "681933370adfe0fc7253f77735275a82fea09fe4f8adba907bdeb46c110daf8f",
+}
 
 HAN = r"㐀-䶿一-鿿豈-﫿\U00020000-\U0003ffff"
 WORD = re.compile(r"\{\w+\}|[A-Za-zÀ-ỹĐđ]+")
@@ -152,11 +162,49 @@ def propose(missing: set[str]) -> None:
         print(f"{word}\t\t\t{forms or 'no attested spelling'}")
 
 
+def font(catalogue: dict) -> None:
+    """Subset Plangothic P1 and P2 to the catalogue's supplementary-plane characters, as one woff2."""
+    from fontTools import subset
+    from fontTools.merge import Merger
+    from fontTools.ttLib import TTFont
+
+    text = "".join(v for v in catalogue.values() if isinstance(v, str)) + LOCALE["name"]
+    wanted = sorted({ord(c) for c in text if ord(c) >= 0x20000})
+    parts, covered = [], set()
+    for name, sha256 in FONTS.items():
+        source = download(f"{PLANGOTHIC}/{name}", FONT_CACHE / name, sha256)
+        cmap = TTFont(source).getBestCmap()
+        codes = [c for c in wanted if c in cmap and c not in covered]
+        if not codes:
+            continue
+        covered.update(codes)
+        options = subset.Options()
+        options.layout_features, options.name_IDs, options.notdef_outline = [], ["*"], True
+        part = subset.load_font(str(source), options)
+        subsetter = subset.Subsetter(options)
+        subsetter.populate(unicodes=codes)
+        subsetter.subset(part)
+        path = CACHE / f"part-{name}"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        part.save(path)
+        parts.append(str(path))
+    if lacking := [chr(c) for c in wanted if c not in covered]:
+        raise SystemExit(f"Plangothic lacks {''.join(lacking)}")
+    merged = Merger().merge(parts) if len(parts) > 1 else TTFont(parts[0])
+    # The source's own timestamp, so the same characters always give the same file.
+    merged["head"].modified = TTFont(FONT_CACHE / next(iter(FONTS)))["head"].modified
+    merged.recalcTimestamp = False
+    merged.flavor = "woff2"
+    merged.save(FONT_OUT)
+    print(f"{FONT_OUT.relative_to(ROOT)}: {len(wanted)} characters, {FONT_OUT.stat().st_size} bytes")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true", help="fail if vi-Hani.json is out of date")
     mode.add_argument("--propose", action="store_true", help="suggest table rows for missing words")
+    mode.add_argument("--font", action="store_true", help="write the subset webfont")
     args = parser.parse_args()
 
     catalogue, missing = build()
@@ -165,6 +213,9 @@ def main() -> None:
         return
     if missing:
         sys.exit(f"Not in {TABLE.relative_to(ROOT)}: {', '.join(sorted(missing))} (run with --propose)")
+    if args.font:
+        font(catalogue)
+        return
     written = json.dumps(catalogue, ensure_ascii=False, indent=2) + "\n"
     target = LOCALES / "vi-Hani.json"
     if args.check:
