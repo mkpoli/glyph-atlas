@@ -7,7 +7,7 @@ const escape = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;')
 export async function GET({ fetch, url }) {
   const paths = ['/']
   if (await formsAvailable(fetch)) {
-    paths.push('/forms', ...(await families({ fetch })).items.map(item => '/forms/' + item.code_point))
+    paths.push(...(await families({ fetch })).items.map(item => '/forms/' + item.code_point))
   }
   const body = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">

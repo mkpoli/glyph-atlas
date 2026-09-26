@@ -513,7 +513,7 @@
   "visualGroups.label": "시각적 그룹",
   "ziLink.aria": "zi.tools에서 {char} 찾아보기",
   "ziLink.text": "zi.tools ↗",
-  "meta.description": "옛 필사본과 판본에서 잘라 낸 글자 이미지입니다. 글자마다 읽기, 출처, 이용 조건을 함께 보여 줍니다.",
+  "meta.description": "옛 필사본과 판본에서 잘라 낸 글자 이미지입니다. 글자마다 독음, 출처, 이용 조건을 함께 보여 줍니다.",
   "meta.formsIndex.description": "CODH의 글리프를 글자별로 모양이 비슷한 클러스터로 나누고, 클러스터마다 지정된 자형을 보여 줍니다.",
   "meta.forms.description": "CODH에 있는 {character}({codePoint}) 글리프 {count}개를 모양이 비슷한 클러스터 {clusters}개로 나누고, 클러스터마다 지정된 자형을 보여 줍니다.",
   "meta.crop.description": "{source}의 {character}"
