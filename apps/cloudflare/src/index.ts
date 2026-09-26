@@ -157,7 +157,9 @@ export function validRound(input: Json, target?: string): { answers: Json[]; see
   for (const crop of [...seen, ...skipped]) {
     text(crop?.id, 512, 'character id', true);
     if (typeof pixels(crop) !== 'string' || !/^[a-f0-9]{64}$/.test(pixels(crop))) throw new Problem(422, 'Invalid image hash.');
-    if (crop.image !== undefined) text(crop.image, 256, 'crop image', true);
+    // A crop's image is compared with its record, never stored. Corpus glyphs link their source's own
+    // file, and an HNG file name percent-encodes Japanese, so the address can run past 256 characters.
+    if (crop.image !== undefined) text(crop.image, 2048, 'crop image', true);
   }
   return { answers, seen, skipped };
 }
