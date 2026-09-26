@@ -170,3 +170,21 @@ def test_an_unreviewed_unit_whose_only_change_is_the_quiz_leaves_it_in_place():
 def test_a_null_shape_order_is_the_same_as_none():
     assert refresh.plan(with_data(unit(revision=1000001), shape_order=None), live(revision=1000001)) == ("skip", None)
     assert refresh.plan(unit(revision=1000001), with_data(live(revision=1000001), shape_order=None)) == ("skip", None)
+
+
+def test_the_output_ends_by_stamping_the_refresh(tmp_path, monkeypatch):
+    import sqlite3
+    catalogue = sqlite3.connect(tmp_path / "catalogue.sqlite")
+    row = unit(box={"x": 1, "y": 2, "w": 3, "h": 4}, image="/atlas/media/b.webp")
+    catalogue.execute(f"CREATE TABLE units ({','.join(row)})")
+    catalogue.execute(f"INSERT INTO units VALUES ({','.join('?' * len(row))})", list(row.values()))
+    catalogue.commit()
+    (tmp_path / "live.jsonl").write_text(json.dumps({"id": "hk:1", **live()}) + "\n")
+    monkeypatch.setattr("sys.argv", ["refresh", str(tmp_path / "catalogue.sqlite"), str(tmp_path / "live.jsonl"), str(tmp_path / "out.sql")])
+    refresh.main()
+    lines = (tmp_path / "out.sql").read_text().splitlines()
+    assert lines[0].startswith("UPDATE units SET") and "units_refreshed_at" in lines[-1]
+    site = sqlite3.connect(":memory:")
+    site.execute("CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    site.execute(lines[-1])
+    assert json.loads(site.execute("SELECT value FROM metadata WHERE key='units_refreshed_at'").fetchone()[0]).endswith("Z")

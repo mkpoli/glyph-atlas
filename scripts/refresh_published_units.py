@@ -19,6 +19,8 @@ This writes the UPDATE statements that bring such units up to date:
   later reviews and undos, so an undo brings back neither, and undo decides the quiz with the
   repair status the row holds.
 
+The file ends by stamping `metadata.units_refreshed_at`, which the Worker's cached listings are keyed by.
+
 A null `shape_order` is the same as none: the Worker reads a crop's shape order from `unit_shapes`
 and ignores the key in its data, and older rows were written without it.
 
@@ -141,6 +143,9 @@ def main() -> None:
                 held.append(new["id"])
             if statement:
                 out.write(statement + "\n")
+        # Last, so the Worker's cached listings, keyed by it, change once the rows have.
+        out.write("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at',"
+                  "json_quote(strftime('%Y-%m-%dT%H:%M:%fZ','now')));\n")
     print(json.dumps({**counts, "held": held}, ensure_ascii=False))
 
 
