@@ -1,0 +1,22 @@
+id: ja-wikipedia-kana
+name: Wikipedia 日本語版 各仮名の記事（平仮名字源）
+publisher: Wikipedia 日本語版の執筆者（Wikimedia Foundation）
+kind: reference-table
+url: https://ja.wikipedia.org/wiki/<kana>
+licence: CC-BY-SA-4.0
+licence_evidence: https://ja.wikipedia.org/wiki/Wikipedia:ウィキペディアを二次利用する
+attribution: Wikipedia 日本語版の執筆者, 各仮名の記事（「あ」から「ん」まで）, CC BY-SA 4.0
+accessed: 2026-09-26
+access:
+  api: https://ja.wikipedia.org/w/api.php?action=query&prop=revisions&titles=<kana>
+  build: scripts/build_kana_origins.py
+format:
+  field: 平仮名字源 of the infobox of each single-kana article, e.g. た「太の草書体」
+  revisions: one per row of data/vocab/kana-origins.tsv
+counts:
+  kana: 48
+  rows: 48
+notes:
+  - A tertiary, community-edited source, and the infobox field carries no reference of its own in any of the 48 articles: each row repeats an uncited statement. Each row keeps the article revision it was read from.
+  - The field states one origin per kana. Where the origin is disputed the table still holds one: the article 平仮名 (revision 111097001) notes that つ is also traced to 川 or 鬥 (紅林幸子 2024, 國學院大學北海道短期大学部紀要 41, doi:10.24626/kokuteanc.41.0_137), and the article ん lists several theories for its katakana.
+  - Only fields naming a cursive form (草書体) are kept; the 片仮名字源 field, which names parts of kanji, is not used.

@@ -62,6 +62,8 @@ try {
     const data = { char, code_point: code, grapheme: { code_point: 'U+4EEE' }, candidates: {} }
     await db.prepare('INSERT INTO characters VALUES(?,?,?,?,?)').bind(code, char, '', JSON.stringify(data), JSON.stringify(data)).run()
   }
+  const katakanaA = { char: 'ア', code_point: 'U+30A2', grapheme: { code_point: 'U+3042' }, candidates: {} }
+  await db.prepare('INSERT INTO characters VALUES(?,?,?,?,?)').bind('U+30A2', 'ア', '', JSON.stringify(katakanaA), JSON.stringify(katakanaA)).run()
   const corpus = { id: 'codh:fixture', origin: 'corpus', label: '仮', source_label: '仮', reading: '仮',
     written_character: null, identity_status: 'unassigned', grapheme: 'U+4EEE', visual_group: { id: 'group-one' },
     state: 'pending', revision: 0, proxyable: true, source_revision: sourceRevision }
@@ -127,6 +129,9 @@ try {
   assert.equal((await call('/atlas?group=kanji')).items[0].id, 'one', 'category follows the written identity')
   await call(`/atlas/rounds/${cropProblem.id}/undo`, { client_id: 'integration' })
   assert.equal((await call('/atlas?group=kana')).items.length, 2, 'undo restores the category')
+  // …and the family: the correction filed `one` under 仮's U+4EEE, and its undo files it back under ア's.
+  const familyOf = async id => (await db.prepare('SELECT family FROM units WHERE id=?').bind(id).first()).family
+  assert.equal(await familyOf('one'), 'U+3042', 'undo restores the family')
   await db.prepare('INSERT INTO unit_shapes VALUES(?,?)').bind('two', 7).run()
   const shaped = Object.fromEntries((await call('/atlas?purpose=review&production=all')).items.map(i => [i.id, i.shape_order]))
   assert.deepEqual(shaped, { one: null, two: 7 }, 'a crop carries its shape order, or null without one')

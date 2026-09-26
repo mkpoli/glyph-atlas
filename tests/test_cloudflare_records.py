@@ -221,3 +221,21 @@ def test_the_document_migration_reads_the_book_from_the_page_id():
     db.executescript(Path("apps/cloudflare/migrations/0021_unit_document.sql").read_text())
     assert dict(db.execute("SELECT id,document FROM units")) == {
         "local-a": "hl:00AB", "local-b": "hk:entry:with:separators", "no-page": None, "corpus": None}
+
+
+def test_the_family_migration_refiles_a_crop_left_under_another_family():
+    """0023 gives a local crop its character's family, or none when the character table has no family."""
+    db = sqlite3.connect(":memory:")
+    for path in sorted(Path("apps/cloudflare/migrations").glob("*.sql")):
+        if path.name < "0023":
+            db.executescript(path.read_text())
+    grapheme = json.dumps({"grapheme": {"code_point": "U+3042"}})
+    db.execute("INSERT INTO characters VALUES('U+30A2','ア','',?,?)", (grapheme, grapheme))
+    for unit_id, origin, label, family in (("undone", "local", "ア", "U+4EEE"), ("mark", "local", "※", "U+4EEE"),
+                                           ("kept", "local", "ア", "U+3042"), ("corpus", "corpus", "ア", "U+4EEE")):
+        db.execute("INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                   (unit_id, origin, label, None, family, None, "unknown", "kana", "pending", 0, 1, 1, 0,
+                    "{}", "{}", "{}", "{}"))
+    db.executescript(Path("apps/cloudflare/migrations/0023_family_follows_character.sql").read_text())
+    assert dict(db.execute("SELECT id,family FROM units")) == {
+        "undone": "U+3042", "mark": None, "kept": "U+3042", "corpus": "U+4EEE"}
