@@ -26,8 +26,8 @@
   let loadingFamily = $state(''), loadingMembers = $state(false), loadingSplit = $state(false)
   // Cluster by cluster review of every glyph, entered from the cluster grid.
   let reviewing = $state(false)
-  // A cluster is done once it is named, or every glyph has a form or was reported as not belonging.
-  const isOpen = c => !c.form && c.assigned + c.rejected < c.count
+  // A cluster is done once it is named or marked, or every glyph has a form or was reported as not belonging.
+  const isOpen = c => !c.form && !c.issue && c.assigned + c.rejected < c.count
   const cluster = $derived(current?.items[active] ?? null)
   const shown = $derived(list.filter(f => !filter.trim() || f.char.includes(filter.trim()) || f.label.includes(filter.trim())
     || f.code_point.toLowerCase().includes(filter.trim().toLowerCase())))
@@ -135,6 +135,25 @@
       else if (!units.length) active = nextOpen(openFirst ? Math.max(-1, index - targets.length) : index)
     } catch (e) { error = e.message } finally { busy = false }
   }
+  // A cluster marked mixed holds more than one form; one reported as a whole reports every glyph that
+  // follows it. Picked clusters are marked together, one decision each.
+  async function markClusters(issue) {
+    if (busy || !cluster) return
+    busy = true; error = ''
+    try {
+      const targets = pickedClusters.length ? pickedClusters.map(c => c.id) : [cluster.id], index = active
+      const wrong = issue === 'character' && correction.trim() ? { character: correction.trim() } : {}
+      let count = 0
+      for (const id of targets) count += (await decide({ kind: 'cluster', cluster: id, issue, client_id: reviewer(), ...wrong })).count
+      picked = new Set(); pickAnchor = null; correcting = false; correction = ''
+      notice = issue === 'mixed' ? t('forms.notice.mixed', { count: targets.length }) : t('forms.notice.reported', { count, issue: issueName(issue) })
+      setTimeout(() => notice = '', 2200)
+      await pick(code, true)
+      await refreshList()
+      active = nextOpen(openFirst ? Math.max(-1, index - targets.length) : index)
+    } catch (e) { error = e.message } finally { busy = false }
+  }
+  const issueName = issue => issue === 'crop' ? t('forms.reportIssue.crop') : t('forms.reportIssue.character')
   // A bad crop or a glyph of another character is not a form: it is reported, and leaves the family.
   async function flag(issue) {
     if (busy || !chosen.size) return
@@ -144,7 +163,7 @@
       for (let i = 0; i < units.length; i += 1000)
         result.count += (await decide({ kind: 'glyph', units: units.slice(i, i + 1000), issue, client_id: reviewer(),
           ...(issue === 'character' && correction.trim() ? { character: correction.trim() } : {}) })).count
-      notice = t('forms.notice.reported', { count: result.count, issue: issue === 'crop' ? t('forms.reportIssue.crop') : t('forms.reportIssue.character') })
+      notice = t('forms.notice.reported', { count: result.count, issue: issueName(issue) })
       setTimeout(() => notice = '', 2200)
       correcting = false; correction = ''
       await pick(code, true)
@@ -158,12 +177,14 @@
     return after >= 0 ? after : Math.min(from + 1, current.items.length - 1)
   }
   async function reviewed({ reported, issue, form, count }) {
-    notice = [reported ? t('forms.notice.reported', { count: reported, issue: issue === 'crop' ? t('forms.reportIssue.crop') : t('forms.reportIssue.character') }) : '',
+    notice = [issue === 'mixed' ? t('forms.notice.mixed', { count: 1 }) : '',
+      reported ? t('forms.notice.reported', { count: reported, issue: issueName(issue) }) : '',
       form ? t('forms.notice.assigned', { form, count }) : ''].filter(Boolean).join(' · ')
     if (notice) setTimeout(() => notice = '', 2200)
     await pick(code, true)
     await refreshList()
   }
+  const clusterIssue = issue => issue === 'mixed' ? t('forms.mixed') : issue === 'crop' ? t('forms.cluster.crop') : t('forms.cluster.character', { char: current.char })
   function leaveReview(index) { reviewing = false; active = Math.min(index, current.items.length - 1); scrollActive() }
   function keydown(event) {
     if (reviewing) return
@@ -175,11 +196,12 @@
     else if (event.key === 'Enter' && !open) { event.preventDefault(); show(active) }
     else if (!open && (event.key === 'r' || event.key === 'R')) { event.preventDefault(); reviewing = true }
     else if (!open && (event.key === 'x' || event.key === 'X')) { event.preventDefault(); togglePick() }
+    else if (!chosen.size && (event.key === 'm' || event.key === 'M')) { event.preventDefault(); markClusters('mixed') }
     else if (event.key === 'Escape' && !open && picked.size) { event.preventDefault(); picked = new Set() }
     else if (event.key === 'Escape' && open) { event.preventDefault(); close() }
     // Clearing gives selected glyphs back to their cluster, or a cluster its unnamed state.
     else if (event.key === 'Backspace' && chosen.size) { event.preventDefault(); apply(null, 'inherit') }
-    else if (event.key === 'Backspace' && cluster?.form) { event.preventDefault(); apply(null) }
+    else if (event.key === 'Backspace' && (cluster?.form || cluster?.issue)) { event.preventDefault(); apply(null) }
   }
   function choose(index, event) {
     const id = current.items[index].id
@@ -280,7 +302,15 @@
                 {:else}<button disabled={busy} onclick={() => correcting = true}>{t('forms.wrongCharacter')}</button>{/if}
                 <button disabled={busy} onclick={() => apply(null, 'inherit')}>{t('forms.followCluster')} <kbd>⌫</kbd></button>
               {:else}
-                <button disabled={busy || !cluster?.form} onclick={() => apply(null)}>{t('forms.clearCluster')} <kbd>⌫</kbd></button>
+                <button disabled={busy || !cluster} onclick={() => markClusters('mixed')}>{t('forms.mixed')} <kbd>M</kbd></button>
+                <button disabled={busy || !cluster} onclick={() => markClusters('crop')}>{t('forms.cluster.crop')}</button>
+                {#if correcting}
+                  <form class="correct-char" onsubmit={event => { event.preventDefault(); markClusters('character') }}>
+                    <input bind:value={correction} maxlength="4" placeholder={t('forms.actual.placeholder')} aria-label={t('forms.actual.aria')} />
+                    <button disabled={busy}>{t('forms.report')}</button>
+                  </form>
+                {:else}<button disabled={busy || !cluster} onclick={() => correcting = true}>{t('forms.cluster.character', { char: current.char })}…</button>{/if}
+                <button disabled={busy || !(cluster?.form || cluster?.issue)} onclick={() => apply(null)}>{t('forms.clearCluster')} <kbd>⌫</kbd></button>
               {/if}
             </div>
           </div>
@@ -300,7 +330,8 @@
                 <button class:active={order === 'typical'} aria-pressed={order === 'typical'} onclick={() => reorder('typical')}>{t('forms.order.typical')}</button>
                 <button class:active={order === 'unusual'} aria-pressed={order === 'unusual'} onclick={() => reorder('unusual')}>{t('forms.order.unusual')}</button>
               </div>{/if}
-              {#if cluster.form}<span class="cluster-form">{cluster.form} <small>{byForm.get(cluster.form)?.jibo ?? ''}</small></span>{/if}
+              {#if cluster.form}<span class="cluster-form">{cluster.form} <small>{byForm.get(cluster.form)?.jibo ?? ''}</small></span>
+              {:else if cluster.issue}<span class="cluster-issue" class:reported={cluster.issue !== 'mixed'}>{clusterIssue(cluster.issue)}</span>{/if}
               {#if chosen.size}<button class="quiet-link" onclick={() => chosen = new Set()}>{t('forms.clearSelection')}</button>{/if}
             </div>
             {#if splitK && loadingSplit}
@@ -350,11 +381,12 @@
           </div>
           <ol class="cluster-grid">
             {#each current.items as c, i (c.id)}
-              <li class="form-cluster" class:active={i === active} class:picked={picked.has(c.id)} class:assigned={c.form}>
+              <li class="form-cluster" class:active={i === active} class:picked={picked.has(c.id)} class:assigned={c.form || c.issue}>
                 <button class="cluster-select" onclick={event => choose(i, event)} ondblclick={() => show(i)} aria-pressed={i === active || picked.has(c.id)}>
                   <span class="cluster-head">
                     <strong lang="ja">{c.label}</strong><span>{number(c.count)}</span>
                     {#if c.form}<span class="cluster-form"><span class="inline-glyph">{c.form}</span> {byForm.get(c.form)?.jibo ?? ''}</span>
+                    {:else if c.issue}<span class="cluster-issue" class:reported={c.issue !== 'mixed'}>{clusterIssue(c.issue)}</span>
                     {:else if c.assigned}<span class="cluster-open">{around('forms.haveForm', 'glyph', { count: c.assigned })[0]}<span class="inline-glyph">{c.majority}</span>{around('forms.haveForm', 'glyph', { count: c.assigned })[1]}</span>
                     {:else}<span class="cluster-open">{t('corpus.unassigned')}</span>{/if}
                   </span>
@@ -416,6 +448,8 @@
   .cluster-form{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--accent);background:var(--accent-light);border-radius:14px;padding:2px 10px}
   .cluster-form .inline-glyph{font-size:18px}
   .cluster-open{margin-left:auto;font-size:10px;color:var(--muted)}
+  .cluster-issue{margin-left:auto;font-size:11px;color:var(--uncertain);background:var(--uncertain-light);border-radius:14px;padding:3px 10px}
+  .cluster-issue.reported{color:var(--wrong);background:var(--wrong-light)}
   .cluster-samples{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px}
   .cluster-samples img{aspect-ratio:1;border-radius:3px;padding:3px}
   .cluster-foot{display:flex;align-items:center;justify-content:space-between;padding:0 12px 10px;font-size:10px;color:var(--muted)}

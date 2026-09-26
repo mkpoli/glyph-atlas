@@ -1,6 +1,7 @@
 <script>
   // Cluster by cluster, every glyph at once: mark the ones that are not the family's character,
-  // then save and move on. A form key also names the rest of the cluster before moving on.
+  // then save and move on. A form key also names the rest of the cluster before moving on, and M
+  // marks a cluster that holds more than one form.
   import { onMount } from 'svelte'
   import { settle } from '../lib/settle.js'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
@@ -49,17 +50,22 @@
     const next = [...order.slice(from + 1), ...order.slice(0, from + 1)].find(id => open.has(id))
     return next ? family.items.findIndex(c => c.id === next) : family.items.length
   }
-  async function save(form = null) {
+  async function save(form = null, mixed = false) {
     if (busy || !cluster) return
     busy = true; error = ''
     try {
-      const units = [...marked], wrong = issue === 'character' && character.trim() ? character.trim() : null
+      const units = mixed ? [] : [...marked], wrong = issue === 'character' && character.trim() ? { character: character.trim() } : {}
+      // Every glyph of the cluster marked, none with a decision of its own: the cluster is reported
+      // as a whole, in one decision that clearing the cluster takes back.
+      const whole = !form && units.length === total && glyphs.length === total && glyphs.every(g => g.basis !== 'form_glyph')
+      if (mixed) await decide({ kind: 'cluster', cluster: cluster.id, issue: 'mixed', client_id: reviewer() })
+      else if (whole) await decide({ kind: 'cluster', cluster: cluster.id, issue, client_id: reviewer(), ...wrong })
       // A decision covers at most 1,000 glyphs; a larger mark goes in parts.
-      for (let i = 0; i < units.length; i += 1000)
-        await decide({ kind: 'glyph', units: units.slice(i, i + 1000), issue, client_id: reviewer(), ...(wrong ? { character: wrong } : {}) })
+      else for (let i = 0; i < units.length; i += 1000)
+        await decide({ kind: 'glyph', units: units.slice(i, i + 1000), issue, client_id: reviewer(), ...wrong })
       if (form) await decide({ kind: 'cluster', cluster: cluster.id, form, client_id: reviewer() })
       const from = index, order = family.items.map(c => c.id)
-      await onsaved({ reported: units.length, issue, form, count: cluster.count - units.length })
+      await onsaved({ reported: units.length, issue: mixed ? 'mixed' : issue, form, count: cluster.count - units.length })
       character = ''
       await load(following(from, order))
     } catch (e) { error = e.message } finally { busy = false }
@@ -75,6 +81,7 @@
     else if (event.key === 'Enter') { event.preventDefault(); save() }
     else if (event.key === 'a' || event.key === 'A') { event.preventDefault(); markAll() }
     else if (event.key === 's' || event.key === 'S') { event.preventDefault(); load(following(index)) }
+    else if (event.key === 'm' || event.key === 'M') { event.preventDefault(); save(null, true) }
     else if (event.key === 'b' || event.key === 'B') { event.preventDefault(); issue = issue === 'crop' ? 'character' : 'crop' }
     else if (event.key === 'Escape') { event.preventDefault(); marked.size ? marked = new Set() : onexit(index) }
   }
@@ -101,6 +108,7 @@
         </div>
         {#if issue === 'character'}<input class="review-actual" bind:value={character} maxlength="4" placeholder={t('forms.actual.placeholder')} aria-label={t('forms.actual.aria')} />{/if}
         <button onclick={markAll}>{marked.size === glyphs.length && glyphs.length ? t('forms.review.markNone') : t('forms.review.markAll')} <kbd>A</kbd></button>
+        <button onclick={() => save(null, true)} disabled={busy || loading}>{t('forms.mixed')} <kbd>M</kbd></button>
         <button onclick={() => load(following(index))} disabled={busy}>{t('forms.review.skip')} <kbd>S</kbd></button>
         <button class="primary" onclick={() => save()} disabled={busy || loading}>
           {marked.size ? t('forms.review.report', { count: marked.size }) : t('forms.review.next')} <kbd>↵</kbd>
