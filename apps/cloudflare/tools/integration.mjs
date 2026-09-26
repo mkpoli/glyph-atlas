@@ -127,6 +127,8 @@ try {
   const marked = Object.fromEntries((await call('/atlas?purpose=review&production=all')).items.map(i => [i.id, i.suspect]))
   assert.deepEqual(marked, { one: null, two: { p: 0.01, reads_as: 'マ' } },
     'a crop carries the classifier\'s doubt, or null without one or once relabelled')
+  const browsed = Object.fromEntries((await call('/atlas')).items.map(i => [i.id, i.suspect]))
+  assert.deepEqual(browsed, marked, 'browse carries the same doubt')
   // Flagged order: a crop already reviewed in the character inspector queues behind one nobody has.
   for (const id of ['flag-a', 'flag-b']) {
     const d = { id, label: 'ラ', reading: 'ラ', state: 'pending', revision: 0, image_sha256: hash,
