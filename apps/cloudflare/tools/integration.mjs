@@ -197,6 +197,9 @@ try {
       id, 'local', 'セ', 'セ', 'U+30BB', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
       JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}').run()
   }
+  // Browse counts are cached per version of the data, so each write below must show in them at once.
+  const browseSe = async () => { const { pending, seen, flagged } = (await call('/atlas')).categories.find(c => c.label === 'セ'); return { pending, seen, flagged } }
+  assert.deepEqual(await browseSe(), { pending: 3, seen: 0, flagged: 0 })
   const pendingSe = async () => (await call('/atlas?purpose=review&reading=セ&state=pending&limit=96')).items.map(i => i.id).sort()
   const passed = { id: crypto.randomUUID(), client_id: 'integration', label: 'セ',
     seen: [{ id: 'seen-a', image_sha256: hash }, { id: 'seen-b', image_sha256: hash }, { id: 'seen-c', image_sha256: 'c'.repeat(64) }] }
@@ -207,6 +210,7 @@ try {
   assert.deepEqual(await call('/atlas/rounds', scrolled), recorded, 'a retry with more crops on screen returns the first result')
   await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'integration', seen: [{ id: 'seen-a', image_sha256: hash }] }, 422)
   assert.deepEqual(await pendingSe(), ['seen-c'], 'seen crops leave the queue')
+  assert.deepEqual(await browseSe(), { pending: 1, seen: 2, flagged: 0 }, 'a round shows in the browse counts')
   const summary = await call('/atlas?purpose=review&reading=セ')
   assert.equal(summary.counts.seen, 2)
   assert.equal(summary.items.find(i => i.id === 'seen-a').state, 'seen')
@@ -217,8 +221,10 @@ try {
   await call('/atlas/rounds', flagOnSeen)
   assert.equal((await call('/atlas/characters/seen-a')).state, 'flagged', 'a seen crop can still be flagged at its revision')
   assert.deepEqual(await pendingSe(), [], 'answers and seen crops save together')
+  assert.deepEqual(await browseSe(), { pending: 0, seen: 2, flagged: 1 })
   await call(`/atlas/rounds/${passed.id}/undo`, { client_id: 'integration' })
   assert.deepEqual(await pendingSe(), ['seen-b'], 'undoing a pass returns its crops to the queue')
+  assert.deepEqual(await browseSe(), { pending: 1, seen: 1, flagged: 1 }, 'undoing a round with no reviews shows in the browse counts')
   await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'integration', label: 'セ', answers: [], seen: [] }, 422)
   // A crop re-cut after the round was dealt shows another image; the reader never saw that one.
   const recut = await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'integration', label: 'セ',

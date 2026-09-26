@@ -177,7 +177,26 @@ const ROUND_OFFSET_MAX = 4096;
 // them out: either way no request reads every named glyph. Should a character hold more named
 // pending rows than this, mostly glyphs already seen, an older one that is due again waits outside it.
 const NAMED_WINDOW = 256;
-async function catalogue(env: Env, q: URLSearchParams) {
+// Browse counts every local crop by character and state, which reads the whole table and takes
+// seconds, and every visitor gets the same answer. The edge keeps one copy per version of the data:
+// a publication, a review, a round and an undo each make a new key. A refresh that writes `units`
+// without a new publication shows once the copy expires.
+const FACETS_TTL = 3600;
+async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, production: string, facets: D1PreparedStatement) {
+  const version = await env.DB.prepare(`SELECT (SELECT value FROM metadata WHERE key='published_at') AS published,
+    (SELECT max(rowid) FROM events) AS event,(SELECT max(rowid) FROM submissions) AS submission,
+    (SELECT count(*) FROM submissions WHERE undone=1) AS undone`)
+    .first<{ published: string | null; event: number | null; submission: number | null; undone: number }>();
+  const key = new Request(`${url.origin}/atlas/facets?production=${encodeURIComponent(production)}&v=${encodeURIComponent(
+    [version?.published ?? '', version?.event ?? 0, version?.submission ?? 0, version?.undone ?? 0].join(':'))}`);
+  const cached = await caches.default.match(key);
+  if (cached) return { results: await cached.json() } as D1Result<{ label: string; state: string; n: number }>;
+  const groups = await facets.all<{ label: string; state: string; n: number }>();
+  ctx.waitUntil(caches.default.put(key, Response.json(groups.results, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
+  return groups;
+}
+async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
+  const q = url.searchParams;
   const purpose = q.get('purpose') || 'browse';
   const production = q.get('production') || (purpose === 'review' ? REVIEW_SCOPE : 'all');
   if (!validScope(production)) throw new Problem(400, 'Invalid production scope.');
@@ -192,10 +211,10 @@ async function catalogue(env: Env, q: URLSearchParams) {
   where.push(materials); values.push(...materialValues);
   const reviewer = q.get('reviewer') ? text(q.get('reviewer'), 128, 'reviewer', true)! : null;
   const state = stateFor(reviewer);
-  const [groups, published] = await env.DB.batch([
-    env.DB.prepare(`SELECT character AS label,${state} AS state,count(*) AS n FROM units WHERE ${where.join(' AND ')} GROUP BY 1,2`).bind(...values),
-    ...(review ? [corpusCountQuery(production)].map(({ sql, values }) => env.DB.prepare(sql).bind(...values)) : []),
-  ]) as D1Result<{label:string;state?:string;n:number}>[];
+  const facets = env.DB.prepare(`SELECT character AS label,${state} AS state,count(*) AS n FROM units WHERE ${where.join(' AND ')} GROUP BY 1,2`).bind(...values);
+  const [groups, published] = review ? await env.DB.batch([facets,
+    ...[corpusCountQuery(production)].map(({ sql, values }) => env.DB.prepare(sql).bind(...values)),
+  ]) as D1Result<{label:string;state?:string;n:number}>[] : [await browseFacets(env, ctx, url, production, facets)];
   const categories = new Map<string, Json>();
   const counts: Json = { pending: 0, seen: 0, flagged: 0, checked: 0, hard: 0, skipped: 0 };
   const add = (label: string, state: string, n: number) => {
@@ -705,7 +724,7 @@ export default {
       if(path==='/health')return json({ok:true,published_at:await meta(env,'published_at')});
       const image=path.match(/^\/atlas\/media\/([a-f0-9]{64})\.webp$/);
       if(image)return await media(env,request,image[1],ctx);
-      if(path==='/atlas')return json(await catalogue(env,q));
+      if(path==='/atlas')return json(await catalogue(env,ctx,url));
       if(path==='/atlas/history')return json(await history(env,q));
       if(path==='/atlas/corpus/character')return json(parse((await unit(env,q.get('id')||'')).data));
       if(path==='/atlas/collection/status')return json(await meta(env,'collection'));
