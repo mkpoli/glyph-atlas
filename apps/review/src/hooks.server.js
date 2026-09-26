@@ -58,8 +58,9 @@ export async function handle({ event, resolve }) {
   const { pathname, search } = event.url
   if (API.test(pathname)) return api(event)
   if (UNLOCALIZED.test(pathname)) return resolve(event)
-  // English has the unprefixed addresses, so an /en/ address names a page that has another.
-  if (pathname === '/en' || pathname.startsWith('/en/')) return moved(301, (pathname.slice(3) || '/') + search)
+  // English has the unprefixed addresses, so an /en/ address names a page that has another. Leading
+  // slashes are collapsed so the target stays on this site (`/en//example.com` is not `//example.com`).
+  if (pathname === '/en' || pathname.startsWith('/en/')) return moved(301, '/' + pathname.slice(3).replace(/^[/\\]+/, '') + search)
   const { tag, path } = delocalize(pathname)
   // An unprefixed address is English to a crawler, which sends neither a cookie nor a language; a
   // reader who asks for another language is sent to that language's address.
