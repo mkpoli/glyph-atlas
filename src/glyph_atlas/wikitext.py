@@ -30,7 +30,8 @@ The meaning of each template is the one its documentation on zh.wikisource state
 - `SKchar`, `SKchar2`: a rare character given by number, with its Unicode form in parameter 2;
 - `僻字`/`!`: the character, then its description; `校`: the character as printed, then the
   correction; `Year Link`/`YL`: the text, then a gloss; `換行頂格`/`DG`: the text, then a margin;
-  `Unencoded Original`: the standard form, then a reference — each keeps parameter 1 only;
+  `Unencoded Original`: the standard form, then a reference; `參`: the text, then an editor's
+  remark; `PL`: the text, then a link target — each keeps parameter 1 only;
 - `註`/`*` and `Annotation` (annotations of the book, in smaller type): `note`; `?`: unreadable;
 - `Small`/`-`, `多行合一`, `Seal`, `3`, `letter-spacing`, `right` and any template not listed: the
   text of every positional parameter, in order (`1=`, `2=` and `1a=`-style names count as
@@ -54,7 +55,7 @@ Role = Literal["main", "warigaki", "note", "unreadable", "substituted"]
 #: Templates whose content is not text of the page.
 DROPPED = frozenset({"ia", "interpretive apparatus", "nop", "gap", "sk anchor", "visible anchor"})
 #: Templates whose parameter 1 is the printed text and whose later parameters are not.
-FIRST_ONLY = frozenset({"yl", "year link", "校", "僻字", "!", "dg", "換行頂格"})
+FIRST_ONLY = frozenset({"yl", "year link", "校", "僻字", "!", "dg", "換行頂格", "參", "pl"})
 WARIGAKI = frozenset({"雙行註文", "dl", "分注"})
 NOTE = frozenset({"*", "註", "annotation"})
 UNREADABLE = frozenset({"?"})
@@ -134,7 +135,7 @@ class _Reader:
                     index += 1
             elif text[index] in _IDC:
                 index = _skip_ids(text, index)
-                self.emit(Glyph("", "unreadable"))
+                self.emit(Glyph("", "unreadable", column))
             else:
                 cluster, index = _cluster(text, index)
                 if _is_glyph(cluster[0]):
@@ -160,13 +161,13 @@ class _Reader:
         elif name in NOTE:
             self.read("".join(args), "note", column)
         elif name in UNREADABLE:
-            self.emit(Glyph("", "unreadable"))
+            self.emit(Glyph("", "unreadable", column))
         elif name in RARE:
             character = args[1].strip() if len(args) > 1 else ""
             if character:
                 self.read(character, role, column)
             else:
-                self.emit(Glyph("", "unreadable"))
+                self.emit(Glyph("", "unreadable", column))
         elif name in SUBSTITUTED:
             self.read(args[0] if args else "", "substituted", column)
         elif name in FIRST_ONLY:
