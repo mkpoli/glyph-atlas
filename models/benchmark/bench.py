@@ -196,8 +196,9 @@ class Metom:
 class Soramaru:
     """Soramaru's classifier (https://huggingface.co/yuta1984/soramaru_kuzushiji_ai, CC BY-SA 4.0):
     ConvNeXt-tiny at 384×384 over 3,673 characters, trained on the Kaggle Kuzushiji Recognition pages
-    (drawn from CODH's books) and the HI Lab crops, so `codh-test` and `hilab-test` may overlap its
-    training data. It crops the centre square of a crop as its demo does; `pad` pads the crop to a
+    and the HI Lab crops. Its README states no split of the HI Lab crops, so `hilab-test` may overlap
+    its training data; CODH states the Kaggle data differs from its dataset, so whether `codh-test`
+    does is uncertain. It crops the centre square of a crop as its demo does; `pad` pads the crop to a
     white square instead. `SORAMARU` names the folder holding `convnext_v4.onnx` and its
     `convnext_v4.meta.json`.
     """
@@ -223,7 +224,8 @@ class Soramaru:
         else:
             left, top = (image.width - side) // 2, (image.height - side) // 2
             square = image.crop((left, top, left + side, top + side))
-        array = np.asarray(square.resize((self.size, self.size), Image.Resampling.BILINEAR), np.float32) / 255
+        # Bicubic, as the model's own example resizes.
+        array = np.asarray(square.resize((self.size, self.size), Image.Resampling.BICUBIC), np.float32) / 255
         return ((array - self.mean) / self.std).transpose(2, 0, 1)
 
     def top(self, images):

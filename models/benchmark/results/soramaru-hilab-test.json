@@ -3,7 +3,7 @@
  "crops": 37606,
  "models": {
   "atlas": {
-   "seconds": 31.1,
+   "seconds": 28.2,
    "scores": {
     "all": {
      "n": 37606,
@@ -48,45 +48,45 @@
    }
   },
   "soramaru": {
-   "seconds": 191.3,
+   "seconds": 217.3,
    "scores": {
     "all": {
      "n": 37606,
-     "top1": 0.9437,
-     "top5": 0.9796,
-     "family1": 0.9483,
-     "family5": 0.9797,
+     "top1": 0.9444,
+     "top5": 0.9798,
+     "family1": 0.949,
+     "family5": 0.9799,
      "empty": 0.0
     },
     "hiragana": {
      "n": 4767,
-     "top1": 0.9008,
-     "top5": 0.9803,
-     "family1": 0.9008,
-     "family5": 0.9803,
+     "top1": 0.8978,
+     "top5": 0.9805,
+     "family1": 0.8978,
+     "family5": 0.9805,
      "empty": 0.0
     },
     "kanji": {
      "n": 31967,
-     "top1": 0.9514,
-     "top5": 0.979,
-     "family1": 0.9568,
-     "family5": 0.9792,
+     "top1": 0.9525,
+     "top5": 0.9792,
+     "family1": 0.9579,
+     "family5": 0.9794,
      "empty": 0.0
     },
     "katakana": {
      "n": 529,
-     "top1": 0.9584,
+     "top1": 0.9622,
      "top5": 0.9962,
-     "family1": 0.9584,
+     "family1": 0.9622,
      "family5": 0.9962,
      "empty": 0.0
     },
     "symbol": {
      "n": 343,
-     "top1": 0.793,
+     "top1": 0.8076,
      "top5": 0.9971,
-     "family1": 0.793,
+     "family1": 0.8076,
      "family5": 0.9971,
      "empty": 0.0
     }
@@ -105,17 +105,17 @@
     "hiragana": {
      "n": 4767,
      "top1": 0.6864,
-     "top5": 0.978,
+     "top5": 0.9769,
      "family1": 0.6864,
-     "family5": 0.978,
+     "family5": 0.9769,
      "empty": 0.0
     },
     "kanji": {
      "n": 31967,
      "top1": 0.8291,
-     "top5": 0.9809,
+     "top5": 0.981,
      "family1": 0.8333,
-     "family5": 0.9812,
+     "family5": 0.9813,
      "empty": 0.0
     },
     "katakana": {

@@ -3,7 +3,7 @@
  "crops": 168,
  "models": {
   "atlas": {
-   "seconds": 0.6,
+   "seconds": 0.8,
    "scores": {
     "all": {
      "n": 168,
@@ -48,7 +48,7 @@
    }
   },
   "soramaru": {
-   "seconds": 1.4,
+   "seconds": 1.6,
    "scores": {
     "all": {
      "n": 168,
@@ -69,17 +69,17 @@
     "han": {
      "n": 117,
      "top1": 0.9487,
-     "top5": 0.9915,
+     "top5": 0.9829,
      "family1": 0.9487,
-     "family5": 0.9915,
+     "family5": 0.9829,
      "empty": 0.0
     },
     "hiragana": {
      "n": 18,
      "top1": 0.7778,
-     "top5": 0.8889,
+     "top5": 0.9444,
      "family1": 0.7778,
-     "family5": 0.8889,
+     "family5": 0.9444,
      "empty": 0.0
     },
     "katakana": {
@@ -88,6 +88,51 @@
      "top5": 0.8182,
      "family1": 0.5152,
      "family5": 0.8182,
+     "empty": 0.0
+    }
+   }
+  },
+  "soramaru-pad": {
+   "seconds": 1.2,
+   "scores": {
+    "all": {
+     "n": 168,
+     "top1": 0.7262,
+     "top5": 0.8571,
+     "family1": 0.7262,
+     "family5": 0.8571,
+     "empty": 0.0
+    },
+    "corrected": {
+     "n": 49,
+     "top1": 0.449,
+     "top5": 0.7143,
+     "family1": 0.449,
+     "family5": 0.7143,
+     "empty": 0.0
+    },
+    "han": {
+     "n": 117,
+     "top1": 0.8803,
+     "top5": 0.9316,
+     "family1": 0.8803,
+     "family5": 0.9316,
+     "empty": 0.0
+    },
+    "hiragana": {
+     "n": 18,
+     "top1": 0.5556,
+     "top5": 0.7778,
+     "family1": 0.5556,
+     "family5": 0.7778,
+     "empty": 0.0
+    },
+    "katakana": {
+     "n": 33,
+     "top1": 0.2727,
+     "top5": 0.6364,
+     "family1": 0.2727,
+     "family5": 0.6364,
      "empty": 0.0
     }
    }

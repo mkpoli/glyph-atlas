@@ -94,9 +94,9 @@ The served CAFormer (`atlas`) against Soramaru, top-1 / top-5, percent:
 | model | codh-test | hilab-test | atlas-reviewed | corrected (49) |
 | --- | --- | --- | --- | --- |
 | `atlas` | 92.3 / 97.1 | 80.9 / 91.7 | 89.9 / 95.2 | 69.4 / 85.7 |
-| `soramaru` | 86.2 / 95.0 | 94.4 / 98.0 (may overlap its training) | 84.5 / 94.6 | 59.2 / 87.8 |
-| `soramaru-pad` | | | 75.0 / 86.9 | 49.0 / 73.5 |
+| `soramaru` | 86.5 / 95.1 | 94.4 / 98.0 (may overlap its training) | 84.5 / 94.6 | 59.2 / 87.8 |
+| `soramaru-pad` | | | 72.6 / 85.7 | 44.9 / 71.4 |
 | `atlas+soramaru` | 92.3 / 98.3 | 80.9 / 98.1 | 89.9 / 95.8 | 69.4 / 87.8 |
 
-On `codh-test` hiragana, `atlas` reads 93.2 / 99.5 and `soramaru` 77.6 / 94.6. The full breakdowns
+On `codh-test` hiragana, `atlas` reads 93.2 / 99.5 and `soramaru` 77.4 / 94.6. The full breakdowns
 are in `results/soramaru-*.json`.

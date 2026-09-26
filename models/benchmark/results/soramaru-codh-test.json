@@ -3,7 +3,7 @@
  "crops": 45981,
  "models": {
   "atlas": {
-   "seconds": 34.4,
+   "seconds": 23.4,
    "scores": {
     "all": {
      "n": 45981,
@@ -48,46 +48,46 @@
    }
   },
   "soramaru": {
-   "seconds": 292.9,
+   "seconds": 256.6,
    "scores": {
     "all": {
      "n": 45981,
-     "top1": 0.8619,
-     "top5": 0.9498,
-     "family1": 0.8622,
-     "family5": 0.9499,
+     "top1": 0.8647,
+     "top5": 0.951,
+     "family1": 0.8649,
+     "family5": 0.951,
      "empty": 0.0
     },
     "hiragana": {
      "n": 11314,
-     "top1": 0.7759,
-     "top5": 0.9456,
-     "family1": 0.7759,
-     "family5": 0.9456,
+     "top1": 0.774,
+     "top5": 0.9461,
+     "family1": 0.774,
+     "family5": 0.9461,
      "empty": 0.0
     },
     "kanji": {
      "n": 33981,
-     "top1": 0.8933,
-     "top5": 0.9519,
-     "family1": 0.8936,
-     "family5": 0.952,
+     "top1": 0.8978,
+     "top5": 0.9534,
+     "family1": 0.898,
+     "family5": 0.9534,
      "empty": 0.0
     },
     "katakana": {
      "n": 99,
-     "top1": 0.4949,
-     "top5": 0.8283,
-     "family1": 0.4949,
-     "family5": 0.8283,
+     "top1": 0.4545,
+     "top5": 0.7475,
+     "family1": 0.4545,
+     "family5": 0.7475,
      "empty": 0.0
     },
     "symbol": {
      "n": 587,
-     "top1": 0.7666,
-     "top5": 0.9336,
-     "family1": 0.7666,
-     "family5": 0.9336,
+     "top1": 0.7717,
+     "top5": 0.9404,
+     "family1": 0.7717,
+     "family5": 0.9404,
      "empty": 0.0
     }
    }
@@ -97,25 +97,25 @@
     "all": {
      "n": 45981,
      "top1": 0.9226,
-     "top5": 0.9829,
+     "top5": 0.9828,
      "family1": 0.9228,
-     "family5": 0.9829,
+     "family5": 0.9828,
      "empty": 0.0
     },
     "hiragana": {
      "n": 11314,
      "top1": 0.932,
-     "top5": 0.9939,
+     "top5": 0.9938,
      "family1": 0.932,
-     "family5": 0.9939,
+     "family5": 0.9938,
      "empty": 0.0
     },
     "kanji": {
      "n": 33981,
      "top1": 0.9295,
-     "top5": 0.9791,
+     "top5": 0.979,
      "family1": 0.9298,
-     "family5": 0.9792,
+     "family5": 0.979,
      "empty": 0.0
     },
     "katakana": {
