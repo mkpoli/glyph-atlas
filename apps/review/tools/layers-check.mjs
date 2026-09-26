@@ -127,7 +127,7 @@ try {
   const openReviewer = async id => {
     await browser.evaluate(`visit('/')`)
     await browser.waitFor('document.querySelector("dialog[open]") === null', 4000)
-    await browser.evaluate(`visit('/character/' + encodeURIComponent(${JSON.stringify(id)}))`)
+    await browser.evaluate(`visit('/crop/' + encodeURIComponent(${JSON.stringify(id)}))`)
     try {
       await browser.waitFor('document.querySelector("dialog[open] .inspector-crop img")?.naturalWidth > 0', 6000)
     } catch (error) {
