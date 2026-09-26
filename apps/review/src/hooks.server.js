@@ -2,6 +2,9 @@ import { env } from '$env/dynamic/private'
 import worker from '../../cloudflare/src/index.ts'
 import { LOCALE_COOKIE, isLocale, negotiate } from '$lib/i18n.svelte.js'
 
+/** Headers that describe one connection, not the request, and are not passed on. */
+const HOP = ['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade']
+
 /** The paths the API owns; every other path is a page. */
 const API = /^\/(atlas|layers|images|reviews)(\/|$)|^\/health$/
 
@@ -15,14 +18,19 @@ async function api(event) {
   const upstream = env.ATLAS_REVIEW_API
   if (!upstream) return worker.fetch(event.request, event.platform.env, event.platform.ctx)
   const headers = new Headers(event.request.headers)
-  headers.delete('host')
+  for (const name of ['host', ...HOP]) headers.delete(name)
   const body = ['GET', 'HEAD'].includes(event.request.method) ? undefined : event.request.body
-  const response = await fetch(new URL(event.url.pathname + event.url.search, upstream), {
-    method: event.request.method, headers, body, duplex: 'half', redirect: 'manual',
-  })
+  let response
+  try {
+    response = await fetch(new URL(event.url.pathname + event.url.search, upstream), {
+      method: event.request.method, headers, body, duplex: 'half', redirect: 'manual',
+    })
+  } catch {
+    return Response.json({ detail: 'The review service did not answer.' }, { status: 502 })
+  }
   // The body arrives decoded, so the encoding and length it was sent with no longer describe it.
   const out = new Headers(response.headers)
-  out.delete('content-encoding'); out.delete('content-length')
+  for (const name of ['content-encoding', 'content-length', ...HOP]) out.delete(name)
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers: out })
 }
 

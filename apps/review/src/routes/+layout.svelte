@@ -3,7 +3,7 @@
   import '../layers.css'
   import '../script-colors.css'
   import { onMount, untrack } from 'svelte'
-  import { afterNavigate, goto } from '$app/navigation'
+  import { afterNavigate, pushState } from '$app/navigation'
   import { page } from '$app/state'
   import CharacterDialog from '$components/CharacterDialog.svelte'
   import CorpusDialog from '$components/CorpusDialog.svelte'
@@ -21,7 +21,8 @@
   const path = $derived(page.url.pathname)
   const section = $derived(path.startsWith('/pages') ? '/pages' : path.startsWith('/forms') ? '/forms' : path)
   // A crop page is a crop opened over the collection; the inspector's own choice takes over from it.
-  const routed = $derived(page.data.record ? { id: page.params.id, origin: page.route.id === '/corpus/[id]' ? 'corpus' : 'collection' } : null)
+  // Closing it moves to the collection's address in place, and Back opens it again.
+  const routed = $derived(page.data.record && !page.state.closed ? { id: page.params.id, origin: page.route.id === '/corpus/[id]' ? 'corpus' : 'collection' } : null)
   const shown = $derived(inspector.state.selected ? { id: inspector.state.selected, origin: inspector.state.origin } : routed)
   const index = $derived(inspector.state.queue.findIndex(item => item.id === inspector.state.selected))
   const previous = $derived(index > 0 ? () => inspector.step(-1) : null)
@@ -33,7 +34,7 @@
   $effect(() => { document.documentElement.dataset.ink = session.state.ink })
   function close() {
     if (inspector.state.selected) inspector.close()
-    else if (routed) goto('/', { replaceState: true, noScroll: true })
+    else if (routed) pushState('/', { closed: true })
   }
   function saved(id, result) {
     inspector.update?.(id, result)
