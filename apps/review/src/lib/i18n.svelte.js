@@ -95,7 +95,7 @@ const numerals = () => byTag[current].numerals
 const hanzi = () => numerals() === 'hanzi' || numerals() === 'classical'
 const DIGITS = '〇一二三四五六七八九'
 
-/** 1–9999 with its 千百十 places, a gap written as `gap`: 105 is 一百零五, or 一百五 with none. */
+/** 1–9999 with its 千百十 places, a gap written as `gapWord`: 105 is 一百零五, or 一百五 with none. */
 function hanziGroup(value, gapWord) {
   let text = '', gap = false
   for (const [place, unit] of [[1000, '千'], [100, '百'], [10, '十'], [1, '']]) {
