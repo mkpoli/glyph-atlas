@@ -566,6 +566,11 @@ try {
   assert.deepEqual(members.items.map(m => [m.id, m.form, m.basis]), [['codh:plain', '假', 'form_glyph'], ['codh:fixture', '仮', 'form_cluster']])
   await call('/atlas/forms/decisions', { kind: 'inherit', units: ['codh:plain'], client_id: 'integration' })
   assert.equal((await call('/atlas/corpus/character?id=codh%3Aplain')).written_character, '仮', 'following the cluster again')
+  // A reload of the same clustering with no new decision still shows once it finishes.
+  assert.equal((await call('/atlas/forms/families')).items[0].label, '仮 = 假')
+  await db.batch([db.prepare("UPDATE form_families SET label='仮 = 假 = 叚' WHERE code_point='U+4EEE'"),
+    db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('forms_loaded_at','\"reloaded\"')")])
+  assert.equal((await call('/atlas/forms/families')).items[0].label, '仮 = 假 = 叚', 'a finished reload replaces the cached families')
   await counted()
   await call('/atlas/forms/decisions', { kind: 'cluster', cluster: 'U+4EEE:c1', form: null, client_id: 'integration' })
   assert.equal((await db.prepare("SELECT character FROM corpus_units WHERE id='codh:plain'").first()).character, '假',

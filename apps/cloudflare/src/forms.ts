@@ -194,11 +194,12 @@ function decoded(segment: string, tools: FormTools) {
 
 // The family list and a family's cluster tallies change only when a decision is made or a clustering
 // is loaded, and every page reads the list (the header links to Forms while it answers). The edge
-// keeps one copy per clustering revision and latest decision; FORMS_TTL bounds a copy's life.
+// keeps one copy per finished load (`forms_loaded_at`, written last by a reload), clustering revision
+// and latest decision; FORMS_TTL bounds a copy's life.
 const FORMS_TTL = 3600;
-type FormsState = { loading: number; revision: string | null; decision: number | null };
+type FormsState = { loading: number; loaded: string | null; revision: string | null; decision: number | null };
 async function cached(url: URL, state: FormsState, key: string, read: () => Promise<Json | null>, ctx: ExecutionContext) {
-  const request = new Request(`${url.origin}/atlas/forms/cached/${key}?v=${encodeURIComponent(`${state.revision}:${state.decision ?? 0}`)}`);
+  const request = new Request(`${url.origin}/atlas/forms/cached/${key}?v=${encodeURIComponent(`${state.loaded}:${state.revision}:${state.decision ?? 0}`)}`);
   const hit = await caches.default.match(request);
   if (hit) return hit.json<Json>();
   const value = await read();
@@ -207,7 +208,7 @@ async function cached(url: URL, state: FormsState, key: string, read: () => Prom
 }
 
 export async function formsRoute(env: Env, request: Request, path: string, q: URLSearchParams, tools: FormTools, ctx: ExecutionContext): Promise<Response | Json | null> {
-  const state = (await env.DB.prepare(`SELECT EXISTS(SELECT 1 FROM form_loading) AS loading,
+  const state = (await env.DB.prepare(`SELECT EXISTS(SELECT 1 FROM form_loading) AS loading,(SELECT value FROM metadata WHERE key='forms_loaded_at') AS loaded,
     (SELECT revision FROM form_families LIMIT 1) AS revision,(SELECT max(rowid) FROM form_decisions) AS decision`).first<FormsState>())!;
   // A publication is reloading the clustering; the migration's trigger refuses a decision meanwhile.
   if (path !== '/atlas/forms/decisions.jsonl' && state.loading)
