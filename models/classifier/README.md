@@ -152,7 +152,8 @@ uv run atlas review lookalikes                  # look-alike pairs are measured 
 ```
 
 The published crops' suggestions are read per model, so a new classifier reaches the site when they
-are read again.
+are read again. An alignment run that pins the previous export by `classifier_sha256` refuses the
+new one; aligning with the new model takes a new run.
 
 ## Cost
 
