@@ -46,6 +46,12 @@
     if (inspector.state.selected) inspector.close()
     else if (routed) pushState(localize('/'), { closed: true })
   }
+  // A write that keeps the inspector open (a crop's style): the crop's tile and record are stale all
+  // the same, so the next open reads it afresh.
+  function changed(id, result) {
+    inspector.update?.(id, result)
+    written = { ...written, [id]: true }
+  }
   function saved(id, result) {
     inspector.update?.(id, result)
     written = { ...written, [id]: true }
@@ -81,7 +87,7 @@
     · {around('footer.code', 'license')[0]}<a href="https://github.com/mkpoli/glyph-atlas/blob/main/LICENSE" rel="noopener" target="_blank">MIT</a>{around('footer.code', 'license')[1]}
     · <a href="https://github.com/mkpoli/glyph-atlas" rel="noopener" target="_blank">GitHub ↗</a></p>
 </footer>
-{#if shown}{#if shown.origin === 'corpus'}<CorpusDialog id={shown.id} clientId={session.state.clientId} {close} {saved} {previous} {next} {position} {initial} />{:else}<CharacterDialog id={shown.id} clientId={session.state.clientId} {close} onVerdict={inspector.state.onVerdict} {saved} {previous} {next} {position} {initial} />{/if}{/if}
+{#if shown}{#if shown.origin === 'corpus'}<CorpusDialog id={shown.id} clientId={session.state.clientId} {close} {saved} {previous} {next} {position} {initial} />{:else}<CharacterDialog id={shown.id} clientId={session.state.clientId} {changed} {close} onVerdict={inspector.state.onVerdict} {saved} {previous} {next} {position} {initial} />{/if}{/if}
 {#if savedNotice}<div class="save-toast" role="status">✓ {savedNotice}</div>{/if}
 {#if exporting}<ExportReviews close={() => { exporting = false; menuButton?.focus() }} />{/if}
 {#if session.state.progress}<CollectionProgress close={() => { session.state.progress = false; menuButton?.focus() }} />{/if}

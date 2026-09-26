@@ -16,7 +16,7 @@
   // closes, or does something else. Without the prop the sensible default is the same as finishing
   // with it — the next occurrence if the caller offered one, otherwise close.
   // `initial` is the record the server rendered the page with, so the first load needs no request.
-  let { id, clientId, close, saved, onVerdict = null, onskip = null,
+  let { id, clientId, close, saved, changed = null, onVerdict = null, onskip = null,
         previous = null, next = null, position = '', initial = null } = $props()
   const first = untrack(() => initial)
   let dialog, data = $state(first), error = $state(''), busy = $state(false)
@@ -183,6 +183,12 @@
     } catch (e) { if (!closed && current === generation) error = e.message }
     finally { busy = false }
   }
+  // A style saved for one crop may come back after the dialog has moved to another; the crop is
+  // marked as changed either way, and the record on screen is replaced only when it is that crop.
+  function styled(result) {
+    changed?.(result.id, result)
+    if (!closed && result.id === data?.id) data = result
+  }
   async function beginCrop() {
     editingBox = true
     await tick()
@@ -223,7 +229,7 @@
     {#if replaced}<p class="replaced-note" role="status">{t('character.replaced')}</p>{/if}
     {#if error}<div class="error-message" role="alert">{error}<button disabled={busy} onclick={() => load(id)}>{t('character.reload')}</button></div>{/if}
     {#if data}
-      <div class="inspector-production"><ProductionBadge item={data} /><StyleField item={data} {clientId} disabled={busy} saved={result => data = result} /></div>
+      <div class="inspector-production"><ProductionBadge item={data} /><StyleField item={data} {clientId} editable={!onVerdict} disabled={busy} working={value => busy = value} saved={styled} /></div>
       <div class="inspector-title"><h2 lang="ja">{data.label}</h2><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{/if}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.state === 'checked' ? t('state.checked') : data.state === 'flagged' ? t('state.flagged') : t('state.unreviewed')}</span></div><p class="record-id"><code>{data.id}</code><button type="button" class="copy-id" onclick={() => navigator.clipboard?.writeText(data.id)} aria-label={t('inspector.copyId')}>{t('inspector.copyId')}</button></p>
       <div class="inspector-figure">
         {#if editingBox && data.context && data.context_box}

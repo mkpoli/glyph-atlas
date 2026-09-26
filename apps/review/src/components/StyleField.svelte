@@ -4,24 +4,28 @@
   // The values of `data/vocab/style.yaml`, in the order a reviewer reaches for them.
   const STYLES = ['regular', 'running', 'cursive', 'clerical', 'seal', 'ming', 'gothic', 'mixed']
   // `item` is the crop as the server reports it; a server that reports no style (the hosted site)
-  // gets nothing here. `saved` receives the crop as it is after an edit.
-  let { item, clientId, disabled = false, saved } = $props()
-  let busy = $state(false), error = $state('')
+  // gets nothing here. `saved` receives the crop as it is after an edit. `working` tells the dialog
+  // a save is under way, so its own save waits: both carry the crop's revision. In a review round
+  // (`editable` false) the style is only shown, since a change would move the revision the round
+  // was dealt at and the round's save would be refused.
+  let { item, clientId, editable = true, disabled = false, working = null, saved } = $props()
+  let error = $state('')
   const own = $derived(item?.style_basis === 'unit' ? item.style : 'unassessed')
   // The server names the basis `document-confirmed`; a catalogue key has no hyphen.
   const basis = $derived((item?.style_basis ?? 'none').replaceAll('-', '_'))
 
   async function choose(event) {
-    const style = event.currentTarget.value
-    busy = true; error = ''
+    // The event's target is gone once the request is awaited, so the menu is kept here.
+    const menu = event.currentTarget, style = menu.value
+    working?.(true); error = ''
     try {
       const result = await request(`/atlas/characters/${encodeURIComponent(item.id)}/style`,
         { id: crypto.randomUUID(), client_id: clientId, revision: item.revision, style })
       saved?.(result)
     } catch (e) {
       error = e.message
-      event.currentTarget.value = own
-    } finally { busy = false }
+      menu.value = own
+    } finally { working?.(false) }
   }
 </script>
 
@@ -29,9 +33,9 @@
   <div class="style-field">
     <span class="style-value">{t('style.label')}: <b>{t(`style.kind.${item.style}`)}</b>
       {#if item.style_basis !== 'none'}<span class="style-basis">{t(`style.basis.${basis}`)}</span>{/if}</span>
-    {#if item.style_editable}
+    {#if item.style_editable && editable}
       <label class="style-own">{t('style.own')}
-        <select value={own} disabled={disabled || busy} onchange={choose}>
+        <select value={own} {disabled} onchange={choose}>
           <option value="unassessed">{t('style.inherit')}</option>
           {#each STYLES as value}<option {value}>{t(`style.kind.${value}`)}</option>{/each}
         </select>

@@ -1228,17 +1228,33 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
 
     @api.post("/atlas/characters/{unit_id}/style")
     def set_style(unit_id: str, edit: StyleEdit) -> dict:
-        """Record a reviewer's style for one crop as a `style` event, and return the crop as it now is."""
+        """Record a reviewer's style for one crop as a `style` event, and return the crop as it now is.
+
+        A request saved before under this id is answered with the crop as it now is, when it named
+        the same crop and style; any other use of the id is refused, including a concurrent one the
+        store answered with the first request's event.
+        """
+        def same(event: dict) -> bool:
+            return (event["target_id"] == unit_id and event["new"] == edit.style
+                    and json.loads(event["evidence"]).get("request") == edit.model_dump(mode="json"))
+
+        previous = store.submission_results(edit.client_id, f"style:{edit.id}")
+        if previous:
+            if not same(previous[0]["review"]):
+                raise BadRequest("This style was already saved with different values.")
+            return character(unit_id)
         try:
             style_module.check(edit.style)
         except ValueError as error:
             raise HTTPException(422, str(error)) from error
         one(unit_id)
-        store.record(ReviewRequest(
+        result = store.record(ReviewRequest(
             target_type="unit", target_id=unit_id, field="style", new=edit.style,
             base_revision=edit.revision, client_id=edit.client_id, idempotency_key=f"style:{edit.id}",
             evidence=json.dumps({"kind": "style-review", "request": edit.model_dump(mode="json")}, ensure_ascii=False),
         ))
+        if not same(result["review"]):
+            raise BadRequest("This style was already saved with different values.")
         return character(unit_id)
 
     def schedule_refinement(background: BackgroundTasks, unit_ids: set[str]) -> None:
