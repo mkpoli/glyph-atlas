@@ -76,9 +76,17 @@ def holder_image(joined, box, enabled):
     return _iiif_region(joined.get("image_service"), box, edge=480) if enabled else None
 
 
+#: Corpora the site publishes as its own crops. The Ainu records are merged into the Ainu build and
+#: published from it as local crops under the same ids; as corpus glyphs too, a round would deal the
+#: copy and every save of it would be refused against the local row.
+PUBLISHED_LOCALLY = frozenset({"ainu-records"})
+
+
 def unit_corpora(names=None):
-    """Every unit corpus under `work`, or only those in `names`, which must all exist."""
-    found = [corpus for corpus in sources.discover("work") if corpus.name in UNIT_CORPORA]
+    """Every unit corpus under `work` the site does not publish locally, or only those in `names`,
+    which must all exist."""
+    found = [corpus for corpus in sources.discover("work")
+             if corpus.name in UNIT_CORPORA and corpus.name not in PUBLISHED_LOCALLY]
     if names is None:
         return found
     missing = set(names) - {corpus.name for corpus in found}

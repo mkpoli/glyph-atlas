@@ -130,7 +130,7 @@ def test_resuming_an_export_whose_corpus_rows_predate_their_material_is_refused(
 
 def test_an_export_reads_only_the_corpora_it_names(scripts, tmp_path, monkeypatch):
     export = importlib.import_module("export_cloudflare_corpus")
-    names = sorted(export.UNIT_CORPORA)[:2]
+    names = sorted(set(export.UNIT_CORPORA) - export.PUBLISHED_LOCALLY)[:2]
     monkeypatch.setattr(export.sources, "discover",
                         lambda root: [SimpleNamespace(name=name) for name in [*names, "not-a-unit-corpus"]])
     assert [c.name for c in export.unit_corpora()] == names
@@ -263,3 +263,10 @@ def test_holder_images_point_at_the_holders_region_of_the_box(scripts):
     assert export.holder_image(served, box, False) is None
     assert export.holder_image({"image_service": None}, box, True) is None
     assert export.holder_image(served, None, True) is None
+
+
+def test_the_ainu_records_the_site_publishes_as_its_own_crops_are_not_exported_as_corpus_glyphs(scripts, monkeypatch):
+    export = importlib.import_module("export_cloudflare_corpus")
+    monkeypatch.setattr(export.sources, "discover",
+                        lambda root: [SimpleNamespace(name=name) for name in ("ainu-records", "codh-full")])
+    assert [c.name for c in export.unit_corpora()] == ["codh-full"]
