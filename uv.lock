@@ -478,10 +478,6 @@ detector = [
     { name = "torchvision" },
     { name = "transformers" },
 ]
-fonts = [
-    { name = "brotli" },
-    { name = "fonttools" },
-]
 marks = [
     { name = "numpy" },
     { name = "opencv-python-headless" },
@@ -494,7 +490,9 @@ ocr = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "brotli" },
     { name = "cffconvert" },
+    { name = "fonttools" },
     { name = "numpy" },
     { name = "onnx" },
     { name = "onnxruntime-gpu" },
@@ -505,9 +503,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "brotli", marker = "extra == 'fonts'", specifier = ">=1.1" },
     { name = "fastapi", specifier = ">=0.115" },
-    { name = "fonttools", marker = "extra == 'fonts'", specifier = ">=4.60" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "numpy", marker = "extra == 'detector'", specifier = ">=2" },
     { name = "numpy", marker = "extra == 'marks'", specifier = ">=2" },
@@ -531,11 +527,13 @@ requires-dist = [
     { name = "typer", specifier = ">=0.16" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34" },
 ]
-provides-extras = ["data", "fonts", "ocr", "marks", "detector"]
+provides-extras = ["data", "ocr", "marks", "detector"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "brotli", specifier = ">=1.1" },
     { name = "cffconvert", specifier = ">=2.0" },
+    { name = "fonttools", specifier = ">=4.60" },
     { name = "numpy", specifier = ">=2" },
     { name = "onnx", specifier = ">=1.20" },
     { name = "onnxruntime-gpu", specifier = ">=1.22" },

@@ -22,10 +22,11 @@ def test_catalogue_is_up_to_date():
 
 
 def test_spelling_joins_han_and_keeps_names():
-    table = {"tải": "載", "lại": "吏", "từ": "自", "và": "吧"}
+    table = {"tải": "載", "lại": "吏", "từ": "自", "và": "吧", "để": "底"}
     missing = set()
     assert build_vi_hani.spell("Tải lại JSON.", table, missing) == "載吏JSON。"
     assert build_vi_hani.spell("Từ CODH, HI Lab và {name}", table, missing) == "自CODH，HI Lab吧{name}"
+    assert build_vi_hani.spell("qwerty… để lại · ⌫ tải", table, missing) == "qwerty…底吏 · ⌫載"
     assert not missing
 
 
