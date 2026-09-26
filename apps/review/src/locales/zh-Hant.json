@@ -515,5 +515,9 @@
   "quiz.reference.seen": "已檢視",
   "state.hard": "難讀：兩位審核者已略過",
   "suggestions.type.label": "或直接輸入（選填）",
-  "suggestions.type.placeholder": "字符…"
+  "suggestions.type.placeholder": "字符…",
+  "meta.description": "從歷史寫本與刻本中裁切的文字影像，每字附有讀音、來源與使用條款。",
+  "meta.formsIndex.description": "將CODH的字形依字符按相似形狀分組，並標出各組所指定的字形。",
+  "meta.forms.description": "CODH中「{character}」（{codePoint}）的{count}個字形，依相似形狀分為{clusters}組，並標出各組所指定的字形。",
+  "meta.crop.description": "{source}中的「{character}」"
 }

@@ -1,4 +1,6 @@
 <script>
+  import Seo from '$components/Seo.svelte'
+  import { t } from '$lib/i18n.svelte.js'
   import { page } from '$app/state'
   import Quiz from '$views/Quiz.svelte'
   import { useInspector } from '$lib/inspector.svelte.js'
@@ -6,6 +8,8 @@
   const inspector = useInspector(), session = useSession()
   const reading = $derived(page.url.searchParams.get('reading') || '')
 </script>
+
+<Seo title={t('nav.quickReview')} index={false} />
 
 <!-- A round is dealt for one reviewer, whose id exists only in the browser. -->
 {#if session.state.clientId}{#key reading}<Quiz clientId={session.state.clientId} initialReading={reading} inspect={inspector.inspect.bind(inspector)} />{/key}{/if}

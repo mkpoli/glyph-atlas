@@ -512,5 +512,9 @@
   "visualGroups.allForms": "全字體",
   "visualGroups.label": "形群",
   "ziLink.aria": "zi.toolsニ於テ{char}ヲ引ク",
-  "ziLink.text": "zi.tools ↗"
+  "ziLink.text": "zi.tools ↗",
+  "meta.description": "古寫本及ビ版本ヨリ截リ出セル字ノ畫像。一字每ニ讀、出典、利用ノ條件ヲ附ス。",
+  "meta.formsIndex.description": "CODHノ字形ヲ字每ニ形ノ近キニ從ヒテ群ニ分チ、各群ニ定メタル字體ヲ示ス。",
+  "meta.forms.description": "CODHニ收ムル「{character}」（{codePoint}）ノ字形{count}ヲ形ノ近キ{clusters}群ニ分チ、各群ニ定メタル字體ヲ示ス。",
+  "meta.crop.description": "{source}ノ「{character}」"
 }

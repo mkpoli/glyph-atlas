@@ -530,5 +530,9 @@
   "visualGroups.allForms": "All forms",
   "visualGroups.label": "Visual groups",
   "ziLink.aria": "Look up {char} on zi.tools",
-  "ziLink.text": "zi.tools ↗"
+  "ziLink.text": "zi.tools ↗",
+  "meta.description": "Character crops from historical manuscripts and printed books, each with its reading, source and terms of use.",
+  "meta.formsIndex.description": "Glyphs from CODH grouped by shape for each character, with the variant forms named for each group.",
+  "meta.forms.description": "{count} glyphs of {character} ({codePoint}) from CODH in {clusters} shape clusters, with the variant forms named for them.",
+  "meta.crop.description": "{character} in {source}"
 }

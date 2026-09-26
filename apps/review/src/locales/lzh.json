@@ -512,5 +512,9 @@
   "visualGroups.allForms": "諸體",
   "visualGroups.label": "以形分群",
   "ziLink.aria": "於zi.tools查{char}",
-  "ziLink.text": "zi.tools ↗"
+  "ziLink.text": "zi.tools ↗",
+  "meta.description": "古寫本、刻本所截之字，各附其讀、出處與用約。",
+  "meta.formsIndex.description": "CODH字形，每字以形近分群，各注所定之體。",
+  "meta.forms.description": "CODH所收{character}（{codePoint}）字形{count}，以形近分爲{clusters}群，各注所定之體。",
+  "meta.crop.description": "{source}之「{character}」"
 }
