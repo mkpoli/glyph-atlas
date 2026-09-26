@@ -60,9 +60,9 @@ async function family(env: Env, codePoint: string, q: URLSearchParams, tools: Fo
     forms: JSON.parse(found!.forms),
     items: (clusters.results as Json[]).map(c => {
       const t = byCluster.get(c.id);
-      const majority = t ? [...t.forms].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null : null;
+      const [majority, majorityCount] = (t ? [...t.forms].sort((a, b) => b[1] - a[1])[0] : null) ?? [null, 0];
       return { id: c.id, label: c.label, count: c.count, coherence: c.coherence, form: c.form, issue: c.issue,
-        exceptions: t?.own ?? 0, assigned: t?.assigned ?? 0, rejected: t?.rejected ?? 0, majority, representatives: JSON.parse(c.representatives) };
+        exceptions: t?.own ?? 0, assigned: t?.assigned ?? 0, rejected: t?.rejected ?? 0, majority, majority_count: majorityCount, representatives: JSON.parse(c.representatives) };
     }) };
 }
 

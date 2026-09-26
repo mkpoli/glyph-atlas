@@ -590,7 +590,7 @@ try {
   const named = await call('/atlas/forms/decisions', { kind: 'cluster', cluster: 'U+4EEE:c1', form: '仮', client_id: 'integration' })
   assert.equal(named.count, 2)
   const family = await call('/atlas/forms/families/U%2B4EEE')
-  assert.deepEqual([family.assigned, family.items[0].form, family.items[0].assigned], [2, '仮', 2])
+  assert.deepEqual([family.assigned, family.items[0].form, family.items[0].assigned, family.items[0].majority, family.items[0].majority_count], [2, '仮', 2, '仮', 2])
   assert.equal((await db.prepare("SELECT character FROM corpus_units WHERE id='codh:plain'").first()).character, '仮')
   await counted()
   assert.equal((await call('/atlas/corpus/character?id=codh%3Aplain')).identity_basis, 'form_cluster')
