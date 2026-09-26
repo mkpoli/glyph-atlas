@@ -1,6 +1,6 @@
 import { env } from '$env/dynamic/private'
 import worker from '../../cloudflare/src/index.ts'
-import { LOCALES, LOCALE_COOKIE, delocalize, isLocale, localize, negotiate } from '$lib/i18n.svelte.js'
+import { LOCALES, LOCALE_COOKIE, isLocale, localize, negotiate } from '$lib/i18n.svelte.js'
 
 /** Headers that describe one connection, not the request, and are not passed on. */
 const HOP = ['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade']
@@ -37,7 +37,7 @@ async function api(event) {
 }
 
 /** The files served beside the pages, which have no language. */
-const UNLOCALIZED = /^\/(robots\.txt|sitemap\.xml)$/
+const UNLOCALIZED = /^\/(robots\.txt$|sitemap\.xml$|sitemaps\/)/
 
 /** The language a reader wants: the one they chose, else the first their browser asks for that exists. */
 function preferred(event) {
@@ -61,28 +61,15 @@ export async function handle({ event, resolve }) {
   const { pathname, search } = event.url
   if (API.test(pathname)) return api(event)
   if (UNLOCALIZED.test(pathname)) return resolve(event)
-  // English has the unprefixed addresses, so an /en/ address names a page that has another. Leading
-  // slashes are collapsed so the target stays on this site (`/en//example.com` is not `//example.com`).
-  if (pathname === '/en' || pathname.startsWith('/en/')) return moved(301, '/' + pathname.slice(3).replace(/^[/\\]+/, '') + search)
-  // A language the site has, written in other case, goes to its address; one the site does not have
-  // falls back to the page's unprefixed address, which then serves the reader's own language. Leading
-  // slashes are collapsed so the target stays on this site (`/fr//example.com` is not `//example.com`).
   const [, first, ...rest] = pathname.split('/')
-  if (LANGUAGE_TAG.test(first) && !isLocale(first)) {
-    const page = '/' + rest.join('/').replace(/^[/\\]+/, '')
-    const known = LOCALES.find(locale => locale.tag.toLowerCase() === first.toLowerCase())
-    return moved(302, (known ? localize(page, known.tag) : page) + search)
+  if (isLocale(first)) {
+    event.locals.locale = first
+    return resolve(event, { transformPageChunk: ({ html }) => html.replace('%lang%', first) })
   }
-  const { tag, path } = delocalize(pathname)
-  // An unprefixed address is English to a crawler, which sends neither a cookie nor a language; a
-  // reader who asks for another language is sent to that language's address.
-  // A file (favicon.ico and the like) has no language and is not redirected.
-  if (tag === 'en' && event.request.method === 'GET' && !event.isDataRequest && !/\.[a-z0-9]+$/i.test(pathname)) {
-    const wanted = preferred(event)
-    if (wanted !== 'en') return moved(302, localize(path, wanted) + search)
-  }
-  event.locals.locale = tag
-  const response = await resolve(event, { transformPageChunk: ({ html }) => html.replace('%lang%', tag) })
-  if (tag === 'en') response.headers.append('vary', 'Accept-Language, Cookie')
-  return response
+  // Every other address is sent to a language's address: a site language written in other case to that
+  // language, and an unknown language or an unprefixed address to the page in the reader's language.
+  // Leading slashes are collapsed so the target stays on this site (`//example.com` would leave it).
+  const known = LANGUAGE_TAG.test(first) && LOCALES.find(locale => locale.tag.toLowerCase() === first.toLowerCase())
+  const page = '/' + (LANGUAGE_TAG.test(first) ? rest : [first, ...rest]).join('/').replace(/^[/\\]+/, '')
+  return moved(302, localize(page, known ? known.tag : preferred(event)) + search)
 }

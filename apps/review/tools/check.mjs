@@ -106,12 +106,23 @@ await step('GET / renders the collection on the server', async () => {
   return `${tiles} crops in the first response`
 })
 
-await step('an /en/ address redirects to its unprefixed page on this site', async () => {
-  const cases = [['/en', '/'], ['/en/history?mine=1', '/history?mine=1'], ['/en//example.com/a', '/example.com/a']]
-  for (const [from, to] of cases) {
-    const response = await fetch(`${service.base}${from}`, { redirect: 'manual' })
-    assert(response.status === 301 && response.headers.get('location') === to, `${from} answered ${response.status} → ${response.headers.get('location')}`)
+
+await step('every page has a language prefix, and an address without one goes to the reader\'s language', async () => {
+  const cases = [
+    ['/', '/en'], ['/history?mine=1', '/en/history?mine=1'], ['/fr/history', '/en/history'], ['/JA/history', '/ja/history'],
+    ['/zh-hant', '/zh-Hant'], ['//example.com/a', '/en/example.com/a'], ['/fr//example.com/a', '/en/example.com/a'],
+    ['/', '/ja', { 'accept-language': 'ja-JP,ja;q=0.9,en;q=0.8' }], ['/history', '/ko/history', { cookie: 'atlas.locale=ko' }],
+  ]
+  for (const [from, to, headers = {}] of cases) {
+    const response = await fetch(`${service.base}${from}`, { redirect: 'manual', headers })
+    assert(response.status === 302 && response.headers.get('location') === to, `${from} answered ${response.status} → ${response.headers.get('location')}`)
   }
+  for (const path of ['/en', '/en/history', '/ja/history']) {
+    const response = await fetch(`${service.base}${path}`, { redirect: 'manual' })
+    assert(response.status === 200, `${path} answered ${response.status}`)
+  }
+  const unknown = await fetch(`${service.base}/en/nowhere`, { redirect: 'manual' })
+  assert(unknown.status === 404, `/en/nowhere answered ${unknown.status}`)
   return cases.map(([from, to]) => `${from} → ${to}`).join(', ')
 })
 
@@ -128,19 +139,6 @@ await step('the page server forwards API paths and keeps page paths', async () =
   return `${documents.payload.total} documents, ${queue.payload.total} disagreement line(s)`
 })
 
-await step('an address in a language the site does not have falls back to its unprefixed page', async () => {
-  const cases = [['/fr', '/'], ['/fr/history', '/history'], ['/zh-TW/history?mine=1', '/history?mine=1'],
-    ['/fr//example.com/a', '/example.com/a'], ['/JA/history', '/ja/history'], ['/zh-hant', '/zh-Hant']]
-  for (const [from, to] of cases) {
-    const response = await fetch(`${service.base}${from}`, { redirect: 'manual' })
-    assert(response.status === 302 && response.headers.get('location') === to, `${from} answered ${response.status} → ${response.headers.get('location')}`)
-  }
-  const japanese = await fetch(`${service.base}/ja/history`, { redirect: 'manual' })
-  assert(japanese.status === 200, `/ja/history answered ${japanese.status}`)
-  const unknown = await fetch(`${service.base}/nowhere`, { redirect: 'manual' })
-  assert(unknown.status === 404, `/nowhere answered ${unknown.status}`)
-  return cases.map(([from, to]) => `${from} → ${to}`).join(', ')
-})
 
 console.log('\nreading the dataset the way the views do')
 

@@ -21,7 +21,7 @@ export function urlset(origin, paths, tags) {
   const address = (path, tag) => escape(origin + localize(path, tag))
   const entry = path => {
     const links = [...HREFLANG.map(locale => `<xhtml:link rel="alternate" hreflang="${locale.tag}" href="${address(path, locale.tag)}"/>`),
-      `<xhtml:link rel="alternate" hreflang="x-default" href="${address(path, 'en')}"/>`].join('')
+      `<xhtml:link rel="alternate" hreflang="x-default" href="${escape(origin + path)}"/>`].join('')
     return tags.map(tag => `  <url><loc>${address(path, tag)}</loc>${HREFLANG.some(locale => locale.tag === tag) ? links : ''}</url>`).join('\n')
   }
   return xml(`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">

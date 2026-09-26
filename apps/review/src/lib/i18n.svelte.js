@@ -41,8 +41,8 @@ export const locale = () => current
 export const base = () => byTag[current].base
 export const isLocale = tag => Boolean(byTag[tag])
 
-/** `path` in language `tag`: English at the path itself, every other language under its own prefix. */
-export const localize = (path, tag = current) => tag === 'en' ? path : `/${tag}${path === '/' ? '' : path}`
+/** `path` in language `tag`: every language under its own prefix. */
+export const localize = (path, tag = current) => `/${tag}${path === '/' ? '' : path}`
 
 /**
  * The languages search engines can name in `hreflang`: a two-letter language with an optional script.
@@ -50,11 +50,11 @@ export const localize = (path, tag = current) => tag === 'en' ? path : `/${tag}$
  */
 export const HREFLANG = LOCALES.filter(locale => /^[a-z]{2}(-[A-Z][a-z]{3})?$/.test(locale.tag))
 
-/** The language an address is in, and the address without its prefix. */
+/** The language an address is in (null for an unprefixed one), and the address without its prefix. */
 export function delocalize(pathname) {
   const [, first, ...rest] = pathname.split('/')
-  if (first && first !== 'en' && byTag[first]) return { tag: first, path: '/' + rest.join('/') }
-  return { tag: 'en', path: pathname }
+  if (byTag[first]) return { tag: first, path: '/' + rest.join('/') }
+  return { tag: null, path: pathname }
 }
 
 /** Render in `tag`: the language of the address, set before anything is rendered. */
