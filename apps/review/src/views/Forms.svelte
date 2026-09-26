@@ -134,7 +134,7 @@
     anchor = index; chosen = next
   }
   async function apply(form, kind = null) {
-    if (busy || (!cluster && !chosen.size)) return
+    if (busy || history.busy || (!cluster && !chosen.size)) return
     busy = true; error = ''
     try {
       const units = [...chosen]
@@ -162,7 +162,7 @@
   // A cluster marked mixed holds more than one form; one reported as a whole reports every glyph that
   // follows it. Picked clusters are marked together, one decision each.
   async function markClusters(issue) {
-    if (busy || !cluster) return
+    if (busy || history.busy || !cluster) return
     busy = true; error = ''
     try {
       const targets = pickedClusters.length ? pickedClusters.map(c => c.id) : [cluster.id], index = active
@@ -185,7 +185,7 @@
   const issueName = issue => issue === 'crop' ? t('forms.reportIssue.crop') : t('forms.reportIssue.character')
   // A bad crop or a glyph of another character is not a form: it is reported, and leaves the family.
   async function flag(issue) {
-    if (busy || !chosen.size) return
+    if (busy || history.busy || !chosen.size) return
     busy = true; error = ''
     try {
       const units = [...chosen], result = { count: 0 }

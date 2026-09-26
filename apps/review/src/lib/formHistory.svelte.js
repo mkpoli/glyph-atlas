@@ -7,8 +7,11 @@ import { reviewer } from './client.js'
 export const history = $state({ done: [], undone: [], busy: false })
 
 /** Runs `action`, which sends its decisions through the `send` it is given, as one step. `place`
- *  (`{ family, cluster }`) is where the step happened, to return to when it is taken back. */
+ *  (`{ family, cluster }`) is where the step happened, to return to when it is taken back. A step,
+ *  an undo and a redo each hold the history until they finish, so none starts while another runs. */
 export async function step(place, action) {
+  if (history.busy) return
+  history.busy = true
   const sent = []
   const send = async decision => {
     const result = await decide(decision)
@@ -17,6 +20,7 @@ export async function step(place, action) {
   }
   try { return await action(send) } finally {
     if (sent.length) { history.done.push({ ...place, sent }); history.undone = [] }
+    history.busy = false
   }
 }
 
@@ -28,7 +32,7 @@ export async function undo() {
   try {
     for (const { undo } of [...last.sent].reverse())
       for (const decision of undo) await decide({ ...decision, client_id: reviewer() })
-    history.done.pop(); history.undone.push(last)
+    history.done.splice(history.done.indexOf(last), 1); history.undone.push(last)
     return last
   } finally { history.busy = false }
 }
@@ -44,7 +48,7 @@ export async function redo() {
     return next
   } finally {
     // Should sending stop partway, what was sent becomes the step to take back, and the rest is dropped.
-    if (sent.length) { history.undone.pop(); history.done.push({ ...next, sent }) }
+    if (sent.length) { history.undone.splice(history.undone.indexOf(next), 1); history.done.push({ ...next, sent }) }
     history.busy = false
   }
 }

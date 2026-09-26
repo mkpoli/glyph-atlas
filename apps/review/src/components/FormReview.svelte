@@ -7,7 +7,7 @@
   import { showsContext } from '../lib/glyphContext.svelte.js'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import { members as loadMembers } from '../lib/forms.js'
-  import { step } from '../lib/formHistory.svelte.js'
+  import { history, step } from '../lib/formHistory.svelte.js'
   import { number, reviewer } from '../lib/client.js'
   import { t } from '../lib/i18n.svelte.js'
 
@@ -53,7 +53,7 @@
     return next ? family.items.findIndex(c => c.id === next) : family.items.length
   }
   async function save(form = null, mixed = false) {
-    if (busy || !cluster) return
+    if (busy || history.busy || !cluster) return
     busy = true; error = ''
     try {
       const units = [...marked], wrong = issue === 'character' && character.trim() ? { character: character.trim() } : {}
