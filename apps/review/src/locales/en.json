@@ -21,7 +21,7 @@
   "character.crop.dragToAdjust": "Drag to adjust the crop",
   "character.dialog.label": "Character reviewer",
   "character.field.character": "Character",
-  "character.field.character.aria": "Character the source printed",
+  "character.field.character.aria": "Character as written in the source",
   "character.field.character.note": "Records the written character, not the reading.",
   "character.field.reading": "Reading",
   "character.field.reading.aria": "Character reading",

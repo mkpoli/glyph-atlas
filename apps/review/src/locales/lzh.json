@@ -4,7 +4,8 @@
     "base": "zh-Hant",
     "matches": [
       "lzh"
-    ]
+    ],
+    "numerals": "hanzi"
   },
   "app.name": "字形大圖譜",
   "app.home.aria": "字形大圖譜卷首",
@@ -209,7 +210,7 @@
   "forms.reportIssue.crop": "截誤",
   "forms.reported": "已舉：{reason}",
   "forms.report": "舉",
-  "forms.percentDone": "已畢{percent}%",
+  "forms.percentDone": "已畢百分之{percent}",
   "forms.rejectedLabel": "已舉",
   "forms.review.start": "覈",
   "forms.review.progress": "{clusters}群已校{reviewed}",
@@ -357,7 +358,7 @@
   "progress.archive.textWorks.other": "文可尋者{count}部",
   "progress.archive.works": "有截書",
   "progress.bar.discovering": "方訪書",
-  "progress.bar.percentCollected": "所訪書已蒐{percent}%",
+  "progress.bar.percentCollected": "所訪書已蒐百分之{percent}",
   "progress.close": "闔蒐集",
   "progress.extraction.booksWithCrops": "有新截書",
   "progress.extraction.fromTranscriptions": "出於有圖位釋文",

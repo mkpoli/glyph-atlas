@@ -21,7 +21,7 @@
   "character.crop.dragToAdjust": "ドラッグして切り出しを調整",
   "character.dialog.label": "文字レビュー",
   "character.field.character": "文字",
-  "character.field.character.aria": "底本に印刷された文字",
+  "character.field.character.aria": "底本に書かれた文字",
   "character.field.character.note": "読みではなく、書かれた文字を記録します。",
   "character.field.reading": "読み",
   "character.field.reading.aria": "文字の読み",

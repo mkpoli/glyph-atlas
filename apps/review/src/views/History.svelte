@@ -2,7 +2,7 @@
   import { onMount } from 'svelte'
   import { history as fetchHistory, stored, remember } from '../lib/client.js'
   import { issues } from '../lib/issues.js'
-  import { t, locale } from '../lib/i18n.svelte.js'
+  import { t, formatDateTime } from '../lib/i18n.svelte.js'
   let { clientId, inspect } = $props()
   let items = $state([]), loading = $state(true), loadingMore = $state(false), error = $state('')
   let cursor = $state(null), hasMore = $state(true)
@@ -51,8 +51,7 @@
     if (item.verdict === 'unsure') return t('history.decision.unsure')
     return t('history.decision.reported')
   }
-  const formatter = $derived(new Intl.DateTimeFormat(locale(), { dateStyle: 'medium', timeStyle: 'short' }))
-  function when(at) { try { return formatter.format(new Date(at)) } catch { return at } }
+  function when(at) { try { return formatDateTime(at) } catch { return at } }
   $effect(() => { if (nearEnd && hasMore && !error && !loading && !loadingMore) load(true) })
   onMount(() => { load(); return () => { closed = true; clearTimeout(filterTimer) } })
 </script>

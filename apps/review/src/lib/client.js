@@ -30,7 +30,7 @@ export const history = (params = {}, options = {}) =>
   request('/atlas/history?' + new URLSearchParams(Object.entries(params).filter(([, v]) => v !== '' && v != null)), undefined, options)
 export const corpusCharacter = (id, options) => request('/atlas/corpus/character?' + new URLSearchParams({ id }), undefined, options)
 export const randomSeed = () => Math.floor(Math.random() * 2147483647)
-export { formatNumber as number } from './i18n.svelte.js'
+export { formatNumber as number, formatSerial } from './i18n.svelte.js'
 export function stored(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback } catch { return fallback }
 }
