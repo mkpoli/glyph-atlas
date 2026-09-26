@@ -16,7 +16,8 @@ try {
   const migrations = (await readdir(new URL('../migrations/', import.meta.url))).filter(name => name.endsWith('.sql')).sort()
   const apply = async name => {
     const schema = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8')
-    const statements = schema.match(/CREATE TRIGGER[\s\S]*?\nEND;|(?:CREATE (?:TABLE|(?:UNIQUE )?INDEX)|DROP TRIGGER|UPDATE|ALTER TABLE|DELETE FROM|INSERT INTO) [\s\S]*?;/g)
+    // Comments go first: a comment line that starts with a keyword would otherwise read as a statement.
+    const statements = schema.replace(/^\s*--.*$/gm, '').match(/CREATE TRIGGER[\s\S]*?\nEND;|(?:CREATE (?:TABLE|(?:UNIQUE )?INDEX)|DROP TRIGGER|UPDATE|ALTER TABLE|DELETE FROM|INSERT INTO) [\s\S]*?;/g)
     await db.batch(statements.map(sql => db.prepare(sql)))
   }
   for (const name of migrations.filter(name => name < '0006')) await apply(name)
