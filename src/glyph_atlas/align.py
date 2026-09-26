@@ -121,6 +121,18 @@ class Placement:
     group: bool = False
 
 
+def check_classifier(run: Run) -> None:
+    """Refuse a classifier export other than the one the run names by hash."""
+    if run.classifier_sha256 is None:
+        return
+    with Path(run.classifier).open("rb") as handle:
+        found = hashlib.file_digest(handle, "sha256").hexdigest()
+    if found != run.classifier_sha256:
+        raise ValueError(f"{run.classifier} is not the classifier run {run.name} was measured with "
+                         f"({run.classifier_version}, sha256 {run.classifier_sha256[:12]}); "
+                         "restore that export or define a new run")
+
+
 class Run(BaseModel):
     """A named alignment configuration; its hash names the units it writes."""
 
@@ -129,6 +141,10 @@ class Run(BaseModel):
     classifier: str = "models/classifier/artifacts/classifier.onnx"
     detector_version: str = "unset"
     classifier_version: str = "unset"
+    #: The sha256 of the classifier export the run was measured with. The path names wherever the
+    #: served model lives, so the run refuses a different file there rather than writing its scores
+    #: under this run's unit ids. It checks the file and is not part of the hash.
+    classifier_sha256: str | None = None
     policy: str = "align-v1"
     weights: dict[str, float] = Field(
         default_factory=lambda: {
@@ -168,6 +184,7 @@ class Run(BaseModel):
         payload = self.model_dump(mode="json")
         payload.pop("name", None)
         payload.pop("score", None)
+        payload.pop("classifier_sha256", None)
         if payload.get("ink") is None:
             payload.pop("ink", None)
         return hashlib.sha1(
@@ -801,6 +818,10 @@ def run_directory(
     """
     from . import images, net, tables
 
+    # A classifier handed in scores under this run's ids as much as the run's own would.
+    handed = getattr(classifier, "onnx_path", None)
+    if classifier is None or handed is not None:
+        check_classifier(run if classifier is None else run.model_copy(update={"classifier": str(handed)}))
     dataset = tables.Dataset(directory)
     if dataset.tables["lines"] is None or dataset.tables["pages"] is None:
         raise ValueError(f"{directory} needs lines and pages to align")

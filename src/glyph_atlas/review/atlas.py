@@ -25,6 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .. import images, refs
 from .. import production as production_metadata
+from .. import style as style_module
 from ..production import production_info
 from ..schema import Box, ReviewState, Script, Unit
 from . import quiz_shapes, quiz_suspects, status
@@ -131,6 +132,15 @@ def reviewed_targets(events: Iterable[Any]) -> set[str]:
         if kind == "character-review":
             reviews[event.id] = event.target_id
     return {target for event_id, target in reviews.items() if event_id not in undone}
+
+
+def grapheme_of(text: str) -> str | None:
+    """The grapheme a label is filed under: its family's representative code point, or, for a label
+    with no family (a symbol, a sequence), its own code points. Publication writes the same value."""
+    if not text:
+        return None
+    own = " ".join(refs.to_code_points(text))
+    return (refs.grapheme(own) if len(text) == 1 else None) or own
 
 
 def single_character(text: str) -> bool:
@@ -570,6 +580,16 @@ class CharacterEdit(BaseModel):
     box: Box | None = None
 
 
+class StyleEdit(BaseModel):
+    """A reviewer's style for one crop; `unassessed` clears it, so the crop takes its page's or document's."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: UUID
+    client_id: str = Field(min_length=1, max_length=128)
+    revision: int = Field(ge=0)
+    style: str = Field(min_length=1, max_length=64)
+
+
 def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
     from .server import cached_image
 
@@ -600,7 +620,10 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             return None
         path = cached_image(page.sha256) if page.sha256 else None
         if path is None:
-            record = url_index(stamp).get(page.image)
+            # A IIIF image is cached under its service base; a page may name a sized request of it
+            # (`.../full/1495,/0/default.jpg`), which is the same image.
+            index = url_index(stamp)
+            record = index.get(page.image) or index.get(images.service_of(page.image) or "")
             path = cached_image(record.sha256) if record else None
         return path
 
@@ -762,13 +785,15 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         standing = status.unit_reviews([u for u, _ in units], events)
         seen = seen_boxes(events)
         reviewed = reviewed_targets(events)
-        documents = {doc.id: production_info(doc)["production"] for doc in store.documents()}
+        documents = {doc.id: doc for doc in store.documents()}
+        productions = {key: production_info(doc)["production"] for key, doc in documents.items()}
         pages = store.pages()
-        kinds = {}
+        kinds, books = {}, {}
         for unit, _ in units:
             page = pages.get(unit.page_id)
             document_id = unit.document_id or (page.document_id if page else None)
-            kinds[unit.id] = documents.get(document_id, "unknown")
+            kinds[unit.id] = productions.get(document_id, "unknown")
+            books[unit.id] = document_id
         states = {key: review_state(value.human_review) for key, value in standing.items()}
         marks = skip_marks(events)
         # The skips that still apply: those made at the crop's current box.
@@ -789,7 +814,8 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 states[unit.id] = "hard"
             elif unit.id in seen and seen[unit.id] == box:
                 states[unit.id] = "seen"
-        return units, states, kinds, skips, reviewed
+        titles = {key: doc.title for key, doc in documents.items()}
+        return units, states, kinds, books, titles, skips, reviewed
 
     @api.get("/atlas")
     def catalogue(
@@ -801,6 +827,8 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         purpose: Literal["browse", "review"] = "browse",
         production: Annotated[str | None, Query(description="`all`, a production node, or `not:` and a node")] = None,
         reported: Literal["show", "hide"] = "show",
+        document: Annotated[str | None, Query(max_length=256)] = None,
+        grapheme: Annotated[str | None, Query(max_length=256, description="A grapheme's code point(s), `U+4EEE`")] = None,
         seed: int = 0,
         limit: Annotated[int, Query(ge=1, le=96)] = 60,
         offset: Annotated[int, Query(ge=0)] = 0,
@@ -826,7 +854,9 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             raise HTTPException(422, str(error)) from error
         generation = (file_stamp(store.path), file_stamp(Path(str(store.path) + "-wal")),
                       file_stamp(production_metadata.OVERRIDES))
-        units, all_states, kinds, skips, reviewed = catalogue_snapshot(generation)
+        units, all_states, kinds, books, titles, skips, reviewed = catalogue_snapshot(generation)
+        document = document or None
+        grapheme = " ".join(grapheme.upper().split()) if grapheme else None
         records = [(u, rev) for u, rev in units
                    if production_metadata.in_scope(kinds[u.id], scope) and considered(u)]
         states = {u.id: all_states[u.id] for u, _ in records}
@@ -838,13 +868,21 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 if states[u.id] == "pending" and at is not None and at > rested:
                     states[u.id] = "skipped"
         categories: dict[str, Counter] = {}
+        # The books the crops come from, counted like the readings: `document` picks one.
+        shelves: dict[str, Counter] = {}
         for unit, _ in records:
-            counts = categories.setdefault(shown(unit), Counter())
-            counts["total"] += 1
-            counts[states[unit.id]] += 1
+            groups = [categories.setdefault(shown(unit), Counter())]
+            if books[unit.id]:
+                groups.append(shelves.setdefault(books[unit.id], Counter()))
+            for counts in groups:
+                counts["total"] += 1
+                counts[states[unit.id]] += 1
         counts = Counter(states[u.id] for u, _ in records)
         searched = matches(records, q) if q else records
+        families = {name: grapheme_of(name) for name in categories}
         selected = [(u, rev) for u, rev in searched if (reading is None or shown(u) == reading)
+                    and (grapheme is None or families[shown(u)] == grapheme)
+                    and (document is None or books[u.id] == document)
                     and (group == "all" or character_group(u) == group)
                     and (state == "all" or states[u.id] == state
                          # The Flagged view: every crop waiting for a person, flagged or hard to read.
@@ -872,9 +910,12 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 # counts the collection or only the queue.
                 "purpose": purpose, "production": scope, "review_epoch": store.review_epoch(),
                 "query": q or None, "matched": len(searched) if q else None,
-                "categories": [{"label": name, **{key: c[key] for key in
+                "categories": [{"label": name, "grapheme": families[name], **{key: c[key] for key in
                                   ("total", "pending", "seen", "checked", "flagged", "hard", "skipped")}}
                                for name, c in sorted(categories.items(), key=lambda x: (-x[1]["total"], x[0]))],
+                "documents": [{"id": key, "title": titles.get(key), **{name: c[name] for name in
+                                ("total", "pending", "seen", "checked", "flagged", "hard", "skipped")}}
+                              for key, c in sorted(shelves.items(), key=lambda x: (-x[1]["total"], titles.get(x[0]) or "", x[0]))],
                 "reported_count": reported_count,
                 "items": [item(u, rev, states[u.id]) for u, rev in selected[offset:offset + limit]]}
 
@@ -885,7 +926,9 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         line = store.line(unit.line_id) if unit.line_id else None
         page = store.page(unit.page_id) if unit.page_id else None
         document = store.document(unit.document_id or page.document_id) if (unit.document_id or page) else None
+        value, basis = style_module.resolve(unit, page, document)
         result.update({"context_image": result["image"] + "&context=true",
+                       "style": value, "style_basis": basis, "style_editable": True,
                        "text": line.text if line else "", "source": document.title if document else "",
                        "page_number": page.seq + 1 if page else None,
                        "line": line.model_dump(mode="json") if line else None})
@@ -1182,6 +1225,21 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         if edit.issue == "merged":
             schedule_refinement(background, {unit_id})
         return {"results": results}
+
+    @api.post("/atlas/characters/{unit_id}/style")
+    def set_style(unit_id: str, edit: StyleEdit) -> dict:
+        """Record a reviewer's style for one crop as a `style` event, and return the crop as it now is."""
+        try:
+            style_module.check(edit.style)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
+        one(unit_id)
+        store.record(ReviewRequest(
+            target_type="unit", target_id=unit_id, field="style", new=edit.style,
+            base_revision=edit.revision, client_id=edit.client_id, idempotency_key=f"style:{edit.id}",
+            evidence=json.dumps({"kind": "style-review", "request": edit.model_dump(mode="json")}, ensure_ascii=False),
+        ))
+        return character(unit_id)
 
     def schedule_refinement(background: BackgroundTasks, unit_ids: set[str]) -> None:
         from .refine import background_refine

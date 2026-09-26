@@ -242,18 +242,13 @@ def score(rows: list[dict], answers: list[list[str]]) -> dict:
     return {k: {"n": g["n"], **{m: round(g[m] / g["n"], 4) for m in g if m != "n"}} for k, g in sorted(groups.items())}
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--set", required=True, choices=["codh-test", "hilab-test", "atlas-reviewed"])
-    parser.add_argument("--model", nargs="+", required=True)
-    parser.add_argument("--limit", type=int)
-    parser.add_argument("--out", type=Path)
-    args = parser.parse_args()
-    rows = load_set(args.set)
-    if args.limit:
+def run(set_name: str, models: list[str], *, limit: int | None = None, quiet: bool = False) -> dict:
+    """Read `set_name` with every model of `models` (a merge reads its two parts) and score them."""
+    rows = load_set(set_name)
+    if limit:
         random.Random(1).shuffle(rows)
-        rows = rows[:args.limit]
-    cache, report = {}, {"set": args.set, "crops": len(rows), "models": {}}
+        rows = rows[:limit]
+    cache, report = {}, {"set": set_name, "crops": len(rows), "models": {}}
     answers = {}
 
     def read(name):
@@ -269,13 +264,25 @@ def main():
             report["models"][name] = {"seconds": round(time.time() - started, 1)}
         return answers[name]
 
-    for name in args.model:
+    for name in models:
         if name in MERGES:
             a, b, how = MERGES[name]
             answers[name] = [merge(x, y, how) for x, y in zip(read(a), read(b), strict=True)]
             report["models"][name] = {}
         report["models"][name]["scores"] = score(rows, read(name))
-        print(json.dumps({name: report["models"][name]["scores"]["all"]}), flush=True)
+        if not quiet:
+            print(json.dumps({name: report["models"][name]["scores"]["all"]}), flush=True)
+    return report
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--set", required=True, choices=["codh-test", "hilab-test", "atlas-reviewed"])
+    parser.add_argument("--model", nargs="+", required=True)
+    parser.add_argument("--limit", type=int)
+    parser.add_argument("--out", type=Path)
+    args = parser.parse_args()
+    report = run(args.set, args.model, limit=args.limit)
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(report, ensure_ascii=False, indent=1) + "\n")

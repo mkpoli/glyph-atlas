@@ -448,12 +448,11 @@ def review_serve(
 def review_shapes(
     directory: Annotated[Path, typer.Argument(help="dataset directory whose crops are ordered; the order is written into it")],
     checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
-    classes: Annotated[Path, typer.Option(help="classifier class list")] = Path("models/classifier/classes.json"),
 ) -> None:
     """Order each character's Quick review crops by shape (needs CUDA)."""
     from .review import quiz_shapes
 
-    for name, value in quiz_shapes.compute(directory, checkpoint=checkpoint, classes=classes).items():
+    for name, value in quiz_shapes.compute(directory, checkpoint=checkpoint).items():
         typer.echo(f"{name:<12} {value:>10}")
 
 
@@ -461,12 +460,12 @@ def review_shapes(
 def review_suspects(
     directory: Annotated[Path, typer.Argument(help="dataset directory whose crops are marked; the marks are written into it")],
     checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
-    classes: Annotated[Path, typer.Option(help="classifier class list")] = Path("models/classifier/classes.json"),
+    lookalikes: Annotated[Path, typer.Option(help="look-alike pairs measured for the checkpoint (`atlas review lookalikes`)")] = Path("models/classifier/artifacts/lookalikes.json"),
 ) -> None:
     """Mark the Quick review crops the classifier reads as another character (needs CUDA)."""
     from .review import quiz_suspects
 
-    for name, value in quiz_suspects.compute(directory, checkpoint=checkpoint, classes=classes).items():
+    for name, value in quiz_suspects.compute(directory, checkpoint=checkpoint, lookalikes=lookalikes).items():
         typer.echo(f"{name:<12} {value:>10}")
 
 
@@ -476,14 +475,42 @@ def review_corpus_suspects(
     root: Annotated[Path, typer.Option(help="corpus root")] = Path("work"),
     corpus: Annotated[list[str] | None, typer.Option(help="only this unit corpus; repeat for several")] = None,
     checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
-    classes: Annotated[Path, typer.Option(help="classifier class list")] = Path("models/classifier/classes.json"),
     workers: Annotated[int, typer.Option(help="processes cutting glyphs")] = 8,
+    lookalikes: Annotated[Path, typer.Option(help="look-alike pairs measured for the checkpoint (`atlas review lookalikes`)")] = Path("models/classifier/artifacts/lookalikes.json"),
 ) -> None:
     """Mark the published corpus glyphs the classifier reads as another character (needs CUDA)."""
     from .review import quiz_suspects
 
-    result = quiz_suspects.compute_corpus(root, target, checkpoint=checkpoint, classes=classes,
+    result = quiz_suspects.compute_corpus(root, target, checkpoint=checkpoint, lookalikes=lookalikes,
                                           corpora=corpus, workers=workers)
+    typer.echo(json.dumps(result, ensure_ascii=False))
+
+
+@review_app.command("catalogue-suspects")
+def review_catalogue_suspects(
+    catalogues: Annotated[list[Path], typer.Argument(help="sealed publications' atlas.sqlite files")],
+    target: Annotated[Path, typer.Option(help="file the marks are written to")],
+    checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
+    lookalikes: Annotated[Path, typer.Option(help="look-alike pairs measured for the checkpoint (`atlas review lookalikes`)")] = Path("models/classifier/artifacts/lookalikes.json"),
+) -> None:
+    """Mark the crops of sealed publications, keyed as the hosted site serves them (needs CUDA)."""
+    from .review import quiz_suspects
+
+    result = quiz_suspects.compute_catalogues(catalogues, target, checkpoint=checkpoint,
+                                              lookalikes=lookalikes)
+    typer.echo(json.dumps(result, ensure_ascii=False))
+
+
+@review_app.command("lookalikes")
+def review_lookalikes(
+    split: Annotated[Path, typer.Argument(help="held-out classifier split")] = Path("work/classifier-combined/test.parquet"),
+    target: Annotated[Path, typer.Option(help="file the pairs are written to")] = Path("models/classifier/artifacts/lookalikes.json"),
+    checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
+) -> None:
+    """Measure which characters the classifier confuses, for the suspect marks to expect (needs CUDA)."""
+    from .review import quiz_suspects
+
+    result = quiz_suspects.measure_lookalikes(split, target, checkpoint=checkpoint)
     typer.echo(json.dumps(result, ensure_ascii=False))
 
 
@@ -1013,13 +1040,12 @@ def forms_cluster(
     root: Annotated[Path, typer.Option(help="corpus root holding the clustered corpora")] = Path("work"),
     out: Annotated[Path, typer.Option(help="directory the revisions and `current` are written to")] = Path("work/forms"),
     checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
-    classes: Annotated[Path, typer.Option(help="classifier class list")] = Path("models/classifier/classes.json"),
     workers: Annotated[int, typer.Option(help="processes cutting crops from the page scans")] = 8,
 ) -> None:
     """Embed the glyphs of every multi-form family and cluster them by shape (needs CUDA)."""
     from . import form_clusters
 
-    summary = form_clusters.run(root, out, checkpoint=checkpoint, classes=classes, workers=workers)
+    summary = form_clusters.run(root, out, checkpoint=checkpoint, workers=workers)
     for name, value in summary.items():
         if isinstance(value, dict):
             for corpus, count in value.items():

@@ -7,6 +7,7 @@ import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import quote
 from uuid import uuid4
 
 import pytest
@@ -85,6 +86,37 @@ def test_catalogue_filters_hangul_as_its_own_group(dataset):
     assert hangul['total'] == 3 and {i['label'] for i in hangul['items']} == {'ㅿ', 'ᄫ', '한'}
     assert client.get('/atlas?group=kana').json()['total'] == 16
     assert client.get('/atlas?group=kanji').json()['total'] == 0
+
+
+def test_catalogue_counts_and_filters_by_book(dataset):
+    tables.write(dataset / 'documents.parquet', [Document(id='d', title='Fixture'), Document(id='e', title='Second')], Document)
+    units = list(tables.read(dataset / 'units.parquet', Unit))
+    units.extend(Unit(id=f'second-{i}', document_id='e', page_id=PAGE, reading='あ', script='hiragana',
+                      box=Box(x=10, y=10, w=20, h=30)) for i in range(2))
+    tables.write(dataset / 'units.parquet', units, Unit)
+    client = TestClient(create_app(dataset))
+    shelf = client.get('/atlas').json()['documents']
+    assert [(b['id'], b['title'], b['total'], b['pending']) for b in shelf] == [('d', 'Fixture', 16, 16), ('e', 'Second', 2, 2)]
+    second = client.get('/atlas?document=e').json()
+    assert second['total'] == 2 and {i['id'] for i in second['items']} == {'second-0', 'second-1'}
+    assert client.get('/atlas?document=e&reading=シ').json()['total'] == 0
+    assert client.get('/atlas?document=missing').json()['total'] == 0
+    assert client.get('/atlas?document=').json()['total'] == 18
+
+
+def test_catalogue_files_labels_under_graphemes_and_filters_by_one(dataset):
+    units = list(tables.read(dataset / 'units.parquet', Unit))
+    units.extend(Unit(id=f'extra-{i}', document_id='d', page_id=PAGE, reading=char, script='hiragana',
+                      box=Box(x=10, y=10, w=20, h=30)) for i, char in enumerate(('\U0001B002', '\U0001B002', '※')))
+    tables.write(dataset / 'units.parquet', units, Unit)
+    client = TestClient(create_app(dataset))
+    filed = {c['label']: c['grapheme'] for c in client.get('/atlas').json()['categories']}
+    # 𛀂 is a hentaigana of あ, シ is filed under し, and ※ has no family, so it is its own grapheme.
+    assert filed == {'あ': 'U+3042', '\U0001B002': 'U+3042', 'シ': 'U+3057', '※': 'U+203B'}
+    family = client.get('/atlas', params={'grapheme': 'U+3042', 'limit': 96}).json()
+    assert family['total'] == 14 and {i['label'] for i in family['items']} == {'あ', '\U0001B002'}
+    assert client.get('/atlas', params={'grapheme': 'u+203b'}).json()['total'] == 1
+    assert client.get('/atlas', params={'grapheme': 'U+4EEE'}).json()['total'] == 0
 
 
 def test_character_group_follows_the_script_of_the_first_character():
@@ -335,6 +367,22 @@ def test_url_index_resolves_images_without_a_page_checksum(dataset):
     cached = images.images_root() / page.sha256[:2] / (page.sha256 + '.jpg')
     images.register(cached, page.image)
     page.sha256 = None
+    tables.write(dataset / 'pages.parquet', [page], Page)
+    client = TestClient(create_app(dataset))
+    entries = client.get('/atlas').json()['items']
+    assert len(entries) == 16
+    assert client.get(entries[0]['image']).status_code == 200
+
+
+def test_a_page_naming_a_sized_iiif_request_finds_the_image_cached_under_its_service(dataset):
+    from glyph_atlas import images
+
+    page = next(iter(tables.read(dataset / 'pages.parquet', Page)))
+    cached = images.images_root() / page.sha256[:2] / (page.sha256 + '.jpg')
+    service = 'https://iiif.example.org/iiif/book/002/tiff/page-009.tiff'
+    images.register(cached, service)
+    page.sha256 = None
+    page.image = service + '/full/1495,/0/default.jpg'
     tables.write(dataset / 'pages.parquet', [page], Page)
     client = TestClient(create_app(dataset))
     entries = client.get('/atlas').json()['items']
@@ -1857,3 +1905,29 @@ def test_a_crop_carries_its_suspect_mark(dataset):
     marks = {item["id"]: item["suspect"] for item in items}
     assert marks[first] == {"p": 0.01, "reads_as": "お"}
     assert {mark for identity, mark in marks.items() if identity != first} == {None}
+
+
+def test_a_crop_shows_its_style_and_where_it_comes_from(dataset, tmp_path, monkeypatch):
+    from glyph_atlas import style
+
+    confirmed = tmp_path / "document-styles.yaml"
+    confirmed.write_text("documents:\n  d:\n    style: cursive\n    evidence: [{source: reviewer, reviewed: 2026-09-26}]\n",
+                         encoding="utf-8")
+    monkeypatch.setattr(style, "DOCUMENTS", confirmed)
+    client = TestClient(create_app(dataset))
+    unit = LINE + ":u0"
+    detail = client.get(f"/atlas/characters/{quote(unit, safe='')}").json()
+    assert (detail["style"], detail["style_basis"], detail["style_editable"]) == ("cursive", "document-confirmed", True)
+    body = {"id": str(uuid4()), "client_id": "fixture-reviewer", "revision": detail["revision"], "style": "regular"}
+    saved = client.post(f"/atlas/characters/{quote(unit, safe='')}/style", json=body)
+    assert saved.status_code == 200, saved.text
+    assert (saved.json()["style"], saved.json()["style_basis"]) == ("regular", "unit")
+    assert saved.json()["revision"] == detail["revision"] + 1
+    assert client.post(f"/atlas/characters/{quote(unit, safe='')}/style", json=body).json()["style"] == "regular"
+    stale = {**body, "id": str(uuid4()), "style": "running"}
+    assert client.post(f"/atlas/characters/{quote(unit, safe='')}/style", json=stale).status_code == 409
+    wrong = {**body, "id": str(uuid4()), "revision": saved.json()["revision"], "style": "sosho"}
+    assert client.post(f"/atlas/characters/{quote(unit, safe='')}/style", json=wrong).status_code == 422
+    cleared = {**body, "id": str(uuid4()), "revision": saved.json()["revision"], "style": "unassessed"}
+    again = client.post(f"/atlas/characters/{quote(unit, safe='')}/style", json=cleared).json()
+    assert (again["style"], again["style_basis"]) == ("cursive", "document-confirmed")

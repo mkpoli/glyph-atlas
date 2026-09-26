@@ -4,6 +4,7 @@
   import { page } from '$app/state'
   import ReferenceGlyph from '../components/ReferenceGlyph.svelte'
   import FormReview from '../components/FormReview.svelte'
+  import { settle } from '../lib/settle.js'
   import { families as loadFamilies, family as loadFamily, members as loadMembers, decide, split as loadSplit } from '../lib/forms.js'
   import { number, reviewer, stored, remember } from '../lib/client.js'
   import { t, around, localize } from '../lib/i18n.svelte.js'
@@ -21,6 +22,8 @@
   let splitK = $state(0), groups = $state([])
   // Clusters with glyphs still to name come first; finished ones keep their order below them.
   let openFirst = $state(stored('atlas.forms.unassignedFirst', true) !== false)
+  // What is on its way: a family being switched to, an opened cluster's glyphs, a split.
+  let loadingFamily = $state(''), loadingMembers = $state(false), loadingSplit = $state(false)
   // Cluster by cluster review of every glyph, entered from the cluster grid.
   let reviewing = $state(false)
   // A cluster is done once it is named, or every glyph has a form or was reported as not belonging.
@@ -48,7 +51,12 @@
     const address = localize('/forms/' + codePoint)
     if (page.url.pathname !== address) replaceState(address, page.state)
     const keepId = keep ? current?.items[active]?.id : null
-    current = arranged(await loadFamily(codePoint, arrange))
+    if (!keep) loadingFamily = codePoint
+    let loaded
+    try { loaded = await loadFamily(codePoint, arrange) } finally { if (loadingFamily === codePoint) loadingFamily = '' }
+    // A family picked while this one loaded replaces it.
+    if (code !== codePoint) return
+    current = arranged(loaded)
     if (keepId) active = Math.max(0, current.items.findIndex(c => c.id === keepId))
     if (!keep) { picked = new Set(); pickAnchor = null; reviewing = false; active = Math.max(0, current.items.findIndex(isOpen)); close() }
   }
@@ -56,18 +64,30 @@
     active = index; open = current.items[index].id; chosen = new Set(); anchor = null
     // An opened cluster is the only target; clusters picked on the grid are let go.
     picked = new Set(); pickAnchor = null
-    const page = await loadMembers(open, 0, 240, order)
-    glyphs = page.items; total = page.total
+    await members(0)
   }
-  async function reorder(value) { order = value; chosen = new Set(); anchor = null; const page = await loadMembers(open, 0, 240, order); glyphs = page.items }
+  // An opened cluster's first glyphs, with its tiles shown as placeholders until they come. Only the
+  // latest request is shown: another cluster or order asked for meanwhile replaces it.
+  let membersRequest = 0
+  async function members(offset) {
+    const request = ++membersRequest
+    glyphs = []; total = 0; loadingMembers = true
+    try {
+      const page = await loadMembers(open, offset, 240, order)
+      if (request === membersRequest) { glyphs = page.items; total = page.total }
+    } finally { if (request === membersRequest) loadingMembers = false }
+  }
+  async function reorder(value) { order = value; chosen = new Set(); anchor = null; await members(0) }
   async function more() {
-    const page = await loadMembers(open, glyphs.length, 240, order)
-    glyphs = [...glyphs, ...page.items]
+    const request = membersRequest, page = await loadMembers(open, glyphs.length, 240, order)
+    if (request === membersRequest) glyphs = [...glyphs, ...page.items]
   }
-  function close() { open = null; glyphs = []; chosen = new Set(); anchor = null; splitK = 0; groups = [] }
+  function close() { membersRequest++; open = null; glyphs = []; loadingMembers = false; chosen = new Set(); anchor = null; splitK = 0; groups = [] }
   async function divide(k) {
-    splitK = k; chosen = new Set(); anchor = null
-    const cluster = open, result = k ? (await loadSplit(cluster, k)).groups : []
+    splitK = k; chosen = new Set(); anchor = null; groups = []; loadingSplit = Boolean(k)
+    const cluster = open
+    let result
+    try { result = k ? (await loadSplit(cluster, k)).groups : [] } finally { if (splitK === k && open === cluster) loadingSplit = false }
     // Only the answer for the split still asked for is shown.
     if (splitK === k && open === cluster) groups = result
   }
@@ -206,7 +226,8 @@
   <div class="forms-layout">
     <aside class="family-list" aria-label={t('forms.families.label')}>
       <input type="search" placeholder={t('forms.findFamily.placeholder')} bind:value={filter} aria-label={t('forms.findFamily.aria')} />
-      <ol>
+      <ol aria-busy={!list.length && !error}>
+        {#if !list.length && !error}{#each Array(12) as _, i (i)}<li class="family-skeleton" aria-hidden="true"><span class="shimmer"></span><span class="shimmer"></span></li>{/each}{/if}
         {#each shown as f (f.code_point)}
           <li><button class:current={f.code_point === code} onclick={() => pick(f.code_point)}>
             <span class="family-char">{f.char}</span>
@@ -217,7 +238,15 @@
       </ol>
     </aside>
 
-    {#if current}
+    {#if loadingFamily || (!current && !error)}
+      <div class="family-panel" aria-busy="true">
+        <div class="family-title"><span class="shimmer title-skeleton" aria-hidden="true"></span><span class="shimmer line-skeleton" aria-hidden="true"></span></div>
+        <div class="palette-skeleton" aria-hidden="true">{#each Array(6) as _, i (i)}<span class="shimmer"></span>{/each}</div>
+        <ol class="cluster-grid" aria-hidden="true">
+          {#each Array(6) as _, i (i)}<li class="form-cluster cluster-skeleton"><span class="shimmer line-skeleton"></span><span class="cluster-samples">{#each Array(12) as _, j (j)}<span class="shimmer"></span>{/each}</span></li>{/each}
+        </ol>
+      </div>
+    {:else if current}
       <div class="family-panel">
         <div class="family-title">
           <h2>{current.char}</h2>
@@ -261,7 +290,7 @@
           <div class="cluster-members">
             <div class="members-heading">
               <button class="quiet-link" onclick={close}>{t('forms.allClusters')}</button>
-              <h3>{cluster.label} <small>{t('forms.glyphs.count', { count: total })}</small></h3>
+              <h3>{cluster.label} <small>{t('forms.glyphs.count', { count: total || cluster.count })}</small></h3>
               <label class="split-control">{t('forms.splitInto')}
                 <select value={splitK} onchange={event => divide(Number(event.currentTarget.value))}>
                   <option value={0}>—</option>{#each [2, 3, 4, 5, 6, 8] as k (k)}<option value={k}>{k}</option>{/each}
@@ -274,7 +303,9 @@
               {#if cluster.form}<span class="cluster-form">{cluster.form} <small>{byForm.get(cluster.form)?.jibo ?? ''}</small></span>{/if}
               {#if chosen.size}<button class="quiet-link" onclick={() => chosen = new Set()}>{t('forms.clearSelection')}</button>{/if}
             </div>
-            {#if splitK}
+            {#if splitK && loadingSplit}
+              {#each Array(2) as _, g (g)}<section class="split-group" aria-hidden="true"><div class="member-grid">{#each Array(12) as _, i (i)}<span class="member shimmer"></span>{/each}</div></section>{/each}
+            {:else if splitK}
               {#each groups as group, g (g)}
                 <section class="split-group">
                   <header><strong>{t('forms.group', { number: g + 1 })}</strong><span>{t('forms.glyphs.count', { count: group.count })}</span>
@@ -283,7 +314,7 @@
                     {#each group.items as glyph (glyph.id)}
                       <button class="member" class:selected={chosen.has(glyph.id)} class:own={glyph.basis === 'form_glyph'}
                               aria-pressed={chosen.has(glyph.id)} onclick={() => toggleId(glyph.id)} title={glyph.id}>
-                        {#if glyph.image}<img class="glyph-image" src={glyph.image} alt="" loading="lazy" />{/if}
+                        {#if glyph.image}<img class="glyph-image" src={glyph.image} alt="" loading="lazy" use:settle />{/if}
                         {#if glyph.reported}<span class="member-flag" title={t('forms.reported', { reason: glyph.reported })}>{glyph.character ?? '⚠'}</span>
                         {:else if glyph.basis === 'form_glyph'}<span class="member-form">{glyph.form ?? '×'}</span>{/if}
                       </button>
@@ -293,17 +324,18 @@
                 </section>
               {/each}
             {:else}
-            <div class="member-grid">
+            <div class="member-grid" aria-busy={loadingMembers}>
+              {#if loadingMembers}{#each Array(Math.min(cluster.count, 36)) as _, i (i)}<span class="member shimmer" aria-hidden="true"></span>{/each}{/if}
               {#each glyphs as glyph, i (glyph.id)}
                 <button class="member" class:selected={chosen.has(glyph.id)} class:own={glyph.basis === 'form_glyph'}
                         aria-pressed={chosen.has(glyph.id)} onclick={event => toggle(i, event)} title={glyph.id}>
-                  {#if glyph.image}<img class="glyph-image" src={glyph.image} alt="" loading="lazy" />{/if}
+                  {#if glyph.image}<img class="glyph-image" src={glyph.image} alt="" loading="lazy" use:settle />{/if}
                   {#if glyph.reported}<span class="member-flag" title={t('forms.reported', { reason: glyph.reported })}>{glyph.character ?? '⚠'}</span>
                   {:else if glyph.basis === 'form_glyph'}<span class="member-form">{glyph.form ?? '×'}</span>{/if}
                 </button>
               {/each}
             </div>
-            {#if glyphs.length < total}<div class="load-more"><button onclick={more}>{t('forms.showMore', { count: total - glyphs.length })}</button></div>{/if}
+            {#if !loadingMembers && glyphs.length < total}<div class="load-more"><button onclick={more}>{t('forms.showMore', { count: total - glyphs.length })}</button></div>{/if}
             {/if}
           </div>
         {:else}
@@ -326,7 +358,7 @@
                     {:else if c.assigned}<span class="cluster-open">{around('forms.haveForm', 'glyph', { count: c.assigned })[0]}<span class="inline-glyph">{c.majority}</span>{around('forms.haveForm', 'glyph', { count: c.assigned })[1]}</span>
                     {:else}<span class="cluster-open">{t('corpus.unassigned')}</span>{/if}
                   </span>
-                  <span class="cluster-samples">{#each c.representatives as r (r.id)}{#if r.image}<img class="glyph-image" src={r.image} alt="" loading="lazy" />{/if}{/each}</span>
+                  <span class="cluster-samples">{#each c.representatives as r (r.id)}{#if r.image}<img class="glyph-image" src={r.image} alt="" loading="lazy" use:settle />{/if}{/each}</span>
                 </button>
                 <span class="cluster-foot">
                   {#if c.exceptions}<small>{t('forms.setIndividually', { count: c.exceptions })}</small>{/if}
@@ -385,13 +417,19 @@
   .cluster-form .inline-glyph{font-size:18px}
   .cluster-open{margin-left:auto;font-size:10px;color:var(--muted)}
   .cluster-samples{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px}
-  .cluster-samples img{aspect-ratio:1;background:#f4f4f5;border-radius:3px;padding:3px}
+  .cluster-samples img{aspect-ratio:1;border-radius:3px;padding:3px}
   .cluster-foot{display:flex;align-items:center;justify-content:space-between;padding:0 12px 10px;font-size:10px;color:var(--muted)}
   .cluster-foot .quiet-link{margin-left:auto;font-size:11px}
   .cluster-members{margin-top:16px}
   .members-heading{display:flex;align-items:center;gap:18px;margin-bottom:12px}
   .members-heading h3{font-size:16px;font-weight:500}.members-heading small{font-size:11px;color:var(--muted);font-weight:400;margin-left:6px}
   .member-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:4px}
+  .family-skeleton{display:grid;grid-template-columns:40px 1fr;gap:10px;padding:12px 6px;border-bottom:1px solid var(--line)}.family-skeleton span{height:22px;border-radius:4px}
+  .title-skeleton{width:52px;height:56px;border-radius:6px}.line-skeleton{display:block;width:220px;height:12px;border-radius:4px}
+  .palette-skeleton{display:flex;gap:6px;padding:14px 0;border-bottom:1px solid var(--line)}.palette-skeleton span{width:66px;height:82px;border-radius:7px}
+  .cluster-skeleton{padding:12px 12px 16px}.cluster-skeleton .line-skeleton{width:120px;margin-bottom:10px}.cluster-skeleton .cluster-samples span{aspect-ratio:1;border-radius:3px}
+  span.member{display:block}
+  .cluster-samples img:not(.pending){background:#f4f4f5}
   .member{position:relative;aspect-ratio:1;padding:6px;border:1.5px solid transparent;border-radius:5px;background:#f1f1f3}
   .member.selected{border-color:var(--accent);background:#e7e3ff}
   .member.own{border-style:dashed;border-color:#b3acd9}
@@ -399,7 +437,7 @@
   .split-group{margin-bottom:22px}.split-group header{display:flex;align-items:baseline;gap:12px;font-size:13px;margin-bottom:8px}.split-group header span{color:var(--muted);font-size:11px}.split-more{font-size:11px;color:var(--muted);margin-top:6px}
   .member-flag{position:absolute;top:3px;right:5px;font-size:12px;color:var(--wrong)}
   .correct-char{display:flex;gap:4px}.correct-char input{width:64px;padding:6px 8px;font-size:14px}.correct-char button{font-size:11px;padding:6px 9px}
-  .member-form{position:absolute;top:3px;right:5px;font-size:14px;color:var(--accent);font-family:"Kureedo Kata","Noto Serif Hentaigana",system-ui,sans-serif}
+  .member-form{position:absolute;top:3px;right:5px;font-size:14px;color:var(--accent);font-family:"Kureedo Kata","GenZui Sans",system-ui,sans-serif}
   @media(max-width:900px){.forms-layout{grid-template-columns:1fr}.family-list{position:static;max-height:260px}.cluster-grid{grid-template-columns:1fr}}
   @media(max-width:700px){.forms{padding:30px 16px 40px}.form-choice{min-width:54px}.palette-other{flex-direction:row;margin-left:0;width:100%}}
 </style>

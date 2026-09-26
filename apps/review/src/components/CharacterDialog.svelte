@@ -1,5 +1,6 @@
 <script>
   import ProductionBadge from './ProductionBadge.svelte'
+  import StyleField from './StyleField.svelte'
   import ZiLink from './ZiLink.svelte'
   import { onMount, untrack, tick } from 'svelte'
   import { replaceState } from '$app/navigation'
@@ -75,8 +76,8 @@
       // A link to a retired crop opens the crop that replaced it, and the address follows. A round's
       // tile does not: its verdict belongs to the crop it was dealt, so the round reports the error.
       if (e.replacedBy && !onVerdict && !redirected) {
-        if (page.route.id?.endsWith('/character/[id]') && page.params.id === target)
-          replaceState(localize('/character/' + encodeURIComponent(e.replacedBy)), page.state)
+        if (page.route.id?.endsWith('/crop/[id]') && page.params.id === target)
+          replaceState(localize('/crop/' + encodeURIComponent(e.replacedBy)), page.state)
         return load(e.replacedBy, true)
       }
       replaced = false
@@ -222,7 +223,7 @@
     {#if replaced}<p class="replaced-note" role="status">{t('character.replaced')}</p>{/if}
     {#if error}<div class="error-message" role="alert">{error}<button disabled={busy} onclick={() => load(id)}>{t('character.reload')}</button></div>{/if}
     {#if data}
-      <div class="inspector-production"><ProductionBadge item={data} /></div>
+      <div class="inspector-production"><ProductionBadge item={data} /><StyleField item={data} {clientId} disabled={busy} saved={result => data = result} /></div>
       <div class="inspector-title"><h2 lang="ja">{data.label}</h2><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{/if}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.state === 'checked' ? t('state.checked') : data.state === 'flagged' ? t('state.flagged') : t('state.unreviewed')}</span></div><p class="record-id"><code>{data.id}</code><button type="button" class="copy-id" onclick={() => navigator.clipboard?.writeText(data.id)} aria-label={t('inspector.copyId')}>{t('inspector.copyId')}</button></p>
       <div class="inspector-figure">
         {#if editingBox && data.context && data.context_box}
@@ -246,7 +247,7 @@
   </div>
   <footer class="inspector-savebar">
     {#if imageFailed}<span role="alert">{t('character.image.unavailable')}</span>{/if}
-    <button class="primary save-character" disabled={busy || !data || !loaded || imageFailed} onclick={() => save()}>{busy ? t('common.saving') : issue ? (onVerdict ? t('character.save.useError') : next ? t('character.save.issueNext') : t('character.save.issue')) : (onVerdict ? t('character.save.backToSelection') : next ? t('character.save.looksRightNext') : t('character.save.looksRight'))} <span>{issue || onVerdict ? '→' : '✓'}</span></button>
+    <button class="primary save-character" disabled={busy || !data || !loaded || imageFailed} onclick={() => save()}>{busy ? t('common.saving') : issue ? (onVerdict ? t('character.save.useError') : t('character.save.issue')) : (onVerdict ? t('character.save.backToSelection') : t('character.save.looksRight'))} {#if onVerdict}<span>→</span>{:else if !issue}<span>✓</span>{/if}</button>
     {#if issue}<button class="quiet-link looks-right" disabled={busy || !loaded || imageFailed} onclick={() => { discardProposals(); save(true) }}>{onVerdict ? t('character.save.removeSelection') : t('character.save.itLooksRight')}</button>{/if}
     <button class="skip-character" disabled={busy} onclick={skip} title={skipHint()}>{t('common.skip.arrow')}</button>
   </footer>

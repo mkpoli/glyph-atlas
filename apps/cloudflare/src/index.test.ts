@@ -41,6 +41,12 @@ describe('a round names flagged answers, seen crops, or both', () => {
     expect(validRound({ seen: [{ id: 'one', image_sha256: hash }] }).seen).toHaveLength(1)
     expect(validRound({ seen: [{ id: 'one', image_sha256: hash }] }).answers).toHaveLength(0)
   })
+  it('accepts a corpus glyph whose image is the long file address of its source', () => {
+    const hng = 'https://raw.githubusercontent.com/chise/hng-basic-data/e2174a30844b8100c34af1c0dbe1e301f186883e/77_%E5%9B%9B%E5%88%86%E5%BE%8B%E5%8D%B7%E7%AC%AC%E5%8D%81%E5%85%AD%28%E6%AD%A3%E5%80%89%E9%99%A2%E4%BA%94%E6%9C%88%E4%B8%80%E6%97%A5%E7%B6%93%29/glyphs/BMP/0122.bmp'
+    expect(hng.length).toBeGreaterThan(256)
+    expect(validRound({ seen: [{ id: 'hng:1', source_revision: hash, image: hng }] }).seen).toHaveLength(1)
+    expect(() => validRound({ seen: [{ id: 'hng:1', source_revision: hash, image: 'x'.repeat(2049) }] })).toThrow('crop image')
+  })
   it('accepts a round of 144 crops', () => {
     expect(ROUND_MAX).toBe(144)
     const full = Array.from({ length: ROUND_MAX }, (_, i) => ({ id: `u${i}`, image_sha256: hash }))

@@ -42,8 +42,13 @@ def test_a_malformed_mark_is_refused(module, tmp_path, mark):
         module.export([marks(tmp_path / "m.json", {"a": mark})], tmp_path / "suspects.sql")
 
 
-def test_two_files_that_disagree_are_refused(module, tmp_path):
-    one = marks(tmp_path / "one.json", {"a": {"p": 0.01, "reads_as": "ア", "label": "イ", "box": None}})
-    two = marks(tmp_path / "two.json", {"a": {"p": 0.02, "reads_as": "ア", "label": "イ", "box": None}})
-    with pytest.raises(ValueError, match="differently"):
-        module.export([one, two], tmp_path / "suspects.sql")
+def test_an_earlier_file_decides_a_crop_it_scored(module, tmp_path):
+    hosted = tmp_path / "hosted.json"
+    hosted.write_text(json.dumps({"scored_ids": ["a", "b"], "suspects": {"a": {"p": 0.01, "reads_as": "ア", "label": "イ", "box": None}}}))
+    corpus = marks(tmp_path / "corpus.json", {"a": {"p": 0.02, "reads_as": "ア", "label": "イ", "box": None},
+                                              "b": {"p": 0.02, "reads_as": None, "label": "イ", "box": None},
+                                              "c": {"p": 0.03, "reads_as": None, "label": "ウ", "box": None}})
+    assert module.export([hosted, corpus], tmp_path / "suspects.sql") == 2
+    sql = (tmp_path / "suspects.sql").read_text()
+    # a: the hosted mark; b: scored clean on the hosted side, so the corpus mark is dropped; c: the corpus mark.
+    assert "'a',0.01," in sql and "'b'," not in sql and "'c',0.03," in sql

@@ -19,12 +19,12 @@ async function get(path, params = {}, { fetch: send = fetch, ...options } = {}) 
 /** The candidate list the search box shows: characters, with their own counts, for a typed query. */
 export const suggest = (q, limit = 8, signal) => q ? get('/layers/suggest', { q, limit }, { signal, priority: 'high' }) : Promise.resolve(null)
 export const search = (q, expand = 'none') => get('/layers/search', { q, expand })
-export const character = (codePoint, expand = 'none') => get('/layers/characters/' + encodeURIComponent(codePoint), { expand })
-export const occurrences = (codePoint, params = {}) => get('/layers/occurrences', { code_point: codePoint, ...params })
+export const character = (codePoint, expand = 'none', options) => get('/layers/characters/' + encodeURIComponent(codePoint), { expand }, options)
+export const occurrences = (codePoint, params = {}, options) => get('/layers/occurrences', { code_point: codePoint, ...params }, options)
 export const graphemes = (params = {}) => get('/layers/graphemes', params)
 export const ligatures = () => get('/layers/ligatures')
 export const gallery = (limit = 24, seed = 0, options) => get('/layers/gallery', { limit, seed }, options)
-export const candidates = (codePoint, limit = 24, offset = 0, options = {}) => get('/layers/candidates', { code_point: codePoint, limit, offset: offset || '', ...options })
+export const candidates = (codePoint, limit = 24, offset = 0, params = {}, options) => get('/layers/candidates', { code_point: codePoint, limit, offset: offset || '', ...params }, options)
 export const layerSummary = () => get('/layers/summary')
 
 /** `2 crops · 212 line matches` — the two evidence kinds, never added into one number. */

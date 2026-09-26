@@ -1,25 +1,24 @@
-# The classifier: the backbone, the preprocessing and the hyperparameters that train.py,
-# train_with_hilab.py, export_onnx.py and glyph_atlas.classify read. The framework versions are
-# the ones the 2026-09-11 installation spike verified on the workstation (see SPIKE.md); the
-# training hyperparameters below are the starting point, and the ones the profile fitted.
+# The classifier: the backbone, the preprocessing and the hyperparameters that train.py and
+# export_onnx.py read; glyph_atlas.classify takes the size from the export. The framework versions
+# are the ones the 2026-09-11 installation spike verified on the workstation (see SPIKE.md).
 
 framework: timm
-# ConvNeXt-tiny through timm, Apache-2.0. torchvision's ConvNeXt is the same architecture but timm
-# carries the ImageNet-22k checkpoint that is fine-tuned on ImageNet-1k (`fb_in22k_ft_in1k`), which
-# is the starting point named here. See SPIKE.md for what was tried and what it measured.
+# CAFormer-S18 (MetaFormer: convolution stages, then attention stages) through timm, ImageNet-22k
+# pretrained and fine-tuned on ImageNet-1k, Apache-2.0. models/benchmark/README.md compares it with
+# ConvNeXt, ConvNeXt V2, DINOv2, EVA-02 and DeiT III backbones on the held-out sets.
 
 model:
-  checkpoint: convnext_tiny.fb_in22k_ft_in1k
-  architecture: convnext_tiny
-  # the checkpoint's 1000-class head is replaced by one linear layer over the class list
+  checkpoint: caformer_s18.sail_in22k_ft_in1k
+  # the checkpoint's 1000-class head is replaced by one over the class list
   pretrained: true
   licence: Apache-2.0
 
 preprocessing:
-  # one crop is one character; the class list fixes the size and src/glyph_atlas/classify.py
-  # repeats it, because a model trained at one size and served at another is a different model
-  size: 96
-  # grey: the CODH crops carry no colour the classifier uses, and the pages are bitonal scans
+  # one crop is one character; the export fixes the size and the served classifier reads it from
+  # the export's input, because a model trained at one size and served at another is a different
+  # model
+  size: 128
+  # grey: the crops carry no colour the classifier uses, and the pages are bitonal scans
   grey: true
   # aspect preserved by padding to a square with white, then resized; never stretched
   pad: 255
@@ -29,24 +28,17 @@ preprocessing:
   std: 0.226
 
 data:
-  # written by models/classifier/build_manifests.py
-  directory: work/classifier
+  # written by models/classifier/build_combined.py over build_manifests.py's CODH crops
+  directory: work/classifier-combined
   splits:
     train: train.parquet
     val: val.parquet
     test: test.parquet
-  # the class order, and the source tables the manifests were cut from
+  # the class order build_combined.py writes
   classes: models/classifier/classes.json
-  dataset: work/codh-full
-  split_table: data/splits/codh.tsv
-  detector: work/detector
-  image_cache: cache/images
   # a code point with fewer crops than this in train is not a class: it is trained as `other`
-  min_train_crops: 20
+  min_train_crops: 5
   other: other
-  # HI Lab crops are a separate experiment, never mixed into the baseline
-  hilab: work/hilab
-  hilab_crops: cache/hilab
 
 training:
   # 16 GB VRAM, batch 64 at 96 square, mixed precision, within the workstation's budget

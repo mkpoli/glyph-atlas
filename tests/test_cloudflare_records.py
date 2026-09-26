@@ -79,7 +79,7 @@ def test_a_records_only_export_seals_into_packs_and_ordered_sql(scripts, tmp_pat
     replayed.execute("INSERT INTO corpus_characters VALUES('gone','unknown',9,0)")
     # A glyph a review named before this publication stays named after its row is rewritten.
     replayed.execute("INSERT INTO corpus_units VALUES('codh:1','𛂥','U+306F',NULL,1,'old',0,1,'unknown',0)")
-    replayed.execute("INSERT INTO units VALUES('codh:1','corpus','𛂥',NULL,NULL,NULL,'printed/woodblock','kana','checked',1,1,1,1,'{}','{}','{}','{}')")
+    replayed.execute("INSERT INTO units VALUES('codh:1','corpus','𛂥',NULL,NULL,NULL,'printed/woodblock','kana','checked',1,1,1,1,'{}','{}','{}','{}',NULL)")
     replayed.executescript(sql)
     assert replayed.execute("SELECT character,named FROM corpus_units WHERE id='codh:1'").fetchone() == ("𛂥", 1)
     # The last part regenerates the per-character counts from the rows D1 then holds.
@@ -172,9 +172,9 @@ def test_the_hangul_migration_moves_a_row_published_as_other(scripts):
     db = sqlite3.connect(":memory:")
     cloudflare_schema.schema(db)
     for unit_id, label, category in (("jamo", "ㅿ", "other"), ("kana", "あ", "kana"), ("latin", "A", "other")):
-        db.execute("INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        db.execute("INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                    (unit_id, "corpus", label, None, None, None, "unknown", category, "pending", 0, 1, 1, 0,
-                    json.dumps({"label": label, "category": category}), "{}", "{}", "{}"))
+                    json.dumps({"label": label, "category": category}), "{}", "{}", "{}", None))
     db.executescript(Path("apps/cloudflare/migrations/0008_hangul_category.sql").read_text())
     assert dict(db.execute("SELECT id,category FROM units")) == {"jamo": "hangul", "kana": "kana", "latin": "other"}
     assert json.loads(db.execute("SELECT data FROM units WHERE id='jamo'").fetchone()[0])["category"] == "hangul"
@@ -198,9 +198,68 @@ def test_the_gugyeol_migration_moves_a_row_published_as_other(scripts):
     db = sqlite3.connect(":memory:")
     cloudflare_schema.schema(db)
     for unit_id, label, category in (("gugyeol", "", "other"), ("kana", "あ", "kana"), ("latin", "A", "other")):
-        db.execute("INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        db.execute("INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                    (unit_id, "corpus", label, None, None, None, "unknown", category, "pending", 0, 1, 1, 0,
-                    json.dumps({"label": label, "category": category}), "{}", "{}", "{}"))
+                    json.dumps({"label": label, "category": category}), "{}", "{}", "{}", None))
     db.executescript(Path("apps/cloudflare/migrations/0012_gugyeol_category.sql").read_text())
     assert dict(db.execute("SELECT id,category FROM units")) == {"gugyeol": "gugyeol", "kana": "kana", "latin": "other"}
     assert json.loads(db.execute("SELECT data FROM units WHERE id='gugyeol'").fetchone()[0])["category"] == "gugyeol"
+
+
+def test_the_document_migration_reads_the_book_from_the_page_id():
+    """0024 fills a published local crop's book from its page id, `<document>:<page>`."""
+    db = sqlite3.connect(":memory:")
+    for path in sorted(Path("apps/cloudflare/migrations").glob("*.sql")):
+        if path.name < "0024":
+            db.executescript(path.read_text())
+    rows = (("local-a", "local", {"page_id": "hl:00AB:12"}), ("local-b", "local", {"page_id": "hk:entry:with:separators:9"}),
+            ("no-page", "local", {}), ("corpus", "corpus", {"page_id": "codh:1:2"}))
+    for unit_id, origin, data in rows:
+        db.execute("INSERT INTO units(id,origin,character,reading,family,visual_group,production,category,state,"
+                   "revision,quiz,priority,shuffle,data,snapshot,context,visual) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                   (unit_id, origin, "あ", None, None, None, "unknown", "kana", "pending", 0, 1, 1, 0,
+                    json.dumps(data), "{}", "{}", "{}"))
+    db.executescript(Path("apps/cloudflare/migrations/0024_unit_document.sql").read_text())
+    assert dict(db.execute("SELECT id,document FROM units")) == {
+        "local-a": "hl:00AB", "local-b": "hk:entry:with:separators", "no-page": None, "corpus": None}
+
+
+def test_the_family_migration_refiles_a_crop_left_under_another_family():
+    """0023 gives a local crop its character's family, or the character's own code points without one."""
+    db = sqlite3.connect(":memory:")
+    for path in sorted(Path("apps/cloudflare/migrations").glob("*.sql")):
+        if path.name < "0023":
+            db.executescript(path.read_text())
+    grapheme = json.dumps({"grapheme": {"code_point": "U+3042"}})
+    db.execute("INSERT INTO characters VALUES('U+30A2','ア','',?,?)", (grapheme, grapheme))
+    for unit_id, origin, label, family in (("undone", "local", "ア", "U+4EEE"), ("mark", "local", "※", "U+4EEE"),
+                                           ("kept", "local", "ア", "U+3042"), ("corpus", "corpus", "ア", "U+4EEE"),
+                                           ("marked", "local", "ツ\u309a", None), ("unnamed", "local", "", None)):
+        db.execute("INSERT INTO units(id,origin,character,reading,family,visual_group,production,category,state,"
+                   "revision,quiz,priority,shuffle,data,snapshot,context,visual) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                   (unit_id, origin, label, None, family, None, "unknown", "kana", "pending", 0, 1, 1, 0,
+                    "{}", "{}", "{}", "{}"))
+    db.executescript(Path("apps/cloudflare/migrations/0023_family_follows_character.sql").read_text())
+    assert dict(db.execute("SELECT id,family FROM units")) == {
+        "undone": "U+3042", "mark": "U+203B", "kept": "U+3042", "corpus": "U+4EEE",
+        "marked": "U+30C4 U+309A", "unnamed": None}
+
+
+def test_an_export_leaves_out_the_units_the_site_holds(scripts, tmp_path):
+    export = importlib.import_module("export_cloudflare_corpus")
+    (tmp_path / "live.txt").write_text("hl:a:1\n\nhl:a:2\n")
+    with sqlite3.connect(tmp_path / "corpus.sqlite") as db:
+        db.executescript(SCHEMA)
+        db.execute("INSERT INTO corpus_units(id,character,shuffle,object,offset,size) VALUES('hl:b:1','あ',1,'x.bin',0,1)")
+        assert export.held(db, export.unit_ids(tmp_path / "live.txt")) == {"hl:a:1", "hl:a:2", "hl:b:1"}
+        assert export.held(db) == {"hl:b:1"}
+
+
+def test_holder_images_point_at_the_holders_region_of_the_box(scripts):
+    export = importlib.import_module("export_cloudflare_corpus")
+    box = {"x": 10, "y": 20, "w": 30, "h": 40}
+    served = {"image_service": "https://iiif.example/page1"}
+    assert export.holder_image(served, box, True) == "https://iiif.example/page1/10,20,30,40/480,/0/default.jpg"
+    assert export.holder_image(served, box, False) is None
+    assert export.holder_image({"image_service": None}, box, True) is None
+    assert export.holder_image(served, None, True) is None

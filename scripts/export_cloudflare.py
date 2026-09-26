@@ -112,6 +112,20 @@ def read_crops(db, media):
     db.commit()
 
 
+PRIVATE_STATUS = frozenset({"root", "output", "path", "disk_free_bytes", "error", "errors"})
+
+
+def public_status(value):
+    """What the site may show of a collector's status: no local paths, disk space or error text, and
+    `status` as a publication snapshot, never a stale claim that a collector is running."""
+    if isinstance(value, dict):
+        return {k: ("snapshot" if k == "status" else public_status(v)) for k, v in value.items()
+                if k not in PRIVATE_STATUS}
+    if isinstance(value, list):
+        return [public_status(v) for v in value]
+    return value
+
+
 def export(dataset: Path, output: Path, *, resume=False):
     output.mkdir(parents=True, exist_ok=resume)
     frozen = output / "source"
@@ -157,7 +171,8 @@ def export(dataset: Path, output: Path, *, resume=False):
                 detail = json.loads(db.execute("SELECT data FROM units WHERE id=?", (item["id"],)).fetchone()[0])
                 detail.update(licence=str(doc.image_rights.licence), holder=doc.holder,
                               attribution=doc.image_rights.attribution, rights_url=doc.image_rights.evidence)
-                db.execute("UPDATE units SET data=? WHERE id=?", (encoded(detail), item["id"]))
+                db.execute("UPDATE units SET data=?,document=?,family=? WHERE id=?",
+                           (encoded(detail), doc.id, atlas.grapheme_of(item["label"]), item["id"]))
                 continue
             if unit.line_id not in lines:
                 lines[unit.line_id] = store.line(unit.line_id) if unit.line_id else None
@@ -195,13 +210,14 @@ def export(dataset: Path, output: Path, *, resume=False):
             visual = {"status": "unavailable", "candidates": []}
             cp = refs.to_code_point(item["label"]) if len(item["label"]) == 1 else None
             counts[cp] += 1
-            family = refs.grapheme(cp) if cp else None
-            db.execute("INSERT INTO units VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+            # A label with no family is its own grapheme, so every named crop is one `family` lookup.
+            family = atlas.grapheme_of(item["label"])
+            db.execute("INSERT INTO units VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
                 item["id"], "local", item["label"], item["reading"], family, None,
                 item["production"], atlas.character_group(unit), item["state"], item["revision"],
                 int(not atlas.repair_withheld(unit)), atlas.review_priority(unit),
                 int(hashlib.sha256(item["id"].encode()).hexdigest()[:7], 16),
-                encoded(detail), encoded(snapshot), encoded(context), encoded(visual)))
+                encoded(detail), encoded(snapshot), encoded(context), encoded(visual), doc.id))
             if i % 500 == 0:
                 db.commit()
                 print(encoded({"stage": "local-crops", "done": i}), flush=True)
@@ -244,14 +260,6 @@ def export(dataset: Path, output: Path, *, resume=False):
                 "published_at": datetime.now(UTC).isoformat(),
                 "corpus_index": json.loads(Path("work/corpus-index/index.json").read_text()),
                 "collection": collection.status(Path("work").resolve()), "review_epoch": store.review_epoch()}
-        # The public status reports publication, never a stale claim that a collector is running.
-        def public_status(value):
-            if isinstance(value, dict):
-                return {k: ("snapshot" if k == "status" else public_status(v)) for k, v in value.items()
-                        if k not in {"root", "output", "path", "disk_free_bytes", "error", "errors"}}
-            if isinstance(value, list):
-                return [public_status(v) for v in value]
-            return value
         for key, value in meta.items():
             db.execute("INSERT OR REPLACE INTO metadata VALUES (?,?)", (key, encoded(public_status(value))))
         db.commit()

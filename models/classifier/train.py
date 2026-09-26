@@ -187,7 +187,12 @@ def augment_grey(array: np.ndarray, rng: random.Random) -> np.ndarray:
 
 
 class Crops(torch.utils.data.Dataset):
-    """The crops of one split, preprocessed the way the export is served."""
+    """The crops of one split, preprocessed the way the export is served.
+
+    `augment` jitters exposure for training. The draws come from each loader worker's own
+    generator, which torch seeds from the run's seed, so every epoch sees new jitter. (Box jitter,
+    slant and stroke-width changes were tried and lowered accuracy on every held-out set.)
+    """
 
     def __init__(self, data: Data, *, augment: bool, size: int, seed: int = 0) -> None:
         self.data = data
@@ -202,8 +207,7 @@ class Crops(torch.utils.data.Dataset):
         with Image.open(self.data.path(index)) as handle:
             image = handle.convert("L")
             if self.augment:
-                rng = random.Random(f"{self.seed}:{index}")
-                image = Image.fromarray(augment_grey(np.asarray(image, dtype=np.float32), rng).astype(np.uint8))
+                image = Image.fromarray(augment_grey(np.asarray(image, dtype=np.float32), random).astype(np.uint8))
             pixels = classify.crop_array(image, size=self.size)
         return torch.from_numpy(pixels[0]), int(self.data.labels[index])
 
@@ -439,20 +443,27 @@ def load_config(path: Path) -> dict[str, Any]:
 
 
 def build_model(config: dict[str, Any], n_classes: int, *, pretrained: bool | None = None) -> Any:
-    """ConvNeXt-tiny with a fresh head over the class list, started from the ImageNet checkpoint."""
+    """The backbone with a fresh head over the class list, started from the named checkpoint.
+
+    `checkpoint` is the timm name with its pretrained tag; the bare architecture name would load
+    whichever tag timm makes the default.
+    """
     import timm
 
     model_config = config["model"]
     return timm.create_model(
-        model_config["architecture"],
+        model_config["checkpoint"],
         pretrained=bool(model_config.get("pretrained", True)) if pretrained is None else pretrained,
         num_classes=n_classes,
+        # e.g. a transformer's input size, which sets its position embeddings
+        **model_config.get("options", {}),
     )
 
 
 def head_classes(model: Any) -> int:
-    """How many classes the classifier head of a timm ConvNeXt returns."""
-    return int(model.head.fc.out_features)
+    """How many classes the classifier head of a timm model returns."""
+    head = model.get_classifier()
+    return int(head.out_features if hasattr(head, "out_features") else head.fc2.out_features)
 
 
 def check_classes(model: Any, classes: list[str], *, where: str) -> None:
@@ -602,10 +613,6 @@ def main() -> None:
     calibration = config["calibration"]
     preprocessing = config["preprocessing"]
     size = int(preprocessing["size"])
-    if size != classify.SIZE:
-        raise SystemExit(
-            f"{args.config} preprocesses at {size} and glyph_atlas.classify serves {classify.SIZE}"
-        )
     if abs(float(preprocessing["mean"]) - classify.MEAN) > 1e-9 or abs(
         float(preprocessing["std"]) - classify.STD
     ) > 1e-9:
@@ -644,7 +651,7 @@ def main() -> None:
     model = build_model(config, len(classes), pretrained=False if args.no_pretrained else None).to(device)
     check_classes(model, classes, where=str(args.config))
     print(
-        f"{config['model']['architecture']} on {device}, "
+        f"{config['model']['checkpoint']} on {device}, "
         f"{sum(p.numel() for p in model.parameters()) / 1e6:.1f}M parameters, "
         f"head {head_classes(model)} classes, {size}x{size} grey, {precision}",
         flush=True,
@@ -659,8 +666,12 @@ def main() -> None:
         if not checkpoint.exists():
             raise SystemExit(f"{checkpoint} is missing: train first, or pass --checkpoint")
         state = torch.load(checkpoint, map_location=device, weights_only=False)
-        model.load_state_dict(state["model"])
+        # The checkpoint's own configuration: an older one may be another backbone or size.
+        config = state.get("config", config)
+        size = int(config["preprocessing"]["size"])
         classes = state.get("classes", classes)
+        model = build_model(config, len(classes), pretrained=False).to(device)
+        model.load_state_dict(state["model"])
         check_classes(model, classes, where=str(checkpoint))
         temperature = float(state.get("temperature", state.get("metrics", {}).get("temperature", 1.0)))
         print(f"{checkpoint}: epoch {state.get('epoch')}, temperature {temperature:.4f}", flush=True)

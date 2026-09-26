@@ -224,8 +224,8 @@ def build(directory: Path, *, long_units: int = 240) -> dict:
              unicode="U+3090", script=Script.HIRAGANA, classification=Classification.IDENTIFIED,
              method="detect-align"),
         # The three layers on one record, which is what the reviewer has to keep apart: written ネ
-        # (U+30CD), read ね. A correction of the character changes `unicode`; the reading stays ね
-        # unless a reviewer changes the reading too, so the fixture makes the two visibly different.
+        # (U+30CD), read ね. A correction of the character changes `unicode`, and a kana with one
+        # stated reading carries it along (ヌ reads ぬ); the fixture keeps the layers visibly different.
         Unit(id="doc-1:p1:l3:u2", document_id="doc-1", page_id="doc-1:p1", line_id=written_line.id,
              seq=2, box=Box(x=1000, y=960, w=160, h=300), reading="ね", text_source="ね",
              unicode="U+30CD", script=Script.KATAKANA, classification=Classification.IDENTIFIED,

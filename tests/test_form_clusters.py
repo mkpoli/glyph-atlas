@@ -65,7 +65,7 @@ def test_a_crop_file_is_embedded_whole(form_corpora):
     jobs = form_clusters._file_jobs(located)
     assert sorted(len(boxes) for _, boxes in jobs) == [1, 2], "one job per page scan and per crop file"
     for job in jobs:
-        ids_done, arrays = form_clusters._crops(job)
+        ids_done, arrays = form_clusters._crops(job, size=96)
         assert len(ids_done) == len(job[1]) and arrays.shape[0] == len(ids_done)
 
 

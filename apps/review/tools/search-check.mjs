@@ -36,6 +36,11 @@ const rows = `[...document.querySelectorAll('.glyph-tile')].map(tile => ({
   loaded: (tile.querySelector('img')?.naturalWidth ?? 0) > 0,
 }))`
 const countText = `document.querySelector('.find-count')?.textContent ?? null`
+// The card for the typed character, with its gallery loaded: until then the count still belongs to
+// the previous query, or reads zero while the answer is pending.
+const counted = char => `document.querySelector('.character-layers .member[aria-pressed=true]')?.getAttribute('aria-label')?.endsWith(${JSON.stringify(char)})
+  && document.querySelector('.find-count') && !document.querySelector('.find-count .find-pending')
+  && document.querySelector('.glyph-grid')?.getAttribute('aria-busy') === 'false'`
 
 try {
   browser = await Browser.launch({ width: 1440, height: 1000 })
@@ -44,15 +49,33 @@ try {
 
   await browser.goto(`${service.base}/`, { waitFor: `document.querySelectorAll('.glyph-tile').length > 0` })
 
+  // The work menu offers the works that have crops (the fixture's second work has none), and a chosen
+  // work shows in the toggle until "All works" clears it.
+  const units = `[...document.querySelectorAll('.glyph-tile[data-unit]')].map(tile => tile.dataset.unit)`
+  await browser.evaluate(`document.querySelector('.work-toggle').click()`)
+  await browser.waitFor(`document.querySelector('.work-menu input') !== null`)
+  const offered = await browser.evaluate(`[...document.querySelectorAll('.work-menu li button span')].map(s => s.textContent)`)
+  assert(JSON.stringify(offered) === '["Calibration book A"]', `the work menu offers ${JSON.stringify(offered)}`)
+  await browser.evaluate(typeInto('.work-menu input', 'no such work'))
+  await browser.waitFor(`document.querySelector('.work-none') !== null`)
+  await browser.evaluate(typeInto('.work-menu input', 'book a'))
+  await browser.waitFor(`document.querySelectorAll('.work-menu li button').length === 2`)
+  await browser.evaluate(`document.querySelectorAll('.work-menu li button')[1].click()`)
+  await browser.waitFor(`document.querySelector('.work-name').textContent === 'Calibration book A'`)
+  await browser.waitFor(`${units}.length > 0 && ${units}.every(id => id.startsWith('doc-1:'))`, 15000)
+  await browser.evaluate(`document.querySelector('.work-toggle').click()`)
+  await browser.waitFor(`document.querySelector('.work-menu li button') !== null`)
+  await browser.evaluate(`document.querySelector('.work-menu li button').click()`)
+  await browser.waitFor(`document.querySelector('.work-name').textContent === 'All works'`)
+
   // A reading filter is on, as a reviewer would have left it. A direct character search has to
   // answer its own question rather than intersect with it.
-  await browser.evaluate(`document.querySelector('.category-toggle').click()`)
-  await browser.waitFor(`document.querySelector('.category-menu input') !== null`)
-  const filtered = await browser.evaluate(typeInto('.category-menu input', 'あ'))
-  assert(filtered === 'あ', `the reading search box took ${JSON.stringify(filtered)}`)
-  await browser.waitFor(`document.querySelector('.category-options button') !== null`)
-  await browser.evaluate(`document.querySelector('.category-options button').click()`)
-  await browser.waitFor(`document.querySelector('.category-toggle').textContent.trim() !== 'Any reading'`)
+  // The empty box, focused, lists the readings; choosing one puts it in the box as a token.
+  await browser.evaluate(`document.querySelector('.find input').focus()`)
+  await browser.waitFor(`document.querySelector('.browse-panel .category-options button') !== null`)
+  await browser.evaluate(`[...document.querySelectorAll('.browse-panel .category-options button')]
+    .find(b => b.querySelector('span').textContent === 'あ').click()`)
+  await browser.waitFor(`document.querySelector('.find-token')?.textContent.includes('あ')`)
   const before = await browser.evaluate(`document.querySelectorAll('.glyph-tile').length`)
   assert(before > 0, 'the reading filter shows some rows to start from')
 
@@ -62,14 +85,14 @@ try {
   assert(typed.length === 2, 'JavaScript sees it as a surrogate pair, which is the point')
   assert(typed.codePointAt(0) === 0x2A708, 'the code point the box holds is U+2A708')
 
-  await browser.waitFor(`${countText} !== null`, 15000)
+  await browser.waitFor(counted(CHARACTER), 15000)
   const count = await browser.evaluate(countText)
-  assert(/1 occurrence of/.test(count), `the count reads ${JSON.stringify(count)}`)
+  assert(/^1 glyph · 1 here/.test(count.trim()), `the count reads ${JSON.stringify(count)}`)
   assert(!/No occurrence/.test(count), 'the character has a recorded occurrence in the fixture')
 
   // The reading filter is cleared by the search, so the box no longer narrows the answer.
-  const reading = await browser.evaluate(`document.querySelector('.category-toggle').textContent.trim()`)
-  assert(reading.startsWith('Any reading'), `the reading filter still says ${JSON.stringify(reading)}`)
+  const token = await browser.evaluate(`document.querySelector('.find-token')?.textContent ?? null`)
+  assert(token === null, `the reading filter still says ${JSON.stringify(token)}`)
   const group = await browser.evaluate(`document.querySelector('.filter-tabs button.active').textContent.trim()`)
   assert(group === 'All', `the type filter still says ${JSON.stringify(group)}`)
 
@@ -93,7 +116,7 @@ try {
   const empty = await browser.evaluate(`document.querySelector('.empty h2').textContent`)
   assert(/No occurrence of/.test(empty), `the empty state reads ${JSON.stringify(empty)}`)
   assert(await browser.evaluate(`document.querySelectorAll('.glyph-tile').length`) === 0, 'no rows')
-  assert(/0 occurrences of/.test(await browser.evaluate(countText)), 'the count says zero')
+  assert(/^0 glyphs/.test((await browser.evaluate(countText)).trim()), 'the count says zero')
   await browser.screenshot('/tmp/atlas-search-empty.png')
   await browser.evaluate(`document.querySelector('.empty button.primary').click()`)
   await browser.waitFor(`document.querySelectorAll('.glyph-tile').length > 1`)
@@ -101,8 +124,8 @@ try {
   // ゐ is written on a record read as い: found by what was written, not by the reading. The label
   // is the reading, which for this record is い, so the assertion is on the matched unit.
   await browser.evaluate(typeInto('.find input', 'ゐ'))
-  await browser.waitFor(`${countText} !== null`, 15000)
-  assert(/1 occurrence of/.test(await browser.evaluate(countText)), 'ゐ is found by its character')
+  await browser.waitFor(counted('ゐ'), 15000)
+  assert(/^1 glyph(?!s)/.test((await browser.evaluate(countText)).trim()), 'ゐ is found by its character')
   const katakana = await browser.evaluate(rows)
   assert(katakana.length === 1 && katakana[0].id === 'doc-1:p1:l3:u1',
     `ゐ matched ${JSON.stringify(katakana.map(row => row.id))}`)
@@ -110,7 +133,7 @@ try {
   // い is written on many records and on neither of the two written 𪜈/ゐ: the search is by
   // character, so the reading search returns the い records and not those two.
   await browser.evaluate(typeInto('.find input', 'い'))
-  await browser.waitFor(`${countText} !== null`, 15000)
+  await browser.waitFor(counted('い'), 15000)
   const ne = Number((await browser.evaluate(countText)).match(/^([\d,]+)/)[1].replace(/,/g, ''))
   assert(ne > 0, `the fixture has ordinary い records; the count said ${ne}`)
   await browser.screenshot('/tmp/atlas-search-reading.png')
