@@ -70,9 +70,9 @@
   const shownGrapheme = item => { const g = graphemeChar(item); return g && (isUnassigned(item) || g !== item.label) ? g : null }
   const groupLabel = group => group.id === 'unassigned' ? t('corpus.unassigned')
     : group.label === 'Similar forms' ? t('explore.similarForms') : group.label
-  /** One state per tile: checked, flagged or hard get a corner badge and outline; withheld and plain a dot. */
   /** Whether a crop still waits for a person: flagged, or hard to read after two reviewers skipped it. */
   const waiting = state => state === 'flagged' || state === 'hard'
+  /** One state per tile: checked, flagged or hard get a corner badge and outline; withheld and plain a dot. */
   function tileState(item) {
     if (item.state === 'checked' || item.state === 'flagged' || item.state === 'hard') return item.state
     const kind = repairOf(item)?.kind
@@ -392,12 +392,18 @@
   .tile-footer .status-dot{flex-shrink:0}
   @media(max-width:700px){.tile-production{display:none}}
   .status-dot.withheld{background:transparent;box-shadow:inset 0 0 0 1px #9b9ba3}
-  .glyph-tile.decided-checked{box-shadow:inset 0 0 0 2px #458665;background:#eef4f0}
-  .glyph-tile.decided-flagged{box-shadow:inset 0 0 0 2px var(--wrong);background:var(--wrong-light)}
+  .glyph-tile.decided-checked{background:#eef4f0}
+  .glyph-tile.decided-flagged{background:var(--wrong-light)}
+  .glyph-tile.decided-checked:hover{background:#e0ece4}
+  .glyph-tile.decided-flagged:hover{background:#fbe3e6}
+  /* Drawn above the hover panel, so the outline stays whole while the details show. */
+  .decided-checked::after,.decided-flagged::after{content:'';position:absolute;inset:0;z-index:3;border:2px solid #458665;pointer-events:none}
+  .decided-flagged::after{border-color:var(--wrong)}
+  .decided-checked .tile-reading,.decided-flagged .tile-reading{right:38px;overflow:hidden;white-space:nowrap}
   .tile-verdict{position:absolute;top:8px;right:8px;z-index:3;display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;color:#fff;font:600 13px/1 system-ui,sans-serif}
   .decided-checked .tile-verdict{background:#458665}
   .decided-flagged .tile-verdict{background:var(--wrong)}
-  @media(max-width:700px){.tile-verdict{top:6px;right:6px;width:18px;height:18px;font-size:11px}}
+  @media(max-width:700px){.tile-verdict{top:6px;right:6px;width:18px;height:18px;font-size:11px}.decided-checked .tile-reading,.decided-flagged .tile-reading{right:28px}}
   .explore-status{display:flex;align-items:center;flex-wrap:wrap;gap:8px 24px;padding:4px 0 14px}
   .explore-status .collection-meta{margin-left:auto;padding:0}
   .collection-progress-link{display:flex;align-items:center;flex-wrap:wrap;gap:12px 20px;border:0;border-radius:0;background:transparent;text-align:left;padding:0;color:var(--muted);font-size:12px}
