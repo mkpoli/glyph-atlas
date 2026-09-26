@@ -138,7 +138,9 @@ try {
   console.log('PASS multi-select, one problem per crop, optional suggestion, only picked problems saved')
 
   await browser.waitFor(roundReady)
-  // Select all takes every crop whose image has loaded; a lazy tile below the fold waits for its image.
+  // Select all takes every crop whose image has loaded, so the count is compared once every image
+  // has either loaded or failed.
+  await browser.waitFor('[...document.querySelectorAll(".quiz-tile img")].every(i => i.complete)', 15000)
   const loadedTiles = '[...document.querySelectorAll(".quiz-tile:not(.unavailable):not(.skipped):not(.recorded)")].filter(t => t.querySelector("img")?.complete && t.querySelector("img").naturalWidth).length'
   await click('.stage-toolbar .bulk-toggle')
   const chosen = await browser.evaluate('document.querySelectorAll(".quiz-tile.selected").length')
