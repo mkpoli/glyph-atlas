@@ -57,8 +57,10 @@ OTHER = "other"
 CLASSES_NAME = "classes.json"
 
 
-# What `batch_width` answers for a graph whose first dimension is symbolic.
-SYMBOLIC_BATCH = 1_000_000
+#: The most crops one run of a graph with a free batch dimension is given. An alignment scores every
+#: detection of a line at once, and a line of a few hundred detections at 128 px asks the CUDA arena
+#: for more than a capped session holds; runs of this size keep the memory bounded by the chunk.
+CHUNK = 32
 
 
 class ClassifierError(RuntimeError):
@@ -243,9 +245,8 @@ class Classifier:
     def probabilities_many(self, crops: Iterable[Image.Image | np.ndarray]) -> np.ndarray:
         """The class probabilities of crops, as an (n, classes) array.
 
-        The exported graph may fix its batch dimension at one, which is what the export writes; a
-        caller that hands over hundreds of crops still gets one array back, because the crops are run
-        in as many batches as the graph accepts.
+        A caller that hands over hundreds of crops gets one array back, run in batches of the graph's
+        fixed batch size, or of `CHUNK` when the batch dimension is free.
         """
         images = [self._pixels(crop) for crop in crops]
         if not images:
@@ -260,7 +261,7 @@ class Classifier:
         return np.concatenate(parts, axis=0)
 
     def batch_width(self) -> int:
-        """How many crops one run of the exported graph accepts, or a large number when it is free."""
+        """How many crops one run of the exported graph is given: its fixed batch, or `CHUNK`."""
         described = getattr(self._session, "get_inputs", None)
         if described is None:
             return 1
@@ -274,7 +275,7 @@ class Classifier:
             if isinstance(first, int) and first > 0:
                 return first
             # A symbolic dimension is a graph that accepts whatever it is given.
-            return SYMBOLIC_BATCH
+            return CHUNK
         return 1
 
     def _probabilities_of(self, batch: np.ndarray) -> np.ndarray:

@@ -319,3 +319,21 @@ def test_a_classifier_handed_to_a_run_is_held_to_its_pin(tmp_path: Path) -> None
     run = align.Run(name="pinned", classifier=str(pinned), classifier_sha256=hashlib.sha256(b"one model").hexdigest())
     with pytest.raises(ValueError, match="not the classifier"):
         align.run_directory(tmp_path, run, pages=[], detector=object(), classifier=SimpleNamespace(onnx_path=other))
+
+
+def test_a_free_batch_runs_in_chunks(tmp_path: Path) -> None:
+    """A line of a hundred detections never reaches the graph as one batch."""
+    from types import SimpleNamespace
+
+    runs = []
+
+    def run(_names, feed):
+        batch = feed["pixel_values"]
+        runs.append(len(batch))
+        return [np.full((len(batch), len(CLASSES)), 1 / len(CLASSES), dtype=np.float32)]
+
+    session = SimpleNamespace(run=run, get_inputs=lambda: [SimpleNamespace(name="pixel_values", shape=["batch", 3, 96, 96])],
+                              get_outputs=lambda: [SimpleNamespace(name="probs")])
+    reader = Classifier(tmp_path / "x.onnx", classes=CLASSES, session=session)
+    assert reader.probabilities_many([crop(30, 40)] * 100).shape == (100, len(CLASSES))
+    assert max(runs) <= classify.CHUNK and sum(runs) == 100
