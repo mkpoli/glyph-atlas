@@ -37,16 +37,19 @@ SPLITS = range(2, 9)
 UNITS_PER_STATEMENT = 1000
 
 # Every decision stored in D1, replayed in the order it was made onto freshly loaded rows: a glyph's
-# cluster form is the latest cluster decision that listed it, its own decision the latest glyph or
-# inherit decision, and its form the second when it has one. The Worker applies one decision the
-# same way. The site takes no decision from the reload to here (`form_loading`). `forms_loaded_at` marks
-# the finished load; the Worker keys its cached family pages by it.
+# cluster form or report is the latest cluster decision that listed it, its own decision the latest
+# glyph or inherit decision, and its form and report the second when it has one. A mixed cluster names
+# nothing for its glyphs. The Worker applies one decision the same way. The site takes no decision from
+# the reload to here (`form_loading`). `forms_loaded_at` marks the finished load; the Worker keys its
+# cached family pages by it.
 REPLAY = """
 DELETE FROM form_marks;
 INSERT INTO form_marks(id,at,seq,kind,form,decision,issue,character,character_family)
   SELECT j.value,d.at,d.seq,d.kind,d.form,d.id,d.issue,d.character,d.character_family
   FROM form_decisions d,json_each(d.units) j;
-UPDATE form_units SET cluster_form=(SELECT m.form FROM form_marks m WHERE m.id=form_units.id AND m.kind='cluster'
+UPDATE form_units SET (cluster_form,cluster_issue,cluster_character,cluster_family)=(SELECT m.form,
+  CASE WHEN m.issue<>'mixed' THEN m.issue END,m.character,m.character_family
+  FROM form_marks m WHERE m.id=form_units.id AND m.kind='cluster'
   ORDER BY m.at DESC,m.seq DESC LIMIT 1) WHERE id IN (SELECT id FROM form_marks WHERE kind='cluster');
 UPDATE form_units SET (glyph_set,glyph_form,glyph_decision,glyph_issue,glyph_character,glyph_family)=(SELECT m.kind='glyph',
   CASE WHEN m.kind='glyph' THEN m.form END,CASE WHEN m.kind='glyph' THEN m.decision END,
@@ -54,13 +57,16 @@ UPDATE form_units SET (glyph_set,glyph_form,glyph_decision,glyph_issue,glyph_cha
   CASE WHEN m.kind='glyph' THEN m.character_family END
   FROM form_marks m WHERE m.id=form_units.id AND m.kind<>'cluster'
   ORDER BY m.at DESC,m.seq DESC LIMIT 1) WHERE id IN (SELECT id FROM form_marks WHERE kind<>'cluster');
-UPDATE form_units SET form=CASE WHEN glyph_set=1 THEN glyph_form ELSE cluster_form END;
+UPDATE form_units SET form=CASE WHEN glyph_set=1 THEN glyph_form ELSE cluster_form END,
+  issue=CASE WHEN glyph_set=1 THEN glyph_issue ELSE cluster_issue END,
+  issue_character=CASE WHEN glyph_set=1 THEN glyph_character ELSE cluster_character END,
+  issue_family=CASE WHEN glyph_set=1 THEN glyph_family ELSE cluster_family END;
 DELETE FROM form_marks;
-UPDATE form_clusters SET (form,decision)=(SELECT d.form,d.id FROM form_decisions d WHERE d.kind='cluster'
+UPDATE form_clusters SET (form,issue,decision)=(SELECT d.form,d.issue,d.id FROM form_decisions d WHERE d.kind='cluster'
   AND d.cluster=form_clusters.id AND d.revision=(SELECT revision FROM form_families WHERE code_point=form_clusters.family)
   ORDER BY d.at DESC,d.seq DESC LIMIT 1);
 UPDATE form_families SET assigned=(SELECT count(*) FROM form_units WHERE family=code_point AND form IS NOT NULL),
-  rejected=(SELECT count(*) FROM form_units WHERE family=code_point AND glyph_issue IS NOT NULL);
+  rejected=(SELECT count(*) FROM form_units WHERE family=code_point AND issue IS NOT NULL);
 INSERT OR REPLACE INTO metadata(key,value) VALUES('forms_loaded_at',json_quote(strftime('%Y-%m-%dT%H:%M:%fZ','now')));
 DELETE FROM form_loading;
 """
