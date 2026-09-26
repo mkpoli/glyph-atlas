@@ -51,10 +51,12 @@ export function download(value, name) {
 
 const suggestionCache = new Map()
 export function suggestionsFor(item, source = 'visual') {
-  const key = source + ':' + item.id + ':' + item.revision + ':' + item.image_sha256
+  // A corpus glyph names its pixels by its source revision, a local crop by its page hash.
+  const pixels = item.origin === 'corpus' ? { source_revision: item.source_revision } : { image_sha256: item.image_sha256 }
+  const key = source + ':' + item.id + ':' + item.revision + ':' + Object.values(pixels)[0]
   if (!suggestionCache.has(key)) {
     if (suggestionCache.size > 256) suggestionCache.delete(suggestionCache.keys().next().value)
-    const query = new URLSearchParams({ revision: item.revision, image_sha256: item.image_sha256 })
+    const query = new URLSearchParams({ revision: item.revision, ...pixels })
     const suffix = source === 'context' ? '/context' : ''
     const promise = request('/atlas/characters/' + encodeURIComponent(item.id) + '/suggestions' + suffix + '?' + query,
       undefined, { signal: AbortSignal.timeout(source === 'context' ? 8000 : 30000) })

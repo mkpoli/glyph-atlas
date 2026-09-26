@@ -855,7 +855,9 @@ export default {
       const character=path.match(/^\/atlas\/characters\/([^/]+)(\/suggestions(?:\/context)?)?$/);
       if(character){const row=await unit(env,decodeURIComponent(character[1]));
         if(character[2]){
-          if(q.get('revision')!==String(row.revision)||q.get('image_sha256')!==parse(row.data).image_sha256)throw new Problem(409,'Character changed.');
+          const data=parse(row.data);
+          const same=row.origin==='corpus'?q.get('source_revision')===data.source_revision:q.get('image_sha256')===data.image_sha256;
+          if(q.get('revision')!==String(row.revision)||!same)throw new Problem(409,'Character changed.');
           return json(parse(character[2].endsWith('/context')?row.context:row.visual));
         }
         return json(parse(row.data));
