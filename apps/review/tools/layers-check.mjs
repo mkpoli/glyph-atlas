@@ -57,7 +57,7 @@ try {
       const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
       Object.defineProperty(event, 'isComposing', { value: true })
       i.dispatchEvent(event)
-      return document.querySelector('.layer-chips') !== null
+      return document.querySelector('.character-layers') !== null
     })()`)
     assert(!chosen, 'a composing Enter opened a character')
     return 'ignored'
@@ -66,12 +66,12 @@ try {
   await step('choosing a candidate opens its own gallery', async () => {
     const point = await browser.centre('.candidate')
     await browser.click(point.x, point.y)
-    await browser.waitFor('document.querySelector(".layer-chips") !== null', 4000)
+    await browser.waitFor('document.querySelector(".character-layers") !== null', 4000)
     await browser.waitFor('document.querySelectorAll(".glyph-grid .glyph-tile").length > 0', 4000)
-    return await browser.evaluate(`document.querySelector('.layer-chips').innerText.split(String.fromCharCode(10)).join(' · ')`)
+    return await browser.evaluate(`document.querySelector('.character-layers').innerText.split(String.fromCharCode(10)).join(' · ')`)
   })
 
-  await step('a chip click renders a whole card and throws nothing', async () => {
+  await step('widening to the grapheme renders the card and throws nothing', async () => {
     // The chips pass a code point rather than a whole row, which is the path that used to render an
     // incomplete card and throw. Escape and refocus repeat what a reader does between keystrokes.
     await browser.evaluate(`document.querySelector('.character-search input').blur()`)
@@ -81,33 +81,26 @@ try {
     await browser.waitFor('document.querySelectorAll(".candidate").length > 0', 4000)
     const row = await browser.centre('.candidate')
     await browser.click(row.x, row.y)
-    await browser.waitFor('document.querySelector(".layer-chips") !== null', 4000)
+    await browser.waitFor('document.querySelector(".character-layers") !== null', 4000)
     await new Promise(resolve => setTimeout(resolve, 600))
-    const chips = await browser.evaluate(`document.querySelector('.layer-chips')?.innerText.split(String.fromCharCode(10)).join(' · ') ?? null`)
-    assert(chips, 'the card rendered empty after choosing a candidate')
+    const card = await browser.evaluate(`document.querySelector('.character-layers')?.innerText.split(String.fromCharCode(10)).join(' · ') ?? null`)
+    assert(card, 'the card rendered empty after choosing a candidate')
     assert(!errors.length, `an exception was thrown: ${errors.join(' | ').slice(0, 300)}`)
-    const actions = await browser.evaluate(`document.querySelectorAll('.chip-action').length`)
-    assert(actions > 0, `no widening chip on the card: ${chips}`)
-    const label = await browser.evaluate(`document.querySelector('.chip-action')?.innerText ?? ''`)
-    assert(/forms/.test(label), `the widening chip does not name the shape: ${label}`)
-    {
-      const chip = await browser.centre('.chip-action')
-      await browser.click(chip.x, chip.y)
-      await new Promise(resolve => setTimeout(resolve, 900))
-      const widened = await browser.evaluate(`document.querySelector('.layer-chips')?.innerText.split(String.fromCharCode(10)).join(' · ') ?? null`)
-      assert(widened, 'the card did not render after a chip click')
-      assert(!errors.length, `an exception was thrown on a chip click: ${errors.join(' | ').slice(0, 300)}`)
-      // The widening the reader chose reading back as `active` is NOT asserted here: the round trip
-      // is listed as pending verification rather than asserted loosely.
-      const on = await browser.evaluate(`document.querySelectorAll('.chip-action.active').length`)
-      return `${actions} chip(s), ${on} reading as chosen, ${label.trim()}`
-    }
+    // The grapheme button widens the gallery from this character to every form of its grapheme.
+    const family = await browser.centre('.character-layers .family')
+    await browser.click(family.x, family.y)
+    await browser.waitFor(`document.querySelector('.character-layers .family')?.getAttribute('aria-pressed') === 'true'`, 4000)
+    await browser.waitFor(`document.querySelector('.forms-row')?.innerText.includes('All forms')`, 4000)
+    await browser.waitFor('document.querySelector(".glyph-grid")?.getAttribute("aria-busy") === "false"', 6000)
+    assert(await browser.evaluate('document.querySelectorAll(".glyph-grid .glyph-tile").length') > 0, 'the widened gallery is empty')
+    assert(!errors.length, `an exception was thrown on widening: ${errors.join(' | ').slice(0, 300)}`)
+    return card
   })
 
   await step('clearing the box restores the collection', async () => {
     const clear = await browser.centre('.find-clear')
     await browser.click(clear.x, clear.y)
-    await browser.waitFor('document.querySelector(".layer-chips") === null', 4000)
+    await browser.waitFor('document.querySelector(".character-layers") === null', 4000)
     await browser.waitFor('document.querySelectorAll(".glyph-grid .glyph-tile").length > 0', 4000)
     return 'chips gone, grid back'
   })
@@ -129,12 +122,11 @@ try {
     await browser.waitFor('document.querySelector("dialog[open]") === null', 4000)
     await browser.evaluate(`visit('/character/' + encodeURIComponent(${JSON.stringify(id)}))`)
     try {
-      await browser.waitFor('document.querySelector("dialog[open] .inspector-crop img")?.naturalWidth > 0', 6000)
+      await browser.waitFor('document.querySelector("dialog[open] .crop-viewport")?.dataset.ready === "true" && !document.querySelector(".save-character")?.disabled', 6000)
     } catch (error) {
       const state = await browser.evaluate(`JSON.stringify({
         path: location.pathname, dialog: !!document.querySelector('dialog[open]'),
-        crop: !!document.querySelector('.inspector-crop img'),
-        natural: document.querySelector('.inspector-crop img')?.naturalWidth ?? null,
+        viewport: document.querySelector('.crop-viewport')?.dataset.ready ?? null,
         error: document.querySelector('dialog .error-message')?.innerText ?? null,
         disabled: document.querySelector('.save-character')?.disabled ?? null,
         unavailable: document.querySelector('.inspector-savebar [role=alert]')?.innerText ?? null })`)
@@ -168,7 +160,7 @@ try {
     return `${written.length} review event(s), none of them a reading`
   })
 
-  await step('correcting the character keeps the reading and lands in the export', async () => {
+  await step('correcting the character carries its reading and lands in the export', async () => {
     await openReviewer(LAYERED)
     await browser.evaluate(`(() => {
       const input = document.querySelector('.written-input input')
@@ -181,7 +173,8 @@ try {
     await new Promise(resolve => setTimeout(resolve, 400))
     const stored = await (await fetch(service.base + '/atlas/characters/' + encodeURIComponent(LAYERED))).json()
     assert(stored.label === 'ヌ', `stored character is ${stored.label}, expected ヌ`)
-    assert(stored.reading === 'ね', `stored reading is ${stored.reading}, expected the untouched ね`)
+    // ヌ has one stated reading, so the correction carries it: the reading follows the character.
+    assert(stored.reading === 'ぬ', `stored reading is ${stored.reading}, expected ぬ from the character layer`)
     // The export holds one row per review, and the layer correction is its evidence: the unicode
     // event itself is in the journal, which is what the export's `current` check reads.
     const exportBody = await (await fetch(service.base + '/atlas/reviews')).json()
@@ -191,7 +184,7 @@ try {
     const correction = evidence.layer_correction ?? {}
     assert(correction.changed?.includes('character'), `changed is ${JSON.stringify(correction.changed)}`)
     assert(correction.code_point === 'U+30CC', `correction code point is ${correction.code_point}`)
-    assert(correction.character === 'ヌ' && correction.reading === 'ね',
+    assert(correction.character === 'ヌ' && correction.reading === 'ぬ',
       `correction reads ${correction.character} / ${correction.reading}`)
     assert(row.current === true, 'the exported review does not read as current')
     const journal = await (await fetch(service.base + '/atlas/reviews.json')).json()
@@ -202,10 +195,10 @@ try {
   await step('the ordinary collection keeps its review queue after a correction', async () => {
     // The homepage inspector queue is the path a correction must not break: its Next steps through
     // the collection's own rows, not through a character gallery that may hold one record.
-    await browser.evaluate(`visit('/')`)
+    // A fresh load: a crop page draws the collection under its dialog, so after an in-app visit the
+    // same tiles are on screen before the navigation lands, and a click then is closed by it.
+    await browser.goto(service.base + '/', { waitFor: '"hydrated" in document.documentElement.dataset' })
     await browser.waitFor('document.querySelector("dialog[open]") === null', 4000)
-    // The search box still holds the last query; the collection behind it is what is being tested.
-    await browser.evaluate(`document.querySelector('.find-clear')?.click()`)
     await browser.waitFor('document.querySelectorAll(".glyph-grid .glyph-tile").length > 1', 8000)
     const tiles = await browser.evaluate(`document.querySelectorAll('.glyph-grid .glyph-tile').length`)
     const first = await browser.centre('.glyph-grid .glyph-tile')
