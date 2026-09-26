@@ -15,8 +15,9 @@
   const reviewed = $derived(family.items.filter(c => !isOpen(c)).length)
 
   async function load(at) {
-    index = at; marked = new Set(); anchor = null; error = ''
-    if (!family.items[at]) { glyphs = []; total = 0; return }
+    // The last cluster's tiles go at once, so nothing marked or clicked can reach the next one.
+    index = at; marked = new Set(); anchor = null; error = ''; glyphs = []; total = 0
+    if (!family.items[at]) return
     loading = true
     try {
       // Least typical first: the glyphs that do not belong sit furthest from the cluster centre.
@@ -25,10 +26,11 @@
     } catch (e) { error = e.message } finally { loading = false }
   }
   async function more() {
-    const page = await loadMembers(cluster.id, glyphs.length, 500, 'unusual')
-    glyphs = [...glyphs, ...page.items]
+    const id = cluster.id, page = await loadMembers(id, glyphs.length, 500, 'unusual')
+    if (cluster?.id === id) glyphs = [...glyphs, ...page.items]
   }
   function toggle(i, event) {
+    if (loading || busy) return
     const next = new Set(marked)
     if (event?.shiftKey && anchor != null) {
       const [from, to] = [Math.min(anchor, i), Math.max(anchor, i)]
@@ -38,10 +40,12 @@
   }
   function markAll() { marked = marked.size === glyphs.length ? new Set() : new Set(glyphs.map(g => g.id)) }
   // The next cluster still to review after the one at `from`, in the order the list had then; the
-  // list may reorder once a cluster is done, so the order is taken before saving.
+  // list may reorder once a cluster is done, so the order is taken before saving. The cluster itself
+  // comes last: moving on without naming or reporting anything leaves it open, and only a family with
+  // no open cluster left is done.
   function following(from, order = family.items.map(c => c.id)) {
     const open = new Set(family.items.filter(isOpen).map(c => c.id))
-    const next = [...order.slice(from + 1), ...order.slice(0, from)].find(id => open.has(id) && id !== order[from])
+    const next = [...order.slice(from + 1), ...order.slice(0, from + 1)].find(id => open.has(id))
     return next ? family.items.findIndex(c => c.id === next) : family.items.length
   }
   async function save(form = null) {
@@ -60,6 +64,7 @@
     } catch (e) { error = e.message } finally { busy = false }
   }
   function keydown(event) {
+    if (busy || loading) return
     if (event.target.closest?.('input, textarea') || event.metaKey || event.ctrlKey || event.altKey) {
       if (event.key === 'Enter' && event.target.closest?.('input')) { event.preventDefault(); save() }
       return

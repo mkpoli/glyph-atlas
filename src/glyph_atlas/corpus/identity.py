@@ -52,6 +52,9 @@ def identity_fields(
         # than falling back to the visual model.
         written, basis = decided["form"] or decided.get("character"), decided["basis"]
         ambiguous = written is None
+        if decided.get("character"):
+            # Reported as another character: the glyph belongs to that character's family.
+            family = family_of(" ".join(refs.to_code_points(decided["character"])))
     else:
         try:
             from ..visual_families import assignment_for, evidence_signature

@@ -41,7 +41,7 @@
     if (openFirst) loaded.items = [...loaded.items.filter(isOpen), ...loaded.items.filter(c => !isOpen(c))]
     current = loaded
     if (keepId) active = Math.max(0, current.items.findIndex(c => c.id === keepId))
-    if (!keep) { picked = new Set(); pickAnchor = null; active = Math.max(0, current.items.findIndex(isOpen)); close() }
+    if (!keep) { picked = new Set(); pickAnchor = null; reviewing = false; active = Math.max(0, current.items.findIndex(isOpen)); close() }
   }
   async function show(index) {
     active = index; open = current.items[index].id; chosen = new Set(); anchor = null

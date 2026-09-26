@@ -464,7 +464,9 @@ function text(value: unknown, max: number, name: string, required=false): string
   if(typeof value!=='string'||value.length>max||(required&&!value.trim()))throw new Problem(422,`Invalid ${name}.`);
   return compose(value.trim());
 }
-const formTools: FormTools = {fail:(status,message)=>{throw new Problem(status,message)},body,text,codePoints:cp};
+// A character's grapheme family, as a reviewed correction takes it; one the catalogue lacks is its own.
+const formTools: FormTools = {fail:(status,message)=>{throw new Problem(status,message)},body,text,codePoints:cp,
+  family:async(env,char)=>(await known(env,char).catch(()=>null))?.data.grapheme?.code_point||cp(char)};
 export function canonical(value: unknown): string {
   if(value===null||typeof value!=='object')return JSON.stringify(value);
   if(Array.isArray(value))return '['+value.map(canonical).join(',')+']';

@@ -193,7 +193,7 @@ def router(media, corpus_root: Path) -> APIRouter:
         try:
             event = forms.record(decision.kind, form=decision.form, cluster=decision.cluster,
                                  units=decision.units, note=decision.note, issue=decision.issue,
-                                 character=decision.character.strip() or None if decision.character else None)
+                                 character=decision.character)
         except forms.DecisionError as error:
             raise HTTPException(422, str(error)) from None
         return {**{k: v for k, v in event.items() if k != "units"}, "count": len(event["units"])}
