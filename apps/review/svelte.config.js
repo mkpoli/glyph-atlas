@@ -16,5 +16,8 @@ export default {
       $components: 'src/components',
       $views: 'src/views',
     },
+    // Put each page's stylesheets in its HTML. As separate files they block the first paint behind
+    // extra requests that, on a slow phone connection, finish after the first glyph images arrive.
+    inlineStyleThreshold: 64 * 1024,
   },
 }
