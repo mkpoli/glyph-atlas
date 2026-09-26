@@ -588,6 +588,19 @@ try {
   const log = await (await mf.dispatchFetch(base + '/atlas/forms/decisions.jsonl')).text()
   assert.equal(log.trim().split('\n').length, 6, 'every accepted decision is logged, the refused ones are not')
   assert.deepEqual(log.trim().split('\n').map(JSON.parse).filter(d => d.issue).map(d => [d.issue, d.character]), [['character', 'テ']])
+  // A repair verdict changed in place survives a review and its undo, and so does the quiz it decides.
+  const vetted = { id: 'vetted', label: 'キ', reading: 'キ', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten',
+    repair: { status: 'joined', quiz: true } }
+  await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
+    vetted.id, 'local', 'キ', 'キ', 'U+30AD', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
+    JSON.stringify(vetted), JSON.stringify({ character: vetted }), '{}', '{}').run()
+  const vettedRound = { id: crypto.randomUUID(), client_id: 'integration', label: 'キ',
+    answers: [{ id: 'vetted', revision: 0, image_sha256: hash, verdict: 'wrong', issue: 'blank' }] }
+  await call('/atlas/rounds', vettedRound)
+  await db.prepare(`UPDATE units SET data=json_set(data,'$.repair',json('{"status":"uncertain","quiz":false}')), quiz=0 WHERE id='vetted' AND revision=1`).run()
+  await call(`/atlas/rounds/${vettedRound.id}/undo`, { client_id: 'integration' })
+  const vettedRow = await db.prepare("SELECT quiz, json_extract(data,'$.repair.quiz') AS dealt, json_extract(data,'$.state') AS state FROM units WHERE id='vetted'").first()
+  assert.deepEqual(vettedRow, { quiz: 0, dealt: 0, state: 'pending' }, 'undo restores the review state and keeps the newer repair verdict out of the quiz')
   // A retired crop names the crop that replaced it: deleted, kept for its history, or through a chain.
   const retiredCrop = { id: 'retired-kept', label: 'ア', reading: 'ア', state: 'flagged', revision: 1, image_sha256: hash, production: 'handwritten' }
   await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(

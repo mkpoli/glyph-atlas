@@ -15,8 +15,9 @@ This writes the UPDATE statements that bring such units up to date:
   its alignment-repair status (the rebuild's verdict on whether the crop may be dealt). Nothing a
   reviewer judged has changed, so an open page may still save against it. An unreviewed unit's
   quiz eligibility follows the catalogue with it; a reviewed one may still only leave the quiz.
-  The Worker's event trigger (migration 0009) keeps a row's context through later reviews and
-  undos, so an undo does not bring back the old context.
+  The Worker's event trigger (migration 0019) keeps a row's context and repair status through
+  later reviews and undos, so an undo brings back neither, and undo decides the quiz with the
+  repair status the row holds.
 
 A null `shape_order` is the same as none: the Worker reads a crop's shape order from `unit_shapes`
 and ignores the key in its data, and older rows were written without it.
