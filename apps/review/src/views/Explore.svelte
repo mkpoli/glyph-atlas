@@ -43,7 +43,8 @@
     try { collection = await request('/atlas/collection/status') } catch { /* retry on the next interval */ }
   }
   const categories = $derived((data?.categories ?? []).filter(c => !flagged || c.flagged || c.hard))
-  const works = $derived((data?.documents ?? []).filter(w => !flagged || w.flagged || w.hard))
+  const works = $derived((data?.documents ?? []).filter(w => !flagged || w.flagged || w.hard)
+    .map(w => ({ ...w, count: flagged ? w.flagged + w.hard : w.total })))
   /** What a record says about its own reliability, in one badge: withheld, machine or confirmed.
    *
    * The words come from the record's `repair` block — `withheld`, `reliable`, `verified`, `reason` —
@@ -340,7 +341,8 @@
                      token={reading} tokenLabel={t('explore.clearReading', { reading })} ontokenclear={() => select('')}
                      onsubmit={() => { clearTimeout(searchTimer); offset = 0; submitQuery() }} />
     <div class="filter-tabs" aria-label={t('explore.filter.label')}>{#each [['all', () => t('explore.filter.all')], ['kana', () => t('explore.filter.kana')], ['kanji', () => t('explore.filter.kanji')], ['hangul', () => t('explore.filter.hangul')], ['gugyeol', () => t('explore.filter.gugyeol')]] as [value, text]}<button class:active={filter === value} onclick={() => { filter = value; offset = 0; load() }}>{text()}</button>{/each}</div>
-    <WorkFilter {works} value={work} onchange={value => { work = value; offset = 0; load() }} />
+    <!-- A work narrows the collection's listing; choosing one leaves a picked character's gallery. -->
+    <WorkFilter {works} value={work} onchange={value => { work = value; if (picked || query) clearQuery(); else { offset = 0; load() } }} />
     <span class="toolbar-space"></span>
     <ImageStyleToggle {ink} onchange={onink} />
     {#if reading && !flagged}<a class="quiet-link" href={localize('/review') + `?reading=${encodeURIComponent(reading)}`}>{t('explore.reviewReading', { reading })}</a>{/if}

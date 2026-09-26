@@ -1,18 +1,27 @@
 <script>
   // Which work the grid shows: every work, or one. The list is the catalogue's own count of crops per
-  // work, so a work with nothing to show is not offered.
+  // work, so a work with nothing to show is not offered. `count` is the number each row shows. A chosen
+  // work keeps its name after a refresh drops it from the list, so the toggle never claims all works
+  // while one is still applied.
   import { t } from '../lib/i18n.svelte.js'
   import { number } from '../lib/client.js'
 
   let { works = [], value = '', onchange = () => {} } = $props()
-  let open = $state(false), find = $state(''), root = $state(null), field = $state(null)
-  const chosen = $derived(works.find(work => work.id === value))
+  let open = $state(false), find = $state(''), root = $state(null), field = $state(null), toggleButton = $state(null)
+  let named = $state(null)
+  const chosen = $derived(works.find(work => work.id === value) ?? (value ? (named?.id === value ? named : { id: value, title: null }) : null))
   const shown = $derived(works.filter(work => (work.title ?? work.id).toLowerCase().includes(find.trim().toLowerCase())))
 
-  function choose(id) {
+  function choose(work) {
+    named = work
     open = false
     find = ''
-    onchange(id)
+    toggleButton?.focus()
+    onchange(work?.id ?? '')
+  }
+
+  function left(event) {
+    if (open && !root?.contains(event.relatedTarget)) open = false
   }
 
   function toggle() {
@@ -28,18 +37,18 @@
 <svelte:window onpointerdown={outside} />
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="work-control" bind:this={root} onkeydown={e => { if (e.key === 'Escape' && open) { e.preventDefault(); open = false; root.querySelector('.work-toggle')?.focus() } }}>
-  <button class="work-toggle" aria-expanded={open} aria-label={t('explore.works.label')} onclick={toggle}>
+<div class="work-control" bind:this={root} onfocusout={left} onkeydown={e => { if (e.key === 'Escape' && open) { e.preventDefault(); open = false; toggleButton?.focus() } }}>
+  <button class="work-toggle" bind:this={toggleButton} aria-expanded={open} aria-label={t('explore.works.label')} onclick={toggle}>
     <span class="work-name" lang={chosen ? 'ja' : undefined}>{chosen ? (chosen.title ?? chosen.id) : t('explore.works.all')}</span><span aria-hidden="true">⌄</span>
   </button>
   {#if open}
     <div class="work-menu" role="dialog" aria-label={t('explore.works.label')}>
       <input bind:this={field} bind:value={find} aria-label={t('explore.works.find')} placeholder={t('explore.works.find')} />
       <ul>
-        <li><button class:chosen={!value} onclick={() => choose('')}>{t('explore.works.all')}</button></li>
+        <li><button class:chosen={!value} onclick={() => choose(null)}>{t('explore.works.all')}</button></li>
         {#each shown as work (work.id)}
-          <li><button class:chosen={work.id === value} onclick={() => choose(work.id)} title={work.title ?? work.id}>
-            <span lang="ja">{work.title ?? work.id}</span><small>{number(work.total)}</small>
+          <li><button class:chosen={work.id === value} onclick={() => choose(work)} title={work.title ?? work.id}>
+            <span lang="ja">{work.title ?? work.id}</span><small>{number(work.count ?? work.total)}</small>
           </button></li>
         {:else}
           <li class="work-none">{t('explore.works.none')}</li>
