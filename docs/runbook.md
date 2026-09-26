@@ -102,6 +102,12 @@ The run configuration names the two ONNX exports, the equivalence policy and the
 its fingerprint is part of every unit id it writes, so a rerun with a changed configuration adds
 units rather than overwriting them, and units a reviewer wrote are never touched.
 
+Transcription whitespace retains a token without a box and cannot consume a detection through
+matching or splitting. The algorithm version participates in the run fingerprint, so corrected
+placements have distinct ids from historical crops. Rerunning an older configuration adds the new
+run's units while preserving the old run and its review evidence. Historical bad crops still need
+quality filtering or an explicit repair; a rerun alone does not retire them.
+
 ## 6. Pilot
 
 ```sh
