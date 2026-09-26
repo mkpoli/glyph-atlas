@@ -1,6 +1,8 @@
 <script>
   import '../app.css'
   import '../layers.css'
+  import '@fontsource/klee-one/400.css'
+  import '../fallback-fonts.css'
   import '../script-colors.css'
   import { onMount, untrack } from 'svelte'
   import { afterNavigate, goto, pushState } from '$app/navigation'

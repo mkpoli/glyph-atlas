@@ -31,6 +31,27 @@ installed fonts rarely draw.
   the hentaigana, U+1B11F and the Unicode 18.0 digraphs U+1B123–U+1B128, and the kana ligatures
   𪜈 U+2A708, 𬻿 U+2CEFF, 𬼀 U+2CF00 and 𬼂 U+2CF02.
 
+## Handwriting fallbacks for the review target
+
+The review round's target character is drawn in one hand: Kureedo Kata, then Klee One, then
+LXGW WenKai TC, then LXGW WenKai, then GenZui Sans for the kana they lack.
+
+- `Klee One` comes complete from the `@fontsource/klee-one` package (SIL Open Font License 1.1,
+  © The Klee Project Authors, <https://github.com/fontworks-fonts/Klee>), split by `unicode-range`
+  so a page loads only the files it needs.
+- `fallback/` holds LXGW WenKai TC v1.522 (© The LXGW WenKai Project Authors,
+  <https://github.com/lxgw/LxgwWenkaiTC>) and LXGW WenKai v1.522 (© LXGW,
+  <https://github.com/lxgw/LxgwWenKai>, with glyphs from Klee One © The Klee Project Authors), both
+  under the SIL Open Font License 1.1 as `fallback/wenkai-tc-OFL.txt` and `fallback/wenkai-OFL.txt`.
+  They are cut down to the labels
+  with crops in the corpus that Kureedo Kata and Klee One do not draw, listed with their crop
+  counts in `fallback/characters.tsv`, and split into files of 120 characters, most frequent
+  first. Neither release reserves a font name, so the subsets keep the family names.
+  `scripts/build_fallback_fonts.py` rebuilds them from the release files, which it checks against
+  pinned hashes; run it with `--labels work/corpus-index/chars.parquet` when the corpus grows.
+- Labels no font here draws fall back to the reader's own fonts: 46 characters of CJK Extensions
+  B–E, and 〱 〲 until the Kureedo Kata in this directory is a release that covers them.
+
 ## Interface font for chữ Hán-Nôm
 
 `Plangothic-vi-Hani.woff2` draws the Nôm characters of the `vi-Hani` interface that lie beyond the
