@@ -130,7 +130,7 @@ def test_resuming_an_export_whose_corpus_rows_predate_their_material_is_refused(
 
 def test_an_export_reads_only_the_corpora_it_names(scripts, tmp_path, monkeypatch):
     export = importlib.import_module("export_cloudflare_corpus")
-    names = sorted(export.UNIT_CORPORA)[:2]
+    names = sorted(set(export.UNIT_CORPORA) - export.PUBLISHED_LOCALLY)[:2]
     monkeypatch.setattr(export.sources, "discover",
                         lambda root: [SimpleNamespace(name=name) for name in [*names, "not-a-unit-corpus"]])
     assert [c.name for c in export.unit_corpora()] == names
@@ -263,3 +263,29 @@ def test_holder_images_point_at_the_holders_region_of_the_box(scripts):
     assert export.holder_image(served, box, False) is None
     assert export.holder_image({"image_service": None}, box, True) is None
     assert export.holder_image(served, None, True) is None
+
+
+def test_the_ainu_records_the_site_publishes_as_its_own_crops_are_not_exported_as_corpus_glyphs(scripts, monkeypatch):
+    export = importlib.import_module("export_cloudflare_corpus")
+    monkeypatch.setattr(export.sources, "discover",
+                        lambda root: [SimpleNamespace(name=name) for name in ("ainu-records", "codh-full")])
+    assert [c.name for c in export.unit_corpora()] == ["codh-full"]
+
+
+def test_an_export_or_seal_drops_the_glyphs_the_site_publishes_as_its_own_crops(scripts, tmp_path, monkeypatch):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    export = importlib.import_module("export_cloudflare_corpus")
+    units = tmp_path / "units.parquet"
+    pq.write_table(pa.table({"id": ["hk:1", "hk:2"]}), units)
+    monkeypatch.setattr(export.sources, "discover", lambda root: [
+        SimpleNamespace(name="ainu-records", table=lambda name: units),
+        SimpleNamespace(name="codh-full", table=lambda name: None)])
+    ids = export.locally_published_ids()
+    assert ids == {"hk:1", "hk:2"}
+    db = sqlite3.connect(":memory:")
+    db.execute("CREATE TABLE corpus_units (id TEXT PRIMARY KEY)")
+    db.executemany("INSERT INTO corpus_units VALUES (?)", [("hk:1",), ("hk:2",), ("codh:1",)])
+    assert export.drop_locally_published(db, ids) == 2
+    assert [i for i, in db.execute("SELECT id FROM corpus_units")] == ["codh:1"]
