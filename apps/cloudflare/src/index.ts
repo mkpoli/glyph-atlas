@@ -195,13 +195,16 @@ const SHUFFLE_RANGE = 268435456;
 // a publication, a review, a round and an undo each make a new key. A refresh that writes `units`
 // without a new publication shows once the copy expires.
 const FACETS_TTL = 3600;
-type Facet = { label: string; document: string | null; title: string | null; state: string; n: number };
+// The grapheme a label is filed under: its family, or its own code points when it has none. The
+// publication writes `family` from the same rule (`atlas.grapheme_of`).
+export const graphemeOf = (label: string, family: string | null) => family || cp(label) || null;
+type Facet = { label: string; family: string | null; document: string | null; title: string | null; state: string; n: number };
 async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, production: string, facets: D1PreparedStatement) {
   const version = await env.DB.prepare(`SELECT (SELECT value FROM metadata WHERE key='published_at') AS published,
     (SELECT max(rowid) FROM events) AS event,(SELECT max(rowid) FROM submissions) AS submission,
     (SELECT count(*) FROM submissions WHERE undone=1) AS undone`)
     .first<{ published: string | null; event: number | null; submission: number | null; undone: number }>();
-  const key = new Request(`${url.origin}/atlas/facets?by=character,document&production=${encodeURIComponent(production)}&v=${encodeURIComponent(
+  const key = new Request(`${url.origin}/atlas/facets?by=character,family,document&production=${encodeURIComponent(production)}&v=${encodeURIComponent(
     [version?.published ?? '', version?.event ?? 0, version?.submission ?? 0, version?.undone ?? 0].join(':'))}`);
   const cached = await caches.default.match(key);
   if (cached) return { results: await cached.json() } as D1Result<Facet>;
@@ -228,9 +231,9 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   // Counts by character and by book in one pass; a book's title is the one its crops were published with.
   // A round needs only the characters, and is never cached, so it skips the per-work grouping.
   const facets = env.DB.prepare(review
-    ? `SELECT character AS label,NULL AS document,NULL AS title,${state} AS state,count(*) AS n FROM units WHERE ${where.join(' AND ')} GROUP BY 1,4`
-    : `SELECT character AS label,document,max(json_extract(data,'$.source')) AS title,${state} AS state,count(*) AS n
-    FROM units WHERE ${where.join(' AND ')} GROUP BY 1,2,4`).bind(...values);
+    ? `SELECT character AS label,max(family) AS family,NULL AS document,NULL AS title,${state} AS state,count(*) AS n FROM units WHERE ${where.join(' AND ')} GROUP BY 1,5`
+    : `SELECT character AS label,max(family) AS family,document,max(json_extract(data,'$.source')) AS title,${state} AS state,count(*) AS n
+    FROM units WHERE ${where.join(' AND ')} GROUP BY 1,3,5`).bind(...values);
   // Only counts that are the same for every visitor are cached; a reviewer's own skips are theirs.
   const [groups, published] = review ? await env.DB.batch([facets,
     ...[corpusCountQuery(production)].map(({ sql, values }) => env.DB.prepare(sql).bind(...values)),
@@ -238,8 +241,8 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   const categories = new Map<string, Json>(), documents = new Map<string, Json>();
   const counts: Json = { pending: 0, seen: 0, flagged: 0, checked: 0, hard: 0, skipped: 0 };
   const empty = { total: 0, pending: 0, seen: 0, checked: 0, flagged: 0, hard: 0, skipped: 0 };
-  const add = (label: string, state: string, n: number, document: string | null = null, title: string | null = null) => {
-    const category = categories.get(label) || { label, ...empty };
+  const add = (label: string, state: string, n: number, document: string | null = null, title: string | null = null, family: string | null = null) => {
+    const category = categories.get(label) || { label, grapheme: graphemeOf(label, family), ...empty };
     category.total += n; category[state] += n; counts[state] += n;
     categories.set(label, category);
     if (!document) return;
@@ -247,7 +250,7 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
     book.total += n; book[state] += n;
     documents.set(document, book);
   };
-  for (const row of groups.results) add(row.label, row.state, row.n, row.document, row.title);
+  for (const row of groups.results) add(row.label, row.state, row.n, row.document, row.title, row.family);
   // A corpus glyph nothing has named is pending for everyone, and the table counts them per character.
   const corpus = new Map<string, number>();
   if (review) for (const row of published.results) if (row.n > 0) { corpus.set(row.label, row.n); add(row.label, 'pending', row.n) }
@@ -255,6 +258,13 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   if (reading) { where.push('character=?'); values.push(reading) }
   const document = text(q.get('document'), 256, 'document');
   if (document) { where.push('document=?'); values.push(document) }
+  // A grapheme is a family's representative; a crop whose label has no family is its own grapheme.
+  const grapheme = text(q.get('grapheme'), 256, 'grapheme')?.toUpperCase().split(/\s+/).join(' ');
+  if (grapheme) {
+    if (!/^U\+[0-9A-F]{4,6}( U\+[0-9A-F]{4,6})*$/.test(grapheme)) throw new Problem(422, 'Invalid grapheme.');
+    where.push('(family=? OR (family IS NULL AND character=?))');
+    values.push(grapheme, grapheme.split(' ').map(p => String.fromCodePoint(parseInt(p.slice(2), 16))).join(''));
+  }
   if (q.get('q')) { where.push('(character=? OR reading=?)'); values.push(literal(q.get('q')!), literal(q.get('q')!)) }
   if (q.get('group') && q.get('group') !== 'all') { where.push('category=?'); values.push(q.get('group')!) }
   // `attention` is the Flagged view: every crop waiting for a person, flagged or hard to read.

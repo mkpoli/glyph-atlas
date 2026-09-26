@@ -349,7 +349,7 @@ try {
   assert.equal(first.origin, 'corpus')
   assert.equal(first.source.title, 'A woodblock book', 'a corpus tile can name its source')
   const category = async (reviewer = '') => (await call(`/atlas?purpose=review&limit=1${reviewer}`)).categories.find(c => c.label === 'ナ')
-  assert.deepEqual(await category(), { label: 'ナ', total: 7, pending: 7, seen: 0, checked: 0, flagged: 0, hard: 0, skipped: 0 }, 'counts include corpus glyphs')
+  assert.deepEqual(await category(), { label: 'ナ', grapheme: 'U+30CA', total: 7, pending: 7, seen: 0, checked: 0, flagged: 0, hard: 0, skipped: 0 }, 'counts include corpus glyphs')
   assert.equal((await call('/atlas?purpose=review&limit=1&production=all')).categories.find(c => c.label === 'ナ').pending, 8)
   const na = Object.fromEntries((await roundOf('&seed=0')).items.map(i => [i.id, i]))
   const cropRound = { id: crypto.randomUUID(), client_id: 'alice', label: 'ナ',
@@ -363,7 +363,7 @@ try {
   assert.deepEqual(aliceIds.slice(2), ['na-3', 'na-1'], 'flagged, seen and skipped glyphs leave the next round')
   assert.equal((await ids('&seed=0&reviewer=bob'))[0], 'na-5', 'another reviewer is dealt a skipped corpus glyph first')
   // Counts cover local crops and untouched glyphs; named corpus glyphs are no longer counted anywhere.
-  assert.deepEqual(await category('&reviewer=alice'), { label: 'ナ', total: 4, pending: 4, seen: 0, checked: 0, flagged: 0, hard: 0, skipped: 0 })
+  assert.deepEqual(await category('&reviewer=alice'), { label: 'ナ', grapheme: 'U+30CA', total: 4, pending: 4, seen: 0, checked: 0, flagged: 0, hard: 0, skipped: 0 })
   assert.deepEqual((await db.prepare("SELECT id FROM corpus_units WHERE character='ナ' AND named=1 ORDER BY id").all()).results.map(r => r.id),
     ['na-2', 'na-4', 'na-5'], 'naming a glyph marks its published row')
   assert.deepEqual(await db.prepare("SELECT n,named FROM corpus_characters WHERE character='ナ' AND production='printed/woodblock'").first(), { n: 5, named: 3 })
@@ -485,6 +485,21 @@ try {
   assert.deepEqual((await call('/atlas?document=hl:A&limit=96')).items.map(i => i.id).sort(), ['book-a1', 'book-a2'], 'one book lists its own crops')
   assert.deepEqual((await call('/atlas?reviewer=shelf')).documents.filter(b => b.id.startsWith('hl:')).map(({ id, title, total }) => ({ id, title, total })),
     [{ id: 'hl:A', title: '甲', total: 2 }, { id: 'hl:B', title: '乙', total: 1 }], 'the listing counts crops per book, with the title they were published under')
+  // The listing files each label under its grapheme, and `grapheme` lists the whole family: 仮 and 假
+  // under U+4EEE, and a label with no family under its own code points.
+  for (const [id, label, family] of [['kari-1', '仮', 'U+4EEE'], ['kari-2', '假', 'U+4EEE'], ['mark', '※', null]]) {
+    const d = { id, label, reading: label, state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten', repair: { quiz: true } }
+    await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
+      id, 'local', label, label, family, null, 'handwritten', 'kanji', 'pending', 0, 1, 1, 1,
+      JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
+  }
+  const filed = Object.fromEntries((await call('/atlas?reviewer=shelf')).categories.filter(c => ['仮', '假', '※'].includes(c.label)).map(c => [c.label, c.grapheme]))
+  assert.deepEqual(filed, { '仮': 'U+4EEE', '假': 'U+4EEE', '※': 'U+203B' }, 'each label names its grapheme')
+  const kari = (await call('/atlas?grapheme=U%2B4EEE&limit=96')).items
+  assert.ok(['kari-1', 'kari-2'].every(id => kari.some(i => i.id === id)) && kari.every(i => ['仮', '假'].includes(i.label)),
+    `a grapheme lists its whole family and nothing else: ${kari.map(i => i.id + ' ' + i.label)}`)
+  assert.deepEqual((await call('/atlas?grapheme=u%2B203b')).items.map(i => i.id), ['mark'], 'a label with no family is its own grapheme')
+  assert.equal((await mf.dispatchFetch(base + '/atlas?grapheme=%E4%BB%AE')).status, 422, 'a grapheme is named by code points')
   // The migration names the label categories the Worker computes, code point by code point.
   const hangulMigration = await readFile(new URL('../migrations/0008_hangul_category.sql', import.meta.url), 'utf8')
   const gugyeolMigration = await readFile(new URL('../migrations/0012_gugyeol_category.sql', import.meta.url), 'utf8')

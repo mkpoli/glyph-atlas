@@ -133,6 +133,15 @@ def reviewed_targets(events: Iterable[Any]) -> set[str]:
     return {target for event_id, target in reviews.items() if event_id not in undone}
 
 
+def grapheme_of(text: str) -> str | None:
+    """The grapheme a label is filed under: its family's representative code point, or, for a label
+    with no family (a symbol, a sequence), its own code points. Publication writes the same value."""
+    if not text:
+        return None
+    own = " ".join(refs.to_code_points(text))
+    return (refs.grapheme(own) if len(text) == 1 else None) or own
+
+
 def single_character(text: str) -> bool:
     bases = [c for c in text if not unicodedata.combining(c)
              and not 0xFE00 <= ord(c) <= 0xFE0F and not 0xE0100 <= ord(c) <= 0xE01EF]
@@ -805,6 +814,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         production: Annotated[str | None, Query(description="`all`, a production node, or `not:` and a node")] = None,
         reported: Literal["show", "hide"] = "show",
         document: Annotated[str | None, Query(max_length=256)] = None,
+        grapheme: Annotated[str | None, Query(max_length=256, description="A grapheme's code point(s), `U+4EEE`")] = None,
         seed: int = 0,
         limit: Annotated[int, Query(ge=1, le=96)] = 60,
         offset: Annotated[int, Query(ge=0)] = 0,
@@ -832,6 +842,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                       file_stamp(production_metadata.OVERRIDES))
         units, all_states, kinds, books, titles, skips, reviewed = catalogue_snapshot(generation)
         document = document or None
+        grapheme = " ".join(grapheme.upper().split()) if grapheme else None
         records = [(u, rev) for u, rev in units
                    if production_metadata.in_scope(kinds[u.id], scope) and considered(u)]
         states = {u.id: all_states[u.id] for u, _ in records}
@@ -854,7 +865,9 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 counts[states[unit.id]] += 1
         counts = Counter(states[u.id] for u, _ in records)
         searched = matches(records, q) if q else records
+        families = {name: grapheme_of(name) for name in categories}
         selected = [(u, rev) for u, rev in searched if (reading is None or shown(u) == reading)
+                    and (grapheme is None or families[shown(u)] == grapheme)
                     and (document is None or books[u.id] == document)
                     and (group == "all" or character_group(u) == group)
                     and (state == "all" or states[u.id] == state
@@ -883,7 +896,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 # counts the collection or only the queue.
                 "purpose": purpose, "production": scope, "review_epoch": store.review_epoch(),
                 "query": q or None, "matched": len(searched) if q else None,
-                "categories": [{"label": name, **{key: c[key] for key in
+                "categories": [{"label": name, "grapheme": families[name], **{key: c[key] for key in
                                   ("total", "pending", "seen", "checked", "flagged", "hard", "skipped")}}
                                for name, c in sorted(categories.items(), key=lambda x: (-x[1]["total"], x[0]))],
                 "documents": [{"id": key, "title": titles.get(key), **{name: c[name] for name in
