@@ -438,7 +438,7 @@ def review_serve(
         help="checkout of the publishing project, for the source correspondence"
     )] = None,
 ) -> None:
-    """Serve the review interface and its API over one dataset directory."""
+    """Serve the review API over one dataset directory; `apps/review` renders the interface in front of it."""
     from .review import server
 
     server.serve(directory, port=port, host=host, source=source)

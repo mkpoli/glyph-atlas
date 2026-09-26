@@ -5,6 +5,8 @@ __pycache__/
 .ruff_cache/
 node_modules/
 dist/
+.svelte-kit/
+.wrangler/
 build/
 # fetched upstream material and derived crops live outside git
 cache/
