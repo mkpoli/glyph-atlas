@@ -242,7 +242,14 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   if (review) for (const row of published.results) if (row.n > 0) { corpus.set(row.label, row.n); add(row.label, 'pending', row.n) }
   const reading = q.get('reading');
   if (reading) { where.push('character=?'); values.push(reading) }
-  if (q.get('q')) { where.push('(character=? OR reading=?)'); values.push(literal(q.get('q')!), literal(q.get('q')!)) }
+  // A search finds a crop by its character or its reading. Each is one range of its own index; an OR
+  // across the two columns would read every local crop instead. The origin test is kept off its index
+  // (`+`), so the query starts from the ids the search found.
+  if (q.get('q')) {
+    where[0] = "+origin='local'";
+    where.push("id IN (SELECT id FROM units WHERE origin='local' AND character=? UNION SELECT id FROM units WHERE origin='local' AND reading=?)");
+    values.push(literal(q.get('q')!), literal(q.get('q')!));
+  }
   if (q.get('group') && q.get('group') !== 'all') { where.push('category=?'); values.push(q.get('group')!) }
   // `attention` is the Flagged view: every crop waiting for a person, flagged or hard to read.
   if (q.get('state') === 'attention') where.push(`${state} IN ('flagged','hard')`);
