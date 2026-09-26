@@ -270,3 +270,22 @@ def test_the_ainu_records_the_site_publishes_as_its_own_crops_are_not_exported_a
     monkeypatch.setattr(export.sources, "discover",
                         lambda root: [SimpleNamespace(name=name) for name in ("ainu-records", "codh-full")])
     assert [c.name for c in export.unit_corpora()] == ["codh-full"]
+
+
+def test_an_export_or_seal_drops_the_glyphs_the_site_publishes_as_its_own_crops(scripts, tmp_path, monkeypatch):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    export = importlib.import_module("export_cloudflare_corpus")
+    units = tmp_path / "units.parquet"
+    pq.write_table(pa.table({"id": ["hk:1", "hk:2"]}), units)
+    monkeypatch.setattr(export.sources, "discover", lambda root: [
+        SimpleNamespace(name="ainu-records", table=lambda name: units),
+        SimpleNamespace(name="codh-full", table=lambda name: None)])
+    ids = export.locally_published_ids()
+    assert ids == {"hk:1", "hk:2"}
+    db = sqlite3.connect(":memory:")
+    db.execute("CREATE TABLE corpus_units (id TEXT PRIMARY KEY)")
+    db.executemany("INSERT INTO corpus_units VALUES (?)", [("hk:1",), ("hk:2",), ("codh:1",)])
+    assert export.drop_locally_published(db, ids) == 2
+    assert [i for i, in db.execute("SELECT id FROM corpus_units")] == ["codh:1"]

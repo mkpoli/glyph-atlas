@@ -68,6 +68,10 @@ def seal(catalogue: Path, corpus: Path, output: Path):
     # Named columns: an export made before corpus rows carried their material is refused here.
     columns = "id,character,family,visual_group,shuffle,object,offset,size,production"
     db.execute(f"INSERT INTO corpus_units({columns}) SELECT {columns} FROM corpus_source.corpus_units")
+    # An export made while a corpus was still published as corpus glyphs holds rows the site now
+    # publishes as its own crops, under the same ids; they are not sealed again.
+    from export_cloudflare_corpus import drop_locally_published, locally_published_ids
+    drop_locally_published(db, locally_published_ids())
     baselines = reviewed_baselines(db, corpus)
     # Earlier preparation may contain media for subsequently excluded sources.
     # Only references from the licence-filtered publication may enter its media index.

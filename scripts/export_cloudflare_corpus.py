@@ -82,6 +82,25 @@ def holder_image(joined, box, enabled):
 PUBLISHED_LOCALLY = frozenset({"ainu-records"})
 
 
+def locally_published_ids(root="work") -> set[str]:
+    """The unit ids of the corpora the site publishes as its own crops."""
+    ids = set()
+    for corpus in sources.discover(root):
+        path = corpus.table("units") if corpus.name in PUBLISHED_LOCALLY else None
+        if path is not None:
+            ids.update(ds.dataset(path, format="parquet").to_table(columns=["id"])["id"].to_pylist())
+    return ids
+
+
+def drop_locally_published(db, ids) -> int:
+    """Remove from an export's `corpus_units` the glyphs the site publishes as its own crops; rows an
+    earlier export wrote stay otherwise, so a resumed export or a seal of it would bring them back."""
+    db.execute("CREATE TEMP TABLE IF NOT EXISTS published_locally (id TEXT PRIMARY KEY)")
+    db.execute("DELETE FROM published_locally")
+    db.executemany("INSERT OR IGNORE INTO published_locally VALUES (?)", [(i,) for i in ids])
+    return db.execute("DELETE FROM corpus_units WHERE id IN (SELECT id FROM published_locally)").rowcount
+
+
 def unit_corpora(names=None):
     """Every unit corpus under `work` the site does not publish locally, or only those in `names`,
     which must all exist."""
@@ -117,6 +136,8 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
     for name, in db.execute("SELECT DISTINCT object FROM corpus_units"):
         size = (output / name).stat().st_size
         db.execute("DELETE FROM corpus_units WHERE object=? AND offset+size>?", (name, size))
+    db.commit()
+    drop_locally_published(db, locally_published_ids())
     db.commit()
     existing = held(db, skip)
     counts = Counter(json.loads((output / "progress.json").read_text()) if (output / "progress.json").exists() else {})
