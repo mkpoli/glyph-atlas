@@ -1,6 +1,6 @@
 // Catalogue snapshots are published offline. All online review mutations use D1 transactions.
 import { ROUND_MAX } from './rounds';
-import { formsRoute, withForm, type FormTools } from './forms';
+import { formsRoute, withForm, formed, FORM_COLUMNS, type FormTools, type UnitForm } from './forms';
 type Json = Record<string, any>;
 type UnitRow = { id: string; origin: string; character: string | null; state: string; revision: number;
   quiz: number; category?: string; data: string; snapshot: string; context: string; visual: string;
@@ -358,6 +358,24 @@ async function corpusRound(env: Env, character: string, production: string, seed
     for (const item of items) item.suspect = suspectOf(found.get(item.id), item)
   }
   return { items, read: read.length, exhausted: rows.length < wanted };
+}
+// The homepage gallery is dealt from `corpus_gallery`: records copied out of the R2 packs for the corpus
+// glyphs whose `shuffle` falls below SAMPLE_RANGE, so a page is one query where reading its records
+// from the packs took one R2 request each. Packs are content-addressed, so a copy is current exactly
+// while `corpus_units` still names the object and offset it came from; `scripts/fill_corpus_gallery.py`
+// copies the rest after a publication. A glyph a review has named shows its `units` row.
+const SAMPLE_RANGE = 4194304;
+export const gallerySampleQuery = (side: '>=' | '<') => `SELECT s.data,u.data AS current,${FORM_COLUMNS.split(',').map(c => `f.${c}`).join(',')}
+  FROM corpus_gallery s JOIN corpus_units c ON c.id=s.id AND c.object=s.object AND c.offset=s.offset
+  LEFT JOIN units u ON u.id=s.id LEFT JOIN form_units f ON f.id=s.id
+  WHERE s.shuffle${side}? ORDER BY s.shuffle LIMIT ?`;
+async function gallery(env: Env, q: URLSearchParams) {
+  const limit = integer(q, 'limit', 24, 96), start = integer(q, 'seed', 0, 2147483647) % SAMPLE_RANGE;
+  type Row = UnitForm & { data: string; current: string | null };
+  const rows = (await env.DB.prepare(gallerySampleQuery('>=')).bind(start, limit).all<Row>()).results;
+  if (rows.length < limit) rows.push(...(await env.DB.prepare(gallerySampleQuery('<')).bind(start, limit - rows.length).all<Row>()).results);
+  const items = rows.map(r => r.current ? parse(r.current) : formed(parse(r.data), r.id ? r : null, formTools));
+  return { status: 'ok', available: items.length, items };
 }
 function chunks<T>(list: T[], size: number): T[][] {
   const out: T[][] = [];
@@ -788,16 +806,7 @@ export default {
       if(path==='/layers/occurrences')return json(await occurrences(env,q.get('code_point')||'',q));
       if(path==='/layers/candidates'){const found=await occurrences(env,q.get('code_point')||'',q,'corpus');
         return json({...found,glyphs:found.total,glyph_items:found.items,retry:false})}
-      if(path==='/layers/gallery'){
-        const limit=integer(q,'limit',24,96),seed=integer(q,'seed',0,2147483647)%268435456;
-        const rows=await env.DB.prepare('SELECT * FROM corpus_units WHERE shuffle>=? ORDER BY shuffle LIMIT ?').bind(seed,limit).all<CorpusRow>();
-        if(rows.results.length<limit){const more=await env.DB.prepare('SELECT * FROM corpus_units WHERE shuffle<? ORDER BY shuffle LIMIT ?').bind(seed,limit-rows.results.length).all<CorpusRow>();rows.results.push(...more.results)}
-        const overlays=rows.results.length?await env.DB.prepare(`SELECT id,data FROM units WHERE id IN (${rows.results.map(()=>'?').join(',')})`)
-          .bind(...rows.results.map(r=>r.id)).all<{id:string;data:string}>():{results:[]};
-        const current=new Map(overlays.results.map(r=>[r.id,r.data]));
-        const items=[];for(let i=0;i<rows.results.length;i+=8)items.push(...await Promise.all(rows.results.slice(i,i+8).map(async r=>
-          current.has(r.id)?parse(current.get(r.id)!):await corpusData(env,r))));
-        return json({status:'ok',available:items.length,items})}
+      if(path==='/layers/gallery')return json(await gallery(env,q));
       if(path==='/layers/summary')return json(await meta(env,'corpus_index'));
       if(path==='/layers/graphemes'||path==='/layers/ligatures'){
         const selector=path.endsWith('ligatures')?"json_extract(data,'$.ligature') IS NOT NULL":"json_array_length(json_extract(data,'$.grapheme.members'))>1";

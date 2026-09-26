@@ -69,6 +69,12 @@ try {
   const bucket = await mf.getR2Bucket('MEDIA')
   await bucket.put('fixture', raw)
   await db.prepare('INSERT INTO corpus_units VALUES(?,?,?,?,?,?,?,?,?,?)').bind(corpus.id, null, 'U+4EEE', 'group-one', 1, 'fixture', 0, new TextEncoder().encode(raw).length, 'unknown', 0).run()
+  // The gallery deals copies of the published records; one copied from a pack a later publication
+  // replaced no longer matches its row, and is not dealt.
+  const stale = { ...corpus, id: 'codh:stale', label: '古' }
+  await db.batch([db.prepare('INSERT INTO corpus_gallery VALUES(?,?,?,?,?)').bind(corpus.id, 1, 'fixture', 0, raw),
+    db.prepare('INSERT INTO corpus_units VALUES(?,?,?,?,?,?,?,?,?,?)').bind(stale.id, null, 'U+53E4', null, 2, 'newer-pack', 0, 10, 'unknown', 0),
+    db.prepare('INSERT INTO corpus_gallery VALUES(?,?,?,?,?)').bind(stale.id, 2, 'older-pack', 0, JSON.stringify(stale))])
   // Miniflare hands the Worker its own loopback address, so the page origin a browser would send is
   // that address; a fixed `http://localhost` fails the Worker's same-origin check on every POST.
   const base = new URL(await mf.ready).origin
@@ -106,7 +112,9 @@ try {
   assert.equal((await call(unassigned)).glyphs, 0)
   assert.equal((await call('/layers/candidates?code_point=U%2B5047')).glyphs, 1, 'corrected occurrence enters new search')
   assert.equal((await call('/layers/candidates?code_point=U%2B4EEE')).glyphs, 0)
-  assert.equal((await call('/layers/gallery')).items[0].label, '假', 'gallery uses current reviews')
+  const galleried = (await call('/layers/gallery')).items
+  assert.equal(galleried[0].label, '假', 'gallery uses current reviews')
+  assert.ok(!galleried.some(item => item.id === stale.id), 'a copy of a replaced record is not dealt')
   const exported = await call('/atlas/reviews.json')
   assert.equal(exported.reviews.filter(r => r.current).length, 1)
   assert.equal(exported.reviews.find(r => r.origin === 'corpus').source_update.proposed_character, '假')
@@ -530,6 +538,7 @@ try {
   const plain = JSON.stringify({ ...corpus, id: 'codh:plain' })
   await bucket.put('plain', plain)
   await db.prepare('INSERT INTO corpus_units VALUES(?,?,?,?,?,?,?,?,?,?)').bind('codh:plain', '假', 'U+4EEE', null, 2, 'plain', 0, new TextEncoder().encode(plain).length, 'unknown', 0).run()
+  await db.prepare('INSERT INTO corpus_gallery VALUES(?,?,?,?,?)').bind('codh:plain', 2, 'plain', 0, plain).run()
   await db.prepare("INSERT INTO corpus_characters VALUES('假','unknown',1,0) ON CONFLICT DO UPDATE SET n=n+1").run()
   // Quick review's per-character counts agree with a recount of the rows after every decision.
   const counted = async () => {
@@ -551,6 +560,8 @@ try {
   await call('/atlas/forms/decisions', { kind: 'glyph', units: ['codh:plain'], form: '假', client_id: 'integration' })
   const record = await call('/atlas/corpus/character?id=codh%3Aplain')
   assert.deepEqual([record.written_character, record.identity_basis], ['假', 'form_glyph'], 'a glyph decision overrides its cluster')
+  const shown = (await call('/layers/gallery')).items.find(item => item.id === 'codh:plain')
+  assert.deepEqual([shown.written_character, shown.identity_basis, shown.form_cluster], ['假', 'form_glyph', { id: 'U+4EEE:c1' }], 'the gallery shows the form decision')
   const members = await call('/atlas/forms/clusters/U%2B4EEE%3Ac1')
   assert.deepEqual(members.items.map(m => [m.id, m.form, m.basis]), [['codh:plain', '假', 'form_glyph'], ['codh:fixture', '仮', 'form_cluster']])
   await call('/atlas/forms/decisions', { kind: 'inherit', units: ['codh:plain'], client_id: 'integration' })
