@@ -24,7 +24,7 @@
 </script>
 
 {#if id}
-  <aside class="glyph-context" class:pinned class:left={glyphContext.side === 'left'} aria-label={t('forms.context.label')}>
+  <aside class="glyph-context" class:pinned class:left={glyphContext.side === 'left'} class:top={glyphContext.side === 'top'} aria-label={t('forms.context.label')}>
     <header>
       {#if data}<span class="context-source"><b lang="ja">{data.source_label}</b> {data.source?.title ?? ''}</span>{:else}<span class="shimmer line"></span>{/if}
       {#if pinned}<button class="icon-button" aria-label={t('forms.context.close')} onclick={() => glyphContext.pinned = null}>×</button>{/if}
@@ -54,5 +54,5 @@
   .context-figure :global(.crop-viewport){height:260px}
   .context-missing{margin:auto;font-size:12px;color:var(--muted)}
   .context-id{font-size:9px;color:var(--muted);overflow-wrap:anywhere}
-  @media(max-width:700px){.glyph-context,.glyph-context.left{left:16px;right:16px;width:auto}.context-figure,.context-figure :global(.crop-viewport){height:200px}}
+  @media(max-width:700px){.glyph-context,.glyph-context.left{left:16px;right:16px;width:auto}.glyph-context.top{top:16px;bottom:auto}.context-figure,.context-figure :global(.crop-viewport){height:200px}}
 </style>

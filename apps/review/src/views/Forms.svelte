@@ -6,7 +6,7 @@
   import FormReview from '../components/FormReview.svelte'
   import GlyphContext from '../components/GlyphContext.svelte'
   import { settle } from '../lib/settle.js'
-  import { showsContext, clearContext } from '../lib/glyphContext.svelte.js'
+  import { glyphContext, showsContext, clearContext } from '../lib/glyphContext.svelte.js'
   import { families as loadFamilies, family as loadFamily, members as loadMembers, decide, split as loadSplit } from '../lib/forms.js'
   import { number, reviewer, stored, remember } from '../lib/client.js'
   import { t, around, localize } from '../lib/i18n.svelte.js'
@@ -202,12 +202,13 @@
     await refreshList()
   }
   const clusterIssue = issue => issue === 'mixed' ? t('forms.mixed') : issue === 'crop' ? t('forms.cluster.crop') : t('forms.cluster.character', { char: current.char })
-  function leaveReview(index) { reviewing = false; active = Math.min(index, current.items.length - 1); scrollActive() }
+  function leaveReview(index) { clearContext(); reviewing = false; active = Math.min(index, current.items.length - 1); scrollActive() }
   function keydown(event) {
     if (reviewing) return
     if (!current || event.target.closest?.('input, textarea') || event.metaKey || event.ctrlKey || event.altKey) return
     const keys = '1234567890'
-    if (keys.includes(event.key) && current.forms[keys.indexOf(event.key)]) { event.preventDefault(); apply(current.forms[keys.indexOf(event.key)].char) }
+    if (event.key === 'Escape' && glyphContext.pinned) { event.preventDefault(); glyphContext.pinned = null }
+    else if (keys.includes(event.key) && current.forms[keys.indexOf(event.key)]) { event.preventDefault(); apply(current.forms[keys.indexOf(event.key)].char) }
     else if (!open && (event.key === 'j' || event.key === 'ArrowDown')) { event.preventDefault(); active = Math.min(active + 1, current.items.length - 1); scrollActive() }
     else if (!open && (event.key === 'k' || event.key === 'ArrowUp')) { event.preventDefault(); active = Math.max(active - 1, 0); scrollActive() }
     else if (event.key === 'Enter' && !open) { event.preventDefault(); show(active) }

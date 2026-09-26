@@ -1,15 +1,24 @@
 // The glyph whose place on its page is on show: the one under the pointer or keyboard focus, else the
-// last one clicked. `side` keeps the panel on the half of the window away from that glyph.
+// last one clicked. `side` keeps the panel on the half of the window away from the glyph that placed
+// it: left or right, or top or bottom on a narrow screen. A pinned panel stays where it was put.
 export const glyphContext = $state({ hovered: null, pinned: null, side: 'right' })
 
 let showing = 0, hiding = 0
-const sideOf = node => { const box = node.getBoundingClientRect(); return box.left + box.width / 2 > innerWidth / 2 ? 'left' : 'right' }
+function sideOf(node) {
+  const box = node.getBoundingClientRect()
+  return innerWidth <= 700 ? (box.top + box.height / 2 > innerHeight / 2 ? 'top' : 'bottom')
+    : box.left + box.width / 2 > innerWidth / 2 ? 'left' : 'right'
+}
 
 /** Shows a glyph's context while the pointer rests on `node`, and with `pin` keeps it after a click. */
 export function showsContext(node, { id, pin = true }) {
   function show() {
     clearTimeout(showing); clearTimeout(hiding)
-    const reveal = () => { glyphContext.hovered = id; glyphContext.side = sideOf(node) }
+    const reveal = () => {
+      if (!node.isConnected) return
+      glyphContext.hovered = id
+      if (!glyphContext.pinned) glyphContext.side = sideOf(node)
+    }
     // Once a context is on show, moving to the next glyph replaces it at once.
     if (glyphContext.hovered || glyphContext.pinned) reveal()
     else showing = setTimeout(reveal, 200)
