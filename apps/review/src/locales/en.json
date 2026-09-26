@@ -228,7 +228,7 @@
   "forms.reportIssue.crop": "bad crop",
   "forms.reported": "Reported: {reason}",
   "forms.report": "Report",
-  "forms.percentDone": "{percent}% done",
+  "forms.percentDone": "{count}% done",
   "forms.rejectedLabel": "reported",
   "forms.review.start": "Review clusters",
   "forms.review.progress": "{reviewed} of {clusters} clusters done",

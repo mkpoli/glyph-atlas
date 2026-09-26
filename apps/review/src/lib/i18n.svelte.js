@@ -77,11 +77,12 @@ const pluralOf = count => (plurals[base()] ??= new Intl.PluralRules(base())).sel
  * The message for `key` in the current language, English where a translation is missing.
  *
  * `{name}` is replaced by `params.name`. A key with `.one` and `.other` forms is a plural, chosen by
- * `params.count`; the count itself is written in the language's own number format.
+ * `params.count`; the count itself is written in the language's own number format. A language may
+ * give a key a `.zero` form of its own, used when `params.count` is 0.
  */
 export function t(key, params = {}) {
   const messages = byTag[current].messages
-  let text = messages[key] ?? en[key]
+  let text = (params.count === 0 ? messages[`${key}.zero`] : undefined) ?? messages[key] ?? en[key]
   if (text === undefined && 'count' in params) {
     const form = `${key}.${pluralOf(Number(params.count))}`
     text = messages[form] ?? messages[`${key}.other`] ?? en[form] ?? en[`${key}.other`]

@@ -218,7 +218,7 @@
   "forms.reportIssue.crop": "裁切錯誤",
   "forms.reported": "已回報：{reason}",
   "forms.report": "回報",
-  "forms.percentDone": "已完成{percent}%",
+  "forms.percentDone": "已完成{count}%",
   "forms.rejectedLabel": "已回報",
   "forms.review.start": "逐組審閱",
   "forms.review.progress": "{clusters}組中已完成{reviewed}組",

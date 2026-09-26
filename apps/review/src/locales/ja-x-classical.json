@@ -215,7 +215,7 @@
   "forms.reportIssue.crop": "截片ノ誤",
   "forms.reported": "報告濟：{reason}",
   "forms.report": "報告",
-  "forms.percentDone": "{percent}%了",
+  "forms.percentDone": "{count}%了",
   "forms.rejectedLabel": "報告濟",
   "forms.review.start": "群ヲ順ニ檢ス",
   "forms.review.progress": "{clusters}群中{reviewed}群了",
