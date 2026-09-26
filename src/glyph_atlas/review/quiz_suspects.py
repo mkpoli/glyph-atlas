@@ -14,10 +14,12 @@ Two readings are expected rather than suspicious, and are not marks:
 - a kana derived from the label, as 於 read as お or 太 read as た: in cursive the kanji and its kana
   are one shape. Hentaigana carry their 字母 in the character layer; the modern hiragana take theirs
   from `refs.kana_origins`.
+- a reading reviewers found to be a cursive form of the label, as 可 read as 一 (`refs.suspect_forms`):
+  the classifier, trained on printed and book hands, never saw that shape of the label.
 
 Measured on 2026-09-26 against the hosted reviews of the Quick review dataset (149 crops a reviewer
-marked wrong, 2,151 left unflagged or confirmed), the rule marks 121 of the wrong crops and 9 of the
-others. Of the 19,291 crops it marks 4,397, and all but 79 of those the alignment-repair pass had
+marked wrong, 2,151 left unflagged or confirmed), the rule marks 121 of the wrong crops and 6 of the
+others. Of the 19,291 crops it marks 4,357, and all but 72 of those the alignment-repair pass had
 already withheld from rounds. Among the dealable marks about one in five is a plain error on
 inspection (a half character, a blank page edge, 知 filed as 如); reviewers found 5 errors among some
 1,900 dealt crops of the same dataset. The nearest-neighbour distance within a character was tried
@@ -106,6 +108,8 @@ class Labels:
                 self.kana[letter].update(row.readings or ())
         # The modern hiragana each kanji is the cursive form of: 太 gives た, the hiragana itself.
         self.cursive = refs.kana_origins()
+        # Readings reviewers found to be a cursive form of the label (可 read as 一).
+        self.forms = refs.suspect_forms()
 
         self.classes = classes
         self.chars = [refs.to_char(name) if name.startswith("U+") else None for name in classes]
@@ -143,7 +147,8 @@ class Labels:
         from .. import refs
         from .atlas import reading_of
 
-        if frozenset((label, reads)) in self.lookalikes or reads in self.cursive.get(label, ()):
+        if (frozenset((label, reads)) in self.lookalikes or reads in self.cursive.get(label, ())
+                or (label, reads) in self.forms):
             return True
         # A hentaigana of the label, or the hiragana one reads as. A katakana is a part of some
         # kanji, not the label's cursive, so one that only sounds like it (以 read as イ) is not.

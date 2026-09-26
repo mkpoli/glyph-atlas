@@ -137,3 +137,12 @@ def test_the_origins_builder_reads_the_whole_field(monkeypatch):
     assert build.origin("|平仮名字源=無の[[草書体|草書]]|x=1") == "無の草書"
     page = {"revisions": [{"revid": 7, "slots": {"main": {"content": "|平仮名字源=川または州の[[草書体]]"}}}]}
     assert [row[1] for row in build.rows({"つ": page})] == ["川", "州"]
+
+
+def test_a_reading_reviewers_found_to_be_a_cursive_form_is_not_a_suspect(labels, monkeypatch):
+    from glyph_atlas import refs
+
+    assert ("可", "一") in refs.suspect_forms()
+    monkeypatch.setattr(labels, "forms", frozenset({("太", "ア")}))
+    assert labels.judge(np.stack([row(ア=.99, 太=.01)]), ["太"]) == [None]
+    assert labels.judge(np.stack([row(イ=.99, 太=.01)]), ["太"]) == [{"p": 0.01, "reads_as": "イ"}]
