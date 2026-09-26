@@ -119,6 +119,20 @@ await step('the page server forwards API paths and keeps page paths', async () =
   return `${documents.payload.total} documents, ${queue.payload.total} disagreement line(s)`
 })
 
+await step('an address in a language the site does not have falls back to its unprefixed page', async () => {
+  const cases = [['/fr', '/'], ['/fr/history', '/history'], ['/zh-TW/history?mine=1', '/history?mine=1'],
+    ['/fr//example.com/a', '/example.com/a'], ['/JA/history', '/ja/history'], ['/zh-hant', '/zh-Hant']]
+  for (const [from, to] of cases) {
+    const response = await fetch(`${service.base}${from}`, { redirect: 'manual' })
+    assert(response.status === 302 && response.headers.get('location') === to, `${from} answered ${response.status} → ${response.headers.get('location')}`)
+  }
+  const japanese = await fetch(`${service.base}/ja/history`, { redirect: 'manual' })
+  assert(japanese.status === 200, `/ja/history answered ${japanese.status}`)
+  const unknown = await fetch(`${service.base}/nowhere`, { redirect: 'manual' })
+  assert(unknown.status === 404, `/nowhere answered ${unknown.status}`)
+  return cases.map(([from, to]) => `${from} → ${to}`).join(', ')
+})
+
 console.log('\nreading the dataset the way the views do')
 
 await step('page view: the cached page names a served image, the uncached one names its URL', async () => {
