@@ -62,7 +62,7 @@ try {
   console.log('PASS: late replies from a closed character are discarded')
 
   await browser.key('Escape')
-  await browser.evaluate(`window.suggestionMode = 'context-first'; window.delayedSuggestions = []; visit('/review')`)
+  await browser.evaluate(`window.suggestionMode = 'context-first'; window.delayedSuggestions = []; visit('/en/review')`)
   await browser.waitFor("document.querySelector('.quiz-choice:not(:disabled)') !== null")
   await browser.evaluate("document.querySelector('.quiz-choice:not(:disabled)').click()")
   await browser.evaluate("[...document.querySelectorAll('.round-error-tools .issue-card')].find(b => b.innerText.includes('Joined')).click()")

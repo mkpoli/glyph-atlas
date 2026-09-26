@@ -44,7 +44,7 @@ const type = value => browser.evaluate(`(() => { const input = document.querySel
 const settled = () => browser.waitFor(`document.querySelector('.glyph-grid')?.getAttribute('aria-busy') === 'false'`, 45000)
 try {
   await browser.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] })
-  await browser.goto(base + '/', { waitFor: 'document.querySelector(".collection-progress-link")' })
+  await browser.goto(base + '/en', { waitFor: 'document.querySelector(".collection-progress-link")' })
   await browser.waitFor(`document.querySelector('[data-unit="${citedId}"] .tile-production')`)
   assert(await browser.evaluate(`document.querySelector('[data-unit="${citedId}"] .tile-production').textContent === 'Movable type'`), 'cited occurrence lacks Movable type label')
   await click(`[data-unit="${citedId}"]`)

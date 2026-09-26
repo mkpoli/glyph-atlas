@@ -37,7 +37,7 @@ try {
       posts.push(`${m.params.request.url.split('/').slice(-2).join('/')} ${m.params.request.postData ?? ''}`)
     }
   })
-  await browser.goto(service.base + '/', { waitFor: 'document.querySelectorAll(".glyph-tile").length > 0' })
+  await browser.goto(service.base + '/en', { waitFor: 'document.querySelectorAll(".glyph-tile").length > 0' })
   const setQuery = async text => {
     await browser.evaluate(`(() => { const i = document.querySelector('.character-search input'); i.focus();
       i.value = ${JSON.stringify(text)}; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
@@ -120,9 +120,9 @@ try {
   // discovered, so this test cannot quietly pass by finding a record with no difference to test.
   const LAYERED = 'doc-1:p1:l3:u2'
   const openReviewer = async id => {
-    await browser.evaluate(`visit('/')`)
+    await browser.evaluate(`visit('/en')`)
     await browser.waitFor('document.querySelector("dialog[open]") === null', 4000)
-    await browser.evaluate(`visit('/crop/' + encodeURIComponent(${JSON.stringify(id)}))`)
+    await browser.evaluate(`visit('/en/crop/' + encodeURIComponent(${JSON.stringify(id)}))`)
     try {
       await browser.waitFor('document.querySelector("dialog[open] .crop-viewport")?.dataset.ready === "true" && !document.querySelector(".save-character")?.disabled', 6000)
     } catch (error) {
@@ -216,7 +216,7 @@ try {
     // A crop page draws the collection under its dialog and closes to '/', so the path cannot tell
     // the pages apart: a click before the visit lands would be closed by it. The title can.
     const cropTitle = await browser.evaluate('document.title')
-    await browser.evaluate(`visit('/')`)
+    await browser.evaluate(`visit('/en')`)
     await browser.waitFor(`document.title !== ${JSON.stringify(cropTitle)} && document.querySelector('.glyph-grid')?.getAttribute('aria-busy') === 'false'`, 6000)
     await browser.waitFor('document.querySelector("dialog[open]") === null', 4000)
     // The search box still holds the last query; the collection behind it is what is being tested.

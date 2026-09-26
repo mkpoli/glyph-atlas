@@ -67,7 +67,7 @@ const currentId = () => browser.evaluate('document.querySelector(".focus-figure"
 const noneState = () => browser.evaluate('document.querySelector(".no-suggestion").getAttribute("aria-pressed")')
 try {
   await browser.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] })
-  await browser.goto(base + '/review?reading=' + encodeURIComponent(startReading), { waitFor: 'document.querySelectorAll(".quiz-choice").length > 0' })
+  await browser.goto(base + '/en/review?reading=' + encodeURIComponent(startReading), { waitFor: 'document.querySelectorAll(".quiz-choice").length > 0' })
   await browser.waitFor('document.querySelectorAll(".quiz-choice:not(:disabled)").length >= 4')
   await check('questions cover joined characters and bad cuts', async () => {
     const heading = await browser.evaluate('document.querySelector(".quiz-title").innerText')
@@ -326,7 +326,7 @@ try {
   })
   await check('standalone reviewer uses one viewport and keeps manual crop adjustment explicit', async () => {
     const writes = posted.length
-    await browser.evaluate(`visit('/crop/' + encodeURIComponent(${JSON.stringify(selected[0])}))`)
+    await browser.evaluate(`visit('/en/crop/' + encodeURIComponent(${JSON.stringify(selected[0])}))`)
     await browser.waitFor('document.querySelector(".character-dialog .crop-viewport")?.dataset.ready === "true"')
     await browser.waitFor('document.querySelector(".save-character")?.disabled === false')
     assert(!await browser.evaluate('!!document.querySelector(".inspector-crop, .nearby")'), 'standalone reviewer retained duplicate panels')
@@ -348,7 +348,7 @@ try {
   })
   await check('corpus reviewer shares the viewport without treating provenance as page pixels', async () => {
     const before = pagePhotoRequests, writes = posted.length
-    await browser.evaluate(`visit('/corpus/' + encodeURIComponent('codh:200008316:200008316_00030_2:B0001:C0027'))`)
+    await browser.evaluate(`visit('/en/corpus/' + encodeURIComponent('codh:200008316:200008316_00030_2:B0001:C0027'))`)
     await browser.waitFor('document.querySelector(".corpus-dialog .crop-viewport")?.dataset.ready === "true"')
     await browser.waitFor('document.querySelector(".corpus-dialog .save-character")?.disabled === false')
     assert(!await browser.evaluate('!!document.querySelector(".corpus-dialog .inspector-crop, .corpus-dialog .nearby, .corpus-dialog .page-photo")'), 'corpus has duplicate views or wrong page source')

@@ -28,7 +28,7 @@ try {
   async function route(hash, ready) { await browser.evaluate(`visit(${JSON.stringify(hash)})`); await browser.waitFor(ready) }
   const roundReady = 'document.querySelectorAll(".quiz-choice").length > 0 && !document.querySelector(".quiz-submit .primary")?.disabled'
   const inspectorReady = 'document.querySelector("dialog[open] .crop-viewport")?.dataset.ready === "true" && !document.querySelector(".save-character")?.disabled'
-  await browser.goto(service.base + '/', { waitFor: 'document.querySelectorAll(".glyph-tile").length > 0' })
+  await browser.goto(service.base + '/en', { waitFor: 'document.querySelectorAll(".glyph-tile").length > 0' })
   await browser.waitFor('Array.from(document.querySelectorAll(".glyph-grid img")).slice(0,12).every(i => i.complete && i.naturalWidth)')
   assert(!await browser.evaluate('document.querySelector("nav").innerText.includes("Sources")'), 'old source navigation remains')
   const before = await browser.evaluate('document.querySelector(".glyph-grid img").src')
@@ -92,7 +92,7 @@ try {
   assert(events(config.directory).some(e => e.field === 'box'), 'crop adjustment saved')
   console.log('PASS optional crop adjustment')
 
-  await route('/review?reading=あ', roundReady)
+  await route('/en/review?reading=あ', roundReady)
   // A round saves only the problems a reviewer picked; crops left unselected are not confirmed.
   // A crop can be picked only once its image has loaded.
   await browser.waitFor('[...document.querySelectorAll(".quiz-tile img")].every(i => i.complete)', 15000)
@@ -197,7 +197,7 @@ try {
   await browser.setViewport(390, 844)
   await browser.screenshot(join(screenshots, 'error-quiz-mobile.png'))
   assert(await browser.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'quiz mobile overflow')
-  await route('/', 'document.querySelectorAll(".glyph-tile").length > 0')
+  await route('/en', 'document.querySelectorAll(".glyph-tile").length > 0')
   await click('.glyph-tile')
   await browser.waitFor(inspectorReady)
   await click('dialog .issue-card[data-issue="merged"]')
@@ -209,7 +209,7 @@ try {
   await browser.send('Network.enable')
   await browser.send('Network.setBlockedURLs', { urls: ['*/atlas/media/*', '*/atlas/characters/*/image*'] })
   await browser.send('Network.setCacheDisabled', { cacheDisabled: true })
-  await route('/review?reading=い', 'document.querySelectorAll(".quiz-tile.unavailable").length > 0')
+  await route('/en/review?reading=い', 'document.querySelectorAll(".quiz-tile.unavailable").length > 0')
   await browser.waitFor('document.querySelectorAll(".quiz-tile.unavailable").length === document.querySelectorAll(".quiz-tile").length')
   assert(await browser.evaluate('document.querySelector(".quiz-submit .primary").classList.contains("next-round")'), 'unseen crops offer only Next round')
   const beforeUnavailable = events(config.directory).length

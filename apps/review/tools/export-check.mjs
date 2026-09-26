@@ -33,7 +33,7 @@ async function click(selector) {
 }
 try {
   await browser.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] })
-  await browser.goto(base + '/review', { waitFor: `!!document.querySelector('[aria-label="Review options"]')` })
+  await browser.goto(base + '/en/review', { waitFor: `!!document.querySelector('[aria-label="Review options"]')` })
   await click('[aria-label="Review options"]')
   await click('.options-menu button:last-of-type')
   await browser.waitFor('!!document.querySelector(".export-count")')
