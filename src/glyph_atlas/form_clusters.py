@@ -37,6 +37,7 @@ from concurrent.futures import ProcessPoolExecutor
 from functools import cache
 from multiprocessing import get_context
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pyarrow as pa
@@ -201,18 +202,25 @@ class Encoder:
         self.torch = torch
 
     def __call__(self, pixels: np.ndarray) -> np.ndarray:
+        return self.classify(pixels)[0]
+
+    def classify(self, pixels: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """The features, and the class probabilities the classifier's head gives them."""
         from .classify import MEAN, STD
 
         torch = self.torch
         with torch.inference_mode():
             x = torch.from_numpy(pixels).cuda().float().div_(255).sub_(MEAN).div_(STD)
             x = x[:, None].expand(-1, 3, -1, -1)
-            features = self.model.forward_head(self.model.forward_features(x), pre_logits=True).float()
-            return torch.nn.functional.normalize(features, dim=1).cpu().numpy()
+            features = self.model.forward_head(self.model.forward_features(x), pre_logits=True)
+            probabilities = self.model.get_classifier()(features).float().softmax(1)
+            return (torch.nn.functional.normalize(features.float(), dim=1).cpu().numpy(),
+                    probabilities.cpu().numpy())
 
 
-def _embed(jobs: list[tuple[str, list[tuple[str, dict]]]], encoder: Encoder, *, workers: int,
-           batch: int = 512) -> Iterator[tuple[list[str], np.ndarray]]:
+def _embed(jobs: list[tuple[str, list[tuple[str, dict]]]], encoder, *, workers: int,
+           batch: int = 512) -> Iterator[tuple[list[str], Any]]:
+    """Cut the glyphs of every job in worker processes, and run `encoder` over them a batch at a time."""
     pending_ids: list[str] = []
     pending: list[np.ndarray] = []
     with ProcessPoolExecutor(workers, mp_context=get_context("fork")) as pool:
