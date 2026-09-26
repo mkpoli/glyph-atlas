@@ -258,3 +258,26 @@ def test_a_cluster_is_marked_mixed_or_reported_whole(clustering, tmp_path):
     # Clearing the cluster takes the report back.
     forms.record("cluster", cluster="U+306F:one", form=None)
     assert forms.form_for(A) is None
+
+
+def test_a_cluster_lists_its_least_typical_glyphs_past_the_typical_twelve(tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from glyph_atlas.review.forms import router
+
+    directory = Path(os.environ["ATLAS_FORM_CLUSTERS"])
+    directory.mkdir(parents=True)
+    ids = [f"codh:book:page:B0001:C{i:04d}" for i in range(30)]
+    clusters = [{"id": "U+306F:one", "label": "Cluster 1", "count": 30, "coherence": .9, "representatives": ids[:12]}]
+    (directory / "clusters.json").write_text(json.dumps({"revision": "r1", "families": {"U+306F": {
+        "family": "U+306F", "char": "は", "label": "は", "members": [], "count": 30, "clusters": clusters}}}))
+    pq.write_table(pa.table({"id": ids, "family": ["U+306F"] * 30, "cluster": ["U+306F:one"] * 30,
+                             "similarity": [1 - i / 100 for i in range(30)], "rank": list(range(30))}),
+                   directory / "units.parquet")
+    forms.record("glyph", units=[ids[28]], issue="crop")
+    app = FastAPI()
+    app.include_router(router(media=None, corpus_root=tmp_path))
+    unusual = TestClient(app).get("/atlas/forms/families/U+306F").json()["items"][0]["unusual"]
+    # Least typical first, without the reported glyph, and never one of the twelve the card already shows.
+    assert [g["id"] for g in unusual] == [ids[29], *ids[27:16:-1]]
