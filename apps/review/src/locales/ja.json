@@ -215,7 +215,7 @@
   "forms.reportIssue.crop": "切り出し不良",
   "forms.reported": "報告済み：{reason}",
   "forms.report": "報告",
-  "forms.percentDone": "{percent}%完了",
+  "forms.percentDone": "{count}%完了",
   "forms.rejectedLabel": "報告済み",
   "forms.review.start": "クラスタを順に確認",
   "forms.review.progress": "{clusters}クラスタ中{reviewed}件完了",

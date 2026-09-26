@@ -202,7 +202,7 @@
   "forms.reportIssue.crop": "塳割磊",
   "forms.reported": "㐌報：{reason}",
   "forms.report": "報",
-  "forms.percentDone": "冲{percent}%",
+  "forms.percentDone": "冲{count}%",
   "forms.rejectedLabel": "㐌報",
   "forms.review.start": "閱吝𧙷各佔",
   "forms.review.progress": "冲{reviewed}/{clusters}佔",

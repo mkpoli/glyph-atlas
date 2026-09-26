@@ -12,7 +12,7 @@
  *   - a literal key the source calls is missing from en.json (a plural key counts as present when
  *     either the bare key or both `.one` and `.other` exist);
  *   - en.json holds a key that no source file's literal or wildcard use reaches;
- *   - a non-English locale holds a key that is not in en.json;
+ *   - a non-English locale holds a key that is not in en.json, other than a `.zero` form of one;
  *   - a catalogue lacks the `@locale` entry that names it and gives its `base` language.
  * Reports, per non-English locale, how many of en.json's keys it does not yet have — informational,
  * not a failure, since translation happens on its own schedule.
@@ -136,7 +136,7 @@ for (const file of readdirSync(LOCALES_DIR)) {
   const tag = file.replace(/\.json$/, '')
   const messages = catalogue(file)
   const localeKeys = Object.keys(messages)
-  const foreign = localeKeys.filter(key => !enKeySet.has(key))
+  const foreign = localeKeys.filter(key => !enKeySet.has(key) && !(key.endsWith('.zero') && enKeySet.has(key.slice(0, -5))))
   if (foreign.length) {
     failed = true
     console.error(`${tag}.json has keys not in en.json (${foreign.length}):`)

@@ -215,7 +215,7 @@
   "forms.reportIssue.crop": "크롭 不良",
   "forms.reported": "報告됨: {reason}",
   "forms.report": "報告",
-  "forms.percentDone": "{percent}% 完了",
+  "forms.percentDone": "{count}% 完了",
   "forms.rejectedLabel": "報告됨",
   "forms.review.start": "群集 次例로 檢討",
   "forms.review.progress": "群集 {clusters}個 中 {reviewed}個 完了",

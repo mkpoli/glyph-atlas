@@ -201,7 +201,7 @@
   "forms.reportIssue.crop": "vùng cắt lỗi",
   "forms.reported": "Đã báo: {reason}",
   "forms.report": "Báo",
-  "forms.percentDone": "Xong {percent}%",
+  "forms.percentDone": "Xong {count}%",
   "forms.rejectedLabel": "đã báo",
   "forms.review.start": "Duyệt lần lượt các nhóm",
   "forms.review.progress": "Xong {reviewed}/{clusters} nhóm",
