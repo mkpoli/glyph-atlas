@@ -262,7 +262,7 @@
   "issue.merged.hint": "한 크롭에 두 글자 이상",
   "issue.merged.title": "붙은 글자",
   "issue.picker.label": "문제 유형",
-  "issue.reading.hint": "한 글자지만 다른 글자",
+  "issue.reading.hint": "온전한 글자 하나지만 다른 글자",
   "issue.reading.title": "잘못된 글자",
   "issue.selected": "선택됨",
   "issue.suggested": "제안됨",
