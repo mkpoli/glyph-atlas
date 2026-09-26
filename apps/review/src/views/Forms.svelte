@@ -1,10 +1,12 @@
 <script>
-  import { onMount, untrack } from 'svelte'
+  import { onMount, onDestroy, untrack } from 'svelte'
   import { replaceState } from '$app/navigation'
   import { page } from '$app/state'
   import ReferenceGlyph from '../components/ReferenceGlyph.svelte'
   import FormReview from '../components/FormReview.svelte'
+  import GlyphContext from '../components/GlyphContext.svelte'
   import { settle } from '../lib/settle.js'
+  import { showsContext, clearContext } from '../lib/glyphContext.svelte.js'
   import { families as loadFamilies, family as loadFamily, members as loadMembers, decide, split as loadSplit } from '../lib/forms.js'
   import { number, reviewer, stored, remember } from '../lib/client.js'
   import { t, around, localize } from '../lib/i18n.svelte.js'
@@ -82,7 +84,7 @@
     const request = membersRequest, page = await loadMembers(open, glyphs.length, 240, order)
     if (request === membersRequest) glyphs = [...glyphs, ...page.items]
   }
-  function close() { membersRequest++; open = null; glyphs = []; loadingMembers = false; chosen = new Set(); anchor = null; splitK = 0; groups = [] }
+  function close() { clearContext(); membersRequest++; open = null; glyphs = []; loadingMembers = false; chosen = new Set(); anchor = null; splitK = 0; groups = [] }
   async function divide(k) {
     splitK = k; chosen = new Set(); anchor = null; groups = []; loadingSplit = Boolean(k)
     const cluster = open
@@ -241,6 +243,7 @@
   }
   async function toggleOpenFirst() { openFirst = !openFirst; remember('atlas.forms.unassignedFirst', openFirst); await pick(code, true) }
   async function rearrange(value) { arrange = value; const id = cluster?.id; await pick(code, true); active = Math.max(0, current.items.findIndex(c => c.id === id)) }
+  onDestroy(clearContext)
   function scrollActive() { requestAnimationFrame(() => document.querySelector('.form-cluster.active')?.scrollIntoView({ block: 'nearest' })) }
   onMount(async () => {
     // The server arranged the family with open clusters first; a reader who turned that off gets theirs.
@@ -361,7 +364,7 @@
                   <div class="member-grid">
                     {#each group.items as glyph (glyph.id)}
                       <button class="member" class:selected={chosen.has(glyph.id)} class:own={glyph.basis === 'form_glyph'}
-                              aria-pressed={chosen.has(glyph.id)} onclick={() => toggleId(glyph.id)} title={glyph.id}>
+                              aria-pressed={chosen.has(glyph.id)} onclick={() => toggleId(glyph.id)} use:showsContext={{ id: glyph.id }}>
                         {#if glyph.image}<img class="glyph-image" src={glyph.image} alt="" loading="lazy" use:settle />{/if}
                         {#if glyph.reported}<span class="member-flag" title={t('forms.reported', { reason: glyph.reported })}>{glyph.character ?? '⚠'}</span>
                         {:else if glyph.basis === 'form_glyph'}<span class="member-form">{glyph.form ?? '×'}</span>{/if}
@@ -376,7 +379,7 @@
               {#if loadingMembers}{#each Array(Math.min(cluster.count, 36)) as _, i (i)}<span class="member shimmer" aria-hidden="true"></span>{/each}{/if}
               {#each glyphs as glyph, i (glyph.id)}
                 <button class="member" class:selected={chosen.has(glyph.id)} class:own={glyph.basis === 'form_glyph'}
-                        aria-pressed={chosen.has(glyph.id)} onclick={event => toggle(i, event)} title={glyph.id}>
+                        aria-pressed={chosen.has(glyph.id)} onclick={event => toggle(i, event)} use:showsContext={{ id: glyph.id }}>
                   {#if glyph.image}<img class="glyph-image" src={glyph.image} alt="" loading="lazy" use:settle />{/if}
                   {#if glyph.reported}<span class="member-flag" title={t('forms.reported', { reason: glyph.reported })}>{glyph.character ?? '⚠'}</span>
                   {:else if glyph.basis === 'form_glyph'}<span class="member-form">{glyph.form ?? '×'}</span>{/if}
@@ -407,7 +410,7 @@
                     {:else if c.assigned}<span class="cluster-open">{around('forms.haveForm', 'glyph', { count: c.assigned })[0]}<span class="inline-glyph">{c.majority}</span>{around('forms.haveForm', 'glyph', { count: c.assigned })[1]}</span>
                     {:else}<span class="cluster-open">{t('corpus.unassigned')}</span>{/if}
                   </span>
-                  <span class="cluster-samples">{#each c.representatives as r (r.id)}{#if r.image}<img class="glyph-image" src={r.image} alt="" loading="lazy" use:settle />{/if}{/each}</span>
+                  <span class="cluster-samples">{#each c.representatives as r (r.id)}{#if r.image}<img class="glyph-image" src={r.image} alt="" loading="lazy" use:settle use:showsContext={{ id: r.id, pin: false }} />{/if}{/each}</span>
                 </button>
                 <span class="cluster-foot">
                   {#if c.exceptions}<small>{t('forms.setIndividually', { count: c.exceptions })}</small>{/if}
@@ -422,6 +425,7 @@
     {/if}
   </div>
   {#if notice}<div class="save-toast" role="status">{notice}</div>{/if}
+  <GlyphContext />
 </section>
 
 <style>

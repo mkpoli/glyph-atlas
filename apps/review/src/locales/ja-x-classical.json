@@ -186,6 +186,8 @@
   "forms.clusterOrder.label": "群順",
   "forms.clusters.count.other": "{count}群",
   "forms.clustersLabel": "群",
+  "forms.context.close": "閉ヅ",
+  "forms.context.label": "紙面上ノ位置",
   "forms.families.label": "字族",
   "forms.findFamily.aria": "字族ヲ索ム",
   "forms.findFamily.placeholder": "字族ヲ索ム…",

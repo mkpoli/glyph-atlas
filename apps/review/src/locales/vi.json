@@ -173,6 +173,8 @@
   "forms.clusterOrder.label": "Thứ tự nhóm",
   "forms.clusters.count.other": "{count} nhóm",
   "forms.clustersLabel": "nhóm",
+  "forms.context.close": "Đóng",
+  "forms.context.label": "Vị trí trên trang",
   "forms.families.label": "Tự tộc",
   "forms.findFamily.aria": "Tìm tự tộc",
   "forms.findFamily.placeholder": "Tìm tự tộc…",

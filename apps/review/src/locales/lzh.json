@@ -187,6 +187,8 @@
   "forms.clusterOrder.label": "群序",
   "forms.clusters.count.other": "{count}群",
   "forms.clustersLabel": "群",
+  "forms.context.close": "闔",
+  "forms.context.label": "所在",
   "forms.families.label": "字族",
   "forms.findFamily.aria": "尋字族",
   "forms.findFamily.placeholder": "尋字族…",

@@ -189,6 +189,8 @@
   "forms.clusterOrder.label": "組的順序",
   "forms.clusters.count.other": "{count}組",
   "forms.clustersLabel": "組",
+  "forms.context.close": "關閉",
+  "forms.context.label": "在頁面中的位置",
   "forms.families.label": "字族",
   "forms.findFamily.aria": "查找字族",
   "forms.findFamily.placeholder": "查找字族…",

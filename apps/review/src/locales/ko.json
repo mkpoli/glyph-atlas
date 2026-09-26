@@ -186,6 +186,8 @@
   "forms.clusterOrder.label": "클러스터 순서",
   "forms.clusters.count.other": "클러스터 {count}개",
   "forms.clustersLabel": "클러스터",
+  "forms.context.close": "닫기",
+  "forms.context.label": "페이지 속 위치",
   "forms.families.label": "패밀리",
   "forms.findFamily.aria": "패밀리 찾기",
   "forms.findFamily.placeholder": "패밀리 찾기…",

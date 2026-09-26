@@ -186,6 +186,8 @@
   "forms.clusterOrder.label": "クラスタの順序",
   "forms.clusters.count.other": "クラスタ{count}件",
   "forms.clustersLabel": "クラスタ",
+  "forms.context.close": "閉じる",
+  "forms.context.label": "ページ上の位置",
   "forms.families.label": "系列",
   "forms.findFamily.aria": "系列を検索",
   "forms.findFamily.placeholder": "系列を検索…",

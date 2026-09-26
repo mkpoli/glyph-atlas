@@ -186,6 +186,8 @@
   "forms.clusterOrder.label": "群集 順序",
   "forms.clusters.count.other": "群集 {count}個",
   "forms.clustersLabel": "群集",
+  "forms.context.close": "닫기",
+  "forms.context.label": "페이지 속 位置",
   "forms.families.label": "패밀리",
   "forms.findFamily.aria": "패밀리 檢索",
   "forms.findFamily.placeholder": "패밀리 檢索…",
