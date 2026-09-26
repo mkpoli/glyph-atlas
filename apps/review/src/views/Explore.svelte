@@ -7,6 +7,7 @@
   import ImageStyleToggle from '../components/ImageStyleToggle.svelte'
   import CharacterSearch from '../components/CharacterSearch.svelte'
   import CharacterChips from '../components/CharacterChips.svelte'
+  import WorkFilter from '../components/WorkFilter.svelte'
   import { catalogue, character, request, randomSeed, number, formatSerial, stored, remember } from '../lib/client.js'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery } from '../lib/layers.js'
   import { t, around, localName, locale, localize } from '../lib/i18n.svelte.js'
@@ -15,7 +16,7 @@
   let { flagged = false, inspect, ink = 'original', onink = () => {}, onprogress = () => {}, initial = null } = $props()
   const first = untrack(() => initial)
   let data = $state(first?.result ?? null), items = $state(first?.result.items ?? []), error = $state(''), loading = $state(!first)
-  let reading = $state(''), offset = $state(0), seed = $state(first?.seed ?? randomSeed())
+  let reading = $state(''), work = $state(''), offset = $state(0), seed = $state(first?.seed ?? randomSeed())
   let query = $state('')
   let choosing = $state(false), catalogueRequest = null
   let filter = $state('all'), requestId = 0, closed = false
@@ -42,6 +43,7 @@
     try { collection = await request('/atlas/collection/status') } catch { /* retry on the next interval */ }
   }
   const categories = $derived((data?.categories ?? []).filter(c => !flagged || c.flagged || c.hard))
+  const works = $derived((data?.documents ?? []).filter(w => !flagged || w.flagged || w.hard))
   /** What a record says about its own reliability, in one badge: withheld, machine or confirmed.
    *
    * The words come from the record's `repair` block — `withheld`, `reliable`, `verified`, `reason` —
@@ -134,7 +136,7 @@
         const rows = found.items.map(item => ({ ...item, origin: 'collection' }))
         local = append ? [...local, ...rows] : rows
         data = { ...(data ?? {}), query: picked.char, total: found.counts.total, available: found.counts.exact_total,
-                 categories: data?.categories ?? [], counts: data?.counts ?? {} }
+                 categories: data?.categories ?? [], documents: data?.documents ?? [], counts: data?.counts ?? {} }
         // The chips come from the card, and the card says which widening is in force: refetch it so a
         // chip that was just switched on reads as on.
         layerCharacter(picked.code_point, expand)
@@ -158,7 +160,7 @@
         return
       }
       catalogueRequest = new AbortController()
-      const result = await catalogue({ reading, q: query, group: filter, state: flagged ? 'attention' : 'all',
+      const result = await catalogue({ reading, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
         reported: flagged ? (showReported ? 'show' : 'hide') : null, seed, offset, limit: 60 }, { signal: catalogueRequest.signal, priority: 'low' })
       if (closed || id !== requestId) return
       data = result; items = append ? [...items, ...result.items] : result.items
@@ -171,11 +173,12 @@
     if (flagged) {
       const result = await request('/atlas/corpus/reviews?state=flagged')
       if (closed || id !== requestId) return
-      sample = result.items.filter(row => (!query || row.label.includes(query)) && (!reading || row.label === reading))
+      // A corpus glyph belongs to no work of this collection, so choosing a work leaves them out.
+      sample = work ? [] : result.items.filter(row => (!query || row.label.includes(query)) && (!reading || row.label === reading))
       sampleFault = null
       return
     }
-    const bare = !query && !picked && !flagged && filter === 'all' && !reading
+    const bare = !query && !picked && !flagged && filter === 'all' && !reading && !work
     if (!bare) { sample = []; sampleFault = null; return }
     try {
       const page = await layerGallery(60, seed)
@@ -205,10 +208,10 @@
     catalogueRequest?.abort()
     if (picked || expand !== 'none') { picked = null; expand = 'none'; local = []; corpus = []; corpusTotal = 0 }
     corpusOffset = 0
-    // A direct character search answers its own question, so it drops the reading and type filters
+    // A direct character search answers its own question, so it drops the reading, type and work filters
     // rather than intersecting with them: with シ selected, searching ア used to answer nothing and
     // say there was no such occurrence, when the filter was what excluded it.
-    if (value) { reading = ''; filter = 'all' }
+    if (value) { reading = ''; filter = 'all'; work = '' }
     clearTimeout(searchTimer)
     // Readings such as トモ ask the candidate index first. Scanning the crop catalogue for every
     // intermediate spelling only competes with the list the reader is trying to choose from.
@@ -262,7 +265,7 @@
     // A chip passes a code point and a candidate row passes itself; whichever it is, the card is
     // given the fields the chips read so a half-known character never renders as undefined.
     const bare = { char: '', characters: [], derived: [], jibo: [], expansions: [], candidates: null }
-    query = item.char ?? ''; reading = ''; filter = 'all'; offset = 0; expand = 'none'
+    query = item.char ?? ''; reading = ''; filter = 'all'; work = ''; offset = 0; expand = 'none'
     local = []; corpus = []; corpusTotal = 0; corpusOffset = 0; corpusFault = null
     visual = ''; analysis = null; familyTotal = null; unassignedCount = null
     if (item.code_point) {
@@ -302,9 +305,9 @@
       const replace = item => item.id !== id ? [item] : (flagged && !waiting(updated.state)) || !fitsGallery(updated) ? [] : [updated]
       if (picked) local = local.flatMap(replace)
       else items = items.flatMap(replace)
-      const summary = await catalogue({ reading, q: query, group: filter, state: flagged ? 'attention' : 'all',
+      const summary = await catalogue({ reading, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
         reported: flagged ? (showReported ? 'show' : 'hide') : null, limit: 1 })
-      if (!closed) data = { ...data, counts: summary.counts, categories: summary.categories, total: summary.total, available: summary.available, reported_count: summary.reported_count }
+      if (!closed) data = { ...data, counts: summary.counts, categories: summary.categories, documents: summary.documents, total: summary.total, available: summary.available, reported_count: summary.reported_count }
     } catch (e) { if (!closed) error = e.message }
   }
   function select(value) { reading = value; offset = 0; load() }
@@ -337,6 +340,7 @@
                      token={reading} tokenLabel={t('explore.clearReading', { reading })} ontokenclear={() => select('')}
                      onsubmit={() => { clearTimeout(searchTimer); offset = 0; submitQuery() }} />
     <div class="filter-tabs" aria-label={t('explore.filter.label')}>{#each [['all', () => t('explore.filter.all')], ['kana', () => t('explore.filter.kana')], ['kanji', () => t('explore.filter.kanji')], ['hangul', () => t('explore.filter.hangul')], ['gugyeol', () => t('explore.filter.gugyeol')]] as [value, text]}<button class:active={filter === value} onclick={() => { filter = value; offset = 0; load() }}>{text()}</button>{/each}</div>
+    <WorkFilter {works} value={work} onchange={value => { work = value; offset = 0; load() }} />
     <span class="toolbar-space"></span>
     <ImageStyleToggle {ink} onchange={onink} />
     {#if reading && !flagged}<a class="quiet-link" href={localize('/review') + `?reading=${encodeURIComponent(reading)}`}>{t('explore.reviewReading', { reading })}</a>{/if}
