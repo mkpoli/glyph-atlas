@@ -3,18 +3,61 @@ on:
   push:
     branches: [main]
   pull_request:
+# A newer push to the same branch or pull request makes the older run moot.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
+  # Which jobs a change needs: the Python suite reads the migrations, the Worker's source, the
+  # interface catalogues and the vi-Hani font besides its own tree, and the migrations job reads only
+  # the Worker's migrations and toolchain.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      python: ${{ steps.filter.outputs.python }}
+      migrations: ${{ steps.filter.outputs.migrations }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            python:
+              - 'src/**'
+              - 'tests/**'
+              - 'scripts/**'
+              - 'models/**'
+              - 'data/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'apps/cloudflare/migrations/**'
+              - 'apps/cloudflare/src/**'
+              - 'apps/review/src/locales/**'
+              - 'apps/review/static/fonts/**'
+              - '.github/workflows/ci.yml'
+            migrations:
+              - 'apps/cloudflare/migrations/**'
+              - 'apps/cloudflare/package.json'
+              - 'apps/cloudflare/bun.lock'
+              - 'apps/cloudflare/wrangler.jsonc'
+              - '.github/workflows/ci.yml'
   test:
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
       # The registry scripts need odfpy; numpy, onnx and onnxruntime come with the dev group so the
       # detector's ONNX tests and the synthetic renderings run here rather than skipping.
       - run: uv sync --group dev --extra data
       - run: uv run ruff check src tests scripts models
       - run: uv run pytest -q
   migrations:
+    needs: changes
+    if: needs.changes.outputs.migrations == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
