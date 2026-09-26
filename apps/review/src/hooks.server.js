@@ -52,6 +52,9 @@ function preferred(event) {
   return negotiate(wanted)
 }
 
+/** A first path segment shaped like a language tag: fr, pt-BR, zh-TW, ja-x-classical. */
+const LANGUAGE_TAG = /^[a-z]{2,3}(-[a-z0-9]{1,8})*$/i
+
 const moved = (status, location) => new Response(null, { status, headers: { location, vary: 'Accept-Language, Cookie' } })
 
 export async function handle({ event, resolve }) {
@@ -60,6 +63,10 @@ export async function handle({ event, resolve }) {
   if (UNLOCALIZED.test(pathname)) return resolve(event)
   // English has the unprefixed addresses, so an /en/ address names a page that has another.
   if (pathname === '/en' || pathname.startsWith('/en/')) return moved(301, (pathname.slice(3) || '/') + search)
+  // A language the site does not have falls back to the page's unprefixed address, which then serves
+  // the reader's own language.
+  const [, first, ...rest] = pathname.split('/')
+  if (LANGUAGE_TAG.test(first) && !isLocale(first)) return moved(302, '/' + rest.join('/') + search)
   const { tag, path } = delocalize(pathname)
   // An unprefixed address is English to a crawler, which sends neither a cookie nor a language; a
   // reader who asks for another language is sent to that language's address.
