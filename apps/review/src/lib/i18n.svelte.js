@@ -42,6 +42,12 @@ export const isLocale = tag => Boolean(byTag[tag])
 /** `path` in language `tag`: English at the path itself, every other language under its own prefix. */
 export const localize = (path, tag = current) => tag === 'en' ? path : `/${tag}${path === '/' ? '' : path}`
 
+/**
+ * The languages search engines can name in `hreflang`: a two-letter language with an optional script.
+ * Literary Chinese (`lzh`) and classical Japanese (`ja-x-classical`) have their pages but no such code.
+ */
+export const HREFLANG = LOCALES.filter(locale => /^[a-z]{2}(-[A-Z][a-z]{3})?$/.test(locale.tag))
+
 /** The language an address is in, and the address without its prefix. */
 export function delocalize(pathname) {
   const [, first, ...rest] = pathname.split('/')

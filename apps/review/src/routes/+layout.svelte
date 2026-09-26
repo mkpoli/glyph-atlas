@@ -1,7 +1,7 @@
 <script>
-  import '../../app.css'
-  import '../../layers.css'
-  import '../../script-colors.css'
+  import '../app.css'
+  import '../layers.css'
+  import '../script-colors.css'
   import { onMount, untrack } from 'svelte'
   import { afterNavigate, goto, pushState } from '$app/navigation'
   import { page } from '$app/state'
@@ -13,10 +13,11 @@
   import { createSession, provideSession } from '$lib/session.svelte.js'
   import { t, around, LOCALES, locale, localName, setLocale, useLocale, localize, delocalize } from '$lib/i18n.svelte.js'
   let { data, children } = $props()
-  // Before anything renders, so the server and the browser draw the same words.
-  useLocale(untrack(() => data.locale))
+  // Set from the address before anything renders, so the server and the browser draw the same words.
+  // The layout also draws error pages, which have no route to carry the language.
+  useLocale(untrack(() => delocalize(page.url.pathname).tag))
   // Moving to another language's address changes it for the pages that follow.
-  $effect.pre(() => useLocale(data.locale))
+  $effect.pre(() => useLocale(delocalize(page.url.pathname).tag))
   const inspector = provideInspector(createInspector())
   const session = provideSession(createSession())
   let menuButton, menu = $state(false), exporting = $state(false), savedNotice = $state('')

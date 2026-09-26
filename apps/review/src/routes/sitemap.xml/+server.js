@@ -1,5 +1,5 @@
 import { families, formsAvailable } from '$lib/forms.js'
-import { LOCALES, localize } from '$lib/i18n.svelte.js'
+import { HREFLANG, LOCALES, localize } from '$lib/i18n.svelte.js'
 
 const escape = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;')
 
@@ -12,9 +12,10 @@ export async function GET({ fetch, url }) {
   }
   const address = (path, tag) => escape(url.origin + localize(path, tag))
   const entry = path => {
-    const links = [...LOCALES.map(locale => `<xhtml:link rel="alternate" hreflang="${locale.tag}" href="${address(path, locale.tag)}"/>`),
+    const links = [...HREFLANG.map(locale => `<xhtml:link rel="alternate" hreflang="${locale.tag}" href="${address(path, locale.tag)}"/>`),
       `<xhtml:link rel="alternate" hreflang="x-default" href="${address(path, 'en')}"/>`].join('')
-    return LOCALES.map(locale => `  <url><loc>${address(path, locale.tag)}</loc>${links}</url>`).join('\n')
+    // A language without an hreflang code is listed on its own, outside the set that names each other.
+    return LOCALES.map(locale => `  <url><loc>${address(path, locale.tag)}</loc>${HREFLANG.includes(locale) ? links : ''}</url>`).join('\n')
   }
   const body = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">

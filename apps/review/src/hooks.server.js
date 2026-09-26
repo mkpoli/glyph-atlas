@@ -61,7 +61,8 @@ export async function handle({ event, resolve }) {
   const { tag, path } = delocalize(pathname)
   // An unprefixed address is English to a crawler, which sends neither a cookie nor a language; a
   // reader who asks for another language is sent to that language's address.
-  if (tag === 'en' && event.request.method === 'GET' && !event.isDataRequest) {
+  // A file (favicon.ico and the like) has no language and is not redirected.
+  if (tag === 'en' && event.request.method === 'GET' && !event.isDataRequest && !/\.[a-z0-9]+$/i.test(pathname)) {
     const wanted = preferred(event)
     if (wanted !== 'en') return moved(302, localize(path, wanted) + search)
   }

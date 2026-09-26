@@ -1,6 +1,6 @@
 <script>
   import { page } from '$app/state'
-  import { t, LOCALES, localize, delocalize } from '$lib/i18n.svelte.js'
+  import { t, HREFLANG, localize, delocalize } from '$lib/i18n.svelte.js'
   // `title` is the page's own name; the site's name follows it. A page kept out of search results
   // (a reviewer's working view) passes `index={false}`. `data` is the page's JSON-LD, if any.
   let { title = '', description = t('meta.description'), image = null, index = true, type = 'website', data = null } = $props()
@@ -9,7 +9,7 @@
   const canonical = $derived(page.url.origin + page.url.pathname)
   // The same page in every interface language; English, unprefixed, is the default.
   const path = $derived(delocalize(page.url.pathname).path)
-  const alternates = $derived(LOCALES.map(locale => ({ tag: locale.tag, href: page.url.origin + localize(path, locale.tag) })))
+  const alternates = $derived(HREFLANG.map(locale => ({ tag: locale.tag, href: page.url.origin + localize(path, locale.tag) })))
   const picture = $derived(image ? new URL(image, page.url.origin).href : null)
   // A JSON-LD block is script text: `<` is escaped so no value can close the element.
   const ld = $derived(data ? JSON.stringify({ '@context': 'https://schema.org', ...data }).replaceAll('<', '\\u003c') : null)

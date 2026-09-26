@@ -1,5 +1,6 @@
 import { error, redirect } from '@sveltejs/kit'
 import { families, family } from '$lib/forms.js'
+import { localize } from '$lib/i18n.svelte.js'
 
 // The family list and one family's clusters. The bare /forms address moves to the first family, so
 // each family's page has one address.
@@ -8,7 +9,7 @@ export async function load({ fetch, params, parent }) {
   const list = (await families({ fetch })).items
   if (!params.family) {
     if (!list.length) return { initial: { list, family: null } }
-    redirect(307, '/forms/' + list[0].code_point)
+    redirect(307, localize('/forms/' + list[0].code_point, params.lang ?? 'en'))
   }
   const code = params.family
   try {
