@@ -43,7 +43,7 @@ try {
   const originalReading = units(config.directory)[originalId].reading
   const order = await browser.evaluate('Array.from(document.querySelectorAll(".glyph-grid [data-unit]")).map(i=>i.dataset.unit)')
   const scroll = await browser.evaluate('scrollY')
-  await browser.evaluate('window.sameReviewDialog = document.querySelector("dialog");window.sameCollection = document.querySelector(".glyph-grid")')
+  await browser.evaluate('window.sameCollection = document.querySelector(".glyph-grid")')
   assert(!await browser.evaluate('document.querySelector(".advanced-edit").open'), 'manual typing should be optional')
   await click('dialog .issue-card[data-issue="merged"]')
   await browser.waitFor('document.querySelector("dialog .suggestion-options") !== null')

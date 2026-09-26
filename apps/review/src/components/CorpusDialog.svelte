@@ -96,7 +96,7 @@
   </div>
   <footer class="inspector-savebar">
     {#if imageFailed}<span role="alert">{t('character.image.unavailable')}</span>{/if}
-    <button class="primary save-character" disabled={busy || !data || !loaded || imageFailed || !data.proxyable || ((data.needs_segmentation || data.identity_status === 'unassigned') && !issue)} onclick={() => save()}>{busy ? t('common.saving') : data?.identity_status === 'unassigned' && !issue ? t('corpus.save.chooseCharacterOrIssue') : data?.needs_segmentation && !issue ? t('corpus.save.awaitingSegmentation') : issue ? t('character.save.issue') : t('character.save.looksRight')} <span>{issue ? '→' : '✓'}</span></button>
+    <button class="primary save-character" disabled={busy || !data || !loaded || imageFailed || !data.proxyable || ((data.needs_segmentation || data.identity_status === 'unassigned') && !issue)} onclick={() => save()}>{busy ? t('common.saving') : data?.identity_status === 'unassigned' && !issue ? t('corpus.save.chooseCharacterOrIssue') : data?.needs_segmentation && !issue ? t('corpus.save.awaitingSegmentation') : issue ? t('character.save.issue') : t('character.save.looksRight')} {#if !issue}<span>✓</span>{/if}</button>
     {#if issue && !data?.needs_segmentation && data?.identity_status !== 'unassigned'}<button class="quiet-link looks-right" disabled={busy || !loaded || imageFailed} onclick={() => save(true)}>{t('character.save.itLooksRight')}</button>{/if}
     <button class="skip-character" disabled={busy} onclick={skip} title={skipHint()}>{t('common.skip.arrow')}</button>
   </footer>
