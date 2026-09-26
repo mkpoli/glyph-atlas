@@ -14,8 +14,12 @@ Without --labels the character list committed beside the fonts is reused. Writes
 apps/review/static/fonts/fallback/ (fonts, the character list, the licences) and
 apps/review/src/fallback-fonts.css.
 """
-import argparse, hashlib, re, urllib.request
+import argparse
+import hashlib
+import re
+import urllib.request
 from pathlib import Path
+
 from fontTools import subset
 from fontTools.ttLib import TTFont
 
@@ -28,14 +32,14 @@ LIST = OUT / 'characters.tsv'
 CHUNK = 120   # characters per file
 
 FONTS = [
-    dict(family='LXGW WenKai TC', key='wenkai-tc', release='v1.522',
-         url='https://github.com/lxgw/LxgwWenkaiTC/releases/download/v1.522/LXGWWenKaiTC-Regular.ttf',
-         sha256='b1a0795862c1415bf3f393ea50b2a4ea6275012cf5bad3f94feeb1222f555731',
-         licence='https://raw.githubusercontent.com/lxgw/LxgwWenkaiTC/v1.522/OFL.txt'),
-    dict(family='LXGW WenKai', key='wenkai', release='v1.522',
-         url='https://github.com/lxgw/LxgwWenKai/releases/download/v1.522/LXGWWenKai-Regular.ttf',
-         sha256='39ad71264b588165b469e35e6afb162a378dacd1f95348160240ba9038ac3009',
-         licence='https://raw.githubusercontent.com/lxgw/LxgwWenKai/v1.522/OFL.txt'),
+    {'family': 'LXGW WenKai TC', 'key': 'wenkai-tc', 'release': 'v1.522',
+     'url': 'https://github.com/lxgw/LxgwWenkaiTC/releases/download/v1.522/LXGWWenKaiTC-Regular.ttf',
+     'sha256': 'b1a0795862c1415bf3f393ea50b2a4ea6275012cf5bad3f94feeb1222f555731',
+     'licence': 'https://raw.githubusercontent.com/lxgw/LxgwWenkaiTC/v1.522/OFL.txt'},
+    {'family': 'LXGW WenKai', 'key': 'wenkai', 'release': 'v1.522',
+     'url': 'https://github.com/lxgw/LxgwWenKai/releases/download/v1.522/LXGWWenKai-Regular.ttf',
+     'sha256': '39ad71264b588165b469e35e6afb162a378dacd1f95348160240ba9038ac3009',
+     'licence': 'https://raw.githubusercontent.com/lxgw/LxgwWenKai/v1.522/OFL.txt'},
 ]
 
 
