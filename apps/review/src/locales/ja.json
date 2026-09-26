@@ -258,7 +258,7 @@
   "issue.merged.hint": "1つの切り出しに複数の文字",
   "issue.merged.title": "結合した文字",
   "issue.picker.label": "エラーの種類",
-  "issue.reading.hint": "1字だが、別の字",
+  "issue.reading.hint": "正しく切り出された別の文字",
   "issue.reading.title": "文字違い",
   "issue.selected": "選択中",
   "issue.suggested": "候補",
