@@ -87,8 +87,17 @@ def test_look_alikes_measured_for_another_checkpoint_are_refused(tmp_path):
     checkpoint = tmp_path / "best.pt"
     checkpoint.write_bytes(b"one")
     path = tmp_path / "lookalikes.json"
-    path.write_text(json.dumps({"checkpoint": quiz_suspects._digest(checkpoint), "pairs": [["大", "太"]]}))
+    measured = {"checkpoint": quiz_suspects._digest(checkpoint), "rate": quiz_suspects.LOOKALIKE_RATE,
+                "misreads": quiz_suspects.LOOKALIKE_MISREADS, "pairs": [["大", "太"]]}
+    path.write_text(json.dumps(measured))
     assert quiz_suspects.load_lookalikes(path, checkpoint) == {frozenset(("太", "大"))}
+    path.write_text(json.dumps({**measured, "misreads": 1}))
+    with pytest.raises(RuntimeError, match="thresholds"):
+        quiz_suspects.load_lookalikes(path, checkpoint)
+    path.write_text("{")
+    with pytest.raises(RuntimeError, match="not a look-alikes file"):
+        quiz_suspects.load_lookalikes(path, checkpoint)
+    path.write_text(json.dumps(measured))
     checkpoint.write_bytes(b"two")
     with pytest.raises(RuntimeError, match="another checkpoint"):
         quiz_suspects.load_lookalikes(path, checkpoint)

@@ -10,7 +10,7 @@ were nearly all good crops in a hand or a print the training set lacked.
 Two readings are expected rather than suspicious, and are not marks:
 
 - a look-alike: a pair the classifier itself confuses on at least `LOOKALIKE_RATE` of its held-out
-  test crops of either character, as 太 read as 大 (`lookalikes`);
+  test crops of either character, `LOOKALIKE_MISREADS` times or more, as 太 read as 大 (`lookalikes`);
 - a kana the character layer derives from the label, as 於 read as お: in cursive the kanji and its
   kana are one shape.
 
@@ -45,8 +45,11 @@ METHOD = "classifier-label-probability-v1"
 FILE = "quiz-suspects.json"
 #: Below this much probability on the label's classes, a crop is a suspect.
 FLAG_BELOW = 0.05
-#: Two characters are look-alikes when the classifier reads one as the other this often on its test split.
+#: Two characters are look-alikes when the classifier reads one as the other this often on its test split,
 LOOKALIKE_RATE = 0.02
+#: and misreads them, one as the other in either direction, at least this many times: a class with
+#: few test crops reaches the rate with a single misread.
+LOOKALIKE_MISREADS = 3
 #: Where `lookalikes` keeps the pairs, beside the checkpoint they were measured for.
 LOOKALIKES = Path("models/classifier/artifacts/lookalikes.json")
 #: A suspect names the character the classifier reads it as when that character holds this much.
@@ -134,10 +137,11 @@ class Labels:
 
     def expected(self, label: str, reads: str) -> bool:
         """Whether reading `label` as `reads` is what the classifier does with good crops too."""
+        from .. import refs
         from .atlas import reading_of
 
-        return (frozenset((label, reads)) in self.lookalikes
-                or bool({reads, reading_of(reads)} & self.kana.get(label, set())))
+        readings = {reads, reading_of(reads), *refs.readings(refs.to_code_point(reads))} - {None}
+        return frozenset((label, reads)) in self.lookalikes or bool(readings & self.kana.get(label, set()))
 
     def judge(self, probabilities: np.ndarray, labels: list[str]) -> list[dict | None]:
         """A mark for each crop that is a suspect, `None` for each that is not.
@@ -313,10 +317,11 @@ def compute_corpus(root: Path, target: Path, *, checkpoint: Path, classes: Path,
 def measure_lookalikes(split: Path, target: Path, *, checkpoint: Path, classes: Path) -> dict[str, Any]:
     """Measure which characters the classifier confuses, on a held-out split, into the file `target`.
 
-    `split` is a classifier split table (`crop`, `label`), such as `work/classifier/test.parquet`. A
-    pair is a look-alike when either character is read as the other on at least `LOOKALIKE_RATE` of
-    its crops there. The pairs are only good for the checkpoint they were measured with, which the
-    file names.
+    `split` is a classifier split table (`crop`, `label`), such as `work/classifier/test.parquet`,
+    whose crop paths are relative to the checkout that holds its `work/`. A pair is a look-alike when
+    either character is read as the other on at least `LOOKALIKE_RATE` of its crops there, and the
+    two are misread as each other `LOOKALIKE_MISREADS` times or more. The pairs are only good for the
+    checkpoint, split and thresholds they were measured with, which the file names.
     """
     from concurrent.futures import ThreadPoolExecutor
 
@@ -330,13 +335,14 @@ def measure_lookalikes(split: Path, target: Path, *, checkpoint: Path, classes: 
     names = read_classes(classes)
     index = {name: i for i, name in enumerate(names)}
     rows = pq.read_table(split, columns=["crop", "label"]).to_pylist()
+    root = Path(split).resolve().parents[2]
     if not rows:
         raise RuntimeError(f"{split} holds no crops")
     encoder = Encoder(checkpoint, classes)
     counts = np.zeros((len(names), len(names)), dtype=np.int64)
 
     def load(row: dict) -> np.ndarray:
-        with Image.open(row["crop"]) as picture:
+        with Image.open(root / row["crop"]) as picture:
             return np.asarray(preprocess(picture.convert("L")), dtype=np.uint8)
 
     with ThreadPoolExecutor(8) as pool:
@@ -350,22 +356,30 @@ def measure_lookalikes(split: Path, target: Path, *, checkpoint: Path, classes: 
     totals = counts.sum(1, keepdims=True)
     rates = np.divide(counts, totals, out=np.zeros(counts.shape), where=totals > 0)
     chars = [refs.to_char(name) if name.startswith("U+") else None for name in names]
+    misreads = counts + counts.T
     pairs = sorted({tuple(sorted((chars[a], chars[b])))
                     for a, b in zip(*np.nonzero(rates >= LOOKALIKE_RATE), strict=True)
-                    if a != b and chars[a] and chars[b]})
+                    if a != b and chars[a] and chars[b] and misreads[a, b] >= LOOKALIKE_MISREADS})
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps({"checkpoint": _digest(checkpoint), "split": _digest(split), "rate": LOOKALIKE_RATE,
-                                  "crops": int(counts.sum()), "pairs": [list(pair) for pair in pairs]},
+                                  "misreads": LOOKALIKE_MISREADS, "crops": int(counts.sum()),
+                                  "pairs": [list(pair) for pair in pairs]},
                                  ensure_ascii=False, indent=0))
     return {"crops": int(counts.sum()), "pairs": len(pairs)}
 
 
 def load_lookalikes(path: Path, checkpoint: Path) -> set[frozenset[str]]:
-    """The look-alike pairs measured for `checkpoint`; measured for another one, they are refused."""
+    """The look-alike pairs measured for `checkpoint` under the current thresholds; others are refused."""
     try:
         document = json.loads(Path(path).read_text())
+        pairs = {frozenset(pair) for pair in document["pairs"]}
     except OSError as error:
         raise RuntimeError(f"{path}: no look-alikes; run `atlas review lookalikes` first") from error
+    except (ValueError, KeyError, TypeError) as error:
+        raise RuntimeError(f"{path} is not a look-alikes file; run `atlas review lookalikes` again") from error
     if document.get("checkpoint") != _digest(checkpoint):
-        raise RuntimeError(f"{path} was measured for another checkpoint; run `atlas review lookalikes` again")
-    return {frozenset(pair) for pair in document["pairs"]}
+        raise RuntimeError(f"{path} was measured for another checkpoint than {checkpoint}; pass --lookalikes "
+                           "for that checkpoint, or run `atlas review lookalikes` for it")
+    if document.get("rate") != LOOKALIKE_RATE or document.get("misreads") != LOOKALIKE_MISREADS:
+        raise RuntimeError(f"{path} was measured under other thresholds; run `atlas review lookalikes` again")
+    return pairs
