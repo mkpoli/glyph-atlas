@@ -6,6 +6,12 @@ of that page. A page the index has transcribed gets a page text: the body of its
 without the header and footer sections. A page the index has not created stays in the dataset with no
 text. Each page's proofreading level (0 to 4) is kept in its meta.
 
+A page text on a wiki `wikitext` can read (zh.wikisource) also becomes lines: one line per column of
+the page, its `text` the glyphs printed in that column in reading order, an unreadable glyph written
+〓, and `meta["glyph_roles"]` the role of each glyph (`main`, `warigaki1`, `warigaki2`, `note`,
+`unreadable`, `substituted`). A line has no box: the page text says what is written in each column
+and nothing about where the column is.
+
 The scan's licence tags are read from the Commons file page and kept verbatim; the transcription's
 licence comes from the wiki's own `rightsinfo`. Neither is assumed.
 
@@ -33,8 +39,8 @@ from uuid import uuid4
 
 import httpx
 
-from .. import images, net, rights, tables
-from ..schema import Dating, Document, Page, PageText, Rights
+from .. import images, net, rights, tables, wikitext
+from ..schema import Dating, Document, Line, Page, PageText, Rights
 
 USER_AGENT = "GlyphAtlas/0.1 (+https://github.com/mkpoli/glyph-atlas)"
 PAUSE = 1.0
@@ -557,6 +563,53 @@ def collect_index(
     return Collected(document=document, pages=pages, texts=texts, summary=summary)
 
 
+#: Wikis whose page texts `wikitext` reads into columns.
+LINE_WIKIS = frozenset({"zh"})
+#: How an unreadable glyph is written in a line's text.
+UNREADABLE = "〓"
+
+
+def wiki_of(document_id: str) -> str | None:
+    """The wiki a collected document comes from: `zh` in `ws:zh:scan:…`."""
+    parts = document_id.split(":")
+    return parts[1] if len(parts) > 2 and parts[0] == "ws" else None
+
+
+def lines_of(page_id: str, text_raw: str) -> list[Line]:
+    """The columns of a page text as lines, by the rule of the module docstring."""
+    lines = []
+    for seq, column in enumerate(wikitext.glyphs(text_raw)):
+        text = "".join(glyph.text or UNREADABLE for glyph in column)
+        roles = [glyph.role + (str(glyph.column) if glyph.column else "") for glyph in column]
+        lines.append(Line(id=f"{page_id}:c{seq}", page_id=page_id, seq=seq, box=None, vertical=True,
+                          text_raw=text, text=text,
+                          meta={"source": "wikisource-scans", "glyph_roles": roles}))
+    return lines
+
+
+def lines_for(texts: Iterable[PageText], pages: Iterable[Page]) -> list[Line]:
+    """The lines of every page text whose page belongs to a wiki in `LINE_WIKIS`."""
+    wiki = {page.id: wiki_of(page.document_id) for page in pages}
+    return [line for text in texts if wiki.get(text.page_id) in LINE_WIKIS
+            for line in lines_of(text.page_id, text.text_raw)]
+
+
+def write_lines(directory: Path) -> int:
+    """Write `lines.parquet` for a collected dataset from its page texts, and return the count."""
+    directory = Path(directory)
+    dataset = tables.Dataset(directory)
+    lines = lines_for(dataset.read("page_texts"), dataset.read("pages"))
+    staging = directory / ".lines.parquet"
+    tables.write(staging, lines, Line)
+    os.replace(staging, directory / "lines.parquet")
+    manifest_path = directory / "MANIFEST.json"
+    if manifest_path.exists():
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest.setdefault("tables", {})["lines"] = len(lines)
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    return len(lines)
+
+
 def collect(
     out: Path,
     wiki: str,
@@ -577,13 +630,14 @@ def collect(
     documents = [result.document for result in results]
     pages = [page for result in results for page in result.pages]
     texts = [text for result in results for text in result.texts]
+    lines = lines_for(texts, pages)
     out.mkdir(parents=True, exist_ok=True)
     for table, records, model in (("documents", documents, Document), ("pages", pages, Page),
-                                  ("page_texts", texts, PageText)):
+                                  ("page_texts", texts, PageText), ("lines", lines, Line)):
         staging = out / f".{table}.parquet"
         tables.write(staging, records, model)
         os.replace(staging, out / f"{table}.parquet")
-    counts = {"documents": len(documents), "pages": len(pages), "page_texts": len(texts)}
+    counts = {"documents": len(documents), "pages": len(pages), "page_texts": len(texts), "lines": len(lines)}
     sources = sorted({url for document in documents for url in document.source_refs.values()
                       if url.startswith("http")})
     manifest = {"schema_version": tables.SCHEMA_VERSION, "tables": counts, "command": command,

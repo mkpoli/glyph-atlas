@@ -244,3 +244,24 @@ def test_read_site_without_proofreadpage_is_an_error():
 
     with pytest.raises(scans.WikiError):
         scans.read_site(Bare(), "xx")
+
+
+def test_a_zh_page_text_becomes_one_line_per_column():
+    lines = scans.lines_of("ws:zh:scan:x:1", "十六年{{雙行註文|晉出|公}}\n\n{{?}}城")
+    assert [(line.id, line.seq, line.text, line.box) for line in lines] == [
+        ("ws:zh:scan:x:1:c0", 0, "十六年晉出公", None), ("ws:zh:scan:x:1:c1", 1, "〓城", None)]
+    assert lines[0].meta["glyph_roles"] == ["main"] * 3 + ["warigaki1"] * 2 + ["warigaki2"]
+    assert lines[1].meta["glyph_roles"] == ["unreadable", "main"]
+
+
+def test_only_page_texts_of_a_wiki_the_reader_knows_become_lines(tmp_path):
+    pages = [Page(id=f"ws:{wiki}:scan:k:1", document_id=f"ws:{wiki}:scan:k", seq=1, image="u", width=1, height=1)
+             for wiki in ("zh", "ko")]
+    texts = [PageText(page_id=page.id, source="wikisource", revision="1", text_raw="天地") for page in pages]
+    documents = [Document(id=page.document_id, title="t") for page in pages]
+    for name, records, model in (("documents", documents, Document), ("pages", pages, Page),
+                                 ("page_texts", texts, PageText)):
+        tables.write(tmp_path / f"{name}.parquet", records, model)
+    assert scans.write_lines(tmp_path) == 1
+    [line] = tables.read(tmp_path / "lines.parquet", scans.Line)
+    assert (line.page_id, line.text) == ("ws:zh:scan:k:1", "天地")
