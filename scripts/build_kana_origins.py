@@ -23,7 +23,7 @@ from pathlib import Path
 KANA = "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわゐゑをん"
 API = "https://ja.wikipedia.org/w/api.php"
 OUT = Path(__file__).resolve().parents[1] / "data" / "vocab" / "kana-origins.tsv"
-FIELD = re.compile(r"^\|\s*平仮名字源\s*=\s*(?P<value>[^|]*(?:\[\[[^\]]*\]\][^|]*)*)")
+FIELD = re.compile(r"^\|\s*平仮名字源\s*=\s*(?P<value>.*)$")
 LINK = re.compile(r"\[\[(?:[^|\]]*\|)?([^\]]*)\]\]")
 IDEOGRAPH = re.compile(r"[㐀-䶿一-鿿豈-﫿\U00020000-\U0003134f]")
 
@@ -40,26 +40,41 @@ def fetch() -> dict[str, dict]:
     return {kana: pages[redirects.get(kana, kana)] for kana in KANA}
 
 
+def field_value(text: str) -> str:
+    """A template field's value: up to the next `|` that is not inside a link."""
+    depth = 0
+    for i, char in enumerate(text):
+        if text.startswith("[[", i):
+            depth += 1
+        elif text.startswith("]]", i) and depth:
+            depth -= 1
+        elif char == "|" and not depth:
+            return text[:i]
+    return text
+
+
 def origin(content: str) -> str | None:
     """The 平仮名字源 field's text, links reduced to what they show."""
     for line in content.splitlines():
         found = FIELD.match(line.strip())
         if found:
-            return LINK.sub(r"\1", found["value"]).strip()
+            return LINK.sub(r"\1", field_value(found["value"])).strip()
     return None
 
 
 def rows(pages: dict[str, dict]) -> list[tuple[str, ...]]:
     table = []
     for kana, page in pages.items():
+        if not page.get("revisions"):
+            raise RuntimeError(f"the article {kana} returned no revision")
         revision = page["revisions"][0]
         text = origin(revision["slots"]["main"]["content"])
         # Only a cursive form: the kana is then the kanji's own shape, written quickly.
         if not text or "草" not in text:
             continue
-        kanji = IDEOGRAPH.search(text)
-        if kanji:
-            table.append((kana, kanji[0], f"U+{ord(kanji[0]):04X}", text, str(revision["revid"])))
+        # Every kanji the field names before its cursive: 「川または州の草書体」 gives both.
+        for kanji in dict.fromkeys(IDEOGRAPH.findall(text[:text.index("草")])):
+            table.append((kana, kanji, f"U+{ord(kanji):04X}", text, str(revision["revid"])))
     return table
 
 

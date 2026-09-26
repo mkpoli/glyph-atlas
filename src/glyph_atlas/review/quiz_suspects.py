@@ -143,9 +143,14 @@ class Labels:
         from .. import refs
         from .atlas import reading_of
 
+        if frozenset((label, reads)) in self.lookalikes or reads in self.cursive.get(label, ()):
+            return True
+        # A hentaigana of the label, or the hiragana one reads as. A katakana is a part of some
+        # kanji, not the label's cursive, so one that only sounds like it (以 read as イ) is not.
+        if "KATAKANA" in unicodedata.name(reads[0], ""):
+            return False
         readings = {reads, reading_of(reads), *refs.readings(refs.to_code_point(reads))} - {None}
-        return (frozenset((label, reads)) in self.lookalikes or bool(readings & self.kana.get(label, set()))
-                or reads in self.cursive.get(label, ()))
+        return bool(readings & self.kana.get(label, set()))
 
     def judge(self, probabilities: np.ndarray, labels: list[str]) -> list[dict | None]:
         """A mark for each crop that is a suspect, `None` for each that is not.

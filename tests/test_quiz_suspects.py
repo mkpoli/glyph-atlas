@@ -118,3 +118,22 @@ def test_the_kana_origins_table_covers_every_modern_hiragana():
     covered = {kana for kanas in origins.values() for kana in kanas}
     assert covered == set("あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわゐゑをん")
     assert origins["太"] == {"た"} and origins["曽"] == origins["曾"] == {"そ"}
+
+
+def test_a_katakana_that_only_sounds_like_the_label_s_kana_is_still_a_suspect():
+    # イ is part of 伊; 以 read as イ is not 以 written in cursive.
+    labels = quiz_suspects.Labels(CLASSES)
+    assert labels.expected("以", "い")
+    assert not labels.expected("以", "イ")
+
+
+def test_the_origins_builder_reads_the_whole_field(monkeypatch):
+    import importlib
+    from pathlib import Path
+
+    monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
+    build = importlib.import_module("build_kana_origins")
+    assert build.origin("| 平仮名字源 = 和の[[草書体]]|Unicode平仮名=308F") == "和の草書体"
+    assert build.origin("|平仮名字源=無の[[草書体|草書]]|x=1") == "無の草書"
+    page = {"revisions": [{"revid": 7, "slots": {"main": {"content": "|平仮名字源=川または州の[[草書体]]"}}}]}
+    assert [row[1] for row in build.rows({"つ": page})] == ["川", "州"]
