@@ -6,7 +6,7 @@
   import FormReview from '../components/FormReview.svelte'
   import { families as loadFamilies, family as loadFamily, members as loadMembers, decide, split as loadSplit } from '../lib/forms.js'
   import { number, reviewer, stored, remember } from '../lib/client.js'
-  import { t, around } from '../lib/i18n.svelte.js'
+  import { t, around, localize } from '../lib/i18n.svelte.js'
 
   // `initial` is what the server rendered: the family list and the family on show, arranged by shape.
   let { initialFamily = '', initial = null } = $props()
@@ -45,7 +45,7 @@
   async function pick(codePoint, keep = false) {
     error = ''
     code = codePoint
-    const address = '/forms/' + codePoint
+    const address = localize('/forms/' + codePoint)
     if (page.url.pathname !== address) replaceState(address, page.state)
     const keepId = keep ? current?.items[active]?.id : null
     current = arranged(await loadFamily(codePoint, arrange))

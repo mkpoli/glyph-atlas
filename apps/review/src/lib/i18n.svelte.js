@@ -39,11 +39,22 @@ export const locale = () => current
 export const base = () => byTag[current].base
 export const isLocale = tag => Boolean(byTag[tag])
 
-/** Render in `tag`: the language the request negotiated, set before anything is rendered. */
+/** `path` in language `tag`: English at the path itself, every other language under its own prefix. */
+export const localize = (path, tag = current) => tag === 'en' ? path : `/${tag}${path === '/' ? '' : path}`
+
+/** The language an address is in, and the address without its prefix. */
+export function delocalize(pathname) {
+  const [, first, ...rest] = pathname.split('/')
+  if (first && first !== 'en' && byTag[first]) return { tag: first, path: '/' + rest.join('/') }
+  return { tag: 'en', path: pathname }
+}
+
+/** Render in `tag`: the language of the address, set before anything is rendered. */
 export function useLocale(tag) {
   if (byTag[tag]) current = tag
 }
 
+/** Remember `tag` as the reader's language; the caller moves to the address in that language. */
 export function setLocale(tag) {
   if (!byTag[tag]) return
   current = tag
