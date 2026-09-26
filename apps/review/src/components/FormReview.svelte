@@ -4,6 +4,7 @@
   // marks a cluster that holds more than one form.
   import { onMount } from 'svelte'
   import { settle } from '../lib/settle.js'
+  import { showsContext } from '../lib/glyphContext.svelte.js'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import { members as loadMembers, decide } from '../lib/forms.js'
   import { number, reviewer } from '../lib/client.js'
@@ -134,7 +135,7 @@
       {#if loading && !glyphs.length}{#each Array(Math.min(cluster.count, 36)) as _, i (i)}<span class="review-glyph shimmer" aria-hidden="true"></span>{/each}{/if}
       {#each glyphs as glyph, i (glyph.id)}
         <button class="review-glyph" class:marked={marked.has(glyph.id)} class:reported={glyph.reported}
-                aria-pressed={marked.has(glyph.id)} onclick={event => toggle(i, event)} title={glyph.id}>
+                aria-pressed={marked.has(glyph.id)} onclick={event => toggle(i, event)} use:showsContext={{ id: glyph.id }}>
           {#if glyph.image}<img class="glyph-image" src={glyph.image} alt="" loading="lazy" use:settle />{/if}
           {#if glyph.reported}<span class="review-flag">{glyph.character ?? '⚠'}</span>
           {:else if glyph.form}<span class="review-form-mark">{glyph.form}</span>{/if}
