@@ -40,14 +40,24 @@ async function families(env: Env) {
     label: r.label, count: r.count, clusters: r.cluster_count, assigned: r.assigned, rejected: r.rejected })) };
 }
 
+// Each cluster's twelve glyphs least like its centre, past the twelve most typical it already shows
+// and leaving out reported ones: a glyph of another form is most often among them. Read backwards
+// along form_unit_cluster, twelve rows a cluster.
+export const leastTypicalQuery = () => `SELECT u.cluster,u.id,u.image,u.rank FROM form_clusters c JOIN form_units u ON u.rowid IN
+  (SELECT rowid FROM form_units WHERE cluster=c.id AND rank>=12 AND issue IS NULL ORDER BY rank DESC LIMIT 12) WHERE c.family=?`;
+
 async function family(env: Env, codePoint: string, q: URLSearchParams, tools: FormTools) {
   const found = await env.DB.prepare('SELECT * FROM form_families WHERE code_point=?').bind(codePoint).first<Json>();
   if (!found) tools.fail(404, 'This family was not clustered.');
   const order = q.get('order') === 'size' ? 'size' : 'shape';
-  const [clusters, tallies] = await env.DB.batch([
+  const [clusters, tallies, unusual] = await env.DB.batch([
     env.DB.prepare(`SELECT * FROM form_clusters WHERE family=? ORDER BY ${order === 'size' ? 'size_position' : 'shape_position'}`).bind(codePoint),
     env.DB.prepare('SELECT cluster,form,count(*) AS n,sum(glyph_set) AS own,count(issue) AS rejected FROM form_units WHERE family=? GROUP BY cluster,form').bind(codePoint),
+    env.DB.prepare(leastTypicalQuery()).bind(codePoint),
   ]);
+  const leastTypical = new Map<string, Json[]>();
+  for (const u of (unusual.results as Json[]).sort((a, b) => b.rank - a.rank))
+    leastTypical.set(u.cluster, [...leastTypical.get(u.cluster) ?? [], { id: u.id, image: u.image }]);
   const byCluster = new Map<string, { assigned: number; own: number; rejected: number; forms: Map<string, number> }>();
   for (const t of tallies.results as Json[]) {
     const entry = byCluster.get(t.cluster) ?? { assigned: 0, own: 0, rejected: 0, forms: new Map() };
@@ -62,7 +72,8 @@ async function family(env: Env, codePoint: string, q: URLSearchParams, tools: Fo
       const t = byCluster.get(c.id);
       const [majority, majorityCount] = (t ? [...t.forms].sort((a, b) => b[1] - a[1])[0] : null) ?? [null, 0];
       return { id: c.id, label: c.label, count: c.count, coherence: c.coherence, form: c.form, issue: c.issue,
-        exceptions: t?.own ?? 0, assigned: t?.assigned ?? 0, rejected: t?.rejected ?? 0, majority, majority_count: majorityCount, representatives: JSON.parse(c.representatives) };
+        exceptions: t?.own ?? 0, assigned: t?.assigned ?? 0, rejected: t?.rejected ?? 0, majority, majority_count: majorityCount, representatives: JSON.parse(c.representatives),
+        unusual: leastTypical.get(c.id) ?? [] };
     }) };
 }
 
@@ -233,9 +244,11 @@ function decoded(segment: string, tools: FormTools) {
 // keeps one copy per finished load (`forms_loaded_at`, written last by a reload), clustering revision
 // and latest decision; FORMS_TTL bounds a copy's life.
 const FORMS_TTL = 3600;
+// The shape of what `family` and `families` answer; a change to it leaves the older copies behind.
+const FORMS_SHAPE = 2;
 type FormsState = { loading: number; loaded: string | null; revision: string | null; decision: number | null };
 async function cached(url: URL, state: FormsState, key: string, read: () => Promise<Json | null>, ctx: ExecutionContext) {
-  const request = new Request(`${url.origin}/atlas/forms/cached/${key}?v=${encodeURIComponent(`${state.loaded}:${state.revision}:${state.decision ?? 0}`)}`);
+  const request = new Request(`${url.origin}/atlas/forms/cached/${key}?v=${encodeURIComponent(`${FORMS_SHAPE}:${state.loaded}:${state.revision}:${state.decision ?? 0}`)}`);
   const hit = await caches.default.match(request);
   if (hit) return hit.json<Json>();
   const value = await read();

@@ -1,6 +1,7 @@
 // Catalogue snapshots are published offline. All online review mutations use D1 transactions.
 import { ROUND_MAX } from './rounds';
 import { formsRoute, withForm, formed, FORM_COLUMNS, type FormTools, type UnitForm } from './forms';
+export { leastTypicalQuery } from './forms';
 type Json = Record<string, any>;
 type UnitRow = { id: string; origin: string; character: string | null; state: string; revision: number;
   quiz: number; category?: string; data: string; snapshot: string; context: string; visual: string;
