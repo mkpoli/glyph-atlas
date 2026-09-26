@@ -661,8 +661,10 @@ async function undo(env:Env,request:Request,id:string){
     const event={...parse(r.event),id:'cf:'+crypto.randomUUID(),old:parse(r.event).new,new:parse(r.event).old,evidence:'undo of '+r.id,at};
     statements.push(env.DB.prepare('INSERT INTO events(id,submission,target,actor,expected_revision,before_data,after_data,event,snapshot,kind,at) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
       .bind(event.id,key,r.target,actor,current.revision,current.data,JSON.stringify(restored),JSON.stringify(event),r.snapshot,'undo',at));
-    // Restore queue eligibility from the record the undo restores.
-    statements.push(env.DB.prepare('UPDATE units SET quiz=? WHERE id=?').bind(dealable(current.origin,parse(r.before_data))?1:0,r.target));
+    // Restore queue eligibility from the record the undo restores, with the repair verdict the row holds
+    // now: the event trigger keeps it, and a publication may have changed it since the review.
+    const eligible={...parse(r.before_data),repair:parse(current.data).repair};
+    statements.push(env.DB.prepare('UPDATE units SET quiz=? WHERE id=?').bind(dealable(current.origin,eligible)?1:0,r.target));
     results.push({id:event.id,target_id:r.target,revision:restored.revision,review:event});
   }
   statements.push(env.DB.prepare('UPDATE submissions SET undone=1 WHERE id=?').bind(key));

@@ -10,11 +10,17 @@ This writes the UPDATE statements that bring such units up to date:
 - a reviewed unit whose crop changed is held back and reported. Its events carry revisions from
   the old lineage; a lower catalogue revision would make the site call the old review current and
   the importer reject every new one. It needs a local revision above every event it has first;
-- a unit whose only change is its context image (the page around the crop, cut again at a new
-  reach) takes the new context_image and context_box in place, reviewed or not, and keeps its
-  revision: nothing a reviewer judged has changed, so an open page may still save against it.
-  The Worker's event trigger (migration 0009) keeps a row's context through later reviews and
-  undos, so an undo does not bring back the old context.
+- a unit whose only changes are publication metadata takes them in place, reviewed or not, and
+  keeps its revision: its context image (the page around the crop, cut again at a new reach) and
+  its alignment-repair status (the rebuild's verdict on whether the crop may be dealt). Nothing a
+  reviewer judged has changed, so an open page may still save against it. An unreviewed unit's
+  quiz eligibility follows the catalogue with it; a reviewed one may still only leave the quiz.
+  The Worker's event trigger (migration 0019) keeps a row's context and repair status through
+  later reviews and undos, so an undo brings back neither, and undo decides the quiz with the
+  repair status the row holds.
+
+A null `shape_order` is the same as none: the Worker reads a crop's shape order from `unit_shapes`
+and ignores the key in its data, and older rows were written without it.
 
 A crop is the same when its box, crop box and image (the crop's media key) are unchanged; the
 image hash names the page the crop was cut from, so it cannot tell two crops apart.
@@ -54,7 +60,7 @@ def quote(value) -> str:
 
 
 CROP_KEYS = ("box", "crop_box", "image")
-CONTEXT_KEYS = ("context_image", "context_box")
+IN_PLACE_KEYS = ("context_image", "context_box", "repair")
 
 
 def same_crop(new_data: str, live_data: str) -> bool:
@@ -67,17 +73,18 @@ class Collision(ValueError):
 
 
 def plan(new: dict, live: dict) -> tuple[str, str | None]:
-    """What to do with one unit: ("skip" | "quiz" | "context" | "replace" | "hold", statement)."""
+    """What to do with one unit: ("skip" | "quiz" | "in-place" | "replace" | "hold", statement)."""
     for key in ("revision", "quiz", "data", "reviewed"):
         if key not in live:
             raise KeyError(f"{new['id']}: the live export lacks {key!r}")
     guard = f" WHERE id={quote(new['id'])} AND revision={int(live['revision'])};"
     new_data, live_data = json.loads(new["data"]), json.loads(live["data"])
-    context = {key: new_data.get(key) for key in CONTEXT_KEYS}
-    changed = context != {key: live_data.get(key) for key in CONTEXT_KEYS}
+    in_place = {key: new_data.get(key) for key in IN_PLACE_KEYS if new_data.get(key) != live_data.get(key)}
     for data in (new_data, live_data):
-        for key in CONTEXT_KEYS:
+        for key in IN_PLACE_KEYS:
             data.pop(key, None)
+        if "shape_order" in data and data["shape_order"] is None:
+            del data["shape_order"]
     sets = []
     if live["reviewed"]:
         if not same_crop(new["data"], live["data"]):
@@ -88,19 +95,21 @@ def plan(new: dict, live: dict) -> tuple[str, str | None]:
     # The revision is part of the comparison: a unit left at the old lineage's revision could not
     # have its later site reviews imported.
     # Compared as JSON: D1 and the catalogue may write the same object with different spacing.
-    elif new_data != live_data or int(new["revision"]) != int(live["revision"]) or int(new["quiz"]) != int(live["quiz"]):
+    elif new_data != live_data or int(new["revision"]) != int(live["revision"]):
         if int(new["revision"]) == int(live["revision"]):
             raise Collision(f"{new['id']}: catalogue revision {new['revision']} equals the live one")
         columns = ", ".join(f"{column}={quote(new[column])}" for column in (*COLUMNS, "revision"))
         return "replace", f"UPDATE units SET {columns}" + guard
-    if changed:
+    elif int(new["quiz"]) != int(live["quiz"]):
+        sets.append(f"quiz={int(new['quiz'])}")
+    if in_place:
         # json_set keeps the stored key order; the values keep the catalogue's.
         paths = ", ".join(f"'$.{key}', json({quote(json.dumps(value, ensure_ascii=False, separators=(',', ':')))})"
-                          for key, value in context.items())
+                          for key, value in in_place.items())
         sets.insert(0, f"data=json_set(data, {paths})")
     if not sets:
         return "skip", None
-    return ("context" if changed else "quiz"), f"UPDATE units SET {', '.join(sets)}" + guard
+    return ("in-place" if in_place else "quiz"), f"UPDATE units SET {', '.join(sets)}" + guard
 
 
 def main() -> None:
@@ -112,7 +121,7 @@ def main() -> None:
     live = {row["id"]: row for row in (json.loads(line) for line in args.live.read_text(encoding="utf-8").splitlines() if line.strip())}
     db = sqlite3.connect(args.catalogue)
     db.row_factory = sqlite3.Row
-    counts = {"skip": 0, "quiz": 0, "context": 0, "replace": 0, "hold": 0, "new": 0, "collision": 0}
+    counts = {"skip": 0, "quiz": 0, "in-place": 0, "replace": 0, "hold": 0, "new": 0, "collision": 0}
     held = []
     with args.output.open("w", encoding="utf-8") as out:
         for row in db.execute("SELECT * FROM units"):
