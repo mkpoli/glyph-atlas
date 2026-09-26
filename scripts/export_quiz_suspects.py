@@ -19,9 +19,19 @@ def quoted(value: str | None) -> str:
 
 
 def export(files: list[Path], out: Path) -> int:
+    """Files come in precedence order: a crop an earlier file scored keeps that file's answer, marked or not.
+
+    A file lists what it scored in `scored_ids` (`catalogue-suspects` writes it); without the list only
+    its marks count as scored. So the hosted catalogue's marks go first and the corpus glyphs' last:
+    a glyph published as a local crop is judged as the crop the site serves.
+    """
     marks: dict[str, dict] = {}
+    scored: set[str] = set()
     for path in files:
-        for identity, mark in json.loads(path.read_text())["suspects"].items():
+        document = json.loads(path.read_text())
+        for identity, mark in document["suspects"].items():
+            if identity in scored:
+                continue
             p, reads = mark.get("p"), mark.get("reads_as")
             if not isinstance(p, (int, float)) or not math.isfinite(p) or not 0 <= p <= 1:
                 raise ValueError(f"{identity}: a suspect's probability must be a number from 0 to 1")
@@ -33,9 +43,8 @@ def export(files: list[Path], out: Path) -> int:
             if box is not None and not (isinstance(box, dict) and sorted(box) == ["h", "w", "x", "y"]
                                         and all(isinstance(v, (int, float)) for v in box.values())):
                 raise ValueError(f"{identity}: box must be x, y, w and h, or null")
-            if identity in marks and marks[identity] != mark:
-                raise ValueError(f"{identity}: marked differently by two files")
             marks[identity] = mark
+        scored |= set(document.get("scored_ids") or document["suspects"])
     lines = ["DELETE FROM unit_suspects;"]
     for identity, mark in sorted(marks.items()):
         box = json.dumps(mark["box"], sort_keys=True) if mark["box"] is not None else None
