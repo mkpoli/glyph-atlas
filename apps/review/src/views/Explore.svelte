@@ -1,5 +1,5 @@
 <script>
-  import { onMount, untrack } from 'svelte'
+  import { onMount, tick, untrack } from 'svelte'
   import { productionLabel } from '../components/ProductionBadge.svelte'
   import VisualGroups from '../components/VisualGroups.svelte'
   import { isUnassigned, writtenLabel, visualGroup, matchesVisualGroup, graphemeChar } from '../lib/identity.js'
@@ -294,6 +294,17 @@
     if (isUnassigned(row)) return (row.grapheme?.code_point ?? row.grapheme) === picked.grapheme?.code_point
     return (picked.grapheme?.members ?? [picked]).some(member => member.char === writtenLabel(row))
   }
+  /** A save can take its tile off the page (Needs fixing drops a cleared crop). Focus then moves to the
+   * tile that took its place, so a keyboard reviewer keeps their position in the grid. */
+  async function keepPlace(id, apply) {
+    const tiles = () => [...document.querySelectorAll('.glyph-grid .glyph-tile')]
+    const at = tiles().findIndex(tile => (tile.dataset.unit ?? tile.dataset.corpus) === id)
+    apply()
+    await tick()
+    if (at < 0 || document.activeElement !== document.body) return
+    const left = tiles()
+    left[Math.min(at, left.length - 1)]?.focus()
+  }
   async function updateItem(id, result) {
     if (result?.origin === 'corpus') {
       const replace = row => {
@@ -301,7 +312,7 @@
         const updated = { ...row, ...result }
         return (flagged && !waiting(result.state)) || !fitsGallery(updated) ? [] : [updated]
       }
-      corpus = corpus.flatMap(replace); sample = sample.flatMap(replace)
+      keepPlace(id, () => { corpus = corpus.flatMap(replace); sample = sample.flatMap(replace) })
       return
     }
     try {
@@ -309,8 +320,7 @@
       // The tile that was just saved is in one of two lists: the character's gallery, or the
       // collection's own rows. Updating the wrong one leaves the tile showing its old state.
       const replace = item => item.id !== id ? [item] : (flagged && !waiting(updated.state)) || !fitsGallery(updated) ? [] : [updated]
-      if (picked) local = local.flatMap(replace)
-      else items = items.flatMap(replace)
+      keepPlace(id, () => { if (picked) local = local.flatMap(replace); else items = items.flatMap(replace) })
       const summary = await catalogue({ reading, q: query, group: filter, state: flagged ? 'attention' : 'all',
         reported: flagged ? (showReported ? 'show' : 'hide') : null, limit: 1 })
       if (!closed) data = { ...data, counts: summary.counts, categories: summary.categories, total: summary.total, available: summary.available, reported_count: summary.reported_count }
