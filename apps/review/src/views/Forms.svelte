@@ -54,7 +54,7 @@
         const items = (await loadMembers(id, 0, 12, 'unusual')).items
         outlierCache.set(id, items)
         if (current) outliers = { id, items }
-      } catch { /* The card keeps its typical glyphs. */ }
+      } catch { if (current) outliers = { id, items: [] } }
     }, 150)
     return () => { current = false; clearTimeout(timer) }
   })
@@ -429,12 +429,12 @@
                   <span class="cluster-samples">{#each c.representatives as r (r.id)}{#if r.image}<img class="glyph-image" src={r.image} alt="" loading="lazy" use:settle />{/if}{/each}</span>
                 </button>
                 {#if i === active && c.count > 12}
-                  {@const shown = outliers?.id === c.id ? outliers.items.filter(g => !c.representatives.some(r => r.id === g.id)) : null}
-                  <div class="cluster-outliers" aria-busy={!shown}>
+                  {@const shown = outliers?.id === c.id ? outliers.items.filter(g => !g.reported && !c.representatives.some(r => r.id === g.id)) : null}
+                  {#if !shown || shown.length}<div class="cluster-outliers" aria-busy={!shown}>
                     <small>{t('forms.leastTypical')}</small>
                     <span class="cluster-samples">{#if shown}{#each shown as g (g.id)}{#if g.image}<img class="glyph-image" src={g.image} alt="" loading="lazy" use:settle />{/if}{/each}
                       {:else}{#each Array(Math.min(12, c.count - 12)) as _, j (j)}<span class="shimmer"></span>{/each}{/if}</span>
-                  </div>
+                  </div>{/if}
                 {/if}
                 <span class="cluster-foot">
                   {#if c.exceptions}<small>{t('forms.setIndividually', { count: c.exceptions })}</small>{/if}
@@ -483,7 +483,7 @@
   .forms-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:10px 0 12px}.forms-keys{margin:0}
   .review-start{margin-left:auto;font-size:12px;padding:8px 13px;background:var(--ink);color:#fff;border-color:var(--ink)}.review-start kbd{font-size:9px;opacity:.7}
   .form-cluster.picked{border-color:var(--accent);background:#f3f1ff}
-  .cluster-grid{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px}
+  .cluster-grid{list-style:none;margin:0;padding:0;display:grid;align-items:start;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px}
   .form-cluster{border:1.5px solid var(--line);border-radius:9px;background:#fff;overflow:hidden}
   .form-cluster.active{border-color:var(--accent);box-shadow:0 0 0 3px #6356e51f}
   .form-cluster.assigned{background:#fbfbfe}
