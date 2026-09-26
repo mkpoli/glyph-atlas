@@ -460,11 +460,12 @@ def review_shapes(
 def review_suspects(
     directory: Annotated[Path, typer.Argument(help="dataset directory whose crops are marked; the marks are written into it")],
     checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
+    lookalikes: Annotated[Path, typer.Option(help="look-alike pairs measured for the checkpoint (`atlas review lookalikes`)")] = Path("models/classifier/artifacts/lookalikes.json"),
 ) -> None:
     """Mark the Quick review crops the classifier reads as another character (needs CUDA)."""
     from .review import quiz_suspects
 
-    for name, value in quiz_suspects.compute(directory, checkpoint=checkpoint).items():
+    for name, value in quiz_suspects.compute(directory, checkpoint=checkpoint, lookalikes=lookalikes).items():
         typer.echo(f"{name:<12} {value:>10}")
 
 
@@ -475,12 +476,26 @@ def review_corpus_suspects(
     corpus: Annotated[list[str] | None, typer.Option(help="only this unit corpus; repeat for several")] = None,
     checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
     workers: Annotated[int, typer.Option(help="processes cutting glyphs")] = 8,
+    lookalikes: Annotated[Path, typer.Option(help="look-alike pairs measured for the checkpoint (`atlas review lookalikes`)")] = Path("models/classifier/artifacts/lookalikes.json"),
 ) -> None:
     """Mark the published corpus glyphs the classifier reads as another character (needs CUDA)."""
     from .review import quiz_suspects
 
-    result = quiz_suspects.compute_corpus(root, target, checkpoint=checkpoint,
+    result = quiz_suspects.compute_corpus(root, target, checkpoint=checkpoint, lookalikes=lookalikes,
                                           corpora=corpus, workers=workers)
+    typer.echo(json.dumps(result, ensure_ascii=False))
+
+
+@review_app.command("lookalikes")
+def review_lookalikes(
+    split: Annotated[Path, typer.Argument(help="held-out classifier split")] = Path("work/classifier-combined/test.parquet"),
+    target: Annotated[Path, typer.Option(help="file the pairs are written to")] = Path("models/classifier/artifacts/lookalikes.json"),
+    checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
+) -> None:
+    """Measure which characters the classifier confuses, for the suspect marks to expect (needs CUDA)."""
+    from .review import quiz_suspects
+
+    result = quiz_suspects.measure_lookalikes(split, target, checkpoint=checkpoint)
     typer.echo(json.dumps(result, ensure_ascii=False))
 
 

@@ -49,6 +49,7 @@ MJ_KANJI_TSV = "mj-kanji.tsv"
 #: The version in a generated MJ table's first header line, `# MJ文字情報一覧表 Ver.006.02`.
 MJ_VERSION = re.compile(r"Ver\.(?P<version>[0-9.]+)")
 EQUIVALENTS_TSV = "kanji-equivalents.tsv"
+KANA_ORIGINS_TSV = "kana-origins.tsv"
 POLICIES_YAML = "equivalence-policies.yaml"
 LIGATURES_YAML = "ligatures.yaml"
 BUILT_BY = {
@@ -56,6 +57,7 @@ BUILT_BY = {
     HENTAIGANA_TSV: "scripts/build_hentaigana_table.py",
     MJ_TSV: "scripts/build_mj_table.py",
     EQUIVALENTS_TSV: "scripts/build_kanji_equivalents.py",
+    KANA_ORIGINS_TSV: "scripts/build_kana_origins.py",
 }
 #: hentaigana.tsv and mj-hentaigana.tsv joined, with the character layer for everything the two
 #: kana tables do not state: the Unicode name and 字母, the MJ figure, the 音価 merged into
@@ -538,6 +540,23 @@ def readings(code_point: str) -> list[str]:
     """
     row = character(code_point)
     return list(row.readings) if row else []
+
+
+@cache
+def kana_origins() -> dict[str, frozenset[str]]:
+    """The modern hiragana each kanji is the cursive form of, by kanji: 太 gives た.
+
+    From kana-origins.tsv (the 平仮名字源 of each kana's Japanese Wikipedia article). The character
+    layer has no 字母 for the modern kana, only for hentaigana. A kanji is found under every member
+    of its grapheme family, so 曽 finds the そ that the table gives under 曾.
+    """
+    found: dict[str, set[str]] = {}
+    for row in _read_tsv(KANA_ORIGINS_TSV):
+        info = grapheme_info(row["jibo_code_point"])
+        members = {row["jibo"], *(member["char"] for member in (info or {}).get("members") or [])}
+        for member in members:
+            found.setdefault(member, set()).add(row["kana"])
+    return {kanji: frozenset(kana) for kanji, kana in found.items()}
 
 
 def jibo_of(unicode: str | None) -> list[str]:

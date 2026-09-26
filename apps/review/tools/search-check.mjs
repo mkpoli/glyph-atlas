@@ -46,13 +46,12 @@ try {
 
   // A reading filter is on, as a reviewer would have left it. A direct character search has to
   // answer its own question rather than intersect with it.
-  await browser.evaluate(`document.querySelector('.category-toggle').click()`)
-  await browser.waitFor(`document.querySelector('.category-menu input') !== null`)
-  const filtered = await browser.evaluate(typeInto('.category-menu input', 'あ'))
-  assert(filtered === 'あ', `the reading search box took ${JSON.stringify(filtered)}`)
-  await browser.waitFor(`document.querySelector('.category-options button') !== null`)
-  await browser.evaluate(`document.querySelector('.category-options button').click()`)
-  await browser.waitFor(`document.querySelector('.category-toggle').textContent.trim() !== 'Any reading'`)
+  // The empty box, focused, lists the readings; choosing one puts it in the box as a token.
+  await browser.evaluate(`document.querySelector('.find input').focus()`)
+  await browser.waitFor(`document.querySelector('.browse-panel .category-options button') !== null`)
+  await browser.evaluate(`[...document.querySelectorAll('.browse-panel .category-options button')]
+    .find(b => b.querySelector('span').textContent === 'あ').click()`)
+  await browser.waitFor(`document.querySelector('.find-token')?.textContent.includes('あ')`)
   const before = await browser.evaluate(`document.querySelectorAll('.glyph-tile').length`)
   assert(before > 0, 'the reading filter shows some rows to start from')
 
@@ -68,8 +67,8 @@ try {
   assert(!/No occurrence/.test(count), 'the character has a recorded occurrence in the fixture')
 
   // The reading filter is cleared by the search, so the box no longer narrows the answer.
-  const reading = await browser.evaluate(`document.querySelector('.category-toggle').textContent.trim()`)
-  assert(reading.startsWith('Any reading'), `the reading filter still says ${JSON.stringify(reading)}`)
+  const token = await browser.evaluate(`document.querySelector('.find-token')?.textContent ?? null`)
+  assert(token === null, `the reading filter still says ${JSON.stringify(token)}`)
   const group = await browser.evaluate(`document.querySelector('.filter-tabs button.active').textContent.trim()`)
   assert(group === 'All', `the type filter still says ${JSON.stringify(group)}`)
 

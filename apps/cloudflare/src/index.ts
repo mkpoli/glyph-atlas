@@ -1,6 +1,6 @@
 // Catalogue snapshots are published offline. All online review mutations use D1 transactions.
 import { ROUND_MAX } from './rounds';
-import { formsRoute, withForm, type FormTools } from './forms';
+import { formsRoute, withForm, formed, FORM_COLUMNS, type FormTools, type UnitForm } from './forms';
 type Json = Record<string, any>;
 type UnitRow = { id: string; origin: string; character: string | null; state: string; revision: number;
   quiz: number; category?: string; data: string; snapshot: string; context: string; visual: string;
@@ -190,18 +190,23 @@ const ROUND_OFFSET_MAX = 4096;
 const NAMED_WINDOW = 256;
 // `shuffle` is the first 28 bits of the id's SHA-256.
 const SHUFFLE_RANGE = 268435456;
-// Browse counts every local crop by character and state, which reads the whole table and takes
-// seconds, and every visitor gets the same answer. The edge keeps one copy per version of the data:
-// a publication, a review, a round and an undo each make a new key. A refresh that writes `units`
-// without a new publication shows once the copy expires.
-const FACETS_TTL = 3600;
-async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, production: string, facets: D1PreparedStatement) {
+// What the cached listings are keyed by: every way `units` and the review tables change moves it. A
+// publication stamps `published_at`, `refresh_published_units.py` stamps `units_refreshed_at`, a
+// review or undo adds an event, a round adds a submission, and an undo of a round with no review
+// only marks its submission undone.
+async function catalogueVersion(env: Env): Promise<string> {
   const version = await env.DB.prepare(`SELECT (SELECT value FROM metadata WHERE key='published_at') AS published,
+    (SELECT value FROM metadata WHERE key='units_refreshed_at') AS refreshed,
     (SELECT max(rowid) FROM events) AS event,(SELECT max(rowid) FROM submissions) AS submission,
     (SELECT count(*) FROM submissions WHERE undone=1) AS undone`)
-    .first<{ published: string | null; event: number | null; submission: number | null; undone: number }>();
-  const key = new Request(`${url.origin}/atlas/facets?production=${encodeURIComponent(production)}&v=${encodeURIComponent(
-    [version?.published ?? '', version?.event ?? 0, version?.submission ?? 0, version?.undone ?? 0].join(':'))}`);
+    .first<{ published: string | null; refreshed: string | null; event: number | null; submission: number | null; undone: number }>();
+  return [version?.published ?? '', version?.refreshed ?? '', version?.event ?? 0, version?.submission ?? 0, version?.undone ?? 0].join(':');
+}
+// Browse counts every local crop by character and state, which reads the whole table and takes
+// seconds, and every visitor gets the same answer. The edge keeps one copy per catalogue version.
+const FACETS_TTL = 3600;
+async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, production: string, facets: D1PreparedStatement) {
+  const key = new Request(`${url.origin}/atlas/facets?production=${encodeURIComponent(production)}&v=${encodeURIComponent(await catalogueVersion(env))}`);
   const cached = await caches.default.match(key);
   if (cached) return { results: await cached.json() } as D1Result<{ label: string; state: string; n: number }>;
   const groups = await facets.all<{ label: string; state: string; n: number }>();
@@ -242,8 +247,17 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   if (review) for (const row of published.results) if (row.n > 0) { corpus.set(row.label, row.n); add(row.label, 'pending', row.n) }
   const reading = q.get('reading');
   if (reading) { where.push('character=?'); values.push(reading) }
-  if (q.get('q')) { where.push('(character=? OR reading=?)'); values.push(literal(q.get('q')!), literal(q.get('q')!)) }
-  if (q.get('group') && q.get('group') !== 'all') { where.push('category=?'); values.push(q.get('group')!) }
+  // A search finds a crop by its character or its reading. Each is one range of its own index; an OR
+  // across the two columns would read every local crop instead. The origin test is kept off its index
+  // (`+`), so the query starts from the ids the search found.
+  if (q.get('q')) {
+    where[0] = "+origin='local'";
+    where.push("id IN (SELECT id FROM units WHERE origin='local' AND character=? UNION SELECT id FROM units WHERE origin='local' AND reading=?)");
+    values.push(literal(q.get('q')!), literal(q.get('q')!));
+  }
+  // With a character or a search named, its own index finds the few crops and the script only filters
+  // them (`+`); the script's index would read every crop of that script.
+  if (q.get('group') && q.get('group') !== 'all') { where.push(reading || q.get('q') ? '+category=?' : 'category=?'); values.push(q.get('group')!) }
   // `attention` is the Flagged view: every crop waiting for a person, flagged or hard to read.
   if (q.get('state') === 'attention') where.push(`${state} IN ('flagged','hard')`);
   else if (q.get('state') && q.get('state') !== 'all') { where.push(`${state}=?`); values.push(q.get('state')!) }
@@ -359,6 +373,24 @@ async function corpusRound(env: Env, character: string, production: string, seed
   }
   return { items, read: read.length, exhausted: rows.length < wanted };
 }
+// The homepage gallery is dealt from `corpus_gallery`: records copied out of the R2 packs for the corpus
+// glyphs whose `shuffle` falls below SAMPLE_RANGE, so a page is one query where reading its records
+// from the packs took one R2 request each. Packs are content-addressed, so a copy is current exactly
+// while `corpus_units` still names the object and offset it came from; `scripts/fill_corpus_gallery.py`
+// copies the rest after a publication. A glyph a review has named shows its `units` row.
+const SAMPLE_RANGE = 4194304;
+export const gallerySampleQuery = (side: '>=' | '<') => `SELECT s.data,u.data AS current,${FORM_COLUMNS.split(',').map(c => `f.${c}`).join(',')}
+  FROM corpus_gallery s JOIN corpus_units c ON c.id=s.id AND c.object=s.object AND c.offset=s.offset
+  LEFT JOIN units u ON u.id=s.id LEFT JOIN form_units f ON f.id=s.id
+  WHERE s.shuffle${side}? ORDER BY s.shuffle LIMIT ?`;
+async function gallery(env: Env, q: URLSearchParams) {
+  const limit = integer(q, 'limit', 24, 96), start = integer(q, 'seed', 0, 2147483647) % SAMPLE_RANGE;
+  type Row = UnitForm & { data: string; current: string | null };
+  const rows = (await env.DB.prepare(gallerySampleQuery('>=')).bind(start, limit).all<Row>()).results;
+  if (rows.length < limit) rows.push(...(await env.DB.prepare(gallerySampleQuery('<')).bind(start, limit - rows.length).all<Row>()).results);
+  const items = rows.map(r => r.current ? parse(r.current) : formed(parse(r.data), r.id ? r : null, formTools));
+  return { status: 'ok', available: items.length, items };
+}
 function chunks<T>(list: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
@@ -397,12 +429,15 @@ async function occurrences(env: Env, code: string, q: URLSearchParams, origin = 
   const { data } = await known(env, code);
   if(origin==='corpus')return corpusOccurrences(env,data,q);
   const limit = integer(q,'limit',24,200), offset=integer(q,'offset',0);
-  const values: (string | number)[] = [origin];
-  const where = ['origin=?'];
+  const values: (string | number)[] = [];
+  const where: string[] = [];
   if (q.get('scope') === 'grapheme' || q.get('expand') === 'grapheme') {
+    // A grapheme's crops are its family's and its own character's. Each is one range of its own index;
+    // an OR across the two columns would read every crop of the origin instead.
     const family = data.grapheme?.code_point || data.code_point;
-    where.push('(family=? OR character=?)'); values.push(family,data.char);
-  } else { where.push('character=?'); values.push(data.char) }
+    where.push('id IN (SELECT id FROM units WHERE origin=? AND family=? UNION SELECT id FROM units WHERE origin=? AND character=?)');
+    values.push(origin, family, origin, data.char);
+  } else { where.push('origin=? AND character=?'); values.push(origin, data.char) }
   if (q.get('visual_group')) {
     if(q.get('visual_group')==='unassigned') where.push('visual_group IS NULL');
     else { where.push('visual_group=?'); values.push(q.get('visual_group')!) }
@@ -459,13 +494,11 @@ async function corpusOccurrences(env:Env,data:Json,q:URLSearchParams){
 export const documentCharactersQuery = () => `SELECT c.unit,c.data,u.character,u.state,u.revision,json_extract(u.data,'$.issue') AS issue
   FROM document_characters c LEFT JOIN units u ON u.id=c.unit WHERE c.document=? ORDER BY c.ord`;
 // Other sites read this listing from the browser, so it is served to any origin, errors included. The
-// edge copy is keyed by the publication and the latest review, so a review makes a new key; browsers
-// revalidate every time. A refresh that writes `units` directly shows once the edge copy expires.
+// edge copy is keyed by the catalogue version, so any change to the units makes a new key; browsers
+// revalidate every time.
 const OPEN = { 'access-control-allow-origin': '*' };
 async function documentCharacters(env: Env, url: URL, document: string, ctx: ExecutionContext) {
-  const version = await env.DB.prepare("SELECT (SELECT value FROM metadata WHERE key='published_at') AS published,(SELECT max(rowid) FROM events) AS event")
-    .first<{ published: string | null; event: number | null }>();
-  const key = new Request(`${url.origin}${url.pathname}?v=${encodeURIComponent(`${version?.published ?? ''}:${version?.event ?? 0}`)}`);
+  const key = new Request(`${url.origin}${url.pathname}?v=${encodeURIComponent(await catalogueVersion(env))}`);
   const served = (body: BodyInit | null) => new Response(body, { headers: { 'content-type': 'application/json',
     'cache-control': 'no-cache', 'x-content-type-options': 'nosniff', ...OPEN } });
   const cached = await caches.default.match(key);
@@ -481,7 +514,7 @@ async function documentCharacters(env: Env, url: URL, document: string, ctx: Exe
     const source = label !== d.label || r.state === 'checked' ? 'review' : d.source;
     return { ...d, unit: r.unit, atlas: true, label, source, state: r.state, revision: r.revision, issue: r.issue };
   });
-  const body = JSON.stringify({ document, published_at: version?.published ? JSON.parse(version.published) : null, characters });
+  const body = JSON.stringify({ document, published_at: await meta(env, 'published_at'), characters });
   ctx.waitUntil(caches.default.put(key, new Response(body, { headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=60' } })));
   return served(body);
 }
@@ -661,8 +694,10 @@ async function undo(env:Env,request:Request,id:string){
     const event={...parse(r.event),id:'cf:'+crypto.randomUUID(),old:parse(r.event).new,new:parse(r.event).old,evidence:'undo of '+r.id,at};
     statements.push(env.DB.prepare('INSERT INTO events(id,submission,target,actor,expected_revision,before_data,after_data,event,snapshot,kind,at) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
       .bind(event.id,key,r.target,actor,current.revision,current.data,JSON.stringify(restored),JSON.stringify(event),r.snapshot,'undo',at));
-    // Restore queue eligibility from the record the undo restores.
-    statements.push(env.DB.prepare('UPDATE units SET quiz=? WHERE id=?').bind(dealable(current.origin,parse(r.before_data))?1:0,r.target));
+    // Restore queue eligibility from the record the undo restores, with the repair verdict the row holds
+    // now: the event trigger keeps it, and a publication may have changed it since the review.
+    const eligible={...parse(r.before_data),repair:parse(current.data).repair};
+    statements.push(env.DB.prepare('UPDATE units SET quiz=? WHERE id=?').bind(dealable(current.origin,eligible)?1:0,r.target));
     results.push({id:event.id,target_id:r.target,revision:restored.revision,review:event});
   }
   statements.push(env.DB.prepare('UPDATE submissions SET undone=1 WHERE id=?').bind(key));
@@ -751,7 +786,7 @@ export default {
         if(undone)return json(await undo(env,request,decodeURIComponent(undone[1])));
         const edit=path.match(/^\/(?:atlas\/characters|layers\/units)\/([^/]+)$/);
         if(edit)return json(await submit(env,request,decodeURIComponent(edit[1])));
-        const formed=await formsRoute(env,request,path,q,formTools);
+        const formed=await formsRoute(env,request,path,q,formTools,ctx);
         if(formed)return formed instanceof Response?formed:json(formed);
         throw new Problem(404,'Unknown endpoint.');
       }
@@ -788,16 +823,7 @@ export default {
       if(path==='/layers/occurrences')return json(await occurrences(env,q.get('code_point')||'',q));
       if(path==='/layers/candidates'){const found=await occurrences(env,q.get('code_point')||'',q,'corpus');
         return json({...found,glyphs:found.total,glyph_items:found.items,retry:false})}
-      if(path==='/layers/gallery'){
-        const limit=integer(q,'limit',24,96),seed=integer(q,'seed',0,2147483647)%268435456;
-        const rows=await env.DB.prepare('SELECT * FROM corpus_units WHERE shuffle>=? ORDER BY shuffle LIMIT ?').bind(seed,limit).all<CorpusRow>();
-        if(rows.results.length<limit){const more=await env.DB.prepare('SELECT * FROM corpus_units WHERE shuffle<? ORDER BY shuffle LIMIT ?').bind(seed,limit-rows.results.length).all<CorpusRow>();rows.results.push(...more.results)}
-        const overlays=rows.results.length?await env.DB.prepare(`SELECT id,data FROM units WHERE id IN (${rows.results.map(()=>'?').join(',')})`)
-          .bind(...rows.results.map(r=>r.id)).all<{id:string;data:string}>():{results:[]};
-        const current=new Map(overlays.results.map(r=>[r.id,r.data]));
-        const items=[];for(let i=0;i<rows.results.length;i+=8)items.push(...await Promise.all(rows.results.slice(i,i+8).map(async r=>
-          current.has(r.id)?parse(current.get(r.id)!):await corpusData(env,r))));
-        return json({status:'ok',available:items.length,items})}
+      if(path==='/layers/gallery')return json(await gallery(env,q));
       if(path==='/layers/summary')return json(await meta(env,'corpus_index'));
       if(path==='/layers/graphemes'||path==='/layers/ligatures'){
         const selector=path.endsWith('ligatures')?"json_extract(data,'$.ligature') IS NOT NULL":"json_array_length(json_extract(data,'$.grapheme.members'))>1";
@@ -806,7 +832,7 @@ export default {
       if(path==='/atlas/corpus/reviews'){
         const rows=await env.DB.prepare("SELECT * FROM units WHERE origin='corpus' AND state='flagged' ORDER BY id LIMIT 96").all<UnitRow>();
         return json({items:rows.results.map(compact),total:rows.results.length})}
-      if(path.startsWith('/atlas/forms/')){const formed=await formsRoute(env,request,path,q,formTools);
+      if(path.startsWith('/atlas/forms/')){const formed=await formsRoute(env,request,path,q,formTools,ctx);
         if(formed)return formed instanceof Response?formed:json(formed)}
       throw new Problem(404,'Unknown endpoint.');
     }catch(error){
