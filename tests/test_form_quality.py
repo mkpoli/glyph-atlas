@@ -163,6 +163,9 @@ def test_clean_preserves_embeddings_decisions_and_source_revision(form_corpora, 
 
 
 def test_clustering_applies_the_same_gate_before_loading_a_model(form_corpora, tmp_path, monkeypatch):
+    import sys
+
+    monkeypatch.setitem(sys.modules, "torch", None)
     root, ids = form_corpora
     decisions = tmp_path / "decisions.jsonl"
     monkeypatch.setenv("ATLAS_FORM_DECISIONS", str(decisions))
