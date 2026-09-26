@@ -278,6 +278,7 @@
   "issue.reading.title": "文字 誤謬",
   "issue.selected": "選擇됨",
   "issue.suggested": "提案",
+  "links.licence": "라이선스: {license}",
   "layers.crops.count.one": "크롭 {count}個",
   "layers.crops.count.other": "크롭 {count}個",
   "layers.familySamples": "패밀리 用例",

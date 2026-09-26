@@ -278,6 +278,7 @@
   "issue.reading.title": "文字違い",
   "issue.selected": "選択中",
   "issue.suggested": "候補",
+  "links.licence": "ライセンス：{license}",
   "layers.crops.count.one": "切り出し{count}件",
   "layers.crops.count.other": "切り出し{count}件",
   "layers.familySamples": "系列のサンプル",

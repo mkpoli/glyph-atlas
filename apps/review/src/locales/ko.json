@@ -278,6 +278,7 @@
   "issue.reading.title": "잘못된 글자",
   "issue.selected": "선택됨",
   "issue.suggested": "제안됨",
+  "links.licence": "라이선스: {license}",
   "layers.crops.count.one": "크롭 {count}개",
   "layers.crops.count.other": "크롭 {count}개",
   "layers.familySamples": "패밀리 예시",
