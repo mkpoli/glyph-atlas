@@ -185,6 +185,7 @@
   "forms.haveForm.other": "{count} đã có tự dạng, phần lớn là {glyph}",
   "forms.heading": "Gán tự dạng",
   "forms.keyboardHint": "J K di chuyển · X hoặc ⌘/Ctrl-click để thêm · Shift-click chọn khoảng · 1–0 gán · Enter mở · ⌫ bỏ gán · M lẫn lộn · V chốt theo đa số",
+  "forms.leastTypical": "Kém điển hình nhất",
   "forms.lede": "CODH, HI Lab và Minna de Honkoku ghi lại mọi tự dạng của cùng một chữ bằng cùng một điểm mã Unicode. Các tự hình được nhóm theo hình dạng. Hãy gán tự dạng cho từng nhóm, rồi chỉnh lại những tự hình khác với tự dạng đã gán.",
   "forms.moreLikeThese": "và {count} tự hình tương tự khác, đã bao gồm trong Chọn tất cả",
   "forms.notThisForm": "Không phải tự dạng này",

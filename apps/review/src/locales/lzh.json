@@ -199,6 +199,7 @@
   "forms.haveForm.other": "{count}已定體，多作「{glyph}」",
   "forms.heading": "定字體",
   "forms.keyboardHint": "J K移 · X或⌘/Ctrl點加 · Shift點擇其間 · 1–0定 · Enter開 · ⌫除 · M雜 · V從衆",
+  "forms.leastTypical": "罕者",
   "forms.lede": "CODH、HI Lab、みんなで翻刻皆以一碼統字諸體。字形依形分群；先名群體，後正其異者",
   "forms.moreLikeThese": "類此者尚{count}，並在「盡擇」中",
   "forms.notThisForm": "非此體",

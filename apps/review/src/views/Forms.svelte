@@ -41,6 +41,25 @@
     : cluster ? t('forms.target.clusterGlyphs', { label: cluster.label, count: cluster.count }) : '')
 
   async function refreshList() { list = (await loadFamilies()).items }
+  // The selected cluster's least typical glyphs. The cards show the most typical twelve, so a glyph of
+  // another form rarely shows among them; these are where one usually is.
+  const outlierCache = new Map()
+  let outliers = $state(null)
+  $effect(() => {
+    const id = cluster && !open && !reviewing && cluster.count > 12 ? cluster.id : null
+    if (!id) return
+    if (outlierCache.has(id)) { outliers = { id, items: outlierCache.get(id) }; return }
+    let current = true
+    // Moving through the grid with J and K asks only for the cluster it stops on.
+    const timer = setTimeout(async () => {
+      try {
+        const items = (await loadMembers(id, 0, 12, 'unusual')).items
+        outlierCache.set(id, items)
+        if (current) outliers = { id, items }
+      } catch { if (current) outliers = { id, items: [] } }
+    }, 150)
+    return () => { current = false; clearTimeout(timer) }
+  })
   /** A family as the grid shows it: with open clusters first when the reader asks for that. */
   function arranged(loaded) {
     if (openFirst) loaded.items = [...loaded.items.filter(isOpen), ...loaded.items.filter(c => !isOpen(c))]
@@ -412,6 +431,14 @@
                   </span>
                   <span class="cluster-samples">{#each c.representatives as r (r.id)}{#if r.image}<img class="glyph-image" src={r.image} alt="" loading="lazy" use:settle use:showsContext={{ id: r.id, pin: false }} />{/if}{/each}</span>
                 </button>
+                {#if i === active && c.count > 12}
+                  {@const shown = outliers?.id === c.id ? outliers.items.filter(g => !g.reported && !c.representatives.some(r => r.id === g.id)) : null}
+                  {#if !shown || shown.length}<div class="cluster-outliers" aria-busy={!shown}>
+                    <small>{t('forms.leastTypical')}</small>
+                    <span class="cluster-samples">{#if shown}{#each shown as g (g.id)}{#if g.image}<img class="glyph-image" src={g.image} alt="" loading="lazy" use:settle />{/if}{/each}
+                      {:else}{#each Array(Math.min(12, c.count - 12)) as _, j (j)}<span class="shimmer"></span>{/each}{/if}</span>
+                  </div>{/if}
+                {/if}
                 <span class="cluster-foot">
                   {#if c.exceptions}<small>{t('forms.setIndividually', { count: c.exceptions })}</small>{/if}
                   <button class="quiet-link" onclick={() => show(i)}>{t('forms.open', { count: c.count })}</button>
@@ -460,7 +487,7 @@
   .forms-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:10px 0 12px}.forms-keys{margin:0}
   .review-start{margin-left:auto;font-size:12px;padding:8px 13px;background:var(--ink);color:#fff;border-color:var(--ink)}.review-start kbd{font-size:9px;opacity:.7}
   .form-cluster.picked{border-color:var(--accent);background:#f3f1ff}
-  .cluster-grid{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px}
+  .cluster-grid{list-style:none;margin:0;padding:0;display:grid;align-items:start;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px}
   .form-cluster{border:1.5px solid var(--line);border-radius:9px;background:#fff;overflow:hidden}
   .form-cluster.active{border-color:var(--accent);box-shadow:0 0 0 3px #6356e51f}
   .form-cluster.assigned{background:#fbfbfe}
@@ -474,6 +501,8 @@
   .cluster-issue.reported{color:var(--wrong);background:var(--wrong-light)}
   .cluster-samples{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px}
   .cluster-samples img{aspect-ratio:1;border-radius:3px;padding:3px}
+  .cluster-outliers{padding:2px 12px 10px}.cluster-outliers small{display:block;font-size:10px;color:var(--muted);margin-bottom:6px}
+  .cluster-outliers .shimmer{aspect-ratio:1;border-radius:3px}
   .cluster-foot{display:flex;align-items:center;justify-content:space-between;padding:0 12px 10px;font-size:10px;color:var(--muted)}
   .cluster-foot .quiet-link{margin-left:auto;font-size:11px}
   .cluster-members{margin-top:16px}
