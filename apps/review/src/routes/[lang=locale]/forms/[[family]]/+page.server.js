@@ -9,7 +9,7 @@ export async function load({ fetch, params, parent }) {
   const list = (await families({ fetch })).items
   if (!params.family) {
     if (!list.length) return { initial: { list, family: null } }
-    redirect(307, localize('/forms/' + list[0].code_point, params.lang ?? 'en'))
+    redirect(307, localize('/forms/' + list[0].code_point, params.lang))
   }
   const code = params.family
   try {

@@ -34,7 +34,7 @@ const choose = async value => {
 }
 try {
   await browser.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] })
-  await browser.goto(base + '/review', { waitFor: 'document.querySelectorAll(".quiz-choice:not(:disabled)").length > 0' })
+  await browser.goto(base + '/en/review', { waitFor: 'document.querySelectorAll(".quiz-choice:not(:disabled)").length > 0' })
   await settled()
   assert(await material() === 'not:printed/type', 'initial review included movable type')
   assert(!await browser.evaluate('[...document.querySelectorAll(".quiz-tile [data-production]")].some(t => t.dataset.production.startsWith("printed/type"))'), 'movable type in default queue')

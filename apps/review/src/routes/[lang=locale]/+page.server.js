@@ -20,7 +20,7 @@ export async function load({ fetch, params, url }) {
   const group = GROUPS.includes(url.searchParams.get('group')) ? url.searchParams.get('group') : 'all'
   // One character, by itself or by code point, has a page of its own.
   const point = /^U\+[0-9a-f]{4,6}$/i.test(q) ? q.toUpperCase() : [...q].length === 1 ? 'U+' + q.codePointAt(0).toString(16).toUpperCase().padStart(4, '0') : null
-  if (point) redirect(307, localize(characterAddress(point), params.lang ?? 'en'))
+  if (point) redirect(307, localize(characterAddress(point), params.lang))
   const seed = randomSeed()
   const bare = !q && !grapheme && !work && group === 'all'
   const rest = Promise.all([

@@ -7,7 +7,8 @@
   const site = $derived(t('app.name'))
   const full = $derived(title ? `${title} · ${site}` : site)
   const canonical = $derived(page.url.origin + page.url.pathname)
-  // The same page in every interface language; English, unprefixed, is the default.
+  // The same page in every interface language; the unprefixed address, which picks the reader's
+  // language, is the default.
   const path = $derived(delocalize(page.url.pathname).path)
   const alternates = $derived(HREFLANG.map(locale => ({ tag: locale.tag, href: page.url.origin + localize(path, locale.tag) })))
   const picture = $derived(image ? new URL(image, page.url.origin).href : null)

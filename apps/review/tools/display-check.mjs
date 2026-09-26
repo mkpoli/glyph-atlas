@@ -49,7 +49,7 @@ try {
     ] })).toString('base64'),
   }) })
 
-  await browser.goto(`${service.base}/`, { waitFor: `document.querySelector('.glyph-tile .glyph-image')?.naturalWidth > 0` })
+  await browser.goto(`${service.base}/en`, { waitFor: `document.querySelector('.glyph-tile .glyph-image')?.naturalWidth > 0` })
 
   // 1. Original colour by default, and actually coloured.
   assert(await browser.evaluate(`document.documentElement.dataset.ink`) === 'original', 'Original is the default mode')
@@ -66,7 +66,7 @@ try {
   assert(greyFilters.length > 0 && greyFilters.every(f => /grayscale/.test(f)),
     `B&W filters every crop: ${JSON.stringify(greyFilters.slice(0, 3))}`)
   await browser.screenshot('/tmp/atlas-display-bw.png')
-  await browser.goto(`${service.base}/`, { waitFor: `document.querySelector('.glyph-tile') !== null` })
+  await browser.goto(`${service.base}/en`, { waitFor: `document.querySelector('.glyph-tile') !== null` })
   assert(await browser.evaluate(`document.documentElement.dataset.ink`) === 'bw', 'the choice survives a reload')
   await browser.evaluate(`[...document.querySelectorAll('.ink-toggle button')].find(b => b.textContent === 'Original').click()`)
   await browser.waitFor(`document.documentElement.dataset.ink === 'original'`)
@@ -75,7 +75,7 @@ try {
 
   // 3. A single viewer keeps the crop clear inside the original colour photograph.
   const unit = service.fixture.unit
-  await browser.evaluate(`visit('/crop/' + encodeURIComponent(${JSON.stringify(unit)}))`)
+  await browser.evaluate(`visit('/en/crop/' + encodeURIComponent(${JSON.stringify(unit)}))`)
   await browser.waitFor(`document.querySelector('dialog[open] .crop-viewport')?.dataset.ready === 'true'`)
   assert(await browser.evaluate(`document.querySelectorAll('.inspector-tabs, .inspector-crop, .nearby').length`) === 0, 'duplicate crop/context views remain')
   const reviewSource = await (await fetch(service.base + '/atlas/characters/' + encodeURIComponent(unit))).json()

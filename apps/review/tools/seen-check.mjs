@@ -35,7 +35,7 @@ const passRound = async () => {
 
 try {
   browser = await Browser.launch({ width: 1200, height: 700 })
-  await browser.goto(`${service.base}/review`)
+  await browser.goto(`${service.base}/en/review`)
   await browser.waitFor(loadedTiles, 60000)
   await Bun.sleep(300)
   const first = await browser.evaluate(tiles)

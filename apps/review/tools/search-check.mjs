@@ -47,7 +47,7 @@ try {
   const errors = []
   browser.listeners.push(m => { if (m.method === 'Runtime.exceptionThrown') errors.push(m.params.exceptionDetails?.text) })
 
-  await browser.goto(`${service.base}/`, { waitFor: `document.querySelectorAll('.glyph-tile').length > 0` })
+  await browser.goto(`${service.base}/en`, { waitFor: `document.querySelectorAll('.glyph-tile').length > 0` })
 
   // The work menu offers the works that have crops (the fixture's second work has none), and a chosen
   // work shows in the toggle until "All works" clears it.
