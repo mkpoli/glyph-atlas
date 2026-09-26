@@ -821,6 +821,13 @@ async function reviews(env:Env,all:boolean){
       expected_revision:r.expected_revision,publication_snapshot:parse(r.publication_snapshot)}
   }),publication:await meta(env,'published_at')};
 }
+/** Whether a suggestions request names the pixels the unit holds now: a corpus glyph by its source
+ *  revision, a crop by its page hash, and a crop published without a hash by its image. */
+export function samePixels(q: URLSearchParams, origin: string, data: Json): boolean {
+  if (origin === 'corpus') return q.get('source_revision') === data.source_revision;
+  return data.image_sha256 ? q.get('image_sha256') === data.image_sha256 : q.get('image') === data.image;
+}
+
 export default {
   async fetch(request:Request,env:Env,ctx:ExecutionContext):Promise<Response>{
     const url=new URL(request.url),path=url.pathname,q=url.searchParams;
@@ -857,8 +864,7 @@ export default {
       if(character){const row=await unit(env,decodeURIComponent(character[1]));
         if(character[2]){
           const data=parse(row.data);
-          const same=row.origin==='corpus'?q.get('source_revision')===data.source_revision:q.get('image_sha256')===data.image_sha256;
-          if(q.get('revision')!==String(row.revision)||!same)throw new Problem(409,'Character changed.');
+          if(q.get('revision')!==String(row.revision)||!samePixels(q,row.origin,data))throw new Problem(409,'Character changed.');
           return json(parse(character[2].endsWith('/context')?row.context:row.visual));
         }
         return json(parse(row.data));
