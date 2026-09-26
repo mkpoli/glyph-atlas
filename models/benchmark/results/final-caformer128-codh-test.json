@@ -1,0 +1,51 @@
+{
+ "set": "codh-test",
+ "crops": 45981,
+ "models": {
+  "onnx:work/experiments/final-caformer128/classifier.onnx": {
+   "seconds": 57.1,
+   "scores": {
+    "all": {
+     "n": 45981,
+     "top1": 0.9225,
+     "top5": 0.9709,
+     "family1": 0.9228,
+     "family5": 0.9709,
+     "empty": 0.0
+    },
+    "hiragana": {
+     "n": 11314,
+     "top1": 0.932,
+     "top5": 0.9949,
+     "family1": 0.932,
+     "family5": 0.9949,
+     "empty": 0.0
+    },
+    "kanji": {
+     "n": 33981,
+     "top1": 0.9295,
+     "top5": 0.9715,
+     "family1": 0.9298,
+     "family5": 0.9715,
+     "empty": 0.0
+    },
+    "katakana": {
+     "n": 99,
+     "top1": 0.6061,
+     "top5": 0.9697,
+     "family1": 0.6061,
+     "family5": 0.9697,
+     "empty": 0.0
+    },
+    "symbol": {
+     "n": 587,
+     "top1": 0.3918,
+     "top5": 0.477,
+     "family1": 0.3918,
+     "family5": 0.477,
+     "empty": 0.0
+    }
+   }
+  }
+ }
+}

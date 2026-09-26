@@ -277,3 +277,45 @@ def test_preprocessing_refuses_an_empty_crop() -> None:
         classify.preprocess(Image.new("L", (1, 1)).crop((0, 0, 0, 0)))
     with pytest.raises(ValueError):
         Classifier("stub.onnx", classes=CLASSES, session=object(), size=0)
+
+
+def test_the_size_is_read_from_the_export(tmp_path: Path) -> None:
+    """An export at 128 is fed 128-square crops; one whose input names no size gets the default."""
+    from types import SimpleNamespace
+
+    def session(shape):
+        return SimpleNamespace(get_inputs=lambda: [SimpleNamespace(name="pixel_values", shape=shape)])
+
+    wide = Classifier(tmp_path / "x.onnx", classes=CLASSES, session=session(["batch", 3, 128, 128]))
+    assert wide.size == 128
+    assert wide._pixels(crop(40, 60)).shape == (1, 3, 128, 128)
+    assert Classifier(tmp_path / "x.onnx", classes=CLASSES, session=session(["batch", 3, "h", "w"])).size == classify.SIZE
+
+
+def test_a_run_refuses_a_classifier_it_was_not_measured_with(tmp_path: Path) -> None:
+    import hashlib
+
+    from glyph_atlas.align import Run, check_classifier
+
+    export = tmp_path / "classifier.onnx"
+    export.write_bytes(b"one model")
+    run = Run(name="pinned", classifier=str(export), classifier_sha256=hashlib.sha256(b"one model").hexdigest())
+    check_classifier(run)
+    export.write_bytes(b"another model")
+    with pytest.raises(ValueError, match="not the classifier"):
+        check_classifier(run)
+    assert run.fingerprint() == run.model_copy(update={"classifier_sha256": None}).fingerprint()
+
+
+def test_a_classifier_handed_to_a_run_is_held_to_its_pin(tmp_path: Path) -> None:
+    import hashlib
+    from types import SimpleNamespace
+
+    from glyph_atlas import align
+
+    pinned, other = tmp_path / "pinned.onnx", tmp_path / "other.onnx"
+    pinned.write_bytes(b"one model")
+    other.write_bytes(b"another model")
+    run = align.Run(name="pinned", classifier=str(pinned), classifier_sha256=hashlib.sha256(b"one model").hexdigest())
+    with pytest.raises(ValueError, match="not the classifier"):
+        align.run_directory(tmp_path, run, pages=[], detector=object(), classifier=SimpleNamespace(onnx_path=other))

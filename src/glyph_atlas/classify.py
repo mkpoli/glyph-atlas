@@ -19,9 +19,9 @@ gets its mass there, and a caller that reads the probabilities as identification
 code points that all lie outside the class list still scores at the abstention probability instead of
 zero.
 
-The model takes one float32 tensor `pixel_values` of shape (1, 3, 96, 96) and returns either `probs`
-(1, classes), a distribution over the classes of `classes.json`, or `logits` of the same shape, which
-the module turns into a distribution itself. The class list is read from `classes.json`, beside the
+The model takes one float32 tensor `pixel_values` of shape (batch, 3, size, size) and returns either
+`probs` (batch, classes), a distribution over the classes of `classes.json`, or `logits` of the same
+shape, which the module turns into a distribution itself. The size is read from the export's input. The class list is read from `classes.json`, beside the
 export or one directory above it, which is how `models/classifier/artifacts/classifier.onnx` finds
 `models/classifier/classes.json`.
 
@@ -32,13 +32,14 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 from PIL import Image
 
-#: The side of the square the model takes.
+#: The side of the square an export takes when its input does not say.
 SIZE = 96
 
 #: The white a crop is padded with.
@@ -157,7 +158,7 @@ class Classifier:
     `classes` is the class order, a list or the path of a `classes.json`; without it the file beside
     the export, or one directory above it, is read. `session` replaces the onnxruntime session, which
     tests use to run a stub. `providers` names the execution providers to try, in order; `size`
-    overrides the side of the square the export takes.
+    overrides the side of the square, which is otherwise the export's own input size.
     """
 
     def __init__(
@@ -167,14 +168,14 @@ class Classifier:
         classes: Sequence[str] | Path | str | None = None,
         session: Any | None = None,
         providers: Sequence[str] | None = None,
-        size: int = SIZE,
+        size: int | None = None,
     ) -> None:
-        if size < 1:
+        if size is not None and size < 1:
             raise ValueError(f"size must be positive, got {size}")
         self.onnx_path = Path(onnx_path)
         self.classes = classes_for(self.onnx_path, classes)
-        self.size = int(size)
         self._session = session if session is not None else self._build_session(providers)
+        self.size = int(size or self._input_size())
 
     def _build_session(self, providers: Sequence[str] | None) -> Any:
         import onnxruntime as ort
@@ -198,6 +199,12 @@ class Classifier:
         options = ort.SessionOptions()
         options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         return ort.InferenceSession(str(self.onnx_path), sess_options=options, providers=usable)
+
+    def _input_size(self) -> int:
+        inputs = getattr(self._session, "get_inputs", None)
+        shape = inputs()[0].shape if inputs is not None and inputs() else []
+        side = shape[2] if len(shape) == 4 else None
+        return side if isinstance(side, int) and side > 0 else SIZE
 
     @property
     def other(self) -> str:
@@ -340,3 +347,33 @@ class Classifier:
                 return crop_array(Image.fromarray(array.astype(np.uint8), mode="L"), size=self.size)
             raise ValueError(f"a numpy crop must be a 2-D grey array, got shape {array.shape}")
         return crop_array(crop, size=self.size)
+
+
+
+@dataclass(frozen=True)
+class Trained:
+    """A `train.py` checkpoint rebuilt: the model on the CPU in eval mode, its class list, the fitted
+    temperature, the side of the square it was trained at and the timm name of its backbone."""
+
+    model: Any
+    classes: list[str]
+    temperature: float
+    size: int
+    backbone: str
+
+
+def load_checkpoint(path: Path | str) -> Trained:
+    """The PyTorch model a checkpoint holds, rebuilt from the configuration stored in it, so a caller
+    never assumes an architecture or a size."""
+    import timm
+    import torch
+
+    state = torch.load(Path(path), map_location="cpu", weights_only=False)
+    config = state["config"]
+    classes = [str(name) for name in state["classes"]]
+    backbone = config["model"]["checkpoint"]
+    model = timm.create_model(backbone, pretrained=False, num_classes=len(classes),
+                              **config["model"].get("options", {}))
+    model.load_state_dict(state["model"])
+    temperature = float(state.get("temperature", state.get("metrics", {}).get("temperature", 1.0)))
+    return Trained(model.eval(), classes, temperature, int(config["preprocessing"]["size"]), backbone)

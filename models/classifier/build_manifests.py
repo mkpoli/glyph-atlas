@@ -16,8 +16,9 @@ resizes happens in `glyph_atlas.classify`, once, for training and for serving al
 The split is by book, from `data/splits/codh.tsv`, so a hand, a block and a scan stay on one
 side of the split. The classes are the code points with at least `--min-train` crops in `train`, plus
 `other`, which carries every code point below that line and every code point the classifier was not
-trained on. The class order is fixed by `models/classifier/classes.json`: by descending number of
-training crops, then by code point, with `other` last.
+trained on. The class order is written to `work/classifier/classes.json`: by descending number of
+training crops, then by code point, with `other` last. The served class list comes from
+`build_combined.py`, which adds the HI Lab crops to these manifests.
 
     python models/classifier/build_manifests.py
     python models/classifier/build_manifests.py --limit 2000 --only train,test
@@ -260,7 +261,7 @@ class Options:
     dataset: Path = ROOT / "work" / "codh-full"
     splits: Path = ROOT / "data" / "splits" / "codh.tsv"
     out: Path = ROOT / "work" / "classifier"
-    classes: Path = ROOT / "models" / "classifier" / "classes.json"
+    classes: Path = ROOT / "work" / "classifier" / "classes.json"
     detector: Path = ROOT / "work" / "detector"
     image_cache: Path = ROOT / "cache" / "images"
     min_train: int = 20
