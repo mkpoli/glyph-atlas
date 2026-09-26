@@ -6,7 +6,8 @@
   import { settle } from '../lib/settle.js'
   import { showsContext } from '../lib/glyphContext.svelte.js'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
-  import { members as loadMembers, decide } from '../lib/forms.js'
+  import { members as loadMembers } from '../lib/forms.js'
+  import { history, step } from '../lib/formHistory.svelte.js'
   import { number, reviewer } from '../lib/client.js'
   import { t } from '../lib/i18n.svelte.js'
 
@@ -52,20 +53,22 @@
     return next ? family.items.findIndex(c => c.id === next) : family.items.length
   }
   async function save(form = null, mixed = false) {
-    if (busy || !cluster) return
+    if (busy || history.busy || !cluster) return
     busy = true; error = ''
     try {
       const units = [...marked], wrong = issue === 'character' && character.trim() ? { character: character.trim() } : {}
       // Every glyph of the cluster marked, none with a decision of its own: the cluster is reported
       // as a whole, in one decision that clearing the cluster takes back.
       const whole = !form && !mixed && units.length === total && glyphs.length === total && glyphs.every(g => g.basis !== 'form_glyph')
-      if (whole) await decide({ kind: 'cluster', cluster: cluster.id, issue, client_id: reviewer(), ...wrong })
-      // A decision covers at most 1,000 glyphs; a larger mark goes in parts.
-      else for (let i = 0; i < units.length; i += 1000)
-        await decide({ kind: 'glyph', units: units.slice(i, i + 1000), issue, client_id: reviewer(), ...wrong })
-      // Marked glyphs are reported first, so a cluster marked mixed keeps them.
-      if (mixed) await decide({ kind: 'cluster', cluster: cluster.id, issue: 'mixed', client_id: reviewer() })
-      if (form) await decide({ kind: 'cluster', cluster: cluster.id, form, client_id: reviewer() })
+      await step({ family: family.code_point, cluster: cluster.id }, async send => {
+        if (whole) await send({ kind: 'cluster', cluster: cluster.id, issue, client_id: reviewer(), ...wrong })
+        // A decision covers at most 1,000 glyphs; a larger mark goes in parts.
+        else for (let i = 0; i < units.length; i += 1000)
+          await send({ kind: 'glyph', units: units.slice(i, i + 1000), issue, client_id: reviewer(), ...wrong })
+        // Marked glyphs are reported first, so a cluster marked mixed keeps them.
+        if (mixed) await send({ kind: 'cluster', cluster: cluster.id, issue: 'mixed', client_id: reviewer() })
+        if (form) await send({ kind: 'cluster', cluster: cluster.id, form, client_id: reviewer() })
+      })
       const from = index, order = family.items.map(c => c.id)
       await onsaved({ reported: units.length, issue, mixed, form, count: cluster.count - units.length })
       character = ''

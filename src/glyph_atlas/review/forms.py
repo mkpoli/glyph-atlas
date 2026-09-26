@@ -198,12 +198,13 @@ def router(media, corpus_root: Path) -> APIRouter:
 
     @api.post("/atlas/forms/decisions")
     def decide(decision: Decision) -> dict[str, Any]:
+        undo = forms.restoring(decision.kind, cluster=decision.cluster, units=decision.units)
         try:
             event = forms.record(decision.kind, form=decision.form, cluster=decision.cluster,
                                  units=decision.units, note=decision.note, issue=decision.issue,
                                  character=decision.character)
         except forms.DecisionError as error:
             raise HTTPException(422, str(error)) from None
-        return {**{k: v for k, v in event.items() if k != "units"}, "count": len(event["units"])}
+        return {**{k: v for k, v in event.items() if k != "units"}, "count": len(event["units"]), "undo": undo}
 
     return api

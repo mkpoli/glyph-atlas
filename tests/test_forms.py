@@ -260,6 +260,35 @@ def test_a_cluster_is_marked_mixed_or_reported_whole(clustering, tmp_path):
     assert forms.form_for(A) is None
 
 
+def test_a_decision_answers_with_the_decisions_that_restore_what_it_changed(clustering, tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from glyph_atlas.review.forms import router
+
+    app = FastAPI()
+    app.include_router(router(media=None, corpus_root=tmp_path))
+    client = TestClient(app)
+    decide = lambda decision: client.post("/atlas/forms/decisions", json=decision).json()
+    replay = lambda undo: [decide(decision) for decision in undo]
+    # A cluster never named is cleared again; a named one gets its form back.
+    first = decide({"kind": "cluster", "cluster": "U+306F:one", "form": "𛂥"})
+    assert first["undo"] == [{"kind": "cluster", "cluster": "U+306F:one", "form": None}]
+    second = decide({"kind": "cluster", "cluster": "U+306F:one", "issue": "character", "character": "テ"})
+    replay(second["undo"])
+    assert forms.form_for(A)["form"] == "𛂥" and forms.form_for(A).get("issue") is None
+    replay(decide({"kind": "cluster", "cluster": "U+306F:one", "form": None})["undo"])
+    assert forms.form_for(A)["form"] == "𛂥"
+    # Glyphs get back their own decisions, and those that followed the cluster follow it again.
+    decide({"kind": "glyph", "units": [B], "form": "𛂞"})
+    decide({"kind": "glyph", "units": [C], "issue": "crop"})
+    changed = decide({"kind": "glyph", "units": [A, B, C], "form": None})
+    assert sorted(len(d["units"]) for d in changed["undo"]) == [1, 1, 1]
+    replay(changed["undo"])
+    assert forms.form_for(A)["basis"] == "form_cluster" and forms.form_for(A)["form"] == "𛂥"
+    assert forms.form_for(B)["form"] == "𛂞" and forms.form_for(C)["issue"] == "crop"
+
+
 def test_a_cluster_lists_its_least_typical_glyphs_past_the_typical_twelve(tmp_path):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient

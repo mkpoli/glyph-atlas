@@ -594,6 +594,7 @@ try {
   await call('/atlas/forms/decisions', { kind: 'cluster', cluster: 'U+4EEE:c1', form: 'あ', client_id: 'integration' }, 422)
   const named = await call('/atlas/forms/decisions', { kind: 'cluster', cluster: 'U+4EEE:c1', form: '仮', client_id: 'integration' })
   assert.equal(named.count, 2)
+  assert.deepEqual(named.undo, [{ kind: 'cluster', cluster: 'U+4EEE:c1', form: null }], 'a cluster never named is cleared again')
   const family = await call('/atlas/forms/families/U%2B4EEE')
   assert.deepEqual([family.assigned, family.items[0].form, family.items[0].assigned, family.items[0].majority, family.items[0].majority_count], [2, '仮', 2, '仮', 2])
   // A cluster of two has no glyphs past its typical twelve. Its least typical glyphs are read
@@ -644,6 +645,18 @@ try {
     { character: '假', family: 'U+4EEE' }, 'taking the report back restores its character and family')
   assert.equal((await call('/atlas/forms/families/U%2B4EEE')).rejected, 0)
   await counted()
+  // A decision answers with the decisions that restore what it changed; sent, they put the rows back.
+  const own = await call('/atlas/forms/decisions', { kind: 'glyph', units: ['codh:plain'], issue: 'character', character: 'テ', client_id: 'integration' })
+  assert.deepEqual(own.undo, [{ kind: 'inherit', units: ['codh:plain'] }])
+  const over = await call('/atlas/forms/decisions', { kind: 'glyph', units: ['codh:plain', 'codh:fixture'], form: '假', client_id: 'integration' })
+  assert.deepEqual([...over.undo].sort((a, b) => a.kind.localeCompare(b.kind)), [{ kind: 'glyph', form: null, issue: 'character', character: 'テ', units: ['codh:plain'] }, { kind: 'inherit', units: ['codh:fixture'] }])
+  for (const decision of over.undo) await call('/atlas/forms/decisions', { ...decision, client_id: 'integration' })
+  assert.deepEqual((await call('/atlas/forms/clusters/U%2B4EEE%3Ac1')).items.map(m => [m.id, m.reported, m.character, m.basis]),
+    [['codh:plain', 'character', 'テ', 'form_glyph'], ['codh:fixture', null, null, null]])
+  const mixedCluster = await call('/atlas/forms/decisions', { kind: 'cluster', cluster: 'U+4EEE:c1', issue: 'mixed', client_id: 'integration' })
+  assert.deepEqual(mixedCluster.undo, [{ kind: 'cluster', cluster: 'U+4EEE:c1', form: null }])
+  for (const decision of [...own.undo, ...mixedCluster.undo]) await call('/atlas/forms/decisions', { ...decision, client_id: 'integration' })
+  await counted()
   // A cluster marked mixed names nothing for its glyphs; one reported whole reports every glyph that
   // follows it; clearing the cluster takes either back.
   await call('/atlas/forms/decisions', { kind: 'cluster', cluster: 'U+4EEE:c1', form: '仮', client_id: 'integration' })
@@ -674,9 +687,10 @@ try {
   await call('/atlas/forms/decisions', { kind: 'glyph', units: ['codh:plain'], form: '假', client_id: 'integration' }, 503)
   await db.prepare('DELETE FROM form_loading').run()
   const log = await (await mf.dispatchFetch(base + '/atlas/forms/decisions.jsonl')).text()
-  assert.equal(log.trim().split('\n').length, 10, 'every accepted decision is logged, the refused ones are not')
+  assert.equal(log.trim().split('\n').length, 17, 'every accepted decision is logged, the refused ones are not')
   assert.deepEqual(log.trim().split('\n').map(JSON.parse).filter(d => d.issue).map(d => [d.kind, d.issue, d.character]),
-    [['glyph', 'character', 'テ'], ['cluster', 'mixed', undefined], ['cluster', 'character', 'テ']])
+    [['glyph', 'character', 'テ'], ['glyph', 'character', 'テ'], ['glyph', 'character', 'テ'], ['cluster', 'mixed', undefined],
+      ['cluster', 'mixed', undefined], ['cluster', 'character', 'テ']])
   // A repair verdict changed in place survives a review and its undo, and so does the quiz it decides.
   const vetted = { id: 'vetted', label: 'キ', reading: 'キ', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten',
     repair: { status: 'joined', quiz: true } }

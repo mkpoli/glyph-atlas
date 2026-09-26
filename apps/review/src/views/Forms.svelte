@@ -7,7 +7,8 @@
   import GlyphContext from '../components/GlyphContext.svelte'
   import { settle } from '../lib/settle.js'
   import { showsContext, clearContext } from '../lib/glyphContext.svelte.js'
-  import { families as loadFamilies, family as loadFamily, members as loadMembers, decide, split as loadSplit } from '../lib/forms.js'
+  import { families as loadFamilies, family as loadFamily, members as loadMembers, split as loadSplit } from '../lib/forms.js'
+  import { history, step, undo, redo } from '../lib/formHistory.svelte.js'
   import { number, reviewer, stored, remember } from '../lib/client.js'
   import { t, around, localize } from '../lib/i18n.svelte.js'
 
@@ -114,17 +115,19 @@
     anchor = index; chosen = next
   }
   async function apply(form, kind = null) {
-    if (busy || (!cluster && !chosen.size)) return
+    if (busy || history.busy || (!cluster && !chosen.size)) return
     busy = true; error = ''
     try {
       const units = [...chosen]
       const targets = units.length ? [] : pickedClusters.length ? pickedClusters.map(c => c.id) : [cluster.id]
-      let result = { count: 0 }
-      // A decision covers at most 1,000 glyphs; a larger selection is sent in parts.
-      for (let i = 0; i < units.length; i += 1000)
-        result = { count: result.count + (await decide({ kind: kind ?? 'glyph', units: units.slice(i, i + 1000), client_id: reviewer(), ...(kind === 'inherit' ? {} : { form }) })).count }
-      // One decision per cluster, so each keeps its own record and can be withdrawn on its own.
-      for (const id of targets) result = { count: result.count + (await decide({ kind: 'cluster', cluster: id, form, client_id: reviewer() })).count }
+      const result = { count: 0 }
+      await step({ family: code, cluster: open ?? targets[0] }, async send => {
+        // A decision covers at most 1,000 glyphs; a larger selection is sent in parts.
+        for (let i = 0; i < units.length; i += 1000)
+          result.count += (await send({ kind: kind ?? 'glyph', units: units.slice(i, i + 1000), client_id: reviewer(), ...(kind === 'inherit' ? {} : { form }) })).count
+        // One decision per cluster, so each keeps its own record and can be withdrawn on its own.
+        for (const id of targets) result.count += (await send({ kind: 'cluster', cluster: id, form, client_id: reviewer() })).count
+      })
       picked = new Set(); pickAnchor = null
       notice = form ? t('forms.notice.assigned', { form, count: result.count })
         : kind === 'inherit' ? t('forms.notice.inherited', { count: result.count }) : t('forms.notice.cleared', { count: result.count })
@@ -140,13 +143,15 @@
   // A cluster marked mixed holds more than one form; one reported as a whole reports every glyph that
   // follows it. Picked clusters are marked together, one decision each.
   async function markClusters(issue) {
-    if (busy || !cluster) return
+    if (busy || history.busy || !cluster) return
     busy = true; error = ''
     try {
       const targets = pickedClusters.length ? pickedClusters.map(c => c.id) : [cluster.id], index = active
       const wrong = issue === 'character' && correction.trim() ? { character: correction.trim() } : {}
       let count = 0
-      for (const id of targets) count += (await decide({ kind: 'cluster', cluster: id, issue, client_id: reviewer(), ...wrong })).count
+      await step({ family: code, cluster: targets[0] }, async send => {
+        for (const id of targets) count += (await send({ kind: 'cluster', cluster: id, issue, client_id: reviewer(), ...wrong })).count
+      })
       picked = new Set(); pickAnchor = null; correcting = false; correction = ''
       notice = issue === 'mixed' ? t('forms.notice.mixed', { count: targets.length }) : t('forms.notice.reported', { count, issue: issueName(issue) })
       setTimeout(() => notice = '', 2200)
@@ -161,13 +166,15 @@
   const issueName = issue => issue === 'crop' ? t('forms.reportIssue.crop') : t('forms.reportIssue.character')
   // A bad crop or a glyph of another character is not a form: it is reported, and leaves the family.
   async function flag(issue) {
-    if (busy || !chosen.size) return
+    if (busy || history.busy || !chosen.size) return
     busy = true; error = ''
     try {
       const units = [...chosen], result = { count: 0 }
-      for (let i = 0; i < units.length; i += 1000)
-        result.count += (await decide({ kind: 'glyph', units: units.slice(i, i + 1000), issue, client_id: reviewer(),
-          ...(issue === 'character' && correction.trim() ? { character: correction.trim() } : {}) })).count
+      await step({ family: code, cluster: open }, async send => {
+        for (let i = 0; i < units.length; i += 1000)
+          result.count += (await send({ kind: 'glyph', units: units.slice(i, i + 1000), issue, client_id: reviewer(),
+            ...(issue === 'character' && correction.trim() ? { character: correction.trim() } : {}) })).count
+      })
       notice = t('forms.notice.reported', { count: result.count, issue: issueName(issue) })
       setTimeout(() => notice = '', 2200)
       correcting = false; correction = ''
@@ -201,10 +208,35 @@
     await pick(code, true)
     await refreshList()
   }
+  // Taking a step back, or making it again, returns to where it was made: its family, and its cluster
+  // in the grid, the opened cluster or the review.
+  let reviewRound = $state(0)
+  async function takeBack(again) {
+    if (busy || history.busy) return
+    busy = true; error = ''
+    try {
+      const entry = again ? await redo() : await undo()
+      if (!entry) return
+      notice = t(again ? 'forms.notice.redone' : 'forms.notice.undone')
+      setTimeout(() => notice = '', 2200)
+      if (entry.family !== code) await pick(entry.family)
+      else await pick(code, true)
+      await refreshList()
+      const at = current.items.findIndex(c => c.id === entry.cluster)
+      if (open) { const page = await loadMembers(open, 0, Math.min(500, Math.max(240, glyphs.length)), order); glyphs = page.items; chosen = new Set(); if (splitK) groups = (await loadSplit(open, splitK)).groups }
+      else if (at >= 0) { active = at; if (reviewing) reviewRound++; else scrollActive() }
+    } catch (e) { error = e.message } finally { busy = false }
+  }
+  function historyKeys(event) {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey || event.target.closest?.('input, textarea')) return false
+    const key = event.key.toLowerCase()
+    if (key === 'z' || key === 'y') { event.preventDefault(); takeBack(key === 'y' || event.shiftKey); return true }
+    return false
+  }
   const clusterIssue = issue => issue === 'mixed' ? t('forms.mixed') : issue === 'crop' ? t('forms.cluster.crop') : t('forms.cluster.character', { char: current.char })
   function leaveReview(index) { reviewing = false; active = Math.min(index, current.items.length - 1); scrollActive() }
   function keydown(event) {
-    if (reviewing) return
+    if (historyKeys(event) || reviewing) return
     if (!current || event.target.closest?.('input, textarea') || event.metaKey || event.ctrlKey || event.altKey) return
     const keys = '1234567890'
     if (keys.includes(event.key) && current.forms[keys.indexOf(event.key)]) { event.preventDefault(); apply(current.forms[keys.indexOf(event.key)].char) }
@@ -292,10 +324,14 @@
         <div class="family-title">
           <h2>{current.char}</h2>
           <p><strong>{number(current.count)}</strong> {t('forms.glyphsLabel')} · {number(current.clusters)} {t('forms.clustersLabel')} · <strong>{number(current.assigned)}</strong> {t('forms.assignedLabel')}{#if current.rejected}{' · '}<strong>{number(current.rejected)}</strong> {t('forms.rejectedLabel')}{/if}</p>
+          <span class="history-actions">
+            <button disabled={busy || history.busy || !history.done.length} onclick={() => takeBack(false)} title={t('forms.undo.title')}>↶ {t('forms.undo')}</button>
+            <button disabled={busy || history.busy || !history.undone.length} onclick={() => takeBack(true)} title={t('forms.redo.title')}>↷ {t('forms.redo')}</button>
+          </span>
         </div>
 
         {#if reviewing}
-          <FormReview family={current} start={active} {isOpen} onsaved={reviewed} onexit={leaveReview} />
+          {#key reviewRound}<FormReview family={current} start={active} {isOpen} onsaved={reviewed} onexit={leaveReview} />{/key}
         {:else}
 
         <div class="form-palette" aria-label={t('forms.palette.label')}>
@@ -451,7 +487,8 @@
   .family-progress{display:flex;background:#ececef;border-radius:2px;overflow:hidden}.family-progress i{display:block;height:100%;background:var(--accent)}.family-progress i.rejected{background:var(--wrong);opacity:.55}
   .family-title{display:flex;align-items:baseline;gap:18px;border-bottom:1px solid var(--line);padding-bottom:12px}
   .family-title h2{font-size:48px;font-weight:500;font-family:"Noto Sans CJK JP","Yu Gothic",sans-serif}
-  .family-title p{font-size:12px;color:var(--muted)}.family-title strong{color:var(--ink);font-weight:500}
+  .family-title p{font-size:12px;color:var(--muted)}
+  .history-actions{margin-left:auto;display:flex;gap:4px}.history-actions button{font-size:11px;padding:6px 10px}.family-title strong{color:var(--ink);font-weight:500}
   .form-palette{position:sticky;top:0;z-index:3;background:#fafafaf2;backdrop-filter:blur(12px);padding:14px 0;border-bottom:1px solid var(--line)}
   .palette-target{font-size:12px;color:var(--muted);margin-bottom:10px}.palette-target strong{color:var(--ink);font-weight:500}
   .palette-forms{display:flex;flex-wrap:wrap;gap:6px;align-items:stretch}
