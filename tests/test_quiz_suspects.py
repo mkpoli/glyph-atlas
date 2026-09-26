@@ -168,3 +168,18 @@ def test_catalogue_crops_are_marked_under_the_label_and_box_they_are_served_with
     monkeypatch.setattr(quiz_suspects, "_mark", mark)
     assert quiz_suspects.compute_catalogues([catalogue], tmp_path / "out.json", checkpoint=tmp_path) == {"scored": 1}
     assert seen == {"a": ("イ", box)}
+
+
+def test_a_crop_in_two_catalogues_is_scored_once_as_the_later_serves_it(tmp_path, monkeypatch):
+    import sqlite3
+
+    image = "/atlas/media/" + "0" * 64 + ".webp"
+    for name, label in (("one", "イ"), ("two", "ア")):
+        with sqlite3.connect(tmp_path / f"{name}.sqlite") as db:
+            db.execute("CREATE TABLE units (id TEXT PRIMARY KEY, data TEXT)")
+            db.execute("INSERT INTO units VALUES(?,?)", ("a", json.dumps({"label": label, "box": None, "image": image})))
+    seen = []
+    monkeypatch.setattr(quiz_suspects, "_mark", lambda crops, target, **kwargs: seen.extend((c[0], c[1]) for c in crops) or {})
+    quiz_suspects.compute_catalogues([tmp_path / "one.sqlite", tmp_path / "two.sqlite"], tmp_path / "out.json",
+                                     checkpoint=tmp_path)
+    assert seen == [("a", "ア")]

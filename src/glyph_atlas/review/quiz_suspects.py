@@ -197,12 +197,14 @@ def same_box(a: dict | None, b: dict | None) -> bool:
     return all(abs(float(a[k]) - float(b[k])) < 1e-6 for k in "xywh")
 
 
-def _write(target: Path, suspects: dict[str, dict], scored: int, inputs: dict) -> dict[str, Any]:
+def _write(target: Path, suspects: dict[str, dict], scored: int, inputs: dict,
+           scored_ids: list[str] | None = None) -> dict[str, Any]:
     revision = hashlib.sha256(json.dumps({"method": METHOD, "inputs": inputs, "suspects": suspects},
                                          sort_keys=True).encode()).hexdigest()[:16]
     temporary = target.with_name(target.name + ".tmp")
     temporary.write_text(json.dumps({"revision": revision, "method": METHOD, "flag_below": FLAG_BELOW,
-                                     "reads_as": READS_AS, "scored": scored, "suspects": suspects},
+                                     "reads_as": READS_AS, "scored": scored, "suspects": suspects,
+                                     **({"scored_ids": scored_ids} if scored_ids is not None else {})},
                                     ensure_ascii=False, sort_keys=True))
     os.replace(temporary, target)
     return {"scored": scored, "suspects": len(suspects), "revision": revision}
@@ -247,7 +249,8 @@ def compute_catalogues(catalogues: Iterable[Path], target: Path, *, checkpoint: 
     from .media import MediaCache
 
     media = MediaCache()
-    crops = []
+    # A crop published twice is the one the later catalogue gives: it is scored once, as served last.
+    crops: dict[str, tuple] = {}
     for catalogue in catalogues:
         with sqlite3.connect(f"file:{catalogue}?mode=ro", uri=True) as db:
             for identity, data in db.execute("SELECT id, data FROM units"):
@@ -255,15 +258,15 @@ def compute_catalogues(catalogues: Iterable[Path], target: Path, *, checkpoint: 
                 found = re.fullmatch(r"/atlas/media/([0-9a-f]{64})\.webp", item.get("image") or "")
                 if not found or not item.get("label"):
                     continue
-                crops.append((identity, item["label"], item.get("box"),
-                              lambda key=found[1]: media.materialize(key).read_bytes()))
+                crops[identity] = (identity, item["label"], item.get("box"),
+                                   lambda key=found[1]: media.materialize(key).read_bytes())
     if not crops:
         raise RuntimeError("the catalogues hold no crop with a display image")
     target.parent.mkdir(parents=True, exist_ok=True)
-    return _mark(crops, target, checkpoint=checkpoint, lookalikes=lookalikes)
+    return _mark(list(crops.values()), target, list_scored=True, checkpoint=checkpoint, lookalikes=lookalikes)
 
 
-def _mark(crops: list[tuple], target: Path, *, checkpoint: Path, lookalikes: Path) -> dict[str, Any]:
+def _mark(crops: list[tuple], target: Path, *, list_scored: bool = False, checkpoint: Path, lookalikes: Path) -> dict[str, Any]:
     """Classify `crops` (id, label, box, a function giving the image bytes) and write their marks."""
     from PIL import Image
 
@@ -287,7 +290,7 @@ def _mark(crops: list[tuple], target: Path, *, checkpoint: Path, lookalikes: Pat
     inputs = {"crops": hashlib.sha256("\n".join(sorted(c[0] for c in crops)).encode()).hexdigest(),
               "checkpoint": _digest(checkpoint), "lookalikes": _digest(lookalikes),
               "kana_origins": _digest(refs_table("kana-origins.tsv")), "suspect_forms": _digest(refs_table("suspect-forms.tsv"))}
-    return _write(target, suspects, len(crops), inputs)
+    return _write(target, suspects, len(crops), inputs, scored_ids=sorted(c[0] for c in crops) if list_scored else None)
 
 
 def corpus_glyphs(root: Path, corpora: Iterable[str]) -> Iterator[dict]:
