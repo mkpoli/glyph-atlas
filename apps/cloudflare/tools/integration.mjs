@@ -122,6 +122,11 @@ try {
   await db.prepare('INSERT INTO unit_shapes VALUES(?,?)').bind('two', 7).run()
   const shaped = Object.fromEntries((await call('/atlas?purpose=review&production=all')).items.map(i => [i.id, i.shape_order]))
   assert.deepEqual(shaped, { one: null, two: 7 }, 'a crop carries its shape order, or null without one')
+  await db.batch([db.prepare('INSERT INTO unit_suspects VALUES(?,?,?,?,?)').bind('two', 0.01, 'マ', 'ア', null),
+    db.prepare('INSERT INTO unit_suspects VALUES(?,?,?,?,?)').bind('one', 0.02, null, 'イ', null)])
+  const marked = Object.fromEntries((await call('/atlas?purpose=review&production=all')).items.map(i => [i.id, i.suspect]))
+  assert.deepEqual(marked, { one: null, two: { p: 0.01, reads_as: 'マ' } },
+    'a crop carries the classifier\'s doubt, or null without one or once relabelled')
   // Flagged order: a crop already reviewed in the character inspector queues behind one nobody has.
   for (const id of ['flag-a', 'flag-b']) {
     const d = { id, label: 'ラ', reading: 'ラ', state: 'pending', revision: 0, image_sha256: hash,
@@ -299,6 +304,11 @@ try {
   assert.deepEqual(dealtNa.slice(0, 2).sort(), ['na-local-a', 'na-local-b'], 'local crops come first')
   assert.deepEqual(dealtNa.slice(2), ['na-2', 'na-4', 'na-5', 'na-3', 'na-1'], 'then corpus glyphs in shuffle order')
   assert.deepEqual((await ids('&seed=25')).slice(2), ['na-5', 'na-3', 'na-1', 'na-2', 'na-4'], 'the seed picks where the shuffle starts')
+  await db.batch([db.prepare('INSERT INTO unit_suspects VALUES(?,?,?,?,?)').bind('na-3', 0.02, null, 'ナ', '{"x":1,"y":2,"w":3,"h":4}'),
+    db.prepare('INSERT INTO unit_suspects VALUES(?,?,?,?,?)').bind('na-1', 0.02, null, 'ナ', '{"x":1,"y":2,"w":3,"h":9}')])
+  const doubted = Object.fromEntries((await roundOf('&seed=0')).items.map(i => [i.id, i.suspect]))
+  assert.deepEqual(doubted['na-3'], { p: 0.02, reads_as: null }, 'a corpus glyph carries its mark as well')
+  assert.equal(doubted['na-1'], null, 'a mark made for another box does not hold')
   const paged = []
   for (let offset = 0; offset < 7; offset += 3) paged.push(...await ids(`&seed=0&limit=3&offset=${offset}`))
   assert.deepEqual(paged, dealtNa, 'paging runs on from the local crops into the corpus glyphs')
