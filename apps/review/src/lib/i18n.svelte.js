@@ -3,7 +3,7 @@
  * `@locale` entry gives the language's own name, the `base` language the number and plural rules
  * come from, and the browser languages it `matches` on a first visit. `"numerals": "hanzi"` writes
  * its numbers, dates and times in Chinese numerals (一千零五, 二〇二六年九月二十六日); `"classical"` in the
- * classical way, leaving gaps unwritten and zero as 無 (一千五, 二千二十六年九月二十六日).
+ * classical way, a gap as 有 and zero as 無 (一千有五, 二千有二十六年九月二十六日).
  */
 export const LOCALES = Object.entries(import.meta.glob('../locales/*.json', { eager: true, import: 'default' }))
   .map(([path, { '@locale': about, ...messages }]) => ({ tag: path.slice(11, -5), ...about, messages }))
@@ -95,7 +95,7 @@ const numerals = () => byTag[current].numerals
 const hanzi = () => numerals() === 'hanzi' || numerals() === 'classical'
 const DIGITS = '〇一二三四五六七八九'
 
-/** 1–9999 with its 千百十 places, a gap written as `gapWord`: 105 is 一百零五, or 一百五 with none. */
+/** 1–9999 with its 千百十 places, a gap written as `gapWord`: 105 is 一百零五, or 一百有五. */
 function hanziGroup(value, gapWord) {
   let text = '', gap = false
   for (const [place, unit] of [[1000, '千'], [100, '百'], [10, '十'], [1, '']]) {
@@ -110,11 +110,11 @@ function hanziGroup(value, gapWord) {
 /**
  * A whole number below 10¹⁶ in Chinese numerals, grouped by 萬, 億 and 兆: 12345 is 一萬二千三百四十五,
  * 15 is 十五. The modern form writes 零 for zero and for a gap (10005 is 一萬零五); the classical form
- * leaves gaps unwritten and writes zero as 無 (10005 is 一萬五).
+ * joins a gap with 有 and writes zero as 無 (10005 is 一萬有五).
  */
 function hanziNumber(value) {
   const classical = numerals() === 'classical'
-  const gapWord = classical ? '' : '零'
+  const gapWord = classical ? '有' : '零'
   let n = Math.round(Math.abs(value))
   if (!n) return classical ? '無' : '零'
   const groups = []
