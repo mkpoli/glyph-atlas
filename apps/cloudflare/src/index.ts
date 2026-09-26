@@ -219,6 +219,26 @@ async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, productio
   ctx.waitUntil(caches.default.put(key, Response.json(groups.results, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return groups;
 }
+// The crops a listing starts from: local ones, those a round may deal, in the material asked for.
+// A round and its reference strips name their character, and read it through `unit_character`: the
+// review filter is kept off its index (`+`), which would otherwise drive the query over every crop
+// that can be dealt.
+export function listingFilter(review: boolean, production: string, character: string | null) {
+  const [materials, materialValues] = material(production, 'production');
+  const where = ["origin='local'", ...(review ? [character === null ? 'quiz=1' : '+quiz=1'] : []), materials];
+  const values: (string | number)[] = [...materialValues];
+  if (character !== null) { where.push('character=?'); values.push(character) }
+  return { where, values };
+}
+// Counts by character and state, and for browsing by book as well; a book's title is the one its
+// crops were published with. Counting every character evaluates each crop's review state, which takes
+// seconds, so a round asks only for its own character's.
+export function facetsQuery(review: boolean, state: string, where: string[]) {
+  return review
+    ? `SELECT character AS label,max(family) AS family,NULL AS document,NULL AS title,${state} AS state,count(*) AS n FROM units WHERE ${where.join(' AND ')} GROUP BY 1,5`
+    : `SELECT character AS label,max(family) AS family,document,max(json_extract(data,'$.source')) AS title,${state} AS state,count(*) AS n
+    FROM units WHERE ${where.join(' AND ')} GROUP BY 1,3,5`;
+}
 async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   const q = url.searchParams;
   const purpose = q.get('purpose') || 'browse';
@@ -228,22 +248,16 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   const seed = integer(q, 'seed', 0, 2147483647);
   const limit = integer(q, 'limit', 60, 96), offset = integer(q, 'offset', 0);
   if (review && offset > ROUND_OFFSET_MAX) throw new Problem(404, 'A round does not page this far.');
-  const where = ["origin='local'"];
-  const values: (string | number)[] = [];
-  if (review) where.push('quiz=1');
-  const [materials, materialValues] = material(production, 'production');
-  where.push(materials); values.push(...materialValues);
   const reviewer = q.get('reviewer') ? text(q.get('reviewer'), 128, 'reviewer', true)! : null;
   const state = stateFor(reviewer);
-  // Counts by character and by book in one pass; a book's title is the one its crops were published with.
-  // A round needs only the characters, and is never cached, so it skips the per-work grouping.
-  const facets = env.DB.prepare(review
-    ? `SELECT character AS label,max(family) AS family,NULL AS document,NULL AS title,${state} AS state,count(*) AS n FROM units WHERE ${where.join(' AND ')} GROUP BY 1,5`
-    : `SELECT character AS label,max(family) AS family,document,max(json_extract(data,'$.source')) AS title,${state} AS state,count(*) AS n
-    FROM units WHERE ${where.join(' AND ')} GROUP BY 1,3,5`).bind(...values);
+  const reading = q.get('reading');
+  const scoped = review && reading !== null;
+  const { where, values } = listingFilter(review, production, scoped ? reading : null);
+  const [materials, materialValues] = material(production, 'production');
+  const facets = env.DB.prepare(facetsQuery(review, state, where)).bind(...values);
   // Only counts that are the same for every visitor are cached; a reviewer's own skips are theirs.
   const [groups, published] = review ? await env.DB.batch([facets,
-    ...[corpusCountQuery(production)].map(({ sql, values }) => env.DB.prepare(sql).bind(...values)),
+    ...[corpusCountQuery(production, scoped ? reading : null)].map(({ sql, values }) => env.DB.prepare(sql).bind(...values)),
   ]) as D1Result<Facet>[] : [reviewer ? await facets.all<Facet>() : await browseFacets(env, ctx, url, production, facets)];
   const categories = new Map<string, Json>(), documents = new Map<string, Json>();
   const counts: Json = { pending: 0, seen: 0, flagged: 0, checked: 0, hard: 0, skipped: 0 };
@@ -261,8 +275,7 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   // A corpus glyph nothing has named is pending for everyone, and the table counts them per character.
   const corpus = new Map<string, number>();
   if (review) for (const row of published.results) if (row.n > 0) { corpus.set(row.label, row.n); add(row.label, 'pending', row.n) }
-  const reading = q.get('reading');
-  if (reading) { where.push('character=?'); values.push(reading) }
+  if (reading && !scoped) { where.push('character=?'); values.push(reading) }
   const document = text(q.get('document'), 256, 'document');
   if (document) { where.push('document=?'); values.push(document) }
   // A grapheme is a family's representative code point, or a label's own code points.
@@ -354,9 +367,10 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
     items };
 }
 // Untouched assigned corpus glyphs per character in this material.
-export function corpusCountQuery(production: string) {
+export function corpusCountQuery(production: string, character: string | null = null) {
   const [materials, values] = material(production, 'production');
-  return { sql: `SELECT character AS label,sum(n-named) AS n FROM corpus_characters WHERE ${materials} GROUP BY character`, values };
+  return { sql: `SELECT character AS label,sum(n-named) AS n FROM corpus_characters WHERE ${character === null ? '' : 'character=? AND '}${materials} GROUP BY character`,
+    values: character === null ? values : [character, ...values] };
 }
 // The round character's named corpus glyphs that are due, from its most recently named pending rows.
 export function namedRoundQuery(materials: string, state: string) {
