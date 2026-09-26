@@ -39,7 +39,8 @@ UNITS_PER_STATEMENT = 1000
 # Every decision stored in D1, replayed in the order it was made onto freshly loaded rows: a glyph's
 # cluster form is the latest cluster decision that listed it, its own decision the latest glyph or
 # inherit decision, and its form the second when it has one. The Worker applies one decision the
-# same way. The site takes no decision from the reload to here (`form_loading`).
+# same way. The site takes no decision from the reload to here (`form_loading`). `forms_loaded_at` marks
+# the finished load; the Worker keys its cached family pages by it.
 REPLAY = """
 DELETE FROM form_marks;
 INSERT INTO form_marks(id,at,seq,kind,form,decision,issue,character,character_family)
@@ -60,6 +61,7 @@ UPDATE form_clusters SET (form,decision)=(SELECT d.form,d.id FROM form_decisions
   ORDER BY d.at DESC,d.seq DESC LIMIT 1);
 UPDATE form_families SET assigned=(SELECT count(*) FROM form_units WHERE family=code_point AND form IS NOT NULL),
   rejected=(SELECT count(*) FROM form_units WHERE family=code_point AND glyph_issue IS NOT NULL);
+INSERT OR REPLACE INTO metadata(key,value) VALUES('forms_loaded_at',json_quote(strftime('%Y-%m-%dT%H:%M:%fZ','now')));
 DELETE FROM form_loading;
 """
 

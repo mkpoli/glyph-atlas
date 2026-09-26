@@ -69,6 +69,12 @@ try {
   const bucket = await mf.getR2Bucket('MEDIA')
   await bucket.put('fixture', raw)
   await db.prepare('INSERT INTO corpus_units VALUES(?,?,?,?,?,?,?,?,?,?)').bind(corpus.id, null, 'U+4EEE', 'group-one', 1, 'fixture', 0, new TextEncoder().encode(raw).length, 'unknown', 0).run()
+  // The gallery deals copies of the published records; one copied from a pack a later publication
+  // replaced no longer matches its row, and is not dealt.
+  const stale = { ...corpus, id: 'codh:stale', label: '古' }
+  await db.batch([db.prepare('INSERT INTO corpus_gallery VALUES(?,?,?,?,?)').bind(corpus.id, 1, 'fixture', 0, raw),
+    db.prepare('INSERT INTO corpus_units VALUES(?,?,?,?,?,?,?,?,?,?)').bind(stale.id, null, 'U+53E4', null, 2, 'newer-pack', 0, 10, 'unknown', 0),
+    db.prepare('INSERT INTO corpus_gallery VALUES(?,?,?,?,?)').bind(stale.id, 2, 'older-pack', 0, JSON.stringify(stale))])
   // Miniflare hands the Worker its own loopback address, so the page origin a browser would send is
   // that address; a fixed `http://localhost` fails the Worker's same-origin check on every POST.
   const base = new URL(await mf.ready).origin
@@ -106,7 +112,9 @@ try {
   assert.equal((await call(unassigned)).glyphs, 0)
   assert.equal((await call('/layers/candidates?code_point=U%2B5047')).glyphs, 1, 'corrected occurrence enters new search')
   assert.equal((await call('/layers/candidates?code_point=U%2B4EEE')).glyphs, 0)
-  assert.equal((await call('/layers/gallery')).items[0].label, '假', 'gallery uses current reviews')
+  const galleried = (await call('/layers/gallery')).items
+  assert.equal(galleried[0].label, '假', 'gallery uses current reviews')
+  assert.ok(!galleried.some(item => item.id === stale.id), 'a copy of a replaced record is not dealt')
   const exported = await call('/atlas/reviews.json')
   assert.equal(exported.reviews.filter(r => r.current).length, 1)
   assert.equal(exported.reviews.find(r => r.origin === 'corpus').source_update.proposed_character, '假')
@@ -127,6 +135,8 @@ try {
   const marked = Object.fromEntries((await call('/atlas?purpose=review&production=all')).items.map(i => [i.id, i.suspect]))
   assert.deepEqual(marked, { one: null, two: { p: 0.01, reads_as: 'マ' } },
     'a crop carries the classifier\'s doubt, or null without one or once relabelled')
+  const browsed = Object.fromEntries((await call('/atlas')).items.map(i => [i.id, i.suspect]))
+  assert.deepEqual(browsed, marked, 'browse carries the same doubt')
   // Flagged order: a crop already reviewed in the character inspector queues behind one nobody has.
   for (const id of ['flag-a', 'flag-b']) {
     const d = { id, label: 'ラ', reading: 'ラ', state: 'pending', revision: 0, image_sha256: hash,
@@ -528,6 +538,7 @@ try {
   const plain = JSON.stringify({ ...corpus, id: 'codh:plain' })
   await bucket.put('plain', plain)
   await db.prepare('INSERT INTO corpus_units VALUES(?,?,?,?,?,?,?,?,?,?)').bind('codh:plain', '假', 'U+4EEE', null, 2, 'plain', 0, new TextEncoder().encode(plain).length, 'unknown', 0).run()
+  await db.prepare('INSERT INTO corpus_gallery VALUES(?,?,?,?,?)').bind('codh:plain', 2, 'plain', 0, plain).run()
   await db.prepare("INSERT INTO corpus_characters VALUES('假','unknown',1,0) ON CONFLICT DO UPDATE SET n=n+1").run()
   // Quick review's per-character counts agree with a recount of the rows after every decision.
   const counted = async () => {
@@ -549,10 +560,17 @@ try {
   await call('/atlas/forms/decisions', { kind: 'glyph', units: ['codh:plain'], form: '假', client_id: 'integration' })
   const record = await call('/atlas/corpus/character?id=codh%3Aplain')
   assert.deepEqual([record.written_character, record.identity_basis], ['假', 'form_glyph'], 'a glyph decision overrides its cluster')
+  const shown = (await call('/layers/gallery')).items.find(item => item.id === 'codh:plain')
+  assert.deepEqual([shown.written_character, shown.identity_basis, shown.form_cluster], ['假', 'form_glyph', { id: 'U+4EEE:c1' }], 'the gallery shows the form decision')
   const members = await call('/atlas/forms/clusters/U%2B4EEE%3Ac1')
   assert.deepEqual(members.items.map(m => [m.id, m.form, m.basis]), [['codh:plain', '假', 'form_glyph'], ['codh:fixture', '仮', 'form_cluster']])
   await call('/atlas/forms/decisions', { kind: 'inherit', units: ['codh:plain'], client_id: 'integration' })
   assert.equal((await call('/atlas/corpus/character?id=codh%3Aplain')).written_character, '仮', 'following the cluster again')
+  // A reload of the same clustering with no new decision still shows once it finishes.
+  assert.equal((await call('/atlas/forms/families')).items[0].label, '仮 = 假')
+  await db.batch([db.prepare("UPDATE form_families SET label='仮 = 假 = 叚' WHERE code_point='U+4EEE'"),
+    db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('forms_loaded_at','\"reloaded\"')")])
+  assert.equal((await call('/atlas/forms/families')).items[0].label, '仮 = 假 = 叚', 'a finished reload replaces the cached families')
   await counted()
   await call('/atlas/forms/decisions', { kind: 'cluster', cluster: 'U+4EEE:c1', form: null, client_id: 'integration' })
   assert.equal((await db.prepare("SELECT character FROM corpus_units WHERE id='codh:plain'").first()).character, '假',
@@ -586,6 +604,19 @@ try {
   const log = await (await mf.dispatchFetch(base + '/atlas/forms/decisions.jsonl')).text()
   assert.equal(log.trim().split('\n').length, 6, 'every accepted decision is logged, the refused ones are not')
   assert.deepEqual(log.trim().split('\n').map(JSON.parse).filter(d => d.issue).map(d => [d.issue, d.character]), [['character', 'テ']])
+  // A repair verdict changed in place survives a review and its undo, and so does the quiz it decides.
+  const vetted = { id: 'vetted', label: 'キ', reading: 'キ', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten',
+    repair: { status: 'joined', quiz: true } }
+  await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
+    vetted.id, 'local', 'キ', 'キ', 'U+30AD', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
+    JSON.stringify(vetted), JSON.stringify({ character: vetted }), '{}', '{}').run()
+  const vettedRound = { id: crypto.randomUUID(), client_id: 'integration', label: 'キ',
+    answers: [{ id: 'vetted', revision: 0, image_sha256: hash, verdict: 'wrong', issue: 'blank' }] }
+  await call('/atlas/rounds', vettedRound)
+  await db.prepare(`UPDATE units SET data=json_set(data,'$.repair',json('{"status":"uncertain","quiz":false}')), quiz=0 WHERE id='vetted' AND revision=1`).run()
+  await call(`/atlas/rounds/${vettedRound.id}/undo`, { client_id: 'integration' })
+  const vettedRow = await db.prepare("SELECT quiz, json_extract(data,'$.repair.quiz') AS dealt, json_extract(data,'$.state') AS state FROM units WHERE id='vetted'").first()
+  assert.deepEqual(vettedRow, { quiz: 0, dealt: 0, state: 'pending' }, 'undo restores the review state and keeps the newer repair verdict out of the quiz')
   // A retired crop names the crop that replaced it: deleted, kept for its history, or through a chain.
   const retiredCrop = { id: 'retired-kept', label: 'ア', reading: 'ア', state: 'flagged', revision: 1, image_sha256: hash, production: 'handwritten' }
   await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
@@ -603,6 +634,57 @@ try {
   assert.equal((await looped.json()).replaced_by, undefined, 'a redirect loop is answered as missing')
   assert.ok(!(await call('/atlas?state=all&limit=96')).items.some(i => i.id === 'retired-kept'), 'a retired crop is in no listing')
   assert.ok(!(await call('/atlas?state=attention&limit=96')).items.some(i => i.id === 'retired-kept'), 'nor in Needs fixing')
+  // Browse starts from a point the seed picks and wraps round, so every page run deals each crop once.
+  await db.prepare('UPDATE units SET shuffle=rowid*1000').run()
+  const everyLocal = (await db.prepare("SELECT id FROM units WHERE origin='local'").all()).results.map(r => r.id).sort()
+  for (const seed of [0, 5500, 12345, 268435455, 268440000]) {
+    const dealt = []
+    for (let offset = 0, total = Infinity; offset < total;) {
+      const page = await call(`/atlas?seed=${seed}&offset=${offset}&limit=7`)
+      dealt.push(...page.items.map(i => i.id)); total = page.total; offset = page.next_offset
+    }
+    assert.deepEqual(dealt.slice().sort(), everyLocal, `seed ${seed} deals every crop once`)
+  }
+  const dealtFrom = async seed => (await call(`/atlas?seed=${seed}&limit=96`)).items.map(i => i.id)
+  const [fromZero, later] = [await dealtFrom(0), await dealtFrom(5500)]
+  assert.notEqual(fromZero[0], later[0], 'another seed starts elsewhere')
+  assert.deepEqual(later.slice().sort(), fromZero.slice().sort(), 'and wraps round to the same crops')
+  // A grapheme lists its family's crops and its own character's, each once.
+  for (const [id, character, family] of [['fam-a', '假', 'U+4EEE'], ['fam-b', '仮', null], ['fam-c', '仮', 'U+4EEE'], ['fam-other', '何', 'U+4F55']]) {
+    const d = { id, label: character, reading: character, state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
+    await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(id, 'local', character, character, family, null,
+      'handwritten', 'kanji', 'pending', 0, 0, 1, 1, JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}').run()
+  }
+  const inGrapheme = async query => { const found = await call('/layers/occurrences?code_point=U%2B4EEE' + query); return [found.total, found.items.map(i => i.id).filter(id => id.startsWith('fam-'))] }
+  const localCount = async where => (await db.prepare(`SELECT count(*) AS n FROM units WHERE origin='local' AND ${where}`).first()).n
+  const [graphemeTotal, characterTotal] = [await localCount("(family='U+4EEE' OR character='仮')"), await localCount("character='仮'")]
+  assert.deepEqual(await inGrapheme('&scope=grapheme&limit=200'), [graphemeTotal, ['fam-a', 'fam-b', 'fam-c']], 'a grapheme lists its family and its character')
+  assert.deepEqual(await inGrapheme('&limit=200'), [characterTotal, ['fam-b', 'fam-c']], 'a character lists its own crops')
+  const ordered = (await call('/layers/occurrences?code_point=U%2B4EEE&scope=grapheme&limit=200')).items.map(i => i.id)
+  assert.deepEqual(ordered, ordered.slice().sort(), 'in id order')
+  assert.equal((await call(`/layers/occurrences?code_point=U%2B4EEE&scope=grapheme&limit=1&offset=${ordered.indexOf('fam-b')}`)).items[0].id, 'fam-b', 'and pages through them')
+  // Search finds a crop by its character or by its reading, each once.
+  for (const [id, character, reading] of [['find-both', 'とも', 'とも'], ['find-reading', '𪜈', 'とも'], ['find-neither', '𪜈', '𪜈']]) {
+    const d = { id, label: character, reading, state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
+    await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(id, 'local', character, reading, null, null,
+      'handwritten', 'kana', 'pending', 0, 0, 1, 1, JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}').run()
+  }
+  const searched = async term => { const found = await call(`/atlas?q=${encodeURIComponent(term)}&limit=96`); return [found.total, found.items.map(i => i.id).filter(id => id.startsWith('find-')).sort()] }
+  const matching = async term => (await db.prepare("SELECT count(*) AS n FROM units WHERE origin='local' AND (character=? OR reading=?)").bind(term, term).first()).n
+  assert.deepEqual(await searched('とも'), [await matching('とも'), ['find-both', 'find-reading']], 'a search matches the character or the reading')
+  assert.deepEqual(await searched('𪜈'), [await matching('𪜈'), ['find-neither', 'find-reading']])
+  // A picked character within a script: the script still filters.
+  const pickedIn = async group => (await call(`/atlas?reading=${encodeURIComponent('仮')}&group=${group}&limit=96`)).items.map(i => i.id).filter(id => id.startsWith('fam-')).sort()
+  assert.deepEqual(await pickedIn('kanji'), ['fam-b', 'fam-c'], 'a picked character keeps its crops in its script')
+  assert.deepEqual(await pickedIn('kana'), [], 'and has none in another')
+  // A refresh rewrites `units` in place and stamps the catalogue; the cached browse counts follow.
+  // The crops above were written straight into D1, as a refresh writes them.
+  const stamp = stamped => db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at',?)").bind(JSON.stringify(stamped))
+  await stamp('first refresh').run()
+  const checkedKa = async () => (await call('/atlas')).categories.find(c => c.label === '仮').checked
+  const checkedBefore = await checkedKa()
+  await db.batch([db.prepare("UPDATE units SET state='checked' WHERE id='fam-b' AND state<>'checked'"), stamp('second refresh')])
+  assert.equal(await checkedKa(), checkedBefore + 1, 'a refresh shows in the browse counts')
   console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms.')
 } finally {
   await mf.dispose()
