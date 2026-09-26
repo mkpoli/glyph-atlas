@@ -26,3 +26,23 @@ from this font is ever shown as one.
 
 The file was copied unchanged from the font project's build output; it carries no metadata or private
 block, and no path from the machine it was built on.
+
+## Handwriting fallbacks for the review target
+
+The review round's target character is drawn in one hand: Kureedo Kata, then Klee One, then
+LXGW WenKai TC, then LXGW WenKai, then Noto Serif Hentaigana.
+
+- `Klee One` comes complete from the `@fontsource/klee-one` package (SIL Open Font License 1.1,
+  © The Klee Project Authors, <https://github.com/fontworks-fonts/Klee>), split by `unicode-range`
+  so a page loads only the files it needs.
+- `fallback/` holds LXGW WenKai TC and LXGW WenKai v1.522 (SIL Open Font License 1.1, © LXGW,
+  <https://github.com/lxgw/LxgwWenkaiTC> and <https://github.com/lxgw/LxgwWenKai>; their licences
+  are `fallback/wenkai-tc-OFL.txt` and `fallback/wenkai-OFL.txt`). They are cut down to the labels
+  with crops in the corpus that Kureedo Kata and Klee One do not draw, listed with their crop
+  counts in `fallback/characters.tsv`, and split into files of 120 characters, most frequent
+  first. The family names are kept under the licence's additional permission for web-font subsets.
+  `scripts/build_fallback_fonts.py` rebuilds them from the release files, which it checks against
+  pinned hashes; run it with `--labels work/corpus-index/chars.parquet` when the corpus grows.
+- Labels no font here draws (rare Extension B characters and a few hentaigana outside Noto's set)
+  fall back to the reader's own fonts.
+
