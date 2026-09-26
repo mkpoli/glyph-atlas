@@ -31,7 +31,7 @@ import json
 import math
 import os
 import shutil
-from collections import defaultdict
+from collections import defaultdict, deque
 from collections.abc import Iterator
 from concurrent.futures import ProcessPoolExecutor
 from functools import cache
@@ -216,7 +216,7 @@ def _embed(jobs: list[tuple[str, list[tuple[str, dict]]]], encoder: Encoder, *, 
     pending_ids: list[str] = []
     pending: list[np.ndarray] = []
     with ProcessPoolExecutor(workers, mp_context=get_context("fork")) as pool:
-        for ids, arrays in pool.map(_crops, jobs, chunksize=4):
+        for ids, arrays in _bounded_map(pool, _crops, jobs, ahead=4 * workers):
             if arrays is None:
                 continue
             pending_ids.extend(ids)
@@ -227,6 +227,21 @@ def _embed(jobs: list[tuple[str, list[tuple[str, dict]]]], encoder: Encoder, *, 
                 pending_ids, pending = [], []
     if pending_ids:
         yield pending_ids, encoder(np.concatenate(pending))
+
+
+def _bounded_map(pool: ProcessPoolExecutor, fn, jobs, *, ahead: int) -> Iterator:
+    """`pool.map(fn, jobs)` with at most `ahead` jobs submitted and not yet consumed.
+
+    `Executor.map` submits every job at once, so when the consumer is slower than the workers
+    their finished results pile up in this process's memory until the run ends or runs out of it.
+    """
+    queued: deque = deque()
+    for job in jobs:
+        if len(queued) >= ahead:
+            yield queued.popleft().result()
+        queued.append(pool.submit(fn, job))
+    while queued:
+        yield queued.popleft().result()
 
 
 def _file_jobs(located: dict[str, tuple[Path, tuple | None]]) -> list[tuple[str, list[tuple[str, dict | None]]]]:
