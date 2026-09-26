@@ -10,7 +10,7 @@ export type FormTools = {
   codePoints: (value: string) => string;
   family: (env: Env, char: string) => Promise<string>;
 };
-type UnitForm = { id: string; cluster: string; form: string | null; glyph_set: number; cluster_form: string | null;
+type UnitForm = { id: string; cluster: string; clustered?: number; form: string | null; glyph_set: number; cluster_form: string | null;
   issue: string | null; issue_character: string | null; issue_family: string | null };
 
 // A glyph decision names at most this many glyphs; the view sends larger selections in parts.
@@ -44,7 +44,7 @@ async function families(env: Env) {
 // and leaving out reported ones: a glyph of another form is most often among them. Read backwards
 // along form_unit_cluster, twelve rows a cluster.
 export const leastTypicalQuery = () => `SELECT u.cluster,u.id,u.image,u.rank FROM form_clusters c JOIN form_units u ON u.rowid IN
-  (SELECT rowid FROM form_units WHERE cluster=c.id AND rank>=12 AND issue IS NULL ORDER BY rank DESC LIMIT 12) WHERE c.family=?`;
+  (SELECT rowid FROM form_units WHERE cluster=c.id AND clustered=1 AND rank>=12 AND issue IS NULL ORDER BY rank DESC LIMIT 12) WHERE c.family=?`;
 
 async function family(env: Env, codePoint: string, q: URLSearchParams, tools: FormTools) {
   const found = await env.DB.prepare('SELECT * FROM form_families WHERE code_point=?').bind(codePoint).first<Json>();
@@ -52,7 +52,7 @@ async function family(env: Env, codePoint: string, q: URLSearchParams, tools: Fo
   const order = q.get('order') === 'size' ? 'size' : 'shape';
   const [clusters, tallies, unusual] = await env.DB.batch([
     env.DB.prepare(`SELECT * FROM form_clusters WHERE family=? ORDER BY ${order === 'size' ? 'size_position' : 'shape_position'}`).bind(codePoint),
-    env.DB.prepare('SELECT cluster,form,count(*) AS n,sum(glyph_set) AS own,count(issue) AS rejected FROM form_units WHERE family=? GROUP BY cluster,form').bind(codePoint),
+    env.DB.prepare('SELECT cluster,form,count(*) AS n,sum(glyph_set) AS own,count(issue) AS rejected FROM form_units WHERE family=? AND clustered=1 GROUP BY cluster,form').bind(codePoint),
     env.DB.prepare(leastTypicalQuery()).bind(codePoint),
   ]);
   const leastTypical = new Map<string, Json[]>();
@@ -85,7 +85,7 @@ async function members(env: Env, clusterId: string, q: URLSearchParams, tools: F
   if (!cluster) tools.fail(404, 'Unknown cluster.');
   const offset = count(q, 'offset', 0, 1_000_000, tools), limit = count(q, 'limit', 120, 500, tools);
   const order = q.get('order') === 'unusual' ? 'unusual' : 'typical';
-  const rows = await env.DB.prepare(`SELECT id,image,rank,similarity,form,glyph_set,issue,issue_character FROM form_units WHERE cluster=? ORDER BY rank ${order === 'unusual' ? 'DESC' : 'ASC'} LIMIT ? OFFSET ?`)
+  const rows = await env.DB.prepare(`SELECT id,image,rank,similarity,form,glyph_set,issue,issue_character FROM form_units WHERE cluster=? AND clustered=1 ORDER BY rank ${order === 'unusual' ? 'DESC' : 'ASC'} LIMIT ? OFFSET ?`)
     .bind(clusterId, limit, offset).all<Json>();
   return { id: clusterId, total: cluster!.count, offset, order, form: cluster!.form, issue: cluster!.issue,
     items: rows.results.map(r => ({ ...member(r), rank: r.rank, similarity: r.similarity })) };
@@ -94,7 +94,7 @@ async function members(env: Env, clusterId: string, q: URLSearchParams, tools: F
 async function split(env: Env, clusterId: string, q: URLSearchParams, tools: FormTools) {
   const k = count(q, 'k', 4, 8, tools), shown = count(q, 'shown', 60, 240, tools);
   if (k < 2) tools.fail(422, 'Invalid k.');
-  const rows = await env.DB.prepare('SELECT id,image,split,form,glyph_set,issue,issue_character FROM form_units WHERE cluster=? ORDER BY rank').bind(clusterId).all<Json>();
+  const rows = await env.DB.prepare('SELECT id,image,split,form,glyph_set,issue,issue_character FROM form_units WHERE cluster=? AND clustered=1 ORDER BY rank').bind(clusterId).all<Json>();
   if (!rows.results.length) tools.fail(404, 'Unknown cluster.');
   // The groups for every k were computed at publication, one digit per k from 2 to 8.
   const groups = new Map<string, Json[]>();
@@ -134,7 +134,7 @@ async function decide(env: Env, request: Request, tools: FormTools) {
         || input.units.some((u: unknown) => typeof u !== 'string' || u.length > 200) || new Set(input.units).size !== input.units.length)
       tools.fail(422, `Choose between 1 and ${GLYPHS_PER_DECISION} distinct glyphs.`);
     units = input.units;
-    const found = await env.DB.prepare('SELECT count(*) AS n,count(DISTINCT family) AS families,min(family) AS family FROM form_units WHERE id IN (SELECT value FROM json_each(?))')
+    const found = await env.DB.prepare('SELECT count(*) AS n,count(DISTINCT family) AS families,min(family) AS family FROM form_units WHERE clustered=1 AND id IN (SELECT value FROM json_each(?))')
       .bind(JSON.stringify(units)).first<Json>();
     if (found!.n !== units.length) tools.fail(422, 'Some glyphs are not in the current clustering.');
     if (found!.families !== 1) tools.fail(422, 'A decision covers glyphs of one family.');
@@ -143,7 +143,7 @@ async function decide(env: Env, request: Request, tools: FormTools) {
   const allowed = await env.DB.prepare('SELECT forms,revision FROM form_families WHERE code_point=?').bind(family!).first<Json>();
   if (form != null && !JSON.parse(allowed!.forms).some((f: Json) => f.char === form)) tools.fail(422, `${form} is not a form of this family.`);
   const id = crypto.randomUUID(), at = new Date().toISOString().replace(/\.\d+Z$/, '+00:00');
-  const touched = kind === 'cluster' ? 'SELECT id FROM form_units WHERE cluster=?1' : 'SELECT value FROM json_each(?1)';
+  const touched = kind === 'cluster' ? 'SELECT id FROM form_units WHERE cluster=?1 AND clustered=1' : 'SELECT value FROM json_each(?1)';
   const target = kind === 'cluster' ? clusterId : JSON.stringify(units);
   // Quick review deals unnamed corpus glyphs by character and counts them per character: the glyphs
   // leave their old count, take their form (or, with none decided, the character they had before any
@@ -152,18 +152,18 @@ async function decide(env: Env, request: Request, tools: FormTools) {
   // What the touched rows held before, read in the same transaction: the decisions that restore it
   // are returned as the decision's undo.
   const before = kind === 'cluster'
-    ? env.DB.prepare('SELECT form,issue,(SELECT cluster_character FROM form_units WHERE cluster=?1 LIMIT 1) AS character FROM form_clusters WHERE id=?1').bind(clusterId)
+    ? env.DB.prepare('SELECT form,issue,(SELECT cluster_character FROM form_units WHERE cluster=?1 AND clustered=1 LIMIT 1) AS character FROM form_clusters WHERE id=?1').bind(clusterId)
     : env.DB.prepare('SELECT id,glyph_set,glyph_form,glyph_issue,glyph_character FROM form_units WHERE id IN (SELECT value FROM json_each(?))').bind(target);
   const statements = [
     before,
     kind === 'cluster'
-      ? env.DB.prepare(`INSERT INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,note,issue,character,character_family) SELECT ?,?,?,'cluster',?,?,?,?,json_group_array(id),?,?,?,? FROM (SELECT id FROM form_units WHERE cluster=? ORDER BY rank)`)
+      ? env.DB.prepare(`INSERT INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,note,issue,character,character_family) SELECT ?,?,?,'cluster',?,?,?,?,json_group_array(id),?,?,?,? FROM (SELECT id FROM form_units WHERE cluster=? AND clustered=1 ORDER BY rank)`)
         .bind(id, at, actor, family!, form, clusterId, allowed!.revision, note, issue, character, characterFamily, clusterId)
       : env.DB.prepare('INSERT INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,note,issue,character,character_family) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)')
         .bind(id, at, actor, kind, family!, form, null, allowed!.revision, target, note, issue, character, characterFamily),
     // A mixed cluster names nothing for its glyphs: they lose any form or report it gave them before.
     kind === 'cluster'
-      ? env.DB.prepare(`UPDATE form_units SET cluster_form=?1,cluster_issue=?2,cluster_character=?3,cluster_family=?4 WHERE cluster=?5`)
+      ? env.DB.prepare(`UPDATE form_units SET cluster_form=?1,cluster_issue=?2,cluster_character=?3,cluster_family=?4 WHERE cluster=?5 AND clustered=1`)
         .bind(form, issue === 'mixed' ? null : issue, character, characterFamily, clusterId)
       : kind === 'glyph'
         ? env.DB.prepare('UPDATE form_units SET glyph_set=1,glyph_form=?1,glyph_decision=?2,glyph_issue=?4,glyph_character=?5,glyph_family=?6 WHERE id IN (SELECT value FROM json_each(?3))')
@@ -179,8 +179,8 @@ async function decide(env: Env, request: Request, tools: FormTools) {
     env.DB.prepare(`INSERT INTO corpus_characters(character,production,n,named) SELECT character,production,count(*),0 ${unnamed}
       GROUP BY character,production ON CONFLICT(character,production) DO UPDATE SET n=n+excluded.n`).bind(target),
     env.DB.prepare('DELETE FROM corpus_characters WHERE n=0'),
-    env.DB.prepare(`UPDATE form_families SET assigned=(SELECT count(*) FROM form_units WHERE family=?1 AND form IS NOT NULL),
-      rejected=(SELECT count(*) FROM form_units WHERE family=?1 AND issue IS NOT NULL) WHERE code_point=?1`).bind(family!),
+    env.DB.prepare(`UPDATE form_families SET assigned=(SELECT count(*) FROM form_units WHERE family=?1 AND clustered=1 AND form IS NOT NULL),
+      rejected=(SELECT count(*) FROM form_units WHERE family=?1 AND clustered=1 AND issue IS NOT NULL) WHERE code_point=?1`).bind(family!),
   ];
   if (kind === 'cluster') statements.push(env.DB.prepare('UPDATE form_clusters SET form=?,issue=?,decision=? WHERE id=?').bind(form, issue, id, clusterId));
   const [prior] = await env.DB.batch(statements);
@@ -223,11 +223,16 @@ export async function withForm(env: Env, record: Json, tools: Pick<FormTools, 'c
   return formed(record, row, tools);
 }
 // The `form_units` columns `formed` reads, for a query that joins them to its own rows.
-export const FORM_COLUMNS = 'id,cluster,form,glyph_set,cluster_form,issue,issue_character,issue_family';
+export const FORM_COLUMNS = 'id,cluster,clustered,form,glyph_set,cluster_form,issue,issue_character,issue_family';
 export type { UnitForm };
 export function formed(record: Json, row: UnitForm | null, tools: Pick<FormTools, 'codePoints'>): Json {
-  if (!row || (!row.form && !row.issue && !row.glyph_set)) return row ? { ...record, form_cluster: { id: row.cluster } } : record;
-  const decided = { form_cluster: { id: row.cluster }, form_decision: { form: row.form, basis: basis(row) } };
+  if (row?.clustered === 0) {
+    record = { ...record };
+    delete record.form_cluster;
+  }
+  const membership = row && row.clustered !== 0 ? { form_cluster: { id: row.cluster } } : {};
+  if (!row || (!row.form && !row.issue && !row.glyph_set)) return { ...record, ...membership };
+  const decided = { ...membership, form_decision: { form: row.form, basis: basis(row) } };
   // A glyph reported as another character shows that character; one only marked off its form shows none.
   const written = row.form ?? row.issue_character;
   if (!written) return { ...record, ...decided, written_character: null, identity_status: 'unassigned', identity_basis: basis(row) ?? 'form_glyph' };

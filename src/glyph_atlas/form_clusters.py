@@ -93,7 +93,7 @@ def units_stamp(root: Path) -> tuple:
                  for corpus in _corpora(root) for path in corpus.parquet_files("units"))
 
 
-def glyphs(root: Path, wanted: set[str] | None = None) -> Iterator[dict]:
+def glyphs(root: Path, wanted: set[str] | None = None, *, admission=None) -> Iterator[dict]:
     """Every character glyph of a multi-form family in `CORPORA`, or of those in `wanted`.
 
     Each is `{id, corpus, family, info, page, box, crop}`: a boxed glyph names its page image and
@@ -103,6 +103,8 @@ def glyphs(root: Path, wanted: set[str] | None = None) -> Iterator[dict]:
     import pyarrow.dataset as ds
 
     for corpus in _corpora(root):
+        if admission is not None:
+            admission.corpus(corpus)
         pages = {}
         if corpus.parquet_files("pages"):
             table = ds.dataset([str(p) for p in corpus.parquet_files("pages")], format="parquet")
@@ -112,8 +114,11 @@ def glyphs(root: Path, wanted: set[str] | None = None) -> Iterator[dict]:
                  & (pc.field("box").is_valid() | pc.field("crop").is_valid()))
         if wanted is not None:
             where &= pc.field("id").isin(pa.array(sorted(wanted), pa.string()))
-        table = ds.dataset([str(p) for p in corpus.parquet_files("units")], format="parquet").to_table(
-            columns=["id", "page_id", "box", "crop", "unicode"], filter=where)
+        source = ds.dataset([str(p) for p in corpus.parquet_files("units")], format="parquet")
+        quality = [name for name in ("document_id", "line_id", "review", "meta", "granularity", "group_id")
+                   if admission is not None and name in source.schema.names]
+        table = source.to_table(columns=["id", "page_id", "box", "crop", "unicode", *quality], filter=where)
+        evidence = {name: table.column(name).to_pylist() for name in quality}
         # Box fields column by column: a struct per row as a Python dict costs more than the glyphs.
         box = table.column("box").combine_chunks()
         columns = [table.column(name).to_pylist() for name in ("id", "page_id", "crop", "unicode")]
@@ -123,6 +128,12 @@ def glyphs(root: Path, wanted: set[str] | None = None) -> Iterator[dict]:
             info = _family(unicode)
             if info is None:
                 continue
+            if admission is not None:
+                source_row = {"id": identity, "unicode": unicode,
+                              "box": dict(zip("xywh", (c[row] for c in corners), strict=True)) if valid[row] else None,
+                              **{name: values[row] for name, values in evidence.items()}}
+                if admission.assess(source_row, corpus.name):
+                    continue
             page = pages.get(page_id) if valid[row] else None
             yield {"id": identity, "corpus": corpus.name, "family": info["code_point"], "info": info, "page": page,
                    "box": tuple(c[row] for c in corners) if page else None, "crop": None if page else crop}
@@ -286,9 +297,13 @@ def _kmeans(x, k: int, seed: int):
     return labels, c
 
 
-def run(root: Path, out: Path, *, checkpoint: Path, workers: int = 8) -> dict:
+def run(root: Path, out: Path, *, checkpoint: Path, workers: int = 8, reviews: Path | None = None) -> dict:
     """Embed, cluster and publish one revision. `root` is the corpus root holding `CORPORA`."""
     import torch
+
+    from .form_quality import Admission
+
+    admission = Admission(root, reviews)
 
     families: dict[str, dict] = {}
     family_of_unit: dict[str, str] = {}
@@ -296,7 +311,7 @@ def run(root: Path, out: Path, *, checkpoint: Path, workers: int = 8) -> dict:
     located: dict[str, tuple[Path, tuple | None]] = {}
     pixels = Pixels(root)
     unheld = defaultdict(int)
-    for glyph in glyphs(root):
+    for glyph in glyphs(root, admission=admission):
         found = pixels(glyph)
         if found is None:
             unheld[glyph["corpus"]] += 1
@@ -311,6 +326,9 @@ def run(root: Path, out: Path, *, checkpoint: Path, workers: int = 8) -> dict:
     # brings its glyphs into a new revision.
     inputs = {"units": {corpus.name: [_digest(path) for path in corpus.parquet_files("units")] for corpus in corpora},
               "pages": {corpus.name: [_digest(path) for path in corpus.parquet_files("pages")] for corpus in corpora},
+              "documents": {corpus.name: [_digest(path) for path in corpus.parquet_files("documents")]
+                            for corpus in corpora},
+              "admission": admission.inputs,
               "located": hashlib.sha256("\n".join(sorted(located)).encode()).hexdigest(),
               "checkpoint": _digest(checkpoint),
               "vocab": _digest(Path(refs.__file__).parents[2] / "data/vocab/characters.tsv"),
@@ -322,13 +340,14 @@ def run(root: Path, out: Path, *, checkpoint: Path, workers: int = 8) -> dict:
         _point_current(out, revision)
         return {k: v for k, v in json.loads((target / "manifest.json").read_text()).items() if k != "inputs"}
 
-    encoder = Encoder(checkpoint)
     ids: list[str] = []
     vectors: list[np.ndarray] = []
-    for batch_ids, batch_vectors in _embed(_file_jobs(located), encoder, size=encoder.size, workers=workers):
-        ids.extend(batch_ids)
-        vectors.append(batch_vectors.astype(np.float16))
-    matrix = np.concatenate(vectors)
+    if located:
+        encoder = Encoder(checkpoint)
+        for batch_ids, batch_vectors in _embed(_file_jobs(located), encoder, size=encoder.size, workers=workers):
+            ids.extend(batch_ids)
+            vectors.append(batch_vectors.astype(np.float16))
+    matrix = np.concatenate(vectors) if vectors else np.empty((0, 0), dtype=np.float16)
 
     rows = {"id": [], "family": [], "cluster": [], "similarity": [], "rank": []}
     order: list[int] = []
@@ -381,6 +400,7 @@ def run(root: Path, out: Path, *, checkpoint: Path, workers: int = 8) -> dict:
     summary = {"revision": revision, "families": len(published), "units": len(ids),
                "clusters": sum(len(f["clusters"]) for f in published.values()),
                "by_corpus": dict(sorted(by_corpus.items())), "unheld": dict(sorted(unheld.items()))}
+    (staging / "quality.json").write_text(json.dumps(admission.report(), ensure_ascii=False, indent=1) + "\n")
     (staging / "manifest.json").write_text(json.dumps({**summary, "inputs": inputs}, indent=1) + "\n")
     os.replace(staging, target)
     write_neighbours(target)
@@ -409,6 +429,94 @@ def shape_order(centres: np.ndarray) -> list[int]:
         first, second = max(joins, key=lambda pair: similarity[pair[0][-1], pair[1][0]])
         runs = [run for i, run in enumerate(runs) if i not in (a, b)] + [first + second]
     return runs[0] if runs else []
+
+
+def clean(root: Path, source: Path, out: Path, *, reviews: Path | None = None) -> dict:
+    """Remove unsafe members from an existing clustering, preserving its shape proposals.
+
+    No inference is needed. Scores still refer to the original cluster centres.
+    Source tables must match the embeddings' manifest; changed crops need a fresh run.
+    The source revision and all decisions remain available for undo and inspection.
+    """
+    from .form_quality import Admission, digest
+
+    original = json.loads((source / "manifest.json").read_text())
+    corpora = _corpora(root)
+    for name in ("units", "pages"):
+        actual = {c.name: [_digest(p) for p in c.parquet_files(name)] for c in corpora}
+        if actual != original["inputs"].get(name):
+            raise ValueError(f"The {name} changed since clustering; run `atlas forms cluster` with the new crops")
+    data = json.loads((source / "clusters.json").read_text())
+    table = pq.read_table(source / "units.parquet")
+    ids = table.column("id").to_pylist()
+    if len(set(ids)) != len(ids):
+        raise ValueError("The source clustering contains duplicate glyph ids")
+    embeddings = np.load(source / "embeddings.npy", mmap_mode="r")
+    if len(embeddings) != len(ids):
+        raise ValueError("The source embeddings are not aligned with the glyph table")
+    admission = Admission(root, reviews)
+    eligible = {g["id"] for g in glyphs(root, set(ids), admission=admission)}
+    missing = set(ids) - eligible - admission.excluded.keys()
+    if missing:
+        raise ValueError(f"{len(missing)} clustered glyphs no longer resolve to their source; rebuild the clustering")
+    inputs = {**original["inputs"], "admission": admission.inputs,
+              "documents": {c.name: [_digest(p) for p in c.parquet_files("documents")] for c in corpora},
+              "parent_revision": data["revision"], "retained": digest(sorted(eligible)),
+              "filter_method": "preserve-clusters-v2"}
+    revision = digest(inputs)[:16]
+    target = out / revision
+    if target.resolve() == source.resolve():
+        raise ValueError("The filtered revision must differ from its source")
+    indexes = [i for i, identity in enumerate(ids) if identity in eligible]
+    filtered = table.take(pa.array(indexes, pa.int64())).to_pydict()
+    members = defaultdict(list)
+    for index, cluster in enumerate(filtered["cluster"]):
+        members[cluster].append(index)
+    families = {}
+    for family, value in data["families"].items():
+        clusters = []
+        for cluster in value["clusters"]:
+            kept = members.get(cluster["id"], [])
+            if not kept:
+                continue
+            for rank, index in enumerate(kept):
+                filtered["rank"][index] = rank
+            clusters.append({**cluster, "count": len(kept),
+                             "coherence": round(sum(filtered["similarity"][i] for i in kept) / len(kept), 5),
+                             "representatives": [filtered["id"][i] for i in kept[:REPRESENTATIVES]]})
+        if clusters:
+            clusters.sort(key=lambda c: (-c["count"], c["id"]))
+            families[family] = {**value, "count": sum(c["count"] for c in clusters), "clusters": clusters}
+    summary = {"revision": revision, "families": len(families), "units": len(indexes),
+               "clusters": len(members), "excluded": len(ids) - len(indexes), "parent_revision": data["revision"]}
+    out.mkdir(parents=True, exist_ok=True)
+    staging = out / f".{revision}.partial"
+    shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir()
+    pq.write_table(pa.Table.from_pydict(filtered, schema=table.schema), staging / "units.parquet")
+    # Copy bounded batches; advanced indexing over all embeddings would materialise gigabytes.
+    matrix = np.lib.format.open_memmap(staging / "embeddings.npy", mode="w+", dtype=embeddings.dtype,
+                                      shape=(len(indexes), *embeddings.shape[1:]))
+    for start in range(0, len(indexes), 4096):
+        matrix[start:start + 4096] = embeddings[indexes[start:start + 4096]]
+    matrix.flush()
+    del matrix
+    (staging / "clusters.json").write_text(json.dumps(
+        {**data, "revision": revision, "families": families,
+         "parents": [data["revision"], *data.get("parents", [])]}, ensure_ascii=False, indent=1) + "\n")
+    (staging / "manifest.json").write_text(json.dumps({**summary, "inputs": inputs}, indent=1) + "\n")
+    (staging / "quality.json").write_text(json.dumps(admission.report(), ensure_ascii=False, indent=1) + "\n")
+    with (staging / "exclusions.jsonl").open("w") as handle:
+        for identity, reason in sorted(admission.excluded.items()):
+            handle.write(json.dumps({"id": identity, "reason": reason}) + "\n")
+    # A filtered revision starts in size order. Shape neighbours can be recomputed later;
+    # neighbours from the parent would refer to removed clusters and old centroids.
+    if target.exists():
+        shutil.rmtree(staging)
+    else:
+        os.replace(staging, target)
+    _point_current(out, revision)
+    return summary
 
 
 def write_neighbours(directory: Path) -> Path:

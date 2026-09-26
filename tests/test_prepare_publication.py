@@ -69,15 +69,16 @@ def test_an_export_made_before_a_migration_is_brought_up_to_it(tmp_path):
     export = tmp_path / "export"
     export.mkdir()
     with sqlite3.connect(export / "catalogue.sqlite") as db:
-        prepare.schema(db)
-        version = db.execute("PRAGMA user_version").fetchone()[0]
-        db.execute("DROP INDEX IF EXISTS unit_document_sample")
-        db.execute("ALTER TABLE units DROP COLUMN document")
+        migrations = sorted(Path("apps/cloudflare/migrations").glob("*.sql"))
+        version = len(migrations)
+        for migration in migrations[:-1]:
+            db.executescript(migration.read_text())
         db.execute(f"PRAGMA user_version = {version - 1}")
     (tmp_path / "out").mkdir()
     copy = prepare.snapshot(export, tmp_path / "out")
     with sqlite3.connect(copy) as db:
         assert "document" in [row[1] for row in db.execute("PRAGMA table_info(units)")]
+        assert "clustered" in [row[1] for row in db.execute("PRAGMA table_info(form_units)")]
         assert db.execute("PRAGMA user_version").fetchone()[0] == version
 
 

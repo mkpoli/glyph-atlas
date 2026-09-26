@@ -47,6 +47,12 @@ DELETE FROM form_marks;
 INSERT INTO form_marks(id,at,seq,kind,form,decision,issue,character,character_family)
   SELECT j.value,d.at,d.seq,d.kind,d.form,d.id,d.issue,d.character,d.character_family
   FROM form_decisions d,json_each(d.units) j;
+-- Keep a projection of decisions whose glyphs no longer have cluster membership.
+-- Their historic family/cluster are provenance; clustered=0 keeps them out of Forms.
+INSERT OR IGNORE INTO form_units(id,family,cluster,rank,similarity,split,clustered)
+  SELECT m.id,d.family,coalesce(d.cluster,''),0,0,'',0
+  FROM form_marks m JOIN form_decisions d ON d.id=m.decision
+  WHERE m.seq=(SELECT max(last.seq) FROM form_marks last WHERE last.id=m.id);
 UPDATE form_units SET (cluster_form,cluster_issue,cluster_character,cluster_family)=(SELECT m.form,
   CASE WHEN m.issue<>'mixed' THEN m.issue END,m.character,m.character_family
   FROM form_marks m WHERE m.id=form_units.id AND m.kind='cluster'
@@ -63,10 +69,11 @@ UPDATE form_units SET form=CASE WHEN glyph_set=1 THEN glyph_form ELSE cluster_fo
   issue_family=CASE WHEN glyph_set=1 THEN glyph_family ELSE cluster_family END;
 DELETE FROM form_marks;
 UPDATE form_clusters SET (form,issue,decision)=(SELECT d.form,d.issue,d.id FROM form_decisions d WHERE d.kind='cluster'
-  AND d.cluster=form_clusters.id AND d.revision=(SELECT revision FROM form_families WHERE code_point=form_clusters.family)
+  AND d.cluster=form_clusters.id AND (d.revision=(SELECT revision FROM form_families WHERE code_point=form_clusters.family)
+    OR d.revision IN (SELECT value FROM json_each((SELECT value FROM metadata WHERE key='forms_parent_revisions'))))
   ORDER BY d.at DESC,d.seq DESC LIMIT 1);
-UPDATE form_families SET assigned=(SELECT count(*) FROM form_units WHERE family=code_point AND form IS NOT NULL),
-  rejected=(SELECT count(*) FROM form_units WHERE family=code_point AND issue IS NOT NULL);
+UPDATE form_families SET assigned=(SELECT count(*) FROM form_units WHERE family=code_point AND clustered=1 AND form IS NOT NULL),
+  rejected=(SELECT count(*) FROM form_units WHERE family=code_point AND clustered=1 AND issue IS NOT NULL);
 INSERT OR REPLACE INTO metadata(key,value) VALUES('forms_loaded_at',json_quote(strftime('%Y-%m-%dT%H:%M:%fZ','now')));
 DELETE FROM form_loading;
 """
@@ -240,6 +247,8 @@ def export(corpus_root: Path, out: Path, workers: int = 8) -> dict:
         forms_of = json.dumps([_form_entry(char) for char in forms.family_members(code_point)], ensure_ascii=False)
         parts.write(f"INSERT INTO form_families(code_point,char,label,count,cluster_count,forms,assigned,revision) VALUES({_values((code_point, family['char'], family['label'], family['count'], len(clusters), forms_of, 0, data['revision']))});")
         counts["families"] += 1
+    parts.write("INSERT OR REPLACE INTO metadata(key,value) VALUES('forms_parent_revisions',"
+                f"{_quote(json.dumps(data.get('parents', [])))});")
     parts.write(REPLAY.strip())
     parts.write(CORPUS_REFRESH)
     names = parts.close()

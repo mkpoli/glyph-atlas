@@ -118,6 +118,41 @@ def test_a_corpus_republication_keeps_the_forms(tmp_path, monkeypatch, form_corp
     assert db.execute("SELECT character,n FROM corpus_characters").fetchall() == [("𛂥", 1)]
 
 
+def test_filtered_publication_preserves_identity_projection_and_mixed_marks(tmp_path, monkeypatch, form_corpora):
+    monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
+    from cloudflare_schema import CORPUS_REFRESH, corpus_upsert
+
+    clustering(tmp_path, monkeypatch, form_corpora)
+    forms.record("cluster", cluster="U+306F:one", issue="mixed")
+    forms.record("glyph", units=[B], issue="character", character="テ")
+    forms.record("glyph", units=[C], form="𛂞")
+    forms.record("glyph", units=[D], issue="crop")
+    directory = Path(os.environ["ATLAS_FORM_CLUSTERS"])
+    summary = json.loads((directory / "clusters.json").read_text())
+    summary.update(revision="filtered", parents=["r1"])
+    family = summary["families"]["U+306F"]
+    family["count"] = 1
+    family["clusters"][0].update(count=1, representatives=[A])
+    (directory / "clusters.json").write_text(json.dumps(summary))
+    pq.write_table(pq.read_table(directory / "units.parquet").slice(0, 1), directory / "units.parquet")
+    np.save(directory / "embeddings.npy", np.array([[1, 0]], np.float16))
+    forms._CLUSTERS.invalidate()
+    assert forms.cluster_decisions()["U+306F:one"]["issue"] == "mixed"
+    db = schema()
+    for identity in [A, B, C, D]:
+        db.executescript(corpus_upsert((identity, "は", "U+306F", None, 1, "x", 0, 1, "unknown")))
+    publish(tmp_path, monkeypatch, "filtered")
+    load(db, tmp_path / "filtered")
+    assert dict(db.execute("SELECT id,clustered FROM form_units")) == {A: 1, B: 0, C: 0, D: 0}
+    assert dict(db.execute("SELECT id,character FROM corpus_units")) == {A: "は", B: "テ", C: "𛂞", D: None}
+    assert db.execute("SELECT issue FROM form_clusters").fetchone() == ("mixed",)
+    assert db.execute("SELECT count,assigned,rejected FROM form_families").fetchone() == (1, 0, 0)
+    for identity in [B, C, D]:
+        db.executescript(corpus_upsert((identity, "は", "U+306F", None, 1, "new", 0, 1, "unknown")))
+    db.executescript(CORPUS_REFRESH)
+    assert dict(db.execute("SELECT id,character FROM corpus_units")) == {A: "は", B: "テ", C: "𛂞", D: None}
+
+
 def test_the_site_refuses_decisions_while_a_clustering_reloads():
     db = schema()
     db.execute("INSERT INTO form_loading VALUES('now')")
