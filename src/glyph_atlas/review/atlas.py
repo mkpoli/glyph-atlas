@@ -1228,7 +1228,17 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
 
     @api.post("/atlas/characters/{unit_id}/style")
     def set_style(unit_id: str, edit: StyleEdit) -> dict:
-        """Record a reviewer's style for one crop as a `style` event, and return the crop as it now is."""
+        """Record a reviewer's style for one crop as a `style` event, and return the crop as it now is.
+
+        A request already saved under this id is answered as it stands, before anything else is
+        checked; the same id with a different style is refused.
+        """
+        previous = store.submission_results(edit.client_id, f"style:{edit.id}")
+        if previous:
+            old = json.loads(previous[0]["review"]["evidence"])
+            if old.get("request") != edit.model_dump(mode="json"):
+                raise BadRequest("This style was already saved with different values.")
+            return character(unit_id)
         try:
             style_module.check(edit.style)
         except ValueError as error:

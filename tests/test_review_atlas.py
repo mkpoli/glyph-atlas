@@ -1924,6 +1924,8 @@ def test_a_crop_shows_its_style_and_where_it_comes_from(dataset, tmp_path, monke
     assert (saved.json()["style"], saved.json()["style_basis"]) == ("regular", "unit")
     assert saved.json()["revision"] == detail["revision"] + 1
     assert client.post(f"/atlas/characters/{quote(unit, safe='')}/style", json=body).json()["style"] == "regular"
+    replayed = client.post(f"/atlas/characters/{quote(unit, safe='')}/style", json={**body, "style": "running"})
+    assert replayed.status_code == 422 and "different values" in replayed.text
     stale = {**body, "id": str(uuid4()), "style": "running"}
     assert client.post(f"/atlas/characters/{quote(unit, safe='')}/style", json=stale).status_code == 409
     wrong = {**body, "id": str(uuid4()), "revision": saved.json()["revision"], "style": "sosho"}
