@@ -220,9 +220,11 @@ function decoded(segment: string, tools: FormTools) {
 // keeps one copy per finished load (`forms_loaded_at`, written last by a reload), clustering revision
 // and latest decision; FORMS_TTL bounds a copy's life.
 const FORMS_TTL = 3600;
+// The shape of what `family` and `families` answer; a change to it leaves the older copies behind.
+const FORMS_SHAPE = 2;
 type FormsState = { loading: number; loaded: string | null; revision: string | null; decision: number | null };
 async function cached(url: URL, state: FormsState, key: string, read: () => Promise<Json | null>, ctx: ExecutionContext) {
-  const request = new Request(`${url.origin}/atlas/forms/cached/${key}?v=${encodeURIComponent(`${state.loaded}:${state.revision}:${state.decision ?? 0}`)}`);
+  const request = new Request(`${url.origin}/atlas/forms/cached/${key}?v=${encodeURIComponent(`${FORMS_SHAPE}:${state.loaded}:${state.revision}:${state.decision ?? 0}`)}`);
   const hit = await caches.default.match(request);
   if (hit) return hit.json<Json>();
   const value = await read();
