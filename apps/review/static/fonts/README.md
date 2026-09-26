@@ -18,8 +18,8 @@ from this font is ever shown as one.
 installed fonts rarely draw.
 
 - Family: `GenZui Sans` (源萃ゴシック), version 0.103, by mkpoli (<https://github.com/mkpoli/GenZui>),
-  derived from Noto Sans JP, Noto Sans Hentaigana, GenSeki Hentaigana Gothic and Noto Sans CJK JP; the
-  copyright notices of all of them stay in the subset's name table.
+  derived from Noto Sans JP, Noto Sans Hentaigana, GenSeki Hentaigana Gothic and Noto Sans CJK JP.
+  `OFL.txt` carries the copyright notices of GenZui's own `OFL.txt`.
 - Licence: SIL Open Font License 1.1, the same `OFL.txt` in this directory, which also carries its
   notices. The only Reserved Font Name among its sources is Adobe's `Source`, which the family name
   does not use, so the subset keeps the name GenZui Sans.

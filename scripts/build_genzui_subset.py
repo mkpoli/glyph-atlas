@@ -73,6 +73,8 @@ def main() -> None:
     subsetter.populate(unicodes=points)
     subsetter.subset(font)
     font.flavor = "woff2"
+    # fontTools stamps `head.modified` with the time of saving; the source's stamp keeps reruns identical.
+    font.recalcTimestamp = False
     font.save(OUTPUT)
     print(f"{OUTPUT.relative_to(ROOT)}: {len(points)} characters, {OUTPUT.stat().st_size:,} bytes")
     print(ranges(points))
