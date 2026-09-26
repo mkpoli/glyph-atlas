@@ -666,8 +666,12 @@ def main() -> None:
         if not checkpoint.exists():
             raise SystemExit(f"{checkpoint} is missing: train first, or pass --checkpoint")
         state = torch.load(checkpoint, map_location=device, weights_only=False)
-        model.load_state_dict(state["model"])
+        # The checkpoint's own configuration: an older one may be another backbone or size.
+        config = state.get("config", config)
+        size = int(config["preprocessing"]["size"])
         classes = state.get("classes", classes)
+        model = build_model(config, len(classes), pretrained=False).to(device)
+        model.load_state_dict(state["model"])
         check_classes(model, classes, where=str(checkpoint))
         temperature = float(state.get("temperature", state.get("metrics", {}).get("temperature", 1.0)))
         print(f"{checkpoint}: epoch {state.get('epoch')}, temperature {temperature:.4f}", flush=True)

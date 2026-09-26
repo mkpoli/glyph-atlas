@@ -305,3 +305,17 @@ def test_a_run_refuses_a_classifier_it_was_not_measured_with(tmp_path: Path) -> 
     with pytest.raises(ValueError, match="not the classifier"):
         check_classifier(run)
     assert run.fingerprint() == run.model_copy(update={"classifier_sha256": None}).fingerprint()
+
+
+def test_a_classifier_handed_to_a_run_is_held_to_its_pin(tmp_path: Path) -> None:
+    import hashlib
+    from types import SimpleNamespace
+
+    from glyph_atlas import align
+
+    pinned, other = tmp_path / "pinned.onnx", tmp_path / "other.onnx"
+    pinned.write_bytes(b"one model")
+    other.write_bytes(b"another model")
+    run = align.Run(name="pinned", classifier=str(pinned), classifier_sha256=hashlib.sha256(b"one model").hexdigest())
+    with pytest.raises(ValueError, match="not the classifier"):
+        align.run_directory(tmp_path, run, pages=[], detector=object(), classifier=SimpleNamespace(onnx_path=other))

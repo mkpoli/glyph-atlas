@@ -195,7 +195,7 @@ class Encoder:
         if not torch.cuda.is_available():
             raise RuntimeError("form clustering needs CUDA; run gpu-check")
         trained = load_checkpoint(checkpoint)
-        self.size, self.classes = trained.size, trained.classes
+        self.size, self.classes, self.temperature = trained.size, trained.classes, trained.temperature
         self.model = trained.model.cuda()
         self.torch = torch
 
@@ -203,7 +203,7 @@ class Encoder:
         return self.classify(pixels)[0]
 
     def classify(self, pixels: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """The features, and the class probabilities the classifier's head gives them."""
+        """The features, and the calibrated class probabilities the classifier's head gives them."""
         from .classify import MEAN, STD
 
         torch = self.torch
@@ -212,7 +212,8 @@ class Encoder:
             x = x[:, None].expand(-1, 3, -1, -1)
             pooled = self.model.forward_features(x)
             features = self.model.forward_head(pooled, pre_logits=True)
-            probabilities = self.model.forward_head(pooled).float().softmax(1)
+            # Calibrated as the served export's `probs` are: the logits over the fitted temperature.
+            probabilities = (self.model.forward_head(pooled).float() / self.temperature).softmax(1)
             return (torch.nn.functional.normalize(features.float(), dim=1).cpu().numpy(),
                     probabilities.cpu().numpy())
 

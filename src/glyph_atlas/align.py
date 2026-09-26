@@ -818,6 +818,10 @@ def run_directory(
     """
     from . import images, net, tables
 
+    # A classifier handed in scores under this run's ids as much as the run's own would.
+    handed = getattr(classifier, "onnx_path", None)
+    if classifier is None or handed is not None:
+        check_classifier(run if classifier is None else run.model_copy(update={"classifier": str(handed)}))
     dataset = tables.Dataset(directory)
     if dataset.tables["lines"] is None or dataset.tables["pages"] is None:
         raise ValueError(f"{directory} needs lines and pages to align")
@@ -858,7 +862,6 @@ def run_directory(
     if classifier is None:
         from .classify import Classifier as OnnxClassifier
 
-        check_classifier(run)
         classifier = OnnxClassifier(run.classifier)
     crop_of = _crop_reader(dataset, page_records)
 
