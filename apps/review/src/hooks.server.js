@@ -18,7 +18,9 @@ async function api(event) {
   const upstream = env.ATLAS_REVIEW_API
   if (!upstream) return worker.fetch(event.request, event.platform.env, event.platform.ctx)
   const headers = new Headers(event.request.headers)
-  for (const name of ['host', ...HOP]) headers.delete(name)
+  // The page server's fetch asks for an encoding it can decode; passing the browser's own list on can
+  // bring back one it cannot (zstd), whose bytes would then reach the browser labelled as plain.
+  for (const name of ['host', 'accept-encoding', ...HOP]) headers.delete(name)
   const body = ['GET', 'HEAD'].includes(event.request.method) ? undefined : event.request.body
   let response
   try {
