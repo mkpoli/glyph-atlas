@@ -70,6 +70,11 @@ def same_crop(new_data: str, live_data: str) -> bool:
     return all(new.get(key) == live.get(key) for key in CROP_KEYS)
 
 
+# The Worker keys its cached listings on this row (`catalogueVersion`); a publication writes it last.
+VERSION_BUMP = ("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at',"
+                "json_quote(strftime('%Y-%m-%dT%H:%M:%fZ','now')));\n")
+
+
 class Collision(ValueError):
     """The catalogue's revision equals the live one, so a stale page could not be told apart."""
 
@@ -144,8 +149,7 @@ def main() -> None:
             if statement:
                 out.write(statement + "\n")
         # Last, so the Worker's cached listings, keyed by it, change once the rows have.
-        out.write("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at',"
-                  "json_quote(strftime('%Y-%m-%dT%H:%M:%fZ','now')));\n")
+        out.write(VERSION_BUMP)
     print(json.dumps({**counts, "held": held}, ensure_ascii=False))
 
 

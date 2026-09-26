@@ -14,7 +14,8 @@
    held and listed in OUTPUT/held.json. Only the image rows and packs of those crops are published;
    the rest are already on the site.
 4. The SQL parts hold, in order: image rows, new units, the refresh, each `--extra` file whole, and
-   with `--status` the collection status row. Each part stays under D1's upload size and every
+   with `--status` the collection status row, and last the row the Worker keys its cached listings
+   on (`units_refreshed_at`), so they change once the rest has. Each part stays under D1's upload size and every
    statement under its statement limit; `publication.json` lists the parts.
 
 Nothing is uploaded or written to D1 here: reading the live units is the only request.
@@ -58,6 +59,10 @@ def snapshot(export: Path, output: Path) -> Path:
     with sqlite3.connect(f"file:{export / 'catalogue.sqlite'}?mode=ro", uri=True, timeout=120) as src, \
             sqlite3.connect(target) as dst:
         src.backup(dst)
+    # An export made before a migration is brought up to it, as a resume of the export would be, so
+    # the seal copies rows of the shape the site holds.
+    with sqlite3.connect(target) as db:
+        schema(db)
     for pack in export.glob("pack-*.bin"):
         link = output / pack.name
         link.unlink(missing_ok=True)
@@ -149,8 +154,10 @@ def statements(text: str) -> list[str]:
 
 
 def status_row() -> str:
+    from export_cloudflare import public_status
+
     from glyph_atlas.review import collection
-    value = json.dumps(collection.status((ROOT / "work").resolve()), ensure_ascii=False, separators=(",", ":"))
+    value = json.dumps(public_status(collection.status((ROOT / "work").resolve())), ensure_ascii=False, separators=(",", ":"))
     return ("INSERT INTO metadata(key, value) VALUES('collection', " + refresh.quote(value)
             + ") ON CONFLICT(key) DO UPDATE SET value=excluded.value;\n")
 
@@ -237,7 +244,8 @@ def main() -> None:
                 UNIT_ID.match(line).group(1).replace("''", "'") in fresh:
             units.append(line)
     extras = [statements(path.read_text(encoding="utf-8")) for path in args.extra]
-    groups = [media, units, updates, *extras] + ([[status_row()]] if args.status else [])
+    # The version row goes last, so the Worker's cached listings change only once every row has.
+    groups = [media, units, updates, *extras] + ([[status_row()]] if args.status else []) + [[refresh.VERSION_BUMP]]
     parts = write_parts(sealed, groups)
 
     manifest = json.loads((sealed / "publication.json").read_text())

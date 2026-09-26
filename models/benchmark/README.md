@@ -52,3 +52,29 @@ Top-1 / top-5, percent. `results/` holds every breakdown by script.
 | `interleave` | 88.4 / 94.9 | 46.6 / 59.9 (8,000) | 83.3 / 91.1 | 55.1 / 79.6 |
 | `metom` | 95.5 / 98.4 (seen in training, all 45,981) | 41.4 / 61.3 | 81.5 / 94.6 | 67.3 / 85.7 |
 | `atlas+metom` | | 46.7 / 64.4 | 83.3 / 93.5 | 55.1 / 81.6 |
+
+## Backbones (2026-09-26)
+
+Each backbone trained on the same CODH + HI Lab manifests (`models/classifier/build_combined.py`,
+3,428 classes) for two epochs of half the training crops each, with the same optimiser and
+brightness-contrast jitter, then measured here. Top-1 / top-5, percent; `atlas-reviewed` had 168
+crops, 49 of them corrected.
+
+| backbone | licence | input | codh-test | hilab-test | atlas-reviewed | corrected |
+| --- | --- | ---: | --- | --- | --- | --- |
+| ConvNeXt-tiny, `fb_in22k_ft_in1k` | Apache-2.0 | 96 | 88.2 / 95.9 | 71.4 / 86.9 | 84.5 / 93.5 | 67.3 / 83.7 |
+| ConvNeXt-tiny, `fb_in22k_ft_in1k` | Apache-2.0 | 128 | 88.8 / 96.2 | 72.4 / 87.6 | 87.5 / 94.0 | 71.4 / 85.7 |
+| ConvNeXt V2-tiny, `fcmae_ft_in22k_in1k` | CC BY-NC 4.0 | 96 | 88.8 / 96.0 | 72.6 / 87.9 | 86.9 / 94.0 | 67.4 / 85.7 |
+| ConvNeXt-tiny, `dinov3_lvd1689m` | DINOv3 Licence | 96 | 90.0 / 96.6 | 73.9 / 88.7 | 87.5 / 93.5 | 71.4 / 83.7 |
+| DINOv2 ViT-S/14 reg4, `lvd142m` | Apache-2.0 | 112 | 89.2 / 96.3 | 72.0 / 87.8 | 86.9 / 94.6 | 69.4 / 85.7 |
+| EVA-02 Small, `mim_in22k` | MIT | 112 | 88.6 / 96.1 | 70.8 / 86.8 | 86.9 / 93.5 | 71.4 / 83.7 |
+| DeiT III Small, `fb_in22k_ft_in1k` | Apache-2.0 | 128 | 88.4 / 96.0 | 69.9 / 86.5 | 83.3 / 93.5 | 69.4 / 85.7 |
+| CAFormer-S18, `sail_in22k_ft_in1k` | Apache-2.0 | 96 | 89.5 / 96.5 | 73.4 / 88.7 | 88.1 / 94.0 | 73.5 / 85.7 |
+| CAFormer-S36, `sail_in22k_ft_in1k` | Apache-2.0 | 96 | 89.7 / 96.5 | 74.6 / 89.1 | 86.9 / 92.3 | 69.4 / 79.6 |
+| CAFormer-S18, `sail_in22k_ft_in1k` | Apache-2.0 | 128 | 90.1 / 96.7 | 74.2 / 88.9 | 87.5 / 94.6 | 67.3 / 83.7 |
+
+ConvNeXt V2's weights forbid commercial use and the DINOv3 licence requires a "Built with DINOv3"
+notice, so neither is served. The CAFormer-S18 at 128, trained for ten full epochs, is the served
+classifier (`models/classifier/README.md`); its results are in `results/final-caformer128-*.json`:
+92.3 / 97.1 on `codh-test`, 80.9 / 91.7 on `hilab-test`, 89.9 / 95.2 on `atlas-reviewed` and
+69.4 / 85.7 on its corrected crops.

@@ -122,7 +122,7 @@ def order_group(vectors: np.ndarray) -> list[int]:
     return positions
 
 
-def compute(dataset: Path, *, checkpoint: Path, classes: Path) -> dict[str, Any]:
+def compute(dataset: Path, *, checkpoint: Path) -> dict[str, Any]:
     """Order every crop of `dataset` by shape, and write the order into the dataset."""
     from PIL import Image
 
@@ -130,14 +130,14 @@ def compute(dataset: Path, *, checkpoint: Path, classes: Path) -> dict[str, Any]
     from ..form_clusters import Encoder
 
     groups, images, _boxes = _crops(dataset)
-    encoder = Encoder(checkpoint, classes)
+    encoder = Encoder(checkpoint)
     ids = [identity for members in groups.values() for identity in members]
     vectors = []
     for start in range(0, len(ids), 512):
         batch = []
         for identity in ids[start:start + 512]:
             with Image.open(io.BytesIO(images[identity])) as picture:
-                batch.append(np.asarray(preprocess(picture.convert("L")), dtype=np.uint8))
+                batch.append(np.asarray(preprocess(picture.convert("L"), size=encoder.size), dtype=np.uint8))
         vectors.append(encoder(np.stack(batch)))
     embedded = dict(zip(ids, np.concatenate(vectors), strict=True))
     orders: dict[str, int] = {}

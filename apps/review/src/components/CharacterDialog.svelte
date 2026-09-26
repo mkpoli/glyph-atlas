@@ -75,8 +75,8 @@
       // A link to a retired crop opens the crop that replaced it, and the address follows. A round's
       // tile does not: its verdict belongs to the crop it was dealt, so the round reports the error.
       if (e.replacedBy && !onVerdict && !redirected) {
-        if (page.route.id?.endsWith('/character/[id]') && page.params.id === target)
-          replaceState(localize('/character/' + encodeURIComponent(e.replacedBy)), page.state)
+        if (page.route.id?.endsWith('/crop/[id]') && page.params.id === target)
+          replaceState(localize('/crop/' + encodeURIComponent(e.replacedBy)), page.state)
         return load(e.replacedBy, true)
       }
       replaced = false

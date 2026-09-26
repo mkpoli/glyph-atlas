@@ -220,7 +220,7 @@ def _digest(path: Path) -> str:
         return hashlib.file_digest(handle, "sha256").hexdigest()
 
 
-def compute(dataset: Path, *, checkpoint: Path, classes: Path, lookalikes: Path = LOOKALIKES) -> dict[str, Any]:
+def compute(dataset: Path, *, checkpoint: Path, lookalikes: Path = LOOKALIKES) -> dict[str, Any]:
     """Mark the suspects among every crop of `dataset`, and write the marks into the dataset."""
     from .quiz_shapes import _crops
 
@@ -230,10 +230,10 @@ def compute(dataset: Path, *, checkpoint: Path, classes: Path, lookalikes: Path 
         raise RuntimeError(f"{dataset} shows no crops; is $GLYPH_ATLAS_CACHE the image cache it was built with?")
     crops = [(identity, label, boxes[identity], lambda i=identity: images[i])
              for label, members in groups.items() for identity in members]
-    return _mark(crops, Path(dataset) / FILE, checkpoint=checkpoint, classes=classes, lookalikes=lookalikes)
+    return _mark(crops, Path(dataset) / FILE, checkpoint=checkpoint, lookalikes=lookalikes)
 
 
-def compute_catalogues(catalogues: Iterable[Path], target: Path, *, checkpoint: Path, classes: Path,
+def compute_catalogues(catalogues: Iterable[Path], target: Path, *, checkpoint: Path,
                        lookalikes: Path = LOOKALIKES) -> dict[str, Any]:
     """Mark the suspects among the crops of sealed publications, as the hosted site serves them.
 
@@ -260,32 +260,32 @@ def compute_catalogues(catalogues: Iterable[Path], target: Path, *, checkpoint: 
     if not crops:
         raise RuntimeError("the catalogues hold no crop with a display image")
     target.parent.mkdir(parents=True, exist_ok=True)
-    return _mark(crops, target, checkpoint=checkpoint, classes=classes, lookalikes=lookalikes)
+    return _mark(crops, target, checkpoint=checkpoint, lookalikes=lookalikes)
 
 
-def _mark(crops: list[tuple], target: Path, *, checkpoint: Path, classes: Path, lookalikes: Path) -> dict[str, Any]:
+def _mark(crops: list[tuple], target: Path, *, checkpoint: Path, lookalikes: Path) -> dict[str, Any]:
     """Classify `crops` (id, label, box, a function giving the image bytes) and write their marks."""
     from PIL import Image
 
-    from ..classify import preprocess, read_classes
+    from ..classify import preprocess
     from ..form_clusters import Encoder
 
-    encoder = Encoder(checkpoint, classes)
-    labels = Labels(read_classes(classes), load_lookalikes(lookalikes, checkpoint))
+    encoder = Encoder(checkpoint)
+    labels = Labels(encoder.classes, load_lookalikes(lookalikes, checkpoint))
     suspects: dict[str, dict] = {}
     for start in range(0, len(crops), 512):
         batch = crops[start:start + 512]
         pixels = []
         for _identity, _label, _box, load in batch:
             with Image.open(io.BytesIO(load())) as picture:
-                pixels.append(np.asarray(preprocess(picture.convert("L")), dtype=np.uint8))
+                pixels.append(np.asarray(preprocess(picture.convert("L"), size=encoder.size), dtype=np.uint8))
         _features, probabilities = encoder.classify(np.stack(pixels))
         for (identity, label, box, _load), mark in zip(batch, labels.judge(probabilities, [c[1] for c in batch]),
                                                         strict=True):
             if mark:
                 suspects[identity] = {**mark, "label": label, "box": box}
     inputs = {"crops": hashlib.sha256("\n".join(sorted(c[0] for c in crops)).encode()).hexdigest(),
-              "checkpoint": _digest(checkpoint), "classes": _digest(classes), "lookalikes": _digest(lookalikes),
+              "checkpoint": _digest(checkpoint), "lookalikes": _digest(lookalikes),
               "kana_origins": _digest(refs_table("kana-origins.tsv")), "suspect_forms": _digest(refs_table("suspect-forms.tsv"))}
     return _write(target, suspects, len(crops), inputs)
 
@@ -329,10 +329,9 @@ def corpus_glyphs(root: Path, corpora: Iterable[str]) -> Iterator[dict]:
                    "box": tuple(c[row] for c in corners) if page else None, "crop": None if page else values["crop"][row]}
 
 
-def compute_corpus(root: Path, target: Path, *, checkpoint: Path, classes: Path, lookalikes: Path = LOOKALIKES,
+def compute_corpus(root: Path, target: Path, *, checkpoint: Path, lookalikes: Path = LOOKALIKES,
                    corpora: Iterable[str] | None = None, workers: int = 8) -> dict[str, Any]:
     """Mark the suspects among the corpus glyphs whose pixels are on disk, into the file `target`."""
-    from ..classify import read_classes
     from ..corpus.index import UNIT_CORPORA
     from ..form_clusters import Encoder, Pixels, _embed, _file_jobs
 
@@ -350,12 +349,12 @@ def compute_corpus(root: Path, target: Path, *, checkpoint: Path, classes: Path,
         label_of[glyph["id"]] = glyph["label"]
     if not located:
         raise RuntimeError(f"no glyph of {', '.join(corpora)} has its pixels under {root}")
-    encoder = Encoder(checkpoint, classes)
-    labels = Labels(read_classes(classes), load_lookalikes(lookalikes, checkpoint))
+    encoder = Encoder(checkpoint)
+    labels = Labels(encoder.classes, load_lookalikes(lookalikes, checkpoint))
     suspects: dict[str, dict] = {}
     scored = 0
     print(f"{len(located)} glyphs located, {sum(unheld.values())} without pixels", file=sys.stderr, flush=True)
-    for batch_ids, (_features, probabilities) in _embed(_file_jobs(located), encoder.classify, workers=workers):
+    for batch_ids, (_features, probabilities) in _embed(_file_jobs(located), encoder.classify, size=encoder.size, workers=workers):
         scored += len(batch_ids)
         if scored // 50000 != (scored - len(batch_ids)) // 50000:
             print(f"{scored} scored, {len(suspects)} suspects", file=sys.stderr, flush=True)
@@ -366,17 +365,17 @@ def compute_corpus(root: Path, target: Path, *, checkpoint: Path, classes: Path,
                 suspects[identity] = {**mark, "label": label_of[identity],
                                       "box": dict(zip("xywh", box, strict=True)) if box else None}
     inputs = {"corpora": list(corpora), "located": hashlib.sha256("\n".join(sorted(located)).encode()).hexdigest(),
-              "checkpoint": _digest(checkpoint), "classes": _digest(classes), "lookalikes": _digest(lookalikes),
+              "checkpoint": _digest(checkpoint), "lookalikes": _digest(lookalikes),
               "kana_origins": _digest(refs_table("kana-origins.tsv")), "suspect_forms": _digest(refs_table("suspect-forms.tsv"))}
     target.parent.mkdir(parents=True, exist_ok=True)
     return {**_write(target, suspects, scored, inputs), "unheld": dict(unheld)}
 
 
 
-def measure_lookalikes(split: Path, target: Path, *, checkpoint: Path, classes: Path) -> dict[str, Any]:
+def measure_lookalikes(split: Path, target: Path, *, checkpoint: Path) -> dict[str, Any]:
     """Measure which characters the classifier confuses, on a held-out split, into the file `target`.
 
-    `split` is a classifier split table (`crop`, `label`), such as `work/classifier/test.parquet`,
+    `split` is a classifier split table (`crop`, `label`), such as `work/classifier-combined/test.parquet`,
     whose crop paths are relative to the checkout that holds its `work/`. A pair is a look-alike when
     either character is read as the other on at least `LOOKALIKE_RATE` of its crops there, and the
     two are misread as each other `LOOKALIKE_MISREADS` times or more. The pairs are only good for the
@@ -388,21 +387,21 @@ def measure_lookalikes(split: Path, target: Path, *, checkpoint: Path, classes: 
     from PIL import Image
 
     from .. import refs
-    from ..classify import preprocess, read_classes
+    from ..classify import preprocess
     from ..form_clusters import Encoder
 
-    names = read_classes(classes)
+    encoder = Encoder(checkpoint)
+    names = encoder.classes
     index = {name: i for i, name in enumerate(names)}
     rows = pq.read_table(split, columns=["crop", "label"]).to_pylist()
     root = Path(split).resolve().parents[2]
     if not rows:
         raise RuntimeError(f"{split} holds no crops")
-    encoder = Encoder(checkpoint, classes)
     counts = np.zeros((len(names), len(names)), dtype=np.int64)
 
     def load(row: dict) -> np.ndarray:
         with Image.open(root / row["crop"]) as picture:
-            return np.asarray(preprocess(picture.convert("L")), dtype=np.uint8)
+            return np.asarray(preprocess(picture.convert("L"), size=encoder.size), dtype=np.uint8)
 
     with ThreadPoolExecutor(8) as pool:
         for start in range(0, len(rows), 1024):

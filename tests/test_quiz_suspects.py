@@ -166,5 +166,5 @@ def test_catalogue_crops_are_marked_under_the_label_and_box_they_are_served_with
         return {"scored": len(crops)}
 
     monkeypatch.setattr(quiz_suspects, "_mark", mark)
-    assert quiz_suspects.compute_catalogues([catalogue], tmp_path / "out.json", checkpoint=tmp_path, classes=tmp_path) == {"scored": 1}
+    assert quiz_suspects.compute_catalogues([catalogue], tmp_path / "out.json", checkpoint=tmp_path) == {"scored": 1}
     assert seen == {"a": ("イ", box)}

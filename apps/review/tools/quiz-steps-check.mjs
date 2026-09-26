@@ -326,7 +326,7 @@ try {
   })
   await check('standalone reviewer uses one viewport and keeps manual crop adjustment explicit', async () => {
     const writes = posted.length
-    await browser.evaluate(`visit('/character/' + encodeURIComponent(${JSON.stringify(selected[0])}))`)
+    await browser.evaluate(`visit('/crop/' + encodeURIComponent(${JSON.stringify(selected[0])}))`)
     await browser.waitFor('document.querySelector(".character-dialog .crop-viewport")?.dataset.ready === "true"')
     await browser.waitFor('document.querySelector(".save-character")?.disabled === false')
     assert(!await browser.evaluate('!!document.querySelector(".inspector-crop, .nearby")'), 'standalone reviewer retained duplicate panels')

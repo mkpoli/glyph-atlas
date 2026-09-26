@@ -61,6 +61,21 @@ def published_keys(path: Path) -> set[str]:
     return {line.strip() for line in path.read_text().splitlines() if line.strip()}
 
 
+def unit_ids(path: Path) -> set[str]:
+    """Unit ids from a text file, one per line: the corpus units a site already holds."""
+    return {line.strip() for line in path.read_text().splitlines() if line.strip()}
+
+
+def held(db, skip=frozenset()):
+    """Ids this export does not write again: those already in its database, and those in `skip`."""
+    return {r[0] for r in db.execute("SELECT id FROM corpus_units")} | set(skip)
+
+
+def holder_image(joined, box, enabled):
+    """The holder's own IIIF region of a unit's box when `enabled` and the page has a service."""
+    return _iiif_region(joined.get("image_service"), box, edge=480) if enabled else None
+
+
 def unit_corpora(names=None):
     """Every unit corpus under `work`, or only those in `names`, which must all exist."""
     found = [corpus for corpus in sources.discover("work") if corpus.name in UNIT_CORPORA]
@@ -72,8 +87,12 @@ def unit_corpora(names=None):
     return [corpus for corpus in found if corpus.name in names]
 
 
-def export(output, *, resume=False, published=None, corpora=None):
-    """Export every unit corpus, or only those named in `corpora`."""
+def export(output, *, resume=False, published=None, corpora=None, skip=frozenset(), holder_images=False):
+    """Export every unit corpus, or only those named in `corpora`, leaving out the ids in `skip`.
+
+    With `holder_images`, a unit on a page the holder serves through IIIF points at the holder's
+    region of its box, so no crop is packed for it; a pre-cut crop is packed as before.
+    """
     found = unit_corpora(corpora)
     output.mkdir(parents=True, exist_ok=resume)
     db = sqlite3.connect(output / "corpus.sqlite")
@@ -91,7 +110,7 @@ def export(output, *, resume=False, published=None, corpora=None):
         size = (output / name).stat().st_size
         db.execute("DELETE FROM corpus_units WHERE object=? AND offset+size>?", (name, size))
     db.commit()
-    existing = {r[0] for r in db.execute("SELECT id FROM corpus_units")}
+    existing = held(db, skip)
     counts = Counter(json.loads((output / "progress.json").read_text()) if (output / "progress.json").exists() else {})
     for corpus in found:
         paths = corpus.parquet_files("units")
@@ -124,7 +143,10 @@ def export(output, *, resume=False, published=None, corpora=None):
                 context_box = _viewport(box, page.get("width"), page.get("height"))
                 image = joined["thumbnail"].get("iiif_url")
                 context_image = _iiif_region(joined.get("image_service"), context_box, edge=900)
-                if joined["thumbnail"].get("mode") != "remote_iiif":
+                holder = holder_image(joined, box, holder_images)
+                if holder:
+                    image = holder
+                elif joined["thumbnail"].get("mode") != "remote_iiif":
                     image = media.corpus_image(joined, api.crops, edge=480)
                     if not image:
                         counts["unavailable"] += 1
@@ -208,6 +230,12 @@ if __name__ == "__main__":
                              "(an earlier export's corpus.sqlite, or a text file of keys)")
     parser.add_argument("--corpus", action="append", dest="corpora", metavar="NAME",
                         help="export only this unit corpus; repeat for several (default: every one)")
+    parser.add_argument("--skip", type=Path, metavar="IDS",
+                        help="leave out the unit ids listed in IDS, one per line: the corpus units "
+                             "the site already holds, so a publication adds units without replacing them")
+    parser.add_argument("--holder-images", action="store_true",
+                        help="point units on IIIF pages at the holder's region instead of packing a crop")
     args = parser.parse_args()
     export(args.output, resume=args.resume, corpora=args.corpora,
-           published=published_keys(args.records_only) if args.records_only else None)
+           published=published_keys(args.records_only) if args.records_only else None,
+           skip=unit_ids(args.skip) if args.skip else frozenset(), holder_images=args.holder_images)
