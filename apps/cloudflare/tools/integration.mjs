@@ -668,6 +668,10 @@ try {
   const matching = async term => (await db.prepare("SELECT count(*) AS n FROM units WHERE origin='local' AND (character=? OR reading=?)").bind(term, term).first()).n
   assert.deepEqual(await searched('とも'), [await matching('とも'), ['find-both', 'find-reading']], 'a search matches the character or the reading')
   assert.deepEqual(await searched('𪜈'), [await matching('𪜈'), ['find-neither', 'find-reading']])
+  // A picked character within a script: the script still filters.
+  const pickedIn = async group => (await call(`/atlas?reading=${encodeURIComponent('仮')}&group=${group}&limit=96`)).items.map(i => i.id).filter(id => id.startsWith('fam-')).sort()
+  assert.deepEqual(await pickedIn('kanji'), ['fam-b', 'fam-c'], 'a picked character keeps its crops in its script')
+  assert.deepEqual(await pickedIn('kana'), [], 'and has none in another')
   console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms.')
 } finally {
   await mf.dispose()

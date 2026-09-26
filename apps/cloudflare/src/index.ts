@@ -250,7 +250,9 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
     where.push("id IN (SELECT id FROM units WHERE origin='local' AND character=? UNION SELECT id FROM units WHERE origin='local' AND reading=?)");
     values.push(literal(q.get('q')!), literal(q.get('q')!));
   }
-  if (q.get('group') && q.get('group') !== 'all') { where.push('category=?'); values.push(q.get('group')!) }
+  // With a character or a search named, its own index finds the few crops and the script only filters
+  // them (`+`); the script's index would read every crop of that script.
+  if (q.get('group') && q.get('group') !== 'all') { where.push(reading || q.get('q') ? '+category=?' : 'category=?'); values.push(q.get('group')!) }
   // `attention` is the Flagged view: every crop waiting for a person, flagged or hard to read.
   if (q.get('state') === 'attention') where.push(`${state} IN ('flagged','hard')`);
   else if (q.get('state') && q.get('state') !== 'all') { where.push(`${state}=?`); values.push(q.get('state')!) }
