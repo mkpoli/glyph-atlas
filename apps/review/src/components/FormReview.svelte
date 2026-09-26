@@ -2,6 +2,7 @@
   // Cluster by cluster, every glyph at once: mark the ones that are not the family's character,
   // then save and move on. A form key also names the rest of the cluster before moving on.
   import { onMount } from 'svelte'
+  import { settle } from '../lib/settle.js'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import { members as loadMembers, decide } from '../lib/forms.js'
   import { number, reviewer } from '../lib/client.js'
@@ -87,7 +88,7 @@
     <div class="review-heading">
       <button class="quiet-link" onclick={() => onexit(index)}>{t('forms.allClusters')}</button>
       {#if cluster}
-        <h3>{cluster.label} <small>{t('forms.glyphs.count', { count: total })}</small></h3>
+        <h3>{cluster.label} <small>{t('forms.glyphs.count', { count: cluster.count })}</small></h3>
         <span class="review-progress">{t('forms.review.progress', { reviewed: number(reviewed), clusters: number(family.items.length) })}</span>
       {/if}
     </div>
@@ -121,10 +122,11 @@
     <p class="review-done">{t('forms.review.done', { char: family.char })}</p>
   {:else}
     <div class="review-grid" aria-busy={loading}>
+      {#if loading && !glyphs.length}{#each Array(Math.min(cluster.count, 36)) as _, i (i)}<span class="review-glyph shimmer" aria-hidden="true"></span>{/each}{/if}
       {#each glyphs as glyph, i (glyph.id)}
         <button class="review-glyph" class:marked={marked.has(glyph.id)} class:reported={glyph.reported}
                 aria-pressed={marked.has(glyph.id)} onclick={event => toggle(i, event)} title={glyph.id}>
-          {#if glyph.image}<img class="glyph-image" src={glyph.image} alt="" loading="lazy" />{/if}
+          {#if glyph.image}<img class="glyph-image" src={glyph.image} alt="" loading="lazy" use:settle />{/if}
           {#if glyph.reported}<span class="review-flag">{glyph.character ?? '⚠'}</span>
           {:else if glyph.form}<span class="review-form-mark">{glyph.form}</span>{/if}
         </button>
@@ -151,7 +153,7 @@
   .review-form{position:relative;display:flex;align-items:center;gap:4px;padding:4px 8px;background:#fff}
   .review-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:5px;margin-top:14px}
   .review-glyph{position:relative;aspect-ratio:1;padding:7px;border:2px solid transparent;border-radius:6px;background:#f1f1f3}
-  .review-glyph.marked{border-color:var(--wrong);background:#fdeceb}
+  span.review-glyph{display:block}.review-glyph.marked{border-color:var(--wrong);background:#fdeceb}
   .review-glyph.marked::after{content:"✕";position:absolute;top:2px;left:6px;font-size:13px;color:var(--wrong)}
   .review-glyph.reported{opacity:.55}
   .review-flag{position:absolute;top:3px;right:6px;font-size:14px;color:var(--wrong);font-family:"Noto Sans CJK JP","Yu Gothic",sans-serif}
