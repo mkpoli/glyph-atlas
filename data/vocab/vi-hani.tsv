@@ -18,7 +18,7 @@
 # The spellings are an editorial reconstruction of how modern interface wording would be written in
 # chữ Nôm; no Nôm text attests most of these phrases, and no native reader has reviewed them yet.
 word	hannom	source	note
-biệt	別	wiktionary	
+bao	包	wiktionary	
 buộc	纀	wiktionary	
 báo	報	wiktionary	
 bút	筆	wiktionary	
@@ -26,7 +26,6 @@ bạn	伴	wiktionary
 bản	本	wiktionary	
 bản in	本印	joined	each syllable attested
 bản khắc	版刻	joined	each syllable attested
-bản phiên	本翻	editorial	phiên 翻 as in 翻音
 bản quyền	版權	wiktionary	
 bẩn	𪷪	wiktionary	
 bật	弼	wiktionary	
@@ -44,7 +43,6 @@ chì	𨦥	wiktionary
 chính	正	wiktionary	
 chú giải	註解	wiktionary	
 chưa	𣗓	wiktionary	
-chất liệu	質料	joined	each syllable attested
 chế tác	製作	joined	each syllable attested
 chỉ	只	wiktionary	
 chỉ mục	指目	joined	each syllable attested
@@ -56,15 +54,13 @@ chữ	𡨸	wiktionary
 cuối	𣞄	wiktionary	
 cuộn	𦄣	wiktionary	
 các	各	unihan	
-cách	格	wiktionary	
 còn	羣	wiktionary	
 có	𣎏	wiktionary	
 có thể	固體	wiktionary	
 công bố	公布	joined	each syllable attested
 công cụ	工具	wiktionary	
 cùng	共	wiktionary	
-cũng	共	wiktionary	
-cạnh	𧣲	wiktionary	
+cũng	拱	wiktionary	
 cả	哿	wiktionary	
 cần	勤	wiktionary	
 cập nhật	及日	joined	each syllable attested
@@ -80,9 +76,7 @@ dò	𠻀	wiktionary
 dòng	𣳔	wiktionary	
 dùng	用	wiktionary	
 dư	餘	editorial	Wiktionary gives 餘 as the etymon; Unihan reads 余 dư too
-dưới	𠁑	wiktionary	
 dấu	唒	wiktionary	
-dụ	喻	wiktionary	
 dừng	亭	wiktionary	
 dữ liệu	與料	joined	each syllable attested
 ghi	𥱬	wiktionary	
@@ -101,7 +95,6 @@ gõ	𢱗	wiktionary
 gốm	𡑲	wiktionary	
 gồm	𡗄	wiktionary	
 gỗ	楛	wiktionary	
-gộp	𠄦	wiktionary	
 gợi	𢭮	wiktionary	
 hai	𠄩	wiktionary	
 hangul	諺文	editorial	the script names written in Han characters
@@ -111,9 +104,7 @@ hoàn tác	還作	joined	each syllable attested
 hoạt tự	活字	joined	each syllable attested
 hoặc	或	wiktionary	
 hán	漢	wiktionary	
-hán tự	漢字	wiktionary	
 hãy	唉	wiktionary	
-hình	形	wiktionary	
 hình dạng	形樣	joined	each syllable attested
 hẹp	陿	wiktionary	
 hết	歇	wiktionary	
@@ -136,11 +127,11 @@ khớp	級	wiktionary
 kim loại	金類	joined	each syllable attested
 kim văn	金文	joined	each syllable attested
 kiếm	劍	wiktionary	
-kiểm	檢	editorial	Sino-Vietnamese reading of the Han word
 kiểm tra	檢查	wiktionary	
 kèm	兼	wiktionary	
+kém	劔	wiktionary	the variant of 劍, which spells kiếm here
 kéo	捁	wiktionary	
-kích	戟	unihan	
+kích thước	戟𢭑	editorial	Wiktionary gives no etymon for this kích; 戟 is the only character Unihan reads kích, so the spelling is uncertain
 ký hiệu	記號	wiktionary	spelled kí hiệu there
 kết quả	結果	wiktionary	
 kỹ thuật	技術	wiktionary	spelled kĩ thuật there
@@ -179,7 +170,6 @@ mục	目	wiktionary
 mục tiêu	目標	wiktionary	
 mực	墨	wiktionary	
 nay	尼	wiktionary	
-nghi vấn	疑問	wiktionary	
 nguyên	原	wiktionary	
 nguyên bản	原本	wiktionary	
 nguồn	源	wiktionary	
@@ -191,7 +181,6 @@ nhau	𦣗	wiktionary
 nhiễu	擾	unihan	
 nhãn	眼	unihan	
 nhóm	佔	wiktionary	
-như	如	wiktionary	
 nhưng	仍	wiktionary	
 nhấn	刃	wiktionary	
 nhất	一	wiktionary	
@@ -203,9 +192,7 @@ nét	涅	wiktionary
 nó	伮	wiktionary	
 nếu	裊	wiktionary	
 nữa	女	wiktionary	
-phiên	翻	editorial	翻 as in 翻音
 phiên này	番呢	joined	each syllable attested
-phân biệt	分別	wiktionary	
 phân loại	分類	wiktionary	
 phím	乏	wiktionary	
 phóng to	放𡚢	joined	each syllable attested
@@ -217,7 +204,6 @@ qua	過	wiktionary
 quanh	縈	wiktionary	
 quay	乖	wiktionary	
 quyết định	決定	wiktionary	
-quá	過	wiktionary	
 ra	𠚢	wiktionary	
 riêng	𥢅	wiktionary	
 rõ	𠓑	wiktionary	
@@ -248,7 +234,6 @@ thu nhỏ	收𡮈	joined	each syllable attested
 thu thập	收拾	joined	each syllable attested
 thành	成	wiktionary	
 thêm	添	wiktionary	
-thước	𢭑	wiktionary	
 thạch bản	石版	joined	each syllable attested
 thấy	𧡊	wiktionary	
 thời gian	時間	wiktionary	
@@ -290,12 +275,10 @@ tự hình	字形	joined	each syllable attested
 tự hình đại đồ phổ	字形大圖譜	editorial	the project name 字形大圖譜
 tự tộc	字族	joined	each syllable attested
 tự vị	字位	joined	each syllable attested
-viên	員	wiktionary	
 viết	曰	wiktionary	
 và	吧	wiktionary	
 vào	𠓨	wiktionary	
 vì	位	wiktionary	
-ví	𱒢	wiktionary	
 vòng	釯	wiktionary	
 vùng	塳	wiktionary	
 văn	文	wiktionary	
@@ -321,7 +304,6 @@ xếp	插	wiktionary
 xử lý	處理	wiktionary	spelled xử lí there
 áp dụng	壓用	wiktionary	
 âm đọc	音讀	wiktionary	
-ít	𠃣	wiktionary	
 ý	意	wiktionary	
 đang	當	wiktionary	
 đen	顛	wiktionary	
@@ -353,4 +335,3 @@ xử lý	處理	wiktionary	spelled xử lí there
 ảnh	影	unihan	
 ẩn	隱	wiktionary	
 ở	於	wiktionary	
-ứng	應	unihan	
