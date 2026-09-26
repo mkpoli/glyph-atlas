@@ -106,3 +106,5 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 /* The nav scrolls sideways on a phone rather than pushing the header wider than the screen. */
 @media(max-width:700px){.site-header nav{min-width:0;overflow-x:auto;scrollbar-width:none}}
 .issue-card.skip-card{grid-column:1/-1;display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:14px;row-gap:2px;align-items:center;align-content:center;min-height:0}.skip-card .issue-example{grid-row:1/3;height:auto;width:34px;justify-content:center;font-size:24px;color:var(--uncertain)}.skip-card .issue-name,.skip-card .issue-hint{grid-column:2}
+/* The wide tracking suits a wordmark of three to five Han characters; a Latin-script name keeps its own. */
+.wordmark .local-name[lang=vi]{letter-spacing:.01em}
