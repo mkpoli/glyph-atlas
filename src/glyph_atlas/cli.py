@@ -457,6 +457,36 @@ def review_shapes(
         typer.echo(f"{name:<12} {value:>10}")
 
 
+@review_app.command("suspects")
+def review_suspects(
+    directory: Annotated[Path, typer.Argument(help="dataset directory whose crops are marked; the marks are written into it")],
+    checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
+    classes: Annotated[Path, typer.Option(help="classifier class list")] = Path("models/classifier/classes.json"),
+) -> None:
+    """Mark the Quick review crops the classifier reads as another character (needs CUDA)."""
+    from .review import quiz_suspects
+
+    for name, value in quiz_suspects.compute(directory, checkpoint=checkpoint, classes=classes).items():
+        typer.echo(f"{name:<12} {value:>10}")
+
+
+@review_app.command("corpus-suspects")
+def review_corpus_suspects(
+    target: Annotated[Path, typer.Argument(help="file the corpus glyphs' marks are written to")],
+    root: Annotated[Path, typer.Option(help="corpus root")] = Path("work"),
+    corpus: Annotated[list[str] | None, typer.Option(help="only this unit corpus; repeat for several")] = None,
+    checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
+    classes: Annotated[Path, typer.Option(help="classifier class list")] = Path("models/classifier/classes.json"),
+    workers: Annotated[int, typer.Option(help="processes cutting glyphs")] = 8,
+) -> None:
+    """Mark the published corpus glyphs the classifier reads as another character (needs CUDA)."""
+    from .review import quiz_suspects
+
+    result = quiz_suspects.compute_corpus(root, target, checkpoint=checkpoint, classes=classes,
+                                          corpora=corpus, workers=workers)
+    typer.echo(json.dumps(result, ensure_ascii=False))
+
+
 @review_app.command("apply")
 def review_apply(directory: Annotated[Path, typer.Argument(help="dataset directory to write back")]) -> None:
     """Write the reviewed state to the tables and the events to reviews.jsonl."""

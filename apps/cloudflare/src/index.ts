@@ -117,6 +117,17 @@ export const reviewedInInspectorQuery = () => `EXISTS(SELECT 1 FROM events e JOI
 const REVIEWED_IN_INSPECTOR = reviewedInInspectorQuery();
 const SEEN = `EXISTS(SELECT 1 FROM seen s JOIN submissions b ON b.id=s.submission AND b.undone=0
   WHERE s.target=units.id AND s.box IS json_extract(units.data,'$.box'))`;
+// The classifier's doubt about a crop's label, as `atlas review suspects` computed it, or null.
+const SUSPECT = `(SELECT json_object('p',m.p,'reads_as',m.reads_as,'label',m.label,'box',json(m.box)) FROM unit_suspects m WHERE m.id=units.id)`;
+type Suspect = { p: number; reads_as: string | null; label: string; box: Json | null };
+// A mark holds while the crop keeps the label and box the classifier was shown; a crop relabelled or
+// re-cut since is no longer what it judged.
+export function suspectOf(mark: Suspect | null | undefined, item: Json): Json | null {
+  if (!mark || mark.label !== item.label) return null;
+  const a = mark.box, b = item.box ?? null;
+  const same = a === null || b === null ? a === b : ['x', 'y', 'w', 'h'].every(k => Math.abs(Number(a[k]) - Number(b[k])) < 1e-6);
+  return same ? { p: mark.p, reads_as: mark.reads_as } : null;
+}
 const EFFECTIVE_STATE = `iif(state='pending' AND ${HARD},'hard',iif(state='pending' AND ${SEEN},'seen',state))`;
 // How long a crop a reviewer skipped stays out of that reviewer's own rounds.
 const SKIP_REST_MS = 3 * 24 * 60 * 60 * 1000;
@@ -254,7 +265,7 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   const order = others + (review && seed % 5 ? 'priority,' : '');
   // Flagged view: a crop already looked at in the inspector queues behind the ones nobody has reviewed yet.
   const reviewedLast = flaggedView ? `${REVIEWED_IN_INSPECTOR},` : '';
-  const columns = `*,${state} AS effective,(SELECT shape_order FROM unit_shapes s WHERE s.id=units.id) AS shape_order`;
+  const columns = `*,${state} AS effective,(SELECT shape_order FROM unit_shapes s WHERE s.id=units.id) AS shape_order,${SUSPECT} AS suspect`;
   // Browse deals crops in `shuffle` order from a point the seed picks, and wraps round past the
   // highest: an index serves that order, where a seed-scrambled order sorts every row on each visit.
   // A named character is found through `unit_character` instead, and its few crops sort in memory.
@@ -268,7 +279,7 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
     ...(reportedCountWhere ? [env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${reportedCountWhere.join(' AND ')}`).bind(...values)] : []),
   ]);
   const listed = (count.results[0] as { n: number }).n;
-  const rows = window.results as (UnitRow & { effective: string; shape_order: number | null })[];
+  const rows = window.results as (UnitRow & { effective: string; shape_order: number | null; suspect: string | null })[];
   if (rotated && rows.length < limit) {
     const above = rows.length ? offset + rows.length : (await env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${where.join(' AND ')} AND shuffle>=?`)
       .bind(...values, start).first<{ n: number }>())!.n;
@@ -276,7 +287,8 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
     rows.push(...wrapped.results as typeof rows);
   }
   const items: Json[] = rows
-    .map(row => ({ ...compact(row), state: row.effective, shape_order: row.shape_order }));
+    .map(row => { const item = compact(row); return { ...item, state: row.effective, shape_order: row.shape_order,
+      suspect: suspectOf(row.suspect ? parse(row.suspect) as Suspect : null, item) } });
   // Positions run through the `units` rows and then the untouched corpus glyphs. A glyph its record
   // keeps out still takes its position, so `next_offset` can run ahead of the items, and once the
   // glyphs run out `total` is what was there to deal.
@@ -336,8 +348,14 @@ async function corpusRound(env: Env, character: string, production: string, seed
       // The record decides: a glyph whose image this site may not serve, or whose record disagrees
       // with its published row about the character or the material, is not dealt.
       if (dealable('corpus', data) && data.label === character && inMaterial(production, productionOf(data)))
-        items.push({ ...listing(data), origin: 'corpus', state: 'pending', shape_order: null });
+        items.push({ ...listing(data), origin: 'corpus', state: 'pending', shape_order: null, suspect: null });
     }
+  }
+  if (items.length) {
+    const marks = await env.DB.prepare('SELECT id,p,reads_as,label,box FROM unit_suspects WHERE id IN (SELECT value FROM json_each(?))')
+      .bind(JSON.stringify(items.map(item => item.id))).all<{ id: string; p: number; reads_as: string | null; label: string; box: string | null }>()
+    const found = new Map(marks.results.map(row => [row.id, { ...row, box: row.box === null ? null : parse(row.box) }]))
+    for (const item of items) item.suspect = suspectOf(found.get(item.id), item)
   }
   return { items, read: read.length, exhausted: rows.length < wanted };
 }

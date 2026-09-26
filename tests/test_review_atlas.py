@@ -1844,3 +1844,16 @@ def test_history_lists_reviewer_decisions_newest_first_with_paging_and_filters(d
     page2 = client.get('/atlas/history', params={"limit": 100, "before": page1["next"]}).json()
     assert ([i["id"] for i in page1["items"]] + [i["id"] for i in page2["items"]]
             == [i["id"] for i in full["items"]])
+
+
+def test_a_crop_carries_its_suspect_mark(dataset):
+    first, second = LINE + ":u0", LINE + ":u1"
+    box = {"x": 20, "y": 20, "w": 65, "h": 100}
+    (dataset / "quiz-suspects.json").write_text(json.dumps({"suspects": {
+        first: {"p": 0.01, "reads_as": "お", "label": "あ", "box": box},
+        # Made for another cut of the crop: it no longer holds.
+        second: {"p": 0.01, "reads_as": "お", "label": "あ", "box": box}}}))
+    items = TestClient(create_app(dataset)).get('/atlas', params={"reading": "あ", "limit": 96}).json()["items"]
+    marks = {item["id"]: item["suspect"] for item in items}
+    assert marks[first] == {"p": 0.01, "reads_as": "お"}
+    assert {mark for identity, mark in marks.items() if identity != first} == {None}
