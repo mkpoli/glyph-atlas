@@ -831,6 +831,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         generation = (file_stamp(store.path), file_stamp(Path(str(store.path) + "-wal")),
                       file_stamp(production_metadata.OVERRIDES))
         units, all_states, kinds, books, titles, skips, reviewed = catalogue_snapshot(generation)
+        document = document or None
         records = [(u, rev) for u, rev in units
                    if production_metadata.in_scope(kinds[u.id], scope) and considered(u)]
         states = {u.id: all_states[u.id] for u, _ in records}

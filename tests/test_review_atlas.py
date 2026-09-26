@@ -100,6 +100,7 @@ def test_catalogue_counts_and_filters_by_book(dataset):
     assert second['total'] == 2 and {i['id'] for i in second['items']} == {'second-0', 'second-1'}
     assert client.get('/atlas?document=e&reading=シ').json()['total'] == 0
     assert client.get('/atlas?document=missing').json()['total'] == 0
+    assert client.get('/atlas?document=').json()['total'] == 18
 
 
 def test_character_group_follows_the_script_of_the_first_character():

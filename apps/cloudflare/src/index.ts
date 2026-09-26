@@ -226,7 +226,10 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   const reviewer = q.get('reviewer') ? text(q.get('reviewer'), 128, 'reviewer', true)! : null;
   const state = stateFor(reviewer);
   // Counts by character and by book in one pass; a book's title is the one its crops were published with.
-  const facets = env.DB.prepare(`SELECT character AS label,document,max(json_extract(data,'$.source')) AS title,${state} AS state,count(*) AS n
+  // A round needs only the characters, and is never cached, so it skips the per-work grouping.
+  const facets = env.DB.prepare(review
+    ? `SELECT character AS label,NULL AS document,NULL AS title,${state} AS state,count(*) AS n FROM units WHERE ${where.join(' AND ')} GROUP BY 1,4`
+    : `SELECT character AS label,document,max(json_extract(data,'$.source')) AS title,${state} AS state,count(*) AS n
     FROM units WHERE ${where.join(' AND ')} GROUP BY 1,2,4`).bind(...values);
   // Only counts that are the same for every visitor are cached; a reviewer's own skips are theirs.
   const [groups, published] = review ? await env.DB.batch([facets,
@@ -264,7 +267,8 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   const reportedCountWhere = flaggedView ? [...where, REVIEWED_IN_INSPECTOR] : null;
   if (flaggedView && q.get('reported') === 'hide') where.push(`NOT ${REVIEWED_IN_INSPECTOR}`);
   // A round of one character deals its named and then its untouched corpus glyphs after its local crops.
-  const dealt = review && reading !== null && ['all', 'pending'].includes(q.get('state') || 'all') && !q.get('q')
+  // Corpus glyphs belong to no work of the collection, so a round narrowed to one work deals none.
+  const dealt = review && reading !== null && !document && ['all', 'pending'].includes(q.get('state') || 'all') && !q.get('q')
     && ['all', categoryOf(reading)].includes(q.get('group') || 'all');
   const named = dealt ? { sql: namedRoundQuery(materials, state), values: [reading, ...materialValues] } : null;
   const from = named ? `(SELECT * FROM units WHERE ${where.join(' AND ')} UNION ALL ${named.sql}) AS units` : `units WHERE ${where.join(' AND ')}`;
