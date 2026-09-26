@@ -98,6 +98,10 @@ def test_the_api_lists_clusters_and_records_decisions(clustering, tmp_path):
     assert members["form"] == "𛂥" and members["total"] == 3
     assert [(m["id"], m["form"], m["basis"]) for m in members["items"]] == [(A, "𛂥", "form_cluster"), (B, "𛂥", "form_cluster")]
     assert client.get("/atlas/forms/families").json()["items"][0]["assigned"] == 3
+    # The majority form comes with how many glyphs have it, so a cluster is accepted only when it covers most of them.
+    client.post("/atlas/forms/decisions", json={"kind": "glyph", "units": [B], "form": "𛂞"})
+    one = client.get("/atlas/forms/families/U+306F").json()["items"][0]
+    assert (one["majority"], one["majority_count"], one["count"]) == ("𛂥", 2, 3)
 
 
 def test_an_unfinished_last_line_is_not_a_decision_but_a_broken_one_is_reported(clustering):

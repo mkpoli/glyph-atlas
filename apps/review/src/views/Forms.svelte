@@ -153,15 +153,17 @@
       if (splitK) groups = (await loadSplit(open, splitK)).groups
     } catch (e) { error = e.message } finally { busy = false }
   }
-  // A cluster whose glyphs mostly have one form already is named with it. From an opened cluster the
-  // next open one opens, so a run of clusters is confirmed one key each.
+  // A cluster where more than half of the glyphs not reported already have one form is named with it.
+  // From an opened cluster the next open one opens, so a run of clusters is confirmed one key each.
+  const acceptable = c => Boolean(c?.majority && !c.form && 2 * c.majority_count > c.count - c.rejected
+    && (!picked.size || (picked.size === 1 && picked.has(c.id))))
   async function accept() {
     const target = cluster
-    if (busy || chosen.size || picked.size > 1 || !target?.majority || target.form) return
+    if (busy || chosen.size || !acceptable(target)) return
     const wasOpen = open
     if (wasOpen) close()
     await apply(target.majority)
-    if (wasOpen && !error && isOpen(current.items[active] ?? {})) await show(active)
+    try { if (wasOpen && !error && isOpen(current.items[active] ?? {})) await show(active) } catch (e) { error = e.message }
   }
   function nextOpen(from) {
     const after = current.items.findIndex((c, i) => i > from && isOpen(c))
@@ -291,7 +293,7 @@
                 {:else}<button disabled={busy} onclick={() => correcting = true}>{t('forms.wrongCharacter')}</button>{/if}
                 <button disabled={busy} onclick={() => apply(null, 'inherit')}>{t('forms.followCluster')} <kbd>⌫</kbd></button>
               {:else}
-                {#if cluster?.majority && !cluster.form && picked.size < 2}<button class="accept-majority" disabled={busy} onclick={accept}>{t('forms.acceptMajority', { glyph: cluster.majority })} <kbd>V</kbd></button>{/if}
+                {#if acceptable(cluster)}<button class="accept-majority" disabled={busy} onclick={accept}>{t('forms.acceptMajority', { glyph: cluster.majority })} <kbd>V</kbd></button>{/if}
                 <button disabled={busy || !cluster?.form} onclick={() => apply(null)}>{t('forms.clearCluster')} <kbd>⌫</kbd></button>
               {/if}
             </div>

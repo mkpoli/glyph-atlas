@@ -145,6 +145,7 @@ def router(media, corpus_root: Path) -> APIRouter:
                              "assigned": sum(assigned.values()),
                              "rejected": sum(1 for identity in members if (decided.get(identity) or {}).get("issue")),
                              "majority": assigned.most_common(1)[0][0] if assigned else None,
+                             "majority_count": assigned.most_common(1)[0][1] if assigned else 0,
                              "nearest": ({**near["nearest"][cluster["id"]],
                                           "label": data["labels"].get(near["nearest"][cluster["id"]]["id"])}
                                          if cluster["id"] in near.get("nearest", {}) else None),
