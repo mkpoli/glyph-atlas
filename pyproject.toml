@@ -45,7 +45,8 @@ detector = [
 # The GPU wheel also runs CPU tests. Installing both ONNX runtime distributions
 # overwrites their shared Python package and can silently remove CUDA support.
 # scipy: the style teacher's crop preparation (`despeck`), which its tests exercise.
-dev = ["pytest>=8", "ruff>=0.12", "cffconvert>=2.0", "numpy>=2", "onnx>=1.20", "onnxruntime-gpu>=1.22", "scipy>=1.16"]
+# fonttools and brotli: the vi-Hani webfont (`scripts/build_vi_hani.py --font`) and its coverage test.
+dev = ["pytest>=8", "ruff>=0.12", "cffconvert>=2.0", "numpy>=2", "onnx>=1.20", "onnxruntime-gpu>=1.22", "scipy>=1.16", "fonttools>=4.60", "brotli>=1.1"]
 
 [build-system]
 requires = ["hatchling"]

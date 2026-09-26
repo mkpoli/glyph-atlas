@@ -1,0 +1,68 @@
+"""The chữ Hán-Nôm catalogue is the Vietnamese one respelled through `data/vocab/vi-hani.tsv`."""
+
+import importlib.util
+import json
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+spec = importlib.util.spec_from_file_location("build_vi_hani", ROOT / "scripts/build_vi_hani.py")
+build_vi_hani = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(build_vi_hani)
+
+
+def test_every_word_has_a_spelling():
+    _, missing = build_vi_hani.build()
+    assert not missing
+
+
+def test_catalogue_is_up_to_date():
+    catalogue, _ = build_vi_hani.build()
+    written = json.loads((ROOT / "apps/review/src/locales/vi-Hani.json").read_text(encoding="utf-8"))
+    assert written == catalogue
+
+
+def test_abbreviations_are_spelled_out():
+    catalogue, _ = build_vi_hani.build()
+    assert not [v for v in catalogue.values() if isinstance(v, str) and ("tr." in v or "}s" in v)]
+
+
+def test_spelling_joins_han_and_keeps_names():
+    table = {"tải": "載", "lại": "吏", "từ": "自", "và": "吧", "để": "底"}
+    missing = set()
+    assert build_vi_hani.spell("Tải lại JSON.", table, missing) == "載吏JSON。"
+    assert build_vi_hani.spell("Từ CODH, HI Lab và {name}", table, missing) == "自CODH，HI Lab吧{name}"
+    assert build_vi_hani.spell("qwerty… để lại · ⌫ tải", table, missing) == "qwerty…底吏 · ⌫載"
+    assert not missing
+
+
+def test_webfont_draws_every_supplementary_character():
+    """Few installed fonts reach past the BMP, so each such Nôm character must be in the subset."""
+    from fontTools.ttLib import TTFont
+
+    catalogue, _ = build_vi_hani.build()
+    text = "".join(v for v in catalogue.values() if isinstance(v, str)) + build_vi_hani.LOCALE["name"]
+    cmap = TTFont(build_vi_hani.FONT_OUT).getBestCmap()
+    assert {c for c in text if ord(c) >= 0x20000 and ord(c) not in cmap} == set()
+
+
+def test_vietnamese_has_every_message():
+    """Vietnamese has one plural form, so only the `.one` keys may be missing from vi.json."""
+    locales = ROOT / "apps/review/src/locales"
+    en, vi, hani = (json.loads((locales / f"{tag}.json").read_text(encoding="utf-8")) for tag in ("en", "vi", "vi-Hani"))
+    assert {key for key in en if not key.endswith(".one")} <= set(vi)
+    assert set(vi) == set(hani)
+
+
+def test_table_refuses_bad_rows(tmp_path, monkeypatch):
+    header = "word\thannom\tsource\tnote\n"
+    bad = ("tải\t載\twiktionary\t\ntải\t載\twiktionary\t\n", "tải\t載\t?\t\n", "tải\t\twiktionary\t\n", "tải\t載\n",
+           "Tải\t載\twiktionary\t\n", "\t載\twiktionary\t\n")
+    for rows in bad:
+        table = tmp_path / "vi-hani.tsv"
+        table.write_text(header + rows, encoding="utf-8")
+        monkeypatch.setattr(build_vi_hani, "TABLE", table)
+        monkeypatch.setattr(build_vi_hani, "ROOT", tmp_path)
+        with pytest.raises(SystemExit):
+            build_vi_hani.load_table()
