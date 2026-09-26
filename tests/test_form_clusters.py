@@ -81,3 +81,24 @@ def test_a_page_harvested_later_is_found(form_corpora, tmp_path):
     Image.new("RGB", (100, 100), "white").save(tmp_path / "other.png")
     images.register(tmp_path / "other.png", "https://example.org/iiif/other.tif")
     assert pixels(glyph) is not None
+
+
+def test_workers_stay_a_bounded_distance_ahead_of_the_consumer():
+    from concurrent.futures import Future
+
+    class Pool:
+        submitted = 0
+
+        def submit(self, fn, job):
+            self.submitted += 1
+            future = Future()
+            future.set_result(fn(job))
+            return future
+
+    pool = Pool()
+    results = form_clusters._bounded_map(pool, lambda n: n * n, range(100), ahead=8)
+    consumed = []
+    for value in results:
+        consumed.append(value)
+        assert pool.submitted - len(consumed) < 8
+    assert consumed == [n * n for n in range(100)]
