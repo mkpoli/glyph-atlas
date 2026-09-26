@@ -264,7 +264,7 @@
   "issue.merged.hint": "한 크롭에 두 字 以上",
   "issue.merged.title": "붙은 文字",
   "issue.picker.label": "誤謬 類型",
-  "issue.reading.hint": "한 文字이나 다른 文字",
+  "issue.reading.hint": "完全한 單一 文字이나 別個의 文字",
   "issue.reading.title": "文字 誤謬",
   "issue.selected": "選擇됨",
   "issue.suggested": "提案",

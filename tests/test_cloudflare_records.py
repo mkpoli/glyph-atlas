@@ -207,10 +207,10 @@ def test_the_gugyeol_migration_moves_a_row_published_as_other(scripts):
 
 
 def test_the_document_migration_reads_the_book_from_the_page_id():
-    """0019 fills a published local crop's book from its page id, `<document>:<page>`."""
+    """0021 fills a published local crop's book from its page id, `<document>:<page>`."""
     db = sqlite3.connect(":memory:")
     for path in sorted(Path("apps/cloudflare/migrations").glob("*.sql")):
-        if path.name < "0019":
+        if path.name < "0021":
             db.executescript(path.read_text())
     rows = (("local-a", "local", {"page_id": "hl:00AB:12"}), ("local-b", "local", {"page_id": "hk:entry:with:separators:9"}),
             ("no-page", "local", {}), ("corpus", "corpus", {"page_id": "codh:1:2"}))
@@ -218,6 +218,6 @@ def test_the_document_migration_reads_the_book_from_the_page_id():
         db.execute("INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                    (unit_id, origin, "あ", None, None, None, "unknown", "kana", "pending", 0, 1, 1, 0,
                     json.dumps(data), "{}", "{}", "{}"))
-    db.executescript(Path("apps/cloudflare/migrations/0019_unit_document.sql").read_text())
+    db.executescript(Path("apps/cloudflare/migrations/0021_unit_document.sql").read_text())
     assert dict(db.execute("SELECT id,document FROM units")) == {
         "local-a": "hl:00AB", "local-b": "hk:entry:with:separators", "no-page": None, "corpus": None}

@@ -101,7 +101,7 @@ def with_context(row, image="/atlas/media/wide.webp", box=WIDE):
 def test_a_new_context_alone_is_set_in_place_and_keeps_the_revision():
     old = with_context(live(revision=1000001), "/atlas/media/narrow.webp", {"x": 5, "y": 10, "w": 40, "h": 60})
     action, sql = refresh.plan(with_context(unit(revision=1000001)), old)
-    assert action == "context"
+    assert action == "in-place"
     assert sql == ("UPDATE units SET data=json_set(data, '$.context_image', json('\"/atlas/media/wide.webp\"'), "
                    "'$.context_box', json('{\"x\":0,\"y\":0,\"w\":90,\"h\":120}')) WHERE id='hk:1' AND revision=1000001;")
     assert "revision=" not in sql.split(" WHERE ")[0]
@@ -110,7 +110,7 @@ def test_a_new_context_alone_is_set_in_place_and_keeps_the_revision():
 def test_a_reviewed_unit_takes_a_new_context_and_may_leave_the_quiz_in_the_same_statement():
     old = with_context(live(reviewed=True, quiz=1), "/atlas/media/narrow.webp")
     action, sql = refresh.plan(with_context(unit(quiz=0)), old)
-    assert action == "context" and "json_set(data" in sql and ", quiz=0 WHERE" in sql
+    assert action == "in-place" and "json_set(data" in sql and ", quiz=0 WHERE" in sql
 
 
 def test_a_reviewed_unit_whose_crop_changed_is_held_back_even_with_a_new_context():
@@ -139,3 +139,34 @@ def test_the_statement_runs_in_sqlite_and_keeps_the_key_order():
     stored = db.execute("SELECT data FROM units").fetchone()[0]
     assert list(json.loads(stored)) == list(json.loads(old["data"]))
     assert json.loads(stored)["context_box"] == WIDE and json.loads(stored)["context_image"] == "/atlas/media/wide.webp"
+
+
+def with_data(row, **fields):
+    row["data"] = json.dumps({**json.loads(row["data"]), **fields}, ensure_ascii=False, separators=(",", ":"))
+    return row
+
+
+def test_a_new_repair_status_is_set_in_place_and_the_quiz_follows_it():
+    old = with_data(live(revision=1000001, quiz=0), repair={"status": "uncertain", "quiz": False})
+    new = with_data(unit(revision=1000001, quiz=1), repair={"status": "confirmed", "quiz": True})
+    action, sql = refresh.plan(new, old)
+    assert action == "in-place"
+    assert sql == ("UPDATE units SET data=json_set(data, '$.repair', json('{\"status\":\"confirmed\",\"quiz\":true}')), "
+                   "quiz=1 WHERE id='hk:1' AND revision=1000001;")
+
+
+def test_a_reviewed_unit_takes_a_new_repair_status_but_is_not_dealt_again():
+    old = with_data(live(reviewed=True, quiz=0), repair={"status": "uncertain"})
+    new = with_data(unit(quiz=1), repair={"status": "confirmed"})
+    action, sql = refresh.plan(new, old)
+    assert action == "in-place" and "'$.repair'" in sql and "quiz=" not in sql
+
+
+def test_an_unreviewed_unit_whose_only_change_is_the_quiz_leaves_it_in_place():
+    action, sql = refresh.plan(unit(revision=1000001, quiz=0), live(revision=1000001, quiz=1))
+    assert (action, sql) == ("quiz", "UPDATE units SET quiz=0 WHERE id='hk:1' AND revision=1000001;")
+
+
+def test_a_null_shape_order_is_the_same_as_none():
+    assert refresh.plan(with_data(unit(revision=1000001), shape_order=None), live(revision=1000001)) == ("skip", None)
+    assert refresh.plan(unit(revision=1000001), with_data(live(revision=1000001), shape_order=None)) == ("skip", None)
