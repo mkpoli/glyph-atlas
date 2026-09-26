@@ -99,17 +99,27 @@ def document_style(document: Document) -> str:
     return entry["style"] if entry else document.style
 
 
-def style_of(unit: Unit, page: Page | None = None, document: Document | None = None) -> str:
-    """A unit's own style, else its page's, else its document's, confirmed or stated.
+def resolve(unit: Unit, page: Page | None = None, document: Document | None = None) -> tuple[str, str]:
+    """A unit's style and where it comes from: `unit`, `page`, `document-confirmed`, `document` or `none`.
 
     A `mixed` page or document says its units differ, so it passes nothing down.
     """
-    for record, value in ((unit, unit.style), (page, page and page.style),
-                          (document, document and document_style(document))):
-        if record is None:
-            continue
-        if value == MIXED and record is not unit:
-            return UNASSESSED
+    if unit.style != UNASSESSED:
+        return unit.style, "unit"
+    if page is not None and page.style == MIXED:
+        return UNASSESSED, "none"
+    if page is not None and page.style != UNASSESSED:
+        return page.style, "page"
+    if document is not None:
+        confirmed_style = confirmed().get(document.id, {}).get("style")
+        value = confirmed_style or document.style
+        if value == MIXED:
+            return UNASSESSED, "none"
         if value != UNASSESSED:
-            return value
-    return UNASSESSED
+            return value, "document-confirmed" if confirmed_style else "document"
+    return UNASSESSED, "none"
+
+
+def style_of(unit: Unit, page: Page | None = None, document: Document | None = None) -> str:
+    """A unit's own style, else its page's, else its document's, confirmed or stated."""
+    return resolve(unit, page, document)[0]
