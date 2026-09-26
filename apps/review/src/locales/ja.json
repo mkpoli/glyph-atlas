@@ -111,7 +111,7 @@
   "explore.flagged.hideReported": "報告済みを隠す",
   "explore.flagged.showReported": "報告済み{count}件を表示",
   "explore.grid.collection": "文字コレクション",
-  "explore.heading.atlas": "文字アトラス",
+  "explore.heading.atlas": "文字図譜",
   "explore.heading.flagged": "要修正の文字",
   "explore.meta.characters.one": "{count}文字",
   "explore.meta.characters.other": "{count}文字",
