@@ -20,6 +20,12 @@ const config = options()
 const service = await boot(config)
 let browser
 const assert = (condition, message) => { if (!condition) throw new Error(message) }
+// The round's tally as numbers, read from its own elements so a change of wording does not break the check.
+const counts = async () => JSON.parse(await browser.evaluate(`JSON.stringify((() => {
+  const tally = document.querySelector('.round-selection'), number = el => el ? parseInt(el.textContent, 10) : 0
+  return { decided: number(tally?.querySelector('strong')), undecided: number(tally?.querySelector('span:not(.selection-dot)')),
+    skipped: number(tally?.querySelector('small')), text: tally?.textContent ?? '' }
+})())`))
 const sleep = ms => Bun.sleep(ms)
 
 try {
@@ -59,8 +65,7 @@ try {
     'a skip wrote to the journal')
   assert(await browser.evaluate(reviewedText) === startReviewed,
     'a skip changed the reviewed count')
-  assert(/1 skipped/.test(await browser.evaluate(`document.querySelector('.round-selection')?.textContent ?? ''`)),
-    'the bar does not report the skip as a skip')
+  assert((await counts()).skipped === 1, 'the bar does not report the skip as a skip')
   assert(await browser.evaluate(
     `document.querySelector('.quiz-tile.skipped .choice-label')?.textContent`) === 'Skipped',
     'the skipped crop does not say so')
@@ -80,7 +85,7 @@ try {
   // the answers are the rest.
   await click('.quiz-submit .review-selected')
   for (let n = 0; n < before.length; n++) {
-    if (!/to decide/.test(await browser.evaluate(`document.querySelector('.round-selection')?.textContent ?? ''`))) break
+    if (!(await counts()).undecided) break
     await browser.waitFor(`document.querySelector('.quiz-workspace .issue-card[data-issue="crop"]') !== null`)
     await click('.quiz-workspace .issue-card[data-issue="crop"]')
     await sleep(150)
@@ -116,9 +121,9 @@ try {
   await sleep(400)
   assert(events(service.fixture.directory).length === beforeSecond, 'skipping from the review step wrote to the journal')
   assert(await browser.evaluate(reviewedText) === reviewedSecond, 'skipping from the review step was counted as reviewed')
-  const tally = await browser.evaluate(`document.querySelector('.round-selection')?.textContent ?? ''`)
-  assert(/1 skipped/.test(tally), 'skipping from the review step did not skip the crop')
-  assert(/1 issues/.test(tally), 'skipping one crop discarded the decision made for the other')
+  const tally = await counts()
+  assert(tally.skipped === 1, `skipping from the review step did not skip the crop: ${tally.text}`)
+  assert(tally.decided === 1, `skipping one crop discarded the decision made for the other: ${tally.text}`)
   // 3b. A skipped crop keeps its place in the review step: going back reaches it with its Skip card
   // chosen, and choosing a problem takes it back into the round.
   assert(await browser.evaluate(`!!document.querySelector('.focus-thumb.skipped')`), 'the skipped crop left the review step')
@@ -126,8 +131,8 @@ try {
   await browser.waitFor(`document.querySelector('.issue-card[data-issue="skip"].chosen') !== null`)
   await click('.issue-card[data-issue="blank"]')
   await sleep(200)
-  const retaken = await browser.evaluate(`document.querySelector('.round-selection')?.textContent ?? ''`)
-  assert(!/skipped/.test(retaken) && /2 issues/.test(retaken), `choosing a problem for a skipped crop did not take it back: ${retaken}`)
+  const retaken = await counts()
+  assert(retaken.skipped === 0 && retaken.decided === 2, `choosing a problem for a skipped crop did not take it back: ${retaken.text}`)
   await click('.focus-back')
   await browser.waitFor(`document.querySelector('.quiz-grid') !== null`)
 
