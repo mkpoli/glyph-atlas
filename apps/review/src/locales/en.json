@@ -207,6 +207,7 @@
   "forms.haveForm.other": "{count} have a form, mostly {glyph}",
   "forms.heading": "Assign forms",
   "forms.keyboardHint": "J K move · X or ⌘/Ctrl-click add · Shift-click range · 1–0 assign · Enter open · ⌫ clear · M mixed · V accept the majority form",
+  "forms.leastTypical": "Least typical",
   "forms.lede": "CODH, HI Lab and Minna de Honkoku transcribe every form of a character under one code point. Glyphs are grouped by shape; name the form of a cluster, then correct the glyphs that differ.",
   "forms.moreLikeThese": "and {count} more like these, included in Select all",
   "forms.notThisForm": "Not this form",

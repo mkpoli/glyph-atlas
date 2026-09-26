@@ -199,6 +199,7 @@
   "forms.haveForm.other": "{count}个已定字样，多为“{glyph}”",
   "forms.heading": "指定字样",
   "forms.keyboardHint": "J K移动 · X或⌘/Ctrl+点击添加 · Shift+点击选择范围 · 1–0指定 · Enter打开 · ⌫清除 · M标为混杂 · V按多数确认",
+  "forms.leastTypical": "最不典型的",
   "forms.lede": "CODH、HI Lab和みんなで翻刻将一个字的所有字样归入同一个码位。字形按形状分组；先为每组指定字样，再修正与之不同的字形。",
   "forms.moreLikeThese": "以及另外{count}个类似项，包含在全选范围内",
   "forms.notThisForm": "不是此字样",
