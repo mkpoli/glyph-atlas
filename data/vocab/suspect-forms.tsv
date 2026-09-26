@@ -1,8 +1,14 @@
-# Classifier readings of a label that are a cursive form of the label itself, not another character.
-# A Quick review suspect mark whose label and reading make one of these pairs is not made (quiz_suspects).
-# Decided by mkpoli on 2026-09-26 from eight sample crops per pair (the glyph ids below), among the 201
-# (label, reading) pairs the corpus marks repeated at least 40 times. A pair is listed only when all eight
-# samples were the label; 45 further pairs were answered "can't tell" and are not listed, so they stay marked.
+# Classifier readings that reviewers found the label itself shows: for each (label, reading) pair, all eight
+# sampled crops filed under the label were the label, though the classifier took them for the reading.
+# The readings are of several kinds: a cursive or abbreviated form of the label (可 taken for 一), a print
+# look-alike (千 for 干), a kana taken for its 字母 (り for 利), a lost or added dakuten (が for か), and one
+# kana or kanji taken for another (か for り). A Quick review suspect mark with a listed pair is not made
+# (quiz_suspects).
+# Decided by mkpoli on 2026-09-26 on the 201 (label, reading) pairs the corpus marks repeated at least 40
+# times, eight sample crops each (the glyph ids below). 156 pairs had every crop the label and are listed;
+# 45 were answered "can't tell" and stay marked; no pair had a crop that was not the label.
+# Eight clean samples bound the share of real errors in a pair only loosely (up to about 37% at 95%), and a
+# real swap within a listed pair is no longer marked. Pairs listed in both directions: う/か, か/り, ん/人, 候/御.
 # marks: how many corpus marks the pair held when it was decided.
 label	label_code_point	reads_as	reads_as_code_point	marks	samples	decided
 可	U+53EF	一	U+4E00	600	hi:34250011 hi:34141811 hi:34295507 hi:34078290 hi:34086181 hi:34368405 hi:34100582 hi:34277744	2026-09-26

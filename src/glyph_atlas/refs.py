@@ -563,10 +563,10 @@ def kana_origins() -> dict[str, frozenset[str]]:
 
 @cache
 def suspect_forms() -> frozenset[tuple[str, str]]:
-    """(label, reading) pairs where the classifier's reading is a cursive form of the label itself.
+    """(label, reading) pairs where reviewers found the crops to be the label the classifier doubts.
 
-    From suspect-forms.tsv, which reviewers keep: each pair was decided on sample crops that were all
-    the label, written in a shape the classifier takes for another character (可 read as 一).
+    From suspect-forms.tsv, which reviewers keep: every sampled crop of each pair was the label, though
+    the classifier took it for the reading (可 for 一, a cursive form; 千 for 干, a print look-alike).
     """
     return frozenset((row["label"], row["reads_as"]) for row in _read_tsv(SUSPECT_FORMS_TSV))
 
