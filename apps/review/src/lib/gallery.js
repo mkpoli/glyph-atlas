@@ -25,6 +25,12 @@ export function characterAddress(codePoint, { scope = null, visual = '' } = {}) 
   return '/character/' + slug(codePoint) + (query.size ? '?' + query : '')
 }
 
+/** The collection with a search and filters: a grapheme key, a work's document id and a script group. */
+export function collectionAddress({ q = '', grapheme = '', work = '', group = 'all' } = {}) {
+  const query = new URLSearchParams(Object.entries({ q, grapheme, work, group: group === 'all' ? '' : group }).filter(([, value]) => value))
+  return '/' + (query.size ? '?' + query : '')
+}
+
 const bare = { char: '', characters: [], derived: [], jibo: [], expansions: [], candidates: null }
 
 /**

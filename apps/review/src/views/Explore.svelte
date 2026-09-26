@@ -14,22 +14,22 @@
   import { catalogue, character, request, randomSeed, number, formatSerial, stored, remember } from '../lib/client.js'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery } from '../lib/layers.js'
   import { t, around, localName, locale, localize, delocalize } from '../lib/i18n.svelte.js'
-  import { characterAddress, scopeFor, unslug } from '../lib/gallery.js'
-  // `initial` is the collection page the server rendered: the seed it shuffled with, the collection's
-  // rows, the corpus sample and the progress line. `gallery` is a character's page instead
-  // (`lib/gallery.js`). Without either the view loads what it shows itself.
+  import { characterAddress, collectionAddress, scopeFor, unslug } from '../lib/gallery.js'
+  // `initial` is the collection page the server rendered: the seed it shuffled with, the filters in the
+  // address, the collection's rows, the corpus sample and the progress line; without rows the view loads
+  // them itself, with the same filters. `gallery` is a character's page instead (`lib/gallery.js`).
   // `addressed` is the collection and character pages, whose address this view keeps; the Flagged view
   // and the collection behind a crop's dialog leave theirs alone.
   // `shown` is the character on show, for the page's title; the view changes it in place.
   let { flagged = false, addressed = false, inspect, ink = 'original', onink = () => {}, onprogress = () => {}, initial = null, gallery = null, shown = $bindable() } = $props()
-  const first = untrack(() => initial), opened = untrack(() => gallery)
+  const asked = untrack(() => initial), first = asked?.result ? asked : null, opened = untrack(() => gallery)
   let data = $state(first?.result ?? (opened ? { query: opened.picked.char, total: opened.total, available: opened.available,
     categories: opened.summary?.categories ?? [], documents: opened.summary?.documents ?? [], counts: opened.summary?.counts ?? {} } : null))
   let items = $state(first?.result.items ?? []), error = $state(''), loading = $state(!first && !opened)
-  let grapheme = $state(''), work = $state(''), offset = $state(0), seed = $state(first?.seed ?? randomSeed())
-  let query = $state(opened?.picked.char ?? '')
+  let grapheme = $state(asked?.grapheme ?? ''), work = $state(asked?.work ?? ''), offset = $state(0), seed = $state(first?.seed ?? randomSeed())
+  let query = $state(asked?.q ?? opened?.picked.char ?? '')
   let choosing = $state(false), catalogueRequest = null
-  let filter = $state('all'), requestId = 0, closed = false
+  let filter = $state(asked?.group ?? 'all'), requestId = 0, closed = false
   // The Flagged view hides crops already reviewed in the inspector by default; the choice is
   // remembered across visits.
   let showReported = $state(stored('atlas.showReported', false))
@@ -47,13 +47,15 @@
   $effect(() => { shown = picked?.code_point ? { char: picked.char, code_point: picked.code_point } : null })
   /**
    * The address says what is on show, so it can be shared and reloaded: a character's page with its
-   * scope and visual group, or the collection. The view changes what it
+   * scope and visual group, or the collection with its search and filters. The view changes what it
    * shows in place and rewrites the address to match, so typing never leaves the page.
    */
   function showInAddress() {
     if (!addressed) return
     const [path, search = ''] = (picked?.code_point
-      ? characterAddress(picked.code_point, { scope: scopeFor(expand, picked), visual }) : '/').split('?')
+      ? characterAddress(picked.code_point, { scope: scopeFor(expand, picked), visual })
+      // Text still being chosen from the candidate list is not a search yet.
+      : collectionAddress({ q: choosing ? '' : query.trim(), grapheme, work, group: filter })).split('?')
     const target = localize(path) + (search && '?' + search)
     // A shallow rewrite leaves `page.url` as it was loaded, so the address bar is what is compared.
     if (location.pathname + location.search !== target) replaceState(target, page.state)
@@ -387,7 +389,15 @@
     const { path } = delocalize(location.pathname)
     const code = path.startsWith('/character/') ? unslug(path.slice(11)) : null
     if (code && code !== picked?.code_point) pick({ code_point: code }, new URLSearchParams(location.search).get('scope') === 'exact')
-    else if (!code && path === '/' && picked) clearQuery()
+    else if (!code && path === '/') {
+      const wanted = new URLSearchParams(location.search)
+      const q = wanted.get('q') ?? '', g = wanted.get('grapheme') ?? '', w = wanted.get('work') ?? '', group = wanted.get('group') ?? 'all'
+      if (!picked && q === query.trim() && g === grapheme && w === work && group === filter) return
+      clearTimeout(searchTimer); pickId += 1; choosing = false
+      visual = ''; analysis = null; familyTotal = null; unassignedCount = null
+      picked = null; expand = 'none'; local = []; corpus = []; corpusTotal = 0; corpusOffset = 0; offset = 0
+      query = q; grapheme = g; work = w; filter = group; load()
+    }
   }
   onMount(() => { if (!first) readCollection(); if (!first && !opened) load(); if (addressed) followAddress(); const timer = setInterval(readCollection, 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
   // Widening is the reader's choice and only it reloads the gallery; picking a character resets the
