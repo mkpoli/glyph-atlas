@@ -233,7 +233,8 @@ def test_the_family_migration_refiles_a_crop_left_under_another_family():
     db.execute("INSERT INTO characters VALUES('U+30A2','ア','',?,?)", (grapheme, grapheme))
     for unit_id, origin, label, family in (("undone", "local", "ア", "U+4EEE"), ("mark", "local", "※", "U+4EEE"),
                                            ("kept", "local", "ア", "U+3042"), ("corpus", "corpus", "ア", "U+4EEE")):
-        db.execute("INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        db.execute("INSERT INTO units(id,origin,character,reading,family,visual_group,production,category,state,"
+                   "revision,quiz,priority,shuffle,data,snapshot,context,visual) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                    (unit_id, origin, label, None, family, None, "unknown", "kana", "pending", 0, 1, 1, 0,
                     "{}", "{}", "{}", "{}"))
     db.executescript(Path("apps/cloudflare/migrations/0023_family_follows_character.sql").read_text())
