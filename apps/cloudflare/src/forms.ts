@@ -192,15 +192,36 @@ function decoded(segment: string, tools: FormTools) {
   try { return decodeURIComponent(segment) } catch { return tools.fail(404, 'Unknown family or cluster.') }
 }
 
-export async function formsRoute(env: Env, request: Request, path: string, q: URLSearchParams, tools: FormTools): Promise<Response | Json | null> {
+// The family list and a family's cluster tallies change only when a decision is made or a clustering
+// is loaded, and every page reads the list (the header links to Forms while it answers). The edge
+// keeps one copy per clustering revision and latest decision; FORMS_TTL bounds a copy's life.
+const FORMS_TTL = 3600;
+type FormsState = { loading: number; revision: string | null; decision: number | null };
+async function cached(url: URL, state: FormsState, key: string, read: () => Promise<Json | null>, ctx: ExecutionContext) {
+  const request = new Request(`${url.origin}/atlas/forms/cached/${key}?v=${encodeURIComponent(`${state.revision}:${state.decision ?? 0}`)}`);
+  const hit = await caches.default.match(request);
+  if (hit) return hit.json<Json>();
+  const value = await read();
+  if (value) ctx.waitUntil(caches.default.put(request, Response.json(value, { headers: { 'cache-control': `public, max-age=${FORMS_TTL}` } })));
+  return value;
+}
+
+export async function formsRoute(env: Env, request: Request, path: string, q: URLSearchParams, tools: FormTools, ctx: ExecutionContext): Promise<Response | Json | null> {
+  const state = (await env.DB.prepare(`SELECT EXISTS(SELECT 1 FROM form_loading) AS loading,
+    (SELECT revision FROM form_families LIMIT 1) AS revision,(SELECT max(rowid) FROM form_decisions) AS decision`).first<FormsState>())!;
   // A publication is reloading the clustering; the migration's trigger refuses a decision meanwhile.
-  if (path !== '/atlas/forms/decisions.jsonl' && await env.DB.prepare('SELECT 1 FROM form_loading LIMIT 1').first())
+  if (path !== '/atlas/forms/decisions.jsonl' && state.loading)
     tools.fail(503, 'The forms are being republished. Try again in a few minutes.');
   if (request.method === 'POST') return path === '/atlas/forms/decisions' ? decide(env, request, tools) : null;
-  if (path === '/atlas/forms/families') return (await families(env)) ?? tools.fail(404, 'No clustering has been published.');
+  const url = new URL(request.url);
+  if (path === '/atlas/forms/families')
+    return (await cached(url, state, 'families', () => families(env), ctx)) ?? tools.fail(404, 'No clustering has been published.');
   if (path === '/atlas/forms/decisions.jsonl') return decisionLog(env);
   const familyPath = path.match(/^\/atlas\/forms\/families\/([^/]+)$/);
-  if (familyPath) return family(env, decoded(familyPath[1], tools), q, tools);
+  if (familyPath) {
+    const code = decoded(familyPath[1], tools), order = q.get('order') === 'size' ? 'size' : 'shape';
+    return cached(url, state, `family/${encodeURIComponent(code)}/${order}`, () => family(env, code, q, tools), ctx);
+  }
   const clusterPath = path.match(/^\/atlas\/forms\/clusters\/(.+)$/);
   if (clusterPath) return members(env, decoded(clusterPath[1], tools), q, tools);
   const splitPath = path.match(/^\/atlas\/forms\/split\/(.+)$/);
