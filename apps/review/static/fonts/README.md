@@ -35,14 +35,15 @@ LXGW WenKai TC, then LXGW WenKai, then Noto Serif Hentaigana.
 - `Klee One` comes complete from the `@fontsource/klee-one` package (SIL Open Font License 1.1,
   © The Klee Project Authors, <https://github.com/fontworks-fonts/Klee>), split by `unicode-range`
   so a page loads only the files it needs.
-- `fallback/` holds LXGW WenKai TC and LXGW WenKai v1.522 (SIL Open Font License 1.1, © LXGW,
-  <https://github.com/lxgw/LxgwWenkaiTC> and <https://github.com/lxgw/LxgwWenKai>; their licences
-  are `fallback/wenkai-tc-OFL.txt` and `fallback/wenkai-OFL.txt`). They are cut down to the labels
+- `fallback/` holds LXGW WenKai TC v1.522 (© The LXGW WenKai Project Authors,
+  <https://github.com/lxgw/LxgwWenkaiTC>) and LXGW WenKai v1.522 (© LXGW,
+  <https://github.com/lxgw/LxgwWenKai>, with glyphs from Klee One © The Klee Project Authors), both
+  under the SIL Open Font License 1.1 as `fallback/wenkai-tc-OFL.txt` and `fallback/wenkai-OFL.txt`. They are cut down to the labels
   with crops in the corpus that Kureedo Kata and Klee One do not draw, listed with their crop
   counts in `fallback/characters.tsv`, and split into files of 120 characters, most frequent
-  first. The family names are kept under the licence's additional permission for web-font subsets.
+  first. Neither release reserves a font name, so the subsets keep the family names.
   `scripts/build_fallback_fonts.py` rebuilds them from the release files, which it checks against
   pinned hashes; run it with `--labels work/corpus-index/chars.parquet` when the corpus grows.
-- Labels no font here draws (rare Extension B characters and a few hentaigana outside Noto's set)
-  fall back to the reader's own fonts.
+- Labels no font here draws fall back to the reader's own fonts: 46 characters of CJK Extensions
+  B–E, and 〱 〲 until the Kureedo Kata in this directory is a release that covers them.
 
