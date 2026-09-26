@@ -23,6 +23,11 @@ def test_catalogue_is_up_to_date():
     assert written == catalogue
 
 
+def test_abbreviations_are_spelled_out():
+    catalogue, _ = build_vi_hani.build()
+    assert not [v for v in catalogue.values() if isinstance(v, str) and ("tr." in v or "}s" in v)]
+
+
 def test_spelling_joins_han_and_keeps_names():
     table = {"tải": "載", "lại": "吏", "từ": "自", "và": "吧", "để": "底"}
     missing = set()
@@ -52,7 +57,9 @@ def test_vietnamese_has_every_message():
 
 def test_table_refuses_bad_rows(tmp_path, monkeypatch):
     header = "word\thannom\tsource\tnote\n"
-    for rows in ("tải\t載\twiktionary\t\ntải\t載\twiktionary\t\n", "tải\t載\t?\t\n", "tải\t\twiktionary\t\n", "tải\t載\n"):
+    bad = ("tải\t載\twiktionary\t\ntải\t載\twiktionary\t\n", "tải\t載\t?\t\n", "tải\t\twiktionary\t\n", "tải\t載\n",
+           "Tải\t載\twiktionary\t\n", "\t載\twiktionary\t\n")
+    for rows in bad:
         table = tmp_path / "vi-hani.tsv"
         table.write_text(header + rows, encoding="utf-8")
         monkeypatch.setattr(build_vi_hani, "TABLE", table)

@@ -64,15 +64,17 @@ HEADER = ["word", "hannom", "source", "note"]
 
 def load_table() -> dict[str, str]:
     """The word table, refused when a row lacks a spelling or a known source, or repeats a word."""
-    lines = [line.rstrip("\n") for line in TABLE.open(encoding="utf-8")]
+    lines = [line.rstrip("\r\n") for line in TABLE.open(encoding="utf-8")]
     header, *rows = [line.split("\t") for line in lines if line and not line.startswith("#")]
     where = TABLE.relative_to(ROOT)
     if header != HEADER:
         raise SystemExit(f"{where}: the first row must be the header {' '.join(HEADER)}")
     table: dict[str, str] = {}
     for row in rows:
-        if len(row) != len(HEADER) or not row[1] or row[2] not in SOURCES:
-            raise SystemExit(f"{where}: {row[0]!r} needs a spelling, one of {sorted(SOURCES)} and a note column")
+        if len(row) != len(HEADER):
+            raise SystemExit(f"{where}: {row[0]!r} has {len(row)} columns, not {len(HEADER)}")
+        if not row[0] or row[0] != row[0].lower() or not row[1] or row[2] not in SOURCES:
+            raise SystemExit(f"{where}: {row[0]!r} needs a lower-case word, a spelling and one of {sorted(SOURCES)}")
         if row[0] in table:
             raise SystemExit(f"{where}: {row[0]!r} appears twice")
         table[row[0]] = row[1]
