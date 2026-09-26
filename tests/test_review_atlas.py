@@ -342,6 +342,22 @@ def test_url_index_resolves_images_without_a_page_checksum(dataset):
     assert client.get(entries[0]['image']).status_code == 200
 
 
+def test_a_page_naming_a_sized_iiif_request_finds_the_image_cached_under_its_service(dataset):
+    from glyph_atlas import images
+
+    page = next(iter(tables.read(dataset / 'pages.parquet', Page)))
+    cached = images.images_root() / page.sha256[:2] / (page.sha256 + '.jpg')
+    service = 'https://iiif.example.org/iiif/book/002/tiff/page-009.tiff'
+    images.register(cached, service)
+    page.sha256 = None
+    page.image = service + '/full/1495,/0/default.jpg'
+    tables.write(dataset / 'pages.parquet', [page], Page)
+    client = TestClient(create_app(dataset))
+    entries = client.get('/atlas').json()['items']
+    assert len(entries) == 16
+    assert client.get(entries[0]['image']).status_code == 200
+
+
 def test_export_preserves_the_reviewed_snapshot_and_marks_undone_answers(dataset):
     client = TestClient(create_app(dataset))
     payload = round_payload(client, count=1)

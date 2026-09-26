@@ -600,7 +600,10 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             return None
         path = cached_image(page.sha256) if page.sha256 else None
         if path is None:
-            record = url_index(stamp).get(page.image)
+            # A IIIF image is cached under its service base; a page may name a sized request of it
+            # (`.../full/1495,/0/default.jpg`), which is the same image.
+            index = url_index(stamp)
+            record = index.get(page.image) or index.get(images.service_of(page.image) or "")
             path = cached_image(record.sha256) if record else None
         return path
 
