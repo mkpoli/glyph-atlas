@@ -58,7 +58,8 @@
   $effect(() => {
     // Never while an error is showing: a failed batch would otherwise be retried at once, forever,
     // and an error from another action would be cleared before anyone could read it.
-    if (nearEnd && hasMore && !error && !loading && !saving && !loadingMore && items.length < roundLimit) loadMore()
+    // Showing only suspects, a round may show nothing for many batches, so more crops wait to be asked for.
+    if (nearEnd && hasMore && !onlySuspects && !error && !loading && !saving && !loadingMore && items.length < roundLimit) loadMore()
   })
   const roundLimit = $derived(data?.review_limit ?? 4096)
   // The scopes a round can be dealt from, in the order the material menu lists them.
@@ -79,6 +80,14 @@
   let step = $state('select'), at = $state(0)
   let suggestionsElement = $state(null)
   const keys = 'qwertyasdfgh'.split('')
+  // The crops the classifier doubts (`suspect`), shown alone when the reader asks. The rest of the round
+  // stays dealt but off screen, so it is neither seen nor recorded, and a later round shows it again.
+  let onlySuspects = $state(stored('atlas.quiz.suspects-only', false) === true)
+  const shown = $derived(onlySuspects ? items.filter(i => i.suspect) : items)
+  function toggleSuspects() {
+    if (saving || loading || selection.length || step !== 'select') return
+    onlySuspects = !onlySuspects; remember('atlas.quiz.suspects-only', onlySuspects)
+  }
   const selection = $derived(Object.keys(selected).filter(id => selected[id]))
   // A crop skipped in the review step stays selected so the reader can go back to it, but it is no
   // longer a problem to decide: whether the round still has one, and what moving on records, ask this.
@@ -95,10 +104,10 @@
   // A selected crop still needs an explicit issue before it can be saved.
   const undecided = $derived(remaining.filter(i => selected[i.id] && !choices[i.id] && !skipped[i.id]).length)
   // Unavailable and skipped images cannot carry a decision.
-  const remaining = $derived(items.filter(i => loaded[i.id] && !failed[i.id] && !skipped[i.id] && recorded[i.id] !== 'flagged'))
-  const settled = $derived(items.every(i => skipped[i.id] || failed[i.id] || (loaded[i.id] && !failed[i.id])))
-  const ready = $derived(items.length > 0 && settled && remaining.length > 0)
-  const exhausted = $derived(items.length > 0 && settled && !remaining.length)
+  const remaining = $derived(shown.filter(i => loaded[i.id] && !failed[i.id] && !skipped[i.id] && recorded[i.id] !== 'flagged'))
+  const settled = $derived(shown.every(i => skipped[i.id] || failed[i.id] || (loaded[i.id] && !failed[i.id])))
+  const ready = $derived(shown.length > 0 && settled && remaining.length > 0)
+  const exhausted = $derived(shown.length > 0 && settled && !remaining.length)
   const categories = $derived((data?.categories ?? []).filter(c => c.pending > 0 && c.label.includes(search)))
 
   // Whether moving on would record something: a crop seen, or a crop skipped after it was seen.
@@ -494,7 +503,7 @@
     const control = e.target.closest('button, a, input, textarea, select, summary, [contenteditable="true"]')
     if (step === 'select') {
       const index = keys.indexOf(e.key.toLowerCase())
-      if (index >= 0 && items[index] && !control) { e.preventDefault(); toggle(items[index].id) }
+      if (index >= 0 && shown[index] && !control) { e.preventDefault(); toggle(shown[index].id) }
       if (e.key === 'Escape') clearSelection()
       return
     }
@@ -522,7 +531,7 @@
 
 <svelte:window onkeydown={keydown} />
 <section class="quiz-workspace">
-  <div class="quiz-topline"><a href="#/" class="quiet-link">{t('quiz.backToCollection')}</a><div class="round-count"><span class="live-dot"></span>{t('quiz.issuesSavedSession', { count: completed })}</div><button class="undo-round shape-toggle" aria-pressed={byShape} onclick={toggleShape}>{byShape ? t('quiz.shapeToggle.byShape') : t('quiz.shapeToggle.dealt')}</button>{#if last}<button class="undo-round" disabled={saving} onclick={undo}>{t('quiz.undoLastRound')}</button>{/if}</div>
+  <div class="quiz-topline"><a href="#/" class="quiet-link">{t('quiz.backToCollection')}</a><div class="round-count"><span class="live-dot"></span>{t('quiz.issuesSavedSession', { count: completed })}</div><button class="undo-round shape-toggle" aria-pressed={byShape} onclick={toggleShape}>{byShape ? t('quiz.shapeToggle.byShape') : t('quiz.shapeToggle.dealt')}</button><button class="undo-round suspect-toggle" aria-pressed={onlySuspects} disabled={saving || loading || selection.length > 0 || step !== 'select'} onclick={toggleSuspects}>{onlySuspects ? t('quiz.suspectToggle.only') : t('quiz.suspectToggle.all')}</button>{#if last}<button class="undo-round" disabled={saving} onclick={undo}>{t('quiz.undoLastRound')}</button>{/if}</div>
   <div class="quiz-heading"><div class="target-character" aria-label={t('quiz.targetReading', { reading })}><span lang="ja">{reading || '字'}</span></div><div class="quiz-title"><p class="overline">{t('quiz.overline', { step: step === 'select' ? t('quiz.overline.select') : t('quiz.overline.review') })}</p><h1>{step === 'select' ? t('quiz.heading.select') : step === 'issue' ? t('quiz.heading.issue') : choices[current?.id]?.issue === 'merged' ? t('quiz.heading.merged') : t('quiz.heading.correct')}</h1>{#if step === 'select'}<p>{around('quiz.selectHint', 'reading')[0]}<b>{reading || "…"}</b>{around('quiz.selectHint', 'reading')[1]}</p>{/if}</div><div class="round-switch"><button class="category-toggle" disabled={saving || loading} onclick={() => categoryOpen = !categoryOpen}>{t('quiz.changeCharacter')}</button><button class="quiet-link" disabled={saving || loading || (!canNext && !recordable)} onclick={pass}>{t('quiz.nextCharacterArrow')}</button></div></div>
   {#if categoryOpen}<div class="round-categories"><input aria-label={t('quiz.findCategory.aria')} placeholder={t('quiz.findCategory.placeholder')} bind:value={search}/><div class="category-options">{#each categories as c}<button disabled={saving} onclick={() => chooseCategory(c.label)}><span lang="ja">{c.label}</span><small>{c.pending}</small></button>{/each}</div></div>{/if}
   <label class="review-material">{t('quiz.material.label')}
@@ -544,14 +553,15 @@
     <div class="stage-toolbar"><strong>{openSelection.length ? t('quiz.select.selectedCount', { count: openSelection.length }) : t('quiz.select.selectProblems')}</strong><button class="bulk-toggle" disabled={saving || loading || !available} onclick={selectAll}>{decidable.length && decidable.every(i => selected[i.id]) ? t('quiz.bulk.none') : t('quiz.bulk.all')}</button><button class="bulk-toggle skip-selection" disabled={saving || loading || !selection.length} onclick={() => skip()} title={skipHint()}>{t('quiz.skipSelected', { skip: skipLabel() })}</button><span class="keyboard-hint">{t('quiz.keyboardHint.pickCrop')}</span></div>
     {#key roundId}<div class="quiz-grid" aria-label={t('quiz.grid.label')} aria-busy={loading}>
       {#if loading}{#each Array(12) as _}<div class="quiz-skeleton"></div>{/each}
-      {:else}{#each items as item, i (item.id)}
+      {:else}{#each shown as item, i (item.id)}
         <div class="quiz-tile" use:watchSeen={item.id} data-unit={item.id} class:selected={selected[item.id]} class:wrong={choices[item.id]?.verdict === 'wrong' || recorded[item.id] === 'flagged'} class:unavailable={failed[item.id]} class:skipped={skipped[item.id]} class:recorded={recorded[item.id]}>
           <button class="quiz-choice" aria-label={t('quiz.selectCharacter', { number: i + 1 })} aria-pressed={!!selected[item.id]} disabled={saving || !loaded[item.id] || recorded[item.id] === 'flagged'} onclick={() => toggle(item.id)}><Glyph {item} eager onload={id => loaded = { ...loaded, [id]: true }} onerror={id => { failed = { ...failed, [id]: true }; if (selected[id]) skip([id]) }} /><span class="choice-mark">{selected[item.id] ? '✓' : choices[item.id]?.verdict === 'wrong' ? '×' : ''}</span></button>
-          <div class="quiz-production"><ProductionBadge {item} />{#if recorded[item.id]}<span class="recorded-badge">✓ {t('app.saved')}</span>{/if}{#if item.origin === 'corpus'}<span class="quiz-source" lang={item.source?.title ? 'ja' : undefined} title={item.source?.title}>{item.source?.title ?? t('quiz.corpusSource')}</span>{/if}</div><div class="quiz-tile-tools">{#if keys[i]}<kbd>{keys[i]}</kbd>{/if}<span class="choice-label">{failed[item.id] ? t('quiz.choiceLabel.unavailable') : skipped[item.id] ? t('quiz.choiceLabel.skipped') : ''}</span><button class="inspect-choice" aria-label={t('quiz.inspectCharacter', { number: i + 1 })} disabled={saving} onclick={() => inspectChoice(item)}>↗</button>{#if skipped[item.id]}<button class="restore-choice" aria-label={t('quiz.restoreCharacter', { number: i + 1 })} disabled={saving} onclick={() => restore(item.id)}>{t('quiz.restore')}</button>{:else}<button class="skip-choice" aria-label={t('quiz.skipCharacter', { number: i + 1 })} title={skipHint()} disabled={saving} onclick={() => skip([item.id])}>–</button>{/if}</div>
+          <div class="quiz-production"><ProductionBadge {item} />{#if onlySuspects && item.suspect}<span class="suspect-badge" lang={item.suspect.reads_as ? 'ja' : undefined}>{item.suspect.reads_as ? t('quiz.suspect.readsAs', { character: item.suspect.reads_as }) : t('quiz.suspect.doubtful')}</span>{/if}{#if recorded[item.id]}<span class="recorded-badge">✓ {t('app.saved')}</span>{/if}{#if item.origin === 'corpus'}<span class="quiz-source" lang={item.source?.title ? 'ja' : undefined} title={item.source?.title}>{item.source?.title ?? t('quiz.corpusSource')}</span>{/if}</div><div class="quiz-tile-tools">{#if keys[i]}<kbd>{keys[i]}</kbd>{/if}<span class="choice-label">{failed[item.id] ? t('quiz.choiceLabel.unavailable') : skipped[item.id] ? t('quiz.choiceLabel.skipped') : ''}</span><button class="inspect-choice" aria-label={t('quiz.inspectCharacter', { number: i + 1 })} disabled={saving} onclick={() => inspectChoice(item)}>↗</button>{#if skipped[item.id]}<button class="restore-choice" aria-label={t('quiz.restoreCharacter', { number: i + 1 })} disabled={saving} onclick={() => restore(item.id)}>{t('quiz.restore')}</button>{:else}<button class="skip-choice" aria-label={t('quiz.skipCharacter', { number: i + 1 })} title={skipHint()} disabled={saving} onclick={() => skip([item.id])}>–</button>{/if}</div>
         </div>
       {/each}{#if loadingMore}{#each Array(6) as _}<div class="quiz-skeleton" aria-hidden="true"></div>{/each}{/if}{/if}
     </div>
     {/key}
+    {#if !loading && items.length && !shown.length}<p class="no-suspects" role="status">{t('quiz.suspect.none', { count: items.length })}</p>{/if}
     <!-- More crops load on their own as the reader nears the end; the row only says what is happening.
          A button remains for the case scrolling cannot trigger (a failed batch waits for a retry). -->
     {#if items.length}<div class="load-more-row" use:watchEnd role="status">
@@ -638,5 +648,8 @@
   .save-toast.quiz-saved { bottom:108px; }
   /* A crop this round already saved: still shown, marked, and never sent again. */
   .recorded-badge { font-size:9px; color:var(--muted); white-space:nowrap; }
+  .suspect-badge { font-size:9px; color:var(--wrong); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .suspect-toggle[aria-pressed="true"] { color:var(--wrong); }
+  .no-suspects { margin:18px 0 0; font-size:13px; color:var(--muted); text-align:center; }
   .quiz-tile.recorded .quiz-choice { opacity:.72; }
 </style>
