@@ -87,7 +87,7 @@
   .grapheme-cell{display:contents}
   .grapheme-tile{position:relative}
   .form-count{position:absolute;top:4px;right:5px;font-style:normal;font-size:9px;line-height:1;color:var(--muted)}
-  .grapheme-popover{position:fixed;z-index:60;width:240px;padding:10px;border:1px solid var(--line);border-radius:9px;background:#fff;box-shadow:0 14px 40px #0002;font-size:12px}
+  .grapheme-popover{position:fixed;z-index:60;width:240px;padding:10px;border:1px solid var(--line);border-radius:9px;background:var(--surface);box-shadow:0 14px 40px var(--shadow);font-size:12px}
   .popover-head{display:flex;gap:10px;align-items:center;padding:2px 4px 8px;border-bottom:1px solid var(--line);color:var(--muted);line-height:1.5}
   .popover-head b{font-weight:500;color:var(--ink)}
   .popover-head>span{font-size:12px}

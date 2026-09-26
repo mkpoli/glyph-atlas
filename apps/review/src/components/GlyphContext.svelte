@@ -40,7 +40,7 @@
 {/if}
 
 <style>
-  .glyph-context{position:fixed;right:16px;bottom:16px;z-index:20;width:min(320px,calc(100vw - 32px));display:flex;flex-direction:column;gap:8px;padding:10px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 28px rgb(0 0 0 / 16%);pointer-events:none}
+  .glyph-context{position:fixed;right:16px;bottom:16px;z-index:20;width:min(320px,calc(100vw - 32px));display:flex;flex-direction:column;gap:8px;padding:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 28px light-dark(rgb(0 0 0 / 16%), rgb(0 0 0 / 45%));pointer-events:none}
   .glyph-context.left{right:auto;left:16px}
   .glyph-context.pinned{pointer-events:auto}
   .glyph-context:not(.pinned) :global(.crop-tools){display:none}

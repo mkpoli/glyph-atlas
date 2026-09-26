@@ -84,15 +84,15 @@
 </dialog>
 
 <style>
-  .export-dialog{width:min(620px,calc(100vw - 32px));max-height:calc(100dvh - 32px);margin:auto;padding:28px;border:1px solid var(--line);border-radius:12px;color:var(--ink);background:#fff;box-shadow:0 24px 80px #0002}
-  .export-dialog::backdrop{background:#17171b66;backdrop-filter:blur(3px)}
+  .export-dialog{width:min(620px,calc(100vw - 32px));max-height:calc(100dvh - 32px);margin:auto;padding:28px;border:1px solid var(--line);border-radius:12px;color:var(--ink);background:var(--surface);box-shadow:0 24px 80px var(--shadow)}
+  .export-dialog::backdrop{background:var(--backdrop);backdrop-filter:blur(3px)}
   .export-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px}
   h2{font-size:24px;font-weight:500;letter-spacing:-.6px;margin:0}
   .export-count{color:var(--muted);font-size:13px}
   .export-history{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);margin:14px 0}
   .export-actions{display:flex;gap:10px;flex-wrap:wrap;margin:22px 0 16px}
   .export-actions a,.export-actions button{padding:12px 18px;border-radius:7px;font-size:13px}
-  textarea{width:100%;height:230px;resize:vertical;font:11px/1.6 ui-monospace,monospace;white-space:pre;overflow:auto;background:#f7f7f8}
+  textarea{width:100%;height:230px;resize:vertical;font:11px/1.6 ui-monospace,monospace;white-space:pre;overflow:auto;background:var(--surface-subtle)}
   .export-foot{display:flex;justify-content:space-between;gap:14px;margin-top:12px;font-size:11px;color:var(--muted)}
   .export-foot a{text-decoration:underline;white-space:nowrap}
   [role=alert]{margin-bottom:16px}

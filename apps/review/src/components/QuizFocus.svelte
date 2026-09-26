@@ -53,16 +53,16 @@
   .focus-images,.focus-figure{width:100%;min-width:0}
   .focus-image-meta{display:flex;justify-content:space-between;gap:12px;padding-top:8px}
   .focus-details{margin:6px 0 0;font-size:12px;line-height:1.5;color:var(--muted)}
-  .focus-id{margin:2px 0 0;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:10px;color:#a0a0a7;overflow-wrap:anywhere}
+  .focus-id{margin:2px 0 0;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:10px;color:var(--faint);overflow-wrap:anywhere}
   .focus-body{width:100%;min-width:0}
   .focus-body :global(.issue-card){min-height:102px;padding:14px;gap:5px}
   .focus-body :global(.issue-card.chosen){padding:13px}
   .focus-nav{grid-column:1/-1;display:flex;align-items:center;gap:10px;width:100%;margin-top:4px}
-  .focus-step{font-size:16px;padding:10px 16px;border:1px solid var(--line);border-radius:7px;background:#fff;cursor:pointer}
+  .focus-step{font-size:16px;padding:10px 16px;border:1px solid var(--line);border-radius:7px;background:var(--surface);cursor:pointer}
   .focus-step:disabled{opacity:.4;cursor:default}
   .focus-strip{display:flex;gap:8px;overflow-x:auto;padding:3px;flex:1;justify-content:center}
-  .focus-thumb{padding:6px;border:1px solid var(--line);border-radius:7px;background:#fff;cursor:pointer;line-height:0}
-  .focus-thumb.skipped{border-style:dashed;background:#eceaf0}
+  .focus-thumb{padding:6px;border:1px solid var(--line);border-radius:7px;background:var(--surface);cursor:pointer;line-height:0}
+  .focus-thumb.skipped{border-style:dashed;background:var(--surface-skipped)}
   .focus-thumb.skipped :global(img){opacity:.45}
   .focus-thumb.current{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-light)}
   .focus-thumb :global(img){width:44px;height:44px;object-fit:contain}

@@ -456,24 +456,24 @@
 </section>
 
 <style>
-  .visual-grid-heading{grid-column:1/-1;font-size:14px;padding:20px 2px 12px;color:var(--muted);background:var(--paper,#fafafa)}
+  .visual-grid-heading{grid-column:1/-1;font-size:14px;padding:20px 2px 12px;color:var(--muted);background:var(--paper)}
   .tile-production{font-family:system-ui,sans-serif;font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .tile-number{margin-left:auto}
   .tile-footer .tile-arrow{margin-left:0}
   .tile-footer .status-dot{flex-shrink:0}
   @media(max-width:700px){.tile-production{display:none}}
-  .status-dot.withheld{background:transparent;box-shadow:inset 0 0 0 1px #9b9ba3}
-  .glyph-tile.decided-checked{background:#eef4f0}
+  .status-dot.withheld{background:transparent;box-shadow:inset 0 0 0 1px light-dark(#9b9ba3, #9d9da6)}
+  .glyph-tile.decided-checked{background:var(--good-light)}
   .glyph-tile.decided-flagged{background:var(--wrong-light)}
-  .glyph-tile.decided-checked:hover{background:#e0ece4}
-  .glyph-tile.decided-flagged:hover{background:#fbe3e6}
+  .glyph-tile.decided-checked:hover{background:light-dark(#e0ece4, rgb(130 205 163 / 18%))}
+  .glyph-tile.decided-flagged:hover{background:light-dark(#fbe3e6, rgb(255 146 159 / 18%))}
   /* Drawn above the hover panel, so the outline stays whole while the details show. */
-  .decided-checked::after,.decided-flagged::after{content:'';position:absolute;inset:0;z-index:3;border:2px solid #458665;pointer-events:none}
+  .decided-checked::after,.decided-flagged::after{content:'';position:absolute;inset:0;z-index:3;border:2px solid var(--good);pointer-events:none}
   .decided-flagged::after{border-color:var(--wrong)}
   .decided-checked .tile-reading,.decided-flagged .tile-reading{right:38px;overflow:hidden;white-space:nowrap}
-  .tile-verdict{position:absolute;top:8px;right:8px;z-index:3;display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;color:#fff;font:600 13px/1 system-ui,sans-serif}
-  .decided-checked .tile-verdict{background:#458665}
-  .decided-flagged .tile-verdict{background:var(--wrong)}
+  .tile-verdict{position:absolute;top:8px;right:8px;z-index:3;display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;color:var(--on-color);font:600 13px/1 system-ui,sans-serif}
+  .decided-checked .tile-verdict{background:var(--good-solid)}
+  .decided-flagged .tile-verdict{background:var(--wrong-solid)}
   @media(max-width:700px){.tile-verdict{top:6px;right:6px;width:18px;height:18px;font-size:11px}.decided-checked .tile-reading,.decided-flagged .tile-reading{right:28px}}
   .explore-status{display:flex;align-items:center;flex-wrap:wrap;gap:8px 24px;padding:4px 0 14px}
   .explore-status .collection-meta{margin-left:auto;padding:0}

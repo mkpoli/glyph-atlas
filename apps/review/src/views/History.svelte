@@ -101,7 +101,7 @@
     display: flex; align-items: center; gap: 20px; width: 100%; border: 0; border-radius: 0;
     background: transparent; padding: 14px 6px; font-size: 13px; text-align: left;
   }
-  .history-row:hover { background: #f4f4f5; }
+  .history-row:hover { background: var(--surface-tile); }
   .history-row.undo .history-decision { color: var(--wrong); }
   .history-time { flex: 0 0 150px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
   .history-actor { flex: 0 0 130px; color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

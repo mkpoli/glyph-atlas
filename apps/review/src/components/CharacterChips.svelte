@@ -57,7 +57,7 @@
   .character-members{display:flex;flex-wrap:wrap;gap:8px;flex:1}
   .member-choice{display:flex;flex-direction:column;align-items:center;gap:4px}
   .member{display:flex;align-items:center;gap:10px;padding:8px 12px;background:transparent}
-  .active{color:var(--accent);border-color:var(--accent);background:var(--accent-light,#f0edff)}
+  .active{color:var(--accent);border-color:var(--accent);background:var(--accent-light)}
   .forms-row{font-size:12px;color:var(--muted)}
   .forms-row small{margin-left:auto}
   .layer-chips{margin:0}

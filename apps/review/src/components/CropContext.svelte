@@ -186,23 +186,24 @@
 
 <style>
   .crop-viewer{width:100%;min-width:0}
-  .crop-viewport{height:380px;position:relative;overflow:clip;border-radius:12px;background:#ebe8e3;isolation:isolate;touch-action:none;outline-offset:4px;user-select:none}
+  /* Keep the scan canvas, shade and crop mask independent of the UI scheme. */
+  .crop-viewport{height:380px;position:relative;overflow:clip;border-radius:12px;background:light-dark(#ebe8e3, #ebe8e3);isolation:isolate;touch-action:none;outline-offset:4px;user-select:none}
   .crop-viewport.ready{cursor:grab}
   .crop-viewport.dragging{cursor:grabbing}
   .crop-viewport:focus-visible{outline:2px solid var(--accent)}
   .crop-plane{position:absolute;left:0;top:0;transform-origin:0 0;pointer-events:none}
   .crop-plane img{position:absolute;display:block;max-width:none;max-height:none;object-fit:fill;filter:none;pointer-events:none}
   .page-photo{left:0;top:0}
-  .context-shade{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;fill:rgb(24 20 17 / 42%)}
-  .crop-mask{position:absolute;pointer-events:none;box-shadow:0 0 12px 3px rgb(24 20 17 / 24%)}
+  .context-shade{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;fill:light-dark(rgb(24 20 17 / 42%), rgb(24 20 17 / 42%))}
+  .crop-mask{position:absolute;pointer-events:none;box-shadow:0 0 12px 3px light-dark(rgb(24 20 17 / 24%), rgb(24 20 17 / 24%))}
   .crop-fallback{position:absolute;inset:28px;display:flex;align-items:center;justify-content:center}
   .crop-fallback :global(img){width:100%;height:100%;object-fit:contain;filter:none}
-  .crop-tools{position:absolute;right:12px;bottom:12px;display:flex;gap:2px;background:rgb(255 255 255 / 94%);padding:3px;border-radius:8px;box-shadow:0 2px 12px rgb(0 0 0 / 12%);cursor:default}
+  .crop-tools{position:absolute;right:12px;bottom:12px;display:flex;gap:2px;background:light-dark(rgb(255 255 255 / 94%), rgb(27 27 31 / 94%));padding:3px;border-radius:8px;box-shadow:0 2px 12px light-dark(rgb(0 0 0 / 12%), rgb(0 0 0 / 40%));cursor:default}
   .crop-tools button{display:flex;align-items:center;justify-content:center;width:32px;height:32px;padding:0;border:0;border-radius:5px;background:transparent;font-size:22px;color:var(--ink);cursor:pointer}
   .crop-tools button:hover:enabled{background:var(--accent-light)}
   .crop-tools button:disabled{opacity:.35;cursor:default}
   .crop-tools svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.5}
-  .crop-only{position:absolute;left:12px;bottom:18px;font-size:11px;color:var(--muted);background:rgb(255 255 255 / 90%);padding:4px 7px;border-radius:4px}
+  .crop-only{position:absolute;left:12px;bottom:18px;font-size:11px;color:var(--muted);background:light-dark(rgb(255 255 255 / 90%), rgb(27 27 31 / 90%));padding:4px 7px;border-radius:4px}
   .context-text{margin-top:10px;text-align:left;font-size:11px;color:var(--muted)}
   summary{cursor:pointer}
   .context-text p{font-size:15px;line-height:1.8;max-height:7em;overflow:auto;overflow-wrap:anywhere;margin:8px 0}
