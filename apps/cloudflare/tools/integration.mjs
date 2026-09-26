@@ -423,6 +423,9 @@ try {
   const cursor = { at: '2026-01-01T00:00:00.000Z', id: 'cf:0' }
   shapes.push([{ sql: worker.historyQuery(null, null, cursor).sql, values: [] }, [cursor.at, cursor.id, 41], 'event_history'])
   shapes.push([{ sql: worker.historyQuery('integration', null, cursor).sql, values: [] }, ['integration', cursor.at, cursor.id, 41], 'event_actor_history'])
+  // Browsing one grapheme deals its crops from the seed's point in shuffle order, as `catalogue` asks.
+  shapes.push([{ sql: "SELECT * FROM units WHERE origin='local' AND family=? AND shuffle>=? ORDER BY shuffle,rowid LIMIT ? OFFSET ?", values: [] },
+    ['U+4EEE', 0, 60, 0], 'unit_family_sample'])
   // A document's characters are read along the table's own key, and each unit by its id.
   const documentPlan = await plan({ sql: worker.documentCharactersQuery(), values: [] }, ['hk:doc'])
   served(documentPlan, null)
@@ -443,6 +446,7 @@ try {
     corpus_round: 'CREATE INDEX corpus_round ON corpus_units(character,named,shuffle)',
     corpus_material: 'CREATE INDEX corpus_material ON corpus_units(character,production,named,shuffle)',
     unit_character: 'CREATE INDEX unit_character ON units(origin,character,state)',
+    unit_family_sample: 'CREATE INDEX unit_family_sample ON units(origin,family,shuffle)',
     event_history: "CREATE INDEX event_history ON events(at DESC, id DESC) WHERE kind IN ('review','undo')",
     event_actor_history: "CREATE INDEX event_actor_history ON events(actor, at DESC, id DESC) WHERE kind IN ('review','undo')",
     event_label_history: `CREATE INDEX event_label_history ON events(${worker.historyLabelExpr()}, at DESC, id DESC) WHERE kind IN ('review','undo')`,
@@ -486,8 +490,9 @@ try {
   assert.deepEqual((await call('/atlas?reviewer=shelf')).documents.filter(b => b.id.startsWith('hl:')).map(({ id, title, total }) => ({ id, title, total })),
     [{ id: 'hl:A', title: '甲', total: 2 }, { id: 'hl:B', title: '乙', total: 1 }], 'the listing counts crops per book, with the title they were published under')
   // The listing files each label under its grapheme, and `grapheme` lists the whole family: 仮 and 假
-  // under U+4EEE, and a label with no family under its own code points.
-  for (const [id, label, family] of [['kari-1', '仮', 'U+4EEE'], ['kari-2', '假', 'U+4EEE'], ['mark', '※', null]]) {
+  // under U+4EEE, and ※, which the character table gives no family, under its own code point, as the
+  // publication writes it.
+  for (const [id, label, family] of [['kari-1', '仮', 'U+4EEE'], ['kari-2', '假', 'U+4EEE'], ['mark', '※', 'U+203B']]) {
     const d = { id, label, reading: label, state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten', repair: { quiz: true } }
     await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
       id, 'local', label, label, family, null, 'handwritten', 'kanji', 'pending', 0, 1, 1, 1,
@@ -498,7 +503,7 @@ try {
   const kari = (await call('/atlas?grapheme=U%2B4EEE&limit=96')).items
   assert.ok(['kari-1', 'kari-2'].every(id => kari.some(i => i.id === id)) && kari.every(i => ['仮', '假'].includes(i.label)),
     `a grapheme lists its whole family and nothing else: ${kari.map(i => i.id + ' ' + i.label)}`)
-  assert.deepEqual((await call('/atlas?grapheme=u%2B203b')).items.map(i => i.id), ['mark'], 'a label with no family is its own grapheme')
+  assert.deepEqual((await call('/atlas?grapheme=u%2B203b')).items.map(i => i.id), ['mark'], 'a label with no family is filed under its own code point')
   assert.equal((await mf.dispatchFetch(base + '/atlas?grapheme=%E4%BB%AE')).status, 422, 'a grapheme is named by code points')
   // The migration names the label categories the Worker computes, code point by code point.
   const hangulMigration = await readFile(new URL('../migrations/0008_hangul_category.sql', import.meta.url), 'utf8')

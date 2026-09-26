@@ -86,7 +86,7 @@ const productionOf=(data:Json)=>typeof data.production==='string'?data.productio
 function materialise(env:Env,row:UnitRow&{fresh:CorpusRow}){
   const d=parse(row.data);
   return env.DB.prepare('INSERT OR IGNORE INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
-    .bind(row.id,'corpus',d.written_character||null,d.reading||null,d.grapheme||null,d.visual_group?.id||null,row.fresh.production,
+    .bind(row.id,'corpus',d.written_character||null,d.reading||null,d.grapheme||(d.written_character?cp(d.written_character):null),d.visual_group?.id||null,row.fresh.production,
       row.category||categoryOf(d.label),d.state,d.revision,row.quiz,1,row.fresh.shuffle,row.data,row.snapshot,row.context,row.visual,null);
 }
 async function corpusData(env:Env,row:CorpusRow):Promise<Json>{
@@ -258,12 +258,14 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   if (reading) { where.push('character=?'); values.push(reading) }
   const document = text(q.get('document'), 256, 'document');
   if (document) { where.push('document=?'); values.push(document) }
-  // A grapheme is a family's representative; a crop whose label has no family is its own grapheme.
+  // A grapheme is a family's representative code point, or a label's own code points.
   const grapheme = text(q.get('grapheme'), 256, 'grapheme')?.toUpperCase().split(/\s+/).join(' ');
   if (grapheme) {
-    if (!/^U\+[0-9A-F]{4,6}( U\+[0-9A-F]{4,6})*$/.test(grapheme)) throw new Problem(422, 'Invalid grapheme.');
-    where.push('(family=? OR (family IS NULL AND character=?))');
-    values.push(grapheme, grapheme.split(' ').map(p => String.fromCodePoint(parseInt(p.slice(2), 16))).join(''));
+    if (!/^U\+[0-9A-F]{4,6}( U\+[0-9A-F]{4,6})*$/.test(grapheme) || grapheme.split(' ').some(p => parseInt(p.slice(2), 16) > 0x10FFFF))
+      throw new Problem(422, 'Invalid grapheme.');
+    // Every named crop has a family (its own code points when the character table gives none), so
+    // this is one lookup that `unit_family_sample` serves in shuffle order.
+    where.push('family=?'); values.push(grapheme);
   }
   if (q.get('q')) { where.push('(character=? OR reading=?)'); values.push(literal(q.get('q')!), literal(q.get('q')!)) }
   if (q.get('group') && q.get('group') !== 'all') { where.push('category=?'); values.push(q.get('group')!) }
