@@ -158,27 +158,36 @@
         return
       }
       catalogueRequest = new AbortController()
+      // The corpus half is requested alongside the crops, and deduplicated against them once both are in.
+      const sampled = append ? null : requestSample()
       const result = await catalogue({ reading, q: query, group: filter, state: flagged ? 'attention' : 'all',
         reported: flagged ? (showReported ? 'show' : 'hide') : null, seed, offset, limit: 60 }, { signal: catalogueRequest.signal, priority: 'low' })
       if (closed || id !== requestId) return
       data = result; items = append ? [...items, ...result.items] : result.items
-      if (!append) await loadSample(id, result.items)
+      if (!append) await showSample(id, sampled, result.items)
     } catch (e) { if (!closed && id === requestId && e.name !== 'AbortError') error = e.message }
     finally { if (!closed && id === requestId) loading = false }
   }
   /** The homepage's corpus half: bounded, deduplicated against the local rows, never a scan. */
-  async function loadSample(id, localRows) {
+  function requestSample() {
+    const bare = !query && !picked && filter === 'all' && !reading
+    const pending = flagged ? request('/atlas/corpus/reviews?state=flagged') : bare ? layerGallery(60, seed) : null
+    // Settled here, so a failure waits for `showSample` instead of surfacing as unhandled.
+    return pending?.then(page => ({ page }), error => ({ error })) ?? null
+  }
+  async function showSample(id, sampled, localRows) {
     if (flagged) {
-      const result = await request('/atlas/corpus/reviews?state=flagged')
+      const { page: result, error } = await sampled
+      if (error) throw error
       if (closed || id !== requestId) return
       sample = result.items.filter(row => (!query || row.label.includes(query)) && (!reading || row.label === reading))
       sampleFault = null
       return
     }
-    const bare = !query && !picked && !flagged && filter === 'all' && !reading
-    if (!bare) { sample = []; sampleFault = null; return }
+    if (!sampled) { sample = []; sampleFault = null; return }
     try {
-      const page = await layerGallery(60, seed)
+      const { page, error } = await sampled
+      if (error) throw error
       if (closed || id !== requestId) return
       sample = sampleRows(page, localRows)
       sampleFault = page.status === 'ok' ? null : page.status
