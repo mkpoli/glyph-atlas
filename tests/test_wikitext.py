@@ -104,3 +104,14 @@ def test_annotation_is_a_note():
 
 def test_a_length_parameter_is_layout():
     assert [text(c) for c in glyphs("{{right|大秦寺僧景淨述|1em}}")] == ["大秦寺僧景淨述"]
+
+
+def test_remarks_and_link_targets_are_not_text():
+    assert [text(c) for c in glyphs("{{參|落|此句開頭應為「落日欲沒」}}日")] == ["落日"]
+    assert [text(c) for c in glyphs("{{PL|屠公本畯|屠本畯}}")] == ["屠公本畯"]
+
+
+def test_an_unreadable_glyph_keeps_its_annotation_column():
+    [column] = glyphs("{{雙行註文|甲{{?}}|丁⿰阝耴}}")
+    assert [(g.text, g.role, g.column) for g in column] == [
+        ("甲", "warigaki", 1), ("", "unreadable", 1), ("丁", "warigaki", 2), ("", "unreadable", 2)]
