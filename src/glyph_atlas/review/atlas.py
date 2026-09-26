@@ -735,7 +735,8 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 # this order so that a crop unlike its neighbours stands out.
                 "shape_order": quiz_shapes.load(store.directory).get(unit.id),
                 # The classifier's doubt about the label (`quiz_suspects`): a round can show only these.
-                "suspect": quiz_suspects.load(store.directory).get(unit.id)}
+                "suspect": quiz_suspects.current(quiz_suspects.load(store.directory).get(unit.id), shown(unit),
+                                                 unit.box.model_dump() if unit.box else None)}
 
     def one(unit_id: str) -> tuple[Unit, int]:
         records = store.unit_snapshot(unit_id)

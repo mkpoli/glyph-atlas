@@ -1847,8 +1847,12 @@ def test_history_lists_reviewer_decisions_newest_first_with_paging_and_filters(d
 
 
 def test_a_crop_carries_its_suspect_mark(dataset):
-    first = LINE + ":u0"
-    (dataset / "quiz-suspects.json").write_text(json.dumps({"suspects": {first: {"p": 0.01, "reads_as": "お"}}}))
+    first, second = LINE + ":u0", LINE + ":u1"
+    box = {"x": 20, "y": 20, "w": 65, "h": 100}
+    (dataset / "quiz-suspects.json").write_text(json.dumps({"suspects": {
+        first: {"p": 0.01, "reads_as": "お", "label": "あ", "box": box},
+        # Made for another cut of the crop: it no longer holds.
+        second: {"p": 0.01, "reads_as": "お", "label": "あ", "box": box}}}))
     items = TestClient(create_app(dataset)).get('/atlas', params={"reading": "あ", "limit": 96}).json()["items"]
     marks = {item["id"]: item["suspect"] for item in items}
     assert marks[first] == {"p": 0.01, "reads_as": "お"}

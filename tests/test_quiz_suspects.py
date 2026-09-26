@@ -6,12 +6,12 @@ import pytest
 
 from glyph_atlas.review import quiz_suspects
 
-CLASSES = ["U+30A2", "U+30A4", "U+4EEE", "U+5047", "other"]
+CLASSES = ["U+30A2", "U+30A4", "U+4EEE", "U+5047", "U+3078", "other"]
 
 
 def row(**weights):
-    """One softmax row over `CLASSES`, from weights named ア, イ, 仮, 假 and other."""
-    order = ["ア", "イ", "仮", "假", "other"]
+    """One softmax row over `CLASSES`, from weights named ア, イ, 仮, 假, へ and other."""
+    order = ["ア", "イ", "仮", "假", "へ", "other"]
     values = np.array([weights.get(name, 0.0) for name in order])
     return values / values.sum()
 
@@ -54,3 +54,19 @@ def test_marks_are_read_from_the_dataset_and_follow_a_new_file(tmp_path):
     assert quiz_suspects.load(tmp_path) == {"a": {"p": 0.01, "reads_as": "ア"}}
     (tmp_path / "quiz-suspects.json").write_text(json.dumps({"suspects": {"b": {"p": 0.02, "reads_as": None}}}))
     assert list(quiz_suspects.load(tmp_path)) == ["b"]
+
+
+def test_a_katakana_read_as_its_hiragana_is_no_suspect(labels):
+    # ヘ has no class of its own; the classifier's へ is the same shape, read the same way.
+    assert labels.judge(np.stack([row(へ=.99, ア=.01)]), ["ヘ"]) == [None]
+    assert labels.judge(np.stack([row(ア=.99, へ=.01)]), ["ヘ"]) == [{"p": 0.01, "reads_as": "ア"}]
+
+
+def test_a_mark_holds_only_for_the_label_and_box_it_was_made_for():
+    box = {"x": 1, "y": 2, "w": 3, "h": 4}
+    mark = {"p": 0.01, "reads_as": "ア", "label": "イ", "box": box}
+    assert quiz_suspects.current(mark, "イ", {**box, "x": 1.0}) == {"p": 0.01, "reads_as": "ア"}
+    assert quiz_suspects.current(mark, "ア", box) is None
+    assert quiz_suspects.current(mark, "イ", {**box, "h": 5}) is None
+    assert quiz_suspects.current({**mark, "box": None}, "イ", None) == {"p": 0.01, "reads_as": "ア"}
+    assert quiz_suspects.current(None, "イ", box) is None

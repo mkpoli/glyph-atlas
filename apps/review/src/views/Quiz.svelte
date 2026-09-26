@@ -81,7 +81,8 @@
   let suggestionsElement = $state(null)
   const keys = 'qwertyasdfgh'.split('')
   // The crops the classifier doubts (`suspect`), shown alone when the reader asks. The rest of the round
-  // stays dealt but off screen, so it is neither seen nor recorded, and a later round shows it again.
+  // stays dealt but off screen: a crop never shown is not recorded as seen, and a later round shows it
+  // again. A crop the reader skipped while it was shown stays skipped.
   let onlySuspects = $state(stored('atlas.quiz.suspects-only', false) === true)
   const shown = $derived(onlySuspects ? items.filter(i => i.suspect) : items)
   function toggleSuspects() {

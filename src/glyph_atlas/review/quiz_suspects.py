@@ -99,8 +99,17 @@ class Labels:
         self._masks: dict[str, np.ndarray] = {}
 
     def mask(self, label: str) -> np.ndarray:
+        """The classes `label` accepts: itself, its merged family, and the kana that read as it does.
+
+        Reading is compared both ways, so katakana ヘ accepts hiragana へ as へ accepts ヘ: the two are
+        one shape, and a classifier trained mostly on hiragana is not doubting the label when it
+        names the other.
+        """
         if label not in self._masks:
-            self._masks[label] = np.array([char == label or label in members or reading == label
+            from .atlas import reading_of
+
+            readings = {label, reading_of(label)} - {None}
+            self._masks[label] = np.array([char == label or label in members or reading in readings
                                            for char, members, reading in zip(self.chars, self.members, self.readings,
                                                                              strict=True)])
         return self._masks[label]
@@ -127,6 +136,22 @@ class Labels:
         return marks
 
 
+def current(mark: dict | None, label: str, box: dict | None) -> dict | None:
+    """A stored mark as a listing shows it, while the crop still has the label and box it was made for.
+
+    A crop re-cut or relabelled since the marks were computed is no longer what the classifier saw.
+    """
+    if not mark or mark.get("label") != label or not same_box(mark.get("box"), box):
+        return None
+    return {"p": mark["p"], "reads_as": mark["reads_as"]}
+
+
+def same_box(a: dict | None, b: dict | None) -> bool:
+    if a is None or b is None:
+        return a is None and b is None
+    return all(abs(float(a[k]) - float(b[k])) < 1e-6 for k in "xywh")
+
+
 def _write(target: Path, suspects: dict[str, dict], scored: int, inputs: dict) -> dict[str, Any]:
     revision = hashlib.sha256(json.dumps({"method": METHOD, "inputs": inputs, "suspects": suspects},
                                          sort_keys=True).encode()).hexdigest()[:16]
@@ -151,7 +176,7 @@ def compute(dataset: Path, *, checkpoint: Path, classes: Path) -> dict[str, Any]
     from ..form_clusters import Encoder
     from .quiz_shapes import _crops
 
-    groups, images = _crops(dataset)
+    groups, images, boxes = _crops(dataset)
     if not images:
         # Every crop is cut from a cached page image; a cache that holds none leaves nothing to mark.
         raise RuntimeError(f"{dataset} shows no crops; is $GLYPH_ATLAS_CACHE the image cache it was built with?")
@@ -170,7 +195,7 @@ def compute(dataset: Path, *, checkpoint: Path, classes: Path) -> dict[str, Any]
         for identity, mark in zip(batch_ids, labels.judge(probabilities, [label_of[i] for i in batch_ids]),
                                   strict=True):
             if mark:
-                suspects[identity] = mark
+                suspects[identity] = {**mark, "label": label_of[identity], "box": boxes[identity]}
     inputs = {"crops": hashlib.sha256("\n".join(sorted(ids)).encode()).hexdigest(),
               "checkpoint": _digest(checkpoint), "classes": _digest(classes)}
     return _write(Path(dataset) / FILE, suspects, len(ids), inputs)
@@ -248,7 +273,9 @@ def compute_corpus(root: Path, target: Path, *, checkpoint: Path, classes: Path,
         for identity, mark in zip(batch_ids, labels.judge(probabilities, [label_of[i] for i in batch_ids]),
                                   strict=True):
             if mark:
-                suspects[identity] = mark
+                box = located[identity][1]
+                suspects[identity] = {**mark, "label": label_of[identity],
+                                      "box": dict(zip("xywh", box, strict=True)) if box else None}
     inputs = {"corpora": list(corpora), "located": hashlib.sha256("\n".join(sorted(located)).encode()).hexdigest(),
               "checkpoint": _digest(checkpoint), "classes": _digest(classes)}
     target.parent.mkdir(parents=True, exist_ok=True)

@@ -26,12 +26,20 @@ def export(files: list[Path], out: Path) -> int:
                 raise ValueError(f"{identity}: a suspect's probability must be a number from 0 to 1")
             if reads is not None and not isinstance(reads, str):
                 raise ValueError(f"{identity}: reads_as must be text or null")
+            label, box = mark.get("label"), mark.get("box")
+            if not isinstance(label, str) or not label:
+                raise ValueError(f"{identity}: a suspect names the label it was judged under")
+            if box is not None and not (isinstance(box, dict) and sorted(box) == ["h", "w", "x", "y"]
+                                        and all(isinstance(v, (int, float)) for v in box.values())):
+                raise ValueError(f"{identity}: box must be x, y, w and h, or null")
             if identity in marks and marks[identity] != mark:
                 raise ValueError(f"{identity}: marked differently by two files")
             marks[identity] = mark
     lines = ["DELETE FROM unit_suspects;"]
     for identity, mark in sorted(marks.items()):
-        lines.append(f"INSERT INTO unit_suspects VALUES({quoted(identity)},{mark['p']!r},{quoted(mark.get('reads_as'))});")
+        box = json.dumps(mark["box"], sort_keys=True) if mark["box"] is not None else None
+        lines.append(f"INSERT INTO unit_suspects VALUES({quoted(identity)},{mark['p']!r},{quoted(mark.get('reads_as'))},"
+                     f"{quoted(mark['label'])},{quoted(box)});")
     out.write_text("\n".join(lines) + "\n")
     return len(marks)
 
