@@ -12,13 +12,18 @@ mapfile -t parts < <(jq -er '.sql[]' "$publication/publication.json")
 # Objects are content-addressed, so sending one twice is harmless.
 uploaded="$publication/uploaded.txt"
 touch "$uploaded"
+jq -r '.objects[].key' "$publication/publication.json" > "$publication/keys.txt"
+total=$(wc -l < "$publication/keys.txt")
 for round in 1 2 3 4; do
   jq -r '.objects[] | "\(.key) \(.file)"' "$publication/publication.json" |
     while read -r key file; do grep -qxF "$key" "$uploaded" || echo "$key $file"; done > "$publication/pending.txt"
   [ -s "$publication/pending.txt" ] || break
-  echo "r2 round $round: $(wc -l < "$publication/pending.txt") objects"
+  echo "r2 round $round: $(wc -l < "$publication/pending.txt") of $total objects to send"
+  # Each finished put prints how many of the publication's objects are in R2 and how large it was.
   xargs -P 4 -L 1 sh -c 'bunx wrangler r2 object put "glyph-atlas/$0" --file "'"$publication"'/$1" \
-    --content-type application/octet-stream --remote >/dev/null 2>&1 && echo "$0" >> "'"$uploaded"'"' \
+    --content-type application/octet-stream --remote >/dev/null 2>&1 && echo "$0" >> "'"$uploaded"'" &&
+    echo "r2 $(sort -u "'"$uploaded"'" | grep -cxFf "'"$publication/keys.txt"'")/'"$total"' $(du -h "'"$publication"'/$1" | cut -f1) $0" ||
+    echo "r2 failed $0 (retried next round)"' \
     < "$publication/pending.txt" || true
 done
 missing=$(jq -r '.objects[].key' "$publication/publication.json" | grep -cvxFf "$uploaded" || true)
