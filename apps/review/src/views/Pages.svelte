@@ -2,6 +2,7 @@
   import { onMount, tick } from 'svelte'
   import DrawnBoxDialog from '../components/DrawnBoxDialog.svelte'
   import ReferenceGlyph from '../components/ReferenceGlyph.svelte'
+  import { number } from '../lib/client.js'
   import { pageList, pageRecord, drawBox } from '../lib/pages.js'
   import { t, localize } from '../lib/i18n.svelte.js'
   // The page photos of the dataset, with every active box drawn over them. With Draw on, a drag on
@@ -227,7 +228,7 @@
           <p class="page-note">{t('pages.document.pages', { count: document.pages.length })} · {t('pages.boxes.count', { count: document.units })}</p>
           <ol>
             {#each document.pages as page (page.id)}
-              <li><a href={localize('/pages/' + encodeURIComponent(page.id))}><span>{t('pages.pageNumber', { seq: page.seq })}</span>{#if page.units}<small>{page.units}</small>{/if}</a></li>
+              <li><a href={localize('/pages/' + encodeURIComponent(page.id))}><span>{t('pages.pageNumber', { seq: page.seq })}</span>{#if page.units}<small>{number(page.units)}</small>{/if}</a></li>
             {/each}
           </ol>
         </article>
