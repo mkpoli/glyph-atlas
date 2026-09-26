@@ -1,6 +1,6 @@
 <script>
   import { onMount, tick, untrack } from 'svelte'
-  import { replaceState } from '$app/navigation'
+  import { afterNavigate, replaceState } from '$app/navigation'
   import { page } from '$app/state'
   import { productionLabel } from '../components/ProductionBadge.svelte'
   import VisualGroups from '../components/VisualGroups.svelte'
@@ -155,9 +155,9 @@
   }
   const corpusOnly = $derived(picked ? corpus.filter(lead => !visibleLocal.some(unit => sameInk(unit, lead))) : [])
   const homeCorpus = $derived(sample.filter(lead => !items.some(unit => sameInk(unit, lead))))
-  // A lead crop the collection also holds keeps its place and shows the collection's record there.
-  const leadRows = $derived(sample.slice(0, lead).map(row => items.find(unit => sameInk(unit, row)) ?? row))
-  const mixedItems = $derived(lead ? items.filter(unit => !leadRows.includes(unit)) : items)
+  // A lead crop the collection also holds keeps its place, as the tile it was shown as.
+  const leadRows = $derived(sample.slice(0, lead))
+  const mixedItems = $derived(lead ? items.filter(unit => !leadRows.some(row => sameInk(unit, row))) : items)
   const mixedCorpus = $derived(homeCorpus.filter(row => sample.indexOf(row) >= lead))
   const baseDisplay = $derived(choosing ? [] : picked ? [...visibleLocal, ...corpusOnly]
     : [...leadRows, ...mixedItems.flatMap((item, index) => mixedCorpus[index] ? [item, mixedCorpus[index]] : [item]),
@@ -407,14 +407,18 @@
       query = q; grapheme = g; work = w; filter = group; load()
     }
   }
-  /** The rest of the homepage the server streams after its lead crops; a search started meanwhile wins. */
-  async function receive(rest) {
+  /**
+   * The rest of the homepage the server streams after its lead crops; a search started meanwhile wins.
+   * A page whose response ended without the rest, cut off on the way, leaves the view to load it itself:
+   * the promise of a stream that stopped never settles. On the page a reader opened (`entered`), the
+   * rest, when it came, resolved while the document was still being read, so the end of the document,
+   * or a task after it when the view started later, stands for a rest that will not come.
+   */
+  async function receive(rest, entered) {
     const id = ++requestId
-    // A page whose response ended without the rest, cut off on the way, leaves the view to load it
-    // itself: the promise of a stream that stopped never settles. The rest, when it came, resolved
-    // while the page was still being read, before the end of the document is announced.
-    const ended = document.readyState === 'loading'
-      ? new Promise(resolve => addEventListener('DOMContentLoaded', () => resolve({}), { once: true })) : new Promise(() => {})
+    const ended = !entered ? new Promise(() => {}) : document.readyState === 'loading'
+      ? new Promise(resolve => addEventListener('DOMContentLoaded', () => resolve({}), { once: true }))
+      : new Promise(resolve => setTimeout(() => resolve({}), 0))
     const { result = null, sample: page = null } = await Promise.race([rest.catch(() => ({})), ended])
     if (closed || id !== requestId) return
     if (!result) { load(); return }
@@ -427,7 +431,10 @@
     sampleFault = page ? (page.status === 'ok' ? null : page.status) : null
     loading = false
   }
-  onMount(() => { if (!collection) readCollection(); if (streamed) receive(streamed.rest); else if (!first && !opened) load(); if (addressed) followAddress(); const timer = setInterval(readCollection, 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
+  onMount(() => { if (!collection) readCollection(); if (!first && !opened && !streamed) load(); if (addressed) followAddress(); const timer = setInterval(readCollection, 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
+  // Whether this is the page the reader opened is known once the view has started.
+  let received = false
+  afterNavigate(({ type }) => { if (streamed && !received) { received = true; receive(streamed.rest, type === 'enter') } })
   // Widening is the reader's choice and only it reloads the gallery; picking a character resets the
   // widening itself and loads once through `pick`.
   // The first run is the widening the page opened with, already loaded.
