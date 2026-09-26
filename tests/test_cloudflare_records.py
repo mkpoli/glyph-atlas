@@ -253,3 +253,13 @@ def test_an_export_leaves_out_the_units_the_site_holds(scripts, tmp_path):
         db.execute("INSERT INTO corpus_units(id,character,shuffle,object,offset,size) VALUES('hl:b:1','あ',1,'x.bin',0,1)")
         assert export.held(db, export.unit_ids(tmp_path / "live.txt")) == {"hl:a:1", "hl:a:2", "hl:b:1"}
         assert export.held(db) == {"hl:b:1"}
+
+
+def test_holder_images_point_at_the_holders_region_of_the_box(scripts):
+    export = importlib.import_module("export_cloudflare_corpus")
+    box = {"x": 10, "y": 20, "w": 30, "h": 40}
+    served = {"image_service": "https://iiif.example/page1"}
+    assert export.holder_image(served, box, True) == "https://iiif.example/page1/10,20,30,40/480,/0/default.jpg"
+    assert export.holder_image(served, box, False) is None
+    assert export.holder_image({"image_service": None}, box, True) is None
+    assert export.holder_image(served, None, True) is None
