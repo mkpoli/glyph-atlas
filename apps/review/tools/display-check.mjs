@@ -75,7 +75,7 @@ try {
 
   // 3. A single viewer keeps the crop clear inside the original colour photograph.
   const unit = service.fixture.unit
-  await browser.evaluate(`visit('/character/' + encodeURIComponent(${JSON.stringify(unit)}))`)
+  await browser.evaluate(`visit('/crop/' + encodeURIComponent(${JSON.stringify(unit)}))`)
   await browser.waitFor(`document.querySelector('dialog[open] .crop-viewport')?.dataset.ready === 'true'`)
   assert(await browser.evaluate(`document.querySelectorAll('.inspector-tabs, .inspector-crop, .nearby').length`) === 0, 'duplicate crop/context views remain')
   const reviewSource = await (await fetch(service.base + '/atlas/characters/' + encodeURIComponent(unit))).json()
