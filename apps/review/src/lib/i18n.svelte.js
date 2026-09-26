@@ -2,7 +2,8 @@
  * The interface languages: every catalogue in `src/locales`, named after its BCP 47 tag. Its
  * `@locale` entry gives the language's own name, the `base` language the number and plural rules
  * come from, and the browser languages it `matches` on a first visit. `"numerals": "hanzi"` writes
- * its numbers, dates and times in Chinese numerals (一千二百三十四, 二〇二六年九月二十六日).
+ * its numbers, dates and times in Chinese numerals (一千零五, 二〇二六年九月二十六日); `"classical"` in the
+ * classical way, leaving gaps unwritten and zero as 無 (一千五, 二千二十六年九月二十六日).
  */
 export const LOCALES = Object.entries(import.meta.glob('../locales/*.json', { eager: true, import: 'default' }))
   .map(([path, { '@locale': about, ...messages }]) => ({ tag: path.slice(11, -5), ...about, messages }))
@@ -90,32 +91,39 @@ export function t(key, params = {}) {
     : whole)
 }
 
-const hanzi = () => byTag[current].numerals === 'hanzi'
-const DIGITS = '零一二三四五六七八九'
+const numerals = () => byTag[current].numerals
+const hanzi = () => numerals() === 'hanzi' || numerals() === 'classical'
+const DIGITS = '〇一二三四五六七八九'
 
-/** 1–9999 with its 千百十 places, a gap inside written 零: 105 is 一百零五. */
-function hanziGroup(value) {
+/** 1–9999 with its 千百十 places, a gap written as `gapWord`: 105 is 一百零五, or 一百五 with none. */
+function hanziGroup(value, gapWord) {
   let text = '', gap = false
   for (const [place, unit] of [[1000, '千'], [100, '百'], [10, '十'], [1, '']]) {
     const digit = Math.floor(value / place) % 10
     if (!digit) { gap = text !== ''; continue }
-    if (gap) { text += '零'; gap = false }
+    if (gap) { text += gapWord; gap = false }
     text += DIGITS[digit] + unit
   }
   return text
 }
 
-/** A whole number below 10¹⁶ in Chinese numerals, grouped by 萬, 億 and 兆: 12345 is 一萬二千三百四十五, 15 is 十五. */
+/**
+ * A whole number below 10¹⁶ in Chinese numerals, grouped by 萬, 億 and 兆: 12345 is 一萬二千三百四十五,
+ * 15 is 十五. The modern form writes 零 for zero and for a gap (10005 is 一萬零五); the classical form
+ * leaves gaps unwritten and writes zero as 無 (10005 is 一萬五).
+ */
 function hanziNumber(value) {
+  const classical = numerals() === 'classical'
+  const gapWord = classical ? '' : '零'
   let n = Math.round(Math.abs(value))
-  if (!n) return '零'
+  if (!n) return classical ? '無' : '零'
   const groups = []
   for (; n; n = Math.floor(n / 10000)) groups.push(n % 10000)
   let text = '', gap = false
   for (let g = groups.length - 1; g >= 0; g--) {
     if (!groups[g]) { gap = text !== ''; continue }
-    if (text && (gap || groups[g] < 1000)) text += '零'
-    text += hanziGroup(groups[g]) + ['', '萬', '億', '兆'][g]
+    if (text && (gap || groups[g] < 1000)) text += gapWord
+    text += hanziGroup(groups[g], gapWord) + ['', '萬', '億', '兆'][g]
     gap = false
   }
   return (value < 0 ? '負' : '') + text.replace(/^一十/, '十')
@@ -139,7 +147,7 @@ export function formatDateTime(value, { date = true } = {}) {
   if (hanzi()) {
     const time = `${hanziNumber(at.getHours())}時${at.getMinutes() ? `${hanziNumber(at.getMinutes())}分` : ''}`
     if (!date) return time
-    const year = [...String(at.getFullYear())].map(digit => '〇一二三四五六七八九'[digit]).join('')
+    const year = numerals() === 'classical' ? hanziNumber(at.getFullYear()) : [...String(at.getFullYear())].map(digit => DIGITS[digit]).join('')
     return `${year}年${hanziNumber(at.getMonth() + 1)}月${hanziNumber(at.getDate())}日 ${time}`
   }
   const key = `${base()} ${date}`
