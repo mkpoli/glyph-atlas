@@ -44,7 +44,7 @@ EXPAND = (("tr. {page}", "trang {page}"), ("{seconds}s ", "{seconds} giây "))
 SOURCES = {"wiktionary", "unihan", "joined", "editorial"}
 # Latin words that are names, keys or file formats and stay in Latin letters.
 KEEP = {"CODH", "Unicode", "HI", "Lab", "Minna", "de", "Honkoku", "JSON", "ID", "Ctrl", "Home", "Enter", "Shift",
-        "click", "qwerty", "zi", "tools", "roneo", "scan", "C", "J", "K", "X", "n", "s"}
+        "click", "qwerty", "zi", "tools", "roneo", "scan", "C", "J", "K", "M", "V", "X", "n", "s"}
 
 KAIKKI = "https://kaikki.org/dictionary/Vietnamese/kaikki.org-dictionary-Vietnamese.jsonl"
 UNIHAN = "https://www.unicode.org/Public/18.0.0/ucd/Unihan.zip"
