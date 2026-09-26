@@ -54,9 +54,9 @@ try {
   for (const id of ['one', 'two']) {
     const d = { id, label: 'ア', reading: 'ア', state: 'pending', revision: 0, image_sha256: hash,
       production: 'handwritten', repair: { quiz: true } }
-    await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
+    await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
       id, 'local', 'ア', 'ア', 'U+3042', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
-      JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}').run()
+      JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
   }
   for (const [char, code] of [['仮', 'U+4EEE'], ['假', 'U+5047']]) {
     const data = { char, code_point: code, grapheme: { code_point: 'U+4EEE' }, candidates: {} }
@@ -133,9 +133,9 @@ try {
   for (const id of ['flag-a', 'flag-b']) {
     const d = { id, label: 'ラ', reading: 'ラ', state: 'pending', revision: 0, image_sha256: hash,
       production: 'handwritten', repair: { quiz: true } }
-    await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
+    await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
       id, 'local', 'ラ', 'ラ', 'U+3042', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
-      JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}').run()
+      JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
   }
   const flagRound = { id: crypto.randomUUID(), client_id: 'integration', label: 'ラ', answers: [
     { id: 'flag-a', revision: 0, image_sha256: hash, verdict: 'wrong', issue: 'blank' },
@@ -200,9 +200,9 @@ try {
   for (const id of ['seen-a', 'seen-b', 'seen-c']) {
     const d = { id, label: 'セ', reading: 'セ', state: 'pending', revision: 0, image_sha256: hash,
       image: `/atlas/media/${id}.webp`, production: 'handwritten', box: { x: 1, y: 2, w: 3, h: 4 }, repair: { quiz: true } }
-    await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
+    await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
       id, 'local', 'セ', 'セ', 'U+30BB', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
-      JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}').run()
+      JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
   }
   // Browse counts are cached per version of the data, so each write below must show in them at once.
   const browseSe = async () => { const { pending, seen, flagged } = (await call('/atlas')).categories.find(c => c.label === 'セ'); return { pending, seen, flagged } }
@@ -245,9 +245,9 @@ try {
   for (const id of ['skip-a', 'skip-b', 'skip-c']) {
     const d = { id, label: 'ソ', reading: 'ソ', state: 'pending', revision: 0, image_sha256: hash,
       production: 'handwritten', box: { x: 1, y: 2, w: 3, h: 4 }, repair: { quiz: true } }
-    await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
+    await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
       id, 'local', 'ソ', 'ソ', 'U+30BD', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
-      JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}').run()
+      JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
   }
   const dealtTo = async reviewer => (await call(`/atlas?purpose=review&reading=ソ&state=pending&seed=3&limit=96&reviewer=${reviewer}`)).items.map(i => i.id)
   const skipBy = (reviewer, id) => ({ id: crypto.randomUUID(), client_id: reviewer, label: 'ソ', skipped: [{ id, image_sha256: hash }] })
@@ -296,9 +296,9 @@ try {
   for (const id of ['na-local-a', 'na-local-b']) {
     const d = { id, label: 'ナ', reading: 'ナ', state: 'pending', revision: 0, image_sha256: hash,
       production: 'handwritten', box: { x: 1, y: 2, w: 3, h: 4 }, repair: { quiz: true } }
-    await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
+    await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
       id, 'local', 'ナ', 'ナ', 'U+30CA', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
-      JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}').run()
+      JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
   }
   const roundOf = async (params = '') => call(`/atlas?purpose=review&reading=ナ&state=pending${params.includes('limit=') ? '' : '&limit=96'}${params}`)
   const ids = async params => (await roundOf(params)).items.map(i => i.id)
@@ -444,9 +444,9 @@ try {
   // the listing filters it by that group.
   const jamo = { id: 'hangul', label: 'ㅿ', reading: 'ㅿ', state: 'pending', revision: 0, image_sha256: hash,
     production: 'printed/woodblock', repair: { quiz: true } }
-  await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
+  await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
     jamo.id, 'local', 'ㅿ', 'ㅿ', 'U+317F', null, 'printed/woodblock', 'other', 'pending', 0, 1, 1, 1,
-    JSON.stringify(jamo), JSON.stringify({ character: jamo }), '{}', '{}').run()
+    JSON.stringify(jamo), JSON.stringify({ character: jamo }), '{}', '{}', null).run()
   await apply('0008_hangul_category.sql')
   assert.deepEqual((await call('/atlas?group=hangul')).items.map(i => i.id), ['hangul'], 'a Hangul label is in the hangul group')
   assert.ok(!(await call('/atlas?group=kana')).items.some(i => i.id === 'hangul'), 'and in no other')
@@ -454,12 +454,24 @@ try {
   // the listing filters it by that group.
   const gugyeol = { id: 'gugyeol', label: '', reading: '', state: 'pending', revision: 0, image_sha256: hash,
     production: 'printed/woodblock', repair: { quiz: true } }
-  await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
+  await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
     gugyeol.id, 'local', '', '', 'U+F67F', null, 'printed/woodblock', 'other', 'pending', 0, 1, 1, 1,
-    JSON.stringify(gugyeol), JSON.stringify({ character: gugyeol }), '{}', '{}').run()
+    JSON.stringify(gugyeol), JSON.stringify({ character: gugyeol }), '{}', '{}', null).run()
   await apply('0012_gugyeol_category.sql')
   assert.deepEqual((await call('/atlas?group=gugyeol')).items.map(i => i.id), ['gugyeol'], 'a gugyeol label is in the gugyeol group')
   assert.ok(!(await call('/atlas?group=kana')).items.some(i => i.id === 'gugyeol'), 'and in no other')
+  // Explore narrows to one book: the listing counts crops per book, and `document` lists one book's.
+  // A reviewer's listing is read uncached, so the rows written straight to D1 show in its counts.
+  for (const [id, book, title] of [['book-a1', 'hl:A', '甲'], ['book-a2', 'hl:A', '甲'], ['book-b1', 'hl:B', '乙']]) {
+    const d = { id, label: 'ヌ', reading: 'ヌ', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten',
+      source: title, page_id: `${book}:1`, repair: { quiz: true } }
+    await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
+      id, 'local', 'ヌ', 'ヌ', 'U+30CC', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
+      JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', book).run()
+  }
+  assert.deepEqual((await call('/atlas?document=hl:A&limit=96')).items.map(i => i.id).sort(), ['book-a1', 'book-a2'], 'one book lists its own crops')
+  assert.deepEqual((await call('/atlas?reviewer=shelf')).documents.filter(b => b.id.startsWith('hl:')).map(({ id, title, total }) => ({ id, title, total })),
+    [{ id: 'hl:A', title: '甲', total: 2 }, { id: 'hl:B', title: '乙', total: 1 }], 'the listing counts crops per book, with the title they were published under')
   // The migration names the label categories the Worker computes, code point by code point.
   const hangulMigration = await readFile(new URL('../migrations/0008_hangul_category.sql', import.meta.url), 'utf8')
   const gugyeolMigration = await readFile(new URL('../migrations/0012_gugyeol_category.sql', import.meta.url), 'utf8')
@@ -476,9 +488,9 @@ try {
   // A context widened in place survives a review and its undo.
   const framed = { id: 'framed', label: 'カ', reading: 'カ', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten',
     repair: { quiz: true }, context: true, context_image: '/atlas/media/narrow.webp', context_box: { x: 5, y: 5, w: 40, h: 60 } }
-  await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
+  await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
     framed.id, 'local', 'カ', 'カ', 'U+30AB', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
-    JSON.stringify(framed), JSON.stringify({ character: framed }), '{}', '{}').run()
+    JSON.stringify(framed), JSON.stringify({ character: framed }), '{}', '{}', null).run()
   const wide = { x: 0, y: 0, w: 90, h: 120 }
   const framedRound = { id: crypto.randomUUID(), client_id: 'integration', label: 'カ',
     answers: [{ id: 'framed', revision: 0, image_sha256: hash, verdict: 'wrong', issue: 'blank' }] }
@@ -590,9 +602,9 @@ try {
   assert.deepEqual(log.trim().split('\n').map(JSON.parse).filter(d => d.issue).map(d => [d.issue, d.character]), [['character', 'テ']])
   // A retired crop names the crop that replaced it: deleted, kept for its history, or through a chain.
   const retiredCrop = { id: 'retired-kept', label: 'ア', reading: 'ア', state: 'flagged', revision: 1, image_sha256: hash, production: 'handwritten' }
-  await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
+  await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(
     retiredCrop.id, 'retired', 'ア', 'ア', 'U+30A2', null, 'handwritten', 'kana', 'flagged', 1, 0, 1, 1,
-    JSON.stringify(retiredCrop), JSON.stringify({ character: retiredCrop }), '{}', '{}').run()
+    JSON.stringify(retiredCrop), JSON.stringify({ character: retiredCrop }), '{}', '{}', null).run()
   await db.batch([['retired-gone', 'retired-kept'], ['retired-kept', 'two'], ['loop-a', 'loop-b'], ['loop-b', 'loop-a']]
     .map(([id, target]) => db.prepare('INSERT INTO unit_redirects VALUES(?,?)').bind(id, target)))
   for (const id of ['retired-gone', 'retired-kept']) {

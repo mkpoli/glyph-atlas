@@ -762,13 +762,15 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         standing = status.unit_reviews([u for u, _ in units], events)
         seen = seen_boxes(events)
         reviewed = reviewed_targets(events)
-        documents = {doc.id: production_info(doc)["production"] for doc in store.documents()}
+        documents = {doc.id: doc for doc in store.documents()}
+        productions = {key: production_info(doc)["production"] for key, doc in documents.items()}
         pages = store.pages()
-        kinds = {}
+        kinds, books = {}, {}
         for unit, _ in units:
             page = pages.get(unit.page_id)
             document_id = unit.document_id or (page.document_id if page else None)
-            kinds[unit.id] = documents.get(document_id, "unknown")
+            kinds[unit.id] = productions.get(document_id, "unknown")
+            books[unit.id] = document_id
         states = {key: review_state(value.human_review) for key, value in standing.items()}
         marks = skip_marks(events)
         # The skips that still apply: those made at the crop's current box.
@@ -789,7 +791,8 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 states[unit.id] = "hard"
             elif unit.id in seen and seen[unit.id] == box:
                 states[unit.id] = "seen"
-        return units, states, kinds, skips, reviewed
+        titles = {key: doc.title for key, doc in documents.items()}
+        return units, states, kinds, books, titles, skips, reviewed
 
     @api.get("/atlas")
     def catalogue(
@@ -801,6 +804,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         purpose: Literal["browse", "review"] = "browse",
         production: Annotated[str | None, Query(description="`all`, a production node, or `not:` and a node")] = None,
         reported: Literal["show", "hide"] = "show",
+        document: Annotated[str | None, Query(max_length=256)] = None,
         seed: int = 0,
         limit: Annotated[int, Query(ge=1, le=96)] = 60,
         offset: Annotated[int, Query(ge=0)] = 0,
@@ -826,7 +830,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             raise HTTPException(422, str(error)) from error
         generation = (file_stamp(store.path), file_stamp(Path(str(store.path) + "-wal")),
                       file_stamp(production_metadata.OVERRIDES))
-        units, all_states, kinds, skips, reviewed = catalogue_snapshot(generation)
+        units, all_states, kinds, books, titles, skips, reviewed = catalogue_snapshot(generation)
         records = [(u, rev) for u, rev in units
                    if production_metadata.in_scope(kinds[u.id], scope) and considered(u)]
         states = {u.id: all_states[u.id] for u, _ in records}
@@ -838,13 +842,19 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 if states[u.id] == "pending" and at is not None and at > rested:
                     states[u.id] = "skipped"
         categories: dict[str, Counter] = {}
+        # The books the crops come from, counted like the readings: `document` picks one.
+        shelves: dict[str, Counter] = {}
         for unit, _ in records:
-            counts = categories.setdefault(shown(unit), Counter())
-            counts["total"] += 1
-            counts[states[unit.id]] += 1
+            groups = [categories.setdefault(shown(unit), Counter())]
+            if books[unit.id]:
+                groups.append(shelves.setdefault(books[unit.id], Counter()))
+            for counts in groups:
+                counts["total"] += 1
+                counts[states[unit.id]] += 1
         counts = Counter(states[u.id] for u, _ in records)
         searched = matches(records, q) if q else records
         selected = [(u, rev) for u, rev in searched if (reading is None or shown(u) == reading)
+                    and (document is None or books[u.id] == document)
                     and (group == "all" or character_group(u) == group)
                     and (state == "all" or states[u.id] == state
                          # The Flagged view: every crop waiting for a person, flagged or hard to read.
@@ -875,6 +885,9 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 "categories": [{"label": name, **{key: c[key] for key in
                                   ("total", "pending", "seen", "checked", "flagged", "hard", "skipped")}}
                                for name, c in sorted(categories.items(), key=lambda x: (-x[1]["total"], x[0]))],
+                "documents": [{"id": key, "title": titles.get(key), **{name: c[name] for name in
+                                ("total", "pending", "seen", "checked", "flagged", "hard", "skipped")}}
+                              for key, c in sorted(shelves.items(), key=lambda x: (-x[1]["total"], titles.get(x[0]) or "", x[0]))],
                 "reported_count": reported_count,
                 "items": [item(u, rev, states[u.id]) for u, rev in selected[offset:offset + limit]]}
 

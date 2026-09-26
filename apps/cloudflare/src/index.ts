@@ -85,9 +85,9 @@ const productionOf=(data:Json)=>typeof data.production==='string'?data.productio
 // in the same batch and before the rows that reference it.
 function materialise(env:Env,row:UnitRow&{fresh:CorpusRow}){
   const d=parse(row.data);
-  return env.DB.prepare('INSERT OR IGNORE INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+  return env.DB.prepare('INSERT OR IGNORE INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
     .bind(row.id,'corpus',d.written_character||null,d.reading||null,d.grapheme||null,d.visual_group?.id||null,row.fresh.production,
-      row.category||categoryOf(d.label),d.state,d.revision,row.quiz,1,row.fresh.shuffle,row.data,row.snapshot,row.context,row.visual);
+      row.category||categoryOf(d.label),d.state,d.revision,row.quiz,1,row.fresh.shuffle,row.data,row.snapshot,row.context,row.visual,null);
 }
 async function corpusData(env:Env,row:CorpusRow):Promise<Json>{
   if(row.size>128*1024)throw new Problem(503,'Invalid published record.');
@@ -195,16 +195,17 @@ const SHUFFLE_RANGE = 268435456;
 // a publication, a review, a round and an undo each make a new key. A refresh that writes `units`
 // without a new publication shows once the copy expires.
 const FACETS_TTL = 3600;
+type Facet = { label: string; document: string | null; title: string | null; state: string; n: number };
 async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, production: string, facets: D1PreparedStatement) {
   const version = await env.DB.prepare(`SELECT (SELECT value FROM metadata WHERE key='published_at') AS published,
     (SELECT max(rowid) FROM events) AS event,(SELECT max(rowid) FROM submissions) AS submission,
     (SELECT count(*) FROM submissions WHERE undone=1) AS undone`)
     .first<{ published: string | null; event: number | null; submission: number | null; undone: number }>();
-  const key = new Request(`${url.origin}/atlas/facets?production=${encodeURIComponent(production)}&v=${encodeURIComponent(
+  const key = new Request(`${url.origin}/atlas/facets?by=character,document&production=${encodeURIComponent(production)}&v=${encodeURIComponent(
     [version?.published ?? '', version?.event ?? 0, version?.submission ?? 0, version?.undone ?? 0].join(':'))}`);
   const cached = await caches.default.match(key);
-  if (cached) return { results: await cached.json() } as D1Result<{ label: string; state: string; n: number }>;
-  const groups = await facets.all<{ label: string; state: string; n: number }>();
+  if (cached) return { results: await cached.json() } as D1Result<Facet>;
+  const groups = await facets.all<Facet>();
   ctx.waitUntil(caches.default.put(key, Response.json(groups.results, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return groups;
 }
@@ -224,24 +225,33 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   where.push(materials); values.push(...materialValues);
   const reviewer = q.get('reviewer') ? text(q.get('reviewer'), 128, 'reviewer', true)! : null;
   const state = stateFor(reviewer);
-  const facets = env.DB.prepare(`SELECT character AS label,${state} AS state,count(*) AS n FROM units WHERE ${where.join(' AND ')} GROUP BY 1,2`).bind(...values);
+  // Counts by character and by book in one pass; a book's title is the one its crops were published with.
+  const facets = env.DB.prepare(`SELECT character AS label,document,max(json_extract(data,'$.source')) AS title,${state} AS state,count(*) AS n
+    FROM units WHERE ${where.join(' AND ')} GROUP BY 1,2,4`).bind(...values);
   // Only counts that are the same for every visitor are cached; a reviewer's own skips are theirs.
   const [groups, published] = review ? await env.DB.batch([facets,
     ...[corpusCountQuery(production)].map(({ sql, values }) => env.DB.prepare(sql).bind(...values)),
-  ]) as D1Result<{label:string;state?:string;n:number}>[] : [reviewer ? await facets.all<{ label: string; state: string; n: number }>() : await browseFacets(env, ctx, url, production, facets)];
-  const categories = new Map<string, Json>();
+  ]) as D1Result<Facet>[] : [reviewer ? await facets.all<Facet>() : await browseFacets(env, ctx, url, production, facets)];
+  const categories = new Map<string, Json>(), documents = new Map<string, Json>();
   const counts: Json = { pending: 0, seen: 0, flagged: 0, checked: 0, hard: 0, skipped: 0 };
-  const add = (label: string, state: string, n: number) => {
-    const category = categories.get(label) || { label, total: 0, pending: 0, seen: 0, checked: 0, flagged: 0, hard: 0, skipped: 0 };
+  const empty = { total: 0, pending: 0, seen: 0, checked: 0, flagged: 0, hard: 0, skipped: 0 };
+  const add = (label: string, state: string, n: number, document: string | null = null, title: string | null = null) => {
+    const category = categories.get(label) || { label, ...empty };
     category.total += n; category[state] += n; counts[state] += n;
     categories.set(label, category);
+    if (!document) return;
+    const book = documents.get(document) || { id: document, title, ...empty };
+    book.total += n; book[state] += n;
+    documents.set(document, book);
   };
-  for (const row of groups.results) add(row.label, row.state!, row.n);
+  for (const row of groups.results) add(row.label, row.state, row.n, row.document, row.title);
   // A corpus glyph nothing has named is pending for everyone, and the table counts them per character.
   const corpus = new Map<string, number>();
   if (review) for (const row of published.results) if (row.n > 0) { corpus.set(row.label, row.n); add(row.label, 'pending', row.n) }
   const reading = q.get('reading');
   if (reading) { where.push('character=?'); values.push(reading) }
+  const document = text(q.get('document'), 256, 'document');
+  if (document) { where.push('document=?'); values.push(document) }
   if (q.get('q')) { where.push('(character=? OR reading=?)'); values.push(literal(q.get('q')!), literal(q.get('q')!)) }
   if (q.get('group') && q.get('group') !== 'all') { where.push('category=?'); values.push(q.get('group')!) }
   // `attention` is the Flagged view: every crop waiting for a person, flagged or hard to read.
@@ -307,6 +317,7 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   return { total, next_offset: next, available: Object.values(counts).reduce((a:number,b:any) => a+b,0),
     counts, purpose, production, review_limit:ROUND_MAX, review_epoch: await meta(env, 'review_epoch') || 0, query: q.get('q'),
     categories: [...categories.values()].sort((a,b) => b.total-a.total || a.label.localeCompare(b.label)),
+    documents: [...documents.values()].sort((a,b) => b.total-a.total || (a.title ?? '').localeCompare(b.title ?? '') || a.id.localeCompare(b.id)),
     reported_count: reportedCount ? (reportedCount.results[0] as { n: number }).n : 0,
     items };
 }

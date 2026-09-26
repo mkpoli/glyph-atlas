@@ -79,7 +79,7 @@ def test_a_records_only_export_seals_into_packs_and_ordered_sql(scripts, tmp_pat
     replayed.execute("INSERT INTO corpus_characters VALUES('gone','unknown',9,0)")
     # A glyph a review named before this publication stays named after its row is rewritten.
     replayed.execute("INSERT INTO corpus_units VALUES('codh:1','𛂥','U+306F',NULL,1,'old',0,1,'unknown',0)")
-    replayed.execute("INSERT INTO units VALUES('codh:1','corpus','𛂥',NULL,NULL,NULL,'printed/woodblock','kana','checked',1,1,1,1,'{}','{}','{}','{}')")
+    replayed.execute("INSERT INTO units VALUES('codh:1','corpus','𛂥',NULL,NULL,NULL,'printed/woodblock','kana','checked',1,1,1,1,'{}','{}','{}','{}',NULL)")
     replayed.executescript(sql)
     assert replayed.execute("SELECT character,named FROM corpus_units WHERE id='codh:1'").fetchone() == ("𛂥", 1)
     # The last part regenerates the per-character counts from the rows D1 then holds.
@@ -172,9 +172,9 @@ def test_the_hangul_migration_moves_a_row_published_as_other(scripts):
     db = sqlite3.connect(":memory:")
     cloudflare_schema.schema(db)
     for unit_id, label, category in (("jamo", "ㅿ", "other"), ("kana", "あ", "kana"), ("latin", "A", "other")):
-        db.execute("INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        db.execute("INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                    (unit_id, "corpus", label, None, None, None, "unknown", category, "pending", 0, 1, 1, 0,
-                    json.dumps({"label": label, "category": category}), "{}", "{}", "{}"))
+                    json.dumps({"label": label, "category": category}), "{}", "{}", "{}", None))
     db.executescript(Path("apps/cloudflare/migrations/0008_hangul_category.sql").read_text())
     assert dict(db.execute("SELECT id,category FROM units")) == {"jamo": "hangul", "kana": "kana", "latin": "other"}
     assert json.loads(db.execute("SELECT data FROM units WHERE id='jamo'").fetchone()[0])["category"] == "hangul"
@@ -198,9 +198,26 @@ def test_the_gugyeol_migration_moves_a_row_published_as_other(scripts):
     db = sqlite3.connect(":memory:")
     cloudflare_schema.schema(db)
     for unit_id, label, category in (("gugyeol", "", "other"), ("kana", "あ", "kana"), ("latin", "A", "other")):
-        db.execute("INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        db.execute("INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                    (unit_id, "corpus", label, None, None, None, "unknown", category, "pending", 0, 1, 1, 0,
-                    json.dumps({"label": label, "category": category}), "{}", "{}", "{}"))
+                    json.dumps({"label": label, "category": category}), "{}", "{}", "{}", None))
     db.executescript(Path("apps/cloudflare/migrations/0012_gugyeol_category.sql").read_text())
     assert dict(db.execute("SELECT id,category FROM units")) == {"gugyeol": "gugyeol", "kana": "kana", "latin": "other"}
     assert json.loads(db.execute("SELECT data FROM units WHERE id='gugyeol'").fetchone()[0])["category"] == "gugyeol"
+
+
+def test_the_document_migration_reads_the_book_from_the_page_id():
+    """0019 fills a published local crop's book from its page id, `<document>:<page>`."""
+    db = sqlite3.connect(":memory:")
+    for path in sorted(Path("apps/cloudflare/migrations").glob("*.sql")):
+        if path.name < "0019":
+            db.executescript(path.read_text())
+    rows = (("local-a", "local", {"page_id": "hl:00AB:12"}), ("local-b", "local", {"page_id": "hk:entry:with:separators:9"}),
+            ("no-page", "local", {}), ("corpus", "corpus", {"page_id": "codh:1:2"}))
+    for unit_id, origin, data in rows:
+        db.execute("INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                   (unit_id, origin, "あ", None, None, None, "unknown", "kana", "pending", 0, 1, 1, 0,
+                    json.dumps(data), "{}", "{}", "{}"))
+    db.executescript(Path("apps/cloudflare/migrations/0019_unit_document.sql").read_text())
+    assert dict(db.execute("SELECT id,document FROM units")) == {
+        "local-a": "hl:00AB", "local-b": "hk:entry:with:separators", "no-page": None, "corpus": None}
