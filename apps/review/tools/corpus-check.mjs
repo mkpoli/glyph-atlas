@@ -77,14 +77,16 @@ try {
   await click('.corpus-dialog .save-character')
   await browser.waitFor(`!document.querySelector('dialog')`)
   await browser.evaluate(`visit('/flagged')`)
-  await browser.waitFor(`document.querySelector('[data-corpus="${fixture.next}"]')`)
+  // The collection page shows the same tile, so wait for the flagged page itself: a click that lands
+  // before the navigation finishes opens a dialog the new page then closes.
+  await browser.waitFor(`location.pathname === '/flagged' && document.querySelector('.glyph-grid[aria-busy="false"] [data-corpus="${fixture.next}"]')`)
   await click(`[data-corpus="${fixture.next}"]`)
-  await browser.waitFor(`document.querySelector('.corpus-dialog .state-pill')?.textContent === 'Flagged'`)
+  await browser.waitFor(`document.querySelector('.corpus-dialog .state-pill')?.classList.contains('flagged')`)
   assert(await browser.evaluate(`document.querySelector('dialog').scrollWidth <= document.querySelector('dialog').clientWidth + 1`), 'mobile dialog overflows')
   const proposal = (await exportRows()).find(row => row.source_update.proposed_character === '有')
   assert(proposal?.source_update.original_character === '在' && proposal.source_update.applied_upstream === false, 'export lost source proposal provenance')
   assert(errors.length === 0, 'browser exceptions: ' + errors.join(', '))
-  console.log('PASS corpus panel, source context, suggested correction, durable flag, save/next, neutral skips, export, mobile')
+  console.log('PASS corpus panel, source context, suggested correction, durable flag, save, neutral skips, export, mobile')
 } finally {
   await browser?.close()
   await service.stop()
