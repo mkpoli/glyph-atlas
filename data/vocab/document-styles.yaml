@@ -4,4 +4,814 @@
 # `reviewer` item with the day (`reviewed`), and any `style-teacher` suggestion shown to them
 # (`models/style/`, with its checkpoint) or `reference` that informed it.
 version: 1
-documents: {}
+documents:
+  "codh:100249371":
+    style: cursive
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 14
+        suggested: running
+  "codh:100249537":
+    style: running
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 27
+        suggested: running
+  "codh:200003076":
+    style: running
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 74
+        suggested: running
+  "codh:200003967":
+    style: running
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 16
+        suggested: cursive
+  "codh:200004148":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 48
+        suggested: regular
+  "codh:200005798":
+    style: cursive
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 40
+        suggested: cursive
+  "codh:200008316":
+    style: cursive
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 40
+        suggested: cursive
+  "codh:200014685":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 21
+        suggested: regular
+  "codh:200014740":
+    style: cursive
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 50
+        suggested: cursive
+  "codh:200015779":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 46
+        suggested: regular
+  "codh:200015843":
+    style: running
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 59
+        suggested: running
+  "codh:200018243":
+    style: running
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 15
+        suggested: running
+  "codh:200019865":
+    style: cursive
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 21
+        suggested: cursive
+  "codh:200020019":
+    style: cursive
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 12
+        suggested: cursive
+  "codh:200021071":
+    style: cursive
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 26
+        suggested: cursive
+  "codh:200021086":
+    style: running
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 12
+        suggested: cursive
+  "codh:200021644":
+    style: running
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 12
+        suggested: running
+  "codh:200021660":
+    style: running
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 46
+        suggested: running
+  "codh:200021712":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 33
+        suggested: regular
+  "codh:200021763":
+    style: running
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 25
+        suggested: running
+  "codh:200021802":
+    style: cursive
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 14
+        suggested: cursive
+  "codh:brsk00000":
+    style: running
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 88
+        suggested: running
+  "codh:hnsd00000":
+    style: running
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 78
+        suggested: running
+  "codh:umgy00000":
+    style: running
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 71
+        suggested: running
+  "hng:dng":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 24
+        suggested: regular
+  "hng:doh":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 16
+        suggested: regular
+  "hng:drt":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 17
+        suggested: regular
+  "hng:fhs":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 14
+        suggested: regular
+  "hng:gok":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 31
+        suggested: regular
+  "hng:hod":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 53
+        suggested: regular
+  "hng:hok":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 24
+        suggested: regular
+  "hng:hos":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 38
+        suggested: regular
+  "hng:ini":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 35
+        suggested: regular
+  "hng:ink":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 31
+        suggested: regular
+  "hng:jhk":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 17
+        suggested: regular
+  "hng:jou":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 21
+        suggested: regular
+  "hng:jyu":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 12
+        suggested: regular
+  "hng:k24":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 37
+        suggested: regular
+  "hng:kae":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 35
+        suggested: regular
+  "hng:kak":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 19
+        suggested: regular
+  "hng:kar":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 36
+        suggested: regular
+  "hng:kbk":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 38
+        suggested: regular
+  "hng:kcc":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 28
+        suggested: regular
+  "hng:kcj":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 35
+        suggested: regular
+  "hng:keg":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 19
+        suggested: regular
+  "hng:kgk":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 17
+        suggested: regular
+  "hng:khi":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 19
+        suggested: regular
+  "hng:khm":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 20
+        suggested: regular
+  "hng:kkd":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 14
+        suggested: regular
+  "hng:kkh":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 19
+        suggested: regular
+  "hng:kmi":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 28
+        suggested: regular
+  "hng:ksk":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 18
+        suggested: regular
+  "hng:kss":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 22
+        suggested: running
+  "hng:kyd":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 44
+        suggested: regular
+  "hng:kyo":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 20
+        suggested: regular
+  "hng:kyu":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 20
+        suggested: regular
+  "hng:mam":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 39
+        suggested: regular
+  "hng:myz":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 25
+        suggested: regular
+  "hng:nak":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 19
+        suggested: regular
+  "hng:nkk":
+    style: running
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 32
+        suggested: running
+  "hng:nkm":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 29
+        suggested: regular
+  "hng:nto":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 42
+        suggested: running
+  "hng:okd":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 18
+        suggested: regular
+  "hng:sab":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 12
+        suggested: regular
+  "hng:sai":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 14
+        suggested: regular
+  "hng:sgs":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 25
+        suggested: regular
+  "hng:sik":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 18
+        suggested: regular
+  "hng:skj":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 16
+        suggested: regular
+  "hng:skk":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 12
+        suggested: regular
+  "hng:smk":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 26
+        suggested: regular
+  "hng:sts":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 12
+        suggested: regular
+  "hng:sys":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 24
+        suggested: regular
+  "hng:tsu":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 38
+        suggested: regular
+  "hng:tzj":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 12
+        suggested: regular
+  "hng:tzs":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 28
+        suggested: regular
+  "hng:wan":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 23
+        suggested: regular
+  "hng:wke":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 23
+        suggested: regular
+  "hng:wks":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 23
+        suggested: regular
+  "hng:yhk":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 24
+        suggested: regular
+  "hng:ykk":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 23
+        suggested: regular
+  "hng:zkd":
+    style: regular
+    evidence:
+      - source: reviewer
+        reviewed: 2026-09-26
+        note: "kanji crops compared with the style teacher suggestion"
+      - source: style-teacher
+        checkpoint_sha256: f312704b54b03c86149b8c38f6172a7df6b3504c46e28ca0dc056eca4b4a8ee1
+        crops: 55
+        suggested: regular
