@@ -1,11 +1,8 @@
 #!/usr/bin/env bun
 // Read-only browser check: staged UI, live corpus, bounded intercepted candidate examples.
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import Browser from './browser.mjs'
 
-const base = process.argv[2] ?? 'http://127.0.0.1:8770'
-const build = process.argv[3] ?? 'dist-family-check'
+const base = process.argv[2] ?? 'http://127.0.0.1:4173'
 const citedId = 'ex:c358736e26b4c11e:3b550be22a3a596506f6'
 const browser = await Browser.launch({ width: 1440, height: 1000 })
 const errors = [], queries = []
@@ -24,12 +21,6 @@ browser.listeners.push(event => {
     if (path === '/layers/candidates') queries.push(Object.fromEntries(url.searchParams))
     if (path === '/layers/candidates' && failCandidates) return fulfill(requestId, { detail: 'Test corpus outage' }, 502)
     if (request.method !== 'GET') return browser.send('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' })
-    if (path === '/' || path.startsWith('/assets/')) {
-      const file = join(import.meta.dir, '..', build, path === '/' ? 'index.html' : path.slice(1))
-      return browser.send('Fetch.fulfillRequest', { requestId, responseCode: 200,
-        responseHeaders: [{ name: 'Content-Type', value: path === '/' ? 'text/html' : path.endsWith('.css') ? 'text/css' : 'application/javascript' }],
-        body: readFileSync(file).toString('base64') })
-    }
     if (path === '/layers/suggest' && url.searchParams.get('q') === 'ム') return fulfill(requestId, {
       items: [{ code_point: 'U+30E0', char: 'ム', script: 'katakana' }, { code_point: 'U+53B6', char: '厶', script: 'han' }], more: 0,
     })

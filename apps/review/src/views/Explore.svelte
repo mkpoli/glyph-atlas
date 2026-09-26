@@ -10,9 +10,12 @@
   import { catalogue, character, request, randomSeed, number, stored, remember } from '../lib/client.js'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery } from '../lib/layers.js'
   import { t, around, localName, locale } from '../lib/i18n.svelte.js'
-  let { flagged = false, inspect, ink = 'original', onink = () => {}, onprogress = () => {} } = $props()
-  let data = $state(null), items = $state([]), error = $state(''), loading = $state(true)
-  let reading = $state(''), search = $state(''), offset = $state(0), seed = $state(randomSeed())
+  // `initial` is the first page the server rendered: the seed it shuffled with, the collection's rows,
+  // the corpus sample and the progress line. Without it the view loads them itself.
+  let { flagged = false, inspect, ink = 'original', onink = () => {}, onprogress = () => {}, initial = null } = $props()
+  const first = untrack(() => initial)
+  let data = $state(first?.result ?? null), items = $state(first?.result.items ?? []), error = $state(''), loading = $state(!first)
+  let reading = $state(''), search = $state(''), offset = $state(0), seed = $state(first?.seed ?? randomSeed())
   let query = $state('')
   let choosing = $state(false), catalogueRequest = null
   let categoryOpen = $state(false), filter = $state('all'), requestId = 0, closed = false
@@ -33,7 +36,8 @@
   // The unfiltered homepage mixes a bounded corpus sample with the collection's own rows, so the
   // first page is not one source's leftovers: the sample is normalised by the same adapter and
   // deduplicated against what is already on the page.
-  let sample = $state([]), sampleFault = $state(null), collection = $state(null)
+  let sample = $state(first ? sampleRows(first.sample, first.result.items) : []), sampleFault = $state(first?.sample ? (first.sample.status === 'ok' ? null : first.sample.status) : null)
+  let collection = $state(first?.collection ?? null)
   async function readCollection() {
     try { collection = await request('/atlas/collection/status') } catch { /* retry on the next interval */ }
   }
@@ -176,15 +180,20 @@
     try {
       const page = await layerGallery(60, seed)
       if (closed || id !== requestId) return
-      const known = new Set(localRows.flatMap(row => [row.id, row.identity_key].filter(Boolean)))
-      sample = (page.items ?? [])
-        .filter(row => row.proxyable && row.image)
-        .filter(row => !known.has(row.id) && !known.has(row.identity_key))
-        .map(row => ({ ...row, label: writtenLabel(row), origin: 'corpus' }))
+      sample = sampleRows(page, localRows)
       sampleFault = page.status === 'ok' ? null : page.status
     } catch (e) {
       if (!closed && id === requestId) { sample = []; sampleFault = e.status === 502 ? 'error' : 'not-loaded' }
     }
+  }
+
+  /** A gallery page as tiles: images this site may show, none the collection's own rows already hold. */
+  function sampleRows(page, localRows) {
+    const known = new Set(localRows.flatMap(row => [row.id, row.identity_key].filter(Boolean)))
+    return (page?.items ?? [])
+      .filter(row => row.proxyable && row.image)
+      .filter(row => !known.has(row.id) && !known.has(row.identity_key))
+      .map(row => ({ ...row, label: writtenLabel(row), origin: 'corpus' }))
   }
 
   let searchTimer
@@ -300,7 +309,7 @@
   }
   function select(value) { reading = value; offset = 0; categoryOpen = false; load() }
   function shuffle() { seed = randomSeed(); offset = 0; load() }
-  onMount(() => { load(); readCollection(); const timer = setInterval(readCollection, 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
+  onMount(() => { if (!first) { load(); readCollection() } const timer = setInterval(readCollection, 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
   // Widening is the reader's choice and only it reloads the gallery; picking a character resets the
   // widening itself and loads once through `pick`.
   $effect(() => { const value = expand; untrack(() => { visual = ''; if (picked && !closed) load() }) })
@@ -327,7 +336,7 @@
     </div>
     <span class="toolbar-space"></span>
     <ImageStyleToggle {ink} onchange={onink} />
-    {#if reading && !flagged}<a class="quiet-link" href={`#/review?reading=${encodeURIComponent(reading)}`}>{t('explore.reviewReading', { reading })}</a>{/if}
+    {#if reading && !flagged}<a class="quiet-link" href={`/review?reading=${encodeURIComponent(reading)}`}>{t('explore.reviewReading', { reading })}</a>{/if}
     {#if flagged && data?.reported_count}<button class="quiet-link" onclick={toggleReported}>{showReported ? t('explore.flagged.hideReported') : t('explore.flagged.showReported', { count: data.reported_count })}</button>{/if}
     <button class="shuffle" onclick={shuffle} disabled={loading} aria-label={t('explore.shuffle.aria')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h3c4 0 8 12 12 12h3M17 14l4 4-4 4M3 18h3c1.7 0 3.5-2.3 5-5M14 8c1.5-1.4 2.6-2 4-2h3M17 2l4 4-4 4"/></svg>{t('explore.shuffle')}</button>
   </div>
@@ -351,7 +360,7 @@
     {#if loading && !display.length}{#each Array(32) as _}<div class="glyph-skeleton"></div>{/each}
     {:else}{#each display as item, i (item.id)}{#if picked && expand === 'grapheme' && (i === 0 || visualGroup(display[i - 1]).id !== visualGroup(item).id)}<div class="visual-grid-heading">{groupLabel(visualGroup(item))}</div>{/if}{#if item.origin === 'corpus'}<button class="glyph-tile corpus" data-corpus={item.id} onclick={() => inspect(item.id, null, display, updateItem, 'corpus')} aria-label={t('explore.tile.inspectCorpus', { label: shownLabel(item) })}><span class="tile-reading"><span class="tile-glyph" class:unassigned={isUnassigned(item)} lang={isUnassigned(item) ? undefined : 'ja'}>{shownLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" lang="ja" title={t('chips.grapheme')}>{shownGrapheme(item)}</span>{/if}</span><span class="tile-details">{#each tileDetails(item) as line}<span>{line}</span>{/each}<span class="tile-id">{item.id}</span></span>{#if item.proxyable && item.image}<img class="glyph-image" src={item.image} alt={t('explore.tile.located', { label: shownLabel(item) })} loading={i < 24 ? "eager" : "lazy"} fetchpriority={i < 24 ? "high" : "auto"} decoding="async" />{:else}<span class="corpus-open"><b>{shownLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}<span class="tile-footer"><span class="status-dot" class:checked={tileState(item) === 'checked'} class:flagged={waiting(tileState(item))} class:withheld={tileState(item) === 'withheld'}></span>{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{String(i + 1).padStart(2, '0')}</span><span class="tile-arrow">↗</span></span></button>{:else}<button class="glyph-tile" data-unit={item.id} onclick={() => inspect(item.id, null, display, updateItem)} aria-label={t('explore.tile.inspect', { label: shownLabel(item) })}><span class="tile-reading"><span class="tile-glyph" class:unassigned={isUnassigned(item)} lang={isUnassigned(item) ? undefined : 'ja'}>{shownLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" lang="ja" title={t('chips.grapheme')}>{shownGrapheme(item)}</span>{/if}</span><span class="tile-details">{#each tileDetails(item) as line}<span>{line}</span>{/each}<span class="tile-id">{item.id}</span></span><Glyph {item} eager={i < 24} /><span class="tile-footer"><span class="status-dot" class:checked={tileState(item) === 'checked'} class:flagged={waiting(tileState(item))} class:withheld={tileState(item) === 'withheld'}></span>{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{String(i + 1).padStart(2, '0')}</span><span class="tile-arrow">↗</span></span></button>{/if}{/each}{/if}
   </div>
-  {#if !choosing && !loading && !display.length}<div class="empty"><span class="empty-mark">{picked || (settled && settled.total === 0) ? '∅' : flagged ? '✓' : '∅'}</span><h2>{picked && corpusFault ? t('explore.empty.samplesFailed', { char: picked.char }) : picked ? t('explore.empty.noOccurrenceOf', { char: picked.char }) : settled && settled.total === 0 ? t('explore.empty.noOccurrenceOfTerm', { term: readable }) : flagged ? t('explore.empty.nothingFlagged') : t('explore.empty.noCharacters')}</h2>{#if query}<button class="primary" onclick={clearQuery}>{t('explore.clearSearch')}</button>{:else}<a href="#/review" class="primary">{t('explore.startRound')}</a>{/if}</div>{/if}
+  {#if !choosing && !loading && !display.length}<div class="empty"><span class="empty-mark">{picked || (settled && settled.total === 0) ? '∅' : flagged ? '✓' : '∅'}</span><h2>{picked && corpusFault ? t('explore.empty.samplesFailed', { char: picked.char }) : picked ? t('explore.empty.noOccurrenceOf', { char: picked.char }) : settled && settled.total === 0 ? t('explore.empty.noOccurrenceOfTerm', { term: readable }) : flagged ? t('explore.empty.nothingFlagged') : t('explore.empty.noCharacters')}</h2>{#if query}<button class="primary" onclick={clearQuery}>{t('explore.clearSearch')}</button>{:else}<a href="/review" class="primary">{t('explore.startRound')}</a>{/if}</div>{/if}
   {#if picked && (!visual && local.length < (data?.total ?? 0) || corpusOffset < corpusTotal) && !loading}
     <div class="load-more">
       {#if corpusOffset < corpusTotal}<button onclick={moreCorpus}>{t('explore.moreFromCorpus')}</button>{/if}

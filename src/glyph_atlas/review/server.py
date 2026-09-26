@@ -38,7 +38,6 @@ from typing import Annotated, Any, Literal
 import uvicorn
 from fastapi import Body, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 
 from .. import __version__, ainu_native, ainu_source, images, refs
 from ..schema import Unit
@@ -60,16 +59,6 @@ from .store import (
 
 #: The checksum of a cached file, which is also its name under `cache/images/<first two>/`.
 SHA256 = re.compile(r"[0-9a-f]{64}")
-
-
-class ReviewInterface(StaticFiles):
-    """Revalidate the entry page so a refresh loads the current hashed assets."""
-
-    async def get_response(self, path, scope):
-        response = await super().get_response(path, scope)
-        if path in (".", "index.html"):
-            response.headers["Cache-Control"] = "no-cache, must-revalidate"
-        return response
 
 
 def _page_notes(store: Store, page_id: str) -> list[dict[str, Any]]:
@@ -671,12 +660,6 @@ def create_app(directory: Path, *, source: Path | str | None = None,
     # The page photos and the boxes on them, where a reviewer draws a box the dataset lacks.
     from .pages import router as pages_router
     app.include_router(pages_router(store))
-
-    # The built review interface (`apps/review`, `bun run build`), mounted last so that every API
-    # path above keeps its own route; without a build the service is the API alone.
-    interface = Path(__file__).resolve().parents[3] / "apps" / "review" / "dist"
-    if (interface / "index.html").is_file():
-        app.mount("/", ReviewInterface(directory=interface, html=True), name="review-interface")
 
     return app
 

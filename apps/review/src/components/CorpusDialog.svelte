@@ -13,24 +13,29 @@
   import CharacterSearch from './CharacterSearch.svelte'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import CropContext from './CropContext.svelte'
-  let { id, clientId, close, saved, previous = null, next = null, position = '' } = $props()
-  let dialog, data = $state(null), error = $state(''), busy = $state(false)
+  // `initial` is the record the server rendered the page with, so the first load needs no request.
+  let { id, clientId, close, saved, previous = null, next = null, position = '', initial = null } = $props()
+  const first = untrack(() => initial)
+  let dialog, data = $state(first), error = $state(''), busy = $state(false)
   let issue = $state(null), noneSelected = $state(false), correction = $state(null), note = $state(''), search = $state('')
   let loaded = $state(false), imageFailed = $state(false), suggestionsElement = $state(null)
   let generation = 0, closed = false, submission = null
   const sourceName = $derived(data?.source?.corpus === 'codh-full' ? 'CODH' : data?.source?.corpus || t('corpus.genericName'))
-  async function load(target) {
+  async function load(target, preloaded = null) {
     const current = ++generation
-    data = null; error = ''; issue = null; correction = null; noneSelected = false; note = ''; search = ''
+    data = preloaded; error = ''; issue = null; correction = null; noneSelected = false; note = ''; search = ''
     loaded = false; imageFailed = false; submission = null
     dialog?.scrollTo({ top: 0 })
     try {
-      const result = await corpusCharacter(target)
+      const result = preloaded ?? await corpusCharacter(target)
       if (!closed && current === generation) data = result
     } catch (e) { if (!closed && current === generation) error = e.message }
   }
-  $effect(() => { const target = id; untrack(() => load(target)) })
-  onMount(() => { dialog.showModal(); return () => { closed = true; generation++ } })
+  // Only the first load, of the crop the page was rendered for, starts from `initial`.
+  let preloaded = first
+  $effect(() => { const target = id; untrack(() => { load(target, preloaded); preloaded = null }) })
+  // Rendered open on the server, reopened as a modal once the script runs.
+  onMount(() => { if (dialog.open) dialog.close(); dialog.showModal(); return () => { closed = true; generation++ } })
   function skip() { if (!busy) { if (next) next(); else close() } }
   async function chooseIssue(value) {
     issue = value; correction = null; noneSelected = false; submission = null; search = ''
@@ -57,7 +62,7 @@
   }
 </script>
 
-<dialog class="character-dialog corpus-dialog" bind:this={dialog} oncancel={close} onclick={e => { if (e.target === dialog) close() }} aria-label={t('corpus.dialog.label')}>
+<dialog class="character-dialog corpus-dialog" bind:this={dialog} open oncancel={close} onclick={e => { if (e.target === dialog) close() }} aria-label={t('corpus.dialog.label')}>
   <div class="inspector">
     <header class="inspector-header"><span class="overline">{data?.needs_segmentation ? t('corpus.overline.group') : t('character.overline')}</span><div class="inspector-navigation"><span>{position}</span><button class="icon-button previous-character" aria-label={t('common.previousCharacter')} disabled={busy || !previous} onclick={() => previous?.()}>←</button><button class="icon-button next-character" aria-label={t('common.nextCharacter')} disabled={busy || !next} onclick={() => next?.()}>→</button><button class="icon-button close-inspector" aria-label={t('common.closeReviewer')} onclick={close}>×</button></div></header>
     {#if error}<div class="error-message" role="alert">{error}<button disabled={busy} onclick={() => load(id)}>{t('character.reload')}</button></div>{/if}

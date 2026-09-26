@@ -11,17 +11,24 @@ The inspector shows the character and a small surrounding region.
 
 ## Run
 
+The interface is a SvelteKit app rendered on the server. On Cloudflare it runs in the Worker with the
+API in `apps/cloudflare`; locally it forwards `/atlas`, `/layers`, `/images` and `/reviews` to the review
+service named by `ATLAS_REVIEW_API`.
+
 From the repository root:
 
 ```sh
 bun install --cwd apps/review
 bun run --cwd apps/review build
 devrun .venv/bin/atlas review serve work/ainu-records --port 8770
+ATLAS_REVIEW_API=http://127.0.0.1:8770 devrun bun run --cwd apps/review preview
 ```
 
-Open <http://127.0.0.1:8770/>. Stop the command with Ctrl-C when finished.
-For frontend development, Vite forwards `/atlas` to `ATLAS_REVIEW_API` (default port 8770).
+Open <http://127.0.0.1:4173/>. For frontend development, run `vite dev` with the same variable.
 Run development servers through `devrun`.
+
+`bun run --cwd apps/cloudflare deploy` builds this app and deploys it with the Worker configuration in
+`apps/cloudflare/wrangler.jsonc`.
 
 ## Review
 

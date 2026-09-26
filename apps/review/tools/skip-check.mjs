@@ -38,7 +38,7 @@ try {
   }))`
   const reviewedText = `document.querySelector('.round-count')?.textContent ?? ''`
 
-  await browser.goto(`${service.base}/#/review`, {
+  await browser.goto(`${service.base}/review`, {
     waitFor: `document.querySelectorAll('.quiz-choice').length > 0`,
   })
   // Deliberately no wait for the round to settle: the round loads itself on mount and may still be
@@ -195,7 +195,7 @@ try {
 
   // 6. In the collection inspector, Skip advances the existing queue in place, however many times
   // in a row it is pressed.
-  await browser.evaluate(`location.hash = '#/'`)
+  await browser.evaluate(`visit('/')`)
   await browser.waitFor(`document.querySelectorAll('.glyph-tile[data-unit]').length > 3`)
   const order = await browser.evaluate(`[...document.querySelectorAll('.glyph-tile[data-unit]')].map(t => t.dataset.unit)`)
   await click('.glyph-tile[data-unit]')

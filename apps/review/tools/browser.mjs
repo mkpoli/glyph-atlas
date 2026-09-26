@@ -103,6 +103,10 @@ export class Browser {
     const browser = new Browser(process_, socket, directory)
     await browser.send('Page.enable')
     await browser.send('Runtime.enable')
+    // `visit(path)` moves within the app the way a link does, without reloading the page.
+    await browser.send('Page.addScriptToEvaluateOnNewDocument', { source: `window.visit = path => {
+      const link = Object.assign(document.createElement('a'), { href: path })
+      document.body.append(link); link.click(); link.remove() }` })
     await browser.setViewport(width, height)
     return browser
   }
@@ -152,18 +156,12 @@ export class Browser {
     })
   }
 
-  /** Load a URL and wait for the load event; a hash-only change waits for the new route instead. */
+  /** Load a URL and wait until the app has hydrated it: before that, a click reaches no handler. */
   async goto(url, { waitFor = null, timeout = 30000 } = {}) {
-    const target = new URL(url)
     const loaded = this.once('Page.loadEventFired', timeout).catch(() => null)
     await this.send('Page.navigate', { url })
     await loaded
-    // Navigating to the same document with another hash fires no load event, so wait for the route
-    // itself; the app answers a `hashchange` by fetching and rendering the view.
-    await this.waitFor(
-      `location.hash === ${JSON.stringify(target.hash)} && document.readyState === 'complete'`,
-      timeout,
-    )
+    await this.waitFor(`document.documentElement.dataset.hydrated !== undefined`, timeout)
     if (waitFor) await this.waitFor(waitFor, timeout)
     return this
   }

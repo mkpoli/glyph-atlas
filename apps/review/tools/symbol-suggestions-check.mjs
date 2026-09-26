@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import Browser from './browser.mjs'
 
-const base = process.env.ATLAS_URL || 'http://127.0.0.1:8770/'
+const base = process.env.ATLAS_URL || 'http://127.0.0.1:4173/'
 let browser
 try {
   browser = await Browser.launch({ width: 1280, height: 1000 })
