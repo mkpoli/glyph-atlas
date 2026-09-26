@@ -1,9 +1,9 @@
 import { t } from './i18n.svelte.js'
 
 /** The character layer's API: candidate search, exact characters, graphemes and ligatures. */
-async function get(path, params = {}, options = {}) {
+async function get(path, params = {}, { fetch: send = fetch, ...options } = {}) {
   const query = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== '' && v != null))
-  const response = await fetch(path + (query.size ? '?' + query : ''), {
+  const response = await send(path + (query.size ? '?' + query : ''), {
     headers: { accept: 'application/json' }, priority: 'high',
     signal: AbortSignal.timeout(15000), ...options,
   })
@@ -23,7 +23,7 @@ export const character = (codePoint, expand = 'none') => get('/layers/characters
 export const occurrences = (codePoint, params = {}) => get('/layers/occurrences', { code_point: codePoint, ...params })
 export const graphemes = (params = {}) => get('/layers/graphemes', params)
 export const ligatures = () => get('/layers/ligatures')
-export const gallery = (limit = 24, seed = 0) => get('/layers/gallery', { limit, seed })
+export const gallery = (limit = 24, seed = 0, options) => get('/layers/gallery', { limit, seed }, options)
 export const candidates = (codePoint, limit = 24, offset = 0, options = {}) => get('/layers/candidates', { code_point: codePoint, limit, offset: offset || '', ...options })
 export const layerSummary = () => get('/layers/summary')
 

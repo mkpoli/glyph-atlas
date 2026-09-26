@@ -2,9 +2,9 @@ import { request } from './client.js'
 
 // The page photos and the boxes on them. Only the local review service serves these routes; the
 // hosted Worker answers 404, so the Pages view and its drawing tools stay hidden there.
-export async function pagesAvailable() {
+export async function pagesAvailable(send = fetch) {
   try {
-    const response = await fetch('/atlas/pages', { method: 'GET' })
+    const response = await send('/atlas/pages', { method: 'GET' })
     return response.ok && (response.headers.get('content-type') || '').includes('application/json')
   } catch { return false }
 }

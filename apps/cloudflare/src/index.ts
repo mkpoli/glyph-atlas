@@ -754,8 +754,7 @@ export default {
         return json({items:rows.results.map(compact),total:rows.results.length})}
       if(path.startsWith('/atlas/forms/')){const formed=await formsRoute(env,request,path,q,formTools);
         if(formed)return formed instanceof Response?formed:json(formed)}
-      if(path.startsWith('/atlas')||path.startsWith('/layers')||path.startsWith('/images/'))throw new Problem(404,'Unknown endpoint.');
-      return await env.ASSETS.fetch(request);
+      throw new Problem(404,'Unknown endpoint.');
     }catch(error){
       const open=path.startsWith('/atlas/documents/')?OPEN:{};
       if(error instanceof Problem)return json({detail:error.message,...error.extra},error.status,open);

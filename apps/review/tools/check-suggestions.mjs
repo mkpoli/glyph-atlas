@@ -1,6 +1,6 @@
 import Browser from './browser.mjs'
 
-const base = process.env.ATLAS_URL || 'http://127.0.0.1:8770/'
+const base = process.env.ATLAS_URL || 'http://127.0.0.1:4173/'
 let browser
 const assert = (condition, message) => { if (!condition) throw new Error(message) }
 async function open(mode, index = 0) {
@@ -62,7 +62,7 @@ try {
   console.log('PASS: late replies from a closed character are discarded')
 
   await browser.key('Escape')
-  await browser.evaluate(`window.suggestionMode = 'context-first'; window.delayedSuggestions = []; location.hash = '#/review'`)
+  await browser.evaluate(`window.suggestionMode = 'context-first'; window.delayedSuggestions = []; visit('/review')`)
   await browser.waitFor("document.querySelector('.quiz-choice:not(:disabled)') !== null")
   await browser.evaluate("document.querySelector('.quiz-choice:not(:disabled)').click()")
   await browser.evaluate("[...document.querySelectorAll('.round-error-tools .issue-card')].find(b => b.innerText.includes('Joined')).click()")

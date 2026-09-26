@@ -42,7 +42,7 @@ try {
   const errors = []
   browser.listeners.push(m => { if (m.method === 'Runtime.exceptionThrown') errors.push(m.params.exceptionDetails?.text) })
 
-  await browser.goto(`${service.base}/#/explore`, { waitFor: `document.querySelectorAll('.glyph-tile').length > 0` })
+  await browser.goto(`${service.base}/`, { waitFor: `document.querySelectorAll('.glyph-tile').length > 0` })
 
   // A reading filter is on, as a reviewer would have left it. A direct character search has to
   // answer its own question rather than intersect with it.

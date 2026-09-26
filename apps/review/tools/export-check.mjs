@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import Browser from './browser.mjs'
 
 const index = process.argv.indexOf('--server')
-const base = (index >= 0 ? process.argv[index + 1] : 'http://127.0.0.1:8770').replace(/\/$/, '')
+const base = (index >= 0 ? process.argv[index + 1] : 'http://127.0.0.1:4173').replace(/\/$/, '')
 const browser = await Browser.launch({ width: 1440, height: 1000 })
 const requested = [], errors = [], writes = []
 const assert = (value, message) => { if (!value) throw new Error(message) }
@@ -33,7 +33,7 @@ async function click(selector) {
 }
 try {
   await browser.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] })
-  await browser.goto(base + '/#/review', { waitFor: `!!document.querySelector('[aria-label="Review options"]')` })
+  await browser.goto(base + '/review', { waitFor: `!!document.querySelector('[aria-label="Review options"]')` })
   await click('[aria-label="Review options"]')
   await click('.options-menu button:last-of-type')
   await browser.waitFor('!!document.querySelector(".export-count")')

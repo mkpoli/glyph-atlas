@@ -25,10 +25,10 @@ try {
     ] })).toString('base64'),
   }) })
   async function click(selector) { await browser.evaluate(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'center'})`); const p = await browser.centre(selector); await browser.click(p.x, p.y) }
-  async function route(hash, ready) { await browser.evaluate(`location.hash=${JSON.stringify(hash)}`); await browser.waitFor(ready) }
+  async function route(hash, ready) { await browser.evaluate(`visit(${JSON.stringify(hash)})`); await browser.waitFor(ready) }
   const roundReady = 'document.querySelectorAll(".quiz-choice").length > 0 && !document.querySelector(".quiz-submit .primary")?.disabled'
   const inspectorReady = 'document.querySelector("dialog[open] .inspector-crop img")?.naturalWidth > 0 && !document.querySelector(".save-character")?.disabled'
-  await browser.goto(service.base + '/#/', { waitFor: 'document.querySelectorAll(".glyph-tile").length > 0' })
+  await browser.goto(service.base + '/', { waitFor: 'document.querySelectorAll(".glyph-tile").length > 0' })
   await browser.waitFor('Array.from(document.querySelectorAll(".glyph-grid img")).slice(0,12).every(i => i.complete && i.naturalWidth)')
   assert(!await browser.evaluate('document.querySelector("nav").innerText.includes("Sources")'), 'old source navigation remains')
   const before = await browser.evaluate('document.querySelector(".glyph-grid img").src')
@@ -88,7 +88,7 @@ try {
   await click('.close-inspector')
   console.log('PASS optional crop adjustment retains next navigation')
 
-  await route('#/review?reading=あ', roundReady)
+  await route('/review?reading=あ', roundReady)
   const availableTiles = await browser.evaluate('Array.from(document.querySelectorAll(".quiz-tile")).flatMap((tile, index) => tile.classList.contains("unavailable") ? [] : [index + 1])')
   assert(availableTiles.length >= 4, 'fixture has four viewable crops')
   const tile = n => `.quiz-tile:nth-child(${availableTiles[n]})`
@@ -163,7 +163,7 @@ try {
   await browser.setViewport(390, 844)
   await browser.screenshot(join(screenshots, 'error-quiz-mobile.png'))
   assert(await browser.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'quiz mobile overflow')
-  await route('#/', 'document.querySelectorAll(".glyph-tile").length > 0')
+  await route('/', 'document.querySelectorAll(".glyph-tile").length > 0')
   await click('.glyph-tile')
   await browser.waitFor(inspectorReady)
   await click('dialog .issue-card[data-issue="merged"]')
@@ -175,7 +175,7 @@ try {
   await browser.send('Network.enable')
   await browser.send('Network.setBlockedURLs', { urls: ['*/atlas/characters/*/image*'] })
   await browser.send('Network.setCacheDisabled', { cacheDisabled: true })
-  await route('#/review?reading=い', 'document.querySelectorAll(".quiz-tile.unavailable").length > 0')
+  await route('/review?reading=い', 'document.querySelectorAll(".quiz-tile.unavailable").length > 0')
   await browser.waitFor('document.querySelectorAll(".quiz-tile.unavailable").length === document.querySelectorAll(".quiz-tile").length')
   assert(await browser.evaluate('document.querySelector(".quiz-submit .primary").classList.contains("next-round")'), 'unseen crops offer only Next round')
   const beforeUnavailable = events(config.directory).length

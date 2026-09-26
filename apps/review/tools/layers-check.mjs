@@ -37,7 +37,7 @@ try {
       posts.push(`${m.params.request.url.split('/').slice(-2).join('/')} ${m.params.request.postData ?? ''}`)
     }
   })
-  await browser.goto(service.base + '/#/', { waitFor: 'document.querySelectorAll(".glyph-tile").length > 0' })
+  await browser.goto(service.base + '/', { waitFor: 'document.querySelectorAll(".glyph-tile").length > 0' })
   const setQuery = async text => {
     await browser.evaluate(`(() => { const i = document.querySelector('.character-search input'); i.focus();
       i.value = ${JSON.stringify(text)}; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
@@ -125,14 +125,14 @@ try {
   // discovered, so this test cannot quietly pass by finding a record with no difference to test.
   const LAYERED = 'doc-1:p1:l3:u2'
   const openReviewer = async id => {
-    await browser.evaluate(`location.hash = '#/'`)
+    await browser.evaluate(`visit('/')`)
     await browser.waitFor('document.querySelector("dialog[open]") === null', 4000)
-    await browser.evaluate(`location.hash = '#/character/' + encodeURIComponent(${JSON.stringify(id)})`)
+    await browser.evaluate(`visit('/character/' + encodeURIComponent(${JSON.stringify(id)}))`)
     try {
       await browser.waitFor('document.querySelector("dialog[open] .inspector-crop img")?.naturalWidth > 0', 6000)
     } catch (error) {
       const state = await browser.evaluate(`JSON.stringify({
-        hash: location.hash, dialog: !!document.querySelector('dialog[open]'),
+        path: location.pathname, dialog: !!document.querySelector('dialog[open]'),
         crop: !!document.querySelector('.inspector-crop img'),
         natural: document.querySelector('.inspector-crop img')?.naturalWidth ?? null,
         error: document.querySelector('dialog .error-message')?.innerText ?? null,
@@ -202,7 +202,7 @@ try {
   await step('the ordinary collection keeps its review queue after a correction', async () => {
     // The homepage inspector queue is the path a correction must not break: its Next steps through
     // the collection's own rows, not through a character gallery that may hold one record.
-    await browser.evaluate(`location.hash = '#/'`)
+    await browser.evaluate(`visit('/')`)
     await browser.waitFor('document.querySelector("dialog[open]") === null', 4000)
     // The search box still holds the last query; the collection behind it is what is being tested.
     await browser.evaluate(`document.querySelector('.find-clear')?.click()`)

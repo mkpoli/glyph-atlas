@@ -1,13 +1,17 @@
 <script>
-  import { onMount } from 'svelte'
+  import { onMount, untrack } from 'svelte'
+  import { replaceState } from '$app/navigation'
+  import { page } from '$app/state'
   import ReferenceGlyph from '../components/ReferenceGlyph.svelte'
   import FormReview from '../components/FormReview.svelte'
   import { families as loadFamilies, family as loadFamily, members as loadMembers, decide, split as loadSplit } from '../lib/forms.js'
   import { number, reviewer, stored, remember } from '../lib/client.js'
   import { t, around } from '../lib/i18n.svelte.js'
 
-  let { initialFamily = '' } = $props()
-  let list = $state([]), filter = $state(''), current = $state(null), code = $state('')
+  // `initial` is what the server rendered: the family list and the family on show, arranged by shape.
+  let { initialFamily = '', initial = null } = $props()
+  const first = untrack(() => initial)
+  let list = $state(first?.list ?? []), filter = $state(''), current = $state(null), code = $state(first?.family?.code_point ?? '')
   let active = $state(0), open = $state(null), glyphs = $state([]), total = $state(0), order = $state('typical')
   let chosen = $state(new Set()), anchor = null, busy = $state(false), error = $state(''), notice = $state('')
   let correcting = $state(false), correction = $state('')
@@ -32,14 +36,19 @@
     : cluster ? t('forms.target.clusterGlyphs', { label: cluster.label, count: cluster.count }) : '')
 
   async function refreshList() { list = (await loadFamilies()).items }
+  /** A family as the grid shows it: with open clusters first when the reader asks for that. */
+  function arranged(loaded) {
+    if (openFirst) loaded.items = [...loaded.items.filter(isOpen), ...loaded.items.filter(c => !isOpen(c))]
+    return loaded
+  }
+  if (first?.family) { const shown = arranged(first.family); current = shown; active = Math.max(0, shown.items.findIndex(isOpen)) }
   async function pick(codePoint, keep = false) {
     error = ''
     code = codePoint
-    history.replaceState(null, '', '#/forms?family=' + encodeURIComponent(codePoint))
+    const address = '/forms/' + codePoint
+    if (page.url.pathname !== address) replaceState(address, page.state)
     const keepId = keep ? current?.items[active]?.id : null
-    const loaded = await loadFamily(codePoint, arrange)
-    if (openFirst) loaded.items = [...loaded.items.filter(isOpen), ...loaded.items.filter(c => !isOpen(c))]
-    current = loaded
+    current = arranged(await loadFamily(codePoint, arrange))
     if (keepId) active = Math.max(0, current.items.findIndex(c => c.id === keepId))
     if (!keep) { picked = new Set(); pickAnchor = null; reviewing = false; active = Math.max(0, current.items.findIndex(isOpen)); close() }
   }
@@ -176,6 +185,8 @@
   async function rearrange(value) { arrange = value; const id = cluster?.id; await pick(code, true); active = Math.max(0, current.items.findIndex(c => c.id === id)) }
   function scrollActive() { requestAnimationFrame(() => document.querySelector('.form-cluster.active')?.scrollIntoView({ block: 'nearest' })) }
   onMount(async () => {
+    // The server arranged the family with open clusters first; a reader who turned that off gets theirs.
+    if (first?.family) { if (!openFirst) await pick(code, true); return }
     try {
       await refreshList()
       await pick(initialFamily || list[0]?.code_point)
