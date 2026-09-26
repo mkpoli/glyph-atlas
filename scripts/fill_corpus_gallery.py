@@ -5,7 +5,7 @@
 """Write the SQL that brings D1's `corpus_gallery` up to date with the published corpus.
 
 The homepage gallery deals copies of the records of the corpus glyphs whose `shuffle` falls below
-2^22 (migration 0019). This reads which of those D1 lacks a current copy of, reads each record's bytes
+2^22 (migration 0020). This reads which of those D1 lacks a current copy of, reads each record's bytes
 from its R2 pack with a ranged S3 request, and writes SQL parts under D1's import size that remove
 copies whose record has since been republished and insert the missing ones. `publish_cloudflare.sh`
 runs it and applies the parts after every publication; by hand:
@@ -30,7 +30,7 @@ from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
 CLOUDFLARE = Path(__file__).resolve().parents[1] / "apps/cloudflare"
-# Matches `SAMPLE_RANGE` in the Worker and the cut migration 0019 describes.
+# Matches `SAMPLE_RANGE` in the Worker and the cut migration 0020 describes.
 SAMPLE_RANGE = 2**22
 # D1 refuses a statement over 100 KB; parts stay under the import size `seal_cloudflare_records.py` uses.
 STATEMENT_BYTES = 100_000
