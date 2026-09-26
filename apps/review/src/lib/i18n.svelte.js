@@ -3,7 +3,8 @@
  * `@locale` entry gives the language's own name, the `base` language the number and plural rules
  * come from, and the browser languages it `matches` on a first visit. `"numerals": "hanzi"` writes
  * its numbers, dates and times in Chinese numerals (一千零五, 二〇二六年九月二十六日); `"classical"` in the
- * classical way, a gap as 有 and zero as 無 (一千有五, 二千有二十六年九月二十六日).
+ * classical way, a gap as 有, zero as 無 and the time by double hours (一千有五,
+ * 二千有二十六年九月二十六日 未初二刻).
  */
 export const LOCALES = Object.entries(import.meta.glob('../locales/*.json', { eager: true, import: 'default' }))
   .map(([path, { '@locale': about, ...messages }]) => ({ tag: path.slice(11, -5), ...about, messages }))
@@ -138,6 +139,17 @@ export function formatNumber(value) {
 /** A running number on a tile: 01, 02 … in digits, 一, 二 … in Chinese numerals. */
 export const formatSerial = value => hanzi() ? formatNumber(value) : String(value).padStart(2, '0')
 
+/**
+ * A time of day by the twelve double hours, each split into 初 and 正, then 刻 of fifteen minutes and
+ * 分: 00:05 is 子正五分, 13:37 is 未初二刻七分.
+ */
+function doubleHour(at) {
+  const hour = at.getHours(), minute = at.getMinutes()
+  const quarter = Math.floor(minute / 15), rest = minute % 15
+  return '子丑寅卯辰巳午未申酉戌亥'[Math.floor((hour + 1) / 2) % 12] + (hour % 2 ? '初' : '正')
+    + (quarter ? `${hanziNumber(quarter)}刻` : '') + (rest ? `${hanziNumber(rest)}分` : '')
+}
+
 const dateFormats = {}
 
 /** A moment in the current language: date and time, or with `{ date: false }` the time alone. Throws on an invalid date. */
@@ -145,7 +157,7 @@ export function formatDateTime(value, { date = true } = {}) {
   const at = new Date(value)
   if (Number.isNaN(at.getTime())) throw new RangeError(`Invalid time value: ${value}`)
   if (hanzi()) {
-    const time = `${hanziNumber(at.getHours())}時${at.getMinutes() ? `${hanziNumber(at.getMinutes())}分` : ''}`
+    const time = numerals() === 'classical' ? doubleHour(at) : `${hanziNumber(at.getHours())}時${at.getMinutes() ? `${hanziNumber(at.getMinutes())}分` : ''}`
     if (!date) return time
     const year = numerals() === 'classical' ? hanziNumber(at.getFullYear()) : [...String(at.getFullYear())].map(digit => DIGITS[digit]).join('')
     return `${year}年${hanziNumber(at.getMonth() + 1)}月${hanziNumber(at.getDate())}日 ${time}`
