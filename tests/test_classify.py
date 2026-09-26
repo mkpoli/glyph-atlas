@@ -290,3 +290,18 @@ def test_the_size_is_read_from_the_export(tmp_path: Path) -> None:
     assert wide.size == 128
     assert wide._pixels(crop(40, 60)).shape == (1, 3, 128, 128)
     assert Classifier(tmp_path / "x.onnx", classes=CLASSES, session=session(["batch", 3, "h", "w"])).size == classify.SIZE
+
+
+def test_a_run_refuses_a_classifier_it_was_not_measured_with(tmp_path: Path) -> None:
+    import hashlib
+
+    from glyph_atlas.align import Run, check_classifier
+
+    export = tmp_path / "classifier.onnx"
+    export.write_bytes(b"one model")
+    run = Run(name="pinned", classifier=str(export), classifier_sha256=hashlib.sha256(b"one model").hexdigest())
+    check_classifier(run)
+    export.write_bytes(b"another model")
+    with pytest.raises(ValueError, match="not the classifier"):
+        check_classifier(run)
+    assert run.fingerprint() == run.model_copy(update={"classifier_sha256": None}).fingerprint()

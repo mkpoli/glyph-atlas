@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -346,3 +347,33 @@ class Classifier:
                 return crop_array(Image.fromarray(array.astype(np.uint8), mode="L"), size=self.size)
             raise ValueError(f"a numpy crop must be a 2-D grey array, got shape {array.shape}")
         return crop_array(crop, size=self.size)
+
+
+
+@dataclass(frozen=True)
+class Trained:
+    """A `train.py` checkpoint rebuilt: the model on the CPU in eval mode, its class list, the fitted
+    temperature, the side of the square it was trained at and the timm name of its backbone."""
+
+    model: Any
+    classes: list[str]
+    temperature: float
+    size: int
+    backbone: str
+
+
+def load_checkpoint(path: Path | str) -> Trained:
+    """The PyTorch model a checkpoint holds, rebuilt from the configuration stored in it, so a caller
+    never assumes an architecture or a size."""
+    import timm
+    import torch
+
+    state = torch.load(Path(path), map_location="cpu", weights_only=False)
+    config = state["config"]
+    classes = [str(name) for name in state["classes"]]
+    backbone = config["model"]["checkpoint"]
+    model = timm.create_model(backbone, pretrained=False, num_classes=len(classes),
+                              **config["model"].get("options", {}))
+    model.load_state_dict(state["model"])
+    temperature = float(state.get("temperature", state.get("metrics", {}).get("temperature", 1.0)))
+    return Trained(model.eval(), classes, temperature, int(config["preprocessing"]["size"]), backbone)

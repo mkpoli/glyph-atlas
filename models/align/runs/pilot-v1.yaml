@@ -5,6 +5,8 @@ detector: models/detector/artifacts/detector.onnx
 classifier: models/classifier/artifacts/classifier.onnx
 detector_version: rtdetr_r18vd-6e
 classifier_version: convnext_tiny-12e
+# The export this run was measured with; the run refuses any other file at the classifier path.
+classifier_sha256: e761e7b7e8e5b6e16061d70de82e478ee27cb9111fe06af2fc0df2a9c07975f8
 # The operating point every stage of this run detects at, including the aligner's own detector. It is
 # unset in the run's hash: the pilot's units were found at this score before it was written down.
 score: 0.02

@@ -448,12 +448,11 @@ def review_serve(
 def review_shapes(
     directory: Annotated[Path, typer.Argument(help="dataset directory whose crops are ordered; the order is written into it")],
     checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
-    classes: Annotated[Path, typer.Option(help="classifier class list")] = Path("models/classifier/classes.json"),
 ) -> None:
     """Order each character's Quick review crops by shape (needs CUDA)."""
     from .review import quiz_shapes
 
-    for name, value in quiz_shapes.compute(directory, checkpoint=checkpoint, classes=classes).items():
+    for name, value in quiz_shapes.compute(directory, checkpoint=checkpoint).items():
         typer.echo(f"{name:<12} {value:>10}")
 
 
@@ -983,13 +982,12 @@ def forms_cluster(
     root: Annotated[Path, typer.Option(help="corpus root holding the clustered corpora")] = Path("work"),
     out: Annotated[Path, typer.Option(help="directory the revisions and `current` are written to")] = Path("work/forms"),
     checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
-    classes: Annotated[Path, typer.Option(help="classifier class list")] = Path("models/classifier/classes.json"),
     workers: Annotated[int, typer.Option(help="processes cutting crops from the page scans")] = 8,
 ) -> None:
     """Embed the glyphs of every multi-form family and cluster them by shape (needs CUDA)."""
     from . import form_clusters
 
-    summary = form_clusters.run(root, out, checkpoint=checkpoint, classes=classes, workers=workers)
+    summary = form_clusters.run(root, out, checkpoint=checkpoint, workers=workers)
     for name, value in summary.items():
         if isinstance(value, dict):
             for corpus, count in value.items():

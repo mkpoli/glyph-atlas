@@ -93,8 +93,8 @@ the calibrated ones.
 
 ## Metrics
 
-10 epochs over 1,204,964 crops, 3 h 25 min on the card beside other work. The `val` curve, over
-the 44,716 val crops whose class is in `classes.json`:
+10 epochs over 1,204,964 crops, 3 h 26 min wall-clock with validation, beside other work on the
+card. The `val` curve, over the 44,716 val crops whose class is in `classes.json`:
 
 | epoch | loss | top-1 | top-5 | macro F1 | ECE | seconds |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -146,7 +146,7 @@ the card with the extraction worker:
 | --- | --- |
 | One training step, batch 64 | 0.05–0.07 s |
 | Peak VRAM, batch 64 | 3.0 GiB |
-| One epoch over 1,204,964 crops | 15–23 minutes |
+| One epoch over 1,204,964 crops | 15–37 minutes, depending on what else shares the card |
 | Export | 125,551,320 bytes, 3,429 classes at opset 17 |
 
 The exported graph and the PyTorch model agree on 200 val crops to 2.2e-6 in probability, with the

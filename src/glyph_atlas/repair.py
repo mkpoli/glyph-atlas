@@ -1929,21 +1929,14 @@ class TorchClassifier:
             raise RepairError("cuda was asked for and is not available")
         self.device = device
         self.batch = max(1, batch)
-        state = torch.load(self.path, map_location="cpu", weights_only=False)
-        self.classes = [str(name) for name in state["classes"]]
-        self.temperature = float(state.get("temperature",
-                                           state.get("metrics", {}).get("temperature", 1.0)))
-        config = state["config"]
-        self.size = size or int(config["preprocessing"]["size"])
-        import timm
+        from .classify import load_checkpoint
 
-        model = timm.create_model(config["model"]["checkpoint"], pretrained=False,
-                                  num_classes=len(self.classes), **config["model"].get("options", {}))
-        model.load_state_dict(state["model"])
-        model.eval()
+        trained = load_checkpoint(self.path)
+        self.classes, self.temperature = trained.classes, trained.temperature
+        self.size = size or trained.size
         self._torch = torch
-        self._model = model.to(device)
-        del state, model
+        self._model = trained.model.to(device)
+        del trained
         torch.cuda.empty_cache() if device.startswith("cuda") else None
         self.used = 0
 
@@ -2005,10 +1998,13 @@ def classifier_for(run: Run, *, backend: str = "onnx", checkpoint: Path | str | 
                    device: str = "cuda", batch: int = 256, root: Path | None = None) -> Any:
     """The classifier a pass scores with: the run's ONNX export, or its checkpoint on a device."""
     if backend == "onnx":
+        from .align import check_classifier
         from .classify import Classifier
 
         path = Path(run.classifier)
-        return Classifier(path if path.exists() else _primary(root, path))
+        path = path if path.exists() else _primary(root, path)
+        check_classifier(run.model_copy(update={"classifier": str(path)}))
+        return Classifier(path)
     if backend == "torch":
         path = Path(checkpoint) if checkpoint is not None else \
             _primary(root, Path("models/classifier/artifacts/best.pt"))

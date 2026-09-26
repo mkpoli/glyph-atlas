@@ -34,7 +34,7 @@ import shutil
 from collections import defaultdict
 from collections.abc import Iterator
 from concurrent.futures import ProcessPoolExecutor
-from functools import cache
+from functools import cache, partial
 from multiprocessing import get_context
 from pathlib import Path
 
@@ -157,8 +157,8 @@ class Pixels:
         return (path, None) if path else None
 
 
-def _crops(job: tuple[str, list[tuple[str, dict]]]) -> tuple[list[str], np.ndarray | None]:
-    """Cut every box of one page, preprocessed for the classifier."""
+def _crops(job: tuple[str, list[tuple[str, dict]]], size: int) -> tuple[list[str], np.ndarray | None]:
+    """Cut every box of one page, preprocessed for the classifier at its size."""
     from PIL import Image
 
     from .classify import preprocess
@@ -171,7 +171,7 @@ def _crops(job: tuple[str, list[tuple[str, dict]]]) -> tuple[list[str], np.ndarr
             if box is None:
                 # A pre-cut crop is the glyph whole.
                 ids.append(identity)
-                arrays.append(np.asarray(preprocess(scan), dtype=np.uint8))
+                arrays.append(np.asarray(preprocess(scan, size=size), dtype=np.uint8))
                 continue
             x, y, w, h = box
             right, bottom = min(scan.width, x + w), min(scan.height, y + h)
@@ -179,25 +179,23 @@ def _crops(job: tuple[str, list[tuple[str, dict]]]) -> tuple[list[str], np.ndarr
                 continue
             crop = scan.crop((x, y, right, bottom))
             ids.append(identity)
-            arrays.append(np.asarray(preprocess(crop), dtype=np.uint8))
+            arrays.append(np.asarray(preprocess(crop, size=size), dtype=np.uint8))
     return ids, np.stack(arrays) if arrays else None
 
 
 class Encoder:
     """The classifier's penultimate features, as L2-normalised vectors."""
 
-    def __init__(self, checkpoint: Path, classes: Path):
-        import timm
+    def __init__(self, checkpoint: Path):
         import torch
 
-        from .classify import read_classes
+        from .classify import load_checkpoint
 
         if not torch.cuda.is_available():
             raise RuntimeError("form clustering needs CUDA; run gpu-check")
-        state = torch.load(checkpoint, map_location="cpu", weights_only=True)
-        self.model = timm.create_model("convnext_tiny", pretrained=False, num_classes=len(read_classes(classes)))
-        self.model.load_state_dict(state["model"], strict=True)
-        self.model = self.model.eval().cuda()
+        trained = load_checkpoint(checkpoint)
+        self.size = trained.size
+        self.model = trained.model.cuda()
         self.torch = torch
 
     def __call__(self, pixels: np.ndarray) -> np.ndarray:
@@ -216,7 +214,7 @@ def _embed(jobs: list[tuple[str, list[tuple[str, dict]]]], encoder: Encoder, *, 
     pending_ids: list[str] = []
     pending: list[np.ndarray] = []
     with ProcessPoolExecutor(workers, mp_context=get_context("fork")) as pool:
-        for ids, arrays in pool.map(_crops, jobs, chunksize=4):
+        for ids, arrays in pool.map(partial(_crops, size=encoder.size), jobs, chunksize=4):
             if arrays is None:
                 continue
             pending_ids.extend(ids)
@@ -262,7 +260,7 @@ def _kmeans(x, k: int, seed: int):
     return labels, c
 
 
-def run(root: Path, out: Path, *, checkpoint: Path, classes: Path, workers: int = 8) -> dict:
+def run(root: Path, out: Path, *, checkpoint: Path, workers: int = 8) -> dict:
     """Embed, cluster and publish one revision. `root` is the corpus root holding `CORPORA`."""
     import torch
 
@@ -289,7 +287,7 @@ def run(root: Path, out: Path, *, checkpoint: Path, classes: Path, workers: int 
               "pages": {corpus.name: [_digest(path) for path in corpus.parquet_files("pages")] for corpus in corpora},
               "located": hashlib.sha256("\n".join(sorted(located)).encode()).hexdigest(),
               "checkpoint": _digest(checkpoint),
-              "classes": _digest(classes), "vocab": _digest(Path(refs.__file__).parents[2] / "data/vocab/characters.tsv"),
+              "vocab": _digest(Path(refs.__file__).parents[2] / "data/vocab/characters.tsv"),
               "method": METHOD, "max_clusters": MAX_CLUSTERS, "min_family_units": MIN_FAMILY_UNITS}
     revision = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()[:16]
     target = out / revision
@@ -298,7 +296,7 @@ def run(root: Path, out: Path, *, checkpoint: Path, classes: Path, workers: int 
         _point_current(out, revision)
         return {k: v for k, v in json.loads((target / "manifest.json").read_text()).items() if k != "inputs"}
 
-    encoder = Encoder(checkpoint, classes)
+    encoder = Encoder(checkpoint)
     ids: list[str] = []
     vectors: list[np.ndarray] = []
     for batch_ids, batch_vectors in _embed(_file_jobs(located), encoder, workers=workers):

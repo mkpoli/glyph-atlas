@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from glyph_atlas.classify import MEAN, SIZE, STD, crop_array, read_classes
+from glyph_atlas.classify import MEAN, STD, crop_array, load_checkpoint
 
 
 def digest(path):
@@ -34,7 +34,7 @@ def image_paths(root, rows):
     return result
 
 
-def embed(root, checkpoint, classes_path, batch_size=32):
+def embed(root, checkpoint, batch_size=32):
     import timm
     import torch
 
@@ -54,12 +54,9 @@ def embed(root, checkpoint, classes_path, batch_size=32):
         raise RuntimeError("less than 3 GiB of free CUDA memory; batch deferred")
     torch.cuda.set_per_process_memory_fraction(min(.95, 2.5 * 1024**3 / total))
     torch.cuda.reset_peak_memory_stats()
-    classes = read_classes(classes_path)
     checkpoint_hash = digest(checkpoint)
-    state = torch.load(checkpoint, map_location="cpu", weights_only=True)
-    model = timm.create_model("convnext_tiny", pretrained=False, num_classes=len(classes))
-    model.load_state_dict(state["model"], strict=True)
-    del state
+    trained = load_checkpoint(checkpoint)
+    model, size = trained.model, trained.size
     model = model.eval().cuda()
     started = time.monotonic()
     vectors = []
@@ -68,7 +65,7 @@ def embed(root, checkpoint, classes_path, batch_size=32):
             images = []
             for path in paths[start:start + batch_size]:
                 with Image.open(path) as source:
-                    images.append(crop_array(source))
+                    images.append(crop_array(source, size=size))
             batch = torch.from_numpy(np.concatenate(images)).cuda()
             # Penultimate representations preserve shape information that class logits discard.
             features = model.forward_head(model.forward_features(batch), pre_logits=True).float()
@@ -91,9 +88,9 @@ def embed(root, checkpoint, classes_path, batch_size=32):
         "state": "ready", "samples": len(rows), "dimensions": int(result.shape[1]),
         "dtype": "float32", "normalized": "L2", "manifest_sha256": manifest_hash,
         "embeddings_sha256": digest(root / "embeddings.npy"), "checkpoint_sha256": checkpoint_hash,
-        "classes_sha256": digest(classes_path), "architecture": "convnext_tiny",
+        "architecture": trained.backbone,
         "representation": "forward_head(forward_features(image), pre_logits=True)",
-        "preprocessing": {"size": SIZE, "mean": MEAN, "std": STD,
+        "preprocessing": {"size": size, "mean": MEAN, "std": STD,
                           "grey": True, "square_padding": "white", "resize": "bilinear"},
         "device": torch.cuda.get_device_name(), "torch": torch.__version__, "timm": timm.__version__,
         "batch_size": batch_size, "peak_cuda_allocated_bytes": torch.cuda.max_memory_allocated(),
@@ -111,7 +108,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path("work/visual-families"))
     parser.add_argument("--checkpoint", type=Path, default=Path("models/classifier/artifacts/best.pt"))
-    parser.add_argument("--classes", type=Path, default=Path("models/classifier/classes.json"))
     parser.add_argument("--batch-size", type=int, default=32)
     args = parser.parse_args()
-    print(json.dumps(embed(args.root, args.checkpoint, args.classes, args.batch_size), ensure_ascii=False, indent=2))
+    print(json.dumps(embed(args.root, args.checkpoint, args.batch_size), ensure_ascii=False, indent=2))

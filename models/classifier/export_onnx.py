@@ -211,7 +211,6 @@ def main() -> None:
     args = parser.parse_args()
 
     config = train.load_config(args.config)
-    size = int(config["preprocessing"]["size"])
     out = args.out or (ROOT / config["artifacts"]["export"])
     data_directory = args.data or (ROOT / config["data"]["directory"])
     device = torch.device(args.device or "cuda") if torch.cuda.is_available() and args.device != "cpu" else torch.device("cpu")
@@ -220,6 +219,8 @@ def main() -> None:
     if checkpoint is not None and not checkpoint.exists():
         raise SystemExit(f"{checkpoint} is missing: train first, or pass --base")
     model, classes, temperature, config = build(checkpoint, device, args.config)
+    # The checkpoint's own configuration: an older checkpoint was trained at its own size.
+    size = int(config["preprocessing"]["size"])
     train.check_classes(model, classes, where=str(checkpoint or "the base model"))
     report = export(
         model,
