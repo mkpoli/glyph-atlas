@@ -17,16 +17,18 @@
   import { characterAddress, collectionAddress, scopeFor, unslug } from '../lib/gallery.js'
   // `initial` is the collection page the server rendered: the seed it shuffled with, the filters in the
   // address, the collection's rows, the corpus sample and the progress line; without rows the view loads
-  // them itself, with the same filters. `gallery` is a character's page instead (`lib/gallery.js`).
+  // them itself, with the same filters. The bare homepage comes with `lead`, the first crops of the
+  // sample, and `rest`, a promise of the rows and the whole sample.
+  // `gallery` is a character's page instead (`lib/gallery.js`).
   // `addressed` is the collection and character pages, whose address this view keeps; the Flagged view
   // and the collection behind a crop's dialog leave theirs alone.
   // `shown` is the character on show, for the page's title; the view changes it in place.
   let { flagged = false, addressed = false, inspect, ink = 'original', onink = () => {}, onprogress = () => {}, initial = null, gallery = null, shown = $bindable() } = $props()
-  const asked = untrack(() => initial), first = asked?.result ? asked : null, opened = untrack(() => gallery)
+  const asked = untrack(() => initial), first = asked?.result ? asked : null, streamed = asked?.rest ? asked : null, opened = untrack(() => gallery)
   let data = $state(first?.result ?? (opened ? { query: opened.picked.char, total: opened.total, available: opened.available,
     categories: opened.summary?.categories ?? [], documents: opened.summary?.documents ?? [], counts: opened.summary?.counts ?? {} } : null))
   let items = $state(first?.result.items ?? []), error = $state(''), loading = $state(!first && !opened)
-  let grapheme = $state(asked?.grapheme ?? ''), work = $state(asked?.work ?? ''), offset = $state(0), seed = $state(first?.seed ?? randomSeed())
+  let grapheme = $state(asked?.grapheme ?? ''), work = $state(asked?.work ?? ''), offset = $state(0), seed = $state((first ?? streamed)?.seed ?? randomSeed())
   let query = $state(asked?.q ?? opened?.picked.char ?? '')
   let choosing = $state(false), catalogueRequest = null
   let filter = $state(asked?.group ?? 'all'), requestId = 0, closed = false
@@ -63,8 +65,10 @@
   // The unfiltered homepage mixes a bounded corpus sample with the collection's own rows, so the
   // first page is not one source's leftovers: the sample is normalised by the same adapter and
   // deduplicated against what is already on the page.
-  let sample = $state(first ? sampleRows(first.sample, first.result.items) : []), sampleFault = $state(first?.sample ? (first.sample.status === 'ok' ? null : first.sample.status) : null)
-  let collection = $state(first?.collection ?? null)
+  let sample = $state(first ? sampleRows(first.sample, first.result.items) : streamed ? sampleRows(streamed.lead, []) : []), sampleFault = $state(first?.sample ? (first.sample.status === 'ok' ? null : first.sample.status) : null)
+  // The crops the homepage was sent first stay where they were drawn when the rest arrives around them.
+  let lead = $state(streamed ? sample.length : 0)
+  let collection = $state((first ?? streamed)?.collection ?? null)
   async function readCollection() {
     try { collection = await request('/atlas/collection/status') } catch { /* retry on the next interval */ }
   }
@@ -151,9 +155,10 @@
   }
   const corpusOnly = $derived(picked ? corpus.filter(lead => !visibleLocal.some(unit => sameInk(unit, lead))) : [])
   const homeCorpus = $derived(sample.filter(lead => !items.some(unit => sameInk(unit, lead))))
+  const mixedCorpus = $derived(homeCorpus.slice(lead))
   const baseDisplay = $derived(choosing ? [] : picked ? [...visibleLocal, ...corpusOnly]
-    : [...items.flatMap((item, index) => homeCorpus[index] ? [item, homeCorpus[index]] : [item]),
-       ...homeCorpus.slice(items.length)])
+    : [...homeCorpus.slice(0, lead), ...items.flatMap((item, index) => mixedCorpus[index] ? [item, mixedCorpus[index]] : [item]),
+       ...mixedCorpus.slice(items.length)])
   function groupOrder(item) {
     const group = visualGroup(item)
     const index = (analysis?.groups ?? []).findIndex(entry => entry.id === group.id)
@@ -172,7 +177,7 @@
   async function load(append = false) {
     choosing = false
     catalogueRequest?.abort()
-    if (!append) showInAddress()
+    if (!append) { showInAddress(); lead = 0 }
     const id = ++requestId; loading = true; error = ''
     try {
       if (picked) {
@@ -399,7 +404,19 @@
       query = q; grapheme = g; work = w; filter = group; load()
     }
   }
-  onMount(() => { if (!first) readCollection(); if (!first && !opened) load(); if (addressed) followAddress(); const timer = setInterval(readCollection, 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
+  /** The rest of the homepage the server streams after its lead crops; a search started meanwhile wins. */
+  async function receive(rest) {
+    const id = ++requestId
+    // A response cut off before the rest arrived leaves the view to load it itself.
+    const { result = null, sample: page = null } = await rest.catch(() => ({}))
+    if (closed || id !== requestId) return
+    if (!result) { load(); return }
+    data = result; items = result.items
+    sample = sampleRows(page ?? streamed.lead, items)
+    sampleFault = page ? (page.status === 'ok' ? null : page.status) : null
+    loading = false
+  }
+  onMount(() => { if (!collection) readCollection(); if (streamed) receive(streamed.rest); else if (!first && !opened) load(); if (addressed) followAddress(); const timer = setInterval(readCollection, 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
   // Widening is the reader's choice and only it reloads the gallery; picking a character resets the
   // widening itself and loads once through `pick`.
   // The first run is the widening the page opened with, already loaded.
@@ -452,13 +469,13 @@
       {#if loading}<span class="find-pending"> …</span>{/if}
     </p>
   {:else if !query && sample.length}
-    <p class="find-count" role="status">{t('explore.count.here', { count: items.length })}<span class="separator">·</span> {t('explore.count.fromCorpus', { count: sample.length })}{#if sampleFault}<span class="corpus-fault"> · {sampleFault === 'error' ? t('explore.corpus.error') : t('explore.corpus.notLoaded')}</span>{/if}</p>
+    <p class="find-count" role="status">{#if loading && lead}<span class="find-pending">…</span>{:else}{t('explore.count.here', { count: items.length })}<span class="separator">·</span> {t('explore.count.fromCorpus', { count: sample.length })}{/if}{#if sampleFault}<span class="corpus-fault"> · {sampleFault === 'error' ? t('explore.corpus.error') : t('explore.corpus.notLoaded')}</span>{/if}</p>
   {:else if query && settled}
     <p class="find-count" role="status">{around('explore.occurrencesOf', 'reading', { count: settled.total })[0]}<b>{readable}</b>{around('explore.occurrencesOf', 'reading', { count: settled.total })[1]}{#if loading}<span class="find-pending"> …</span>{/if}</p>
   {/if}
   <div class="glyph-grid" aria-label={flagged ? t('explore.heading.flagged') : t('explore.grid.collection')} aria-busy={loading}>
     {#if loading && !display.length}{#each Array(32) as _}<div class="glyph-skeleton"></div>{/each}
-    {:else}{#each display as item, i (item.id)}{#if picked && expand === 'grapheme' && (i === 0 || visualGroup(display[i - 1]).id !== visualGroup(item).id)}<div class="visual-grid-heading">{groupLabel(visualGroup(item))}</div>{/if}{#if item.origin === 'corpus'}<button class="glyph-tile corpus" data-corpus={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={waiting(tileState(item))} onclick={() => inspect(item.id, null, display, updateItem, 'corpus')} aria-label={t('explore.tile.inspectCorpus', { label: shownLabel(item) })}><span class="tile-reading"><span class="tile-glyph" class:unassigned={isUnassigned(item)} lang={isUnassigned(item) ? undefined : 'ja'}>{shownLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" lang="ja" title={t('chips.grapheme')}>{shownGrapheme(item)}</span>{/if}</span><span class="tile-details">{#each tileDetails(item) as line}<span>{line}</span>{/each}<span class="tile-id">{item.id}</span></span>{#if item.proxyable && item.image}<img class="glyph-image" src={item.image} alt={t('explore.tile.located', { label: shownLabel(item) })} loading={i < 24 ? "eager" : "lazy"} fetchpriority={i < 24 ? "high" : "auto"} decoding="async" />{:else}<span class="corpus-open"><b>{shownLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}{#if tileState(item) === 'checked' || waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}<span class="tile-footer">{#if tileState(item) === 'plain' || tileState(item) === 'withheld'}<span class="status-dot" class:withheld={tileState(item) === 'withheld'}></span>{/if}{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{formatSerial(i + 1)}</span><span class="tile-arrow">↗</span></span></button>{:else}<button class="glyph-tile" data-unit={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={waiting(tileState(item))} onclick={() => inspect(item.id, null, display, updateItem)} aria-label={t('explore.tile.inspect', { label: shownLabel(item) })}><span class="tile-reading"><span class="tile-glyph" class:unassigned={isUnassigned(item)} lang={isUnassigned(item) ? undefined : 'ja'}>{shownLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" lang="ja" title={t('chips.grapheme')}>{shownGrapheme(item)}</span>{/if}</span><span class="tile-details">{#each tileDetails(item) as line}<span>{line}</span>{/each}<span class="tile-id">{item.id}</span></span><Glyph {item} eager={i < 24} />{#if tileState(item) === 'checked' || waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}<span class="tile-footer">{#if tileState(item) === 'plain' || tileState(item) === 'withheld'}<span class="status-dot" class:withheld={tileState(item) === 'withheld'}></span>{/if}{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{formatSerial(i + 1)}</span><span class="tile-arrow">↗</span></span></button>{/if}{/each}{/if}
+    {:else}{#each display as item, i (item.id)}{#if picked && expand === 'grapheme' && (i === 0 || visualGroup(display[i - 1]).id !== visualGroup(item).id)}<div class="visual-grid-heading">{groupLabel(visualGroup(item))}</div>{/if}{#if item.origin === 'corpus'}<button class="glyph-tile corpus" data-corpus={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={waiting(tileState(item))} onclick={() => inspect(item.id, null, display, updateItem, 'corpus')} aria-label={t('explore.tile.inspectCorpus', { label: shownLabel(item) })}><span class="tile-reading"><span class="tile-glyph" class:unassigned={isUnassigned(item)} lang={isUnassigned(item) ? undefined : 'ja'}>{shownLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" lang="ja" title={t('chips.grapheme')}>{shownGrapheme(item)}</span>{/if}</span><span class="tile-details">{#each tileDetails(item) as line}<span>{line}</span>{/each}<span class="tile-id">{item.id}</span></span>{#if item.proxyable && item.image}<img class="glyph-image" src={item.image} alt={t('explore.tile.located', { label: shownLabel(item) })} loading={i < 24 ? "eager" : "lazy"} fetchpriority={i < 24 ? "high" : "auto"} decoding="async" />{:else}<span class="corpus-open"><b>{shownLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}{#if tileState(item) === 'checked' || waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}<span class="tile-footer">{#if tileState(item) === 'plain' || tileState(item) === 'withheld'}<span class="status-dot" class:withheld={tileState(item) === 'withheld'}></span>{/if}{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{formatSerial(i + 1)}</span><span class="tile-arrow">↗</span></span></button>{:else}<button class="glyph-tile" data-unit={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={waiting(tileState(item))} onclick={() => inspect(item.id, null, display, updateItem)} aria-label={t('explore.tile.inspect', { label: shownLabel(item) })}><span class="tile-reading"><span class="tile-glyph" class:unassigned={isUnassigned(item)} lang={isUnassigned(item) ? undefined : 'ja'}>{shownLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" lang="ja" title={t('chips.grapheme')}>{shownGrapheme(item)}</span>{/if}</span><span class="tile-details">{#each tileDetails(item) as line}<span>{line}</span>{/each}<span class="tile-id">{item.id}</span></span><Glyph {item} eager={i < 24} />{#if tileState(item) === 'checked' || waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}<span class="tile-footer">{#if tileState(item) === 'plain' || tileState(item) === 'withheld'}<span class="status-dot" class:withheld={tileState(item) === 'withheld'}></span>{/if}{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{formatSerial(i + 1)}</span><span class="tile-arrow">↗</span></span></button>{/if}{/each}{#if loading && lead}{#each Array(16) as _}<div class="glyph-skeleton"></div>{/each}{/if}{/if}
   </div>
   {#if !choosing && !loading && !display.length}<div class="empty"><span class="empty-mark">{picked || (settled && settled.total === 0) ? '∅' : flagged ? '✓' : '∅'}</span><h2>{picked && corpusFault ? t('explore.empty.samplesFailed', { char: picked.char }) : picked ? t('explore.empty.noOccurrenceOf', { char: picked.char }) : settled && settled.total === 0 ? t('explore.empty.noOccurrenceOfTerm', { term: readable }) : flagged ? t('explore.empty.nothingFlagged') : t('explore.empty.noCharacters')}</h2>{#if query}<button class="primary" onclick={clearQuery}>{t('explore.clearSearch')}</button>{:else}<a href={localize('/review')} class="primary">{t('explore.startRound')}</a>{/if}</div>{/if}
   {#if picked && (!visual && local.length < (data?.total ?? 0) || corpusOffset < corpusTotal) && !loading}

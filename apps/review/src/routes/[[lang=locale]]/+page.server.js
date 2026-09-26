@@ -5,10 +5,16 @@ import { localize } from '$lib/i18n.svelte.js'
 import { gallery } from '$lib/layers.js'
 
 const GROUPS = ['all', 'kana', 'kanji', 'hangul', 'gugyeol']
+/** Corpus crops the bare homepage is sent with before anything else: the first rows of a phone screen. */
+const LEAD = 16
 
 // The collection as its view first shows it: one shuffle of the rows the address's search and filters
 // select, the progress line, and, with no search or filter, a corpus sample drawn with the same seed.
 // A collection that cannot answer leaves the view to load and report it itself, with the same filters.
+//
+// The bare homepage waits only for the progress line and the first crops of its sample, one indexed
+// read, and streams the rest in the same response: the collection's rows with their filter counts and
+// the whole sample, which starts with those crops, being drawn with the same seed.
 export async function load({ fetch, params, url }) {
   const q = url.searchParams.get('q')?.trim() ?? '', grapheme = url.searchParams.get('grapheme') ?? '', work = url.searchParams.get('work') ?? ''
   const group = GROUPS.includes(url.searchParams.get('group')) ? url.searchParams.get('group') : 'all'
@@ -17,10 +23,16 @@ export async function load({ fetch, params, url }) {
   if (point) redirect(307, localize(characterAddress(point), params.lang ?? 'en'))
   const seed = randomSeed()
   const bare = !q && !grapheme && !work && group === 'all'
-  const [result, sample, collection] = await Promise.all([
+  const rest = Promise.all([
     catalogue({ q, grapheme, document: work, group, state: 'all', seed, offset: 0, limit: 60 }, { fetch }).catch(() => null),
     bare ? gallery(60, seed, { fetch }).catch(() => null) : null,
+  ]).then(([result, sample]) => ({ result, sample }))
+  const [lead, collection] = await Promise.all([
+    bare ? gallery(LEAD, seed, { fetch }).catch(() => null) : null,
     request('/atlas/collection/status', undefined, { fetch }).catch(() => null),
   ])
-  return { explore: { seed, q, grapheme, work, group, result, sample, collection } }
+  const explore = { seed, q, grapheme, work, group, collection }
+  // A backend with no corpus to draw from, such as the local review service, has nothing to lead with.
+  if (!lead?.items?.some(item => item.proxyable && item.image)) return { explore: { ...explore, ...await rest } }
+  return { explore: { ...explore, lead, rest } }
 }

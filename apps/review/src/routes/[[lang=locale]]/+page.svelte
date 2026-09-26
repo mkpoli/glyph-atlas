@@ -11,6 +11,11 @@
   let character = $state(null)
 </script>
 
+<svelte:head>
+  <!-- The first crops are asked for before the page around them is read. -->
+  {#each (data.explore.lead?.items ?? []).filter(item => item.proxyable && item.image) as item (item.id)}<link rel="preload" as="image" href={item.image} fetchpriority="high" />{/each}
+</svelte:head>
+
 {#if character}<Seo title={`${character.char} (${character.code_point})`} description={t('meta.character.description', { character: character.char, codePoint: character.code_point })} />
 {:else}<Seo data={{ '@type': 'WebSite', name: t('app.name'), url: page.url.origin + '/', inLanguage: locale() }} />{/if}
 
