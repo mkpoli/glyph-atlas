@@ -1,6 +1,6 @@
 import { env } from '$env/dynamic/private'
 import worker from '../../cloudflare/src/index.ts'
-import { LOCALE_COOKIE, delocalize, isLocale, localize, negotiate } from '$lib/i18n.svelte.js'
+import { LOCALES, LOCALE_COOKIE, delocalize, isLocale, localize, negotiate } from '$lib/i18n.svelte.js'
 
 /** Headers that describe one connection, not the request, and are not passed on. */
 const HOP = ['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade']
@@ -63,10 +63,15 @@ export async function handle({ event, resolve }) {
   if (UNLOCALIZED.test(pathname)) return resolve(event)
   // English has the unprefixed addresses, so an /en/ address names a page that has another.
   if (pathname === '/en' || pathname.startsWith('/en/')) return moved(301, (pathname.slice(3) || '/') + search)
-  // A language the site does not have falls back to the page's unprefixed address, which then serves
-  // the reader's own language.
+  // A language the site has, written in other case, goes to its address; one the site does not have
+  // falls back to the page's unprefixed address, which then serves the reader's own language. Leading
+  // slashes are collapsed so the target stays on this site (`/fr//example.com` is not `//example.com`).
   const [, first, ...rest] = pathname.split('/')
-  if (LANGUAGE_TAG.test(first) && !isLocale(first)) return moved(302, '/' + rest.join('/') + search)
+  if (LANGUAGE_TAG.test(first) && !isLocale(first)) {
+    const page = '/' + rest.join('/').replace(/^[/\\]+/, '')
+    const known = LOCALES.find(locale => locale.tag.toLowerCase() === first.toLowerCase())
+    return moved(302, (known ? localize(page, known.tag) : page) + search)
+  }
   const { tag, path } = delocalize(pathname)
   // An unprefixed address is English to a crawler, which sends neither a cookie nor a language; a
   // reader who asks for another language is sent to that language's address.

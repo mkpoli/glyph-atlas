@@ -120,7 +120,8 @@ await step('the page server forwards API paths and keeps page paths', async () =
 })
 
 await step('an address in a language the site does not have falls back to its unprefixed page', async () => {
-  const cases = [['/fr', '/'], ['/fr/history', '/history'], ['/zh-TW/history?mine=1', '/history?mine=1']]
+  const cases = [['/fr', '/'], ['/fr/history', '/history'], ['/zh-TW/history?mine=1', '/history?mine=1'],
+    ['/fr//example.com/a', '/example.com/a'], ['/JA/history', '/ja/history'], ['/zh-hant', '/zh-Hant']]
   for (const [from, to] of cases) {
     const response = await fetch(`${service.base}${from}`, { redirect: 'manual' })
     assert(response.status === 302 && response.headers.get('location') === to, `${from} answered ${response.status} → ${response.headers.get('location')}`)
