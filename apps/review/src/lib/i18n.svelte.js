@@ -138,6 +138,17 @@ export function formatNumber(value) {
 /** A running number on a tile: 01, 02 … in digits, 一, 二 … in Chinese numerals. */
 export const formatSerial = value => hanzi() ? formatNumber(value) : String(value).padStart(2, '0')
 
+/**
+ * A time of day by the twelve double hours, each split into 初 and 正, then 刻 of fifteen minutes and
+ * 分: 00:05 is 子正五分, 13:37 is 未初二刻七分.
+ */
+function doubleHour(at) {
+  const hour = at.getHours(), minute = at.getMinutes()
+  const quarter = Math.floor(minute / 15), rest = minute % 15
+  return '子丑寅卯辰巳午未申酉戌亥'[Math.floor((hour + 1) / 2) % 12] + (hour % 2 ? '初' : '正')
+    + (quarter ? `${hanziNumber(quarter)}刻` : '') + (rest ? `${hanziNumber(rest)}分` : '')
+}
+
 const dateFormats = {}
 
 /** A moment in the current language: date and time, or with `{ date: false }` the time alone. Throws on an invalid date. */
@@ -145,7 +156,7 @@ export function formatDateTime(value, { date = true } = {}) {
   const at = new Date(value)
   if (Number.isNaN(at.getTime())) throw new RangeError(`Invalid time value: ${value}`)
   if (hanzi()) {
-    const time = `${hanziNumber(at.getHours())}時${at.getMinutes() ? `${hanziNumber(at.getMinutes())}分` : ''}`
+    const time = numerals() === 'classical' ? doubleHour(at) : `${hanziNumber(at.getHours())}時${at.getMinutes() ? `${hanziNumber(at.getMinutes())}分` : ''}`
     if (!date) return time
     const year = numerals() === 'classical' ? hanziNumber(at.getFullYear()) : [...String(at.getFullYear())].map(digit => DIGITS[digit]).join('')
     return `${year}年${hanziNumber(at.getMonth() + 1)}月${hanziNumber(at.getDate())}日 ${time}`
