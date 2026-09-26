@@ -523,5 +523,6 @@
   "visualGroups.allForms": "諸體",
   "visualGroups.label": "以形分群",
   "ziLink.aria": "於zi.tools查{char}",
-  "ziLink.text": "zi.tools ↗"
+  "ziLink.text": "zi.tools ↗",
+  "meta.character.description": "古寫本、刻本所截「{character}」（{codePoint}）之字，各附其出處與用約。"
 }

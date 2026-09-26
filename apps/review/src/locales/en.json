@@ -543,5 +543,6 @@
   "visualGroups.allForms": "All forms",
   "visualGroups.label": "Visual groups",
   "ziLink.aria": "Look up {char} on zi.tools",
-  "ziLink.text": "zi.tools ↗"
+  "ziLink.text": "zi.tools ↗",
+  "meta.character.description": "Crops of {character} ({codePoint}) from historical manuscripts and printed books, each with its source and terms of use."
 }

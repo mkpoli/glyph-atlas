@@ -51,7 +51,8 @@
     setTimeout(() => savedNotice = '', 2000)
     close()
   }
-  function chooseLocale(tag) { setLocale(tag); menu = false; goto(localize(path, tag) + page.url.search, { noScroll: true, keepFocus: true }) }
+  // The address bar, not `page.url`: a view may have rewritten the address in place since the page loaded.
+  function chooseLocale(tag) { setLocale(tag); menu = false; goto(localize(delocalize(location.pathname).path, tag) + location.search, { noScroll: true, keepFocus: true }) }
   function exportReviews() { menu = false; exporting = true }
   function showProgress() { menu = false; session.showProgress() }
   // A new page closes whatever the last one left open.

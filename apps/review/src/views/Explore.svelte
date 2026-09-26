@@ -1,5 +1,7 @@
 <script>
   import { onMount, tick, untrack } from 'svelte'
+  import { replaceState } from '$app/navigation'
+  import { page } from '$app/state'
   import { productionLabel } from '../components/ProductionBadge.svelte'
   import VisualGroups from '../components/VisualGroups.svelte'
   import { isUnassigned, writtenLabel, visualGroup, matchesVisualGroup, graphemeChar } from '../lib/identity.js'
@@ -11,14 +13,21 @@
   import GraphemeGrid from '../components/GraphemeGrid.svelte'
   import { catalogue, character, request, randomSeed, number, formatSerial, stored, remember } from '../lib/client.js'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery } from '../lib/layers.js'
-  import { t, around, localName, locale, localize } from '../lib/i18n.svelte.js'
-  // `initial` is the first page the server rendered: the seed it shuffled with, the collection's rows,
-  // the corpus sample and the progress line. Without it the view loads them itself.
-  let { flagged = false, inspect, ink = 'original', onink = () => {}, onprogress = () => {}, initial = null } = $props()
-  const first = untrack(() => initial)
-  let data = $state(first?.result ?? null), items = $state(first?.result.items ?? []), error = $state(''), loading = $state(!first)
+  import { t, around, localName, locale, localize, delocalize } from '../lib/i18n.svelte.js'
+  import { characterAddress, scopeFor, unslug } from '../lib/gallery.js'
+  // `initial` is the collection page the server rendered: the seed it shuffled with, the collection's
+  // rows, the corpus sample and the progress line. `gallery` is a character's page instead
+  // (`lib/gallery.js`). Without either the view loads what it shows itself.
+  // `addressed` is the collection and character pages, whose address this view keeps; the Flagged view
+  // and the collection behind a crop's dialog leave theirs alone.
+  // `shown` is the character on show, for the page's title; the view changes it in place.
+  let { flagged = false, addressed = false, inspect, ink = 'original', onink = () => {}, onprogress = () => {}, initial = null, gallery = null, shown = $bindable() } = $props()
+  const first = untrack(() => initial), opened = untrack(() => gallery)
+  let data = $state(first?.result ?? (opened ? { query: opened.picked.char, total: opened.total, available: opened.available,
+    categories: opened.summary?.categories ?? [], documents: opened.summary?.documents ?? [], counts: opened.summary?.counts ?? {} } : null))
+  let items = $state(first?.result.items ?? []), error = $state(''), loading = $state(!first && !opened)
   let grapheme = $state(''), work = $state(''), offset = $state(0), seed = $state(first?.seed ?? randomSeed())
-  let query = $state('')
+  let query = $state(opened?.picked.char ?? '')
   let choosing = $state(false), catalogueRequest = null
   let filter = $state('all'), requestId = 0, closed = false
   // The Flagged view hides crops already reviewed in the inspector by default; the choice is
@@ -32,9 +41,23 @@
   // A picked character has a gallery of its own: the occurrences this collection holds and the
   // located glyphs the corpus index knows about. They are separate lists with separate paging —
   // different services page them — and they are merged for display only.
-  let picked = $state(null), expand = $state('none'), local = $state([]), corpus = $state([])
-  let visual = $state(''), analysis = $state(null), familyTotal = $state(null), unassignedCount = $state(null)
-  let corpusTotal = $state(0), corpusOffset = $state(0), pickId = 0, corpusFault = $state(null)
+  let picked = $state(opened?.picked ?? null), expand = $state(opened?.expand ?? 'none'), local = $state(opened?.local ?? []), corpus = $state(opened?.corpus ?? [])
+  let visual = $state(opened?.visual ?? ''), analysis = $state(opened?.analysis ?? null), familyTotal = $state(opened?.familyTotal ?? null), unassignedCount = $state(opened?.unassignedCount ?? null)
+  let corpusTotal = $state(opened?.corpusTotal ?? 0), corpusOffset = $state(opened?.corpus.length ?? 0), pickId = 0, corpusFault = $state(opened?.corpusFault ?? null)
+  $effect(() => { shown = picked?.code_point ? { char: picked.char, code_point: picked.code_point } : null })
+  /**
+   * The address says what is on show, so it can be shared and reloaded: a character's page with its
+   * scope and visual group, or the collection. The view changes what it
+   * shows in place and rewrites the address to match, so typing never leaves the page.
+   */
+  function showInAddress() {
+    if (!addressed) return
+    const [path, search = ''] = (picked?.code_point
+      ? characterAddress(picked.code_point, { scope: scopeFor(expand, picked), visual }) : '/').split('?')
+    const target = localize(path) + (search && '?' + search)
+    // A shallow rewrite leaves `page.url` as it was loaded, so the address bar is what is compared.
+    if (location.pathname + location.search !== target) replaceState(target, page.state)
+  }
   // The unfiltered homepage mixes a bounded corpus sample with the collection's own rows, so the
   // first page is not one source's leftovers: the sample is normalised by the same adapter and
   // deduplicated against what is already on the page.
@@ -147,6 +170,7 @@
   async function load(append = false) {
     choosing = false
     catalogueRequest?.abort()
+    if (!append) showInAddress()
     const id = ++requestId; loading = true; error = ''
     try {
       if (picked) {
@@ -247,6 +271,8 @@
     // Readings such as トモ ask the candidate index first. Scanning the crop catalogue for every
     // intermediate spelling only competes with the list the reader is trying to choose from.
     choosing = [...value.trim()].length > 1 && !/^(U\+[0-9a-f]{4,6})(\s+U\+[0-9a-f]{4,6})*$/i.test(value.trim())
+    // The character that was on show is gone as soon as typing starts, and the address says so.
+    showInAddress()
     if (choosing) { loading = false; return }
     // Typing one code point at a time would otherwise search the intermediate text, and a
     // supplementary character arrives as two UTF-16 units while it is being entered.
@@ -353,10 +379,22 @@
   }
   function select(value) { grapheme = value; offset = 0; load() }
   function shuffle() { seed = randomSeed(); offset = 0; load() }
-  onMount(() => { if (!first) { load(); readCollection() } const timer = setInterval(readCollection, 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
+  /**
+   * Back or Forward to an address this view rewrote loads the page as it was first loaded, while the
+   * address bar keeps what the view had moved on to. The view follows the address bar.
+   */
+  function followAddress() {
+    const { path } = delocalize(location.pathname)
+    const code = path.startsWith('/character/') ? unslug(path.slice(11)) : null
+    if (code && code !== picked?.code_point) pick({ code_point: code }, new URLSearchParams(location.search).get('scope') === 'exact')
+    else if (!code && path === '/' && picked) clearQuery()
+  }
+  onMount(() => { if (!first) readCollection(); if (!first && !opened) load(); if (addressed) followAddress(); const timer = setInterval(readCollection, 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
   // Widening is the reader's choice and only it reloads the gallery; picking a character resets the
   // widening itself and loads once through `pick`.
-  $effect(() => { const value = expand; untrack(() => { visual = ''; if (picked && !closed) load() }) })
+  // The first run is the widening the page opened with, already loaded.
+  let shownExpand = untrack(() => expand)
+  $effect(() => { const value = expand; if (value === shownExpand) return; shownExpand = value; untrack(() => { visual = ''; if (picked && !closed) load() }) })
 </script>
 
 <section class="explore">
