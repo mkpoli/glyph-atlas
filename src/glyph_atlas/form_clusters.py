@@ -299,8 +299,6 @@ def _kmeans(x, k: int, seed: int):
 
 def run(root: Path, out: Path, *, checkpoint: Path, workers: int = 8, reviews: Path | None = None) -> dict:
     """Embed, cluster and publish one revision. `root` is the corpus root holding `CORPORA`."""
-    import torch
-
     from .form_quality import Admission
 
     admission = Admission(root, reviews)
@@ -343,6 +341,8 @@ def run(root: Path, out: Path, *, checkpoint: Path, workers: int = 8, reviews: P
     ids: list[str] = []
     vectors: list[np.ndarray] = []
     if located:
+        import torch
+
         encoder = Encoder(checkpoint)
         for batch_ids, batch_vectors in _embed(_file_jobs(located), encoder, size=encoder.size, workers=workers):
             ids.extend(batch_ids)
