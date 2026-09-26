@@ -490,6 +490,22 @@ def review_corpus_suspects(
     typer.echo(json.dumps(result, ensure_ascii=False))
 
 
+@review_app.command("catalogue-suspects")
+def review_catalogue_suspects(
+    catalogues: Annotated[list[Path], typer.Argument(help="sealed publications' atlas.sqlite files")],
+    target: Annotated[Path, typer.Option(help="file the marks are written to")],
+    checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
+    classes: Annotated[Path, typer.Option(help="classifier class list")] = Path("models/classifier/classes.json"),
+    lookalikes: Annotated[Path, typer.Option(help="look-alike pairs measured for the checkpoint (`atlas review lookalikes`)")] = Path("models/classifier/artifacts/lookalikes.json"),
+) -> None:
+    """Mark the crops of sealed publications, keyed as the hosted site serves them (needs CUDA)."""
+    from .review import quiz_suspects
+
+    result = quiz_suspects.compute_catalogues(catalogues, target, checkpoint=checkpoint, classes=classes,
+                                              lookalikes=lookalikes)
+    typer.echo(json.dumps(result, ensure_ascii=False))
+
+
 @review_app.command("lookalikes")
 def review_lookalikes(
     split: Annotated[Path, typer.Argument(help="held-out classifier split")] = Path("work/classifier/test.parquet"),

@@ -146,3 +146,25 @@ def test_a_reading_reviewers_found_to_be_a_cursive_form_is_not_a_suspect(labels,
     monkeypatch.setattr(labels, "forms", frozenset({("太", "ア")}))
     assert labels.judge(np.stack([row(ア=.99, 太=.01)]), ["太"]) == [None]
     assert labels.judge(np.stack([row(イ=.99, 太=.01)]), ["太"]) == [{"p": 0.01, "reads_as": "イ"}]
+
+
+def test_catalogue_crops_are_marked_under_the_label_and_box_they_are_served_with(tmp_path, monkeypatch):
+    import sqlite3
+
+    catalogue = tmp_path / "atlas.sqlite"
+    with sqlite3.connect(catalogue) as db:
+        db.execute("CREATE TABLE units (id TEXT PRIMARY KEY, data TEXT)")
+        box = {"x": 1, "y": 2, "w": 3, "h": 4}
+        db.executemany("INSERT INTO units VALUES(?,?)", [
+            ("a", json.dumps({"label": "イ", "box": box, "image": "/atlas/media/" + "0" * 64 + ".webp"})),
+            ("no-image", json.dumps({"label": "イ", "box": box, "image": "/atlas/characters/x/image"})),
+        ])
+    seen = {}
+
+    def mark(crops, target, **kwargs):
+        seen.update({c[0]: (c[1], c[2]) for c in crops})
+        return {"scored": len(crops)}
+
+    monkeypatch.setattr(quiz_suspects, "_mark", mark)
+    assert quiz_suspects.compute_catalogues([catalogue], tmp_path / "out.json", checkpoint=tmp_path, classes=tmp_path) == {"scored": 1}
+    assert seen == {"a": ("イ", box)}

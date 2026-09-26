@@ -1,8 +1,9 @@
 """Write D1 SQL that replaces `unit_suspects` with computed Quick review suspect marks.
 
-The inputs are `quiz-suspects.json` files: the one `atlas review suspects <dataset>` writes into the
-dataset the published catalogue was exported from (its frozen `source/` copy), and the one
-`atlas review corpus-suspects` writes for the corpus glyphs. The output replaces the whole table; run
+The inputs are marks files: `atlas review catalogue-suspects` over the sealed publications the hosted
+site serves (their `atlas.sqlite`), and `atlas review corpus-suspects` for the corpus glyphs. A marks
+file for one dataset (`atlas review suspects <dataset>`) also fits, when that dataset is what was
+published. The output replaces the whole table; run
 it with `wrangler d1 execute glyph-atlas --remote --file <out>` after migration 0017 is applied.
 """
 from __future__ import annotations
