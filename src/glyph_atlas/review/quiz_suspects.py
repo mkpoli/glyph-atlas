@@ -15,8 +15,8 @@ Two readings are expected rather than suspicious, and are not marks:
   kana are one shape.
 
 Measured on 2026-09-26 against the hosted reviews of the Quick review dataset (149 crops a reviewer
-marked wrong, 2,151 left unflagged or confirmed), the rule marks 120 of the wrong crops and 9 of the
-others. Of the 19,291 crops it marks 4,387, and all but 78 of those the alignment-repair pass had
+marked wrong, 2,151 left unflagged or confirmed), the rule marks 121 of the wrong crops and 9 of the
+others. Of the 19,291 crops it marks 4,397, and all but 79 of those the alignment-repair pass had
 already withheld from rounds. Among the dealable marks about one in five is a plain error on
 inspection (a half character, a blank page edge, 知 filed as 如); reviewers found 5 errors among some
 1,900 dealt crops of the same dataset. The nearest-neighbour distance within a character was tried
