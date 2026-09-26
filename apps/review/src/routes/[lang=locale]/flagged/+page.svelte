@@ -9,4 +9,4 @@
 
 <Seo title={t('nav.flagged')} index={false} />
 
-<Explore flagged inspect={inspector.inspect.bind(inspector)} ink={session.state.ink} onink={value => session.setInk(value)} onprogress={() => session.showProgress()} />
+<Explore flagged inspect={inspector.inspect.bind(inspector)} ink={session.state.ink} onink={value => session.setInk(value)} />

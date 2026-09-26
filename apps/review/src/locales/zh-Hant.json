@@ -281,6 +281,7 @@
   "issue.reading.title": "錯字",
   "issue.selected": "已選取",
   "issue.suggested": "建議",
+  "links.licence": "授權：{license}",
   "layers.crops.count.one": "{count}個裁切",
   "layers.crops.count.other": "{count}個裁切",
   "layers.familySamples": "字族範例",

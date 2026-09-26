@@ -278,6 +278,7 @@
   "issue.reading.title": "字ノ誤",
   "issue.selected": "選擇濟",
   "issue.suggested": "推薦",
+  "links.licence": "許諾：{license}",
   "layers.crops.count.one": "截片{count}",
   "layers.crops.count.other": "截片{count}",
   "layers.familySamples": "字族見本",

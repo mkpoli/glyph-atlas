@@ -292,6 +292,7 @@
   "issue.reading.title": "Wrong character",
   "issue.selected": "Selected",
   "issue.suggested": "Suggested",
+  "links.licence": "Licence: {license}",
   "layers.crops.count.one": "{count} crop",
   "layers.crops.count.other": "{count} crops",
   "layers.familySamples": "Family samples",

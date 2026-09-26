@@ -280,6 +280,7 @@
   "issue.reading.title": "訛",
   "issue.selected": "已擇",
   "issue.suggested": "所薦",
+  "links.licence": "許用：{license}",
   "layers.crops.count.one": "截{count}",
   "layers.crops.count.other": "截{count}",
   "layers.familySamples": "族樣",

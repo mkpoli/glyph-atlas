@@ -21,4 +21,4 @@
      data={image ? cropImage(record, image) : null} />
 
 <!-- The crop itself is drawn by the layout's inspector, over the collection. -->
-<Explore inspect={inspector.inspect.bind(inspector)} ink={session.state.ink} onink={value => session.setInk(value)} onprogress={() => session.showProgress()} />
+<Explore inspect={inspector.inspect.bind(inspector)} ink={session.state.ink} onink={value => session.setInk(value)} />

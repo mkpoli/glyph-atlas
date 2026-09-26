@@ -270,6 +270,7 @@
   "issue.reading.title": "Sai chữ",
   "issue.selected": "Đã chọn",
   "issue.suggested": "Gợi ý",
+  "links.licence": "Giấy phép: {license}",
   "layers.crops.count.other": "{count} vùng cắt",
   "layers.familySamples": "Mẫu của tự tộc",
   "layers.familySamples.count.other": "{count} mẫu của tự tộc",

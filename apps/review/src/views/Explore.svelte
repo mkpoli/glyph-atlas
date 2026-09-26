@@ -12,6 +12,7 @@
   import CharacterChips from '../components/CharacterChips.svelte'
   import WorkFilter from '../components/WorkFilter.svelte'
   import GraphemeGrid from '../components/GraphemeGrid.svelte'
+  import SiteLinks from '../components/SiteLinks.svelte'
   import { catalogue, character, request, randomSeed, number, formatSerial, stored, remember } from '../lib/client.js'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery } from '../lib/layers.js'
   import { t, around, localName, locale, localize, delocalize } from '../lib/i18n.svelte.js'
@@ -24,7 +25,7 @@
   // `addressed` is the collection and character pages, whose address this view keeps; the Flagged view
   // and the collection behind a crop's dialog leave theirs alone.
   // `shown` is the character on show, for the page's title; the view changes it in place.
-  let { flagged = false, addressed = false, inspect, ink = 'original', onink = () => {}, onprogress = () => {}, initial = null, gallery = null, shown = $bindable() } = $props()
+  let { flagged = false, addressed = false, inspect, ink = 'original', onink = () => {}, initial = null, gallery = null, shown = $bindable() } = $props()
   const asked = untrack(() => initial), first = asked?.result ? asked : null, streamed = asked?.rest ? asked : null, opened = untrack(() => gallery)
   let data = $state(first?.result ?? (opened ? { query: opened.picked.char, total: opened.total, available: opened.available,
     categories: opened.summary?.categories ?? [], documents: opened.summary?.documents ?? [], counts: opened.summary?.counts ?? {} } : null))
@@ -419,13 +420,7 @@
 <section class="explore">
   <div class="explore-status">
     <h1 class="visually-hidden">{flagged ? t('explore.heading.flagged') : t('explore.heading.atlas')}</h1>
-    {#if !flagged}
-      <button class="collection-progress-link" onclick={onprogress}>
-        <span class="live-dot"></span> {t('explore.collectionProgress')}
-        {#each collection?.sources ?? [] as source}<span>{source.name} <b>{number(source.completed)}</b>{#if source.total} / {number(source.total)}{/if}</span>{/each}
-        <span>↗</span>
-      </button>
-    {/if}
+    <SiteLinks />
     <div class="collection-meta"><span class="live-dot"></span>{#if picked}<span>{t('explore.meta.glyphs', { count: display.length })}</span><span class="meta-divider">/</span><span>{expand === "grapheme" ? t('explore.meta.characters', { count: picked.grapheme?.character_count ?? 1 }) : t('explore.meta.characters', { count: 1 })}</span>{:else if !flagged && collection?.archive}<span>{t('explore.meta.indexedCrops', { count: collection.archive.character_crops })}</span><span class="meta-divider">/</span><span>{t('explore.meta.worksWithCrops', { count: collection.archive.works_with_crops })}</span>{:else}<span>{t('explore.meta.glyphsTotal', { count: flagged ? (data?.total ?? 0) + sample.length : data?.available })}</span><span class="meta-divider">/</span><span>{t('explore.meta.graphemes', { count: graphemes.length })}</span>{/if}</div>
   </div>
   <div class="collection-toolbar">
@@ -496,6 +491,4 @@
   @media(max-width:700px){.tile-verdict{top:6px;right:6px;width:18px;height:18px;font-size:11px}.decided-checked .tile-reading,.decided-flagged .tile-reading{right:28px}}
   .explore-status{display:flex;align-items:center;flex-wrap:wrap;gap:8px 24px;padding:4px 0 14px}
   .explore-status .collection-meta{margin-left:auto;padding:0}
-  .collection-progress-link{display:flex;align-items:center;flex-wrap:wrap;gap:12px 20px;border:0;border-radius:0;background:transparent;text-align:left;padding:0;color:var(--muted);font-size:12px}
-  .collection-progress-link b{font-weight:500;color:var(--ink)}
 </style>
