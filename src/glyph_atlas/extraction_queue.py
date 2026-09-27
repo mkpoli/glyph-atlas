@@ -152,7 +152,9 @@ class Queue:
             page_id TEXT NOT NULL, policy TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
             attempts INTEGER NOT NULL DEFAULT 0, output TEXT, added INTEGER, error TEXT,
             published_at TEXT, publish_error TEXT, publish_attempts INTEGER NOT NULL DEFAULT 0,
-            updated_at TEXT, PRIMARY KEY (page_id, policy))""")
+            updated_at TEXT, retry_after REAL, PRIMARY KEY (page_id, policy))""")
+        if "retry_after" not in {r[1] for r in self.db.execute("PRAGMA table_info(supplements)")}:
+            self.db.execute("ALTER TABLE supplements ADD COLUMN retry_after REAL")
         self.db.commit()
 
     def seed(self, source: Path, *, include_ainu=False):
@@ -238,22 +240,24 @@ class Queue:
             self.db.executemany("UPDATE pages SET priority=? WHERE id=?", scores)
         return len(scores)
 
-    def seed_supplements(self, source: Path, classes) -> int:
+    def seed_supplements(self, classes) -> int:
         """List the complete pages that an extraction under `POLICY` would add units to.
 
-        A page qualifies when its output was written under another policy and a line of it holds a
-        letter the classifier has no class for (`letter_out_of_vocabulary`). Returns how many rows
-        were added; a page already listed for `POLICY` is left as it is.
+        A page qualifies when its output was written under another policy and a line of it, in the
+        page's own source dataset, holds a letter the classifier has no class for
+        (`letter_out_of_vocabulary`). Returns how many rows were added; a page already listed for
+        `POLICY` is left as it is.
         """
         import pyarrow.dataset as ds
 
         from . import refs
 
-        earlier = {}
-        for page_id, output in self.db.execute("SELECT id,output FROM pages WHERE status='complete'"):
+        earlier = defaultdict(set)
+        for page_id, output, page_source in self.db.execute(
+                "SELECT id,output,source FROM pages WHERE status='complete'"):
             report = self.root/output/"report.json"
             if report.exists() and json.loads(report.read_text()).get("policy") != POLICY:
-                earlier[page_id] = output
+                earlier[page_source].add(page_id)
         if not earlier:
             return 0
         classes = set(classes)
@@ -265,15 +269,18 @@ class Queue:
             return known[char]
 
         wanted = set()
-        lines_path = Path(source) / "lines"
-        if not lines_path.exists():
-            lines_path = Path(source) / "lines.parquet"
-        scanner = ds.dataset(lines_path, format="parquet").scanner(columns=["page_id", "text"])
-        for batch in scanner.to_batches():
-            for page_id, text in zip(batch.column("page_id").to_pylist(),
-                                     batch.column("text").to_pylist(), strict=True):
-                if page_id in earlier and page_id not in wanted and text and any(map(unknown, text)):
-                    wanted.add(page_id)
+        for page_source, page_ids in earlier.items():
+            lines_path = Path(page_source) / "lines"
+            if not lines_path.exists():
+                lines_path = Path(page_source) / "lines.parquet"
+            if not lines_path.exists():
+                continue
+            scanner = ds.dataset(lines_path, format="parquet").scanner(columns=["page_id", "text"])
+            for batch in scanner.to_batches():
+                for page_id, text in zip(batch.column("page_id").to_pylist(),
+                                         batch.column("text").to_pylist(), strict=True):
+                    if page_id in page_ids and page_id not in wanted and text and any(map(unknown, text)):
+                        wanted.add(page_id)
         before = self.db.total_changes
         with self.db:
             self.db.executemany("INSERT OR IGNORE INTO supplements (page_id,policy) VALUES (?,?)",
@@ -285,12 +292,16 @@ class Queue:
         with self.db:
             row = self.db.execute("""SELECT s.page_id, s.policy, p.* FROM supplements s
                 JOIN pages p ON p.id = s.page_id WHERE s.status='pending' AND s.policy=?
+                AND (s.retry_after IS NULL OR s.retry_after<=?)
                 ORDER BY p.priority DESC, p.cached DESC, p.rank, p.document_id, p.id LIMIT 1""",
-                (POLICY,)).fetchone()
-            if row:
-                self.db.execute("""UPDATE supplements SET status='running',attempts=attempts+1,updated_at=?
-                    WHERE page_id=? AND policy=?""", (datetime.now(UTC).isoformat(), row["page_id"], POLICY))
-        return dict(row) if row else None
+                (POLICY, time.time())).fetchone()
+            if not row:
+                return None
+            self.db.execute("""UPDATE supplements SET status='running',attempts=attempts+1,updated_at=?
+                WHERE page_id=? AND policy=?""", (datetime.now(UTC).isoformat(), row["page_id"], POLICY))
+            earlier = [r[0] for r in self.db.execute("""SELECT output FROM supplements
+                WHERE page_id=? AND policy!=? AND status='complete'""", (row["page_id"], POLICY))]
+        return {**dict(row), "earlier_supplements": earlier}
 
     def finish_supplement(self, page_id, report, output):
         with self.db:
@@ -299,11 +310,15 @@ class Queue:
                                                   datetime.now(UTC).isoformat(), page_id, POLICY))
 
     def fail_supplement(self, page_id, reason):
-        """Leave a supplement pending to try again, or failed after `MAX_ATTEMPTS`."""
+        """Leave a supplement to try again after a growing pause, or failed after `MAX_ATTEMPTS`."""
+        attempts = self.db.execute("SELECT attempts FROM supplements WHERE page_id=? AND policy=?",
+                                   (page_id, POLICY)).fetchone()[0]
+        status = "pending" if attempts < MAX_ATTEMPTS else "failed"
+        retry_after = time.time() + 30 * 2**max(0, attempts-1) if status == "pending" else None
         with self.db:
-            self.db.execute("""UPDATE supplements SET status=CASE WHEN attempts>=? THEN 'failed' ELSE 'pending' END,
-                error=?,updated_at=? WHERE page_id=? AND policy=?""",
-                (MAX_ATTEMPTS, reason, datetime.now(UTC).isoformat(), page_id, POLICY))
+            self.db.execute("""UPDATE supplements SET status=?,error=?,updated_at=?,retry_after=?
+                WHERE page_id=? AND policy=?""",
+                (status, reason, datetime.now(UTC).isoformat(), retry_after, page_id, POLICY))
 
     def recover(self):
         """Return pages a stopped worker left running, and stop retrying one that keeps stopping it.
@@ -347,7 +362,9 @@ class Queue:
                   "supplements": {**dict(self.db.execute("SELECT status,count(*) FROM supplements GROUP BY status")),
                                   "added": self.db.execute("SELECT coalesce(sum(added),0) FROM supplements").fetchone()[0],
                                   "published": self.db.execute(
-                                      "SELECT coalesce(sum(added),0) FROM supplements WHERE published_at IS NOT NULL").fetchone()[0]},
+                                      "SELECT coalesce(sum(added),0) FROM supplements WHERE published_at IS NOT NULL").fetchone()[0],
+                                  "publication_failures": self.db.execute(
+                                      "SELECT count(*) FROM supplements WHERE publish_error IS NOT NULL").fetchone()[0]},
                   "updated_at": datetime.now(UTC).isoformat(),
                   "recent": [dict(r) for r in self.db.execute("""SELECT id,title,status,accepted,examined,output,error,published_at,publish_error,retry_after
                       FROM pages WHERE status!='pending' ORDER BY updated_at DESC LIMIT 12""")]}
@@ -615,16 +632,19 @@ class Engine:
 def supplement(engine, job, root, *, max_lines=64):
     """Extract a page completed under an earlier policy again and keep what that policy could not add.
 
-    The kept units are the `unconfirmed` ones that overlap no crop of the page's earlier output
-    (`overlaps`), since that output is already published and a crop there may already be reviewed.
+    The kept units are the `unconfirmed` ones that overlap no crop of the page's earlier output or of
+    a supplement an earlier policy made for it (`overlaps`), since those are already published and a
+    crop there may already be reviewed.
     They are committed with the page's document, page and line rows under `supplements/`.
     """
     report, output = engine.extract(job, root, max_lines=max_lines)
     current = tables.Dataset(output)
-    published = [unit.box for unit in tables.Dataset(root/job["output"]).read("units") if unit.box]
+    published = [unit.box for output in (job["output"], *job.get("earlier_supplements", ()))
+                 for unit in tables.Dataset(root/output).read("units") if unit.box]
     added = [unit for unit in current.read("units") if unit.meta["extraction"]["gate"] == UNCONFIRMED
              and not any(overlaps(unit.box, box) for box in published)]
-    identity = digest({"supplement": report["generation"], "earlier": job["output"]})
+    identity = digest({"supplement": report["generation"], "earlier": job["output"],
+                       "earlier_supplements": sorted(job.get("earlier_supplements", ()))})
     result = {"policy": POLICY, "generation": identity, "page_id": job["id"], "extraction": report["generation"],
               "earlier_output": job["output"], "added": len(added), "created_at": datetime.now(UTC).isoformat()}
     records = {name: current.read(name) for name in ("documents", "pages", "lines")}

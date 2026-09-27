@@ -441,15 +441,15 @@ def supplement_queue(tmp_path, pages):
 
 def test_supplements_list_pages_an_earlier_policy_completed_with_unknown_letters(tmp_path):
     from glyph_atlas.extraction_queue import POLICY
-    queue, source = supplement_queue(tmp_path, [
+    queue, _ = supplement_queue(tmp_path, [
         ("old-rare", "complete", "single-character-consensus-v1", "風飍字"),
         ("old-known", "complete", "single-character-consensus-v1", "字：ー"),
         ("old-kana", "complete", "single-character-consensus-v1", "ユ"),
         ("current", "complete", POLICY, "飍"),
         ("pending", "pending", None, "飍")])
     classes = {"U+5B57", "U+98A8", "U+3086"}
-    assert queue.seed_supplements(source, classes) == 1
-    assert queue.seed_supplements(source, classes) == 0
+    assert queue.seed_supplements(classes) == 1
+    assert queue.seed_supplements(classes) == 0
     assert [r[0] for r in queue.db.execute("SELECT page_id FROM supplements")] == ["old-rare"]
     assert queue.claim_supplement()["output"] == "pages/old-rare"
     assert queue.claim_supplement() is None
@@ -479,16 +479,21 @@ def test_a_supplement_keeps_unconfirmed_units_off_published_crops(tmp_path):
     assert report["added"] == 1 and output.parent.name == "supplements"
     assert [u.id for u in tables.Dataset(output).read("units")] == ["new:3"]
     assert not tables.Dataset(output).validate()
+    # A later policy's supplement also leaves alone what an earlier supplement published.
+    commit(root/"supplements"/"prior", "prior", {**records, "units": [placed("prior:1", 205, "unconfirmed")]}, {})
+    report, output = supplement(
+        Engine(), {"id": "d:0", "output": "pages/old", "earlier_supplements": ["supplements/prior"]}, root)
+    assert report["added"] == 0 and tables.Dataset(output).read("units") == []
 
 
 def test_run_takes_a_supplement_every_other_page_and_then_the_rest(tmp_path, monkeypatch):
     from glyph_atlas import extraction_queue
     monkeypatch.setattr(extraction_queue, "require_storage", lambda _: None)
-    queue, source = supplement_queue(tmp_path, [
+    queue, _ = supplement_queue(tmp_path, [
         ("s1", "complete", "single-character-consensus-v1", "飍"),
         ("s2", "complete", "single-character-consensus-v1", "飍"),
         ("p1", "pending", None, "字"), ("p2", "pending", None, "字")])
-    assert queue.seed_supplements(source, {"U+5B57"}) == 2
+    assert queue.seed_supplements({"U+5B57"}) == 2
     order = []
 
     class Engine:
@@ -502,7 +507,7 @@ def test_run_takes_a_supplement_every_other_page_and_then_the_rest(tmp_path, mon
     monkeypatch.setattr(extraction_queue, "supplement", fake_supplement)
     result = run(queue, Engine(), pages=4, pause=0)
     assert order == [("page", "p1"), ("supplement", "s1"), ("page", "p2"), ("supplement", "s2")]
-    assert result["supplements"] == {"complete": 2, "added": 4, "published": 0}
+    assert result["supplements"] == {"complete": 2, "added": 4, "published": 0, "publication_failures": 0}
 
 
 def test_supplements_are_published_once_and_a_refusal_is_not_retried(tmp_path, monkeypatch):
@@ -527,3 +532,44 @@ def test_supplements_are_published_once_and_a_refusal_is_not_retried(tmp_path, m
     assert publish_supplements(queue, Store()) == 0
     assert imported == ["a"]
     assert queue.status()["supplements"]["published"] == 1
+
+
+def test_a_failed_supplement_waits_before_its_next_attempt(tmp_path, monkeypatch):
+    from glyph_atlas import extraction_queue
+    queue, _ = supplement_queue(tmp_path, [("a", "complete", "single-character-consensus-v1", "飍")])
+    assert queue.seed_supplements({"U+5B57"}) == 1
+    now = [1000.0]
+    monkeypatch.setattr(extraction_queue.time, "time", lambda: now[0])
+    for attempt in range(extraction_queue.MAX_ATTEMPTS):
+        assert queue.claim_supplement()["id"] == "a"
+        queue.fail_supplement("a", "DownloadError: unavailable")
+        assert queue.claim_supplement() is None
+        now[0] += 3600
+    assert queue.db.execute("SELECT status FROM supplements").fetchone()[0] == "failed"
+
+
+def test_supplements_are_seeded_from_each_page_s_own_source(tmp_path):
+    queue, _ = supplement_queue(tmp_path, [("a", "complete", "single-character-consensus-v1", "字")])
+    other = lines_source(tmp_path, [Line(id="b:L", page_id="b", seq=0, text_raw="飍", text="飍",
+                                         box=Box(x=0, y=0, w=10, h=10))], name="user-source")
+    (queue.root/"pages"/"b").mkdir(parents=True)
+    (queue.root/"pages"/"b"/"report.json").write_text('{"policy": "single-character-consensus-v1"}')
+    queue.db.execute("""INSERT INTO pages(id,document_id,title,source,cached,rank,status,output)
+        VALUES('b','d','D',?,1,0,'complete','pages/b')""", (str(other),))
+    queue.db.commit()
+    assert queue.seed_supplements({"U+5B57"}) == 1
+    assert [r[0] for r in queue.db.execute("SELECT page_id FROM supplements")] == ["b"]
+
+
+def test_a_supplements_table_without_retry_after_is_upgraded(tmp_path):
+    import sqlite3
+    root = tmp_path/"queue"; root.mkdir()
+    db = sqlite3.connect(root/"queue.sqlite")
+    db.execute("""CREATE TABLE supplements (page_id TEXT NOT NULL, policy TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, output TEXT, added INTEGER,
+        error TEXT, published_at TEXT, publish_error TEXT, publish_attempts INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT, PRIMARY KEY (page_id, policy))""")
+    db.commit(); db.close()
+    queue = Queue(root)
+    assert "retry_after" in {r[1] for r in queue.db.execute("PRAGMA table_info(supplements)")}
+    assert queue.claim_supplement() is None
