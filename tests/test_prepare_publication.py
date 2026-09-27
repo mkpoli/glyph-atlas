@@ -101,3 +101,24 @@ def test_the_published_status_carries_no_local_paths_disk_space_or_errors():
            "extraction": {"recent": [{"path": "p", "errors": ["boom"], "pages": 2}]}}
     assert public_status(raw) == {"status": "snapshot", "completed": 3, "sources": [{"status": "snapshot", "total": 5}],
                                   "extraction": {"recent": [{"pages": 2}]}}
+
+
+def test_a_new_extracted_crop_on_the_ink_of_a_live_crop_is_left_out():
+    atlas = sqlite3.connect(":memory:")
+    atlas.execute("CREATE TABLE units (id TEXT, data TEXT)")
+
+    def data(page, x, y=10, w=40, h=40):
+        return json.dumps({"page_id": page, "box": {"x": x, "y": y, "w": w, "h": h}})
+    atlas.executemany("INSERT INTO units VALUES (?,?)", [
+        ("ex:a", data("p", 100)),   # on the live crop a reviewer moved to x=110
+        ("ex:b", data("p", 300)),   # clear of every live crop
+        ("ex:c", data("q", 100)),   # same place, another page
+        ("ex:d", data("p", 500)),   # over a retired crop only
+        ("ex:e", data("p", 110)),   # already on the site, so not new
+        ("hk:f", data("p", 110))])  # not an extracted crop
+    live = [{"id": "ex:e", "origin": "local", "data": data("p", 110)},
+            {"id": "ex:r", "origin": "retired", "data": data("p", 500)}]
+    fresh = {"ex:a", "ex:b", "ex:c", "ex:d", "hk:f"}
+    assert prepare.live_overlaps(atlas, fresh, live) == ["ex:a"]
+    # A live file written before the origin column was read counts every row as local.
+    assert prepare.live_overlaps(atlas, fresh, [{"id": "ex:r", "data": data("p", 500)}]) == ["ex:d"]
