@@ -564,3 +564,13 @@ def test_a_supplements_table_without_retry_after_is_upgraded(tmp_path):
     queue = Queue(root)
     assert "retry_after" in {r[1] for r in queue.db.execute("PRAGMA table_info(supplements)")}
     assert queue.claim_supplement() is None
+
+
+def test_the_extraction_run_is_the_pilot_run_judging_each_character_on_its_own_margin():
+    from pathlib import Path
+
+    from glyph_atlas import align
+    runs = Path(__file__).resolve().parents[1] / "models" / "align" / "runs"
+    extraction, pilot = align.load_run(runs / "collection-v2.yaml"), align.load_run(runs / "pilot-v1.yaml")
+    assert extraction.margin_scope == "character"
+    assert extraction.model_copy(update={"name": pilot.name, "margin_scope": None}) == pilot

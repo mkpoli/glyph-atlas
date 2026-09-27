@@ -487,7 +487,7 @@ class Engine:
 
         from .detect import Detector
         from .review.suggestions import Recognizer
-        self.run = align.load_run(Path("models/align/runs/pilot-v1.yaml"), "collection-v1")
+        self.run = align.load_run(Path("models/align/runs/collection-v2.yaml"))
         options = ort.SessionOptions()
         options.intra_op_num_threads = 2
         options.inter_op_num_threads = 1
