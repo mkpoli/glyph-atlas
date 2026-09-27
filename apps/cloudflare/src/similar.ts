@@ -38,9 +38,23 @@ export async function similarCrops(env: Env, id: string, limit: number, itemsFor
   if (!object) return { ...empty, revision: at.revision };
   const shard = JSON.parse(await new Response(object.body.pipeThrough(new DecompressionStream('gzip'))).text());
   const entry: Entry = shard[id] ?? {};
-  const lists = { similar: entry.similar ?? [], filed_differently: entry.filed_differently ?? [] };
-  const items = await itemsFor(env, [...new Set([...lists.similar, ...lists.filed_differently].map(([n]) => n))]);
-  const pick = (list: Neighbour[]) => list.filter(([n]) => items.has(n)).slice(0, limit)
-    .map(([n, score]) => ({ ...items.get(n), score }));
-  return { revision: at.revision, similar: pick(lists.similar), filed_differently: pick(lists.filed_differently) };
+  // Each list is resolved in order, `limit` ids at a time, until it has `limit` crops the site holds:
+  // a corpus glyph costs a record read, so the crops past what is shown are never looked up.
+  const known = new Map<string, Json | null>();
+  async function pick(list: Neighbour[]) {
+    const shown: Json[] = [];
+    for (let start = 0; start < list.length && shown.length < limit; start += limit) {
+      const batch = list.slice(start, start + limit);
+      const wanted = batch.map(([n]) => n).filter(n => !known.has(n));
+      const found = wanted.length ? await itemsFor(env, wanted) : new Map();
+      for (const n of wanted) known.set(n, found.get(n) ?? null);
+      for (const [n, score] of batch) {
+        const item = known.get(n);
+        if (item && shown.length < limit) shown.push({ ...item, score });
+      }
+    }
+    return shown;
+  }
+  const similar = await pick(entry.similar ?? []);
+  return { revision: at.revision, similar, filed_differently: await pick(entry.filed_differently ?? []) };
 }

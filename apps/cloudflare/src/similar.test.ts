@@ -25,14 +25,24 @@ describe('similar crops', () => {
       [`similar/r1/${shard}.json.gz`]: gzipSync(JSON.stringify(entries)),
     }) } as unknown as Env;
     const held = new Map([['hi:2', { id: 'hi:2', origin: 'corpus' }], ['ex:3', { id: 'ex:3', origin: 'local' }]]);
+    const asked: string[][] = [];
     const result = await similarCrops(env, 'ex:1', 12, async (_, ids) => {
-      expect(ids.sort()).toEqual(['ex:3', 'gone', 'hi:2']);
-      return held;
+      asked.push([...ids]);
+      return new Map(ids.filter(i => held.has(i)).map(i => [i, held.get(i)!]));
     });
+    // Each id is looked up once, however many lists name it.
+    expect(asked).toEqual([['hi:2', 'gone', 'ex:3']]);
     expect(result.revision).toBe('r1');
     expect(result.similar.map((i: any) => [i.id, i.score])).toEqual([['hi:2', 0.91], ['ex:3', 0.8]]);
     expect(result.filed_differently.map((i: any) => i.id)).toEqual(['ex:3']);
-    expect((await similarCrops(env, 'ex:1', 1, async () => held)).similar.length).toBe(1);
+    // With a limit of one, only the first id of each list is looked up.
+    const limited: string[][] = [];
+    const one = await similarCrops(env, 'ex:1', 1, async (_, ids) => {
+      limited.push([...ids]);
+      return new Map(ids.filter(i => held.has(i)).map(i => [i, held.get(i)!]));
+    });
+    expect(one.similar.map((i: any) => i.id)).toEqual(['hi:2']);
+    expect(limited).toEqual([['hi:2'], ['ex:3']]);
   });
 
   it('answers empty lists before any revision is published, and for a crop no shard lists', async () => {

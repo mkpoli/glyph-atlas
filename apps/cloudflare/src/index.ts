@@ -906,7 +906,8 @@ export default {
       if(path==='/atlas/reviews'||path==='/atlas/reviews.json')return json(await reviews(env,q.get('include_processed')==='true'),200,
         path.endsWith('.json')?{'content-disposition':'attachment; filename="atlas-character-reviews.json"'}:{});
       const similar=path.match(/^\/atlas\/characters\/([^/]+)\/similar$/);
-      if(similar)return json(await similarCrops(env,decodeURIComponent(similar[1]),integer(q,'limit',12,20),itemsFor));
+      if(similar){let id:string;try{id=decodeURIComponent(similar[1])}catch{throw new Problem(404,'This character is not in the published collection.')}
+        return json(await similarCrops(env,id,integer(q,'limit',12,20),itemsFor))}
       const character=path.match(/^\/atlas\/characters\/([^/]+)(\/suggestions(?:\/context)?)?$/);
       if(character){const row=await unit(env,decodeURIComponent(character[1]));
         if(character[2]){

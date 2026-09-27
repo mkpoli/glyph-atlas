@@ -248,7 +248,7 @@
         {/if}
       </div>
       {#if data.licence}<div class="image-credit"><span>{data.source}</span><small>{[data.attribution || data.holder, data.licence].filter(Boolean).join(' · ')}</small>{#if data.rights_url}<a href={data.rights_url} target="_blank" rel="noreferrer">{t('character.sourceRights')}</a>{/if}</div>{/if}
-      <SimilarCrops id={data.id} />
+      <SimilarCrops id={data.id} label={data.label} />
       <div class="inspector-question"><strong>{t('character.question.whatsWrong')}</strong><span>{t('character.question.chooseOne')}</span></div>
       <IssuePicker value={issue} choose={chooseIssue} suggested={suggestedIssue} disabled={busy} />
       <ReadingSuggestions targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={suggestions} loading={suggesting} contextResult={contextSuggestions} contextLoading={contextSuggesting} {issue} reading={data.label} value={issue === 'character' ? written : correction} disabled={busy} choose={chooseSuggestion} />
