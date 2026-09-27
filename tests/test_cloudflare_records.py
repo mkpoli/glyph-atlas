@@ -110,7 +110,7 @@ def test_an_export_that_packed_images_seals_its_media_first_and_insert_only(scri
     assert sql.index("INSERT OR IGNORE INTO media") < sql.index("INSERT INTO corpus_units")
     site = sqlite3.connect(":memory:")
     site.executescript(SCHEMA)
-    # A key D1 already holds keeps its row: the key is the image's hash, so both name the same bytes.
+    # A key D1 already holds keeps its row: the key hashes the crop's render specification, so both show one crop.
     site.execute("INSERT INTO media VALUES(?, 'packs/earlier.bin', 7, ?, 'image/webp')", (old, len(context)))
     site.executescript(sql)
     assert site.execute("SELECT object, offset FROM media WHERE key=?", (new,)).fetchone() == (pack, 0)

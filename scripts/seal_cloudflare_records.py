@@ -3,7 +3,8 @@
 The input is `export_cloudflare_corpus.py`. With `--records-only` its records point only at images
 an earlier publication already put in R2 and D1; without it the export also packed the crops of its
 own units, and those media packs and `media` rows are sealed too. A `media` row is inserted only
-when its key is new: the key is the image's own hash, so a row already in D1 names the same bytes.
+when its key is new: the key hashes the crop's render specification (source file, box, context,
+renderer version; `glyph_atlas.review.media`), so a row already in D1 shows the same crop.
 Locally reviewed corpus glyphs are not carried as `units` rows here; a review reaches Cloudflare
 through a full `seal_cloudflare.py` publication. The output holds `objects/` (one file per pack,
 named by its SHA-256), `sql/NNN.sql` parts under D1's import size with the `media` rows first, and
