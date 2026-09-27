@@ -83,6 +83,11 @@ def holder_context(joined, box, page):
     return (window, url) if url else (None, None)
 
 
+def attribution(joined):
+    """The credit line the source asks for, from the image rights of its registry record, or None."""
+    return (joined.get("image_rights") or {}).get("attribution") or None
+
+
 def holder_image(joined, box, enabled):
     """The holder's own IIIF region of a unit's box when `enabled` and the page has a service."""
     return _iiif_region(joined.get("image_service"), box, edge=480) if enabled else None
@@ -230,7 +235,8 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
                     record_url=resolver._record_url(corpus, joined, box),
                     extra={"kind": "char", "method": joined.get("method"), "basis": "upstream_bbox" if box else "upstream_crop",
                         "review": joined.get("review") or "machine", "confirmed_by_human": False,
-                        "render_available": True, **{k: joined.get(k) for k in ("production", "production_label", "production_evidence")}})
+                        "render_available": True, "attribution": attribution(joined),
+                        **{k: joined.get(k) for k in ("production", "production_label", "production_evidence")}})
                 detail.update(origin="corpus", state="pending", revision=0, suggestions=[], located=True, grid_safe=True)
                 if record_file is None or record_file.tell() >= 32 * 1024**2:
                     if record_file:

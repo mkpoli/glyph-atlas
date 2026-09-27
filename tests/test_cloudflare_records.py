@@ -305,3 +305,11 @@ def test_a_glyph_on_a_holder_page_takes_the_holders_region_as_its_context(script
     # A page registered at a scaled rendition has boxes in that rendition's pixels, not the service's.
     scaled = {"width": 1495, "height": 1050, "image": f"{service}/full/1495,/0/default.jpg"}
     assert export.holder_context({"image_service": service}, box, scaled) == (None, None)
+
+
+def test_a_corpus_glyph_carries_its_sources_credit_line(scripts):
+    exporter = importlib.import_module("export_cloudflare_corpus")
+    credit = "東京大学史料編纂所「くずし字データセット」doi:10.57459/hi.34.kuzushiji"
+    assert exporter.attribution({"image_rights": {"licence": "CC-BY-4.0", "attribution": credit}}) == credit
+    assert exporter.attribution({"image_rights": {"licence": "PD"}}) is None
+    assert exporter.attribution({}) is None
