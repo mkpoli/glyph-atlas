@@ -104,20 +104,18 @@ function listing(d: Json): Json {
   const { text, line, context_image, context_box, crop_box, ...rest } = d;
   return rest;
 }
-// A pending crop that a round showed and left unflagged, and that still has the box it was seen with,
-// is `seen`: out of the queue, and no decision. An undone round's rows stop counting.
 // Skips that still count: from a round that was not undone, at the crop's current box.
 const SKIPS = `FROM skips k JOIN submissions b ON b.id=k.submission AND b.undone=0
   WHERE k.target=units.id AND k.box IS json_extract(units.data,'$.box')`;
-// A pending crop two reviewers skipped is `hard`: it leaves the rounds for its own list.
-const HARD = `(SELECT count(DISTINCT k.actor) ${SKIPS})>=2`;
+// What rounds made of a crop at its current box (`unit_marks`): a pending crop two reviewers skipped is
+// `hard` and leaves the rounds for its own list; one a round showed and left unflagged is `seen`, out
+// of the queue with no decision.
+const MARK = `(SELECT mark FROM unit_marks m WHERE m.id=units.id)`;
 // A standing review from the character inspector (`character-review`), not a round's own verdict;
 // an undone review stops counting.
 export const reviewedInInspectorQuery = () => `EXISTS(SELECT 1 FROM events e JOIN submissions f ON f.id=e.submission AND f.undone=0
   WHERE e.target=units.id AND e.kind='review' AND json_extract(json_extract(e.event,'$.evidence'),'$.kind')='character-review')`;
 const REVIEWED_IN_INSPECTOR = reviewedInInspectorQuery();
-const SEEN = `EXISTS(SELECT 1 FROM seen s JOIN submissions b ON b.id=s.submission AND b.undone=0
-  WHERE s.target=units.id AND s.box IS json_extract(units.data,'$.box'))`;
 // The classifier's doubt about a crop's label, as `atlas review suspects` computed it, or null.
 const SUSPECT = `(SELECT json_object('p',m.p,'reads_as',m.reads_as,'label',m.label,'box',json(m.box)) FROM unit_suspects m WHERE m.id=units.id)`;
 type Suspect = { p: number; reads_as: string | null; label: string; box: Json | null };
@@ -129,12 +127,12 @@ export function suspectOf(mark: Suspect | null | undefined, item: Json): Json | 
   const same = a === null || b === null ? a === b : ['x', 'y', 'w', 'h'].every(k => Math.abs(Number(a[k]) - Number(b[k])) < 1e-6);
   return same ? { p: mark.p, reads_as: mark.reads_as } : null;
 }
-// The crops that can be flagged or hard: those stored as flagged (`unit_state`), and those at least
-// two people skipped. Every crop the effective state calls flagged or hard is among them.
+// The crops that can be flagged or hard: those stored as flagged (`unit_state`), and those marked hard
+// (`unit_mark`). Every crop the effective state calls flagged or hard is among them.
 export const attentionCandidatesQuery = () => `id IN (SELECT id FROM units WHERE origin='local' AND state='flagged'
-  UNION SELECT target FROM skips GROUP BY target HAVING count(DISTINCT actor)>=2)`;
+  UNION SELECT id FROM unit_marks WHERE mark='hard')`;
 const ATTENTION_CANDIDATES = attentionCandidatesQuery();
-const EFFECTIVE_STATE = `iif(state='pending' AND ${HARD},'hard',iif(state='pending' AND ${SEEN},'seen',state))`;
+const EFFECTIVE_STATE = `iif(state='pending',coalesce(${MARK},state),state)`;
 // How long a crop a reviewer skipped stays out of that reviewer's own rounds.
 const SKIP_REST_MS = 3 * 24 * 60 * 60 * 1000;
 const quoted = (value: string) => `'${value.replaceAll("'", "''")}'`;
@@ -142,10 +140,9 @@ const quoted = (value: string) => `'${value.replaceAll("'", "''")}'`;
 export function stateFor(reviewer: string | null): string {
   if (!reviewer) return EFFECTIVE_STATE;
   const since = new Date(Date.now() - SKIP_REST_MS).toISOString();
-  // The reviewer's own recent skip is tested first: it is one indexed probe and false for most rows,
-  // so the full state is evaluated once per row.
+  // The reviewer's own recent skip is tested first: it is one indexed probe and false for most rows.
   return `iif(state='pending' AND EXISTS(SELECT 1 ${SKIPS} AND k.actor=${quoted(reviewer)} AND k.at>${quoted(since)})
-    AND NOT ${HARD} AND NOT ${SEEN},'skipped',${EFFECTIVE_STATE})`;
+    AND ${MARK} IS NULL,'skipped',${EFFECTIVE_STATE})`;
 }
 // What a shown crop's pixels are named by: a local crop's page hash, a corpus glyph's source revision.
 const pixels = (crop: Json) => crop.image_sha256 ?? crop.source_revision;
