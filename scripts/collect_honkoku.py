@@ -23,6 +23,13 @@ from pathlib import Path
 from glyph_atlas.importers import honkoku_queue as hq
 
 
+def project_id(value: str) -> str:
+    """A project id, refused when blank: an empty filter would silently mean every project."""
+    if not value.strip():
+        raise argparse.ArgumentTypeError("a project id must not be empty")
+    return value.strip()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -63,6 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--project",
         action="append",
+        type=project_id,
         default=None,
         metavar="ID",
         help="collect only books of this project; repeat for several",
@@ -81,7 +89,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.project and (args.entry or args.seed or args.discover or args.checkpoint is not None):
+        parser.error("--project applies to a collection run, not to --entry, --seed, --discover or --checkpoint")
 
     # Reading the outputs does not open the queue: a reader must not create tables,
     # directories or a book claim as a side effect of asking what happened.

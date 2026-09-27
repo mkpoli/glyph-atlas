@@ -965,3 +965,15 @@ class TestCollectionOrder:
         queue = self.queue(tmp_path, [("new", "young", 4, 4), ("old", "aged", 4, 4)],
                            projects=[("young", 2_000), ("aged", 1_000)])
         assert self.order(queue) == ["old", "new"]
+
+
+def test_a_blank_project_filter_is_refused():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("collect_honkoku", Path(__file__).parents[1] / "scripts/collect_honkoku.py")
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+    with pytest.raises(SystemExit):
+        script.build_parser().parse_args(["--project", " "])
+    with pytest.raises(SystemExit):
+        script.main(["--project", "p", "--discover"])
