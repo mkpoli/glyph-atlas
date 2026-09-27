@@ -20,7 +20,7 @@ from collections import Counter, defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
 
-from . import align, images, production, tables
+from . import align, images, tables
 from .schema import Classification, ReviewState, UnitKind
 
 POLICY = "single-character-consensus-v1"
@@ -118,8 +118,6 @@ class Queue:
             document = documents[page.document_id]
             if not include_ainu and any(s in document.title for s in ("蝦夷", "北海随筆", "アイヌ", "藻汐")):
                 continue
-            if not in_extraction_scope(document):
-                continue
             groups[page.document_id].append(page)
         before = self.db.total_changes
         with self.db:
@@ -130,22 +128,6 @@ class Queue:
                         (page.id, document_id, documents[document_id].title,
                          str(source), int(page.image in cached), rank))
         return self.db.total_changes - before
-
-    def exclude(self, source: Path) -> int:
-        """Set aside pending and retry pages of the documents outside `production.EXTRACTION_SCOPE`.
-
-        Seeding already leaves them out; this catches pages seeded before a document's production
-        was known. They become `excluded` and are never claimed. Returns how many pages changed.
-        """
-        documents = tables.Dataset(source).read("documents")
-        out = [(d.id,) for d in documents if not in_extraction_scope(d)]
-        with self.db:
-            self.db.execute("CREATE TEMP TABLE IF NOT EXISTS out_of_scope (id TEXT PRIMARY KEY)")
-            self.db.execute("DELETE FROM out_of_scope")
-            self.db.executemany("INSERT OR IGNORE INTO out_of_scope VALUES (?)", out)
-            return self.db.execute("""UPDATE pages SET status='excluded',updated_at=?
-                WHERE status IN ('pending','retry') AND document_id IN (SELECT id FROM out_of_scope)""",
-                (datetime.now(UTC).isoformat(),)).rowcount
 
     def claim(self):
         """Take the next page to extract, in the order this class's docstring describes."""
@@ -235,10 +217,6 @@ class Queue:
                       FROM pages WHERE status!='pending' ORDER BY updated_at DESC LIMIT 12""")]}
         atomic_json(self.root / "status.json", result)
         return result
-
-
-def in_extraction_scope(document) -> bool:
-    return production.in_scope(production.production_info(document)["production"], production.EXTRACTION_SCOPE)
 
 
 def quality_reason(unit, votes, size):

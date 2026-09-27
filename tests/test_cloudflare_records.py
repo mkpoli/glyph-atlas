@@ -291,13 +291,6 @@ def test_an_export_or_seal_drops_the_glyphs_the_site_publishes_as_its_own_crops(
     assert [i for i, in db.execute("SELECT id FROM corpus_units")] == ["codh:1"]
 
 
-def test_typeset_glyphs_of_an_extracted_corpus_are_not_exported(scripts):
-    export = importlib.import_module("export_cloudflare_corpus")
-    assert not export.published_production("honkoku-lines", "printed/type/metal")
-    assert export.published_production("honkoku-lines", "unknown")
-    assert export.published_production("kokatsuji", "printed/type")
-
-
 def test_a_glyph_on_a_holder_page_takes_the_holders_region_as_its_context(scripts):
     """A page the holder serves at full size shows the holder's region at the full reach; no service, no
     page size to clamp to, or a scaled rendition leaves the context to the local cut."""

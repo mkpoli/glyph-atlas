@@ -40,7 +40,6 @@ with tables.locked(args.root/"worker",timeout=0):
         print(json.dumps(queue.status(),ensure_ascii=False,indent=2))
     else:
         queue.status(state="initializing")
-        queue.exclude(args.source)
         if not args.no_prioritize:
             counts = load_char_counts(args.counts) if args.counts.exists() else {}
             queue.prioritize(args.source, counts)

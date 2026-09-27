@@ -12,7 +12,6 @@ import pyarrow.dataset as ds
 from cloudflare_schema import CORPUS_REFRESH, schema
 from export_cloudflare import Packs, encoded
 
-from glyph_atlas import production
 from glyph_atlas.corpus import sources
 from glyph_atlas.corpus.api import PROXYABLE, CorpusAPI
 from glyph_atlas.corpus.details import DetailResolver, _iiif_region, _viewport
@@ -93,13 +92,6 @@ def holder_image(joined, box, enabled):
 #: published from it as local crops under the same ids; as corpus glyphs too, a round would deal the
 #: copy and every save of it would be refused against the local row.
 PUBLISHED_LOCALLY = frozenset({"ainu-records"})
-#: Corpora whose boxes the detector placed on transcribed pages; they follow `production.EXTRACTION_SCOPE`.
-EXTRACTED = frozenset({"honkoku-lines"})
-
-
-def published_production(corpus, kind):
-    """Whether a glyph of `corpus` made by production `kind` is published."""
-    return corpus not in EXTRACTED or production.in_scope(kind, production.EXTRACTION_SCOPE)
 
 
 def locally_published_ids(root="work") -> set[str]:
@@ -180,9 +172,6 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
                 if not char:
                     continue
                 joined = _unit_row(corpus, context, row, char, row.get("unicode") or "")
-                if not published_production(corpus.name, joined.get("production") or "unknown"):
-                    counts["out-of-scope"] += 1
-                    continue
                 if joined.get("image_licence") not in PROXYABLE:
                     counts["licence-link-only"] += 1
                     continue
