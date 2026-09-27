@@ -153,6 +153,8 @@ class Queue:
             attempts INTEGER NOT NULL DEFAULT 0, output TEXT, added INTEGER, error TEXT,
             published_at TEXT, publish_error TEXT, publish_attempts INTEGER NOT NULL DEFAULT 0,
             updated_at TEXT, retry_after REAL, PRIMARY KEY (page_id, policy))""")
+        if "retry_after" not in {r[1] for r in self.db.execute("PRAGMA table_info(supplements)")}:
+            self.db.execute("ALTER TABLE supplements ADD COLUMN retry_after REAL")
         self.db.commit()
 
     def seed(self, source: Path, *, include_ainu=False):

@@ -559,3 +559,17 @@ def test_supplements_are_seeded_from_each_page_s_own_source(tmp_path):
     queue.db.commit()
     assert queue.seed_supplements({"U+5B57"}) == 1
     assert [r[0] for r in queue.db.execute("SELECT page_id FROM supplements")] == ["b"]
+
+
+def test_a_supplements_table_without_retry_after_is_upgraded(tmp_path):
+    import sqlite3
+    root = tmp_path/"queue"; root.mkdir()
+    db = sqlite3.connect(root/"queue.sqlite")
+    db.execute("""CREATE TABLE supplements (page_id TEXT NOT NULL, policy TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, output TEXT, added INTEGER,
+        error TEXT, published_at TEXT, publish_error TEXT, publish_attempts INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT, PRIMARY KEY (page_id, policy))""")
+    db.commit(); db.close()
+    queue = Queue(root)
+    assert "retry_after" in {r[1] for r in queue.db.execute("PRAGMA table_info(supplements)")}
+    assert queue.claim_supplement() is None
