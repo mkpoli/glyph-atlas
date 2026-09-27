@@ -80,7 +80,7 @@
   const charOf = key => /^U\+[0-9A-F]{4,6}( U\+[0-9A-F]{4,6})*$/i.test(key)
     ? key.split(' ').map(point => String.fromCodePoint(parseInt(point.slice(2), 16))).join('') : key
   // Whether the graphemes are listed from the most crops or from the fewest; the choice is remembered.
-  let order = $state(stored('atlas.browseOrder', 'most'))
+  let order = $state(stored('atlas.browseOrder', 'most') === 'fewest' ? 'fewest' : 'most')
   function orderBy(value) { order = value; remember('atlas.browseOrder', value) }
   // The readings the catalogue counts, gathered under their graphemes: 仮 and 假 are one tile.
   const graphemes = $derived.by(() => {
