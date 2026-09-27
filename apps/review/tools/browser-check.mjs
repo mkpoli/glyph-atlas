@@ -105,13 +105,11 @@ try {
   const tile = id => `.quiz-tile[data-unit="${id}"]`
   const beforeCorrection = units(config.directory)[correctedId]
   const roundMark = events(config.directory).length
-  // The id on a tile's hover card copies itself and leaves the tile unselected.
+  // The id on a tile's hover card copies itself and leaves the tile unselected. Headless Chromium has
+  // no hovering pointer, so the card never takes pointer events here and the id is clicked directly.
   await browser.send('Browser.grantPermissions', { permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite'], origin: new URL(service.base).origin })
-  await browser.evaluate(`document.querySelector('${tile(joinedA)}').scrollIntoView({block:'center'})`)
-  const hovered = await browser.centre(tile(joinedA))
-  await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(hovered.x), y: Math.round(hovered.y) })
-  await Bun.sleep(250)
-  await click(tile(joinedA) + ' .copy-inline')
+  await browser.evaluate(`document.querySelector('${tile(joinedA)} .copy-inline').click()`)
+  await Bun.sleep(100)
   await browser.screenshot(join(screenshots, 'quiz-copy-id-desktop.png'))
   assert(await browser.evaluate('navigator.clipboard.readText()') === joinedA, 'the tile id is copied')
   assert(await browser.evaluate(`document.querySelector('${tile(joinedA)} .copy-inline').textContent === 'Copied'`), 'the tile id says it was copied')

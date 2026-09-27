@@ -622,8 +622,9 @@
   .quiz-tile-details{bottom:32px;padding-bottom:10px}
   /* Keyboard focus shows it too; a click that leaves focus on the tile does not keep it open. */
   .quiz-tile:hover .quiz-tile-details,.quiz-tile:has(:focus-visible) .quiz-tile-details{opacity:1;transform:none}
-  /* The id takes clicks only while its card shows, so a tap on a touch screen still selects the crop. */
-  .quiz-tile:hover .quiz-tile-details :global(.copy-inline){pointer-events:auto}
+  /* The id takes clicks only while its card shows, and only for a pointer that hovers: a touch screen
+     keeps a tapped tile in :hover, and the next tap there must still toggle the crop. */
+  @media (hover:hover){.quiz-tile:hover .quiz-tile-details :global(.copy-inline){pointer-events:auto}}
   .quiz-source{flex:1;min-width:0;overflow:hidden;font-size:10px;line-height:1.5;color:var(--muted);text-overflow:ellipsis;white-space:nowrap}
   .quiz-tile.skipped { background: var(--surface-skipped); border-style: dashed; }
   .quiz-tile.skipped .quiz-choice { opacity: .35; }
