@@ -44,8 +44,8 @@ UNITS_PER_STATEMENT = 1000
 # cached family pages by it.
 REPLAY = """
 DELETE FROM form_marks;
-INSERT INTO form_marks(id,at,seq,kind,form,decision,issue,character,character_family)
-  SELECT j.value,d.at,d.seq,d.kind,d.form,d.id,d.issue,d.character,d.character_family
+INSERT INTO form_marks(id,at,seq,kind,form,decision,issue,character,written_family)
+  SELECT j.value,d.at,d.seq,d.kind,d.form,d.id,d.issue,d.character,d.written_family
   FROM form_decisions d,json_each(d.units) j;
 -- Keep a projection of decisions whose glyphs no longer have cluster membership.
 -- Their historic family/cluster are provenance; clustered=0 keeps them out of Forms.
@@ -54,19 +54,19 @@ INSERT OR IGNORE INTO form_units(id,family,cluster,rank,similarity,split,cluster
   FROM form_marks m JOIN form_decisions d ON d.id=m.decision
   WHERE m.seq=(SELECT max(last.seq) FROM form_marks last WHERE last.id=m.id);
 UPDATE form_units SET (cluster_form,cluster_issue,cluster_character,cluster_family)=(SELECT m.form,
-  CASE WHEN m.issue<>'mixed' THEN m.issue END,m.character,m.character_family
+  CASE WHEN m.issue<>'mixed' THEN m.issue END,m.character,m.written_family
   FROM form_marks m WHERE m.id=form_units.id AND m.kind='cluster'
   ORDER BY m.at DESC,m.seq DESC LIMIT 1) WHERE id IN (SELECT id FROM form_marks WHERE kind='cluster');
 UPDATE form_units SET (glyph_set,glyph_form,glyph_decision,glyph_issue,glyph_character,glyph_family)=(SELECT m.kind='glyph',
   CASE WHEN m.kind='glyph' THEN m.form END,CASE WHEN m.kind='glyph' THEN m.decision END,
   CASE WHEN m.kind='glyph' THEN m.issue END,CASE WHEN m.kind='glyph' THEN m.character END,
-  CASE WHEN m.kind='glyph' THEN m.character_family END
+  CASE WHEN m.kind='glyph' THEN m.written_family END
   FROM form_marks m WHERE m.id=form_units.id AND m.kind<>'cluster'
   ORDER BY m.at DESC,m.seq DESC LIMIT 1) WHERE id IN (SELECT id FROM form_marks WHERE kind<>'cluster');
 UPDATE form_units SET form=CASE WHEN glyph_set=1 THEN glyph_form ELSE cluster_form END,
   issue=CASE WHEN glyph_set=1 THEN glyph_issue ELSE cluster_issue END,
   issue_character=CASE WHEN glyph_set=1 THEN glyph_character ELSE cluster_character END,
-  issue_family=CASE WHEN glyph_set=1 THEN glyph_family ELSE cluster_family END;
+  written_family=CASE WHEN glyph_set=1 THEN glyph_family ELSE cluster_family END;
 DELETE FROM form_marks;
 UPDATE form_clusters SET (form,issue,decision)=(SELECT d.form,d.issue,d.id FROM form_decisions d WHERE d.kind='cluster'
   AND d.cluster=form_clusters.id AND (d.revision=(SELECT revision FROM form_families WHERE code_point=form_clusters.family)
@@ -79,8 +79,8 @@ DELETE FROM form_loading;
 """
 
 
-def character_family(character: str | None) -> str | None:
-    """The grapheme family of a character a glyph was reported as, as the Worker takes it."""
+def written_family(character: str | None) -> str | None:
+    """The grapheme family of the form or character a glyph is written as, as the Worker takes it."""
     if not character:
         return None
     from glyph_atlas import refs
@@ -214,8 +214,8 @@ def export(corpus_root: Path, out: Path, workers: int = 8) -> dict:
     parts.write("DELETE FROM form_loading;")
     for event in forms._events():
         units = event["units"]
-        parts.write("INSERT OR IGNORE INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,note,issue,character,character_family) "
-                    f"VALUES({_values((event['id'], event['at'], event.get('actor', 'local'), event['kind'], event['family'], event.get('form'), event.get('cluster'), event['revision'], json.dumps(units[:UNITS_PER_STATEMENT]), event.get('note', ''), event.get('issue'), event.get('character'), character_family(event.get('character'))))});")
+        parts.write("INSERT OR IGNORE INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,note,issue,character,written_family) "
+                    f"VALUES({_values((event['id'], event['at'], event.get('actor', 'local'), event['kind'], event['family'], event.get('form'), event.get('cluster'), event['revision'], json.dumps(units[:UNITS_PER_STATEMENT]), event.get('note', ''), event.get('issue'), event.get('character'), written_family(event.get('form') or event.get('character'))))});")
         # D1 refuses a statement over 100 KB, so a large cluster's glyphs follow in parts. Each part
         # extends only the list it follows, which leaves a decision already in D1 as it is.
         for start in range(UNITS_PER_STATEMENT, len(units), UNITS_PER_STATEMENT):

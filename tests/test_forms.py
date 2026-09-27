@@ -80,6 +80,17 @@ def test_a_decided_form_becomes_the_written_character_below_a_human_review(clust
     assert excluded["written_character"] is None and excluded["identity_basis"] == "form_glyph"
 
 
+def test_a_glyph_takes_the_grapheme_of_the_form_named_for_it(clustering, monkeypatch):
+    row = {"id": A, "unicode": "U+306F", "text_source": "は", "page_id": "codh:book:page"}
+    forms.record("cluster", cluster="U+306F:one", form="𛂥")
+    assert identity_fields(row, "codh-full")["grapheme"] == "U+306F"
+    # A kanji variant is not its label's grapheme: a 倣 glyph named 仿 is 仿's.
+    monkeypatch.setattr(forms, "form_for", lambda identity: {"form": "仿", "basis": "form_cluster"})
+    kanji = {"id": A, "unicode": "U+5023", "text_source": "倣", "page_id": "codh:book:page"}
+    fields = identity_fields(kanji, "codh-full")
+    assert (fields["written_character"], fields["grapheme"]) == ("仿", "U+4EFF")
+
+
 def test_the_api_lists_clusters_and_records_decisions(clustering, tmp_path):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient

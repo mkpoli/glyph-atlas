@@ -7,7 +7,7 @@ describe('form decisions outside cluster membership', () => {
   it('keeps the corrected identity without linking to a removed cluster', () => {
     const result = formed({ id: 'u', label: 'は', form_cluster: { id: 'old' } }, {
       id: 'u', cluster: 'old', clustered: 0, form: null, glyph_set: 1, cluster_form: null,
-      issue: 'character', issue_character: '川', issue_family: 'U+5DDD',
+      issue: 'character', issue_character: '川', written_family: 'U+5DDD',
     }, { codePoints: () => 'U+5DDD' });
     expect(result.label).toBe('川');
     expect(result.grapheme).toBe('U+5DDD');
@@ -27,6 +27,32 @@ describe('form decisions outside cluster membership', () => {
     expect(db.query(leastTypicalQuery()).all('U+306F')).toEqual([
       { cluster: 'c', id: 'kept', image: null, rank: 12 },
     ]);
+    db.close();
+  });
+
+  it('gives a glyph named with a form the grapheme of that form', () => {
+    const db = new Database(':memory:');
+    const migrations = new URL('../migrations/', import.meta.url);
+    const files = readdirSync(migrations).filter(f => f.endsWith('.sql')).sort();
+    for (const file of files.filter(f => f < '0030'))
+      db.exec(readFileSync(new URL(file, migrations), 'utf8'));
+    db.exec(`INSERT INTO characters VALUES('U+4EFF','仿','','{"grapheme":{"code_point":"U+4EFF"}}','{}'),
+        ('U+1B0A5','𛂥','','{"grapheme":{"code_point":"U+306F"}}','{}');
+      INSERT INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,note)
+        VALUES('d1','2026-09-27','a','cluster','U+5023','仿','c','r','["k"]',''),
+              ('d2','2026-09-27','a','cluster','U+306F','𛂥','h','r','["h"]','');
+      INSERT INTO form_units(id,family,cluster,rank,similarity,split,clustered,cluster_form,form)
+        VALUES('k','U+5023','c',0,1,'',1,'仿','仿'),('h','U+306F','h',0,1,'',1,'𛂥','𛂥'),('m','U+4E00','x',0,1,'',1,'𮧒','𮧒');
+      INSERT INTO corpus_units(id,character,family,shuffle,object,offset,size) VALUES('k','仿','U+5023',1,'o',0,1);
+      INSERT INTO form_bases(id,character,family) VALUES('k','倣','U+5023');`);
+    for (const file of files.filter(f => f >= '0030'))
+      db.exec(readFileSync(new URL(file, migrations), 'utf8'));
+    expect(db.query('SELECT id,written_family FROM form_decisions ORDER BY id').all()).toEqual([
+      { id: 'd1', written_family: 'U+4EFF' }, { id: 'd2', written_family: 'U+306F' }]);
+    // A form the character table lacks takes its own code point, as `tools.family` does.
+    expect(db.query('SELECT id,written_family FROM form_units ORDER BY id').all()).toEqual([
+      { id: 'h', written_family: 'U+306F' }, { id: 'k', written_family: 'U+4EFF' }, { id: 'm', written_family: 'U+2E9D2' }]);
+    expect(db.query("SELECT character,family FROM corpus_units WHERE id='k'").get()).toEqual({ character: '仿', family: 'U+4EFF' });
     db.close();
   });
 });
