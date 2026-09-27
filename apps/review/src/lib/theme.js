@@ -11,8 +11,12 @@ export function setTheme(value) {
   showThemeColor(value)
 }
 
-/** The browser's own bar follows the chosen scheme: each theme-color meta names the scheme it is for. */
+/** The `color-scheme` meta and the media of the theme-color meta for `scheme`, the browser's own bar. */
+export const colorScheme = value => value === 'system' ? 'light dark' : value
+export const themeColorMedia = (value, scheme) => value === 'system' ? `(prefers-color-scheme: ${scheme})` : value === scheme ? 'all' : 'not all'
+
+/** The metas follow the chosen scheme; the server writes them the same way into the page it renders. */
 export function showThemeColor(value) {
-  for (const meta of document.querySelectorAll('meta[name=theme-color][data-scheme]'))
-    meta.media = value === 'system' ? `(prefers-color-scheme: ${meta.dataset.scheme})` : meta.dataset.scheme === value ? 'all' : 'not all'
+  document.querySelector('meta[name=color-scheme]')?.setAttribute('content', colorScheme(value))
+  for (const meta of document.querySelectorAll('meta[name=theme-color][data-scheme]')) meta.media = themeColorMedia(value, meta.dataset.scheme)
 }
