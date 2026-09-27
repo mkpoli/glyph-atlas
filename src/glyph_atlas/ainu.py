@@ -496,6 +496,9 @@ def derived_by_atlas(line: Line) -> bool:
 def human_box(line: Line) -> bool:
     """Whether this line's box is anybody's but this derivation's, and so not a proposal's to touch.
 
+    "Anybody" includes other placement methods: a box `atlas lines match` wrote is left to that
+    command's own reruns, exactly as a reviewer's or an import's box is.
+
     A box the derivation wrote carries its provenance, and only such a box may be replaced on a paired
     page or withdrawn on an unpaired one. Everything else with a box is left alone: a reviewer's
     (`match_method` of `manual` or `review`, or a `meta` that names a person's source), and equally an

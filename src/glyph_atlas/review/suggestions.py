@@ -22,8 +22,11 @@ MODEL = ROOT / "cache/models/ndlkotenocr-lite"
 LOCK = threading.Lock()
 
 
-def decode(logits: np.ndarray, alphabet: str) -> list[dict]:
+def decode(logits: np.ndarray, alphabet: str, *, limit: int | None = 32) -> list[dict]:
     """Decode EOS-terminated tokens and a few single-position alternatives.
+
+    `limit` caps the decoded length; a crop in review is a few characters, while a whole
+    transcription line (`line_match`) is read to its end-of-sequence token, as upstream does.
 
     These are model suggestions, not calibrated confidence estimates or separate OCR runs.
     """
@@ -36,7 +39,8 @@ def decode(logits: np.ndarray, alphabet: str) -> list[dict]:
     probs /= probs.sum(axis=1, keepdims=True)
     tokens = probs.argmax(axis=1).tolist()
     length = tokens.index(0) if 0 in tokens else len(tokens)
-    length = min(length, 32)
+    if limit is not None:
+        length = min(length, limit)
     if not length:
         return []
     best = tokens[:length]
