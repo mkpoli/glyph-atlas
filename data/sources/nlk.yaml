@@ -1,0 +1,41 @@
+id: nlk
+name: 국립중앙도서관 디지털도서관 원문보기
+publisher: 국립중앙도서관
+holder: 국립중앙도서관
+kind: image-collection
+url: https://www.nl.go.kr
+licence: PD
+licence_evidence: https://www.nl.go.kr/NL/contents/N70600000000.do
+attribution: 국립중앙도서관, [관외이용-무료]
+access:
+  bookinfo: https://viewer.nl.go.kr/nlviewer/pdf/web/getBookInfo.jsp?contents_id={cno}
+  viewer: https://viewer.nl.go.kr/main.wviewer (POST cno={cno}&ax=Y&sysid=homepage, with the viewer page as Referer; 404 without it)
+  detail: https://www.nl.go.kr/NL/search/nl_detail_online_view.ajax (POST viewKey={cno}&viewType=C&category=고문헌&pageIdx=1&jourId=)
+  pdf: https://viewer.nl.go.kr/conv/{name}.pdf (name is the content id CNTS-…, or its KOL control number when the content id 404s; built once the viewer form is posted)
+  search: https://www.nl.go.kr/NL/contents/search.do?kwd={cno}
+notes:
+  - >
+    A `CNTS-…` content id names one digitised record. Its bibliography comes from two pages of the
+    library's own site: `getBookInfo.jsp`, which is what the PDF viewer itself requests, and
+    `nl_detail_online_view.ajax`, the search site's detail popup, which carries the fuller catalogue
+    statement (판사항, 발행사항, 주기사항) and, when the record has a physical counterpart in the
+    catalogue, a link naming its `KOL…` control number.
+  - >
+    The digitised pages are one PDF, served at `viewer.nl.go.kr/conv/<name>.pdf`. Most records are
+    named by their own content id; the older 고문헌 records that already had a KOL entry before being
+    digitised are named by that KOL id instead, so the content id is tried first and the KOL id only
+    on a 404. A PDF is built when the viewer form (`main.wviewer`) is posted for its record, as the
+    viewer does when a reader opens it, and answers 404 until the build finishes; the collector posts
+    that form first, then asks for each name again with a growing pause before it counts as missing.
+    A PDF whose page count differs from the record's stated `PDF | N p.` is left out. Each page holds
+    one embedded JPEG, extracted as it stands (no re-encoding).
+  - >
+    `[관외이용-무료]` on a record means it can be read outside the library because its copyright has
+    expired or its rightsholder gave permission, not that reuse beyond viewing and printing is
+    licensed. No record here carries a 공공누리 mark, so every image is recorded under `restricted`;
+    `Document._public_domain_reproduction` turns that into `PD` with `holder_terms` restricted for a
+    record dated 1900 or earlier or undated (docs/licensing.md).
+  - >
+    Suggested in a remark relayed by the maintainer on 2026-09-27 (speaker not named): 倭語類解 scans
+    are free to view outside the library.
+  - Collected with scripts/collect_nlk.py.
