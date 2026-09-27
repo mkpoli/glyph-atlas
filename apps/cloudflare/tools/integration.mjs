@@ -818,11 +818,12 @@ try {
     ['state=checked', "state='checked'"], ['reading=仮&document=hk:tally&state=pending', "character='仮' AND document='hk:tally' AND state='pending'"]])
     assert.equal((await call(`/atlas?${encodeURI(query)}&limit=1`)).total, await localCount(where), `browse ${query || 'everything'} totals what it lists`)
   // A crop written without a stamp is not in those counts yet: the listing did not count the table.
-  const listedBefore = (await call('/atlas?limit=1')).total
+  const listedBefore = (await call('/atlas?limit=1')).total, pickedBefore = (await call(`/atlas?${encodeURI('reading=仮')}&limit=1`)).total
   const unstamped = { id: 'unstamped', label: '仮', reading: '仮', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
   await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind('unstamped', 'local', '仮', '仮', null, null,
     'handwritten', 'kanji', 'pending', 0, 0, 1, 1, JSON.stringify(unstamped), JSON.stringify({ character: unstamped }), '{}', '{}', null).run()
   assert.equal((await call('/atlas?limit=1')).total, listedBefore, 'an unfiltered browse page does not count the table')
+  assert.equal((await call(`/atlas?${encodeURI('reading=仮')}&limit=1`)).total, pickedBefore, 'nor does one filtered by character')
   assert.equal((await call('/atlas?group=kanji&limit=1')).total, await localCount("category='kanji'"), 'a listing its counts cannot answer is counted')
   await stamp('fourth refresh').run()
   assert.equal((await call('/atlas?limit=1')).total, listedBefore + 1, 'and the next stamp brings the crop in')
