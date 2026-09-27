@@ -53,6 +53,11 @@ done
 `atlas import hilab --download` extracts the 325,261 crops instead of only listing them; it is needed
 before a release can materialise HI Lab crops.
 
+`atlas rare-chars` reads the same みんなで翻刻 clone and lists the Han characters attested in at most
+`--max-documents` entries, one row per example line with the 振り仮名 the transcriber gave and, where
+Honkoku-Lines holds the line, its line box. Transcribers type modern forms, so the list is a review
+queue: a rare row can be a typing error, and a rare form on the page can hide under a common character.
+
 The two HNG importers read clones at the commits their source files pin, and refuse a clone at any
 other commit. `atlas import hng-kiridashi` also reads `cache/hng-basic-data` (or `--basic`) to link
 each box to its representative crop:
