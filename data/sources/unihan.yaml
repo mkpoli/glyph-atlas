@@ -8,7 +8,7 @@ licence: Unicode-3.0
 licence_evidence: https://www.unicode.org/license.txt
 attribution: Copyright Unicode, Inc.; Unicode License v3
 access:
-  zip: https://www.unicode.org/Public/UCD/latest/ucd/Unihan.zip
+  zip: https://www.unicode.org/Public/18.0.0/ucd/Unihan.zip
 format:
   file: "Unihan_Variants.txt: U+XXXX<TAB>field<TAB>U+YYYY[<source tags] …"
   fields_read: [kSemanticVariant, kSpecializedSemanticVariant, kZVariant, kSimplifiedVariant, kTraditionalVariant, kJapaneseNewVariant, kJapaneseOldVariant, kSpoofingVariant]

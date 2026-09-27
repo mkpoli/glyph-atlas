@@ -27,9 +27,9 @@ row reads "b is the <relation> of a".
     uv sync --extra data
     .venv/bin/python scripts/build_kanji_variants.py
 
-Network access happens here and nowhere else; downloads are cached under `cache/variants/` and
-`cache/ucd/`. The Wikidata query result is not versioned upstream, so its download date and digest
-go into the table header; `--refresh` fetches everything again.
+Network access happens here and nowhere else; downloads are cached under `cache/variants/`, the
+Unicode files under a folder named for their version. The Wikidata query result is not versioned upstream, so its
+download date and digest go into the table header; `--refresh` fetches everything again.
 """
 
 from __future__ import annotations
@@ -56,8 +56,9 @@ TARGET = ROOT / "data" / "vocab" / "kanji-variants.tsv"
 SOURCES = ROOT / "data" / "sources"
 MJ_KANJI = ROOT / "data" / "vocab" / "mj-kanji.tsv"
 
-UNIHAN_URL = "https://www.unicode.org/Public/UCD/latest/ucd/Unihan.zip"
-UNICODEDATA_URL = "https://www.unicode.org/Public/UCD/latest/ucd/UnicodeData.txt"
+UNICODE_VERSION = "18.0.0"
+UNIHAN_URL = f"https://www.unicode.org/Public/{UNICODE_VERSION}/ucd/Unihan.zip"
+UNICODEDATA_URL = f"https://www.unicode.org/Public/{UNICODE_VERSION}/ucd/UnicodeData.txt"
 OPENCC_REVISION = "2939943bd6f4d459b46d7fdcf07a885ab3f01761"
 OPENCC_URL = "https://raw.githubusercontent.com/BYVoid/OpenCC/{revision}/data/dictionary/{name}"
 YITIZI_REVISION = "60e232c40d6076af07679151c008349363e699ae"
@@ -419,8 +420,8 @@ def main(argv: list[str] | None = None) -> int:
         return download(url, dest, expected=expected, refresh=args.refresh, timeout=300)
 
     paths = {
-        "unihan": fetch(UNIHAN_URL, cache / "Unihan.zip", "zip"),
-        "ucd": fetch(UNICODEDATA_URL, args.cache / "ucd" / "UnicodeData.txt"),
+        "unihan": fetch(UNIHAN_URL, cache / UNICODE_VERSION / "Unihan.zip", "zip"),
+        "ucd": fetch(UNICODEDATA_URL, cache / UNICODE_VERSION / "UnicodeData.txt"),
         "shrink": fetch(SHRINK_MAP_URL, args.cache / "moji" / SHRINK_MAP_URL.rsplit("/", 1)[-1], "json"),
         "hng": fetch(HNG_URL.format(revision=HNG_REVISION, name=HNG_INDEX), cache / "hng" / HNG_INDEX),
     }
