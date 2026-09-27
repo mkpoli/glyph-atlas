@@ -246,6 +246,25 @@ export function facetsQuery(review: boolean, state: string, where: string[]) {
     : `SELECT character AS label,max(family) AS family,document,max(json_extract(data,'$.source')) AS title,${state} AS state,count(*) AS n
     FROM units WHERE ${where.join(' AND ')} GROUP BY 1,3,5`;
 }
+// The two-character frequencies Explore's grid shows: crops that follow each other on a line
+// (`unit_pairs`), counted by the text their labels make, most frequent first. The whole collection's
+// count reads every pair and a book's reads its own, through the index that also groups them; the edge
+// keeps one copy per catalogue version and book.
+const PAIRS_MAX = 480;
+export function pairsQuery(document: boolean) {
+  return `SELECT text,count(*) AS n FROM unit_pairs
+    WHERE ${document ? 'document=? AND ' : ''}text IS NOT NULL GROUP BY text ORDER BY n DESC,text LIMIT ${PAIRS_MAX}`;
+}
+async function pairs(env: Env, ctx: ExecutionContext, url: URL) {
+  const document = text(url.searchParams.get('document'), 256, 'document');
+  const key = new Request(`${url.origin}/atlas/pairs?document=${encodeURIComponent(document ?? '')}&v=${encodeURIComponent(await catalogueVersion(env))}`);
+  const cached = await caches.default.match(key);
+  if (cached) return await cached.json() as Json;
+  const rows = await env.DB.prepare(pairsQuery(Boolean(document))).bind(...(document ? [document] : [])).all<{ text: string; n: number }>();
+  const body = { items: rows.results, limit: PAIRS_MAX };
+  ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
+  return body;
+}
 async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   const q = url.searchParams;
   const purpose = q.get('purpose') || 'browse';
@@ -855,6 +874,7 @@ export default {
       if(image)return await media(env,request,image[1],ctx);
       if(path==='/atlas')return json(await catalogue(env,ctx,url));
       if(path==='/atlas/history')return json(await history(env,q));
+      if(path==='/atlas/pairs')return json(await pairs(env,ctx,url));
       if(path==='/atlas/corpus/character')return json(parse((await unit(env,q.get('id')||'')).data));
       if(path==='/atlas/collection/status')return json(await meta(env,'collection'));
       const document=path.match(/^\/atlas\/documents\/([^/]+)\/characters$/);

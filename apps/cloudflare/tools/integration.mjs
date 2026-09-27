@@ -462,6 +462,38 @@ try {
     event_actor_history: "CREATE INDEX event_actor_history ON events(actor, at DESC, id DESC) WHERE kind IN ('review','undo')",
     event_label_history: `CREATE INDEX event_label_history ON events(${worker.historyLabelExpr()}, at DESC, id DESC) WHERE kind IN ('review','undo')`,
   }
+  // Two-character frequencies group along their own index, for the collection and for one book. The
+  // sort by count is over the grouped rows, which is why the answer is kept at the edge.
+  const pairShapes = [[false, [], 'unit_pair_text'], [true, ['hk:doc'], 'unit_pair_document']]
+  const pairServed = (details, index) => {
+    assert.ok(details.some(d => new RegExp(`USING (COVERING )?INDEX ${index}\\b`).test(d)), `${index}: ${details.join('; ')}`)
+    assert.ok(!details.some(d => d.includes('USE TEMP B-TREE FOR GROUP BY')), details.join('; '))
+    assert.ok(!details.some(d => /^SCAN \w+/.test(d) && !/USING (COVERING )?INDEX/.test(d)), details.join('; '))
+  }
+  for (const [document, bound, index] of pairShapes) {
+    const shape = { sql: worker.pairsQuery(document), values: [] }
+    pairServed(await plan(shape, bound), index)
+    const create = (await db.prepare('SELECT sql FROM sqlite_master WHERE name=?').bind(index).first()).sql
+    await db.prepare(`DROP INDEX ${index}`).run()
+    // D1 keeps a prepared statement, plan and all, by its text: a trailing space prepares it again.
+    await assert.rejects(async () => pairServed(await plan({ ...shape, sql: shape.sql + ' ' }, bound), index), `the check on ${index} fails without it`)
+    await db.prepare(create).run()
+  }
+  await db.batch([
+    db.prepare("INSERT INTO unit_pairs VALUES('p1','p2','申候','hk:doc'),('p3','p4','申候','hk:other'),('p5','p6','候也','hk:doc'),('p7','p8',NULL,'hk:doc')"),
+  ])
+  const pairsOf = async query => (await (await mf.dispatchFetch(base + '/atlas/pairs' + query)).json()).items
+  assert.deepEqual(await pairsOf(''), [{ text: '申候', n: 2 }, { text: '候也', n: 1 }], 'pairs are counted by text, most frequent first')
+  assert.deepEqual(await pairsOf('?document=hk%3Aother'), [{ text: '申候', n: 1 }], 'a book counts its own pairs')
+  // A review that relabels a crop moves the pairs it is half of.
+  await db.batch([db.prepare("INSERT INTO unit_pairs(first,second,text,document) SELECT a.id,b.id,a.character||b.character,a.document FROM units a JOIN units b ON b.id='two' WHERE a.id='one'")])
+  const labelOf = async id => (await db.prepare('SELECT character FROM units WHERE id=?').bind(id).first()).character
+  const [firstLabel, secondLabel] = [await labelOf('one'), await labelOf('two')]
+  assert.equal((await db.prepare("SELECT text FROM unit_pairs WHERE first='one'").first()).text, firstLabel + secondLabel)
+  await db.prepare("UPDATE units SET character='ヰ' WHERE id='two'").run()
+  assert.equal((await db.prepare("SELECT text FROM unit_pairs WHERE first='one'").first()).text, firstLabel + 'ヰ')
+  await db.prepare("UPDATE units SET character=? WHERE id='two'").bind(secondLabel).run()
+  await db.prepare('DELETE FROM unit_pairs').run()
   for (const [index, create] of Object.entries(keys)) {
     await db.prepare(`DROP INDEX ${index}`).run()
     for (const [shape, bound] of shapes.filter(s => s[2] === index))
