@@ -682,7 +682,7 @@ def import_ainu_records(
 @import_app.command("honkoku-collection")
 def import_honkoku_collection(
     collection: Annotated[Path, typer.Option(help="the honkoku-collection dataset root")] = Path("work/honkoku-collection"),
-    selection: Annotated[Path, typer.Option(help="the curated project list")] = Path("data/sources/honkoku-user-projects.yaml"),
+    selection: Annotated[Path, typer.Option(help="the curated project list")] = Path("data/selections/honkoku-user-projects.yaml"),
     honkoku_lines: Annotated[
         Path | None, typer.Option(help="Honkoku-Lines dataset, to skip pages it already covers")
     ] = Path("work/honkoku-lines"),
