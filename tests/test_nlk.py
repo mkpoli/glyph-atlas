@@ -102,13 +102,30 @@ def detail_html(*, title: str, production: str = "", publication: str = "", coll
     )
 
 
-def transport(records: dict[str, dict], seen: list[str], *, pdf_404: set[str] = frozenset()):
-    """A mock transport for one or more CNTS records, keyed by their bookinfo/detail/pdf fixtures.
+def png(width: int, height: int) -> bytes:
+    buffer = io.BytesIO()
+    Image.new("1", (width, height), 1).save(buffer, format="PNG")
+    return buffer.getvalue()
 
-    Each `records[cno]` gives `bookinfo`, `detail`, `pdf_name` (the name the PDF answers under) and
-    `pdf` (its bytes). `pdf_404` names cnos whose content-id-named PDF answers 404 before the working
-    name is tried, so the KOL fallback path is exercised. As on the real host, a record's PDF answers
-    404 until the viewer form has been posted for it.
+
+def viewer_page(cno: str, record: dict) -> str:
+    """The viewer page the form answers: a PDF record names its file, an image record its pages."""
+    if "images" in record:
+        count = len(record["images"])
+        return (f'<script>var srcpath = "/data2/imagedb/NCL_DB_7/X"; var ext = "TIF";\n'
+                f'var vol_maxpage = "{count}";</script>'
+                f"<a onClick=\"loadVol('{cno}',0,'/data2/imagedb/NCL_DB_7/X',{count},'1'); false;\">")
+    return f"<script>var DEFAULT_URL = '/conv/{record['pdf_name']}.pdf';</script>"
+
+
+def transport(records: dict[str, dict], seen: list[str]):
+    """A mock of the library's hosts for one or more CNTS records.
+
+    Each `records[cno]` gives `bookinfo`, `detail`, and either `pdf_name` and `pdf` (the file the
+    viewer page names, and its bytes) or `images` (the served page images, in order). As on the real
+    host, the viewer form answers 404 without the viewer page as Referer; a PDF answers 404 until the
+    form has been posted for its record, and for good when `built` is False; a page image is served
+    only to the session the form opened, and outside it the host answers a short text body.
     """
     opened: set[str] = set()
 
@@ -129,16 +146,22 @@ def transport(records: dict[str, dict], seen: list[str], *, pdf_404: set[str] = 
             if not request.headers.get("Referer", "").startswith(nlk.VIEWER_OPEN):
                 return httpx.Response(404, text="not found")
             form = dict(pair.split("=", 1) for pair in request.content.decode().split("&"))
-            opened.add(form["cno"])
-            return httpx.Response(200, text="<html></html>")
+            cno = form["cno"]
+            opened.add(cno)
+            return httpx.Response(200, text=viewer_page(cno, records[cno]),
+                                  headers={"Content-Type": "text/html;charset=UTF-8",
+                                           "Set-Cookie": f"JSESSIONID={cno}; Path=/"})
+        if "view_image.jsp" in url:
+            query = dict(request.url.params)
+            record = records[query["cno"]]
+            if request.headers.get("Cookie") != f"JSESSIONID={query['cno']}":
+                return httpx.Response(200, text="error\r\n", headers={"Content-Type": "text/html"})
+            return httpx.Response(200, content=record["images"][int(query["page"]) - 1],
+                                  headers={"Content-Type": "image/png"})
         if url.endswith(".pdf"):
             name = url.rsplit("/", 1)[1].removesuffix(".pdf")
             for cno, record in records.items():
-                if cno not in opened:
-                    continue
-                if name == cno and cno in pdf_404:
-                    return httpx.Response(404, text="not found")
-                if name == record["pdf_name"]:
+                if name == record.get("pdf_name") and cno in opened and record.get("built", True):
                     return httpx.Response(200, content=record["pdf"],
                                           headers={"Content-Type": "application/pdf",
                                                    "Accept-Ranges": "bytes"})
@@ -148,7 +171,7 @@ def transport(records: dict[str, dict], seen: list[str], *, pdf_404: set[str] = 
     return httpx.Client(transport=httpx.MockTransport(handler))
 
 
-def test_an_undated_record_becomes_a_pd_document_via_the_kol_fallback(tmp_path: Path) -> None:
+def test_an_undated_record_becomes_a_pd_document_from_the_pdf_its_viewer_names(tmp_path: Path) -> None:
     seen: list[str] = []
     records = {
         "CNTS-00092710493": {
@@ -163,12 +186,12 @@ def test_an_undated_record_becomes_a_pd_document_via_the_kol_fallback(tmp_path: 
             "pdf": pdf_bytes([(30, 20), (40, 25)]),
         }
     }
-    client = transport(records, seen, pdf_404={"CNTS-00092710493"})
+    client = transport(records, seen)
     out = tmp_path / "nlk"
     summary = nlk.collect(["CNTS-00092710493"], out, client=client, checked=CHECKED, build_retries=1)
 
     assert summary["collected"] == [{
-        "id": "CNTS-00092710493", "title": "倭語類解. 1-2", "pages": 2,
+        "id": "CNTS-00092710493", "title": "倭語類解. 1-2", "pages": 2, "held_as": "pdf",
         "pdf": "https://viewer.nl.go.kr/conv/KOL000032963.pdf", "kol": "KOL000032963",
     }]
     assert summary["unavailable"] == []
@@ -179,6 +202,7 @@ def test_an_undated_record_becomes_a_pd_document_via_the_kol_fallback(tmp_path: 
     assert document.production == "printed/woodblock"
     assert document.source_refs["kol"] == "KOL000032963"
     assert document.source_refs["pdf"] == "https://viewer.nl.go.kr/conv/KOL000032963.pdf"
+    assert document.source_refs["viewer"] == nlk.VIEWER_PAGE.format(cno="CNTS-00092710493")
     # The statement names no year, but is kept as an unknown-kind dating for provenance.
     assert document.dating[0].start is None and document.dating[0].end is None
     assert document.dating[0].kind == "unknown"
@@ -202,12 +226,13 @@ def test_an_undated_record_becomes_a_pd_document_via_the_kol_fallback(tmp_path: 
     (corpus,) = sources.discover(tmp_path)
     assert corpus.name == "nlk"
 
-    # A PDF answered 404 under the content id, so only the KOL name was ever fetched.
-    assert any(url.endswith("CNTS-00092710493.pdf") for url in seen)
-    assert any(url.endswith("KOL000032963.pdf") for url in seen)
+    # Only the file the viewer page names is ever asked for.
+    assert [url for url in seen if url.endswith(".pdf")] == [
+        "https://viewer.nl.go.kr/conv/KOL000032963.pdf"
+    ]
 
 
-def test_a_dated_record_with_no_kol_link_is_named_by_its_own_content_id(tmp_path: Path) -> None:
+def test_a_dated_record_with_no_kol_link(tmp_path: Path) -> None:
     seen: list[str] = []
     records = {
         "CNTS-00132358209": {
@@ -235,7 +260,6 @@ def test_a_dated_record_with_no_kol_link_is_named_by_its_own_content_id(tmp_path
     assert document.image_rights.licence is Licence.PUBLIC_DOMAIN
     assert document.image_rights.holder_terms is Licence.RESTRICTED
     assert "kol" not in document.source_refs
-    assert not any(".pdf" in url and "KOL" in url for url in seen)
 
 
 def test_a_record_dated_after_1900_keeps_the_holder_statement(tmp_path: Path) -> None:
@@ -281,8 +305,9 @@ def test_a_pdf_still_building_is_retried_before_giving_up(tmp_path: Path, clock:
         "CNTS-00132136027": {
             "bookinfo": bookinfo_html(title="詩傳正音. 中"),
             "detail": detail_html(title="詩傳正音. 中"),
-            "pdf_name": "never-answers",
+            "pdf_name": "CNTS-00132136027",
             "pdf": pdf_bytes([(10, 10)]),
+            "built": False,
         }
     }
     client = transport(records, [])
@@ -294,7 +319,7 @@ def test_a_pdf_still_building_is_retried_before_giving_up(tmp_path: Path, clock:
     assert clock.slept.count(nlk.BUILD_BACKOFF * 2) == 1
 
 
-def test_a_rerun_reuses_the_cached_pdf_and_its_resolved_name(tmp_path: Path) -> None:
+def test_a_rerun_reuses_the_cached_pdf(tmp_path: Path) -> None:
     seen: list[str] = []
     records = {
         "CNTS-00092710493": {
@@ -304,16 +329,53 @@ def test_a_rerun_reuses_the_cached_pdf_and_its_resolved_name(tmp_path: Path) -> 
             "pdf": pdf_bytes([(30, 20)]),
         }
     }
-    client = transport(records, seen, pdf_404={"CNTS-00092710493"})
+    client = transport(records, seen)
     out = tmp_path / "nlk"
     nlk.collect(["CNTS-00092710493"], out, client=client, checked=CHECKED, build_retries=1)
-    pdf_requests_first_run = sum(url.endswith(".pdf") for url in seen)
-
     seen.clear()
     summary = nlk.collect(["CNTS-00092710493"], out, client=client, checked=CHECKED, build_retries=1)
-    assert summary["collected"][0]["pdf"] == "https://viewer.nl.go.kr/conv/KOL000032963.pdf"
+    assert summary["collected"][0]["pages"] == 1
     assert not any(url.endswith(".pdf") for url in seen)
-    assert pdf_requests_first_run == 2  # the 404 under the content id, then the KOL name
+
+
+def test_a_record_held_as_page_images_is_fetched_in_the_viewer_session(tmp_path: Path) -> None:
+    seen: list[str] = []
+    records = {
+        "CNTS-00047976255": {
+            "bookinfo": bookinfo_html(title="朝鮮司譯院日滿蒙語學書斷簡", collation="JPG | 1권 1책"),
+            "detail": detail_html(title="朝鮮司譯院日滿蒙語學書斷簡", publication="[刊寫地未詳]"),
+            "images": [png(40, 60), png(42, 61)],
+        }
+    }
+    out = tmp_path / "nlk"
+    summary = nlk.collect(["CNTS-00047976255"], out, client=transport(records, seen), checked=CHECKED)
+    assert summary["collected"][0]["pages"] == 2
+    assert summary["collected"][0]["held_as"] == "images"
+    pages = tables.read(out / "pages.parquet", Page)
+    assert [(p.seq, p.width, p.height) for p in pages] == [(1, 40, 60), (2, 42, 61)]
+    assert pages[0].image == nlk.PAGE_IMAGE.format(cno="CNTS-00047976255", vol="0", page=1)
+    assert images.path_for(pages[0].image).suffix == ".png"
+    (document,) = tables.read(out / "documents.parquet", Document)
+    assert "pdf" not in document.source_refs
+    assert not any(url.endswith(".pdf") for url in seen)
+    assert seen.index(nlk.VIEWER_OPEN) < min(i for i, url in enumerate(seen) if "view_image" in url)
+
+
+def test_a_page_image_outside_the_viewer_session_fails_the_record(tmp_path: Path) -> None:
+    records = {
+        "CNTS-00047976255": {
+            "bookinfo": bookinfo_html(title="朝鮮司譯院日滿蒙語學書斷簡"),
+            "detail": detail_html(title="朝鮮司譯院日滿蒙語學書斷簡"),
+            "images": [png(40, 60)],
+        }
+    }
+    client = transport(records, [])
+    # A client that drops the session cookie before each request.
+    client.event_hooks["request"] = [lambda request: request.headers.pop("Cookie", None)]
+    out = tmp_path / "nlk"
+    summary = nlk.collect(["CNTS-00047976255"], out, client=client, checked=CHECKED, retries=1)
+    assert summary["collected"] == []
+    assert "view_image.jsp" in summary["unavailable"][0]["error"]
 
 
 def test_the_pdf_is_fetched_only_after_the_viewer_opens_the_record(tmp_path: Path) -> None:
@@ -382,11 +444,15 @@ def test_a_cached_pdf_without_its_sidecar_is_fetched_again(tmp_path: Path) -> No
     out = tmp_path / "nlk"
     (out / "upstream").mkdir(parents=True)
     (out / "upstream" / "CNTS-00092710493.pdf").write_bytes(pdf_bytes([(30, 20)]))
-    summary = nlk.collect(["CNTS-00092710493"], out,
-                          client=transport(records, seen, pdf_404={"CNTS-00092710493"}),
+    summary = nlk.collect(["CNTS-00092710493"], out, client=transport(records, seen),
                           checked=CHECKED, build_retries=1)
-    assert summary["collected"][0]["pdf"] == "https://viewer.nl.go.kr/conv/KOL000032963.pdf"
-    assert any(url.endswith("KOL000032963.pdf") for url in seen)
+    assert summary["collected"][0]["pages"] == 1
+    assert "https://viewer.nl.go.kr/conv/KOL000032963.pdf" in seen
+
+
+def test_a_viewer_page_naming_no_file_leaves_the_record_out(tmp_path: Path) -> None:
+    with pytest.raises(nlk.RecordError, match="neither a PDF nor page images"):
+        nlk._viewer(b"<html>nothing here</html>", "CNTS-1")
 
 
 def test_a_bookinfo_error_page_is_not_kept(tmp_path: Path) -> None:
