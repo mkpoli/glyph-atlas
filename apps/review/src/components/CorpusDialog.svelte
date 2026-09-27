@@ -1,4 +1,5 @@
 <script>
+  import SimilarCrops from './SimilarCrops.svelte'
   import { graphemeChar } from '../lib/identity.js'
   import ScriptText from './ScriptText.svelte'
   import ScriptLegend from './ScriptLegend.svelte'
@@ -92,6 +93,7 @@
         <details class="corpus-pick"><summary>{t('corpus.chooseAnother')}</summary><CharacterSearch bind:value={search} label={t('corpus.correctCharacter.label')} placeholder={t('corpus.correctCharacter.placeholder')} onselect={item => choose(item.char)} />{#if correction}<p class="corpus-choice" role="status"><span lang="ja">{data.label}</span> → <b lang="ja">{correction}</b><button disabled={busy} onclick={() => choose(null)}>{t('common.clear')}</button></p>{/if}</details>
       {/if}
       <details class="advanced-edit"><summary>{t('corpus.addNote')}</summary><textarea aria-label={t('character.note.aria')} bind:value={note} rows="2" maxlength="2000" placeholder={t('character.note.placeholder')} disabled={busy}></textarea></details>
+      <SimilarCrops id={data.id} />
       <div class="corpus-credit"><span>{data.source?.title}</span><small>{[data.attribution || data.source?.holder, data.licence].filter(Boolean).join(' · ')}</small>{#if /^https?:\/\//i.test(data.record_url ?? '')}<a href={data.record_url} target="_blank" rel="noreferrer">{t('corpus.sourceRecord')}</a>{/if}</div>
     {:else if !error}<div class="inspector-skeleton"></div>{/if}
   </div>

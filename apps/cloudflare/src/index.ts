@@ -1,6 +1,7 @@
 // Catalogue snapshots are published offline. All online review mutations use D1 transactions.
 import { ROUND_MAX } from './rounds';
 import { formsRoute, withForm, formed, FORM_COLUMNS, type FormTools, type UnitForm } from './forms';
+import { similarCrops } from './similar';
 export { leastTypicalQuery } from './forms';
 type Json = Record<string, any>;
 type UnitRow = { id: string; origin: string; character: string | null; state: string; revision: number;
@@ -95,6 +96,24 @@ async function corpusData(env:Env,row:CorpusRow):Promise<Json>{
   const object=await env.MEDIA.get(row.object,{range:{offset:row.offset,length:row.size}});
   if(!object)throw new Problem(503,'The corpus publication is incomplete.');
   return withForm(env,await object.json<Json>(),formTools);
+}
+// Listing items for crops by id: rows the site holds, then corpus glyphs from their published records.
+// An id it does not hold, or a retired crop, is left out.
+async function itemsFor(env: Env, ids: string[]): Promise<Map<string, Json>> {
+  const found = new Map<string, Json>();
+  if (!ids.length) return found;
+  const marks = (n: number) => Array(n).fill('?').join(',');
+  const rows = await env.DB.prepare(`SELECT * FROM units WHERE id IN (${marks(ids.length)}) AND origin!='retired'`)
+    .bind(...ids).all<UnitRow>();
+  for (const row of rows.results) found.set(row.id, { ...compact(row), origin: row.origin });
+  const rest = ids.filter(id => !found.has(id));
+  if (rest.length) {
+    const pointers = await env.DB.prepare(`SELECT * FROM corpus_units WHERE id IN (${marks(rest.length)})`)
+      .bind(...rest).all<CorpusRow>();
+    const records = await Promise.all(pointers.results.map(p => corpusData(env, p).then(d => [p.id, d] as const, () => null)));
+    for (const record of records) if (record) found.set(record[0], { ...listing(record[1]), origin: 'corpus' });
+  }
+  return found;
 }
 function compact(row: UnitRow): Json {
   return listing(parse(row.data));
@@ -886,6 +905,8 @@ export default {
         return Response.redirect(new URL(data.image,url).href,302)}
       if(path==='/atlas/reviews'||path==='/atlas/reviews.json')return json(await reviews(env,q.get('include_processed')==='true'),200,
         path.endsWith('.json')?{'content-disposition':'attachment; filename="atlas-character-reviews.json"'}:{});
+      const similar=path.match(/^\/atlas\/characters\/([^/]+)\/similar$/);
+      if(similar)return json(await similarCrops(env,decodeURIComponent(similar[1]),integer(q,'limit',12,20),itemsFor));
       const character=path.match(/^\/atlas\/characters\/([^/]+)(\/suggestions(?:\/context)?)?$/);
       if(character){const row=await unit(env,decodeURIComponent(character[1]));
         if(character[2]){
