@@ -24,6 +24,7 @@ eval_app = typer.Typer(help="Measure a prediction against adjudicated truth.", n
 review_app = typer.Typer(help="Serve and apply editorial reviews.", no_args_is_help=True)
 audit_app = typer.Typer(help="Draw a blind audit sample and publish its precision.", no_args_is_help=True)
 ainu_app = typer.Typer(help="The アイヌ関連資料 records: line boxes, and the characters ainu-records publishes.", no_args_is_help=True)
+lines_app = typer.Typer(help="Place and evaluate transcription line boxes.", no_args_is_help=True)
 repair_app = typer.Typer(help="Diagnose and repair systematic character-to-detection misassignment.", no_args_is_help=True)
 forms_app = typer.Typer(help="Cluster glyphs by shape so their forms can be assigned.", no_args_is_help=True)
 quality_app = typer.Typer(help="Measure how well the scans show each crop.", no_args_is_help=True)
@@ -882,6 +883,48 @@ def ainu_merge(
     typer.echo(f"-> {out}")
 
 
+@lines_app.command("match")
+def lines_match(
+    directory: Annotated[Path, typer.Argument(help="dataset directory whose unboxed lines to place")],
+    pages: Annotated[str | None, typer.Option("--pages", help="comma-separated page ids")] = None,
+    limit: Annotated[int | None, typer.Option(help="stop after this many pages")] = None,
+    cache: Annotated[Path | None, typer.Option(help="read and write line detections here")] = None,
+) -> None:
+    """Place currently unboxed lines by NDLkotenOCR-Lite line detection and OCR matching."""
+    from . import line_match
+
+    if limit is not None and limit < 0:
+        raise typer.BadParameter(f"--limit must not be negative, got {limit}")
+    selected = pages.split(",") if pages else None
+    if limit is not None:
+        limited = [page.id for page in tables.Dataset(directory).read("pages")][:limit]
+        selected = limited if selected is None else [page_id for page_id in selected if page_id in set(limited)]
+    if selected is not None and not selected:
+        typer.echo("no page selected")
+        return
+    counts = line_match.match_dataset(directory, pages=selected, cache=cache)
+    for name, value in counts.items():
+        typer.echo(f"{name:<14} {value:>10}")
+
+
+@lines_app.command("evaluate")
+def lines_evaluate(
+    directory: Annotated[Path, typer.Argument(help="boxed line dataset to evaluate without mutating")],
+    limit: Annotated[int | None, typer.Option(help="stop after this many pages")] = None,
+) -> None:
+    """Measure line matching against existing boxes without writing the dataset."""
+    from . import line_match
+
+    if limit is not None and limit < 0:
+        raise typer.BadParameter(f"--limit must not be negative, got {limit}")
+    result = line_match.evaluate_dataset(directory, limit=limit)
+    for name in ("pages", "skipped", "eligible", "matched", "iou_ge_0.5"):
+        typer.echo(f"{name:<18} {result[name]:>10}")
+    typer.echo(f"{'matched_share':<18} {result['matched_share']:.2%}")
+    typer.echo(f"{'iou_ge_0.5_share':<18} {result['iou_ge_0.5_share']:.2%}")
+    typer.echo(f"{'median_iou':<18} {result['median_iou']:.4f}")
+
+
 @repair_app.command("diagnose")
 def repair_diagnose(
     directory: Annotated[Path, typer.Argument(help="dataset directory to diagnose")] = Path("work/ainu-records"),
@@ -1190,6 +1233,7 @@ for name, module in (
     ("review", review_app),
     ("audit", audit_app),
     ("ainu", ainu_app),
+    ("lines", lines_app),
     ("repair", repair_app),
     ("forms", forms_app),
     ("quality", quality_app),

@@ -13,6 +13,10 @@ FILES = [
      "fd75b2c435d053fab9f9e563393ee5b6654a41434b2358b50fb63498a2c85b79"),
     ("src/config/NDLmoji.yaml", "characters.yaml",
      "775eb37e6b09ad0a97b762d48c916c60e7ce8879a4628ddb190ce037d0a15772"),
+    ("src/model/rtmdet-s-1280x1280.onnx", "rtmdet.onnx",
+     "f46267754d406431f6e035f9e20b8552af8ff1ab5ca13bcac8f4b1abbd02090c"),
+    ("src/config/ndl.yaml", "ndl-classes.yaml",
+     "0b676c6b694a9d0f40c20bfde24db07d0030bef49775dd8f561456d60e94653a"),
     ("LICENCE", "LICENCE", "12538e73c4a1e05fc0c0b75d9d4de657f139d94ebc5f44b03a84cc1f793358f0"),
 ]
 

@@ -1,11 +1,15 @@
 # Review OCR suggestions
 
-Character review uses two local models:
+Character review and line placement use local models:
 
 - [NDLkotenOCR-Lite PARSeq](https://github.com/ndl-lab/ndlkotenocr-lite) recognizes text within a crop, including several joined characters. The National Diet Library publishes it under [CC BY 4.0](https://github.com/ndl-lab/ndlkotenocr-lite/blob/ede4283845cdc0ba2bda8b7ebfc3dc80b33c92c8/LICENCE).
 - The [Atlas character classifier](../classifier/README.md) supplies alternatives for individual characters.
+- NDLkotenOCR-Lite's RTMDet line detector (`src/model/rtmdet-s-1280x1280.onnx`, same licence) finds text lines on a
+  page for `atlas lines match`, which reads each with PARSeq and matches it to a transcription line. The export takes a
+  1024×1024 input and reports every detection with label 0, so `line_match.py` gates on score alone, as upstream's
+  `rtmdet.py` does.
 
-Download the 42.4 MB sequence model and its alphabet:
+Download the 42.4 MB sequence model, its alphabet and the 40.2 MB line detector:
 
 ```sh
 python scripts/fetch_review_ocr.py
