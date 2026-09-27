@@ -921,6 +921,7 @@ def lines_evaluate(
     for name in ("pages", "skipped", "eligible", "matched", "iou_ge_0.5"):
         typer.echo(f"{name:<18} {result[name]:>10}")
     typer.echo(f"{'matched_share':<18} {result['matched_share']:.2%}")
+    typer.echo(f"{'in_own_line_share':<18} {result['in_own_line_share']:.2%}")
     typer.echo(f"{'iou_ge_0.5_share':<18} {result['iou_ge_0.5_share']:.2%}")
     typer.echo(f"{'median_iou':<18} {result['median_iou']:.4f}")
 

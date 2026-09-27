@@ -242,3 +242,59 @@ def test_owned_detector_is_released_before_recognition(tmp_path: Path, monkeypat
     monkeypatch.setattr(line_match, "detector_for", make_detector)
     monkeypatch.setattr(line_match, "recognizer_for", make_recognizer)
     assert line_match.match_dataset(directory)["matched"] == 1
+
+
+def test_withdrawing_a_box_retires_the_machine_units_on_it(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from glyph_atlas.schema import Unit
+
+    item = page()
+    cached_page(tmp_path, monkeypatch, item)
+    own = line(0, "abc", box=Box(x=10, y=10, w=20, h=30), method=line_match.METHOD)
+    own.meta = {"line_match": {"ocr_text": "abc"}}
+    directory = tmp_path / "data"
+    write_dataset(directory, item, [own])
+    placed = Unit(id="u1", line_id=own.id, page_id=item.id, text_source="a", box=Box(x=10, y=10, w=20, h=10),
+                  method="detect-align")
+    tables.write(directory / "units.parquet", [placed], Unit)
+
+    counts = line_match.match_dataset(directory, detector=FakeDetector([]), recognizer=FakeRecognizer({}),
+                                      out=tmp_path / "report.tsv")
+
+    assert counts["units-retired"] == 1
+    assert not tables.read(directory / "units.parquet", Unit)[0].active
+
+
+def test_a_boxed_lines_ink_is_not_offered_to_another_line(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    item = page()
+    cached_page(tmp_path, monkeypatch, item)
+    boxed = line(0, "abc", box=Box(x=10, y=10, w=20, h=30), method="manual")
+    unboxed = line(1, "abd")
+    directory = tmp_path / "data"
+    write_dataset(directory, item, [boxed, unboxed])
+
+    counts = line_match.match_dataset(directory, detector=FakeDetector([detection(10)]),
+                                      recognizer=FakeRecognizer({10: "abc"}), out=tmp_path / "report.tsv")
+
+    assert counts["matched"] == 0
+    assert tables.read(directory / "lines.parquet", Line)[1].box is None
+
+
+def test_a_page_scoped_line_is_never_a_candidate() -> None:
+    scoped = line(0, "abc")
+    scoped.meta = {"scope": "page"}
+    assert line_match.candidate_lines([scoped, line(1, "def")]) == [line(1, "def")]
+
+
+def test_a_whole_line_is_decoded_past_the_review_cap() -> None:
+    from glyph_atlas.review.suggestions import decode
+
+    alphabet = "ab"
+    logits = np.zeros((1, 40, 3))
+    logits[0, :, 1] = 5.0  # "a" at every position, no end-of-sequence token
+    assert len(decode(logits, alphabet)[0]["text"]) == 32
+    assert len(decode(logits, alphabet, limit=None)[0]["text"]) == 40
+
+
+def test_inside_share_measures_the_inner_boxs_area() -> None:
+    assert line_match.inside_share(Box(x=0, y=0, w=10, h=10), Box(x=0, y=0, w=100, h=100)) == 1.0
+    assert line_match.inside_share(Box(x=0, y=0, w=10, h=10), Box(x=5, y=0, w=100, h=100)) == 0.5

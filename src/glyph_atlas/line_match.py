@@ -299,6 +299,7 @@ def candidate_lines(lines: Sequence[Line], *, ignore_existing_boxes: bool = Fals
             line
             for line in lines
             if (ignore_existing_boxes or line.box is None) and (line.text or "").strip()
+            and not line.page_scope
         ],
         key=lambda line: (line.seq is None, line.seq if line.seq is not None else 0, line.id),
     )
@@ -364,6 +365,13 @@ def page_matches(
     if not candidates:
         return PageMatches(page=page, candidates=[], read_lines=[], matches=[])
     detections = _detect(path, detector)
+    if not ignore_existing_boxes:
+        # Ink a boxed line already covers is not offered to another line, or a line whose own
+        # detection is missing could take its neighbour's and put two boxes on the same ink.
+        held = [line.box for line in lines if line.page_id == page.id and line.box is not None
+                and not line.page_scope]
+        detections = [item for item in detections
+                      if not any(inside_share(item.box, box) >= 0.5 for box in held)]
     read_lines = _read_detections(path, detections, recognizer)
     matches = match_read_lines(candidates, read_lines)
     return PageMatches(page=page, candidates=candidates, read_lines=read_lines, matches=matches)
@@ -424,17 +432,17 @@ def _recognize_crop(page: Image.Image, box: Box, recognizer: Any) -> str:
         return str(method(crop))
     sequence = getattr(recognizer, "sequence", None)
     alphabet = getattr(recognizer, "alphabet", None)
-    if sequence is not None and alphabet is not None:
-        from .review.suggestions import decode, preprocess
+    if sequence is None or alphabet is None:
+        # The single-character classifier on a whole line would "read" one character, which can
+        # match a one-character transcription line exactly: no placement is better than that.
+        raise RuntimeError("line matching needs the PARSeq sequence model; run scripts/fetch_review_ocr.py")
+    from .review.suggestions import decode, preprocess
 
-        input_info = sequence.get_inputs()[0]
-        pixels = preprocess(crop, (input_info.shape[3], input_info.shape[2]))
-        output = sequence.run(None, {input_info.name: pixels})[0]
-        decoded = decode(output, alphabet)
-        return decoded[0]["text"] if decoded else ""
-    result = recognizer.read(crop)
-    candidates = result.get("candidates") or []
-    return str(candidates[0].get("text", "")) if candidates else ""
+    input_info = sequence.get_inputs()[0]
+    pixels = preprocess(crop, (input_info.shape[3], input_info.shape[2]))
+    output = sequence.run(None, {input_info.name: pixels})[0]
+    decoded = decode(output, alphabet, limit=None)
+    return decoded[0]["text"] if decoded else ""
 
 
 def line_match_meta(match: Match, *, detector_sha256: str, recognizer_sha256: str) -> dict[str, Any]:
@@ -618,6 +626,7 @@ def match_dataset(
         "withdrawn": 0,
         "failed": 0,
         "stale": 0,
+        "units-retired": 0,
         "cache-entries": 0,
         "cache-reused": 0,
     }
@@ -684,6 +693,7 @@ def match_dataset(
     if updates:
         commit = _commit(directory, updates)
         counts["stale"] = commit["stale"]
+        counts["units-retired"] = commit["units-retired"]
         counts["matched"] -= len(commit["stale-matched"])
         counts["withdrawn"] -= len(commit["stale-withdrawn"])
     write_report(out if out is not None else directory / "line-match.tsv", rows)
@@ -705,6 +715,7 @@ def _commit(directory: Path, updates: dict[str, dict[str, Any]]) -> dict[str, An
     from . import tables
 
     stale: set[str] = set()
+    applied: set[str] = set()
     with tables.locked(directory):
         dataset = tables.Dataset(directory)
         path = dataset._path("lines")
@@ -729,8 +740,25 @@ def _commit(directory: Path, updates: dict[str, dict[str, Any]]) -> dict[str, An
             if update["line_match"] is not None:
                 meta["line_match"] = update["line_match"]
             line.meta = meta
+            applied.add(line.id)
         tables._write_unlocked(path, lines, Line, shard=path.is_dir())
+        withdrawn = {line_id for line_id in applied if updates[line_id]["box"] is None}
+        retired = 0
+        if withdrawn and (directory / "units.parquet").exists():
+            from .ainu import _unit_is_machine
+            from .schema import Unit
+
+            units = tables.read(directory / "units.parquet", Unit)
+            for unit in units:
+                if unit.line_id in withdrawn and unit.active and _unit_is_machine(unit):
+                    # As in `ainu._commit`: a withdrawn box cannot hold a machine placement, and the
+                    # unit is retired rather than deleted so the claim stays auditable.
+                    unit.active = False
+                    retired += 1
+            if retired:
+                tables._write_unlocked(directory / "units.parquet", units, Unit)
     return {
+        "units-retired": retired,
         "stale": len(stale),
         "stale-matched": [line_id for line_id in stale if updates[line_id]["box"] is not None],
         "stale-withdrawn": [line_id for line_id in stale if updates[line_id]["box"] is None],
@@ -756,6 +784,7 @@ def _nothing() -> dict[str, int]:
         "withdrawn": 0,
         "failed": 0,
         "stale": 0,
+        "units-retired": 0,
         "cache-entries": 0,
         "cache-reused": 0,
     }
@@ -788,6 +817,7 @@ def evaluate_dataset(
     eligible = 0
     matched = 0
     good = 0
+    own = 0
     skipped = 0
     ious: list[float] = []
     for page in pages:
@@ -807,20 +837,36 @@ def evaluate_dataset(
         for match in result.accepted:
             if match.line.box is None:
                 continue
-            value = box_iou(match.read.detection.box, match.line.box)
+            predicted = match.read.detection.box
+            value = box_iou(predicted, match.line.box)
             ious.append(value)
             matched += 1
             good += int(value >= 0.5)
+            # Reference boxes may be padded well beyond the ink (Honkoku-Lines' are), which keeps
+            # IoU low for a correct box; the placement question is whose line the box lies in.
+            best = max(lines, key=lambda line: inside_share(predicted, line.box))
+            own += int(best.id == match.line.id and inside_share(predicted, match.line.box) >= 0.5)
     return {
         "pages": len(pages),
         "skipped": skipped,
         "eligible": eligible,
         "matched": matched,
         "matched_share": matched / eligible if eligible else 0.0,
+        "in_own_line": own,
+        "in_own_line_share": own / matched if matched else 0.0,
         "iou_ge_0.5": good,
         "iou_ge_0.5_share": good / matched if matched else 0.0,
         "median_iou": float(np.median(np.asarray(ious, dtype=np.float64))) if ious else 0.0,
     }
+
+
+def inside_share(inner: Box, outer: Box) -> float:
+    """The share of `inner`'s area that lies within `outer`."""
+    left, top = max(inner.x, outer.x), max(inner.y, outer.y)
+    right = min(inner.x + inner.w, outer.x + outer.w)
+    bottom = min(inner.y + inner.h, outer.y + outer.h)
+    area = inner.w * inner.h
+    return max(0, right - left) * max(0, bottom - top) / area if area > 0 else 0.0
 
 
 def box_iou(first: Box, second: Box) -> float:
