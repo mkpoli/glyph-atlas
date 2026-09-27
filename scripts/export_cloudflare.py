@@ -126,6 +126,11 @@ def public_status(value):
     return value
 
 
+def page_fields(page) -> dict:
+    """What a crop shows of its page: the page number, seq + 1, and the page's 0-based position."""
+    return {"page_number": page.seq + 1 if page else None, "page_index": page.seq if page else None}
+
+
 def export(dataset: Path, output: Path, *, resume=False):
     output.mkdir(parents=True, exist_ok=resume)
     frozen = output / "source"
@@ -168,11 +173,17 @@ def export(dataset: Path, output: Path, *, resume=False):
                 db.execute("DELETE FROM units WHERE id=?", (item["id"],))
                 continue
             if item["id"] in existing:
-                detail = json.loads(db.execute("SELECT data FROM units WHERE id=?", (item["id"],)).fetchone()[0])
+                # A crop an earlier run wrote takes the current licence and page number: both can
+                # change while its image does not.
+                data, snapshot = db.execute("SELECT data,snapshot FROM units WHERE id=?", (item["id"],)).fetchone()
+                detail, kept = json.loads(data), json.loads(snapshot)
+                shown = page_fields(page)
                 detail.update(licence=str(doc.image_rights.licence), holder=doc.holder,
-                              attribution=doc.image_rights.attribution, rights_url=doc.image_rights.evidence)
-                db.execute("UPDATE units SET data=?,document=?,family=? WHERE id=?",
-                           (encoded(detail), doc.id, atlas.grapheme_of(item["label"]), item["id"]))
+                              attribution=doc.image_rights.attribution, rights_url=doc.image_rights.evidence,
+                              page_number=shown["page_number"])
+                kept["page_index"] = shown["page_index"]
+                db.execute("UPDATE units SET data=?,snapshot=?,document=?,family=? WHERE id=?",
+                           (encoded(detail), encoded(kept), doc.id, atlas.grapheme_of(item["label"]), item["id"]))
                 continue
             if unit.line_id not in lines:
                 lines[unit.line_id] = store.line(unit.line_id) if unit.line_id else None
@@ -183,7 +194,7 @@ def export(dataset: Path, output: Path, *, resume=False):
             box = spec["box"]
             detail = {**item, "context_image": media.local(path, box, context=True),
                       "source": doc.title if doc else "", "text": line.text if line else "",
-                      "page_number": page.seq + 1 if page else None,
+                      "page_number": page_fields(page)["page_number"],
                       "context": bool(box), "context_box": None, "line": None,
                       "source_scale": [1, 1], "crop_editable": False}
             if box:
@@ -204,7 +215,7 @@ def export(dataset: Path, output: Path, *, resume=False):
                 packs.add(key, media.materialize(key))
             snapshot = {"character": item, "source_refs": doc.source_refs if doc else {},
                         "canvas": page.canvas if page else None,
-                        "page_index": page.seq if page else None, "image_sha256": item["image_sha256"]}
+                        "page_index": page_fields(page)["page_index"], "image_sha256": item["image_sha256"]}
             context = context_guesses(unit, line, neighbors.get(unit.line_id, []))
             # Filled by read_crops below, which also covers rows kept from a resumed export.
             visual = {"status": "unavailable", "candidates": []}
