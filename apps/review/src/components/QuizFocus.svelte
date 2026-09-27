@@ -2,6 +2,7 @@
   import ProductionBadge, { productionLabel } from './ProductionBadge.svelte'
   import { cropDetails } from '../lib/cropDetails.js'
   import ZiLink from './ZiLink.svelte'
+  import CopyId from './CopyId.svelte'
   // Keep the same crop and context visible while its issue and correction are chosen.
   import Glyph from './Glyph.svelte'
   import CropContext from './CropContext.svelte'
@@ -28,7 +29,7 @@
       </div>
       <div class="focus-image-meta"><ProductionBadge {item} /><ZiLink character={item.written_character ?? item.label} /></div>
       {#if details.length}<p class="focus-details">{details.join(' · ')}</p>{/if}
-      <p class="focus-id">{item.id}</p>
+      <CopyId id={item.id} />
     </div>
   {/if}
   <div class="focus-body">{@render children?.()}</div>
@@ -53,7 +54,6 @@
   .focus-images,.focus-figure{width:100%;min-width:0}
   .focus-image-meta{display:flex;justify-content:space-between;gap:12px;padding-top:8px}
   .focus-details{margin:6px 0 0;font-size:12px;line-height:1.5;color:var(--muted)}
-  .focus-id{margin:2px 0 0;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:10px;color:var(--faint);overflow-wrap:anywhere}
   .focus-body{width:100%;min-width:0}
   .focus-body :global(.issue-card){min-height:102px;padding:14px;gap:5px}
   .focus-body :global(.issue-card.chosen){padding:13px}
