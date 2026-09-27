@@ -1,0 +1,38 @@
+name: python
+# A pull request's run already tests its merge into main, so main itself is checked only on demand.
+# The suite reads the migrations, the Worker's source, the interface catalogues and the vi-Hani font
+# besides its own tree.
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'models/**'
+      - 'data/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'apps/cloudflare/migrations/**'
+      - 'apps/cloudflare/src/**'
+      - 'apps/review/src/locales/**'
+      - 'apps/review/static/fonts/**'
+      - '.github/workflows/python.yml'
+  workflow_dispatch:
+# A newer push to the same pull request makes the older run moot.
+concurrency:
+  group: python-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      # The registry scripts need odfpy and the 국립중앙도서관 collector pymupdf; numpy, onnx and
+      # onnxruntime come with the dev group so the detector's ONNX tests and the synthetic renderings
+      # run here rather than skipping.
+      - run: uv sync --group dev --extra data --extra pdf
+      - run: uv run ruff check src tests scripts models
+      - run: uv run pytest -q
