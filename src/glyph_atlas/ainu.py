@@ -579,10 +579,14 @@ def derive_dataset(
     for page in sorted(dataset.read("pages"), key=lambda page: page.id):
         if wanted is not None and page.id not in wanted:
             continue
-        if not page.width or not page.height:
-            size = _cached_size(page)
-            if size is not None:
-                page_sizes[page.id] = size
+        # The detector draws on the cached image, so the page takes that image's size: a server that
+        # caps what it sends (国立公文書館 sends 3,000 px for a 6,700 px canvas) would otherwise
+        # leave the boxes in one pixel space and the page in another. A page a person drew boxes on
+        # keeps the size those boxes were drawn in.
+        size = _cached_size(page)
+        if size is not None and size != (page.width, page.height) and not any(
+                line.box is not None and human_box(line) for line in lines_by_page.get(page.id, [])):
+            page_sizes[page.id] = size
         boxes = found_map.get(page.id)
         if boxes is None:
             if detector is None:
@@ -709,10 +713,14 @@ def _commit(directory: Path, updates: dict[str, dict[str, Any]],
 
         if page_sizes:
             pages = tables.read(directory / "pages.parquet", Page)
+            drawn = {line.page_id for line in lines if line.box is not None and human_box(line)}
             for page in pages:
                 size = page_sizes.get(page.id)
-                if size is not None and (not page.width or not page.height):
-                    page.width, page.height = size
+                if size is None or page.id in drawn or size == (page.width, page.height):
+                    continue
+                if page.width and page.height:
+                    page.meta = {**(page.meta or {}), "recorded_size": [page.width, page.height]}
+                page.width, page.height = size
             tables._write_unlocked(directory / "pages.parquet", pages, Page)
 
         withdrawn = {line.id for line in lines
