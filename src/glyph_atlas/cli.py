@@ -27,6 +27,7 @@ ainu_app = typer.Typer(help="The アイヌ関連資料 records: line boxes, and 
 repair_app = typer.Typer(help="Diagnose and repair systematic character-to-detection misassignment.", no_args_is_help=True)
 forms_app = typer.Typer(help="Cluster glyphs by shape so their forms can be assigned.", no_args_is_help=True)
 quality_app = typer.Typer(help="Measure how well the scans show each crop.", no_args_is_help=True)
+similar_app = typer.Typer(help="Embed published crops and find the ones that look alike.", no_args_is_help=True)
 
 
 @app.callback()
@@ -1113,6 +1114,34 @@ def quality_index(
     typer.echo(json.dumps({"image_cache": str(images.images_root()), **counts}, ensure_ascii=False))
 
 
+@similar_app.command("index")
+def similar_index(
+    root: Annotated[Path, typer.Option(help="corpus root, which also resolves display-crop paths")] = Path("work"),
+    export: Annotated[list[Path] | None, typer.Option(help="catalogue export; every work/cloudflare-*/catalogue.sqlite when unset")] = None,
+    out: Annotated[Path, typer.Option(help="directory the revisions and `current` are written to")] = Path("work/similar"),
+    checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
+    workers: Annotated[int, typer.Option(help="processes cutting crops")] = 8,
+    base: Annotated[str, typer.Option(help="site that serves display crops whose packs are gone")] = "https://atlas.mkpo.li",
+) -> None:
+    """Embed every corpus glyph and published local crop, reusing unchanged vectors."""
+    from .similar import index
+
+    exports = export or sorted(Path("work").glob("cloudflare-*/catalogue.sqlite"))
+    typer.echo(json.dumps(index(root, exports, out, checkpoint=checkpoint, workers=workers, base=base),
+                          ensure_ascii=False))
+
+
+@similar_app.command("neighbours")
+def similar_neighbours(
+    out: Annotated[Path, typer.Option(help="directory holding the revisions and `current`")] = Path("work/similar"),
+    k: Annotated[int, typer.Option(help="neighbours kept per crop, in each list")] = 20,
+) -> None:
+    """Write each crop's nearest crops, and its nearest filed under another character, as shards."""
+    from .similar import neighbours
+
+    typer.echo(json.dumps(neighbours((out / "current").resolve(), k=k)))
+
+
 @forms_app.command("audit")
 def forms_audit(
     root: Annotated[Path, typer.Option(help="corpus root")] = Path("work"),
@@ -1175,6 +1204,7 @@ for name, module in (
     ("repair", repair_app),
     ("forms", forms_app),
     ("quality", quality_app),
+    ("similar", similar_app),
 ):
     app.add_typer(module, name=name)
 
