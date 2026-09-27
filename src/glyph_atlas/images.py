@@ -319,8 +319,9 @@ def resolver(*, root: Path | None = None):
     for row in rows:
         if row.superseded_by is None:
             by_url[row.url].append(row)
-            if row.service is not None:
-                by_service[row.service].append(row)
+            service = _service_of_row(row)
+            if service is not None:
+                by_service[service].append(row)
 
     def lookup(url: str, sha256: str | None = None) -> tuple[Path, str] | None:
         if sha256:
@@ -347,7 +348,7 @@ def path_for(url: str, *, root: Path | None = None) -> Path | None:
     found = [row for row in rows if row.url == url]
     if not found:
         service = service_of(url)
-        found = [row for row in rows if service is not None and row.service == service]
+        found = [row for row in rows if service is not None and _service_of_row(row) == service]
     for row in reversed(found):
         path = _file_for(cache, row)
         if path.exists():
@@ -420,9 +421,9 @@ def _held_files(cache: str, stamp: tuple[int, int, int]) -> dict[str, Path]:
         if row.superseded_by is not None:
             continue
         files[row.url] = _file_for(root, row)
-        # A full-size request is the scan of its service; a region or scaled one is not.
-        if row.service and _names_whole_image(row.url, row.service):
-            files[row.service] = files[row.url]
+        service = _whole_service(row)
+        if service is not None:
+            files[service] = files[row.url]
     return files
 
 
@@ -699,6 +700,23 @@ def _write_index(cache: Path, rows: list[ImageRecord]) -> int:
     written = tables.write(scratch, rows, ImageRecord)
     os.replace(scratch, path)
     return written
+
+
+def _service_of_row(row: ImageRecord) -> str | None:
+    """The service a row was fetched from.
+
+    Rows written by a `service_of` that did not recognise the server (IIPImage `?IIIF=` addresses)
+    carry none, so the service is read from the URL instead.
+    """
+    return row.service or service_of(row.url)
+
+
+def _whole_service(row: ImageRecord) -> str | None:
+    """The service a row is the whole scan of, or None for a region, a scaled copy or a plain file."""
+    service = _service_of_row(row)
+    if service is None or not _names_whole_image(row.url, service):
+        return None
+    return service
 
 
 def _file_for(cache: Path, record: ImageRecord) -> Path:
