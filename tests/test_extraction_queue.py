@@ -16,8 +16,12 @@ def test_gate_rejects_joined_disagreement_and_unaligned():
     assert quality_reason(unit(),votes(),(200,200)) is None
     assert quality_reason(unit(),votes("字字"),(200,200)) == "visual-disagreement"
     assert quality_reason(unit(review=ReviewState.REJECTED),votes(),(200,200)) == "alignment-uncertain"
-    low=votes(); low[1]["score"]=.69
+    faint=votes(); faint[1]["score"]=.12
+    assert quality_reason(unit(),faint,(200,200)) is None, "NDLkotenOCR's reading of the character counts at .10"
+    low=votes(); low[1]["score"]=.09
     assert quality_reason(unit(),low,(200,200)) == "visual-uncertain"
+    unsure=votes(); unsure[0]["score"]=.79
+    assert quality_reason(unit(),unsure,(200,200)) == "visual-uncertain"
     assert quality_reason(unit(),votes(),(30,30)) == "invalid-geometry"
 
 

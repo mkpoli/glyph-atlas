@@ -7,8 +7,11 @@ ahead of a page of characters it already has plenty of, as `Queue.prioritize` sc
 `Queue`'s docstring for the full claim order.
 
 A unit is published through one of two gates, recorded as `meta.extraction.gate`. `consensus`: the
-alignment accepted it and both visual models read its character (`quality_reason`). `unconfirmed`: its
-letter has no class in the classifier under any of its readings, so alignment scores it at the
+alignment accepted it and both visual models read its character (`quality_reason`): the classifier at
+.80, and NDLkotenOCR at .10. NDLkotenOCR reads text lines, and on a lone character its reading is right
+far more often than its score says: on 21 sampled pages it read 264 crops as the transcribed character
+below .70, and of 40 drawn at random and the 40 lowest, all framed their character but one at .09.
+`unconfirmed`: its letter has no class in the classifier under any of its readings, so alignment scores it at the
 probability floor and leaves it rejected, and the classifier cannot vote for it; it is published on its
 shape, unless the classifier confidently reads a kana or a neighbour there, and on NDLkotenOCR's
 reading when that model's alphabet holds the character (`unconfirmed_reason`). Without
@@ -41,7 +44,7 @@ from pathlib import Path
 from . import align, images, tables
 from .schema import PAGE_SCOPE, Classification, ReviewState, UnitKind
 
-POLICY = "single-character-consensus-v2"
+POLICY = "single-character-consensus-v3"
 CONSENSUS = "consensus"
 UNCONFIRMED = "unconfirmed"
 
@@ -375,7 +378,7 @@ def quality_reason(unit, votes, size):
     if reason:
         return reason
     expected = unicodedata.normalize("NFC", unit.text_source)
-    for name, threshold in (("Atlas classifier", .80), ("NDLkotenOCR", .70)):
+    for name, threshold in (("Atlas classifier", .80), ("NDLkotenOCR", .10)):
         reason = vote_reason(votes, expected, name, threshold)
         if reason:
             return reason
