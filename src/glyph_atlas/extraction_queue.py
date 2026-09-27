@@ -149,6 +149,9 @@ class Queue:
             self.db.execute("ALTER TABLE pages ADD COLUMN publish_attempts INTEGER NOT NULL DEFAULT 0")
         if "priority" not in columns:
             self.db.execute("ALTER TABLE pages ADD COLUMN priority REAL NOT NULL DEFAULT 0")
+        # The policy a complete page's output was written under, so listing supplements is a query.
+        if "policy" not in columns:
+            self.db.execute("ALTER TABLE pages ADD COLUMN policy TEXT")
         self.db.execute("""CREATE INDEX IF NOT EXISTS idx_pages_claim_order
             ON pages(priority DESC, cached DESC, rank, document_id, id)""")
         self.db.execute("""CREATE TABLE IF NOT EXISTS supplements (
@@ -246,18 +249,27 @@ class Queue:
     def seed_supplements(self) -> int:
         """List the complete pages whose output was written under another policy than `POLICY`.
 
-        Returns how many rows were added; a page already listed for `POLICY` is left as it is.
+        A supplement of an earlier policy that has not run is superseded: `claim_supplement` takes
+        only the current policy's, and this one covers what it would have added. Returns how many
+        rows were added; a page already listed for `POLICY` is left as it is.
         """
-        wanted = set()
-        for page_id, output in self.db.execute("SELECT id,output FROM pages WHERE status='complete'"):
+        now = datetime.now(UTC).isoformat()
+        # A page completed before the queue recorded policies has it read from its report, once.
+        unknown = list(self.db.execute("SELECT id,output FROM pages WHERE status='complete' AND policy IS NULL"))
+        policies = []
+        for page_id, output in unknown:
             report = self.root/output/"report.json"
-            if report.exists() and json.loads(report.read_text()).get("policy") != POLICY:
-                wanted.add(page_id)
-        before = self.db.total_changes
+            if report.exists():
+                policies.append((json.loads(report.read_text()).get("policy"), page_id))
         with self.db:
-            self.db.executemany("INSERT OR IGNORE INTO supplements (page_id,policy) VALUES (?,?)",
-                                [(page_id, POLICY) for page_id in sorted(wanted)])
-        return self.db.total_changes - before
+            self.db.executemany("UPDATE pages SET policy=? WHERE id=?", policies)
+            self.db.execute("""UPDATE supplements SET status='superseded',updated_at=?
+                WHERE policy!=? AND status IN ('pending','running')""", (now, POLICY))
+            changed = self.db.total_changes
+            self.db.execute("""INSERT OR IGNORE INTO supplements (page_id,policy)
+                SELECT id,? FROM pages WHERE status='complete' AND policy IS NOT NULL AND policy!=?""",
+                (POLICY, POLICY))
+        return self.db.total_changes - changed
 
     def claim_supplement(self):
         """Take the pending supplement whose page scores highest, as `claim` orders pages."""
@@ -311,9 +323,9 @@ class Queue:
     def finish(self, ident, report, output):
         with self.db:
             self.db.execute("""UPDATE pages SET status='complete',output=?,accepted=?,examined=?,
-                error=NULL,updated_at=? WHERE id=?""",
+                error=NULL,updated_at=?,policy=? WHERE id=?""",
                 (str(output.relative_to(self.root)), report["accepted"], report["examined"],
-                 datetime.now(UTC).isoformat(), ident))
+                 datetime.now(UTC).isoformat(), report["policy"], ident))
 
     def fail(self, ident, reason, *, retryable=False):
         attempts = self.db.execute("SELECT attempts FROM pages WHERE id=?",(ident,)).fetchone()[0]
@@ -331,7 +343,10 @@ class Queue:
                   "published_crops": self.db.execute("SELECT coalesce(sum(accepted),0) FROM pages WHERE published_at IS NOT NULL").fetchone()[0],
                   "publication_failures": self.db.execute("SELECT count(*) FROM pages WHERE publish_error IS NOT NULL").fetchone()[0],
                   "books_with_crops": self.db.execute("SELECT count(DISTINCT document_id) FROM pages WHERE accepted>0").fetchone()[0],
-                  "supplements": {**dict(self.db.execute("SELECT status,count(*) FROM supplements GROUP BY status")),
+                  # Supplements of the current policy by status; crops added and published count every
+                  # policy's, since those crops are on the site.
+                  "supplements": {**dict(self.db.execute(
+                                      "SELECT status,count(*) FROM supplements WHERE policy=? GROUP BY status", (POLICY,))),
                                   "added": self.db.execute("SELECT coalesce(sum(added),0) FROM supplements").fetchone()[0],
                                   "published": self.db.execute(
                                       "SELECT coalesce(sum(added),0) FROM supplements WHERE published_at IS NOT NULL").fetchone()[0],
