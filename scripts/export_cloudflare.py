@@ -18,7 +18,7 @@ from pathlib import Path
 from cloudflare_schema import schema
 from PIL import Image
 
-from glyph_atlas import refs
+from glyph_atlas import production, refs
 from glyph_atlas.corpus.api import PROXYABLE, CorpusAPI
 from glyph_atlas.review import atlas, characters, collection, corpus_source
 from glyph_atlas.review.context_suggestions import context_guesses
@@ -149,7 +149,11 @@ def export(dataset: Path, output: Path, *, resume=False):
     packs = Packs(output, db)
     with lookup_scope():
         existing = {r[0] for r in db.execute("SELECT id FROM units")}
-        listing = endpoints["/atlas"](limit=10**7)
+        # Typeset crops the extraction took before its scope said otherwise stay in the store, unpublished.
+        listing = endpoints["/atlas"](limit=10**7, production=production.EXTRACTION_SCOPE)
+        listed = {item["id"] for item in listing["items"]}
+        db.executemany("DELETE FROM units WHERE id=?", [(i,) for i in existing - listed])
+        existing &= listed
         units = {unit.id: unit for unit, revision in store.unit_snapshot()}
         neighbors = defaultdict(list)
         for unit in units.values():
