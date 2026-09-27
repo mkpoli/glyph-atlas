@@ -127,6 +127,7 @@ DERIVED_MARKER = "derived_from"
 ID_FAMILIES = {
     "honkoku-lines": "honkoku-platform",
     "honkoku-data": "honkoku-platform",
+    "honkoku-user": "honkoku-platform",
     "ndl-minhon": "ndl-minhon",
     "ainu-records": "ainu-records-0based",
     "codh": "codh-omt",

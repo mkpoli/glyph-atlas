@@ -1,0 +1,88 @@
+# Curated user-created みんなで翻刻 projects imported as plain-text tables with no boxes.
+# The platform's own `ainu` project has its own importer (`ainu_records.py`) and is excluded here.
+projects:
+  - id: berabou
+    title: 翻刻！べらぼう関連資料
+    practice: false
+    guidelines: own
+    url: https://app.honkoku.org/projects/berabou/info
+  - id: tatsu01
+    title: 地誌・紀行・寺社縁起
+    practice: false
+    guidelines: own
+    url: https://app.honkoku.org/projects/tatsu01/info
+  - id: jinkouki
+    title: 様々な塵劫記
+    practice: false
+    guidelines: own
+    url: https://app.honkoku.org/projects/jinkouki/info
+  - id: wasansyuui
+    title: 和算拾遺
+    practice: false
+    guidelines: own
+    url: https://app.honkoku.org/projects/wasansyuui/info
+  - id: ishinpou
+    title: 国宝　医心方
+    practice: false
+    guidelines: own
+    url: https://app.honkoku.org/projects/ishinpou/info
+  - id: tatsu02
+    title: 行状記・評伝
+    practice: false
+    guidelines: own
+    url: https://app.honkoku.org/projects/tatsu02/info
+  - id: MugenHanbeHenn
+    title: 皆で竹中半兵衛の本を読みたいプロジェクト
+    practice: false
+    guidelines: platform
+    url: https://app.honkoku.org/projects/MugenHanbeHenn/info
+  - id: 9101134
+    title: 觀音堂
+    practice: false
+    guidelines: own
+    url: https://app.honkoku.org/projects/9101134/info
+  - id: asakaichi
+    title: 浅香市集
+    practice: false
+    guidelines: platform
+    url: https://app.honkoku.org/projects/asakaichi/info
+  - id: kinseikisyo
+    title: 近世棋書を読もう！
+    practice: false
+    guidelines: platform
+    url: https://app.honkoku.org/projects/kinseikisyo/info
+  - id: family11
+    title: 井伊氏関連文書展示会
+    practice: false
+    guidelines: own
+    url: https://app.honkoku.org/projects/family11/info
+  - id: touken
+    title: 刀剣書を翻刻しよう
+    practice: true
+    guidelines: platform
+    url: https://app.honkoku.org/projects/touken/info
+  - id: myproject
+    title: はじめてのマイプロジェクト
+    practice: true
+    guidelines: platform
+    url: https://app.honkoku.org/projects/myproject/info
+  - id: YasasiiKanbun
+    title: やさしい漢文
+    practice: true
+    guidelines: platform
+    url: https://app.honkoku.org/projects/YasasiiKanbun/info
+  - id: yasasiihentaigana
+    title: やさしい変体仮名の読み物
+    practice: true
+    guidelines: own
+    url: https://app.honkoku.org/projects/yasasiihentaigana/info
+  - id: atsuryugunkihw616
+    title: 薩琉軍記
+    practice: false
+    guidelines: own
+    url: https://app.honkoku.org/projects/atsuryugunkihw616/info
+  - id: Itokumizu
+    title: Itokumizu Pages
+    practice: false
+    guidelines: platform
+    url: https://app.honkoku.org/projects/Itokumizu/info
