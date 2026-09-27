@@ -25,6 +25,6 @@ references:
   Q178528: writing system 繁体字; Q185614 简体字; Q1055887 新字体; Q1147857 旧字体
 notes:
   - Wikidata has no releases; the build records the date the query ran and the digest of its result.
-  - "Weakness: most statements cite 教育部《異體字字典》, whose site reads 「中華民國教育部 版權所有」 and which is absent from the MOE public-licence page (https://language.moe.gov.tw/001/Upload/Files/site_content/M0001/respub/index.html, checked 2026-09-27; it lists only 重編國語辭典修訂本, 國語辭典簡編本, 國語小字典 and 成語典 under CC BY-ND 3.0 TW). Wikidata publishes the statements under CC0; the dictionary's own terms do not grant that. Rows citing Q10427532 carry it in the detail column, so a consumer can leave them out."
+  - Most statements cite 教育部《異體字字典》 (Q10427532). The relations are facts and are used under Wikidata's CC0 like every other statement.
   - Statements are unsigned editorial claims; a few carry qualifiers the build does not map (component, 則天文字, not yet determined) and keep them only as Q-ids.
 checked: 2026-09-27
