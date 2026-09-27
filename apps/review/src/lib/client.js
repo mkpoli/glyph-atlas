@@ -26,6 +26,7 @@ export async function request(path, body, { fetch: send = fetch, ...options } = 
 export const catalogue = ({ purpose = 'browse', ...params } = {}, options = {}) =>
   request('/atlas?' + new URLSearchParams(Object.entries({ purpose, ...params }).filter(([, v]) => v !== '' && v != null)), undefined, options)
 export const character = (id, options) => request('/atlas/characters/' + encodeURIComponent(id), undefined, options)
+export const similar = (id, options) => request('/atlas/characters/' + encodeURIComponent(id) + '/similar', undefined, options)
 export const history = (params = {}, options = {}) =>
   request('/atlas/history?' + new URLSearchParams(Object.entries(params).filter(([, v]) => v !== '' && v != null)), undefined, options)
 export const corpusCharacter = (id, options) => request('/atlas/corpus/character?' + new URLSearchParams({ id }), undefined, options)
