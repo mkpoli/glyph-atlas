@@ -1,5 +1,6 @@
 <script>
   import { onMount, onDestroy, untrack } from 'svelte'
+  import SiteLinks from '../components/SiteLinks.svelte'
   import { replaceState } from '$app/navigation'
   import { page } from '$app/state'
   import ReferenceGlyph from '../components/ReferenceGlyph.svelte'
@@ -290,11 +291,11 @@
 <svelte:window onkeydown={keydown} />
 
 <section class="forms">
-  <header class="forms-heading">
-    <p class="overline">{t('forms.overline')}</p>
-    <h1>{t('forms.heading')}</h1>
-    <p class="forms-lede">{t('forms.lede')}</p>
-  </header>
+  <div class="page-status">
+    <h1 class="visually-hidden">{t('forms.heading')}</h1>
+    <SiteLinks />
+    {#if list.length}<div class="collection-meta"><span class="live-dot"></span><span>{t('explore.meta.glyphs', { count: list.reduce((n, f) => n + f.count, 0) })}</span><span class="meta-divider">/</span><span>{t('forms.clusters.count', { count: list.reduce((n, f) => n + f.clusters, 0) })}</span></div>{/if}
+  </div>
   {#if error}<p class="error-message">{error}</p>{/if}
   <div class="forms-layout">
     <aside class="family-list" aria-label={t('forms.families.label')}>
@@ -471,11 +472,8 @@
 </section>
 
 <style>
-  .forms{padding:52px 4.4vw 60px;max-width:1920px;margin:auto}
-  .forms-heading{padding-bottom:30px}
-  .forms-heading h1{font-size:clamp(40px,5vw,76px);letter-spacing:-.06em;font-weight:500;line-height:1.15;margin-top:13px}
-  .forms-lede{max-width:640px;font-size:13px;line-height:1.6;color:var(--muted);margin-top:8px}
-  .forms-layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:32px;align-items:start}
+  .forms{padding:24px 4.4vw 60px;max-width:1920px;margin:auto}
+  .forms-layout{border-top:1px solid var(--line);padding-top:18px;display:grid;grid-template-columns:220px minmax(0,1fr);gap:32px;align-items:start}
   .family-list{position:sticky;top:16px;max-height:calc(100dvh - 32px);display:flex;flex-direction:column;gap:10px}
   .family-list input{width:100%;font-size:13px;padding:9px 11px}
   .family-list ol{list-style:none;margin:0;padding:0;overflow:auto;border-top:1px solid var(--line)}
@@ -539,5 +537,5 @@
   .correct-char{display:flex;gap:4px}.correct-char input{width:64px;padding:6px 8px;font-size:14px}.correct-char button{font-size:11px;padding:6px 9px}
   .member-form{position:absolute;top:3px;right:5px;font-size:14px;color:var(--accent);font-family:"Kureedo Kata","GenZui Sans",system-ui,sans-serif}
   @media(max-width:900px){.forms-layout{grid-template-columns:1fr}.family-list{position:static;max-height:260px}.cluster-grid{grid-template-columns:1fr}}
-  @media(max-width:700px){.forms{padding:30px 16px 40px}.form-choice{min-width:54px}.palette-other{flex-direction:row;margin-left:0;width:100%}}
+  @media(max-width:700px){.forms{padding:16px 16px 40px}.form-choice{min-width:54px}.palette-other{flex-direction:row;margin-left:0;width:100%}}
 </style>
