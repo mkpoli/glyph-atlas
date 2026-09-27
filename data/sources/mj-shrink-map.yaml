@@ -1,0 +1,16 @@
+id: mj-shrink-map
+name: MJ縮退マップ
+publisher: 独立行政法人情報処理推進機構（IPA）; now 文字情報技術促進協議会
+kind: reference-table
+url: https://moji.or.jp/mojikiban/oscdl/
+version: "1.2.0"
+licence: CC-BY-SA-2.1-JP
+licence_evidence: https://moji.or.jp/wp-content/mojikiban/oscdl/MJShrinkMap.1.2.0.json
+attribution: 文字情報基盤 MJ縮退マップ（IPA）, CC BY-SA 2.1 JP
+access:
+  json: https://moji.or.jp/wp-content/mojikiban/oscdl/MJShrinkMap.1.2.0.json
+format:
+  record: "one per MJ文字図形名; keys JIS包摂規準・UCS統合規則, 法務省告示582号別表第四 (表, 順位), 法務省戸籍法関連通達・通知 (種別, ホップ数), 辞書類等による関連字, 読み・字形による類推; each lists target UCS"
+notes:
+  - The licence is the file's own meta field cc:license. Version 1.2.0 (2018-01-26) corresponds to MJ文字情報一覧表 Ver.005.02; the figure's own code point is read from data/vocab/mj-kanji.tsv (Ver.006.02).
+  - A reduction maps an administrative name character to one that systems can display; 第2順位 targets and 読み・字形による類推 are fallbacks, not variants in the philological sense.

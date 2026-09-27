@@ -184,6 +184,19 @@
   checked: 2026-09-11
 
 - match:
+    - Apache-2.0
+    - Apache License 2.0
+    - Apache License, Version 2.0
+    - https://www.apache.org/licenses/LICENSE-2.0
+    - http://www.apache.org/licenses/LICENSE-2.0
+  licence: Apache-2.0
+  label: Apache License 2.0
+  evidence: https://www.apache.org/licenses/LICENSE-2.0
+  eligible: true
+  obligations: "Keep the copyright notice and any NOTICE text, give the licence text in ATTRIBUTION.md, and state that the files were modified (section 4)."
+  checked: 2026-09-27
+
+- match:
     - PD
     - Public Domain
     - public domain

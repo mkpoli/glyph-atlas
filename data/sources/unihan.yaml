@@ -1,0 +1,18 @@
+id: unihan
+name: Unicode Han Database (Unihan), Unihan_Variants.txt
+publisher: Unicode, Inc.
+kind: reference-table
+url: https://www.unicode.org/charts/unihan.html
+version: "18.0.0"
+licence: Unicode-3.0
+licence_evidence: https://www.unicode.org/license.txt
+attribution: Copyright Unicode, Inc.; Unicode License v3
+access:
+  zip: https://www.unicode.org/Public/UCD/latest/ucd/Unihan.zip
+format:
+  file: "Unihan_Variants.txt: U+XXXX<TAB>field<TAB>U+YYYY[<source tags] …"
+  fields_read: [kSemanticVariant, kSpecializedSemanticVariant, kZVariant, kSimplifiedVariant, kTraditionalVariant, kJapaneseNewVariant, kJapaneseOldVariant, kSpoofingVariant]
+notes:
+  - Source tags after `<` name the dictionary behind a semantic variant (kMatthews, kMeyerWempe, kFenn, kLau, kHanYu …); they are kept in the detail column.
+  - Coverage is uneven. U+509A 傚 has no variant row at all, although Wikidata and HNG relate it to 效.
+  - Reciprocal rows are usual but not guaranteed; kTraditionalVariant and kSimplifiedVariant may name the character itself, which the build drops.

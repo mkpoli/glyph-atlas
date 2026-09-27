@@ -1,0 +1,18 @@
+id: yitizi
+name: Yitizi 異體字 (nk2028)
+publisher: nk2028
+kind: reference-table
+url: https://github.com/nk2028/yitizi
+revision: 60e232c40d6076af07679151c008349363e699ae
+licence: CC0-1.0
+licence_evidence: https://github.com/nk2028/yitizi/blob/60e232c40d6076af07679151c008349363e699ae/LICENSE
+attribution: nk2028, Yitizi, CC0 1.0
+access:
+  files: https://raw.githubusercontent.com/nk2028/yitizi/{revision}/data/{name}
+format:
+  files: ["ytenx/JihThex.csv, ytenx/ThaJihThex.csv: #字, 全等, 語義交疊 (or 其他異體), 簡體, 繁體", "yitizi.txt: =AB… 全等, AB… 交疊, A>BC… 簡體"]
+notes:
+  - The ytenx tables come from 韻典網 (ytenx.org) and cover 廣韻 headwords; yitizi.txt is nk2028's own supplement and corrections. The repository declares CC0 for all of it; the licence of the 韻典網 tables it was derived from is not stated separately.
+  - yitizi's own OpenCC copy (data/opencc) is not read; OpenCC comes from its own repository.
+  - The build applies yitizi's excluded characters and 全等 pairs (build/build_lib/loaders.py) so the rows match what yitizi itself publishes.
+  - 交疊 groups are not transitive; each row's detail names the group it came from.
