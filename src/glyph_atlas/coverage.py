@@ -13,9 +13,8 @@ transcriptions, `hl:<entry>` documents (`work/honkoku-lines`) and `ndl-minhon:` 
 first. Ids compare without case, since the upstreams spell them in both cases, and the entry is
 written as the transcription dataset spells it.
 
-Pages are compared by the number they carry within their entry, `page.seq`: the platform numbers the
-canvases of an entry from one and so does 日本古典籍OCR学習用データセット, while Honkoku-Lines numbers
-its pages from zero (`image_index`), which `build` adds one to.
+Pages are compared by their number within their entry, `page.seq + 1`: every dataset counts its pages
+from 0, and the platform numbers the canvases of an entry from one.
 
 `pages_with_text_no_lines` counts the pages of an entry that a transcription covers and no line
 dataset does, and it counts two different situations together: a page of an entry that the line
@@ -48,8 +47,6 @@ LINE_COLUMNS = {
 PREFIXES = (TEXT_PREFIX, *LINE_COLUMNS)
 #: `source_refs` keys that hold the entry id, most specific first.
 ENTRY_KEYS = ("honkoku-data", "honkoku", "honkoku-entry", "minna-de-honkoku", "entry")
-#: The prefixes whose page numbers start at zero.
-ZERO_BASED = frozenset({"hl:"})
 #: The columns of `work/coverage.tsv`, preceded by the lines that say what the counts mean.
 COLUMNS = ("entry", "pages_with_text", *LINE_COLUMNS.values(), "pages_with_text_no_lines")
 NOTES = (
@@ -107,8 +104,8 @@ def build(dirs: list[Path], out: Path) -> dict[str, int]:
             known = kinds.get(page.document_id)
             if known is None:
                 continue
-            prefix, key = known
-            numbers[page.id] = (key, _ordinal(prefix, page.seq))
+            _, key = known
+            numbers[page.id] = (key, page.seq + 1)
         if column is None:
             if dataset.tables["page_texts"] is None:
                 raise FileNotFoundError(f"{path}: no page_texts table")
@@ -198,11 +195,6 @@ def _entry_id(value: str) -> str | None:
         if marker in parts and parts.index(marker) + 1 < len(parts):
             return parts[parts.index(marker) + 1]
     return parts[-1] if parts else None
-
-
-def _ordinal(prefix: str, seq: int) -> int:
-    """The number of a page within its entry, counting the canvases of an entry from one."""
-    return seq + 1 if prefix in ZERO_BASED else seq
 
 
 def _column(path: Path, name: str) -> Iterator[str]:
