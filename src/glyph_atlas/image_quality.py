@@ -112,33 +112,48 @@ def _box(unit: Unit) -> str:
 
 
 def index_units(db: sqlite3.Connection, units: Iterable[Unit], pages: dict[str, Page],
-                path_of: Callable[[str], Path | None]) -> dict[str, int]:
+                image_of: Callable[[str, str | None], tuple[Path, str] | None]) -> dict[str, int]:
     """Measure every unit with a box whose current box and page image are not in the index yet.
 
-    Units are grouped by page, so each page image is opened once. A page whose cached image is
-    missing, or whose size differs from the page record the boxes refer to, is counted and skipped.
+    `image_of(url, sha256)` finds a page's cached image and its sha256 (`images.resolver`), so a row
+    names the very file it was measured on. Units are grouped by page, so each page image is opened
+    once. A unit whose page is unknown, uncached, unreadable, of no recorded size or of another size
+    is counted and skipped.
     """
     held = {(row[0]): (row[1], row[2]) for row in
             db.execute("SELECT id, box, page_sha256 FROM quality WHERE method=?", (METHOD,))}
     by_page = defaultdict(list)
-    for unit in units:
-        page = pages.get(unit.page_id) if unit.page_id else None
-        if unit.box is None or page is None or not page.sha256:
-            continue
-        if held.get(unit.id) != (_box(unit), page.sha256):
-            by_page[page.id].append(unit)
     counts = defaultdict(int)
+    for unit in units:
+        if unit.box is None:
+            continue
+        page = pages.get(unit.page_id) if unit.page_id else None
+        if page is None:
+            counts["page-unknown"] += 1
+        else:
+            by_page[page.id].append(unit)
     for page_id, waiting in by_page.items():
         page = pages[page_id]
-        path = path_of(page.image)
-        if path is None:
+        found = image_of(page.image, page.sha256)
+        if found is None:
             counts["page-not-cached"] += len(waiting)
             continue
-        with Image.open(path) as handle:
-            if page.width and page.height and handle.size != (page.width, page.height):
-                counts["page-size-differs"] += len(waiting)
-                continue
-            image = handle.convert("RGB")
+        path, sha256 = found
+        waiting = [unit for unit in waiting if held.get(unit.id) != (_box(unit), sha256)]
+        if not waiting:
+            continue
+        if not page.width or not page.height:
+            counts["page-size-unknown"] += len(waiting)
+            continue
+        try:
+            with Image.open(path) as handle:
+                if handle.size != (page.width, page.height):
+                    counts["page-size-differs"] += len(waiting)
+                    continue
+                image = handle.convert("RGB")
+        except (OSError, ValueError):
+            counts["page-unreadable"] += len(waiting)
+            continue
         rows = []
         for unit in waiting:
             b = unit.box
@@ -146,11 +161,17 @@ def index_units(db: sqlite3.Connection, units: Iterable[Unit], pages: dict[str, 
                 counts["box-outside-page"] += 1
                 continue
             quality = measure(image.crop((b.x, b.y, b.x + b.w, b.y + b.h)))
-            rows.append((unit.id, METHOD, page.id, _box(unit), page.sha256, *(quality[k] for k in STATISTICS)))
+            rows.append((unit.id, METHOD, page.id, _box(unit), sha256, *(quality[k] for k in STATISTICS)))
         with db:
             db.executemany("INSERT OR REPLACE INTO quality VALUES (?,?,?,?,?,?,?,?,?,?)", rows)
         counts["measured"] += len(rows)
     return dict(counts)
+
+
+def forget(db: sqlite3.Connection, ids: Iterable[str]) -> int:
+    """Drop the rows of crops that no longer exist, so they leave their page's median."""
+    with db:
+        return db.executemany("DELETE FROM quality WHERE id=?", [(i,) for i in ids]).rowcount
 
 
 def lookup(db: sqlite3.Connection, ids: Iterable[str] | None = None) -> dict[str, dict]:

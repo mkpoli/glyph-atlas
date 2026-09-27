@@ -1046,15 +1046,18 @@ def quality_index(
     store: Annotated[Path, typer.Option(help="review store whose crops are measured")] = Path("work/ainu-gallery"),
     out: Annotated[Path, typer.Option(help="the quality index")] = Path("work/crop-quality/index.sqlite"),
 ) -> None:
-    """Measure every crop of a review store that the index lacks, from the cached page images."""
+    """Measure every active crop of a review store that the index lacks, from the cached page images,
+    and drop the rows of its retired crops."""
     from . import images
-    from .image_quality import connect, index_units
+    from .image_quality import connect, forget, index_units
     from .review.store import Store
 
     source = Store(store)
-    counts = index_units(connect(out), (unit for unit, _ in source.unit_snapshot()), source.pages(),
-                         images.paths())
-    typer.echo(json.dumps(counts, ensure_ascii=False))
+    units = [unit for unit, _ in source.unit_snapshot()]
+    db = connect(out)
+    counts = index_units(db, (u for u in units if u.active), source.pages(), images.resolver())
+    counts["forgotten"] = forget(db, (u.id for u in units if not u.active))
+    typer.echo(json.dumps({"image_cache": str(images.images_root()), **counts}, ensure_ascii=False))
 
 
 @forms_app.command("audit")

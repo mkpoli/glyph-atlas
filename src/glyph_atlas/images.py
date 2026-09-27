@@ -26,6 +26,7 @@ import os
 import re
 import shutil
 import tempfile
+from collections import defaultdict
 from collections.abc import Callable
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -276,23 +277,33 @@ def register(path: Path, url: str, **fields: Any) -> ImageRecord:
     return record
 
 
-def paths(*, root: Path | None = None):
-    """A lookup from a page URL to its cached file, as `path_for` finds it, reading the index once.
+def resolver(*, root: Path | None = None):
+    """A lookup from a page image to its cached file and that file's sha256, reading the index once.
 
-    For a job over thousands of pages, where `path_for` would read the whole index for each one.
+    A page that records its image's sha256 finds that very file: the cache is content-addressed and
+    keeps superseded files, so it is the image the page's boxes were drawn on whatever its URL now
+    resolves to. A page without one is matched by URL, then by service, as `path_for` matches it.
     """
     cache = images_root(root)
-    by_url, by_service = {}, {}
-    for row in index(cache):
+    rows = index(cache)
+    by_sha = {row.sha256: row for row in rows}
+    by_url, by_service = defaultdict(list), defaultdict(list)
+    for row in rows:
         if row.superseded_by is None:
-            by_url[row.url] = row
+            by_url[row.url].append(row)
             if row.service is not None:
-                by_service[row.service] = row
+                by_service[row.service].append(row)
 
-    def lookup(url: str) -> Path | None:
-        row = by_url.get(url) or by_service.get(service_of(url))
-        path = _file_for(cache, row) if row is not None else None
-        return path if path is not None and path.exists() else None
+    def lookup(url: str, sha256: str | None = None) -> tuple[Path, str] | None:
+        if sha256:
+            found = [by_sha[sha256]] if sha256 in by_sha else []
+        else:
+            found = by_url.get(url) or by_service.get(service_of(url) or "", [])
+        for row in reversed(found):
+            path = _file_for(cache, row)
+            if path.exists():
+                return path, row.sha256
+        return None
 
     return lookup
 
