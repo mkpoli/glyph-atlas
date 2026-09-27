@@ -1,3 +1,5 @@
+import pytest
+
 from glyph_atlas import tables
 from glyph_atlas.extraction_queue import Queue, quality_reason, run, scorable_chars, unique_units
 from glyph_atlas.schema import Box, Candidate, Document, Line, Page, ReviewState, Unit
@@ -637,3 +639,19 @@ def test_seeding_reads_a_page_s_report_once_and_a_page_finished_under_this_polic
     queue.finish("c", {"accepted": 0, "examined": 0, "policy": POLICY}, queue.root/"pages"/"c")
     assert queue.seed_supplements() == 0
 
+
+@pytest.mark.parametrize("text,score,reason", [
+    ("字", .10, None), ("字", .0999, "visual-uncertain"), (" 字\n", .5, None),
+    ("子", .95, "visual-disagreement"), ("字字", .95, "visual-disagreement")])
+def test_ndl_s_reading_counts_from_ten_hundredths(text, score, reason):
+    ballot = votes(); ballot[1].update(text=text, score=score)
+    assert quality_reason(unit(), ballot, (200, 200)) == reason
+
+
+def test_a_small_kana_is_not_its_full_size_form_and_a_compatibility_ideograph_is_its_unified_one():
+    kana = unit(); kana.text_source = "ゃ"
+    ballot = [{"engine": "Atlas classifier", "text": "ゃ", "score": .97}, {"engine": "NDLkotenOCR", "text": "や", "score": .98}]
+    assert quality_reason(kana, ballot, (200, 200)) == "visual-disagreement"
+    han = unit(); han.text_source = "豈"  # U+8C48
+    ballot = [{"engine": "Atlas classifier", "text": "豈", "score": .97}, {"engine": "NDLkotenOCR", "text": "豈", "score": .5}]
+    assert quality_reason(han, ballot, (200, 200)) is None

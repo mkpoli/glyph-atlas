@@ -376,7 +376,7 @@ def vote_reason(votes, expected, name, threshold):
     """Why the vote of engine `name` does not confirm `expected`, or None."""
     vote = next((v for v in votes if v["engine"] == name), None)
     if (not vote or vote.get("identity_scope", "character") != "character"
-            or unicodedata.normalize("NFC", vote.get("text") or "") != expected):
+            or unicodedata.normalize("NFC", vote.get("text") or "").strip() != expected):
         return "visual-disagreement"
     score = vote.get("score")
     if (not isinstance(score, (float, int)) or isinstance(score, bool)
@@ -431,7 +431,9 @@ def unconfirmed_reason(unit, votes, size, *, alphabet, neighbours=()):
     unit; it cannot veto every confident reading, since it reads 髙 as 高. NDLkotenOCR vetoes it when
     it reads two or more characters there at .90 or more (tall compounds such as 孼 read as two, but
     less surely). The shape checks of any unit apply, and NDLkotenOCR must read the character when
-    its alphabet holds it.
+    its alphabet holds it, at .70 rather than the .10 the consensus gate asks: there the classifier
+    has already read the character, and NDLkotenOCR only has to agree; here its reading is the only
+    evidence of which character the box holds.
     """
     reason = shape_reason(unit, size)
     if reason:
