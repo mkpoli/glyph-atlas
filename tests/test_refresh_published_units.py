@@ -188,3 +188,19 @@ def test_the_output_ends_by_stamping_the_refresh(tmp_path, monkeypatch):
     site.execute("CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     site.execute(lines[-1])
     assert json.loads(site.execute("SELECT value FROM metadata WHERE key='units_refreshed_at'").fetchone()[0]).endswith("Z")
+
+
+def test_a_new_page_number_is_set_in_place_with_its_page_index_reviewed_or_not():
+    import sqlite3
+    for reviewed in (False, True):
+        old = with_data(live(revision=1000001, reviewed=reviewed), page_number=88)
+        row = with_data(unit(revision=1000001), page_number=87)
+        row["snapshot"] = json.dumps({"page_index": 86})
+        action, sql = refresh.plan(row, old)
+        assert action == "in-place"
+        db = sqlite3.connect(":memory:")
+        db.execute("CREATE TABLE units (id TEXT, revision INTEGER, quiz INTEGER, data TEXT, snapshot TEXT)")
+        db.execute("INSERT INTO units VALUES ('hk:1', 1000001, 1, ?, ?)", (old["data"], json.dumps({"page_index": 87})))
+        db.execute(sql)
+        data, snapshot = db.execute("SELECT data, snapshot FROM units").fetchone()
+        assert json.loads(data)["page_number"] == 87 and json.loads(snapshot)["page_index"] == 86
