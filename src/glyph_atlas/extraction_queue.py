@@ -21,7 +21,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from . import align, images, tables
-from .schema import Classification, ReviewState, UnitKind
+from .schema import PAGE_SCOPE, Classification, ReviewState, UnitKind
 
 POLICY = "single-character-consensus-v1"
 
@@ -58,6 +58,31 @@ def scorable_chars(text: str) -> set[str]:
     also `single_character` in `.review.atlas` for a related, string-level check.
     """
     return {c for c in text if not c.isspace() and not unicodedata.category(c).startswith(("P", "M"))}
+
+
+def located_pages(source: Path) -> set[str]:
+    """The pages of a dataset with at least one located line that is not page-scoped.
+
+    Read with pyarrow, two columns at a time, because Honkoku-Lines holds more than a million lines.
+    """
+    import pyarrow.compute as pc
+    import pyarrow.dataset as ds
+
+    lines_path = source / "lines"
+    if not lines_path.exists():
+        lines_path = source / "lines.parquet"
+    if not lines_path.exists():
+        return set()
+    table = ds.dataset(lines_path, format="parquet").to_table(
+        columns=["page_id", "meta"], filter=pc.is_valid(pc.field("box")))
+    found = set()
+    for page_id, meta in zip(table.column("page_id").to_pylist(), table.column("meta").to_pylist(), strict=True):
+        # `Line.page_scope` reads `meta["scope"]`; most lines carry no scope, so the JSON is parsed
+        # only when the key appears.
+        if meta and '"scope"' in meta and json.loads(meta).get("scope") == PAGE_SCOPE:
+            continue
+        found.add(page_id)
+    return found
 
 
 def load_char_counts(path: Path) -> dict[str, int]:
@@ -106,8 +131,14 @@ class Queue:
         self.db.commit()
 
     def seed(self, source: Path, *, include_ainu=False):
+        """Queue the pages of `source` that hold a located transcription line.
+
+        `extract` works only inside located lines, so a page with none, such as a page whose line
+        boxes have not been derived yet, would only fail its attempts; it is left for a later seed.
+        """
         dataset = tables.Dataset(source)
         documents = {d.id: d for d in dataset.read("documents")}
+        located = located_pages(Path(source))
         # Read the cache index once, rather than rescanning it for 79,000 pages.
         import pyarrow.parquet as pq
         index = images.index_path()
@@ -115,6 +146,8 @@ class Queue:
         cached = {r[k] for r in records for k in ("url", "service") if r.get(k)}
         groups = defaultdict(list)
         for page in dataset.read("pages"):
+            if page.id not in located:
+                continue
             document = documents[page.document_id]
             if not include_ainu and any(s in document.title for s in ("蝦夷", "北海随筆", "アイヌ", "藻汐")):
                 continue
