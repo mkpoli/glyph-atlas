@@ -32,7 +32,7 @@ from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, quote, urlsplit
 from uuid import uuid4
 
 import httpx
@@ -95,17 +95,25 @@ class ImageRecord(BaseModel):
 def _bare(url: str) -> str:
     """`url` without its fragment, its trailing slash and any query that is not the identifier.
 
-    IIPImage servers carry the IIIF identifier in the query (e国宝:
-    `https://emuseum.nich.go.jp/iiif/?IIIF=/100173035001.tif/full/max/0/default.jpg`), so a query
-    naming `IIIF=` is part of the address; any other query is a cache-buster or a session and goes.
+    IIPImage servers carry the IIIF identifier in an `IIIF=` query parameter (e国宝:
+    `https://emuseum.nich.go.jp/iiif/?IIIF=/100173035001.tif/full/max/0/default.jpg`, and
+    `…/iipsrv/iipsrv.fcgi?IIIF=/…tif/…` elsewhere). That parameter is part of the address, written
+    back as the only query; any other parameter is a cache-buster or a session and goes.
     """
     address, _, query = url.split("#", 1)[0].partition("?")
-    if _IIIF_QUERY.match(query):
-        return f"{address}?{query}".rstrip("/")
+    identifier = _iiif_parameter(query)
+    if identifier is not None:
+        # Re-encoded so that `&`, `+` and `#` in an identifier stay part of it on the next parse.
+        return f"{address}?IIIF={quote(identifier, safe="/,:;=@!$'()*~")}".rstrip("/")
     return address.rstrip("/")
 
 
-_IIIF_QUERY = re.compile(r"iiif=", re.IGNORECASE)
+def _iiif_parameter(query: str) -> str | None:
+    """The decoded value of an `IIIF=` query parameter, in any letter case, or None."""
+    for name, value in parse_qsl(query, keep_blank_values=True):
+        if name.lower() == "iiif" and value:
+            return value
+    return None
 
 
 def service_of(url: str) -> str | None:
@@ -125,6 +133,9 @@ def service_of(url: str) -> str | None:
         if found:
             return base[: found.start()].rstrip("/") or None
     parts = urlsplit(base)
+    if _iiif_parameter(parts.query) is not None:
+        # An IIPImage identifier with no request suffix names the service itself, whatever the path.
+        return base
     segments = [segment.lower() for segment in parts.path.split("/") if segment]
     if "iiif" in (parts.hostname or "").lower() or any(
         marker in segment for segment in segments for marker in IIIF_MARKERS
@@ -171,7 +182,7 @@ def info(
 
 def full_url(service: str, version: int | str) -> str:
     """The full-size image request of a service: `/full/max/0/default.jpg` for 3, `full` for 1 and 2."""
-    base = service_of(service) or service.split("#", 1)[0].split("?", 1)[0].rstrip("/")
+    base = service_of(service) or _bare(service)
     return f"{base}/full/{_size_keyword(version)}/0/default.jpg"
 
 
@@ -370,23 +381,27 @@ def index(root: Path | None = None) -> list[ImageRecord]:
 def held(url: str, *, root: Path | None = None) -> Path | None:
     """The full-size file the cache holds for a page `url`, or None.
 
-    `url` has to name the whole image: a plain file, a bare service or a full-size request. The
-    file is the one stored under that URL, under its service base, or under a full-size request of
-    that service. A region or a scaled request names other pixels and resolves to nothing.
+    A file stored under `url` itself is the image the page names, even when `url` is a scaled
+    request, as some manifests give (龍谷大学's `…/full/1350,/0/default.jpg`). Otherwise `url` has to
+    name the whole image, a bare service or a full-size request, and the file is the one stored under
+    its service base or under a full-size request of that service. A region or a scaled request of
+    another URL names other pixels and resolves to nothing.
 
     The map is read once per version of the cache index, so a scan fetched while a server runs is
     found without a restart.
     """
-    service = service_of(url)
-    if service is not None and not _names_whole_image(url, service):
-        return None
     cache = images_root(root)
     try:
         stat = index_path(cache).stat()
     except OSError:
         return None
     files = _held_files(str(cache.resolve()), (stat.st_mtime_ns, stat.st_ino, stat.st_size))
-    path = files.get(url) or (files.get(service) if service else None)
+    path = files.get(url)
+    if path is None:
+        service = service_of(url)
+        if service is None or not _names_whole_image(url, service):
+            return None
+        path = files.get(service)
     if path is None or not path.is_file() or not path.resolve().is_relative_to(cache.resolve()):
         return None
     return path

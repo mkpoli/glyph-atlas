@@ -145,6 +145,18 @@ def info_bytes(document: dict) -> bytes:
             "https://emuseum.nich.go.jp/iiif/?IIIF=/100173035001.tif/info.json",
             "https://emuseum.nich.go.jp/iiif/?IIIF=/100173035001.tif",
         ),
+        (
+            "https://ourarchives.amane-project.jp/iipsrv/iipsrv.fcgi?IIIF=/a/b.tif/full/full/0/default.jpg",
+            "https://ourarchives.amane-project.jp/iipsrv/iipsrv.fcgi?IIIF=/a/b.tif",
+        ),
+        (
+            "https://h.example/iiif/?foo=1&iiif=/a.tif/full/max/0/default.jpg&t=2",
+            "https://h.example/iiif/?IIIF=/a.tif",
+        ),
+        (
+            "https://h.example/fcgi?IIIF=%2Fa.tif%2Finfo.json",
+            "https://h.example/fcgi?IIIF=/a.tif",
+        ),
         ("https://example.org/collections/12345/photo.jpg", None),
         ("https://example.org/files/scan.tif", None),
         ("https://example.org/data?id=7", None),
@@ -153,6 +165,21 @@ def info_bytes(document: dict) -> bytes:
 )
 def test_service_of_strips_the_request_suffix(url: str, expected: str | None) -> None:
     assert images.service_of(url) == expected
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://ourarchives.amane-project.jp/iipsrv/iipsrv.fcgi?IIIF=/a/b.tif/full/full/0/default.jpg",
+        "https://emuseum.nich.go.jp/iiif/?IIIF=/100173035001.tif/full/8847,/0/default.jpg",
+        "https://example.org/iiif/2/abcd/full/full/0/default.jpg",
+    ],
+)
+def test_a_service_base_is_its_own_service(url: str) -> None:
+    service = images.service_of(url)
+    assert service is not None
+    assert images.service_of(service) == service
+    assert images.full_url(service, 2).startswith(service + "/full/")
 
 
 @pytest.mark.parametrize(
@@ -578,3 +605,22 @@ def test_the_resolver_finds_a_page_by_its_recorded_hash_even_after_its_url_moved
     assert find(url)[1] == new.sha256
     assert find(url, "0" * 64) is None
     assert find("https://example.org/other.png") is None
+
+
+def test_held_returns_the_file_stored_under_a_scaled_page_url(tmp_path) -> None:
+    url = "https://da2.library.ryukoku.ac.jp/image/?IIIF=/17%2F170161%2F170161-0001.tif/full/1350,/0/default.jpg"
+    source = tmp_path / "page.jpg"
+    Image.new("RGB", (8, 8)).save(source)
+    images.register(source, url, root=tmp_path / "cache")
+    assert images.held(url, root=tmp_path / "cache") is not None
+    assert images.held(url.replace("1350,", "600,"), root=tmp_path / "cache") is None
+
+
+@pytest.mark.parametrize("identifier", ["/a&b.tif", "/a+b.tif", "/a#b.tif", "/a b.tif"])
+def test_an_iipimage_identifier_survives_a_second_parse(identifier: str) -> None:
+    from urllib.parse import quote
+
+    url = f"https://h.example/fcgi?IIIF={quote(identifier, safe='/')}/full/max/0/default.jpg"
+    service = images.service_of(url)
+    assert service == f"https://h.example/fcgi?IIIF={quote(identifier, safe='/')}"
+    assert images.service_of(service) == service
