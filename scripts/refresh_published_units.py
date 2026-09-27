@@ -62,7 +62,8 @@ def quote(value) -> str:
 
 
 CROP_KEYS = ("box", "crop_box", "image")
-IN_PLACE_KEYS = ("context_image", "context_box", "repair")
+# What a publication owns: set on the live row without a new revision, reviewed or not.
+IN_PLACE_KEYS = ("context_image", "context_box", "repair", "page_number")
 
 
 def same_crop(new_data: str, live_data: str) -> bool:
@@ -114,6 +115,10 @@ def plan(new: dict, live: dict) -> tuple[str, str | None]:
         paths = ", ".join(f"'$.{key}', json({quote(json.dumps(value, ensure_ascii=False, separators=(',', ':')))})"
                           for key, value in in_place.items())
         sets.insert(0, f"data=json_set(data, {paths})")
+        # The page index the snapshot carries moves with the page number.
+        index = json.loads(new.get("snapshot") or "{}").get("page_index")
+        if "page_number" in in_place and index is not None:
+            sets.insert(1, f"snapshot=json_set(snapshot, '$.page_index', {int(index)})")
     if not sets:
         return "skip", None
     return ("in-place" if in_place else "quiz"), f"UPDATE units SET {', '.join(sets)}" + guard
