@@ -1,7 +1,7 @@
 import { t } from './i18n.svelte.js'
 import { productionLabel } from '../components/ProductionBadge.svelte'
 
-/** What a record says about its own reliability, in one badge: withheld, machine or confirmed.
+/** What a record says about its own reliability, in one badge: withheld, machine, unrecognised or confirmed.
  *
  * The words come from the record's `repair` block — `withheld`, `reliable`, `verified`, `reason` —
  * and nothing is claimed that the record does not state: a machine alignment with no human review
@@ -17,6 +17,8 @@ export function repairOf(item) {
     }
     return null
   }
+  // Extraction published this crop although no recognition model has a class for its character.
+  if (item.gate === 'unconfirmed') return { kind: 'machine', label: 'unrecognised', reason: t('repair.reason.unrecognised') }
   // The corpus states its own case: a lead nobody has confirmed is not a verified example.
   if (item.origin === 'corpus' || item.requires_review) return { kind: 'machine', label: 'unconfirmed', reason: item.licence_note ?? t('repair.reason.corpusUnconfirmed') }
   if (item.machine) return { kind: 'machine', label: 'machine', reason: t('repair.reason.machineProposed') }
@@ -29,7 +31,8 @@ export function cropDetails(item) {
   const repair = repairOf(item)
   const state = item.state === 'checked' ? t('state.checked') : item.state === 'flagged' ? t('state.flagged') : item.state === 'hard' ? t('state.hard')
     : repair?.kind === 'withheld' ? t('tile.withheldReason', { reason: repair.reason }) : repair?.kind === 'verified' ? t('state.checked')
-    : repair?.label === 'unconfirmed' ? t('tile.notYetConfirmed') : repair ? t('tile.machineAligned') : null
+    : repair?.label === 'unconfirmed' ? t('tile.notYetConfirmed') : repair?.label === 'unrecognised' ? t('tile.unrecognised')
+    : repair ? t('tile.machineAligned') : null
   const origin = item.origin === 'corpus' ? ((item.source?.corpus ?? item.corpus) === 'codh-full' ? t('tile.origin.codh') : t('tile.origin.corpus')) : null
   const work = typeof item.source === 'string' ? item.source : (item.source?.title ?? item.title)
   const page = item.page_number ? t('tile.page', { page: item.page_number }) : null
