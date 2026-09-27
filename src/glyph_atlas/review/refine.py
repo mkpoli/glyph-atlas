@@ -25,7 +25,7 @@ from PIL import Image
 
 from .. import refs
 from ..feedback import QUARANTINE_IMPLICIT_QUIZ_MATCH, normalize_export
-from ..schema import Box
+from ..schema import Box, ReviewState
 from ..split_proposals import Limits, propose_split
 from .atlas import identity_text, script_of_identity, single_character
 from .characters import _source_digest, written_identity
@@ -212,9 +212,14 @@ def _changes(store, unit, values, evidence, *, base_revision, role="model"):
 
 
 def _collision(boxes, others):
+    """The first occurrence a child box would duplicate.
+
+    A placement the aligner rejected is not an occurrence: it is never published, and a split
+    that puts a character where one sits takes nothing from it.
+    """
     for box in boxes:
         for other in others:
-            if not other.active or not other.box:
+            if not other.active or not other.box or other.review == ReviewState.REJECTED:
                 continue
             b = other.box
             area = max(0, min(box.x + box.w, b.x + b.w) - max(box.x, b.x)) * max(
@@ -242,7 +247,8 @@ def _reuse_existing_child(store, unit, assessment, boxes, others, *, base_revisi
 
     reused, uncovered = [], []
     for index, (box, text) in enumerate(zip(boxes, assessment["text"], strict=True)):
-        hits = [other for other in others if other.active and other.box and overlaps(box, other.box)]
+        hits = [other for other in others if other.active and other.box and overlaps(box, other.box)
+                and other.review != ReviewState.REJECTED]
         if not hits:
             uncovered.append(index)
             continue
