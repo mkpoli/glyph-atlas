@@ -626,3 +626,39 @@ def test_pitch_grouping_keeps_a_split_annotation_inside_its_ruled_column():
 def test_a_pitch_derived_box_names_its_grouping():
     assert ainu.provenance("pitch") == {"source": "ainu-derive", "method": ainu.PITCH_METHOD}
     assert ainu.provenance() == {"source": "ainu-derive", "method": ainu.DERIVATION_METHOD}
+
+
+def test_a_page_takes_the_size_of_the_image_the_detector_saw(tmp_path, monkeypatch) -> None:
+    """A server that caps its images leaves the recorded canvas larger than the cached file."""
+    from glyph_atlas import tables
+
+    directory = tmp_path / "ainu"
+    directory.mkdir()
+    tables.write(directory / "pages.parquet", [page(width=6700, height=4650)], Page)
+    tables.write(directory / "lines.parquet", [line(0, "あ" * 4)], Line)
+    monkeypatch.setattr(ainu, "_cached_size", lambda _: (3000, 2082))
+
+    counts = ainu.derive_dataset(directory, detections={page().id: []}, out=tmp_path / "c.tsv")
+
+    sized = tables.read(directory / "pages.parquet", Page)[0]
+    assert counts["pages-sized"] == 1
+    assert (sized.width, sized.height) == (3000, 2082)
+    assert sized.meta["recorded_size"] == [6700, 4650]
+
+
+def test_a_page_with_a_persons_box_keeps_its_size(tmp_path, monkeypatch) -> None:
+    from glyph_atlas import tables
+
+    directory = tmp_path / "ainu"
+    directory.mkdir()
+    drawn = line(0, "あ" * 4)
+    drawn.box = Box(x=1, y=2, w=3, h=4)
+    drawn.match_method = "manual"
+    tables.write(directory / "pages.parquet", [page(width=6700, height=4650)], Page)
+    tables.write(directory / "lines.parquet", [drawn], Line)
+    monkeypatch.setattr(ainu, "_cached_size", lambda _: (3000, 2082))
+
+    ainu.derive_dataset(directory, detections={page().id: []}, out=tmp_path / "c.tsv")
+
+    kept = tables.read(directory / "pages.parquet", Page)[0]
+    assert (kept.width, kept.height) == (6700, 4650)
