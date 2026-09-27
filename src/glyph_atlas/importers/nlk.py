@@ -162,41 +162,73 @@ def _fetch_pdf(
     retries: int,
     fetch_options: dict[str, Any],
     build_retries: int = BUILD_RETRIES,
+    stated_pages: int | None = None,
 ) -> tuple[Path, str]:
     """Download the record's PDF, trying each candidate name, and return the path and the URL used.
 
-    Which name answered is kept in a sidecar file next to `dest`, so that a rerun with a cached PDF
-    does not have to guess which of the candidate names it was fetched under.
+    Which name answered is kept in a sidecar file next to `dest`, written only once the file opens as
+    a PDF with `stated_pages` pages (when the record states a count), so that a rerun reuses only a
+    file known to be whole and knows which name it came under. A cached file that fails the check, or
+    has no sidecar, is fetched again. A body that is not such a PDF (an error page, or a file served
+    mid-build) is retried like a 404.
     """
     marker = dest.with_name(dest.name + ".url")
     if dest.exists() and marker.exists():
-        return dest, marker.read_text(encoding="utf-8").strip()
+        if _pdf_problem(dest, stated_pages) is None:
+            return dest, marker.read_text(encoding="utf-8").strip()
+        marker.unlink()
+    dest.unlink(missing_ok=True)
     sleeper = fetch_options.get("sleeper") or net.SLEEP
     net.download(
         VIEWER_OPEN, dest.with_name(f"{cno}.viewer.html"), retries=retries, refresh=True,
         method="POST", data={"cno": cno, "ax": "Y", "sysid": "homepage"},
         referer=f"{VIEWER_OPEN}?cno={cno}&sysid=homepage", **fetch_options,
     )
-    last_error: Exception | None = None
+    last_error = "no request was made"
     for name in _pdf_names(cno, kol):
         url = PDF_URL.format(name=name)
         for attempt in range(1, build_retries + 1):
             try:
                 path = net.download(url, dest, retries=retries, **fetch_options)
             except net.DownloadError as error:
-                last_error = error
-                if "HTTP 404" not in str(error):
+                last_error = str(error)
+                if "HTTP 404" not in last_error:
                     raise
-                if attempt < build_retries:
-                    sleeper(min(BUILD_BACKOFF * attempt, BUILD_MAX_BACKOFF))
-                continue
             else:
-                marker.write_text(url, encoding="utf-8")
-                return path, url
+                problem = _pdf_problem(path, stated_pages)
+                if problem is None:
+                    marker.write_text(url, encoding="utf-8")
+                    return path, url
+                path.unlink()
+                last_error = f"{url}: {problem}"
+            if attempt < build_retries:
+                sleeper(min(BUILD_BACKOFF * attempt, BUILD_MAX_BACKOFF))
     raise RecordError(
-        f"{cno}: no PDF at any of {_pdf_names(cno, kol)}, still 404 after waiting for it to build "
+        f"{cno}: no whole PDF at any of {_pdf_names(cno, kol)} after waiting for it to build "
         f"({last_error})"
     )
+
+
+def _pdf_problem(path: Path, stated_pages: int | None) -> str | None:
+    """Why the file at `path` is not the record's whole PDF, or None when it is."""
+    import pymupdf
+
+    try:
+        doc = pymupdf.open(path, filetype="pdf")
+    except (RuntimeError, ValueError) as error:
+        return f"not a readable PDF ({error.__class__.__name__}: {error})"
+    try:
+        if stated_pages is not None and doc.page_count != stated_pages:
+            return f"the PDF has {doc.page_count} pages, the record states {stated_pages}"
+        return None
+    finally:
+        doc.close()
+
+
+def _stated_pages(bookinfo: dict[str, str]) -> int | None:
+    """The page count the record states in its 형태사항, as `PDF | N p.`, if it states one."""
+    stated = STATED_PAGES.match(bookinfo.get("형태사항", ""))
+    return int(stated.group(1)) if stated else None
 
 
 def collect(
@@ -219,6 +251,7 @@ def collect(
     `#page=<n>` fragment. A record whose metadata or PDF cannot be fetched, or whose PDF holds a page
     with no embedded image, is left out whole and listed under `unavailable`. `build_retries` bounds
     how many times a PDF that is still 404 (still converting) is asked for again before giving up.
+    The tables written hold exactly the records of `ids`: a rerun with fewer ids drops the others.
     """
     out = Path(out)
     upstream = out / "upstream"
@@ -247,12 +280,15 @@ def collect(
                 )
                 detail, kol = _detail(detail_path.read_bytes(), cno)
             except (net.DownloadError, RecordError) as error:
+                # An answer that did not parse is not kept, so a rerun asks again.
+                for name in ("bookinfo", "detail"):
+                    (upstream / f"{cno}.{name}.html").unlink(missing_ok=True)
                 unavailable.append({"id": cno, "error": str(error)})
                 continue
             try:
                 pdf_path, pdf_url = _fetch_pdf(
                     cno, kol, upstream / f"{cno}.pdf", retries=retries, fetch_options=fetch_options,
-                    build_retries=build_retries,
+                    build_retries=build_retries, stated_pages=_stated_pages(bookinfo),
                 )
             except net.DownloadError as error:
                 unavailable.append({"id": cno, "title": bookinfo.get("표제"), "error": str(error)})
@@ -266,6 +302,9 @@ def collect(
                     cache=cache, checked=checked,
                 )
             except RecordError as error:
+                # A PDF that could not be built into pages is not kept, so a rerun fetches it again.
+                pdf_path.unlink(missing_ok=True)
+                pdf_path.with_name(pdf_path.name + ".url").unlink(missing_ok=True)
                 unavailable.append({"id": cno, "title": bookinfo.get("표제"), "error": str(error)})
                 continue
             documents.append(document)
@@ -321,11 +360,6 @@ def build(
 
     doc = pymupdf.open(pdf_path)
     try:
-        stated = STATED_PAGES.match(bookinfo.get("형태사항", ""))
-        if stated and int(stated.group(1)) != doc.page_count:
-            raise RecordError(
-                f"{cno}: the PDF has {doc.page_count} pages, the record states {stated.group(1)}"
-            )
         pages: list[Page] = []
         for index in range(doc.page_count):
             seq = index + 1
