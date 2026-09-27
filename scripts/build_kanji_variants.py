@@ -12,17 +12,30 @@ row reads "b is the <relation> of a".
 `semantic`              Unihan kSemanticVariant
 `specialized-semantic`  directed: b is a variant of a in some senses (Unihan kSpecializedSemanticVariant,
                         Wikidata P5475 with 特徴 Q126726325)
-`variant`               a variant with no finer kind (Wikidata P5475, HNG 異体字 column)
-`z`                     one abstract character encoded twice (Unihan kZVariant)
+`variant`               a variant with no finer kind (Wikidata P5475, HNG 異体字 column, the 異体字 tables of
+                        cjkvi-variants: 漢語大字典, 民國教育部, 戸籍統一文字, 第一批异体字整理表, 常用漢字表,
+                        人名用漢字, 表外漢字字体表, JIS X 0212/0213, 原規格分離, 古壮字字典)
+`z`                     one abstract character encoded twice (Unihan kZVariant, cjkvi 重複漢字)
 `simplified`            directed: b is a simplified form of a (Unihan kSimplifiedVariant, and
-                        kTraditionalVariant read backwards; OpenCC TSCharacters; yitizi 簡體)
+                        kTraditionalVariant read backwards; OpenCC TSCharacters; yitizi 簡體;
+                        cjkvi-simplified and 漢語大字典 𥳑體字)
 `shinjitai`             directed: b is the Japanese 新字体 of a (Unihan kJapaneseNewVariant, and
-                        kJapaneseOldVariant read backwards; OpenCC JPShinjitaiCharacters)
+                        kJapaneseOldVariant read backwards; OpenCC JPShinjitaiCharacters; cjkvi
+                        jp-old-style with its variation selectors removed)
 `regional`              directed: b is the form a regional standard writes for a (OpenCC TW/HKVariants)
 `shuowen`               directed: b is the 說文解字 隸定字 of a (OpenCC SealVariants)
 `reduction`             directed: an MJ figure of a reduces to b (MJ縮退マップ; detail names the table)
 `compatibility`         directed: a is a compatibility character whose decomposition is b (UnicodeData)
+`borrowed`              not a variant: characters of like sound written for one another (cjkvi 漢語大字典
+                        通假字)
+`substitute`            not a variant; directed: b is the 同音の書き換え字 written in place of a (cjkvi
+                        jp-borrowed)
+`non-cognate`           not a variant: one shape, two unrelated characters (cjkvi 同型異字)
 `spoofing`              visually confusable, not the same character (Unihan kSpoofingVariant)
+
+Unihan and cjkvi-variants rows keep the upstream line's own direction in the detail
+(`倣→仿 kSemanticVariant<kMatthews`, `仿→倣 hydzd/variant`), since a symmetric row may be stored either
+way and a tag can describe one endpoint.
 
     uv sync --extra data
     .venv/bin/python scripts/build_kanji_variants.py
@@ -66,6 +79,45 @@ SHRINK_MAP_URL = "https://moji.or.jp/wp-content/mojikiban/oscdl/MJShrinkMap.1.2.
 HNG_REVISION = "e2174a30844b8100c34af1c0dbe1e301f186883e"
 HNG_URL = "https://raw.githubusercontent.com/chise/hng-basic-data/{revision}/{name}"
 HNG_INDEX = "all_table_v.5.0_2019-01-15.csv"
+CJKVI_REVISION = "e4f1da248c9737a243f9930b5dc497cef5d5ae16"
+CJKVI_URL = "https://raw.githubusercontent.com/cjkvi/cjkvi-variants/{revision}/{name}"
+#: every file of the repository except non-cjk.txt and radical-variants.txt, which relate
+#: radicals and non-ideographs to ideographs; jp-old-style.txt has a format of its own.
+CJKVI_FILES = [
+    "cjkvi-simplified.txt",
+    "cjkvi-variants.txt",
+    "duplicate-chars.txt",
+    "dypytz-variants.txt",
+    "hydzd-borrowed.txt",
+    "hydzd-variants.txt",
+    "hyogai-variants.txt",
+    "jinmei-variants.txt",
+    "jisx0212-variants.txt",
+    "jisx0213-variants.txt",
+    "joyo-variants.txt",
+    "jp-borrowed.txt",
+    "koseki-variants.txt",
+    "non-cognates.txt",
+    "numeric-variants.txt",
+    "sawndip-variants.txt",
+    "twedu-variants.txt",
+    "ucs-scs.txt",
+    "x0212-x0213-variants.txt",
+]
+CJKVI_OLD_STYLE = "jp-old-style.txt"
+#: cjkvi tags that are not a plain `…/variant`: relation, and whether the line reads backwards.
+CJKVI_TAGS = {
+    "cjkvi/simplified": ("simplified", False),
+    "cjkvi/variant-simplified": ("simplified", False),
+    "cjkvi/pseudo-simplified": ("simplified", False),
+    "cjkvi/traditional": ("simplified", True),
+    "hydzd/simplified": ("simplified", False),
+    "hydcd/borrowed": ("borrowed", False),
+    "jp/borrowed": ("substitute", False),
+    "cjkvi/duplicate": ("z", False),
+    "cjkvi/non-cognate": ("non-cognate", False),
+    "cjkvi/numeric": ("variant", False),
+}
 WIKIDATA_ENDPOINT = "https://query.wikidata.org/sparql"
 #: P5475 CJKV variant character, with the character of each item (P487), the works the statement
 #: cites (P248 under its references), 特徴 (P1552) and writing system (P282).
@@ -110,7 +162,7 @@ UNIHAN_FIELDS = {
     "kJapaneseOldVariant": ("shinjitai", True),
     "kSpoofingVariant": ("spoofing", False),
 }
-SYMMETRIC = {"equivalent", "overlap", "semantic", "variant", "z", "spoofing"}
+SYMMETRIC = {"equivalent", "overlap", "semantic", "variant", "z", "borrowed", "non-cognate", "spoofing"}
 RELATIONS = [
     "equivalent",
     "overlap",
@@ -124,9 +176,21 @@ RELATIONS = [
     "shuowen",
     "reduction",
     "compatibility",
+    "borrowed",
+    "substitute",
+    "non-cognate",
     "spoofing",
 ]
-SOURCE_IDS = ["unihan", "unicode-ucd", "wikidata", "yitizi", "opencc", "mj-shrink-map", "hng-basic-data"]
+SOURCE_IDS = [
+    "unihan",
+    "unicode-ucd",
+    "wikidata",
+    "cjkvi-variants",
+    "yitizi",
+    "opencc",
+    "mj-shrink-map",
+    "hng-basic-data",
+]
 COLUMNS = ["a", "b", "relation", "source", "detail"]
 HEX = re.compile(r"U\+([0-9A-F]{4,6})")
 
@@ -231,6 +295,69 @@ def opencc_edges(name: str, text: str) -> list[Edge]:
                 if backwards
                 else edge(key, value, relation, "opencc", detail)
             )
+    return [row for row in rows if row]
+
+
+def cjkvi_edges(name: str, text: str) -> list[Edge]:
+    """`A,tag,B[,extra]` lines; `<name>`, `<rev>` and `<reverse>` lines declare tags, `#` comments.
+
+    A `…/variant` tag (with or without a year of abolition, as in dypytz/variant/1986) becomes a
+    `variant` row. Where the file declares a `/proper` or `/regular` converse (漢語大字典, 民國教育部,
+    戸籍統一文字, 常用漢字表, 人名用漢字, 表外漢字字体表, 第一批异体字整理表, 古壮字字典) the line reads
+    "B is a 異体字 of the 正字 A"; cjkvi/variant, jisx0212/variant, jisx0213/variant and
+    ucs-scs/variant are their own converse and only say A and B are related (関連字, 原規格分離). The
+    arrow in the detail keeps the line's order either way. The other tags are mapped by CJKVI_TAGS; a
+    tag outside both is refused so a new upstream tag cannot slip in unread. Fields are stripped, since
+    a few lines end in a tab. Lines whose ends are IDS or bracketed notes are not single characters
+    and yield no row.
+    """
+    rows = []
+    for number, line in enumerate(text.splitlines(), 1):
+        if not line.strip() or line.startswith("#"):
+            continue
+        fields = line.split(",")
+        if len(fields) < 3 or fields[1].startswith("<"):
+            continue
+        a, tag, b, *extra = (field.strip() for field in fields)
+        if tag in CJKVI_TAGS:
+            relation, backwards = CJKVI_TAGS[tag]
+        elif re.fullmatch(r"[\w-]+/variants?(/\d{4})?", tag):
+            relation, backwards = "variant", False
+        else:
+            raise SystemExit(f"cjkvi {name} line {number}: unknown tag {tag!r}")
+        detail = f"{a}→{b} {tag}" + (f" {' '.join(extra)}" if extra else "")
+        rows.append(
+            edge(b, a, relation, "cjkvi-variants", detail)
+            if backwards
+            else edge(a, b, relation, "cjkvi-variants", detail)
+        )
+    return [row for row in rows if row]
+
+
+VARIATION_SELECTOR = re.compile("[\ufe00-\ufe0f\U000e0100-\U000e01ef]")
+
+
+def cjkvi_old_style_edges(text: str) -> list[Edge]:
+    """jp-old-style.txt: `新字体<TAB>旧字体[<TAB>compatibility character[<TAB>comment]]`.
+
+    Either column may carry an IVS naming the glyph. A row relates the two base characters once the
+    selectors are removed; a line whose two columns share a base character pairs two glyphs of one
+    character and yields no row. The detail keeps the columns as written.
+    """
+    rows = []
+    for line in text.splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        new, old = (field.strip() for field in line.split("\t")[:2])
+        rows.append(
+            edge(
+                VARIATION_SELECTOR.sub("", old),
+                VARIATION_SELECTOR.sub("", new),
+                "shinjitai",
+                "cjkvi-variants",
+                f"{new}→{old} jp-old-style",
+            )
+        )
     return [row for row in rows if row]
 
 
@@ -393,6 +520,7 @@ def provenance(paths: dict[str, Path], counts: dict[str, int], fetched: str) -> 
         f"#   unihan: {UNIHAN_URL} sha256:{digest(paths['unihan'])}",
         f"#   unicode-ucd: {UNICODEDATA_URL} sha256:{digest(paths['ucd'])}",
         f"#   wikidata: P5475 query at {WIKIDATA_ENDPOINT}, fetched {fetched}, sha256:{digest(paths['wikidata'])}",
+        f"#   cjkvi-variants: {CJKVI_URL.format(revision=CJKVI_REVISION, name='…')} ({len(CJKVI_FILES) + 1} files)",
         f"#   yitizi: {YITIZI_URL.format(revision=YITIZI_REVISION, name='…')} ({', '.join(YITIZI_FILES)})",
         f"#   opencc: {OPENCC_URL.format(revision=OPENCC_REVISION, name='…')} ({', '.join(OPENCC_FILES)})",
         f"#   mj-shrink-map: {SHRINK_MAP_URL} sha256:{digest(paths['shrink'])}; figures from data/vocab/mj-kanji.tsv",
@@ -434,6 +562,13 @@ def main(argv: list[str] | None = None) -> int:
     rows = unihan_edges(unihan_text)
     rows += compatibility_edges(paths["ucd"].read_text(encoding="utf-8"))
     rows += wikidata_edges(json.loads(wikidata.read_text(encoding="utf-8")))
+    for name in CJKVI_FILES:
+        path = fetch(CJKVI_URL.format(revision=CJKVI_REVISION, name=name), cache / "cjkvi" / name)
+        rows += cjkvi_edges(name, path.read_text(encoding="utf-8"))
+    path = fetch(
+        CJKVI_URL.format(revision=CJKVI_REVISION, name=CJKVI_OLD_STYLE), cache / "cjkvi" / CJKVI_OLD_STYLE
+    )
+    rows += cjkvi_old_style_edges(path.read_text(encoding="utf-8"))
     for name in YITIZI_FILES:
         path = fetch(YITIZI_URL.format(revision=YITIZI_REVISION, name=name), cache / "yitizi" / name)
         rows += yitizi_edges(name, path.read_text(encoding="utf-8"))
