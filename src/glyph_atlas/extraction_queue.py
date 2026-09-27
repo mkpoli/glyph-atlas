@@ -151,8 +151,8 @@ class Queue:
         with `load_char_counts`. Each page is scored from the lines of the dataset it was seeded
         from, its `source`, so pages of every seeded dataset compete on the same terms. Complete,
         running and failed pages are left alone, and only `page_id` and `text` are read from each
-        lines table to keep this cheap at tens of thousands of pages. Returns how many pages were
-        scored.
+        lines table to keep this cheap at tens of thousands of pages. A source without a lines table
+        is an error. Returns how many pages were scored.
         """
         import pyarrow.dataset as ds
 
@@ -165,7 +165,8 @@ class Queue:
             if not lines_path.exists():
                 lines_path = Path(source) / "lines.parquet"
             if not lines_path.exists():
-                continue
+                # A moved or misnamed dataset would otherwise leave all its pages at 0 unnoticed.
+                raise FileNotFoundError(f"{source}: queued pages name a dataset with no lines table")
             scanner = ds.dataset(lines_path, format="parquet").scanner(columns=["page_id", "text"])
             for batch in scanner.to_batches():
                 for page_id, text in zip(batch.column("page_id").to_pylist(),

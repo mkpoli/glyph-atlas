@@ -256,6 +256,16 @@ def test_prioritize_scores_each_page_from_the_dataset_it_was_seeded_from(tmp_pat
     assert queue.claim()["id"] == "b"
 
 
+def test_prioritize_refuses_a_source_without_lines(tmp_path, monkeypatch):
+    import pytest
+
+    monkeypatch.setattr("glyph_atlas.images.index_path", lambda: tmp_path / "missing")
+    queue = Queue(tmp_path / "queue")
+    seeded(queue, [("a", tmp_path / "moved", 0)])
+    with pytest.raises(FileNotFoundError):
+        queue.prioritize({})
+
+
 def test_prioritize_ties_keep_the_original_claim_order(tmp_path, monkeypatch):
     monkeypatch.setattr("glyph_atlas.images.index_path", lambda: tmp_path / "missing")
     queue = Queue(tmp_path / "queue")
