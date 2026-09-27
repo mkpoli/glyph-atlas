@@ -177,6 +177,10 @@ class TestImport:
         assert counts["documents"] == 1
         for name in ("documents.parquet", "pages.parquet", "page_texts.parquet", "MANIFEST.json"):
             assert (out / name).exists()
+        from glyph_atlas import tables
+        from glyph_atlas.schema import Page
+
+        assert [page.seq for page in tables.read(out / "pages.parquet", Page)] == [0]
 
     def test_the_written_corpus_is_discoverable_and_indexable(self, tmp_path):
         from glyph_atlas.corpus import CorpusIndex, build_chars, discover

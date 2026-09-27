@@ -360,7 +360,7 @@ def import_corpus(
 
     documents = [document_of(host)]
     kept_pages = []
-    for index, page in enumerate(keep, 1):
+    for index, page in enumerate(keep):
         row = page_of(page)
         row.seq = index
         kept_pages.append(row)
