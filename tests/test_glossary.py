@@ -101,3 +101,22 @@ def test_agreement_allows_the_equivalent_forms_and_says_when_it_cannot_judge() -
     assert glossary.agrees(Glyph("臺"), ["U+53F0", "U+6765"], known) is True
     assert glossary.agrees(Glyph("鰥"), ["U+6765"], known) is None
     assert glossary.agrees(Glyph("⿰方⿱厶夫", "族"), ["U+6765"], known) is None
+
+
+def test_markup_in_a_headword_line_is_not_text() -> None:
+    assert glossary.glyphs("邉<!--自→白-->(邊)") == [Glyph("邉", "邊")]
+    assert glossary.glyphs("别(別)𭈹<!--⿰⿱口了𠂰-->(號)") == [Glyph("别", "別"), Glyph("𭈹", "號")]
+    assert glossary.glyphs("(牛") == [Glyph("牛")] and glossary.glyphs("星)") == [Glyph("星")]
+
+
+def test_an_unencoded_variant_or_unread_character_holds_its_place_without_a_name() -> None:
+    (variant,) = glossary.glyphs("{{이체자|脊}}")
+    assert variant.standard == "脊" and not variant.readable and not variant.encoded
+    unread, *rest = glossary.glyphs("？鼻涕")
+    assert not unread.readable and [g.text for g in rest] == ["鼻", "涕"]
+    assert glossary.agrees(unread, ["U+9F3B"], {"U+9F3B"}) is None
+
+
+def test_a_section_heading_is_not_a_headword() -> None:
+    text = ';<section begin="公式" /><h2>公式</h2>\n;天\n:하ᄂᆞᆯ텬\n'
+    assert [[g.text for g in head] for head in glossary.headwords(text)] == [["天"]]

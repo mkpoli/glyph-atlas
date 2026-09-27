@@ -20,7 +20,9 @@ transcription gives each entry's headword as a `;` line, in reading order, but n
 many entries as headwords, so that the order holds; within it, an entry is kept only when it has as
 many boxes as its headword has printed characters. Nothing is guessed: each kept box is labelled
 with the transcription's character at its place. The classifier only checks it (`agrees`): an entry
-whose character the classifier knows but does not read there is left out by the cutting script.
+whose character the classifier knows but does not read there is left out, and a page on which more
+than `REFUSED_SHARE` of the matched entries are refused is left out whole, since that is how a
+pairing shifted by one looks.
 """
 
 from __future__ import annotations
@@ -40,10 +42,20 @@ CIRCLE_HEIGHT = 0.45
 HEADWORD_AREA = 0.4
 #: Least width of a flat headword character, as a share of the wide box.
 HEADWORD_WIDTH = 0.8
+#: Most of a page's matched entries the classifier may refuse before the page is taken as misaligned.
+REFUSED_SHARE = 0.25
 #: Least gap between two columns' box centres, as a share of the wide box.
 COLUMN_GAP = 0.6
 
 _HEADWORD_LINE = re.compile(r"^;(.*)$", re.MULTILINE)
+#: Markup of a `;` line that heads a section instead of naming an entry.
+_HEADING = re.compile(r"<h\d|<section\b")
+_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+_TAG = re.compile(r"<[^>]*>")
+#: `{{이체자|X}}`: a variant form of X that Unicode does not encode.
+_VARIANT = re.compile(r"\{\{\s*이체자\s*\|\s*([^{}|]+?)\s*\}\}")
+#: How a transcriber writes a character they could not read.
+UNREADABLE = frozenset({"？", "?", "〓"})
 
 
 @dataclass(frozen=True)
@@ -54,9 +66,14 @@ class Glyph:
     standard: str | None = None
 
     @property
+    def readable(self) -> bool:
+        """Whether the transcription names the printed character (it may still be a description)."""
+        return self.text not in UNREADABLE
+
+    @property
     def encoded(self) -> bool:
         """Whether the printed character is one encoded character, not a description."""
-        return self.text[0] not in _IDC
+        return self.readable and self.text[0] not in _IDC
 
 
 @dataclass(frozen=True)
@@ -69,21 +86,31 @@ def glyphs(headword: str) -> list[Glyph]:
     """The printed characters of a headword line, e.g. `𬌟(牽)牛星` or `一⿰方⿱厶夫(族)`.
 
     A character is one encoded character or one ideographic description sequence, and a `(…)`
-    right after it gives its standard form.
+    right after it gives its standard form. `{{이체자|X}}` is an unencoded variant of X, and `？` a
+    character the transcriber could not read: each stands in its place but names no printed
+    character. Comments and tags are not text.
     """
+    headword = _TAG.sub("", _COMMENT.sub("", headword))
+    headword = _VARIANT.sub(lambda m: f"〓({m.group(1)})", headword)
     out: list[Glyph] = []
     index = 0
     while index < len(headword):
         char = headword[index]
-        if char.isspace():
+        if char.isspace() or char == ")":
             index += 1
             continue
-        if char == "(" and out:
+        if char == "(":
             end = headword.find(")", index)
-            if end < 0:
-                raise ValueError(f"unclosed standard form in {headword!r}")
-            out[-1] = Glyph(out[-1].text, headword[index + 1:end])
+            if end < 0:  # a stray bracket
+                index += 1
+                continue
+            if out:
+                out[-1] = Glyph(out[-1].text, headword[index + 1:end])
             index = end + 1
+            continue
+        if char in UNREADABLE:
+            out.append(Glyph(char))
+            index += 1
             continue
         if char in _IDC:
             end = _skip_ids(headword, index)
@@ -96,8 +123,8 @@ def glyphs(headword: str) -> list[Glyph]:
 
 
 def headwords(wikitext: str) -> list[list[Glyph]]:
-    """Each entry's headword on a transcribed page, in reading order."""
-    return [glyphs(line.strip()) for line in _HEADWORD_LINE.findall(wikitext)]
+    """Each entry's headword on a transcribed page, in reading order; a section heading is none."""
+    return [glyphs(line.strip()) for line in _HEADWORD_LINE.findall(wikitext) if not _HEADING.search(line)]
 
 
 def wide_box(boxes: Sequence[Box]) -> float:
@@ -155,7 +182,7 @@ def agrees(glyph: Glyph, top: Sequence[str], known: set[str], policy: str = "ali
     from . import refs
 
     if not glyph.encoded:
-        return None
+        return None  # a description, or a character the transcription does not name
     forms = refs.equivalents(glyph.text, policy)
     if glyph.standard and len(glyph.standard) == 1:
         forms |= refs.equivalents(glyph.standard, policy)

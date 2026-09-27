@@ -99,7 +99,11 @@ def main() -> int:
             verdicts = [glossary.agrees(glyph, top5[id(box)], known) for box, glyph in zip(entry.boxes, head, strict=True)]
             if False not in verdicts:
                 checked.append((place, entry, head, verdicts))
-        report[page.id] = f"{why}, {len(kept) - len(checked)} of them refused by the classifier (text page {text_page.id})"
+        refused = len(kept) - len(checked)
+        report[page.id] = f"{why}, {refused} of them refused by the classifier (text page {text_page.id})"
+        if refused > glossary.REFUSED_SHARE * len(kept):
+            report[page.id] += "; page left out as misaligned"
+            continue
         if not checked:
             continue
         kept_pages.append(page)
@@ -110,6 +114,8 @@ def main() -> int:
                               text_raw=written, text=written, match_method="glossary-entries",
                               meta={"source": "cut_glossary_headwords", "column": entry.column}))
             for seq, (box, glyph, verdict) in enumerate(zip(entry.boxes, head, verdicts, strict=True)):
+                if not glyph.readable:
+                    continue  # the transcription does not name this character
                 code = f"U+{ord(glyph.text):04X}" if glyph.encoded and len(glyph.text) == 1 else None
                 meta = {"segmentation": SEGMENTATION, "text_quality": text_page.meta.get("quality"),
                         "classifier_top5": top5[id(box)], "classifier_agrees": verdict}
