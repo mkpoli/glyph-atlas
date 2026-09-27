@@ -147,6 +147,9 @@ def download(
     timeout: float = 30.0,
     meta: dict[str, Any] | None = None,
     user_agent: str | None = None,
+    method: str = "GET",
+    data: dict[str, str] | None = None,
+    referer: str | None = None,
 ) -> Path:
     """Fetch `url` into `dest` and return `dest`.
 
@@ -159,7 +162,10 @@ def download(
     the server answers a `Range` request with 206. `clock` and `sleeper` stand in for `time.monotonic`
     and `time.sleep`, and the module-level `CLOCK` and `SLEEP` do the same for every caller. `meta`,
     when given, takes the status line and headers of the request that succeeded. `user_agent` replaces
-    the project User-Agent for a host whose policy asks for a client name and version.
+    the project User-Agent for a host whose policy asks for a client name and version. `method` and
+    `data` send a form POST instead of a GET, for an endpoint that answers only that way; a POST is
+    never resumed with `Range`, since the body would have to be resent anyway. `referer` is sent as the
+    `Referer` header, for an endpoint that refuses a request not made from its own page.
     """
     dest = Path(dest)
     if dest.exists() and not refresh:
@@ -187,8 +193,10 @@ def download(
         while True:
             attempt += 1
             _wait_for_turn(url, interval, now, sleep)
-            start = part.stat().st_size if part.exists() else 0
+            start = part.stat().st_size if part.exists() and method == "GET" else 0
             headers = {"Accept": "*/*"}
+            if referer is not None:
+                headers["Referer"] = referer
             if start:
                 headers["Range"] = f"bytes={start}-"
             if user_agent is not None:
@@ -197,7 +205,8 @@ def download(
                 agents = (BROWSER_USER_AGENT,) if browser_agent else _user_agents(url)
             try:
                 response, agent = _get(
-                    client, url, headers=headers, agents=agents, interval=interval, clock=now, sleeper=sleep
+                    client, url, headers=headers, agents=agents, interval=interval, clock=now, sleeper=sleep,
+                    method=method, data=data,
                 )
             except httpx.HTTPError as exc:
                 failure = f"{exc.__class__.__name__}: {exc}"
@@ -236,13 +245,15 @@ def _get(
     interval: float,
     clock: Callable[[], float],
     sleeper: Callable[[float], None],
+    method: str = "GET",
+    data: dict[str, str] | None = None,
 ) -> tuple[httpx.Response, str]:
-    """Send one GET, asking again with the next User-Agent while the host refuses the previous one."""
+    """Send one request, asking again with the next User-Agent while the host refuses the previous one."""
     for index, agent in enumerate(agents):
         sent = dict(headers)
         sent["User-Agent"] = agent
         response = client.send(
-            client.build_request("GET", url, headers=sent), stream=True, follow_redirects=True
+            client.build_request(method, url, headers=sent, data=data), stream=True, follow_redirects=True
         )
         if index + 1 < len(agents) and response.status_code in REFUSAL_STATUS:
             _drain(response)

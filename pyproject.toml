@@ -21,6 +21,9 @@ atlas = "glyph_atlas.cli:app"
 
 [project.optional-dependencies]
 data = ["odfpy>=1.4"]
+# The 국립중앙도서관 collector (`atlas` importers `nlk`): reads embedded page images
+# straight out of a PDF, without re-encoding them.
+pdf = ["pymupdf>=1.24"]
 ocr = ["onnxruntime-gpu>=1.22", "numpy>=2", "opencv-python-headless>=4.11"]
 # The interlinear mark proposer (`atlas review propose-marks`)
 marks = ["numpy>=2", "opencv-python-headless>=4.11"]
