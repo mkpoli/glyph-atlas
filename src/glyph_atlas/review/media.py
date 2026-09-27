@@ -73,7 +73,7 @@ class MediaCache:
                     "box": list(box) if box else None, "context": context, "edge": edge}
                 if context:
                     # The reach is part of what a context image is, so a wider reach is a new image.
-                    from .atlas import CONTEXT_REACH
+                    from ..context import CONTEXT_REACH
                     spec["reach"] = list(CONTEXT_REACH)
                 if exact:
                     # A requested region is cut as given, without the display margin.
