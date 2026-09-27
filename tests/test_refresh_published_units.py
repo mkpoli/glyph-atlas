@@ -167,9 +167,15 @@ def test_an_unreviewed_unit_whose_only_change_is_the_quiz_leaves_it_in_place():
     assert (action, sql) == ("quiz", "UPDATE units SET quiz=0 WHERE id='hk:1' AND revision=1000001;")
 
 
-def test_a_null_shape_order_is_the_same_as_none():
-    assert refresh.plan(with_data(unit(revision=1000001), shape_order=None), live(revision=1000001)) == ("skip", None)
-    assert refresh.plan(unit(revision=1000001), with_data(live(revision=1000001), shape_order=None)) == ("skip", None)
+@pytest.mark.parametrize("key", ["shape_order", "suspect"])
+def test_a_null_key_is_the_same_as_none(key):
+    assert refresh.plan(with_data(unit(revision=1000001), **{key: None}), live(revision=1000001)) == ("skip", None)
+    assert refresh.plan(unit(revision=1000001), with_data(live(revision=1000001), **{key: None})) == ("skip", None)
+
+
+def test_a_key_that_gains_a_value_is_a_change():
+    action, _ = refresh.plan(with_data(unit(revision=1000002), suspect={"p": 0.9}), live(revision=1000001))
+    assert action == "replace"
 
 
 def test_the_output_ends_by_stamping_the_refresh(tmp_path, monkeypatch):

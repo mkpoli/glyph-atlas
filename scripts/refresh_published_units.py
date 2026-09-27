@@ -21,8 +21,9 @@ This writes the UPDATE statements that bring such units up to date:
 
 The file ends by stamping `metadata.units_refreshed_at`, which the Worker's cached listings are keyed by.
 
-A null `shape_order` is the same as none: the Worker reads a crop's shape order from `unit_shapes`
-and ignores the key in its data, and older rows were written without it.
+A key holding null is the same as no key: the Worker reads both as nothing, and rows written by
+older catalogues lack keys a newer one writes as null (`shape_order`, which the Worker reads from
+`unit_shapes`, and `suspect`, which it reads from `unit_suspects`).
 
 A crop is the same when its box, crop box and image (the crop's media key) are unchanged; the
 image hash names the page the crop was cut from, so it cannot tell two crops apart.
@@ -91,8 +92,8 @@ def plan(new: dict, live: dict) -> tuple[str, str | None]:
     for data in (new_data, live_data):
         for key in IN_PLACE_KEYS:
             data.pop(key, None)
-        if "shape_order" in data and data["shape_order"] is None:
-            del data["shape_order"]
+        for key in [key for key, value in data.items() if value is None]:
+            del data[key]
     sets = []
     if live["reviewed"]:
         if not same_crop(new["data"], live["data"]):
