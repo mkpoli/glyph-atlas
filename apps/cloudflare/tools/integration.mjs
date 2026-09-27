@@ -128,7 +128,10 @@ try {
   await call('/atlas/characters/one', cropProblem)
   assert.equal((await call('/atlas/characters/one')).state, 'flagged', 'text edits do not resolve bad geometry')
   assert.equal((await call('/atlas?group=kanji')).items[0].id, 'one', 'category follows the written identity')
+  // A publication corrects the page number in place; undoing a review made before that keeps it.
+  await db.prepare("UPDATE units SET data=json_set(data,'$.page_number',41) WHERE id='one'").run()
   await call(`/atlas/rounds/${cropProblem.id}/undo`, { client_id: 'integration' })
+  assert.equal((await call('/atlas/characters/one')).page_number, 41, 'an undo keeps the corrected page number')
   assert.equal((await call('/atlas?group=kana')).items.length, 2, 'undo restores the category')
   // …and the family: the correction filed `one` under 仮's U+4EEE, and its undo files it back under ア's.
   const familyOf = async id => (await db.prepare('SELECT family FROM units WHERE id=?').bind(id).first()).family
