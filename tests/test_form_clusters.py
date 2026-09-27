@@ -127,3 +127,13 @@ def test_a_curated_pair_keeps_its_grapheme_family():
 
 def family_of_chars(char):
     return [member["char"] for member in form_clusters.family_of(f"U+{ord(char):04X}")["members"]]
+
+
+def test_a_sawndip_claim_is_dropped_claim_by_claim():
+    # 墶–𭖟 is stated only for Sawndip (among other writing systems); 倗–朋 is also 漢語大字典's.
+    assert "𭖟" not in family_of_chars("墶")
+    assert "朋" in family_of_chars("倗")
+
+
+def test_ideographs_newer_than_the_runtime_unicode_database_have_families():
+    assert "丌" in family_of_chars("\U0002cea2")
