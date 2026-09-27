@@ -245,47 +245,39 @@ def fetch(
     scratch.mkdir(parents=True, exist_ok=True)
     temporary = scratch / uuid4().hex
     seen: dict[str, Any] = {}
+
+    def stitch() -> Path:
+        return _stitch(service, described, scratch, client=client, pause=pause, clock=clock, sleeper=sleeper)
+
     try:
-        path = net.download(
-            request_url,
-            temporary,
-            expected="image",
-            client=client,
-            refresh=True,
-            pause=pause,
-            clock=clock,
-            sleeper=sleeper,
-            meta=seen,
-        )
-        digest, size = _digest(path)
-        target = cache / digest[:2] / f"{digest}{_extension(request_url, seen.get('content_type'))}"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        if target.exists():
-            path.unlink()
+        if service is not None and box is None and described is not None and _capped(described, described["width"]):
+            # `info.json` already shows the server caps the whole image (国立公文書館 sends 3,000 px of
+            # a 6,700 px scan), so the capped copy is never downloaded.
+            target, _ = _store(cache, stitch(), ".jpg")
         else:
-            os.replace(path, target)
+            path = net.download(request_url, temporary, expected="image", client=client, refresh=True,
+                                pause=pause, clock=clock, sleeper=sleeper, meta=seen)
+            target, created = _store(cache, path, _extension(request_url, seen.get("content_type")))
+            wanted = _wanted_width(request_url) if service is not None and box is None else None
+            if wanted is not None and _image_size(target)[0] < wanted:
+                # A request URL that names a width the server did not send; when its stated limits
+                # explain the shortfall, region requests at full resolution add up to that image.
+                capped = target
+                try:
+                    described = described or info(service, client=client, pause=pause, clock=clock,
+                                                  sleeper=sleeper)
+                    if described["width"] == wanted and _capped(described, wanted):
+                        target, _ = _store(cache, stitch(), ".jpg")
+                        seen = {}
+                except Exception:
+                    if created:
+                        capped.unlink(missing_ok=True)
+                    raise
+                if target != capped and created:
+                    # Nothing indexes the capped copy once the stitched image replaces it.
+                    capped.unlink(missing_ok=True)
+        digest, size = _digest(target)
         width, height = _image_size(target)
-        if service is not None and box is None:
-            wanted = _wanted_width(request_url)
-            if wanted is None and described is not None:
-                wanted = described["width"]
-            if wanted is not None and width < wanted:
-                # The server may have capped the image (国立公文書館 sends 3,000 px of a 6,700 px
-                # scan). When its stated limits explain the shortfall, region requests at full
-                # resolution within them add up to the image the URL names.
-                described = described or info(service, client=client, pause=pause, clock=clock, sleeper=sleeper)
-                if described["width"] == wanted and _capped(described, wanted):
-                    stitched = _stitch(service, described, scratch, client=client, pause=pause,
-                                       clock=clock, sleeper=sleeper)
-                    digest, size = _digest(stitched)
-                    target = cache / digest[:2] / f"{digest}.jpg"
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    if target.exists():
-                        stitched.unlink()
-                    else:
-                        os.replace(stitched, target)
-                    width, height = _image_size(target)
-                    seen = {}
     finally:
         for leftover in (temporary, temporary.with_name(temporary.name + net.PART_SUFFIX)):
             leftover.unlink(missing_ok=True)
@@ -790,6 +782,18 @@ def _wanted_width(request_url: str) -> int | None:
     return int(width) if width.isdigit() else None
 
 
+def _store(cache: Path, path: Path, extension: str) -> tuple[Path, bool]:
+    """Move a downloaded file to its content address; returns the cached path and whether it is new."""
+    digest, _ = _digest(path)
+    target = cache / digest[:2] / f"{digest}{extension}"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        path.unlink()
+        return target, False
+    os.replace(path, target)
+    return target, True
+
+
 def _capped(described: dict, wanted: int) -> bool:
     """Whether the server's stated limits forbid a whole image `wanted` pixels wide."""
     limits = described.get("limits") or {}
@@ -810,6 +814,9 @@ def _stitch(
 ) -> Path:
     """The full-resolution image of `service`, assembled from region requests within its limits."""
     width, height = described["width"], described["height"]
+    if Image.MAX_IMAGE_PIXELS is not None and width * height > 2 * Image.MAX_IMAGE_PIXELS:
+        # Pillow would refuse to open the result; better to say so before fetching every region.
+        raise ImageError(f"{service}: {width}x{height} is larger than Pillow opens")
     limits = described.get("limits") or {}
     step = min(limits.get("maxWidth", 2048), limits.get("maxHeight", limits.get("maxWidth", 2048)))
     if "maxArea" in limits:
@@ -822,10 +829,13 @@ def _stitch(
             try:
                 net.download(f"{service}/{x},{y},{w},{h}/{w},/0/default.jpg", part, expected="image",
                              client=client, refresh=True, pause=pause, clock=clock, sleeper=sleeper)
-                with Image.open(part) as tile:
-                    if tile.size != (w, h):
-                        raise ImageError(f"{service}: region {x},{y},{w},{h} came back {tile.size}")
-                    canvas.paste(tile.convert("RGB"), (x, y))
+                try:
+                    with Image.open(part) as tile:
+                        if tile.size != (w, h):
+                            raise ImageError(f"{service}: region {x},{y},{w},{h} came back {tile.size}")
+                        canvas.paste(tile.convert("RGB"), (x, y))
+                except OSError as exc:  # a truncated or unreadable region
+                    raise ImageError(f"{service}: region {x},{y},{w},{h} is not a readable image ({exc})") from exc
             finally:
                 part.unlink(missing_ok=True)
                 part.with_name(part.name + net.PART_SUFFIX).unlink(missing_ok=True)

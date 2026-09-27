@@ -678,3 +678,39 @@ def test_a_deliberately_smaller_request_is_not_stitched(http_server: Server) -> 
 
     assert (record.width, record.height) == (32, 24)
     assert http_server.requests == ["GET /iiif/2/capped/full/32,/0/default.jpg"]
+
+
+def test_a_capped_service_is_stitched_without_downloading_the_capped_copy(http_server: Server) -> None:
+    http_server.put("iiif/2/capped/info.json", info_bytes(CAPPED_INFO))
+    for x, y in ((0, 0), (40, 0), (0, 40), (40, 40)):
+        w, h = min(40, 64 - x), min(40, 48 - y)
+        http_server.put(f"iiif/2/capped/{x},{y},{w},{h}/{w},/0/default.jpg", jpeg(w, h))
+    url = http_server.url("iiif/2/capped")
+
+    record = images.fetch(url, pause=0)
+
+    assert (record.width, record.height) == (64, 48)
+    assert "GET /iiif/2/capped/full/full/0/default.jpg" not in http_server.requests
+
+
+def test_a_failed_stitch_leaves_no_capped_copy_behind(http_server: Server, tmp_path: Path) -> None:
+    http_server.put("iiif/2/capped/info.json", info_bytes(CAPPED_INFO))
+    http_server.put("iiif/2/capped/full/64,/0/default.jpg", jpeg(40, 30))
+    url = http_server.url("iiif/2/capped/full/64,/0/default.jpg")
+    cache = tmp_path / "cache"
+
+    with pytest.raises((images.ImageError, net.DownloadError)):
+        images.fetch(url, pause=0, root=cache)
+
+    assert not [p for p in cache.rglob("*.jpg")]
+    assert images.index(cache) == []
+
+
+def test_an_unreadable_info_json_leaves_no_capped_copy_behind(http_server: Server, tmp_path: Path) -> None:
+    http_server.put("iiif/2/capped/full/64,/0/default.jpg", jpeg(40, 30))  # no info.json served
+    cache = tmp_path / "cache"
+
+    with pytest.raises((images.ImageError, net.DownloadError)):
+        images.fetch(http_server.url("iiif/2/capped/full/64,/0/default.jpg"), pause=0, root=cache)
+
+    assert not [p for p in cache.rglob("*.jpg")]
