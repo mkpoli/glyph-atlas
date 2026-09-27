@@ -31,8 +31,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from . import refs
-
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -283,8 +281,9 @@ def cluster_of(identity: str) -> dict | None:
 
 
 def family_members(family: str) -> list[str]:
-    info = refs.grapheme_info(family) or {}
-    return [member["char"] for member in info.get("members") or []]
+    """The forms of a family as the current clustering published them."""
+    found = clusters()["families"].get(family) or {}
+    return [member["char"] for member in found.get("members") or []]
 
 
 class DecisionError(ValueError):

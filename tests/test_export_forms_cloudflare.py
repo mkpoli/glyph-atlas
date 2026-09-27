@@ -9,7 +9,10 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from glyph_atlas import forms
+from glyph_atlas import form_clusters, forms
+
+#: The forms of は as a clustering publishes them.
+HA_MEMBERS = form_clusters.family_of("U+306F")["members"]
 
 A, B, C = (f"codh:book:page:B0001:C000{i}" for i in range(3))
 D = "hi:1"
@@ -46,7 +49,7 @@ def clustering(tmp_path, monkeypatch, form_corpora):
     members = [A, B, C, D]
     clusters = [{"id": "U+306F:one", "label": "Cluster 1", "count": 4, "coherence": 0.9, "representatives": members}]
     (directory / "clusters.json").write_text(json.dumps({"revision": "r1", "families": {"U+306F": {
-        "family": "U+306F", "char": "は", "label": "は", "members": [], "count": 4, "clusters": clusters}}}))
+        "family": "U+306F", "char": "は", "label": "は", "members": HA_MEMBERS, "count": 4, "clusters": clusters}}}))
     pq.write_table(pa.table({"id": members, "family": ["U+306F"] * 4, "cluster": ["U+306F:one"] * 4,
                              "similarity": [0.95, 0.9, 0.8, 0.7], "rank": [0, 1, 2, 3]}), directory / "units.parquet")
     np.save(directory / "embeddings.npy", np.array([[1, 0], [0.9, 0.1], [0, 1], [0.1, 0.9]], np.float16))

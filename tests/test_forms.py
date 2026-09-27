@@ -7,8 +7,11 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from glyph_atlas import forms
+from glyph_atlas import form_clusters, forms
 from glyph_atlas.corpus.identity import identity_fields
+
+#: The forms of は as a clustering publishes them.
+HA_MEMBERS = form_clusters.family_of("U+306F")["members"]
 
 A, B, C, D = (f"codh:book:page:B0001:C000{i}" for i in range(4))
 
@@ -20,7 +23,7 @@ def clustering():
     clusters = [{"id": "U+306F:one", "label": "Cluster 1", "count": 3, "coherence": .9, "representatives": [A, B, C]},
                 {"id": "U+306F:two", "label": "Cluster 2", "count": 1, "coherence": .9, "representatives": [D]}]
     (directory / "clusters.json").write_text(json.dumps({"revision": "r1", "families": {"U+306F": {
-        "family": "U+306F", "char": "は", "label": "は", "members": [], "count": 4, "clusters": clusters}}}))
+        "family": "U+306F", "char": "は", "label": "は", "members": HA_MEMBERS, "count": 4, "clusters": clusters}}}))
     pq.write_table(pa.table({"id": [A, B, C, D], "family": ["U+306F"] * 4,
                              "cluster": ["U+306F:one"] * 3 + ["U+306F:two"],
                              "similarity": [.95, .9, .8, 1.0], "rank": [0, 1, 2, 0]}), directory / "units.parquet")
@@ -327,7 +330,7 @@ def test_a_cluster_lists_its_least_typical_glyphs_past_the_typical_twelve(tmp_pa
     ids = [f"codh:book:page:B0001:C{i:04d}" for i in range(30)]
     clusters = [{"id": "U+306F:one", "label": "Cluster 1", "count": 30, "coherence": .9, "representatives": ids[:12]}]
     (directory / "clusters.json").write_text(json.dumps({"revision": "r1", "families": {"U+306F": {
-        "family": "U+306F", "char": "は", "label": "は", "members": [], "count": 30, "clusters": clusters}}}))
+        "family": "U+306F", "char": "は", "label": "は", "members": HA_MEMBERS, "count": 30, "clusters": clusters}}}))
     pq.write_table(pa.table({"id": ids, "family": ["U+306F"] * 30, "cluster": ["U+306F:one"] * 30,
                              "similarity": [1 - i / 100 for i in range(30)], "rank": list(range(30))}),
                    directory / "units.parquet")

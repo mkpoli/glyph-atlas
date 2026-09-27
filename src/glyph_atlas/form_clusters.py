@@ -1,9 +1,10 @@
 """Cluster glyphs by shape within each character family, for form assignment.
 
 Some corpora transcribe every form of a family under one code point: a hentaigana は and the
-波-derived は are both U+306F, and CODH transcribes 假 as 仮. The glyphs of those corpora (`CORPORA`)
-are pooled per family, so one set of clusters covers a family across all of them. Within each
-family that has more than one member, the glyphs are embedded with the character classifier's
+波-derived は are both U+306F, CODH transcribes 假 as 仮, and a transcriber may write 倣 for a
+glyph drawn as 仿. The glyphs of those corpora (`CORPORA`) are pooled per family, so one set of
+clusters covers a family across all of them. A family is a grapheme family, or a kanji and its
+異体字 (`family_of`). Within each family that has more than one member, the glyphs are embedded with the character classifier's
 penultimate features and grouped by spherical k-means. A cluster is a proposal of shape, never an
 identity; a person names its form.
 
@@ -67,12 +68,34 @@ def cluster_count(n: int) -> int:
     return max(2, min(MAX_CLUSTERS, round(math.sqrt(n) / 4)))
 
 
+#: Most forms a kanji family offers: its own character and the best-attested variants.
+MAX_VARIANT_FORMS = 16
+
+
 def family_of(code_point: str | None) -> dict | None:
-    """The grapheme family of a code point, when it has more than one member."""
+    """The family whose forms a glyph labelled `code_point` may take, when it has more than one.
+
+    A kana, or a kanji of a curated 新字/旧字 pair, keeps its grapheme family: the corpora write
+    every member under one code point. Any other kanji is a family of its own, keyed by its code
+    point, whose forms are the character and its one-step variants in data/vocab/kanji-variants.tsv
+    (`refs.variants`), most-attested first and at most MAX_VARIANT_FORMS. A glyph labelled 倣 may
+    thus be named 仿; one labelled 仿 is in 仿's own family.
+    """
     info = refs.grapheme_info(code_point) if code_point else None
-    if not info or len(info.get("members") or []) < 2:
+    if not info:
         return None
-    return info
+    if len(info.get("members") or []) > 1:
+        return info
+    if info.get("script") != "han" or len(code_point.split()) != 1:
+        return None
+    found = refs.variants(info["char"])[: MAX_VARIANT_FORMS - 1]
+    if not found:
+        return None
+    members = [{"code_point": code_point, "char": info["char"]}]
+    members += [{"code_point": refs.to_code_point(char), "char": char, "sources": list(sources)}
+                for char, sources in found]
+    return {**info, "label": " ~ ".join(member["char"] for member in members), "members": members,
+            "character_count": len(members), "relation": "kanji-variants"}
 
 
 def _digest(path: Path) -> str:
@@ -330,6 +353,7 @@ def run(root: Path, out: Path, *, checkpoint: Path, workers: int = 8, reviews: P
               "located": hashlib.sha256("\n".join(sorted(located)).encode()).hexdigest(),
               "checkpoint": _digest(checkpoint),
               "vocab": _digest(Path(refs.__file__).parents[2] / "data/vocab/characters.tsv"),
+              "variants": _digest(refs.VOCAB / refs.VARIANTS_TSV),
               "method": METHOD, "max_clusters": MAX_CLUSTERS, "min_family_units": MIN_FAMILY_UNITS}
     revision = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()[:16]
     target = out / revision
