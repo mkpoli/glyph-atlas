@@ -10,6 +10,7 @@ from threading import RLock
 from typing import Any
 from urllib.parse import urlencode
 
+from ..context import reach
 from ..unit_scope import unit_scope
 from . import crops as crops_module
 from . import sources as corpus_sources
@@ -61,11 +62,6 @@ _FORBIDDEN = ("/", "\\", "?", "#", "@", "~", " ", "\t", "\n", "\x00")
 CODH_VIEWER = "https://codh.rois.ac.jp/char-shape/app/icv-kuzushiji/"
 CODH_MANIFEST = "https://codh.rois.ac.jp/char-shape/book/{book}/manifest.json"
 CODH_IMAGE_MARKER = "/char-shape/iiif/"
-
-#: How far the derived context viewport reaches beyond the character box, as a
-#: multiple of the longer box edge. Enough for neighbouring strokes, not the page.
-CONTEXT_PAD = 2.0
-
 
 def _refuse(identity: str) -> None:
     """Raise :class:`KeyError` for anything that is not an identity.
@@ -155,7 +151,7 @@ def _is_crop_url(url: Any) -> bool:
 
 
 def _viewport(box: dict[str, int] | None, width: Any, height: Any) -> dict[str, int] | None:
-    """A padded window around a character box, clamped to the registered page.
+    """The context window around a character box (`context.CONTEXT_REACH`), clamped to the registered page.
 
     Only produced when the page size is known: without it there is nothing to clamp
     to, and an unclamped window would be a guess about where the page ends. This is a
@@ -169,11 +165,7 @@ def _viewport(box: dict[str, int] | None, width: Any, height: Any) -> dict[str, 
         return None
     if page_w <= 0 or page_h <= 0:
         return None
-    pad = round(max(box["w"], box["h"]) * CONTEXT_PAD)
-    x0 = max(0, box["x"] - pad)
-    y0 = max(0, box["y"] - pad)
-    x1 = min(page_w, box["x"] + box["w"] + pad)
-    y1 = min(page_h, box["y"] + box["h"] + pad)
+    x0, y0, x1, y1 = reach(box["x"], box["y"], box["w"], box["h"], page_w, page_h)
     if x1 <= x0 or y1 <= y0:
         return None
     if (x0, y0, x1, y1) == (box["x"], box["y"], box["x"] + box["w"], box["y"] + box["h"]):
