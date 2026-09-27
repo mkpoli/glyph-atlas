@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 from collections.abc import Callable, Iterable
@@ -354,60 +355,70 @@ def collect(
 
 #: The densest a composited page is rendered, in pixels per PDF point (600 dpi).
 MAX_RENDER_ZOOM = 600 / 72
-
-
+#: The most pixels a composited page is rendered to (about 120 MB as RGB).
+MAX_RENDER_PIXELS = 40_000_000
 #: An XObject drawn by a page's content stream: `/Name Do`.
 DRAWN_XOBJECT = re.compile(rb"/([^\s/<>\[\]()]+)\s+Do\b")
+#: An inline image in a page's content stream.
+INLINE_IMAGE = re.compile(rb"\bBI\b")
 
 
 def _drawn(page: Any) -> list[dict[str, Any]]:
-    """The images the page draws, each with its placement (`bbox`), pixel size and colour space.
+    """The images the page draws: xref, pixel size, colour space, `bbox` and `transform`.
 
     A page's resource list can name images it never draws, when pages share one resource dictionary,
-    so the drawn ones are read from the page's content stream. A page that also draws a form, which
-    may hold images of its own, is read with `get_image_info` instead, which walks every resource and
-    is far slower on such shared dictionaries.
+    so the drawn ones are read from the page's content stream. A page that draws a form (which may
+    hold images of its own) or an inline image is read with `get_image_info` instead, which walks
+    every resource and is far slower on such shared dictionaries. Placements are in the page's
+    unrotated space.
     """
-    names = set(DRAWN_XOBJECT.findall(page.read_contents()))
+    contents = page.read_contents()
+    names = set(DRAWN_XOBJECT.findall(contents))
     listed = {entry[7].encode(): entry for entry in page.get_images(full=True) if entry[9] == 0}
-    if not names <= listed.keys():
+    if not names <= listed.keys() or INLINE_IMAGE.search(contents):
         return [info for info in page.get_image_info(xrefs=True)
-                if info["xref"] and info["bbox"][2] > info["bbox"][0] and info["bbox"][3] > info["bbox"][1]]
+                if info["bbox"][2] > info["bbox"][0] and info["bbox"][3] > info["bbox"][1]]
     drawn = []
     # One image can be drawn under several names; its placements are listed once.
     for entry in {listed[name][0]: listed[name] for name in sorted(names)}.values():
-        for rect in page.get_image_rects(entry[0]):
+        for rect, matrix in page.get_image_rects(entry[0], transform=True):
             if rect.width > 0 and rect.height > 0:
-                drawn.append({"xref": entry[0], "bbox": tuple(rect), "width": entry[2],
-                              "height": entry[3], "cs-name": entry[5]})
+                drawn.append({"xref": entry[0], "bbox": tuple(rect), "transform": tuple(matrix),
+                              "width": entry[2], "height": entry[3], "cs-name": entry[5]})
     return drawn
 
 
-def _whole_page_image(page: Any) -> int | None:
+def _whole_page_image(page: Any, drawn: list[dict[str, Any]]) -> int | None:
     """The xref of the page's one drawn image when it is the whole page as scanned, else None.
 
     That is a single image with a colour space of its own (a stencil mask has none) placed over the
     full page. Any other page is a composite, such as a scan split into JPEG tiles over a 1-bit JBIG2
     layer, and no single image in it is the page.
     """
-    drawn = _drawn(page)
-    if len(drawn) != 1 or drawn[0]["cs-name"] in ("", "None"):
+    if len(drawn) != 1 or not drawn[0]["xref"] or drawn[0]["cs-name"] in ("", "None"):
         return None
     x0, y0, x1, y1 = drawn[0]["bbox"]
-    full = page.rect
+    full = page.rect * page.derotation_matrix  # the page in the placements' unrotated space
     slack = 2  # points
     if x0 > full.x0 + slack or y0 > full.y0 + slack or x1 < full.x1 - slack or y1 < full.y1 - slack:
         return None
     return drawn[0]["xref"]
 
 
-def _render_zoom(page: Any) -> float:
-    """The pixel density of the page's densest image layer, in pixels per point."""
+def _render_zoom(page: Any, drawn: list[dict[str, Any]]) -> float:
+    """The pixel density of the page's densest image layer, in pixels per point.
+
+    Each image's pixels are measured along its own placed axes, so a rotated placement is measured
+    as it lies. The zoom is capped at `MAX_RENDER_ZOOM` and at `MAX_RENDER_PIXELS` for the page.
+    """
     zoom = 1.0
-    for info in _drawn(page):
-        x0, y0, x1, y1 = info["bbox"]
-        zoom = max(zoom, info["width"] / (x1 - x0), info["height"] / (y1 - y0))
-    return min(zoom, MAX_RENDER_ZOOM)
+    for info in drawn:
+        a, b, c, d = info["transform"][:4]
+        across, down = math.hypot(a, b), math.hypot(c, d)
+        if across > 0 and down > 0:
+            zoom = max(zoom, info["width"] / across, info["height"] / down)
+    area = page.rect.width * page.rect.height
+    return min(zoom, MAX_RENDER_ZOOM, math.sqrt(MAX_RENDER_PIXELS / area) if area else MAX_RENDER_ZOOM)
 
 
 def _pdf_pages(cno: str, pdf_path: Path, pdf_url: str, *, cache: Path | None) -> tuple[list[Page], str]:
@@ -428,18 +439,19 @@ def _pdf_pages(cno: str, pdf_path: Path, pdf_url: str, *, cache: Path | None) ->
         for index in range(doc.page_count):
             seq = index + 1
             page = doc[index]
-            if not _drawn(page):
+            drawn = _drawn(page)
+            if not drawn:
                 raise RecordError(f"{cno}: page {seq} of the PDF draws no image")
             meta: dict[str, Any] = {"pdf_page": seq}
-            xref = _whole_page_image(page)
+            xref = _whole_page_image(page, drawn)
             if xref is not None:
                 info = doc.extract_image(xref)
                 body, suffix, width, height = info["image"], info["ext"], info["width"], info["height"]
             else:
-                zoom = _render_zoom(page)
+                zoom = _render_zoom(page, drawn)
                 pixmap = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), alpha=False)
                 body, suffix, width, height = pixmap.tobytes("png"), "png", pixmap.width, pixmap.height
-                meta["rendered"] = {"zoom": round(zoom, 4), "layers": len(_drawn(page))}
+                meta["rendered"] = {"zoom": round(zoom, 4), "layers": len(drawn)}
             temp_path = scratch / f"{uuid4().hex}.{suffix}"
             temp_path.write_bytes(body)
             try:
