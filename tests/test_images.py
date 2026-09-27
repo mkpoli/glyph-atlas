@@ -137,6 +137,14 @@ def info_bytes(document: dict) -> bytes:
             "https://codh.rois.ac.jp/char-shape/iiif/200006663/200006663_00005_2.tif/full/full/0/default.jpg",
             "https://codh.rois.ac.jp/char-shape/iiif/200006663/200006663_00005_2.tif",
         ),
+        (
+            "https://emuseum.nich.go.jp/iiif/?IIIF=/100173035001.tif/full/8847,/0/default.jpg",
+            "https://emuseum.nich.go.jp/iiif/?IIIF=/100173035001.tif",
+        ),
+        (
+            "https://emuseum.nich.go.jp/iiif/?IIIF=/100173035001.tif/info.json",
+            "https://emuseum.nich.go.jp/iiif/?IIIF=/100173035001.tif",
+        ),
         ("https://example.org/collections/12345/photo.jpg", None),
         ("https://example.org/files/scan.tif", None),
         ("https://example.org/data?id=7", None),

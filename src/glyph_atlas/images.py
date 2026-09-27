@@ -92,15 +92,32 @@ class ImageRecord(BaseModel):
     superseded_by: str | None = Field(default=None, description="sha256 of the row that replaced this one")
 
 
+def _bare(url: str) -> str:
+    """`url` without its fragment, its trailing slash and any query that is not the identifier.
+
+    IIPImage servers carry the IIIF identifier in the query (e国宝:
+    `https://emuseum.nich.go.jp/iiif/?IIIF=/100173035001.tif/full/max/0/default.jpg`), so a query
+    naming `IIIF=` is part of the address; any other query is a cache-buster or a session and goes.
+    """
+    address, _, query = url.split("#", 1)[0].partition("?")
+    if _IIIF_QUERY.match(query):
+        return f"{address}?{query}".rstrip("/")
+    return address.rstrip("/")
+
+
+_IIIF_QUERY = re.compile(r"iiif=", re.IGNORECASE)
+
+
 def service_of(url: str) -> str | None:
     """The Image API service base of `url`, or None when it is a plain file URL.
 
     A request suffix (`/{region}/{size}/{rotation}/{quality}.{format}`), an `info.json` suffix, a
-    query string and a trailing slash are removed. A URL whose path carries a IIIF marker and no
-    request suffix is a service base itself, which is how the `.../{bid}/{image}.tif` services of CODH
-    are read. Anything else is a file that is fetched as it stands.
+    query string other than an IIPImage identifier, and a trailing slash are removed. A URL whose
+    path carries a IIIF marker and no request suffix is a service base itself, which is how the
+    `.../{bid}/{image}.tif` services of CODH are read. Anything else is a file that is fetched as it
+    stands.
     """
-    base = url.split("#", 1)[0].split("?", 1)[0].rstrip("/")
+    base = _bare(url)
     if not base:
         return None
     for pattern in (INFO_SUFFIX, REQUEST_SUFFIX):
@@ -376,7 +393,7 @@ def held(url: str, *, root: Path | None = None) -> Path | None:
 
 
 def _names_whole_image(url: str, service: str) -> bool:
-    return _is_bare(url, service) or url.split("#", 1)[0].split("?", 1)[0].rstrip("/") in (
+    return _is_bare(url, service) or _bare(url) in (
         full_url(service, 2), full_url(service, 3))
 
 
@@ -566,8 +583,7 @@ def _request_url(url: str, *, service: str | None, version: int | None, box: Box
 
 def _is_bare(url: str, service: str) -> bool:
     """True when `url` names its service without a region, a size or `info.json`."""
-    cleaned = url.split("#", 1)[0].split("?", 1)[0].rstrip("/")
-    return cleaned in (service, f"{service}/info.json")
+    return _bare(url) in (service, f"{service}/info.json")
 
 
 def _size_keyword(version: int | str | None) -> str:
