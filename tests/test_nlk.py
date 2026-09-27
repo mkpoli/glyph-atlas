@@ -295,7 +295,7 @@ def test_a_pdf_page_with_no_embedded_image_leaves_the_record_out(tmp_path: Path)
     summary = nlk.collect(["CNTS-00132358210"], out, client=client, checked=CHECKED)
     assert summary["collected"] == []
     assert summary["unavailable"][0]["id"] == "CNTS-00132358210"
-    assert "no embedded image" in summary["unavailable"][0]["error"]
+    assert "draws no image" in summary["unavailable"][0]["error"]
     assert tables.read(out / "documents.parquet", Document) == []
 
 
@@ -317,6 +317,156 @@ def test_a_pdf_still_building_is_retried_before_giving_up(tmp_path: Path, clock:
     assert "no whole PDF" in summary["unavailable"][0]["error"]
     assert clock.slept.count(nlk.BUILD_BACKOFF * 1) == 1
     assert clock.slept.count(nlk.BUILD_BACKOFF * 2) == 1
+
+
+def tiled_pdf() -> bytes:
+    """One 40×60 pt page drawn as two 80×60 px JPEG tiles, top and bottom: 2 px per point."""
+    doc = pymupdf.open()
+    page = doc.new_page(width=40, height=60)
+    page.insert_image(pymupdf.Rect(0, 0, 40, 30), stream=jpeg(80, 60))
+    page.insert_image(pymupdf.Rect(0, 30, 40, 60), stream=jpeg(80, 60))
+    part = doc.new_page(width=40, height=60)
+    part.insert_image(pymupdf.Rect(0, 0, 40, 30), stream=jpeg(80, 60))  # covers half the page
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    doc.close()
+    return buffer.getvalue()
+
+
+def test_a_composite_page_is_rendered_at_its_densest_layer(tmp_path: Path) -> None:
+    records = {
+        "CNTS-00092710493": {
+            "bookinfo": bookinfo_html(title="倭語類解", collation="PDF | 2 p."),
+            "detail": detail_html(title="倭語類解"),
+            "pdf_name": "KOL000032963",
+            "pdf": tiled_pdf(),
+        }
+    }
+    out = tmp_path / "nlk"
+    summary = nlk.collect(["CNTS-00092710493"], out, client=transport(records, []), checked=CHECKED)
+    assert summary["collected"][0]["pages"] == 2
+    pages = tables.read(out / "pages.parquet", Page)
+    assert [(p.width, p.height) for p in pages] == [(80, 120), (80, 120)]
+    assert pages[0].meta["rendered"] == {"zoom": 2.0, "layers": 2}
+    assert pages[1].meta["rendered"] == {"zoom": 2.0, "layers": 1}
+    assert images.path_for(pages[0].image).suffix == ".png"
+
+
+def test_a_whole_page_scan_keeps_its_own_bytes(tmp_path: Path) -> None:
+    scan = pdf_bytes([(30, 20)])
+    records = {
+        "CNTS-00132358209": {
+            "bookinfo": bookinfo_html(title="老乞大諺解. 上", collation="PDF | 1 p."),
+            "detail": detail_html(title="老乞大諺解. 上"),
+            "pdf_name": "CNTS-00132358209",
+            "pdf": scan,
+        }
+    }
+    out = tmp_path / "nlk"
+    nlk.collect(["CNTS-00132358209"], out, client=transport(records, []), checked=CHECKED)
+    (page,) = tables.read(out / "pages.parquet", Page)
+    assert "rendered" not in page.meta
+    assert images.path_for(page.image).read_bytes() == jpeg(30, 20)
+
+
+def reopened(doc: pymupdf.Document) -> pymupdf.Document:
+    """`doc` saved and read back, so low-level edits are seen as a reader would see them."""
+    return pymupdf.open(stream=doc.tobytes(), filetype="pdf")
+
+
+def xobjects(doc: pymupdf.Document, page: pymupdf.Page) -> int:
+    """The xref of the page's `/XObject` resource dictionary, made indirect if it is not."""
+    kind, value = doc.xref_get_key(page.xref, "Resources")
+    resources = int(value.split()[0]) if kind == "xref" else page.xref
+    prefix = "" if kind == "xref" else "Resources/"
+    kind, value = doc.xref_get_key(resources, f"{prefix}XObject")
+    if kind == "xref":
+        return int(value.split()[0])
+    xref = doc.get_new_xref()
+    doc.update_object(xref, value if kind == "dict" else "<<>>")
+    doc.xref_set_key(resources, f"{prefix}XObject", f"{xref} 0 R")
+    return xref
+
+
+def stencil_over_tiles() -> pymupdf.Document:
+    """A 40×60 pt page like 倭語類解 vol. 1: two JPEG tiles under a full-page 1-bit stencil mask."""
+    doc = pymupdf.open()
+    page = doc.new_page(width=40, height=60)
+    page.insert_image(pymupdf.Rect(0, 0, 40, 30), stream=jpeg(80, 60))
+    page.insert_image(pymupdf.Rect(0, 30, 40, 60), stream=jpeg(80, 60))
+    mask = doc.get_new_xref()
+    doc.update_object(mask, "<< /Type /XObject /Subtype /Image /Width 160 /Height 240 "
+                            "/ImageMask true /BitsPerComponent 1 >>")
+    doc.update_stream(mask, bytes(160 // 8 * 240))
+    doc.xref_set_key(xobjects(doc, page), "Mask", f"{mask} 0 R")
+    contents = page.get_contents()[0]
+    doc.update_stream(contents, doc.xref_stream(contents) + b"\nq 40 0 0 60 0 0 cm /Mask Do Q\n")
+    return reopened(doc)
+
+
+def test_a_stencil_mask_over_tiles_is_rendered_not_kept() -> None:
+    doc = stencil_over_tiles()
+    page = doc[0]
+    drawn = nlk._drawn(page)
+    assert len(drawn) == 3  # two tile placements and the mask
+    assert max(drawn, key=lambda info: info["width"])["cs-name"] == ""
+    assert nlk._whole_page_image(page, drawn) is None
+    assert nlk._render_zoom(page, drawn) == 4.0  # the mask's 160 px across 40 pt
+
+
+def test_images_a_page_lists_but_never_draws_are_left_out() -> None:
+    doc = pymupdf.open()
+    first = doc.new_page(width=40, height=60)
+    first.insert_image(first.rect, stream=jpeg(80, 120))
+    second = doc.new_page(width=40, height=60)
+    second.insert_image(second.rect, stream=jpeg(40, 60))
+    # Give the second page the first page's image too, as a shared resource it never draws.
+    image = doc[0].get_images(full=True)[0]
+    doc.xref_set_key(xobjects(doc, second), "Unused", f"{image[0]} 0 R")
+    saved = reopened(doc)
+    second = saved[1]
+    assert len(second.get_images(full=True)) == 2
+    drawn = nlk._drawn(second)
+    assert [(info["width"], info["height"]) for info in drawn] == [(40, 60)]
+    assert nlk._whole_page_image(second, drawn) is not None
+
+
+def test_a_rotated_page_scan_is_still_a_whole_page() -> None:
+    doc = pymupdf.open()
+    page = doc.new_page(width=40, height=60)
+    page.insert_image(page.rect, stream=jpeg(40, 60))
+    page.set_rotation(90)
+    assert nlk._whole_page_image(page, nlk._drawn(page)) is not None
+
+
+def test_a_rotated_placement_is_measured_along_its_own_axes() -> None:
+    doc = pymupdf.open()
+    page = doc.new_page(width=40, height=60)
+    page.insert_image(pymupdf.Rect(0, 0, 40, 30), stream=jpeg(80, 20), rotate=90, keep_proportion=False)
+    drawn = nlk._drawn(page)
+    assert nlk._render_zoom(page, drawn) == pytest.approx(80 / 30)
+
+
+def test_the_render_is_capped_at_the_pixel_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    doc = pymupdf.open()
+    page = doc.new_page(width=100, height=100)
+    page.insert_image(pymupdf.Rect(0, 0, 10, 10), stream=jpeg(80, 80))  # 8 px per point
+    monkeypatch.setattr(nlk, "MAX_RENDER_PIXELS", 40_000)
+    assert nlk._render_zoom(page, nlk._drawn(page)) == pytest.approx(2.0)
+
+
+def test_a_page_with_an_inline_image_is_read_through_its_image_info() -> None:
+    doc = pymupdf.open()
+    page = doc.new_page(width=10, height=10)
+    contents = doc.get_new_xref()
+    doc.update_object(contents, "<<>>")
+    doc.update_stream(contents, b"q 10 0 0 10 0 0 cm BI /W 2 /H 2 /CS /G /BPC 8 ID \x00\xff\xff\x00 EI Q")
+    doc.xref_set_key(page.xref, "Contents", f"{contents} 0 R")
+    saved = reopened(doc)
+    page = saved[0]
+    drawn = nlk._drawn(page)
+    assert len(drawn) == 1
+    assert nlk._whole_page_image(page, drawn) is None  # nothing to extract as it stands
 
 
 def test_a_rerun_reuses_the_cached_pdf(tmp_path: Path) -> None:
