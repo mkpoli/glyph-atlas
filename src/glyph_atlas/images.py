@@ -32,7 +32,7 @@ from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qsl, urlsplit
+from urllib.parse import parse_qsl, quote, urlsplit
 from uuid import uuid4
 
 import httpx
@@ -103,7 +103,8 @@ def _bare(url: str) -> str:
     address, _, query = url.split("#", 1)[0].partition("?")
     identifier = _iiif_parameter(query)
     if identifier is not None:
-        return f"{address}?IIIF={identifier}".rstrip("/")
+        # Re-encoded so that `&`, `+` and `#` in an identifier stay part of it on the next parse.
+        return f"{address}?IIIF={quote(identifier, safe="/,:;=@!$'()*~")}".rstrip("/")
     return address.rstrip("/")
 
 
