@@ -204,6 +204,14 @@ class TestQueueSchema:
         claimed = queue.claim_next()
         assert claimed["state"] == "in_progress" and claimed["attempts"] == 1
 
+    def test_a_project_filter_claims_only_that_project(self, tmp_path):
+        queue = hq.Queue(tmp_path / "queue.sqlite")
+        queue.record_book(ENTRY_A, project_id="p", collection_id="c", position=0, origin="live")
+        queue.record_book(ENTRY_B, project_id="q", collection_id="d", position=0, origin="live")
+        assert queue.claim_next(projects=["absent"]) is None
+        claimed = queue.claim_next(projects=["q"])
+        assert claimed["entry_id"] == ENTRY_B
+
     def test_a_book_is_never_queued_twice(self, tmp_path):
         queue = hq.Queue(tmp_path / "queue.sqlite")
         assert (

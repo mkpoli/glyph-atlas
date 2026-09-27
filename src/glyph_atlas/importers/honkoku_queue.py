@@ -406,12 +406,16 @@ class Queue:
         return added
 
     # --------------------------------------------------------------- claiming
-    def claim_next(self, exclude: Iterable[str] | None = None) -> sqlite3.Row | None:
+    def claim_next(
+        self, exclude: Iterable[str] | None = None, *, projects: Iterable[str] | None = None
+    ) -> sqlite3.Row | None:
         """Mark the next pending book in progress, or return None.
 
         The next book is chosen by `CLAIM_ORDER`: complete transcriptions first, then books
         with the largest share of finished pages, spreading across projects so an early
         harvest covers many kinds of material, and older projects before newer ones.
+        `projects`, when given, limits the claim to books of those projects; the order
+        within them is the same.
 
         The UPDATE is guarded by ``state='pending'`` inside an immediate transaction,
         and the partial unique index is the backstop: if a second process ever raced
@@ -424,7 +428,10 @@ class Queue:
                 return None
             skip = [e for e in (exclude or ()) if e]
             marks = f" AND b.entry_id NOT IN ({','.join('?' * len(skip))})" if skip else ""
-            row = db.execute(CLAIM_ORDER.format(marks=marks), tuple(skip)).fetchone()
+            wanted = [p for p in (projects or ()) if p]
+            if wanted:
+                marks += f" AND b.project_id IN ({','.join('?' * len(wanted))})"
+            row = db.execute(CLAIM_ORDER.format(marks=marks), (*skip, *wanted)).fetchone()
             if row is None:
                 return None
             db.execute(
@@ -1412,8 +1419,9 @@ class Collector:
         *,
         max_books: int | None = None,
         max_seconds: float | None = None,
+        projects: Iterable[str] | None = None,
     ) -> dict[str, Any]:
-        """Collect pending books one at a time, unhurried.
+        """Collect pending books one at a time, unhurried; only of `projects` when given.
 
         Returns a status dict either way: a disk floor, a deadline or a run of failures
         ends the run cleanly with everything already written left in place.
@@ -1424,6 +1432,7 @@ class Collector:
         started = self.clock()
         collected = failures = 0
         deferred: set[str] = set()
+        wanted = tuple(projects or ())
         stop: str | None = None
         while max_books is None or collected < max_books:
             if max_seconds is not None and self.clock() - started >= max_seconds:
@@ -1435,7 +1444,7 @@ class Collector:
                 stop = str(error)
                 break
             finished_at = self.queue.finished_at()
-            row = self.queue.claim_next(deferred)
+            row = self.queue.claim_next(deferred, projects=wanted)
             if row is None:
                 stop = "retry-later" if deferred else "queue-empty"
                 break

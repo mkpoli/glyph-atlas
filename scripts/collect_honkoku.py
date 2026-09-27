@@ -3,6 +3,7 @@
 
     python scripts/collect_honkoku.py --root work/honkoku-collection --seed
     python scripts/collect_honkoku.py --root work/honkoku-collection --books 5
+    python scripts/collect_honkoku.py --root work/honkoku-collection --project jinkouki --project wasansyuui
     python scripts/collect_honkoku.py --root work/honkoku-collection --status
     python scripts/collect_honkoku.py --root work/honkoku-collection --index
 
@@ -58,6 +59,13 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=hq.MIN_FREE_BYTES / 1024**3,
         help="stop below this much free space (default: 5)",
+    )
+    parser.add_argument(
+        "--project",
+        action="append",
+        default=None,
+        metavar="ID",
+        help="collect only books of this project; repeat for several",
     )
     parser.add_argument("--entry", default=None, help="collect one named book, for a smoke test")
     parser.add_argument("--status", action="store_true", help="print the status and stop")
@@ -135,9 +143,13 @@ def main(argv: list[str] | None = None) -> int:
             collector.write_outputs()
             return 0
         collector.discover()
-        result = collector.run(max_books=args.books, max_seconds=args.seconds)
+        result = collector.run(max_books=args.books, max_seconds=args.seconds, projects=args.project)
         print(json.dumps({k: v for k, v in result.items() if k != "status"}, ensure_ascii=False, indent=2))
-        unfinished = collector.queue.counts()["books"].get("pending", 0)
+        unfinished = (
+            sum(1 for row in collector.queue.books(state="pending") if row["project_id"] in args.project)
+            if args.project
+            else collector.queue.counts()["books"].get("pending", 0)
+        )
         discovery_failed = len(collector.queue.projects(state="failed")) + len(collector.queue.collections(state="failed"))
         return 75 if unfinished or discovery_failed else 0
 
