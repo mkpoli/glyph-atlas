@@ -352,37 +352,107 @@ def collect(
     return summary
 
 
+#: The densest a composited page is rendered, in pixels per PDF point (600 dpi).
+MAX_RENDER_ZOOM = 600 / 72
+
+
+#: An XObject drawn by a page's content stream: `/Name Do`.
+DRAWN_XOBJECT = re.compile(rb"/([^\s/<>\[\]()]+)\s+Do\b")
+
+
+def _drawn(page: Any) -> list[dict[str, Any]]:
+    """The images the page draws, each with its placement (`bbox`), pixel size and colour space.
+
+    A page's resource list can name images it never draws, when pages share one resource dictionary,
+    so the drawn ones are read from the page's content stream. A page that also draws a form, which
+    may hold images of its own, is read with `get_image_info` instead, which walks every resource and
+    is far slower on such shared dictionaries.
+    """
+    names = set(DRAWN_XOBJECT.findall(page.read_contents()))
+    listed = {entry[7].encode(): entry for entry in page.get_images(full=True) if entry[9] == 0}
+    if not names <= listed.keys():
+        return [info for info in page.get_image_info(xrefs=True)
+                if info["xref"] and info["bbox"][2] > info["bbox"][0] and info["bbox"][3] > info["bbox"][1]]
+    drawn = []
+    # One image can be drawn under several names; its placements are listed once.
+    for entry in {listed[name][0]: listed[name] for name in sorted(names)}.values():
+        for rect in page.get_image_rects(entry[0]):
+            if rect.width > 0 and rect.height > 0:
+                drawn.append({"xref": entry[0], "bbox": tuple(rect), "width": entry[2],
+                              "height": entry[3], "cs-name": entry[5]})
+    return drawn
+
+
+def _whole_page_image(page: Any) -> int | None:
+    """The xref of the page's one drawn image when it is the whole page as scanned, else None.
+
+    That is a single image with a colour space of its own (a stencil mask has none) placed over the
+    full page. Any other page is a composite, such as a scan split into JPEG tiles over a 1-bit JBIG2
+    layer, and no single image in it is the page.
+    """
+    drawn = _drawn(page)
+    if len(drawn) != 1 or drawn[0]["cs-name"] in ("", "None"):
+        return None
+    x0, y0, x1, y1 = drawn[0]["bbox"]
+    full = page.rect
+    slack = 2  # points
+    if x0 > full.x0 + slack or y0 > full.y0 + slack or x1 < full.x1 - slack or y1 < full.y1 - slack:
+        return None
+    return drawn[0]["xref"]
+
+
+def _render_zoom(page: Any) -> float:
+    """The pixel density of the page's densest image layer, in pixels per point."""
+    zoom = 1.0
+    for info in _drawn(page):
+        x0, y0, x1, y1 = info["bbox"]
+        zoom = max(zoom, info["width"] / (x1 - x0), info["height"] / (y1 - y0))
+    return min(zoom, MAX_RENDER_ZOOM)
+
+
 def _pdf_pages(cno: str, pdf_path: Path, pdf_url: str, *, cache: Path | None) -> tuple[list[Page], str]:
-    """The pages of a record held as the PDF at `pdf_path`, and the PDF's SHA-256."""
+    """The pages of a record held as the PDF at `pdf_path`, and the PDF's SHA-256.
+
+    A page that is one whole scanned image keeps that image's bytes as they stand. A composite page
+    is rendered at the density of its densest layer and kept as PNG, and its `meta` says so.
+    """
     import pymupdf  # imported lazily so the module loads without the optional extra
 
     document_id = f"{SOURCE}:{cno}"
     revision = hashlib.sha256(pdf_path.read_bytes()).hexdigest()
+    scratch = images.images_root(cache) / ".tmp"
+    scratch.mkdir(parents=True, exist_ok=True)
     doc = pymupdf.open(pdf_path)
     try:
         pages: list[Page] = []
         for index in range(doc.page_count):
             seq = index + 1
-            candidates = doc[index].get_images(full=True)
-            if not candidates:
-                raise RecordError(f"{cno}: page {seq} of the PDF holds no embedded image")
-            xref = max(candidates, key=lambda entry: entry[2] * entry[3])[0]
-            info = doc.extract_image(xref)
-            scratch = images.images_root(cache) / ".tmp"
-            scratch.mkdir(parents=True, exist_ok=True)
-            temp_path = scratch / f"{uuid4().hex}.{info['ext']}"
-            temp_path.write_bytes(info["image"])
+            page = doc[index]
+            if not _drawn(page):
+                raise RecordError(f"{cno}: page {seq} of the PDF draws no image")
+            meta: dict[str, Any] = {"pdf_page": seq}
+            xref = _whole_page_image(page)
+            if xref is not None:
+                info = doc.extract_image(xref)
+                body, suffix, width, height = info["image"], info["ext"], info["width"], info["height"]
+            else:
+                zoom = _render_zoom(page)
+                pixmap = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), alpha=False)
+                body, suffix, width, height = pixmap.tobytes("png"), "png", pixmap.width, pixmap.height
+                meta["rendered"] = {"zoom": round(zoom, 4), "layers": len(_drawn(page))}
+            temp_path = scratch / f"{uuid4().hex}.{suffix}"
+            temp_path.write_bytes(body)
             try:
                 record = images.register(
-                    temp_path, f"{pdf_url}#page={seq}", root=cache, width=info["width"],
-                    height=info["height"], fetched_at=datetime.now(UTC),
+                    temp_path, f"{pdf_url}#page={seq}", root=cache, width=width, height=height,
+                    fetched_at=datetime.now(UTC),
                 )
             finally:
                 temp_path.unlink(missing_ok=True)
             pages.append(Page(
                 id=f"{document_id}:{seq}", document_id=document_id, seq=seq,
                 image=record.url, width=record.width, height=record.height, sha256=record.sha256,
-                meta={"pdf_page": seq},
+                meta=meta,
             ))
     finally:
         doc.close()

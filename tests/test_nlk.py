@@ -295,7 +295,7 @@ def test_a_pdf_page_with_no_embedded_image_leaves_the_record_out(tmp_path: Path)
     summary = nlk.collect(["CNTS-00132358210"], out, client=client, checked=CHECKED)
     assert summary["collected"] == []
     assert summary["unavailable"][0]["id"] == "CNTS-00132358210"
-    assert "no embedded image" in summary["unavailable"][0]["error"]
+    assert "draws no image" in summary["unavailable"][0]["error"]
     assert tables.read(out / "documents.parquet", Document) == []
 
 
@@ -317,6 +317,56 @@ def test_a_pdf_still_building_is_retried_before_giving_up(tmp_path: Path, clock:
     assert "no whole PDF" in summary["unavailable"][0]["error"]
     assert clock.slept.count(nlk.BUILD_BACKOFF * 1) == 1
     assert clock.slept.count(nlk.BUILD_BACKOFF * 2) == 1
+
+
+def tiled_pdf() -> bytes:
+    """One 40×60 pt page drawn as two 80×60 px JPEG tiles, top and bottom: 2 px per point."""
+    doc = pymupdf.open()
+    page = doc.new_page(width=40, height=60)
+    page.insert_image(pymupdf.Rect(0, 0, 40, 30), stream=jpeg(80, 60))
+    page.insert_image(pymupdf.Rect(0, 30, 40, 60), stream=jpeg(80, 60))
+    part = doc.new_page(width=40, height=60)
+    part.insert_image(pymupdf.Rect(0, 0, 40, 30), stream=jpeg(80, 60))  # covers half the page
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    doc.close()
+    return buffer.getvalue()
+
+
+def test_a_composite_page_is_rendered_at_its_densest_layer(tmp_path: Path) -> None:
+    records = {
+        "CNTS-00092710493": {
+            "bookinfo": bookinfo_html(title="倭語類解", collation="PDF | 2 p."),
+            "detail": detail_html(title="倭語類解"),
+            "pdf_name": "KOL000032963",
+            "pdf": tiled_pdf(),
+        }
+    }
+    out = tmp_path / "nlk"
+    summary = nlk.collect(["CNTS-00092710493"], out, client=transport(records, []), checked=CHECKED)
+    assert summary["collected"][0]["pages"] == 2
+    pages = tables.read(out / "pages.parquet", Page)
+    assert [(p.width, p.height) for p in pages] == [(80, 120), (80, 120)]
+    assert pages[0].meta["rendered"] == {"zoom": 2.0, "layers": 2}
+    assert pages[1].meta["rendered"] == {"zoom": 2.0, "layers": 1}
+    assert images.path_for(pages[0].image).suffix == ".png"
+
+
+def test_a_whole_page_scan_keeps_its_own_bytes(tmp_path: Path) -> None:
+    scan = pdf_bytes([(30, 20)])
+    records = {
+        "CNTS-00132358209": {
+            "bookinfo": bookinfo_html(title="老乞大諺解. 上", collation="PDF | 1 p."),
+            "detail": detail_html(title="老乞大諺解. 上"),
+            "pdf_name": "CNTS-00132358209",
+            "pdf": scan,
+        }
+    }
+    out = tmp_path / "nlk"
+    nlk.collect(["CNTS-00132358209"], out, client=transport(records, []), checked=CHECKED)
+    (page,) = tables.read(out / "pages.parquet", Page)
+    assert "rendered" not in page.meta
+    assert images.path_for(page.image).read_bytes() == jpeg(30, 20)
 
 
 def test_a_rerun_reuses_the_cached_pdf(tmp_path: Path) -> None:
