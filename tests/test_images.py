@@ -640,3 +640,41 @@ def test_a_row_saved_without_its_service_is_found_through_the_service(tmp_path) 
     assert images.path_for(service, root=cache) is not None
     assert images.resolver(root=cache)(service) is not None
     assert images.held(service, root=cache) is not None
+
+
+CAPPED_INFO = {
+    "@context": "http://iiif.io/api/image/2/context.json",
+    "profile": ["http://iiif.io/api/image/2/level1.json", {"maxWidth": 40, "maxHeight": 40}],
+    "protocol": "http://iiif.io/api/image",
+    "width": 64,
+    "height": 48,
+}
+
+
+def test_a_capped_whole_image_is_stitched_from_full_resolution_regions(http_server: Server) -> None:
+    http_server.put("iiif/2/capped/info.json", info_bytes(CAPPED_INFO))
+    http_server.put("iiif/2/capped/full/64,/0/default.jpg", jpeg(40, 30))  # what the server sends
+    colours = {(0, 0): (200, 0, 0), (40, 0): (0, 200, 0), (0, 40): (0, 0, 200), (40, 40): (200, 200, 0)}
+    for (x, y), colour in colours.items():
+        w, h = min(40, 64 - x), min(40, 48 - y)
+        http_server.put(f"iiif/2/capped/{x},{y},{w},{h}/{w},/0/default.jpg", jpeg(w, h, colour))
+    url = http_server.url("iiif/2/capped/full/64,/0/default.jpg")
+
+    record = images.fetch(url, pause=0)
+
+    assert (record.width, record.height) == (64, 48)
+    with Image.open(images.path_for(url)) as stitched:
+        assert stitched.size == (64, 48)
+        red, green, _ = stitched.getpixel((50, 10))
+        assert green > 150 and red < 60, "the second region sits to the right of the first"
+
+
+def test_a_deliberately_smaller_request_is_not_stitched(http_server: Server) -> None:
+    http_server.put("iiif/2/capped/info.json", info_bytes(CAPPED_INFO))
+    http_server.put("iiif/2/capped/full/32,/0/default.jpg", jpeg(32, 24))
+    url = http_server.url("iiif/2/capped/full/32,/0/default.jpg")
+
+    record = images.fetch(url, pause=0)
+
+    assert (record.width, record.height) == (32, 24)
+    assert http_server.requests == ["GET /iiif/2/capped/full/32,/0/default.jpg"]
