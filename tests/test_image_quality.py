@@ -58,3 +58,43 @@ def test_a_transparent_crop_is_measured_on_white():
     image = Image.new("RGBA", (40, 40), (200, 30, 30, 0))
     ImageDraw.Draw(image).rectangle((10, 5, 20, 35), fill=(0, 0, 0, 255))
     assert measure(image)["chroma"] < 1
+
+
+def page_image(tmp_path):
+    image = Image.new("RGB", (100, 80), (200, 200, 200))
+    ImageDraw.Draw(image).rectangle((20, 10, 30, 60), fill=(40, 40, 40))
+    path = tmp_path / "page.png"
+    image.save(path)
+    return path
+
+
+def test_the_index_measures_each_crop_once_and_again_when_its_box_moves(tmp_path):
+    from glyph_atlas.image_quality import connect, index_units, lookup
+    from glyph_atlas.schema import Page, Unit
+
+    path = page_image(tmp_path)
+    page = Page(id="p:0", document_id="p", seq=0, image="https://example.org/p.jpg", width=100, height=80,
+                sha256="a" * 64)
+    units = [Unit(id="u1", page_id="p:0", box=Box(x=15, y=5, w=20, h=60)),
+             Unit(id="u2", page_id="p:0", box=Box(x=90, y=70, w=20, h=20)),
+             Unit(id="u3", page_id="p:0")]
+    db = connect(tmp_path / "index.sqlite")
+    assert index_units(db, units, {"p:0": page}, lambda url: path) == {"measured": 1, "box-outside-page": 1}
+    assert index_units(db, units[:1], {"p:0": page}, lambda url: path) == {}
+    assert lookup(db)["u1"]["method"] == METHOD
+    moved = units[0].model_copy(update={"box": Box(x=16, y=5, w=20, h=60)})
+    assert index_units(db, [moved], {"p:0": page}, lambda url: path) == {"measured": 1}
+
+
+def test_a_page_missing_from_the_cache_or_of_another_size_is_skipped(tmp_path):
+    from glyph_atlas.image_quality import connect, index_units
+    from glyph_atlas.schema import Page, Unit
+
+    path = page_image(tmp_path)
+    unit = Unit(id="u1", page_id="p:0", box=Box(x=15, y=5, w=20, h=60))
+    page = Page(id="p:0", document_id="p", seq=0, image="https://example.org/p.jpg", width=100, height=80,
+                sha256="a" * 64)
+    db = connect(tmp_path / "index.sqlite")
+    assert index_units(db, [unit], {"p:0": page}, lambda url: None) == {"page-not-cached": 1}
+    scaled = page.model_copy(update={"width": 200, "height": 160})
+    assert index_units(db, [unit], {"p:0": scaled}, lambda url: path) == {"page-size-differs": 1}

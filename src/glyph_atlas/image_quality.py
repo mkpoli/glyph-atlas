@@ -1,8 +1,8 @@
 """How well a scan shows a crop's letterform, measured from its pixels.
 
-A crop keeps every measurement, and a consumer (form clustering, a training set, a review round)
-decides what to leave out by `tags`. Nothing is removed for being poor: a noisy, blurry or thresholded
-scan is still a witness to its letterform.
+The measurements of every crop are kept in an index (`INDEX`), and a consumer (form clustering, a
+training set, a review round) decides what to leave out by `tags`. Nothing is removed for being poor:
+a noisy, blurry or thresholded scan is still a witness to its letterform.
 
 `measure` records five numbers under `METHOD`:
 
@@ -21,11 +21,22 @@ reader calls blurry (豊橋の年中行事), noisy (風俗畫報) and thresholde
 """
 from __future__ import annotations
 
+import json
+import sqlite3
+from collections import defaultdict
+from collections.abc import Callable, Iterable
+from pathlib import Path
+
 import numpy as np
 from PIL import Image
 
+from .schema import Page, Unit
+
 #: Names the statistics and how they are computed; a change to either takes a new method.
 METHOD = "pixel-statistics-v1"
+#: Where the measurements are kept, one row per crop and method.
+INDEX = Path("work/crop-quality/index.sqlite")
+STATISTICS = ("contrast", "mid_grey", "sharpness", "noise", "chroma")
 #: Shorter side, in source pixels, below which a crop is `small`.
 SMALL = 24
 #: Contrast below which a crop shows no ink to judge sharpness by.
@@ -67,3 +78,69 @@ def tags(quality: dict | None, box=None) -> list[str]:
     if box is not None and min(box.w, box.h) < SMALL:
         found.append("small")
     return found
+
+
+def connect(path: Path = INDEX) -> sqlite3.Connection:
+    """The index, created when missing. A row names the box and page image it was measured on, so a
+    crop whose box or page changed is measured again."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    db = sqlite3.connect(path)
+    db.execute("""CREATE TABLE IF NOT EXISTS quality (id TEXT NOT NULL, method TEXT NOT NULL,
+        box TEXT NOT NULL, page_sha256 TEXT NOT NULL, contrast REAL NOT NULL, mid_grey REAL NOT NULL,
+        sharpness REAL NOT NULL, noise REAL NOT NULL, chroma REAL NOT NULL, PRIMARY KEY (id, method))""")
+    return db
+
+
+def _box(unit: Unit) -> str:
+    return json.dumps([unit.box.x, unit.box.y, unit.box.w, unit.box.h])
+
+
+def index_units(db: sqlite3.Connection, units: Iterable[Unit], pages: dict[str, Page],
+                path_of: Callable[[str], Path | None]) -> dict[str, int]:
+    """Measure every unit with a box whose current box and page image are not in the index yet.
+
+    Units are grouped by page, so each page image is opened once. A page whose cached image is
+    missing, or whose size differs from the page record the boxes refer to, is counted and skipped.
+    """
+    held = {(row[0]): (row[1], row[2]) for row in
+            db.execute("SELECT id, box, page_sha256 FROM quality WHERE method=?", (METHOD,))}
+    by_page = defaultdict(list)
+    for unit in units:
+        page = pages.get(unit.page_id) if unit.page_id else None
+        if unit.box is None or page is None or not page.sha256:
+            continue
+        if held.get(unit.id) != (_box(unit), page.sha256):
+            by_page[page.id].append(unit)
+    counts = defaultdict(int)
+    for page_id, waiting in by_page.items():
+        page = pages[page_id]
+        path = path_of(page.image)
+        if path is None:
+            counts["page-not-cached"] += len(waiting)
+            continue
+        with Image.open(path) as handle:
+            if page.width and page.height and handle.size != (page.width, page.height):
+                counts["page-size-differs"] += len(waiting)
+                continue
+            image = handle.convert("RGB")
+        rows = []
+        for unit in waiting:
+            b = unit.box
+            if b.w < 1 or b.h < 1 or b.x < 0 or b.y < 0 or b.x + b.w > image.width or b.y + b.h > image.height:
+                counts["box-outside-page"] += 1
+                continue
+            quality = measure(image.crop((b.x, b.y, b.x + b.w, b.y + b.h)))
+            rows.append((unit.id, METHOD, _box(unit), page.sha256, *(quality[k] for k in STATISTICS)))
+        with db:
+            db.executemany("INSERT OR REPLACE INTO quality VALUES (?,?,?,?,?,?,?,?,?)", rows)
+        counts["measured"] += len(rows)
+    return dict(counts)
+
+
+def lookup(db: sqlite3.Connection, ids: Iterable[str] | None = None) -> dict[str, dict]:
+    """The measurements of the given crops, or of every crop, in the form `measure` returns."""
+    query = f"SELECT id, {', '.join(STATISTICS)} FROM quality WHERE method=?"
+    rows = db.execute(query, (METHOD,))
+    wanted = None if ids is None else set(ids)
+    return {row[0]: {"method": METHOD, **dict(zip(STATISTICS, row[1:], strict=True))}
+            for row in rows if wanted is None or row[0] in wanted}

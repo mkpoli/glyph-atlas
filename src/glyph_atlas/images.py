@@ -276,6 +276,27 @@ def register(path: Path, url: str, **fields: Any) -> ImageRecord:
     return record
 
 
+def paths(*, root: Path | None = None):
+    """A lookup from a page URL to its cached file, as `path_for` finds it, reading the index once.
+
+    For a job over thousands of pages, where `path_for` would read the whole index for each one.
+    """
+    cache = images_root(root)
+    by_url, by_service = {}, {}
+    for row in index(cache):
+        if row.superseded_by is None:
+            by_url[row.url] = row
+            if row.service is not None:
+                by_service[row.service] = row
+
+    def lookup(url: str) -> Path | None:
+        row = by_url.get(url) or by_service.get(service_of(url))
+        path = _file_for(cache, row) if row is not None else None
+        return path if path is not None and path.exists() else None
+
+    return lookup
+
+
 def path_for(url: str, *, root: Path | None = None) -> Path | None:
     """The cached file of `url`, or None.
 

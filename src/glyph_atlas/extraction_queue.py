@@ -20,7 +20,7 @@ from collections import Counter, defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
 
-from . import align, image_quality, images, tables
+from . import align, images, tables
 from .schema import Classification, ReviewState, UnitKind
 
 POLICY = "single-character-consensus-v1"
@@ -382,8 +382,7 @@ class Engine:
                     "meta":{"extraction":{"policy":POLICY,"source_unit_id":unit.id,
                         "source_page_id":page.id,"source_line_id":line.id,"page_sha256":page.sha256,
                         "generation":identity,"visual_votes":result["votes"],
-                        "verified":False,"quiz":True},
-                        "image_quality":image_quality.measure(crop_of(page.id, unit.box))},
+                        "verified":False,"quiz":True}},
                     "upstream":{**unit.upstream,"source":line.meta.get("source", "honkoku-lines"),
                                 "extraction_policy":POLICY}})
                 candidates.append(unit)
