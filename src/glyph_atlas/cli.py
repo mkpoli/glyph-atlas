@@ -1061,6 +1061,39 @@ def align(
         typer.echo(f"{name:<14} {value:>10}")
 
 
+@app.command("rare-chars")
+def rare_chars(
+    clone: Annotated[Path | None, typer.Option(help="みんなで翻刻データ clone; cache/honkoku-data when unset")] = None,
+    lines: Annotated[Path | None, typer.Option(help="Honkoku-Lines lines.jsonl.gz; cache/honkoku-lines when unset")] = None,
+    out: Annotated[Path, typer.Option(help="report TSV")] = Path("work/rare-chars/rare-chars.tsv"),
+    max_documents: Annotated[int, typer.Option(help="rare means attested in at most this many entries")] = 1,
+    examples: Annotated[int, typer.Option(help="example lines per character, each from a different entry")] = 5,
+    project: Annotated[list[str] | None, typer.Option(help="only these projects")] = None,
+    workers: Annotated[int, typer.Option(help="processes reading the entries")] = 4,
+) -> None:
+    """List the Han characters the transcriptions attest in few documents, with readings and line boxes."""
+    from . import rare_chars as rare
+    from .importers import honkoku_data
+
+    clone = clone or honkoku_data.default_clone()
+    lines = lines or honkoku_data.cache_root() / "honkoku-lines" / "lines.jsonl.gz"
+    rows, counts = rare.report(clone, lines, max_documents=max_documents, examples=examples, projects=project, workers=workers)
+    rare.write(rows, out)
+    summary = {
+        "entries": counts.entries,
+        "pages": counts.pages,
+        "lines": counts.lines,
+        "han_characters": len(counts.documents),
+        "han_occurrences": sum(counts.occurrences.values()),
+        "rare_characters": len({row["char"] for row in rows}),
+        "rows": len(rows),
+        "rows_with_reading": sum(1 for row in rows if row["reading"]),
+        "rows_with_line_box": sum(1 for row in rows if row["line_box"]),
+    }
+    typer.echo(json.dumps(summary, ensure_ascii=False))
+    typer.echo(f"-> {out}")
+
+
 @quality_app.command("index")
 def quality_index(
     store: Annotated[Path, typer.Option(help="review store whose crops are measured")] = Path("work/ainu-gallery"),
