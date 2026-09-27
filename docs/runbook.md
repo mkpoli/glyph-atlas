@@ -134,6 +134,7 @@ service answers with the local file.
 
 ```sh
 atlas rights resolve    work/honkoku-lines --limit 40      # manifest evidence, bounded fetches
+atlas rights kokusho    work/honkoku-lines                 # 国書データベース records of NIJL books, cached
 atlas rights report     work/honkoku-lines --out out/rights.md
 atlas rights attribution work/honkoku-lines --out ATTRIBUTION.md
 atlas export work/kokatsuji work/hilab --out out/0.1 --crops --review transcriber --include-machine

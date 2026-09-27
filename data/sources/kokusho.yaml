@@ -1,0 +1,24 @@
+# 国書データベース (国文学研究資料館): the bibliographic records of the books whose images it serves.
+#
+# `atlas rights kokusho` reads one record per book the dataset already holds, by its id (`bid`), from
+# the JSON the database's own pages read (`/api/biblioDetail/{bid}`), and keeps it under a document's
+# `meta.kokusho` with the record URL, the DOI and the date it was read. It fills only a document's
+# empty holder and shelfmark, and an `unknown` production from 刊写. The images keep the licence each
+# item states; that licence is recorded beside the document's own rights, never in place of them.
+#
+# The terms (checked 2026-09-27): 「当館が独自に作成した書誌データは、ご自由にお使いいただけます。」
+# A credit names the content's title, its holder, any change made to it, and the database, e.g.
+# 「『伊勢物語』（国文学研究資料館所蔵）出典：国書データベース，https://doi.org/10.20730/200013710」.
+id: kokusho
+name: 国書データベース
+publisher: 国文学研究資料館
+kind: reference-table
+url: https://kokusho.nijl.ac.jp/
+licence: bespoke-free
+licence_evidence: https://kokusho.nijl.ac.jp/page/terms.html
+attribution: 出典：国書データベース（国文学研究資料館）, https://kokusho.nijl.ac.jp/
+access:
+  record: https://kokusho.nijl.ac.jp/biblio/{bid}
+  record_json: https://kokusho.nijl.ac.jp/api/biblioDetail/{bid}
+  manifest: https://kokusho.nijl.ac.jp/biblio/{bid}/manifest
+  doi: https://doi.org/10.20730/{bid}
