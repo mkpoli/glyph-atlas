@@ -136,6 +136,7 @@ ID_FAMILIES = {
     "hilab": "hilab",
     "hng": "hng",
     "hng-kiridashi": "hng-kiridashi",
+    "glossary-headwords": "glossary-headwords",
 }
 
 #: Known corpora, with the rights and shape a caller needs before showing a result.
@@ -177,6 +178,11 @@ KNOWN: tuple[dict[str, Any], ...] = (
     {
         "name": "hng-kiridashi",
         "note": "HNG 切り出しデータ: 10.3k character boxes on Gallica pages of Pelliot chinois 2334 and 2195.",
+    },
+    {
+        "name": "glossary-headwords",
+        "note": "倭語類解 vol. 1 headwords: 1.4k Han character boxes on National Library of Korea pages, "
+                "labelled from the ko.wikisource transcription (scripts/cut_glossary_headwords.py).",
     },
 )
 

@@ -643,6 +643,7 @@ class TestShape:
         assert record.source_corpus == "ainu-records"
         assert source_corpus_of("codh-omt:001:1") == "kokatsuji"
         assert source_corpus_of("hng-kiridashi:myz:23166") == "hng-kiridashi"
+        assert source_corpus_of("gl:0123456789abcdef0123") == "glossary-headwords"
         assert source_corpus_of("nonsense") is None
 
 
