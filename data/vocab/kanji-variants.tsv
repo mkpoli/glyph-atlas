@@ -7,8 +7,8 @@
 # source opencc: Open Chinese Convert (OpenCC) dictionaries; Apache-2.0 (https://github.com/BYVoid/OpenCC/blob/2939943bd6f4d459b46d7fdcf07a885ab3f01761/LICENSE); OpenCC contributors, Apache License 2.0
 # source mj-shrink-map: MJ縮退マップ; CC-BY-SA-2.1-JP (https://moji.or.jp/wp-content/mojikiban/oscdl/MJShrinkMap.1.2.0.json); 文字情報基盤 MJ縮退マップ（IPA）, CC BY-SA 2.1 JP
 # source hng-basic-data: 漢字字体規範史データセット（HNG）基本データセット; CC-BY-SA-4.0 (https://github.com/chise/hng-basic-data/blob/e2174a30844b8100c34af1c0dbe1e301f186883e/README.md); 漢字字体規範史データセット保存会『漢字字体規範史データセット（HNG）』基本データセット, CC BY-SA 4.0
-#   unihan: https://www.unicode.org/Public/UCD/latest/ucd/Unihan.zip sha256:4c93ea9c1f636451
-#   unicode-ucd: https://www.unicode.org/Public/UCD/latest/ucd/UnicodeData.txt sha256:0736451de439ae7b
+#   unihan: https://www.unicode.org/Public/18.0.0/ucd/Unihan.zip sha256:4c93ea9c1f636451
+#   unicode-ucd: https://www.unicode.org/Public/18.0.0/ucd/UnicodeData.txt sha256:0736451de439ae7b
 #   wikidata: P5475 query at https://query.wikidata.org/sparql, fetched 2026-09-27, sha256:a1912a5546fe01ed
 #   cjkvi-variants: https://raw.githubusercontent.com/cjkvi/cjkvi-variants/e4f1da248c9737a243f9930b5dc497cef5d5ae16/… (20 files)
 #   yitizi: https://raw.githubusercontent.com/nk2028/yitizi/60e232c40d6076af07679151c008349363e699ae/data/… (ytenx/JihThex.csv, ytenx/ThaJihThex.csv, yitizi.txt)
