@@ -302,9 +302,13 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   // A corpus glyph nothing has named is pending for everyone, and the table counts them per character.
   const corpus = new Map<string, number>();
   if (review) for (const row of published.results) if (row.n > 0) { corpus.set(row.label, row.n); add(row.label, 'pending', row.n) }
-  if (reading && !scoped) { where.push('character=?'); values.push(reading) }
+  // Browse's counts are grouped by character, book and state, so a browse listing filtered by those
+  // alone takes its total from them; counting it again would read every crop it holds on each page.
+  // Any other filter clears this, and the listing is counted.
+  let tally: ((row: Facet) => boolean)[] | null = review ? null : [];
+  if (reading && !scoped) { where.push('character=?'); values.push(reading); tally?.push(row => row.label === reading) }
   const document = text(q.get('document'), 256, 'document');
-  if (document) { where.push('document=?'); values.push(document) }
+  if (document) { where.push('document=?'); values.push(document); tally?.push(row => row.document === document) }
   // A grapheme is a family's representative code point, or a label's own code points.
   const grapheme = text(q.get('grapheme'), 256, 'grapheme')?.toUpperCase().split(/\s+/).join(' ');
   if (grapheme) {
@@ -312,7 +316,7 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
       throw new Problem(422, 'Invalid grapheme.');
     // Every named crop has a family (its own code points when the character table gives none), so
     // this is one lookup that `unit_family_sample` serves in shuffle order.
-    where.push('family=?'); values.push(grapheme);
+    where.push('family=?'); values.push(grapheme); tally = null;
   }
   // A search finds a crop by its character or its reading. Each is one range of its own index; an OR
   // across the two columns would read every local crop instead. The origin test is kept off its index
@@ -320,21 +324,21 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   if (q.get('q')) {
     where[0] = "+origin='local'";
     where.push("id IN (SELECT id FROM units WHERE origin='local' AND character=? UNION SELECT id FROM units WHERE origin='local' AND reading=?)");
-    values.push(literal(q.get('q')!), literal(q.get('q')!));
+    values.push(literal(q.get('q')!), literal(q.get('q')!)); tally = null;
   }
   // With a character, a grapheme or a search named, its own index finds the few crops and the script only filters
   // them (`+`); the script's index would read every crop of that script.
-  if (q.get('group') && q.get('group') !== 'all') { where.push(reading || grapheme || q.get('q') ? '+category=?' : 'category=?'); values.push(q.get('group')!) }
+  if (q.get('group') && q.get('group') !== 'all') { where.push(reading || grapheme || q.get('q') ? '+category=?' : 'category=?'); values.push(q.get('group')!); tally = null }
   // `attention` is the Flagged view: every crop waiting for a person, flagged or hard to read. The
   // review state is worked out per crop, so the query starts from the few that can qualify.
-  if (q.get('state') === 'attention') { where[0] = "+origin='local'"; where.push(ATTENTION_CANDIDATES, `${state} IN ('flagged','hard')`) }
-  else if (q.get('state') && q.get('state') !== 'all') { where.push(`${state}=?`); values.push(q.get('state')!) }
+  if (q.get('state') === 'attention') { where[0] = "+origin='local'"; where.push(ATTENTION_CANDIDATES, `${state} IN ('flagged','hard')`); tally = null }
+  else if (q.get('state') && q.get('state') !== 'all') { const wanted = q.get('state')!; where.push(`${state}=?`); values.push(wanted); tally?.push(row => row.state === wanted) }
   // The Flagged view hides crops already looked at in the inspector by default; `reported=show`
   // (the default for every other caller) leaves them in. `reportedCountWhere` is captured before the
   // hide filter, so the count is of what is hidden, not what remains.
   const flaggedView = ['flagged', 'attention'].includes(q.get('state') ?? '');
   const reportedCountWhere = flaggedView ? [...where, REVIEWED_IN_INSPECTOR] : null;
-  if (flaggedView && q.get('reported') === 'hide') where.push(`NOT ${REVIEWED_IN_INSPECTOR}`);
+  if (flaggedView && q.get('reported') === 'hide') { where.push(`NOT ${REVIEWED_IN_INSPECTOR}`); tally = null }
   // A round of one character deals its named and then its untouched corpus glyphs after its local crops.
   // Corpus glyphs belong to no work of the collection, so a round narrowed to one work deals none.
   const dealt = review && reading !== null && !document && ['all', 'pending'].includes(q.get('state') || 'all') && !q.get('q')
@@ -355,13 +359,15 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   const rotated = !review && !flaggedView && !reading && !q.get('q');
   const start = seed % SHUFFLE_RANGE;
   const side = (test: '>=' | '<') => `SELECT ${columns} FROM units WHERE ${where.join(' AND ')} AND shuffle${test}? ORDER BY shuffle,rowid LIMIT ? OFFSET ?`;
-  const [count, window, reportedCount] = await env.DB.batch([
-    env.DB.prepare(`SELECT count(*) AS n FROM ${from}`).bind(...fromValues),
+  const results = await env.DB.batch([
+    ...(tally ? [] : [env.DB.prepare(`SELECT count(*) AS n FROM ${from}`).bind(...fromValues)]),
     rotated ? env.DB.prepare(side('>=')).bind(...values, start, limit, offset)
       : env.DB.prepare(`SELECT ${columns} FROM ${from} ORDER BY ${order}${reviewedLast} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...fromValues, seed + 1, limit, offset),
     ...(reportedCountWhere ? [env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${reportedCountWhere.join(' AND ')}`).bind(...values)] : []),
   ]);
-  const listed = (count.results[0] as { n: number }).n;
+  const count = tally ? null : results.shift()!, [window, reportedCount] = results;
+  const listed = tally ? groups.results.filter(row => tally!.every(test => test(row))).reduce((n, row) => n + row.n, 0)
+    : (count!.results[0] as { n: number }).n;
   const rows = window.results as (UnitRow & { effective: string; shape_order: number | null; suspect: string | null })[];
   if (rotated && rows.length < limit) {
     const above = rows.length ? offset + rows.length : (await env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${where.join(' AND ')} AND shuffle>=?`)

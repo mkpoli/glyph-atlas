@@ -812,6 +812,20 @@ try {
   const checkedBefore = await checkedKa()
   await db.batch([db.prepare("UPDATE units SET state='checked' WHERE id='fam-b' AND state<>'checked'"), stamp('second refresh')])
   assert.equal(await checkedKa(), checkedBefore + 1, 'a refresh shows in the browse counts')
+  // A browse listing filtered by character, book or state alone takes its total from those counts.
+  await db.batch([db.prepare("UPDATE units SET document='hk:tally' WHERE id IN ('fam-b','fam-c')"), stamp('third refresh')])
+  for (const [query, where] of [['', '1=1'], ['reading=仮', "character='仮'"], ['document=hk:tally', "document='hk:tally'"],
+    ['state=checked', "state='checked'"], ['reading=仮&document=hk:tally&state=pending', "character='仮' AND document='hk:tally' AND state='pending'"]])
+    assert.equal((await call(`/atlas?${encodeURI(query)}&limit=1`)).total, await localCount(where), `browse ${query || 'everything'} totals what it lists`)
+  // A crop written without a stamp is not in those counts yet: the listing did not count the table.
+  const listedBefore = (await call('/atlas?limit=1')).total
+  const unstamped = { id: 'unstamped', label: '仮', reading: '仮', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
+  await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind('unstamped', 'local', '仮', '仮', null, null,
+    'handwritten', 'kanji', 'pending', 0, 0, 1, 1, JSON.stringify(unstamped), JSON.stringify({ character: unstamped }), '{}', '{}', null).run()
+  assert.equal((await call('/atlas?limit=1')).total, listedBefore, 'an unfiltered browse page does not count the table')
+  assert.equal((await call('/atlas?group=kanji&limit=1')).total, await localCount("category='kanji'"), 'a listing its counts cannot answer is counted')
+  await stamp('fourth refresh').run()
+  assert.equal((await call('/atlas?limit=1')).total, listedBefore + 1, 'and the next stamp brings the crop in')
   // A corpus glyph's suggestions are asked for by its source revision, which it has in place of a page hash.
   const corpusSuggestions = (query) => mf.dispatchFetch(`${base}/atlas/characters/${encodeURIComponent('codh:fixture')}/suggestions?${query}`)
   const glyphNow = await call(`/atlas/corpus/character?id=${encodeURIComponent('codh:fixture')}`)
