@@ -46,6 +46,7 @@ UNIT_ID_PREFIXES = {
     "ws:": "wikisource",
     "hng:": "hng",
     "hng-kiridashi:": "hng-kiridashi",
+    "gl:": "glossary-headwords",
 }
 
 #: Tables whose content a resolved detail depends on. A change to any of them, or to
