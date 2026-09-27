@@ -28,8 +28,9 @@ row reads "b is the <relation> of a".
     .venv/bin/python scripts/build_kanji_variants.py
 
 Network access happens here and nowhere else; downloads are cached under `cache/variants/`, the
-Unicode files under a folder named for their version. The Wikidata query result is not versioned upstream, so its
-download date and digest go into the table header; `--refresh` fetches everything again.
+Unicode files under a folder named for their version. The Wikidata query result is not versioned upstream, so the
+day it was fetched is kept beside it (`wikidata-p5475.date`) and goes into the table header with its
+digest; `--refresh` fetches everything again.
 """
 
 from __future__ import annotations
@@ -426,9 +427,13 @@ def main(argv: list[str] | None = None) -> int:
         "hng": fetch(HNG_URL.format(revision=HNG_REVISION, name=HNG_INDEX), cache / "hng" / HNG_INDEX),
     }
     wikidata = cache / "wikidata-p5475.json"
+    stamp = wikidata.with_suffix(".date")
+    cached = wikidata.exists() and not args.refresh
     fetch(f"{WIKIDATA_ENDPOINT}?{urlencode({'query': WIKIDATA_QUERY, 'format': 'json'})}", wikidata, "json")
     paths["wikidata"] = wikidata
-    fetched = datetime.fromtimestamp(wikidata.stat().st_mtime, tz=UTC).date().isoformat()
+    if not cached or not stamp.exists():
+        stamp.write_text(datetime.now(tz=UTC).date().isoformat() + "\n", encoding="utf-8")
+    fetched = stamp.read_text(encoding="utf-8").strip()
 
     with zipfile.ZipFile(paths["unihan"]) as archive:
         unihan_text = archive.read("Unihan_Variants.txt").decode("utf-8")
