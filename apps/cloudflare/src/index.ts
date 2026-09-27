@@ -129,6 +129,11 @@ export function suspectOf(mark: Suspect | null | undefined, item: Json): Json | 
   const same = a === null || b === null ? a === b : ['x', 'y', 'w', 'h'].every(k => Math.abs(Number(a[k]) - Number(b[k])) < 1e-6);
   return same ? { p: mark.p, reads_as: mark.reads_as } : null;
 }
+// The crops that can be flagged or hard: those stored as flagged (`unit_state`), and those at least
+// two people skipped. Every crop the effective state calls flagged or hard is among them.
+export const attentionCandidatesQuery = () => `id IN (SELECT id FROM units WHERE origin='local' AND state='flagged'
+  UNION SELECT target FROM skips GROUP BY target HAVING count(DISTINCT actor)>=2)`;
+const ATTENTION_CANDIDATES = attentionCandidatesQuery();
 const EFFECTIVE_STATE = `iif(state='pending' AND ${HARD},'hard',iif(state='pending' AND ${SEEN},'seen',state))`;
 // How long a crop a reviewer skipped stays out of that reviewer's own rounds.
 const SKIP_REST_MS = 3 * 24 * 60 * 60 * 1000;
@@ -301,8 +306,9 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   // With a character, a grapheme or a search named, its own index finds the few crops and the script only filters
   // them (`+`); the script's index would read every crop of that script.
   if (q.get('group') && q.get('group') !== 'all') { where.push(reading || grapheme || q.get('q') ? '+category=?' : 'category=?'); values.push(q.get('group')!) }
-  // `attention` is the Flagged view: every crop waiting for a person, flagged or hard to read.
-  if (q.get('state') === 'attention') where.push(`${state} IN ('flagged','hard')`);
+  // `attention` is the Flagged view: every crop waiting for a person, flagged or hard to read. The
+  // review state is worked out per crop, so the query starts from the few that can qualify.
+  if (q.get('state') === 'attention') { where[0] = "+origin='local'"; where.push(ATTENTION_CANDIDATES, `${state} IN ('flagged','hard')`) }
   else if (q.get('state') && q.get('state') !== 'all') { where.push(`${state}=?`); values.push(q.get('state')!) }
   // The Flagged view hides crops already looked at in the inspector by default; `reported=show`
   // (the default for every other caller) leaves them in. `reportedCountWhere` is captured before the
