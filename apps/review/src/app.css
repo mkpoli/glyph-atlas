@@ -164,6 +164,7 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 .tile-id{margin-top:3px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:9px;color:light-dark(#8a8a93, #9d9da6);white-space:normal!important;word-break:break-all;overflow:visible!important}.record-id{display:flex;align-items:center;gap:10px;margin:6px 0 0;font-size:11px;color:var(--muted)}.record-id code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:10px;word-break:break-all}.copy-id{border:0;background:transparent;padding:2px 4px;font-size:11px;color:var(--muted);text-decoration:underline;flex-shrink:0}.copy-id:hover{color:var(--ink)}
 .site-footer{max-width:1920px;margin:8px auto 0;padding:0 4.4vw 28px;font-size:11px;line-height:1.7;color:var(--muted)}.site-footer p{margin:0;padding-top:16px;border-top:1px solid var(--line)}.site-footer a{color:inherit;text-decoration:underline;text-underline-offset:2px}
 .chat{white-space:nowrap}.link-mark{display:inline-block;width:1.1em;height:1.1em;margin-right:.3em;vertical-align:-.2em;fill:currentColor}
+.page-status{display:flex;align-items:center;flex-wrap:wrap;gap:8px 24px;padding:4px 0 14px}.page-status .collection-meta{margin-left:auto;padding:0}
 .site-links{margin:0;font-size:12px;color:var(--muted)}.site-links a{color:inherit;text-decoration:underline;text-underline-offset:2px;white-space:nowrap}
 /* The nav scrolls sideways on a phone rather than pushing the header wider than the screen. */
 @media(max-width:700px){.site-header nav{min-width:0;overflow-x:auto;scrollbar-width:none}}
