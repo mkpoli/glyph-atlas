@@ -531,7 +531,7 @@ def records(
             Page(
                 id=page_id,
                 document_id=document.id,
-                seq=position,
+                seq=position - 1,
                 canvas=canvas_id,
                 image=image,
                 width=width,

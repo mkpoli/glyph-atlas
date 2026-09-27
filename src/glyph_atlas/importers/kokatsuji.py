@@ -220,13 +220,13 @@ def union(boxes: list[Box]) -> Box:
 
 
 def page_seq(stem: str) -> int:
-    """The reading order of a page: `001_002_1` -> 3.
+    """The reading order of a page from 0: `001_002_1` -> 2, shown as page 3.
 
     The two halves of a photographed spread are numbered together, so `_1` takes the odd and `_2`
-    the even place; where the archive holds one half only, the place of the other stays empty.
+    the even page; where the archive holds one half only, the place of the other stays empty.
     """
     _, number, half = stem.split("_")
-    return int(number) * 2 - (2 - int(half))
+    return int(number) * 2 - (2 - int(half)) - 1
 
 
 def page_id(stem: str) -> str:

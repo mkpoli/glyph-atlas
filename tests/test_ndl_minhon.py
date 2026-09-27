@@ -138,11 +138,11 @@ def test_import_writes_both_versions_with_reading_order_and_rights(tmp_path):
 
     pages = {record.id: record for record in tables.read(tmp_path / "out" / "pages.parquet", Page)}
     assert set(pages) == {V1_PAGE_ID, V2_PAGE_ID}
-    assert pages[V1_PAGE_ID].seq == int(V1_IMAGE_ID)
+    assert pages[V1_PAGE_ID].seq == int(V1_IMAGE_ID) - 1
     assert pages[V1_PAGE_ID].image == V1_IMAGE
     assert pages[V1_PAGE_ID].width == 0 and pages[V1_PAGE_ID].height == 0
     assert pages[V1_PAGE_ID].transcription["source"] == ndl_minhon.SOURCE
-    assert pages[V2_PAGE_ID].seq == int(V2_PAGE)
+    assert pages[V2_PAGE_ID].seq == int(V2_PAGE) - 1
     assert pages[V2_PAGE_ID].image == V2_SERVICE
 
     lines = {record.id: record for record in tables.read(tmp_path / "out" / "lines.parquet", Line)}

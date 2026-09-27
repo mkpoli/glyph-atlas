@@ -104,7 +104,7 @@ def test_document_carries_the_rights_of_the_source_file(tmp_path, cache, archive
 def test_pages_are_registered_in_the_image_cache(tmp_path, cache, archive):
     document, pages, _, _ = fixture_records(tmp_path, archive)
     assert [page.id for page in pages] == ["codh-omt:001:001_001_1", "codh-omt:001:001_001_2"]
-    assert [page.seq for page in pages] == [1, 2]
+    assert [page.seq for page in pages] == [0, 1]
     for page in pages:
         stem = page.id.rsplit(":", 1)[1]
         extracted = tmp_path / "out" / "images" / f"{stem}.jpg"

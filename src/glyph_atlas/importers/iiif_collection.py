@@ -37,9 +37,9 @@ def collect(source: Path, out: Path, *, cache: Path | None = None) -> dict:
                   "extraction_status": "pending"},
         )
         documents.append(document)
-        for seq, canvas in enumerate(canvases(manifest), 1):
+        for seq, canvas in enumerate(canvases(manifest)):
             canvas_id, image, width, height = canvas_page(canvas)
-            pages.append(Page(id=f"{document.id}:{seq}", document_id=document.id, seq=seq,
+            pages.append(Page(id=f"{document.id}:{seq + 1}", document_id=document.id, seq=seq,
                               canvas=canvas_id, image=image, width=width, height=height))
     # Only complete tables become visible. A rerun reuses the manifest cache.
     for name, records, model in [("documents", documents, Document), ("pages", pages, Page)]:

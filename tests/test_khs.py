@@ -135,7 +135,7 @@ def test_the_kogl_type_1_photographs_of_an_item_become_pages(tmp_path: Path) -> 
 
     pages = tables.read(out / "pages.parquet", Page)
     assert [(p.seq, p.width, p.meta["sn"], p.meta["caption"]) for p in pages] == [
-        (1, 30, "1", "사진 1"), (2, 40, "3", "사진 3")]
+        (0, 30, "1", "사진 1"), (1, 40, "3", "사진 3")]
     assert all(p.image.startswith("https://") and images.path_for(p.image) is not None for p in pages)
     assert tables.read(out / "page_texts.parquet", PageText) == []
 

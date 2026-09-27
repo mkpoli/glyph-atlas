@@ -177,7 +177,8 @@ class Document(BaseModel):
 class Page(BaseModel):
     id: str
     document_id: str
-    seq: int = Field(description="position in the document, 0-based; the site shows it as page seq + 1")
+    seq: int = Field(description="the page's position in its source's own order, counting from 0; every page "
+                     "number shown is seq + 1. A page id keeps the source's own name or number.")
     canvas: str | None = Field(default=None, description="IIIF canvas id")
     image: str = Field(description="IIIF image service base or a direct URL of the full-size image")
     width: int

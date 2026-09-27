@@ -785,7 +785,7 @@ def _pages(
             stacklevel=4,
         )
     pages = []
-    for position, image in enumerate(sorted(named), start=1):
+    for position, image in enumerate(sorted(named)):
         found = sizes.get(image)
         width, height = (found[1], found[2]) if found is not None else (0, 0)
         pages.append(
@@ -803,15 +803,12 @@ def _pages(
 
 
 def page_seq(image: str, fallback: int) -> int:
-    """The reading order of a page: `{bid}_00003_1` -> 5.
+    """The reading order of a page from 0: `{bid}_00003_1` -> 4, shown as page 5.
 
     The two halves of a photographed spread are numbered together, so `_1` takes the odd and `_2`
-    the even place; an image whose name does not carry a page and a half keeps its position.
+    the even page; an image whose name does not carry a page and a half keeps its position.
     """
-    match = codh.IMAGE_NAME.match(image)
-    if match is None:
-        return fallback
-    return int(match["page"]) * 2 - (2 - int(match["half"]))
+    return codh.page_seq(image, fallback)
 
 
 def _units(book: Book, rows: list[dict[str, str]], sizes: dict[str, tuple[Path | None, int, int]]) -> list[Unit]:

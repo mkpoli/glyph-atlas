@@ -109,7 +109,7 @@ def test_a_kogl_type_1_record_becomes_a_document_with_pages_text_and_licence(tmp
     assert document.dating[0].start == 1601 and document.dating[0].end == 1900
 
     pages = tables.read(out / "pages.parquet", Page)
-    assert [(p.seq, p.width, p.height) for p in pages] == [(1, 30, 20), (2, 40, 25)]
+    assert [(p.seq, p.width, p.height) for p in pages] == [(0, 30, 20), (1, 40, 25)]
     assert all(images.path_for(p.image) is not None and p.sha256 for p in pages)
     (page_text,) = tables.read(out / "page_texts.parquet", PageText)
     assert page_text.page_id == "hangeul-museum:40712:1"

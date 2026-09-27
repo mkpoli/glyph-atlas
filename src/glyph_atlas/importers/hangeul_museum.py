@@ -227,11 +227,11 @@ def build(
     )
 
     pages = []
-    for seq, (item, image) in enumerate(zip(record["imgList"], held, strict=True), 1):
+    for seq, (item, image) in enumerate(zip(record["imgList"], held, strict=True)):
         pages.append(Page(
-            id=f"{document_id}:{seq}", document_id=document_id, seq=seq,
+            id=f"{document_id}:{seq + 1}", document_id=document_id, seq=seq,
             image=image.url, width=image.width, height=image.height, sha256=image.sha256,
-            transcription={"source": SOURCE, "entry id": rid, "revision": revision} if raw_text and seq == 1 else {},
+            transcription={"source": SOURCE, "entry id": rid, "revision": revision} if raw_text and seq == 0 else {},
             meta={"atchFileSn": item["atchFileSn"], "file_name": item.get("orgnlFileNm")},
         ))
     texts = []

@@ -1031,7 +1031,7 @@ def dataset_records(entry: Mapping[str, Any], *, entry_id: str) -> tuple[list[An
             Page(
                 id=page["page_id"],
                 document_id=document_id,
-                seq=page["index"] + 1,
+                seq=page["index"],
                 canvas=page["canvas_id"],
                 image=page["image_url"] or "",
                 width=page["width"] or 0,

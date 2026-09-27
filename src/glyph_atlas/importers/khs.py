@@ -246,9 +246,9 @@ def build(
         meta=meta,
     )
     pages = []
-    for seq, (photo, image) in enumerate(zip(photos, held, strict=True), 1):
+    for seq, (photo, image) in enumerate(zip(photos, held, strict=True)):
         pages.append(Page(
-            id=f"{document_id}:{seq}", document_id=document_id, seq=seq,
+            id=f"{document_id}:{seq + 1}", document_id=document_id, seq=seq,
             image=image.url, width=image.width, height=image.height, sha256=image.sha256,
             meta={key: value for key, value in
                   {"sn": photo.get("sn"), "caption": photo.get("ccimDesc"), "imageNuri": photo["imageNuri"]}.items()
