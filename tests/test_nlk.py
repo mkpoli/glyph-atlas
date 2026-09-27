@@ -431,6 +431,81 @@ def test_a_corrupt_pdf_body_is_retried_and_never_cached(tmp_path: Path) -> None:
     assert summary["collected"][0]["pages"] == 1
 
 
+def dangan(images_: list[bytes]) -> dict[str, dict]:
+    return {
+        "CNTS-00047976255": {
+            "bookinfo": bookinfo_html(title="朝鮮司譯院日滿蒙語學書斷簡"),
+            "detail": detail_html(title="朝鮮司譯院日滿蒙語學書斷簡"),
+            "images": images_,
+        }
+    }
+
+
+def test_a_rerun_reuses_whole_page_images_and_refetches_broken_ones(tmp_path: Path) -> None:
+    seen: list[str] = []
+    records = dangan([png(40, 60), png(42, 61)])
+    out = tmp_path / "nlk"
+    nlk.collect(["CNTS-00047976255"], out, client=transport(records, seen), checked=CHECKED)
+    folder = out / "upstream" / "CNTS-00047976255"
+    (folder / "0002.png").write_bytes(png(42, 61)[:20])  # truncated on disk
+    (folder / "0001.download.part").write_bytes(b"left from an interrupted run")
+    seen.clear()
+    summary = nlk.collect(["CNTS-00047976255"], out, client=transport(records, seen), checked=CHECKED)
+    assert summary["collected"][0]["pages"] == 2
+    fetched = [url for url in seen if "view_image" in url]
+    assert fetched == [nlk.PAGE_IMAGE.format(cno="CNTS-00047976255", vol="0", page=2)]
+    pages = tables.read(out / "pages.parquet", Page)
+    assert [(p.width, p.height) for p in pages] == [(40, 60), (42, 61)]
+
+
+def test_a_corrupt_image_body_fails_only_its_record(tmp_path: Path) -> None:
+    records = dangan([b"\x89PNG\r\n\x1a\n broken"])
+    records.update({
+        "CNTS-00132358211": {
+            "bookinfo": bookinfo_html(title="朴通事諺解. 上", collation="PDF | 1 p."),
+            "detail": detail_html(title="朴通事諺解. 上"),
+            "pdf_name": "CNTS-00132358211",
+            "pdf": pdf_bytes([(10, 10)]),
+        }
+    })
+    out = tmp_path / "nlk"
+    summary = nlk.collect(["CNTS-00047976255", "CNTS-00132358211"], out,
+                          client=transport(records, []), checked=CHECKED, retries=1)
+    assert [entry["id"] for entry in summary["collected"]] == ["CNTS-00132358211"]
+    assert "not a readable image" in summary["unavailable"][0]["error"]
+    assert not list((out / "upstream" / "CNTS-00047976255").glob("0001*"))
+
+
+def test_a_viewer_page_listing_several_volumes_fails_the_record() -> None:
+    page = b"var vol_maxpage = \"5\"; loadVol('C',1,'/x',5,'1'); loadVol('C',2,'/x',5,'1');"
+    with pytest.raises(nlk.RecordError, match="lists volumes"):
+        nlk._volume(page, "C")
+    assert nlk._volume(b"loadVol('C',3,'/x',5,'1'); loadVol('C',3,'/x',5,'9');", "C") == "3"
+
+
+def test_a_partial_pdf_is_never_resumed(tmp_path: Path) -> None:
+    seen: list[str] = []
+    records = {
+        "CNTS-00123492041": {
+            "bookinfo": bookinfo_html(title="老乞大", collation="PDF | 1 p."),
+            "detail": detail_html(title="老乞大"),
+            "pdf_name": "CNTS-00123492041_pdf",
+            "pdf": pdf_bytes([(10, 10)]),
+        }
+    }
+    out = tmp_path / "nlk"
+    (out / "upstream").mkdir(parents=True)
+    (out / "upstream" / "CNTS-00123492041.pdf.part").write_bytes(b"%PDF-1.4 from another URL")
+    client = transport(records, seen)
+    ranged: list[str] = []
+    client.event_hooks["request"] = [
+        lambda request: ranged.append(str(request.url)) if "Range" in request.headers else None
+    ]
+    summary = nlk.collect(["CNTS-00123492041"], out, client=client, checked=CHECKED, build_retries=1)
+    assert summary["collected"][0]["pdf"] == "https://viewer.nl.go.kr/conv/CNTS-00123492041_pdf.pdf"
+    assert ranged == []
+
+
 def test_a_cached_pdf_without_its_sidecar_is_fetched_again(tmp_path: Path) -> None:
     seen: list[str] = []
     records = {

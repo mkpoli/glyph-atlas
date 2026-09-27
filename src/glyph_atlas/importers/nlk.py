@@ -156,10 +156,16 @@ def _viewer(payload: bytes, cno: str) -> tuple[str, str | int]:
     raise RecordError(f"{cno}: the viewer page names neither a PDF nor page images")
 
 
-def _volume(payload: bytes) -> str:
-    """The volume number the viewer page asks page images for (`0` for a one-volume record)."""
-    found = VIEWER_VOLUME.search(payload.decode("utf-8", "replace"))
-    return found.group(1) if found else "0"
+def _volume(payload: bytes, cno: str) -> str:
+    """The volume number the viewer page asks page images for (`0` for a one-volume record).
+
+    `vol_maxpage` counts one volume's pages, so a page listing several volumes fails the record
+    instead of collecting one volume as the whole.
+    """
+    volumes = set(VIEWER_VOLUME.findall(payload.decode("utf-8", "replace")))
+    if len(volumes) > 1:
+        raise RecordError(f"{cno}: the viewer page lists volumes {sorted(volumes)}; only one is read")
+    return volumes.pop() if volumes else "0"
 
 
 #: The host builds a PDF in the background once the viewer form is posted: until the build
@@ -193,6 +199,8 @@ def _fetch_pdf(
         return dest
     marker.unlink(missing_ok=True)
     dest.unlink(missing_ok=True)
+    # A partial file may be from another URL than the one named now; it is never resumed.
+    dest.with_name(dest.name + net.PART_SUFFIX).unlink(missing_ok=True)
     sleeper = fetch_options.get("sleeper") or net.SLEEP
     last_error = "no request was made"
     for attempt in range(1, build_retries + 1):
@@ -308,12 +316,12 @@ def collect(
                     record_pages, revision = _pdf_pages(cno, pdf_path, held, cache=cache)
                 else:
                     record_pages, revision = _image_pages(
-                        cno, _volume(viewer), held, upstream / cno, retries=retries,
+                        cno, _volume(viewer, cno), held, upstream / cno, retries=retries,
                         fetch_options=fetch_options, cache=cache,
                     )
                 document = build(cno, bookinfo, detail, kol=kol, kind=kind, held=held,
                                  revision=revision, checked=checked)
-            except (net.DownloadError, RecordError) as error:
+            except (net.DownloadError, RecordError, images.ImageError) as error:
                 # A PDF that could not be built into pages is not kept, so a rerun fetches it again.
                 pdf_path.unlink(missing_ok=True)
                 pdf_path.with_name(pdf_path.name + ".url").unlink(missing_ok=True)
@@ -412,21 +420,47 @@ def _image_pages(
     return pages, digest.hexdigest()
 
 
-def _page_image(url: str, folder: Path, seq: int, *, retries: int,
-                fetch_options: dict[str, Any]) -> Path:
-    """Fetch one served page image into `folder`, named by its page and its own format's suffix."""
+#: The formats a served page image may come in, and the suffix it is kept under.
+SERVED_FORMATS = {"JPEG": ".jpg", "PNG": ".png", "TIFF": ".tif", "GIF": ".gif"}
+
+
+def _image_problem(path: Path) -> str | None:
+    """Why the file at `path` is not a whole page image of a served format, or None when it is."""
     from PIL import Image
 
-    kept = sorted(folder.glob(f"{seq:04d}.*")) if folder.exists() else []
-    if kept:
-        return kept[0]
+    try:
+        with Image.open(path) as image:
+            image.load()
+            if image.format not in SERVED_FORMATS:
+                return f"an image Pillow names {image.format!r}"
+    except (OSError, SyntaxError, ValueError) as error:
+        return f"not a readable image ({error.__class__.__name__}: {error})"
+    return None
+
+
+def _page_image(url: str, folder: Path, seq: int, *, retries: int,
+                fetch_options: dict[str, Any]) -> Path:
+    """Fetch one served page image into `folder`, named by its page and its own format's suffix.
+
+    A page kept from an earlier run is reused only when it still opens whole; one that does not, and
+    a fetched body that does not, is deleted, so a rerun asks for it again.
+    """
+    from PIL import Image
+
+    for suffix in SERVED_FORMATS.values():
+        kept = folder / f"{seq:04d}{suffix}"
+        if kept.exists():
+            if _image_problem(kept) is None:
+                return kept
+            kept.unlink()
     fetched = net.download(url, folder / f"{seq:04d}.download", retries=retries, expected="image",
                            referer=VIEWER_OPEN, **fetch_options)
-    with Image.open(fetched) as image:
-        suffix = {"JPEG": ".jpg", "PNG": ".png", "TIFF": ".tif", "GIF": ".gif"}.get(image.format)
-    if suffix is None:
+    problem = _image_problem(fetched)
+    if problem is not None:
         fetched.unlink()
-        raise RecordError(f"{url}: served an image Pillow names {image.format!r}")
+        raise RecordError(f"{url}: served {problem}")
+    with Image.open(fetched) as image:
+        suffix = SERVED_FORMATS[image.format]
     return fetched.replace(fetched.with_suffix(suffix))
 
 
