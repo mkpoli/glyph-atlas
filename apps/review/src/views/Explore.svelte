@@ -95,16 +95,18 @@
   const chosenGrapheme = $derived(graphemes.find(group => group.key === grapheme))
   // The browse panel counts single graphemes or two-character pairs; the choice is remembered. Pairs
   // are counted for the work chosen, or the whole collection, and read when the panel first shows them.
-  let unit = $state(stored('atlas.browseUnit', 'grapheme')), pairs = $state(null), pairsFailed = $state(false), pairsWork = null
+  // A save can relabel half of a pair, so it drops the counts and the panel reads them again.
+  let unit = $state(stored('atlas.browseUnit', 'grapheme')), pairs = $state(null), pairsFailed = $state(false), pairsWork = null, pairsRequest = 0
   function countBy(value) { unit = value; remember('atlas.browseUnit', value) }
   async function loadPairs() {
-    const scope = work
+    const scope = work, id = ++pairsRequest
     pairsWork = scope; pairs = null; pairsFailed = false
     try {
       const found = await request('/atlas/pairs' + (scope ? `?document=${encodeURIComponent(scope)}` : ''))
-      if (!closed && pairsWork === scope) pairs = found.items
-    } catch { if (!closed && pairsWork === scope) pairsFailed = true }
+      if (!closed && id === pairsRequest) pairs = found.items
+    } catch { if (!closed && id === pairsRequest) pairsFailed = true }
   }
+  function pairsChanged() { if (unit === 'pair' && !flagged) loadPairs(); else { pairsWork = null; pairsRequest += 1 } }
   $effect(() => { if (unit === 'pair' && !flagged && work !== pairsWork) untrack(loadPairs) })
   /** The grapheme a corpus row is filed under, as the catalogue files a label. */
   const codesOf = text => [...text].map(c => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')).join(' ')
@@ -387,6 +389,7 @@
       // collection's own rows. Updating the wrong one leaves the tile showing its old state.
       const replace = item => item.id !== id ? [item] : (flagged && !waiting(updated.state)) || !fitsGallery(updated) ? [] : [updated]
       keepPlace(id, () => { if (picked) local = local.flatMap(replace); else items = items.flatMap(replace) })
+      pairsChanged()
       const summary = await catalogue({ grapheme, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
         reported: flagged ? (showReported ? 'show' : 'hide') : null, limit: 1 })
       if (!closed) data = { ...data, counts: summary.counts, categories: summary.categories, documents: summary.documents, total: summary.total, available: summary.available, reported_count: summary.reported_count }
