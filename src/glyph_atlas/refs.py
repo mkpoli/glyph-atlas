@@ -49,6 +49,7 @@ MJ_KANJI_TSV = "mj-kanji.tsv"
 #: The version in a generated MJ table's first header line, `# MJ文字情報一覧表 Ver.006.02`.
 MJ_VERSION = re.compile(r"Ver\.(?P<version>[0-9.]+)")
 EQUIVALENTS_TSV = "kanji-equivalents.tsv"
+VARIANTS_TSV = "kanji-variants.tsv"
 KANA_ORIGINS_TSV = "kana-origins.tsv"
 SUSPECT_FORMS_TSV = "suspect-forms.tsv"
 POLICIES_YAML = "equivalence-policies.yaml"
@@ -58,6 +59,7 @@ BUILT_BY = {
     HENTAIGANA_TSV: "scripts/build_hentaigana_table.py",
     MJ_TSV: "scripts/build_mj_table.py",
     EQUIVALENTS_TSV: "scripts/build_kanji_equivalents.py",
+    VARIANTS_TSV: "scripts/build_kanji_variants.py",
     KANA_ORIGINS_TSV: "scripts/build_kana_origins.py",
     SUSPECT_FORMS_TSV: "nothing: it is kept by hand from reviewers' decisions",
 }
@@ -167,6 +169,66 @@ def _character_rows() -> tuple[dict[str, str], ...]:
 @cache
 def _equivalence_rows() -> tuple[dict[str, str], ...]:
     return tuple(_read_tsv(EQUIVALENTS_TSV))
+
+
+#: Relations of data/vocab/kanji-variants.tsv under which one character may be written for another:
+#: every relation except `borrowed`, `substitute`, `non-cognate` and `spoofing`, which relate
+#: different characters. A `reduction` row counts only where the MJ縮退マップ names a 正字 or a JIS
+#: 包摂 (REDUCTION_KINDS); its fallback reductions and 類推 relate characters for display only.
+WRITTEN_FOR = frozenset({
+    "equivalent", "overlap", "semantic", "specialized-semantic", "variant", "z", "simplified",
+    "shinjitai", "regional", "shuowen", "compatibility", "reduction",
+})
+REDUCTION_KINDS = ("親字・正字", "誤字俗字・正字", "正字・俗字等", "JIS包摂規準・UCS統合規則")
+#: 古壮字 (Sawndip), a script none of the corpora is written in: a claim of cjkvi's 古壮字字典 table,
+#: or a Wikidata statement one of whose writing systems (P282) is Sawndip.
+SAWNDIP_TAG, SAWNDIP_ITEM = "sawndip/variant", "Q923677"
+
+
+def _counts(relation: str, claim: str) -> bool:
+    """Whether one claim of a row's detail (claims are joined with ` | `) relates written forms."""
+    if relation == "reduction" and not any(kind in claim for kind in REDUCTION_KINDS):
+        return False
+    if SAWNDIP_TAG in claim:
+        return False
+    systems = next((part.split()[1:] for part in claim.split("; ") if part.startswith("P282 ")), [])
+    return SAWNDIP_ITEM not in systems
+
+
+def _ideograph(char: str) -> bool:
+    """A CJK unified or compatibility ideograph, by the character layer's own names."""
+    row = character(to_code_point(char)) if len(char) == 1 else None
+    return row is not None and row.name.startswith(("CJK UNIFIED IDEOGRAPH", "CJK COMPATIBILITY IDEOGRAPH"))
+
+
+@cache
+def _variant_neighbours() -> dict[str, dict[str, set[str]]]:
+    """Each ideograph's one-step variants under WRITTEN_FOR, with the sources that state each.
+
+    Radicals, numerals and other non-ideographs are left out. A row counts when at least one of its
+    claims does (`_counts`), so a pair stated by 漢語大字典 and by the 古壮字字典 is kept for the first.
+    """
+    neighbours: dict[str, dict[str, set[str]]] = {}
+    for row in _read_tsv(VARIANTS_TSV):
+        relation = row["relation"]
+        if relation not in WRITTEN_FOR or not any(_counts(relation, claim) for claim in row["detail"].split(" | ")):
+            continue
+        a, b = row["a"], row["b"]
+        if not (_ideograph(a) and _ideograph(b)):
+            continue
+        neighbours.setdefault(a, {}).setdefault(b, set()).add(row["source"])
+        neighbours.setdefault(b, {}).setdefault(a, set()).add(row["source"])
+    return neighbours
+
+
+def variants(char: str) -> list[tuple[str, tuple[str, ...]]]:
+    """The characters one step from `char` in the 異体字 graph, each with the sources that state it.
+
+    Most-attested first: by the number of sources, then by code point. The graph is not closed
+    under chaining: 閒 has 閑 and 間, and neither is returned for the other.
+    """
+    found = _variant_neighbours().get(char, {})
+    return [(other, tuple(sorted(found[other]))) for other in sorted(found, key=lambda o: (-len(found[o]), o))]
 
 
 @cache

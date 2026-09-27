@@ -102,3 +102,38 @@ def test_workers_stay_a_bounded_distance_ahead_of_the_consumer():
         consumed.append(value)
         assert pool.submitted - len(consumed) < 8
     assert consumed == [n * n for n in range(100)]
+
+
+def test_a_kanji_family_offers_its_one_step_variants_most_attested_first():
+    family = form_clusters.family_of("U+5023")
+    chars = [member["char"] for member in family["members"]]
+    assert family["code_point"] == "U+5023" and family["relation"] == "kanji-variants"
+    assert chars[:2] == ["倣", "仿"] and "效" not in chars
+    assert family_of_chars("傚") == ["傚", "俲", "效"]
+
+
+def test_variants_do_not_chain_and_leave_out_what_is_not_the_same_character():
+    # 閒 relates to both 閑 and 間, which are not variants of each other.
+    assert "間" not in family_of_chars("閑") and "閑" not in family_of_chars("間")
+    one = family_of_chars("一")
+    # ⼀ is a Kangxi radical, 〡 a Hangzhou numeral and 亦 only a 古壮字 variant.
+    assert "弌" in one and not {"⼀", "〡", "亦"} & set(one)
+    assert len(one) <= form_clusters.MAX_VARIANT_FORMS
+
+
+def test_a_curated_pair_keeps_its_grapheme_family():
+    assert form_clusters.family_of("U+6548")["relation"] == "shinjitai-kyujitai"
+
+
+def family_of_chars(char):
+    return [member["char"] for member in form_clusters.family_of(f"U+{ord(char):04X}")["members"]]
+
+
+def test_a_sawndip_claim_is_dropped_claim_by_claim():
+    # 墶–𭖟 is stated only for Sawndip (among other writing systems); 倗–朋 is also 漢語大字典's.
+    assert "𭖟" not in family_of_chars("墶")
+    assert "朋" in family_of_chars("倗")
+
+
+def test_ideographs_newer_than_the_runtime_unicode_database_have_families():
+    assert "丌" in family_of_chars("\U0002cea2")
