@@ -142,7 +142,7 @@ def test_page_text_is_the_body_and_the_level_is_kept(tmp_path, served):
     _, pages, texts = read(out)
     assert [text.text_raw for text in texts] == ["ㄱ。牙音。如君字初彂聲\n{{nop}}"]
     assert texts[0].revision == "101"
-    first = next(page for page in pages if page.seq == 1)
+    first = next(page for page in pages if page.meta["pdf_page"] == 1)
     assert first.meta["quality"] == 3 and first.meta["quality_user"] == "Aspere" and first.meta["label"] == "표지"
     assert result["documents"][0]["quality_levels"] == {"0": 1, "3": 1, "missing": 1}
 
@@ -151,10 +151,13 @@ def test_page_images_are_in_file_order_with_their_urls_sizes_and_checksums(tmp_p
     seen, _, shades = served
     out, _, _ = run(tmp_path, served)
     pages = sorted(read(out)[1], key=lambda page: page.seq)
-    assert [page.seq for page in pages] == [1, 2, 3]
+    # seq counts from zero like every page's; the id and pdf_page keep the file's own page number.
+    assert [page.seq for page in pages] == [0, 1, 2]
+    assert [page.meta["pdf_page"] for page in pages] == [1, 2, 3]
+    assert [page.id.rsplit(":", 1)[1] for page in pages] == ["1", "2", "3"]
     assert [page.image for page in pages] == [scans.thumbnail_url(FILE, n, 960) for n in (1, 2, 3)]
     for page in pages:
-        assert page.sha256 == hashlib.sha256(jpeg(shades[page.seq])).hexdigest()
+        assert page.sha256 == hashlib.sha256(jpeg(shades[page.meta["pdf_page"]])).hexdigest()
         assert (page.width, page.height) == (96, 136)
     assert {request.headers["user-agent"] for request in seen} == {scans.USER_AGENT}
 
@@ -172,7 +175,7 @@ def test_thumbnail_url_and_width_follow_commons():
 def test_a_gap_in_the_index_is_a_page_without_text(tmp_path, served):
     out, _, _ = run(tmp_path, served)
     _, pages, texts = read(out)
-    by_seq = {page.seq: page for page in pages}
+    by_seq = {page.meta["pdf_page"]: page for page in pages}
     with_text = {text.page_id for text in texts}
     assert by_seq[2].meta["text_status"] == "missing" and by_seq[2].meta["quality"] is None
     assert by_seq[3].meta["text_status"] == "empty" and by_seq[3].meta["quality"] == 0
