@@ -13,7 +13,8 @@
    are inserted, changed ones updated in place or replaced, a reviewed crop whose crop changed is
    held and listed in OUTPUT/held.json. Only the image rows and packs of those crops are published;
    the rest are already on the site.
-4. The SQL parts hold, in order: image rows, new units, the refresh, each `--extra` file whole, and
+4. The SQL parts hold, in order: image rows, new units, the refresh, the adjacent crop pairs of every
+   unit kept (`glyph_atlas.unit_pairs`, which need both crops on the site), each `--extra` file whole, and
    with `--status` the collection status row, and last the row the Worker keys its cached listings
    on (`units_refreshed_at`), so they change once the rest has. Each part stays under D1's upload size and every
    statement under its statement limit; `publication.json` lists the parts.
@@ -190,6 +191,22 @@ def write_parts(sealed: Path, groups: list[list[str]]) -> list[str]:
     return parts
 
 
+def split_sealed(sql: str, wanted: set[str], fresh: set[str]) -> tuple[list[str], list[str], list[str]]:
+    """A sealed catalogue's statements this publication applies: the image rows of `wanted` media keys,
+    the rows of `fresh` units, and every adjacent pair statement, in the order sealing wrote them."""
+    media, units, pairs = [], [], []
+    for line in sql.splitlines(keepends=True):
+        if line.startswith(("DELETE FROM unit_pairs ", "INSERT OR IGNORE INTO unit_pairs(")):
+            pairs.append(line)
+        elif line.startswith('INSERT OR REPLACE INTO "media"'):
+            if MEDIA_KEY.match(line).group(1) in wanted:
+                media.append(line.replace('INSERT OR REPLACE INTO "media"', 'INSERT OR IGNORE INTO "media"', 1))
+        elif line.startswith('INSERT OR IGNORE INTO "units"') and \
+                UNIT_ID.match(line).group(1).replace("''", "'") in fresh:
+            units.append(line)
+    return media, units, pairs
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("export", type=Path)
@@ -235,17 +252,10 @@ def main() -> None:
             wanted.update(key_of(json.loads(data).get(f)) for f in ("image", "context_image"))
     wanted.discard("")
     objects = {obj for key, obj in atlas.execute("SELECT key, object FROM media") if key in wanted}
-    media, units = [], []
-    for line in (sealed / "catalogue.sql").read_text(encoding="utf-8").splitlines(keepends=True):
-        if line.startswith('INSERT OR REPLACE INTO "media"'):
-            if MEDIA_KEY.match(line).group(1) in wanted:
-                media.append(line.replace('INSERT OR REPLACE INTO "media"', 'INSERT OR IGNORE INTO "media"', 1))
-        elif line.startswith('INSERT OR IGNORE INTO "units"') and \
-                UNIT_ID.match(line).group(1).replace("''", "'") in fresh:
-            units.append(line)
+    media, units, pairs = split_sealed((sealed / "catalogue.sql").read_text(encoding="utf-8"), wanted, fresh)
     extras = [statements(path.read_text(encoding="utf-8")) for path in args.extra]
     # The version row goes last, so the Worker's cached listings change only once every row has.
-    groups = [media, units, updates, *extras] + ([[status_row()]] if args.status else []) + [[refresh.VERSION_BUMP]]
+    groups = [media, units, updates, pairs, *extras] + ([[status_row()]] if args.status else []) + [[refresh.VERSION_BUMP]]
     parts = write_parts(sealed, groups)
 
     manifest = json.loads((sealed / "publication.json").read_text())
