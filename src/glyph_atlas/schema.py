@@ -40,6 +40,7 @@ class Licence(StrEnum):
     CC_BY_NC_ND_4 = "CC-BY-NC-ND-4.0"
     KOGL_1 = "KOGL-1"
     UNICODE = "Unicode-3.0"
+    APACHE_2 = "Apache-2.0"
     PUBLIC_DOMAIN = "PD"
     PDM = "PDM-1.0"
     RS_NOC_CR = "RS-NOC-CR"
