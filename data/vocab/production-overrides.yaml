@@ -1,5 +1,7 @@
-# Production stated by a holder or a reference work where the source dataset states less. Keys are
-# document ids or upstream ids; `production` is a node of `data/vocab/production.yaml`.
+# Production stated by a holder or a reference work, or read from the scan, where the source dataset
+# states less. Keys are document ids or upstream ids; `production` is a node of
+# `data/vocab/production.yaml`. A `scan` reading shows set type but not its material, so it stays at
+# `printed/type`.
 version: 1
 documents:
   68eb3417ed31bd40b47322289459eeec:
@@ -17,3 +19,351 @@ documents:
           京都国立博物館 館蔵品データベース「古活字版日本書紀神代巻（慶長勅版）」, read 2026-09-25:
           「木活字による刻字は勅版にふさわしく濃く鮮明である。」 It describes the museum's copy of the same
           edition (神代巻下 only), not the copy HNG crops, which HNG files as 日本書紀版本.
+  043334259A62EA1439CF9B306C8010DF:  # 新撰暑中養生法 : 附・コレラ予防歌
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/836957/R0000006/2526,415,167,1842/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  0AEE874FB6D5447744AF438BEE410AA1:  # 豊橋市史談
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/954691/R0000006/2431,894,135,1621/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  0B334CE8C1E66994B5442D53CCA993C0:  # 東参名勝案内
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/765200/R0000006/2994,1004,177,1418/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  0e2c745b547658e2826174624b58c9c5:  # 風俗畫報臨時増刊第百二十四號　洪水地震被害録（上）
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://iiif.dl.itc.u-tokyo.ac.jp/iiif/2/erilibsc%2FL001207%2FL001207_06.tif/3980,528,161,1733/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  155156C21FD32273BD5053C3A5D51FDF:  # 豊橋市都市計画第一期事業報告書
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/1222164/R0000006/1908,1983,160,949/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  19AD4ED008C07C9C626F4EDE39C399EA:  # 豊橋の年中行事
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/1455856/R0000006/3250,837,159,2042/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  1A494B6498668B44079F1639676167C5:  # 産業の豊橋
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/1233585/R0000009/588,613,160,1835/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  1B34F274416417AE9D3150399864C493:  # 日本漂流譚
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://catalog.lib.kyushu-u.ac.jp/image/iiif/1/820/7162280/1131362.tiff/1953,709,188,2692/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  2589A23F3C5A8D573F02B01457D523FB:  # 大阪今昔四度の大火
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://image.kukozisin.org/iiif/2/AND__31-10-01.tif/4279,2636,119,785/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  2FA3EFD57A89052CBA759CD3C7A9430C:  # 伝染病ニ於ケル免疫ニ関スル研究
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/1051762/R0000005/2125,847,1054,168/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  2b8e1156e1f37d33f8cd70dccb854c7a:  # 震災被害状況並救護施設概要
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://iiif.dl.itc.u-tokyo.ac.jp/iiif/2/erilibsc%2FL000267%2FL000267_06.tif/1365,793,157,1073/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  342749F3370CD8CA938CA16A4EDEDE78:  # 伝染病予防法
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/837084/R0000006/469,631,188,1950/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  38080F1AC374FE1AE712170DCDDA2E2F:  # 豊橋商工案内. 昭和15年度版
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/1036236/R0000006/2158,389,139,1346/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  3AE6FBA550BCE9E23B25B9544D937F91:  # 沖縄県地誌畧
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://shimuchi.lib.u-ryukyu.ac.jp/iiif/2/HW470c-3%2FHW470c-3_006.tif/1248,209,137,1033/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  3b6eadec5da5dcc8a7b9d2eba4f1e714:  # 風俗畫報臨時増刊第百九十七號　明治三十二年八月諸國災害圖會
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://iiif.dl.itc.u-tokyo.ac.jp/iiif/2/erilibsc%2FL001210%2FL001210_06.tif/4414,601,158,1693/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  40541cc93eea4fef338c81a5a124f81f:  # 校異源氏物語.
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/3437686/R0000006/5427,690,166,2067/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  414EBAF39BADAC68FBA055A47A291800:  # 豊橋市立高山病院年報. 昭和12年度
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/1115457/R0000006/1331,369,129,1409/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  41AD19BB9927A7A5D64081AFC8A22F60:  # 小野湖山翁小伝
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/1209441/R0000007/1458,1034,136,1274/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  4D28F6A507641322C587DCE11FE1ED66:  # 沖縄口承文芸
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://shimuchi.lib.u-ryukyu.ac.jp/iiif/2/NA054_01%2FNA054_01_006.tif/1306,702,113,527/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  512574EB567E7E3B904E312C062B1056:  # 地災撮要. 巻5-6(地震之部)
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/2533591/R0000006/5811,1444,259,3212/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  60535811C3FCF4C9F03A8B5ECBFBD61A:  # 琉球新誌 図附 上
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://shimuchi.lib.u-ryukyu.ac.jp/iiif/2/HW473c-02(1)%2FHW473c-02(1)_005.tif/1020,321,139,917/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  60A41A4A7B88A698CCD30F5A405C10B2:  # 袖珍防疫必携
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/905574/R0000003/1481,685,142,1295/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  666d2690f8d0b5d770a7e839373526ee:  # 風俗畫報臨時増刊第百二十號　大海嘯被害録（下）
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://iiif.dl.itc.u-tokyo.ac.jp/iiif/2/erilibsc%2FL001206%2FL001206_06.tif/4692,2188,159,1701/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  68BA4BCC3CDD47E89E1CDF702CB3EA42:  # 沖縄固有信仰のおとろえ
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://shimuchi.lib.u-ryukyu.ac.jp/iiif/2/NA053_01%2FNA053_01_006.tif/835,200,112,534/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  6944e4397141c78a187c1ccaed88ec84:  # 熱海獨案内　全
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://iiif.dl.itc.u-tokyo.ac.jp/iiif/2/erilibsc%2FL000037%2FL000037_05.tif/3868,1047,206,2388/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  69C3BF60872E76FBAD37AA7E69C69189:  # 養蠶全書
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://kokusho.nijl.ac.jp/api/iiif/100376536/v4/OBIU/OBIU-00034/OBIU-00034-00005.tif/1350,927,212,2489/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  718132e0033c2253f10126854f4de25d:  # 風俗畫報臨時増刊第百九十七号　明治三十二年諸國災害圖會
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://iiif.dl.itc.u-tokyo.ac.jp/iiif/2/erilibsc%2FL000329%2FL000329_0006.tif/4424,678,166,1696/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  76E2FE243E8C1AAFEADD6E2D0277E88A:  # これら病予防心得
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/835181/R0000006/2973,742,195,1876/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  7E867CFA5A06951B3F12942E183BE04F:  # 能登舳倉嶋之図
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://www.library.pref.ishikawa.lg.jp/shosho/content/item/orgn/B101001366/iiif/B1010013660003.jp2/3493,2933,138,965/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  7c040f2cdcc6efa611144fc16a69485a:  # 風俗畫報臨時増刊第百二十六號　洪水被害録（中）
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://iiif.dl.itc.u-tokyo.ac.jp/iiif/2/erilibsc%2FL001208%2FL001208_06.tif/2371,2208,155,1707/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  832a01dee4dfafb4d18c1ab4a645a4b0:  # 風俗畫報臨時増刊第百十八號　大海嘯被害録（上）
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://iiif.dl.itc.u-tokyo.ac.jp/iiif/2/erilibsc%2FL001205%2FL001205_01.tif/4658,687,192,3051/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  834F4CE4E1C911197319B65709A9D418:  # 東三河之古城
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/1192003/R0000006/2865,729,158,2159/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  855e22cfecfc2ea76e37a06ef2abd081:  # 風俗畫報臨時増刊第百九十九號　明治三十二年十月各地災害圖會（前編之續）
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://iiif.dl.itc.u-tokyo.ac.jp/iiif/2/erilibsc%2FL001211%2FL001211_06.tif/2940,628,155,1685/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  86592EE2C374050D4F393C83F28F2BEC:  # 郷土誌
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/765001/R0000006/1327,690,157,1790/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  88D9A25EDAC1F08B2DF42DB73CA3D765:  # 駆疫法 : コレラヲヨケ並ニナホスシカタ
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/835121/R0000005/218,741,139,839/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  8a357e2c5e756eb897b6cd0186b838b4:  # 三陸海嘯細見
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://iiif.dl.itc.u-tokyo.ac.jp/iiif/2/erilibsc%2FL000017%2FL000017_06.tif/3750,514,176,2306/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  91C961944F948D05BA45000480AD8F7F:  # 虎列剌病予防養生法訳解
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/835189/R0000006/2071,791,164,1898/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  93802393E11D63F23E248A023A57D64D:  # 飲水の心得 : 伝染病の予防
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/837156/R0000006/2839,912,169,1660/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  95e42ac654056dd9cc379f02b0c60e11:  # 風俗畫報臨時増刊第百十九號　大海嘯被害録（中）
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://iiif.dl.itc.u-tokyo.ac.jp/iiif/2/erilibsc%2FL000440%2FL000440_06.tif/2916,2199,160,1705/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  9a43e9c31d5c447f544434d04dd451db:  # 百科全書　地文學　全
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://iiif.dl.itc.u-tokyo.ac.jp/iiif/2/erilibsc%2FL000059%2FL000059_06.tif/3980,457,203,2932/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  A665885145923E1270F323287C03076C:  # 豊橋市水道誌
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/1225183/R0000053/1731,709,175,2713/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  AB50BEBB666C39512DF6FD82A8B797C8:  # 発疹窒扶私予防の訓
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/835384/R0000006/2368,691,169,1805/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  B4E4765D3E42F6F497E95660129FD8BA:  # 五事略 上
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://shimuchi.lib.u-ryukyu.ac.jp/iiif/2/HW521c-01(1)%2FHW521c-01(1)_005.tif/1364,329,122,842/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  B862AA9124244EB9D088F63F0069DED3:  # 豊橋志要
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/765211/R0000006/1413,529,194,1847/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  C08E9D3FD9958A85D5266BA46095F1DA:  # 沖縄縣地誌略
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://shimuchi.lib.u-ryukyu.ac.jp/iiif/2/NA051_01%2FNA051_01_005.tif/1639,185,139,1102/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  DC228B0A10D5A3C456177280C6AADF7C:  # 三河鉄道営業案内
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/948089/R0000006/2799,603,165,1717/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  E29A58916D8C873039EFDC686E85207A:  # 東参河資料叢書. 第1編
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/1177908/R0000006/2141,165,190,3470/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  E2D5D5070BEE7892A469D8D9F2ADB460:  # 東三河道中記 : 豊橋市及其附近案内
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/1108072/R0000006/2056,529,142,1265/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  EEAE9B18AF7202451EF9ABAB15ECFC79:  # 天然痘予防注意兼種痘者之注意
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/835334/R0000006/1482,670,166,1808/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  F03F21CC5F78FADFB2B0CA6BD82E1F87:  # 九死の一生
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/836808/R0000006/2985,683,181,1990/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  FDD3FE328EA97511613A5244693518AD:  # 沖縄県地誌畧
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://shimuchi.lib.u-ryukyu.ac.jp/iiif/2/HW470c-1%2FHW470c-1_006.tif/1247,208,137,1048/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  FEDD07A135F307085A3C01614EAC4B22:  # 豊橋商工案内
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/1057326/R0000007/964,480,120,624/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  FFB0C609232AEAC2F82FFC55BF751B36:  # 豊橋市市制施行二十年誌
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://dl.ndl.go.jp/api/iiif/1176185/R0000010/1702,926,174,2336/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  a601337b11fe0b264b3730afffb3fb2a:  # 永代惨話　文化の夢　全
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://iiif.dl.itc.u-tokyo.ac.jp/iiif/2/erilibsc%2FL000077%2FL000077_06.tif/368,591,175,2135/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  a6eda422d5930333eb61fe19080ae1fd:  # 土佐古今ノ地震
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://iiif.dl.itc.u-tokyo.ac.jp/iiif/2/erilibsc%2FL000148%2FL000148_06.tif/4316,765,197,2899/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  aa90b3421ea377679c7c87452ecd22fe:  # 愛知岐阜福井三県　大地震見聞録（内題）
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://iiif.dl.itc.u-tokyo.ac.jp/iiif/2/erilibsc%2FL000134%2FL000134_0006.tif/598,572,164,2286/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  f38e8046eb35f9a6515840c44e231e89:  # 地形論　巻二
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://iiif.dl.itc.u-tokyo.ac.jp/iiif/2/erilibsc%2FL000076%2FL000076_06.tif/810,745,204,2868/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
+  fb91f296339ba2e170a26be323dd1244:  # 豆州熱海誌　完
+    production: printed/type
+    evidence:
+      - source: scan
+        url: https://iiif.dl.itc.u-tokyo.ac.jp/iiif/2/erilibsc%2FL000035%2FL000035_06.tif/2004,954,214,2332/full/0/default.jpg
+        note: Typeset letterforms in this line of the scan, read 2026-09-27.
