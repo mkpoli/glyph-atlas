@@ -11,6 +11,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 BUILT_BY = ROOT / "scripts" / "build_kanji_variants.py"
 TABLE = ROOT / "data" / "vocab" / "kanji-variants.tsv"
@@ -80,6 +82,39 @@ def test_opencc_reads_the_japanese_table_from_shinjitai_to_kyujitai():
         ("國", "国", "shinjitai", "opencc", "JPShinjitaiCharacters"),
         ("鹽", "䀋", "shinjitai", "opencc", "JPShinjitaiCharacters (self first)"),
     }
+
+
+def test_cjkvi_reads_variant_tags_by_table_and_refuses_unknown_tags():
+    text = (
+        "# 異體字表\n"
+        "hydzd/variant,<rev>,hydzd/proper\n"
+        "仿,hydzd/variant,倣\n"
+        "仿,dypytz/variant/1988,彷\n"
+        "效,cjkvi/traditional,傚\n"
+        "仍,hydcd/borrowed,乃,5287\n"
+        "祖,cjkvi/non-cognate,𥘵\n"
+        "歎,jp/borrowed,嘆\n"
+        "十,cjkvi/numeric,拾\t\n"
+        "撈\U000e0100,jisx0213/variant,撈\n"
+    )
+    assert rows(variants.cjkvi_edges("hydzd-variants.txt", text)) == {
+        ("仿", "倣", "variant", "cjkvi-variants", "仿→倣 hydzd/variant"),
+        ("仿", "彷", "variant", "cjkvi-variants", "仿→彷 dypytz/variant/1988"),
+        ("傚", "效", "simplified", "cjkvi-variants", "效→傚 cjkvi/traditional"),
+        ("乃", "仍", "borrowed", "cjkvi-variants", "仍→乃 hydcd/borrowed 5287"),
+        ("祖", "𥘵", "non-cognate", "cjkvi-variants", "祖→𥘵 cjkvi/non-cognate"),
+        ("歎", "嘆", "substitute", "cjkvi-variants", "歎→嘆 jp/borrowed"),
+        ("十", "拾", "variant", "cjkvi-variants", "十→拾 cjkvi/numeric"),
+    }
+
+
+def test_cjkvi_old_style_relates_base_characters_across_their_selectors():
+    text = "# 1st column :: 新字体\n亜\U000e0100\t亞\U000e0100\n鼻\U000e0100\t鼻\U000e0101\n亥\t亥\U000e0101\t\t★\n"
+    assert rows(variants.cjkvi_old_style_edges(text)) == {
+        ("亞", "亜", "shinjitai", "cjkvi-variants", "亜\U000e0100→亞\U000e0100 jp-old-style"),
+    }
+    with pytest.raises(SystemExit, match="unknown tag"):
+        variants.cjkvi_edges("x.txt", "一,cjkvi/new-kind,弌")
 
 
 def test_shrink_map_reads_each_table_from_the_figure_code_point():

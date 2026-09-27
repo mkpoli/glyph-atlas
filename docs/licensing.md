@@ -56,12 +56,10 @@ through みんなで翻刻.
 - CHISE IDS: GPL-2.0-or-later, excluded from the CC BY-SA core; a separately licensed aggregate is
   possible in principle and is not planned.
 - 異体字 relations (`data/vocab/kanji-variants.tsv`): Unihan and UnicodeData (Unicode License v3),
-  Wikidata P5475 (CC0), yitizi (CC0), OpenCC (Apache-2.0), MJ縮退マップ (CC BY-SA 2.1 JP) and HNG
-  (CC BY-SA 4.0). Most Wikidata statements cite 教育部《異體字字典》, which is 版權所有 and absent
-  from the ministry's public-licence page; those rows name Q10427532 in their detail so a build can
-  leave them out. Not used: cjkvi-variants (no licence granted), CHISE (CHISE-IDS is
-  GPL-2.0-or-later; the JSON dump states no licence), zi.tools (no downloadable dataset) and the
-  異體字字典 itself.
+  Wikidata P5475 (CC0), yitizi (CC0), OpenCC (Apache-2.0), MJ縮退マップ (CC BY-SA 2.1 JP), HNG
+  (CC BY-SA 4.0) and cjkvi-variants. A variant relation between two characters is a fact without
+  creative expression, so a relation table that states no licence (cjkvi-variants) is used as public
+  domain, and Wikidata's statements are used under CC0 whichever dictionary they cite.
 
 ## Attribution
 
