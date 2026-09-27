@@ -177,7 +177,21 @@ def info(
         "version": _version_of(document),
         "tiles": _tiles_of(document),
         "sizes": [dict(size) for size in sizes if isinstance(size, dict)] if isinstance(sizes, list) else [],
+        "limits": _limits_of(document),
     }
+
+
+def _limits_of(document: dict) -> dict[str, int]:
+    """`maxWidth`, `maxHeight` and `maxArea` a server states, at the top (Image API 3) or in `profile` (2)."""
+    places = [document] + [item for item in document.get("profile") or [] if isinstance(item, dict)] \
+        if isinstance(document.get("profile"), list) else [document]
+    limits: dict[str, int] = {}
+    for place in places:
+        for key in ("maxWidth", "maxHeight", "maxArea"):
+            value = place.get(key)
+            if isinstance(value, int) and value > 0:
+                limits[key] = min(value, limits.get(key, value))
+    return limits
 
 
 def full_url(service: str, version: int | str) -> str:
@@ -214,8 +228,10 @@ def fetch(
     if box is not None and service is None:
         raise ImageError(f"{url}: a box needs an Image API service URL")
     version = None
+    described: dict | None = None
     if service is not None and (box is not None or _is_bare(url, service)):
-        version = info(service, client=client, pause=pause, clock=clock, sleeper=sleeper)["version"]
+        described = info(service, client=client, pause=pause, clock=clock, sleeper=sleeper)
+        version = described["version"]
     request_url = _request_url(url, service=service, version=version, box=box)
     if box is not None:
         # A region is kept under its own request, so the page URL always names the whole image.
@@ -249,6 +265,27 @@ def fetch(
         else:
             os.replace(path, target)
         width, height = _image_size(target)
+        if service is not None and box is None:
+            wanted = _wanted_width(request_url)
+            if wanted is None and described is not None:
+                wanted = described["width"]
+            if wanted is not None and width < wanted:
+                # The server may have capped the image (国立公文書館 sends 3,000 px of a 6,700 px
+                # scan). When its stated limits explain the shortfall, region requests at full
+                # resolution within them add up to the image the URL names.
+                described = described or info(service, client=client, pause=pause, clock=clock, sleeper=sleeper)
+                if described["width"] == wanted and _capped(described, wanted):
+                    stitched = _stitch(service, described, scratch, client=client, pause=pause,
+                                       clock=clock, sleeper=sleeper)
+                    digest, size = _digest(stitched)
+                    target = cache / digest[:2] / f"{digest}.jpg"
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    if target.exists():
+                        stitched.unlink()
+                    else:
+                        os.replace(stitched, target)
+                    width, height = _image_size(target)
+                    seen = {}
     finally:
         for leftover in (temporary, temporary.with_name(temporary.name + net.PART_SUFFIX)):
             leftover.unlink(missing_ok=True)
@@ -738,6 +775,63 @@ def _digest(path: Path) -> tuple[str, int]:
             digest.update(block)
             size += len(block)
     return digest.hexdigest(), size
+
+
+#: The region and size of a request URL.
+_SIZE_OF = re.compile(rf"/({REGION})/({SIZE})/{ROTATION}/{QUALITY}\.{FORMAT}$", re.IGNORECASE)
+
+
+def _wanted_width(request_url: str) -> int | None:
+    """The width a whole-image request asks for in pixels (`full/5616,`, `full/5616,4000`), or None."""
+    found = _SIZE_OF.search(_bare(request_url))
+    if found is None or found.group(1).lower() != "full":
+        return None
+    width = found.group(2).split(",", 1)[0]
+    return int(width) if width.isdigit() else None
+
+
+def _capped(described: dict, wanted: int) -> bool:
+    """Whether the server's stated limits forbid a whole image `wanted` pixels wide."""
+    limits = described.get("limits") or {}
+    height = described["height"] * wanted // max(described["width"], 1)
+    return (wanted > limits.get("maxWidth", wanted) or height > limits.get("maxHeight", height)
+            or wanted * height > limits.get("maxArea", wanted * height))
+
+
+def _stitch(
+    service: str,
+    described: dict,
+    scratch: Path,
+    *,
+    client: httpx.Client | None,
+    pause: float | None,
+    clock: Callable[[], float] | None,
+    sleeper: Callable[[float], None] | None,
+) -> Path:
+    """The full-resolution image of `service`, assembled from region requests within its limits."""
+    width, height = described["width"], described["height"]
+    limits = described.get("limits") or {}
+    step = min(limits.get("maxWidth", 2048), limits.get("maxHeight", limits.get("maxWidth", 2048)))
+    if "maxArea" in limits:
+        step = min(step, int(limits["maxArea"] ** 0.5))
+    canvas = Image.new("RGB", (width, height))
+    for y in range(0, height, step):
+        for x in range(0, width, step):
+            w, h = min(step, width - x), min(step, height - y)
+            part = scratch / uuid4().hex
+            try:
+                net.download(f"{service}/{x},{y},{w},{h}/{w},/0/default.jpg", part, expected="image",
+                             client=client, refresh=True, pause=pause, clock=clock, sleeper=sleeper)
+                with Image.open(part) as tile:
+                    if tile.size != (w, h):
+                        raise ImageError(f"{service}: region {x},{y},{w},{h} came back {tile.size}")
+                    canvas.paste(tile.convert("RGB"), (x, y))
+            finally:
+                part.unlink(missing_ok=True)
+                part.with_name(part.name + net.PART_SUFFIX).unlink(missing_ok=True)
+    stitched = scratch / f"{uuid4().hex}.jpg"
+    canvas.save(stitched, "JPEG", quality=95)
+    return stitched
 
 
 def _image_size(path: Path) -> tuple[int, int]:
