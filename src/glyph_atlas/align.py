@@ -22,7 +22,7 @@ import json
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, Field
 
@@ -119,6 +119,9 @@ class Placement:
     kind: str = "match"
     accepted: bool = True
     group: bool = False
+    #: The decision's own margin, and the line's, whichever the run accepts by.
+    margin: float = float("inf")
+    line_margin: float = float("inf")
 
 
 def check_classifier(run: Run) -> None:
@@ -157,6 +160,12 @@ class Run(BaseModel):
     )
     accept: float = 0.9
     margin: float = 1.0
+    #: What the margin is measured against. Unset, it is the line's: the best alignment of the whole
+    #: container against its second best, so one unclear character withholds every character of the
+    #: line. `character` measures each placement against the best alignment that places its token
+    #: differently, so a character is withheld only when its own placement is in doubt. Set, it is
+    #: part of the hash, since it decides which units are accepted.
+    margin_scope: Literal["character"] | None = None
     ruby: bool = False
     #: The detector's score cutoff. It belongs to the run rather than to the detector's constructor
     #: default, because the run's units are only comparable when every stage detects at one operating
@@ -190,6 +199,8 @@ class Run(BaseModel):
         payload.pop("classifier_sha256", None)
         if payload.get("ink") is None:
             payload.pop("ink", None)
+        if payload.get("margin_scope") is None:
+            payload.pop("margin_scope", None)
         return hashlib.sha1(
             json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
         ).hexdigest()[:12]
@@ -558,7 +569,58 @@ def _align_container(
     (total, _), (runner_up, _) = table[n][m]
     margin = runner_up - total if runner_up != infinity else infinity
     decisions = _walk(table, n, m)
-    return _placements(tokens, detections, decisions, run, margin)
+    margins = _character_margins(table, decisions, tokens, costs, weights, n, m)
+    return _placements(tokens, detections, decisions, run, margin, margins)
+
+
+def _character_margins(
+    table: list[list[tuple]],
+    decisions: Sequence[Decision],
+    tokens: Sequence[Token],
+    costs: list[list[float]],
+    weights: dict[str, float],
+    n: int,
+    m: int,
+) -> list[float]:
+    """Each decision's margin: how much dearer the cheapest alignment is that places its tokens otherwise.
+
+    Every complete alignment places each token by exactly one move, so the cheapest alignment that
+    places token t differently is the cheapest path through any other move that places t. That is
+    the forward cost to the move's state, the move, and the cheapest completion after it.
+    """
+    infinity = float("inf")
+    after = [[infinity] * (m + 1) for _ in range(n + 1)]
+    after[n][m] = 0.0
+    for i in range(n, -1, -1):
+        for j in range(m, -1, -1):
+            for move in _moves(i, j, n, m, tokens, costs, weights):
+                rest = after[move.next_i][move.next_j]
+                after[i][j] = min(after[i][j], move.step + rest)
+    total = after[0][0]
+    # The cheapest alignment through each distinct placement of every token.
+    cheapest: list[dict[tuple, float]] = [{} for _ in range(n)]
+    for i in range(n + 1):
+        for j in range(m + 1):
+            (reached, _), _ = table[i][j]
+            if reached == infinity:
+                continue
+            for move in _moves(i, j, n, m, tokens, costs, weights):
+                through = reached + move.step + after[move.next_i][move.next_j]
+                if through == infinity:
+                    continue
+                key = (move.kind, move.tokens, move.detections)
+                for token in move.tokens:
+                    if through < cheapest[token].get(key, infinity):
+                        cheapest[token][key] = through
+    margins = []
+    for decision in decisions:
+        key = (decision.kind, decision.tokens, decision.detections)
+        margin = infinity
+        for token in decision.tokens:
+            other = min((cost for k, cost in cheapest[token].items() if k != key), default=infinity)
+            margin = min(margin, other - total)
+        margins.append(margin)
+    return margins
 
 
 class _Move:
@@ -768,9 +830,11 @@ def _placements(
     decisions: Iterable[Decision],
     run: Run,
     margin: float,
+    margins: Sequence[float] | None = None,
 ) -> list[Placement]:
     placements: list[Placement] = []
-    for decision in decisions:
+    for position, decision in enumerate(decisions):
+        own = margins[position] if margins is not None else margin
         if decision.kind == "skip-detection":
             continue
         if decision.kind == "skip-token":
@@ -785,7 +849,8 @@ def _placements(
             placements.append(Placement(token=token, detections=[], kind="gap", accepted=True))
             continue
         boxes = [detections[index] for index in decision.detections]
-        accepted = decision.probability >= run.accept and margin >= run.margin
+        scoped = own if run.margin_scope == "character" else margin
+        accepted = decision.probability >= run.accept and scoped >= run.margin
         placements.append(
             Placement(
                 token=tokens[decision.tokens[0]],
@@ -794,6 +859,8 @@ def _placements(
                 segmentation=_segmentation(decision),
                 text_probability=decision.probability,
                 accepted=accepted,
+                margin=own,
+                line_margin=margin,
             )
         )
     return placements

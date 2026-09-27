@@ -257,3 +257,32 @@ def test_ruby_is_recorded_without_a_box():
     assert all(unit.id.endswith(f":r{n}") for n, unit in enumerate(ruby, start=1))
     assert all(unit.review is ReviewState.MACHINE for unit in ruby)
     assert all(unit.upstream["role"] == "ruby" for unit in ruby)
+
+
+class ByBox:
+    """A classifier that scores each code point by the x of the crop it is shown."""
+
+    def __init__(self, table: dict[tuple[int, str], float], default: float = 0.001) -> None:
+        self.table = table
+        self.default = default
+
+    def score_set(self, crop: Box, code_points: set[str]) -> float:
+        return max((self.table.get((crop.x, point), self.default) for point in code_points), default=self.default)
+
+
+def test_a_character_is_accepted_on_its_own_margin_when_its_neighbour_is_in_doubt():
+    # 漢 is certain on the box at 70. 字 reads equally well on 40 and on 10, so the line's best path
+    # barely beats its second best; that doubt concerns 字 alone.
+    classifier = ByBox({(70, "U+6F22"): 0.95, (40, "U+5B57"): 0.95, (10, "U+5B57"): 0.94})
+    arguments = {"classifier": classifier, "crop_of": lambda page, b: b}
+    by_line, _ = align.align_line(line("漢字"), detections(70, 40, 10), run=run(accept=0.9, margin=1.0), **arguments)
+    assert [unit.review for unit in by_line] == [ReviewState.REJECTED, ReviewState.REJECTED]
+    scoped = run(accept=0.9, margin=1.0, margin_scope="character")
+    by_character, _ = align.align_line(line("漢字"), detections(70, 40, 10), run=scoped, **arguments)
+    assert [(unit.text_source, unit.box.x, unit.review) for unit in by_character] == [
+        ("漢", 70, ReviewState.MACHINE), ("字", 40, ReviewState.REJECTED)]
+
+
+def test_the_margin_scope_is_part_of_the_hash_only_when_set():
+    assert run().fingerprint() == run(margin_scope=None).fingerprint()
+    assert run().fingerprint() != run(margin_scope="character").fingerprint()
