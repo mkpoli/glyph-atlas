@@ -12,6 +12,7 @@
   import CharacterChips from '../components/CharacterChips.svelte'
   import WorkFilter from '../components/WorkFilter.svelte'
   import GraphemeGrid from '../components/GraphemeGrid.svelte'
+  import PairGrid from '../components/PairGrid.svelte'
   import SiteLinks from '../components/SiteLinks.svelte'
   import { catalogue, character, request, randomSeed, number, formatSerial, stored, remember } from '../lib/client.js'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery } from '../lib/layers.js'
@@ -92,6 +93,21 @@
     return [...groups.values()].sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
   })
   const chosenGrapheme = $derived(graphemes.find(group => group.key === grapheme))
+  // The browse panel counts single graphemes or two-character pairs; the choice is remembered. Pairs
+  // are counted for the work chosen, or the whole collection, and read when the panel first shows them.
+  // A save can relabel half of a pair, so it drops the counts and the panel reads them again.
+  let unit = $state(stored('atlas.browseUnit', 'grapheme')), pairs = $state(null), pairsFailed = $state(false), pairsWork = null, pairsRequest = 0
+  function countBy(value) { unit = value; remember('atlas.browseUnit', value) }
+  async function loadPairs() {
+    const scope = work, id = ++pairsRequest
+    pairsWork = scope; pairs = null; pairsFailed = false
+    try {
+      const found = await request('/atlas/pairs' + (scope ? `?document=${encodeURIComponent(scope)}` : ''))
+      if (!closed && id === pairsRequest) pairs = found.items
+    } catch { if (!closed && id === pairsRequest) pairsFailed = true }
+  }
+  function pairsChanged() { if (unit === 'pair' && !flagged) loadPairs(); else { pairsWork = null; pairsRequest += 1 } }
+  $effect(() => { if (unit === 'pair' && !flagged && work !== pairsWork) untrack(loadPairs) })
   /** The grapheme a corpus row is filed under, as the catalogue files a label. */
   const codesOf = text => [...text].map(c => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')).join(' ')
   const rowGrapheme = row => row.grapheme?.code_point ?? row.grapheme ?? codesOf(row.label ?? '')
@@ -373,6 +389,7 @@
       // collection's own rows. Updating the wrong one leaves the tile showing its old state.
       const replace = item => item.id !== id ? [item] : (flagged && !waiting(updated.state)) || !fitsGallery(updated) ? [] : [updated]
       keepPlace(id, () => { if (picked) local = local.flatMap(replace); else items = items.flatMap(replace) })
+      pairsChanged()
       const summary = await catalogue({ grapheme, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
         reported: flagged ? (showReported ? 'show' : 'hide') : null, limit: 1 })
       if (!closed) data = { ...data, counts: summary.counts, categories: summary.categories, documents: summary.documents, total: summary.total, available: summary.available, reported_count: summary.reported_count }
@@ -428,9 +445,13 @@
     <!-- The box, empty and focused, lists the collection's graphemes; one chosen narrows the grid, and a
          form in a tile's popover opens that form's own gallery. -->
     {#snippet browse(close)}
-      <p class="candidate-status">{t('explore.graphemes')}</p>
-      <GraphemeGrid groups={graphemes} value={grapheme} onchoose={key => { close(); select(key) }}
-                    onform={form => { close(); pick({ code_point: codesOf(form), char: form }, true) }} />
+      {#if flagged}<p class="candidate-status">{t('explore.graphemes')}</p>
+      {:else}<div class="browse-unit" role="group" aria-label={t('explore.browseUnit')}>
+        {#each [['grapheme', () => t('explore.graphemes')], ['pair', () => t('explore.pairs')]] as [value, text]}<button type="button" aria-pressed={unit === value} onclick={() => countBy(value)}>{text()}</button>{/each}
+      </div>{/if}
+      {#if unit === 'pair' && !flagged}<PairGrid {pairs} failed={pairsFailed} onretry={loadPairs} />
+      {:else}<GraphemeGrid groups={graphemes} value={grapheme} onchoose={key => { close(); select(key) }}
+                    onform={form => { close(); pick({ code_point: codesOf(form), char: form }, true) }} />{/if}
     {/snippet}
     <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse}
                      token={grapheme ? charOf(grapheme) : ''} tokenLabel={t('explore.clearGrapheme', { grapheme: charOf(grapheme) })} ontokenclear={() => select('')}
@@ -471,6 +492,9 @@
 </section>
 
 <style>
+  .browse-unit{display:flex;gap:2px;padding:8px 8px 6px}
+  .browse-unit button{border:0;border-radius:5px;background:transparent;padding:5px 10px;font-size:12px;color:var(--muted)}
+  .browse-unit button[aria-pressed="true"]{background:var(--surface-selected);color:var(--ink)}
   .visual-grid-heading{grid-column:1/-1;font-size:14px;padding:20px 2px 12px;color:var(--muted);background:var(--paper)}
   .tile-production{font-family:system-ui,sans-serif;font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .tile-number{margin-left:auto}

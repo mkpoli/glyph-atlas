@@ -31,6 +31,10 @@ def publication(tmp_path, monkeypatch):
         db.execute("INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
             "one", "local", "ア", "ア", None, None, "handwritten", "kana", "pending", 0, 1, 1, 0,
             data, "{}", "{}", "{}", None))
+        db.execute("INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+            "two", "local", "ウ", "ウ", None, None, "handwritten", "kana", "pending", 0, 1, 1, 0,
+            json.dumps({"id": "two", "label": "ウ"}), "{}", "{}", "{}", None))
+        db.execute("INSERT INTO unit_pairs VALUES('one','two','アウ',NULL)")
         db.executemany("INSERT INTO media VALUES(?,?,?,?,?)", [
             (key, "pack-0001.bin", 0, 7, "image/webp"),
             (denied, "pack-0001.bin", 7, 7, "image/webp")])
@@ -67,13 +71,15 @@ def test_publication_sql_does_not_overwrite_online_review(publication):
     with database(":memory:") as db:
         sql = (output / "catalogue.sql").read_text()
         db.executescript(sql)
+        assert db.execute("SELECT * FROM unit_pairs").fetchall() == [("one", "two", "アウ", None)]
         db.execute("UPDATE units SET character='カ',state='checked',revision=3 WHERE id='one'")
         # Named online since the last publication, by a round whose row this test leaves out.
         db.execute("UPDATE corpus_units SET named=1 WHERE id='corpus-one'")
         db.execute("INSERT INTO submissions VALUES('review','person','{}','{}','now',0)")
         db.commit()
         db.executescript(sql)
-        assert db.execute("SELECT character,state,revision FROM units").fetchone() == ("カ", "checked", 3)
+        assert db.execute("SELECT character,state,revision FROM units WHERE id='one'").fetchone() == ("カ", "checked", 3)
+        assert db.execute("SELECT text FROM unit_pairs").fetchall() == [("カウ",)], "a pair keeps the label reviewed online"
         assert db.execute("SELECT count(*) FROM submissions").fetchone()[0] == 1
         assert db.execute("SELECT named FROM corpus_units").fetchone() == (1,), "a publication never resets named"
         assert db.execute("SELECT * FROM corpus_characters").fetchall() == [("イ", "handwritten", 1, 1)]

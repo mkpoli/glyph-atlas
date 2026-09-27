@@ -12,6 +12,8 @@ from pathlib import Path
 from cloudflare_schema import CORPUS_COLUMNS, CORPUS_REFRESH, category_of, corpus_upsert, schema
 from export_cloudflare import encoded
 
+from glyph_atlas.unit_pairs import pair_statements
+
 IMMUTABLE = ("metadata", "characters", "aliases", "corpus_units", "media")
 
 
@@ -158,10 +160,18 @@ def seal(catalogue: Path, corpus: Path, output: Path):
             statement = corpus_upsert(row)
             max_statement = max(max_statement, len(statement.encode()))
             sql.write(statement + "\n")
+        # After the units, since a pair is recorded only once both of its crops are on the site. The
+        # publication's units lose the pairs an earlier one recorded for them first.
+        pairs = db.execute("SELECT first,second FROM local_source.unit_pairs ORDER BY first").fetchall() \
+            if db.execute("SELECT 1 FROM local_source.sqlite_master WHERE name='unit_pairs'").fetchone() else []
+        for statement in pair_statements((i for i, in db.execute("SELECT id FROM units WHERE origin='local'")), pairs):
+            max_statement = max(max_statement, len(statement.encode()))
+            sql.write(statement + "\n")
         # Counted in D1 from the rows it now holds, which may include rows earlier publications left.
         sql.write(CORPUS_REFRESH + "\n")
     counts = {table: db.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
               for table in ("units", "characters", "corpus_units", "media")}
+    counts["unit_pairs"] = len(pairs)
     (output / "publication.json").write_text(encoded({"counts": counts, "objects": manifest, "review_baselines": baselines,
                                                      "max_statement_bytes": max_statement}) + "\n")
     db.close()

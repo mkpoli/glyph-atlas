@@ -7,7 +7,8 @@
 # source:
 #   wiktionary  the English Wiktionary Vietnamese entries (CC BY-SA 4.0), through the kaikki.org
 #               extract (https://kaikki.org/dictionary/Vietnamese/, file of 2026-09-20): a "CJK"
-#               form of the word, or a character glossed "chữ Nôm form of" it.
+#               form of the word, a character glossed "chữ Nôm form of" it, or, for a Sino-Vietnamese
+#               word, the Han etymon its etymology names (note "etymology").
 #   unihan      the kVietnamese reading in Unihan 18.0.0 (Unicode, 2026-07-31).
 #   joined      a compound joined here from syllables each attested in one of those two; the whole
 #               word is not attested in that spelling.
@@ -63,6 +64,7 @@ cả	哿	wiktionary
 cần	勤	wiktionary	
 cập nhật	及日	joined	each syllable attested
 cắt	割	wiktionary	
+cặp	及	wiktionary	"pair" sense
 cổ	古	wiktionary	
 của	𧵑	wiktionary	
 cửa	𨷯	wiktionary	
@@ -230,6 +232,7 @@ sắp	拉	wiktionary
 sắt	𨫊	wiktionary	
 sẵn	𫤢	wiktionary	
 số	數	wiktionary	
+số liệu	數料	wiktionary	etymology
 sổ	數	wiktionary	
 sử dụng	使用	wiktionary	
 sửa	𢯢	wiktionary	
@@ -248,6 +251,7 @@ thêm	添	wiktionary
 thạch bản	石版	joined	each syllable attested
 thảo thư	草書	joined	each syllable attested
 thấy	𧡊	wiktionary	
+thống kê	統計	wiktionary	etymology
 thời gian	時間	wiktionary	
 thứ tự	次序	editorial	Sino-Vietnamese reading of the Han word
 thừa	乘	wiktionary	
@@ -335,6 +339,7 @@ xử lý	處理	wiktionary	spelled xử lí there
 đó	妬	wiktionary	Wiktionary's Nôm for đó "that"; 妬 is also Sino-Vietnamese đố
 đóng	㨂	wiktionary	
 đúng	中	wiktionary	
+đơn vị	單位	wiktionary	etymology
 đưa	迻	wiktionary	
 được	特	wiktionary	
 đầu	頭	wiktionary	
