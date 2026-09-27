@@ -223,7 +223,7 @@ def export(dataset: Path, output: Path, *, resume=False):
                 print(encoded({"stage": "local-crops", "done": i}), flush=True)
         # Only pairs whose two crops were published above are recorded.
         db.execute("DELETE FROM unit_pairs")
-        for statement in unit_pairs.pair_inserts(unit_pairs.adjacent_pairs(units.values())):
+        for statement in unit_pairs.pair_statements([], unit_pairs.adjacent_pairs(units.values())):
             db.execute(statement)
         db.commit()
         read_crops(db, media)

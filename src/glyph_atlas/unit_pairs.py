@@ -46,15 +46,20 @@ def adjacent_pairs(units: Iterable[Unit]) -> list[tuple[str, str]]:
     return pairs
 
 
-def pair_inserts(pairs: list[tuple[str, str]], batch: int = 200) -> list[str]:
-    """D1 statements that record `pairs` whose two units the site holds as its own crops.
+def pair_statements(units: Iterable[str], pairs: list[tuple[str, str]], batch: int = 200) -> list[str]:
+    """D1 statements that make `pairs` the successors of `units`, as the site holds them.
 
-    A pair's text and book are read from the rows the site holds, whose labels may have been reviewed
-    since publication. A pair already recorded keeps its row; the triggers of migration 0028 keep its
-    text in step with its units.
+    Every pair starting at one of `units` is removed first, so a unit whose successor changed or went
+    away since an earlier publication keeps no stale pair. A pair is then recorded only when both of
+    its crops are on the site as its own; its text and book are read from the rows the site holds,
+    whose labels may have been reviewed since. The triggers of migration 0028 keep them in step.
     """
     quote = lambda value: "'" + value.replace("'", "''") + "'"
+    ids = sorted(set(units))
     return [
+        "DELETE FROM unit_pairs WHERE first IN (" + ",".join(map(quote, ids[start:start + batch])) + ");"
+        for start in range(0, len(ids), batch)
+    ] + [
         "INSERT OR IGNORE INTO unit_pairs(first,second,text,document) "
         "SELECT p.column1,p.column2,a.character||b.character,a.document FROM (VALUES "
         + ",".join(f"({quote(first)},{quote(second)})" for first, second in pairs[start:start + batch])

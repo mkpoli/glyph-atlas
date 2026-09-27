@@ -2,7 +2,7 @@ import sqlite3
 from pathlib import Path
 
 from glyph_atlas.schema import Box, Unit, UnitKind
-from glyph_atlas.unit_pairs import adjacent_pairs, pair_inserts
+from glyph_atlas.unit_pairs import adjacent_pairs, pair_statements
 
 MIGRATION = Path(__file__).resolve().parents[1] / "apps/cloudflare/migrations/0028_unit_pairs.sql"
 
@@ -43,7 +43,7 @@ def test_d1_pairs_take_the_site_labels_and_follow_them():
     db.executemany("INSERT INTO units VALUES(?,?,?,?)", [
         ("a", "local", "申", "book"), ("b", "local", "候", "book"), ("c", "corpus", "也", None)])
     # A pair whose crop the site does not hold as its own is left out; one already recorded is kept.
-    for statement in pair_inserts([("a", "b"), ("b", "c"), ("x", "a")]) * 2:
+    for statement in pair_statements(["a", "b", "x"], [("a", "b"), ("b", "c"), ("x", "a")]) * 2:
         db.execute(statement)
     assert db.execute("SELECT * FROM unit_pairs").fetchall() == [("a", "b", "申候", "book")]
     db.execute("UPDATE units SET character='中' WHERE id='a'")
@@ -53,3 +53,16 @@ def test_d1_pairs_take_the_site_labels_and_follow_them():
     assert db.execute("SELECT document FROM unit_pairs").fetchall() == [("other",)]
     db.execute("DELETE FROM units WHERE id='b'")
     assert db.execute("SELECT count(*) FROM unit_pairs").fetchone() == (0,)
+
+
+def test_a_later_publication_replaces_a_units_successor():
+    db = sqlite3.connect(":memory:")
+    db.execute("CREATE TABLE units (id TEXT PRIMARY KEY, origin TEXT, character TEXT, document TEXT)")
+    db.executescript(MIGRATION.read_text())
+    db.executemany("INSERT INTO units VALUES(?,?,?,?)", [(i, "local", c, "book") for i, c in zip("abcd", "申候也之")])
+    for statement in pair_statements("abc", [("a", "b"), ("b", "c")]):
+        db.execute(statement)
+    # Resegmented: a is now followed by c, and b has no successor.
+    for statement in pair_statements("abc", [("a", "c")]):
+        db.execute(statement)
+    assert db.execute("SELECT first,second,text FROM unit_pairs").fetchall() == [("a", "c", "申也")]

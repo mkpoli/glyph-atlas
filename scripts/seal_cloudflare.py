@@ -12,7 +12,7 @@ from pathlib import Path
 from cloudflare_schema import CORPUS_COLUMNS, CORPUS_REFRESH, category_of, corpus_upsert, schema
 from export_cloudflare import encoded
 
-from glyph_atlas.unit_pairs import pair_inserts
+from glyph_atlas.unit_pairs import pair_statements
 
 IMMUTABLE = ("metadata", "characters", "aliases", "corpus_units", "media")
 
@@ -160,10 +160,11 @@ def seal(catalogue: Path, corpus: Path, output: Path):
             statement = corpus_upsert(row)
             max_statement = max(max_statement, len(statement.encode()))
             sql.write(statement + "\n")
-        # After the units, since a pair is recorded only once both of its crops are on the site.
+        # After the units, since a pair is recorded only once both of its crops are on the site. The
+        # publication's units lose the pairs an earlier one recorded for them first.
         pairs = db.execute("SELECT first,second FROM local_source.unit_pairs ORDER BY first").fetchall() \
             if db.execute("SELECT 1 FROM local_source.sqlite_master WHERE name='unit_pairs'").fetchone() else []
-        for statement in pair_inserts(pairs):
+        for statement in pair_statements((i for i, in db.execute("SELECT id FROM units WHERE origin='local'")), pairs):
             max_statement = max(max_statement, len(statement.encode()))
             sql.write(statement + "\n")
         # Counted in D1 from the rows it now holds, which may include rows earlier publications left.
