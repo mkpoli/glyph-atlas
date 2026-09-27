@@ -154,7 +154,7 @@
     <div class="page-toolbar">
       <a class="quiet-link" href={localize('/pages')}>← {t('pages.back')}</a>
       {#if data}
-        <strong class="page-title">{data.document_title ?? data.document_id} · {t('pages.pageNumber', { seq: data.seq })}</strong>
+        <strong class="page-title">{data.document_title ?? data.document_id} · {t('pages.pageNumber', { number: data.seq + 1 })}</strong>
         <span class="toolbar-space"></span>
         {#if data.drawable}
           <button class="draw-toggle" class:active={drawing} aria-pressed={drawing} onclick={() => drawing = !drawing}
@@ -179,7 +179,7 @@
              onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={() => { drag = null; draft = null }}>
           {#if data.image_url}
             <div class="page-sheet" style="width:{data.width}px;height:{data.height}px;transform:translate({tx}px,{ty}px) scale({scale})">
-              <img src={data.image_url} alt={t('pages.photoAlt', { seq: data.seq })} draggable="false" />
+              <img src={data.image_url} alt={t('pages.photoAlt', { number: data.seq + 1 })} draggable="false" />
               <svg viewBox="0 0 {data.width} {data.height}" aria-hidden="true">
                 {#each data.units as unit (unit.id)}
                   {#if unit.box}
@@ -228,7 +228,7 @@
           <p class="page-note">{t('pages.document.pages', { count: document.pages.length })} · {t('pages.boxes.count', { count: document.units })}</p>
           <ol>
             {#each document.pages as page (page.id)}
-              <li><a href={localize('/pages/' + encodeURIComponent(page.id))}><span>{t('pages.pageNumber', { seq: page.seq })}</span>{#if page.units}<small>{number(page.units)}</small>{/if}</a></li>
+              <li><a href={localize('/pages/' + encodeURIComponent(page.id))}><span>{t('pages.pageNumber', { number: page.seq + 1 })}</span>{#if page.units}<small>{number(page.units)}</small>{/if}</a></li>
             {/each}
           </ol>
         </article>
