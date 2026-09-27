@@ -430,3 +430,29 @@ def test_a_typed_reading_still_refuses_to_duplicate_an_occurrence(store):
     assert item["status"] == "withheld" and item["reason"] == "child would duplicate another occurrence"
     assert item["overlap"] == "v"
     assert store.unit("u").active and not store.unit("u").split_into
+
+
+def test_a_withheld_report_is_assessed_again_from_its_own_events(store, monkeypatch):
+    payload = feedback(store, issue="merged", proposal="ニシ")
+    # An earlier run without the typed-reading path: the unsure OCR withholds the split.
+    with monkeypatch.context() as earlier:
+        earlier.setattr(refine, "reviewer_reading", lambda f: None)
+        first = refine.refine_feedback(store, payload, apply=True, engine=refine.SplitEngine(UncertainOCR()))
+    assert first["counts"] == {"withheld": 1}
+    assert store.revision("u") > payload["reviews"][0]["current_revision"]
+    # The repair's own withheld record is the only change since the review, so the report is
+    # still current and the reading now splits it.
+    again = refine.refine_feedback(store, payload, apply=True, engine=refine.SplitEngine(UncertainOCR()))
+    assert again["counts"] == {"split": 1}
+    assert [refine.written_identity(store.unit(i)) for i in store.unit("u").split_into] == ["ニ", "シ"]
+
+
+def test_a_withheld_report_a_person_has_acted_on_since_stays_stale(store, monkeypatch):
+    payload = feedback(store, issue="merged", proposal="ニシ")
+    with monkeypatch.context() as earlier:
+        earlier.setattr(refine, "reviewer_reading", lambda f: None)
+        refine.refine_feedback(store, payload, apply=True, engine=refine.SplitEngine(UncertainOCR()))
+    store.record(ReviewRequest(target_id="u", field="unicode", new="U+30CB", client_id="person2",
+                               base_revision=store.revision("u")))
+    assert refine.refine_feedback(store, payload, apply=True)["counts"] == {"stale": 1}
+    assert store.unit("u").active and not store.unit("u").split_into
