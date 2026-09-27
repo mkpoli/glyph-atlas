@@ -447,7 +447,13 @@ try {
   // A round and its reference strips count their own character only, through its index; the review
   // filter off its index keeps the planner from walking every crop that can be dealt.
   const roundFilter = worker.listingFilter(true, 'not:printed/type', 'ナ')
-  shapes.push([{ sql: worker.facetsQuery(true, worker.stateFor('integration'), roundFilter.where), values: [] }, roundFilter.values, 'unit_character'])
+  shapes.push([{ sql: worker.facetsQueries(true, 'integration', roundFilter.where, true).stored, values: [] }, roundFilter.values, 'unit_character'])
+  // Every character's counts find a reviewer's skips during the rest by who and when, read each mark
+  // once and look its crop up by id.
+  const allCounts = worker.facetsQueries(true, 'integration', worker.listingFilter(true, 'not:printed/type', null).where, false)
+  shapes.push([{ sql: allCounts.skipped, values: [] }, ['printed/type', 'printed/type0'], 'skip_actor'])
+  const markPlan = await plan({ sql: allCounts.marked, values: [] }, ['printed/type', 'printed/type0'])
+  assert.ok(markPlan.some(d => /^SCAN m\b/.test(d)) && markPlan.some(d => /^SEARCH units USING INDEX sqlite_autoindex_units_1 \(id=\?\)/.test(d)), markPlan.join('; '))
   shapes.push([worker.corpusCountQuery('not:printed/type', 'ナ'), [], null])
   // Needs fixing starts from the stored-flagged crops (`unit_state`) and the twice-skipped ones, and
   // looks each up by id; it never reads every crop to work out its review state.
@@ -474,6 +480,7 @@ try {
     corpus_round: 'CREATE INDEX corpus_round ON corpus_units(character,named,shuffle)',
     corpus_material: 'CREATE INDEX corpus_material ON corpus_units(character,production,named,shuffle)',
     unit_character: 'CREATE INDEX unit_character ON units(origin,character,state)',
+    skip_actor: 'CREATE INDEX skip_actor ON skips(actor,at)',
     unit_family_sample: 'CREATE INDEX unit_family_sample ON units(origin,family,shuffle)',
     event_history: "CREATE INDEX event_history ON events(at DESC, id DESC) WHERE kind IN ('review','undo')",
     event_actor_history: "CREATE INDEX event_actor_history ON events(actor, at DESC, id DESC) WHERE kind IN ('review','undo')",
@@ -538,7 +545,7 @@ try {
   assert.deepEqual((await call('/atlas?group=gugyeol')).items.map(i => i.id), ['gugyeol'], 'a gugyeol label is in the gugyeol group')
   assert.ok(!(await call('/atlas?group=kana')).items.some(i => i.id === 'gugyeol'), 'and in no other')
   // Explore narrows to one book: the listing counts crops per book, and `document` lists one book's.
-  // A reviewer's listing is read uncached, so the rows written straight to D1 show in its counts.
+  // Crops written straight to D1 and stamped, as a refresh writes them, show in a reviewer's counts.
   for (const [id, book, title] of [['book-a1', 'hl:A', '甲'], ['book-a2', 'hl:A', '甲'], ['book-b1', 'hl:B', '乙']]) {
     const d = { id, label: 'ヌ', reading: 'ヌ', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten',
       source: title, page_id: `${book}:1`, repair: { quiz: true } }
@@ -546,6 +553,7 @@ try {
       id, 'local', 'ヌ', 'ヌ', 'U+30CC', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
       JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', book).run()
   }
+  await db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at',?)").bind(JSON.stringify('books')).run()
   assert.deepEqual((await call('/atlas?document=hl:A&limit=96')).items.map(i => i.id).sort(), ['book-a1', 'book-a2'], 'one book lists its own crops')
   assert.deepEqual((await call('/atlas?reviewer=shelf')).documents.filter(b => b.id.startsWith('hl:')).map(({ id, title, total }) => ({ id, title, total })),
     [{ id: 'hl:A', title: '甲', total: 2 }, { id: 'hl:B', title: '乙', total: 1 }], 'the listing counts crops per book, with the title they were published under')
@@ -558,6 +566,7 @@ try {
       id, 'local', label, label, family, null, 'handwritten', 'kanji', 'pending', 0, 1, 1, 1,
       JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
   }
+  await db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at',?)").bind(JSON.stringify('graphemes')).run()
   const filed = Object.fromEntries((await call('/atlas?reviewer=shelf')).categories.filter(c => ['仮', '假', '※'].includes(c.label)).map(c => [c.label, c.grapheme]))
   assert.deepEqual(filed, { '仮': 'U+4EEE', '假': 'U+4EEE', '※': 'U+203B' }, 'each label names its grapheme')
   const kari = (await call('/atlas?grapheme=U%2B4EEE&limit=96')).items
@@ -852,6 +861,21 @@ try {
   await db.prepare("DELETE FROM seen WHERE target='seen-b'").run()
   assert.equal(await db.prepare("SELECT mark FROM unit_marks WHERE id='seen-b'").first(), null, 'a crop whose seen rows are gone is unmarked')
   await db.batch(seenB.results.map(r => db.prepare(`INSERT INTO seen(${Object.keys(r)}) VALUES(${Object.keys(r).map(() => '?')})`).bind(...Object.values(r))))
+  // Counts made from the stored states and the moves are the ones working out each crop's state gives.
+  const byState = rows => rows.map(r => `${r.label}|${r.document}|${r.state}|${r.n}`).sort()
+  for (const review of [true, false])
+    for (const reviewer of [null, 'alice', 'bob'])
+      for (const character of [null, 'ソ', 'セ']) {
+        if (!review && character) continue
+        const { where, values } = worker.listingFilter(review, review ? 'not:printed/type' : 'all', character)
+        const q = worker.facetsQueries(review, reviewer, where, character !== null)
+        const [stored, ...moves] = await Promise.all([q.stored, q.marked, q.skipped].filter(Boolean).map(sql => db.prepare(sql).bind(...values).all()))
+        const book = review ? 'NULL' : 'document'
+        const whole = await db.prepare(`SELECT character AS label,${book} AS document,${worker.stateFor(reviewer)} AS state,count(*) AS n
+          FROM units WHERE ${where.join(' AND ')} GROUP BY 1,2,3`).bind(...values).all()
+        const counted = worker.moved(stored.results, moves.flatMap(m => m.results))
+        assert.deepEqual(byState(counted), byState(whole.results), `counts for ${review ? 'review' : 'browse'}, ${reviewer ?? 'anyone'}, ${character ?? 'every character'}`)
+      }
   // Every mark the triggers kept is the one `skips` and `seen` give from scratch.
   const marks = async sql => (await db.prepare(sql).all()).results.map(r => `${r.id}:${r.mark}`).sort()
   const skippers = "(SELECT count(DISTINCT k.actor) FROM skips k JOIN submissions b ON b.id=k.submission AND b.undone=0 WHERE k.target=u.id AND k.box IS json_extract(u.data,'$.box'))"
