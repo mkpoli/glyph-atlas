@@ -506,6 +506,24 @@
   checked: 2026-09-11
 
 - match:
+    - https://emuseum.nich.go.jp/about
+  licence: restricted
+  label: e国宝 国立文化財機構 (private use only)
+  evidence: https://emuseum.nich.go.jp/about
+  eligible: false
+  obligations: "The page allows no use beyond private use and the limits the law sets, and sends licensing questions to each museum's image office. Ask 国立文化財機構 before reuse; never in a release build."
+  checked: 2026-09-27
+
+- match:
+    - https://www.lib.u-ryukyu.ac.jp/okinawa/valuable-reference/
+  licence: restricted
+  label: 琉球大学附属図書館 貴重資料 (free secondary use for its own out-of-copyright holdings; ハワイ大学 holdings excluded)
+  evidence: https://www.lib.u-ryukyu.ac.jp/okinawa/valuable-reference/
+  eligible: false
+  obligations: "琉球大学's own special-collection images need no application once copyright has expired. The 阪巻・宝玲文庫 images belong to the University of Hawaiʻi at Mānoa Library, which the page names as the party to ask. The manifest carries this URL for both, so it resolves as restricted; never in a release build without the owner's answer."
+  checked: 2026-09-27
+
+- match:
     - https://library.u-gakugei.ac.jp/digitalarchive/riyotop.html
   licence: restricted
   label: 東京学芸大学教育コンテンツアーカイブ (terms page, no standard licence identifier)
