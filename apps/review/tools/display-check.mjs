@@ -214,10 +214,18 @@ try {
   await browser.waitFor(`document.querySelector('.export-foot [role="status"]').textContent.startsWith('Could not save.')`)
   assert(await browser.evaluate('window.saveAborted === true'), 'a failed write is aborted')
 
+  // A page at position 0 is page 1, in the page list and in the page's own view.
+  await browser.goto(`${service.base}/en/pages`, { waitFor: `document.querySelector('a[href*="doc-1%3Ap1"]') !== null` })
+  const listed = await browser.evaluate(`document.querySelector('a[href*="doc-1%3Ap1"] span').textContent`)
+  assert(listed === 'Page 1', `the page list names doc-1:p1 ${listed}`)
+  await browser.goto(`${service.base}/en/pages/doc-1%3Ap1`, { waitFor: `document.querySelector('.page-title') !== null` })
+  const title = await browser.evaluate(`document.querySelector('.page-title').textContent`)
+  assert(title.endsWith('Page 1'), `the page view is titled ${title}`)
+
   assert(errors.length === 0, `page errors: ${errors.join('; ')}`)
   console.log(`display: ${exploreFilters.length} crops unfiltered by default, ${greyFilters.length} grayscale under B&W,`)
   console.log(`         aligned crop opening and pan/reset, focus in the suggestions, Enter chose a candidate,`)
-  console.log(`         export saved ${files[0]} (${body.reviews.length} reviews)`)
+  console.log(`         export saved ${files[0]} (${body.reviews.length} reviews), page 1 is the page at position 0`)
 } finally {
   if (browser) await browser.close()
   await service.stop()
