@@ -1069,6 +1069,7 @@ def rare_chars(
     max_documents: Annotated[int, typer.Option(help="rare means attested in at most this many entries")] = 1,
     examples: Annotated[int, typer.Option(help="example lines per character, each from a different entry")] = 5,
     project: Annotated[list[str] | None, typer.Option(help="only these projects")] = None,
+    workers: Annotated[int, typer.Option(help="processes reading the entries")] = 4,
 ) -> None:
     """List the Han characters the transcriptions attest in few documents, with readings and line boxes."""
     from . import rare_chars as rare
@@ -1076,7 +1077,7 @@ def rare_chars(
 
     clone = clone or honkoku_data.default_clone()
     lines = lines or honkoku_data.cache_root() / "honkoku-lines" / "lines.jsonl.gz"
-    rows, counts = rare.report(clone, lines, max_documents=max_documents, examples=examples, projects=project)
+    rows, counts = rare.report(clone, lines, max_documents=max_documents, examples=examples, projects=project, workers=workers)
     rare.write(rows, out)
     summary = {
         "entries": counts.entries,
