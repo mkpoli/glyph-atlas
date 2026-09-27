@@ -444,3 +444,31 @@ def test_a_placement_the_aligner_rejected_does_not_block_a_split(store):
     assert result["counts"] == {"split": 1}
     assert [refine.written_identity(store.unit(i)) for i in store.unit("u").split_into] == ["ニ", "シ"]
     assert store.unit("v").active and store.unit("v").review == "rejected"
+
+
+def test_a_rejected_placement_does_not_stop_a_join_reusing_its_neighbour(store):
+    from glyph_atlas import tables
+    from glyph_atlas.schema import Unit
+
+    # v already crops ル over the top half; w, a placement the aligner rejected, sits on the lower half.
+    root = store.directory
+    units = tables.read(root / "units.parquet", Unit)
+    w = units[1].model_copy(update={"id": "w", "seq": 2, "unicode": "U+30EB", "reading": "ル",
+                                    "box": Box(x=11, y=52, w=38, h=36), "review": "rejected"})
+    tables.write(root / "units.parquet", [*units, w], Unit)
+    for leftover in root.glob("review.sqlite*"):
+        leftover.unlink()
+    store = Store(root)
+    store.record_batch([
+        ReviewRequest(target_id="u", field="unicode", new="U+30E9", client_id="setup"),
+        ReviewRequest(target_id="v", field="unicode", new="U+30EB", client_id="setup"),
+        ReviewRequest(target_id="v", field="box", new=Box(x=12, y=12, w=36, h=30).model_dump(),
+                      client_id="setup", base_revision=1),
+    ], role="model")
+    proposal = {"accepted": True, "text": ["ル", "ラ"], "boxes": [{"x": 0, "y": 0, "w": 40, "h": 40},
+                                                                 {"x": 0, "y": 40, "w": 40, "h": 40}]}
+    result = refine.split_unit(store, store.unit("u"), proposal, base_revision=store.revision("u"),
+                               source_event_id="rv1")
+    assert result["status"] == "recropped"
+    assert store.unit("u").box == Box(x=10, y=50, w=40, h=40)
+    assert store.unit("w").review == "rejected"
