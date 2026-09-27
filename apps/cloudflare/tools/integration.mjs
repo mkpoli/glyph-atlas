@@ -282,6 +282,20 @@ try {
   assert.deepEqual((await call('/atlas?state=hard&reading=ソ')).items.map(i => i.id), ['skip-b'], 'two skips make a crop hard')
   assert.ok((await call('/atlas?state=attention&reading=ソ')).items.some(i => i.id === 'skip-b'), 'the Flagged view lists hard crops')
   assert.ok(!(await dealtTo('carol')).includes('skip-b'), 'a hard crop leaves the rounds')
+  // A crop is hard at the box it was skipped at, whoever moves the box: a refresh updating it in place,
+  // or a publication writing the crop anew.
+  const hardSo = async () => (await call('/atlas?state=hard&reading=ソ')).items.map(i => i.id)
+  const moveBox = box => db.prepare("UPDATE units SET data=json_set(data,'$.box',json(?)) WHERE id='skip-b'").bind(box).run()
+  await moveBox('{"x":9,"y":2,"w":3,"h":4}')
+  assert.deepEqual(await hardSo(), [], 'a crop moved to another box is not hard there')
+  await moveBox('{"x":1,"y":2,"w":3,"h":4}')
+  assert.deepEqual(await hardSo(), ['skip-b'], 'and is again once it is back')
+  const skipB = await db.prepare("SELECT * FROM units WHERE id='skip-b'").first()
+  const rewrite = data => db.prepare(`INSERT OR REPLACE INTO units VALUES(${Object.keys(skipB).map(() => '?').join(',')})`).bind(...Object.values({ ...skipB, data })).run()
+  await rewrite(JSON.stringify({ ...JSON.parse(skipB.data), box: { x: 7, y: 2, w: 3, h: 4 } }))
+  assert.deepEqual(await hardSo(), [], 'nor is a crop written anew at another box')
+  await rewrite(skipB.data)
+  assert.deepEqual(await hardSo(), ['skip-b'])
   await call(`/atlas/rounds/${second.id}/undo`, { client_id: 'bob' })
   assert.deepEqual((await call('/atlas?state=hard&reading=ソ')).items, [], 'an undo takes a skip back')
   // Corpus glyphs in Quick review: a character's local crops first, then its assigned, proxyable
@@ -832,6 +846,20 @@ try {
   const glyphNow = await call(`/atlas/corpus/character?id=${encodeURIComponent('codh:fixture')}`)
   assert.equal((await corpusSuggestions(`revision=${glyphNow.revision}&source_revision=${glyphNow.source_revision}`)).status, 200, 'a corpus glyph serves suggestions for its source revision')
   assert.equal((await corpusSuggestions(`revision=${glyphNow.revision}&source_revision=${'c'.repeat(64)}`)).status, 409, 'and refuses another')
+  // Taking a crop's seen rows out, as removing crops does before the crops, takes its mark with them.
+  const seenB = await db.prepare("SELECT * FROM seen WHERE target='seen-b'").all()
+  assert.ok(seenB.results.length && await db.prepare("SELECT 1 FROM unit_marks WHERE id='seen-b'").first(), 'seen-b is marked seen')
+  await db.prepare("DELETE FROM seen WHERE target='seen-b'").run()
+  assert.equal(await db.prepare("SELECT mark FROM unit_marks WHERE id='seen-b'").first(), null, 'a crop whose seen rows are gone is unmarked')
+  await db.batch(seenB.results.map(r => db.prepare(`INSERT INTO seen(${Object.keys(r)}) VALUES(${Object.keys(r).map(() => '?')})`).bind(...Object.values(r))))
+  // Every mark the triggers kept is the one `skips` and `seen` give from scratch.
+  const marks = async sql => (await db.prepare(sql).all()).results.map(r => `${r.id}:${r.mark}`).sort()
+  const skippers = "(SELECT count(DISTINCT k.actor) FROM skips k JOIN submissions b ON b.id=k.submission AND b.undone=0 WHERE k.target=u.id AND k.box IS json_extract(u.data,'$.box'))"
+  const seenHere = "EXISTS(SELECT 1 FROM seen s JOIN submissions b ON b.id=s.submission AND b.undone=0 WHERE s.target=u.id AND s.box IS json_extract(u.data,'$.box'))"
+  const kept = await marks('SELECT id,mark FROM unit_marks')
+  assert.ok(kept.some(m => m.endsWith(':seen')), 'the run leaves seen crops to compare')
+  assert.deepEqual(kept, await marks(`SELECT id,iif(${skippers}>=2,'hard','seen') AS mark FROM units u WHERE ${skippers}>=2 OR ${seenHere}`),
+    'the kept marks are what the skips and seen crops say')
   console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms.')
 } finally {
   await mf.dispose()
