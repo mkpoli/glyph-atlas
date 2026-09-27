@@ -15,6 +15,7 @@
   import { createInspector, provideInspector } from '$lib/inspector.svelte.js'
   import { number } from '$lib/client.js'
   import { createSession, provideSession } from '$lib/session.svelte.js'
+  import { THEMES, setTheme, showThemeColor } from '$lib/theme.js'
   import { t, around, LOCALES, locale, localName, setLocale, useLocale, localize, delocalize } from '$lib/i18n.svelte.js'
   let { data, children } = $props()
   // Set from the address before anything renders, so the server and the browser draw the same words.
@@ -61,12 +62,16 @@
     close()
   }
   // The address bar, not `page.url`: a view may have rewritten the address in place since the page loaded.
+  // The scheme the server rendered with, read back once the page is in the browser.
+  let theme = $state('system')
+  function chooseTheme(value) { setTheme(value); theme = value }
   function chooseLocale(tag) { setLocale(tag); menu = false; goto(localize(delocalize(location.pathname).path, tag) + location.search, { noScroll: true, keepFocus: true }) }
   function exportReviews() { menu = false; exporting = true }
   function showProgress() { menu = false; session.showProgress() }
   // A new page closes whatever the last one left open.
   afterNavigate(() => { menu = false; if (inspector.state.selected) inspector.close() })
   onMount(() => {
+    theme = document.documentElement.dataset.theme || 'system'; showThemeColor(theme)
     session.start()
     // Until now the page was the server's markup, with no handlers; this marks it live.
     document.documentElement.dataset.hydrated = ''
@@ -75,7 +80,7 @@
 
 <header class="site-header"><a href={localize('/')} class="wordmark" aria-label={t('app.home.aria')}><svg class="atlas-symbol" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M4 4h9v9H4zM19 4h9v9h-9zM4 19h9v9H4z" fill="currentColor"/><path d="M19 19h9v9h-9z" stroke="currentColor" stroke-width="2"/></svg>{#if localName()}<span class="local-name" lang={locale()}>{localName()}</span>{:else}<span lang="en">GLYPH <b>ATLAS</b></span>{/if}<small class="slogan" lang="ja">Let's 集字!</small></a>
   <nav aria-label={t('app.nav.aria')}><a class:active={section === '/'} href={localize('/')}>{t('nav.explore')}</a>{#if data.forms}<a class:active={section === '/forms'} href={localize('/forms')}>{t('nav.forms')}</a>{/if}{#if data.pages}<a class:active={section === '/pages'} href={localize('/pages')}>{t('nav.pages')}</a>{/if}<a class:active={section === '/flagged'} href={localize('/flagged')}>{t('nav.flagged')}</a><a class:active={section === '/history'} href={localize('/history')}>{t('nav.history')}</a></nav>
-  <div class="header-actions"><a class="review-link" class:current={section === '/review'} href={localize('/review')}>{t('nav.quickReview')} <span>↗</span></a><div class="header-menu"><button bind:this={menuButton} class="icon-button" aria-label={t('app.reviewOptions')} aria-expanded={menu} onclick={() => menu = !menu}>···</button>{#if menu}<div class="options-menu"><button onclick={showProgress}>{t('explore.collectionProgress')}</button><button onclick={exportReviews}>{t('export.menuItem')}</button>{#if LOCALES.length > 1}<div class="language-group"><small>{t('menu.language')}</small><div class="language-options">{#each LOCALES as loc (loc.tag)}<button lang={loc.tag} class:active={locale() === loc.tag} aria-pressed={locale() === loc.tag} onclick={() => chooseLocale(loc.tag)}>{loc.name}</button>{/each}</div></div>{/if}<small>{session.state.clientId}</small></div>{/if}</div></div>
+  <div class="header-actions"><a class="review-link" class:current={section === '/review'} href={localize('/review')}>{t('nav.quickReview')} <span>↗</span></a><div class="header-menu"><button bind:this={menuButton} class="icon-button" aria-label={t('app.reviewOptions')} aria-expanded={menu} onclick={() => menu = !menu}>···</button>{#if menu}<div class="options-menu"><button onclick={showProgress}>{t('explore.collectionProgress')}</button><button onclick={exportReviews}>{t('export.menuItem')}</button>{#if LOCALES.length > 1}<div class="language-group"><small>{t('menu.language')}</small><div class="language-options">{#each LOCALES as loc (loc.tag)}<button lang={loc.tag} class:active={locale() === loc.tag} aria-pressed={locale() === loc.tag} onclick={() => chooseLocale(loc.tag)}>{loc.name}</button>{/each}</div></div>{/if}<div class="language-group"><small>{t('menu.theme')}</small><div class="language-options">{#each THEMES as value (value)}<button aria-pressed={theme === value} onclick={() => chooseTheme(value)}>{t(`menu.theme.${value}`)}</button>{/each}</div></div><small>{session.state.clientId}</small></div>{/if}</div></div>
 </header>
 <main>
   {@render children()}

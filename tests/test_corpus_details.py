@@ -16,10 +16,10 @@ from urllib.parse import quote
 import pytest
 
 from glyph_atlas import tables
+from glyph_atlas.context import CONTEXT_REACH
 from glyph_atlas.corpus import CorpusAPI, build_chars
 from glyph_atlas.corpus.crops import _hng_crop_prefix
 from glyph_atlas.corpus.details import (
-    CONTEXT_PAD,
     DETAIL_EDGE,
     UNIT_CORPORA,
     UNIT_ID_PREFIXES,
@@ -592,15 +592,16 @@ class TestHNGStandaloneCrop:
         assert payload["context_image"] is not None
         assert payload["context_box"] != payload["box"]
 
-    def test_the_derived_viewport_is_padded_around_the_real_box(self, viewer):
+    def test_the_derived_viewport_reaches_as_far_as_a_crop_context(self, viewer):
+        """Three columns across and five characters along the line, as a collection crop's context."""
         api, _, _ = viewer
         payload = detail(api, "codh:u1")
         box, context = payload["box"], payload["context_box"]
-        pad = round(max(box["w"], box["h"]) * CONTEXT_PAD)
-        assert context["x"] == max(0, box["x"] - pad)
-        assert context["y"] == max(0, box["y"] - pad)
-        assert context["x"] + context["w"] == min(PAGE_W, box["x"] + box["w"] + pad)
-        assert context["y"] + context["h"] == min(PAGE_H, box["y"] + box["h"] + pad)
+        across, along = (max(box["w"], box["h"]) * m for m in CONTEXT_REACH)
+        assert context["x"] == max(0, int(box["x"] - across))
+        assert context["y"] == max(0, int(box["y"] - along))
+        assert context["x"] + context["w"] == min(PAGE_W, int(box["x"] + box["w"] + across))
+        assert context["y"] + context["h"] == min(PAGE_H, int(box["y"] + box["h"] + along))
 
     def test_the_derived_viewport_never_escapes_the_registered_page(self, viewer, tmp_path):
         api, root, _ = viewer

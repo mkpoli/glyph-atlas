@@ -12,7 +12,6 @@ import pyarrow.dataset as ds
 from cloudflare_schema import CORPUS_REFRESH, schema
 from export_cloudflare import Packs, encoded
 
-from glyph_atlas import production
 from glyph_atlas.corpus import sources
 from glyph_atlas.corpus.api import PROXYABLE, CorpusAPI
 from glyph_atlas.corpus.details import DetailResolver, _iiif_region, _viewport
@@ -72,6 +71,18 @@ def held(db, skip=frozenset()):
     return {r[0] for r in db.execute("SELECT id FROM corpus_units")} | set(skip)
 
 
+def holder_context(joined, box, page):
+    """The holder's IIIF region of a unit's context window and that window, or (None, None) when the page
+    has no service, no registered size, or was registered at a scaled rendition, whose boxes are not in
+    the service's pixels; a packed crop then cuts its context from the local page."""
+    service, image = joined.get("image_service"), (page.get("image") or "").rstrip("/")
+    if not service or image not in (service, f"{service}/full/full/0/default.jpg", f"{service}/full/max/0/default.jpg"):
+        return None, None
+    window = _viewport(box, page.get("width"), page.get("height"))
+    url = _iiif_region(service, window, edge=900)
+    return (window, url) if url else (None, None)
+
+
 def holder_image(joined, box, enabled):
     """The holder's own IIIF region of a unit's box when `enabled` and the page has a service."""
     return _iiif_region(joined.get("image_service"), box, edge=480) if enabled else None
@@ -81,13 +92,6 @@ def holder_image(joined, box, enabled):
 #: published from it as local crops under the same ids; as corpus glyphs too, a round would deal the
 #: copy and every save of it would be refused against the local row.
 PUBLISHED_LOCALLY = frozenset({"ainu-records"})
-#: Corpora whose boxes the detector placed on transcribed pages; they follow `production.EXTRACTION_SCOPE`.
-EXTRACTED = frozenset({"honkoku-lines"})
-
-
-def published_production(corpus, kind):
-    """Whether a glyph of `corpus` made by production `kind` is published."""
-    return corpus not in EXTRACTED or production.in_scope(kind, production.EXTRACTION_SCOPE)
 
 
 def locally_published_ids(root="work") -> set[str]:
@@ -168,9 +172,6 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
                 if not char:
                     continue
                 joined = _unit_row(corpus, context, row, char, row.get("unicode") or "")
-                if not published_production(corpus.name, joined.get("production") or "unknown"):
-                    counts["out-of-scope"] += 1
-                    continue
                 if joined.get("image_licence") not in PROXYABLE:
                     counts["licence-link-only"] += 1
                     continue
@@ -180,9 +181,8 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
                     continue
                 box = joined.get("box")
                 page = context.page(joined.get("page_id") or "")
-                context_box = _viewport(box, page.get("width"), page.get("height"))
+                context_box, context_image = holder_context(joined, box, page)
                 image = joined["thumbnail"].get("iiif_url")
-                context_image = _iiif_region(joined.get("image_service"), context_box, edge=900)
                 holder = holder_image(joined, box, holder_images)
                 if holder:
                     image = holder
@@ -197,10 +197,11 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
                     except (OSError, ValueError):
                         counts["unavailable"] += 1
                         continue
-                    # Local image crops are sufficient for pre-cut datasets; page-backed
-                    # sources get a context generated with the same coordinate transform.
+                    # A page the holder serves shows the holder's region as its context; any other
+                    # page-backed crop gets a context cut with the same coordinate transform, and a
+                    # pre-cut dataset has none.
                     spec = json.loads((media.directory / key[:2] / (key + ".json")).read_text())
-                    if spec.get("box"):
+                    if not context_image and spec.get("box"):
                         path = media.roots[spec["source"]] / spec["path"]
                         context_image = media.local(path, spec["box"], context=True)
                         context_key = context_image.rsplit("/", 1)[-1].removesuffix(".webp")
@@ -215,7 +216,7 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
                         with Image.open(path) as picture:
                             l, t, r, b = crop_bounds(picture, spec["box"], context=True)
                         context_box = {"x": l, "y": t, "w": r-l, "h": b-t}
-                    else:
+                    elif not context_image:
                         context_box, context_image = None, None
                 source = {"corpus": corpus.name, **{k: joined.get(k) for k in
                     ("document_id", "page_id", "line_id", "title", "holder", "shelfmark", "image_service")},

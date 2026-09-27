@@ -472,3 +472,53 @@ def test_a_rejected_placement_does_not_stop_a_join_reusing_its_neighbour(store):
     assert result["status"] == "recropped"
     assert store.unit("u").box == Box(x=10, y=50, w=40, h=40)
     assert store.unit("w").review == "rejected"
+
+
+def test_a_withheld_report_is_assessed_again_from_its_own_events(store, monkeypatch):
+    payload = feedback(store, issue="merged", proposal="ニシ")
+    # An earlier run without the typed-reading path: the unsure OCR withholds the split.
+    with monkeypatch.context() as earlier:
+        earlier.setattr(refine, "reviewer_reading", lambda f: None)
+        first = refine.refine_feedback(store, payload, apply=True, engine=refine.SplitEngine(UncertainOCR()))
+    assert first["counts"] == {"withheld": 1}
+    assert store.revision("u") > payload["reviews"][0]["current_revision"]
+    # The repair's own withheld record is the only change since the review, so the report is
+    # still current and the reading now splits it.
+    again = refine.refine_feedback(store, payload, apply=True, engine=refine.SplitEngine(UncertainOCR()))
+    assert again["counts"] == {"split": 1}
+    assert [refine.written_identity(store.unit(i)) for i in store.unit("u").split_into] == ["ニ", "シ"]
+
+
+def test_a_withheld_report_a_person_has_acted_on_since_stays_stale(store, monkeypatch):
+    payload = feedback(store, issue="merged", proposal="ニシ")
+    with monkeypatch.context() as earlier:
+        earlier.setattr(refine, "reviewer_reading", lambda f: None)
+        refine.refine_feedback(store, payload, apply=True, engine=refine.SplitEngine(UncertainOCR()))
+    store.record(ReviewRequest(target_id="u", field="unicode", new="U+30CB", client_id="person2",
+                               base_revision=store.revision("u")))
+    assert refine.refine_feedback(store, payload, apply=True)["counts"] == {"stale": 1}
+    assert store.unit("u").active and not store.unit("u").split_into
+
+
+@pytest.mark.parametrize("basis,expected", [("reviewer-reading", "recropped"), (None, "withheld")])
+def test_a_typed_join_trims_to_the_character_not_yet_cropped(store, basis, expected):
+    # u is labelled 手 but holds ル over ラ; v already crops ル.
+    store.record_batch([
+        ReviewRequest(target_id="v", field="unicode", new="U+30EB", client_id="setup"),
+        ReviewRequest(target_id="v", field="box", new=Box(x=12, y=12, w=36, h=30).model_dump(),
+                      client_id="setup", base_revision=1),
+    ], role="model")
+    proposal = {"accepted": True, "text": ["ル", "ラ"], "boxes": [{"x": 0, "y": 0, "w": 40, "h": 40},
+                                                                 {"x": 0, "y": 40, "w": 40, "h": 40}]}
+    if basis:
+        proposal["basis"] = basis
+    result = refine.split_unit(store, store.unit("u"), proposal, base_revision=store.revision("u"),
+                               source_event_id="rv1")
+    assert result["status"] == expected
+    target = store.unit("u")
+    if expected == "recropped":
+        assert target.box == Box(x=10, y=50, w=40, h=40)
+        assert (target.unicode, target.reading, target.script) == ("U+30E9", "ラ", "katakana")
+        assert target.review == "machine" and target.meta["feedback_repair"]["character"] == "ラ"
+    else:
+        assert target.unicode == "U+624B" and target.box == Box(x=10, y=10, w=40, h=80)

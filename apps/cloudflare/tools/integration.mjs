@@ -432,6 +432,11 @@ try {
   const roundFilter = worker.listingFilter(true, 'not:printed/type', 'ナ')
   shapes.push([{ sql: worker.facetsQuery(true, worker.stateFor('integration'), roundFilter.where), values: [] }, roundFilter.values, 'unit_character'])
   shapes.push([worker.corpusCountQuery('not:printed/type', 'ナ'), [], null])
+  // Needs fixing starts from the stored-flagged crops (`unit_state`) and the twice-skipped ones, and
+  // looks each up by id; it never reads every crop to work out its review state.
+  const attentionPlan = await plan({ sql: `SELECT count(*) AS n FROM units WHERE +origin='local' AND ${worker.attentionCandidatesQuery()}`, values: [] }, [])
+  assert.ok(attentionPlan.some(d => /SEARCH units USING (COVERING )?INDEX unit_state \(origin=\? AND state=\?\)/.test(d)), attentionPlan.join('; '))
+  assert.ok(!attentionPlan.some(d => /^SCAN units\b/.test(d)), attentionPlan.join('; '))
   // A document's characters are read along the table's own key, and each unit by its id.
   const documentPlan = await plan({ sql: worker.documentCharactersQuery(), values: [] }, ['hk:doc'])
   served(documentPlan, null)

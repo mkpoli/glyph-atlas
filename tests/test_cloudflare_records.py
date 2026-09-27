@@ -291,8 +291,17 @@ def test_an_export_or_seal_drops_the_glyphs_the_site_publishes_as_its_own_crops(
     assert [i for i, in db.execute("SELECT id FROM corpus_units")] == ["codh:1"]
 
 
-def test_typeset_glyphs_of_an_extracted_corpus_are_not_exported(scripts):
+def test_a_glyph_on_a_holder_page_takes_the_holders_region_as_its_context(scripts):
+    """A page the holder serves at full size shows the holder's region at the full reach; no service, no
+    page size to clamp to, or a scaled rendition leaves the context to the local cut."""
     export = importlib.import_module("export_cloudflare_corpus")
-    assert not export.published_production("honkoku-lines", "printed/type/metal")
-    assert export.published_production("honkoku-lines", "unknown")
-    assert export.published_production("kokatsuji", "printed/type")
+    service = "https://codh.rois.ac.jp/char-shape/iiif/100241706/100241706_00004_2.tif"
+    box, page = {"x": 1852, "y": 1736, "w": 104, "h": 219}, {"width": 2404, "height": 3874, "image": service}
+    window, url = export.holder_context({"image_service": service}, box, page)
+    assert window == {"x": 1195, "y": 641, "w": 1209, "h": 2409}
+    assert url == f"{service}/1195,641,1209,2409/900,/0/default.jpg"
+    assert export.holder_context({"image_service": None}, box, page) == (None, None)
+    assert export.holder_context({"image_service": service}, box, {"image": service}) == (None, None)
+    # A page registered at a scaled rendition has boxes in that rendition's pixels, not the service's.
+    scaled = {"width": 1495, "height": 1050, "image": f"{service}/full/1495,/0/default.jpg"}
+    assert export.holder_context({"image_service": service}, box, scaled) == (None, None)
