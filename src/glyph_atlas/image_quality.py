@@ -4,7 +4,8 @@ The measurements of every crop are kept in an index (`INDEX`), and a consumer (f
 training set, a review round) decides what to leave out by `tags`. Nothing is removed for being poor:
 a noisy, blurry or thresholded scan is still a witness to its letterform.
 
-`measure` records five numbers under `METHOD`:
+`measure` scales a crop down to a shorter side of `EDGE` pixels, so that sharpness and noise are read at
+the scale of the glyph and not of the scan's resolution, then records five numbers under `METHOD`:
 
 - `contrast`: ink to paper, the 5th to the 95th percentile of grey, 0 to 255.
 - `mid_grey`: share of pixels more than a fifth of the contrast away from both ink and paper. A
@@ -14,10 +15,12 @@ a noisy, blurry or thresholded scan is still a witness to its letterform.
 - `noise`: spread of the lightest 40% of pixels, the paper, as a share of the contrast.
 - `chroma`: mean distance of a pixel's channels from their own mean. A greyscale scan has none.
 
-The thresholds of `tags` were set on 2026-09-27 on 18 crops each of 38 typeset Honkoku-Lines books,
-as the site serves them (WebP re-encodings of the source pixels). There they separate the books a
-reader calls blurry (豊橋の年中行事), noisy (風俗畫報) and thresholded (豊橋志要) from clean ones
-(小野湖山翁小伝); they are a first calibration, not a validated one.
+Thresholding, blur, noise and colour belong to a scan, so `tags` reads them from the median of a
+page's crops (`page_summary`); only `small` belongs to the crop. The thresholds were set on
+2026-09-27 on the 368,860 extracted crops of the review store. They separate the books a reader calls
+blurry (豊橋の年中行事), noisy (風俗畫報, every one of its 105 pages) and thresholded (豊橋志要) from
+clean ones (小野湖山翁小伝) and from brush writing on high-resolution scans. They are a first
+calibration, not a validated one.
 """
 from __future__ import annotations
 
@@ -33,7 +36,9 @@ from PIL import Image
 from .schema import Page, Unit
 
 #: Names the statistics and how they are computed; a change to either takes a new method.
-METHOD = "pixel-statistics-v1"
+METHOD = "pixel-statistics-v2"
+#: Shorter side, in pixels, a larger crop is scaled down to before it is measured.
+EDGE = 48
 #: Where the measurements are kept, one row per crop and method.
 INDEX = Path("work/crop-quality/index.sqlite")
 STATISTICS = ("contrast", "mid_grey", "sharpness", "noise", "chroma")
@@ -49,6 +54,10 @@ def measure(image: Image.Image) -> dict:
     if image.mode in ("RGBA", "LA", "PA") or (image.mode == "P" and "transparency" in image.info):
         ground = Image.new("RGBA", image.size, "white")
         image = Image.alpha_composite(ground, image.convert("RGBA"))
+    if min(image.size) > EDGE:
+        scale = EDGE / min(image.size)
+        image = image.resize((max(1, round(image.width * scale)), max(1, round(image.height * scale))),
+                             Image.Resampling.BOX)
     rgb = np.asarray(image.convert("RGB"), dtype=np.float32)
     grey = rgb.mean(axis=2)
     ink, paper = np.percentile(grey, 5), np.percentile(grey, 95)
@@ -62,18 +71,25 @@ def measure(image: Image.Image) -> dict:
             "chroma": round(float(np.abs(rgb - rgb.mean(axis=2, keepdims=True)).mean()), 1)}
 
 
-def tags(quality: dict | None, box=None) -> list[str]:
-    """The quality tags of a crop from its `measure` result and, for `small`, its box on the page."""
+def page_summary(qualities: Iterable[dict]) -> dict | None:
+    """The median of each statistic over a page's crops, in the form `measure` returns."""
+    current = [q for q in qualities if q and q.get("method") == METHOD]
+    if not current:
+        return None
+    return {"method": METHOD, **{k: float(np.median([q[k] for q in current])) for k in STATISTICS}}
+
+
+def tags(page: dict | None, box=None) -> list[str]:
+    """The quality tags of a crop: the scan's from its page's `page_summary`, `small` from its box."""
     found = []
-    if quality and quality.get("method") == METHOD:
-        binary = quality["mid_grey"] < 0.02 and quality["contrast"] >= 240
-        if binary:
+    if page and page.get("method") == METHOD:
+        if page["mid_grey"] < 0.02 and page["contrast"] >= 240:
             found.append("binary")
-        elif quality["sharpness"] < 0.30 and quality["contrast"] >= BLANK:
+        elif page["sharpness"] < 0.32 and page["contrast"] >= BLANK:
             found.append("blurry")
-        if quality["noise"] > 0.06:
+        if page["noise"] > 0.065:
             found.append("noisy")
-        if quality["chroma"] < 1:
+        if page["chroma"] < 1:
             found.append("greyscale")
     if box is not None and min(box.w, box.h) < SMALL:
         found.append("small")
@@ -86,7 +102,7 @@ def connect(path: Path = INDEX) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(path)
     db.execute("""CREATE TABLE IF NOT EXISTS quality (id TEXT NOT NULL, method TEXT NOT NULL,
-        box TEXT NOT NULL, page_sha256 TEXT NOT NULL, contrast REAL NOT NULL, mid_grey REAL NOT NULL,
+        page_id TEXT NOT NULL, box TEXT NOT NULL, page_sha256 TEXT NOT NULL, contrast REAL NOT NULL, mid_grey REAL NOT NULL,
         sharpness REAL NOT NULL, noise REAL NOT NULL, chroma REAL NOT NULL, PRIMARY KEY (id, method))""")
     return db
 
@@ -130,17 +146,22 @@ def index_units(db: sqlite3.Connection, units: Iterable[Unit], pages: dict[str, 
                 counts["box-outside-page"] += 1
                 continue
             quality = measure(image.crop((b.x, b.y, b.x + b.w, b.y + b.h)))
-            rows.append((unit.id, METHOD, _box(unit), page.sha256, *(quality[k] for k in STATISTICS)))
+            rows.append((unit.id, METHOD, page.id, _box(unit), page.sha256, *(quality[k] for k in STATISTICS)))
         with db:
-            db.executemany("INSERT OR REPLACE INTO quality VALUES (?,?,?,?,?,?,?,?,?)", rows)
+            db.executemany("INSERT OR REPLACE INTO quality VALUES (?,?,?,?,?,?,?,?,?,?)", rows)
         counts["measured"] += len(rows)
     return dict(counts)
 
 
 def lookup(db: sqlite3.Connection, ids: Iterable[str] | None = None) -> dict[str, dict]:
-    """The measurements of the given crops, or of every crop, in the form `measure` returns."""
-    query = f"SELECT id, {', '.join(STATISTICS)} FROM quality WHERE method=?"
-    rows = db.execute(query, (METHOD,))
-    wanted = None if ids is None else set(ids)
-    return {row[0]: {"method": METHOD, **dict(zip(STATISTICS, row[1:], strict=True))}
-            for row in rows if wanted is None or row[0] in wanted}
+    """The measurements of the given crops, or of every crop, in the form `measure` returns, with the
+    crop's `page_id` and the `page_summary` of its page as `page`."""
+    rows = db.execute(f"SELECT id, page_id, {', '.join(STATISTICS)} FROM quality WHERE method=?", (METHOD,))
+    crops, by_page = {}, defaultdict(list)
+    for row in rows:
+        quality = {"method": METHOD, **dict(zip(STATISTICS, row[2:], strict=True))}
+        crops[row[0]] = {**quality, "page_id": row[1]}
+        by_page[row[1]].append(quality)
+    pages = {page_id: page_summary(qualities) for page_id, qualities in by_page.items()}
+    wanted = crops.keys() if ids is None else set(ids) & crops.keys()
+    return {i: {**crops[i], "page": pages[crops[i]["page_id"]]} for i in wanted}

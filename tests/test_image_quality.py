@@ -29,7 +29,7 @@ def test_a_blurred_scan_is_blurry():
 
 def test_speckled_paper_is_noisy():
     rng = np.random.default_rng(0)
-    pixels = np.asarray(glyph().convert("L"), dtype=np.float32) + rng.normal(0, 25, (60, 60))
+    pixels = np.asarray(glyph().convert("L"), dtype=np.float32) + rng.normal(0, 40, (60, 60))
     noisy = Image.fromarray(np.clip(pixels, 0, 255).astype(np.uint8)).convert("RGB")
     assert "noisy" in tags(measure(noisy))
     assert "noisy" not in tags(measure(glyph()))
@@ -98,3 +98,17 @@ def test_a_page_missing_from_the_cache_or_of_another_size_is_skipped(tmp_path):
     assert index_units(db, [unit], {"p:0": page}, lambda url: None) == {"page-not-cached": 1}
     scaled = page.model_copy(update={"width": 200, "height": 160})
     assert index_units(db, [unit], {"p:0": scaled}, lambda url: path) == {"page-size-differs": 1}
+
+
+def test_a_high_resolution_brush_edge_is_not_blurry():
+    """A sharp edge spread over a few pixels of a large scan is sharp at the scale of the glyph."""
+    big = glyph(size=60).resize((300, 300), Image.Resampling.BICUBIC)
+    assert "blurry" not in tags(measure(big))
+
+
+def test_scan_tags_come_from_the_page_median():
+    from glyph_atlas.image_quality import page_summary
+    clean, rough = measure(glyph()), {**measure(glyph()), "noise": 0.2}
+    assert "noisy" not in tags(page_summary([clean, clean, rough]))
+    assert "noisy" in tags(page_summary([rough, rough, clean]))
+    assert page_summary([{"method": "other"}]) is None
