@@ -380,23 +380,27 @@ def index(root: Path | None = None) -> list[ImageRecord]:
 def held(url: str, *, root: Path | None = None) -> Path | None:
     """The full-size file the cache holds for a page `url`, or None.
 
-    `url` has to name the whole image: a plain file, a bare service or a full-size request. The
-    file is the one stored under that URL, under its service base, or under a full-size request of
-    that service. A region or a scaled request names other pixels and resolves to nothing.
+    A file stored under `url` itself is the image the page names, even when `url` is a scaled
+    request, as some manifests give (龍谷大学's `…/full/1350,/0/default.jpg`). Otherwise `url` has to
+    name the whole image, a bare service or a full-size request, and the file is the one stored under
+    its service base or under a full-size request of that service. A region or a scaled request of
+    another URL names other pixels and resolves to nothing.
 
     The map is read once per version of the cache index, so a scan fetched while a server runs is
     found without a restart.
     """
-    service = service_of(url)
-    if service is not None and not _names_whole_image(url, service):
-        return None
     cache = images_root(root)
     try:
         stat = index_path(cache).stat()
     except OSError:
         return None
     files = _held_files(str(cache.resolve()), (stat.st_mtime_ns, stat.st_ino, stat.st_size))
-    path = files.get(url) or (files.get(service) if service else None)
+    path = files.get(url)
+    if path is None:
+        service = service_of(url)
+        if service is None or not _names_whole_image(url, service):
+            return None
+        path = files.get(service)
     if path is None or not path.is_file() or not path.resolve().is_relative_to(cache.resolve()):
         return None
     return path

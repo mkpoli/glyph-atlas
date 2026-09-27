@@ -605,3 +605,17 @@ def test_the_resolver_finds_a_page_by_its_recorded_hash_even_after_its_url_moved
     assert find(url)[1] == new.sha256
     assert find(url, "0" * 64) is None
     assert find("https://example.org/other.png") is None
+
+
+def test_held_returns_the_file_stored_under_a_scaled_page_url(tmp_path, monkeypatch) -> None:
+    url = "https://da2.library.ryukoku.ac.jp/image/?IIIF=/17%2F170161%2F170161-0001.tif/full/1350,/0/default.jpg"
+    stored = tmp_path / "images" / "ab" / "page.jpg"
+    stored.parent.mkdir(parents=True)
+    stored.write_bytes(b"jpeg")
+    monkeypatch.setattr(images, "_held_files", lambda cache, stamp: {url: stored})
+    (tmp_path / "images" / "index.parquet").write_bytes(b"")
+    monkeypatch.setattr(images, "index_path", lambda cache: tmp_path / "images" / "index.parquet")
+    monkeypatch.setattr(images, "images_root", lambda root: tmp_path / "images")
+    assert images.held(url) == stored
+    other = url.replace("1350,", "600,")
+    assert images.held(other) is None
