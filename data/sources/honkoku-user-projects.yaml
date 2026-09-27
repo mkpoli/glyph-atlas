@@ -71,15 +71,11 @@ projects:
     practice: true
     guidelines: platform
     url: https://app.honkoku.org/projects/YasasiiKanbun/info
-    markers:
-      uncertain_suffix: "？"
   - id: yasasiihentaigana
     title: やさしい変体仮名の読み物
     practice: true
     guidelines: own
     url: https://app.honkoku.org/projects/yasasiihentaigana/info
-    markers:
-      uncertain_suffix: "？"
   - id: atsuryugunkihw616
     title: 薩琉軍記
     practice: false

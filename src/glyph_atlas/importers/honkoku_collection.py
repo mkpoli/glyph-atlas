@@ -13,6 +13,7 @@ left out here so the plain-text import only fills the gap that alignment can lat
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from collections import Counter
 from collections.abc import Iterator
@@ -22,7 +23,7 @@ from typing import Any
 
 import yaml
 
-from .. import rights, tables
+from .. import images, koji, rights, tables
 from ..schema import Document, Licence, Line, Page, PageText, Rights
 from . import honkoku_data
 from .ainu_records import lines_of, plain
@@ -30,7 +31,15 @@ from .honkoku_queue import QUEUE_FILE
 
 MATCH_METHOD = "honkoku-collection-2026-09"
 PROJECT_META_TYPE = "user"
-KOJI_NOTE = "【{marker}】"
+#: A question mark is never a glyph of the pre-modern pages these projects transcribe: transcribers
+#: write it after a character they are unsure of (やさしい漢文 and やさしい変体仮名の読み物 say so
+#: in their rules, and berabou does it without saying). Alignment would take it for a character.
+QUERY_MARKS = frozenset("？?")
+#: The koji roles that are text of the document; a mark in a note or a reading is already out of
+#: alignment's way.
+DOCUMENT_ROLES = frozenset({"main", "warigaki", "inserted"})
+#: The IIIF size a canvas asks for when the platform recorded a width of 0; the server refuses it.
+_ZERO_SIZE = re.compile(r"/full/(?:0,|,0|0,0)/", re.IGNORECASE)
 
 
 def load_selection(path: Path) -> list[dict[str, Any]]:
@@ -71,8 +80,6 @@ def import_all(
         books = done_books(collection, project_id)
         if books:
             counts["projects_with_books"] += 1
-        markers = project.get("markers") if isinstance(project.get("markers"), dict) else {}
-        uncertain = markers.get("uncertain_suffix") if isinstance(markers, dict) else None
         for book in books:
             book_documents, book_pages, book_texts = read_book(collection / book["dataset"])
             if len(book_documents) != 1:
@@ -96,9 +103,13 @@ def import_all(
                     counts["pages_covered_by_honkoku_lines"] += 1
                 if without_image or without_text or covered_by_lines:
                     continue
+                image = fetchable_image(page.image)
+                if image != page.image:
+                    counts["pages_image_repaired"] += 1
+                    page = page.model_copy(update={"image": image})
                 pages.append(page)
                 page_texts.append(text)
-                lines.extend(lines_of_page(page, text.text_raw, uncertain=uncertain))
+                lines.extend(lines_of_page(page, text.text_raw))
 
     written = _write(
         out,
@@ -108,7 +119,7 @@ def import_all(
         lines,
         command or f"atlas import honkoku-collection --collection {collection} --selection {selection} --out {out}",
     )
-    counts.update({name: 0 for name in (
+    for name in (
         "books",
         "documents",
         "pages",
@@ -118,8 +129,10 @@ def import_all(
         "pages_without_text",
         "pages_covered_by_honkoku_lines",
         "manifest_rights_applied",
+        "pages_image_repaired",
         "projects_with_books",
-    )})
+    ):
+        counts.setdefault(name, 0)
     for name, rows_written in written.items():
         counts[name] = rows_written
     return {name: counts[name] for name in sorted(counts)}
@@ -203,7 +216,7 @@ def manifest_image_rights(document: Document) -> tuple[Rights | None, bool]:
     holder = holder_rights.holder
     manifest = rights.manifest_rights(document_data) if document_data is not None else None
     if manifest is None:
-        return holder_rights, False
+        return current, False
     if holder and not manifest.holder:
         manifest = manifest.model_copy(update={"holder": holder})
     return manifest, True
@@ -221,12 +234,43 @@ def entry_id(document: Document) -> str:
     return found.strip()
 
 
-def lines_of_page(page: Page, text: str, *, uncertain: Any = None) -> Iterator[Line]:
+def fetchable_image(url: str) -> str:
+    """The page image as a request the server answers.
+
+    For some servers (デジタルアーカイブ福井 among them) the platform records `imageUrl` with a
+    width of 0, which the server refuses with HTTP 400. The service base lets `images.fetch` ask
+    for the full image instead.
+    """
+    if _ZERO_SIZE.search(url):
+        return images.service_of(url) or url
+    return url
+
+
+def query_marks_as_notes(text: str) -> str:
+    """`text` with each question mark of the document text wrapped as a koji note `【？】`.
+
+    A mark already inside a note, a reading or other notation is left alone, and so is a line whose
+    markup does not parse, which alignment cannot read either.
+    """
+    try:
+        chars = koji.parse(text).chars
+    except (ValueError, RecursionError):
+        return text
+    starts = sorted(char.start for char in chars if char.text in QUERY_MARKS and char.role in DOCUMENT_ROLES)
+    for start in reversed(starts):
+        text = f"{text[:start]}【{text[start]}】{text[start + 1:]}"
+    return text
+
+
+def lines_of_page(page: Page, text: str) -> Iterator[Line]:
     """Line records for one kept page."""
-    marker = uncertain if isinstance(uncertain, str) and uncertain else None
     for position, transcriber_text in enumerate(lines_of(text)):
-        body = transcriber_text.replace(marker, KOJI_NOTE.format(marker=marker)) if marker else transcriber_text
-        meta: dict[str, Any] = {"transcription_index": page.seq - 1, "line_position": position}
+        body = query_marks_as_notes(transcriber_text)
+        meta: dict[str, Any] = {
+            "source": "honkoku-collection",
+            "transcription_index": page.seq - 1,
+            "line_position": position,
+        }
         if body != transcriber_text:
             meta["transcriber_text"] = transcriber_text
         yield Line(

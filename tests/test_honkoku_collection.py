@@ -7,6 +7,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
 from glyph_atlas import tables
@@ -188,13 +189,10 @@ def test_manifest_rights_fallback_reads_only_the_cache(
     assert document.image_rights.holder == "Example Library"
 
 
-def test_uncertain_suffix_becomes_koji_note_but_page_text_stays_verbatim(tmp_path: Path) -> None:
+def test_query_marks_become_koji_notes_but_page_text_stays_verbatim(tmp_path: Path) -> None:
     root = collection_root(tmp_path)
     write_book(root, ENTRY, "marked", texts=["漢？\n　かな？  \n"])
-    source = selection(
-        tmp_path / "projects.yaml",
-        [{"id": "marked", "practice": True, "guidelines": "platform", "markers": {"uncertain_suffix": "？"}}],
-    )
+    source = selection(tmp_path / "projects.yaml", [{"id": "marked", "practice": True, "guidelines": "own"}])
 
     out = tmp_path / "out"
     counts = honkoku_collection.import_all(out, collection=root, selection=source)
@@ -209,4 +207,30 @@ def test_uncertain_suffix_becomes_koji_note_but_page_text_stays_verbatim(tmp_pat
     assert lines[1].meta["transcriber_text"] == "　かな？"
     assert lines[1].meta["transcription_index"] == 0
     assert lines[1].meta["line_position"] == 1
+    assert lines[0].meta["source"] == "honkoku-collection"
     assert tables.Dataset(out).validate() == []
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("漢【？】字", "漢【？】字"),  # already a note
+        ("【作者？】字", "【作者？】字"),  # inside a note
+        ("漢（かん？）字", "漢（かん？）字"),  # inside a reading
+        ("え？と？", "え【？】と【？】"),
+        ("後に「？」を", "後に「【？】」を"),
+        ("字?", "字【?】"),
+    ],
+)
+def test_only_query_marks_of_the_document_text_become_notes(raw: str, expected: str) -> None:
+    converted = honkoku_collection.query_marks_as_notes(raw)
+    assert converted == expected
+    assert "？" not in honkoku_collection.plain(converted).replace("】", "")
+    assert "】" not in honkoku_collection.plain(converted)
+
+
+def test_a_zero_width_image_request_becomes_the_service_base() -> None:
+    url = "https://www.digital-archives.pref.fukui.lg.jp/iiif/2/1144994/full/0,/0/default.jpg"
+    assert honkoku_collection.fetchable_image(url) == "https://www.digital-archives.pref.fukui.lg.jp/iiif/2/1144994"
+    kept = "https://dl.ndl.go.jp/api/iiif/9892494/R0000001/full/5166,/0/default.jpg"
+    assert honkoku_collection.fetchable_image(kept) == kept
