@@ -64,7 +64,7 @@ def load_char_counts(path: Path) -> dict[str, int]:
     """Crops the atlas already holds per character, from a corpus-index characters table.
 
     Reads only the `char` and `n_units` columns of the parquet table at `path` (by default
-    `work/corpus-index/chars.parquet`); the caller decides which path to pass to `Queue.prioritize`.
+    `work/corpus-index/chars.parquet`); the caller passes the result to `Queue.prioritize`.
     """
     import pyarrow.parquet as pq
 
@@ -140,7 +140,7 @@ class Queue:
                                 (datetime.now(UTC).isoformat(), row["id"]))
         return dict(row) if row else None
 
-    def prioritize(self, source: Path, counts: dict[str, int]) -> int:
+    def prioritize(self, counts: dict[str, int]) -> int:
         """Score every pending or retry page by how much the atlas still lacks its characters.
 
         A page's score is the sum, over the distinct scorable characters in its transcription
@@ -148,28 +148,31 @@ class Queue:
         contributes 1, one the atlas already has plenty of contributes close to 0. Whitespace,
         punctuation and combining marks are not scored. `counts` maps a character to the crops
         the atlas already holds for it, typically loaded from a corpus-index characters table
-        with `load_char_counts`; `source` is the transcribed-lines dataset (e.g. `work/honkoku-lines`)
-        that `seed` read pages from. Complete, running and failed pages are left alone, and only
-        `page_id` and `text` are read from the lines table to keep this cheap at tens of thousands
-        of pages. Returns how many pages were scored.
+        with `load_char_counts`. Each page is scored from the lines of the dataset it was seeded
+        from, its `source`, so pages of every seeded dataset compete on the same terms. Complete,
+        running and failed pages are left alone, and only `page_id` and `text` are read from each
+        lines table to keep this cheap at tens of thousands of pages. Returns how many pages were
+        scored.
         """
         import pyarrow.dataset as ds
 
-        pending = [r[0] for r in self.db.execute(
-            "SELECT id FROM pages WHERE status IN ('pending','retry')")]
+        pending = self.db.execute("SELECT id, source FROM pages WHERE status IN ('pending','retry')").fetchall()
         if not pending:
             return 0
-        chars_by_page: dict[str, set[str]] = {page_id: set() for page_id in pending}
-        lines_path = Path(source) / "lines"
-        if not lines_path.exists():
-            lines_path = Path(source) / "lines.parquet"
-        scanner = ds.dataset(lines_path, format="parquet").scanner(columns=["page_id", "text"])
-        for batch in scanner.to_batches():
-            for page_id, text in zip(batch.column("page_id").to_pylist(),
-                                     batch.column("text").to_pylist(), strict=True):
-                found = chars_by_page.get(page_id)
-                if found is not None and text:
-                    found.update(scorable_chars(text))
+        chars_by_page: dict[str, set[str]] = {row["id"]: set() for row in pending}
+        for source in sorted({row["source"] for row in pending}):
+            lines_path = Path(source) / "lines"
+            if not lines_path.exists():
+                lines_path = Path(source) / "lines.parquet"
+            if not lines_path.exists():
+                continue
+            scanner = ds.dataset(lines_path, format="parquet").scanner(columns=["page_id", "text"])
+            for batch in scanner.to_batches():
+                for page_id, text in zip(batch.column("page_id").to_pylist(),
+                                         batch.column("text").to_pylist(), strict=True):
+                    found = chars_by_page.get(page_id)
+                    if found is not None and text:
+                        found.update(scorable_chars(text))
         scores = [(sum(1 / (1 + counts.get(ch, 0)) for ch in chars), page_id)
                   for page_id, chars in chars_by_page.items()]
         with self.db:

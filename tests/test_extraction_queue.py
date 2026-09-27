@@ -225,45 +225,57 @@ def test_scorable_chars_skips_whitespace_punctuation_and_marks():
     assert scorable_chars("あ、　ヿ゙") == {"あ", "ヿ"}
 
 
+def seeded(queue, rows):
+    """Queue pages as `seed` would, each row `(id, source, rank)`."""
+    with queue.db:
+        for page_id, source, rank in rows:
+            queue.db.execute("INSERT INTO pages(id,document_id,title,source,cached,rank) VALUES(?,'d','T',?,0,?)",
+                             (page_id, str(source), rank))
+
+
 def test_prioritize_claims_a_zero_crop_character_before_an_earlier_common_page(tmp_path, monkeypatch):
     monkeypatch.setattr("glyph_atlas.images.index_path", lambda: tmp_path / "missing")
     queue = Queue(tmp_path / "queue")
-    with queue.db:
-        queue.db.execute("INSERT INTO pages(id,document_id,title,source,cached,rank) VALUES('a','d','A','s',0,0)")
-        queue.db.execute("INSERT INTO pages(id,document_id,title,source,cached,rank) VALUES('b','d','B','s',0,1)")
-    lines = [
+    source = lines_source(tmp_path, [
         Line(id="l1", page_id="a", seq=0, text_raw="のの", text="のの"),
         Line(id="l2", page_id="b", seq=0, text_raw="ヿ", text="ヿ"),
-    ]
-    source = lines_source(tmp_path, lines)
-    assert queue.prioritize(source, {"の": 1000}) == 2
+    ])
+    seeded(queue, [("a", source, 0), ("b", source, 1)])
+    assert queue.prioritize({"の": 1000}) == 2
+    assert queue.claim()["id"] == "b"
+
+
+def test_prioritize_scores_each_page_from_the_dataset_it_was_seeded_from(tmp_path, monkeypatch):
+    monkeypatch.setattr("glyph_atlas.images.index_path", lambda: tmp_path / "missing")
+    queue = Queue(tmp_path / "queue")
+    common = lines_source(tmp_path, [Line(id="l1", page_id="a", seq=0, text_raw="の", text="の")], name="common")
+    rare = lines_source(tmp_path, [Line(id="l2", page_id="b", seq=0, text_raw="ヿ", text="ヿ")], name="rare")
+    seeded(queue, [("a", common, 0), ("b", rare, 1)])
+    assert queue.prioritize({"の": 1000}) == 2
+    assert queue.db.execute("SELECT priority FROM pages WHERE id='b'").fetchone()[0] == 1.0
     assert queue.claim()["id"] == "b"
 
 
 def test_prioritize_ties_keep_the_original_claim_order(tmp_path, monkeypatch):
     monkeypatch.setattr("glyph_atlas.images.index_path", lambda: tmp_path / "missing")
     queue = Queue(tmp_path / "queue")
-    with queue.db:
-        queue.db.execute("INSERT INTO pages(id,document_id,title,source,cached,rank) VALUES('a','d','A','s',0,1)")
-        queue.db.execute("INSERT INTO pages(id,document_id,title,source,cached,rank) VALUES('b','d','B','s',0,0)")
-    lines = [
+    source = lines_source(tmp_path, [
         Line(id="l1", page_id="a", seq=0, text_raw="字", text="字"),
         Line(id="l2", page_id="b", seq=0, text_raw="字", text="字"),
-    ]
-    source = lines_source(tmp_path, lines)
-    queue.prioritize(source, {})
+    ])
+    seeded(queue, [("a", source, 1), ("b", source, 0)])
+    queue.prioritize({})
     assert queue.claim()["id"] == "b"
 
 
 def test_prioritize_leaves_complete_pages_alone(tmp_path, monkeypatch):
     monkeypatch.setattr("glyph_atlas.images.index_path", lambda: tmp_path / "missing")
     queue = Queue(tmp_path / "queue")
+    source = lines_source(tmp_path, [Line(id="l1", page_id="a", seq=0, text_raw="ヿ", text="ヿ")])
     with queue.db:
         queue.db.execute("""INSERT INTO pages(id,document_id,title,source,cached,rank,status,priority)
-            VALUES('a','d','A','s',0,0,'complete',5.0)""")
-    lines = [Line(id="l1", page_id="a", seq=0, text_raw="ヿ", text="ヿ")]
-    source = lines_source(tmp_path, lines)
-    assert queue.prioritize(source, {}) == 0
+            VALUES('a','d','A',?,0,0,'complete',5.0)""", (str(source),))
+    assert queue.prioritize({}) == 0
     assert queue.db.execute("SELECT priority FROM pages WHERE id='a'").fetchone()[0] == 5.0
 
 

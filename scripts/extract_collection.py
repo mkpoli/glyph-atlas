@@ -42,7 +42,7 @@ with tables.locked(args.root/"worker",timeout=0):
         queue.status(state="initializing")
         if not args.no_prioritize:
             counts = load_char_counts(args.counts) if args.counts.exists() else {}
-            queue.prioritize(args.source, counts)
+            queue.prioritize(counts)
         try:
             result = run(queue,Engine(),pages=args.pages,seconds=args.seconds,
                          pause=args.pause,max_lines=args.max_lines,store=store)
