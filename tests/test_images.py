@@ -624,3 +624,19 @@ def test_an_iipimage_identifier_survives_a_second_parse(identifier: str) -> None
     service = images.service_of(url)
     assert service == f"https://h.example/fcgi?IIIF={quote(identifier, safe='/')}"
     assert images.service_of(service) == service
+
+
+def test_a_row_saved_without_its_service_is_found_through_the_service(tmp_path) -> None:
+    service = "https://ourarchives.amane-project.jp/iipsrv/iipsrv.fcgi?IIIF=/img/a/b.tif"
+    url = service + "/full/full/0/default.jpg"
+    source = tmp_path / "page.jpg"
+    Image.new("RGB", (8, 8)).save(source)
+    cache = tmp_path / "cache"
+    images.register(source, url, root=cache)
+    # Rows fetched before `service_of` knew IIPImage addresses were saved with no service.
+    rows = [row.model_copy(update={"service": None}) for row in images.index(cache)]
+    images._write_index(cache, rows)
+
+    assert images.path_for(service, root=cache) is not None
+    assert images.resolver(root=cache)(service) is not None
+    assert images.held(service, root=cache) is not None
