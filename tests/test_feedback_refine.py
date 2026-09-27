@@ -456,3 +456,27 @@ def test_a_withheld_report_a_person_has_acted_on_since_stays_stale(store, monkey
                                base_revision=store.revision("u")))
     assert refine.refine_feedback(store, payload, apply=True)["counts"] == {"stale": 1}
     assert store.unit("u").active and not store.unit("u").split_into
+
+
+@pytest.mark.parametrize("basis,expected", [("reviewer-reading", "recropped"), (None, "withheld")])
+def test_a_typed_join_trims_to_the_character_not_yet_cropped(store, basis, expected):
+    # u is labelled 手 but holds ル over ラ; v already crops ル.
+    store.record_batch([
+        ReviewRequest(target_id="v", field="unicode", new="U+30EB", client_id="setup"),
+        ReviewRequest(target_id="v", field="box", new=Box(x=12, y=12, w=36, h=30).model_dump(),
+                      client_id="setup", base_revision=1),
+    ], role="model")
+    proposal = {"accepted": True, "text": ["ル", "ラ"], "boxes": [{"x": 0, "y": 0, "w": 40, "h": 40},
+                                                                 {"x": 0, "y": 40, "w": 40, "h": 40}]}
+    if basis:
+        proposal["basis"] = basis
+    result = refine.split_unit(store, store.unit("u"), proposal, base_revision=store.revision("u"),
+                               source_event_id="rv1")
+    assert result["status"] == expected
+    target = store.unit("u")
+    if expected == "recropped":
+        assert target.box == Box(x=10, y=50, w=40, h=40)
+        assert (target.unicode, target.reading, target.script) == ("U+30E9", "ラ", "katakana")
+        assert target.review == "machine" and target.meta["feedback_repair"]["character"] == "ラ"
+    else:
+        assert target.unicode == "U+624B" and target.box == Box(x=10, y=10, w=40, h=80)
