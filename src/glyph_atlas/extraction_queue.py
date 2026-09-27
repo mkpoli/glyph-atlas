@@ -512,7 +512,8 @@ class Engine:
                        "classifier_classes":digest(self.classifier.classes),
                        "sequence_alphabet":digest(self.reader.alphabet)}
 
-    def extract(self, job, root, *, max_lines=64):
+    def inputs(self, job, *, max_lines=64):
+        """What one page's extraction reads, with the `identity` that names its output; no model runs."""
         from PIL import Image
         dataset = tables.Dataset(Path(job["source"]))
         page = next(p for p in dataset.read("pages") if p.id == job["id"])
@@ -540,17 +541,32 @@ class Engine:
         located_line_count = len(lines)
         lines = [line for line in lines if line.box.x >= 0 and line.box.y >= 0
                  and line.box.x+line.box.w <= image.width and line.box.y+line.box.h <= image.height]
+        identity = digest({"policy":POLICY,"models":self.models,"run":self.run.model_dump(),
+                           "page":page.model_dump(),"document":document.model_dump(),
+                           "lines":[l.model_dump() for l in lines]})
+        return {"page": page, "document": document, "lines": lines, "image": image, "identity": identity,
+                "located_line_count": located_line_count, "original_dimensions": original_dimensions}
+
+    def extract(self, job, root, *, max_lines=64):
+        """Extract one page and commit it under `pages/`, or return the output already committed."""
+        work = self.inputs(job, max_lines=max_lines)
+        output = root/"pages"/work["identity"]
+        if output.exists():
+            return committed_report(output, work["identity"], work["page"]), output
+        report, records = self.extract_page(work)
+        return report, commit(output, work["identity"], records, report)
+
+    def extract_page(self, work):
+        """Run the models over one page's `inputs`: its report and the records to commit."""
+        page, document, lines, image = work["page"], work["document"], work["lines"], work["image"]
+        identity, located_line_count = work["identity"], work["located_line_count"]
+        original_dimensions = work["original_dimensions"]
+
         def crop_of(page_id, box):
             return image.crop((box.x,box.y,box.x+box.w,box.y+box.h))
         candidates = []
         reasons = Counter()
         examined = 0
-        identity = digest({"policy":POLICY,"models":self.models,"run":self.run.model_dump(),
-                           "page":page.model_dump(),"document":document.model_dump(),
-                           "lines":[l.model_dump() for l in lines]})
-        output = root/"pages"/identity
-        if output.exists():
-            return committed_report(output, identity, page), output
         detections = [align.Detection(box=box, score=score) for box,score in self.detector.boxes(image)]
         classes = set(self.classifier.classes)
         for line in lines:
@@ -597,8 +613,7 @@ class Engine:
                   "source_dimensions":list(original_dimensions),"lines":len(lines),"detected":len(detections),"complete_page":len(lines)==located_line_count,
                   "withheld_lines":{"invalid_geometry":located_line_count-len(lines)},
                   "created_at":datetime.now(UTC).isoformat()}
-        return report, commit(root/"pages"/identity, identity,
-                              {"documents":[document],"pages":[page],"lines":lines,"units":accepted}, report)
+        return report, {"documents":[document],"pages":[page],"lines":lines,"units":accepted}
 
 
 def supplement(engine, job, root, *, max_lines=64):
@@ -606,20 +621,26 @@ def supplement(engine, job, root, *, max_lines=64):
 
     The kept units, of either gate, are those that overlap no crop of the page's earlier output or of
     a supplement an earlier policy made for it (`overlaps`), since those are already published and a
-    crop there may already be reviewed.
-    They are committed with the page's document, page and line rows under `supplements/`.
+    crop there may already be reviewed. They are committed with the page's document, page and line
+    rows under `supplements/`; the page's full extraction under this policy is not kept. A supplement
+    committed before its worker stopped is found by its identity and returned as it is.
     """
-    report, output = engine.extract(job, root, max_lines=max_lines)
-    current = tables.Dataset(output)
-    published = [unit.box for output in (job["output"], *job.get("earlier_supplements", ()))
-                 for unit in tables.Dataset(root/output).read("units") if unit.box]
-    added = [unit for unit in current.read("units") if not any(overlaps(unit.box, box) for box in published)]
-    identity = digest({"supplement": report["generation"], "earlier": job["output"],
-                       "earlier_supplements": sorted(job.get("earlier_supplements", ()))})
-    result = {"policy": POLICY, "generation": identity, "page_id": job["id"], "extraction": report["generation"],
+    work = engine.inputs(job, max_lines=max_lines)
+    earlier = sorted(job.get("earlier_supplements", ()))
+    identity = digest({"supplement": work["identity"], "earlier": job["output"], "earlier_supplements": earlier})
+    output = root/"supplements"/identity
+    if output.exists():
+        report = json.loads((output/"report.json").read_text())
+        if report.get("generation") != identity or report.get("page_id") != job["id"]:
+            raise ValueError("committed supplement identity mismatch")
+        return report, output
+    extraction, records = engine.extract_page(work)
+    published = [unit.box for committed in (job["output"], *earlier)
+                 for unit in tables.Dataset(root/committed).read("units") if unit.box]
+    added = [unit for unit in records["units"] if not any(overlaps(unit.box, box) for box in published)]
+    result = {"policy": POLICY, "generation": identity, "page_id": job["id"], "extraction": extraction["generation"],
               "earlier_output": job["output"], "added": len(added), "created_at": datetime.now(UTC).isoformat()}
-    records = {name: current.read(name) for name in ("documents", "pages", "lines")}
-    return result, commit(root/"supplements"/identity, identity, {**records, "units": added}, result)
+    return result, commit(output, identity, {**records, "units": added}, result)
 
 
 def commit(output, identity, records, report):

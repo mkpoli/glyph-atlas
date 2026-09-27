@@ -459,35 +459,62 @@ def test_supplements_list_the_pages_an_earlier_policy_completed(tmp_path):
     assert {r[0] for r in queue.db.execute("SELECT status FROM supplements")} == {"pending"}
 
 
+class SupplementEngine:
+    """An engine whose page extraction yields `units` and counts how often it ran."""
+
+    def __init__(self, records, units):
+        self.records, self.units, self.runs = records, units, 0
+
+    def inputs(self, job, max_lines=64):
+        return {"identity": "new"}
+
+    def extract_page(self, work):
+        self.runs += 1
+        return {"generation": work["identity"]}, {**self.records, "units": self.units}
+
+
+def supplement_records():
+    document, page = Document(id="d", title="D"), Page(id="d:0", document_id="d", seq=0, image="x", width=400, height=100)
+    line = Line(id="d:0:L", page_id="d:0", seq=0, text_raw="字飍飍", text="字飍飍", box=Box(x=0, y=0, w=400, h=100))
+    return {"documents": [document], "pages": [page], "lines": [line]}
+
+
+def placed(ident, x, gate):
+    return Unit(id=ident, document_id="d", page_id="d:0", line_id="d:0:L", reading="飍", text_source="飍",
+                box=Box(x=x, y=10, w=40, h=45), meta={"extraction": {"gate": gate}})
+
+
 def test_a_supplement_keeps_new_units_off_published_crops(tmp_path):
     from glyph_atlas.extraction_queue import commit, supplement
     root = tmp_path/"queue"
-    document, page = Document(id="d", title="D"), Page(id="d:0", document_id="d", seq=0, image="x", width=400, height=100)
-    line = Line(id="d:0:L", page_id="d:0", seq=0, text_raw="字飍飍", text="字飍飍", box=Box(x=0, y=0, w=400, h=100))
-
-    def placed(ident, x, gate):
-        return Unit(id=ident, document_id="d", page_id="d:0", line_id="d:0:L", reading="飍", text_source="飍",
-                    box=Box(x=x, y=10, w=40, h=45), meta={"extraction": {"gate": gate}})
-    records = {"documents": [document], "pages": [page], "lines": [line]}
+    records = supplement_records()
     commit(root/"pages"/"old", "old", {**records, "units": [placed("old:1", 10, "consensus")]}, {})
-
-    class Engine:
-        def extract(self, job, into, max_lines=64):
-            units = [placed("new:1", 10, "consensus"), placed("new:2", 12, "unconfirmed"),
-                     placed("new:3", 200, "unconfirmed"), placed("new:4", 300, "consensus")]
-            return {"generation": "new"}, commit(into/"pages"/"new", "new", {**records, "units": units}, {})
-
-    report, output = supplement(Engine(), {"id": "d:0", "output": "pages/old"}, root)
+    engine = SupplementEngine(records, [placed("new:1", 10, "consensus"), placed("new:2", 12, "unconfirmed"),
+                                        placed("new:3", 200, "unconfirmed"), placed("new:4", 300, "consensus")])
+    report, output = supplement(engine, {"id": "d:0", "output": "pages/old"}, root)
     assert report["added"] == 2 and output.parent.name == "supplements"
     # Either gate adds a crop the earlier output did not publish; nothing lands on a published one.
     assert [u.id for u in tables.Dataset(output).read("units")] == ["new:3", "new:4"]
     assert not tables.Dataset(output).validate()
+    assert sorted(p.name for p in (root/"pages").iterdir()) == ["old"], "the page's full extraction is not kept"
     # A later policy's supplement also leaves alone what an earlier supplement published.
     commit(root/"supplements"/"prior", "prior", {**records, "units": [placed("prior:1", 205, "unconfirmed"),
                                                                        placed("prior:2", 302, "consensus")]}, {})
-    report, output = supplement(
-        Engine(), {"id": "d:0", "output": "pages/old", "earlier_supplements": ["supplements/prior"]}, root)
+    report, output = supplement(engine, {"id": "d:0", "output": "pages/old",
+                                         "earlier_supplements": ["supplements/prior"]}, root)
     assert report["added"] == 0 and tables.Dataset(output).read("units") == []
+
+
+def test_a_supplement_committed_before_its_worker_stopped_is_reused(tmp_path):
+    from glyph_atlas.extraction_queue import commit, supplement
+    root = tmp_path/"queue"
+    records = supplement_records()
+    commit(root/"pages"/"old", "old", {**records, "units": []}, {})
+    engine = SupplementEngine(records, [placed("new:1", 200, "consensus")])
+    job = {"id": "d:0", "output": "pages/old"}
+    first, output = supplement(engine, job, root)
+    again, same = supplement(engine, job, root)
+    assert engine.runs == 1 and same == output and again == first
 
 
 def test_run_takes_a_supplement_every_other_page_and_then_the_rest(tmp_path, monkeypatch):
