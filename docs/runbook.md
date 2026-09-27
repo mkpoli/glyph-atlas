@@ -41,10 +41,11 @@ atlas import kokatsuji                  --out work/kokatsuji      # 36,869 units
 atlas import ndl-minhon                 --out work/ndl-minhon     # 641,632 lines, 2 min
 atlas import hilab                      --out work/hilab          # listing only, 25 s
 atlas import honkoku-data --clone cache/honkoku-data --out work/honkoku-data   # 7,584 documents, 16 min
+atlas import honkoku-collection         --out work/honkoku-user   # 154 documents, 858 pages, 10,858 lines, 2 s
 atlas import hng                        --out work/hng            # 49,786 crops, 63 documents, 19 s
 atlas import hng-kiridashi              --out work/hng-kiridashi  # 10,307 boxes on 26 Gallica pages, 2 s
 atlas coverage                          --out work/coverage.tsv
-for d in codh-full honkoku-lines kokatsuji ndl-minhon hilab honkoku-data hng hng-kiridashi; do
+for d in codh-full honkoku-lines kokatsuji ndl-minhon hilab honkoku-data honkoku-user hng hng-kiridashi; do
   atlas tables validate work/$d
 done
 ```

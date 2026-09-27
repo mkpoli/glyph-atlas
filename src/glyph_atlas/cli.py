@@ -678,6 +678,26 @@ def import_ainu_records(
     typer.echo(f"-> {out}")
 
 
+@import_app.command("honkoku-collection")
+def import_honkoku_collection(
+    collection: Annotated[Path, typer.Option(help="the honkoku-collection dataset root")] = Path("work/honkoku-collection"),
+    selection: Annotated[Path, typer.Option(help="the curated project list")] = Path("data/sources/honkoku-user-projects.yaml"),
+    honkoku_lines: Annotated[
+        Path | None, typer.Option(help="Honkoku-Lines dataset, to skip pages it already covers")
+    ] = Path("work/honkoku-lines"),
+    out: Annotated[Path, typer.Option(help="directory for the tables")] = Path("work/honkoku-user"),
+) -> None:
+    """Import user-created みんなで翻刻 projects already collected into work/honkoku-collection."""
+    from .importers import honkoku_collection
+
+    counts = honkoku_collection.import_all(
+        out, collection=collection, selection=selection, honkoku_lines=honkoku_lines
+    )
+    for name, rows in counts.items():
+        typer.echo(f"{name:<28} {rows:>10}")
+    typer.echo(f"-> {out}")
+
+
 @import_app.command("hilab")
 def import_hilab(
     download: Annotated[bool, typer.Option("--download", help="extract the crops into the cache")] = False,
