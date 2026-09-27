@@ -1,6 +1,7 @@
 import { env } from '$env/dynamic/private'
 import worker from '../../cloudflare/src/index.ts'
 import { LOCALES, LOCALE_COOKIE, isLocale, localize, negotiate } from '$lib/i18n.svelte.js'
+import { THEME_COOKIE, isTheme } from '$lib/theme.js'
 
 /** Headers that describe one connection, not the request, and are not passed on. */
 const HOP = ['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade']
@@ -64,7 +65,8 @@ export async function handle({ event, resolve }) {
   const [, first, ...rest] = pathname.split('/')
   if (isLocale(first)) {
     event.locals.locale = first
-    return resolve(event, { transformPageChunk: ({ html }) => html.replace('%lang%', first) })
+    const theme = isTheme(event.cookies.get(THEME_COOKIE)) ? event.cookies.get(THEME_COOKIE) : 'system'
+    return resolve(event, { transformPageChunk: ({ html }) => html.replace('%lang%', first).replace('%theme%', theme) })
   }
   // Every other address is sent to a language's address: a site language written in other case to that
   // language, and an unknown language or an unprefixed address to the page in the reader's language.
