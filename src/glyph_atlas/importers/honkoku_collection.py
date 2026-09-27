@@ -94,7 +94,7 @@ def import_all(
                 text = text_by_page.get(page.id)
                 without_image = not page.image.strip()
                 without_text = text is None or not text.text_raw.strip()
-                covered_by_lines = (entry_id(document).casefold(), page.seq - 1) in covered
+                covered_by_lines = (entry_id(document).casefold(), page.seq) in covered
                 if without_image:
                     counts["pages_without_image"] += 1
                 if without_text:
@@ -268,7 +268,7 @@ def lines_of_page(page: Page, text: str) -> Iterator[Line]:
         body = query_marks_as_notes(transcriber_text)
         meta: dict[str, Any] = {
             "source": "honkoku-collection",
-            "transcription_index": page.seq - 1,
+            "transcription_index": page.seq,
             "line_position": position,
         }
         if body != transcriber_text:

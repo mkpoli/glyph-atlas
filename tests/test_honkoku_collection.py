@@ -73,7 +73,7 @@ def write_book(
             Page(
                 id=page_id,
                 document_id=document.id,
-                seq=index,
+                seq=index - 1,
                 canvas=f"https://example.test/canvas/{entry}/{index}",
                 image=(images or [f"https://example.test/image/{entry}/{index}"] * len(texts))[index - 1],
                 width=1000,
@@ -134,7 +134,7 @@ def test_filters_selection_done_books_and_honkoku_lines_coverage(tmp_path: Path)
         "practice": True,
         "guidelines": "own",
     }
-    assert [page.seq for page in tables.read(out / "pages.parquet", Page)] == [2]
+    assert [page.seq for page in tables.read(out / "pages.parquet", Page)] == [1]
     assert tables.Dataset(out).validate() == []
 
 
