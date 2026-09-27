@@ -159,10 +159,10 @@ const restSince = () => new Date(Date.now() - SKIP_REST_MS).toISOString();
 // A reviewer's own skip that still rests: at the crop's current box, from a round not undone.
 const OWN_SKIP = (reviewer: string, since: string) => `EXISTS(SELECT 1 ${SKIPS} AND k.actor=${quoted(reviewer)} AND k.at>${quoted(since)})`;
 // The state as one reviewer sees it: a crop they skipped lately is `skipped` for them.
-export function stateFor(reviewer: string | null): string {
+export function stateFor(reviewer: string | null, since = restSince()): string {
   if (!reviewer) return EFFECTIVE_STATE;
   // The reviewer's own recent skip is tested first: it is one indexed probe and false for most rows.
-  return `iif(state='pending' AND ${OWN_SKIP(reviewer, restSince())} AND ${MARK} IS NULL,'skipped',${EFFECTIVE_STATE})`;
+  return `iif(state='pending' AND ${OWN_SKIP(reviewer, since)} AND ${MARK} IS NULL,'skipped',${EFFECTIVE_STATE})`;
 }
 // What a shown crop's pixels are named by: a local crop's page hash, a corpus glyph's source revision.
 const pixels = (crop: Json) => crop.image_sha256 ?? crop.source_revision;
@@ -261,19 +261,18 @@ export function listingFilter(review: boolean, production: string, character: st
 // something of (`unit_marks`), and those the reviewer skipped during the rest, are counted apart and
 // moved out of `pending`: working out every crop's state as it is counted reads each crop twice. A
 // named character's few crops work out their own state as they are counted.
-export function facetsQueries(review: boolean, reviewer: string | null, where: string[], named: boolean) {
+export function facetsQueries(review: boolean, reviewer: string | null, where: string[], named: boolean, since = restSince()) {
   const filter = where.join(' AND '), book = review ? 'NULL' : 'document';
   const counted = (state: string) => review
     ? `SELECT character AS label,max(family) AS family,NULL AS document,NULL AS title,${state} AS state,count(*) AS n FROM units WHERE ${filter} GROUP BY 1,5`
     : `SELECT character AS label,max(family) AS family,document,max(json_extract(data,'$.source')) AS title,${state} AS state,count(*) AS n
     FROM units WHERE ${filter} GROUP BY 1,3,5`;
-  if (named) return { stored: counted(stateFor(reviewer)), marked: null, skipped: null };
+  if (named) return { stored: counted(stateFor(reviewer, since)), marked: null, skipped: null };
   const stored = counted('state');
   // Every mark is read once, and its crop by id.
   const marked = `SELECT character AS label,${book} AS document,m.mark AS state,count(*) AS n
     FROM unit_marks m CROSS JOIN units ON units.id=m.id WHERE ${filter} AND state='pending' GROUP BY 1,2,3`;
   if (!reviewer) return { stored, marked, skipped: null };
-  const since = restSince();
   const skipped = `SELECT character AS label,${book} AS document,'skipped' AS state,count(*) AS n FROM units
     WHERE id IN (SELECT target FROM skips WHERE actor=${quoted(reviewer)} AND at>${quoted(since)}) AND ${filter}
     AND state='pending' AND ${MARK} IS NULL AND ${OWN_SKIP(reviewer, since)} GROUP BY 1,2`;
@@ -325,13 +324,14 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   const limit = integer(q, 'limit', 60, 96), offset = integer(q, 'offset', 0);
   if (review && offset > ROUND_OFFSET_MAX) throw new Problem(404, 'A round does not page this far.');
   const reviewer = q.get('reviewer') ? text(q.get('reviewer'), 128, 'reviewer', true)! : null;
-  const state = stateFor(reviewer);
+  // One rest window for the counts and the listing.
+  const since = restSince(), state = stateFor(reviewer, since);
   // An empty `reading` names no character.
   const reading = q.get('reading') || null;
   const scoped = review && reading !== null;
   const { where, values } = listingFilter(review, production, scoped ? reading : null);
   const [materials, materialValues] = material(production, 'production');
-  const queries = facetsQueries(review, reviewer, where, scoped);
+  const queries = facetsQueries(review, reviewer, where, scoped, since);
   const [stored, marked, skipped] = [queries.stored, queries.marked, queries.skipped].map(sql => sql ? env.DB.prepare(sql).bind(...values) : null);
   // Only counts that are the same for every visitor are cached; a reviewer's own skips are theirs.
   let groups: Facet[], published: D1Result<{ label: string; n: number }> | null = null;
