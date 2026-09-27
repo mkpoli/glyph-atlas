@@ -145,6 +145,18 @@ def info_bytes(document: dict) -> bytes:
             "https://emuseum.nich.go.jp/iiif/?IIIF=/100173035001.tif/info.json",
             "https://emuseum.nich.go.jp/iiif/?IIIF=/100173035001.tif",
         ),
+        (
+            "https://ourarchives.amane-project.jp/iipsrv/iipsrv.fcgi?IIIF=/a/b.tif/full/full/0/default.jpg",
+            "https://ourarchives.amane-project.jp/iipsrv/iipsrv.fcgi?IIIF=/a/b.tif",
+        ),
+        (
+            "https://h.example/iiif/?foo=1&iiif=/a.tif/full/max/0/default.jpg&t=2",
+            "https://h.example/iiif/?IIIF=/a.tif",
+        ),
+        (
+            "https://h.example/fcgi?IIIF=%2Fa.tif%2Finfo.json",
+            "https://h.example/fcgi?IIIF=/a.tif",
+        ),
         ("https://example.org/collections/12345/photo.jpg", None),
         ("https://example.org/files/scan.tif", None),
         ("https://example.org/data?id=7", None),
@@ -153,6 +165,21 @@ def info_bytes(document: dict) -> bytes:
 )
 def test_service_of_strips_the_request_suffix(url: str, expected: str | None) -> None:
     assert images.service_of(url) == expected
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://ourarchives.amane-project.jp/iipsrv/iipsrv.fcgi?IIIF=/a/b.tif/full/full/0/default.jpg",
+        "https://emuseum.nich.go.jp/iiif/?IIIF=/100173035001.tif/full/8847,/0/default.jpg",
+        "https://example.org/iiif/2/abcd/full/full/0/default.jpg",
+    ],
+)
+def test_a_service_base_is_its_own_service(url: str) -> None:
+    service = images.service_of(url)
+    assert service is not None
+    assert images.service_of(service) == service
+    assert images.full_url(service, 2).startswith(service + "/full/")
 
 
 @pytest.mark.parametrize(
