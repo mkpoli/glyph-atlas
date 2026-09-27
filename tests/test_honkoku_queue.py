@@ -204,6 +204,14 @@ class TestQueueSchema:
         claimed = queue.claim_next()
         assert claimed["state"] == "in_progress" and claimed["attempts"] == 1
 
+    def test_a_project_filter_claims_only_that_project(self, tmp_path):
+        queue = hq.Queue(tmp_path / "queue.sqlite")
+        queue.record_book(ENTRY_A, project_id="p", collection_id="c", position=0, origin="live")
+        queue.record_book(ENTRY_B, project_id="q", collection_id="d", position=0, origin="live")
+        assert queue.claim_next(projects=["absent"]) is None
+        claimed = queue.claim_next(projects=["q"])
+        assert claimed["entry_id"] == ENTRY_B
+
     def test_a_book_is_never_queued_twice(self, tmp_path):
         queue = hq.Queue(tmp_path / "queue.sqlite")
         assert (
@@ -957,3 +965,15 @@ class TestCollectionOrder:
         queue = self.queue(tmp_path, [("new", "young", 4, 4), ("old", "aged", 4, 4)],
                            projects=[("young", 2_000), ("aged", 1_000)])
         assert self.order(queue) == ["old", "new"]
+
+
+def test_a_blank_project_filter_is_refused():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("collect_honkoku", Path(__file__).parents[1] / "scripts/collect_honkoku.py")
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+    with pytest.raises(SystemExit):
+        script.build_parser().parse_args(["--project", " "])
+    with pytest.raises(SystemExit):
+        script.main(["--project", "p", "--discover"])
