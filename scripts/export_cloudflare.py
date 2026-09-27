@@ -18,7 +18,7 @@ from pathlib import Path
 from cloudflare_schema import schema
 from PIL import Image
 
-from glyph_atlas import refs
+from glyph_atlas import refs, unit_pairs
 from glyph_atlas.corpus.api import PROXYABLE, CorpusAPI
 from glyph_atlas.review import atlas, characters, collection, corpus_source
 from glyph_atlas.review.context_suggestions import context_guesses
@@ -221,6 +221,10 @@ def export(dataset: Path, output: Path, *, resume=False):
             if i % 500 == 0:
                 db.commit()
                 print(encoded({"stage": "local-crops", "done": i}), flush=True)
+        # Only pairs whose two crops were published above are recorded.
+        db.execute("DELETE FROM unit_pairs")
+        for statement in unit_pairs.pair_inserts(unit_pairs.adjacent_pairs(units.values())):
+            db.execute(statement)
         db.commit()
         read_crops(db, media)
         counts = Counter({refs.to_code_point(char): n for char, n in db.execute(
