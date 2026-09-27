@@ -55,6 +55,13 @@ through みんなで翻刻.
 - GlyphWiki glyphs: free for any use without attribution, per the site's licence page.
 - CHISE IDS: GPL-2.0-or-later, excluded from the CC BY-SA core; a separately licensed aggregate is
   possible in principle and is not planned.
+- 異体字 relations (`data/vocab/kanji-variants.tsv`): Unihan and UnicodeData (Unicode License v3),
+  Wikidata P5475 (CC0), yitizi (CC0), OpenCC (Apache-2.0), MJ縮退マップ (CC BY-SA 2.1 JP) and HNG
+  (CC BY-SA 4.0). Most Wikidata statements cite 教育部《異體字字典》, which is 版權所有 and absent
+  from the ministry's public-licence page; those rows name Q10427532 in their detail so a build can
+  leave them out. Not used: cjkvi-variants (no licence granted), CHISE (CHISE-IDS is
+  GPL-2.0-or-later; the JSON dump states no licence), zi.tools (no downloadable dataset) and the
+  異體字字典 itself.
 
 ## Attribution
 

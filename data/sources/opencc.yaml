@@ -1,0 +1,17 @@
+id: opencc
+name: Open Chinese Convert (OpenCC) dictionaries
+publisher: BYVoid and OpenCC contributors
+kind: reference-table
+url: https://github.com/BYVoid/OpenCC
+revision: 2939943bd6f4d459b46d7fdcf07a885ab3f01761
+licence: Apache-2.0
+licence_evidence: https://github.com/BYVoid/OpenCC/blob/2939943bd6f4d459b46d7fdcf07a885ab3f01761/LICENSE
+attribution: OpenCC contributors, Apache License 2.0
+access:
+  files: https://raw.githubusercontent.com/BYVoid/OpenCC/{revision}/data/dictionary/{name}
+format:
+  files: "key<TAB>value value…; read: TSCharacters (traditional → simplified), JPShinjitaiCharacters (新字体 → 旧字体, the jp2t table; read backwards), TWVariants and HKVariants (OpenCC standard → regional form), SealVariants (modern standard → 說文 隸定字)"
+notes:
+  - A line whose first candidate is the key itself is kept with `(self first)` in the detail; in JPShinjitaiCharacters these are historical entries outside the three Japanese tables the file draws on.
+  - These are conversion tables built for machine conversion; a one-to-many key lists every candidate and the first is the default.
+  - SealVariants was compiled by OpenCC from the 說文解字 headword sequence and Unicode SealSources.txt, supplemented by reviewed Unihan pairs (the file's own header).
