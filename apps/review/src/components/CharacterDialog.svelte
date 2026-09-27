@@ -10,6 +10,7 @@
   import { decision, isSingle, suggestsReading, greetSuggestions, skipHint } from '../lib/issues.js'
   import { t, localize } from '../lib/i18n.svelte.js'
   import CropContext from './CropContext.svelte'
+  import { repairOf } from '../lib/cropDetails.js'
   import IssuePicker from './IssuePicker.svelte'
   import ReadingSuggestions from './ReadingSuggestions.svelte'
   // `onskip` is supplied by the caller that owns the queue. The dialog never decides what "next"
@@ -231,7 +232,7 @@
     {#if error}<div class="error-message" role="alert">{error}<button disabled={busy} onclick={() => load(id)}>{t('character.reload')}</button></div>{/if}
     {#if data}
       <div class="inspector-production"><ProductionBadge item={data} /><StyleField item={data} {clientId} editable={!onVerdict} disabled={busy} working={value => busy = value} saved={styled} /></div>
-      <div class="inspector-title"><h2 lang="ja">{data.label}</h2><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{:else if data.gate === 'unconfirmed'}<span class="repair-note" title={t('repair.reason.unrecognised')}>{t('repair.unrecognised')}</span>{/if}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.state === 'checked' ? t('state.checked') : data.state === 'flagged' ? t('state.flagged') : t('state.unreviewed')}</span></div><CopyId id={data.id} />
+      <div class="inspector-title"><h2 lang="ja">{data.label}</h2><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{:else if repairOf(data)?.label === 'no-class'}<span class="repair-note" title={t('repair.reason.noClass')}>{t('repair.noClass')}</span>{/if}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.state === 'checked' ? t('state.checked') : data.state === 'flagged' ? t('state.flagged') : t('state.unreviewed')}</span></div><CopyId id={data.id} />
       <div class="inspector-figure">
         {#if editingBox && data.context && data.context_box}
           <figure class="nearby crop-adjustment" bind:this={nearby}>
