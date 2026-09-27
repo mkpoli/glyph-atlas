@@ -31,6 +31,9 @@ because a scan of a public-domain page may carry no copyright of its own.
 | 京都大学貴重資料デジタルアーカイブ | free reuse with credit, change notice and link; some holdings need approval; a bulk crop package is to be confirmed with the library | https://rmda.kulib.kyoto-u.ac.jp/reuse |
 | Gallica (Bibliothèque nationale de France) | non-commercial reuse free with the source line; commercial reuse under a paid licence; metadata Etalab open licence | https://gallica.bnf.fr/edit/und/conditions-dutilisation-des-contenus-de-gallica |
 | 国立公文書館デジタルアーカイブ | free reuse; metadata CC0 | https://www.digital.archives.go.jp/secondary-use |
+| ADEAC (会津若松市立会津図書館, 岡山市立図書館 and other municipal archives) | per item, stated in the IIIF manifest's `rights` and 権利関係 metadata; the items seen are CC BY 4.0 with the holder as `requiredStatement`. 岡山市立図書館 asks to be told of use in publications, broadcasts, exhibitions and products, and for a copy of any publication; items marked 独自規定あり need an enquiry | https://adeac.jp/okayama-city/terms-of-use |
+| e国宝 (国立文化財機構) | private use only; licensing through the image office of the institution holding the object | https://emuseum.nich.go.jp/about |
+| 琉球大学附属図書館 貴重資料 | own holdings: secondary use without application so far as it infringes no copyright; 阪巻・宝玲文庫 belongs to the University of Hawaiʻi at Mānoa Library, which the page names for enquiries | https://www.lib.u-ryukyu.ac.jp/okinawa/valuable-reference/ |
 | 早稲田大学古典籍総合データベース | permission required | https://www.waseda.jp/library/user/using-images/ |
 | 慶應義塾大学 | all rights reserved | https://dcollections.lib.keio.ac.jp/ja/about |
 | 奈良文化財研究所 木簡庫 | images surveyed by 奈良文化財研究所: free reuse including commercial, with a source line and a modification notice; other institutions' tablets follow their own terms | https://mokkanko.nabunken.go.jp/ja/?c=help |
