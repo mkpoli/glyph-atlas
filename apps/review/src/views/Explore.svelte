@@ -79,6 +79,9 @@
   /** A grapheme key (`U+4EEE`, or a label's own code points) as the text it names. */
   const charOf = key => /^U\+[0-9A-F]{4,6}( U\+[0-9A-F]{4,6})*$/i.test(key)
     ? key.split(' ').map(point => String.fromCodePoint(parseInt(point.slice(2), 16))).join('') : key
+  // Whether the graphemes are listed from the most crops or from the fewest; the choice is remembered.
+  let order = $state(stored('atlas.browseOrder', 'most'))
+  function orderBy(value) { order = value; remember('atlas.browseOrder', value) }
   // The readings the catalogue counts, gathered under their graphemes: 仮 and 假 are one tile.
   const graphemes = $derived.by(() => {
     const groups = new Map()
@@ -90,7 +93,9 @@
       groups.set(key, group)
     }
     for (const group of groups.values()) group.members.sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
-    return [...groups.values()].sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
+    // Fewest first puts the rarest characters of the collection at the top.
+    const direction = order === 'fewest' ? -1 : 1
+    return [...groups.values()].sort((a, b) => direction * (b.count - a.count) || a.key.localeCompare(b.key))
   })
   const chosenGrapheme = $derived(graphemes.find(group => group.key === grapheme))
   // The browse panel counts single graphemes or two-character pairs; the choice is remembered. Pairs
@@ -448,6 +453,9 @@
       {#if flagged}<p class="candidate-status">{t('explore.graphemes')}</p>
       {:else}<div class="browse-unit" role="group" aria-label={t('explore.browseUnit')}>
         {#each [['grapheme', () => t('explore.graphemes')], ['pair', () => t('explore.pairs')]] as [value, text]}<button type="button" aria-pressed={unit === value} onclick={() => countBy(value)}>{text()}</button>{/each}
+      </div>{/if}
+      {#if unit !== 'pair' || flagged}<div class="browse-unit" role="group" aria-label={t('explore.browseOrder')}>
+        {#each [['most', () => t('explore.order.most')], ['fewest', () => t('explore.order.fewest')]] as [value, text]}<button type="button" aria-pressed={order === value} onclick={() => orderBy(value)}>{text()}</button>{/each}
       </div>{/if}
       {#if unit === 'pair' && !flagged}<PairGrid {pairs} failed={pairsFailed} onretry={loadPairs} />
       {:else}<GraphemeGrid groups={graphemes} value={grapheme} onchoose={key => { close(); select(key) }}
