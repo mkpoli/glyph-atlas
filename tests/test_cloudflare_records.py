@@ -86,14 +86,46 @@ def test_a_records_only_export_seals_into_packs_and_ordered_sql(scripts, tmp_pat
     assert replayed.execute("SELECT * FROM corpus_characters").fetchall() == [("𛂥", "printed/woodblock", 1, 1)]
 
 
-def test_an_export_that_packed_images_is_refused(scripts, tmp_path):
+def test_an_export_that_packed_images_seals_its_media_first_and_insert_only(scripts, tmp_path):
+    seal = importlib.import_module("seal_cloudflare_records")
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    crop, context = b"crop-webp", b"context-webp"
+    (corpus / "pack-10001.bin").write_bytes(crop + context)
+    record = json.dumps({"id": "gl:1", "label": "天"}).encode()
+    (corpus / "corpus-0001.bin").write_bytes(record)
+    new, old = "a" * 64, "b" * 64
+    with sqlite3.connect(corpus / "corpus.sqlite") as db:
+        db.executescript(SCHEMA)
+        db.execute("INSERT INTO media VALUES(?, 'pack-10001.bin', 0, ?, 'image/webp')", (new, len(crop)))
+        db.execute("INSERT INTO media VALUES(?, 'pack-10001.bin', ?, ?, 'image/webp')", (old, len(crop), len(context)))
+        db.execute("INSERT INTO corpus_units VALUES('gl:1','天','U+5929',NULL,1,'corpus-0001.bin',0,?,'printed/woodblock',0)",
+                   (len(record),))
+    summary = seal.seal(corpus, tmp_path / "sealed")
+    assert summary["media"] == 2 and summary["objects"] == 2
+    publication = json.loads((tmp_path / "sealed" / "publication.json").read_text())
+    pack = next(o["key"] for o in publication["objects"]
+                if (tmp_path / "sealed" / o["file"]).read_bytes() == crop + context)
+    sql = "".join((tmp_path / "sealed" / part).read_text() for part in publication["sql"])
+    assert sql.index("INSERT OR IGNORE INTO media") < sql.index("INSERT INTO corpus_units")
+    site = sqlite3.connect(":memory:")
+    site.executescript(SCHEMA)
+    # A key D1 already holds keeps its row: the key is the image's hash, so both name the same bytes.
+    site.execute("INSERT INTO media VALUES(?, 'packs/earlier.bin', 7, ?, 'image/webp')", (old, len(context)))
+    site.executescript(sql)
+    assert site.execute("SELECT object, offset FROM media WHERE key=?", (new,)).fetchone() == (pack, 0)
+    assert site.execute("SELECT object, offset FROM media WHERE key=?", (old,)).fetchone() == ("packs/earlier.bin", 7)
+    assert site.execute("SELECT count(*) FROM corpus_units").fetchone() == (1,)
+
+
+def test_media_rows_naming_a_pack_the_export_lacks_are_refused(scripts, tmp_path):
     seal = importlib.import_module("seal_cloudflare_records")
     corpus = tmp_path / "corpus"
     corpus.mkdir()
     with sqlite3.connect(corpus / "corpus.sqlite") as db:
         db.executescript(SCHEMA)
         db.execute("INSERT INTO media VALUES(?, 'pack-10001.bin', 0, 1, 'image/webp')", ("c" * 64,))
-    with pytest.raises(ValueError, match="packed images"):
+    with pytest.raises(ValueError, match="not in the export"):
         seal.seal(corpus, tmp_path / "sealed")
 
 

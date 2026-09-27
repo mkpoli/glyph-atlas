@@ -1,15 +1,20 @@
-"""Seal a records-only corpus export: content-addressed record packs and ordered, chunked D1 SQL.
+"""Seal a corpus export for adding to the site: content-addressed packs and ordered, chunked D1 SQL.
 
-The input is `export_cloudflare_corpus.py --records-only`, whose records point only at images an
-earlier publication already put in R2 and D1. Locally reviewed corpus glyphs are not carried as
-`units` rows here; a review reaches Cloudflare through a full `seal_cloudflare.py` publication. The output holds `objects/` (one file per
-record pack, named by its SHA-256), `sql/NNN.sql` parts under D1's import size, and
-`publication.json` listing both in upload order. `publish_cloudflare.sh` uploads it.
+The input is `export_cloudflare_corpus.py`. With `--records-only` its records point only at images
+an earlier publication already put in R2 and D1; without it the export also packed the crops of its
+own units, and those media packs and `media` rows are sealed too. A `media` row is inserted only
+when its key is new: the key is the image's own hash, so a row already in D1 names the same bytes.
+Locally reviewed corpus glyphs are not carried as `units` rows here; a review reaches Cloudflare
+through a full `seal_cloudflare.py` publication. The output holds `objects/` (one file per pack,
+named by its SHA-256), `sql/NNN.sql` parts under D1's import size with the `media` rows first, and
+`publication.json` listing both in upload order. `publish_cloudflare.sh` uploads every object
+before it runs any SQL.
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
+import itertools
 import json
 import os
 import sqlite3
@@ -25,26 +30,33 @@ def seal(corpus: Path, output: Path) -> dict:
     (output / "objects").mkdir()
     (output / "sql").mkdir()
     db = sqlite3.connect(corpus / "corpus.sqlite")
-    if db.execute("SELECT count(*) FROM media").fetchone()[0]:
-        raise ValueError("This export packed images; seal it with seal_cloudflare.py")
     names, objects = {}, []
-    for path in sorted(corpus.glob("corpus-*.bin")):
-        extent = db.execute("SELECT max(offset+size) FROM corpus_units WHERE object=?", (path.name,)).fetchone()[0]
-        if extent is None:
-            continue
-        if path.stat().st_size < extent:
-            raise ValueError(f"Incomplete record pack {path.name}")
-        with path.open("rb") as handle:
-            sha = hashlib.file_digest(handle, "sha256").hexdigest()
-        os.link(path, output / "objects" / f"{sha}.bin")
-        names[path.name] = f"packs/{sha}.bin"
-        objects.append({"key": names[path.name], "file": f"objects/{sha}.bin", "sha256": sha,
-                        "bytes": path.stat().st_size})
+    for table, pattern in (("media", "pack-*.bin"), ("corpus_units", "corpus-*.bin")):
+        for path in sorted(corpus.glob(pattern)):
+            extent = db.execute(f"SELECT max(offset+size) FROM {table} WHERE object=?", (path.name,)).fetchone()[0]
+            if extent is None:
+                continue
+            if path.stat().st_size < extent:
+                raise ValueError(f"Incomplete pack {path.name}")
+            with path.open("rb") as handle:
+                sha = hashlib.file_digest(handle, "sha256").hexdigest()
+            os.link(path, output / "objects" / f"{sha}.bin")
+            names[path.name] = f"packs/{sha}.bin"
+            objects.append({"key": names[path.name], "file": f"objects/{sha}.bin", "sha256": sha,
+                            "bytes": path.stat().st_size})
+    missing = db.execute("SELECT DISTINCT object FROM media").fetchall()
+    if unsealed := sorted(name for (name,) in missing if name not in names):
+        raise ValueError(f"media rows name packs that are not in the export: {unsealed}")
     parts: list[str] = []
     handle, size = None, 0
-    rows = db.execute(f"SELECT {','.join(CORPUS_COLUMNS)} FROM corpus_units ORDER BY id")
-    for row in rows:
-        line = corpus_upsert((*row[:5], names[row[5]], *row[6:])) + "\n"
+    media = (f"INSERT OR IGNORE INTO media(key,object,offset,size,content_type) "
+             f"VALUES({_quoted(key)},{_quoted(names[obj])},{offset},{length},{_quoted(kind)});"
+             for key, obj, offset, length, kind in db.execute(
+                 "SELECT key,object,offset,size,content_type FROM media ORDER BY key"))
+    records = (corpus_upsert((*row[:5], names[row[5]], *row[6:]))
+               for row in db.execute(f"SELECT {','.join(CORPUS_COLUMNS)} FROM corpus_units ORDER BY id"))
+    for statement in itertools.chain(media, records):
+        line = statement + "\n"
         if handle is None or size + len(line) > PART_BYTES:
             if handle:
                 handle.close()
@@ -60,9 +72,15 @@ def seal(corpus: Path, output: Path) -> dict:
     handle.write(CORPUS_REFRESH + "\n")
     handle.close()
     count = db.execute("SELECT count(*) FROM corpus_units").fetchone()[0]
-    summary = {"corpus_units": count, "objects": objects, "sql": parts}
+    images = db.execute("SELECT count(*) FROM media").fetchone()[0]
+    summary = {"corpus_units": count, "media": images, "objects": objects, "sql": parts}
     (output / "publication.json").write_text(json.dumps(summary, indent=1) + "\n")
-    return {"corpus_units": count, "objects": len(objects), "bytes": sum(o["bytes"] for o in objects), "sql_parts": len(parts)}
+    return {"corpus_units": count, "media": images, "objects": len(objects),
+            "bytes": sum(o["bytes"] for o in objects), "sql_parts": len(parts)}
+
+
+def _quoted(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
 
 
 if __name__ == "__main__":
