@@ -33,6 +33,16 @@ from ..schema import (
 SOURCE = "codh-char-shape"
 
 
+
+def page_seq(image: str, fallback: int) -> int:
+    """The reading order of a page from 0: `{bid}_00003_1` -> 4, shown as page 5.
+
+    The two halves of a photographed spread are numbered together, so `_1` takes the odd and `_2`
+    the even page; an image whose name carries no page and half keeps `fallback`, its position.
+    """
+    match = IMAGE_NAME.match(image)
+    return int(match["page"]) * 2 - (2 - int(match["half"])) - 1 if match else fallback
+
 def classification_of(code_point: int) -> Classification:
     """A merged source class does not identify one written form."""
     family = refs.grapheme_info(f"U+{code_point:04X}")
@@ -100,8 +110,7 @@ def read(zip_path: Path, title: str | None = None) -> tuple[Document, list[Page]
     for row in rows:
         image = row["Image"]
         if image not in pages:
-            match = IMAGE_NAME.match(image)
-            seq = int(match["page"]) * 2 - (2 - int(match["half"])) if match else len(pages) + 1
+            seq = page_seq(image, len(pages))
             width, height = sizes.get(image, (0, 0))
             pages[image] = Page(id=f"codh:{bid}:{image}", document_id=document.id, seq=seq,
                                 image=IIIF.format(bid=bid, image=image), width=width, height=height,

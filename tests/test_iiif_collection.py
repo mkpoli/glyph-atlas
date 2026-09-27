@@ -18,7 +18,7 @@ def test_collect_full_volume_without_fabricated_text(tmp_path, monkeypatch):
     pages = list(tables.read(out / "pages.parquet", Page))
     assert len(docs) == len(pages) == 1
     assert docs[0].image_rights.licence == Licence.PDM
-    assert pages[0].id == "ndl:123:1"
+    assert (pages[0].id, pages[0].seq) == ("ndl:123:1", 0)
     assert pages[0].image == "https://example.org/image/1"
     assert not (out / "page_texts.parquet").exists()
     assert not (out / "units.parquet").exists()

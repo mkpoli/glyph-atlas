@@ -185,9 +185,9 @@ def test_two_books_merge_into_one_directory(tmp_path, cache, books_file, zips, m
     ]
     # the second page of the first book is blank: no row of its coordinate CSV names it
     blank = pages["codh:900000001:900000001_00004_1"]
-    assert (blank.width, blank.height) == PAGE_SIZE and blank.seq == 7
-    assert pages["codh:900000001:900000001_00003_1"].seq == 5
-    assert pages["codh:900000002:900000002_00001_2"].seq == 2
+    assert (blank.width, blank.height) == PAGE_SIZE and blank.seq == 6
+    assert pages["codh:900000001:900000001_00003_1"].seq == 4
+    assert pages["codh:900000002:900000002_00001_2"].seq == 1
     page = pages["codh:900000001:900000001_00003_1"]
     assert page.image == "https://codh.rois.ac.jp/char-shape/iiif/900000001/900000001_00003_1.tif"
     assert page.document_id == "codh:900000001" and page.transcription["entry"] == "900000001"

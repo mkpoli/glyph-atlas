@@ -143,7 +143,7 @@ def records_of(
             page = Page(
                 id=f"{document.id}:{row['page']}",
                 document_id=document.id,
-                seq=int(folio["n"]) if folio else len(pages) + 1,
+                seq=int(folio["n"]) - 1 if folio else len(pages),
                 canvas=row["canvas"] or None,
                 image=row["img"].removesuffix("/info.json"),
                 width=int(row["mx"]),

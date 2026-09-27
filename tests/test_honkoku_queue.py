@@ -403,6 +403,8 @@ class TestCollectingOneBook:
         texts = tables.read(dataset / "page_texts.parquet", PageText)
         assert [d.id for d in documents] == [f"hk:{ENTRY_A}"]
         assert len(pages) == 3 and len(texts) == 3
+        # The page id keeps the platform's own number, from 1; the position counts from 0.
+        assert [(p.id, p.seq) for p in pages] == [(f"hk:{ENTRY_A}:{n + 1}", n) for n in range(3)]
 
     def test_page_ids_are_one_based_like_the_snapshot(self, tmp_path):
         collector, _, _ = build(tmp_path)

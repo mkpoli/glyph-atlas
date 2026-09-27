@@ -44,13 +44,13 @@ def text_dataset(root: Path) -> Path:
         Document(id=f"hk:{ONLY_TEXT}", title="仮名文書 三"),
     ]
     pages = [
-        Page(id=f"hk:{ENTRY}:{number}", document_id=f"hk:{ENTRY}", seq=number, image="", width=0, height=0)
+        Page(id=f"hk:{ENTRY}:{number}", document_id=f"hk:{ENTRY}", seq=number - 1, image="", width=0, height=0)
         for number in (1, 2, 3)
     ] + [
-        Page(id=f"hk:{OTHER}:{number}", document_id=f"hk:{OTHER}", seq=number, image="", width=0, height=0)
+        Page(id=f"hk:{OTHER}:{number}", document_id=f"hk:{OTHER}", seq=number - 1, image="", width=0, height=0)
         for number in (1, 2)
     ] + [
-        Page(id=f"hk:{ONLY_TEXT}:1", document_id=f"hk:{ONLY_TEXT}", seq=1, image="", width=0, height=0)
+        Page(id=f"hk:{ONLY_TEXT}:1", document_id=f"hk:{ONLY_TEXT}", seq=0, image="", width=0, height=0)
     ]
     texts = [PageText(page_id=page.id, source="honkoku-data", revision="abc", text_raw="一\n") for page in pages]
     directory = write_dataset(root / "honkoku-data", documents, pages, [])
@@ -58,7 +58,7 @@ def text_dataset(root: Path) -> Path:
     return directory
 
 
-def lines_dataset(root: Path, name: str, prefix: str, seqs: dict[str, list[int]], zero_based: bool) -> Path:
+def lines_dataset(root: Path, name: str, prefix: str, seqs: dict[str, list[int]]) -> Path:
     """A line dataset: `seqs` gives the page numbers of each entry that carry a line."""
     documents = []
     pages = []
@@ -67,7 +67,7 @@ def lines_dataset(root: Path, name: str, prefix: str, seqs: dict[str, list[int]]
         document_id = f"{prefix}{entry}"
         documents.append(Document(id=document_id, title="仮名文書"))
         for number in numbers:
-            seq = number - 1 if zero_based else number
+            seq = number - 1
             page_id = f"{document_id}:{number}"
             pages.append(Page(id=page_id, document_id=document_id, seq=seq, image="", width=0, height=0))
             lines.append(
@@ -88,8 +88,8 @@ def datasets(tmp_path: Path) -> list[Path]:
     """The three datasets: みんなで翻刻データ, Honkoku-Lines and the NDL dataset."""
     return [
         text_dataset(tmp_path),
-        lines_dataset(tmp_path, "honkoku-lines", "hl:", {ENTRY: [1, 2], OTHER: [1], ONLY_LINES: [1]}, zero_based=True),
-        lines_dataset(tmp_path, "ndl-minhon", "ndl-minhon:v2:demo:", {ENTRY: [2]}, zero_based=False),
+        lines_dataset(tmp_path, "honkoku-lines", "hl:", {ENTRY: [1, 2], OTHER: [1], ONLY_LINES: [1]}),
+        lines_dataset(tmp_path, "ndl-minhon", "ndl-minhon:v2:demo:", {ENTRY: [2]}),
     ]
 
 
@@ -120,10 +120,10 @@ def test_build_joins_the_three_datasets_on_the_entry_id(datasets: list[Path], tm
 
 
 def test_pages_are_compared_by_their_number_within_the_entry(datasets: list[Path], tmp_path: Path) -> None:
-    """Honkoku-Lines numbers its pages from zero, so its page `0` is page 1 of the transcription.
+    """Every dataset counts its pages from zero, so a page at seq 0 is page 1 of the transcription.
 
-    Counting the Honkoku-Lines sequence as it stands would leave pages 2 and 3 of the first entry
-    uncovered instead of page 3 alone.
+    Counting the sequence as it stands would leave pages 2 and 3 of the first entry uncovered instead
+    of page 3 alone.
     """
     out = tmp_path / "coverage.tsv"
     coverage.build(datasets, out)
@@ -151,7 +151,7 @@ def test_the_entry_of_a_document_comes_from_source_refs(datasets: list[Path], tm
             Page(
                 id="ndl-minhon:v2:demo:999:2",
                 document_id="ndl-minhon:v2:demo:999",
-                seq=2,
+                seq=1,
                 image="",
                 width=0,
                 height=0,
@@ -193,13 +193,13 @@ def test_a_missing_dataset_is_skipped_with_a_warning(datasets: list[Path], tmp_p
 
 def test_ids_are_matched_without_case(tmp_path: Path) -> None:
     """The transcription spells the entry in lower case and Honkoku-Lines in upper case."""
-    lines = lines_dataset(tmp_path, "honkoku-lines", "hl:", {ENTRY.upper(): [1]}, zero_based=True)
+    lines = lines_dataset(tmp_path, "honkoku-lines", "hl:", {ENTRY.upper(): [1]})
     text = tmp_path / "honkoku-data"
     text.mkdir()
     tables.write(text / "documents.parquet", [Document(id=f"hk:{ENTRY.lower()}", title="仮名文書")], Document)
     tables.write(
         text / "pages.parquet",
-        [Page(id=f"hk:{ENTRY.lower()}:1", document_id=f"hk:{ENTRY.lower()}", seq=1, image="", width=0, height=0)],
+        [Page(id=f"hk:{ENTRY.lower()}:1", document_id=f"hk:{ENTRY.lower()}", seq=0, image="", width=0, height=0)],
         Page,
     )
     tables.write(
@@ -223,7 +223,7 @@ def test_a_blank_transcription_is_not_text(tmp_path: Path) -> None:
     tables.write(
         directory / "pages.parquet",
         [
-            Page(id=f"hk:{ENTRY}:{number}", document_id=f"hk:{ENTRY}", seq=number, image="", width=0, height=0)
+            Page(id=f"hk:{ENTRY}:{number}", document_id=f"hk:{ENTRY}", seq=number - 1, image="", width=0, height=0)
             for number in (1, 2)
         ],
         Page,
@@ -251,7 +251,7 @@ def test_a_repository_path_in_source_refs_names_the_entry(tmp_path: Path) -> Non
     tables.write(lines / "documents.parquet", [document], Document)
     tables.write(
         lines / "pages.parquet",
-        [Page(id="ndl-minhon:v2:demo:999:001", document_id=document.id, seq=1, image="", width=0, height=0)],
+        [Page(id="ndl-minhon:v2:demo:999:001", document_id=document.id, seq=0, image="", width=0, height=0)],
         Page,
     )
     tables.write(
@@ -273,7 +273,7 @@ def test_a_repository_path_in_source_refs_names_the_entry(tmp_path: Path) -> Non
     tables.write(text / "documents.parquet", [Document(id=f"hk:{ENTRY}", title="仮名文書")], Document)
     tables.write(
         text / "pages.parquet",
-        [Page(id=f"hk:{ENTRY}:1", document_id=f"hk:{ENTRY}", seq=1, image="", width=0, height=0)],
+        [Page(id=f"hk:{ENTRY}:1", document_id=f"hk:{ENTRY}", seq=0, image="", width=0, height=0)],
         Page,
     )
     tables.write(

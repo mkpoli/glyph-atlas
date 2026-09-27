@@ -267,7 +267,7 @@ def _book(
         page = Page(
             id=f"{identifier}:{entry.file_id}",
             document_id=identifier,
-            seq=_integer(entry.file_id, len(pages) + 1),
+            seq=_integer(entry.file_id, len(pages) + 1) - 1,
             image=image,
             width=0,
             height=0,

@@ -27,7 +27,7 @@ def make_zip(tmp_path):
 def test_codh_rows_become_pages_and_units(tmp_path):
     document, pages, units = codh.read(make_zip(tmp_path), title="試し")
     assert document.id == "codh:900000001" and document.image_rights.licence.value == "CC-BY-SA-4.0"
-    assert len(pages) == 1 and pages[0].width == 120 and pages[0].seq == 5
+    assert len(pages) == 1 and pages[0].width == 120 and pages[0].seq == 4
     assert pages[0].image.endswith("900000001_00003_1.tif")
     assert [u.unicode for u in units] == ["U+304B", "U+3005", "U+6F22"]
     assert units[0].script is Script.HIRAGANA and refs.jibo_of_unit(units[0].unicode) is None

@@ -82,7 +82,7 @@ def test_document_rights(imported) -> None:
 def test_pages_lines_units(imported) -> None:
     _, _, pages, lines, units = imported
     f2 = next(page for page in pages if page.id.endswith(":f2"))
-    assert (f2.image, f2.canvas, f2.width, f2.height, f2.seq) == (BASE + "/f2", BASE + "/canvas/f2", 3340, 2150, 2)
+    assert (f2.image, f2.canvas, f2.width, f2.height, f2.seq) == (BASE + "/f2", BASE + "/canvas/f2", 3340, 2150, 1)
     column = next(line for line in lines if line.id == "hng-kiridashi:myz:f2:l0")
     assert column.text == "妙法"
     assert (column.box.x, column.box.y, column.box.w, column.box.h) == (2959, 393, 113, 129)

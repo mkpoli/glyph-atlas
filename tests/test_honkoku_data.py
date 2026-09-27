@@ -260,7 +260,7 @@ def test_page_maps_to_the_canvas_of_its_number(imported: tuple[Path, dict[str, i
     assert first.canvas == http_server.url("canvas/1")
     assert first.image == http_server.url("iiif/1")
     assert (first.width, first.height) == (4064, 2888)
-    assert first.seq == 1 and first.transcription == {"source": "honkoku-data", "entry": ENTRY, "revision": COMMIT}
+    assert first.seq == 0 and first.transcription == {"source": "honkoku-data", "entry": ENTRY, "revision": COMMIT}
     assert second.canvas == http_server.url("canvas/2") and second.image == http_server.url("iiif/2")
     assert first.meta == {} and second.meta == {}
 
@@ -281,7 +281,7 @@ def test_a_manifest_that_fails_keeps_the_pages_without_an_image(imported: tuple[
     page = pages[f"hk:{ENTRY_MISSING}:1"]
     assert page.canvas is None and page.image == "" and (page.width, page.height) == (0, 0)
     assert "HTTP 404" in page.meta["manifest_error"]
-    assert page.seq == 1
+    assert page.seq == 0
 
 
 def test_more_text_files_than_canvases_warns(clone: Path, tmp_path: Path) -> None:
