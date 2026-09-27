@@ -19,10 +19,10 @@ so reviewers and consumers should read the gate.
 
 A page completed under an earlier policy is not extracted again; a supplement adds what the current
 policy would publish there and the earlier one could not. `Queue.seed_supplements` lists the complete
-pages whose output predates `POLICY` and whose transcription holds a letter the classifier has no class
-for; `Engine.supplement` extracts such a page under `POLICY` and keeps its `unconfirmed` units that do
-not overlap a crop the page's earlier output published. `run` takes a supplement every
-`supplement_every` pages, so the backlog of new pages keeps moving.
+pages whose output predates `POLICY`; `supplement` extracts such a page under `POLICY` and keeps the
+units, of either gate, that overlap no crop the page's earlier output or an earlier supplement
+published. `run` takes a supplement every `supplement_every` pages, so the backlog of new pages keeps
+moving.
 """
 from __future__ import annotations
 
@@ -240,47 +240,16 @@ class Queue:
             self.db.executemany("UPDATE pages SET priority=? WHERE id=?", scores)
         return len(scores)
 
-    def seed_supplements(self, classes) -> int:
-        """List the complete pages that an extraction under `POLICY` would add units to.
+    def seed_supplements(self) -> int:
+        """List the complete pages whose output was written under another policy than `POLICY`.
 
-        A page qualifies when its output was written under another policy and a line of it, in the
-        page's own source dataset, holds a letter the classifier has no class for
-        (`letter_out_of_vocabulary`). Returns how many rows were added; a page already listed for
-        `POLICY` is left as it is.
+        Returns how many rows were added; a page already listed for `POLICY` is left as it is.
         """
-        import pyarrow.dataset as ds
-
-        from . import refs
-
-        earlier = defaultdict(set)
-        for page_id, output, page_source in self.db.execute(
-                "SELECT id,output,source FROM pages WHERE status='complete'"):
+        wanted = set()
+        for page_id, output in self.db.execute("SELECT id,output FROM pages WHERE status='complete'"):
             report = self.root/output/"report.json"
             if report.exists() and json.loads(report.read_text()).get("policy") != POLICY:
-                earlier[page_source].add(page_id)
-        if not earlier:
-            return 0
-        classes = set(classes)
-        known: dict[str, bool] = {}
-
-        def unknown(char):
-            if char not in known:
-                known[char] = letter_out_of_vocabulary(char, refs.candidates(char) or [], classes)
-            return known[char]
-
-        wanted = set()
-        for page_source, page_ids in earlier.items():
-            lines_path = Path(page_source) / "lines"
-            if not lines_path.exists():
-                lines_path = Path(page_source) / "lines.parquet"
-            if not lines_path.exists():
-                continue
-            scanner = ds.dataset(lines_path, format="parquet").scanner(columns=["page_id", "text"])
-            for batch in scanner.to_batches():
-                for page_id, text in zip(batch.column("page_id").to_pylist(),
-                                         batch.column("text").to_pylist(), strict=True):
-                    if page_id in page_ids and page_id not in wanted and text and any(map(unknown, text)):
-                        wanted.add(page_id)
+                wanted.add(page_id)
         before = self.db.total_changes
         with self.db:
             self.db.executemany("INSERT OR IGNORE INTO supplements (page_id,policy) VALUES (?,?)",
@@ -632,7 +601,7 @@ class Engine:
 def supplement(engine, job, root, *, max_lines=64):
     """Extract a page completed under an earlier policy again and keep what that policy could not add.
 
-    The kept units are the `unconfirmed` ones that overlap no crop of the page's earlier output or of
+    The kept units, of either gate, are those that overlap no crop of the page's earlier output or of
     a supplement an earlier policy made for it (`overlaps`), since those are already published and a
     crop there may already be reviewed.
     They are committed with the page's document, page and line rows under `supplements/`.
@@ -641,8 +610,7 @@ def supplement(engine, job, root, *, max_lines=64):
     current = tables.Dataset(output)
     published = [unit.box for output in (job["output"], *job.get("earlier_supplements", ()))
                  for unit in tables.Dataset(root/output).read("units") if unit.box]
-    added = [unit for unit in current.read("units") if unit.meta["extraction"]["gate"] == UNCONFIRMED
-             and not any(overlaps(unit.box, box) for box in published)]
+    added = [unit for unit in current.read("units") if not any(overlaps(unit.box, box) for box in published)]
     identity = digest({"supplement": report["generation"], "earlier": job["output"],
                        "earlier_supplements": sorted(job.get("earlier_supplements", ()))})
     result = {"policy": POLICY, "generation": identity, "page_id": job["id"], "extraction": report["generation"],

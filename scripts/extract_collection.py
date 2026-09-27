@@ -48,7 +48,7 @@ with tables.locked(args.root/"worker",timeout=0):
         try:
             engine = Engine()
             if args.supplement_every:
-                print(json.dumps({"supplements_seeded":queue.seed_supplements(engine.classifier.classes)}),
+                print(json.dumps({"supplements_seeded":queue.seed_supplements()}),
                       flush=True)
             result = run(queue,engine,pages=args.pages,seconds=args.seconds,pause=args.pause,
                          max_lines=args.max_lines,store=store,supplement_every=args.supplement_every)
