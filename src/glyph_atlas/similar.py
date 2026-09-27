@@ -1,4 +1,4 @@
-"""Embed every published crop for similar-crop search.
+"""Embed every published crop for similar-crop search, and list each crop's nearest crops.
 
 The vectors are the served character classifier's penultimate features (`form_clusters.Encoder`),
 L2-normalised. On HI Lab crops (2026-09-27) they found a crop's nearest other crop of the same
@@ -8,31 +8,34 @@ for, in a gallery of 242,841 crops; a general-purpose DINOv2-S found 2–4%.
 Two kinds of crop are embedded, keyed by the ids the site serves:
 
 - corpus glyphs, from the corpus datasets under `root` (`corpus.index.UNIT_CORPORA`): every active
-  character unit whose page scan or crop file is on disk (`form_clusters.Pixels`);
-- local crops, from the catalogue exports of Cloudflare publications: each row names the display
-  crop the site shows, and the export's `media` table places its bytes in the export's packs. A
-  newer export wins when two hold the same id.
+  character unit whose page scan or crop file is on disk (`form_clusters.Pixels`). CODH glyphs, whose
+  zips were removed, wait until their images are held again;
+- local crops, from the catalogue exports of Cloudflare publications that the caller names, in
+  publication order: a later export's row wins for the same id. Each row names the display crop the
+  site shows; the export's `media` table places its bytes in the export's packs, and a crop whose
+  pack has been removed is fetched from the site by its key.
 
-Corpus glyphs whose page scans are no longer on disk (CODH, whose zips were removed) are not
-embedded until their images are held again.
+`index` writes `<out>/<revision>/`:
 
-One run writes `<out>/<revision>/`:
-
-- `units.parquet`: one row per crop, row-aligned with the vectors: `id`, `label` (the character it
-  is filed under), `origin` (`corpus` or `local`) and `source` (its corpus or export);
+- `units.parquet`: one row per crop, row-aligned with the vectors: `id`, `label` (the text it is
+  filed under), `origin` (`corpus` or `local`), `source` (its corpus or export) and `fingerprint`;
 - `vectors.npy`: float16 unit vectors;
-- `manifest.json`: counts and the inputs the revision is derived from.
+- `manifest.json`: counts and the inputs.
 
-A crop whose image, box and encoder are unchanged since the previous revision keeps its vector, so
-a run embeds only what is new. `<out>/current` then points at the revision.
+A crop whose image, box and encoder are unchanged since the current revision keeps its vector, so a
+run embeds only what is new; a changed label or source makes a new revision without re-embedding.
+`<out>/current` then points at the revision. `neighbours` adds `<revision>/neighbours/`.
 """
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import shutil
 import sqlite3
+import unicodedata
+from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
@@ -42,6 +45,14 @@ import pyarrow.parquet as pq
 from . import refs
 
 METHOD = "classifier-penultimate-v1"
+#: Neighbours kept per crop, in each list.
+NEIGHBOURS = 20
+#: A crop's shard is the first `SHARD_DIGITS` hex digits of the SHA-256 of its id.
+SHARD_DIGITS = 3
+
+
+class ExportUnreadable(RuntimeError):
+    """A named export could not be read, so the crops it publishes would silently fall back."""
 
 
 def corpus_crops(root: Path) -> dict[str, dict]:
@@ -81,35 +92,33 @@ def corpus_crops(root: Path) -> dict[str, dict]:
             located = pixels(glyph)
             if located is None:
                 continue
-            found[identity] = {"path": str(located[0]), "box": located[1], "label": refs.to_char(unicode) if unicode else None,
+            found[identity] = {"path": str(located[0]), "box": located[1],
+                               "label": refs.to_char(unicode) if unicode else None,
                                "origin": "corpus", "source": name}
     return found
 
 
 def local_crops(exports: list[Path], fetched: Path) -> dict[str, dict]:
-    """Every local crop the catalogue exports publish, as the display crop the site shows.
+    """Every local crop the named catalogue exports publish, as the display crop the site shows.
 
-    An export's `media` table places each display crop in one of the export's `pack-*.bin` files,
-    which hold the bytes uploaded to R2. A crop whose pack has since been removed is read from
-    `fetched/<key>.webp`, which `fetch` fills from the site. Exports are read oldest first, so a
-    newer one's row wins.
+    `exports` is in publication order and a later export's row wins. An export that cannot be read,
+    such as one still being written, raises `ExportUnreadable`: its crops would otherwise come from an
+    older export, or be left out. A crop whose pack has been removed is read from
+    `fetched/<key[:2]>/<key>.webp`, which `fetch` fills from the site.
     """
     found = {}
-    for export in sorted(exports, key=lambda path: path.stat().st_mtime):
+    for export in exports:
         try:
             with sqlite3.connect(f"file:{export}?mode=ro", uri=True, timeout=1) as db:
-                if not db.execute("SELECT 1 FROM sqlite_master WHERE name='media'").fetchone():
-                    continue
                 rows = db.execute("""SELECT u.id, json_extract(u.data,'$.label'), m.key, m.object, m.offset, m.size
                     FROM units u JOIN media m ON m.key = replace(replace(json_extract(u.data,'$.image'),
                         '/atlas/media/', ''), '.webp', '')
                     WHERE u.origin='local'""").fetchall()
-        except sqlite3.OperationalError:
-            # An export still being written is locked; it is read on the next run.
-            continue
+        except sqlite3.Error as error:
+            raise ExportUnreadable(f"{export}: {error}") from error
         for identity, label, key, pack, offset, size in rows:
-            crop = {"label": label if label and len(label) == 1 else None, "origin": "local",
-                    "source": export.parent.name, "key": key}
+            label = unicodedata.normalize("NFC", label) if label else None
+            crop = {"label": label or None, "origin": "local", "source": export.parent.name, "key": key}
             path = export.parent / pack
             if path.is_file():
                 crop.update(path=str(path), range=(offset, size))
@@ -119,10 +128,15 @@ def local_crops(exports: list[Path], fetched: Path) -> dict[str, dict]:
     return found
 
 
+def _is_webp(data: bytes) -> bool:
+    return len(data) > 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+
+
 def fetch(crops: dict[str, dict], base: str, *, workers: int = 8) -> dict[str, int]:
     """Download the display crops `local_crops` expects under its fetched directory and lacks.
 
-    Each is `<base>/atlas/media/<key>.webp`, the public URL the site serves it at.
+    Each is `<base>/atlas/media/<key>.webp`, the public URL the site serves it at. A response that is
+    not a WebP image is not kept, so the next run asks again.
     """
     from concurrent.futures import ThreadPoolExecutor
 
@@ -137,12 +151,14 @@ def fetch(crops: dict[str, dict], base: str, *, workers: int = 8) -> dict[str, i
             try:
                 response = client.get(f"{base.rstrip('/')}/atlas/media/{key}.webp")
                 response.raise_for_status()
-            except httpx.HTTPError:
+                if not _is_webp(response.content):
+                    return False
+                path.parent.mkdir(parents=True, exist_ok=True)
+                temporary = path.with_suffix(".part")
+                temporary.write_bytes(response.content)
+                temporary.replace(path)
+            except (httpx.HTTPError, OSError):
                 return False
-            path.parent.mkdir(parents=True, exist_ok=True)
-            temporary = path.with_suffix(".part")
-            temporary.write_bytes(response.content)
-            temporary.replace(path)
             return True
         with ThreadPoolExecutor(workers) as pool:
             for ok in pool.map(one, missing):
@@ -152,44 +168,44 @@ def fetch(crops: dict[str, dict], base: str, *, workers: int = 8) -> dict[str, i
 
 def _cut(job: tuple[str, list[tuple[str, tuple | None, tuple | None]]], size: int) -> tuple[list[str], np.ndarray | None]:
     """Every crop of one file at the classifier's size: boxes of a page scan, a whole crop file, or
-    byte ranges of a pack of display crops."""
-    import io
-
+    byte ranges of a pack of display crops. A file or crop that cannot be read yields nothing."""
     from PIL import Image
 
     from .classify import preprocess
 
     path, items = job
     ids, arrays = [], []
-    if items[0][2] is not None:
-        with open(path, "rb") as handle:
-            for identity, _, (offset, length) in items:
-                handle.seek(offset)
-                try:
-                    with Image.open(io.BytesIO(handle.read(length))) as image:
-                        arrays.append(np.asarray(preprocess(image, size=size), dtype=np.uint8))
-                except OSError:
-                    continue
-                ids.append(identity)
-        return ids, np.stack(arrays) if arrays else None
-    with Image.open(path) as scan:
-        scan = scan.convert("L")
-        for identity, box, _ in items:
-            crop = scan
-            if box is not None:
-                x, y, w, h = box
-                right, bottom = min(scan.width, x + w), min(scan.height, y + h)
-                if right <= x or bottom <= y:
-                    continue
-                crop = scan.crop((x, y, right, bottom))
-            ids.append(identity)
-            arrays.append(np.asarray(preprocess(crop, size=size), dtype=np.uint8))
+    try:
+        if items[0][2] is not None:
+            with open(path, "rb") as handle:
+                for identity, _, (offset, length) in items:
+                    handle.seek(offset)
+                    try:
+                        with Image.open(io.BytesIO(handle.read(length))) as image:
+                            arrays.append(np.asarray(preprocess(image, size=size), dtype=np.uint8))
+                    except (OSError, ValueError):
+                        continue
+                    ids.append(identity)
+        else:
+            with Image.open(path) as scan:
+                scan = scan.convert("L")
+                for identity, box, _ in items:
+                    crop = scan
+                    if box is not None:
+                        x, y, w, h = box
+                        right, bottom = min(scan.width, x + w), min(scan.height, y + h)
+                        if right <= x or bottom <= y:
+                            continue
+                        crop = scan.crop((x, y, right, bottom))
+                    arrays.append(np.asarray(preprocess(crop, size=size), dtype=np.uint8))
+                    ids.append(identity)
+    except (OSError, ValueError, Image.DecompressionBombError):
+        return [], None
     return ids, np.stack(arrays) if arrays else None
 
 
 def _embed(crops: dict[str, dict], encoder, *, workers: int, batch: int = 512):
     """Cut `crops` in worker processes, grouped by file, and run `encoder` a batch at a time."""
-    from collections import defaultdict
     from concurrent.futures import ProcessPoolExecutor
     from functools import partial
     from multiprocessing import get_context
@@ -215,7 +231,7 @@ def _embed(crops: dict[str, dict], encoder, *, workers: int, batch: int = 512):
 
 
 def fingerprint(crop: dict, encoder: str) -> str:
-    """What a vector depends on: the image file as it is now, the box, and the encoder."""
+    """What a vector depends on: the image file as it is now, the box or byte range, and the encoder."""
     stat = os.stat(crop["path"])
     raw = json.dumps([crop["path"], stat.st_size, stat.st_mtime_ns, crop.get("box"), crop.get("range"), encoder])
     return hashlib.sha256(raw.encode()).hexdigest()[:24]
@@ -232,38 +248,34 @@ def index(root: Path, exports: list[Path], out: Path, *, checkpoint: Path, worke
     crops = {**corpus_crops(root), **{i: c for i, c in local.items() if Path(c["path"]).is_file()}}
     ids = sorted(crops)
     prints = [fingerprint(crops[i], encoder_digest) for i in ids]
-    revision = hashlib.sha256(json.dumps([METHOD, ids, prints]).encode()).hexdigest()[:16]
+    described = [[crops[i]["label"], crops[i]["origin"], crops[i]["source"]] for i in ids]
+    revision = hashlib.sha256(json.dumps([METHOD, ids, prints, described]).encode()).hexdigest()[:16]
     target = out / revision
     if not target.is_dir():
-        previous = {}
+        previous, old_vectors = {}, None
         current = out / "current"
         if (current / "units.parquet").is_file():
             old = pq.read_table(current / "units.parquet", columns=["id", "fingerprint"]).to_pydict()
             old_vectors = np.load(current / "vectors.npy", mmap_mode="r")
             previous = {(i, f): row for row, (i, f) in enumerate(zip(old["id"], old["fingerprint"], strict=True))}
-        vectors = None
-        missing = {}
-        for row, (identity, mark) in enumerate(zip(ids, prints, strict=True)):
-            kept = previous.get((identity, mark))
-            if kept is None:
-                missing[identity] = row
+        kept = {row: previous[(i, f)] for row, (i, f) in enumerate(zip(ids, prints, strict=True)) if (i, f) in previous}
+        missing = {i: row for row, i in enumerate(ids) if row not in kept}
+        vectors = np.zeros((len(ids), old_vectors.shape[1] if old_vectors is not None else 0), dtype=np.float16)
+        embedded = np.zeros(len(ids), dtype=bool)
         if missing:
             encoder = Encoder(checkpoint)
             for batch_ids, batch_vectors in _embed({i: crops[i] for i in missing}, encoder, workers=workers):
-                if vectors is None:
+                if vectors.shape[1] != batch_vectors.shape[1]:
                     vectors = np.zeros((len(ids), batch_vectors.shape[1]), dtype=np.float16)
-                vectors[[missing[i] for i in batch_ids]] = batch_vectors.astype(np.float16)
-        if vectors is None:
-            vectors = np.zeros((len(ids), old_vectors.shape[1] if previous else 0), dtype=np.float16)
-        embedded = np.zeros(len(ids), dtype=bool)
-        embedded[list(missing.values())] = True
-        for row, (identity, mark) in enumerate(zip(ids, prints, strict=True)):
-            kept = previous.get((identity, mark))
-            if kept is not None:
-                vectors[row] = old_vectors[kept]
-                embedded[row] = True
+                    embedded[:] = False
+                rows = [missing[i] for i in batch_ids]
+                vectors[rows] = batch_vectors.astype(np.float16)
+                embedded[rows] = True
+        for row, old_row in kept.items():
+            vectors[row] = old_vectors[old_row]
+            embedded[row] = True
         # A crop that could not be cut (an empty box, an unreadable image) has no vector.
-        keep = np.flatnonzero(embedded & (np.abs(vectors).sum(1) > 0))
+        keep = np.flatnonzero(embedded)
         staging = out / f".{revision}.partial"
         shutil.rmtree(staging, ignore_errors=True)
         staging.mkdir(parents=True)
@@ -272,13 +284,13 @@ def index(root: Path, exports: list[Path], out: Path, *, checkpoint: Path, worke
             "origin": [crops[ids[i]]["origin"] for i in keep], "source": [crops[ids[i]]["source"] for i in keep],
             "fingerprint": [prints[i] for i in keep]}), staging / "units.parquet")
         np.save(staging / "vectors.npy", vectors[keep], allow_pickle=False)
-        origins = {}
+        origins = defaultdict(int)
         for i in keep:
-            origins[crops[ids[i]]["origin"]] = origins.get(crops[ids[i]]["origin"], 0) + 1
-        manifest = {"revision": revision, "method": METHOD, "crops": len(keep), "by_origin": origins,
-                    "embedded": len(missing), "reused": int(len(ids) - len(missing)),
-                    "unembedded": int(len(ids) - len(keep)), "encoder": encoder_digest,
-                    "exports": sorted(str(e) for e in exports), "fetched": fetched}
+            origins[crops[ids[i]]["origin"]] += 1
+        manifest = {"revision": revision, "method": METHOD, "crops": len(keep), "by_origin": dict(origins),
+                    "embedded": int(embedded[list(missing.values())].sum()) if missing else 0,
+                    "reused": len(kept), "unembedded": len(ids) - len(keep), "encoder": encoder_digest,
+                    "exports": [str(e) for e in exports], "fetched": fetched}
         (staging / "manifest.json").write_text(json.dumps(manifest, indent=1) + "\n")
         os.replace(staging, target)
     link = out / "current"
@@ -289,70 +301,90 @@ def index(root: Path, exports: list[Path], out: Path, *, checkpoint: Path, worke
     return json.loads((target / "manifest.json").read_text())
 
 
-#: Neighbours kept per crop, in each list.
-NEIGHBOURS = 20
-#: A crop's shard is the first `SHARD_DIGITS` hex digits of the SHA-256 of its id.
-SHARD_DIGITS = 3
-
-
 def shard_of(identity: str, digits: int = SHARD_DIGITS) -> str:
     return hashlib.sha256(identity.encode()).hexdigest()[:digits]
 
 
 def neighbours(directory: Path, *, k: int = NEIGHBOURS, block: int = 1024, gallery: int = 262144,
                digits: int = SHARD_DIGITS) -> dict:
-    """Each crop's nearest crops, and its nearest crops filed under another character, as shards.
+    """Each crop's nearest crops, and its nearest crops filed under another label, as shards.
 
     Writes `<directory>/neighbours/<shard>.json`, each `{id: {"similar": [[id, score], ...],
     "filed_differently": [[id, score], ...]}}` with cosine scores to three places, and
-    `neighbours/manifest.json` naming the shard width. A crop with no label has no
-    `filed_differently` list; it is always a neighbour in `similar`.
+    `neighbours/manifest.json` naming the shard width. `filed_differently` is its own search over the
+    crops with another label, so a common character still gets one. A crop without a label is listed
+    in `similar` only and has no `filed_differently` list.
+
+    Crops are taken shard by shard and each shard is written once its crops are done, so memory
+    holds one shard's lists; the gallery is scanned a chunk at a time with a running top-k, so the
+    GPU holds one block by one chunk whatever the number of crops.
     """
     import torch
 
     rows = pq.read_table(directory / "units.parquet", columns=["id", "label"]).to_pydict()
     ids, labels = rows["id"], rows["label"]
     vectors = torch.from_numpy(np.load(directory / "vectors.npy")).cuda()
-    codes = {}
+    codes: dict[str, int] = {}
     label_codes = torch.tensor([codes.setdefault(label, len(codes)) if label else -1 for label in labels],
                                device="cuda")
-    # Enough candidates that `k` differently filed ones remain after dropping the same character.
-    wide = min(len(ids) - 1, 8 * k)
-    other = label_codes.cpu().numpy()
-    shards: dict[str, dict] = {}
-    for start in range(0, len(ids), block):
-        query = vectors[start:start + block]
-        best_scores = torch.full((len(query), 0), -2.0, device="cuda")
-        best = torch.zeros((len(query), 0), dtype=torch.long, device="cuda")
-        # The gallery is scanned a chunk at a time and each chunk's best merged in, so memory stays
-        # at one block by one chunk whatever the number of crops.
+    width = min(k, len(ids) - 1)
+    order = sorted(range(len(ids)), key=lambda i: (shard_of(ids[i], digits), ids[i]))
+
+    def search(query_rows):
+        query = vectors[query_rows]
+        own = label_codes[query_rows]
+        empty = [torch.full((len(query_rows), 0), -2.0, device="cuda"),
+                 torch.zeros((len(query_rows), 0), dtype=torch.long, device="cuda")]
+        found = {"similar": empty, "filed_differently": [t.clone() for t in empty]}
+        positions = torch.as_tensor(query_rows, device="cuda")
         for chunk in range(0, len(ids), gallery):
             scores = (query @ vectors[chunk:chunk + gallery].T).float()
-            inside = torch.arange(len(query), device="cuda") + start - chunk
+            inside = positions - chunk
             mine = (inside >= 0) & (inside < scores.shape[1])
             scores[torch.nonzero(mine).squeeze(1), inside[mine]] = -2
-            local_scores, local = scores.topk(min(wide, scores.shape[1]), dim=1)
-            best_scores = torch.cat([best_scores, local_scores], dim=1)
-            best = torch.cat([best, local + chunk], dim=1)
-            best_scores, order = best_scores.topk(min(wide, best_scores.shape[1]), dim=1)
-            best = best.gather(1, order)
-        top, top_scores = best.cpu().numpy(), best_scores.cpu().numpy()
-        own = other[start:start + len(query)]
-        for row in range(len(query)):
-            identity = ids[start + row]
-            entry = {"similar": [[ids[j], round(float(s), 3)] for j, s in zip(top[row, :k], top_scores[row, :k], strict=True)]}
-            if own[row] >= 0:
-                entry["filed_differently"] = [
-                    [ids[j], round(float(s), 3)] for j, s in zip(top[row], top_scores[row], strict=True)
-                    if other[j] >= 0 and other[j] != own[row]][:k]
-            shards.setdefault(shard_of(identity, digits), {})[identity] = entry
+            other = label_codes[chunk:chunk + gallery]
+            differ = scores.masked_fill((other[None, :] == own[:, None]) | (other[None, :] < 0), -2)
+            for name, values in (("similar", scores), ("filed_differently", differ)):
+                local_scores, local = values.topk(min(width, values.shape[1]), dim=1)
+                best_scores = torch.cat([found[name][0], local_scores], dim=1)
+                best = torch.cat([found[name][1], local + chunk], dim=1)
+                best_scores, pick = best_scores.topk(min(width, best_scores.shape[1]), dim=1)
+                found[name] = [best_scores, best.gather(1, pick)]
+        return {name: (value[0].cpu().numpy(), value[1].cpu().numpy()) for name, value in found.items()}
+
     target = directory / "neighbours"
     staging = directory / ".neighbours.partial"
     shutil.rmtree(staging, ignore_errors=True)
     staging.mkdir()
-    for shard, entries in shards.items():
+    written = 0
+
+    def write(shard, entries):
         (staging / f"{shard}.json").write_text(json.dumps(entries, ensure_ascii=False, separators=(",", ":")))
-    manifest = {"crops": len(ids), "k": k, "shard_digits": digits, "shards": len(shards)}
+
+    shard, entries = None, {}
+    for start in range(0, len(order), block):
+        query_rows = order[start:start + block]
+        found = search(query_rows)
+        for n, row in enumerate(query_rows):
+            identity = ids[row]
+            here = shard_of(identity, digits)
+            if here != shard:
+                if shard is not None:
+                    write(shard, entries)
+                    written += 1
+                shard, entries = here, {}
+            entry = {}
+            for name in ("similar", "filed_differently"):
+                if name == "filed_differently" and not labels[row]:
+                    continue
+                scores, found_rows = found[name]
+                entry[name] = [[ids[j], round(float(s), 3)]
+                               for j, s in zip(found_rows[n], scores[n], strict=True) if s > -2]
+            entries[identity] = entry
+    if shard is not None:
+        write(shard, entries)
+        written += 1
+    manifest = {"crops": len(ids), "k": k, "shard_digits": digits, "shards": written}
     (staging / "manifest.json").write_text(json.dumps(manifest, indent=1) + "\n")
     shutil.rmtree(target, ignore_errors=True)
     os.replace(staging, target)

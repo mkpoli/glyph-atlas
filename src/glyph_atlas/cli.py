@@ -1116,8 +1116,8 @@ def quality_index(
 
 @similar_app.command("index")
 def similar_index(
-    root: Annotated[Path, typer.Option(help="corpus root, which also resolves display-crop paths")] = Path("work"),
-    export: Annotated[list[Path] | None, typer.Option(help="catalogue export; every work/cloudflare-*/catalogue.sqlite when unset")] = None,
+    export: Annotated[list[Path], typer.Option(help="catalogue export the site serves, repeated in publication order; a later one wins")],
+    root: Annotated[Path, typer.Option(help="corpus root")] = Path("work"),
     out: Annotated[Path, typer.Option(help="directory the revisions and `current` are written to")] = Path("work/similar"),
     checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
     workers: Annotated[int, typer.Option(help="processes cutting crops")] = 8,
@@ -1126,8 +1126,7 @@ def similar_index(
     """Embed every corpus glyph and published local crop, reusing unchanged vectors."""
     from .similar import index
 
-    exports = export or sorted(Path("work").glob("cloudflare-*/catalogue.sqlite"))
-    typer.echo(json.dumps(index(root, exports, out, checkpoint=checkpoint, workers=workers, base=base),
+    typer.echo(json.dumps(index(root, list(export), out, checkpoint=checkpoint, workers=workers, base=base),
                           ensure_ascii=False))
 
 

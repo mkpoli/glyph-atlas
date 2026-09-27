@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import sqlite3
 from pathlib import Path
 
@@ -41,22 +42,42 @@ def export(directory: Path, rows: list[tuple[str, str, str, bytes | None]]) -> P
 
 
 def test_local_crops_read_packs_and_expect_the_rest_from_the_site(tmp_path):
-    first = export(tmp_path/"old", [("ex:1", "飍", "a" * 64, webp(10)), ("ex:2", "字", "b" * 64, webp(20))])
+    first = export(tmp_path/"old", [("ex:1", "飍", "a" * 64, webp(10)), ("ex:2", "字", "b" * 64, webp(20)),
+                                    ("ar:1", "ツ゚", "e" * 64, webp(40))])
     second = export(tmp_path/"new", [("ex:2", "宇", "c" * 64, None)])
-    crops = similar.local_crops([second, first], tmp_path/"fetched")
+    # Publication order decides, whatever the files' times.
+    os.utime(first, (2_000_000_000, 2_000_000_000))
+    crops = similar.local_crops([first, second], tmp_path/"fetched")
+    assert crops["ar:1"]["label"] == "ツ゚", "a label of more than one code point is kept"
     assert crops["ex:1"]["path"] == str(tmp_path/"old"/"pack-0001.bin") and crops["ex:1"]["label"] == "飍"
     # The newer export's row wins, and its pack is gone, so the crop is fetched by key.
     assert crops["ex:2"]["label"] == "宇" and "range" not in crops["ex:2"]
     assert crops["ex:2"]["path"] == str(tmp_path/"fetched"/"cc"/f"{'c' * 64}.webp")
 
 
+def test_a_locked_export_stops_the_run(tmp_path):
+    import pytest
+    catalogue = export(tmp_path/"busy", [("ex:1", "飍", "a" * 64, webp(10))])
+    writer = sqlite3.connect(catalogue)
+    writer.execute("BEGIN EXCLUSIVE")
+    try:
+        with pytest.raises(similar.ExportUnreadable):
+            similar.local_crops([catalogue], tmp_path/"fetched")
+    finally:
+        writer.rollback()
+        writer.close()
+
+
 def test_fetch_downloads_only_missing_display_crops(tmp_path, http_server):
     http_server.put(f"atlas/media/{'c' * 64}.webp", webp(30))
+    http_server.put(f"atlas/media/{'e' * 64}.webp", b"<html>not an image</html>")
     crops = {"ex:2": {"key": "c" * 64, "path": str(tmp_path/"cc"/f"{'c' * 64}.webp")},
              "ex:3": {"key": "d" * 64, "path": str(tmp_path/"dd"/f"{'d' * 64}.webp")},
+             "ex:4": {"key": "e" * 64, "path": str(tmp_path/"ee"/f"{'e' * 64}.webp")},
              "ex:1": {"key": "a" * 64, "path": "pack", "range": (0, 1)}}
-    assert similar.fetch(crops, http_server.base_url) == {"held": 0, "fetched": 1, "failed": 1}
-    assert similar.fetch(crops, http_server.base_url) == {"held": 1, "fetched": 0, "failed": 1}
+    assert similar.fetch(crops, http_server.base_url) == {"held": 0, "fetched": 1, "failed": 2}
+    assert similar.fetch(crops, http_server.base_url) == {"held": 1, "fetched": 0, "failed": 2}
+    assert not (tmp_path/"ee").exists(), "a body that is not WebP is not kept"
 
 
 def test_cut_reads_pack_ranges_page_boxes_and_whole_files(tmp_path):
@@ -71,6 +92,9 @@ def test_cut_reads_pack_ranges_page_boxes_and_whole_files(tmp_path):
     assert ids == ["c"]
     ids, _ = similar._cut((str(page), [("e", None, None)]), 32)
     assert ids == ["e"]
+    broken = tmp_path/"broken.png"
+    broken.write_bytes(b"not an image")
+    assert similar._cut((str(broken), [("f", None, None)]), 32) == ([], None)
 
 
 class Encoder:
@@ -112,6 +136,12 @@ def test_index_embeds_new_crops_and_reuses_unchanged_ones(tmp_path, monkeypatch)
     assert second["revision"] != first["revision"]
     assert (out/"current").resolve().name == second["revision"]
 
+    # A label that changes, with the same pixels, is a new revision without re-embedding.
+    corpus["hi:2"]["label"] = "字"
+    third = similar.index(tmp_path, [catalogue], out, checkpoint=checkpoint, workers=1, base="http://unused")
+    assert third["revision"] != second["revision"] and third["embedded"] == 0 and Encoder.calls == 3
+    assert pq.read_table(out/"current"/"units.parquet").to_pydict()["label"] == ["飍", "字", "字"]
+
 
 def test_neighbours_list_the_nearest_and_the_nearest_filed_differently(tmp_path):
     import pyarrow as pa
@@ -121,18 +151,19 @@ def test_neighbours_list_the_nearest_and_the_nearest_filed_differently(tmp_path)
         pytest.skip("neighbours run on CUDA")
     directory = tmp_path/"rev"
     directory.mkdir()
-    angles = [0.0, 0.05, 0.1, 1.0, 1.05]
+    angles = [0.0, 0.08, 0.12, 1.0, 1.05, 0.03, 0.05]
     vectors = np.array([[np.cos(a), np.sin(a)] for a in angles], dtype=np.float16)
     np.save(directory/"vectors.npy", vectors)
-    pq.write_table(pa.table({"id": ["a", "b", "c", "d", "e"], "label": ["字", "字", "宇", "字", None]}),
+    pq.write_table(pa.table({"id": ["a", "b", "c", "d", "e", "f", "g"], "label": ["字", "字", "宇", "字", None, "字", "字"]}),
                    directory/"units.parquet")
     # A gallery chunk of two forces the merge across chunks.
     manifest = similar.neighbours(directory, k=2, block=2, gallery=2, digits=1)
     entries = {}
     for shard in (directory/"neighbours").glob("?.json"):
         entries.update(json.loads(shard.read_text()))
-    assert manifest["crops"] == 5 and set(entries) == {"a", "b", "c", "d", "e"}
-    assert [n for n, _ in entries["a"]["similar"]] == ["b", "c"]
+    assert manifest["crops"] == 7 and set(entries) == {"a", "b", "c", "d", "e", "f", "g"}
+    assert [n for n, _ in entries["a"]["similar"]] == ["f", "g"]
+    # Its nearest crops are all 字, and the differently filed list is searched on its own.
     assert [n for n, _ in entries["a"]["filed_differently"]] == ["c"]
     assert [n for n, _ in entries["d"]["similar"]] == ["e", "c"]
     # An unlabelled crop is a neighbour, but has no list of its own of differently filed ones.
