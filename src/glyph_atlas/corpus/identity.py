@@ -52,9 +52,11 @@ def identity_fields(
         # than falling back to the visual model.
         written, basis = decided["form"] or decided.get("character"), decided["basis"]
         ambiguous = written is None
-        if decided.get("character"):
-            # Reported as another character: the glyph belongs to that character's family.
-            family = family_of(" ".join(refs.to_code_points(decided["character"])))
+        if written:
+            # The glyph belongs to the family of what it is written as: a kana form keeps its
+            # family (𛂞 is は's), a kanji variant has its own (仿 is not 倣's), and a reported
+            # character brings its own.
+            family = family_of(" ".join(refs.to_code_points(written)))
     else:
         try:
             from ..visual_families import assignment_for, evidence_signature

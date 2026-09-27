@@ -12,7 +12,7 @@ MIGRATIONS = Path(__file__).resolve().parents[1] / "apps/cloudflare/migrations"
 FORMS_REAPPLY = """INSERT OR IGNORE INTO form_bases(id,character,family) SELECT c.id,c.character,c.family FROM corpus_units c JOIN form_units f ON f.id=c.id
   WHERE f.glyph_set=1 OR f.cluster_form IS NOT NULL OR f.cluster_issue IS NOT NULL;
 UPDATE corpus_units SET character=CASE WHEN f.glyph_set=1 OR f.form IS NOT NULL OR f.issue IS NOT NULL THEN coalesce(f.issue_character,f.form) ELSE b.character END,
-  family=coalesce(f.issue_family,b.family)
+  family=coalesce(f.written_family,b.family)
   FROM form_units f JOIN form_bases b ON b.id=f.id WHERE f.id=corpus_units.id AND corpus_units.named=0;"""
 
 # Reapplies the forms, marks the corpus glyphs that have a `units` row as named, then counts assigned

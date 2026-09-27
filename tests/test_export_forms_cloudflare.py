@@ -181,9 +181,9 @@ def test_a_republication_keeps_cluster_marks(tmp_path, monkeypatch, form_corpora
                (A, "は", "U+306F", None, 1, "x", 0, 1))
     publish(tmp_path, monkeypatch, "out")
     load(db, tmp_path / "out")
-    # The report reaches every glyph that follows the cluster; B keeps its own form.
-    rows = {r[0]: r[1:] for r in db.execute("SELECT id,form,issue,issue_character,issue_family FROM form_units")}
-    assert rows[A] == (None, "character", "テ", "U+3066") and rows[B] == ("𛂞", None, None, None)
+    # The report reaches every glyph that follows the cluster; B keeps its own form, in は's grapheme.
+    rows = {r[0]: r[1:] for r in db.execute("SELECT id,form,issue,issue_character,written_family FROM form_units")}
+    assert rows[A] == (None, "character", "テ", "U+3066") and rows[B] == ("𛂞", None, None, "U+306F")
     assert db.execute("SELECT form,issue,rejected FROM form_clusters JOIN form_families ON family=code_point").fetchone() == (
         None, "character", 3)
     db.executescript(corpus_upsert((A, "は", "U+306F", None, 1, "y", 0, 1, "unknown")) + "\n" + CORPUS_REFRESH)
@@ -198,3 +198,9 @@ def test_a_republication_keeps_cluster_marks(tmp_path, monkeypatch, form_corpora
     assert rows[A] == (None, None) and rows[B] == ("𛂞", None)
     assert db.execute("SELECT issue,rejected FROM form_clusters JOIN form_families ON family=code_point").fetchone() == ("mixed", 0)
     assert db.execute("SELECT character FROM corpus_units WHERE id=?", (A,)).fetchone() == ("は",)
+
+
+def test_a_decision_carries_the_grapheme_of_what_the_glyph_is_written_as(monkeypatch):
+    monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
+    module = importlib.import_module("export_forms_cloudflare")
+    assert [module.written_family(c) for c in ("𛂥", "仿", "國", None)] == ["U+306F", "U+4EFF", "U+56FD", None]
