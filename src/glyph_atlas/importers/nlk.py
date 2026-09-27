@@ -6,13 +6,13 @@ requests when a reader opens a book, and the search site's detail popup (`nl_det
 which carries the fuller catalogue statement (판사항, 발행사항, 주기사항) and, for a record that has a
 physical counterpart in the catalogue, a link naming its `KOL…` control number.
 
-The digitised pages themselves are one PDF per record, served at `viewer.nl.go.kr/conv/<name>.pdf` and
-built when the viewer form is posted for the record, as the viewer does when a reader opens it. Most
-records are named by their own content id; some (the older 고문헌 records that already had a KOL
-catalogue entry before they were digitised) are named by that KOL id instead, so a `.pdf` request
-under the content id is tried first and the KOL id only when that answers 404. Each
-page of the PDF holds one embedded JPEG, which is extracted as it stands: PyMuPDF reads the compressed
-image bytes straight out of the page's image directory, without re-encoding.
+The pages are served by the viewer. Opening a record posts a form (`VIEWER_OPEN`), and the page it
+answers names how the record is held: most records as one PDF, which that page names in
+`DEFAULT_URL` and which the host builds in the background once the form is posted; some older
+records as page images (`srcpath`, `vol_maxpage`), each served by `view_image.jsp` to the session the
+form opened. A PDF page's embedded JPEG is extracted as it stands: PyMuPDF reads the compressed image
+bytes straight out of the page's image directory, without re-encoding. A served page image is kept
+as the host sends it.
 
 The library states no 공공누리 label on these records; `[관외이용-무료]` means the item can be read from
 outside the library because its copyright has expired or its rightsholder gave permission, not that
@@ -43,9 +43,13 @@ SOURCE = "nlk"
 HOLDER = "국립중앙도서관"
 BOOKINFO_API = "https://viewer.nl.go.kr/nlviewer/pdf/web/getBookInfo.jsp?contents_id={cno}"
 DETAIL_API = "https://www.nl.go.kr/NL/search/nl_detail_online_view.ajax"
-PDF_URL = "https://viewer.nl.go.kr/conv/{name}.pdf"
-#: The form the viewer page posts when a reader opens a record; it is what starts the PDF build.
-VIEWER_OPEN = "https://viewer.nl.go.kr/main.wviewer"
+VIEWER_HOST = "https://viewer.nl.go.kr"
+#: The form the viewer page posts when a reader opens a record: it answers the viewer page, starts
+#: the PDF build, and opens the session that page images are served to.
+VIEWER_OPEN = f"{VIEWER_HOST}/main.wviewer"
+#: The page the library's search site opens for a record; it redirects into the viewer.
+VIEWER_PAGE = f"{VIEWER_HOST}/nlmivs/viewWonmun_js.jsp?cno={{cno}}&sysid=homepage"
+PAGE_IMAGE = f"{VIEWER_HOST}/nlmivs/view_image.jsp?cno={{cno}}&vol={{vol}}&page={{page}}&twoThreeYn=N"
 SEARCH_PAGE = "https://www.nl.go.kr/NL/contents/search.do?kwd={cno}"
 POLICY = "https://www.nl.go.kr/NL/contents/N70600000000.do"
 
@@ -55,6 +59,9 @@ ATTRIBUTION = f"{HOLDER}, {ACCESS_WORDING}"
 CNTS = re.compile(r"^CNTS-\d+$")
 CONTROL_NO = re.compile(r"controlNo=(KOL\d+)")
 STATED_PAGES = re.compile(r"^PDF\s*\|\s*(\d+)\s*p\.?$")
+VIEWER_PDF = re.compile(r"var DEFAULT_URL = '(/conv/[^']+\.pdf)'")
+VIEWER_IMAGES = re.compile(r'var vol_maxpage = "(\d+)"')
+VIEWER_VOLUME = re.compile(r"loadVol\('[^']*',\s*(\d+)\s*,")
 BOOKINFO_ROW = re.compile(
     r'<span class="label">\s*(?P<label>[^<]*?)\s*</span>\s*<span class="text">\s*(?P<value>.*?)\s*</span>',
     re.DOTALL,
@@ -137,18 +144,27 @@ def _dating(statement: str) -> Dating | None:
     return Dating(literal=statement, start=start, end=end, kind="publication", evidence="발행사항")
 
 
-def _pdf_names(cno: str, kol: str | None) -> list[str]:
-    """PDF basenames to try in order: the content id first, then the KOL control number if known."""
-    names = [cno]
-    if kol:
-        names.append(kol)
-    return names
+def _viewer(payload: bytes, cno: str) -> tuple[str, str | int]:
+    """How the viewer page holds the record: `("pdf", url)` or `("images", page count)`."""
+    text = payload.decode("utf-8", "replace")
+    pdf = VIEWER_PDF.search(text)
+    if pdf:
+        return "pdf", VIEWER_HOST + pdf.group(1)
+    count = VIEWER_IMAGES.search(text)
+    if count and int(count.group(1)) > 0:
+        return "images", int(count.group(1))
+    raise RecordError(f"{cno}: the viewer page names neither a PDF nor page images")
 
 
-#: A PDF is built when a reader opens the record in the viewer (`VIEWER_OPEN`), and the build runs in
-#: the background: until it finishes, and for a while on some of the servers behind the host, the PDF
-#: answers 404. Each candidate name is retried on a 404 with a growing pause, rather than treated as
-#: a name that has no PDF at all.
+def _volume(payload: bytes) -> str:
+    """The volume number the viewer page asks page images for (`0` for a one-volume record)."""
+    found = VIEWER_VOLUME.search(payload.decode("utf-8", "replace"))
+    return found.group(1) if found else "0"
+
+
+#: The host builds a PDF in the background once the viewer form is posted: until the build
+#: finishes, and for a while on some of the servers behind the host, the PDF answers 404. It is
+#: asked for again on a 404 with a growing pause.
 BUILD_RETRIES = 10
 BUILD_BACKOFF = 5.0
 BUILD_MAX_BACKOFF = 60.0
@@ -156,57 +172,46 @@ BUILD_MAX_BACKOFF = 60.0
 
 def _fetch_pdf(
     cno: str,
-    kol: str | None,
+    url: str,
     dest: Path,
     *,
     retries: int,
     fetch_options: dict[str, Any],
     build_retries: int = BUILD_RETRIES,
     stated_pages: int | None = None,
-) -> tuple[Path, str]:
-    """Download the record's PDF, trying each candidate name, and return the path and the URL used.
+) -> Path:
+    """Download the record's PDF from `url`, the one the viewer page names, and return its path.
 
-    Which name answered is kept in a sidecar file next to `dest`, written only once the file opens as
-    a PDF with `stated_pages` pages (when the record states a count), so that a rerun reuses only a
-    file known to be whole and knows which name it came under. A cached file that fails the check, or
-    has no sidecar, is fetched again. A body that is not such a PDF (an error page, or a file served
-    mid-build) is retried like a 404.
+    A sidecar file next to `dest` holding `url` is written only once the file opens as a PDF with
+    `stated_pages` pages (when the record states a count), so a rerun reuses only a file known to be
+    whole and fetched from that URL. Anything else on disk is fetched again. A body that is not such
+    a PDF (an error page, or a file served mid-build) is retried like a 404.
     """
     marker = dest.with_name(dest.name + ".url")
-    if dest.exists() and marker.exists():
-        if _pdf_problem(dest, stated_pages) is None:
-            return dest, marker.read_text(encoding="utf-8").strip()
-        marker.unlink()
+    if (dest.exists() and marker.exists() and marker.read_text(encoding="utf-8").strip() == url
+            and _pdf_problem(dest, stated_pages) is None):
+        return dest
+    marker.unlink(missing_ok=True)
     dest.unlink(missing_ok=True)
     sleeper = fetch_options.get("sleeper") or net.SLEEP
-    net.download(
-        VIEWER_OPEN, dest.with_name(f"{cno}.viewer.html"), retries=retries, refresh=True,
-        method="POST", data={"cno": cno, "ax": "Y", "sysid": "homepage"},
-        referer=f"{VIEWER_OPEN}?cno={cno}&sysid=homepage", **fetch_options,
-    )
     last_error = "no request was made"
-    for name in _pdf_names(cno, kol):
-        url = PDF_URL.format(name=name)
-        for attempt in range(1, build_retries + 1):
-            try:
-                path = net.download(url, dest, retries=retries, **fetch_options)
-            except net.DownloadError as error:
-                last_error = str(error)
-                if "HTTP 404" not in last_error:
-                    raise
-            else:
-                problem = _pdf_problem(path, stated_pages)
-                if problem is None:
-                    marker.write_text(url, encoding="utf-8")
-                    return path, url
-                path.unlink()
-                last_error = f"{url}: {problem}"
-            if attempt < build_retries:
-                sleeper(min(BUILD_BACKOFF * attempt, BUILD_MAX_BACKOFF))
-    raise RecordError(
-        f"{cno}: no whole PDF at any of {_pdf_names(cno, kol)} after waiting for it to build "
-        f"({last_error})"
-    )
+    for attempt in range(1, build_retries + 1):
+        try:
+            path = net.download(url, dest, retries=retries, **fetch_options)
+        except net.DownloadError as error:
+            last_error = str(error)
+            if "HTTP 404" not in last_error:
+                raise
+        else:
+            problem = _pdf_problem(path, stated_pages)
+            if problem is None:
+                marker.write_text(url, encoding="utf-8")
+                return path
+            path.unlink()
+            last_error = f"{url}: {problem}"
+        if attempt < build_retries:
+            sleeper(min(BUILD_BACKOFF * attempt, BUILD_MAX_BACKOFF))
+    raise RecordError(f"{cno}: no whole PDF at {url} after waiting for it to build ({last_error})")
 
 
 def _pdf_problem(path: Path, stated_pages: int | None) -> str | None:
@@ -246,11 +251,12 @@ def collect(
 ) -> dict[str, Any]:
     """Collect the National Library records `ids` into the dataset directory `out`.
 
-    The bookinfo and detail HTML, and the PDF, are kept in `out/upstream/` and reused on a rerun.
-    Each page's embedded image goes through `images.register`, keyed by the PDF's URL with a
-    `#page=<n>` fragment. A record whose metadata or PDF cannot be fetched, or whose PDF holds a page
-    with no embedded image, is left out whole and listed under `unavailable`. `build_retries` bounds
-    how many times a PDF that is still 404 (still converting) is asked for again before giving up.
+    The bookinfo, detail and viewer HTML, the PDF and the served page images are kept in
+    `out/upstream/`; all but the viewer page, which opens the session, are reused on a rerun. Each
+    page image goes through `images.register`, keyed by the PDF's URL with a `#page=<n>` fragment or
+    by its `view_image.jsp` URL. A record whose metadata or pages cannot be fetched, or whose PDF
+    holds a page with no embedded image, is left out whole and listed under `unavailable`.
+    `build_retries` bounds how many times a PDF that is still 404 (still building) is asked for again.
     The tables written hold exactly the records of `ids`: a rerun with fewer ids drops the others.
     """
     out = Path(out)
@@ -285,23 +291,29 @@ def collect(
                     (upstream / f"{cno}.{name}.html").unlink(missing_ok=True)
                 unavailable.append({"id": cno, "error": str(error)})
                 continue
+            pdf_path = upstream / f"{cno}.pdf"
             try:
-                pdf_path, pdf_url = _fetch_pdf(
-                    cno, kol, upstream / f"{cno}.pdf", retries=retries, fetch_options=fetch_options,
-                    build_retries=build_retries, stated_pages=_stated_pages(bookinfo),
+                viewer_path = net.download(
+                    VIEWER_OPEN, upstream / f"{cno}.viewer.html", retries=retries, refresh=True,
+                    method="POST", data={"cno": cno, "ax": "Y", "sysid": "homepage"},
+                    referer=f"{VIEWER_OPEN}?cno={cno}&sysid=homepage", **fetch_options,
                 )
-            except net.DownloadError as error:
-                unavailable.append({"id": cno, "title": bookinfo.get("표제"), "error": str(error)})
-                continue
-            except RecordError as error:
-                unavailable.append({"id": cno, "title": bookinfo.get("표제"), "error": str(error)})
-                continue
-            try:
-                document, record_pages = build(
-                    cno, bookinfo, detail, kol=kol, pdf_path=pdf_path, pdf_url=pdf_url,
-                    cache=cache, checked=checked,
-                )
-            except RecordError as error:
+                viewer = viewer_path.read_bytes()
+                kind, held = _viewer(viewer, cno)
+                if kind == "pdf":
+                    _fetch_pdf(
+                        cno, held, pdf_path, retries=retries, fetch_options=fetch_options,
+                        build_retries=build_retries, stated_pages=_stated_pages(bookinfo),
+                    )
+                    record_pages, revision = _pdf_pages(cno, pdf_path, held, cache=cache)
+                else:
+                    record_pages, revision = _image_pages(
+                        cno, _volume(viewer), held, upstream / cno, retries=retries,
+                        fetch_options=fetch_options, cache=cache,
+                    )
+                document = build(cno, bookinfo, detail, kol=kol, kind=kind, held=held,
+                                 revision=revision, checked=checked)
+            except (net.DownloadError, RecordError) as error:
                 # A PDF that could not be built into pages is not kept, so a rerun fetches it again.
                 pdf_path.unlink(missing_ok=True)
                 pdf_path.with_name(pdf_path.name + ".url").unlink(missing_ok=True)
@@ -310,7 +322,7 @@ def collect(
             documents.append(document)
             pages.extend(record_pages)
             collected.append({"id": cno, "title": document.title, "pages": len(record_pages),
-                              "pdf": pdf_url, "kol": kol})
+                              "held_as": kind, **({"pdf": held} if kind == "pdf" else {}), "kol": kol})
     finally:
         if own_client:
             client.close()
@@ -332,58 +344,30 @@ def collect(
     return summary
 
 
-def build(
-    cno: str,
-    bookinfo: dict[str, str],
-    detail: dict[str, str],
-    *,
-    kol: str | None,
-    pdf_path: Path,
-    pdf_url: str,
-    cache: Path | None,
-    checked: date,
-) -> tuple[Document, list[Page]]:
-    """The document and pages of one record whose PDF is on disk at `pdf_path`."""
+def _pdf_pages(cno: str, pdf_path: Path, pdf_url: str, *, cache: Path | None) -> tuple[list[Page], str]:
+    """The pages of a record held as the PDF at `pdf_path`, and the PDF's SHA-256."""
     import pymupdf  # imported lazily so the module loads without the optional extra
 
     document_id = f"{SOURCE}:{cno}"
-    pdf_bytes = pdf_path.read_bytes()
-    revision = hashlib.sha256(pdf_bytes).hexdigest()
-
-    title = detail.get("표제/저자사항") or bookinfo.get("표제", cno)
-    title = re.split(r"\s*/\s*", title)[0].strip()
-    production_statement = detail.get("판사항", "")
-    publication_statement = detail.get("발행사항") or (
-        f"{bookinfo.get('발행처', '')}, {bookinfo.get('발행년도', '')}".strip(", ")
-    )
-    dating = _dating(publication_statement)
-
+    revision = hashlib.sha256(pdf_path.read_bytes()).hexdigest()
     doc = pymupdf.open(pdf_path)
     try:
         pages: list[Page] = []
         for index in range(doc.page_count):
             seq = index + 1
-            page = doc[index]
-            candidates = page.get_images(full=True)
+            candidates = doc[index].get_images(full=True)
             if not candidates:
                 raise RecordError(f"{cno}: page {seq} of the PDF holds no embedded image")
-            best_xref, best_area = None, -1
-            for entry in candidates:
-                xref = entry[0]
-                width, height = entry[2], entry[3]
-                area = width * height
-                if area > best_area:
-                    best_xref, best_area = xref, area
-            info = doc.extract_image(best_xref)
-            image_url = f"{pdf_url}#page={seq}"
+            xref = max(candidates, key=lambda entry: entry[2] * entry[3])[0]
+            info = doc.extract_image(xref)
             scratch = images.images_root(cache) / ".tmp"
             scratch.mkdir(parents=True, exist_ok=True)
             temp_path = scratch / f"{uuid4().hex}.{info['ext']}"
             temp_path.write_bytes(info["image"])
             try:
                 record = images.register(
-                    temp_path, image_url, root=cache, width=info["width"], height=info["height"],
-                    fetched_at=datetime.now(UTC),
+                    temp_path, f"{pdf_url}#page={seq}", root=cache, width=info["width"],
+                    height=info["height"], fetched_at=datetime.now(UTC),
                 )
             finally:
                 temp_path.unlink(missing_ok=True)
@@ -394,8 +378,78 @@ def build(
             ))
     finally:
         doc.close()
+    return pages, revision
 
-    shelfmark = detail.get("청구기호") or None
+
+def _image_pages(
+    cno: str,
+    volume: str,
+    count: int,
+    folder: Path,
+    *,
+    retries: int,
+    fetch_options: dict[str, Any],
+    cache: Path | None,
+) -> tuple[list[Page], str]:
+    """The pages of a record held as `count` page images, and a SHA-256 over theirs in order.
+
+    Each image is fetched from `view_image.jsp` in the session the viewer form opened; an answer
+    that is not an image (the host sends a short text body outside a session) fails the record.
+    """
+    document_id = f"{SOURCE}:{cno}"
+    pages: list[Page] = []
+    digest = hashlib.sha256()
+    for seq in range(1, count + 1):
+        url = PAGE_IMAGE.format(cno=cno, vol=volume, page=seq)
+        path = _page_image(url, folder, seq, retries=retries, fetch_options=fetch_options)
+        record = images.register(path, url, root=cache, fetched_at=datetime.now(UTC))
+        digest.update(record.sha256.encode())
+        pages.append(Page(
+            id=f"{document_id}:{seq}", document_id=document_id, seq=seq,
+            image=record.url, width=record.width, height=record.height, sha256=record.sha256,
+            meta={"viewer_page": seq},
+        ))
+    return pages, digest.hexdigest()
+
+
+def _page_image(url: str, folder: Path, seq: int, *, retries: int,
+                fetch_options: dict[str, Any]) -> Path:
+    """Fetch one served page image into `folder`, named by its page and its own format's suffix."""
+    from PIL import Image
+
+    kept = sorted(folder.glob(f"{seq:04d}.*")) if folder.exists() else []
+    if kept:
+        return kept[0]
+    fetched = net.download(url, folder / f"{seq:04d}.download", retries=retries, expected="image",
+                           referer=VIEWER_OPEN, **fetch_options)
+    with Image.open(fetched) as image:
+        suffix = {"JPEG": ".jpg", "PNG": ".png", "TIFF": ".tif", "GIF": ".gif"}.get(image.format)
+    if suffix is None:
+        fetched.unlink()
+        raise RecordError(f"{url}: served an image Pillow names {image.format!r}")
+    return fetched.replace(fetched.with_suffix(suffix))
+
+
+def build(
+    cno: str,
+    bookinfo: dict[str, str],
+    detail: dict[str, str],
+    *,
+    kol: str | None,
+    kind: str,
+    held: str | int,
+    revision: str,
+    checked: date,
+) -> Document:
+    """The document of one record; `kind` and `held` are what `_viewer` read from its viewer page."""
+    title = detail.get("표제/저자사항") or bookinfo.get("표제", cno)
+    title = re.split(r"\s*/\s*", title)[0].strip()
+    production_statement = detail.get("판사항", "")
+    publication_statement = detail.get("발행사항") or (
+        f"{bookinfo.get('발행처', '')}, {bookinfo.get('발행년도', '')}".strip(", ")
+    )
+    dating = _dating(publication_statement)
+
     rights = Rights(licence=Licence.RESTRICTED, holder=HOLDER, attribution=ATTRIBUTION, evidence=POLICY,
                     checked=checked)
     meta: dict[str, Any] = {
@@ -411,22 +465,21 @@ def build(
         "copyright_note": bookinfo.get("저작권") or None,
         "kol_control_number": kol,
         "record_sha256": revision,
-        "pdf_url": pdf_url,
         "search_page": SEARCH_PAGE.format(cno=cno),
     }
     meta = {key: value for key, value in meta.items() if value not in (None, [], "")}
 
-    document = Document(
-        id=document_id,
+    return Document(
+        id=f"{SOURCE}:{cno}",
         title=title,
         origin="korea",
-        source_refs={SOURCE: cno, "catalogue": SEARCH_PAGE.format(cno=cno), "pdf": pdf_url,
-                     **({"kol": kol} if kol else {})},
+        source_refs={SOURCE: cno, "catalogue": SEARCH_PAGE.format(cno=cno),
+                     "viewer": VIEWER_PAGE.format(cno=cno),
+                     **({"pdf": held} if kind == "pdf" else {}), **({"kol": kol} if kol else {})},
         holder=HOLDER,
-        shelfmark=shelfmark,
+        shelfmark=detail.get("청구기호") or None,
         production=_production(production_statement),
         dating=[dating] if dating else [],
         image_rights=rights,
         meta=meta,
     )
-    return document, pages
