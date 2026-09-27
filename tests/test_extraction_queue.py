@@ -48,8 +48,11 @@ def source(tmp_path):
     docs=[Document(id="a",title="暦"),Document(id="b",title="天文"),Document(id="c",title="蝦夷")]
     pages=[Page(id=f"{d.id}:{i}",document_id=d.id,seq=i,image="https://example.org/x.jpg",width=100,height=100)
            for d in docs for i in range(2)]
+    lines=[Line(id=f"{p.id}:L0",page_id=p.id,seq=0,box=Box(x=1,y=1,w=10,h=50),text_raw="字",text="字")
+           for p in pages]
     tables.write(directory/"documents.parquet",docs,Document)
     tables.write(directory/"pages.parquet",pages,Page)
+    tables.write(directory/"lines.parquet",lines,Line)
     return directory
 
 
@@ -62,6 +65,24 @@ def test_queue_round_robin_resumes_and_seed_is_idempotent(tmp_path,monkeypatch):
     assert queue.claim()["id"] == "b:0"
     queue.recover()
     assert queue.claim()["id"] == "a:0"
+
+
+def test_seed_leaves_out_a_page_without_a_located_line(tmp_path,monkeypatch):
+    monkeypatch.setattr("glyph_atlas.images.index_path",lambda:tmp_path/"missing")
+    directory=tmp_path/"source"; directory.mkdir()
+    doc=Document(id="a",title="暦")
+    pages=[Page(id=f"a:{i}",document_id="a",seq=i,image="https://example.org/x.jpg",width=100,height=100)
+           for i in range(3)]
+    lines=[Line(id="a:0:L0",page_id="a:0",seq=0,box=Box(x=1,y=1,w=10,h=50),text_raw="字",text="字"),
+           Line(id="a:1:L0",page_id="a:1",seq=0,box=None,text_raw="字",text="字"),
+           Line(id="a:2:L0",page_id="a:2",seq=0,box=Box(x=0,y=0,w=100,h=100),text_raw="",text="",
+                meta={"scope":"page"})]
+    tables.write(directory/"documents.parquet",[doc],Document)
+    tables.write(directory/"pages.parquet",pages,Page)
+    tables.write(directory/"lines.parquet",lines,Line)
+    queue=Queue(tmp_path/"queue")
+    assert queue.seed(directory) == 1
+    assert [r[0] for r in queue.db.execute("SELECT id FROM pages")] == ["a:0"]
 
 
 def test_failed_page_is_not_completed_or_importable(tmp_path, monkeypatch):
