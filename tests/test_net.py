@@ -355,3 +355,25 @@ def tmp_path_file(root, name):
     from pathlib import Path
 
     return Path(root) / name
+
+
+def test_a_form_post_sends_its_body_and_referer_and_is_never_resumed(tmp_path: Path) -> None:
+    import httpx
+
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, content=b"ok")
+
+    dest = tmp_path / "form.html"
+    dest.with_name(dest.name + net.PART_SUFFIX).write_bytes(b"stale partial body")
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    net.download("https://example.org/form", dest, client=client, method="POST",
+                 data={"cno": "X-1"}, referer="https://example.org/page?cno=X-1")
+    (request,) = seen
+    assert request.method == "POST"
+    assert request.content == b"cno=X-1"
+    assert request.headers["Referer"] == "https://example.org/page?cno=X-1"
+    assert "Range" not in request.headers
+    assert dest.read_bytes() == b"ok"
