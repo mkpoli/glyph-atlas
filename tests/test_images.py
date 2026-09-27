@@ -704,3 +704,13 @@ def test_a_failed_stitch_leaves_no_capped_copy_behind(http_server: Server, tmp_p
 
     assert not [p for p in cache.rglob("*.jpg")]
     assert images.index(cache) == []
+
+
+def test_an_unreadable_info_json_leaves_no_capped_copy_behind(http_server: Server, tmp_path: Path) -> None:
+    http_server.put("iiif/2/capped/full/64,/0/default.jpg", jpeg(40, 30))  # no info.json served
+    cache = tmp_path / "cache"
+
+    with pytest.raises((images.ImageError, net.DownloadError)):
+        images.fetch(http_server.url("iiif/2/capped/full/64,/0/default.jpg"), pause=0, root=cache)
+
+    assert not [p for p in cache.rglob("*.jpg")]

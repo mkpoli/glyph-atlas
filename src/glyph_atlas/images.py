@@ -262,16 +262,20 @@ def fetch(
             if wanted is not None and _image_size(target)[0] < wanted:
                 # A request URL that names a width the server did not send; when its stated limits
                 # explain the shortfall, region requests at full resolution add up to that image.
-                described = described or info(service, client=client, pause=pause, clock=clock, sleeper=sleeper)
-                if described["width"] == wanted and _capped(described, wanted):
-                    capped = target
-                    try:
+                capped = target
+                try:
+                    described = described or info(service, client=client, pause=pause, clock=clock,
+                                                  sleeper=sleeper)
+                    if described["width"] == wanted and _capped(described, wanted):
                         target, _ = _store(cache, stitch(), ".jpg")
-                    finally:
-                        if created:
-                            # Nothing indexes the capped copy, stitched or not.
-                            capped.unlink(missing_ok=True)
-                    seen = {}
+                        seen = {}
+                except Exception:
+                    if created:
+                        capped.unlink(missing_ok=True)
+                    raise
+                if target != capped and created:
+                    # Nothing indexes the capped copy once the stitched image replaces it.
+                    capped.unlink(missing_ok=True)
         digest, size = _digest(target)
         width, height = _image_size(target)
     finally:
