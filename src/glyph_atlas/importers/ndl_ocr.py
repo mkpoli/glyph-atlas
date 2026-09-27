@@ -21,7 +21,8 @@ def import_ocr(root: Path, payload: bytes, pid: str) -> dict:
     lines, updated, seen = [], {}, set()
     rejected = 0
     for record in records:
-        seq = record["page"]
+        # NDL numbers a book's pages from 1; a page's seq is its position from 0.
+        seq = record["page"] - 1
         if str(record["book"]) != pid or seq not in pages or seq in seen:
             raise ValueError("OCR pages do not match the IIIF book")
         seen.add(seq)

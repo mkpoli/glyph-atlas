@@ -9,7 +9,7 @@ from glyph_atlas.schema import Document, Page
 
 def source(tmp_path):
     tables.write(tmp_path / "documents.parquet", [Document(id="ndl:123", title="Book")], Document)
-    tables.write(tmp_path / "pages.parquet", [Page(id="ndl:123:1", document_id="ndl:123", seq=1,
+    tables.write(tmp_path / "pages.parquet", [Page(id="ndl:123:1", document_id="ndl:123", seq=0,
                  image="https://example.org/scan", width=100, height=200)], Page)
     (tmp_path / "MANIFEST.json").write_text('{"tables":{},"collection":{}}')
     return tmp_path
