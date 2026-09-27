@@ -48,3 +48,13 @@ def test_small_comes_from_the_box_and_an_unknown_method_gives_no_pixel_tag():
 
 def test_a_one_pixel_line_is_measured_without_error():
     assert measure(Image.new("L", (1, 12), 128))["sharpness"] == 0
+
+
+def test_a_blank_crop_is_not_blurry():
+    assert "blurry" not in tags(measure(Image.new("L", (40, 40), 230)))
+
+
+def test_a_transparent_crop_is_measured_on_white():
+    image = Image.new("RGBA", (40, 40), (200, 30, 30, 0))
+    ImageDraw.Draw(image).rectangle((10, 5, 20, 35), fill=(0, 0, 0, 255))
+    assert measure(image)["chroma"] < 1

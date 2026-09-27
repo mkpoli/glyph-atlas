@@ -28,10 +28,16 @@ from PIL import Image
 METHOD = "pixel-statistics-v1"
 #: Shorter side, in source pixels, below which a crop is `small`.
 SMALL = 24
+#: Contrast below which a crop shows no ink to judge sharpness by.
+BLANK = 16
 
 
 def measure(image: Image.Image) -> dict:
-    """The statistics of one crop, cut from the page at its source resolution."""
+    """The statistics of one crop, cut from the page at its source resolution. A transparent crop is
+    measured on a white ground, as it is shown."""
+    if image.mode in ("RGBA", "LA", "PA") or (image.mode == "P" and "transparency" in image.info):
+        ground = Image.new("RGBA", image.size, "white")
+        image = Image.alpha_composite(ground, image.convert("RGBA"))
     rgb = np.asarray(image.convert("RGB"), dtype=np.float32)
     grey = rgb.mean(axis=2)
     ink, paper = np.percentile(grey, 5), np.percentile(grey, 95)
@@ -52,7 +58,7 @@ def tags(quality: dict | None, box=None) -> list[str]:
         binary = quality["mid_grey"] < 0.02 and quality["contrast"] >= 240
         if binary:
             found.append("binary")
-        elif quality["sharpness"] < 0.30:
+        elif quality["sharpness"] < 0.30 and quality["contrast"] >= BLANK:
             found.append("blurry")
         if quality["noise"] > 0.06:
             found.append("noisy")
