@@ -303,20 +303,3 @@ def test_the_pause_follows_only_a_page_that_fetched_its_image(tmp_path, monkeypa
             raise ValueError("unavailable")
     run(queue,Broken(),pages=4,pause=7)
     assert slept == [7]
-
-
-def test_movable_type_is_neither_seeded_nor_claimed(tmp_path, monkeypatch):
-    monkeypatch.setattr("glyph_atlas.images.index_path", lambda: tmp_path/"missing")
-    directory = source(tmp_path)
-    queue = Queue(tmp_path/"queue")
-    queue.seed(directory)
-    docs = [Document(id="a", title="暦", production="printed/type"), Document(id="b", title="天文"),
-            Document(id="c", title="蝦夷"), Document(id="d", title="活版", production="printed/type/metal")]
-    tables.write(directory/"documents.parquet", docs, Document)
-    tables.write(directory/"pages.parquet", [Page(id=f"{d}:0", document_id=d, seq=0, image="https://example.org/x.jpg",
-                 width=100, height=100) for d in ("a", "b", "d")], Page)
-    assert queue.seed(directory) == 0
-    assert queue.exclude(directory) == 2
-    assert {queue.claim()["document_id"], queue.claim()["document_id"]} == {"b"}
-    assert queue.claim() is None
-    assert queue.exclude(directory) == 0

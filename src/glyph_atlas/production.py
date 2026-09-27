@@ -16,10 +16,6 @@ VOCAB = Path(__file__).resolve().parents[2] / "data/vocab/production.yaml"
 OVERRIDES = Path(__file__).resolve().parents[2] / "data/vocab/production-overrides.yaml"
 #: What a Quick review round deals by default: movable type fills whole books with near-identical glyphs.
 REVIEW_SCOPE = "not:printed/type"
-#: What extraction takes from transcribed pages, and what the site publishes of it. Typeset pages there
-#: are Meiji or later prints, often scanned badly, and the kuzushiji detector and classifier misplace
-#: and misread their type.
-EXTRACTION_SCOPE = "not:printed/type"
 TREE = Tree(VOCAB)
 check, label, within, in_scope, check_scope = TREE.check, TREE.label, TREE.within, TREE.in_scope, TREE.check_scope
 
