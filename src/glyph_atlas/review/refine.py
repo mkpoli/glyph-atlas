@@ -10,6 +10,10 @@ withheld only when the ink cannot be cut into that many characters, for the reas
 `divide_by_reading` lists, or when the reading is one encoded ligature. Without a
 typed reading the OCR-gated `SplitEngine` decides, as before. Either way the
 children are machine proposals, dealt again in Quick review.
+
+A report withheld earlier is assessed again when its batch is rerun with
+`--include-processed`, provided nothing but this repair's own record of that report
+has changed the crop since the review.
 """
 from __future__ import annotations
 
@@ -177,6 +181,16 @@ def assess_reading(unit, crop: Image.Image, reading: str) -> dict:
     return {**divide_by_reading(crop, reading).model_dump(mode="json"), **basis}
 
 
+def _reconciles(event, source_event_id) -> bool:
+    """Whether a journal event is this repair's own record for one reviewer report."""
+    try:
+        evidence = json.loads(event.evidence or "{}")
+    except (ValueError, TypeError):
+        return False
+    return (isinstance(evidence, dict) and evidence.get("kind") == "feedback-reconciliation"
+            and evidence.get("source_event_id") == source_event_id)
+
+
 def _changes(store, unit, values, evidence, *, base_revision, role="model"):
     revision = base_revision
     body = json.dumps(evidence, ensure_ascii=False, sort_keys=True)
@@ -301,7 +315,9 @@ def refine_feedback(store: Store, payload: dict, *, apply=False, engine=None, ma
     """Validate feedback against current pixels before recording a derived change."""
     feedback = normalize_export(payload)
     source_rows = {r["event"]["id"]: r for r in payload.get("reviews", [])}
-    events = {e.id: e for e in store.events()}
+    journal = store.events()
+    events = {e.id: e for e in journal}
+    position = {e.id: i for i, e in enumerate(journal)}
     latest = {e.target_id: e.id for e in events.values() if e.field == "review"}
     output = []
     for f in feedback:
@@ -331,6 +347,13 @@ def refine_feedback(store: Store, payload: dict, *, apply=False, engine=None, ma
         continuation = bool(isinstance(latest_evidence, dict)
                             and latest_evidence.get("kind") == "feedback-reconciliation"
                             and latest_evidence.get("source_event_id") == f.event_id)
+        # A report this repair withheld earlier is assessed again from where it left off: the
+        # crop has moved on only by the repair's own events for this same report.
+        base_revision = expected_revision
+        if isinstance(expected_revision, int) and original and f.event_id in position:
+            since = [e for e in journal[position[f.event_id] + 1:] if e.target_id == unit.id]
+            if since and all(e.role == "model" and _reconciles(e, f.event_id) for e in since):
+                base_revision = store.revision(unit.id)
         if _source_digest(store, unit) is None:
             # Not stale: the image is simply not in this checkout's cache. The review stays pending,
             # so a run where the image is present still applies it.
@@ -338,7 +361,7 @@ def refine_feedback(store: Store, payload: dict, *, apply=False, engine=None, ma
             continue
         if (not isinstance(expected_revision, int) or not original
                 or (latest.get(unit.id) != f.event_id and not continuation)
-                or (expected_revision is not None and store.revision(unit.id) != expected_revision)
+                or (expected_revision is not None and store.revision(unit.id) != base_revision)
                 or original.model_dump(mode="json") != source_rows[f.event_id]["event"]
                 or not f.page_hash or _source_digest(store, unit) != f.page_hash
                 or (unit.box.model_dump() if unit.box else None) != f.source_box):
@@ -397,9 +420,9 @@ def refine_feedback(store: Store, payload: dict, *, apply=False, engine=None, ma
                         item["status"] = "split-proposed"
                         if apply:
                             # CAS must still name the snapshot inspected before inference.
-                            if store.revision(unit.id) != expected_revision:
+                            if store.revision(unit.id) != base_revision:
                                 raise Conflict("review changed during inference")
-                            item.update(split_unit(store, unit, assessment, base_revision=expected_revision,
+                            item.update(split_unit(store, unit, assessment, base_revision=base_revision,
                                                    source_event_id=f.event_id if f.decision == "joined" else None,
                                                    source_event_fingerprint=event_fingerprint))
                             if item["status"] in ("split", "recropped"):
@@ -415,9 +438,9 @@ def refine_feedback(store: Store, payload: dict, *, apply=False, engine=None, ma
         evidence["result"] = item["status"]
         values["meta"] = {**meta, "feedback_repair": {**evidence, "assessment": item.get("assessment")}}
         if apply:
-            if store.revision(unit.id) != expected_revision:
+            if store.revision(unit.id) != base_revision:
                 raise Conflict("review changed during inference")
-            item["events"] = len(_changes(store, unit, values, evidence, base_revision=expected_revision))
+            item["events"] = len(_changes(store, unit, values, evidence, base_revision=base_revision))
     return {"policy": POLICY, "applied": apply, "counts": dict(Counter(i["status"] for i in output)),
             "items": output}
 
