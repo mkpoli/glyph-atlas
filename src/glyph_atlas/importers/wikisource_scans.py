@@ -464,7 +464,8 @@ def collect_index(
         url = thumbnail_url(file_name, scan.number, width)
         record = fetch_image(http, url, root=image_root, known=known)
         pages.append(Page(
-            id=f"{document_id}:{scan.number}", document_id=document_id, seq=scan.number, image=url,
+            # `seq` counts from zero, as every page's does; the id and `pdf_page` keep the PDF's own number.
+            id=f"{document_id}:{scan.number}", document_id=document_id, seq=scan.number - 1, image=url,
             width=record.width, height=record.height, sha256=record.sha256,
             transcription=({"source": TEXT_SOURCE, "entry": scan.title, "revision": str(scan.revision or "")}
                            if scan.exists else {}),
