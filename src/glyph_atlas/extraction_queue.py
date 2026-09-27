@@ -7,8 +7,11 @@ ahead of a page of characters it already has plenty of, as `Queue.prioritize` sc
 `Queue`'s docstring for the full claim order.
 
 A unit is published through one of two gates, recorded as `meta.extraction.gate`. `consensus`: the
-alignment accepted it and both visual models read its character (`quality_reason`). `unconfirmed`: its
-letter has no class in the classifier under any of its readings, so alignment scores it at the
+alignment accepted it and both visual models read its character (`quality_reason`): the classifier at
+.80, and NDLkotenOCR at .10. NDLkotenOCR reads text lines, and on a lone character its reading is right
+far more often than its score says: on 21 sampled pages it read 264 crops as the transcribed character
+below .70, and of 40 drawn at random and the 40 lowest, all framed their character but one at .09.
+`unconfirmed`: its letter has no class in the classifier under any of its readings, so alignment scores it at the
 probability floor and leaves it rejected, and the classifier cannot vote for it; it is published on its
 shape, unless the classifier confidently reads a kana or a neighbour there, and on NDLkotenOCR's
 reading when that model's alphabet holds the character (`unconfirmed_reason`). Without
@@ -19,10 +22,10 @@ so reviewers and consumers should read the gate.
 
 A page completed under an earlier policy is not extracted again; a supplement adds what the current
 policy would publish there and the earlier one could not. `Queue.seed_supplements` lists the complete
-pages whose output predates `POLICY` and whose transcription holds a letter the classifier has no class
-for; `Engine.supplement` extracts such a page under `POLICY` and keeps its `unconfirmed` units that do
-not overlap a crop the page's earlier output published. `run` takes a supplement every
-`supplement_every` pages, so the backlog of new pages keeps moving.
+pages whose output predates `POLICY`; `supplement` extracts such a page under `POLICY` and keeps the
+units, of either gate, that overlap no crop the page's earlier output or an earlier supplement
+published. `run` takes a supplement every `supplement_every` pages, so the backlog of new pages keeps
+moving.
 """
 from __future__ import annotations
 
@@ -41,7 +44,7 @@ from pathlib import Path
 from . import align, images, tables
 from .schema import PAGE_SCOPE, Classification, ReviewState, UnitKind
 
-POLICY = "single-character-consensus-v2"
+POLICY = "single-character-consensus-v3"
 CONSENSUS = "consensus"
 UNCONFIRMED = "unconfirmed"
 
@@ -146,6 +149,9 @@ class Queue:
             self.db.execute("ALTER TABLE pages ADD COLUMN publish_attempts INTEGER NOT NULL DEFAULT 0")
         if "priority" not in columns:
             self.db.execute("ALTER TABLE pages ADD COLUMN priority REAL NOT NULL DEFAULT 0")
+        # The policy a complete page's output was written under, so listing supplements is a query.
+        if "policy" not in columns:
+            self.db.execute("ALTER TABLE pages ADD COLUMN policy TEXT")
         self.db.execute("""CREATE INDEX IF NOT EXISTS idx_pages_claim_order
             ON pages(priority DESC, cached DESC, rank, document_id, id)""")
         self.db.execute("""CREATE TABLE IF NOT EXISTS supplements (
@@ -240,52 +246,30 @@ class Queue:
             self.db.executemany("UPDATE pages SET priority=? WHERE id=?", scores)
         return len(scores)
 
-    def seed_supplements(self, classes) -> int:
-        """List the complete pages that an extraction under `POLICY` would add units to.
+    def seed_supplements(self) -> int:
+        """List the complete pages whose output was written under another policy than `POLICY`.
 
-        A page qualifies when its output was written under another policy and a line of it, in the
-        page's own source dataset, holds a letter the classifier has no class for
-        (`letter_out_of_vocabulary`). Returns how many rows were added; a page already listed for
-        `POLICY` is left as it is.
+        A supplement of an earlier policy that has not run is superseded: `claim_supplement` takes
+        only the current policy's, and this one covers what it would have added. Returns how many
+        rows were added; a page already listed for `POLICY` is left as it is.
         """
-        import pyarrow.dataset as ds
-
-        from . import refs
-
-        earlier = defaultdict(set)
-        for page_id, output, page_source in self.db.execute(
-                "SELECT id,output,source FROM pages WHERE status='complete'"):
+        now = datetime.now(UTC).isoformat()
+        # A page completed before the queue recorded policies has it read from its report, once.
+        unknown = list(self.db.execute("SELECT id,output FROM pages WHERE status='complete' AND policy IS NULL"))
+        policies = []
+        for page_id, output in unknown:
             report = self.root/output/"report.json"
-            if report.exists() and json.loads(report.read_text()).get("policy") != POLICY:
-                earlier[page_source].add(page_id)
-        if not earlier:
-            return 0
-        classes = set(classes)
-        known: dict[str, bool] = {}
-
-        def unknown(char):
-            if char not in known:
-                known[char] = letter_out_of_vocabulary(char, refs.candidates(char) or [], classes)
-            return known[char]
-
-        wanted = set()
-        for page_source, page_ids in earlier.items():
-            lines_path = Path(page_source) / "lines"
-            if not lines_path.exists():
-                lines_path = Path(page_source) / "lines.parquet"
-            if not lines_path.exists():
-                continue
-            scanner = ds.dataset(lines_path, format="parquet").scanner(columns=["page_id", "text"])
-            for batch in scanner.to_batches():
-                for page_id, text in zip(batch.column("page_id").to_pylist(),
-                                         batch.column("text").to_pylist(), strict=True):
-                    if page_id in page_ids and page_id not in wanted and text and any(map(unknown, text)):
-                        wanted.add(page_id)
-        before = self.db.total_changes
+            if report.exists():
+                policies.append((json.loads(report.read_text()).get("policy"), page_id))
         with self.db:
-            self.db.executemany("INSERT OR IGNORE INTO supplements (page_id,policy) VALUES (?,?)",
-                                [(page_id, POLICY) for page_id in sorted(wanted)])
-        return self.db.total_changes - before
+            self.db.executemany("UPDATE pages SET policy=? WHERE id=?", policies)
+            self.db.execute("""UPDATE supplements SET status='superseded',updated_at=?
+                WHERE policy!=? AND status IN ('pending','running')""", (now, POLICY))
+            changed = self.db.total_changes
+            self.db.execute("""INSERT OR IGNORE INTO supplements (page_id,policy)
+                SELECT id,? FROM pages WHERE status='complete' AND policy IS NOT NULL AND policy!=?""",
+                (POLICY, POLICY))
+        return self.db.total_changes - changed
 
     def claim_supplement(self):
         """Take the pending supplement whose page scores highest, as `claim` orders pages."""
@@ -339,9 +323,9 @@ class Queue:
     def finish(self, ident, report, output):
         with self.db:
             self.db.execute("""UPDATE pages SET status='complete',output=?,accepted=?,examined=?,
-                error=NULL,updated_at=? WHERE id=?""",
+                error=NULL,updated_at=?,policy=? WHERE id=?""",
                 (str(output.relative_to(self.root)), report["accepted"], report["examined"],
-                 datetime.now(UTC).isoformat(), ident))
+                 datetime.now(UTC).isoformat(), report["policy"], ident))
 
     def fail(self, ident, reason, *, retryable=False):
         attempts = self.db.execute("SELECT attempts FROM pages WHERE id=?",(ident,)).fetchone()[0]
@@ -359,7 +343,10 @@ class Queue:
                   "published_crops": self.db.execute("SELECT coalesce(sum(accepted),0) FROM pages WHERE published_at IS NOT NULL").fetchone()[0],
                   "publication_failures": self.db.execute("SELECT count(*) FROM pages WHERE publish_error IS NOT NULL").fetchone()[0],
                   "books_with_crops": self.db.execute("SELECT count(DISTINCT document_id) FROM pages WHERE accepted>0").fetchone()[0],
-                  "supplements": {**dict(self.db.execute("SELECT status,count(*) FROM supplements GROUP BY status")),
+                  # Supplements of the current policy by status; crops added and published count every
+                  # policy's, since those crops are on the site.
+                  "supplements": {**dict(self.db.execute(
+                                      "SELECT status,count(*) FROM supplements WHERE policy=? GROUP BY status", (POLICY,))),
                                   "added": self.db.execute("SELECT coalesce(sum(added),0) FROM supplements").fetchone()[0],
                                   "published": self.db.execute(
                                       "SELECT coalesce(sum(added),0) FROM supplements WHERE published_at IS NOT NULL").fetchone()[0],
@@ -389,7 +376,7 @@ def vote_reason(votes, expected, name, threshold):
     """Why the vote of engine `name` does not confirm `expected`, or None."""
     vote = next((v for v in votes if v["engine"] == name), None)
     if (not vote or vote.get("identity_scope", "character") != "character"
-            or unicodedata.normalize("NFC", vote.get("text") or "") != expected):
+            or unicodedata.normalize("NFC", vote.get("text") or "").strip() != expected):
         return "visual-disagreement"
     score = vote.get("score")
     if (not isinstance(score, (float, int)) or isinstance(score, bool)
@@ -406,7 +393,7 @@ def quality_reason(unit, votes, size):
     if reason:
         return reason
     expected = unicodedata.normalize("NFC", unit.text_source)
-    for name, threshold in (("Atlas classifier", .80), ("NDLkotenOCR", .70)):
+    for name, threshold in (("Atlas classifier", .80), ("NDLkotenOCR", .10)):
         reason = vote_reason(votes, expected, name, threshold)
         if reason:
             return reason
@@ -444,7 +431,9 @@ def unconfirmed_reason(unit, votes, size, *, alphabet, neighbours=()):
     unit; it cannot veto every confident reading, since it reads 髙 as 高. NDLkotenOCR vetoes it when
     it reads two or more characters there at .90 or more (tall compounds such as 孼 read as two, but
     less surely). The shape checks of any unit apply, and NDLkotenOCR must read the character when
-    its alphabet holds it.
+    its alphabet holds it, at .70 rather than the .10 the consensus gate asks: there the classifier
+    has already read the character, and NDLkotenOCR only has to agree; here its reading is the only
+    evidence of which character the box holds.
     """
     reason = shape_reason(unit, size)
     if reason:
@@ -515,7 +504,7 @@ class Engine:
 
         from .detect import Detector
         from .review.suggestions import Recognizer
-        self.run = align.load_run(Path("models/align/runs/pilot-v1.yaml"), "collection-v1")
+        self.run = align.load_run(Path("models/align/runs/collection-v2.yaml"))
         options = ort.SessionOptions()
         options.intra_op_num_threads = 2
         options.inter_op_num_threads = 1
@@ -540,7 +529,8 @@ class Engine:
                        "classifier_classes":digest(self.classifier.classes),
                        "sequence_alphabet":digest(self.reader.alphabet)}
 
-    def extract(self, job, root, *, max_lines=64):
+    def inputs(self, job, *, max_lines=64):
+        """What one page's extraction reads, with the `identity` that names its output; no model runs."""
         from PIL import Image
         dataset = tables.Dataset(Path(job["source"]))
         page = next(p for p in dataset.read("pages") if p.id == job["id"])
@@ -568,17 +558,32 @@ class Engine:
         located_line_count = len(lines)
         lines = [line for line in lines if line.box.x >= 0 and line.box.y >= 0
                  and line.box.x+line.box.w <= image.width and line.box.y+line.box.h <= image.height]
+        identity = digest({"policy":POLICY,"models":self.models,"run":self.run.model_dump(),
+                           "page":page.model_dump(),"document":document.model_dump(),
+                           "lines":[l.model_dump() for l in lines]})
+        return {"page": page, "document": document, "lines": lines, "image": image, "identity": identity,
+                "located_line_count": located_line_count, "original_dimensions": original_dimensions}
+
+    def extract(self, job, root, *, max_lines=64):
+        """Extract one page and commit it under `pages/`, or return the output already committed."""
+        work = self.inputs(job, max_lines=max_lines)
+        output = root/"pages"/work["identity"]
+        if output.exists():
+            return committed_report(output, work["identity"], work["page"]), output
+        report, records = self.extract_page(work)
+        return report, commit(output, work["identity"], records, report)
+
+    def extract_page(self, work):
+        """Run the models over one page's `inputs`: its report and the records to commit."""
+        page, document, lines, image = work["page"], work["document"], work["lines"], work["image"]
+        identity, located_line_count = work["identity"], work["located_line_count"]
+        original_dimensions = work["original_dimensions"]
+
         def crop_of(page_id, box):
             return image.crop((box.x,box.y,box.x+box.w,box.y+box.h))
         candidates = []
         reasons = Counter()
         examined = 0
-        identity = digest({"policy":POLICY,"models":self.models,"run":self.run.model_dump(),
-                           "page":page.model_dump(),"document":document.model_dump(),
-                           "lines":[l.model_dump() for l in lines]})
-        output = root/"pages"/identity
-        if output.exists():
-            return committed_report(output, identity, page), output
         detections = [align.Detection(box=box, score=score) for box,score in self.detector.boxes(image)]
         classes = set(self.classifier.classes)
         for line in lines:
@@ -625,30 +630,34 @@ class Engine:
                   "source_dimensions":list(original_dimensions),"lines":len(lines),"detected":len(detections),"complete_page":len(lines)==located_line_count,
                   "withheld_lines":{"invalid_geometry":located_line_count-len(lines)},
                   "created_at":datetime.now(UTC).isoformat()}
-        return report, commit(root/"pages"/identity, identity,
-                              {"documents":[document],"pages":[page],"lines":lines,"units":accepted}, report)
+        return report, {"documents":[document],"pages":[page],"lines":lines,"units":accepted}
 
 
 def supplement(engine, job, root, *, max_lines=64):
     """Extract a page completed under an earlier policy again and keep what that policy could not add.
 
-    The kept units are the `unconfirmed` ones that overlap no crop of the page's earlier output or of
+    The kept units, of either gate, are those that overlap no crop of the page's earlier output or of
     a supplement an earlier policy made for it (`overlaps`), since those are already published and a
-    crop there may already be reviewed.
-    They are committed with the page's document, page and line rows under `supplements/`.
+    crop there may already be reviewed. They are committed with the page's document, page and line
+    rows under `supplements/`; the page's full extraction under this policy is not kept. A supplement
+    committed before its worker stopped is found by its identity and returned as it is.
     """
-    report, output = engine.extract(job, root, max_lines=max_lines)
-    current = tables.Dataset(output)
-    published = [unit.box for output in (job["output"], *job.get("earlier_supplements", ()))
-                 for unit in tables.Dataset(root/output).read("units") if unit.box]
-    added = [unit for unit in current.read("units") if unit.meta["extraction"]["gate"] == UNCONFIRMED
-             and not any(overlaps(unit.box, box) for box in published)]
-    identity = digest({"supplement": report["generation"], "earlier": job["output"],
-                       "earlier_supplements": sorted(job.get("earlier_supplements", ()))})
-    result = {"policy": POLICY, "generation": identity, "page_id": job["id"], "extraction": report["generation"],
+    work = engine.inputs(job, max_lines=max_lines)
+    earlier = sorted(job.get("earlier_supplements", ()))
+    identity = digest({"supplement": work["identity"], "earlier": job["output"], "earlier_supplements": earlier})
+    output = root/"supplements"/identity
+    if output.exists():
+        report = json.loads((output/"report.json").read_text())
+        if report.get("generation") != identity or report.get("page_id") != job["id"]:
+            raise ValueError("committed supplement identity mismatch")
+        return report, output
+    extraction, records = engine.extract_page(work)
+    published = [unit.box for committed in (job["output"], *earlier)
+                 for unit in tables.Dataset(root/committed).read("units") if unit.box]
+    added = [unit for unit in records["units"] if not any(overlaps(unit.box, box) for box in published)]
+    result = {"policy": POLICY, "generation": identity, "page_id": job["id"], "extraction": extraction["generation"],
               "earlier_output": job["output"], "added": len(added), "created_at": datetime.now(UTC).isoformat()}
-    records = {name: current.read(name) for name in ("documents", "pages", "lines")}
-    return result, commit(root/"supplements"/identity, identity, {**records, "units": added}, result)
+    return result, commit(output, identity, {**records, "units": added}, result)
 
 
 def commit(output, identity, records, report):

@@ -1,0 +1,24 @@
+# The run the collection's character extraction aligns with: the pilot's run (pilot-v1), with each
+# character accepted on its own margin. The pilot run holds every character of a line back when any
+# one of them is in doubt. On 21 sampled pages this run accepts 45 more characters than the pilot's
+# under extraction policy v3; the 38 of them both models read at the pilot's thresholds all framed
+# their character.
+name: collection-v2
+detector: models/detector/artifacts/detector.onnx
+classifier: models/classifier/artifacts/classifier.onnx
+detector_version: rtdetr_r18vd-6e
+classifier_version: convnext_tiny-12e
+classifier_sha256: e761e7b7e8e5b6e16061d70de82e478ee27cb9111fe06af2fc0df2a9c07975f8
+score: 0.02
+nms: 0.2
+policy: align-v1
+weights:
+  skip-token: 8.0
+  skip-detection: 6.0
+  split: 12.0
+  merge: 14.0
+  gap: 3.0
+accept: 0.9
+margin: 1.0
+ruby: false
+margin_scope: character
