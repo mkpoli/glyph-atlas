@@ -214,9 +214,10 @@ def _reuse_existing_child(store, unit, assessment, boxes, others, *, base_revisi
                          source_event_fingerprint=None):
     """Trim a joined parent when its other child already exists at the same ink.
 
-    This only handles a two-character, human-selected sequence whose remaining
-    child is the parent's existing identity. Existing occurrences are untouched.
-    Every overlap must be an enclosing, identically labelled child; conflicting
+    This only handles a two-character, human-selected sequence. The remaining child must be
+    the parent's existing identity, unless the reviewer typed the sequence: then the typed
+    character names it, and the trimmed crop takes that identity. Existing occurrences are
+    untouched. Every overlap must be an enclosing, identically labelled child; conflicting
     labels, crossing boxes, and multiple existing occurrences are refused.
     """
     if not source_event_id or len(boxes) != 2 or len(assessment.get("text", [])) != 2:
@@ -244,7 +245,9 @@ def _reuse_existing_child(store, unit, assessment, boxes, others, *, base_revisi
     if len(reused) != 1 or len(uncovered) != 1:
         return None
     index = uncovered[0]
-    if assessment["text"][index] != written_identity(unit):
+    remaining = assessment["text"][index]
+    typed = assessment.get("basis") == "reviewer-reading"
+    if remaining != written_identity(unit) and not typed:
         return None
     evidence = {"kind": "feedback-reconciliation", "policy": POLICY,
                 "result": "recropped", "source_event_id": source_event_id,
@@ -258,8 +261,12 @@ def _reuse_existing_child(store, unit, assessment, boxes, others, *, base_revisi
     meta["alignment_repair"] = {"status": "applied", "machine": True, "verified": False,
         "reliable": True, "withheld": False, "quiz": True,
         "reason": "measured blank gap separated a neighbouring character already represented by its own crop"}
-    results = _changes(store, unit, {"box": boxes[index].model_dump(), "review": "machine", "meta": meta},
-                       evidence, base_revision=base_revision)
+    values = {"box": boxes[index].model_dump(), "review": "machine", "meta": meta}
+    if remaining != written_identity(unit):
+        values.update(unicode=encoded(remaining), reading=remaining, text_source=remaining,
+                      script=script_of_identity(remaining))
+        evidence["character"] = remaining
+    results = _changes(store, unit, values, evidence, base_revision=base_revision)
     return {"status": "recropped", "box": boxes[index].model_dump(), "reused_children": reused,
             "events": len(results)}
 
