@@ -39,6 +39,30 @@ BEGIN
    OR EXISTS(SELECT 1 FROM seen s JOIN submissions b ON b.id=s.submission AND b.undone=0
      WHERE s.target=u.id AND s.box IS json_extract(u.data,'$.box')));
 END;
+-- A skip or seen row taken out by hand, as removing crops from the collection does before the crops
+-- themselves, takes its part of the mark with it.
+CREATE TRIGGER IF NOT EXISTS unit_mark_skip_removed AFTER DELETE ON skips
+BEGIN
+ DELETE FROM unit_marks WHERE id=OLD.target;
+ INSERT INTO unit_marks(id,mark) SELECT u.id,iif((SELECT count(DISTINCT k.actor) FROM skips k JOIN submissions b ON b.id=k.submission AND b.undone=0
+   WHERE k.target=u.id AND k.box IS json_extract(u.data,'$.box'))>=2,'hard','seen') FROM units u
+   WHERE u.id=OLD.target
+   AND ((SELECT count(DISTINCT k.actor) FROM skips k JOIN submissions b ON b.id=k.submission AND b.undone=0
+     WHERE k.target=u.id AND k.box IS json_extract(u.data,'$.box'))>=2
+   OR EXISTS(SELECT 1 FROM seen s JOIN submissions b ON b.id=s.submission AND b.undone=0
+     WHERE s.target=u.id AND s.box IS json_extract(u.data,'$.box')));
+END;
+CREATE TRIGGER IF NOT EXISTS unit_mark_seen_removed AFTER DELETE ON seen
+BEGIN
+ DELETE FROM unit_marks WHERE id=OLD.target;
+ INSERT INTO unit_marks(id,mark) SELECT u.id,iif((SELECT count(DISTINCT k.actor) FROM skips k JOIN submissions b ON b.id=k.submission AND b.undone=0
+   WHERE k.target=u.id AND k.box IS json_extract(u.data,'$.box'))>=2,'hard','seen') FROM units u
+   WHERE u.id=OLD.target
+   AND ((SELECT count(DISTINCT k.actor) FROM skips k JOIN submissions b ON b.id=k.submission AND b.undone=0
+     WHERE k.target=u.id AND k.box IS json_extract(u.data,'$.box'))>=2
+   OR EXISTS(SELECT 1 FROM seen s JOIN submissions b ON b.id=s.submission AND b.undone=0
+     WHERE s.target=u.id AND s.box IS json_extract(u.data,'$.box')));
+END;
 CREATE TRIGGER IF NOT EXISTS unit_mark_undo AFTER UPDATE OF undone ON submissions WHEN OLD.undone IS NOT NEW.undone
 BEGIN
  DELETE FROM unit_marks WHERE id IN (SELECT target FROM skips WHERE submission=NEW.id UNION SELECT target FROM seen WHERE submission=NEW.id);

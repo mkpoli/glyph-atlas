@@ -831,6 +831,12 @@ try {
   const glyphNow = await call(`/atlas/corpus/character?id=${encodeURIComponent('codh:fixture')}`)
   assert.equal((await corpusSuggestions(`revision=${glyphNow.revision}&source_revision=${glyphNow.source_revision}`)).status, 200, 'a corpus glyph serves suggestions for its source revision')
   assert.equal((await corpusSuggestions(`revision=${glyphNow.revision}&source_revision=${'c'.repeat(64)}`)).status, 409, 'and refuses another')
+  // Taking a crop's seen rows out, as removing crops does before the crops, takes its mark with them.
+  const seenB = await db.prepare("SELECT * FROM seen WHERE target='seen-b'").all()
+  assert.ok(seenB.results.length && await db.prepare("SELECT 1 FROM unit_marks WHERE id='seen-b'").first(), 'seen-b is marked seen')
+  await db.prepare("DELETE FROM seen WHERE target='seen-b'").run()
+  assert.equal(await db.prepare("SELECT mark FROM unit_marks WHERE id='seen-b'").first(), null, 'a crop whose seen rows are gone is unmarked')
+  await db.batch(seenB.results.map(r => db.prepare(`INSERT INTO seen(${Object.keys(r)}) VALUES(${Object.keys(r).map(() => '?')})`).bind(...Object.values(r))))
   // Every mark the triggers kept is the one `skips` and `seen` give from scratch.
   const marks = async sql => (await db.prepare(sql).all()).results.map(r => `${r.id}:${r.mark}`).sort()
   const skippers = "(SELECT count(DISTINCT k.actor) FROM skips k JOIN submissions b ON b.id=k.submission AND b.undone=0 WHERE k.target=u.id AND k.box IS json_extract(u.data,'$.box'))"
