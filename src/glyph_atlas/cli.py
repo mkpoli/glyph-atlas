@@ -26,6 +26,7 @@ audit_app = typer.Typer(help="Draw a blind audit sample and publish its precisio
 ainu_app = typer.Typer(help="The アイヌ関連資料 records: line boxes, and the characters ainu-records publishes.", no_args_is_help=True)
 repair_app = typer.Typer(help="Diagnose and repair systematic character-to-detection misassignment.", no_args_is_help=True)
 forms_app = typer.Typer(help="Cluster glyphs by shape so their forms can be assigned.", no_args_is_help=True)
+quality_app = typer.Typer(help="Measure how well the scans show each crop.", no_args_is_help=True)
 
 
 @app.callback()
@@ -1040,6 +1041,25 @@ def align(
         typer.echo(f"{name:<14} {value:>10}")
 
 
+@quality_app.command("index")
+def quality_index(
+    store: Annotated[Path, typer.Option(help="review store whose crops are measured")] = Path("work/ainu-gallery"),
+    out: Annotated[Path, typer.Option(help="the quality index")] = Path("work/crop-quality/index.sqlite"),
+) -> None:
+    """Measure every active crop of a review store that the index lacks, from the cached page images,
+    and drop the rows of its retired crops."""
+    from . import images
+    from .image_quality import connect, forget, index_units
+    from .review.store import Store
+
+    source = Store(store)
+    units = [unit for unit, _ in source.unit_snapshot()]
+    db = connect(out)
+    counts = index_units(db, (u for u in units if u.active), source.pages(), images.resolver())
+    counts["forgotten"] = forget(db, (u.id for u in units if not u.active))
+    typer.echo(json.dumps({"image_cache": str(images.images_root()), **counts}, ensure_ascii=False))
+
+
 @forms_app.command("audit")
 def forms_audit(
     root: Annotated[Path, typer.Option(help="corpus root")] = Path("work"),
@@ -1101,6 +1121,7 @@ for name, module in (
     ("ainu", ainu_app),
     ("repair", repair_app),
     ("forms", forms_app),
+    ("quality", quality_app),
 ):
     app.add_typer(module, name=name)
 

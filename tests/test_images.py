@@ -553,3 +553,20 @@ def test_write_crops_of_a_units_table_alone_skips_everything(tmp_path: Path) -> 
     )
 
     assert images.write_crops(alone, tmp_path / "crops") == (0, 1)
+
+
+def test_the_resolver_finds_a_page_by_its_recorded_hash_even_after_its_url_moved_on(tmp_path):
+    from PIL import Image as PILImage
+
+    root = tmp_path / "cache"
+    first, second = tmp_path / "first.png", tmp_path / "second.png"
+    PILImage.new("L", (8, 8), 10).save(first)
+    PILImage.new("L", (8, 8), 200).save(second)
+    url = "https://example.org/page.png"
+    old = images.register(first, url, root=root)
+    new = images.register(second, url, root=root)
+    find = images.resolver(root=root)
+    assert find(url, old.sha256)[1] == old.sha256
+    assert find(url)[1] == new.sha256
+    assert find(url, "0" * 64) is None
+    assert find("https://example.org/other.png") is None
