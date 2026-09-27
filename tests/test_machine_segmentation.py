@@ -284,6 +284,16 @@ def test_a_machine_child_may_not_cover_a_unit_of_another_line(dataset):
     assert store.unit(JOINED).active
 
 
+def test_a_placement_the_aligner_rejected_is_not_a_neighbour(dataset):
+    add_other_line(dataset, Box(x=110, y=110, w=10, h=10))
+    units = tables.read(dataset / "units.parquet", Unit)
+    tables.write(dataset / "units.parquet", [u.model_copy(update={"review": ReviewState.REJECTED})
+                 if u.id == f"{OTHER_LINE}:u0" else u for u in units], Unit)
+    store = Store(dataset)
+    store.record_batch([split_request()], role="model")
+    assert not store.unit(JOINED).active and store.unit(f"{OTHER_LINE}:u0").review == ReviewState.REJECTED
+
+
 def test_a_split_the_new_tables_leave_no_room_for_is_skipped_on_replay(dataset):
     aligned = tables.read(dataset / "units.parquet", Unit)
     Store(dataset).record_batch([split_request()], role="model")

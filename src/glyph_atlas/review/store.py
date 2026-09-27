@@ -1897,13 +1897,17 @@ def _inside_parent(box: Box, parent: Box | None) -> None:
 
 
 def _refuse_overlap(boxes: list[Box], state: State, parent: Unit) -> None:
-    """Two boxes of one split, or a child and a neighbour, may not cover the same pixels."""
+    """Two boxes of one split, or a child and a neighbour, may not cover the same pixels.
+
+    A placement the aligner rejected claims no pixels: it is not a neighbour.
+    """
     for index, box in enumerate(boxes):
         for other in boxes[index + 1:]:
             if _overlaps(box, other):
                 raise BadRequest("two boxes of one machine split overlap")
     for unit in state.units.values():
-        if unit.id == parent.id or not unit.active or unit.page_id != parent.page_id or unit.box is None:
+        if (unit.id == parent.id or not unit.active or unit.page_id != parent.page_id or unit.box is None
+                or unit.review == ReviewState.REJECTED):
             continue
         for box in boxes:
             if _overlaps(box, unit.box):

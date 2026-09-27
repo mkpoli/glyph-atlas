@@ -430,3 +430,17 @@ def test_a_typed_reading_still_refuses_to_duplicate_an_occurrence(store):
     assert item["status"] == "withheld" and item["reason"] == "child would duplicate another occurrence"
     assert item["overlap"] == "v"
     assert store.unit("u").active and not store.unit("u").split_into
+
+
+def test_a_placement_the_aligner_rejected_does_not_block_a_split(store):
+    # v sits over the lower half of the joined crop, but the aligner never accepted it.
+    store.record_batch([
+        ReviewRequest(target_id="v", field="box", new=Box(x=10, y=52, w=40, h=38).model_dump(),
+                      client_id="setup"),
+        ReviewRequest(target_id="v", field="review", new="rejected", client_id="setup", base_revision=1),
+    ], role="model")
+    payload = feedback(store, issue="merged", proposal="ニシ")
+    result = refine.refine_feedback(store, payload, apply=True)
+    assert result["counts"] == {"split": 1}
+    assert [refine.written_identity(store.unit(i)) for i in store.unit("u").split_into] == ["ニ", "シ"]
+    assert store.unit("v").active and store.unit("v").review == "rejected"
