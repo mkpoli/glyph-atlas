@@ -289,7 +289,7 @@ def test_a_pdf_still_building_is_retried_before_giving_up(tmp_path: Path, clock:
     out = tmp_path / "nlk"
     summary = nlk.collect(["CNTS-00132136027"], out, client=client, checked=CHECKED, build_retries=3)
     assert summary["collected"] == []
-    assert "still 404 after waiting for it to build" in summary["unavailable"][0]["error"]
+    assert "no whole PDF" in summary["unavailable"][0]["error"]
     assert clock.slept.count(nlk.BUILD_BACKOFF * 1) == 1
     assert clock.slept.count(nlk.BUILD_BACKOFF * 2) == 1
 
@@ -345,6 +345,63 @@ def test_a_pdf_short_of_the_stated_page_count_leaves_the_record_out(tmp_path: Pa
                           checked=CHECKED, build_retries=1)
     assert summary["collected"] == []
     assert "the PDF has 2 pages, the record states 144" in summary["unavailable"][0]["error"]
+
+
+def test_a_corrupt_pdf_body_is_retried_and_never_cached(tmp_path: Path) -> None:
+    records = {
+        "CNTS-00132358211": {
+            "bookinfo": bookinfo_html(title="朴通事諺解. 上", collation="PDF | 1 p."),
+            "detail": detail_html(title="朴通事諺解. 上"),
+            "pdf_name": "CNTS-00132358211",
+            "pdf": b"%PDF-1.4 truncated",
+        }
+    }
+    out = tmp_path / "nlk"
+    summary = nlk.collect(["CNTS-00132358211"], out, client=transport(records, []),
+                          checked=CHECKED, build_retries=2)
+    assert summary["collected"] == []
+    assert "not a readable PDF" in summary["unavailable"][0]["error"]
+    assert not (out / "upstream" / "CNTS-00132358211.pdf").exists()
+
+    records["CNTS-00132358211"]["pdf"] = pdf_bytes([(10, 10)])
+    summary = nlk.collect(["CNTS-00132358211"], out, client=transport(records, []),
+                          checked=CHECKED, build_retries=1)
+    assert summary["collected"][0]["pages"] == 1
+
+
+def test_a_cached_pdf_without_its_sidecar_is_fetched_again(tmp_path: Path) -> None:
+    seen: list[str] = []
+    records = {
+        "CNTS-00092710493": {
+            "bookinfo": bookinfo_html(title="倭語類解"),
+            "detail": detail_html(title="倭語類解", kol="KOL000032963"),
+            "pdf_name": "KOL000032963",
+            "pdf": pdf_bytes([(30, 20)]),
+        }
+    }
+    out = tmp_path / "nlk"
+    (out / "upstream").mkdir(parents=True)
+    (out / "upstream" / "CNTS-00092710493.pdf").write_bytes(pdf_bytes([(30, 20)]))
+    summary = nlk.collect(["CNTS-00092710493"], out,
+                          client=transport(records, seen, pdf_404={"CNTS-00092710493"}),
+                          checked=CHECKED, build_retries=1)
+    assert summary["collected"][0]["pdf"] == "https://viewer.nl.go.kr/conv/KOL000032963.pdf"
+    assert any(url.endswith("KOL000032963.pdf") for url in seen)
+
+
+def test_a_bookinfo_error_page_is_not_kept(tmp_path: Path) -> None:
+    records = {
+        "CNTS-00132358211": {
+            "bookinfo": "<html>error</html>",
+            "detail": detail_html(title="朴通事諺解. 上"),
+            "pdf_name": "CNTS-00132358211",
+            "pdf": pdf_bytes([(10, 10)]),
+        }
+    }
+    out = tmp_path / "nlk"
+    summary = nlk.collect(["CNTS-00132358211"], out, client=transport(records, []), checked=CHECKED)
+    assert summary["unavailable"][0]["id"] == "CNTS-00132358211"
+    assert not (out / "upstream" / "CNTS-00132358211.bookinfo.html").exists()
 
 
 def test_a_network_error_is_retried_then_fails_cleanly(tmp_path: Path, clock: Clock) -> None:
