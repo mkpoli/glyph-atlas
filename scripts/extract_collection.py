@@ -20,9 +20,11 @@ parser.add_argument("--pages",type=int,default=3)
 parser.add_argument("--seconds",type=int,default=600)
 parser.add_argument("--pause",type=float,default=10)
 parser.add_argument("--max-lines",type=int,default=64)
+parser.add_argument("--supplement-every",type=int,default=2,
+                    help="take a supplement of a page completed under an earlier policy every N pages; 0 never")
 args = parser.parse_args()
-if min(args.pages,args.seconds,args.max_lines) < 1 or args.pause < 0:
-    parser.error("positive page/time/line limits and nonnegative pause required")
+if min(args.pages,args.seconds,args.max_lines) < 1 or args.pause < 0 or args.supplement_every < 0:
+    parser.error("positive page/time/line limits and nonnegative pause and supplement interval required")
 queue = Queue(args.root)
 with tables.locked(args.root/"worker",timeout=0):
     if args.seed:
@@ -44,8 +46,12 @@ with tables.locked(args.root/"worker",timeout=0):
             counts = load_char_counts(args.counts) if args.counts.exists() else {}
             queue.prioritize(counts)
         try:
-            result = run(queue,Engine(),pages=args.pages,seconds=args.seconds,
-                         pause=args.pause,max_lines=args.max_lines,store=store)
+            engine = Engine()
+            if args.supplement_every:
+                print(json.dumps({"supplements_seeded":queue.seed_supplements(args.source,engine.classifier.classes)}),
+                      flush=True)
+            result = run(queue,engine,pages=args.pages,seconds=args.seconds,pause=args.pause,
+                         max_lines=args.max_lines,store=store,supplement_every=args.supplement_every)
         except Exception as exc:  # noqa: BLE001 — publish a redacted worker failure for the supervisor
             error = type(exc).__name__+": "+str(exc).replace(str(Path.home()),"~")[:500]
             print(json.dumps(queue.status(state="failed",error=error),ensure_ascii=False,indent=2))

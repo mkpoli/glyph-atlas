@@ -419,3 +419,111 @@ def test_extraction_publishes_out_of_vocabulary_units_tagged_unconfirmed(tmp_pat
     # The boxless 飍 and the in-vocabulary 字 stay withheld by the alignment; the 飍 at x=250 reads as
     # its neighbour 字.
     assert report["withheld"] == {"alignment-uncertain": 2, "visual-disagreement": 1, "overlapping-crops": 0}
+
+
+def supplement_queue(tmp_path, pages):
+    """A queue whose rows are `(id, status, policy of its output or None, line text)`."""
+    from glyph_atlas.extraction_queue import atomic_json
+    source = lines_source(tmp_path, [Line(id=f"{ident}:L", page_id=ident, seq=0, text_raw=text, text=text,
+                                          box=Box(x=0, y=0, w=10, h=10)) for ident, _, _, text in pages])
+    queue = Queue(tmp_path/"queue")
+    for ident, status, policy, _ in pages:
+        output = None
+        if policy:
+            output = f"pages/{ident}"
+            (queue.root/output).mkdir(parents=True)
+            atomic_json(queue.root/output/"report.json", {"policy": policy})
+        queue.db.execute("""INSERT INTO pages(id,document_id,title,source,cached,rank,status,output)
+            VALUES(?,?,?,?,1,0,?,?)""", (ident, "d", "D", str(source), status, output))
+    queue.db.commit()
+    return queue, source
+
+
+def test_supplements_list_pages_an_earlier_policy_completed_with_unknown_letters(tmp_path):
+    from glyph_atlas.extraction_queue import POLICY
+    queue, source = supplement_queue(tmp_path, [
+        ("old-rare", "complete", "single-character-consensus-v1", "風飍字"),
+        ("old-known", "complete", "single-character-consensus-v1", "字：ー"),
+        ("old-kana", "complete", "single-character-consensus-v1", "ユ"),
+        ("current", "complete", POLICY, "飍"),
+        ("pending", "pending", None, "飍")])
+    classes = {"U+5B57", "U+98A8", "U+3086"}
+    assert queue.seed_supplements(source, classes) == 1
+    assert queue.seed_supplements(source, classes) == 0
+    assert [r[0] for r in queue.db.execute("SELECT page_id FROM supplements")] == ["old-rare"]
+    assert queue.claim_supplement()["output"] == "pages/old-rare"
+    assert queue.claim_supplement() is None
+    queue.recover()
+    assert queue.db.execute("SELECT status FROM supplements").fetchone()[0] == "pending"
+
+
+def test_a_supplement_keeps_unconfirmed_units_off_published_crops(tmp_path):
+    from glyph_atlas.extraction_queue import commit, supplement
+    root = tmp_path/"queue"
+    document, page = Document(id="d", title="D"), Page(id="d:0", document_id="d", seq=0, image="x", width=400, height=100)
+    line = Line(id="d:0:L", page_id="d:0", seq=0, text_raw="字飍飍", text="字飍飍", box=Box(x=0, y=0, w=400, h=100))
+
+    def placed(ident, x, gate):
+        return Unit(id=ident, document_id="d", page_id="d:0", line_id="d:0:L", reading="飍", text_source="飍",
+                    box=Box(x=x, y=10, w=40, h=45), meta={"extraction": {"gate": gate}})
+    records = {"documents": [document], "pages": [page], "lines": [line]}
+    commit(root/"pages"/"old", "old", {**records, "units": [placed("old:1", 10, "consensus")]}, {})
+
+    class Engine:
+        def extract(self, job, into, max_lines=64):
+            units = [placed("new:1", 10, "consensus"), placed("new:2", 12, "unconfirmed"),
+                     placed("new:3", 200, "unconfirmed")]
+            return {"generation": "new"}, commit(into/"pages"/"new", "new", {**records, "units": units}, {})
+
+    report, output = supplement(Engine(), {"id": "d:0", "output": "pages/old"}, root)
+    assert report["added"] == 1 and output.parent.name == "supplements"
+    assert [u.id for u in tables.Dataset(output).read("units")] == ["new:3"]
+    assert not tables.Dataset(output).validate()
+
+
+def test_run_takes_a_supplement_every_other_page_and_then_the_rest(tmp_path, monkeypatch):
+    from glyph_atlas import extraction_queue
+    monkeypatch.setattr(extraction_queue, "require_storage", lambda _: None)
+    queue, source = supplement_queue(tmp_path, [
+        ("s1", "complete", "single-character-consensus-v1", "飍"),
+        ("s2", "complete", "single-character-consensus-v1", "飍"),
+        ("p1", "pending", None, "字"), ("p2", "pending", None, "字")])
+    assert queue.seed_supplements(source, {"U+5B57"}) == 2
+    order = []
+
+    class Engine:
+        def extract(self, job, root, max_lines=64):
+            order.append(("page", job["id"]))
+            return {"accepted": 1, "examined": 1}, root/"pages"/job["id"]
+
+    def fake_supplement(engine, job, root, max_lines=64):
+        order.append(("supplement", job["id"]))
+        return {"added": 2}, root/"supplements"/job["id"]
+    monkeypatch.setattr(extraction_queue, "supplement", fake_supplement)
+    result = run(queue, Engine(), pages=4, pause=0)
+    assert order == [("page", "p1"), ("supplement", "s1"), ("page", "p2"), ("supplement", "s2")]
+    assert result["supplements"] == {"complete": 2, "added": 4, "published": 0}
+
+
+def test_supplements_are_published_once_and_a_refusal_is_not_retried(tmp_path, monkeypatch):
+    from glyph_atlas.extraction_queue import POLICY, publish_supplements
+    from glyph_atlas.review import media
+    from glyph_atlas.review.store import BadRequest
+    monkeypatch.setattr(media, "prepare_dataset", lambda path: None)
+    queue, _ = supplement_queue(tmp_path, [("a", "complete", "single-character-consensus-v1", "飍"),
+                                           ("b", "complete", "single-character-consensus-v1", "飍")])
+    queue.db.executemany("INSERT INTO supplements(page_id,policy,status,output,added) VALUES(?,?,'complete',?,1)",
+                         [("a", POLICY, "supplements/a"), ("b", POLICY, "supplements/b")])
+    queue.db.commit()
+
+    imported = []
+
+    class Store:
+        def import_dataset(self, path):
+            if path.name == "b":
+                raise BadRequest("Conflicting imported pages record")
+            imported.append(path.name)
+    assert publish_supplements(queue, Store()) == 1
+    assert publish_supplements(queue, Store()) == 0
+    assert imported == ["a"]
+    assert queue.status()["supplements"]["published"] == 1

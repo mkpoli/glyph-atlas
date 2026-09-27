@@ -16,6 +16,13 @@ this gate no character outside the classifier's classes could reach review, and 
 ones. Of the 30 units it published from 7 pages on 2026-09-27, 25 framed their character; the others
 held part of it (a detector trained on common classes splits tall compounds such as 飍) or a sliver,
 so reviewers and consumers should read the gate.
+
+A page completed under an earlier policy is not extracted again; a supplement adds what the current
+policy would publish there and the earlier one could not. `Queue.seed_supplements` lists the complete
+pages whose output predates `POLICY` and whose transcription holds a letter the classifier has no class
+for; `Engine.supplement` extracts such a page under `POLICY` and keeps its `unconfirmed` units that do
+not overlap a crop the page's earlier output published. `run` takes a supplement every
+`supplement_every` pages, so the backlog of new pages keeps moving.
 """
 from __future__ import annotations
 
@@ -141,6 +148,11 @@ class Queue:
             self.db.execute("ALTER TABLE pages ADD COLUMN priority REAL NOT NULL DEFAULT 0")
         self.db.execute("""CREATE INDEX IF NOT EXISTS idx_pages_claim_order
             ON pages(priority DESC, cached DESC, rank, document_id, id)""")
+        self.db.execute("""CREATE TABLE IF NOT EXISTS supplements (
+            page_id TEXT NOT NULL, policy TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+            attempts INTEGER NOT NULL DEFAULT 0, output TEXT, added INTEGER, error TEXT,
+            published_at TEXT, publish_error TEXT, publish_attempts INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT, PRIMARY KEY (page_id, policy))""")
         self.db.commit()
 
     def seed(self, source: Path, *, include_ainu=False):
@@ -226,6 +238,73 @@ class Queue:
             self.db.executemany("UPDATE pages SET priority=? WHERE id=?", scores)
         return len(scores)
 
+    def seed_supplements(self, source: Path, classes) -> int:
+        """List the complete pages that an extraction under `POLICY` would add units to.
+
+        A page qualifies when its output was written under another policy and a line of it holds a
+        letter the classifier has no class for (`letter_out_of_vocabulary`). Returns how many rows
+        were added; a page already listed for `POLICY` is left as it is.
+        """
+        import pyarrow.dataset as ds
+
+        from . import refs
+
+        earlier = {}
+        for page_id, output in self.db.execute("SELECT id,output FROM pages WHERE status='complete'"):
+            report = self.root/output/"report.json"
+            if report.exists() and json.loads(report.read_text()).get("policy") != POLICY:
+                earlier[page_id] = output
+        if not earlier:
+            return 0
+        classes = set(classes)
+        known: dict[str, bool] = {}
+
+        def unknown(char):
+            if char not in known:
+                known[char] = letter_out_of_vocabulary(char, refs.candidates(char) or [], classes)
+            return known[char]
+
+        wanted = set()
+        lines_path = Path(source) / "lines"
+        if not lines_path.exists():
+            lines_path = Path(source) / "lines.parquet"
+        scanner = ds.dataset(lines_path, format="parquet").scanner(columns=["page_id", "text"])
+        for batch in scanner.to_batches():
+            for page_id, text in zip(batch.column("page_id").to_pylist(),
+                                     batch.column("text").to_pylist(), strict=True):
+                if page_id in earlier and page_id not in wanted and text and any(map(unknown, text)):
+                    wanted.add(page_id)
+        before = self.db.total_changes
+        with self.db:
+            self.db.executemany("INSERT OR IGNORE INTO supplements (page_id,policy) VALUES (?,?)",
+                                [(page_id, POLICY) for page_id in sorted(wanted)])
+        return self.db.total_changes - before
+
+    def claim_supplement(self):
+        """Take the pending supplement whose page scores highest, as `claim` orders pages."""
+        with self.db:
+            row = self.db.execute("""SELECT s.page_id, s.policy, p.* FROM supplements s
+                JOIN pages p ON p.id = s.page_id WHERE s.status='pending' AND s.policy=?
+                ORDER BY p.priority DESC, p.cached DESC, p.rank, p.document_id, p.id LIMIT 1""",
+                (POLICY,)).fetchone()
+            if row:
+                self.db.execute("""UPDATE supplements SET status='running',attempts=attempts+1,updated_at=?
+                    WHERE page_id=? AND policy=?""", (datetime.now(UTC).isoformat(), row["page_id"], POLICY))
+        return dict(row) if row else None
+
+    def finish_supplement(self, page_id, report, output):
+        with self.db:
+            self.db.execute("""UPDATE supplements SET status='complete',output=?,added=?,error=NULL,updated_at=?
+                WHERE page_id=? AND policy=?""", (str(output.relative_to(self.root)), report["added"],
+                                                  datetime.now(UTC).isoformat(), page_id, POLICY))
+
+    def fail_supplement(self, page_id, reason):
+        """Leave a supplement pending to try again, or failed after `MAX_ATTEMPTS`."""
+        with self.db:
+            self.db.execute("""UPDATE supplements SET status=CASE WHEN attempts>=? THEN 'failed' ELSE 'pending' END,
+                error=?,updated_at=? WHERE page_id=? AND policy=?""",
+                (MAX_ATTEMPTS, reason, datetime.now(UTC).isoformat(), page_id, POLICY))
+
     def recover(self):
         """Return pages a stopped worker left running, and stop retrying one that keeps stopping it.
 
@@ -238,6 +317,9 @@ class Queue:
                 error='the worker stopped while extracting this page ' || attempts || ' times'
                 WHERE status='running' AND attempts>=?""", (now, MAX_ATTEMPTS))
             self.db.execute("UPDATE pages SET status='pending' WHERE status='running'")
+            self.db.execute("""UPDATE supplements SET status=CASE WHEN attempts>=? THEN 'failed' ELSE 'pending' END,
+                error=CASE WHEN attempts>=? THEN 'the worker stopped while supplementing this page ' || attempts
+                || ' times' ELSE error END WHERE status='running'""", (MAX_ATTEMPTS, MAX_ATTEMPTS))
 
     def finish(self, ident, report, output):
         with self.db:
@@ -262,6 +344,10 @@ class Queue:
                   "published_crops": self.db.execute("SELECT coalesce(sum(accepted),0) FROM pages WHERE published_at IS NOT NULL").fetchone()[0],
                   "publication_failures": self.db.execute("SELECT count(*) FROM pages WHERE publish_error IS NOT NULL").fetchone()[0],
                   "books_with_crops": self.db.execute("SELECT count(DISTINCT document_id) FROM pages WHERE accepted>0").fetchone()[0],
+                  "supplements": {**dict(self.db.execute("SELECT status,count(*) FROM supplements GROUP BY status")),
+                                  "added": self.db.execute("SELECT coalesce(sum(added),0) FROM supplements").fetchone()[0],
+                                  "published": self.db.execute(
+                                      "SELECT coalesce(sum(added),0) FROM supplements WHERE published_at IS NOT NULL").fetchone()[0]},
                   "updated_at": datetime.now(UTC).isoformat(),
                   "recent": [dict(r) for r in self.db.execute("""SELECT id,title,status,accepted,examined,output,error,published_at,publish_error,retry_after
                       FROM pages WHERE status!='pending' ORDER BY updated_at DESC LIMIT 12""")]}
@@ -310,6 +396,14 @@ def quality_reason(unit, votes, size):
     return None
 
 
+def letter_out_of_vocabulary(char, candidates, classes) -> bool:
+    """Whether `char` is a letter (category Lo) with no class under itself or any of `candidates`."""
+    char = unicodedata.normalize("NFC", char)
+    if len(char) != 1 or unicodedata.category(char) != "Lo":
+        return False
+    return {f"U+{ord(char):04X}", *candidates}.isdisjoint(classes)
+
+
 def out_of_vocabulary(unit, classes) -> bool:
     """Whether the unit is a letter the classifier has no class for, under any of its readings.
 
@@ -317,11 +411,7 @@ def out_of_vocabulary(unit, classes) -> bool:
     hiragana class is in vocabulary. Marks, punctuation and symbols (not category Lo) never are
     out of vocabulary here: many are editorial notation with no ink of their own.
     """
-    expected = unicodedata.normalize("NFC", unit.text_source or "")
-    if len(expected) != 1 or unicodedata.category(expected) != "Lo":
-        return False
-    points = {candidate.unicode for candidate in unit.candidates} | {f"U+{ord(expected):04X}"}
-    return points.isdisjoint(classes)
+    return letter_out_of_vocabulary(unit.text_source or "", (c.unicode for c in unit.candidates), classes)
 
 
 def kana(text) -> bool:
@@ -518,30 +608,55 @@ class Engine:
                   "source_dimensions":list(original_dimensions),"lines":len(lines),"detected":len(detections),"complete_page":len(lines)==located_line_count,
                   "withheld_lines":{"invalid_geometry":located_line_count-len(lines)},
                   "created_at":datetime.now(UTC).isoformat()}
-        output = root/"pages"/identity
-        if not output.exists():
-            stage = root/".staging"/identity
-            if stage.exists():
-                shutil.rmtree(stage)
-            stage.mkdir(parents=True)
-            records = {"documents":[document],"pages":[page],"lines":lines,"units":accepted}
-            for name, rows in records.items():
-                tables.write(stage/f"{name}.parquet", rows, tables.TABLES[name])
-            issues = tables.Dataset(stage).validate()
-            if issues:
-                raise ValueError("invalid extracted dataset: "+"; ".join(issues[:3]))
-            atomic_json(stage/"report.json",report)
-            output.parent.mkdir(parents=True,exist_ok=True)
-            for file in stage.glob("*.parquet"):
-                with file.open("rb") as handle:
-                    os.fsync(handle.fileno())
-            stage.replace(output)
-            descriptor = os.open(output.parent, os.O_DIRECTORY)
-            try:
-                os.fsync(descriptor)
-            finally:
-                os.close(descriptor)
-        return report, output
+        return report, commit(root/"pages"/identity, identity,
+                              {"documents":[document],"pages":[page],"lines":lines,"units":accepted}, report)
+
+
+def supplement(engine, job, root, *, max_lines=64):
+    """Extract a page completed under an earlier policy again and keep what that policy could not add.
+
+    The kept units are the `unconfirmed` ones that overlap no crop of the page's earlier output
+    (`overlaps`), since that output is already published and a crop there may already be reviewed.
+    They are committed with the page's document, page and line rows under `supplements/`.
+    """
+    report, output = engine.extract(job, root, max_lines=max_lines)
+    current = tables.Dataset(output)
+    published = [unit.box for unit in tables.Dataset(root/job["output"]).read("units") if unit.box]
+    added = [unit for unit in current.read("units") if unit.meta["extraction"]["gate"] == UNCONFIRMED
+             and not any(overlaps(unit.box, box) for box in published)]
+    identity = digest({"supplement": report["generation"], "earlier": job["output"]})
+    result = {"policy": POLICY, "generation": identity, "page_id": job["id"], "extraction": report["generation"],
+              "earlier_output": job["output"], "added": len(added), "created_at": datetime.now(UTC).isoformat()}
+    records = {name: current.read(name) for name in ("documents", "pages", "lines")}
+    return result, commit(root/"supplements"/identity, identity, {**records, "units": added}, result)
+
+
+def commit(output, identity, records, report):
+    """Write an immutable dataset and its report to `output` through a staging directory."""
+    if output.exists():
+        return output
+    root = output.parent.parent
+    stage = root/".staging"/identity
+    if stage.exists():
+        shutil.rmtree(stage)
+    stage.mkdir(parents=True)
+    for name, rows in records.items():
+        tables.write(stage/f"{name}.parquet", rows, tables.TABLES[name])
+    issues = tables.Dataset(stage).validate()
+    if issues:
+        raise ValueError("invalid extracted dataset: "+"; ".join(issues[:3]))
+    atomic_json(stage/"report.json",report)
+    output.parent.mkdir(parents=True,exist_ok=True)
+    for file in stage.glob("*.parquet"):
+        with file.open("rb") as handle:
+            os.fsync(handle.fileno())
+    stage.replace(output)
+    descriptor = os.open(output.parent, os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    return output
 
 
 def committed_report(output, identity, page):
@@ -592,11 +707,39 @@ def publish_completed(queue, store):
     return published
 
 
-def run(queue, engine, *, pages=3, seconds=600, pause=10, max_lines=64, store=None):
+def publish_supplements(queue, store):
+    """Import completed supplements, as `publish_completed` imports pages."""
+    from .review.media import prepare_dataset
+    from .review.store import BadRequest, Conflict
+
+    published = 0
+    rows = list(queue.db.execute("""SELECT page_id,policy,output FROM supplements WHERE status='complete'
+        AND published_at IS NULL AND publish_attempts<?""", (MAX_ATTEMPTS,)))
+    for row in rows:
+        try:
+            prepare_dataset(queue.root / row["output"])
+            store.import_dataset(queue.root / row["output"])
+        except (ValueError, RuntimeError, OSError, sqlite3.Error) as exc:
+            attempts = MAX_ATTEMPTS if isinstance(exc, BadRequest | Conflict) else None
+            with queue.db:
+                queue.db.execute("""UPDATE supplements SET publish_error=?,
+                    publish_attempts=COALESCE(?, publish_attempts + 1) WHERE page_id=? AND policy=?""",
+                                 (type(exc).__name__+": "+str(exc).replace(str(Path.home()),"~")[:500],
+                                  attempts, row["page_id"], row["policy"]))
+            continue
+        with queue.db:
+            queue.db.execute("""UPDATE supplements SET published_at=?,publish_error=NULL
+                WHERE page_id=? AND policy=?""", (datetime.now(UTC).isoformat(), row["page_id"], row["policy"]))
+        published += 1
+    return published
+
+
+def run(queue, engine, *, pages=3, seconds=600, pause=10, max_lines=64, store=None, supplement_every=2):
     started = time.monotonic()
     queue.recover()  # caller holds the exclusive worker lock
     if store is not None:
         publish_completed(queue, store)
+        publish_supplements(queue, store)
     queue.status(state="running")
     done = 0
     while done < pages and time.monotonic()-started < seconds:
@@ -606,21 +749,34 @@ def run(queue, engine, *, pages=3, seconds=600, pause=10, max_lines=64, store=No
                 require_storage(store.directory)
         except OSError:
             return queue.status(state="paused-low-storage")
-        job = queue.claim()
+        job = queue.claim_supplement() if supplement_every and done % supplement_every == supplement_every - 1 else None
+        kind = "supplement" if job else "page"
+        job = job or queue.claim()
+        if job is None:
+            job, kind = queue.claim_supplement(), "supplement"
         if job is None:
             break
         try:
-            report, output = engine.extract(job, queue.root, max_lines=max_lines)
-            queue.finish(job["id"],report,output)
+            if kind == "supplement":
+                report, output = supplement(engine, job, queue.root, max_lines=max_lines)
+                queue.finish_supplement(job["id"], report, output)
+            else:
+                report, output = engine.extract(job, queue.root, max_lines=max_lines)
+                queue.finish(job["id"],report,output)
         except Exception as exc:  # noqa: BLE001 — persist a failed page and keep the bounded queue moving
             # Avoid leaking local paths from exception text into durable status.
             import httpx
 
             from . import net
-            queue.fail(job["id"], type(exc).__name__+": "+str(exc).replace(str(Path.home()),"~")[:500],
-                       retryable=isinstance(exc,(net.DownloadError,httpx.HTTPError,OSError)))
+            reason = type(exc).__name__+": "+str(exc).replace(str(Path.home()),"~")[:500]
+            if kind == "supplement":
+                queue.fail_supplement(job["id"], reason)
+            else:
+                queue.fail(job["id"], reason,
+                           retryable=isinstance(exc,(net.DownloadError,httpx.HTTPError,OSError)))
         if store is not None:
             publish_completed(queue, store)
+            publish_supplements(queue, store)
         done += 1
         queue.status(state="running")
         # The pause spaces out requests to the image hosts; a page whose image was already
