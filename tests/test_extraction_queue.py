@@ -320,3 +320,20 @@ def test_movable_type_is_neither_seeded_nor_claimed(tmp_path, monkeypatch):
     assert {queue.claim()["document_id"], queue.claim()["document_id"]} == {"b"}
     assert queue.claim() is None
     assert queue.exclude(directory) == 0
+
+
+def test_exclusion_catches_a_running_page_and_follows_a_corrected_production(tmp_path, monkeypatch):
+    monkeypatch.setattr("glyph_atlas.images.index_path", lambda: tmp_path/"missing")
+    directory = source(tmp_path)
+    queue = Queue(tmp_path/"queue")
+    queue.seed(directory)
+    running = queue.claim()
+    docs = [Document(id=d, title=t, production="printed/type") for d, t in (("a", "暦"), ("b", "天文"))]
+    tables.write(directory/"documents.parquet", docs, Document)
+    assert queue.exclude(directory) == 4
+    queue.recover()
+    assert queue.claim() is None
+    tables.write(directory/"documents.parquet", [docs[0], Document(id="b", title="天文")], Document)
+    assert queue.exclude(directory) == 2
+    assert queue.claim()["document_id"] == "b"
+    assert running["document_id"] == "a"

@@ -20,6 +20,8 @@ REVIEW_SCOPE = "not:printed/type"
 #: are Meiji or later prints, often scanned badly, and the kuzushiji detector and classifier misplace
 #: and misread their type.
 EXTRACTION_SCOPE = "not:printed/type"
+#: Sources whose boxes the detector placed on transcribed pages; they follow `EXTRACTION_SCOPE`.
+EXTRACTED = frozenset({"honkoku-lines"})
 TREE = Tree(VOCAB)
 check, label, within, in_scope, check_scope = TREE.check, TREE.label, TREE.within, TREE.in_scope, TREE.check_scope
 
@@ -52,3 +54,8 @@ def production_info(document) -> dict:
     if not evidence and kind != "unknown":
         evidence = [{"source": "source_metadata", "document_id": row.get("id")}]
     return {"production": kind, "production_label": label(kind), "production_evidence": evidence}
+
+
+def published(source, kind) -> bool:
+    """Whether the site publishes a crop from `source` of a document made by production `kind`."""
+    return source not in EXTRACTED or in_scope(kind, EXTRACTION_SCOPE)

@@ -293,6 +293,21 @@ def test_an_export_or_seal_drops_the_glyphs_the_site_publishes_as_its_own_crops(
 
 def test_typeset_glyphs_of_an_extracted_corpus_are_not_exported(scripts):
     export = importlib.import_module("export_cloudflare_corpus")
-    assert not export.published_production("honkoku-lines", "printed/type/metal")
-    assert export.published_production("honkoku-lines", "unknown")
-    assert export.published_production("kokatsuji", "printed/type")
+    assert not export.production.published("honkoku-lines", "printed/type/metal")
+    assert export.production.published("honkoku-lines", "unknown")
+    assert export.production.published("kokatsuji", "printed/type")
+    assert export.production.published("hng", "printed/type/wood")
+
+
+def test_a_resumed_export_drops_the_glyphs_of_books_now_out_of_scope(scripts, tmp_path):
+    export = importlib.import_module("export_cloudflare_corpus")
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    pq.write_table(pa.Table.from_pylist([{"id": "hl:T", "production": "printed/type"},
+                                         {"id": "hl:H", "production": "unknown"}]), tmp_path/"documents.parquet")
+    db = sqlite3.connect(":memory:")
+    db.execute("CREATE TABLE corpus_units (id TEXT PRIMARY KEY)")
+    db.executemany("INSERT INTO corpus_units VALUES (?)", [("hl:T_0_000:x:1",), ("hl:TT_0_000:x:1",), ("hl:H_0_000:x:1",)])
+    corpus = SimpleNamespace(name="honkoku-lines", table=lambda name: tmp_path/f"{name}.parquet")
+    assert export.drop_out_of_scope(db, [corpus]) == 1
+    assert {r[0] for r in db.execute("SELECT id FROM corpus_units")} == {"hl:TT_0_000:x:1", "hl:H_0_000:x:1"}

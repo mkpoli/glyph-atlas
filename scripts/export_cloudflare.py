@@ -149,12 +149,14 @@ def export(dataset: Path, output: Path, *, resume=False):
     packs = Packs(output, db)
     with lookup_scope():
         existing = {r[0] for r in db.execute("SELECT id FROM units")}
+        listing = endpoints["/atlas"](limit=10**7)
+        units = {unit.id: unit for unit, revision in store.unit_snapshot()}
         # Typeset crops the extraction took before its scope said otherwise stay in the store, unpublished.
-        listing = endpoints["/atlas"](limit=10**7, production=production.EXTRACTION_SCOPE)
+        listing["items"] = [item for item in listing["items"] if production.published(
+            units[item["id"]].upstream.get("source"), item["production"])]
         listed = {item["id"] for item in listing["items"]}
         db.executemany("DELETE FROM units WHERE id=?", [(i,) for i in existing - listed])
         existing &= listed
-        units = {unit.id: unit for unit, revision in store.unit_snapshot()}
         neighbors = defaultdict(list)
         for unit in units.values():
             if unit.line_id:

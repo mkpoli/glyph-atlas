@@ -132,10 +132,13 @@ class Queue:
         return self.db.total_changes - before
 
     def exclude(self, source: Path) -> int:
-        """Set aside pending and retry pages of the documents outside `production.EXTRACTION_SCOPE`.
+        """Set aside the pages of the documents outside `production.EXTRACTION_SCOPE`, and return
+        pages set aside earlier whose document is back in it.
 
-        Seeding already leaves them out; this catches pages seeded before a document's production
-        was known. They become `excluded` and are never claimed. Returns how many pages changed.
+        Seeding already leaves such documents out; this catches pages seeded before a document's
+        production was known. An unfinished page becomes `excluded` and is never claimed; a page a
+        stopped worker left running is caught too, before `recover` would requeue it. Returns how
+        many pages changed.
         """
         documents = tables.Dataset(source).read("documents")
         out = [(d.id,) for d in documents if not in_extraction_scope(d)]
@@ -143,9 +146,11 @@ class Queue:
             self.db.execute("CREATE TEMP TABLE IF NOT EXISTS out_of_scope (id TEXT PRIMARY KEY)")
             self.db.execute("DELETE FROM out_of_scope")
             self.db.executemany("INSERT OR IGNORE INTO out_of_scope VALUES (?)", out)
-            return self.db.execute("""UPDATE pages SET status='excluded',updated_at=?
-                WHERE status IN ('pending','retry') AND document_id IN (SELECT id FROM out_of_scope)""",
-                (datetime.now(UTC).isoformat(),)).rowcount
+            changed = self.db.execute("""UPDATE pages SET status='excluded'
+                WHERE status IN ('pending','retry','running') AND document_id IN (SELECT id FROM out_of_scope)""").rowcount
+            changed += self.db.execute("""UPDATE pages SET status='pending'
+                WHERE status='excluded' AND document_id NOT IN (SELECT id FROM out_of_scope)""").rowcount
+        return changed
 
     def claim(self):
         """Take the next page to extract, in the order this class's docstring describes."""

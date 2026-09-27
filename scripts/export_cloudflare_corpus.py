@@ -81,13 +81,21 @@ def holder_image(joined, box, enabled):
 #: published from it as local crops under the same ids; as corpus glyphs too, a round would deal the
 #: copy and every save of it would be refused against the local row.
 PUBLISHED_LOCALLY = frozenset({"ainu-records"})
-#: Corpora whose boxes the detector placed on transcribed pages; they follow `production.EXTRACTION_SCOPE`.
-EXTRACTED = frozenset({"honkoku-lines"})
-
-
-def published_production(corpus, kind):
-    """Whether a glyph of `corpus` made by production `kind` is published."""
-    return corpus not in EXTRACTED or production.in_scope(kind, production.EXTRACTION_SCOPE)
+def drop_out_of_scope(db, found) -> int:
+    """Remove from an export's `corpus_units` the glyphs of books an extracted corpus no longer
+    publishes, which an earlier run of a resumed export wrote. A unit id of such a corpus starts with
+    its document id and `_`."""
+    dropped = 0
+    for corpus in found:
+        path = corpus.table("documents") if corpus.name in production.EXTRACTED else None
+        if path is None:
+            continue
+        for document in ds.dataset(path, format="parquet").to_table().to_pylist():
+            if not production.published(corpus.name, production.production_info(document)["production"]):
+                prefix = document["id"] + "_"
+                dropped += db.execute("DELETE FROM corpus_units WHERE substr(id,1,?)=?",
+                                      (len(prefix), prefix)).rowcount
+    return dropped
 
 
 def locally_published_ids(root="work") -> set[str]:
@@ -146,6 +154,7 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
         db.execute("DELETE FROM corpus_units WHERE object=? AND offset+size>?", (name, size))
     db.commit()
     drop_locally_published(db, locally_published_ids())
+    drop_out_of_scope(db, found)
     db.commit()
     existing = held(db, skip)
     counts = Counter(json.loads((output / "progress.json").read_text()) if (output / "progress.json").exists() else {})
@@ -168,7 +177,7 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
                 if not char:
                     continue
                 joined = _unit_row(corpus, context, row, char, row.get("unicode") or "")
-                if not published_production(corpus.name, joined.get("production") or "unknown"):
+                if not production.published(corpus.name, joined.get("production") or "unknown"):
                     counts["out-of-scope"] += 1
                     continue
                 if joined.get("image_licence") not in PROXYABLE:
