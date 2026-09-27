@@ -9,10 +9,12 @@
    cuts them again. They are listed in OUTPUT/lost.json.
 2. Only units whose id starts with one of `--prefix` are kept, and the copy is sealed.
 3. The units the site already holds are read from D1 (or from `--live`, one JSON object per unit
-   with id, revision, quiz, data, reviewed) and planned by `refresh_published_units.plan`: new crops
-   are inserted, changed ones updated in place or replaced, a reviewed crop whose crop changed is
-   held and listed in OUTPUT/held.json. Only the image rows and packs of those crops are published;
-   the rest are already on the site.
+   with id, origin, revision, quiz, data, reviewed) and planned by `refresh_published_units.plan`:
+   new crops are inserted, changed ones updated in place or replaced, a reviewed crop whose crop
+   changed is held and listed in OUTPUT/held.json. A new extracted crop (`ex:`) whose box overlaps a
+   live crop's current box on its page, which a reviewer may have moved there, is left out and
+   listed in OUTPUT/overlapping.json. Only the image rows and packs of the crops published are
+   uploaded; the rest are already on the site.
 4. The SQL parts hold, in order: image rows, new units, the refresh, the adjacent crop pairs of every
    unit kept (`glyph_atlas.unit_pairs`, which need both crops on the site), each `--extra` file whole, and
    with `--status` the collection status row, and last the row the Worker keys its cached listings
@@ -38,6 +40,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 from cloudflare_schema import schema
 from seal_cloudflare import seal
+
+from glyph_atlas.extraction_queue import overlaps
+from glyph_atlas.schema import Box
 
 _spec = importlib.util.spec_from_file_location("refresh", ROOT / "scripts" / "refresh_published_units.py")
 refresh = importlib.util.module_from_spec(_spec)
@@ -109,12 +114,34 @@ def read_live(prefixes: list[str]) -> list[dict]:
         got = []
         bounds = [prefix] + [prefix + c for c in ID_CHARS[1:]] + [prefix + "~"]
         for low, high in itertools.pairwise(bounds):
-            got += d1("SELECT u.id, u.revision, u.quiz, u.data, EXISTS(SELECT 1 FROM events e WHERE e.target=u.id) AS reviewed "
+            got += d1("SELECT u.id, u.origin, u.revision, u.quiz, u.data, EXISTS(SELECT 1 FROM events e WHERE e.target=u.id) AS reviewed "
                       f"FROM units u WHERE u.id >= '{low}' AND u.id < '{high}'")
         if len(got) != expected:
             raise SystemExit(f"read {len(got)} live {prefix} units, D1 holds {expected}")
         rows += got
     return rows
+
+
+def live_overlaps(atlas: sqlite3.Connection, fresh: set[str], live_rows: list[dict]) -> list[str]:
+    """New extracted crops (`ex:`) that would sit on the ink of a crop the site already holds.
+
+    A crop on the site may have been moved there by a reviewer since it was published, so the live
+    box is what counts, compared by `extraction_queue.overlaps` (half of the smaller box) on the same
+    page. A retired crop no longer holds its ink.
+    """
+    by_page: dict[str, list[Box]] = {}
+    for row in live_rows:
+        data = json.loads(row["data"])
+        if row.get("origin", "local") == "local" and data.get("box") and data.get("page_id"):
+            by_page.setdefault(data["page_id"], []).append(Box(**data["box"]))
+    dropped = []
+    for ident, raw in atlas.execute("SELECT id, data FROM units WHERE id LIKE 'ex:%'"):
+        if ident not in fresh:
+            continue
+        data = json.loads(raw)
+        if data.get("box") and any(overlaps(Box(**data["box"]), box) for box in by_page.get(data.get("page_id"), ())):
+            dropped.append(ident)
+    return sorted(dropped)
 
 
 def plan_refresh(atlas: Path, live: dict[str, dict]) -> tuple[list[str], dict, list[str], set[str]]:
@@ -246,6 +273,9 @@ def main() -> None:
     # every other image row and pack is already on the site from an earlier publication.
     atlas = sqlite3.connect(sealed / "atlas.sqlite")
     fresh = {i for i, in atlas.execute("SELECT id FROM units")} - live.keys()
+    overlapping = live_overlaps(atlas, fresh, live_rows)
+    fresh -= set(overlapping)
+    (out / "overlapping.json").write_text(json.dumps(overlapping, indent=1))
     wanted = set()
     for i, data in atlas.execute("SELECT id, data FROM units"):
         if i in fresh or i in touched:
@@ -262,7 +292,7 @@ def main() -> None:
     manifest["objects"] = [o for o in manifest["objects"] if o["key"] in objects]
     manifest["sql"] = parts
     (sealed / "publication.json").write_text(json.dumps(manifest, ensure_ascii=False))
-    print(json.dumps({"lost": len(lost["units"]), "new": len(units), "media": len(media), "refresh": counts,
+    print(json.dumps({"lost": len(lost["units"]), "new": len(units), "overlapping": len(overlapping), "media": len(media), "refresh": counts,
                       "held": len(held), "extra": [str(p) for p in args.extra], "status": args.status,
                       "objects": len(manifest["objects"]), "parts": parts, "publication": str(sealed)}, ensure_ascii=False))
 
