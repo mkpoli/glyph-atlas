@@ -342,6 +342,8 @@ def path_for(url: str, *, root: Path | None = None) -> Path | None:
 
     A URL is matched as it stands first, then through the service it belongs to, so that a page which
     names a service base finds the full-size image fetched from a request of that service.
+    The service match takes any row of the service, a scaled request included (龍谷大学's manifests
+    name `…/full/1350,/0/default.jpg`); `held` is the lookup that insists on the whole image.
     """
     cache = images_root(root)
     rows = [row for row in index(cache) if row.superseded_by is None]
