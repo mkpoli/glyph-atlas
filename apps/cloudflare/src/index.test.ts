@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'bun:test';
 import { canonical, samePixels, literal, hira, single, readingFrom, validRound, categoryOf,
-  encodeCursor, decodeCursor, historyItem, historyQuery } from './index';
+  encodeCursor, decodeCursor, historyItem, historyQuery, moved } from './index';
 import { ROUND_MAX } from './rounds';
 
 describe('historical character identities', () => {
@@ -147,3 +147,10 @@ describe('samePixels', () => {
     expect(samePixels(new URLSearchParams({ source_revision: 'r1' }), 'corpus', { source_revision: 'r1' })).toBe(true);
   });
 });
+
+it('moves crops counted apart out of pending, and never more than pending holds', () => {
+  const row = (label: string, document: string | null, state: string, n: number) => ({ label, family: null, document, title: document && 'T', state, n })
+  expect(moved([row('ア', 'd', 'pending', 5), row('ア', 'd', 'checked', 1), row('イ', null, 'pending', 2)],
+    [row('ア', 'd', 'seen', 2), row('イ', null, 'hard', 2), row('ウ', null, 'seen', 1), row('ア', 'd', 'skipped', 9)]))
+    .toEqual([row('ア', 'd', 'checked', 1), row('ア', 'd', 'seen', 2), row('イ', null, 'hard', 2), row('ア', 'd', 'skipped', 3)])
+})

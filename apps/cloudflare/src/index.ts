@@ -136,13 +136,14 @@ const EFFECTIVE_STATE = `iif(state='pending',coalesce(${MARK},state),state)`;
 // How long a crop a reviewer skipped stays out of that reviewer's own rounds.
 const SKIP_REST_MS = 3 * 24 * 60 * 60 * 1000;
 const quoted = (value: string) => `'${value.replaceAll("'", "''")}'`;
+const restSince = () => new Date(Date.now() - SKIP_REST_MS).toISOString();
+// A reviewer's own skip that still rests: at the crop's current box, from a round not undone.
+const OWN_SKIP = (reviewer: string, since: string) => `EXISTS(SELECT 1 ${SKIPS} AND k.actor=${quoted(reviewer)} AND k.at>${quoted(since)})`;
 // The state as one reviewer sees it: a crop they skipped lately is `skipped` for them.
 export function stateFor(reviewer: string | null): string {
   if (!reviewer) return EFFECTIVE_STATE;
-  const since = new Date(Date.now() - SKIP_REST_MS).toISOString();
   // The reviewer's own recent skip is tested first: it is one indexed probe and false for most rows.
-  return `iif(state='pending' AND EXISTS(SELECT 1 ${SKIPS} AND k.actor=${quoted(reviewer)} AND k.at>${quoted(since)})
-    AND ${MARK} IS NULL,'skipped',${EFFECTIVE_STATE})`;
+  return `iif(state='pending' AND ${OWN_SKIP(reviewer, restSince())} AND ${MARK} IS NULL,'skipped',${EFFECTIVE_STATE})`;
 }
 // What a shown crop's pixels are named by: a local crop's page hash, a corpus glyph's source revision.
 const pixels = (crop: Json) => crop.image_sha256 ?? crop.source_revision;
@@ -214,12 +215,13 @@ const FACETS_TTL = 3600;
 // publication writes `family` from the same rule (`atlas.grapheme_of`).
 export const graphemeOf = (label: string, family: string | null) => family || cp(label) || null;
 type Facet = { label: string; family: string | null; document: string | null; title: string | null; state: string; n: number };
-async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, production: string, facets: D1PreparedStatement) {
+async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, production: string, stored: D1PreparedStatement, marked: D1PreparedStatement) {
   const key = new Request(`${url.origin}/atlas/facets?by=character,family,document&production=${encodeURIComponent(production)}&v=${encodeURIComponent(await catalogueVersion(env))}`);
   const cached = await caches.default.match(key);
-  if (cached) return { results: await cached.json() } as D1Result<Facet>;
-  const groups = await facets.all<Facet>();
-  ctx.waitUntil(caches.default.put(key, Response.json(groups.results, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
+  if (cached) return await cached.json() as Facet[];
+  const [counted, marks] = await env.DB.batch<Facet>([stored, marked]);
+  const groups = moved(counted.results, marks.results);
+  ctx.waitUntil(caches.default.put(key, Response.json(groups, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return groups;
 }
 // The crops a listing starts from: local ones, those a round may deal, in the material asked for.
@@ -234,14 +236,46 @@ export function listingFilter(review: boolean, production: string, character: st
   return { where, values };
 }
 // Counts by character and state, and for browsing by book as well; a book's title is the one its
-// crops were published with. Counting every character evaluates each crop's review state, which takes
-// seconds, so a round asks only for its own character's: a review response that names a character
-// carries that character's `categories` and `counts` alone.
-export function facetsQuery(review: boolean, state: string, where: string[]) {
-  return review
-    ? `SELECT character AS label,max(family) AS family,NULL AS document,NULL AS title,${state} AS state,count(*) AS n FROM units WHERE ${where.join(' AND ')} GROUP BY 1,5`
+// crops were published with. A round asks only for its own character's: a review response that names
+// a character carries that character's `categories` and `counts` alone.
+// Every character's counts take the stored state along an index. The few pending crops rounds made
+// something of (`unit_marks`), and those the reviewer skipped during the rest, are counted apart and
+// moved out of `pending`: working out every crop's state as it is counted reads each crop twice. A
+// named character's few crops work out their own state as they are counted.
+export function facetsQueries(review: boolean, reviewer: string | null, where: string[], named: boolean) {
+  const filter = where.join(' AND '), book = review ? 'NULL' : 'document';
+  const counted = (state: string) => review
+    ? `SELECT character AS label,max(family) AS family,NULL AS document,NULL AS title,${state} AS state,count(*) AS n FROM units WHERE ${filter} GROUP BY 1,5`
     : `SELECT character AS label,max(family) AS family,document,max(json_extract(data,'$.source')) AS title,${state} AS state,count(*) AS n
-    FROM units WHERE ${where.join(' AND ')} GROUP BY 1,3,5`;
+    FROM units WHERE ${filter} GROUP BY 1,3,5`;
+  if (named) return { stored: counted(stateFor(reviewer)), marked: null, skipped: null };
+  const stored = counted('state');
+  // Every mark is read once, and its crop by id.
+  const marked = `SELECT character AS label,${book} AS document,m.mark AS state,count(*) AS n
+    FROM unit_marks m CROSS JOIN units ON units.id=m.id WHERE ${filter} AND state='pending' GROUP BY 1,2,3`;
+  if (!reviewer) return { stored, marked, skipped: null };
+  const since = restSince();
+  const skipped = `SELECT character AS label,${book} AS document,'skipped' AS state,count(*) AS n FROM units
+    WHERE id IN (SELECT target FROM skips WHERE actor=${quoted(reviewer)} AND at>${quoted(since)}) AND ${filter}
+    AND state='pending' AND ${MARK} IS NULL AND ${OWN_SKIP(reviewer, since)} GROUP BY 1,2`;
+  return { stored, marked, skipped };
+}
+// Stored counts with the crops counted apart moved from `pending` to the state they are in. A
+// reviewer's skips are counted now and browse's counts may be the edge's copy of this catalogue
+// version, so a move never takes more than `pending` holds.
+export function moved(stored: Facet[], moves: Facet[]): Facet[] {
+  const key = (row: { label: string; document: string | null }, state: string) => JSON.stringify([row.label, row.document, state]);
+  const rows = new Map(stored.map(row => [key(row, row.state), { ...row }]));
+  for (const move of moves) {
+    const pending = rows.get(key(move, 'pending'));
+    const n = Math.min(move.n, pending?.n ?? 0);
+    if (!pending || !n) continue;
+    pending.n -= n;
+    const target = rows.get(key(move, move.state)) ?? { ...pending, state: move.state, n: 0 };
+    target.n += n;
+    rows.set(key(move, move.state), target);
+  }
+  return [...rows.values()].filter(row => row.n > 0);
 }
 // The two-character frequencies Explore's grid shows: crops that follow each other on a line
 // (`unit_pairs`), counted by the text their labels make, most frequent first. The whole collection's
@@ -278,11 +312,19 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   const scoped = review && reading !== null;
   const { where, values } = listingFilter(review, production, scoped ? reading : null);
   const [materials, materialValues] = material(production, 'production');
-  const facets = env.DB.prepare(facetsQuery(review, state, where)).bind(...values);
+  const queries = facetsQueries(review, reviewer, where, scoped);
+  const [stored, marked, skipped] = [queries.stored, queries.marked, queries.skipped].map(sql => sql ? env.DB.prepare(sql).bind(...values) : null);
   // Only counts that are the same for every visitor are cached; a reviewer's own skips are theirs.
-  const [groups, published] = review ? await env.DB.batch([facets,
-    ...[corpusCountQuery(production, scoped ? reading : null)].map(({ sql, values }) => env.DB.prepare(sql).bind(...values)),
-  ]) as D1Result<Facet>[] : [reviewer ? await facets.all<Facet>() : await browseFacets(env, ctx, url, production, facets)];
+  let groups: Facet[], published: D1Result<{ label: string; n: number }> | null = null;
+  if (review) {
+    const corpus = corpusCountQuery(production, scoped ? reading : null);
+    const results = await env.DB.batch<any>([...[stored, marked, skipped].filter(s => s !== null), env.DB.prepare(corpus.sql).bind(...corpus.values)]);
+    published = results.pop()!;
+    groups = moved(results[0].results, results.slice(1).flatMap(result => result.results));
+  } else {
+    groups = await browseFacets(env, ctx, url, production, stored!, marked!);
+    if (skipped) groups = moved(groups, (await skipped.all<Facet>()).results);
+  }
   const categories = new Map<string, Json>(), documents = new Map<string, Json>();
   const counts: Json = { pending: 0, seen: 0, flagged: 0, checked: 0, hard: 0, skipped: 0 };
   const empty = { total: 0, pending: 0, seen: 0, checked: 0, flagged: 0, hard: 0, skipped: 0 };
@@ -295,10 +337,10 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
     book.total += n; book[state] += n;
     documents.set(document, book);
   };
-  for (const row of groups.results) add(row.label, row.state, row.n, row.document, row.title, row.family);
+  for (const row of groups) add(row.label, row.state, row.n, row.document, row.title, row.family);
   // A corpus glyph nothing has named is pending for everyone, and the table counts them per character.
   const corpus = new Map<string, number>();
-  if (review) for (const row of published.results) if (row.n > 0) { corpus.set(row.label, row.n); add(row.label, 'pending', row.n) }
+  if (published) for (const row of published.results) if (row.n > 0) { corpus.set(row.label, row.n); add(row.label, 'pending', row.n) }
   // Browse's counts are grouped by character, book and state, so a browse listing filtered by those
   // alone takes its total from them; counting it again would read every crop it holds on each page.
   // Any other filter clears this, and the listing is counted.
@@ -363,7 +405,7 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
     ...(reportedCountWhere ? [env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${reportedCountWhere.join(' AND ')}`).bind(...values)] : []),
   ]);
   const count = tally ? null : results.shift()!, [window, reportedCount] = results;
-  const listed = tally ? groups.results.filter(row => tally!.every(test => test(row))).reduce((n, row) => n + row.n, 0)
+  const listed = tally ? groups.filter(row => tally!.every(test => test(row))).reduce((n, row) => n + row.n, 0)
     : (count!.results[0] as { n: number }).n;
   const rows = window.results as (UnitRow & { effective: string; shape_order: number | null; suspect: string | null })[];
   if (rotated && rows.length < limit) {
