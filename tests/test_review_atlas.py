@@ -1111,11 +1111,24 @@ def test_a_mended_crop_a_person_settled_stays_a_candidate_and_a_human_decision(r
     assert "machine" not in checked["counts"], "a repair is not a review state"
 
 
+def test_an_extracted_crop_says_which_gate_let_it_through(repaired: Path):
+    units = tables.Dataset(repaired).read("units")
+    extracted = units[-1].model_copy(update={"id": f"{LINE}:extracted", "seq": 4, "reading": "飍", "unicode": "U+98CD",
+                                             "meta": {"extraction": {"gate": "unconfirmed", "quiz": True}}})
+    # The fixture's recorded review is not needed here, and a store refuses tables that changed under it.
+    for store_file in repaired.glob("review.sqlite*"):
+        store_file.unlink()
+    tables.write(repaired / "units.parquet", [*units, extracted], Unit)
+    body = TestClient(create_app(repaired)).get("/atlas/characters/" + f"{LINE}:extracted").json()
+    assert body["gate"] == "unconfirmed"
+
+
 def test_an_untouched_occurrence_says_nothing_about_repair(repaired: Path):
     """`None` rather than an empty record, so a view can tell "never repaired" from "fine"."""
     client = TestClient(create_app(repaired))
     body = client.get("/atlas/characters/" + f"{LINE}:untouched").json()
     assert body["repair"] is None
+    assert body["gate"] is None, "only extracted crops carry an extraction gate"
     assert body["state"] == "pending"
     mended = client.get("/atlas/characters/" + f"{LINE}:trusted").json()
     assert mended["repair"]["withheld"] is False and mended["repair"]["reliable"] is True

@@ -743,6 +743,9 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 # rather than staying in the table: `None` for a unit the pass never touched, so a
                 # view can tell "not repaired" from "repaired and fine".
                 "repair": repair_metadata(unit),
+                # How extraction let the crop through: `consensus` when both visual models read it,
+                # `unconfirmed` when the classifier has no class for it; None for other crops.
+                "gate": (unit.meta.get("extraction") or {}).get("gate"),
                 "box": unit.box.model_dump() if unit.box else None,
                 "image_sha256": digest,
                 "image": image_url,

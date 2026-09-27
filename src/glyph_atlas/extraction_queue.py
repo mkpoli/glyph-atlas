@@ -5,6 +5,17 @@ pages separately; this worker never rewrites its baseline or review history. `Qu
 takes pending work coverage-first: a page holding characters the atlas still lacks is claimed
 ahead of a page of characters it already has plenty of, as `Queue.prioritize` scores it; see
 `Queue`'s docstring for the full claim order.
+
+A unit is published through one of two gates, recorded as `meta.extraction.gate`. `consensus`: the
+alignment accepted it and both visual models read its character (`quality_reason`). `unconfirmed`: its
+letter has no class in the classifier under any of its readings, so alignment scores it at the
+probability floor and leaves it rejected, and the classifier cannot vote for it; it is published on its
+shape, unless the classifier confidently reads a kana or a neighbour there, and on NDLkotenOCR's
+reading when that model's alphabet holds the character (`unconfirmed_reason`). Without
+this gate no character outside the classifier's classes could reach review, and those are the rare
+ones. Of the 30 units it published from 7 pages on 2026-09-27, 25 framed their character; the others
+held part of it (a detector trained on common classes splits tall compounds such as 飍) or a sliver,
+so reviewers and consumers should read the gate.
 """
 from __future__ import annotations
 
@@ -23,7 +34,9 @@ from pathlib import Path
 from . import align, images, tables
 from .schema import PAGE_SCOPE, Classification, ReviewState, UnitKind
 
-POLICY = "single-character-consensus-v1"
+POLICY = "single-character-consensus-v2"
+CONSENSUS = "consensus"
+UNCONFIRMED = "unconfirmed"
 
 
 def digest(value):
@@ -256,10 +269,8 @@ class Queue:
         return result
 
 
-def quality_reason(unit, votes, size):
-    """Conservative publication gate. Both independent visual models must agree."""
-    if unit.review != ReviewState.MACHINE:
-        return "alignment-uncertain"
+def shape_reason(unit, size):
+    """Why a unit cannot be one character's crop on a page of `size`, or None."""
     expected = unicodedata.normalize("NFC", unit.text_source or "")
     if unit.kind != UnitKind.CHAR or unit.granularity != "char" or len(expected) != 1:
         return "not-one-character"
@@ -268,16 +279,81 @@ def quality_reason(unit, votes, size):
         return "invalid-geometry"
     if not .25 <= b.w / b.h <= 2.2:
         return "elongated-crop"
-    by_engine = {v["engine"]: v for v in votes}
+    return None
+
+
+def vote_reason(votes, expected, name, threshold):
+    """Why the vote of engine `name` does not confirm `expected`, or None."""
+    vote = next((v for v in votes if v["engine"] == name), None)
+    if (not vote or vote.get("identity_scope", "character") != "character"
+            or unicodedata.normalize("NFC", vote.get("text") or "") != expected):
+        return "visual-disagreement"
+    score = vote.get("score")
+    if (not isinstance(score, (float, int)) or isinstance(score, bool)
+            or not math.isfinite(score) or not 0 <= score <= 1 or score < threshold):
+        return "visual-uncertain"
+    return None
+
+
+def quality_reason(unit, votes, size):
+    """Conservative publication gate. Both independent visual models must agree."""
+    if unit.review != ReviewState.MACHINE:
+        return "alignment-uncertain"
+    reason = shape_reason(unit, size)
+    if reason:
+        return reason
+    expected = unicodedata.normalize("NFC", unit.text_source)
     for name, threshold in (("Atlas classifier", .80), ("NDLkotenOCR", .70)):
-        vote = by_engine.get(name)
-        if (not vote or vote.get("identity_scope", "character") != "character"
-                or unicodedata.normalize("NFC", vote.get("text") or "") != expected):
+        reason = vote_reason(votes, expected, name, threshold)
+        if reason:
+            return reason
+    return None
+
+
+def out_of_vocabulary(unit, classes) -> bool:
+    """Whether the unit is a letter the classifier has no class for, under any of its readings.
+
+    Alignment scores a token through its candidate code points, so a katakana unit read through its
+    hiragana class is in vocabulary. Marks, punctuation and symbols (not category Lo) never are
+    out of vocabulary here: many are editorial notation with no ink of their own.
+    """
+    expected = unicodedata.normalize("NFC", unit.text_source or "")
+    if len(expected) != 1 or unicodedata.category(expected) != "Lo":
+        return False
+    points = {candidate.unicode for candidate in unit.candidates} | {f"U+{ord(expected):04X}"}
+    return points.isdisjoint(classes)
+
+
+def kana(text) -> bool:
+    return len(text) == 1 and unicodedata.name(text, "").startswith(("HIRAGANA", "KATAKANA", "HENTAIGANA"))
+
+
+def unconfirmed_reason(unit, votes, size, *, alphabet, neighbours=()):
+    """Publication gate for a character the classifier has no class for.
+
+    Alignment gives such a token whichever detection is left between its neighbours, and when the
+    detector missed the character that can be a ruby kana or part of the next character. The
+    classifier vetoes the box when it reads, at .80 or more, a kana or the text of a neighbouring
+    unit; it cannot veto every confident reading, since it reads 髙 as 高. NDLkotenOCR vetoes it when
+    it reads two or more characters there at .90 or more (tall compounds such as 孼 read as two, but
+    less surely). The shape checks of any unit apply, and NDLkotenOCR must read the character when
+    its alphabet holds it.
+    """
+    reason = shape_reason(unit, size)
+    if reason:
+        return reason
+    sequence = next((v for v in votes if v["engine"] == "NDLkotenOCR"), None)
+    if sequence and len(sequence.get("text") or "") > 1 and not vote_reason(
+            [sequence], sequence["text"], "NDLkotenOCR", .90):
+        return "not-one-character"
+    vote = next((v for v in votes if v["engine"] == "Atlas classifier"), None)
+    if vote and not vote_reason([vote], vote.get("text") or "", "Atlas classifier", .80):
+        read = unicodedata.normalize("NFC", vote.get("text") or "")
+        if kana(read) or read in neighbours:
             return "visual-disagreement"
-        score = vote.get("score")
-        if (not isinstance(score, (float, int)) or isinstance(score, bool)
-                or not math.isfinite(score) or not 0 <= score <= 1 or score < threshold):
-            return "visual-uncertain"
+    expected = unicodedata.normalize("NFC", unit.text_source)
+    if expected in alphabet:
+        return vote_reason(votes, expected, "NDLkotenOCR", .70)
     return None
 
 
@@ -397,17 +473,25 @@ class Engine:
         if output.exists():
             return committed_report(output, identity, page), output
         detections = [align.Detection(box=box, score=score) for box,score in self.detector.boxes(image)]
+        classes = set(self.classifier.classes)
         for line in lines:
             found, _ = align.align_line(line, detections, run=self.run, classifier=self.classifier,
                                         crop_of=crop_of)
-            for unit in found:
+            for position, unit in enumerate(found):
                 examined += 1
-                prelim = quality_reason(unit, [], image.size)
-                if prelim not in (None,"visual-disagreement"):
-                    reasons[prelim] += 1
-                    continue
-                result = self.reader.read(crop_of(page.id, unit.box))
-                reason = quality_reason(unit, result["votes"], image.size)
+                gate = CONSENSUS
+                reason = quality_reason(unit, [], image.size)
+                if reason in (None, "visual-disagreement"):
+                    result = self.reader.read(crop_of(page.id, unit.box))
+                    reason = quality_reason(unit, result["votes"], image.size)
+                elif (reason == "alignment-uncertain" and out_of_vocabulary(unit, classes)
+                        and shape_reason(unit, image.size) is None):
+                    result = self.reader.read(crop_of(page.id, unit.box))
+                    neighbours = {other.text_source for other in found[max(0, position - 1):position + 2]
+                                  if other is not unit and other.text_source}
+                    reason = unconfirmed_reason(unit, result["votes"], image.size, alphabet=self.reader.alphabet,
+                                                neighbours=neighbours)
+                    gate = UNCONFIRMED
                 if reason:
                     reasons[reason] += 1
                     continue
@@ -416,7 +500,8 @@ class Engine:
                     "id":"ex:"+identity[:16]+":"+digest(unit.id)[:20],
                     "document_id":document.id,"unicode":f"U+{ord(label):04X}",
                     "classification":Classification.IDENTIFIED,"group_id":None,
-                    "meta":{"extraction":{"policy":POLICY,"source_unit_id":unit.id,
+                    "review":ReviewState.MACHINE,
+                    "meta":{"extraction":{"policy":POLICY,"gate":gate,"source_unit_id":unit.id,
                         "source_page_id":page.id,"source_line_id":line.id,"page_sha256":page.sha256,
                         "generation":identity,"visual_votes":result["votes"],
                         "verified":False,"quiz":True}},
@@ -429,6 +514,7 @@ class Engine:
         report = {"policy":POLICY,"generation":identity,"page_id":page.id,"document_id":document.id,
                   "title":document.title,"page_sha256":page.sha256,"models":self.models,
                   "examined":examined,"accepted":len(accepted),"withheld":dict(reasons),
+                  "unconfirmed":sum(1 for u in accepted if u.meta["extraction"]["gate"] == UNCONFIRMED),
                   "source_dimensions":list(original_dimensions),"lines":len(lines),"detected":len(detections),"complete_page":len(lines)==located_line_count,
                   "withheld_lines":{"invalid_geometry":located_line_count-len(lines)},
                   "created_at":datetime.now(UTC).isoformat()}

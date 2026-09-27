@@ -1,6 +1,6 @@
 from glyph_atlas import tables
 from glyph_atlas.extraction_queue import Queue, quality_reason, run, scorable_chars, unique_units
-from glyph_atlas.schema import Box, Document, Line, Page, ReviewState, Unit
+from glyph_atlas.schema import Box, Candidate, Document, Line, Page, ReviewState, Unit
 
 
 def unit(**kwargs):
@@ -346,3 +346,76 @@ def test_the_pause_follows_only_a_page_that_fetched_its_image(tmp_path, monkeypa
             raise ValueError("unavailable")
     run(queue,Broken(),pages=4,pause=7)
     assert slept == [7]
+
+
+def test_gates_for_a_character_the_classifier_has_no_class_for():
+    from glyph_atlas.extraction_queue import out_of_vocabulary, unconfirmed_reason
+    rare = unit().model_copy(update={"text_source": "飍", "reading": "飍", "review": ReviewState.REJECTED})
+    assert out_of_vocabulary(rare, {"U+5B57"}) and not out_of_vocabulary(unit(), {"U+5B57"})
+    # Katakana is scored through its hiragana class; marks and punctuation have no ink of their own.
+    yu = unit().model_copy(update={"text_source": "ユ", "candidates": [Candidate(unicode="U+3086", p=1.0)]})
+    assert not out_of_vocabulary(yu, {"U+3086"})
+    for mark in ("ー", "〳", "：", "-", "（"):
+        assert not out_of_vocabulary(unit().model_copy(update={"text_source": mark}), set())
+    assert unconfirmed_reason(rare, [], (200,200), alphabet=set()) is None
+    assert unconfirmed_reason(rare, [], (30,30), alphabet=set()) == "invalid-geometry"
+    # Where NDLkotenOCR knows the character, it must read it.
+    assert unconfirmed_reason(rare, votes("尽"), (200,200), alphabet={"飍"}) == "visual-disagreement"
+    assert unconfirmed_reason(rare, votes("飍"), (200,200), alphabet={"飍"}) is None
+    # The classifier vetoes a box it confidently reads as a kana or as a neighbour.
+    assert unconfirmed_reason(rare, votes("お"), (200,200), alphabet=set()) == "visual-disagreement"
+    assert unconfirmed_reason(rare, votes("風"), (200,200), alphabet=set(), neighbours={"風"}) == "visual-disagreement"
+    assert unconfirmed_reason(rare, votes("高"), (200,200), alphabet=set(), neighbours={"風"}) is None
+    # NDLkotenOCR reading two characters surely means the box holds more than one.
+    two = votes("高"); two[1]["text"] = "吉園"
+    assert unconfirmed_reason(rare, two, (200,200), alphabet=set()) == "not-one-character"
+    two[1]["score"] = .78
+    assert unconfirmed_reason(rare, two, (200,200), alphabet=set()) is None
+    unsure = votes("お"); unsure[0]["score"] = .5
+    assert unconfirmed_reason(rare, unsure, (200,200), alphabet=set()) is None
+
+
+def test_extraction_publishes_out_of_vocabulary_units_tagged_unconfirmed(tmp_path, monkeypatch):
+    from PIL import Image
+
+    from glyph_atlas import align as align_module
+    from glyph_atlas import extraction_queue
+    from glyph_atlas.extraction_queue import Engine
+
+    directory = tmp_path/"source"; directory.mkdir()
+    page = Page(id="d:0", document_id="d", seq=0, image="https://example.org/p.jpg", width=400, height=200)
+    tables.write(directory/"documents.parquet", [Document(id="d", title="安政風聞集")], Document)
+    tables.write(directory/"pages.parquet", [page], Page)
+    tables.write(directory/"lines.parquet", [Line(id="d:0:l", page_id="d:0", seq=0, text="字飍字", text_raw="字飍字",
+                 box=Box(x=0, y=0, w=400, h=200))], Line)
+    image = tmp_path/"p.png"; Image.new("RGB", (400, 200), "white").save(image)
+    monkeypatch.setattr(extraction_queue.images, "path_for", lambda _: image)
+
+    def placed(text, x, review, box=True, w=40):
+        return Unit(id=f"u{x}", page_id="d:0", line_id="d:0:l", text_source=text, reading=text, review=review,
+                    box=Box(x=x, y=10, w=w, h=45) if box else None)
+    # The classifier reads 字 on every 40-pixel crop, and 高 on the 50-pixel 飍 at x=100.
+    found = [placed("字", 10, ReviewState.MACHINE), placed("飍", 100, ReviewState.REJECTED, w=50),
+             placed("字", 200, ReviewState.REJECTED), placed("飍", 250, ReviewState.REJECTED),
+             placed("飍", 300, ReviewState.REJECTED, box=False)]
+    monkeypatch.setattr(align_module, "align_line", lambda *a, **k: (found, []))
+    monkeypatch.setattr(align_module, "clear_crop_cache", lambda: None)
+
+    engine = object.__new__(Engine)
+    engine.run = type("Run", (), {"model_dump": lambda self: {}})()
+    engine.models = {}
+    engine.detector = type("Detector", (), {"boxes": lambda self, _: []})()
+    engine.classifier = type("Classifier", (), {"classes": ["U+5B57", "other"]})()
+    engine.reader = type("Reader", (), {"alphabet": set("字"),
+                                        "read": lambda self, crop: {"votes": votes("高" if crop.width == 50 else "字")}})()
+
+    report, output = engine.extract({"id": "d:0", "source": str(directory)}, tmp_path/"out")
+    units = {u.meta["extraction"]["source_unit_id"]: u for u in tables.Dataset(output).read("units")}
+    assert units["u10"].meta["extraction"]["gate"] == "consensus"
+    assert units["u100"].meta["extraction"]["gate"] == "unconfirmed"
+    assert units["u100"].review == ReviewState.MACHINE and units["u100"].unicode == "U+98CD"
+    assert set(units) == {"u10", "u100"}
+    assert report["unconfirmed"] == 1
+    # The boxless 飍 and the in-vocabulary 字 stay withheld by the alignment; the 飍 at x=250 reads as
+    # its neighbour 字.
+    assert report["withheld"] == {"alignment-uncertain": 2, "visual-disagreement": 1, "overlapping-crops": 0}
