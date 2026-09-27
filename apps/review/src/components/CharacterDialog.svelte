@@ -2,6 +2,7 @@
   import ProductionBadge from './ProductionBadge.svelte'
   import StyleField from './StyleField.svelte'
   import ZiLink from './ZiLink.svelte'
+  import CopyId from './CopyId.svelte'
   import { onMount, untrack, tick } from 'svelte'
   import { replaceState } from '$app/navigation'
   import { page } from '$app/state'
@@ -230,7 +231,7 @@
     {#if error}<div class="error-message" role="alert">{error}<button disabled={busy} onclick={() => load(id)}>{t('character.reload')}</button></div>{/if}
     {#if data}
       <div class="inspector-production"><ProductionBadge item={data} /><StyleField item={data} {clientId} editable={!onVerdict} disabled={busy} working={value => busy = value} saved={styled} /></div>
-      <div class="inspector-title"><h2 lang="ja">{data.label}</h2><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{/if}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.state === 'checked' ? t('state.checked') : data.state === 'flagged' ? t('state.flagged') : t('state.unreviewed')}</span></div><p class="record-id"><code>{data.id}</code><button type="button" class="copy-id" onclick={() => navigator.clipboard?.writeText(data.id)} aria-label={t('inspector.copyId')}>{t('inspector.copyId')}</button></p>
+      <div class="inspector-title"><h2 lang="ja">{data.label}</h2><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{/if}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.state === 'checked' ? t('state.checked') : data.state === 'flagged' ? t('state.flagged') : t('state.unreviewed')}</span></div><CopyId id={data.id} />
       <div class="inspector-figure">
         {#if editingBox && data.context && data.context_box}
           <figure class="nearby crop-adjustment" bind:this={nearby}>
