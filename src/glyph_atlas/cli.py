@@ -274,6 +274,24 @@ def rights_resolve(
         typer.echo(f"{name:<18} {value:>8}")
 
 
+@rights_app.command("kokusho")
+def rights_kokusho(
+    directory: Annotated[Path, typer.Argument(help="dataset directory whose documents to enrich")],
+    cache: Annotated[Path, typer.Option(help="where the 国書データベース records are kept")] = Path("cache/kokusho"),
+) -> None:
+    """Keep each document's 国書データベース record, and fill its empty holder, shelfmark and production."""
+    from datetime import UTC, datetime
+
+    from . import kokusho
+    from .schema import Document
+
+    today = datetime.now(UTC).date()
+    documents, counts = kokusho.enrich_all(tables.Dataset(directory).read("documents"), cache, today)
+    tables.write_table(directory / "documents.parquet", documents, Document, command="atlas rights kokusho")
+    for name, value in counts.items():
+        typer.echo(f"{name:<12} {value:>8}")
+
+
 @rights_app.command("report")
 def rights_report(
     directory: Annotated[Path, typer.Argument(help="dataset directory to report on")],
