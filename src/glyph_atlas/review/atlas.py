@@ -553,6 +553,23 @@ class Round(BaseModel):
     skipped: list[Seen] = Field(default_factory=list, max_length=4096)
 
 
+class CorrectedCrop(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    revision: int = Field(ge=0)
+    image_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class Correction(BaseModel):
+    """Crops a reader selected in the collection view, all given one written character at once."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: UUID
+    client_id: str = Field(min_length=1, max_length=128)
+    character: str = Field(min_length=1, max_length=32)
+    crops: list[CorrectedCrop] = Field(min_length=1, max_length=144)
+
+
 class Undo(BaseModel):
     model_config = ConfigDict(extra="forbid")
     client_id: str = Field(min_length=1, max_length=128)
@@ -1143,9 +1160,64 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         results = store.record_batch(requests)
         return {"id": str(round.id), "results": results}
 
+    @api.post("/atlas/corrections")
+    def correct(correction: Correction) -> dict:
+        ids = [crop.id for crop in correction.crops]
+        if len(set(ids)) != len(ids):
+            raise BadRequest("A character can appear only once in a correction.")
+        identity = identity_correction(correction.character, "character")
+        prefix = f"correction:{correction.id}:"
+        previous = store.submission_results(correction.client_id, prefix)
+        if previous:
+            reviews = [r for r in previous if r["field"] == "review"]
+            old = [json.loads(r["review"]["evidence"]) for r in reviews]
+            if ({r["target_id"] for r in reviews} != set(ids)
+                    or any(o.get("suggested_character") != identity for o in old)):
+                raise HTTPException(409, "This correction was already saved with different crops.")
+            return {"id": str(correction.id), **repeat(previous)}
+        requests = []
+        for crop in correction.crops:
+            unit, revision = one(crop.id)
+            if crop.revision != revision:
+                raise HTTPException(409, "This character changed. Reload it.")
+            if crop.image_sha256 != image_source(unit)[0].stem:
+                raise HTTPException(409, "The source image changed. Reload it.")
+            if identity == stored_identity(unit):
+                raise BadRequest("Choose a different character or a different issue.")
+            # A corrected character carries its reading along: い corrected to り reads り.
+            derived = reading_of(identity_text(identity))
+            reading = derived if derived and derived != label(unit) else None
+            evidence = json.dumps({"kind": "character-review", "batch": str(correction.id), "verdict": "wrong",
+                                   "issue": "character", "suggested_reading": None,
+                                   "suggested_character": identity, "snapshot": snapshot(unit, revision),
+                                   "correction": {"reading": reading or label(unit), "unicode": identity,
+                                                  "box": unit.box.model_dump() if unit.box else None}},
+                                  ensure_ascii=False)
+            base = revision
+            requests.append(ReviewRequest(target_type="unit", target_id=crop.id, field="unicode", new=identity,
+                                          base_revision=base, client_id=correction.client_id,
+                                          idempotency_key=prefix + crop.id + ":character", evidence=evidence))
+            base += 1
+            if reading:
+                requests.append(ReviewRequest(target_type="unit", target_id=crop.id, field="reading", new=reading,
+                                              base_revision=base, client_id=correction.client_id,
+                                              idempotency_key=prefix + crop.id + ":reading", evidence=evidence))
+                base += 1
+            requests.append(ReviewRequest(target_type="unit", target_id=crop.id, field="review", new="reviewed",
+                                          base_revision=base, client_id=correction.client_id,
+                                          idempotency_key=prefix + crop.id, evidence=evidence))
+        return {"id": str(correction.id), "results": store.record_batch(requests)}
+
+    @api.post("/atlas/corrections/{round_id}/undo")
+    def undo_correction(round_id: UUID, request: Undo) -> dict:
+        return undo_submission(round_id, request, "correction")
+
     @api.post("/atlas/rounds/{round_id}/undo")
     def undo(round_id: UUID, request: Undo) -> dict:
-        previous = store.submission_results(request.client_id, f"quiz:{round_id}:")
+        return undo_submission(round_id, request, "quiz")
+
+    def undo_submission(round_id: UUID, request: Undo, kind: str) -> dict:
+        previous = store.submission_results(request.client_id, f"{kind}:{round_id}:")
         if not previous:
             raise HTTPException(404, "No saved round belongs to this reviewer.")
         revisions = {r["target_id"]: r["revision"] for r in previous}
@@ -1156,7 +1228,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 target_type="unit", target_id=target, field=r["field"], new=r["review"]["old"],
                 # A seen record changed nothing, so its undo has nothing to be stale against.
                 base_revision=None if r["field"] == SEEN else revisions[target], client_id=request.client_id,
-                idempotency_key=f"quiz-undo:{round_id}:{r['id']}", evidence=f"undo of {r['id']}",
+                idempotency_key=f"{kind}-undo:{round_id}:{r['id']}", evidence=f"undo of {r['id']}",
             ))
             if r["field"] != SEEN:
                 revisions[target] += 1

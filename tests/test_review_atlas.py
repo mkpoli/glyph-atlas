@@ -1948,3 +1948,27 @@ def test_a_crop_shows_its_style_and_where_it_comes_from(dataset, tmp_path, monke
     cleared = {**body, "id": str(uuid4()), "revision": saved.json()["revision"], "style": "unassessed"}
     again = client.post(f"/atlas/characters/{quote(unit, safe='')}/style", json=cleared).json()
     assert (again["style"], again["style_basis"]) == ("cursive", "document-confirmed")
+
+
+def test_a_correction_gives_crops_of_different_labels_one_character_and_undoes_as_one(dataset):
+    client = TestClient(create_app(dataset))
+    items = client.get('/atlas?limit=60').json()['items']
+    labels = sorted({item['label'] for item in items})[:2]
+    chosen = [next(i for i in items if i['label'] == labels[0])] + [i for i in items if i['label'] == labels[1]][:2]
+    assert len(chosen) == 3 and len({item['label'] for item in chosen}) == 2
+    crops = [{"id": i['id'], "revision": i['revision'], "image_sha256": i['image_sha256']} for i in chosen]
+    payload = {"id": str(uuid4()), "client_id": "batch", "character": "タ", "crops": crops}
+    stale = {**payload, "id": str(uuid4()), "crops": [crops[0], {**crops[1], "revision": crops[1]['revision'] + 5}]}
+    assert client.post('/atlas/corrections', json=stale).status_code == 409
+    assert client.get('/atlas/characters/' + chosen[0]['id']).json()['revision'] == chosen[0]['revision']
+    saved = client.post('/atlas/corrections', json=payload)
+    assert saved.status_code == 200, saved.text
+    assert client.post('/atlas/corrections', json=payload).status_code == 200
+    assert client.post('/atlas/corrections', json={**payload, "character": "ナ"}).status_code == 409
+    for item in chosen:
+        detail = client.get('/atlas/characters/' + item['id']).json()
+        assert (detail['label'], detail['state']) == ('タ', 'checked')
+    kinds = {json.loads(e.evidence)['kind'] for e in Store(dataset).events()}
+    assert kinds == {'character-review'}
+    assert client.post('/atlas/corrections/' + payload['id'] + '/undo', json={"client_id": "batch"}).status_code == 200
+    assert [client.get('/atlas/characters/' + i['id']).json()['label'] for i in chosen] == [i['label'] for i in chosen]
