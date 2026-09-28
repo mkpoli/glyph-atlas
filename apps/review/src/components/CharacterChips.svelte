@@ -3,9 +3,27 @@
   import ZiLink from './ZiLink.svelte'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import { countsLabel } from '../lib/layers.js'
-  import { t, formatNumber } from '../lib/i18n.svelte.js'
+  import { t, formatNumber, localize } from '../lib/i18n.svelte.js'
+  import { characterAddress } from '../lib/gallery.js'
   let { card = null, expand = $bindable('none'), onselect = () => {}, onreview = null } = $props()
   const members = $derived(card?.grapheme?.members ?? [{code_point: card?.code_point, char: card?.char}])
+  // The 異体字 graph: characters one may be written for this one, and characters related otherwise.
+  const variants = $derived(card?.variants ?? { written: [], related: [], sources: {} })
+  // Each edge as its source states it: the relation and the sources that give it.
+  const relationTitle = v => {
+    const by = new Map()
+    for (const r of v.relations) by.set(r.relation, new Set([...(by.get(r.relation) ?? []), r.source]))
+    return `${v.char} ${v.code_point}\n` + [...by].map(([relation, sources]) => `${relation}: ${[...sources].join(', ')}`).join('\n')
+  }
+  // The relations that set a character apart from a variant, in the reader's language; another is shown as its source names it.
+  const RELATION_NAMES = { borrowed: () => t('chips.relation.borrowed'), substitute: () => t('chips.relation.substitute'),
+    'non-cognate': () => t('chips.relation.nonCognate'), spoofing: () => t('chips.relation.spoofing'),
+    reduction: () => t('chips.relation.reduction') }
+  const relationName = v => { const relation = v.relations[0]?.relation; return RELATION_NAMES[relation]?.() ?? relation }
+  const crops = v => (v.count ?? 0) + (v.corpus_count ?? 0)
+  // Few fonts reach past the basic plane, and a compatibility ideograph looks like its unified form,
+  // so either shows its code point beside it: a missing glyph can still be told apart.
+  const named = v => { const p = v.char.codePointAt(0); return p > 0xffff || (p >= 0xf900 && p <= 0xfaff) }
 </script>
 
 {#if card}
@@ -27,6 +45,29 @@
         {/each}
       </div>
     </div>
+    {#if variants.written.length}
+      <div class="layer-row">
+        <span class="layer-label">{t('chips.variants')}</span>
+        <div class="variant-chips">
+          {#each variants.written as v (v.code_point)}
+            <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><span lang="zh">{v.char}</span>{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if crops(v)}<small>{formatNumber(crops(v))}</small>{/if}</a>
+          {/each}
+        </div>
+      </div>
+    {/if}
+    {#if variants.related.length}
+      <div class="layer-row">
+        <span class="layer-label">{t('chips.related')}</span>
+        <div class="variant-chips">
+          {#each variants.related as v (v.code_point)}
+            <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><span lang="zh">{v.char}</span>{#if named(v)}<small class="code">{v.code_point}</small>{/if}<small>{relationName(v)}{#if crops(v)} · {formatNumber(crops(v))}{/if}</small></a>
+          {/each}
+        </div>
+      </div>
+    {/if}
+    {#if variants.written.length || variants.related.length}
+      <p class="variant-sources">{t('chips.variantSources')}: {#each Object.entries(variants.sources) as [id, citation], i (id)}{#if i} · {/if}<abbr title={citation}>{id}</abbr>{/each}</p>
+    {/if}
     <div class="layer-legend"><ScriptLegend /></div>
     <div class="layer-row forms-row">
       <span class="layer-label">{t('chips.forms')}</span>
@@ -61,4 +102,12 @@
   .forms-row{font-size:12px;color:var(--muted)}
   .forms-row small{margin-left:auto}
   .layer-chips{margin:0}
+  .variant-chips{display:flex;flex-wrap:wrap;gap:6px;flex:1}
+  .variant{display:inline-flex;align-items:baseline;gap:6px;padding:4px 10px;border:1px solid var(--line);border-radius:7px;color:var(--ink);text-decoration:none;font-size:22px;line-height:1.2}
+  .variant:hover{border-color:var(--accent)}
+  .variant small{font-size:11px;color:var(--muted)}
+  .variant .code{font-family:ui-monospace,monospace;font-size:10px}
+  .variant-sources{margin:0;padding-left:92px;font-size:11px;color:var(--muted)}
+  .variant-sources abbr{text-decoration:underline dotted;cursor:help}
+  @media(max-width:600px){.variant-sources{padding-left:0}}
 </style>
