@@ -88,10 +88,11 @@
       {/if}
       <div class="inspector-question"><strong>{t('character.question.whatsWrong')}</strong><span>{t('character.question.chooseOne')}</span></div>
       <IssuePicker value={issue} choose={chooseIssue} disabled={busy} suggested={data.state === 'flagged' ? data.issue : null} />
-      <ReadingSuggestions typing={false} targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={{ candidates: data.suggestions }} {issue} reading={data.label} value={correction} disabled={busy} {choose} />
-      {#if ['reading', 'character'].includes(issue)}
-        <details class="corpus-pick"><summary>{t('corpus.chooseAnother')}</summary><CharacterSearch bind:value={search} label={t('corpus.correctCharacter.label')} placeholder={t('corpus.correctCharacter.placeholder')} onselect={item => choose(item.char)} />{#if correction}<p class="corpus-choice" role="status"><span lang="ja">{data.label}</span> → <b lang="ja">{correction}</b><button disabled={busy} onclick={() => choose(null)}>{t('common.clear')}</button></p>{/if}</details>
-      {/if}
+      <!-- Any other character is chosen beside the suggestions, in the same row as "None of these"; a crop of
+           joined characters takes what it holds as typed text. -->
+      {#snippet other()}<div class="corpus-pick"><span>{t('corpus.chooseAnother')}</span><CharacterSearch bind:value={search} label={t('corpus.correctCharacter.label')} placeholder={t('corpus.correctCharacter.placeholder')} onselect={item => choose(item.char)} /></div>{/snippet}
+      <ReadingSuggestions typing={issue === 'merged'} targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={{ candidates: data.suggestions }} {issue} reading={data.label} value={correction} disabled={busy} {choose} other={['reading', 'character'].includes(issue) ? other : null} />
+      {#if ['reading', 'character'].includes(issue) && correction}<p class="corpus-choice" role="status"><span lang="ja">{data.label}</span> → <b lang="ja">{correction}</b><button disabled={busy} onclick={() => choose(null)}>{t('common.clear')}</button></p>{/if}
       <details class="advanced-edit"><summary>{t('corpus.addNote')}</summary><textarea aria-label={t('character.note.aria')} bind:value={note} rows="2" maxlength="2000" placeholder={t('character.note.placeholder')} disabled={busy}></textarea></details>
       <SimilarCrops id={data.id} label={data.label} />
       <div class="corpus-credit"><span>{data.source?.title}</span><small>{[data.attribution || data.source?.holder, data.licence].filter(Boolean).join(' · ')}</small>{#if /^https?:\/\//i.test(data.record_url ?? '')}<a href={data.record_url} target="_blank" rel="noreferrer">{t('corpus.sourceRecord')}</a>{/if}</div>
@@ -110,6 +111,6 @@
   .unassigned-title{font-size:28px}
   .title-grapheme{margin-left:12px;font-size:40px;color:var(--muted)}
   .corpus-source-label{font-size:12px;color:var(--muted);margin:-6px 0 18px}.corpus-source-label b{font-size:17px;color:var(--ink);margin-left:6px}
-  .corpus-pick{margin-top:18px;font-size:12px}.corpus-pick summary{cursor:pointer;padding:8px 0}.corpus-pick :global(.character-search){margin-top:8px;width:100%}.corpus-choice{display:flex;align-items:center;gap:12px;margin-top:12px}.corpus-choice b{font-size:24px}.corpus-choice button{margin-left:auto;padding:5px 10px}
+  .corpus-pick{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--muted);flex:1 1 16em;min-width:0}.corpus-pick :global(.character-search){width:100%;min-width:0}.corpus-choice{display:flex;align-items:center;gap:12px;margin-top:12px}.corpus-choice b{font-size:24px}.corpus-choice button{margin-left:auto;padding:5px 10px}
   .corpus-credit{display:flex;flex-direction:column;gap:6px;margin-top:24px;color:var(--muted);font-size:12px}.corpus-credit a{align-self:flex-start;text-decoration:underline;text-underline-offset:3px;font-size:11px}
 </style>

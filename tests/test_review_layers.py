@@ -255,6 +255,14 @@ def test_typing_does_not_rescan_occurrences(dataset, monkeypatch):
         assert response.json()["items"]
 
 
+def test_suggest_finds_a_character_by_its_components(dataset):
+    """A term no reading or character answers is read as components: 水骨 and 氵骨 are 滑."""
+    api = client(dataset)
+    for term in ("水骨", "氵骨"):
+        first = api.get("/layers/suggest", params={"q": term}).json()["items"][0]
+        assert first["char"] == "滑" and first["rank"] == 7 and first["reason"].startswith("built from"), term
+
+
 def test_suggest_reaches_historical_forms_from_the_modern_kana(dataset):
     """ネ leads to the alternate NE, ヨリ to both yori ligatures, 子 to the kana written as it."""
     api = client(dataset)

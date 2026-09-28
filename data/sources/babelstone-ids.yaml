@@ -1,0 +1,21 @@
+id: babelstone-ids
+name: BabelStone IDS (Ideographic Description Sequences for CJK Unified Ideographs)
+publisher: Andrew West (魏安), BabelStone
+kind: reference-table
+url: https://www.babelstone.co.uk/CJK/IDS.TXT
+version: "File Date 2025-06-27, Unicode 16.0 edition"
+licence: PD
+licence_evidence: https://www.babelstone.co.uk/CJK/IDS.TXT
+attribution: Andrew West (魏安), BabelStone IDS.TXT
+access:
+  file: https://www.babelstone.co.uk/CJK/IDS.TXT
+format:
+  line: "U+XXXX<TAB>char<TAB>^IDS$(regions)[<TAB>^IDS$(regions) …]; CR/LF with a BOM"
+  components: "unified ideographs, CJK strokes and CJK Radicals Supplement characters; {n} names BabelStone's unencoded component n and ？ an unrepresentable one"
+notes:
+  - "Header note 2 states that IDS sequences are facts and not eligible for copyright, and waives any claim to the file's presentation format: \"anyone is free to make use of the IDS data provided in this file for personal or commercial purposes without asking permission or providing attribution\". The atlas records it as public domain and credits it all the same."
+  - The file draws on Kawabata Taichi's IDS data (https://github.com/kawabata/ids), itself descended from CHISE, and on IRG submissions, heavily edited by the maintainer. The atlas uses only this file, never CHISE IDS or kawabata/ids directly.
+  - Covers the 97,058 unified ideographs of Unicode 15.1 (URO, 12 of the compatibility block, Extensions A–I); later ideographs have no row.
+  - The header warns that a sequence describes a character's form in the regions tagged, not an absolute glyph; the atlas keeps every alternative with its regions.
+  - Unversioned upstream; the table header records the File Date and the digest of the copy read.
+checked: 2026-09-28

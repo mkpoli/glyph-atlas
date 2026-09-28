@@ -456,6 +456,68 @@ try {
   const markPlan = await plan({ sql: allCounts.marked, values: [] }, ['printed/type', 'printed/type0'])
   assert.ok(markPlan.some(d => /^SCAN m\b/.test(d)) && markPlan.some(d => /^SEARCH units USING INDEX sqlite_autoindex_units_1 \(id=\?\)/.test(d)), markPlan.join('; '))
   shapes.push([worker.corpusCountQuery('not:printed/type', 'ナ'), [], null])
+  // A character card lists its 異体字 edges both ways: the variants a gallery widens to apart from the
+  // rest, a pair any source calls simplified among the rest, each edge with its relation, source and
+  // claims, the sources cited, and crop counts from the kept counts.
+  await db.batch([
+    db.prepare("INSERT INTO character_variants VALUES('仮','假','variant','wikidata','Q1; P248 Q2',1,1)"),
+    db.prepare("INSERT INTO character_variants VALUES('假','仮','shinjitai','opencc','JPShinjitaiCharacters',1,1)"),
+    db.prepare("INSERT INTO character_variants VALUES('反','仮','borrowed','cjkvi-variants','反→仮 hydcd/borrowed',0,0)"),
+    db.prepare("INSERT INTO character_variants VALUES('仮','伋','variant','cjkvi-variants','仮→伋 hydzd/variant',1,1)"),
+    db.prepare("INSERT INTO character_variants VALUES('伋','仮','simplified','unihan','伋→仮 kSimplifiedVariant',1,0)"),
+    db.prepare(`INSERT OR REPLACE INTO metadata VALUES('variant_sources','{"wikidata":"Wikidata, P5475; CC0-1.0","opencc":"OpenCC; Apache-2.0","cjkvi-variants":"CJKVI; PD","unihan":"Unihan; Unicode-3.0"}')`),
+    db.prepare("INSERT OR REPLACE INTO metadata VALUES('units_refreshed_at','\"variants-test\"')"),
+  ])
+  const card = await call('/layers/characters/U%2B4EEE')
+  assert.deepEqual(card.variants.items.map(v => [v.char, v.code_point, v.sources]), [['假', 'U+5047', ['opencc', 'wikidata']]])
+  assert.deepEqual(card.variants.related.map(v => [v.char, v.relations.map(r => r.relation).sort()]),
+    [['伋', ['simplified', 'variant']], ['反', ['borrowed']]], 'a simplified pair is kept apart; every relation is listed')
+  assert.equal(card.variants.sources.wikidata, 'Wikidata, P5475; CC0-1.0', 'each source used is cited')
+  assert.equal(typeof card.variants.items[0].count, 'number')
+  const edgePlan = await plan({ sql: worker.variantEdgesQuery(), values: [] }, ['仮', '仮'])
+  assert.ok(edgePlan.includes('SEARCH character_variants USING PRIMARY KEY (a=?)'), edgePlan.join('; '))
+  assert.ok(edgePlan.includes('SEARCH character_variants USING INDEX character_variant_b (b=?)'), edgePlan.join('; '))
+  const countPlan = await plan({ sql: worker.variantCountsQuery(2), values: [] }, ['假', '反'])
+  assert.ok(countPlan.some(d => /SEARCH unit_counts USING PRIMARY KEY \(origin=\? AND character=\?\)/.test(d)), countPlan.join('; '))
+  assert.ok(!countPlan.some(d => /^SCAN/.test(d)), countPlan.join('; '))
+  // A gallery widened to its variants deals a variant's crops with the character's own, and only then.
+  const variantCrop = { id: 'variant-crop', label: '假', reading: '假', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
+  await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind('variant-crop', 'local', '假', '假', 'U+4EEE', null,
+    'handwritten', 'kanji', 'pending', 0, 1, 1, 1, JSON.stringify(variantCrop), JSON.stringify({ character: variantCrop }), '{}', '{}', null).run()
+  assert.ok(!(await call('/layers/occurrences?code_point=U%2B4EEE')).items.some(i => i.id === 'variant-crop'), 'the exact character alone')
+  assert.ok((await call('/layers/occurrences?code_point=U%2B4EEE&expand=variants')).items.some(i => i.id === 'variant-crop'), 'widened to 假')
+  // A crop of 伋 is not dealt: a source calls the pair a simplification, so it is kept apart.
+  const apart = { ...variantCrop, id: 'apart-crop', label: '伋', reading: '伋' }
+  await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind('apart-crop', 'local', '伋', '伋', 'U+4EEE', null,
+    'handwritten', 'kanji', 'pending', 0, 1, 1, 1, JSON.stringify(apart), JSON.stringify({ character: apart }), '{}', '{}', null).run()
+  assert.ok(!(await call('/layers/occurrences?code_point=U%2B4EEE&expand=variants')).items.some(i => i.id === 'apart-crop'), 'a simplified pair is not widened to')
+  assert.equal((await call('/layers/candidates?code_point=U%2B4EEE&scope=variants')).retry, false, 'the corpus side widens without error')
+  await call('/layers/occurrences?code_point=U%2B4EEE&expand=variants&offset=2001', undefined, 404)
+  // The widening reads the character's edges by key and index, and each widened page and count reads
+  // the chosen characters in index order: no temporary sort, a count that stops at the cap.
+  const widenPlan = await plan({ sql: worker.writtenVariantsQuery(), values: [] }, ['仮', '仮', '仮'])
+  assert.ok(widenPlan.includes('SEARCH character_variants USING PRIMARY KEY (a=?)'), widenPlan.join('; '))
+  assert.ok(widenPlan.includes('SEARCH character_variants USING INDEX character_variant_b (b=?)'), widenPlan.join('; '))
+  const sortFree = details => {
+    assert.ok(!details.some(d => /TEMP B-TREE/.test(d)), details.join('; '))
+    assert.ok(!details.some(d => /^SCAN (units|corpus_units|c|u)\b/.test(d)), details.join('; '))
+  }
+  const cropsPlan = await plan({ sql: worker.widenedCropsQuery(3), values: [] }, ['local', '仮', '假', '反', 60, 0])
+  sortFree(cropsPlan)
+  assert.ok(cropsPlan.some(d => /SEARCH units USING INDEX unit_character \(origin=\? AND character=\?\)/.test(d)), cropsPlan.join('; '))
+  const cropsCountPlan = await plan({ sql: worker.widenedCropsCountQuery(3), values: [] }, ['local', '仮', '假', '反'])
+  sortFree(cropsCountPlan)
+  for (const n of [1, 3]) {
+    const chars = ['仮', '假', '反'].slice(0, n)
+    const corpusPlan = await plan({ sql: `SELECT * FROM (${worker.corpusSelection('character', n)}) WHERE 1=1 ORDER BY k,i LIMIT ? OFFSET ?`, values: [] }, [...chars, ...chars, 60, 0])
+    sortFree(corpusPlan)
+    assert.ok(corpusPlan.some(d => /SEARCH c USING INDEX corpus_character \(character=\?\)/.test(d)), corpusPlan.join('; '))
+    assert.ok(corpusPlan.some(d => /SEARCH u USING INDEX unit_corpus_character/.test(d)), corpusPlan.join('; '))
+  }
+  await db.prepare("DELETE FROM units WHERE id='apart-crop'").run()
+  await db.prepare("DELETE FROM units WHERE id='variant-crop'").run()
+  const corpusCountPlan = await plan({ sql: worker.variantCorpusCountsQuery(2), values: [] }, ['假', '反'])
+  assert.ok(!corpusCountPlan.some(d => /^SCAN/.test(d)), corpusCountPlan.join('; '))
   // Needs fixing starts from the stored-flagged crops (`unit_state`) and the twice-skipped ones, and
   // looks each up by id; it never reads every crop to work out its review state.
   const attentionPlan = await plan({ sql: `SELECT count(*) AS n FROM units WHERE +origin='local' AND ${worker.attentionCandidatesQuery()}`, values: [] }, [])
@@ -466,6 +528,24 @@ try {
   served(documentPlan, null)
   assert.ok(documentPlan.includes('SEARCH c USING PRIMARY KEY (document=?)'), documentPlan.join('; '))
   assert.ok(documentPlan.some(d => /^SEARCH u USING INDEX sqlite_autoindex_units_1 \(id=\?\)/.test(d)), documentPlan.join('; '))
+  // A search of two or more ideographs no alias names finds the characters built from them: 水骨, 氵骨
+  // and ⺡骨 are 滑. The rarest component's list is read along its key, each other one looked up by key.
+  const built = { char: '滑', code_point: 'U+6ED1', candidates: {} }
+  await db.batch([
+    db.prepare('INSERT INTO characters VALUES(?,?,?,?,?)').bind('U+6ED1', '滑', '', JSON.stringify(built), JSON.stringify(built)),
+    ...[['氵', 0, 7, 'U+6ED1', 1, 1], ['水', 0, 7, 'U+6ED1', 1, 1], ['骨', 0, 7, 'U+6ED1', 1, 1], ['水', 0, 2, 'U+6C38', 1, 0],
+      ['骨', 2, 9, 'U+2DC2B', 1, 1]].map(row => db.prepare('INSERT INTO han_components VALUES(?,?,?,?,?,?)').bind(...row)),
+    ...[['氵', '氵', 1], ['⺡', '氵', 1], ['水', '水', 2], ['骨', '骨', 2]].map(row => db.prepare('INSERT INTO han_component_names VALUES(?,?,?)').bind(...row))])
+  for (const q of ['水骨', '氵骨', '⺡骨', 'U+6C34 U+9AA8']) {
+    const found = await (await mf.dispatchFetch(`${base}/layers/suggest?q=${encodeURIComponent(q)}`)).json()
+    assert.equal(found.match_kind, 'components', q)
+    assert.deepEqual(found.items.map(item => item.char), ['滑'], `${q}: a component character missing from the table is left out`)
+  }
+  assert.deepEqual((await (await mf.dispatchFetch(`${base}/layers/suggest?q=${encodeURIComponent('骨水骨')}`)).json()).items, [], 'two 骨 are asked for')
+  const componentPlan = await plan({ sql: worker.componentMatchQuery(1), values: [] }, ['骨', '水', 1, 1])
+  assert.ok(componentPlan.includes('SEARCH han_components USING PRIMARY KEY (component=?)'), componentPlan.join('; '))
+  assert.ok(componentPlan.includes('SEARCH o0 USING PRIMARY KEY (component=? AND tier=? AND size=? AND code_point=?)'), componentPlan.join('; '))
+  assert.ok(!componentPlan.some(d => d.includes('TEMP B-TREE')), componentPlan.join('; '))
   // `reported=hide`'s `NOT EXISTS` filter: the flagged set is small, but events and submissions are
   // still read through their own indexes, one correlated lookup per candidate row, never a scan.
   const reportedPlan = await plan({ sql: `SELECT count(*) AS n FROM units WHERE origin='local' AND state='flagged' AND NOT ${worker.reviewedInInspectorQuery()}`, values: [] }, [])
