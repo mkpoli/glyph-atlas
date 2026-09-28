@@ -15,6 +15,8 @@ export async function request(path, body, { fetch: send = fetch, ...options } = 
     error.status = response.status
     // A crop a publication retired names the crop that replaced it.
     if (typeof value.replaced_by === 'string') error.replacedBy = value.replaced_by
+    // A batch the site refused names the crops it refused.
+    if (Array.isArray(value.targets)) error.targets = value.targets
     throw error
   }
   return value

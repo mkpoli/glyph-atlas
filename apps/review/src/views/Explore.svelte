@@ -18,6 +18,8 @@
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery } from '../lib/layers.js'
   import { t, around, localName, locale, localize, delocalize } from '../lib/i18n.svelte.js'
   import { characterAddress, collectionAddress, corpusScope, expandFor, scopeFor, unslug } from '../lib/gallery.js'
+  import { useSession } from '../lib/session.svelte.js'
+  import BulkBar from '../components/BulkBar.svelte'
   // `initial` is the collection page the server rendered: the seed it shuffled with, the filters in the
   // address, the collection's rows, the corpus sample and the progress line; without rows the view loads
   // them itself, with the same filters. The bare homepage comes with `lead`, the first crops of the
@@ -27,6 +29,8 @@
   // and the collection behind a crop's dialog leave theirs alone.
   // `shown` is the character on show, for the page's title; the view changes it in place.
   let { flagged = false, addressed = false, inspect, ink = 'original', onink = () => {}, initial = null, gallery = null, shown = $bindable() } = $props()
+  const session = useSession()
+  const clientId = $derived(session?.state.clientId ?? '')
   const asked = untrack(() => initial), first = asked?.result ? asked : null, streamed = asked?.rest ? asked : null, opened = untrack(() => gallery)
   let data = $state(first?.result ?? (opened ? { query: opened.picked.char, total: opened.total, available: opened.available,
     categories: opened.summary?.categories ?? [], documents: opened.summary?.documents ?? [], counts: opened.summary?.counts ?? {} } : null))
@@ -198,7 +202,7 @@
   async function load(append = false) {
     choosing = false
     catalogueRequest?.abort()
-    if (!append) { showInAddress(); lead = 0 }
+    if (!append) { showInAddress(); lead = 0; clearSelection() }
     const id = ++requestId; loading = true; error = ''
     try {
       if (picked) {
@@ -410,6 +414,113 @@
       if (!closed) data = { ...data, counts: summary.counts, categories: summary.categories, documents: summary.documents, total: summary.total, available: summary.available, reported_count: summary.reported_count }
     } catch (e) { if (!closed) error = e.message }
   }
+  // Several tiles can be given one written character at once, as when the same misreading repeats.
+  // Ctrl/⌘-click or the corner box toggles a tile, Shift-click takes the range from the last one, X
+  // toggles the focused tile, and once anything is selected a mouse click toggles too; Enter still opens
+  // the inspector, so a keyboard reader can check a tile before marking it. Esc clears.
+  let selected = $state(new Set()), anchor = null, bulkTarget = $state(''), bulkBusy = $state(false), bulkError = $state('')
+  let bulkDone = $state(null)
+  const BATCH = 144
+  /** A corpus glyph whose image this site may not show cannot be judged from the grid. */
+  const selectable = item => item.origin !== 'corpus' || Boolean(item.proxyable && item.image)
+  function tileClick(event, item, index, open) {
+    const toggling = event.target.closest?.('.tile-select') || event.ctrlKey || event.metaKey || event.shiftKey || (selected.size && event.detail > 0)
+    if (!toggling || !selectable(item)) { open(); return }
+    event.preventDefault()
+    const next = new Set(selected)
+    if (event.shiftKey && anchor != null) {
+      const [from, to] = anchor < index ? [anchor, index] : [index, anchor]
+      for (const tile of tiles.slice(from, to + 1)) if (selectable(tile)) next.add(tile.id)
+    } else if (next.has(item.id)) next.delete(item.id)
+    else next.add(item.id)
+    anchor = index; selected = next; bulkError = ''
+  }
+  function clearSelection() { selected = new Set(); anchor = null; bulkError = '' }
+  function selectShown() { selected = new Set(tiles.filter(selectable).map(tile => tile.id)); bulkError = '' }
+  function selectionKeys(event) {
+    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.target.closest?.('input, textarea, dialog')) return
+    if (event.key === 'Escape' && selected.size) { clearSelection(); return }
+    const tile = event.target.closest?.('.glyph-grid .glyph-tile')
+    if (!tile || (event.key !== 'x' && event.key !== 'X')) return
+    const index = tiles.findIndex(item => item.id === (tile.dataset.unit ?? tile.dataset.corpus))
+    if (index >= 0) { event.preventDefault(); tileClick({ ctrlKey: true, detail: 0, target: event.target, preventDefault() {} }, tiles[index], index, () => {}) }
+  }
+  const writtenAs = item => item.written_character || item.label
+  /** A tile after a correction, or null when the correction takes it out of what this view shows. */
+  function corrected(item, result) {
+    const next = { ...item, label: bulkTarget, char: bulkTarget, written_character: bulkTarget, identity_status: 'assigned',
+      state: result?.state ?? 'checked', revision: result?.revision ?? item.revision + 1 }
+    return (flagged && !waiting(next.state)) || !fitsGallery(next) ? null : next
+  }
+  function patch(change) {
+    const apply = list => list.flatMap(item => (item.id in change ? (change[item.id] ? [change[item.id]] : []) : [item]))
+    items = apply(items); local = apply(local); corpus = apply(corpus); sample = apply(sample)
+  }
+  /** Tiles the site refused, read again so the grid shows what they are now. */
+  async function refresh(ids) {
+    const change = {}
+    await Promise.all(ids.map(async id => {
+      const tile = display.find(item => item.id === id)
+      try {
+        const now = tile?.origin === 'corpus' ? { ...tile, ...(await request('/atlas/corpus/character?id=' + encodeURIComponent(id))) } : await character(id)
+        change[id] = (flagged && !waiting(now.state)) || !fitsGallery(now) ? null : now
+      } catch { change[id] = null }
+    }))
+    patch(change)
+  }
+  async function applyBulk() {
+    const target = bulkTarget
+    if (!target || bulkBusy || !clientId) return
+    const chosen = display.filter(item => selected.has(item.id) && selectable(item))
+    // A tile a person already checked as the character has nothing to change; every other one is sent,
+    // and one already written as the character is confirmed.
+    const crops = chosen.filter(item => !(writtenAs(item) === target && item.state === 'checked'))
+    let kept = chosen.length - crops.length
+    bulkBusy = true; bulkError = ''
+    const saved = [], before = {}, after = {}
+    let refused = []
+    try {
+      for (let at = 0; at < crops.length; at += BATCH) {
+        const part = crops.slice(at, at + BATCH), id = crypto.randomUUID()
+        const result = await request('/atlas/corrections', { id, client_id: clientId, character: target,
+          crops: part.map(item => ({ id: item.id, revision: item.revision,
+            ...(item.origin === 'corpus' ? { source_revision: item.source_revision } : { image_sha256: item.image_sha256 }) })) })
+        saved.push(id)
+        const byId = Object.fromEntries((result.results ?? []).map(r => [r.target_id, r]))
+        kept += (result.unchanged ?? []).length
+        for (const item of part) if (byId[item.id]) { before[item.id] = item; after[item.id] = corrected(item, byId[item.id]) }
+      }
+    } catch (e) {
+      refused = (e.targets ?? []).map(target => target.id)
+      bulkError = refused.length ? t('bulk.refused', { count: refused.length }) : e.status === 429 ? t('bulk.tooMany') : e.status === 409 ? t('bulk.changed') : e.message
+    } finally {
+      bulkBusy = false
+    }
+    // Crops in a saved batch, tiles with nothing to change, and refused crops are done with.
+    const handled = new Set([...crops.slice(0, saved.length * BATCH), ...chosen.filter(item => !crops.includes(item))].map(item => item.id).concat(refused))
+    if (saved.length) {
+      patch(after)
+      bulkDone = { batches: saved, count: Object.keys(after).length, char: target, before, kept }
+      pairsChanged()
+    }
+    // What was saved or refused leaves the selection; what a later batch never reached stays selected.
+    selected = new Set([...selected].filter(id => !handled.has(id))); anchor = null
+    if (refused.length) await refresh(refused)
+  }
+  async function undoBulk() {
+    const done = bulkDone
+    if (!done || bulkBusy) return
+    bulkBusy = true; bulkError = ''
+    try {
+      for (const id of [...done.batches].reverse()) await request(`/atlas/corrections/${id}/undo`, { client_id: clientId })
+      bulkDone = null
+      const shown = new Set([...items, ...local, ...corpus, ...sample].map(item => item.id))
+      if (Object.keys(done.before).every(id => shown.has(id))) patch(done.before)
+      else await load()
+      pairsChanged()
+    } catch (e) { bulkError = e.message }
+    finally { bulkBusy = false }
+  }
   function select(value) { grapheme = value; offset = 0; load() }
   function shuffle() { seed = randomSeed(); offset = 0; load() }
   /**
@@ -452,6 +563,8 @@
   let shownExpand = untrack(() => expand)
   $effect(() => { const value = expand; if (value === shownExpand) return; shownExpand = value; untrack(() => { visual = ''; if (picked && !closed) load() }) })
 </script>
+
+<svelte:window onkeydown={selectionKeys} />
 
 <section class="explore">
   <div class="page-status">
@@ -505,9 +618,11 @@
   {/if}
   <div class="glyph-grid" bind:this={grid} aria-label={flagged ? t('explore.heading.flagged') : t('explore.grid.collection')} aria-busy={loading}>
     {#if loading && !display.length}{#each Array(32) as _}<div class="glyph-skeleton"></div>{/each}
-    {:else}{#each tiles as item, i (item.id)}{#if headed(item) && (i === 0 || visualGroup(display[i - 1]).id !== visualGroup(item).id)}<div class="visual-grid-heading">{groupLabel(visualGroup(item))}</div>{/if}{#if item.origin === 'corpus'}<button class="glyph-tile corpus" data-corpus={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} onclick={() => inspect(item.id, null, display, updateItem, 'corpus')} aria-label={t('explore.tile.inspectCorpus', { label: shownLabel(item) })}><span class="tile-reading"><span class="tile-glyph" class:unassigned={isUnassigned(item)} lang={isUnassigned(item) ? undefined : 'ja'}>{shownLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" lang="ja" title={t('chips.grapheme')}>{shownGrapheme(item)}</span>{/if}</span><span class="tile-details">{#each cropDetails(item) as line}<span>{line}</span>{/each}<span class="tile-id">{item.id}</span></span>{#if item.proxyable && item.image}<img class="glyph-image" src={item.image} alt={t('explore.tile.located', { label: shownLabel(item) })} loading={i < 24 ? "eager" : "lazy"} fetchpriority={i < 24 ? "high" : "auto"} decoding="async" />{:else}<span class="corpus-open"><b>{shownLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}<span class="tile-footer">{#if tileState(item) === 'plain' || tileState(item) === 'withheld'}<span class="status-dot" class:withheld={tileState(item) === 'withheld'}></span>{/if}{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{formatSerial(i + 1)}</span><span class="tile-arrow">↗</span></span></button>{:else}<button class="glyph-tile" data-unit={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} onclick={() => inspect(item.id, null, display, updateItem)} aria-label={t('explore.tile.inspect', { label: shownLabel(item) })}><span class="tile-reading"><span class="tile-glyph" class:unassigned={isUnassigned(item)} lang={isUnassigned(item) ? undefined : 'ja'}>{shownLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" lang="ja" title={t('chips.grapheme')}>{shownGrapheme(item)}</span>{/if}</span><span class="tile-details">{#each cropDetails(item) as line}<span>{line}</span>{/each}<span class="tile-id">{item.id}</span></span><Glyph {item} eager={i < 24} />{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}<span class="tile-footer">{#if tileState(item) === 'plain' || tileState(item) === 'withheld'}<span class="status-dot" class:withheld={tileState(item) === 'withheld'}></span>{/if}{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{formatSerial(i + 1)}</span><span class="tile-arrow">↗</span></span></button>{/if}{/each}{#if loading && lead}{#each Array(16) as _}<div class="glyph-skeleton"></div>{/each}{/if}{/if}
+    {:else}{#each tiles as item, i (item.id)}{#if headed(item) && (i === 0 || visualGroup(display[i - 1]).id !== visualGroup(item).id)}<div class="visual-grid-heading">{groupLabel(visualGroup(item))}</div>{/if}{#if item.origin === 'corpus'}<button class="glyph-tile corpus" data-corpus={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} onclick={event => tileClick(event, item, i, () => inspect(item.id, null, display, updateItem, 'corpus'))} aria-label={t('explore.tile.inspectCorpus', { label: shownLabel(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if selectable(item)}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-reading"><span class="tile-glyph" class:unassigned={isUnassigned(item)} lang={isUnassigned(item) ? undefined : 'ja'}>{shownLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" lang="ja" title={t('chips.grapheme')}>{shownGrapheme(item)}</span>{/if}</span><span class="tile-details">{#each cropDetails(item) as line}<span>{line}</span>{/each}<span class="tile-id">{item.id}</span></span>{#if item.proxyable && item.image}<img class="glyph-image" src={item.image} alt={t('explore.tile.located', { label: shownLabel(item) })} loading={i < 24 ? "eager" : "lazy"} fetchpriority={i < 24 ? "high" : "auto"} decoding="async" />{:else}<span class="corpus-open"><b>{shownLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}<span class="tile-footer">{#if tileState(item) === 'plain' || tileState(item) === 'withheld'}<span class="status-dot" class:withheld={tileState(item) === 'withheld'}></span>{/if}{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{formatSerial(i + 1)}</span><span class="tile-arrow">↗</span></span></button>{:else}<button class="glyph-tile" data-unit={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} onclick={event => tileClick(event, item, i, () => inspect(item.id, null, display, updateItem))} aria-label={t('explore.tile.inspect', { label: shownLabel(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}><span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span><span class="tile-reading"><span class="tile-glyph" class:unassigned={isUnassigned(item)} lang={isUnassigned(item) ? undefined : 'ja'}>{shownLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" lang="ja" title={t('chips.grapheme')}>{shownGrapheme(item)}</span>{/if}</span><span class="tile-details">{#each cropDetails(item) as line}<span>{line}</span>{/each}<span class="tile-id">{item.id}</span></span><Glyph {item} eager={i < 24} />{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}<span class="tile-footer">{#if tileState(item) === 'plain' || tileState(item) === 'withheld'}<span class="status-dot" class:withheld={tileState(item) === 'withheld'}></span>{/if}{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{formatSerial(i + 1)}</span><span class="tile-arrow">↗</span></span></button>{/if}{/each}{#if loading && lead}{#each Array(16) as _}<div class="glyph-skeleton"></div>{/each}{/if}{/if}
   </div>
   {#if !choosing && !loading && !display.length}<div class="empty"><span class="empty-mark">{picked || (settled && settled.total === 0) ? '∅' : flagged ? '✓' : '∅'}</span><h2>{picked && corpusFault ? t('explore.empty.samplesFailed', { char: picked.char }) : picked ? t('explore.empty.noOccurrenceOf', { char: picked.char }) : settled && settled.total === 0 ? t('explore.empty.noOccurrenceOfTerm', { term: readable }) : flagged ? t('explore.empty.nothingFlagged') : t('explore.empty.noCharacters')}</h2>{#if query}<button class="primary" onclick={clearQuery}>{t('explore.clearSearch')}</button>{:else}<a href={localize('/review')} class="primary">{t('explore.startRound')}</a>{/if}</div>{/if}
+  {#if selected.size || bulkDone || bulkError}<BulkBar count={selected.size} bind:target={bulkTarget} busy={bulkBusy} error={bulkError} done={bulkDone}
+    onapply={applyBulk} onselectall={selectShown} onclear={clearSelection} onundo={undoBulk} ondismiss={() => { bulkDone = null; bulkError = '' }} />{/if}
   <div class="scroll-sentinel" bind:this={sentinel} aria-hidden="true">{#if hasMore && loading && display.length}…{/if}</div>
   <div class="collection-bottom">{#if localName()}<span lang={locale()}>{localName()}</span>{:else}<span lang="en">GLYPH ATLAS</span>{/if}<span>{t('explore.bottom.checked', { count: data?.counts.checked })} <span class="separator">·</span> {t('explore.bottom.flagged', { count: data?.counts.flagged })}</span></div>
 </section>
@@ -516,6 +631,13 @@
   .browse-unit{display:flex;gap:2px;padding:8px 8px 6px}
   .browse-unit button{border:0;border-radius:5px;background:transparent;padding:5px 10px;font-size:12px;color:var(--muted)}
   .browse-unit button[aria-pressed="true"]{background:var(--surface-selected);color:var(--ink)}
+  /* The box that selects a tile shows on hover or focus, and on every tile once one is selected or on a touch screen. */
+  .tile-select{position:absolute;top:8px;right:8px;z-index:4;display:flex;align-items:center;justify-content:center;width:20px;height:20px;border:1.5px solid var(--muted);border-radius:5px;background:var(--surface);color:var(--on-color);font:600 12px/1 system-ui,sans-serif;opacity:0;transition:opacity .12s}
+  :global(.glyph-tile):hover .tile-select,:global(.glyph-tile):focus-visible .tile-select,:global(.glyph-grid:has(.glyph-tile.selected)) .tile-select{opacity:1}
+  @media(hover:none){.tile-select{opacity:.85}}
+  .decided-checked .tile-select,.decided-flagged .tile-select{right:36px}
+  :global(.glyph-tile.selected){outline:2px solid var(--accent);outline-offset:-2px;background:var(--accent-light)}
+  :global(.glyph-tile.selected) .tile-select{opacity:1;background:var(--accent-solid);border-color:var(--accent-solid)}
   .visual-grid-heading{grid-column:1/-1;font-size:14px;padding:20px 2px 12px;color:var(--muted);background:var(--paper)}
   .tile-production{font-family:system-ui,sans-serif;font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .tile-number{margin-left:auto}
