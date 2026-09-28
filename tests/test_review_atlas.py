@@ -1948,3 +1948,40 @@ def test_a_crop_shows_its_style_and_where_it_comes_from(dataset, tmp_path, monke
     cleared = {**body, "id": str(uuid4()), "revision": saved.json()["revision"], "style": "unassessed"}
     again = client.post(f"/atlas/characters/{quote(unit, safe='')}/style", json=cleared).json()
     assert (again["style"], again["style_basis"]) == ("cursive", "document-confirmed")
+
+
+def test_a_correction_gives_crops_one_character_with_the_sites_rules(dataset):
+    client = TestClient(create_app(dataset))
+    items = client.get('/atlas?limit=60').json()['items']
+    labels = sorted({item['label'] for item in items})[:2]
+    first = [i for i in items if i['label'] == labels[0]]
+    second = [i for i in items if i['label'] == labels[1]]
+    chosen = [first[0], second[0], second[1]]
+    crop = lambda i: {"id": i['id'], "revision": i['revision'], "image_sha256": i['image_sha256']}
+    crops = [crop(i) for i in chosen]
+    stale = {"id": str(uuid4()), "client_id": "batch", "character": "タ",
+             "crops": [crops[0], {**crops[1], "revision": crops[1]['revision'] + 5}]}
+    refused = client.post('/atlas/corrections', json=stale)
+    assert refused.status_code == 409
+    assert refused.json()['targets'] == [{"id": chosen[1]['id'], "reason": "changed"}]
+    assert client.get('/atlas/characters/' + chosen[0]['id']).json()['revision'] == chosen[0]['revision']
+    # A crop already written as the character is confirmed, not corrected.
+    payload = {"id": str(uuid4()), "client_id": "batch", "character": labels[1], "crops": crops}
+    saved = client.post('/atlas/corrections', json=payload)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()['unchanged'] == []
+    assert client.post('/atlas/corrections', json=payload).status_code == 200
+    assert client.post('/atlas/corrections', json={**payload, "character": "ナ"}).status_code == 409
+    for item in chosen:
+        detail = client.get('/atlas/characters/' + item['id']).json()
+        assert (detail['label'], detail['state']) == (labels[1], 'checked')
+    verdicts = sorted(json.loads(e.evidence)['verdict'] for e in Store(dataset).events() if e.field == 'review')
+    assert verdicts == ['match', 'match', 'wrong']
+    # Checked now: another character is refused, the same one is left alone.
+    again = [crop(client.get('/atlas/characters/' + i['id']).json() | {"image_sha256": i['image_sha256']}) for i in chosen]
+    other = client.post('/atlas/corrections', json={"id": str(uuid4()), "client_id": "batch", "character": "タ", "crops": again[:1]})
+    assert other.status_code == 409 and other.json()['targets'][0]['reason'] == 'checked'
+    same = client.post('/atlas/corrections', json={"id": str(uuid4()), "client_id": "batch", "character": labels[1], "crops": again[:1]})
+    assert same.status_code == 200 and same.json()['unchanged'] == [chosen[0]['id']]
+    assert client.post('/atlas/corrections/' + payload['id'] + '/undo', json={"client_id": "batch"}).status_code == 200
+    assert [client.get('/atlas/characters/' + i['id']).json()['label'] for i in chosen] == [i['label'] for i in chosen]

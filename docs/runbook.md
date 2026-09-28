@@ -158,6 +158,25 @@ atlas audit report work/<run> --sample <sample id> --out work/<run>/audit-<sampl
 A sampled unit carries its inclusion probability and the machine fields the interface must hide; a
 unit in a sample is never drawn again and is documented as unusable for tuning.
 
+### Reverting a batch correction
+
+A batch correction (`POST /atlas/corrections`) gives up to 144 crops one written character; its
+events carry the batch id in their evidence. To find recent batches and who made them:
+
+```sh
+bunx wrangler d1 execute glyph-atlas --remote --command "SELECT submission, actor, count(*) AS crops, min(at) AS at \
+  FROM events WHERE kind='review' AND json_extract(json_extract(event,'$.evidence'),'$.batch') IS NOT NULL \
+  GROUP BY submission ORDER BY at DESC LIMIT 20"
+```
+
+The submission is `<actor>:<batch id>`. The batch is undone as its reviewer would undo it, which
+refuses if a later review changed one of its crops:
+
+```sh
+curl -X POST https://atlas.mkpo.li/atlas/corrections/<batch id>/undo \
+  -H 'content-type: application/json' -H 'origin: https://atlas.mkpo.li' -d '{"client_id":"<actor>"}'
+```
+
 ## 9. Release
 
 `CITATION.cff` has no `doi` yet: the concept DOI is minted at the first Zenodo deposit. The steps:
