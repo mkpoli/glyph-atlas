@@ -514,6 +514,7 @@
   "search.narrowQuery": "缩小搜索范围以查看其余结果。",
   "search.noMatch": "没有匹配的字。",
   "search.placeholder": "查找字…",
+  "search.others.other": "其他 {count} 个字",
   "search.reading": "加载中…",
   "search.searching": "搜索中…",
   "similar.none": "没有相似裁切",

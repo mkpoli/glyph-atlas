@@ -520,6 +520,7 @@
   "search.narrowQuery": "殘ヲ見ルニハ檢索語ヲ絞ルベシ",
   "search.noMatch": "合フ字無之",
   "search.placeholder": "字ヲ索ム…",
+  "search.others.other": "他ノ字 {count}",
   "search.reading": "讀込中…",
   "search.searching": "檢索中…",
   "similar.none": "似タル截片ナシ",

@@ -505,6 +505,7 @@
   "search.narrowQuery": "Thu hẹp từ khóa để xem phần còn lại.",
   "search.noMatch": "Không có chữ nào khớp.",
   "search.placeholder": "Tìm chữ…",
+  "search.others.other": "{count} chữ khác",
   "search.reading": "Đang tải…",
   "search.searching": "Đang tìm…",
   "similar.none": "Không có vùng cắt tương tự",

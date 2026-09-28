@@ -542,6 +542,8 @@
   "search.narrowQuery": "Narrow the query to see the rest.",
   "search.noMatch": "No character matches that.",
   "search.placeholder": "Find a character…",
+  "search.others.one": "{count} more character",
+  "search.others.other": "{count} more characters",
   "search.reading": "Loading…",
   "search.searching": "Searching…",
   "similar.none": "No similar crops",

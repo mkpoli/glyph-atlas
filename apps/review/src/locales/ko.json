@@ -520,6 +520,7 @@
   "search.narrowQuery": "검색어를 좁혀 나머지를 확인하세요.",
   "search.noMatch": "일치하는 글자가 없습니다.",
   "search.placeholder": "글자 찾기…",
+  "search.others.other": "다른 글자 {count}개",
   "search.reading": "불러오는 중…",
   "search.searching": "검색 중…",
   "similar.none": "닮은 크롭이 없습니다",

@@ -11,9 +11,12 @@
   //
   // A page may give the box a `browse` snippet, shown while the box is empty and focused, and a
   // `token`: the filter that snippet chose, shown in the box until the reader removes it or types.
+  // A page that knows its graphemes gives `groupOf`: the candidates a query names then show as the
+  // same grapheme cards its browser shows, and the characters it holds none of fold away beneath them.
   import { onMount } from 'svelte'
   import ZiLink from './ZiLink.svelte'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
+  import GraphemeCard from './GraphemeCard.svelte'
   import { suggest, countsLabel, ownLabel } from '../lib/layers.js'
   import { t } from '../lib/i18n.svelte.js'
 
@@ -30,6 +33,9 @@
     token = '',
     tokenLabel = '',
     ontokenclear = () => {},
+    groupOf = null,
+    onchoosegroup = () => {},
+    onform = () => {},
   } = $props()
 
   const listId = `candidates-${Math.random().toString(36).slice(2, 9)}`
@@ -38,7 +44,18 @@
   let limit = $state(PAGE)
   let loading = $state(false), failed = $state(false), answer = $state(null)
   let options = $state([]), closed = false, timer, generation = 0
-  let pending = null, composing = false, quiet = false
+  let pending = null, composing = false, quiet = false, list = $state(null)
+
+  // The graphemes the candidates belong to, once each and in the candidates' order, and the candidates
+  // that belong to none the page holds.
+  const cards = $derived.by(() => {
+    if (!groupOf) return []
+    const seen = new Map()
+    for (const item of items) { const group = groupOf(item); if (group && !seen.has(group.key)) seen.set(group.key, group) }
+    return [...seen.values()]
+  })
+  const others = $derived(groupOf ? items.map((item, index) => ({ item, index })).filter(({ item }) => !groupOf(item)) : [])
+  const carded = $derived(cards.length > 0)
 
   function searchSignal() {
     pending?.abort()
@@ -109,6 +126,7 @@
     input?.focus()
   }
 
+  // Enter in the box opens the first candidate, with or without cards: トモ still opens 𪜈.
   function choose(index = active) {
     if (loading || index < 0) return
     const item = items[index]
@@ -126,6 +144,13 @@
     if (event.key === 'ArrowDown' && browsing) {
       event.preventDefault()
       root.querySelector('.browse-panel button')?.focus()
+      return
+    }
+    if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && open && carded) {
+      // The cards are buttons: the arrows walk into them, as they walk into the browse panel.
+      event.preventDefault()
+      const buttons = focusable()
+      buttons[event.key === 'ArrowDown' ? 0 : buttons.length - 1]?.focus()
       return
     }
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -147,6 +172,19 @@
   }
 
   const browsing = $derived(open && Boolean(browse) && !value.trim())
+
+  const focusable = () => [...(list?.querySelectorAll('button:not(:disabled), summary') ?? [])]
+  /** Arrow keys among the cards' buttons; Escape, or an arrow past either end, returns to the box. */
+  function walk(event) {
+    if (event.key === 'Escape') { event.preventDefault(); done(); return }
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+    event.preventDefault()
+    const buttons = focusable(), at = buttons.indexOf(document.activeElement)
+    const next = at + (event.key === 'ArrowDown' ? 1 : -1)
+    if (next < 0 || next >= buttons.length) { quiet = true; input?.focus(); quiet = false; return }
+    buttons[next].focus()
+  }
+  function chose(action, argument) { open = false; action(argument) }
 
   /** Closes the browse panel and puts focus back in the box without opening the panel again. */
   function done() {
@@ -175,6 +213,24 @@
   })
 </script>
 
+{#snippet row(item, index)}
+  <div class="candidate-row"><button type="button" class="candidate" id={`${listId}-${index}`} role={carded ? undefined : 'option'}
+          bind:this={options[index]}
+          aria-selected={carded ? undefined : index === active} class:active={!carded && index === active}
+          onpointerenter={() => { if (!carded) active = index }} onclick={() => choose(index)}
+          title={[item.name, item.reason].filter(Boolean).join(' · ')}>
+    <ReferenceGlyph char={item.char} code_point={item.code_point} script={item.script} size="lg" />
+    <span class="candidate-body">
+      <span class="candidate-line">
+        <b class="candidate-char"><ReferenceGlyph char={item.char} code_point={item.code_point} script={item.script} size="sm" /></b>
+        <span class="candidate-reading">{item.reading ?? item.code_point}</span>
+        {#if item.kind === 'ligature'}<span class="tag">{t('search.ligature')}</span>{/if}
+      </span>
+      <span class="candidate-counts">{countsLabel(item.candidates) || ownLabel(item)}{#if item.grapheme?.character_count > 1}<span> · {item.grapheme.label}</span>{/if}</span>
+    </span>
+  </button><ZiLink character={item.char} compact /></div>
+{/snippet}
+
 <div class="character-search" class:compact bind:this={root} onfocusout={blurred}>
   <form class="find" role="search" onsubmit={e => { e.preventDefault(); if (onsubmit) onsubmit(value); else choose() }}>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
@@ -182,7 +238,7 @@
     <input bind:this={input} aria-label={label} bind:value placeholder={placeholder}
            autocomplete="off" spellcheck="false" role="combobox" aria-expanded={open}
            aria-controls={listId} aria-autocomplete="list" aria-busy={loading}
-           aria-activedescendant={open && active >= 0 ? `${listId}-${active}` : undefined}
+           aria-activedescendant={open && !carded && active >= 0 ? `${listId}-${active}` : undefined}
            oncompositionstart={() => { composing = true; reset() }}
            oncompositionend={e => { composing = false; typed(e.currentTarget.value) }}
            oninput={e => { if (!composing && !e.isComposing) typed(e.currentTarget.value) }}
@@ -198,27 +254,24 @@
     <div class="candidate-list browse-panel" id={listId} onmousedown={e => e.preventDefault()}
          onkeydown={e => { if (e.key === 'Escape') { e.preventDefault(); done() } }}>{@render browse(done)}</div>
   {:else if open}
-    <div class="candidate-list" id={listId} role="listbox" aria-label={t('search.candidates.label')}>
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="candidate-list" class:carded id={listId} bind:this={list} role={carded ? 'group' : 'listbox'} aria-label={t('search.candidates.label')}
+         onkeydown={e => { if (carded) walk(e) }}>
       {#if loading}<p class="candidate-status" role="status">{t('search.searching')}</p>{/if}
       {#if failed}<p class="candidate-status" role="alert">{t('search.failed')} <button type="button" onclick={() => seek(value)}>{t('common.tryAgain')}</button></p>{/if}
-      {#each items as item, index (item.code_point)}
-        <div class="candidate-row"><button type="button" class="candidate" id={`${listId}-${index}`} role="option"
-                bind:this={options[index]}
-                aria-selected={index === active} class:active={index === active}
-                onpointerenter={() => active = index} onclick={() => choose(index)}
-                title={[item.name, item.reason].filter(Boolean).join(' · ')}>
-          <ReferenceGlyph char={item.char} code_point={item.code_point} script={item.script} size="lg" />
-          <span class="candidate-body">
-            <span class="candidate-line">
-              <b class="candidate-char"><ReferenceGlyph char={item.char} code_point={item.code_point} script={item.script} size="sm" /></b>
-              <span class="candidate-reading">{item.reading ?? item.code_point}</span>
-              {#if item.kind === 'ligature'}<span class="tag">{t('search.ligature')}</span>{/if}
-            </span>
-            <span class="candidate-counts">{countsLabel(item.candidates) || ownLabel(item)}{#if item.grapheme?.character_count > 1}<span> · {item.grapheme.label}</span>{/if}</span>
-          </span>
-        </button><ZiLink character={item.char} compact /></div>
-      {/each}
-      {#if items.length}<div class="candidate-legend"><ScriptLegend /></div>{/if}
+      {#if carded}
+        {#each cards as group (group.key)}
+          <div class="search-card"><GraphemeCard {group} onchoose={key => chose(onchoosegroup, key)} onform={form => chose(onform, form)} /></div>
+        {/each}
+        {#if others.length}
+          <details class="candidate-others"><summary>{t('search.others', { count: others.length })}</summary>
+            {#each others as { item, index } (item.code_point)}{@render row(item, index)}{/each}
+          </details>
+        {/if}
+      {:else}
+        {#each items as item, index (item.code_point)}{@render row(item, index)}{/each}
+      {/if}
+      {#if items.length && (!carded || others.length)}<div class="candidate-legend"><ScriptLegend /></div>{/if}
       {#if !loading && !failed && !items.length && answer}
         <p class="candidate-status">{answer.hint ?? t('search.noMatch')}</p>
       {/if}
@@ -237,4 +290,10 @@
   .candidate-row{display:flex;align-items:center;gap:8px;padding-right:12px}
   .candidate-row .candidate{flex:1;min-width:0}
   .candidate-legend{padding:10px 14px;border-top:1px solid var(--line)}
+  .candidate-list.carded{padding:8px}
+  .search-card{padding:10px;border:1px solid var(--line);border-radius:9px;background:var(--surface);font-size:12px}
+  .search-card + .search-card{margin-top:8px}
+  .candidate-others{margin-top:8px;color:var(--muted)}
+  .candidate-others summary{cursor:pointer;padding:8px 6px;font-size:12px}
+  .candidate-others .candidate-row{opacity:.8}
 </style>

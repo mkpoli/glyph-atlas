@@ -522,6 +522,7 @@
   "search.narrowQuery": "約所尋以見其餘",
   "search.noMatch": "無合者",
   "search.placeholder": "尋字…",
+  "search.others.other": "他字{count}",
   "search.reading": "方載…",
   "search.searching": "方尋…",
   "similar.none": "無類截",
