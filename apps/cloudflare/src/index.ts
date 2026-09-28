@@ -257,18 +257,21 @@ export function listingFilter(review: boolean, production: string, character: st
 // Counts by character and state, and for browsing by book as well; a book's title is the one its
 // crops were published with. A round asks only for its own character's: a review response that names
 // a character carries that character's `categories` and `counts` alone.
-// Every character's counts take the stored state along an index. The few pending crops rounds made
-// something of (`unit_marks`), and those the reviewer skipped during the rest, are counted apart and
-// moved out of `pending`: working out every crop's state as it is counted reads each crop twice. A
-// named character's few crops work out their own state as they are counted.
+// Every character's counts by stored state are read from `unit_counts`, which the triggers keep in
+// step with `units`. The few pending crops rounds made something of (`unit_marks`), and those the
+// reviewer skipped during the rest, are counted apart and moved out of `pending`: working out every
+// crop's state as it is counted reads each crop twice. A named character's few crops work out their
+// own state as they are counted.
 export function facetsQueries(review: boolean, reviewer: string | null, where: string[], named: boolean, since = restSince()) {
   const filter = where.join(' AND '), book = review ? 'NULL' : 'document';
-  const counted = (state: string) => review
-    ? `SELECT character AS label,max(family) AS family,NULL AS document,NULL AS title,${state} AS state,count(*) AS n FROM units WHERE ${filter} GROUP BY 1,5`
-    : `SELECT character AS label,max(family) AS family,document,max(json_extract(data,'$.source')) AS title,${state} AS state,count(*) AS n
-    FROM units WHERE ${filter} GROUP BY 1,3,5`;
-  if (named) return { stored: counted(stateFor(reviewer, since)), marked: null, skipped: null };
-  const stored = counted('state');
+  if (named) return { stored: `SELECT character AS label,max(family) AS family,NULL AS document,NULL AS title,${stateFor(reviewer, since)} AS state,count(*) AS n
+    FROM units WHERE ${filter} GROUP BY 1,5`, marked: null, skipped: null };
+  // `unit_counts` keeps a missing key as ''.
+  const stored = review
+    ? `SELECT nullif(character,'') AS label,nullif(max(family),'') AS family,NULL AS document,NULL AS title,state,sum(n) AS n
+    FROM unit_counts WHERE ${filter} GROUP BY character,state`
+    : `SELECT nullif(character,'') AS label,nullif(max(family),'') AS family,nullif(document,'') AS document,nullif(max(title),'') AS title,state,sum(n) AS n
+    FROM unit_counts WHERE ${filter} GROUP BY character,document,state`;
   // Every mark is read once, and its crop by id.
   const marked = `SELECT character AS label,${book} AS document,m.mark AS state,count(*) AS n
     FROM unit_marks m CROSS JOIN units ON units.id=m.id WHERE ${filter} AND state='pending' GROUP BY 1,2,3`;
