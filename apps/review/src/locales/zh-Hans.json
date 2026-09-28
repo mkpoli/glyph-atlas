@@ -310,6 +310,8 @@
   "nav.history": "历史",
   "nav.pages": "页面",
   "nav.quickReview": "快速审阅",
+  "pair.occurrences.other": "{count}处",
+  "pair.empty": "尚无此字对的用例。",
   "pages.back": "全部页面",
   "pages.box.chosen": "字：",
   "pages.box.close": "关闭",

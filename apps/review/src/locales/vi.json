@@ -296,6 +296,8 @@
   "nav.history": "Lịch sử",
   "nav.pages": "Trang",
   "nav.quickReview": "Duyệt nhanh",
+  "pair.occurrences.other": "{count} lần",
+  "pair.empty": "Chưa có lần nào của cặp chữ này.",
   "pages.back": "Mọi trang",
   "pages.box.chosen": "Chữ:",
   "pages.box.close": "Đóng",

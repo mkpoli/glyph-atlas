@@ -307,6 +307,8 @@
   "nav.history": "기록",
   "nav.pages": "페이지",
   "nav.quickReview": "빠른 검토",
+  "pair.occurrences.other": "용례 {count}건",
+  "pair.empty": "이 글자 쌍의 용례가 없습니다.",
   "pages.back": "페이지 목록",
   "pages.box.chosen": "글자:",
   "pages.box.close": "닫기",

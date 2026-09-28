@@ -309,6 +309,8 @@
   "nav.history": "錄",
   "nav.pages": "頁",
   "nav.quickReview": "校",
+  "pair.occurrences.other": "{count}見",
+  "pair.empty": "此對無例",
   "pages.back": "諸頁",
   "pages.box.chosen": "字：",
   "pages.box.close": "闔",
