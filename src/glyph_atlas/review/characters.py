@@ -51,7 +51,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from .. import images, refs, visual_families
+from .. import han_components, images, refs, visual_families
 from ..production import production_info
 from ..schema import Box, Character, Document, Page, Unit
 from . import corpus_source, status
@@ -708,7 +708,9 @@ def suggest(term: str, layer: Layers, *, limit: int = 8) -> dict[str, Any]:
     1. a ligature the query spells or reads as (トモ -> 𪜈, ヨリ -> ゟ and 𛄦, コト -> ヿ and 𛄣);
     2. the kana written as the kanji the query names (子 -> 𛂘, 𛄧);
     3. the layer's own search: readings, names, 字母, and the word a multi-character query spells;
-    4. the other forms of the shape, so ネ leads to 𛄧 and ね to its 変体仮名.
+    4. the other forms of the shape, so ネ leads to 𛄧 and ね to its 変体仮名;
+    5. when nothing above answers, the characters built from the ideographs the query names (水骨 and
+       氵骨 -> 滑), in `han_components.search`'s order, which the hosted site's search keeps too.
 
     The counts on a row belong to that row's character and to nothing else: a ト followed by a モ
     counts under ト and under モ, and it is not 𪜈, so it counts under no ligature. Located crops and
@@ -772,6 +774,11 @@ def suggest(term: str, layer: Layers, *, limit: int = 8) -> dict[str, Any]:
             keep(code_point, 6, f"a form of {literal}")
 
     ordered = sorted(ranked.items(), key=lambda item: (item[1][0], -counts.get(item[0], 0), item[0]))
+    if not ranked:
+        wanted = han_components.query(literal)
+        for char in han_components.search(literal):
+            keep(refs.to_code_point(char), 7, "built from " + " ".join(sorted(wanted, key=literal.find)))
+        ordered = list(ranked.items())
     window = ordered[:max(limit, 1)]
     live, fault = corpus_source.safe(corpus_source.counts,
                                      [refs.to_char(code_point) for code_point, _ in window])

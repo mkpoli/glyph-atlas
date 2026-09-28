@@ -2,7 +2,9 @@
 import { ROUND_MAX } from './rounds';
 import { formsRoute, withForm, formed, FORM_COLUMNS, type FormTools, type UnitForm } from './forms';
 import { similarCrops } from './similar';
+import { componentSearch, componentTerm } from './components';
 export { leastTypicalQuery } from './forms';
+export { componentMatchQuery } from './components';
 type Json = Record<string, any>;
 type UnitRow = { id: string; origin: string; character: string | null; state: string; revision: number;
   quiz: number; category?: string; data: string; snapshot: string; context: string; visual: string;
@@ -643,6 +645,16 @@ async function suggest(env: Env, q: URLSearchParams) {
   if (!rows.results.length && /^[a-z0-9 -]+$/i.test(term)) {
     const found = await env.DB.prepare('SELECT data,5 AS rank FROM characters WHERE name LIKE ? LIMIT ?').bind('%'+term+'%',limit+1).all<{data:string;rank:number}>();
     rows.results.push(...found.results);
+  }
+  // A term no alias names that is two or more ideographs asks for the characters built from them.
+  const wanted = rows.results.length ? null : componentTerm(literal(term));
+  if (wanted) {
+    const { codes, more } = await componentSearch(env, wanted, limit);
+    const found = codes.length ? await env.DB.prepare(`SELECT code_point,data FROM characters WHERE code_point IN (${codes.map(() => '?').join(',')})`)
+      .bind(...codes).all<{ code_point: string; data: string }>() : { results: [] };
+    const byCode = new Map(found.results.map(r => [r.code_point, r.data]));
+    const items = codes.filter(code => byCode.has(code)).map(code => ({ ...parse(byCode.get(code)!), rank: 7 }));
+    return { query: term, match_kind: 'components', items, total: items.length, more: more ? 1 : 0, status: 'ok', corpus: { ready: true } };
   }
   return { query: term, items: rows.results.slice(0,limit).map(r => ({...parse(r.data), rank:r.rank})),
     total: rows.results.length, more: Math.max(0,rows.results.length-limit), status:'ok',corpus:{ready:true} };

@@ -527,6 +527,24 @@ try {
   served(documentPlan, null)
   assert.ok(documentPlan.includes('SEARCH c USING PRIMARY KEY (document=?)'), documentPlan.join('; '))
   assert.ok(documentPlan.some(d => /^SEARCH u USING INDEX sqlite_autoindex_units_1 \(id=\?\)/.test(d)), documentPlan.join('; '))
+  // A search of two or more ideographs no alias names finds the characters built from them: 水骨, 氵骨
+  // and ⺡骨 are 滑. The rarest component's list is read along its key, each other one looked up by key.
+  const built = { char: '滑', code_point: 'U+6ED1', candidates: {} }
+  await db.batch([
+    db.prepare('INSERT INTO characters VALUES(?,?,?,?,?)').bind('U+6ED1', '滑', '', JSON.stringify(built), JSON.stringify(built)),
+    ...[['氵', 0, 7, 'U+6ED1', 1, 1], ['水', 0, 7, 'U+6ED1', 1, 1], ['骨', 0, 7, 'U+6ED1', 1, 1], ['水', 0, 2, 'U+6C38', 1, 0],
+      ['骨', 2, 9, 'U+2DC2B', 1, 1]].map(row => db.prepare('INSERT INTO han_components VALUES(?,?,?,?,?,?)').bind(...row)),
+    ...[['氵', '氵', 1], ['⺡', '氵', 1], ['水', '水', 2], ['骨', '骨', 2]].map(row => db.prepare('INSERT INTO han_component_names VALUES(?,?,?)').bind(...row))])
+  for (const q of ['水骨', '氵骨', '⺡骨', 'U+6C34 U+9AA8']) {
+    const found = await (await mf.dispatchFetch(`${base}/layers/suggest?q=${encodeURIComponent(q)}`)).json()
+    assert.equal(found.match_kind, 'components', q)
+    assert.deepEqual(found.items.map(item => item.char), ['滑'], `${q}: a component character missing from the table is left out`)
+  }
+  assert.deepEqual((await (await mf.dispatchFetch(`${base}/layers/suggest?q=${encodeURIComponent('骨水骨')}`)).json()).items, [], 'two 骨 are asked for')
+  const componentPlan = await plan({ sql: worker.componentMatchQuery(1), values: [] }, ['骨', '水', 1, 1])
+  assert.ok(componentPlan.includes('SEARCH han_components USING PRIMARY KEY (component=?)'), componentPlan.join('; '))
+  assert.ok(componentPlan.includes('SEARCH o0 USING PRIMARY KEY (component=? AND tier=? AND size=? AND code_point=?)'), componentPlan.join('; '))
+  assert.ok(!componentPlan.some(d => d.includes('TEMP B-TREE')), componentPlan.join('; '))
   // `reported=hide`'s `NOT EXISTS` filter: the flagged set is small, but events and submissions are
   // still read through their own indexes, one correlated lookup per candidate row, never a scan.
   const reportedPlan = await plan({ sql: `SELECT count(*) AS n FROM units WHERE origin='local' AND state='flagged' AND NOT ${worker.reviewedInInspectorQuery()}`, values: [] }, [])

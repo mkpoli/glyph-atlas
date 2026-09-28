@@ -55,6 +55,12 @@ through みんなで翻刻.
 - GlyphWiki glyphs: free for any use without attribution, per the site's licence page.
 - CHISE IDS: GPL-2.0-or-later, excluded from the CC BY-SA core; a separately licensed aggregate is
   possible in principle and is not planned.
+- Component tables (`data/vocab/han-ids.tsv`, `data/vocab/han-component-forms.tsv`): BabelStone
+  IDS.TXT, whose header states that IDS sequences are facts not eligible for copyright and waives any
+  claim to the file's format, used as public domain and credited; Unicode's
+  EquivalentUnifiedIdeograph.txt (Unicode License v3); cjkvi-variants `radical-variants.txt`, used as
+  public domain like the rest of that database. BabelStone's data descends in part from Kawabata
+  Taichi's IDS, which derives from CHISE; the atlas reads only BabelStone's file.
 - 異体字 relations (`data/vocab/kanji-variants.tsv`): Unihan and UnicodeData (Unicode License v3),
   Wikidata P5475 (CC0), yitizi (CC0), OpenCC (Apache-2.0), MJ縮退マップ (CC BY-SA 2.1 JP), HNG
   (CC BY-SA 4.0) and cjkvi-variants. A variant relation between two characters is a fact without

@@ -11,7 +11,7 @@ access:
   files: https://raw.githubusercontent.com/cjkvi/cjkvi-variants/{revision}/{name}
 format:
   line: "A,tag,B[,extra]; `tag,<name>,label` names a tag and `tag,<rev>,tag` its converse"
-  files_read: "every file except non-cjk.txt and radical-variants.txt, which relate radicals and non-ideographs to ideographs"
+  files_read: "kanji-variants.tsv reads every file except non-cjk.txt and radical-variants.txt, which relate radicals and non-ideographs to ideographs; han-component-forms.tsv reads radical-variants.txt (tags radical-variant and radical-variant-simplified)"
   old_style: "jp-old-style.txt: 新字体<TAB>旧字体[<TAB>compatibility character<TAB>comment], either column possibly an IVS; read as 新字体/旧字体 pairs of base characters"
   tags: "…/variant with a /proper or /regular converse: B is a 異体字 of the 正字 A in the table the file transcribes (漢語大字典, 民國教育部異體字字典, 戸籍統一文字, 第一批异体字整理表 with the year a pair was abolished, 常用漢字表, 人名用漢字, 表外漢字字体表, 古壮字字典); cjkvi/variant, jisx0212/variant, jisx0213/variant, ucs-scs/variant: their own converse, A and B are related (関連字, 原規格分離); cjkvi/simplified and hydzd/simplified: B is the simplified form of A; hydcd/borrowed: 通假字, its own converse; jp/borrowed: B is the 同音の書き換え字 for A; cjkvi/duplicate: 重複漢字; cjkvi/non-cognate: 同型異字"
 notes:
