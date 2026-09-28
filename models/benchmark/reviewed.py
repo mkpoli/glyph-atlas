@@ -1,7 +1,7 @@
 """Write `reviewed.jsonl`: crops whose character a person settled on the review site.
 
 A crop counts when its latest review that was not undone confirms the label, or corrects the
-character (`issue` `character` with a written character). A corrected reading, a bad crop, a
+character (`issue` `character` with a written character, one crop at a time or as a batch). A corrected reading, a bad crop, a
 merged crop or a blank names no character, so it is left out. The label and the image are the ones
 the reviewer saw, from the event's snapshot; the unit may have changed since. The input is the
 site's review events, exported from D1:
@@ -28,9 +28,15 @@ def truths(lines):
     for line in lines:
         row = json.loads(line)
         evidence = json.loads(row["ev"])
-        request = evidence["request"]
-        answer = request if evidence["kind"] == "character-review" else next(
-            (a for a in request.get("answers", []) if a["id"] == row["id"]), None)
+        if "batch" in evidence:
+            # A batch correction gives every selected crop one written character, held as a code point.
+            written = evidence.get("suggested_character")
+            answer = {"verdict": evidence["verdict"], "issue": evidence.get("issue"),
+                      "character": refs.to_char(written) if written else None}
+        elif evidence["kind"] == "character-review":
+            answer = evidence["request"]
+        else:
+            answer = next((a for a in evidence["request"].get("answers", []) if a["id"] == row["id"]), None)
         if answer is not None:
             latest[row["id"]] = (evidence["snapshot"]["character"], answer)
     for identity, (seen, answer) in latest.items():

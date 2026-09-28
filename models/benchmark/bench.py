@@ -39,6 +39,8 @@ from glyph_atlas import refs
 from glyph_atlas.review.suggestions import MODEL, decode
 
 KANA_SAMPLE = 12_000
+#: The review site, which serves every reviewed crop's display image.
+SITE = "https://atlas.mkpo.li"
 
 
 def code_point(char: str) -> str:
@@ -74,6 +76,23 @@ def hilab_rows() -> list[dict]:
     return rows
 
 
+def reviewed_image(image: str) -> Path:
+    """The file of the image a reviewer saw: a display crop, rendered from its page when the page is
+    held and otherwise fetched from the site, or a corpus glyph's IIIF region, fetched once."""
+    from glyph_atlas import net
+    from glyph_atlas.review.media import MediaCache
+
+    if image.startswith("/atlas/media/"):
+        key = image.rsplit("/", 1)[-1].removesuffix(".webp")
+        try:
+            return MediaCache().materialize(key)
+        except (OSError, KeyError, ValueError):
+            path = ROOT / "cache/display-crops" / key[:2] / (key + ".webp")
+            return net.download(SITE + image, path, expected="image")
+    path = ROOT / "cache/benchmark-images" / (hashlib.sha256(image.encode()).hexdigest() + ".jpg")
+    return net.download(image, path, expected="image")
+
+
 def load_set(name: str) -> list[dict]:
     import pyarrow.parquet as pq
     if name == "codh-test":
@@ -88,13 +107,9 @@ def load_set(name: str) -> list[dict]:
         return [{"id": r["unit_id"], "path": ROOT / r["crop"], "truth": r["code_point"], "script": r["script"]}
                 for r in hilab_rows() if r["split"] == "test"]
     if name == "atlas-reviewed":
-        out = []
-        for line in (Path(__file__).parent / "reviewed.jsonl").read_text().splitlines():
-            r = json.loads(line)
-            key = r["image"].rsplit("/", 1)[-1].removesuffix(".webp")
-            out.append({"id": r["id"], "path": ROOT / "cache/display-crops" / key[:2] / (key + ".webp"),
-                        "truth": code_point(r["truth"]), "script": r["script"], "corrected": r["corrected"]})
-        return out
+        return [{"id": r["id"], "path": reviewed_image(r["image"]), "truth": code_point(r["truth"]),
+                 "script": r["script"], "corrected": r["corrected"]}
+                for r in map(json.loads, (Path(__file__).parent / "reviewed.jsonl").read_text().splitlines())]
     raise ValueError(name)
 
 
