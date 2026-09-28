@@ -149,7 +149,7 @@ try {
     assert(await currentId() === selected[0], 'wrong first crop')
     assert(posted.length === 0, 'selecting wrote reviews')
   })
-  await check('a problem immediately offers corrections for the SAME crop', async () => {
+  await check('a problem offers corrections for the SAME crop under the issue cards', async () => {
     const badCrop = await browser.evaluate('document.querySelector("[data-issue=crop]").innerText')
     assert(badCrop.includes('Bad crop') && badCrop.includes('extra ink'), 'crop category too narrow')
     holdContext = true
@@ -157,6 +157,8 @@ try {
     await browser.waitFor('!!document.querySelector(".reading-suggestions")')
     await browser.waitFor('!!document.querySelector(".suggestion-options button")')
     assert(await currentId() === selected[0], 'issue selection jumped to next crop')
+    assert(await browser.evaluate('document.querySelector("[data-issue=reading]")?.getAttribute("aria-pressed")') === 'true', 'issue cards left the screen when suggestions opened')
+    assert(await browser.evaluate('!!(document.querySelector(".issue-picker").compareDocumentPosition(document.querySelector(".reading-suggestions")) & Node.DOCUMENT_POSITION_FOLLOWING)'), 'suggestions are not below the issue cards')
     assert(await noneState() === 'false', 'none is selected by default')
     assert(!await browser.evaluate('!!document.querySelector(".suggestion-source")'), 'suggestions expose model source groups')
     const texts = await browser.evaluate('[...document.querySelectorAll(".suggestion-options button")].map(b => b.innerText)')
@@ -228,10 +230,8 @@ try {
   await check('changing an issue clears incompatible corrections', async () => {
     await click('[data-issue=merged]')
     await click('.suggestion-options button')
-    await click('.focus-back')
     await click('[data-issue=reading]')
     assert(!await browser.evaluate('!!document.querySelector(".suggestion-options button[aria-pressed=true]")'), 'joined text leaked into single-character correction')
-    await click('.focus-back')
     await click('[data-issue=merged]')
     await click('.no-suggestion')
     await browser.evaluate('window.scrollTo({top: 0, behavior: "instant"})')
@@ -289,7 +289,6 @@ try {
     await click('[data-issue=reading]')
     await click('.suggestion-options button')
     const chosen = await browser.evaluate('document.querySelector(".suggestion-options button[aria-pressed=true]").innerText')
-    await click('.focus-back')
     assert(await browser.evaluate('document.querySelector("[data-issue=reading]").getAttribute("aria-pressed")') === 'true', 'same visible issue lost its selection')
     await click('[data-issue=reading]')
     assert(await browser.evaluate('document.querySelector(".suggestion-options button[aria-pressed=true]")?.innerText') === chosen, 'same issue lost correction')
