@@ -1,0 +1,269 @@
+{
+ "set": "atlas-reviewed",
+ "crops": 260,
+ "models": {
+  "atlas": {
+   "seconds": 2.5,
+   "scores": {
+    "all": {
+     "n": 260,
+     "top1": 0.8538,
+     "top5": 0.9462,
+     "family1": 0.8654,
+     "family5": 0.9538,
+     "empty": 0.0
+    },
+    "corrected": {
+     "n": 136,
+     "top1": 0.7426,
+     "top5": 0.9118,
+     "family1": 0.7647,
+     "family5": 0.9265,
+     "empty": 0.0
+    },
+    "han": {
+     "n": 169,
+     "top1": 0.9349,
+     "top5": 0.9822,
+     "family1": 0.9527,
+     "family5": 0.9941,
+     "empty": 0.0
+    },
+    "hiragana": {
+     "n": 48,
+     "top1": 0.6875,
+     "top5": 0.9167,
+     "family1": 0.6875,
+     "family5": 0.9167,
+     "empty": 0.0
+    },
+    "katakana": {
+     "n": 42,
+     "top1": 0.7143,
+     "top5": 0.8333,
+     "family1": 0.7143,
+     "family5": 0.8333,
+     "empty": 0.0
+    },
+    "unknown": {
+     "n": 1,
+     "top1": 1.0,
+     "top5": 1.0,
+     "family1": 1.0,
+     "family5": 1.0,
+     "empty": 0.0
+    }
+   }
+  },
+  "soramaru": {
+   "seconds": 6.9,
+   "scores": {
+    "all": {
+     "n": 260,
+     "top1": 0.8231,
+     "top5": 0.9346,
+     "family1": 0.8346,
+     "family5": 0.9385,
+     "empty": 0.0
+    },
+    "corrected": {
+     "n": 136,
+     "top1": 0.7132,
+     "top5": 0.9044,
+     "family1": 0.7353,
+     "family5": 0.9118,
+     "empty": 0.0
+    },
+    "han": {
+     "n": 169,
+     "top1": 0.8994,
+     "top5": 0.9763,
+     "family1": 0.9172,
+     "family5": 0.9822,
+     "empty": 0.0
+    },
+    "hiragana": {
+     "n": 48,
+     "top1": 0.7917,
+     "top5": 0.875,
+     "family1": 0.7917,
+     "family5": 0.875,
+     "empty": 0.0
+    },
+    "katakana": {
+     "n": 42,
+     "top1": 0.5476,
+     "top5": 0.8333,
+     "family1": 0.5476,
+     "family5": 0.8333,
+     "empty": 0.0
+    },
+    "unknown": {
+     "n": 1,
+     "top1": 1.0,
+     "top5": 1.0,
+     "family1": 1.0,
+     "family5": 1.0,
+     "empty": 0.0
+    }
+   }
+  },
+  "atlas+soramaru": {
+   "scores": {
+    "all": {
+     "n": 260,
+     "top1": 0.8538,
+     "top5": 0.9577,
+     "family1": 0.8654,
+     "family5": 0.9615,
+     "empty": 0.0
+    },
+    "corrected": {
+     "n": 136,
+     "top1": 0.7426,
+     "top5": 0.9338,
+     "family1": 0.7647,
+     "family5": 0.9412,
+     "empty": 0.0
+    },
+    "han": {
+     "n": 169,
+     "top1": 0.9349,
+     "top5": 0.9941,
+     "family1": 0.9527,
+     "family5": 1.0,
+     "empty": 0.0
+    },
+    "hiragana": {
+     "n": 48,
+     "top1": 0.6875,
+     "top5": 0.9375,
+     "family1": 0.6875,
+     "family5": 0.9375,
+     "empty": 0.0
+    },
+    "katakana": {
+     "n": 42,
+     "top1": 0.7143,
+     "top5": 0.8333,
+     "family1": 0.7143,
+     "family5": 0.8333,
+     "empty": 0.0
+    },
+    "unknown": {
+     "n": 1,
+     "top1": 1.0,
+     "top5": 1.0,
+     "family1": 1.0,
+     "family5": 1.0,
+     "empty": 0.0
+    }
+   }
+  },
+  "ndl": {
+   "seconds": 18.8,
+   "scores": {
+    "all": {
+     "n": 260,
+     "top1": 0.6308,
+     "top5": 0.7038,
+     "family1": 0.6423,
+     "family5": 0.7077,
+     "empty": 0.0
+    },
+    "corrected": {
+     "n": 136,
+     "top1": 0.4853,
+     "top5": 0.6176,
+     "family1": 0.5074,
+     "family5": 0.625,
+     "empty": 0.0
+    },
+    "han": {
+     "n": 169,
+     "top1": 0.6509,
+     "top5": 0.6923,
+     "family1": 0.6686,
+     "family5": 0.6982,
+     "empty": 0.0
+    },
+    "hiragana": {
+     "n": 48,
+     "top1": 0.7083,
+     "top5": 0.75,
+     "family1": 0.7083,
+     "family5": 0.75,
+     "empty": 0.0
+    },
+    "katakana": {
+     "n": 42,
+     "top1": 0.4524,
+     "top5": 0.6905,
+     "family1": 0.4524,
+     "family5": 0.6905,
+     "empty": 0.0
+    },
+    "unknown": {
+     "n": 1,
+     "top1": 1.0,
+     "top5": 1.0,
+     "family1": 1.0,
+     "family5": 1.0,
+     "empty": 0.0
+    }
+   }
+  },
+  "interleave": {
+   "scores": {
+    "all": {
+     "n": 260,
+     "top1": 0.8538,
+     "top5": 0.95,
+     "family1": 0.8654,
+     "family5": 0.9538,
+     "empty": 0.0
+    },
+    "corrected": {
+     "n": 136,
+     "top1": 0.7426,
+     "top5": 0.9191,
+     "family1": 0.7647,
+     "family5": 0.9265,
+     "empty": 0.0
+    },
+    "han": {
+     "n": 169,
+     "top1": 0.9349,
+     "top5": 0.9882,
+     "family1": 0.9527,
+     "family5": 0.9941,
+     "empty": 0.0
+    },
+    "hiragana": {
+     "n": 48,
+     "top1": 0.6875,
+     "top5": 0.8958,
+     "family1": 0.6875,
+     "family5": 0.8958,
+     "empty": 0.0
+    },
+    "katakana": {
+     "n": 42,
+     "top1": 0.7143,
+     "top5": 0.8571,
+     "family1": 0.7143,
+     "family5": 0.8571,
+     "empty": 0.0
+    },
+    "unknown": {
+     "n": 1,
+     "top1": 1.0,
+     "top5": 1.0,
+     "family1": 1.0,
+     "family5": 1.0,
+     "empty": 0.0
+    }
+   }
+  }
+ }
+}
