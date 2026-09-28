@@ -81,3 +81,14 @@ def test_the_backfill_counts_every_row_however_high_its_rowid():
     db.executescript(COUNTS.read_text())
     agrees(db)
     assert db.execute("SELECT count(*) FROM unit_count_keys").fetchone()[0] == 2
+
+
+def test_an_id_moved_onto_another_crop_leaves_one_crop_counted():
+    db = sqlite3.connect(":memory:")
+    for migration in MIGRATIONS:
+        db.executescript(migration.read_text())
+    unit(db, "one"); unit(db, "two")
+    db.execute("UPDATE OR REPLACE units SET id='two' WHERE id='one'")
+    agrees(db)
+    db.execute("DELETE FROM units")
+    agrees(db)

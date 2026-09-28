@@ -38,6 +38,10 @@ BEGIN
  UPDATE unit_counts SET n=n-1 WHERE (origin,character,document,state,family,production,quiz,title)=(SELECT origin,character,document,state,family,production,quiz,title FROM unit_count_keys WHERE id=OLD.id);
  DELETE FROM unit_counts WHERE (origin,character,document,state,family,production,quiz,title)=(SELECT origin,character,document,state,family,production,quiz,title FROM unit_count_keys WHERE id=OLD.id) AND n<=0;
  DELETE FROM unit_count_keys WHERE id=OLD.id;
+ -- An id moved onto another crop's replaces that crop, which goes uncounted.
+ UPDATE unit_counts SET n=n-1 WHERE (origin,character,document,state,family,production,quiz,title)=(SELECT origin,character,document,state,family,production,quiz,title FROM unit_count_keys WHERE id=NEW.id);
+ DELETE FROM unit_counts WHERE (origin,character,document,state,family,production,quiz,title)=(SELECT origin,character,document,state,family,production,quiz,title FROM unit_count_keys WHERE id=NEW.id) AND n<=0;
+ DELETE FROM unit_count_keys WHERE id=NEW.id;
  INSERT INTO unit_count_keys VALUES(NEW.id,NEW.origin,coalesce(NEW.character,''),coalesce(NEW.document,''),NEW.state,coalesce(NEW.family,''),NEW.production,NEW.quiz,coalesce(json_extract(NEW.data,'$.source'),''));
  INSERT INTO unit_counts VALUES(NEW.origin,coalesce(NEW.character,''),coalesce(NEW.document,''),NEW.state,coalesce(NEW.family,''),NEW.production,NEW.quiz,coalesce(json_extract(NEW.data,'$.source'),''),1) ON CONFLICT DO UPDATE SET n=n+1;
 END;
