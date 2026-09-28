@@ -44,6 +44,7 @@
   "chips.characters": "字",
   "chips.forms": "字體",
   "chips.grapheme": "字種",
+  "chips.includeVariants": "異體字ヲモ含ム",
   "chips.layers.label": "字層",
   "chips.review": "校閱 ↗",
   "chips.showCharacter": "字{char}ヲ示ス",

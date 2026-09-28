@@ -44,6 +44,7 @@
   "chips.characters": "文字",
   "chips.forms": "字体",
   "chips.grapheme": "字種",
+  "chips.includeVariants": "異体字も含める",
   "chips.layers.label": "文字レイヤー",
   "chips.review": "レビュー↗",
   "chips.showCharacter": "文字{char}を表示",

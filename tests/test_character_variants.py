@@ -69,3 +69,21 @@ def test_the_parts_fill_a_staging_table_and_only_the_last_swaps_it_in(tmp_path):
     assert db.execute("SELECT name FROM sqlite_master WHERE name=?", (export.STAGING,)).fetchone() is None
     assert "cjkvi-variants" in db.execute("SELECT value FROM metadata WHERE key='variant_sources'").fetchone()[0]
 
+
+
+def test_a_gallery_widens_to_exactly_the_cards_first_row():
+    assert characters.split_expansions("variants") == {"variants"}
+    points = characters.variant_code_points("U+523B")
+    card = characters.variant_card("刻", {})
+    assert points == [row["code_point"] for row in card["items"]]
+    assert "U+514B" not in points, "克 is a borrowed character, not a variant"
+    assert not {"U+4E7E", "U+5E79"} & set(characters.variant_code_points("U+5E72")), "干 keeps 乾 and 幹 apart"
+
+
+def test_the_local_corpus_side_widens_in_character_then_id_order(monkeypatch):
+    answers = {"刻": [{"id": "b"}, {"id": "a"}], "𠚰": [{"id": "c"}]}
+    monkeypatch.setattr(characters.corpus_source, "candidates",
+                        lambda char, limit, offset, **kw: {"items": answers.get(char, []), "total": len(answers.get(char, []))})
+    found, fault = characters._widened_corpus(["𠚰", "刻"], 2, 1, None)
+    assert fault is None and found["total"] == 3
+    assert [item["id"] for item in found["items"]] == ["b", "c"]

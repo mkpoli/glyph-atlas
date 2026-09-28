@@ -45,6 +45,7 @@
   "chips.characters": "𡨸",
   "chips.forms": "字樣",
   "chips.grapheme": "字位",
+  "chips.includeVariants": "𡗄哿異體",
   "chips.layers.label": "垃𡨸",
   "chips.review": "閱 ↗",
   "chips.showCharacter": "現𡨸{char}",

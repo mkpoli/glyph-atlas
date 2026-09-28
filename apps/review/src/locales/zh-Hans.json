@@ -47,6 +47,7 @@
   "chips.characters": "字",
   "chips.forms": "字样",
   "chips.grapheme": "字种",
+  "chips.includeVariants": "包括异体字",
   "chips.layers.label": "图层",
   "chips.review": "审阅 ↗",
   "chips.showCharacter": "显示{char}字",

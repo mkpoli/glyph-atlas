@@ -16,8 +16,12 @@ export const widensByDefault = card => card.default_scope === 'grapheme' || Bool
  * The scope an address asks for: `family` is the character's grapheme family, `exact` the character
  * alone. Without one the card's default applies, and the address leaves it out.
  */
-export const expandFor = (scope, card) => scope === 'family' ? 'grapheme' : scope === 'exact' ? 'none' : widensByDefault(card) ? 'grapheme' : 'none'
-export const scopeFor = (expand, card) => (expand === 'grapheme') === widensByDefault(card) ? null : expand === 'grapheme' ? 'family' : 'exact'
+export const expandFor = (scope, card) => scope === 'variants' ? 'variants' : scope === 'family' ? 'grapheme' : scope === 'exact' ? 'none'
+  : widensByDefault(card) ? 'grapheme' : 'none'
+export const scopeFor = (expand, card) => expand === 'variants' ? 'variants'
+  : (expand === 'grapheme') === widensByDefault(card) ? null : expand === 'grapheme' ? 'family' : 'exact'
+/** The corpus side of a widening: the grapheme family, the character and its variants, or the character. */
+export const corpusScope = expand => expand === 'grapheme' ? 'grapheme' : expand === 'variants' ? 'variants' : 'character'
 
 /** The page of a character in the collection view, with the scope and visual group it is shown with. */
 export function characterAddress(codePoint, { scope = null, visual = '' } = {}) {
@@ -43,9 +47,10 @@ export async function characterGallery(codePoint, { scope = null, visual = '' } 
   const expand = expandFor(scope, card)
   const [found, widened, leads] = await Promise.all([
     occurrences(codePoint, { expand, limit: 60, offset: 0 }, options),
-    // The chips read which widening is in force from the card fetched with it.
-    expand === 'none' ? card : layerCharacter(codePoint, expand, options).catch(() => card),
-    layerCandidates(codePoint, 60, 0, { scope: expand === 'grapheme' ? 'grapheme' : 'character', visual_group: visual || undefined }, options)
+    // The chips read which widening is in force from the card fetched with it; a variants widening
+    // changes no field of the card.
+    expand === 'none' || expand === 'variants' ? card : layerCharacter(codePoint, expand, options).catch(() => card),
+    layerCandidates(codePoint, 60, 0, { scope: corpusScope(expand), visual_group: visual || undefined }, options)
       .catch(error => ({ fault: error.status === 502 ? 'error' : 'not-loaded' })),
   ])
   const corpus = (leads.glyph_items ?? []).map(item => ({ ...item, label: writtenLabel(item), origin: 'corpus' }))
