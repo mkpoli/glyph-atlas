@@ -563,7 +563,7 @@ async function suggest(env: Env, q: URLSearchParams) {
     rows.results.push(...found.results);
   }
   // A term no alias names that is two or more ideographs asks for the characters built from them.
-  const wanted = rows.results.length ? null : componentTerm(term);
+  const wanted = rows.results.length ? null : componentTerm(literal(term));
   if (wanted) {
     const { codes, more } = await componentSearch(env, wanted, limit);
     const found = codes.length ? await env.DB.prepare(`SELECT code_point,data FROM characters WHERE code_point IN (${codes.map(() => '?').join(',')})`)
