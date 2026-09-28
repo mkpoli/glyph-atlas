@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte'
-  import { history as fetchHistory, stored, remember } from '../lib/client.js'
+  import { history as fetchHistory, request, stored, remember } from '../lib/client.js'
   import { issues } from '../lib/issues.js'
   import { t, formatDateTime } from '../lib/i18n.svelte.js'
   let { clientId, inspect } = $props()
@@ -51,6 +51,20 @@
     if (item.verdict === 'unsure') return t('history.decision.unsure')
     return t('history.decision.reported')
   }
+  // A batch correction's edits arrive together; they read as one row, undone together.
+  const rows = $derived(items.reduce((list, item) => {
+    const last = list.at(-1)
+    if (item.batch && last?.batch === item.batch) last.items.push(item)
+    else list.push({ id: item.id, batch: item.batch ?? null, items: [item] })
+    return list
+  }, []))
+  let undoing = $state('')
+  async function undoBatch(batch) {
+    undoing = batch; error = ''
+    try { await request(`/atlas/corrections/${batch}/undo`, { client_id: clientId }); await load() }
+    catch (e) { error = e.message }
+    finally { undoing = '' }
+  }
   function when(at) { try { return formatDateTime(at) } catch { return at } }
   $effect(() => { if (nearEnd && hasMore && !error && !loading && !loadingMore) load(true) })
   onMount(() => { load(); return () => { closed = true; clearTimeout(filterTimer) } })
@@ -73,16 +87,32 @@
     <div class="empty"><span class="empty-mark">∅</span><h2>{t('history.empty')}</h2></div>
   {:else}
     <ul class="history-list">
-      {#each items as item (item.id)}
-        <li>
-          <button class="history-row" class:undo={item.kind === 'undo'} onclick={() => inspect(item.target)}
-                  aria-label={t('history.row.inspect', { label: item.label ?? item.target })}>
-            <span class="history-time">{when(item.at)}</span>
-            <span class="history-actor">{item.actor}</span>
-            <span class="history-label" lang="ja">{item.label ?? t('history.noLabel')}</span>
-            <span class="history-decision">{decisionText(item)}</span>
-          </button>
-        </li>
+      {#each rows as row (row.id)}
+        {#if row.batch && row.items.length > 1}
+          {@const item = row.items[0]}
+          <li class="history-batch">
+            <div class="history-row">
+              <span class="history-time">{when(item.at)}</span>
+              <span class="history-actor">{item.actor}</span>
+              <span class="history-label" lang="ja">{item.character ?? item.label ?? t('history.noLabel')}</span>
+              <span class="history-decision">{t('history.batch', { count: row.items.length, character: item.character ?? item.label ?? '' })}
+                <span class="history-batch-labels" lang="ja">{row.items.map(entry => entry.label).filter(Boolean).slice(0, 12).join(' ')}</span></span>
+              {#if item.actor === clientId}<button class="quiet-link" disabled={undoing === row.batch} onclick={() => undoBatch(row.batch)}>{t('history.batch.undo')}</button>{/if}
+            </div>
+          </li>
+        {:else}
+          {#each row.items as item (item.id)}
+            <li>
+              <button class="history-row" class:undo={item.kind === 'undo'} onclick={() => inspect(item.target)}
+                      aria-label={t('history.row.inspect', { label: item.label ?? item.target })}>
+                <span class="history-time">{when(item.at)}</span>
+                <span class="history-actor">{item.actor}</span>
+                <span class="history-label" lang="ja">{item.label ?? t('history.noLabel')}</span>
+                <span class="history-decision">{decisionText(item)}</span>
+              </button>
+            </li>
+          {/each}
+        {/if}
       {/each}
     </ul>
     <div class="load-more-row" use:watchEnd>
@@ -103,6 +133,8 @@
   }
   .history-row:hover { background: var(--surface-tile); }
   .history-row.undo .history-decision { color: var(--wrong); }
+  .history-batch-labels { margin-left: 10px; color: var(--muted); }
+  .history-batch .quiet-link { flex: 0 0 auto; }
   .history-time { flex: 0 0 150px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
   .history-actor { flex: 0 0 130px; color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .history-label { flex: 0 0 40px; font-size: 20px; text-align: center; }

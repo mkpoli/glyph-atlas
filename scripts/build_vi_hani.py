@@ -43,7 +43,7 @@ LOCALE = {"name": "㗂越（𡨸漢喃）", "base": "vi", "matches": ["vi-hani"]
 EXPAND = (("tr. {page}", "trang {page}"), ("{seconds}s ", "{seconds} giây "))
 SOURCES = {"wiktionary", "unihan", "joined", "editorial"}
 # Latin words that are names, keys or file formats and stay in Latin letters.
-KEEP = {"CODH", "Unicode", "HI", "Lab", "Minna", "de", "Honkoku", "JSON", "ID", "Ctrl", "Home", "Enter", "Shift",
+KEEP = {"CODH", "Unicode", "HI", "Lab", "Minna", "de", "Honkoku", "JSON", "ID", "Ctrl", "Esc", "Home", "Enter", "Shift",
         "click", "qwerty", "zi", "tools", "roneo", "scan", "Gothic", "C", "J", "K", "M", "V", "X", "Z", "n", "s"}
 
 KAIKKI = "https://kaikki.org/dictionary/Vietnamese/kaikki.org-dictionary-Vietnamese.jsonl"
