@@ -16,8 +16,8 @@ export function visualGroup(item) {
   if (item?.visual_group?.id) return { id: item.visual_group.id,
     label: item.visual_group.label ?? 'Similar forms' }
   if (isUnassigned(item)) return { id: 'unassigned', label: 'Unassigned' }
-  const char = writtenLabel(item)
-  return { id: 'character:' + char, label: char }
+  // A crop no shape analysis placed is in no group; its tile already shows the character it is written as.
+  return { id: 'ungrouped', label: null }
 }
 
 export function matchesVisualGroup(item, group) {

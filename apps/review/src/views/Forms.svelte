@@ -12,6 +12,7 @@
   import { history, step, undo, redo } from '../lib/formHistory.svelte.js'
   import { number, reviewer, stored, remember } from '../lib/client.js'
   import { t, around, localize } from '../lib/i18n.svelte.js'
+  import { characterAddress } from '../lib/gallery.js'
   import { originText, originTitle } from '../lib/origin.js'
 
   // `initial` is what the server rendered: the family list and the family on show, arranged by shape.
@@ -324,7 +325,7 @@
     {:else if current}
       <div class="family-panel">
         <div class="family-title">
-          <h2>{current.char}</h2>
+          <h2><a class="family-link" href={localize(characterAddress(current.code_point))} aria-label={t('chips.showCharacter', { char: current.char })}>{current.char}</a></h2>
           <p><strong>{number(current.count)}</strong> {t('forms.glyphsLabel')} · {number(current.clusters)} {t('forms.clustersLabel')} · <strong>{number(current.assigned)}</strong> {t('forms.assignedLabel')}{#if current.rejected}{' · '}<strong>{number(current.rejected)}</strong> {t('forms.rejectedLabel')}{/if}</p>
           <span class="history-actions">
             <button disabled={busy || history.busy || !history.done.length} onclick={() => takeBack(false)} title={t('forms.undo.title')}>↶ {t('forms.undo')}</button>
@@ -485,6 +486,7 @@
   .family-meta small{font-size:10px;color:var(--muted)}
   .family-progress{display:flex;background:light-dark(#ececef, #2e2e35);border-radius:2px;overflow:hidden}.family-progress i{display:block;height:100%;background:var(--accent)}.family-progress i.rejected{background:var(--wrong);opacity:.55}
   .family-title{display:flex;align-items:baseline;gap:18px;border-bottom:1px solid var(--line);padding-bottom:12px}
+  .family-link{color:inherit;text-decoration:none}.family-link:hover{color:var(--accent)}
   .family-title h2{font-size:48px;font-weight:500;font-family:"Noto Sans CJK JP","Yu Gothic",sans-serif}
   .family-title p{font-size:12px;color:var(--muted)}
   .history-actions{margin-left:auto;display:flex;gap:4px}.history-actions button{font-size:11px;padding:6px 10px}.family-title strong{color:var(--ink);font-weight:500}

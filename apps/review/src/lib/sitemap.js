@@ -1,5 +1,5 @@
 import { HREFLANG, LOCALES, localize } from './i18n.svelte.js'
-import { families, formsAvailable } from './forms.js'
+import { familyCodes } from './forms.js'
 import { catalogue } from './client.js'
 
 const escape = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;')
@@ -32,7 +32,7 @@ ${paths.map(entry).join('\n')}
 /** The collection and each character's forms. */
 export async function pagePaths(fetch) {
   const paths = ['/']
-  if (await formsAvailable(fetch)) paths.push(...(await families({ fetch })).items.map(item => '/forms/' + item.code_point))
+  paths.push(...((await familyCodes(fetch)) ?? []).map(code => '/forms/' + code))
   return paths
 }
 
