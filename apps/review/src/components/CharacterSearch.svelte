@@ -14,7 +14,6 @@
   // A page that knows its graphemes gives `groupOf`: the candidates a query names then show as the
   // same grapheme cards its browser shows, and the characters it holds none of fold away beneath them.
   import { onMount } from 'svelte'
-  import ZiLink from './ZiLink.svelte'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import GraphemeCard from './GraphemeCard.svelte'
   import { suggest, countsLabel, ownLabel } from '../lib/layers.js'
@@ -228,7 +227,7 @@
       </span>
       <span class="candidate-counts">{countsLabel(item.candidates) || ownLabel(item)}{#if item.grapheme?.character_count > 1}<span> · {item.grapheme.label}</span>{/if}</span>
     </span>
-  </button><ZiLink character={item.char} compact /></div>
+  </button></div>
 {/snippet}
 
 <div class="character-search" class:compact bind:this={root} onfocusout={blurred}>
