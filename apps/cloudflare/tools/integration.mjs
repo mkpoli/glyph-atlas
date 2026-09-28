@@ -889,7 +889,37 @@ try {
   assert.deepEqual(await groups('SELECT * FROM unit_counts'), await groups(`SELECT origin,coalesce(character,''),coalesce(document,''),state,
     coalesce(family,''),production,quiz,coalesce(json_extract(data,'$.source'),''),count(*) FROM units GROUP BY 1,2,3,4,5,6,7,8`),
     'the kept counts are what the crops say')
-  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms.')
+  // A batch correction: crops a reader selected across labels, local and corpus, all given one written
+  // character in one submission, which is atomic, idempotent and undone as one.
+  for (const [id, label] of [['batch-a', 'ア'], ['batch-b', 'ウ']]) {
+    const d = { id, label, reading: label, state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten', repair: { quiz: true } }
+    await db.prepare(`INSERT INTO units(id,origin,character,reading,family,visual_group,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual,document)
+      VALUES(?,'local',?,?,NULL,NULL,'handwritten','kana','pending',0,1,1,1,?,?,'{}','{}',NULL)`).bind(id, label, label, JSON.stringify(d), JSON.stringify({ character: d })).run()
+  }
+  const legacyNow = await call('/atlas/corpus/character?id=' + encodeURIComponent('codh:legacy'))
+  const crops = [{ id: 'batch-a', revision: 0, image_sha256: hash }, { id: 'batch-b', revision: 0, image_sha256: hash },
+    { id: 'codh:legacy', revision: legacyNow.revision, source_revision: legacyNow.source_revision }]
+  const batch = { id: crypto.randomUUID(), client_id: 'integration', character: 'タ', crops }
+  await call('/atlas/corrections', { ...batch, id: crypto.randomUUID(), crops: [crops[0], { ...crops[1], revision: 7 }] }, 409)
+  assert.equal((await call('/atlas/characters/batch-a')).revision, 0, 'a batch with one stale crop changes nothing')
+  await call('/atlas/corrections', { ...batch, id: crypto.randomUUID(), seen: [] }, 422)
+  await call('/atlas/corrections', { ...batch, id: crypto.randomUUID(), crops: Array.from({ length: 145 }, (_, i) => ({ id: 'x' + i, revision: 0, image_sha256: hash })) }, 422)
+  const corrected = await call('/atlas/corrections', batch)
+  assert.equal(corrected.results.length, 3)
+  assert.deepEqual(await call('/atlas/corrections', batch), corrected, 'a retried batch returns the first result')
+  await call('/atlas/corrections', { ...batch, character: 'ナ' }, 409)
+  for (const id of ['batch-a', 'batch-b']) {
+    const row = await call('/atlas/characters/' + id)
+    assert.deepEqual([row.label, row.written_character, row.state], ['タ', 'タ', 'checked'], id + ' takes the batch character')
+  }
+  assert.equal((await call('/atlas/corpus/character?id=' + encodeURIComponent('codh:legacy'))).label, 'タ', 'the corpus glyph takes it too')
+  const kinds = (await db.prepare(`SELECT DISTINCT json_extract(json_extract(event,'$.evidence'),'$.kind') AS kind,
+    json_extract(json_extract(event,'$.evidence'),'$.batch') AS batch FROM events WHERE submission=?`).bind('integration:' + batch.id).all()).results
+  assert.deepEqual(kinds, [{ kind: 'character-review', batch: batch.id }], 'a batch is recorded as inspector reviews carrying its id')
+  await call('/atlas/corrections', { id: crypto.randomUUID(), client_id: 'integration', character: 'タ', crops: [{ id: 'batch-a', revision: 1, image_sha256: hash }] }, 422)
+  await call(`/atlas/corrections/${batch.id}/undo`, { client_id: 'integration' })
+  assert.deepEqual([(await call('/atlas/characters/batch-a')).label, (await call('/atlas/characters/batch-b')).label], ['ア', 'ウ'], 'undo restores every crop')
+  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms, batch corrections.')
 } finally {
   await mf.dispose()
 }

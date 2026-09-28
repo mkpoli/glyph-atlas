@@ -186,6 +186,16 @@ export function validRound(input: Json, target?: string): { answers: Json[]; see
   }
   return { answers, seen, skipped };
 }
+// A batch correction names one written character and the crops a reader selected as that character:
+// each crop becomes a `wrong`/`character` answer, checked against its own revision and pixels.
+export function validBatch(input: Json): Json[] {
+  const character = text(input.character, 32, 'character', true)!;
+  const crops = input.crops;
+  if (!Array.isArray(crops) || crops.length < 1 || crops.length > ROUND_MAX || new Set(crops.map(crop => crop?.id)).size !== crops.length)
+    throw new Problem(422, `A correction needs 1–${ROUND_MAX} distinct crops.`);
+  return crops.map(crop => ({ id: crop?.id, revision: crop?.revision, image_sha256: crop?.image_sha256, source_revision: crop?.source_revision,
+    verdict: 'wrong', issue: 'character', character }));
+}
 // A production is a node of the tree in `data/vocab/production.yaml`, written as its path
 // (`printed/type/wood`); `tests/test_production.py` holds this list to the file. A material scope is
 // `all`, a node with everything under it, or `not:` and a node.
@@ -714,20 +724,22 @@ function validateAnswer(answer: Json, current: Json, round: boolean, corpus=fals
 }
 async function submit(env: Env, request: Request, target?: string) {
   const input=await body(request);
-  const corpus=target==='@corpus';
+  const corpus=target==='@corpus', batch=target==='@batch';
   if(corpus)target=text(input.identity,512,'corpus identity',true)!;
+  if(batch)target=undefined;
   const id=text(input.id,64,'submission id',true)!, actor=text(input.client_id,128,'reviewer',true)!;
   if(!/^[0-9a-f-]{36}$/i.test(id))throw new Problem(422,'Invalid submission id.');
   // A retry is the same submission whatever else came on screen meanwhile: the seen crops are left
   // out of the signature, as the local server compares only the answers, and the first result stands.
   const {seen:_,skipped:__,...signed}=input;
-  const signature=canonical({target:target||null,input:signed});
+  const signature=canonical({target:batch?'@batch':target||null,input:signed});
   const key=actor+':'+id;
   const previous=await env.DB.prepare('SELECT request,response FROM submissions WHERE id=?').bind(key).first<{request:string;response:string}>();
   if(previous){if(previous.request!==signature)throw new Problem(409,'This submission was already saved with different answers.');return parse(previous.response)}
-  const round=!target;
+  const round=!target&&!batch;
   if(round)text(input.label,32,'label',true);
-  const {answers,seen,skipped}=validRound(input,target);
+  if(batch&&(input.seen!==undefined||input.skipped!==undefined))throw new Problem(422,'Only a round records seen or skipped crops.');
+  const {answers,seen,skipped}=batch?{answers:validBatch(input),seen:[],skipped:[]}:validRound(input,target);
   // One round usually corrects many crops to the same few characters; each is read once.
   const lookups=new Map<string,Promise<{data:Json;detail:Json}|null>>();
   const lookup=(value:string)=>{let key:string;try{key=cp(literal(value))}catch{key='\u0000'+value}if(!lookups.has(key))lookups.set(key,known(env,value).catch(()=>null));return lookups.get(key)!};
@@ -762,7 +774,7 @@ async function submit(env: Env, request: Request, target?: string) {
       ...(written?{grapheme:family||cp(written),visual_group:null,category:categoryOf(written)}:{}),
       ...(reading?{reading}:{}),issue:resolved?null:answer.issue};
     const snapshot={...parse(row.snapshot),character:compact(row)};
-    const evidence={kind:round?'visual-quiz':'character-review',...(round?{round:id,label:input.label}:{}),
+    const evidence={kind:round?'visual-quiz':'character-review',...(round?{round:id,label:input.label}:{}),...(batch?{batch:id}:{}),
       request:input,verdict:answer.verdict,issue:answer.issue||null,note:answer.note||'',
       suggested_character:written?cp(written):null,suggested_reading:answer.correction||null,snapshot,
       correction:{unicode:cp(next.label),reading:next.reading,box:next.box}};
@@ -927,7 +939,8 @@ export default {
       if(request.method==='POST'){
         if(path==='/atlas/corpus/reviews')return json(await submit(env,request,'@corpus'));
         if(path==='/atlas/rounds')return json(await submit(env,request));
-        const undone=path.match(/^\/atlas\/rounds\/([^/]+)\/undo$/);
+        if(path==='/atlas/corrections')return json(await submit(env,request,'@batch'));
+        const undone=path.match(/^\/atlas\/(?:rounds|corrections)\/([^/]+)\/undo$/);
         if(undone)return json(await undo(env,request,decodeURIComponent(undone[1])));
         const edit=path.match(/^\/(?:atlas\/characters|layers\/units)\/([^/]+)$/);
         if(edit)return json(await submit(env,request,decodeURIComponent(edit[1])));
