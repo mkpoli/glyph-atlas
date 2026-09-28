@@ -23,9 +23,12 @@ PARTS = 8
 # How many of the rarest component's characters a search reads (the Worker's COMPONENT_SCAN).
 SCAN = 3000
 
-# Ideographic Description Characters and BabelStone's other operators (subtraction, mirror, rotation,
-# the variation indicator) describe layout; the region list and `{n}` name no character of their own.
-LAYOUT = re.compile(r"\([^)]*\)$|\{\d+\}|[⿰-⿿㇯〾？]")
+# BabelStone's operators by how many operands each takes. ㇯ subtracts its second operand from its
+# first (㇯鸟丶 is 乌); 〾 marks a sequence as approximate. `{n}` and ？ name no encoded character.
+BINARY = set("⿰⿱⿴⿵⿶⿷⿸⿹⿺⿻⿼⿽㇯")
+TERNARY = set("⿲⿳")
+UNARY = set("⿾⿿〾")
+TOKEN = re.compile(r"\{\d+\}|.")
 
 
 def _read(name: str) -> list[list[str]]:
@@ -62,47 +65,94 @@ def _names(component: str) -> list[str]:
     return names
 
 
+def _parse(tokens: list[str], at: int = 0) -> tuple[tuple, int]:
+    """One description from `tokens[at]`: a leaf, or an operator and its operands."""
+    token = tokens[at]
+    arity = 2 if token in BINARY else 3 if token in TERNARY else 1 if token in UNARY else 0
+    if not arity:
+        return ("leaf", token), at + 1
+    operands, at = [], at + 1
+    for _ in range(arity):
+        operand, at = _parse(tokens, at)
+        operands.append(operand)
+    return (token, operands), at
+
+
+def _tree(sequence: str) -> tuple:
+    return _parse(TOKEN.findall(re.sub(r"\([^)]*\)$", "", sequence)))[0]
+
+
+class _Part:
+    """What one description holds: every component through every level under each of its names,
+    counted; how many pieces it is built from; and the names at its own top level."""
+
+    __slots__ = ("held", "size", "top")
+
+    def __init__(self, held: Counter | None = None, size: int = 0, top: frozenset[str] = frozenset()):
+        self.held, self.size, self.top = held or Counter(), size, top
+
+
 # A few sequences lead back to the character they describe (水 through 氺); the path being expanded
-# stops there. A closure that stopped short is not kept, so each character's own is complete.
-_closures: dict[str, Counter] = {}
+# stops there. A description that stopped short is not kept, so each character's own is complete.
+_described: dict[str, _Part] = {}
 
 
-def _expand(char: str, path: frozenset[str]) -> tuple[Counter, bool]:
-    if char in _closures:
-        return _closures[char], False
-    found: Counter = Counter()
-    short = False
+def _evaluate(node: tuple, char: str, path: frozenset[str]) -> tuple[_Part, bool]:
+    kind, value = node
+    if kind == "leaf":
+        if value == char or value == "？" or value.startswith("{"):
+            return _Part(size=1), False
+        names = _names(value)
+        held = Counter(names)
+        if value in path:
+            return _Part(held, 1, frozenset(names)), True
+        inner, short = _describe(value, path | {char})
+        return _Part(held + inner.held, 1 + inner.size, frozenset(names)), short
+    parts, short = [], False
+    for operand in value:
+        part, stopped = _evaluate(operand, char, path)
+        parts.append(part)
+        short |= stopped
+    if kind == "㇯":
+        # The second operand is taken away from the first, and none of it is in the character.
+        whole, taken = parts
+        return _Part(whole.held - taken.held, max(whole.size - taken.size, 1), whole.top - taken.top), short
+    held: Counter = Counter()
+    for part in parts:
+        held.update(part.held)
+    return _Part(held, sum(p.size for p in parts), frozenset().union(*(p.top for p in parts))), short
+
+
+def _describe(char: str, path: frozenset[str]) -> tuple[_Part, bool]:
+    """A character's description: each sequence counted on its own, then the most any one holds of
+    each component, so two regional forms (礻 and 示 in 礼) never add up to two."""
+    if char in _described:
+        return _described[char], False
+    found, short = _Part(), False
     for sequence in _sequences().get(char, ()):
-        parts: Counter = Counter()
-        for part in LAYOUT.sub("", sequence):
-            if part == char:
-                continue
-            parts[part] += 1
-            if part in path:
-                short = True
-                continue
-            inner, stopped = _expand(part, path | {char})
-            parts.update(inner)
-            short |= stopped
-        found |= parts
+        part, stopped = _evaluate(_tree(sequence), char, path | {char})
+        short |= stopped
+        found = _Part(found.held | part.held, max(found.size, part.size), found.top | part.top)
     if not short:
-        _closures[char] = found
+        _described[char] = found
     return found, short
 
 
-def _written(char: str) -> Counter:
-    """The components as the sequences write them, counted: the most any one sequence names of each."""
-    return _expand(char, frozenset())[0]
-
-
 def components(char: str) -> Counter:
-    """Every component of `char`, each counted under its own name and the characters it writes."""
-    found: Counter = Counter()
-    for part, n in _written(char).items():
-        for name in _names(part):
-            found[name] += n
-    found.pop(char, None)
-    return found
+    """Every component of `char`, counted, under its own name and the characters it writes."""
+    held = Counter(_describe(char, frozenset())[0].held)
+    held.pop(char, None)
+    return held
+
+
+def direct(char: str) -> frozenset[str]:
+    """The components a sequence names at its top level, under every name they go by: 日 and 月 for 明."""
+    return _describe(char, frozenset())[0].top
+
+
+def size(char: str) -> int:
+    """How many pieces a character is built from, counted through every level."""
+    return _describe(char, frozenset())[0].size
 
 
 def query(term: str) -> Counter | None:
@@ -121,23 +171,6 @@ def _component_like(char: str) -> bool:
         or char in _sequences()
         or char in _forms()
     )
-
-
-@cache
-def direct(char: str) -> frozenset[str]:
-    """The components a sequence names at its top level, under every name they go by: 日 and 月 for 明."""
-    return frozenset(
-        name
-        for sequence in _sequences().get(char, ())
-        for part in LAYOUT.sub("", sequence)
-        if part != char
-        for name in _names(part)
-    )
-
-
-def size(char: str) -> int:
-    """How many components a character is built from, counted through every level."""
-    return sum(_written(char).values())
 
 
 def rows():

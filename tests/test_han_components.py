@@ -84,3 +84,15 @@ def test_only_two_or_more_ideographs_are_a_component_search():
     assert han_components.query("水骨ab") is None
     assert han_components.query("一二三四五六七八九") is None, "longer than PARTS"
     assert han_components.search("骨") == []
+
+
+def test_a_subtracted_component_is_not_in_the_character():
+    """乌 is ㇯鸟丶: 鸟 without its dot."""
+    assert han_components.components("乌")["丶"] == 0
+    assert "乌" not in han_components.search("鸟丶")
+
+
+def test_two_regional_forms_of_one_component_count_once():
+    """礼 is ⿰礻乚 in some regions and ⿰示乚 in others; either way it holds one 示."""
+    assert han_components.components("礼")["示"] == 1
+    assert "礼" not in han_components.search("示示")
