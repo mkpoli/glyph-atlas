@@ -330,6 +330,8 @@
   "nav.history": "歷史",
   "nav.pages": "頁面",
   "nav.quickReview": "快速審閱",
+  "pair.occurrences.other": "{count}處",
+  "pair.empty": "尚無此字對的用例。",
   "origin.label": "字源",
   "origin.source": "日文維基百科：{text}",
   "origin.uncertain": "另有說法：{kanji}",

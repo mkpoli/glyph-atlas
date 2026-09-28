@@ -470,7 +470,7 @@
       {#if unit !== 'pair' || flagged}<div class="browse-unit" role="group" aria-label={t('explore.browseOrder')}>
         {#each [['most', () => t('explore.order.most')], ['fewest', () => t('explore.order.fewest')]] as [value, text]}<button type="button" aria-pressed={order === value} onclick={() => orderBy(value)}>{text()}</button>{/each}
       </div>{/if}
-      {#if unit === 'pair' && !flagged}<PairGrid {pairs} failed={pairsFailed} onretry={loadPairs} />
+      {#if unit === 'pair' && !flagged}<PairGrid {pairs} failed={pairsFailed} onretry={loadPairs} {work} />
       {:else}<GraphemeGrid groups={graphemes} value={grapheme} onchoose={key => { close(); select(key) }}
                     onform={form => { close(); pick({ code_point: codesOf(form), char: form }, 'exact') }} />{/if}
     {/snippet}

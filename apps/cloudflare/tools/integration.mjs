@@ -597,6 +597,32 @@ try {
   await db.prepare("UPDATE units SET character='ヰ' WHERE id='two'").run()
   assert.equal((await db.prepare("SELECT text FROM unit_pairs WHERE first='one'").first()).text, firstLabel + 'ヰ')
   await db.prepare("UPDATE units SET character=? WHERE id='two'").bind(secondLabel).run()
+  // One pair's occurrences: read along the pair's index in its key order, each crop by its id, never
+  // sorted or scanned; a book's through the index it shares with the count.
+  const occurrenceServed = (details, index) => {
+    assert.ok(details.some(d => new RegExp(`SEARCH p USING (COVERING )?INDEX ${index}\\b`).test(d)), `${index}: ${details.join('; ')}`)
+    assert.ok(!details.some(d => d.includes('TEMP B-TREE')), details.join('; '))
+    assert.ok(!details.some(d => /^SCAN \w+/.test(d)), details.join('; '))
+  }
+  for (const [document, bound, index] of [[false, ['ナリ'], 'unit_pair_text'], [true, ['hk:doc', 'ナリ'], 'unit_pair_document']]) {
+    for (const shape of [{ sql: worker.pairOccurrencesQuery(document), values: [] }, { sql: worker.pairCountQuery(document), values: [] }]) {
+      const args = shape.sql.includes('LIMIT') ? [...bound, 48, 0] : bound
+      occurrenceServed(await plan(shape, args), index)
+      const create = (await db.prepare('SELECT sql FROM sqlite_master WHERE name=?').bind(index).first()).sql
+      await db.prepare(`DROP INDEX ${index}`).run()
+      await assert.rejects(async () => occurrenceServed(await plan({ ...shape, sql: shape.sql + ' ' }, args), index), `the occurrence check on ${index} fails without it`)
+      await db.prepare(create).run()
+    }
+  }
+  const pairText = firstLabel + secondLabel
+  const occurrences = await (await mf.dispatchFetch(base + '/atlas/pairs/' + encodeURIComponent(pairText))).json()
+  assert.equal(occurrences.total, 1, 'a pair counts the occurrences whose crops are both live')
+  assert.deepEqual(occurrences.items.map(o => [o.first.id, o.second.id]), [['one', 'two']], 'an occurrence carries its two crops in reading order')
+  assert.ok(!('context_image' in occurrences.items[0].first), 'occurrences carry listing fields only')
+  assert.equal((await mf.dispatchFetch(base + '/atlas/pairs/' + encodeURIComponent('申候'))).status, 200)
+  assert.equal((await (await mf.dispatchFetch(base + '/atlas/pairs/' + encodeURIComponent('申候'))).json()).total, 0, 'pairs whose crops are not live are not shown')
+  assert.equal((await mf.dispatchFetch(base + '/atlas/pairs/' + encodeURIComponent(pairText) + '?offset=2001')).status, 404, 'a pair does not page past its cap')
+  assert.equal((await mf.dispatchFetch(base + '/atlas/pairs/' + encodeURIComponent(pairText) + '?limit=97')).status, 422, 'a page is bounded')
   await db.prepare('DELETE FROM unit_pairs').run()
   for (const [index, create] of Object.entries(keys)) {
     await db.prepare(`DROP INDEX ${index}`).run()

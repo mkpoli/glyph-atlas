@@ -327,6 +327,8 @@
   "nav.history": "履歴",
   "nav.pages": "ページ",
   "nav.quickReview": "クイックレビュー",
+  "pair.occurrences.other": "{count}例",
+  "pair.empty": "この二字組の用例はありません。",
   "origin.label": "字源",
   "origin.source": "Wikipedia日本語版：{text}",
   "origin.uncertain": "異説あり：{kanji}",

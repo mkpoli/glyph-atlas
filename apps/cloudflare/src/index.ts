@@ -319,6 +319,36 @@ async function pairs(env: Env, ctx: ExecutionContext, url: URL) {
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return body;
 }
+// One pair's occurrences: the two crops of each, in the order the pair's index keeps (by the first crop's
+// id), each crop found by its key. A book's are read through the index it shares with the count. The
+// join order is fixed and the origin test kept off its index (`+`): the planner would otherwise start
+// from every local crop.
+const PAIR_PAGE_MAX = 96, PAIR_OFFSET_MAX = 2000;
+export function pairOccurrencesQuery(document: boolean) {
+  return `SELECT a.data AS first, b.data AS second FROM unit_pairs p
+    CROSS JOIN units a ON a.id=p.first AND +a.origin='local' CROSS JOIN units b ON b.id=p.second AND +b.origin='local'
+    WHERE ${document ? 'p.document=? AND ' : ''}p.text=? ORDER BY p.first LIMIT ? OFFSET ?`;
+}
+export function pairCountQuery(document: boolean) {
+  return `SELECT count(*) AS n FROM unit_pairs p
+    CROSS JOIN units a ON a.id=p.first AND +a.origin='local' CROSS JOIN units b ON b.id=p.second AND +b.origin='local'
+    WHERE ${document ? 'p.document=? AND ' : ''}p.text=?`;
+}
+async function pairOccurrences(env: Env, url: URL, pair: string) {
+  const q = url.searchParams;
+  const value = text(pair, 64, 'pair', true)!;
+  const document = text(q.get('document'), 256, 'document');
+  const limit = integer(q, 'limit', 48, PAIR_PAGE_MAX), offset = integer(q, 'offset', 0);
+  if (offset > PAIR_OFFSET_MAX) throw new Problem(404, 'A pair does not page this far.');
+  const bound = [...(document ? [document] : []), value];
+  const [count, page] = await env.DB.batch([
+    env.DB.prepare(pairCountQuery(Boolean(document))).bind(...bound),
+    env.DB.prepare(pairOccurrencesQuery(Boolean(document))).bind(...bound, limit, offset),
+  ]) as D1Result<any>[];
+  const items = (page.results as { first: string; second: string }[])
+    .map(row => ({ first: listing(parse(row.first)), second: listing(parse(row.second)) }));
+  return { text: value, document, total: (count.results[0] as { n: number }).n, next_offset: offset + items.length, items };
+}
 async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   const q = url.searchParams;
   const purpose = q.get('purpose') || 'browse';
@@ -1054,6 +1084,8 @@ export default {
       if(path==='/atlas')return json(await catalogue(env,ctx,url));
       if(path==='/atlas/history')return json(await history(env,q));
       if(path==='/atlas/pairs')return json(await pairs(env,ctx,url));
+      const pair=path.match(/^\/atlas\/pairs\/([^/]+)$/);
+      if(pair)return json(await pairOccurrences(env,url,decodeURIComponent(pair[1])));
       if(path==='/atlas/corpus/character')return json(parse((await unit(env,q.get('id')||'')).data));
       if(path==='/atlas/collection/status')return json(await meta(env,'collection'));
       const document=path.match(/^\/atlas\/documents\/([^/]+)\/characters$/);
