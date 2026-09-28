@@ -1,12 +1,13 @@
 import { request } from './client.js'
 
 // Both the local review server and the hosted Worker serve form assignment once a clustering exists;
-// without one the path answers 404 and the view stays hidden.
-export async function formsAvailable(send = fetch) {
+// without one the path answers 404 and the view stays hidden. The families' code points, or null.
+export async function familyCodes(send = fetch) {
   try {
     const response = await send('/atlas/forms/families', { method: 'GET' })
-    return response.ok && (response.headers.get('content-type') || '').includes('application/json')
-  } catch { return false }
+    if (!response.ok || !(response.headers.get('content-type') || '').includes('application/json')) return null
+    return (await response.json()).items.map(item => item.code_point)
+  } catch { return null }
 }
 export const families = options => request('/atlas/forms/families', undefined, options)
 export const family = (codePoint, order = 'shape', options) =>
