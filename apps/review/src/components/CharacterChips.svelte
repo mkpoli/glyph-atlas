@@ -7,23 +7,31 @@
   import { characterAddress } from '../lib/gallery.js'
   let { card = null, expand = $bindable('none'), onselect = () => {}, onreview = null } = $props()
   const members = $derived(card?.grapheme?.members ?? [{code_point: card?.code_point, char: card?.char}])
-  // The 異体字 graph: characters one may be written for this one, and characters related otherwise.
-  const variants = $derived(card?.variants ?? { written: [], related: [], sources: {} })
-  // Each edge as its source states it: the relation and the sources that give it.
-  const relationTitle = v => {
+  // The 異体字 graph: the variants a gallery widens to, and characters related otherwise.
+  const variants = $derived(card?.variants ?? { items: [], related: [], sources: {} })
+  // Every relation of kanji-variants.tsv in the reader's language; one the table gains later reads as its id.
+  const RELATION_NAMES = {
+    variant: () => t('chips.relation.variant'), equivalent: () => t('chips.relation.equivalent'),
+    overlap: () => t('chips.relation.overlap'), semantic: () => t('chips.relation.semantic'),
+    'specialized-semantic': () => t('chips.relation.specializedSemantic'), z: () => t('chips.relation.z'),
+    simplified: () => t('chips.relation.simplified'), shinjitai: () => t('chips.relation.shinjitai'),
+    regional: () => t('chips.relation.regional'), shuowen: () => t('chips.relation.shuowen'),
+    reduction: () => t('chips.relation.reduction'), compatibility: () => t('chips.relation.compatibility'),
+    borrowed: () => t('chips.relation.borrowed'), substitute: () => t('chips.relation.substitute'),
+    'non-cognate': () => t('chips.relation.nonCognate'), spoofing: () => t('chips.relation.spoofing'),
+  }
+  const relationName = relation => RELATION_NAMES[relation]?.() ?? relation
+  // A pair's relations, each once, with the sources that state it.
+  const relationsOf = v => {
     const by = new Map()
     for (const r of v.relations) by.set(r.relation, new Set([...(by.get(r.relation) ?? []), r.source]))
-    return `${v.char} ${v.code_point}\n` + [...by].map(([relation, sources]) => `${relation}: ${[...sources].join(', ')}`).join('\n')
+    return [...by].map(([relation, sources]) => ({ relation, name: relationName(relation), sources: [...sources] }))
   }
-  // The relations that set a character apart from a variant, in the reader's language; another is shown as its source names it.
-  const RELATION_NAMES = { borrowed: () => t('chips.relation.borrowed'), substitute: () => t('chips.relation.substitute'),
-    'non-cognate': () => t('chips.relation.nonCognate'), spoofing: () => t('chips.relation.spoofing'),
-    reduction: () => t('chips.relation.reduction') }
-  const relationName = v => { const relation = v.relations[0]?.relation; return RELATION_NAMES[relation]?.() ?? relation }
+  const relationTitle = v => `${v.char} ${v.code_point}\n` + relationsOf(v).map(r => `${r.name}: ${r.sources.join(', ')}`).join('\n')
   const crops = v => (v.count ?? 0) + (v.corpus_count ?? 0)
-  // Few fonts reach past the basic plane, and a compatibility ideograph looks like its unified form,
-  // so either shows its code point beside it: a missing glyph can still be told apart.
-  const named = v => { const p = v.char.codePointAt(0); return p > 0xffff || (p >= 0xf900 && p <= 0xfaff) }
+  // Outside the unified ideographs' main block a character may be missing from the reader's fonts or
+  // look like another (a compatibility ideograph, a Kangxi radical), so it shows its code point too.
+  const named = v => { const p = v.char.codePointAt(0); return !(p >= 0x4e00 && p <= 0x9fff) }
 </script>
 
 {#if card}
@@ -45,11 +53,11 @@
         {/each}
       </div>
     </div>
-    {#if variants.written.length}
+    {#if variants.items.length}
       <div class="layer-row">
         <span class="layer-label">{t('chips.variants')}</span>
         <div class="variant-chips">
-          {#each variants.written as v (v.code_point)}
+          {#each variants.items as v (v.code_point)}
             <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><span lang="zh">{v.char}</span>{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if crops(v)}<small>{formatNumber(crops(v))}</small>{/if}</a>
           {/each}
         </div>
@@ -60,13 +68,16 @@
         <span class="layer-label">{t('chips.related')}</span>
         <div class="variant-chips">
           {#each variants.related as v (v.code_point)}
-            <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><span lang="zh">{v.char}</span>{#if named(v)}<small class="code">{v.code_point}</small>{/if}<small>{relationName(v)}{#if crops(v)} · {formatNumber(crops(v))}{/if}</small></a>
+            <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><span lang="zh">{v.char}</span>{#if named(v)}<small class="code">{v.code_point}</small>{/if}<small>{relationsOf(v).map(r => r.name).join(' · ')}{#if crops(v)} · {formatNumber(crops(v))}{/if}</small></a>
           {/each}
         </div>
       </div>
     {/if}
-    {#if variants.written.length || variants.related.length}
-      <p class="variant-sources">{t('chips.variantSources')}: {#each Object.entries(variants.sources) as [id, citation], i (id)}{#if i} · {/if}<abbr title={citation}>{id}</abbr>{/each}</p>
+    {#if variants.items.length || variants.related.length}
+      <details class="variant-sources">
+        <summary>{t('chips.variantSources')}: {Object.keys(variants.sources).join(' · ')}</summary>
+        <ul>{#each Object.entries(variants.sources) as [id, citation] (id)}<li><b>{id}</b> {citation}</li>{/each}</ul>
+      </details>
     {/if}
     <div class="layer-legend"><ScriptLegend /></div>
     <div class="layer-row forms-row">
@@ -108,6 +119,8 @@
   .variant small{font-size:11px;color:var(--muted)}
   .variant .code{font-family:ui-monospace,monospace;font-size:10px}
   .variant-sources{margin:0;padding-left:92px;font-size:11px;color:var(--muted)}
-  .variant-sources abbr{text-decoration:underline dotted;cursor:help}
+  .variant-sources summary{cursor:pointer;width:fit-content}
+  .variant-sources ul{margin:6px 0 0;padding-left:16px;display:grid;gap:3px;overflow-wrap:anywhere}
+  .variant-sources b{font-weight:500;color:var(--ink)}
   @media(max-width:600px){.variant-sources{padding-left:0}}
 </style>

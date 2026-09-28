@@ -213,13 +213,33 @@ def _written(row: dict[str, str]) -> bool:
             and _ideograph(row["a"]) and _ideograph(row["b"]))
 
 
+#: Written relations a character's gallery does not widen to. A simplified form and a variant in some
+#: senses only are often a different character in a pre-modern text (干 for 乾 and 幹, 台 for 臺 and
+#: 颱, 斗 for 鬥), so a reader sees them beside the character without their crops joining its own.
+NOT_WIDENED = frozenset({"simplified", "specialized-semantic"})
+#: A pair any source calls simplified is kept apart even where another table lists it as a plain variant:
+#: cjkvi's 異体字 tables pair 干 with 乾 and 幹, which four sources give as simplifications.
+KEPT_APART = frozenset({"simplified"})
+
+
+def widens(edges: Iterable[dict[str, Any]]) -> bool:
+    """Whether a gallery widens across a pair, given all its edges: one widens and none keeps it apart."""
+    edges = list(edges)
+    return any(e["widens"] for e in edges) and not any(e["relation"] in KEPT_APART for e in edges)
+
+
 @cache
 def variant_edges() -> tuple[dict[str, Any], ...]:
-    """Every edge of data/vocab/kanji-variants.tsv as its source states it, with `written` marking the
-    ones under which one character may be written for the other. No edge is left out: the others
-    (borrowed, substitute, a fallback reduction, …) relate different characters and are shown as such.
+    """Every edge of data/vocab/kanji-variants.tsv as its source states it. `written` marks the ones
+    under which one character may be written for the other (WRITTEN_FOR), `widens` those of them a
+    gallery widens to (all but NOT_WIDENED). No edge is left out: the others (borrowed, substitute, a
+    fallback reduction, …) relate different characters and are shown as such.
     """
-    return tuple({**row, "written": _written(row)} for row in _read_tsv(VARIANTS_TSV))
+    edges = []
+    for row in _read_tsv(VARIANTS_TSV):
+        written = _written(row)
+        edges.append({**row, "written": written, "widens": written and row["relation"] not in NOT_WIDENED})
+    return tuple(edges)
 
 
 @cache
