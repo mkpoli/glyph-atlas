@@ -102,21 +102,27 @@ def _evaluate(node: tuple, char: str, path: frozenset[str]) -> tuple[_Part, bool
     if kind == "leaf":
         if value == char or value == "？" or value.startswith("{"):
             return _Part(size=1), False
-        names = _names(value)
+        # 王 writes 玉 in the forms table, but the 王 inside 玉 is not a second 玉.
+        names = [name for name in _names(value) if name != char]
         held = Counter(names)
         if value in path:
-            return _Part(held, 1, frozenset(names)), True
+            # A sequence that leads back to a character on the path describes nothing new.
+            return _Part(size=1), True
         inner, short = _describe(value, path | {char})
-        return _Part(held + inner.held, 1 + inner.size, frozenset(names)), short
+        # Nor is the 耂 inside 考 a second 老 when 考 already writes 老.
+        within = Counter({name: n for name, n in inner.held.items() if name not in held})
+        return _Part(held + within, 1 + inner.size, frozenset(names)), short
     parts, short = [], False
     for operand in value:
         part, stopped = _evaluate(operand, char, path)
         parts.append(part)
         short |= stopped
     if kind == "㇯":
-        # The second operand is taken away from the first, and none of it is in the character.
+        # The second operand is taken away from the first, so the character holds what the first is
+        # built from less the second, and not the first itself: 乌 (㇯鸟丶) is no 鸟.
         whole, taken = parts
-        return _Part(whole.held - taken.held, max(whole.size - taken.size, 1), whole.top - taken.top), short
+        minuend = Counter(_names(value[0][1])) if value[0][0] == "leaf" else Counter()
+        return _Part(whole.held - minuend - taken.held, max(whole.size - taken.size, 1), frozenset()), short
     held: Counter = Counter()
     for part in parts:
         held.update(part.held)

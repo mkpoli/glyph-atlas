@@ -96,3 +96,18 @@ def test_two_regional_forms_of_one_component_count_once():
     """礼 is ⿰礻乚 in some regions and ⿰示乚 in others; either way it holds one 示."""
     assert han_components.components("礼")["示"] == 1
     assert "礼" not in han_components.search("示示")
+
+
+def test_the_first_operand_of_a_subtraction_is_not_in_the_character():
+    """乌 is 鸟 less a dot, so it is no 鸟."""
+    assert han_components.components("乌")["鸟"] == 0
+    assert han_components.search("鸟一")[0] != "乌"
+
+
+def test_a_component_is_counted_once_however_the_tables_reach_it():
+    """泉 (水 through 𰛅, which is ㇯水㇇), 国 (王 writes 玉) and 烤 (考 and its 耂 both write 老)."""
+    assert han_components.components("泉")["水"] == 1
+    assert han_components.components("国")["玉"] == 1
+    assert han_components.components("烤")["老"] == 1
+    assert "泉" not in han_components.search("水水") and "国" not in han_components.search("玉玉")
+    assert han_components.components("淼")["水"] == 3
