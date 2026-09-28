@@ -8,6 +8,7 @@ const mf = new Miniflare(convertV4MiniflareOptions({workers:[{
   name: 'atlas-test',
   modules: true, script: await readFile('/tmp/atlas-worker-test.mjs', 'utf8'), compatibilityDate: '2026-09-22',
   d1Databases: ['DB'], r2Buckets: ['MEDIA'],
+  ratelimits: { CORRECTIONS: { namespace_id: '4401', simple: { limit: 20, period: 60 } } },
 }]}))
 try {
   const db = await mf.getD1Database('DB')
@@ -889,7 +890,78 @@ try {
   assert.deepEqual(await groups('SELECT * FROM unit_counts'), await groups(`SELECT origin,coalesce(character,''),coalesce(document,''),state,
     coalesce(family,''),production,quiz,coalesce(json_extract(data,'$.source'),''),count(*) FROM units GROUP BY 1,2,3,4,5,6,7,8`),
     'the kept counts are what the crops say')
-  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms.')
+  // A batch correction: crops a reader selected across labels, local and corpus, all given one written
+  // character in one submission, which is atomic, idempotent and undone as one.
+  const countsMatch = async what => assert.deepEqual(await groups('SELECT * FROM unit_counts'), await groups(`SELECT origin,coalesce(character,''),coalesce(document,''),state,
+    coalesce(family,''),production,quiz,coalesce(json_extract(data,'$.source'),''),count(*) FROM units GROUP BY 1,2,3,4,5,6,7,8`), what)
+  const addLocal = async (id, label, extra = {}) => {
+    const d = { id, label, reading: label, state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten', repair: { quiz: true }, ...extra }
+    await db.prepare(`INSERT INTO units(id,origin,character,reading,family,visual_group,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual,document)
+      VALUES(?,'local',?,?,NULL,NULL,'handwritten','kana',?,0,1,1,1,?,?,'{}','{}',NULL)`).bind(id, label, label, d.state, JSON.stringify(d), JSON.stringify({ character: d })).run()
+  }
+  await addLocal('batch-a', 'ア'); await addLocal('batch-b', 'ウ')
+  await addLocal('batch-crop', 'エ', { state: 'flagged', issue: 'crop' })
+  await addLocal('batch-same', 'タ'); await addLocal('batch-done', 'タ', { state: 'checked', written_character: 'タ' })
+  // Two corpus glyphs: one that can be shown, one whose image the site may not show.
+  for (const [id, proxyable, shuffle] of [['codh:batch', true, 3], ['codh:hidden', false, 4]]) {
+    const record = JSON.stringify({ id, origin: 'corpus', label: 'ウ', source_label: 'ウ', reading: 'ウ', written_character: 'ウ', identity_status: 'assigned',
+      state: 'pending', revision: 0, proxyable, source_revision: sourceRevision })
+    await bucket.put(id, record)
+    await db.prepare('INSERT INTO corpus_units VALUES(?,?,?,?,?,?,?,?,?,?)').bind(id, 'ウ', 'U+30A6', null, shuffle, id, 0, new TextEncoder().encode(record).length, 'unknown', 0).run()
+  }
+  const localCrop = id => ({ id, revision: 0, image_sha256: hash })
+  const corpusCrop = id => ({ id, revision: 0, source_revision: sourceRevision })
+  const legacyNow = await call('/atlas/corpus/character?id=' + encodeURIComponent('codh:legacy'))
+  const refusedBatch = await call('/atlas/corrections', { id: crypto.randomUUID(), client_id: 'integration', character: 'タ',
+    crops: [localCrop('batch-a'), { ...localCrop('batch-b'), revision: 7 }, corpusCrop('codh:hidden'), { id: 'codh:legacy', revision: legacyNow.revision, source_revision: legacyNow.source_revision }] }, 409)
+  assert.deepEqual(refusedBatch.targets, [{ id: 'batch-b', reason: 'changed' }, { id: 'codh:hidden', reason: 'unavailable' }, { id: 'codh:legacy', reason: 'checked' }],
+    'a batch names every crop it refuses: changed, not showable, or checked by a person as another character')
+  assert.equal((await call('/atlas/characters/batch-a')).revision, 0, 'and saves none of them')
+  await call('/atlas/corrections', { id: crypto.randomUUID(), client_id: 'integration', character: 'タ', crops: [localCrop('batch-a')], seen: [] }, 422)
+  await call('/atlas/corrections', { id: crypto.randomUUID(), client_id: 'integration', character: 'タ', crops: Array.from({ length: 145 }, (_, i) => localCrop('x' + i)) }, 422)
+  for (const character of ['‍', '́', ' ', '\u0007', 'タナ'])
+    await call('/atlas/corrections', { id: crypto.randomUUID(), client_id: 'integration', character, crops: [localCrop('batch-a')] }, 422)
+  const batchReq = { id: crypto.randomUUID(), client_id: 'integration', character: 'タ',
+    crops: [localCrop('batch-a'), localCrop('batch-b'), localCrop('batch-crop'), localCrop('batch-same'), localCrop('batch-done'), corpusCrop('codh:batch')] }
+  const corrected = await call('/atlas/corrections', batchReq)
+  assert.deepEqual(corrected.results.map(r => [r.target_id, r.state]).sort(), [['batch-a', 'checked'], ['batch-b', 'checked'], ['batch-crop', 'flagged'], ['batch-same', 'checked'], ['codh:batch', 'checked']])
+  assert.deepEqual(corrected.unchanged, ['batch-done'], 'a crop a person already checked as the character is left as it is')
+  assert.deepEqual(await call('/atlas/corrections', batchReq), corrected, 'a retried batch returns the first result')
+  await call('/atlas/corrections', { ...batchReq, character: 'ナ' }, 409)
+  for (const id of ['batch-a', 'batch-b', 'batch-same']) {
+    const row = await call('/atlas/characters/' + id)
+    assert.deepEqual([row.label, row.state], ['タ', 'checked'], id + ' is タ, checked')
+  }
+  const cropRow = await call('/atlas/characters/batch-crop')
+  assert.deepEqual([cropRow.label, cropRow.state, cropRow.issue], ['タ', 'flagged', 'crop'], 'a crop reported for its box keeps the report')
+  assert.equal((await call('/atlas/corpus/character?id=' + encodeURIComponent('codh:batch'))).label, 'タ', 'the corpus glyph takes the character too')
+  const batchEvidence = (await db.prepare(`SELECT json_extract(event,'$.evidence') AS e FROM events WHERE submission=?`).bind('integration:' + batchReq.id).all()).results.map(r => JSON.parse(r.e))
+  assert.ok(batchEvidence.every(e => e.kind === 'character-review' && e.batch === batchReq.id && e.request === undefined), 'a batch is recorded as inspector reviews carrying its id, not its request')
+  assert.deepEqual(batchEvidence.map(e => e.verdict).sort(), ['match', 'wrong', 'wrong', 'wrong', 'wrong'], 'a crop already written as the character is confirmed')
+  const batchHistory = (await call('/atlas/history?limit=10')).items.filter(item => item.batch === batchReq.id)
+  assert.equal(batchHistory.length, 5, 'History names the batch of each edit')
+  await countsMatch('the counts follow a batch')
+  await call(`/atlas/corrections/${batchReq.id}/undo`, { client_id: 'integration' })
+  assert.deepEqual([(await call('/atlas/characters/batch-a')).label, (await call('/atlas/characters/batch-b')).label, (await call('/atlas/characters/batch-crop')).issue], ['ア', 'ウ', 'crop'], 'undo restores every crop')
+  await countsMatch('the counts follow its undo')
+  // A full batch of crops with real-length ids stays well inside D1's row limit.
+  const manyIds = Array.from({ length: 144 }, (_, i) => 'ex:0b3fffde4433fda4:' + createHash('sha1').update('batch' + i).digest('hex').slice(0, 20))
+  for (const id of manyIds) await addLocal(id, 'サ')
+  const fullBatch = { id: crypto.randomUUID(), client_id: 'integration', character: 'セ', crops: manyIds.map(localCrop) }
+  assert.equal((await call('/atlas/corrections', fullBatch)).results.length, 144)
+  const storedSize = await db.prepare('SELECT length(request)+length(response) AS n FROM submissions WHERE id=?').bind('integration:' + fullBatch.id).first()
+  assert.ok(storedSize.n < 100000, `a 144-crop batchReq is stored in ${storedSize.n} bytes`)
+  const eventSize = await db.prepare('SELECT max(length(event)+length(before_data)+length(after_data)+length(snapshot)) AS n FROM events WHERE submission=?').bind('integration:' + fullBatch.id).first()
+  assert.ok(eventSize.n < 20000, `and each of its events in at most ${eventSize.n} bytes`)
+  await countsMatch('the counts follow a full batch')
+  // One address gets 20 batches a minute.
+  let rateLimited = false
+  for (let i = 0; i < 25 && !rateLimited; i++) {
+    const response = await mf.dispatchFetch(base + '/atlas/corrections', { method: 'POST', headers: { 'content-type': 'application/json', origin: base }, body: '{}' })
+    rateLimited = response.status === 429
+  }
+  assert.ok(rateLimited, 'batches are rate-rateLimited per address')
+  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms, batch corrections.')
 } finally {
   await mf.dispose()
 }

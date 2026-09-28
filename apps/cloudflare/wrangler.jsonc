@@ -14,5 +14,7 @@
   },
   "observability": {"enabled": true, "head_sampling_rate": 0.1},
   "d1_databases": [{"binding": "DB", "database_name": "glyph-atlas", "database_id": "556cb20f-db02-4f2a-8044-f7fd86776db6", "migrations_dir": "migrations"}],
-  "r2_buckets": [{"binding": "MEDIA", "bucket_name": "glyph-atlas"}]
+  "r2_buckets": [{"binding": "MEDIA", "bucket_name": "glyph-atlas"}],
+  // Batch corrections change up to 144 crops a request; one address gets 20 of them a minute.
+  "ratelimits": [{"name": "CORRECTIONS", "namespace_id": "4401", "simple": {"limit": 20, "period": 60}}]
 }

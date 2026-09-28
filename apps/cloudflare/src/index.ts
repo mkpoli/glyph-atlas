@@ -186,6 +186,34 @@ export function validRound(input: Json, target?: string): { answers: Json[]; see
   }
   return { answers, seen, skipped };
 }
+// A batch correction names one written character and the crops a reader selected as that character:
+// each crop becomes a `wrong`/`character` answer, checked against its own revision and pixels.
+export function validBatch(input: Json): { character: string; crops: Json[] } {
+  const character = writtenCharacter(text(input.character, 32, 'character', true)!);
+  const crops = input.crops;
+  if (!Array.isArray(crops) || crops.length < 1 || crops.length > ROUND_MAX || new Set(crops.map(crop => crop?.id)).size !== crops.length)
+    throw new Problem(422, `A correction needs 1–${ROUND_MAX} distinct crops.`);
+  for (const crop of crops) text(crop?.id, 512, 'crop id', true);
+  return { character, crops };
+}
+// A written character a reviewer names: one character, which may carry combining marks or a variation
+// selector, and may be a private-use code point (구결자 are encoded there). Control, format, surrogate
+// and separator code points are refused, as is a combining mark with no base.
+export function writtenCharacter(value: string): string {
+  const written = literal(value);
+  if (!written || /[\p{Cc}\p{Cf}\p{Cs}\p{Z}]/u.test(written) || /^\p{M}/u.test(written) || !single(written))
+    throw new Problem(422, 'Choose one written character.');
+  return written;
+}
+/** Units by id, read eight at a time; an id the collection does not hold maps to its 404. */
+async function unitsById(env: Env, ids: string[]): Promise<Map<string, UnitRow | Problem>> {
+  const found = new Map<string, UnitRow | Problem>();
+  for (const part of chunks(ids, 8)) {
+    const rows = await Promise.all(part.map(id => unit(env, id).catch(error => { if (error instanceof Problem && error.status === 404) return error; throw error })));
+    part.forEach((id, i) => found.set(id, rows[i]));
+  }
+  return found;
+}
 // A production is a node of the tree in `data/vocab/production.yaml`, written as its path
 // (`printed/type/wood`); `tests/test_production.py` holds this list to the file. A material scope is
 // `all`, a node with everything under it, or `not:` and a node.
@@ -707,27 +735,54 @@ function validateAnswer(answer: Json, current: Json, round: boolean, corpus=fals
   if(answer.verdict==='wrong'&&!answer.issue)throw new Problem(422,'Choose an issue.');
   for(const field of ['character','correction','reading'])text(answer[field],32,field);
   text(answer.note,2000,'note');
-  if(answer.character && !single(literal(answer.character)))throw new Problem(422,'Choose one written character.');
+  if(answer.character)writtenCharacter(answer.character);
   if(answer.verdict==='wrong' && answer.character && literal(answer.character)===current.written_character)
     throw new Problem(422,'Choose a different character or a different issue.');
   if(answer.box) throw new Problem(422,'Crop geometry changes are queued as crop issues on this publication.');
 }
 async function submit(env: Env, request: Request, target?: string) {
   const input=await body(request);
-  const corpus=target==='@corpus';
+  const corpus=target==='@corpus', batch=target==='@batch';
   if(corpus)target=text(input.identity,512,'corpus identity',true)!;
+  if(batch)target=undefined;
   const id=text(input.id,64,'submission id',true)!, actor=text(input.client_id,128,'reviewer',true)!;
   if(!/^[0-9a-f-]{36}$/i.test(id))throw new Problem(422,'Invalid submission id.');
   // A retry is the same submission whatever else came on screen meanwhile: the seen crops are left
   // out of the signature, as the local server compares only the answers, and the first result stands.
   const {seen:_,skipped:__,...signed}=input;
-  const signature=canonical({target:target||null,input:signed});
+  const signature=canonical({target:batch?'@batch':target||null,input:signed});
   const key=actor+':'+id;
   const previous=await env.DB.prepare('SELECT request,response FROM submissions WHERE id=?').bind(key).first<{request:string;response:string}>();
   if(previous){if(previous.request!==signature)throw new Problem(409,'This submission was already saved with different answers.');return parse(previous.response)}
-  const round=!target;
+  const round=!target&&!batch;
   if(round)text(input.label,32,'label',true);
-  const {answers,seen,skipped}=validRound(input,target);
+  if(batch&&(input.seen!==undefined||input.skipped!==undefined))throw new Problem(422,'Only a round records seen or skipped crops.');
+  const correction=batch?validBatch(input):null;
+  const {answers,seen,skipped}=batch?{answers:correction!.crops,seen:[],skipped:[]}:validRound(input,target);
+  const rows=await unitsById(env,answers.map(answer=>text(answer.id,512,'character id',true)!));
+  // A correction names crops a reader selected on the grid, so each is judged here: one that changed
+  // since the page loaded, one whose image cannot be shown, or one a person already checked as another
+  // character is refused (all are named, and nothing is saved); one already written as the character
+  // is confirmed, unless a person already checked it, when it is left as it is.
+  const unchanged:string[]=[];
+  if(batch){
+    const refused:Json[]=[], chosen:Json[]=[];
+    for(const crop of answers){
+      const row=rows.get(crop.id)!;
+      if(row instanceof Problem){refused.push({id:crop.id,reason:'missing'});continue}
+      const data=parse(row.data), glyph=row.origin==='corpus';
+      if(!Number.isSafeInteger(crop.revision)||crop.revision!==data.revision||(glyph?crop.source_revision!==data.source_revision:crop.image_sha256!==data.image_sha256)){refused.push({id:crop.id,reason:'changed'});continue}
+      if(glyph&&!data.proxyable){refused.push({id:crop.id,reason:'unavailable'});continue}
+      const identity=glyph?data.written_character:(data.written_character||data.label);
+      if(identity===correction!.character){
+        if(data.state==='checked')unchanged.push(crop.id);
+        else chosen.push({...crop,verdict:'match'});
+      }else if(data.state==='checked')refused.push({id:crop.id,reason:'checked'});
+      else chosen.push({...crop,verdict:'wrong',issue:'character',character:correction!.character});
+    }
+    if(refused.length)throw new Problem(409,'Some of these crops changed or were already checked. Reload them.',{targets:refused});
+    answers.splice(0,answers.length,...chosen);
+  }
   // One round usually corrects many crops to the same few characters; each is read once.
   const lookups=new Map<string,Promise<{data:Json;detail:Json}|null>>();
   const lookup=(value:string)=>{let key:string;try{key=cp(literal(value))}catch{key='\u0000'+value}if(!lookups.has(key))lookups.set(key,known(env,value).catch(()=>null));return lookups.get(key)!};
@@ -736,8 +791,9 @@ async function submit(env: Env, request: Request, target?: string) {
   const fresh:(UnitRow&{fresh:CorpusRow})[]=[];
   const at=new Date().toISOString();
   for(const answer of answers){
-    text(answer.id,512,'character id',true);
-    const row=await unit(env,answer.id), stored=parse(row.data), glyph=row.origin==='corpus';
+    const found=rows.get(answer.id)!;
+    if(found instanceof Problem)throw found;
+    const row=found, stored=parse(row.data), glyph=row.origin==='corpus';
     const current:Json={...stored,category:row.category||categoryOf(stored.label)};
     row.data=JSON.stringify(current);
     validateAnswer(answer,current,round,glyph);
@@ -755,15 +811,17 @@ async function submit(env: Env, request: Request, target?: string) {
     const derived=written&&!answer.reading?readingFrom((await lookup(written))?.data):null;
     const reading=answer.reading || (answer.issue==='reading'&&answer.correction&&single(answer.correction)?answer.correction:null)
       || (derived&&derived!==current.reading?derived:null);
-    const resolved=answer.verdict==='match'||Boolean(answer.issue==='character'&&written)||Boolean(answer.issue==='reading'&&reading);
+    // A batch names the character only: a crop reported for its box, a blank or a merge stays reported.
+    const kept=batch&&current.state==='flagged'&&current.issue&&!['character','reading'].includes(current.issue)?current.issue:null;
+    const resolved=!kept&&(answer.verdict==='match'||Boolean(answer.issue==='character'&&written)||Boolean(answer.issue==='reading'&&reading));
     const family=written?(await lookup(written))?.data.grapheme?.code_point:null;
     const next:Json={...current,revision:current.revision+1,state:resolved?'checked':'flagged',
       ...(written?{label:written,char:written,code_point:cp(written),written_character:written,identity_status:'assigned',identity_basis:'human_review',script:/\p{Script=Katakana}/u.test(written)?'katakana':/\p{Script=Hiragana}/u.test(written)?'hiragana':/\p{Script=Han}/u.test(written)?'han':/\p{Script=Hangul}/u.test(written)?'hangul':isGugyeol(written)?'gugyeol':'symbol'}:{}),
       ...(written?{grapheme:family||cp(written),visual_group:null,category:categoryOf(written)}:{}),
-      ...(reading?{reading}:{}),issue:resolved?null:answer.issue};
+      ...(reading?{reading}:{}),issue:resolved?null:kept??answer.issue};
     const snapshot={...parse(row.snapshot),character:compact(row)};
-    const evidence={kind:round?'visual-quiz':'character-review',...(round?{round:id,label:input.label}:{}),
-      request:input,verdict:answer.verdict,issue:answer.issue||null,note:answer.note||'',
+    const evidence={kind:round?'visual-quiz':'character-review',...(round?{round:id,label:input.label}:{}),...(batch?{batch:id}:{request:input}),
+      verdict:answer.verdict,issue:answer.issue||null,note:answer.note||'',
       suggested_character:written?cp(written):null,suggested_reading:answer.correction||null,snapshot,
       correction:{unicode:cp(next.label),reading:next.reading,box:next.box}};
     const event={id:'cf:'+crypto.randomUUID(),target_type:'unit',target_id:row.id,field:'review',
@@ -794,6 +852,7 @@ async function submit(env: Env, request: Request, target?: string) {
     });
   }
   const result=corpus?{...(changes[0].next),origin:'corpus',event:changes[0].event}
+    :batch?{id,results:changes.map(c=>({target_id:c.row.id,revision:c.next.revision,state:c.next.state})),unchanged}
     :{id,results:[...changes.map(c=>({id:c.event.id,target_id:c.row.id,field:'review',revision:c.next.revision,review:c.event})),
       ...shown.map(crop=>({target_id:crop.id,field:'seen'})),...passed.map(crop=>({target_id:crop.id,field:'skip'}))]};
   const statements=[env.DB.prepare('INSERT INTO submissions(id,actor,request,response,at) VALUES (?,?,?,?,?)').bind(key,actor,signature,JSON.stringify(result),at)];
@@ -882,6 +941,7 @@ export function historyItem(row: HistoryRow): Json {
     character: evidence?.suggested_character ? literal(evidence.suggested_character) : null,
     reading: evidence?.suggested_reading ?? null,
     round: evidence?.round ?? null,
+    batch: evidence?.batch ?? null,
     undoes: undo ? String(parsedEvent.evidence).replace(/^undo of /, '') : null,
   };
 }
@@ -927,7 +987,13 @@ export default {
       if(request.method==='POST'){
         if(path==='/atlas/corpus/reviews')return json(await submit(env,request,'@corpus'));
         if(path==='/atlas/rounds')return json(await submit(env,request));
-        const undone=path.match(/^\/atlas\/rounds\/([^/]+)\/undo$/);
+        if(path==='/atlas/corrections'){
+          // A batch changes many crops at once, so each address is held to a rate.
+          const {success}=await env.CORRECTIONS.limit({key:request.headers.get('cf-connecting-ip')??'local'});
+          if(!success)throw new Problem(429,'Too many corrections at once. Wait a minute and try again.');
+          return json(await submit(env,request,'@batch'));
+        }
+        const undone=path.match(/^\/atlas\/(?:rounds|corrections)\/([^/]+)\/undo$/);
         if(undone)return json(await undo(env,request,decodeURIComponent(undone[1])));
         const edit=path.match(/^\/(?:atlas\/characters|layers\/units)\/([^/]+)$/);
         if(edit)return json(await submit(env,request,decodeURIComponent(edit[1])));
