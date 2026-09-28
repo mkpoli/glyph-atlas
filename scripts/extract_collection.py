@@ -45,6 +45,11 @@ with tables.locked(args.root/"worker",timeout=0):
         if not args.no_prioritize:
             counts = load_char_counts(args.counts) if args.counts.exists() else {}
             queue.prioritize(counts)
+        # `<root>/focus.txt` names documents to extract first, one id per line (`#` starts a comment);
+        # read at every batch, so editing it steers the running service.
+        focus = args.root/"focus.txt"
+        wanted = [line.split("#")[0].strip() for line in focus.read_text().splitlines()] if focus.exists() else []
+        print(json.dumps({"focused_pending":queue.focus(w for w in wanted if w)}),flush=True)
         try:
             engine = Engine()
             if args.supplement_every:

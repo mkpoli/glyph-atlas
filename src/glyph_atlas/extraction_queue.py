@@ -123,10 +123,11 @@ def load_char_counts(path: Path) -> dict[str, int]:
 class Queue:
     """A durable, restartable queue of pages to extract, claimed one at a time.
 
-    `claim` orders pending work by coverage priority first — a page scores higher the more its
-    characters are still scarce in the atlas, as `prioritize` computes it — then by whether its
-    image is already cached, then by the page's original rank within its book, then by document
-    and page id as a stable tie-break for equal scores.
+    `claim` orders pending work by focus first — the pages of documents `focus` names, such as a
+    book chosen as a source of variant forms — then by coverage priority — a page scores higher the
+    more its characters are still scarce in the atlas, as `prioritize` computes it — then by whether
+    its image is already cached, then by the page's original rank within its book, then by document
+    and page id as a stable tie-break for equal scores. `claim_supplement` takes focus first too.
     """
 
     def __init__(self, root: Path):
@@ -149,11 +150,14 @@ class Queue:
             self.db.execute("ALTER TABLE pages ADD COLUMN publish_attempts INTEGER NOT NULL DEFAULT 0")
         if "priority" not in columns:
             self.db.execute("ALTER TABLE pages ADD COLUMN priority REAL NOT NULL DEFAULT 0")
+        if "focus" not in columns:
+            self.db.execute("ALTER TABLE pages ADD COLUMN focus INTEGER NOT NULL DEFAULT 0")
         # The policy a complete page's output was written under, so listing supplements is a query.
         if "policy" not in columns:
             self.db.execute("ALTER TABLE pages ADD COLUMN policy TEXT")
-        self.db.execute("""CREATE INDEX IF NOT EXISTS idx_pages_claim_order
-            ON pages(priority DESC, cached DESC, rank, document_id, id)""")
+        self.db.execute("DROP INDEX IF EXISTS idx_pages_claim_order")
+        self.db.execute("""CREATE INDEX IF NOT EXISTS idx_pages_focus_claim_order
+            ON pages(focus DESC, priority DESC, cached DESC, rank, document_id, id)""")
         self.db.execute("""CREATE TABLE IF NOT EXISTS supplements (
             page_id TEXT NOT NULL, policy TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
             attempts INTEGER NOT NULL DEFAULT 0, output TEXT, added INTEGER, error TEXT,
@@ -195,12 +199,25 @@ class Queue:
                          str(source), int(page.image in cached), rank))
         return self.db.total_changes - before
 
+    def focus(self, documents) -> int:
+        """Claim the pages of `documents` first, and no others; an empty set clears the focus.
+
+        Returns how many focused pages are still pending or due for a retry.
+        """
+        documents = sorted(set(documents))
+        with self.db:
+            self.db.execute("UPDATE pages SET focus=0 WHERE focus!=0")
+            for start in range(0, len(documents), 500):
+                batch = documents[start:start + 500]
+                self.db.execute(f"UPDATE pages SET focus=1 WHERE document_id IN ({','.join('?' * len(batch))})", batch)
+        return self.db.execute("SELECT count(*) FROM pages WHERE focus=1 AND status IN ('pending','retry')").fetchone()[0]
+
     def claim(self):
         """Take the next page to extract, in the order this class's docstring describes."""
         with self.db:
             row = self.db.execute("""SELECT * FROM pages WHERE status='pending' OR
                 (status='retry' AND CAST(retry_after AS REAL)<=?)
-                ORDER BY priority DESC, cached DESC, rank, document_id, id LIMIT 1""", (time.time(),)).fetchone()
+                ORDER BY focus DESC, priority DESC, cached DESC, rank, document_id, id LIMIT 1""", (time.time(),)).fetchone()
             if row:
                 self.db.execute("UPDATE pages SET status='running',attempts=attempts+1,updated_at=? WHERE id=?",
                                 (datetime.now(UTC).isoformat(), row["id"]))
@@ -277,7 +294,7 @@ class Queue:
             row = self.db.execute("""SELECT s.page_id, s.policy, p.* FROM supplements s
                 JOIN pages p ON p.id = s.page_id WHERE s.status='pending' AND s.policy=?
                 AND (s.retry_after IS NULL OR s.retry_after<=?)
-                ORDER BY p.priority DESC, p.cached DESC, p.rank, p.document_id, p.id LIMIT 1""",
+                ORDER BY p.focus DESC, p.priority DESC, p.cached DESC, p.rank, p.document_id, p.id LIMIT 1""",
                 (POLICY, time.time())).fetchone()
             if not row:
                 return None

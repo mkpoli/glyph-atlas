@@ -655,3 +655,25 @@ def test_a_small_kana_is_not_its_full_size_form_and_a_compatibility_ideograph_is
     han = unit(); han.text_source = "豈"  # U+8C48
     ballot = [{"engine": "Atlas classifier", "text": "豈", "score": .97}, {"engine": "NDLkotenOCR", "text": "豈", "score": .5}]
     assert quality_reason(han, ballot, (200, 200)) is None
+
+
+def test_focused_documents_are_claimed_first_until_the_focus_is_cleared(tmp_path, monkeypatch):
+    monkeypatch.setattr("glyph_atlas.images.index_path", lambda: tmp_path/"missing")
+    queue = Queue(tmp_path/"queue")
+    queue.seed(source(tmp_path))
+    assert queue.focus({"b"}) == 2
+    assert [queue.claim()["id"], queue.claim()["id"]] == ["b:0", "b:1"]
+    queue.recover()
+    assert queue.focus(set()) == 0
+    assert queue.claim()["id"] == "a:0"
+
+
+def test_a_focused_document_s_supplements_are_taken_first(tmp_path):
+    queue, _ = supplement_queue(tmp_path, [
+        ("a", "complete", "single-character-consensus-v1", "飍"),
+        ("b", "complete", "single-character-consensus-v1", "飍")])
+    queue.db.execute("UPDATE pages SET document_id=id")
+    queue.db.commit()
+    assert queue.seed_supplements() == 2
+    queue.focus({"b"})
+    assert queue.claim_supplement()["id"] == "b"
