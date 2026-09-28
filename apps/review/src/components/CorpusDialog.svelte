@@ -88,9 +88,10 @@
       {/if}
       <div class="inspector-question"><strong>{t('character.question.whatsWrong')}</strong><span>{t('character.question.chooseOne')}</span></div>
       <IssuePicker value={issue} choose={chooseIssue} disabled={busy} suggested={data.state === 'flagged' ? data.issue : null} />
-      <!-- Any other character is chosen beside the suggestions, in the same row as "None of these". -->
+      <!-- Any other character is chosen beside the suggestions, in the same row as "None of these"; a crop of
+           joined characters takes what it holds as typed text. -->
       {#snippet other()}<div class="corpus-pick"><span>{t('corpus.chooseAnother')}</span><CharacterSearch bind:value={search} label={t('corpus.correctCharacter.label')} placeholder={t('corpus.correctCharacter.placeholder')} onselect={item => choose(item.char)} /></div>{/snippet}
-      <ReadingSuggestions typing={false} targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={{ candidates: data.suggestions }} {issue} reading={data.label} value={correction} disabled={busy} {choose} other={['reading', 'character'].includes(issue) ? other : null} />
+      <ReadingSuggestions typing={issue === 'merged'} targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={{ candidates: data.suggestions }} {issue} reading={data.label} value={correction} disabled={busy} {choose} other={['reading', 'character'].includes(issue) ? other : null} />
       {#if ['reading', 'character'].includes(issue) && correction}<p class="corpus-choice" role="status"><span lang="ja">{data.label}</span> → <b lang="ja">{correction}</b><button disabled={busy} onclick={() => choose(null)}>{t('common.clear')}</button></p>{/if}
       <details class="advanced-edit"><summary>{t('corpus.addNote')}</summary><textarea aria-label={t('character.note.aria')} bind:value={note} rows="2" maxlength="2000" placeholder={t('character.note.placeholder')} disabled={busy}></textarea></details>
       <SimilarCrops id={data.id} label={data.label} />
