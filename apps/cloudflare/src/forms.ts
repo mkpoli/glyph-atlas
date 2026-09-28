@@ -184,10 +184,10 @@ async function decide(env: Env, request: Request, tools: FormTools) {
 // second on D1, and a decision made meanwhile waits for one batch at most.
 export const FOLLOW_BATCH = 500;
 const following = `SELECT id FROM corpus_follow ORDER BY id LIMIT ${FOLLOW_BATCH}`;
-// A drain holds the list this long past its latest batch.
+// A drain holds the list this long past its latest batch. Its lease's `until` also names it: a drain
+// renews and lets go of only the lease it holds, so one that stalled past its lease stops, and leaves
+// the drain that took over alone.
 const FOLLOW_LEASE = 30_000;
-const lease = (env: Env) => env.DB.prepare(`INSERT INTO corpus_follow_drain(one,until) VALUES(1,?1)
-  ON CONFLICT(one) DO UPDATE SET until=excluded.until WHERE corpus_follow_drain.until<?2`).bind(Date.now() + FOLLOW_LEASE, Date.now());
 // Quick review deals unnamed corpus glyphs by character and counts them per character: the glyphs
 // leave their old count, take their form (or, with none decided, the character they had before any
 // decision covered them), and join the new count. Each batch reads its glyphs from the list and
@@ -195,16 +195,21 @@ const lease = (env: Env) => env.DB.prepare(`INSERT INTO corpus_follow_drain(one,
 // moved to its latest form. A drain that finds the list held returns: the holder takes the glyphs
 // listed meanwhile, as it looks once more after letting go.
 export async function followCorpus(env: Env) {
-  while ((await lease(env).run()).meta.changes) {
-    try { await drain(env) } finally { await env.DB.prepare('DELETE FROM corpus_follow_drain').run() }
+  for (;;) {
+    const held = { until: Date.now() + FOLLOW_LEASE };
+    const taken = await env.DB.prepare(`INSERT INTO corpus_follow_drain(one,until) VALUES(1,?1)
+      ON CONFLICT(one) DO UPDATE SET until=excluded.until WHERE corpus_follow_drain.until<?2`).bind(held.until, Date.now()).run();
+    if (!taken.meta.changes) return;
+    try { await drain(env, held) } finally { await env.DB.prepare('DELETE FROM corpus_follow_drain WHERE until=?').bind(held.until).run() }
     if (!await env.DB.prepare('SELECT 1 FROM corpus_follow LIMIT 1').first()) return;
   }
 }
-async function drain(env: Env) {
+async function drain(env: Env, held: { until: number }) {
   const unnamed = `FROM corpus_units WHERE named=0 AND character IS NOT NULL AND id IN (${following})`;
   for (;;) {
+    const until = Date.now() + FOLLOW_LEASE;
     const results = await env.DB.batch([
-      env.DB.prepare('UPDATE corpus_follow_drain SET until=?').bind(Date.now() + FOLLOW_LEASE),
+      env.DB.prepare('UPDATE corpus_follow_drain SET until=?1 WHERE until=?2').bind(until, held.until),
       env.DB.prepare(`INSERT OR IGNORE INTO form_bases(id,character,family) SELECT id,character,family FROM corpus_units WHERE id IN (${following})`),
       env.DB.prepare(`UPDATE corpus_characters SET n=n-t.k FROM (SELECT character,production,count(*) AS k ${unnamed} GROUP BY character,production) AS t
         WHERE corpus_characters.character=t.character AND corpus_characters.production=t.production`),
@@ -216,6 +221,8 @@ async function drain(env: Env) {
       env.DB.prepare('DELETE FROM corpus_characters WHERE n=0'),
       env.DB.prepare(`DELETE FROM corpus_follow WHERE id IN (${following})`),
     ]);
+    if (!results[0].meta.changes) return;
+    held.until = until;
     if (results.at(-1)!.meta.changes < FOLLOW_BATCH) return;
   }
 }
