@@ -133,10 +133,59 @@ def test_the_origins_builder_reads_the_whole_field(monkeypatch):
 
     monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
     build = importlib.import_module("build_kana_origins")
-    assert build.origin("| 平仮名字源 = 和の[[草書体]]|Unicode平仮名=308F") == "和の草書体"
-    assert build.origin("|平仮名字源=無の[[草書体|草書]]|x=1") == "無の草書"
+    assert build.field("| 平仮名字源 = 和の[[草書体]]|Unicode平仮名=308F", "平仮名字源") == ("和の草書体", [])
+    assert build.field("|平仮名字源=無の[[草書体|草書]]|x=1", "平仮名字源") == ("無の草書", [])
+    # A link that shows no Japanese is dropped from the field and named in the row's note.
+    assert build.field("|片仮名字源=阿の[[偏]][[MOLA]]", "片仮名字源") == ("阿の偏", ["[[MOLA]]"])
     page = {"revisions": [{"revid": 7, "slots": {"main": {"content": "|平仮名字源=川または州の[[草書体]]"}}}]}
     assert [row[1] for row in build.rows({"つ": page})] == ["川", "州"]
+
+
+def test_the_origins_builder_reads_the_katakana_field(monkeypatch):
+    import importlib
+    from pathlib import Path
+
+    monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
+    build = importlib.import_module("build_kana_origins")
+    # Several fields on one line, as わ's article writes them.
+    content = "|平仮名字源=乃の[[草書体]]\n|片仮名字源=乃|JIS片仮名=1-5-46|Unicode片仮名=30CE"
+    rows = build.rows({"の": {"revisions": [{"revid": 9, "slots": {"main": {"content": content}}}]}})
+    assert [(row[0], row[1], row[3]) for row in rows] == [("の", "乃", "平仮名字源"), ("ノ", "乃", "片仮名字源")]
+    assert build.katakana_kanji("阿の偏") == ["阿"] and build.katakana_kanji("千") == ["千"]
+    # A field that offers another explanation gives no 字源 rather than one of them.
+    assert build.katakana_kanji("和の旁の部分、あるいは○の変形") == []
+    assert build.katakana_kanji("无の変形，尓の上の部分からなど多数説あり。") == []
+
+
+def test_the_origins_builder_marks_what_the_katakana_article_contests(monkeypatch):
+    import importlib
+    from pathlib import Path
+
+    monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
+    build = importlib.import_module("build_kana_origins")
+    bold = "'" * 3
+
+    def red(text):
+        return "{{Color|red|" + bold + text + bold + "}}"
+
+    article = ("== 字体の由来 ==\n"
+               f"*「{bold}ケ{bold}」については「箇」の異体字である「{red('个')}」の変形とする説がある。\n"
+               f"*「{bold}ツ{bold}」については「{red('州')}」の草体、「{red('門')}」の草体とする諸説がある。\n"
+               "== 一覧==\n")
+    katakana = {"revisions": [{"revid": 5, "slots": {"main": {"content": article}}}]}
+
+    def page(content):
+        return {"revisions": [{"revid": 9, "slots": {"main": {"content": content}}}]}
+
+    rows = build.rows({"け": page("|片仮名字源=介の変形|Unicode片仮名=30B1"),
+                       "つ": page("|片仮名字源=州の省略形|Unicode片仮名=30C4")}, katakana)
+    assert [(row[0], row[1], row[7], row[8]) for row in rows] == [("ケ", "介", "个", "5"), ("ツ", "州", "門", "5")]
+
+
+def test_a_katakana_s_origin_does_not_make_its_kanji_read_as_the_kana(labels):
+    # ユ is written from 弓 and ヱ from 衛, but neither kanji is the cursive of ゆ or ゑ.
+    assert not labels.expected("弓", "ゆ") and not labels.expected("衛", "ゑ")
+    assert labels.expected("太", "た"), "た is the cursive of 太"
 
 
 def test_a_reading_reviewers_found_to_be_a_cursive_form_is_not_a_suspect(labels, monkeypatch):

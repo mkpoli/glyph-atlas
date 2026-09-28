@@ -77,6 +77,11 @@ def _form_entry(char: str) -> dict[str, Any]:
     if row is not None:
         entry.update({key: value for key, value in (("jibo", row.jibo[0] if row.jibo else None),
                                                     ("name", row.name), ("script", row.script)) if value})
+    # A modern kana has no 字母 but a 字源 (の from 乃, ノ from part of 乃), shown apart from one.
+    origin = refs.origin_of(code_point)
+    if origin:
+        entry["origin"] = [{key: e[key] for key in ("char", "field", "source_text", "uncertain", "also_cited")}
+                           for e in origin]
     return entry
 
 

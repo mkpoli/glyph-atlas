@@ -32,9 +32,11 @@ from __future__ import annotations
 
 import csv
 import re
+import unicodedata
 from collections.abc import Iterable
 from functools import cache
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -201,23 +203,87 @@ def _ideograph(char: str) -> bool:
     return row is not None and row.name.startswith(("CJK UNIFIED IDEOGRAPH", "CJK COMPATIBILITY IDEOGRAPH"))
 
 
+def _written(row: dict[str, str]) -> bool:
+    """Whether one edge of the graph says one ideograph may be written for the other.
+
+    Radicals, numerals and other non-ideographs do not. A row counts when at least one of its claims
+    does (`_counts`), so a pair stated by 漢語大字典 and by the 古壮字字典 is kept for the first.
+    """
+    relation = row["relation"]
+    return (relation in WRITTEN_FOR and any(_counts(relation, claim) for claim in row["detail"].split(" | "))
+            and _ideograph(row["a"]) and _ideograph(row["b"]))
+
+
+#: Written relations a character's gallery does not widen to. A simplified form and a variant in some
+#: senses only are often a different character in a pre-modern text (干 for 乾 and 幹, 台 for 臺 and
+#: 颱, 斗 for 鬥), so a reader sees them beside the character without their crops joining its own.
+NOT_WIDENED = frozenset({"simplified", "specialized-semantic"})
+#: A pair any source calls simplified is kept apart even where another table lists it as a plain variant:
+#: cjkvi's 異体字 tables pair 干 with 乾 and 幹, which four sources give as simplifications.
+KEPT_APART = frozenset({"simplified"})
+
+
+def widens(edges: Iterable[dict[str, Any]]) -> bool:
+    """Whether a gallery widens across a pair, given all its edges: one widens and none keeps it apart."""
+    edges = list(edges)
+    return any(e["widens"] for e in edges) and not any(e["relation"] in KEPT_APART for e in edges)
+
+
+@cache
+def variant_edges() -> tuple[dict[str, Any], ...]:
+    """Every edge of data/vocab/kanji-variants.tsv as its source states it. `written` marks the ones
+    under which one character may be written for the other (WRITTEN_FOR), `widens` those of them a
+    gallery widens to (all but NOT_WIDENED). No edge is left out: the others (borrowed, substitute, a
+    fallback reduction, …) relate different characters and are shown as such.
+    """
+    edges = []
+    for row in _read_tsv(VARIANTS_TSV):
+        written = _written(row)
+        edges.append({**row, "written": written, "widens": written and row["relation"] not in NOT_WIDENED})
+    return tuple(edges)
+
+
+@cache
+def _edges_by_char() -> dict[str, tuple[dict[str, Any], ...]]:
+    found: dict[str, list[dict[str, Any]]] = {}
+    for edge in variant_edges():
+        found.setdefault(edge["a"], []).append(edge)
+        if edge["b"] != edge["a"]:
+            found.setdefault(edge["b"], []).append(edge)
+    return {char: tuple(edges) for char, edges in found.items()}
+
+
+def variant_edges_of(char: str) -> tuple[dict[str, Any], ...]:
+    """The edges of the 異体字 graph with `char` at either end."""
+    return _edges_by_char().get(char, ())
+
+
+@cache
+def variant_sources() -> dict[str, str]:
+    """The citation of each source of the 異体字 graph, as the table's header states it."""
+    path = VOCAB / VARIANTS_TSV
+    if not path.exists():
+        raise MissingTable(f"{path} is missing; run {BUILT_BY[VARIANTS_TSV]} to write it")
+    found = {}
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            if not line.startswith("#"):
+                break
+            if line.startswith("# source ") and ": " in line:
+                name, citation = line[len("# source "):].rstrip("\n").split(": ", 1)
+                found[name] = citation
+    return found
+
+
 @cache
 def _variant_neighbours() -> dict[str, dict[str, set[str]]]:
-    """Each ideograph's one-step variants under WRITTEN_FOR, with the sources that state each.
-
-    Radicals, numerals and other non-ideographs are left out. A row counts when at least one of its
-    claims does (`_counts`), so a pair stated by 漢語大字典 and by the 古壮字字典 is kept for the first.
-    """
+    """Each ideograph's one-step variants under WRITTEN_FOR, with the sources that state each."""
     neighbours: dict[str, dict[str, set[str]]] = {}
-    for row in _read_tsv(VARIANTS_TSV):
-        relation = row["relation"]
-        if relation not in WRITTEN_FOR or not any(_counts(relation, claim) for claim in row["detail"].split(" | ")):
-            continue
-        a, b = row["a"], row["b"]
-        if not (_ideograph(a) and _ideograph(b)):
-            continue
-        neighbours.setdefault(a, {}).setdefault(b, set()).add(row["source"])
-        neighbours.setdefault(b, {}).setdefault(a, set()).add(row["source"])
+    for row in variant_edges():
+        if row["written"]:
+            a, b = row["a"], row["b"]
+            neighbours.setdefault(a, {}).setdefault(b, set()).add(row["source"])
+            neighbours.setdefault(b, {}).setdefault(a, set()).add(row["source"])
     return neighbours
 
 
@@ -610,14 +676,14 @@ def readings(code_point: str) -> list[str]:
 def kana_origins() -> dict[str, frozenset[str]]:
     """The modern hiragana each kanji is the cursive form of, by kanji: 太 gives た.
 
-    From kana-origins.tsv (the 平仮名字源 of each kana's Japanese Wikipedia article). The character
-    layer has no 字母 for the modern kana, only for hentaigana. A kanji is found under every member
-    of its grapheme family, so 曽 finds the そ that the table gives under 曾.
+    From kana-origins.tsv, its 平仮名字源 rows only: a katakana is written from part of a kanji, not
+    as its cursive, so ユ does not make 弓 read as ゆ. A kanji is found under every member of its
+    grapheme family, so 曽 finds the そ that the table gives under 曾.
     """
     found: dict[str, set[str]] = {}
-    for row in _read_tsv(KANA_ORIGINS_TSV):
-        info = grapheme_info(row["jibo_code_point"])
-        members = {row["jibo"], *(member["char"] for member in (info or {}).get("members") or [])}
+    for row in (row for row in _read_tsv(KANA_ORIGINS_TSV) if row["field"] == "平仮名字源"):
+        info = grapheme_info(row["origin_code_point"])
+        members = {row["origin"], *(member["char"] for member in (info or {}).get("members") or [])}
         for member in members:
             found.setdefault(member, set()).add(row["kana"])
     return {kanji: frozenset(kana) for kanji, kana in found.items()}
@@ -653,6 +719,40 @@ def jibo_of_unit(unicode: str | None) -> str | None:
     """The first 字母 of a code point sequence, or `None`; the whole list is `jibo_of`."""
     letters = jibo_of(unicode)
     return letters[0] if letters else None
+
+
+@cache
+def _kana_origin_rows() -> dict[str, list[dict[str, Any]]]:
+    """kana -> its 字源 rows from kana-origins.tsv, each with its field, source text and revision."""
+    found: dict[str, list[dict[str, Any]]] = {}
+    for row in _read_tsv(KANA_ORIGINS_TSV):
+        also = row["also_cited"].split()
+        found.setdefault(row["kana"], []).append({
+            "char": row["origin"], "code_point": row["origin_code_point"], "field": row["field"],
+            "source_text": row["source_text"], "revision": int(row["revision"]),
+            "also_cited": also, "uncertain": bool(also),
+        })
+    return found
+
+
+def origin_of(unicode: str | None) -> list[dict[str, Any]]:
+    """The 字源 of a modern kana sequence, from its Japanese Wikipedia articles; `[]` for any other.
+
+    Kept apart from `jibo_of`: a hentaigana's 字母 is the kanji it is a form of, while a modern kana's
+    字源 is where its shape came from, a whole kanji in cursive for a hiragana and usually a part of
+    one for a katakana. A voiced kana has the 字源 of its base whichever way it is written, so が and
+    か + U+3099 both give 加. An entry the article 片仮名 contests carries the other kanji it names in
+    `also_cited` and is `uncertain`.
+    """
+    rows = _kana_origin_rows()
+    found: list[dict[str, Any]] = []
+    for point in (unicode or "").split():
+        char = to_char(point)
+        base = unicodedata.normalize("NFD", char)[0]
+        for entry in rows.get(char) or rows.get(base) or []:
+            if entry["char"] not in [e["char"] for e in found]:
+                found.append(entry)
+    return found
 
 
 def _normalise(code_point: str) -> str:

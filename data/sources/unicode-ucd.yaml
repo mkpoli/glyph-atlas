@@ -9,6 +9,7 @@ attribution: Copyright Unicode, Inc.; Unicode License v3
 access:
   nameslist: https://www.unicode.org/Public/UCD/latest/ucd/NamesList.txt
   ivd: https://www.unicode.org/ivd/data/2026-08-03/IVD_Sequences.txt
+  equivalent_unified: https://www.unicode.org/Public/18.0.0/ucd/EquivalentUnifiedIdeograph.txt
 counts:
   hentaigana_letters: 285
   derived_from_notes: 287

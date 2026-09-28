@@ -51,7 +51,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from .. import images, refs, visual_families
+from .. import han_components, images, refs, visual_families
 from ..production import production_info
 from ..schema import Box, Character, Document, Page, Unit
 from . import corpus_source, status
@@ -307,7 +307,10 @@ class Layers:
         `exact` is a row of the character the reader asked for; a row with `exact` false is a form of
         the same grapheme and appears only when the reader asked for the expansion.
         """
-        wanted = _forms(code_point) if "grapheme" in split_expansions(expand) else [code_point]
+        chosen = split_expansions(expand)
+        wanted = _forms(code_point) if "grapheme" in chosen else [code_point]
+        if "variants" in chosen:
+            wanted = [*wanted, *(point for point in variant_code_points(code_point) if point not in wanted)]
         rows: list[tuple[Unit, int, str, bool]] = []
         for form in wanted:
             for index in self._by_code_point.get(form, ()):
@@ -474,6 +477,9 @@ def character_view(character: Character, layer: Layers, *, expand: str = "none",
         "category": character.category,
         "confusables": [to_row(refs.character(code_point)) for code_point in character.confusables],
         "grapheme": _grapheme_head(character, counts),
+        # A modern kana's 字源, from its Japanese Wikipedia articles: where its shape came from, which
+        # is not a 字母 (the kanji a hentaigana is a form of) and is shown apart from one.
+        "origin": refs.origin_of(character.code_point),
         "characters": [_row(row, counts) for row in forms if row is not None],
         "visual_analysis": visual_families.family_analysis(character.code_point),
         # The widenings this character offers, with the one the request already applied marked
@@ -486,7 +492,80 @@ def character_view(character: Character, layer: Layers, *, expand: str = "none",
         "occurrences": {**layer.counts(character.code_point, expand=expand), "filtered": len(rows)},
         "samples": [layer.item(unit, revision, form, exact) for unit, revision, form, exact in window],
         "candidates": candidates,
+        "variants": variant_card(character.char, counts),
     }
+
+
+#: Each row of a card's variants lists at most this many, the most attested first; the gallery widens
+#: to exactly the first row (the Worker's VARIANTS_SHOWN).
+VARIANTS_SHOWN = 32
+
+
+def _attested(entry: dict[str, Any]) -> tuple[int, int]:
+    """Most sources first, then by code point: the order the card, the Worker and the widening share."""
+    return (-len({r["source"] for r in entry["relations"]}), ord(entry["char"][0]))
+
+
+def variant_pairs(char: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """The characters `char` shares an edge of the 異体字 graph with: those a gallery widens to (a pair
+    with one widening edge), then the rest, each most attested first. Every edge of a pair is kept."""
+    by_char: dict[str, dict[str, Any]] = {}
+    for edge in refs.variant_edges_of(char):
+        other = edge["b"] if edge["a"] == char else edge["a"]
+        if other == char:
+            continue
+        entry = by_char.setdefault(other, {"char": other, "code_point": refs.to_code_point(other),
+                                           "edges": [], "relations": []})
+        entry["edges"].append(edge)
+        entry["relations"].append({"relation": edge["relation"], "source": edge["source"], "detail": edge["detail"]})
+    for entry in by_char.values():
+        entry["widens"] = refs.widens(entry.pop("edges"))
+    ordered = sorted(by_char.values(), key=_attested)
+    return [e for e in ordered if e["widens"]], [e for e in ordered if not e["widens"]]
+
+
+def variant_code_points(code_point: str) -> list[str]:
+    """The characters a gallery widened to its variants deals with this one: the card's first row."""
+    row = refs.character(code_point)
+    return [entry["code_point"] for entry in variant_pairs(row.char)[0][:VARIANTS_SHOWN]] if row else []
+
+
+#: A gallery widened to its variants pages this far at most (the Worker's WIDENED_CAP).
+WIDENED_CAP = 2000
+
+
+def _widened_corpus(chars: list[str], limit: int, offset: int, visual_group: str | None) -> tuple[dict[str, Any] | None, str | None]:
+    """The corpus glyphs of several characters, in the Worker's order (character, then id), from one
+    read per character of the corpus index service, which answers one character at a time."""
+    items, total, fault = [], 0, None
+    for char in sorted(chars):
+        payload, fault_here = corpus_source.safe(corpus_source.candidates, char, min(offset + limit, WIDENED_CAP), 0,
+                                                 scope="character", visual_group=visual_group)
+        if fault_here == "error":
+            return None, "error"
+        fault = fault or fault_here
+        payload = payload or {}
+        items += sorted(payload.get("items", []), key=lambda item: str(item.get("id", "")))
+        total += int(payload.get("total") or 0)
+    return {"items": items[offset:offset + limit], "total": min(total, WIDENED_CAP)}, fault
+
+
+def variant_card(char: str, counts: dict[str, int]) -> dict[str, Any]:
+    """The characters `char` is related to in the 異体字 graph, as the Worker's card lists them.
+
+    `items` are the variants a gallery widens to, `related` the rest (simplified, borrowed, …), at most
+    VARIANTS_SHOWN each. Every edge keeps its relation, source and claims; `sources` cites each source used.
+    """
+    widening, other = variant_pairs(char)
+    shown = [*widening[:VARIANTS_SHOWN], *other[:VARIANTS_SHOWN]]
+    corpus_counts, _ = corpus_source.safe(corpus_source.counts, [e["char"] for e in shown])
+    cited = refs.variant_sources()
+    rows = [{**e, "sources": sorted({r["source"] for r in e["relations"]}),
+             "count": counts.get(e["code_point"], 0),
+             "corpus_count": int(((corpus_counts or {}).get(e["char"]) or {}).get("n_glyphs") or 0)} for e in shown]
+    used = {source for row in rows for source in row["sources"]}
+    return {"items": [r for r in rows if r["widens"]], "related": [r for r in rows if not r["widens"]],
+            "total": len(widening) + len(other), "sources": {source: cited.get(source, source) for source in sorted(used)}}
 
 
 def _expansions(character: Character, counts: dict[str, int], *, expand: str) -> list[dict[str, Any]]:
@@ -533,9 +612,9 @@ def split_expansions(expand: str) -> set[str]:
     would otherwise look like a relation the layer does not have.
     """
     parts = {part.strip() for part in expand.split(",") if part.strip()}
-    unknown = parts - {"none", "grapheme", "jibo"}
+    unknown = parts - {"none", "grapheme", "jibo", "variants"}
     if unknown:
-        raise BadRequest(f"unknown expansion {sorted(unknown)}; the layer has grapheme and jibo")
+        raise BadRequest(f"unknown expansion {sorted(unknown)}; the layer has grapheme, jibo and variants")
     return parts - {"none"}
 
 
@@ -632,7 +711,9 @@ def suggest(term: str, layer: Layers, *, limit: int = 8) -> dict[str, Any]:
     1. a ligature the query spells or reads as (トモ -> 𪜈, ヨリ -> ゟ and 𛄦, コト -> ヿ and 𛄣);
     2. the kana written as the kanji the query names (子 -> 𛂘, 𛄧);
     3. the layer's own search: readings, names, 字母, and the word a multi-character query spells;
-    4. the other forms of the shape, so ネ leads to 𛄧 and ね to its 変体仮名.
+    4. the other forms of the shape, so ネ leads to 𛄧 and ね to its 変体仮名;
+    5. when nothing above answers, the characters built from the ideographs the query names (水骨 and
+       氵骨 -> 滑), in `han_components.search`'s order, which the hosted site's search keeps too.
 
     The counts on a row belong to that row's character and to nothing else: a ト followed by a モ
     counts under ト and under モ, and it is not 𪜈, so it counts under no ligature. Located crops and
@@ -696,6 +777,11 @@ def suggest(term: str, layer: Layers, *, limit: int = 8) -> dict[str, Any]:
             keep(code_point, 6, f"a form of {literal}")
 
     ordered = sorted(ranked.items(), key=lambda item: (item[1][0], -counts.get(item[0], 0), item[0]))
+    if not ranked:
+        wanted = han_components.query(literal)
+        for char in han_components.search(literal):
+            keep(refs.to_code_point(char), 7, "built from " + " ".join(sorted(wanted, key=literal.find)))
+        ordered = list(ranked.items())
     window = ordered[:max(limit, 1)]
     live, fault = corpus_source.safe(corpus_source.counts,
                                      [refs.to_char(code_point) for code_point, _ in window])
@@ -820,7 +906,7 @@ def router(store: Store) -> APIRouter:
     @api.get("/layers/search")
     def find(
         q: str = "",
-        expand: str = Query("none", pattern=r"^(none|grapheme|jibo)(,(grapheme|jibo))*$"),
+        expand: str = Query("none", pattern=r"^(none|grapheme|jibo|variants)(,(grapheme|jibo|variants))*$"),
         limit: Annotated[int, Query(ge=1, le=96)] = 24,
         offset: Annotated[int, Query(ge=0)] = 0,
     ) -> dict[str, Any]:
@@ -846,7 +932,7 @@ def router(store: Store) -> APIRouter:
     @api.get("/layers/characters/{code_point}")
     def character(
         code_point: str,
-        expand: str = Query("none", pattern=r"^(none|grapheme|jibo)(,(grapheme|jibo))*$"),
+        expand: str = Query("none", pattern=r"^(none|grapheme|jibo|variants)(,(grapheme|jibo|variants))*$"),
         state: Literal["all", "pending", "checked", "flagged"] = "all",
         limit: Annotated[int, Query(ge=1, le=96)] = 24,
         offset: Annotated[int, Query(ge=0)] = 0,
@@ -859,7 +945,7 @@ def router(store: Store) -> APIRouter:
     @api.get("/layers/occurrences")
     def occurrences(
         code_point: str,
-        expand: str = Query("none", pattern=r"^(none|grapheme|jibo)(,(grapheme|jibo))*$"),
+        expand: str = Query("none", pattern=r"^(none|grapheme|jibo|variants)(,(grapheme|jibo|variants))*$"),
         state: Literal["all", "pending", "checked", "flagged"] = "all",
         limit: Annotated[int, Query(ge=1, le=96)] = 48,
         offset: Annotated[int, Query(ge=0)] = 0,
@@ -938,7 +1024,7 @@ def router(store: Store) -> APIRouter:
         code_point: str,
         limit: Annotated[int, Query(ge=1, le=200)] = 24,
         offset: Annotated[int, Query(ge=0)] = 0,
-        scope: Literal["character", "grapheme"] = "character",
+        scope: Literal["character", "grapheme", "variants"] = "character",
         visual_group: Annotated[str | None, Query(max_length=160)] = None,
     ) -> dict[str, Any]:
         """What the corpus index holds for one character: located glyphs, and the counts by kind.
@@ -952,8 +1038,14 @@ def router(store: Store) -> APIRouter:
         counts, _ = corpus_source.safe(corpus_source.counts, [row.char])
         summary = candidate_summary(row.char, live=(counts or {}).get(row.char),
                                     local=current.per_character.get(row.code_point, 0))
-        payload, fault = corpus_source.safe(corpus_source.candidates, row.char, limit, offset,
-                                            scope=scope, visual_group=visual_group)
+        if scope == "variants":
+            if offset > WIDENED_CAP:
+                raise HTTPException(404, "A widened gallery does not page this far.")
+            chars = [row.char, *(refs.character(point).char for point in variant_code_points(row.code_point))]
+            payload, fault = _widened_corpus(chars, limit, offset, visual_group)
+        else:
+            payload, fault = corpus_source.safe(corpus_source.candidates, row.char, limit, offset,
+                                                scope=scope, visual_group=visual_group)
         if fault == "error":
             # Not an empty corpus: the reader is told the index could not be read and can retry,
             # while the counts that are already known stay in the answer.

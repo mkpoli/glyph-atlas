@@ -17,7 +17,7 @@
   import { catalogue, character, request, randomSeed, number, formatSerial, stored, remember } from '../lib/client.js'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery } from '../lib/layers.js'
   import { t, around, localName, locale, localize, delocalize } from '../lib/i18n.svelte.js'
-  import { characterAddress, collectionAddress, scopeFor, unslug } from '../lib/gallery.js'
+  import { characterAddress, collectionAddress, corpusScope, expandFor, scopeFor, unslug } from '../lib/gallery.js'
   // `initial` is the collection page the server rendered: the seed it shuffled with, the filters in the
   // address, the collection's rows, the corpus sample and the progress line; without rows the view loads
   // them itself, with the same filters. The bare homepage comes with `lead`, the first crops of the
@@ -151,16 +151,22 @@
   function groupOrder(item) {
     const group = visualGroup(item)
     const index = (analysis?.groups ?? []).findIndex(entry => entry.id === group.id)
-    return index >= 0 ? index : group.id === 'unassigned' ? Number.MAX_SAFE_INTEGER : 10000
+    // Crops in no group come first, under no heading, so none sits beneath another group's.
+    return group.id === 'ungrouped' ? -1 : index >= 0 ? index : group.id === 'unassigned' ? Number.MAX_SAFE_INTEGER : 10000
   }
+  // Group ids compare by code point: a locale collation would call た and タ equal.
+  const byId = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
   const display = $derived(picked && expand === 'grapheme'
-    ? [...baseDisplay].sort((a, b) => groupOrder(a) - groupOrder(b) || visualGroup(a).id.localeCompare(visualGroup(b).id)) : baseDisplay)
+    ? [...baseDisplay].sort((a, b) => groupOrder(a) - groupOrder(b) || byId(visualGroup(a).id, visualGroup(b).id)) : baseDisplay)
+  // The grapheme view puts a heading over each shape group; crops in no group have none.
+  const headed = item => picked && expand === 'grapheme' && visualGroup(item).id !== 'ungrouped'
+  const headings = $derived(display.some(headed))
   // The next page arrives as the reader nears the end of the grid. While there is one to come, the
   // grid shows whole rows only: the crops of a part-filled last row wait for the page that fills it.
   let grid = $state(), sentinel = $state(), columns = $state(0), nearEnd = $state(false)
   const hasMore = $derived(!choosing && (picked ? (!visual && local.length < (data?.total ?? 0)) || corpusOffset < corpusTotal
     : Boolean(data) && items.length < data.total))
-  const whole = $derived(hasMore && columns && !(picked && expand === 'grapheme') ? Math.floor(display.length / columns) * columns : display.length)
+  const whole = $derived(hasMore && columns && !headings ? Math.floor(display.length / columns) * columns : display.length)
   const tiles = $derived(whole ? display.slice(0, whole) : display)
   function more() {
     if (picked) { if (!visual && local.length < (data?.total ?? 0)) load(true); else moreCorpus() }
@@ -207,7 +213,8 @@
                  categories: data?.categories ?? [], documents: data?.documents ?? [], counts: data?.counts ?? {} }
         // The chips come from the card, and the card says which widening is in force: refetch it so a
         // chip that was just switched on reads as on.
-        layerCharacter(picked.code_point, expand)
+        // A variants widening changes no field of the card, and a further page none at all.
+        if (!append && expand !== 'variants') layerCharacter(picked.code_point, expand)
           .then(card => { if (!closed && id === requestId) picked = { ...picked, ...card } })
           .catch(() => {})
         if (append) return
@@ -216,7 +223,7 @@
         corpusFault = null
         try {
           const leads = await layerCandidates(picked.code_point, 60, 0,
-            { scope: expand === 'grapheme' ? 'grapheme' : 'character', visual_group: visual || undefined })
+            { scope: corpusScope(expand), visual_group: visual || undefined })
           if (closed || id !== requestId) return
           corpus = (leads.glyph_items ?? []).map(item => ({ ...item, label: writtenLabel(item), origin: 'corpus' }))
           corpusTotal = leads.glyphs ?? 0; corpusOffset = corpus.length
@@ -323,7 +330,7 @@
     loading = true
     try {
       const page = await layerCandidates(target, 60, corpusOffset,
-        { scope: expand === 'grapheme' ? 'grapheme' : 'character', visual_group: visual || undefined })
+        { scope: corpusScope(expand), visual_group: visual || undefined })
       if (closed || current !== pickId || id !== requestId || picked?.code_point !== target) return
       const rows = (page.glyph_items ?? []).map(item => ({ ...item, label: writtenLabel(item), origin: 'corpus' }))
       corpusOffset += rows.length
@@ -334,7 +341,8 @@
     } finally { if (!closed && id === requestId) loading = false }
   }
   // Choosing a candidate is choosing what to look at: the grid becomes that character's gallery.
-  async function pick(item, exact = false) {
+  // `scope` is an address's: `exact`, `family` or `variants`; without one the card's default applies.
+  async function pick(item, scope = null) {
     let expansionWillLoad = false
     choosing = false
     clearTimeout(searchTimer)
@@ -352,7 +360,7 @@
         const card = await layerCharacter(item.code_point, 'none')
         if (closed || current !== pickId) return   // a newer choice owns the gallery now
         picked = { ...bare, ...item, ...card }; query = card.char
-        const nextExpand = !exact && (card.default_scope === 'grapheme' || card.candidates?.requires_family_scope) ? 'grapheme' : 'none'
+        const nextExpand = expandFor(scope, card)
         expansionWillLoad = expand !== nextExpand
         expand = nextExpand
         analysis = card.visual_analysis ?? null
@@ -363,6 +371,8 @@
   function fitsGallery(row) {
     if (!picked) return true
     if (!matchesVisualGroup(row, visual)) return false
+    if (expand === 'variants') return !isUnassigned(row)
+      && [picked.char, ...(picked.variants?.items ?? []).map(v => v.char)].includes(writtenLabel(row))
     if (expand !== 'grapheme') return !isUnassigned(row) && writtenLabel(row) === picked.char
     if (isUnassigned(row)) return (row.grapheme?.code_point ?? row.grapheme) === picked.grapheme?.code_point
     return (picked.grapheme?.members ?? [picked]).some(member => member.char === writtenLabel(row))
@@ -409,7 +419,10 @@
   function followAddress() {
     const { path } = delocalize(location.pathname)
     const code = path.startsWith('/character/') ? unslug(path.slice(11)) : null
-    if (code && code !== picked?.code_point) pick({ code_point: code }, new URLSearchParams(location.search).get('scope') === 'exact')
+    const scope = new URLSearchParams(location.search).get('scope')
+    if (code && code !== picked?.code_point) pick({ code_point: code }, scope)
+    // Back or Forward between two scopes of the same character: the widening the address names.
+    else if (code && picked && expandFor(scope, picked) !== expand) expand = expandFor(scope, picked)
     else if (!code && path === '/') {
       const wanted = new URLSearchParams(location.search)
       const q = wanted.get('q') ?? '', g = wanted.get('grapheme') ?? '', w = wanted.get('work') ?? '', group = wanted.get('group') ?? 'all'
@@ -444,7 +457,7 @@
   <div class="page-status">
     <h1 class="visually-hidden">{flagged ? t('explore.heading.flagged') : t('explore.heading.atlas')}</h1>
     <SiteLinks />
-    <div class="collection-meta"><span class="live-dot"></span>{#if picked}<span>{t('explore.meta.glyphs', { count: display.length })}</span><span class="meta-divider">/</span><span>{expand === "grapheme" ? t('explore.meta.characters', { count: picked.grapheme?.character_count ?? 1 }) : t('explore.meta.characters', { count: 1 })}</span>{:else if !flagged && collection?.archive}<span>{t('explore.meta.indexedCrops', { count: collection.archive.character_crops })}</span><span class="meta-divider">/</span><span>{t('explore.meta.worksWithCrops', { count: collection.archive.works_with_crops })}</span>{:else}<span>{t('explore.meta.glyphsTotal', { count: flagged ? (data?.total ?? 0) + sample.length : data?.available })}</span><span class="meta-divider">/</span><span>{t('explore.meta.graphemes', { count: graphemes.length })}</span>{/if}</div>
+    <div class="collection-meta"><span class="live-dot"></span>{#if picked}<span>{t('explore.meta.glyphs', { count: display.length })}</span><span class="meta-divider">/</span><span>{expand === "grapheme" ? t('explore.meta.characters', { count: picked.grapheme?.character_count ?? 1 }) : expand === "variants" ? t('explore.meta.characters', { count: 1 + (picked.variants?.items?.length ?? 0) }) : t('explore.meta.characters', { count: 1 })}</span>{:else if !flagged && collection?.archive}<span>{t('explore.meta.indexedCrops', { count: collection.archive.character_crops })}</span><span class="meta-divider">/</span><span>{t('explore.meta.worksWithCrops', { count: collection.archive.works_with_crops })}</span>{:else}<span>{t('explore.meta.glyphsTotal', { count: flagged ? (data?.total ?? 0) + sample.length : data?.available })}</span><span class="meta-divider">/</span><span>{t('explore.meta.graphemes', { count: graphemes.length })}</span>{/if}</div>
   </div>
   <div class="collection-toolbar">
     <!-- The box, empty and focused, lists the collection's graphemes; one chosen narrows the grid, and a
@@ -459,7 +472,7 @@
       </div>{/if}
       {#if unit === 'pair' && !flagged}<PairGrid {pairs} failed={pairsFailed} onretry={loadPairs} {work} />
       {:else}<GraphemeGrid groups={graphemes} value={grapheme} onchoose={key => { close(); select(key) }}
-                    onform={form => { close(); pick({ code_point: codesOf(form), char: form }, true) }} />{/if}
+                    onform={form => { close(); pick({ code_point: codesOf(form), char: form }, 'exact') }} />{/if}
     {/snippet}
     <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse}
                      token={grapheme ? charOf(grapheme) : ''} tokenLabel={t('explore.clearGrapheme', { grapheme: charOf(grapheme) })} ontokenclear={() => select('')}
@@ -476,7 +489,7 @@
   </div>
   {#if error}<div class="error-message" role="alert">{error}<button onclick={() => load()}>{t('common.retry')}</button></div>{/if}
   {#if picked}
-    <CharacterChips card={picked} bind:expand onselect={item => pick({ code_point: item }, true)} />
+    <CharacterChips card={picked} bind:expand onselect={item => pick({ code_point: item }, 'exact')} />
     {#if expand === 'grapheme'}<VisualGroups {analysis} count={familyTotal} unassigned={unassignedCount} value={visual} onchange={value => { visual = value; load() }} />{/if}
     <p class="find-count" role="status">
       {t('explore.meta.glyphs', { count: display.length })}
@@ -492,7 +505,7 @@
   {/if}
   <div class="glyph-grid" bind:this={grid} aria-label={flagged ? t('explore.heading.flagged') : t('explore.grid.collection')} aria-busy={loading}>
     {#if loading && !display.length}{#each Array(32) as _}<div class="glyph-skeleton"></div>{/each}
-    {:else}{#each tiles as item, i (item.id)}{#if picked && expand === 'grapheme' && (i === 0 || visualGroup(display[i - 1]).id !== visualGroup(item).id)}<div class="visual-grid-heading">{groupLabel(visualGroup(item))}</div>{/if}{#if item.origin === 'corpus'}<button class="glyph-tile corpus" data-corpus={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} onclick={() => inspect(item.id, null, display, updateItem, 'corpus')} aria-label={t('explore.tile.inspectCorpus', { label: shownLabel(item) })}><span class="tile-reading"><span class="tile-glyph" class:unassigned={isUnassigned(item)} lang={isUnassigned(item) ? undefined : 'ja'}>{shownLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" lang="ja" title={t('chips.grapheme')}>{shownGrapheme(item)}</span>{/if}</span><span class="tile-details">{#each cropDetails(item) as line}<span>{line}</span>{/each}<span class="tile-id">{item.id}</span></span>{#if item.proxyable && item.image}<img class="glyph-image" src={item.image} alt={t('explore.tile.located', { label: shownLabel(item) })} loading={i < 24 ? "eager" : "lazy"} fetchpriority={i < 24 ? "high" : "auto"} decoding="async" />{:else}<span class="corpus-open"><b>{shownLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}<span class="tile-footer">{#if tileState(item) === 'plain' || tileState(item) === 'withheld'}<span class="status-dot" class:withheld={tileState(item) === 'withheld'}></span>{/if}{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{formatSerial(i + 1)}</span><span class="tile-arrow">↗</span></span></button>{:else}<button class="glyph-tile" data-unit={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} onclick={() => inspect(item.id, null, display, updateItem)} aria-label={t('explore.tile.inspect', { label: shownLabel(item) })}><span class="tile-reading"><span class="tile-glyph" class:unassigned={isUnassigned(item)} lang={isUnassigned(item) ? undefined : 'ja'}>{shownLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" lang="ja" title={t('chips.grapheme')}>{shownGrapheme(item)}</span>{/if}</span><span class="tile-details">{#each cropDetails(item) as line}<span>{line}</span>{/each}<span class="tile-id">{item.id}</span></span><Glyph {item} eager={i < 24} />{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}<span class="tile-footer">{#if tileState(item) === 'plain' || tileState(item) === 'withheld'}<span class="status-dot" class:withheld={tileState(item) === 'withheld'}></span>{/if}{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{formatSerial(i + 1)}</span><span class="tile-arrow">↗</span></span></button>{/if}{/each}{#if loading && lead}{#each Array(16) as _}<div class="glyph-skeleton"></div>{/each}{/if}{/if}
+    {:else}{#each tiles as item, i (item.id)}{#if headed(item) && (i === 0 || visualGroup(display[i - 1]).id !== visualGroup(item).id)}<div class="visual-grid-heading">{groupLabel(visualGroup(item))}</div>{/if}{#if item.origin === 'corpus'}<button class="glyph-tile corpus" data-corpus={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} onclick={() => inspect(item.id, null, display, updateItem, 'corpus')} aria-label={t('explore.tile.inspectCorpus', { label: shownLabel(item) })}><span class="tile-reading"><span class="tile-glyph" class:unassigned={isUnassigned(item)} lang={isUnassigned(item) ? undefined : 'ja'}>{shownLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" lang="ja" title={t('chips.grapheme')}>{shownGrapheme(item)}</span>{/if}</span><span class="tile-details">{#each cropDetails(item) as line}<span>{line}</span>{/each}<span class="tile-id">{item.id}</span></span>{#if item.proxyable && item.image}<img class="glyph-image" src={item.image} alt={t('explore.tile.located', { label: shownLabel(item) })} loading={i < 24 ? "eager" : "lazy"} fetchpriority={i < 24 ? "high" : "auto"} decoding="async" />{:else}<span class="corpus-open"><b>{shownLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}<span class="tile-footer">{#if tileState(item) === 'plain' || tileState(item) === 'withheld'}<span class="status-dot" class:withheld={tileState(item) === 'withheld'}></span>{/if}{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{formatSerial(i + 1)}</span><span class="tile-arrow">↗</span></span></button>{:else}<button class="glyph-tile" data-unit={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} onclick={() => inspect(item.id, null, display, updateItem)} aria-label={t('explore.tile.inspect', { label: shownLabel(item) })}><span class="tile-reading"><span class="tile-glyph" class:unassigned={isUnassigned(item)} lang={isUnassigned(item) ? undefined : 'ja'}>{shownLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" lang="ja" title={t('chips.grapheme')}>{shownGrapheme(item)}</span>{/if}</span><span class="tile-details">{#each cropDetails(item) as line}<span>{line}</span>{/each}<span class="tile-id">{item.id}</span></span><Glyph {item} eager={i < 24} />{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}<span class="tile-footer">{#if tileState(item) === 'plain' || tileState(item) === 'withheld'}<span class="status-dot" class:withheld={tileState(item) === 'withheld'}></span>{/if}{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{formatSerial(i + 1)}</span><span class="tile-arrow">↗</span></span></button>{/if}{/each}{#if loading && lead}{#each Array(16) as _}<div class="glyph-skeleton"></div>{/each}{/if}{/if}
   </div>
   {#if !choosing && !loading && !display.length}<div class="empty"><span class="empty-mark">{picked || (settled && settled.total === 0) ? '∅' : flagged ? '✓' : '∅'}</span><h2>{picked && corpusFault ? t('explore.empty.samplesFailed', { char: picked.char }) : picked ? t('explore.empty.noOccurrenceOf', { char: picked.char }) : settled && settled.total === 0 ? t('explore.empty.noOccurrenceOfTerm', { term: readable }) : flagged ? t('explore.empty.nothingFlagged') : t('explore.empty.noCharacters')}</h2>{#if query}<button class="primary" onclick={clearQuery}>{t('explore.clearSearch')}</button>{:else}<a href={localize('/review')} class="primary">{t('explore.startRound')}</a>{/if}</div>{/if}
   <div class="scroll-sentinel" bind:this={sentinel} aria-hidden="true">{#if hasMore && loading && display.length}…{/if}</div>

@@ -257,11 +257,44 @@ def export(corpus_root: Path, out: Path, workers: int = 8) -> dict:
     return {"revision": data["revision"], **counts, "objects": len(packed.manifest), "sql_parts": len(names)}
 
 
+def families_only(out: Path) -> dict:
+    """Refresh only the forms each published family lists, and what the character layer says of them.
+
+    The palette under a family names each form's 字母, script and name from the character layer, which
+    a later build of the layer can change without the clustering changing. This writes a publication
+    of those rows alone: no tiles, clusters or decisions are touched. Each update applies only while
+    the live family is from the clustering this reads, and `forms_loaded_at` moves so the Worker's
+    cached Forms answers are read afresh.
+    """
+    from glyph_atlas import forms
+    from glyph_atlas.review.forms import _form_entry
+
+    data = forms.clusters()
+    if data["revision"] is None:
+        raise SystemExit("No clustering: run `atlas forms cluster` first.")
+    out.mkdir(parents=True, exist_ok=False)
+    parts = Parts(out)
+    count = 0
+    for code_point in sorted(data["families"]):
+        forms_of = json.dumps([_form_entry(char) for char in forms.family_members(code_point)], ensure_ascii=False)
+        parts.write(f"UPDATE form_families SET forms={_quote(forms_of)} "
+                    f"WHERE code_point={_quote(code_point)} AND revision={_quote(data['revision'])};")
+        count += 1
+    parts.write("INSERT OR REPLACE INTO metadata(key,value) VALUES('forms_loaded_at',"
+                "json_quote(strftime('%Y-%m-%dT%H:%M:%fZ','now')));")
+    names = parts.close()
+    (out / "publication.json").write_text(json.dumps({"revision": data["revision"], "counts": {"families": count},
+                                                      "objects": [], "sql": names}, indent=1) + "\n")
+    return {"revision": data["revision"], "families": count, "sql_parts": len(names)}
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("out", type=Path)
     parser.add_argument("--corpus-root", type=Path, default=Path("work"))
     parser.add_argument("--workers", type=int, default=8, help="threads rendering tiles")
+    parser.add_argument("--families-only", action="store_true",
+                        help="refresh only the forms each family lists (their 字母, script and name)")
     args = parser.parse_args()
     os.environ.setdefault("ATLAS_FORM_CLUSTERS", str((args.corpus_root / "forms/current").resolve()))
-    print(json.dumps(export(args.corpus_root, args.out, args.workers)))
+    print(json.dumps(families_only(args.out) if args.families_only else export(args.corpus_root, args.out, args.workers)))

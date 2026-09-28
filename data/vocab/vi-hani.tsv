@@ -77,6 +77,8 @@ dòng	𣳔	wiktionary
 dùng	用	wiktionary	
 dư	餘	editorial	Wiktionary gives 餘 as the etymon; Unihan reads 余 dư too
 dấu	唒	wiktionary	
+dễ nhầm	𥚯𢗖	joined	each syllable attested
+dị thể	異體	joined	each syllable attested
 dừng	亭	wiktionary	
 dữ liệu	與料	joined	each syllable attested
 ghi	𥱬	wiktionary	
@@ -85,6 +87,7 @@ ghép	扱	wiktionary
 giao diện	交面	joined	each syllable attested
 giáp cốt văn	甲骨文	wiktionary	
 giây	𣆰	wiktionary	
+giản thể	簡體	joined	each syllable attested
 giấy	紙	wiktionary	
 giống	種	wiktionary	
 giữ	𡨹	wiktionary	
@@ -93,6 +96,7 @@ gugyeol	口訣	editorial	the script names written in Han characters
 gán	檊	wiktionary	
 gì	之	wiktionary	
 gõ	𢱗	wiktionary	
+gốc	㭲	wiktionary	
 gốm	𡑲	wiktionary	
 gồm	𡗄	wiktionary	
 gỗ	楛	wiktionary	
@@ -140,6 +144,7 @@ kích thước	戟𢭑	editorial	Wiktionary gives no etymon for this kích; 戟 
 ký hiệu	記號	wiktionary	spelled kí hiệu there
 kết quả	結果	wiktionary	
 kỹ thuật	技術	wiktionary	spelled kĩ thuật there
+liên quan	聯關	joined	each syllable attested
 liền	連	wiktionary	
 loại	類	wiktionary	
 là	羅	wiktionary	
@@ -154,6 +159,7 @@ lần	吝	wiktionary
 lẫn	吝	wiktionary	Unihan reads 悋 lẫn
 lập	立	wiktionary	
 lệ thư	隸書	editorial	Sino-Vietnamese, written with its Han etymon; neither source reads 隸 lệ
+lệ định	隸定	editorial	Sino-Vietnamese, written with its Han etymon; neither source reads 隸 lệ
 lệch	瀝	wiktionary	
 lịch sử	歷史	wiktionary	
 lọc	𤀓	wiktionary	
@@ -166,6 +172,7 @@ minh triều	明朝	joined	each syllable attested
 màu	牟	wiktionary	
 máy	𣛠	wiktionary	
 mã	碼	wiktionary	
+mã trùng	碼重	joined	each syllable attested; 重 for the sense 'repeated'
 mép	𠲵	wiktionary	
 mũi tên	𪖫𥏍	joined	each syllable attested
 mẫu	母	wiktionary	
@@ -187,6 +194,7 @@ người	𠊛	wiktionary
 ngữ cảnh	語境	joined	each syllable attested
 nhanh	伶	wiktionary	
 nhau	𦣗	wiktionary	
+nhiều	𡗉	wiktionary	
 nhiễu	擾	unihan	
 nhãn	眼	unihan	
 nhóm	佔	wiktionary	
@@ -195,6 +203,7 @@ nhưng	仍	wiktionary
 nhấn	刃	wiktionary	
 nhất	一	wiktionary	
 nhập	入	wiktionary	
+nhật	日	unihan	
 những	仍	wiktionary	
 nào	𱜢	wiktionary	
 này	呢	wiktionary	
@@ -220,6 +229,7 @@ ra	𠚢	wiktionary
 riêng	𥢅	wiktionary	
 rõ	𠓑	wiktionary	
 rõ ràng	𤑟𤉜	wiktionary	
+rút gọn	𪮊𦄣	joined	each syllable attested
 rồi	耒	wiktionary	
 sai	差	wiktionary	
 sang	𨖅	wiktionary	
@@ -247,8 +257,12 @@ thiếu	少	wiktionary
 thu	收	wiktionary	
 thu nhỏ	收𡮈	joined	each syllable attested
 thu thập	收拾	joined	each syllable attested
+thuyết	説	unihan	
+thuyết văn	說文	editorial	Sino-Vietnamese, written with its Han etymon; the sources give the variant 説
 thành	成	wiktionary	
 thêm	添	wiktionary	
+thông dụng	通用	joined	each syllable attested
+thông giả	通假	joined	each syllable attested
 thạch bản	石版	joined	each syllable attested
 thảo thư	草書	joined	each syllable attested
 thấy	𧡊	wiktionary	
@@ -259,6 +273,7 @@ thừa	乘	wiktionary
 thử	試	wiktionary	
 thực	實	wiktionary	
 tiến độ	進度	wiktionary	
+tiếng	㗂	wiktionary	
 tiếp	接	unihan	
 tiếp tục	接續	wiktionary	
 tra	查	wiktionary	
@@ -277,9 +292,11 @@ trừ	除	wiktionary
 tài liệu	材料	editorial	Sino-Vietnamese, written with its Han etymon; neither source reads 材 tài
 tác phẩm	作品	wiktionary	
 tách	索	wiktionary	
+tân tự thể	新字體	joined	each syllable attested
 tìm	尋	wiktionary	
 tôi	碎	wiktionary	
 tùy chọn	隨𫾗	editorial	tùy 隨 as in 隨意
+tương thích	相適	joined	each syllable attested
 tương tự	相似	wiktionary	
 tạm	暫	unihan	
 tải	載	unihan	
@@ -323,6 +340,7 @@ xếp	插	wiktionary
 xử lý	處理	wiktionary	spelled xử lí there
 áp dụng	壓用	wiktionary	
 âm đọc	音讀	wiktionary	
+ít	𠃣	wiktionary	
 ý	意	wiktionary	
 đa	多	unihan	Sino-Vietnamese đa 'many'; Wiktionary's 栘 is đa 'banyan'
 đang	當	wiktionary	
@@ -347,11 +365,14 @@ xử lý	處理	wiktionary	spelled xử lí there
 đặt	撻	wiktionary	
 đề xuất	提出	wiktionary	
 để	底	wiktionary	
+địa phương	地方	joined	each syllable attested
 định vị	定位	wiktionary	
 đọc	讀	wiktionary	
 đồ phổ	圖譜	editorial	圖譜
 đồng	銅	wiktionary	
+đồng nghĩa	同義	joined	each syllable attested
 đồng thời	同時	joined	each syllable attested
+đồng đẳng	同等	joined	each syllable attested
 đổi	對	wiktionary	
 độ	度	wiktionary	
 ảnh	影	unihan	

@@ -12,6 +12,8 @@
   import { history, step, undo, redo } from '../lib/formHistory.svelte.js'
   import { number, reviewer, stored, remember } from '../lib/client.js'
   import { t, around, localize } from '../lib/i18n.svelte.js'
+  import { characterAddress } from '../lib/gallery.js'
+  import { originText, originTitle } from '../lib/origin.js'
 
   // `initial` is what the server rendered: the family list and the family on show, arranged by shape.
   let { initialFamily = '', initial = null } = $props()
@@ -323,7 +325,7 @@
     {:else if current}
       <div class="family-panel">
         <div class="family-title">
-          <h2>{current.char}</h2>
+          <h2><a class="family-link" href={localize(characterAddress(current.code_point))} aria-label={t('chips.showCharacter', { char: current.char })}>{current.char}</a></h2>
           <p><strong>{number(current.count)}</strong> {t('forms.glyphsLabel')} · {number(current.clusters)} {t('forms.clustersLabel')} · <strong>{number(current.assigned)}</strong> {t('forms.assignedLabel')}{#if current.rejected}{' · '}<strong>{number(current.rejected)}</strong> {t('forms.rejectedLabel')}{/if}</p>
           <span class="history-actions">
             <button disabled={busy || history.busy || !history.done.length} onclick={() => takeBack(false)} title={t('forms.undo.title')}>↶ {t('forms.undo')}</button>
@@ -341,7 +343,7 @@
             {#each current.forms as form, i (form.char)}
               <button class="form-choice" disabled={busy || !target} onclick={() => apply(form.char)} title={form.name ?? form.code_point}>
                 <ReferenceGlyph char={form.char} code_point={form.code_point} size="lg" script={form.script} />
-                <span class="form-source">{form.jibo ?? ''}</span>
+                {#if form.jibo}<span class="form-source">{form.jibo}</span>{:else if form.origin}<span class="form-source form-origin" title={originTitle(form.origin)}><small>{t('origin.label')}</small>{originText(form.origin)}</span>{:else}<span class="form-source"></span>{/if}
                 <small>{form.code_point}</small>
                 {#if i < 10}<kbd>{'1234567890'[i]}</kbd>{/if}
               </button>
@@ -387,7 +389,7 @@
                 <button class:active={order === 'typical'} aria-pressed={order === 'typical'} onclick={() => reorder('typical')}>{t('forms.order.typical')}</button>
                 <button class:active={order === 'unusual'} aria-pressed={order === 'unusual'} onclick={() => reorder('unusual')}>{t('forms.order.unusual')}</button>
               </div>{/if}
-              {#if cluster.form}<span class="cluster-form">{cluster.form} <small>{byForm.get(cluster.form)?.jibo ?? ''}</small></span>
+              {#if cluster.form}<span class="cluster-form">{cluster.form} <small>{byForm.get(cluster.form)?.jibo ?? originText(byForm.get(cluster.form)?.origin)}</small></span>
               {:else if cluster.issue}<span class="cluster-issue" class:reported={cluster.issue !== 'mixed'}>{clusterIssue(cluster.issue)}</span>{/if}
               {#if chosen.size}<button class="quiet-link" onclick={() => chosen = new Set()}>{t('forms.clearSelection')}</button>{/if}
             </div>
@@ -442,7 +444,7 @@
                 <button class="cluster-select" onclick={event => choose(i, event)} ondblclick={() => show(i)} aria-pressed={i === active || picked.has(c.id)}>
                   <span class="cluster-head">
                     <strong lang="ja">{c.label}</strong><span>{number(c.count)}</span>
-                    {#if c.form}<span class="cluster-form"><span class="inline-glyph">{c.form}</span> {byForm.get(c.form)?.jibo ?? ''}</span>
+                    {#if c.form}<span class="cluster-form"><span class="inline-glyph">{c.form}</span> {byForm.get(c.form)?.jibo ?? originText(byForm.get(c.form)?.origin)}</span>
                     {:else if c.issue}<span class="cluster-issue" class:reported={c.issue !== 'mixed'}>{clusterIssue(c.issue)}</span>
                     {:else if c.assigned}<span class="cluster-open">{around('forms.haveForm', 'glyph', { count: c.assigned })[0]}<span class="inline-glyph">{c.majority}</span>{around('forms.haveForm', 'glyph', { count: c.assigned })[1]}</span>
                     {:else}<span class="cluster-open">{t('corpus.unassigned')}</span>{/if}
@@ -484,6 +486,7 @@
   .family-meta small{font-size:10px;color:var(--muted)}
   .family-progress{display:flex;background:light-dark(#ececef, #2e2e35);border-radius:2px;overflow:hidden}.family-progress i{display:block;height:100%;background:var(--accent)}.family-progress i.rejected{background:var(--wrong);opacity:.55}
   .family-title{display:flex;align-items:baseline;gap:18px;border-bottom:1px solid var(--line);padding-bottom:12px}
+  .family-link{color:inherit;text-decoration:none}.family-link:hover{color:var(--accent)}
   .family-title h2{font-size:48px;font-weight:500;font-family:"Noto Sans CJK JP","Yu Gothic",sans-serif}
   .family-title p{font-size:12px;color:var(--muted)}
   .history-actions{margin-left:auto;display:flex;gap:4px}.history-actions button{font-size:11px;padding:6px 10px}.family-title strong{color:var(--ink);font-weight:500}
@@ -493,6 +496,7 @@
   .form-choice{position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:66px;padding:8px 8px 6px;background:var(--surface)}
   .form-choice:not(:disabled):hover{border-color:var(--accent);background:var(--accent-hover)}
   .form-source{font-size:12px;min-height:16px;font-family:"Noto Sans CJK JP","Yu Gothic",sans-serif}
+  .form-origin{color:var(--muted)}.form-origin small{font-size:8px;margin-right:2px}
   .form-choice small{font-size:8px;color:var(--muted);font-family:ui-monospace,monospace}
   .form-choice kbd{position:absolute;top:4px;right:5px;font-size:8px;color:var(--faint);font-family:ui-monospace,monospace}
   .palette-other{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto;align-content:flex-start;max-width:260px}.palette-other button{font-size:11px;padding:8px 11px}
