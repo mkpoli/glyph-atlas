@@ -1,0 +1,27 @@
+name: migrations
+# A pull request's run already tests its merge into main, so main itself is checked only on demand.
+on:
+  pull_request:
+    paths:
+      - 'apps/cloudflare/migrations/**'
+      - 'apps/cloudflare/package.json'
+      - 'apps/cloudflare/bun.lock'
+      - 'apps/cloudflare/wrangler.jsonc'
+      - '.github/workflows/migrations.yml'
+  workflow_dispatch:
+# A newer push to the same pull request makes the older run moot.
+concurrency:
+  group: migrations-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+        working-directory: apps/cloudflare
+      # Wrangler splits a migration into statements itself, so a schema SQLite accepts can still fail
+      # here; applying every migration to a fresh local database is what a new deployment does.
+      - run: bunx wrangler d1 migrations apply glyph-atlas --local
+        working-directory: apps/cloudflare
