@@ -486,7 +486,39 @@ def character_view(character: Character, layer: Layers, *, expand: str = "none",
         "occurrences": {**layer.counts(character.code_point, expand=expand), "filtered": len(rows)},
         "samples": [layer.item(unit, revision, form, exact) for unit, revision, form, exact in window],
         "candidates": candidates,
+        "variants": variant_card(character.char, counts),
     }
+
+
+#: The variants a card lists: at most this many, the most attested first (the Worker's VARIANTS_SHOWN).
+VARIANTS_SHOWN = 48
+
+
+def variant_card(char: str, counts: dict[str, int]) -> dict[str, Any]:
+    """The characters `char` is related to in the 異体字 graph, as the Worker's card lists them.
+
+    `written` holds those one may be written for it, `related` the rest (borrowed, substitute, …).
+    Every edge keeps its relation, source and the source's claims; `sources` cites each source used.
+    """
+    by_char: dict[str, dict[str, Any]] = {}
+    for edge in refs.variant_edges_of(char):
+        other = edge["b"] if edge["a"] == char else edge["a"]
+        if other == char:
+            continue
+        entry = by_char.setdefault(other, {"char": other, "code_point": refs.to_code_point(other),
+                                           "written": False, "relations": []})
+        entry["written"] = entry["written"] or edge["written"]
+        entry["relations"].append({"relation": edge["relation"], "source": edge["source"], "detail": edge["detail"]})
+    shown = sorted(by_char.values(), key=lambda e: (not e["written"], -len({r["source"] for r in e["relations"]}),
+                                                    ord(e["char"][0])))[:VARIANTS_SHOWN]
+    corpus_counts, _ = corpus_source.safe(corpus_source.counts, [e["char"] for e in shown])
+    cited = refs.variant_sources()
+    rows = [{**e, "sources": sorted({r["source"] for r in e["relations"]}),
+             "count": counts.get(e["code_point"], 0),
+             "corpus_count": int(((corpus_counts or {}).get(e["char"]) or {}).get("n_glyphs") or 0)} for e in shown]
+    used = {source for row in rows for source in row["sources"]}
+    return {"written": [r for r in rows if r["written"]], "related": [r for r in rows if not r["written"]],
+            "total": len(by_char), "sources": {source: cited.get(source, source) for source in sorted(used)}}
 
 
 def _expansions(character: Character, counts: dict[str, int], *, expand: str) -> list[dict[str, Any]]:

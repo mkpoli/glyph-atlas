@@ -534,6 +534,46 @@ function chunks<T>(list: T[], size: number): T[][] {
   for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
   return out;
 }
+// A character's edges in the 異体字 graph, both ways (0033): each by the key or by `b`'s index.
+export const variantEdgesQuery = () => `SELECT b AS other,relation,source,detail,written FROM character_variants WHERE a=?
+  UNION ALL SELECT a AS other,relation,source,detail,written FROM character_variants WHERE b=? LIMIT 400`;
+// How many crops each of a bounded list of characters has here and in the corpus, from the counts the
+// triggers keep (0032, 0006): one key range per character, never a scan of the crops.
+export const variantCountsQuery = (n: number) => `SELECT character,sum(n) AS n FROM unit_counts WHERE origin='local' AND character IN (${Array(n).fill('?').join(',')}) GROUP BY character`;
+export const variantCorpusCountsQuery = (n: number) => `SELECT character,sum(n) AS n FROM corpus_characters WHERE character IN (${Array(n).fill('?').join(',')}) GROUP BY character`;
+// The variants a card lists: at most this many, the most attested first.
+const VARIANTS_SHOWN = 48;
+type VariantEdge = { other: string; relation: string; source: string; detail: string; written: number };
+// The characters `char` is related to in the 異体字 graph. `written` holds those one may be written
+// for it (a relation refs.WRITTEN_FOR counts), `related` the rest (borrowed, substitute, …); every
+// edge keeps its relation, source and the source's own claims, and `sources` cites each source used.
+async function variantsOf(env: Env, char: string) {
+  const edges = (await env.DB.prepare(variantEdgesQuery()).bind(char, char).all<VariantEdge>()).results;
+  const byChar = new Map<string, { char: string; code_point: string; written: boolean; relations: { relation: string; source: string; detail: string }[] }>();
+  for (const edge of edges) {
+    if (edge.other === char) continue;
+    const entry = byChar.get(edge.other) ?? { char: edge.other, code_point: cp(edge.other), written: false, relations: [] };
+    entry.written ||= Boolean(edge.written);
+    entry.relations.push({ relation: edge.relation, source: edge.source, detail: edge.detail });
+    byChar.set(edge.other, entry);
+  }
+  const attested = (entry: { relations: { source: string }[] }) => new Set(entry.relations.map(r => r.source)).size;
+  const shown = [...byChar.values()].sort((a, b) => Number(b.written) - Number(a.written) || attested(b) - attested(a)
+    || (a.char.codePointAt(0)! - b.char.codePointAt(0)!)).slice(0, VARIANTS_SHOWN);
+  const chars = shown.map(entry => entry.char);
+  const [local, corpus] = chars.length ? await env.DB.batch([
+    env.DB.prepare(variantCountsQuery(chars.length)).bind(...chars),
+    env.DB.prepare(variantCorpusCountsQuery(chars.length)).bind(...chars),
+  ]) as D1Result<{ character: string; n: number }>[] : [null, null];
+  const count = (rows: { character: string; n: number }[] | undefined) => new Map((rows ?? []).map(row => [row.character, row.n]));
+  const here = count(local?.results), there = count(corpus?.results);
+  const cited: Record<string, string> = (await meta(env, 'variant_sources')) || {};
+  const used = new Set(shown.flatMap(entry => entry.relations.map(r => r.source)));
+  const rows = shown.map(entry => ({ ...entry, sources: [...new Set(entry.relations.map(r => r.source))].sort(),
+    count: here.get(entry.char) ?? 0, corpus_count: there.get(entry.char) ?? 0 }));
+  return { written: rows.filter(row => row.written), related: rows.filter(row => !row.written), total: byChar.size,
+    sources: Object.fromEntries([...used].map(source => [source, cited[source] ?? source])) };
+}
 async function known(env: Env, value: string) {
   const key = cp(literal(value));
   const row = await env.DB.prepare('SELECT data,detail FROM characters WHERE code_point=?').bind(key).first<{data:string;detail:string}>();
@@ -969,7 +1009,7 @@ export default {
       if(path==='/layers/search'){const found=await suggest(env,q);return json({...found,results:found.items,match:found.items[0]||null})}
       const layer=path.match(/^\/layers\/characters\/([^/]+)$/);
       if(layer){const value=decodeURIComponent(layer[1]),{detail}=await known(env,value);const found=await occurrences(env,value,q);
-        return json({...detail,query:detail.code_point,samples:found.items,occurrences:{...found.counts,filtered:found.total}})}
+        return json({...detail,variants:await variantsOf(env,detail.char),query:detail.code_point,samples:found.items,occurrences:{...found.counts,filtered:found.total}})}
       if(path==='/layers/occurrences')return json(await occurrences(env,q.get('code_point')||'',q));
       if(path==='/layers/candidates'){const found=await occurrences(env,q.get('code_point')||'',q,'corpus');
         return json({...found,glyphs:found.total,glyph_items:found.items,retry:false})}

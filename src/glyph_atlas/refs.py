@@ -35,6 +35,7 @@ import re
 from collections.abc import Iterable
 from functools import cache
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -201,23 +202,67 @@ def _ideograph(char: str) -> bool:
     return row is not None and row.name.startswith(("CJK UNIFIED IDEOGRAPH", "CJK COMPATIBILITY IDEOGRAPH"))
 
 
+def _written(row: dict[str, str]) -> bool:
+    """Whether one edge of the graph says one ideograph may be written for the other.
+
+    Radicals, numerals and other non-ideographs do not. A row counts when at least one of its claims
+    does (`_counts`), so a pair stated by 漢語大字典 and by the 古壮字字典 is kept for the first.
+    """
+    relation = row["relation"]
+    return (relation in WRITTEN_FOR and any(_counts(relation, claim) for claim in row["detail"].split(" | "))
+            and _ideograph(row["a"]) and _ideograph(row["b"]))
+
+
+@cache
+def variant_edges() -> tuple[dict[str, Any], ...]:
+    """Every edge of data/vocab/kanji-variants.tsv as its source states it, with `written` marking the
+    ones under which one character may be written for the other. No edge is left out: the others
+    (borrowed, substitute, a fallback reduction, …) relate different characters and are shown as such.
+    """
+    return tuple({**row, "written": _written(row)} for row in _read_tsv(VARIANTS_TSV))
+
+
+@cache
+def _edges_by_char() -> dict[str, tuple[dict[str, Any], ...]]:
+    found: dict[str, list[dict[str, Any]]] = {}
+    for edge in variant_edges():
+        found.setdefault(edge["a"], []).append(edge)
+        if edge["b"] != edge["a"]:
+            found.setdefault(edge["b"], []).append(edge)
+    return {char: tuple(edges) for char, edges in found.items()}
+
+
+def variant_edges_of(char: str) -> tuple[dict[str, Any], ...]:
+    """The edges of the 異体字 graph with `char` at either end."""
+    return _edges_by_char().get(char, ())
+
+
+@cache
+def variant_sources() -> dict[str, str]:
+    """The citation of each source of the 異体字 graph, as the table's header states it."""
+    path = VOCAB / VARIANTS_TSV
+    if not path.exists():
+        raise MissingTable(f"{path} is missing; run {BUILT_BY[VARIANTS_TSV]} to write it")
+    found = {}
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            if not line.startswith("#"):
+                break
+            if line.startswith("# source ") and ": " in line:
+                name, citation = line[len("# source "):].rstrip("\n").split(": ", 1)
+                found[name] = citation
+    return found
+
+
 @cache
 def _variant_neighbours() -> dict[str, dict[str, set[str]]]:
-    """Each ideograph's one-step variants under WRITTEN_FOR, with the sources that state each.
-
-    Radicals, numerals and other non-ideographs are left out. A row counts when at least one of its
-    claims does (`_counts`), so a pair stated by 漢語大字典 and by the 古壮字字典 is kept for the first.
-    """
+    """Each ideograph's one-step variants under WRITTEN_FOR, with the sources that state each."""
     neighbours: dict[str, dict[str, set[str]]] = {}
-    for row in _read_tsv(VARIANTS_TSV):
-        relation = row["relation"]
-        if relation not in WRITTEN_FOR or not any(_counts(relation, claim) for claim in row["detail"].split(" | ")):
-            continue
-        a, b = row["a"], row["b"]
-        if not (_ideograph(a) and _ideograph(b)):
-            continue
-        neighbours.setdefault(a, {}).setdefault(b, set()).add(row["source"])
-        neighbours.setdefault(b, {}).setdefault(a, set()).add(row["source"])
+    for row in variant_edges():
+        if row["written"]:
+            a, b = row["a"], row["b"]
+            neighbours.setdefault(a, {}).setdefault(b, set()).add(row["source"])
+            neighbours.setdefault(b, {}).setdefault(a, set()).add(row["source"])
     return neighbours
 
 
