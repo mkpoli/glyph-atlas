@@ -1,7 +1,7 @@
 // Form assignment on the hosted site: CODH shape clusters, and the forms people name for them.
 // The clustering is published by scripts/export_forms_cloudflare.py; decisions are recorded here and
-// applied to the same rows in one D1 batch, so `form_units.form` always holds a glyph's current form
-// and `corpus_units.character` follows it for search and counts.
+// applied to the same rows in one D1 batch, so `form_units.form` always holds a glyph's current form.
+// `corpus_units.character` follows it for search and counts shortly after (`followCorpus`).
 type Json = Record<string, any>;
 export type FormTools = {
   fail: (status: number, message: string) => never;
@@ -147,10 +147,6 @@ async function decide(env: Env, request: Request, tools: FormTools) {
   const id = crypto.randomUUID(), at = new Date().toISOString().replace(/\.\d+Z$/, '+00:00');
   const touched = kind === 'cluster' ? 'SELECT id FROM form_units WHERE cluster=?1 AND clustered=1' : 'SELECT value FROM json_each(?1)';
   const target = kind === 'cluster' ? clusterId : JSON.stringify(units);
-  // Quick review deals unnamed corpus glyphs by character and counts them per character: the glyphs
-  // leave their old count, take their form (or, with none decided, the character they had before any
-  // decision covered them), and join the new count.
-  const unnamed = `FROM corpus_units WHERE named=0 AND character IS NOT NULL AND id IN (${touched})`;
   // What the touched rows held before, read in the same transaction: the decisions that restore it
   // are returned as the decision's undo.
   const before = kind === 'cluster'
@@ -172,15 +168,7 @@ async function decide(env: Env, request: Request, tools: FormTools) {
           .bind(form, id, target, issue, character, writtenFamily)
         : env.DB.prepare('UPDATE form_units SET glyph_set=0,glyph_form=NULL,glyph_decision=NULL,glyph_issue=NULL,glyph_character=NULL,glyph_family=NULL WHERE id IN (SELECT value FROM json_each(?))').bind(target),
     env.DB.prepare(`UPDATE form_units SET ${SETTLE} WHERE id IN (${touched})`).bind(target),
-    env.DB.prepare(`INSERT OR IGNORE INTO form_bases(id,character,family) SELECT id,character,family FROM corpus_units WHERE id IN (${touched})`).bind(target),
-    env.DB.prepare(`UPDATE corpus_characters SET n=n-t.k FROM (SELECT character,production,count(*) AS k ${unnamed} GROUP BY character,production) AS t
-      WHERE corpus_characters.character=t.character AND corpus_characters.production=t.production`).bind(target),
-    env.DB.prepare(`UPDATE corpus_units SET character=CASE WHEN f.glyph_set=1 OR f.form IS NOT NULL OR f.issue IS NOT NULL THEN coalesce(f.issue_character,f.form) ELSE b.character END,
-      family=coalesce(f.written_family,b.family)
-      FROM form_units f JOIN form_bases b ON b.id=f.id WHERE f.id=corpus_units.id AND corpus_units.named=0 AND corpus_units.id IN (${touched})`).bind(target),
-    env.DB.prepare(`INSERT INTO corpus_characters(character,production,n,named) SELECT character,production,count(*),0 ${unnamed}
-      GROUP BY character,production ON CONFLICT(character,production) DO UPDATE SET n=n+excluded.n`).bind(target),
-    env.DB.prepare('DELETE FROM corpus_characters WHERE n=0'),
+    env.DB.prepare(`INSERT OR IGNORE INTO corpus_follow(id) ${touched}`).bind(target),
     env.DB.prepare(`UPDATE form_families SET assigned=(SELECT count(*) FROM form_units WHERE family=?1 AND clustered=1 AND form IS NOT NULL),
       rejected=(SELECT count(*) FROM form_units WHERE family=?1 AND clustered=1 AND issue IS NOT NULL) WHERE code_point=?1`).bind(family!),
   ];
@@ -190,6 +178,46 @@ async function decide(env: Env, request: Request, tools: FormTools) {
     ? (await env.DB.prepare('SELECT count FROM form_clusters WHERE id=?').bind(clusterId).first<Json>())!.count : units.length;
   return { id, at, kind, family: family!, form, cluster: clusterId, count: covered, issue, character,
     undo: kind === 'cluster' ? [restoreCluster(clusterId!, (prior.results as Json[])[0])] : restoreGlyphs(prior.results as Json[]) };
+}
+
+// Glyphs a corpus batch moves. Each rewrites about seven index pages, so a batch takes a fraction of a
+// second on D1, and a decision made meanwhile waits for one batch at most.
+export const FOLLOW_BATCH = 500;
+const following = `SELECT id FROM corpus_follow ORDER BY id LIMIT ${FOLLOW_BATCH}`;
+// A drain holds the list this long past its latest batch.
+const FOLLOW_LEASE = 30_000;
+const lease = (env: Env) => env.DB.prepare(`INSERT INTO corpus_follow_drain(one,until) VALUES(1,?1)
+  ON CONFLICT(one) DO UPDATE SET until=excluded.until WHERE corpus_follow_drain.until<?2`).bind(Date.now() + FOLLOW_LEASE, Date.now());
+// Quick review deals unnamed corpus glyphs by character and counts them per character: the glyphs
+// leave their old count, take their form (or, with none decided, the character they had before any
+// decision covered them), and join the new count. Each batch reads its glyphs from the list and
+// removes them last, and reads their forms as they are then, so a glyph decided again while listed is
+// moved to its latest form. A drain that finds the list held returns: the holder takes the glyphs
+// listed meanwhile, as it looks once more after letting go.
+export async function followCorpus(env: Env) {
+  while ((await lease(env).run()).meta.changes) {
+    try { await drain(env) } finally { await env.DB.prepare('DELETE FROM corpus_follow_drain').run() }
+    if (!await env.DB.prepare('SELECT 1 FROM corpus_follow LIMIT 1').first()) return;
+  }
+}
+async function drain(env: Env) {
+  const unnamed = `FROM corpus_units WHERE named=0 AND character IS NOT NULL AND id IN (${following})`;
+  for (;;) {
+    const results = await env.DB.batch([
+      env.DB.prepare('UPDATE corpus_follow_drain SET until=?').bind(Date.now() + FOLLOW_LEASE),
+      env.DB.prepare(`INSERT OR IGNORE INTO form_bases(id,character,family) SELECT id,character,family FROM corpus_units WHERE id IN (${following})`),
+      env.DB.prepare(`UPDATE corpus_characters SET n=n-t.k FROM (SELECT character,production,count(*) AS k ${unnamed} GROUP BY character,production) AS t
+        WHERE corpus_characters.character=t.character AND corpus_characters.production=t.production`),
+      env.DB.prepare(`UPDATE corpus_units SET character=CASE WHEN f.glyph_set=1 OR f.form IS NOT NULL OR f.issue IS NOT NULL THEN coalesce(f.issue_character,f.form) ELSE b.character END,
+        family=coalesce(f.written_family,b.family)
+        FROM form_units f JOIN form_bases b ON b.id=f.id WHERE f.id=corpus_units.id AND corpus_units.named=0 AND corpus_units.id IN (${following})`),
+      env.DB.prepare(`INSERT INTO corpus_characters(character,production,n,named) SELECT character,production,count(*),0 ${unnamed}
+        GROUP BY character,production ON CONFLICT(character,production) DO UPDATE SET n=n+excluded.n`),
+      env.DB.prepare('DELETE FROM corpus_characters WHERE n=0'),
+      env.DB.prepare(`DELETE FROM corpus_follow WHERE id IN (${following})`),
+    ]);
+    if (results.at(-1)!.meta.changes < FOLLOW_BATCH) return;
+  }
 }
 
 const stated = (form: string | null, issue: string | null, character: string | null) =>
@@ -253,7 +281,7 @@ function decoded(segment: string, tools: FormTools) {
 const FORMS_TTL = 3600;
 // The shape of what `family` and `families` answer; a change to it leaves the older copies behind.
 const FORMS_SHAPE = 2;
-type FormsState = { loading: number; loaded: string | null; revision: string | null; decision: number | null };
+type FormsState = { loading: number; loaded: string | null; revision: string | null; decision: number | null; following: number };
 async function cached(url: URL, state: FormsState, key: string, read: () => Promise<Json | null>, ctx: ExecutionContext) {
   const request = new Request(`${url.origin}/atlas/forms/cached/${key}?v=${encodeURIComponent(`${FORMS_SHAPE}:${state.loaded}:${state.revision}:${state.decision ?? 0}`)}`);
   const hit = await caches.default.match(request);
@@ -265,11 +293,21 @@ async function cached(url: URL, state: FormsState, key: string, read: () => Prom
 
 export async function formsRoute(env: Env, request: Request, path: string, q: URLSearchParams, tools: FormTools, ctx: ExecutionContext): Promise<Response | Json | null> {
   const state = (await env.DB.prepare(`SELECT EXISTS(SELECT 1 FROM form_loading) AS loading,(SELECT value FROM metadata WHERE key='forms_loaded_at') AS loaded,
-    (SELECT revision FROM form_families LIMIT 1) AS revision,(SELECT max(rowid) FROM form_decisions) AS decision`).first<FormsState>())!;
+    (SELECT revision FROM form_families LIMIT 1) AS revision,(SELECT max(rowid) FROM form_decisions) AS decision,
+    EXISTS(SELECT 1 FROM corpus_follow) AS following`).first<FormsState>())!;
   // A publication is reloading the clustering; the migration's trigger refuses a decision meanwhile.
   if (path !== '/atlas/forms/decisions.jsonl' && state.loading)
     tools.fail(503, 'The forms are being republished. Try again in a few minutes.');
-  if (request.method === 'POST') return path === '/atlas/forms/decisions' ? decide(env, request, tools) : null;
+  // The decision answers once its own rows are written; its corpus glyphs move after. Glyphs a drain cut
+  // short left listed are moved by the next request that finds them.
+  const follow = () => ctx.waitUntil(followCorpus(env).catch(error => console.error('corpus follow', error)));
+  if (request.method === 'POST') {
+    if (path !== '/atlas/forms/decisions') return null;
+    const decided = await decide(env, request, tools);
+    follow();
+    return decided;
+  }
+  if (state.following && !state.loading) follow();
   const url = new URL(request.url);
   if (path === '/atlas/forms/families')
     return (await cached(url, state, 'families', () => families(env), ctx)) ?? tools.fail(404, 'No clustering has been published.');
