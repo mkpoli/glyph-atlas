@@ -486,7 +486,54 @@ def character_view(character: Character, layer: Layers, *, expand: str = "none",
         "occurrences": {**layer.counts(character.code_point, expand=expand), "filtered": len(rows)},
         "samples": [layer.item(unit, revision, form, exact) for unit, revision, form, exact in window],
         "candidates": candidates,
+        "variants": variant_card(character.char, counts),
     }
+
+
+#: Each row of a card's variants lists at most this many, the most attested first; the gallery widens
+#: to exactly the first row (the Worker's VARIANTS_SHOWN).
+VARIANTS_SHOWN = 32
+
+
+def _attested(entry: dict[str, Any]) -> tuple[int, int]:
+    """Most sources first, then by code point: the order the card, the Worker and the widening share."""
+    return (-len({r["source"] for r in entry["relations"]}), ord(entry["char"][0]))
+
+
+def variant_pairs(char: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """The characters `char` shares an edge of the 異体字 graph with: those a gallery widens to (a pair
+    with one widening edge), then the rest, each most attested first. Every edge of a pair is kept."""
+    by_char: dict[str, dict[str, Any]] = {}
+    for edge in refs.variant_edges_of(char):
+        other = edge["b"] if edge["a"] == char else edge["a"]
+        if other == char:
+            continue
+        entry = by_char.setdefault(other, {"char": other, "code_point": refs.to_code_point(other),
+                                           "edges": [], "relations": []})
+        entry["edges"].append(edge)
+        entry["relations"].append({"relation": edge["relation"], "source": edge["source"], "detail": edge["detail"]})
+    for entry in by_char.values():
+        entry["widens"] = refs.widens(entry.pop("edges"))
+    ordered = sorted(by_char.values(), key=_attested)
+    return [e for e in ordered if e["widens"]], [e for e in ordered if not e["widens"]]
+
+
+def variant_card(char: str, counts: dict[str, int]) -> dict[str, Any]:
+    """The characters `char` is related to in the 異体字 graph, as the Worker's card lists them.
+
+    `items` are the variants a gallery widens to, `related` the rest (simplified, borrowed, …), at most
+    VARIANTS_SHOWN each. Every edge keeps its relation, source and claims; `sources` cites each source used.
+    """
+    widening, other = variant_pairs(char)
+    shown = [*widening[:VARIANTS_SHOWN], *other[:VARIANTS_SHOWN]]
+    corpus_counts, _ = corpus_source.safe(corpus_source.counts, [e["char"] for e in shown])
+    cited = refs.variant_sources()
+    rows = [{**e, "sources": sorted({r["source"] for r in e["relations"]}),
+             "count": counts.get(e["code_point"], 0),
+             "corpus_count": int(((corpus_counts or {}).get(e["char"]) or {}).get("n_glyphs") or 0)} for e in shown]
+    used = {source for row in rows for source in row["sources"]}
+    return {"items": [r for r in rows if r["widens"]], "related": [r for r in rows if not r["widens"]],
+            "total": len(widening) + len(other), "sources": {source: cited.get(source, source) for source in sorted(used)}}
 
 
 def _expansions(character: Character, counts: dict[str, int], *, expand: str) -> list[dict[str, Any]]:

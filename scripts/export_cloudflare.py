@@ -15,6 +15,7 @@ from collections import Counter, defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
 
+import export_character_variants
 from cloudflare_schema import schema
 from PIL import Image
 
@@ -242,6 +243,7 @@ def export(dataset: Path, output: Path, *, resume=False):
             "SELECT character,count(*) FROM units GROUP BY character") if len(char) == 1})
         print(encoded({"stage": "characters"}), flush=True)
         live_counts = {row["char"]: corpus._count_row(row["char"], row) for row in corpus.index.characters()}
+        export_character_variants.fill(db)
         db.execute("DELETE FROM characters")
         db.execute("DELETE FROM aliases")
         for row in refs.characters():

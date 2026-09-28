@@ -455,6 +455,32 @@ try {
   const markPlan = await plan({ sql: allCounts.marked, values: [] }, ['printed/type', 'printed/type0'])
   assert.ok(markPlan.some(d => /^SCAN m\b/.test(d)) && markPlan.some(d => /^SEARCH units USING INDEX sqlite_autoindex_units_1 \(id=\?\)/.test(d)), markPlan.join('; '))
   shapes.push([worker.corpusCountQuery('not:printed/type', 'ナ'), [], null])
+  // A character card lists its 異体字 edges both ways: the variants a gallery widens to apart from the
+  // rest, a pair any source calls simplified among the rest, each edge with its relation, source and
+  // claims, the sources cited, and crop counts from the kept counts.
+  await db.batch([
+    db.prepare("INSERT INTO character_variants VALUES('仮','假','variant','wikidata','Q1; P248 Q2',1,1)"),
+    db.prepare("INSERT INTO character_variants VALUES('假','仮','shinjitai','opencc','JPShinjitaiCharacters',1,1)"),
+    db.prepare("INSERT INTO character_variants VALUES('反','仮','borrowed','cjkvi-variants','反→仮 hydcd/borrowed',0,0)"),
+    db.prepare("INSERT INTO character_variants VALUES('仮','伋','variant','cjkvi-variants','仮→伋 hydzd/variant',1,1)"),
+    db.prepare("INSERT INTO character_variants VALUES('伋','仮','simplified','unihan','伋→仮 kSimplifiedVariant',1,0)"),
+    db.prepare(`INSERT OR REPLACE INTO metadata VALUES('variant_sources','{"wikidata":"Wikidata, P5475; CC0-1.0","opencc":"OpenCC; Apache-2.0","cjkvi-variants":"CJKVI; PD","unihan":"Unihan; Unicode-3.0"}')`),
+    db.prepare("INSERT OR REPLACE INTO metadata VALUES('units_refreshed_at','\"variants-test\"')"),
+  ])
+  const card = await call('/layers/characters/U%2B4EEE')
+  assert.deepEqual(card.variants.items.map(v => [v.char, v.code_point, v.sources]), [['假', 'U+5047', ['opencc', 'wikidata']]])
+  assert.deepEqual(card.variants.related.map(v => [v.char, v.relations.map(r => r.relation).sort()]),
+    [['伋', ['simplified', 'variant']], ['反', ['borrowed']]], 'a simplified pair is kept apart; every relation is listed')
+  assert.equal(card.variants.sources.wikidata, 'Wikidata, P5475; CC0-1.0', 'each source used is cited')
+  assert.equal(typeof card.variants.items[0].count, 'number')
+  const edgePlan = await plan({ sql: worker.variantEdgesQuery(), values: [] }, ['仮', '仮'])
+  assert.ok(edgePlan.includes('SEARCH character_variants USING PRIMARY KEY (a=?)'), edgePlan.join('; '))
+  assert.ok(edgePlan.includes('SEARCH character_variants USING INDEX character_variant_b (b=?)'), edgePlan.join('; '))
+  const countPlan = await plan({ sql: worker.variantCountsQuery(2), values: [] }, ['假', '反'])
+  assert.ok(countPlan.some(d => /SEARCH unit_counts USING PRIMARY KEY \(origin=\? AND character=\?\)/.test(d)), countPlan.join('; '))
+  assert.ok(!countPlan.some(d => /^SCAN/.test(d)), countPlan.join('; '))
+  const corpusCountPlan = await plan({ sql: worker.variantCorpusCountsQuery(2), values: [] }, ['假', '反'])
+  assert.ok(!corpusCountPlan.some(d => /^SCAN/.test(d)), corpusCountPlan.join('; '))
   // Needs fixing starts from the stored-flagged crops (`unit_state`) and the twice-skipped ones, and
   // looks each up by id; it never reads every crop to work out its review state.
   const attentionPlan = await plan({ sql: `SELECT count(*) AS n FROM units WHERE +origin='local' AND ${worker.attentionCandidatesQuery()}`, values: [] }, [])
