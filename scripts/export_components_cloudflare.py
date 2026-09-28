@@ -35,11 +35,11 @@ def statements(table: str, columns: str, rows):
     size = len(head)
     for row in rows:
         values = "(" + ",".join(quoted(value) for value in row) + ")"
-        if batch and size + len(values) + 2 > STATEMENT_BYTES:
+        if batch and size + len(values.encode()) + 2 > STATEMENT_BYTES:
             yield head + ",".join(batch) + ";"
             batch, size = [], len(head)
         batch.append(values)
-        size += len(values) + 1
+        size += len(values.encode()) + 1
     if batch:
         yield head + ",".join(batch) + ";"
 
