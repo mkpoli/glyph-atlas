@@ -98,6 +98,9 @@ Reference tables:
   Images CC BY-SA 2.1 JP, data CC BY 4.0. https://cid.ninjal.ac.jp/kana/
 - IVD 2026-08-03, Moji_Joho collection, 11,392 sequences, whose glyph ids are MJ文字図形名. Unicode
   License v3. https://www.unicode.org/ivd/
+- BabelStone IDS.TXT (Andrew West, File Date 2025-06-27): Ideographic Description Sequences for the
+  97,058 unified ideographs of Unicode 15.1, per source region. The header states the sequences are
+  facts free of copyright and waives the format. https://www.babelstone.co.uk/CJK/IDS.TXT
 
 Japanese Wikisource is included in full discovery. Main-namespace works and scan-backed Page
 records are collected through resumable, paced requests. Text-only works remain searchable text
@@ -109,7 +112,8 @@ finishing every page of the pilot.
 Outside the current acquisition scope:
 
 - 木簡庫 / MOJIZO: 木簡 are out of scope (decision 0001).
-- CHISE IDS: GPL-2.0-or-later, which cannot sit inside a CC BY-SA dataset.
+- CHISE IDS: GPL-2.0-or-later, which cannot sit inside a CC BY-SA dataset; component search uses
+  BabelStone's IDS instead.
 
 ## 5. Labelling
 
