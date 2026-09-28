@@ -6,7 +6,7 @@
   import { t } from '../lib/i18n.svelte.js'
   let { result = null, loading = false, contextResult = undefined, contextLoading = false,
     targetId = '', issue, reading, value = null, noneSelected = false, choose, disabled = false,
-    element = $bindable(null), typing = true } = $props()
+    element = $bindable(null), typing = true, other = null } = $props()
   let candidates = $state([]), scripts = $state({}), typed = $state('')
   // The field holds what the reader typed; choosing a suggestion or "None of these" empties it.
   $effect(() => { if (!value || candidates.includes(value)) typed = '' })
@@ -51,6 +51,7 @@
     <div class="suggestion-end">
     {#if typing}<label class="typed-choice"><span>{t('suggestions.type.label')}</span><input lang="ja" value={typed} maxlength="8" {disabled}
       placeholder={t('suggestions.type.placeholder')} class:chosen={typed && value === typed.trim()} oninput={type} /></label>{/if}
+    {#if other}{@render other()}{/if}
     <button type="button" class="no-suggestion" class:chosen={noneSelected} aria-pressed={noneSelected} {disabled} onclick={() => choose(null, true)}>{#if noneSelected}<span aria-hidden="true">✓ </span>{/if}{t('suggestions.noneOfThese')}</button>
     </div>
   </div>
