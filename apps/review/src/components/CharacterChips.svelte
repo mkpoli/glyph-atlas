@@ -3,10 +3,13 @@
   import ZiLink from './ZiLink.svelte'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import { countsLabel } from '../lib/layers.js'
+  import { page } from '$app/state'
   import { t, formatNumber, localize } from '../lib/i18n.svelte.js'
   import { characterAddress } from '../lib/gallery.js'
   let { card = null, expand = $bindable('none'), onselect = () => {}, onreview = null } = $props()
   const members = $derived(card?.grapheme?.members ?? [{code_point: card?.code_point, char: card?.char}])
+  // The Forms family this character is clustered in, by its grapheme or its own code point; none, no link.
+  const formsFamily = $derived([card?.grapheme?.code_point, card?.code_point].find(code => code && page.data.forms?.includes(code)))
   // The 異体字 graph: the variants a gallery widens to, and characters related otherwise.
   const variants = $derived(card?.variants ?? { items: [], related: [], sources: {} })
   // Every relation of kanji-variants.tsv in the reader's language; one the table gains later reads as its id.
@@ -83,6 +86,7 @@
     <div class="layer-row forms-row">
       <span class="layer-label">{t('chips.forms')}</span>
       <span>{expand === 'grapheme' ? t('chips.allForms') : card.char}</span>
+      {#if formsFamily}<a class="forms-link" href={localize('/forms/' + formsFamily)}>{t('nav.forms')} →</a>{/if}
       {#if expand !== 'grapheme' && card.candidates?.known && countsLabel(card.candidates)}<small>{countsLabel(card.candidates)}</small>{/if}
     </div>
     {#if card.ligature || card.jibo?.length || card.derived?.length || card.expansions?.some(o => o.key !== 'grapheme') || onreview}
@@ -112,6 +116,7 @@
   .active{color:var(--accent);border-color:var(--accent);background:var(--accent-light)}
   .forms-row{font-size:12px;color:var(--muted)}
   .forms-row small{margin-left:auto}
+  .forms-link{color:var(--accent);text-decoration:none}.forms-link:hover{text-decoration:underline}
   .layer-chips{margin:0}
   .variant-chips{display:flex;flex-wrap:wrap;gap:6px;flex:1}
   .variant{display:inline-flex;align-items:baseline;gap:6px;padding:4px 10px;border:1px solid var(--line);border-radius:7px;color:var(--ink);text-decoration:none;font-size:22px;line-height:1.2}
