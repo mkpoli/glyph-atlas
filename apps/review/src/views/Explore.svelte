@@ -522,6 +522,20 @@
     finally { bulkBusy = false }
   }
   function select(value) { grapheme = value; offset = 0; load() }
+  // The graphemes the browser lists, by key: a query's candidate shows in its grapheme's card when the
+  // collection holds that very character, as the browser's card lists it.
+  const graphemeByKey = $derived(new Map(graphemes.map(group => [group.key, group])))
+  function groupOf(item) {
+    const group = graphemeByKey.get(item.grapheme?.code_point ?? codesOf(item.char ?? ''))
+    return group && group.members.some(member => member.label === item.char) ? group : null
+  }
+  /** "All forms" in a query's card: the collection narrowed to that grapheme, as in the browser. */
+  function chooseGrapheme(key) {
+    clearTimeout(searchTimer); pickId += 1; requestId += 1; choosing = false
+    visual = ''; analysis = null; familyTotal = null; unassignedCount = null
+    query = ''; picked = null; expand = 'none'; local = []; corpus = []; corpusTotal = 0; corpusOffset = 0
+    select(key)
+  }
   function shuffle() { seed = randomSeed(); offset = 0; load() }
   /**
    * Back or Forward to an address this view rewrote loads the page as it was first loaded, while the
@@ -587,7 +601,8 @@
       {:else}<GraphemeGrid groups={graphemes} value={grapheme} onchoose={key => { close(); select(key) }}
                     onform={form => { close(); pick({ code_point: codesOf(form), char: form }, 'exact') }} />{/if}
     {/snippet}
-    <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse}
+    <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} {groupOf} onchoosegroup={chooseGrapheme}
+                     onform={form => pick({ code_point: codesOf(form), char: form }, true)}
                      token={grapheme ? charOf(grapheme) : ''} tokenLabel={t('explore.clearGrapheme', { grapheme: charOf(grapheme) })} ontokenclear={() => select('')}
                      onsubmit={() => { clearTimeout(searchTimer); offset = 0; submitQuery() }} />
     <div class="filter-tabs" aria-label={t('explore.filter.label')}>{#each [['all', () => t('explore.filter.all')], ['kana', () => t('explore.filter.kana')], ['kanji', () => t('explore.filter.kanji')], ['hangul', () => t('explore.filter.hangul')], ['gugyeol', () => t('explore.filter.gugyeol')]] as [value, text]}<button class:active={filter === value} onclick={() => { filter = value; offset = 0; load() }}>{text()}</button>{/each}</div>

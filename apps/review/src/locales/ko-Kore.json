@@ -565,6 +565,7 @@
   "search.narrowQuery": "나머지를 보려면 檢索語를 좁히십시오.",
   "search.noMatch": "一致하는 文字가 없습니다.",
   "search.placeholder": "文字 檢索…",
+  "search.others.other": "다른 文字 {count}個",
   "search.reading": "불러오는 中…",
   "search.searching": "檢索 中…",
   "similar.none": "닮은 크롭이 없습니다",
