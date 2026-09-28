@@ -17,7 +17,8 @@ The crops the atlas extracted from transcriptions (`ex:` ids) are not a test set
 kept a crop only when the recognizers agreed with the transcription
 (`glyph_atlas.extraction_queue`), so those labels favour the models that chose them.
 
-`atlas-reviewed` is small and drawn from the site's own crops (85 `ex:`, 58 `ar:`, 44 `hk:`, 37 `hl:`),
+`atlas-reviewed` is small and drawn from the site's own crops (85 `ex:`, 58 `ar:`, 44 `hk:` and 37 `hl:` crops, and 36 CODH and
+Hanja glyphs),
 so it serves as a check on those images rather than a ranking. The sections below dated before
 2026-09-29 were measured on its first 168 crops. Its `corrected` group holds the crops a person relabelled, where
 a suggestion matters most.

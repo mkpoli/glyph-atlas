@@ -1,13 +1,15 @@
 """Write `reviewed.jsonl`: crops whose character a person settled on the review site.
 
-A crop counts when its latest review that was not undone confirms the label, or corrects the
-character (`issue` `character` with a written character, one crop at a time or as a batch). A corrected reading, a bad crop, a
-merged crop or a blank names no character, so it is left out. The label and the image are the ones
-the reviewer saw, from the event's snapshot; the unit may have changed since. The input is the
-site's review events, exported from D1:
+A crop counts when its latest review that was not undone checked it (`new` is `reviewed`) by
+confirming its label or by correcting its character, one crop at a time, in a round or as a batch.
+Its truth is the label the review left the crop with, from the event's `correction`. A corrected
+reading, a bad crop, a merged crop or a blank names no character, so it is left out, and a batch
+that named a character for a crop already reported for its box leaves it reported. The label and
+the image are the ones the reviewer saw, from the event's snapshot; the unit may have changed since.
+The input is the site's review events, exported from D1:
 
     bunx wrangler d1 execute glyph-atlas --remote --json --command "SELECT e.target id,
-      json_extract(e.event,'$.evidence') ev FROM events e
+      json_extract(e.event,'$.new') new, json_extract(e.event,'$.evidence') ev FROM events e
       JOIN submissions s ON s.id=e.submission AND s.undone=0
       WHERE e.kind='review' ORDER BY e.at" | jq -c '.[0].results[]' > events.jsonl
     python models/benchmark/reviewed.py events.jsonl
@@ -24,29 +26,14 @@ from glyph_atlas import refs
 
 
 def truths(lines):
-    latest = {}
-    for line in lines:
-        row = json.loads(line)
+    latest = {row["id"]: row for row in map(json.loads, lines)}
+    for identity, row in latest.items():
         evidence = json.loads(row["ev"])
-        if "batch" in evidence:
-            # A batch correction gives every selected crop one written character, held as a code point.
-            written = evidence.get("suggested_character")
-            answer = {"verdict": evidence["verdict"], "issue": evidence.get("issue"),
-                      "character": refs.to_char(written) if written else None}
-        elif evidence["kind"] == "character-review":
-            answer = evidence["request"]
-        else:
-            answer = next((a for a in evidence["request"].get("answers", []) if a["id"] == row["id"]), None)
-        if answer is not None:
-            latest[row["id"]] = (evidence["snapshot"]["character"], answer)
-    for identity, (seen, answer) in latest.items():
-        if answer.get("verdict") == "match":
-            truth = seen["label"]
-        elif answer.get("verdict") == "wrong" and answer.get("issue") == "character" and answer.get("character"):
-            truth = answer["character"]
-        else:
+        if row["new"] != "reviewed" or not (evidence["verdict"] == "match" or evidence["issue"] == "character"):
             continue
-        if truth and len(truth) == 1:
+        seen = evidence["snapshot"]["character"]
+        truth = refs.from_code_points(evidence["correction"]["unicode"].split())
+        if len(truth) == 1:
             yield {"id": identity, "image": seen["image"], "truth": truth, "label": seen["label"],
                    "script": str(refs.script_of(truth)), "corrected": truth != seen["label"]}
 
