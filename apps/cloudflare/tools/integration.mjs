@@ -884,6 +884,11 @@ try {
   assert.ok(kept.some(m => m.endsWith(':seen')), 'the run leaves seen crops to compare')
   assert.deepEqual(kept, await marks(`SELECT id,iif(${skippers}>=2,'hard','seen') AS mark FROM units u WHERE ${skippers}>=2 OR ${seenHere}`),
     'the kept marks are what the skips and seen crops say')
+  // Every count the triggers kept, crops written anew included, is what counting `units` gives.
+  const groups = async sql => (await db.prepare(sql).all()).results.map(r => JSON.stringify(Object.values(r))).sort()
+  assert.deepEqual(await groups('SELECT * FROM unit_counts'), await groups(`SELECT origin,coalesce(character,''),coalesce(document,''),state,
+    coalesce(family,''),production,quiz,coalesce(json_extract(data,'$.source'),''),count(*) FROM units GROUP BY 1,2,3,4,5,6,7,8`),
+    'the kept counts are what the crops say')
   console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms.')
 } finally {
   await mf.dispose()

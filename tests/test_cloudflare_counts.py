@@ -52,3 +52,32 @@ def test_a_review_that_changes_only_the_record_leaves_the_counts_alone():
     # The update itself is the only row written.
     assert db.total_changes - before == 1
     agrees(db)
+
+
+def test_a_crop_written_anew_is_counted_once():
+    """`INSERT OR REPLACE` removes the old row without the delete trigger while recursive triggers are off."""
+    db = sqlite3.connect(":memory:")
+    for migration in MIGRATIONS:
+        db.executescript(migration.read_text())
+    unit(db, "one"); unit(db, "two")
+    row = db.execute("SELECT * FROM units WHERE id='one'").fetchone()
+    replace = f"INSERT OR REPLACE INTO units VALUES({','.join('?' * len(row))})"
+    db.execute(replace, row)
+    agrees(db)
+    moved = list(row); moved[2] = "イ"; moved[4] = "U+30A4"
+    db.execute(replace, moved)
+    agrees(db)
+    assert db.execute("SELECT count(*) FROM unit_count_keys").fetchone()[0] == 2
+
+
+def test_the_backfill_counts_every_row_however_high_its_rowid():
+    db = sqlite3.connect(":memory:")
+    for migration in MIGRATIONS:
+        if migration != COUNTS:
+            db.executescript(migration.read_text())
+    unit(db, "low")
+    db.execute("UPDATE units SET rowid=900000 WHERE id='low'")
+    unit(db, "one")
+    db.executescript(COUNTS.read_text())
+    agrees(db)
+    assert db.execute("SELECT count(*) FROM unit_count_keys").fetchone()[0] == 2
