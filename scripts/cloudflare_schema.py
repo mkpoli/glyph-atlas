@@ -8,12 +8,14 @@ MIGRATIONS = Path(__file__).resolve().parents[1] / "apps/cloudflare/migrations"
 
 # A decided glyph's corpus character is its form or the character it or its cluster was reported as, or, with none decided, the character it had before
 # any decision covered it (the Worker applies one decision the same way). A rewritten corpus row
-# carries the source's character, so the forms are applied to it again.
+# carries the source's character, so the forms are applied to it again, and the glyphs the Worker had
+# still to move (`corpus_follow`) have been moved with the rest.
 FORMS_REAPPLY = """INSERT OR IGNORE INTO form_bases(id,character,family) SELECT c.id,c.character,c.family FROM corpus_units c JOIN form_units f ON f.id=c.id
   WHERE f.glyph_set=1 OR f.cluster_form IS NOT NULL OR f.cluster_issue IS NOT NULL;
 UPDATE corpus_units SET character=CASE WHEN f.glyph_set=1 OR f.form IS NOT NULL OR f.issue IS NOT NULL THEN coalesce(f.issue_character,f.form) ELSE b.character END,
   family=coalesce(f.written_family,b.family)
-  FROM form_units f JOIN form_bases b ON b.id=f.id WHERE f.id=corpus_units.id AND corpus_units.named=0;"""
+  FROM form_units f JOIN form_bases b ON b.id=f.id WHERE f.id=corpus_units.id AND corpus_units.named=0;
+DELETE FROM corpus_follow;"""
 
 # Reapplies the forms, marks the corpus glyphs that have a `units` row as named, then counts assigned
 # glyphs per character and material, with the statements the migration runs. Every publication that
@@ -21,7 +23,7 @@ UPDATE corpus_units SET character=CASE WHEN f.glyph_set=1 OR f.form IS NOT NULL 
 CORPUS_REFRESH = FORMS_REAPPLY + "\n" + "\n".join(re.findall(
     r"UPDATE corpus_units SET named=1 WHERE id IN [\s\S]*?;|DELETE FROM corpus_characters;|INSERT INTO corpus_characters [\s\S]*?;",
     (MIGRATIONS / "0006_corpus_rounds.sql").read_text()))
-assert CORPUS_REFRESH.count(";") == 5, "0006 no longer restores and counts corpus_characters"
+assert CORPUS_REFRESH.count(";") == 6, "0006 no longer restores and counts corpus_characters"
 
 # Code points whose script makes a label kana, kanji or hangul, generated from the Unicode script
 # properties the Worker's `categoryOf` tests; 0006 names the kana and Han ranges in SQL and 0008 the
