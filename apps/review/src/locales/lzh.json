@@ -45,6 +45,7 @@
   "chips.characters": "字",
   "chips.forms": "體",
   "chips.grapheme": "字種",
+  "chips.includeVariants": "并異體",
   "chips.layers.label": "層",
   "chips.review": "校 ↗",
   "chips.showCharacter": "示{char}字",

@@ -547,6 +547,38 @@ const VARIANTS_SHOWN = 32;
 // A pair any source calls simplified is kept apart even where another lists it as a plain variant
 // (refs.KEPT_APART): cjkvi pairs 干 with 乾 and 幹, which four sources give as simplifications.
 const KEPT_APART = new Set(['simplified']);
+// The characters a gallery widened to its variants deals with `char`: the card's first row, in the
+// card's order (most sources, then code point), at most VARIANTS_SHOWN. One grouped read of the
+// character's edges, both ways by key and index.
+export const writtenVariantsQuery = () => `SELECT other FROM (
+    SELECT b AS other,relation,source,widens FROM character_variants WHERE a=?
+    UNION ALL SELECT a AS other,relation,source,widens FROM character_variants WHERE b=?)
+  WHERE other<>? GROUP BY other HAVING max(widens)=1 AND max(relation IN ('simplified'))=0
+  ORDER BY count(DISTINCT source) DESC,other LIMIT ${VARIANTS_SHOWN}`;
+async function writtenVariants(env: Env, char: string): Promise<string[]> {
+  const rows = (await env.DB.prepare(writtenVariantsQuery()).bind(char, char, char).all<{ other: string }>()).results;
+  return [char, ...rows.map(row => row.other)];
+}
+// A gallery widened to its variants pages this far at most and counts no further: the variants of a
+// common character can hold a hundred thousand corpus glyphs.
+const WIDENED_CAP = 2000;
+const widenedPage = (offset: number) => { if (offset > WIDENED_CAP) throw new Problem(404, 'A widened gallery does not page this far.') };
+// A character's crops with its variants', in the order `unit_character` (origin, character, state) holds
+// them: by character, then state, then row.
+export const widenedCropsQuery = (n: number, extra = '') => `SELECT * FROM units WHERE origin=? AND character IN (${Array(n).fill('?').join(',')})${extra} ORDER BY character,state,rowid LIMIT ? OFFSET ?`;
+export const widenedCropsCountQuery = (n: number, extra = '') => `SELECT count(*) AS n FROM (SELECT 1 FROM units WHERE origin=? AND character IN (${Array(n).fill('?').join(',')})${extra} LIMIT ${WIDENED_CAP + 1})`;
+// A corpus category: its glyphs, those corrected into it and not out of it, each branch in its own
+// index order (`k`, `i`: `corpus_character`, `unit_corpus_character`) so the union merges without
+// sorting. `field` is character or family.
+export const corpusSelection = (field: 'character' | 'family', n: number) => {
+  const list = n === 1 ? '=?' : ` IN (${Array(n).fill('?').join(',')})`;
+  return `SELECT c.*,c.${field} AS k,c.id AS i,u.data AS overlay,u.visual_group AS overlay_group,u.character AS overlay_character
+    FROM corpus_units c LEFT JOIN units u ON c.id=u.id
+    WHERE c.${field}${list} AND (u.id IS NULL OR u.${field}=c.${field})
+    UNION ALL SELECT c.*,u.${field} AS k,u.id AS i,u.data AS overlay,u.visual_group AS overlay_group,u.character AS overlay_character
+    FROM units u${field === 'character' ? ' INDEXED BY unit_corpus_character' : ''} JOIN corpus_units c ON c.id=u.id
+    WHERE u.origin='corpus' AND u.${field}${list} AND c.${field} IS NOT u.${field}`;
+};
 type VariantEdge = { other: string; relation: string; source: string; detail: string; widens: number };
 type VariantRow = { char: string; code_point: string; widens: boolean; relations: { relation: string; source: string; detail: string }[] };
 // The characters `char` shares an edge with, as the card lists them: `items` a gallery widens to (a
@@ -621,6 +653,25 @@ async function occurrences(env: Env, code: string, q: URLSearchParams, origin = 
   const limit = integer(q,'limit',24,200), offset=integer(q,'offset',0);
   const values: (string | number)[] = [];
   const where: string[] = [];
+  if (q.get('scope') === 'variants' || q.get('expand') === 'variants') {
+    widenedPage(offset);
+    const chars = await writtenVariants(env, data.char);
+    const filters: string[] = [], extra: (string | number)[] = [];
+    if (q.get('visual_group')) {
+      if (q.get('visual_group') === 'unassigned') filters.push('visual_group IS NULL');
+      else { filters.push('visual_group=?'); extra.push(q.get('visual_group')!) }
+    }
+    if (q.get('state') && q.get('state') !== 'all') { filters.push('state=?'); extra.push(q.get('state')!) }
+    const tail = filters.map(f => ' AND ' + f).join('');
+    const [count, rows] = await env.DB.batch([
+      env.DB.prepare(widenedCropsCountQuery(chars.length, tail)).bind(origin, ...chars, ...extra),
+      env.DB.prepare(widenedCropsQuery(chars.length, tail)).bind(origin, ...chars, ...extra, limit, offset),
+    ]);
+    const counted = (count.results[0] as { n: number }).n, total = Math.min(counted, WIDENED_CAP);
+    return { ...data.candidates, query: data.code_point, code_point: data.code_point,
+      total, capped: counted > WIDENED_CAP, available: rows.results.length, items: (rows.results as UnitRow[]).map(compact),
+      counts: { total, exact: total, exact_total: total }, scope: 'variants', status: 'ok' };
+  }
   if (q.get('scope') === 'grapheme' || q.get('expand') === 'grapheme') {
     // A grapheme's crops are its family's and its own character's. Each is one range of its own index;
     // an OR across the two columns would read every crop of the origin instead.
@@ -644,24 +695,21 @@ async function occurrences(env: Env, code: string, q: URLSearchParams, origin = 
 }
 async function corpusOccurrences(env:Env,data:Json,q:URLSearchParams){
   const limit=integer(q,'limit',24,200),offset=integer(q,'offset',0);
-  const family=q.get('scope')==='grapheme',field=family?'family':'character';
-  const selected=family?(data.grapheme?.code_point||data.code_point):data.char;
-  // Two indexed branches include corrections into this category and remove corrections
-  // out of it. Unassigned source classes remain null until evidence identifies the form.
-  const selection=`SELECT c.*,u.data AS overlay,u.visual_group AS overlay_group,u.character AS overlay_character
-    FROM corpus_units c LEFT JOIN units u ON c.id=u.id
-    WHERE c.${field}=? AND (u.id IS NULL OR u.${field}=c.${field})
-    UNION ALL SELECT c.*,u.data AS overlay,u.visual_group AS overlay_group,u.character AS overlay_character
-    FROM units u JOIN corpus_units c ON c.id=u.id
-    WHERE u.origin='corpus' AND u.${field}=? AND c.${field} IS NOT u.${field}`;
-  const where=['1=1'],values:(string|number)[]=[selected,selected];
+  const family=q.get('scope')==='grapheme',widened=q.get('scope')==='variants',field=family?'family':'character';
+  if(widened)widenedPage(offset);
+  // A variants widening reads the character and its variants, each by the character index.
+  const selected=widened?await writtenVariants(env,data.char):[family?(data.grapheme?.code_point||data.code_point):data.char];
+  // Unassigned source classes remain null until evidence identifies the form.
+  const where=['1=1'],values:(string|number)[]=[...selected,...selected];
   if(q.get('visual_group')){if(q.get('visual_group')==='unassigned')where.push('(CASE WHEN overlay IS NULL THEN character ELSE overlay_character END) IS NULL');
     else{where.push('(CASE WHEN overlay IS NULL THEN visual_group ELSE overlay_group END)=?');values.push(q.get('visual_group')!)}}
-  const join=`FROM (${selection})`;
+  const join=`FROM (${corpusSelection(field,selected.length)})`;
   const [count,rows]=await env.DB.batch([
-    env.DB.prepare(`SELECT count(*) AS n ${join} WHERE ${where.join(' AND ')}`).bind(...values),
-    env.DB.prepare(`SELECT * ${join} WHERE ${where.join(' AND ')} ORDER BY id LIMIT ? OFFSET ?`).bind(...values,limit,offset),
+    env.DB.prepare(widened?`SELECT count(*) AS n FROM (SELECT 1 ${join} WHERE ${where.join(' AND ')} LIMIT ${WIDENED_CAP+1})`
+      :`SELECT count(*) AS n ${join} WHERE ${where.join(' AND ')}`).bind(...values),
+    env.DB.prepare(`SELECT * ${join} WHERE ${where.join(' AND ')} ORDER BY k,i LIMIT ? OFFSET ?`).bind(...values,limit,offset),
   ]);
+  const counted=(count.results[0] as {n:number}).n;
   const items=[];
   // Bound simultaneous R2 streams; a corpus page may contain 200 records.
   for(let i=0;i<rows.results.length;i+=8){
@@ -675,8 +723,8 @@ async function corpusOccurrences(env:Env,data:Json,q:URLSearchParams){
     UNION ALL SELECT u.character AS written FROM units u JOIN corpus_units c ON c.id=u.id
       WHERE u.origin='corpus' AND u.family=? AND c.family IS NOT u.family
     )`).bind(familyCode,familyCode).first<{total:number;unassigned:number}>();
-  return {...data.candidates,code_point:data.code_point,total:(count.results[0] as {n:number}).n,
-    available:items.length,items,scope:family?'grapheme':'character',status:'ok',
+  return {...data.candidates,code_point:data.code_point,total:widened?Math.min(counted,WIDENED_CAP):counted,capped:widened&&counted>WIDENED_CAP,
+    available:items.length,items,scope:family?'grapheme':widened?'variants':'character',status:'ok',
     visual_analysis:info.detail.visual_analysis,family_total:familyCounts?.total||0,unassigned_count:familyCounts?.unassigned||0};
 }
 // A document's characters in source order. The primary key serves the filter and the order, and each

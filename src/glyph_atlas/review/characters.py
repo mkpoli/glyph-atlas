@@ -307,7 +307,10 @@ class Layers:
         `exact` is a row of the character the reader asked for; a row with `exact` false is a form of
         the same grapheme and appears only when the reader asked for the expansion.
         """
-        wanted = _forms(code_point) if "grapheme" in split_expansions(expand) else [code_point]
+        chosen = split_expansions(expand)
+        wanted = _forms(code_point) if "grapheme" in chosen else [code_point]
+        if "variants" in chosen:
+            wanted = [*wanted, *(point for point in variant_code_points(code_point) if point not in wanted)]
         rows: list[tuple[Unit, int, str, bool]] = []
         for form in wanted:
             for index in self._by_code_point.get(form, ()):
@@ -518,6 +521,32 @@ def variant_pairs(char: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]
     return [e for e in ordered if e["widens"]], [e for e in ordered if not e["widens"]]
 
 
+def variant_code_points(code_point: str) -> list[str]:
+    """The characters a gallery widened to its variants deals with this one: the card's first row."""
+    row = refs.character(code_point)
+    return [entry["code_point"] for entry in variant_pairs(row.char)[0][:VARIANTS_SHOWN]] if row else []
+
+
+#: A gallery widened to its variants pages this far at most (the Worker's WIDENED_CAP).
+WIDENED_CAP = 2000
+
+
+def _widened_corpus(chars: list[str], limit: int, offset: int, visual_group: str | None) -> tuple[dict[str, Any] | None, str | None]:
+    """The corpus glyphs of several characters, in the Worker's order (character, then id), from one
+    read per character of the corpus index service, which answers one character at a time."""
+    items, total, fault = [], 0, None
+    for char in sorted(chars):
+        payload, fault_here = corpus_source.safe(corpus_source.candidates, char, min(offset + limit, WIDENED_CAP), 0,
+                                                 scope="character", visual_group=visual_group)
+        if fault_here == "error":
+            return None, "error"
+        fault = fault or fault_here
+        payload = payload or {}
+        items += sorted(payload.get("items", []), key=lambda item: str(item.get("id", "")))
+        total += int(payload.get("total") or 0)
+    return {"items": items[offset:offset + limit], "total": min(total, WIDENED_CAP)}, fault
+
+
 def variant_card(char: str, counts: dict[str, int]) -> dict[str, Any]:
     """The characters `char` is related to in the 異体字 graph, as the Worker's card lists them.
 
@@ -580,9 +609,9 @@ def split_expansions(expand: str) -> set[str]:
     would otherwise look like a relation the layer does not have.
     """
     parts = {part.strip() for part in expand.split(",") if part.strip()}
-    unknown = parts - {"none", "grapheme", "jibo"}
+    unknown = parts - {"none", "grapheme", "jibo", "variants"}
     if unknown:
-        raise BadRequest(f"unknown expansion {sorted(unknown)}; the layer has grapheme and jibo")
+        raise BadRequest(f"unknown expansion {sorted(unknown)}; the layer has grapheme, jibo and variants")
     return parts - {"none"}
 
 
@@ -867,7 +896,7 @@ def router(store: Store) -> APIRouter:
     @api.get("/layers/search")
     def find(
         q: str = "",
-        expand: str = Query("none", pattern=r"^(none|grapheme|jibo)(,(grapheme|jibo))*$"),
+        expand: str = Query("none", pattern=r"^(none|grapheme|jibo|variants)(,(grapheme|jibo|variants))*$"),
         limit: Annotated[int, Query(ge=1, le=96)] = 24,
         offset: Annotated[int, Query(ge=0)] = 0,
     ) -> dict[str, Any]:
@@ -893,7 +922,7 @@ def router(store: Store) -> APIRouter:
     @api.get("/layers/characters/{code_point}")
     def character(
         code_point: str,
-        expand: str = Query("none", pattern=r"^(none|grapheme|jibo)(,(grapheme|jibo))*$"),
+        expand: str = Query("none", pattern=r"^(none|grapheme|jibo|variants)(,(grapheme|jibo|variants))*$"),
         state: Literal["all", "pending", "checked", "flagged"] = "all",
         limit: Annotated[int, Query(ge=1, le=96)] = 24,
         offset: Annotated[int, Query(ge=0)] = 0,
@@ -906,7 +935,7 @@ def router(store: Store) -> APIRouter:
     @api.get("/layers/occurrences")
     def occurrences(
         code_point: str,
-        expand: str = Query("none", pattern=r"^(none|grapheme|jibo)(,(grapheme|jibo))*$"),
+        expand: str = Query("none", pattern=r"^(none|grapheme|jibo|variants)(,(grapheme|jibo|variants))*$"),
         state: Literal["all", "pending", "checked", "flagged"] = "all",
         limit: Annotated[int, Query(ge=1, le=96)] = 48,
         offset: Annotated[int, Query(ge=0)] = 0,
@@ -985,7 +1014,7 @@ def router(store: Store) -> APIRouter:
         code_point: str,
         limit: Annotated[int, Query(ge=1, le=200)] = 24,
         offset: Annotated[int, Query(ge=0)] = 0,
-        scope: Literal["character", "grapheme"] = "character",
+        scope: Literal["character", "grapheme", "variants"] = "character",
         visual_group: Annotated[str | None, Query(max_length=160)] = None,
     ) -> dict[str, Any]:
         """What the corpus index holds for one character: located glyphs, and the counts by kind.
@@ -999,8 +1028,14 @@ def router(store: Store) -> APIRouter:
         counts, _ = corpus_source.safe(corpus_source.counts, [row.char])
         summary = candidate_summary(row.char, live=(counts or {}).get(row.char),
                                     local=current.per_character.get(row.code_point, 0))
-        payload, fault = corpus_source.safe(corpus_source.candidates, row.char, limit, offset,
-                                            scope=scope, visual_group=visual_group)
+        if scope == "variants":
+            if offset > WIDENED_CAP:
+                raise HTTPException(404, "A widened gallery does not page this far.")
+            chars = [row.char, *(refs.character(point).char for point in variant_code_points(row.code_point))]
+            payload, fault = _widened_corpus(chars, limit, offset, visual_group)
+        else:
+            payload, fault = corpus_source.safe(corpus_source.candidates, row.char, limit, offset,
+                                                scope=scope, visual_group=visual_group)
         if fault == "error":
             # Not an empty corpus: the reader is told the index could not be read and can retry,
             # while the counts that are already known stay in the answer.

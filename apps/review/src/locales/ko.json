@@ -44,6 +44,7 @@
   "chips.characters": "글자",
   "chips.forms": "자형",
   "chips.grapheme": "자소",
+  "chips.includeVariants": "이체자도 포함",
   "chips.layers.label": "글자 레이어",
   "chips.review": "검토 ↗",
   "chips.showCharacter": "{char} 표시",

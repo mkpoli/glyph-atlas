@@ -44,6 +44,7 @@
   "chips.characters": "Chữ",
   "chips.forms": "Tự dạng",
   "chips.grapheme": "Tự vị",
+  "chips.includeVariants": "Gồm cả dị thể",
   "chips.layers.label": "Lớp chữ",
   "chips.review": "Duyệt ↗",
   "chips.showCharacter": "Hiện chữ {char}",

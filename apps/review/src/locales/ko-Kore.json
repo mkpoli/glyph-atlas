@@ -44,6 +44,7 @@
   "chips.characters": "文字",
   "chips.forms": "字形",
   "chips.grapheme": "字素",
+  "chips.includeVariants": "異體字도 包含",
   "chips.layers.label": "文字 層",
   "chips.review": "檢討 ↗",
   "chips.showCharacter": "文字 {char} 보기",

@@ -74,6 +74,8 @@
       </div>
     {/if}
     {#if variants.items.length || variants.related.length}
+      {#if variants.items.length}<button class="chip chip-action include-variants" class:active={expand === 'variants'} aria-pressed={expand === 'variants'}
+        onclick={() => expand = expand === 'variants' ? 'none' : 'variants'}>{t('chips.includeVariants')}{#if variants.items.some(crops)} <small>{formatNumber(variants.items.reduce((n, v) => n + crops(v), 0))}</small>{/if}</button>{/if}
       <details class="variant-sources">
         <summary>{t('chips.variantSources')}: {Object.keys(variants.sources).join(' · ')}</summary>
         <ul>{#each Object.entries(variants.sources) as [id, citation] (id)}<li><b>{id}</b> {citation}</li>{/each}</ul>
@@ -118,6 +120,8 @@
   .variant:hover{border-color:var(--accent)}
   .variant small{font-size:11px;color:var(--muted)}
   .variant .code{font-family:ui-monospace,monospace;font-size:10px}
+  .include-variants{justify-self:start;margin-left:92px}
+  @media(max-width:600px){.include-variants{margin-left:0}}
   .variant-sources{margin:0;padding-left:92px;font-size:11px;color:var(--muted)}
   .variant-sources summary{cursor:pointer;width:fit-content}
   .variant-sources ul{margin:6px 0 0;padding-left:16px;display:grid;gap:3px;overflow-wrap:anywhere}

@@ -479,6 +479,42 @@ try {
   const countPlan = await plan({ sql: worker.variantCountsQuery(2), values: [] }, ['假', '反'])
   assert.ok(countPlan.some(d => /SEARCH unit_counts USING PRIMARY KEY \(origin=\? AND character=\?\)/.test(d)), countPlan.join('; '))
   assert.ok(!countPlan.some(d => /^SCAN/.test(d)), countPlan.join('; '))
+  // A gallery widened to its variants deals a variant's crops with the character's own, and only then.
+  const variantCrop = { id: 'variant-crop', label: '假', reading: '假', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
+  await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind('variant-crop', 'local', '假', '假', 'U+4EEE', null,
+    'handwritten', 'kanji', 'pending', 0, 1, 1, 1, JSON.stringify(variantCrop), JSON.stringify({ character: variantCrop }), '{}', '{}', null).run()
+  assert.ok(!(await call('/layers/occurrences?code_point=U%2B4EEE')).items.some(i => i.id === 'variant-crop'), 'the exact character alone')
+  assert.ok((await call('/layers/occurrences?code_point=U%2B4EEE&expand=variants')).items.some(i => i.id === 'variant-crop'), 'widened to 假')
+  // A crop of 伋 is not dealt: a source calls the pair a simplification, so it is kept apart.
+  const apart = { ...variantCrop, id: 'apart-crop', label: '伋', reading: '伋' }
+  await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind('apart-crop', 'local', '伋', '伋', 'U+4EEE', null,
+    'handwritten', 'kanji', 'pending', 0, 1, 1, 1, JSON.stringify(apart), JSON.stringify({ character: apart }), '{}', '{}', null).run()
+  assert.ok(!(await call('/layers/occurrences?code_point=U%2B4EEE&expand=variants')).items.some(i => i.id === 'apart-crop'), 'a simplified pair is not widened to')
+  assert.equal((await call('/layers/candidates?code_point=U%2B4EEE&scope=variants')).retry, false, 'the corpus side widens without error')
+  await call('/layers/occurrences?code_point=U%2B4EEE&expand=variants&offset=2001', undefined, 404)
+  // The widening reads the character's edges by key and index, and each widened page and count reads
+  // the chosen characters in index order: no temporary sort, a count that stops at the cap.
+  const widenPlan = await plan({ sql: worker.writtenVariantsQuery(), values: [] }, ['仮', '仮', '仮'])
+  assert.ok(widenPlan.includes('SEARCH character_variants USING PRIMARY KEY (a=?)'), widenPlan.join('; '))
+  assert.ok(widenPlan.includes('SEARCH character_variants USING INDEX character_variant_b (b=?)'), widenPlan.join('; '))
+  const sortFree = details => {
+    assert.ok(!details.some(d => /TEMP B-TREE/.test(d)), details.join('; '))
+    assert.ok(!details.some(d => /^SCAN (units|corpus_units|c|u)\b/.test(d)), details.join('; '))
+  }
+  const cropsPlan = await plan({ sql: worker.widenedCropsQuery(3), values: [] }, ['local', '仮', '假', '反', 60, 0])
+  sortFree(cropsPlan)
+  assert.ok(cropsPlan.some(d => /SEARCH units USING INDEX unit_character \(origin=\? AND character=\?\)/.test(d)), cropsPlan.join('; '))
+  const cropsCountPlan = await plan({ sql: worker.widenedCropsCountQuery(3), values: [] }, ['local', '仮', '假', '反'])
+  sortFree(cropsCountPlan)
+  for (const n of [1, 3]) {
+    const chars = ['仮', '假', '反'].slice(0, n)
+    const corpusPlan = await plan({ sql: `SELECT * FROM (${worker.corpusSelection('character', n)}) WHERE 1=1 ORDER BY k,i LIMIT ? OFFSET ?`, values: [] }, [...chars, ...chars, 60, 0])
+    sortFree(corpusPlan)
+    assert.ok(corpusPlan.some(d => /SEARCH c USING INDEX corpus_character \(character=\?\)/.test(d)), corpusPlan.join('; '))
+    assert.ok(corpusPlan.some(d => /SEARCH u USING INDEX unit_corpus_character/.test(d)), corpusPlan.join('; '))
+  }
+  await db.prepare("DELETE FROM units WHERE id='apart-crop'").run()
+  await db.prepare("DELETE FROM units WHERE id='variant-crop'").run()
   const corpusCountPlan = await plan({ sql: worker.variantCorpusCountsQuery(2), values: [] }, ['假', '反'])
   assert.ok(!corpusCountPlan.some(d => /^SCAN/.test(d)), corpusCountPlan.join('; '))
   // Needs fixing starts from the stored-flagged crops (`unit_state`) and the twice-skipped ones, and

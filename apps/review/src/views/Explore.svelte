@@ -17,7 +17,7 @@
   import { catalogue, character, request, randomSeed, number, formatSerial, stored, remember } from '../lib/client.js'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery } from '../lib/layers.js'
   import { t, around, localName, locale, localize, delocalize } from '../lib/i18n.svelte.js'
-  import { characterAddress, collectionAddress, scopeFor, unslug } from '../lib/gallery.js'
+  import { characterAddress, collectionAddress, corpusScope, expandFor, scopeFor, unslug } from '../lib/gallery.js'
   // `initial` is the collection page the server rendered: the seed it shuffled with, the filters in the
   // address, the collection's rows, the corpus sample and the progress line; without rows the view loads
   // them itself, with the same filters. The bare homepage comes with `lead`, the first crops of the
@@ -207,7 +207,8 @@
                  categories: data?.categories ?? [], documents: data?.documents ?? [], counts: data?.counts ?? {} }
         // The chips come from the card, and the card says which widening is in force: refetch it so a
         // chip that was just switched on reads as on.
-        layerCharacter(picked.code_point, expand)
+        // A variants widening changes no field of the card, and a further page none at all.
+        if (!append && expand !== 'variants') layerCharacter(picked.code_point, expand)
           .then(card => { if (!closed && id === requestId) picked = { ...picked, ...card } })
           .catch(() => {})
         if (append) return
@@ -216,7 +217,7 @@
         corpusFault = null
         try {
           const leads = await layerCandidates(picked.code_point, 60, 0,
-            { scope: expand === 'grapheme' ? 'grapheme' : 'character', visual_group: visual || undefined })
+            { scope: corpusScope(expand), visual_group: visual || undefined })
           if (closed || id !== requestId) return
           corpus = (leads.glyph_items ?? []).map(item => ({ ...item, label: writtenLabel(item), origin: 'corpus' }))
           corpusTotal = leads.glyphs ?? 0; corpusOffset = corpus.length
@@ -323,7 +324,7 @@
     loading = true
     try {
       const page = await layerCandidates(target, 60, corpusOffset,
-        { scope: expand === 'grapheme' ? 'grapheme' : 'character', visual_group: visual || undefined })
+        { scope: corpusScope(expand), visual_group: visual || undefined })
       if (closed || current !== pickId || id !== requestId || picked?.code_point !== target) return
       const rows = (page.glyph_items ?? []).map(item => ({ ...item, label: writtenLabel(item), origin: 'corpus' }))
       corpusOffset += rows.length
@@ -334,7 +335,8 @@
     } finally { if (!closed && id === requestId) loading = false }
   }
   // Choosing a candidate is choosing what to look at: the grid becomes that character's gallery.
-  async function pick(item, exact = false) {
+  // `scope` is an address's: `exact`, `family` or `variants`; without one the card's default applies.
+  async function pick(item, scope = null) {
     let expansionWillLoad = false
     choosing = false
     clearTimeout(searchTimer)
@@ -352,7 +354,7 @@
         const card = await layerCharacter(item.code_point, 'none')
         if (closed || current !== pickId) return   // a newer choice owns the gallery now
         picked = { ...bare, ...item, ...card }; query = card.char
-        const nextExpand = !exact && (card.default_scope === 'grapheme' || card.candidates?.requires_family_scope) ? 'grapheme' : 'none'
+        const nextExpand = expandFor(scope, card)
         expansionWillLoad = expand !== nextExpand
         expand = nextExpand
         analysis = card.visual_analysis ?? null
@@ -363,6 +365,8 @@
   function fitsGallery(row) {
     if (!picked) return true
     if (!matchesVisualGroup(row, visual)) return false
+    if (expand === 'variants') return !isUnassigned(row)
+      && [picked.char, ...(picked.variants?.items ?? []).map(v => v.char)].includes(writtenLabel(row))
     if (expand !== 'grapheme') return !isUnassigned(row) && writtenLabel(row) === picked.char
     if (isUnassigned(row)) return (row.grapheme?.code_point ?? row.grapheme) === picked.grapheme?.code_point
     return (picked.grapheme?.members ?? [picked]).some(member => member.char === writtenLabel(row))
@@ -409,7 +413,10 @@
   function followAddress() {
     const { path } = delocalize(location.pathname)
     const code = path.startsWith('/character/') ? unslug(path.slice(11)) : null
-    if (code && code !== picked?.code_point) pick({ code_point: code }, new URLSearchParams(location.search).get('scope') === 'exact')
+    const scope = new URLSearchParams(location.search).get('scope')
+    if (code && code !== picked?.code_point) pick({ code_point: code }, scope)
+    // Back or Forward between two scopes of the same character: the widening the address names.
+    else if (code && picked && expandFor(scope, picked) !== expand) expand = expandFor(scope, picked)
     else if (!code && path === '/') {
       const wanted = new URLSearchParams(location.search)
       const q = wanted.get('q') ?? '', g = wanted.get('grapheme') ?? '', w = wanted.get('work') ?? '', group = wanted.get('group') ?? 'all'
@@ -444,7 +451,7 @@
   <div class="page-status">
     <h1 class="visually-hidden">{flagged ? t('explore.heading.flagged') : t('explore.heading.atlas')}</h1>
     <SiteLinks />
-    <div class="collection-meta"><span class="live-dot"></span>{#if picked}<span>{t('explore.meta.glyphs', { count: display.length })}</span><span class="meta-divider">/</span><span>{expand === "grapheme" ? t('explore.meta.characters', { count: picked.grapheme?.character_count ?? 1 }) : t('explore.meta.characters', { count: 1 })}</span>{:else if !flagged && collection?.archive}<span>{t('explore.meta.indexedCrops', { count: collection.archive.character_crops })}</span><span class="meta-divider">/</span><span>{t('explore.meta.worksWithCrops', { count: collection.archive.works_with_crops })}</span>{:else}<span>{t('explore.meta.glyphsTotal', { count: flagged ? (data?.total ?? 0) + sample.length : data?.available })}</span><span class="meta-divider">/</span><span>{t('explore.meta.graphemes', { count: graphemes.length })}</span>{/if}</div>
+    <div class="collection-meta"><span class="live-dot"></span>{#if picked}<span>{t('explore.meta.glyphs', { count: display.length })}</span><span class="meta-divider">/</span><span>{expand === "grapheme" ? t('explore.meta.characters', { count: picked.grapheme?.character_count ?? 1 }) : expand === "variants" ? t('explore.meta.characters', { count: 1 + (picked.variants?.items?.length ?? 0) }) : t('explore.meta.characters', { count: 1 })}</span>{:else if !flagged && collection?.archive}<span>{t('explore.meta.indexedCrops', { count: collection.archive.character_crops })}</span><span class="meta-divider">/</span><span>{t('explore.meta.worksWithCrops', { count: collection.archive.works_with_crops })}</span>{:else}<span>{t('explore.meta.glyphsTotal', { count: flagged ? (data?.total ?? 0) + sample.length : data?.available })}</span><span class="meta-divider">/</span><span>{t('explore.meta.graphemes', { count: graphemes.length })}</span>{/if}</div>
   </div>
   <div class="collection-toolbar">
     <!-- The box, empty and focused, lists the collection's graphemes; one chosen narrows the grid, and a
@@ -459,7 +466,7 @@
       </div>{/if}
       {#if unit === 'pair' && !flagged}<PairGrid {pairs} failed={pairsFailed} onretry={loadPairs} />
       {:else}<GraphemeGrid groups={graphemes} value={grapheme} onchoose={key => { close(); select(key) }}
-                    onform={form => { close(); pick({ code_point: codesOf(form), char: form }, true) }} />{/if}
+                    onform={form => { close(); pick({ code_point: codesOf(form), char: form }, 'exact') }} />{/if}
     {/snippet}
     <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse}
                      token={grapheme ? charOf(grapheme) : ''} tokenLabel={t('explore.clearGrapheme', { grapheme: charOf(grapheme) })} ontokenclear={() => select('')}
@@ -476,7 +483,7 @@
   </div>
   {#if error}<div class="error-message" role="alert">{error}<button onclick={() => load()}>{t('common.retry')}</button></div>{/if}
   {#if picked}
-    <CharacterChips card={picked} bind:expand onselect={item => pick({ code_point: item }, true)} />
+    <CharacterChips card={picked} bind:expand onselect={item => pick({ code_point: item }, 'exact')} />
     {#if expand === 'grapheme'}<VisualGroups {analysis} count={familyTotal} unassigned={unassignedCount} value={visual} onchange={value => { visual = value; load() }} />{/if}
     <p class="find-count" role="status">
       {t('explore.meta.glyphs', { count: display.length })}
