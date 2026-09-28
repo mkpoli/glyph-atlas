@@ -204,3 +204,28 @@ def test_a_decision_carries_the_grapheme_of_what_the_glyph_is_written_as(monkeyp
     monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
     module = importlib.import_module("export_forms_cloudflare")
     assert [module.written_family(c) for c in ("𛂥", "仿", "國", None)] == ["U+306F", "U+4EFF", "U+56FD", None]
+
+
+def test_a_families_only_publication_refreshes_the_palette_and_nothing_else(tmp_path, monkeypatch, form_corpora):
+    clustering(tmp_path, monkeypatch, form_corpora)
+    publish(tmp_path, monkeypatch, "out")
+    db = schema()
+    load(db, tmp_path / "out")
+    # A family listed by an older build of the character layer.
+    stale = [dict(entry, jibo="舊") for entry in json.loads(db.execute("SELECT forms FROM form_families").fetchone()[0])]
+    db.execute("UPDATE form_families SET forms=?", (json.dumps(stale, ensure_ascii=False),))
+    db.execute("INSERT OR REPLACE INTO metadata(key,value) VALUES('forms_loaded_at','old')")
+    units = db.execute("SELECT count(*) FROM form_units").fetchone()
+    module = importlib.import_module("export_forms_cloudflare")
+    assert module.families_only(tmp_path / "palette") == {"revision": "r1", "families": 1, "sql_parts": 1}
+    publication = load(db, tmp_path / "palette")
+    assert publication["objects"] == []
+    from glyph_atlas.review.forms import _form_entry
+    palette = json.loads(db.execute("SELECT forms FROM form_families").fetchone()[0])
+    assert palette == [_form_entry(char) for char in forms.family_members("U+306F")], "each form as the layer states it now"
+    assert db.execute("SELECT count(*) FROM form_units").fetchone() == units
+    assert db.execute("SELECT value FROM metadata WHERE key='forms_loaded_at'").fetchone()[0] != "old"
+    # A live family from another clustering is left alone.
+    db.execute("UPDATE form_families SET forms='[]', revision='r0'")
+    load(db, tmp_path / "palette")
+    assert db.execute("SELECT forms FROM form_families").fetchone()[0] == "[]"
