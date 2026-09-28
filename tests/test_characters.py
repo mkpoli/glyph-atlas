@@ -662,3 +662,18 @@ def test_the_build_refuses_a_gugyeol_row_it_cannot_trust(tiny, line):
     (vocab / "gugyeol.tsv").write_text("code_point\tchar\treadings\tjibo\n" + line, encoding="utf-8")
     with pytest.raises(ValueError):
         build(release, vocab)
+
+
+def test_a_modern_kana_has_a_source_not_a_jibo():
+    """の and ノ come from 乃, as their Japanese Wikipedia articles state; neither is a hentaigana of 乃."""
+    assert refs.jibo_of_unit("U+306E") is None and refs.jibo_of_unit("U+1B099") == "乃"
+    assert [(o["char"], o["field"]) for o in refs.origin_of("U+306E")] == [("乃", "平仮名字源")]
+    assert [(o["char"], o["field"]) for o in refs.origin_of("U+30CE")] == [("乃", "片仮名字源")]
+    # A voiced kana has its base's 字源, precomposed or not.
+    assert refs.origin_of("U+304C") == refs.origin_of("U+304B U+3099") == refs.origin_of("U+304B")
+    assert refs.origin_of("U+1B099") == [] and refs.origin_of("U+4E43") == []
+    # The article 片仮名 cites 个 for ケ too, so 介 is not given as settled.
+    ke, = refs.origin_of("U+30B1")
+    assert ke["char"] == "介" and ke["uncertain"] and ke["also_cited"] == ["个"]
+    # A hiragana is the cursive of a whole kanji; a katakana's source is not.
+    assert refs.kana_origins()["乃"] == {"の"} and "弓" not in refs.kana_origins()

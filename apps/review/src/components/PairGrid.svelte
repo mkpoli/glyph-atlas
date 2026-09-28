@@ -3,9 +3,11 @@
   // labels make, most frequent first. `pairs` is `[{ text, n }]`, or null while it loads.
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import { number } from '../lib/client.js'
-  import { t } from '../lib/i18n.svelte.js'
+  import { t, localize } from '../lib/i18n.svelte.js'
+  import { pairAddress } from '../lib/pairs.js'
 
-  let { pairs = null, failed = false, onretry = () => {} } = $props()
+  // `work` is the work the counts are for; a pair opens its occurrences in it.
+  let { pairs = null, failed = false, onretry = () => {}, work = '' } = $props()
 </script>
 
 {#if failed}
@@ -17,12 +19,14 @@
 {:else}
   <ul class="category-options pair-grid">
     {#each pairs as pair (pair.text)}
-      <li><ReferenceGlyph char={pair.text} size="md" /><small>{number(pair.n)}</small></li>
+      <li><a href={localize(pairAddress(pair.text, work))} aria-label={`${pair.text} ${t('pair.occurrences', { count: number(pair.n) })}`}><ReferenceGlyph char={pair.text} size="md" /><small>{number(pair.n)}</small></a></li>
     {/each}
   </ul>
 {/if}
 
 <style>
   .pair-grid{list-style:none;margin:0}
-  .pair-grid li{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:54px;padding:8px 4px;background:var(--surface-subtle)}
+  .pair-grid li{background:var(--surface-subtle)}
+  .pair-grid a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:54px;padding:8px 4px;color:inherit;text-decoration:none}
+  .pair-grid a:hover,.pair-grid a:focus-visible{background:var(--surface-selected)}
 </style>

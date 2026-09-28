@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import csv
 import re
+import unicodedata
 from collections.abc import Iterable
 from functools import cache
 from pathlib import Path
@@ -675,14 +676,14 @@ def readings(code_point: str) -> list[str]:
 def kana_origins() -> dict[str, frozenset[str]]:
     """The modern hiragana each kanji is the cursive form of, by kanji: 太 gives た.
 
-    From kana-origins.tsv (the 平仮名字源 of each kana's Japanese Wikipedia article). The character
-    layer has no 字母 for the modern kana, only for hentaigana. A kanji is found under every member
-    of its grapheme family, so 曽 finds the そ that the table gives under 曾.
+    From kana-origins.tsv, its 平仮名字源 rows only: a katakana is written from part of a kanji, not
+    as its cursive, so ユ does not make 弓 read as ゆ. A kanji is found under every member of its
+    grapheme family, so 曽 finds the そ that the table gives under 曾.
     """
     found: dict[str, set[str]] = {}
-    for row in _read_tsv(KANA_ORIGINS_TSV):
-        info = grapheme_info(row["jibo_code_point"])
-        members = {row["jibo"], *(member["char"] for member in (info or {}).get("members") or [])}
+    for row in (row for row in _read_tsv(KANA_ORIGINS_TSV) if row["field"] == "平仮名字源"):
+        info = grapheme_info(row["origin_code_point"])
+        members = {row["origin"], *(member["char"] for member in (info or {}).get("members") or [])}
         for member in members:
             found.setdefault(member, set()).add(row["kana"])
     return {kanji: frozenset(kana) for kanji, kana in found.items()}
@@ -718,6 +719,40 @@ def jibo_of_unit(unicode: str | None) -> str | None:
     """The first 字母 of a code point sequence, or `None`; the whole list is `jibo_of`."""
     letters = jibo_of(unicode)
     return letters[0] if letters else None
+
+
+@cache
+def _kana_origin_rows() -> dict[str, list[dict[str, Any]]]:
+    """kana -> its 字源 rows from kana-origins.tsv, each with its field, source text and revision."""
+    found: dict[str, list[dict[str, Any]]] = {}
+    for row in _read_tsv(KANA_ORIGINS_TSV):
+        also = row["also_cited"].split()
+        found.setdefault(row["kana"], []).append({
+            "char": row["origin"], "code_point": row["origin_code_point"], "field": row["field"],
+            "source_text": row["source_text"], "revision": int(row["revision"]),
+            "also_cited": also, "uncertain": bool(also),
+        })
+    return found
+
+
+def origin_of(unicode: str | None) -> list[dict[str, Any]]:
+    """The 字源 of a modern kana sequence, from its Japanese Wikipedia articles; `[]` for any other.
+
+    Kept apart from `jibo_of`: a hentaigana's 字母 is the kanji it is a form of, while a modern kana's
+    字源 is where its shape came from, a whole kanji in cursive for a hiragana and usually a part of
+    one for a katakana. A voiced kana has the 字源 of its base whichever way it is written, so が and
+    か + U+3099 both give 加. An entry the article 片仮名 contests carries the other kanji it names in
+    `also_cited` and is `uncertain`.
+    """
+    rows = _kana_origin_rows()
+    found: list[dict[str, Any]] = []
+    for point in (unicode or "").split():
+        char = to_char(point)
+        base = unicodedata.normalize("NFD", char)[0]
+        for entry in rows.get(char) or rows.get(base) or []:
+            if entry["char"] not in [e["char"] for e in found]:
+                found.append(entry)
+    return found
 
 
 def _normalise(code_point: str) -> str:

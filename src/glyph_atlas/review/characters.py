@@ -477,6 +477,9 @@ def character_view(character: Character, layer: Layers, *, expand: str = "none",
         "category": character.category,
         "confusables": [to_row(refs.character(code_point)) for code_point in character.confusables],
         "grapheme": _grapheme_head(character, counts),
+        # A modern kana's 字源, from its Japanese Wikipedia articles: where its shape came from, which
+        # is not a 字母 (the kanji a hentaigana is a form of) and is shown apart from one.
+        "origin": refs.origin_of(character.code_point),
         "characters": [_row(row, counts) for row in forms if row is not None],
         "visual_analysis": visual_families.family_analysis(character.code_point),
         # The widenings this character offers, with the one the request already applied marked

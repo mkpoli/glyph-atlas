@@ -248,6 +248,7 @@ def export(dataset: Path, output: Path, *, resume=False):
         db.execute("DELETE FROM aliases")
         for row in refs.characters():
             info = characters._row(row, counts)
+            info["origin"] = refs.origin_of(row.code_point)
             info["candidates"] = characters.candidate_summary(row.char, live=live_counts.get(row.char),
                                                                local=counts.get(row.code_point, 0))
             info["kind"] = ("ligature" if row.ligature else "han" if str(row.script) == "han"
@@ -265,7 +266,10 @@ def export(dataset: Path, output: Path, *, resume=False):
             db.execute("INSERT INTO characters VALUES (?,?,?,?,?)",
                        (row.code_point, row.char, row.name or "", encoded(info), encoded(detail)))
             aliases = {row.char: 0, row.code_point.lower(): 0}
-            for value in [*row.readings, *row.jibo]:
+            # A hiragana is found by the kanji it is the cursive of (の by 乃); a katakana is written from
+            # part of a kanji (ミ from 三), which a reader searching 三 is not asking for.
+            cursive = [e["char"] for e in info["origin"] if e["field"] == "平仮名字源"]
+            for value in [*row.readings, *row.jibo, *cursive]:
                 aliases.setdefault(refs.to_hiragana(value), 4)
             if row.ligature:
                 for value in [row.ligature.reading, refs.from_code_points(row.ligature.components)]:
