@@ -4,6 +4,7 @@
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import { countsLabel } from '../lib/layers.js'
   import { t, formatNumber } from '../lib/i18n.svelte.js'
+  import { originText, originTitle } from '../lib/origin.js'
   let { card = null, expand = $bindable('none'), onselect = () => {}, onreview = null } = $props()
   const members = $derived(card?.grapheme?.members ?? [{code_point: card?.code_point, char: card?.char}])
 </script>
@@ -33,10 +34,11 @@
       <span>{expand === 'grapheme' ? t('chips.allForms') : card.char}</span>
       {#if expand !== 'grapheme' && card.candidates?.known && countsLabel(card.candidates)}<small>{countsLabel(card.candidates)}</small>{/if}
     </div>
-    {#if card.ligature || card.jibo?.length || card.derived?.length || card.expansions?.some(o => o.key !== 'grapheme') || onreview}
+    {#if card.ligature || card.jibo?.length || card.origin?.length || card.derived?.length || card.expansions?.some(o => o.key !== 'grapheme') || onreview}
       <div class="layer-chips">
         {#if card.ligature}<span class="chip">{card.ligature.components.map(c => c.char).join(' + ')}</span>{/if}
         {#if card.jibo?.length}<span class="chip">字母 {card.jibo.map(j => j.char).join(' ')}</span>{/if}
+        {#if card.origin?.length}<span class="chip chip-origin" title={originTitle(card.origin)}>{t('origin.label')} {originText(card.origin)}</span>{/if}
         {#each (card.expansions ?? []).filter(o => o.key !== 'grapheme') as option (option.key)}
           <button class="chip chip-action" class:active={expand === option.key}
             onclick={() => expand = expand === option.key ? 'none' : option.key}>{option.label} <small>{formatNumber(option.count)}</small></button>
