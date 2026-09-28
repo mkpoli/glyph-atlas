@@ -19,7 +19,7 @@ from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -551,6 +551,25 @@ class Round(BaseModel):
     #: The crops the reviewer skipped: shown and not judged. They are recorded against the reviewer, so
     #: the crop goes to other reviewers first and comes back to this one only after `SKIP_REST`.
     skipped: list[Seen] = Field(default_factory=list, max_length=4096)
+
+
+class CorrectedCrop(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1, max_length=512)
+    revision: int = Field(ge=0)
+    #: A crop names its page image; a corpus glyph, which this service does not hold, its source revision.
+    image_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    source_revision: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+
+
+class Correction(BaseModel):
+    """Crops a reader selected in the collection view, all given one written character at once."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: UUID
+    client_id: str = Field(min_length=1, max_length=128)
+    character: str = Field(min_length=1, max_length=32)
+    crops: list[CorrectedCrop] = Field(min_length=1, max_length=144)
 
 
 class Undo(BaseModel):
@@ -1143,9 +1162,96 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         results = store.record_batch(requests)
         return {"id": str(round.id), "results": results}
 
+    @api.post("/atlas/corrections", response_model=None)
+    def correct(correction: Correction) -> dict | JSONResponse:
+        """Crops a reader selected, given one written character, with the site's rules: every crop that
+        changed or that a person already checked as another character is named and nothing is saved; a
+        crop already written as the character is confirmed, or left alone if a person checked it; a crop
+        reported for its box, a blank or a merge keeps that report."""
+        ids = [crop.id for crop in correction.crops]
+        if len(set(ids)) != len(ids):
+            raise BadRequest("A crop can appear only once in a correction.")
+        identity = identity_correction(correction.character, "character")
+        prefix = f"correction:{correction.id}:"
+        # A retry is the same request, compared whole, as the Worker compares its submissions.
+        signature = hashlib.sha256(json.dumps(correction.model_dump(mode="json"), sort_keys=True,
+                                              ensure_ascii=False).encode()).hexdigest()
+        previous = store.submission_results(correction.client_id, prefix)
+        if previous:
+            old = {json.loads(r["review"]["evidence"]).get("request_sha256") for r in previous if r["field"] == "review"}
+            if old != {signature}:
+                raise HTTPException(409, "This correction was already saved with different crops.")
+            return {"id": str(correction.id), **repeat(previous)}
+        open_issue: dict[str, str | None] = {}
+        for event in store.events():
+            if event.field == "review" and event.target_id in ids:
+                try:
+                    evidence = json.loads(event.evidence) if event.evidence else {}
+                except ValueError:
+                    evidence = {}
+                open_issue[event.target_id] = (evidence.get("issue") if isinstance(evidence, dict) else None) \
+                    if event.new == ReviewState.DISPUTED else None
+        refused, chosen, unchanged = [], [], []
+        for crop in correction.crops:
+            try:
+                unit, revision = one(crop.id)
+            except HTTPException:
+                refused.append({"id": crop.id, "reason": "missing"})
+                continue
+            if crop.revision != revision or crop.image_sha256 != image_source(unit)[0].stem:
+                refused.append({"id": crop.id, "reason": "changed"})
+                continue
+            state = review_state(unit.review)
+            same = identity == stored_identity(unit) or (not unit.unicode and identity_text(identity) == label(unit))
+            if same and state == "checked":
+                unchanged.append(crop.id)
+            elif state == "checked":
+                refused.append({"id": crop.id, "reason": "checked"})
+            else:
+                chosen.append((crop, unit, revision, same))
+        if refused:
+            return JSONResponse({"detail": "Some of these crops changed or were already checked. Reload them.",
+                                 "targets": refused}, status_code=409)
+        requests = []
+        for crop, unit, revision, same in chosen:
+            kept = open_issue.get(crop.id)
+            kept = kept if kept not in (None, "character", "reading") else None
+            derived = None if same else reading_of(identity_text(identity))
+            reading = derived if derived and derived != label(unit) else None
+            evidence = json.dumps({"kind": "character-review", "batch": str(correction.id), "request_sha256": signature,
+                                   "verdict": "match" if same else "wrong", "issue": kept or (None if same else "character"),
+                                   "suggested_reading": None, "suggested_character": None if same else identity,
+                                   "snapshot": snapshot(unit, revision),
+                                   "correction": {"reading": reading or label(unit), "unicode": identity,
+                                                  "box": unit.box.model_dump() if unit.box else None}},
+                                  ensure_ascii=False)
+            base = revision
+            if not same:
+                requests.append(ReviewRequest(target_type="unit", target_id=crop.id, field="unicode", new=identity,
+                                              base_revision=base, client_id=correction.client_id,
+                                              idempotency_key=prefix + crop.id + ":character", evidence=evidence))
+                base += 1
+            if reading:
+                requests.append(ReviewRequest(target_type="unit", target_id=crop.id, field="reading", new=reading,
+                                              base_revision=base, client_id=correction.client_id,
+                                              idempotency_key=prefix + crop.id + ":reading", evidence=evidence))
+                base += 1
+            requests.append(ReviewRequest(target_type="unit", target_id=crop.id, field="review",
+                                          new="disputed" if kept else "reviewed",
+                                          base_revision=base, client_id=correction.client_id,
+                                          idempotency_key=prefix + crop.id, evidence=evidence))
+        return {"id": str(correction.id), "results": store.record_batch(requests), "unchanged": unchanged}
+
+    @api.post("/atlas/corrections/{round_id}/undo")
+    def undo_correction(round_id: UUID, request: Undo) -> dict:
+        return undo_submission(round_id, request, "correction")
+
     @api.post("/atlas/rounds/{round_id}/undo")
     def undo(round_id: UUID, request: Undo) -> dict:
-        previous = store.submission_results(request.client_id, f"quiz:{round_id}:")
+        return undo_submission(round_id, request, "quiz")
+
+    def undo_submission(round_id: UUID, request: Undo, kind: str) -> dict:
+        previous = store.submission_results(request.client_id, f"{kind}:{round_id}:")
         if not previous:
             raise HTTPException(404, "No saved round belongs to this reviewer.")
         revisions = {r["target_id"]: r["revision"] for r in previous}
@@ -1156,7 +1262,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 target_type="unit", target_id=target, field=r["field"], new=r["review"]["old"],
                 # A seen record changed nothing, so its undo has nothing to be stale against.
                 base_revision=None if r["field"] == SEEN else revisions[target], client_id=request.client_id,
-                idempotency_key=f"quiz-undo:{round_id}:{r['id']}", evidence=f"undo of {r['id']}",
+                idempotency_key=f"{kind}-undo:{round_id}:{r['id']}", evidence=f"undo of {r['id']}",
             ))
             if r["field"] != SEEN:
                 revisions[target] += 1
@@ -1283,6 +1389,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             "character": identity_text(points) if points else None,
             "reading": evidence.get("suggested_reading"),
             "round": evidence.get("round"),
+            "batch": evidence.get("batch"),
         }
 
     def history_entry(seq: int, event: Any, by_id: dict[str, Any]) -> dict[str, Any]:
