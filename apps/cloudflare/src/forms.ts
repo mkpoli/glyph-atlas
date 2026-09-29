@@ -219,10 +219,12 @@ async function drain(env: Env, held: { until: number }) {
       env.DB.prepare(`INSERT INTO corpus_characters(character,production,n,named) SELECT character,production,count(*),0 ${unnamed}
         GROUP BY character,production ON CONFLICT(character,production) DO UPDATE SET n=n+excluded.n`),
       env.DB.prepare('DELETE FROM corpus_characters WHERE n=0'),
-      // The browser's corpus counts are cached on this stamp.
-      env.DB.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('corpus_counts_at',?)").bind(JSON.stringify(new Date(until).toISOString())),
       env.DB.prepare(`DELETE FROM corpus_follow WHERE id IN (${following})`),
     ]);
+    // The grapheme browser's corpus counts are cached on this stamp; it is written once the counts
+    // have changed, so a request in between caches the new counts under the old key at worst.
+    if (results[2].meta.changes || results[4].meta.changes)
+      await env.DB.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('corpus_counts_at',?)").bind(JSON.stringify(new Date().toISOString())).run();
     if (!results[0].meta.changes) return;
     held.until = until;
     if (results.at(-1)!.meta.changes < FOLLOW_BATCH) return;
