@@ -677,3 +677,33 @@ def test_a_focused_document_s_supplements_are_taken_first(tmp_path):
     assert queue.seed_supplements() == 2
     queue.focus({"b"})
     assert queue.claim_supplement()["id"] == "b"
+
+
+def test_a_queue_keeps_the_ndl_provider_its_first_worker_brought(tmp_path):
+    queue = Queue(tmp_path / "queue")
+    queue.pin("ndl_provider", "CPUExecutionProvider")
+    queue.pin("ndl_provider", "CPUExecutionProvider")
+    with pytest.raises(RuntimeError, match="CPUExecutionProvider, not CUDAExecutionProvider"):
+        Queue(tmp_path / "queue").pin("ndl_provider", "CUDAExecutionProvider")
+    queue.pin("ndl_provider", "CUDAExecutionProvider", replace=True)
+    assert queue.db.execute("SELECT value FROM settings WHERE key='ndl_provider'").fetchone()[0] == "CUDAExecutionProvider"
+
+
+def test_where_ndl_runs_is_part_of_a_page_identity(tmp_path):
+    from types import SimpleNamespace
+
+    from glyph_atlas.extraction_queue import engine_models, page_identity
+
+    detector = tmp_path / "detector.onnx"
+    detector.write_bytes(b"model")
+
+    def reader(provider):
+        return SimpleNamespace(engines=[{"name": "NDLkotenOCR", "sha256": "s", "provider": provider}],
+                               classifier=SimpleNamespace(classes=["あ"]), alphabet="あい")
+
+    run = SimpleNamespace(model_dump=lambda: {"detector": "d"})
+    page = Page(id="a:0", document_id="a", seq=0, image="https://example.org/x.jpg", width=100, height=100)
+    document = Document(id="a", title="暦")
+    on_gpu, on_cpu = (page_identity(engine_models(detector, reader(p)), run, page, document, [])
+                      for p in ("CUDAExecutionProvider", "CPUExecutionProvider"))
+    assert on_gpu != on_cpu
