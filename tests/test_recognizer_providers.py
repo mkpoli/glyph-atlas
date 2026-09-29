@@ -27,4 +27,6 @@ def test_the_sequence_model_runs_on_the_cpu_when_asked(tmp_path, monkeypatch):
     assert reader.sequence.get_providers() == ["CPUExecutionProvider"]
     assert reader.engines == [{"name": "NDLkotenOCR", "sha256": reader.engines[0]["sha256"],
                                "provider": "CPUExecutionProvider"}]
-    assert reader.sequence.get_session_options().intra_op_num_threads == 3
+    options = reader.sequence.get_session_options()
+    assert options.intra_op_num_threads == 3
+    assert options.get_session_config_entry("session.intra_op.allow_spinning") == "0"

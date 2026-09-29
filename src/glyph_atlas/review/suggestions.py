@@ -211,6 +211,9 @@ class Recognizer:
                 sequence_options.log_severity_level = 3
                 sequence_options.intra_op_num_threads = sequence_threads
                 sequence_options.inter_op_num_threads = 1
+                # Idle threads sleep instead of spinning: beside other workers on the same cores, four
+                # workers read as fast or faster and use less CPU.
+                sequence_options.add_session_config_entry("session.intra_op.allow_spinning", "0")
             self.sequence = ort.InferenceSession(str(model), sess_options=sequence_options,
                                                  providers=["CPUExecutionProvider"] if sequence_on_cpu else providers)
             self.alphabet = yaml.safe_load(alphabet.read_text())["model"]["charset_train"]
