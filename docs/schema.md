@@ -185,7 +185,10 @@ append to a shared file.
 `data/vocab/genre.yaml` and `data/vocab/holders.yaml` hold the controlled values with Japanese
 labels. `data/vocab/production.yaml` is a tree: an id is its path from the root
 (`printed/type/wood`). It and `data/vocab/style.yaml` give each value an English label and a
-definition.
+definition. The site files each crop under one of three style groups, in the order its galleries
+list them: running and cursive script; not assessed (with `mixed`); and the formal scripts (seal,
+clerical, regular) with the print faces. A publication writes each crop's resolved style;
+`scripts/publish_styles.py` writes the confirmed document styles onto crops already published.
 
 `refs.forms(reading)` is every character written for a reading, from the layer, and
 `refs.candidates(reading)` is the same list ordered for a classifier and for a reviewer: the modern kana first, then the hentaigana in code point order, then the katakana. The
