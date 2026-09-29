@@ -11,14 +11,16 @@ the other form of a 新字・旧字 pair, because CODH merged those forms.
 | --- | ---: | --- |
 | `codh-test` | 45,981 | CODH's four test books (`data/splits/codh.tsv`): every kanji crop and 12,000 of the others |
 | `hilab-test` | 37,606 | HI Lab crops in the held-out tenth of `hilab_split`, drawn by blocks of 200 ids |
-| `atlas-reviewed` | 168 | crops whose character a person confirmed (119) or corrected (49) on the review site (`reviewed.py`) |
+| `atlas-reviewed` | 260 | crops whose character a person confirmed (124) or corrected (136) on the review site (`reviewed.py`) |
 
 The crops the atlas extracted from transcriptions (`ex:` ids) are not a test set. The extraction
 kept a crop only when the recognizers agreed with the transcription
 (`glyph_atlas.extraction_queue`), so those labels favour the models that chose them.
 
-`atlas-reviewed` is small, and most of it is `ex:` crops, so it serves as a check on the site's
-own images rather than a ranking. Its `corrected` group holds the crops a person relabelled, where
+`atlas-reviewed` is small and drawn from the site's own crops (85 `ex:`, 58 `ar:`, 44 `hk:` and 37 `hl:` crops, and 36 CODH and
+Hanja glyphs),
+so it serves as a check on those images rather than a ranking. The sections below dated before
+2026-09-29 were measured on its first 168 crops. Its `corrected` group holds the crops a person relabelled, where
 a suggestion matters most.
 
 ## Models
@@ -100,3 +102,19 @@ The served CAFormer (`atlas`) against Soramaru, top-1 / top-5, percent:
 
 On `codh-test` hiragana, `atlas` reads 93.2 / 99.5 and `soramaru` 77.6 / 94.6. The full breakdowns
 are in `results/soramaru-*.json`.
+
+## Reviewed crops (2026-09-29)
+
+`atlas-reviewed` refreshed from the site's reviews: 260 crops, 136 of them corrected. Top-1 / top-5,
+percent; `results/reviewed-2026-09-29-atlas-reviewed.json` holds the breakdowns.
+
+| model | all (260) | corrected (136) | han (169) | hiragana (48) | katakana (42) |
+| --- | --- | --- | --- | --- | --- |
+| `atlas` | 85.4 / 94.6 | 74.3 / 91.2 | 93.5 / 98.2 | 68.8 / 91.7 | 71.4 / 83.3 |
+| `soramaru` | 82.3 / 93.5 | 71.3 / 90.4 | 89.9 / 97.6 | 79.2 / 87.5 | 54.8 / 83.3 |
+| `atlas+soramaru` | 85.4 / 95.8 | 74.3 / 93.4 | 93.5 / 99.4 | 68.8 / 93.8 | 71.4 / 83.3 |
+| `ndl` | 63.1 / 70.4 | 48.5 / 61.8 | 65.1 / 69.2 | 70.8 / 75.0 | 45.2 / 69.0 |
+| `interleave` | 85.4 / 95.0 | 74.3 / 91.9 | 93.5 / 98.8 | 68.8 / 89.6 | 71.4 / 85.7 |
+
+Soramaru leads on hiragana at top-1 (79.2 against 68.8), the script where `atlas` also trails on
+`codh-test` and `hilab-test`.
