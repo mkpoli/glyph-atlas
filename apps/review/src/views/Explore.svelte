@@ -94,14 +94,15 @@
   // Whether the graphemes are listed from the most crops or from the fewest; the choice is remembered.
   let order = $state(stored('atlas.browseOrder', 'most') === 'fewest' ? 'fewest' : 'most')
   function orderBy(value) { order = value; remember('atlas.browseOrder', value) }
-  // The readings the catalogue counts, gathered under their graphemes: 仮 and 假 are one tile.
+  // The readings the catalogue counts, gathered under their graphemes: 仮 and 假 are one tile. A tile
+  // counts the collection's own crops and the corpus glyphs of its characters; `local` keeps the former.
   const graphemes = $derived.by(() => {
     const groups = new Map()
     for (const c of categories) {
       const key = c.grapheme ?? c.label
-      const group = groups.get(key) ?? { key, char: charOf(key), count: 0, members: [] }
-      const count = flagged ? c.flagged + c.hard : c.total
-      group.members.push({ label: c.label, count }); group.count += count
+      const group = groups.get(key) ?? { key, char: charOf(key), count: 0, local: 0, members: [] }
+      const count = flagged ? c.flagged + c.hard : c.total + (c.corpus ?? 0)
+      group.members.push({ label: c.label, count }); group.count += count; group.local += c.total
       groups.set(key, group)
     }
     for (const group of groups.values()) group.members.sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
@@ -556,6 +557,12 @@
     finally { bulkBusy = false }
   }
   function select(value) { grapheme = value; offset = 0; load() }
+  // A grapheme held only as corpus glyphs has nothing for the collection's filter to list, so it opens
+  // the character's gallery, which lists corpus glyphs too.
+  function openGrapheme(key) {
+    if (key && graphemeByKey.get(key)?.local === 0) pick({ code_point: key, char: charOf(key) }, 'family')
+    else select(key)
+  }
   // The graphemes the browser lists, by key: a query's candidate shows in its grapheme's card when the
   // collection holds that very character, as the browser's card lists it.
   const graphemeByKey = $derived(new Map(graphemes.map(group => [group.key, group])))
@@ -568,7 +575,7 @@
     clearTimeout(searchTimer); pickId += 1; requestId += 1; choosing = false
     visual = ''; analysis = null; familyTotal = null; unassignedCount = null
     query = ''; picked = null; expand = 'none'; local = []; corpus = []; corpusTotal = 0; corpusOffset = 0
-    select(key)
+    openGrapheme(key)
   }
   function shuffle() { seed = randomSeed(); offset = 0; load() }
   /**
@@ -632,7 +639,7 @@
         {#each [['most', () => t('explore.order.most')], ['fewest', () => t('explore.order.fewest')]] as [value, text]}<button type="button" aria-pressed={order === value} onclick={() => orderBy(value)}>{text()}</button>{/each}
       </div>{/if}
       {#if unit === 'pair' && !flagged}<PairGrid {pairs} failed={pairsFailed} onretry={loadPairs} {work} />
-      {:else}<GraphemeGrid groups={graphemes} value={grapheme} onchoose={key => { close(); select(key) }}
+      {:else}<GraphemeGrid groups={graphemes} value={grapheme} onchoose={key => { close(); openGrapheme(key) }}
                     onform={form => { close(); pick({ code_point: codesOf(form), char: form }, 'exact') }} />{/if}
     {/snippet}
     <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} {groupOf} onchoosegroup={chooseGrapheme}
