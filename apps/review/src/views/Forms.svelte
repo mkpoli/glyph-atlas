@@ -343,7 +343,7 @@
             {#each current.forms as form, i (form.char)}
               <button class="form-choice" disabled={busy || !target} onclick={() => apply(form.char)} title={form.name ?? form.code_point}>
                 <ReferenceGlyph char={form.char} code_point={form.code_point} size="lg" script={form.script} />
-                {#if form.jibo}<span class="form-source">{form.jibo}</span>{:else if form.origin}<span class="form-source form-origin" title={originTitle(form.origin)}><small>{t('origin.label')}</small>{originText(form.origin)}</span>{:else}<span class="form-source"></span>{/if}
+                {#if form.jibo}<span class="form-source">{form.jibo}</span>{:else if form.origin}<span class="form-source form-origin" title={originTitle(form.origin)}>{originText(form.origin)}</span>{:else}<span class="form-source"></span>{/if}
                 <small>{form.code_point}</small>
                 {#if i < 10}<kbd>{'1234567890'[i]}</kbd>{/if}
               </button>
@@ -496,7 +496,7 @@
   .form-choice{position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:66px;padding:8px 8px 6px;background:var(--surface)}
   .form-choice:not(:disabled):hover{border-color:var(--accent);background:var(--accent-hover)}
   .form-source{font-size:12px;min-height:16px;font-family:"Noto Sans CJK JP","Yu Gothic",sans-serif}
-  .form-origin{color:var(--muted)}.form-origin small{font-size:8px;margin-right:2px}
+  .form-origin{color:var(--muted)}
   .form-choice small{font-size:8px;color:var(--muted);font-family:ui-monospace,monospace}
   .form-choice kbd{position:absolute;top:4px;right:5px;font-size:8px;color:var(--faint);font-family:ui-monospace,monospace}
   .palette-other{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto;align-content:flex-start;max-width:260px}.palette-other button{font-size:11px;padding:8px 11px}
