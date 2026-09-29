@@ -104,15 +104,24 @@ def resolve(unit: Unit, page: Page | None = None, document: Document | None = No
 
     A `mixed` page or document says its units differ, so it passes nothing down.
     """
-    if unit.style != UNASSESSED:
-        return unit.style, "unit"
-    if page is not None and page.style == MIXED:
+    return resolve_values(unit.style, page.style if page is not None else None,
+                          document.id if document is not None else None,
+                          document.style if document is not None else None)
+
+
+def resolve_values(unit: str | None, page: str | None, document_id: str | None,
+                   document: str | None) -> tuple[str, str]:
+    """`resolve` from the values a row states, as a corpus row carries them; None states nothing."""
+    unit, page = unit or UNASSESSED, page or UNASSESSED
+    if unit != UNASSESSED:
+        return unit, "unit"
+    if page == MIXED:
         return UNASSESSED, "none"
-    if page is not None and page.style != UNASSESSED:
-        return page.style, "page"
-    if document is not None:
-        confirmed_style = confirmed().get(document.id, {}).get("style")
-        value = confirmed_style or document.style
+    if page != UNASSESSED:
+        return page, "page"
+    if document_id is not None:
+        confirmed_style = confirmed().get(document_id, {}).get("style")
+        value = confirmed_style or document or UNASSESSED
         if value == MIXED:
             return UNASSESSED, "none"
         if value != UNASSESSED:
