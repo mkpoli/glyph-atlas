@@ -76,6 +76,9 @@ MAX_ATTEMPTS = 3
 #: How long a claim holds without a heartbeat. A worker renews it every eighth of this while it
 #: extracts, so a page is taken back only from a worker that stopped.
 LEASE_SECONDS = 600
+#: How many leases a page may run before its heartbeat stops renewing it, so a worker whose
+#: extraction hangs gives the page back.
+PAGE_DEADLINE_LEASES = 6
 
 
 def scorable_chars(text: str) -> set[str]:
@@ -893,17 +896,25 @@ class heartbeat:
 
     A renewal the database refuses for a moment (busy, locked) is tried again at the next beat, well
     inside the lease. Once another worker holds the claim, `lost` is set and the beats stop: the
-    worker then writes nothing for it.
+    worker then writes nothing for it. A page still running `deadline` seconds after its claim
+    (`PAGE_DEADLINE_LEASES` leases by default) is given up the same way, so a hung extraction lets its
+    lease lapse and another worker takes the page.
     """
 
-    def __init__(self, queue, kind, ident, worker, *, lease=LEASE_SECONDS):
+    def __init__(self, queue, kind, ident, worker, *, lease=LEASE_SECONDS, deadline=None):
         import threading
         self.stop = threading.Event()
         self.lost = threading.Event()
-        self.thread = threading.Thread(target=self._beat, args=(queue, kind, ident, worker, lease), daemon=True)
+        deadline = lease * PAGE_DEADLINE_LEASES if deadline is None else deadline
+        self.thread = threading.Thread(target=self._beat, args=(queue, kind, ident, worker, lease, deadline),
+                                       daemon=True)
 
-    def _beat(self, queue, kind, ident, worker, lease):
+    def _beat(self, queue, kind, ident, worker, lease, deadline):
+        started = time.monotonic()
         while not self.stop.wait(lease / 8):
+            if time.monotonic() - started > deadline:
+                self.lost.set()
+                return
             try:
                 held = queue.renew(kind, ident, worker, lease=lease)
             except sqlite3.Error:

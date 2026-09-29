@@ -1069,3 +1069,23 @@ def test_a_supplement_fail_whose_claim_is_taken_over_after_the_check_writes_noth
     queue.db = Interleaved(queue.db, queue.root)
     assert not queue.fail_supplement("p", "slow", "timeout")
     assert tuple(queue.db.execute("SELECT status, worker, error FROM supplements").fetchone()) == ("running", "fresh", None)
+
+
+def test_a_heartbeat_stops_renewing_a_page_that_ran_past_its_deadline():
+    import time
+
+    from glyph_atlas.extraction_queue import heartbeat
+
+    class Renewals:
+        calls = 0
+
+        def renew(self, *args, **kwargs):
+            self.calls += 1
+            return True
+
+    hung = Renewals()
+    with heartbeat(hung, "page", "p", "w", lease=0.08, deadline=0.2) as beat:
+        time.sleep(0.5)
+        calls = hung.calls
+        time.sleep(0.2)
+    assert beat.lost.is_set() and hung.calls == calls
