@@ -19,7 +19,7 @@ import export_character_variants
 from cloudflare_schema import schema
 from PIL import Image
 
-from glyph_atlas import refs, unit_pairs
+from glyph_atlas import refs, style, unit_pairs
 from glyph_atlas.corpus.api import PROXYABLE, CorpusAPI
 from glyph_atlas.review import atlas, characters, collection, corpus_source
 from glyph_atlas.review.context_suggestions import context_guesses
@@ -183,8 +183,9 @@ def export(dataset: Path, output: Path, *, resume=False):
                               attribution=doc.image_rights.attribution, rights_url=doc.image_rights.evidence,
                               page_number=shown["page_number"])
                 kept["page_index"] = shown["page_index"]
-                db.execute("UPDATE units SET data=?,snapshot=?,document=?,family=? WHERE id=?",
-                           (encoded(detail), encoded(kept), doc.id, atlas.grapheme_of(item["label"]), item["id"]))
+                db.execute("UPDATE units SET data=?,snapshot=?,document=?,family=?,style=? WHERE id=?",
+                           (encoded(detail), encoded(kept), doc.id, atlas.grapheme_of(item["label"]),
+                            style.style_of(unit, page, doc), item["id"]))
                 continue
             if unit.line_id not in lines:
                 lines[unit.line_id] = store.line(unit.line_id) if unit.line_id else None
@@ -224,12 +225,13 @@ def export(dataset: Path, output: Path, *, resume=False):
             counts[cp] += 1
             # A label with no family is its own grapheme, so every named crop is one `family` lookup.
             family = atlas.grapheme_of(item["label"])
-            db.execute("INSERT INTO units VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+            db.execute("INSERT INTO units VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
                 item["id"], "local", item["label"], item["reading"], family, None,
                 item["production"], atlas.character_group(unit), item["state"], item["revision"],
                 int(not atlas.repair_withheld(unit)), atlas.review_priority(unit),
                 int(hashlib.sha256(item["id"].encode()).hexdigest()[:7], 16),
-                encoded(detail), encoded(snapshot), encoded(context), encoded(visual), doc.id))
+                encoded(detail), encoded(snapshot), encoded(context), encoded(visual), doc.id,
+                style.style_of(unit, page, doc)))
             if i % 500 == 0:
                 db.commit()
                 print(encoded({"stage": "local-crops", "done": i}), flush=True)

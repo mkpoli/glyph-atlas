@@ -108,3 +108,13 @@ def test_a_caller_cannot_change_the_cached_entries(tmp_path, monkeypatch):
 
 def test_the_confirmed_file_in_the_repository_is_valid():
     style.confirmed()
+
+
+def test_the_values_a_corpus_row_states_resolve_as_its_models_do(tmp_path, monkeypatch):
+    confirm(tmp_path, monkeypatch, f"documents:\n  d:\n    style: cursive\n    {REVIEWED}\n")
+    assert style.resolve_values(None, None, "d", None) == ("cursive", "document-confirmed")
+    assert style.resolve_values(None, "regular", "d", None) == ("regular", "page")
+    assert style.resolve_values("running", None, "d", None) == ("running", "unit")
+    assert style.resolve_values(None, None, "e", "ming") == ("ming", "document")
+    assert style.resolve_values(None, "mixed", "d", None) == ("unassessed", "none")
+    assert style.resolve_values(None, None, None, None) == ("unassessed", "none")

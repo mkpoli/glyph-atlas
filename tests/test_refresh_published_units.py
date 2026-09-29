@@ -16,14 +16,15 @@ def data(box=BOX, image="/atlas/media/a.webp", revision=1, **extra):
                       ensure_ascii=False, separators=(",", ":"))
 
 
-def unit(box=BOX, image="/atlas/media/a.webp", quiz=1, state="pending", revision=1):
+def unit(box=BOX, image="/atlas/media/a.webp", quiz=1, state="pending", revision=1, style="unassessed"):
     return {"id": "hk:1", "origin": "local", "character": "イ", "reading": "イ", "family": None, "visual_group": None,
             "production": "unknown", "category": "イ", "state": state, "quiz": quiz, "priority": 0, "shuffle": 5,
-            "revision": revision, "data": data(box, image, revision), "snapshot": "{}", "context": "{}", "visual": "{}"}
+            "revision": revision, "data": data(box, image, revision), "snapshot": "{}", "context": "{}", "visual": "{}",
+            "style": style}
 
 
-def live(box=BOX, image="/atlas/media/a.webp", quiz=1, revision=1000001, reviewed=False, **extra):
-    return {"revision": revision, "quiz": quiz, "data": data(box, image, revision, **extra), "reviewed": reviewed}
+def live(box=BOX, image="/atlas/media/a.webp", quiz=1, revision=1000001, reviewed=False, style="unassessed", **extra):
+    return {"revision": revision, "quiz": quiz, "data": data(box, image, revision, **extra), "style": style, "reviewed": reviewed}
 
 
 def test_an_unreviewed_changed_unit_takes_the_catalogue_row_and_revision():
@@ -210,3 +211,15 @@ def test_a_new_page_number_is_set_in_place_with_its_page_index_reviewed_or_not()
         db.execute(sql)
         data, snapshot = db.execute("SELECT data, snapshot FROM units").fetchone()
         assert json.loads(data)["page_number"] == 87 and json.loads(snapshot)["page_index"] == 86
+
+
+@pytest.mark.parametrize("reviewed", [False, True])
+def test_a_new_style_is_set_in_place_reviewed_or_not(reviewed):
+    action, sql = refresh.plan(unit(revision=1000001, style="cursive"), live(reviewed=reviewed))
+    assert action == "in-place"
+    assert sql == "UPDATE units SET style='cursive' WHERE id='hk:1' AND revision=1000001;"
+
+
+def test_a_replaced_unit_takes_the_catalogues_style():
+    _, sql = refresh.plan(unit(box={"x": 1, "y": 2, "w": 3, "h": 4}, style="running"), live())
+    assert "style='running'" in sql

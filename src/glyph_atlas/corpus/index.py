@@ -785,8 +785,9 @@ class _MetaCache:
                 "image_rights",
                 "text_rights",
                 "source_refs",
+                "style",
             ],
-            "pages": ["id", "document_id", "seq", "canvas", "image", "width", "height", "transcription"],
+            "pages": ["id", "document_id", "seq", "canvas", "image", "width", "height", "transcription", "style"],
         }[name]
         columns = [c for c in wanted if c in dataset.schema.names]
         return dataset, columns

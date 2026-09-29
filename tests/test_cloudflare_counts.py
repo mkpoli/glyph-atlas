@@ -12,7 +12,7 @@ COUNTED = """SELECT origin,coalesce(character,''),coalesce(document,''),state,co
 
 
 def unit(db, identity, character="ア", document="hk:a", state="pending", family="U+30A2", source="Book A", quiz=1):
-    db.execute("INSERT OR IGNORE INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+    db.execute("INSERT OR IGNORE INTO units(id,origin,character,reading,family,visual_group,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual,document) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
         identity, "local", character, character, family, None, "handwritten", "kana", state, 0, quiz, 1, 0,
         json.dumps({"id": identity, "label": character, "source": source}), "{}", "{}", "{}", document))
 
@@ -60,7 +60,9 @@ def test_a_crop_written_anew_is_counted_once():
     for migration in MIGRATIONS:
         db.executescript(migration.read_text())
     unit(db, "one"); unit(db, "two")
-    row = db.execute("SELECT * FROM units WHERE id='one'").fetchone()
+    # `table_info` leaves out the generated `style_order`, which takes no value.
+    columns = [c[1] for c in db.execute("PRAGMA table_info(units)")]
+    row = db.execute(f"SELECT {','.join(columns)} FROM units WHERE id='one'").fetchone()
     replace = f"INSERT OR REPLACE INTO units VALUES({','.join('?' * len(row))})"
     db.execute(replace, row)
     agrees(db)

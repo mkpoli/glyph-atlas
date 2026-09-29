@@ -44,7 +44,8 @@ GUGYEOL = ((0xF67E, 0xF77C),)
 
 
 # A published corpus row, in the order `corpus_upsert` takes it.
-CORPUS_COLUMNS = ("id", "character", "family", "visual_group", "shuffle", "object", "offset", "size", "production")
+CORPUS_COLUMNS = ("id", "character", "family", "visual_group", "shuffle", "object", "offset", "size", "production",
+                  "style")
 
 
 def corpus_upsert(values) -> str:

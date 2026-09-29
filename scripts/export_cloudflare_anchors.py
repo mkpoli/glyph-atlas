@@ -11,6 +11,7 @@ from export_cloudflare import encoded
 from export_cloudflare_corpus import FrozenResolver
 from PIL import Image
 
+from glyph_atlas import style
 from glyph_atlas.corpus.api import CorpusAPI
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -49,10 +50,12 @@ with (args.output / "anchors-images.bin").open("wb") as media, (args.output / "a
         raw = encoded(detail).encode()
         offset = records.tell()
         records.write(raw)
-        db.execute("INSERT OR REPLACE INTO corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production) VALUES(?,?,?,?,?,?,?,?,?)", (
+        # An anchor states no style of its own or of its page; its document's confirmed style applies.
+        document = (detail.get("source") or {}).get("document_id")
+        db.execute("INSERT OR REPLACE INTO corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,style) VALUES(?,?,?,?,?,?,?,?,?,?)", (
             detail["id"], detail["written_character"], detail["grapheme"], None,
             int(hashlib.sha256(detail["id"].encode()).hexdigest()[:7], 16), "anchors-records.bin", offset, len(raw),
-            detail.get("production") or "unknown"))
+            detail.get("production") or "unknown", style.resolve_values(None, None, document, None)[0]))
 db.commit()
 db.executescript(CORPUS_REFRESH)
 print(encoded({"anchors": len(details), "hosted_images": len(images)}))

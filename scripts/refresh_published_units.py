@@ -17,7 +17,9 @@ This writes the UPDATE statements that bring such units up to date:
   quiz eligibility follows the catalogue with it; a reviewed one may still only leave the quiz.
   The Worker's event trigger (migration 0019) keeps a row's context and repair status through
   later reviews and undos, so an undo brings back neither, and undo decides the quiz with the
-  repair status the row holds.
+  repair status the row holds;
+- a unit whose resolved style changed takes it in place too, reviewed or not: the style is the
+  publication's (its document's, page's or own), and no review records it.
 
 The file ends by stamping `metadata.units_refreshed_at`, which the Worker's cached listings are keyed by.
 
@@ -37,9 +39,9 @@ for the next run. JSON is written back in its stored key order, because the Work
     python scripts/refresh_published_units.py CATALOGUE.sqlite LIVE.jsonl OUTPUT.sql
 
 LIVE.jsonl has one object per unit the site holds, all keys required: id, revision, quiz, data,
-reviewed. `reviewed` means the unit has any row in the Worker's `events` table:
+style, reviewed. `reviewed` means the unit has any row in the Worker's `events` table:
 
-    SELECT u.id, u.revision, u.quiz, u.data,
+    SELECT u.id, u.revision, u.quiz, u.data, u.style,
            EXISTS(SELECT 1 FROM events e WHERE e.target = u.id) AS reviewed
     FROM units u WHERE u.origin = 'local'
 """
@@ -51,7 +53,7 @@ import sqlite3
 from pathlib import Path
 
 COLUMNS = ("origin", "character", "reading", "family", "visual_group", "production", "category",
-           "state", "quiz", "priority", "shuffle", "data", "snapshot", "context", "visual")
+           "state", "quiz", "priority", "shuffle", "data", "snapshot", "context", "visual", "style")
 
 
 def quote(value) -> str:
@@ -83,7 +85,7 @@ class Collision(ValueError):
 
 def plan(new: dict, live: dict) -> tuple[str, str | None]:
     """What to do with one unit: ("skip" | "quiz" | "in-place" | "replace" | "hold", statement)."""
-    for key in ("revision", "quiz", "data", "reviewed"):
+    for key in ("revision", "quiz", "data", "style", "reviewed"):
         if key not in live:
             raise KeyError(f"{new['id']}: the live export lacks {key!r}")
     guard = f" WHERE id={quote(new['id'])} AND revision={int(live['revision'])};"
@@ -120,9 +122,12 @@ def plan(new: dict, live: dict) -> tuple[str, str | None]:
         index = json.loads(new.get("snapshot") or "{}").get("page_index")
         if "page_number" in in_place and index is not None:
             sets.insert(1, f"snapshot=json_set(snapshot, '$.page_index', {int(index)})")
+    restyled = new["style"] != live["style"]
+    if restyled:
+        sets.append(f"style={quote(new['style'])}")
     if not sets:
         return "skip", None
-    return ("in-place" if in_place else "quiz"), f"UPDATE units SET {', '.join(sets)}" + guard
+    return ("in-place" if in_place or restyled else "quiz"), f"UPDATE units SET {', '.join(sets)}" + guard
 
 
 def main() -> None:
