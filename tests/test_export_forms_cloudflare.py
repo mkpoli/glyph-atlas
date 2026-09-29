@@ -34,12 +34,12 @@ def load(db, out: Path):
     return publication
 
 
-def publish(tmp_path, monkeypatch, name):
+def publish(tmp_path, monkeypatch, name, known=frozenset()):
     monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
     module = importlib.import_module("export_forms_cloudflare")
     # Two glyphs per statement, so the three-glyph cluster decision is written in parts.
     monkeypatch.setattr(module, "UNITS_PER_STATEMENT", 2)
-    return module.export(tmp_path / "corpus", tmp_path / name, workers=2)
+    return module.export(tmp_path / "corpus", tmp_path / name, workers=2, known=known)
 
 
 def clustering(tmp_path, monkeypatch, form_corpora):
@@ -229,3 +229,16 @@ def test_a_families_only_publication_refreshes_the_palette_and_nothing_else(tmp_
     db.execute("UPDATE form_families SET forms='[]', revision='r0'")
     load(db, tmp_path / "palette")
     assert db.execute("SELECT forms FROM form_families").fetchone()[0] == "[]"
+
+
+def test_tiles_the_site_already_serves_are_referenced_and_not_packed_again(tmp_path, monkeypatch, form_corpora):
+    clustering(tmp_path, monkeypatch, form_corpora)
+    publish(tmp_path, monkeypatch, "first")
+    db = schema()
+    load(db, tmp_path / "first")
+    images = {r[0]: r[1] for r in db.execute("SELECT id,image FROM form_units")}
+    known = frozenset(images[i].removeprefix("/atlas/media/").removesuffix(".webp") for i in (A, B))
+    summary = publish(tmp_path, monkeypatch, "second", known)
+    assert (summary["tiles_known"], summary["tiles"]) == (2, 1)
+    load(db, tmp_path / "second")
+    assert {r[0]: r[1] for r in db.execute("SELECT id,image FROM form_units")} == images

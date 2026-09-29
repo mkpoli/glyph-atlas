@@ -5,7 +5,8 @@ and writes a publication `scripts/publish_cloudflare.sh` uploads: tile packs und
 ordered SQL parts under `sql/`, and `publication.json` listing both.
 
 1. Every clustered glyph whose pixels are on disk gets a 240-pixel tile, packed into immutable
-   objects with a `media` row each, so the Worker serves it like any other crop.
+   objects with a `media` row each, so the Worker serves it like any other crop. `--known-media`
+   names tiles the site already serves, which are referenced and not packed again.
 2. `form_families`, `form_clusters` and `form_units` are replaced. Each glyph carries its tile, its
    rank in its cluster and its group for every "Split into k" (k = 2..8), since the Worker has no
    embeddings to split with.
@@ -156,8 +157,13 @@ class Tiles:
             self._seal()
 
 
-def tiles(corpus_root: Path, out: Path, workers: int) -> tuple[dict[str, str], Tiles, Counter]:
-    """A tile URL for every clustered glyph whose pixels are on disk, the tiles packed under `out`."""
+def tiles(corpus_root: Path, out: Path, workers: int, known: frozenset[str] = frozenset()) -> tuple[dict[str, str], Tiles, Counter]:
+    """A tile URL for every clustered glyph whose pixels are on disk, the tiles packed under `out`.
+
+    A tile whose media key is in `known` is one the site already serves: its URL is used as it is,
+    and it is neither rendered nor packed again. A key names the source file, its stamp and the box,
+    so a known key is the same tile.
+    """
     from glyph_atlas import form_clusters, forms
     from glyph_atlas.review.media import MediaCache
 
@@ -177,8 +183,9 @@ def tiles(corpus_root: Path, out: Path, workers: int) -> tuple[dict[str, str], T
         except (OSError, ValueError):
             return key, None
 
-    packed, rendered = Tiles(out), {}
-    wanted = list(dict.fromkeys(keys.values()))
+    packed, rendered = Tiles(out), dict.fromkeys(known & set(keys.values()), True)
+    wanted = [key for key in dict.fromkeys(keys.values()) if key not in rendered]
+    counts["tiles_known"] = len(rendered)
     with ThreadPoolExecutor(workers) as pool:
         for n, (key, path) in enumerate(pool.map(render, wanted), 1):
             rendered[key] = path
@@ -197,7 +204,7 @@ def tiles(corpus_root: Path, out: Path, workers: int) -> tuple[dict[str, str], T
     return urls, packed, counts
 
 
-def export(corpus_root: Path, out: Path, workers: int = 8) -> dict:
+def export(corpus_root: Path, out: Path, workers: int = 8, known: frozenset[str] = frozenset()) -> dict:
     from glyph_atlas import forms
     from glyph_atlas.review.forms import _form_entry, shape_runs
 
@@ -205,7 +212,7 @@ def export(corpus_root: Path, out: Path, workers: int = 8) -> dict:
     if data["revision"] is None:
         raise SystemExit("No clustering: run `atlas forms cluster` first.")
     out.mkdir(parents=True, exist_ok=False)
-    urls, packed, counts = tiles(corpus_root, out, workers)
+    urls, packed, counts = tiles(corpus_root, out, workers, known)
 
     parts = Parts(out)
     for row in packed.rows:
@@ -293,8 +300,15 @@ if __name__ == "__main__":
     parser.add_argument("out", type=Path)
     parser.add_argument("--corpus-root", type=Path, default=Path("work"))
     parser.add_argument("--workers", type=int, default=8, help="threads rendering tiles")
+    parser.add_argument("--known-media", type=Path,
+                        help="media keys the site already serves, one per line, bare or as /atlas/media/<key>.webp "
+                             "(e.g. the live form_units.image); "
+                             "their tiles are not rendered or uploaded again")
     parser.add_argument("--families-only", action="store_true",
                         help="refresh only the forms each family lists (their 字母, script and name)")
     args = parser.parse_args()
     os.environ.setdefault("ATLAS_FORM_CLUSTERS", str((args.corpus_root / "forms/current").resolve()))
-    print(json.dumps(families_only(args.out) if args.families_only else export(args.corpus_root, args.out, args.workers)))
+    known = frozenset(line.rsplit("/", 1)[-1].removesuffix(".webp") for line in args.known_media.read_text().split()
+                      ) if args.known_media else frozenset()
+    print(json.dumps(families_only(args.out) if args.families_only
+                     else export(args.corpus_root, args.out, args.workers, known)))
