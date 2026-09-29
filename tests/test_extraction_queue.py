@@ -427,6 +427,33 @@ def test_extraction_publishes_out_of_vocabulary_units_tagged_unconfirmed(tmp_pat
     assert report["withheld"] == {"alignment-uncertain": 2, "visual-disagreement": 1, "overlapping-crops": 0}
 
 
+def test_a_page_s_inputs_are_read_from_its_own_rows_without_loading_the_catalogue(tmp_path, monkeypatch):
+    from PIL import Image
+
+    from glyph_atlas import extraction_queue
+    from glyph_atlas.extraction_queue import Engine
+
+    directory = tmp_path/"source"; directory.mkdir()
+    tables.write(directory/"documents.parquet", [Document(id="d", title="暦"), Document(id="e", title="天文")], Document)
+    tables.write(directory/"pages.parquet", [
+        Page(id=f"{d}:{i}", document_id=d, seq=i, image=f"https://example.org/{d}{i}.jpg", width=40, height=20)
+        for d in "de" for i in range(3)], Page)
+    tables.write(directory/"lines.parquet", [Line(id="e:1:l", page_id="e:1", seq=0, text="字", text_raw="字",
+                 box=Box(x=0, y=0, w=40, h=20))], Line)
+    image = tmp_path/"p.png"; Image.new("RGB", (40, 20), "white").save(image)
+    monkeypatch.setattr(extraction_queue.images, "path_for", lambda _: image)
+    loaded = []
+    read = tables.Dataset.read
+    monkeypatch.setattr(tables.Dataset, "read", lambda self, name, *a, **k: loaded.append(name) or read(self, name, *a, **k))
+
+    engine = object.__new__(Engine)
+    engine.run = type("Run", (), {"model_dump": lambda self: {}})()
+    engine.models = {}
+    work = engine.inputs({"id": "e:1", "source": str(directory)})
+    assert (work["page"].id, work["document"].title, [line.id for line in work["lines"]]) == ("e:1", "天文", ["e:1:l"])
+    assert loaded == []
+
+
 def supplement_queue(tmp_path, pages):
     """A queue whose rows are `(id, status, policy of its output or None, line text)`."""
     from glyph_atlas.extraction_queue import atomic_json
