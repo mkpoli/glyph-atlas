@@ -1120,6 +1120,23 @@ try {
   const eventSize = await db.prepare('SELECT max(length(event)+length(before_data)+length(after_data)+length(snapshot)) AS n FROM events WHERE submission=?').bind('integration:' + fullBatch.id).first()
   assert.ok(eventSize.n < 20000, `and each of its events in at most ${eventSize.n} bytes`)
   await countsMatch('the counts follow a full batch')
+  // A full round of wrong answers, with real-length ids and notes, stays well inside D1's row limit
+  // too: the round's request is kept once, on its submission, and each event carries its own answer.
+  const roundIds = Array.from({ length: 144 }, (_, i) => 'ex:0b3fffde4433fda4:' + createHash('sha1').update('round' + i).digest('hex').slice(0, 20))
+  for (const id of roundIds) await addLocal(id, 'ソ')
+  const fullRound = { id: crypto.randomUUID(), client_id: 'integration', label: 'ソ', seen: [], skipped: [],
+    answers: roundIds.map(id => ({ ...localCrop(id), verdict: 'wrong', issue: 'character', character: 'ン', note: '点の向きがンに見える' })) }
+  const firstRound = await call('/atlas/rounds', fullRound)
+  assert.equal(firstRound.results.length, 144)
+  const roundSize = await db.prepare('SELECT length(request)+length(response) AS n FROM submissions WHERE id=?').bind('integration:' + fullRound.id).first()
+  assert.ok(roundSize.n < 100000, `a 144-answer round is stored in ${roundSize.n} bytes`)
+  const roundEvent = await db.prepare('SELECT max(length(event)+length(before_data)+length(after_data)+length(snapshot)) AS n FROM events WHERE submission=?').bind('integration:' + fullRound.id).first()
+  assert.ok(roundEvent.n < 20000, `and each of its events in at most ${roundEvent.n} bytes`)
+  const roundEvidence = (await db.prepare(`SELECT json_extract(event,'$.evidence') AS e, target FROM events WHERE submission=?`).bind('integration:' + fullRound.id).all()).results
+  assert.ok(roundEvidence.every(r => { const e = JSON.parse(r.e); return e.round === fullRound.id && e.request === undefined && e.answer?.id === r.target }),
+    'each round event names its round and carries only its own answer')
+  assert.deepEqual(await call('/atlas/rounds', fullRound), firstRound, 'a retried round returns the first result')
+  await countsMatch('the counts follow a full round')
   // One address gets 20 batches a minute.
   let rateLimited = false
   for (let i = 0; i < 25 && !rateLimited; i++) {

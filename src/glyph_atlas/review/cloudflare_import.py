@@ -44,6 +44,12 @@ def _same_view(a, b):
 
 
 def _answer(evidence, identity):
+    # A round's event carries its own answer; one saved before that carried the whole round's request.
+    if evidence.get("kind") == "visual-quiz" and "answer" in evidence:
+        answer = evidence["answer"]
+        if answer.get("id") != identity:
+            raise Rejected("round answer names another occurrence")
+        return answer
     request = evidence["request"]
     if evidence.get("kind") == "visual-quiz":
         answers = [item for item in request.get("answers", []) if item.get("id") == identity]
@@ -64,10 +70,11 @@ def _step(record, before):
             or event.get("role") != "reviewer" or not event.get("actor")
             or event.get("target_id") != before["id"]):
         raise Rejected("unsupported remote event")
-    request = evidence["request"]
     answer = _answer(evidence, before["id"])
+    # The reviewer is the event's actor; a request carried in the evidence must name the same one.
+    client = evidence["request"].get("client_id") if "request" in evidence else event["actor"]
     if (answer.get("revision") != revision or answer.get("image_sha256") != before["image_sha256"]
-            or request.get("client_id") != event["actor"]):
+            or client != event["actor"]):
         raise Rejected("request provenance disagrees with the reviewed occurrence")
     verdict, issue = answer.get("verdict"), answer.get("issue")
     if verdict != evidence.get("verdict") or issue != evidence.get("issue"):
