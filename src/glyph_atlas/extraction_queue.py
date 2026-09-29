@@ -279,8 +279,8 @@ class Queue:
                 worker=?,lease_until=? WHERE id=(SELECT id FROM pages WHERE status='pending'
                 OR (status='retry' AND CAST(retry_after AS REAL)<=?)
                 OR (status='running' AND (lease_until IS NULL OR lease_until<?))
-                ORDER BY (cached=0 AND host IN (SELECT host FROM pages WHERE status='running' AND cached=0
-                    AND lease_until>=? AND worker!=? AND host IS NOT NULL)),
+                ORDER BY (cached=0 AND host IS NOT NULL AND host IN (SELECT host FROM pages
+                    WHERE status='running' AND cached=0 AND lease_until>=? AND worker!=? AND host IS NOT NULL)),
                 focus DESC, priority DESC, cached DESC, rank, document_id, id LIMIT 1) RETURNING *""",
                 (stamp, worker, now + lease, now, now, now, worker)).fetchone()
         return dict(row) if row else None

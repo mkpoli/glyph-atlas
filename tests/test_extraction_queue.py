@@ -1006,3 +1006,18 @@ def test_a_frozen_worker_s_late_result_leaves_the_page_to_the_worker_that_took_i
     assert stalled.exitcode == 0
     row = queue.db.execute("SELECT status, accepted, attempts, error, worker FROM pages").fetchone()
     assert tuple(row) == ("complete", 0, 2, None, None)
+
+
+def test_an_unseeded_uncached_page_keeps_its_place_behind_focus_while_a_host_is_busy(tmp_path):
+    """A page without a host sorts as a page on no busy host, so focus and priority still decide."""
+    queue = Queue(tmp_path / "queue")
+    with queue.db:
+        queue.db.executemany("""INSERT INTO pages (id,document_id,title,source,cached,rank,host,focus,priority)
+            VALUES(?,?,?,?,?,?,?,?,?)""", [("busy", "a", "t", "s", 0, 0, "a.example", 0, 0),
+                                          ("unseeded", "b", "t", "s", 0, 1, None, 0, 0),
+                                          ("focused", "c", "t", "s", 0, 2, "c.example", 1, 5)])
+    assert queue.claim("w1")["id"] == "focused"
+    assert queue.claim("w2")["id"] == "busy"
+    queue.db.execute("UPDATE pages SET status='pending', worker=NULL WHERE id='focused'")
+    queue.db.commit()
+    assert queue.claim("w3")["id"] == "focused"
