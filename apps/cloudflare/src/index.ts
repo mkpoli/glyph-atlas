@@ -249,22 +249,13 @@ const SHUFFLE_RANGE = 268435456;
 // publication stamps `published_at`, `refresh_published_units.py` stamps `units_refreshed_at`, a
 // review or undo adds an event, a round adds a submission, and an undo of a round with no review
 // only marks its submission undone.
-async function versions(env: Env): Promise<{ catalogue: string; corpus: string }> {
+async function catalogueVersion(env: Env): Promise<string> {
   const version = await env.DB.prepare(`SELECT (SELECT value FROM metadata WHERE key='published_at') AS published,
     (SELECT value FROM metadata WHERE key='units_refreshed_at') AS refreshed,
-    (SELECT value FROM metadata WHERE key='forms_loaded_at') AS forms,(SELECT value FROM metadata WHERE key='corpus_counts_at') AS counted,
     (SELECT max(rowid) FROM events) AS event,(SELECT max(rowid) FROM submissions) AS submission,
     (SELECT count(*) FROM submissions WHERE undone=1) AS undone`)
-    .first<{ published: string | null; refreshed: string | null; forms: string | null; counted: string | null; event: number | null; submission: number | null; undone: number }>();
-  const published = version?.published ?? '', refreshed = version?.refreshed ?? '';
-  return {
-    catalogue: [published, refreshed, version?.event ?? 0, version?.submission ?? 0, version?.undone ?? 0].join(':'),
-    // What changes `corpus_characters`: a publication, a forms reload, and the glyphs a form decision moves.
-    corpus: [published, refreshed, version?.forms ?? '', version?.counted ?? ''].join(':'),
-  };
-}
-async function catalogueVersion(env: Env): Promise<string> {
-  return (await versions(env)).catalogue;
+    .first<{ published: string | null; refreshed: string | null; event: number | null; submission: number | null; undone: number }>();
+  return [version?.published ?? '', version?.refreshed ?? '', version?.event ?? 0, version?.submission ?? 0, version?.undone ?? 0].join(':');
 }
 // Browse counts every local crop by character and state, which reads the whole table and takes
 // seconds, and every visitor gets the same answer. The edge keeps one copy per catalogue version.
@@ -286,8 +277,13 @@ async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, productio
 // under: what the grapheme browser counts beside the collection's own crops, so a character the site
 // holds only as corpus glyphs (債) is listed too. It is its own request, which the browser makes when
 // it opens, so catalogue pages carry none of it. `corpus_characters` is read whole (one row per
-// character and material), once per corpus version: the edge keeps one copy until a publication, a
-// forms reload or a form decision changes the table.
+// character and material), and the edge keeps one copy per `corpus_counts_at`: every recount a
+// publication runs (`CORPUS_REFRESH`, which a forms reload runs too) stamps it with the recount, and
+// the forms drain stamps it once a decision has moved glyphs between characters. The browser keeps
+// its copy for five minutes.
+async function corpusVersion(env: Env) {
+  return (await env.DB.prepare("SELECT value FROM metadata WHERE key='corpus_counts_at'").first<{ value: string }>())?.value ?? '';
+}
 export function browseCorpusQuery(production: string) {
   const [materials, values] = material(production, 'cc.production');
   return { sql: `SELECT cc.character AS label,sum(cc.n) AS n,json_extract(ch.data,'$.grapheme.code_point') AS family
@@ -296,7 +292,7 @@ export function browseCorpusQuery(production: string) {
 async function corpusCharacters(env: Env, ctx: ExecutionContext, url: URL) {
   const production = url.searchParams.get('production') || 'all';
   if (!validScope(production)) throw new Problem(400, 'Invalid production scope.');
-  const key = new Request(`${url.origin}/atlas/corpus/characters?production=${encodeURIComponent(production)}&v=${encodeURIComponent((await versions(env)).corpus)}`);
+  const key = new Request(`${url.origin}/atlas/corpus/characters?production=${encodeURIComponent(production)}&v=${encodeURIComponent(await corpusVersion(env))}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json() as Json;
   const { sql, values } = browseCorpusQuery(production);
@@ -1220,7 +1216,7 @@ export default {
       if(path==='/atlas/pairs')return json(await pairs(env,ctx,url));
       const pair=path.match(/^\/atlas\/pairs\/([^/]+)$/);
       if(pair)return json(await pairOccurrences(env,url,decodeURIComponent(pair[1])));
-      if(path==='/atlas/corpus/characters')return json(await corpusCharacters(env,ctx,url));
+      if(path==='/atlas/corpus/characters')return json(await corpusCharacters(env,ctx,url),200,{'cache-control':'private, max-age=300'});
       if(path==='/atlas/corpus/character')return json(parse((await unit(env,q.get('id')||'')).data));
       if(path==='/atlas/collection/status')return json(await meta(env,'collection'));
       const document=path.match(/^\/atlas\/documents\/([^/]+)\/characters$/);

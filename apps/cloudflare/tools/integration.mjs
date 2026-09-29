@@ -480,6 +480,7 @@ try {
   assert.deepEqual((await corpusItems())['債'], ['U+50B5', 8], 'a corpus-only character is listed with its grapheme and count')
   assert.equal((await corpusItems('?production=not:printed'))['債'], undefined, 'the count follows the material')
   await call('/atlas/corpus/characters?production=printed%20type', undefined, 400)
+  assert.equal((await mf.dispatchFetch(base + '/atlas/corpus/characters')).headers.get('cache-control'), 'private, max-age=300')
   const listedCorpus = await corpusItems(), browseCategories = (await call('/atlas')).categories
   const both = browseCategories.find(c => listedCorpus[c.label])
   assert.ok(both && both.total > 0 && both.total === both.pending + both.seen + both.checked + both.flagged + both.hard,
@@ -812,7 +813,9 @@ try {
   await bucket.put('plain', plain)
   await db.prepare(`INSERT INTO corpus_units(${CORPUS_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?)`).bind('codh:plain', '假', 'U+4EEE', null, 2, 'plain', 0, new TextEncoder().encode(plain).length, 'unknown', 0).run()
   await db.prepare('INSERT INTO corpus_gallery VALUES(?,?,?,?,?)').bind('codh:plain', 2, 'plain', 0, plain).run()
-  await db.prepare("INSERT INTO corpus_characters VALUES('假','unknown',1,0) ON CONFLICT DO UPDATE SET n=n+1").run()
+  // Published as a corpus publication publishes it: counted, and the count stamped.
+  await db.batch([db.prepare("INSERT INTO corpus_characters VALUES('假','unknown',1,0) ON CONFLICT DO UPDATE SET n=n+1"),
+    db.prepare("INSERT OR REPLACE INTO metadata VALUES('corpus_counts_at','\"forms-fixture\"')")])
   // Quick review's per-character counts agree with a recount of the rows after every decision.
   const counted = async () => {
     const kept = (await db.prepare('SELECT character,production,n,named FROM corpus_characters ORDER BY 1,2').all()).results
