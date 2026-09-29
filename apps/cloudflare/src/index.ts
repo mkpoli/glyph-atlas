@@ -118,7 +118,7 @@ async function itemsFor(env: Env, ids: string[]): Promise<Map<string, Json>> {
   return found;
 }
 function compact(row: UnitRow): Json {
-  return listing(parse(row.data));
+  return { ...listing(parse(row.data)), ...(row.style ? { style: row.style } : {}) };
 }
 // A record as a listing shows it, without the fields only its inspector needs.
 function listing(d: Json): Json {
@@ -623,22 +623,43 @@ async function writtenVariants(env: Env, char: string): Promise<string[]> {
 // common character can hold a hundred thousand corpus glyphs.
 const WIDENED_CAP = 2000;
 const widenedPage = (offset: number) => { if (offset > WIDENED_CAP) throw new Problem(404, 'A widened gallery does not page this far.') };
-// A character's crops with its variants', in the order `unit_character` (origin, character, state) holds
-// them: by character, then state, then row.
-export const widenedCropsQuery = (n: number, extra = '') => `SELECT * FROM units WHERE origin=? AND character IN (${Array(n).fill('?').join(',')})${extra} ORDER BY character,state,rowid LIMIT ? OFFSET ?`;
+// A character's crops with its variants', in the order `unit_character_style` holds them: by character,
+// then style (`STYLE_ORDER`), then id.
+export const widenedCropsQuery = (n: number, extra = '') => `SELECT * FROM units WHERE origin=? AND character IN (${Array(n).fill('?').join(',')})${extra} ORDER BY character,style_order,id LIMIT ? OFFSET ?`;
 export const widenedCropsCountQuery = (n: number, extra = '') => `SELECT count(*) AS n FROM (SELECT 1 FROM units WHERE origin=? AND character IN (${Array(n).fill('?').join(',')})${extra} LIMIT ${WIDENED_CAP + 1})`;
 // A corpus category: its glyphs, those corrected into it and not out of it, each branch in its own
-// index order (`k`, `i`: `corpus_character`, `unit_corpus_character`) so the union merges without
-// sorting. `field` is character or family.
+// index order (`k`, `s`, `i`: `corpus_character_style` or `corpus_family_style`, and
+// `unit_corpus_character_style`) so the union merges without sorting. `field` is character or family.
+// A glyph's style is its published row's; a named glyph's `units` row carries the same.
 export const corpusSelection = (field: 'character' | 'family', n: number) => {
   const list = n === 1 ? '=?' : ` IN (${Array(n).fill('?').join(',')})`;
-  return `SELECT c.*,c.${field} AS k,c.id AS i,u.data AS overlay,u.visual_group AS overlay_group,u.character AS overlay_character
+  return `SELECT c.*,c.${field} AS k,c.style_order AS s,c.id AS i,u.data AS overlay,u.visual_group AS overlay_group,u.character AS overlay_character
     FROM corpus_units c LEFT JOIN units u ON c.id=u.id
     WHERE c.${field}${list} AND (u.id IS NULL OR u.${field}=c.${field})
-    UNION ALL SELECT c.*,u.${field} AS k,u.id AS i,u.data AS overlay,u.visual_group AS overlay_group,u.character AS overlay_character
-    FROM units u${field === 'character' ? ' INDEXED BY unit_corpus_character' : ''} JOIN corpus_units c ON c.id=u.id
+    UNION ALL SELECT c.*,u.${field} AS k,u.style_order AS s,u.id AS i,u.data AS overlay,u.visual_group AS overlay_group,u.character AS overlay_character
+    FROM units u${field === 'character' ? ' INDEXED BY unit_corpus_character_style' : ''} JOIN corpus_units c ON c.id=u.id
     WHERE u.origin='corpus' AND u.${field}${list} AND c.${field} IS NOT u.${field}`;
 };
+// The style groups a gallery is filtered by, as `style_order` (migration 0035) numbers them: running
+// and cursive script, then what nobody has judged, then the formal scripts and the print faces. A gallery lists them in
+// this order.
+export const STYLE_ORDER: Record<string, number> = { cursive: 0, unassessed: 1, formal: 2 };
+const STYLE_NAMES = Object.keys(STYLE_ORDER);
+function styleGroup(q: URLSearchParams): number | null {
+  const value = q.get('style');
+  if (!value || value === 'all') return null;
+  if (!(value in STYLE_ORDER)) throw new Problem(422, 'Invalid style.');
+  return STYLE_ORDER[value];
+}
+// A gallery names the style groups it can be filtered by (`style_groups`); a server that reports none
+// cannot filter by style.
+// Counts by `style_order` as a gallery reports them: every group by name, and the total of the one asked
+// for, or of all.
+function styleCounts(rows: { s: number; n: number }[], group: number | null) {
+  const styles = Object.fromEntries(STYLE_NAMES.map(name => [name, rows.find(row => row.s === STYLE_ORDER[name])?.n ?? 0]));
+  const total = group === null ? rows.reduce((sum, row) => sum + row.n, 0) : rows.find(row => row.s === group)?.n ?? 0;
+  return { styles, total };
+}
 type VariantEdge = { other: string; relation: string; source: string; detail: string; widens: number };
 type VariantRow = { char: string; code_point: string; widens: boolean; relations: { relation: string; source: string; detail: string }[] };
 // The characters `char` shares an edge with, as the card lists them: `items` a gallery widens to (a
@@ -720,51 +741,58 @@ async function suggest(env: Env, q: URLSearchParams) {
 async function occurrences(env: Env, code: string, q: URLSearchParams, origin = 'local') {
   const { data } = await known(env, code);
   if(origin==='corpus')return corpusOccurrences(env,data,q);
-  const limit = integer(q,'limit',24,200), offset=integer(q,'offset',0);
-  const values: (string | number)[] = [];
-  const where: string[] = [];
+  const limit = integer(q,'limit',24,200), offset=integer(q,'offset',0), group = styleGroup(q);
+  // The filters other than style: the style counts are taken over them, so each group says what it holds.
+  const filters: string[] = [], extra: (string | number)[] = [];
+  if (q.get('visual_group')) {
+    if (q.get('visual_group') === 'unassigned') filters.push('visual_group IS NULL');
+    else { filters.push('visual_group=?'); extra.push(q.get('visual_group')!) }
+  }
+  if (q.get('state') && q.get('state') !== 'all') { filters.push('state=?'); extra.push(q.get('state')!) }
+  const tail = filters.map(f => ' AND ' + f).join('');
+  const styled = group === null ? tail : tail + ' AND style_order=?', styledExtra = group === null ? extra : [...extra, group];
   if (q.get('scope') === 'variants' || q.get('expand') === 'variants') {
     widenedPage(offset);
     const chars = await writtenVariants(env, data.char);
-    const filters: string[] = [], extra: (string | number)[] = [];
-    if (q.get('visual_group')) {
-      if (q.get('visual_group') === 'unassigned') filters.push('visual_group IS NULL');
-      else { filters.push('visual_group=?'); extra.push(q.get('visual_group')!) }
-    }
-    if (q.get('state') && q.get('state') !== 'all') { filters.push('state=?'); extra.push(q.get('state')!) }
-    const tail = filters.map(f => ' AND ' + f).join('');
     const [count, rows] = await env.DB.batch([
-      env.DB.prepare(widenedCropsCountQuery(chars.length, tail)).bind(origin, ...chars, ...extra),
-      env.DB.prepare(widenedCropsQuery(chars.length, tail)).bind(origin, ...chars, ...extra, limit, offset),
+      env.DB.prepare(widenedCropsCountQuery(chars.length, styled)).bind(origin, ...chars, ...styledExtra),
+      env.DB.prepare(widenedCropsQuery(chars.length, styled)).bind(origin, ...chars, ...styledExtra, limit, offset),
     ]);
     const counted = (count.results[0] as { n: number }).n, total = Math.min(counted, WIDENED_CAP);
     return { ...data.candidates, query: data.code_point, code_point: data.code_point,
       total, capped: counted > WIDENED_CAP, available: rows.results.length, items: (rows.results as UnitRow[]).map(compact),
-      counts: { total, exact: total, exact_total: total }, scope: 'variants', status: 'ok' };
+      counts: { total, exact: total, exact_total: total }, style_groups: STYLE_NAMES, scope: 'variants', status: 'ok' };
   }
+  let counted: D1PreparedStatement, listed: D1PreparedStatement;
   if (q.get('scope') === 'grapheme' || q.get('expand') === 'grapheme') {
-    // A grapheme's crops are its family's and its own character's. Each is one range of its own index;
+    // A grapheme's crops are its family's and its own character's. Each is one range of its own index
+    // (`unit_family_style`, `unit_character_style`), and the page merges the two in style and id order;
     // an OR across the two columns would read every crop of the origin instead.
     const family = data.grapheme?.code_point || data.code_point;
-    where.push('id IN (SELECT id FROM units WHERE origin=? AND family=? UNION SELECT id FROM units WHERE origin=? AND character=?)');
-    values.push(origin, family, origin, data.char);
-  } else { where.push('origin=? AND character=?'); values.push(origin, data.char) }
-  if (q.get('visual_group')) {
-    if(q.get('visual_group')==='unassigned') where.push('visual_group IS NULL');
-    else { where.push('visual_group=?'); values.push(q.get('visual_group')!) }
+    counted = env.DB.prepare(`SELECT style_order AS s,count(*) AS n FROM units
+      WHERE id IN (SELECT id FROM units WHERE origin=? AND family=? UNION SELECT id FROM units WHERE origin=? AND character=?)${tail} GROUP BY 1`)
+      .bind(origin, family, origin, data.char, ...extra);
+    listed = env.DB.prepare(graphemeCropsQuery(styled)).bind(origin, family, ...styledExtra, origin, data.char, family, ...styledExtra, limit, offset);
+  } else {
+    counted = env.DB.prepare(`SELECT style_order AS s,count(*) AS n FROM units WHERE origin=? AND character=?${tail} GROUP BY 1`)
+      .bind(origin, data.char, ...extra);
+    listed = env.DB.prepare(characterCropsQuery(styled)).bind(origin, data.char, ...styledExtra, limit, offset);
   }
-  if (q.get('state') && q.get('state')!=='all') { where.push('state=?'); values.push(q.get('state')!) }
-  const [count, rows] = await env.DB.batch([
-    env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${where.join(' AND ')}`).bind(...values),
-    env.DB.prepare(`SELECT * FROM units WHERE ${where.join(' AND ')} ORDER BY id LIMIT ? OFFSET ?`).bind(...values,limit,offset),
-  ]);
-  const total = (count.results[0] as {n:number}).n;
+  const [count, rows] = await env.DB.batch([counted, listed]);
+  const { styles, total } = styleCounts(count.results as { s: number; n: number }[], group);
   return { ...data.candidates, query: data.code_point, code_point: data.code_point,
     total, available: rows.results.length, items:(rows.results as UnitRow[]).map(compact),
-    counts:{ total, exact:total, exact_total:total }, scope:q.get('scope') || 'character', status:'ok' };
+    counts:{ total, exact:total, exact_total:total }, styles, style_groups: STYLE_NAMES, scope:q.get('scope') || 'character', status:'ok' };
 }
+// A character's crops, and a grapheme's, in style order (`STYLE_ORDER`) then id; `extra` is further
+// conditions on the crop.
+export const characterCropsQuery = (extra = '') => `SELECT * FROM units WHERE origin=? AND character=?${extra} ORDER BY style_order,id LIMIT ? OFFSET ?`;
+// A grapheme's crops are its family's, and those of its own character filed under another family; the
+// two branches share no crop, so they merge without comparing whole rows.
+export const graphemeCropsQuery = (extra = '') => `SELECT * FROM units WHERE origin=? AND family=?${extra}
+  UNION ALL SELECT * FROM units WHERE origin=? AND character=? AND family IS NOT ?${extra} ORDER BY style_order,id LIMIT ? OFFSET ?`;
 async function corpusOccurrences(env:Env,data:Json,q:URLSearchParams){
-  const limit=integer(q,'limit',24,200),offset=integer(q,'offset',0);
+  const limit=integer(q,'limit',24,200),offset=integer(q,'offset',0),group=styleGroup(q);
   const family=q.get('scope')==='grapheme',widened=q.get('scope')==='variants',field=family?'family':'character';
   if(widened)widenedPage(offset);
   // A variants widening reads the character and its variants, each by the character index.
@@ -774,17 +802,20 @@ async function corpusOccurrences(env:Env,data:Json,q:URLSearchParams){
   if(q.get('visual_group')){if(q.get('visual_group')==='unassigned')where.push('(CASE WHEN overlay IS NULL THEN character ELSE overlay_character END) IS NULL');
     else{where.push('(CASE WHEN overlay IS NULL THEN visual_group ELSE overlay_group END)=?');values.push(q.get('visual_group')!)}}
   const join=`FROM (${corpusSelection(field,selected.length)})`;
+  const styled=group===null?where:[...where,'s=?'],styledValues=group===null?values:[...values,group];
   const [count,rows]=await env.DB.batch([
-    env.DB.prepare(widened?`SELECT count(*) AS n FROM (SELECT 1 ${join} WHERE ${where.join(' AND ')} LIMIT ${WIDENED_CAP+1})`
-      :`SELECT count(*) AS n ${join} WHERE ${where.join(' AND ')}`).bind(...values),
-    env.DB.prepare(`SELECT * ${join} WHERE ${where.join(' AND ')} ORDER BY k,i LIMIT ? OFFSET ?`).bind(...values,limit,offset),
+    // A widening counts no further than its cap, and so has no style counts.
+    widened?env.DB.prepare(`SELECT count(*) AS n FROM (SELECT 1 ${join} WHERE ${styled.join(' AND ')} LIMIT ${WIDENED_CAP+1})`).bind(...styledValues)
+      :env.DB.prepare(`SELECT s,count(*) AS n ${join} WHERE ${where.join(' AND ')} GROUP BY s`).bind(...values),
+    env.DB.prepare(`SELECT * ${join} WHERE ${styled.join(' AND ')} ORDER BY k,s,i LIMIT ? OFFSET ?`).bind(...styledValues,limit,offset),
   ]);
-  const counted=(count.results[0] as {n:number}).n;
+  const grouped=widened?null:styleCounts(count.results as {s:number;n:number}[],group);
+  const counted=grouped?grouped.total:(count.results[0] as {n:number}).n;
   const items=[];
   // Bound simultaneous R2 streams; a corpus page may contain 200 records.
   for(let i=0;i<rows.results.length;i+=8){
     items.push(...await Promise.all((rows.results.slice(i,i+8) as (CorpusRow&{overlay:string|null})[])
-      .map(async row=>row.overlay?parse(row.overlay):await corpusData(env,row))));
+      .map(async row=>({...(row.overlay?parse(row.overlay):await corpusData(env,row)),style:row.style}))));
   }
   const info=await known(env,data.char),familyCode=data.grapheme?.code_point||data.code_point;
   const familyCounts=await env.DB.prepare(`SELECT count(*) AS total,sum(written IS NULL) AS unassigned FROM (
@@ -794,7 +825,7 @@ async function corpusOccurrences(env:Env,data:Json,q:URLSearchParams){
       WHERE u.origin='corpus' AND u.family=? AND c.family IS NOT u.family
     )`).bind(familyCode,familyCode).first<{total:number;unassigned:number}>();
   return {...data.candidates,code_point:data.code_point,total:widened?Math.min(counted,WIDENED_CAP):counted,capped:widened&&counted>WIDENED_CAP,
-    available:items.length,items,scope:family?'grapheme':widened?'variants':'character',status:'ok',
+    available:items.length,items,...(grouped?{styles:grouped.styles}:{}),scope:family?'grapheme':widened?'variants':'character',status:'ok',
     visual_analysis:info.detail.visual_analysis,family_total:familyCounts?.total||0,unassigned_count:familyCounts?.unassigned||0};
 }
 // A document's characters in source order. The primary key serves the filter and the order, and each

@@ -426,6 +426,8 @@ try {
     if (index) assert.ok(details.some(d => new RegExp(`USING (COVERING )?INDEX ${index}\\b`).test(d)), `${index}: ${details.join('; ')}`)
   }
   const shapes = []
+  // One character's crops, by either index that starts with it: the planner may take either.
+  const ONE_CHARACTER = 'unit_character(?:_style)?'
   for (const production of [null, 'printed/woodblock'])
     for (const side of ['>=', '<'])
       shapes.push([{ sql: worker.corpusRoundQuery(production, side), values: [] }, ['ナ', ...(production ? [production] : []), 0, 96],
@@ -433,7 +435,7 @@ try {
   // corpus_characters is small and read whole, in its key's order.
   for (const production of ['all', 'not:printed/type', 'printed/woodblock']) shapes.push([worker.corpusCountQuery(production), [], null])
   shapes.push([{ sql: worker.namedRoundQuery('NOT (production>=? AND production<?)', 'state'), values: [] },
-    ['ナ', 'printed/type', 'printed/type0'], 'unit_character'])
+    ['ナ', 'printed/type', 'printed/type0'], ONE_CHARACTER])
   // What a publication runs after it rewrites corpus_units, and what the trigger runs on each naming.
   shapes.push([{ sql: refresh[0], values: [] }, [], 'sqlite_autoindex_corpus_units_1'])
   shapes.push([{ sql: "UPDATE corpus_characters SET named=named+1 WHERE (character,production)=(SELECT character,production FROM corpus_units WHERE id=? AND named=0)", values: [] },
@@ -452,7 +454,7 @@ try {
   // A round and its reference strips count their own character only, through its index; the review
   // filter off its index keeps the planner from walking every crop that can be dealt.
   const roundFilter = worker.listingFilter(true, 'not:printed/type', 'ナ')
-  shapes.push([{ sql: worker.facetsQueries(true, 'integration', roundFilter.where, true).stored, values: [] }, roundFilter.values, 'unit_character'])
+  shapes.push([{ sql: worker.facetsQueries(true, 'integration', roundFilter.where, true).stored, values: [] }, roundFilter.values, ONE_CHARACTER])
   // Every character's counts find a reviewer's skips during the rest by who and when, read each mark
   // once and look its crop up by id.
   const allCounts = worker.facetsQueries(true, 'integration', worker.listingFilter(true, 'not:printed/type', null).where, false)
@@ -508,15 +510,34 @@ try {
   }
   const cropsPlan = await plan({ sql: worker.widenedCropsQuery(3), values: [] }, ['local', '仮', '假', '反', 60, 0])
   sortFree(cropsPlan)
-  assert.ok(cropsPlan.some(d => /SEARCH units USING INDEX unit_character \(origin=\? AND character=\?\)/.test(d)), cropsPlan.join('; '))
+  assert.ok(cropsPlan.some(d => /SEARCH units USING INDEX unit_character_style \(origin=\? AND character=\?\)/.test(d)), cropsPlan.join('; '))
   const cropsCountPlan = await plan({ sql: worker.widenedCropsCountQuery(3), values: [] }, ['local', '仮', '假', '反'])
   sortFree(cropsCountPlan)
   for (const n of [1, 3]) {
     const chars = ['仮', '假', '反'].slice(0, n)
-    const corpusPlan = await plan({ sql: `SELECT * FROM (${worker.corpusSelection('character', n)}) WHERE 1=1 ORDER BY k,i LIMIT ? OFFSET ?`, values: [] }, [...chars, ...chars, 60, 0])
-    sortFree(corpusPlan)
-    assert.ok(corpusPlan.some(d => /SEARCH c USING INDEX corpus_character \(character=\?\)/.test(d)), corpusPlan.join('; '))
-    assert.ok(corpusPlan.some(d => /SEARCH u USING INDEX unit_corpus_character/.test(d)), corpusPlan.join('; '))
+    for (const [filter, extra] of [['1=1', []], ['1=1 AND s=?', [0]]]) {
+      const corpusPlan = await plan({ sql: `SELECT * FROM (${worker.corpusSelection('character', n)}) WHERE ${filter} ORDER BY k,s,i LIMIT ? OFFSET ?`, values: [] }, [...chars, ...chars, ...extra, 60, 0])
+      sortFree(corpusPlan)
+      assert.ok(corpusPlan.some(d => /SEARCH c USING INDEX corpus_character_style \(character=\?/.test(d)), corpusPlan.join('; '))
+      assert.ok(corpusPlan.some(d => /SEARCH u USING INDEX unit_corpus_character_style/.test(d)), corpusPlan.join('; '))
+    }
+  }
+  // A grapheme's corpus glyphs are read along the family's style index, with or without a style.
+  for (const [filter, extra] of [['1=1', []], ['1=1 AND s=?', [2]]]) {
+    const familyPlan = await plan({ sql: `SELECT * FROM (${worker.corpusSelection('family', 1)}) WHERE ${filter} ORDER BY k,s,i LIMIT ? OFFSET ?`, values: [] }, ['U+4EEE', 'U+4EEE', ...extra, 60, 0])
+    assert.ok(!familyPlan.some(d => /TEMP B-TREE FOR ORDER BY/.test(d)), familyPlan.join('; '))
+    assert.ok(familyPlan.some(d => /SEARCH c USING INDEX corpus_family_style \(family=\?/.test(d)), familyPlan.join('; '))
+  }
+  // A character's and a grapheme's own crops, with or without a style, each read along a style index.
+  for (const extra of ['', ' AND style_order=?']) {
+    const bound = extra ? [1] : []
+    const characterPlan = await plan({ sql: worker.characterCropsQuery(extra), values: [] }, ['local', '仮', ...bound, 60, 0])
+    sortFree(characterPlan)
+    assert.ok(characterPlan.some(d => /SEARCH units USING INDEX unit_character_style \(origin=\? AND character=\?/.test(d)), characterPlan.join('; '))
+    const graphemePlan = await plan({ sql: worker.graphemeCropsQuery(extra), values: [] }, ['local', 'U+4EEE', ...bound, 'local', '仮', 'U+4EEE', ...bound, 60, 0])
+    sortFree(graphemePlan)
+    assert.ok(graphemePlan.some(d => /SEARCH units USING INDEX unit_family_style \(origin=\? AND family=\?/.test(d)), graphemePlan.join('; '))
+    assert.ok(graphemePlan.some(d => /SEARCH units USING INDEX unit_character_style \(origin=\? AND character=\?/.test(d)), graphemePlan.join('; '))
   }
   await db.prepare("DELETE FROM units WHERE id='apart-crop'").run()
   await db.prepare("DELETE FROM units WHERE id='variant-crop'").run()
@@ -924,6 +945,30 @@ try {
   const ordered = (await call('/layers/occurrences?code_point=U%2B4EEE&scope=grapheme&limit=200')).items.map(i => i.id)
   assert.deepEqual(ordered, ordered.slice().sort(), 'in id order')
   assert.equal((await call(`/layers/occurrences?code_point=U%2B4EEE&scope=grapheme&limit=1&offset=${ordered.indexOf('fam-b')}`)).items[0].id, 'fam-b', 'and pages through them')
+  // A gallery lists running and cursive crops first, then those nobody has judged, then the formal
+  // ones, and each style can be asked for alone; the counts by style are taken over the other filters.
+  for (const [id, style] of [['sty-a', 'regular'], ['sty-b', 'cursive'], ['sty-c', 'unassessed'], ['sty-d', 'running'], ['sty-e', 'ming']]) {
+    const d = { id, label: '仮', reading: '仮', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
+    await db.prepare(`INSERT INTO units(${UNIT_COLUMNS},style) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, 'local', '仮', '仮', 'U+4EEE', null,
+      'handwritten', 'kanji', 'pending', 0, 0, 1, 1, JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null, style).run()
+  }
+  const styled = async query => { const found = await call('/layers/occurrences?code_point=U%2B4EEE&limit=200' + query); return { found, ids: found.items.map(i => i.id).filter(id => id.startsWith('sty-')) } }
+  for (const scope of ['', '&scope=grapheme']) {
+    const all = await styled(scope)
+    assert.deepEqual(all.ids, ['sty-b', 'sty-d', 'sty-c', 'sty-a', 'sty-e'], 'cursive first, then unassessed, then formal')
+    assert.equal(all.found.items.find(i => i.id === 'sty-d').style, 'running', 'a crop carries its style')
+    const unassessed = all.found.styles.unassessed
+    assert.deepEqual([all.found.styles.cursive, all.found.styles.formal], [2, 2])
+    assert.equal(all.found.total, 4 + unassessed)
+    const cursive = await styled(scope + '&style=cursive')
+    assert.deepEqual(cursive.ids, ['sty-b', 'sty-d'])
+    assert.equal(cursive.found.total, 2, 'the total is of the style asked for')
+    assert.deepEqual(cursive.found.styles, all.found.styles, 'the counts by style do not depend on the style asked for')
+    assert.deepEqual((await styled(scope + '&style=formal')).ids, ['sty-a', 'sty-e'])
+  }
+  assert.deepEqual((await call('/layers/occurrences?code_point=U%2B4EEE&expand=variants&limit=200&style=cursive')).items.map(i => i.id), ['sty-b', 'sty-d'], 'a widened gallery takes the style too')
+  await call('/layers/occurrences?code_point=U%2B4EEE&style=bold', undefined, 422)
+  await db.prepare("DELETE FROM units WHERE id LIKE 'sty-%'").run()
   // Search finds a crop by its character or by its reading, each once.
   for (const [id, character, reading] of [['find-both', 'とも', 'とも'], ['find-reading', '𪜈', 'とも'], ['find-neither', '𪜈', '𪜈']]) {
     const d = { id, label: character, reading, state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
