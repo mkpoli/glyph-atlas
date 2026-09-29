@@ -166,6 +166,7 @@ def test_round_answer_for_another_occurrence_is_rejected(store):
     record["event"]["evidence"] = json.dumps(evidence, ensure_ascii=False)
     _, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
     assert report["counts"].get("imported", 0) == 0
+    assert report["items"][0]["reason"] == "round answer names another occurrence"
 
 
 def test_character_correction_whose_saved_reading_is_not_the_workers_is_rejected(store):
