@@ -1089,3 +1089,24 @@ def test_a_heartbeat_stops_renewing_a_page_that_ran_past_its_deadline():
         calls = hung.calls
         time.sleep(0.2)
     assert beat.lost.is_set() and hung.calls == calls
+
+
+def test_a_worker_start_sweeps_scratch_files_older_than_a_lease(tmp_path):
+    import os
+    import time
+
+    queue = Queue(tmp_path / "queue")
+    stale = queue.root/".staging"/"x.dead"
+    fresh = queue.root/".staging"/"y.live"
+    for directory in (stale, fresh):
+        directory.mkdir(parents=True)
+        (directory/"report.json").write_text("{}")
+    (queue.root/"status.json.dead.tmp").write_text("{")
+    (queue.root/"status.json.live.tmp").write_text("{")
+    old = time.time() - 2 * 600
+    for path in (stale, stale/"report.json", queue.root/"status.json.dead.tmp"):
+        os.utime(path, (old, old))
+    queue.sweep(age=600)
+    assert sorted(p.name for p in (queue.root/".staging").iterdir()) == ["y.live"]
+    assert [p.name for p in queue.root.glob("*.tmp")] == ["status.json.live.tmp"]
+

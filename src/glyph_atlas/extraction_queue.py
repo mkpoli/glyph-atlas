@@ -38,6 +38,7 @@ import sqlite3
 import time
 import unicodedata
 from collections import Counter, defaultdict
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -436,6 +437,20 @@ class Queue:
             return self.db.execute("""UPDATE pages SET status=?,error=?,updated_at=?,retry_after=?,worker=NULL,
                 lease_until=NULL WHERE id=? AND status='running' AND worker=?""",
                 (status,reason, datetime.now(UTC).isoformat(),retry_after,ident,worker)).rowcount > 0
+
+    def sweep(self, *, age=LEASE_SECONDS):
+        """Remove the staging directories and scratch files that workers killed mid-write left, once
+        untouched for `age` seconds; a worker writing one touches it within seconds."""
+        cutoff = time.time() - age
+        staging = self.root / ".staging"
+        for path in [*(staging.iterdir() if staging.is_dir() else ()), *self.root.glob("*.tmp")]:
+            with suppress(FileNotFoundError):
+                if path.stat().st_mtime >= cutoff:
+                    continue
+                if path.is_dir():
+                    shutil.rmtree(path, ignore_errors=True)
+                else:
+                    path.unlink()
 
     def status(self, *, state="idle", error=None):
         counts = dict(self.db.execute("SELECT status,count(*) FROM pages GROUP BY status"))
@@ -956,6 +971,7 @@ def run(queue, engine, *, pages=3, seconds=600, max_lines=64, store=None, supple
     import socket
     worker = worker or f"{socket.gethostname()}:{os.getpid()}"
     started = time.monotonic()
+    queue.sweep(age=lease)
     if store is not None:
         publish(queue, store)
     queue.status(state="running")
