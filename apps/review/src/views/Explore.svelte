@@ -639,7 +639,7 @@
     sampleFault = page ? (page.status === 'ok' ? null : page.status) : null
     loading = false
   }
-  onMount(() => { if (first) openEmptyGrapheme(first.result); if (!collection) readCollection(); if (streamed) receive(streamed.rest); else if (!first && !opened) load(); if (addressed) followAddress(); const timer = setInterval(readCollection, 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
+  onMount(() => { const redirected = first ? openEmptyGrapheme(first.result) : false; if (!collection) readCollection(); if (streamed) receive(streamed.rest); else if (!first && !opened) load(); if (addressed && !redirected) followAddress(); const timer = setInterval(readCollection, 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
   // Widening is the reader's choice and only it reloads the gallery; picking a character resets the
   // widening itself and loads once through `pick`.
   // The first run is the widening the page opened with, already loaded.
