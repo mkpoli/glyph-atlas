@@ -67,10 +67,10 @@ def test_queue_round_robin_resumes_and_seed_is_idempotent(tmp_path,monkeypatch):
     queue=Queue(tmp_path/"queue")
     assert queue.seed(source(tmp_path)) == 4
     assert queue.seed(tmp_path/"source") == 0
-    assert queue.claim(lease=-1)["id"] == "a:0"  # a worker that stopped: its lease has lapsed
-    assert queue.claim(lease=-1)["id"] == "b:0"
-    queue.recover()
-    assert queue.claim()["id"] == "a:0"
+    assert queue.claim("w")["id"] == "a:0"
+    assert queue.claim("stopped", lease=-1)["id"] == "b:0"  # a worker that stopped: its lease has lapsed
+    assert queue.claim("w")["id"] == "b:0"
+    assert queue.claim("w")["id"] == "a:1"
 
 
 def test_seed_leaves_out_a_page_without_a_located_line(tmp_path,monkeypatch):
@@ -99,7 +99,7 @@ def test_failed_page_is_not_completed_or_importable(tmp_path, monkeypatch):
     class Broken:
         def extract(self,*args,**kwargs):
             raise ValueError("unavailable")
-    result=run(queue,Broken(),pages=1,pause=0)
+    result=run(queue,Broken(),pages=1)
     assert result["counts"] == {"failed":1}
     assert result["character_crops"] == 0
     assert queue.db.execute("SELECT output FROM pages").fetchone()[0] is None
@@ -159,15 +159,15 @@ def test_retryable_errors_have_bounded_backoff(tmp_path,monkeypatch):
     queue.db.execute("INSERT INTO pages(id,document_id,title,source,cached,rank) VALUES('a','a','A','s',1,0)")
     queue.db.commit()
     monkeypatch.setattr("glyph_atlas.extraction_queue.time.time",lambda:1000)
-    assert queue.claim()["id"] == "a"
-    queue.fail("a","timeout",retryable=True)
-    assert queue.claim() is None
+    assert queue.claim("w")["id"] == "a"
+    queue.fail("a","w","timeout",retryable=True)
+    assert queue.claim("w") is None
     monkeypatch.setattr("glyph_atlas.extraction_queue.time.time",lambda:1100)
-    assert queue.claim()["id"] == "a"
-    queue.fail("a","timeout",retryable=True)
+    assert queue.claim("w")["id"] == "a"
+    queue.fail("a","w","timeout",retryable=True)
     monkeypatch.setattr("glyph_atlas.extraction_queue.time.time",lambda:1300)
-    assert queue.claim()["id"] == "a"
-    queue.fail("a","timeout",retryable=True)
+    assert queue.claim("w")["id"] == "a"
+    queue.fail("a","w","timeout",retryable=True)
     assert queue.db.execute("SELECT status FROM pages").fetchone()[0] == "failed"
 
 
@@ -213,9 +213,8 @@ def test_a_page_that_keeps_stopping_the_worker_is_left_failed(tmp_path):
             queue.db.execute("INSERT INTO pages (id,document_id,title,source,cached,rank) VALUES(?,?,?,?,?,?)",
                              (ident, "a", "t", "s", 1, rank))
     for _ in range(MAX_ATTEMPTS):
-        assert queue.claim(lease=-1)["id"] == "a:0"
-        queue.recover()  # the worker died while extracting a:0, and its lease lapsed
-    assert queue.claim()["id"] == "a:1"
+        assert queue.claim("w", lease=-1)["id"] == "a:0"  # the worker died while extracting a:0
+    assert queue.claim("w")["id"] == "a:1"
     assert queue.db.execute("SELECT status FROM pages WHERE id='a:0'").fetchone()[0] == "failed"
 
 
@@ -269,7 +268,7 @@ def test_prioritize_claims_a_zero_crop_character_before_an_earlier_common_page(t
     ])
     seeded(queue, [("a", source, 0), ("b", source, 1)])
     assert queue.prioritize({"の": 1000}) == 2
-    assert queue.claim()["id"] == "b"
+    assert queue.claim("w")["id"] == "b"
 
 
 def test_prioritize_scores_each_page_from_the_dataset_it_was_seeded_from(tmp_path, monkeypatch):
@@ -280,7 +279,7 @@ def test_prioritize_scores_each_page_from_the_dataset_it_was_seeded_from(tmp_pat
     seeded(queue, [("a", common, 0), ("b", rare, 1)])
     assert queue.prioritize({"の": 1000}) == 2
     assert queue.db.execute("SELECT priority FROM pages WHERE id='b'").fetchone()[0] == 1.0
-    assert queue.claim()["id"] == "b"
+    assert queue.claim("w")["id"] == "b"
 
 
 def test_prioritize_refuses_a_source_without_lines(tmp_path, monkeypatch):
@@ -302,7 +301,7 @@ def test_prioritize_ties_keep_the_original_claim_order(tmp_path, monkeypatch):
     ])
     seeded(queue, [("a", source, 1), ("b", source, 0)])
     queue.prioritize({})
-    assert queue.claim()["id"] == "b"
+    assert queue.claim("w")["id"] == "b"
 
 
 def test_prioritize_leaves_complete_pages_alone(tmp_path, monkeypatch):
@@ -334,24 +333,7 @@ def test_priority_column_upgrades_an_old_queue_file_without_it(tmp_path):
     queue = Queue(path)
     columns = {r[1] for r in queue.db.execute("PRAGMA table_info(pages)")}
     assert "priority" in columns
-    assert queue.claim()["id"] == "a"
-
-
-def test_the_pause_follows_only_a_page_that_fetched_its_image(tmp_path, monkeypatch):
-    monkeypatch.setattr("glyph_atlas.extraction_queue.require_storage", lambda _: None)
-    slept=[]
-    monkeypatch.setattr("glyph_atlas.extraction_queue.time.sleep", slept.append)
-    queue=Queue(tmp_path/"queue")
-    # Claimed a, c (cached), then b, d: only b both fetched its image and has a page after it.
-    for ident,cached,rank in (("a",1,0),("b",0,1),("c",1,2),("d",0,3)):
-        queue.db.execute("INSERT INTO pages(id,document_id,title,source,cached,rank) VALUES(?,?,?,?,?,?)",
-                         (ident,ident,ident.upper(),"s",cached,rank))
-    queue.db.commit()
-    class Broken:
-        def extract(self,*args,**kwargs):
-            raise ValueError("unavailable")
-    run(queue,Broken(),pages=4,pause=7)
-    assert slept == [7]
+    assert queue.claim("w")["id"] == "a"
 
 
 def test_gates_for_a_character_the_classifier_has_no_class_for():
@@ -455,11 +437,9 @@ def test_supplements_list_the_pages_an_earlier_policy_completed(tmp_path):
     assert queue.seed_supplements() == 2
     assert queue.seed_supplements() == 0
     assert sorted(r[0] for r in queue.db.execute("SELECT page_id FROM supplements")) == ["old-known", "old-rare"]
-    assert {queue.claim_supplement(lease=-1)["output"],
-            queue.claim_supplement(lease=-1)["output"]} == {"pages/old-rare", "pages/old-known"}
-    assert queue.claim_supplement() is None
-    queue.recover()
-    assert {r[0] for r in queue.db.execute("SELECT status FROM supplements")} == {"pending"}
+    assert {queue.claim_supplement("w")["output"],
+            queue.claim_supplement("w")["output"]} == {"pages/old-rare", "pages/old-known"}
+    assert queue.claim_supplement("w") is None
 
 
 class SupplementEngine:
@@ -539,7 +519,7 @@ def test_run_takes_a_supplement_every_other_page_and_then_the_rest(tmp_path, mon
         order.append(("supplement", job["id"]))
         return {"added": 2}, root/"supplements"/job["id"]
     monkeypatch.setattr(extraction_queue, "supplement", fake_supplement)
-    result = run(queue, Engine(), pages=4, pause=0)
+    result = run(queue, Engine(), pages=4)
     assert order == [("page", "p1"), ("supplement", "s1"), ("page", "p2"), ("supplement", "s2")]
     assert {r[0] for r in queue.db.execute("SELECT status FROM pages WHERE id IN ('p1','p2')")} == {"complete"}
     assert result["supplements"] == {"complete": 2, "added": 4, "published": 0, "publication_failures": 0}
@@ -576,9 +556,9 @@ def test_a_failed_supplement_waits_before_its_next_attempt(tmp_path, monkeypatch
     now = [1000.0]
     monkeypatch.setattr(extraction_queue.time, "time", lambda: now[0])
     for attempt in range(extraction_queue.MAX_ATTEMPTS):
-        assert queue.claim_supplement()["id"] == "a"
-        queue.fail_supplement("a", "DownloadError: unavailable")
-        assert queue.claim_supplement() is None
+        assert queue.claim_supplement("w")["id"] == "a"
+        queue.fail_supplement("a", "w", "DownloadError: unavailable")
+        assert queue.claim_supplement("w") is None
         now[0] += 3600
     assert queue.db.execute("SELECT status FROM supplements").fetchone()[0] == "failed"
 
@@ -594,7 +574,7 @@ def test_a_supplements_table_without_retry_after_is_upgraded(tmp_path):
     db.commit(); db.close()
     queue = Queue(root)
     assert "retry_after" in {r[1] for r in queue.db.execute("PRAGMA table_info(supplements)")}
-    assert queue.claim_supplement() is None
+    assert queue.claim_supplement("w") is None
 
 
 def test_the_extraction_run_is_the_pilot_run_judging_each_character_on_its_own_margin():
@@ -619,7 +599,7 @@ def test_seeding_supersedes_an_earlier_policy_s_supplements_and_status_counts_on
     assert dict(queue.db.execute("SELECT page_id,status FROM supplements WHERE policy=?", (old,))) == {
         "a": "complete", "b": "superseded"}
     claimed = {}
-    while (job := queue.claim_supplement()) is not None:
+    while (job := queue.claim_supplement("w")) is not None:
         assert job["policy"] == POLICY
         claimed[job["id"]] = job["earlier_supplements"]
     assert claimed == {"a": ["supplements/a-v2"], "b": []}, "a complete earlier supplement is kept off"
@@ -636,8 +616,8 @@ def test_seeding_reads_a_page_s_report_once_and_a_page_finished_under_this_polic
     (queue.root/"pages"/"a"/"report.json").unlink()
     queue.db.execute("DELETE FROM supplements")
     assert queue.seed_supplements() == 1, "the policy recorded on the page row is enough"
-    queue.claim()
-    queue.finish("c", {"accepted": 0, "examined": 0, "policy": POLICY}, queue.root/"pages"/"c")
+    queue.claim("w")
+    queue.finish("c", "w", {"accepted": 0, "examined": 0, "policy": POLICY}, queue.root/"pages"/"c")
     assert queue.seed_supplements() == 0
 
 
@@ -663,10 +643,9 @@ def test_focused_documents_are_claimed_first_until_the_focus_is_cleared(tmp_path
     queue = Queue(tmp_path/"queue")
     queue.seed(source(tmp_path))
     assert queue.focus({"b"}) == 2
-    assert [queue.claim()["id"], queue.claim()["id"]] == ["b:0", "b:1"]
-    queue.recover()
+    assert [queue.claim("w")["id"], queue.claim("w")["id"]] == ["b:0", "b:1"]
     assert queue.focus(set()) == 0
-    assert queue.claim()["id"] == "a:0"
+    assert queue.claim("w")["id"] == "a:0"
 
 
 def test_a_focused_document_s_supplements_are_taken_first(tmp_path):
@@ -677,7 +656,7 @@ def test_a_focused_document_s_supplements_are_taken_first(tmp_path):
     queue.db.commit()
     assert queue.seed_supplements() == 2
     queue.focus({"b"})
-    assert queue.claim_supplement()["id"] == "b"
+    assert queue.claim_supplement("w")["id"] == "b"
 
 
 def test_a_queue_keeps_the_ndl_provider_its_first_worker_brought(tmp_path):
@@ -761,7 +740,7 @@ def _open_after(start, root):
     Queue(root)
 
 
-def test_recovery_leaves_a_live_lease_and_takes_back_a_lapsed_one(tmp_path):
+def test_a_claim_leaves_a_live_lease_and_takes_back_a_lapsed_one(tmp_path):
     queue = Queue(tmp_path / "queue")
     with queue.db:
         queue.db.executemany("INSERT INTO pages (id,document_id,title,source,cached,rank) VALUES(?,?,?,?,?,?)",
@@ -769,8 +748,9 @@ def test_recovery_leaves_a_live_lease_and_takes_back_a_lapsed_one(tmp_path):
     assert queue.claim("alive")["id"] == "live"
     assert queue.claim("stopped", lease=-1)["id"] == "dead"
     assert queue.status()["workers"] == {"alive": 1}
-    queue.recover()
-    assert dict(queue.db.execute("SELECT id, status FROM pages")) == {"live": "running", "dead": "pending"}
+    taken = queue.claim("next")
+    assert (taken["id"], taken["attempts"]) == ("dead", 2)
+    assert queue.claim("another") is None
 
 
 def test_a_lease_is_renewed_only_by_the_worker_holding_it(tmp_path):
@@ -780,5 +760,137 @@ def test_a_lease_is_renewed_only_by_the_worker_holding_it(tmp_path):
     queue.claim("w1", lease=-1)
     assert not queue.renew("page", "p", "w2")
     assert queue.renew("page", "p", "w1")
-    queue.recover()
-    assert queue.db.execute("SELECT status FROM pages").fetchone()[0] == "running"
+    assert queue.claim("w3") is None
+
+
+def test_a_worker_whose_lease_was_taken_over_writes_nothing(tmp_path):
+    from glyph_atlas.extraction_queue import POLICY
+
+    queue = Queue(tmp_path / "queue")
+    with queue.db:
+        queue.db.execute("INSERT INTO pages (id,document_id,title,source,cached,rank) VALUES('p','d','t','s',1,0)")
+    queue.claim("slow", lease=-1)
+    queue.claim("fresh")
+    report = {"accepted": 1, "examined": 1, "policy": POLICY}
+    assert not queue.finish("p", "slow", report, queue.root/"pages"/"x")
+    assert not queue.fail("p", "slow", "timeout", retryable=True)
+    assert tuple(queue.db.execute("SELECT status, worker FROM pages").fetchone()) == ("running", "fresh")
+    assert queue.finish("p", "fresh", report, queue.root/"pages"/"x")
+    assert tuple(queue.db.execute("SELECT status, worker FROM pages").fetchone()) == ("complete", None)
+
+
+def test_a_supplement_whose_lease_was_taken_over_is_left_to_its_new_worker(tmp_path):
+    queue, _ = supplement_queue(tmp_path, [("a", "complete", "single-character-consensus-v1", "飍")])
+    queue.seed_supplements()
+    queue.claim_supplement("slow", lease=-1)
+    assert queue.claim_supplement("fresh")["id"] == "a"
+    assert queue.status()["workers"] == {"fresh": 1}
+    assert not queue.finish_supplement("a", "slow", {"added": 0}, queue.root/"supplements"/"x")
+    assert not queue.fail_supplement("a", "slow", "timeout")
+    assert queue.finish_supplement("a", "fresh", {"added": 0}, queue.root/"supplements"/"x")
+
+
+def test_an_uncached_page_on_a_host_another_worker_uses_waits_behind_other_pages(tmp_path):
+    queue = Queue(tmp_path / "queue")
+    with queue.db:
+        queue.db.executemany("INSERT INTO pages (id,document_id,title,source,cached,rank,host) VALUES(?,?,?,?,?,?,?)",
+                             [("a0", "a", "t", "s", 0, 0, "a.example"), ("a1", "a", "t", "s", 0, 1, "a.example"),
+                              ("a2", "a", "t", "s", 1, 2, "a.example"), ("b0", "b", "t", "s", 0, 3, "b.example")])
+    assert queue.claim("w1")["id"] == "a2", "a cached page goes first"
+    assert queue.claim("w2")["id"] == "a0", "and asks its host for nothing"
+    assert queue.claim("w3")["id"] == "b0"
+    assert queue.claim("w4")["id"] == "a1", "with nothing else left, the busy host's page is taken"
+
+
+def test_seeding_records_each_page_s_image_host(tmp_path, monkeypatch):
+    monkeypatch.setattr("glyph_atlas.images.index_path", lambda: tmp_path/"missing")
+    queue = Queue(tmp_path/"queue")
+    queue.seed(source(tmp_path))
+    assert {r[0] for r in queue.db.execute("SELECT host FROM pages")} == {"example.org"}
+
+
+def test_a_heartbeat_retries_a_busy_database_and_stops_once_the_claim_is_lost():
+    import sqlite3
+    import time
+
+    from glyph_atlas.extraction_queue import heartbeat
+
+    class Renewals:
+        def __init__(self, answers):
+            self.answers, self.calls = list(answers), 0
+
+        def renew(self, *args, **kwargs):
+            self.calls += 1
+            answer = self.answers.pop(0) if self.answers else True
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+
+    busy = Renewals([sqlite3.OperationalError("database is locked"), True, True])
+    with heartbeat(busy, "page", "p", "w", lease=0.08) as beat:
+        time.sleep(0.1)
+    assert busy.calls >= 3 and not beat.lost.is_set()
+    lost = Renewals([True, False])
+    with heartbeat(lost, "page", "p", "w", lease=0.08) as beat:
+        time.sleep(0.1)
+    assert beat.lost.is_set() and lost.calls == 2
+
+
+class CommittingEngine:
+    """An engine that commits an empty extraction for each page, as a real one would, a little slowly."""
+
+    def extract(self, job, root, *, max_lines=64):
+        import time
+
+        from glyph_atlas.extraction_queue import POLICY, commit
+        time.sleep(0.01)
+        report = {"accepted": 0, "examined": 0, "policy": POLICY, "page_id": job["id"]}
+        return report, commit(root/"pages"/job["id"], job["id"], {"documents": [Document(id="d", title="t")]}, report)
+
+
+def _work(root, name):
+    run(Queue(root), CommittingEngine(), pages=100, seconds=60, supplement_every=0, worker=name)
+
+
+def test_workers_running_at_once_extract_every_page_once(tmp_path, monkeypatch):
+    """Four worker processes share one queue: each page is extracted and finished once, status stays readable."""
+    import json
+    import multiprocessing
+
+    monkeypatch.setattr("glyph_atlas.extraction_queue.require_storage", lambda _: None)
+    queue = Queue(tmp_path / "queue")
+    with queue.db:
+        queue.db.executemany("INSERT INTO pages (id,document_id,title,source,cached,rank) VALUES(?,?,?,?,?,?)",
+                             [(f"p{i}", "d", "t", "s", 1, i) for i in range(40)])
+    context = multiprocessing.get_context("fork")
+    workers = [context.Process(target=_work, args=(queue.root, f"w{i}")) for i in range(4)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(120)
+    assert [worker.exitcode for worker in workers] == [0] * 4
+    assert dict(queue.db.execute("SELECT status, count(*) FROM pages GROUP BY status")) == {"complete": 40}
+    assert sorted(p.name for p in (queue.root/"pages").iterdir()) == sorted(f"p{i}" for i in range(40))
+    assert json.loads((queue.root/"status.json").read_text())["counts"] == {"complete": 40}
+    assert not list(queue.root.glob("status.json.*.tmp")) and not list((queue.root/".staging").iterdir())
+
+
+def _commit_same(root, start):
+    from glyph_atlas.extraction_queue import POLICY, commit
+    start.wait()
+    commit(root/"pages"/"same", "same", {"documents": [Document(id="d", title="t")]}, {"accepted": 0, "policy": POLICY})
+
+
+def test_workers_committing_one_identity_at_once_leave_one_output(tmp_path):
+    import multiprocessing
+
+    context = multiprocessing.get_context("fork")
+    start = context.Barrier(4)
+    workers = [context.Process(target=_commit_same, args=(tmp_path, start)) for _ in range(4)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(60)
+    assert [worker.exitcode for worker in workers] == [0] * 4
+    assert sorted(p.name for p in (tmp_path/"pages"/"same").glob("[!.]*")) == ["documents.parquet", "report.json"]
+    assert not list((tmp_path/".staging").iterdir())

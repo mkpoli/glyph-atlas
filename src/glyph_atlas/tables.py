@@ -308,13 +308,16 @@ class locked:
     leave the table unusable.
 
     `poll` and `timeout` bound the wait: a run that cannot take the lock within `timeout` seconds
-    raises `TimeoutError` rather than hanging behind a stuck process.
+    raises `TimeoutError` rather than hanging behind a stuck process. `shared` takes it shared: any
+    number of shared holders at once, and none while a process holds it exclusively.
     """
 
-    def __init__(self, path: Path, *, poll: float = 0.2, timeout: float | None = 3600.0) -> None:
+    def __init__(self, path: Path, *, poll: float = 0.2, timeout: float | None = 3600.0,
+                 shared: bool = False) -> None:
         self.path = Path(path)
         self.poll = poll
         self.timeout = timeout
+        self.shared = shared
         self._handle: Any = None
 
     @property
@@ -332,7 +335,7 @@ class locked:
         started = time.monotonic()
         while True:
             try:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(handle.fileno(), (fcntl.LOCK_SH if self.shared else fcntl.LOCK_EX) | fcntl.LOCK_NB)
                 self._handle = handle
                 return self
             except OSError:
@@ -340,7 +343,7 @@ class locked:
                     handle.close()
                     raise TimeoutError(
                         f"waited {self.timeout:.0f} s for the lock on {self.path}; "
-                        f"another process is writing it"
+                        f"another process holds it"
                     ) from None
                 time.sleep(self.poll)
 
