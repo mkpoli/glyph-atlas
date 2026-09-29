@@ -21,8 +21,10 @@ corrections reviewers made on these blocks. Of 40 random relabels among unreview
 plainly right by eye, about 9 uncertain on small or damaged crops and about 3 wrong; the label
 before was wrong on nearly all of them.
 
-A crop a person reviewed is never relabelled, and neither is one named in `protect` (the ids the
-site holds reviews for). The relabel is a model event in the store's journal, with the evidence that
+The text at each position is the transcriber's own (`text_source`), so a neighbour already corrected
+does not change what its place holds. A crop a person reviewed is never relabelled, nor one named in
+`protect` (the ids the site holds reviews for), nor one whose review state is anything but `machine`:
+a settled label or a placement the aligner rejected is text for its neighbours only. The relabel is a model event in the store's journal, with the evidence that
 chose it, so it can be listed and undone like any other.
 """
 from __future__ import annotations
@@ -49,13 +51,20 @@ MIN_SUPPORT = 2
 MIN_SIDE = 10
 
 
-def sequence_key(unit) -> tuple | None:
-    """The block a unit's label was cut from: its line, or its record's page and block."""
-    if unit.line_id:
-        return ("line", unit.line_id)
+def place(unit) -> tuple[tuple, int] | None:
+    """The block a unit's text was cut from and its position there.
+
+    An Ainu record's crop belongs to its record's block at the record's position, even when it also
+    names a line: the detector-aligned units of that line are numbered along another text. Any other
+    unit belongs to its line, at its place in the line.
+    """
     record = (unit.meta or {}).get("ainu_records")
-    if record and record.get("block") is not None:
-        return ("block", record.get("key"), record.get("page"), record["block"])
+    if record:
+        if record.get("block") is None or record.get("position") is None:
+            return None
+        return ("block", record.get("key"), record.get("page"), record["block"]), int(record["position"])
+    if unit.line_id and unit.seq is not None:
+        return ("line", unit.line_id), unit.seq
     return None
 
 
@@ -75,11 +84,12 @@ def path(cost: np.ndarray, switch: float = SWITCH) -> list[int]:
     return chosen[::-1]
 
 
-def propose(blocks: dict[Any, list[tuple[str, int, str]]], shown: dict[str, np.ndarray],
+def propose(blocks: dict[Any, list[tuple[str, int, str, str]]], shown: dict[str, np.ndarray],
             sizes: dict[str, tuple[float, float]], protected: set[str]) -> list[dict]:
     """The relabels of every block.
 
-    `blocks` lists each block's crops as (id, position, label); `shown[id]` holds, for each offset of
+    `blocks` lists each block's crops as (id, position, the text written at that position, the crop's
+    label now); `shown[id]` holds, for each offset of
     `OFFSETS`, the probability that the crop shows the label at that offset (`FLOOR` where there is
     none). `sizes` gives each box's width and height.
     """
@@ -87,13 +97,13 @@ def propose(blocks: dict[Any, list[tuple[str, int, str]]], shown: dict[str, np.n
     proposals = []
     for key, crops in blocks.items():
         crops = sorted(crops, key=lambda crop: crop[1])
-        by_position = {position: label for _, position, label in crops}
+        by_position = {position: text for _, position, text, _ in crops}
         scored = [crop for crop in crops if crop[0] in shown]
         if not scored:
             continue
         p = np.stack([shown[crop[0]] for crop in scored])
         chosen = path(-np.log(np.maximum(p, FLOOR)))
-        for i, (identity, position, label) in enumerate(scored):
+        for i, (identity, position, _text, label) in enumerate(scored):
             column = chosen[i]
             offset = OFFSETS[column]
             target = by_position.get(position + offset)
@@ -138,8 +148,8 @@ def _shown(store, blocks, checkpoint: Path) -> dict[str, np.ndarray]:
                   if (found := re.fullmatch(r"/atlas/media/([0-9a-f]{64})\.webp", item["image"] or ""))}
     wanted = []
     for crops in blocks.values():
-        by_position = {position: label for _, position, label in crops}
-        for identity, position, _ in crops:
+        by_position = {position: text for _, position, text, _ in crops}
+        for identity, position, _, _ in crops:
             if identity in images:
                 wanted.append((identity, [by_position.get(position + o) for o in OFFSETS]))
     shown = {}
@@ -164,21 +174,27 @@ def run(dataset: Path, *, checkpoint: Path, apply: bool = False, protect: Iterab
     """Propose, and with `apply` record, the relabels of every block of `dataset`."""
     from .atlas import script_of_identity, written_identity
     from .refine import _changes, encoded
-    from .store import SEEN, Store
+    from .store import SEEN, Conflict, Store
 
     store = Store(dataset)
     reviewed = {event.target_id for event in store.events() if event.role != "model" and event.field != SEEN}
     protected = reviewed | set(protect)
     units, blocks, sizes = {}, defaultdict(list), {}
     for unit, revision in store.unit_snapshot():
-        key = sequence_key(unit)
-        if not unit.active or str(unit.kind) != "char" or key is None or unit.seq is None or unit.box is None:
+        found = place(unit)
+        if not unit.active or str(unit.kind) != "char" or found is None or unit.box is None:
             continue
         label = written_identity(unit)
-        if not label:
+        # The block's text is what the transcriber wrote, which a relabel never changes.
+        text = unit.text_source or label
+        if not label or not text:
             continue
+        # A label a person settled, or a placement the aligner rejected, is text for its neighbours
+        # and is never relabelled itself.
+        if str(unit.review) != "machine":
+            protected.add(unit.id)
         units[unit.id] = (unit, revision)
-        blocks[key].append((unit.id, unit.seq, label))
+        blocks[found[0]].append((unit.id, found[1], text, label))
         sizes[unit.id] = (unit.box.w, unit.box.h)
     shown = _shown(store, blocks, checkpoint)
     proposals = propose(blocks, shown, sizes, protected)
@@ -193,7 +209,12 @@ def run(dataset: Path, *, checkpoint: Path, apply: bool = False, protect: Iterab
                     **{k: v for k, v in item.items() if k not in ("unit_id", "status")}}
         values = {"unicode": encoded(character), "reading": character, "script": script_of_identity(character),
                   "review": "machine", "meta": {**(unit.meta or {}), "feedback_identity": evidence}}
-        _changes(store, unit, values, evidence, base_revision=revision)
+        try:
+            _changes(store, unit, values, evidence, base_revision=revision)
+        except Conflict:
+            # Reviewed or changed since it was read; the next run judges it as it stands.
+            item["status"] = "stale"
+            continue
         item["status"] = "relabelled"
     counts.update(item["status"] for item in proposals)
     return {"method": METHOD, "blocks": len(blocks), "crops": len(units), "read": len(shown), "protected": len(protected & set(units)),
