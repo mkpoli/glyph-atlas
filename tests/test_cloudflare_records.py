@@ -47,9 +47,9 @@ def test_a_records_only_export_seals_into_packs_and_ordered_sql(scripts, tmp_pat
     (corpus / "corpus-0001.bin").write_bytes(b"".join(records))
     with sqlite3.connect(corpus / "corpus.sqlite") as db:
         db.executescript(SCHEMA)
-        db.execute("INSERT INTO corpus_units VALUES('codh:2',NULL,'U+306F',NULL,2,'corpus-0001.bin',?,?,'unknown',0)",
+        db.execute("INSERT INTO corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named) VALUES('codh:2',NULL,'U+306F',NULL,2,'corpus-0001.bin',?,?,'unknown',0)",
                    (len(records[0]), len(records[1])))
-        db.execute("INSERT INTO corpus_units VALUES('codh:1','𛂥','U+306F',NULL,1,'corpus-0001.bin',0,?,'printed/woodblock',0)",
+        db.execute("INSERT INTO corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named,style) VALUES('codh:1','𛂥','U+306F',NULL,1,'corpus-0001.bin',0,?,'printed/woodblock',0,'cursive')",
                    (len(records[0]),))
     summary = seal.seal(corpus, tmp_path / "sealed")
     assert summary["corpus_units"] == 2 and summary["objects"] == 1
@@ -59,17 +59,17 @@ def test_a_records_only_export_seals_into_packs_and_ordered_sql(scripts, tmp_pat
     sql = (tmp_path / "sealed" / publication["sql"][0]).read_text()
     lines = sql.splitlines()
     updates = "character=excluded.character,family=excluded.family,visual_group=excluded.visual_group,shuffle=excluded.shuffle," \
-        "object=excluded.object,offset=excluded.offset,size=excluded.size,production=excluded.production"
-    columns = "id,character,family,visual_group,shuffle,object,offset,size,production"
+        "object=excluded.object,offset=excluded.offset,size=excluded.size,production=excluded.production,style=excluded.style"
+    columns = "id,character,family,visual_group,shuffle,object,offset,size,production,style"
     assert lines[:2] == [
-        (f"INSERT INTO corpus_units({columns}) VALUES('codh:1','𛂥','U+306F',NULL,1,'{key}',0,{len(records[0])},'printed/woodblock') "
+        (f"INSERT INTO corpus_units({columns}) VALUES('codh:1','𛂥','U+306F',NULL,1,'{key}',0,{len(records[0])},'printed/woodblock','cursive') "
          f"ON CONFLICT(id) DO UPDATE SET {updates};"),
-        (f"INSERT INTO corpus_units({columns}) VALUES('codh:2',NULL,'U+306F',NULL,2,'{key}',{len(records[0])},{len(records[1])},'unknown') "
+        (f"INSERT INTO corpus_units({columns}) VALUES('codh:2',NULL,'U+306F',NULL,2,'{key}',{len(records[0])},{len(records[1])},'unknown','unassessed') "
          f"ON CONFLICT(id) DO UPDATE SET {updates};")]
     # A part applied before the last one leaves a named glyph named and the counts as they were.
     partial = sqlite3.connect(":memory:")
     partial.executescript(SCHEMA)
-    partial.execute("INSERT INTO corpus_units VALUES('codh:1','𛂥','U+306F',NULL,1,'old',0,1,'printed/woodblock',1)")
+    partial.execute("INSERT INTO corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named) VALUES('codh:1','𛂥','U+306F',NULL,1,'old',0,1,'printed/woodblock',1)")
     partial.execute("INSERT INTO corpus_characters VALUES('𛂥','printed/woodblock',1,1)")
     partial.executescript("\n".join(line for line in lines if line.startswith("INSERT INTO corpus_units")))
     assert partial.execute("SELECT object,named FROM corpus_units WHERE id='codh:1'").fetchone() == (key, 1)
@@ -78,8 +78,8 @@ def test_a_records_only_export_seals_into_packs_and_ordered_sql(scripts, tmp_pat
     replayed.executescript(SCHEMA)
     replayed.execute("INSERT INTO corpus_characters VALUES('gone','unknown',9,0)")
     # A glyph a review named before this publication stays named after its row is rewritten.
-    replayed.execute("INSERT INTO corpus_units VALUES('codh:1','𛂥','U+306F',NULL,1,'old',0,1,'unknown',0)")
-    replayed.execute("INSERT INTO units VALUES('codh:1','corpus','𛂥',NULL,NULL,NULL,'printed/woodblock','kana','checked',1,1,1,1,'{}','{}','{}','{}',NULL)")
+    replayed.execute("INSERT INTO corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named) VALUES('codh:1','𛂥','U+306F',NULL,1,'old',0,1,'unknown',0)")
+    replayed.execute("INSERT INTO units(id,origin,character,reading,family,visual_group,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual,document) VALUES('codh:1','corpus','𛂥',NULL,NULL,NULL,'printed/woodblock','kana','checked',1,1,1,1,'{}','{}','{}','{}',NULL)")
     replayed.executescript(sql)
     assert replayed.execute("SELECT character,named FROM corpus_units WHERE id='codh:1'").fetchone() == ("𛂥", 1)
     # The last part regenerates the per-character counts from the rows D1 then holds.
@@ -99,7 +99,7 @@ def test_an_export_that_packed_images_seals_its_media_first_and_insert_only(scri
         db.executescript(SCHEMA)
         db.execute("INSERT INTO media VALUES(?, 'pack-10001.bin', 0, ?, 'image/webp')", (new, len(crop)))
         db.execute("INSERT INTO media VALUES(?, 'pack-10001.bin', ?, ?, 'image/webp')", (old, len(crop), len(context)))
-        db.execute("INSERT INTO corpus_units VALUES('gl:1','天','U+5929',NULL,1,'corpus-0001.bin',0,?,'printed/woodblock',0)",
+        db.execute("INSERT INTO corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named) VALUES('gl:1','天','U+5929',NULL,1,'corpus-0001.bin',0,?,'printed/woodblock',0)",
                    (len(record),))
     summary = seal.seal(corpus, tmp_path / "sealed")
     assert summary["media"] == 2 and summary["objects"] == 2
@@ -204,7 +204,7 @@ def test_the_hangul_migration_moves_a_row_published_as_other(scripts):
     db = sqlite3.connect(":memory:")
     cloudflare_schema.schema(db)
     for unit_id, label, category in (("jamo", "ㅿ", "other"), ("kana", "あ", "kana"), ("latin", "A", "other")):
-        db.execute("INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        db.execute("INSERT INTO units(id,origin,character,reading,family,visual_group,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual,document) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                    (unit_id, "corpus", label, None, None, None, "unknown", category, "pending", 0, 1, 1, 0,
                     json.dumps({"label": label, "category": category}), "{}", "{}", "{}", None))
     db.executescript(Path("apps/cloudflare/migrations/0008_hangul_category.sql").read_text())
@@ -230,7 +230,7 @@ def test_the_gugyeol_migration_moves_a_row_published_as_other(scripts):
     db = sqlite3.connect(":memory:")
     cloudflare_schema.schema(db)
     for unit_id, label, category in (("gugyeol", "", "other"), ("kana", "あ", "kana"), ("latin", "A", "other")):
-        db.execute("INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        db.execute("INSERT INTO units(id,origin,character,reading,family,visual_group,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual,document) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                    (unit_id, "corpus", label, None, None, None, "unknown", category, "pending", 0, 1, 1, 0,
                     json.dumps({"label": label, "category": category}), "{}", "{}", "{}", None))
     db.executescript(Path("apps/cloudflare/migrations/0012_gugyeol_category.sql").read_text())

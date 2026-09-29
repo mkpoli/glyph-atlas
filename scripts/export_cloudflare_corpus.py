@@ -12,6 +12,7 @@ import pyarrow.dataset as ds
 from cloudflare_schema import CORPUS_REFRESH, schema
 from export_cloudflare import Packs, encoded
 
+from glyph_atlas import style
 from glyph_atlas.corpus import sources
 from glyph_atlas.corpus.api import PROXYABLE, CorpusAPI
 from glyph_atlas.corpus.details import DetailResolver, _iiif_region, _viewport
@@ -165,7 +166,8 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
         context = _MetaCache(corpus)
         dataset = ds.dataset([str(p) for p in paths], format="parquet")
         columns = [c for c in ("id", "document_id", "page_id", "line_id", "seq", "box", "crop", "crop_sha256",
-                   "kind", "granularity", "text_source", "reading", "unicode", "method", "review", "active", "upstream")
+                   "kind", "granularity", "text_source", "reading", "unicode", "method", "review", "active", "upstream",
+                   "style")
                    if c in dataset.schema.names]
         for batch in dataset.scanner(columns=columns, batch_size=2048, use_threads=False).to_batches():
             for row in batch.to_pylist():
@@ -247,10 +249,13 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
                 raw = encoded(detail).encode()
                 family = detail.get("grapheme")
                 visual = detail.get("visual_group") or {}
-                db.execute("INSERT OR IGNORE INTO corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production) VALUES(?,?,?,?,?,?,?,?,?)", (
+                document_id = joined.get("document_id") or None
+                written_style = style.resolve_values(row.get("style"), page.get("style"), document_id,
+                                                     context.document(document_id or "").get("style"))[0]
+                db.execute("INSERT OR IGNORE INTO corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,style) VALUES(?,?,?,?,?,?,?,?,?,?)", (
                     row["id"], detail.get("written_character"), family, visual.get("id"),
                     int(hashlib.sha256(row["id"].encode()).hexdigest()[:7], 16), record_name, record_file.tell(), len(raw),
-                    detail.get("production") or "unknown"))
+                    detail.get("production") or "unknown", written_style))
                 record_file.write(raw)
                 counts[corpus.name] += 1
             if record_file:

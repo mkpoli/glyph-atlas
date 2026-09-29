@@ -46,7 +46,7 @@ def export(tmp_path, monkeypatch):
     for identity, visual in (("unread", {"status": "unavailable", "candidates": []}), ("read", READY),
                              ("older", older)):
         data = json.dumps({"image": f"/atlas/media/{identity[0] * 64}.webp"})
-        db.execute("INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+        db.execute("INSERT INTO units(id,origin,character,reading,family,visual_group,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual,document) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
             identity, "local", "天", "天", None, None, "print", "han", "pending", 0, 1, 1, 0,
             data, "{}", "{}", json.dumps(visual), None))
     Model.reads = 0

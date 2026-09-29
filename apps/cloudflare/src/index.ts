@@ -7,10 +7,10 @@ export { leastTypicalQuery } from './forms';
 export { componentMatchQuery } from './components';
 type Json = Record<string, any>;
 type UnitRow = { id: string; origin: string; character: string | null; state: string; revision: number;
-  quiz: number; category?: string; data: string; snapshot: string; context: string; visual: string;
+  quiz: number; category?: string; data: string; snapshot: string; context: string; visual: string; style?: string;
   // A corpus glyph nothing has named yet: it has no `units` row, and this is where it is published.
   fresh?: CorpusRow };
-type CorpusRow = {id:string;character:string|null;family:string|null;visual_group:string|null;production:string;shuffle:number;object:string;offset:number;size:number};
+type CorpusRow = {id:string;character:string|null;family:string|null;visual_group:string|null;production:string;style:string;shuffle:number;object:string;offset:number;size:number};
 class Problem extends Error {
   constructor(public status: number, message: string, public extra: Json = {}) { super(message) }
 }
@@ -89,9 +89,9 @@ const productionOf=(data:Json)=>typeof data.production==='string'?data.productio
 // in the same batch and before the rows that reference it.
 function materialise(env:Env,row:UnitRow&{fresh:CorpusRow}){
   const d=parse(row.data);
-  return env.DB.prepare('INSERT OR IGNORE INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+  return env.DB.prepare('INSERT OR IGNORE INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
     .bind(row.id,'corpus',d.written_character||null,d.reading||null,d.grapheme||(d.written_character?cp(d.written_character):null),d.visual_group?.id||null,row.fresh.production,
-      row.category||categoryOf(d.label),d.state,d.revision,row.quiz,1,row.fresh.shuffle,row.data,row.snapshot,row.context,row.visual,null);
+      row.category||categoryOf(d.label),d.state,d.revision,row.quiz,1,row.fresh.shuffle,row.data,row.snapshot,row.context,row.visual,null,row.fresh.style);
 }
 async function corpusData(env:Env,row:CorpusRow):Promise<Json>{
   if(row.size>128*1024)throw new Problem(503,'Invalid published record.');

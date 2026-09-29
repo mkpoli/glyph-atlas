@@ -29,7 +29,7 @@ def reviewed_baselines(db, corpus):
     latest, baseline = reviews.latest(), reviews.baseline()
     applied, stale = 0, 0
     for identity in latest.keys() | baseline.keys():
-        row = db.execute("SELECT object,offset,size,shuffle FROM corpus_units WHERE id=?", (identity,)).fetchone()
+        row = db.execute("SELECT object,offset,size,shuffle,style FROM corpus_units WHERE id=?", (identity,)).fetchone()
         if not row:
             continue
         with (corpus / row[0]).open("rb") as source:
@@ -45,13 +45,13 @@ def reviewed_baselines(db, corpus):
             # A character written with a mark is several code points; `grapheme` takes the whole sequence.
             own = " ".join(refs.to_code_points(written))
             current["grapheme"] = refs.grapheme(own) or own
-        db.execute("INSERT OR REPLACE INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+        db.execute("INSERT OR REPLACE INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
             identity, "corpus", written, current.get("reading"), current.get("grapheme"),
             (current.get("visual_group") or {}).get("id"), current.get("production") or "unknown",
             category_of(current.get("label")),
             # Dealt in Quick review, as the Worker decides, when its image may be served and it names a character.
             current["state"], current["revision"], int(bool(current.get("proxyable") and written)), 1, row[3],
-            encoded(current), encoded(original), "{}", "{}", None))
+            encoded(current), encoded(original), "{}", "{}", None, row[4]))
         applied += 1
     return {"applied": applied, "stale": stale}
 
@@ -65,10 +65,12 @@ def seal(catalogue: Path, corpus: Path, output: Path):
     db.execute("ATTACH DATABASE ? AS local_source", (str(catalogue / "catalogue.sqlite"),))
     db.execute("ATTACH DATABASE ? AS corpus_source", (str(corpus / "corpus.sqlite"),))
     for table in ("metadata", "characters", "aliases", "units"):
-        db.execute(f"INSERT INTO {table} SELECT * FROM local_source.{table}")
+        # By name: `table_info` leaves out generated columns (`style_order`), which take no value.
+        columns = ",".join(row[1] for row in db.execute(f"PRAGMA table_info({table})"))
+        db.execute(f"INSERT INTO {table}({columns}) SELECT {columns} FROM local_source.{table}")
     db.execute("INSERT INTO media SELECT * FROM corpus_source.media")
     # Named columns: an export made before corpus rows carried their material is refused here.
-    columns = "id,character,family,visual_group,shuffle,object,offset,size,production"
+    columns = "id,character,family,visual_group,shuffle,object,offset,size,production,style"
     db.execute(f"INSERT INTO corpus_units({columns}) SELECT {columns} FROM corpus_source.corpus_units")
     # An export made while a corpus was still published as corpus glyphs holds rows the site now
     # publishes as its own crops, under the same ids; they are not sealed again.

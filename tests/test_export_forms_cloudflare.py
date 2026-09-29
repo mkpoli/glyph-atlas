@@ -116,7 +116,7 @@ def test_a_corpus_republication_keeps_the_forms(tmp_path, monkeypatch, form_corp
     publish(tmp_path, monkeypatch, "out")
     load(db, tmp_path / "out")
     # A corpus publication writes the source's character back, then refreshes.
-    db.executescript(corpus_upsert((A, "は", "U+306F", None, 1, "y", 0, 1, "unknown")) + "\n" + CORPUS_REFRESH)
+    db.executescript(corpus_upsert((A, "は", "U+306F", None, 1, "y", 0, 1, "unknown", "unassessed")) + "\n" + CORPUS_REFRESH)
     assert db.execute("SELECT character FROM corpus_units WHERE id=?", (A,)).fetchone() == ("𛂥",)
     assert db.execute("SELECT character,n FROM corpus_characters").fetchall() == [("𛂥", 1)]
 
@@ -143,7 +143,7 @@ def test_filtered_publication_preserves_identity_projection_and_mixed_marks(tmp_
     assert forms.cluster_decisions()["U+306F:one"]["issue"] == "mixed"
     db = schema()
     for identity in [A, B, C, D]:
-        db.executescript(corpus_upsert((identity, "は", "U+306F", None, 1, "x", 0, 1, "unknown")))
+        db.executescript(corpus_upsert((identity, "は", "U+306F", None, 1, "x", 0, 1, "unknown", "unassessed")))
     publish(tmp_path, monkeypatch, "filtered")
     load(db, tmp_path / "filtered")
     assert dict(db.execute("SELECT id,clustered FROM form_units")) == {A: 1, B: 0, C: 0, D: 0}
@@ -151,7 +151,7 @@ def test_filtered_publication_preserves_identity_projection_and_mixed_marks(tmp_
     assert db.execute("SELECT issue FROM form_clusters").fetchone() == ("mixed",)
     assert db.execute("SELECT count,assigned,rejected FROM form_families").fetchone() == (1, 0, 0)
     for identity in [B, C, D]:
-        db.executescript(corpus_upsert((identity, "は", "U+306F", None, 1, "new", 0, 1, "unknown")))
+        db.executescript(corpus_upsert((identity, "は", "U+306F", None, 1, "new", 0, 1, "unknown", "unassessed")))
     db.executescript(CORPUS_REFRESH)
     assert dict(db.execute("SELECT id,character FROM corpus_units")) == {A: "は", B: "テ", C: "𛂞", D: None}
 
@@ -186,7 +186,7 @@ def test_a_republication_keeps_cluster_marks(tmp_path, monkeypatch, form_corpora
     assert rows[A] == (None, "character", "テ", "U+3066") and rows[B] == ("𛂞", None, None, "U+306F")
     assert db.execute("SELECT form,issue,rejected FROM form_clusters JOIN form_families ON family=code_point").fetchone() == (
         None, "character", 3)
-    db.executescript(corpus_upsert((A, "は", "U+306F", None, 1, "y", 0, 1, "unknown")) + "\n" + CORPUS_REFRESH)
+    db.executescript(corpus_upsert((A, "は", "U+306F", None, 1, "y", 0, 1, "unknown", "unassessed")) + "\n" + CORPUS_REFRESH)
     assert db.execute("SELECT character,family FROM corpus_units WHERE id=?", (A,)).fetchone() == ("テ", "U+3066")
     # Someone on the site then marks it mixed: nothing is named for its glyphs, and A's character comes back.
     db.execute("INSERT INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,note,issue) VALUES("
