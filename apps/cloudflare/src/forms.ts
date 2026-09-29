@@ -219,6 +219,8 @@ async function drain(env: Env, held: { until: number }) {
       env.DB.prepare(`INSERT INTO corpus_characters(character,production,n,named) SELECT character,production,count(*),0 ${unnamed}
         GROUP BY character,production ON CONFLICT(character,production) DO UPDATE SET n=n+excluded.n`),
       env.DB.prepare('DELETE FROM corpus_characters WHERE n=0'),
+      // The browser's corpus counts are cached on this stamp.
+      env.DB.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('corpus_counts_at',?)").bind(JSON.stringify(new Date(until).toISOString())),
       env.DB.prepare(`DELETE FROM corpus_follow WHERE id IN (${following})`),
     ]);
     if (!results[0].meta.changes) return;

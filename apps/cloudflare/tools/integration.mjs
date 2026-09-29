@@ -470,16 +470,29 @@ try {
     assert.ok(details.some(d => /SEARCH ch USING (COVERING )?INDEX character_text \(character=\?\)/.test(d)), details.join('; '))
     assert.ok(!details.some(d => d.includes('TEMP B-TREE')), details.join('; '))
   }
-  // Browse lists a character held only as corpus glyphs, counted apart from the collection's own crops.
+  // The grapheme browser's corpus counts: every character with corpus glyphs, one held by no crop of the
+  // collection (債) included, in the material asked for. Catalogue responses carry none of it.
   await db.batch([
     db.prepare("INSERT INTO corpus_characters VALUES('債','printed',8,0)"),
-    db.prepare("INSERT OR REPLACE INTO metadata VALUES('units_refreshed_at','\"browse-corpus-test\"')"),
+    db.prepare("INSERT OR REPLACE INTO metadata VALUES('corpus_counts_at','\"browse-corpus-test\"')"),
   ])
-  const debt = (await call('/atlas')).categories.find(c => c.label === '債')
-  assert.equal(debt?.corpus, 8, 'a corpus-only character is listed with its corpus count')
-  assert.equal(debt.total, 0, "its own crops' count stays apart")
-  assert.equal((await call('/atlas?production=not:printed')).categories.find(c => c.label === '債'), undefined, 'the corpus count follows the material')
-  await db.prepare("DELETE FROM corpus_characters WHERE character='債'").run()
+  const corpusItems = async (query = '') => Object.fromEntries((await call('/atlas/corpus/characters' + query)).items.map(([label, grapheme, n]) => [label, [grapheme, n]]))
+  assert.deepEqual((await corpusItems())['債'], ['U+50B5', 8], 'a corpus-only character is listed with its grapheme and count')
+  assert.equal((await corpusItems('?production=not:printed'))['債'], undefined, 'the count follows the material')
+  await call('/atlas/corpus/characters?production=printed%20type', undefined, 400)
+  const listedCorpus = await corpusItems(), browseCategories = (await call('/atlas')).categories
+  const both = browseCategories.find(c => listedCorpus[c.label])
+  assert.ok(both && both.total > 0 && both.total === both.pending + both.seen + both.checked + both.flagged + both.hard,
+    'a character in both lists keeps its crop counts in the catalogue')
+  for (const query of ['', '?state=attention'])
+    assert.ok((await call('/atlas' + query)).categories.every(c => !('corpus' in c) && c.label !== '債'), `no corpus counts in /atlas${query}`)
+  // Review counts unnamed corpus glyphs as pending, as it did.
+  assert.equal((await call('/atlas?purpose=review&production=all')).categories.find(c => c.label === '債')?.pending, 8)
+  await db.batch([
+    db.prepare("DELETE FROM corpus_characters WHERE character='債'"),
+    db.prepare("INSERT OR REPLACE INTO metadata VALUES('corpus_counts_at','\"browse-corpus-test-2\"')"),
+  ])
+  assert.equal((await corpusItems())['債'], undefined, 'a new stamp replaces the cached counts')
   // A character card lists its 異体字 edges both ways: the variants a gallery widens to apart from the
   // rest, a pair any source calls simplified among the rest, each edge with its relation, source and
   // claims, the sources cited, and crop counts from the kept counts.
@@ -805,6 +818,12 @@ try {
     const kept = (await db.prepare('SELECT character,production,n,named FROM corpus_characters ORDER BY 1,2').all()).results
     const recount = (await db.prepare('SELECT character,production,count(*) AS n,sum(named) AS named FROM corpus_units WHERE character IS NOT NULL GROUP BY 1,2 ORDER BY 1,2').all()).results
     assert.deepEqual(kept, recount, 'corpus_characters follows the forms')
+    // The browser's corpus counts follow them too, their cached copy replaced as a decision or reload lands.
+    const summed = (await db.prepare('SELECT character,sum(n) AS n FROM corpus_characters GROUP BY 1 HAVING sum(n)>0').all()).results
+    const listed = (await call('/atlas/corpus/characters')).items
+    assert.deepEqual(listed.map(([label, , n]) => [label, n]), summed.map(r => [r.character, r.n]), 'the browser counts what corpus_characters holds')
+    const variant = listed.find(([label]) => label === '假')
+    if (variant) assert.equal(variant[1], 'U+4EEE', '假 is filed under its family')
   }
   await counted()
   assert.equal((await call('/atlas/forms/families')).items[0].code_point, 'U+4EEE')
