@@ -377,3 +377,27 @@ def test_a_form_post_sends_its_body_and_referer_and_is_never_resumed(tmp_path: P
     assert request.headers["Referer"] == "https://example.org/page?cno=X-1"
     assert "Range" not in request.headers
     assert dest.read_bytes() == b"ok"
+
+
+def test_host_pace_holds_across_processes(tmp_path, monkeypatch):
+    """Two processes asking one host still wait the pause between their requests."""
+    import itertools
+    import multiprocessing
+    import time
+
+    monkeypatch.setattr(net, "PACE_DIR", tmp_path)
+    context = multiprocessing.get_context("fork")
+    stamps = context.Queue()
+
+    def ask():
+        for _ in range(2):
+            net._wait_for_turn("https://example.org/a", 0.3, time.monotonic, time.sleep)
+            stamps.put(time.time())
+
+    workers = [context.Process(target=ask) for _ in range(2)]
+    for w in workers:
+        w.start()
+    for w in workers:
+        w.join()
+    times = sorted(stamps.get() for _ in range(4))
+    assert min(b - a for a, b in itertools.pairwise(times)) >= 0.29

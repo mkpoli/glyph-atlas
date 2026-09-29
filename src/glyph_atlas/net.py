@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
 import time
 from collections.abc import Callable
 from contextlib import suppress
@@ -371,11 +372,46 @@ def _looks_like_image(head: bytes) -> bool:
     return head[:4] == b"RIFF" and head[8:12] == b"WEBP"
 
 
+#: Where the time of the last request to each host is kept for every process on this machine, so
+#: several workers together still wait `host_pause` between two requests to one host.
+PACE_DIR = Path(os.environ.get("ATLAS_HOST_PACE_DIR") or Path(tempfile.gettempdir()) / "glyph-atlas-host-pace")
+
+
+def _shared_turn(host: str, pause: float, sleeper: Callable[[float], None]) -> None:
+    """Hold the host's interval across processes: wait under the host's lock, then stamp the request."""
+    import fcntl
+
+    PACE_DIR.mkdir(parents=True, exist_ok=True)
+    name = re.sub(r"[^A-Za-z0-9.-]", "_", host) or "host"
+    with (PACE_DIR / f"{name}.stamp").open("a+") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        handle.seek(0)
+        try:
+            last = float(handle.read().strip() or "nan")
+        except ValueError:
+            last = float("nan")
+        remaining = pause - (time.time() - last)
+        if remaining > 0 and remaining <= pause:
+            sleeper(remaining)
+        handle.seek(0)
+        handle.truncate()
+        handle.write(repr(time.time()))
+        handle.flush()
+
+
 def _wait_for_turn(
     url: str, pause: float, clock: Callable[[], float], sleeper: Callable[[float], None]
 ) -> None:
-    """Hold the per-host interval, counting from the previous request measured by the same clock."""
+    """Hold the per-host interval, counting from the previous request measured by the same clock.
+
+    On the real clock the interval is held across every process on the machine (`PACE_DIR`); a clock a
+    test substitutes keeps it within the process.
+    """
     host = _host_of(url)
+    if clock is time.monotonic:
+        _shared_turn(host, pause, sleeper)
+        _LAST_REQUEST[host] = (clock(), clock)
+        return
     now = clock()
     last = _LAST_REQUEST.get(host)
     if last is not None and last[1] is clock:
