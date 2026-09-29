@@ -938,7 +938,8 @@ def publish(queue, store, *, wait=False):
         pass
 
 
-def run(queue, engine, *, pages=3, seconds=600, max_lines=64, store=None, supplement_every=2, worker=None):
+def run(queue, engine, *, pages=3, seconds=600, max_lines=64, store=None, supplement_every=2, worker=None,
+        lease=LEASE_SECONDS):
     """Extract up to `pages` pages within `seconds`, as one of any number of workers sharing `queue`.
 
     Requests to image hosts are paced by `net`, across every worker, so pages follow one another at once.
@@ -957,15 +958,15 @@ def run(queue, engine, *, pages=3, seconds=600, max_lines=64, store=None, supple
                 require_storage(store.directory)
         except OSError:
             return queue.status(state="paused-low-storage")
-        job = (queue.claim_supplement(worker) if supplement_every and done % supplement_every == supplement_every - 1
-               else None)
+        job = (queue.claim_supplement(worker, lease=lease)
+               if supplement_every and done % supplement_every == supplement_every - 1 else None)
         kind = "supplement" if job else "page"
-        job = job or queue.claim(worker)
+        job = job or queue.claim(worker, lease=lease)
         if job is None:
-            job, kind = queue.claim_supplement(worker), "supplement"
+            job, kind = queue.claim_supplement(worker, lease=lease), "supplement"
         if job is None:
             break
-        beat = heartbeat(queue, kind, job["id"], worker)
+        beat = heartbeat(queue, kind, job["id"], worker, lease=lease)
         try:
             with beat:
                 if kind == "supplement":

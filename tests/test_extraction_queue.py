@@ -866,9 +866,15 @@ def test_workers_running_at_once_extract_every_page_once(tmp_path, monkeypatch):
     workers = [context.Process(target=_work, args=(queue.root, f"w{i}")) for i in range(4)]
     for worker in workers:
         worker.start()
+    reads = 0
+    while any(worker.is_alive() for worker in workers):
+        if (queue.root/"status.json").exists():
+            json.loads((queue.root/"status.json").read_text())
+            reads += 1
     for worker in workers:
         worker.join(120)
     assert [worker.exitcode for worker in workers] == [0] * 4
+    assert reads, "status.json was read while the workers wrote it"
     assert dict(queue.db.execute("SELECT status, count(*) FROM pages GROUP BY status")) == {"complete": 40}
     assert sorted(p.name for p in (queue.root/"pages").iterdir()) == sorted(f"p{i}" for i in range(40))
     assert json.loads((queue.root/"status.json").read_text())["counts"] == {"complete": 40}
@@ -894,3 +900,109 @@ def test_workers_committing_one_identity_at_once_leave_one_output(tmp_path):
     assert [worker.exitcode for worker in workers] == [0] * 4
     assert sorted(p.name for p in (tmp_path/"pages"/"same").glob("[!.]*")) == ["documents.parquet", "report.json"]
     assert not list((tmp_path/".staging").iterdir())
+
+
+class SlowEngine(CommittingEngine):
+    """Takes longer over each page than a lease lasts, and counts every extraction of a page."""
+
+    def extract(self, job, root, *, max_lines=64):
+        import time
+        (root/"extracted").mkdir(exist_ok=True)
+        with open(root/"extracted"/job["id"], "a") as log:
+            log.write("x")
+        time.sleep(0.6)
+        return super().extract(job, root, max_lines=max_lines)
+
+
+def _work_slowly(root, name):
+    run(Queue(root), SlowEngine(), pages=100, seconds=60, supplement_every=0, worker=name, lease=0.3)
+
+
+def test_heartbeats_keep_pages_that_outlast_their_lease_with_their_workers(tmp_path, monkeypatch):
+    """Two worker processes each hold a page twice as long as a lease: the heartbeat renews it, so no
+    page is taken over and extracted twice."""
+    import multiprocessing
+
+    monkeypatch.setattr("glyph_atlas.extraction_queue.require_storage", lambda _: None)
+    queue = Queue(tmp_path / "queue")
+    with queue.db:
+        queue.db.executemany("INSERT INTO pages (id,document_id,title,source,cached,rank) VALUES(?,?,?,?,?,?)",
+                             [(f"p{i}", "d", "t", "s", 1, i) for i in range(4)])
+    context = multiprocessing.get_context("fork")
+    workers = [context.Process(target=_work_slowly, args=(queue.root, f"w{i}")) for i in range(2)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(60)
+    assert [worker.exitcode for worker in workers] == [0, 0]
+    assert {p.name: p.read_text() for p in (queue.root/"extracted").iterdir()} == {f"p{i}": "x" for i in range(4)}
+    assert {tuple(r) for r in queue.db.execute("SELECT status, attempts FROM pages")} == {("complete", 1)}
+
+
+class GatedEngine:
+    """Signals that it holds its page, then waits for `gate` and either commits 7 crops or fails."""
+
+    def __init__(self, outcome):
+        self.outcome = outcome
+
+    def extract(self, job, root, *, max_lines=64):
+        import time
+
+        from glyph_atlas.extraction_queue import POLICY, commit
+        (root/"claimed").touch()
+        while not (root/"gate").exists():
+            time.sleep(0.01)
+        if self.outcome == "fail":
+            raise OSError("the stalled worker's download failed")
+        report = {"accepted": 7, "examined": 7, "policy": POLICY, "page_id": job["id"]}
+        return report, commit(root/"pages"/"stale", job["id"], {"documents": [Document(id="d", title="t")]}, report)
+
+
+def _stall(root, outcome):
+    run(Queue(root), GatedEngine(outcome), pages=1, seconds=60, supplement_every=0, worker="stalled", lease=0.5)
+
+
+def _take_over(root):
+    run(Queue(root), CommittingEngine(), pages=1, seconds=60, supplement_every=0, worker="fresh")
+
+
+@pytest.mark.parametrize("outcome", ["finish", "fail"])
+def test_a_frozen_worker_s_late_result_leaves_the_page_to_the_worker_that_took_it_over(tmp_path, monkeypatch, outcome):
+    """A worker process frozen past its lease loses the page to another; thawed, its finish or fail
+    writes nothing over the other worker's result."""
+    import multiprocessing
+    import os
+    import signal
+    import sqlite3
+    import time
+
+    monkeypatch.setattr("glyph_atlas.extraction_queue.require_storage", lambda _: None)
+    queue = Queue(tmp_path / "queue")
+    with queue.db:
+        queue.db.execute("INSERT INTO pages (id,document_id,title,source,cached,rank) VALUES('p','d','t','s',1,0)")
+    context = multiprocessing.get_context("fork")
+    stalled = context.Process(target=_stall, args=(queue.root, outcome))
+    stalled.start()
+    while not (queue.root/"claimed").exists():
+        time.sleep(0.01)
+    # Freeze the worker outside a write of its heartbeat, or the frozen write would lock the queue.
+    while True:
+        os.kill(stalled.pid, signal.SIGSTOP)
+        try:
+            with sqlite3.connect(queue.root/"queue.sqlite", timeout=0.2) as db:
+                db.execute("BEGIN IMMEDIATE")
+            break
+        except sqlite3.OperationalError:
+            os.kill(stalled.pid, signal.SIGCONT)
+            time.sleep(0.01)
+    time.sleep(0.8)
+    fresh = context.Process(target=_take_over, args=(queue.root,))
+    fresh.start()
+    fresh.join(60)
+    assert fresh.exitcode == 0
+    os.kill(stalled.pid, signal.SIGCONT)
+    (queue.root/"gate").touch()
+    stalled.join(60)
+    assert stalled.exitcode == 0
+    row = queue.db.execute("SELECT status, accepted, attempts, error, worker FROM pages").fetchone()
+    assert tuple(row) == ("complete", 0, 2, None, None)
