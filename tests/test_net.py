@@ -379,25 +379,47 @@ def test_a_form_post_sends_its_body_and_referer_and_is_never_resumed(tmp_path: P
     assert dest.read_bytes() == b"ok"
 
 
-def test_host_pace_holds_across_processes(tmp_path, monkeypatch):
-    """Two processes asking one host still wait the pause between their requests."""
-    import itertools
+def _spans(requests, *, pause=0.3, work=0.2, hold=0.0, slow=None):
+    """Run `requests` turns to one host in each of two forked processes and return their (start, end)."""
     import multiprocessing
     import time
 
-    monkeypatch.setattr(net, "PACE_DIR", tmp_path)
     context = multiprocessing.get_context("fork")
-    stamps = context.Queue()
+    spans = context.Queue()
 
     def ask():
-        for _ in range(2):
-            net._wait_for_turn("https://example.org/a", 0.3, time.monotonic, time.sleep)
-            stamps.put(time.time())
+        for _ in range(requests):
+            with net._turn("https://example.org/a", pause, time.monotonic, time.sleep) as turn:
+                started = time.time()
+                time.sleep(work)
+                if hold:
+                    turn.hold(hold)
+                if slow:
+                    net.slow_down("https://example.org/a", slow)
+            spans.put((started, time.time()))
 
     workers = [context.Process(target=ask) for _ in range(2)]
     for w in workers:
         w.start()
     for w in workers:
         w.join()
-    times = sorted(stamps.get() for _ in range(4))
-    assert min(b - a for a, b in itertools.pairwise(times)) >= 0.29
+    return sorted(spans.get(timeout=30) for _ in range(2 * requests))
+
+
+def test_one_request_at_a_time_reaches_a_host_across_processes_with_the_pause_after_each_end():
+    import itertools
+
+    spans = _spans(2)
+    for (_, ended), (started, _) in itertools.pairwise(spans):
+        assert started - ended >= 0.29
+
+
+def test_a_retry_after_one_process_saw_keeps_the_other_off_the_host():
+    spans = _spans(1, pause=0.0, work=0.05, hold=0.6)
+    (_, ended), (started, _) = spans
+    assert started - ended >= 0.55
+
+
+def test_a_slower_interval_one_process_was_asked_for_holds_in_the_other():
+    spans = _spans(1, pause=0.1, work=0.05, slow=0.7)
+    assert spans[1][0] - spans[0][1] >= 0.65
