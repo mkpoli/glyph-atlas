@@ -522,6 +522,23 @@ def review_catalogue_suspects(
     typer.echo(json.dumps(result, ensure_ascii=False))
 
 
+@review_app.command("shift-repair")
+def review_shift_repair(
+    directory: Annotated[Path, typer.Argument(help="dataset directory whose blocks are checked")],
+    out: Annotated[Path, typer.Option(help="report of every proposed relabel")],
+    apply: Annotated[bool, typer.Option(help="record the relabels in the dataset's journal")] = False,
+    protect: Annotated[Path | None, typer.Option(help="file of unit ids never relabelled, one per line (reviewed on the site)")] = None,
+    checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
+) -> None:
+    """Relabel crops whose block is one or two places out of step with its text (needs CUDA)."""
+    from .review import shift_repair
+
+    ids = protect.read_text().split() if protect else ()
+    result = shift_repair.run(directory, checkpoint=checkpoint, apply=apply, protect=ids)
+    shift_repair.write(result, out)
+    typer.echo(json.dumps({k: v for k, v in result.items() if k != "items"}, ensure_ascii=False))
+
+
 @review_app.command("lookalikes")
 def review_lookalikes(
     split: Annotated[Path, typer.Argument(help="held-out classifier split")] = Path("work/classifier-combined/test.parquet"),
