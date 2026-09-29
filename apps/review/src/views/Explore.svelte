@@ -5,6 +5,8 @@
   import { productionLabel } from '../components/ProductionBadge.svelte'
   import { cropDetails, repairOf } from '../lib/cropDetails.js'
   import VisualGroups from '../components/VisualGroups.svelte'
+  import StyleFilter from '../components/StyleFilter.svelte'
+  import { styleRank } from '../lib/style.js'
   import { isUnassigned, writtenLabel, visualGroup, matchesVisualGroup, graphemeChar } from '../lib/identity.js'
   import Glyph from '../components/Glyph.svelte'
   import ImageStyleToggle from '../components/ImageStyleToggle.svelte'
@@ -17,7 +19,7 @@
   import { catalogue, character, request, randomSeed, number, formatSerial, stored, remember } from '../lib/client.js'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery } from '../lib/layers.js'
   import { t, around, localName, locale, localize, delocalize } from '../lib/i18n.svelte.js'
-  import { characterAddress, collectionAddress, corpusScope, expandFor, scopeFor, unslug } from '../lib/gallery.js'
+  import { characterAddress, collectionAddress, corpusScope, expandFor, scopeFor, styleCounts, unslug } from '../lib/gallery.js'
   import { useSession } from '../lib/session.svelte.js'
   import BulkBar from '../components/BulkBar.svelte'
   // `initial` is the collection page the server rendered: the seed it shuffled with, the filters in the
@@ -53,6 +55,11 @@
   let picked = $state(opened?.picked ?? null), expand = $state(opened?.expand ?? 'none'), local = $state(opened?.local ?? []), corpus = $state(opened?.corpus ?? [])
   let visual = $state(opened?.visual ?? ''), analysis = $state(opened?.analysis ?? null), familyTotal = $state(opened?.familyTotal ?? null), unassignedCount = $state(opened?.unassignedCount ?? null)
   let corpusTotal = $state(opened?.corpusTotal ?? 0), corpusOffset = $state(opened?.corpus.length ?? 0), pickId = 0, corpusFault = $state(opened?.corpusFault ?? null)
+  // The style group the gallery is narrowed to ('' for all), and each list's counts by style group.
+  // `styled` is whether the server files crops by style at all.
+  let style = $state(opened?.style ?? ''), styled = $state(opened?.styled ?? false)
+  let localStyles = $state(opened?.localStyles ?? null), corpusStyles = $state(opened?.corpusStyles ?? null)
+  const styles = $derived(styleCounts(localStyles, corpusStyles))
   $effect(() => { shown = picked?.code_point ? { char: picked.char, code_point: picked.code_point } : null })
   /**
    * The address says what is on show, so it can be shared and reloaded: a character's page with its
@@ -62,7 +69,7 @@
   function showInAddress() {
     if (!addressed) return
     const [path, search = ''] = (picked?.code_point
-      ? characterAddress(picked.code_point, { scope: scopeFor(expand, picked), visual })
+      ? characterAddress(picked.code_point, { scope: scopeFor(expand, picked), visual, style })
       // Text still being chosen from the candidate list is not a search yet.
       : collectionAddress({ q: choosing ? '' : query.trim(), grapheme, work, group: filter })).split('?')
     const target = localize(path) + (search && '?' + search)
@@ -147,9 +154,23 @@
     return Boolean(unit?.id) && (unit.id === lead.id || unit.id === lead.identity_key)
   }
   const corpusOnly = $derived(picked ? corpus.filter(lead => !visibleLocal.some(unit => sameInk(unit, lead))) : [])
+  // With no style group chosen, a gallery reads as one list in style order: running and cursive first,
+  // each group's own crops before its corpus glyphs. The two lists page apart, each in that order, so a
+  // tile is shown once neither list can still bring one that goes before it. A tile's place is its
+  // group's rank, doubled, plus one for the corpus; a list with nothing more to bring holds nothing back.
+  const localDone = $derived(Boolean(visual) || local.length >= (data?.total ?? 0))
+  const corpusDone = $derived(Boolean(corpusFault) || corpusOffset >= corpusTotal)
+  const localNext = $derived(localDone ? Infinity : 2 * (local.length ? styleRank(local.at(-1)) : 0))
+  const corpusNext = $derived(corpusDone ? Infinity : 2 * (corpus.length ? styleRank(corpus.at(-1)) : 0) + 1)
+  const galleryTiles = $derived.by(() => {
+    if (style) return [...visibleLocal, ...corpusOnly]
+    const shownUpTo = Math.min(localNext, corpusNext)
+    return [...visibleLocal.map(item => [2 * styleRank(item), item]), ...corpusOnly.map(item => [2 * styleRank(item) + 1, item])]
+      .filter(([place]) => place <= shownUpTo).sort((a, b) => a[0] - b[0]).map(([, item]) => item)
+  })
   const homeCorpus = $derived(sample.filter(lead => !items.some(unit => sameInk(unit, lead))))
   const mixedCorpus = $derived(homeCorpus.slice(lead))
-  const baseDisplay = $derived(choosing ? [] : picked ? [...visibleLocal, ...corpusOnly]
+  const baseDisplay = $derived(choosing ? [] : picked ? galleryTiles
     : [...homeCorpus.slice(0, lead), ...items.flatMap((item, index) => mixedCorpus[index] ? [item, mixedCorpus[index]] : [item]),
        ...mixedCorpus.slice(items.length)])
   function groupOrder(item) {
@@ -173,7 +194,8 @@
   const whole = $derived(hasMore && columns && !headings ? Math.floor(display.length / columns) * columns : display.length)
   const tiles = $derived(whole ? display.slice(0, whole) : display)
   function more() {
-    if (picked) { if (!visual && local.length < (data?.total ?? 0)) load(true); else moreCorpus() }
+    // The list whose next page goes first; with a style group chosen, the collection's own crops first.
+    if (picked) { if (!localDone && (style || localNext < corpusNext)) load(true); else moreCorpus() }
     else { offset = items.length; load(true) }
   }
   $effect(() => { if (nearEnd && hasMore && !loading && !error) untrack(more) })
@@ -206,13 +228,14 @@
     const id = ++requestId; loading = true; error = ''
     try {
       if (picked) {
-        if (!append) { local = []; corpus = []; corpusTotal = 0; corpusOffset = 0 }
+        if (!append) { local = []; corpus = []; corpusTotal = 0; corpusOffset = 0; localStyles = null; corpusStyles = null }
         // Local records page by their own count, and they are shown before the corpus is asked:
         // a corpus that cannot answer must not hide the records this collection does hold.
-        const found = await occurrences(picked.code_point, { expand, limit: 60, offset: append ? local.length : 0 })
+        const found = await occurrences(picked.code_point, { expand, limit: 60, offset: append ? local.length : 0, style: style || undefined })
         if (closed || id !== requestId) return
         const rows = found.items.map(item => ({ ...item, origin: 'collection' }))
         local = append ? [...local, ...rows] : rows
+        localStyles = found.styles ?? null; styled = Boolean(found.style_groups)
         data = { ...(data ?? {}), query: picked.char, total: found.counts.total, available: found.counts.exact_total,
                  categories: data?.categories ?? [], documents: data?.documents ?? [], counts: data?.counts ?? {} }
         // The chips come from the card, and the card says which widening is in force: refetch it so a
@@ -227,14 +250,15 @@
         corpusFault = null
         try {
           const leads = await layerCandidates(picked.code_point, 60, 0,
-            { scope: corpusScope(expand), visual_group: visual || undefined })
+            { scope: corpusScope(expand), visual_group: visual || undefined, style: style || undefined })
           if (closed || id !== requestId) return
+          corpusStyles = leads.styles ?? null
           corpus = (leads.glyph_items ?? []).map(item => ({ ...item, label: writtenLabel(item), origin: 'corpus' }))
           corpusTotal = leads.glyphs ?? 0; corpusOffset = corpus.length
           analysis = leads.visual_analysis ?? picked.visual_analysis ?? null
           familyTotal = leads.family_total ?? null; unassignedCount = leads.unassigned_count ?? null
         } catch (e) {
-          if (!closed && id === requestId) corpusFault = e.status === 502 ? 'error' : 'not-loaded'
+          if (!closed && id === requestId) { corpusFault = e.status === 502 ? 'error' : 'not-loaded'; corpusStyles = {} }
         }
         return
       }
@@ -334,7 +358,7 @@
     loading = true
     try {
       const page = await layerCandidates(target, 60, corpusOffset,
-        { scope: corpusScope(expand), visual_group: visual || undefined })
+        { scope: corpusScope(expand), visual_group: visual || undefined, style: style || undefined })
       if (closed || current !== pickId || id !== requestId || picked?.code_point !== target) return
       const rows = (page.glyph_items ?? []).map(item => ({ ...item, label: writtenLabel(item), origin: 'corpus' }))
       corpusOffset += rows.length
@@ -618,6 +642,7 @@
   {#if error}<div class="error-message" role="alert">{error}<button onclick={() => load()}>{t('common.retry')}</button></div>{/if}
   {#if picked}
     <CharacterChips card={picked} bind:expand onselect={item => pick({ code_point: item }, 'exact')} />
+    {#if styled || style}<StyleFilter counts={styles} value={style} onchange={value => { style = value; load() }} />{/if}
     {#if expand === 'grapheme'}<VisualGroups {analysis} count={familyTotal} unassigned={unassignedCount} value={visual} onchange={value => { visual = value; load() }} />{/if}
     <p class="find-count" role="status">
       {t('explore.meta.glyphs', { count: display.length })}
