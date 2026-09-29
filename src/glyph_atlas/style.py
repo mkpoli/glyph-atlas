@@ -85,12 +85,17 @@ def _confirmed(path: str, stamp: int, size: int) -> dict[str, dict]:
     return entries
 
 
-def confirmed() -> dict[str, dict]:
-    """The confirmed document styles by document id, with their evidence."""
+def _entries() -> dict[str, dict]:
+    """The confirmed document styles as read, shared: callers must not change them."""
     if not DOCUMENTS.exists():
         return {}
     stat = DOCUMENTS.stat()
-    return copy.deepcopy(_confirmed(str(DOCUMENTS), stat.st_mtime_ns, stat.st_size))
+    return _confirmed(str(DOCUMENTS), stat.st_mtime_ns, stat.st_size)
+
+
+def confirmed() -> dict[str, dict]:
+    """The confirmed document styles by document id, with their evidence."""
+    return copy.deepcopy(_entries())
 
 
 def document_style(document: Document) -> str:
@@ -120,7 +125,8 @@ def resolve_values(unit: str | None, page: str | None, document_id: str | None,
     if page != UNASSESSED:
         return page, "page"
     if document_id is not None:
-        confirmed_style = confirmed().get(document_id, {}).get("style")
+        # Read without a copy: an export resolves every glyph of a corpus through here.
+        confirmed_style = _entries().get(document_id, {}).get("style")
         value = confirmed_style or document or UNASSESSED
         if value == MIXED:
             return UNASSESSED, "none"

@@ -4,15 +4,16 @@ A publication resolves each crop's style as it writes the crop (`glyph_atlas.sty
 D1 keep the style they were published with. This writes the SQL that gives them their document's:
 
 - a local crop by its `document` column;
-- a corpus glyph, and the `units` row of one a round or review has named, by the range of ids that
-  start with its document's id and a colon. The range is used only for a document whose glyphs, in the
-  corpora under `work/`, all have ids of that form, and whose range holds no other document's glyph;
-  any other confirmed document is refused.
+- a corpus glyph by the range of ids that start with its document's id and a colon; the `units` row
+  of one a round or review has named follows it (migration 0035's `corpus_style` trigger). The range
+  is used only for a document whose glyphs, in the corpora under `work/`, all have ids of that form,
+  and whose range holds no other document's glyph.
 
-A crop or page with a style of its own would be overwritten, so the script refuses to run when a page
-of a confirmed document states one, or when a review store named with `--review` holds a style a
-reviewer gave one crop; such crops reach the site through a publication. A document confirmed as
-`mixed` gives its crops no style (`unassessed`).
+A confirmed document found in no corpus under `work/` is refused: its crops could not be checked. A
+crop or page with a style of its own would be overwritten, so the script refuses to run when a crop
+or page of a confirmed document states one, or when a review store named with `--review` holds a
+style a reviewer gave one crop; such crops reach the site through a publication. A document
+confirmed as `mixed` gives its crops no style (`unassessed`).
 
 The file ends by stamping `metadata.units_refreshed_at`, which the Worker's cached listings are keyed by.
 
@@ -42,18 +43,23 @@ def upper(prefix: str) -> str:
 
 
 def corpus_ranges(documents: set[str], root="work") -> dict[str, str]:
-    """The id prefix of each confirmed document's corpus glyphs, checked against every unit corpus."""
-    held, stray = defaultdict(int), defaultdict(set)
+    """The id prefix of each confirmed document's glyphs, checked against every unit corpus."""
+    held, stray, own = defaultdict(int), defaultdict(set), {}
     prefixes = {document: document + ":" for document in documents}
     for corpus in sources.discover(root):
         path = corpus.table("units")
         if path is None:
             continue
-        table = ds.dataset(path, format="parquet").to_table(columns=["id", "document_id"])
-        for identity, document in zip(table["id"].to_pylist(), table["document_id"].to_pylist(), strict=True):
+        dataset = ds.dataset(path, format="parquet")
+        styled = "style" in dataset.schema.names
+        table = dataset.to_table(columns=["id", "document_id", *(["style"] if styled else [])])
+        values = table["style"].to_pylist() if styled else [None] * table.num_rows
+        for identity, document, value in zip(table["id"].to_pylist(), table["document_id"].to_pylist(), values, strict=True):
             if document in prefixes:
                 if not identity.startswith(prefixes[document]):
                     stray[document].add(identity)
+                if value not in (None, style.UNASSESSED):
+                    own[identity] = value
                 held[document] += 1
             # The id may still fall in a confirmed document's range; a range is `document:`, so the
             # candidate documents are the id's own prefixes that end before a colon.
@@ -65,7 +71,11 @@ def corpus_ranges(documents: set[str], root="work") -> dict[str, str]:
     if stray:
         raise Refused("; ".join(f"{document}: {len(ids)} glyphs outside or inside its id range, e.g. {min(ids)}"
                                 for document, ids in sorted(stray.items())))
-    return {document: prefixes[document] for document in documents if held[document]}
+    if own:
+        raise Refused(f"{len(own)} crops state a style of their own, e.g. {min(own)}; publish them instead")
+    if missing := sorted(document for document in documents if not held[document]):
+        raise Refused(f"{len(missing)} confirmed documents are in no corpus under {root}, e.g. {missing[0]}")
+    return dict(prefixes)
 
 
 def page_styles(documents: set[str], root="work") -> dict[str, str]:
@@ -103,7 +113,6 @@ def statements(confirmed: dict[str, dict], ranges: dict[str, str]) -> list[str]:
         if document in ranges:
             low, high = quote(ranges[document]), quote(upper(ranges[document]))
             out.append(f"UPDATE corpus_units SET style={quote(value)} WHERE id>={low} AND id<{high};")
-            out.append(f"UPDATE units SET style={quote(value)} WHERE id>={low} AND id<{high} AND origin='corpus';")
     return out
 
 

@@ -25,8 +25,23 @@ def corpus(root, name, units, pages=()):
 
 def test_a_documents_glyphs_are_its_id_range(tmp_path):
     corpus(tmp_path, "codh", [("codh:1:a", "codh:1"), ("codh:1:b", "codh:1"), ("codh:10:a", "codh:10")])
-    assert publish.corpus_ranges({"codh:1", "codh:2"}, tmp_path) == {"codh:1": "codh:1:"}
+    assert publish.corpus_ranges({"codh:1"}, tmp_path) == {"codh:1": "codh:1:"}
     assert publish.upper("codh:1:") == "codh:1;"
+
+
+def test_a_document_in_no_corpus_is_refused(tmp_path):
+    corpus(tmp_path, "codh", [("codh:1:a", "codh:1")])
+    with pytest.raises(publish.Refused, match="codh:2"):
+        publish.corpus_ranges({"codh:1", "codh:2"}, tmp_path)
+
+
+def test_a_crop_with_a_style_of_its_own_is_refused(tmp_path):
+    directory = tmp_path / "codh"
+    directory.mkdir()
+    pq.write_table(pa.table({"id": ["codh:1:a", "codh:1:b"], "document_id": ["codh:1", "codh:1"],
+                             "style": ["unassessed", "regular"]}), directory / "units.parquet")
+    with pytest.raises(publish.Refused, match="codh:1:b"):
+        publish.corpus_ranges({"codh:1"}, tmp_path)
 
 
 def test_a_range_that_misses_a_glyph_or_takes_another_documents_is_refused(tmp_path):
@@ -52,6 +67,5 @@ def test_the_statements_set_local_crops_by_document_and_corpus_glyphs_by_range(t
     assert lines == [
         "UPDATE units SET style='cursive' WHERE origin='local' AND document='codh:1';",
         "UPDATE corpus_units SET style='cursive' WHERE id>='codh:1:' AND id<'codh:1;';",
-        "UPDATE units SET style='cursive' WHERE id>='codh:1:' AND id<'codh:1;' AND origin='corpus';",
         "UPDATE units SET style='unassessed' WHERE origin='local' AND document='hk:2';",
     ]
