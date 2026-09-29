@@ -17,8 +17,8 @@ filed under 表 whose text runs 前金 becomes 金 even where the scan shows a f
 Measured on 2026-09-29 against the review site (docs/reports/block-shift-repair.md): among the crops
 a person reviewed, the rule relabels 43; 40 take the reviewer's correction (or its 新字・旧字 or
 katakana form), 1 another character and 2 were confirmed as they stood. It finds 40 of the 57
-corrections reviewers made on these blocks. Of 40 random relabels among unreviewed crops, 28 were
-plainly right by eye, about 9 uncertain on small or damaged crops and about 3 wrong; the label
+corrections reviewers made on these blocks. Of 40 random relabels among unreviewed crops, about 31 were
+plainly right by eye, about 6 uncertain on small or damaged crops and about 3 wrong; the label
 before was wrong on nearly all of them.
 
 The text at each position is the transcriber's own (`text_source`), so a neighbour already corrected

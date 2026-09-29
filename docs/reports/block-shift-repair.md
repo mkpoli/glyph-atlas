@@ -17,8 +17,10 @@ The served classifier reads each crop, and for each offset −2…+2 the probabi
 the label written at that offset is kept. A Viterbi pass over each block picks one offset per crop and
 pays 4 nats for each change of offset. A crop is relabelled with the character at its offset when the
 offset is not zero, the crop shows that character with probability 0.8 or more, at least two crops of
-its run show theirs with 0.4 or more, and both sides of its box are 10 pixels or more. Crops a person
-reviewed on the site or in the dataset are left alone.
+its run show theirs with 0.4 or more, and both sides of its box are 10 pixels or more. The text at each
+position is the transcriber's own. A record crop is placed in its record's block at its record's
+position. Crops a person reviewed on the site or in the dataset, and placements the aligner rejected,
+are never relabelled.
 
 ## Measured
 
@@ -35,10 +37,10 @@ crops of `work/ainu-characters-20260927-repair`:
 It finds 40 of the 57 corrections. Several crops passed in rounds show the proposed character (葉 → 言,
 高 → 慢, 自 → 由, 者 → な), so a passed crop is weak evidence that its label is right.
 
-On unreviewed crops the rule proposes 10,052 relabels (10,029 `ar:`, 23 `hk:`; offsets −1: 5,414,
-+1: 4,079, −2: 338, +2: 221). Of 40 drawn at random, 28 show the proposed character plainly, about 9 are
-too small or damaged to tell and about 3 show another character. The label before was wrong on nearly
-all 40.
+On unreviewed crops the rule proposes 10,330 relabels (10,289 `ar:`, 41 `hk:`; offsets −1: 5,617,
++1: 4,148, −2: 341, +2: 224). Of 40 drawn at random, about 31 show the proposed character plainly,
+about 6 are too small or damaged to tell and about 3 show another character (る → た on a crop of る).
+The label before was wrong on nearly all 40.
 
 ## What is not covered
 
