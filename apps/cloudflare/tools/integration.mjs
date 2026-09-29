@@ -462,6 +462,24 @@ try {
   const markPlan = await plan({ sql: allCounts.marked, values: [] }, ['printed/type', 'printed/type0'])
   assert.ok(markPlan.some(d => /^SCAN m\b/.test(d)) && markPlan.some(d => /^SEARCH units USING INDEX sqlite_autoindex_units_1 \(id=\?\)/.test(d)), markPlan.join('; '))
   shapes.push([worker.corpusCountQuery('not:printed/type', 'ナ'), [], null])
+  // Browse's corpus counts read corpus_characters whole in its key's order and look each character's
+  // grapheme up by its text.
+  for (const production of ['all', 'not:printed/type']) {
+    const details = await plan(worker.browseCorpusQuery(production), [])
+    served(details, null)
+    assert.ok(details.some(d => /SEARCH ch USING (COVERING )?INDEX character_text \(character=\?\)/.test(d)), details.join('; '))
+    assert.ok(!details.some(d => d.includes('TEMP B-TREE')), details.join('; '))
+  }
+  // Browse lists a character held only as corpus glyphs, counted apart from the collection's own crops.
+  await db.batch([
+    db.prepare("INSERT INTO corpus_characters VALUES('債','printed',8,0)"),
+    db.prepare("INSERT OR REPLACE INTO metadata VALUES('units_refreshed_at','\"browse-corpus-test\"')"),
+  ])
+  const debt = (await call('/atlas')).categories.find(c => c.label === '債')
+  assert.equal(debt?.corpus, 8, 'a corpus-only character is listed with its corpus count')
+  assert.equal(debt.total, 0, "its own crops' count stays apart")
+  assert.equal((await call('/atlas?production=not:printed')).categories.find(c => c.label === '債'), undefined, 'the corpus count follows the material')
+  await db.prepare("DELETE FROM corpus_characters WHERE character='債'").run()
   // A character card lists its 異体字 edges both ways: the variants a gallery widens to apart from the
   // rest, a pair any source calls simplified among the rest, each edge with its relation, source and
   // claims, the sources cited, and crop counts from the kept counts.

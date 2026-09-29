@@ -273,6 +273,28 @@ async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, productio
   ctx.waitUntil(caches.default.put(key, Response.json(groups, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return groups;
 }
+// Corpus glyphs by character in the material asked for, with the grapheme the character table files each
+// under: what browse counts beside the collection's own crops, so a character the site holds only as
+// corpus glyphs (債) is listed too. `corpus_characters` holds one row per character and material and is
+// read whole (some 20,000 rows), so the result is kept for an hour per publication rather than per
+// catalogue version, which every review changes: a corpus glyph renamed by a form review moves
+// between characters in this count within the hour.
+export function browseCorpusQuery(production: string) {
+  const [materials, values] = material(production, 'cc.production');
+  return { sql: `SELECT cc.character AS label,sum(cc.n) AS n,json_extract(ch.data,'$.grapheme.code_point') AS family
+    FROM corpus_characters cc LEFT JOIN characters ch ON ch.character=cc.character WHERE ${materials} GROUP BY cc.character`, values };
+}
+async function browseCorpus(env: Env, ctx: ExecutionContext, url: URL, production: string) {
+  const version = await env.DB.prepare(`SELECT (SELECT value FROM metadata WHERE key='published_at') AS published,
+    (SELECT value FROM metadata WHERE key='units_refreshed_at') AS refreshed`).first<{ published: string | null; refreshed: string | null }>();
+  const key = new Request(`${url.origin}/atlas/facets?by=corpus&production=${encodeURIComponent(production)}&v=${encodeURIComponent(`${version?.published ?? ''}:${version?.refreshed ?? ''}`)}`);
+  const cached = await caches.default.match(key);
+  if (cached) return await cached.json() as { label: string; n: number; family: string | null }[];
+  const { sql, values } = browseCorpusQuery(production);
+  const rows = (await env.DB.prepare(sql).bind(...values).all<{ label: string; n: number; family: string | null }>()).results;
+  ctx.waitUntil(caches.default.put(key, Response.json(rows, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
+  return rows;
+}
 // The crops a listing starts from: local ones, those a round may deal, in the material asked for.
 // A round and its reference strips name their character, and read it through `unit_character`: the
 // review filter is kept off its index (`+`), which would otherwise drive the query over every crop
@@ -420,6 +442,14 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
     documents.set(document, book);
   };
   for (const row of groups) add(row.label, row.state, row.n, row.document, row.title, row.family);
+  // Browse lists every character the site holds: each category's `corpus` counts its corpus glyphs,
+  // apart from the collection's own crops, whose totals and states stay as counted above.
+  if (!review && q.get('state') !== 'attention') for (const row of await browseCorpus(env, ctx, url, production)) {
+    if (!row.label || !(row.n > 0)) continue;
+    const category = categories.get(row.label) || { label: row.label, grapheme: graphemeOf(row.label, row.family), ...empty };
+    category.corpus = row.n;
+    categories.set(row.label, category);
+  }
   // A corpus glyph nothing has named is pending for everyone, and the table counts them per character.
   const corpus = new Map<string, number>();
   if (published) for (const row of published.results) if (row.n > 0) { corpus.set(row.label, row.n); add(row.label, 'pending', row.n) }
