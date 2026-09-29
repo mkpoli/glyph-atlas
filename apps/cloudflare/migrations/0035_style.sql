@@ -8,3 +8,9 @@ ALTER TABLE units ADD COLUMN style TEXT NOT NULL DEFAULT 'unassessed';
 ALTER TABLE units ADD COLUMN style_order INTEGER GENERATED ALWAYS AS (CASE WHEN style IN ('cursive','running') THEN 0 WHEN style IN ('unassessed','mixed') THEN 1 ELSE 2 END) VIRTUAL;
 ALTER TABLE corpus_units ADD COLUMN style TEXT NOT NULL DEFAULT 'unassessed';
 ALTER TABLE corpus_units ADD COLUMN style_order INTEGER GENERATED ALWAYS AS (CASE WHEN style IN ('cursive','running') THEN 0 WHEN style IN ('unassessed','mixed') THEN 1 ELSE 2 END) VIRTUAL;
+-- A named corpus glyph's `units` row files it under the style its published row has: a gallery orders
+-- and filters a glyph corrected into another character by the `units` row, and shows the published
+-- one. A publication or `publish_styles.py` that restyles the published row restyles the named one.
+CREATE TRIGGER IF NOT EXISTS corpus_style AFTER UPDATE OF style ON corpus_units BEGIN
+  UPDATE units SET style=NEW.style WHERE id=NEW.id AND origin='corpus' AND style IS NOT NEW.style;
+END;

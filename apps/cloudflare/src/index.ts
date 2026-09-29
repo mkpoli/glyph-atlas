@@ -648,7 +648,7 @@ const STYLE_NAMES = Object.keys(STYLE_ORDER);
 function styleGroup(q: URLSearchParams): number | null {
   const value = q.get('style');
   if (!value || value === 'all') return null;
-  if (!(value in STYLE_ORDER)) throw new Problem(422, 'Invalid style.');
+  if (!Object.hasOwn(STYLE_ORDER, value)) throw new Problem(422, 'Invalid style.');
   return STYLE_ORDER[value];
 }
 // A gallery names the style groups it can be filtered by (`style_groups`); a server that reports none
@@ -769,9 +769,7 @@ async function occurrences(env: Env, code: string, q: URLSearchParams, origin = 
     // (`unit_family_style`, `unit_character_style`), and the page merges the two in style and id order;
     // an OR across the two columns would read every crop of the origin instead.
     const family = data.grapheme?.code_point || data.code_point;
-    counted = env.DB.prepare(`SELECT style_order AS s,count(*) AS n FROM units
-      WHERE id IN (SELECT id FROM units WHERE origin=? AND family=? UNION SELECT id FROM units WHERE origin=? AND character=?)${tail} GROUP BY 1`)
-      .bind(origin, family, origin, data.char, ...extra);
+    counted = env.DB.prepare(graphemeCountsQuery(tail)).bind(origin, family, origin, data.char, ...extra);
     listed = env.DB.prepare(graphemeCropsQuery(styled)).bind(origin, family, ...styledExtra, origin, data.char, family, ...styledExtra, limit, offset);
   } else {
     counted = env.DB.prepare(`SELECT style_order AS s,count(*) AS n FROM units WHERE origin=? AND character=?${tail} GROUP BY 1`)
@@ -784,6 +782,9 @@ async function occurrences(env: Env, code: string, q: URLSearchParams, origin = 
     total, available: rows.results.length, items:(rows.results as UnitRow[]).map(compact),
     counts:{ total, exact:total, exact_total:total }, styles, style_groups: STYLE_NAMES, scope:q.get('scope') || 'character', status:'ok' };
 }
+// A grapheme's crops counted by style group, each branch read along its own index.
+export const graphemeCountsQuery = (extra = '') => `SELECT style_order AS s,count(*) AS n FROM units
+  WHERE id IN (SELECT id FROM units WHERE origin=? AND family=? UNION SELECT id FROM units WHERE origin=? AND character=?)${extra} GROUP BY 1`;
 // A character's crops, and a grapheme's, in style order (`STYLE_ORDER`) then id; `extra` is further
 // conditions on the crop.
 export const characterCropsQuery = (extra = '') => `SELECT * FROM units WHERE origin=? AND character=?${extra} ORDER BY style_order,id LIMIT ? OFFSET ?`;

@@ -525,7 +525,7 @@ try {
   // A grapheme's corpus glyphs are read along the family's style index, with or without a style.
   for (const [filter, extra] of [['1=1', []], ['1=1 AND s=?', [2]]]) {
     const familyPlan = await plan({ sql: `SELECT * FROM (${worker.corpusSelection('family', 1)}) WHERE ${filter} ORDER BY k,s,i LIMIT ? OFFSET ?`, values: [] }, ['U+4EEE', 'U+4EEE', ...extra, 60, 0])
-    assert.ok(!familyPlan.some(d => /TEMP B-TREE FOR ORDER BY/.test(d)), familyPlan.join('; '))
+    sortFree(familyPlan)
     assert.ok(familyPlan.some(d => /SEARCH c USING INDEX corpus_family_style \(family=\?/.test(d)), familyPlan.join('; '))
   }
   // A character's and a grapheme's own crops, with or without a style, each read along a style index.
@@ -539,6 +539,10 @@ try {
     assert.ok(graphemePlan.some(d => /SEARCH units USING INDEX unit_family_style \(origin=\? AND family=\?/.test(d)), graphemePlan.join('; '))
     assert.ok(graphemePlan.some(d => /SEARCH units USING INDEX unit_character_style \(origin=\? AND character=\?/.test(d)), graphemePlan.join('; '))
   }
+  // A grapheme's counts by style read its two ranges by index and each crop by its id, never the table.
+  const graphemeCountPlan = await plan({ sql: worker.graphemeCountsQuery(), values: [] }, ['local', 'U+4EEE', 'local', '仮'])
+  assert.ok(!graphemeCountPlan.some(d => /^SCAN units\b/.test(d) && !/USING (COVERING )?INDEX/.test(d)), graphemeCountPlan.join('; '))
+  assert.ok(graphemeCountPlan.some(d => /SEARCH units USING (COVERING )?INDEX unit_family/.test(d)), graphemeCountPlan.join('; '))
   await db.prepare("DELETE FROM units WHERE id='apart-crop'").run()
   await db.prepare("DELETE FROM units WHERE id='variant-crop'").run()
   const corpusCountPlan = await plan({ sql: worker.variantCorpusCountsQuery(2), values: [] }, ['假', '反'])
@@ -968,6 +972,13 @@ try {
   }
   assert.deepEqual((await call('/layers/occurrences?code_point=U%2B4EEE&expand=variants&limit=200&style=cursive')).items.map(i => i.id), ['sty-b', 'sty-d'], 'a widened gallery takes the style too')
   await call('/layers/occurrences?code_point=U%2B4EEE&style=bold', undefined, 422)
+  await call('/layers/occurrences?code_point=U%2B4EEE&style=constructor', undefined, 422)
+  // A named corpus glyph's row follows its published row's style.
+  await db.batch([db.prepare(`INSERT INTO corpus_units(${CORPUS_COLUMNS}) VALUES('sty-corpus','仮','U+4EEE',NULL,9,'none',0,1,'unknown',1)`),
+    db.prepare(`INSERT INTO units(${UNIT_COLUMNS}) VALUES('sty-corpus','corpus','仮','仮','U+4EEE',NULL,'unknown','kanji','checked',1,0,1,9,'{}','{}','{}','{}',NULL)`)])
+  await db.prepare("UPDATE corpus_units SET style='running' WHERE id='sty-corpus'").run()
+  assert.equal((await db.prepare("SELECT style FROM units WHERE id='sty-corpus'").first()).style, 'running')
+  await db.batch([db.prepare("DELETE FROM units WHERE id='sty-corpus'"), db.prepare("DELETE FROM corpus_units WHERE id='sty-corpus'")])
   await db.prepare("DELETE FROM units WHERE id LIKE 'sty-%'").run()
   // Search finds a crop by its character or by its reading, each once.
   for (const [id, character, reading] of [['find-both', 'とも', 'とも'], ['find-reading', '𪜈', 'とも'], ['find-neither', '𪜈', '𪜈']]) {
