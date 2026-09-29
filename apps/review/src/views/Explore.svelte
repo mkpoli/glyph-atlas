@@ -104,10 +104,13 @@
     try { const found = await request('/atlas/corpus/characters'); if (!closed) corpusCounts = found.items }
     catch { /* no corpus counts this visit */ }
   }
-  // The readings the catalogue counts, gathered under their graphemes: 仮 and 假 are one tile. A tile
-  // counts the collection's own crops (`local`) and the corpus glyphs of its characters (`corpus`), so
-  // characters held only as corpus glyphs are listed too. Corpus glyphs belong to no work: with a work
-  // chosen, tiles count its crops alone.
+  // Tiles count corpus glyphs only while choosing one opens its gallery: with a work or a script group
+  // chosen, a tile narrows the collection's listing instead, and corpus glyphs belong to neither.
+  const countsCorpus = $derived(!flagged && !work && filter === 'all')
+  // The readings the catalogue counts, gathered under their graphemes: 仮 and 假 are one tile. The
+  // catalogue's counts are the whole collection's crops (`local`), whatever the filters; while
+  // `countsCorpus`, a tile adds the corpus glyphs of its characters (`corpus`), so characters held only
+  // as corpus glyphs are listed too.
   const graphemes = $derived.by(() => {
     const groups = new Map()
     const groupFor = key => { const group = groups.get(key) ?? { key, char: charOf(key), count: 0, local: 0, corpus: 0, members: [] }; groups.set(key, group); return group }
@@ -116,7 +119,7 @@
       const count = flagged ? c.flagged + c.hard : c.total
       group.members.push({ label: c.label, count }); group.count += count; group.local += count
     }
-    if (!flagged && !work) for (const [label, key, n] of corpusCounts ?? []) {
+    if (countsCorpus) for (const [label, key, n] of corpusCounts ?? []) {
       const group = groupFor(key)
       const member = group.members.find(m => m.label === label)
       if (member) member.count += n; else group.members.push({ label, count: n })
@@ -575,10 +578,10 @@
     finally { bulkBusy = false }
   }
   function select(value) { grapheme = value; offset = 0; load() }
-  // A tile counts corpus glyphs, which the collection's own listing leaves out, so a grapheme that has
-  // any opens its gallery, which lists both; with a work chosen, the tile narrows the listing.
+  // A tile that counts corpus glyphs, which the collection's own listing leaves out, opens its
+  // grapheme's gallery, which lists both; any other narrows the listing, keeping its filters.
   function openGrapheme(key) {
-    if (key && graphemeByKey.get(key)?.corpus > 0) pick({ code_point: key, char: charOf(key) }, 'family')
+    if (key && countsCorpus && graphemeByKey.get(key)?.corpus > 0) pick({ code_point: key, char: charOf(key) }, 'family')
     else select(key)
   }
   // An address that narrows the collection to a grapheme it holds no crop of (one held only as corpus
