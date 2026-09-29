@@ -5,7 +5,8 @@ same request once more with a browser User-Agent, which is why the fallback is k
 host list: a second request against a server that answers the first one is wasted traffic.
 
 Requests to one host are spaced by `host_pause`, counted from the end of the previous request, and
-sent one at a time by all of this user's processes together (`_turn`, through `PACE_DIR`). A clock a
+sent one at a time by all of this user's processes together (`_turn`, through `PACE_DIR`); a request
+stuck past `BUSY_LIMIT` no longer holds the others back. A clock a
 test substitutes (`CLOCK`, or the `clock` argument) keeps the pace within the process, so a test can
 assert the pause without sleeping. A 429 or 503 is retried after `Retry-After`, a transport error or a 5xx after an
 exponential backoff, and at most `retries` attempts are made.
@@ -28,6 +29,7 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Self
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 import httpx
 
@@ -223,7 +225,7 @@ def download(
                         failure = retry.reason
                         delay = retry.delay
                         if retry.status in (429, 503):
-                            turn.hold(delay)
+                            turn.hold(delay, slow=retry.status == 429)
                     else:
                         os.replace(part, dest)
                         if meta is not None:
@@ -382,21 +384,29 @@ def _pace_dir() -> Path:
     return (Path(runtime) if runtime else Path.home() / ".cache") / "glyph-atlas-host-pace"
 
 
-#: Where each host's pace is kept for every process of this user: when its last request ended, the
-#: longer interval a 429 asked for, and a `Retry-After` still running.
+#: Where each host's pace is kept for every process of this user: when its last request started and
+#: ended, which process is sending one now, the longer interval a 429 asked for, and a `Retry-After`
+#: still running.
 PACE_DIR = _pace_dir()
 #: How long a longer interval a host asked for holds for other processes.
 SLOW_MEMORY = 3600.0
+#: How long a request keeps the other processes off its host; one stuck past it no longer does.
+BUSY_LIMIT = 60.0
+#: How often a process waiting for another's request to end looks again.
+BUSY_POLL = 0.2
 
 
 class _turn:
-    """One request to a host, waiting its interval after the previous one has ended.
+    """One request to a host, starting its interval after the previous one has ended.
 
-    On the real clock the turn holds the host's `flock` in `PACE_DIR` from the wait until the response
-    has been read, so the processes of this user send one request at a time to a host and every one
-    starts `pause` after the previous one ended. A slower interval (`slow_down`) and a `Retry-After`
-    (`hold`) are written there too, so the other processes honour them. A clock a test substitutes
-    keeps the pace within the process.
+    On the real clock the turn reserves the host in its file in `PACE_DIR`, under a `flock` held only
+    to read and write the file. A turn waits while another process's request is in flight, for at
+    most `BUSY_LIMIT`, then starts `pause` after the last request ended and marks itself in flight
+    until it exits. So the processes of this user send one request at a time to a host, and a process
+    stuck in a request stalls the others for `BUSY_LIMIT` at most. A 429's slower interval and a
+    `Retry-After` (`hold`) are written there too, so the other processes honour them; a slower
+    interval another process wrote holds until its `slow_until`. A clock a test substitutes keeps the
+    pace within the process.
     """
 
     def __init__(
@@ -409,8 +419,44 @@ class _turn:
         self.sleeper = sleeper
         self.explicit = explicit
         self.shared = clock is time.monotonic
-        self.handle: Any = None
+        self.token = uuid4().hex
         self.not_before = 0.0
+        self.slowed = False
+
+    def _update(self, change: Callable[[dict[str, Any], float], float]) -> float:
+        """Apply `change(state, now)` to the host's file under its lock, and return what it returns."""
+        import fcntl
+
+        PACE_DIR.mkdir(parents=True, exist_ok=True)
+        name = re.sub(r"[^A-Za-z0-9.-]", "_", self.host) or "host"
+        with (PACE_DIR / f"{name}.json").open("a+") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            handle.seek(0)
+            try:
+                state = json.loads(handle.read() or "{}")
+            except ValueError:
+                state = {}
+            result = change(state, time.time())
+            handle.seek(0)
+            handle.truncate()
+            handle.write(json.dumps(state))
+            handle.flush()
+        return result
+
+    def _reserve(self, state: dict[str, Any], now: float) -> float:
+        """Mark this turn in flight and return when it starts, or return -wait while another is."""
+        busy = float(state.get("busy_until", 0))
+        # A deadline further ahead than the limit is a clock that went back; it is ignored.
+        if state.get("holder") and now < busy <= now + BUSY_LIMIT + self.pause:
+            return -min(BUSY_POLL, busy - now)
+        pause = self.pause
+        if not self.explicit and float(state.get("slow_until", 0)) > now:
+            pause = max(pause, float(state.get("slow", 0)))
+        # Stamps are capped at what this module asks for, so a clock that went back waits no longer.
+        start = max(now, min(float(state.get("end", 0)) + pause, now + pause),
+                    min(float(state.get("not_before", 0)), now + MAX_RETRY_AFTER))
+        state.update(holder=self.token, busy_until=start + BUSY_LIMIT)
+        return start
 
     def __enter__(self) -> Self:
         if not self.shared:
@@ -420,63 +466,38 @@ class _turn:
                 if remaining > 0:
                     self.sleeper(remaining)
             return self
-        import fcntl
-
-        PACE_DIR.mkdir(parents=True, exist_ok=True)
-        name = re.sub(r"[^A-Za-z0-9.-]", "_", self.host) or "host"
-        self.handle = (PACE_DIR / f"{name}.json").open("a+")
-        fcntl.flock(self.handle.fileno(), fcntl.LOCK_EX)
-        self.handle.seek(0)
-        try:
-            state = json.loads(self.handle.read() or "{}")
-        except ValueError:
-            state = {}
-        now = time.time()
-        if float(state.get("slow_until", 0)) > now:
-            _SLOW_HOSTS[self.host] = max(float(state.get("slow", 0)), _SLOW_HOSTS.get(self.host, 0.0))
-        if not self.explicit:
-            self.pause = max(self.pause, _SLOW_HOSTS.get(self.host, 0.0))
-        self.state = state
-        wait = max(float(state.get("end", 0)) + self.pause, float(state.get("not_before", 0))) - now
-        # A stamp further ahead than any wait this module asks for is a clock that jumped; it is ignored.
-        if 0 < wait <= max(self.pause, MAX_RETRY_AFTER):
-            self.sleeper(wait)
+        while (start := self._update(self._reserve)) < 0:
+            self.sleeper(-start)
+        if start > time.time():
+            self.sleeper(start - time.time())
         return self
 
     def again(self) -> None:
         """Wait the interval once more, for a second request inside this turn."""
         self.sleeper(self.pause)
 
-    def hold(self, delay: float) -> None:
-        """Keep every process off the host for `delay` seconds, as a `Retry-After` asks."""
+    def hold(self, delay: float, *, slow: bool = False) -> None:
+        """Keep every process off the host for `delay` seconds, as a `Retry-After` asks; `slow` when
+        the host answered 429, so the others take up its slower interval too."""
         self.not_before = max(self.not_before, time.time() + delay)
+        self.slowed = self.slowed or slow
+
+    def _release(self, state: dict[str, Any], now: float) -> float:
+        if state.get("holder") == self.token:
+            state.pop("holder")
+            state.pop("busy_until", None)
+        state["end"] = now
+        if self.not_before > float(state.get("not_before", 0)):
+            state["not_before"] = self.not_before
+        if self.slowed:
+            state.update(slow=_SLOW_HOSTS.get(self.host, SLOW_PAUSE), slow_until=now + SLOW_MEMORY)
+        return 0.0
 
     def __exit__(self, *_: object) -> None:
         if not self.shared:
             _LAST_REQUEST[self.host] = (self.clock(), self.clock)
             return
-        import fcntl
-
-        now = time.time()
-        state: dict[str, float] = {"end": now}
-        if self.not_before > now:
-            state["not_before"] = self.not_before
-        elif float(self.state.get("not_before", 0)) > now:
-            state["not_before"] = float(self.state["not_before"])
-        slow = _SLOW_HOSTS.get(self.host)
-        if slow is not None:
-            renewed = slow > float(self.state.get("slow", 0)) or float(self.state.get("slow_until", 0)) <= now
-            state["slow"] = slow
-            state["slow_until"] = now + SLOW_MEMORY if renewed else float(self.state["slow_until"])
-        try:
-            self.handle.seek(0)
-            self.handle.truncate()
-            self.handle.write(json.dumps(state))
-            self.handle.flush()
-        finally:
-            fcntl.flock(self.handle.fileno(), fcntl.LOCK_UN)
-            self.handle.close()
-            self.handle = None
+        self._update(self._release)
 
 
 def _user_agents(url: str) -> tuple[str, ...]:
