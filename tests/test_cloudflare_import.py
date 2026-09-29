@@ -70,7 +70,13 @@ def remote(publication, *, before=None, issue="character", character="を", corr
                 "suggested_reading": correction,
                 "correction": {"unicode": " ".join(f"U+{ord(c):04X}" for c in after["label"]),
                                "reading": after["reading"], "box": after["box"]}}
-    if round_review:
+    if round_review == "answer":
+        # As the Worker saves a round now: the event names its round and carries its own answer only.
+        answer = {key: value for key, value in request.items() if key != "client_id"}
+        evidence.pop("request")
+        evidence.update(kind="visual-quiz", round=str(uuid4()), label=shown["label"], answer={**answer, "id": shown["id"]})
+    elif round_review:
+        # As rounds saved before: the round's whole request in every event.
         evidence.update(kind="visual-quiz", request={"id": str(uuid4()), "client_id": request["client_id"],
             "label": shown["label"], "answers": [{**request, "id": shown["id"]}]})
     resolved = bool(issue == "character" and character) or bool(issue == "reading" and (reading or correction))
@@ -143,7 +149,7 @@ def test_full_remote_chain_imports_only_current_review(store):
     assert len(json.loads(store.events()[-1].evidence)["cloudflare_import"]["remote_chain"]) == 2
 
 
-@pytest.mark.parametrize("round_review", [False, True])
+@pytest.mark.parametrize("round_review", [False, True, "answer"])
 def test_site_character_correction_imports_as_reviewed_with_its_reading(store, round_review):
     record, after = remote(baseline(store), character="ナ", round_review=round_review)
     assert after["reading"] == "な" and record["event"]["new"] == "reviewed"
@@ -151,6 +157,15 @@ def test_site_character_correction_imports_as_reviewed_with_its_reading(store, r
     assert report["counts"] == {"imported": 1}
     unit = store.unit("u")
     assert (unit.unicode, unit.reading, unit.review) == ("U+30CA", "な", "reviewed")
+
+
+def test_round_answer_for_another_occurrence_is_rejected(store):
+    record, _ = remote(baseline(store), character="ナ", round_review="answer")
+    evidence = json.loads(record["event"]["evidence"])
+    evidence["answer"]["id"] = "someone-else"
+    record["event"]["evidence"] = json.dumps(evidence, ensure_ascii=False)
+    _, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
+    assert report["counts"].get("imported", 0) == 0
 
 
 def test_character_correction_whose_saved_reading_is_not_the_workers_is_rejected(store):

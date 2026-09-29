@@ -994,7 +994,10 @@ async function submit(env: Env, request: Request, target?: string) {
       ...(written?{grapheme:family||cp(written),visual_group:null,category:categoryOf(written)}:{}),
       ...(reading?{reading}:{}),issue:resolved?null:kept??answer.issue};
     const snapshot={...parse(row.snapshot),character:compact(row)};
-    const evidence={kind:round?'visual-quiz':'character-review',...(round?{round:id,label:input.label}:{}),...(batch?{batch:id}:{request:input}),
+    // A round or batch keeps its request once, on the submission; each event names it and carries only its
+    // own answer, so a submission of many crops stays well inside D1's row size. A single crop's review
+    // keeps its request whole: it is that one answer.
+    const evidence={kind:round?'visual-quiz':'character-review',...(round?{round:id,label:input.label}:{}),...(batch?{batch:id}:round?{answer}:{request:input}),
       verdict:answer.verdict,issue:answer.issue||null,note:answer.note||'',
       suggested_character:written?cp(written):null,suggested_reading:answer.correction||null,snapshot,
       correction:{unicode:cp(next.label),reading:next.reading,box:next.box}};
@@ -1027,7 +1030,7 @@ async function submit(env: Env, request: Request, target?: string) {
   }
   const result=corpus?{...(changes[0].next),origin:'corpus',event:changes[0].event}
     :batch?{id,results:changes.map(c=>({target_id:c.row.id,revision:c.next.revision,state:c.next.state})),unchanged}
-    :{id,results:[...changes.map(c=>({id:c.event.id,target_id:c.row.id,field:'review',revision:c.next.revision,review:c.event})),
+    :{id,results:[...changes.map(c=>({id:c.event.id,target_id:c.row.id,field:'review',revision:c.next.revision,state:c.next.state})),
       ...shown.map(crop=>({target_id:crop.id,field:'seen'})),...passed.map(crop=>({target_id:crop.id,field:'skip'}))]};
   const statements=[env.DB.prepare('INSERT INTO submissions(id,actor,request,response,at) VALUES (?,?,?,?,?)').bind(key,actor,signature,JSON.stringify(result),at)];
   for(const row of fresh)statements.push(materialise(env,row));
