@@ -94,19 +94,35 @@
   // Whether the graphemes are listed from the most crops or from the fewest; the choice is remembered.
   let order = $state(stored('atlas.browseOrder', 'most') === 'fewest' ? 'fewest' : 'most')
   function orderBy(value) { order = value; remember('atlas.browseOrder', value) }
+  // The corpus glyphs of every character, as [label, grapheme, glyphs], read once when the browser or
+  // the search box is first used; the Flagged view has no use for them.
+  let corpusCounts = $state(null), corpusCountsAsked = false
+  async function loadCorpusCounts() {
+    if (flagged || corpusCountsAsked) return
+    corpusCountsAsked = true
+    try { const found = await request('/atlas/corpus/characters'); if (!closed) corpusCounts = found.items }
+    catch { corpusCountsAsked = false }
+  }
   // The readings the catalogue counts, gathered under their graphemes: 仮 and 假 are one tile. A tile
-  // counts the collection's own crops and the corpus glyphs of its characters; `local` keeps the former.
+  // counts the collection's own crops (`local`) and the corpus glyphs of its characters (`corpus`), so
+  // characters held only as corpus glyphs are listed too. Corpus glyphs belong to no work: with a work
+  // chosen, tiles count its crops alone.
   const graphemes = $derived.by(() => {
     const groups = new Map()
+    const groupFor = key => { const group = groups.get(key) ?? { key, char: charOf(key), count: 0, local: 0, corpus: 0, members: [] }; groups.set(key, group); return group }
     for (const c of categories) {
-      const key = c.grapheme ?? c.label
-      const group = groups.get(key) ?? { key, char: charOf(key), count: 0, local: 0, members: [] }
-      const count = flagged ? c.flagged + c.hard : c.total + (c.corpus ?? 0)
-      group.members.push({ label: c.label, count }); group.count += count; group.local += c.total
-      groups.set(key, group)
+      const group = groupFor(c.grapheme ?? c.label)
+      const count = flagged ? c.flagged + c.hard : c.total
+      group.members.push({ label: c.label, count }); group.count += count; group.local += count
+    }
+    if (!flagged && !work) for (const [label, key, n] of corpusCounts ?? []) {
+      const group = groupFor(key)
+      const member = group.members.find(m => m.label === label)
+      if (member) member.count += n; else group.members.push({ label, count: n })
+      group.count += n; group.corpus += n
     }
     for (const group of groups.values()) group.members.sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
-    // Fewest first puts the rarest characters of the collection at the top.
+    // Fewest first puts the graphemes the site holds fewest glyphs of at the top.
     const direction = order === 'fewest' ? -1 : 1
     return [...groups.values()].sort((a, b) => direction * (b.count - a.count) || a.key.localeCompare(b.key))
   })
@@ -279,6 +295,7 @@
       const result = await catalogue({ grapheme, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
         reported: flagged ? (showReported ? 'show' : 'hide') : null, seed, offset, limit: 60 }, { signal: catalogueRequest.signal, priority: 'low' })
       if (closed || id !== requestId) return
+      if (!append && openEmptyGrapheme(result)) return
       data = result; items = append ? [...items, ...result.items] : result.items
       if (!append) await showSample(id, sampled, result.items)
     } catch (e) { if (!closed && id === requestId && e.name !== 'AbortError') error = e.message }
@@ -557,11 +574,18 @@
     finally { bulkBusy = false }
   }
   function select(value) { grapheme = value; offset = 0; load() }
-  // A grapheme held only as corpus glyphs has nothing for the collection's filter to list, so it opens
-  // the character's gallery, which lists corpus glyphs too.
+  // A tile counts corpus glyphs, which the collection's own listing leaves out, so a grapheme that has
+  // any opens its gallery, which lists both; with a work chosen, the tile narrows the listing.
   function openGrapheme(key) {
-    if (key && graphemeByKey.get(key)?.local === 0) pick({ code_point: key, char: charOf(key) }, 'family')
+    if (key && graphemeByKey.get(key)?.corpus > 0) pick({ code_point: key, char: charOf(key) }, 'family')
     else select(key)
+  }
+  // An address that narrows the collection to a grapheme it holds no crop of (one held only as corpus
+  // glyphs) opens the grapheme's gallery instead of an empty listing.
+  function openEmptyGrapheme(result) {
+    if (!grapheme || work || flagged || query || filter !== 'all' || result.total > 0) return false
+    pick({ code_point: grapheme, char: charOf(grapheme) }, 'family')
+    return true
   }
   // The graphemes the browser lists, by key: a query's candidate shows in its grapheme's card when the
   // collection holds that very character, as the browser's card lists it.
@@ -611,7 +635,7 @@
     sampleFault = page ? (page.status === 'ok' ? null : page.status) : null
     loading = false
   }
-  onMount(() => { if (!collection) readCollection(); if (streamed) receive(streamed.rest); else if (!first && !opened) load(); if (addressed) followAddress(); const timer = setInterval(readCollection, 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
+  onMount(() => { if (first) openEmptyGrapheme(first.result); if (!collection) readCollection(); if (streamed) receive(streamed.rest); else if (!first && !opened) load(); if (addressed) followAddress(); const timer = setInterval(readCollection, 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
   // Widening is the reader's choice and only it reloads the gallery; picking a character resets the
   // widening itself and loads once through `pick`.
   // The first run is the widening the page opened with, already loaded.
@@ -625,9 +649,9 @@
   <div class="page-status">
     <h1 class="visually-hidden">{flagged ? t('explore.heading.flagged') : t('explore.heading.atlas')}</h1>
     <SiteLinks />
-    <div class="collection-meta"><span class="live-dot"></span>{#if picked}<span>{t('explore.meta.glyphs', { count: display.length })}</span><span class="meta-divider">/</span><span>{expand === "grapheme" ? t('explore.meta.characters', { count: picked.grapheme?.character_count ?? 1 }) : expand === "variants" ? t('explore.meta.characters', { count: 1 + (picked.variants?.items?.length ?? 0) }) : t('explore.meta.characters', { count: 1 })}</span>{:else if !flagged && collection?.archive}<span>{t('explore.meta.indexedCrops', { count: collection.archive.character_crops })}</span><span class="meta-divider">/</span><span>{t('explore.meta.worksWithCrops', { count: collection.archive.works_with_crops })}</span>{:else}<span>{t('explore.meta.glyphsTotal', { count: flagged ? (data?.total ?? 0) + sample.length : data?.available })}</span><span class="meta-divider">/</span><span>{t('explore.meta.graphemes', { count: graphemes.length })}</span>{/if}</div>
+    <div class="collection-meta"><span class="live-dot"></span>{#if picked}<span>{t('explore.meta.glyphs', { count: display.length })}</span><span class="meta-divider">/</span><span>{expand === "grapheme" ? t('explore.meta.characters', { count: picked.grapheme?.character_count ?? 1 }) : expand === "variants" ? t('explore.meta.characters', { count: 1 + (picked.variants?.items?.length ?? 0) }) : t('explore.meta.characters', { count: 1 })}</span>{:else if !flagged && collection?.archive}<span>{t('explore.meta.indexedCrops', { count: collection.archive.character_crops })}</span><span class="meta-divider">/</span><span>{t('explore.meta.worksWithCrops', { count: collection.archive.works_with_crops })}</span>{:else}<span>{t('explore.meta.glyphsTotal', { count: flagged ? (data?.total ?? 0) + sample.length : data?.available })}</span><span class="meta-divider">/</span><span>{t('explore.meta.graphemes', { count: graphemes.filter(group => group.local > 0).length })}</span>{/if}</div>
   </div>
-  <div class="collection-toolbar">
+  <div class="collection-toolbar" onfocusin={loadCorpusCounts}>
     <!-- The box, empty and focused, lists the collection's graphemes; one chosen narrows the grid, and a
          form in a tile's popover opens that form's own gallery. -->
     {#snippet browse(close)}
