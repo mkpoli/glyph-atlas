@@ -1021,3 +1021,51 @@ def test_an_unseeded_uncached_page_keeps_its_place_behind_focus_while_a_host_is_
     queue.db.execute("UPDATE pages SET status='pending', worker=NULL WHERE id='focused'")
     queue.db.commit()
     assert queue.claim("w3")["id"] == "focused"
+
+
+class Interleaved:
+    """A connection that lets another worker take over page or supplement `p` right after the holder
+    was checked, as a second process could between two statements."""
+
+    def __init__(self, db, root):
+        self.db, self.root = db, root
+
+    def __getattr__(self, name):
+        return getattr(self.db, name)
+
+    def __enter__(self):
+        return self.db.__enter__()
+
+    def __exit__(self, *exc):
+        return self.db.__exit__(*exc)
+
+    def execute(self, sql, *args):
+        import sqlite3
+        result = self.db.execute(sql, *args)
+        if sql.lstrip().startswith("SELECT attempts FROM"):
+            table = "supplements" if "supplements" in sql else "pages"
+            key = "page_id" if table == "supplements" else "id"
+            other = sqlite3.connect(self.root / "queue.sqlite", timeout=5)
+            with other:
+                other.execute(f"UPDATE {table} SET worker='fresh' WHERE {key}='p'")
+            other.close()
+        return result
+
+
+def test_a_fail_whose_claim_is_taken_over_after_the_check_writes_nothing(tmp_path):
+    queue = Queue(tmp_path / "queue")
+    with queue.db:
+        queue.db.execute("INSERT INTO pages (id,document_id,title,source,cached,rank) VALUES('p','d','t','s',1,0)")
+    queue.claim("slow")
+    queue.db = Interleaved(queue.db, queue.root)
+    assert not queue.fail("p", "slow", "timeout", retryable=True)
+    assert tuple(queue.db.execute("SELECT status, worker, error FROM pages").fetchone()) == ("running", "fresh", None)
+
+
+def test_a_supplement_fail_whose_claim_is_taken_over_after_the_check_writes_nothing(tmp_path):
+    queue, _ = supplement_queue(tmp_path, [("p", "complete", "single-character-consensus-v1", "飍")])
+    queue.seed_supplements()
+    queue.claim_supplement("slow")
+    queue.db = Interleaved(queue.db, queue.root)
+    assert not queue.fail_supplement("p", "slow", "timeout")
+    assert tuple(queue.db.execute("SELECT status, worker, error FROM supplements").fetchone()) == ("running", "fresh", None)

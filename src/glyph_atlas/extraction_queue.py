@@ -408,10 +408,9 @@ class Queue:
                 return False
             status = "pending" if held[0] < MAX_ATTEMPTS else "failed"
             retry_after = time.time() + 30 * 2**max(0, held[0]-1) if status == "pending" else None
-            self.db.execute("""UPDATE supplements SET status=?,error=?,updated_at=?,retry_after=?,
-                worker=NULL,lease_until=NULL WHERE page_id=? AND policy=?""",
-                (status, reason, datetime.now(UTC).isoformat(), retry_after, page_id, POLICY))
-        return True
+            return self.db.execute("""UPDATE supplements SET status=?,error=?,updated_at=?,retry_after=?,
+                worker=NULL,lease_until=NULL WHERE page_id=? AND policy=? AND status='running' AND worker=?""",
+                (status, reason, datetime.now(UTC).isoformat(), retry_after, page_id, POLICY, worker)).rowcount > 0
 
     def finish(self, ident, worker, report, output):
         """Record a committed page; False when `worker` no longer holds it, and nothing is written."""
@@ -431,10 +430,9 @@ class Queue:
                 return False
             status = "retry" if retryable and held[0] < MAX_ATTEMPTS else "failed"
             retry_after = time.time() + 30 * 2**max(0, held[0]-1) if status == "retry" else None
-            self.db.execute("""UPDATE pages SET status=?,error=?,updated_at=?,retry_after=?,worker=NULL,
-                lease_until=NULL WHERE id=?""",
-                            (status,reason, datetime.now(UTC).isoformat(),retry_after,ident))
-        return True
+            return self.db.execute("""UPDATE pages SET status=?,error=?,updated_at=?,retry_after=?,worker=NULL,
+                lease_until=NULL WHERE id=? AND status='running' AND worker=?""",
+                (status,reason, datetime.now(UTC).isoformat(),retry_after,ident,worker)).rowcount > 0
 
     def status(self, *, state="idle", error=None):
         counts = dict(self.db.execute("SELECT status,count(*) FROM pages GROUP BY status"))
