@@ -502,3 +502,42 @@ def test_a_429_on_the_real_clock_writes_the_slower_interval_for_the_other_proces
     shared = json.loads((net.PACE_DIR / f"{urlsplit(url).hostname}.json").read_text())
     assert shared["slow"] == net.SLOW_PAUSE and shared["slow_until"] > time.time()
     assert "holder" not in shared
+
+
+def _starts_of_turns_booked_apart(state, *, pause=0.1, apart=0.5):
+    """Start two forked processes `apart` seconds apart on a host whose file holds `state`, each
+    taking one turn, and return when each turn began."""
+    import multiprocessing
+    import time
+
+    _write_pace(state)
+    context = multiprocessing.get_context("fork")
+    starts = context.Queue()
+
+    def ask():
+        with net._turn("https://example.org/a", pause, time.monotonic, time.sleep):
+            starts.put(time.time())
+            time.sleep(0.05)
+
+    workers = [context.Process(target=ask) for _ in range(2)]
+    workers[0].start()
+    time.sleep(apart)
+    workers[1].start()
+    for w in workers:
+        w.join(60)
+    return sorted(starts.get(timeout=30) for _ in range(2))
+
+
+def test_processes_booking_during_a_retry_after_take_turns_one_after_the_other():
+    import time
+
+    first, second = _starts_of_turns_booked_apart({"end": 0, "not_before": time.time() + 5})
+    assert second - first >= 0.14, "the second waits for the first to end, then the pause"
+
+
+def test_processes_booking_at_a_slower_pace_take_turns_one_after_the_other():
+    import time
+
+    now = time.time()
+    first, second = _starts_of_turns_booked_apart({"end": now, "slow": 4.0, "slow_until": now + 60})
+    assert second - first >= 3.9

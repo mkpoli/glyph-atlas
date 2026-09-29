@@ -400,12 +400,12 @@ class _turn:
     """One request to a host, starting its interval after the previous one has ended.
 
     On the real clock the turn reserves the host in its file in `PACE_DIR`, under a `flock` held only
-    to read and write the file. A turn waits while another process's request is in flight, for at
-    most `BUSY_LIMIT`, then starts `pause` after the last request ended and marks itself in flight
-    until it exits. So the processes of this user send one request at a time to a host, and a process
-    stuck in a request stalls the others for `BUSY_LIMIT` at most. A 429's slower interval and a
-    `Retry-After` (`hold`) are written there too, so the other processes honour them; a slower
-    interval another process wrote holds until its `slow_until`. A clock a test substitutes keeps the
+    to read and write the file. A turn waits while another process's turn is booked or in flight,
+    then starts `pause` after the last request ended and marks itself in flight until it exits. The
+    mark lasts `BUSY_LIMIT` past the booked start, so the processes of this user send one request at
+    a time to a host, and a process stuck in a request stalls the others for `BUSY_LIMIT` at most. A
+    429's slower interval and a `Retry-After` (`hold`) are written there too, so the other processes
+    honour them; a slower interval another process wrote holds until its `slow_until`. A clock a test substitutes keeps the
     pace within the process.
     """
 
@@ -446,8 +446,10 @@ class _turn:
     def _reserve(self, state: dict[str, Any], now: float) -> float:
         """Mark this turn in flight and return when it starts, or return -wait while another is."""
         busy = float(state.get("busy_until", 0))
-        # A deadline further ahead than the limit is a clock that went back; it is ignored.
-        if state.get("holder") and now < busy <= now + BUSY_LIMIT + self.pause:
+        # A booking starts at most the longest wait this module asks for ahead; a mark further ahead
+        # than that is a clock that went back, and is ignored.
+        horizon = max(MAX_RETRY_AFTER, float(state.get("slow", 0)), self.pause) + BUSY_LIMIT
+        if state.get("holder") and now < busy <= now + horizon:
             return -min(BUSY_POLL, busy - now)
         pause = self.pause
         if not self.explicit and float(state.get("slow_until", 0)) > now:
