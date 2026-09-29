@@ -94,14 +94,15 @@
   // Whether the graphemes are listed from the most crops or from the fewest; the choice is remembered.
   let order = $state(stored('atlas.browseOrder', 'most') === 'fewest' ? 'fewest' : 'most')
   function orderBy(value) { order = value; remember('atlas.browseOrder', value) }
-  // The corpus glyphs of every character, as [label, grapheme, glyphs], read once when the browser or
-  // the search box is first used; the Flagged view has no use for them.
+  // The corpus glyphs of every character, as [label, grapheme, glyphs], read once when the search box is
+  // first focused; the Flagged view has no use for them. A service without them (the local review
+  // service has none) or a failed read leaves the tiles counting crops for the rest of the visit.
   let corpusCounts = $state(null), corpusCountsAsked = false
   async function loadCorpusCounts() {
     if (flagged || corpusCountsAsked) return
     corpusCountsAsked = true
     try { const found = await request('/atlas/corpus/characters'); if (!closed) corpusCounts = found.items }
-    catch { corpusCountsAsked = false }
+    catch { /* no corpus counts this visit */ }
   }
   // The readings the catalogue counts, gathered under their graphemes: 仮 and 假 are one tile. A tile
   // counts the collection's own crops (`local`) and the corpus glyphs of its characters (`corpus`), so
@@ -651,7 +652,7 @@
     <SiteLinks />
     <div class="collection-meta"><span class="live-dot"></span>{#if picked}<span>{t('explore.meta.glyphs', { count: display.length })}</span><span class="meta-divider">/</span><span>{expand === "grapheme" ? t('explore.meta.characters', { count: picked.grapheme?.character_count ?? 1 }) : expand === "variants" ? t('explore.meta.characters', { count: 1 + (picked.variants?.items?.length ?? 0) }) : t('explore.meta.characters', { count: 1 })}</span>{:else if !flagged && collection?.archive}<span>{t('explore.meta.indexedCrops', { count: collection.archive.character_crops })}</span><span class="meta-divider">/</span><span>{t('explore.meta.worksWithCrops', { count: collection.archive.works_with_crops })}</span>{:else}<span>{t('explore.meta.glyphsTotal', { count: flagged ? (data?.total ?? 0) + sample.length : data?.available })}</span><span class="meta-divider">/</span><span>{t('explore.meta.graphemes', { count: graphemes.filter(group => group.local > 0).length })}</span>{/if}</div>
   </div>
-  <div class="collection-toolbar" onfocusin={loadCorpusCounts}>
+  <div class="collection-toolbar" onfocusin={e => { if (e.target.closest('.character-search') && e.target.matches('input')) loadCorpusCounts() }}>
     <!-- The box, empty and focused, lists the collection's graphemes; one chosen narrows the grid, and a
          form in a tile's popover opens that form's own gallery. -->
     {#snippet browse(close)}
