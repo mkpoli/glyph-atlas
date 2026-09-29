@@ -119,6 +119,8 @@ def test_a_corpus_republication_keeps_the_forms(tmp_path, monkeypatch, form_corp
     db.executescript(corpus_upsert((A, "は", "U+306F", None, 1, "y", 0, 1, "unknown", "unassessed")) + "\n" + CORPUS_REFRESH)
     assert db.execute("SELECT character FROM corpus_units WHERE id=?", (A,)).fetchone() == ("𛂥",)
     assert db.execute("SELECT character,n FROM corpus_characters").fetchall() == [("𛂥", 1)]
+    stamp = db.execute("SELECT value FROM metadata WHERE key='corpus_counts_at'").fetchone()
+    assert stamp and json.loads(stamp[0]).endswith("Z"), "the recount stamps the key the browser's corpus counts are cached on"
 
 
 def test_filtered_publication_preserves_identity_projection_and_mixed_marks(tmp_path, monkeypatch, form_corpora):
