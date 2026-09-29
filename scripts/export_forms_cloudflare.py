@@ -301,12 +301,14 @@ if __name__ == "__main__":
     parser.add_argument("--corpus-root", type=Path, default=Path("work"))
     parser.add_argument("--workers", type=int, default=8, help="threads rendering tiles")
     parser.add_argument("--known-media", type=Path,
-                        help="media keys the site already serves, one per line (e.g. the keys of form_units.image); "
+                        help="media keys the site already serves, one per line, bare or as /atlas/media/<key>.webp "
+                             "(e.g. the live form_units.image); "
                              "their tiles are not rendered or uploaded again")
     parser.add_argument("--families-only", action="store_true",
                         help="refresh only the forms each family lists (their 字母, script and name)")
     args = parser.parse_args()
     os.environ.setdefault("ATLAS_FORM_CLUSTERS", str((args.corpus_root / "forms/current").resolve()))
-    known = frozenset(args.known_media.read_text().split()) if args.known_media else frozenset()
+    known = frozenset(line.rsplit("/", 1)[-1].removesuffix(".webp") for line in args.known_media.read_text().split()
+                      ) if args.known_media else frozenset()
     print(json.dumps(families_only(args.out) if args.families_only
                      else export(args.corpus_root, args.out, args.workers, known)))
