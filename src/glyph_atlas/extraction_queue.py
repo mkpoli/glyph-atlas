@@ -148,6 +148,10 @@ class Queue:
     def __init__(self, root: Path):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
+        # The wall clock leases are kept on, which every process reads alike; tests replace it.
+        self.wall = time.time
+        self._alive = None
+        self._settle_until = 0.0
         self.db = sqlite3.connect(self.root / "queue.sqlite", timeout=30)
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode=WAL")
@@ -272,21 +276,23 @@ class Queue:
         claiming at once never take the same page. A page whose lease lapsed is claimed like a pending
         one, and its attempt counts: a page that kills its worker never reaches `fail`, so after
         `MAX_ATTEMPTS` such stops it is left failed, or it would be claimed first after every restart.
+        `lapse` says when a lease counts as lapsed.
         """
-        now, stamp = time.time(), datetime.now(UTC).isoformat()
+        now, lapsed, stopped = self.lapse(lease)
+        stamp = datetime.now(UTC).isoformat()
         with self.db:
             self.db.execute("""UPDATE pages SET status='failed',updated_at=?,worker=NULL,lease_until=NULL,
                 error='the worker stopped while extracting this page ' || attempts || ' times'
-                WHERE status='running' AND (lease_until IS NULL OR lease_until<?) AND attempts>=?""",
-                            (stamp, now, MAX_ATTEMPTS))
+                WHERE status='running' AND coalesce(lease_until,0)<? AND attempts>=?""",
+                            (stamp, stopped, MAX_ATTEMPTS))
             row = self.db.execute("""UPDATE pages SET status='running',attempts=attempts+1,updated_at=?,
                 worker=?,lease_until=? WHERE id=(SELECT id FROM pages WHERE status='pending'
                 OR (status='retry' AND CAST(retry_after AS REAL)<=?)
-                OR (status='running' AND (lease_until IS NULL OR lease_until<?))
+                OR (status='running' AND coalesce(lease_until,0)<? AND attempts<?)
                 ORDER BY (cached=0 AND host IS NOT NULL AND host IN (SELECT host FROM pages
                     WHERE status='running' AND cached=0 AND lease_until>=? AND worker!=? AND host IS NOT NULL)),
                 focus DESC, priority DESC, cached DESC, rank, document_id, id LIMIT 1) RETURNING *""",
-                (stamp, worker, now + lease, now, now, now, worker)).fetchone()
+                (stamp, worker, now + lease, now, lapsed, MAX_ATTEMPTS, now, worker)).fetchone()
         return dict(row) if row else None
 
     def renew(self, kind, ident, worker, *, lease=LEASE_SECONDS):
@@ -295,10 +301,36 @@ class Queue:
         Opens its own connection, so a heartbeat thread can call it while the worker's thread extracts.
         """
         table, key = ("supplements", "page_id") if kind == "supplement" else ("pages", "id")
+        now = self.wall()
+        self.alive(lease, now)
         with sqlite3.connect(self.root / "queue.sqlite", timeout=30) as db:
             changed = db.execute(f"UPDATE {table} SET lease_until=? WHERE {key}=? AND status='running' AND worker=?",
-                                 (time.time() + lease, ident, worker)).rowcount
+                                 (now + lease, ident, worker)).rowcount
         return changed > 0
+
+    def alive(self, lease=LEASE_SECONDS, now=None):
+        """Note a sign of life of this process: a claim or a renewal.
+
+        Half a lease without one is most likely a machine that slept, and its other workers wake with
+        every lease lapsed. For a quarter lease this process then claims no lapsed page, while their
+        heartbeats renew them, which they do within an eighth.
+        """
+        now = self.wall() if now is None else now
+        if self._alive is not None and now - self._alive > lease / 2:
+            self._settle_until = now + lease / 4
+        self._alive = now
+
+    def lapse(self, lease=LEASE_SECONDS):
+        """Now, the time a running lease must end before to count as lapsed, and the time before which a
+        lapsed page counts as having stopped its worker; this notes a sign of life (`alive`).
+
+        A page is left failed for stopping its workers only once its lease is a whole lease past, so a
+        heartbeat late after a machine woke still finds it running.
+        """
+        now = self.wall()
+        self.alive(lease, now)
+        lapsed = now if now >= self._settle_until else -math.inf
+        return now, lapsed, min(lapsed, now - lease)
 
     def prioritize(self, counts: dict[str, int]) -> int:
         """Score every pending or retry page by how much the atlas still lacks its characters.
@@ -371,19 +403,20 @@ class Queue:
         A supplement whose lease lapsed is claimed again, and left failed after `MAX_ATTEMPTS`, as
         `claim` treats a page.
         """
-        now, stamp = time.time(), datetime.now(UTC).isoformat()
+        now, lapsed, stopped = self.lapse(lease)
+        stamp = datetime.now(UTC).isoformat()
         with self.db:
             self.db.execute("""UPDATE supplements SET status='failed',updated_at=?,worker=NULL,lease_until=NULL,
                 error='the worker stopped while supplementing this page ' || attempts || ' times'
-                WHERE status='running' AND (lease_until IS NULL OR lease_until<?) AND attempts>=?""",
-                            (stamp, now, MAX_ATTEMPTS))
+                WHERE status='running' AND coalesce(lease_until,0)<? AND attempts>=?""",
+                            (stamp, stopped, MAX_ATTEMPTS))
             claimed = self.db.execute("""UPDATE supplements SET status='running',attempts=attempts+1,updated_at=?,
                 worker=?,lease_until=? WHERE policy=? AND page_id=(SELECT s.page_id FROM supplements s
                 JOIN pages p ON p.id = s.page_id WHERE s.policy=? AND ((s.status='pending'
                 AND (s.retry_after IS NULL OR s.retry_after<=?))
-                OR (s.status='running' AND (s.lease_until IS NULL OR s.lease_until<?)))
+                OR (s.status='running' AND coalesce(s.lease_until,0)<? AND s.attempts<?))
                 ORDER BY p.focus DESC, p.priority DESC, p.cached DESC, p.rank, p.document_id, p.id LIMIT 1)
-                RETURNING page_id""", (stamp, worker, now + lease, POLICY, POLICY, now, now)).fetchone()
+                RETURNING page_id""", (stamp, worker, now + lease, POLICY, POLICY, now, lapsed, MAX_ATTEMPTS)).fetchone()
             if not claimed:
                 return None
             row = self.db.execute("""SELECT s.page_id, s.policy, p.* FROM supplements s JOIN pages p ON p.id = s.page_id
@@ -411,7 +444,7 @@ class Queue:
             if held is None:
                 return False
             status = "pending" if held[0] < MAX_ATTEMPTS else "failed"
-            retry_after = time.time() + 30 * 2**max(0, held[0]-1) if status == "pending" else None
+            retry_after = self.wall() + 30 * 2**max(0, held[0]-1) if status == "pending" else None
             return self.db.execute("""UPDATE supplements SET status=?,error=?,updated_at=?,retry_after=?,
                 worker=NULL,lease_until=NULL WHERE page_id=? AND policy=? AND status='running' AND worker=?""",
                 (status, reason, datetime.now(UTC).isoformat(), retry_after, page_id, POLICY, worker)).rowcount > 0
@@ -433,7 +466,7 @@ class Queue:
             if held is None:
                 return False
             status = "retry" if retryable and held[0] < MAX_ATTEMPTS else "failed"
-            retry_after = time.time() + 30 * 2**max(0, held[0]-1) if status == "retry" else None
+            retry_after = self.wall() + 30 * 2**max(0, held[0]-1) if status == "retry" else None
             return self.db.execute("""UPDATE pages SET status=?,error=?,updated_at=?,retry_after=?,worker=NULL,
                 lease_until=NULL WHERE id=? AND status='running' AND worker=?""",
                 (status,reason, datetime.now(UTC).isoformat(),retry_after,ident,worker)).rowcount > 0
@@ -473,7 +506,7 @@ class Queue:
                   "workers": dict(self.db.execute("""SELECT worker,count(*) FROM (
                       SELECT worker FROM pages WHERE status='running' AND lease_until>=:now UNION ALL
                       SELECT worker FROM supplements WHERE status='running' AND lease_until>=:now)
-                      GROUP BY worker""", {"now": time.time()})),
+                      GROUP BY worker""", {"now": self.wall()})),
                   "updated_at": datetime.now(UTC).isoformat(),
                   "recent": [dict(r) for r in self.db.execute("""SELECT id,title,status,accepted,examined,output,error,published_at,publish_error,retry_after
                       FROM pages WHERE status!='pending' ORDER BY updated_at DESC LIMIT 12""")]}

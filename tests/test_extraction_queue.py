@@ -158,14 +158,14 @@ def test_retryable_errors_have_bounded_backoff(tmp_path,monkeypatch):
     queue=Queue(tmp_path/"queue")
     queue.db.execute("INSERT INTO pages(id,document_id,title,source,cached,rank) VALUES('a','a','A','s',1,0)")
     queue.db.commit()
-    monkeypatch.setattr("glyph_atlas.extraction_queue.time.time",lambda:1000)
+    queue.wall = lambda: 1000
     assert queue.claim("w")["id"] == "a"
     queue.fail("a","w","timeout",retryable=True)
     assert queue.claim("w") is None
-    monkeypatch.setattr("glyph_atlas.extraction_queue.time.time",lambda:1100)
+    queue.wall = lambda: 1100
     assert queue.claim("w")["id"] == "a"
     queue.fail("a","w","timeout",retryable=True)
-    monkeypatch.setattr("glyph_atlas.extraction_queue.time.time",lambda:1300)
+    queue.wall = lambda: 1300
     assert queue.claim("w")["id"] == "a"
     queue.fail("a","w","timeout",retryable=True)
     assert queue.db.execute("SELECT status FROM pages").fetchone()[0] == "failed"
@@ -214,7 +214,7 @@ def test_a_page_that_keeps_stopping_the_worker_is_left_failed(tmp_path):
                              (ident, "a", "t", "s", 1, rank))
     for _ in range(MAX_ATTEMPTS):
         assert queue.claim("w", lease=-1)["id"] == "a:0"  # the worker died while extracting a:0
-    assert queue.claim("w")["id"] == "a:1"
+    assert queue.claim("w", lease=-1)["id"] == "a:1"  # a lease later
     assert queue.db.execute("SELECT status FROM pages WHERE id='a:0'").fetchone()[0] == "failed"
 
 
@@ -554,7 +554,7 @@ def test_a_failed_supplement_waits_before_its_next_attempt(tmp_path, monkeypatch
     queue, _ = supplement_queue(tmp_path, [("a", "complete", "single-character-consensus-v1", "飍")])
     assert queue.seed_supplements() == 1
     now = [1000.0]
-    monkeypatch.setattr(extraction_queue.time, "time", lambda: now[0])
+    queue.wall = lambda: now[0]
     for attempt in range(extraction_queue.MAX_ATTEMPTS):
         assert queue.claim_supplement("w")["id"] == "a"
         queue.fail_supplement("a", "w", "DownloadError: unavailable")
@@ -1071,6 +1071,45 @@ def test_a_supplement_fail_whose_claim_is_taken_over_after_the_check_writes_noth
     assert tuple(queue.db.execute("SELECT status, worker, error FROM supplements").fetchone()) == ("running", "fresh", None)
 
 
+class Wall:
+    def __init__(self, now=1_000_000.0):
+        self.now = now
+
+    def __call__(self):
+        return self.now
+
+
+def test_a_page_that_stopped_its_workers_is_failed_only_once_its_lease_is_well_past(tmp_path):
+    from glyph_atlas.extraction_queue import MAX_ATTEMPTS
+
+    queue = Queue(tmp_path / "queue")
+    queue.wall = wall = Wall()
+    with queue.db:
+        queue.db.execute("""INSERT INTO pages (id,document_id,title,source,cached,rank,status,attempts,worker,lease_until)
+            VALUES('p','d','t','s',1,0,'running',?,'gone',?)""", (MAX_ATTEMPTS, wall.now - 1))
+    for _ in range(3):
+        assert queue.claim("w", lease=10) is None
+        assert queue.db.execute("SELECT status FROM pages").fetchone()[0] == "running"
+        wall.now += 4
+    queue.claim("w", lease=10)
+    assert queue.db.execute("SELECT status FROM pages").fetchone()[0] == "failed"
+
+
+def test_after_a_clock_jump_a_worker_leaves_lapsed_leases_to_their_heartbeats_for_a_while(tmp_path):
+    """A machine that slept wakes with every lease lapsed; its workers' heartbeats renew them within
+    an eighth of a lease, so a worker that notices the jump claims only pending pages meanwhile."""
+    queue = Queue(tmp_path / "queue")
+    queue.wall = wall = Wall()
+    with queue.db:
+        queue.db.executemany("INSERT INTO pages (id,document_id,title,source,cached,rank) VALUES(?,?,?,?,?,?)",
+                             [("held", "d", "t", "s", 1, 0), ("next", "d", "t", "s", 1, 1), ("last", "d", "t", "s", 1, 2)])
+    assert queue.claim("sleeper", lease=10)["id"] == "held"
+    wall.now += 3600
+    assert queue.claim("other", lease=10)["id"] == "next"
+    wall.now += 3
+    assert queue.claim("other", lease=10)["id"] == "held"
+
+
 def test_a_heartbeat_stops_renewing_a_page_that_ran_past_its_deadline():
     import time
 
@@ -1109,4 +1148,3 @@ def test_a_worker_start_sweeps_scratch_files_older_than_a_lease(tmp_path):
     queue.sweep(age=600)
     assert sorted(p.name for p in (queue.root/".staging").iterdir()) == ["y.live"]
     assert [p.name for p in queue.root.glob("*.tmp")] == ["status.json.live.tmp"]
-
