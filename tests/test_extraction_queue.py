@@ -67,8 +67,8 @@ def test_queue_round_robin_resumes_and_seed_is_idempotent(tmp_path,monkeypatch):
     queue=Queue(tmp_path/"queue")
     assert queue.seed(source(tmp_path)) == 4
     assert queue.seed(tmp_path/"source") == 0
-    assert queue.claim()["id"] == "a:0"
-    assert queue.claim()["id"] == "b:0"
+    assert queue.claim(lease=-1)["id"] == "a:0"  # a worker that stopped: its lease has lapsed
+    assert queue.claim(lease=-1)["id"] == "b:0"
     queue.recover()
     assert queue.claim()["id"] == "a:0"
 
@@ -213,8 +213,8 @@ def test_a_page_that_keeps_stopping_the_worker_is_left_failed(tmp_path):
             queue.db.execute("INSERT INTO pages (id,document_id,title,source,cached,rank) VALUES(?,?,?,?,?,?)",
                              (ident, "a", "t", "s", 1, rank))
     for _ in range(MAX_ATTEMPTS):
-        assert queue.claim()["id"] == "a:0"
-        queue.recover()  # the worker died while extracting a:0
+        assert queue.claim(lease=-1)["id"] == "a:0"
+        queue.recover()  # the worker died while extracting a:0, and its lease lapsed
     assert queue.claim()["id"] == "a:1"
     assert queue.db.execute("SELECT status FROM pages WHERE id='a:0'").fetchone()[0] == "failed"
 
@@ -455,7 +455,8 @@ def test_supplements_list_the_pages_an_earlier_policy_completed(tmp_path):
     assert queue.seed_supplements() == 2
     assert queue.seed_supplements() == 0
     assert sorted(r[0] for r in queue.db.execute("SELECT page_id FROM supplements")) == ["old-known", "old-rare"]
-    assert {queue.claim_supplement()["output"], queue.claim_supplement()["output"]} == {"pages/old-rare", "pages/old-known"}
+    assert {queue.claim_supplement(lease=-1)["output"],
+            queue.claim_supplement(lease=-1)["output"]} == {"pages/old-rare", "pages/old-known"}
     assert queue.claim_supplement() is None
     queue.recover()
     assert {r[0] for r in queue.db.execute("SELECT status FROM supplements")} == {"pending"}
@@ -707,3 +708,77 @@ def test_where_ndl_runs_is_part_of_a_page_identity(tmp_path):
     on_gpu, on_cpu = (page_identity(engine_models(detector, reader(p)), run, page, document, [])
                       for p in ("CUDAExecutionProvider", "CPUExecutionProvider"))
     assert on_gpu != on_cpu
+def test_workers_sharing_a_queue_never_claim_the_same_page(tmp_path):
+    """Claims from separate connections, as separate worker processes make them, take distinct pages."""
+    import threading
+
+    queue = Queue(tmp_path / "queue")
+    with queue.db:
+        queue.db.executemany("INSERT INTO pages (id,document_id,title,source,cached,rank) VALUES(?,?,?,?,?,?)",
+                             [(f"p:{i}", "p", "t", "s", 1, i) for i in range(60)])
+    taken, lock = [], threading.Lock()
+
+    def worker(name):
+        own = Queue(tmp_path / "queue")
+        while (job := own.claim(name)) is not None:
+            with lock:
+                taken.append(job["id"])
+
+    threads = [threading.Thread(target=worker, args=(f"w{i}",)) for i in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert sorted(taken) == sorted(f"p:{i}" for i in range(60))
+
+
+def test_workers_starting_together_on_an_older_queue_add_each_column_once(tmp_path):
+    """Opening a queue made before the lease columns, from several processes at once, migrates it once."""
+    import multiprocessing
+    import sqlite3
+
+    root = tmp_path / "queue"
+    root.mkdir()
+    with sqlite3.connect(root / "queue.sqlite") as db:
+        db.execute("PRAGMA journal_mode=WAL")
+        db.execute("""CREATE TABLE pages (id TEXT PRIMARY KEY, document_id TEXT NOT NULL, title TEXT NOT NULL,
+            source TEXT NOT NULL, cached INTEGER NOT NULL, rank INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, output TEXT,
+            accepted INTEGER NOT NULL DEFAULT 0, examined INTEGER NOT NULL DEFAULT 0, error TEXT, updated_at TEXT)""")
+    context = multiprocessing.get_context("fork")
+    start = context.Barrier(8)
+    workers = [context.Process(target=_open_after, args=(start, root)) for _ in range(8)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join()
+    assert [worker.exitcode for worker in workers] == [0] * 8
+    assert "lease_until" in {r[1] for r in Queue(root).db.execute("PRAGMA table_info(pages)")}
+
+
+def _open_after(start, root):
+    start.wait()
+    Queue(root)
+
+
+def test_recovery_leaves_a_live_lease_and_takes_back_a_lapsed_one(tmp_path):
+    queue = Queue(tmp_path / "queue")
+    with queue.db:
+        queue.db.executemany("INSERT INTO pages (id,document_id,title,source,cached,rank) VALUES(?,?,?,?,?,?)",
+                             [("live", "d", "t", "s", 1, 0), ("dead", "d", "t", "s", 1, 1)])
+    assert queue.claim("alive")["id"] == "live"
+    assert queue.claim("stopped", lease=-1)["id"] == "dead"
+    assert queue.status()["workers"] == {"alive": 1}
+    queue.recover()
+    assert dict(queue.db.execute("SELECT id, status FROM pages")) == {"live": "running", "dead": "pending"}
+
+
+def test_a_lease_is_renewed_only_by_the_worker_holding_it(tmp_path):
+    queue = Queue(tmp_path / "queue")
+    with queue.db:
+        queue.db.execute("INSERT INTO pages (id,document_id,title,source,cached,rank) VALUES('p','d','t','s',1,0)")
+    queue.claim("w1", lease=-1)
+    assert not queue.renew("page", "p", "w2")
+    assert queue.renew("page", "p", "w1")
+    queue.recover()
+    assert queue.db.execute("SELECT status FROM pages").fetchone()[0] == "running"
