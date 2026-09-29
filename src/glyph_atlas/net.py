@@ -219,7 +219,8 @@ def download(
                     browser_agent = browser_agent or agent == BROWSER_USER_AGENT
                     try:
                         headers_seen = _receive(
-                            response, url=url, part=part, start=start, attempt=attempt, expected=expected
+                            response, url=url, part=part, start=start, attempt=attempt, expected=expected,
+                            progress=turn.touch,
                         )
                     except _Retry as retry:
                         failure = retry.reason
@@ -285,8 +286,10 @@ def _receive(
     start: int,
     attempt: int,
     expected: str | None,
+    progress: Callable[[], None] = lambda: None,
 ) -> dict[str, Any]:
-    """Write the body of `response` to `part` and return what the response said about it."""
+    """Write the body of `response` to `part` and return what the response said about it; `progress`
+    is called after each chunk."""
     status = response.status_code
     if status in RETRY_STATUS:
         _drain(response)
@@ -315,6 +318,7 @@ def _receive(
             if not head:
                 head = chunk[:SNIFF]
             handle.write(chunk)
+            progress()
     size = part.stat().st_size
     total = _content_range_total(response.headers.get("content-range"))
     if status == 206 and total is not None and size != total:
@@ -390,7 +394,8 @@ def _pace_dir() -> Path:
 PACE_DIR = _pace_dir()
 #: How long a longer interval a host asked for holds for other processes.
 SLOW_MEMORY = 3600.0
-#: How long a request keeps the other processes off its host; one stuck past it no longer does.
+#: How long a request that stops making progress keeps the other processes off its host; one
+#: still receiving its body renews it (`_turn.touch`).
 BUSY_LIMIT = 60.0
 #: How often a process waiting for another's request to end looks again.
 BUSY_POLL = 0.2
@@ -402,10 +407,11 @@ class _turn:
     On the real clock the turn reserves the host in its file in `PACE_DIR`, under a `flock` held only
     to read and write the file. A turn waits while another process's turn is booked or in flight,
     then starts `pause` after the last request ended and marks itself in flight until it exits. The
-    mark lasts `BUSY_LIMIT` past the booked start, so the processes of this user send one request at
-    a time to a host, and a process stuck in a request stalls the others for `BUSY_LIMIT` at most. A
-    429's slower interval and a `Retry-After` (`hold`) are written there too, so the other processes
-    honour them; a slower interval another process wrote holds until its `slow_until`. A clock a test substitutes keeps the
+    mark lasts `BUSY_LIMIT` past the booked start and is renewed while the body arrives (`touch`), so
+    the processes of this user send one request at a time to a host, and a process that stops making
+    progress stalls the others for `BUSY_LIMIT` at most. A 429's slower interval and a `Retry-After`
+    (`hold`) are written there too, so the other processes honour them; a slower interval another
+    process wrote holds until its `slow_until`. A clock a test substitutes keeps the
     pace within the process.
     """
 
@@ -422,6 +428,7 @@ class _turn:
         self.token = uuid4().hex
         self.not_before = 0.0
         self.slowed = False
+        self.touched = time.monotonic()
 
     def _update(self, change: Callable[[dict[str, Any], float], float]) -> float:
         """Apply `change(state, now)` to the host's file under its lock, and return what it returns."""
@@ -473,6 +480,19 @@ class _turn:
         if start > time.time():
             self.sleeper(start - time.time())
         return self
+
+    def touch(self) -> None:
+        """Renew this turn's in-flight mark while its body arrives, at most every quarter `BUSY_LIMIT`."""
+        if not self.shared or time.monotonic() - self.touched < BUSY_LIMIT / 4:
+            return
+        self.touched = time.monotonic()
+
+        def renew(state: dict[str, Any], now: float) -> float:
+            if state.get("holder") == self.token:
+                state["busy_until"] = now + BUSY_LIMIT
+            return 0.0
+
+        self._update(renew)
 
     def again(self) -> None:
         """Wait the interval once more, for a second request inside this turn."""

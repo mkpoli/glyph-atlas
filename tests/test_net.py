@@ -541,3 +541,39 @@ def test_processes_booking_at_a_slower_pace_take_turns_one_after_the_other():
     now = time.time()
     first, second = _starts_of_turns_booked_apart({"end": now, "slow": 4.0, "slow_until": now + 60})
     assert second - first >= 3.9
+
+
+def test_a_request_still_reading_its_body_keeps_the_host_past_the_busy_limit(monkeypatch):
+    import multiprocessing
+    import time
+
+    monkeypatch.setattr(net, "BUSY_LIMIT", 0.5)
+    context = multiprocessing.get_context("fork")
+    entered = context.Event()
+
+    def streaming():
+        with net._turn("https://example.org/a", 0.05, time.monotonic, time.sleep) as turn:
+            entered.set()
+            for _ in range(15):
+                time.sleep(0.1)
+                turn.touch()
+
+    worker = context.Process(target=streaming)
+    worker.start()
+    entered.wait(10)
+    started = time.monotonic()
+    try:
+        _timed_turn(0.05)
+        assert time.monotonic() - started >= 1.3, "the other process waits while the body keeps arriving"
+    finally:
+        worker.join()
+
+
+def test_a_download_renews_its_turn_as_the_body_arrives(http_server, monkeypatch, tmp_path):
+    import time
+
+    touched = []
+    monkeypatch.setattr(net._turn, "touch", lambda self: touched.append(1))
+    http_server.put("big.bin", b"x" * (3 * net.CHUNK))
+    net.download(http_server.url("big.bin"), tmp_path / "big.bin", pause=0.0, clock=time.monotonic, sleeper=time.sleep)
+    assert len(touched) >= 3
