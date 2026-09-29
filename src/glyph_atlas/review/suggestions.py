@@ -180,7 +180,9 @@ def rank(candidates: list[dict], votes: list[dict] = ()) -> list[dict]:
 
 
 class Recognizer:
-    def __init__(self):
+    def __init__(self, *, sequence_on_cpu: bool = False, sequence_threads: int = 2):
+        """`sequence_on_cpu` runs NDL's sequence model on the CPU even where CUDA is available: it reads one
+        small crop at a time, and on this model the CPU answers in about half the GPU's time."""
         import onnxruntime as ort
         import yaml
 
@@ -203,7 +205,14 @@ class Recognizer:
         model = directory / "parseq.onnx"
         alphabet = directory / "characters.yaml"
         if model.is_file() and alphabet.is_file():
-            self.sequence = ort.InferenceSession(str(model), sess_options=options, providers=providers)
+            sequence_options = options
+            if sequence_on_cpu:
+                sequence_options = ort.SessionOptions()
+                sequence_options.log_severity_level = 3
+                sequence_options.intra_op_num_threads = sequence_threads
+                sequence_options.inter_op_num_threads = 1
+            self.sequence = ort.InferenceSession(str(model), sess_options=sequence_options,
+                                                 providers=["CPUExecutionProvider"] if sequence_on_cpu else providers)
             self.alphabet = yaml.safe_load(alphabet.read_text())["model"]["charset_train"]
             self.engines.append({"name": "NDLkotenOCR", "sha256": hashlib.sha256(model.read_bytes()).hexdigest(),
                                  "provider": self.sequence.get_providers()[0]})

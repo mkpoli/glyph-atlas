@@ -516,7 +516,7 @@ def check_coordinate_space(original, cached):
 
 
 class Engine:
-    def __init__(self):
+    def __init__(self, *, ndl_cpu: bool = False, ndl_threads: int = 2):
         import onnxruntime as ort
 
         from .detect import Detector
@@ -535,11 +535,13 @@ class Engine:
         if session.get_providers()[0] != "CUDAExecutionProvider":
             raise RuntimeError("detector CUDA initialization failed")
         self.detector = Detector(self.run.detector, score=self.run.score, nms=self.run.nms, session=session)
-        self.reader = Recognizer()  # two capped 768 MiB sessions, classifier shared with alignment
+        # The classifier, shared with alignment, runs on CUDA; NDL's sequence model may run on the CPU.
+        self.reader = Recognizer(sequence_on_cpu=ndl_cpu, sequence_threads=ndl_threads)
         if self.reader.sequence is None or self.reader.classifier is None:
             raise RuntimeError("both sequence and single-character models are required")
-        if any(e["provider"] != "CUDAExecutionProvider" for e in self.reader.engines):
-            raise RuntimeError("recognizer CUDA initialization failed")
+        wanted = {"NDLkotenOCR": "CPUExecutionProvider" if ndl_cpu else "CUDAExecutionProvider"}
+        if any(e["provider"] != wanted.get(e["name"], "CUDAExecutionProvider") for e in self.reader.engines):
+            raise RuntimeError("recognizer initialization did not reach the requested providers")
         self.classifier = self.reader.classifier
         self.models = {"detector": hashlib.sha256(Path(self.run.detector).read_bytes()).hexdigest(),
                        "recognizers":self.reader.engines,
