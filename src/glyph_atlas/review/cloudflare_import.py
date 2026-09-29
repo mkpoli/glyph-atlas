@@ -43,7 +43,18 @@ def _same_view(a, b):
                ("id", "label", "reading", "box", "image_sha256", "page_id"))
 
 
-def _answer(evidence, identity):
+def _answer(evidence, identity, snapshot=None):
+    # A batch correction's event names its batch and records only the verdict it saved (#434): the
+    # answer is that decision on the crop the snapshot shows, the character its correction wrote.
+    if "batch" in evidence and "request" not in evidence:
+        if evidence.get("kind") != "character-review":
+            raise Rejected("a batch correction is recorded as an inspector review")
+        shown = (snapshot or {}).get("character", {})
+        answer = {"id": identity, "revision": shown.get("revision"), "image_sha256": shown.get("image_sha256"),
+                  "verdict": evidence.get("verdict"), "issue": evidence.get("issue")}
+        if evidence.get("suggested_character"):
+            answer["character"] = evidence["suggested_character"]
+        return answer
     request = evidence["request"]
     if evidence.get("kind") == "visual-quiz":
         answers = [item for item in request.get("answers", []) if item.get("id") == identity]
@@ -64,10 +75,11 @@ def _step(record, before):
             or event.get("role") != "reviewer" or not event.get("actor")
             or event.get("target_id") != before["id"]):
         raise Rejected("unsupported remote event")
-    request = evidence["request"]
-    answer = _answer(evidence, before["id"])
+    answer = _answer(evidence, before["id"], evidence.get("snapshot"))
+    # The reviewer is the event's actor; a request carried in the evidence must name the same one.
+    client = evidence["request"].get("client_id") if "request" in evidence else event["actor"]
     if (answer.get("revision") != revision or answer.get("image_sha256") != before["image_sha256"]
-            or request.get("client_id") != event["actor"]):
+            or client != event["actor"]):
         raise Rejected("request provenance disagrees with the reviewed occurrence")
     verdict, issue = answer.get("verdict"), answer.get("issue")
     if verdict != evidence.get("verdict") or issue != evidence.get("issue"):
@@ -225,7 +237,7 @@ def ingest_cloudflare(store, payload: dict, *, apply=False) -> tuple[dict, dict]
                     # Hosted reading edits already distinguish pronunciation from
                     # identity. Do not run the normalizer's legacy identity inference.
                     evidence["layer"] = "review"
-                    answer = _answer(evidence, target)
+                    answer = _answer(evidence, target, evidence.get("snapshot"))
                     if evidence.get("kind") != "visual-quiz" and answer.get("character"):
                         answer["character"] = identity_text(answer["character"])
                     # A joined-text choice and an identity edit can coexist. Keep

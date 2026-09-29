@@ -214,6 +214,18 @@ def test_quiz_suggestion_spelled_with_several_code_points_is_one_character():
     assert normalized.proposed_text == "ツ゚"
 
 
+
+def test_a_batch_correction_proposes_the_character_it_wrote():
+    """A batch correction (#434) keeps no request: its saved suggested_character is the proposal."""
+    record = local_record(verdict="wrong", issue="character", label="タ", quiz_character="U+30CA")
+    evidence = json.loads(record["event"]["evidence"])
+    evidence.pop("request")
+    evidence["batch"] = "b-1"
+    record["event"]["evidence"] = json.dumps(evidence, ensure_ascii=False)
+    normalized = normalize_export(export(record))[0]
+    assert normalized.decision == "accepted-identity"
+    assert normalized.proposed_text == "ナ"
+
 class TestTheSuppliedPatterns:
     """Every shape the live export actually contains, and what each must become."""
 

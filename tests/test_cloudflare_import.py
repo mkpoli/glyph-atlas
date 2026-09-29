@@ -70,7 +70,11 @@ def remote(publication, *, before=None, issue="character", character="を", corr
                 "suggested_reading": correction,
                 "correction": {"unicode": " ".join(f"U+{ord(c):04X}" for c in after["label"]),
                                "reading": after["reading"], "box": after["box"]}}
-    if round_review:
+    if round_review == "batch":
+        # As the Worker saves a batch correction: the event names its batch and keeps no request.
+        evidence.pop("request")
+        evidence["batch"] = str(uuid4())
+    elif round_review:
         evidence.update(kind="visual-quiz", request={"id": str(uuid4()), "client_id": request["client_id"],
             "label": shown["label"], "answers": [{**request, "id": shown["id"]}]})
     resolved = bool(issue == "character" and character) or bool(issue == "reading" and (reading or correction))
@@ -143,7 +147,7 @@ def test_full_remote_chain_imports_only_current_review(store):
     assert len(json.loads(store.events()[-1].evidence)["cloudflare_import"]["remote_chain"]) == 2
 
 
-@pytest.mark.parametrize("round_review", [False, True])
+@pytest.mark.parametrize("round_review", [False, True, "batch"])
 def test_site_character_correction_imports_as_reviewed_with_its_reading(store, round_review):
     record, after = remote(baseline(store), character="ナ", round_review=round_review)
     assert after["reading"] == "な" and record["event"]["new"] == "reviewed"
@@ -152,6 +156,25 @@ def test_site_character_correction_imports_as_reviewed_with_its_reading(store, r
     unit = store.unit("u")
     assert (unit.unicode, unit.reading, unit.review) == ("U+30CA", "な", "reviewed")
 
+
+
+def test_batch_correction_keeps_its_batch_and_reviewer(store):
+    record, _ = remote(baseline(store), character="ナ", round_review="batch")
+    batch = json.loads(record["event"]["evidence"])["batch"]
+    _, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
+    assert report["counts"] == {"imported": 1}
+    local = [e for e in store.events() if e.target_id == "u" and e.field == "review"][-1]
+    assert local.actor == "reviewer-test" and json.loads(local.evidence)["batch"] == batch
+
+
+def test_batch_correction_of_another_crop_is_rejected(store):
+    record, _ = remote(baseline(store), character="ナ", round_review="batch")
+    evidence = json.loads(record["event"]["evidence"])
+    evidence["snapshot"]["character"]["image_sha256"] = "0" * 64
+    record["event"]["evidence"] = json.dumps(evidence, ensure_ascii=False)
+    record["reviewed"] = evidence["snapshot"]
+    _, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
+    assert report["counts"].get("imported", 0) == 0
 
 def test_character_correction_whose_saved_reading_is_not_the_workers_is_rejected(store):
     record, _ = remote(baseline(store), character="ナ")
