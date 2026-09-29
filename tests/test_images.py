@@ -714,3 +714,31 @@ def test_an_unreadable_info_json_leaves_no_capped_copy_behind(http_server: Serve
         images.fetch(http_server.url("iiif/2/capped/full/64,/0/default.jpg"), pause=0, root=cache)
 
     assert not [p for p in cache.rglob("*.jpg")]
+
+
+def test_processes_registering_at_once_keep_every_row_of_the_index(tmp_path: Path) -> None:
+    """Each upsert reads, adds and swaps the index under its lock, so no process drops another's rows."""
+    import multiprocessing
+
+    from PIL import Image as PILImage
+
+    sources = tmp_path / "sources"
+    sources.mkdir()
+    for n in range(60):
+        PILImage.new("RGB", (4, 4), (n, 0, 0)).save(sources / f"{n}.png")
+    context = multiprocessing.get_context("fork")
+    start = context.Barrier(4)
+
+    def add(first: int) -> None:
+        start.wait()
+        for n in range(first, first + 15):
+            images.register(sources / f"{n}.png", f"https://example.org/{n}.png", root=tmp_path / "cache")
+
+    workers = [context.Process(target=add, args=(first,)) for first in range(0, 60, 15)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(60)
+    assert [worker.exitcode for worker in workers] == [0] * 4
+    assert len(images.index(root=tmp_path / "cache")) == 60
+    assert not list((tmp_path / "cache").glob("index.parquet.*.tmp"))

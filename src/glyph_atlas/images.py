@@ -700,16 +700,21 @@ def _current(cache: Path, url: str) -> ImageRecord | None:
 
 
 def _upsert(cache: Path, record: ImageRecord) -> None:
-    """Write a row, retiring with `superseded_by` the row it replaces when the checksum changed."""
-    rows: list[ImageRecord] = []
-    for row in _read_index(cache):
-        if row.url == record.url and row.superseded_by is None:
-            if row.sha256 == record.sha256:
-                continue  # the same image, with fresh headers
-            row = row.model_copy(update={"superseded_by": record.sha256})
-        rows.append(row)
-    rows.append(record)
-    _write_index(cache, rows)
+    """Write a row, retiring with `superseded_by` the row it replaces when the checksum changed.
+
+    The index's lock is held from the read to the swap, so processes fetching at once each keep the
+    rows the others added.
+    """
+    with tables.locked(cache / "index.parquet"):
+        rows: list[ImageRecord] = []
+        for row in _read_index(cache):
+            if row.url == record.url and row.superseded_by is None:
+                if row.sha256 == record.sha256:
+                    continue  # the same image, with fresh headers
+                row = row.model_copy(update={"superseded_by": record.sha256})
+            rows.append(row)
+        rows.append(record)
+        _write_index(cache, rows)
 
 
 def _read_index(cache: Path) -> list[ImageRecord]:
@@ -723,12 +728,13 @@ def _write_index(cache: Path, rows: list[ImageRecord]) -> int:
     """Write the whole index through the table store, and swap the file into place.
 
     Parquet is not appendable and the index is small next to the images, so a fetch rewrites it; the
-    swap keeps the old file readable if the write is interrupted.
+    swap keeps the old file readable if the write is interrupted. The caller holds the index's lock;
+    the scratch file is named for this write alone all the same.
     """
     path = cache / "index.parquet"
     path.parent.mkdir(parents=True, exist_ok=True)
-    scratch = path.with_name(path.name + ".tmp")
-    written = tables.write(scratch, rows, ImageRecord)
+    scratch = path.with_name(f"{path.name}.{uuid4().hex}.tmp")
+    written = tables._write_unlocked(scratch, rows, ImageRecord)
     os.replace(scratch, path)
     return written
 
