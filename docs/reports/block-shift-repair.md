@@ -45,5 +45,5 @@ all 40.
 - A character the transcription itself misreads (令 read as 金) is copied from the text as it stands.
 - Crops of a block whose text has more or fewer characters than it has boxes at the shifted place, and
   single misplaced crops, stay with their labels: an offset needs two crops of its run to carry it.
-- Classifier confidence alone was tried first: with no block context, only about half of the crops it
-  confidently reads as another character took that character on review.
+- Classifier confidence without the block is not enough: of the reviewed crops it reads as another
+  character with probability 0.9 or more, about half took that character on review.
