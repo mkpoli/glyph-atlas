@@ -55,6 +55,12 @@ def _answer(evidence, identity, snapshot=None):
         if evidence.get("suggested_character"):
             answer["character"] = evidence["suggested_character"]
         return answer
+    # A round's event carries its own answer; one saved before that carried the whole round's request.
+    if evidence.get("kind") == "visual-quiz" and "answer" in evidence:
+        answer = evidence["answer"]
+        if answer.get("id") != identity:
+            raise Rejected("round answer names another occurrence")
+        return answer
     request = evidence["request"]
     if evidence.get("kind") == "visual-quiz":
         answers = [item for item in request.get("answers", []) if item.get("id") == identity]

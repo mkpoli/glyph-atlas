@@ -74,7 +74,13 @@ def remote(publication, *, before=None, issue="character", character="を", corr
         # As the Worker saves a batch correction: the event names its batch and keeps no request.
         evidence.pop("request")
         evidence["batch"] = str(uuid4())
+    elif round_review == "answer":
+        # As the Worker saves a round now: the event names its round and carries its own answer only.
+        answer = {key: value for key, value in request.items() if key != "client_id"}
+        evidence.pop("request")
+        evidence.update(kind="visual-quiz", round=str(uuid4()), label=shown["label"], answer={**answer, "id": shown["id"]})
     elif round_review:
+        # As rounds saved before: the round's whole request in every event.
         evidence.update(kind="visual-quiz", request={"id": str(uuid4()), "client_id": request["client_id"],
             "label": shown["label"], "answers": [{**request, "id": shown["id"]}]})
     resolved = bool(issue == "character" and character) or bool(issue == "reading" and (reading or correction))
@@ -147,7 +153,7 @@ def test_full_remote_chain_imports_only_current_review(store):
     assert len(json.loads(store.events()[-1].evidence)["cloudflare_import"]["remote_chain"]) == 2
 
 
-@pytest.mark.parametrize("round_review", [False, True, "batch"])
+@pytest.mark.parametrize("round_review", [False, True, "answer", "batch"])
 def test_site_character_correction_imports_as_reviewed_with_its_reading(store, round_review):
     record, after = remote(baseline(store), character="ナ", round_review=round_review)
     assert after["reading"] == "な" and record["event"]["new"] == "reviewed"
@@ -175,6 +181,17 @@ def test_batch_correction_of_another_crop_is_rejected(store):
     record["reviewed"] = evidence["snapshot"]
     _, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
     assert report["counts"].get("imported", 0) == 0
+
+
+def test_round_answer_for_another_occurrence_is_rejected(store):
+    record, _ = remote(baseline(store), character="ナ", round_review="answer")
+    evidence = json.loads(record["event"]["evidence"])
+    evidence["answer"]["id"] = "someone-else"
+    record["event"]["evidence"] = json.dumps(evidence, ensure_ascii=False)
+    _, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
+    assert report["counts"].get("imported", 0) == 0
+    assert report["items"][0]["reason"] == "round answer names another occurrence"
+
 
 def test_character_correction_whose_saved_reading_is_not_the_workers_is_rejected(store):
     record, _ = remote(baseline(store), character="ナ")
