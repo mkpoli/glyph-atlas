@@ -125,6 +125,24 @@ def test_a_curated_family_keeps_its_head_and_is_never_joined_to_another():
     assert found == {"国": "囶国國", "学": "学學"}
 
 
+def test_a_refused_merge_is_collected_for_the_build_summary():
+    rows = [reduction("囶", "國", "MJ1"), reduction("學", "学", "MJ2"), edge("國", "學", "z", "unihan", "z")]
+    refused: list[tuple[str, object]] = []
+    families(rows, [], {c for row in rows for c in (row["a"], row["b"])},
+             {"MJ1": "囶", "MJ2": "學"}, set(),
+             curated={"国": ["国", "國"], "学": ["学", "學"]}, refused=refused)
+    assert [(reason, edge.a, edge.b) for reason, edge in refused] == [("two curated families", "國", "學")]
+
+
+def test_a_repeated_reduction_row_adds_its_claim_rather_than_replacing_it():
+    """The same figure stated twice, or two figures of one character, both reach the detail."""
+    rows = [reduction("𠆡", "己", "MJ1"), reduction("𠆡", "己", "MJ1"), reduction("𠆡", "己", "MJ2")]
+    found = families(rows, [], {"𠆡", "己"}, {"MJ1": "𠆡", "MJ2": "𠆡"}, set())
+    (family,) = found
+    merge, = [e for e in family.edges if e.relation == "reduction"]
+    assert merge.detail == " | ".join([OYAJI.format(figure="MJ1"), OYAJI.format(figure="MJ2")])
+
+
 def test_the_rule_gives_the_same_families_in_any_input_order():
     rows = KAN + [reduction("嶋", "島", "MJ2"), edge("島", "嶋", "variant"), edge("島", "嶋", "equivalent", "yitizi", "y"),
                   reduction("嶌", "島", "MJ3"), edge("島", "嶌", "variant")]

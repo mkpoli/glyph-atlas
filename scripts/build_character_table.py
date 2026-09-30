@@ -489,8 +489,12 @@ def selected_blocks(blocks: list[Range], wanted: tuple[str, ...] = BLOCKS) -> li
 def build(
     ucd: Path,
     vocab: Path | None = None,
+    refused: list[tuple[str, shape_families.Edge]] | None = None,
 ) -> tuple[list[Character], list[shape_families.Family]]:
-    """Every character in code point order, and the kanji families of more than one character."""
+    """Every character in code point order, and the kanji families of more than one character.
+
+    `refused`, when given, collects the merges `shape_families` turned down, for the summary.
+    """
     vocab = vocab or ROOT / "data" / "vocab"
     blocks = read_ranges(ucd / "Blocks.txt")
     scripts = read_ranges(ucd / "Scripts.txt")
@@ -515,7 +519,7 @@ def build(
     _add_jibo(characters, mj, derived)
     _add_readings(characters)
     _add_graphemes(characters, kana, curated)
-    families = _add_shape_families(characters, document, ucd, vocab)
+    families = _add_shape_families(characters, document, ucd, vocab, refused)
     _add_confusables(characters, lookalikes)
     _check_graphemes(characters)
     return [characters[point] for point in sorted(characters)], families
@@ -540,7 +544,8 @@ def jis0208(ucd: Path) -> set[str]:
 
 
 def _add_shape_families(
-    characters: dict[int, Character], document: dict[str, Any], ucd: Path, vocab: Path
+    characters: dict[int, Character], document: dict[str, Any], ucd: Path, vocab: Path,
+    refused: list[tuple[str, shape_families.Edge]] | None = None,
 ) -> list[shape_families.Family]:
     """Put the kanji a source defines as one character in another shape under one grapheme.
 
@@ -557,7 +562,7 @@ def _add_shape_families(
                for head, family in (document.get("families") or {}).items()}
     families = shape_families.families(
         read_table(vocab / VARIANTS_NAME), read_table(vocab / EQUIVALENTS_NAME), ideographs,
-        default_figure, jis0208(ucd), curated)
+        default_figure, jis0208(ucd), curated, refused)
     for family in families:
         head = code_point(ord(family.head))
         for member in family.members:
@@ -921,15 +926,28 @@ def write(rows: list[Character], target: Path) -> None:
 
 
 def write_families(families: list[shape_families.Family], target: Path, vocab: Path) -> None:
-    """Write the edges each kanji family rests on, with the sources they cite in the header."""
+    """Write the edges each kanji family rests on, with the sources they cite in the header.
+
+    The counts describe the rows below: a curated family no edge joins (two 新旧字体 pairs) is
+    part of the build but carries no row here, so it is not counted.
+    """
     rows = [(family, edge) for family in families for edge in family.edges]
+    emitted = [family for family in families if family.edges]
     used = sorted({edge.source for _, edge in rows} | {"unihan"})
     lines = [
         "# Kanji grapheme families: the edges that join each family; see src/glyph_atlas/shape_families.py.",
         "# The members of a family are the characters of data/vocab/characters.tsv under its head.",
     ]
     for identifier in used:
-        record = yaml.safe_load((ROOT / "data" / "sources" / f"{identifier}.yaml").read_text(encoding="utf-8"))
+        path = ROOT / "data" / "sources" / f"{identifier}.yaml"
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"{path} is missing; the grapheme-families header cites the source {identifier!r}")
+        record = yaml.safe_load(path.read_text(encoding="utf-8"))
+        lack = [key for key in ("name", "licence", "licence_evidence", "attribution") if key not in record]
+        if lack:
+            raise ValueError(f"{path} lacks {', '.join(lack)}; the grapheme-families header cites "
+                             f"the source {identifier!r}")
         lines.append(f"# source {identifier}: {record['name']}; {record['licence']} "
                      f"({record['licence_evidence']}); {record['attribution']}")
     lines += [
@@ -941,8 +959,8 @@ def write_families(families: list[shape_families.Family], target: Path, vocab: P
         ("# role: merge joins a and b; corroborates is the second source a reduction between two "
          "JIS X 0208 characters needs."),
         "# columns: " + ", ".join(FAMILY_FIELDS),
-        (f"# families: {len(families)} ({sum(1 for family in families if family.curated)} curated), "
-         f"characters: {sum(len(family.members) for family in families)}, rows: {len(rows)}"),
+        (f"# families: {len(emitted)} ({sum(1 for family in emitted if family.curated)} curated), "
+         f"characters: {sum(len(family.members) for family in emitted)}, rows: {len(rows)}"),
         "\t".join(FAMILY_FIELDS),
     ]
     lines += ["\t".join((code_point(ord(family.head)), edge.a, edge.b, edge.relation, edge.source,
@@ -962,7 +980,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--vocab", type=Path, default=ROOT / "data" / "vocab", help="where the curated tables are")
     arguments = parser.parse_args(argv)
 
-    rows, families = build(arguments.ucd, arguments.vocab)
+    refused: list[tuple[str, shape_families.Edge]] = []
+    rows, families = build(arguments.ucd, arguments.vocab, refused)
     write(rows, arguments.out)
     write_families(families, arguments.out.with_name(FAMILIES_NAME), arguments.vocab)
     scripts = Counter(row.script for row in rows)
@@ -974,6 +993,10 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  ages: {dict(sorted(ages.items(), key=lambda item: (item[0] is None, item[0])))}")
     sizes = Counter(len(family.members) for family in families)
     print(f"  kanji families: {len(families)}, sizes {dict(sorted(sizes.items()))}")
+    reasons = Counter(reason for reason, _ in refused)
+    print(f"  refused merges: {len(refused)}"
+          + (": " + ", ".join(f"{reason} {count}" for reason, count in sorted(reasons.items()))
+             if refused else ""))
     return 0
 
 

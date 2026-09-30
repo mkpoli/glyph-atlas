@@ -13,7 +13,7 @@
 #   unihan: Unihan_IRGSources.txt kIRG_JSource J0 (JIS X 0208) of Unicode 18.0.0, for the representative and for which reductions need a second source
 # role: merge joins a and b; corroborates is the second source a reduction between two JIS X 0208 characters needs.
 # columns: head, a, b, relation, source, role, detail
-# families: 4775 (271 curated), characters: 15039, rows: 10853
+# families: 4773 (269 curated), characters: 15035, rows: 10853
 head	a	b	relation	source	role	detail
 U+34B9	㒹	㒹	compatibility	unicode-ucd	merge	34B9
 U+34BB	㒻	㒻	compatibility	unicode-ucd	merge	34BB

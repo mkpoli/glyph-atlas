@@ -105,7 +105,7 @@ def _corroborating(row: Mapping[str, str]) -> Mapping[str, str] | None:
         return None
     if row["source"] != "cjkvi-variants":
         return row
-    claims = [claim for claim in row["detail"].split(" | ") if " koseki/" not in claim]
+    claims = [claim for claim in row["detail"].split(" | ") if "koseki/" not in claim]
     return {**row, "detail": " | ".join(claims)} if claims else None
 
 
@@ -141,12 +141,14 @@ def candidate_edges(
         elif relation == "reduction" and row["source"] == "mj-shrink-map":
             claims = _oyaji_claims(row, default_figure)
             if claims:
-                targets.setdefault(a, {})[b] = claims
+                # A repeated a→b row adds its claims rather than replacing them, so no statement
+                # a figure makes about its 親字 is lost to a later row's copy of another.
+                targets.setdefault(a, {}).setdefault(b, []).extend(claims)
     for a, found in targets.items():
         if len(found) != 1:
             continue  # a figure registered under two 正字 is a variant of neither
         ((b, claims),) = found.items()
-        edges.append(Edge(a, b, "reduction", "mj-shrink-map", " | ".join(claims)))
+        edges.append(Edge(a, b, "reduction", "mj-shrink-map", " | ".join(dict.fromkeys(claims))))
     for row in equivalents:
         if row["kind"] == "itaiji" and row["a"] in ideographs and row["b"] in ideographs:
             edges.append(Edge(row["a"], row["b"], "itaiji", "mj-kanji", "X0213 包摂"))
@@ -163,12 +165,14 @@ def families(
     default_figure: Mapping[str, str],
     jis0208: set[str],
     curated: Mapping[str, list[str]] | None = None,
+    refused: list[tuple[str, Edge]] | None = None,
 ) -> list[Family]:
     """Every family of more than one character, curated ones included, in head code point order.
 
     `curated` maps a head character to the members `graphemes.yaml` states for it, head first. A
     curated family keeps its head and may take in further members by a shape edge; two curated
-    families are never joined.
+    families are never joined. `refused`, when given, collects the merges a rule turned down — as
+    (reason, edge) pairs in edge order — for the build's summary.
     """
     edges, corroboration, blocked = candidate_edges(
         variants, equivalents, ideographs, default_figure, jis0208)
@@ -183,24 +187,32 @@ def families(
     def of(char: str) -> Family:
         return group.get(char) or Family(char, {char})
 
+    def refuse(reason: str, edge: Edge) -> None:
+        if refused is not None:
+            refused.append((reason, edge))
+
     for edge in edges:
         left, right = of(edge.a), of(edge.b)
         if left is right:
             left.edges.append(edge)
             continue
         if left.curated and right.curated:
+            refuse("two curated families", edge)
             continue
         small, large = sorted((left, right), key=lambda family: len(family.members))
         if any(blocked.get(char, set()) & large.members for char in small.members):
+            refuse("a pair the relations keep apart", edge)
             continue
         seconds: list[Edge] = []
         if edge.relation == "reduction":
             ends = [{_canonical(char) for char in family.members & seiji} for family in (left, right)]
             if ends[0] and ends[1] and ends[0] != ends[1]:
+                refuse("a 正字 of a family each", edge)
                 continue
             pairs = [frozenset((x, y)) for x in sorted(left.members & jis0208)
                      for y in sorted(right.members & jis0208)]
             if any(pair not in corroboration for pair in pairs):
+                refuse("no second source for a JIS X 0208 pair", edge)
                 continue
             seconds = [second for pair in pairs for second in corroboration[pair]]
         keep, gone = (left, right) if left.curated or (not right.curated and left is large) else (right, left)
