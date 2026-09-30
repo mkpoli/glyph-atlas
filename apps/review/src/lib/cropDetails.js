@@ -25,7 +25,7 @@ export function repairOf(item) {
   return null
 }
 
-/** What a crop's details list: the reading when it differs, the material, how far the record
+/** What a crop's details list: the reading when it differs, the written form, the material, how far the record
  * has been checked, where it comes from, the work and page, and the holder. */
 export function cropDetails(item) {
   const repair = repairOf(item)
@@ -36,7 +36,9 @@ export function cropDetails(item) {
   const origin = item.origin === 'corpus' ? ((item.source?.corpus ?? item.corpus) === 'codh-full' ? t('tile.origin.codh') : t('tile.origin.corpus')) : null
   const work = typeof item.source === 'string' ? item.source : (item.source?.title ?? item.title)
   const page = item.page_number ? t('tile.page', { page: item.page_number }) : null
-  return [item.reading && item.reading !== item.label ? item.reading : null, productionLabel(item), state, origin,
+  // A written form a reviewer recorded: the shape the letterforms take, the crop still filed under its label.
+  const written = item.written_form && item.written_form !== item.label ? t('written.detail', { form: item.written_form }) : null
+  return [item.reading && item.reading !== item.label ? item.reading : null, written, productionLabel(item), state, origin,
     [work, page].filter(Boolean).join(' · ') || null, typeof item.source === 'string' ? item.holder : (item.source?.holder ?? item.holder)]
     .filter(Boolean)
 }

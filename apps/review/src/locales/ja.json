@@ -628,6 +628,7 @@
   "written.input": "ほかの字形・IDS",
   "written.note": "1字、または⿺辶𦊷のような漢字構成記述列（IDS）。この切り出しの文字は変わりません。",
   "written.save": "この字形にする",
+  "written.detail": "字形：{form}",
   "written.problem.character": "1字か漢字構成記述列を入力してください。",
   "written.problem.component": "構成記述列の部品は漢字・部首・筆画に限ります。",
   "written.problem.missing": "構成記述列の部品が足りません。",

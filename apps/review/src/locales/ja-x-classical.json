@@ -628,6 +628,7 @@
   "written.input": "他ノ字形又ハIDS",
   "written.note": "一字、又ハ⿺辶𦊷ノ如キ構成記述列ヲ書ク　字ハ改マラズ",
   "written.save": "此ノ字形トス",
+  "written.detail": "字形：{form}",
   "written.problem.character": "一字又ハ構成記述列ヲ書クベシ",
   "written.problem.component": "構成ノ部品ハ漢字・部首・筆畫ニ限ル",
   "written.problem.missing": "部品足ラズ",

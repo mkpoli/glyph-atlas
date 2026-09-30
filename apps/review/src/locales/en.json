@@ -657,6 +657,7 @@
   "written.input": "Other form or IDS",
   "written.note": "One character, or an ideographic description sequence such as ⿺辶𦊷. The crop keeps its character.",
   "written.save": "Use this form",
+  "written.detail": "Written {form}",
   "written.problem.character": "Write one character or an ideographic description sequence.",
   "written.problem.component": "A description is built from ideographs, radicals and strokes.",
   "written.problem.missing": "This description is missing a component.",

@@ -613,6 +613,7 @@
   "written.input": "Dạng khác hoặc IDS",
   "written.note": "Một chữ, hoặc chuỗi mô tả chữ Hán (IDS) như ⿺辶𦊷. Chữ của vùng cắt không đổi.",
   "written.save": "Dùng dạng này",
+  "written.detail": "Viết là {form}",
   "written.problem.character": "Hãy nhập một chữ hoặc một chuỗi IDS.",
   "written.problem.component": "Chuỗi IDS chỉ gồm chữ Hán, bộ thủ và nét.",
   "written.problem.missing": "Chuỗi IDS thiếu thành phần.",

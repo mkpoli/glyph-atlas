@@ -630,6 +630,7 @@
   "written.input": "別形",
   "written.note": "書一字，或以⿺辶𦊷之類述其構。其字不易。",
   "written.save": "用此形",
+  "written.detail": "作{form}",
   "written.problem.character": "書一字或一構式。",
   "written.problem.component": "構式唯用字、部首、筆畫。",
   "written.problem.missing": "構式缺件。",

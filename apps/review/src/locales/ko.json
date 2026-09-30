@@ -612,6 +612,7 @@
   "written.input": "다른 자형 또는 IDS",
   "written.note": "한 글자, 또는 ⿺辶𦊷 같은 한자 구조 기술 문자열(IDS). 글자는 바뀌지 않습니다.",
   "written.save": "이 자형으로 기록",
+  "written.detail": "자형 {form}",
   "written.problem.character": "한 글자나 IDS를 입력하세요.",
   "written.problem.component": "IDS 구성 요소는 한자·부수·획만 쓸 수 있습니다.",
   "written.problem.missing": "IDS에 구성 요소가 모자랍니다.",

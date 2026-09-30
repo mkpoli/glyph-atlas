@@ -631,6 +631,7 @@
   "written.input": "其他字形或IDS",
   "written.note": "一個字，或⿺辶𦊷這樣的漢字描述序列（IDS）。字本身不變。",
   "written.save": "採用此字形",
+  "written.detail": "字形：{form}",
   "written.problem.character": "請輸入一個字或一個漢字描述序列。",
   "written.problem.component": "描述序列只能由漢字、部首和筆畫組成。",
   "written.problem.missing": "描述序列缺少部件。",
