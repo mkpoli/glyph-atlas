@@ -158,7 +158,7 @@ def test_two_books_merge_into_one_directory(tmp_path, cache, books_file, zips, m
         "pages": 3,
         "units": 3,
         "reports": 1,
-        "kana_unassessed": 1,
+        "kana_unassessed": 2,
         "books": 2,
     }
     dataset = tables.Dataset(tmp_path / "out")
@@ -217,7 +217,7 @@ def test_two_books_merge_into_one_directory(tmp_path, cache, books_file, zips, m
     }
 
 
-def test_a_kana_unit_is_unassessed_and_a_kanji_identified(tmp_path, cache, books_file, zips):
+def test_a_kana_unit_is_unassessed_and_a_family_kanji_too(tmp_path, cache, books_file, zips):
     fixture_import(tmp_path, books=["900000001"])
     units = {unit.id: unit for unit in tables.Dataset(tmp_path / "out").read("units")}
     kana = units["codh:900000001:900000001_00003_1:B0001:C0002"]
@@ -225,7 +225,9 @@ def test_a_kana_unit_is_unassessed_and_a_kanji_identified(tmp_path, cache, books
     # か carries no 字母: the layer states one for the kana forms of a source, not for the modern
     # kana, whose derivation every reader of Japanese knows and no record of it needs.
     assert kana.classification is Classification.UNASSESSED and refs.jibo_of_unit(kana.unicode) is None
-    assert units["codh:900000001:900000001_00003_1:B0001:C0001"].classification is Classification.IDENTIFIED
+    # 漢's grapheme family also holds 㵄 and 𣶔, which the MJ縮退マップ registers under it, so
+    # the source's normalized 漢 class names no single written form either.
+    assert units["codh:900000001:900000001_00003_1:B0001:C0001"].classification is Classification.UNASSESSED
 
 
 def test_a_report_row_becomes_an_unreadable_unit(tmp_path, cache, books_file, zips):

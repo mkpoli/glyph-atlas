@@ -325,7 +325,7 @@ def document_of(book: Book, record_rights: Rights, manifest: dict | None = None)
 def classification_of(code_point: int) -> Classification:
     """`unassessed` for a kana letter, whose hentaigana form the source does not record.
 
-    Kanji classes spanning several curated written forms stay unassessed too.
+    Kanji classes whose grapheme family spans several written forms stay unassessed too.
     """
     return Classification.UNASSESSED if is_kana(code_point) else codh.classification_of(code_point)
 
