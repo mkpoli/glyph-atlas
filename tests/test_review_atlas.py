@@ -1950,6 +1950,40 @@ def test_a_crop_shows_its_style_and_where_it_comes_from(dataset, tmp_path, monke
     assert (again["style"], again["style_basis"]) == ("cursive", "document-confirmed")
 
 
+def test_a_written_form_is_recorded_without_touching_the_character_or_the_review(dataset):
+    client = TestClient(create_app(dataset))
+    unit = LINE + ":u0"
+    path = f"/atlas/characters/{quote(unit, safe='')}/written-form"
+    detail = client.get(f"/atlas/characters/{quote(unit, safe='')}").json()
+    assert detail["written_form"] is None
+    body = {"id": str(uuid4()), "client_id": "fixture-reviewer", "revision": detail["revision"],
+            "image_sha256": detail["image_sha256"], "form": "⿺辶𦊷"}
+    saved = client.post(path, json=body)
+    assert saved.status_code == 200, saved.text
+    after = saved.json()
+    assert after["written_form"] == "⿺辶𦊷"
+    assert {key: after[key] for key in ("label", "reading", "revision", "state")} == \
+        {key: detail[key] for key in ("label", "reading", "revision", "state")}
+    listed = {item["id"]: item for item in client.get("/atlas", params={"limit": 96}).json()["items"]}
+    assert listed[unit]["written_form"] == "⿺辶𦊷"
+    # A rebuilt store gives the crop the same revision: the event is not counted as one.
+    store = Store(dataset)
+    store.rebuild()
+    assert (store.revision(unit), store.unit(unit).written_form) == (detail["revision"], "⿺辶𦊷")
+    # A retry answers with the crop; the same id with another form is refused.
+    assert client.post(path, json=body).json()["written_form"] == "⿺辶𦊷"
+    assert client.post(path, json={**body, "form": "𮟃"}).status_code == 422
+    assert client.post(path, json={**body, "id": str(uuid4()), "form": "⿺辶"}).status_code == 422
+    assert client.post(path, json={**body, "id": str(uuid4()), "revision": detail["revision"] + 1}).status_code == 409
+    assert client.post(path, json={**body, "id": str(uuid4()), "image_sha256": "0" * 64}).status_code == 409
+    # The crop's own character clears it, and a review saved against the revision it was opened at stands.
+    cleared = client.post(path, json={**body, "id": str(uuid4()), "form": detail["label"]}).json()
+    assert cleared["written_form"] is None
+    review = {"id": str(uuid4()), "client_id": "fixture-reviewer", "revision": detail["revision"],
+              "image_sha256": detail["image_sha256"], "verdict": "match"}
+    assert client.post(f"/atlas/characters/{quote(unit, safe='')}", json=review).status_code == 200
+
+
 def test_a_correction_gives_crops_one_character_with_the_sites_rules(dataset):
     client = TestClient(create_app(dataset))
     items = client.get('/atlas?limit=60').json()['items']
