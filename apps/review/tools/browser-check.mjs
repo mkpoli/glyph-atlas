@@ -28,7 +28,12 @@ try {
     responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
     body: Buffer.from(JSON.stringify(m.params.request.url.includes('/layers/characters/') ? variantCard : suggested)).toString('base64'),
   }) })
-  async function click(selector) { await browser.evaluate(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'center'})`); const p = await browser.centre(selector); await browser.click(p.x, p.y) }
+  async function click(selector) {
+    await browser.evaluate(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'center'})`)
+    // A control still disabled while a load is in flight ignores the click; wait for it to take one.
+    await browser.waitFor(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); return el !== null && !el.disabled })()`)
+    const p = await browser.centre(selector); await browser.click(p.x, p.y)
+  }
   async function route(hash, ready) { await browser.evaluate(`visit(${JSON.stringify(hash)})`); await browser.waitFor(ready) }
   const roundReady = 'document.querySelectorAll(".quiz-choice").length > 0 && !document.querySelector(".quiz-submit .primary")?.disabled'
   const inspectorReady = 'document.querySelector("dialog[open] .crop-viewport")?.dataset.ready === "true" && !document.querySelector(".save-character")?.disabled'
