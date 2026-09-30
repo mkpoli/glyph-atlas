@@ -4,9 +4,11 @@ Every request carries the project User-Agent. A host whose front end filters on 
 same request once more with a browser User-Agent, which is why the fallback is kept behind a short
 host list: a second request against a server that answers the first one is wasted traffic.
 
-Requests to one host are spaced by `host_pause`, held across calls in this process and measured
-against a monotonic clock (`CLOCK`, or the `clock` argument), so a test can assert the pause without
-sleeping. A 429 or 503 is retried after `Retry-After`, a transport error or a 5xx after an
+Requests to one host are spaced by `host_pause`, counted from the end of the previous request, and
+sent one at a time by all of this user's processes together (`_turn`, through `PACE_DIR`); a request
+stuck past `BUSY_LIMIT` no longer holds the others back. A clock a
+test substitutes (`CLOCK`, or the `clock` argument) keeps the pace within the process, so a test can
+assert the pause without sleeping. A 429 or 503 is retried after `Retry-After`, a transport error or a 5xx after an
 exponential backoff, and at most `retries` attempts are made.
 
 An interrupted download leaves `<dest>.part`. The next call resumes it with a `Range` request when
@@ -25,8 +27,9 @@ from contextlib import suppress
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 import httpx
 
@@ -94,13 +97,14 @@ class DownloadError(RuntimeError):
 class _Retry(Exception):
     """A failed attempt that is worth repeating."""
 
-    def __init__(self, delay: float, reason: str) -> None:
+    def __init__(self, delay: float, reason: str, status: int | None = None) -> None:
         super().__init__(reason)
         self.delay = delay
         self.reason = reason
+        self.status = status
 
 
-# A host that answered 429 to the default pace is given a longer one for the rest of the process.
+# A host that answered 429 to the default pace is given a longer one, by every process for `SLOW_MEMORY`.
 # `SLOW_PAUSE` is what the license-reconciliation pass needs: gallica.bnf.fr answers 429 at 3 s and
 # 200 at 10 s, which is a rate limit rather than a refusal.
 SLOW_PAUSE = 10.0
@@ -153,8 +157,9 @@ def download(
 ) -> Path:
     """Fetch `url` into `dest` and return `dest`.
 
-    `pause` is the least interval between two requests to the same host, held across calls in this
-    process; the default comes from `host_pause`. `retries` counts attempts, not retries after the
+    `pause` is the least interval between the end of one request to a host and the next, held across
+    this user's processes; the default comes from `host_pause`, and a slower interval a 429 asked for
+    applies only to the default. `retries` counts attempts, not retries after the
     first, and the last failure is raised as `DownloadError`. `expected` names the content kind
     ("json", "image", "zip" or "text"): a response that does not look like that kind, an HTML body in
     particular, fails and names the URL. A `dest` that already exists is returned untouched unless
@@ -192,41 +197,43 @@ def download(
     try:
         while True:
             attempt += 1
-            _wait_for_turn(url, interval, now, sleep)
-            start = part.stat().st_size if part.exists() and method == "GET" else 0
-            headers = {"Accept": "*/*"}
-            if referer is not None:
-                headers["Referer"] = referer
-            if start:
-                headers["Range"] = f"bytes={start}-"
-            if user_agent is not None:
-                agents: tuple[str, ...] = (user_agent,)
-            else:
-                agents = (BROWSER_USER_AGENT,) if browser_agent else _user_agents(url)
-            try:
-                response, agent = _get(
-                    client, url, headers=headers, agents=agents, interval=interval, clock=now, sleeper=sleep,
-                    method=method, data=data,
-                )
-            except httpx.HTTPError as exc:
-                failure = f"{exc.__class__.__name__}: {exc}"
-                delay = _backoff(attempt)
-            else:
-                browser_agent = browser_agent or agent == BROWSER_USER_AGENT
-                try:
-                    headers_seen = _receive(
-                        response, url=url, part=part, start=start, attempt=attempt, expected=expected
-                    )
-                except _Retry as retry:
-                    failure = retry.reason
-                    delay = retry.delay
+            with _turn(url, interval, now, sleep, explicit=pause is not None) as turn:
+                start = part.stat().st_size if part.exists() and method == "GET" else 0
+                headers = {"Accept": "*/*"}
+                if referer is not None:
+                    headers["Referer"] = referer
+                if start:
+                    headers["Range"] = f"bytes={start}-"
+                if user_agent is not None:
+                    agents: tuple[str, ...] = (user_agent,)
                 else:
-                    os.replace(part, dest)
-                    if meta is not None:
-                        meta.update(headers_seen)
-                    return dest
-                finally:
-                    response.close()
+                    agents = (BROWSER_USER_AGENT,) if browser_agent else _user_agents(url)
+                try:
+                    response, agent = _get(
+                        client, url, headers=headers, agents=agents, turn=turn, method=method, data=data,
+                    )
+                except httpx.HTTPError as exc:
+                    failure = f"{exc.__class__.__name__}: {exc}"
+                    delay = _backoff(attempt)
+                else:
+                    browser_agent = browser_agent or agent == BROWSER_USER_AGENT
+                    try:
+                        headers_seen = _receive(
+                            response, url=url, part=part, start=start, attempt=attempt, expected=expected,
+                            progress=turn.touch,
+                        )
+                    except _Retry as retry:
+                        failure = retry.reason
+                        delay = retry.delay
+                        if retry.status in (429, 503):
+                            turn.hold(delay, slow=retry.status == 429)
+                    else:
+                        os.replace(part, dest)
+                        if meta is not None:
+                            meta.update(headers_seen)
+                        return dest
+                    finally:
+                        response.close()
             if attempt >= retries:
                 raise DownloadError(f"{url}: gave up after {attempt} attempts ({failure})")
             if delay > 0:
@@ -242,9 +249,7 @@ def _get(
     *,
     headers: dict[str, str],
     agents: tuple[str, ...],
-    interval: float,
-    clock: Callable[[], float],
-    sleeper: Callable[[float], None],
+    turn: _turn,
     method: str = "GET",
     data: dict[str, str] | None = None,
 ) -> tuple[httpx.Response, str]:
@@ -258,7 +263,7 @@ def _get(
         if index + 1 < len(agents) and response.status_code in REFUSAL_STATUS:
             _drain(response)
             response.close()
-            _wait_for_turn(url, interval, clock, sleeper)
+            turn.again()
             continue
         return response, agent
     raise AssertionError("agents is never empty")
@@ -281,17 +286,19 @@ def _receive(
     start: int,
     attempt: int,
     expected: str | None,
+    progress: Callable[[], None] = lambda: None,
 ) -> dict[str, Any]:
-    """Write the body of `response` to `part` and return what the response said about it."""
+    """Write the body of `response` to `part` and return what the response said about it; `progress`
+    is called after each chunk."""
     status = response.status_code
     if status in RETRY_STATUS:
         _drain(response)
         if status == 429:
             # A 429 is the host asking for a slower pace, not a transient failure, so the host keeps
-            # the longer interval for the rest of the process instead of being asked again at the
+            # the longer interval, in every process, instead of being asked again at the
             # same rate and refused again.
             slow_down(url)
-        raise _Retry(_retry_delay(response, attempt), f"HTTP {status}")
+        raise _Retry(_retry_delay(response, attempt), f"HTTP {status}", status)
     if status == 416:
         _drain(response)
         part.unlink(missing_ok=True)
@@ -311,6 +318,7 @@ def _receive(
             if not head:
                 head = chunk[:SNIFF]
             handle.write(chunk)
+            progress()
     size = part.stat().st_size
     total = _content_range_total(response.headers.get("content-range"))
     if status == 206 and total is not None and size != total:
@@ -371,19 +379,147 @@ def _looks_like_image(head: bytes) -> bool:
     return head[:4] == b"RIFF" and head[8:12] == b"WEBP"
 
 
-def _wait_for_turn(
-    url: str, pause: float, clock: Callable[[], float], sleeper: Callable[[float], None]
-) -> None:
-    """Hold the per-host interval, counting from the previous request measured by the same clock."""
-    host = _host_of(url)
-    now = clock()
-    last = _LAST_REQUEST.get(host)
-    if last is not None and last[1] is clock:
-        remaining = pause - (now - last[0])
-        if remaining > 0:
-            sleeper(remaining)
-            now = clock()
-    _LAST_REQUEST[host] = (now, clock)
+def _pace_dir() -> Path:
+    """`$ATLAS_HOST_PACE_DIR`, or `glyph-atlas-host-pace` in `$XDG_RUNTIME_DIR` or `~/.cache`."""
+    override = os.environ.get("ATLAS_HOST_PACE_DIR")
+    if override:
+        return Path(override)
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    return (Path(runtime) if runtime else Path.home() / ".cache") / "glyph-atlas-host-pace"
+
+
+#: Where each host's pace is kept for every process of this user: when its last request started and
+#: ended, which process is sending one now, the longer interval a 429 asked for, and a `Retry-After`
+#: still running.
+PACE_DIR = _pace_dir()
+#: How long a longer interval a host asked for holds for other processes.
+SLOW_MEMORY = 3600.0
+#: How long a request that stops making progress keeps the other processes off its host; one
+#: still receiving its body renews it (`_turn.touch`).
+BUSY_LIMIT = 60.0
+#: How often a process waiting for another's request to end looks again.
+BUSY_POLL = 0.2
+
+
+class _turn:
+    """One request to a host, starting its interval after the previous one has ended.
+
+    On the real clock the turn reserves the host in its file in `PACE_DIR`, under a `flock` held only
+    to read and write the file. A turn waits while another process's turn is booked or in flight,
+    then starts `pause` after the last request ended and marks itself in flight until it exits. The
+    mark lasts `BUSY_LIMIT` past the booked start and is renewed while the body arrives (`touch`), so
+    the processes of this user send one request at a time to a host, and a process that stops making
+    progress stalls the others for `BUSY_LIMIT` at most. A 429's slower interval and a `Retry-After`
+    (`hold`) are written there too, so the other processes honour them; a slower interval another
+    process wrote holds until its `slow_until`. A clock a test substitutes keeps the
+    pace within the process.
+    """
+
+    def __init__(
+        self, url: str, pause: float, clock: Callable[[], float], sleeper: Callable[[float], None],
+        *, explicit: bool = False,
+    ) -> None:
+        self.host = _host_of(url)
+        self.pause = pause
+        self.clock = clock
+        self.sleeper = sleeper
+        self.explicit = explicit
+        self.shared = clock is time.monotonic
+        self.token = uuid4().hex
+        self.not_before = 0.0
+        self.slowed = False
+        self.touched = time.monotonic()
+
+    def _update(self, change: Callable[[dict[str, Any], float], float]) -> float:
+        """Apply `change(state, now)` to the host's file under its lock, and return what it returns."""
+        import fcntl
+
+        PACE_DIR.mkdir(parents=True, exist_ok=True)
+        name = re.sub(r"[^A-Za-z0-9.-]", "_", self.host) or "host"
+        with (PACE_DIR / f"{name}.json").open("a+") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            handle.seek(0)
+            try:
+                state = json.loads(handle.read() or "{}")
+            except ValueError:
+                state = {}
+            result = change(state, time.time())
+            handle.seek(0)
+            handle.truncate()
+            handle.write(json.dumps(state))
+            handle.flush()
+        return result
+
+    def _reserve(self, state: dict[str, Any], now: float) -> float:
+        """Mark this turn in flight and return when it starts, or return -wait while another is."""
+        busy = float(state.get("busy_until", 0))
+        # A booking starts at most the longest wait this module asks for ahead; a mark further ahead
+        # than that is a clock that went back, and is ignored.
+        horizon = max(MAX_RETRY_AFTER, float(state.get("slow", 0)), self.pause) + BUSY_LIMIT
+        if state.get("holder") and now < busy <= now + horizon:
+            return -min(BUSY_POLL, busy - now)
+        pause = self.pause
+        if not self.explicit and float(state.get("slow_until", 0)) > now:
+            pause = max(pause, float(state.get("slow", 0)))
+        # Stamps are capped at what this module asks for, so a clock that went back waits no longer.
+        start = max(now, min(float(state.get("end", 0)) + pause, now + pause),
+                    min(float(state.get("not_before", 0)), now + MAX_RETRY_AFTER))
+        state.update(holder=self.token, busy_until=start + BUSY_LIMIT)
+        return start
+
+    def __enter__(self) -> Self:
+        if not self.shared:
+            last = _LAST_REQUEST.get(self.host)
+            if last is not None and last[1] is self.clock:
+                remaining = self.pause - (self.clock() - last[0])
+                if remaining > 0:
+                    self.sleeper(remaining)
+            return self
+        while (start := self._update(self._reserve)) < 0:
+            self.sleeper(-start)
+        if start > time.time():
+            self.sleeper(start - time.time())
+        return self
+
+    def touch(self) -> None:
+        """Renew this turn's in-flight mark while its body arrives, at most every quarter `BUSY_LIMIT`."""
+        if not self.shared or time.monotonic() - self.touched < BUSY_LIMIT / 4:
+            return
+        self.touched = time.monotonic()
+
+        def renew(state: dict[str, Any], now: float) -> float:
+            if state.get("holder") == self.token:
+                state["busy_until"] = now + BUSY_LIMIT
+            return 0.0
+
+        self._update(renew)
+
+    def again(self) -> None:
+        """Wait the interval once more, for a second request inside this turn."""
+        self.sleeper(self.pause)
+
+    def hold(self, delay: float, *, slow: bool = False) -> None:
+        """Keep every process off the host for `delay` seconds, as a `Retry-After` asks; `slow` when
+        the host answered 429, so the others take up its slower interval too."""
+        self.not_before = max(self.not_before, time.time() + delay)
+        self.slowed = self.slowed or slow
+
+    def _release(self, state: dict[str, Any], now: float) -> float:
+        if state.get("holder") == self.token:
+            state.pop("holder")
+            state.pop("busy_until", None)
+        state["end"] = now
+        if self.not_before > float(state.get("not_before", 0)):
+            state["not_before"] = self.not_before
+        if self.slowed:
+            state.update(slow=_SLOW_HOSTS.get(self.host, SLOW_PAUSE), slow_until=now + SLOW_MEMORY)
+        return 0.0
+
+    def __exit__(self, *_: object) -> None:
+        if not self.shared:
+            _LAST_REQUEST[self.host] = (self.clock(), self.clock)
+            return
+        self._update(self._release)
 
 
 def _user_agents(url: str) -> tuple[str, ...]:

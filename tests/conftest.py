@@ -16,6 +16,15 @@ from typing import Any
 
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def host_pace_dir(tmp_path, monkeypatch):
+    """Keep each test's host pace apart from other tests and from the user's running downloads."""
+    from glyph_atlas import net
+
+    monkeypatch.setattr(net, "PACE_DIR", tmp_path / "host-pace")
+
+
 RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
 
 

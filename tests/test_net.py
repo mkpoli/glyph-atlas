@@ -377,3 +377,203 @@ def test_a_form_post_sends_its_body_and_referer_and_is_never_resumed(tmp_path: P
     assert request.headers["Referer"] == "https://example.org/page?cno=X-1"
     assert "Range" not in request.headers
     assert dest.read_bytes() == b"ok"
+
+
+def _spans(requests, *, pause=0.3, work=0.2, hold=0.0, slow=None):
+    """Run `requests` turns to one host in each of two forked processes and return their (start, end)."""
+    import multiprocessing
+    import time
+
+    context = multiprocessing.get_context("fork")
+    spans = context.Queue()
+
+    def ask():
+        for _ in range(requests):
+            with net._turn("https://example.org/a", pause, time.monotonic, time.sleep) as turn:
+                started = time.time()
+                time.sleep(work)
+                if hold:
+                    turn.hold(hold)
+                if slow:
+                    # What `download` does on a 429.
+                    net.slow_down("https://example.org/a", slow)
+                    turn.hold(0, slow=True)
+            spans.put((started, time.time()))
+
+    workers = [context.Process(target=ask) for _ in range(2)]
+    for w in workers:
+        w.start()
+    for w in workers:
+        w.join()
+    return sorted(spans.get(timeout=30) for _ in range(2 * requests))
+
+
+def test_one_request_at_a_time_reaches_a_host_across_processes_with_the_pause_after_each_end():
+    import itertools
+
+    spans = _spans(2)
+    for (_, ended), (started, _) in itertools.pairwise(spans):
+        assert started - ended >= 0.29
+
+
+def test_a_retry_after_one_process_saw_keeps_the_other_off_the_host():
+    spans = _spans(1, pause=0.0, work=0.05, hold=0.6)
+    (_, ended), (started, _) = spans
+    assert started - ended >= 0.55
+
+
+def test_a_slower_interval_one_process_was_asked_for_holds_in_the_other():
+    spans = _spans(1, pause=0.1, work=0.05, slow=0.7)
+    assert spans[1][0] - spans[0][1] >= 0.65
+
+
+def _write_pace(state):
+    import json
+
+    net.PACE_DIR.mkdir(parents=True, exist_ok=True)
+    (net.PACE_DIR / "example.org.json").write_text(json.dumps(state))
+
+
+def _read_pace():
+    import json
+
+    return json.loads((net.PACE_DIR / "example.org.json").read_text())
+
+
+def _timed_turn(pause):
+    import time
+
+    started = time.monotonic()
+    with net._turn("https://example.org/a", pause, time.monotonic, time.sleep):
+        waited = time.monotonic() - started
+    return waited
+
+
+def test_a_slower_interval_read_from_another_process_ends_when_it_expires():
+    import time
+
+    net.reset_pauses()
+    _write_pace({"end": 0, "slow": 5.0, "slow_until": time.time() + 0.3})
+    assert _timed_turn(0.05) < 0.3
+    time.sleep(0.4)
+    assert _timed_turn(0.05) < 0.3, "the expired slower interval is not kept"
+    assert _read_pace().get("slow_until", 0) < time.time(), "an expiry is not renewed without a 429"
+    assert net.host_pause("https://example.org/a") == net.DEFAULT_PAUSE
+
+
+def test_a_process_stuck_inside_its_request_holds_the_host_only_for_the_busy_limit(monkeypatch):
+    import multiprocessing
+    import time
+
+    monkeypatch.setattr(net, "BUSY_LIMIT", 0.5, raising=False)
+    context = multiprocessing.get_context("fork")
+    entered = context.Event()
+
+    def stuck():
+        with net._turn("https://example.org/a", 0.05, time.monotonic, time.sleep):
+            entered.set()
+            time.sleep(3)
+
+    worker = context.Process(target=stuck)
+    worker.start()
+    entered.wait(10)
+    try:
+        assert _timed_turn(0.05) < 1.5
+    finally:
+        worker.join()
+
+
+def test_a_stamp_from_a_clock_that_went_back_waits_no_longer_than_the_pace():
+    import time
+
+    _write_pace({"end": time.time() + 5})
+    assert _timed_turn(0.1) < 1.0
+
+
+def test_a_429_on_the_real_clock_writes_the_slower_interval_for_the_other_processes(http_server):
+    import json
+    import time
+    from urllib.parse import urlsplit
+
+    http_server.put("data.json", b"payload")
+    url = http_server.url("data.json")
+    http_server.script["/data.json"] = [net_test_scripted(429)]
+    net.download(url, tmp_path_file(http_server.root, "out.json"), pause=0.0, clock=time.monotonic, sleeper=time.sleep)
+    shared = json.loads((net.PACE_DIR / f"{urlsplit(url).hostname}.json").read_text())
+    assert shared["slow"] == net.SLOW_PAUSE and shared["slow_until"] > time.time()
+    assert "holder" not in shared
+
+
+def _starts_of_turns_booked_apart(state, *, pause=0.1, apart=0.5):
+    """Start two forked processes `apart` seconds apart on a host whose file holds `state`, each
+    taking one turn, and return when each turn began."""
+    import multiprocessing
+    import time
+
+    _write_pace(state)
+    context = multiprocessing.get_context("fork")
+    starts = context.Queue()
+
+    def ask():
+        with net._turn("https://example.org/a", pause, time.monotonic, time.sleep):
+            starts.put(time.time())
+            time.sleep(0.05)
+
+    workers = [context.Process(target=ask) for _ in range(2)]
+    workers[0].start()
+    time.sleep(apart)
+    workers[1].start()
+    for w in workers:
+        w.join(60)
+    return sorted(starts.get(timeout=30) for _ in range(2))
+
+
+def test_processes_booking_during_a_retry_after_take_turns_one_after_the_other():
+    import time
+
+    first, second = _starts_of_turns_booked_apart({"end": 0, "not_before": time.time() + 5})
+    assert second - first >= 0.14, "the second waits for the first to end, then the pause"
+
+
+def test_processes_booking_at_a_slower_pace_take_turns_one_after_the_other():
+    import time
+
+    now = time.time()
+    first, second = _starts_of_turns_booked_apart({"end": now, "slow": 4.0, "slow_until": now + 60})
+    assert second - first >= 3.9
+
+
+def test_a_request_still_reading_its_body_keeps_the_host_past_the_busy_limit(monkeypatch):
+    import multiprocessing
+    import time
+
+    monkeypatch.setattr(net, "BUSY_LIMIT", 0.5)
+    context = multiprocessing.get_context("fork")
+    entered = context.Event()
+
+    def streaming():
+        with net._turn("https://example.org/a", 0.05, time.monotonic, time.sleep) as turn:
+            entered.set()
+            for _ in range(15):
+                time.sleep(0.1)
+                turn.touch()
+
+    worker = context.Process(target=streaming)
+    worker.start()
+    entered.wait(10)
+    started = time.monotonic()
+    try:
+        _timed_turn(0.05)
+        assert time.monotonic() - started >= 1.3, "the other process waits while the body keeps arriving"
+    finally:
+        worker.join()
+
+
+def test_a_download_renews_its_turn_as_the_body_arrives(http_server, monkeypatch, tmp_path):
+    import time
+
+    touched = []
+    monkeypatch.setattr(net._turn, "touch", lambda self: touched.append(1))
+    http_server.put("big.bin", b"x" * (3 * net.CHUNK))
+    net.download(http_server.url("big.bin"), tmp_path / "big.bin", pause=0.0, clock=time.monotonic, sleeper=time.sleep)
+    assert len(touched) >= 3
