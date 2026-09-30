@@ -14,7 +14,8 @@
   // The 異体字 graph: the variants a gallery widens to, characters related otherwise, and the
   // derived tier — forms one attested component substitution may write this character as, no
   // gallery widening to them, each chip carrying the substitution and the pairs behind it.
-  const variants = $derived(card?.variants ?? { items: [], related: [], derived: [], sources: {} })
+  // A card cached before the derived tier existed has no `derived`; it reads as none.
+  const variants = $derived({ items: [], related: [], sources: {}, ...card?.variants, derived: card?.variants?.derived ?? [] })
   // Every relation of kanji-variants.tsv in the reader's language; one the table gains later reads as its id.
   const RELATION_NAMES = {
     variant: () => t('chips.relation.variant'), equivalent: () => t('chips.relation.equivalent'),
