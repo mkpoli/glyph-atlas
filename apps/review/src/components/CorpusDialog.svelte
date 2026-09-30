@@ -4,6 +4,8 @@
   import ScriptText from './ScriptText.svelte'
   import ScriptLegend from './ScriptLegend.svelte'
   import ProductionBadge from './ProductionBadge.svelte'
+  import AdvanceSwitch from './AdvanceSwitch.svelte'
+  import { useSession } from '../lib/session.svelte.js'
   import ZiLink from './ZiLink.svelte'
   import CopyId from './CopyId.svelte'
   import { onMount, untrack, tick } from 'svelte'
@@ -18,6 +20,8 @@
   // `initial` is the record the server rendered the page with, so the first load needs no request.
   let { id, clientId, close, saved, previous = null, next = null, position = '', initial = null } = $props()
   const first = untrack(() => initial)
+  const session = useSession()
+  const advancing = $derived(session.state.advance && Boolean(next))
   let dialog, data = $state(first), error = $state(''), busy = $state(false)
   let issue = $state(null), noneSelected = $state(false), correction = $state(null), note = $state(''), search = $state('')
   let loaded = $state(false), imageFailed = $state(false), suggestionsElement = $state(null)
@@ -38,7 +42,8 @@
   $effect(() => { const target = id; untrack(() => { load(target, preloaded); preloaded = null }) })
   // Rendered open on the server, reopened as a modal once the script runs.
   onMount(() => { if (dialog.open) dialog.close(); dialog.showModal(); return () => { closed = true; generation++ } })
-  function skip() { if (!busy) { if (next) next(); else close() } }
+  // A skip goes where a save would: on to the next crop when the reader goes through the list in a row.
+  function skip() { if (!busy) { if (advancing) next(); else close() } }
   async function chooseIssue(value) {
     issue = value; correction = null; noneSelected = false; submission = null; search = ''
     if (suggestsReading(value)) { await tick(); greetSuggestions(suggestionsElement, { focus: true }) }
@@ -99,10 +104,11 @@
     {:else if !error}<div class="inspector-skeleton"></div>{/if}
   </div>
   <footer class="inspector-savebar">
+    {#if position}<AdvanceSwitch disabled={busy} />{/if}
     {#if imageFailed}<span role="alert">{t('character.image.unavailable')}</span>{/if}
-    <button class="primary save-character" disabled={busy || !data || !loaded || imageFailed || !data.proxyable || ((data.needs_segmentation || data.identity_status === 'unassigned') && !issue)} onclick={() => save()}>{busy ? t('common.saving') : data?.identity_status === 'unassigned' && !issue ? t('corpus.save.chooseCharacterOrIssue') : data?.needs_segmentation && !issue ? t('corpus.save.awaitingSegmentation') : issue ? t('character.save.issue') : t('character.save.looksRight')} {#if !issue}<span>✓</span>{/if}</button>
+    <button class="primary save-character" disabled={busy || !data || !loaded || imageFailed || !data.proxyable || ((data.needs_segmentation || data.identity_status === 'unassigned') && !issue)} onclick={() => save()}>{busy ? t('common.saving') : data?.identity_status === 'unassigned' && !issue ? t('corpus.save.chooseCharacterOrIssue') : data?.needs_segmentation && !issue ? t('corpus.save.awaitingSegmentation') : issue ? t(advancing ? 'character.save.issue.next' : 'character.save.issue.close') : t(advancing ? 'character.save.looksRight.next' : 'character.save.looksRight.close')} {#if advancing}<span>→</span>{:else if !issue}<span>✓</span>{/if}</button>
     {#if issue && !data?.needs_segmentation && data?.identity_status !== 'unassigned'}<button class="quiet-link looks-right" disabled={busy || !loaded || imageFailed} onclick={() => save(true)}>{t('character.save.itLooksRight')}</button>{/if}
-    <button class="skip-character" disabled={busy} onclick={skip} title={skipHint()}>{t('common.skip.arrow')}</button>
+    <button class="skip-character" disabled={busy} onclick={skip} title={skipHint()}>{t(advancing ? 'common.skip.next' : 'common.skip.close')}</button>
   </footer>
 </dialog>
 

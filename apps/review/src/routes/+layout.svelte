@@ -60,7 +60,8 @@
     written = { ...written, [id]: true }
     savedNotice = t('app.saved')
     setTimeout(() => savedNotice = '', 2000)
-    close()
+    if (session.state.advance && next) next()
+    else close()
   }
   // The address bar, not `page.url`: a view may have rewritten the address in place since the page loaded.
   // The scheme the server rendered with, read back once the page is in the browser.

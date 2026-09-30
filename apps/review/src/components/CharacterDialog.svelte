@@ -14,14 +14,19 @@
   import SimilarCrops from './SimilarCrops.svelte'
   import IssuePicker from './IssuePicker.svelte'
   import ReadingSuggestions from './ReadingSuggestions.svelte'
+  import AdvanceSwitch from './AdvanceSwitch.svelte'
+  import { useSession } from '../lib/session.svelte.js'
   // `onskip` is supplied by the caller that owns the queue. The dialog never decides what "next"
   // means: it reports that the reader declined to judge this occurrence, and the caller advances,
-  // closes, or does something else. Without the prop the sensible default is the same as finishing
-  // with it — the next occurrence if the caller offered one, otherwise close.
+  // closes, or does something else. Without the prop a skip goes where a save would: the next
+  // occurrence when the reader goes through the list in a row and there is one, otherwise close.
   // `initial` is the record the server rendered the page with, so the first load needs no request.
   let { id, clientId, close, saved, changed = null, onVerdict = null, onskip = null,
         previous = null, next = null, position = '', initial = null } = $props()
   const first = untrack(() => initial)
+  const session = useSession()
+  // A round's crop returns to its round, and a crop opened on its own has nowhere to go on to.
+  const advancing = $derived(!onVerdict && !onskip && session.state.advance && Boolean(next))
   let dialog, data = $state(first), error = $state(''), busy = $state(false)
   let reading = $state(first?.reading ?? first?.label ?? ''), note = $state(''), issue = $state(null), noneSelected = $state(false), correction = $state(null)
   // The character the source printed and the reading it has are two layers: this holds the encoded
@@ -140,7 +145,7 @@
     // A caller that takes verdicts is told this was a skip rather than a decision: `{ skip: true }`
     // is not a verdict, and a caller that ignores it simply gets no choice recorded for the crop.
     if (onVerdict) { onVerdict({ skip: true }); close(); return }
-    if (next) { next(); return }
+    if (advancing) { next(); return }
     close()
   }
 
@@ -256,10 +261,11 @@
     {:else if !error}<div class="inspector-skeleton"></div>{/if}
   </div>
   <footer class="inspector-savebar">
+    {#if position && !onVerdict}<AdvanceSwitch disabled={busy} />{/if}
     {#if imageFailed}<span role="alert">{t('character.image.unavailable')}</span>{/if}
-    <button class="primary save-character" disabled={busy || !data || !loaded || imageFailed} onclick={() => save()}>{busy ? t('common.saving') : issue ? (onVerdict ? t('character.save.useError') : t('character.save.issue')) : (onVerdict ? t('character.save.backToSelection') : t('character.save.looksRight'))} {#if onVerdict}<span>→</span>{:else if !issue}<span>✓</span>{/if}</button>
+    <button class="primary save-character" disabled={busy || !data || !loaded || imageFailed} onclick={() => save()}>{busy ? t('common.saving') : issue ? (onVerdict ? t('character.save.useError') : t(advancing ? 'character.save.issue.next' : 'character.save.issue.close')) : (onVerdict ? t('character.save.backToSelection') : t(advancing ? 'character.save.looksRight.next' : 'character.save.looksRight.close'))} {#if onVerdict || advancing}<span>→</span>{:else if !issue}<span>✓</span>{/if}</button>
     {#if issue}<button class="quiet-link looks-right" disabled={busy || !loaded || imageFailed} onclick={() => { discardProposals(); save(true) }}>{onVerdict ? t('character.save.removeSelection') : t('character.save.itLooksRight')}</button>{/if}
-    <button class="skip-character" disabled={busy} onclick={skip} title={skipHint()}>{t('common.skip.arrow')}</button>
+    <button class="skip-character" disabled={busy} onclick={skip} title={skipHint()}>{t(advancing ? 'common.skip.next' : 'common.skip.close')}</button>
   </footer>
 </dialog>
 
