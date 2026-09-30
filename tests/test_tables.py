@@ -341,3 +341,12 @@ def test_merge_keeps_a_sharded_table_sharded(tmp_path):
         hashlib.sha1(value.encode()).hexdigest()[:2] for value in ("d1", "d2")
     }
     assert sorted(record.id for record in tables.Dataset(tmp_path / "merged").read("units")) == ["u0", "u1"]
+
+
+def test_a_shared_lock_admits_other_shared_holders_and_keeps_an_exclusive_one_out(tmp_path):
+    path = tmp_path / "worker"
+    with (tables.locked(path, shared=True, timeout=0), tables.locked(path, shared=True, timeout=0),
+          pytest.raises(TimeoutError)):
+        tables.locked(path, timeout=0).__enter__()
+    with tables.locked(path, timeout=0), pytest.raises(TimeoutError):
+        tables.locked(path, shared=True, timeout=0).__enter__()

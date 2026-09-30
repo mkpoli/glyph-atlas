@@ -1,6 +1,7 @@
 """Slow, resumable character extraction; commits one immutable page at a time."""
 import argparse
 import json
+from contextlib import ExitStack
 from pathlib import Path
 
 from glyph_atlas import tables
@@ -18,7 +19,6 @@ parser.add_argument("--seed",action="store_true")
 parser.add_argument("--status",action="store_true")
 parser.add_argument("--pages",type=int,default=3)
 parser.add_argument("--seconds",type=int,default=600)
-parser.add_argument("--pause",type=float,default=10)
 parser.add_argument("--max-lines",type=int,default=64)
 parser.add_argument("--ndl-cpu",action="store_true",
                     help="run NDL's sequence model on the CPU (faster than CUDA for its one-crop reads)")
@@ -28,12 +28,22 @@ parser.add_argument("--switch-ndl",action="store_true",
 parser.add_argument("--supplement-every",type=int,default=2,
                     help="take a supplement of a page completed under an earlier policy every N pages; 0 never")
 args = parser.parse_args()
-if min(args.pages,args.seconds,args.max_lines,args.ndl_threads) < 1 or args.pause < 0 or args.supplement_every < 0:
-    parser.error("positive page/time/line/thread limits and nonnegative pause and supplement interval required")
-queue = Queue(args.root)
-with tables.locked(args.root/"worker",timeout=0):
+if min(args.pages,args.seconds,args.max_lines,args.ndl_threads) < 1 or args.supplement_every < 0:
+    parser.error("positive page/time/line/thread limits and a nonnegative supplement interval required")
+# Workers of this version share the queue, each holding `.worker.lock` shared; a worker of the
+# single-worker version takes it exclusively, so neither starts while the other runs.
+guard = ExitStack()
+try:
+    guard.enter_context(tables.locked(args.root/"worker",shared=True,timeout=0))
+except TimeoutError:
+    raise SystemExit("an extraction worker of the single-worker version holds this queue; stop it first") from None
+with guard:
+    queue = Queue(args.root)
+    # Any number of workers may run at once: each claims its own pages. Seeding and re-scoring the queue
+    # are done by whichever worker holds the maintenance lock, and skipped by the others.
     if args.seed:
-        print(json.dumps({"seeded":queue.seed(args.source)},ensure_ascii=False),flush=True)
+        with tables.locked(args.root/"maintenance"):
+            print(json.dumps({"seeded":queue.seed(args.source)},ensure_ascii=False),flush=True)
     store = None
     if args.publish_to:
         from glyph_atlas.review.store import Store
@@ -41,27 +51,31 @@ with tables.locked(args.root/"worker",timeout=0):
     if args.publish_only:
         if store is None:
             parser.error("--publish-only requires --publish-to")
-        print(json.dumps({"published_pages":publish_completed(queue,store)}))
+        with tables.locked(args.root/"publish"):
+            print(json.dumps({"published_pages":publish_completed(queue,store)}))
         print(json.dumps(queue.status(),ensure_ascii=False,indent=2))
     elif args.status:
         print(json.dumps(queue.status(),ensure_ascii=False,indent=2))
     else:
         queue.status(state="initializing")
-        if not args.no_prioritize:
-            counts = load_char_counts(args.counts) if args.counts.exists() else {}
-            queue.prioritize(counts)
-        # `<root>/focus.txt` names documents to extract first, one id per line (`#` starts a comment);
-        # read at every batch, so editing it steers the running service.
-        focus = args.root/"focus.txt"
-        wanted = [line.split("#")[0].strip() for line in focus.read_text().splitlines()] if focus.exists() else []
-        print(json.dumps({"focused_pending":queue.focus(w for w in wanted if w)}),flush=True)
+        try:
+            with tables.locked(args.root/"maintenance",timeout=0):
+                if not args.no_prioritize:
+                    counts = load_char_counts(args.counts) if args.counts.exists() else {}
+                    queue.prioritize(counts)
+                # `<root>/focus.txt` names documents to extract first, one id per line (`#` starts a
+                # comment); read at every batch, so editing it steers the running service.
+                focus = args.root/"focus.txt"
+                wanted = [line.split("#")[0].strip() for line in focus.read_text().splitlines()] if focus.exists() else []
+                print(json.dumps({"focused_pending":queue.focus(w for w in wanted if w)}),flush=True)
+                if args.supplement_every:
+                    print(json.dumps({"supplements_seeded":queue.seed_supplements()}),flush=True)
+        except TimeoutError:
+            print(json.dumps({"maintenance":"another worker holds it"}),flush=True)
         try:
             engine = Engine(ndl_cpu=args.ndl_cpu,ndl_threads=args.ndl_threads)
             queue.pin("ndl_provider",engine.ndl_provider,replace=args.switch_ndl)
-            if args.supplement_every:
-                print(json.dumps({"supplements_seeded":queue.seed_supplements()}),
-                      flush=True)
-            result = run(queue,engine,pages=args.pages,seconds=args.seconds,pause=args.pause,
+            result = run(queue,engine,pages=args.pages,seconds=args.seconds,
                          max_lines=args.max_lines,store=store,supplement_every=args.supplement_every)
         except Exception as exc:  # noqa: BLE001 — publish a redacted worker failure for the supervisor
             error = type(exc).__name__+": "+str(exc).replace(str(Path.home()),"~")[:500]

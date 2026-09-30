@@ -38,8 +38,11 @@ import sqlite3
 import time
 import unicodedata
 from collections import Counter, defaultdict
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlsplit
+from uuid import uuid4
 
 from . import align, images, tables
 from .schema import PAGE_SCOPE, Classification, ReviewState, UnitKind
@@ -55,7 +58,8 @@ def digest(value):
 
 
 def atomic_json(path, value):
-    temporary = path.with_suffix(path.suffix + ".tmp")
+    """Write `value` to `path` through a scratch file of this call's own, so writers never share one."""
+    temporary = path.with_name(f"{path.name}.{uuid4().hex}.tmp")
     with temporary.open("w") as handle:
         json.dump(value, handle, ensure_ascii=False, sort_keys=True, indent=2)
         handle.flush()
@@ -70,6 +74,12 @@ def atomic_json(path, value):
 
 #: How often a page is extracted, or published, before it is left failed for a person to look at.
 MAX_ATTEMPTS = 3
+#: How long a claim holds without a heartbeat. A worker renews it every eighth of this while it
+#: extracts, so a page is taken back only from a worker that stopped.
+LEASE_SECONDS = 600
+#: How many leases a page may run before its heartbeat stops renewing it, so a worker whose
+#: extraction hangs gives the page back.
+PAGE_DEADLINE_LEASES = 6
 
 
 def scorable_chars(text: str) -> set[str]:
@@ -128,14 +138,26 @@ class Queue:
     more its characters are still scarce in the atlas, as `prioritize` computes it — then by whether
     its image is already cached, then by the page's original rank within its book, then by document
     and page id as a stable tie-break for equal scores. `claim_supplement` takes focus first too.
+
+    Any number of workers share a queue. A claim marks its row running under the worker's name and a
+    lease the worker renews (`heartbeat`); a row whose lease lapsed is claimed again like a pending one.
+    Only the worker holding a lease finishes or fails its row. An uncached page on a host another
+    worker is downloading from goes after every other claimable page, so workers spread over hosts.
     """
 
     def __init__(self, root: Path):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
+        # The wall clock leases are kept on, which every process reads alike; tests replace it.
+        self.wall = time.time
+        self._alive = None
+        self._settle_until = 0.0
         self.db = sqlite3.connect(self.root / "queue.sqlite", timeout=30)
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode=WAL")
+        # One write transaction for the whole schema check, so workers starting together on an older
+        # queue do not both add the same column.
+        self.db.execute("BEGIN IMMEDIATE")
         self.db.execute("""CREATE TABLE IF NOT EXISTS pages (
             id TEXT PRIMARY KEY, document_id TEXT NOT NULL, title TEXT NOT NULL,
             source TEXT NOT NULL, cached INTEGER NOT NULL, rank INTEGER NOT NULL,
@@ -155,6 +177,16 @@ class Queue:
         # The policy a complete page's output was written under, so listing supplements is a query.
         if "policy" not in columns:
             self.db.execute("ALTER TABLE pages ADD COLUMN policy TEXT")
+        # Who holds a running page, and until when: a worker renews its lease while it works, and a
+        # page is taken back only once its lease has lapsed, so several workers can share the queue.
+        if "worker" not in columns:
+            self.db.execute("ALTER TABLE pages ADD COLUMN worker TEXT")
+        if "lease_until" not in columns:
+            self.db.execute("ALTER TABLE pages ADD COLUMN lease_until REAL")
+        # The image host of the page, filled by `seed`, so a claim can keep off a host in use.
+        if "host" not in columns:
+            self.db.execute("ALTER TABLE pages ADD COLUMN host TEXT")
+        self.db.execute("CREATE INDEX IF NOT EXISTS idx_pages_lease ON pages(status, lease_until)")
         self.db.execute("DROP INDEX IF EXISTS idx_pages_claim_order")
         self.db.execute("""CREATE INDEX IF NOT EXISTS idx_pages_focus_claim_order
             ON pages(focus DESC, priority DESC, cached DESC, rank, document_id, id)""")
@@ -163,8 +195,13 @@ class Queue:
             attempts INTEGER NOT NULL DEFAULT 0, output TEXT, added INTEGER, error TEXT,
             published_at TEXT, publish_error TEXT, publish_attempts INTEGER NOT NULL DEFAULT 0,
             updated_at TEXT, retry_after REAL, PRIMARY KEY (page_id, policy))""")
-        if "retry_after" not in {r[1] for r in self.db.execute("PRAGMA table_info(supplements)")}:
+        supplement_columns = {r[1] for r in self.db.execute("PRAGMA table_info(supplements)")}
+        if "retry_after" not in supplement_columns:
             self.db.execute("ALTER TABLE supplements ADD COLUMN retry_after REAL")
+        if "worker" not in supplement_columns:
+            self.db.execute("ALTER TABLE supplements ADD COLUMN worker TEXT")
+        if "lease_until" not in supplement_columns:
+            self.db.execute("ALTER TABLE supplements ADD COLUMN lease_until REAL")
         # Settings every worker on the queue must share, such as where NDL's model runs (`pin`).
         self.db.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
         self.db.commit()
@@ -207,15 +244,17 @@ class Queue:
             if not include_ainu and any(s in document.title for s in ("蝦夷", "北海随筆", "アイヌ", "藻汐")):
                 continue
             groups[page.document_id].append(page)
-        before = self.db.total_changes
+        added = 0
         with self.db:
             for document_id, pages in groups.items():
                 for rank, page in enumerate(sorted(pages, key=lambda p: (p.seq, p.id))):
-                    self.db.execute("""INSERT OR IGNORE INTO pages
-                        (id,document_id,title,source,cached,rank) VALUES(?,?,?,?,?,?)""",
+                    host = (urlsplit(page.image).hostname or "").lower() or None
+                    added += self.db.execute("""INSERT OR IGNORE INTO pages
+                        (id,document_id,title,source,cached,rank,host) VALUES(?,?,?,?,?,?,?)""",
                         (page.id, document_id, documents[document_id].title,
-                         str(source), int(page.image in cached), rank))
-        return self.db.total_changes - before
+                         str(source), int(page.image in cached), rank, host)).rowcount
+                    self.db.execute("UPDATE pages SET host=? WHERE id=? AND host IS NULL", (host, page.id))
+        return added
 
     def focus(self, documents) -> int:
         """Claim the pages of `documents` first, and no others; an empty set clears the focus.
@@ -230,16 +269,68 @@ class Queue:
                 self.db.execute(f"UPDATE pages SET focus=1 WHERE document_id IN ({','.join('?' * len(batch))})", batch)
         return self.db.execute("SELECT count(*) FROM pages WHERE focus=1 AND status IN ('pending','retry')").fetchone()[0]
 
-    def claim(self):
-        """Take the next page to extract, in the order this class's docstring describes."""
+    def claim(self, worker, *, lease=LEASE_SECONDS):
+        """Take the next page to extract, in the order this class's docstring describes.
+
+        One statement picks the page and marks it running under `worker`'s lease, so two workers
+        claiming at once never take the same page. A page whose lease lapsed is claimed like a pending
+        one, and its attempt counts: a page that kills its worker never reaches `fail`, so after
+        `MAX_ATTEMPTS` such stops it is left failed, or it would be claimed first after every restart.
+        `lapse` says when a lease counts as lapsed.
+        """
+        now, lapsed, stopped = self.lapse(lease)
+        stamp = datetime.now(UTC).isoformat()
         with self.db:
-            row = self.db.execute("""SELECT * FROM pages WHERE status='pending' OR
-                (status='retry' AND CAST(retry_after AS REAL)<=?)
-                ORDER BY focus DESC, priority DESC, cached DESC, rank, document_id, id LIMIT 1""", (time.time(),)).fetchone()
-            if row:
-                self.db.execute("UPDATE pages SET status='running',attempts=attempts+1,updated_at=? WHERE id=?",
-                                (datetime.now(UTC).isoformat(), row["id"]))
+            self.db.execute("""UPDATE pages SET status='failed',updated_at=?,worker=NULL,lease_until=NULL,
+                error='the worker stopped while extracting this page ' || attempts || ' times'
+                WHERE status='running' AND coalesce(lease_until,0)<? AND attempts>=?""",
+                            (stamp, stopped, MAX_ATTEMPTS))
+            row = self.db.execute("""UPDATE pages SET status='running',attempts=attempts+1,updated_at=?,
+                worker=?,lease_until=? WHERE id=(SELECT id FROM pages WHERE status='pending'
+                OR (status='retry' AND CAST(retry_after AS REAL)<=?)
+                OR (status='running' AND coalesce(lease_until,0)<? AND attempts<?)
+                ORDER BY (cached=0 AND host IS NOT NULL AND host IN (SELECT host FROM pages
+                    WHERE status='running' AND cached=0 AND lease_until>=? AND worker!=? AND host IS NOT NULL)),
+                focus DESC, priority DESC, cached DESC, rank, document_id, id LIMIT 1) RETURNING *""",
+                (stamp, worker, now + lease, now, lapsed, MAX_ATTEMPTS, now, worker)).fetchone()
         return dict(row) if row else None
+
+    def renew(self, kind, ident, worker, *, lease=LEASE_SECONDS):
+        """Extend `worker`'s lease on a running page or supplement; False once another worker holds it.
+
+        Opens its own connection, so a heartbeat thread can call it while the worker's thread extracts.
+        """
+        table, key = ("supplements", "page_id") if kind == "supplement" else ("pages", "id")
+        now = self.wall()
+        self.alive(lease, now)
+        with sqlite3.connect(self.root / "queue.sqlite", timeout=30) as db:
+            changed = db.execute(f"UPDATE {table} SET lease_until=? WHERE {key}=? AND status='running' AND worker=?",
+                                 (now + lease, ident, worker)).rowcount
+        return changed > 0
+
+    def alive(self, lease=LEASE_SECONDS, now=None):
+        """Note a sign of life of this process: a claim or a renewal.
+
+        Half a lease without one is most likely a machine that slept, and its other workers wake with
+        every lease lapsed. For a quarter lease this process then claims no lapsed page, while their
+        heartbeats renew them, which they do within an eighth.
+        """
+        now = self.wall() if now is None else now
+        if self._alive is not None and now - self._alive > lease / 2:
+            self._settle_until = now + lease / 4
+        self._alive = now
+
+    def lapse(self, lease=LEASE_SECONDS):
+        """Now, the time a running lease must end before to count as lapsed, and the time before which a
+        lapsed page counts as having stopped its worker; this notes a sign of life (`alive`).
+
+        A page is left failed for stopping its workers only once its lease is a whole lease past, so a
+        heartbeat late after a machine woke still finds it running.
+        """
+        now = self.wall()
+        self.alive(lease, now)
+        lapsed = now if now >= self._settle_until else -math.inf
+        return now, lapsed, min(lapsed, now - lease)
 
     def prioritize(self, counts: dict[str, int]) -> int:
         """Score every pending or retry page by how much the atlas still lacks its characters.
@@ -306,69 +397,93 @@ class Queue:
                 (POLICY, POLICY))
         return self.db.total_changes - changed
 
-    def claim_supplement(self):
-        """Take the pending supplement whose page scores highest, as `claim` orders pages."""
+    def claim_supplement(self, worker, *, lease=LEASE_SECONDS):
+        """Take the supplement whose page scores highest, as `claim` orders pages, atomically.
+
+        A supplement whose lease lapsed is claimed again, and left failed after `MAX_ATTEMPTS`, as
+        `claim` treats a page.
+        """
+        now, lapsed, stopped = self.lapse(lease)
+        stamp = datetime.now(UTC).isoformat()
         with self.db:
-            row = self.db.execute("""SELECT s.page_id, s.policy, p.* FROM supplements s
-                JOIN pages p ON p.id = s.page_id WHERE s.status='pending' AND s.policy=?
-                AND (s.retry_after IS NULL OR s.retry_after<=?)
-                ORDER BY p.focus DESC, p.priority DESC, p.cached DESC, p.rank, p.document_id, p.id LIMIT 1""",
-                (POLICY, time.time())).fetchone()
-            if not row:
+            self.db.execute("""UPDATE supplements SET status='failed',updated_at=?,worker=NULL,lease_until=NULL,
+                error='the worker stopped while supplementing this page ' || attempts || ' times'
+                WHERE status='running' AND coalesce(lease_until,0)<? AND attempts>=?""",
+                            (stamp, stopped, MAX_ATTEMPTS))
+            claimed = self.db.execute("""UPDATE supplements SET status='running',attempts=attempts+1,updated_at=?,
+                worker=?,lease_until=? WHERE policy=? AND page_id=(SELECT s.page_id FROM supplements s
+                JOIN pages p ON p.id = s.page_id WHERE s.policy=? AND ((s.status='pending'
+                AND (s.retry_after IS NULL OR s.retry_after<=?))
+                OR (s.status='running' AND coalesce(s.lease_until,0)<? AND s.attempts<?))
+                ORDER BY p.focus DESC, p.priority DESC, p.cached DESC, p.rank, p.document_id, p.id LIMIT 1)
+                RETURNING page_id""", (stamp, worker, now + lease, POLICY, POLICY, now, lapsed, MAX_ATTEMPTS)).fetchone()
+            if not claimed:
                 return None
-            self.db.execute("""UPDATE supplements SET status='running',attempts=attempts+1,updated_at=?
-                WHERE page_id=? AND policy=?""", (datetime.now(UTC).isoformat(), row["page_id"], POLICY))
+            row = self.db.execute("""SELECT s.page_id, s.policy, p.* FROM supplements s JOIN pages p ON p.id = s.page_id
+                WHERE s.page_id=? AND s.policy=?""", (claimed[0], POLICY)).fetchone()
             earlier = [r[0] for r in self.db.execute("""SELECT output FROM supplements
                 WHERE page_id=? AND policy!=? AND status='complete'""", (row["page_id"], POLICY))]
         return {**dict(row), "earlier_supplements": earlier}
 
-    def finish_supplement(self, page_id, report, output):
+    def finish_supplement(self, page_id, worker, report, output):
+        """Record a committed supplement; False when `worker` no longer holds it, and nothing is written."""
         with self.db:
-            self.db.execute("""UPDATE supplements SET status='complete',output=?,added=?,error=NULL,updated_at=?
-                WHERE page_id=? AND policy=?""", (str(output.relative_to(self.root)), report["added"],
-                                                  datetime.now(UTC).isoformat(), page_id, POLICY))
+            return self.db.execute("""UPDATE supplements SET status='complete',output=?,added=?,error=NULL,
+                updated_at=?,worker=NULL,lease_until=NULL WHERE page_id=? AND policy=? AND status='running'
+                AND worker=?""", (str(output.relative_to(self.root)), report["added"],
+                                  datetime.now(UTC).isoformat(), page_id, POLICY, worker)).rowcount > 0
 
-    def fail_supplement(self, page_id, reason):
-        """Leave a supplement to try again after a growing pause, or failed after `MAX_ATTEMPTS`."""
-        attempts = self.db.execute("SELECT attempts FROM supplements WHERE page_id=? AND policy=?",
-                                   (page_id, POLICY)).fetchone()[0]
-        status = "pending" if attempts < MAX_ATTEMPTS else "failed"
-        retry_after = time.time() + 30 * 2**max(0, attempts-1) if status == "pending" else None
-        with self.db:
-            self.db.execute("""UPDATE supplements SET status=?,error=?,updated_at=?,retry_after=?
-                WHERE page_id=? AND policy=?""",
-                (status, reason, datetime.now(UTC).isoformat(), retry_after, page_id, POLICY))
+    def fail_supplement(self, page_id, worker, reason):
+        """Leave a supplement to try again after a growing pause, or failed after `MAX_ATTEMPTS`.
 
-    def recover(self):
-        """Return pages a stopped worker left running, and stop retrying one that keeps stopping it.
-
-        A page that kills the process outright never reaches `fail`, so its attempts are counted
-        here; without that it would be claimed first after every restart and nothing else would run.
+        False when `worker` no longer holds it, and nothing is written.
         """
-        now = datetime.now(UTC).isoformat()
         with self.db:
-            self.db.execute("""UPDATE pages SET status='failed',updated_at=?,
-                error='the worker stopped while extracting this page ' || attempts || ' times'
-                WHERE status='running' AND attempts>=?""", (now, MAX_ATTEMPTS))
-            self.db.execute("UPDATE pages SET status='pending' WHERE status='running'")
-            self.db.execute("""UPDATE supplements SET status=CASE WHEN attempts>=? THEN 'failed' ELSE 'pending' END,
-                error=CASE WHEN attempts>=? THEN 'the worker stopped while supplementing this page ' || attempts
-                || ' times' ELSE error END WHERE status='running'""", (MAX_ATTEMPTS, MAX_ATTEMPTS))
+            held = self.db.execute("""SELECT attempts FROM supplements WHERE page_id=? AND policy=?
+                AND status='running' AND worker=?""", (page_id, POLICY, worker)).fetchone()
+            if held is None:
+                return False
+            status = "pending" if held[0] < MAX_ATTEMPTS else "failed"
+            retry_after = self.wall() + 30 * 2**max(0, held[0]-1) if status == "pending" else None
+            return self.db.execute("""UPDATE supplements SET status=?,error=?,updated_at=?,retry_after=?,
+                worker=NULL,lease_until=NULL WHERE page_id=? AND policy=? AND status='running' AND worker=?""",
+                (status, reason, datetime.now(UTC).isoformat(), retry_after, page_id, POLICY, worker)).rowcount > 0
 
-    def finish(self, ident, report, output):
+    def finish(self, ident, worker, report, output):
+        """Record a committed page; False when `worker` no longer holds it, and nothing is written."""
         with self.db:
-            self.db.execute("""UPDATE pages SET status='complete',output=?,accepted=?,examined=?,
-                error=NULL,updated_at=?,policy=? WHERE id=?""",
+            return self.db.execute("""UPDATE pages SET status='complete',output=?,accepted=?,examined=?,
+                error=NULL,updated_at=?,policy=?,worker=NULL,lease_until=NULL
+                WHERE id=? AND status='running' AND worker=?""",
                 (str(output.relative_to(self.root)), report["accepted"], report["examined"],
-                 datetime.now(UTC).isoformat(), report["policy"], ident))
+                 datetime.now(UTC).isoformat(), report["policy"], ident, worker)).rowcount > 0
 
-    def fail(self, ident, reason, *, retryable=False):
-        attempts = self.db.execute("SELECT attempts FROM pages WHERE id=?",(ident,)).fetchone()[0]
-        status = "retry" if retryable and attempts < MAX_ATTEMPTS else "failed"
-        retry_after = time.time() + 30 * 2**max(0, attempts-1) if status == "retry" else None
+    def fail(self, ident, worker, reason, *, retryable=False):
+        """Leave a page to retry or failed; False when `worker` no longer holds it, and nothing is written."""
         with self.db:
-            self.db.execute("UPDATE pages SET status=?,error=?,updated_at=?,retry_after=? WHERE id=?",
-                            (status,reason, datetime.now(UTC).isoformat(),retry_after,ident))
+            held = self.db.execute("SELECT attempts FROM pages WHERE id=? AND status='running' AND worker=?",
+                                   (ident, worker)).fetchone()
+            if held is None:
+                return False
+            status = "retry" if retryable and held[0] < MAX_ATTEMPTS else "failed"
+            retry_after = self.wall() + 30 * 2**max(0, held[0]-1) if status == "retry" else None
+            return self.db.execute("""UPDATE pages SET status=?,error=?,updated_at=?,retry_after=?,worker=NULL,
+                lease_until=NULL WHERE id=? AND status='running' AND worker=?""",
+                (status,reason, datetime.now(UTC).isoformat(),retry_after,ident,worker)).rowcount > 0
+
+    def sweep(self, *, age=LEASE_SECONDS):
+        """Remove the staging directories and scratch files that workers killed mid-write left, once
+        untouched for `age` seconds; a worker writing one touches it within seconds."""
+        cutoff = time.time() - age
+        staging = self.root / ".staging"
+        for path in [*(staging.iterdir() if staging.is_dir() else ()), *self.root.glob("*.tmp")]:
+            with suppress(FileNotFoundError):
+                if path.stat().st_mtime >= cutoff:
+                    continue
+                if path.is_dir():
+                    shutil.rmtree(path, ignore_errors=True)
+                else:
+                    path.unlink()
 
     def status(self, *, state="idle", error=None):
         counts = dict(self.db.execute("SELECT status,count(*) FROM pages GROUP BY status"))
@@ -387,6 +502,11 @@ class Queue:
                                       "SELECT coalesce(sum(added),0) FROM supplements WHERE published_at IS NOT NULL").fetchone()[0],
                                   "publication_failures": self.db.execute(
                                       "SELECT count(*) FROM supplements WHERE publish_error IS NOT NULL").fetchone()[0]},
+                  # `state` is the last writer's; this lists every worker holding a live lease.
+                  "workers": dict(self.db.execute("""SELECT worker,count(*) FROM (
+                      SELECT worker FROM pages WHERE status='running' AND lease_until>=:now UNION ALL
+                      SELECT worker FROM supplements WHERE status='running' AND lease_until>=:now)
+                      GROUP BY worker""", {"now": self.wall()})),
                   "updated_at": datetime.now(UTC).isoformat(),
                   "recent": [dict(r) for r in self.db.execute("""SELECT id,title,status,accepted,examined,output,error,published_at,publish_error,retry_after
                       FROM pages WHERE status!='pending' ORDER BY updated_at DESC LIMIT 12""")]}
@@ -716,21 +836,28 @@ def commit(output, identity, records, report):
     if output.exists():
         return output
     root = output.parent.parent
-    stage = root/".staging"/identity
-    if stage.exists():
-        shutil.rmtree(stage)
+    # A staging directory of this call's own: two workers committing one identity never share one.
+    stage = root/".staging"/f"{identity}.{uuid4().hex}"
     stage.mkdir(parents=True)
-    for name, rows in records.items():
-        tables.write(stage/f"{name}.parquet", rows, tables.TABLES[name])
-    issues = tables.Dataset(stage).validate()
-    if issues:
-        raise ValueError("invalid extracted dataset: "+"; ".join(issues[:3]))
-    atomic_json(stage/"report.json",report)
-    output.parent.mkdir(parents=True,exist_ok=True)
-    for file in stage.glob("*.parquet"):
-        with file.open("rb") as handle:
-            os.fsync(handle.fileno())
-    stage.replace(output)
+    try:
+        for name, rows in records.items():
+            tables.write(stage/f"{name}.parquet", rows, tables.TABLES[name])
+        issues = tables.Dataset(stage).validate()
+        if issues:
+            raise ValueError("invalid extracted dataset: "+"; ".join(issues[:3]))
+        atomic_json(stage/"report.json",report)
+        output.parent.mkdir(parents=True,exist_ok=True)
+        for file in stage.glob("*.parquet"):
+            with file.open("rb") as handle:
+                os.fsync(handle.fileno())
+        try:
+            stage.replace(output)
+        except OSError:
+            if not output.exists():
+                raise
+            # Another worker committed the same identity first; its output is the same.
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
     descriptor = os.open(output.parent, os.O_DIRECTORY)
     try:
         os.fsync(descriptor)
@@ -814,12 +941,74 @@ def publish_supplements(queue, store):
     return published
 
 
-def run(queue, engine, *, pages=3, seconds=600, pause=10, max_lines=64, store=None, supplement_every=2):
+class heartbeat:
+    """Renew a claim's lease in the background while the worker extracts it.
+
+    A renewal the database refuses for a moment (busy, locked) is tried again at the next beat, well
+    inside the lease. Once another worker holds the claim, `lost` is set and the beats stop: the
+    worker then writes nothing for it. A page still running `deadline` seconds after its claim
+    (`PAGE_DEADLINE_LEASES` leases by default) is given up the same way, so a hung extraction lets its
+    lease lapse and another worker takes the page.
+    """
+
+    def __init__(self, queue, kind, ident, worker, *, lease=LEASE_SECONDS, deadline=None):
+        import threading
+        self.stop = threading.Event()
+        self.lost = threading.Event()
+        deadline = lease * PAGE_DEADLINE_LEASES if deadline is None else deadline
+        self.thread = threading.Thread(target=self._beat, args=(queue, kind, ident, worker, lease, deadline),
+                                       daemon=True)
+
+    def _beat(self, queue, kind, ident, worker, lease, deadline):
+        started = time.monotonic()
+        while not self.stop.wait(lease / 8):
+            if time.monotonic() - started > deadline:
+                self.lost.set()
+                return
+            try:
+                held = queue.renew(kind, ident, worker, lease=lease)
+            except sqlite3.Error:
+                continue
+            if not held:
+                self.lost.set()
+                return
+
+    def __enter__(self):
+        self.thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.stop.set()
+        self.thread.join()
+
+
+def publish(queue, store, *, wait=False):
+    """Import completed pages and supplements into the store, one worker at a time.
+
+    Another worker already publishing takes this worker's pages too, so a busy lock is skipped, unless
+    `wait` asks to wait for it: a worker's last publish does, or its final pages would wait for the
+    next worker's run.
+    """
+    try:
+        with tables.locked(queue.root / "publish", timeout=None if wait else 0):
+            publish_completed(queue, store)
+            publish_supplements(queue, store)
+    except TimeoutError:
+        pass
+
+
+def run(queue, engine, *, pages=3, seconds=600, max_lines=64, store=None, supplement_every=2, worker=None,
+        lease=LEASE_SECONDS):
+    """Extract up to `pages` pages within `seconds`, as one of any number of workers sharing `queue`.
+
+    Requests to image hosts are paced by `net`, across every worker, so pages follow one another at once.
+    """
+    import socket
+    worker = worker or f"{socket.gethostname()}:{os.getpid()}"
     started = time.monotonic()
-    queue.recover()  # caller holds the exclusive worker lock
+    queue.sweep(age=lease)
     if store is not None:
-        publish_completed(queue, store)
-        publish_supplements(queue, store)
+        publish(queue, store)
     queue.status(state="running")
     done = 0
     while done < pages and time.monotonic()-started < seconds:
@@ -829,38 +1018,43 @@ def run(queue, engine, *, pages=3, seconds=600, pause=10, max_lines=64, store=No
                 require_storage(store.directory)
         except OSError:
             return queue.status(state="paused-low-storage")
-        job = queue.claim_supplement() if supplement_every and done % supplement_every == supplement_every - 1 else None
+        job = (queue.claim_supplement(worker, lease=lease)
+               if supplement_every and done % supplement_every == supplement_every - 1 else None)
         kind = "supplement" if job else "page"
-        job = job or queue.claim()
+        job = job or queue.claim(worker, lease=lease)
         if job is None:
-            job, kind = queue.claim_supplement(), "supplement"
+            job, kind = queue.claim_supplement(worker, lease=lease), "supplement"
         if job is None:
             break
+        beat = heartbeat(queue, kind, job["id"], worker, lease=lease)
         try:
-            if kind == "supplement":
-                report, output = supplement(engine, job, queue.root, max_lines=max_lines)
-                queue.finish_supplement(job["id"], report, output)
-            else:
-                report, output = engine.extract(job, queue.root, max_lines=max_lines)
-                queue.finish(job["id"],report,output)
+            with beat:
+                if kind == "supplement":
+                    report, output = supplement(engine, job, queue.root, max_lines=max_lines)
+                else:
+                    report, output = engine.extract(job, queue.root, max_lines=max_lines)
+            # A claim another worker took over is its to record; the output committed here is kept,
+            # named by its identity, and that worker finds it.
+            if not beat.lost.is_set():
+                if kind == "supplement":
+                    queue.finish_supplement(job["id"], worker, report, output)
+                else:
+                    queue.finish(job["id"], worker, report, output)
         except Exception as exc:  # noqa: BLE001 — persist a failed page and keep the bounded queue moving
             # Avoid leaking local paths from exception text into durable status.
             import httpx
 
             from . import net
             reason = type(exc).__name__+": "+str(exc).replace(str(Path.home()),"~")[:500]
-            if kind == "supplement":
-                queue.fail_supplement(job["id"], reason)
-            else:
-                queue.fail(job["id"], reason,
+            if kind == "supplement" and not beat.lost.is_set():
+                queue.fail_supplement(job["id"], worker, reason)
+            elif not beat.lost.is_set():
+                queue.fail(job["id"], worker, reason,
                            retryable=isinstance(exc,(net.DownloadError,httpx.HTTPError,OSError)))
         if store is not None:
-            publish_completed(queue, store)
-            publish_supplements(queue, store)
+            publish(queue, store)
         done += 1
         queue.status(state="running")
-        # The pause spaces out requests to the image hosts; a page whose image was already
-        # cached asked them for nothing, so the next page follows at once.
-        if not job["cached"] and done < pages and time.monotonic()-started+pause < seconds:
-            time.sleep(pause)
+    if store is not None:
+        publish(queue, store, wait=True)
     return queue.status()
