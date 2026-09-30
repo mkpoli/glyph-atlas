@@ -198,20 +198,28 @@ try {
     `moving on after a review-step skip recorded ${reviewSkipRecords.map(row => row.field + ':' + row.new).join(', ') || 'nothing'}`)
   const afterPass = events(service.fixture.directory).length
 
-  // 6. In the collection inspector, Skip advances the existing queue in place, however many times
-  // in a row it is pressed.
+  // 6. In the collection inspector, Skip closes like a save does, and with "Next after saving" on it
+  // advances the existing queue in place, however many times in a row it is pressed.
   await browser.evaluate(`visit('/en')`)
   await browser.waitFor(`document.querySelectorAll('.glyph-tile[data-unit]').length > 3`)
   const order = await browser.evaluate(`[...document.querySelectorAll('.glyph-tile[data-unit]')].map(t => t.dataset.unit)`)
   await click('.glyph-tile[data-unit]')
   await browser.waitFor(`document.querySelector('.inspector-navigation > span')?.textContent.startsWith('1 /')`)
   await click('.skip-character')
+  await browser.waitFor(`document.querySelector('dialog[open]') === null`)
+  await click('.glyph-tile[data-unit]')
+  await browser.waitFor(`document.querySelector('.inspector-navigation > span')?.textContent.startsWith('1 /')`)
+  await click('.advance-switch')
+  await click('.skip-character')
   await browser.waitFor(`document.querySelector('.inspector-navigation > span')?.textContent.startsWith('2 /')`)
   await click('.skip-character')
   await browser.waitFor(`document.querySelector('.inspector-navigation > span')?.textContent.startsWith('3 /')`)
+  await click('.advance-switch')
   await click('.close-inspector')
   assert(events(service.fixture.directory).length === afterPass, 'queue skipping wrote an event')
-  assert(JSON.stringify(await browser.evaluate(`[...document.querySelectorAll('.glyph-tile[data-unit]')].map(t => t.dataset.unit)`)) === JSON.stringify(order), 'skipping refreshed or reordered the collection')
+  // Closing the inspector returns focus to its tile, which may let the grid load its next page; the
+  // crops that were there must stay where they were.
+  assert(JSON.stringify((await browser.evaluate(`[...document.querySelectorAll('.glyph-tile[data-unit]')].map(t => t.dataset.unit)`)).slice(0, order.length)) === JSON.stringify(order), 'skipping refreshed or reordered the collection')
 
   assert(errors.length === 0, `page errors: ${errors.join('; ')}`)
   console.log(`skip: ${reviewEvents.length} answers saved for ${before.length} crops offered, skipped crop excluded`)
