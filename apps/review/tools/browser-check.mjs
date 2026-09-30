@@ -244,6 +244,7 @@ try {
   await browser.waitFor(`${shownId} === ${JSON.stringify(listed[1])}`)
   await browser.waitFor(inspectorReady)
   assert(events(config.directory).length > beforeAdvance, 'the save before going on was not recorded')
+  await browser.waitFor('document.activeElement?.classList.contains("save-character")')
   await click('.skip-character')
   await browser.waitFor(`${shownId} === ${JSON.stringify(listed[2])}`)
   assert(await browser.evaluate('JSON.parse(localStorage.getItem("atlas.advance"))') === true, 'the choice is not remembered')

@@ -21,6 +21,12 @@
   let { id, clientId, close, saved, previous = null, next = null, position = '', initial = null } = $props()
   const first = untrack(() => initial)
   const session = useSession()
+  // Going on to the next crop disables the focused save button while it loads, which drops its focus;
+  // once the crop is ready, focus returns to the button the reader was pressing. The save names the
+  // crop it leaves, and the load of another crop arms the return.
+  let saveButton = $state(null), refocus = $state(false), leaving = null
+  // The button is enabled on the render after the crop is ready, so focus waits for it.
+  $effect(() => { if (refocus && loaded && !busy && saveButton) { refocus = false; tick().then(() => saveButton?.focus({ preventScroll: true })) } })
   const advancing = $derived(session.state.advance && Boolean(next))
   let dialog, data = $state(first), error = $state(''), busy = $state(false)
   let issue = $state(null), noneSelected = $state(false), correction = $state(null), note = $state(''), search = $state('')
@@ -31,6 +37,7 @@
     const current = ++generation
     data = preloaded; error = ''; issue = null; correction = null; noneSelected = false; note = ''; search = ''
     loaded = false; imageFailed = false; submission = null
+    if (leaving && target !== leaving) { refocus = true; leaving = null }
     dialog?.scrollTo({ top: 0 })
     try {
       const result = preloaded ?? await corpusCharacter(target)
@@ -62,6 +69,7 @@
     if (!submission || submission.signature !== signature) submission = { signature, id: crypto.randomUUID() }
     busy = true; error = ''
     try {
+      leaving = advancing ? target : null
       const result = await request('/atlas/corpus/reviews', { id: submission.id, ...payload })
       if (!closed && current === generation) saved(target, result)
     } catch (e) { if (!closed && current === generation) error = e.message }
@@ -106,7 +114,7 @@
   <footer class="inspector-savebar">
     {#if position}<AdvanceSwitch disabled={busy} />{/if}
     {#if imageFailed}<span role="alert">{t('character.image.unavailable')}</span>{/if}
-    <button class="primary save-character" disabled={busy || !data || !loaded || imageFailed || !data.proxyable || ((data.needs_segmentation || data.identity_status === 'unassigned') && !issue)} onclick={() => save()}>{busy ? t('common.saving') : data?.identity_status === 'unassigned' && !issue ? t('corpus.save.chooseCharacterOrIssue') : data?.needs_segmentation && !issue ? t('corpus.save.awaitingSegmentation') : issue ? t(advancing ? 'character.save.issue.next' : 'character.save.issue.close') : t(advancing ? 'character.save.looksRight.next' : 'character.save.looksRight.close')} {#if advancing}<span>→</span>{:else if !issue}<span>✓</span>{/if}</button>
+    <button class="primary save-character" bind:this={saveButton} disabled={busy || !data || !loaded || imageFailed || !data.proxyable || ((data.needs_segmentation || data.identity_status === 'unassigned') && !issue)} onclick={() => save()}>{busy ? t('common.saving') : data?.identity_status === 'unassigned' && !issue ? t('corpus.save.chooseCharacterOrIssue') : data?.needs_segmentation && !issue ? t('corpus.save.awaitingSegmentation') : issue ? t(advancing ? 'character.save.issue.next' : 'character.save.issue.close') : t(advancing ? 'character.save.looksRight.next' : 'character.save.looksRight.close')} {#if advancing}<span>→</span>{:else if !issue}<span>✓</span>{/if}</button>
     {#if issue && !data?.needs_segmentation && data?.identity_status !== 'unassigned'}<button class="quiet-link looks-right" disabled={busy || !loaded || imageFailed} onclick={() => save(true)}>{t('character.save.itLooksRight')}</button>{/if}
     <button class="skip-character" disabled={busy} onclick={skip} title={skipHint()}>{t(advancing ? 'common.skip.next' : 'common.skip.close')}</button>
   </footer>
