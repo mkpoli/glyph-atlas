@@ -17,9 +17,15 @@ The parts fill a staging table, `grapheme_rows_next`; the last part swaps the ro
 `--file` as one transaction, so a failure before the last part leaves the site as it was, and a rerun
 starts the staging table again.
 
-What this does not reach: the corpus record packs in R2, whose records carry `grapheme`,
-`family_members` and `written_character` as the corpus export wrote them (a corpus re-export does),
-and the Forms tables, whose families and clusters the forms export writes.
+What this does not reach, and a corpus re-export and a forms export do:
+
+- the corpus record packs in R2 and their copies in `corpus_gallery.data`, whose records carry
+  `grapheme`, `family_members` and `written_character` as the corpus export wrote them;
+- a glyph of a normalized corpus (CODH) whose class has just joined a family of several forms: the
+  corpus export leaves it unassigned (`corpus_units.character` NULL, family scope required), and this
+  moves only its family, keeping its character;
+- the Forms tables, whose families and clusters the forms export writes, `form_bases.family` among
+  them, so undoing a form decision after this restores the family it had before.
 """
 from __future__ import annotations
 
@@ -27,6 +33,7 @@ import argparse
 import csv
 import json
 import subprocess
+import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -72,11 +79,16 @@ def changed(previous: dict[str, frozenset[str]]) -> list[str]:
                   key=lambda point: int(point.removeprefix("U+"), 16))
 
 
-def d1(sql: str) -> list[dict[str, Any]]:
-    """A read-only query against the live database."""
-    done = subprocess.run(["bunx", "wrangler", "d1", "execute", "glyph-atlas", "--remote", "--json", "--command", sql],
-                          cwd=WRANGLER, capture_output=True, text=True, check=True)
-    return json.loads(done.stdout)[0]["results"]
+def d1(sql: str, tries: int = 4) -> list[dict[str, Any]]:
+    """A read-only query against the live database, retried: the API refuses a request now and then."""
+    for attempt in range(tries):
+        done = subprocess.run(["bunx", "wrangler", "d1", "execute", "glyph-atlas", "--remote", "--json", "--command", sql],
+                              cwd=WRANGLER, capture_output=True, text=True, check=False)
+        if done.returncode == 0:
+            return json.loads(done.stdout)[0]["results"]
+        if attempt < tries - 1:
+            time.sleep(10)
+    raise SystemExit(f"D1 refused {sql[:80]!r} {tries} times: {done.stdout[-400:]}")
 
 
 def live_rows(points: list[str]) -> dict[str, dict[str, Any]]:
@@ -110,9 +122,17 @@ def rewritten(point: str, live: dict[str, dict[str, Any]], counts: dict[str, int
     detail = {**detail, **data,
               "characters": [characters.form_row(form, counts) for cp in characters._forms(point)
                              if (form := refs.character(cp))],
-              "expansions": characters._expansions(row, counts, expand="none"),
+              "expansions": _expansions(row, counts, detail),
               "visual_analysis": _visual_analysis(point, info["grapheme"]["code_point"], live)}
     return data, detail
+
+
+def _expansions(row, counts: dict[str, int], detail: dict[str, Any]) -> list[dict[str, Any]]:
+    """The widenings with the family one recomputed. The kana written as a kanji are not among the
+    changed rows, so their counts are unknown here and the live row's `jibo` entry is kept as it is."""
+    kept = {entry["key"]: entry for entry in detail.get("expansions") or []}
+    return [kept.get("jibo", entry) if entry["key"] == "jibo" else entry
+            for entry in characters._expansions(row, counts, expand="none")]
 
 
 def _visual_analysis(point: str, head: str, live: dict[str, dict[str, Any]]) -> dict:
@@ -123,12 +143,13 @@ def _visual_analysis(point: str, head: str, live: dict[str, dict[str, Any]]) -> 
 def statements(rows: dict[str, tuple[dict, dict]]) -> list[list[str]]:
     """The staging fill in statements under D1's statement limit, then the swap as the last group."""
     fill = [f"DROP TABLE IF EXISTS {STAGING};\n",
-            (f"CREATE TABLE {STAGING} (code_point TEXT PRIMARY KEY, character TEXT NOT NULL, data TEXT NOT NULL,"
-             " detail TEXT NOT NULL) WITHOUT ROWID;\n")]
-    head = f"INSERT OR REPLACE INTO {STAGING}(code_point,character,data,detail) VALUES"
+            (f"CREATE TABLE {STAGING} (code_point TEXT PRIMARY KEY, character TEXT NOT NULL, family TEXT NOT NULL,"
+             " data TEXT NOT NULL, detail TEXT NOT NULL) WITHOUT ROWID;\n")]
+    head = f"INSERT OR REPLACE INTO {STAGING}(code_point,character,family,data,detail) VALUES"
     values, size = [], 0
     for point, (data, detail) in rows.items():
-        value = f"({quote(point)},{quote(refs.to_char(point))},{quote(encoded(data))},{quote(encoded(detail))})"
+        value = (f"({quote(point)},{quote(refs.to_char(point))},{quote(data['grapheme']['code_point'])},"
+                 f"{quote(encoded(data))},{quote(encoded(detail))})")
         if values and size + len(value.encode()) + 1 > STATEMENT_BYTES - len(head):
             fill.append(head + ",".join(values) + ";\n")
             values, size = [], 0
@@ -136,18 +157,19 @@ def statements(rows: dict[str, tuple[dict, dict]]) -> list[list[str]]:
         size += len(value.encode()) + 1
     if values:
         fill.append(head + ",".join(values) + ";\n")
-    family = "(SELECT json_extract(c.data,'$.grapheme.code_point') FROM characters c WHERE c.character={table}.character)"
-    moved = f"character IN (SELECT character FROM {STAGING})"
+    # Each moved crop and glyph is found through its character index (`unit_character`,
+    # `corpus_character`) from the staging row, which carries the new family, so no statement reads a
+    # whole table.
     swap = [
         f"UPDATE characters SET data=n.data,detail=n.detail FROM {STAGING} n WHERE characters.code_point=n.code_point;\n",
-        (f"UPDATE units SET family={family.format(table='units')} WHERE {moved} "
-         f"AND family IS NOT {family.format(table='units')};\n"),
-        ("UPDATE units SET data=json_set(data,'$.grapheme',json_extract(c.data,'$.grapheme.code_point'),"
-         "'$.family_members',json_extract(c.data,'$.grapheme.members')) FROM characters c "
-         f"WHERE units.origin='corpus' AND c.character=units.character AND units.{moved} "
+        (f"UPDATE units SET family=n.family FROM {STAGING} n WHERE units.origin IN ('local','corpus') "
+         "AND units.character=n.character AND units.family IS NOT n.family;\n"),
+        ("UPDATE units SET data=json_set(units.data,'$.grapheme',n.family,"
+         "'$.family_members',json_extract(n.data,'$.grapheme.members')) "
+         f"FROM {STAGING} n WHERE units.origin='corpus' AND units.character=n.character "
          "AND json_type(units.data,'$.grapheme') IS NOT NULL;\n"),
-        (f"UPDATE corpus_units SET family={family.format(table='corpus_units')} WHERE {moved} "
-         f"AND family IS NOT {family.format(table='corpus_units')};\n"),
+        (f"UPDATE corpus_units SET family=n.family FROM {STAGING} n WHERE corpus_units.character=n.character "
+         "AND corpus_units.family IS NOT n.family;\n"),
         f"DROP TABLE {STAGING};\n",
         *(f"INSERT OR REPLACE INTO metadata(key,value) VALUES('{stamp}',"
           "json_quote(strftime('%Y-%m-%dT%H:%M:%fZ','now')));\n" for stamp in STAMPS),
@@ -195,9 +217,13 @@ published=$(q "SELECT value FROM metadata WHERE key='published_at'")
 [ "$published" = '{published}' ] || {{ echo "the site was published again since this export read it ($published); export again" >&2; exit 1; }}
 check="SELECT count(*) AS rows FROM characters WHERE json_extract(data,'$.grapheme.code_point')='{probe_head}'"
 echo "before: $(q "$check")"
+last=$(basename "$(ls "$here"/sql/part-*.sql | tail -1)")
 for part in "$here"/sql/part-*.sql; do
   done=0
   for try in 1 2 3 4; do
+    # The last part may have committed although wrangler's answer was lost; it drops the staging table,
+    # so a retry would fail on it.
+    if [ "$try" -gt 1 ] && [ "$(basename "$part")" = "$last" ] && [ "$(q "$check")" = '{{"rows":{probe_rows}}}' ]; then done=1; break; fi
     if bunx wrangler d1 execute glyph-atlas --remote --yes --file "$part" 2>&1 | tee /dev/stderr | grep -q "Executed"; then done=1; break; fi
     sleep 30
   done
