@@ -1966,6 +1966,10 @@ def test_a_written_form_is_recorded_without_touching_the_character_or_the_review
         {key: detail[key] for key in ("label", "reading", "revision", "state")}
     listed = {item["id"]: item for item in client.get("/atlas", params={"limit": 96}).json()["items"]}
     assert listed[unit]["written_form"] == "⿺辶𦊷"
+    # The character page's tiles read the same field from the occurrence listing.
+    occurrence = next(item for item in client.get("/layers/occurrences",
+                      params={"code_point": "U+3042"}).json()["items"] if item["id"] == unit)
+    assert occurrence["written_form"] == "⿺辶𦊷"
     # A rebuilt store gives the crop the same revision: the event is not counted as one.
     store = Store(dataset)
     store.rebuild()
