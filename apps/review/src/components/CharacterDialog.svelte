@@ -25,6 +25,12 @@
         previous = null, next = null, position = '', initial = null } = $props()
   const first = untrack(() => initial)
   const session = useSession()
+  // Going on to the next crop disables the focused save button while it loads, which drops its focus;
+  // once the crop is ready, focus returns to the button the reader was pressing. The save names the
+  // crop it leaves, and the load of another crop arms the return.
+  let saveButton = $state(null), refocus = $state(false), leaving = null
+  // The button is enabled on the render after the crop is ready, so focus waits for it.
+  $effect(() => { if (refocus && loaded && !busy && saveButton) { refocus = false; tick().then(() => saveButton?.focus({ preventScroll: true })) } })
   // A round's crop returns to its round, and a crop opened on its own has nowhere to go on to.
   const advancing = $derived(!onVerdict && !onskip && session.state.advance && Boolean(next))
   let dialog, data = $state(first), error = $state(''), busy = $state(false)
@@ -66,6 +72,7 @@
     written = ''; writtenDirty = false; readingDirty = false
     contextSuggestions = null; contextSuggesting = false
     loaded = false; imageFailed = false; suggestions = null; suggesting = false; submission = null
+    if (leaving && target !== leaving) { refocus = true; leaving = null }
     try {
       const result = preloaded ?? await character(target)
       if (closed || current !== generation) return
@@ -186,6 +193,7 @@
     const signature = JSON.stringify(payload)
     if (!submission || submission.signature !== signature) submission = { signature, id: crypto.randomUUID() }
     try {
+      leaving = advancing ? target : null
       const result = await request(route, { id: submission.id, ...payload })
       if (!closed && current === generation) saved(target, result)
     } catch (e) { if (!closed && current === generation) error = e.message }
@@ -263,7 +271,7 @@
   <footer class="inspector-savebar">
     {#if position && !onVerdict}<AdvanceSwitch disabled={busy} />{/if}
     {#if imageFailed}<span role="alert">{t('character.image.unavailable')}</span>{/if}
-    <button class="primary save-character" disabled={busy || !data || !loaded || imageFailed} onclick={() => save()}>{busy ? t('common.saving') : issue ? (onVerdict ? t('character.save.useError') : t(advancing ? 'character.save.issue.next' : 'character.save.issue.close')) : (onVerdict ? t('character.save.backToSelection') : t(advancing ? 'character.save.looksRight.next' : 'character.save.looksRight.close'))} {#if onVerdict || advancing}<span>→</span>{:else if !issue}<span>✓</span>{/if}</button>
+    <button class="primary save-character" bind:this={saveButton} disabled={busy || !data || !loaded || imageFailed} onclick={() => save()}>{busy ? t('common.saving') : issue ? (onVerdict ? t('character.save.useError') : t(advancing ? 'character.save.issue.next' : 'character.save.issue.close')) : (onVerdict ? t('character.save.backToSelection') : t(advancing ? 'character.save.looksRight.next' : 'character.save.looksRight.close'))} {#if onVerdict || advancing}<span>→</span>{:else if !issue}<span>✓</span>{/if}</button>
     {#if issue}<button class="quiet-link looks-right" disabled={busy || !loaded || imageFailed} onclick={() => { discardProposals(); save(true) }}>{onVerdict ? t('character.save.removeSelection') : t('character.save.itLooksRight')}</button>{/if}
     <button class="skip-character" disabled={busy} onclick={skip} title={skipHint()}>{t(advancing ? 'common.skip.next' : 'common.skip.close')}</button>
   </footer>
