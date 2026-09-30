@@ -24,6 +24,10 @@ CORPUS_REFRESH = FORMS_REAPPLY + "\n" + "\n".join(re.findall(
     r"UPDATE corpus_units SET named=1 WHERE id IN [\s\S]*?;|DELETE FROM corpus_characters;|INSERT INTO corpus_characters [\s\S]*?;",
     (MIGRATIONS / "0006_corpus_rounds.sql").read_text()))
 assert CORPUS_REFRESH.count(";") == 6, "0006 no longer restores and counts corpus_characters"
+# The Worker caches the grapheme browser's corpus counts on this stamp; it is written with the recount,
+# in the same part, so no request between them caches the old counts under a new key.
+CORPUS_REFRESH += ("\nINSERT OR REPLACE INTO metadata(key,value) "
+                   "VALUES('corpus_counts_at',json_quote(strftime('%Y-%m-%dT%H:%M:%fZ','now')));")
 
 # Code points whose script makes a label kana, kanji or hangul, generated from the Unicode script
 # properties the Worker's `categoryOf` tests; 0006 names the kana and Han ranges in SQL and 0008 the

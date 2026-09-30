@@ -273,6 +273,35 @@ async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, productio
   ctx.waitUntil(caches.default.put(key, Response.json(groups, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return groups;
 }
+// Corpus glyphs by character in the material asked for, with the grapheme the character table files each
+// under: what the grapheme browser counts beside the collection's own crops, so a character the site
+// holds only as corpus glyphs (債) is listed too. It is its own request, which the browser makes when
+// it opens, so catalogue pages carry none of it. `corpus_characters` is read whole (one row per
+// character and material), and the edge keeps one copy per `corpus_counts_at`: every recount a
+// publication runs (`CORPUS_REFRESH`, which a forms reload runs too) stamps it with the recount, and
+// the forms drain stamps it once a decision has moved glyphs between characters. The browser keeps
+// its copy for five minutes.
+async function corpusVersion(env: Env) {
+  return (await env.DB.prepare("SELECT value FROM metadata WHERE key='corpus_counts_at'").first<{ value: string }>())?.value ?? '';
+}
+export function browseCorpusQuery(production: string) {
+  const [materials, values] = material(production, 'cc.production');
+  return { sql: `SELECT cc.character AS label,sum(cc.n) AS n,json_extract(ch.data,'$.grapheme.code_point') AS family
+    FROM corpus_characters cc LEFT JOIN characters ch ON ch.character=cc.character WHERE ${materials} GROUP BY cc.character`, values };
+}
+async function corpusCharacters(env: Env, ctx: ExecutionContext, url: URL) {
+  const production = url.searchParams.get('production') || 'all';
+  if (!validScope(production)) throw new Problem(400, 'Invalid production scope.');
+  const key = new Request(`${url.origin}/atlas/corpus/characters?production=${encodeURIComponent(production)}&v=${encodeURIComponent(await corpusVersion(env))}`);
+  const cached = await caches.default.match(key);
+  if (cached) return await cached.json() as Json;
+  const { sql, values } = browseCorpusQuery(production);
+  const rows = (await env.DB.prepare(sql).bind(...values).all<{ label: string; n: number; family: string | null }>()).results;
+  // [label, grapheme, glyphs], one per character that has any.
+  const body = { items: rows.filter(row => row.label && row.n > 0).map(row => [row.label, graphemeOf(row.label, row.family), row.n]) };
+  ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
+  return body;
+}
 // The crops a listing starts from: local ones, those a round may deal, in the material asked for.
 // A round and its reference strips name their character, and read it through `unit_character`: the
 // review filter is kept off its index (`+`), which would otherwise drive the query over every crop
@@ -1187,6 +1216,7 @@ export default {
       if(path==='/atlas/pairs')return json(await pairs(env,ctx,url));
       const pair=path.match(/^\/atlas\/pairs\/([^/]+)$/);
       if(pair)return json(await pairOccurrences(env,url,decodeURIComponent(pair[1])));
+      if(path==='/atlas/corpus/characters')return json(await corpusCharacters(env,ctx,url),200,{'cache-control':'private, max-age=300'});
       if(path==='/atlas/corpus/character')return json(parse((await unit(env,q.get('id')||'')).data));
       if(path==='/atlas/collection/status')return json(await meta(env,'collection'));
       const document=path.match(/^\/atlas\/documents\/([^/]+)\/characters$/);
