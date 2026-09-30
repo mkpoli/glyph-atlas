@@ -71,6 +71,7 @@
   "chips.showCharacter": "字{char}ヲ示ス",
   "chips.variants": "異體字",
   "chips.related": "關聯字",
+  "chips.derived": "導出",
   "chips.relation.variant": "異體字",
   "chips.relation.equivalent": "全等異體",
   "chips.relation.overlap": "部分通用",

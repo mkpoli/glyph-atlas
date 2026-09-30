@@ -75,6 +75,7 @@
   "chips.showCharacter": "Show character {char}",
   "chips.variants": "Variants",
   "chips.related": "Related",
+  "chips.derived": "Derived",
   "chips.relation.variant": "Variant",
   "chips.relation.equivalent": "Interchangeable",
   "chips.relation.overlap": "Partly interchangeable",

@@ -87,3 +87,14 @@ def test_the_local_corpus_side_widens_in_character_then_id_order(monkeypatch):
     found, fault = characters._widened_corpus(["𠚰", "刻"], 2, 1, None)
     assert fault is None and found["total"] == 3
     assert [item["id"] for item in found["items"]] == ["b", "c"]
+
+
+def test_a_derived_form_joins_neither_the_widening_nor_the_attested_rows(monkeypatch):
+    monkeypatch.setattr(characters.corpus_source, "counts", lambda chars: {})
+    card = characters.variant_card("寰", {})
+    assert card["derived"] and card["sources"][refs.DERIVED_IDS].startswith("Predicted component variants")
+    attested = {row["char"] for row in card["items"] + card["related"]}
+    assert not attested & {row["char"] for row in card["derived"]}
+    widened = set(characters.variant_code_points("U+5BF0"))
+    assert not widened & {row["code_point"] for row in card["derived"] if row["code_point"]}
+

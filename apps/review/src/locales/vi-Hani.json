@@ -72,6 +72,7 @@
   "chips.showCharacter": "現𡨸{char}",
   "chips.variants": "異體",
   "chips.related": "聯關",
+  "chips.derived": "派生",
   "chips.relation.variant": "異體",
   "chips.relation.equivalent": "同等",
   "chips.relation.overlap": "通用𠬠分",

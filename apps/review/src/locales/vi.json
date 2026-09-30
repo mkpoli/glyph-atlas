@@ -71,6 +71,7 @@
   "chips.showCharacter": "Hiện chữ {char}",
   "chips.variants": "Dị thể",
   "chips.related": "Liên quan",
+  "chips.derived": "Phái sinh",
   "chips.relation.variant": "Dị thể",
   "chips.relation.equivalent": "Đồng đẳng",
   "chips.relation.overlap": "Thông dụng một phần",
