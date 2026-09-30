@@ -173,8 +173,8 @@ The submission is `<actor>:<batch id>`. The batch is undone as its reviewer woul
 refuses if a later review changed one of its crops:
 
 ```sh
-curl -X POST https://atlas.mkpo.li/atlas/corrections/<batch id>/undo \
-  -H 'content-type: application/json' -H 'origin: https://atlas.mkpo.li' -d '{"client_id":"<actor>"}'
+curl -X POST https://glyphatlas.org/atlas/corrections/<batch id>/undo \
+  -H 'content-type: application/json' -H 'origin: https://glyphatlas.org' -d '{"client_id":"<actor>"}'
 ```
 
 ## 9. Release

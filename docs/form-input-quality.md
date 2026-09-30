@@ -54,9 +54,9 @@ Read the site's current exports before generating a revision:
 
 ```sh
 mkdir -p work/form-reviews
-curl --fail 'https://atlas.mkpo.li/atlas/forms/decisions.jsonl' \
+curl --fail 'https://glyphatlas.org/atlas/forms/decisions.jsonl' \
   -o work/form-reviews/decisions.jsonl
-curl --fail 'https://atlas.mkpo.li/atlas/reviews.json?include_processed=true' \
+curl --fail 'https://glyphatlas.org/atlas/reviews.json?include_processed=true' \
   -o work/form-reviews/reviews.json
 export ATLAS_FORM_DECISIONS=work/form-reviews/decisions.jsonl
 
