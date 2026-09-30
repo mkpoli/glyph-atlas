@@ -584,8 +584,10 @@ class Engine:
         """What one page's extraction reads, with the `identity` that names its output; no model runs."""
         from PIL import Image
         dataset = tables.Dataset(Path(job["source"]))
-        page = next(p for p in dataset.read("pages") if p.id == job["id"])
-        document = next(d for d in dataset.read("documents") if d.id == page.document_id)
+        # One row each, filtered by Arrow: building all 79,000 pages to keep one cost 2 s a page.
+        page = next(p for batch in dataset.scan("pages", keep=tables.In("id", {job["id"]})) for p in batch)
+        document = next(d for batch in dataset.scan("documents", keep=tables.In("id", {page.document_id}))
+                        for d in batch)
         lines = [line for batch in dataset.scan("lines", keep=tables.In("page_id", {page.id}))
                  for line in batch if line.box is not None and not line.page_scope]
         lines = sorted(lines, key=lambda x:(x.seq,x.id))
