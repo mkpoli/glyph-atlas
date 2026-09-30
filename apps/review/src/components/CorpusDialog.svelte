@@ -107,7 +107,7 @@
 </dialog>
 
 <style>
-  .assignment-options{display:flex;gap:12px;margin:18px 0}.assignment-options>span{display:flex;flex-direction:column;align-items:center;gap:4px}.assignment-options button{font-size:28px;padding:10px 18px}.assignment-options button.chosen{border-color:var(--accent);background:var(--accent-light)}
+  .assignment-options{display:flex;flex-wrap:wrap;gap:12px;margin:18px 0}.assignment-options>span{display:flex;flex-direction:column;align-items:center;gap:4px}.assignment-options button{font-size:28px;padding:10px 18px}.assignment-options button.chosen{border-color:var(--accent);background:var(--accent-light)}
   .unassigned-title{font-size:28px}
   .title-grapheme{margin-left:12px;font-size:40px;color:var(--muted)}
   .corpus-source-label{font-size:12px;color:var(--muted);margin:-6px 0 18px}.corpus-source-label b{font-size:17px;color:var(--ink);margin-left:6px}
