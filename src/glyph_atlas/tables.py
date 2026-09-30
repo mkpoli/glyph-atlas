@@ -42,8 +42,8 @@ from .schema import Box, Document, Group, Line, Page, PageText, Unit
 #: The version of the dataset tables' schema, written into every `MANIFEST.json`. Version 2 removed
 #: `Unit.jibo`: the 字母 is metadata on a character now, and `data/vocab/characters.tsv` states it.
 #: Version 3 added `Document.style`, `Page.style` and `Unit.style`; a table written before reads them
-#: as `unassessed`.
-SCHEMA_VERSION = 3
+#: as `unassessed`. Version 4 added `Unit.written_form`, which a table written before reads as null.
+SCHEMA_VERSION = 4
 BATCH_SIZE = 65_536
 MANIFEST_NAME = "MANIFEST.json"
 
