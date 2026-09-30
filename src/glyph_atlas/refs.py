@@ -44,6 +44,7 @@ from .schema import Character, Ligature, Script, VariantRef
 
 ROOT = Path(__file__).resolve().parents[2]
 VOCAB = ROOT / "data" / "vocab"
+SOURCES = ROOT / "data" / "sources"
 CHARACTERS_TSV = "characters.tsv"
 HENTAIGANA_TSV = "hentaigana.tsv"
 MJ_TSV = "mj-hentaigana.tsv"
@@ -52,6 +53,7 @@ MJ_KANJI_TSV = "mj-kanji.tsv"
 MJ_VERSION = re.compile(r"Ver\.(?P<version>[0-9.]+)")
 EQUIVALENTS_TSV = "kanji-equivalents.tsv"
 VARIANTS_TSV = "kanji-variants.tsv"
+FAMILIES_TSV = "grapheme-families.tsv"
 KANA_ORIGINS_TSV = "kana-origins.tsv"
 SUSPECT_FORMS_TSV = "suspect-forms.tsv"
 POLICIES_YAML = "equivalence-policies.yaml"
@@ -62,6 +64,7 @@ BUILT_BY = {
     MJ_TSV: "scripts/build_mj_table.py",
     EQUIVALENTS_TSV: "scripts/build_kanji_equivalents.py",
     VARIANTS_TSV: "scripts/build_kanji_variants.py",
+    FAMILIES_TSV: "scripts/build_character_table.py",
     KANA_ORIGINS_TSV: "scripts/build_kana_origins.py",
     SUSPECT_FORMS_TSV: "nothing: it is kept by hand from reviewers' decisions",
 }
@@ -399,6 +402,7 @@ def clear_cache() -> None:
         _characters,
         _ordered_characters,
         graphemes,
+        _source_record,
         _grapheme_families,
         _grapheme_info,
         _by_code_point,
@@ -568,10 +572,10 @@ def character(code_point: str) -> Character | None:
 
 
 def grapheme(code_point: str) -> str | None:
-    """The representative of a character's curated grapheme family.
+    """The representative of a character's grapheme family.
 
-    仮 and 假 share U+4EEE while retaining separate encoded identities. Kana keep
-    their curated families. Characters without a stated relation represent themselves.
+    仮 and 假 share U+4EEE, and 𮟃 and 還 share U+9084, while each keeps its own encoded identity.
+    Kana keep their curated families. Characters without a stated relation represent themselves.
     """
     row = character(code_point)
     return row.grapheme or row.code_point if row else None
@@ -586,21 +590,49 @@ def graphemes() -> dict[str, list[str]]:
     return forms
 
 
+#: The relation of a kanji family joined by shape-variant edges (`glyph_atlas.shape_families`).
+SHAPE_VARIANT = "shape-variant"
+
+
+@cache
+def _source_record(identifier: str) -> dict:
+    return yaml.safe_load((SOURCES / f"{identifier}.yaml").read_text(encoding="utf-8"))
+
+
 @cache
 def _grapheme_families() -> dict[str, dict]:
+    """The kanji families: the curated ones of graphemes.yaml and the shape-variant ones of
+    grapheme-families.tsv, each with its members and the evidence it rests on.
+
+    A curated family may hold more members than graphemes.yaml names, each joined by an edge of
+    the tsv; every member of a family must be one of the two, or the table is stale.
+    """
     path = VOCAB / "graphemes.yaml"
-    if not path.exists():
-        return {}
-    document = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    document = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}) if path.exists() else {}
+    edges: dict[str, list[dict[str, str]]] = {}
+    for row in _read_tsv(FAMILIES_TSV):
+        edges.setdefault(row["head"], []).append(row)
     families = {}
-    for head, family in document.get("families", {}).items():
-        members = [to_code_point(char) for char in family["members"]]
+    for head in [*document.get("families", {}), *(head for head in edges if head not in document.get("families", {}))]:
+        family = document.get("families", {}).get(head)
+        stated = [to_code_point(char) for char in family["members"]] if family else [head]
+        joined = {to_code_point(row[end]) for row in edges.get(head, ()) for end in ("a", "b")}
+        members = stated + sorted(joined - set(stated),
+                                  key=lambda point: int(point.removeprefix("U+"), 16))
         if set(members) != set(graphemes().get(head, [])):
             raise ValueError(f"family {head} disagrees with characters.tsv; rebuild the character table")
+        evidence = [{"id": key, **document["sources"][key]} for key in family["sources"]] if family else []
+        by_source: dict[str, list[dict[str, str]]] = {}
+        for row in edges.get(head, ()):
+            by_source.setdefault(row["source"], []).append(
+                {key: row[key] for key in ("a", "b", "relation", "role", "detail")})
+        for source, rows in sorted(by_source.items()):
+            record = _source_record(source)
+            evidence.append({"id": source, "title": record["name"], "url": record["url"], "edges": rows})
         families[head] = {
             "members": members,
-            "relation": family["relation"],
-            "evidence": [{"id": key, **document["sources"][key]} for key in family["sources"]],
+            "relation": family["relation"] if family else SHAPE_VARIANT,
+            "evidence": evidence,
         }
     return families
 
