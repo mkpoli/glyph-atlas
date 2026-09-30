@@ -219,11 +219,12 @@ def statements(rows: dict[str, tuple[dict, dict]]) -> list[list[str]]:
             (f"UPDATE units SET family=n.family FROM {STAGING} n WHERE units.origin='corpus'"
              f" AND units.character=n.character AND n.character IN ({chars})"
              " AND units.family IS NOT n.family;\n"),
+            # No mismatch guard: the head can already be right while `family_members` still names
+            # the family before it grew, and the statement is idempotent either way.
             ("UPDATE units SET data=json_set(units.data,'$.grapheme',n.family,"
              "'$.family_members',json_extract(n.data,'$.grapheme.members')) "
              f"FROM {STAGING} n WHERE units.origin='corpus' AND units.character=n.character"
-             f" AND n.character IN ({chars}) AND json_type(units.data,'$.grapheme') IS NOT NULL"
-             " AND json_extract(units.data,'$.grapheme') IS NOT n.family;\n"),
+             f" AND n.character IN ({chars}) AND json_type(units.data,'$.grapheme') IS NOT NULL;\n"),
             # A local crop's record carries `grapheme` too (95 of them do on the live site), and a
             # review's `event_apply` restores family from it; those follow the new head as well.
             ("UPDATE units SET data=json_set(units.data,'$.grapheme',n.family) "

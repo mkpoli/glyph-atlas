@@ -125,12 +125,16 @@ def test_the_swap_moves_forms_codes_and_a_local_records_grapheme(module):
                                                         {"code_point": "U+2E7C3", "char": "𮟃"}]}
         db.execute("INSERT INTO characters VALUES(?,?,'',?,'{}')", (point, char, json.dumps({"grapheme": grapheme})))
     unit(db, "l1", "local", "𮟃", "U+2E7C3", {"grapheme": "U+2E7C3"})
+    # the head was already right on this corpus row, but its family_members still names the old family
+    unit(db, "c2", "corpus", "還", "U+9084", {"grapheme": "U+9084", "family_members": []})
     insert_forms(db)
     members = [{"code_point": "U+9084", "char": "還"}, {"code_point": "U+2E7C3", "char": "𮟃"}]
     data = {"grapheme": {"code_point": "U+9084", "members": members}}
     fill, swap = module.statements({"U+9084": (data, {}), "U+2E7C3": (data, {})})
     db.executescript("".join(fill) + "".join(swap))
     assert json.loads(db.execute("SELECT data FROM units WHERE id='l1'").fetchone()[0]) == {"grapheme": "U+9084"}
+    corpus = json.loads(db.execute("SELECT data FROM units WHERE id='c2'").fetchone()[0])
+    assert corpus == {"grapheme": "U+9084", "family_members": members}
     assert db.execute("SELECT family FROM form_units").fetchone() == ("U+9084",)
     assert db.execute("SELECT family FROM form_clusters").fetchone() == ("U+9084",)
     assert db.execute("SELECT family FROM form_decisions").fetchone() == ("U+9084",)
