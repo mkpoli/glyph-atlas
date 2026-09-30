@@ -165,7 +165,25 @@ class Queue:
             updated_at TEXT, retry_after REAL, PRIMARY KEY (page_id, policy))""")
         if "retry_after" not in {r[1] for r in self.db.execute("PRAGMA table_info(supplements)")}:
             self.db.execute("ALTER TABLE supplements ADD COLUMN retry_after REAL")
+        # Settings every worker on the queue must share, such as where NDL's model runs (`pin`).
+        self.db.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
         self.db.commit()
+
+    def pin(self, key, value, *, replace=False):
+        """Record `value` as the queue's `key` on first use, and refuse a worker that brings another.
+
+        NDL's provider is pinned so: the CPU and CUDA differ in the last digits of a score, which moves a
+        few crops across a threshold, and a queue extracted by both would hold pages of either. `replace`
+        re-pins it, for a switch made once every worker has stopped.
+        """
+        with self.db:
+            if replace:
+                self.db.execute("INSERT OR REPLACE INTO settings (key,value) VALUES(?,?)", (key, value))
+            else:
+                self.db.execute("INSERT OR IGNORE INTO settings (key,value) VALUES(?,?)", (key, value))
+            pinned = self.db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()[0]
+        if pinned != value:
+            raise RuntimeError(f"this queue's {key} is {pinned}, not {value}")
 
     def seed(self, source: Path, *, include_ainu=False):
         """Queue the pages of `source` that hold a located transcription line.
@@ -515,8 +533,24 @@ def check_coordinate_space(original, cached):
         raise ValueError("cached image dimensions differ from source coordinates; extraction withheld")
 
 
+def engine_models(detector, reader):
+    """What names the models of an extraction: the detector's checksum, and each recognizer's model
+    with the provider it ran on, since providers differ in the last digits of a score."""
+    return {"detector": hashlib.sha256(Path(detector).read_bytes()).hexdigest(),
+            "recognizers": reader.engines,
+            "classifier_classes": digest(reader.classifier.classes),
+            "sequence_alphabet": digest(reader.alphabet)}
+
+
+def page_identity(models, run, page, document, lines):
+    """The digest that names a page's extraction output: policy, models, run and the page's inputs."""
+    return digest({"policy":POLICY,"models":models,"run":run.model_dump(),
+                   "page":page.model_dump(),"document":document.model_dump(),
+                   "lines":[l.model_dump() for l in lines]})
+
+
 class Engine:
-    def __init__(self):
+    def __init__(self, *, ndl_cpu: bool = False, ndl_threads: int = 2):
         import onnxruntime as ort
 
         from .detect import Detector
@@ -535,16 +569,16 @@ class Engine:
         if session.get_providers()[0] != "CUDAExecutionProvider":
             raise RuntimeError("detector CUDA initialization failed")
         self.detector = Detector(self.run.detector, score=self.run.score, nms=self.run.nms, session=session)
-        self.reader = Recognizer()  # two capped 768 MiB sessions, classifier shared with alignment
+        # The classifier, shared with alignment, runs on CUDA; NDL's sequence model may run on the CPU.
+        self.reader = Recognizer(sequence_on_cpu=ndl_cpu, sequence_threads=ndl_threads)
         if self.reader.sequence is None or self.reader.classifier is None:
             raise RuntimeError("both sequence and single-character models are required")
-        if any(e["provider"] != "CUDAExecutionProvider" for e in self.reader.engines):
-            raise RuntimeError("recognizer CUDA initialization failed")
+        wanted = {"NDLkotenOCR": "CPUExecutionProvider" if ndl_cpu else "CUDAExecutionProvider"}
+        if any(e["provider"] != wanted.get(e["name"], "CUDAExecutionProvider") for e in self.reader.engines):
+            raise RuntimeError("recognizer initialization did not reach the requested providers")
         self.classifier = self.reader.classifier
-        self.models = {"detector": hashlib.sha256(Path(self.run.detector).read_bytes()).hexdigest(),
-                       "recognizers":self.reader.engines,
-                       "classifier_classes":digest(self.classifier.classes),
-                       "sequence_alphabet":digest(self.reader.alphabet)}
+        self.ndl_provider = next(e["provider"] for e in self.reader.engines if e["name"] == "NDLkotenOCR")
+        self.models = engine_models(Path(self.run.detector), self.reader)
 
     def inputs(self, job, *, max_lines=64):
         """What one page's extraction reads, with the `identity` that names its output; no model runs."""
@@ -575,9 +609,7 @@ class Engine:
         located_line_count = len(lines)
         lines = [line for line in lines if line.box.x >= 0 and line.box.y >= 0
                  and line.box.x+line.box.w <= image.width and line.box.y+line.box.h <= image.height]
-        identity = digest({"policy":POLICY,"models":self.models,"run":self.run.model_dump(),
-                           "page":page.model_dump(),"document":document.model_dump(),
-                           "lines":[l.model_dump() for l in lines]})
+        identity = page_identity(self.models, self.run, page, document, lines)
         return {"page": page, "document": document, "lines": lines, "image": image, "identity": identity,
                 "located_line_count": located_line_count, "original_dimensions": original_dimensions}
 

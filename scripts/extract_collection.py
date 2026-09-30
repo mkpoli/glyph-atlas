@@ -20,11 +20,16 @@ parser.add_argument("--pages",type=int,default=3)
 parser.add_argument("--seconds",type=int,default=600)
 parser.add_argument("--pause",type=float,default=10)
 parser.add_argument("--max-lines",type=int,default=64)
+parser.add_argument("--ndl-cpu",action="store_true",
+                    help="run NDL's sequence model on the CPU (faster than CUDA for its one-crop reads)")
+parser.add_argument("--ndl-threads",type=int,default=2,help="CPU threads for NDL's model with --ndl-cpu")
+parser.add_argument("--switch-ndl",action="store_true",
+                    help="re-pin the queue to this worker's NDL provider; only once every worker has stopped")
 parser.add_argument("--supplement-every",type=int,default=2,
                     help="take a supplement of a page completed under an earlier policy every N pages; 0 never")
 args = parser.parse_args()
-if min(args.pages,args.seconds,args.max_lines) < 1 or args.pause < 0 or args.supplement_every < 0:
-    parser.error("positive page/time/line limits and nonnegative pause and supplement interval required")
+if min(args.pages,args.seconds,args.max_lines,args.ndl_threads) < 1 or args.pause < 0 or args.supplement_every < 0:
+    parser.error("positive page/time/line/thread limits and nonnegative pause and supplement interval required")
 queue = Queue(args.root)
 with tables.locked(args.root/"worker",timeout=0):
     if args.seed:
@@ -51,7 +56,8 @@ with tables.locked(args.root/"worker",timeout=0):
         wanted = [line.split("#")[0].strip() for line in focus.read_text().splitlines()] if focus.exists() else []
         print(json.dumps({"focused_pending":queue.focus(w for w in wanted if w)}),flush=True)
         try:
-            engine = Engine()
+            engine = Engine(ndl_cpu=args.ndl_cpu,ndl_threads=args.ndl_threads)
+            queue.pin("ndl_provider",engine.ndl_provider,replace=args.switch_ndl)
             if args.supplement_every:
                 print(json.dumps({"supplements_seeded":queue.seed_supplements()}),
                       flush=True)
