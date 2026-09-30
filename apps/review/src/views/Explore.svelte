@@ -24,8 +24,7 @@
   import BulkBar from '../components/BulkBar.svelte'
   // `initial` is the collection page the server rendered: the seed it shuffled with, the filters in the
   // address, the collection's rows, the corpus sample and the progress line; without rows the view loads
-  // them itself, with the same filters. The bare homepage comes with `lead`, the first crops of the
-  // sample, and `rest`, a promise of the rows and the whole sample.
+  // them itself, with the same filters.
   // `gallery` is a character's page instead (`lib/gallery.js`).
   // `addressed` is the collection and character pages, whose address this view keeps; the Flagged view
   // and the collection behind a crop's dialog leave theirs alone.
@@ -33,11 +32,11 @@
   let { flagged = false, addressed = false, inspect, ink = 'original', onink = () => {}, initial = null, gallery = null, shown = $bindable() } = $props()
   const session = useSession()
   const clientId = $derived(session?.state.clientId ?? '')
-  const asked = untrack(() => initial), first = asked?.result ? asked : null, streamed = asked?.rest ? asked : null, opened = untrack(() => gallery)
+  const asked = untrack(() => initial), first = asked?.result ? asked : null, opened = untrack(() => gallery)
   let data = $state(first?.result ?? (opened ? { query: opened.picked.char, total: opened.total, available: opened.available,
     categories: opened.summary?.categories ?? [], documents: opened.summary?.documents ?? [], counts: opened.summary?.counts ?? {} } : null))
   let items = $state(first?.result.items ?? []), error = $state(''), loading = $state(!first && !opened)
-  let grapheme = $state(asked?.grapheme ?? ''), work = $state(asked?.work ?? ''), offset = $state(0), seed = $state((first ?? streamed)?.seed ?? randomSeed())
+  let grapheme = $state(asked?.grapheme ?? ''), work = $state(asked?.work ?? ''), offset = $state(0), seed = $state(asked?.seed ?? randomSeed())
   let query = $state(asked?.q ?? opened?.picked.char ?? '')
   let choosing = $state(false), catalogueRequest = null
   let filter = $state(asked?.group ?? 'all'), requestId = 0, closed = false
@@ -77,13 +76,10 @@
     // A shallow rewrite leaves `page.url` as it was loaded, so the address bar is what is compared.
     if (location.pathname + location.search !== target) replaceState(target, page.state)
   }
-  // The unfiltered homepage mixes a bounded corpus sample with the collection's own rows, so the
-  // first page is not one source's leftovers: the sample is normalised by the same adapter and
-  // deduplicated against what is already on the page.
-  let sample = $state(first ? sampleRows(first.sample, first.result.items) : streamed ? sampleRows(streamed.lead, []) : []), sampleFault = $state(first?.sample ? (first.sample.status === 'ok' ? null : first.sample.status) : null)
-  // The crops the homepage was sent first stay where they were drawn when the rest arrives around them.
-  let lead = $state(streamed ? sample.length : 0)
-  let collection = $state((first ?? streamed)?.collection ?? null)
+  // The unfiltered homepage shows the collection's own rows and then a bounded corpus sample. The
+  // sample is normalised by the same adapter and deduplicated against what is already on the page.
+  let sample = $state(first ? sampleRows(first.sample, first.result.items) : []), sampleFault = $state(first?.sample ? (first.sample.status === 'ok' ? null : first.sample.status) : null)
+  let collection = $state(asked?.collection ?? null)
   async function readCollection() {
     try { collection = await request('/atlas/collection/status') } catch { /* retry on the next interval */ }
   }
@@ -172,10 +168,10 @@
   const visibleLocal = $derived(local.filter(item => matchesVisualGroup(item, visual)))
   const editable = $derived((picked ? visibleLocal : items).filter(item => (item.origin ?? 'collection') === 'collection'))
   /** The same record from two services: an exact id match is the only dedup that is certain. */
-  function sameInk(unit, lead) {
-    return Boolean(unit?.id) && (unit.id === lead.id || unit.id === lead.identity_key)
+  function sameInk(unit, other) {
+    return Boolean(unit?.id) && (unit.id === other.id || unit.id === other.identity_key)
   }
-  const corpusOnly = $derived(picked ? corpus.filter(lead => !visibleLocal.some(unit => sameInk(unit, lead))) : [])
+  const corpusOnly = $derived(picked ? corpus.filter(other => !visibleLocal.some(unit => sameInk(unit, other))) : [])
   // With no style group chosen, a character's or grapheme's gallery reads as one list in style order:
   // running and cursive first, each group's own crops before its corpus glyphs. The two lists page
   // apart, each in that order, so a tile is shown once neither list can still bring one that goes
@@ -199,11 +195,11 @@
     return [...visibleLocal.map(item => [2 * styleRank(item), item]), ...corpusOnly.map(item => [2 * styleRank(item) + 1, item])]
       .filter(([place]) => place <= shownUpTo).sort((a, b) => a[0] - b[0]).map(([, item]) => item)
   })
-  const homeCorpus = $derived(sample.filter(lead => !items.some(unit => sameInk(unit, lead))))
-  const mixedCorpus = $derived(homeCorpus.slice(lead))
-  const baseDisplay = $derived(choosing ? [] : picked ? galleryTiles
-    : [...homeCorpus.slice(0, lead), ...items.flatMap((item, index) => mixedCorpus[index] ? [item, mixedCorpus[index]] : [item]),
-       ...mixedCorpus.slice(items.length)])
+  // The collection's own crops are listed before the corpus sample: their labels are this atlas's own
+  // reading of the crop and are what a reviewer should reach first, while a corpus record's label is
+  // the source's own transcription and is mostly right already.
+  const homeCorpus = $derived(sample.filter(other => !items.some(unit => sameInk(unit, other))))
+  const baseDisplay = $derived(choosing ? [] : picked ? galleryTiles : [...items, ...homeCorpus])
   function groupOrder(item) {
     const group = visualGroup(item)
     const index = (analysis?.groups ?? []).findIndex(entry => entry.id === group.id)
@@ -255,7 +251,7 @@
   async function load(append = false) {
     choosing = false
     catalogueRequest?.abort()
-    if (!append) { showInAddress(); lead = 0; clearSelection() }
+    if (!append) { showInAddress(); clearSelection() }
     const id = ++requestId; loading = true; error = ''
     try {
       if (picked) {
@@ -627,19 +623,7 @@
       query = q; grapheme = g; work = w; filter = group; load()
     }
   }
-  /** The rest of the homepage the server streams after its lead crops; a search started meanwhile wins. */
-  async function receive(rest) {
-    const id = ++requestId
-    // A response cut off before the rest arrived leaves the view to load it itself.
-    const { result = null, sample: page = null } = await rest.catch(() => ({}))
-    if (closed || id !== requestId) return
-    if (!result) { load(); return }
-    data = result; items = result.items
-    sample = sampleRows(page ?? streamed.lead, items)
-    sampleFault = page ? (page.status === 'ok' ? null : page.status) : null
-    loading = false
-  }
-  onMount(() => { const redirected = first ? openEmptyGrapheme(first.result) : false; if (!collection) readCollection(); if (streamed) receive(streamed.rest); else if (!first && !opened) load(); if (addressed && !redirected) followAddress(); const timer = setInterval(readCollection, 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
+  onMount(() => { const redirected = first ? openEmptyGrapheme(first.result) : false; if (!collection) readCollection(); if (!first && !opened) load(); if (addressed && !redirected) followAddress(); const timer = setInterval(readCollection, 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
   // Widening is the reader's choice and only it reloads the gallery; picking a character resets the
   // widening itself and loads once through `pick`.
   // The first run is the widening the page opened with, already loaded.
@@ -696,14 +680,14 @@
       {#if corpusFault}<span class="separator">·</span> <span class="corpus-fault" role="status">{t('explore.samplesUnavailable')}</span> <button class="quiet-link" onclick={() => load()}>{t('common.retry')}</button>{/if}
       {#if loading}<span class="find-pending"> …</span>{/if}
     </p>
-  {:else if !query && sample.length}
-    <p class="find-count" role="status">{#if loading && lead}<span class="find-pending">…</span>{:else}{t('explore.count.here', { count: items.length })}<span class="separator">·</span> {t('explore.count.fromCorpus', { count: sample.length })}{/if}{#if sampleFault}<span class="corpus-fault"> · {sampleFault === 'error' ? t('explore.corpus.error') : t('explore.corpus.notLoaded')}</span>{/if}</p>
+  {:else if !query && (items.length || homeCorpus.length || sampleFault)}
+    <p class="find-count" role="status">{#if items.length}{t('explore.count.here', { count: items.length })}{/if}{#if homeCorpus.length}{#if items.length}<span class="separator">·</span> {/if}{t('explore.count.fromCorpus', { count: homeCorpus.length })}{/if}{#if sampleFault}{#if items.length || homeCorpus.length}<span class="separator">·</span> {/if}<span class="corpus-fault" role="status">{sampleFault === 'error' ? t('explore.corpus.error') : t('explore.corpus.notLoaded')}</span>{/if}{#if loading}<span class="find-pending"> …</span>{/if}</p>
   {:else if query && settled}
     <p class="find-count" role="status">{around('explore.occurrencesOf', 'reading', { count: settled.total })[0]}<b>{readable}</b>{around('explore.occurrencesOf', 'reading', { count: settled.total })[1]}{#if loading}<span class="find-pending"> …</span>{/if}</p>
   {/if}
   <div class="glyph-grid" bind:this={grid} aria-label={flagged ? t('explore.heading.flagged') : t('explore.grid.collection')} aria-busy={loading}>
     {#if loading && !display.length}{#each Array(32) as _}<div class="glyph-skeleton"></div>{/each}
-    {:else}{#each tiles as item, i (item.id)}{#if headed(item) && (i === 0 || visualGroup(display[i - 1]).id !== visualGroup(item).id)}<div class="visual-grid-heading">{groupLabel(visualGroup(item))}</div>{/if}{#if item.origin === 'corpus'}<button class="glyph-tile corpus" data-corpus={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} onclick={event => tileClick(event, item, i, () => inspect(item.id, null, display, updateItem, 'corpus'))} aria-label={t('explore.tile.inspectCorpus', { label: shownLabel(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if selectable(item)}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-reading"><span class="tile-glyph" class:unassigned={isUnassigned(item)} lang={isUnassigned(item) ? undefined : 'ja'}>{shownLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" lang="ja" title={t('chips.grapheme')}>{shownGrapheme(item)}</span>{/if}</span><span class="tile-details">{#each cropDetails(item) as line}<span>{line}</span>{/each}<span class="tile-id">{item.id}</span></span>{#if item.proxyable && item.image}<img class="glyph-image" src={item.image} alt={t('explore.tile.located', { label: shownLabel(item) })} loading={i < 24 ? "eager" : "lazy"} fetchpriority={i < 24 ? "high" : "auto"} decoding="async" />{:else}<span class="corpus-open"><b>{shownLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}<span class="tile-footer">{#if tileState(item) === 'plain' || tileState(item) === 'withheld'}<span class="status-dot" class:withheld={tileState(item) === 'withheld'}></span>{/if}{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{formatSerial(i + 1)}</span><span class="tile-arrow">↗</span></span></button>{:else}<button class="glyph-tile" data-unit={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} onclick={event => tileClick(event, item, i, () => inspect(item.id, null, display, updateItem))} aria-label={t('explore.tile.inspect', { label: shownLabel(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}><span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span><span class="tile-reading"><span class="tile-glyph" class:unassigned={isUnassigned(item)} lang={isUnassigned(item) ? undefined : 'ja'}>{shownLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" lang="ja" title={t('chips.grapheme')}>{shownGrapheme(item)}</span>{/if}</span><span class="tile-details">{#each cropDetails(item) as line}<span>{line}</span>{/each}<span class="tile-id">{item.id}</span></span><Glyph {item} eager={i < 24} />{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}<span class="tile-footer">{#if tileState(item) === 'plain' || tileState(item) === 'withheld'}<span class="status-dot" class:withheld={tileState(item) === 'withheld'}></span>{/if}{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{formatSerial(i + 1)}</span><span class="tile-arrow">↗</span></span></button>{/if}{/each}{#if loading && lead}{#each Array(16) as _}<div class="glyph-skeleton"></div>{/each}{/if}{/if}
+    {:else}{#each tiles as item, i (item.id)}{#if headed(item) && (i === 0 || visualGroup(display[i - 1]).id !== visualGroup(item).id)}<div class="visual-grid-heading">{groupLabel(visualGroup(item))}</div>{/if}{#if item.origin === 'corpus'}<button class="glyph-tile corpus" data-corpus={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} onclick={event => tileClick(event, item, i, () => inspect(item.id, null, display, updateItem, 'corpus'))} aria-label={t('explore.tile.inspectCorpus', { label: shownLabel(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if selectable(item)}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-reading"><span class="tile-glyph" class:unassigned={isUnassigned(item)} lang={isUnassigned(item) ? undefined : 'ja'}>{shownLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" lang="ja" title={t('chips.grapheme')}>{shownGrapheme(item)}</span>{/if}</span><span class="tile-details">{#each cropDetails(item) as line}<span>{line}</span>{/each}<span class="tile-id">{item.id}</span></span>{#if item.proxyable && item.image}<img class="glyph-image" src={item.image} alt={t('explore.tile.located', { label: shownLabel(item) })} loading={i < 24 ? "eager" : "lazy"} fetchpriority={i < 24 ? "high" : "auto"} decoding="async" />{:else}<span class="corpus-open"><b>{shownLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}<span class="tile-footer">{#if tileState(item) === 'plain' || tileState(item) === 'withheld'}<span class="status-dot" class:withheld={tileState(item) === 'withheld'}></span>{/if}{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{formatSerial(i + 1)}</span><span class="tile-arrow">↗</span></span></button>{:else}<button class="glyph-tile" data-unit={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} onclick={event => tileClick(event, item, i, () => inspect(item.id, null, display, updateItem))} aria-label={t('explore.tile.inspect', { label: shownLabel(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}><span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span><span class="tile-reading"><span class="tile-glyph" class:unassigned={isUnassigned(item)} lang={isUnassigned(item) ? undefined : 'ja'}>{shownLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" lang="ja" title={t('chips.grapheme')}>{shownGrapheme(item)}</span>{/if}</span><span class="tile-details">{#each cropDetails(item) as line}<span>{line}</span>{/each}<span class="tile-id">{item.id}</span></span><Glyph {item} eager={i < 24} />{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}<span class="tile-footer">{#if tileState(item) === 'plain' || tileState(item) === 'withheld'}<span class="status-dot" class:withheld={tileState(item) === 'withheld'}></span>{/if}{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{formatSerial(i + 1)}</span><span class="tile-arrow">↗</span></span></button>{/if}{/each}{/if}
   </div>
   {#if !choosing && !loading && !display.length}<div class="empty"><span class="empty-mark">{picked || (settled && settled.total === 0) ? '∅' : flagged ? '✓' : '∅'}</span><h2>{picked && corpusFault ? t('explore.empty.samplesFailed', { char: picked.char }) : picked ? t('explore.empty.noOccurrenceOf', { char: picked.char }) : settled && settled.total === 0 ? t('explore.empty.noOccurrenceOfTerm', { term: readable }) : flagged ? t('explore.empty.nothingFlagged') : t('explore.empty.noCharacters')}</h2>{#if query}<button class="primary" onclick={clearQuery}>{t('explore.clearSearch')}</button>{:else}<a href={localize('/review')} class="primary">{t('explore.startRound')}</a>{/if}</div>{/if}
   {#if selected.size || bulkDone || bulkError}<BulkBar count={selected.size} bind:target={bulkTarget} busy={bulkBusy} error={bulkError} done={bulkDone}
