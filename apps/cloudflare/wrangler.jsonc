@@ -7,7 +7,8 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "preview_urls": false,
-  "routes": [{"pattern": "atlas.mkpo.li", "custom_domain": true}],
+  // atlas.mkpo.li and www.glyphatlas.org answer with 301s to this host from Redirect Rules on their zones.
+  "routes": [{"pattern": "glyphatlas.org", "custom_domain": true}],
   "assets": {
     "directory": "../review/.svelte-kit/cloudflare",
     "binding": "ASSETS"

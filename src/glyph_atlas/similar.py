@@ -238,7 +238,7 @@ def fingerprint(crop: dict, encoder: str) -> str:
 
 
 def index(root: Path, exports: list[Path], out: Path, *, checkpoint: Path, workers: int = 8,
-          base: str = "https://atlas.mkpo.li") -> dict:
+          base: str = "https://glyphatlas.org") -> dict:
     """Embed every corpus glyph and local crop, reusing unchanged vectors of the current revision."""
     from .form_clusters import Encoder
 

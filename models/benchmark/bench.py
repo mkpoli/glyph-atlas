@@ -40,7 +40,7 @@ from glyph_atlas.review.suggestions import MODEL, decode
 
 KANA_SAMPLE = 12_000
 #: The review site, which serves every reviewed crop's display image.
-SITE = "https://atlas.mkpo.li"
+SITE = "https://glyphatlas.org"
 
 
 def code_point(char: str) -> str:

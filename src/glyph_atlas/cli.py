@@ -1200,7 +1200,7 @@ def similar_index(
     out: Annotated[Path, typer.Option(help="directory the revisions and `current` are written to")] = Path("work/similar"),
     checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
     workers: Annotated[int, typer.Option(help="processes cutting crops")] = 8,
-    base: Annotated[str, typer.Option(help="site that serves display crops whose packs are gone")] = "https://atlas.mkpo.li",
+    base: Annotated[str, typer.Option(help="site that serves display crops whose packs are gone")] = "https://glyphatlas.org",
 ) -> None:
     """Embed every corpus glyph and published local crop, reusing unchanged vectors."""
     from .similar import index
