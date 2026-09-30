@@ -14,15 +14,19 @@ try {
   const errors = []
   browser.listeners.push(m => { if (m.method === 'Runtime.exceptionThrown') errors.push(m.params.exceptionDetails?.text) })
   // Deterministic OCR suggestions for synthetic glyphs; real model smoke is a separate read-only check.
-  await browser.send('Fetch.enable', { patterns: [{ urlPattern: '*\/suggestions?*' }] })
+  // The fixture's kana have no entry in the 異体字 graph, so the written-form picker is given one
+  // variant, a hentaigana, to offer.
+  await browser.send('Fetch.enable', { patterns: [{ urlPattern: '*\/suggestions?*' }, { urlPattern: '*\/layers/characters/*' }] })
+  const suggested = { status: 'ready', candidates: [
+    { text: 'シヨロ', engine: 'NDLkotenOCR', score: .9 },
+    { text: 'カ', engine: 'fixture classifier', score: .7 },
+    { text: 'ア', engine: 'fixture classifier', score: .2 },
+  ] }
+  const variantCard = { variants: { items: [{ char: '𛀂', code_point: 'U+1B002', sources: ['fixture'] }], related: [] } }
   browser.listeners.push(m => { if (m.method === 'Fetch.requestPaused') browser.send('Fetch.fulfillRequest', {
     requestId: m.params.requestId, responseCode: 200,
     responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
-    body: Buffer.from(JSON.stringify({ status: 'ready', candidates: [
-      { text: 'シヨロ', engine: 'NDLkotenOCR', score: .9 },
-      { text: 'カ', engine: 'fixture classifier', score: .7 },
-      { text: 'ア', engine: 'fixture classifier', score: .2 },
-    ] })).toString('base64'),
+    body: Buffer.from(JSON.stringify(m.params.request.url.includes('/layers/characters/') ? variantCard : suggested)).toString('base64'),
   }) })
   async function click(selector) { await browser.evaluate(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'center'})`); const p = await browser.centre(selector); await browser.click(p.x, p.y) }
   async function route(hash, ready) { await browser.evaluate(`visit(${JSON.stringify(hash)})`); await browser.waitFor(ready) }
@@ -252,6 +256,62 @@ try {
   await click('.close-inspector')
   await browser.waitFor('document.querySelector("dialog[open]") === null')
   console.log('PASS saving and skipping go on to the next crop only when asked')
+
+  // The written form: picked from the variants or typed as a description, saved on its own. The crop
+  // keeps its character, revision and review, and is not flagged.
+  await route('/en', 'document.querySelectorAll(".glyph-tile").length > 2')
+  const formId = await browser.evaluate('document.querySelectorAll(".glyph-grid [data-unit]")[3].dataset.unit')
+  const formBefore = units(config.directory)[formId]
+  await click(`.glyph-grid [data-unit="${formId}"]`)
+  await browser.waitFor(inspectorReady)
+  const formShown = 'document.querySelector("dialog[open] .form-value b")?.textContent'
+  assert(await browser.evaluate(formShown) === await browser.evaluate('document.querySelector(".inspector-title h2").textContent'), 'the written form starts as the label')
+  await click('.form-summary')
+  await browser.waitFor('document.querySelector(".form-variant")?.textContent === "𛀂"')
+  await browser.screenshot(join(screenshots, 'written-form-desktop-light.png'))
+  await browser.setColorScheme('dark')
+  await browser.screenshot(join(screenshots, 'written-form-desktop-dark.png'))
+  await browser.setColorScheme('light')
+  const formMark = events(config.directory).length
+  await click('.form-variant')
+  await browser.waitFor(`${formShown} === "𛀂"`)
+  const typeForm = async text => {
+    await browser.evaluate('(() => { const i = document.querySelector(".form-input input"); i.focus(); i.select() })()')
+    await browser.send('Input.insertText', { text })
+  }
+  await click('.form-summary')
+  await typeForm('⿺辶')
+  await browser.waitFor('document.querySelector(".form-panel .form-error")?.textContent.includes("missing")')
+  assert(await browser.evaluate('document.querySelector(".form-apply").disabled'), 'a malformed description cannot be saved')
+  await typeForm('⿺辶𦊷')
+  await browser.waitFor('!document.querySelector(".form-apply").disabled')
+  await click('.form-apply')
+  await browser.waitFor(`${formShown} === "⿺辶𦊷"`)
+  const formEvents = events(config.directory).slice(formMark)
+  assert(formEvents.length === 2 && formEvents.every(e => e.field === 'written_form' && e.target_id === formId),
+    'only the written form is recorded: ' + formEvents.map(e => e.field).join(', '))
+  assert(JSON.stringify(formEvents.map(e => e.new)) === JSON.stringify(['𛀂', '⿺辶𦊷']), 'the picked and the typed forms are recorded')
+  const formAfter = units(config.directory)[formId]
+  assert(formAfter.written_form === '⿺辶𦊷' && formAfter.unicode === formBefore.unicode && formAfter.review === formBefore.review,
+    'the crop keeps its character and review')
+  assert(!await browser.evaluate('document.querySelector("dialog[open] .state-pill").classList.contains("flagged")'), 'the crop is not flagged')
+  assert(!await browser.evaluate('document.querySelector(".save-character").disabled'), 'the crop can still be reviewed')
+  await click('.close-inspector')
+  await browser.waitFor('document.querySelector("dialog[open]") === null')
+  await browser.waitFor(`document.querySelector('.glyph-grid [data-unit="${formId}"] .tile-details')?.textContent.includes("Written ⿺辶𦊷")`)
+  await browser.setViewport(390, 844)
+  await click(`.glyph-grid [data-unit="${formId}"]`)
+  await browser.waitFor(inspectorReady)
+  await click('.form-summary')
+  await browser.waitFor('document.querySelector(".form-variant") !== null')
+  assert(await browser.evaluate('document.querySelector("dialog").scrollWidth <= innerWidth + 1'), 'written form picker overflows on a phone')
+  await browser.screenshot(join(screenshots, 'written-form-mobile-light.png'))
+  await browser.setColorScheme('dark')
+  await browser.screenshot(join(screenshots, 'written-form-mobile-dark.png'))
+  await browser.setColorScheme('light')
+  await click('.close-inspector')
+  await browser.setViewport(1440, 1000)
+  console.log('PASS written form picked, typed as a description, saved without a review')
 
   await browser.send('Network.enable')
   await browser.send('Network.setBlockedURLs', { urls: ['*/atlas/media/*', '*/atlas/characters/*/image*'] })
