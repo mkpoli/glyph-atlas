@@ -96,7 +96,7 @@
     · <a href="https://github.com/mkpoli/glyph-atlas" rel="noopener" target="_blank">GitHub ↗</a>
     · <ChatLinks /></p>
 </footer>
-{#if shown}{#if shown.origin === 'corpus'}<CorpusDialog id={shown.id} clientId={session.state.clientId} {close} {saved} {previous} {next} {position} {initial} />{:else}<CharacterDialog id={shown.id} clientId={session.state.clientId} {changed} {close} onVerdict={inspector.state.onVerdict} {saved} {previous} {next} {position} {initial} />{/if}{/if}
+{#if shown}{#if shown.origin === 'corpus'}<CorpusDialog id={shown.id} clientId={session.state.clientId} {changed} {close} {saved} {previous} {next} {position} {initial} />{:else}<CharacterDialog id={shown.id} clientId={session.state.clientId} {changed} {close} onVerdict={inspector.state.onVerdict} {saved} {previous} {next} {position} {initial} />{/if}{/if}
 {#if savedNotice}<div class="save-toast" role="status">✓ {savedNotice}</div>{/if}
 {#if exporting}<ExportReviews close={() => { exporting = false; menuButton?.focus() }} />{/if}
 {#if session.state.progress}<CollectionProgress close={() => { session.state.progress = false; menuButton?.focus() }} />{/if}

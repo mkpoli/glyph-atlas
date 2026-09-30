@@ -606,5 +606,14 @@
   "styleFilter.label": "書體",
   "styleFilter.all": "모든 書體",
   "styleFilter.cursive": "行書·草書",
-  "styleFilter.formal": "楷書·印刷體"
+  "styleFilter.formal": "楷書·印刷體",
+  "written.label": "字形",
+  "written.change": "바꾸기",
+  "written.input": "다른 字形 또는 IDS",
+  "written.note": "한 文字, 또는 ⿺辶𦊷 같은 漢字 構造 記述 文字列(IDS). 文字는 바뀌지 않습니다.",
+  "written.save": "이 字形으로 記錄",
+  "written.problem.character": "한 文字나 IDS를 入力하세요.",
+  "written.problem.component": "IDS 構成 要素는 漢字·部首·劃만 쓸 수 있습니다.",
+  "written.problem.missing": "IDS에 構成 要素가 모자랍니다.",
+  "written.problem.extra": "IDS 構成 要素가 演算子가 받는 數보다 많습니다."
 }

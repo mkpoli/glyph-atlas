@@ -651,5 +651,14 @@
   "visualGroups.label": "Visual groups",
   "ziLink.aria": "Look up {char} on zi.tools",
   "ziLink.text": "zi.tools ↗",
-  "meta.character.description": "Crops of {character} ({codePoint}) from historical manuscripts and printed books, each with its source and terms of use."
+  "meta.character.description": "Crops of {character} ({codePoint}) from historical manuscripts and printed books, each with its source and terms of use.",
+  "written.label": "Written form",
+  "written.change": "Change",
+  "written.input": "Other form or IDS",
+  "written.note": "One character, or an ideographic description sequence such as ⿺辶𦊷. The crop keeps its character.",
+  "written.save": "Use this form",
+  "written.problem.character": "Write one character or an ideographic description sequence.",
+  "written.problem.component": "A description is built from ideographs, radicals and strokes.",
+  "written.problem.missing": "This description is missing a component.",
+  "written.problem.extra": "This description has more components than its operators take."
 }

@@ -607,5 +607,14 @@
   "visualGroups.label": "Nhóm theo hình dạng",
   "ziLink.aria": "Tra {char} trên zi.tools",
   "ziLink.text": "zi.tools ↗",
-  "meta.character.description": "Các vùng cắt chữ {character} ({codePoint}) từ bản chép tay và sách in xưa, mỗi vùng cắt kèm nguồn và điều khoản sử dụng."
+  "meta.character.description": "Các vùng cắt chữ {character} ({codePoint}) từ bản chép tay và sách in xưa, mỗi vùng cắt kèm nguồn và điều khoản sử dụng.",
+  "written.label": "Dạng chữ",
+  "written.change": "Đổi",
+  "written.input": "Dạng khác hoặc IDS",
+  "written.note": "Một chữ, hoặc chuỗi mô tả chữ Hán (IDS) như ⿺辶𦊷. Chữ của vùng cắt không đổi.",
+  "written.save": "Dùng dạng này",
+  "written.problem.character": "Hãy nhập một chữ hoặc một chuỗi IDS.",
+  "written.problem.component": "Chuỗi IDS chỉ gồm chữ Hán, bộ thủ và nét.",
+  "written.problem.missing": "Chuỗi IDS thiếu thành phần.",
+  "written.problem.extra": "Chuỗi IDS thừa thành phần."
 }
