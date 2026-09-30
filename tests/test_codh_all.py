@@ -158,7 +158,7 @@ def test_two_books_merge_into_one_directory(tmp_path, cache, books_file, zips, m
         "pages": 3,
         "units": 3,
         "reports": 1,
-        "kana_unassessed": 2,
+        "unassessed": 2,
         "books": 2,
     }
     dataset = tables.Dataset(tmp_path / "out")
