@@ -1,5 +1,7 @@
 """The `derived-ids` tier: forms one attested component substitution makes of a character."""
 
+import json
+
 from glyph_atlas import refs
 
 
@@ -29,3 +31,13 @@ def test_a_card_lists_at_most_the_shown_rows_and_sequences():
     assert len(rows) <= refs.DERIVED_SHOWN
     assert sum(not row["encoded"] for row in rows) <= refs.DERIVED_IDS_SHOWN
 
+
+
+def test_the_exported_rows_are_the_characters_own_list_in_order():
+    # A derivation is not symmetric: 𪞱 derives 壳, and 壳 does not derive 𪞱.
+    for char in ("壳", "㟄", "妳", "寰"):
+        listed = refs.derived_variants(char)
+        rows = refs.derived_rows_of(char)
+        assert [(rank, form) for _, rank, form, _ in rows] == list(enumerate(e["char"] for e in listed))
+        for (_, _, _, subs), entry in zip(rows, listed, strict=True):
+            assert json.loads(subs) == [[s["was"], s["became"]] for s in entry["substitutions"]]

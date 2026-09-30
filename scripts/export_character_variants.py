@@ -9,9 +9,9 @@ listing version and cites the sources. A failure before the last part leaves the
 untouched; a rerun starts the staging tables again.
 
 `character_variants` is the 異体字 graph itself. The derived tier is `component_variants` (each
-attested substitution with its count and pairs) and `character_derived` (each prediction: a pair no
-source states, or a character with the sequence of a form no character has), all read through
-`refs.derived_rows`, which takes minutes and is computed once per run.
+attested substitution with its count and pairs) and `character_derived` (each character's derived
+list, ranked as `refs.derived_variants` lists it), read through `refs.derived_rows`, which takes
+about half a minute and is computed once per run.
 
 OUT/sql/part-NN.sql are the parts in order and OUT/apply.sh imports them, retrying a refused part,
 and checks the counts it expects. The full export (`export_cloudflare.py`) fills the same tables
@@ -34,6 +34,7 @@ COLUMNS = ("a", "b", "relation", "source", "detail", "written", "widens")
 STAGING = "character_variants_next"
 SUBSTITUTIONS_STAGING = "component_variants_next"
 DERIVED_STAGING = "character_derived_next"
+DERIVED_COLUMNS = ("a", "rank", "b", "subs")
 # The Worker keys its cached listings and cards on this row; the swap writes it with the new graph.
 VERSION_BUMP = ("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at',"
                 "json_quote(strftime('%Y-%m-%dT%H:%M:%fZ','now')));\n")
@@ -46,8 +47,8 @@ def quote(value) -> str:
 
 
 @cache
-def derived_rows() -> tuple[tuple[str, str, str], ...]:
-    """Every row of the derived tier (refs.derived_rows), computed once per run: minutes."""
+def derived_rows() -> tuple[tuple[str, int, str, str], ...]:
+    """Every row of the derived tier (refs.derived_rows), computed once per run."""
     return tuple(refs.derived_rows())
 
 
@@ -92,20 +93,20 @@ def statements() -> list[list[str]]:
         (f"CREATE TABLE {SUBSTITUTIONS_STAGING} (a TEXT NOT NULL, b TEXT NOT NULL, count INTEGER NOT NULL,"
          " pairs TEXT NOT NULL, PRIMARY KEY(a,b)) WITHOUT ROWID;\n"),
         f"DROP TABLE IF EXISTS {DERIVED_STAGING};\n",
-        (f"CREATE TABLE {DERIVED_STAGING} (a TEXT NOT NULL, b TEXT NOT NULL, subs TEXT NOT NULL,"
-         " PRIMARY KEY(a,b)) WITHOUT ROWID;\n"),
+        (f"CREATE TABLE {DERIVED_STAGING} (a TEXT NOT NULL, rank INTEGER NOT NULL, b TEXT NOT NULL,"
+         " subs TEXT NOT NULL, PRIMARY KEY(a,rank)) WITHOUT ROWID;\n"),
     ]
     fill += insert_rows(STAGING, COLUMNS, (tuple(edge[column] for column in COLUMNS)
                                             for edge in refs.variant_edges()))
     fill += insert_rows(SUBSTITUTIONS_STAGING, ("a", "b", "count", "pairs"), (
         (left, right, item["count"], json.dumps(item["pairs"], ensure_ascii=False, separators=(",", ":")))
         for (left, right), item in sorted(refs.component_variants().items())))
-    fill += insert_rows(DERIVED_STAGING, ("a", "b", "subs"), derived_rows())
+    fill += insert_rows(DERIVED_STAGING, DERIVED_COLUMNS, derived_rows())
     swap = []
     for live, staging, columns in (
         ("character_variants", STAGING, COLUMNS),
         ("component_variants", SUBSTITUTIONS_STAGING, ("a", "b", "count", "pairs")),
-        ("character_derived", DERIVED_STAGING, ("a", "b", "subs")),
+        ("character_derived", DERIVED_STAGING, DERIVED_COLUMNS),
     ):
         swap += [f"DELETE FROM {live};\n",
                  f"INSERT INTO {live}({','.join(columns)}) SELECT {','.join(columns)} FROM {staging};\n",
@@ -128,7 +129,7 @@ def fill(db: sqlite3.Connection) -> None:
                    [(left, right, item["count"], json.dumps(item["pairs"], ensure_ascii=False, separators=(",", ":")))
                     for (left, right), item in refs.component_variants().items()])
     db.execute("DELETE FROM character_derived")
-    db.executemany("INSERT OR REPLACE INTO character_derived(a,b,subs) VALUES (?,?,?)", derived_rows())
+    db.executemany("INSERT OR REPLACE INTO character_derived(a,rank,b,subs) VALUES (?,?,?,?)", derived_rows())
     db.execute("INSERT OR REPLACE INTO metadata(key,value) VALUES('variant_sources',?)", (citations(),))
 
 

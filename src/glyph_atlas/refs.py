@@ -458,39 +458,23 @@ def derived_variants(char: str, *, limit: int | None = DERIVED_SHOWN) -> list[di
     return [*encoded, *ids]
 
 
-def derived_rows() -> Iterable[tuple[str, str, str]]:
-    """Every row of the tier as the export stores it: (a, b, substitutions).
+def derived_rows() -> Iterable[tuple[str, int, str, str]]:
+    """Every row of the tier as the export stores it: (character, rank, form, substitutions).
 
-    An encoded pair once, its sides in code point order — both subjects derive each other, and the
-    row merges what each side used — or a character and the sequence of a form no character has,
-    the `DERIVED_IDS_SHOWN` strongest per character. Substitutions are `[was, became]` pairs, the
-    strongest first; each one's count and attesting pairs are the table's own row.
+    One row per entry of `derived_variants(character)`, in its order (`rank` from 0), so a page reads
+    the same rows in the same order off D1. A derivation is not symmetric, so each character keeps its
+    own rows. Substitutions are the entry's `[was, became]` pairs, in the entry's order; each one's
+    count and attesting pairs are the table's own row.
     """
-    pairs: dict[tuple[str, str], list[dict[str, Any]]] = {}
-    sequences: list[tuple[str, str, list[dict[str, Any]]]] = []
     for char in sorted(_descriptions().trees):
-        entries = _derive(char)
-        unencoded = 0
-        for entry in entries:
-            if entry["encoded"]:
-                row = pairs.setdefault(tuple(sorted((char, entry["char"]), key=ord)), [])
-                for sub in entry["substitutions"]:
-                    if not any(_substitution(s["was"], s["became"]) == _substitution(sub["was"], sub["became"])
-                               for s in row):
-                        row.append(sub)
-            elif unencoded < DERIVED_IDS_SHOWN:
-                unencoded += 1
-                sequences.append((char, entry["char"], entry["substitutions"]))
-    def encode(subs: list[dict[str, Any]]) -> str:
-        """The substitutions of one row, strongest first, as the export's `subs` cell."""
-        ordered = sorted(subs, key=lambda sub: -sub["count"])
-        return json.dumps([[sub["was"], sub["became"]] for sub in ordered],
-                          ensure_ascii=False, separators=(",", ":"))
+        yield from derived_rows_of(char)
 
-    for (left, right), subs in sorted(pairs.items()):
-        yield left, right, encode(subs)
-    for char, sequence, subs in sorted(sequences):
-        yield char, sequence, encode(subs)
+
+def derived_rows_of(char: str) -> list[tuple[str, int, str, str]]:
+    """The export's rows for one character: `derived_variants(char)`, ranked."""
+    return [(char, rank, entry["char"], json.dumps([[sub["was"], sub["became"]] for sub in entry["substitutions"]],
+                                                   ensure_ascii=False, separators=(",", ":")))
+            for rank, entry in enumerate(derived_variants(char))]
 
 
 @cache
