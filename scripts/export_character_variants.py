@@ -1,14 +1,20 @@
-"""Write the 異体字 graph into the site's `character_variants` table, as SQL parts D1 can import.
+"""Write the 異体字 graph and its derived tier into the site's D1 tables, as SQL parts D1 can import.
 
     python scripts/export_character_variants.py OUT
 
 D1 imports each `--file` as one transaction: a part that fails leaves the database as it was. The
-graph is too large for one statement, so the parts fill a staging table, `character_variants_next`,
-and only the last part swaps it in, bumps the listing version and cites the sources. A failure before
-the last part leaves the live table untouched; a rerun starts the staging table again.
+graph is too large for one statement, so the parts fill staging tables (`character_variants_next`,
+`component_variants_next`, `character_derived_next`) and only the last part swaps them in, bumps the
+listing version and cites the sources. A failure before the last part leaves the live tables
+untouched; a rerun starts the staging tables again.
+
+`character_variants` is the 異体字 graph itself. The derived tier is `component_variants` (each
+attested substitution with its count and pairs) and `character_derived` (each prediction: a pair no
+source states, or a character with the sequence of a form no character has), all read through
+`refs.derived_rows`, which takes minutes and is computed once per run.
 
 OUT/sql/part-NN.sql are the parts in order and OUT/apply.sh imports them, retrying a refused part,
-and checks the counts it expects. The full export (`export_cloudflare.py`) fills the same table
+and checks the counts it expects. The full export (`export_cloudflare.py`) fills the same tables
 through `fill`.
 """
 from __future__ import annotations
@@ -16,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
+from functools import cache
 from pathlib import Path
 
 from glyph_atlas import refs
@@ -25,6 +32,8 @@ PART_BYTES = 40 * 1024 * 1024
 STATEMENT_BYTES = 90 * 1024
 COLUMNS = ("a", "b", "relation", "source", "detail", "written", "widens")
 STAGING = "character_variants_next"
+SUBSTITUTIONS_STAGING = "component_variants_next"
+DERIVED_STAGING = "character_derived_next"
 # The Worker keys its cached listings and cards on this row; the swap writes it with the new graph.
 VERSION_BUMP = ("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at',"
                 "json_quote(strftime('%Y-%m-%dT%H:%M:%fZ','now')));\n")
@@ -36,40 +45,75 @@ def quote(value) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
+@cache
+def derived_rows() -> tuple[tuple[str, str, str], ...]:
+    """Every row of the derived tier (refs.derived_rows), computed once per run: minutes."""
+    return tuple(refs.derived_rows())
+
+
 def citations() -> str:
-    return json.dumps(refs.variant_sources(), ensure_ascii=False, separators=(",", ":"))
+    """Every source a row of any table may cite, the derived tier's own `derived-ids` included."""
+    return json.dumps({**refs.variant_sources(), **refs.component_variant_sources()},
+                      ensure_ascii=False, separators=(",", ":"))
 
 
 def expected() -> dict[str, int]:
-    """What the live table holds once the parts are applied: rows are unique by their key."""
+    """What the live tables hold once the parts are applied: rows are unique by their key."""
     rows = {(e["a"], e["b"], e["relation"], e["source"]): e for e in refs.variant_edges()}
     return {"edges": len(rows), "written": sum(e["written"] for e in rows.values()),
-            "widens": sum(e["widens"] for e in rows.values())}
+            "widens": sum(e["widens"] for e in rows.values()),
+            "substitutions": len(refs.component_variants()), "derived": len(derived_rows())}
+
+
+def insert_rows(into: str, columns: tuple[str, ...], rows) -> list[str]:
+    """Multi-row INSERTs, each statement under D1's limit; `rows` are the values in column order."""
+    head = f"INSERT OR REPLACE INTO {into}({','.join(columns)}) VALUES"
+    statements, batch, size = [], [], 0
+    for row in rows:
+        values = "(" + ",".join(quote(value) for value in row) + ")"
+        if batch and size + len(values.encode()) + 1 > STATEMENT_BYTES - len(head):
+            statements.append(head + ",".join(batch) + ";\n")
+            batch, size = [], 0
+        batch.append(values)
+        size += len(values.encode()) + 1
+    if batch:
+        statements.append(head + ",".join(batch) + ";\n")
+    return statements
 
 
 def statements() -> list[list[str]]:
     """The staging fill, in statements under D1's statement limit, then the swap as the last group."""
-    fill = [f"DROP TABLE IF EXISTS {STAGING};\n",
-            (f"CREATE TABLE {STAGING} (a TEXT NOT NULL, b TEXT NOT NULL, relation TEXT NOT NULL, source TEXT NOT NULL,"
-             " detail TEXT NOT NULL, written INTEGER NOT NULL, widens INTEGER NOT NULL,"
-             " PRIMARY KEY(a,b,relation,source)) WITHOUT ROWID;\n")]
-    head = f"INSERT OR REPLACE INTO {STAGING}({','.join(COLUMNS)}) VALUES"
-    rows, size = [], 0
-    for edge in refs.variant_edges():
-        row = "(" + ",".join(quote(edge[column]) for column in COLUMNS) + ")"
-        if rows and size + len(row.encode()) + 1 > STATEMENT_BYTES - len(head):
-            fill.append(head + ",".join(rows) + ";\n")
-            rows, size = [], 0
-        rows.append(row)
-        size += len(row.encode()) + 1
-    if rows:
-        fill.append(head + ",".join(rows) + ";\n")
-    swap = ["DELETE FROM character_variants;\n",
-            f"INSERT INTO character_variants({','.join(COLUMNS)}) SELECT {','.join(COLUMNS)} FROM {STAGING};\n",
-            f"DROP TABLE {STAGING};\n",
-            "INSERT INTO metadata(key,value) VALUES('variant_sources'," + quote(citations())
-            + ") ON CONFLICT(key) DO UPDATE SET value=excluded.value;\n",
-            VERSION_BUMP]
+    fill = [
+        f"DROP TABLE IF EXISTS {STAGING};\n",
+        (f"CREATE TABLE {STAGING} (a TEXT NOT NULL, b TEXT NOT NULL, relation TEXT NOT NULL, source TEXT NOT NULL,"
+         " detail TEXT NOT NULL, written INTEGER NOT NULL, widens INTEGER NOT NULL,"
+         " PRIMARY KEY(a,b,relation,source)) WITHOUT ROWID;\n"),
+        f"DROP TABLE IF EXISTS {SUBSTITUTIONS_STAGING};\n",
+        (f"CREATE TABLE {SUBSTITUTIONS_STAGING} (a TEXT NOT NULL, b TEXT NOT NULL, count INTEGER NOT NULL,"
+         " pairs TEXT NOT NULL, PRIMARY KEY(a,b)) WITHOUT ROWID;\n"),
+        f"DROP TABLE IF EXISTS {DERIVED_STAGING};\n",
+        (f"CREATE TABLE {DERIVED_STAGING} (a TEXT NOT NULL, b TEXT NOT NULL, subs TEXT NOT NULL,"
+         " PRIMARY KEY(a,b)) WITHOUT ROWID;\n"),
+    ]
+    fill += insert_rows(STAGING, COLUMNS, (tuple(edge[column] for column in COLUMNS)
+                                            for edge in refs.variant_edges()))
+    fill += insert_rows(SUBSTITUTIONS_STAGING, ("a", "b", "count", "pairs"), (
+        (left, right, item["count"], json.dumps(item["pairs"], ensure_ascii=False, separators=(",", ":")))
+        for (left, right), item in sorted(refs.component_variants().items())))
+    fill += insert_rows(DERIVED_STAGING, ("a", "b", "subs"), derived_rows())
+    swap = []
+    for live, staging, columns in (
+        ("character_variants", STAGING, COLUMNS),
+        ("component_variants", SUBSTITUTIONS_STAGING, ("a", "b", "count", "pairs")),
+        ("character_derived", DERIVED_STAGING, ("a", "b", "subs")),
+    ):
+        swap += [f"DELETE FROM {live};\n",
+                 f"INSERT INTO {live}({','.join(columns)}) SELECT {','.join(columns)} FROM {staging};\n",
+                 f"DROP TABLE {staging};\n"]
+    swap += [
+        "INSERT INTO metadata(key,value) VALUES('variant_sources'," + quote(citations())
+        + ") ON CONFLICT(key) DO UPDATE SET value=excluded.value;\n",
+        VERSION_BUMP]
     return [fill, swap]
 
 
@@ -79,6 +123,12 @@ def fill(db: sqlite3.Connection) -> None:
     db.executemany(f"INSERT OR REPLACE INTO character_variants({','.join(COLUMNS)}) VALUES ({','.join('?' * len(COLUMNS))})",
                    [tuple(int(edge[c]) if c in ("written", "widens") else edge[c] for c in COLUMNS)
                     for edge in refs.variant_edges()])
+    db.execute("DELETE FROM component_variants")
+    db.executemany("INSERT OR REPLACE INTO component_variants(a,b,count,pairs) VALUES (?,?,?,?)",
+                   [(left, right, item["count"], json.dumps(item["pairs"], ensure_ascii=False, separators=(",", ":")))
+                    for (left, right), item in refs.component_variants().items()])
+    db.execute("DELETE FROM character_derived")
+    db.executemany("INSERT OR REPLACE INTO character_derived(a,b,subs) VALUES (?,?,?)", derived_rows())
     db.execute("INSERT OR REPLACE INTO metadata(key,value) VALUES('variant_sources',?)", (citations(),))
 
 
@@ -109,13 +159,13 @@ def write_parts(out: Path, groups: list[list[str]]) -> list[Path]:
 
 
 APPLY = """#!/usr/bin/env bash
-# Replace the site's 異体字 graph (character_variants) with this export. Each part is one D1
-# transaction; the parts fill a staging table and the last one swaps it in, so a failure never
-# leaves the live table empty. Safe to rerun.
+# Replace the site's variant tables (character_variants, component_variants, character_derived)
+# with this export. Each part is one D1 transaction; the parts fill staging tables and the last one
+# swaps them in, so a failure never leaves the live tables empty. Safe to rerun.
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 cd ~/projects/Philology/glyph-atlas/apps/cloudflare
-count="SELECT count(*) AS edges, coalesce(sum(written),0) AS written, coalesce(sum(widens),0) AS widens FROM character_variants"
+count="SELECT (SELECT count(*) FROM character_variants) AS edges, (SELECT count(*) FROM character_variants WHERE written=1) AS written, (SELECT count(*) FROM character_variants WHERE widens=1) AS widens, (SELECT count(*) FROM component_variants) AS substitutions, (SELECT count(*) FROM character_derived) AS derived"
 q() {{ bunx wrangler d1 execute glyph-atlas --remote --json --command "$1" 2>/dev/null | jq -c '.[0].results[0]'; }}
 echo "before: $(q "$count")"
 echo "started $(date -u +%Y-%m-%dT%H:%M:%SZ); undo: bunx wrangler d1 time-travel restore glyph-atlas --timestamp=<that time>"

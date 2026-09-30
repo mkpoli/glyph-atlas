@@ -2,6 +2,7 @@
 
 import glob
 import importlib.util
+import json
 import sqlite3
 from pathlib import Path
 
@@ -50,7 +51,10 @@ def migrated() -> sqlite3.Connection:
     return db
 
 
-def test_the_parts_fill_a_staging_table_and_only_the_last_swaps_it_in(tmp_path):
+def test_the_parts_fill_a_staging_table_and_only_the_last_swaps_it_in(tmp_path, monkeypatch):
+    # The whole derived tier takes half a minute; a few rows of it stand in.
+    rows = (("寰", "⿱宀𦊷", '[["睘","𦊷"]]'), ("還", "⿺廴睘", '[["廴","辶"]]'))
+    monkeypatch.setattr(export, "derived_rows", lambda: rows)
     db = migrated()
     db.execute("INSERT INTO character_variants VALUES('a','b','variant','x','',1,1)")
     paths = export.write_parts(tmp_path, export.statements())
@@ -66,8 +70,14 @@ def test_the_parts_fill_a_staging_table_and_only_the_last_swaps_it_in(tmp_path):
     assert db.execute("SELECT count(*), sum(written), sum(widens) FROM character_variants").fetchone() == (
         want["edges"], want["written"], want["widens"])
     assert db.execute("SELECT written, widens FROM character_variants WHERE a='克' AND b='刻'").fetchone() == (0, 0)
-    assert db.execute("SELECT name FROM sqlite_master WHERE name=?", (export.STAGING,)).fetchone() is None
-    assert "cjkvi-variants" in db.execute("SELECT value FROM metadata WHERE key='variant_sources'").fetchone()[0]
+    for staging in (export.STAGING, export.SUBSTITUTIONS_STAGING, export.DERIVED_STAGING):
+        assert db.execute("SELECT name FROM sqlite_master WHERE name=?", (staging,)).fetchone() is None
+    cited = db.execute("SELECT value FROM metadata WHERE key='variant_sources'").fetchone()[0]
+    assert "cjkvi-variants" in cited and "derived-ids" in cited
+    assert db.execute("SELECT count(*) FROM component_variants").fetchone() == (want["substitutions"],)
+    assert db.execute("SELECT b, subs FROM character_derived WHERE a='寰'").fetchall() == [("⿱宀𦊷", '[["睘","𦊷"]]')]
+    pairs = db.execute("SELECT pairs FROM component_variants WHERE a='睘' AND b='𦊷'").fetchone()[0]
+    assert {(p["a"], p["b"]) for p in json.loads(pairs)} == {("環", "𤨔"), ("還", "𮟃")}
 
 
 
