@@ -133,12 +133,25 @@ def rows() -> list[dict[str, str]]:
         return list(csv.DictReader((line for line in handle if not line.startswith("#")), delimiter="\t"))
 
 
-def test_the_committed_table_holds_only_what_the_threshold_keeps():
+def test_a_substitution_whose_predictions_the_graph_mostly_does_not_state_is_not_kept():
+    # 口 and 厶 swap in four pairs of characters; the graph gives one of them as variants.
+    desc = descriptions({"㗀": ["⿰口夂"], "㗁": ["⿰厶夂"], "㗂": ["⿰口日"], "㗃": ["⿰厶日"],
+                         "㗄": ["⿰口月"], "㗅": ["⿰厶月"], "㗆": ["⿰口木"], "㗇": ["⿰厶木"]})
+    item = v.Attested(*v._ordered("口", "厶"), (("㗀", "㗁", ("s",)),), ("x/y",))
+    predicted = v.predictions(desc, [item])
+    assert predicted[(item.a, item.b)] == {("㗀", "㗁"), ("㗂", "㗃"), ("㗄", "㗅"), ("㗆", "㗇")}
+    assert v.agreeing([item], predicted, {("㗀", "㗁")}) == []
+    kept = v.agreeing([item], predicted, {("㗀", "㗁"), ("㗂", "㗃")})
+    assert [(k.predicted, k.agreed) for k in kept] == [(4, 2)]
+
+
+def test_the_committed_table_holds_only_what_the_threshold_and_the_agreement_keep():
     found = rows()
-    assert len(found) > 4000
+    assert len(found) > 2000
     assert found == sorted(found, key=lambda row: (row["a"], row["b"]))
     for row in found:
         assert int(row["count"]) >= v.THRESHOLD
+        assert int(row["agreed"]) >= v.AGREEMENT * int(row["predicted"]) > 0
         pairs = row["pairs"].split(" ")
         assert len(pairs) >= v.THRESHOLD
         for pair in pairs:
@@ -151,5 +164,11 @@ def test_the_committed_table_holds_only_what_the_threshold_keeps():
 def test_the_example_substitution_is_in_the_committed_table():
     by_key = {(row["a"], row["b"]): row for row in rows()}
     row = by_key[v._ordered("睘", "𦊷")]
-    assert row["count"] == "2"
+    assert (row["count"], row["predicted"], row["agreed"]) == ("2", "3", "2")
     assert {token.split("=")[0] for token in row["pairs"].split(" ")} == {"環:𤨔", "還:𮟃"}
+
+
+def test_口_厶_is_kept_and_a_swap_of_meaning_is_not():
+    by_key = {(row["a"], row["b"]) for row in rows()}
+    assert v._ordered("口", "厶") in by_key
+    assert v._ordered("口", "氵") not in by_key and v._ordered("扌", "木") not in by_key

@@ -3,7 +3,8 @@
 強 is ⿰弓𧈧 and 强 is ⿰弓虽 (`data/vocab/han-ids.tsv`), and the 異体字 graph gives the two as variants
 (`data/vocab/kanji-variants.tsv`). They differ in one component, 𧈧 against 虽, and inside it in one
 more, 厶 against 口, so the pair attests both substitutions. A substitution is kept once `THRESHOLD`
-distinct pairs attest it (`attest`), and every character is then tried with each kept substitution at
+distinct pairs attest it (`attest`, `kept`) and at least `AGREEMENT` of the pairs of characters it
+predicts are pairs the graph already gives (`agreeing`), and every character is then tried with each kept substitution at
 every depth of its decomposition (`derive`): a result that is another character's sequence is a
 derived variant of it, and one no character has is an unencoded form, written as its sequence. 還
 (⿺辶睘) and 環 (⿰𤣩睘) are attested with 𮟃 (⿺辶𦊷) and 𤨔 (⿰𤣩𦊷), so 睘→𦊷 is kept, and 寰 (⿱宀睘)
@@ -25,7 +26,7 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from collections.abc import Iterable, Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from glyph_atlas.han_components import BINARY, TERNARY, TOKEN, UNARY
 
@@ -34,6 +35,13 @@ from glyph_atlas.han_components import BINARY, TERNARY, TOKEN, UNARY
 #: two characters, and one position replicated across a thousand pairs is one claim, not a pattern.
 #: See the build script's report for the distribution this was chosen against.
 THRESHOLD = 2
+#: Of the pairs of encoded characters a substitution predicts, the share the 異体字 graph must already
+#: give as written variants for the substitution to be kept (`agreeing`). 口 against 氵 has fourteen
+#: attesting pairs (唾 and 涶, 噥 and 濃, …) and predicts 1,492 pairs, of which the graph states 14: it
+#: holds where 口 and 氵 are the semantic part of words of speech and of liquid, and nowhere else. The
+#: substitutions under a tenth are such swaps of meaning (扌 and 木, 月 and 目); from 0.3 up the ones
+#: that predict most are interchanges of writing (厶 and 口 at 82 of 218, 宀 and 宂, 厂 and 广).
+AGREEMENT = 0.3
 #: How many levels below a character a substitution is looked for, in the pairs and in the derivation.
 DEPTH = 4
 SKIPPED = set("〾㇯？")
@@ -214,6 +222,10 @@ class Attested:
     b: str
     pairs: tuple[tuple[str, str, tuple[str, ...]], ...]
     contexts: tuple[str, ...]
+    #: How many pairs of encoded characters it predicts, and how many of those the graph gives as
+    #: written variants (`agreeing`); zero until measured.
+    predicted: int = 0
+    agreed: int = 0
 
     @property
     def count(self) -> int:
@@ -237,13 +249,37 @@ def attest(desc: Descriptions, pairs: Iterable[tuple[str, str, Iterable[str]]]) 
 
 
 def kept(found: dict[str, Attested]) -> list[Attested]:
-    """What predicts: `THRESHOLD` distinct attesting pairs seen in `THRESHOLD` distinct contexts.
+    """What may predict: `THRESHOLD` distinct attesting pairs seen in `THRESHOLD` distinct contexts.
 
     Two pairs from one position (one enclosing substitution reached by both) are one claim twice,
     and one pair seen twice (at the top and inside the same decomposition) is one claim; either way
     nothing predicts. The pairs a substitution rests on are its own record either way.
     """
     return [item for item in found.values() if item.count >= THRESHOLD and len(item.pairs) >= THRESHOLD]
+
+
+def predictions(desc: Descriptions, items: Iterable[Attested], chars: Iterable[str] | None = None) -> dict[tuple[str, str], set[tuple[str, str]]]:
+    """The pairs of encoded characters each substitution of `items` predicts, from `chars` (all when
+    None), each pair in code point order. The pairs that attest it are among them."""
+    found: dict[tuple[str, str], set[tuple[str, str]]] = defaultdict(set)
+    for form in derive(desc, equivalents(items), chars):
+        if form.encoded:
+            found[_ordered(form.was, form.became)].add(tuple(sorted((form.char, form.other), key=ord)))
+    return found
+
+
+def agreeing(items: Iterable[Attested], predicted: dict[tuple[str, str], set[tuple[str, str]]],
+             written: set[tuple[str, str]]) -> list[Attested]:
+    """The substitutions at least `AGREEMENT` of whose predicted pairs are written pairs of the graph,
+    each with those two counts: one that predicts mostly pairs no source states is not a rule of
+    writing but a coincidence of meaning (口 and 氵, 日 and 木)."""
+    out = []
+    for item in items:
+        pairs = predicted.get((item.a, item.b), set())
+        agreed = len(pairs & written)
+        if pairs and agreed / len(pairs) >= AGREEMENT:
+            out.append(replace(item, predicted=len(pairs), agreed=agreed))
+    return out
 
 
 @dataclass(frozen=True)
