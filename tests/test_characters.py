@@ -13,6 +13,7 @@ in the generated table, and once as a rule in the fixture build.
 from __future__ import annotations
 
 import csv
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -274,9 +275,11 @@ def test_every_declared_family_agrees_with_generated_character_table():
     assert len(document["families"]) == 271
     for head, family in document["families"].items():
         points = [refs.to_code_point(char) for char in family["members"]]
-        assert set(refs.graphemes()[head]) == set(points)
+        assert set(points) <= set(refs.graphemes()[head]), "a shape family may add members, never drop one"
         assert all(refs.grapheme(point) == head for point in points)
-        assert refs.grapheme_info(head)["evidence"]
+        info = refs.grapheme_info(head)
+        assert info["evidence"][0]["id"] in document["sources"]
+        assert [member["code_point"] for member in info["members"]][:len(points)] == points
 
 
 def test_a_kanji_is_not_a_form_of_the_kana_it_is_confusable_with():
@@ -370,6 +373,9 @@ def write_release(directory: Path) -> Path:
         "# confusables.txt\n1B127 ;\t5B50 ;\tMA\t# ( 𛄧 → 子 ) KATAKANA LETTER ALTERNATE NE → CJK UNIFIED IDEOGRAPH-5B50\n",
         encoding="utf-8",
     )
+    with zipfile.ZipFile(directory / "Unihan.zip", "w") as archive:
+        archive.writestr("Unihan_IRGSources.txt", "# Unihan_IRGSources.txt\nU+5CF6\tkIRG_JSource\tJ0-4567\n"
+                         "U+5D8B\tkIRG_JSource\tJ0-5068\nU+5B50\tkIRG_JSource\tJ0-3B52\n")
     return directory
 
 
@@ -382,7 +388,15 @@ def build(directory: Path, vocab: Path):
     module = importlib.util.module_from_spec(spec)
     sys.modules["build_character_table"] = module
     spec.loader.exec_module(module)
-    return {ord(row.char): row for row in module.build(directory, vocab)}
+    rows, _ = module.build(directory, vocab)
+    return {ord(row.char): row for row in rows}
+
+
+def write_shape_tables(vocab: Path, variants: str = "", equivalents: str = "", figures: str = "") -> None:
+    """The three tables the shape families are read from, with the given data rows."""
+    (vocab / "kanji-variants.tsv").write_text("# fixture\na\tb\trelation\tsource\tdetail\n" + variants, encoding="utf-8")
+    (vocab / "kanji-equivalents.tsv").write_text("a\tb\tkind\tsource\n" + equivalents, encoding="utf-8")
+    (vocab / "mj-kanji.tsv").write_text("mj\tcode_point\timplemented_code_point\tivs\n" + figures, encoding="utf-8")
 
 
 @pytest.fixture
@@ -403,6 +417,7 @@ def tiny(tmp_path: Path) -> tuple[Path, Path]:
         "characters:\n  U+1B127:\n    jibo: [子]\n  U+1B128:\n    jibo: [井]\n",
         encoding="utf-8",
     )
+    write_shape_tables(vocab)
     (vocab / "gugyeol.tsv").write_text(
         "# a comment the reader skips\ncode_point\tchar\treadings\tjibo\n"
         f"U+F67F\t{chr(0xF67F)}\t가\t可\nU+F690\t{chr(0xF690)}\t\t\n",
@@ -659,6 +674,7 @@ def test_the_build_holds_a_gugyeol_at_its_private_use_code_point(tiny):
 ])
 def test_the_build_refuses_a_gugyeol_row_it_cannot_trust(tiny, line):
     release, vocab = tiny
+    write_shape_tables(vocab)
     (vocab / "gugyeol.tsv").write_text("code_point\tchar\treadings\tjibo\n" + line, encoding="utf-8")
     with pytest.raises(ValueError):
         build(release, vocab)
@@ -677,3 +693,45 @@ def test_a_modern_kana_has_a_source_not_a_jibo():
     assert ke["char"] == "介" and ke["uncertain"] and ke["also_cited"] == ["个"]
     # A hiragana is the cursive of a whole kanji; a katakana's source is not.
     assert refs.kana_origins()["乃"] == {"の"} and "弓" not in refs.kana_origins()
+
+
+def test_the_build_joins_shape_variants_under_the_seiji(tiny):
+    """島 is the 親字・正字 嶋 is registered under, and a second source calls them variants."""
+    release, vocab = tiny
+    write_shape_tables(
+        vocab,
+        variants="嶋\t島\treduction\tmj-shrink-map\tMJ013777: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1\n"
+                 "島\t嶋\tvariant\twikidata\tQ1\n",
+        figures="MJ013777\tU+5D8B\tU+5D8B\t\n")
+    rows = build(release, vocab)
+    assert rows[ord("嶋")].grapheme == rows[ord("島")].grapheme == "U+5CF6"
+    assert rows[ord("子")].grapheme == "U+5B50"
+
+
+def test_the_build_writes_the_edges_a_family_rests_on(tiny, tmp_path):
+    import importlib.util
+    import sys
+
+    release, vocab = tiny
+    write_shape_tables(
+        vocab,
+        variants="嶋\t島\treduction\tmj-shrink-map\tMJ013777: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1\n"
+                 "島\t嶋\tvariant\twikidata\tQ1\n",
+        figures="MJ013777\tU+5D8B\tU+5D8B\t\n")
+    spec = importlib.util.spec_from_file_location("build_character_table", BUILT_BY)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["build_character_table"] = module
+    spec.loader.exec_module(module)
+    _, families = module.build(release, vocab)
+    target = tmp_path / "grapheme-families.tsv"
+    module.write_families(families, target, vocab)
+    lines = target.read_text(encoding="utf-8").splitlines()
+    assert any(line.startswith("# source mj-shrink-map: MJ縮退マップ") for line in lines)
+    assert any(line.startswith("# source wikidata: ") for line in lines)
+    body = [line.split("\t") for line in lines if not line.startswith("#")]
+    assert body[0] == list(module.FAMILY_FIELDS)
+    assert [row[:7] for row in body[1:]] == [
+        ["U+5CF6", "嶋", "島", "reduction", "mj-shrink-map", "merge",
+         "MJ013777: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1"],
+        ["U+5CF6", "島", "嶋", "variant", "wikidata", "corroborates", "Q1"],
+    ]

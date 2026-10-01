@@ -259,7 +259,7 @@ def export(dataset: Path, output: Path, *, resume=False):
             info["default_scope"] = "grapheme" if info["candidates"].get("requires_family_scope") else info["default_scope"]
             detail = {**info, "alias": row.alias, "category": row.category,
                       "confusables": [characters.to_row(refs.character(cp)) for cp in row.confusables],
-                      "characters": [characters._row(r, counts) for cp in characters._forms(row.code_point)
+                      "characters": [characters.form_row(r, counts) for cp in characters._forms(row.code_point)
                                      if (r := refs.character(cp))],
                       "derived": [characters._row(r, counts) for cp in refs.derived(row.char)
                                   if (r := refs.character(cp))],

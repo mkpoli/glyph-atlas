@@ -26,6 +26,12 @@ Sources, all from one Unicode release:
   for the characters Unicode 18.0 added without a derivation note.
 - `data/vocab/graphemes.yaml`, hand-written, for the grapheme groupings and for the kana Unicode
   names but does not give a reading.
+- `Unihan.zip` of the same release, for `kIRG_JSource` in `Unihan_IRGSources.txt`: a `J0` source is
+  JIS X 0208, which the shape families below read.
+- `data/vocab/kanji-variants.tsv`, `data/vocab/kanji-equivalents.tsv` and `data/vocab/mj-kanji.tsv`
+  for the kanji grapheme families no curated row states: `glyph_atlas.shape_families` joins the
+  characters a source defines as one character in another shape, and the build writes the edges
+  each family rests on to `data/vocab/grapheme-families.tsv`.
 - `data/vocab/gugyeol.tsv`, hand-kept, for the 구결자 of the Hanyang private-use convention
   (U+F67E to U+F77C). Unicode assigns them nothing but a private-use code point, so the file is
   what gives each its script, reading and 字母.
@@ -48,6 +54,7 @@ import argparse
 import csv
 import re
 import sys
+import zipfile
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -55,11 +62,18 @@ from typing import Any
 
 import yaml
 
+from glyph_atlas import shape_families
+
 ROOT = Path(__file__).resolve().parents[1]
 MJ_TABLE_NAME = "mj-hentaigana.tsv"
 OVERRIDES_NAME = "graphemes.yaml"
 GUGYEOL_NAME = "gugyeol.tsv"
 OUTPUT_NAME = "characters.tsv"
+VARIANTS_NAME = "kanji-variants.tsv"
+EQUIVALENTS_NAME = "kanji-equivalents.tsv"
+MJ_KANJI_NAME = "mj-kanji.tsv"
+FAMILIES_NAME = "grapheme-families.tsv"
+FAMILY_FIELDS = ("head", "a", "b", "relation", "source", "role", "detail")
 
 #: The Unicode release the cached files and the generated table are from. Every file of the release
 #: carries no version of its own, so the table records the one it was built against.
@@ -475,8 +489,12 @@ def selected_blocks(blocks: list[Range], wanted: tuple[str, ...] = BLOCKS) -> li
 def build(
     ucd: Path,
     vocab: Path | None = None,
-) -> list[Character]:
-    """Every character the table covers, in code point order."""
+    refused: list[tuple[str, shape_families.Edge]] | None = None,
+) -> tuple[list[Character], list[shape_families.Family]]:
+    """Every character in code point order, and the kanji families of more than one character.
+
+    `refused`, when given, collects the merges `shape_families` turned down, for the summary.
+    """
     vocab = vocab or ROOT / "data" / "vocab"
     blocks = read_ranges(ucd / "Blocks.txt")
     scripts = read_ranges(ucd / "Scripts.txt")
@@ -501,9 +519,58 @@ def build(
     _add_jibo(characters, mj, derived)
     _add_readings(characters)
     _add_graphemes(characters, kana, curated)
+    families = _add_shape_families(characters, document, ucd, vocab, refused)
     _add_confusables(characters, lookalikes)
     _check_graphemes(characters)
-    return [characters[point] for point in sorted(characters)]
+    return [characters[point] for point in sorted(characters)], families
+
+
+def read_table(path: Path) -> list[dict[str, str]]:
+    """A generated tab-separated table with its `#` header lines dropped."""
+    with path.open(encoding="utf-8") as handle:
+        return list(csv.DictReader([line for line in handle if not line.startswith("#")], delimiter="\t"))
+
+
+def jis0208(ucd: Path) -> set[str]:
+    """The ideographs whose Unihan `kIRG_JSource` is `J0`, the JIS X 0208 repertoire."""
+    with zipfile.ZipFile(ucd / "Unihan.zip") as archive:
+        text = archive.read("Unihan_IRGSources.txt").decode("utf-8")
+    found = set()
+    for line in text.splitlines():
+        cells = line.split("\t")
+        if len(cells) == 3 and cells[1] == "kIRG_JSource" and cells[2].startswith("J0-"):
+            found.add(chr(int(cells[0].removeprefix("U+"), 16)))
+    return found
+
+
+def _add_shape_families(
+    characters: dict[int, Character], document: dict[str, Any], ucd: Path, vocab: Path,
+    refused: list[tuple[str, shape_families.Edge]] | None = None,
+) -> list[shape_families.Family]:
+    """Put the kanji a source defines as one character in another shape under one grapheme.
+
+    A curated family of `graphemes.yaml` keeps its representative and may take in further members;
+    every other family's representative is chosen by `shape_families.head_of`. Only ideographs
+    take part, and a character another rule has already placed under a grapheme other than itself
+    is never moved, so the kana rules and the curated rows stand.
+    """
+    ideographs = {row.char for row in characters.values()
+                  if (row.name or "").startswith(("CJK UNIFIED IDEOGRAPH", "CJK COMPATIBILITY IDEOGRAPH"))}
+    default_figure = {row["mj"]: chr(int(row["implemented_code_point"].removeprefix("U+"), 16))
+                      for row in read_table(vocab / MJ_KANJI_NAME) if row["implemented_code_point"]}
+    curated = {chr(int(head.removeprefix("U+"), 16)): list(family["members"])
+               for head, family in (document.get("families") or {}).items()}
+    families = shape_families.families(
+        read_table(vocab / VARIANTS_NAME), read_table(vocab / EQUIVALENTS_NAME), ideographs,
+        default_figure, jis0208(ucd), curated, refused)
+    for family in families:
+        head = code_point(ord(family.head))
+        for member in family.members:
+            row = characters[ord(member)]
+            if row.grapheme not in (None, row.code_point, head):
+                raise ValueError(f"{row.code_point} is under {row.grapheme} and a shape family of {head}")
+            row.grapheme = head
+    return families
 
 
 def _check_graphemes(characters: dict[int, Character]) -> None:
@@ -858,6 +925,49 @@ def write(rows: list[Character], target: Path) -> None:
     target.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def write_families(families: list[shape_families.Family], target: Path, vocab: Path) -> None:
+    """Write the edges each kanji family rests on, with the sources they cite in the header.
+
+    The counts describe the rows below: a curated family no edge joins (two 新旧字体 pairs) is
+    part of the build but carries no row here, so it is not counted.
+    """
+    rows = [(family, edge) for family in families for edge in family.edges]
+    emitted = [family for family in families if family.edges]
+    used = sorted({edge.source for _, edge in rows} | {"unihan"})
+    lines = [
+        "# Kanji grapheme families: the edges that join each family; see src/glyph_atlas/shape_families.py.",
+        "# The members of a family are the characters of data/vocab/characters.tsv under its head.",
+    ]
+    for identifier in used:
+        path = ROOT / "data" / "sources" / f"{identifier}.yaml"
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"{path} is missing; the grapheme-families header cites the source {identifier!r}")
+        record = yaml.safe_load(path.read_text(encoding="utf-8"))
+        lack = [key for key in ("name", "licence", "licence_evidence", "attribution") if key not in record]
+        if lack:
+            raise ValueError(f"{path} lacks {', '.join(lack)}; the grapheme-families header cites "
+                             f"the source {identifier!r}")
+        lines.append(f"# source {identifier}: {record['name']}; {record['licence']} "
+                     f"({record['licence_evidence']}); {record['attribution']}")
+    lines += [
+        (f"#   from {VARIANTS_NAME} (compatibility, z, reduction and the corroborating rows), "
+         f"{EQUIVALENTS_NAME} (itaiji, source mj-kanji: the MJ文字情報一覧表's X0213 column) and "
+         f"{MJ_KANJI_NAME} (実装したUCS, the default figure of a code point)"),
+        (f"#   unihan: Unihan_IRGSources.txt kIRG_JSource J0 (JIS X 0208) of Unicode {RELEASE}, "
+         "for the representative and for which reductions need a second source"),
+        ("# role: merge joins a and b; corroborates is the second source a reduction between two "
+         "JIS X 0208 characters needs."),
+        "# columns: " + ", ".join(FAMILY_FIELDS),
+        (f"# families: {len(emitted)} ({sum(1 for family in emitted if family.curated)} curated), "
+         f"characters: {sum(len(family.members) for family in emitted)}, rows: {len(rows)}"),
+        "\t".join(FAMILY_FIELDS),
+    ]
+    lines += ["\t".join((code_point(ord(family.head)), edge.a, edge.b, edge.relation, edge.source,
+                         edge.role, edge.detail)) for family, edge in rows]
+    target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("ucd", type=Path, help="directory holding the Unicode release's files")
@@ -870,8 +980,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--vocab", type=Path, default=ROOT / "data" / "vocab", help="where the curated tables are")
     arguments = parser.parse_args(argv)
 
-    rows = build(arguments.ucd, arguments.vocab)
+    refused: list[tuple[str, shape_families.Edge]] = []
+    rows, families = build(arguments.ucd, arguments.vocab, refused)
     write(rows, arguments.out)
+    write_families(families, arguments.out.with_name(FAMILIES_NAME), arguments.vocab)
     scripts = Counter(row.script for row in rows)
     ages = Counter(row.age for row in rows)
     print(f"{len(rows)} rows from Unicode {RELEASE} -> {arguments.out}")
@@ -879,6 +991,12 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  with a reading: {sum(1 for row in rows if row.readings)}")
     print(f"  scripts: {dict(scripts.most_common())}")
     print(f"  ages: {dict(sorted(ages.items(), key=lambda item: (item[0] is None, item[0])))}")
+    sizes = Counter(len(family.members) for family in families)
+    print(f"  kanji families: {len(families)}, sizes {dict(sorted(sizes.items()))}")
+    reasons = Counter(reason for reason, _ in refused)
+    print(f"  refused merges: {len(refused)}"
+          + (": " + ", ".join(f"{reason} {count}" for reason, count in sorted(reasons.items()))
+             if refused else ""))
     return 0
 
 
