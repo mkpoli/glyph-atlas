@@ -137,6 +137,7 @@ ID_FAMILIES = {
     "hng": "hng",
     "hng-kiridashi": "hng-kiridashi",
     "glossary-headwords": "glossary-headwords",
+    "hdic-krm": "hdic-krm",
 }
 
 #: Known corpora, with the rights and shape a caller needs before showing a result.
@@ -183,6 +184,11 @@ KNOWN: tuple[dict[str, Any], ...] = (
         "name": "glossary-headwords",
         "note": "倭語類解 vol. 1 headwords: 1.4k Han character boxes on National Library of Korea pages, "
                 "labelled from the ko.wikisource transcription (scripts/cut_glossary_headwords.py).",
+    },
+    {
+        "name": "hdic-krm",
+        "note": "観智院本類聚名義抄 headwords on the NDL facsimile (貴重図書複製会, 1937), "
+                "labelled from HDIC's KRM database (scripts/cut_krm_headwords.py).",
     },
 )
 

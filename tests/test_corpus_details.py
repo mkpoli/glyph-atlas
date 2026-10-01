@@ -920,6 +920,7 @@ class TestLookupIsRoutedNotBudgeted:
         assert resolver._corpus_order("hng:jou:00350") == ["hng"]
         assert UNIT_ID_PREFIXES["hng-kiridashi:"] == "hng-kiridashi"
         assert UNIT_ID_PREFIXES["gl:"] == "glossary-headwords"
+        assert UNIT_ID_PREFIXES["krm:"] == "hdic-krm"
 
     def test_an_unfamiliar_prefix_still_looks_everywhere(self, viewer):
         api, _, _ = viewer
