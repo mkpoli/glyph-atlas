@@ -93,6 +93,7 @@
   "chips.variantSources": "来源",
   "client.changed": "该字已更改。请重新加载以审阅当前版本。",
   "client.saveFailed": "无法保存审阅结果。",
+  "client.signInAgain": "登录已失效。请重新登录后保存。",
   "common.clear": "清除",
   "common.closeReviewer": "关闭审阅器",
   "common.nextCharacter": "下一个字",

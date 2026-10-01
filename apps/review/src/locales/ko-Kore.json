@@ -90,6 +90,7 @@
   "chips.variantSources": "出處",
   "client.changed": "이 文字가 變更되었습니다. 다시 불러와 最新 版을 檢討하십시오.",
   "client.saveFailed": "檢討를 貯藏할 수 없습니다.",
+  "client.signInAgain": "로그인 세션이 滿了되었습니다. 貯藏하려면 다시 로그인하십시오.",
   "common.clear": "除去",
   "common.closeReviewer": "檢討 닫기",
   "common.nextCharacter": "다음 文字",

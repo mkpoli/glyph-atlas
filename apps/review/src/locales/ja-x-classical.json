@@ -687,5 +687,6 @@
   "account.sessions.unknown": "未詳ノ端末",
   "account.sessions.revoke": "退出",
   "account.sessions.revokeOthers": "他ノ端末ヲ悉ク退出ス",
-  "signIn.wall": "文字集ノ截片"
+  "signIn.wall": "文字集ノ截片",
+  "client.signInAgain": "登入時限ヲ過ギタリ　保存スルニハ再ビ登入スベシ"
 }

@@ -93,6 +93,7 @@
   "chips.variantSources": "來源",
   "client.changed": "此字已變更，請重新載入以審閱最新版本。",
   "client.saveFailed": "無法儲存審閱結果。",
+  "client.signInAgain": "登入已失效。請重新登入後儲存。",
   "common.clear": "清除",
   "common.closeReviewer": "關閉審閱視窗",
   "common.nextCharacter": "下一個字",

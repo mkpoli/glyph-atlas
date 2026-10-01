@@ -687,5 +687,6 @@
   "account.sessions.unknown": "不明な端末",
   "account.sessions.revoke": "サインアウト",
   "account.sessions.revokeOthers": "他のすべての端末からサインアウト",
-  "signIn.wall": "コレクションの切り出し"
+  "signIn.wall": "コレクションの切り出し",
+  "client.signInAgain": "セッションが終了しました。保存するにはもう一度サインインしてください。"
 }
