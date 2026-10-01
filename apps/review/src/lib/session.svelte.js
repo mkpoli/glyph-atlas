@@ -1,6 +1,7 @@
 import { getContext, setContext } from 'svelte'
 import { authClient } from './auth.js'
 import { stored, remember, forget } from './client.js'
+import { t } from './i18n.svelte.js'
 
 const KEY = Symbol('session')
 // The id this browser reviewed under before accounts, until an account takes it over.
@@ -36,6 +37,9 @@ export function createSession() {
     },
     /** The signed-in user, starting an anonymous session if there is none. */
     async ensure({ again = false } = {}) {
+      // An account whose session has ended (signed out elsewhere, or banned) signs in again; it never
+      // goes on saving as somebody new.
+      if (again && state.user && !state.user.anonymous) { state.user = null; state.signingIn = true; throw new Error(t('client.signInAgain')) }
       if (again) state.user = null
       if (state.user) { await claimLegacy(); return state.user }
       starting ??= (async () => {

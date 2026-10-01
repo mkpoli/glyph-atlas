@@ -25,10 +25,10 @@ export const MAIL: Record<string, Words> = {
 };
 
 export function signInMail(locale: string, code: string, host: string) {
-  const words = MAIL[locale] ?? MAIL[locale.split('-')[0]] ?? MAIL.en;
+  const words = MAIL[locale] ?? MAIL.en;
   const subject = words.subject.replace('{code}', code);
   const text = `${words.intro}\n\n${code}\n\n${words.expiry}\n${words.ignore}\n\n@${host} #${code}\n`;
-  const html = `<!doctype html><html lang="${locale}"><body style="margin:0;padding:32px 16px;background:#fafafa;font-family:Inter,'Helvetica Neue',Arial,sans-serif;color:#19191c">
+  const html = `<!doctype html><html lang="${Object.hasOwn(MAIL, locale) ? locale : 'en'}"><body style="margin:0;padding:32px 16px;background:#fafafa;font-family:Inter,'Helvetica Neue',Arial,sans-serif;color:#19191c">
 <div style="max-width:440px;margin:auto;background:#fff;border:1px solid #e3e3e7;border-radius:12px;padding:32px">
 <p style="margin:0 0 4px;font-size:11px;letter-spacing:1.5px;color:#77777f">GLYPH ATLAS</p>
 <p style="margin:16px 0;font-size:15px;line-height:1.5">${words.intro}</p>

@@ -716,5 +716,6 @@
   "account.sessions.unknown": "Unknown device",
   "account.sessions.revoke": "Sign out",
   "account.sessions.revokeOthers": "Sign out everywhere else",
-  "signIn.wall": "Crops from the collection"
+  "signIn.wall": "Crops from the collection",
+  "client.signInAgain": "Your session has ended. Sign in again to save."
 }

@@ -5,7 +5,7 @@
 import { betterAuth } from 'better-auth';
 import { anonymous, emailOTP, lastLoginMethod } from 'better-auth/plugins';
 import { passkey } from '@better-auth/passkey';
-import { signInMail } from './mail';
+import { MAIL, signInMail } from './mail';
 
 export type Viewer = { id: string; name: string; image: string | null; anonymous: boolean };
 type Auth = ReturnType<typeof build>;
@@ -20,13 +20,15 @@ const secrets = (env: Env) => env as unknown as Record<string, string | undefine
 export function providers(env: Env): Provider[] {
   return PROVIDERS.filter(name => secrets(env)[`${name.toUpperCase()}_CLIENT_ID`] && secrets(env)[`${name.toUpperCase()}_CLIENT_SECRET`]);
 }
-// A provider that confirms the address it gives may join an account that already has it.
-const VERIFIED_EMAIL: Provider[] = ['github', 'google', 'discord'];
 
-// The language a mail is written in: the site language the reader chose, else their browser's first.
-function mailLocale(request: Request | undefined) {
-  const chosen = request?.headers.get('cookie')?.match(/(?:^|;\s*)atlas\.locale=([^;]+)/)?.[1];
-  return decodeURIComponent(chosen ?? request?.headers.get('accept-language')?.split(',')[0]?.split(';')[0] ?? 'en');
+// The language a mail is written in: the site language the reader chose, else their browser's first,
+// else English. Only a language the mail is written in is taken.
+export function mailLocale(request: Request | undefined) {
+  const chosen = request?.headers.get('cookie')?.match(/(?:^|;\s*)atlas\.locale=([\w-]+)/)?.[1];
+  const wanted = [chosen, ...(request?.headers.get('accept-language') ?? '').split(',').map(part => part.split(';')[0].trim())];
+  // A browser names Chinese by region (zh-TW), the site by script (zh-Hant).
+  const script = (tag: string) => /^zh-(TW|HK|MO|Hant)/i.test(tag) ? 'zh-Hant' : /^zh/i.test(tag) ? 'zh-Hans' : tag.split('-')[0];
+  return wanted.flatMap(tag => tag ? [tag, script(tag)] : []).find(tag => Object.hasOwn(MAIL, tag)) ?? 'en';
 }
 async function sendCode(env: Env, email: string, code: string, request: Request | undefined, origin: string) {
   const host = new URL(origin).host, mail = signInMail(mailLocale(request), code, host);
@@ -51,7 +53,9 @@ function build(env: Env, origin: string) {
     socialProviders: Object.fromEntries(providers(env).map(name => [name, {
       clientId: secrets(env)[`${name.toUpperCase()}_CLIENT_ID`]!, clientSecret: secrets(env)[`${name.toUpperCase()}_CLIENT_SECRET`]!,
     }])),
-    account: { accountLinking: { enabled: true, trustedProviders: [...VERIFIED_EMAIL, 'email-otp'] } },
+    // An account elsewhere joins the user with its address only when that provider has verified the
+    // address. Any one way in may be removed, since a code can always be sent to the address.
+    account: { accountLinking: { enabled: true, allowUnlinkingAll: true } },
     session: {
       expiresIn: 60 * 60 * 24 * 90,
       updateAge: 60 * 60 * 24,

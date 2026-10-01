@@ -37,7 +37,7 @@
   }
   const rename = event => { event.preventDefault(); return act('name', async client => { const r = await client.updateUser({ name: name.trim() }); await session.refresh(); return r }, t('account.name.saved')) }
   const link = provider => act(provider, client => client.linkSocial({ provider, callbackURL: location.pathname }))
-  const unlink = provider => act(provider, client => client.unlinkAccount({ providerId: provider }))
+  const unlink = provider => act(provider, client => client.unlinkAccount({ accountId: accounts.find(account => account.providerId === provider).id }))
   const addKey = () => act('add', client => client.passkey.addPasskey({ name: navigator.platform || undefined }), t('account.passkeys.added'))
   const dropKey = id => act(id, client => client.passkey.deletePasskey({ id }))
   const revoke = token => act(token, client => client.revokeSession({ token }))
