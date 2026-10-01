@@ -79,7 +79,7 @@ fetches each frame KRM names into the image cache and runs the detector and the 
 ```sh
 git clone https://github.com/shikeda/krm cache/krm
 git -C cache/krm checkout 9fc4f644674f307891442f1f39b3e436528c2392
-uv run scripts/cut_krm_headwords.py work/hdic-krm --report work/hdic-krm.report.json
+uv run scripts/cut_krm_headwords.py work/hdic-krm --report work/hdic-krm.report.json   # 20,662 units on 563 frames, 1.5 h with downloads
 ```
 
 ## 3. Images
