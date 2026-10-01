@@ -1,6 +1,7 @@
 <script>
   // Pair or trigram frequencies: runs of crops that follow each other on a line, counted by the text
-  // their labels make, most frequent first. `runs` is `[{ text, n }]`, or null while it loads.
+  // their labels make, most frequent first, each written the way most of its occurrences are: down
+  // the page or across it. `runs` is `[{ text, n, vertical }]`, or null while it loads.
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import { number } from '../lib/client.js'
   import { t, localize } from '../lib/i18n.svelte.js'
@@ -20,7 +21,7 @@
 {:else}
   <ul class="category-options ngram-grid">
     {#each runs as run (run.text)}
-      <li><a href={localize(ngramAddress(kind, run.text, work))} aria-label={`${run.text} ${t('ngram.occurrences', { count: number(run.n) })}`}><ReferenceGlyph char={run.text} size="md" /><small>{number(run.n)}</small></a></li>
+      <li><a href={localize(ngramAddress(kind, run.text, work))} aria-label={`${run.text} ${t('ngram.occurrences', { count: number(run.n) })}`}><span class="ngram-text" class:vertical={run.vertical}><ReferenceGlyph char={run.text} size="md" /></span><small>{number(run.n)}</small></a></li>
     {/each}
   </ul>
 {/if}
@@ -30,4 +31,5 @@
   .ngram-grid li{background:var(--surface-subtle)}
   .ngram-grid a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:54px;padding:8px 4px;color:inherit;text-decoration:none}
   .ngram-grid a:hover,.ngram-grid a:focus-visible{background:var(--surface-selected)}
+  .ngram-text.vertical{writing-mode:vertical-rl;text-orientation:upright}
 </style>

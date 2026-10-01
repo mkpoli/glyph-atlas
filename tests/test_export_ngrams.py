@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 from glyph_atlas import tables
-from glyph_atlas.schema import Box, Unit
+from glyph_atlas.schema import Box, Line, Unit
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -18,25 +18,41 @@ def unit(seq, line="L1", cut=""):
     return Unit(id=f"{line}:{cut}{seq}", line_id=line, seq=seq, box=Box(x=0, y=seq * 40, w=36, h=36))
 
 
-def review_dataset(path, units):
+def review_dataset(path, units, lines=()):
     path.mkdir()
     with sqlite3.connect(path / "review.sqlite") as db:
         db.execute("CREATE TABLE units (id TEXT PRIMARY KEY, data TEXT)")
         db.executemany("INSERT INTO units VALUES(?,?)", [(u.id, u.model_dump_json()) for u in units])
+        db.execute("CREATE TABLE lines (id TEXT PRIMARY KEY, data TEXT)")
+        db.executemany("INSERT INTO lines VALUES(?,?)", [(line.id, line.model_dump_json()) for line in lines])
     return path
 
 
-def parquet_dataset(path, units):
+def parquet_dataset(path, units, lines=()):
     path.mkdir()
     tables.write(path / "units.parquet", units, Unit)
+    if lines:
+        tables.write(path / "lines.parquet", list(lines), Line)
     return path
+
+
+def test_a_dataset_says_which_lines_are_written_across(tmp_path):
+    across = [Unit(id=f"H:{i}", line_id="H", seq=i, box=Box(x=i * 40, y=0, w=36, h=36)) for i in range(2)]
+    lines = [Line(id="H", page_id="P", seq=0, text_raw="ab", text="ab", vertical=False),
+             Line(id="L1", page_id="P", seq=1, text_raw="cd", text="cd")]
+    cells = parquet_dataset(tmp_path / "cells", [*across, unit(0), unit(1)], lines)
+    store = review_dataset(tmp_path / "store", [*across, unit(0), unit(1)], lines)
+    for dataset in (cells, store):
+        found, sizes = export.statements([dataset])
+        assert sizes == {(2, False): 1, (2, True): 1}
+        assert any("('H:0','H:1',0)" in s for s in found) and any("('L1:0','L1:1',1)" in s for s in found)
 
 
 def test_a_line_another_dataset_cuts_differently_keeps_its_runs(tmp_path):
     store = review_dataset(tmp_path / "store", [unit(0), unit(1), unit(2)])
     cells = parquet_dataset(tmp_path / "cells", [unit(1, cut="b"), unit(2, cut="b")])
     found, sizes = export.statements([store, cells])
-    assert sizes == {2: 3, 3: 1}
+    assert sizes == {(2, True): 3, (3, True): 1}
     assert any("'L1:0','L1:1'" in s for s in found)
     assert any("'L1:0','L1:1','L1:2'" in s for s in found)
 
@@ -46,9 +62,9 @@ def test_a_later_dataset_replaces_every_run_from_a_crop_it_holds(tmp_path):
     earlier = parquet_dataset(tmp_path / "earlier", [unit(0), unit(1), unit(2)])
     later = parquet_dataset(tmp_path / "later", [unit(0), Unit(id="L1:far", line_id="L1", seq=1, box=Box(x=0, y=400, w=36, h=36))])
     found, sizes = export.statements([earlier, later])
-    assert sizes == {2: 1}
+    assert sizes == {(2, True): 1}
     inserts = [s for s in found if s.startswith("INSERT")]
-    assert not any("'L1:0'," in s for s in inserts) and any("('L1:1','L1:2')" in s for s in inserts)
+    assert not any("'L1:0'," in s for s in inserts) and any("('L1:1','L1:2',1)" in s for s in inserts)
 
 
 def test_the_parts_record_the_runs_and_can_be_applied_again(tmp_path, monkeypatch):
@@ -65,6 +81,6 @@ def test_the_parts_record_the_runs_and_can_be_applied_again(tmp_path, monkeypatc
     for _ in range(2):
         for part in parts:
             db.executescript(part.read_text())
-    assert db.execute("SELECT first,size,text FROM unit_ngrams ORDER BY first,size").fetchall() == [
-        ("L1:0", 2, "申候"), ("L1:0", 3, "申候也"), ("L1:1", 2, "候也")]
+    assert db.execute("SELECT first,size,text,vertical FROM unit_ngrams ORDER BY first,size").fetchall() == [
+        ("L1:0", 2, "申候", 1), ("L1:0", 3, "申候也", 1), ("L1:1", 2, "候也", 1)]
     assert db.execute("SELECT count(*) FROM metadata WHERE key='units_refreshed_at'").fetchone() == (1,)

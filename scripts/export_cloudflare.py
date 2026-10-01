@@ -237,7 +237,7 @@ def export(dataset: Path, output: Path, *, resume=False):
                 print(encoded({"stage": "local-crops", "done": i}), flush=True)
         # Only runs whose crops were all published above are recorded.
         db.execute("DELETE FROM unit_ngrams")
-        for statement in ngrams.ngram_statements([], ngrams.adjacent_ngrams(units.values())):
+        for statement in ngrams.ngram_statements([], ngrams.adjacent_ngrams(units.values(), store.horizontal_lines())):
             db.execute(statement)
         db.commit()
         read_crops(db, media)

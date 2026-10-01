@@ -1,6 +1,7 @@
 <script>
   // Every occurrence of a pair or trigram: the crops that follow each other on a line, shown as they
-  // sit on the page (`NgramImage`), with the book and page they come from. Pages arrive as the reader nears the
+  // sit on the page (`NgramImage`), with the book and page they come from. The run's own text is written
+  // the way most of its occurrences are: down the page or across it. Pages arrive as the reader nears the
   // end, and while more are to come the grid shows whole rows only.
   import { untrack } from 'svelte'
   import NgramImage from './NgramImage.svelte'
@@ -13,7 +14,7 @@
   let { kind = 'pair', text, work = '', first = null, inspect } = $props()
   const words = $derived(ngramWords(kind))
   const opened = untrack(() => first)
-  let items = $state(opened?.items ?? []), total = $state(opened?.total ?? null), offset = $state(opened?.next_offset ?? 0)
+  let items = $state(opened?.items ?? []), total = $state(opened?.total ?? null), offset = $state(opened?.next_offset ?? 0), vertical = $state(opened?.vertical ?? true)
   let loading = $state(!opened), error = $state(''), requestId = 0
 
   async function load(append = false) {
@@ -23,7 +24,7 @@
       const page = await ngramOccurrences(kind, text, { work, offset: append ? offset : 0 })
       if (id !== requestId) return
       items = append ? [...items, ...page.items] : page.items
-      total = page.total; offset = page.next_offset
+      total = page.total; offset = page.next_offset; vertical = page.vertical
     } catch (e) { if (id === requestId) error = e.message }
     finally { if (id === requestId) loading = false }
   }
@@ -60,14 +61,14 @@
   </div>
   <header class="ngram-heading">
     <a class="quiet-link" href={localize(collectionAddress({ work }))}>← {words.name()}</a>
-    <p><b lang="ja">{text}</b>{#if total !== null}<span>{t('ngram.occurrences', { count: number(total) })}</span>{/if}</p>
+    <p><b lang="ja" class:vertical>{text}</b>{#if total !== null}<span>{t('ngram.occurrences', { count: number(total) })}</span>{/if}</p>
   </header>
   {#if error}<div class="error-message" role="alert">{error}<button onclick={() => load(items.length > 0)}>{t('common.tryAgain')}</button></div>{/if}
   <div class="ngram-grid" bind:this={grid} aria-busy={loading}>
     {#if loading && !items.length}{#each Array(12) as _}<div class="glyph-skeleton"></div>{/each}{/if}
     {#each shown as occurrence (occurrence.crops[0].id)}
       <article class="ngram-occurrence">
-        <div class="ngram-page"><NgramImage crops={occurrence.crops} page={occurrence.page} oninspect={id => inspect(id, null, crops)} /></div>
+        <div class="ngram-page"><NgramImage crops={occurrence.crops} page={occurrence.page} vertical={occurrence.vertical} oninspect={id => inspect(id, null, crops)} /></div>
         <p class="ngram-where">{where(occurrence.crops[0])}</p>
       </article>
     {/each}
@@ -80,6 +81,7 @@
   .ngram-heading{display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding:18px 0}
   .ngram-heading p{display:flex;align-items:baseline;gap:14px;margin:0}
   .ngram-heading b{font-size:40px;font-weight:500;line-height:1.1}
+  .ngram-heading b.vertical{writing-mode:vertical-rl;text-orientation:upright}
   .ngram-heading span{color:var(--muted);font-size:13px}
   .ngram-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line)}
   .ngram-occurrence{display:flex;flex-direction:column;background:var(--surface-tile);min-width:0}

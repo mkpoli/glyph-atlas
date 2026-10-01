@@ -472,6 +472,11 @@ class Store:
         with self._lock, self._connection() as conn:
             return self._unit_row(conn, unit_id)
 
+    def horizontal_lines(self) -> set[str]:
+        """The ids of the lines written across the page: those whose `vertical` is false."""
+        with self._lock, self._connection() as conn:
+            return {row["id"] for row in conn.execute("SELECT id FROM lines WHERE json_extract(data, '$.vertical') = 0")}
+
     def lines_of_page(self, page_id: str) -> list[Line]:
         with self._lock, self._connection() as conn:
             return self._lines_of_page(conn, page_id)
