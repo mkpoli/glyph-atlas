@@ -142,6 +142,21 @@ export async function viewer(env: Env, request: Request, fresh = false): Promise
 /** The ids a user's rows were written under, as a subquery over `actors`. */
 export const owned = (user: string) => `(SELECT actor FROM actors WHERE user_id='${user.replaceAll("'", "''")}')`;
 
+/** Give a reviewer id to one of the users who asked for it; the other claims on it end. */
+export async function grant(env: Env, reviewer: string, user: string) {
+  const asked = await env.DB.prepare('SELECT u.isAnonymous FROM actor_claims c JOIN "user" u ON u.id=c.user_id WHERE c.actor=? AND c.user_id=?')
+    .bind(reviewer, user).first<{ isAnonymous: number | null }>();
+  if (!asked) return { status: 404, body: { detail: 'This user has not asked for this reviewer id.' } };
+  try {
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO actors(actor,user_id,via,at) VALUES(?,?,'legacy',?)").bind(reviewer, user, now()),
+      env.DB.prepare('DELETE FROM actor_claims WHERE actor=?').bind(reviewer),
+      // An anonymous user takes the id as its name, so its history reads as it did.
+      ...(asked.isAnonymous ? [env.DB.prepare('UPDATE "user" SET name=? WHERE id=?').bind(reviewer, user)] : []),
+    ]);
+  } catch { return { status: 409, body: { detail: 'Another account already holds this reviewer id.' } } }
+  return { status: 200, body: { reviewer, user } };
+}
 // How many reviewer ids one user may ask for at once; a browser held one, a reader with a few
 // browsers a few.
 const CLAIMS = 5;

@@ -13,10 +13,16 @@ export async function reviewers(env: Env, q: URLSearchParams) {
   const kind = q.get('kind') ?? 'active', offset = Math.max(0, Number(q.get('offset') ?? 0) | 0);
   const find = (q.get('q') ?? '').trim().slice(0, 64);
   if (kind === 'unclaimed') {
-    const rows = await env.DB.prepare(`SELECT actor,count(*) AS submissions,max(at) AS last FROM submissions
-      WHERE actor NOT IN (SELECT actor FROM actors) AND (?='' OR actor LIKE '%'||?||'%') GROUP BY actor ORDER BY last DESC LIMIT ? OFFSET ?`)
-      .bind(find, find, PAGE + 1, offset).all<Json>();
-    return page(rows.results.map(r => ({ actor: r.actor, name: r.actor, submissions: r.submissions, last: r.last })), offset);
+    // Ids someone has asked for come first, each with everyone who asked.
+    const rows = await env.DB.prepare(`SELECT *,(SELECT count(*) FROM actor_claims c WHERE c.actor=g.actor) AS asked FROM (
+        SELECT actor,count(*) AS submissions,max(at) AS last FROM submissions
+        WHERE actor NOT IN (SELECT actor FROM actors) AND (?='' OR actor LIKE '%'||?||'%') GROUP BY actor) g
+      ORDER BY asked>0 DESC,last DESC LIMIT ? OFFSET ?`).bind(find, find, PAGE + 1, offset).all<Json>();
+    const ids = rows.results.map(r => r.actor);
+    const claims = ids.length ? (await env.DB.prepare(`SELECT c.actor,c.at,u.id,u.name,u.email,u.isAnonymous FROM actor_claims c
+      JOIN "user" u ON u.id=c.user_id WHERE c.actor IN (${ids.map(() => '?').join(',')}) ORDER BY c.at`).bind(...ids).all<Json>()).results : [];
+    return page(rows.results.map(r => ({ actor: r.actor, name: r.actor, submissions: r.submissions, last: r.last,
+      claims: claims.filter(c => c.actor === r.actor).map(c => ({ user: c.id, name: c.name, email: c.isAnonymous ? null : c.email, at: c.at })) })), offset);
   }
   const where = [`(?='' OR u.name LIKE '%'||?||'%' OR u.email LIKE '%'||?||'%' OR u.id=?)`];
   if (kind === 'accounts') where.push('coalesce(u.isAnonymous,0)=0');

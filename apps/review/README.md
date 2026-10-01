@@ -52,7 +52,9 @@ way this browser signed in last, and a reader signed in by mail is offered a pas
 - **Admins** see a page at `/admin` that lists reviewers and their submissions. Rejecting one undoes
   it as its author's own undo would, recorded with the admin and a reason in `rejections`; rejecting
   all of a reviewer's work also passes over their own later changes to a crop, and leaves any crop
-  someone else has changed since. An admin can ban a user and make another user an admin. The first
+  someone else has changed since, or that one of their own submissions still standing has changed.
+  Old reviewer ids someone has asked for come first under **Old ids**, each with everyone who asked;
+  the admin gives the id to one of them. An admin can ban a user and make another user an admin. The first
   admin is made in D1:
   `bunx wrangler d1 execute glyph-atlas --remote --command "UPDATE \"user\" SET role='admin' WHERE email='…'"`.
 - **Passkeys** are bound to the host the page is served from, so a local check uses `localhost`
