@@ -51,6 +51,8 @@ through みんなで翻刻.
   No terms page exists on the application itself.
 - Honkoku-Lines transcriptions and metadata: CC BY-SA 4.0; construction code MIT.
 - NDL古典籍OCR学習用データセット: CC BY-SA 4.0.
+- HDIC KRM (観智院本類聚名義抄データベース): CC BY-SA 4.0, stated in the repository README and in
+  each TSV's header. The page images it is placed on are the NDL facsimile, marked PDM.
 - Unicode data files and the IVD: Unicode License v3, notice reproduced in `ATTRIBUTION.md`.
 - GlyphWiki glyphs: free for any use without attribution, per the site's licence page.
 - CHISE IDS: GPL-2.0-or-later, excluded from the CC BY-SA core; a separately licensed aggregate is
