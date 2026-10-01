@@ -628,46 +628,50 @@ try {
     event_actor_history: "CREATE INDEX event_actor_history ON events(actor, at DESC, id DESC) WHERE kind IN ('review','undo')",
     event_label_history: `CREATE INDEX event_label_history ON events(${worker.historyLabelExpr()}, at DESC, id DESC) WHERE kind IN ('review','undo')`,
   }
-  // Two-character frequencies group along their own index, for the collection and for one book. The
+  // Pair and trigram frequencies group along their own index, for the collection and for one book. The
   // sort by count is over the grouped rows, which is why the answer is kept at the edge.
-  const pairShapes = [[false, [], 'unit_pair_text'], [true, ['hk:doc'], 'unit_pair_document']]
-  const pairServed = (details, index) => {
+  const ngramShapes = [[false, [2], 'unit_ngram_text'], [true, ['hk:doc', 2], 'unit_ngram_document']]
+  const ngramServed = (details, index) => {
     assert.ok(details.some(d => new RegExp(`USING (COVERING )?INDEX ${index}\\b`).test(d)), `${index}: ${details.join('; ')}`)
     assert.ok(!details.some(d => d.includes('USE TEMP B-TREE FOR GROUP BY')), details.join('; '))
     assert.ok(!details.some(d => /^SCAN \w+/.test(d) && !/USING (COVERING )?INDEX/.test(d)), details.join('; '))
   }
-  for (const [document, bound, index] of pairShapes) {
-    const shape = { sql: worker.pairsQuery(document), values: [] }
-    pairServed(await plan(shape, bound), index)
+  for (const [document, bound, index] of ngramShapes) {
+    const shape = { sql: worker.ngramsQuery(document), values: [] }
+    ngramServed(await plan(shape, bound), index)
     const create = (await db.prepare('SELECT sql FROM sqlite_master WHERE name=?').bind(index).first()).sql
     await db.prepare(`DROP INDEX ${index}`).run()
     // D1 keeps a prepared statement, plan and all, by its text: a trailing space prepares it again.
-    await assert.rejects(async () => pairServed(await plan({ ...shape, sql: shape.sql + ' ' }, bound), index), `the check on ${index} fails without it`)
+    await assert.rejects(async () => ngramServed(await plan({ ...shape, sql: shape.sql + ' ' }, bound), index), `the check on ${index} fails without it`)
     await db.prepare(create).run()
   }
   await db.batch([
-    db.prepare("INSERT INTO unit_pairs VALUES('p1','p2','申候','hk:doc'),('p3','p4','申候','hk:other'),('p5','p6','候也','hk:doc'),('p7','p8',NULL,'hk:doc')"),
+    db.prepare(`INSERT INTO unit_ngrams(first,size,second,third,text,document) VALUES('p1',2,'p2',NULL,'申候','hk:doc'),('p3',2,'p4',NULL,'申候','hk:other'),
+      ('p5',2,'p6',NULL,'候也','hk:doc'),('p7',2,'p8',NULL,NULL,'hk:doc'),('p1',3,'p2','p9','申候也','hk:doc')`),
   ])
-  const pairsOf = async query => (await (await mf.dispatchFetch(base + '/atlas/pairs' + query)).json()).items
-  assert.deepEqual(await pairsOf(''), [{ text: '申候', n: 2 }, { text: '候也', n: 1 }], 'pairs are counted by text, most frequent first')
-  assert.deepEqual(await pairsOf('?document=hk%3Aother'), [{ text: '申候', n: 1 }], 'a book counts its own pairs')
-  // A review that relabels a crop moves the pairs it is half of.
-  await db.batch([db.prepare("INSERT INTO unit_pairs(first,second,text,document) SELECT a.id,b.id,a.character||b.character,a.document FROM units a JOIN units b ON b.id='two' WHERE a.id='one'")])
+  const countsOf = async query => (await (await mf.dispatchFetch(base + '/atlas/ngrams/' + query)).json()).items
+  assert.deepEqual(await countsOf('2'), [{ text: '申候', n: 2 }, { text: '候也', n: 1 }], 'pairs are counted by text, most frequent first')
+  assert.deepEqual(await countsOf('2?document=hk%3Aother'), [{ text: '申候', n: 1 }], 'a book counts its own pairs')
+  assert.deepEqual(await countsOf('3'), [{ text: '申候也', n: 1 }], 'trigrams are counted apart from pairs')
+  assert.equal((await mf.dispatchFetch(base + '/atlas/ngrams/4')).status, 404, 'only pairs and trigrams are counted')
+  // A review that relabels a crop moves the runs it is part of.
+  await db.batch([db.prepare(`INSERT INTO unit_ngrams(first,size,second,third,text,document) SELECT a.id,2,b.id,NULL,a.character||b.character,a.document
+    FROM units a JOIN units b ON b.id='two' WHERE a.id='one'`)])
   const labelOf = async id => (await db.prepare('SELECT character FROM units WHERE id=?').bind(id).first()).character
   const [firstLabel, secondLabel] = [await labelOf('one'), await labelOf('two')]
-  assert.equal((await db.prepare("SELECT text FROM unit_pairs WHERE first='one'").first()).text, firstLabel + secondLabel)
+  assert.equal((await db.prepare("SELECT text FROM unit_ngrams WHERE first='one'").first()).text, firstLabel + secondLabel)
   await db.prepare("UPDATE units SET character='ヰ' WHERE id='two'").run()
-  assert.equal((await db.prepare("SELECT text FROM unit_pairs WHERE first='one'").first()).text, firstLabel + 'ヰ')
+  assert.equal((await db.prepare("SELECT text FROM unit_ngrams WHERE first='one'").first()).text, firstLabel + 'ヰ')
   await db.prepare("UPDATE units SET character=? WHERE id='two'").bind(secondLabel).run()
-  // One pair's occurrences: read along the pair's index in its key order, each crop by its id, never
+  // One run's occurrences: read along the run's index in its key order, each crop by its id, never
   // sorted or scanned; a book's through the index it shares with the count.
   const occurrenceServed = (details, index) => {
     assert.ok(details.some(d => new RegExp(`SEARCH p USING (COVERING )?INDEX ${index}\\b`).test(d)), `${index}: ${details.join('; ')}`)
     assert.ok(!details.some(d => d.includes('TEMP B-TREE')), details.join('; '))
     assert.ok(!details.some(d => /^SCAN \w+/.test(d)), details.join('; '))
   }
-  for (const [document, bound, index] of [[false, ['ナリ'], 'unit_pair_text'], [true, ['hk:doc', 'ナリ'], 'unit_pair_document']]) {
-    for (const shape of [{ sql: worker.pairOccurrencesQuery(document), values: [] }, { sql: worker.pairCountQuery(document), values: [] }]) {
+  for (const [document, bound, index] of [[false, [2, 'ナリ'], 'unit_ngram_text'], [true, ['hk:doc', 2, 'ナリ'], 'unit_ngram_document']]) {
+    for (const shape of [{ sql: worker.ngramOccurrencesQuery(document), values: [] }, { sql: worker.ngramCountQuery(document), values: [] }]) {
       const args = shape.sql.includes('LIMIT') ? [...bound, 48, 0] : bound
       occurrenceServed(await plan(shape, args), index)
       const create = (await db.prepare('SELECT sql FROM sqlite_master WHERE name=?').bind(index).first()).sql
@@ -677,15 +681,21 @@ try {
     }
   }
   const pairText = firstLabel + secondLabel
-  const occurrences = await (await mf.dispatchFetch(base + '/atlas/pairs/' + encodeURIComponent(pairText))).json()
+  const occurrences = await (await mf.dispatchFetch(base + '/atlas/ngrams/2/' + encodeURIComponent(pairText))).json()
   assert.equal(occurrences.total, 1, 'a pair counts the occurrences whose crops are both live')
-  assert.deepEqual(occurrences.items.map(o => [o.first.id, o.second.id]), [['one', 'two']], 'an occurrence carries its two crops in reading order')
-  assert.ok(!('context_image' in occurrences.items[0].first), 'occurrences carry listing fields only')
-  assert.equal((await mf.dispatchFetch(base + '/atlas/pairs/' + encodeURIComponent('申候'))).status, 200)
-  assert.equal((await (await mf.dispatchFetch(base + '/atlas/pairs/' + encodeURIComponent('申候'))).json()).total, 0, 'pairs whose crops are not live are not shown')
-  assert.equal((await mf.dispatchFetch(base + '/atlas/pairs/' + encodeURIComponent(pairText) + '?offset=2001')).status, 404, 'a pair does not page past its cap')
-  assert.equal((await mf.dispatchFetch(base + '/atlas/pairs/' + encodeURIComponent(pairText) + '?limit=97')).status, 422, 'a page is bounded')
-  await db.prepare('DELETE FROM unit_pairs').run()
+  assert.deepEqual(occurrences.items.map(o => o.crops.map(c => c.id)), [['one', 'two']], 'an occurrence carries its crops in reading order')
+  assert.ok(!('context_image' in occurrences.items[0].crops[0]), 'occurrences carry listing fields only')
+  // A trigram is shown only while its third crop is live as well.
+  await db.prepare(`INSERT INTO unit_ngrams(first,size,second,third,text,document) VALUES('one',3,'two','gone',?,NULL)`).bind(pairText + '也').run()
+  assert.equal((await (await mf.dispatchFetch(base + '/atlas/ngrams/3/' + encodeURIComponent(pairText + '也'))).json()).total, 0, 'a trigram needs its third crop live')
+  await db.prepare("UPDATE unit_ngrams SET third='one',text=? WHERE first='one' AND size=3").bind(pairText + firstLabel).run()
+  const trigram = await (await mf.dispatchFetch(base + '/atlas/ngrams/3/' + encodeURIComponent(pairText + firstLabel))).json()
+  assert.deepEqual([trigram.total, trigram.items.map(o => o.crops.map(c => c.id))], [1, [['one', 'two', 'one']]], 'a trigram carries its three crops')
+  assert.equal((await mf.dispatchFetch(base + '/atlas/ngrams/2/' + encodeURIComponent('申候'))).status, 200)
+  assert.equal((await (await mf.dispatchFetch(base + '/atlas/ngrams/2/' + encodeURIComponent('申候'))).json()).total, 0, 'pairs whose crops are not live are not shown')
+  assert.equal((await mf.dispatchFetch(base + '/atlas/ngrams/2/' + encodeURIComponent(pairText) + '?offset=2001')).status, 404, 'a run does not page past its cap')
+  assert.equal((await mf.dispatchFetch(base + '/atlas/ngrams/2/' + encodeURIComponent(pairText) + '?limit=97')).status, 422, 'a page is bounded')
+  await db.prepare('DELETE FROM unit_ngrams').run()
   for (const [index, create] of Object.entries(keys)) {
     await db.prepare(`DROP INDEX ${index}`).run()
     for (const [shape, bound] of shapes.filter(s => s[2] === index))

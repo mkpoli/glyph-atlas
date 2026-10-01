@@ -1,12 +1,13 @@
-"""Write D1 SQL that records the adjacent crop pairs of datasets whose crops the site already holds.
+"""Write D1 SQL that records the pairs and trigrams of crops of datasets whose crops the site already holds.
 
-A publication records its own pairs (`export_cloudflare.py`, `seal_cloudflare.py`); this covers crops
-published before migration 0028. A dataset is read, never written: its `review.sqlite` where it has one,
-else its `units.parquet`. Each dataset's pairs are found within it, as its publication finds them; where
-two datasets pair the same crop, the later one wins. A pair is recorded only when both of its crops are on the site, and each unit loses the pair recorded for it
+A publication records its own runs (`export_cloudflare.py`, `seal_cloudflare.py`); this covers crops
+published before their runs were counted. A dataset is read, never written: its `review.sqlite` where it
+has one, else its `units.parquet`. Each dataset's runs are found within it, as its publication finds
+them; where two datasets hold the same crop, the later one's runs from it replace the earlier's. A run is
+recorded only when all of its crops are on the site, and each unit loses the runs recorded for it
 before, so the parts may be applied to D1 any number of times, in order:
 
-    uv run scripts/export_unit_pairs.py DATASET [DATASET ...] OUTPUT
+    uv run scripts/export_ngrams.py DATASET [DATASET ...] OUTPUT
     for part in OUTPUT/sql/part-*.sql; do bunx wrangler d1 execute glyph-atlas --remote --file "$part"; done
 
 The parts stay under D1's import size, every statement under its statement limit; the last one stamps
@@ -17,14 +18,15 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
+from collections import Counter
 from pathlib import Path
 
 from prepare_publication import write_parts
 from refresh_published_units import VERSION_BUMP
 
 from glyph_atlas import tables
+from glyph_atlas.ngrams import adjacent_ngrams, ngram_statements
 from glyph_atlas.schema import Unit
-from glyph_atlas.unit_pairs import adjacent_pairs, pair_statements
 
 
 def dataset_units(dataset: Path) -> list[Unit]:
@@ -34,16 +36,19 @@ def dataset_units(dataset: Path) -> list[Unit]:
     return tables.read(dataset / "units.parquet", Unit)
 
 
-def statements(datasets: list[Path]) -> tuple[list[str], int]:
-    """Every statement that records the datasets' pairs, and how many pairs they name."""
+def statements(datasets: list[Path]) -> tuple[list[str], Counter]:
+    """Every statement that records the datasets' runs, and how many runs of each length they name."""
     # Pooled, a line two datasets cut differently would hold two crops at a position, and such a
-    # position pairs with nothing.
-    pairs, placed = {}, set()
+    # position starts and ends no run.
+    runs, placed = {}, set()
     for dataset in datasets:
         units = dataset_units(dataset)
-        pairs |= dict(adjacent_pairs(units))
+        held = {unit.id for unit in units}
+        runs = {key: run for key, run in runs.items() if key[0] not in held}
+        runs |= {(run[0], len(run)): run for run in adjacent_ngrams(units)}
         placed |= {unit.id for unit in units if unit.active and unit.line_id}
-    return [s + "\n" for s in pair_statements(sorted(placed), sorted(pairs.items()))], len(pairs)
+    found = [s + "\n" for s in ngram_statements(sorted(placed), [runs[key] for key in sorted(runs)])]
+    return found, Counter(len(run) for run in runs.values())
 
 
 def main() -> None:
@@ -51,10 +56,10 @@ def main() -> None:
     parser.add_argument("datasets", type=Path, nargs="+")
     parser.add_argument("output", type=Path)
     args = parser.parse_args()
-    found, pairs = statements(args.datasets)
+    found, sizes = statements(args.datasets)
     args.output.mkdir(parents=True, exist_ok=True)
     parts = write_parts(args.output, [found, [VERSION_BUMP]])
-    print(json.dumps({"pairs": pairs, "statements": len(found) + 1, "parts": parts}))
+    print(json.dumps({"pairs": sizes[2], "trigrams": sizes[3], "statements": len(found) + 1, "parts": parts}))
 
 
 if __name__ == "__main__":

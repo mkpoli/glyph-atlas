@@ -19,7 +19,7 @@ import export_character_variants
 from cloudflare_schema import schema
 from PIL import Image
 
-from glyph_atlas import refs, style, unit_pairs
+from glyph_atlas import ngrams, refs, style
 from glyph_atlas.corpus.api import PROXYABLE, CorpusAPI
 from glyph_atlas.review import atlas, characters, collection, corpus_source
 from glyph_atlas.review.context_suggestions import context_guesses
@@ -235,9 +235,9 @@ def export(dataset: Path, output: Path, *, resume=False):
             if i % 500 == 0:
                 db.commit()
                 print(encoded({"stage": "local-crops", "done": i}), flush=True)
-        # Only pairs whose two crops were published above are recorded.
-        db.execute("DELETE FROM unit_pairs")
-        for statement in unit_pairs.pair_statements([], unit_pairs.adjacent_pairs(units.values())):
+        # Only runs whose crops were all published above are recorded.
+        db.execute("DELETE FROM unit_ngrams")
+        for statement in ngrams.ngram_statements([], ngrams.adjacent_ngrams(units.values())):
             db.execute(statement)
         db.commit()
         read_crops(db, media)
