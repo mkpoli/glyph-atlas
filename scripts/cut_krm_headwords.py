@@ -6,8 +6,8 @@
 `--clone` is a checkout of https://github.com/shikeda/krm at the commit `data/sources/hdic-krm.yaml`
 pins. Every frame of the ten NDL volumes that KRM's `krm_ndl.tsv` names is fetched once into the
 image cache, run through the alignment run's character detector and the atlas classifier on CUDA,
-and its two 天理 pages placed by `glyph_atlas.krm.place`. A page is tried on both halves of its
-frame, and the page where more headwords are read where they are placed is taken.
+and its 天理 pages placed by `glyph_atlas.krm.place` on the frame's two page grids, one page to a
+grid (`krm.assign_pages`). A page `krm_ndl.tsv` puts on two frames is left out.
 
 `OUTPUT` becomes a dataset of the frames with a kept headword: one document per NDL volume, one
 line per entry holding its kept headword characters, one unit per character. `--volumes` and
@@ -58,15 +58,18 @@ def main() -> int:
     if found != source["revision"]:
         raise SystemExit(f"{args.clone} is at {found}; {SOURCE.name} pins {source['revision']}")
     entries = krm.read_entries(args.clone / "krm_main.tsv")
-    frames = krm.read_frames(args.clone / "krm_ndl.tsv")
+    frames, conflicts = krm.read_frames(args.clone / "krm_ndl.tsv")
     volumes = {v["volume"]: v["pid"] for v in source["images"]["volumes"]}
     wanted = set(args.volumes.split(",")) if args.volumes else set(volumes)
     only = {int(f) for f in args.frames.split(",")} if args.frames else None
 
     by_frame: dict[tuple[str, int], dict[int, list[krm.Entry]]] = defaultdict(lambda: defaultdict(list))
-    unmapped = Counter()
+    unmapped, conflicting = Counter(), Counter()
     for entry in entries:
         if entry.volume not in wanted:
+            continue
+        if (entry.volume, entry.page) in conflicts:
+            conflicting[entry.volume] += 1
             continue
         place = frames.get((entry.volume, entry.page))
         if place is None or place[0] != volumes[entry.volume]:
@@ -112,11 +115,15 @@ def main() -> int:
 
         kept_here = []
         report[page.id] = {}
-        for tenri, members in sorted(on_frame.items()):
-            tried = {name: krm.place(members, boxes, grid, unit, rank, known) for name, grid in grids.items()}
-            name = max(tried, key=lambda n: (tried[n].agreed, n == ("right" if tenri % 2 == 0 else "left")))
-            result = tried[name]
-            report[page.id][tenri] = {"half": name, **result.counts}
+        tried = {tenri: {name: krm.place(members, boxes, grid, unit, rank, known) for name, grid in grids.items()}
+                 for tenri, members in on_frame.items()}
+        chosen = krm.assign_pages(tried)
+        if not chosen:
+            report[page.id] = {"skipped": f"{len(on_frame)} pages for {len(grids)} grids"}
+            continue
+        for tenri, name in sorted(chosen.items()):
+            result = tried[tenri][name]
+            report[page.id][tenri] = {"grid": name, **result.counts}
             kept_here += [p for p in result.pairs if p.kept]
         if not kept_here:
             continue
@@ -160,11 +167,11 @@ def main() -> int:
     tables.write(args.output / "lines.parquet", lines, Line)
     tables.write(args.output / "units.parquet", units, Unit, command=command)
     if args.report:
-        args.report.write_text(json.dumps({"unmapped": dict(unmapped), "pages": report}, ensure_ascii=False, indent=1))
+        args.report.write_text(json.dumps({"unmapped": dict(unmapped), "conflicting": dict(conflicting), "pages": report}, ensure_ascii=False, indent=1))
     verdicts = [u.meta["classifier_agrees"] for u in units]
     print(json.dumps({"frames": len(by_frame), "pages": len(pages), "entries": len(lines), "units": len(units),
                       "classifier_agrees": verdicts.count(True), "unverifiable": verdicts.count(None),
-                      "unmapped_entries": sum(unmapped.values())}, ensure_ascii=False))
+                      "unmapped_entries": sum(unmapped.values()), "conflicting_entries": sum(conflicting.values())}, ensure_ascii=False))
     return 0
 
 

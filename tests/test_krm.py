@@ -45,11 +45,15 @@ def test_entries_and_frames_are_read_from_the_tsv(tmp_path: Path) -> None:
     (tmp_path / "krm_ndl.tsv").write_text(
         HEADER + "Book\tRadical\tKazama\tTenri\tNDL_url\n"
         "仏上\t人\t1\t23\thttps://dl.ndl.go.jp/info:ndljp/pid/2586891/6\n"
-        "仏上\t人\t1\t23\thttps://dl.ndl.go.jp/info:ndljp/pid/2586891/6\n", encoding="utf-8")
+        "仏上\t人\t1\t23\thttps://dl.ndl.go.jp/info:ndljp/pid/2586891/6\n"
+        "法上\t水\t5\t37\thttps://dl.ndl.go.jp/info:ndljp/pid/2586895/19\n"
+        "法上\t水\t5\t37\thttps://dl.ndl.go.jp/info:ndljp/pid/2586895/22\n", encoding="utf-8")
     entries = krm.read_entries(tmp_path / "krm_main.tsv")
     assert [(e.page, e.line, e.segment, e.order) for e in entries] == [(23, 3, 1, 0), (23, 3, 3, 1)]
     assert entries[1].glyphs == (Glyph("一"), Glyph("人"))
-    assert krm.read_frames(tmp_path / "krm_ndl.tsv") == {("仏上", 23): ("2586891", 6)}
+    frames, conflicts = krm.read_frames(tmp_path / "krm_ndl.tsv")
+    assert frames == {("仏上", 23): ("2586891", 6)}
+    assert conflicts == {("法上", 37)}
 
 
 def test_evenly_spaced_lines_are_fitted_through_scattered_values() -> None:
@@ -135,3 +139,39 @@ def test_a_cell_pairs_its_glyphs_past_a_missed_mark() -> None:
     boxes = [Box(x=0, y=0, w=160, h=160)]
     pairs = krm.align_cell(glyphs, boxes, lambda i, j: True if glyphs[i].text == "等" else None, [False])
     assert pairs == [(1, 0)]
+
+
+def test_tiers_are_not_fitted_at_half_their_spacing() -> None:
+    boxes = []
+    for x in COLUMNS:
+        for y in TIERS:
+            boxes += [headword_box(x, y + offset) for offset in (0, 200, 400)]
+    grid = krm.page_grids(boxes, UNIT)["right"]
+    assert [round(y) for y in grid.tiers] == TIERS
+
+
+def test_an_unjudged_glyph_is_left_out_when_its_pairing_is_in_doubt() -> None:
+    boxes = page(COLUMNS, TIERS) + [headword_box(COLUMNS[0], TIERS[0] + 200)]
+    grid = krm.page_grids(boxes, UNIT)["right"]
+    cell = entry("F1", 1, 1, 0, "人", "⿰亻胃", "僕β")
+
+    def rank(box: Box) -> list[str]:
+        return [code("人")] if (box.x, box.y) == (COLUMNS[0] - 80, TIERS[0]) else [code("ノ")]
+
+    result = krm.place([cell], boxes, grid, UNIT, rank, known={code("人"), code("ノ")})
+    kept = [p.glyph.text for p in result.pairs if p.kept]
+    assert kept == ["人"]  # three glyphs on two boxes: which unjudged glyph sits on the second is a guess
+
+
+def test_two_pages_never_share_one_grid() -> None:
+    def placement(agreed: int) -> krm.Placement:
+        result = krm.Placement()
+        result.pairs = [krm.Pair(entry("F", 1, 1, 0, "人"), 0, Glyph("人"), Box(x=0, y=0, w=1, h=1), [], True, True)
+                        for _ in range(agreed)]
+        return result
+
+    tried = {24: {"right": placement(5), "left": placement(1)}, 25: {"right": placement(4), "left": placement(0)}}
+    assert krm.assign_pages(tried) == {24: "right", 25: "left"}
+    assert krm.assign_pages({23: {"right": placement(0), "left": placement(0)}}) == {23: "left"}
+    three = {page: {"right": placement(1), "left": placement(1)} for page in (36, 37, 38)}
+    assert krm.assign_pages(three) == {}

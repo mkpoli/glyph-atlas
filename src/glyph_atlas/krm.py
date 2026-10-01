@@ -19,18 +19,23 @@ describe a character Unicode lacks, and `■` is one nobody could read.
    repetition mark (`is_mark`).
 2. The right page is anchored on the frame's rightmost column of headwords and the left page on
    its leftmost, since the gutter between them may be as narrow as a column or several wide. `fit`
-   finds each page's column pitch, and then four evenly spaced tiers over its headwords' tops.
+   finds each page's column pitch, and then four evenly spaced tiers over its headwords' tops, their
+   pitch held to `TIER_PITCH` times the column pitch. A grid stands only when `COLUMNS_HELD` of its
+   columns and every tier line hold headwords.
 3. In each cell, `align_cell` pairs the cell's headword glyphs, in KRM order, with its candidate
    boxes top to bottom by least cost, the classifier's five best classes deciding whether a glyph
    and a box agree (`glossary.agrees`). Glyphs and boxes may go unpaired: a mark the detector
    missed, a large gloss character.
 
 A pair is kept when the classifier reads the glyph there. A glyph the classifier cannot judge (a
-description, or a character it has no class for) is kept when its cell is anchored: another glyph
-of the cell was read where it was placed and none was refused, or it is the cell's first headword
-character on the cell's first box, at the tier line. A pair the classifier refuses is left out, and
+description, or a character it has no class for) is kept when no pair of its cell was refused and
+the pairing admits no doubt: every written glyph of the cell sits on its own headword box with no
+box left over, and another glyph of the cell was read where it was placed or the cell's first box
+stands at the tier line. The cell's first headword character on the cell's first box, at the tier
+line, is kept on that alone. A pair the classifier refuses is left out, and
 a page on which more than `REFUSED_SHARE` of the judged pairs are refused is left out whole,
-since that is how a misfitted grid looks. The caller tries a 天理 page on both grids of its frame.
+since that is how a misfitted grid looks. The caller tries a frame's 天理 pages on its two grids,
+one page to a grid.
 The label always comes from KRM, never the classifier.
 """
 
@@ -40,6 +45,7 @@ import csv
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from itertools import permutations
 from pathlib import Path
 
 import numpy as np
@@ -61,6 +67,13 @@ BIG = (1.5, 3.5)
 REFUSED_SHARE = 0.25
 #: How far from its tier line a cell's first box may stand and still anchor the cell, in tier pitches.
 ANCHOR = 0.2
+#: The tier pitch, as a range of multiples of the column pitch. Half or twice the true spacing fits
+#: a page's headword tops almost as well as the spacing itself, and falls outside this range.
+TIER_PITCH = (2.5, 4.5)
+#: Least number of a page's eight columns that must hold a headword for its grid to stand.
+COLUMNS_HELD = 6
+#: Least number of headword tops on each tier line for the tiers to stand.
+TIER_HELD = 2
 
 _STANDARD = re.compile(r"[（(]([^）)]*)[）)]")
 _LOCATION = re.compile(r"^T(?P<volume>[abc])(?P<page>\d{3})(?P<line>\d)(?P<segment>\d)(?P<order>\d)$")
@@ -137,14 +150,19 @@ def read_entries(path: Path) -> list[Entry]:
     return out
 
 
-def read_frames(path: Path) -> dict[tuple[str, int], tuple[str, int]]:
-    """`krm_ndl.tsv` as (volume, 天理 page) → (NDL pid, frame)."""
-    out = {}
+def read_frames(path: Path) -> tuple[dict[tuple[str, int], tuple[str, int]], set[tuple[str, int]]]:
+    """`krm_ndl.tsv` as (volume, 天理 page) → (NDL pid, frame), and the pages it puts on two frames.
+
+    A page listed twice on the same frame is one mapping; a page listed on two frames has none, since
+    nothing in the table says which is right.
+    """
+    seen: dict[tuple[str, int], set[tuple[str, int]]] = {}
     for row in read_tsv(path):
         found = re.search(r"pid/(\d+)/(\d+)", row["NDL_url"])
         if found and row["Tenri"].isdigit():
-            out[(row["Book"], int(row["Tenri"]))] = (found.group(1), int(found.group(2)))
-    return out
+            seen.setdefault((row["Book"], int(row["Tenri"])), set()).add((found.group(1), int(found.group(2))))
+    conflicts = {page for page, frames in seen.items() if len(frames) > 1}
+    return {page: next(iter(frames)) for page, frames in seen.items() if page not in conflicts}, conflicts
 
 
 def encoded(glyph: Glyph) -> str | None:
@@ -245,9 +263,15 @@ def page_grids(boxes: Sequence[Box], unit: float) -> dict[str, Grid]:
         if name == "left":
             columns = columns[::-1]  # line 1 is the page's rightmost column
         inside = Grid(tuple(columns), pitch, (), 0.0)
-        _, top, tier_pitch = fit([b.y for b in big if inside.holds(b)], TIERS, 4 * unit, 12 * unit, 0.1)
-        if tier_pitch:
-            grids[name] = Grid(tuple(columns), pitch, tuple(top + k * tier_pitch for k in range(TIERS)), tier_pitch)
+        tops = [b.y for b in big if inside.holds(b)]
+        _, top, tier_pitch = fit(tops, TIERS, TIER_PITCH[0] * pitch, TIER_PITCH[1] * pitch, 0.1)
+        if not tier_pitch:
+            continue
+        tiers = [top + k * tier_pitch for k in range(TIERS)]
+        held = sum(1 for x in columns if any(abs(c - x) < pitch / 4 for c in centres))
+        if held < COLUMNS_HELD or any(sum(1 for y in tops if abs(y - t) < 0.1 * tier_pitch) < TIER_HELD for t in tiers):
+            continue
+        grids[name] = Grid(tuple(columns), pitch, tuple(tiers), tier_pitch)
     return grids
 
 
@@ -354,8 +378,12 @@ def place(entries: Sequence[Entry], boxes: Sequence[Box], grid: Grid, unit: floa
                  for i, j in align_cell([s[2] for s in slots], candidates, verdict, marks)
                  if slots[i][2].text != MARK and not marks[j]]
         refused = any(p.verdict is False for p in pairs)
+        written = [s for s in slots if s[2].text != MARK]
+        # Every written glyph on its own headword box, in order: no other pairing exists to doubt.
+        complete = len(pairs) == len(written) == sum(1 for mark in marks if not mark)
         read = any(p.verdict for p in pairs)
-        first = next((s for s in slots if s[2].text != MARK), None)
+        on_line = bool(candidates) and abs(candidates[0].y - grid.tiers[segment - 1]) <= ANCHOR * grid.tier_pitch
+        first = written[0] if written else None
         line_top = grid.tiers[segment - 1]
         for pair in pairs:
             if pair.verdict:
@@ -363,7 +391,7 @@ def place(entries: Sequence[Entry], boxes: Sequence[Box], grid: Grid, unit: floa
             elif pair.verdict is None and not refused:
                 at_line = (first is not None and pair.entry is first[0] and pair.slot == first[1]
                            and pair.box is candidates[0] and abs(pair.box.y - line_top) <= ANCHOR * grid.tier_pitch)
-                pair.kept = read or at_line
+                pair.kept = (complete and (read or on_line)) or at_line
             result.count("kept" if pair.kept else "refused" if pair.verdict is False else "unanchored")
         result.count("unpaired", sum(1 for s in slots if s[2].text != MARK) - len(pairs))
         result.pairs += pairs
@@ -405,3 +433,24 @@ def document_of(volume: str, pid: str, manifest: dict, source: dict) -> Document
         meta={"volume": volume, "facsimile": {"title": images["title"], "publisher": images["publisher"],
                                               "ndl_pid": pid, "ndl_catalogue": meta}},
     )
+
+
+def assign_pages(tried: dict[int, dict[str, Placement]]) -> dict[int, str]:
+    """Which grid each 天理 page of a frame stands on, one page to a grid.
+
+    `tried[page][grid]` is the page placed on that grid. The assignment with the most headwords read
+    where they are placed wins, and on a tie the one that puts even pages on the right. A frame KRM
+    gives more pages than it has grids gets none.
+    """
+    pages = sorted(tried)
+    grids = sorted({name for placements in tried.values() for name in placements})
+    if not pages or len(pages) > len(grids):
+        return {}
+
+    def score(choice: tuple[str, ...]) -> tuple[int, int]:
+        agreed = sum(tried[page][name].agreed for page, name in zip(pages, choice, strict=True))
+        parity = sum(name == ("right" if page % 2 == 0 else "left") for page, name in zip(pages, choice, strict=True))
+        return agreed, parity
+
+    best = max(permutations(grids, len(pages)), key=score)
+    return dict(zip(pages, best, strict=True))
