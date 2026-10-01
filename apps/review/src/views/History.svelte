@@ -25,7 +25,7 @@
     try {
       const result = await fetchHistory({
         limit: 40, before: append ? cursor : undefined,
-        mine: onlyMine || undefined, label: characterFilter.trim() || undefined,
+        mine: onlyMine || undefined, user: new URL(location.href).searchParams.get('user') || undefined, label: characterFilter.trim() || undefined,
       })
       if (closed || id !== requestId) return
       items = append ? [...items, ...result.items] : result.items

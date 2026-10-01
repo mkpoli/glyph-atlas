@@ -71,7 +71,7 @@ export function createSession() {
   return session
 }
 
-const user = value => ({ id: value.id, name: value.name, image: value.image ?? null, anonymous: Boolean(value.isAnonymous) })
+const user = value => ({ id: value.id, name: value.name, image: value.image ?? null, anonymous: Boolean(value.isAnonymous), admin: value.role === 'admin' })
 
 async function claimLegacy() {
   const reviewer = stored(LEGACY, null)
