@@ -9,8 +9,8 @@ CREATE INDEX IF NOT EXISTS "account_userId_idx" ON "account" ("userId");
 CREATE INDEX IF NOT EXISTS "verification_identifier_idx" ON "verification" ("identifier");
 
 -- Which user each journal actor belongs to. A user's own id is theirs from the start; a reviewer id a
--- browser made up before accounts is theirs once they claim it; an anonymous user's ids move to the
--- account they sign in with. The journal itself is never rewritten.
+-- browser made up before accounts is theirs once an admin grants their claim; an anonymous user's ids
+-- move to the account they sign in with. The journal itself is never rewritten.
 CREATE TABLE IF NOT EXISTS actors (
   actor TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
@@ -18,3 +18,11 @@ CREATE TABLE IF NOT EXISTS actors (
   at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS actor_user ON actors(user_id);
+-- A user asking for a reviewer id from before accounts; an admin gives it to one of them.
+CREATE TABLE IF NOT EXISTS actor_claims (
+  actor TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  at TEXT NOT NULL,
+  PRIMARY KEY (actor, user_id)
+);
+CREATE INDEX IF NOT EXISTS actor_claim_user ON actor_claims(user_id);

@@ -2,7 +2,8 @@ import { describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
 import { historyQuery } from './index';
-import { owned } from './auth';
+import { claim, owned } from './auth';
+import { d1 } from './forms.test';
 
 function migrated() {
   const db = new Database(':memory:');
@@ -37,6 +38,22 @@ describe('journal actors', () => {
     db.exec(`UPDATE actors SET user_id='u1' WHERE user_id='u2'`);
     expect(db.query(`SELECT actor FROM ${owned('u1')} ORDER BY 1`).all()).toEqual(
       [{ actor: 'reviewer-0000000a' }, { actor: 'u1' }, { actor: 'u2' }]);
+    db.close();
+  });
+});
+
+describe('claims on reviewer ids from before accounts', () => {
+  it('wait for an admin, and stop at an id another account holds', async () => {
+    const { db } = migrated();
+    const env = { DB: d1(db) } as unknown as Env;
+    const anon = { id: 'u2', name: 'reviewer-00000002', image: null, anonymous: true };
+    expect((await claim(env, anon, 'someone')).status).toBe(422);
+    expect((await claim(env, anon, 'reviewer-0000000b')).status).toBe(202);
+    expect((await claim(env, anon, 'reviewer-0000000b')).status).toBe(202);
+    expect(db.query("SELECT count(*) AS n FROM actors WHERE actor='reviewer-0000000b'").get()).toEqual({ n: 0 });
+    expect((await claim(env, anon, 'reviewer-0000000a')).status).toBe(409);
+    for (const id of ['c', 'd', 'e', 'f']) expect((await claim(env, anon, `reviewer-0000000${id}`)).status).toBe(202);
+    expect((await claim(env, anon, 'reviewer-00000010')).status).toBe(429);
     db.close();
   });
 });

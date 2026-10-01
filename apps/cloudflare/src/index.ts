@@ -1143,7 +1143,8 @@ async function writtenForms(env: Env) {
     forms: rows.results.map(row => ({ ...row, current: Boolean(row.current) })) };
 }
 // A submission is keyed by the id it was written under, so a user's own is found under any of theirs.
-async function undo(env:Env,actor:string,id:string){
+async function undo(env:Env,request:Request,actor:string,id:string){
+  await body(request);
   const submission=await env.DB.prepare("SELECT * FROM submissions WHERE id IN (SELECT actor||':'||? FROM actors WHERE user_id=?)").bind(id,actor).first<Json>();
   if(!submission)throw new Problem(404,'No saved round belongs to this reviewer.');
   const key=submission.id as string;
@@ -1280,7 +1281,7 @@ export default {
           return json(await writeForm(env,request,me.id,form?decodeURIComponent(form[1]):null));
         }
         const undone=path.match(/^\/atlas\/(?:rounds|corrections)\/([^/]+)\/undo$/);
-        if(undone)return json(await undo(env,me.id,decodeURIComponent(undone[1])));
+        if(undone)return json(await undo(env,request,me.id,decodeURIComponent(undone[1])));
         const edit=path.match(/^\/(?:atlas\/characters|layers\/units)\/([^/]+)$/);
         if(edit)return json(await submit(env,request,me.id,decodeURIComponent(edit[1])));
         const formed=await formsRoute(env,request,path,q,formTools,ctx,me.id);

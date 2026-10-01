@@ -34,8 +34,9 @@ to the local database once: `bunx wrangler d1 migrations apply glyph-atlas --loc
 ## Accounts
 
 Every write is made by a signed-in user. A browser with no session starts an anonymous one before
-its first write. A browser that reviewed before accounts kept a `reviewer-…` id; its session claims
-that id once, and the work saved under it becomes the user's. The journal is never rewritten:
+its first write. A browser that reviewed before accounts kept a `reviewer-…` id; its session asks
+for that id once. The history shows those ids to everyone, so an admin grants the claim, and the work
+saved under the id then becomes the user's. The journal is never rewritten:
 `actors` records which user each id written into it belongs to.
 
 `bun run --cwd apps/cloudflare deploy` builds this app and deploys it with the Worker configuration in

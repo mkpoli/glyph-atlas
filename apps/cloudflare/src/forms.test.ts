@@ -58,7 +58,7 @@ describe('form decisions outside cluster membership', () => {
 });
 
 // D1's prepare/bind/first/run/batch over bun:sqlite, a batch in one transaction as D1 runs it.
-function d1(db: Database) {
+export function d1(db: Database) {
   const statement = (sql: string, args: unknown[] = []) => ({
     sql, args,
     bind: (...values: unknown[]) => statement(sql, values),

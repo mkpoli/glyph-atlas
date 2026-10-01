@@ -46,9 +46,16 @@ function build(env: Env, origin: string) {
       anonymous({
         // Named like the ids the browser used to make up, so a reader's rows read the same as before.
         generateName: () => 'reviewer-' + crypto.randomUUID().slice(0, 8),
+        // The user stays after it signs in to an account, and cannot delete itself: its rows in the
+        // journal must stay findable by the people who moderate it.
+        disableDeleteAnonymousUser: true,
         // Signing in with an account from an anonymous session brings that session's work along.
         onLinkAccount: async ({ anonymousUser, newUser }) => {
-          await env.DB.prepare('UPDATE actors SET user_id=? WHERE user_id=?').bind(newUser.user.id, anonymousUser.user.id).run();
+          await env.DB.batch([
+            env.DB.prepare('UPDATE actors SET user_id=? WHERE user_id=?').bind(newUser.user.id, anonymousUser.user.id),
+            env.DB.prepare('UPDATE OR IGNORE actor_claims SET user_id=? WHERE user_id=?').bind(newUser.user.id, anonymousUser.user.id),
+            env.DB.prepare('DELETE FROM actor_claims WHERE user_id=?').bind(anonymousUser.user.id),
+          ]);
         },
       }),
     ],
@@ -74,15 +81,20 @@ export async function viewer(env: Env, request: Request): Promise<Viewer | null>
 /** The ids a user's rows were written under, as a subquery over `actors`. */
 export const owned = (user: string) => `(SELECT actor FROM actors WHERE user_id='${user.replaceAll("'", "''")}')`;
 
+// How many reviewer ids one user may ask for at once; a browser held one, a reader with a few
+// browsers a few.
+const CLAIMS = 5;
 /**
- * Take over a reviewer id this browser made up before accounts. The first user to name an id holds
- * it; an anonymous user also takes its name, so their history keeps reading as it did.
+ * Ask to take over a reviewer id a browser made up before accounts. The ids were never secret (the
+ * history shows them), so a claim waits for an admin, who sees every user that asked for the id.
  */
 export async function claim(env: Env, user: Viewer, reviewer: string) {
   if (!LEGACY_REVIEWER.test(reviewer)) return { status: 422, body: { detail: 'Not a reviewer id from before accounts.' } };
-  await env.DB.prepare("INSERT OR IGNORE INTO actors(actor,user_id,via,at) VALUES(?,?,'legacy',?)").bind(reviewer, user.id, now()).run();
   const holder = await env.DB.prepare('SELECT user_id FROM actors WHERE actor=?').bind(reviewer).first<{ user_id: string }>();
-  if (holder?.user_id !== user.id) return { status: 409, body: { detail: 'Another account already holds this reviewer id.' } };
-  if (user.anonymous) await env.DB.prepare('UPDATE "user" SET name=? WHERE id=?').bind(reviewer, user.id).run();
-  return { status: 200, body: { reviewer, user: user.id } };
+  if (holder) return holder.user_id === user.id ? { status: 200, body: { reviewer, status: 'held' } }
+    : { status: 409, body: { detail: 'Another account already holds this reviewer id.' } };
+  const asked = await env.DB.prepare('SELECT count(*) AS n FROM actor_claims WHERE user_id=? AND actor!=?').bind(user.id, reviewer).first<{ n: number }>();
+  if ((asked?.n ?? 0) >= CLAIMS) return { status: 429, body: { detail: 'Too many reviewer ids asked for.' } };
+  await env.DB.prepare('INSERT OR IGNORE INTO actor_claims(actor,user_id,at) VALUES(?,?,?)').bind(reviewer, user.id, now()).run();
+  return { status: 202, body: { reviewer, status: 'requested' } };
 }

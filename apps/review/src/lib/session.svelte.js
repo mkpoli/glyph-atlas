@@ -61,12 +61,9 @@ async function claimLegacy() {
   if (!reviewer) return
   const response = await fetch('/api/account/claim', { method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ reviewer }) })
-  // Held by this account or another, the id is settled either way; a failure tries again next time.
-  if (response.ok || response.status === 409 || response.status === 422) forget(LEGACY)
-  if (!response.ok) return
-  // The session's cached copy still carries the name it started with; reading it afresh replaces it.
-  const { data } = await (await authClient()).getSession({ query: { disableCookieCache: true } })
-  if (data?.user && current) current.state.user = user(data.user)
+  // Asked for, held, or held by another account, the id is settled from here; an admin grants a
+  // claim. A failure tries again next time.
+  if ([200, 202, 409, 422, 429].includes(response.status)) forget(LEGACY)
 }
 
 /** Make sure the browser is signed in before a write. */
