@@ -4,7 +4,7 @@ import { formsRoute, withForm, formed, FORM_COLUMNS, type FormTools, type UnitFo
 import { similarCrops } from './similar';
 import { componentSearch, componentTerm } from './components';
 import { formProblem, type FormProblem } from './writtenForm';
-import { auth, claim, owned, viewer } from './auth';
+import { auth, claim, owned, providers, viewer } from './auth';
 export { leastTypicalQuery } from './forms';
 export { componentMatchQuery } from './components';
 type Json = Record<string, any>;
@@ -1289,7 +1289,7 @@ export default {
         throw new Problem(404,'Unknown endpoint.');
       }
       if(!['GET','HEAD'].includes(request.method))throw new Problem(405,'Method not allowed.');
-      if(path==='/api/account')return json({user:await viewer(env,request)});
+      if(path==='/api/account')return json({user:await viewer(env,request),providers:providers(env)});
       if(path==='/health')return json({ok:true,published_at:await meta(env,'published_at')});
       const image=path.match(/^\/atlas\/media\/([a-f0-9]{64})\.webp$/);
       if(image)return await media(env,request,image[1],ctx);
