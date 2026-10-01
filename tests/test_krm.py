@@ -131,6 +131,7 @@ def test_a_page_mostly_refused_is_left_out_whole() -> None:
 
     result = krm.place(entries, boxes, grid, UNIT, rank, known={code("仿"), code("人")})
     assert result.counts.get("page-refused") == 1
+    assert "kept" not in result.counts
     assert not [p for p in result.pairs if p.kept]
 
 

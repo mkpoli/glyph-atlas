@@ -398,6 +398,7 @@ def place(entries: Sequence[Entry], boxes: Sequence[Box], grid: Grid, unit: floa
     judged_pairs = [p for p in result.pairs if p.verdict is not None]
     if judged_pairs and sum(1 for p in judged_pairs if p.verdict is False) > REFUSED_SHARE * len(judged_pairs):
         result.count("page-refused")
+        result.count("dropped-with-page", result.counts.pop("kept", 0))
         for pair in result.pairs:
             pair.kept = False
     return result
