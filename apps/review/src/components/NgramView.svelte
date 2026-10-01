@@ -1,16 +1,17 @@
 <script>
-  // Every occurrence of a two-character pair: the two crops that follow each other on a line, side by
-  // side in reading order, with the book and page they come from. Pages arrive as the reader nears the
+  // Every occurrence of a pair or trigram: the crops that follow each other on a line, side by side in
+  // reading order, with the book and page they come from. Pages arrive as the reader nears the
   // end, and while more are to come the grid shows whole rows only.
   import { untrack } from 'svelte'
   import Glyph from './Glyph.svelte'
   import SiteLinks from './SiteLinks.svelte'
-  import { pairOccurrences } from '../lib/pairs.js'
+  import { ngramOccurrences, ngramWords } from '../lib/ngrams.js'
   import { collectionAddress } from '../lib/gallery.js'
   import { number } from '../lib/client.js'
   import { t, localize } from '../lib/i18n.svelte.js'
 
-  let { text, work = '', first = null, inspect } = $props()
+  let { kind = 'pair', text, work = '', first = null, inspect } = $props()
+  const words = $derived(ngramWords(kind))
   const opened = untrack(() => first)
   let items = $state(opened?.items ?? []), total = $state(opened?.total ?? null), offset = $state(opened?.next_offset ?? 0)
   let loading = $state(!opened), error = $state(''), requestId = 0
@@ -19,7 +20,7 @@
     const id = ++requestId
     loading = true; error = ''
     try {
-      const page = await pairOccurrences(text, { work, offset: append ? offset : 0 })
+      const page = await ngramOccurrences(kind, text, { work, offset: append ? offset : 0 })
       if (id !== requestId) return
       items = append ? [...items, ...page.items] : page.items
       total = page.total; offset = page.next_offset
@@ -30,7 +31,7 @@
 
   const hasMore = $derived(total !== null && items.length < total && offset < 2000)
   // The crops the inspector steps through, in the order they are shown.
-  const crops = $derived(items.flatMap(o => [o.first, o.second]))
+  const crops = $derived(items.flatMap(o => o.crops))
 
   let grid = $state(), sentinel = $state(), columns = $state(0), nearEnd = $state(false)
   const shown = $derived(hasMore && columns && items.length >= columns ? items.slice(0, Math.floor(items.length / columns) * columns) : items)
@@ -52,48 +53,48 @@
   const where = crop => [crop.source, crop.page_number ? t('tile.page', { page: crop.page_number }) : null].filter(Boolean).join(' · ')
 </script>
 
-<section class="explore pair-view">
+<section class="explore ngram-view">
   <div class="page-status">
-    <h1 class="visually-hidden">{text} · {t('explore.pairs')}</h1>
+    <h1 class="visually-hidden">{text} · {words.name()}</h1>
     <SiteLinks />
   </div>
-  <header class="pair-heading">
-    <a class="quiet-link" href={localize(collectionAddress({ work }))}>← {t('explore.pairs')}</a>
-    <p><b lang="ja">{text}</b>{#if total !== null}<span>{t('pair.occurrences', { count: number(total) })}</span>{/if}</p>
+  <header class="ngram-heading">
+    <a class="quiet-link" href={localize(collectionAddress({ work }))}>← {words.name()}</a>
+    <p><b lang="ja">{text}</b>{#if total !== null}<span>{t('ngram.occurrences', { count: number(total) })}</span>{/if}</p>
   </header>
   {#if error}<div class="error-message" role="alert">{error}<button onclick={() => load(items.length > 0)}>{t('common.tryAgain')}</button></div>{/if}
-  <div class="pair-grid" bind:this={grid} aria-busy={loading}>
+  <div class="ngram-grid" bind:this={grid} aria-busy={loading}>
     {#if loading && !items.length}{#each Array(12) as _}<div class="glyph-skeleton"></div>{/each}{/if}
-    {#each shown as occurrence (occurrence.first.id)}
-      <article class="pair-occurrence">
-        <div class="pair-crops">
-          {#each [occurrence.first, occurrence.second] as crop (crop.id)}
+    {#each shown as occurrence (occurrence.crops[0].id)}
+      <article class="ngram-occurrence">
+        <div class="ngram-crops" style:--crops={occurrence.crops.length}>
+          {#each occurrence.crops as crop, i (i)}
             <button class="glyph-tile" data-unit={crop.id} onclick={() => inspect(crop.id, null, crops)} aria-label={t('explore.tile.inspect', { label: crop.label })}>
               <span class="tile-reading"><span class="tile-glyph" lang="ja">{crop.label}</span></span><Glyph item={crop} />
             </button>
           {/each}
         </div>
-        <p class="pair-where">{where(occurrence.first)}</p>
+        <p class="ngram-where">{where(occurrence.crops[0])}</p>
       </article>
     {/each}
   </div>
-  {#if !loading && !error && total === 0}<p class="pair-empty">{t('pair.empty')}</p>{/if}
+  {#if !loading && !error && total === 0}<p class="ngram-empty">{words.empty()}</p>{/if}
   <div class="scroll-sentinel" bind:this={sentinel} aria-hidden="true">{#if hasMore && loading && items.length}…{/if}</div>
 </section>
 
 <style>
-  .pair-heading{display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding:18px 0}
-  .pair-heading p{display:flex;align-items:baseline;gap:14px;margin:0}
-  .pair-heading b{font-size:40px;font-weight:500;line-height:1.1}
-  .pair-heading span{color:var(--muted);font-size:13px}
-  .pair-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line)}
-  .pair-occurrence{display:flex;flex-direction:column;background:var(--surface-tile);min-width:0}
-  .pair-crops{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line)}
-  .pair-crops .glyph-tile{height:clamp(132px,11vw,190px);padding:24px 14px 14px}
-  .pair-where{margin:0;padding:8px 12px 10px;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .pair-empty{color:var(--muted);padding:30px 0}
-  @media(min-width:1700px){.pair-grid{grid-template-columns:repeat(5,minmax(0,1fr))}}
-  @media(max-width:1100px){.pair-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
-  @media(max-width:700px){.pair-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.pair-crops .glyph-tile{height:120px}}
-  @media(max-width:420px){.pair-grid{grid-template-columns:minmax(0,1fr)}}
+  .ngram-heading{display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding:18px 0}
+  .ngram-heading p{display:flex;align-items:baseline;gap:14px;margin:0}
+  .ngram-heading b{font-size:40px;font-weight:500;line-height:1.1}
+  .ngram-heading span{color:var(--muted);font-size:13px}
+  .ngram-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line)}
+  .ngram-occurrence{display:flex;flex-direction:column;background:var(--surface-tile);min-width:0}
+  .ngram-crops{display:grid;grid-template-columns:repeat(var(--crops),1fr);gap:1px;background:var(--line)}
+  .ngram-crops .glyph-tile{height:clamp(132px,11vw,190px);padding:24px 14px 14px}
+  .ngram-where{margin:0;padding:8px 12px 10px;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ngram-empty{color:var(--muted);padding:30px 0}
+  @media(min-width:1700px){.ngram-grid{grid-template-columns:repeat(5,minmax(0,1fr))}}
+  @media(max-width:1100px){.ngram-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+  @media(max-width:700px){.ngram-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.ngram-crops .glyph-tile{height:120px}}
+  @media(max-width:420px){.ngram-grid{grid-template-columns:minmax(0,1fr)}}
 </style>

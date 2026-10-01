@@ -27,8 +27,8 @@
   const session = provideSession(createSession())
   let menuButton, menu = $state(false), exporting = $state(false), savedNotice = $state('')
   const path = $derived(delocalize(page.url.pathname).path)
-  // A pair's page is part of Explore.
-  const section = $derived(path.startsWith('/pages') ? '/pages' : path.startsWith('/forms') ? '/forms' : path.startsWith('/pair/') ? '/' : path)
+  // A pair's or trigram's page is part of Explore.
+  const section = $derived(path.startsWith('/pages') ? '/pages' : path.startsWith('/forms') ? '/forms' : /^\/(pair|trigram)\//.test(path) ? '/' : path)
   // A crop page is a crop opened over the collection; the inspector's own choice takes over from it.
   // Closing it moves to the collection's address in place, and Back opens it again.
   const routed = $derived(page.data.record && !page.state.closed ? { id: page.params.id, origin: page.route.id?.endsWith('/corpus/[id]') ? 'corpus' : 'collection' } : null)
