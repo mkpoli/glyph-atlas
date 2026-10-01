@@ -31,7 +31,6 @@
   // `shown` is the character on show, for the page's title; the view changes it in place.
   let { flagged = false, addressed = false, inspect, ink = 'original', onink = () => {}, initial = null, gallery = null, shown = $bindable() } = $props()
   const session = useSession()
-  const clientId = $derived(session?.state.clientId ?? '')
   const asked = untrack(() => initial), first = asked?.result ? asked : null, opened = untrack(() => gallery)
   let data = $state(first?.result ?? (opened ? { query: opened.picked.char, total: opened.total, available: opened.available,
     categories: opened.summary?.categories ?? [], documents: opened.summary?.documents ?? [], counts: opened.summary?.counts ?? {} } : null))
@@ -522,7 +521,7 @@
   }
   async function applyBulk() {
     const target = bulkTarget
-    if (!target || bulkBusy || !clientId) return
+    if (!target || bulkBusy) return
     const chosen = display.filter(item => selected.has(item.id) && selectable(item))
     // A tile a person already checked as the character has nothing to change; every other one is sent,
     // and one already written as the character is confirmed.
@@ -534,7 +533,7 @@
     try {
       for (let at = 0; at < crops.length; at += BATCH) {
         const part = crops.slice(at, at + BATCH), id = crypto.randomUUID()
-        const result = await request('/atlas/corrections', { id, client_id: clientId, character: target,
+        const result = await request('/atlas/corrections', { id, character: target,
           crops: part.map(item => ({ id: item.id, revision: item.revision,
             ...(item.origin === 'corpus' ? { source_revision: item.source_revision } : { image_sha256: item.image_sha256 }) })) })
         saved.push(id)
@@ -564,7 +563,7 @@
     if (!done || bulkBusy) return
     bulkBusy = true; bulkError = ''
     try {
-      for (const id of [...done.batches].reverse()) await request(`/atlas/corrections/${id}/undo`, { client_id: clientId })
+      for (const id of [...done.batches].reverse()) await request(`/atlas/corrections/${id}/undo`, {})
       bulkDone = null
       const shown = new Set([...items, ...local, ...corpus, ...sample].map(item => item.id))
       if (Object.keys(done.before).every(id => shown.has(id))) patch(done.before)
