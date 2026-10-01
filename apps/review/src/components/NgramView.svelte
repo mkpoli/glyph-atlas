@@ -1,9 +1,9 @@
 <script>
-  // Every occurrence of a pair or trigram: the crops that follow each other on a line, side by side in
-  // reading order, with the book and page they come from. Pages arrive as the reader nears the
+  // Every occurrence of a pair or trigram: the crops that follow each other on a line, shown as they
+  // sit on the page (`NgramImage`), with the book and page they come from. Pages arrive as the reader nears the
   // end, and while more are to come the grid shows whole rows only.
   import { untrack } from 'svelte'
-  import Glyph from './Glyph.svelte'
+  import NgramImage from './NgramImage.svelte'
   import SiteLinks from './SiteLinks.svelte'
   import { ngramOccurrences, ngramWords } from '../lib/ngrams.js'
   import { collectionAddress } from '../lib/gallery.js'
@@ -67,13 +67,7 @@
     {#if loading && !items.length}{#each Array(12) as _}<div class="glyph-skeleton"></div>{/each}{/if}
     {#each shown as occurrence (occurrence.crops[0].id)}
       <article class="ngram-occurrence">
-        <div class="ngram-crops" style:--crops={occurrence.crops.length}>
-          {#each occurrence.crops as crop, i (i)}
-            <button class="glyph-tile" data-unit={crop.id} onclick={() => inspect(crop.id, null, crops)} aria-label={t('explore.tile.inspect', { label: crop.label })}>
-              <span class="tile-reading"><span class="tile-glyph" lang="ja">{crop.label}</span></span><Glyph item={crop} />
-            </button>
-          {/each}
-        </div>
+        <div class="ngram-page"><NgramImage crops={occurrence.crops} page={occurrence.page} oninspect={id => inspect(id, null, crops)} /></div>
         <p class="ngram-where">{where(occurrence.crops[0])}</p>
       </article>
     {/each}
@@ -89,12 +83,10 @@
   .ngram-heading span{color:var(--muted);font-size:13px}
   .ngram-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line)}
   .ngram-occurrence{display:flex;flex-direction:column;background:var(--surface-tile);min-width:0}
-  .ngram-crops{display:grid;grid-template-columns:repeat(var(--crops),1fr);gap:1px;background:var(--line)}
-  .ngram-crops .glyph-tile{height:clamp(132px,11vw,190px);padding:24px 14px 14px}
+  .ngram-page{height:clamp(190px,15vw,270px);padding:12px}
   .ngram-where{margin:0;padding:8px 12px 10px;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .ngram-empty{color:var(--muted);padding:30px 0}
   @media(min-width:1700px){.ngram-grid{grid-template-columns:repeat(5,minmax(0,1fr))}}
   @media(max-width:1100px){.ngram-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
-  @media(max-width:700px){.ngram-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.ngram-crops .glyph-tile{height:120px}}
-  @media(max-width:420px){.ngram-grid{grid-template-columns:minmax(0,1fr)}}
+  @media(max-width:700px){.ngram-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.ngram-page{height:200px;padding:10px}}
 </style>

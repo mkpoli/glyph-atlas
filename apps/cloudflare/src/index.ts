@@ -380,10 +380,11 @@ async function ngrams(env: Env, ctx: ExecutionContext, url: URL, size: number) {
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return body;
 }
-// One run's occurrences: its crops in reading order, in the order the run's index keeps (by the first
-// crop's id), each crop found by its key; a trigram's third is joined only when there is one. A book's
-// are read through the index it shares with the count. The join order is fixed and the origin test kept
-// off its index (`+`): the planner would otherwise start from every local crop.
+// One run's occurrences: its crops in reading order, each with its box on the page, and the page around
+// them (`ngramPage`). They come in the order the run's index keeps (by the first crop's id), each crop
+// found by its key; a trigram's third is joined only when there is one. A book's are read through the
+// index it shares with the count. The join order is fixed and the origin test kept off its index (`+`):
+// the planner would otherwise start from every local crop.
 const NGRAM_PAGE_MAX = 96, NGRAM_OFFSET_MAX = 2000;
 const NGRAM_CROPS = `FROM unit_ngrams p
     CROSS JOIN units a ON a.id=p.first AND +a.origin='local' CROSS JOIN units b ON b.id=p.second AND +b.origin='local'
@@ -395,6 +396,25 @@ export function ngramOccurrencesQuery(document: boolean) {
 export function ngramCountQuery(document: boolean) {
   return `SELECT count(*) AS n ${NGRAM_CROPS}
     WHERE ${document ? 'p.document=? AND ' : ''}p.size=? AND p.text=? AND (p.third IS NULL OR c.id IS NOT NULL)`;
+}
+// The page around a run, from one of its crops' context renders: the box holding every crop, with a
+// margin of a fifth of the largest, clipped to the render. A render shows the page a few characters
+// around its own crop, so it nearly always holds the whole run; the smallest that does is the sharpest.
+// Null when a crop has no box or no render holds them all: the run's crops are then laid out apart.
+type Rect = { x: number; y: number; w: number; h: number };
+export function ngramPage(crops: Json[]): { image: string; box: Rect; region: Rect } | null {
+  const boxes = crops.map(c => c.crop_box as Rect | null);
+  if (boxes.some(b => !b)) return null;
+  const left = Math.min(...boxes.map(b => b!.x)), top = Math.min(...boxes.map(b => b!.y));
+  const right = Math.max(...boxes.map(b => b!.x + b!.w)), bottom = Math.max(...boxes.map(b => b!.y + b!.h));
+  const holds = (r: Rect) => r.x <= left && r.y <= top && r.x + r.w >= right && r.y + r.h >= bottom;
+  const render = crops.filter(c => c.context_image && c.context_box && holds(c.context_box))
+    .sort((a, b) => a.context_box.w * a.context_box.h - b.context_box.w * b.context_box.h)[0];
+  if (!render) return null;
+  const box = render.context_box as Rect, margin = Math.max(...boxes.flatMap(b => [b!.w, b!.h])) / 5;
+  const x = Math.max(box.x, left - margin), y = Math.max(box.y, top - margin);
+  return { image: render.context_image, box,
+    region: { x, y, w: Math.min(box.x + box.w, right + margin) - x, h: Math.min(box.y + box.h, bottom + margin) - y } };
 }
 async function ngramOccurrences(env: Env, url: URL, size: number, run: string) {
   const q = url.searchParams;
@@ -408,7 +428,8 @@ async function ngramOccurrences(env: Env, url: URL, size: number, run: string) {
     env.DB.prepare(ngramOccurrencesQuery(Boolean(document))).bind(...bound, limit, offset),
   ]) as D1Result<any>[];
   const items = (page.results as { first: string; second: string; third: string | null }[])
-    .map(row => ({ crops: [row.first, row.second, row.third].filter(Boolean).map(data => listing(parse(data!))) }));
+    .map(row => [row.first, row.second, row.third].filter(Boolean).map(data => parse(data!)))
+    .map(crops => ({ crops: crops.map(c => ({ ...listing(c), crop_box: c.crop_box ?? null })), page: ngramPage(crops) }));
   return { text: value, size, document, total: (count.results[0] as { n: number }).n, next_offset: offset + items.length, items };
 }
 async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {

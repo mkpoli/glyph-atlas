@@ -685,6 +685,16 @@ try {
   assert.equal(occurrences.total, 1, 'a pair counts the occurrences whose crops are both live')
   assert.deepEqual(occurrences.items.map(o => o.crops.map(c => c.id)), [['one', 'two']], 'an occurrence carries its crops in reading order')
   assert.ok(!('context_image' in occurrences.items[0].crops[0]), 'occurrences carry listing fields only')
+  // The page around a run is the smallest context render that holds all its crops, clipped to them with
+  // a margin of a fifth of the largest crop that stays inside the render.
+  const placed = (x, y, context) => ({ crop_box: { x, y, w: 10, h: 10 }, context_image: `/atlas/media/${x}-${y}.webp`, context_box: context })
+  assert.deepEqual(worker.ngramPage([placed(50, 50, { x: 0, y: 0, w: 200, h: 200 }), placed(50, 62, { x: 20, y: 20, w: 100, h: 100 })]),
+    { image: '/atlas/media/50-62.webp', box: { x: 20, y: 20, w: 100, h: 100 }, region: { x: 48, y: 48, w: 14, h: 26 } })
+  assert.deepEqual(worker.ngramPage([placed(21, 21, { x: 20, y: 20, w: 100, h: 100 }), placed(21, 33, { x: 20, y: 20, w: 100, h: 100 })]).region,
+    { x: 20, y: 20, w: 13, h: 25 }, 'the margin stays inside the render')
+  assert.equal(worker.ngramPage([placed(50, 50, { x: 45, y: 45, w: 20, h: 20 }), placed(50, 70, { x: 45, y: 65, w: 20, h: 20 })]), null, 'no render holds both crops')
+  assert.equal(worker.ngramPage([placed(50, 50, { x: 0, y: 0, w: 200, h: 200 }), { crop_box: null }]), null, 'a crop without a box has no page')
+  assert.ok('page' in occurrences.items[0] && 'crop_box' in occurrences.items[0].crops[0], 'an occurrence carries its page and its crops\' boxes')
   // A trigram is shown only while its third crop is live as well.
   await db.prepare(`INSERT INTO unit_ngrams(first,size,second,third,text,document) VALUES('one',3,'two','gone',?,NULL)`).bind(pairText + '也').run()
   assert.equal((await (await mf.dispatchFetch(base + '/atlas/ngrams/3/' + encodeURIComponent(pairText + '也'))).json()).total, 0, 'a trigram needs its third crop live')
