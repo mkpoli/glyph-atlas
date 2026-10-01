@@ -377,6 +377,8 @@ class Layers:
             "variants": [variant.model_dump() for variant in unit.variants],
             "exact": exact,
             "reading": unit.reading,
+            # The shape the letterforms take when a reviewer said it differs from the label.
+            "written_form": unit.written_form,
             "kind": str(unit.kind),
             "granularity": unit.granularity,
             "classification": str(unit.classification),

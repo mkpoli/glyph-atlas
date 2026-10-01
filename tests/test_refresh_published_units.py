@@ -16,15 +16,17 @@ def data(box=BOX, image="/atlas/media/a.webp", revision=1, **extra):
                       ensure_ascii=False, separators=(",", ":"))
 
 
-def unit(box=BOX, image="/atlas/media/a.webp", quiz=1, state="pending", revision=1, style="unassessed"):
+def unit(box=BOX, image="/atlas/media/a.webp", quiz=1, state="pending", revision=1, style="unassessed", written_form=None):
     return {"id": "hk:1", "origin": "local", "character": "イ", "reading": "イ", "family": None, "visual_group": None,
             "production": "unknown", "category": "イ", "state": state, "quiz": quiz, "priority": 0, "shuffle": 5,
             "revision": revision, "data": data(box, image, revision), "snapshot": "{}", "context": "{}", "visual": "{}",
-            "style": style}
+            "style": style, "written_form": written_form}
 
 
-def live(box=BOX, image="/atlas/media/a.webp", quiz=1, revision=1000001, reviewed=False, style="unassessed", **extra):
-    return {"revision": revision, "quiz": quiz, "data": data(box, image, revision, **extra), "style": style, "reviewed": reviewed}
+def live(box=BOX, image="/atlas/media/a.webp", quiz=1, revision=1000001, reviewed=False, style="unassessed",
+         written_form=None, formed=False, **extra):
+    return {"revision": revision, "quiz": quiz, "data": data(box, image, revision, **extra), "style": style,
+            "written_form": written_form, "reviewed": reviewed, "formed": formed}
 
 
 def test_an_unreviewed_changed_unit_takes_the_catalogue_row_and_revision():
@@ -223,3 +225,22 @@ def test_a_new_style_is_set_in_place_reviewed_or_not(reviewed):
 def test_a_replaced_unit_takes_the_catalogues_style():
     _, sql = refresh.plan(unit(box={"x": 1, "y": 2, "w": 3, "h": 4}, style="running"), live())
     assert "style='running'" in sql
+
+
+@pytest.mark.parametrize("reviewed", [False, True])
+def test_a_written_form_is_the_catalogue_s_until_one_is_saved_on_the_site(reviewed):
+    action, sql = refresh.plan(unit(revision=1000001, written_form="𮟃"), live(reviewed=reviewed))
+    assert action == "in-place"
+    assert sql == ("UPDATE units SET written_form='𮟃' WHERE id='hk:1' AND revision=1000001"
+                   " AND NOT EXISTS(SELECT 1 FROM written_forms w WHERE w.target=units.id);")
+    assert refresh.plan(unit(revision=1000001, written_form="𮟃"), live(reviewed=reviewed, formed=True)) == ("skip", None)
+
+
+def test_a_replaced_unit_keeps_the_site_s_written_form_unless_it_was_cut_anew():
+    # Only the revision differs: the crop is the one the site's form was saved for.
+    _, sql = refresh.plan(unit(revision=2, written_form="𮟃"), live(written_form="⿰木木", formed=True))
+    assert "written_form" not in sql
+    _, sql = refresh.plan(unit(revision=2, written_form="𮟃"), live())
+    assert "written_form='𮟃'" in sql and "NOT EXISTS" in sql
+    _, sql = refresh.plan(unit(box={"x": 1, "y": 2, "w": 3, "h": 4}, written_form="𮟃"), live(written_form="⿰木木", formed=True))
+    assert "written_form='𮟃'" in sql and "NOT EXISTS" not in sql

@@ -8,7 +8,8 @@ const mf = new Miniflare(convertV4MiniflareOptions({workers:[{
   name: 'atlas-test',
   modules: true, script: await readFile('/tmp/atlas-worker-test.mjs', 'utf8'), compatibilityDate: '2026-09-22',
   d1Databases: ['DB'], r2Buckets: ['MEDIA'],
-  ratelimits: { CORRECTIONS: { namespace_id: '4401', simple: { limit: 20, period: 60 } } },
+  ratelimits: { CORRECTIONS: { namespace_id: '4401', simple: { limit: 20, period: 60 } },
+    WRITTEN_FORMS: { namespace_id: '4402', simple: { limit: 30, period: 60 } } },
 }]}))
 try {
   const db = await mf.getD1Database('DB')
@@ -1177,6 +1178,53 @@ try {
     'each round event names its round and carries only its own answer')
   assert.deepEqual(await call('/atlas/rounds', fullRound), firstRound, 'a retried round returns the first result')
   await countsMatch('the counts follow a full round')
+  // A written form: the crop keeps its character, state and revision, and every listing shows it.
+  await addLocal('form-local', '還')
+  const formPath = '/atlas/characters/form-local/written-form'
+  const formSave = { id: crypto.randomUUID(), client_id: 'integration', revision: 0, image_sha256: hash, form: '⿺辶𦊷' }
+  const formed = await call(formPath, formSave)
+  assert.deepEqual([formed.written_form, formed.label, formed.state, formed.revision], ['⿺辶𦊷', '還', 'pending', 0])
+  assert.equal((await call('/atlas/characters/form-local')).written_form, '⿺辶𦊷', 'the inspector reads it')
+  assert.equal((await call('/atlas?reading=' + encodeURIComponent('還'))).items.find(item => item.id === 'form-local').written_form, '⿺辶𦊷', 'a listing reads it')
+  assert.equal((await call(formPath, formSave)).written_form, '⿺辶𦊷', 'a retry answers with the crop')
+  await call(formPath, { ...formSave, form: '𮟃' }, 409)
+  for (const form of ['⿺辶', '⿰木木木', '還還', 'a⿰', '⿰木a', ' '.repeat(3) + '⿰'])
+    await call(formPath, { ...formSave, id: crypto.randomUUID(), form }, 422)
+  await call(formPath, { ...formSave, id: crypto.randomUUID(), revision: 1 }, 409)
+  await call(formPath, { ...formSave, id: crypto.randomUUID(), image_sha256: 'c'.repeat(64) }, 409)
+  const variant = await call(formPath, { ...formSave, id: crypto.randomUUID(), form: 'U+2E7C3' })
+  assert.equal(variant.written_form, '𮟃', 'a code point is read as its character')
+  // A review saved against the revision the crop was opened at still stands, and keeps the form.
+  await call('/atlas/characters/form-local', { id: crypto.randomUUID(), client_id: 'integration', revision: 0, image_sha256: hash, verdict: 'match', issue: 'reading' })
+  const reviewedForm = await call('/atlas/characters/form-local')
+  assert.deepEqual([reviewedForm.state, reviewedForm.revision, reviewedForm.written_form], ['checked', 1, '𮟃'])
+  assert.equal((await call(formPath, { ...formSave, id: crypto.randomUUID(), revision: 1, form: '還' })).written_form, null, 'its own character clears it')
+  // A corpus glyph nothing has named gets its `units` row, and stays unflagged and unreviewed.
+  const glyphForm = await call('/atlas/corpus/written-forms', { id: crypto.randomUUID(), client_id: 'integration', identity: 'na-5',
+    revision: 0, source_revision: createHash('sha256').update('na-5').digest('hex'), form: '⿱十乚' })
+  assert.deepEqual([glyphForm.written_form, glyphForm.label, glyphForm.state, glyphForm.revision], ['⿱十乚', 'ナ', 'pending', 0])
+  assert.deepEqual(await db.prepare("SELECT origin,state,written_form FROM units WHERE id='na-5'").first(), { origin: 'corpus', state: 'pending', written_form: '⿱十乚' })
+  assert.equal((await call('/atlas/corpus/character?id=na-5')).written_form, '⿱十乚')
+  const naRow = { char: 'ナ', code_point: 'U+30CA', candidates: {} }
+  await db.prepare('INSERT OR IGNORE INTO characters VALUES(?,?,?,?,?)').bind('U+30CA', 'ナ', '', JSON.stringify(naRow), JSON.stringify(naRow)).run()
+  assert.equal((await call('/layers/candidates?code_point=U%2B30CA&limit=200')).glyph_items.find(item => item.id === 'na-5')?.written_form, '⿱十乚',
+    'a corpus gallery reads it')
+  assert.equal((await db.prepare("SELECT count(*) AS n FROM events WHERE target IN ('na-5','form-local') AND json_extract(json_extract(event,'$.evidence'),'$.kind')!='character-review'").first()).n, 0,
+    'a written form writes no review event')
+  const formExport = await call('/atlas/written-forms')
+  assert.equal(formExport.kind, 'atlas-written-forms')
+  assert.deepEqual(formExport.forms.map(f => [f.target, f.form, f.revision, f.current]),
+    [['form-local', '⿺辶𦊷', 0, false], ['form-local', '𮟃', 0, false], ['form-local', null, 1, true], ['na-5', '⿱十乚', 0, true]])
+  assert.deepEqual([formExport.forms[0].label, formExport.forms[0].pixels, formExport.forms[0].origin, formExport.forms[3].origin], ['還', hash, 'local', 'corpus'])
+  const formPlan = (await db.prepare('EXPLAIN QUERY PLAN ' + worker.writtenFormsQuery()).all()).results.map(row => row.detail).join(' | ')
+  assert.ok(!/SCAN l\b/.test(formPlan), 'each form finds its crop\'s latest through the index: ' + formPlan)
+  // One address gets 30 written forms a minute.
+  let formsLimited = false
+  for (let i = 0; i < 40 && !formsLimited; i++) {
+    const response = await mf.dispatchFetch(base + formPath, { method: 'POST', headers: { 'content-type': 'application/json', origin: base }, body: '{}' })
+    formsLimited = response.status === 429
+  }
+  assert.ok(formsLimited, 'written forms are rate-limited per address')
   // One address gets 20 batches a minute.
   let rateLimited = false
   for (let i = 0; i < 25 && !rateLimited; i++) {
@@ -1184,7 +1232,7 @@ try {
     rateLimited = response.status === 429
   }
   assert.ok(rateLimited, 'batches are rate-rateLimited per address')
-  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms, batch corrections.')
+  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms, batch corrections, written forms.')
 } finally {
   await mf.dispose()
 }

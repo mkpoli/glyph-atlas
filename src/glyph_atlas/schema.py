@@ -25,7 +25,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
-from . import origin, production, style
+from . import origin, production, style, written_form
 
 
 class Licence(StrEnum):
@@ -105,6 +105,8 @@ Production = Annotated[str, AfterValidator(production.check)]
 Origin = Annotated[str, AfterValidator(origin.check)]
 #: A value of `data/vocab/style.yaml`, e.g. `regular`, `cursive` or `ming`.
 Style = Annotated[str, AfterValidator(style.check)]
+#: One character or an Ideographic Description Sequence, e.g. `𮟃` or `⿺辶𦊷`.
+WrittenForm = Annotated[str, AfterValidator(written_form.check)]
 
 
 class Register(StrEnum):
@@ -385,6 +387,11 @@ class Unit(BaseModel):
     classification: Classification = Classification.UNASSESSED
     script: Script = Script.UNKNOWN
     style: Style = Field(default=style.UNASSESSED, description="style of this unit's letterforms; unassessed takes the page's")
+    written_form: WrittenForm | None = Field(
+        default=None,
+        description="the shape the letterforms take when a reviewer records that it differs from the character: "
+        "one character or an Ideographic Description Sequence (還 written 𮟃); the character stays what it is",
+    )
     variants: list[VariantRef] = Field(default_factory=list, description="MJ, IVS, GlyphWiki or local shape ids")
     candidates: list[Candidate] = Field(default_factory=list, description="scored alternatives when classification is ambiguous")
     antecedent_ids: list[str] = Field(default_factory=list, description="units an iteration mark repeats")
