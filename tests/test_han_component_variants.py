@@ -38,6 +38,8 @@ def test_a_pair_differing_at_the_top_or_in_two_parts_attests_nothing():
 
 def test_a_single_stroke_is_no_component():
     assert v.substitutions(descriptions({"㐈": ["⿰口一"], "㐉": ["⿰口丶"]}), "㐉", "㐈") == {}
+    # 𠃌 is one stroke by Unihan's kTotalStrokes, though outside the CJK Strokes block.
+    assert v.substitutions(descriptions({"万": ["⿸丆𠃌"], "㐂": ["⿸丆口"]}), "万", "㐂") == {}
 
 
 def test_the_difference_inside_a_component_is_recorded_with_the_substitution_it_is_inside():

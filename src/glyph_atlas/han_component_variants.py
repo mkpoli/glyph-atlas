@@ -45,7 +45,10 @@ AGREEMENT = 0.3
 #: How many levels below a character a substitution is looked for, in the pairs and in the derivation.
 DEPTH = 4
 SKIPPED = set("〾㇯？")
-STROKES = set("一丨丶丿乀乁乙乚乛亅")
+#: The ideographs of one stroke: every character whose Unihan kTotalStrokes is 1 (Unicode 18.0.0,
+#: Unihan_IRGSources.txt). With the CJK Strokes block they are the strokes, and a swap of one of them
+#: against anything is no component.
+STROKES = set("一丨丶丿乀乁乙乚乛亅𠃉𠃊𠃋𠃌𠃍𠃎𠃑𠄌𠄎𡿨𪛙𬼂\U0002F802")
 UNENCODED = re.compile(r"\{\d+\}")
 
 Tree = str | tuple[str, tuple["Tree", ...]]
