@@ -89,15 +89,15 @@ describe('historyQuery', () => {
   it('filters by kind and orders newest first, keyset-paged', () => {
     const { sql, values } = historyQuery(null, null, null);
     expect(sql).toContain(`kind IN ('review','undo')`);
-    expect(sql).toContain('ORDER BY at DESC,id DESC');
+    expect(sql).toContain('ORDER BY at DESC,id DESC LIMIT ?1');
     expect(values).toEqual([]);
   });
-  it('adds user, label and cursor filters as bound parameters', () => {
-    const { sql, values } = historyQuery('alice', 'ア', { at: '2026-01-02T00:00:00.000Z', id: 'cf:one' });
-    expect(sql).toContain('actor IN (SELECT actor FROM actors WHERE user_id=?)');
-    expect(sql).toContain('AS label');
-    expect(sql).toContain('(at,id)<(?,?)');
-    expect(values).toEqual(['alice', 'ア', '2026-01-02T00:00:00.000Z', 'cf:one']);
+  it('binds the label and cursor once, then one id per arm, with the LIMIT after them', () => {
+    const { sql, values } = historyQuery(['u1', 'reviewer-0a1b2c3d'], 'ア', { at: '2026-01-02T00:00:00.000Z', id: 'cf:one' });
+    expect(sql).toContain('(at,id)<(?2,?3) AND actor=?4 UNION ALL SELECT');
+    expect(sql).toContain('(at,id)<(?2,?3) AND actor=?5');
+    expect(sql).toContain('LIMIT ?6');
+    expect(values).toEqual(['ア', '2026-01-02T00:00:00.000Z', 'cf:one', 'u1', 'reviewer-0a1b2c3d']);
   });
 });
 
