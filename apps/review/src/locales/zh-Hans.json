@@ -528,6 +528,8 @@
   "quiz.reviewSelected": "审阅所选（{count}个）",
   "quiz.roundChanged": "本轮内容已更改。你的选择已保留。请重新加载本轮以继续。",
   "quiz.roundNotSaved": "本轮未能保存。你的选择已保留。",
+  "quiz.newVersion": "网站有新版本。请重新加载以继续，本轮的选择会保留。",
+  "quiz.reloadNewVersion": "重新加载",
   "quiz.roundSaved.one": "已保存「{reading}」的{count}个裁切",
   "quiz.roundSaved.other": "已保存「{reading}」的{count}个裁切",
   "quiz.saveIssues": "保存问题",

@@ -4,6 +4,7 @@
   // Only explicitly marked problems are saved as reviews. An unmarked crop that was on screen is
   // recorded as seen, which keeps it out of later rounds without confirming it.
   import { onMount, tick } from 'svelte'
+  import { updated } from '$app/state'
   import Glyph from '../components/Glyph.svelte'
   import IssuePicker from '../components/IssuePicker.svelte'
   import ReadingSuggestions from '../components/ReadingSuggestions.svelte'
@@ -157,7 +158,7 @@
     if (previous >= 0) visit(previous)
     else load({ target })
   }
-  async function load({ target = null, replace = false, scope = production } = {}) {
+  async function load({ target = null, replace = false, scope = production, seed: dealt = null } = {}) {
     checkpoint()
     const id = ++requestId
     loading = true; loadingMore = false; error = ''; errorStatus = 0; categoryOpen = false
@@ -172,7 +173,7 @@
         remember(epochKey, summary.review_epoch ?? null)
       }
       // A grapheme whose count promised crops that cannot be dealt gives way to the next one.
-      let available = roundGraphemes(summary.categories).filter(c => c.pending > 0), chosen = null, seed = randomSeed(), result = null
+      let available = roundGraphemes(summary.categories).filter(c => c.pending > 0), chosen = null, seed = dealt ?? randomSeed(), result = null
       for (let tries = 0; tries < 8; tries++) {
         chosen = tries === 0 && target && available.some(c => c.label === target) ? target
           : nextGrapheme(available, scope === production ? grapheme : '', history.filter(r => r.production === scope), randomSeed())
@@ -520,6 +521,34 @@
   }
   // A round the site refused is reported in the reader's language; the service's messages are English.
   const roundError = e => e.status === 409 ? t('quiz.roundChanged') : t('quiz.roundNotSaved')
+  // A tab open across a deployment runs the page it loaded, and the site may refuse what that page sends.
+  // A refusal while a newer page is out offers the reload (the notice above the round) in place of the error.
+  const outdated = async e => e.status >= 400 && e.status < 500 && (updated.current || await updated.check())
+  /**
+   * Reload into the newer page with this round: its grapheme, material and deal, and the choices made in
+   * it, kept for this tab and taken back once the round is dealt again.
+   */
+  const CARRIED = 'atlas.quiz.carried'
+  function reloadKeepingRound() {
+    try {
+      sessionStorage.setItem(CARRIED, JSON.stringify({ grapheme, production, seed: roundSeed,
+        ...$state.snapshot({ choices, selected, skipped }) }))
+    } catch { /* The page reloads without the choices. */ }
+    location.reload()
+  }
+  function carried() {
+    try { const round = JSON.parse(sessionStorage.getItem(CARRIED) ?? 'null'); sessionStorage.removeItem(CARRIED); return round }
+    catch { return null }
+  }
+  async function resume(round) {
+    const scope = MATERIALS.some(([value]) => value === round.production) ? round.production : production
+    await load({ target: round.grapheme || null, scope, seed: round.seed })
+    if (grapheme !== round.grapheme) return
+    // Only the crops dealt again: a crop decided elsewhere meanwhile has left the round.
+    const dealt = new Set(items.map(item => item.id))
+    const here = map => Object.fromEntries(Object.entries(map ?? {}).filter(([id]) => dealt.has(id)))
+    choices = here(round.choices); selected = here(round.selected); skipped = here(round.skipped)
+  }
   function markRecorded(crops, how) { recorded = { ...recorded, ...Object.fromEntries(crops.map(crop => [crop.id, how])) } }
   async function submit() {
     if (saving || loadingMore || !ready) return
@@ -547,7 +576,7 @@
       markRecorded(answers, 'flagged'); markRecorded(seen, 'seen'); markRecorded(passed, 'skip')
       choices = {}; selected = {}; step = 'select'; at = 0; roundId = crypto.randomUUID()
       await load()
-    } catch (e) { error = roundError(e); errorStatus = e.status ?? 0 }
+    } catch (e) { if (!(await outdated(e))) { error = roundError(e); errorStatus = e.status ?? 0 } }
     finally { saving = false }
   }
   // Moving on from a round with nothing flagged: the crops it showed were seen, so they are recorded
@@ -568,7 +597,7 @@
       markRecorded(seen, 'seen'); markRecorded(passed, 'skip')
       choices = {}; selected = {}; step = 'select'; at = 0; roundId = crypto.randomUUID()
       return true
-    } catch (e) { error = roundError(e); errorStatus = e.status ?? 0; return false }
+    } catch (e) { if (!(await outdated(e))) { error = roundError(e); errorStatus = e.status ?? 0 }; return false }
     finally { saving = false }
   }
   async function pass() {
@@ -622,7 +651,13 @@
       : a.dealt - b.dealt)
   }
   function toggleShape() { byShape = !byShape; remember('atlas.quiz.shape-order', byShape); items = arranged(items) }
-  onMount(() => { last = stored('atlas.last-round', null); load({ target: initialGrapheme || null }); return () => { closed = true } })
+  onMount(() => {
+    last = stored('atlas.last-round', null)
+    const round = carried()
+    if (round) resume(round)
+    else load({ target: initialGrapheme || null })
+    return () => { closed = true }
+  })
 </script>
 
 <svelte:window onkeydown={keydown} />
@@ -643,6 +678,7 @@
       <button class="forward-reading" aria-label={t('quiz.history.nextRound')} disabled={saving || loading || historyIndex >= history.length - 1} onclick={() => visit(historyIndex + 1)}>→</button>
     </nav>
   {/if}
+  {#if updated.current}<div class="update-notice" role="status"><span>{t('quiz.newVersion')}</span><button disabled={saving} onclick={reloadKeepingRound}>{t('quiz.reloadNewVersion')}</button></div>{/if}
   {#if error}<div class="error-message" role="alert"><span>{error}</span>{#if stale}<button disabled={saving} onclick={() => load({ target: grapheme, replace: true })}>{t('quiz.reloadRound')}</button>{/if}</div>{/if}
 
   {#if step === 'select'}
@@ -704,6 +740,8 @@
 
 {#if savedNotice}<div class="save-toast quiz-saved" role="status">✓ {savedNotice}</div>{/if}
 <style>
+  .update-notice{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:13px 16px;margin-bottom:20px;border-radius:7px;background:var(--accent-light);color:var(--accent);font-size:13px}
+  .update-notice button{white-space:nowrap;background:transparent;color:inherit;border-color:currentColor;font-size:12px}
   .review-material{display:flex;align-items:center;gap:10px;margin:0 0 20px;font-size:12px;color:var(--muted)}
   .review-material select{max-width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font:inherit}
   /* Scoped to this view on purpose: the skipped state is the round's own, and the tile keeps the

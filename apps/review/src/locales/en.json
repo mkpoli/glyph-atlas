@@ -556,6 +556,8 @@
   "quiz.reviewSelected": "Review selected ({count})",
   "quiz.roundChanged": "This round changed. Your choices are kept. Reload the round to continue.",
   "quiz.roundNotSaved": "This round could not be saved. Your choices are kept.",
+  "quiz.newVersion": "A new version of the site is available. Reload to continue; your choices in this round are kept.",
+  "quiz.reloadNewVersion": "Reload",
   "quiz.roundSaved.one": "Saved {count} crop of {reading}",
   "quiz.roundSaved.other": "Saved {count} crops of {reading}",
   "quiz.saveIssues": "Save problems",
