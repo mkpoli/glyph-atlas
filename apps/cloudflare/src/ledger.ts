@@ -78,6 +78,17 @@ function submissionId(input: Json, tools: LedgerTools) {
   return id;
 }
 
+// A random id in the shape of a UUID, made in SQL for rows a batch writes by selecting them.
+const SQL_UUID = `lower(hex(randomblob(4)))||'-'||lower(hex(randomblob(2)))||'-'||lower(hex(randomblob(2)))||'-'||lower(hex(randomblob(2)))||'-'||lower(hex(randomblob(6)))`;
+/** The statement that retracts `actor`'s earlier live claims in a single-valued slot, run in the same
+ *  batch after their new claim (`by`), so a concurrent claim of theirs is retracted too. */
+export function retractOwn(env: Env, own: { key: string; actor: string; subject: string; predicate: string; scope: string; at: string; by: string }) {
+  return env.DB.prepare(`INSERT INTO assertion_actions(id,submission,assertion,action,actor,at,reason)
+    SELECT 'cf:'||${SQL_UUID},?,a.id,'retract',?,?,? FROM assertions a WHERE a.subject=? AND a.predicate=? AND a.scope=? AND a.slot=''
+    AND a.asserted_by=? AND a.submission IS NOT ? AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract')`)
+    .bind(own.key, own.actor, own.at, 'superseded by ' + own.by, own.subject, own.predicate, own.scope, own.actor, own.key);
+}
+
 /** Record one claim about a subject (several members make an alternative set) as `actor`. A crop
  *  subject's claim names the evidence version its reviewer saw, and one made after the crop was recut
  *  is refused. A new claim in a slot that takes one value retracts the actor's own earlier ones there.
@@ -106,27 +117,28 @@ export async function writeClaim(env: Env, input: Json, actor: string, tools: Le
   statements.push(...extra.statements ?? []);
   const at = new Date().toISOString(), set = members.length > 1 ? 'cf:' + crypto.randomUUID() : null;
   const ids = members.map(() => 'cf:' + crypto.randomUUID());
-  const own = spec.cardinality === 'one' ? (await env.DB.prepare(`SELECT a.id FROM assertions a WHERE a.subject=? AND a.predicate=? AND a.scope=? AND a.slot=''
-    AND a.asserted_by=? AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract') ORDER BY a.rowid`)
-    .bind(subject, predicate, scope, actor).all<{ id: string }>()).results.map(r => r.id) : [];
   members.forEach((m, i) => {
     statements.push(env.DB.prepare(`INSERT INTO assertions(id,submission,subject,predicate,scope,slot,object,value,alternative_set,tier,asserted_by,asserted_at,confidence,confidence_scheme,method)
       VALUES(?,?,?,?,?,?,?,?,?,'observed',?,?,?,?,?)`).bind(ids[i], key, subject, predicate, scope, slotOf(predicate, m, tools.canonical), m.object,
       m.value === null ? null : tools.canonical(m.value), set, actor, at, m.confidence, m.confidence_scheme, tools.text(input.method ?? null, 64, 'method')));
     if (version) statements.push(env.DB.prepare("INSERT INTO assertion_evidence(assertion,kind,ref) VALUES(?,'crop',?)").bind(ids[i], version));
   });
-  for (const old of own) statements.push(env.DB.prepare("INSERT INTO assertion_actions(id,submission,assertion,action,actor,at,reason) VALUES(?,?,?,'retract',?,?,?)")
-    .bind('cf:' + crypto.randomUUID(), key, old, actor, at, 'superseded by ' + ids[0]));
+  // The actor's own earlier claims in a slot that takes one value are retracted by the batch itself,
+  // so a claim of theirs saved meanwhile is retracted too.
+  if (spec.cardinality === 'one') statements.push(retractOwn(env, { key, actor, subject, predicate, scope, at, by: ids[0] }));
   const slots = [...new Set(members.map(m => slotOf(predicate, m, tools.canonical)))];
   statements.push(...resolveSlots(env, slots.map(slot => [subject, predicate, scope, slot])));
-  const response = { submission: key, subject, assertions: ids, retracted: own };
-  statements.push(env.DB.prepare('INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,?,?)').bind(key, actor, signature, JSON.stringify(response), at));
+  // The response names what the batch retracted, which only the batch knows.
+  statements.push(env.DB.prepare(`INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,json_object('submission',?,'subject',?,
+    'assertions',json(?),'retracted',json((SELECT json_group_array(assertion) FROM assertion_actions WHERE submission=? AND action='retract'))),?)`)
+    .bind(key, actor, signature, key, subject, JSON.stringify(ids), key, at));
   try { await env.DB.batch(statements) } catch (error) {
     const again = await repeat(env, key, signature, tools.fail);
     if (again) return { ...again, current: await currentOf(env, again.subject) };
     throw error;
   }
-  return { ...response, current: await currentOf(env, subject) };
+  const saved = (await repeat(env, key, signature, tools.fail))!;
+  return { ...saved, current: await currentOf(env, subject) };
 }
 
 /** Accept, reject, retract or adjudicate one claim as `actor`. A retraction is the asserter's, an accept

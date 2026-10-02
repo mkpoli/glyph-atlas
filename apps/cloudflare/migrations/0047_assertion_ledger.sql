@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS assertion_actions (
  actor TEXT NOT NULL, at TEXT NOT NULL, reason TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS action_assertion ON assertion_actions(assertion,action);
+CREATE INDEX IF NOT EXISTS action_submission ON assertion_actions(submission);
 -- Each slot's current value as the resolver named in `resolver` found it: `status` (asserted, accepted,
 -- adjudicated, disputed, rejected), the value when it is one (`object` or `value`), `members` (the value,
 -- or each alternative of a set, with its confidence), `supporting` (the ids of the claims it stands on),
