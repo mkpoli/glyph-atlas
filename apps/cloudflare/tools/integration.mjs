@@ -646,13 +646,14 @@ try {
     await db.prepare(create).run()
   }
   await db.batch([
-    db.prepare(`INSERT INTO unit_ngrams(first,size,second,third,text,document) VALUES('p1',2,'p2',NULL,'申候','hk:doc'),('p3',2,'p4',NULL,'申候','hk:other'),
-      ('p5',2,'p6',NULL,'候也','hk:doc'),('p7',2,'p8',NULL,NULL,'hk:doc'),('p1',3,'p2','p9','申候也','hk:doc')`),
+    db.prepare(`INSERT INTO unit_ngrams(first,size,second,third,text,document,vertical) VALUES('p1',2,'p2',NULL,'申候','hk:doc',1),('p3',2,'p4',NULL,'申候','hk:other',0),
+      ('p5',2,'p6',NULL,'候也','hk:doc',0),('p7',2,'p8',NULL,NULL,'hk:doc',1),('p1',3,'p2','p9','申候也','hk:doc',1)`),
   ])
   const countsOf = async query => (await (await mf.dispatchFetch(base + '/atlas/ngrams/' + query)).json()).items
-  assert.deepEqual(await countsOf('2'), [{ text: '申候', n: 2 }, { text: '候也', n: 1 }], 'pairs are counted by text, most frequent first')
-  assert.deepEqual(await countsOf('2?document=hk%3Aother'), [{ text: '申候', n: 1 }], 'a book counts its own pairs')
-  assert.deepEqual(await countsOf('3'), [{ text: '申候也', n: 1 }], 'trigrams are counted apart from pairs')
+  assert.deepEqual(await countsOf('2'), [{ text: '申候', n: 2, vertical: true }, { text: '候也', n: 1, vertical: false }],
+    'pairs are counted by text, most frequent first, and written down the page where half or more of them are')
+  assert.deepEqual(await countsOf('2?document=hk%3Aother'), [{ text: '申候', n: 1, vertical: false }], 'a book counts its own pairs')
+  assert.deepEqual(await countsOf('3'), [{ text: '申候也', n: 1, vertical: true }], 'trigrams are counted apart from pairs')
   assert.equal((await mf.dispatchFetch(base + '/atlas/ngrams/4')).status, 404, 'only pairs and trigrams are counted')
   // A review that relabels a crop moves the runs it is part of.
   await db.batch([db.prepare(`INSERT INTO unit_ngrams(first,size,second,third,text,document) SELECT a.id,2,b.id,NULL,a.character||b.character,a.document
@@ -695,6 +696,7 @@ try {
   assert.equal(worker.ngramPage([placed(50, 50, { x: 45, y: 45, w: 20, h: 20 }), placed(50, 70, { x: 45, y: 65, w: 20, h: 20 })]), null, 'no render holds both crops')
   assert.equal(worker.ngramPage([placed(50, 50, { x: 0, y: 0, w: 200, h: 200 }), { crop_box: null }]), null, 'a crop without a box has no page')
   assert.ok('page' in occurrences.items[0] && 'crop_box' in occurrences.items[0].crops[0], 'an occurrence carries its page and its crops\' boxes')
+  assert.deepEqual([occurrences.vertical, occurrences.items[0].vertical], [true, true], 'a run is written the way its line is')
   // A trigram is shown only while its third crop is live as well.
   await db.prepare(`INSERT INTO unit_ngrams(first,size,second,third,text,document) VALUES('one',3,'two','gone',?,NULL)`).bind(pairText + '也').run()
   assert.equal((await (await mf.dispatchFetch(base + '/atlas/ngrams/3/' + encodeURIComponent(pairText + '也'))).json()).total, 0, 'a trigram needs its third crop live')

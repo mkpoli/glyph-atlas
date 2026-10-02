@@ -34,7 +34,7 @@ def publication(tmp_path, monkeypatch):
         db.execute("INSERT INTO units(id,origin,character,reading,family,visual_group,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual,document) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
             "two", "local", "ウ", "ウ", None, None, "handwritten", "kana", "pending", 0, 1, 1, 0,
             json.dumps({"id": "two", "label": "ウ"}), "{}", "{}", "{}", None))
-        db.execute("INSERT INTO unit_ngrams(first,size,second,text) VALUES('one',2,'two','アウ')")
+        db.execute("INSERT INTO unit_ngrams(first,size,second,text,vertical) VALUES('one',2,'two','アウ',0)")
         db.executemany("INSERT INTO media VALUES(?,?,?,?,?)", [
             (key, "pack-0001.bin", 0, 7, "image/webp"),
             (denied, "pack-0001.bin", 7, 7, "image/webp")])
@@ -71,7 +71,7 @@ def test_publication_sql_does_not_overwrite_online_review(publication):
     with database(":memory:") as db:
         sql = (output / "catalogue.sql").read_text()
         db.executescript(sql)
-        assert db.execute("SELECT first,size,second,third,text,document FROM unit_ngrams").fetchall() == [("one", 2, "two", None, "アウ", None)]
+        assert db.execute("SELECT first,size,second,third,text,document,vertical FROM unit_ngrams").fetchall() == [("one", 2, "two", None, "アウ", None, 0)]
         db.execute("UPDATE units SET character='カ',state='checked',revision=3 WHERE id='one'")
         # Named online since the last publication, by a round whose row this test leaves out.
         db.execute("UPDATE corpus_units SET named=1 WHERE id='corpus-one'")

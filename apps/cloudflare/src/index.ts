@@ -360,14 +360,15 @@ export function moved(stored: Facet[], moves: Facet[]): Facet[] {
 // The pair and trigram frequencies Explore's grid shows: runs of crops that follow each other on a
 // line (`unit_ngrams`), counted by the text their labels make, most frequent first. The whole
 // collection's count reads every run of the length asked for and a book's reads its own, through the
-// index that also groups them; the edge keeps one copy per catalogue version, length and book.
+// index that also groups them; the edge keeps one copy per catalogue version, length and book. A run is
+// shown down the page where most of its occurrences are written that way.
 const NGRAMS_MAX = 480, NGRAM_SIZES = new Set(['2', '3']);
 function ngramSize(value: string) {
   if (!NGRAM_SIZES.has(value)) throw new Problem(404, 'Runs of two or three characters are counted.');
   return Number(value);
 }
 export function ngramsQuery(document: boolean) {
-  return `SELECT text,count(*) AS n FROM unit_ngrams
+  return `SELECT text,count(*) AS n,2*sum(vertical)>=count(*) AS vertical FROM unit_ngrams
     WHERE ${document ? 'document=? AND ' : ''}size=? AND text IS NOT NULL GROUP BY text ORDER BY n DESC,text LIMIT ${NGRAMS_MAX}`;
 }
 async function ngrams(env: Env, ctx: ExecutionContext, url: URL, size: number) {
@@ -375,13 +376,14 @@ async function ngrams(env: Env, ctx: ExecutionContext, url: URL, size: number) {
   const key = new Request(`${url.origin}/atlas/ngrams/${size}?document=${encodeURIComponent(document ?? '')}&v=${encodeURIComponent(await catalogueVersion(env))}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json() as Json;
-  const rows = await env.DB.prepare(ngramsQuery(Boolean(document))).bind(...(document ? [document] : []), size).all<{ text: string; n: number }>();
-  const body = { items: rows.results, limit: NGRAMS_MAX };
+  const rows = await env.DB.prepare(ngramsQuery(Boolean(document))).bind(...(document ? [document] : []), size).all<{ text: string; n: number; vertical: number }>();
+  const body = { items: rows.results.map(row => ({ ...row, vertical: Boolean(row.vertical) })), limit: NGRAMS_MAX };
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return body;
 }
-// One run's occurrences: its crops in reading order, each with its box on the page, and the page around
-// them (`ngramPage`). They come in the order the run's index keeps (by the first crop's id), each crop
+// One run's occurrences: its crops in reading order, each with its box on the page, whether their line
+// is written down the page, and the page around them (`ngramPage`); the run as a whole is written the way
+// most of its occurrences are. They come in the order the run's index keeps (by the first crop's id), each crop
 // found by its key; a trigram's third is joined only when there is one. A book's are read through the
 // index it shares with the count. The join order is fixed and the origin test kept off its index (`+`):
 // the planner would otherwise start from every local crop.
@@ -390,11 +392,11 @@ const NGRAM_CROPS = `FROM unit_ngrams p
     CROSS JOIN units a ON a.id=p.first AND +a.origin='local' CROSS JOIN units b ON b.id=p.second AND +b.origin='local'
     LEFT JOIN units c ON c.id=p.third AND +c.origin='local'`;
 export function ngramOccurrencesQuery(document: boolean) {
-  return `SELECT a.data AS first, b.data AS second, c.data AS third ${NGRAM_CROPS}
+  return `SELECT a.data AS first, b.data AS second, c.data AS third, p.vertical ${NGRAM_CROPS}
     WHERE ${document ? 'p.document=? AND ' : ''}p.size=? AND p.text=? AND (p.third IS NULL OR c.id IS NOT NULL) ORDER BY p.first LIMIT ? OFFSET ?`;
 }
 export function ngramCountQuery(document: boolean) {
-  return `SELECT count(*) AS n ${NGRAM_CROPS}
+  return `SELECT count(*) AS n, sum(p.vertical) AS vertical ${NGRAM_CROPS}
     WHERE ${document ? 'p.document=? AND ' : ''}p.size=? AND p.text=? AND (p.third IS NULL OR c.id IS NOT NULL)`;
 }
 // The page around a run, from one of its crops' context renders: the box holding every crop, with a
@@ -427,10 +429,12 @@ async function ngramOccurrences(env: Env, url: URL, size: number, run: string) {
     env.DB.prepare(ngramCountQuery(Boolean(document))).bind(...bound),
     env.DB.prepare(ngramOccurrencesQuery(Boolean(document))).bind(...bound, limit, offset),
   ]) as D1Result<any>[];
-  const items = (page.results as { first: string; second: string; third: string | null }[])
-    .map(row => [row.first, row.second, row.third].filter(Boolean).map(data => parse(data!)))
-    .map(crops => ({ crops: crops.map(c => ({ ...listing(c), crop_box: c.crop_box ?? null })), page: ngramPage(crops) }));
-  return { text: value, size, document, total: (count.results[0] as { n: number }).n, next_offset: offset + items.length, items };
+  const items = (page.results as { first: string; second: string; third: string | null; vertical: number }[]).map(row => {
+    const crops = [row.first, row.second, row.third].filter(Boolean).map(data => parse(data!));
+    return { crops: crops.map(c => ({ ...listing(c), crop_box: c.crop_box ?? null })), vertical: Boolean(row.vertical), page: ngramPage(crops) };
+  });
+  const { n: total, vertical } = count.results[0] as { n: number; vertical: number | null };
+  return { text: value, size, document, total, vertical: 2 * (vertical ?? 0) >= total, next_offset: offset + items.length, items };
 }
 async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   const q = url.searchParams;

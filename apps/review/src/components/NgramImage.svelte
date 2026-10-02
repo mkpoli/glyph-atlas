@@ -1,23 +1,25 @@
 <script>
   // One occurrence of a pair or trigram as it sits on the page: a crop's context render clipped to the
   // run (`page`, worked out by the Worker's `ngramPage`). Where no render holds the whole run, or the
-  // render cannot be loaded, each crop is drawn at its own place on the page, all at one scale. Every
-  // character opens its crop in the inspector.
+  // render cannot be loaded, each crop is drawn at its own place on the page, all at one scale; a crop
+  // without a place takes the next cell along the line, down it or across. Every character opens its
+  // crop in the inspector.
   import { t } from '../lib/i18n.svelte.js'
 
-  let { crops, page = null, oninspect } = $props()
+  let { crops, page = null, vertical = true, oninspect } = $props()
   let broken = $state(false)
   const whole = $derived(page && !broken)
-  // A crop's place on the page; a crop without one takes the next cell of a strip.
-  const cells = $derived(crops.every(crop => crop.crop_box) ? crops.map(crop => crop.crop_box) : crops.map((_, i) => ({ x: i, y: 0, w: 1, h: 1 })))
+  const placed = $derived(crops.every(crop => crop.crop_box))
+  const cells = $derived(placed ? crops.map(crop => crop.crop_box) : crops.map((_, i) => ({ x: vertical ? 0 : i, y: vertical ? i : 0, w: 1, h: 1 })))
   const view = $derived.by(() => {
     if (whole) return page.region
     const left = Math.min(...cells.map(c => c.x)), top = Math.min(...cells.map(c => c.y))
     const margin = Math.max(...cells.flatMap(c => [c.w, c.h])) / 5
     return { x: left - margin, y: top - margin, w: Math.max(...cells.map(c => c.x + c.w)) - left + 2 * margin, h: Math.max(...cells.map(c => c.y + c.h)) - top + 2 * margin }
   })
-  // A crop's image is cut with a margin of 8% of its longer side around its box (`atlas.crop_bounds`).
-  const cut = box => { const pad = Math.max(box.w, box.h) * 0.08; return { x: box.x - pad, y: box.y - pad, width: box.w + 2 * pad, height: box.h + 2 * pad } }
+  // A crop's image is cut with a margin of 8% of its longer side around its box (`atlas.crop_bounds`);
+  // a crop without a box fills its cell.
+  const cut = box => { const pad = placed ? Math.max(box.w, box.h) * 0.08 : 0; return { x: box.x - pad, y: box.y - pad, width: box.w + 2 * pad, height: box.h + 2 * pad } }
   function pressed(event, crop) {
     if (event.key !== 'Enter' && event.key !== ' ') return
     event.preventDefault()

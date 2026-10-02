@@ -12,7 +12,7 @@ from pathlib import Path
 from cloudflare_schema import CORPUS_COLUMNS, CORPUS_REFRESH, category_of, corpus_upsert, schema
 from export_cloudflare import encoded
 
-from glyph_atlas.ngrams import ngram_statements
+from glyph_atlas.ngrams import Run, ngram_statements
 
 IMMUTABLE = ("metadata", "characters", "aliases", "corpus_units", "media")
 
@@ -164,8 +164,8 @@ def seal(catalogue: Path, corpus: Path, output: Path):
             sql.write(statement + "\n")
         # After the units, since a run is recorded only once all of its crops are on the site. The
         # publication's units lose the runs an earlier one recorded for them first.
-        ngrams = [tuple(i for i in row if i) for row in db.execute(
-            "SELECT first,second,third FROM local_source.unit_ngrams ORDER BY first,size")] \
+        ngrams = [Run(tuple(i for i in ids if i), bool(vertical)) for *ids, vertical in db.execute(
+            "SELECT first,second,third,vertical FROM local_source.unit_ngrams ORDER BY first,size")] \
             if db.execute("SELECT 1 FROM local_source.sqlite_master WHERE name='unit_ngrams'").fetchone() else []
         for statement in ngram_statements((i for i, in db.execute("SELECT id FROM units WHERE origin='local'")), ngrams):
             max_statement = max(max_statement, len(statement.encode()))
