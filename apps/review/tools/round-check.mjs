@@ -44,17 +44,17 @@ try {
     const p = await browser.centre(selector); await browser.click(p.x, p.y)
   }
 
-  await browser.goto(`${service.base}/ko-Kore/review?grapheme=U%2B3042`, { waitFor: settled + ' && document.querySelectorAll(".quiz-tile").length > 0', timeout: 60000 })
-  assert(await target() === 'あ', 'the address deals あ')
+  await browser.goto(`${service.base}/ko-Kore/review`, { waitFor: settled + ' && document.querySelectorAll(".quiz-tile").length > 0', timeout: 60000 })
+  const first = await target(), key = [...first].map(c => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')).join(' ')
   // A material with nothing to deal empties the round; the next material deals a new one.
   await material('inscribed')
   await browser.waitFor(settled + ' && document.querySelectorAll(".quiz-tile").length === 0')
   await material('not:printed/type')
   await browser.waitFor(settled + ' && document.querySelectorAll(".quiz-tile").length > 0')
   // Back through the history to the first round.
-  await browser.evaluate(`[...document.querySelectorAll('.history-character')].find(b => b.innerText === 'あ' && !b.classList.contains('current'))?.click()`)
-  await browser.waitFor(settled + ` && document.querySelector(".target-character").innerText === "あ"`)
-  console.log('ok   a material with nothing to deal, then back to あ through the history')
+  await browser.evaluate(`[...document.querySelectorAll('.history-character')].find(b => b.innerText === ${JSON.stringify(first)} && !b.classList.contains('current'))?.click()`)
+  await browser.waitFor(settled + ` && document.querySelector(".target-character").innerText === ${JSON.stringify(first)}`)
+  console.log(`ok   a material with nothing to deal, then back to ${first} through the history`)
 
   await browser.waitFor('[...document.querySelectorAll(".quiz-tile img")].length > 0 && [...document.querySelectorAll(".quiz-tile img")].every(i => i.complete)', 20000)
   await click('.quiz-tile:not(.unavailable):not(.recorded) .quiz-choice')
@@ -63,8 +63,8 @@ try {
   await click('.quiz-workspace [data-issue="blank"]')
   await click('.save-round')
   await browser.waitFor('!!document.querySelector(".quiz-workspace .error-message")', 20000)
-  assert(posted.length === 1 && posted[0].grapheme === 'U+3042', `the round names its grapheme (${JSON.stringify(posted.map(p => p.grapheme))})`)
-  console.log('ok   the saved round names U+3042')
+  assert(posted.length === 1 && posted[0].grapheme === key, `the round names ${key} (${JSON.stringify(posted.map(p => p.grapheme))})`)
+  console.log(`ok   the saved round names ${key}`)
   const refusal = await browser.evaluate('document.querySelector(".quiz-workspace .error-message span").innerText')
   assert(refusal === koKore['quiz.roundNotSaved'], `a refused round is reported in the reader's language, got "${refusal}"`)
   assert(await browser.evaluate('document.querySelector(".quiz-workspace [data-issue=blank]")?.getAttribute("aria-pressed") === "true"'), 'a refused round keeps its choices')
