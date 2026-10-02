@@ -126,6 +126,10 @@ def _step(record, before):
         if verdict != "match" or issue not in (None, "reading") or written:
             raise Rejected("a redrawn box is saved as the crop's fix")
         after["box"] = {key: box[key] for key in ("x", "y", "w", "h")}
+        recrop = evidence.get("recrop")
+        if recrop is not None and (recrop.get("from") != before["box"] or recrop.get("to") != after["box"]
+                                   or recrop.get("pixels") != before["image_sha256"]):
+            raise Rejected("the box claim names another crop or other pixels")
     correction = evidence.get("correction", {})
     if (correction.get("unicode") != " ".join(refs.to_code_points(after["label"]))
             or correction.get("reading") != after["reading"] or correction.get("box") != after["box"]):

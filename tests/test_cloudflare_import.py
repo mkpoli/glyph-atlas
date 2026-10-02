@@ -559,3 +559,12 @@ def test_a_review_after_a_redrawn_box_imports_on_the_new_box(store):
     assert report["counts"] == {"imported": 1}, report
     unit = store.unit("u")
     assert unit.box.model_dump() == box and unit.unicode == "U+3092"
+
+
+def test_a_box_claim_that_names_another_starting_box_is_refused(store):
+    record, _ = redrawn(baseline(store), {"x": 12, "y": 11, "w": 26, "h": 38})
+    evidence = json.loads(record["event"]["evidence"])
+    evidence["recrop"]["from"] = {"x": 0, "y": 0, "w": 30, "h": 40}
+    record["event"]["evidence"] = json.dumps(evidence, ensure_ascii=False)
+    _, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
+    assert report["counts"] == {"rejected": 1}
