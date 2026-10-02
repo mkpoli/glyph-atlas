@@ -36,7 +36,7 @@ try {
   assert(await browser.evaluate(`document.activeElement?.classList.contains('quiz-choice')`), 'the clicked crop has focus')
   await clickTile(2, true)
   assert(await browser.evaluate(`document.querySelector('.form-bar .selection-count')?.innerText`) === '3 selected', 'Shift-click selects the range')
-  const forms = await browser.evaluate(`[...document.querySelectorAll('.form-chip > .script-text')].map(s => s.innerText)`)
+  const forms = await browser.evaluate(`[...document.querySelectorAll('.form-chip .script-text')].map(s => s.innerText)`)
   const members = await browser.evaluate(`document.querySelector('.round-members')?.innerText.split(' ')`)
   assert(forms.length > 1 && forms.join() === members.join(), `the bar offers the grapheme's forms (${forms.join(' ')})`)
   console.log(`ok   selection opens the bar with ${forms.length} forms`)

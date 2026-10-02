@@ -603,16 +603,7 @@
   "ziLink.aria": "查{char}𨕭zi.tools",
   "ziLink.text": "zi.tools ↗",
   "meta.character.description": "各塳割𡨸{character}（{codePoint}）自本劄拪吧冊印𠸗，每塳割兼源吧條款使用。",
-  "written.label": "樣𡨸",
-  "written.change": "對",
-  "written.input": "樣恪或IDS",
-  "written.note": "𠬠𡨸，或𠁻描寫𡨸漢（IDS）如 ⿺辶𦊷。𡨸𧵑塳割空對。",
-  "written.save": "用樣呢",
   "written.detail": "曰羅{form}",
-  "written.problem.character": "唉入𠬠𡨸或𠬠𠁻IDS。",
-  "written.problem.component": "𠁻IDS只𡗄𡨸漢，部首吧涅。",
-  "written.problem.missing": "𠁻IDS少成分。",
-  "written.problem.extra": "𠁻IDS乘成分。",
   "signIn.open": "登入",
   "signIn.title": "登入",
   "signIn.lede": "𥱬吏各吝閱𠁑共𠬠𠸜𨕭每設備。",
@@ -733,5 +724,7 @@
   "character.save.changes.close": "留 · 㨂",
   "character.save.changes.next": "留 · 接",
   "quiz.keyboardHint.issues": "W M B X問題 · S𠬃過 · ←→塳割",
-  "suggestions.pick.next": "𡨸接蹺…"
+  "suggestions.pick.next": "𡨸接蹺…",
+  "form.add": "添樣𡨸",
+  "script.hentaigana": "Hentaigana"
 }

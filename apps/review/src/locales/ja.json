@@ -613,16 +613,7 @@
   "quiz.reference.seen": "閲覧済み",
   "state.hard": "難読：2人のレビュアーがスキップ",
   "meta.character.description": "写本や版本から切り出した「{character}」（{codePoint}）の画像。一字ごとに出典と利用条件を示します。",
-  "written.label": "字形",
-  "written.change": "変更",
-  "written.input": "ほかの字形・IDS",
-  "written.note": "1字、または⿺辶𦊷のような漢字構成記述列（IDS）。この切り出しの文字は変わりません。",
-  "written.save": "この字形にする",
   "written.detail": "字形：{form}",
-  "written.problem.character": "1字か漢字構成記述列を入力してください。",
-  "written.problem.component": "構成記述列の部品は漢字・部首・筆画に限ります。",
-  "written.problem.missing": "構成記述列の部品が足りません。",
-  "written.problem.extra": "構成記述列の部品が演算子の取る数より多くなっています。",
   "signIn.open": "サインイン",
   "signIn.title": "サインイン",
   "signIn.lede": "どの端末でも、レビューをひとつの名前にまとめられます。",
@@ -747,5 +738,7 @@
   "character.save.changes.close": "保存・閉じる",
   "character.save.changes.next": "保存・次へ",
   "quiz.keyboardHint.issues": "W M B X問題 · Sスキップ · ←→切り出し",
-  "suggestions.pick.next": "次の文字…"
+  "suggestions.pick.next": "次の文字…",
+  "form.add": "字形を追加",
+  "script.hentaigana": "変体仮名"
 }

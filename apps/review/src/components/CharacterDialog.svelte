@@ -3,7 +3,9 @@
   import ProductionBadge, { productionLabel } from './ProductionBadge.svelte'
   import SourceCredit from './SourceCredit.svelte'
   import StyleField from './StyleField.svelte'
-  import WrittenFormField from './WrittenFormField.svelte'
+  import CropForm from './CropForm.svelte'
+  import CropTitle from './CropTitle.svelte'
+  import { setForm } from '../lib/cropForms.js'
   import ZiLink from './ZiLink.svelte'
   import CopyId from './CopyId.svelte'
   import { onMount, untrack, tick } from 'svelte'
@@ -36,6 +38,8 @@
   const advancing = $derived(!onVerdict && !onskip && session.state.advance && Boolean(next))
   let dialog, data = $state(first), error = $state(''), busy = $state(false)
   let issue = $state(null), noneSelected = $state(false), correction = $state(null)
+  // The form the reviewer chose for the crop, held until the save; null keeps the one it has.
+  let form = $state(null)
   // The character a reviewer chose for a wrong-character crop, and whether one was chosen: an
   // untouched crop writes no character.
   let written = $state(first?.label ?? ''), writtenDirty = $state(false)
@@ -65,7 +69,7 @@
     const current = ++generation
     replaced = redirected
     dialog?.scrollTo({ top: 0 })
-    data = preloaded; error = ''; issue = null; correction = null; noneSelected = false; box = null; start = null; editingBox = false
+    data = preloaded; error = ''; form = null; issue = null; correction = null; noneSelected = false; box = null; start = null; editingBox = false
     written = ''; writtenDirty = false
     contextSuggestions = null; contextSuggesting = false
     loaded = false; imageFailed = false; suggestions = null; suggesting = false; submission = null
@@ -138,7 +142,7 @@
   function discardProposals() {
     issue = null; correction = null; noneSelected = false
     written = data?.label ?? ''; writtenDirty = false
-    box = null; editingBox = false
+    box = null; editingBox = false; form = null
   }
 
   /**
@@ -174,6 +178,18 @@
       return
     }
     busy = true; error = ''
+    // A chosen form is written first, and the review that follows names the revision it left. A wrong
+    // character names the crop's character itself, so a form chosen beside it is not written.
+    if (form != null && issue !== 'reading' && issue !== 'character') {
+      try {
+        const formed = await setForm(data, form)
+        changed?.(target, formed.crop)
+        if (closed || current !== generation) return
+        data = { ...data, ...formed.crop }; form = null
+        // A form that named the crop's character was a review already; nothing more to say.
+        if (formed.reviewed && (matches || !issue)) { leaving = advancing ? target : null; saved(target, formed.crop); busy = false; return }
+      } catch (e) { if (!closed && current === generation) error = e.message; busy = false; return }
+    }
     const correctingCharacter = writtenDirty && Boolean(written) && written !== data.label
     // `/atlas/characters` records reading issues; a character issue with no new character is one.
     const resolvedIssue = matches || fixed || (issue === 'character' && !correctingCharacter) ? 'reading'
@@ -248,8 +264,8 @@
     {#if replaced}<p class="replaced-note" role="status">{t('character.replaced')}</p>{/if}
     {#if error}<div class="error-message" role="alert">{error}<button disabled={busy} onclick={() => load(id)}>{t('character.reload')}</button></div>{/if}
     {#if data}
-      <div class="inspector-production">{#if productionLabel(data)}<ProductionBadge item={data} />{/if}<StyleField item={data} editable={!onVerdict} disabled={busy} working={value => busy = value} saved={styled} /><WrittenFormField item={data} editable={!onVerdict} disabled={busy} working={value => busy = value} saved={styled} /></div>
-      <div class="inspector-title"><h2 lang="ja">{data.label}</h2><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{:else if repairOf(data)?.label === 'no-class'}<span class="repair-note" title={t('repair.reason.noClass')}>{t('repair.noClass')}</span>{/if}{#if data.state === 'checked' || data.state === 'flagged'}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.state === 'checked' ? t('state.checked') : t('state.flagged')}</span>{/if}</div><CopyId id={data.id} />
+      <div class="inspector-production">{#if productionLabel(data)}<ProductionBadge item={data} />{/if}<StyleField item={data} editable={!onVerdict} disabled={busy} working={value => busy = value} saved={styled} /></div>
+      <div class="inspector-title"><CropTitle char={data.label} script={data.script} /><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{:else if repairOf(data)?.label === 'no-class'}<span class="repair-note" title={t('repair.reason.noClass')}>{t('repair.noClass')}</span>{/if}{#if data.state === 'checked' || data.state === 'flagged'}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.state === 'checked' ? t('state.checked') : t('state.flagged')}</span>{/if}</div><CopyId id={data.id} />
       <div class="inspector-figure">
         {#if editingBox && data.context && data.context_box}
           <figure class="nearby crop-adjustment" bind:this={nearby}>
@@ -264,7 +280,8 @@
         {/if}
         <div class="credit-beside"><SourceCredit item={data} /></div>
       </div>
-      <CropReview {issue} onissue={chooseIssue} suggested={suggestedIssue} disabled={busy} onskip={skip}
+      {#snippet formBar()}{#if !onVerdict}<CropForm crop={data} chosen={form} onchoose={value => form = value} disabled={busy} />{/if}{/snippet}
+      <CropReview forms={formBar} {issue} onissue={chooseIssue} suggested={suggestedIssue} disabled={busy} onskip={skip}
         targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={suggestions} loading={suggesting} contextResult={contextSuggestions} contextLoading={contextSuggesting} label={data.label} value={issue === 'character' ? written : correction} onchoose={chooseSuggestion} />
       {#if issue === 'crop' && !onVerdict && data.context && data.crop_editable !== false}<div class="crop-change">{#if box}{t('character.crop.adjusted')}<button type="button" disabled={busy} onclick={() => box = null}>{t('common.reset')}</button>{:else}<button type="button" class="quiet-link adjust-crop" disabled={busy || editingBox} onclick={beginCrop}>{t('character.crop.adjust')}</button>{/if}</div>{/if}
       <SimilarCrops id={data.id} label={data.label} />
@@ -275,7 +292,7 @@
     <!-- Always there outside a round, so the choice is visible before a list is opened. -->
     {#if !onVerdict}<AdvanceSwitch disabled={busy} />{/if}
     {#if imageFailed}<span role="alert">{t('character.image.unavailable')}</span>{/if}
-    <button class="primary save-character" bind:this={saveButton} disabled={busy || !data || !loaded || imageFailed} onclick={() => save()}>{busy ? t('common.saving') : issue === 'crop' && box ? t(advancing ? 'character.save.changes.next' : 'character.save.changes.close') : issue ? (onVerdict ? t('character.save.useError') : t(advancing ? 'character.save.issue.next' : 'character.save.issue.close')) : (onVerdict ? t('character.save.backToSelection') : t(advancing ? 'character.save.looksRight.next' : 'character.save.looksRight.close'))} {#if onVerdict || advancing}<span>→</span>{:else if !issue}<span>✓</span>{/if}</button>
+    <button class="primary save-character" bind:this={saveButton} disabled={busy || !data || !loaded || imageFailed} onclick={() => save()}>{busy ? t('common.saving') : (issue === 'crop' && box) || (!issue && form != null) ? t(advancing ? 'character.save.changes.next' : 'character.save.changes.close') : issue ? (onVerdict ? t('character.save.useError') : t(advancing ? 'character.save.issue.next' : 'character.save.issue.close')) : (onVerdict ? t('character.save.backToSelection') : t(advancing ? 'character.save.looksRight.next' : 'character.save.looksRight.close'))} {#if onVerdict || advancing}<span>→</span>{:else if !issue}<span>✓</span>{/if}</button>
     {#if issue}<button class="quiet-link looks-right" disabled={busy || !loaded || imageFailed} onclick={() => { discardProposals(); save(true) }}>{onVerdict ? t('character.save.removeSelection') : t('character.save.itLooksRight')}</button>{/if}
     <ContributionTerms />
   </footer>

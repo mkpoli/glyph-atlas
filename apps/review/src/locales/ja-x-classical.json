@@ -613,16 +613,7 @@
   "ziLink.aria": "zi.toolsニ於テ{char}ヲ引ク",
   "ziLink.text": "zi.tools ↗",
   "meta.character.description": "古寫本及ビ版本ヨリ截リ出セル「{character}」（{codePoint}）ノ畫像。一字每ニ出典、利用ノ條件ヲ附ス。",
-  "written.label": "字形",
-  "written.change": "改ム",
-  "written.input": "他ノ字形又ハIDS",
-  "written.note": "一字、又ハ⿺辶𦊷ノ如キ構成記述列ヲ書ク　字ハ改マラズ",
-  "written.save": "此ノ字形トス",
   "written.detail": "字形：{form}",
-  "written.problem.character": "一字又ハ構成記述列ヲ書クベシ",
-  "written.problem.component": "構成ノ部品ハ漢字・部首・筆畫ニ限ル",
-  "written.problem.missing": "部品足ラズ",
-  "written.problem.extra": "部品多キニ過グ",
   "signIn.open": "登入",
   "signIn.title": "登入",
   "signIn.lede": "何レノ端末ニテモ校閱ヲ一ノ名ニ收ム。",
@@ -747,5 +738,7 @@
   "character.save.changes.close": "保存シテ閉ヅ",
   "character.save.changes.next": "保存シテ次ヘ",
   "quiz.keyboardHint.issues": "W M B X：誤 · S：保留 · ←→：截片",
-  "suggestions.pick.next": "次ノ字…"
+  "suggestions.pick.next": "次ノ字…",
+  "form.add": "字形ヲ加フ",
+  "script.hentaigana": "變體假名"
 }

@@ -1,12 +1,13 @@
 <script>
   // How one crop is judged, the same in Quick Review and in the inspector: the problem cards with
-  // Skip, and for a wrong or joined character what it holds instead.
+  // Skip, and for a wrong or joined character what it holds instead. `forms`, when given, is drawn
+  // above the cards: the inspector's bar of the crop's forms.
   import IssuePicker from './IssuePicker.svelte'
   import ReadingSuggestions from './ReadingSuggestions.svelte'
   import { issueForKey, suggestsReading, SKIP_KEY, NONE_KEY } from '../lib/issues.js'
   let { issue = null, onissue, suggested = null, disabled = false, onskip, skipped = false,
     targetId = '', result = null, loading = false, contextResult = null, contextLoading = false,
-    label = '', value = null, noneSelected = false, onchoose, element = $bindable(null) } = $props()
+    label = '', value = null, noneSelected = false, onchoose, element = $bindable(null), forms = null } = $props()
   let root = $state(null)
 
   // A letter chooses a card, S skips and N says none of the suggestions fits. Keys typed into a field
@@ -27,6 +28,7 @@
 <svelte:window onkeydown={keydown} />
 
 <div class="crop-review" bind:this={root}>
+  {@render forms?.()}
   <IssuePicker value={issue} choose={onissue} {suggested} {disabled} skip={onskip} {skipped} />
   <ReadingSuggestions {targetId} bind:element {result} {loading} {contextResult} {contextLoading} {issue}
     reading={label} {value} {noneSelected} {disabled} choose={onchoose} />
