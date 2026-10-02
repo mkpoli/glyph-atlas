@@ -1,0 +1,61 @@
+id: hdic-ktb
+name: KTB 高山寺本篆隷萬象名義データベース（HDIC 平安時代漢字字書総合データベース）
+publisher: 平安時代漢字字書総合データベース編纂委員会（HDIC project）
+kind: transcription-corpus
+url: https://github.com/shikeda/HDIC
+revision: bf93470cc5a65ea0f191188c3f768cbbf170615f
+version: 1.1.118
+licence: CC-BY-SA-4.0
+licence_evidence: https://github.com/shikeda/HDIC/blob/bf93470cc5a65ea0f191188c3f768cbbf170615f/README.md
+attribution: "池田証寿, 李媛, 劉冠偉, HDIC project『KTB: Kosanjibon Tenrei Bansho Meigi database』(KTB.tsv 1.1.118), CC BY-SA 4.0"
+access:
+  repository: https://github.com/shikeda/HDIC
+  viewer: https://hdic.chise.org
+format:
+  entries: "KTB.tsv: one row per entry; `#` header lines, then TBID, TB_vol_radical, TB_radical, Entry, Entry_type, Entry_diff, TB_def, SYID, YYID, TB_remarks, Lv_page, Zang_page"
+  tbid: "book_leaf_side + line + number, e.g. 1_016_A53; an id with a scholar's name after it (-Shirafuji, -Miyazawa) is that scholar's reading of the entry under the plain id"
+  entry_types: "Regular and Regular_seal headwords are written large at the head of their entry; Embedded ones stand in another entry's gloss, Omitted ones are not on the page, Songben-Yupian ones are variants the Song print adds"
+  frames: "KTB_ndl.txt: Vol_radical, KTB_vol, Radical, Book_leaf, NDL_url (pid and frame of the 崇文叢書 edition)"
+  seals: "KTB_ndl_Seal.tsv: TB_Seal_ID, NDL IIIF image base, x, y, width, height of seal-script forms on the same frames"
+title: 篆隷萬象名義（高山寺本）
+register: kanbun
+images:
+  title: 崇文叢書 第1輯 篆隷萬象名義（崇文院, 1926–1927）
+  publisher: 崇文院
+  holder: 国立国会図書館
+  shelfmark: 154-60
+  production: null
+  terms: https://dl.ndl.go.jp/ja/help_iiif
+  attribution: 国立国会図書館デジタルコレクション
+  volumes:
+    - {pid: "1245837", label: 崇文叢書第1輯27}
+    - {pid: "1245841", label: 崇文叢書第1輯28}
+    - {pid: "1245843", label: 崇文叢書第1輯29}
+    - {pid: "1245850", label: 崇文叢書第1輯30}
+    - {pid: "1245852", label: 崇文叢書第1輯31}
+    - {pid: "1243006", label: 崇文叢書第1輯32}
+    - {pid: "1243011", label: 崇文叢書第1輯33}
+    - {pid: "1243013", label: 崇文叢書第1輯34}
+    - {pid: "1243018", label: 崇文叢書第1輯35}
+    - {pid: "1243024", label: 崇文叢書第1輯36}
+    - {pid: "1243028", label: 崇文叢書第1輯37}
+    - {pid: "1243031", label: 崇文叢書第1輯38}
+    - {pid: "1243035", label: 崇文叢書第1輯39}
+    - {pid: "1243042", label: 崇文叢書第1輯40}
+    - {pid: "1243046", label: 崇文叢書第1輯41}
+    - {pid: "1243049", label: 崇文叢書第1輯42}
+dating:
+  - literal: 永久二年（1114）六月
+    start: 1114
+    end: 1114
+    kind: copying
+    evidence: "https://www.zinbun.kyoto-u.ac.jp/~takata/Banshomeigi.pdf (高田時雄「篆隸萬象名義解説」, quoting the colophon 「永久二年（1114）六月以敦文王之本書寫之了」)"
+  - literal: c. 827-835
+    start: 827
+    end: 835
+    kind: composition
+    evidence: https://github.com/shikeda/HDIC/blob/bf93470cc5a65ea0f191188c3f768cbbf170615f/KTB.tsv
+notes:
+  - The NDL manifests of all sixteen volumes state Access Restrictions PDM (read 2026-10-02).
+  - The 高山寺本 has six lines to a half-leaf, each line holding an upper and a lower entry (高田時雄, as above); KTB numbers the entries of a line in reading order, embedded ones included, without saying which is upper.
+  - How the 崇文叢書 edition was made (photographic or retraced) is not stated in the sources consulted, so images.production is null; a document is classed by the manuscript it reproduces.
