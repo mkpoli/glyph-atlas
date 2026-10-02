@@ -134,7 +134,7 @@ def test_headwords_are_kept_where_the_classifier_reads_them() -> None:
                 return [code(char)] if char != "傮" else [code("僧")]
         return [code("ノ")]
 
-    result = hdic.place(entries, boxes, grid, UNIT, rank, known={code("仿"), code("像"), code("僧"), code("ノ")})
+    result = hdic.place(entries, boxes, grid, UNIT, rank, known={code("仿"), code("像"), code("僧"), code("ノ")}, layout=KRM)
     kept = {p.entry.entry_id: p for p in result.pairs if p.kept}
     assert set(kept) == {"F1", "F2", "F3"}
     assert kept["F1"].verdict is True and kept["F3"].verdict is None  # 傮: no class, anchored at the tier line
@@ -145,7 +145,7 @@ def test_a_headword_the_classifier_refuses_is_left_out() -> None:
     boxes = page(COLUMNS, TIERS)
     grid = hdic.page_grids(boxes, UNIT, KRM)["right"]
     result = hdic.place([entry("F1", 1, 1, 0, "仿")], boxes, grid, UNIT, lambda b: [code("人")],
-                       known={code("仿"), code("人")})
+                       known={code("仿"), code("人")}, layout=KRM)
     assert not [p for p in result.pairs if p.kept]
     assert result.counts.get("refused") == 1
 
@@ -158,7 +158,7 @@ def test_a_page_mostly_refused_is_left_out_whole() -> None:
     def rank(box: Box) -> list[str]:
         return [code("仿")] if box.x == COLUMNS[0] - 80 else [code("人")]
 
-    result = hdic.place(entries, boxes, grid, UNIT, rank, known={code("仿"), code("人")})
+    result = hdic.place(entries, boxes, grid, UNIT, rank, known={code("仿"), code("人")}, layout=KRM)
     assert result.counts.get("page-refused") == 1
     assert "kept" not in result.counts
     assert not [p for p in result.pairs if p.kept]
@@ -188,7 +188,7 @@ def test_an_unjudged_glyph_is_left_out_when_its_pairing_is_in_doubt() -> None:
     def rank(box: Box) -> list[str]:
         return [code("人")] if (box.x, box.y) == (COLUMNS[0] - 80, TIERS[0]) else [code("ノ")]
 
-    result = hdic.place([cell], boxes, grid, UNIT, rank, known={code("人"), code("ノ")})
+    result = hdic.place([cell], boxes, grid, UNIT, rank, known={code("人"), code("ノ")}, layout=KRM)
     kept = [p.glyph.text for p in result.pairs if p.kept]
     assert kept == ["人"]  # three glyphs on two boxes: which unjudged glyph sits on the second is a guess
 
@@ -225,7 +225,7 @@ def test_a_one_tier_page_takes_each_column_whole() -> None:
     grid = hdic.page_grids(boxes, UNIT, TSJ)["right"]
     assert [round(x) for x in grid.columns] == columns
     assert len(grid.tiers) == 1
-    assert [b.y for b in hdic.cell_boxes(boxes, grid, 1, 1, UNIT)] == [400, 1100, 1800, 2500]
+    assert [b.y for b in hdic.cell_boxes(boxes, grid, 1, 1, UNIT, TSJ)] == [400, 1100, 1800, 2500]
 
 
 def column_entries(*glyphs: str) -> list[hdic.Entry]:
@@ -243,8 +243,39 @@ def test_an_unjudged_headword_between_two_read_ones_is_kept() -> None:
         return [code(char)] if char and char != "?" else [code("ノ")]
 
     result = hdic.place(column_entries("天", "⿱一丷", "地", "⿰口天"), boxes, grid, UNIT, rank,
-                        known={code("天"), code("地"), code("ノ")})
+                        known={code("天"), code("地"), code("ノ")}, layout=TSJ)
     kept = {p.glyph.text: p.box.y for p in result.pairs if p.kept}
     # ⿱一丷 sits between 天 and 地, both read. ⿰口天 has no read glyph after it, and with a large
     # gloss character in the column the boxes outnumber the headwords, so nothing vouches for it.
     assert kept == {"天": 400, "⿱一丷": 1100, "地": 1800}
+
+
+KTB = hdic.DICTIONARIES["ktb"].layout
+
+
+def test_a_tier_head_is_the_headword_after_a_seal_form_or_the_first_character() -> None:
+    grid = hdic.Grid(columns=(1000.0,), pitch=250.0, tiers=(500.0, 2300.0), tier_pitch=1800.0)
+    seal, head = headword_box(1000, 500), headword_box(1000, 700)
+    gloss = [Box(x=970, y=900 + 90 * k, w=60, h=70) for k in range(3)]
+    # The lower entry of a later book: headword and gloss written the same size.
+    plain = [Box(x=960, y=2300 + 90 * k, w=80, h=80) for k in range(4)]
+    boxes = [seal, head, *gloss, *plain]
+    assert hdic.cell_boxes(boxes, grid, 1, 1, UNIT, KTB) == [head]
+    assert hdic.cell_boxes(boxes, grid, 1, 2, UNIT, KTB) == [plain[0]]
+
+
+def test_a_second_reader_confirms_but_never_refuses() -> None:
+    boxes = page(COLUMNS, TIERS)
+    grid = hdic.page_grids(boxes, UNIT, KRM)["right"]
+    first = headword_box(COLUMNS[0], TIERS[0])
+    entries = [entry("F1", 1, 1, 0, "傮"), entry("F2", 2, 1, 0, "仿")]
+
+    def second(box: Box) -> str:
+        return "傮" if (box.x, box.y) == (first.x, first.y) else "人"
+
+    result = hdic.place(entries, boxes, grid, UNIT, lambda b: [code("ノ")], known={code("仿"), code("ノ")},
+                        layout=KRM, second=second)
+    by_entry = {p.entry.entry_id: p for p in result.pairs}
+    assert by_entry["F1"].verdict is True and by_entry["F1"].classifier is None and by_entry["F1"].second == "傮"
+    # 仿 is refused by the classifier, which knows it; the second reader's 人 neither refuses nor confirms.
+    assert by_entry["F2"].verdict is False

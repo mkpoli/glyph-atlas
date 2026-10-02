@@ -32,7 +32,7 @@ from glyph_atlas.classify import Classifier
 from glyph_atlas.detect import Detector
 from glyph_atlas.importers.honkoku_data import canvas_page, canvases, clone_revision, fetch_manifest
 from glyph_atlas.registry import SOURCES
-from glyph_atlas.review.suggestions import classifier_path
+from glyph_atlas.review.suggestions import Recognizer, classifier_path, decode, preprocess
 from glyph_atlas.schema import Box, Classification, Document, Line, Page, ReviewState, Script, Unit
 
 RUN = Path("models/align/runs/collection-v2.yaml")
@@ -44,6 +44,25 @@ def segmentation(layout: hdic.Layout) -> str:
     cells = f"{layout.columns}-column, {layout.tiers}-tier" if layout.tiers > 1 else f"{layout.columns}-column"
     return (f"HDIC cells: a {cells} grid fitted to the detector's headword-sized boxes; each cell's HDIC "
             "headword characters paired with its boxes top to bottom, checked by the classifier")
+
+
+def seal_records(seals: list[hdic.Seal], page: Page, lines: list[Line], units: list[Unit]) -> int:
+    """Add a line and a unit for each of a frame's seal forms, as HDIC boxed and labelled it; return how many."""
+    for seal in seals:
+        glyph = hdic.headword(seal.entry, "")
+        code = hdic.encoded(glyph[0]) if len(glyph) == 1 else None
+        line_id = f"ktb:{seal.entry_id}:seal"
+        lines.append(Line(id=line_id, page_id=page.id, seq=len(lines), vertical=True, box=seal.box,
+                          text_raw=seal.entry, text=seal.entry, match_method="import",
+                          meta={"source": "hdic-ktb", "entry_id": seal.entry_id, "file": "KTB_ndl_Seal.tsv"}))
+        units.append(Unit(
+            id=f"ktb:{seal.entry_id}:seal", document_id=page.document_id, page_id=page.id, line_id=line_id, seq=0,
+            box=seal.box, text_source=seal.entry, reading=seal.entry, unicode=code,
+            classification=Classification.IDENTIFIED if code else Classification.UNIDENTIFIED,
+            script=Script.HAN, style="seal", method="import", review=ReviewState.TRANSCRIBER,
+            upstream={"source": "hdic-ktb", "entry_id": seal.entry_id, "seal_id": f"T{seal.entry_id}"},
+            meta={"classifier_agrees": None}))
+    return len(seals)
 
 
 def union(boxes: list[Box]) -> Box:
@@ -86,11 +105,23 @@ def main() -> int:
             continue
         if place[0] in wanted and (only is None or place[1] in only):
             by_frame[place][entry.page].append(entry)
+    # HDIC's own boxes around KTB's seal-script forms: units as they stand, and no headword is sought in them.
+    seals: dict[tuple[str, int], list[hdic.Seal]] = defaultdict(list)
+    if dictionary.name == "ktb":
+        for seal in hdic.read_ktb_seals(args.clone):
+            if seal.pid in wanted and (only is None or seal.frame in only):
+                seals[(seal.pid, seal.frame)].append(seal)
+                by_frame[(seal.pid, seal.frame)]  # a frame with seal forms only is still cut
 
     run = align.load_run(RUN)
     detector = Detector(run.detector, score=run.score, nms=run.nms, providers=["CUDAExecutionProvider"])
     classifier = Classifier(classifier_path(), providers=["CUDAExecutionProvider"])
     known = set(classifier.classes)
+    # NDLkotenOCR reads characters the classifier has no class for.
+    reader = Recognizer()
+    if reader.sequence is None:
+        raise SystemExit("NDLkotenOCR is not installed under cache/models/ndlkotenocr-lite")
+    sequence_input = reader.sequence.get_inputs()[0]
     described = segmentation(dictionary.layout)
 
     documents: dict[str, Document] = {}
@@ -110,10 +141,14 @@ def main() -> int:
                     transcription={"source": corpus, "entry": ",".join(str(p) for p in sorted(on_frame)),
                                    "revision": source["revision"]})
         boxes = [box for box, _ in detector.boxes(image)]
+        boxes = [b for b in boxes if not any(hdic.overlap(b, s.box) > 0.5 for s in seals[(pid, frame)])]
         unit = hdic.side(boxes)
-        grids = hdic.page_grids(boxes, unit, dictionary.layout)
+        grids = hdic.page_grids(boxes, unit, dictionary.layout) if on_frame else {}
+        here = seal_records(seals[(pid, frame)], page, lines, units)
         if not grids:
-            report[page.id] = {"skipped": "no column grid fitted"}
+            report[page.id] = {"skipped": "no column grid fitted", "seals": here}
+            if here:
+                pages.append(page)
             continue
         probabilities = classifier.probabilities_many(
             [image.crop((b.x, b.y, b.x + b.w, b.y + b.h)) for b in boxes]) if boxes else []
@@ -123,21 +158,28 @@ def main() -> int:
         def rank(box: Box, top5=top5) -> list[str]:
             return top5[id(box)]
 
-        tried = {key: {name: hdic.place(members, boxes, grid, unit, rank, known) for name, grid in grids.items()}
+        def read(box: Box, image=image) -> str | None:
+            pixels = preprocess(image.crop((box.x, box.y, box.x + box.w, box.y + box.h)),
+                                (sequence_input.shape[3], sequence_input.shape[2]))
+            decoded = decode(reader.sequence.run(None, {sequence_input.name: pixels})[0], reader.alphabet)
+            return decoded[0]["text"] if decoded else None
+
+        tried = {key: {name: hdic.place(members, boxes, grid, unit, rank, known, dictionary.layout, read) for name, grid in grids.items()}
                  for key, members in on_frame.items()}
         chosen = hdic.assign_pages(tried, dictionary.right)
         if not chosen:
-            report[page.id] = {"skipped": f"{len(on_frame)} pages for {len(grids)} grids"}
+            report[page.id] = {"skipped": f"{len(on_frame)} pages for {len(grids)} grids", "seals": here}
+            if here:
+                pages.append(page)
             continue
         kept_here = []
-        report[page.id] = {}
+        report[page.id] = {"seals": here} if here else {}
         for key, name in sorted(chosen.items()):
             result = tried[key][name]
             report[page.id][str(key)] = {"grid": name, **result.counts}
             kept_here += [p for p in result.pairs if p.kept]
-        if not kept_here:
-            continue
-        pages.append(page)
+        if kept_here or here:
+            pages.append(page)
         by_entry: dict[str, list[hdic.Pair]] = defaultdict(list)
         for pair in kept_here:
             by_entry[pair.entry.entry_id].append(pair)
@@ -153,7 +195,8 @@ def main() -> int:
                 if not pair.glyph.readable:
                     continue  # HDIC does not name this character
                 code = hdic.encoded(pair.glyph)
-                meta = {"segmentation": described, "classifier_top5": pair.top5, "classifier_agrees": pair.verdict}
+                meta = {"segmentation": described, "classifier_top5": pair.top5, "classifier_agrees": pair.classifier,
+                        "ndl_reading": pair.second, "read": pair.verdict}
                 if pair.glyph.standard:
                     meta["standard_form"] = pair.glyph.standard
                 units.append(Unit(
@@ -176,9 +219,9 @@ def main() -> int:
     if args.report:
         args.report.write_text(json.dumps({"unmapped": dict(unmapped), "conflicting": dict(conflicting), "pages": report},
                                           ensure_ascii=False, indent=1))
-    verdicts = [u.meta["classifier_agrees"] for u in units]
+    verdicts = [u.meta.get("read") for u in units if not u.id.endswith(":seal")]
     print(json.dumps({"frames": len(by_frame), "pages": len(pages), "entries": len(lines), "units": len(units),
-                      "classifier_agrees": verdicts.count(True), "unverifiable": verdicts.count(None),
+                      "seals": len(units) - len(verdicts), "read": verdicts.count(True), "unread": verdicts.count(None),
                       "unmapped_entries": sum(unmapped.values()), "conflicting_entries": sum(conflicting.values())},
                      ensure_ascii=False))
     return 0

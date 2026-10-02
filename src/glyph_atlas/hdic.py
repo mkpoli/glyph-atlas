@@ -7,8 +7,10 @@ and frames are read and the `Layout` of its pages:
 
 - KRM, 観智院本類聚名義抄: eight columns of four tiers, each tier opening with a headword
   (`read_krm`). A frame of the facsimile (貴重図書複製会, 1937) shows two pages of the 天理 edition.
-- KTB, 高山寺本篆隷萬象名義: six columns per half-leaf, each holding the upper and the lower entry
-  of the manuscript one after another (`read_ktb`), on the 崇文叢書 edition.
+- KTB, 高山寺本篆隷萬象名義: six columns per half-leaf, each holding an upper and a lower entry
+  (`read_ktb` takes the first of a line's large headwords as the upper), on the 崇文叢書 edition.
+  The first books write a seal-script form above each headword; the later ones write the gloss in
+  characters as large as the headword, so a headword there is told by its place, not its size.
 - TSJ, 天治本新撰字鏡: eight columns per half-leaf, entries running on down each column
   (`read_tsj`), on the 六合館 edition.
 
@@ -21,15 +23,17 @@ character Unicode lacks, and `■` is one nobody could read.
 `page_grids` and `place` find the headword boxes among a frame's detected character boxes:
 
 1. Headword-sized boxes (`BIG`, relative to the page's median box) are kept; a thin tall box is a
-   repetition mark (`is_mark`).
+   repetition mark (`is_mark`). Where the gloss is as large as the headwords, every character is
+   kept and a headword is told by its place, the head of its tier (`Layout.heads`).
 2. The right page is anchored on the frame's rightmost column of headwords and the left page on
    its leftmost, since the gutter between them may be as narrow as a column or several wide. `fit`
    finds each page's column pitch, and for a tiered layout the tiers over its headwords' tops, their
-   pitch held to `TIER_PITCH` times the column pitch. A grid stands only when enough of its columns
+   pitch held to `Layout.tier_pitch` times the column pitch. A grid stands only when enough of its columns
    (`Layout.held`) and every tier line hold headwords. A layout of one tier takes each column whole.
 3. In each cell (a column, or one tier of it), `align_cell` pairs the cell's headword glyphs, in HDIC
    order, with its candidate boxes top to bottom by least cost, the classifier's five best classes
-   deciding whether a glyph and a box agree (`glossary.agrees`). Glyphs and boxes may go unpaired:
+   deciding whether a glyph and a box agree (`glossary.agrees`), and a second reader with a larger
+   alphabet confirming where the classifier cannot. Glyphs and boxes may go unpaired:
    a mark the detector missed, a large gloss character.
 
 A pair is kept when the classifier reads the glyph there. A glyph the classifier cannot judge (a
@@ -38,7 +42,8 @@ its place admits no doubt: every written glyph of the cell sits on its own headw
 left over, and another glyph of the cell was read where it was placed or the cell's first box stands
 at the tier line; or the glyph is the cell's first headword character on the cell's first box, at
 the tier line; or the glyphs before and after it in the cell were both read, on the boxes either
-side of its own. A pair the classifier refuses is left out, and a page on which more than
+side of its own. On a page whose tiers open with seal forms, a tier where none was seen keeps only
+a head the classifier reads. A pair the classifier refuses is left out, and a page on which more than
 `REFUSED_SHARE` of the judged pairs are refused is left out whole, since that is how a misfitted grid
 looks. The caller tries a frame's pages on its two grids, one page to a grid (`assign_pages`).
 The label always comes from HDIC, never the classifier.
@@ -71,22 +76,42 @@ BIG = (1.5, 3.5)
 REFUSED_SHARE = 0.25
 #: How far from its tier line a cell's first box may stand and still anchor the cell, in tier pitches.
 ANCHOR = 0.2
-#: The tier pitch, as a range of multiples of the column pitch. Half or twice the true spacing fits
-#: a page's headword tops almost as well as the spacing itself, and falls outside this range.
-TIER_PITCH = (2.5, 4.5)
 #: Least number of headword tops on each tier line for the tiers to stand.
 TIER_HELD = 2
+#: Least longer side of a box that is a character, not a speck, in multiples of the page's median box.
+INK = 0.6
+#: Least gap above the first box of an entry in its column, in multiples of the page's median box.
+ENTRY_GAP = 1.0
 
 _STANDARD = re.compile(r"[（(]([^）)]*)[）)]")
 
 
 @dataclass(frozen=True)
 class Layout:
-    """The grid of a dictionary's pages: columns, tiers per column, and how many columns must hold a headword."""
+    """The grid of a dictionary's pages and how a headword is told on them.
+
+    `columns` and `tiers` per page, `held` the least number of columns that must hold a headword for
+    a grid to stand, and `tier_pitch` the tier spacing as a range of multiples of the column pitch.
+    With `heads` `"large"`, a headword is a box larger than the gloss around it. With `"tier"`, it
+    is the first character of its tier, whatever its size, and the tiers are fitted to where the
+    entries of each column begin; when the first two boxes of a tier are both large, the first is a
+    seal-script form written above the headword and the headword is the second. With `centred`, a
+    headword's centre lies within that share of the column pitch of the column's axis, where a gloss
+    written in two lines stands to either side. With `counted`, a cell whose written glyphs and
+    candidate boxes are as many as each other vouches for its pairing by that count alone. With
+    `whole`, a candidate's shorter side is at least that share of the shorter side of the page's
+    median headword, and its longer side at most the inverse share of the longer: a headword the
+    detector cut in two leaves a narrow or a flat piece, and one it joined to its gloss a tall box.
+    """
 
     columns: int
     tiers: int
     held: int
+    tier_pitch: tuple[float, float] = (2.5, 4.5)
+    heads: str = "large"
+    centred: float | None = None
+    counted: bool = False
+    whole: float | None = None
 
 
 @dataclass(frozen=True)
@@ -207,21 +232,53 @@ KTB_WRITTEN = frozenset({"Regular", "Regular_seal"})
 
 def read_ktb(clone: Path) -> tuple[list[Entry], Frames, set[tuple[str, Any]]]:
     """KTB's large headwords placed by `TBID` (half-leaf, line, number), and its frame table."""
-    entries = []
+    lines: dict[tuple[str, int], list[tuple[re.Match, dict[str, str]]]] = {}
     for row in read_tsv(clone / "KTB.tsv"):
         found = _KTB_ID.match(row["TBID"])
-        if not found or row["Entry_type"] not in KTB_WRITTEN:
-            continue
-        half = f"{found['book']}_{found['leaf']}_{found['side']}"
-        entries.append(Entry(
-            entry_id=row["TBID"], volume=found["book"], page=half, line=int(found["line"]), segment=1,
-            order=int(found["number"]), location=row["TBID"], glyphs=headword(row["Entry"], ""),
-            meta={"entry": row["Entry"], "entry_type": row["Entry_type"], "radical": row["TB_radical"],
-                  "volume_radical": row["TB_vol_radical"], "definition": row["TB_def"],
-                  "remarks": row["TB_remarks"], "syid": row["SYID"]}))
+        if found and row["Entry_type"] in KTB_WRITTEN:
+            half = f"{found['book']}_{found['leaf']}_{found['side']}"
+            lines.setdefault((half, int(found["line"])), []).append((found, row))
+    entries = []
+    for (half, line), members in lines.items():
+        # The manuscript writes an upper and a lower entry in each line, in this order.
+        for segment, (found, row) in enumerate(sorted(members, key=lambda m: int(m[0]["number"])), start=1):
+            entries.append(Entry(
+                entry_id=row["TBID"], volume=found["book"], page=half, line=line, segment=segment,
+                order=int(found["number"]), location=row["TBID"], glyphs=headword(row["Entry"], ""),
+                meta={"entry": row["Entry"], "entry_type": row["Entry_type"], "radical": row["TB_radical"],
+                      "volume_radical": row["TB_vol_radical"], "definition": row["TB_def"],
+                      "remarks": row["TB_remarks"], "syid": row["SYID"]}))
     frames, conflicts = frame_table([(leaf.split("_")[0], leaf, row["NDL_url"])
                                      for row in read_tsv(clone / "KTB_ndl.txt") if (leaf := row["Book_leaf"])])
     return entries, frames, conflicts
+
+
+@dataclass(frozen=True)
+class Seal:
+    """A seal-script form HDIC boxed on the 崇文叢書 edition: the entry it heads, where it is, what it reads."""
+
+    entry_id: str
+    pid: str
+    frame: int
+    box: Box
+    entry: str
+
+
+def read_ktb_seals(clone: Path) -> list[Seal]:
+    """`KTB_ndl_Seal.tsv`: each seal form's box on its NDL frame, with the headword of the entry it heads.
+
+    `TB_Seal_ID` is T followed by the entry's `TBID`; the image base ends in R and the frame number.
+    """
+    headwords = {row["TBID"]: row["Entry"] for row in read_tsv(clone / "KTB.tsv")}
+    seals = []
+    for row in read_tsv(clone / "KTB_ndl_Seal.tsv"):
+        found = re.search(r"/iiif/(\d+)/R(\d+)$", row["NDL_IIIF_Image_API_Base_URI"])
+        entry_id = row["TB_Seal_ID"].removeprefix("T")
+        if not found or entry_id not in headwords:
+            continue
+        box = Box(x=int(row["x"]), y=int(row["y"]), w=int(row["width"]), h=int(row["height"]))
+        seals.append(Seal(entry_id, found.group(1), int(found.group(2)), box, headwords[entry_id]))
+    return seals
 
 
 # ------------------------------------------------------------------ TSJ
@@ -263,12 +320,20 @@ DICTIONARIES = {
     # 天理 pages: the even page of an opening is on the right.
     "krm": Dictionary("krm", read_krm, Layout(columns=8, tiers=4, held=6), lambda page: page % 2 == 0),
     # Half-leaves: an opening shows a verso (B, b) on the right and the next recto on the left.
-    "ktb": Dictionary("ktb", read_ktb, Layout(columns=6, tiers=1, held=4), lambda page: page.endswith("B")),
-    "tsj": Dictionary("tsj", read_tsj, Layout(columns=8, tiers=1, held=6), lambda page: page.endswith("b")),
+    "ktb": Dictionary("ktb", read_ktb, Layout(columns=6, tiers=2, held=4, tier_pitch=(4.5, 7.5), heads="tier"),
+                      lambda page: page.endswith("B")),
+    "tsj": Dictionary("tsj", read_tsj, Layout(columns=8, tiers=1, held=6, centred=0.2, counted=True, whole=0.7), lambda page: page.endswith("b")),
 }
 
 
 # ------------------------------------------------------------------ geometry
+def overlap(first: Box, second: Box) -> float:
+    """The share of the smaller box that the two boxes have in common."""
+    w = min(first.x + first.w, second.x + second.w) - max(first.x, second.x)
+    h = min(first.y + first.h, second.y + second.h) - max(first.y, second.y)
+    return max(0, w) * max(0, h) / max(1, min(first.w * first.h, second.w * second.h))
+
+
 def side(boxes: Sequence[Box]) -> float:
     """The page's typical box side: the median of the boxes' longer sides."""
     return float(np.median([max(b.w, b.h) for b in boxes])) if boxes else 0.0
@@ -322,13 +387,21 @@ class Grid:
         return min(self.columns) - self.pitch / 2 <= x < max(self.columns) + self.pitch / 2
 
 
-def edge_columns(boxes: Sequence[Box], unit: float) -> tuple[float, float] | None:
-    """The x centres of the rightmost and the leftmost column of headwords on a frame.
+def heads_of(boxes: Sequence[Box], unit: float, layout: Layout) -> list[Box]:
+    """The boxes a page's columns and tiers are fitted to: its large boxes, or with `heads` `"tier"`
+    every box large enough to be a character."""
+    if layout.heads == "tier":
+        return [b for b in boxes if max(b.w, b.h) >= INK * unit]
+    return [b for b in boxes if is_big(b, unit)]
 
-    Headword centres within `unit` of each other form a column; a column needs three headwords, so
-    that a stray box at the plate's edge or on the ruler does not count.
+
+def edge_columns(heads: Sequence[Box], unit: float) -> tuple[float, float] | None:
+    """The x centres of the rightmost and the leftmost column of a frame's heads.
+
+    Centres within `unit` of each other form a column; a column needs three boxes, so that a stray
+    box at the plate's edge or on the ruler does not count.
     """
-    xs = sorted(b.x + b.w / 2 for b in boxes if is_big(b, unit))
+    xs = sorted(b.x + b.w / 2 for b in heads)
     groups: list[list[float]] = []
     for x in xs:
         if groups and x - groups[-1][-1] < unit:
@@ -339,6 +412,15 @@ def edge_columns(boxes: Sequence[Box], unit: float) -> tuple[float, float] | Non
     return (columns[-1], columns[0]) if columns else None
 
 
+def entry_tops(heads: Sequence[Box], columns: Sequence[float], pitch: float, unit: float) -> list[float]:
+    """The tops of the boxes that begin an entry: the first box of a column, or one with a gap above it."""
+    tops = []
+    for x in columns:
+        column = sorted((b for b in heads if abs(b.x + b.w / 2 - x) < 0.45 * pitch), key=lambda b: b.y)
+        tops += [b.y for k, b in enumerate(column) if k == 0 or b.y - (column[k - 1].y + column[k - 1].h) > ENTRY_GAP * unit]
+    return tops
+
+
 def page_grids(boxes: Sequence[Box], unit: float, layout: Layout) -> dict[str, Grid]:
     """The grids of the two pages of a frame: `right` counted from the rightmost column, `left` ending at the leftmost.
 
@@ -346,11 +428,11 @@ def page_grids(boxes: Sequence[Box], unit: float, layout: Layout) -> dict[str, G
     its outer column and only its pitch is fitted. With one tier, the cell runs from the highest
     headword top on the page to the lowest bottom.
     """
-    edges = edge_columns(boxes, unit)
+    heads = heads_of(boxes, unit, layout)
+    edges = edge_columns(heads, unit)
     if edges is None:
         return {}
-    big = [b for b in boxes if is_big(b, unit)]
-    centres = [b.x + b.w / 2 for b in big]
+    centres = [b.x + b.w / 2 for b in heads]
     grids = {}
     for name, anchor, direction in (("right", edges[0], -1), ("left", edges[1], 1)):
         _, start, pitch = fit(centres, layout.columns, 2.2 * unit, 4.5 * unit, 0.25, anchor=anchor, direction=direction)
@@ -359,17 +441,18 @@ def page_grids(boxes: Sequence[Box], unit: float, layout: Layout) -> dict[str, G
         columns = [start + direction * k * pitch for k in range(layout.columns)]
         if name == "left":
             columns = columns[::-1]  # line 1 is the page's rightmost column
-        inside = [b for b in big if Grid(tuple(columns), pitch, (), 0.0).holds(b)]
+        inside = [b for b in heads if Grid(tuple(columns), pitch, (), 0.0).holds(b)]
         held = sum(1 for x in columns if any(abs(c - x) < pitch / 4 for c in centres))
         if held < layout.held or not inside:
             continue
-        tops = [b.y for b in inside]
         if layout.tiers == 1:
             # `cell_boxes` opens a cell a quarter of its height above the tier line.
-            top, bottom = min(tops) - unit, max(b.y + b.h for b in inside) + unit
+            top, bottom = min(b.y for b in inside) - unit, max(b.y + b.h for b in inside) + unit
             grids[name] = Grid(tuple(columns), pitch, (top + 0.25 * (bottom - top),), bottom - top)
             continue
-        _, top, tier_pitch = fit(tops, layout.tiers, TIER_PITCH[0] * pitch, TIER_PITCH[1] * pitch, 0.1)
+        tops = entry_tops(inside, columns, pitch, unit) if layout.heads == "tier" else [b.y for b in inside]
+        low, high = layout.tier_pitch
+        _, top, tier_pitch = fit(tops, layout.tiers, low * pitch, high * pitch, 0.1)
         if not tier_pitch:
             continue
         tiers = [top + k * tier_pitch for k in range(layout.tiers)]
@@ -379,24 +462,56 @@ def page_grids(boxes: Sequence[Box], unit: float, layout: Layout) -> dict[str, G
     return grids
 
 
-def cell_boxes(boxes: Sequence[Box], grid: Grid, line: int, segment: int, unit: float) -> list[Box]:
-    """The candidate headword boxes of a cell, top to bottom: headword-sized boxes and marks."""
+def cell_window(boxes: Sequence[Box], grid: Grid, line: int, segment: int) -> list[Box]:
+    """Every box of a cell, top to bottom. A cell opens a quarter of a tier above its tier line."""
     x = grid.columns[line - 1]
     top = grid.tiers[segment - 1] - 0.25 * grid.tier_pitch
-    return sorted((b for b in boxes if abs(b.x + b.w / 2 - x) < 0.45 * grid.pitch
-                   and top <= b.y < top + grid.tier_pitch and (is_big(b, unit) or is_mark(b, unit))),
+    return sorted((b for b in boxes if abs(b.x + b.w / 2 - x) < 0.45 * grid.pitch and top <= b.y < top + grid.tier_pitch),
                   key=lambda b: b.y)
+
+
+def sealed(cell: Sequence[Box], unit: float) -> bool:
+    """Whether a tier opens with a seal form: its first two characters both large."""
+    return len(cell) > 1 and is_big(cell[0], unit) and is_big(cell[1], unit)
+
+
+def cell_boxes(boxes: Sequence[Box], grid: Grid, line: int, segment: int, unit: float, layout: Layout,
+               headword: tuple[float, float] = (0.0, 0.0)) -> list[Box]:
+    """The candidate headword boxes of a cell, top to bottom.
+
+    With `heads` `"large"`, its headword-sized boxes and marks. With `"tier"`, its one head: the
+    first character, or the second when the tier opens with a seal form.
+    """
+    cell = cell_window(boxes, grid, line, segment)
+    if layout.heads == "tier":
+        cell = [b for b in cell if max(b.w, b.h) >= INK * unit]
+        if not cell:
+            return []
+        return [cell[1]] if sealed(cell, unit) else [cell[0]]
+    if layout.centred is not None:
+        x = grid.columns[line - 1]
+        cell = [b for b in cell if abs(b.x + b.w / 2 - x) <= layout.centred * grid.pitch]
+    if layout.whole is not None and all(headword):
+        short, long = headword
+        cell = [b for b in cell if not is_big(b, unit)
+                or (min(b.w, b.h) >= layout.whole * short and max(b.w, b.h) <= long / layout.whole)]
+    return [b for b in cell if is_big(b, unit) or is_mark(b, unit)]
 
 
 # ------------------------------------------------------------------ pairing
 @dataclass
 class Pair:
+    """A glyph on a box. `verdict` is whether it was read there, by the classifier's five best classes
+    (`classifier`) or by the second reader (`second`), None when neither could judge it."""
+
     entry: Entry
     slot: int
     glyph: Glyph
     box: Box
     top5: list[str]
     verdict: bool | None
+    classifier: bool | None = None
+    second: str | None = None
     kept: bool = False
 
 
@@ -451,22 +566,33 @@ def align_cell(glyphs: Sequence[Glyph], boxes: Sequence[Box], verdicts: Callable
 
 
 def place(entries: Sequence[Entry], boxes: Sequence[Box], grid: Grid, unit: float,
-          rank: Callable[[Box], list[str]], known: set[str]) -> Placement:
+          rank: Callable[[Box], list[str]], known: set[str], layout: Layout,
+          second: Callable[[Box], str | None] | None = None) -> Placement:
     """Place one page's headwords among a frame's detected boxes, on the grid of the page it stands on.
 
-    `rank(box)` is the classifier's five best classes for a box, `known` all its classes.
+    `rank(box)` is the classifier's five best classes for a box, `known` all its classes. `second(box)`,
+    when given, is another reader's text for the box: a glyph it reads as written, or as its standard
+    form, counts as read there. It only ever confirms; its reading something else refuses nothing.
     """
     result = Placement()
     cells: dict[tuple[int, int], list[Entry]] = {}
     for entry in entries:
         cells.setdefault((entry.line, entry.segment), []).append(entry)
+    # A page whose tiers open with seal forms: where no seal form was seen above a head, the head may
+    # be a seal form the detector cut small, so only a head the classifier reads is kept there.
+    windows = {(line, segment): [b for b in cell_window(boxes, grid, line, segment) if max(b.w, b.h) >= INK * unit]
+               for line in range(1, len(grid.columns) + 1) for segment in range(1, len(grid.tiers) + 1)}
+    seal_page = layout.heads == "tier" and any(sealed(cell, unit) for cell in windows.values())
+    heads = [b for b in boxes if grid.holds(b) and is_big(b, unit)]
+    headword = ((float(np.median([min(b.w, b.h) for b in heads])), float(np.median([max(b.w, b.h) for b in heads])))
+                if heads else (0.0, 0.0))
     for (line, segment), members in sorted(cells.items()):
         if line > len(grid.columns) or segment > len(grid.tiers):
             result.count("off-grid")
             continue
         members.sort(key=lambda e: (e.order, e.location))
         slots = [(e, k, g) for e in members for k, g in enumerate(e.glyphs)]
-        candidates = cell_boxes(boxes, grid, line, segment, unit)
+        candidates = cell_boxes(boxes, grid, line, segment, unit, layout, headword)
         if not slots:
             continue
         if not candidates:
@@ -474,31 +600,42 @@ def place(entries: Sequence[Entry], boxes: Sequence[Box], grid: Grid, unit: floa
             continue
         ranked = [rank(b) for b in candidates]
         judged: dict[tuple[int, int], bool | None] = {}
+        readings: dict[int, str | None] = {}
+
+        def reading(j: int, candidates=candidates, readings=readings) -> str | None:
+            if j not in readings:
+                readings[j] = second(candidates[j]) if second else None
+            return readings[j]
 
         def verdict(i: int, j: int, ranked=ranked, slots=slots, judged=judged) -> bool | None:
             if (i, j) not in judged:
-                judged[(i, j)] = agrees(slots[i][2], ranked[j], known)
+                glyph = slots[i][2]
+                seen = agrees(glyph, ranked[j], known)
+                judged[(i, j)] = True if seen is not True and reading(j) in {glyph.text, glyph.standard} - {None} else seen
             return judged[(i, j)]
 
         marks = [is_mark(b, unit) for b in candidates]
         indexed = [(i, j) for i, j in align_cell([s[2] for s in slots], candidates, verdict, marks)
                    if slots[i][2].text != MARK and not marks[j]]
-        pairs = [Pair(slots[i][0], slots[i][1], slots[i][2], candidates[j], ranked[j], verdict(i, j)) for i, j in indexed]
+        pairs = [Pair(slots[i][0], slots[i][1], slots[i][2], candidates[j], ranked[j], verdict(i, j),
+                      agrees(slots[i][2], ranked[j], known), readings.get(j)) for i, j in indexed]
         refused = any(p.verdict is False for p in pairs)
         written = [k for k, s in enumerate(slots) if s[2].text != MARK]
         # Every written glyph on its own headword box, in order: no other pairing exists to doubt.
         complete = len(pairs) == len(written) == sum(1 for mark in marks if not mark)
         read = any(p.verdict for p in pairs)
-        on_line = abs(candidates[0].y - grid.tiers[segment - 1]) <= ANCHOR * grid.tier_pitch
+        # Where the cell begins: its first box, a seal form above the headword included.
+        first_box = cell_window(boxes, grid, line, segment)[0]
+        on_line = abs(first_box.y - grid.tiers[segment - 1]) <= ANCHOR * grid.tier_pitch
         for n, (pair, (i, j)) in enumerate(zip(pairs, indexed, strict=True)):
             if pair.verdict:
                 pair.kept = True
-            elif pair.verdict is None and not refused:
+            elif pair.verdict is None and not refused and not (seal_page and not sealed(windows[(line, segment)], unit)):
                 at_line = bool(written) and i == written[0] and j == 0 and on_line
                 # Read on both sides, on the boxes next to its own.
                 held = (0 < n < len(pairs) - 1 and pairs[n - 1].verdict and pairs[n + 1].verdict
                         and indexed[n - 1][1] == j - 1 and indexed[n + 1][1] == j + 1)
-                pair.kept = bool((complete and (read or on_line)) or at_line or held)
+                pair.kept = bool((complete and (read or on_line or layout.counted)) or at_line or held)
             result.count("kept" if pair.kept else "refused" if pair.verdict is False else "unanchored")
         result.count("unpaired", len(written) - len(pairs))
         result.pairs += pairs
@@ -544,7 +681,7 @@ def document_of(dictionary: Dictionary, pid: str, manifest: dict, source: dict) 
         holder=images["holder"], attribution=images["attribution"], evidence=manifest_url)
     text_rights = Rights(licence=Licence(source["licence"]), holder=source["publisher"],
                          attribution=source["attribution"], evidence=source["licence_evidence"])
-    dating = source["dating"]
+    datings = source["dating"] if isinstance(source["dating"], list) else [source["dating"]]
     label = next(v["label"] for v in images["volumes"] if str(v["pid"]) == pid)
     return Document(
         id=f"hdic-{dictionary.name}:{pid}",
@@ -556,8 +693,8 @@ def document_of(dictionary: Dictionary, pid: str, manifest: dict, source: dict) 
         origin="japan",
         genre=["dictionary"],
         text_register=Register(source.get("register", "mixed")),
-        dating=[Dating(literal=dating["literal"], start=dating["start"], end=dating["end"],
-                       kind=dating.get("kind", "unknown"), evidence=dating["evidence"])],
+        dating=[Dating(literal=str(d["literal"]), start=d["start"], end=d["end"], kind=d.get("kind", "unknown"),
+                       evidence=d["evidence"]) for d in datings],
         image_rights=image_rights,
         text_rights=text_rights,
         meta={"volume": label, "facsimile": {"title": images["title"], "publisher": images["publisher"],
