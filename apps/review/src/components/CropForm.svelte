@@ -35,7 +35,7 @@
   const sections = $derived([
     ['grapheme', t('chips.grapheme'), listed.members.slice(BAR)],
     ['variants', t('chips.variants'), listed.variants],
-    ['derived', t('form.derived'), listed.derived],
+    ['derived', t('chips.derived'), listed.derived],
   ].map(([key, title, items]) => [key, title, items.filter(matches)]).filter(([, , items]) => items.length))
   function choose(char) { onchoose(char === current ? null : char) }
   function add(item) {
