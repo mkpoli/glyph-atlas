@@ -1939,7 +1939,7 @@ def _machine_child(data: dict[str, Any], entry: dict[str, Any], parent: Unit, ev
     from .. import refs
     from ..unit_scope import character_count, encoded_text
 
-    text = encoded_text(data.get("unicode")) or ""
+    text = encoded_text(data.get("unicode")) or entry.get("text_source") or ""
     single = character_count(text) == 1
     script = entry.get("script") or (refs.script_of(text) if single else Script.UNKNOWN).value
     meta = {key: value for key, value in (data.get("meta") or {}).items()

@@ -688,7 +688,8 @@ def cached_image(sha256: str) -> Path | None:
 def candidates_for(unit: Unit) -> dict[str, Any]:
     """The characters that share a unit's kana, with 字母, grapheme, reference glyphs and scores.
 
-    The kana is the one the unit's written character stands for, or else its transcription. The row
+    The kana is the one the unit's written character stands for, else that character itself, else the
+    transcription. The row
     names the unit's own character first, when the table holds it, so that a reviewer sees the letter
     the record carries even where no kana reaches it. The list is `refs.forms`, which is every
     character written for the kana: the ordinary kana, every hentaigana of the 音価 and the historic
@@ -698,7 +699,8 @@ def candidates_for(unit: Unit) -> dict[str, Any]:
     """
     from .atlas import identity_text, kana_of
 
-    kana = (kana_of(identity_text(unit.unicode)) if unit.unicode else None) or unit.text_source or ""
+    written = identity_text(unit.unicode) if unit.unicode else ""
+    kana = (kana_of(written) if written else None) or written or unit.text_source or ""
     code_points = refs.forms(kana)
     scored = {candidate.unicode: candidate for candidate in unit.candidates}
     extras = [candidate.unicode for candidate in unit.candidates if candidate.unicode not in code_points]

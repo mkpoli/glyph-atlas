@@ -1051,3 +1051,14 @@ def test_a_page_with_text_and_no_boxes_is_not_reported_as_nothing_to_do(ainu_dat
         "one page of the two has a box, which is what says whether the witness can be reviewed"
     )
     assert document["lines"] == 1
+
+
+def test_candidates_follow_the_written_character_not_a_stale_transcription() -> None:
+    """A unit relabelled バ whose transcription still says イ is offered the forms of バ."""
+    from glyph_atlas.review.server import candidates_for
+    from glyph_atlas.schema import Unit
+
+    body = candidates_for(Unit(id="relabelled", unicode="U+30D0", text_source="イ"))
+    assert body["kana"] != "イ"
+    assert "U+30D0" in {entry["unicode"] for entry in body["candidates"]}
+    assert "U+30A4" not in {entry["unicode"] for entry in body["candidates"]}

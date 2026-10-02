@@ -27,7 +27,7 @@ from .. import refs
 from ..feedback import QUARANTINE_IMPLICIT_QUIZ_MATCH, normalize_export
 from ..schema import Box, ReviewState
 from ..split_proposals import Limits, propose_split
-from .atlas import identity_text, script_of_identity, single_character, transcription
+from .atlas import identity_text, script_of_identity, single_character
 from .characters import _source_digest, written_identity
 from .receipts import fingerprint
 from .store import SEEN, BadRequest, Conflict, ReviewRequest, Store
@@ -490,8 +490,7 @@ def repair_adjacent_labels(store: Store, *, limit=128, apply=False, engine=None)
     rows = [(u, rev) for u, rev in store.unit_snapshot()
             if u.active and u.id not in human and u.box and u.line_id
             and str(u.review) in ("machine", "rejected") and str(u.kind) == "char"
-            and not refs.ligature(u.unicode or "")
-            and written_identity(u) == transcription(u)]
+            and not refs.ligature(u.unicode or "")]
     random.Random(20260920).shuffle(rows)
     output = []
     for unit, revision in rows[:max(0, min(limit, 256))]:
