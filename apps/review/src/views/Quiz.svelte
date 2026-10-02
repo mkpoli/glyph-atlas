@@ -15,7 +15,10 @@
   import { issues, suggestsReading, isSingle, greetSuggestions, skipLabel, skipHint } from '../lib/issues.js'
   import { nextGrapheme, roundGraphemes, graphemeText, ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
   import { t, around, localize } from '../lib/i18n.svelte.js'
+  import { useSession } from '../lib/session.svelte.js'
   let { initialGrapheme = '', inspect } = $props()
+  // The browser's reviewer id, which a form marking and its undo name like every other save.
+  const session = useSession()
   let data = $state(null), items = $state([]), choices = $state({}), selected = $state({})
   let loaded = $state({}), failed = $state({}), suggestions = $state({}), contextSuggestions = $state({})
   // Crops the reader declined to judge: no choice, no request, not counted (see `skip`).
@@ -317,7 +320,7 @@
     try {
       for (let from = 0; from < crops.length; from += CORRECTION_BATCH) {
         const part = crops.slice(from, from + CORRECTION_BATCH), id = crypto.randomUUID()
-        const result = await request('/atlas/corrections', { id, client_id: clientId, character: form,
+        const result = await request('/atlas/corrections', { id, client_id: session.state.clientId, character: form,
           crops: part.map(i => ({ id: i.id, revision: i.revision, ...pixels(i) })) })
         const byId = Object.fromEntries((result.results ?? []).map(r => [r.target_id, r]))
         saved.push({ id, ids: part.filter(i => byId[i.id]).map(i => i.id) })
@@ -352,7 +355,7 @@
       // older ones to undo.
       while (left.length) {
         const batch = left.at(-1)
-        await request(`/atlas/corrections/${batch.id}/undo`, { client_id: clientId })
+        await request(`/atlas/corrections/${batch.id}/undo`, { client_id: session.state.clientId })
         left.pop()
         const now = Object.fromEntries(await Promise.all(batch.ids.map(async id => {
           const i = done.before[id]
