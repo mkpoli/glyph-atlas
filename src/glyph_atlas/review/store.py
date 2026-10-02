@@ -56,6 +56,7 @@ from ..schema import (
     Unit,
     UnitKind,
 )
+from . import ledger
 
 STORE_NAME = "review.sqlite"
 LOG_NAME = "reviews.jsonl"
@@ -1120,6 +1121,46 @@ class Store:
                 "skipped": skipped,
             }
 
+    # -- the assertion ledger ---------------------------------------------------------------------
+
+    def claim_submission(self, *, key: str, request: Any) -> dict[str, Any] | None:
+        """The response to a ledger submission saved before under `key`, with its slots as they are now."""
+        with self._lock, self._connection() as conn:
+            previous = ledger.previous(conn, key, ledger.canonical(request))
+            if previous is None:
+                return None
+            current = [ledger.current_row(row) for row in ledger.rows_for(conn, _response_keys(conn, previous))]
+        return {**previous, "current": current}
+
+    def write_claims(self, **claim: Any) -> dict[str, Any]:
+        """Record one claim in the ledger and resolve its slot (`ledger.write_claims`), in one transaction."""
+        with self._lock, self._connection() as conn, self._transaction(conn):
+            response = ledger.write_claims(conn, **claim)
+            current = [ledger.current_row(row) for row in ledger.rows_for(conn, _response_keys(conn, response))]
+        return {**response, "current": current}
+
+    def act_on_claim(self, **action: Any) -> dict[str, Any]:
+        """Accept, reject, retract or adjudicate one claim and resolve its slot (`ledger.act`)."""
+        with self._lock, self._connection() as conn, self._transaction(conn):
+            response = ledger.act(conn, **action)
+            current = [ledger.current_row(row) for row in ledger.rows_for(conn, _response_keys(conn, response))]
+        return {**response, "current": current}
+
+    def claims(self, subject: str, crop_version: str | None) -> dict[str, Any]:
+        """A subject's resolved slots that hold on `crop_version`, and its claims with their actions."""
+        with self._lock, self._connection() as conn:
+            return {"subject": subject, "resolver": ledger.RESOLVER, "current": ledger.current(conn, subject, crop_version),
+                    "history": ledger.history(conn, subject)}
+
+    def resolve_claims(self, version_of, subjects: Iterable[str] | None = None) -> int:
+        """Resolve the slots of `subjects` again, or every slot; `version_of` names each crop's current version."""
+        with self._lock, self._connection() as conn, self._transaction(conn):
+            if subjects is None:
+                return ledger.rebuild(conn, version_of)
+            keys = ledger.slots(conn, subjects)
+            ledger.resolve(conn, keys, version_of)
+            return len(keys)
+
     # -- the store's own storage -----------------------------------------------------------------
 
     @contextmanager
@@ -1145,6 +1186,7 @@ class Store:
 
     def _schema(self, conn: sqlite3.Connection) -> None:
         conn.executescript(_SCHEMA)
+        ledger.schema(conn)
 
     def _meta(self, conn: sqlite3.Connection, key: str) -> str | None:
         row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
@@ -1594,6 +1636,16 @@ class Store:
                 )
             self._set_meta(conn, "state_seq", str(state_seq))
             self._set_meta(conn, "replayed_at", datetime.now(UTC).isoformat(timespec="seconds"))
+
+
+def _response_keys(conn: sqlite3.Connection, response: dict[str, Any]) -> list[tuple[str, str, str, str]]:
+    """The slots a ledger write named, from the claims or actions it records."""
+    ids = response.get("assertions") or [row[0] for row in conn.execute(
+        "SELECT assertion FROM assertion_actions WHERE id IN (SELECT value FROM json_each(?))",
+        (json.dumps(response.get("actions", [])),))]
+    return [tuple(row) for row in conn.execute(
+        "SELECT DISTINCT subject,predicate,scope,slot FROM assertions WHERE id IN (SELECT value FROM json_each(?))",
+        (json.dumps(ids),))]
 
 
 def apply(directory: Path) -> dict[str, int]:

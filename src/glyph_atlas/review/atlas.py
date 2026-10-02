@@ -31,7 +31,7 @@ from .. import written_form as written_form_module
 from ..context import CONTEXT_REACH, reach
 from ..production import production_info
 from ..schema import Box, ReviewState, Script, Unit
-from . import quiz_shapes, quiz_suspects, status
+from . import ledger, quiz_shapes, quiz_suspects, status
 from .request_cache import file_stamp, memoize
 from .store import SEEN, WRITTEN_FORM, BadRequest, Conflict, ReviewRequest, Store
 
@@ -621,6 +621,41 @@ class StyleEdit(BaseModel):
     style: str = Field(min_length=1, max_length=64)
 
 
+class ClaimMember(BaseModel):
+    """One value of a claim: an entity it names, or a typed value, with its confidence."""
+
+    model_config = ConfigDict(extra="forbid")
+    object: str | None = Field(default=None, min_length=1, max_length=128)
+    value: str | None = Field(default=None, min_length=1, max_length=64)
+    confidence: float | None = None
+    confidence_scheme: str | None = Field(default=None, min_length=1, max_length=64)
+
+
+class ClaimEdit(BaseModel):
+    """A reviewer's claim about one crop, made on the evidence version they saw (`crop_version`). Several
+    values make one alternative set ("F or G")."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: UUID
+    client_id: str = Field(min_length=1, max_length=128)
+    subject: str = Field(min_length=1, max_length=512)
+    predicate: str = Field(min_length=1, max_length=64)
+    scope: str = Field(default="", max_length=128)
+    crop_version: str | None = Field(default=None, max_length=1024)
+    claims: list[ClaimMember] = Field(min_length=1, max_length=8)
+    method: str | None = Field(default=None, max_length=64)
+
+
+class ClaimAction(BaseModel):
+    """An accept, reject or retraction of one claim. An adjudication is the site's admins' to make."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: UUID
+    client_id: str = Field(min_length=1, max_length=128)
+    action: Literal["accept", "reject", "retract", "adjudicate"]
+    reason: str = Field(default="", max_length=500)
+
+
 class WrittenFormEdit(BaseModel):
     """What a reviewer says one crop's letterforms are written as: a character or a description, or
     `None` for the crop's own character. The revision and image are the ones the reviewer saw."""
@@ -1010,6 +1045,68 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         # The pixels a claim made in this inspector is about, named as the Worker names them.
         result["crop_version"] = evidence.record_version(result)
         return result
+
+    def crop_now(subject: str) -> str | None:
+        """A crop's current evidence version: a unit of this dataset, or a corpus glyph; None for neither."""
+        records = store.unit_snapshot(subject)
+        if records:
+            unit = records[0][0]
+            source = image_source(unit) if unit.active else None
+            return evidence.crop_version(unit.id, source[0].stem if source else None, unit.box) if source else None
+        if corpus_reviews is not None:
+            try:
+                return evidence.record_version(corpus_reviews.source(subject))
+            except HTTPException:
+                return None
+        return None
+
+    def ledger_call(write, **arguments):
+        try:
+            return write(**arguments)
+        except ledger.LedgerError as error:
+            raise HTTPException(error.status, str(error)) from error
+
+    @api.post("/atlas/claims")
+    def make_claim(edit: ClaimEdit) -> dict:
+        """Record a claim about one crop, as the Worker's `/atlas/claims` does, and return its slot.
+
+        The crop is a unit of this dataset or a corpus glyph, and the claim names the evidence version
+        the reviewer saw; one made after the crop was recut is refused. A retry answers with the first
+        response, and the same id sent with anything else is refused.
+        """
+        key, request = f"{edit.client_id}:{edit.id}", edit.model_dump(mode="json")
+        previous = ledger_call(store.claim_submission, key=key, request=request)
+        if previous is not None:
+            return previous
+        spec = ledger.PREDICATES.get(edit.predicate)
+        if spec is None:
+            raise HTTPException(422, f"Unknown predicate {edit.predicate!r}.")
+        if spec["subject"] != "crop":
+            raise HTTPException(422, f"{edit.predicate} has no subject this service can check yet.")
+        version = crop_now(edit.subject)
+        if version is None:
+            raise HTTPException(404, "This crop is not in the collection, or has no image to make a claim about.")
+        if edit.crop_version != version:
+            raise HTTPException(409, "This crop was cut again. Reload it.")
+        members = [ledger.Claim(object=m.object, value=m.value, confidence=m.confidence, confidence_scheme=m.confidence_scheme)
+                   for m in edit.claims]
+        return ledger_call(store.write_claims, key=key, actor=edit.client_id, request=request, subject=edit.subject,
+                           predicate=edit.predicate, scope=edit.scope, claims=members, crop_version=version, method=edit.method)
+
+    @api.post("/atlas/claims/{assertion}/actions")
+    def act_on_claim(assertion: str, edit: ClaimAction) -> dict:
+        """Accept, reject or retract one claim, and return its slot as it now resolves."""
+        key, request = f"{edit.client_id}:{edit.id}", {"target": assertion, "input": edit.model_dump(mode="json")}
+        previous = ledger_call(store.claim_submission, key=key, request=request)
+        if previous is not None:
+            return previous
+        return ledger_call(store.act_on_claim, key=key, actor=edit.client_id, request=request, target=assertion,
+                           action=edit.action, reason=edit.reason, version_of=crop_now)
+
+    @api.get("/atlas/claims")
+    def claims_of(subject: Annotated[str, Query(min_length=1, max_length=512)]) -> dict:
+        """A subject's resolved slots on its current version, and every claim made about it."""
+        return store.claims(subject, crop_now(subject))
 
     @api.get("/atlas/characters/{unit_id}/image")
     def crop(unit_id: str, revision: int, context: bool = False,
