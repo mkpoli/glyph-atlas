@@ -77,9 +77,20 @@ try {
   await browser.waitFor(`document.querySelector(".target-character").innerText === ${JSON.stringify(third)}`)
   console.log(`ok   Next deals ${third} in a new entry, and Back returns to ${second}`)
 
+  // The header's Quick Review link picks a grapheme again, and the address names the round it deals.
+  await browser.evaluate('document.querySelector(".review-link").click()')
+  await browser.waitFor('location.pathname.startsWith("/en/review/")', 30000); await settle()
+  const picked = await target()
+  assert(await here() === `/en/review/${keyOf(picked)}?production=not:printed/type`, `the header link's round is addressed (${await here()}, ${picked})`)
+  assert(await browser.evaluate('document.querySelector(".review-link").classList.contains("current")'), 'the header marks Quick Review')
+  console.log(`ok   the header link deals ${picked} and addresses it`)
+  await browser.evaluate('history.back()'); await settle()
+  await browser.waitFor(`document.querySelector(".target-character").innerText === ${JSON.stringify(third)}`)
+
   // A reload deals the round the address names; Back from there deals the entry's round again.
   await browser.send('Page.reload'); await settle()
   assert(await target() === third && await material() === 'unknown' && await here() === `/en/review/${keyOf(third)}?production=unknown`, `a reload keeps the round (${await here()})`)
+  assert(await browser.evaluate('document.querySelector(".review-link").classList.contains("current")'), 'the header marks Quick Review on a round\'s address')
   await browser.evaluate('history.back()'); await settle()
   await browser.waitFor(`location.pathname === "/en/review/${keyOf(second)}"`)
   assert(await target() === second && await here() === `/en/review/${keyOf(second)}?production=unknown`, `Back after a reload deals the earlier round (${await here()}, ${await target()})`)
