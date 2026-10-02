@@ -92,6 +92,23 @@ try {
   assert(written.find(e => e.target_id === id && e.field === 'review')?.new === 'reviewed', 'the redrawn crop is not reviewed')
   console.log(`PASS bad crop redrawn with a handle, a touch and the arrows, saved as ${JSON.stringify(recorded)}`)
 
+  // On the site a saved box waits for the next publication to cut it: the crop says so, and its box
+  // shows what the new cut will be. The fixture's service cuts at once, so the site's answer is played.
+  const record = await (await fetch(`${service.base}/atlas/characters/${encodeURIComponent(id)}`)).json()
+  const pending = { ...record, box_pending: true }
+  await browser.send('Fetch.enable', { patterns: [{ urlPattern: `*/atlas/characters/${encodeURIComponent(id).replaceAll('%', '%25')}` }, { urlPattern: `*/atlas/characters/${encodeURIComponent(id)}` }] })
+  browser.listeners.push(m => { if (m.method === 'Fetch.requestPaused') browser.send('Fetch.fulfillRequest', {
+    requestId: m.params.requestId, responseCode: 200, responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
+    body: Buffer.from(JSON.stringify(pending)).toString('base64') }) })
+  // Opened from its character's gallery, the inspector reads the crop in the browser, where the answer
+  // above is played.
+  await browser.goto(`${service.base}/en/character/${units(config.directory)[id].unicode}`, { waitFor: `!!document.querySelector('[data-unit="${id}"]')`, timeout: 90000 })
+  await browser.evaluate(`document.querySelector('[data-unit="${id}"]').click()`)
+  await browser.waitFor(`document.querySelector('dialog[open] .state-pill')?.textContent === 'Box corrected, awaiting re-cut'`, 30000)
+  assert(await browser.evaluate('!!document.querySelector("dialog[open] .crop-box .crop-preview")'), 'a box awaiting its cut is not shown')
+  await browser.screenshot(join(screenshots, 'recrop-pending-light.png'))
+  console.log('PASS a saved box awaiting its cut is named and shown')
+
   assert(!errors.length, 'page errors: ' + errors.join('; '))
   console.log('PASS crop adjust')
 } finally {

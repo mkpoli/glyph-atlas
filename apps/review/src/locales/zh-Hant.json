@@ -745,5 +745,6 @@
   "form.add": "新增字形",
   "script.hentaigana": "變體假名",
   "character.crop.keys": "拖曳框或控制點 · 方向鍵移動 · Shift+方向鍵調整大小",
-  "quiz.keyboardHint.forms": "1–0字形"
+  "quiz.keyboardHint.forms": "1–0字形",
+  "character.crop.pending": "裁切已更正，待重新裁切"
 }

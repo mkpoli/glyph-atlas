@@ -726,5 +726,6 @@
   "form.add": "字形 追加",
   "script.hentaigana": "헨타이가나",
   "character.crop.keys": "상자나 손잡이를 끌기 · 화살표로 移動 · Shift+화살표로 크기 調整",
-  "quiz.keyboardHint.forms": "1–0 字形"
+  "quiz.keyboardHint.forms": "1–0 字形",
+  "character.crop.pending": "크롭 修正됨 · 다시 자르기 待機"
 }

@@ -744,5 +744,6 @@
   "form.add": "增形",
   "script.hentaigana": "變體假名",
   "character.crop.keys": "曳框或角 · 矢以移 · Shift+矢以縮放",
-  "quiz.keyboardHint.forms": "1–0形"
+  "quiz.keyboardHint.forms": "1–0形",
+  "character.crop.pending": "截已正，待再截"
 }
