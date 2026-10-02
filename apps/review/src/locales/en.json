@@ -778,5 +778,7 @@
   "ranking.anonymous": "Anonymous",
   "ranking.empty": "Nobody has decided anything yet.",
   "ranking.total.one": "{count} decision",
-  "ranking.total.other": "{count} decisions"
+  "ranking.total.other": "{count} decisions",
+  "history.group.count.one": "{count} decision",
+  "history.group.count.other": "{count} decisions"
 }

@@ -288,6 +288,8 @@
   "history.decision.unsure": "㐌𠬃過位空𠓑",
   "history.decision.wrongCharacter": "差𡨸 → {character}",
   "history.empty": "𣗓𣎏整𢯢𱜢",
+  "history.group.count.one": "{count}吝閱",
+  "history.group.count.other": "{count}吝閱",
   "history.heading": "歷史整𢯢",
   "history.loading": "當載…",
   "history.noLabel": "—",

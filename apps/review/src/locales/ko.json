@@ -295,6 +295,8 @@
   "history.decision.unsure": "잘 모르겠음",
   "history.decision.wrongCharacter": "잘못된 글자 → {character}",
   "history.empty": "아직 편집이 없습니다",
+  "history.group.count.one": "{count}건의 검토",
+  "history.group.count.other": "{count}건의 검토",
   "history.heading": "편집 기록",
   "history.loading": "불러오는 중…",
   "history.noLabel": "—",
