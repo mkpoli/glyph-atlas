@@ -160,12 +160,16 @@ try {
   await step('correcting the character carries its reading and lands in the export', async () => {
     await openReviewer(LAYERED)
     await browser.evaluate(`document.querySelector('dialog[open] .issue-card[data-issue="reading"]').click()`)
-    await browser.waitFor(`!!document.querySelector('dialog[open] .typed-choice input')`)
+    // Another character is picked from the search, never typed in as it stands.
+    await browser.waitFor(`!!document.querySelector('dialog[open] .suggestion-pick input')`)
     await browser.evaluate(`(() => {
-      const input = document.querySelector('dialog[open] .typed-choice input')
-      input.value = 'ヌ'
+      const input = document.querySelector('dialog[open] .suggestion-pick input')
+      input.focus(); input.value = 'ヌ'
       input.dispatchEvent(new Event('input', { bubbles: true }))
     })()`)
+    await browser.waitFor(`[...document.querySelectorAll('dialog[open] .suggestion-pick .candidate')].some(c => c.textContent.includes('U+30CC'))`, 10000)
+    await browser.evaluate(`[...document.querySelectorAll('dialog[open] .suggestion-pick .candidate')].find(c => c.textContent.includes('U+30CC')).click()`)
+    await browser.waitFor(`!!document.querySelector('dialog[open] .suggestion-choice.picked')`)
     const point = await browser.centre('.save-character')
     await browser.click(point.x, point.y)
     await browser.waitFor('document.querySelector("dialog[open]") === null', 6000)

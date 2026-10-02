@@ -139,8 +139,8 @@ try {
   // 4. The Skip control in the reviewer closes without writing.
   const beforeInspector = events(service.fixture.directory).length
   await click('.quiz-tile:nth-child(2) .inspect-choice')
-  await browser.waitFor(`document.querySelector('dialog[open] .skip-character') !== null`)
-  await click('dialog[open] .skip-character')
+  await browser.waitFor(`document.querySelector('dialog[open] [data-issue="skip"]') !== null`)
+  await click('dialog[open] [data-issue="skip"]')
   await browser.waitFor(`document.querySelector('dialog[open]') === null`, 10000)
   const afterInspector = events(service.fixture.directory).length
   assert(afterInspector === beforeInspector, `the reviewer's Skip control wrote ${afterInspector - beforeInspector} events`)
@@ -205,14 +205,14 @@ try {
   const order = await browser.evaluate(`[...document.querySelectorAll('.glyph-tile[data-unit]')].map(t => t.dataset.unit)`)
   await click('.glyph-tile[data-unit]')
   await browser.waitFor(`document.querySelector('.inspector-navigation > span')?.textContent.startsWith('1 /')`)
-  await click('.skip-character')
+  await click('dialog[open] [data-issue="skip"]')
   await browser.waitFor(`document.querySelector('dialog[open]') === null`)
   await click('.glyph-tile[data-unit]')
   await browser.waitFor(`document.querySelector('.inspector-navigation > span')?.textContent.startsWith('1 /')`)
   await click('.advance-switch')
-  await click('.skip-character')
+  await click('dialog[open] [data-issue="skip"]')
   await browser.waitFor(`document.querySelector('.inspector-navigation > span')?.textContent.startsWith('2 /')`)
-  await click('.skip-character')
+  await click('dialog[open] [data-issue="skip"]')
   await browser.waitFor(`document.querySelector('.inspector-navigation > span')?.textContent.startsWith('3 /')`)
   await click('.advance-switch')
   await click('.close-inspector')

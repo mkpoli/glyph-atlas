@@ -1,5 +1,5 @@
 <script>
-  import { issues, issueTitle, issueHint, skipLabel, skipHint } from '../lib/issues.js'
+  import { issues, issueTitle, issueHint, skipLabel, skipHint, SKIP_KEY } from '../lib/issues.js'
   import { t } from '../lib/i18n.svelte.js'
   // `skip`, when given, adds a Skip card: not a problem, and chosen only while the crop is skipped.
   let { value = null, choose, disabled = false, suggested = null, compact = false, skip = null, skipped = false } = $props()
@@ -13,14 +13,14 @@
         {:else if issue.id === 'crop'}<span class="crop-window">ア</span><svg viewBox="0 0 24 24"><path d="M7 2v15h15M2 7h15v15"/></svg>
         {:else if issue.id === 'blank'}<svg viewBox="0 0 48 40"><rect x="5" y="3" width="38" height="34" rx="4" stroke-dasharray="3 4"/><path d="m17 24 2 1m10-11 1 2m-5 13 2-1"/></svg>{/if}
       </span>
-      <span class="issue-name">{issueTitle(issue.id)}</span><span class="issue-hint">{issueHint(issue.id)}</span>
+      <span class="issue-name">{issueTitle(issue.id)}</span><span class="issue-hint">{issueHint(issue.id)}</span><kbd class="issue-key" aria-hidden="true">{issue.key.toUpperCase()}</kbd>
       {#if suggested === issue.id}<span class="suggested-tag">{t('issue.suggested')}</span>{/if}
     </button>
   {/each}
   {#if skip}
     <button type="button" class="issue-card skip-card" class:chosen={skipped} data-issue="skip" {disabled} aria-pressed={skipped} onclick={skip}>
       <span class="issue-example" aria-hidden="true">?</span>
-      <span class="issue-name">{skipLabel()}</span><span class="issue-hint">{skipHint()}</span>
+      <span class="issue-name">{skipLabel()}</span><span class="issue-hint">{skipHint()}</span><kbd class="issue-key" aria-hidden="true">{SKIP_KEY.toUpperCase()}</kbd>
     </button>
   {/if}
 </div>

@@ -138,8 +138,8 @@ try {
   await click('.quiz-workspace [data-issue="merged"]')
   await click('.next-crop')
   await browser.waitFor(`document.querySelector(".focus-figure")?.dataset.unit === ${JSON.stringify(joinedB)}`)
-  // The keyboard path: 2 is Joined characters, and Ctrl+Enter moves on.
-  await browser.key('2')
+  // The keyboard path: M is Joined characters, and Ctrl+Enter moves on.
+  await browser.key('m')
   // Joined characters offers the suggestions for what the crop reads; the problem is then chosen.
   await browser.waitFor('!!document.querySelector(".quiz-workspace .reading-suggestions")')
   await browser.key('Enter', { ctrl: true })
@@ -228,25 +228,25 @@ try {
   console.log('PASS mobile error choices and continuous reviewer')
 
   // Saving closes the inspector until the reader turns on "Next after saving"; then a save and a
-  // skip both go on to the next crop of the list, and both buttons say so.
+  // skip both go on to the next crop of the list, and the save button says so.
   await browser.setViewport(1440, 1000)
   await route('/en', 'document.querySelectorAll(".glyph-tile").length > 2')
   const listed = await browser.evaluate('Array.from(document.querySelectorAll(".glyph-grid [data-unit]")).map(i=>i.dataset.unit)')
   const shownId = 'document.querySelector("dialog[open] .record-id code")?.textContent'
-  const labels = 'document.querySelector(".save-character").innerText + " | " + document.querySelector(".skip-character").innerText'
+  const labels = 'document.querySelector(".save-character").innerText'
   await click(`.glyph-grid [data-unit="${listed[0]}"]`)
   await browser.waitFor(inspectorReady)
   assert(await browser.evaluate('document.querySelector(".advance-switch").getAttribute("aria-checked")') === 'false', 'the inspector goes on to the next crop by default')
   const closing = await browser.evaluate(labels)
-  assert(closing.includes('Looks right & close') && closing.includes('Skip & close'), 'the buttons do not say they close: ' + closing)
+  assert(closing.includes('Looks right & close'), 'the save does not say it closes: ' + closing)
   await browser.screenshot(join(screenshots, 'advance-off-light.png'))
-  await click('.skip-character')
+  await click('dialog[open] [data-issue="skip"]')
   await browser.waitFor('document.querySelector("dialog[open]") === null')
   await click(`.glyph-grid [data-unit="${listed[0]}"]`)
   await browser.waitFor(inspectorReady)
   await click('.advance-switch')
   const advancing = await browser.evaluate(labels)
-  assert(advancing.includes('Looks right & next') && advancing.includes('Skip →'), 'the buttons do not say they go on: ' + advancing)
+  assert(advancing.includes('Looks right & next'), 'the save does not say it goes on: ' + advancing)
   await browser.setColorScheme('dark')
   await browser.screenshot(join(screenshots, 'advance-on-dark.png'))
   await browser.setColorScheme('light')
@@ -257,7 +257,7 @@ try {
   await browser.waitFor(inspectorReady)
   assert(events(config.directory).length > beforeAdvance, 'the save before going on was not recorded')
   await browser.waitFor('document.activeElement?.classList.contains("save-character")')
-  await click('.skip-character')
+  await click('dialog[open] [data-issue="skip"]')
   await browser.waitFor(`${shownId} === ${JSON.stringify(listed[2])}`)
   assert(await browser.evaluate('JSON.parse(localStorage.getItem("atlas.advance"))') === true, 'the choice is not remembered')
   await click('.advance-switch')

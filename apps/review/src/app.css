@@ -83,6 +83,8 @@
 .issue-example.cropped{gap:9px}.crop-window{display:block;width:22px;overflow:hidden;border-right:2px dashed light-dark(#bc6a74, #e195a0);line-height:1.1}.issue-example.cropped svg{color:light-dark(#9289b1, #b8add7)}
 .issue-name{font-size:13px;font-weight:600;line-height:1.3}.issue-hint{font-size:10px;color:var(--muted);line-height:1.4}
 .suggested-tag{position:absolute;right:8px;top:8px;font-size:8px;color:var(--accent);background:light-dark(#e9e4ff, rgb(156 146 255 / 18%));padding:4px 5px;border-radius:4px}
+.issue-key{position:absolute;right:10px;bottom:8px;font-family:"GenZui Sans",ui-monospace,monospace;font-size:9px;color:var(--faint)}
+@media(hover:none){.issue-key{display:none}}
 .selection-toolbar{display:flex;align-items:center;gap:16px;margin:0 0 12px;font-size:12px;min-height:26px}.selection-toolbar strong{font-weight:500}.selection-toolbar>.keyboard-hint{margin-left:auto}.selection-toolbar .bulk-toggle{font-size:11px}
 .issue-picker.compact{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:22px}.compact .issue-card{padding:13px}.compact .issue-name{font-size:12px}.compact .issue-hint{font-size:10px}.compact .issue-example{height:32px;font-size:24px}.compact .issue-example.joined i{height:28px}
 .quiz-grid{align-items:start}.quiz-tile{height:auto;min-height:174px}.quiz-choice{height:144px}.quiz-tile.selected{border-color:var(--accent);box-shadow:0 0 0 2px light-dark(#6754e921, rgb(156 146 255 / 20%));background:var(--accent-light)}.quiz-tile.selected .choice-mark{background:var(--accent-solid);color:var(--on-color);font-size:13px;border-radius:50%;width:22px;height:22px;display:grid;place-items:center;top:8px;right:8px}

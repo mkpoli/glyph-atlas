@@ -1,13 +1,20 @@
 import { t } from './i18n.svelte.js'
 
-// Ids and examples are data; the title and hint shown for each are looked up at render time so a
-// language switch is reflected without rebuilding this list.
+// Ids, examples and keys are data; the title and hint shown for each are looked up at render time so a
+// language switch is reflected without rebuilding this list. The keys are letters, because the
+// number keys choose a crop's form.
 export const issues = [
-  { id: 'reading', example: 'ア → カ', key: '1' },
-  { id: 'merged', example: 'アカ', key: '2' },
-  { id: 'crop', example: 'ア', key: '3' },
-  { id: 'blank', example: '', key: '4' },
+  { id: 'reading', example: 'ア → カ', key: 'w' },
+  { id: 'merged', example: 'アカ', key: 'm' },
+  { id: 'crop', example: 'ア', key: 'b' },
+  { id: 'blank', example: '', key: 'x' },
 ]
+/** The issue a key chooses, or null. */
+export const issueForKey = key => issues.find(issue => issue.key === key.toLowerCase())?.id ?? null
+/** The key that skips a crop. */
+export const SKIP_KEY = 's'
+/** The key that says none of the suggestions fits. */
+export const NONE_KEY = 'n'
 export const issueTitle = id => issues.some(i => i.id === id) ? t(`issue.${id}.title`) : t('issue.selected')
 export const issueHint = id => t(`issue.${id}.hint`)
 export const decision = issue => ({ verdict: 'wrong', issue, correction: null })

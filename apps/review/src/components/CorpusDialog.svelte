@@ -13,11 +13,9 @@
   import CopyId from './CopyId.svelte'
   import { onMount, untrack, tick } from 'svelte'
   import { request, corpusCharacter } from '../lib/client.js'
-  import { isSingle, suggestsReading, greetSuggestions, skipHint } from '../lib/issues.js'
+  import { isSingle, suggestsReading, greetSuggestions } from '../lib/issues.js'
   import { t } from '../lib/i18n.svelte.js'
-  import IssuePicker from './IssuePicker.svelte'
-  import ReadingSuggestions from './ReadingSuggestions.svelte'
-  import CharacterSearch from './CharacterSearch.svelte'
+  import CropReview from './CropReview.svelte'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import CropContext from './CropContext.svelte'
   // `initial` is the record the server rendered the page with, so the first load needs no request.
@@ -33,13 +31,13 @@
   $effect(() => { if (refocus && loaded && !busy && saveButton) { refocus = false; tick().then(() => saveButton?.focus({ preventScroll: true })) } })
   const advancing = $derived(session.state.advance && Boolean(next))
   let dialog, data = $state(first), error = $state(''), busy = $state(false)
-  let issue = $state(null), noneSelected = $state(false), correction = $state(null), search = $state('')
+  let issue = $state(null), noneSelected = $state(false), correction = $state(null)
   let loaded = $state(false), imageFailed = $state(false), suggestionsElement = $state(null)
   let generation = 0, closed = false, submission = null
   const sourceName = $derived(data?.source?.corpus === 'codh-full' ? 'CODH' : data?.source?.corpus || t('corpus.genericName'))
   async function load(target, preloaded = null) {
     const current = ++generation
-    data = preloaded; error = ''; issue = null; correction = null; noneSelected = false; search = ''
+    data = preloaded; error = ''; issue = null; correction = null; noneSelected = false
     loaded = false; imageFailed = false; submission = null
     if (leaving && target !== leaving) { refocus = true; leaving = null }
     dialog?.scrollTo({ top: 0 })
@@ -55,8 +53,15 @@
   onMount(() => { if (dialog.open) dialog.close(); dialog.showModal(); return () => { closed = true; generation++ } })
   // A skip goes where a save would: on to the next crop when the reader goes through the list in a row.
   function skip() { if (!busy) { if (advancing) next(); else close() } }
+  // ← and → step through the list, as the arrows in the header do; the crop view keeps its own arrows.
+  function stepKey(event) {
+    if (event.defaultPrevented || busy || event.metaKey || event.ctrlKey || event.altKey) return
+    if (event.target.closest?.('input, textarea, select, .crop-viewport')) return
+    if (event.key === 'ArrowLeft' && previous) { event.preventDefault(); previous() }
+    else if (event.key === 'ArrowRight' && next) { event.preventDefault(); next() }
+  }
   async function chooseIssue(value) {
-    issue = value; correction = null; noneSelected = false; submission = null; search = ''
+    issue = value; correction = null; noneSelected = false; submission = null
     if (suggestsReading(value)) { await tick(); greetSuggestions(suggestionsElement, { focus: true }) }
   }
   function choose(value, none = false) { correction = value; noneSelected = none; submission = null }
@@ -87,6 +92,7 @@
   }
 </script>
 
+<svelte:window onkeydown={stepKey} />
 <dialog class="character-dialog corpus-dialog" bind:this={dialog} open oncancel={close} onclick={e => { if (e.target === dialog) close() }} aria-label={t('corpus.dialog.label')}>
   <div class="inspector">
     <header class="inspector-header"><div class="inspector-navigation"><span>{position}</span><button class="icon-button previous-character" aria-label={t('common.previousCharacter')} disabled={busy || !previous} onclick={() => previous?.()}>←</button><button class="icon-button next-character" aria-label={t('common.nextCharacter')} disabled={busy || !next} onclick={() => next?.()}>→</button><button class="icon-button close-inspector" aria-label={t('common.closeReviewer')} onclick={close}>×</button></div></header>
@@ -111,12 +117,8 @@
         </div>
         <ScriptLegend />
       {/if}
-      <IssuePicker value={issue} choose={chooseIssue} disabled={busy} suggested={data.state === 'flagged' ? data.issue : null} />
-      <!-- Any other character is chosen beside the suggestions, in the same row as "None of these"; a crop of
-           joined characters takes what it holds as typed text. -->
-      {#snippet other()}<div class="corpus-pick"><span>{t('corpus.chooseAnother')}</span><CharacterSearch bind:value={search} label={t('corpus.correctCharacter.label')} placeholder={t('suggestions.type.placeholder')} onselect={item => choose(item.char)} /></div>{/snippet}
-      <ReadingSuggestions typing={issue === 'merged'} targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={{ candidates: data.suggestions }} {issue} reading={data.label} value={correction} disabled={busy} {choose} other={['reading', 'character'].includes(issue) ? other : null} />
-      {#if ['reading', 'character'].includes(issue) && correction}<p class="corpus-choice" role="status"><span lang="ja">{data.label}</span> → <b lang="ja">{correction}</b><button disabled={busy} onclick={() => choose(null)}>{t('common.clear')}</button></p>{/if}
+      <CropReview {issue} onissue={chooseIssue} disabled={busy} suggested={data.state === 'flagged' ? data.issue : null} onskip={skip}
+        targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={{ candidates: data.suggestions }} label={data.label} value={correction} onchoose={choose} />
       <SimilarCrops id={data.id} label={data.label} />
       <div class="credit-after"><SourceCredit item={data} corpus /></div>
     {:else if !error}<div class="inspector-skeleton"></div>{/if}
@@ -126,7 +128,6 @@
     {#if imageFailed}<span role="alert">{t('character.image.unavailable')}</span>{/if}
     <button class="primary save-character" bind:this={saveButton} disabled={busy || !data || !loaded || imageFailed || !data.proxyable || ((data.needs_segmentation || data.identity_status === 'unassigned') && !issue)} onclick={() => save()}>{busy ? t('common.saving') : data?.identity_status === 'unassigned' && !issue ? t('corpus.save.chooseCharacterOrIssue') : data?.needs_segmentation && !issue ? t('corpus.save.awaitingSegmentation') : issue ? t(advancing ? 'character.save.issue.next' : 'character.save.issue.close') : t(advancing ? 'character.save.looksRight.next' : 'character.save.looksRight.close')} {#if advancing}<span>→</span>{:else if !issue}<span>✓</span>{/if}</button>
     {#if issue && !data?.needs_segmentation && data?.identity_status !== 'unassigned'}<button class="quiet-link looks-right" disabled={busy || !loaded || imageFailed} onclick={() => save(true)}>{t('character.save.itLooksRight')}</button>{/if}
-    <button class="skip-character" disabled={busy} onclick={skip} title={skipHint()}>{t(advancing ? 'common.skip.next' : 'common.skip.close')}</button>
     <ContributionTerms />
   </footer>
 </dialog>
@@ -136,5 +137,5 @@
   .unassigned-title{font-size:28px}
   .title-grapheme{margin-left:12px;font-size:40px;color:var(--muted)}
   .corpus-source-label{font-size:12px;color:var(--muted);margin:-6px 0 18px}.corpus-source-label b{font-size:17px;color:var(--ink);margin-left:6px}
-  .corpus-pick{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--muted);flex:1 1 16em;min-width:0}.corpus-pick :global(.character-search){width:100%;min-width:0}.corpus-choice{display:flex;align-items:center;gap:12px;margin-top:12px}.corpus-choice b{font-size:24px}.corpus-choice button{margin-left:auto;padding:5px 10px}
+
 </style>
