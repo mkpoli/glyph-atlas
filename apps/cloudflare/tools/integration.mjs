@@ -26,7 +26,7 @@ try {
   const db = await mf.getD1Database('DB')
   // The columns a fixture row fills; later ones (`style`) take their defaults.
   const UNIT_COLUMNS = 'id,origin,character,reading,family,visual_group,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual,document'
-  // The same columns once 0056 dropped `reading`.
+  // The columns a crop is written with once 0056 left `reading` unread.
   const CROP_COLUMNS = UNIT_COLUMNS.replace(',reading,', ',')
   const CORPUS_COLUMNS = 'id,character,family,visual_group,shuffle,object,offset,size,production,named'
   // Every migration, in order, the way a new deployment applies them. Rows published and reviewed
@@ -64,9 +64,9 @@ try {
   for (const name of migrations.filter(name => name >= '0055')) await apply(name)
   assert.equal((await db.prepare("SELECT json_extract(data,'$.issue') AS issue FROM units WHERE id='flagged-before'").first()).issue, 'character',
     'a crop flagged under the old issue name carries the wrong-character issue')
-  assert.equal((await db.prepare("SELECT json_type(data,'$.reading') AS kept FROM units WHERE id='flagged-before'").first()).kept, null,
-    'a crop record keeps no reading')
-  assert.ok(!(await db.prepare('PRAGMA table_info(units)').all()).results.some(column => column.name === 'reading'), 'units has no reading column')
+  assert.ok(!(await db.prepare("SELECT sql FROM sqlite_master WHERE name='event_apply'").first()).sql.includes('reading'),
+    'the event trigger writes no reading')
+  assert.equal(await db.prepare("SELECT 1 FROM sqlite_master WHERE name='unit_reading'").first(), null, 'the reading index is gone')
   await db.prepare("DELETE FROM units WHERE id='flagged-before'").run()
   assert.deepEqual((await db.prepare("SELECT id,production,named FROM corpus_units WHERE character='ト' ORDER BY id").all()).results, [
     { id: 'codh-omt:1', production: 'printed/type', named: 0 },

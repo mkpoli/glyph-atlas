@@ -235,8 +235,9 @@ def export(dataset: Path, output: Path, *, resume=False):
             counts[cp] += 1
             # A label with no family is its own grapheme, so every named crop is one `family` lookup.
             family = atlas.grapheme_of(item["label"])
-            db.execute("INSERT INTO units VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
-                item["id"], "local", item["label"], family, None,
+            # `reading`, the fourth column, stays in D1 unread until a rebuild of the table drops it.
+            db.execute("INSERT INTO units VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+                item["id"], "local", item["label"], None, family, None,
                 item["production"], atlas.character_group(unit), item["state"], item["revision"],
                 int(not atlas.repair_withheld(unit)), atlas.review_priority(unit),
                 int(hashlib.sha256(item["id"].encode()).hexdigest()[:7], 16),

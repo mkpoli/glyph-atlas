@@ -1,21 +1,8 @@
--- A crop is its character; it carries no reading. The key leaves each crop's record, a rowid range at
--- a time so no statement rewrites the whole table's records at once; then the trigger is 0029's without
--- the `reading` column, and the column goes with its index. Events keep what they recorded.
-UPDATE units SET data=json_remove(data,'$.reading') WHERE rowid>=0 AND rowid<25000 AND json_type(data,'$.reading') IS NOT NULL;
-UPDATE units SET data=json_remove(data,'$.reading') WHERE rowid>=25000 AND rowid<50000 AND json_type(data,'$.reading') IS NOT NULL;
-UPDATE units SET data=json_remove(data,'$.reading') WHERE rowid>=50000 AND rowid<75000 AND json_type(data,'$.reading') IS NOT NULL;
-UPDATE units SET data=json_remove(data,'$.reading') WHERE rowid>=75000 AND rowid<100000 AND json_type(data,'$.reading') IS NOT NULL;
-UPDATE units SET data=json_remove(data,'$.reading') WHERE rowid>=100000 AND rowid<125000 AND json_type(data,'$.reading') IS NOT NULL;
-UPDATE units SET data=json_remove(data,'$.reading') WHERE rowid>=125000 AND rowid<150000 AND json_type(data,'$.reading') IS NOT NULL;
-UPDATE units SET data=json_remove(data,'$.reading') WHERE rowid>=150000 AND rowid<175000 AND json_type(data,'$.reading') IS NOT NULL;
-UPDATE units SET data=json_remove(data,'$.reading') WHERE rowid>=175000 AND rowid<200000 AND json_type(data,'$.reading') IS NOT NULL;
-UPDATE units SET data=json_remove(data,'$.reading') WHERE rowid>=200000 AND rowid<225000 AND json_type(data,'$.reading') IS NOT NULL;
-UPDATE units SET data=json_remove(data,'$.reading') WHERE rowid>=225000 AND rowid<250000 AND json_type(data,'$.reading') IS NOT NULL;
-UPDATE units SET data=json_remove(data,'$.reading') WHERE rowid>=250000 AND rowid<275000 AND json_type(data,'$.reading') IS NOT NULL;
-UPDATE units SET data=json_remove(data,'$.reading') WHERE rowid>=275000 AND rowid<300000 AND json_type(data,'$.reading') IS NOT NULL;
-UPDATE units SET data=json_remove(data,'$.reading') WHERE rowid>=300000 AND rowid<325000 AND json_type(data,'$.reading') IS NOT NULL;
-UPDATE units SET data=json_remove(data,'$.reading') WHERE rowid>=325000 AND rowid<350000 AND json_type(data,'$.reading') IS NOT NULL;
-UPDATE units SET data=json_remove(data,'$.reading') WHERE rowid>=350000 AND json_type(data,'$.reading') IS NOT NULL;
+-- A crop is its character; nothing reads or writes `units.reading` any more. The trigger is 0029's
+-- without the line that copied it, and the index that served the reading search goes. The column
+-- stays, unread: dropping it rewrites every row of `units`, past what one D1 statement may take, so
+-- it waits for a planned rebuild of the table. Its values and the `$.reading` key in each crop's record
+-- are cleared in batches outside a migration (work/reading-purge/d1-null). Events keep what they recorded.
 DROP TRIGGER IF EXISTS event_apply;
 CREATE TRIGGER IF NOT EXISTS event_apply AFTER INSERT ON events
 BEGIN
@@ -36,4 +23,3 @@ BEGIN
  WHERE id=NEW.target;
 END;
 DROP INDEX IF EXISTS unit_reading;
-ALTER TABLE units DROP COLUMN reading;
