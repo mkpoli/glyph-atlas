@@ -71,7 +71,7 @@ Imported as they are, with identifiers kept:
   (`/char-shape/iiif/{bid}/{bid}_{page}_{half}.tif/{x},{y},{w},{h}/full/0/default.jpg`).
 - CODH 古活字データセット: type blocks with 文字 and 字母, the seed for 字母 classification; some blocks are
   連彫活字 carrying two or three kana.
-- HDIC KRM and KTB (観智院本類聚名義抄, 高山寺本篆隷萬象名義): every entry with its place on a page of
+- HDIC KRM, KTB and TSJ (観智院本類聚名義抄, 高山寺本篆隷萬象名義, 天治本新撰字鏡): every entry with its place on a page of
   a printed edition and its headword as written; the headwords are placed on NDL facsimiles of
   those editions (`glyph_atlas.hdic`), and KTB's seal-script forms are taken in HDIC's own boxes.
 - 東京大学史料編纂所 くずし字データセット: 325,261 crops without page coordinates. The record fields

@@ -49,6 +49,7 @@ UNIT_ID_PREFIXES = {
     "gl:": "glossary-headwords",
     "krm:": "hdic-krm",
     "ktb:": "hdic-ktb",
+    "tsj:": "hdic-tsj",
 }
 
 #: Tables whose content a resolved detail depends on. A change to any of them, or to

@@ -73,8 +73,9 @@ git -C cache/hng-kiridashi-data checkout 346bc74071b9a8393b841b171bbdd6c8e82774a
 
 Headwords of Heian dictionaries are cut from NDL facsimiles and labelled from HDIC's databases, at
 the commits their source files pin: the 観智院本類聚名義抄 (`data/sources/hdic-krm.yaml`, on the
-貴重図書複製会 edition) and the 高山寺本篆隷萬象名義 (`hdic-ktb.yaml`, on the 崇文叢書 edition, with
-HDIC's own boxes around its seal-script forms). The script fetches each frame HDIC names into the
+貴重図書複製会 edition), the 高山寺本篆隷萬象名義 (`hdic-ktb.yaml`, on the 崇文叢書 edition, with
+HDIC's own boxes around its seal-script forms) and the 天治本新撰字鏡 (`hdic-tsj.yaml`, on the 六合館
+edition). The script fetches each frame HDIC names into the
 image cache and runs the detector, the classifier and NDLkotenOCR on CUDA; `glyph_atlas.hdic` says
 how a headword is placed and when it is left out:
 
@@ -85,6 +86,7 @@ uv run scripts/cut_hdic_headwords.py krm work/hdic-krm --clone cache/krm --repor
 git clone https://github.com/shikeda/HDIC cache/hdic
 git -C cache/hdic checkout bf93470cc5a65ea0f191188c3f768cbbf170615f
 uv run scripts/cut_hdic_headwords.py ktb work/hdic-ktb --clone cache/hdic --report work/hdic-ktb.report.json
+uv run scripts/cut_hdic_headwords.py tsj work/hdic-tsj --clone cache/hdic --report work/hdic-tsj.report.json
 ```
 
 ## 3. Images
