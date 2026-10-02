@@ -772,9 +772,9 @@
   </label>
   {#if history.length > 1}
     <nav class="character-history" aria-label={t('quiz.history.label')}>
-      <button class="previous-round" aria-label={t('quiz.history.previousRound')} disabled={saving || loading || historyIndex <= 0} onclick={() => visit(historyIndex - 1)}>{t('quiz.history.previous')}</button>
+      <button class="history-previous" aria-label={t('quiz.history.previousRound')} disabled={saving || loading || historyIndex <= 0} onclick={() => visit(historyIndex - 1)}>{t('quiz.history.previous')}</button>
       <div class="history-characters">{#each history as round, i (round.roundId)}<button class="history-character" class:current={i === historyIndex} aria-current={i === historyIndex ? 'step' : undefined} aria-label={t('quiz.history.returnTo', { grapheme: graphemeText(round.grapheme) })} disabled={saving || loading} onclick={() => visit(i)}><ScriptText text={graphemeText(round.grapheme)} /></button>{/each}</div>
-      <button class="next-round" aria-label={t('quiz.history.nextRound')} disabled={saving || loading || historyIndex >= history.length - 1} onclick={() => visit(historyIndex + 1)}>→</button>
+      <button class="history-next" aria-label={t('quiz.history.nextRound')} disabled={saving || loading || historyIndex >= history.length - 1} onclick={() => visit(historyIndex + 1)}>→</button>
     </nav>
   {/if}
   {#if updated.current}<div class="update-notice" role="status"><span>{t('quiz.newVersion')}</span><button disabled={saving} onclick={reloadKeepingRound}>{t('quiz.reloadNewVersion')}</button></div>{/if}
