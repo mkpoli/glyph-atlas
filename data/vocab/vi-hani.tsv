@@ -19,10 +19,13 @@
 # The spellings are an editorial reconstruction of how modern interface wording would be written in
 # chữ Nôm; no Nôm text attests most of these phrases, and no native reader has reviewed them yet.
 word	hannom	source	note
+ai	埃	wiktionary	
 ba	𠀧	wiktionary	"three" sense
 bao	包	wiktionary	
 buộc	纀	wiktionary	
+bài	排	wiktionary	the sense "composition, paper"
 báo	報	wiktionary	
+bên	邊	wiktionary	
 bút	筆	wiktionary	
 bạn	伴	wiktionary	
 bản	本	wiktionary	
@@ -32,6 +35,7 @@ bản quyền	版權	wiktionary
 bẩn	𪷪	wiktionary	
 bật	弼	wiktionary	
 bắt	扒	wiktionary	
+bằng	憑	wiktionary	etymology; the sense "by means of"
 bị	被	wiktionary	
 bỏ	𠬃	wiktionary	
 bộ	部	wiktionary	
@@ -46,6 +50,7 @@ chép	劄	wiktionary
 chì	𨦥	wiktionary	
 chính	正	wiktionary	
 chú giải	註解	wiktionary	
+chúng	眾	wiktionary	
 chưa	𣗓	wiktionary	
 chế tác	製作	joined	each syllable attested
 chỉ	只	wiktionary	
@@ -59,13 +64,17 @@ chữ	𡨸	wiktionary
 cuối	𣞄	wiktionary	
 cuộn	𦄣	wiktionary	
 các	各	unihan	
+cách	格	wiktionary	etymology; the sense "way"
 còn	羣	wiktionary	
 có	𣎏	wiktionary	
 có thể	固體	wiktionary	
 công bố	公布	joined	each syllable attested
 công cụ	工具	wiktionary	
 cùng	共	wiktionary	
+cũ	寠	wiktionary	
+cạnh	兢	wiktionary	the most attested of its Nôm forms; Wiktionary also gives 𧣲
 cả	哿	wiktionary	
+cấm	禁	wiktionary	etymology
 cần	勤	wiktionary	
 cập nhật	及日	joined	each syllable attested
 cắt	割	wiktionary	
@@ -81,6 +90,7 @@ dò	𠻀	wiktionary
 dòng	𣳔	wiktionary	
 dùng	用	wiktionary	
 dư	餘	editorial	Wiktionary gives 餘 as the etymon; Unihan reads 余 dư too
+dưới	𠁑	wiktionary	
 dạng	樣	unihan	
 dấu	唒	wiktionary	
 dễ nhầm	𥚯𢗖	joined	each syllable attested
@@ -89,13 +99,16 @@ dừng	亭	wiktionary
 dữ liệu	與料	joined	each syllable attested
 ghi	𥱬	wiktionary	
 ghi chú	𥱬註	joined	each syllable attested
+ghi công	𥱬功	joined	each syllable attested; công 功 "merit", as Wiktionary glosses ghi công
 ghép	扱	wiktionary	
+giao	交	wiktionary	etymology
 giao diện	交面	joined	each syllable attested
 giáp cốt văn	甲骨文	wiktionary	
 giây	𣆰	wiktionary	
 giản thể	簡體	joined	each syllable attested
 giấy	紙	wiktionary	
 giống	種	wiktionary	
+giờ	𣇞	wiktionary	
 giữ	𡨹	wiktionary	
 giữa	𡧲	wiktionary	
 gugyeol	口訣	editorial	the script names written in Han characters
@@ -107,18 +120,24 @@ gốm	𡑲	wiktionary
 gồm	𡗄	wiktionary	
 gỗ	楛	wiktionary	
 gợi	𢭮	wiktionary	
+gửi	𠳚	wiktionary	the Nôm form glossed "to send"; 寄 is the Old Chinese source of the word, read ký
 hai	𠄩	wiktionary	
 hangul	諺文	editorial	the script names written in Han characters
 hay	咍	wiktionary	the sense "or"
 hiragana	平假名	editorial	the script names written in Han characters
+hiển thị	顯示	wiktionary	etymology
 hiện	現	unihan	
+hiệu lực	效力	wiktionary	etymology
 hoàn tác	還作	joined	each syllable attested
 hoạt tự	活字	joined	each syllable attested
+hoạt động	活動	wiktionary	etymology
 hoặc	或	wiktionary	
 hành thư	行書	joined	each syllable attested
 hán	漢	wiktionary	
 hãy	唉	wiktionary	
 hình dạng	形樣	joined	each syllable attested
+hơn	欣	wiktionary	
+hạn	限	wiktionary	etymology; the sense "limit"
 hẹp	陿	wiktionary	
 hết	歇	wiktionary	
 hệ thống	系統	joined	each syllable attested
@@ -131,17 +150,21 @@ khi	欺	wiktionary
 kho ngữ liệu	庫語料	joined	each syllable attested
 khoảng	曠	wiktionary	
 khung	穹	wiktionary	
+khuôn mặt	囷𩈘	joined	each syllable attested; mặt 𩈘 "face"
 khác	恪	wiktionary	
 khám phá	勘破	joined	each syllable attested
 khó	𧁷	wiktionary	
+khóa	鎖	wiktionary	spelled khoá there; the sense "lock"
 khôi phục	恢復	wiktionary	
 không	空	wiktionary	
 không thể	空體	wiktionary	
 khải thư	楷書	editorial	Sino-Vietnamese, written with its Han etymon; neither source reads 楷 khải
+khỏi	塊	wiktionary	
 khớp	級	wiktionary	
 kim loại	金類	joined	each syllable attested
 kim văn	金文	joined	each syllable attested
 kiếm	劍	wiktionary	
+kiểm duyệt	檢閱	wiktionary	etymology
 kiểm tra	檢查	wiktionary	
 kiểu	矯	unihan	
 kèm	兼	wiktionary	
@@ -149,6 +172,7 @@ kém	劔	wiktionary	the variant of 劍, which spells kiếm here
 kéo	捁	wiktionary	
 kích thước	戟𢭑	editorial	Wiktionary gives no etymon for this kích; 戟 is the only character Unihan reads kích, so the spelling is uncertain
 ký hiệu	記號	wiktionary	spelled kí hiệu there
+kết nối	結綏	joined	each syllable attested; nối 綏 the most attested of its Nôm forms, Wiktionary also gives 𦀼
 kết quả	結果	wiktionary	
 kỹ thuật	技術	wiktionary	spelled kĩ thuật there
 liên quan	聯關	joined	each syllable attested
@@ -158,6 +182,7 @@ là	羅	wiktionary
 làm	𫜵	wiktionary	
 lên	𨖲	wiktionary	
 lúc	𣅶	wiktionary	
+lý do	理由	wiktionary	spelled lí do there
 lưu	留	wiktionary	
 lượt	𧙷	wiktionary	
 lại	吏	wiktionary	
@@ -176,6 +201,7 @@ lớn	𡘯	wiktionary
 lớp	垃	wiktionary	
 lựa	攄	wiktionary	
 minh triều	明朝	joined	each syllable attested
+mà	𦓡	wiktionary	the Nôm form glossed "but"; Wiktionary also gives 麻
 màu	牟	wiktionary	
 máy	𣛠	wiktionary	
 mã	碼	wiktionary	
@@ -200,6 +226,7 @@ nguồn	源	wiktionary
 ngôn ngữ	言語	wiktionary	
 người	𠊛	wiktionary	
 ngắn	𥐇	wiktionary	
+ngắt	𢪰	wiktionary	the sense "cut off"; Wiktionary also gives 𢩧 扢
 ngữ cảnh	語境	joined	each syllable attested
 nhanh	伶	wiktionary	
 nhau	𦣗	wiktionary	
@@ -211,6 +238,7 @@ như	如	unihan
 nhưng	仍	wiktionary	
 nhấn	刃	wiktionary	
 nhất	一	wiktionary	
+nhận	認	wiktionary	etymology
 nhập	入	wiktionary	
 nhật	日	unihan	
 những	仍	wiktionary	
@@ -221,7 +249,8 @@ nên	年	wiktionary
 nó	伮	wiktionary	
 nếu	裊	wiktionary	
 nữa	女	wiktionary	
-phiên này	番呢	joined	each syllable attested
+phiên	番	wiktionary	etymology
+phát hành	發行	wiktionary	etymology
 phân loại	分類	wiktionary	
 phép	法	wiktionary	
 phím	乏	wiktionary	
@@ -235,7 +264,9 @@ qua	過	wiktionary
 quanh	縈	wiktionary	
 quay	乖	wiktionary	
 quyết định	決定	wiktionary	
+quyền	權	wiktionary	etymology
 quá	過	wiktionary	
+quản trị	管治	wiktionary	etymology
 ra	𠚢	wiktionary	
 riêng	𥢅	wiktionary	
 rõ	𠓑	wiktionary	
@@ -253,6 +284,7 @@ sưu tập	搜集	joined	each syllable attested
 sắp	拉	wiktionary	
 sắt	𨫊	wiktionary	
 sẵn	𫤢	wiktionary	
+sẽ	士	wiktionary	the future marker; Wiktionary gives 𠱊 for the adjective sẽ "softly"
 số	數	wiktionary	
 số liệu	數料	wiktionary	etymology
 sổ	數	wiktionary	
@@ -264,12 +296,14 @@ tham chiếu	參照	wiktionary
 thay	台	wiktionary	
 thay thế	台替	joined	each syllable attested
 theo	蹺	wiktionary	
+thiết bị	設備	wiktionary	etymology
 thiếu	少	wiktionary	
 thu	收	wiktionary	
 thu nhỏ	收𡮈	joined	each syllable attested
 thu thập	收拾	joined	each syllable attested
 thuyết	説	unihan	
 thuyết văn	說文	editorial	Sino-Vietnamese, written with its Han etymon; the sources give the variant 説
+thuộc	屬	wiktionary	etymology; the sense "belong to"
 thành	成	wiktionary	
 thêm	添	wiktionary	
 thông dụng	通用	joined	each syllable attested
@@ -292,7 +326,9 @@ trang	張	wiktionary
 trang chủ	張主	joined	each syllable attested
 triện thư	篆書	joined	each syllable attested
 trong	𥪝	wiktionary	
+truy cập	追及	wiktionary	etymology
 trên	𨕭	wiktionary	
+trình duyệt	呈閱	wiktionary	Wiktionary's Nôm form; the word is a Vietnamese coinage
 trích xuất	摘出	joined	each syllable attested
 trước	𠓀	wiktionary	
 trạng thái	狀態	joined	each syllable attested
@@ -301,10 +337,12 @@ trọn	𠓻	wiktionary
 trộn	遁	wiktionary	
 trở	𧿨	wiktionary	
 trừ	除	wiktionary	
+tài khoản	財款	wiktionary	etymology
 tài liệu	材料	editorial	Sino-Vietnamese, written with its Han etymon; neither source reads 材 tài
 tác phẩm	作品	wiktionary	
 tách	索	wiktionary	
 tân tự thể	新字體	joined	each syllable attested
+tên	𠸜	wiktionary	the sense "name"
 tìm	尋	wiktionary	
 tôi	碎	wiktionary	
 tùy chọn	隨𫾗	editorial	tùy 隨 as in 隨意
@@ -316,6 +354,7 @@ tất	悉	wiktionary
 tắt	𢴑	wiktionary	
 tối	𣋁	wiktionary	the sense "dark"; 最 is Sino-Vietnamese tối "most"
 từ	自	wiktionary	
+từ chối	辭咥	joined	từ 辭 as Wiktionary's etymology of từ chối gives it; chối 咥 the first of its Nôm forms
 từ khóa	詞鎖	editorial	khoá 鎖 in Wiktionary
 từng	曾	wiktionary	
 tự dạng	字樣	joined	each syllable attested
@@ -323,9 +362,11 @@ tự hình	字形	joined	each syllable attested
 tự hình đại đồ phổ	字形大圖譜	editorial	the project name 字形大圖譜
 tự tộc	字族	joined	each syllable attested
 tự vị	字位	joined	each syllable attested
+viên	員	wiktionary	etymology; the suffix "member"
 viết	曰	wiktionary	
 và	吧	wiktionary	
 vào	𠓨	wiktionary	
+vân	紋	wiktionary	etymology: the non-Sino-Vietnamese reading of 紋
 vì	位	wiktionary	
 vòng	釯	wiktionary	
 vùng	塳	wiktionary	
@@ -338,6 +379,7 @@ vẽ	𦘧	wiktionary
 vết	𤵖	wiktionary	
 về	𡗅	wiktionary	
 vị trí	位置	wiktionary	
+với	貝	wiktionary	the preposition "with"
 vừa	𣃣	wiktionary	
 xem	䀡	wiktionary	
 xong	冲	wiktionary	
@@ -350,6 +392,7 @@ xóa	挅	wiktionary	spelled xoá there
 xưa	𠸗	wiktionary	
 xếp	插	wiktionary	
 xử lý	處理	wiktionary	spelled xử lí there
+yêu cầu	要求	wiktionary	etymology
 áp dụng	壓用	wiktionary	
 âm đọc	音讀	wiktionary	
 ít	𠃣	wiktionary	
@@ -370,18 +413,22 @@ xử lý	處理	wiktionary	spelled xử lí there
 đó	妬	wiktionary	Wiktionary's Nôm for đó "that"; 妬 is also Sino-Vietnamese đố
 đóng	㨂	wiktionary	
 đúng	中	wiktionary	
+đăng	登	wiktionary	etymology
 đơn vị	單位	wiktionary	etymology
 đưa	迻	wiktionary	
 được	特	wiktionary	
 đầu	頭	wiktionary	
 đặt	撻	wiktionary	
+đến	𦤾	wiktionary	
 đề xuất	提出	wiktionary	
 để	底	wiktionary	
+địa chỉ	地址	wiktionary	etymology
 địa phương	地方	joined	each syllable attested
 định vị	定位	wiktionary	
 đọc	讀	wiktionary	
 đồ phổ	圖譜	editorial	圖譜
 đồng	銅	wiktionary	
+đồng bộ	同步	wiktionary	etymology; the sense "to sync"
 đồng nghĩa	同義	joined	each syllable attested
 đồng thời	同時	joined	each syllable attested
 đồng đẳng	同等	joined	each syllable attested
@@ -389,4 +436,5 @@ xử lý	處理	wiktionary	spelled xử lí there
 độ	度	wiktionary	
 ảnh	影	unihan	
 ẩn	隱	wiktionary	
+ẩn danh	隱名	wiktionary	etymology
 ở	於	wiktionary	
