@@ -9,7 +9,8 @@
   import { page } from '$app/state'
   import { character, request, suggestionsFor } from '../lib/client.js'
   import { decision, isSingle, suggestsReading, greetSuggestions, skipHint } from '../lib/issues.js'
-  import { t, localize } from '../lib/i18n.svelte.js'
+  import { t } from '../lib/i18n.svelte.js'
+  import { cropAddress } from '../lib/inspector.svelte.js'
   import CropContext from './CropContext.svelte'
   import { repairOf } from '../lib/cropDetails.js'
   import SimilarCrops from './SimilarCrops.svelte'
@@ -92,8 +93,7 @@
       // A link to a retired crop opens the crop that replaced it, and the address follows. A round's
       // tile does not: its verdict belongs to the crop it was dealt, so the round reports the error.
       if (e.replacedBy && !onVerdict && !redirected) {
-        if (page.route.id?.endsWith('/crop/[id]') && page.params.id === target)
-          replaceState(localize('/crop/' + encodeURIComponent(e.replacedBy)), page.state)
+        if (location.pathname === cropAddress(target)) replaceState(cropAddress(e.replacedBy), page.state)
         return load(e.replacedBy, true)
       }
       replaced = false

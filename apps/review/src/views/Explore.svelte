@@ -67,7 +67,8 @@
    * shows in place and rewrites the address to match, so typing never leaves the page.
    */
   function showInAddress() {
-    if (!addressed) return
+    // While a crop is open the address is the crop's; the list's own entry keeps the list's.
+    if (!addressed || page.state.inspect) return
     const [path, search = ''] = (picked?.code_point
       ? characterAddress(picked.code_point, { scope: scopeFor(expand, picked), visual, style })
       // Text still being chosen from the candidate list is not a search yet.

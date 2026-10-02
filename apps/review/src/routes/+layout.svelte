@@ -30,11 +30,11 @@
   const path = $derived(delocalize(page.url.pathname).path)
   // A pair's or trigram's page is part of Explore.
   const section = $derived(path.startsWith('/pages') ? '/pages' : path.startsWith('/forms') ? '/forms' : /^\/(pair|trigram)\//.test(path) ? '/' : path)
-  // A crop page is a crop opened over the collection; the inspector's own choice takes over from it.
+  // A crop page is a crop opened over the collection; a crop the inspector opened takes over from it.
   // Closing it moves to the collection's address in place, and Back opens it again.
-  const routed = $derived(page.data.record && !page.state.closed ? { id: page.params.id, origin: page.route.id?.endsWith('/corpus/[id]') ? 'corpus' : 'collection' } : null)
-  const shown = $derived(inspector.state.selected ? { id: inspector.state.selected, origin: inspector.state.origin } : routed)
-  const index = $derived(inspector.state.queue.findIndex(item => item.id === inspector.state.selected))
+  const routed = $derived(page.data.record && !page.state.closed && !page.state.inspect ? { id: page.params.id, origin: page.route.id?.endsWith('/corpus/[id]') ? 'corpus' : 'collection' } : null)
+  const shown = $derived(inspector.shown ?? routed)
+  const index = $derived(inspector.index)
   const previous = $derived(index > 0 ? () => inspector.step(-1) : null)
   const next = $derived(index >= 0 && index + 1 < inspector.state.queue.length ? () => inspector.step(1) : null)
   // A crop page's record is what its load read. Once this session writes to that crop the record is
@@ -42,12 +42,12 @@
   // the old revision and have its next save refused; the dialog then reads the crop itself.
   let written = $state({})
   const initial = $derived(routed && shown?.id === routed.id && !written[routed.id] ? page.data.record : null)
-  const position = $derived(inspector.state.queue.length ? `${number(index + 1)} / ${number(inspector.state.queue.length)}` : '')
+  const position = $derived(index >= 0 ? `${number(index + 1)} / ${number(inspector.state.queue.length)}` : '')
   $effect(() => { document.documentElement.lang = locale() })
   // Set on the document so the single image rule in app.css reaches every view.
   $effect(() => { document.documentElement.dataset.ink = session.state.ink })
   function close() {
-    if (inspector.state.selected) inspector.close()
+    if (inspector.shown) inspector.close()
     else if (routed) pushState(localize('/'), { closed: true })
   }
   // A write that keeps the inspector open (a crop's style): the crop's tile and record are stale all
@@ -72,7 +72,10 @@
   function exportReviews() { menu = false; exporting = true }
   function showProgress() { menu = false; session.showProgress() }
   // A new page closes whatever the last one left open.
-  afterNavigate(() => { menu = false; if (inspector.state.selected) inspector.close() })
+  afterNavigate(() => { menu = false; inspector.forget() })
+  // Once the dialog has gone, by its close button or by Back, the focus returns to what opened it.
+  let wasShown = false
+  $effect(() => { const now = Boolean(shown); if (wasShown && !now) inspector.restoreFocus(); wasShown = now })
   onMount(() => {
     theme = document.documentElement.dataset.theme || 'system'; showThemeColor(theme)
     session.start()
