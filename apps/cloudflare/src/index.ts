@@ -1574,7 +1574,7 @@ const routes = {
         return json({items:rows.results.map(r=>parse(r.data)),total:rows.results.length})}
       if(path==='/atlas/corpus/reviews'){
         const rows=await env.DB.prepare("SELECT * FROM units WHERE origin='corpus' AND state='flagged' ORDER BY id LIMIT 96").all<UnitRow>();
-        return json({items:rows.results.map(compact),total:rows.results.length})}
+        return json({items:await withForms(env,rows.results.map(compact)),total:rows.results.length})}
       if(path.startsWith('/atlas/forms/')){const formed=await formsRoute(env,request,path,q,formTools,ctx);
         if(formed)return formed instanceof Response?formed:json(formed)}
       throw new Problem(404,'Unknown endpoint.');
