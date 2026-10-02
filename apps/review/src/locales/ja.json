@@ -740,5 +740,6 @@
   "quiz.keyboardHint.issues": "W M B X問題 · Sスキップ · ←→切り出し",
   "suggestions.pick.next": "次の文字…",
   "form.add": "字形を追加",
-  "script.hentaigana": "変体仮名"
+  "script.hentaigana": "変体仮名",
+  "character.crop.keys": "枠か角をドラッグ · 矢印キーで移動 · Shift+矢印キーで大きさを変更"
 }

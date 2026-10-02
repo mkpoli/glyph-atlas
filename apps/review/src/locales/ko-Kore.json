@@ -724,5 +724,6 @@
   "quiz.keyboardHint.issues": "W M B X 問題 · S 건너뛰기 · ←→ 크롭",
   "suggestions.pick.next": "다음 文字…",
   "form.add": "字形 追加",
-  "script.hentaigana": "헨타이가나"
+  "script.hentaigana": "헨타이가나",
+  "character.crop.keys": "상자나 손잡이를 끌기 · 화살표로 移動 · Shift+화살표로 크기 調整"
 }

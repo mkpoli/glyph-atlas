@@ -769,5 +769,6 @@
   "quiz.keyboardHint.issues": "W M B X problem · S skip · ←→ crop",
   "suggestions.pick.next": "Next character…",
   "form.add": "Add a form",
-  "script.hentaigana": "Hentaigana"
+  "script.hentaigana": "Hentaigana",
+  "character.crop.keys": "Drag the box or its handles · arrows move it · Shift and arrows resize it"
 }
