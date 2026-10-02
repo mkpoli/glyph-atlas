@@ -30,6 +30,7 @@ const sleep = ms => Bun.sleep(ms)
 
 try {
   browser = await Browser.launch({ width: 1440, height: 1000 })
+  await browser.writeAs('skip-check')
   const errors = []
   browser.listeners.push(m => { if (m.method === 'Runtime.exceptionThrown') errors.push(m.params.exceptionDetails?.text) })
   const click = async selector => {

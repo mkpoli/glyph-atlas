@@ -15,6 +15,7 @@ async function step(name, body) {
 }
 try {
   browser = await Browser.launch({ width: 1440, height: 1000 })
+  await browser.writeAs('layers-check')
   const errors = []
   browser.listeners.push(m => {
     if (m.method === 'Runtime.exceptionThrown') {
@@ -240,7 +241,8 @@ try {
     assert(!errors.length, errors.join(' | ').slice(0, 400))
     // The fixture keeps one page's image uncached on purpose, so its tiles answer 422; that is the
     // case the collection is built to survive and not a failure of this flow.
-    const unexpected = bad.filter(url => !/^4\d\d .*\/atlas\/characters\/.+\/image\?/.test(url))
+    // The local review service publishes no similar crops, which the inspector now asks for when it opens.
+    const unexpected = bad.filter(url => !/^4\d\d .*\/atlas\/characters\/.+\/image\?/.test(url) && !/^404 .*\/similar$/.test(url))
     assert(!unexpected.length, `unexpected: ${unexpected.slice(0, 3).join(' | ')} (all ${bad.length})`)
     return `${bad.filter(url => /^4/.test(url)).length} expected uncached-page tiles`
   })

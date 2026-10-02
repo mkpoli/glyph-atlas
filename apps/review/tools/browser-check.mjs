@@ -11,6 +11,7 @@ let browser
 const assert = (condition, message) => { if (!condition) throw new Error(message) }
 try {
   browser = await Browser.launch({ width: 1440, height: 1000 })
+  await browser.writeAs('browser-check')
   const errors = []
   browser.listeners.push(m => { if (m.method === 'Runtime.exceptionThrown') errors.push(m.params.exceptionDetails?.text) })
   // Deterministic OCR suggestions for synthetic glyphs; real model smoke is a separate read-only check.
