@@ -178,10 +178,16 @@ def export(dataset: Path, output: Path, *, resume=False):
                 db.execute("DELETE FROM units WHERE id=?", (item["id"],))
                 continue
             if item["id"] in existing:
-                # A crop an earlier run wrote takes the current licence and page number: both can
-                # change while its image does not.
                 data, snapshot = db.execute("SELECT data,snapshot FROM units WHERE id=?", (item["id"],)).fetchone()
                 detail, kept = json.loads(data), json.loads(snapshot)
+            if item["id"] in existing and detail.get("image") != item["image"]:
+                # A crop whose box moved since the earlier run (a reviewer redrew it) is cut again from
+                # its new box, which is a new image and a new crop version.
+                db.execute("DELETE FROM units WHERE id=?", (item["id"],))
+                existing.discard(item["id"])
+            if item["id"] in existing:
+                # A crop an earlier run wrote takes the current licence and page number: both can
+                # change while its image does not.
                 shown = page_fields(page)
                 detail.update(licence=str(doc.image_rights.licence), holder=doc.holder,
                               attribution=doc.image_rights.attribution, rights_url=doc.image_rights.evidence,
@@ -202,7 +208,7 @@ def export(dataset: Path, output: Path, *, resume=False):
                       "source": doc.title if doc else "", "text": line.text if line else "",
                       "page_number": page_fields(page)["page_number"],
                       "context": bool(box), "context_box": None, "line": None,
-                      "source_scale": [1, 1], "crop_editable": False}
+                      "source_scale": [1, 1], "crop_editable": bool(box)}
             if box:
                 with Image.open(path) as picture:
                     left, top, right, bottom = atlas.crop_bounds(picture, box, context=True)
