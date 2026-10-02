@@ -1,4 +1,5 @@
 <script>
+  import ScriptText from './ScriptText.svelte'
   import { t, formatNumber } from '../lib/i18n.svelte.js'
   let { analysis = null, count = null, unassigned = null, value = '', onchange = () => {} } = $props()
   const groups = $derived(analysis?.groups ?? [])
@@ -15,7 +16,7 @@
         <span class="group-examples">{#each (group.representatives ?? []).filter(sample => sample.image).slice(0, 3) as sample (sample.id)}
           <img src={sample.image} alt="" loading="lazy" />
         {/each}</span>
-        <span>{group.label}{#if group.written_character}<small> ≈ {group.written_character}</small>{/if}</span><small>{formatNumber(group.count)}</small>
+        <span>{group.label}{#if group.written_character}<small> ≈ <ScriptText text={group.written_character} /></small>{/if}</span><small>{formatNumber(group.count)}</small>
       </button>
     {/each}
     {#if unassigned > 0}<button class:active={value === 'unassigned'} aria-pressed={value === 'unassigned'} onclick={() => onchange('unassigned')}>
