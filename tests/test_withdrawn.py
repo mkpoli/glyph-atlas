@@ -55,8 +55,9 @@ def site():
                "0,1,0,0,'{\"source_revision\":\"glyph\"}','{}','{}','{}')")
     db.execute("INSERT INTO seen VALUES('hl:gone_0_000:x:1','s',NULL,'h','t')")
     # A claim about each book's crop, one accepted, and a claim about the round's glyph.
+    # The last was made on a cut of ex:2 the site never had.
     for claim, subject, version in (("cf:1", "ex:1", "ex:1@page@1,2,3,4"), ("cf:2", "ex:3", "ex:3@page@1,2,3,4"),
-                                    ("cf:3", "hl:gone_0_000:x:1", "hl:gone_0_000:x:1@glyph@")):
+                                    ("cf:3", "hl:gone_0_000:x:1", "hl:gone_0_000:x:1@glyph@"), ("cf:4", "ex:2", "ex:2@page@9,9,9,9")):
         db.execute("INSERT INTO assertions(id,subject,predicate,value,tier,asserted_by,asserted_at) "
                    "VALUES(?,?,'has_form','\"unreadable\"','observed','a','t')", (claim, subject))
         db.execute("INSERT INTO assertion_evidence(assertion,kind,ref) VALUES(?,'crop',?)", (claim, version))

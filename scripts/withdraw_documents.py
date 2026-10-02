@@ -6,8 +6,8 @@
 For each document, its crops are the `units` rows naming it and the ids in `withdrawn.corpus_range`,
 which holds its corpus glyphs and the `units` rows a round or review wrote for them (with no
 document). They go with everything that names them: review rows, marks, shapes, suspects, redirects,
-pairs, form placements, written forms, gallery and follow rows, the claims made about its crops and
-everything resting on them, the crops' evidence versions, and the image rows of its own crops.
+pairs, form placements, written forms, gallery and follow rows, the claims made about its crops with
+their evidence, premises and actions, the crops' evidence versions, and the image rows of its own crops.
 The corpus counts are then recounted, and the stamp the Worker keys its cached listings on is
 written last. Pack bytes stay in R2. The image rows of corpus display crops and form tiles are not
 derivable here and stay, keyed by content hash and named by no row. Nothing is sent to D1 here, and a
@@ -57,12 +57,13 @@ def statements(documents) -> list[str]:
             f"DELETE FROM document_characters WHERE document={quote(document)};",
             f"DELETE FROM media WHERE key IN ({keys});",
             f"DELETE FROM units WHERE {mine} OR {corpus};",
-            # The claims about the crops go once the crops have, found by the versions they were made on,
-            # then the rows that rest on those claims; the resolved rows went with the crops (0048).
-            *(f"DELETE FROM assertions WHERE id IN (SELECT e.assertion FROM assertion_evidence e JOIN crop_versions v "
-              f"ON v.id=e.ref WHERE e.kind='crop' AND {where});" for where in (f"v.document={quote(document)}", f"v.unit>={low} AND v.unit<{high}")),
-            *(f"DELETE FROM assertion_evidence WHERE kind='crop' AND ref IN (SELECT id FROM crop_versions WHERE {where});"
-              for where in (f"document={quote(document)}", f"unit>={low} AND unit<{high}")),
+            # The claims about the crops go once the crops have: the document's crops, as their versions
+            # name them whatever cut a claim was made on, and its corpus glyphs. Then the evidence,
+            # premises and actions of those claims; the resolved rows went with the crops (0048).
+            *(f"DELETE FROM assertions WHERE {where} AND EXISTS (SELECT 1 FROM assertion_evidence e "
+              f"WHERE e.assertion=assertions.id AND e.kind='crop');"
+              for where in (f"subject IN (SELECT unit FROM crop_versions WHERE document={quote(document)})",
+                            f"subject>={low} AND subject<{high}")),
             *(f"DELETE FROM {table} WHERE assertion NOT IN (SELECT id FROM assertions);"
               for table in ("assertion_evidence", "assertion_premises", "assertion_actions")),
             # A crop's evidence versions may go once the crop has left the site, so they follow it.
