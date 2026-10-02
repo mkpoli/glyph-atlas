@@ -3,6 +3,7 @@
 // The journal stays append-only. Its `actor` column holds whatever id wrote the row, and `actors` says
 // which user each of those ids now belongs to.
 import { betterAuth } from 'better-auth';
+import { APIError } from 'better-auth/api';
 import { admin, anonymous, emailOTP, lastLoginMethod } from 'better-auth/plugins';
 import { passkey } from '@better-auth/passkey';
 import { MAIL, signInMail } from './mail';
@@ -78,12 +79,22 @@ function build(env: Env, origin: string) {
     databaseHooks: {
       user: {
         create: {
-          // A sign-in that gives no name (a code by mail) gets one shaped like the reviewer ids.
-          before: async user => ({ data: { ...user, name: user.name || generatedName() } }),
+          // A sign-in that gives no name (a code by mail) is called `anon-…`; nobody new is named like
+          // an old reviewer id, since a new user holds none.
+          before: async user => ({ data: { ...user, name: user.name && !LEGACY_REVIEWER.test(user.name) ? user.name : generatedName() } }),
           // A user writes under their own id first.
           after: async user => {
             await env.DB.prepare("INSERT OR IGNORE INTO actors(actor,user_id,via,at) VALUES(?,?,'account',?)")
               .bind(user.id, user.id, now()).run();
+          },
+        },
+        update: {
+          // A name shaped like an old reviewer id is only for the user who holds that id.
+          before: async (user, ctx) => {
+            if (typeof user.name !== 'string' || !LEGACY_REVIEWER.test(user.name)) return;
+            const id = ctx?.context.session?.user.id;
+            const held = id && await env.DB.prepare('SELECT 1 FROM actors WHERE actor=? AND user_id=?').bind(user.name, id).first();
+            if (!held) throw new APIError('BAD_REQUEST', { message: 'This name is an old reviewer id another reviewer may hold.' });
           },
         },
       },
@@ -106,9 +117,12 @@ function build(env: Env, origin: string) {
         // Signing in with an account from an anonymous session brings that session's work along.
         onLinkAccount: async ({ anonymousUser, newUser }) => {
           await env.DB.prepare('UPDATE actors SET user_id=? WHERE user_id=?').bind(newUser.user.id, anonymousUser.user.id).run();
-          // An account made by this sign-in keeps the name the anonymous one wrote under.
+          // An account made by this sign-in keeps the name the anonymous one wrote under. A name that is
+          // an old reviewer id goes with the id, and the anonymous user, left with neither, is renamed.
           if (Date.now() - new Date(newUser.user.createdAt).getTime() < 60_000 && GENERATED.test(newUser.user.name))
             await env.DB.prepare('UPDATE "user" SET name=? WHERE id=?').bind(anonymousUser.user.name, newUser.user.id).run();
+          if (LEGACY_REVIEWER.test(anonymousUser.user.name))
+            await env.DB.prepare('UPDATE "user" SET name=? WHERE id=?').bind(generatedName(), anonymousUser.user.id).run();
         },
       }),
     ],
