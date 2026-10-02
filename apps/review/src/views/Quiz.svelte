@@ -10,7 +10,7 @@
   import Glyph from '../components/Glyph.svelte'
   import CropReview from '../components/CropReview.svelte'
   import CropForm from '../components/CropForm.svelte'
-  import { setForm } from '../lib/cropForms.js'
+  import { setForm, formOf } from '../lib/cropForms.js'
   import QuizFocus from '../components/QuizFocus.svelte'
   import CopyId from '../components/CopyId.svelte'
   import FormBar from '../components/FormBar.svelte'
@@ -153,7 +153,7 @@
     roundId = round.roundId; roundSeed = round.roundSeed; hasMore = round.hasMore; nextOffset = round.nextOffset ?? 0
     entry = round.entry ?? null
     loaded = {}; failed = {}; viewed = {}; step = 'select'; at = 0; error = ''; errorStatus = 0; categoryOpen = false
-    anchor = null; formDone = null; formError = ''
+    anchor = null; formDone = null; formError = ''; lastMark = null
   }
   function visit(index, { followed = false } = {}) {
     if (saving || loading || index < 0 || index >= history.length || index === historyIndex) return
@@ -538,19 +538,37 @@
    * Mark the crop on show as one of its grapheme's forms, as the inspector's form bar does: the crop is
    * decided, leaves the problems to answer, and the step goes on to the next one.
    */
+  // The last crop marked here, so it can be marked back: { id, form, before, after }.
+  let lastMark = $state(null)
   async function markCurrent(form) {
-    if (!current || form == null || saving) return
+    if (!current || form == null || saving || loading) return
     const item = current
     saving = true; error = ''; errorStatus = 0
     try {
-      const { crop } = await setForm(item, form)
+      const { crop, reviewed } = await setForm(item, form)
       items = items.map(i => i.id === item.id ? { ...i, ...crop } : i)
-      markRecorded([item], 'assigned')
+      // A form that named the crop's character decided it; a written form alone leaves it for the round.
+      if (reviewed) markRecorded([item], 'assigned')
       selected = without(selected, [item.id]); choices = without(choices, [item.id])
+      lastMark = { id: item.id, form, before: item, after: { ...item, ...crop }, reviewed }
     } catch (e) { error = e.message; errorStatus = e.status ?? 0 }
     finally { saving = false }
     await tick()
     if (!queue.length) back()
+  }
+  /** Mark the last crop back as the form it had, and put it back among the problems. */
+  async function undoMark() {
+    const mark = lastMark
+    if (!mark || saving) return
+    saving = true; error = ''; errorStatus = 0
+    try {
+      const { crop } = await setForm(mark.after, formOf(mark.before))
+      items = items.map(i => i.id === mark.id ? { ...i, ...crop } : i)
+      recorded = without(recorded, [mark.id])
+      selected = { ...selected, [mark.id]: true }
+      lastMark = null
+    } catch (e) { error = e.message; errorStatus = e.status ?? 0 }
+    finally { saving = false }
   }
   function chooseSuggestion(id, value, noneSelected = false) {
     const current = choices[id]
@@ -799,7 +817,8 @@
   {:else if current}
     <QuizFocus items={queue} {skipped} index={focusIndex} label={t('quiz.focus.chooseProblem')} disabled={saving} onback={back} onjump={jump} onprev={() => move(-1)} onnext={() => move(1)}>
       <!-- One panel per crop, so a search begun for one crop never shows in the next one's. -->
-      {#snippet formBar()}<CropForm crop={current} onchoose={markCurrent} disabled={saving} />{/snippet}
+      {#snippet formBar()}<CropForm crop={current} others onchoose={markCurrent} disabled={saving || loading} />
+        {#if lastMark}<p class="mark-done" role="status">{t('bulk.done', { count: 1, char: lastMark.form })}<button class="quiet-link" disabled={saving} onclick={undoMark}>{t('bulk.undo')}</button></p>{/if}{/snippet}
       {#key current.id}<CropReview forms={formBar} issue={currentIssue} onissue={assignCurrent} disabled={saving}
         onskip={() => skip([current.id])} skipped={!!skipped[current.id]}
         targetId={current.id} bind:element={suggestionsElement} result={suggestions[current.id]} loading={!suggestions[current.id]} contextResult={contextSuggestions[current.id] ?? null} contextLoading={!contextSuggestions[current.id]} label={current.label} value={choices[current.id]?.character || choices[current.id]?.correction} noneSelected={choices[current.id]?.noneSelected ?? false} onchoose={(value, none) => chooseSuggestion(current.id, value, none)} />{/key}
@@ -880,4 +899,5 @@
   .quiz-tile.assigned { border-color:var(--good); }
   /* The form bar sits over the actions, on a row of its own. */
   .quiz-actionbar { flex-wrap:wrap; }
+  .mark-done { display:flex; gap:10px; align-items:center; margin:-6px 0 12px; font-size:12px; color:var(--muted); }
 </style>
