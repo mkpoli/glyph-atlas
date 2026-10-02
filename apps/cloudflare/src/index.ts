@@ -223,7 +223,11 @@ export function validBatch(input: Json): { character: string; crops: Json[] } {
   const crops = input.crops;
   if (!Array.isArray(crops) || crops.length < 1 || crops.length > ROUND_MAX || new Set(crops.map(crop => crop?.id)).size !== crops.length)
     throw new Problem(422, `A correction needs 1–${ROUND_MAX} distinct crops.`);
-  for (const crop of crops) text(crop?.id, 512, 'crop id', true);
+  for (const crop of crops) {
+    text(crop?.id, 512, 'crop id', true);
+    // A batch names a character only; a crop is redrawn one at a time, in its own review.
+    if (crop.box !== undefined) throw new Problem(422, 'A correction of many crops cannot redraw one.');
+  }
   return { character, crops };
 }
 // A written character a reviewer names: one character, which may carry combining marks or a variation
@@ -1058,7 +1062,7 @@ export function canonical(value: unknown): string {
   if(Array.isArray(value))return '['+value.map(canonical).join(',')+']';
   return '{'+Object.keys(value).sort().map(k=>JSON.stringify(k)+':'+canonical((value as Json)[k])).join(',')+'}';
 }
-function validateAnswer(answer: Json, current: Json, round: boolean, corpus=false) {
+function validateAnswer(answer: Json, current: Json, round: boolean, corpus=false, batch=false) {
   if(!Number.isSafeInteger(answer.revision)||answer.revision!==current.revision)throw new Problem(409,'This character changed. Reload it.');
   if(corpus?answer.source_revision!==current.source_revision:answer.image_sha256!==current.image_sha256)throw new Problem(409,'The source image changed. Reload it.');
   if(!['match','wrong','unsure'].includes(answer.verdict))throw new Problem(422,'Choose a review decision.');
@@ -1073,7 +1077,7 @@ function validateAnswer(answer: Json, current: Json, round: boolean, corpus=fals
     throw new Problem(422,'Choose a different character or a different issue.');
   if(answer.box!==undefined){
     // A redrawn box is the crop's fix: saved as a match on the pixels it names, never in a round.
-    if(round||corpus)throw new Problem(422,'This crop cannot be redrawn here.');
+    if(round||corpus||batch)throw new Problem(422,'This crop cannot be redrawn here.');
     if(answer.verdict!=='match'||(answer.issue!=null&&answer.issue!=='reading')||answer.character||answer.correction)
       throw new Problem(422,'A redrawn crop is saved as fixed.');
     answer.box=redrawnBox(answer.box,current);
@@ -1143,7 +1147,7 @@ async function submit(env: Env, request: Request, actor: string, target?: string
     const row=found, stored=parse(row.data), glyph=row.origin==='corpus';
     const current:Json={...stored,category:row.category||categoryOf(stored.label)};
     row.data=JSON.stringify(current);
-    validateAnswer(answer,current,round,glyph);
+    validateAnswer(answer,current,round,glyph,batch);
     if(answer.reading&&!single(answer.reading)){
       const identity=answer.character||current.written_character||current.label;
       const registered=await lookup(identity);

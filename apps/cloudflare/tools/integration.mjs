@@ -1348,7 +1348,8 @@ try {
     await call('/atlas/characters/recrop', fix({ x: 90, y: 190, w: 40.5, h: 50 }), 422)
     await call('/atlas/characters/recrop', { ...fix({ x: 90, y: 190, w: 40, h: 50 }), verdict: 'wrong', issue: 'crop' }, 422)
     await call('/atlas/characters/recrop', { ...fix({ x: 90, y: 190, w: 40, h: 50 }), image_sha256: 'c'.repeat(64) }, 409)
-    await call('/atlas/characters/recrop', fix({ x: 90, y: 190, w: 44, h: 60 }))
+    const redraw = fix({ x: 90, y: 190, w: 44, h: 60 }), redrawId = redraw.id
+    await call('/atlas/characters/recrop', redraw)
     const redrawn = await call('/atlas/characters/recrop')
     assert.deepEqual([redrawn.box, redrawn.box_pending, redrawn.state, redrawn.revision], [{ x: 90, y: 190, w: 44, h: 60 }, true, 'checked', 1],
       'the redrawn box is the crop\'s, awaiting the next cut, and the crop is fixed')
@@ -1357,6 +1358,12 @@ try {
     assert.deepEqual(evidence.recrop, { from: { x: 100, y: 200, w: 40, h: 50 }, to: { x: 90, y: 190, w: 44, h: 60 }, pixels: hash },
       'the review records the box claim and the evidence it was made on')
     assert.deepEqual(evidence.correction.box, { x: 90, y: 190, w: 44, h: 60 })
+    await call('/atlas/corrections', { id: crypto.randomUUID(), character: 'ア',
+      crops: [{ id: 'recrop', revision: 1, image_sha256: hash, box: { x: 90, y: 190, w: 40, h: 50 } }] }, 422)
+    // Undoing the redraw puts the old box back, and nothing awaits a cut.
+    await call(`/atlas/rounds/${redrawId}/undo`, {})
+    const undone = await call('/atlas/characters/recrop')
+    assert.deepEqual([undone.box, undone.box_pending ?? false], [{ x: 100, y: 200, w: 40, h: 50 }, false], 'undo restores the box')
     assert.equal((await call('/atlas/corpus/character?id=' + encodeURIComponent(corpus.id))).crop_editable ?? false, false, 'a corpus glyph keeps its source box')
   }
   // One address gets 30 written forms a minute.
