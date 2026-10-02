@@ -12,7 +12,7 @@ import pyarrow.dataset as ds
 from cloudflare_schema import CORPUS_REFRESH, schema
 from export_cloudflare import Packs, encoded
 
-from glyph_atlas import style
+from glyph_atlas import style, withdrawn
 from glyph_atlas.corpus import sources
 from glyph_atlas.corpus.api import PROXYABLE, CorpusAPI
 from glyph_atlas.corpus.details import DetailResolver, _iiif_region, _viewport
@@ -119,6 +119,12 @@ def drop_locally_published(db, ids) -> int:
     return db.execute("DELETE FROM corpus_units WHERE id IN (SELECT id FROM published_locally)").rowcount
 
 
+def drop_withdrawn(db) -> int:
+    """Remove from an export's `corpus_units` the glyphs of withdrawn documents an earlier run wrote."""
+    return sum(db.execute("DELETE FROM corpus_units WHERE id>=? AND id<?", withdrawn.corpus_range(doc)).rowcount
+               for doc in withdrawn.documents())
+
+
 def unit_corpora(names=None):
     """Every unit corpus under `work` the site does not publish locally, or only those in `names`,
     which must all exist."""
@@ -156,6 +162,7 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
         db.execute("DELETE FROM corpus_units WHERE object=? AND offset+size>?", (name, size))
     db.commit()
     drop_locally_published(db, locally_published_ids())
+    drop_withdrawn(db)
     db.commit()
     existing = held(db, skip)
     counts = Counter(json.loads((output / "progress.json").read_text()) if (output / "progress.json").exists() else {})
@@ -172,6 +179,9 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
         for batch in dataset.scanner(columns=columns, batch_size=2048, use_threads=False).to_batches():
             for row in batch.to_pylist():
                 if row["id"] in existing:
+                    continue
+                if row["document_id"] in withdrawn.documents():
+                    counts["withdrawn"] += 1
                     continue
                 if not _character_unit_row(row):
                     continue

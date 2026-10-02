@@ -159,6 +159,11 @@ normalisation policy's columns and writes `ATTRIBUTION.md`, `COUNTS.md`, `datash
 rather than writing an empty directory. The default review filter admits only reviewed units, of
 which there are none until the pilot is annotated.
 
+A document listed in `data/vocab/withdrawn.yaml` keeps its records but gives no crop: extraction
+withdraws its queued pages, and the Cloudflare exports, `prepare_publication.py` and `atlas export`
+leave its crops out. What the site already holds goes with the SQL of
+`scripts/withdraw_documents.py`, applied by hand.
+
 ## 8. Audit
 
 ```sh
