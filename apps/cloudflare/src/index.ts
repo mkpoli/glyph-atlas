@@ -306,15 +306,41 @@ async function corpusCharacters(env: Env, ctx: ExecutionContext, url: URL) {
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return body;
 }
+// The grapheme each corpus character is filed under, from the browser's cached counts: a character
+// the collection holds only as corpus glyphs (𛂞) joins its family's round (は's) in the round menu.
+async function corpusGraphemes(env: Env, ctx: ExecutionContext, origin: string) {
+  const { items } = await corpusCharacters(env, ctx, new URL(`${origin}/atlas/corpus/characters?production=all`)) as { items: [string, string, number][] };
+  return new Map(items.map(([label, grapheme]) => [label, grapheme]));
+}
+export const GRAPHEME_KEY = /^U\+[0-9A-F]{4,6}( U\+[0-9A-F]{4,6})*$/;
+// A grapheme key (`U+306F`) as the text it names.
+export const graphemeText = (key: string) => key.split(' ').map(point => String.fromCodePoint(parseInt(point.slice(2), 16))).join('');
+// A grapheme key as a request names it, upper-cased with single spaces, or null when none is named.
+export function graphemeKey(value: string | null | undefined): string | null {
+  const key = text(value, 256, 'grapheme')?.toUpperCase().split(/\s+/).join(' ');
+  if (!key) return null;
+  if (!GRAPHEME_KEY.test(key) || key.split(' ').some(p => parseInt(p.slice(2), 16) > 0x10FFFF)) throw new Problem(422, 'Invalid grapheme.');
+  return key;
+}
+// The characters a grapheme is written as, by the character table: は's family is は, ハ and its
+// hentaigana. A key that names no family (a sequence, or a character the table lacks) is its own text
+// alone; a key that names a family's member rather than the family is refused.
+export async function graphemeMembers(env: Env, key: string): Promise<string[]> {
+  const row = key.includes(' ') ? null
+    : await env.DB.prepare("SELECT json_extract(data,'$.grapheme') AS grapheme FROM characters WHERE code_point=?").bind(key).first<{ grapheme: string | null }>();
+  const family = row?.grapheme ? parse(row.grapheme) as { code_point: string; char: string; members?: { char: string }[] } : null;
+  if (family && family.code_point !== key) throw new Problem(422, `${graphemeText(key)} is filed under ${family.char}.`);
+  return family?.members?.length ? family.members.map(member => member.char) : [graphemeText(key)];
+}
 // The crops a listing starts from: local ones, those a round may deal, in the material asked for.
-// A round and its reference strips name their character, and read it through `unit_character`: the
-// review filter is kept off its index (`+`), which would otherwise drive the query over every crop
-// that can be dealt.
-export function listingFilter(review: boolean, production: string, character: string | null) {
+// A round and its reference strips name their grapheme's characters, and read each through
+// `unit_character`: the review filter is kept off its index (`+`), which would otherwise drive the
+// query over every crop that can be dealt.
+export function listingFilter(review: boolean, production: string, characters: string[] | null) {
   const [materials, materialValues] = material(production, 'production');
-  const where = ["origin='local'", ...(review ? [character === null ? 'quiz=1' : '+quiz=1'] : []), materials];
+  const where = ["origin='local'", ...(review ? [characters === null ? 'quiz=1' : '+quiz=1'] : []), materials];
   const values: (string | number)[] = [...materialValues];
-  if (character !== null) { where.push('character=?'); values.push(character) }
+  if (characters !== null) { where.push('character IN (SELECT value FROM json_each(?))'); values.push(JSON.stringify(characters)) }
   return { where, values };
 }
 // Counts by character and state, and for browsing by book as well; a book's title is the one its
@@ -422,17 +448,19 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   const reviewer = q.get('reviewer') ? text(q.get('reviewer'), 128, 'reviewer', true)! : null;
   // One rest window for the counts and the listing.
   const since = restSince(), state = stateFor(reviewer, since);
-  // An empty `reading` names no character.
+  // An empty `reading` names no character. A round names its grapheme, and deals every character of it.
   const reading = q.get('reading') || null;
-  const scoped = review && reading !== null;
-  const { where, values } = listingFilter(review, production, scoped ? reading : null);
+  const grapheme = graphemeKey(q.get('grapheme'));
+  const scoped = review && grapheme !== null;
+  const members = scoped ? await graphemeMembers(env, grapheme) : null;
+  const { where, values } = listingFilter(review, production, members);
   const [materials, materialValues] = material(production, 'production');
   const queries = facetsQueries(review, reviewer, where, scoped, since);
   const [stored, marked, skipped] = [queries.stored, queries.marked, queries.skipped].map(sql => sql ? env.DB.prepare(sql).bind(...values) : null);
   // Only counts that are the same for every visitor are cached; a reviewer's own skips are theirs.
   let groups: Facet[], published: D1Result<{ label: string; n: number }> | null = null;
   if (review) {
-    const corpus = corpusCountQuery(production, scoped ? reading : null);
+    const corpus = corpusCountQuery(production, members);
     const results = await env.DB.batch<any>([...[stored, marked, skipped].filter(s => s !== null), env.DB.prepare(corpus.sql).bind(...corpus.values)]);
     published = results.pop()!;
     groups = moved(results[0].results, results.slice(1).flatMap(result => result.results));
@@ -453,9 +481,13 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
     documents.set(document, book);
   };
   for (const row of groups) add(row.label, row.state, row.n, row.document, row.title, row.family);
-  // A corpus glyph nothing has named is pending for everyone, and the table counts them per character.
+  // A corpus glyph nothing has named is pending for everyone, and the table counts them per character,
+  // each under the grapheme its family files it under.
   const corpus = new Map<string, number>();
-  if (published) for (const row of published.results) if (row.n > 0) { corpus.set(row.label, row.n); add(row.label, 'pending', row.n) }
+  const families = published && !scoped ? await corpusGraphemes(env, ctx, url.origin) : null;
+  if (published) for (const row of published.results) if (row.n > 0) {
+    corpus.set(row.label, row.n); add(row.label, 'pending', row.n, null, null, scoped ? grapheme : families!.get(row.label) ?? null)
+  }
   // Browse's counts are grouped by character, book and state, so a browse listing filtered by those
   // alone takes its total from them; counting it again would read every crop it holds on each page.
   // Any other filter clears this, and the listing is counted.
@@ -463,15 +495,10 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   if (reading && !scoped) { where.push('character=?'); values.push(reading); tally?.push(row => row.label === reading) }
   const document = text(q.get('document'), 256, 'document');
   if (document) { where.push('document=?'); values.push(document); tally?.push(row => row.document === document) }
-  // A grapheme is a family's representative code point, or a label's own code points.
-  const grapheme = text(q.get('grapheme'), 256, 'grapheme')?.toUpperCase().split(/\s+/).join(' ');
-  if (grapheme) {
-    if (!/^U\+[0-9A-F]{4,6}( U\+[0-9A-F]{4,6})*$/.test(grapheme) || grapheme.split(' ').some(p => parseInt(p.slice(2), 16) > 0x10FFFF))
-      throw new Problem(422, 'Invalid grapheme.');
-    // Every named crop has a family (its own code points when the character table gives none), so
-    // this is one lookup that `unit_family_sample` serves in shuffle order.
-    where.push('family=?'); values.push(grapheme); tally = null;
-  }
+  // A grapheme is a family's representative code point, or a label's own code points. Every named crop
+  // has a family (its own code points when the character table gives none), so browsing one is one
+  // lookup that `unit_family_sample` serves in shuffle order.
+  if (grapheme && !scoped) { where.push('family=?'); values.push(grapheme); tally = null }
   // A search finds a crop by its character or its reading. Each is one range of its own index; an OR
   // across the two columns would read every local crop instead. The origin test is kept off its index
   // (`+`), so the query starts from the ids the search found.
@@ -493,11 +520,11 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   const flaggedView = ['flagged', 'attention'].includes(q.get('state') ?? '');
   const reportedCountWhere = flaggedView ? [...where, REVIEWED_IN_INSPECTOR] : null;
   if (flaggedView && q.get('reported') === 'hide') { where.push(`NOT ${REVIEWED_IN_INSPECTOR}`); tally = null }
-  // A round of one character deals its named and then its untouched corpus glyphs after its local crops.
+  // A grapheme's round deals its named and then its untouched corpus glyphs after its local crops.
   // Corpus glyphs belong to no work of the collection, so a round narrowed to one work deals none.
-  const dealt = review && reading !== null && !document && ['all', 'pending'].includes(q.get('state') || 'all') && !q.get('q')
-    && ['all', categoryOf(reading)].includes(q.get('group') || 'all');
-  const named = dealt ? { sql: namedRoundQuery(materials, state), values: [reading, ...materialValues] } : null;
+  const dealt = scoped && !reading && !document && ['all', 'pending'].includes(q.get('state') || 'all') && !q.get('q')
+    && (!q.get('group') || q.get('group') === 'all' || members!.every(member => categoryOf(member) === q.get('group')));
+  const named = dealt ? { sql: namedRoundQuery(materials, state), values: [JSON.stringify(members), ...materialValues] } : null;
   const from = named ? `(SELECT * FROM units WHERE ${where.join(' AND ')} UNION ALL ${named.sql}) AS units` : `units WHERE ${where.join(' AND ')}`;
   const fromValues = named ? [...values, ...named.values] : values;
   // A crop another reviewer skipped comes first in a round: it needs a second pair of eyes. Then a
@@ -536,11 +563,11 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   // keeps out still takes its position, so `next_offset` can run ahead of the items, and once the
   // glyphs run out `total` is what was there to deal.
   let total = listed, next = offset + items.length;
-  const unnamed = dealt ? corpus.get(reading) || 0 : 0;
+  const unnamed = dealt ? members!.reduce((n, member) => n + (corpus.get(member) || 0), 0) : 0;
   if (dealt && unnamed) {
     total += unnamed;
     if (items.length < limit) {
-      const round = await corpusRound(env, reading, production, seed, Math.max(offset - listed, 0), limit - items.length);
+      const round = await corpusRound(env, members!, production, seed, Math.max(offset - listed, 0), limit - items.length);
       // A glyph is one crop whichever list deals it, even should its published row read as untouched.
       const shown = new Set(items.map(item => item.id));
       items.push(...round.items.filter(item => !shown.has(item.id))); next += round.read;
@@ -549,20 +576,23 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   }
   return { total, next_offset: next, available: Object.values(counts).reduce((a:number,b:any) => a+b,0),
     counts, purpose, production, review_limit:ROUND_MAX, review_epoch: await meta(env, 'review_epoch') || 0, query: q.get('q'),
+    ...(scoped ? { grapheme: { code_point: grapheme, char: graphemeText(grapheme), members } } : {}),
     categories: [...categories.values()].sort((a,b) => b.total-a.total || a.label.localeCompare(b.label)),
     documents: [...documents.values()].sort((a,b) => b.total-a.total || (a.title ?? '').localeCompare(b.title ?? '') || a.id.localeCompare(b.id)),
     reported_count: reportedCount ? (reportedCount.results[0] as { n: number }).n : 0,
     items };
 }
-// Untouched assigned corpus glyphs per character in this material.
-export function corpusCountQuery(production: string, character: string | null = null) {
+// Untouched assigned corpus glyphs per character in this material, of every character or of a grapheme's.
+export function corpusCountQuery(production: string, characters: string[] | null = null) {
   const [materials, values] = material(production, 'production');
-  return { sql: `SELECT character AS label,sum(n-named) AS n FROM corpus_characters WHERE ${character === null ? '' : 'character=? AND '}${materials} GROUP BY character`,
-    values: character === null ? values : [character, ...values] };
+  return { sql: `SELECT character AS label,sum(n-named) AS n FROM corpus_characters WHERE ${characters === null ? '' : 'character IN (SELECT value FROM json_each(?)) AND '}${materials} GROUP BY character`,
+    values: characters === null ? values : [JSON.stringify(characters), ...values] };
 }
-// The round character's named corpus glyphs that are due, from its most recently named pending rows.
+// The named corpus glyphs of a round's characters that are due, from each one's most recently named
+// pending rows.
 export function namedRoundQuery(materials: string, state: string) {
-  return `SELECT * FROM (SELECT * FROM units WHERE origin='corpus' AND character=? AND state='pending' ORDER BY rowid DESC LIMIT ${NAMED_WINDOW}) AS units
+  return `SELECT * FROM (SELECT u.* FROM json_each(?) m JOIN units u ON u.rowid IN
+    (SELECT rowid FROM units WHERE origin='corpus' AND character=m.value AND state='pending' ORDER BY rowid DESC LIMIT ${NAMED_WINDOW})) AS units
     WHERE quiz=1 AND ${materials} AND ${state}='pending'`;
 }
 // One character's untouched corpus glyphs of one material, or of every material, in shuffle order
@@ -572,15 +602,17 @@ export function corpusRoundQuery(production: string | null, side: '>=' | '<') {
     ORDER BY shuffle LIMIT ?`;
 }
 // The glyphs wrap round from the seeded point, so each seed deals a different but stable order that
-// the index serves as it stands. A scope short of `all` reads each production the character holds in
-// it through its own index range, and merges them.
-async function corpusRound(env: Env, character: string, production: string, seed: number, offset: number, limit: number) {
+// the index serves as it stands. Each character of the grapheme, and in a scope short of `all` each
+// production a character holds in it, is read through its own index range, and they are merged.
+async function corpusRound(env: Env, characters: string[], production: string, seed: number, offset: number, limit: number) {
   const start = seed % SHUFFLE_RANGE, wanted = offset + limit;
-  const kinds = production === 'all' ? [null] : (await env.DB.prepare('SELECT production FROM corpus_characters WHERE character=?')
-    .bind(character).all<{ production: string }>()).results.map(row => row.production).filter(value => inMaterial(production, value));
-  if (!kinds.length) return { items: [], read: 0, exhausted: true };
+  const held = (await env.DB.prepare('SELECT character,production FROM corpus_characters WHERE character IN (SELECT value FROM json_each(?))')
+    .bind(JSON.stringify(characters)).all<{ character: string; production: string }>()).results;
+  const ranges = production === 'all' ? [...new Set(held.map(row => row.character))].map(character => ({ character, kind: null as string | null }))
+    : held.filter(row => inMaterial(production, row.production)).map(row => ({ character: row.character, kind: row.production as string | null }));
+  if (!ranges.length) return { items: [], read: 0, exhausted: true };
   const page = async (side: '>=' | '<', n: number) => {
-    const results = await env.DB.batch(kinds.map(kind => env.DB.prepare(corpusRoundQuery(kind, side))
+    const results = await env.DB.batch(ranges.map(({ character, kind }) => env.DB.prepare(corpusRoundQuery(kind, side))
       .bind(character, ...(kind ? [kind] : []), start, n)));
     return results.flatMap(r => r.results as CorpusRow[]).sort((a, b) => a.shuffle - b.shuffle || (a.id < b.id ? -1 : 1)).slice(0, n);
   };
@@ -589,10 +621,11 @@ async function corpusRound(env: Env, character: string, production: string, seed
   const read = rows.slice(offset), items: Json[] = [];
   // Bound simultaneous R2 streams, as for a corpus search page.
   for (const batch of chunks(read, 8)) {
-    for (const data of await Promise.all(batch.map(row => corpusData(env, row)))) {
+    const records = await Promise.all(batch.map(row => corpusData(env, row)));
+    for (const [i, data] of records.entries()) {
       // The record decides: a glyph whose image this site may not serve, or whose record disagrees
       // with its published row about the character or the material, is not dealt.
-      if (dealable('corpus', data) && data.label === character && inMaterial(production, productionOf(data)))
+      if (dealable('corpus', data) && data.label === batch[i].character && inMaterial(production, productionOf(data)))
         items.push({ ...listing(data), origin: 'corpus', state: 'pending', shape_order: null, suspect: null });
     }
   }
@@ -963,7 +996,10 @@ async function submit(env: Env, request: Request, target?: string) {
   const previous=await env.DB.prepare('SELECT request,response FROM submissions WHERE id=?').bind(key).first<{request:string;response:string}>();
   if(previous){if(previous.request!==signature)throw new Problem(409,'This submission was already saved with different answers.');return parse(previous.response)}
   const round=!target&&!batch;
-  if(round)text(input.label,32,'label',true);
+  // A round names its grapheme; each crop it answers or saw is one of the grapheme's characters.
+  const grapheme=round?graphemeKey(input.grapheme):null;
+  if(round&&!grapheme)throw new Problem(422,'A round names its grapheme.');
+  const members=grapheme?await graphemeMembers(env,grapheme):null;
   if(batch&&(input.seen!==undefined||input.skipped!==undefined))throw new Problem(422,'Only a round records seen or skipped crops.');
   const correction=batch?validBatch(input):null;
   const {answers,seen,skipped}=batch?{answers:correction!.crops,seen:[],skipped:[]}:validRound(input,target);
@@ -1013,7 +1049,7 @@ async function submit(env: Env, request: Request, target?: string) {
     }
     if(glyph&&(!current.proxyable||(current.identity_status==='unassigned'&&answer.verdict==='match')))
       throw new Problem(422,'Choose a written character or report an issue.');
-    if(round&&(!row.quiz||current.label!==input.label))throw new Problem(409,'This round changed. Reload it.');
+    if(round&&(!row.quiz||!members!.includes(current.label)))throw new Problem(409,'This round changed. Reload it.');
     const written=answer.character?literal(answer.character):null;
     // A corrected character carries its reading along unless one was typed: い corrected to り reads り.
     const derived=written&&!answer.reading?readingFrom((await lookup(written))?.data):null;
@@ -1031,7 +1067,7 @@ async function submit(env: Env, request: Request, target?: string) {
     // A round or batch keeps its request once, on the submission; each event names it and carries only its
     // own answer, so a submission of many crops stays well inside D1's row size. A single crop's review
     // keeps its request whole: it is that one answer.
-    const evidence={kind:round?'visual-quiz':'character-review',...(round?{round:id,label:input.label}:{}),...(batch?{batch:id}:round?{answer}:{request:input}),
+    const evidence={kind:round?'visual-quiz':'character-review',...(round?{round:id,grapheme,label:current.label}:{}),...(batch?{batch:id}:round?{answer}:{request:input}),
       verdict:answer.verdict,issue:answer.issue||null,note:answer.note||'',
       suggested_character:written?cp(written):null,suggested_reading:answer.correction||null,snapshot,
       correction:{unicode:cp(next.label),reading:next.reading,box:next.box}};
@@ -1056,7 +1092,7 @@ async function submit(env: Env, request: Request, target?: string) {
       // the crop's own image is what the reader saw. A client that does not send it is held to the rest.
       // A corpus glyph's source revision covers its box and image reference.
       const same=row.origin==='corpus'?data.source_revision===crop.source_revision:data.image_sha256===crop.image_sha256;
-      if(same&&data.label===input.label&&(crop.image===undefined||crop.image===data.image)){
+      if(same&&members!.includes(data.label)&&(crop.image===undefined||crop.image===data.image)){
         list.push(crop);
         if(row.fresh)fresh.push(row as UnitRow&{fresh:CorpusRow});
       }

@@ -64,12 +64,15 @@ try {
       id, 'local', 'ア', 'ア', 'U+3042', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
       JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
   }
-  for (const [char, code] of [['仮', 'U+4EEE'], ['假', 'U+5047']]) {
-    const data = { char, code_point: code, grapheme: { code_point: 'U+4EEE' }, candidates: {} }
-    await db.prepare('INSERT INTO characters VALUES(?,?,?,?,?)').bind(code, char, '', JSON.stringify(data), JSON.stringify(data)).run()
+  // Each row names its family and the family's members, as the character table writes them.
+  const families = { 'U+4EEE': ['仮', '假'], 'U+3042': ['あ', 'ア'] }
+  for (const [head, chars] of Object.entries(families)) {
+    const grapheme = { code_point: head, char: chars[0], members: chars.map(c => ({ char: c, code_point: 'U+' + c.codePointAt(0).toString(16).toUpperCase() })) }
+    for (const { char, code_point } of grapheme.members) {
+      const data = { char, code_point, grapheme, candidates: {} }
+      await db.prepare('INSERT INTO characters VALUES(?,?,?,?,?)').bind(code_point, char, '', JSON.stringify(data), JSON.stringify(data)).run()
+    }
   }
-  const katakanaA = { char: 'ア', code_point: 'U+30A2', grapheme: { code_point: 'U+3042' }, candidates: {} }
-  await db.prepare('INSERT INTO characters VALUES(?,?,?,?,?)').bind('U+30A2', 'ア', '', JSON.stringify(katakanaA), JSON.stringify(katakanaA)).run()
   const corpus = { id: 'codh:fixture', origin: 'corpus', label: '仮', source_label: '仮', reading: '仮',
     written_character: null, identity_status: 'unassigned', grapheme: 'U+4EEE', visual_group: { id: 'group-one' },
     state: 'pending', revision: 0, proxyable: true, source_revision: sourceRevision }
@@ -95,7 +98,7 @@ try {
     return json
   }
   const decision = { id: 'one', revision: 0, image_sha256: hash, verdict: 'wrong', issue: 'merged', correction: 'アイ' }
-  const round = { id: crypto.randomUUID(), client_id: 'integration', label: 'ア', answers: [decision] }
+  const round = { id: crypto.randomUUID(), client_id: 'integration', grapheme: 'U+3042', answers: [decision] }
   const saved = await call('/atlas/rounds', round)
   assert.deepEqual(await call('/atlas/rounds', round), saved)
   assert.equal((await call('/atlas/characters/two')).state, 'pending', 'unselected is unjudged')
@@ -159,7 +162,7 @@ try {
       id, 'local', 'ラ', 'ラ', 'U+3042', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
       JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
   }
-  const flagRound = { id: crypto.randomUUID(), client_id: 'integration', label: 'ラ', answers: [
+  const flagRound = { id: crypto.randomUUID(), client_id: 'integration', grapheme: 'U+30E9', answers: [
     { id: 'flag-a', revision: 0, image_sha256: hash, verdict: 'wrong', issue: 'blank' },
     { id: 'flag-b', revision: 0, image_sha256: hash, verdict: 'wrong', issue: 'blank' },
   ] }
@@ -229,8 +232,8 @@ try {
   // Browse counts are cached per version of the data, so each write below must show in them at once.
   const browseSe = async () => { const { pending, seen, flagged } = (await call('/atlas')).categories.find(c => c.label === 'セ'); return { pending, seen, flagged } }
   assert.deepEqual(await browseSe(), { pending: 3, seen: 0, flagged: 0 })
-  const pendingSe = async () => (await call('/atlas?purpose=review&reading=セ&state=pending&limit=96')).items.map(i => i.id).sort()
-  const passed = { id: crypto.randomUUID(), client_id: 'integration', label: 'セ',
+  const pendingSe = async () => (await call('/atlas?purpose=review&grapheme=U%2B30BB&state=pending&limit=96')).items.map(i => i.id).sort()
+  const passed = { id: crypto.randomUUID(), client_id: 'integration', grapheme: 'U+30BB',
     seen: [{ id: 'seen-a', image_sha256: hash }, { id: 'seen-b', image_sha256: hash }, { id: 'seen-c', image_sha256: 'c'.repeat(64) }] }
   const recorded = await call('/atlas/rounds', passed)
   assert.equal(recorded.results.filter(r => r.field === 'seen').length, 2, 'a crop whose pixels changed is skipped')
@@ -240,12 +243,12 @@ try {
   await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'integration', seen: [{ id: 'seen-a', image_sha256: hash }] }, 422)
   assert.deepEqual(await pendingSe(), ['seen-c'], 'seen crops leave the queue')
   assert.deepEqual(await browseSe(), { pending: 1, seen: 2, flagged: 0 }, 'a round shows in the browse counts')
-  const summary = await call('/atlas?purpose=review&reading=セ')
+  const summary = await call('/atlas?purpose=review&grapheme=U%2B30BB')
   assert.equal(summary.counts.seen, 2)
   assert.equal(summary.items.find(i => i.id === 'seen-a').state, 'seen')
   assert.equal((await call('/atlas/characters/seen-a')).revision, 0, 'seeing a crop changes nothing about it')
   assert.ok(!(await call('/atlas/reviews.json?include_processed=true')).reviews.some(r => r.event?.target_id?.startsWith('seen-')), 'seen is not a review')
-  const flagOnSeen = { id: crypto.randomUUID(), client_id: 'second', label: 'セ',
+  const flagOnSeen = { id: crypto.randomUUID(), client_id: 'second', grapheme: 'U+30BB',
     answers: [{ id: 'seen-a', revision: 0, image_sha256: hash, verdict: 'wrong', issue: 'crop' }], seen: [{ id: 'seen-c', image_sha256: hash }] }
   await call('/atlas/rounds', flagOnSeen)
   assert.equal((await call('/atlas/characters/seen-a')).state, 'flagged', 'a seen crop can still be flagged at its revision')
@@ -254,12 +257,12 @@ try {
   await call(`/atlas/rounds/${passed.id}/undo`, { client_id: 'integration' })
   assert.deepEqual(await pendingSe(), ['seen-b'], 'undoing a pass returns its crops to the queue')
   assert.deepEqual(await browseSe(), { pending: 1, seen: 1, flagged: 1 }, 'undoing a round with no reviews shows in the browse counts')
-  await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'integration', label: 'セ', answers: [], seen: [] }, 422)
+  await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'integration', grapheme: 'U+30BB', answers: [], seen: [] }, 422)
   // A crop re-cut after the round was dealt shows another image; the reader never saw that one.
-  const recut = await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'integration', label: 'セ',
+  const recut = await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'integration', grapheme: 'U+30BB',
     seen: [{ id: 'seen-b', image_sha256: hash, image: '/atlas/media/an-older-cut.webp' }] })
   assert.equal(recut.results.filter(r => r.field === 'seen').length, 0, 'a crop re-cut since the round was dealt is not seen')
-  const dealt = await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'integration', label: 'セ',
+  const dealt = await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'integration', grapheme: 'U+30BB',
     seen: [{ id: 'seen-b', image_sha256: hash, image: '/atlas/media/seen-b.webp' }] })
   assert.equal(dealt.results.filter(r => r.field === 'seen').length, 1, 'the crop the round showed is seen')
   // Skipped crops: recorded against the reviewer, dealt first to others, rested for the one who
@@ -271,8 +274,8 @@ try {
       id, 'local', 'ソ', 'ソ', 'U+30BD', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
       JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
   }
-  const dealtTo = async reviewer => (await call(`/atlas?purpose=review&reading=ソ&state=pending&seed=3&limit=96&reviewer=${reviewer}`)).items.map(i => i.id)
-  const skipBy = (reviewer, id) => ({ id: crypto.randomUUID(), client_id: reviewer, label: 'ソ', skipped: [{ id, image_sha256: hash }] })
+  const dealtTo = async reviewer => (await call(`/atlas?purpose=review&grapheme=U%2B30BD&state=pending&seed=3&limit=96&reviewer=${reviewer}`)).items.map(i => i.id)
+  const skipBy = (reviewer, id) => ({ id: crypto.randomUUID(), client_id: reviewer, grapheme: 'U+30BD', skipped: [{ id, image_sha256: hash }] })
   await call('/atlas/rounds', skipBy('alice', 'skip-b'))
   assert.ok(!(await dealtTo('alice')).includes('skip-b'), 'a skip rests for the reviewer who made it')
   // A reviewer's own skips show only in their counts, whichever request comes first.
@@ -337,7 +340,7 @@ try {
       id, 'local', 'ナ', 'ナ', 'U+30CA', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
       JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
   }
-  const roundOf = async (params = '') => call(`/atlas?purpose=review&reading=ナ&state=pending${params.includes('limit=') ? '' : '&limit=96'}${params}`)
+  const roundOf = async (params = '') => call(`/atlas?purpose=review&grapheme=U%2B30CA&state=pending${params.includes('limit=') ? '' : '&limit=96'}${params}`)
   const ids = async params => (await roundOf(params)).items.map(i => i.id)
   const dealtNa = await ids('&seed=0')
   assert.deepEqual(dealtNa.slice(0, 2).sort(), ['na-local-a', 'na-local-b'], 'local crops come first')
@@ -352,22 +355,22 @@ try {
   for (let offset = 0; offset < 7; offset += 3) paged.push(...await ids(`&seed=0&limit=3&offset=${offset}`))
   assert.deepEqual(paged, dealtNa, 'paging runs on from the local crops into the corpus glyphs')
   assert.equal((await roundOf('&seed=0')).total, 7)
-  await call('/atlas?purpose=review&reading=ナ&offset=5000', undefined, 404)
+  await call('/atlas?purpose=review&grapheme=U%2B30CA&offset=5000', undefined, 404)
   assert.ok(!dealtNa.includes('na-movable') && !dealtNa.includes('na-unassigned'), 'movable type and unassigned glyphs are not dealt')
   assert.ok((await ids('&seed=0&production=all')).includes('na-movable'), 'every material includes movable type')
   assert.deepEqual((await ids('&seed=0&production=printed/woodblock')), ['na-2', 'na-4', 'na-5', 'na-3', 'na-1'], 'one material deals only its glyphs')
   assert.deepEqual((await ids('&seed=0&production=printed/type')), ['na-movable'], 'a node deals what lies under it')
   assert.deepEqual((await ids('&seed=0&production=printed')), ['na-2', 'na-movable', 'na-4', 'na-5', 'na-3', 'na-1'], 'a wider node merges its productions in shuffle order')
   assert.deepEqual((await ids('&seed=0&production=inscribed')), [], 'a node the character has nothing under deals nothing')
-  await call('/atlas?purpose=review&reading=ナ&production=printed%20type', undefined, 400)
-  await call('/atlas?purpose=review&reading=ナ&production=not:all', undefined, 400)
-  await call('/atlas?purpose=review&reading=ナ&production=printed/typo', undefined, 400)
-  assert.deepEqual((await call('/atlas?purpose=review&reading=ヌ&state=pending')).items.map(i => i.id), ['nu-shown'], 'a glyph this site may not serve is not dealt')
+  await call('/atlas?purpose=review&grapheme=U%2B30CA&production=printed%20type', undefined, 400)
+  await call('/atlas?purpose=review&grapheme=U%2B30CA&production=not:all', undefined, 400)
+  await call('/atlas?purpose=review&grapheme=U%2B30CA&production=printed/typo', undefined, 400)
+  assert.deepEqual((await call('/atlas?purpose=review&grapheme=U%2B30CC&state=pending')).items.map(i => i.id), ['nu-shown'], 'a glyph this site may not serve is not dealt')
   // A glyph passed over still takes its position: the next offset runs ahead of the items, and once
   // the glyphs run out the total is what there was to deal.
-  const passedOver = await call('/atlas?purpose=review&reading=ヌ&state=pending&limit=1')
+  const passedOver = await call('/atlas?purpose=review&grapheme=U%2B30CC&state=pending&limit=1')
   assert.deepEqual([passedOver.items.length, passedOver.next_offset, passedOver.total], [0, 1, 2])
-  const rest = await call('/atlas?purpose=review&reading=ヌ&state=pending&limit=2&offset=1')
+  const rest = await call('/atlas?purpose=review&grapheme=U%2B30CC&state=pending&limit=2&offset=1')
   assert.deepEqual([rest.items.map(i => i.id), rest.next_offset, rest.total], [['nu-shown'], 2, 2])
   const first = (await roundOf('&seed=0')).items.find(i => i.id === 'na-2')
   assert.equal(first.origin, 'corpus')
@@ -376,7 +379,7 @@ try {
   assert.deepEqual(await category(), { label: 'ナ', grapheme: 'U+30CA', total: 7, pending: 7, seen: 0, checked: 0, flagged: 0, hard: 0, skipped: 0 }, 'counts include corpus glyphs')
   assert.equal((await call('/atlas?purpose=review&limit=1&production=all')).categories.find(c => c.label === 'ナ').pending, 8)
   const na = Object.fromEntries((await roundOf('&seed=0')).items.map(i => [i.id, i]))
-  const cropRound = { id: crypto.randomUUID(), client_id: 'alice', label: 'ナ',
+  const cropRound = { id: crypto.randomUUID(), client_id: 'alice', grapheme: 'U+30CA',
     answers: [{ id: 'na-2', revision: 0, source_revision: na['na-2'].source_revision, verdict: 'wrong', issue: 'crop' }],
     seen: [{ id: 'na-4', source_revision: na['na-4'].source_revision, image: na['na-4'].image }],
     skipped: [{ id: 'na-5', source_revision: na['na-5'].source_revision, image: na['na-5'].image }] }
@@ -412,11 +415,35 @@ try {
   await db.prepare("UPDATE corpus_units SET named=1 WHERE id='na-2'").run()
   assert.equal((await db.prepare("SELECT quiz FROM units WHERE id='na-2'").first()).quiz, 1, 'undo keeps a dealable glyph in the quiz')
   // A glyph the site may not serve cannot be named by a round, nor answered in one.
-  const refused = await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'alice', label: 'ヌ',
+  const refused = await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'alice', grapheme: 'U+30CC',
     seen: [{ id: 'nu-private', source_revision: createHash('sha256').update('nu-private').digest('hex') }] })
   assert.equal(refused.results.length, 0)
-  await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'alice', label: 'ナ', answers: [{ id: 'na-unassigned', revision: 0,
+  await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'alice', grapheme: 'U+30CA', answers: [{ id: 'na-unassigned', revision: 0,
     source_revision: createHash('sha256').update('na-unassigned').digest('hex'), verdict: 'wrong', issue: 'crop' }] }, 409)
+  // A round deals a grapheme: every character the character table files under it, the local crops
+  // first, then the characters' corpus glyphs merged in shuffle order. A character held only as corpus
+  // glyphs is counted under its family's grapheme.
+  const paired = { code_point: 'U+30CA', char: 'ナ', members: [{ char: 'ナ', code_point: 'U+30CA' }, { char: 'ヌ', code_point: 'U+30CC' }] }
+  await db.batch([...paired.members.map(({ char, code_point }) => {
+    const data = JSON.stringify({ char, code_point, grapheme: paired, candidates: {} })
+    return db.prepare('INSERT INTO characters VALUES(?,?,?,?,?)').bind(code_point, char, '', data, data)
+  }), db.prepare("INSERT OR REPLACE INTO metadata VALUES('corpus_counts_at','\"paired-graphemes\"')")])
+  const pairedRound = await roundOf('&seed=0&reviewer=carol')
+  assert.deepEqual(pairedRound.grapheme, { code_point: 'U+30CA', char: 'ナ', members: ['ナ', 'ヌ'] }, 'a round names its grapheme and members')
+  assert.deepEqual(pairedRound.items.slice(0, 2).map(i => i.id).sort(), ['na-local-a', 'na-local-b'], 'local crops come first')
+  assert.deepEqual(pairedRound.items.slice(2).map(i => i.id).sort(), ['na-1', 'na-2', 'na-3', 'na-4', 'na-5', 'nu-shown'], 'then the corpus glyphs of both characters')
+  assert.deepEqual(pairedRound.categories.map(c => c.label).sort(), ['ナ', 'ヌ'])
+  assert.equal((await call('/atlas?purpose=review&limit=1')).categories.find(c => c.label === 'ヌ').grapheme, 'U+30CA', 'a corpus-only character is filed under its family')
+  await call('/atlas?purpose=review&grapheme=U%2B30CC', undefined, 422)
+  const nuShown = pairedRound.items.find(i => i.id === 'nu-shown')
+  const memberRound = { id: crypto.randomUUID(), client_id: 'carol', grapheme: 'U+30CA', answers: [{ id: 'nu-shown', revision: nuShown.revision,
+    source_revision: nuShown.source_revision, verdict: 'wrong', issue: 'crop' }] }
+  assert.equal((await call('/atlas/rounds', memberRound)).results.length, 1, 'a round answers any character of its grapheme')
+  await call(`/atlas/rounds/${memberRound.id}/undo`, { client_id: 'carol' })
+  await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'carol', grapheme: 'U+30C8', answers: [{ id: 'na-local-a', revision: 0,
+    image_sha256: hash, verdict: 'wrong', issue: 'crop' }] }, 409)
+  await call('/atlas/rounds', { id: crypto.randomUUID(), client_id: 'carol', label: 'ナ', seen: [{ id: 'na-local-a', image_sha256: hash }] }, 422)
+  await db.batch(paired.members.map(({ code_point }) => db.prepare('DELETE FROM characters WHERE code_point=?').bind(code_point)))
   // Every new query shape reads corpus_units through an index, in index order. Each check is shown to
   // fail once its index is gone.
   const plan = async ({ sql, values }, bound) => (await db.prepare('EXPLAIN QUERY PLAN ' + sql).bind(...bound, ...values).all()).results.map(r => r.detail)
@@ -436,7 +463,7 @@ try {
   // corpus_characters is small and read whole, in its key's order.
   for (const production of ['all', 'not:printed/type', 'printed/woodblock']) shapes.push([worker.corpusCountQuery(production), [], null])
   shapes.push([{ sql: worker.namedRoundQuery('NOT (production>=? AND production<?)', 'state'), values: [] },
-    ['ナ', 'printed/type', 'printed/type0'], ONE_CHARACTER])
+    ['["ナ"]', 'printed/type', 'printed/type0'], ONE_CHARACTER])
   // What a publication runs after it rewrites corpus_units, and what the trigger runs on each naming.
   shapes.push([{ sql: refresh[0], values: [] }, [], 'sqlite_autoindex_corpus_units_1'])
   shapes.push([{ sql: "UPDATE corpus_characters SET named=named+1 WHERE (character,production)=(SELECT character,production FROM corpus_units WHERE id=? AND named=0)", values: [] },
@@ -454,7 +481,7 @@ try {
     ['U+4EEE', 0, 60, 0], 'unit_family_sample'])
   // A round and its reference strips count their own character only, through its index; the review
   // filter off its index keeps the planner from walking every crop that can be dealt.
-  const roundFilter = worker.listingFilter(true, 'not:printed/type', 'ナ')
+  const roundFilter = worker.listingFilter(true, 'not:printed/type', ['ナ'])
   shapes.push([{ sql: worker.facetsQueries(true, 'integration', roundFilter.where, true).stored, values: [] }, roundFilter.values, ONE_CHARACTER])
   // Every character's counts find a reviewer's skips during the rest by who and when, read each mark
   // once and look its crop up by id.
@@ -462,7 +489,7 @@ try {
   shapes.push([{ sql: allCounts.skipped, values: [] }, ['printed/type', 'printed/type0'], 'skip_actor'])
   const markPlan = await plan({ sql: allCounts.marked, values: [] }, ['printed/type', 'printed/type0'])
   assert.ok(markPlan.some(d => /^SCAN m\b/.test(d)) && markPlan.some(d => /^SEARCH units USING INDEX sqlite_autoindex_units_1 \(id=\?\)/.test(d)), markPlan.join('; '))
-  shapes.push([worker.corpusCountQuery('not:printed/type', 'ナ'), [], null])
+  shapes.push([worker.corpusCountQuery('not:printed/type', ['ナ']), [], null])
   // Browse's corpus counts read corpus_characters whole in its key's order and look each character's
   // grapheme up by its text.
   for (const production of ['all', 'not:printed/type']) {
@@ -763,7 +790,7 @@ try {
     framed.id, 'local', 'カ', 'カ', 'U+30AB', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
     JSON.stringify(framed), JSON.stringify({ character: framed }), '{}', '{}', null).run()
   const wide = { x: 0, y: 0, w: 90, h: 120 }
-  const framedRound = { id: crypto.randomUUID(), client_id: 'integration', label: 'カ',
+  const framedRound = { id: crypto.randomUUID(), client_id: 'integration', grapheme: 'U+30AB',
     answers: [{ id: 'framed', revision: 0, image_sha256: hash, verdict: 'wrong', issue: 'blank' }] }
   await call('/atlas/rounds', framedRound)
   await db.prepare(`UPDATE units SET data=json_set(data,'$.context_image',json('"/atlas/media/wide.webp"'),'$.context_box',json(?)) WHERE id='framed' AND revision=1`)
@@ -937,7 +964,7 @@ try {
   await db.prepare(`INSERT INTO units(${UNIT_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
     vetted.id, 'local', 'キ', 'キ', 'U+30AD', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
     JSON.stringify(vetted), JSON.stringify({ character: vetted }), '{}', '{}', null).run()
-  const vettedRound = { id: crypto.randomUUID(), client_id: 'integration', label: 'キ',
+  const vettedRound = { id: crypto.randomUUID(), client_id: 'integration', grapheme: 'U+30AD',
     answers: [{ id: 'vetted', revision: 0, image_sha256: hash, verdict: 'wrong', issue: 'blank' }] }
   await call('/atlas/rounds', vettedRound)
   await db.prepare(`UPDATE units SET data=json_set(data,'$.repair',json('{"status":"uncertain","quiz":false}')), quiz=0 WHERE id='vetted' AND revision=1`).run()
@@ -1075,7 +1102,7 @@ try {
     for (const reviewer of [null, 'alice', 'bob'])
       for (const character of [null, 'ソ', 'セ']) {
         if (!review && character) continue
-        const { where, values } = worker.listingFilter(review, review ? 'not:printed/type' : 'all', character)
+        const { where, values } = worker.listingFilter(review, review ? 'not:printed/type' : 'all', character && [character])
         const q = worker.facetsQueries(review, reviewer, where, character !== null)
         const [stored, ...moves] = await Promise.all([q.stored, q.marked, q.skipped].filter(Boolean).map(sql => db.prepare(sql).bind(...values).all()))
         const book = review ? 'NULL' : 'document'
@@ -1165,7 +1192,7 @@ try {
   // too: the round's request is kept once, on its submission, and each event carries its own answer.
   const roundIds = Array.from({ length: 144 }, (_, i) => 'ex:0b3fffde4433fda4:' + createHash('sha1').update('round' + i).digest('hex').slice(0, 20))
   for (const id of roundIds) await addLocal(id, 'ソ')
-  const fullRound = { id: crypto.randomUUID(), client_id: 'integration', label: 'ソ', seen: [], skipped: [],
+  const fullRound = { id: crypto.randomUUID(), client_id: 'integration', grapheme: 'U+30BD', seen: [], skipped: [],
     answers: roundIds.map(id => ({ ...localCrop(id), verdict: 'wrong', issue: 'character', character: 'ン', note: '点の向きがンに見える' })) }
   const firstRound = await call('/atlas/rounds', fullRound)
   assert.equal(firstRound.results.length, 144)
