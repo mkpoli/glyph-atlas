@@ -492,7 +492,7 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   // alone takes its total from them; counting it again would read every crop it holds on each page.
   // Any other filter clears this, and the listing is counted.
   let tally: ((row: Facet) => boolean)[] | null = review ? null : [];
-  if (reading && !scoped) { where.push('character=?'); values.push(reading); tally?.push(row => row.label === reading) }
+  if (reading) { where.push('character=?'); values.push(reading); tally?.push(row => row.label === reading) }
   const document = text(q.get('document'), 256, 'document');
   if (document) { where.push('document=?'); values.push(document); tally?.push(row => row.document === document) }
   // A grapheme is a family's representative code point, or a label's own code points. Every named crop

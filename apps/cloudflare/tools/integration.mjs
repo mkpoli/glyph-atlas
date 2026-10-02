@@ -435,6 +435,7 @@ try {
   assert.deepEqual(pairedRound.categories.map(c => c.label).sort(), ['ナ', 'ヌ'])
   assert.equal((await call('/atlas?purpose=review&limit=1')).categories.find(c => c.label === 'ヌ').grapheme, 'U+30CA', 'a corpus-only character is filed under its family')
   await call('/atlas?purpose=review&grapheme=U%2B30CC', undefined, 422)
+  assert.deepEqual((await call('/atlas?purpose=review&grapheme=U%2B30CA&reading=ヌ&state=pending')).items.map(i => i.id), [], 'a character narrows a grapheme to its own crops, none of them local')
   const nuShown = pairedRound.items.find(i => i.id === 'nu-shown')
   const memberRound = { id: crypto.randomUUID(), client_id: 'carol', grapheme: 'U+30CA', answers: [{ id: 'nu-shown', revision: nuShown.revision,
     source_revision: nuShown.source_revision, verdict: 'wrong', issue: 'crop' }] }

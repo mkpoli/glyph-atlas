@@ -330,6 +330,11 @@ def test_a_round_is_dealt_for_a_grapheme_and_its_members(dataset):
     assert data["items"] and {item["label"] for item in data["items"]} <= set(data["grapheme"]["members"])
     assert "grapheme" not in client.get('/atlas', params={"grapheme": "U+3042"}).json(), "browsing names no round"
     assert client.get('/atlas', params={"purpose": "review", "grapheme": "U+30A2"}).status_code == 422
+    for key in ("invalid", "U+110000"):
+        assert client.get('/atlas', params={"purpose": "review", "grapheme": key}).status_code == 422
+    payload = round_payload(client)
+    payload['grapheme'] = "U+110000"
+    assert client.post('/atlas/rounds', json=payload).status_code == 422
 
 
 def test_round_rejects_other_category_or_repeated_character(dataset):

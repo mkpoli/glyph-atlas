@@ -7,6 +7,7 @@ import io
 import json
 import logging
 import random
+import re
 import threading
 import unicodedata
 from collections import Counter
@@ -153,6 +154,8 @@ def grapheme_members(key: str) -> list[str]:
     hentaigana. A key that names no family is its own text alone; one that names a family's member
     rather than the family is refused, as the hosted site refuses it."""
     points = key.split(" ")
+    if not re.fullmatch(GRAPHEME_KEY, key) or any(int(point.removeprefix("U+"), 16) > 0x10FFFF for point in points):
+        raise BadRequest("Invalid grapheme.")
     head = refs.grapheme(points[0]) if len(points) == 1 else None
     if head and head != key:
         raise BadRequest(f"{refs.from_code_points(points)} is filed under {refs.to_char(head)}.")
