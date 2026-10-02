@@ -51,16 +51,16 @@ def seal_records(seals: list[hdic.Seal], page: Page, lines: list[Line], units: l
     for seal in seals:
         glyph = hdic.headword(seal.entry, "")
         code = hdic.encoded(glyph[0]) if len(glyph) == 1 else None
-        line_id = f"ktb:{seal.entry_id}:seal"
+        line_id = f"ktb:{seal.seal_id}:seal"
         lines.append(Line(id=line_id, page_id=page.id, seq=len(lines), vertical=True, box=seal.box,
                           text_raw=seal.entry, text=seal.entry, match_method="import",
                           meta={"source": "hdic-ktb", "entry_id": seal.entry_id, "file": "KTB_ndl_Seal.tsv"}))
         units.append(Unit(
-            id=f"ktb:{seal.entry_id}:seal", document_id=page.document_id, page_id=page.id, line_id=line_id, seq=0,
+            id=f"ktb:{seal.seal_id}:seal", document_id=page.document_id, page_id=page.id, line_id=line_id, seq=0,
             box=seal.box, text_source=seal.entry, reading=seal.entry, unicode=code,
             classification=Classification.IDENTIFIED if code else Classification.UNIDENTIFIED,
             script=Script.HAN, style="seal", method="import", review=ReviewState.TRANSCRIBER,
-            upstream={"source": "hdic-ktb", "entry_id": seal.entry_id, "seal_id": f"T{seal.entry_id}"},
+            upstream={"source": "hdic-ktb", "entry_id": seal.entry_id, "seal_id": f"T{seal.seal_id}"},
             meta={"classifier_agrees": None}))
     return len(seals)
 

@@ -279,3 +279,61 @@ def test_a_second_reader_confirms_but_never_refuses() -> None:
     assert by_entry["F1"].verdict is True and by_entry["F1"].classifier is None and by_entry["F1"].second == "傮"
     # 仿 is refused by the classifier, which knows it; the second reader's 人 neither refuses nor confirms.
     assert by_entry["F2"].verdict is False
+
+
+def test_a_neighbour_vouches_only_for_the_glyph_next_to_it() -> None:
+    boxes, columns = running_page()
+    boxes = [b for b in boxes if b.y != 1800 or abs(b.x + b.w / 2 - columns[0]) > 1]  # the third headword is missed
+    boxes.append(headword_box(columns[0], 2850))  # and a large gloss character keeps the count off
+    grid = hdic.page_grids(boxes, UNIT, TSJ)["right"]
+
+    def rank(box: Box) -> list[str]:
+        return [code({400: "天", 2500: "地"}[box.y])] if box.x == columns[0] - 80 and box.y in (400, 2500) else [code("ノ")]
+
+    result = hdic.place(column_entries("天", "⿱一丷", "⿰口天", "地"), boxes, grid, UNIT, rank,
+                        known={code("天"), code("地"), code("ノ")}, layout=TSJ)
+    kept = {p.glyph.text for p in result.pairs if p.kept}
+    # One of the two unread glyphs sits on the box between 天 and 地; nothing says which.
+    assert kept == {"天", "地"}
+
+
+def test_only_a_headword_box_anchors_a_cell_at_its_tier_line() -> None:
+    grid = hdic.Grid(columns=(1000.0,), pitch=250.0, tiers=(500.0,), tier_pitch=800.0)
+    gloss_below = [Box(x=970, y=1050 + 90 * k, w=60, h=70) for k in range(3)]
+
+    def kept(*boxes: Box) -> list[bool]:
+        result = hdic.place([entry("F1", 1, 1, 0, "傮")], [*boxes, *gloss_below], grid, UNIT, lambda b: [code("ノ")],
+                            known={code("ノ")}, layout=KRM)
+        return [p.kept for p in result.pairs]
+
+    # A small box on the tier line does not make a headword box well below it the cell's opening...
+    assert kept(Box(x=1050, y=500, w=60, h=60), headword_box(1000, 850)) == [False]
+    # ...and one above the line does not unseat the headword box that stands on it.
+    assert kept(Box(x=1050, y=310, w=60, h=60), headword_box(1000, 500)) == [True]
+
+
+def test_ktb_leaves_out_lines_whose_tiers_its_order_does_not_settle(tmp_path: Path) -> None:
+    columns = ("TBID", "TB_vol_radical", "TB_radical", "Entry", "Entry_type", "Entry_diff", "TB_def", "SYID",
+               "YYID", "TB_remarks", "Lv_page", "Zang_page")
+    rows = [("1_050_B31", "𠋴", "Regular"), ("1_050_B32", "倓", "Regular"), ("1_050_B33", "㒒", "Regular"),
+            ("1_050_B34", "偞", "Regular"), ("1_050_B41", "人", "Omitted"), ("1_050_B42", "仁", "Regular"),
+            ("1_050_B51", "仕", "Regular"), ("1_050_B52", "他", "Embedded_clerical"), ("1_050_B53", "代", "Regular")]
+    (tmp_path / "KTB.tsv").write_text("# KTB\n" + "\t".join(columns) + "\n" + "".join(
+        f"{tid}\tv1#1\t人\t{entry}\t{kind}\t\t\t\t\t\t1\t1\n" for tid, entry, kind in rows), encoding="utf-8")
+    (tmp_path / "KTB_ndl.txt").write_text("# KTB\nVol_radical\tKTB_vol\tRadical\tBook_leaf\tNDL_url\n", encoding="utf-8")
+    entries, _, _ = hdic.read_ktb(tmp_path)
+    assert [(e.entry_id, e.segment) for e in entries] == [("1_050_B51", 1), ("1_050_B53", 2)]
+
+
+def test_a_second_seal_form_of_an_entry_keeps_its_own_id(tmp_path: Path) -> None:
+    columns = ("TBID", "TB_vol_radical", "TB_radical", "Entry", "Entry_type", "Entry_diff", "TB_def", "SYID",
+               "YYID", "TB_remarks", "Lv_page", "Zang_page")
+    (tmp_path / "KTB.tsv").write_text("# KTB\n" + "\t".join(columns) + "\n"
+                                      "1_016_B31\tv1#1\t示\t祉\tRegular_seal\t\t\t\t\t\t1\t1\n", encoding="utf-8")
+    (tmp_path / "KTB_ndl_Seal.tsv").write_text(
+        "TB_Seal_ID\tNDL_IIIF_Image_API_Base_URI\tx\ty\twidth\theight\n"
+        "T1_016_B31\thttps://www.dl.ndl.go.jp/api/iiif/1245837/R0000019\t10\t20\t30\t40\n"
+        "T1_016_B31_2\thttps://www.dl.ndl.go.jp/api/iiif/1245837/R0000019\t10\t80\t30\t40\n", encoding="utf-8")
+    seals = hdic.read_ktb_seals(tmp_path)
+    assert [(s.seal_id, s.entry_id, s.frame, s.entry) for s in seals] == [
+        ("1_016_B31", "1_016_B31", 19, "祉"), ("1_016_B31_2", "1_016_B31", 19, "祉")]

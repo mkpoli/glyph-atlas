@@ -8,7 +8,8 @@ and frames are read and the `Layout` of its pages:
 - KRM, 観智院本類聚名義抄: eight columns of four tiers, each tier opening with a headword
   (`read_krm`). A frame of the facsimile (貴重図書複製会, 1937) shows two pages of the 天理 edition.
 - KTB, 高山寺本篆隷萬象名義: six columns per half-leaf, each holding an upper and a lower entry
-  (`read_ktb` takes the first of a line's large headwords as the upper), on the 崇文叢書 edition.
+  (`read_ktb` takes the first of a line's two large headwords as the upper, and leaves out a line
+  whose tiers its order does not settle), on the 崇文叢書 edition.
   The first books write a seal-script form above each headword; the later ones write the gloss in
   characters as large as the headword, so a headword there is told by its place, not its size.
 - TSJ, 天治本新撰字鏡: eight columns per half-leaf, entries running on down each column
@@ -233,13 +234,22 @@ KTB_WRITTEN = frozenset({"Regular", "Regular_seal"})
 def read_ktb(clone: Path) -> tuple[list[Entry], Frames, set[tuple[str, Any]]]:
     """KTB's large headwords placed by `TBID` (half-leaf, line, number), and its frame table."""
     lines: dict[tuple[str, int], list[tuple[re.Match, dict[str, str]]]] = {}
+    unsure: set[tuple[str, int]] = set()
     for row in read_tsv(clone / "KTB.tsv"):
         found = _KTB_ID.match(row["TBID"])
-        if found and row["Entry_type"] in KTB_WRITTEN:
-            half = f"{found['book']}_{found['leaf']}_{found['side']}"
-            lines.setdefault((half, int(found["line"])), []).append((found, row))
+        if not found:
+            continue
+        key = (f"{found['book']}_{found['leaf']}_{found['side']}", int(found["line"]))
+        if row["Entry_type"] in KTB_WRITTEN:
+            lines.setdefault(key, []).append((found, row))
+        elif not row["Entry_type"].startswith("Embedded"):
+            unsure.add(key)  # an entry missing from the page, or added from the Song print
     entries = []
     for (half, line), members in lines.items():
+        # Upper and lower follow from the order only when the line holds exactly two large headwords,
+        # or one with nothing missing beside it. A line with more doubles headwords in a tier.
+        if len(members) > 2 or (len(members) == 1 and (half, line) in unsure):
+            continue
         # The manuscript writes an upper and a lower entry in each line, in this order.
         for segment, (found, row) in enumerate(sorted(members, key=lambda m: int(m[0]["number"])), start=1):
             entries.append(Entry(
@@ -257,6 +267,7 @@ def read_ktb(clone: Path) -> tuple[list[Entry], Frames, set[tuple[str, Any]]]:
 class Seal:
     """A seal-script form HDIC boxed on the 崇文叢書 edition: the entry it heads, where it is, what it reads."""
 
+    seal_id: str
     entry_id: str
     pid: str
     frame: int
@@ -273,11 +284,13 @@ def read_ktb_seals(clone: Path) -> list[Seal]:
     seals = []
     for row in read_tsv(clone / "KTB_ndl_Seal.tsv"):
         found = re.search(r"/iiif/(\d+)/R(\d+)$", row["NDL_IIIF_Image_API_Base_URI"])
-        entry_id = row["TB_Seal_ID"].removeprefix("T")
+        seal_id = row["TB_Seal_ID"].removeprefix("T")
+        # A second seal form of an entry is numbered after its TBID: 1_016_B31_2.
+        entry_id = seal_id if seal_id in headwords else re.sub(r"_\d+$", "", seal_id)
         if not found or entry_id not in headwords:
             continue
         box = Box(x=int(row["x"]), y=int(row["y"]), w=int(row["width"]), h=int(row["height"]))
-        seals.append(Seal(entry_id, found.group(1), int(found.group(2)), box, headwords[entry_id]))
+        seals.append(Seal(seal_id, entry_id, found.group(1), int(found.group(2)), box, headwords[entry_id]))
     return seals
 
 
@@ -624,17 +637,20 @@ def place(entries: Sequence[Entry], boxes: Sequence[Box], grid: Grid, unit: floa
         # Every written glyph on its own headword box, in order: no other pairing exists to doubt.
         complete = len(pairs) == len(written) == sum(1 for mark in marks if not mark)
         read = any(p.verdict for p in pairs)
-        # Where the cell begins: its first box, a seal form above the headword included.
-        first_box = cell_window(boxes, grid, line, segment)[0]
+        # Where the cell begins: its first candidate, or with tier heads its first box, so that a seal
+        # form above the headword counts.
+        first_box = windows[(line, segment)][0] if layout.heads == "tier" else candidates[0]
         on_line = abs(first_box.y - grid.tiers[segment - 1]) <= ANCHOR * grid.tier_pitch
         for n, (pair, (i, j)) in enumerate(zip(pairs, indexed, strict=True)):
             if pair.verdict:
                 pair.kept = True
             elif pair.verdict is None and not refused and not (seal_page and not sealed(windows[(line, segment)], unit)):
                 at_line = bool(written) and i == written[0] and j == 0 and on_line
-                # Read on both sides, on the boxes next to its own.
+                # Read on both sides, on the glyphs and the boxes next to its own.
+                place_of = written.index
                 held = (0 < n < len(pairs) - 1 and pairs[n - 1].verdict and pairs[n + 1].verdict
-                        and indexed[n - 1][1] == j - 1 and indexed[n + 1][1] == j + 1)
+                        and indexed[n - 1][1] == j - 1 and indexed[n + 1][1] == j + 1
+                        and place_of(indexed[n - 1][0]) == place_of(i) - 1 and place_of(indexed[n + 1][0]) == place_of(i) + 1)
                 pair.kept = bool((complete and (read or on_line or layout.counted)) or at_line or held)
             result.count("kept" if pair.kept else "refused" if pair.verdict is False else "unanchored")
         result.count("unpaired", len(written) - len(pairs))
