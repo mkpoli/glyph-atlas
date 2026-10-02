@@ -13,14 +13,16 @@
   import ZiLink from './ZiLink.svelte'
   import CopyId from './CopyId.svelte'
   import { onMount, untrack, tick } from 'svelte'
-  import { request, corpusCharacter } from '../lib/client.js'
+  import { request } from '../lib/client.js'
+  import { readCrop } from '../lib/cropCache.js'
   import { isSingle, suggestsReading, greetSuggestions } from '../lib/issues.js'
   import { t } from '../lib/i18n.svelte.js'
   import CropReview from './CropReview.svelte'
   import CropContext from './CropContext.svelte'
   // `initial` is the record the server rendered the page with, so the first load needs no request.
   // `changed` hears about a write that keeps the dialog open (a written form), as the crop dialog's does.
-  let { id, close, saved, changed = null, previous = null, next = null, position = '', initial = null } = $props()
+  // `preview` is the list's own row for the glyph, drawn while the record loads.
+  let { id, close, saved, changed = null, previous = null, next = null, position = '', initial = null, preview = null } = $props()
   const first = untrack(() => initial)
   const session = useSession()
   // Going on to the next crop disables the focused save button while it loads, which drops its focus;
@@ -28,24 +30,26 @@
   // crop it leaves, and the load of another crop arms the return.
   let saveButton = $state(null), refocus = $state(false), leaving = null
   // The button is enabled on the render after the crop is ready, so focus waits for it.
-  $effect(() => { if (refocus && loaded && !busy && saveButton) { refocus = false; tick().then(() => saveButton?.focus({ preventScroll: true })) } })
+  $effect(() => { if (refocus && loaded && fresh && !busy && saveButton) { refocus = false; tick().then(() => saveButton?.focus({ preventScroll: true })) } })
   const advancing = $derived(session.state.advance && Boolean(next))
   let dialog, data = $state(first), error = $state(''), busy = $state(false)
   let issue = $state(null), noneSelected = $state(false), correction = $state(null)
   // The form the reviewer chose for the glyph, held until the save; null keeps the one it has.
   let form = $state(null)
   let loaded = $state(false), imageFailed = $state(false), suggestionsElement = $state(null)
-  let generation = 0, closed = false, submission = null
+  let generation = 0, closed = false, submission = null, fresh = $state(Boolean(first))
   const sourceName = $derived(data?.source?.corpus === 'codh-full' ? 'CODH' : data?.source?.corpus || t('corpus.genericName'))
   async function load(target, preloaded = null) {
     const current = ++generation
-    data = preloaded; error = ''; form = null; issue = null; correction = null; noneSelected = false
+    // The list's row stands in until the record arrives; nothing can be saved from it.
+    data = preloaded ?? (preview?.id === target ? preview : null); fresh = Boolean(preloaded)
+    error = ''; form = null; issue = null; correction = null; noneSelected = false
     loaded = false; imageFailed = false; submission = null
     if (leaving && target !== leaving) { refocus = true; leaving = null }
     dialog?.scrollTo({ top: 0 })
     try {
-      const result = preloaded ?? await corpusCharacter(target)
-      if (!closed && current === generation) data = result
+      const result = preloaded ?? await readCrop(target, 'corpus')
+      if (!closed && current === generation) { if (result.image !== data?.image) loaded = false; data = result; fresh = true }
     } catch (e) { if (!closed && current === generation) error = e.message }
   }
   // Only the first load, of the crop the page was rendered for, starts from `initial`.
@@ -69,7 +73,7 @@
   }
   function choose(value, none = false) { correction = value; noneSelected = none; submission = null }
   async function save(matches = false) {
-    if (busy || !data || !loaded || imageFailed) return
+    if (busy || !data || !fresh || !loaded || imageFailed) return
     const target = id, current = generation
     if (data.identity_status === 'unassigned' && (matches || !issue)) return
     if (matches) { issue = null; correction = null; noneSelected = false; form = null }
@@ -118,20 +122,20 @@
         <div class="credit-beside"><SourceCredit item={data} corpus /></div>
       </div>
       {#if data.identity_status === 'unassigned'}
-        <div class="assignment-options"><FormChips forms={data.family_members ?? []} chosen={issue === 'character' ? correction : null} disabled={busy} label={t('corpus.assign.label')}
+        <div class="assignment-options"><FormChips forms={data.family_members ?? []} chosen={issue === 'character' ? correction : null} disabled={busy || !fresh} label={t('corpus.assign.label')}
           onchoose={char => { chooseIssue('character'); choose(char) }} /></div>
       {/if}
-      {#snippet formBar()}{#if data.identity_status !== 'unassigned' && !data.needs_segmentation}<CropForm crop={data} chosen={form} onchoose={value => form = value} disabled={busy} />{/if}{/snippet}
-      <CropReview forms={formBar} {issue} onissue={chooseIssue} disabled={busy} suggested={data.state === 'flagged' ? data.issue : null} onskip={skip}
+      {#snippet formBar()}{#if data.identity_status !== 'unassigned' && !data.needs_segmentation}<CropForm crop={data} chosen={form} onchoose={value => form = value} disabled={busy || !fresh} />{/if}{/snippet}
+      <CropReview forms={formBar} {issue} onissue={chooseIssue} disabled={busy || !fresh} suggested={data.state === 'flagged' ? data.issue : null} onskip={skip}
         targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={{ candidates: data.suggestions }} label={data.label} value={correction} onchoose={choose} />
-      <SimilarCrops id={data.id} label={data.label} />
+      <SimilarCrops id={data.id} label={data.label} ready={fresh && loaded} />
       <div class="credit-after"><SourceCredit item={data} corpus /></div>
     {:else if !error}<div class="inspector-skeleton"></div>{/if}
   </div>
   <footer class="inspector-savebar">
     <AdvanceSwitch disabled={busy} />
     {#if imageFailed}<span role="alert">{t('character.image.unavailable')}</span>{/if}
-    <button class="primary save-character" bind:this={saveButton} disabled={busy || !data || !loaded || imageFailed || !data.proxyable || ((data.needs_segmentation || data.identity_status === 'unassigned') && !issue)} onclick={() => save()}>{busy ? t('common.saving') : data?.identity_status === 'unassigned' && !issue ? t('corpus.save.chooseCharacterOrIssue') : data?.needs_segmentation && !issue ? t('corpus.save.awaitingSegmentation') : issue ? t(advancing ? 'character.save.issue.next' : 'character.save.issue.close') : form != null ? t(advancing ? 'character.save.changes.next' : 'character.save.changes.close') : t(advancing ? 'character.save.looksRight.next' : 'character.save.looksRight.close')} {#if advancing}<span>→</span>{:else if !issue}<span>✓</span>{/if}</button>
+    <button class="primary save-character" bind:this={saveButton} disabled={busy || !data || !fresh || !loaded || imageFailed || !data.proxyable || ((data.needs_segmentation || data.identity_status === 'unassigned') && !issue)} onclick={() => save()}>{busy ? t('common.saving') : data?.identity_status === 'unassigned' && !issue ? t('corpus.save.chooseCharacterOrIssue') : data?.needs_segmentation && !issue ? t('corpus.save.awaitingSegmentation') : issue ? t(advancing ? 'character.save.issue.next' : 'character.save.issue.close') : form != null ? t(advancing ? 'character.save.changes.next' : 'character.save.changes.close') : t(advancing ? 'character.save.looksRight.next' : 'character.save.looksRight.close')} {#if advancing}<span>→</span>{:else if !issue}<span>✓</span>{/if}</button>
     {#if issue && !data?.needs_segmentation && data?.identity_status !== 'unassigned'}<button class="quiet-link looks-right" disabled={busy || !loaded || imageFailed} onclick={() => save(true)}>{t('character.save.itLooksRight')}</button>{/if}
     <ContributionTerms />
   </footer>

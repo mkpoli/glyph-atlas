@@ -14,6 +14,7 @@
   import CollectionProgress from '$components/CollectionProgress.svelte'
   import SignInDialog from '$components/SignInDialog.svelte'
   import { createInspector, provideInspector } from '$lib/inspector.svelte.js'
+  import { prefetchCrop, forgetCrop } from '$lib/cropCache.js'
   import { number } from '$lib/client.js'
   import { createSession, provideSession } from '$lib/session.svelte.js'
   import { THEMES, setTheme, showThemeColor } from '$lib/theme.js'
@@ -43,6 +44,15 @@
   // the old revision and have its next save refused; the dialog then reads the crop itself.
   let written = $state({})
   const initial = $derived(routed && shown?.id === routed.id && !written[routed.id] ? page.data.record : null)
+  // The list's own row for the crop on show, drawn while its record loads.
+  const preview = $derived(index >= 0 && inspector.queue[index]?.image ? inspector.queue[index] : null)
+  // The crops either side are read ahead once this one is on show, so stepping finds them ready.
+  $effect(() => {
+    const queue = inspector.queue, near = [queue[index + 1], queue[index - 1]].filter(Boolean)
+    // A moment later, so the crop on show is read first.
+    const timer = setTimeout(() => { for (const item of near) prefetchCrop(item.id, item.origin ?? 'collection') }, 400)
+    return () => clearTimeout(timer)
+  })
   const position = $derived(index >= 0 ? `${number(index + 1)} / ${number(inspector.queue.length)}` : '')
   $effect(() => { document.documentElement.lang = locale() })
   // Set on the document so the single image rule in app.css reaches every view.
@@ -54,10 +64,12 @@
   // A write that keeps the inspector open (a crop's style): the crop's tile and record are stale all
   // the same, so the next open reads it afresh.
   function changed(id, result) {
+    forgetCrop(id)
     inspector.update?.(id, result)
     written = { ...written, [id]: true }
   }
   function saved(id, result) {
+    forgetCrop(id)
     inspector.update?.(id, result)
     written = { ...written, [id]: true }
     savedNotice = t('app.saved')
@@ -104,7 +116,7 @@
     · <a href="https://github.com/mkpoli/glyph-atlas" rel="noopener" target="_blank">GitHub ↗</a>
     · <ChatLinks /></p>
 </footer>
-{#if shown}{#if shown.origin === 'corpus'}<CorpusDialog id={shown.id} {changed} {close} {saved} {previous} {next} {position} {initial} />{:else}<CharacterDialog id={shown.id} {changed} {close} onVerdict={inspector.onVerdict} {saved} {previous} {next} {position} {initial} />{/if}{/if}
+{#if shown}{#if shown.origin === 'corpus'}<CorpusDialog id={shown.id} {preview} {changed} {close} {saved} {previous} {next} {position} {initial} />{:else}<CharacterDialog id={shown.id} {preview} {changed} {close} onVerdict={inspector.onVerdict} {saved} {previous} {next} {position} {initial} />{/if}{/if}
 {#if savedNotice}<div class="save-toast" role="status">✓ {savedNotice}</div>{/if}
 {#if exporting}<ExportReviews close={() => { exporting = false; menuButton?.focus() }} />{/if}
 {#if session.state.signingIn}<SignInDialog close={() => session.state.signingIn = false} />{/if}
