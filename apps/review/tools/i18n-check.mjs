@@ -37,10 +37,10 @@ function walk(dir, out = []) {
   return out
 }
 
-/** Every balanced `t(...)` or `around(...)` call's key expression — up to the top-level comma before `params`. */
+/** Every balanced `t(...)`, `around(...)` or `withText(...)` call's key expression — up to the top-level comma before `params`. */
 function tCalls(text) {
   const calls = []
-  const re = /\b(?:t|around)\(/g
+  const re = /\b(?:t|around|withText)\(/g
   let match
   while ((match = re.exec(text))) {
     let depth = 1, i = match.index + match[0].length

@@ -573,6 +573,7 @@
   "script.hiragana": "平假名",
   "script.kanji": "漢字",
   "script.katakana": "片假名",
+  "script.latin": "羅馬字",
   "script.legend.label": "字色例",
   "script.mixed": "雜",
   "script.symbol": "符",

@@ -1,11 +1,24 @@
-/* Character colors remain stable when a surrounding option is selected. */
-.script-char[data-script="hiragana"] { color: light-dark(#176456, #75cdb6); }
-.script-char[data-script="katakana"] { color: light-dark(#275991, #88b8f0); }
-.script-char[data-script="kanji"] { color: light-dark(#80521a, #dcb16e); }
-.script-char[data-script="hangul"] { color: light-dark(#9c2f3f, #f596a5); }
-.script-char[data-script="gugyeol"] { color: light-dark(#4a7a1f, #aad477); }
-.script-char[data-script="symbol"] { color: light-dark(#74406a, #d5a0cd); }
-.script-char[data-script="unknown"] { color: light-dark(#53515b, #aaa6b6); }
+/* One colour per script, in the light and the dark scheme. Hentaigana are drawn as hiragana, and a
+   grapheme mixing scripts as an unknown one. Character colours stay stable when a surrounding
+   option is selected. */
+:root {
+  --script-hiragana: light-dark(#176456, #75cdb6);
+  --script-katakana: light-dark(#275991, #88b8f0);
+  --script-kanji: light-dark(#80521a, #dcb16e);
+  --script-hangul: light-dark(#9c2f3f, #f596a5);
+  --script-gugyeol: light-dark(#4a7a1f, #aad477);
+  --script-symbol: light-dark(#74406a, #d5a0cd);
+  --script-latin: light-dark(#665f12, #cfc56c);
+  --script-unknown: light-dark(#53515b, #aaa6b6);
+}
+.script-char[data-script="hiragana"] { color: var(--script-hiragana); }
+.script-char[data-script="katakana"] { color: var(--script-katakana); }
+.script-char[data-script="kanji"] { color: var(--script-kanji); }
+.script-char[data-script="hangul"] { color: var(--script-hangul); }
+.script-char[data-script="gugyeol"] { color: var(--script-gugyeol); }
+.script-char[data-script="symbol"] { color: var(--script-symbol); }
+.script-char[data-script="latin"] { color: var(--script-latin); }
+.script-char[data-script="unknown"], .script-char[data-script="mixed"] { color: var(--script-unknown); }
 @media (forced-colors: active) {
   .script-char[data-script] { color: inherit; }
 }

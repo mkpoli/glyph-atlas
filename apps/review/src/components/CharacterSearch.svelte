@@ -15,6 +15,7 @@
   // same grapheme cards its browser shows, and the characters it holds none of fold away beneath them.
   import { onMount } from 'svelte'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
+  import ScriptText from './ScriptText.svelte'
   import GraphemeCard from './GraphemeCard.svelte'
   import { suggest, countsLabel, ownLabel } from '../lib/layers.js'
   import { t } from '../lib/i18n.svelte.js'
@@ -222,10 +223,10 @@
     <span class="candidate-body">
       <span class="candidate-line">
         <b class="candidate-char"><ReferenceGlyph char={item.char} code_point={item.code_point} script={item.script} size="sm" /></b>
-        <span class="candidate-reading">{item.reading ?? item.code_point}</span>
+        <span class="candidate-reading">{#if item.reading}<ScriptText text={item.reading} />{:else}{item.code_point}{/if}</span>
         {#if item.kind === 'ligature'}<span class="tag">{t('search.ligature')}</span>{/if}
       </span>
-      <span class="candidate-counts">{countsLabel(item.candidates) || ownLabel(item)}{#if item.grapheme?.character_count > 1}<span> · {item.grapheme.label}</span>{/if}</span>
+      <span class="candidate-counts">{countsLabel(item.candidates) || ownLabel(item)}{#if item.grapheme?.character_count > 1}<span> · <ScriptText text={item.grapheme.label} /></span>{/if}</span>
     </span>
   </button></div>
 {/snippet}
@@ -233,7 +234,7 @@
 <div class="character-search" class:compact bind:this={root} onfocusout={blurred}>
   <form class="find" role="search" onsubmit={e => { e.preventDefault(); if (onsubmit) onsubmit(value); else choose() }}>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
-    {#if token}<button type="button" class="find-token" aria-label={tokenLabel} onclick={() => { ontokenclear(); input?.focus() }}><span lang="ja">{token}</span> ×</button>{/if}
+    {#if token}<button type="button" class="find-token" aria-label={tokenLabel} onclick={() => { ontokenclear(); input?.focus() }}><ScriptText text={token} /> ×</button>{/if}
     <input bind:this={input} aria-label={label} bind:value placeholder={placeholder}
            autocomplete="off" spellcheck="false" role="combobox" aria-expanded={open}
            aria-controls={listId} aria-autocomplete="list" aria-busy={loading}

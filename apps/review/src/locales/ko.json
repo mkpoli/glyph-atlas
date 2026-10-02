@@ -571,6 +571,7 @@
   "script.hiragana": "히라가나",
   "script.kanji": "한자",
   "script.katakana": "가타카나",
+  "script.latin": "라틴 문자",
   "script.legend.label": "글자 색상 범례",
   "script.mixed": "혼합",
   "script.symbol": "기호",

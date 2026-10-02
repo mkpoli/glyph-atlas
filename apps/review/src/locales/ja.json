@@ -558,6 +558,7 @@
   "script.hiragana": "ひらがな",
   "script.kanji": "漢字",
   "script.katakana": "カタカナ",
+  "script.latin": "ラテン文字",
   "script.legend.label": "文字の色分け凡例",
   "script.mixed": "混在",
   "script.symbol": "記号",

@@ -1,4 +1,4 @@
-import { t } from './i18n.svelte.js'
+import { t, withText } from './i18n.svelte.js'
 import { productionLabel } from '../components/ProductionBadge.svelte'
 
 /** What a record says about its own reliability, in one badge: withheld, machine, outside the classifier's classes, or confirmed.
@@ -26,7 +26,8 @@ export function repairOf(item) {
 }
 
 /** What a crop's details list: the reading when it differs, the written form, the material, how far the record
- * has been checked, where it comes from, the work and page, and the holder. */
+ * has been checked, where it comes from, the work and page, and the holder. A line that names a character is
+ * `{ before, text, after }`, for `ScriptLine` to draw the character in its script's colour; the others are text. */
 export function cropDetails(item) {
   const repair = repairOf(item)
   const state = item.state === 'checked' ? t('state.checked') : item.state === 'flagged' ? t('state.flagged') : item.state === 'hard' ? t('state.hard')
@@ -37,8 +38,8 @@ export function cropDetails(item) {
   const work = typeof item.source === 'string' ? item.source : (item.source?.title ?? item.title)
   const page = item.page_number ? t('tile.page', { page: item.page_number }) : null
   // A written form a reviewer recorded: the shape the letterforms take, the crop still filed under its label.
-  const written = item.written_form && item.written_form !== item.label ? t('written.detail', { form: item.written_form }) : null
-  return [item.reading && item.reading !== item.label ? item.reading : null, written, productionLabel(item), state, origin,
+  const written = item.written_form && item.written_form !== item.label ? withText('written.detail', 'form', { form: item.written_form }) : null
+  return [item.reading && item.reading !== item.label ? { before: '', text: item.reading, after: '' } : null, written, productionLabel(item), state, origin,
     [work, page].filter(Boolean).join(' · ') || null, typeof item.source === 'string' ? item.holder : (item.source?.holder ?? item.holder)]
     .filter(Boolean)
 }

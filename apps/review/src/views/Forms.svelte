@@ -4,6 +4,8 @@
   import { replaceState } from '$app/navigation'
   import { page } from '$app/state'
   import ReferenceGlyph from '../components/ReferenceGlyph.svelte'
+  import ScriptText from '../components/ScriptText.svelte'
+  import OriginText from '../components/OriginText.svelte'
   import FormReview from '../components/FormReview.svelte'
   import GlyphContext from '../components/GlyphContext.svelte'
   import { settle } from '../lib/settle.js'
@@ -13,7 +15,7 @@
   import { number, stored, remember } from '../lib/client.js'
   import { t, around, localize } from '../lib/i18n.svelte.js'
   import { characterAddress } from '../lib/gallery.js'
-  import { originText, originTitle } from '../lib/origin.js'
+  import { originTitle } from '../lib/origin.js'
 
   // `initial` is what the server rendered: the family list and the family on show, arranged by shape.
   let { initialFamily = '', initial = null } = $props()
@@ -292,6 +294,9 @@
 
 <svelte:window onkeydown={keydown} />
 
+<!-- Where a form of the family comes from: its 字母, else its 字源. -->
+{#snippet source(char)}{#if byForm.get(char)?.jibo}<ScriptText text={byForm.get(char).jibo} />{:else}<OriginText origin={byForm.get(char)?.origin} />{/if}{/snippet}
+
 <section class="forms">
   <div class="page-status">
     <h1 class="visually-hidden">{t('forms.heading')}</h1>
@@ -306,7 +311,7 @@
         {#if !list.length && !error}{#each Array(12) as _, i (i)}<li class="family-skeleton" aria-hidden="true"><span class="shimmer"></span><span class="shimmer"></span></li>{/each}{/if}
         {#each shown as f (f.code_point)}
           <li><button class:current={f.code_point === code} onclick={() => pick(f.code_point)}>
-            <span class="family-char">{f.char}</span>
+            <span class="family-char"><ScriptText text={f.char} /></span>
             <span class="family-meta"><span>{number(f.count)}</span><small>{t('forms.clusters.count', { count: f.clusters })}</small></span>
             <span class="family-progress" aria-label={t('forms.percentDone', { count: f.assigned + f.rejected ? Math.max(1, Math.round(100 * (f.assigned + f.rejected) / f.count)) : 0 })}><i style={`width:${100 * f.assigned / f.count}%`}></i><i class="rejected" style={`width:${100 * f.rejected / f.count}%`}></i></span>
           </button></li>
@@ -325,7 +330,7 @@
     {:else if current}
       <div class="family-panel">
         <div class="family-title">
-          <h2><a class="family-link" href={localize(characterAddress(current.code_point))} aria-label={t('chips.showCharacter', { char: current.char })}>{current.char}</a></h2>
+          <h2><a class="family-link" href={localize(characterAddress(current.code_point))} aria-label={t('chips.showCharacter', { char: current.char })}><ScriptText text={current.char} /></a></h2>
           <p><strong>{number(current.count)}</strong> {t('forms.glyphsLabel')} · {number(current.clusters)} {t('forms.clustersLabel')} · <strong>{number(current.assigned)}</strong> {t('forms.assignedLabel')}{#if current.rejected}{' · '}<strong>{number(current.rejected)}</strong> {t('forms.rejectedLabel')}{/if}</p>
           <span class="history-actions">
             <button disabled={busy || history.busy || !history.done.length} onclick={() => takeBack(false)} title={t('forms.undo.title')}>↶ {t('forms.undo')}</button>
@@ -343,7 +348,7 @@
             {#each current.forms as form, i (form.char)}
               <button class="form-choice" disabled={busy || !target} onclick={() => apply(form.char)} title={form.name ?? form.code_point}>
                 <ReferenceGlyph char={form.char} code_point={form.code_point} size="lg" script={form.script} />
-                {#if form.jibo}<span class="form-source">{form.jibo}</span>{:else if form.origin}<span class="form-source" title={originTitle(form.origin)}>{originText(form.origin)}</span>{:else}<span class="form-source"></span>{/if}
+                {#if form.jibo}<span class="form-source"><ScriptText text={form.jibo} /></span>{:else if form.origin}<span class="form-source" title={originTitle(form.origin)}><OriginText origin={form.origin} titled={false} /></span>{:else}<span class="form-source"></span>{/if}
                 <small>{form.code_point}</small>
                 {#if i < 10}<kbd>{'1234567890'[i]}</kbd>{/if}
               </button>
@@ -389,7 +394,7 @@
                 <button class:active={order === 'typical'} aria-pressed={order === 'typical'} onclick={() => reorder('typical')}>{t('forms.order.typical')}</button>
                 <button class:active={order === 'unusual'} aria-pressed={order === 'unusual'} onclick={() => reorder('unusual')}>{t('forms.order.unusual')}</button>
               </div>{/if}
-              {#if cluster.form}<span class="cluster-form">{cluster.form} <small>{byForm.get(cluster.form)?.jibo ?? originText(byForm.get(cluster.form)?.origin)}</small></span>
+              {#if cluster.form}<span class="cluster-form"><ScriptText text={cluster.form} /> <small>{@render source(cluster.form)}</small></span>
               {:else if cluster.issue}<span class="cluster-issue" class:reported={cluster.issue !== 'mixed'}>{clusterIssue(cluster.issue)}</span>{/if}
               {#if chosen.size}<button class="quiet-link" onclick={() => chosen = new Set()}>{t('forms.clearSelection')}</button>{/if}
             </div>
@@ -444,9 +449,9 @@
                 <button class="cluster-select" onclick={event => choose(i, event)} ondblclick={() => show(i)} aria-pressed={i === active || picked.has(c.id)}>
                   <span class="cluster-head">
                     <strong lang="ja">{c.label}</strong><span>{number(c.count)}</span>
-                    {#if c.form}<span class="cluster-form"><span class="inline-glyph">{c.form}</span> {byForm.get(c.form)?.jibo ?? originText(byForm.get(c.form)?.origin)}</span>
+                    {#if c.form}<span class="cluster-form"><span class="inline-glyph"><ScriptText text={c.form} /></span> {@render source(c.form)}</span>
                     {:else if c.issue}<span class="cluster-issue" class:reported={c.issue !== 'mixed'}>{clusterIssue(c.issue)}</span>
-                    {:else if c.assigned}<span class="cluster-open">{around('forms.haveForm', 'glyph', { count: c.assigned })[0]}<span class="inline-glyph">{c.majority}</span>{around('forms.haveForm', 'glyph', { count: c.assigned })[1]}</span>
+                    {:else if c.assigned}<span class="cluster-open">{around('forms.haveForm', 'glyph', { count: c.assigned })[0]}<span class="inline-glyph"><ScriptText text={c.majority} /></span>{around('forms.haveForm', 'glyph', { count: c.assigned })[1]}</span>
                     {:else}<span class="cluster-open">{t('corpus.unassigned')}</span>{/if}
                   </span>
                   <span class="cluster-samples">{#each c.representatives as r (r.id)}{#if r.image}<img class="glyph-image" src={r.image} alt="" loading="lazy" use:settle use:showsContext={{ id: r.id, pin: false }} />{/if}{/each}</span>

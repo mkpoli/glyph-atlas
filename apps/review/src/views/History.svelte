@@ -4,7 +4,9 @@
   import { page } from '$app/state'
   import { history as fetchHistory, request, stored, remember } from '../lib/client.js'
   import { issues } from '../lib/issues.js'
-  import { t, formatDateTime, localize } from '../lib/i18n.svelte.js'
+  import ScriptText from '../components/ScriptText.svelte'
+  import ScriptLine from '../components/ScriptLine.svelte'
+  import { t, withText, formatDateTime, localize } from '../lib/i18n.svelte.js'
   let { inspect } = $props()
   let items = $state([]), loading = $state(true), loadingMore = $state(false), error = $state('')
   let cursor = $state(null), hasMore = $state(true)
@@ -51,11 +53,11 @@
   }
   const hasIssueTitle = id => issues.some(issue => issue.id === id)
   /** What a row says was decided: a written-character correction and a reading correction each name
-   * what they changed to; otherwise the issue that was reported, or the plain verdict. */
+   * what they changed to, for `ScriptLine` to colour; otherwise the issue that was reported, or the plain verdict. */
   function decisionText(item) {
     if (item.kind === 'undo') return t('history.decision.undo')
-    if (item.character) return t('history.decision.wrongCharacter', { character: item.character })
-    if (item.issue === 'reading' && item.reading) return t('history.decision.wrongReading', { reading: item.reading })
+    if (item.character) return withText('history.decision.wrongCharacter', 'character', { character: item.character })
+    if (item.issue === 'reading' && item.reading) return withText('history.decision.wrongReading', 'reading', { reading: item.reading })
     if (item.issue && hasIssueTitle(item.issue)) return t(`issue.${item.issue}.title`)
     if (item.verdict === 'match') return t('history.decision.match')
     if (item.verdict === 'unsure') return t('history.decision.unsure')
@@ -79,6 +81,9 @@
   $effect(() => { if (nearEnd && hasMore && !error && !loading && !loadingMore) load(true) })
   onMount(() => { load(); return () => { closed = true; clearTimeout(filterTimer) } })
 </script>
+
+<!-- A row's character in its script's colour, or a note that it has none. -->
+{#snippet label(text)}{#if text}<ScriptText {text} />{:else}{t('history.noLabel')}{/if}{/snippet}
 
 {#snippet reviewer(item)}
   {@const who = item.reviewer ?? { name: item.actor, user: null, image: null, mine: false }}
@@ -119,9 +124,9 @@
             <div class="history-row">
               <span class="history-time">{when(item.at)}</span>
               {@render reviewer(item)}
-              <span class="history-label" lang="ja">{item.character ?? item.label ?? t('history.noLabel')}</span>
-              <span class="history-decision">{t('history.batch', { count: row.items.length, character: item.character ?? item.label ?? '' })}
-                <span class="history-batch-labels" lang="ja">{row.items.map(entry => entry.label).filter(Boolean).slice(0, 12).join(' ')}</span></span>
+              <span class="history-label">{@render label(item.character ?? item.label)}</span>
+              <span class="history-decision"><ScriptLine line={withText('history.batch', 'character', { count: row.items.length, character: item.character ?? item.label ?? '' })} />
+                <span class="history-batch-labels">{#each row.items.map(entry => entry.label).filter(Boolean).slice(0, 12) as text, i (i)}{#if i}{' '}{/if}<ScriptText {text} />{/each}</span></span>
               {#if item.reviewer?.mine}<button class="quiet-link" disabled={undoing === row.batch} onclick={() => undoBatch(row.batch)}>{t('history.batch.undo')}</button>{/if}
             </div>
           </li>
@@ -132,8 +137,8 @@
                       aria-label={t('history.row.inspect', { label: item.label ?? item.target })}>
                 <span class="history-time">{when(item.at)}</span>
                 {@render reviewer(item)}
-                <span class="history-label" lang="ja">{item.label ?? t('history.noLabel')}</span>
-                <span class="history-decision">{decisionText(item)}</span>
+                <span class="history-label">{@render label(item.label)}</span>
+                <span class="history-decision"><ScriptLine line={decisionText(item)} /></span>
               </button>
             </li>
           {/each}

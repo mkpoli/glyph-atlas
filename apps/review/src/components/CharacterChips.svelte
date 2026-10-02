@@ -2,11 +2,13 @@
   import ScriptLegend from './ScriptLegend.svelte'
   import ZiLink from './ZiLink.svelte'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
+  import ScriptText from './ScriptText.svelte'
+  import OriginText from './OriginText.svelte'
   import { countsLabel } from '../lib/layers.js'
   import { page } from '$app/state'
   import { t, formatNumber, localize } from '../lib/i18n.svelte.js'
   import { characterAddress } from '../lib/gallery.js'
-  import { originText, originTitle } from '../lib/origin.js'
+  import { originTitle } from '../lib/origin.js'
   let { card = null, expand = $bindable('none'), onselect = () => {}, onreview = null } = $props()
   const members = $derived(card?.grapheme?.members ?? [{code_point: card?.code_point, char: card?.char}])
   // The Forms family this character is clustered in, by its grapheme or its own code point; none, no link.
@@ -50,7 +52,7 @@
     <div class="layer-row">
       <span class="layer-label">{t('chips.grapheme')}</span>
       <button class="family" class:active={expand === 'grapheme'} aria-pressed={expand === 'grapheme'}
-        onclick={() => expand = 'grapheme'}>{card.grapheme?.label ?? card.char}</button>
+        onclick={() => expand = 'grapheme'}>{#each members as member, i (member.code_point)}{#if i}{' = '}{/if}<ScriptText text={member.char} script={member.script} />{/each}</button>
     </div>
     <div class="layer-row">
       <span class="layer-label">{t('chips.characters')}</span>
@@ -69,7 +71,7 @@
         <span class="layer-label">{t('chips.variants')}</span>
         <div class="variant-chips">
           {#each variants.items as v (v.code_point)}
-            <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><span lang="zh">{v.char}</span>{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if crops(v)}<small>{formatNumber(crops(v))}</small>{/if}</a>
+            <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} />{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if crops(v)}<small>{formatNumber(crops(v))}</small>{/if}</a>
           {/each}
           {#each variants.derived as v (v.code_point ?? v.char)}
             {#if v.code_point}
@@ -86,7 +88,7 @@
         <span class="layer-label">{t('chips.related')}</span>
         <div class="variant-chips">
           {#each variants.related as v (v.code_point)}
-            <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><span lang="zh">{v.char}</span>{#if named(v)}<small class="code">{v.code_point}</small>{/if}<small>{relationsOf(v).map(r => r.name).join(' · ')}{#if crops(v)} · {formatNumber(crops(v))}{/if}</small></a>
+            <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} />{#if named(v)}<small class="code">{v.code_point}</small>{/if}<small>{relationsOf(v).map(r => r.name).join(' · ')}{#if crops(v)} · {formatNumber(crops(v))}{/if}</small></a>
           {/each}
         </div>
       </div>
@@ -102,15 +104,15 @@
     <div class="layer-legend"><ScriptLegend /></div>
     <div class="layer-row forms-row">
       <span class="layer-label">{t('chips.forms')}</span>
-      <span>{expand === 'grapheme' ? t('chips.allForms') : card.char}</span>
+      <span>{#if expand === 'grapheme'}{t('chips.allForms')}{:else}<ScriptText text={card.char} script={card.script} />{/if}</span>
       {#if formsFamily}<a class="forms-link" href={localize('/forms/' + formsFamily)}>{t('nav.forms')} →</a>{/if}
       {#if expand !== 'grapheme' && card.candidates?.known && countsLabel(card.candidates)}<small>{countsLabel(card.candidates)}</small>{/if}
     </div>
     {#if card.ligature || card.jibo?.length || card.origin?.length || card.derived?.length || card.expansions?.some(o => o.key !== 'grapheme') || onreview}
       <div class="layer-chips">
-        {#if card.ligature}<span class="chip">{card.ligature.components.map(c => c.char).join(' + ')}</span>{/if}
-        {#if card.jibo?.length}<span class="chip">字母 {card.jibo.map(j => j.char).join(' ')}</span>{/if}
-        {#if card.origin?.length}<span class="chip chip-origin" title={originTitle(card.origin)}>{t('origin.label')} {originText(card.origin)}</span>{/if}
+        {#if card.ligature}<span class="chip">{#each card.ligature.components as c, i (i)}{#if i}{' + '}{/if}<ScriptText text={c.char} script={c.script} />{/each}</span>{/if}
+        {#if card.jibo?.length}<span class="chip">字母{#each card.jibo as j, i (i)}{' '}<ScriptText text={j.char} />{/each}</span>{/if}
+        {#if card.origin?.length}<span class="chip chip-origin" title={originTitle(card.origin)}>{t('origin.label')} <OriginText origin={card.origin} titled={false} /></span>{/if}
         {#each (card.expansions ?? []).filter(o => o.key !== 'grapheme') as option (option.key)}
           <button class="chip chip-action" class:active={expand === option.key}
             onclick={() => expand = expand === option.key ? 'none' : option.key}>{option.label} <small>{formatNumber(option.count)}</small></button>
