@@ -2,6 +2,7 @@
   // The bar under a selection in the collection view: how many tiles are chosen, the character to give
   // them all, and the result of the last correction with its undo.
   import CharacterSearch from './CharacterSearch.svelte'
+  import ContributionTerms from './ContributionTerms.svelte'
   import { t } from '../lib/i18n.svelte.js'
   let { count = 0, target = $bindable(''), busy = false, error = '', done = null,
     onapply, onselectall, onclear, onundo, ondismiss } = $props()
@@ -25,7 +26,7 @@
     <button class="quiet" disabled={busy} onclick={onclear}>{t('bulk.clear')}</button>
   {/if}
   {#if error}<p class="bulk-error" role="alert">{error}</p>{/if}
-  {#if count}<small class="bulk-hint">{t('bulk.hint')}</small>{/if}
+  {#if count}<small class="bulk-hint">{t('bulk.hint')}</small><ContributionTerms />{/if}
 </div>
 
 <style>

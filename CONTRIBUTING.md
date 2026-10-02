@@ -2,10 +2,13 @@
 
 ## Annotations
 
-Boxes, readings, 字母, variants and document metadata contributed through the review tool or by pull
-request are released under CC BY-SA 4.0 (`LICENSE-DATA`). A contributor keeps the copyright, if any,
-in their annotations and is credited in `ATTRIBUTION.md` of every release that contains them, under
-the name or handle they choose. Submitting an annotation is agreement to these terms.
+Every annotation saved on glyphatlas.org or sent by pull request is released under CC BY-SA 4.0
+(`LICENSE-DATA`): reviews and the problems they flag, corrected characters and readings, crop boxes,
+the written form chosen for a crop and the crops grouped under it, 字母, variants, document metadata,
+and notes. This holds for a visitor who saves without signing in to an account, whose saves are made
+under an anonymous name. A contributor keeps the copyright, if any, in their annotations, and each
+annotation is recorded under their display name. Saving or submitting an annotation is agreement to
+these terms.
 
 ## Sources
 
