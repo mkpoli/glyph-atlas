@@ -16,11 +16,13 @@
     "@sveltejs/adapter-cloudflare": "^7.2.9",
     "@sveltejs/kit": "^2.70.3",
     "@sveltejs/vite-plugin-svelte": "^6.2.4",
+    "simple-icons": "^16.33.0",
     "svelte": "^5.43.2",
     "vite": "^7.1.7",
     "wrangler": "4.135.0"
   },
   "dependencies": {
+    "@better-auth/passkey": "^1.7.7",
     "@fontsource/klee-one": "^5.3.0",
     "better-auth": "^1.7.7"
   }

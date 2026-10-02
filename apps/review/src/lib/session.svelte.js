@@ -1,6 +1,7 @@
 import { getContext, setContext } from 'svelte'
 import { authClient } from './auth.js'
 import { stored, remember, forget } from './client.js'
+import { t } from './i18n.svelte.js'
 
 const KEY = Symbol('session')
 // The id this browser reviewed under before accounts, until an account takes it over.
@@ -14,7 +15,7 @@ let current = null
  * the next crop, and the collection-progress dialog.
  */
 export function createSession() {
-  const state = $state({ ready: false, user: null, ink: 'original', advance: false, progress: false })
+  const state = $state({ ready: false, user: null, providers: [], signingIn: false, ink: 'original', advance: false, progress: false })
   let starting = null
   const session = {
     state,
@@ -26,8 +27,9 @@ export function createSession() {
       // chosen to go through them in a row.
       state.advance = stored('atlas.advance', false) === true
       try {
-        const { data } = await (await authClient()).getSession()
-        state.user = data?.user ? user(data.user) : null
+        const account = await (await fetch('/api/account')).json()
+        state.user = account.user
+        state.providers = account.providers ?? []
         // A browser that reviewed before accounts brings that work into its session.
         if (stored(LEGACY, null)) await session.ensure()
       } catch { /* Signed out: the first write starts a session. */ }
@@ -35,6 +37,9 @@ export function createSession() {
     },
     /** The signed-in user, starting an anonymous session if there is none. */
     async ensure({ again = false } = {}) {
+      // An account whose session has ended (signed out elsewhere, or banned) signs in again; it never
+      // goes on saving as somebody new.
+      if (again && state.user && !state.user.anonymous) { state.user = null; state.signingIn = true; throw new Error(t('client.signInAgain')) }
       if (again) state.user = null
       if (state.user) { await claimLegacy(); return state.user }
       starting ??= (async () => {
@@ -46,6 +51,18 @@ export function createSession() {
       })().finally(() => { starting = null })
       return starting
     },
+    /** Read who is signed in afresh, past the session's cached copy. */
+    async refresh() {
+      const { data } = await (await authClient()).getSession({ query: { disableCookieCache: true } })
+      state.user = data?.user ? user(data.user) : null
+      return state.user
+    },
+    async signOut() {
+      await (await authClient()).signOut()
+      state.user = null
+    },
+    /** Open the sign-in form over the page. */
+    signIn() { state.signingIn = true },
     setInk(value) { state.ink = value; remember('atlas.ink', value) },
     setAdvance(value) { state.advance = value; remember('atlas.advance', value) },
     showProgress() { state.progress = true },
@@ -54,7 +71,7 @@ export function createSession() {
   return session
 }
 
-const user = value => ({ id: value.id, name: value.name, anonymous: Boolean(value.isAnonymous) })
+const user = value => ({ id: value.id, name: value.name, image: value.image ?? null, anonymous: Boolean(value.isAnonymous) })
 
 async function claimLegacy() {
   const reviewer = stored(LEGACY, null)

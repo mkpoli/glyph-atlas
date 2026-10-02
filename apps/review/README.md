@@ -39,6 +39,19 @@ for that id once. The history shows those ids to everyone, so an admin grants th
 saved under the id then becomes the user's. The journal is never rewritten:
 `actors` records which user each id written into it belongs to.
 
+There are no passwords. A reader signs in with a passkey, with a six-digit code sent by mail, or with
+an account elsewhere; signing in from an anonymous session brings its work along. The form marks the
+way this browser signed in last, and a reader signed in by mail is offered a passkey for next time.
+
+- **Mail.** Codes are sent through Cloudflare Email Sending from `MAIL_FROM` (`wrangler.jsonc`), whose
+  domain has to be onboarded first: `bunx wrangler email sending enable glyphatlas.org`. A local
+  Worker writes each mail under `.wrangler/tmp/email/`.
+- **Other accounts.** GitHub, Google, Discord, LINE and Kakao are offered once their app's id and
+  secret are set as Worker secrets (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, and so on). Each app's
+  callback is `https://glyphatlas.org/api/auth/callback/<provider>`, as `…/callback/github`.
+- **Passkeys** are bound to the host the page is served from, so a local check uses `localhost`
+  rather than `127.0.0.1`.
+
 `bun run --cwd apps/cloudflare deploy` builds this app and deploys it with the Worker configuration in
 `apps/cloudflare/wrangler.jsonc`.
 
