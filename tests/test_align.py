@@ -286,3 +286,11 @@ def test_a_character_is_accepted_on_its_own_margin_when_its_neighbour_is_in_doub
 def test_the_margin_scope_is_part_of_the_hash_only_when_set():
     assert run().fingerprint() == run(margin_scope=None).fingerprint()
     assert run().fingerprint() != run(margin_scope="character").fingerprint()
+
+
+def test_a_transcribed_voiced_katakana_stays_among_its_candidates():
+    """バ's kana candidates list only ば; the transcribed katakana stays one of them and its identity."""
+    token = next(t for t in align.tokens_of(Line(id="l", page_id="p", seq=0, text_raw="イセバチ", text="イセバチ"))
+                 if t.text == "バ")
+    assert {"U+30D0", "U+3070"} <= token.code_points
+    assert token.unicode == "U+30D0"
