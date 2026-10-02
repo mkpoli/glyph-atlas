@@ -16,7 +16,7 @@ from PIL import Image, ImageDraw
 
 from glyph_atlas import tables
 from glyph_atlas.review import atlas as atlas_module
-from glyph_atlas.review.atlas import image_size, readable_image
+from glyph_atlas.review.atlas import grapheme_of, image_size, readable_image
 from glyph_atlas.review.server import create_app
 from glyph_atlas.review.store import ReviewRequest, Store, apply, replay
 from glyph_atlas.schema import Box, Document, Line, Page, ReviewState, Unit
@@ -59,7 +59,7 @@ def dataset(tmp_path: Path, monkeypatch):
 
 def round_payload(client, count=4):
     data = client.get('/atlas', params={"reading": "あ", "state": "pending", "limit": count}).json()
-    return {"id": str(uuid4()), "client_id": "fixture-reviewer", "label": "あ",
+    return {"id": str(uuid4()), "client_id": "fixture-reviewer", "grapheme": grapheme_of("あ"),
             "answers": [{"id": item["id"], "revision": item["revision"], "image_sha256": item["image_sha256"], "verdict": "match"}
                         for item in data['items']]}
 
@@ -237,7 +237,7 @@ def test_round_persists_distinct_verdicts_and_can_be_undone_after_restart(datase
 def test_partial_round_leaves_unselected_crops_unreviewed(dataset):
     client = TestClient(create_app(dataset))
     shown = client.get('/atlas?reading=あ&state=pending&limit=12').json()['items']
-    payload = {"id": str(uuid4()), "client_id": "problems-only", "label": "あ",
+    payload = {"id": str(uuid4()), "client_id": "problems-only", "grapheme": grapheme_of("あ"),
                "answers": [{"id": item['id'], "revision": item['revision'],
                             "image_sha256": item['image_sha256'], "verdict": "wrong", "issue": issue}
                            for item, issue in zip(shown[:2], ['reading', 'crop'], strict=True)]}
@@ -283,7 +283,7 @@ def test_a_stale_round_writes_nothing(dataset):
                 "field": "reading", "new": "い", "client_id": "someone-else"})
     # The stale revision is checked atomically even if the earlier answers are valid.
     payload['answers'][-1]['revision'] = 0
-    payload['label'] = 'あ'
+    payload['grapheme'] = grapheme_of('あ')
     # Change a note instead so the reading/category check does not short-circuit the transaction.
     payload = round_payload(client)
     client.post('/reviews', json={"target_type": "unit", "target_id": payload['answers'][-1]['id'],
@@ -320,12 +320,24 @@ def test_a_stale_undo_does_not_withdraw_other_answers(dataset):
     assert client.get('/atlas?state=checked').json()['total'] == 4
 
 
+def test_a_round_is_dealt_for_a_grapheme_and_its_members(dataset):
+    """A round names its family's head and lists the characters it deals: あ's family holds ア and its
+    hentaigana. A key that names a member is refused, as it names no round of its own."""
+    client = TestClient(create_app(dataset))
+    data = client.get('/atlas', params={"purpose": "review", "grapheme": "U+3042", "state": "pending"}).json()
+    assert data["grapheme"]["code_point"] == "U+3042" and data["grapheme"]["char"] == "あ"
+    assert data["grapheme"]["members"][0] == "あ" and "ア" in data["grapheme"]["members"]
+    assert data["items"] and {item["label"] for item in data["items"]} <= set(data["grapheme"]["members"])
+    assert "grapheme" not in client.get('/atlas', params={"grapheme": "U+3042"}).json(), "browsing names no round"
+    assert client.get('/atlas', params={"purpose": "review", "grapheme": "U+30A2"}).status_code == 422
+
+
 def test_round_rejects_other_category_or_repeated_character(dataset):
     client = TestClient(create_app(dataset))
     payload = round_payload(client)
-    payload['label'] = 'シ'
+    payload['grapheme'] = grapheme_of('シ')
     assert client.post('/atlas/rounds', json=payload).status_code == 409
-    payload['label'] = 'あ'
+    payload['grapheme'] = grapheme_of('あ')
     payload['answers'][1] = payload['answers'][0]
     assert client.post('/atlas/rounds', json=payload).status_code == 422
     assert Store(dataset).events() == []
@@ -410,7 +422,7 @@ def test_export_preserves_the_reviewed_snapshot_and_marks_undone_answers(dataset
 
 def test_no_crop_cannot_be_submitted_as_a_visual_review(dataset):
     client = TestClient(create_app(dataset))
-    payload = {"id": str(uuid4()), "client_id": "reader", "label": "あ",
+    payload = {"id": str(uuid4()), "client_id": "reader", "grapheme": grapheme_of("あ"),
                "answers": [{"id": "no-box", "revision": 0, "image_sha256": "0" * 64, "verdict": "match"}]}
     assert client.post('/atlas/rounds', json=payload).status_code == 422
     assert Store(dataset).events() == []
@@ -786,7 +798,7 @@ def test_a_search_result_is_a_real_occurrence_a_reviewer_can_decide_on(searched:
     assert image == 200, "the matched occurrence serves its crop"
     round_id = str(uuid4())
     answer = client.post("/atlas/rounds", json={
-        "id": round_id, "client_id": "searcher", "label": SUPPLEMENTARY,
+        "id": round_id, "client_id": "searcher", "grapheme": grapheme_of(SUPPLEMENTARY),
         "answers": [{"id": item["id"], "revision": item["revision"],
                      "image_sha256": item["image_sha256"], "verdict": "wrong", "issue": "crop"}]})
     assert answer.status_code == 200, answer.text
@@ -985,7 +997,7 @@ def test_an_exported_review_says_whether_it_still_stands(searched: Path):
     written = client.get("/atlas/characters/" + f"{LINE}:hira").json()
     assert written["label"] == "ゐ" and written["reading"] == "い", "the fixture's differing record"
     matched = client.post("/atlas/rounds", json={
-        "id": str(uuid4()), "client_id": "matcher", "label": written["label"],
+        "id": str(uuid4()), "client_id": "matcher", "grapheme": grapheme_of(written["label"]),
         "answers": [{"id": written["id"], "revision": written["revision"],
                      "image_sha256": written["image_sha256"], "verdict": "match"}]})
     assert matched.status_code == 200, matched.text
@@ -994,7 +1006,7 @@ def test_an_exported_review_says_whether_it_still_stands(searched: Path):
     # A reading correction: current while the record still reads that way.
     unit = client.get("/atlas/characters/" + f"{LINE}:k0").json()
     corrected = client.post("/atlas/rounds", json={
-        "id": str(uuid4()), "client_id": "corrector", "label": unit["label"],
+        "id": str(uuid4()), "client_id": "corrector", "grapheme": grapheme_of(unit["label"]),
         "answers": [{"id": unit["id"], "revision": unit["revision"],
                      "image_sha256": unit["image_sha256"], "verdict": "wrong", "issue": "reading",
                      "correction": "ヌ"}]})
@@ -1141,7 +1153,7 @@ def test_a_round_refuses_a_withheld_crop_and_still_takes_a_mended_one(repaired: 
     client = TestClient(create_app(repaired))
     held = client.get("/atlas/characters/" + f"{LINE}:withheld").json()
     refused = client.post("/atlas/rounds", json={
-        "id": str(uuid4()), "client_id": "reviewer", "label": "あ",
+        "id": str(uuid4()), "client_id": "reviewer", "grapheme": grapheme_of("あ"),
         "answers": [{"id": held["id"], "revision": held["revision"],
                      "image_sha256": held["image_sha256"], "verdict": "match"}]})
     # A refusal the client can act on: the service answers 422 for a request it will not take.
@@ -1150,7 +1162,7 @@ def test_a_round_refuses_a_withheld_crop_and_still_takes_a_mended_one(repaired: 
 
     mended = client.get("/atlas/characters/" + f"{LINE}:trusted").json()
     accepted = client.post("/atlas/rounds", json={
-        "id": str(uuid4()), "client_id": "reviewer", "label": "い",
+        "id": str(uuid4()), "client_id": "reviewer", "grapheme": grapheme_of("い"),
         "answers": [{"id": mended["id"], "revision": mended["revision"],
                      "image_sha256": mended["image_sha256"], "verdict": "match"}]})
     assert accepted.status_code == 200, accepted.text
@@ -1186,7 +1198,7 @@ def test_a_written_character_correction_keeps_the_reading(searched: Path):
     unit = client.get("/atlas/characters/" + f"{LINE}:k0").json()
     assert unit["label"] == "ね" and unit["reading"] == "ね"
     answer = client.post("/atlas/rounds", json={
-        "id": str(uuid4()), "client_id": "reviewer", "label": "ね",
+        "id": str(uuid4()), "client_id": "reviewer", "grapheme": grapheme_of("ね"),
         "answers": [{"id": unit["id"], "revision": unit["revision"],
                      "image_sha256": unit["image_sha256"], "verdict": "wrong",
                      "issue": "character", "character": "ネ"}]})
@@ -1206,7 +1218,7 @@ def test_the_round_records_the_identity_and_the_reading_snapshot(searched: Path)
     client = TestClient(create_app(searched))
     unit = client.get("/atlas/characters/" + f"{LINE}:k0").json()
     answer = client.post("/atlas/rounds", json={
-        "id": str(uuid4()), "client_id": "reviewer", "label": "ね",
+        "id": str(uuid4()), "client_id": "reviewer", "grapheme": grapheme_of("ね"),
         "answers": [{"id": unit["id"], "revision": unit["revision"],
                      "image_sha256": unit["image_sha256"], "verdict": "wrong",
                      "issue": "character", "character": "U+30CD"}]})
@@ -1223,7 +1235,7 @@ def test_a_character_answer_is_idempotent_and_a_changed_one_is_refused(searched:
     """A retry with the same identity returns the saved result; a different one is refused."""
     client = TestClient(create_app(searched))
     unit = client.get("/atlas/characters/" + f"{LINE}:k1").json()
-    payload = {"id": str(uuid4()), "client_id": "reviewer", "label": "ネ",
+    payload = {"id": str(uuid4()), "client_id": "reviewer", "grapheme": grapheme_of("ネ"),
                "answers": [{"id": unit["id"], "revision": unit["revision"],
                             "image_sha256": unit["image_sha256"], "verdict": "wrong",
                             "issue": "character", "character": "ね"}]}
@@ -1243,7 +1255,7 @@ def test_undoing_a_character_round_restores_identity_and_state(searched: Path):
     unit = client.get("/atlas/characters/" + f"{LINE}:k0").json()
     round_id = str(uuid4())
     saved = client.post("/atlas/rounds", json={
-        "id": round_id, "client_id": "reviewer", "label": "ね",
+        "id": round_id, "client_id": "reviewer", "grapheme": grapheme_of("ね"),
         "answers": [{"id": unit["id"], "revision": unit["revision"],
                      "image_sha256": unit["image_sha256"], "verdict": "wrong",
                      "issue": "character", "character": "ネ"}]})
@@ -1261,7 +1273,7 @@ def test_a_character_correction_is_current_then_stale_after_a_later_mutation(sea
     client = TestClient(create_app(searched))
     unit = client.get("/atlas/characters/" + f"{LINE}:k2").json()
     saved = client.post("/atlas/rounds", json={
-        "id": str(uuid4()), "client_id": "reviewer", "label": "が",
+        "id": str(uuid4()), "client_id": "reviewer", "grapheme": grapheme_of("が"),
         "answers": [{"id": unit["id"], "revision": unit["revision"],
                      "image_sha256": unit["image_sha256"], "verdict": "wrong",
                      "issue": "character", "character": "ざ"}]})
@@ -1273,7 +1285,7 @@ def test_a_character_correction_is_current_then_stale_after_a_later_mutation(sea
     # Somebody corrects the same occurrence again.
     later = client.get("/atlas/characters/" + unit["id"]).json()
     again = client.post("/atlas/rounds", json={
-        "id": str(uuid4()), "client_id": "someone-else", "label": "ざ",
+        "id": str(uuid4()), "client_id": "someone-else", "grapheme": grapheme_of("ざ"),
         "answers": [{"id": later["id"], "revision": later["revision"],
                      "image_sha256": later["image_sha256"], "verdict": "wrong",
                      "issue": "character", "character": "じ"}]})
@@ -1291,7 +1303,7 @@ def test_a_character_answer_refuses_what_is_not_one_written_character(searched: 
         # One occurrence per case: a successful write moves the revision, and a request refused for a
         # bad body would otherwise be masked by the stale-revision check that runs before it.
         fresh = client.get("/atlas/characters/" + f"{LINE}:{occurrence}").json()
-        body = {"id": str(uuid4()), "client_id": "reviewer", "label": label,
+        body = {"id": str(uuid4()), "client_id": "reviewer", "grapheme": grapheme_of(label),
                 "answers": [{"id": fresh["id"], "revision": fresh["revision"],
                              "image_sha256": fresh["image_sha256"], "verdict": "wrong",
                              "issue": "character", "character": "ネ"}]}
@@ -1548,7 +1560,7 @@ def test_the_export_is_the_same_payload_as_a_file(searched: Path):
     client = TestClient(create_app(searched))
     item = client.get("/atlas", params={"q": SUPPLEMENTARY}).json()["items"][0]
     saved = client.post("/atlas/rounds", json={
-        "id": str(uuid4()), "client_id": "exporter", "label": SUPPLEMENTARY,
+        "id": str(uuid4()), "client_id": "exporter", "grapheme": grapheme_of(SUPPLEMENTARY),
         "answers": [{"id": item["id"], "revision": item["revision"],
                      "image_sha256": item["image_sha256"], "verdict": "match"}]})
     assert saved.status_code == 200, saved.text
@@ -1601,7 +1613,7 @@ def test_a_round_that_corrects_the_character_carries_its_reading(searched: Path)
     """A crop read ね corrected to り reads り, and a retry of the same round is still one save."""
     client = TestClient(create_app(searched))
     unit = client.get("/atlas/characters/" + f"{LINE}:k0").json()
-    payload = {"id": str(uuid4()), "client_id": "reviewer", "label": "ね",
+    payload = {"id": str(uuid4()), "client_id": "reviewer", "grapheme": grapheme_of("ね"),
                "answers": [{"id": unit["id"], "revision": unit["revision"], "image_sha256": unit["image_sha256"],
                             "verdict": "wrong", "issue": "character", "character": "り"}]}
     answer = client.post("/atlas/rounds", json=payload)
@@ -1619,7 +1631,7 @@ def seen_round(client, shown, flagged=()):
                 "verdict": "wrong", "issue": "crop"} for item in shown if item['id'] in flagged]
     seen = [{"id": item['id'], "image_sha256": item['image_sha256']}
             for item in shown if item['id'] not in flagged]
-    return {"id": str(uuid4()), "client_id": "seen-reviewer", "label": "あ", "answers": answers, "seen": seen}
+    return {"id": str(uuid4()), "client_id": "seen-reviewer", "grapheme": grapheme_of("あ"), "answers": answers, "seen": seen}
 
 
 def test_a_seen_crop_is_not_dealt_again_and_is_no_confirmation(dataset):
@@ -1658,7 +1670,7 @@ def test_undoing_a_round_that_flagged_a_seen_crop_leaves_it_seen(dataset):
     shown = client.get('/atlas?reading=あ&state=pending&limit=4').json()['items']
     assert client.post('/atlas/rounds', json=seen_round(client, shown)).status_code == 200
     item = client.get('/atlas/characters/' + shown[0]['id']).json()
-    flag = {"id": str(uuid4()), "client_id": "second", "label": "あ", "seen": [],
+    flag = {"id": str(uuid4()), "client_id": "second", "grapheme": grapheme_of("あ"), "seen": [],
             "answers": [{"id": item['id'], "revision": item['revision'], "image_sha256": item['image_sha256'],
                          "verdict": "wrong", "issue": "crop"}]}
     assert client.post('/atlas/rounds', json=flag).status_code == 200
@@ -1669,7 +1681,7 @@ def test_undoing_a_round_that_flagged_a_seen_crop_leaves_it_seen(dataset):
 
 def skip_round(shown, reviewer, skipped):
     """A round in which `reviewer` skips the `skipped` crops and records nothing else."""
-    return {"id": str(uuid4()), "client_id": reviewer, "label": "あ", "answers": [], "seen": [],
+    return {"id": str(uuid4()), "client_id": reviewer, "grapheme": grapheme_of("あ"), "answers": [], "seen": [],
             "skipped": [{"id": item['id'], "image_sha256": item['image_sha256']}
                         for item in shown if item['id'] in skipped]}
 
@@ -1756,7 +1768,7 @@ def test_a_crop_whose_box_moved_since_it_was_seen_is_pending_again(dataset):
 
 def test_a_round_must_carry_an_answer_or_a_seen_crop(dataset):
     client = TestClient(create_app(dataset))
-    empty = {"id": str(uuid4()), "client_id": "seen-reviewer", "label": "あ", "answers": [], "seen": []}
+    empty = {"id": str(uuid4()), "client_id": "seen-reviewer", "grapheme": grapheme_of("あ"), "answers": [], "seen": []}
     assert client.post('/atlas/rounds', json=empty).status_code == 422
 
 
@@ -1777,7 +1789,7 @@ def test_a_seen_crop_keeps_its_revision_so_an_answer_on_it_is_not_stale(dataset)
     shown = client.get('/atlas?reading=あ&state=pending&limit=2').json()['items']
     assert client.post('/atlas/rounds', json=seen_round(client, shown)).status_code == 200
     assert Store(dataset).revision(shown[0]['id']) == shown[0]['revision']
-    flag = {"id": str(uuid4()), "client_id": "second-reviewer", "label": "あ",
+    flag = {"id": str(uuid4()), "client_id": "second-reviewer", "grapheme": grapheme_of("あ"),
             "answers": [{"id": shown[0]['id'], "revision": shown[0]['revision'],
                          "image_sha256": shown[0]['image_sha256'], "verdict": "wrong", "issue": "crop"}]}
     assert client.post('/atlas/rounds', json=flag).status_code == 200
@@ -1856,14 +1868,14 @@ def test_history_lists_reviewer_decisions_newest_first_with_paging_and_filters(d
     client = TestClient(create_app(dataset))
     pending = client.get('/atlas', params={"reading": "あ", "state": "pending", "limit": 7}).json()['items']
     alice_answers, seen_crop, untouched = pending[:4], pending[4], pending[5]
-    alice = {"id": str(uuid4()), "client_id": "alice", "label": "あ",
+    alice = {"id": str(uuid4()), "client_id": "alice", "grapheme": grapheme_of("あ"),
              "answers": [{"id": item["id"], "revision": item["revision"], "image_sha256": item["image_sha256"],
                           "verdict": "match"} for item in alice_answers],
              "seen": [{"id": seen_crop["id"], "image_sha256": seen_crop["image_sha256"]}]}
     assert client.post('/atlas/rounds', json=alice).status_code == 200
 
     shi = client.get('/atlas', params={"reading": "シ", "state": "pending", "limit": 2}).json()['items']
-    bob = {"id": str(uuid4()), "client_id": "bob", "label": "シ",
+    bob = {"id": str(uuid4()), "client_id": "bob", "grapheme": grapheme_of("シ"),
            "answers": [{"id": item["id"], "revision": item["revision"], "image_sha256": item["image_sha256"],
                         "verdict": "wrong", "issue": "character", "character": "ミ"} for item in shi]}
     assert client.post('/atlas/rounds', json=bob).status_code == 200
