@@ -1,4 +1,5 @@
 <script>
+  import ContributionTerms from './ContributionTerms.svelte'
   // Cluster by cluster, every glyph at once: mark the ones that are not the family's character,
   // then save and move on. A form key also names the rest of the cluster before moving on, and M
   // marks a cluster that holds more than one form.
@@ -119,6 +120,7 @@
           {marked.size ? t('forms.review.report', { count: marked.size }) : t('forms.review.next')} <kbd>↵</kbd>
         </button>
       </div>
+      <ContributionTerms />
       <div class="review-forms" aria-label={t('forms.review.nameRest')}>
         <small>{t('forms.review.nameRest')}</small>
         {#each family.forms as form, i (form.char)}

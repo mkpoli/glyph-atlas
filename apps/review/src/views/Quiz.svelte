@@ -698,8 +698,7 @@
     {:else if focusIndex < queue.length - 1}<button class="primary next-crop" disabled={loading || saving || !(choices[current?.id] || skipped[current?.id])} onclick={primary}>{t('quiz.nextCrop')} <span>→</span></button>
     {:else if !answered}<button class="primary finish-issues" disabled={loading || saving || !(choices[current?.id] || skipped[current?.id])} onclick={primary}>{t('quiz.reviewRemaining')} <span>→</span></button>
     {:else}<button class="primary save-round" disabled={loading || saving || loadingMore || !ready} onclick={submit}>{saving ? t('common.saving') : t('quiz.saveIssues')} <span>✓</span></button>{/if}
-    <ContributionTerms />
-  </div></div>{/if}
+  </div><ContributionTerms /></div>{/if}
 </section>
 
 {#if savedNotice}<div class="save-toast quiz-saved" role="status">✓ {savedNotice}</div>{/if}
