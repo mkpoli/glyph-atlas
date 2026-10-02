@@ -1,4 +1,4 @@
--- A claim about a crop stands only on the crop's current evidence version (0046, 0047). A publication
+-- A claim about a crop stands only on the crop's current evidence version (0047, 0048). A publication
 -- that recuts a crop, writes it anew or deletes it leaves no claim standing on it, so its resolved rows
 -- go with the old version, and the claims stay in the ledger to be reassessed on the new one. A slot is
 -- resolved again when a claim, an action or a publication names it, so a crop cut back to an earlier

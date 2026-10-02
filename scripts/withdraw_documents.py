@@ -59,7 +59,7 @@ def statements(documents) -> list[str]:
             f"DELETE FROM units WHERE {mine} OR {corpus};",
             # The claims about the crops go once the crops have: the document's crops, as their versions
             # name them whatever cut a claim was made on, and its corpus glyphs. Then the evidence,
-            # premises and actions of those claims; the resolved rows went with the crops (0048).
+            # premises and actions of those claims; the resolved rows went with the crops (0049).
             *(f"DELETE FROM assertions WHERE {where} AND EXISTS (SELECT 1 FROM assertion_evidence e "
               f"WHERE e.assertion=assertions.id AND e.kind='crop');"
               for where in (f"subject IN (SELECT unit FROM crop_versions WHERE document={quote(document)})",

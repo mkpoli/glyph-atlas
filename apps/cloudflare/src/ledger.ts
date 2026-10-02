@@ -1,4 +1,4 @@
-// The assertion ledger on the site (migrations 0047, 0048; docs/design/form-model.md). A claim and each
+// The assertion ledger on the site (migrations 0048, 0049; docs/design/form-model.md). A claim and each
 // action on it are rows written in one D1 batch with the resolution of their slot, so `current_claims`
 // always holds what the ledger says. The catalogue and the resolver are `data/ledger.json`, which the
 // review service and the publication read too: the three resolve a slot with the same SQL.
@@ -11,7 +11,7 @@ export const PREDICATES: Record<string, Predicate> = catalogue.predicates as Rec
 const ACTIONS = new Set<string>(catalogue.actions);
 const COLUMNS = 'subject,predicate,scope,slot,status,object,value,members,supporting,claims,crop_version,resolver,at';
 const BODY = (catalogue.resolve as string[]).filter(line => !line.trimStart().startsWith('--')).join('\n');
-// `crop_now` from D1's own crops: a crop subject's current version, `units.crop_version` (0046).
+// `crop_now` from D1's own crops: a crop subject's current version, `units.crop_version` (0047).
 const CROP_NOW = "SELECT id,crop_version FROM units WHERE id IN (SELECT json_extract(value,'$[0]') FROM json_each(?1))";
 // By key: the slots are rows of `current_claims`' primary key, each found by it.
 export const resolveClearQuery = () => `DELETE FROM current_claims WHERE (subject,predicate,scope,slot) IN

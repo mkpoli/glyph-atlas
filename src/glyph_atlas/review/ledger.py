@@ -5,7 +5,7 @@ asserted it, its confidence and its evidence. An accept, a reject, a retraction 
 a row of its own, and no row is ever changed. `data/ledger.json` holds the predicate catalogue that
 every write is checked against, and the SQL resolver that turns a slot's claims into its
 `current_claims` row; the Worker runs the same resolver over D1, so the two cannot disagree on what a
-slot holds. The tables are made from the Worker's migration (`0047_assertion_ledger.sql`), so the
+slot holds. The tables are made from the Worker's migration (`0048_assertion_ledger.sql`), so the
 review store and D1 hold the same shape.
 
 Every function here runs inside its caller's transaction on the caller's connection. `version_of`
@@ -27,7 +27,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[3]
 CATALOGUE_PATH = ROOT / "data" / "ledger.json"
-DDL_PATH = ROOT / "apps" / "cloudflare" / "migrations" / "0047_assertion_ledger.sql"
+DDL_PATH = ROOT / "apps" / "cloudflare" / "migrations" / "0048_assertion_ledger.sql"
 
 CATALOGUE: dict[str, Any] = json.loads(CATALOGUE_PATH.read_text(encoding="utf-8"))
 RESOLVER: str = CATALOGUE["resolver"]
@@ -38,7 +38,7 @@ PREDICATES: dict[str, dict[str, Any]] = CATALOGUE["predicates"]
 RESOLVE_BODY = "\n".join(line for line in CATALOGUE["resolve"] if not line.lstrip().startswith("--"))
 #: `crop_now` from the versions a local caller binds as ?2, a JSON array of [unit, version].
 LOCAL_CROP_NOW = "SELECT json_extract(value,'$[0]'),json_extract(value,'$[1]') FROM json_each(?2)"
-#: `crop_now` from D1's own crops (`units.crop_version`, migration 0046), as the publication writes it.
+#: `crop_now` from D1's own crops (`units.crop_version`, migration 0047), as the publication writes it.
 D1_CROP_NOW = "SELECT id,crop_version FROM units WHERE id IN (SELECT json_extract(value,'$[0]') FROM json_each(?1))"
 COLUMNS = ("subject", "predicate", "scope", "slot", "status", "object", "value", "members", "supporting", "claims",
            "crop_version", "resolver", "at")
@@ -66,7 +66,7 @@ def resolve_statements(crop_now: str) -> tuple[str, str]:
 
 
 def schema(conn: sqlite3.Connection) -> None:
-    """Make the ledger's tables, as migration 0047 makes them in D1."""
+    """Make the ledger's tables, as migration 0048 makes them in D1."""
     conn.executescript(DDL_PATH.read_text(encoding="utf-8"))
 
 
