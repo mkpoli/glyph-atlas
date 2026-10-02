@@ -6,8 +6,8 @@
  * box and see the crops for it. The character used is 𪜈 (U+2A708), which is in the supplementary
  * plane — Python indexes it as one character and JavaScript as two UTF-16 units — and which no
  * imported corpus records, so the fixture is the only place a positive result exists. The fixture
- * also writes ゐ read as い, which is what tells a search on the written character from a search on
- * the reading.
+ * also writes ゐ transcribed い, which is what tells a search on the written character from a search
+ * on the transcription.
  *
  * Run through devrun:
  *   devrun bun apps/review/tools/search-check.mjs
@@ -31,7 +31,7 @@ const typeInto = (selector, text) => `(() => {
 })()`
 const rows = `[...document.querySelectorAll('.glyph-tile')].map(tile => ({
   id: tile.dataset.unit,
-  label: tile.querySelector('.tile-reading').textContent,
+  label: tile.querySelector('.tile-label').textContent,
   image: tile.querySelector('img')?.getAttribute('src') ?? null,
   loaded: (tile.querySelector('img')?.naturalWidth ?? 0) > 0,
 }))`
@@ -68,16 +68,16 @@ try {
   await browser.evaluate(`document.querySelector('.work-menu li button').click()`)
   await browser.waitFor(`document.querySelector('.work-name').textContent === 'All works'`)
 
-  // A reading filter is on, as a reviewer would have left it. A direct character search has to
+  // A character filter is on, as a reviewer would have left it. A direct character search has to
   // answer its own question rather than intersect with it.
-  // The empty box, focused, lists the readings; choosing one puts it in the box as a token.
+  // The empty box, focused, lists the characters; choosing one puts it in the box as a token.
   await browser.evaluate(`document.querySelector('.find input').focus()`)
   await browser.waitFor(`document.querySelector('.browse-panel .category-options button') !== null`)
   await browser.evaluate(`[...document.querySelectorAll('.browse-panel .category-options button')]
     .find(b => b.querySelector('span').textContent === 'あ').click()`)
   await browser.waitFor(`document.querySelector('.find-token')?.textContent.includes('あ')`)
   const before = await browser.evaluate(`document.querySelectorAll('.glyph-tile').length`)
-  assert(before > 0, 'the reading filter shows some rows to start from')
+  assert(before > 0, 'the character filter shows some rows to start from')
 
   // Now search the character itself.
   const typed = await browser.evaluate(typeInto('.find input', CHARACTER))
@@ -90,9 +90,9 @@ try {
   assert(/^1 glyph · 1 here/.test(count.trim()), `the count reads ${JSON.stringify(count)}`)
   assert(!/No occurrence/.test(count), 'the character has a recorded occurrence in the fixture')
 
-  // The reading filter is cleared by the search, so the box no longer narrows the answer.
+  // The character filter is cleared by the search, so the box no longer narrows the answer.
   const token = await browser.evaluate(`document.querySelector('.find-token')?.textContent ?? null`)
-  assert(token === null, `the reading filter still says ${JSON.stringify(token)}`)
+  assert(token === null, `the character filter still says ${JSON.stringify(token)}`)
   const group = await browser.evaluate(`document.querySelector('.filter-tabs button.active').textContent.trim()`)
   assert(group === 'All', `the type filter still says ${JSON.stringify(group)}`)
 
@@ -121,8 +121,8 @@ try {
   await browser.evaluate(`document.querySelector('.empty button.primary').click()`)
   await browser.waitFor(`document.querySelectorAll('.glyph-tile').length > 1`)
 
-  // ゐ is written on a record read as い: found by what was written, not by the reading. The label
-  // is the reading, which for this record is い, so the assertion is on the matched unit.
+  // ゐ is written on a record transcribed い: found by what was written, so the assertion is on the
+  // matched unit.
   await browser.evaluate(typeInto('.find input', 'ゐ'))
   await browser.waitFor(counted('ゐ'), 15000)
   assert(/^1 glyph(?!s)/.test((await browser.evaluate(countText)).trim()), 'ゐ is found by its character')
@@ -131,15 +131,15 @@ try {
     `ゐ matched ${JSON.stringify(katakana.map(row => row.id))}`)
 
   // い is written on many records and on neither of the two written 𪜈/ゐ: the search is by
-  // character, so the reading search returns the い records and not those two.
+  // character, so it returns the い records and not those two.
   await browser.evaluate(typeInto('.find input', 'い'))
   await browser.waitFor(counted('い'), 15000)
   const ne = Number((await browser.evaluate(countText)).match(/^([\d,]+)/)[1].replace(/,/g, ''))
   assert(ne > 0, `the fixture has ordinary い records; the count said ${ne}`)
-  await browser.screenshot('/tmp/atlas-search-reading.png')
+  await browser.screenshot('/tmp/atlas-search-character.png')
 
   assert(errors.length === 0, `page errors: ${errors.join('; ')}`)
-  console.log('search: the box finds 𪜈 by character and by U+2A708, clears the reading filter, says zero plainly')
+  console.log('search: the box finds 𪜈 by character and by U+2A708, clears the character filter, says zero plainly')
 } finally {
   if (browser) await browser.close()
   await service.stop()

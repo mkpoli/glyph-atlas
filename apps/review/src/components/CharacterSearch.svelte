@@ -279,7 +279,7 @@
       {/if}
       {#if answer?.more > 0 && limit < CEILING}
         <button type="button" class="candidate-more" onclick={more} disabled={loading}>
-          {loading ? t('search.reading') : t('search.moreCandidates')}
+          {loading ? t('search.loading') : t('search.moreCandidates')}
         </button>
       {:else if answer?.more > 0}
         <p class="candidate-status">{t('search.narrowQuery')}</p>
