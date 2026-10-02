@@ -110,7 +110,12 @@ def forms_for(conn: sqlite3.Connection, versions: Mapping[str, str | None]) -> d
     for row in rows:
         values = [{"form": v["object"], **names.get(v["object"], {"scheme": None, "text": None}), "confidence": v["confidence"]}
                   if v.get("object") else {"state": v["value"], "confidence": v["confidence"]} for v in _values(row)]
-        found[row["subject"]] = {"status": row["status"], "values": values, "supporting": row["supporting"]}
+        # Who made the claims the slot holds now (each competing one's, when people disagree), so a
+        # reader can be offered to clear their own.
+        holding = [claim for claim in row["claims"] if (claim["standing"] if row["status"] == "disputed"
+                   else any(member["assertion"] in row["supporting"] for member in claim["members"]))]
+        found[row["subject"]] = {"status": row["status"], "values": values, "supporting": row["supporting"],
+                                 "by": list(dict.fromkeys(claim["asserted_by"] for claim in holding))}
     return found
 
 

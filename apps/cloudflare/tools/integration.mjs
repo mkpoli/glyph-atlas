@@ -1327,7 +1327,8 @@ try {
   assert.equal((await call('/atlas/characters/form-local')).form, null, 'a crop nobody has looked at is unsorted')
   const formSave = { id: crypto.randomUUID(), crop_version: formVersion, form: '⿺辶𦊷' }
   const formed = await call(formPath, formSave)
-  assert.deepEqual([formed.form.status, formed.form.values.map(v => [v.scheme, v.text])], ['asserted', [['ids', '⿺辶𦊷']]])
+  assert.deepEqual([formed.form.status, formed.form.values.map(v => [v.scheme, v.text]), formed.form.by], ['asserted', [['ids', '⿺辶𦊷']], [(await user('integration')).id]],
+    'the form names who holds it')
   const inspectedForm = await call('/atlas/characters/form-local')
   assert.deepEqual([inspectedForm.form.values[0].text, inspectedForm.label, inspectedForm.state, inspectedForm.revision], ['⿺辶𦊷', '還', 'pending', 0], 'the inspector reads it')
   assert.equal((await call('/atlas?character=' + encodeURIComponent('還'))).items.find(item => item.id === 'form-local').form.values[0].text, '⿺辶𦊷', 'a listing reads it')

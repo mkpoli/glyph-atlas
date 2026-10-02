@@ -94,7 +94,11 @@ export async function formsFor(env: Env, ids: string[]): Promise<Map<string, Jso
   for (const row of parsed) {
     const values = valuesOf(row).map((m: Json) => m.object ? { form: m.object, ...(names.get(m.object) ?? { scheme: null, text: null }), confidence: m.confidence }
       : { state: m.value, confidence: m.confidence });
-    found.set(row.subject, { status: row.status, values, supporting: row.supporting });
+    // Who made the claims the slot holds now (each competing one's, when people disagree), so a reader
+    // can be offered to clear their own.
+    const by = [...new Set((row.claims as Json[]).filter(c => row.status === 'disputed' ? c.standing : c.members.some((m: Json) => row.supporting.includes(m.assertion)))
+      .map(c => c.asserted_by))];
+    found.set(row.subject, { status: row.status, values, supporting: row.supporting, by });
   }
   return found;
 }
