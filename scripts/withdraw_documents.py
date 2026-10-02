@@ -27,6 +27,9 @@ refresh = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(refresh)
 
 MEDIA_KEY = "replace(replace(json_extract(data,'$.{field}'),'/atlas/media/',''),'.webp','')"
+#: Every origin a `units` row has, named so that `unit_document_sample` (origin, document, …) serves the
+#: lookup by document instead of a scan of the whole table.
+ORIGINS = "origin IN ('local','corpus','retired')"
 
 
 def quote(value: str) -> str:
@@ -36,10 +39,11 @@ def quote(value: str) -> str:
 def statements(documents) -> list[str]:
     sql = []
     for document in sorted(documents):
-        own = f"(SELECT id FROM units WHERE document={quote(document)})"
+        mine = f"{ORIGINS} AND document={quote(document)}"
+        own = f"(SELECT id FROM units WHERE {mine})"
         low, high = map(quote, withdrawn.corpus_range(document))
         corpus = f"id>={low} AND id<{high}"
-        keys = " UNION ".join(f"SELECT {MEDIA_KEY.format(field=field)} FROM units WHERE document={quote(document)}"
+        keys = " UNION ".join(f"SELECT {MEDIA_KEY.format(field=field)} FROM units WHERE {mine}"
                               for field in ("image", "context_image"))
         sql += [
             *(f"DELETE FROM {table} WHERE target IN {own};" for table in ("events", "seen", "skips", "written_forms")),
@@ -49,7 +53,7 @@ def statements(documents) -> list[str]:
             f"DELETE FROM unit_pairs WHERE document={quote(document)} OR first IN {own} OR second IN {own};",
             f"DELETE FROM document_characters WHERE document={quote(document)};",
             f"DELETE FROM media WHERE key IN ({keys});",
-            f"DELETE FROM units WHERE document={quote(document)};",
+            f"DELETE FROM units WHERE {mine};",
             *(f"DELETE FROM {table} WHERE {corpus};"
               for table in ("form_units", "form_bases", "corpus_follow", "corpus_gallery", "corpus_units")),
         ]
