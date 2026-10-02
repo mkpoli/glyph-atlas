@@ -126,7 +126,28 @@ function compact(row: UnitRow): Json {
   return { ...listing(parse(row.data)), ...(row.style ? { style: row.style } : {}), ...(row.written_form ? { written_form: row.written_form } : {}) };
 }
 // A crop's record as its inspector reads it, with the written form its row holds (0038).
-const record = (row: UnitRow): Json => ({ ...parse(row.data), written_form: row.written_form ?? null });
+const record = (row: UnitRow): Json => {
+  const data = parse(row.data);
+  return { ...data, written_form: row.written_form ?? null, crop_editable: row.origin !== 'corpus' && Boolean(redrawLimits(data)) };
+};
+// The page rectangle a reviewer may redraw a local crop's box in, in page pixels: the context the
+// inspector shows, which lies inside the page. A corpus glyph's box belongs to its source, so it has none.
+export function redrawLimits(data: Json): { x: number; y: number; w: number; h: number } | null {
+  const c = data?.context_box, s = data?.source_scale;
+  if (!data?.context || !c || !data.crop_box || !Array.isArray(s) || !(s[0] > 0) || !(s[1] > 0)) return null;
+  return { x: Math.floor(c.x / s[0]), y: Math.floor(c.y / s[1]), w: Math.ceil((c.x + c.w) / s[0]) - Math.floor(c.x / s[0]), h: Math.ceil((c.y + c.h) / s[1]) - Math.floor(c.y / s[1]) };
+}
+// A redrawn box as the inspector sends it: whole page pixels, at least two each way, inside the page view.
+export function redrawnBox(value: Json, data: Json): { x: number; y: number; w: number; h: number } {
+  const limits = redrawLimits(data);
+  if (!limits) throw new Problem(422, 'This crop cannot be redrawn.');
+  if (!value || typeof value !== 'object' || Object.keys(value).sort().join() !== 'h,w,x,y' || !['x', 'y', 'w', 'h'].every(k => Number.isSafeInteger(value[k])))
+    throw new Problem(422, 'A box is four whole pixels: x, y, w, h.');
+  const { x, y, w, h } = value;
+  if (w < 2 || h < 2 || x < limits.x || y < limits.y || x + w > limits.x + limits.w || y + h > limits.y + limits.h)
+    throw new Problem(422, 'The crop must stay inside the source image.');
+  return { x, y, w, h };
+}
 // A record as a listing shows it, without the fields only its inspector needs.
 function listing(d: Json): Json {
   const { text, line, context_image, context_box, crop_box, ...rest } = d;
@@ -1050,7 +1071,13 @@ function validateAnswer(answer: Json, current: Json, round: boolean, corpus=fals
   if(answer.character)writtenCharacter(answer.character);
   if(answer.verdict==='wrong' && answer.character && literal(answer.character)===current.written_character)
     throw new Problem(422,'Choose a different character or a different issue.');
-  if(answer.box) throw new Problem(422,'Crop geometry changes are queued as crop issues on this publication.');
+  if(answer.box!==undefined){
+    // A redrawn box is the crop's fix: saved as a match on the pixels it names, never in a round.
+    if(round||corpus)throw new Problem(422,'This crop cannot be redrawn here.');
+    if(answer.verdict!=='match'||(answer.issue!=null&&answer.issue!=='reading')||answer.character||answer.correction)
+      throw new Problem(422,'A redrawn crop is saved as fixed.');
+    answer.box=redrawnBox(answer.box,current);
+  }
 }
 async function submit(env: Env, request: Request, actor: string, target?: string) {
   const input=await body(request);
@@ -1074,6 +1101,11 @@ async function submit(env: Env, request: Request, actor: string, target?: string
   if(batch&&(input.seen!==undefined||input.skipped!==undefined))throw new Problem(422,'Only a round records seen or skipped crops.');
   const correction=batch?validBatch(input):null;
   const {answers,seen,skipped}=batch?{answers:correction!.crops,seen:[],skipped:[]}:validRound(input,target);
+  // A redrawn box is held to the rate batch corrections are, by address.
+  if(answers.some(answer=>answer.box!==undefined)){
+    const {success}=await env.CORRECTIONS.limit({key:request.headers.get('cf-connecting-ip')??'local'});
+    if(!success)throw new Problem(429,'Too many corrections at once. Wait a minute and try again.');
+  }
   const rows=await unitsById(env,answers.map(answer=>text(answer.id,512,'character id',true)!));
   // A correction names crops a reader selected on the grid, so each is judged here: one that changed
   // since the page loaded, one whose image cannot be shown, or one a person already checked as another
@@ -1133,7 +1165,9 @@ async function submit(env: Env, request: Request, actor: string, target?: string
     const next:Json={...current,revision:current.revision+1,state:resolved?'checked':'flagged',
       ...(written?{label:written,char:written,code_point:cp(written),written_character:written,identity_status:'assigned',identity_basis:'human_review',script:/\p{Script=Katakana}/u.test(written)?'katakana':/\p{Script=Hiragana}/u.test(written)?'hiragana':/\p{Script=Han}/u.test(written)?'han':/\p{Script=Hangul}/u.test(written)?'hangul':isGugyeol(written)?'gugyeol':'symbol'}:{}),
       ...(written?{grapheme:family||cp(written),visual_group:null,category:categoryOf(written)}:{}),
-      ...(reading?{reading}:{}),issue:resolved?null:kept??answer.issue};
+      ...(reading?{reading}:{}),issue:resolved?null:kept??answer.issue,
+      // A redrawn box is the crop's until the next publication cuts it; the image shown is still the old cut.
+      ...(answer.box?{box:answer.box,box_pending:true}:{})};
     const snapshot={...parse(row.snapshot),character:compact(row)};
     // A round or batch keeps its request once, on the submission; each event names it and carries only its
     // own answer, so a submission of many crops stays well inside D1's row size. A single crop's review
@@ -1141,7 +1175,9 @@ async function submit(env: Env, request: Request, actor: string, target?: string
     const evidence={kind:round?'visual-quiz':'character-review',...(round?{round:id,grapheme,label:current.label}:{}),...(batch?{batch:id}:round?{answer}:{request:input}),
       verdict:answer.verdict,issue:answer.issue||null,note:answer.note||'',
       suggested_character:written?cp(written):null,suggested_reading:answer.correction||null,snapshot,
-      correction:{unicode:cp(next.label),reading:next.reading,box:next.box}};
+      correction:{unicode:cp(next.label),reading:next.reading,box:next.box},
+      // The box claim and the evidence it was made on: the pixels and the box the crop was cut with.
+      ...(answer.box?{recrop:{from:current.box??null,to:answer.box,pixels:current.image_sha256}}:{})};
     const event={id:'cf:'+crypto.randomUUID(),target_type:'unit',target_id:row.id,field:'review',
       old:current.state==='checked'?'reviewed':current.state==='flagged'?'disputed':'machine',
       new:resolved?'reviewed':'disputed',role:'reviewer',actor,evidence:JSON.stringify(evidence),at};
