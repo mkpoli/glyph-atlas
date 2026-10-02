@@ -111,6 +111,7 @@
   "corpus.correctCharacter.placeholder": "文字または読み…",
   "corpus.dialog.label": "コーパス文字レビュー",
   "corpus.genericName": "コーパス",
+  "corpus.labelCredit": "ラベル：{credit}",
   "corpus.overline.group": "文字グループ",
   "corpus.save.awaitingSegmentation": "分割待ち",
   "corpus.save.chooseCharacterOrIssue": "文字または問題を選んでください",

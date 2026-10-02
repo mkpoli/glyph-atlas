@@ -112,6 +112,7 @@
   "corpus.correctCharacter.placeholder": "文字 또는 讀音…",
   "corpus.dialog.label": "말뭉치 文字 檢討",
   "corpus.genericName": "말뭉치",
+  "corpus.labelCredit": "標示: {credit}",
   "corpus.overline.group": "文字 모음",
   "corpus.save.awaitingSegmentation": "分割 待機 中",
   "corpus.save.chooseCharacterOrIssue": "文字나 問題를 選擇하십시오",

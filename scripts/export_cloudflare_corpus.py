@@ -89,6 +89,12 @@ def attribution(joined):
     return (joined.get("image_rights") or {}).get("attribution") or None
 
 
+def text_attribution(joined):
+    """The credit of the transcription that labels the unit, or None when it repeats the image's credit."""
+    credit = joined.get("text_attribution") or None
+    return None if credit == attribution(joined) else credit
+
+
 def holder_image(joined, box, enabled):
     """The holder's own IIIF region of a unit's box when `enabled` and the page has a service."""
     return _iiif_region(joined.get("image_service"), box, edge=480) if enabled else None
@@ -248,6 +254,7 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
                     extra={"kind": "char", "method": joined.get("method"), "basis": "upstream_bbox" if box else "upstream_crop",
                         "review": joined.get("review") or "machine", "confirmed_by_human": False,
                         "render_available": True, "attribution": attribution(joined),
+                        "text_attribution": text_attribution(joined),
                         **{k: joined.get(k) for k in ("production", "production_label", "production_evidence")}})
                 detail.update(origin="corpus", state="pending", revision=0, suggestions=[], located=True, grid_safe=True)
                 if record_file is None or record_file.tell() >= 32 * 1024**2:

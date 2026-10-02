@@ -113,6 +113,7 @@
   "corpus.correctCharacter.placeholder": "字或讀…",
   "corpus.dialog.label": "校群籍字",
   "corpus.genericName": "群籍",
+  "corpus.labelCredit": "所標：{credit}",
   "corpus.overline.group": "字群",
   "corpus.save.awaitingSegmentation": "俟分字",
   "corpus.save.chooseCharacterOrIssue": "擇字或誤",

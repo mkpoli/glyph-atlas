@@ -111,6 +111,7 @@
   "corpus.correctCharacter.placeholder": "字又ハ讀…",
   "corpus.dialog.label": "集成ノ文字校閱",
   "corpus.genericName": "集成",
+  "corpus.labelCredit": "標記：{credit}",
   "corpus.overline.group": "字群",
   "corpus.save.awaitingSegmentation": "分字ヲ待ツ",
   "corpus.save.chooseCharacterOrIssue": "字又ハ誤ヲ選ブベシ",

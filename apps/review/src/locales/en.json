@@ -116,6 +116,7 @@
   "corpus.correctCharacter.placeholder": "Character or reading…",
   "corpus.dialog.label": "Corpus character reviewer",
   "corpus.genericName": "Corpus",
+  "corpus.labelCredit": "Labels: {credit}",
   "corpus.overline.group": "Character group",
   "corpus.save.awaitingSegmentation": "Awaiting segmentation",
   "corpus.save.chooseCharacterOrIssue": "Choose a character or issue",

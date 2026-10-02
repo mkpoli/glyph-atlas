@@ -115,6 +115,7 @@
   "corpus.correctCharacter.placeholder": "字或读音…",
   "corpus.dialog.label": "语料库单字审阅",
   "corpus.genericName": "语料库",
+  "corpus.labelCredit": "标签：{credit}",
   "corpus.overline.group": "字组",
   "corpus.save.awaitingSegmentation": "等待切分",
   "corpus.save.chooseCharacterOrIssue": "选择字或问题",
