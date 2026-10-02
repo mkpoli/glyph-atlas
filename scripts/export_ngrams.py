@@ -9,7 +9,7 @@ are on the site, and each unit loses the runs recorded for it before, so the par
 any number of times, in order:
 
     uv run scripts/export_ngrams.py DATASET [DATASET ...] OUTPUT
-    cd apps/cloudflare && for part in ../../OUTPUT/sql/part-*.sql; do ../../scripts/d1_import.sh "$part" || break; done
+    cd apps/cloudflare && for part in ../../OUTPUT/sql/part-*.sql; do ../../scripts/d1_import.sh "$part" || { echo "stopped at $part" >&2; break; }; done
 
 The parts stay under D1's import size, every statement under its statement limit; the last one stamps
 `units_refreshed_at`, which the Worker's cached counts are keyed by.

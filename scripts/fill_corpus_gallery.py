@@ -11,7 +11,7 @@ copies whose record has since been republished and insert the missing ones. `pub
 runs it and applies the parts after every publication; by hand:
 
     uv run scripts/fill_corpus_gallery.py gallery
-    cd apps/cloudflare && for part in ../../gallery/*.sql; do ../../scripts/d1_import.sh "$part" || break; done
+    cd apps/cloudflare && for part in ../../gallery/*.sql; do ../../scripts/d1_import.sh "$part" || { echo "stopped at $part" >&2; break; }; done
 
 The S3 endpoint and keys are those of an rclone remote (`r2` by default) that reads the site's bucket.
 """

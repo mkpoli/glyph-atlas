@@ -13,8 +13,8 @@
 # D1_TARGET (default --remote), D1_TRIES (4) and D1_WAIT (seconds between tries, 30) can be set, for
 # example to test against a local database: D1_TARGET="--local --persist-to state" D1_WAIT=1.
 set -uo pipefail
-file="$1"
-[ -f "$file" ] || { echo "d1_import: no such file: $file" >&2; exit 2; }
+file="${1:-}"
+[ -n "$file" ] && [ -f "$file" ] || { echo "d1_import: no such file: $file" >&2; exit 2; }
 read -r -a target <<< "${D1_TARGET:---remote}"
 tries="${D1_TRIES:-4}"
 pause="${D1_WAIT:-30}"
@@ -29,14 +29,19 @@ stamped() {
   local out
   out="$(bunx wrangler d1 execute glyph-atlas "${target[@]}" --json \
     --command "SELECT value FROM metadata WHERE key='import_stamp'" 2>/dev/null)" || return 2
-  [ "$(jq -r '.[0].results[0].value // empty' <<< "$out" 2>/dev/null)" = "\"$stamp\"" ]
+  local value
+  value="$(jq -er '.[0].results[0].value // ""' <<< "$out" 2>/dev/null)" || return 2
+  [ "$value" = "\"$stamp\"" ]
 }
-# Asks again while the database is too busy to answer, so a slow read is not taken for a missing stamp.
+# Asks again while the database is too busy to answer, so a slow read is not taken for a missing
+# stamp. With `patient`, a missing stamp is also asked for again: an import wrangler stopped following
+# may still be finishing on D1's side.
 confirmed() {
   local ask status
   for ask in 1 2 3 4 5; do
     stamped; status=$?
-    [ "$status" -eq 2 ] || return "$status"
+    [ "$status" -eq 0 ] && return 0
+    [ "$status" -eq 1 ] && [ "${1:-}" != patient ] && return 1
     sleep "$pause"
   done
   return 1
@@ -47,9 +52,7 @@ for try in $(seq 1 "$tries"); do
     confirmed && exit 0
     echo "d1_import: $name: wrangler reported success, but its stamp is missing" >&2
   else
-    # An import wrangler stopped following may still be finishing on D1's side.
-    sleep "$pause"
-    if confirmed; then echo "d1_import: $name applied although wrangler reported a failure" >&2; exit 0; fi
+    if confirmed patient; then echo "d1_import: $name applied although wrangler reported a failure" >&2; exit 0; fi
   fi
 done
 echo "d1_import: $name did not apply after $tries tries" >&2
