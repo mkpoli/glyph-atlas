@@ -727,5 +727,12 @@
   "script.hentaigana": "헨타이가나",
   "character.crop.keys": "상자나 손잡이를 끌기 · 화살표로 이동 · Shift+화살표로 크기 조정",
   "quiz.keyboardHint.forms": "1–0 자형",
-  "character.crop.pending": "크롭 수정됨 · 다시 자르기 대기"
+  "character.crop.pending": "크롭 수정됨 · 다시 자르기 대기",
+  "ranking.title": "검토자",
+  "ranking.overline": "순위",
+  "ranking.hint": "현재도 유효한 판단만 한 건씩 셉니다. 라운드·수정·검토에서 판단한 크롭, 기록한 자형, 자형 지정이 각각 포함됩니다.",
+  "ranking.anonymous": "익명",
+  "ranking.empty": "아직 아무도 판단을 내리지 않았습니다.",
+  "ranking.total.one": "판단{count}건",
+  "ranking.total.other": "판단{count}건"
 }

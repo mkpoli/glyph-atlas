@@ -743,5 +743,12 @@
   "script.hentaigana": "變體假名",
   "character.crop.keys": "枠又ハ角ヲ引ク · 矢印ニテ移ス · Shift+矢印ニテ大小ヲ改ム",
   "quiz.keyboardHint.forms": "1–0：字形",
-  "character.crop.pending": "截片ヲ正シ、再ビ截ルヲ待ツ"
+  "character.crop.pending": "截片ヲ正シ、再ビ截ルヲ待ツ",
+  "ranking.title": "校閱者",
+  "ranking.overline": "順位",
+  "ranking.hint": "今モ效アル判定ヲ一件ヅツ數フ。一巡・訂正・校閱ニテ判ジタル截片、記シタル字形、定メタル字體ヲ數ニ入ル。",
+  "ranking.anonymous": "無名",
+  "ranking.empty": "未ダ誰モ判定セズ。",
+  "ranking.total.one": "判定{count}件",
+  "ranking.total.other": "判定{count}件"
 }

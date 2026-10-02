@@ -99,6 +99,7 @@
     <div class="filter-tabs" aria-label={t('history.onlyMine.aria')}>
       <button class:active={onlyMine && !userFilter} aria-pressed={onlyMine && !userFilter} disabled={Boolean(userFilter)} onclick={toggleMine}>{t('history.onlyMine')}</button>
     </div>
+    <a class="quiet-link history-ranking" href={localize('/ranking')}>{t('ranking.title')} ↗</a>
     <input class="history-character-filter" type="text" lang="ja" value={characterFilter}
            oninput={e => seekCharacter(e.currentTarget.value)}
            placeholder={t('history.characterFilter.placeholder')} aria-label={t('history.characterFilter.aria')} />
@@ -155,6 +156,7 @@
 <style>
   .history { padding-bottom: 40px; }
   .history-character-filter { max-width: 220px; font-size: 13px; }
+  .history-ranking { order: 2; margin-left: auto; white-space: nowrap; }
   .history-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
   .history-list li { border-bottom: 1px solid var(--line); }
   .history-row {

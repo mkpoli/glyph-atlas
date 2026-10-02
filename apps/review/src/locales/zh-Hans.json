@@ -746,5 +746,12 @@
   "script.hentaigana": "变体假名",
   "character.crop.keys": "拖动框或控制点 · 方向键移动 · Shift+方向键调整大小",
   "quiz.keyboardHint.forms": "1–0字形",
-  "character.crop.pending": "裁切已更正，待重新裁切"
+  "character.crop.pending": "裁切已更正，待重新裁切",
+  "ranking.title": "审阅者",
+  "ranking.overline": "排名",
+  "ranking.hint": "每项仍有效的判断计一次：每轮审阅、校正或单次审阅中判断过的每张裁切、记录的每个字形，以及每次字样判定。",
+  "ranking.anonymous": "匿名",
+  "ranking.empty": "还没有人作出判断。",
+  "ranking.total.one": "{count}次判断",
+  "ranking.total.other": "{count}次判断"
 }

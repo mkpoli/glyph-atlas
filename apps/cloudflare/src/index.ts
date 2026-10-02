@@ -6,6 +6,7 @@ import { componentSearch, componentTerm } from './components';
 import { formProblem, type FormProblem } from './writtenForm';
 import { auth, claim, owned, providers, viewer } from './auth';
 import { AVATAR_PATH, avatar, setAvatar } from './avatar';
+import { ranking } from './ranking';
 import { reviewers, submissions } from './admin';
 export { leastTypicalQuery } from './forms';
 export { componentMatchQuery } from './components';
@@ -1529,6 +1530,7 @@ export default {
       if(image)return await media(env,request,image[1],ctx);
       // A round leaves out what its reviewer skipped lately, so it reads who is asking.
       if(path==='/atlas')return json(await catalogue(env,ctx,url,q.get('purpose')==='review'?(await viewer(env,request))?.id??null:null));
+      if(path==='/api/ranking')return await ranking(env,url,ctx);
       if(path==='/atlas/history')return json(await history(env,q,(await viewer(env,request))?.id??null));
       const run=path.match(/^\/atlas\/ngrams\/(\d+)(?:\/([^/]+))?$/);
       if(run)return json(run[2]===undefined?await ngrams(env,ctx,url,ngramSize(run[1])):await ngramOccurrences(env,url,ngramSize(run[1]),decodeURIComponent(run[2])));

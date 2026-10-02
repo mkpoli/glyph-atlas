@@ -728,5 +728,12 @@
   "script.hentaigana": "Hentaigana",
   "character.crop.keys": "Kéo khung hoặc góc · phím mũi tên để di chuyển · Shift và mũi tên để đổi cỡ",
   "quiz.keyboardHint.forms": "1–0 dạng chữ",
-  "character.crop.pending": "Đã sửa khung, chờ cắt lại"
+  "character.crop.pending": "Đã sửa khung, chờ cắt lại",
+  "ranking.title": "Người duyệt",
+  "ranking.overline": "Xếp hạng",
+  "ranking.hint": "Mỗi quyết định còn hiệu lực được tính một lần: từng vùng cắt đã được đánh giá trong vòng duyệt, lần chỉnh sửa hoặc lần duyệt, từng dạng chữ đã ghi và từng quyết định về tự dạng.",
+  "ranking.anonymous": "Ẩn danh",
+  "ranking.empty": "Chưa ai đưa ra quyết định nào.",
+  "ranking.total.one": "{count} quyết định",
+  "ranking.total.other": "{count} quyết định"
 }
