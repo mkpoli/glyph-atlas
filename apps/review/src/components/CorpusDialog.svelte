@@ -122,7 +122,7 @@
     {:else if !error}<div class="inspector-skeleton"></div>{/if}
   </div>
   <footer class="inspector-savebar">
-    {#if position}<AdvanceSwitch disabled={busy} />{/if}
+    <AdvanceSwitch disabled={busy} />
     {#if imageFailed}<span role="alert">{t('character.image.unavailable')}</span>{/if}
     <button class="primary save-character" bind:this={saveButton} disabled={busy || !data || !loaded || imageFailed || !data.proxyable || ((data.needs_segmentation || data.identity_status === 'unassigned') && !issue)} onclick={() => save()}>{busy ? t('common.saving') : data?.identity_status === 'unassigned' && !issue ? t('corpus.save.chooseCharacterOrIssue') : data?.needs_segmentation && !issue ? t('corpus.save.awaitingSegmentation') : issue ? t(advancing ? 'character.save.issue.next' : 'character.save.issue.close') : t(advancing ? 'character.save.looksRight.next' : 'character.save.looksRight.close')} {#if advancing}<span>→</span>{:else if !issue}<span>✓</span>{/if}</button>
     {#if issue && !data?.needs_segmentation && data?.identity_status !== 'unassigned'}<button class="quiet-link looks-right" disabled={busy || !loaded || imageFailed} onclick={() => save(true)}>{t('character.save.itLooksRight')}</button>{/if}

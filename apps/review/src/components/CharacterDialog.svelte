@@ -264,7 +264,8 @@
     {:else if !error}<div class="inspector-skeleton"></div>{/if}
   </div>
   <footer class="inspector-savebar">
-    {#if position && !onVerdict}<AdvanceSwitch disabled={busy} />{/if}
+    <!-- Always there outside a round, so the choice is visible before a list is opened. -->
+    {#if !onVerdict}<AdvanceSwitch disabled={busy} />{/if}
     {#if imageFailed}<span role="alert">{t('character.image.unavailable')}</span>{/if}
     <button class="primary save-character" bind:this={saveButton} disabled={busy || !data || !loaded || imageFailed} onclick={() => save()}>{busy ? t('common.saving') : issue === 'crop' && box ? t(advancing ? 'character.save.changes.next' : 'character.save.changes.close') : issue ? (onVerdict ? t('character.save.useError') : t(advancing ? 'character.save.issue.next' : 'character.save.issue.close')) : (onVerdict ? t('character.save.backToSelection') : t(advancing ? 'character.save.looksRight.next' : 'character.save.looksRight.close'))} {#if onVerdict || advancing}<span>→</span>{:else if !issue}<span>✓</span>{/if}</button>
     {#if issue}<button class="quiet-link looks-right" disabled={busy || !loaded || imageFailed} onclick={() => { discardProposals(); save(true) }}>{onVerdict ? t('character.save.removeSelection') : t('character.save.itLooksRight')}</button>{/if}

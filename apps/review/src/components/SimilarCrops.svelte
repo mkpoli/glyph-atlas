@@ -45,10 +45,10 @@
     : tab === 'similar' ? t('similar.none') : t('similar.noneFiledDifferently'))
 </script>
 
-<section class="similar-crops" bind:this={section} aria-label={t('similar.title')}>
+<!-- A list that could not be read is left out; the next crop asks again. -->
+{#if !failed}<section class="similar-crops" bind:this={section} aria-label={t('similar.title')}>
   <h3>{t('similar.title')}</h3>
-  {#if failed}<p class="similar-note" role="status">{t('similar.unavailable')}</p>
-  {:else if !result}<div class="similar-skeleton"></div>
+  {#if !result}<div class="similar-skeleton"></div>
   {:else}
     <div class="similar-tabs">
       <button aria-pressed={tab === 'similar'} onclick={() => tab = 'similar'}>{t('similar.tab.similar')}</button>
@@ -65,7 +65,7 @@
       </ul>
     {:else}<p class="similar-note">{empty}</p>{/if}
   {/if}
-</section>
+</section>{/if}
 
 <style>
   .similar-crops{margin:24px 0 0}.similar-crops h3{margin:0;font-size:12px;font-weight:500;color:var(--muted)}
