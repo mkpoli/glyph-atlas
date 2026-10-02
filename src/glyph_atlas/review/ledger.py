@@ -332,11 +332,13 @@ def history(conn: sqlite3.Connection, subject: str) -> list[dict]:
 TABLES = ("assertions", "assertion_evidence", "assertion_premises", "assertion_actions")
 
 
-def copy_published(source: sqlite3.Connection, target: sqlite3.Connection) -> list[tuple[str, str, str, str]]:
+def copy_published(source: sqlite3.Connection, target: sqlite3.Connection,
+                   keep: Callable[[str], bool] = lambda subject: True) -> list[tuple[str, str, str, str]]:
     """Copy the rows this store made into a publication's catalogue, and return the slots they touch.
 
     The site's own rows (`cf:`) are on the site already. An action made here on a claim made there
-    takes that claim along, so the publication can name the slot it resolves again.
+    takes that claim along, so the publication can name the slot it resolves again. A claim whose
+    subject `keep` refuses (a crop of a withdrawn document) is left out, with its actions.
     """
     names = {table: [c[1] for c in source.execute(f"PRAGMA table_info({table})")] for table in TABLES}
     columns = names["assertion_actions"]
@@ -344,6 +346,12 @@ def copy_published(source: sqlite3.Connection, target: sqlite3.Connection) -> li
     wanted = [row[0] for row in source.execute("SELECT id FROM assertions WHERE substr(id,1,3)<>'cf:' ORDER BY rowid")]
     own = set(wanted)
     wanted += sorted({row[columns.index("assertion")] for row in actions} - own)
+    subjects = {}
+    for start in range(0, len(wanted), 500):
+        subjects.update(source.execute("SELECT id,subject FROM assertions WHERE id IN (SELECT value FROM json_each(?))",
+                                       (canonical(wanted[start:start + 500]),)).fetchall())
+    wanted = [identity for identity in wanted if identity in subjects and keep(subjects[identity])]
+    kept = set(wanted)
     for start in range(0, len(wanted), 500):
         part = canonical(wanted[start:start + 500])
         for table, column in (("assertions", "id"), ("assertion_evidence", "assertion"), ("assertion_premises", "assertion")):
@@ -352,7 +360,7 @@ def copy_published(source: sqlite3.Connection, target: sqlite3.Connection) -> li
             target.executemany(f"INSERT OR IGNORE INTO {table}({','.join(names[table])}) VALUES({','.join('?' * len(names[table]))})",
                                rows)
     target.executemany(f"INSERT OR IGNORE INTO assertion_actions({','.join(columns)}) VALUES({','.join('?' * len(columns))})",
-                       actions)
+                       [row for row in actions if row[columns.index("assertion")] in kept])
     keys = set()
     for start in range(0, len(wanted), 500):
         keys.update(tuple(r) for r in source.execute(
@@ -361,8 +369,25 @@ def copy_published(source: sqlite3.Connection, target: sqlite3.Connection) -> li
     return sorted(keys)
 
 
-def _literal(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
+def sql_literal(value: Any) -> str:
+    """A value as one line of SQL: a newline or carriage return inside text is written as char(10) or
+    char(13), so a publication's one-statement-a-line files keep each statement whole."""
+    if value is None:
+        return "NULL"
+    if isinstance(value, bool):
+        return str(int(value))
+    if isinstance(value, int | float):
+        return repr(value)
+    text = "'" + str(value).replace("'", "''") + "'"
+    return text.replace("\r", "'||char(13)||'").replace("\n", "'||char(10)||'")
+
+
+def insert_statements(conn: sqlite3.Connection, table: str) -> list[str]:
+    """Every row of one of the ledger's tables as an `INSERT OR IGNORE`, one line each."""
+    names = [c[1] for c in conn.execute(f"PRAGMA table_info({table})")]
+    return [f"INSERT OR IGNORE INTO {table}({','.join(names)}) VALUES({','.join(sql_literal(v) for v in row)});\n"
+            for row in conn.execute(f"SELECT {','.join(names)} FROM {table} ORDER BY rowid" if table in ("assertions", "assertion_actions")
+                                    else f"SELECT {','.join(names)} FROM {table}")]
 
 
 def d1_resolve_statements(keys: Sequence[Sequence[str]]) -> list[str]:
@@ -370,7 +395,7 @@ def d1_resolve_statements(keys: Sequence[Sequence[str]]) -> list[str]:
     clear, write = resolve_statements(D1_CROP_NOW)
     out = []
     for start in range(0, len(keys), KEYS_PER_STATEMENT):
-        bound = _literal(canonical([list(key) for key in keys[start:start + KEYS_PER_STATEMENT]]))
+        bound = sql_literal(canonical([list(key) for key in keys[start:start + KEYS_PER_STATEMENT]]))
         for statement in (clear, write):
             # One line, as the publication's SQL files hold one statement a line.
             out.append(" ".join(line.strip() for line in statement.splitlines()).replace("?1", bound) + ";\n")

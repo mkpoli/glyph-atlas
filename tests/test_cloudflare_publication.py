@@ -103,7 +103,7 @@ def test_the_ledger_rows_an_export_carries_are_sealed_insert_only_and_their_slot
         db.execute("INSERT INTO assertion_evidence(assertion,kind,ref) VALUES('lc:1','crop',?)", (version,))
     module.seal(local, corpus, output)
     sql = (output / "catalogue.sql").read_text()
-    assert 'INSERT OR IGNORE INTO "assertions"' in sql and 'INSERT OR IGNORE INTO "assertion_evidence"' in sql
+    assert "INSERT OR IGNORE INTO assertions(" in sql and "INSERT OR IGNORE INTO assertion_evidence(" in sql
     assert json.loads((output / "publication.json").read_text())["counts"]["assertions"] == 1
     with database(":memory:") as db:
         db.executescript(sql)

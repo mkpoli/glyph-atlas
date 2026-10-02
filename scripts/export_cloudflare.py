@@ -246,10 +246,20 @@ def export(dataset: Path, output: Path, *, resume=False):
             if i % 500 == 0:
                 db.commit()
                 print(encoded({"stage": "local-crops", "done": i}), flush=True)
-        # The claims made here, and those an action here names, go to the site's ledger; the site
-        # resolves their slots once they are there (`seal_cloudflare`).
+        # The claims made here, and those an action here names, go to the site's ledger, but none about a
+        # crop of a withdrawn document; the site resolves their slots once they are there (`seal_cloudflare`).
+        gone = withdrawn.documents()
+        ranges = [withdrawn.corpus_range(document) for document in gone]
+
+        def kept(subject):
+            unit = units.get(subject)
+            if unit is not None:
+                page = pages.get(unit.page_id)
+                return (unit.document_id or (page.document_id if page else None)) not in gone
+            return not any(low <= subject < high for low, high in ranges)
+
         with store._connection() as source:
-            ledger.copy_published(source, db)
+            ledger.copy_published(source, db, kept)
         db.commit()
         # Only runs whose crops were all published above are recorded.
         db.execute("DELETE FROM unit_ngrams")

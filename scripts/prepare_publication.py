@@ -225,8 +225,8 @@ def write_parts(sealed: Path, groups: list[list[str]]) -> list[str]:
     return parts
 
 
-LEDGER_LINES = ('INSERT OR IGNORE INTO "assertions"', 'INSERT OR IGNORE INTO "assertion_evidence"',
-                'INSERT OR IGNORE INTO "assertion_premises"', 'INSERT OR IGNORE INTO "assertion_actions"',
+LEDGER_LINES = ("INSERT OR IGNORE INTO assertions(", "INSERT OR IGNORE INTO assertion_evidence(",
+                "INSERT OR IGNORE INTO assertion_premises(", "INSERT OR IGNORE INTO assertion_actions(",
                 "DELETE FROM current_claims ", "INSERT INTO current_claims(")
 
 

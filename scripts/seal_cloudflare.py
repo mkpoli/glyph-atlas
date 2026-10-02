@@ -159,7 +159,7 @@ def seal(catalogue: Path, corpus: Path, output: Path):
                 continue
             if table in IMMUTABLE:
                 statement = statement.replace("INSERT INTO", "INSERT OR REPLACE INTO", 1)
-            elif table == "units" or table in ledger.TABLES:
+            elif table == "units":
                 statement = statement.replace("INSERT INTO", "INSERT OR IGNORE INTO", 1)
             else:
                 continue
@@ -184,7 +184,8 @@ def seal(catalogue: Path, corpus: Path, output: Path):
         # The slots the publication's claims and actions fall in, resolved in D1 over everything its
         # ledger holds there, after the crops whose versions they stand on.
         slots = [tuple(row) for row in db.execute("SELECT DISTINCT subject,predicate,scope,slot FROM assertions ORDER BY 1,2,3,4")]
-        for statement in ledger.d1_resolve_statements(slots):
+        rows = [statement for table in ledger.TABLES for statement in ledger.insert_statements(db, table)]
+        for statement in rows + ledger.d1_resolve_statements(slots):
             max_statement = max(max_statement, len(statement.encode()))
             sql.write(statement)
         # Counted in D1 from the rows it now holds, which may include rows earlier publications left.

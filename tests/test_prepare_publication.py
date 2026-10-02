@@ -24,7 +24,7 @@ def test_a_publication_applies_the_runs_sealing_wrote():
     sql = ("INSERT OR REPLACE INTO \"media\" VALUES('aa','pack',0,1,'image/webp');\n"
            "INSERT OR IGNORE INTO \"units\" VALUES('hk:1','local');\n"
            "INSERT OR IGNORE INTO \"units\" VALUES('hk:2','local');\n" + "".join(ngram_sql))
-    ledger_sql = ["INSERT OR IGNORE INTO \"assertions\" VALUES('lc:1');\n", "INSERT OR IGNORE INTO \"assertion_actions\" VALUES('lc:2');\n",
+    ledger_sql = ["INSERT OR IGNORE INTO assertions(id) VALUES('lc:1');\n", "INSERT OR IGNORE INTO assertion_actions(id) VALUES('lc:2');\n",
                   "DELETE FROM current_claims WHERE 1;\n", "INSERT INTO current_claims(subject) SELECT 1;\n"]
     media, units, ngrams, claims = prepare.split_sealed(sql + "".join(ledger_sql), wanted={"aa"}, fresh={"hk:2"})
     assert len(media) == 1 and units == ["INSERT OR IGNORE INTO \"units\" VALUES('hk:2','local');\n"]

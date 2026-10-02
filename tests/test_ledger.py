@@ -265,3 +265,15 @@ def test_a_publication_carries_the_rows_made_here_and_resolves_their_slots_on_th
         row = ledger.current_row(site.execute(f"SELECT {','.join(ledger.COLUMNS)} FROM current_claims").fetchone())
         assert (row["status"], row["value"], row["supporting"], row["crop_version"]) == ("accepted", "unreadable", [made, mine], V1)
     assert site.execute("SELECT count(*) FROM assertions").fetchone()[0] == 2, "publishing twice adds nothing"
+
+
+def test_a_reason_over_several_lines_is_published_as_one_statement_a_line(conn):
+    made = claim(conn, "ann", "unresolved")["assertions"][0]
+    act(conn, "bob", made, "reject", reason="blurry\nsee page 2\r\n'twice'")
+    statements = ledger.insert_statements(conn, "assertion_actions")
+    assert all(statement.count("\n") == 1 and statement.endswith(";\n") for statement in statements)
+    copy = sqlite3.connect(":memory:", isolation_level=None)
+    copy.execute("CREATE TABLE units (id TEXT PRIMARY KEY)")
+    ledger.schema(copy)
+    copy.executescript("".join(statements))
+    assert copy.execute("SELECT reason FROM assertion_actions").fetchone()[0] == "blurry\nsee page 2\r\n'twice'"
