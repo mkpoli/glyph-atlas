@@ -6,10 +6,10 @@
   import { useInspector } from '$lib/inspector.svelte.js'
   import { useSession } from '$lib/session.svelte.js'
   const inspector = useInspector(), session = useSession()
-  const reading = $derived(page.url.searchParams.get('reading') || '')
+  const grapheme = $derived(page.url.searchParams.get('grapheme') || '')
 </script>
 
 <Seo title={t('nav.quickReview')} index={false} />
 
 <!-- A round is dealt for one reviewer, who is known once the page runs in a browser. -->
-{#if session.state.ready}{#key reading}<Quiz initialReading={reading} inspect={inspector.inspect.bind(inspector)} />{/key}{/if}
+{#if session.state.ready}{#key grapheme}<Quiz initialGrapheme={grapheme} inspect={inspector.inspect.bind(inspector)} />{/key}{/if}

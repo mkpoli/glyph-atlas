@@ -558,7 +558,7 @@
   "quiz.select.selectProblems": "Select the problems",
   "quiz.select.selectedCount": "{count} selected",
   "quiz.selectCharacter": "Select character {number}",
-  "quiz.selectHint": "One complete {reading} per crop. Select crops with extra characters, a bad cut, or another character.",
+  "quiz.selectHint": "One complete {reading} per crop, or the form its tile names. Select crops with extra characters, a bad cut, or another character.",
   "quiz.shapeToggle.byShape": "◧ Similar shapes together",
   "quiz.shapeToggle.dealt": "◧ Dealt order",
   "quiz.suspectToggle.all": "◇ All crops",

@@ -532,7 +532,7 @@
   "quiz.select.selectProblems": "問題 있는 것을 고르십시오",
   "quiz.select.selectedCount": "{count}個 選擇",
   "quiz.selectCharacter": "文字 {number} 選擇",
-  "quiz.selectHint": "크롭마다 온전한 {reading} 하나. 餘分의 文字, 잘못 자른 것, 다른 文字를 고르십시오.",
+  "quiz.selectHint": "크롭마다 온전한 {reading} 또는 해당 타일에 表示된 字形 하나. 餘分의 文字, 잘못 자른 것, 다른 文字를 고르십시오.",
   "quiz.shapeToggle.byShape": "◧ 비슷한 模樣끼리",
   "quiz.shapeToggle.dealt": "◧ 提示 順序",
   "quiz.suspectToggle.all": "◇ 모두 보기",
