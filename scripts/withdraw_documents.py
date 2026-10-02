@@ -52,7 +52,7 @@ def statements(documents) -> list[str]:
             *(f"DELETE FROM {table} WHERE id IN {own};" for table in ("unit_marks", "unit_shapes", "unit_suspects")),
             *(f"DELETE FROM {table} WHERE id IN {own} OR {corpus};" for table in ("form_units", "form_bases")),
             f"DELETE FROM unit_redirects WHERE id IN {own} OR target IN {own};",
-            f"DELETE FROM unit_pairs WHERE document={quote(document)} OR first IN {own} OR second IN {own};",
+            f"DELETE FROM unit_ngrams WHERE document={quote(document)} OR first IN {own} OR second IN {own} OR third IN {own};",
             f"DELETE FROM document_characters WHERE document={quote(document)};",
             f"DELETE FROM media WHERE key IN ({keys});",
             f"DELETE FROM units WHERE {mine} OR {corpus};",

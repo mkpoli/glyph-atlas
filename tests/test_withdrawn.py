@@ -39,6 +39,9 @@ def site():
                     document))
         for key in ("a", "b"):
             db.execute("INSERT INTO media VALUES(?,'pack',0,1,'image/webp')", (unit[3] + key,))
+    # A trigram of the kept book whose last crop is a withdrawn one, and a pair wholly in the kept book.
+    db.executemany("INSERT INTO unit_ngrams(first,size,second,third,text,document) VALUES(?,?,?,?,?,?)",
+                   [("ex:3", 3, "ex:3", "ex:1", "字字字", "hl:kept"), ("ex:3", 2, "ex:3", None, "字字", "hl:kept")])
     db.execute("INSERT INTO submissions(id,actor,request,response,at) VALUES('s','a','{}','{}','t')")
     db.execute("INSERT INTO seen VALUES('ex:1','s',NULL,'h','t')")
     assert db.execute("SELECT count(*) FROM unit_marks").fetchone()[0] == 1
@@ -62,6 +65,7 @@ def test_the_statements_take_a_withdrawn_document_off_the_site_and_nothing_else(
         assert sorted(r for r, in db.execute("SELECT key FROM media")) == ["3a", "3b"]
         assert db.execute("SELECT count(*) FROM seen").fetchone()[0] == 0
         assert db.execute("SELECT count(*) FROM unit_marks").fetchone()[0] == 0
+        assert db.execute("SELECT first,size FROM unit_ngrams").fetchall() == [("ex:3", 2)]
         assert db.execute("SELECT coalesce(sum(n),0) FROM unit_counts WHERE document IS NULL OR document<>'hl:kept'"
                           ).fetchone()[0] == 0
         kept = ["hl:gonearound_0_000:x:1", "hl:kept_0_000:x:1"]
