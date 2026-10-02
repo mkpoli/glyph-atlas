@@ -469,14 +469,22 @@ try {
   shapes.push([{ sql: refresh[0], values: [] }, [], 'sqlite_autoindex_corpus_units_1'])
   shapes.push([{ sql: "UPDATE corpus_characters SET named=named+1 WHERE (character,production)=(SELECT character,production FROM corpus_units WHERE id=? AND named=0)", values: [] },
     ['na-1'], 'sqlite_autoindex_corpus_units_1'])
-  // GET /atlas/history: all history newest first, by actor, and by label, each served by its own partial index.
+  // GET /atlas/history: all history newest first, by user, and by label, each served by its own partial index.
+  // A user's page merges one index-ordered read per id they hold, so it stops at the LIMIT.
+  const held = ['integration', 'reviewer-0000000a']
   shapes.push([{ sql: worker.historyQuery(null, null, null).sql, values: [] }, [41], 'event_history'])
-  shapes.push([{ sql: worker.historyQuery('integration', null, null).sql, values: [] }, ['integration', 41], 'event_actor_history'])
+  const byUser = worker.historyQuery(held, null, null)
+  shapes.push([{ sql: byUser.sql, values: [] }, [...byUser.values, 41], 'event_actor_history'])
   shapes.push([{ sql: worker.historyQuery(null, 'ア', null).sql, values: [] }, ['ア', 41], 'event_label_history'])
-  // The keyset cursor stays on the same index once a page is under way, for the plain and the actor shape.
+  // The keyset cursor stays on the same index once a page is under way, for the plain and the user shape.
   const cursor = { at: '2026-01-01T00:00:00.000Z', id: 'cf:0' }
   shapes.push([{ sql: worker.historyQuery(null, null, cursor).sql, values: [] }, [cursor.at, cursor.id, 41], 'event_history'])
-  shapes.push([{ sql: worker.historyQuery('integration', null, cursor).sql, values: [] }, ['integration', cursor.at, cursor.id, 41], 'event_actor_history'])
+  const byUserAfter = worker.historyQuery(held, null, cursor)
+  shapes.push([{ sql: byUserAfter.sql, values: [] }, [...byUserAfter.values, 41], 'event_actor_history'])
+  for (const shape of [byUser, byUserAfter]) {
+    const reads = (await plan({ sql: shape.sql, values: [] }, [...shape.values, 41])).filter(d => /^(SCAN|SEARCH) events\b/.test(d))
+    assert.ok(reads.length === held.length && reads.every(d => /USING INDEX event_actor_history \(actor=\?/.test(d)), `one index read per id: ${reads.join('; ')}`)
+  }
   // Browsing one grapheme deals its crops from the seed's point in shuffle order, as `catalogue` asks.
   shapes.push([{ sql: "SELECT * FROM units WHERE origin='local' AND family=? AND shuffle>=? ORDER BY shuffle,rowid LIMIT ? OFFSET ?", values: [] },
     ['U+4EEE', 0, 60, 0], 'unit_family_sample'])

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
-import { canonical, historyQuery } from './index';
+import { canonical, history, historyQuery } from './index';
 import { summary } from './admin';
 import { claim, owned } from './auth';
 import { d1 } from './forms.test';
@@ -19,19 +19,64 @@ function migrated() {
     INSERT INTO actors VALUES('u1','u1','account','${at}'),('reviewer-0000000a','u1','legacy','${at}'),('u2','u2','account','${at}');`);
   const event = (id: string, actor: string, minute: number) => db.prepare(`INSERT INTO events(id,submission,target,actor,expected_revision,
     before_data,after_data,event,snapshot,kind,at) VALUES(?,?,?,?,0,'{}','{}','{"evidence":"{}"}','{}','review',?)`)
-    .run(id, actor + ':s', 'unit', actor, `2026-10-01T00:0${minute}:00.000Z`);
+    .run(id, actor + ':s', 'unit', actor, `2026-10-01T00:${String(minute).padStart(2, '0')}:00.000Z`);
   return { db, event };
 }
 
 describe('journal actors', () => {
-  it('give a user the rows of every id they hold, and name each row by its holder', () => {
+  it('give a user the rows of every id they hold, and name each row by its holder', async () => {
     const { db, event } = migrated();
     event('e1', 'reviewer-0000000a', 1); event('e2', 'u1', 2); event('e3', 'u2', 3); event('e4', 'reviewer-0000000f', 4);
-    const mine = historyQuery('u1', null, null);
-    expect(db.query(mine.sql).all(...mine.values, 10).map((r: any) => r.id)).toEqual(['e2', 'e1']);
+    const mine = await history({ DB: d1(db) } as unknown as Env, new URLSearchParams('user=u1'), null);
+    expect(mine.items.map((i: any) => [i.id, i.reviewer.user, i.reviewer.name])).toEqual([['e2', 'u1', 'Ada'], ['e1', 'u1', 'Ada']]);
     const all = historyQuery(null, null, null);
     expect(db.query(all.sql).all(...all.values, 10).map((r: any) => [r.id, r.user, r.name])).toEqual([
       ['e4', null, null], ['e3', 'u2', 'reviewer-00000002'], ['e2', 'u1', 'Ada'], ['e1', 'u1', 'Ada']]);
+    db.close();
+  });
+  it('page a user holding several ids newest first across them, the cursor carrying on where the page stopped', async () => {
+    const { db, event } = migrated();
+    const env = { DB: d1(db) } as unknown as Env;
+    // Interleaved, with two rows at the same instant that only the id orders.
+    event('a1', 'reviewer-0000000a', 1); event('b1', 'u1', 2); event('a2', 'reviewer-0000000a', 3); event('x1', 'u2', 4);
+    event('b2', 'u1', 5); event('b3', 'u1', 6); event('a3', 'reviewer-0000000a', 6); event('a4', 'reviewer-0000000a', 7);
+    const pages: string[][] = [];
+    let before: string | null = null;
+    do {
+      const page: any = await history(env, new URLSearchParams({ user: 'u1', limit: '3', ...(before ? { before } : {}) }), 'u1');
+      pages.push(page.items.map((i: any) => i.id));
+      expect(page.items.every((i: any) => i.reviewer.mine)).toBe(true);
+      before = page.next;
+    } while (before);
+    expect(pages).toEqual([['a4', 'b3', 'a3'], ['b2', 'a2', 'b1'], ['a1']]);
+    db.close();
+  });
+  it('read a user holding more ids than one statement binds in groups, merged into one order', async () => {
+    const { db, event } = migrated();
+    const env = { DB: d1(db) } as unknown as Env;
+    // The Worker reads 64 ids to a statement (index.ts HISTORY_ARMS); a Worker module exports only handlers.
+    const ARMS = 64;
+    const held = Array.from({ length: ARMS + 2 }, (_, i) => `reviewer-${String(i).padStart(8, '0')}`);
+    db.exec(`INSERT INTO actors VALUES ${held.map(a => `('${a}','u1','legacy','2026-10-01T00:00:00.000Z')`).join(',')}`);
+    // The two ids sorted last fall in the second group and wrote the newest row and one tied with the first group.
+    const minute = (i: number) => i >= ARMS ? 59 - 2 * (i - ARMS) : i % 59;
+    held.forEach((actor, i) => event(`h${String(i).padStart(2, '0')}`, actor, minute(i)));
+    const want = held.map((_, i) => i).sort((a, b) => minute(b) - minute(a) || b - a).map(i => `h${String(i).padStart(2, '0')}`);
+    expect(want.slice(0, 4)).toEqual(['h64', 'h58', 'h65', 'h57']);
+    const first: any = await history(env, new URLSearchParams('user=u1&limit=5'), null);
+    const second: any = await history(env, new URLSearchParams({ user: 'u1', limit: '5', before: first.next }), null);
+    expect([...first.items, ...second.items].map((i: any) => i.id)).toEqual(want.slice(0, 10));
+    db.close();
+  });
+  it('serve a user\'s page from event_actor_history without sorting what the ids ever wrote', () => {
+    const { db } = migrated();
+    for (const cursor of [null, { at: '2026-10-01T00:00:00.000Z', id: 'e' }]) {
+      const { sql, values } = historyQuery(['u1', 'reviewer-0000000a', 'u2'], null, cursor);
+      const plan = (db.query('EXPLAIN QUERY PLAN ' + sql).all(...values, 41) as { detail: string }[]).map(r => r.detail);
+      expect(plan.filter(d => d.startsWith('SEARCH events')).every(d => d.includes('USING INDEX event_actor_history'))).toBe(true);
+      expect(plan.filter(d => d.startsWith('SEARCH events')).length).toBe(3);
+      expect(plan.some(d => d.includes('TEMP B-TREE'))).toBe(false);
+    }
     db.close();
   });
   it('move with an anonymous user who signs in to an account', () => {
