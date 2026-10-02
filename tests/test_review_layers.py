@@ -419,7 +419,6 @@ def test_historical_family_keeps_written_characters_readings_and_ink_distinct(da
     old = api.get("/layers/characters/假").json()
     assert modern["code_point"] == "U+4EEE" and old["code_point"] == "U+5047"
     assert modern["occurrence_count"] == 1 and old["occurrence_count"] == 2
-    assert {sample["reading"] for sample in old["samples"]} == {"かり", "け"}
     assert {sample["label"] for sample in old["samples"]} == {"假"}
     assert {sample["written_character"] for sample in old["samples"]} == {"假"}
     family = api.get("/layers/graphemes/假").json()

@@ -823,7 +823,6 @@ def test_search_matches_the_written_character_not_the_reading(searched: Path):
     written = client.get("/atlas", params={"q": "ゐ"}).json()
     assert written["total"] == 1, written
     assert written["items"][0]["id"] == f"{LINE}:hira"
-    assert written["items"][0]["reading"] == "い", "the record still says how it reads"
     assert client.get("/atlas", params={"q": "U+3090"}).json()["total"] == 1
     # The record is not found by its reading. Other records reading い are found by theirs, which is
     # a different question and is answered by the character they were written with.
@@ -841,7 +840,7 @@ def test_an_occurrence_with_a_written_identity_and_no_reading_is_findable(search
     body = client.get("/atlas", params={"q": "U+2A708"}).json()
     record = next(item for item in body["items"] if item["id"] == f"{LINE}:noreading")
     assert record["label"] == SUPPLEMENTARY, "shown by the character it was written with"
-    assert record["reading"] is None
+    assert "reading" not in record
     assert client.get(record["image"]).status_code == 200
     # A category the row belongs to has to be one a reviewer can open, which means the category
     # filter asks the same question the label answers.
@@ -1000,7 +999,7 @@ def test_an_exported_review_says_whether_it_still_stands(searched: Path):
 
     # A record whose written identity and reading differ.
     written = client.get("/atlas/characters/" + f"{LINE}:hira").json()
-    assert written["label"] == "ゐ" and written["reading"] == "い", "the fixture's differing record"
+    assert written["label"] == "ゐ", "the fixture's differing record"
     matched = client.post("/atlas/rounds", json={
         "id": str(uuid4()), "client_id": "matcher", "grapheme": grapheme_of(written["label"]),
         "answers": [{"id": written["id"], "revision": written["revision"],
@@ -1192,16 +1191,13 @@ def test_a_withheld_crop_is_unreviewed_in_both_listings(repaired: Path):
     assert f"{LINE}:withheld" not in {item["id"] for item in review["items"]}
 
 
-def test_a_written_character_correction_keeps_the_reading(searched: Path):
-    """The two layers are separate: correcting what a crop *is* leaves what it *reads* alone.
-
-    `correction` names a reading and `character` names the encoded identity, so an answer that
-    carries the written character writes `unicode` and nothing else. A unit reading ね whose crop is
-    really ネ becomes ネ that still reads ね.
+def test_a_written_character_correction_writes_only_the_identity(searched: Path):
+    """An answer that carries the written character writes `unicode` and nothing else: a crop
+    labelled ね whose ink is really ネ becomes ネ, and its record carries no reading.
     """
     client = TestClient(create_app(searched))
     unit = client.get("/atlas/characters/" + f"{LINE}:k0").json()
-    assert unit["label"] == "ね" and unit["reading"] == "ね"
+    assert unit["label"] == "ね"
     answer = client.post("/atlas/rounds", json={
         "id": str(uuid4()), "client_id": "reviewer", "grapheme": grapheme_of("ね"),
         "answers": [{"id": unit["id"], "revision": unit["revision"],
@@ -1210,7 +1206,7 @@ def test_a_written_character_correction_keeps_the_reading(searched: Path):
     assert answer.status_code == 200, answer.text
     after = client.get("/atlas/characters/" + unit["id"]).json()
     assert after["label"] == "ネ", "the written identity changed"
-    assert after["reading"] == "ね", "the reading the source recorded is untouched"
+    assert "reading" not in after, "a crop record carries no reading"
     assert after["state"] == "checked", "the reviewer settled it"
 
     # The journal holds the identity event and the review, and nothing that rewrites a reading.
@@ -1628,7 +1624,7 @@ def test_a_round_that_corrects_the_character_writes_no_reading(searched: Path):
     assert answer.status_code == 200, answer.text
     assert {row["field"] for row in answer.json()["results"]} == {"unicode", "review"}
     after = client.get("/atlas/characters/" + unit["id"]).json()
-    assert after["label"] == "り" and after["reading"] == "ね"
+    assert after["label"] == "り"
     retry = client.post("/atlas/rounds", json=payload)
     assert retry.status_code == 200 and all(r["duplicate"] for r in retry.json()["results"])
 
@@ -1982,8 +1978,8 @@ def test_a_written_form_is_recorded_without_touching_the_character_or_the_review
     assert saved.status_code == 200, saved.text
     after = saved.json()
     assert after["written_form"] == "⿺辶𦊷"
-    assert {key: after[key] for key in ("label", "reading", "revision", "state")} == \
-        {key: detail[key] for key in ("label", "reading", "revision", "state")}
+    assert {key: after[key] for key in ("label", "revision", "state")} == \
+        {key: detail[key] for key in ("label", "revision", "state")}
     listed = {item["id"]: item for item in client.get("/atlas", params={"limit": 96}).json()["items"]}
     assert listed[unit]["written_form"] == "⿺辶𦊷"
     # The character page's tiles read the same field from the occurrence listing.

@@ -169,7 +169,6 @@ def _item(store: Store, unit: Unit, revision: int) -> dict[str, Any]:
     return {
         "id": unit.id,
         "label": label(unit),
-        "reading": unit.reading,
         "script": str(unit.script),
         "jibo": refs.jibo_of_unit(unit.unicode),
         "revision": revision,
@@ -354,7 +353,6 @@ class Layers:
             "grapheme": _grapheme_head(refs.character(form), self.per_character) if refs.character(form) else None,
             "variants": [variant.model_dump() for variant in unit.variants],
             "exact": exact,
-            "reading": unit.reading,
             # The shape the letterforms take when a reviewer said it differs from the label.
             "written_form": unit.written_form,
             "kind": str(unit.kind),

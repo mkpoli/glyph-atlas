@@ -786,7 +786,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             document_id = page.document_id if page else None
         production = production_info(store.document(document_id) if document_id else None)
         image_url = crop_url(unit, revision, source)
-        return {"id": unit.id, "label": shown(unit), "reading": unit.reading,
+        return {"id": unit.id, "label": shown(unit),
                 **production,
                 "script": unit.script, "jibo": refs.jibo_of_unit(unit.unicode), "revision": revision,
                 "state": state, "page_id": unit.page_id, "line_id": unit.line_id,
