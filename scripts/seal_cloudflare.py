@@ -71,7 +71,7 @@ def seal(catalogue: Path, corpus: Path, output: Path):
         db.execute(f"INSERT INTO {table}({columns}) SELECT {columns} FROM local_source.{table}")
     # The ledger rows the export copied (`ledger.copy_published`); the site keeps them as they are. An
     # export made before the ledger has none.
-    for table in ledger.TABLES:
+    for table in (*ledger.FORM_TABLES, *ledger.TABLES):
         if db.execute("SELECT 1 FROM local_source.sqlite_master WHERE name=?", (table,)).fetchone():
             columns = ",".join(row[1] for row in db.execute(f"PRAGMA table_info({table})"))
             db.execute(f"INSERT INTO {table}({columns}) SELECT {columns} FROM local_source.{table}")
@@ -180,7 +180,7 @@ def seal(catalogue: Path, corpus: Path, output: Path):
         # The slots the publication's claims and actions fall in, resolved in D1 over everything its
         # ledger holds there, after the crops whose versions they stand on.
         slots = [tuple(row) for row in db.execute("SELECT DISTINCT subject,predicate,scope,slot FROM assertions ORDER BY 1,2,3,4")]
-        rows = [statement for table in ledger.TABLES for statement in ledger.insert_statements(db, table)]
+        rows = [statement for table in (*ledger.FORM_TABLES, *ledger.TABLES) for statement in ledger.insert_statements(db, table)]
         for statement in rows + ledger.d1_resolve_statements(slots):
             max_statement = max(max_statement, len(statement.encode()))
             sql.write(statement)

@@ -336,6 +336,8 @@ def history(conn: sqlite3.Connection, subject: str) -> list[dict]:
 
 #: The ledger's tables in the order a publication copies them, each claim before its rows.
 TABLES = ("assertions", "assertion_evidence", "assertion_premises", "assertion_actions")
+#: The forms and representations claims name (migration 0050), copied before the claims.
+FORM_TABLES = ("representations", "forms")
 
 
 def copy_published(source: sqlite3.Connection, target: sqlite3.Connection,
@@ -346,6 +348,12 @@ def copy_published(source: sqlite3.Connection, target: sqlite3.Connection,
     takes that claim along, so the publication can name the slot it resolves again. A claim whose
     subject `keep` refuses (a crop of a withdrawn document) is left out, with its actions.
     """
+    # Every form and representation this store holds: the claims name them, and the site keeps them as
+    # they are.
+    for table in FORM_TABLES:
+        found = [c[1] for c in source.execute(f"PRAGMA table_info({table})")]
+        target.executemany(f"INSERT OR IGNORE INTO {table}({','.join(found)}) VALUES({','.join('?' * len(found))})",
+                           source.execute(f"SELECT {','.join(found)} FROM {table}").fetchall())
     names = {table: [c[1] for c in source.execute(f"PRAGMA table_info({table})")] for table in TABLES}
     columns = names["assertion_actions"]
     actions = source.execute(f"SELECT {','.join(columns)} FROM assertion_actions WHERE substr(id,1,3)<>'cf:' ORDER BY rowid").fetchall()

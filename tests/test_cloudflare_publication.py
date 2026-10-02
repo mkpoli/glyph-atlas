@@ -101,6 +101,8 @@ def test_the_ledger_rows_an_export_carries_are_sealed_insert_only_and_their_slot
         db.execute("INSERT INTO assertions(id,subject,predicate,scope,slot,value,tier,asserted_by,asserted_at) "
                    "VALUES('lc:1','one','has_form','','','\"unreadable\"','observed','ann','2026-10-01T00:00:00.000Z')")
         db.execute("INSERT INTO assertion_evidence(assertion,kind,ref) VALUES('lc:1','crop',?)", (version,))
+        db.execute("INSERT INTO representations(id,scheme,value) VALUES('rp:1','ids','⿺辶𦊷')")
+        db.execute("INSERT INTO forms(id,anchor,created_by,created_at) VALUES('fm:1','rp:1','ann','2026-10-01T00:00:00.000Z')")
     module.seal(local, corpus, output)
     sql = (output / "catalogue.sql").read_text()
     assert "INSERT OR IGNORE INTO assertions(" in sql and "INSERT OR IGNORE INTO assertion_evidence(" in sql
@@ -113,5 +115,7 @@ def test_the_ledger_rows_an_export_carries_are_sealed_insert_only_and_their_slot
         db.execute("INSERT INTO assertion_evidence(assertion,kind,ref) VALUES('cf:1','crop',?)", (version,))
         db.executescript(sql)
         assert db.execute("SELECT count(*) FROM assertions").fetchone()[0] == 2
+        assert db.execute("SELECT f.id,r.value FROM forms f JOIN representations r ON r.id=f.anchor").fetchall() == [("fm:1", "⿺辶𦊷")], \
+            "the forms the claims name are published with them"
         status, supporting, crop = db.execute("SELECT status,supporting,crop_version FROM current_claims").fetchone()
         assert (status, json.loads(supporting), crop) == ("disputed", [], version), "the site's own claim counts too"
