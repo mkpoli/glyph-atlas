@@ -248,6 +248,7 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
                     extra={"kind": "char", "method": joined.get("method"), "basis": "upstream_bbox" if box else "upstream_crop",
                         "review": joined.get("review") or "machine", "confirmed_by_human": False,
                         "render_available": True, "attribution": attribution(joined),
+                        "text_attribution": joined.get("text_attribution"),
                         **{k: joined.get(k) for k in ("production", "production_label", "production_evidence")}})
                 detail.update(origin="corpus", state="pending", revision=0, suggestions=[], located=True, grid_safe=True)
                 if record_file is None or record_file.tell() >= 32 * 1024**2:
