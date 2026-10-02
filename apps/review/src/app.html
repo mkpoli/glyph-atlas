@@ -8,6 +8,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     %sveltekit.head%
+    <!-- Without scripts the header menu cannot open, so a narrow screen shows the nav as a row of its own. -->
+    <noscript><style>.header-menu{display:none}@media(max-width:1099px){.site-header{height:auto;flex-wrap:wrap;column-gap:12px;padding-top:12px}.site-nav{display:flex;order:1;flex:1 1 100%;flex-wrap:wrap;column-gap:20px;height:auto;font-size:13px}.site-nav a{min-height:44px}}</style></noscript>
   </head>
   <body data-sveltekit-preload-data="tap">
     <div style="display: contents">%sveltekit.body%</div>
