@@ -85,7 +85,7 @@ def main() -> int:
                     id=unit_id(page_id, column, place), document_id=args.document, page_id=page_id, line_id=line_id,
                     seq=place, box=Box(x=round(box.x * scale_x), y=round(box.y * scale_y),
                                        w=round(box.w * scale_x), h=round(box.h * scale_y)),
-                    text_source=label, reading=label,
+                    text_source=label,
                     unicode=" ".join(f"U+{ord(c):04X}" for c in label),
                     script="han" if ruled_grid.is_han(label) else "unknown",
                     method="detect-align",

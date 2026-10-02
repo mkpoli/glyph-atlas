@@ -356,7 +356,7 @@ def imported(row: Occurrence, entry: str, lines: set[str], contested: frozenset[
         id=unit_id(row), document_id=f"hk:{entry}", page_id=f"hk:{entry}:{page}",
         line_id=line_id if line_id in lines else None, seq=s.get("position"),
         box=Box(x=s["box"][0], y=s["box"][1], w=s["box"][2], h=s["box"][3]),
-        text_source=row.label or None, reading=row.label or None,
+        text_source=row.label or None,
         unicode=" ".join(refs.to_code_points(row.label)) if row.label else None,
         script=refs.script_of(row.label[:1]) if row.label else Script.UNKNOWN,
         method="import",

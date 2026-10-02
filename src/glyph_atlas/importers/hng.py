@@ -407,7 +407,6 @@ def unit_of(crop: Crop, raw: dict, revision: str, sha256: str | None) -> Unit:
         kind=UnitKind.CHAR,
         granularity="char",
         text_source=crop.headword or None,
-        reading=crop.headword or None,
         unicode=code_point,
         classification=classification,
         script=Script.HAN,

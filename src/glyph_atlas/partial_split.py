@@ -123,7 +123,7 @@ def child_units(parent, proposal: dict, crop_sha256: str):
         children.append(Unit(id=f"{parent.id}:s{fingerprint}:{i}", document_id=parent.document_id,
             page_id=parent.page_id, line_id=parent.line_id, seq=parent.seq,
             box=box, kind=UnitKind.CHAR if single else UnitKind.SEQUENCE,
-            granularity="char" if single else "sequence", text_source=text, reading=text,
+            granularity="char" if single else "sequence", text_source=text,
             unicode=" ".join(refs.to_code_points(text)), method="detect-align", review=ReviewState.MACHINE,
             script=refs.script_of(text) if single else "unknown",
             antecedent_ids=[parent.id], upstream={**parent.upstream, "segmentation_parent": parent.id},

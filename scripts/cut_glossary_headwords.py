@@ -123,7 +123,7 @@ def main() -> int:
                     meta["standard_form"] = glyph.standard
                 units.append(Unit(
                     id=unit_id(page.id, place, seq), document_id=args.document, page_id=page.id, line_id=line_id,
-                    seq=seq, box=box, text_source=glyph.text, reading=glyph.text,
+                    seq=seq, box=box, text_source=glyph.text,
                     unicode=code, script="han", method="detect-align",
                     upstream={"source": "wikisource-scans", "page": text_page.id}, meta=meta))
 

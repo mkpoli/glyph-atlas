@@ -201,7 +201,6 @@ def unit_of(row: dict[str, str], sheet: Sheet, page: Page, column: int, glyphs: 
         seq=int(row["cn"]),
         box=Box(x=int(row["x"]), y=int(row["y"]), w=int(row["w"]), h=int(row["h"])),
         text_source=char,
-        reading=char,
         unicode=code_point,
         classification=Classification.IDENTIFIED if code_point else Classification.UNIDENTIFIED,
         script=Script.HAN,

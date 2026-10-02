@@ -291,7 +291,6 @@ def unit_of(row: dict) -> Unit:
         kind=kind_of(character),
         granularity=labels.granularity,
         text_source=character,
-        reading=character,
         unicode=labels.unicode,
         classification=labels.classification,
         script=labels.script,
