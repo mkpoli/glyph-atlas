@@ -324,3 +324,53 @@ def history(conn: sqlite3.Connection, subject: str) -> list[dict]:
         out.append(item)
     return out
 
+
+# -- publication ---------------------------------------------------------------------------------
+
+#: The ledger's tables in the order a publication copies them, each claim before its rows.
+TABLES = ("assertions", "assertion_evidence", "assertion_premises", "assertion_actions")
+
+
+def copy_published(source: sqlite3.Connection, target: sqlite3.Connection) -> list[tuple[str, str, str, str]]:
+    """Copy the rows this store made into a publication's catalogue, and return the slots they touch.
+
+    The site's own rows (`cf:`) are on the site already. An action made here on a claim made there
+    takes that claim along, so the publication can name the slot it resolves again.
+    """
+    names = {table: [c[1] for c in source.execute(f"PRAGMA table_info({table})")] for table in TABLES}
+    columns = names["assertion_actions"]
+    actions = source.execute(f"SELECT {','.join(columns)} FROM assertion_actions WHERE substr(id,1,3)<>'cf:' ORDER BY rowid").fetchall()
+    wanted = [row[0] for row in source.execute("SELECT id FROM assertions WHERE substr(id,1,3)<>'cf:' ORDER BY rowid")]
+    own = set(wanted)
+    wanted += sorted({row[columns.index("assertion")] for row in actions} - own)
+    for start in range(0, len(wanted), 500):
+        part = canonical(wanted[start:start + 500])
+        for table, column in (("assertions", "id"), ("assertion_evidence", "assertion"), ("assertion_premises", "assertion")):
+            rows = source.execute(f"SELECT {','.join(names[table])} FROM {table} WHERE {column} IN (SELECT value FROM json_each(?))",
+                                  (part,)).fetchall()
+            target.executemany(f"INSERT OR IGNORE INTO {table}({','.join(names[table])}) VALUES({','.join('?' * len(names[table]))})",
+                               rows)
+    target.executemany(f"INSERT OR IGNORE INTO assertion_actions({','.join(columns)}) VALUES({','.join('?' * len(columns))})",
+                       actions)
+    keys = set()
+    for start in range(0, len(wanted), 500):
+        keys.update(tuple(r) for r in source.execute(
+            "SELECT DISTINCT subject,predicate,scope,slot FROM assertions WHERE id IN (SELECT value FROM json_each(?))",
+            (canonical(wanted[start:start + 500]),)))
+    return sorted(keys)
+
+
+def _literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def d1_resolve_statements(keys: Sequence[Sequence[str]]) -> list[str]:
+    """One-line SQL that resolves these slots in D1 after a publication's rows, with the keys written in."""
+    clear, write = resolve_statements(D1_CROP_NOW)
+    out = []
+    for start in range(0, len(keys), KEYS_PER_STATEMENT):
+        bound = _literal(canonical([list(key) for key in keys[start:start + KEYS_PER_STATEMENT]]))
+        for statement in (clear, write):
+            # One line, as the publication's SQL files hold one statement a line.
+            out.append(" ".join(line.strip() for line in statement.splitlines()).replace("?1", bound) + ";\n")
+    return out

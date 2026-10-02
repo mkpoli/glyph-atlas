@@ -13,6 +13,7 @@ from cloudflare_schema import CORPUS_COLUMNS, CORPUS_REFRESH, category_of, corpu
 from export_cloudflare import encoded
 
 from glyph_atlas.ngrams import Run, ngram_statements
+from glyph_atlas.review import ledger
 
 IMMUTABLE = ("metadata", "characters", "aliases", "corpus_units", "media")
 
@@ -72,6 +73,12 @@ def seal(catalogue: Path, corpus: Path, output: Path):
         # By name: `table_info` leaves out generated columns (`style_order`), which take no value.
         columns = ",".join(row[1] for row in db.execute(f"PRAGMA table_info({table})"))
         db.execute(f"INSERT INTO {table}({columns}) SELECT {columns} FROM local_source.{table}")
+    # The ledger rows the export copied (`ledger.copy_published`); the site keeps them as they are. An
+    # export made before the ledger has none.
+    for table in ledger.TABLES:
+        if db.execute("SELECT 1 FROM local_source.sqlite_master WHERE name=?", (table,)).fetchone():
+            columns = ",".join(row[1] for row in db.execute(f"PRAGMA table_info({table})"))
+            db.execute(f"INSERT INTO {table}({columns}) SELECT {columns} FROM local_source.{table}")
     db.execute("INSERT INTO media SELECT * FROM corpus_source.media")
     # Named columns: an export made before corpus rows carried their material is refused here.
     columns = "id,character,family,visual_group,shuffle,object,offset,size,production,style"
@@ -152,7 +159,7 @@ def seal(catalogue: Path, corpus: Path, output: Path):
                 continue
             if table in IMMUTABLE:
                 statement = statement.replace("INSERT INTO", "INSERT OR REPLACE INTO", 1)
-            elif table == "units":
+            elif table == "units" or table in ledger.TABLES:
                 statement = statement.replace("INSERT INTO", "INSERT OR IGNORE INTO", 1)
             else:
                 continue
@@ -174,11 +181,19 @@ def seal(catalogue: Path, corpus: Path, output: Path):
         for statement in ngram_statements((i for i, in db.execute("SELECT id FROM units WHERE origin='local'")), ngrams):
             max_statement = max(max_statement, len(statement.encode()))
             sql.write(statement + "\n")
+        # The slots the publication's claims and actions fall in, resolved in D1 over everything its
+        # ledger holds there, after the crops whose versions they stand on.
+        slots = [tuple(row) for row in db.execute("SELECT DISTINCT subject,predicate,scope,slot FROM assertions ORDER BY 1,2,3,4")]
+        for statement in ledger.d1_resolve_statements(slots):
+            max_statement = max(max_statement, len(statement.encode()))
+            sql.write(statement)
         # Counted in D1 from the rows it now holds, which may include rows earlier publications left.
         sql.write(CORPUS_REFRESH + "\n")
     counts = {table: db.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
               for table in ("units", "characters", "corpus_units", "media")}
     counts["unit_ngrams"] = len(ngrams)
+    counts["assertions"] = db.execute("SELECT count(*) FROM assertions").fetchone()[0]
+    counts["assertion_actions"] = db.execute("SELECT count(*) FROM assertion_actions").fetchone()[0]
     (output / "publication.json").write_text(encoded({"counts": counts, "objects": manifest, "review_baselines": baselines,
                                                      "max_statement_bytes": max_statement}) + "\n")
     db.close()

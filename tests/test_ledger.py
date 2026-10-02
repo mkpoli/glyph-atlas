@@ -216,3 +216,41 @@ def test_ledger_rows_are_never_changed_or_removed(conn):
 def test_the_resolver_names_its_version():
     assert f"'{ledger.RESOLVER}' AS resolver" in ledger.RESOLVE_BODY
 
+
+def test_a_publication_carries_the_rows_made_here_and_resolves_their_slots_on_the_site(conn):
+    import json
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).parents[1] / "scripts"))
+    from cloudflare_schema import schema
+
+    site = sqlite3.connect(":memory:", isolation_level=None)
+    schema(site)
+    site.execute("INSERT INTO units(id,origin,character,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual) "
+                 "VALUES(?,'local','仮','unknown','kanji','pending',0,1,1,1,?,'{}','{}','{}')",
+                 (CROP, json.dumps({"id": CROP, "image_sha256": "a" * 64, "box": {"x": 1, "y": 2, "w": 3, "h": 4}})))
+    # bob's claim was made on the site, and the import brought it here.
+    made = ledger.write_claims(site, key="bob:1", actor="bob", request={}, subject=CROP, predicate="has_form",
+                               claims=[Claim(value="unreadable")], crop_version=V1, prefix="cf",
+                               at="2026-10-01T00:00:00.000Z")["assertions"][0]
+    for table, column in (("assertions", "id"), ("assertion_evidence", "assertion")):
+        rows = site.execute(f"SELECT * FROM {table} WHERE {column}=?", (made,)).fetchall()
+        conn.executemany(f"INSERT INTO {table} VALUES({','.join('?' * len(rows[0]))})", rows)
+    # Here, ann agrees and cat accepts bob's claim.
+    mine = claim(conn, "ann", "unreadable", at="2026-10-01T00:01:00.000Z")["assertions"][0]
+    act(conn, "cat", made, "accept", at="2026-10-01T00:02:00.000Z")
+    catalogue = sqlite3.connect(":memory:", isolation_level=None)
+    schema(catalogue)
+    slots = ledger.copy_published(conn, catalogue)
+    assert slots == [(CROP, "has_form", "", "")]
+    assert [r[0] for r in catalogue.execute("SELECT id FROM assertions ORDER BY asserted_at")] == [made, mine], \
+        "the site's claim comes along with the action on it"
+    for _ in range(2):
+        for table in ledger.TABLES:
+            for row in catalogue.execute(f"SELECT * FROM {table}"):
+                site.execute(f"INSERT OR IGNORE INTO {table} VALUES({','.join('?' * len(row))})", row)
+        site.executescript("".join(ledger.d1_resolve_statements(slots)))
+        row = ledger.current_row(site.execute(f"SELECT {','.join(ledger.COLUMNS)} FROM current_claims").fetchone())
+        assert (row["status"], row["value"], row["supporting"], row["crop_version"]) == ("accepted", "unreadable", [made, mine], V1)
+    assert site.execute("SELECT count(*) FROM assertions").fetchone()[0] == 2, "publishing twice adds nothing"

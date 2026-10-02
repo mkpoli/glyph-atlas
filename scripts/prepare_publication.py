@@ -17,7 +17,8 @@
    listed in OUTPUT/overlapping.json. Only the image rows and packs of the crops published are
    uploaded; the rest are already on the site.
 4. The SQL parts hold, in order: image rows, new units, the refresh, the pairs and trigrams of crops
-   starting at every unit kept (`glyph_atlas.ngrams`, which need all their crops on the site), each `--extra` file whole, and
+   starting at every unit kept (`glyph_atlas.ngrams`, which need all their crops on the site), the
+   ledger rows made locally with the resolution of their slots, each `--extra` file whole, and
    with `--status` the collection status row, and last the row the Worker keys its cached listings
    on (`units_refreshed_at`), so they change once the rest has. Each part stays under D1's upload size and every
    statement under its statement limit; `publication.json` lists the parts.
@@ -224,20 +225,28 @@ def write_parts(sealed: Path, groups: list[list[str]]) -> list[str]:
     return parts
 
 
-def split_sealed(sql: str, wanted: set[str], fresh: set[str]) -> tuple[list[str], list[str], list[str]]:
+LEDGER_LINES = ('INSERT OR IGNORE INTO "assertions"', 'INSERT OR IGNORE INTO "assertion_evidence"',
+                'INSERT OR IGNORE INTO "assertion_premises"', 'INSERT OR IGNORE INTO "assertion_actions"',
+                "DELETE FROM current_claims ", "INSERT INTO current_claims(")
+
+
+def split_sealed(sql: str, wanted: set[str], fresh: set[str]) -> tuple[list[str], list[str], list[str], list[str]]:
     """A sealed catalogue's statements this publication applies: the image rows of `wanted` media keys,
-    the rows of `fresh` units, and every pair and trigram statement, in the order sealing wrote them."""
-    media, units, ngrams = [], [], []
+    the rows of `fresh` units, every pair and trigram statement, and the ledger's rows with the
+    resolution of their slots, in the order sealing wrote them."""
+    media, units, ngrams, claims = [], [], [], []
     for line in sql.splitlines(keepends=True):
         if line.startswith(("DELETE FROM unit_ngrams ", "INSERT OR IGNORE INTO unit_ngrams(")):
             ngrams.append(line)
+        elif line.startswith(LEDGER_LINES):
+            claims.append(line)
         elif line.startswith('INSERT OR REPLACE INTO "media"'):
             if MEDIA_KEY.match(line).group(1) in wanted:
                 media.append(line.replace('INSERT OR REPLACE INTO "media"', 'INSERT OR IGNORE INTO "media"', 1))
         elif line.startswith('INSERT OR IGNORE INTO "units"') and \
                 UNIT_ID.match(line).group(1).replace("''", "'") in fresh:
             units.append(line)
-    return media, units, ngrams
+    return media, units, ngrams, claims
 
 
 def main() -> None:
@@ -288,17 +297,18 @@ def main() -> None:
             wanted.update(key_of(json.loads(data).get(f)) for f in ("image", "context_image"))
     wanted.discard("")
     objects = {obj for key, obj in atlas.execute("SELECT key, object FROM media") if key in wanted}
-    media, units, ngrams = split_sealed((sealed / "catalogue.sql").read_text(encoding="utf-8"), wanted, fresh)
+    media, units, ngrams, claims = split_sealed((sealed / "catalogue.sql").read_text(encoding="utf-8"), wanted, fresh)
     extras = [statements(path.read_text(encoding="utf-8")) for path in args.extra]
     # The version row goes last, so the Worker's cached listings change only once every row has.
-    groups = [media, units, updates, ngrams, *extras] + ([[status_row()]] if args.status else []) + [[refresh.VERSION_BUMP]]
+    # The ledger after the crops: a claim's slot is resolved against the crop's version on the site.
+    groups = [media, units, updates, ngrams, claims, *extras] + ([[status_row()]] if args.status else []) + [[refresh.VERSION_BUMP]]
     parts = write_parts(sealed, groups)
 
     manifest = json.loads((sealed / "publication.json").read_text())
     manifest["objects"] = [o for o in manifest["objects"] if o["key"] in objects]
     manifest["sql"] = parts
     (sealed / "publication.json").write_text(json.dumps(manifest, ensure_ascii=False))
-    print(json.dumps({"lost": len(lost["units"]), "new": len(units), "overlapping": len(overlapping), "media": len(media), "refresh": counts,
+    print(json.dumps({"lost": len(lost["units"]), "new": len(units), "ledger": len(claims), "overlapping": len(overlapping), "media": len(media), "refresh": counts,
                       "held": len(held), "extra": [str(p) for p in args.extra], "status": args.status,
                       "objects": len(manifest["objects"]), "parts": parts, "publication": str(sealed)}, ensure_ascii=False))
 

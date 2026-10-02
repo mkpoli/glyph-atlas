@@ -90,3 +90,28 @@ def test_truncated_publication_is_rejected(publication):
     (local / "pack-0001.bin").write_bytes(b"short")
     with pytest.raises(ValueError, match="Incomplete media pack"):
         module.seal(local, corpus, output)
+
+
+def test_the_ledger_rows_an_export_carries_are_sealed_insert_only_and_their_slots_resolved(publication):
+    module, local, corpus, output = publication
+    version = "one@" + "c" * 64 + "@1,2,3,4"
+    with sqlite3.connect(local / "catalogue.sqlite") as db:
+        db.execute("UPDATE units SET data=json_set(data,'$.image_sha256',?,'$.box',json('{\"x\":1,\"y\":2,\"w\":3,\"h\":4}')) WHERE id='one'",
+                   ("c" * 64,))
+        db.execute("INSERT INTO assertions(id,subject,predicate,scope,slot,value,tier,asserted_by,asserted_at) "
+                   "VALUES('lc:1','one','has_form','','','\"unreadable\"','observed','ann','2026-10-01T00:00:00.000Z')")
+        db.execute("INSERT INTO assertion_evidence(assertion,kind,ref) VALUES('lc:1','crop',?)", (version,))
+    module.seal(local, corpus, output)
+    sql = (output / "catalogue.sql").read_text()
+    assert 'INSERT OR IGNORE INTO "assertions"' in sql and 'INSERT OR IGNORE INTO "assertion_evidence"' in sql
+    assert json.loads((output / "publication.json").read_text())["counts"]["assertions"] == 1
+    with database(":memory:") as db:
+        db.executescript(sql)
+        # A reviewer on the site disagrees before the next publication.
+        db.execute("INSERT INTO assertions(id,subject,predicate,scope,slot,value,tier,asserted_by,asserted_at) "
+                   "VALUES('cf:1','one','has_form','','','\"unresolved\"','observed','bob','2026-10-02T00:00:00.000Z')")
+        db.execute("INSERT INTO assertion_evidence(assertion,kind,ref) VALUES('cf:1','crop',?)", (version,))
+        db.executescript(sql)
+        assert db.execute("SELECT count(*) FROM assertions").fetchone()[0] == 2
+        status, supporting, crop = db.execute("SELECT status,supporting,crop_version FROM current_claims").fetchone()
+        assert (status, json.loads(supporting), crop) == ("disputed", [], version), "the site's own claim counts too"
