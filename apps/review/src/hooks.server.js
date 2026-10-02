@@ -72,9 +72,12 @@ export async function handle({ event, resolve }) {
   if (isLocale(first)) {
     event.locals.locale = first
     const theme = isTheme(event.cookies.get(THEME_COOKIE)) ? event.cookies.get(THEME_COOKIE) : 'system'
-    return resolve(event, { transformPageChunk: ({ html }) => html.replace('%lang%', first).replace('%theme%', theme)
+    const response = await resolve(event, { transformPageChunk: ({ html }) => html.replace('%lang%', first).replace('%theme%', theme)
       .replace('%color-scheme%', colorScheme(theme))
       .replace('%theme-color-light%', themeColorMedia(theme, 'light')).replace('%theme-color-dark%', themeColorMedia(theme, 'dark')) })
+    // A page carries who is signed in, so no shared cache may keep one reader's copy for another.
+    if (!response.headers.has('cache-control')) response.headers.set('cache-control', 'private, no-cache')
+    return response
   }
   // Every other address is sent to a language's address: a site language written in other case to that
   // language, and an unknown language or an unprefixed address to the page in the reader's language.
