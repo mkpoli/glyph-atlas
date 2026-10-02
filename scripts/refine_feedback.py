@@ -12,7 +12,6 @@ from glyph_atlas.review.cloudflare_import import (
     bind_remote_outcomes,
     ingest_cloudflare,
     ingest_ledger,
-    ingest_written_forms,
     merge_ledger_pages,
 )
 from glyph_atlas.review.receipts import FeedbackReceipts, complete_batch, fingerprint
@@ -25,8 +24,6 @@ def main():
     parser.add_argument("dataset", type=Path)
     parser.add_argument("reviews", type=Path)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--forms", type=Path,
-                        help="an exported atlas-written-forms.json to import with the reviews")
     parser.add_argument("--ledger", type=Path, nargs="+",
                         help="the pages of the site's /atlas/ledger, in order, to import with the reviews")
     parser.add_argument("--scan-limit", type=int, default=0)
@@ -47,18 +44,12 @@ def main():
         with sqlite3.connect(store.path) as source, sqlite3.connect(folder / name) as backup:
             source.backup(backup)
     bound, imported = ingest_cloudflare(store, payload, apply=args.apply)
-    # Written forms travel as their own export; a run without one still takes the reviews.
-    forms = None
-    if args.forms:
-        _, forms = ingest_written_forms(store, json.loads(args.forms.read_text(encoding="utf-8")),
-                                        apply=args.apply)
     # The ledger is its own export, read a page at a time; claims stand on their evidence versions.
     claims = ingest_ledger(store, merge_ledger_pages([json.loads(path.read_text(encoding="utf-8")) for path in args.ledger]),
                            apply=args.apply) if args.ledger else None
     feedback = refine_feedback(store, bound, apply=args.apply)
     bind_remote_outcomes(feedback, imported)
     result = {"feedback": feedback, "cloudflare_import": imported,
-              **({"written_forms": forms} if forms else {}),
               **({"ledger": claims} if claims else {}),
               "input": {"source": args.reviews.name,
                         "fingerprints": [fingerprint(record) for record in payload.get("reviews", [])]}}

@@ -5,8 +5,8 @@ asserted it, its confidence and its evidence. An accept, a reject, a retraction 
 a row of its own, and no row is ever changed. `data/ledger.json` holds the predicate catalogue that
 every write is checked against, and the SQL resolver that turns a slot's claims into its
 `current_claims` row; the Worker runs the same resolver over D1, so the two cannot disagree on what a
-slot holds. The tables are made from the Worker's migration (`0048_assertion_ledger.sql`), so the
-review store and D1 hold the same shape.
+slot holds. The tables are made from the Worker's migrations (`0048_assertion_ledger.sql`,
+`0050_forms.sql`), so the review store and D1 hold the same shape.
 
 Every function here runs inside its caller's transaction on the caller's connection. `version_of`
 gives a crop subject's current evidence version (`glyph_atlas.evidence`), and None for a subject that
@@ -27,7 +27,8 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[3]
 CATALOGUE_PATH = ROOT / "data" / "ledger.json"
-DDL_PATH = ROOT / "apps" / "cloudflare" / "migrations" / "0048_assertion_ledger.sql"
+#: The Worker's migrations that make the ledger's tables and the forms it names (0048, 0050).
+DDL_PATHS = tuple(ROOT / "apps" / "cloudflare" / "migrations" / name for name in ("0048_assertion_ledger.sql", "0050_forms.sql"))
 
 CATALOGUE: dict[str, Any] = json.loads(CATALOGUE_PATH.read_text(encoding="utf-8"))
 RESOLVER: str = CATALOGUE["resolver"]
@@ -66,8 +67,9 @@ def resolve_statements(crop_now: str) -> tuple[str, str]:
 
 
 def schema(conn: sqlite3.Connection) -> None:
-    """Make the ledger's tables, as migration 0048 makes them in D1."""
-    conn.executescript(DDL_PATH.read_text(encoding="utf-8"))
+    """Make the ledger's tables and the forms', as migrations 0048 and 0050 make them in D1."""
+    for path in DDL_PATHS:
+        conn.executescript(path.read_text(encoding="utf-8"))
 
 
 def now() -> str:

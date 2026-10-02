@@ -25,7 +25,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
-from . import origin, production, style, written_form
+from . import origin, production, style
 
 
 class Licence(StrEnum):
@@ -105,8 +105,6 @@ Production = Annotated[str, AfterValidator(production.check)]
 Origin = Annotated[str, AfterValidator(origin.check)]
 #: A value of `data/vocab/style.yaml`, e.g. `regular`, `cursive` or `ming`.
 Style = Annotated[str, AfterValidator(style.check)]
-#: One character or an Ideographic Description Sequence, e.g. `𮟃` or `⿺辶𦊷`.
-WrittenForm = Annotated[str, AfterValidator(written_form.check)]
 
 
 class Register(StrEnum):
@@ -362,10 +360,29 @@ class ReviewState(StrEnum):
     REJECTED = "rejected"
 
 
+#: Fields a unit had in an earlier schema version, with the value each held when unused. A record
+#: written then still carries them; one that holds that value reads as without it, and one that holds
+#: anything else is refused, so nothing it said is dropped unread. The form a crop is written in is a
+#: claim of the assertion ledger now (`review.crop_forms`), and `scripts/migrate_written_forms.py`
+#: moves a dataset's written forms there.
+RETIRED_UNIT_FIELDS: dict[str, Any] = {"written_form": None}
+
+
 class Unit(BaseModel):
     """One graphic unit on a page: usually a character, sometimes a ligature or a mark."""
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _retired_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict) or not RETIRED_UNIT_FIELDS.keys() & data.keys():
+            return data
+        data = dict(data)
+        for name, unused in RETIRED_UNIT_FIELDS.items():
+            if name in data and data.pop(name) not in (unused, None):
+                raise ValueError(f"{name} is no field of a unit any more; move it with scripts/migrate_written_forms.py")
+        return data
 
     id: str
     document_id: str | None = Field(default=None, description="set on every unit, so that a standalone crop still reaches its rights")
@@ -387,11 +404,6 @@ class Unit(BaseModel):
     classification: Classification = Classification.UNASSESSED
     script: Script = Script.UNKNOWN
     style: Style = Field(default=style.UNASSESSED, description="style of this unit's letterforms; unassessed takes the page's")
-    written_form: WrittenForm | None = Field(
-        default=None,
-        description="the shape the letterforms take when a reviewer records that it differs from the character: "
-        "one character or an Ideographic Description Sequence (還 written 𮟃); the character stays what it is",
-    )
     variants: list[VariantRef] = Field(default_factory=list, description="MJ, IVS, GlyphWiki or local shape ids")
     candidates: list[Candidate] = Field(default_factory=list, description="scored alternatives when classification is ambiguous")
     antecedent_ids: list[str] = Field(default_factory=list, description="units an iteration mark repeats")

@@ -10,7 +10,7 @@ import sqlite3
 from pathlib import Path
 
 from cloudflare_schema import CORPUS_COLUMNS, CORPUS_REFRESH, category_of, corpus_upsert, schema
-from export_cloudflare import encoded
+from export_cloudflare import UNIT_COLUMNS, encoded
 
 from glyph_atlas.ngrams import Run, ngram_statements
 from glyph_atlas.review import ledger
@@ -29,8 +29,7 @@ def reviewed_baselines(db, corpus):
     reviews = CorpusReviews(api)
     latest, baseline = reviews.latest(), reviews.baseline()
     applied, stale = 0, 0
-    forms = reviews.forms()
-    for identity in latest.keys() | baseline.keys() | forms.keys():
+    for identity in latest.keys() | baseline.keys():
         row = db.execute("SELECT object,offset,size,shuffle,style FROM corpus_units WHERE id=?", (identity,)).fetchone()
         if not row:
             continue
@@ -38,8 +37,6 @@ def reviewed_baselines(db, corpus):
             source.seek(row[1])
             original = json.loads(source.read(row[2]))
         current = reviews.overlay(original, latest.get(identity))
-        # The written form is the row's column (migration 0038), which the Worker adds to the record.
-        form = current.pop("written_form", None)
         if current["state"] == "stale":
             stale += 1
             continue
@@ -49,14 +46,13 @@ def reviewed_baselines(db, corpus):
             # A character written with a mark is several code points; `grapheme` takes the whole sequence.
             own = " ".join(refs.to_code_points(written))
             current["grapheme"] = refs.grapheme(own) or own
-        # `reading`, the fourth column, stays in D1 unread until a rebuild of the table drops it.
-        db.execute("INSERT OR REPLACE INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
-            identity, "corpus", written, None, current.get("grapheme"),
+        db.execute(f"INSERT OR REPLACE INTO units({UNIT_COLUMNS}) VALUES({','.join('?' * (UNIT_COLUMNS.count(',') + 1))})", (
+            identity, "corpus", written, current.get("grapheme"),
             (current.get("visual_group") or {}).get("id"), current.get("production") or "unknown",
             category_of(current.get("label")),
             # Dealt in Quick review, as the Worker decides, when its image may be served and it names a character.
             current["state"], current["revision"], int(bool(current.get("proxyable") and written)), 1, row[3],
-            encoded(current), encoded(original), "{}", "{}", None, row[4], form))
+            encoded(current), encoded(original), "{}", "{}", None, row[4]))
         applied += 1
     return {"applied": applied, "stale": stale}
 

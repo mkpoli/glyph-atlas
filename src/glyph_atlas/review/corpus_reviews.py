@@ -33,18 +33,6 @@ class CorpusEdit(BaseModel):
     note: str = Field(default="", max_length=2000)
 
 
-class CorpusWrittenForm(BaseModel):
-    """What a reviewer says one corpus glyph's letterforms are written as; `None` is its own character."""
-
-    model_config = ConfigDict(extra="forbid")
-    id: UUID
-    identity: str = Field(min_length=1, max_length=1000)
-    client_id: str = Field(min_length=1, max_length=128)
-    revision: int = Field(ge=0)
-    source_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
-    form: str | None = Field(default=None, max_length=256)
-
-
 def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
@@ -85,14 +73,6 @@ class CorpusReviews:
             db.execute("CREATE TABLE IF NOT EXISTS review_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
             db.execute("CREATE TABLE IF NOT EXISTS glyph_baseline "
                        "(identity TEXT PRIMARY KEY, character TEXT NOT NULL, source_revision TEXT)")
-            # What a glyph's letterforms are written as, kept apart from its reviews: a written form
-            # decides nothing, so it neither moves the review revision nor stands in for a verdict.
-            db.execute("""CREATE TABLE IF NOT EXISTS glyph_forms (
-                seq INTEGER PRIMARY KEY AUTOINCREMENT,
-                id TEXT NOT NULL UNIQUE, identity TEXT NOT NULL, client_id TEXT NOT NULL,
-                request TEXT NOT NULL, source_revision TEXT NOT NULL, label TEXT NOT NULL,
-                form TEXT, at TEXT NOT NULL)""")
-            db.execute("CREATE INDEX IF NOT EXISTS glyph_form_identity ON glyph_forms(identity, seq)")
 
     def connect(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.path, timeout=10)
@@ -124,21 +104,7 @@ class CorpusReviews:
                               "(SELECT max(revision) FROM glyph_reviews GROUP BY identity)")
             return {row["identity"]: dict(row) for row in rows}
 
-    def forms(self) -> dict[str, dict]:
-        """Each glyph's latest written form, with the source revision it was recorded against."""
-        with closing(self.connect()) as db:
-            rows = db.execute("SELECT * FROM glyph_forms WHERE seq IN (SELECT max(seq) FROM glyph_forms GROUP BY identity)")
-            return {row["identity"]: dict(row) for row in rows}
-
-    def written_form(self, source: dict, forms: dict[str, dict] | None = None) -> str | None:
-        """The glyph's written form, while its source pixels are the ones it was recorded against."""
-        row = (self.forms() if forms is None else forms).get(source["id"])
-        return row["form"] if row and row["source_revision"] == source.get("source_revision") else None
-
     def overlay(self, source: dict, record: dict | None = None) -> dict:
-        return {**self._overlay(source, record), "written_form": self.written_form(source)}
-
-    def _overlay(self, source: dict, record: dict | None = None) -> dict:
         identity = source["id"]
         if record is None:
             record = self.latest().get(identity)
@@ -242,43 +208,6 @@ class CorpusReviews:
             saved = dict(db.execute("SELECT * FROM glyph_reviews WHERE id=?", (str(edit.id),)).fetchone())
         return {**self.overlay(source, saved), "accepted_event": str(edit.id)}
 
-    def record_form(self, edit: CorpusWrittenForm) -> dict:
-        """Record what a glyph's letterforms are written as, and return the glyph as it now is.
-
-        The glyph keeps its character and review. A form that is its own character clears it. A save
-        repeated under its id answers with the glyph; the id used for another form is refused.
-        """
-        from .. import written_form
-        from .atlas import identity_text
-
-        payload = edit.model_dump(mode="json")
-        with closing(self.connect()) as db, db:
-            db.execute("BEGIN IMMEDIATE")
-            repeated = db.execute("SELECT request FROM glyph_forms WHERE id=?", (str(edit.id),)).fetchone()
-            if repeated:
-                if repeated["request"] != _json(payload):
-                    raise HTTPException(409, "This save was already used for a different written form.")
-                return self.detail(edit.identity)
-            source = self.source(edit.identity)
-            previous = db.execute("SELECT revision FROM glyph_reviews WHERE identity=? ORDER BY revision DESC LIMIT 1",
-                                  (edit.identity,)).fetchone()
-            revision = previous["revision"] if previous else self.revision_floor(db)
-            if edit.revision != revision or edit.source_revision != source["source_revision"]:
-                raise HTTPException(409, "This glyph changed. Reload it before saving.")
-            label = self._overlay(source)["label"]
-            form = identity_text(edit.form) if edit.form and edit.form.strip() else None
-            if form == label:
-                form = None
-            if form is not None:
-                try:
-                    written_form.check(form)
-                except ValueError as error:
-                    raise HTTPException(422, str(error)) from error
-            db.execute("INSERT INTO glyph_forms(id,identity,client_id,request,source_revision,label,form,at) "
-                       "VALUES (?,?,?,?,?,?,?,?)", (str(edit.id), edit.identity, edit.client_id, _json(payload),
-                       source["source_revision"], label, form, datetime.now(UTC).isoformat()))
-        return self.detail(edit.identity)
-
     def reviewed_rows(self, state: str | None = None) -> list[dict]:
         rows = []
         for identity, event in self.latest().items():
@@ -342,15 +271,14 @@ class CorpusReviews:
         from ..corpus.identity import IDENTITY_FIELDS
         latest = self.latest()
         baseline = self.baseline()
-        forms = self.forms()
         output = []
         for row in rows:
             identity = row["id"]
-            if identity in latest or identity in baseline or identity in forms:
+            if identity in latest or identity in baseline:
                 try:
                     item = self.overlay(self.source(identity), latest.get(identity))
                     row = {**row, **{k: item[k] for k in ("label", "char", "code_point", "source_label", "state", "revision",
-                                                          "review_event", "origin", "written_form", *IDENTITY_FIELDS) if k in item}}
+                                                          "review_event", "origin", *IDENTITY_FIELDS) if k in item}}
                 except HTTPException:
                     pass
             output.append(row)
@@ -382,12 +310,21 @@ class CorpusReviews:
         return output
 
 
-def router(reviews: CorpusReviews) -> APIRouter:
+def router(reviews: CorpusReviews, forms=None) -> APIRouter:
+    """The corpus review routes. `forms` reads crops' forms from the review store's ledger
+    (`Store.forms_for`), so a glyph's inspector shows the form set on it."""
+    from .. import evidence
+
     api = APIRouter()
+
+    def with_form(found: dict) -> dict:
+        found["crop_version"] = evidence.record_version(found)
+        found["form"] = forms({found["id"]: found["crop_version"]}).get(found["id"]) if forms else None
+        return found
 
     @api.get("/atlas/corpus/character")
     def character(id: str = Query(min_length=1, max_length=1000)) -> dict:
-        return reviews.detail(id)
+        return with_form(reviews.detail(id))
 
     @api.get("/atlas/corpus/reviews")
     def records(state: Literal["all", "flagged", "checked"] = "all") -> dict:
@@ -395,10 +332,7 @@ def router(reviews: CorpusReviews) -> APIRouter:
 
     @api.post("/atlas/corpus/reviews")
     def save(edit: CorpusEdit) -> dict:
-        return reviews.record(edit)
-
-    @api.post("/atlas/corpus/written-forms")
-    def save_form(edit: CorpusWrittenForm) -> dict:
-        return reviews.record_form(edit)
+        # The dialog shows the glyph it gets back, with its form.
+        return with_form(reviews.record(edit))
 
     return api

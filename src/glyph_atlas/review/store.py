@@ -56,7 +56,7 @@ from ..schema import (
     Unit,
     UnitKind,
 )
-from . import ledger
+from . import crop_forms, ledger
 
 STORE_NAME = "review.sqlite"
 LOG_NAME = "reviews.jsonl"
@@ -69,13 +69,13 @@ CREATE = "create"
 #: again, and it is no decision: nothing is confirmed, no pass may read it as a person's touch, and
 #: the unit's revision does not move, so a reviewer's answer on it is never stale because of it.
 SEEN = "seen"
-#: Events that are recorded and change no state: how long a line was open, free notes, and crops
-#: seen without a flag.
-STATELESS = frozenset({"timing", "note", SEEN})
-#: What a unit's letterforms are written as (`Unit.written_form`). It describes the crop and decides
-#: nothing: the character and the review stay as they are, so its event does not move the revision,
-#: and a review a reader is writing against the crop is still current after it.
+#: A written form saved before forms were claims in the ledger. Such events stay in a journal as the
+#: record of what was saved (`scripts/migrate_written_forms.py` turns them into form claims), and no
+#: longer change a unit.
 WRITTEN_FORM = "written_form"
+#: Events that are recorded and change no state: how long a line was open, free notes, crops seen
+#: without a flag, and the written forms of the journal.
+STATELESS = frozenset({"timing", "note", SEEN, WRITTEN_FORM})
 #: The fields whose events leave the target's revision where it is.
 UNREVISED = frozenset({SEEN, WRITTEN_FORM})
 #: The keys a split entry may carry. The identity and lifecycle fields belong to the server.
@@ -1151,6 +1151,18 @@ class Store:
         with self._lock, self._connection() as conn:
             return {"subject": subject, "resolver": ledger.RESOLVER, "current": ledger.current(conn, subject, crop_version),
                     "history": ledger.history(conn, subject)}
+
+    def set_form(self, **form: Any) -> dict[str, Any]:
+        """Set or clear one crop's form (`crop_forms.set_form`) in one transaction, and return its form."""
+        with self._lock, self._connection() as conn, self._transaction(conn):
+            response = crop_forms.set_form(conn, **form)
+            current = crop_forms.forms_for(conn, {form["crop"]: form["crop_version"]})
+        return {"id": response["subject"], "form": current.get(response["subject"])}
+
+    def forms_for(self, versions: dict[str, str | None]) -> dict[str, dict]:
+        """Each crop's form, for crops given with their current evidence versions (`crop_forms.forms_for`)."""
+        with self._lock, self._connection() as conn:
+            return crop_forms.forms_for(conn, versions)
 
     def resolve_claims(self, version_of, subjects: Iterable[str] | None = None) -> int:
         """Resolve the slots of `subjects` again, or every slot; `version_of` names each crop's current version."""

@@ -10,7 +10,7 @@
   import Glyph from '../components/Glyph.svelte'
   import CropReview from '../components/CropReview.svelte'
   import CropForm from '../components/CropForm.svelte'
-  import { setForm, formOf } from '../lib/cropForms.js'
+  import { setForm, restoreForm } from '../lib/cropForms.js'
   import QuizFocus from '../components/QuizFocus.svelte'
   import CopyId from '../components/CopyId.svelte'
   import FormBar from '../components/FormBar.svelte'
@@ -563,7 +563,7 @@
     if (!mark || saving) return
     saving = true; error = ''; errorStatus = 0
     try {
-      const { crop } = await setForm(mark.after, formOf(mark.before))
+      const { crop } = await restoreForm(mark.after, mark.before)
       items = items.map(i => i.id === mark.id ? { ...i, ...crop } : i)
       recorded = without(recorded, [mark.id])
       selected = { ...selected, [mark.id]: true }

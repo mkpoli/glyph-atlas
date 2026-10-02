@@ -1970,39 +1970,41 @@ def test_a_crop_shows_its_style_and_where_it_comes_from(dataset, tmp_path, monke
     assert (again["style"], again["style_basis"]) == ("cursive", "document-confirmed")
 
 
-def test_a_written_form_is_recorded_without_touching_the_character_or_the_review(dataset):
+def test_a_form_is_a_claim_that_leaves_the_character_and_the_review_alone(dataset):
     client = TestClient(create_app(dataset))
     unit = LINE + ":u0"
-    path = f"/atlas/characters/{quote(unit, safe='')}/written-form"
+    path = f"/atlas/characters/{quote(unit, safe='')}/form"
     detail = client.get(f"/atlas/characters/{quote(unit, safe='')}").json()
-    assert detail["written_form"] is None
-    body = {"id": str(uuid4()), "client_id": "fixture-reviewer", "revision": detail["revision"],
-            "image_sha256": detail["image_sha256"], "form": "⿺辶𦊷"}
+    assert detail["form"] is None, "a crop nobody has looked at is unsorted"
+    body = {"id": str(uuid4()), "client_id": "fixture-reviewer", "crop_version": detail["crop_version"], "form": "⿺辶𦊷"}
     saved = client.post(path, json=body)
     assert saved.status_code == 200, saved.text
-    after = saved.json()
-    assert after["written_form"] == "⿺辶𦊷"
+    assert [(v["scheme"], v["text"]) for v in saved.json()["form"]["values"]] == [("ids", "⿺辶𦊷")]
+    after = client.get(f"/atlas/characters/{quote(unit, safe='')}").json()
+    assert after["form"]["values"][0]["text"] == "⿺辶𦊷"
     assert {key: after[key] for key in ("label", "revision", "state")} == \
         {key: detail[key] for key in ("label", "revision", "state")}
     listed = {item["id"]: item for item in client.get("/atlas", params={"limit": 96}).json()["items"]}
-    assert listed[unit]["written_form"] == "⿺辶𦊷"
-    # The character page's tiles read the same field from the occurrence listing.
+    assert listed[unit]["form"]["values"][0]["text"] == "⿺辶𦊷"
+    # The character page's tiles read it from the occurrence listing.
     occurrence = next(item for item in client.get("/layers/occurrences",
                       params={"code_point": "U+3042"}).json()["items"] if item["id"] == unit)
-    assert occurrence["written_form"] == "⿺辶𦊷"
-    # A rebuilt store gives the crop the same revision: the event is not counted as one.
+    assert occurrence["form"]["values"][0]["text"] == "⿺辶𦊷"
+    # A rebuilt store gives the crop the same revision: no review event was written.
     store = Store(dataset)
     store.rebuild()
-    assert (store.revision(unit), store.unit(unit).written_form) == (detail["revision"], "⿺辶𦊷")
-    # A retry answers with the crop; the same id with another form is refused.
-    assert client.post(path, json=body).json()["written_form"] == "⿺辶𦊷"
-    assert client.post(path, json={**body, "form": "𮟃"}).status_code == 422
+    assert store.revision(unit) == detail["revision"] and not [e for e in store.events() if e.target_id == unit]
+    # A retry answers with the crop's form; the same id with another form is refused.
+    assert client.post(path, json=body).json() == saved.json()
+    assert client.post(path, json={**body, "form": "𮟃"}).status_code == 409
     assert client.post(path, json={**body, "id": str(uuid4()), "form": "⿺辶"}).status_code == 422
-    assert client.post(path, json={**body, "id": str(uuid4()), "revision": detail["revision"] + 1}).status_code == 409
-    assert client.post(path, json={**body, "id": str(uuid4()), "image_sha256": "0" * 64}).status_code == 409
-    # The crop's own character clears it, and a review saved against the revision it was opened at stands.
-    cleared = client.post(path, json={**body, "id": str(uuid4()), "form": detail["label"]}).json()
-    assert cleared["written_form"] is None
+    assert client.post(path, json={**body, "id": str(uuid4()), "crop_version": unit + "@0@1,2,3,4"}).status_code == 409
+    # The crop's own character is a confirmation, and clearing retracts it: the crop is unsorted again.
+    confirmed = client.post(path, json={**body, "id": str(uuid4()), "form": detail["label"]}).json()
+    assert [v["text"] for v in confirmed["form"]["values"]] == [detail["label"]]
+    cleared = client.post(path, json={**body, "id": str(uuid4()), "form": None}).json()
+    assert cleared["form"] is None
+    assert client.post(path, json={**body, "id": str(uuid4()), "form": None}).status_code == 409
     review = {"id": str(uuid4()), "client_id": "fixture-reviewer", "revision": detail["revision"],
               "image_sha256": detail["image_sha256"], "verdict": "match"}
     assert client.post(f"/atlas/characters/{quote(unit, safe='')}", json=review).status_code == 200

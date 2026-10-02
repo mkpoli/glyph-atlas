@@ -50,7 +50,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from .. import han_components, images, refs, visual_families
+from .. import evidence, han_components, images, refs, visual_families
 from ..production import production_info
 from ..schema import Box, Character, Document, Page, Unit
 from . import corpus_source, status
@@ -353,8 +353,6 @@ class Layers:
             "grapheme": _grapheme_head(refs.character(form), self.per_character) if refs.character(form) else None,
             "variants": [variant.model_dump() for variant in unit.variants],
             "exact": exact,
-            # The shape the letterforms take when a reviewer said it differs from the label.
-            "written_form": unit.written_form,
             "kind": str(unit.kind),
             "granularity": unit.granularity,
             "classification": str(unit.classification),
@@ -954,9 +952,13 @@ def router(store: Store) -> APIRouter:
         rows = current.rows(row.code_point, expand=expand, state=state)
         counts = current.counts(row.code_point, expand=expand)
         counts["filtered"] = len(rows)
+        page = rows[offset:offset + limit]
+        # Each crop's form, on the version it is listed with (`crop_forms`).
+        forms = store.forms_for({unit.id: evidence.crop_version(unit.id, _source_digest(store, unit), unit.box)
+                                 for unit, *_ in page})
         return {"query": row.code_point, "expand": expand, "counts": counts,
-                "items": [current.item(unit, revision, form, exact)
-                          for unit, revision, form, exact in rows[offset:offset + limit]]}
+                "items": [{**current.item(unit, revision, form, exact), "form": forms.get(unit.id)}
+                          for unit, revision, form, exact in page]}
 
     @api.get("/layers/graphemes")
     def grapheme_list(

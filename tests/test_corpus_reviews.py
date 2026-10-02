@@ -321,31 +321,24 @@ def test_a_retry_is_one_event_and_a_different_body_conflicts(corpus):
     assert conflict.status_code == 409, conflict.text
 
 
-def test_a_written_form_leaves_the_character_and_the_review_alone(corpus):
-    client = corpus["client"]
-    before = client.get("/atlas/corpus/character", params={"id": UNIT}).json()
-    assert before["written_form"] is None
-    body = {"id": str(uuid4()), "identity": UNIT, "client_id": "reviewer-1", "revision": before["revision"],
-            "source_revision": before["source_revision"], "form": "⿰女氵"}
-    saved = client.post("/atlas/corpus/written-forms", json=body)
-    assert saved.status_code == 200, saved.text
-    after = saved.json()
-    assert after["written_form"] == "⿰女氵"
-    assert {key: after[key] for key in ("label", "code_point", "state", "revision")} == \
+def test_a_glyph_names_its_evidence_version_and_shows_the_form_the_ledger_holds(corpus):
+    before = corpus["client"].get("/atlas/corpus/character", params={"id": UNIT}).json()
+    version = f"{UNIT}@{before['source_revision']}@" + ",".join(str(before["box"][k]) for k in "xywh")
+    assert (before["crop_version"], before["form"]) == (version, None), "no ledger: no form"
+    asked = []
+
+    def forms(versions):
+        asked.append(versions)
+        return {UNIT: {"status": "asserted", "values": [{"form": "fm:x", "scheme": "ids", "text": "⿰女氵", "confidence": None}],
+                       "supporting": ["lc:1"]}}
+
+    app = FastAPI()
+    app.include_router(review_router(corpus["reviews"], forms=forms))
+    shown = TestClient(app).get("/atlas/corpus/character", params={"id": UNIT}).json()
+    assert asked == [{UNIT: version}], "the form is read for the version the glyph has"
+    assert shown["form"]["values"][0]["text"] == "⿰女氵"
+    assert {key: shown[key] for key in ("label", "code_point", "state", "revision")} == \
         {key: before[key] for key in ("label", "code_point", "state", "revision")}
-    assert corpus["reviews"].exports() == [], "a written form is no review"
-    assert client.post("/atlas/corpus/written-forms", json=body).json()["written_form"] == "⿰女氵"
-    assert client.post("/atlas/corpus/written-forms", json={**body, "form": "ぬ"}).status_code == 409
-    assert client.post("/atlas/corpus/written-forms", json={**body, "id": str(uuid4()), "form": "⿰女"}).status_code == 422
-    assert client.post("/atlas/corpus/written-forms",
-                       json={**body, "id": str(uuid4()), "source_revision": "b" * 64}).status_code == 409
-    # A review saved against the revision the glyph was opened at still stands, and keeps the form.
-    reviewed, _ = save(client, UNIT, revision=before["revision"])
-    assert reviewed.status_code == 200, reviewed.text
-    assert reviewed.json()["written_form"] == "⿰女氵"
-    cleared = client.post("/atlas/corpus/written-forms", json={**body, "id": str(uuid4()), "revision": 1,
-                                                               "form": reviewed.json()["label"]})
-    assert cleared.json()["written_form"] is None
 
 
 def test_a_stale_revision_or_source_is_refused(corpus):

@@ -19,10 +19,7 @@ This writes the UPDATE statements that bring such units up to date:
   later reviews and undos, so an undo brings back neither, and undo decides the quiz with the
   repair status the row holds;
 - a unit whose resolved style changed takes it in place too, reviewed or not: the style is the
-  publication's (its document's, page's or own), and no review records it;
-- a unit takes the catalogue's written form in place, reviewed or not, until a reviewer saves one on
-  the site (`formed`): from then on the site's is the latest, and it reaches the catalogue by import.
-  A replaced crop whose crop changed takes the catalogue's, since the site's named the old crop.
+  publication's (its document's, page's or own), and no review records it.
 
 The file ends by stamping `metadata.units_refreshed_at`, which the Worker's cached listings are keyed by.
 
@@ -44,12 +41,10 @@ for the next run. JSON is written back in its stored key order, because the Work
     python scripts/refresh_published_units.py CATALOGUE.sqlite LIVE.jsonl OUTPUT.sql
 
 LIVE.jsonl has one object per unit the site holds, all keys required: id, revision, quiz, data,
-style, written_form, reviewed, formed. `reviewed` means the unit has any row in the Worker's `events`
-table, `formed` any row in its `written_forms`:
+style, reviewed. `reviewed` means the unit has any row in the Worker's `events` table:
 
-    SELECT u.id, u.revision, u.quiz, u.data, u.style, u.written_form,
-           EXISTS(SELECT 1 FROM events e WHERE e.target = u.id) AS reviewed,
-           EXISTS(SELECT 1 FROM written_forms w WHERE w.target = u.id) AS formed
+    SELECT u.id, u.revision, u.quiz, u.data, u.style,
+           EXISTS(SELECT 1 FROM events e WHERE e.target = u.id) AS reviewed
     FROM units u WHERE u.origin = 'local'
 """
 from __future__ import annotations
@@ -94,7 +89,7 @@ class Collision(ValueError):
 
 def plan(new: dict, live: dict) -> tuple[str, str | None]:
     """What to do with one unit: ("skip" | "quiz" | "in-place" | "replace" | "hold", statement)."""
-    for key in ("revision", "quiz", "data", "style", "written_form", "reviewed", "formed"):
+    for key in ("revision", "quiz", "data", "style", "reviewed"):
         if key not in live:
             raise KeyError(f"{new['id']}: the live export lacks {key!r}")
     guard = f" WHERE id={quote(new['id'])} AND revision={int(live['revision'])};"
@@ -106,13 +101,7 @@ def plan(new: dict, live: dict) -> tuple[str, str | None]:
         for key in [key for key, value in data.items() if value is None]:
             del data[key]
     sets = []
-    # A form saved on the site describes the crop its reviewer saw, so it gives way to the catalogue's
-    # only once the crop is cut anew. A form saved meanwhile moves no revision, so the statement is
-    # also held back while the site has one it did not read.
     moved = not same_crop(new["data"], live["data"])
-    reformed = new.get("written_form") != live["written_form"] and (moved or not live["formed"])
-    if reformed and not moved:
-        guard = guard.removesuffix(";") + " AND NOT EXISTS(SELECT 1 FROM written_forms w WHERE w.target=units.id);"
     # A box a reviewer redrew on the site waits on the live row for this cut: the catalogue's crop is cut
     # from that same box, so it takes the row, the site's review having come back through the import.
     recut = moved and bool(live_data.get("box_pending")) and live_data.get("box") == new_data.get("box")
@@ -128,8 +117,7 @@ def plan(new: dict, live: dict) -> tuple[str, str | None]:
     elif recut or new_data != live_data or int(new["revision"]) != int(live["revision"]):
         if int(new["revision"]) == int(live["revision"]):
             raise Collision(f"{new['id']}: catalogue revision {new['revision']} equals the live one")
-        columns = ", ".join(f"{column}={quote(new[column])}"
-                            for column in (*COLUMNS, *(("written_form",) if reformed else ()), "revision"))
+        columns = ", ".join(f"{column}={quote(new[column])}" for column in (*COLUMNS, "revision"))
         return "replace", f"UPDATE units SET {columns}" + guard
     elif int(new["quiz"]) != int(live["quiz"]):
         sets.append(f"quiz={int(new['quiz'])}")
@@ -145,11 +133,9 @@ def plan(new: dict, live: dict) -> tuple[str, str | None]:
     restyled = new["style"] != live["style"]
     if restyled:
         sets.append(f"style={quote(new['style'])}")
-    if reformed:
-        sets.append(f"written_form={quote(new.get('written_form'))}")
     if not sets:
         return "skip", None
-    return ("in-place" if in_place or restyled or reformed else "quiz"), f"UPDATE units SET {', '.join(sets)}" + guard
+    return ("in-place" if in_place or restyled else "quiz"), f"UPDATE units SET {', '.join(sets)}" + guard
 
 
 def main() -> None:
