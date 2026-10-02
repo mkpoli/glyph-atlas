@@ -3,11 +3,11 @@
 // The journal stays append-only. Its `actor` column holds whatever id wrote the row, and `actors` says
 // which user each of those ids now belongs to.
 import { betterAuth } from 'better-auth';
-import { anonymous, emailOTP, lastLoginMethod } from 'better-auth/plugins';
+import { admin, anonymous, emailOTP, lastLoginMethod } from 'better-auth/plugins';
 import { passkey } from '@better-auth/passkey';
 import { MAIL, signInMail } from './mail';
 
-export type Viewer = { id: string; name: string; image: string | null; anonymous: boolean };
+export type Viewer = { id: string; name: string; image: string | null; anonymous: boolean; admin: boolean };
 type Auth = ReturnType<typeof build>;
 
 const now = () => new Date().toISOString();
@@ -70,6 +70,9 @@ function build(env: Env, origin: string) {
       // A code costs a mail; an address gets three a minute and a guess at a code ten.
       '/email-otp/send-verification-otp': { window: 60, max: 3 },
       '/sign-in/email-otp': { window: 60, max: 10 },
+      // A banned anonymous user can start another session. An address gets thirty an hour, enough for
+      // a class behind one network.
+      '/sign-in/anonymous': { window: 3600, max: 30 },
     } },
     databaseHooks: {
       user: {
@@ -92,6 +95,8 @@ function build(env: Env, origin: string) {
       passkey({ rpID: new URL(origin).hostname, rpName: 'Glyph Atlas', origin }),
       // The sign-in form marks the way this browser signed in last.
       lastLoginMethod({ storeInDatabase: true }),
+      // Every user may review; an admin can also ban a user and reject what they saved.
+      admin({ defaultRole: 'user', adminRoles: ['admin'], bannedUserMessage: 'This account is banned.' }),
       anonymous({
         // Named like the ids the browser used to make up, so a reader's rows read the same as before.
         generateName: generatedName,
@@ -122,17 +127,36 @@ export function auth(env: Env, origin: string): Auth {
   return found;
 }
 
-/** The user a request is signed in as, or null. */
-export async function viewer(env: Env, request: Request): Promise<Viewer | null> {
-  const session = await auth(env, new URL(request.url).origin).api.getSession({ headers: request.headers });
+/**
+ * The user a request is signed in as, or null. `fresh` reads the session from D1 past its cached
+ * copy, so a ban or a change of role holds at once; writes and the admin's pages read it so.
+ */
+export async function viewer(env: Env, request: Request, fresh = false): Promise<Viewer | null> {
+  const session = await auth(env, new URL(request.url).origin).api.getSession({ headers: request.headers, query: { disableCookieCache: fresh } });
   if (!session) return null;
-  const user = session.user as typeof session.user & { isAnonymous?: boolean | null };
-  return { id: user.id, name: user.name, image: user.image ?? null, anonymous: Boolean(user.isAnonymous) };
+  const user = session.user as typeof session.user & { isAnonymous?: boolean | null; role?: string | null; banned?: boolean | null };
+  if (user.banned) return null;
+  return { id: user.id, name: user.name, image: user.image ?? null, anonymous: Boolean(user.isAnonymous), admin: user.role === 'admin' };
 }
 
 /** The ids a user's rows were written under, as a subquery over `actors`. */
 export const owned = (user: string) => `(SELECT actor FROM actors WHERE user_id='${user.replaceAll("'", "''")}')`;
 
+/** Give a reviewer id to one of the users who asked for it; the other claims on it end. */
+export async function grant(env: Env, reviewer: string, user: string) {
+  const asked = await env.DB.prepare('SELECT u.isAnonymous FROM actor_claims c JOIN "user" u ON u.id=c.user_id WHERE c.actor=? AND c.user_id=?')
+    .bind(reviewer, user).first<{ isAnonymous: number | null }>();
+  if (!asked) return { status: 404, body: { detail: 'This user has not asked for this reviewer id.' } };
+  try {
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO actors(actor,user_id,via,at) VALUES(?,?,'legacy',?)").bind(reviewer, user, now()),
+      env.DB.prepare('DELETE FROM actor_claims WHERE actor=?').bind(reviewer),
+      // An anonymous user takes the id as its name, so its history reads as it did.
+      ...(asked.isAnonymous ? [env.DB.prepare('UPDATE "user" SET name=? WHERE id=?').bind(reviewer, user)] : []),
+    ]);
+  } catch { return { status: 409, body: { detail: 'Another account already holds this reviewer id.' } } }
+  return { status: 200, body: { reviewer, user } };
+}
 // How many reviewer ids one user may ask for at once; a browser held one, a reader with a few
 // browsers a few.
 const CLAIMS = 5;

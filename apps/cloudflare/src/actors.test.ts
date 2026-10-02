@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
-import { historyQuery } from './index';
+import { canonical, historyQuery } from './index';
+import { summary } from './admin';
 import { claim, owned } from './auth';
 import { d1 } from './forms.test';
 
@@ -55,5 +56,16 @@ describe('claims on reviewer ids from before accounts', () => {
     for (const id of ['c', 'd', 'e', 'f']) expect((await claim(env, anon, `reviewer-0000000${id}`)).status).toBe(202);
     expect((await claim(env, anon, 'reviewer-00000010')).status).toBe(429);
     db.close();
+  });
+});
+
+describe('admin summaries', () => {
+  it('say what each kind of submission asked for', () => {
+    expect(summary(canonical({ target: null, input: { label: 'あ', answers: [{ verdict: 'match' }, { verdict: 'wrong' }, { verdict: 'match' }], skipped: [{}] } })))
+      .toEqual({ kind: 'round', label: 'あ', verdicts: { match: 2, wrong: 1 }, skipped: 1 });
+    expect(summary(canonical({ target: '@batch', input: { character: 'い', crops: [{}, {}] } })))
+      .toEqual({ kind: 'correction', label: 'い', verdicts: { wrong: 2 } });
+    expect(summary(canonical({ target: 'u1', input: { verdict: 'wrong', issue: 'character', character: 'う' } })))
+      .toEqual({ kind: 'crop', target: 'u1', label: 'う', verdicts: { wrong: 1 } });
   });
 });

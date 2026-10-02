@@ -4,7 +4,8 @@ import { formsRoute, withForm, formed, FORM_COLUMNS, type FormTools, type UnitFo
 import { similarCrops } from './similar';
 import { componentSearch, componentTerm } from './components';
 import { formProblem, type FormProblem } from './writtenForm';
-import { auth, claim, owned, providers, viewer } from './auth';
+import { auth, claim, grant, owned, providers, viewer } from './auth';
+import { reviewers, submissions } from './admin';
 export { leastTypicalQuery } from './forms';
 export { componentMatchQuery } from './components';
 type Json = Record<string, any>;
@@ -1147,13 +1148,24 @@ async function undo(env:Env,request:Request,actor:string,id:string){
   await body(request);
   const submission=await env.DB.prepare("SELECT * FROM submissions WHERE id IN (SELECT actor||':'||? FROM actors WHERE user_id=?)").bind(id,actor).first<Json>();
   if(!submission)throw new Problem(404,'No saved round belongs to this reviewer.');
+  return {id,...await revert(env,submission,actor)};
+}
+// Undo a submission as `actor`: each crop goes back to what it was before, unless a later review has
+// changed it since. A rejection is the same undo made by an admin, recorded with its reason.
+async function revert(env:Env,submission:Json,actor:string,rejection?:{reason:string;reviewer?:[string,string[]]}){
   const key=submission.id as string;
-  if(submission.undone)return {id,results:[],duplicate:true};
+  if(submission.undone)return {results:[],duplicate:true};
   const rows=await env.DB.prepare("SELECT * FROM events WHERE submission=? AND kind='review'").bind(key).all<Json>();
   const statements:D1PreparedStatement[]=[],results=[];const at=new Date().toISOString();
   for(const r of rows.results){
     const current=await unit(env,r.target);
-    if(current.revision!==r.expected_revision+1)throw new Problem(409,'A later review changed this crop. It cannot be undone.');
+    // Rejecting all of one reviewer's work also passes over their own later changes to the crop that
+    // are already undone, and the undos themselves; anyone else's later change, or one of theirs that
+    // still stands, stops it.
+    const later=current.revision!==r.expected_revision+1&&(!rejection?.reviewer||await env.DB.prepare(`SELECT 1 FROM events e LEFT JOIN submissions s ON s.id=e.submission
+      WHERE e.target=? AND e.expected_revision>? AND (s.actor IS NULL OR s.actor NOT IN ${rejection.reviewer[0]} OR (s.undone=0 AND e.kind='review')) LIMIT 1`)
+      .bind(r.target,r.expected_revision,...rejection.reviewer[1]).first());
+    if(later)throw new Problem(409,'A later review changed this crop. It cannot be undone.');
     const restored={...parse(r.before_data),revision:current.revision+1};
     const event={...parse(r.event),id:'cf:'+crypto.randomUUID(),old:parse(r.event).new,new:parse(r.event).old,evidence:'undo of '+r.id,at};
     statements.push(env.DB.prepare('INSERT INTO events(id,submission,target,actor,expected_revision,before_data,after_data,event,snapshot,kind,at) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
@@ -1165,8 +1177,54 @@ async function undo(env:Env,request:Request,actor:string,id:string){
     results.push({id:event.id,target_id:r.target,revision:restored.revision,review:event});
   }
   statements.push(env.DB.prepare('UPDATE submissions SET undone=1 WHERE id=?').bind(key));
+  if(rejection)statements.push(env.DB.prepare('INSERT INTO rejections(submission,by,reason,at) VALUES(?,?,?,?)').bind(key,actor,rejection.reason,at));
   try{await env.DB.batch(statements)}catch(error){if(String(error).includes('review_revision_conflict'))throw new Problem(409,'A later review changed this crop.');throw error}
-  return {id,results};
+  return {results};
+}
+// Reject an admin's selection: the named submissions, or all of one reviewer's a page at a time.
+// They go newest first, so a crop two of them touched goes back step by step. One that a later
+// review by someone else has built on is left as it is and reported; `next` continues after the page.
+const REJECT_PAGE=40;
+// Each crop a rejection puts back costs a few queries, and one request may make a thousand: a page
+// stops before the crops it has put back pass this many.
+const REJECT_CROPS=250;
+async function reject(env:Env,admin:string,input:Json){
+  const reason=text(input.reason??'',500,'reason')??'';
+  const crops='(SELECT count(*) FROM events WHERE submission=submissions.id AND kind=\'review\') AS crops';
+  let rows:Json[],reviewer:[string,string[]]|undefined;
+  if(Array.isArray(input.submissions)){
+    const keys=input.submissions.slice(0,REJECT_PAGE).map((key:unknown)=>text(key,256,'submission',true)!);
+    if(!keys.length)throw new Problem(422,'Name the submissions to reject.');
+    rows=(await env.DB.prepare(`SELECT *,${crops} FROM submissions WHERE id IN (${keys.map(()=>'?').join(',')}) AND undone=0 ORDER BY at DESC,id DESC`).bind(...keys).all<Json>()).results;
+  }else{
+    reviewer=reviewerActors(input);
+    const [actors,values]=reviewer,before=input.next?decodeCursor(text(input.next,512,'cursor',true)!):{at:'9999',id:''};
+    rows=(await env.DB.prepare(`SELECT *,${crops} FROM submissions WHERE undone=0 AND actor IN ${actors} AND (at,id)<(?,?) ORDER BY at DESC,id DESC LIMIT ?`)
+      .bind(...values,before.at,before.id,REJECT_PAGE).all<Json>()).results;
+  }
+  let rejected=0,spent=0;const conflicts:string[]=[],unavailable:string[]=[],done:Json[]=[];
+  for(const submission of rows){
+    if(spent&&spent+submission.crops>REJECT_CROPS)break;
+    spent+=submission.crops;done.push(submission);
+    try{await revert(env,submission,admin,{reason,reviewer});rejected++}
+    catch(error){
+      // A crop someone else has changed since stays as it is; a crop no longer in the collection
+      // cannot be put back. Either way the rest go on.
+      if(error instanceof Problem&&error.status===409)conflicts.push(submission.id);
+      else if(error instanceof Problem&&error.status===404)unavailable.push(submission.id);
+      else throw error;
+    }
+  }
+  const last=done.at(-1),more=done.length<rows.length||(!Array.isArray(input.submissions)&&rows.length===REJECT_PAGE);
+  return {rejected,conflicts,unavailable,
+    next:!Array.isArray(input.submissions)&&more&&last?encodeCursor(last.at,last.id):null,
+    left:Array.isArray(input.submissions)?rows.slice(done.length).map(row=>row.id):[]};
+}
+// The journal ids of one reviewer: a user's, or one id from before accounts that nobody holds.
+export function reviewerActors(input:Json):[string,string[]]{
+  if(typeof input.user==='string')return ['(SELECT actor FROM actors WHERE user_id=?)',[text(input.user,64,'user',true)!]];
+  if(typeof input.actor==='string')return ['(?)',[text(input.actor,128,'actor',true)!]];
+  throw new Problem(422,'Name a user or a reviewer id.');
 }
 // A review's label sits in evidence.label (a round) or evidence.snapshot.character.label (a single
 // correction); evidence is itself a JSON string, parsed once. An undo's own evidence is the plain string
@@ -1262,8 +1320,12 @@ export default {
       if(request.method==='POST'){
         // Every write is made by the user the request is signed in as; a browser starts an anonymous
         // session before its first one.
-        const me=await viewer(env,request);
+        const me=await viewer(env,request,true);
         if(!me)throw new Problem(401,'Sign in to save.');
+        // An admin's page: rejecting what a reviewer saved. Banning and roles are Better Auth's own.
+        if(path.startsWith('/api/admin/')&&!me.admin)throw new Problem(403,'Only an admin can do this.');
+        if(path==='/api/admin/reject')return json(await reject(env,me.id,await body(request)));
+        if(path==='/api/admin/claims'){const input=await body(request);const {status,body:out}=await grant(env,text(input.actor,128,'actor',true)!,text(input.user,64,'user',true)!);return json(out,status)}
         if(path==='/api/account/claim'){const {status,body:out}=await claim(env,me,String((await body(request)).reviewer??''));return json(out,status)}
         if(path==='/atlas/corpus/reviews')return json(await submit(env,request,me.id,'@corpus'));
         if(path==='/atlas/rounds')return json(await submit(env,request,me.id));
@@ -1289,7 +1351,13 @@ export default {
         throw new Problem(404,'Unknown endpoint.');
       }
       if(!['GET','HEAD'].includes(request.method))throw new Problem(405,'Method not allowed.');
-      if(path==='/api/account')return json({user:await viewer(env,request),providers:providers(env)});
+      if(path.startsWith('/api/admin/')){
+        if(!(await viewer(env,request,true))?.admin)throw new Problem(403,'Only an admin can see this.');
+        if(path==='/api/admin/reviewers')return json(await reviewers(env,q));
+        if(path==='/api/admin/submissions')return json(await submissions(env,q,reviewerActors(Object.fromEntries(q))));
+        throw new Problem(404,'Unknown endpoint.');
+      }
+      if(path==='/api/account')return json({user:await viewer(env,request,true),providers:providers(env)});
       if(path==='/health')return json({ok:true,published_at:await meta(env,'published_at')});
       const image=path.match(/^\/atlas\/media\/([a-f0-9]{64})\.webp$/);
       if(image)return await media(env,request,image[1],ctx);
