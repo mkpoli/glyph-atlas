@@ -7,8 +7,8 @@ recrop or a re-segmentation changes the box or the image, and so makes a new ver
 stays, with whatever was said about it.
 
 The id joins the three, `{unit}@{pixels}@{x},{y},{w},{h}`, with an empty box for a whole pre-cut file.
-The Worker computes the same id in SQL (`units.crop_version`, migration 0046), so a number is written
-as SQLite writes it: an integer without a decimal point, a real with one.
+The Worker computes the same id in SQL (`units.crop_version`, migration 0046). A box is four whole
+numbers, which both write alike; a crop whose box is anything else has no version, as in SQL.
 """
 
 from __future__ import annotations
@@ -18,26 +18,28 @@ from typing import Any
 
 from .schema import Box
 
-
-def _number(value: Any) -> str:
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        raise TypeError(f"a box coordinate must be a number, not {value!r}")
-    return str(value)
+_KEYS = ("x", "y", "w", "h")
 
 
 def box_text(box: Box | Mapping[str, Any] | None) -> str | None:
-    """A box as a version writes it, `x,y,w,h`; None for no box."""
+    """A box as a version writes it, `x,y,w,h`; '' for no box; None for one that is not four whole numbers."""
     if box is None:
-        return None
+        return ""
     values = box.model_dump() if isinstance(box, Box) else box
-    return ",".join(_number(values[key]) for key in ("x", "y", "w", "h"))
+    if not isinstance(values, Mapping):
+        return None
+    numbers = [values.get(key) for key in _KEYS]
+    if any(isinstance(n, bool) or not isinstance(n, int) for n in numbers):
+        return None
+    return ",".join(str(n) for n in numbers)
 
 
 def crop_version(unit_id: str, pixels: str | None, box: Box | Mapping[str, Any] | None) -> str | None:
-    """The version id of a crop as it stands, or None when its image has no checksum."""
-    if pixels is None:
+    """The version id of a crop as it stands, or None when it has no image checksum or whole-pixel box."""
+    text = box_text(box)
+    if pixels is None or text is None:
         return None
-    return f"{unit_id}@{pixels}@{box_text(box) or ''}"
+    return f"{unit_id}@{pixels}@{text}"
 
 
 def record_version(record: Mapping[str, Any]) -> str | None:

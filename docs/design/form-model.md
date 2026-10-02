@@ -37,10 +37,12 @@ regions it applies to, and its evidence. Several can coexist for one form.
 
 **Crop.** The occurrence: a `Unit` and its image region. Its evidence versions are immutable records
 of the pixels a claim was made about (`crop_versions`): the crop's id, the checksum of the source
-image (a page, a pre-cut crop file, or a corpus record's source revision) and the box on it. The
-version id is those three joined, `{unit}@{pixels}@{x},{y},{w},{h}`, with an empty box for a whole
-pre-cut file, so SQLite, Python and the Worker derive the same id from the same record. A recrop or
-a re-segmentation makes a new version; the old one stays.
+image (a page, a pre-cut crop file, or a corpus record's source revision) and the box on it in
+whole pixels. The version id is those three joined, `{unit}@{pixels}@{x},{y},{w},{h}`, with an empty
+box for a whole pre-cut file, so SQLite and Python derive the same id from the same record; a crop
+with no image checksum, or a box of anything but whole numbers, has none. A recrop or a
+re-segmentation makes a new version; the old one stays. A version is removed only with its crop when
+a withdrawn document is taken off the site.
 
 **Facets.** Style, production, cursiveness, date, script and hand, set on a crop or inherited from its
 page and document. A value set on the crop stays distinguishable from an inherited one. A sub-form is

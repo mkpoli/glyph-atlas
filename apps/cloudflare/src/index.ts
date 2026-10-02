@@ -136,8 +136,9 @@ const record = (row: UnitRow): Json => {
     crop_editable: row.origin !== 'corpus' && Boolean(redrawLimits(data)) };
 };
 // A crop's evidence version as `units.crop_version` computes it, for a corpus glyph that has no row yet:
-// its id, its image checksum and its box. A box of anything but whole numbers is left to SQLite, which
-// writes a real with its decimal point, so such a glyph has no version until its row is written.
+// its id, its image checksum and its box in whole pixels; a box of anything else has none. JSON.parse
+// reads a whole number written as a real (`1.0`) as an integer, which SQLite does not, so a claim names
+// the version its row gives once the row is written.
 export function cropVersion(id: string, data: Json): string | null {
   const pixels = data.image_sha256 ?? data.source_revision ?? null;
   if (typeof pixels !== 'string') return null;
@@ -149,7 +150,7 @@ export function cropVersion(id: string, data: Json): string | null {
 // Every evidence version a crop has had here, oldest first (0046); `current` is the one it has now.
 // One range of `crop_version_unit`, and a crop recut more often than this lists its first ones.
 const VERSIONS_LISTED = 200;
-export const cropVersionsQuery = () => `SELECT id,pixels,box,image,at FROM crop_versions WHERE unit=? ORDER BY at,id LIMIT ${VERSIONS_LISTED}`;
+export const cropVersionsQuery = () => `SELECT id,pixels,box,document,image,at FROM crop_versions WHERE unit=? ORDER BY at,id LIMIT ${VERSIONS_LISTED}`;
 async function cropVersions(env: Env, id: string) {
   const row = await unit(env, id);
   const versions = (await env.DB.prepare(cropVersionsQuery()).bind(row.id).all<Json>()).results;
