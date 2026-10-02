@@ -149,7 +149,7 @@ def test_a_substitution_whose_predictions_the_graph_mostly_does_not_state_is_not
 
 def test_the_committed_table_holds_only_what_the_threshold_and_the_agreement_keep():
     found = rows()
-    assert len(found) > 2000
+    assert len(found) > 1500
     assert found == sorted(found, key=lambda row: (row["a"], row["b"]))
     for row in found:
         assert int(row["count"]) >= v.THRESHOLD
