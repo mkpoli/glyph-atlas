@@ -19,7 +19,8 @@
   import { cropDetails } from '../lib/cropDetails.js'
   import { issues, suggestsReading, isSingle, greetSuggestions, skipLabel, skipHint } from '../lib/issues.js'
   import { nextGrapheme, roundGraphemes, graphemeText, roundAddress, ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
-  import { t, around, localize } from '../lib/i18n.svelte.js'
+  import { t, around, localize, delocalize } from '../lib/i18n.svelte.js'
+  import { unslug } from '../lib/gallery.js'
   import { useSession } from '../lib/session.svelte.js'
   let { initialGrapheme = '', initialProduction = '', inspect } = $props()
   // The browser's reviewer id, which a form marking and its undo name like every other save.
@@ -169,23 +170,32 @@
    */
   let entry = null, addressed = false, followedState = untrack(() => page.state)
   function address(how) {
+    // Back or Forward came while this round was being dealt or saved: the page follows that entry instead.
+    if (page.state !== followedState) return
     const state = { round: { entry, grapheme, production } }
     followedState = state
     ;(how === 'push' && addressed ? pushState : replaceState)(localize(roundAddress(grapheme, production)), state)
     addressed = true
   }
-  // Back and Forward bring the entry's round back: from this page's rounds when it still holds it, or
-  // dealt again (after a reload) from the grapheme and material the entry names.
+  // Back and Forward bring the entry's round back, once nothing is being dealt or saved: from this page's
+  // rounds when it still holds it, or dealt again (after a reload) from the grapheme and material the
+  // entry names. An entry that names no round (a link to /review) is read from its address.
   $effect(() => {
     const state = page.state
-    if (state === followedState) return
+    if (state === followedState || saving || loading) return
     followedState = state
-    untrack(() => follow(state.round))
+    untrack(() => follow(state.round ?? locationRound()))
   })
+  function locationRound() {
+    const { path } = delocalize(location.pathname), key = path.startsWith('/review/') ? unslug(path.slice(8)) : null
+    return { entry: null, grapheme: key ?? '', production: new URLSearchParams(location.search).get('production') ?? '' }
+  }
   function follow(round) {
-    if (!round || saving || round.entry === entry) return
-    const index = history.findIndex(each => each.entry === round.entry)
-    if (index >= 0) visit(index, { followed: true })
+    if (round.entry && round.entry === entry) return
+    const index = round.entry ? history.findIndex(each => each.entry === round.entry)
+      : history.findLastIndex(each => each.grapheme === round.grapheme && each.production === materialOf(round.production))
+    if (index >= 0 && index === historyIndex) address('replace')
+    else if (index >= 0) visit(index, { followed: true })
     else load({ target: round.grapheme || null, scope: materialOf(round.production), how: 'replace' })
   }
   async function chooseCategory(target) {
@@ -229,8 +239,12 @@
             production: scope, summary })
           historyIndex = -1
           address(how)
-        } else if (!grapheme) items = []
-        else { error = t('quiz.noOtherCharacters'); errorStatus = 0 }
+        } else {
+          if (!grapheme) items = []
+          else { error = t('quiz.noOtherCharacters'); errorStatus = 0 }
+          // Asked for by an address, the address now names the round still on screen.
+          if (how === 'replace') address('replace')
+        }
         return
       }
       restoreRound({ grapheme: chosen, members: result.grapheme?.members ?? [graphemeText(chosen)], items: arranged(numbered(unique(result.items))), choices: {}, selected: {}, skipped: {},
