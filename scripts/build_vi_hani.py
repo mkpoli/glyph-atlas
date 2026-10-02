@@ -42,9 +42,11 @@ LOCALE = {"name": "㗂越（𡨸漢喃）", "base": "vi", "matches": ["vi-hani"]
 # Abbreviations in vi.json, written out so the word table spells them: "tr." is trang (page), "s" giây.
 EXPAND = (("tr. {page}", "trang {page}"), ("{seconds}s ", "{seconds} giây "))
 SOURCES = {"wiktionary", "unihan", "joined", "editorial"}
-# Latin words that are names, keys or file formats and stay in Latin letters.
+# Latin words that are names, keys, file formats, licence codes or loanwords written in Latin letters
+# (email, PIN, the address you@example.org), and stay in Latin letters.
 KEEP = {"CODH", "Unicode", "HI", "Lab", "Minna", "de", "Honkoku", "JSON", "ID", "IDS", "Ctrl", "Esc", "Home", "Enter", "Shift",
-        "click", "qwerty", "zi", "tools", "Wikipedia", "roneo", "scan", "Gothic", "C", "J", "K", "M", "V", "X", "Z", "n", "s"}
+        "click", "qwerty", "zi", "tools", "Wikipedia", "roneo", "scan", "Gothic", "C", "J", "K", "M", "V", "X", "Z", "n", "s",
+        "CC", "BY", "SA", "email", "PIN", "you", "example", "org"}
 
 KAIKKI = "https://kaikki.org/dictionary/Vietnamese/kaikki.org-dictionary-Vietnamese.jsonl"
 UNIHAN = "https://www.unicode.org/Public/18.0.0/ucd/Unihan.zip"
@@ -230,8 +232,9 @@ def font(catalogue: dict) -> None:
     if lacking := [chr(c) for c in wanted if c not in covered]:
         raise SystemExit(f"Plangothic lacks {''.join(lacking)}")
     merged = Merger().merge(parts) if len(parts) > 1 else TTFont(parts[0])
-    # The source's own timestamp, so the same characters always give the same file.
-    merged["head"].modified = TTFont(FONT_CACHE / next(iter(FONTS)))["head"].modified
+    # The source's own timestamps, so the same characters always give the same file; merging stamps the time it ran.
+    source_head = TTFont(FONT_CACHE / next(iter(FONTS)))["head"]
+    merged["head"].created, merged["head"].modified = source_head.created, source_head.modified
     merged.recalcTimestamp = False
     merged.flavor = "woff2"
     merged.save(FONT_OUT)

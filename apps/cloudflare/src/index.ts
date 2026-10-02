@@ -1299,19 +1299,27 @@ export function reviewerActors(input:Json):[string,string[]]{
 // This text is repeated verbatim in migration 0011's expression index; keep the two in sync.
 export const historyLabelExpr = () => `(CASE kind WHEN 'review' THEN coalesce(json_extract(json_extract(event,'$.evidence'),'$.label'),json_extract(json_extract(event,'$.evidence'),'$.snapshot.character.label')) WHEN 'undo' THEN json_extract(snapshot,'$.character.label') END)`;
 // Newest first, keyset-paged on (at,id): `before` is strictly older than that pair, in index order.
-// A user's rows are those written under any id `actors` gives them; each row names the user who holds
-// its id now, or none for a reviewer id from before accounts that nobody has claimed.
-export function historyQuery(user: string | null, label: string | null, cursor: { at: string; id: string } | null): { sql: string; values: (string | number)[] } {
-  const where = [`kind IN ('review','undo')`];
+// Given `actors`, the rows are those written under any of those ids: one arm per id, each read in
+// event_actor_history order, merged by the compound ORDER BY so the read stops at the LIMIT instead of
+// sorting everything the ids ever wrote. Each row names the user who holds its id now, or none for a
+// reviewer id from before accounts that nobody has claimed. Parameters are numbered so the label and
+// cursor are bound once for every arm; the LIMIT is the parameter after `values`.
+export function historyQuery(actors: string[] | null, label: string | null, cursor: { at: string; id: string } | null): { sql: string; values: (string | number)[] } {
   const values: (string | number)[] = [];
-  if (user) { where.push('actor IN (SELECT actor FROM actors WHERE user_id=?)'); values.push(user) }
-  if (label !== null) { where.push(`${historyLabelExpr()}=?`); values.push(label) }
-  if (cursor) { where.push('(at,id)<(?,?)'); values.push(cursor.at, cursor.id) }
-  const sql = `SELECT h.*,a.user_id AS user,u.name AS name,u.image AS image FROM (SELECT id,at,actor,target,kind,event,${historyLabelExpr()} AS label
-    FROM events WHERE ${where.join(' AND ')} ORDER BY at DESC,id DESC LIMIT ?) h
+  const bind = (value: string) => `?${values.push(value)}`;
+  const where = [`kind IN ('review','undo')`];
+  if (label !== null) where.push(`${historyLabelExpr()}=${bind(label)}`);
+  if (cursor) where.push(`(at,id)<(${bind(cursor.at)},${bind(cursor.id)})`);
+  const select = (filter: string[]) => `SELECT id,at,actor,target,kind,event,${historyLabelExpr()} AS label FROM events WHERE ${filter.join(' AND ')}`;
+  const arms = actors === null ? [select(where)] : actors.map(actor => select([...where, `actor=${bind(actor)}`]));
+  const sql = `SELECT h.*,a.user_id AS user,u.name AS name,u.image AS image FROM (${arms.join(' UNION ALL ')}
+    ORDER BY at DESC,id DESC LIMIT ?${values.length + 1}) h
     LEFT JOIN actors a ON a.actor=h.actor LEFT JOIN "user" u ON u.id=a.user_id ORDER BY h.at DESC,h.id DESC`;
   return { sql, values };
 }
+// D1 binds at most 100 parameters to a statement: a user holding more ids than one statement takes is
+// read in groups, each bounded by the LIMIT, and the groups' pages merged here.
+const HISTORY_ARMS = 64;
 export function encodeCursor(at: string, id: string): string {
   return btoa(JSON.stringify([at, id]));
 }
@@ -1342,17 +1350,23 @@ export function historyItem(row: HistoryRow, me: string | null = null): Json {
     undoes: undo ? String(parsedEvent.evidence).replace(/^undo of /, '') : null,
   };
 }
-async function history(env: Env, q: URLSearchParams, me: string | null) {
+export async function history(env: Env, q: URLSearchParams, me: string | null) {
   const limit = Math.max(1, integer(q, 'limit', 40, 100));
   if (q.get('mine') === 'true' && !me) return { items: [], next: null };
   const user = q.get('mine') === 'true' ? me : q.get('user') ? text(q.get('user'), 64, 'user', true) : null;
   const label = q.get('label') ? text(q.get('label'), 32, 'label', true) : null;
   const before = q.get('before') ? decodeCursor(q.get('before')!) : null;
-  const { sql, values } = historyQuery(user, label, before);
-  const rows = await env.DB.prepare(sql).bind(...values, limit + 1).all<HistoryRow>();
-  const items = rows.results.slice(0, limit).map(row => historyItem(row, me));
+  const actors = user ? (await env.DB.prepare('SELECT actor FROM actors WHERE user_id=? ORDER BY actor').bind(user).all<{ actor: string }>()).results.map(r => r.actor) : null;
+  const groups = actors === null ? [null] : Array.from({ length: Math.ceil(actors.length / HISTORY_ARMS) }, (_, i) => actors.slice(i * HISTORY_ARMS, (i + 1) * HISTORY_ARMS));
+  const pages = await Promise.all(groups.map(group => {
+    const { sql, values } = historyQuery(group, label, before);
+    return env.DB.prepare(sql).bind(...values, limit + 1).all<HistoryRow>();
+  }));
+  const rows = pages.flatMap(page => page.results);
+  if (pages.length > 1) rows.sort((a, b) => a.at === b.at ? (a.id < b.id ? 1 : a.id > b.id ? -1 : 0) : a.at < b.at ? 1 : -1);
+  const items = rows.slice(0, limit).map(row => historyItem(row, me));
   // The cursor is the last row returned; the next page starts strictly after it.
-  const next = rows.results.length > limit ? encodeCursor(rows.results[limit - 1].at, rows.results[limit - 1].id) : null;
+  const next = rows.length > limit ? encodeCursor(rows[limit - 1].at, rows[limit - 1].id) : null;
   return { items, next };
 }
 async function reviews(env:Env,all:boolean){
