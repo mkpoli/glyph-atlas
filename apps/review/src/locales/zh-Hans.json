@@ -618,7 +618,7 @@
   "visualGroups.label": "视觉分组",
   "ziLink.aria": "在zi.tools上查询{char}",
   "ziLink.text": "zi.tools ↗",
-  "quiz.selectHint": "每张裁切应只含一个完整的“{reading}”。请选出含多余的字、裁切错误或是其他字的裁切。",
+  "quiz.selectHint": "每张裁切应只含一个完整的“{reading}”或其图块上标明的字样。请选出含多余的字、裁切错误或是其他字的裁切。",
   "progress.worksCollected": "已采集{completed}/{total}部文献",
   "progress.worksFound": "已发现{total}部文献 · 仍在继续发现",
   "quiz.corpusSource": "语料库",

@@ -531,7 +531,7 @@
   "quiz.select.selectProblems": "誤アルモノヲ選ブベシ",
   "quiz.select.selectedCount": "{count}ヲ選ブ",
   "quiz.selectCharacter": "第{number}字ヲ選ブ",
-  "quiz.selectHint": "一ノ截片ニハ完キ「{reading}」一字ノミアルベシ　餘分ノ字アルモノ　截片ノ誤　又ハ別ノ字ナルモノヲ選ブベシ",
+  "quiz.selectHint": "一ノ截片ニハ完キ「{reading}」又ハ其ノ札ニ記サレタル字體一字ノミアルベシ　餘分ノ字アルモノ　截片ノ誤　又ハ別ノ字ナルモノヲ選ブベシ",
   "quiz.shapeToggle.byShape": "◧ 似タル形ヲ竝ブ",
   "quiz.shapeToggle.dealt": "◧ 配ラレシ順",
   "quiz.suspectToggle.all": "◇ 悉ク示ス",

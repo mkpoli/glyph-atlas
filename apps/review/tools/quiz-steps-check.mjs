@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
 import Browser from './browser.mjs'
-import { ROUND_BATCH } from '../src/lib/reviewRounds.js'
+import { ROUND_BATCH, roundGraphemes } from '../src/lib/reviewRounds.js'
 const index = process.argv.indexOf('--server')
 const server = index >= 0 ? process.argv[index + 1] : null
 const build = spawnSync('bunx', ['vite', 'build', '--outDir', 'dist-next', '--emptyOutDir'],
@@ -21,8 +21,9 @@ let mismatchDetail = null
 let pagePhotoRequests = 0
 const base = server.replace(/\/$/, '')
 const catalogue = await (await fetch(base + '/atlas?purpose=review&state=pending&limit=1')).json()
-const startReading = catalogue.categories.find(c => c.pending > ROUND_BATCH)?.label
-assert(startReading, `test needs a character with more than ${ROUND_BATCH} pending crops`)
+const startRound = roundGraphemes(catalogue.categories).find(c => c.pending > ROUND_BATCH)
+const startReading = startRound?.char
+assert(startReading, `test needs a grapheme with more than ${ROUND_BATCH} pending crops`)
 const sampleImage = Buffer.from(await (await fetch(base + catalogue.items[0].image)).arrayBuffer()).toString('base64')
 const respond = (requestId, value) => browser.send('Fetch.fulfillRequest', {
   requestId, responseCode: 200,
@@ -67,7 +68,7 @@ const currentId = () => browser.evaluate('document.querySelector(".focus-figure"
 const noneState = () => browser.evaluate('document.querySelector(".no-suggestion").getAttribute("aria-pressed")')
 try {
   await browser.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] })
-  await browser.goto(base + '/en/review?reading=' + encodeURIComponent(startReading), { waitFor: 'document.querySelectorAll(".quiz-choice").length > 0' })
+  await browser.goto(base + '/en/review?grapheme=' + encodeURIComponent(startRound.label), { waitFor: 'document.querySelectorAll(".quiz-choice").length > 0' })
   await browser.waitFor('document.querySelectorAll(".quiz-choice:not(:disabled)").length >= 4')
   await check('questions cover joined characters and bad cuts', async () => {
     const heading = await browser.evaluate('document.querySelector(".quiz-title").innerText')
