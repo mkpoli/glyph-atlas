@@ -23,7 +23,7 @@ METHOD = "form-picker"
 
 
 def ensure_form(conn: sqlite3.Connection, named: representation.Representation, *, key: str, actor: str, at: str,
-                prefix: str = "lc") -> str:
+                prefix: str = "lc", mint: Callable[[], str] | None = None) -> str:
     """The id of the broad form `named` is the encoded name of, created with its naming claim the first time."""
     form = representation.anchored_form(named)
     conn.execute("INSERT OR IGNORE INTO representations(id,scheme,value,namespace,version) VALUES(?,?,?,?,?)",
@@ -32,13 +32,14 @@ def ensure_form(conn: sqlite3.Connection, named: representation.Representation, 
         conn.execute("INSERT INTO forms(id,anchor,created_by,created_at) VALUES(?,?,?,?)", (form, named.id, actor, at))
         ledger.write_claims(conn, key=f"{key}/represented_by", actor=actor, request={"form": form, "representation": named.id},
                             subject=form, predicate="represented_by", claims=[Claim(object=named.id)], tier="editorial",
-                            method=METHOD, objects={named.id: "representation"}, prefix=prefix, at=at)
+                            method=METHOD, objects={named.id: "representation"}, prefix=prefix, at=at, mint=mint)
     return form
 
 
 def set_form(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping[str, Any], crop: str, crop_version: str,
              form: str | None, at: str | None = None, prefix: str = "lc", legacy: str | None = None,
-             method: str = METHOD, version_of: Callable[[str], str | None] | None = None) -> dict:
+             method: str = METHOD, version_of: Callable[[str], str | None] | None = None,
+             mint: Callable[[], str] | None = None) -> dict:
     """Set (or with `form` None, clear) `actor`'s form for one crop, and return the submission.
 
     `crop_version` is the evidence version the reviewer saw, which the caller has checked is the crop's
@@ -58,16 +59,16 @@ def set_form(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping
             raise LedgerError(409, "You have no form on this crop to clear.")
         ledger.act(conn, key=f"{key}/retract", actor=actor, request={"target": own[0], "action": "retract"}, target=own[0],
                    action="retract", reason="cleared", version_of=version_of or (lambda unit: crop_version if unit == crop else None),
-                   prefix=prefix, at=at)
+                   prefix=prefix, at=at, mint=mint)
     else:
         try:
             named = representation.typed(form)
         except ValueError as error:
             raise LedgerError(422, str(error)) from error
-        chosen = ensure_form(conn, named, key=key, actor=actor, at=at, prefix=prefix)
+        chosen = ensure_form(conn, named, key=key, actor=actor, at=at, prefix=prefix, mint=mint)
         ledger.write_claims(conn, key=f"{key}/has_form", actor=actor, request={"crop": crop, "form": chosen}, subject=crop,
                             predicate="has_form", claims=[Claim(object=chosen)], crop_version=crop_version,
-                            method=method, legacy=legacy, objects={chosen: "form"}, prefix=prefix, at=at)
+                            method=method, legacy=legacy, objects={chosen: "form"}, prefix=prefix, at=at, mint=mint)
     response = {"submission": key, "subject": crop}
     conn.execute("INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,?,?)",
                  (key, actor, signature, ledger.canonical(response), at))

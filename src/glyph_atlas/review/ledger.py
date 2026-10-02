@@ -145,14 +145,16 @@ def _retracted(conn: sqlite3.Connection, assertion: str) -> bool:
 def write_claims(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping[str, Any], subject: str,
                  predicate: str, claims: Sequence[Claim], scope: str = "", crop_version: str | None = None,
                  tier: str = "observed", method: str | None = None, run: str | None = None, legacy: str | None = None,
-                 objects: Mapping[str, str] | None = None, prefix: str = "lc", at: str | None = None) -> dict:
+                 objects: Mapping[str, str] | None = None, prefix: str = "lc", at: str | None = None,
+                 mint: Callable[[], str] | None = None) -> dict:
     """Record one claim (several members make an alternative set) and resolve its slot.
 
     `key` is the submission's own key (its actor and the client's id); a repeat with the same request
     answers with the first response. A crop subject's claim names the evidence version it was made on,
     which the caller has checked is the crop's current one. A new claim in a slot that takes one value
     retracts the asserter's own earlier claims there in the same write. The response names the
-    submission, the subject and the rows written, as the Worker's does.
+    submission, the subject and the rows written, as the Worker's does. `mint` makes the new rows'
+    ids, `{prefix}:` and a random UUID unless a caller needs them reproducible.
     """
     signature = canonical(request)
     saved = previous(conn, key, signature)
@@ -165,7 +167,8 @@ def write_claims(conn: sqlite3.Connection, *, key: str, actor: str, request: Map
     if spec["subject"] == "crop" and not crop_version:
         raise LedgerError(409, "This crop has no image to make a claim about.")
     at = at or now()
-    alternative = f"{prefix}:{uuid.uuid4()}" if len(claims) > 1 else None
+    mint = mint or (lambda: f"{prefix}:{uuid.uuid4()}")
+    alternative = mint() if len(claims) > 1 else None
     slots = {slot_of(predicate, claim) for claim in claims}
     retracted = []
     if spec["cardinality"] == "one":
@@ -175,7 +178,7 @@ def write_claims(conn: sqlite3.Connection, *, key: str, actor: str, request: Map
                 retracted.append(own)
     ids = []
     for claim in claims:
-        identity = f"{prefix}:{uuid.uuid4()}"
+        identity = mint()
         conn.execute(
             "INSERT INTO assertions(id,submission,subject,predicate,scope,slot,object,value,alternative_set,tier,"
             "asserted_by,asserted_at,confidence,confidence_scheme,method,run,legacy) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -187,7 +190,7 @@ def write_claims(conn: sqlite3.Connection, *, key: str, actor: str, request: Map
         ids.append(identity)
     for own in retracted:
         conn.execute("INSERT INTO assertion_actions(id,submission,assertion,action,actor,at,reason) VALUES(?,?,?,?,?,?,?)",
-                     (f"{prefix}:{uuid.uuid4()}", key, own, "retract", actor, at, "superseded by " + ids[0]))
+                     (mint(), key, own, "retract", actor, at, "superseded by " + ids[0]))
     keys = [(subject, predicate, scope, slot) for slot in sorted(slots)]
     resolve(conn, keys, lambda unit: crop_version if unit == subject else None)
     response = {"submission": key, "subject": subject, "assertions": ids, "retracted": retracted}
@@ -206,7 +209,7 @@ def assertion(conn: sqlite3.Connection, identity: str) -> dict | None:
 
 def act(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping[str, Any], target: str, action: str,
         version_of: Callable[[str], str | None], reason: str = "", owned: Iterable[str] = (),
-        adjudicator: bool = False, prefix: str = "lc", at: str | None = None) -> dict:
+        adjudicator: bool = False, prefix: str = "lc", at: str | None = None, mint: Callable[[], str] | None = None) -> dict:
     """Accept, reject, retract or adjudicate one claim, and resolve its slot.
 
     A retraction is the asserter's (`owned` names the actor's other journal ids); an accept or reject
@@ -240,7 +243,7 @@ def act(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping[str,
     for one in targets:
         if action == "retract" and _retracted(conn, one):
             continue
-        identity = f"{prefix}:{uuid.uuid4()}"
+        identity = (mint or (lambda: f"{prefix}:{uuid.uuid4()}"))()
         conn.execute("INSERT INTO assertion_actions(id,submission,assertion,action,actor,at,reason) VALUES(?,?,?,?,?,?,?)",
                      (identity, key, one, action, actor, at, reason))
         ids.append(identity)
