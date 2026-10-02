@@ -1,0 +1,50 @@
+id: hdic-tsj
+name: TSJ 天治本新撰字鏡データベース（HDIC 平安時代漢字字書総合データベース）
+publisher: 平安時代漢字字書総合データベース編纂委員会（HDIC project）
+kind: transcription-corpus
+url: https://github.com/shikeda/HDIC
+revision: bf93470cc5a65ea0f191188c3f768cbbf170615f
+version: 1.1.87
+licence: CC-BY-SA-4.0
+licence_evidence: https://github.com/shikeda/HDIC/blob/bf93470cc5a65ea0f191188c3f768cbbf170615f/README.md
+attribution: "池田証寿, 李媛, 劉冠偉, HDIC project『TSJ: Tenjibon Shinsen Jikyo database』(TSJ_entries.tsv 1.1.87), CC BY-SA 4.0"
+access:
+  repository: https://github.com/shikeda/HDIC
+  viewer: https://hdic.chise.org
+format:
+  entries: "TSJ_entries.tsv: one row per headword; `#` header lines, then SJID, SJ2ID, SJ_Rinsen, SJ_vol_radical, SJ_radical, Entry, Entry_original, SJ_source, SJ_entry_remarks, TBID, SYID"
+  sjid: "s + volume (2 digits) + leaf (2) + side (a recto, b verso) + line (1) + number (2), e.g. s0104a601"
+  headwords: "Entry is the collated form, Entry_original the form written (◯ when the same), with IDS for forms Unicode lacks"
+  frames: "TSJ_ndl.tsv: SJ_vol, SJ_vol_leaf, SJ_Rinsen_p, NDL_URL_813.2-Sy968s_1916 (pid and frame of the 六合館 edition), NIJL_Shoryobu_micro"
+title: 新撰字鏡（天治本）
+register: mixed
+images:
+  title: 新撰字鏡 12巻（六合館, 1916）
+  publisher: 六合館
+  holder: 国立国会図書館
+  shelfmark: 813.2-Sy968s
+  production: null
+  terms: https://dl.ndl.go.jp/ja/help_iiif
+  attribution: 国立国会図書館デジタルコレクション
+  volumes:
+    - {pid: "3438195", label: 巻一-巻二}
+    - {pid: "3438196", label: 巻三-巻四}
+    - {pid: "3438197", label: 巻五-巻六}
+    - {pid: "3438198", label: 巻七-巻八}
+    - {pid: "3438199", label: 巻九-巻十}
+    - {pid: "3438200", label: 巻十一-巻十二}
+dating:
+  - literal: "1124"
+    start: 1124
+    end: 1124
+    kind: copying
+    evidence: https://github.com/shikeda/HDIC/blob/bf93470cc5a65ea0f191188c3f768cbbf170615f/TSJ_entries.tsv
+  - literal: c. 898-901
+    start: 898
+    end: 901
+    kind: composition
+    evidence: https://github.com/shikeda/HDIC/blob/bf93470cc5a65ea0f191188c3f768cbbf170615f/TSJ_entries.tsv
+notes:
+  - The NDL manifests of all six volumes state Access Restrictions PDM (read 2026-10-02).
+  - HDIC's header calls the 天治本 "a complete manuscript of 1124 ... held by the Imperial Household Archives"; TSJ_ndl.tsv also links 宮内庁書陵部's microfilm on 国書データベース, whose terms page is not an open licence, so the atlas places headwords on the 六合館 edition only.
+  - How the 六合館 edition was made (photographic or retraced) is not stated in the sources consulted, so images.production is null; a document is classed by the manuscript it reproduces.

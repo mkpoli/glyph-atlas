@@ -139,6 +139,7 @@ ID_FAMILIES = {
     "glossary-headwords": "glossary-headwords",
     "hdic-krm": "hdic-krm",
     "hdic-ktb": "hdic-ktb",
+    "hdic-tsj": "hdic-tsj",
 }
 
 #: Known corpora, with the rights and shape a caller needs before showing a result.
@@ -195,6 +196,11 @@ KNOWN: tuple[dict[str, Any], ...] = (
         "name": "hdic-ktb",
         "note": "高山寺本篆隷萬象名義 headwords on the NDL 崇文叢書 edition, labelled from HDIC's KTB database, "
                 "with the seal-script forms HDIC boxed (scripts/cut_hdic_headwords.py).",
+    },
+    {
+        "name": "hdic-tsj",
+        "note": "天治本新撰字鏡 headwords on the NDL 六合館 edition (1916), labelled from HDIC's TSJ database "
+                "(scripts/cut_hdic_headwords.py).",
     },
 )
 
