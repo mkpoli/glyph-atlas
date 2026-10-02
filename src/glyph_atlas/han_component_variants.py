@@ -326,6 +326,18 @@ def ordered(p: str, q: str) -> tuple[str, str]:
     return (p, q) if (len(p), p) <= (len(q), q) else (q, p)
 
 
+def adds(desc: Descriptions, a: str, b: str) -> bool:
+    """Whether one side of the substitution `a`↔`b` is the other with a component added: 政 (⿰正攵)
+    holds 正 whole, and 除 (⿰阝余) holds 余, where 口 and 厶 swap one shape for another."""
+    for whole, inner in ((a, b), (b, a)):
+        trees = desc.trees.get(whole, ()) if len(whole) == 1 else [desc.whole(parse(whole))]
+        shape = desc.folded_text(desc.part(parse(inner)))
+        if any(not isinstance(tree, str) and shape in {desc.folded_text(part) for part in tree[1]}
+               for tree in trees):
+            return True
+    return False
+
+
 @dataclass(frozen=True)
 class Attested:
     """A substitution with the pairs that attest it, each with the sources that state the pair, and

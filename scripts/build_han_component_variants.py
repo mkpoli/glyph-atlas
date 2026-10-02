@@ -14,8 +14,9 @@ inside a component (𧈧→虽 for 厶→口). One pair is one source's word for
 position replicated across a thousand pairs is one claim, so neither predicts alone. Each candidate is
 then applied to every character, and it is kept only when at least `han_component_variants.AGREEMENT`
 of the pairs of encoded characters it predicts are written pairs the graph already gives
-(`han_component_variants.agreeing`). The run prints both distributions the cut-offs were chosen
-against; the prediction pass runs on every processor and takes about half a minute.
+(`han_component_variants.agreeing`). The run prints the distributions the cut-offs were chosen
+against, and how many kept substitutions add a component to the other side (政 and 正) rather than
+swap one; the prediction pass runs over every character on several processes.
 
 Each row records the substitution with every pair that attests it and the sources that state each
 pair; a substitution is undirected. The header cites the sources the rows come through.
@@ -119,6 +120,7 @@ _PASS: tuple[v.Descriptions, list[v.Attested]] | None = None
 
 
 def _predict(chars: list[str]) -> dict[tuple[str, str], set[tuple[str, str]]]:
+    assert _PASS is not None, "the forked workers are handed the descriptions before the pool starts"
     desc, items = _PASS
     return v.predictions(desc, items, chars)
 
@@ -140,8 +142,9 @@ def predicted(desc: v.Descriptions, items: list[v.Attested]) -> dict[tuple[str, 
     return found
 
 
-def rows() -> tuple[list[tuple], dict[str, v.Attested], list[v.Attested]]:
-    """The kept rows in code point order, every substitution found, and the threshold's candidates."""
+def rows() -> tuple[list[tuple], dict[tuple[str, str], v.Attested], list[v.Attested], v.Descriptions]:
+    """The kept rows in code point order, every substitution found, the threshold's candidates and
+    the descriptions they were read through."""
     desc = describe()
     written = attested_pairs()
     found = v.attest(desc, ((a, b, sources) for (a, b), sources in written.items()))
@@ -153,7 +156,7 @@ def rows() -> tuple[list[tuple], dict[str, v.Attested], list[v.Attested]]:
             f"{p}:{q}={'+'.join(sources)}" for p, q, sources in item.pairs
         )
         out.append((item.a, item.b, item.count, item.predicted, item.agreed, pairs))
-    return out, found, candidates
+    return out, found, candidates, desc
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -161,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, default=TARGET)
     args = parser.parse_args(argv)
 
-    table, found, candidates = rows()
+    table, found, candidates, desc = rows()
     distribution = Counter(item.count for item in found.values())
     print(f"substitutions found: {len(found)}  past threshold {v.THRESHOLD}: {len(candidates)}  "
           f"kept at agreement {v.AGREEMENT:.0%}: {len(table)}")
@@ -173,8 +176,13 @@ def main(argv: list[str] | None = None) -> int:
     # Tenths, with exactly 1.0 a bin of its own; the small epsilon keeps 3/10 in the 0.3 bin.
     shares = Counter(min(int(row[4] / row[3] * 10 + 1e-9), 10) for row in table)
     print("agreement of the kept, by tenth:", "  ".join(f"{k / 10:.1f}×{shares[k]}" for k in sorted(shares)))
+    kept_adds = sum(v.adds(desc, row[0], row[1]) for row in table)
+    candidate_adds = sum(v.adds(desc, item.a, item.b) for item in candidates)
+    print(f"adding a component (政/正): {kept_adds} kept of {candidate_adds} candidates;  "
+          f"swapping one (口/厶): {len(table) - kept_adds} kept of {len(candidates) - candidate_adds}")
     by_key = {(row[0], row[1]): row for row in table}
-    for pair in (("睘", "𦊷"), ("厶", "口"), ("𧈧", "虽"), ("口", "氵")):
+    for pair in (("睘", "𦊷"), ("厶", "口"), ("𧈧", "虽"), ("口", "氵"), ("⺈", "𠂉"), ("刀", "𠂉"),
+                 ("余", "除"), ("鳥", "鸟"), ("惢", "歮")):
         key = v.ordered(*pair)
         item, row = found.get(key), by_key.get(key)
         print(f"  {key[0]}↔{key[1]}: count {item.count if item else 0} over {len(item.pairs) if item else 0} pairs, "

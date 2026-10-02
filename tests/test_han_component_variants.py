@@ -197,6 +197,12 @@ def test_only_trees_of_a_common_region_are_compared():
     assert set(v.substitutions(descriptions(elsewhere), "免", "𭀠")) == {v.ordered("⺈", "𠂉")}
 
 
+def test_余_除_adds_a_component_where_口_厶_swaps_one():
+    desc = descriptions({"除": ["⿰阝余"], "余": ["⿱𠆢⿱一朩"], "政": ["⿰正攵"], "正": ["⿱一止"]})
+    assert v.adds(desc, *v.ordered("余", "除")) and v.adds(desc, *v.ordered("正", "政"))
+    assert not v.adds(desc, *v.ordered("口", "厶"))
+
+
 def test_a_description_that_names_a_component_matches_one_that_spells_it_out_across_the_operator():
     # 鸂 is ⿰溪鳥 with 溪 ⿰氵奚; 㶉 spells 溪 out across the operator as ⿲氵奚鸟, and differs in
     # 鳥 against 鸟.
