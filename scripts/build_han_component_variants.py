@@ -106,7 +106,7 @@ def attested_pairs() -> dict[tuple[str, str], set[str]]:
 
 
 def describe() -> v.Descriptions:
-    raw = {row[1]: row[2].split(" ") for row in hc._read("han-ids.tsv")}
+    raw = {row[1]: row[2].split(" ") for row in hc.read_rows("han-ids.tsv")}
     return v.Descriptions(raw, hc.unified())
 
 
@@ -167,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:
     print("agreement of the kept, by tenth:", "  ".join(f"{k / 10:.1f}×{shares[k]}" for k in sorted(shares)))
     by_key = {(row[0], row[1]): row for row in table}
     for pair in (("睘", "𦊷"), ("厶", "口"), ("𧈧", "虽"), ("口", "氵")):
-        key = v._ordered(*pair)
+        key = v.ordered(*pair)
         item, row = found.get(key), by_key.get(key)
         print(f"  {key[0]}↔{key[1]}: count {item.count if item else 0} over {len(item.pairs) if item else 0} pairs, "
               + (f"kept, {row[4]} of {row[3]} predicted pairs stated" if row else "not kept"))

@@ -193,7 +193,7 @@ def _single(desc: Descriptions, x: Tree, y: Tree, depth: int, host, found) -> No
     p, q = x[1][differ[0]], y[1][differ[0]]
     if stroke(p) or stroke(q):
         return
-    sub = _ordered(text(p), text(q))
+    sub = ordered(text(p), text(q))
     found[sub].add(host)
     if depth + 1 < DEPTH:
         for inner_p in desc.expansions(p):
@@ -207,7 +207,8 @@ def stroke(part: Tree) -> bool:
     return isinstance(part, str) and (0x31C0 <= ord(part[0]) <= 0x31EF or part in STROKES)
 
 
-def _ordered(p: str, q: str) -> tuple[str, str]:
+def ordered(p: str, q: str) -> tuple[str, str]:
+    """A substitution's own spelling: the shorter (then smaller) side first."""
     return (p, q) if (len(p), p) <= (len(q), q) else (q, p)
 
 
@@ -264,7 +265,7 @@ def predictions(desc: Descriptions, items: Iterable[Attested], chars: Iterable[s
     found: dict[tuple[str, str], set[tuple[str, str]]] = defaultdict(set)
     for form in derive(desc, equivalents(items), chars):
         if form.encoded:
-            found[_ordered(form.was, form.became)].add(tuple(sorted((form.char, form.other), key=ord)))
+            found[ordered(form.was, form.became)].add(tuple(sorted((form.char, form.other), key=ord)))
     return found
 
 

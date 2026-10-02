@@ -31,7 +31,7 @@ UNARY = set("⿾⿿〾")
 TOKEN = re.compile(r"\{\d+\}|.")
 
 
-def _read(name: str) -> list[list[str]]:
+def read_rows(name: str) -> list[list[str]]:
     """The rows of a vocab table, past its `#` header and its column names."""
     lines = [
         line
@@ -43,18 +43,18 @@ def _read(name: str) -> list[list[str]]:
 
 @cache
 def _sequences() -> dict[str, tuple[str, ...]]:
-    return {row[1]: tuple(row[2].split(" ")) for row in _read("han-ids.tsv")}
+    return {row[1]: tuple(row[2].split(" ")) for row in read_rows("han-ids.tsv")}
 
 
 @cache
 def _forms() -> dict[str, str]:
-    return {row[0]: row[1] for row in _read("han-component-forms.tsv")}
+    return {row[0]: row[1] for row in read_rows("han-component-forms.tsv")}
 
 
 @cache
 def unified() -> dict[str, str]:
     """Radical characters Unicode unifies with an ideograph (⺡ is 氵); a query is read through these."""
-    return {row[0]: row[1] for row in _read("han-component-forms.tsv") if row[2] == "unicode-ucd"}
+    return {row[0]: row[1] for row in read_rows("han-component-forms.tsv") if row[2] == "unicode-ucd"}
 
 
 def _names(component: str) -> list[str]:
