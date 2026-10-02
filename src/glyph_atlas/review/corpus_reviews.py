@@ -15,7 +15,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from .. import refs
+from .. import recorded_terms, refs
 from ..unit_scope import character_count
 
 
@@ -179,7 +179,7 @@ class CorpusReviews:
         return {**result, "label": written, "char": written,
                 "code_point": " ".join(refs.to_code_points(written)),
                 "state": "checked" if choice.get("verdict") == "match" or choice.get("character") else "flagged",
-                "suggestions": choice.get("suggestions", []), "issue": choice.get("issue"),
+                "suggestions": choice.get("suggestions", []), "issue": recorded_terms.issue(choice.get("issue")),
                 "review_event": record["id"], "actor_kind": record["actor_kind"]}
 
     def detail(self, identity: str) -> dict:
