@@ -613,7 +613,7 @@
   "visualGroups.label": "視覺分組",
   "ziLink.aria": "在zi.tools查詢{char}",
   "ziLink.text": "zi.tools ↗",
-  "quiz.selectHint": "每個裁切應只含一個完整的「{reading}」。請選取含多餘的字、裁切錯誤或是其他字的裁切。",
+  "quiz.selectHint": "每個裁切應只含一個完整的「{reading}」或其圖塊上標明的字樣。請選取含多餘的字、裁切錯誤或是其他字的裁切。",
   "progress.worksCollected": "已收集{completed}/{total}部文獻",
   "progress.worksFound": "已發現{total}部文獻 · 仍在持續發現",
   "quiz.corpusSource": "語料庫",

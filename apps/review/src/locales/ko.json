@@ -527,7 +527,7 @@
   "quiz.select.selectProblems": "문제 선택",
   "quiz.select.selectedCount": "{count}개 선택됨",
   "quiz.selectCharacter": "글자 {number} 선택",
-  "quiz.selectHint": "크롭마다 온전한 {reading} 하나. 글자가 더 있거나, 잘못 잘렸거나, 다른 글자인 크롭을 선택하세요.",
+  "quiz.selectHint": "크롭마다 온전한 {reading} 또는 해당 타일에 표시된 자형 하나. 글자가 더 있거나, 잘못 잘렸거나, 다른 글자인 크롭을 선택하세요.",
   "quiz.shapeToggle.byShape": "◧ 비슷한 모양끼리",
   "quiz.shapeToggle.dealt": "◧ 제시된 순서",
   "quiz.suspectToggle.all": "◇ 모두 보기",

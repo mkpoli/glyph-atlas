@@ -610,7 +610,7 @@
   "visualGroups.label": "形状グループ",
   "ziLink.aria": "zi.toolsで{char}を検索",
   "ziLink.text": "zi.tools↗",
-  "quiz.selectHint": "1つの切り出しに完全な「{reading}」が1字ずつ。余分な文字、切り出し不良、別の文字を選択してください。",
+  "quiz.selectHint": "1つの切り出しに完全な「{reading}」またはそのタイルに表示された字体が1字ずつ。余分な文字、切り出し不良、別の文字を選択してください。",
   "progress.worksCollected": "{completed}/{total}件を収集済み",
   "progress.worksFound": "{total}件を発見 · 発見は継続中",
   "quiz.corpusSource": "コーパス",

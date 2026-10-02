@@ -512,7 +512,7 @@
   "quiz.select.selectProblems": "Chọn vấn đề",
   "quiz.select.selectedCount": "Đã chọn {count}",
   "quiz.selectCharacter": "Chọn chữ {number}",
-  "quiz.selectHint": "Mỗi vùng cắt phải chứa đúng một chữ {reading} nguyên vẹn. Hãy chọn các vùng cắt chứa thừa chữ, bị cắt sai hoặc chứa chữ khác.",
+  "quiz.selectHint": "Mỗi vùng cắt phải chứa đúng một chữ {reading} nguyên vẹn hoặc tự dạng ghi trên ô ảnh đó. Hãy chọn các vùng cắt chứa thừa chữ, bị cắt sai hoặc chứa chữ khác.",
   "quiz.shapeToggle.byShape": "◧ Xếp theo độ giống nhau",
   "quiz.shapeToggle.dealt": "◧ Theo thứ tự chia",
   "quiz.suspectToggle.all": "◇ Mọi vùng cắt",

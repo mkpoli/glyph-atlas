@@ -529,7 +529,7 @@
   "quiz.select.selectProblems": "擇有誤者",
   "quiz.select.selectedCount": "已擇{count}",
   "quiz.selectCharacter": "擇第{number}字",
-  "quiz.selectHint": "每截當含{reading}一字而完具。有餘字、截誤或別字者，擇焉",
+  "quiz.selectHint": "每截當含{reading}或其牌所標之體一字而完具。有餘字、截誤或別字者，擇焉",
   "quiz.shapeToggle.byShape": "◧ 形近相從",
   "quiz.shapeToggle.dealt": "◧ 以次",
   "quiz.suspectToggle.all": "◇ 盡列",
