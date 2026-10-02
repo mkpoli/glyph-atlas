@@ -272,9 +272,7 @@ def ingest_cloudflare(store, payload: dict, *, apply=False) -> tuple[dict, dict]
                             raise Rejected("redrawn box leaves the page")
                         values = {"box": box, **values}
                     for field, value in values.items():
-                        if field == "box":
-                            _append(store, conn, remote, field, value, encoded, remote["id"] + ":" + field)
-                        elif getattr(unit, field) != value:
+                        if field == "box" or getattr(unit, field) != value:
                             _append(store, conn, remote, field, value, encoded, remote["id"] + ":" + field)
                     local_event = _append(store, conn, remote, "review", remote["new"], encoded, remote["id"])
                     revision = store._revision(conn, target)

@@ -1352,7 +1352,7 @@ try {
       'recrop', 'local', 'ア', 'ア', 'U+3042', null, 'handwritten', 'kana', 'flagged', 0, 0, 1, 1,
       JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
     assert.equal((await call('/atlas/characters/recrop')).crop_editable, true, 'a local crop with a page view can be redrawn')
-    const fix = box => ({ id: crypto.randomUUID(), revision: 0, image_sha256: hash, verdict: 'match', issue: 'reading', box })
+    const fix = box => ({ id: crypto.randomUUID(), revision: 0, image_sha256: hash, verdict: 'match', box })
     await call('/atlas/characters/recrop', fix({ x: 79, y: 190, w: 40, h: 50 }), 422)
     await call('/atlas/characters/recrop', fix({ x: 90, y: 190, w: 120, h: 50 }), 422)
     await call('/atlas/characters/recrop', fix({ x: 90, y: 190, w: 40.5, h: 50 }), 422)
