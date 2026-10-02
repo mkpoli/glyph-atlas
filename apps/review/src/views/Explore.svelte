@@ -707,7 +707,7 @@
   :global(.glyph-tile.selected){outline:2px solid var(--accent);outline-offset:-2px;background:var(--accent-light)}
   :global(.glyph-tile.selected) .tile-select{opacity:1;background:var(--accent-solid);border-color:var(--accent-solid)}
   .visual-grid-heading{grid-column:1/-1;font-size:14px;padding:20px 2px 12px;color:var(--muted);background:var(--paper)}
-  .tile-production{font-family:system-ui,sans-serif;font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tile-production{font-family:"GenZui Sans",system-ui,sans-serif;font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .tile-number{margin-left:auto}
   .tile-footer .tile-arrow{margin-left:0}
   .tile-footer .status-dot{flex-shrink:0}
