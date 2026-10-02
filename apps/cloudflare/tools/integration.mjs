@@ -1,13 +1,24 @@
 // Exercise the production Worker in workerd with real D1 transactions and R2 records.
+// Run from apps/cloudflare: `bun tools/integration.mjs`. It bundles this checkout's src/index.ts to a
+// temporary directory of its own, so the Worker under test is always the one beside it.
 import assert from 'node:assert/strict'
-import { readFile, readdir } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { build } from 'esbuild'
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare'
 
+const bundleDir = await mkdtemp(join(tmpdir(), 'atlas-worker-'))
+const bundle = join(bundleDir, 'worker.mjs')
+await build({ entryPoints: [fileURLToPath(new URL('../src/index.ts', import.meta.url))], outfile: bundle, bundle: true,
+  format: 'esm', platform: 'neutral', conditions: ['workerd', 'worker', 'browser'], mainFields: ['module', 'main'],
+  external: ['node:*'], logLevel: 'error' })
 const mf = new Miniflare(convertV4MiniflareOptions({workers:[{
   name: 'atlas-test',
-  modules: true, script: await readFile('/tmp/atlas-worker-test.mjs', 'utf8'), compatibilityDate: '2026-09-22',
-  d1Databases: ['DB'], r2Buckets: ['MEDIA'],
+  modules: true, script: await readFile(bundle, 'utf8'), compatibilityDate: '2026-09-22', compatibilityFlags: ['nodejs_compat'],
+  d1Databases: ['DB'], r2Buckets: ['MEDIA'], bindings: { BETTER_AUTH_SECRET: 'integration-test-secret-integration-test' },
   ratelimits: { CORRECTIONS: { namespace_id: '4401', simple: { limit: 20, period: 60 } },
     WRITTEN_FORMS: { namespace_id: '4402', simple: { limit: 30, period: 60 } } },
 }]}))
@@ -306,7 +317,7 @@ try {
   assert.deepEqual((await call('/atlas?state=hard&reading=ソ')).items, [], 'an undo takes a skip back')
   // Corpus glyphs in Quick review: a character's local crops first, then its assigned, proxyable
   // corpus glyphs, until a round names them and they become `units` rows like any other crop.
-  const worker = await import('/tmp/atlas-worker-test.mjs')
+  const worker = await import(bundle)
   const glyph = (id, fields = {}) => ({ id, origin: 'corpus', label: 'ナ', char: 'ナ', written_character: 'ナ',
     identity_status: 'assigned', source_label: 'ナ', reading: 'ナ', grapheme: 'U+30CA', state: 'pending', revision: 0,
     proxyable: true, production: 'printed/woodblock', image: `/atlas/media/${id}.webp`, box: { x: 1, y: 2, w: 3, h: 4 },
@@ -1257,4 +1268,5 @@ try {
   console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms, batch corrections, written forms.')
 } finally {
   await mf.dispose()
+  await rm(bundleDir, { recursive: true, force: true })
 }
