@@ -46,7 +46,9 @@ from .schema import RETIRED_UNIT_FIELDS, Box, Document, Group, Line, Page, PageT
 #: Version 5 removed it again, and `Unit.variants`: a crop's form is a claim of the assertion ledger,
 #: and a shape id names a form. A table that still holds either column reads as without it while every
 #: value is empty (`schema.RETIRED_UNIT_FIELDS`).
-SCHEMA_VERSION = 5
+#: Version 6 removed `Unit.reading`: a crop is its character, and the kana a character stands for is
+#: character data.
+SCHEMA_VERSION = 6
 BATCH_SIZE = 65_536
 MANIFEST_NAME = "MANIFEST.json"
 
@@ -217,9 +219,12 @@ class SchemaMismatch(ValueError):
     """A table was written by an older schema: it holds a column the current one removed."""
 
 
-#: The columns a schema version removed, by model. A table that still holds one was written before
-#: that version and is refused rather than read with the column silently dropped.
-RETIRED_COLUMNS: dict[str, frozenset[str]] = {"Unit": frozenset({"jibo"})}
+#: The columns a schema version removed, by model, each with the script that migrates a table off it.
+#: A table that still holds one was written before that version and is refused rather than read with
+#: the column silently dropped.
+RETIRED_COLUMNS: dict[str, dict[str, str]] = {
+    "Unit": {"jibo": "scripts/migrate_schema_v2.py", "reading": "scripts/migrate_schema_v6.py"},
+}
 #: The columns a schema version removed that a table may still hold empty: they are read, and the
 #: model refuses a row in which one holds a value (`schema.RETIRED_UNIT_FIELDS`).
 _EMPTIED: dict[str, frozenset[str]] = {"Unit": frozenset(RETIRED_UNIT_FIELDS)}
@@ -232,11 +237,12 @@ def _known_columns(file: Path, model: type[BaseModel]) -> list[str]:
     columns such as `modern_kana` beside the stored ones, and they are not part of the model.
     """
     names = pq.read_schema(file).names
-    retired = sorted(RETIRED_COLUMNS.get(model.__name__, frozenset()) & set(names))
-    if retired:
+    retired = RETIRED_COLUMNS.get(model.__name__, {})
+    found = sorted(set(retired) & set(names))
+    if found:
+        scripts = ", ".join(sorted({retired[name] for name in found}))
         raise SchemaMismatch(
-            f"{file} has {', '.join(retired)}, which schema version 2 removed; "
-            "migrate the dataset with scripts/migrate_schema_v2.py"
+            f"{file} has {', '.join(found)}, which the current schema removed; migrate the dataset with {scripts}"
         )
     emptied = _EMPTIED.get(model.__name__, frozenset())
     return [name for name in names if name in model.model_fields or name in emptied]
@@ -249,7 +255,7 @@ def _row_to_model(row: dict[str, Any], model: type[BaseModel]) -> BaseModel:
     column a schema retired: that one reaches validation and fails it, so old data is never read
     as if it were current.
     """
-    retired = RETIRED_COLUMNS.get(model.__name__, frozenset()) | _EMPTIED.get(model.__name__, frozenset())
+    retired = set(RETIRED_COLUMNS.get(model.__name__, {})) | _EMPTIED.get(model.__name__, frozenset())
     row = {name: value for name, value in row.items() if name in model.model_fields or name in retired}
     _, decoders = _codecs(model)
     for name, decode in decoders.items():
