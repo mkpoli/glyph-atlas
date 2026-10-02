@@ -1,0 +1,23 @@
+# Documents withdrawn from the atlas. Extraction skips their pages, every export and publication
+# leaves their crops out, and `scripts/withdraw_documents.py` writes the SQL that removes what the
+# site already holds. Their tables, transcriptions and production metadata stay in the local datasets.
+version: 1
+withdrawals:
+  - decided: 2026-10-02
+    reason: >-
+      The images are 東京大学地震研究所図書室 scans, whose terms `licences.yaml` records as
+      restricted and outside a release build; the public-domain rule published them only because the
+      documents carry no date. The Meiji typeset pages are also noisy enough to mislead OCR and form
+      clustering (`docs/form-input-quality.md`).
+    evidence:
+      - https://www.lib.u-tokyo.ac.jp/ja/library/contents/archives-top/reuse
+    documents:
+      hl:832a01dee4dfafb4d18c1ab4a645a4b0: 風俗畫報臨時増刊第百十八號　大海嘯被害録（上）
+      hl:95e42ac654056dd9cc379f02b0c60e11: 風俗畫報臨時増刊第百十九號　大海嘯被害録（中）
+      hl:666d2690f8d0b5d770a7e839373526ee: 風俗畫報臨時増刊第百二十號　大海嘯被害録（下）
+      hl:0e2c745b547658e2826174624b58c9c5: 風俗畫報臨時増刊第百二十四號　洪水地震被害録（上）
+      hl:7c040f2cdcc6efa611144fc16a69485a: 風俗畫報臨時増刊第百二十六號　洪水被害録（中）
+      hl:68eb3417ed31bd40b47322289459eeec: 風俗畫報臨時増刊第百二十八號　洪水被害録（下）
+      hl:3b6eadec5da5dcc8a7b9d2eba4f1e714: 風俗畫報臨時増刊第百九十七號　明治三十二年八月諸國災害圖會
+      hl:718132e0033c2253f10126854f4de25d: 風俗畫報臨時増刊第百九十七号　明治三十二年諸國災害圖會
+      hl:855e22cfecfc2ea76e37a06ef2abd081: 風俗畫報臨時増刊第百九十九號　明治三十二年十月各地災害圖會（前編之續）

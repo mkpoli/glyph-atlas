@@ -7,7 +7,8 @@
    An export stopped mid-write leaves rows past the end of its last pack; the crops using them are
    left out here and deleted from the export's own catalogue, so `export_cloudflare.py --resume`
    cuts them again. They are listed in OUTPUT/lost.json.
-2. Only units whose id starts with one of `--prefix` are kept, and the copy is sealed.
+2. Only units whose id starts with one of `--prefix` are kept, less those of withdrawn documents
+   (`data/vocab/withdrawn.yaml`), and the copy is sealed.
 3. The units the site already holds are read from D1 (or from `--live`, one JSON object per unit
    with id, origin, revision, quiz, data, style, written_form, reviewed, formed) and planned by `refresh_published_units.plan`:
    new crops are inserted, changed ones updated in place or replaced, a reviewed crop whose crop
@@ -41,6 +42,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from cloudflare_schema import schema
 from seal_cloudflare import seal
 
+from glyph_atlas import withdrawn
 from glyph_atlas.extraction_queue import overlaps
 from glyph_atlas.schema import Box
 
@@ -92,11 +94,13 @@ def drop_truncated(export: Path, catalogue: Path) -> dict:
     return {"units": lost_units, "media": sorted(lost_media)}
 
 
-def keep_prefixes(catalogue: Path, prefixes: list[str]) -> None:
+def select_units(catalogue: Path, prefixes: list[str]) -> None:
     with sqlite3.connect(catalogue) as db:
         if prefixes:
             clause = " AND ".join("id NOT LIKE ?" for _ in prefixes)
             db.execute(f"DELETE FROM units WHERE {clause}", [p + "%" for p in prefixes])
+        gone = sorted(withdrawn.documents())
+        db.execute(f"DELETE FROM units WHERE document IN ({','.join('?' * len(gone))})", gone)
         db.execute("DELETE FROM metadata WHERE key='catalogue'")
 
 
@@ -253,7 +257,7 @@ def main() -> None:
     catalogue = snapshot(args.export, out)
     lost = drop_truncated(args.export, catalogue)
     (out / "lost.json").write_text(json.dumps(lost, indent=1))
-    keep_prefixes(catalogue, args.prefix)
+    select_units(catalogue, args.prefix)
 
     corpus = out / "empty-corpus"
     corpus.mkdir(exist_ok=True)

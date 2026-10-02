@@ -1,0 +1,64 @@
+"""Write the D1 statements that take withdrawn documents (`data/vocab/withdrawn.yaml`) off the site.
+
+    python scripts/withdraw_documents.py > withdraw.sql
+    (cd apps/cloudflare && bunx wrangler d1 execute glyph-atlas --remote --file ../../withdraw.sql)
+
+For each document, its own crops (`units.document`) go with everything that names them: review rows,
+marks, shapes, suspects, redirects, pairs, form placements, written forms and their image rows. Its
+corpus glyphs are the `corpus_units` ids in `withdrawn.corpus_range`, removed with their gallery,
+form and follow rows. The corpus counts are then recounted, and the stamp the Worker keys its cached
+listings on is written last. The pack bytes stay in R2, reachable by no row. Nothing is sent to D1
+here, and a second run of the statements removes nothing more.
+"""
+from __future__ import annotations
+
+import importlib.util
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+from cloudflare_schema import CORPUS_REFRESH
+
+from glyph_atlas import withdrawn
+
+_spec = importlib.util.spec_from_file_location("refresh", ROOT / "scripts" / "refresh_published_units.py")
+refresh = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(refresh)
+
+MEDIA_KEY = "replace(replace(json_extract(data,'$.{field}'),'/atlas/media/',''),'.webp','')"
+
+
+def quote(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def statements(documents) -> list[str]:
+    sql = []
+    for document in sorted(documents):
+        own = f"(SELECT id FROM units WHERE document={quote(document)})"
+        low, high = map(quote, withdrawn.corpus_range(document))
+        corpus = f"id>={low} AND id<{high}"
+        keys = " UNION ".join(f"SELECT {MEDIA_KEY.format(field=field)} FROM units WHERE document={quote(document)}"
+                              for field in ("image", "context_image"))
+        sql += [
+            *(f"DELETE FROM {table} WHERE target IN {own};" for table in ("events", "seen", "skips", "written_forms")),
+            *(f"DELETE FROM {table} WHERE id IN {own};"
+              for table in ("unit_marks", "unit_shapes", "unit_suspects", "form_units", "form_bases")),
+            f"DELETE FROM unit_redirects WHERE id IN {own} OR target IN {own};",
+            f"DELETE FROM unit_pairs WHERE document={quote(document)} OR first IN {own} OR second IN {own};",
+            f"DELETE FROM document_characters WHERE document={quote(document)};",
+            f"DELETE FROM media WHERE key IN ({keys});",
+            f"DELETE FROM units WHERE document={quote(document)};",
+            *(f"DELETE FROM {table} WHERE {corpus};"
+              for table in ("form_units", "form_bases", "corpus_follow", "corpus_gallery", "corpus_units")),
+        ]
+    return sql + [CORPUS_REFRESH.strip(), refresh.VERSION_BUMP.strip()]
+
+
+def main() -> None:
+    print("\n".join(statements(withdrawn.documents())))
+
+
+if __name__ == "__main__":
+    main()

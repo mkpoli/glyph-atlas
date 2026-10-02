@@ -44,7 +44,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import uuid4
 
-from . import align, images, tables
+from . import align, images, tables, withdrawn
 from .schema import PAGE_SCOPE, Classification, ReviewState, UnitKind
 
 POLICY = "single-character-consensus-v3"
@@ -227,6 +227,8 @@ class Queue:
 
         `extract` works only inside located lines, so a page with none, such as a page whose line
         boxes have not been derived yet, would only fail its attempts; it is left for a later seed.
+        A withdrawn document's pages are not queued, and those already queued are withdrawn unless
+        they have finished.
         """
         dataset = tables.Dataset(source)
         documents = {d.id: d for d in dataset.read("documents")}
@@ -241,6 +243,8 @@ class Queue:
             if page.id not in located:
                 continue
             document = documents[page.document_id]
+            if document.id in withdrawn.documents():
+                continue
             if not include_ainu and any(s in document.title for s in ("蝦夷", "北海随筆", "アイヌ", "藻汐")):
                 continue
             groups[page.document_id].append(page)
@@ -254,6 +258,10 @@ class Queue:
                         (page.id, document_id, documents[document_id].title,
                          str(source), int(page.image in cached), rank, host)).rowcount
                     self.db.execute("UPDATE pages SET host=? WHERE id=? AND host IS NULL", (host, page.id))
+            gone = sorted(withdrawn.documents())
+            self.db.execute(f"""UPDATE pages SET status='withdrawn',worker=NULL,lease_until=NULL,updated_at=?
+                WHERE status NOT IN ('complete','withdrawn') AND document_id IN ({','.join('?' * len(gone))})""",
+                            (datetime.now(UTC).isoformat(), *gone))
         return added
 
     def focus(self, documents) -> int:
