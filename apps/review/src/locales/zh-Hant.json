@@ -476,6 +476,8 @@
   "quiz.empty.chooseCharacter": "請選擇要審閱的字。",
   "quiz.findCategory.aria": "查找分類",
   "quiz.findCategory.placeholder": "查找讀音…",
+  "quiz.forms.label": "{char}的字樣",
+  "quiz.forms.hint": "按1–0將已選取的裁切標為該字樣。Shift+點擊選範圍。",
   "quiz.focus.changeSelection": "更換選取",
   "quiz.focus.chooseProblem": "選擇問題",
   "quiz.focus.cropNumber": "裁切{number}",

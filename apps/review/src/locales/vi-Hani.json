@@ -463,6 +463,8 @@
   "quiz.empty.chooseCharacter": "唉𫾗𠬠𡨸底閱。",
   "quiz.findCategory.aria": "尋音讀",
   "quiz.findCategory.placeholder": "尋音讀…",
+  "quiz.forms.label": "字樣𧵑{char}",
+  "quiz.forms.hint": "刃1–0底打唒各塳割㐌𫾗羅字樣妬。Shift+click底𫾗曠。",
   "quiz.focus.changeSelection": "對攄𫾗",
   "quiz.focus.chooseProblem": "𫾗問題",
   "quiz.focus.cropNumber": "塳割{number}",

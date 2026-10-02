@@ -476,6 +476,8 @@
   "quiz.empty.chooseCharacter": "檢討할 文字를 고르십시오.",
   "quiz.findCategory.aria": "分類 檢索",
   "quiz.findCategory.placeholder": "讀音 檢索…",
+  "quiz.forms.label": "{char}의 字形",
+  "quiz.forms.hint": "1–0을 누르면 選擇한 크롭을 해당 字形으로 表示합니다. Shift+클릭으로 範圍를 選擇합니다.",
   "quiz.focus.changeSelection": "選擇 바꾸기",
   "quiz.focus.chooseProblem": "問題를 고르십시오",
   "quiz.focus.cropNumber": "크롭 {number}",
