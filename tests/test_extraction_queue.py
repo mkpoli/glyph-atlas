@@ -73,6 +73,33 @@ def test_queue_round_robin_resumes_and_seed_is_idempotent(tmp_path,monkeypatch):
     assert queue.claim("w")["id"] == "a:1"
 
 
+def test_seed_withdraws_the_unfinished_pages_of_a_withdrawn_document(tmp_path,monkeypatch):
+    monkeypatch.setattr("glyph_atlas.images.index_path",lambda:tmp_path/"missing")
+    queue=Queue(tmp_path/"queue")
+    queue.seed(source(tmp_path))
+    with queue.db:
+        queue.db.execute("UPDATE pages SET status='complete' WHERE id='b:0'")
+    monkeypatch.setattr("glyph_atlas.withdrawn.documents",lambda:frozenset({"b"}))
+    assert queue.seed(tmp_path/"source") == 0
+    assert dict(queue.db.execute("SELECT id,status FROM pages WHERE document_id='b'")) == {
+        "b:0":"complete","b:1":"withdrawn"}
+    assert [queue.claim("w")["id"] for _ in range(2)] == ["a:0","a:1"]
+    assert queue.claim("w") is None
+
+
+def test_a_withdrawn_document_gets_no_supplement(tmp_path,monkeypatch):
+    monkeypatch.setattr("glyph_atlas.images.index_path",lambda:tmp_path/"missing")
+    queue=Queue(tmp_path/"queue")
+    queue.seed(source(tmp_path))
+    with queue.db:
+        queue.db.execute("UPDATE pages SET status='complete',policy='old' WHERE id IN ('a:0','b:0','b:1')")
+    queue.seed_supplements()
+    monkeypatch.setattr("glyph_atlas.withdrawn.documents",lambda:frozenset({"b"}))
+    queue.seed_supplements()
+    assert dict(queue.db.execute("SELECT page_id,status FROM supplements")) == {
+        "a:0":"pending","b:0":"superseded","b:1":"superseded"}
+
+
 def test_seed_leaves_out_a_page_without_a_located_line(tmp_path,monkeypatch):
     monkeypatch.setattr("glyph_atlas.images.index_path",lambda:tmp_path/"missing")
     directory=tmp_path/"source"; directory.mkdir()

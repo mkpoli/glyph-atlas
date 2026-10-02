@@ -89,16 +89,34 @@ describe('journal actors', () => {
 });
 
 describe('claims on reviewer ids from before accounts', () => {
-  it('wait for an admin, and stop at an id another account holds', async () => {
+  it('rename a user named like an old id it does not hold, after granting any claim left waiting', () => {
+    const db = new Database(':memory:');
+    const migrations = new URL('../migrations/', import.meta.url);
+    const files = readdirSync(migrations).filter(f => f.endsWith('.sql')).sort();
+    for (const file of files.filter(f => f < '0045')) db.exec(readFileSync(new URL(file, migrations), 'utf8'));
+    const at = '2026-10-01T00:00:00.000Z';
+    db.exec(`INSERT INTO "user"(id,name,email,emailVerified,createdAt,updatedAt) VALUES
+        ('u1','reviewer-0000000a','a@x',0,'${at}','${at}'),('u2','reviewer-0000000b','b@x',0,'${at}','${at}'),('u3','Ada','c@x',1,'${at}','${at}');
+      INSERT INTO actors VALUES('reviewer-0000000a','u1','legacy','${at}');
+      INSERT INTO actor_claims VALUES('reviewer-0000000c','u3','${at}');`);
+    for (const file of files.filter(f => f >= '0045')) db.exec(readFileSync(new URL(file, migrations), 'utf8'));
+    const names = db.query('SELECT id,name FROM "user" ORDER BY id').all() as { id: string; name: string }[];
+    expect(names[0].name).toBe('reviewer-0000000a');
+    expect(names[1].name).toMatch(/^anon-[0-9a-f]{6}$/);
+    expect(names[2].name).toBe('Ada');
+    expect(db.query("SELECT user_id FROM actors WHERE actor='reviewer-0000000c'").get()).toEqual({ user_id: 'u3' });
+    db.close();
+  });
+  it('hold at once for the first account, and stop at an id another account holds', async () => {
     const { db } = migrated();
     const env = { DB: d1(db) } as unknown as Env;
-    const anon = { id: 'u2', name: 'reviewer-00000002', image: null, anonymous: true };
+    const anon = { id: 'u2', name: 'anon-000002', image: null, anonymous: true, admin: false };
     expect((await claim(env, anon, 'someone')).status).toBe(422);
-    expect((await claim(env, anon, 'reviewer-0000000b')).status).toBe(202);
-    expect((await claim(env, anon, 'reviewer-0000000b')).status).toBe(202);
-    expect(db.query("SELECT count(*) AS n FROM actors WHERE actor='reviewer-0000000b'").get()).toEqual({ n: 0 });
+    expect((await claim(env, anon, 'reviewer-0000000b')).status).toBe(200);
+    expect((await claim(env, anon, 'reviewer-0000000b')).status).toBe(200);
+    expect(db.query("SELECT user_id FROM actors WHERE actor='reviewer-0000000b'").get()).toEqual({ user_id: 'u2' });
     expect((await claim(env, anon, 'reviewer-0000000a')).status).toBe(409);
-    for (const id of ['c', 'd', 'e', 'f']) expect((await claim(env, anon, `reviewer-0000000${id}`)).status).toBe(202);
+    for (const id of ['c', 'd', 'e', 'f']) expect((await claim(env, anon, `reviewer-0000000${id}`)).status).toBe(200);
     expect((await claim(env, anon, 'reviewer-00000010')).status).toBe(429);
     db.close();
   });
