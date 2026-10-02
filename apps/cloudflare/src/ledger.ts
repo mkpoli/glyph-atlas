@@ -82,10 +82,10 @@ export function submissionId(input: Json, tools: LedgerTools) {
 const SQL_UUID = `lower(hex(randomblob(4)))||'-'||lower(hex(randomblob(2)))||'-'||lower(hex(randomblob(2)))||'-'||lower(hex(randomblob(2)))||'-'||lower(hex(randomblob(6)))`;
 /** The statement that retracts `actor`'s earlier live claims in a single-valued slot, run in the same
  *  batch after their new claim (`by`), so a concurrent claim of theirs is retracted too. */
-export function retractOwn(env: Env, own: { key: string; actor: string; subject: string; predicate: string; scope: string; at: string; by: string }) {
+export function retractOwn(env: Env, own: { key: string; actor: string; subject: string; predicate: string; scope: string; at: string; by: string; owned: string }) {
   return env.DB.prepare(`INSERT INTO assertion_actions(id,submission,assertion,action,actor,at,reason)
     SELECT 'cf:'||${SQL_UUID},?,a.id,'retract',?,?,? FROM assertions a WHERE a.subject=? AND a.predicate=? AND a.scope=? AND a.slot=''
-    AND a.asserted_by=? AND a.submission IS NOT ? AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract')`)
+    AND (a.asserted_by=? OR a.asserted_by IN ${own.owned}) AND a.submission IS NOT ? AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract')`)
     .bind(own.key, own.actor, own.at, 'superseded by ' + own.by, own.subject, own.predicate, own.scope, own.actor, own.key);
 }
 
@@ -109,7 +109,7 @@ export async function planClaim(env: Env, claim: { key: string; actor: string; s
   });
   // The actor's own earlier claims in a slot that takes one value are retracted by the batch itself,
   // so a claim of theirs saved meanwhile is retracted too.
-  if (PREDICATES[predicate].cardinality === 'one') statements.push(retractOwn(env, { key, actor, subject, predicate, scope, at, by: ids[0] }));
+  if (PREDICATES[predicate].cardinality === 'one') statements.push(retractOwn(env, { key, actor, subject, predicate, scope, at, by: ids[0], owned: tools.owned(actor) }));
   const keys = [...new Set(members.map(m => slotOf(predicate, m, tools.canonical)))].map((slot): Slot => [subject, predicate, scope, slot]);
   return { statements, keys, assertions: ids };
 }
