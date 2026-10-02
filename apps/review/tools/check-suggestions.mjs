@@ -55,10 +55,10 @@ try {
   await browser.evaluate("[...document.querySelectorAll('.character-dialog .issue-card')].find(b => b.innerText.includes('Joined')).click()")
   await browser.waitFor(buttons('Context'))
   // Resolve the old crop after the replacement is ready. Its component has been destroyed.
-  const before = await browser.evaluate("document.querySelector('.reading-suggestions').innerText")
+  const before = await browser.evaluate("document.querySelector('.character-suggestions').innerText")
   await browser.evaluate('window.delayedSuggestions.forEach(release => release())')
   await browser.evaluate('new Promise(resolve => setTimeout(resolve, 100))')
-  assert(await browser.evaluate("document.querySelector('.reading-suggestions').innerText") === before, 'Old crop response replaced current suggestions')
+  assert(await browser.evaluate("document.querySelector('.character-suggestions').innerText") === before, 'Old crop response replaced current suggestions')
   console.log('PASS: late replies from a closed character are discarded')
 
   await browser.key('Escape')

@@ -47,7 +47,7 @@ try {
   assert(await browser.evaluate(`!document.querySelector('.corpus-dialog .page-photo, .corpus-dialog .nearby, .corpus-dialog .inspector-crop')`), 'corpus viewport uses a page hash or duplicate display')
   assert(await browser.evaluate(`getComputedStyle(document.querySelector('.corpus-dialog .crop-mask')).borderWidth === '0px'`), 'crop opening has a thick frame')
   assert(await browser.evaluate(`document.querySelector('.corpus-dialog .source-credit a').href.includes('icv-kuzushiji')`), 'source link is a bare image')
-  await click('.corpus-dialog [data-issue="reading"]')
+  await click('.corpus-dialog [data-issue="character"]')
   await browser.waitFor(`document.activeElement?.textContent === '有'`)
   await click('.corpus-dialog .suggestion-options button')
   await click('.corpus-dialog .save-character')

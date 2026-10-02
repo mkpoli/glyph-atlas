@@ -3,13 +3,13 @@
   import ScriptLegend from './ScriptLegend.svelte'
   import ZiLink from './ZiLink.svelte'
   import CharacterSearch from './CharacterSearch.svelte'
-  import { isSingle, suggestsReading } from '../lib/issues.js'
+  import { isSingle, offersSuggestions } from '../lib/issues.js'
   import { t } from '../lib/i18n.svelte.js'
   // What a wrong or joined crop holds: the characters the recognisers suggest, and any other picked
   // from the character search. Nothing typed is saved as it stands; a joined crop's characters are
   // picked one after another.
   let { result = null, loading = false, contextResult = undefined, contextLoading = false,
-    targetId = '', issue, reading, value = null, noneSelected = false, choose, disabled = false,
+    targetId = '', issue, label, value = null, noneSelected = false, choose, disabled = false,
     element = $bindable(null) } = $props()
   let candidates = $state([]), scripts = $state({}), query = $state('')
   const joined = $derived(issue === 'merged')
@@ -23,7 +23,7 @@
   $effect(() => {
     const key = targetId + ':' + (joined ? 'multiple' : 'single')
     const incoming = [...(result?.candidates || []), ...(contextResult?.candidates || [])]
-      .filter(c => c.text && c.text !== reading && (joined ? !isSingle(c.text) : isSingle(c.text)))
+      .filter(c => c.text && c.text !== label && (joined ? !isSingle(c.text) : isSingle(c.text)))
     const texts = new Set(incoming.map(c => c.text))
     scripts = Object.fromEntries(incoming.filter(c => c.script).map(c => [c.text, c.script]))
     if (key !== previousKey) order = []
@@ -38,8 +38,8 @@
   })
 </script>
 
-{#if suggestsReading(issue)}
-  <div class="reading-suggestions" bind:this={element} tabindex="-1" aria-label={t('suggestions.label')}>
+{#if offersSuggestions(issue)}
+  <div class="character-suggestions" bind:this={element} tabindex="-1" aria-label={t('suggestions.label')}>
     <div class="suggestions-heading">{t('suggestions.heading')}</div>
     {#if candidates.length || picked}
       <div class="suggestion-options">
@@ -67,7 +67,7 @@
 <style>
   .suggestion-choice{display:flex;flex-direction:column;align-items:center;gap:4px}
   .suggestion-options{display:flex;flex-wrap:wrap;gap:8px}
-  .reading-suggestions :global(.script-legend){margin-top:12px}
+  .character-suggestions :global(.script-legend){margin-top:12px}
   .suggestion-options button{font-size:24px;padding:10px 14px;min-width:48px;max-width:100%;overflow-wrap:anywhere}
   .picked button{display:inline-flex;align-items:center;gap:8px}
   .picked-clear{font-size:14px;color:var(--muted)}

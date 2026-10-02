@@ -43,9 +43,9 @@ try {
   await browser.waitFor(`document.querySelector('.glyph-grid img')?.src !== ${JSON.stringify(before)}`)
   console.log('PASS crop grid and shuffle')
 
-  // A crop not already read か, so the correction to カ below has a reading to carry.
+  // A crop not already written カ, so the correction to カ below changes it.
   const gridOrder = await browser.evaluate('Array.from(document.querySelectorAll(".glyph-grid [data-unit]")).map(i=>i.dataset.unit)')
-  const originalId = gridOrder.slice(9).find(id => units(config.directory)[id]?.reading !== 'か')
+  const originalId = gridOrder.slice(9).find(id => units(config.directory)[id]?.unicode !== 'U+30AB')
   await click(`.glyph-grid [data-unit="${originalId}"]`)
   await browser.waitFor(inspectorReady)
   assert(await browser.evaluate('document.querySelector("dialog[open] .record-id code").textContent') === originalId, 'the inspector opened another crop')
@@ -70,7 +70,7 @@ try {
 
   await click(reportedTile)
   await browser.waitFor(inspectorReady)
-  await click('dialog .issue-card[data-issue="reading"]')
+  await click('dialog .issue-card[data-issue="character"]')
   await browser.waitFor('document.querySelector("dialog .suggestion-options button")?.innerText === "カ"')
   await click('dialog .suggestion-options button')
   await click('dialog .no-suggestion')
@@ -80,8 +80,6 @@ try {
   await click('.save-character')
   await browser.waitFor('document.querySelector("dialog[open]") === null')
   assert(units(config.directory)[originalId].unicode === 'U+30AB', 'choosing an OCR suggestion updates the written identity')
-  // A kana with one stated reading carries it along; what the transcriber typed stays in text_source.
-  assert(units(config.directory)[originalId].reading === 'か', 'a corrected kana takes its reading from the character layer')
   assert(units(config.directory)[originalId].text_source === originalText, 'an identity correction keeps the transcribed text')
   console.log('PASS optional correction by clicking a suggestion')
 
@@ -109,8 +107,8 @@ try {
   const viewable = await browser.evaluate('Array.from(document.querySelectorAll(".quiz-tile:not(.unavailable)")).map(tile => tile.dataset.unit)')
   assert(viewable.length >= 4, 'fixture has four viewable crops')
   const [joinedA, joinedB, skippedId] = viewable
-  // Last in grid order, and not already read か, so the correction to カ has a reading to carry.
-  const correctedId = viewable.slice(3).find(id => units(config.directory)[id]?.reading !== 'か')
+  // Last in grid order, and not already written カ, so the correction to カ changes it.
+  const correctedId = viewable.slice(3).find(id => units(config.directory)[id]?.unicode !== 'U+30AB')
   assert(correctedId, 'the fixture has a crop not read か')
   const tile = id => `.quiz-tile[data-unit="${id}"]`
   const beforeCorrection = units(config.directory)[correctedId]
@@ -139,10 +137,10 @@ try {
   // The keyboard path: M is Joined characters, and Ctrl+Enter moves on.
   await browser.key('m')
   // Joined characters offers the suggestions for what the crop reads; the problem is then chosen.
-  await browser.waitFor('!!document.querySelector(".quiz-workspace .reading-suggestions")')
+  await browser.waitFor('!!document.querySelector(".quiz-workspace .character-suggestions")')
   await browser.key('Enter', { ctrl: true })
   await browser.waitFor(`document.querySelector(".focus-figure")?.dataset.unit === ${JSON.stringify(correctedId)}`)
-  await click('.quiz-workspace [data-issue="reading"]')
+  await click('.quiz-workspace [data-issue="character"]')
   await browser.waitFor('document.querySelector(".quiz-workspace .suggestion-options button")?.innerText === "カ"')
   await click('.quiz-workspace .suggestion-options button')
   await click('.quiz-workspace .no-suggestion')
@@ -165,15 +163,14 @@ try {
   assert(rounds.find(e => e.target_id === correctedId)?.new === 'reviewed', 'an explicit correction confirms the crop')
   const corrected = units(config.directory)[correctedId]
   assert(corrected.unicode === 'U+30AB', 'the round changes the selected identity')
-  assert(corrected.reading === 'か' && corrected.text_source === beforeCorrection.text_source,
-    'a corrected kana takes its reading from the character layer and keeps the transcribed text')
+  assert(corrected.text_source === beforeCorrection.text_source, 'a corrected kana keeps the transcribed text')
   const exported = await (await fetch(service.base + '/atlas/reviews')).json()
   const correctionReview = exported.reviews.filter(row => row.event.target_id === correctedId).pop()
   assert(correctionReview?.current, 'the round identity correction is current in the export')
   assert(JSON.parse(correctionReview.event.evidence).correction?.unicode === 'U+30AB', 'the export carries the corrected identity')
   console.log('PASS multi-select, one problem per crop, keyboard pick and save, only picked problems saved')
 
-  // The last round survives a reload and can be undone whole: identity and reading come back.
+  // The last round survives a reload and can be undone whole: the identity comes back.
   const undoRound = '.undo-round:not(.shape-toggle):not(.suspect-toggle)'
   await browser.send('Page.reload')
   await browser.waitFor(roundReady)
@@ -186,9 +183,8 @@ try {
   assert(undone.every(e => e.evidence?.startsWith('undo of ')), 'undo writes only compensating events')
   assert(undone.length === written.length, `undo wrote ${undone.length} events for a round of ${written.length}`)
   const restored = units(config.directory)[correctedId]
-  assert(restored.unicode === beforeCorrection.unicode && restored.reading === beforeCorrection.reading,
-    'undo restores identity and reading')
-  console.log('PASS durable undo restores identity and reading')
+  assert(restored.unicode === beforeCorrection.unicode, 'undo restores the identity')
+  console.log('PASS durable undo restores the identity')
 
   await browser.waitFor(roundReady)
   // Select all takes every crop whose image has loaded, so the count is compared once every image

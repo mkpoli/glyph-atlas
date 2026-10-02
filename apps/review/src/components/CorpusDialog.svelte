@@ -15,7 +15,7 @@
   import { onMount, untrack, tick } from 'svelte'
   import { request } from '../lib/client.js'
   import { readCrop } from '../lib/cropCache.js'
-  import { isSingle, suggestsReading, greetSuggestions } from '../lib/issues.js'
+  import { isSingle, offersSuggestions, greetSuggestions } from '../lib/issues.js'
   import { t } from '../lib/i18n.svelte.js'
   import CropReview from './CropReview.svelte'
   import CropContext from './CropContext.svelte'
@@ -70,7 +70,7 @@
   }
   async function chooseIssue(value) {
     issue = value; correction = null; noneSelected = false; submission = null
-    if (suggestsReading(value)) { await tick(); greetSuggestions(suggestionsElement, { focus: true }) }
+    if (offersSuggestions(value)) { await tick(); greetSuggestions(suggestionsElement, { focus: true }) }
   }
   function choose(value, none = false) { correction = value; noneSelected = none; submission = null }
   async function save(matches = false) {
@@ -81,7 +81,7 @@
     busy = true; error = ''
     // A chosen form is written first, and the review that follows names the revision it left. A wrong
     // character names the glyph's character itself, so a form chosen beside it is not written.
-    if (form != null && issue !== 'reading' && issue !== 'character') {
+    if (form != null && issue !== 'character') {
       try {
         const formed = await setForm({ ...data, origin: 'corpus' }, form)
         changed?.(target, formed.crop)

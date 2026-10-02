@@ -18,7 +18,7 @@
   import ScriptLine from '../components/ScriptLine.svelte'
   import { catalogue, character, corpusCharacter, randomSeed, request, remember, stored, number, suggestionsFor } from '../lib/client.js'
   import { cropDetails } from '../lib/cropDetails.js'
-  import { suggestsReading, isSingle, greetSuggestions, skipLabel, skipHint } from '../lib/issues.js'
+  import { offersSuggestions, isSingle, greetSuggestions, skipLabel, skipHint } from '../lib/issues.js'
   import { nextGrapheme, roundGraphemes, graphemeText, roundAddress, ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
   import { t, around, localize, delocalize } from '../lib/i18n.svelte.js'
   import { unslug } from '../lib/gallery.js'
@@ -120,7 +120,7 @@
   const focusIndex = $derived(Math.min(at, Math.max(queue.length - 1, 0)))
   const current = $derived(step === 'select' ? null : queue[focusIndex] ?? null)
   // A character correction is chosen through the wrong-character card, so it shows as that card.
-  const currentIssue = $derived(current ? (choices[current.id]?.issue === 'character' ? 'reading' : choices[current.id]?.issue ?? null) : null)
+  const currentIssue = $derived(current ? choices[current.id]?.issue ?? null : null)
   const answered = $derived(selectedItems.every(i => choices[i.id] || skipped[i.id]))
   const decided = $derived(remaining.filter(i => choices[i.id]?.verdict === 'wrong').length)
   // A selected crop still needs an explicit issue before it can be saved.
@@ -440,12 +440,13 @@
    * refuses. Everything else is cleared, and the character layer is never left holding it.
    */
   function compatible(choice, issue, previous) {
-    if (issue === previous || (issue === 'reading' && previous === 'character')) return choice
+    if (issue === previous) return choice
     const correction = choice?.character || choice?.correction
     if (!correction) return { correction: null, character: null }
-    if (!suggestsReading(issue)) return { correction: null, character: null }
+    if (!offersSuggestions(issue)) return { correction: null, character: null }
     const fits = issue === 'merged' ? !isSingle(correction) : isSingle(correction)
-    return fits ? { correction, character: null } : { correction: null, character: null }
+    if (!fits) return { correction: null, character: null }
+    return issue === 'merged' ? { correction, character: null } : { correction: null, character: correction }
   }
   /** The answer for one crop, from step two: its own issue, never a shared one. */
   function assign(id, issue) {
@@ -454,7 +455,7 @@
     const kept = compatible(choices[id], issue, previous)
     choices = { ...choices, [id]: { verdict: 'wrong', issue, ...kept } }
     if (skipped[id]) skipped = without(skipped, [id])
-    if (suggestsReading(issue)) suggest(items.find(i => i.id === id))
+    if (offersSuggestions(issue)) suggest(items.find(i => i.id === id))
     error = ''; errorStatus = 0
   }
   /** Choose the current crop's issue. The candidates, when the issue has any, open under the cards. */
@@ -462,7 +463,7 @@
     if (!current) return
     const id = current.id
     assign(current.id, issue)
-    if (!suggestsReading(issue)) return
+    if (!offersSuggestions(issue)) return
     await tick()
     if (current?.id === id) greetSuggestions(suggestionsElement, { focus: true })
   }
@@ -531,7 +532,7 @@
       }
       choices = { ...choices, [item.id]: value }
       selected = { ...selected, [item.id]: true }
-      if (suggestsReading(value.issue)) suggest(item)
+      if (offersSuggestions(value.issue)) suggest(item)
     })
   }
   /**
@@ -576,8 +577,8 @@
     // One character names the character, except under joined characters, which picks them in turn.
     choices = { ...choices, [id]: value && isSingle(value) && current.issue !== 'merged'
       ? { verdict: 'wrong', issue: 'character', character: value, correction: null, noneSelected: false }
-      : { ...current, issue: current.issue === 'character' ? 'reading' : current.issue,
-          character: null, correction: value, noneSelected } }
+      // Typed characters belong to a joined crop; on any other issue they name nothing.
+      : { ...current, character: null, correction: current.issue === 'merged' ? value : null, noneSelected } }
   }
   function reviewSelected() {
     // No `answered` guard here: the reader has just selected the crops and has not been asked for a
@@ -594,7 +595,7 @@
     at = Math.max(0, Math.min(queue.length - 1, i))
     const item = queue[at], choice = choices[item?.id]
     step = 'issue'
-    if (item && suggestsReading(choice?.issue) && (!suggestions[item.id] || !contextSuggestions[item.id])) suggest(item)
+    if (item && offersSuggestions(choice?.issue) && (!suggestions[item.id] || !contextSuggestions[item.id])) suggest(item)
     error = ''; errorStatus = 0
   }
   const move = delta => jump(focusIndex + delta)
@@ -828,7 +829,7 @@
   {#if step === 'select' && !loading && !items.length}<div class="empty"><span class="empty-mark">字</span><h2>{categories.length ? t('quiz.empty.chooseCharacter') : t('quiz.empty.allCaughtUp')}</h2>{#if categories.length}<button class="primary" onclick={() => categoryOpen = true}>{t('quiz.chooseCharacterButton')}</button>{:else}<a href={localize('/flagged')} class="primary">{t('quiz.reviewFlagged')}</a>{/if}</div>
   {:else}<div class="quiz-actionbar">{#if step === 'select' && (openSelection.length || formDone || formError)}<FormBar count={openSelection.length} forms={members} grapheme={graphemeLabel} busy={saving} error={formError} done={formDone}
     onassign={assignForm} onclear={clearSelection} onundo={undoForm} ondismiss={() => { formDone = null; formError = '' }} />{/if}<div class="round-selection"><span class="selection-dot" class:has-flags={decided > 0}></span><strong>{t('quiz.decided', { count: decided })}</strong>{#if undecided}<span>{t('quiz.undecided', { count: undecided })}</span>{/if}{#if Object.keys(skipped).length}<small>{t('quiz.skippedNotSaved', { count: Object.keys(skipped).length })}</small>{/if}{#if Object.keys(failed).length}<small>{t('quiz.unavailableCount', { count: Object.keys(failed).length })}</small>{/if}</div><div class="quiz-submit">
-    <span class="keyboard-hint">{step === 'select' ? t('quiz.keyboardHint.select') : t('quiz.keyboardHint.forms') + ' · ' + (suggestsReading(currentIssue) ? t('quiz.keyboardHint.correct') + ' · ' + t('quiz.keyboardHint.issues') : t('quiz.keyboardHint.issues'))}</span>
+    <span class="keyboard-hint">{step === 'select' ? t('quiz.keyboardHint.select') : t('quiz.keyboardHint.forms') + ' · ' + (offersSuggestions(currentIssue) ? t('quiz.keyboardHint.correct') + ' · ' + t('quiz.keyboardHint.issues') : t('quiz.keyboardHint.issues'))}</span>
     {#if step === 'select'}<button class="quiet-link skip-selected" disabled={loading || saving || exhausted || (!decidable.length && !selection.length)} onclick={() => skip(selection.length ? selection : decidable.map(i => i.id))} title={skipHint()}>{selection.length ? t('quiz.skipSelected', { skip: skipLabel() }) : skipLabel()}</button>{/if}
     {#if exhausted || !openSelection.length}<button class="primary next-round" disabled={loading || saving || (!canNext && !recordable)} onclick={pass}>{t('quiz.nextCharacterLabel')} <span>→</span></button>
     {:else if step === 'select'}<button class="primary review-selected" disabled={loading || saving || loadingMore || !ready} onclick={reviewSelected}>{t('quiz.reviewSelected', { count: selection.length })} <span>→</span></button>

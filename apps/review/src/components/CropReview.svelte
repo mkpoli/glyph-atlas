@@ -3,8 +3,8 @@
   // Skip, and for a wrong or joined character what it holds instead. `forms`, when given, is drawn
   // above the cards: the inspector's bar of the crop's forms.
   import IssuePicker from './IssuePicker.svelte'
-  import ReadingSuggestions from './ReadingSuggestions.svelte'
-  import { issueForKey, suggestsReading, SKIP_KEY, NONE_KEY } from '../lib/issues.js'
+  import CharacterSuggestions from './CharacterSuggestions.svelte'
+  import { issueForKey, offersSuggestions, SKIP_KEY, NONE_KEY } from '../lib/issues.js'
   let { issue = null, onissue, suggested = null, disabled = false, onskip, skipped = false,
     targetId = '', result = null, loading = false, contextResult = null, contextLoading = false,
     label = '', value = null, noneSelected = false, onchoose, element = $bindable(null), forms = null } = $props()
@@ -21,7 +21,7 @@
     const key = event.key.toLowerCase(), chosen = issueForKey(key)
     if (chosen) { event.preventDefault(); onissue(chosen) }
     else if (key === SKIP_KEY && onskip) { event.preventDefault(); onskip() }
-    else if (key === NONE_KEY && suggestsReading(issue)) { event.preventDefault(); onchoose(null, true) }
+    else if (key === NONE_KEY && offersSuggestions(issue)) { event.preventDefault(); onchoose(null, true) }
   }
 </script>
 
@@ -30,6 +30,6 @@
 <div class="crop-review" bind:this={root}>
   {@render forms?.()}
   <IssuePicker value={issue} choose={onissue} {suggested} {disabled} skip={onskip} {skipped} />
-  <ReadingSuggestions {targetId} bind:element {result} {loading} {contextResult} {contextLoading} {issue}
-    reading={label} {value} {noneSelected} {disabled} choose={onchoose} />
+  <CharacterSuggestions {targetId} bind:element {result} {loading} {contextResult} {contextLoading} {issue}
+    {label} {value} {noneSelected} {disabled} choose={onchoose} />
 </div>
