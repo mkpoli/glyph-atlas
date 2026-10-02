@@ -648,3 +648,14 @@ def test_command_imports_the_ledger_with_the_reviews(store, tmp_path, monkeypatc
                                       "--ledger", str(page), "--apply"])
     runpy.run_path(str(script), run_name="__main__")
     assert json.loads(report.read_text())["ledger"]["counts"] == {"claim:imported": 1}
+
+
+def test_a_malformed_site_claim_lands_not_at_all_and_the_rest_still_import(store):
+    good = site_claim(store)
+    torn = site_claim(store, evidence=[{"kind": "crop", "ref": "x"}, {"kind": "crop"}])
+    doubled = site_claim(store, evidence=[{"kind": "crop", "ref": "x"}, {"kind": "crop", "ref": "x"}])
+    report = bridge.ingest_ledger(store, {"assertions": [torn, doubled, good], "actions": []}, apply=True)
+    assert [item["status"] for item in report["items"]] == ["rejected", "rejected", "imported"]
+    with store._connection() as conn:
+        assert [r[0] for r in conn.execute("SELECT id FROM assertions")] == [good["id"]]
+        assert conn.execute("SELECT count(*) FROM assertion_evidence").fetchone()[0] == 1

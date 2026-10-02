@@ -406,6 +406,8 @@ def ingest_ledger(store, payload: dict, *, apply=False) -> dict:
             for row in payload.get("assertions", []):
                 item = {"id": row.get("id"), "kind": "claim", "status": "rejected"}
                 report.append(item)
+                # A claim lands whole or not at all: its evidence and premises with it.
+                conn.execute("SAVEPOINT remote_claim")
                 try:
                     if not REMOTE_ID.fullmatch(str(row.get("id", ""))):
                         raise Rejected("a claim id this importer did not make")
@@ -430,9 +432,13 @@ def ingest_ledger(store, payload: dict, *, apply=False) -> dict:
                     subjects.add(row["subject"])
                     item["status"] = "imported" if apply else "ready"
                 except Rejected as error:
+                    conn.execute("ROLLBACK TO remote_claim")
                     item["reason"] = str(error)
-                except (KeyError, TypeError, ValueError):
+                except (KeyError, TypeError, ValueError, sqlite3.IntegrityError):
+                    conn.execute("ROLLBACK TO remote_claim")
                     item["reason"] = "invalid remote claim structure"
+                finally:
+                    conn.execute("RELEASE remote_claim")
             for row in payload.get("actions", []):
                 item = {"id": row.get("id"), "kind": "action", "status": "rejected"}
                 report.append(item)
