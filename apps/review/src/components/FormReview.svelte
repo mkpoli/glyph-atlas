@@ -6,10 +6,11 @@
   import { settle } from '../lib/settle.js'
   import { showsContext } from '../lib/glyphContext.svelte.js'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
+  import ScriptLine from './ScriptLine.svelte'
   import { members as loadMembers } from '../lib/forms.js'
   import { history, step } from '../lib/formHistory.svelte.js'
   import { number } from '../lib/client.js'
-  import { t } from '../lib/i18n.svelte.js'
+  import { t, withText } from '../lib/i18n.svelte.js'
 
   let { family, start = 0, isOpen, onsaved, onexit } = $props()
   let index = $state(0), glyphs = $state([]), total = $state(0), loading = $state(false)
@@ -105,7 +106,7 @@
       {/if}
     </div>
     {#if cluster}
-      <p class="review-hint">{t('forms.review.hint', { char: family.char })}</p>
+      <p class="review-hint"><ScriptLine line={withText('forms.review.hint', 'char', { char: family.char })} /></p>
       <div class="review-actions">
         <div class="filter-tabs" role="group" aria-label={t('forms.review.issue.label')}>
           <button class:active={issue === 'character'} aria-pressed={issue === 'character'} onclick={() => issue = 'character'}>{t('forms.review.issue.character', { char: family.char })}</button>
@@ -132,7 +133,7 @@
   </div>
   {#if error}<p class="error-message">{error}</p>{/if}
   {#if !cluster}
-    <p class="review-done">{t('forms.review.done', { char: family.char })}</p>
+    <p class="review-done"><ScriptLine line={withText('forms.review.done', 'char', { char: family.char })} /></p>
   {:else}
     <div class="review-grid" aria-busy={loading}>
       {#if loading && !glyphs.length}{#each Array(Math.min(cluster.count, 36)) as _, i (i)}<span class="review-glyph shimmer" aria-hidden="true"></span>{/each}{/if}
