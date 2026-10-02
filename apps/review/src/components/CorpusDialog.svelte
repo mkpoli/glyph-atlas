@@ -113,13 +113,7 @@
     {#if error}<div class="error-message" role="alert">{error}<button disabled={busy} onclick={() => load(id)}>{t('character.reload')}</button></div>{/if}
     {#if data}
       <!-- The glyph alone, in a box of one size for every glyph, then the page around it further down. -->
-      <div class="inspector-left">
-        <figure class="crop-box">{#if data.image && data.proxyable}{#key data.id + ':' + data.revision}<Glyph item={data} eager onload={() => { loaded = true; imageFailed = false }} onerror={() => imageFailed = true} />{/key}{:else}<span>{t('character.image.unavailable')}</span>{/if}</figure>
-        <div class="inspector-figure">
-          {#if data.image && data.proxyable}{#key data.id + ':' + data.revision}<CropContext item={data} detail={data} corpus disabled={busy} />{/key}{/if}
-        </div>
-        <div class="credit-beside"><SourceCredit item={data} corpus /></div>
-      </div>
+      <figure class="crop-box">{#if data.image && data.proxyable}{#key data.id + ':' + data.revision}<Glyph item={data} eager onload={() => { loaded = true; imageFailed = false }} onerror={() => imageFailed = true} />{/key}{:else}<span>{t('character.image.unavailable')}</span>{/if}</figure>
       <div class="inspector-right">
         <div class="inspector-production">{#if productionLabel(data)}<ProductionBadge item={data} />{/if}</div>
         <div class="inspector-title">{#if data.identity_status !== 'unassigned'}<CropTitle char={data.written_character ?? data.label} script={data.script} />{:else}<h2 class="unassigned-title">{t('corpus.unassigned')}{#if graphemeChar(data)}<span class="title-grapheme" lang="ja" title={t('chips.grapheme')}>{graphemeChar(data)}</span>{/if}</h2>{/if}{#if data.identity_status !== 'unassigned'}<ZiLink character={data.written_character ?? data.label} />{/if}{#if data.needs_segmentation || ['checked', 'flagged', 'stale'].includes(data.state)}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.needs_segmentation ? t('corpus.state.needsSplitting') : data.state === 'checked' ? t('corpus.state.checkedHere') : data.state === 'flagged' ? t('state.flagged') : t('corpus.state.sourceChanged')}</span>{/if}</div><CopyId id={data.id} />
@@ -134,8 +128,14 @@
           targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={{ candidates: data.suggestions }} label={data.label} value={correction} onchoose={choose} />
         <SimilarCrops id={data.id} label={data.label} ready={fresh && loaded} />
       </div>
+      <div class="inspector-page">
+        <div class="inspector-figure">
+          {#if data.image && data.proxyable}{#key data.id + ':' + data.revision}<CropContext item={data} detail={data} corpus disabled={busy} />{/key}{/if}
+        </div>
+        <div class="credit-beside"><SourceCredit item={data} corpus /></div>
+      </div>
       <div class="credit-after"><SourceCredit item={data} corpus /></div>
-    {:else if !error}<div class="inspector-left"><div class="crop-box shimmer"></div></div><div class="inspector-right"><div class="inspector-skeleton"></div></div>{/if}
+    {:else if !error}<div class="crop-box shimmer"></div><div class="inspector-right"><div class="inspector-skeleton"></div></div>{/if}
   </div>
   <footer class="inspector-savebar">
     <AdvanceSwitch disabled={busy} />

@@ -151,8 +151,10 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 .character-dialog .inspector>*{grid-column:2;min-width:0}
 .character-dialog .inspector>.inspector-header,.character-dialog .inspector>.inspector-skeleton{grid-column:1/-1}
 .character-dialog .inspector-header{background:var(--paper);border-bottom:1px solid var(--line);margin-bottom:18px}
-.character-dialog .inspector>.inspector-left{grid-column:1;grid-row:2/span 2;display:flex;flex-direction:column;gap:14px}
-.character-dialog .inspector>.inspector-right{grid-column:2;grid-row:2;display:block}
+.character-dialog .inspector>.replaced-note,.character-dialog .inspector>.error-message{grid-column:1/-1;grid-row:2}
+.character-dialog .inspector>.crop-box{grid-column:1;grid-row:3}
+.character-dialog .inspector>.inspector-right{grid-column:2;grid-row:3/span 2}
+.character-dialog .inspector>.inspector-page{grid-column:1;grid-row:4;margin-top:14px}
 .character-dialog .crop-box{height:300px}
 .character-dialog .inspector-figure .crop-viewport{height:440px}
 .character-dialog .inspector-figure{min-height:522px}.character-dialog .context-text{height:72px;overflow:hidden}.character-dialog .context-text p{max-height:3.6em}
@@ -168,18 +170,14 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
    the page around it in another further down, so stepping changes only the pixels inside them. On a
    narrow screen the columns dissolve into one, the decision before the page. */
 .crop-box{margin:0;height:220px;display:flex;align-items:center;justify-content:center;padding:18px;border-radius:12px;background:light-dark(#ebe8e3, #ebe8e3)}
+.crop-box.shimmer{background:linear-gradient(100deg,var(--surface-sunken) 35%,var(--paper) 50%,var(--surface-sunken) 65%);background-size:200% 100%}
 .crop-box img{width:100%;height:100%;object-fit:contain}
-.crop-box>span{font-size:12px;color:var(--muted)}
-.inspector-left,.inspector-right{display:contents}
+/* The box keeps the scan's paper in both schemes, so what is written on it is dark in both. */
+.crop-box>span,.crop-box .missing-glyph{font-size:12px;color:#5a5862}
 .inspector-figure .crop-viewport{height:300px}
 .crop-form .form-chips{flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px}
 .inspector-production{min-height:22px}
-@media(max-width:999px){
-.character-dialog .inspector{display:flex;flex-direction:column}
-.crop-box{order:1}.inspector-production{order:2}.inspector-title{order:3}.character-dialog .record-id{order:4}.corpus-source-label,.assignment-options{order:5}
-.crop-review{order:6}.crop-change{order:7}.inspector-figure{order:8;margin-top:20px}.similar-crops{order:9}.credit-after{order:10}
-.inspector-production:empty{display:none}
-}
+@media(max-width:999px){.inspector-page{margin-top:20px}.crop-box+.inspector-right{margin-top:14px}.inspector-production:empty{display:none}}
 /* The source line sits under the crop on a wide screen and after everything else on a narrow one, so
    it never pushes the decision down. */
 .credit-beside{display:none;margin-top:10px}.credit-after{margin-top:24px}
