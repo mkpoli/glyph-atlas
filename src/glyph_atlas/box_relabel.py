@@ -283,7 +283,9 @@ def repair(old_units: Sequence[Unit], lines: Sequence[Line], detections: dict[st
     """
     by_line: dict[str, list[Unit]] = defaultdict(list)
     for unit in old_units:
-        if unit.line_id:
+        # Only the aligner's own units are its to relabel: a unit another method placed on the line
+        # (an import cut from a record's own text) keeps what it says.
+        if unit.line_id and unit.method == "detect-align":
             by_line[unit.line_id].append(unit)
     wanted = aligned_lines(old_units) if every else stale_lines(old_units, vertical={line.id: line.vertical
                                                                                     for line in lines})

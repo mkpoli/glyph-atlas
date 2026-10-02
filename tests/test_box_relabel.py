@@ -223,3 +223,10 @@ def test_a_page_the_detections_do_not_cover_is_left_as_it_is(tmp_path, monkeypat
     result = box_relabel.relabel_directory(source, tmp_path / "out", run=run(), classifier=None,
                                            detections=tmp_path / "detections.jsonl")
     assert result["pages_without_detections"] == 1 and result["lines"] == 0
+
+
+def test_a_unit_another_method_placed_on_the_line_is_not_relabelled():
+    imported = unit(9, "錫", Box(x=100, y=170, w=30, h=28)).model_copy(update={"id": "ar:record:0", "method": "import"})
+    repaired, records = repair([*stale_units(), imported])
+    assert repaired[-1] == imported
+    assert "ar:record:0" not in {record["unit_id"] for record in records}
