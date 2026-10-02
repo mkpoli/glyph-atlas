@@ -160,3 +160,44 @@ def test_a_gap_whose_boxes_and_characters_do_not_match_stays_unplaced():
            unit(4, "四", BOXES[3]).model_copy(update={"id": "n4"})]
     statuses = [record["status"] for record in box_relabel.relabel(old, new)]
     assert statuses.count("unplaced") == 2
+
+
+def test_a_protected_unit_takes_its_place_so_its_line_is_not_stale_after_the_repair():
+    old = stale_units()
+    repaired, _ = repair(old, protected={old[0].id})
+    assert repaired[0].text_source == "高"
+    assert not box_relabel.stale(box_relabel.placed_of(repaired))
+
+
+def test_a_repeat_mark_placed_on_its_own_box_is_a_character_of_the_line():
+    old = stale_units()
+    new = [unit(index + 1, char, BOXES[index]).model_copy(update={"id": f"n{index}"})
+           for index, char in enumerate("高々百四")]
+    new[1] = new[1].model_copy(update={"kind": UnitKind.ITERATION_MARK})
+    records = {tuple(record["box"]): record for record in box_relabel.relabel(old, new)}
+    assert records[box_relabel.box_key(BOXES[1])]["after"] == "々"
+
+
+def test_a_relabelled_split_member_leaves_its_group():
+    old = stale_units()
+    old[0] = old[0].model_copy(update={"granularity": "sequence", "group_id": "old:g0"})
+    repaired, _ = repair(old)
+    assert repaired[0].group_id is None and repaired[0].granularity == "char"
+
+
+def test_a_short_vertical_line_over_two_columns_is_read_down_each_column():
+    placed = [(1, Box(x=140, y=10, w=30, h=28)), (2, Box(x=140, y=45, w=30, h=28)),
+              (3, Box(x=100, y=10, w=30, h=28)), (4, Box(x=100, y=45, w=30, h=28))]
+    assert box_relabel.descents(placed, vertical=True) == (0, 3)
+    assert box_relabel.descents(placed) == (0, 3)
+
+
+def test_a_gap_holding_a_token_of_several_characters_is_not_filled():
+    old = stale_units()
+    new = [unit(1, "高", BOXES[0]).model_copy(update={"id": "n1"}),
+           unit(2, "八", None).model_copy(update={"id": "n2"}),
+           unit(3, "百四", None).model_copy(update={"id": "n3"}),
+           unit(4, "百", None).model_copy(update={"id": "n4"}),
+           unit(5, "四", BOXES[3]).model_copy(update={"id": "n5"})]
+    statuses = [record["status"] for record in box_relabel.relabel(old, new)]
+    assert statuses.count("unplaced") == 2

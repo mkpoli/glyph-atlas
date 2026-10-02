@@ -30,7 +30,7 @@ from __future__ import annotations
 import json
 import unicodedata
 from collections import Counter, defaultdict
-from collections.abc import Collection, Iterable, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from itertools import pairwise
 from pathlib import Path
 from typing import Any
@@ -49,58 +49,73 @@ MIN_UNITS = 3
 #: Review states a person set; a unit in one of them keeps its label.
 HUMAN = frozenset({ReviewState.REVIEWED, ReviewState.DOUBLE_REVIEWED, ReviewState.ADJUDICATED,
                    ReviewState.DISPUTED})
+#: Kinds that name no written character: a gap of unknown length and an unreadable character.
+NO_TEXT = frozenset({"gap", "unreadable"})
 
 
 def box_key(box: Box | None) -> tuple[int, int, int, int] | None:
     return None if box is None else (box.x, box.y, box.w, box.h)
 
 
-def descents(placed: Sequence[tuple[int, Box]]) -> tuple[int, int]:
+def descents(placed: Sequence[tuple[int, Box]], vertical: bool | None = None) -> tuple[int, int]:
     """How many steps of a line's boxes, taken in sequence order, go back against reading order, out
     of how many steps there are. `placed` holds each boxed unit's (seq, box).
 
-    Boxes that spread wider than they run tall are a horizontal line, read left to right, which is
-    the order the aligner has always walked one in.
+    A horizontal line is read left to right, which is the order the aligner has always walked one
+    in. `vertical` is the line's own flag; without it, boxes that spread wider than they run tall
+    and stand one to a column are taken for a horizontal line.
     """
+    from . import ainu
+
     ordered = sorted(placed, key=lambda item: item[0])
     if len(ordered) < 2:
         return 0, 0
     detections = [align.Detection(box=box, score=1.0) for _, box in ordered]
-    xs = [detection.centre[0] for detection in detections]
-    ys = [detection.centre[1] for detection in detections]
-    if max(xs) - min(xs) > max(ys) - min(ys):
-        reading = sorted(detections, key=lambda detection: detection.centre)
-    else:
+    if vertical is None:
+        xs = [detection.centre[0] for detection in detections]
+        ys = [detection.centre[1] for detection in detections]
+        columns = ainu.columns_of([detection.box for detection in detections])
+        vertical = not (max(xs) - min(xs) > max(ys) - min(ys) and len(columns) == len(detections))
+    if vertical:
         reading = align.reading_order(detections)
+    else:
+        reading = sorted(detections, key=lambda detection: detection.centre)
     rank = {id(detection): index for index, detection in enumerate(reading)}
     ranks = [rank[id(detection)] for detection in detections]
     return sum(1 for a, b in pairwise(ranks) if b < a), len(ranks) - 1
 
 
-def stale(placed: Sequence[tuple[int, Box]], share: float = STALE_SHARE) -> bool:
-    """Whether a vertical line's boxed units, as (seq, box), were aligned in the old detection order."""
-    back, steps = descents(placed)
+def stale(placed: Sequence[tuple[int, Box]], share: float = STALE_SHARE, vertical: bool | None = None) -> bool:
+    """Whether a line's boxed units, as (seq, box), were aligned in the old detection order."""
+    back, steps = descents(placed, vertical)
     return steps + 1 >= MIN_UNITS and back > share * steps
 
 
 def placed_of(units: Iterable[Unit]) -> list[tuple[int, Box]]:
-    """The (seq, box) of every boxed character unit."""
-    return [(unit.seq, unit.box) for unit in units
-            if unit.box is not None and unit.seq is not None and str(unit.kind) == "char"]
+    """The (seq, box) of every boxed unit with a place in its line."""
+    return [(unit.seq, unit.box) for unit in units if unit.box is not None and unit.seq is not None]
 
 
-def stale_lines(units: Iterable[Unit], share: float = STALE_SHARE) -> set[str]:
-    """The ids of the lines whose detect-align units were aligned in the old order."""
+def stale_lines(units: Iterable[Unit], share: float = STALE_SHARE,
+                vertical: Mapping[str, bool] | None = None) -> set[str]:
+    """The ids of the lines whose detect-align units were aligned in the old order; `vertical` gives
+    each line's orientation where it is known."""
     by_line: dict[str, list[Unit]] = defaultdict(list)
     for unit in units:
         if unit.line_id and unit.method == "detect-align":
             by_line[unit.line_id].append(unit)
-    return {line for line, found in by_line.items() if stale(placed_of(found), share)}
+    known = vertical or {}
+    return {line for line, found in by_line.items() if stale(placed_of(found), share, known.get(line))}
 
 
 def label_of(unit: Unit) -> str | None:
     """The character a unit is labelled with: its transcription, in NFC."""
     return unicodedata.normalize("NFC", unit.text_source) if unit.text_source else None
+
+
+def one_character(unit: Unit) -> bool:
+    """Whether a unit names one written character: a letter, a repeat mark, a ligature, a mark."""
+    return str(unit.kind) not in NO_TEXT and len((label_of(unit) or "").strip()) == 1
 
 
 def placements(new: Sequence[Unit]) -> dict[tuple[int, int, int, int], Unit]:
@@ -111,8 +126,8 @@ def placements(new: Sequence[Unit]) -> dict[tuple[int, int, int, int], Unit]:
     """
     holders = Counter(box_key(unit.box) for unit in new if unit.box is not None)
     return {box_key(unit.box): unit for unit in new
-            if unit.box is not None and holders[box_key(unit.box)] == 1 and str(unit.kind) == "char"
-            and unit.granularity == "char" and unit.group_id is None and len(label_of(unit) or "") == 1}
+            if unit.box is not None and holders[box_key(unit.box)] == 1 and one_character(unit)
+            and unit.granularity == "char" and unit.group_id is None}
 
 
 def reading_ranks(boxes: Iterable[tuple[int, int, int, int]]) -> dict[tuple[int, int, int, int], int]:
@@ -131,8 +146,8 @@ def gap_fills(old: Sequence[Unit], new: Sequence[Unit], placed: dict[tuple[int, 
     boxes and characters differ, or that holds a box the alignment used otherwise, is left unplaced.
     """
     ranks = reading_ranks([box_key(unit.box) for unit in old if unit.box is not None] + list(placed))
-    free = sorted((ranks[box_key(unit.box)], box_key(unit.box)) for unit in old
-                  if unit.box is not None and box_key(unit.box) not in placed)
+    free = sorted({(ranks[box_key(unit.box)], box_key(unit.box)) for unit in old
+                   if unit.box is not None and box_key(unit.box) not in placed})
     chosen = {id(unit) for unit in placed.values()}
     ordered = sorted((unit for unit in new if unit.seq is not None and not (unit.upstream or {}).get("role")),
                      key=lambda unit: unit.seq)
@@ -141,12 +156,13 @@ def gap_fills(old: Sequence[Unit], new: Sequence[Unit], placed: dict[tuple[int, 
     low, blocked = -1, False
     for unit in [*ordered, None]:
         if unit is not None and id(unit) not in chosen:
-            if unit.box is not None:
-                # A box the alignment used for something other than one character (a split, a merge)
-                # leaves the gap's count of boxes in doubt.
-                blocked = True
-            elif str(unit.kind) == "char" and len((label_of(unit) or "").strip()) == 1:
+            if unit.box is None and one_character(unit):
                 run.append(unit)
+            elif unit.box is not None or str(unit.kind) in NO_TEXT or (label_of(unit) or "").strip():
+                # A box the alignment used for something other than one character (a split, a merge),
+                # a gap of unknown length or a token of several characters leaves the count in doubt;
+                # a space holds no ink and changes nothing.
+                blocked = True
             continue
         high = ranks[box_key(unit.box)] if unit is not None else len(ranks)
         between = [box for rank, box in free if low < rank < high]
@@ -166,7 +182,7 @@ def unplaced_reason(box: tuple[int, int, int, int], new: Sequence[Unit]) -> str:
     unit = holders[0]
     if unit.group_id is not None or unit.granularity != "char":
         return "split"
-    if str(unit.kind) != "char":
+    if str(unit.kind) in NO_TEXT or not (label_of(unit) or "").strip():
         return "not-a-character"
     return "several-characters"
 
@@ -219,12 +235,14 @@ def realign(lines: Sequence[Line], detections: dict[str, list[Box]], *, run: ali
 def applied(unit: Unit, record: dict[str, Any]) -> Unit:
     """`unit` as the record leaves it: the new label and place in the line, or no label when unplaced.
 
-    An unchanged unit takes only its place in the reading order, so the line no longer reads as stale;
-    an unplaced one has no place in it.
+    An unchanged or protected unit takes only its place in the reading order, so the line no longer
+    reads as stale; an unplaced one has no place in it and leaves any group it was cut into.
     The id and the box stay. The evidence goes into `meta["box_relabel"]`, with the label before.
     """
     status = record["status"]
-    if status == "unchanged" and record["seq"] is not None:
+    if status in ("unchanged", "protected"):
+        # A protected unit keeps its label, and takes its place in the reading order like the rest, so
+        # its line is not read as stale; a box the new alignment leaves empty has no place in it.
         return unit.model_copy(update={"seq": record["seq"]})
     if status not in ("relabelled", "unplaced"):
         return unit
@@ -232,14 +250,16 @@ def applied(unit: Unit, record: dict[str, Any]) -> Unit:
     meta = {**(unit.meta or {}), "box_relabel": note}
     if status == "unplaced":
         return unit.model_copy(update={"seq": None, "text_source": None, "reading": None, "unicode": None,
-                                       "candidates": [], "review": ReviewState.REJECTED, "meta": meta})
+                                       "candidates": [], "group_id": None, "granularity": "char",
+                                       "review": ReviewState.REJECTED, "meta": meta})
     return unit.model_copy(update={"meta": meta, **record["fields"]})
 
 
 def fields_of(unit: Unit) -> dict[str, Any]:
     """What a relabelled unit takes from the new unit on its box."""
-    return {key: getattr(unit, key) for key in ("seq", "kind", "text_source", "reading", "unicode", "classification",
-                                                "script", "candidates", "confidence", "review")}
+    return {key: getattr(unit, key) for key in ("seq", "kind", "granularity", "group_id", "text_source", "reading",
+                                                "unicode", "classification", "script", "candidates", "confidence",
+                                                "review")}
 
 
 def aligned_lines(units: Iterable[Unit]) -> set[str]:
@@ -262,7 +282,8 @@ def repair(old_units: Sequence[Unit], lines: Sequence[Line], detections: dict[st
     for unit in old_units:
         if unit.line_id:
             by_line[unit.line_id].append(unit)
-    wanted = aligned_lines(old_units) if every else stale_lines(old_units)
+    wanted = aligned_lines(old_units) if every else stale_lines(old_units, vertical={line.id: line.vertical
+                                                                                    for line in lines})
     chosen = [line for line in lines if line.id in wanted and line.vertical]
     records: list[dict[str, Any]] = []
     changed: dict[str, Unit] = {}
@@ -301,31 +322,53 @@ def relabel_directory(directory: Path, out: Path, *, run: align.Run, classifier:
     """Relabel the stale lines of `directory`, or with `every` all its aligned lines, and write the
     result to `out`, never to `directory`.
 
-    `out` gets `units.parquet`, every unit of the source with the stale lines relabelled, and
-    `relabels.jsonl`, one record per boxed unit of a stale line. `detections` is the cache of the
-    boxes the units were cut from, keyed by page.
+    `out` gets the source's other tables, `units.parquet`, every unit of the source with the stale
+    lines relabelled, and `relabels.jsonl`, one record per boxed unit of a relabelled line.
+    `detections` is the cache of the boxes the units were cut from, keyed by page. A unit the review
+    store beside the source holds a person's change for is protected like one in `protect`. A
+    horizontal line is not relabelled: the old order read one left to right already.
     """
+    import shutil
+
     from . import ainu, images, tables
+    from . import repair as alignment_repair
 
     directory, out = Path(directory), Path(out)
     if out.resolve() == directory.resolve():
         raise ValueError("the relabel writes a derived dataset, never its source")
     dataset = tables.Dataset(directory)
     units = tables.read(directory / "units.parquet", Unit)
-    wanted = aligned_lines(units) if every else stale_lines(units)
+    human = alignment_repair.human_state(directory)
+    candidates = aligned_lines(units)
+    found = [line for batch in dataset.scan("lines", keep=tables.In("page_id", {unit.page_id for unit in units
+                                                                               if unit.line_id in candidates}))
+             for line in batch if line.id in candidates]
+    orientation = {line.id: line.vertical for line in found}
+    wanted = candidates if every else stale_lines(units, vertical=orientation)
+    horizontal = {line for line in wanted if orientation.get(line) is False}
     pages = {unit.page_id for unit in units if unit.line_id in wanted and unit.page_id}
-    lines = sorted((line for batch in dataset.scan("lines", keep=tables.In("page_id", pages)) for line in batch
-                    if line.id in wanted and line.box is not None), key=lambda line: (line.page_id, line.seq))
+    lines = sorted((line for line in found if line.id in wanted and line.box is not None and line.vertical),
+                   key=lambda line: (line.page_id, line.seq))
     page_records = {page.id: page for batch in dataset.scan("pages", keep=tables.In("id", pages)) for page in batch}
     # Without its page image the classifier scores every crop at the floor and the alignment places by
     # position alone, which is the guess this repair exists to replace: such a line is left as it is.
     unread = {page for page, record in page_records.items() if images.path_for(record.image) is None}
     lines = [line for line in lines if line.page_id not in unread]
     repaired, records = repair(units, lines, ainu.read_detections(Path(detections)), run=run, classifier=classifier,
-                               crop_of=align._crop_reader(dataset, page_records), protected=set(protect),
-                               every=every)
+                               crop_of=align._crop_reader(dataset, page_records),
+                               protected=set(protect) | set(human.units), every=every)
     out.mkdir(parents=True, exist_ok=True)
+    for name in alignment_repair.COPIED_TABLES:
+        path = dataset.tables.get(name)
+        if path is None:
+            continue
+        target = out / Path(path).name
+        if Path(path).is_dir():
+            shutil.rmtree(target, ignore_errors=True)
+            shutil.copytree(path, target)
+        else:
+            shutil.copy2(path, target)
     tables.write(out / "units.parquet", repaired, Unit)
     write_records(out / "relabels.jsonl", records)
-    return {"units": len(units), "chosen_lines": len(wanted), "lines": len(lines), "pages_without_image": len(unread),
-            **counts(records)}
+    return {"units": len(units), "chosen_lines": len(wanted), "lines": len(lines), "horizontal_lines": len(horizontal),
+            "pages_without_image": len(unread), "store_protected": len(human.units), **counts(records)}
