@@ -9,6 +9,10 @@ export const MORE_BATCH = 24
 export const REFERENCE_LIMIT = 12
 export const automaticCategories = categories => categories.filter(c => c.pending >= MIN_ROUND_SIZE)
 
+/** A round's address, as the site writes a grapheme's (`U+85CF`, `U+304B-U+309A`), with its material. */
+export const roundAddress = (key, production) =>
+  '/review' + (key ? '/' + key.split(' ').join('-') : '') + (production ? '?production=' + production : '')
+
 /** A grapheme key (`U+306F`, or a label's own code points) as the text it names. */
 export const graphemeText = key => key.split(' ').map(point => String.fromCodePoint(parseInt(point.slice(2), 16))).join('')
 const codesOf = label => [...label].map(c => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')).join(' ')

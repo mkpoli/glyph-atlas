@@ -4,8 +4,9 @@
   // Select problems, then give each crop its issue, with the correction offered under it, before moving on.
   // Only explicitly marked problems are saved as reviews. An unmarked crop that was on screen is
   // recorded as seen, which keeps it out of later rounds without confirming it.
-  import { onMount, tick } from 'svelte'
-  import { updated } from '$app/state'
+  import { onMount, tick, untrack } from 'svelte'
+  import { pushState, replaceState } from '$app/navigation'
+  import { page, updated } from '$app/state'
   import Glyph from '../components/Glyph.svelte'
   import IssuePicker from '../components/IssuePicker.svelte'
   import ReadingSuggestions from '../components/ReadingSuggestions.svelte'
@@ -17,10 +18,10 @@
   import { catalogue, character, corpusCharacter, randomSeed, request, remember, stored, number, suggestionsFor } from '../lib/client.js'
   import { cropDetails } from '../lib/cropDetails.js'
   import { issues, suggestsReading, isSingle, greetSuggestions, skipLabel, skipHint } from '../lib/issues.js'
-  import { nextGrapheme, roundGraphemes, graphemeText, ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
+  import { nextGrapheme, roundGraphemes, graphemeText, roundAddress, ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
   import { t, around, localize } from '../lib/i18n.svelte.js'
   import { useSession } from '../lib/session.svelte.js'
-  let { initialGrapheme = '', inspect } = $props()
+  let { initialGrapheme = '', initialProduction = '', inspect } = $props()
   // The browser's reviewer id, which a form marking and its undo name like every other save.
   const session = useSession()
   let data = $state(null), items = $state([]), choices = $state({}), selected = $state({})
@@ -89,7 +90,9 @@
     ['unknown', () => t('production.kind.unknown')],
     ['all', () => t('quiz.material.all')],
   ]
-  let production = $state('not:printed/type')
+  // A round's material comes from its address; one the menu does not offer falls back to the default.
+  const materialOf = value => MATERIALS.some(([option]) => option === value) ? value : 'not:printed/type'
+  let production = $state(materialOf(untrack(() => initialProduction)))
   // The workflow state: selecting crops, or deciding them one at a time; and where in the selected crops the reader is.
   let step = $state('select'), at = $state(0)
   let suggestionsElement = $state(null)
@@ -136,7 +139,7 @@
   const canNext = $derived(rounds.some(c => c.pending > 0 && c.label !== grapheme))
   function snapshot() {
     return $state.snapshot({ grapheme, members, items, choices, selected, skipped, recorded, suggestions, contextSuggestions,
-      roundId, roundSeed, hasMore, nextOffset, production, summary: data })
+      roundId, roundSeed, hasMore, nextOffset, production, summary: data, entry })
   }
   function checkpoint() {
     if (historyIndex >= 0) history[historyIndex] = snapshot()
@@ -146,15 +149,44 @@
     grapheme = round.grapheme; members = round.members; items = round.items; choices = round.choices; selected = round.selected
     skipped = round.skipped; recorded = round.recorded ?? {}; suggestions = round.suggestions; contextSuggestions = round.contextSuggestions
     roundId = round.roundId; roundSeed = round.roundSeed; hasMore = round.hasMore; nextOffset = round.nextOffset ?? 0
+    entry = round.entry ?? null
     loaded = {}; failed = {}; viewed = {}; step = 'select'; at = 0; error = ''; errorStatus = 0; categoryOpen = false
     anchor = null; formDone = null; formError = ''
   }
-  function visit(index) {
+  function visit(index, { followed = false } = {}) {
     if (saving || loading || index < 0 || index >= history.length || index === historyIndex) return
     checkpoint()
     ++requestId; loadingMore = false
     historyIndex = index
     restoreRound($state.snapshot(history[index]))
+    if (!followed) address('push')
+  }
+  /**
+   * The address names the round on screen, `/review/U+85CF?production=handwritten`. Each round dealt or
+   * returned to adds an entry to the browser's history, so Back steps through the rounds; a round dealt
+   * again in place, and the first one, replace the entry there. The page does not navigate: the rounds,
+   * and the choices made in them, stay.
+   */
+  let entry = null, addressed = false, followedState = untrack(() => page.state)
+  function address(how) {
+    const state = { round: { entry, grapheme, production } }
+    followedState = state
+    ;(how === 'push' && addressed ? pushState : replaceState)(localize(roundAddress(grapheme, production)), state)
+    addressed = true
+  }
+  // Back and Forward bring the entry's round back: from this page's rounds when it still holds it, or
+  // dealt again (after a reload) from the grapheme and material the entry names.
+  $effect(() => {
+    const state = page.state
+    if (state === followedState) return
+    followedState = state
+    untrack(() => follow(state.round))
+  })
+  function follow(round) {
+    if (!round || saving || round.entry === entry) return
+    const index = history.findIndex(each => each.entry === round.entry)
+    if (index >= 0) visit(index, { followed: true })
+    else load({ target: round.grapheme || null, scope: materialOf(round.production), how: 'replace' })
   }
   async function chooseCategory(target) {
     categoryOpen = false
@@ -164,7 +196,7 @@
     if (previous >= 0) visit(previous)
     else load({ target })
   }
-  async function load({ target = null, replace = false, scope = production, seed: dealt = null } = {}) {
+  async function load({ target = null, replace = false, scope = production, seed: dealt = null, how = replace ? 'replace' : 'push' } = {}) {
     checkpoint()
     const id = ++requestId
     loading = true; loadingMore = false; error = ''; errorStatus = 0; categoryOpen = false
@@ -196,6 +228,7 @@
             contextSuggestions: {}, roundId: crypto.randomUUID(), roundSeed: randomSeed(), hasMore: false,
             production: scope, summary })
           historyIndex = -1
+          address(how)
         } else if (!grapheme) items = []
         else { error = t('quiz.noOtherCharacters'); errorStatus = 0 }
         return
@@ -204,6 +237,8 @@
         suggestions: {}, contextSuggestions: {}, roundId: crypto.randomUUID(), roundSeed: seed,
         hasMore: (result.next_offset ?? result.items.length) < result.total, nextOffset: result.next_offset ?? result.items.length,
         production: scope, summary })
+      entry = crypto.randomUUID()
+      address(how)
       if (replace && historyIndex >= 0) history[historyIndex] = snapshot()
       else {
         history = [...history.slice(0, historyIndex + 1), snapshot(), ...history.slice(historyIndex + 1)]
@@ -549,8 +584,7 @@
     catch { return null }
   }
   async function resume(round) {
-    const scope = MATERIALS.some(([value]) => value === round.production) ? round.production : production
-    await load({ target: round.grapheme || null, scope, seed: round.seed })
+    await load({ target: round.grapheme || null, scope: materialOf(round.production), seed: round.seed, how: 'replace' })
     if (grapheme !== round.grapheme) return
     // Only the crops dealt again: a crop decided elsewhere meanwhile has left the round.
     const dealt = new Set(items.map(item => item.id))
@@ -659,11 +693,13 @@
       : a.dealt - b.dealt)
   }
   function toggleShape() { byShape = !byShape; remember('atlas.quiz.shape-order', byShape); items = arranged(items) }
+  // A reload that kept its round deals it again; a page reached by Back after a reload carries the round its
+  // entry named; otherwise the address names it. Each replaces the address with the round it deals.
   onMount(() => {
     last = stored('atlas.last-round', null)
-    const round = carried()
-    if (round) resume(round)
-    else load({ target: initialGrapheme || null })
+    const kept = carried(), round = page.state.round
+    if (kept) resume(kept)
+    else load(round ? { target: round.grapheme || null, scope: materialOf(round.production), how: 'replace' } : { target: initialGrapheme || null, how: 'replace' })
     return () => { closed = true }
   })
 </script>

@@ -101,7 +101,7 @@ try {
   assert(events(config.directory).some(e => e.field === 'box'), 'crop adjustment saved')
   console.log('PASS optional crop adjustment')
 
-  await route('/en/review?grapheme=U%2B3042', roundReady)
+  await route('/en/review/U+3042', roundReady)
   // A round saves only the problems a reviewer picked; crops left unselected are not confirmed.
   // A crop can be picked only once its image has loaded.
   await browser.waitFor('[...document.querySelectorAll(".quiz-tile img")].every(i => i.complete)', 15000)
@@ -360,7 +360,7 @@ try {
   await browser.send('Network.enable')
   await browser.send('Network.setBlockedURLs', { urls: ['*/atlas/media/*', '*/atlas/characters/*/image*'] })
   await browser.send('Network.setCacheDisabled', { cacheDisabled: true })
-  await route('/en/review?grapheme=U%2B3044', 'document.querySelectorAll(".quiz-tile.unavailable").length > 0')
+  await route('/en/review/U+3044', 'document.querySelectorAll(".quiz-tile.unavailable").length > 0')
   await browser.waitFor('document.querySelectorAll(".quiz-tile.unavailable").length === document.querySelectorAll(".quiz-tile").length')
   assert(await browser.evaluate('document.querySelector(".quiz-submit .primary").classList.contains("next-round")'), 'unseen crops offer only Next round')
   const beforeUnavailable = events(config.directory).length

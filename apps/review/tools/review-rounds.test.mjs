@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { nextGrapheme, mergeReferences, roundGraphemes } from '../src/lib/reviewRounds.js'
+import { nextGrapheme, mergeReferences, roundGraphemes, roundAddress } from '../src/lib/reviewRounds.js'
 
 const categories = [{ label: '仮', pending: 1 }, { label: '假', pending: 5 },
   { label: 'あ', pending: 6 }, { label: 'い', pending: 12 }, { label: 'う', pending: 8 }]
@@ -56,4 +56,11 @@ test('each list is capped at the limit independently', () => {
   const result = mergeReferences(checked, seen, 3)
   assert.equal(result.filter(item => item.referenceState === 'checked').length, 3)
   assert.equal(result.filter(item => item.referenceState === 'seen').length, 3)
+})
+
+test('a round is addressed by its grapheme as the site writes one, and its material', () => {
+  assert.equal(roundAddress('U+85CF', 'not:printed/type'), '/review/U+85CF?production=not:printed/type')
+  assert.equal(roundAddress('U+304B U+309A', 'handwritten'), '/review/U+304B-U+309A?production=handwritten')
+  assert.equal(roundAddress('', 'inscribed'), '/review?production=inscribed')
+  assert.equal(roundAddress('U+3042'), '/review/U+3042')
 })
