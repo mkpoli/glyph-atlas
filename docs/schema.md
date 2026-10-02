@@ -23,8 +23,7 @@ The kanji 子 remains a separate character and family, while `Character.jibo` re
 its derivation relation to 𛄧. A shared 字母 alone does not establish a family.
 Small kana and ligatures retain distinct families.
 
-A unit's `unicode` identifies the written character; `reading` preserves its independent
-reading. `variants` can identify an MJ, IVS, GlyphWiki or local form. Grouping a character
+A unit's `unicode` identifies the written character. `variants` can identify an MJ, IVS, GlyphWiki or local form. Grouping a character
 never rewrites these fields or the source transcription.
 
 `/layers/graphemes/{code_point}` resolves either member to its family and lists
@@ -110,7 +109,6 @@ One located unit: a character, a ligature, a mark, a gap, or a sequence awaiting
 | `granularity` | `char`, `sequence` (an unresolved run), `block` (a type block holding several characters) |
 | `kind` | `char`, `sequence`, `ligature`, `iteration-mark`, `voicing-mark`, `punctuation`, `gap`, `unreadable` |
 | `text_source` | the transcriber's string for this unit |
-| `reading` | diplomatic reading, historical spelling kept |
 | `unicode` | code point sequence, `U+1B002` or `U+304B U+3099`; null when no code point fits |
 | `classification` | `unassessed`, `identified`, `ambiguous` (several candidates remain), `unencoded` (identified, no code point exists), `unidentified` |
 | `script` | `hiragana`, `hentaigana`, `katakana`, `han`, `hangul`, `gugyeol`, `symbol`, `latin`, `unknown`; the character layer is the authority |
@@ -129,8 +127,8 @@ One located unit: a character, a ligature, a mark, a gap, or a sequence awaiting
 | `split_into`, `merged_into` | segmentation history |
 | `meta` | fields with no column of their own, such as the audit sample the unit belongs to (`sample`, `p`, `stratum`, `predicted`, `hidden`) |
 
-`unicode` and `reading` answer different questions. A hentaigana form of か derived from 可 has
-`reading` か, `unicode` U+1B019 (KA-3), and 字母 可 in the character layer, `script` hentaigana.
+A hentaigana form of か derived from 可 has `unicode` U+1B019 (KA-3), `script` hentaigana, and, in
+the character layer, 字母 可 and the kana か in `readings`.
 U+1B01A (KA-4) derives from 可 as well, so a record of this pair also carries a local shape id in
 `variants`. The modern spelling is derived at export.
 

@@ -9,7 +9,7 @@ extracted characters, and human-reviewed forms. The resource survey below dates 
 
 One record per graphic occurrence: in most cases one written character on a page image, and
 otherwise a standalone crop without page placement or a block holding several characters, with
-the granularity stated on the record. A record holds the rectangle on the full-size image, the transcriber's string, a diplomatic reading, Unicode code points (hentaigana code points
+the granularity stated on the record. A record holds the rectangle on the full-size image, the transcriber's string, Unicode code points (hentaigana code points
 for kana forms that Unicode encodes), the 字母 of kana, a variant key for kanji written in a form
 other than the transcribed one, the line and the neighbours, and the document's production type,
 genre, register and date. Every record also carries the licence of its image and of its text, and
@@ -122,20 +122,19 @@ Outside the current acquisition scope:
 
 Browsing has three levels: a curated grapheme family (仮 = 假), separate written characters (仮 and
 假), and the exact forms visible in source occurrences. Grouping never changes a character label
-or a saved correction. 字母, readings, and registry variant identifiers remain attached metadata.
+or a saved correction. 字母, kana values and registry variant identifiers remain attached metadata.
 
-Four layers, each fillable on its own:
+Three layers, each fillable on its own:
 
 1. Source: the transcriber's string for the unit, verbatim.
-2. Reading: the diplomatic reading, historical spelling kept (けふ stays けふ).
-3. Classification: code points, script, 字母, variant key.
-4. Normalisation: modern kana, 新字, voicing supplied by an editor. Computed at export from the
+2. Classification: code points, script, 字母, variant key.
+3. Normalisation: modern kana, 新字, voicing supplied by an editor. Computed at export from the
    layers above and a named policy; never stored on the record.
 
-Kana. The reading starts from the transcription, which is evidence and not the diplomatic reading:
-a transcriber may have written い for a form that reads ゐ on the page, so the candidate set includes
+Kana. The code point starts from the transcription, which is evidence and not the written form:
+a transcriber may have written い for a form that is ゐ on the page, so the candidate set includes
 the historical spellings that the source's normalisation maps onto the transcribed kana. Unicode's names list and the MJ table give the code points that share that
-reading (か has twelve, KA-KE included). A classifier and, where reviewed, a person choose among them from the
+kana (か has twelve, KA-KE included). A classifier and, where reviewed, a person choose among them from the
 image, and the 字母 follows from the code point. For the 52 (音価, 字母) pairs that Unicode split across
 several code points, the record carries the code point once the form is identified and a local
 shape id where a finer distinction is needed; a shape Unicode never encoded gets `unicode` null,
@@ -175,11 +174,11 @@ letterforms (`data/vocab/style.yaml`).
    the detection, computed over an equivalence class (hentaigana forms of the same kana, 旧字 and
    新字, iteration marks). Insertions and deletions are allowed; units below threshold are kept,
    with a low confidence and a rejected state.
-6. 字母. For each kana unit the classifier scores the code points of its reading. Training data:
+6. 字母. For each kana unit the classifier scores the code points of its transcribed kana. Training data:
    the 古活字 blocks, the NINJAL reference glyphs, reviewed pilot units, and synthetic renderings
    from the NINJAL and Noto Serif Hentaigana fonts, which are never counted as evidence.
 7. Review. Reviewers see a line in its page context and can move a box, split or merge units, set
-   the reading and the 字母, or reject. Model disagreement and rare forms are queued first; a random
+   the character, or reject. Model disagreement and rare forms are queued first; a random
    audit of accepted units runs separately and gives the published precision.
 8. Release. Parquet tables, crops for redistributable images, an attribution file generated from the
    rights fields, a datasheet, a Zenodo DOI. Counts are published by provenance: imported, aligned,
