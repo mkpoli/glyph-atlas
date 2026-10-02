@@ -123,7 +123,9 @@ def predicted(desc: v.Descriptions, items: list[v.Attested]) -> dict[tuple[str, 
     descriptions are shared rather than copied)."""
     global _PASS
     _PASS = (desc, items)
-    chars = sorted(desc.trees, key=ord)
+    # Every character with a sequence, the atomic components among them: a component without a
+    # description of its own still predicts the bare pair it makes with its equivalent (火, 灬).
+    chars = sorted(desc.raw)
     chunks = [chars[i::64] for i in range(64)]
     found: dict[tuple[str, str], set[tuple[str, str]]] = {}
     with multiprocessing.get_context("fork").Pool(max(1, (os.cpu_count() or 2) - 2)) as pool:

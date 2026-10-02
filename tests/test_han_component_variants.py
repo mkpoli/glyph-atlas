@@ -174,3 +174,12 @@ def test_口_厶_is_kept_and_a_swap_of_meaning_is_not():
     by_key = {(row["a"], row["b"]) for row in rows()}
     assert v.ordered("口", "厶") in by_key
     assert v.ordered("口", "氵") not in by_key and v.ordered("扌", "木") not in by_key
+
+
+def test_a_component_without_a_description_of_its_own_still_predicts_its_bare_pair():
+    # 火 and 灬 have no description of their own (their sequence is themselves); the pair they make
+    # with each other is still a prediction.
+    desc = v.Descriptions({"火": ["火"], "灬": ["灬"], "炎": ["⿱火火"]}, {})
+    item = v.Attested(*v.ordered("火", "灬"), (("炎", "炎", ("s",)),), ("炎/炎",))
+    predicted = v.predictions(desc, [item])
+    assert ("火", "灬") in predicted[v.ordered("火", "灬")]

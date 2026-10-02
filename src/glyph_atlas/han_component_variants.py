@@ -262,11 +262,14 @@ def kept(found: dict[str, Attested]) -> list[Attested]:
     return [item for item in found.values() if item.count >= THRESHOLD and len(item.pairs) >= THRESHOLD]
 
 
-def predictions(desc: Descriptions, items: Iterable[Attested], chars: Iterable[str] | None = None) -> dict[tuple[str, str], set[tuple[str, str]]]:
-    """The pairs of encoded characters each substitution of `items` predicts, from `chars` (all when
-    None), each pair in code point order. The pairs that attest it are among them."""
+def predictions(desc: Descriptions, items: Iterable[Attested],
+                chars: Iterable[str] | None = None) -> dict[tuple[str, str], set[tuple[str, str]]]:
+    """The pairs of encoded characters each substitution of `items` predicts, from `chars` (every
+    character of `desc.raw` when None, those with no description of their own included, so the bare
+    pair of two components such as 火 and 灬 is a prediction too). Each pair is in code point order;
+    the pairs that attest a substitution are among its predictions."""
     found: dict[tuple[str, str], set[tuple[str, str]]] = defaultdict(set)
-    for form in derive(desc, equivalents(items), chars):
+    for form in derive(desc, equivalents(items), list(desc.raw) if chars is None else chars):
         if form.encoded:
             found[ordered(form.was, form.became)].add(tuple(sorted((form.char, form.other), key=ord)))
     return found
