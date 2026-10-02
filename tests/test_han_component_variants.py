@@ -163,16 +163,33 @@ def test_the_committed_table_holds_only_what_the_threshold_and_the_agreement_kee
             assert sources_of_pair
 
 
-def test_the_example_substitution_is_in_the_committed_table():
-    by_key = {(row["a"], row["b"]): row for row in rows()}
-    row = by_key[v.ordered("睘", "𦊷")]
-    assert (row["count"], row["predicted"], row["agreed"]) == ("2", "3", "2")
-    assert {token.split("=")[0] for token in row["pairs"].split(" ")} == {"環:𤨔", "還:𮟃"}
+IDS_睘 = {"還": ["⿺辶睘(GHTJKPV)"], "𮟃": ["⿺辶𦊷(J)"], "環": ["⿰𤣩睘(GHTJKPV)"],
+          "𤨔": ["⿰𤣩𦊷(GTP)"], "寰": ["⿱宀睘(GHTJKP)"], "睘": ["⿳罒𠮛𧘇(GHTJKP)"],
+          "𦊷": ["⿳罒一⿱𠂈{25}(G)"]}
+
+
+def test_睘_𦊷_writes_還_as_𮟃_and_寰_as_a_form_no_character_has():
+    desc = descriptions(IDS_睘)
+    found = v.attest(desc, sources(("還", "𮟃"), ("環", "𤨔")))
+    assert {(p, q) for p, q, _ in found[v.ordered("睘", "𦊷")].pairs} == {("環", "𤨔"), ("還", "𮟃")}
+    derived = {(d.char, d.other, d.encoded) for d in v.derive(desc, {"睘": {"𦊷"}, "𦊷": {"睘"}})}
+    assert {("還", "𮟃", True), ("𮟃", "還", True), ("寰", "⿱宀𦊷", False)} <= derived
+
+
+def test_睘_𦊷_is_not_kept_on_its_two_pairs_alone():
+    # Two pairs attest it and its one other prediction, 寰 with ⿱宀𦊷, is no pair of characters: with
+    # each attesting pair held out the other no longer passes the threshold, so nothing is measured.
+    assert v.ordered("睘", "𦊷") not in {(row["a"], row["b"]) for row in rows()}
+    desc = descriptions(IDS_睘)
+    found = v.attest(desc, sources(("還", "𮟃"), ("環", "𤨔")))
+    item = found[v.ordered("睘", "𦊷")]
+    assert v.kept(found) == [item] and not item.held_out(0) and not item.held_out(1)
+    assert v.agreeing([item], v.predictions(desc, [item]), {("還", "𮟃"), ("環", "𤨔")}) == []
 
 
 def test_口_厶_is_kept_and_a_swap_of_meaning_is_not():
     by_key = {(row["a"], row["b"]) for row in rows()}
-    assert v.ordered("口", "厶") in by_key
+    assert v.ordered("口", "厶") in by_key and v.ordered("鳥", "鸟") in by_key
     assert v.ordered("口", "氵") not in by_key and v.ordered("扌", "木") not in by_key
 
 
@@ -185,6 +202,9 @@ def test_色_𮎜_keeps_the_token_its_sequence_writes():
     assert v.substitutions(desc, "色", "㓀") == {}
     table = v.equivalents([v.Attested(*v.ordered("⺈", "𠂉"), (), ())])
     assert {(d.char, d.other) for d in v.derive(desc, table, ["色", "分", "㓀"])} == {("色", "𮎜")}
+    by_key = {(row["a"], row["b"]): row for row in rows()}
+    assert "色:𮎜" in by_key[v.ordered("⺈", "𠂉")]["pairs"]
+    assert v.ordered("刀", "𠂉") not in by_key
 
 
 def test_only_trees_of_a_common_region_are_compared():
@@ -201,6 +221,9 @@ def test_余_除_adds_a_component_where_口_厶_swaps_one():
     desc = descriptions({"除": ["⿰阝余"], "余": ["⿱𠆢⿱一朩"], "政": ["⿰正攵"], "正": ["⿱一止"]})
     assert v.adds(desc, *v.ordered("余", "除")) and v.adds(desc, *v.ordered("正", "政"))
     assert not v.adds(desc, *v.ordered("口", "厶"))
+    # The rule scores both kinds alike; 余 against 除 is kept on its three pairs.
+    row = {(row["a"], row["b"]): row for row in rows()}[v.ordered("余", "除")]
+    assert {token.split("=")[0] for token in row["pairs"].split(" ")} == {"㾻:𤶠", "涂:滁", "蜍:𮔲"}
 
 
 def test_a_description_that_names_a_component_matches_one_that_spells_it_out_across_the_operator():
@@ -210,6 +233,11 @@ def test_a_description_that_names_a_component_matches_one_that_spells_it_out_acr
     assert v.substitutions(desc, "鸂", "㶉") == {("鳥", "鸟"): {None}}
     # The form comes out as the character, and the spelled-out reading writes no second sequence.
     assert {(d.other, d.encoded) for d in v.derive(desc, {"鳥": {"鸟"}}, ["鸂"])} == {("㶉", True)}
+    by_key = {(row["a"], row["b"]): row for row in rows()}
+    assert "㶉:鸂" in by_key[v.ordered("鳥", "鸟")]["pairs"]
+    # A spelling under an operator it does not flatten into keeps the boundary: ⿱溪鳥 is no ⿰溪鳥.
+    desc2 = descriptions({"鸂": ["⿰溪鳥"], "溪": ["⿰氵奚"], "別": ["⿱⿰氵奚鳥"]})
+    assert v.substitutions(desc2, "鸂", "別") == {}
 
 
 def test_a_component_spelled_out_inside_a_description_reads_the_same_shape():
