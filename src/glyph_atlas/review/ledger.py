@@ -43,7 +43,8 @@ D1_CROP_NOW = "SELECT id,crop_version FROM units WHERE id IN (SELECT json_extrac
 COLUMNS = ("subject", "predicate", "scope", "slot", "status", "object", "value", "members", "supporting", "claims",
            "crop_version", "resolver", "at")
 #: How many slots one resolution statement names; a publication writes its keys into the statement.
-KEYS_PER_STATEMENT = 200
+#: The resolver compares each slot's claims with one another, so a statement is kept to a few slots.
+KEYS_PER_STATEMENT = 50
 
 
 class LedgerError(ValueError):
@@ -56,9 +57,9 @@ class LedgerError(ValueError):
 
 def resolve_statements(crop_now: str) -> tuple[str, str]:
     """The two statements that resolve the slots bound as ?1: clear their rows, then write them."""
-    clear = ("DELETE FROM current_claims WHERE EXISTS (SELECT 1 FROM json_each(?1) k WHERE "
-             "json_extract(k.value,'$[0]')=current_claims.subject AND json_extract(k.value,'$[1]')=current_claims.predicate "
-             "AND json_extract(k.value,'$[2]')=current_claims.scope AND json_extract(k.value,'$[3]')=current_claims.slot)")
+    # By key: the slots are rows of `current_claims`' primary key, each found by it.
+    clear = ("DELETE FROM current_claims WHERE (subject,predicate,scope,slot) IN (SELECT json_extract(value,'$[0]'),"
+             "json_extract(value,'$[1]'),json_extract(value,'$[2]'),json_extract(value,'$[3]') FROM json_each(?1))")
     write = (f"INSERT INTO current_claims({','.join(COLUMNS)}) WITH crop_now(unit,version) AS ({crop_now}),\n"
              + RESOLVE_BODY)
     return clear, write

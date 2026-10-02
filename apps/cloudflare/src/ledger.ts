@@ -13,9 +13,9 @@ const COLUMNS = 'subject,predicate,scope,slot,status,object,value,members,suppor
 const BODY = (catalogue.resolve as string[]).filter(line => !line.trimStart().startsWith('--')).join('\n');
 // `crop_now` from D1's own crops: a crop subject's current version, `units.crop_version` (0046).
 const CROP_NOW = "SELECT id,crop_version FROM units WHERE id IN (SELECT json_extract(value,'$[0]') FROM json_each(?1))";
-export const resolveClearQuery = () => `DELETE FROM current_claims WHERE EXISTS (SELECT 1 FROM json_each(?1) k WHERE
-  json_extract(k.value,'$[0]')=current_claims.subject AND json_extract(k.value,'$[1]')=current_claims.predicate
-  AND json_extract(k.value,'$[2]')=current_claims.scope AND json_extract(k.value,'$[3]')=current_claims.slot)`;
+// By key: the slots are rows of `current_claims`' primary key, each found by it.
+export const resolveClearQuery = () => `DELETE FROM current_claims WHERE (subject,predicate,scope,slot) IN
+  (SELECT json_extract(value,'$[0]'),json_extract(value,'$[1]'),json_extract(value,'$[2]'),json_extract(value,'$[3]') FROM json_each(?1))`;
 export const resolveWriteQuery = () => `INSERT INTO current_claims(${COLUMNS}) WITH crop_now(unit,version) AS (${CROP_NOW}),\n${BODY}`;
 // At most this many members in one alternative set, and this many claims and actions in a subject's history.
 const MEMBERS_MAX = 8, HISTORY_MAX = 200;

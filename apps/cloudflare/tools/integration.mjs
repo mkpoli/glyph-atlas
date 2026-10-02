@@ -1463,8 +1463,11 @@ try {
   assert.ok(laterPage.done && laterPage.actions.length + firstPage.actions.length === 4, 'two retractions, an adjudication and an acceptance')
   for (const [sql, bound] of [[worker.ledgerClaimsQuery(), [0, 3]], [worker.ledgerActionsQuery(), [0, 3]], [worker.claimHistoryQuery(), ['claimed']],
     [worker.currentClaimsQuery(), ['claimed']], [worker.resolveWriteQuery(), [JSON.stringify([['claimed', 'has_form', '', '']])]], [worker.resolveClearQuery(), [JSON.stringify([['claimed', 'has_form', '', '']])]]]) {
+    // No ledger table, nor `units`, is read whole or through an index built for the query; the
+    // resolver's own intermediate results may be.
     const plan = (await db.prepare('EXPLAIN QUERY PLAN ' + sql).bind(...bound).all()).results.map(row => row.detail)
-    assert.ok(!plan.some(d => /^SCAN (a|x|e|p|i|l|assertions|assertion_actions|assertion_evidence|units|u)\b/.test(d) && !/USING (COVERING )?INDEX|USING INTEGER PRIMARY KEY/.test(d)), plan.join('; '))
+    const table = /^(SCAN|SEARCH) (a|x|e|p|u|assertions|assertion_actions|assertion_evidence|assertion_premises|current_claims|units)\b/
+    assert.ok(!plan.some(d => table.test(d) && (/AUTOMATIC/.test(d) || (d.startsWith('SCAN') && !/USING (COVERING )?INDEX|USING INTEGER PRIMARY KEY/.test(d)))), plan.join('; '))
   }
   // One address gets 30 written forms a minute.
   let formsLimited = false
