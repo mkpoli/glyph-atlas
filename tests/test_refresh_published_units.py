@@ -244,3 +244,15 @@ def test_a_replaced_unit_keeps_the_site_s_written_form_unless_it_was_cut_anew():
     assert "written_form='𮟃'" in sql and "NOT EXISTS" in sql
     _, sql = refresh.plan(unit(box={"x": 1, "y": 2, "w": 3, "h": 4}, written_form="𮟃"), live(written_form="⿰木木", formed=True))
     assert "written_form='𮟃'" in sql and "NOT EXISTS" not in sql
+
+
+def test_a_reviewed_crop_whose_box_was_redrawn_on_the_site_takes_its_new_cut():
+    redrawn = {"x": 12, "y": 22, "w": 26, "h": 36}
+    old = live(reviewed=True, box=redrawn, box_pending=True)
+    action, sql = refresh.plan(unit(box=redrawn, image="/atlas/media/b.webp"), old)
+    assert action == "replace" and "b.webp" in sql
+
+
+def test_a_reviewed_crop_whose_pending_box_is_not_the_new_cut_is_still_held():
+    old = live(reviewed=True, box={"x": 12, "y": 22, "w": 26, "h": 36}, box_pending=True)
+    assert refresh.plan(unit(box={"x": 1, "y": 2, "w": 3, "h": 4}, image="/atlas/media/b.webp"), old) == ("hold", None)
