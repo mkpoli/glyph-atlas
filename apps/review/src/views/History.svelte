@@ -1,5 +1,7 @@
 <script>
   import { onMount } from 'svelte'
+  import { goto } from '$app/navigation'
+  import { page } from '$app/state'
   import { history as fetchHistory, request, stored, remember } from '../lib/client.js'
   import { issues } from '../lib/issues.js'
   import { t, formatDateTime, localize } from '../lib/i18n.svelte.js'
@@ -18,6 +20,7 @@
     return { destroy() { observer.disconnect(); nearEnd = false } }
   }
   async function load(append = false) {
+    shownFor = userFilter
     const id = ++requestId
     if (append) loadingMore = true
     else { loading = true; items = []; cursor = null; hasMore = true }
@@ -25,7 +28,7 @@
     try {
       const result = await fetchHistory({
         limit: 40, before: append ? cursor : undefined,
-        mine: onlyMine || undefined, user: userFilter || undefined, label: characterFilter.trim() || undefined,
+        mine: (onlyMine && !userFilter) || undefined, user: userFilter || undefined, label: characterFilter.trim() || undefined,
       })
       if (closed || id !== requestId) return
       items = append ? [...items, ...result.items] : result.items
@@ -33,9 +36,13 @@
     } catch (e) { if (!closed && id === requestId) error = e.message }
     finally { if (!closed && id === requestId) { loading = false; loadingMore = false } }
   }
-  // `?user=` narrows the history to one reviewer, as the admin page links to it.
-  let userFilter = $state('')
-  function clearUser() { userFilter = ''; window.history.replaceState(window.history.state, '', location.pathname); load() }
+  // `?user=` narrows the history to one reviewer, as the admin page links to it; it takes the place of
+  // "Only mine" while it is set.
+  const userFilter = $derived(page.url.searchParams.get('user') ?? '')
+  let shownFor = null
+  $effect(() => { const wanted = userFilter; if (shownFor !== null && wanted !== shownFor) load() })
+  const clearUser = () => goto(localize('/history'), { replaceState: true, noScroll: true, keepFocus: true })
+  const initial = name => [...(name || '?')][0].toUpperCase()
   function toggleMine() { onlyMine = !onlyMine; remember('atlas.history.onlyMine', onlyMine); load() }
   function seekCharacter(value) {
     characterFilter = value
@@ -70,13 +77,13 @@
   }
   function when(at) { try { return formatDateTime(at) } catch { return at } }
   $effect(() => { if (nearEnd && hasMore && !error && !loading && !loadingMore) load(true) })
-  onMount(() => { userFilter = new URL(location.href).searchParams.get('user') ?? ''; load(); return () => { closed = true; clearTimeout(filterTimer) } })
+  onMount(() => { load(); return () => { closed = true; clearTimeout(filterTimer) } })
 </script>
 
 {#snippet reviewer(item)}
   {@const who = item.reviewer ?? { name: item.actor, user: null, image: null, mine: false }}
   <span class="history-actor" class:mine={who.mine} class:unclaimed={!who.user} title={who.name}>
-    <span class="avatar history-avatar" aria-hidden="true">{#if who.image}<img src={who.image} alt="" loading="lazy" />{:else}{(who.name || '?').slice(0, 1).toUpperCase()}{/if}</span>
+    <span class="avatar history-avatar" aria-hidden="true">{#if who.image}<img src={who.image} alt="" loading="lazy" referrerpolicy="no-referrer" />{:else}{initial(who.name)}{/if}</span>
     <span class="history-name">{who.name}{#if who.mine}<small>{t('history.reviewer.you')}</small>{/if}</span>
   </span>
 {/snippet}
@@ -85,7 +92,7 @@
   <h1 class="visually-hidden">{t('history.heading')}</h1>
   <div class="collection-toolbar">
     <div class="filter-tabs" aria-label={t('history.onlyMine.aria')}>
-      <button class:active={onlyMine} aria-pressed={onlyMine} onclick={toggleMine}>{t('history.onlyMine')}</button>
+      <button class:active={onlyMine && !userFilter} aria-pressed={onlyMine && !userFilter} disabled={Boolean(userFilter)} onclick={toggleMine}>{t('history.onlyMine')}</button>
     </div>
     <input class="history-character-filter" type="text" lang="ja" value={characterFilter}
            oninput={e => seekCharacter(e.currentTarget.value)}
@@ -94,7 +101,7 @@
   {#if userFilter}
     <div class="history-by-user">
       {#if items[0]?.reviewer?.user === userFilter}{@render reviewer(items[0])}{/if}
-      <span>{t('history.byUser', { name: items.find(item => item.reviewer?.user === userFilter)?.reviewer.name ?? '…' })}</span>
+      <span>{t('history.byUser', { name: items.find(item => item.reviewer?.user === userFilter)?.reviewer.name ?? (loading ? '…' : userFilter.slice(0, 8)) })}</span>
       <a class="quiet-link" href={localize('/history')} onclick={event => { event.preventDefault(); clearUser() }}>{t('history.byUser.clear')}</a>
     </div>
   {/if}
