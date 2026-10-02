@@ -19,7 +19,7 @@
 <section class="sign-in-page">
   <figure class="sign-in-wall"><SpecimenWall count={36} columns={6} /><figcaption class="overline">{t('signIn.wall')}</figcaption></figure>
   <div class="sign-in-card">
-    {#if session.state.ready}<SignIn done={() => goto(next)} />{:else}<div class="sign-in-placeholder shimmer"></div>{/if}
+    <SignIn done={() => goto(next)} />
   </div>
 </section>
 
@@ -29,7 +29,6 @@
   .sign-in-wall { min-width: 0; margin: 0; display: grid; gap: 14px; justify-items: center; }
   .sign-in-card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 36px 34px 28px;
     box-shadow: 0 24px 70px var(--shadow-soft); }
-  .sign-in-placeholder { height: 420px; border-radius: 10px; }
   @media (max-width: 900px) {
     .sign-in-page { grid-template-columns: minmax(0, 1fr); gap: 0; padding: 0 20px 32px; align-items: start; }
     .sign-in-wall { height: 150px; overflow: hidden; margin: 0 -20px; }

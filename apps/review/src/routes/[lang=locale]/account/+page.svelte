@@ -8,5 +8,4 @@
 
 <Seo title={t('account.title')} index={false} />
 
-<!-- Who is signed in is known once the page runs in a browser. -->
-{#if session.state.ready}<Account />{/if}
+<Account />
