@@ -345,8 +345,8 @@ try {
   assert.deepEqual(await hardSo(), [], 'a crop moved to another box is not hard there')
   await moveBox('{"x":1,"y":2,"w":3,"h":4}')
   assert.deepEqual(await hardSo(), ['skip-b'], 'and is again once it is back')
-  // A generated column (`style_order`) takes no value.
-  const { style_order: _order, ...skipB } = await db.prepare("SELECT * FROM units WHERE id='skip-b'").first()
+  // A generated column (`style_order`, `crop_version`) takes no value.
+  const { style_order: _order, crop_version: _version, ...skipB } = await db.prepare("SELECT * FROM units WHERE id='skip-b'").first()
   const rewrite = data => db.prepare(`INSERT OR REPLACE INTO units VALUES(${Object.keys(skipB).map(() => '?').join(',')})`).bind(...Object.values({ ...skipB, data })).run()
   await rewrite(JSON.stringify({ ...JSON.parse(skipB.data), box: { x: 7, y: 2, w: 3, h: 4 } }))
   assert.deepEqual(await hardSo(), [], 'nor is a crop written anew at another box')
@@ -1382,8 +1382,29 @@ try {
     await call(`/atlas/rounds/${redrawId}/undo`, {})
     const undone = await call('/atlas/characters/recrop')
     assert.deepEqual([undone.box, undone.box_pending ?? false], [{ x: 100, y: 200, w: 40, h: 50 }, false], 'undo restores the box')
+    const recropVersions = await call('/atlas/characters/recrop/versions')
+    assert.deepEqual([recropVersions.versions.map(v => v.box), recropVersions.current], [['100,200,40,50', '90,190,44,60'], `recrop@${hash}@100,200,40,50`],
+      'a redrawn box is a version of its own, and undoing it returns to the first')
     assert.equal((await call('/atlas/corpus/character?id=' + encodeURIComponent(corpus.id))).crop_editable ?? false, false, 'a corpus glyph keeps its source box')
   }
+  // Crop evidence versions: a crop reports the one it has, and a recrop keeps the one reviewed before.
+  await addLocal('versioned', '仮', { box: { x: 10, y: 20, w: 30, h: 40 }, image: '/atlas/media/' + 'c'.repeat(64) + '.webp' })
+  const firstVersion = `versioned@${hash}@10,20,30,40`
+  assert.equal((await call('/atlas/characters/versioned')).crop_version, firstVersion, 'the inspector names the version')
+  await call('/atlas/characters/versioned', { id: crypto.randomUUID(), revision: 0, image_sha256: hash, verdict: 'match' })
+  assert.equal((await call('/atlas/characters/versioned/versions')).versions.length, 1, 'a review records no new version')
+  const recropped = { ...JSON.parse((await db.prepare("SELECT data FROM units WHERE id='versioned'").first()).data), box: { x: 10, y: 20, w: 31, h: 40 } }
+  await db.prepare("UPDATE units SET data=? WHERE id='versioned'").bind(JSON.stringify(recropped)).run()
+  const versions = await call('/atlas/characters/versioned/versions')
+  assert.equal(versions.current, `versioned@${hash}@10,20,31,40`)
+  assert.deepEqual(versions.versions.map(v => [v.id, v.pixels, v.box]), [[firstVersion, hash, '10,20,30,40'], [versions.current, hash, '10,20,31,40']],
+    'the version reviewed before the recrop is still there')
+  const versionPlan = (await db.prepare('EXPLAIN QUERY PLAN ' + worker.cropVersionsQuery()).bind('versioned').all()).results.map(row => row.detail).join(' | ')
+  assert.ok(/crop_version_unit/.test(versionPlan) && !/TEMP B-TREE/.test(versionPlan), 'versions are read in index order: ' + versionPlan)
+  await assert.rejects(db.prepare("UPDATE crop_versions SET image=NULL WHERE unit='versioned'").run(), /crop_version_immutable/)
+  assert.equal(await db.prepare("SELECT 1 FROM units WHERE id='na-unassigned'").first(), null)
+  assert.equal((await call('/atlas/corpus/character?id=na-unassigned')).crop_version,
+    `na-unassigned@${createHash('sha256').update('na-unassigned').digest('hex')}@1,2,3,4`, 'a corpus glyph with no row yet names the version its row would have')
   // One address gets 30 written forms a minute.
   let formsLimited = false
   for (let i = 0; i < 40 && !formsLimited; i++) {
@@ -1398,7 +1419,7 @@ try {
     rateLimited = response.status === 429
   }
   assert.ok(rateLimited, 'batches are rate-rateLimited per address')
-  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms, batch corrections, written forms, redrawn boxes.')
+  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms, batch corrections, written forms, redrawn boxes, crop versions.')
 } finally {
   await mf.dispose()
   await rm(bundleDir, { recursive: true, force: true })

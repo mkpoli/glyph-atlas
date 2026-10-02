@@ -945,6 +945,10 @@ def test_a_drag_in_a_scaled_page_saves_a_page_box(scaled: Path):
 
     after = client.get("/atlas/characters/" + unit).json()
     assert after["box"] == dragged, "the record holds the page box that was dragged"
+    # The recrop is a new evidence version of the crop, on the same page image.
+    box = ",".join(str(dragged[k]) for k in "xywh")
+    assert body["crop_version"] == f"{unit}@{body['image_sha256']}@" + ",".join(str(body["box"][k]) for k in "xywh")
+    assert after["crop_version"] == f"{unit}@{after['image_sha256']}@{box}" != body["crop_version"]
     # And the same rectangle is what the view reports back, in its own pixels.
     assert after["crop_box"] == {"x": dragged["x"] * scale[0], "y": dragged["y"] * scale[1],
                                  "w": dragged["w"] * scale[0], "h": dragged["h"] * scale[1]}

@@ -24,7 +24,7 @@ from fastapi.responses import JSONResponse, Response
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field
 
-from .. import images, recorded_terms, refs
+from .. import evidence, images, recorded_terms, refs
 from .. import production as production_metadata
 from .. import style as style_module
 from .. import written_form as written_form_module
@@ -1007,6 +1007,8 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             result["source_scale"] = [sx, sy]
             result["context_box"] = {"x": left, "y": top, "w": right - left, "h": bottom - top}
             result["crop_box"] = {"x": x, "y": y, "w": w, "h": h}
+        # The pixels a claim made in this inspector is about, named as the Worker names them.
+        result["crop_version"] = evidence.record_version(result)
         return result
 
     @api.get("/atlas/characters/{unit_id}/image")

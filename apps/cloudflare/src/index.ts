@@ -13,6 +13,8 @@ type Json = Record<string, any>;
 type UnitRow = { id: string; origin: string; character: string | null; state: string; revision: number;
   quiz: number; category?: string; data: string; snapshot: string; context: string; visual: string; style?: string;
   written_form?: string | null;
+  // The crop's evidence version (0046): its id, image checksum and box, as SQLite joins them.
+  crop_version?: string | null;
   // A corpus glyph nothing has named yet: it has no `units` row, and this is where it is published.
   fresh?: CorpusRow };
 type CorpusRow = {id:string;character:string|null;family:string|null;visual_group:string|null;production:string;style:string;shuffle:number;object:string;offset:number;size:number};
@@ -126,11 +128,33 @@ async function itemsFor(env: Env, ids: string[]): Promise<Map<string, Json>> {
 function compact(row: UnitRow): Json {
   return { ...listing(parse(row.data)), ...(row.style ? { style: row.style } : {}), ...(row.written_form ? { written_form: row.written_form } : {}) };
 }
-// A crop's record as its inspector reads it, with the written form its row holds (0038).
+// A crop's record as its inspector reads it, with the written form its row holds (0038) and its
+// evidence version (0046).
 const record = (row: UnitRow): Json => {
   const data = parse(row.data);
-  return { ...data, written_form: row.written_form ?? null, crop_editable: row.origin !== 'corpus' && Boolean(redrawLimits(data)) };
+  return { ...data, written_form: row.written_form ?? null, crop_version: row.crop_version ?? cropVersion(row.id, data),
+    crop_editable: row.origin !== 'corpus' && Boolean(redrawLimits(data)) };
 };
+// A crop's evidence version as `units.crop_version` computes it, for a corpus glyph that has no row yet:
+// its id, its image checksum and its box. A box of anything but whole numbers is left to SQLite, which
+// writes a real with its decimal point, so such a glyph has no version until its row is written.
+export function cropVersion(id: string, data: Json): string | null {
+  const pixels = data.image_sha256 ?? data.source_revision ?? null;
+  if (typeof pixels !== 'string') return null;
+  const box = data.box;
+  if (box == null) return `${id}@${pixels}@`;
+  const values = ['x', 'y', 'w', 'h'].map(key => box[key]);
+  return values.every(Number.isSafeInteger) ? `${id}@${pixels}@${values.join(',')}` : null;
+}
+// Every evidence version a crop has had here, oldest first (0046); `current` is the one it has now.
+// One range of `crop_version_unit`, and a crop recut more often than this lists its first ones.
+const VERSIONS_LISTED = 200;
+export const cropVersionsQuery = () => `SELECT id,pixels,box,image,at FROM crop_versions WHERE unit=? ORDER BY at,id LIMIT ${VERSIONS_LISTED}`;
+async function cropVersions(env: Env, id: string) {
+  const row = await unit(env, id);
+  const versions = (await env.DB.prepare(cropVersionsQuery()).bind(row.id).all<Json>()).results;
+  return { id: row.id, current: record(row).crop_version, versions };
+}
 // The page rectangle a reviewer may redraw a local crop's box in, in page pixels: the context the
 // inspector shows, which lies inside the page. A corpus glyph's box belongs to its source, so it has none.
 export function redrawLimits(data: Json): { x: number; y: number; w: number; h: number } | null {
@@ -1535,6 +1559,9 @@ export default {
         path.endsWith('.json')?{'content-disposition':'attachment; filename="atlas-written-forms.json"'}:{});
       if(path==='/atlas/reviews'||path==='/atlas/reviews.json')return json(await reviews(env,q.get('include_processed')==='true'),200,
         path.endsWith('.json')?{'content-disposition':'attachment; filename="atlas-character-reviews.json"'}:{});
+      const versions=path.match(/^\/atlas\/characters\/([^/]+)\/versions$/);
+      if(versions){let id:string;try{id=decodeURIComponent(versions[1])}catch{throw new Problem(404,'This character is not in the published collection.')}
+        return json(await cropVersions(env,id))}
       const similar=path.match(/^\/atlas\/characters\/([^/]+)\/similar$/);
       if(similar){let id:string;try{id=decodeURIComponent(similar[1])}catch{throw new Problem(404,'This character is not in the published collection.')}
         return json(await similarCrops(env,id,integer(q,'limit',12,20),itemsFor))}
