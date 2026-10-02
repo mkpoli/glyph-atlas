@@ -44,7 +44,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import uuid4
 
-from . import align, images, tables
+from . import align, images, tables, withdrawn
 from .schema import PAGE_SCOPE, Classification, ReviewState, UnitKind
 
 POLICY = "single-character-consensus-v3"
@@ -227,6 +227,8 @@ class Queue:
 
         `extract` works only inside located lines, so a page with none, such as a page whose line
         boxes have not been derived yet, would only fail its attempts; it is left for a later seed.
+        A withdrawn document's pages are not queued, and those already queued are withdrawn unless
+        they have finished.
         """
         dataset = tables.Dataset(source)
         documents = {d.id: d for d in dataset.read("documents")}
@@ -241,6 +243,8 @@ class Queue:
             if page.id not in located:
                 continue
             document = documents[page.document_id]
+            if document.id in withdrawn.documents():
+                continue
             if not include_ainu and any(s in document.title for s in ("蝦夷", "北海随筆", "アイヌ", "藻汐")):
                 continue
             groups[page.document_id].append(page)
@@ -254,6 +258,10 @@ class Queue:
                         (page.id, document_id, documents[document_id].title,
                          str(source), int(page.image in cached), rank, host)).rowcount
                     self.db.execute("UPDATE pages SET host=? WHERE id=? AND host IS NULL", (host, page.id))
+            gone = sorted(withdrawn.documents())
+            self.db.execute(f"""UPDATE pages SET status='withdrawn',worker=NULL,lease_until=NULL,updated_at=?
+                WHERE status NOT IN ('complete','withdrawn') AND document_id IN ({','.join('?' * len(gone))})""",
+                            (datetime.now(UTC).isoformat(), *gone))
         return added
 
     def focus(self, documents) -> int:
@@ -377,7 +385,8 @@ class Queue:
 
         A supplement of an earlier policy that has not run is superseded: `claim_supplement` takes
         only the current policy's, and this one covers what it would have added. Returns how many
-        rows were added; a page already listed for `POLICY` is left as it is.
+        rows were added; a page already listed for `POLICY` is left as it is. A withdrawn document's
+        pages get none, and those not yet run are superseded.
         """
         now = datetime.now(UTC).isoformat()
         # A page completed before the queue recorded policies has it read from its report, once.
@@ -391,10 +400,15 @@ class Queue:
             self.db.executemany("UPDATE pages SET policy=? WHERE id=?", policies)
             self.db.execute("""UPDATE supplements SET status='superseded',updated_at=?
                 WHERE policy!=? AND status IN ('pending','running')""", (now, POLICY))
+            gone = sorted(withdrawn.documents())
+            marks = ",".join("?" * len(gone))
+            self.db.execute(f"""UPDATE supplements SET status='superseded',updated_at=?
+                WHERE status IN ('pending','running')
+                AND page_id IN (SELECT id FROM pages WHERE document_id IN ({marks}))""", (now, *gone))
             changed = self.db.total_changes
-            self.db.execute("""INSERT OR IGNORE INTO supplements (page_id,policy)
-                SELECT id,? FROM pages WHERE status='complete' AND policy IS NOT NULL AND policy!=?""",
-                (POLICY, POLICY))
+            self.db.execute(f"""INSERT OR IGNORE INTO supplements (page_id,policy)
+                SELECT id,? FROM pages WHERE status='complete' AND policy IS NOT NULL AND policy!=?
+                AND document_id NOT IN ({marks})""", (POLICY, POLICY, *gone))
         return self.db.total_changes - changed
 
     def claim_supplement(self, worker, *, lease=LEASE_SECONDS):

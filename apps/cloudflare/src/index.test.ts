@@ -108,9 +108,9 @@ describe('historyItem', () => {
       evidence: JSON.stringify({ kind: 'character-review', verdict: 'wrong', issue: 'character',
         suggested_character: 'U+30D7', suggested_reading: 'ぷ', round: null }) });
     expect(historyItem({ id: 'cf:e1', at: '2026-01-02T00:00:00.000Z', actor: 'reviewer-0a1b2c3d', target: 'one',
-      kind: 'review', event, label: 'ア', user: 'u1', name: 'Alice' }, 'u1')).toEqual({
+      kind: 'review', event, label: 'ア', user: 'u1', name: 'Alice', image: null }, 'u1')).toEqual({
       id: 'cf:e1', at: '2026-01-02T00:00:00.000Z', target: 'one', label: 'ア', kind: 'review',
-      reviewer: { user: 'u1', name: 'Alice', mine: true },
+      reviewer: { user: 'u1', name: 'Alice', image: null, mine: true },
       verdict: 'wrong', issue: 'character', character: 'プ', reading: 'ぷ', round: null, batch: null, undoes: null,
     });
   });
@@ -119,9 +119,9 @@ describe('historyItem', () => {
       old: 'reviewed', new: 'machine', role: 'reviewer', actor: 'alice', at: '2026-01-03T00:00:00.000Z',
       evidence: 'undo of cf:e1' });
     expect(historyItem({ id: 'cf:e2', at: '2026-01-03T00:00:00.000Z', actor: 'reviewer-0a1b2c3d', target: 'one',
-      kind: 'undo', event, label: null, user: null, name: null }, 'u1')).toEqual({
+      kind: 'undo', event, label: null, user: null, name: null, image: null }, 'u1')).toEqual({
       id: 'cf:e2', at: '2026-01-03T00:00:00.000Z', target: 'one', label: null, kind: 'undo',
-      reviewer: { user: null, name: 'reviewer-0a1b2c3d', mine: false },
+      reviewer: { user: null, name: 'reviewer-0a1b2c3d', image: null, mine: false },
       verdict: null, issue: null, character: null, reading: null, round: null, batch: null, undoes: 'cf:e1',
     });
   });
@@ -130,7 +130,7 @@ describe('historyItem', () => {
       old: 'machine', new: 'reviewed', role: 'reviewer', actor: 'bob', at: '2026-01-04T00:00:00.000Z',
       evidence: JSON.stringify({ kind: 'visual-quiz', round: 'round-1', label: 'ア', verdict: 'match', issue: null }) });
     expect(historyItem({ id: 'cf:e3', at: '2026-01-04T00:00:00.000Z', actor: 'bob', target: 'two',
-      kind: 'review', event, label: 'ア', user: 'u2', name: 'Bob' }).round).toBe('round-1');
+      kind: 'review', event, label: 'ア', user: 'u2', name: 'Bob', image: null }).round).toBe('round-1');
   });
 });
 

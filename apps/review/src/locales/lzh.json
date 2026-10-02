@@ -302,6 +302,8 @@
   "forms.notice.redone": "已復",
   "history.batch.undo": "盡復",
   "history.batch.other": "一時改{count}為{character}",
+  "history.byUser": "{name}所校",
+  "history.byUser.clear": "盡示諸人",
   "history.characterFilter.aria": "以字篩",
   "history.characterFilter.placeholder": "以字篩",
   "history.decision.match": "無誤",
@@ -317,6 +319,7 @@
   "history.noMore": "無復所改",
   "history.onlyMine": "唯己所改",
   "history.onlyMine.aria": "唯示己所改",
+  "history.reviewer.you": "己",
   "history.row.inspect": "開{label}",
   "copyId.copy": "抄ID",
   "copyId.copied": "已抄",
@@ -483,6 +486,8 @@
   "quiz.empty.chooseCharacter": "擇所校字",
   "quiz.findCategory.aria": "尋類",
   "quiz.findCategory.placeholder": "尋讀…",
+  "quiz.forms.label": "{char}之體",
+  "quiz.forms.hint": "1–0標所擇截爲其體，Shift取區間",
   "quiz.focus.changeSelection": "易所擇",
   "quiz.focus.chooseProblem": "擇誤",
   "quiz.focus.cropNumber": "第{number}截",
@@ -749,10 +754,5 @@
   "admin.submission.other.one": "呈截{count}",
   "admin.submission.other.other": "呈截{count}",
   "admin.unavailable.one": "{count}則未動：所改之截有已不在藏中者。",
-  "admin.unavailable.other": "{count}則未動：所改之截有已不在藏中者。",
-  "admin.claims.title": "求領此號者",
-  "admin.claims.give": "授此人",
-  "admin.claims.given": "{id}今歸{name}。",
-  "admin.claims.count.one": "{count}人求領",
-  "admin.claims.count.other": "{count}人求領"
+  "admin.unavailable.other": "{count}則未動：所改之截有已不在藏中者。"
 }

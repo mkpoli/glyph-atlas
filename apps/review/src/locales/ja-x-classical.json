@@ -480,6 +480,8 @@
   "quiz.empty.chooseCharacter": "校閱スベキ字ヲ選ブベシ",
   "quiz.findCategory.aria": "部類ヲ索ム",
   "quiz.findCategory.placeholder": "讀ヲ索ム…",
+  "quiz.forms.label": "{char}ノ字體",
+  "quiz.forms.hint": "1–0ヲ以テ選ビタル截片ヲ其ノ字體トス　Shiftニテ範圍ヲ取ル",
   "quiz.focus.changeSelection": "選擇ヲ改ム",
   "quiz.focus.chooseProblem": "誤ヲ選ブベシ",
   "quiz.focus.cropNumber": "截片第{number}",
@@ -748,9 +750,7 @@
   "admin.submission.other.other": "截片{count}件ノ提出",
   "admin.unavailable.one": "{count}件ハ殘セリ：改メタル截片ガ最早集成ニ無ケレバナリ。",
   "admin.unavailable.other": "{count}件ハ殘セリ：改メタル截片ガ最早集成ニ無ケレバナリ。",
-  "admin.claims.title": "請求者",
-  "admin.claims.give": "此ノ人ニ與フ",
-  "admin.claims.given": "{id}ハ今{name}ニ屬ス。",
-  "admin.claims.count.one": "{count}人請求中",
-  "admin.claims.count.other": "{count}人請求中"
+  "history.reviewer.you": "己",
+  "history.byUser": "{name}ノ校閱",
+  "history.byUser.clear": "諸人ヲ示ス"
 }

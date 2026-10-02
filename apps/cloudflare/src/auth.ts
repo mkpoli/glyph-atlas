@@ -38,8 +38,9 @@ async function sendCode(env: Env, email: string, code: string, request: Request 
 }
 // The ids the browser made up before accounts: `reviewer-` and eight hex digits.
 export const LEGACY_REVIEWER = /^reviewer-[0-9a-f]{8}$/;
-const GENERATED = LEGACY_REVIEWER;
-const generatedName = () => 'reviewer-' + crypto.randomUUID().slice(0, 8);
+// A user who gives no name is called `anon-` and six hex digits, a shape no reviewer id had.
+const GENERATED = /^anon-[0-9a-f]{6}$/;
+const generatedName = () => 'anon-' + crypto.randomUUID().slice(0, 6);
 
 function build(env: Env, origin: string) {
   return betterAuth({
@@ -98,18 +99,13 @@ function build(env: Env, origin: string) {
       // Every user may review; an admin can also ban a user and reject what they saved.
       admin({ defaultRole: 'user', adminRoles: ['admin'], bannedUserMessage: 'This account is banned.' }),
       anonymous({
-        // Named like the ids the browser used to make up, so a reader's rows read the same as before.
         generateName: generatedName,
         // The user stays after it signs in to an account, and cannot delete itself: its rows in the
         // journal must stay findable by the people who moderate it.
         disableDeleteAnonymousUser: true,
         // Signing in with an account from an anonymous session brings that session's work along.
         onLinkAccount: async ({ anonymousUser, newUser }) => {
-          await env.DB.batch([
-            env.DB.prepare('UPDATE actors SET user_id=? WHERE user_id=?').bind(newUser.user.id, anonymousUser.user.id),
-            env.DB.prepare('UPDATE OR IGNORE actor_claims SET user_id=? WHERE user_id=?').bind(newUser.user.id, anonymousUser.user.id),
-            env.DB.prepare('DELETE FROM actor_claims WHERE user_id=?').bind(anonymousUser.user.id),
-          ]);
+          await env.DB.prepare('UPDATE actors SET user_id=? WHERE user_id=?').bind(newUser.user.id, anonymousUser.user.id).run();
           // An account made by this sign-in keeps the name the anonymous one wrote under.
           if (Date.now() - new Date(newUser.user.createdAt).getTime() < 60_000 && GENERATED.test(newUser.user.name))
             await env.DB.prepare('UPDATE "user" SET name=? WHERE id=?').bind(anonymousUser.user.name, newUser.user.id).run();
@@ -142,35 +138,21 @@ export async function viewer(env: Env, request: Request, fresh = false): Promise
 /** The ids a user's rows were written under, as a subquery over `actors`. */
 export const owned = (user: string) => `(SELECT actor FROM actors WHERE user_id='${user.replaceAll("'", "''")}')`;
 
-/** Give a reviewer id to one of the users who asked for it; the other claims on it end. */
-export async function grant(env: Env, reviewer: string, user: string) {
-  const asked = await env.DB.prepare('SELECT u.isAnonymous FROM actor_claims c JOIN "user" u ON u.id=c.user_id WHERE c.actor=? AND c.user_id=?')
-    .bind(reviewer, user).first<{ isAnonymous: number | null }>();
-  if (!asked) return { status: 404, body: { detail: 'This user has not asked for this reviewer id.' } };
-  try {
-    await env.DB.batch([
-      env.DB.prepare("INSERT INTO actors(actor,user_id,via,at) VALUES(?,?,'legacy',?)").bind(reviewer, user, now()),
-      env.DB.prepare('DELETE FROM actor_claims WHERE actor=?').bind(reviewer),
-      // An anonymous user takes the id as its name, so its history reads as it did.
-      ...(asked.isAnonymous ? [env.DB.prepare('UPDATE "user" SET name=? WHERE id=?').bind(reviewer, user)] : []),
-    ]);
-  } catch { return { status: 409, body: { detail: 'Another account already holds this reviewer id.' } } }
-  return { status: 200, body: { reviewer, user } };
-}
-// How many reviewer ids one user may ask for at once; a browser held one, a reader with a few
-// browsers a few.
+// How many old reviewer ids one user may take: a browser held one, a reader with a few browsers a few.
 const CLAIMS = 5;
 /**
- * Ask to take over a reviewer id a browser made up before accounts. The ids were never secret (the
- * history shows them), so a claim waits for an admin, who sees every user that asked for the id.
+ * Take over a reviewer id a browser made up before accounts. The browser that holds the id sends it,
+ * and the first account to send an id holds it from then on.
  */
 export async function claim(env: Env, user: Viewer, reviewer: string) {
   if (!LEGACY_REVIEWER.test(reviewer)) return { status: 422, body: { detail: 'Not a reviewer id from before accounts.' } };
   const holder = await env.DB.prepare('SELECT user_id FROM actors WHERE actor=?').bind(reviewer).first<{ user_id: string }>();
   if (holder) return holder.user_id === user.id ? { status: 200, body: { reviewer, status: 'held' } }
     : { status: 409, body: { detail: 'Another account already holds this reviewer id.' } };
-  const asked = await env.DB.prepare('SELECT count(*) AS n FROM actor_claims WHERE user_id=? AND actor!=?').bind(user.id, reviewer).first<{ n: number }>();
-  if ((asked?.n ?? 0) >= CLAIMS) return { status: 429, body: { detail: 'Too many reviewer ids asked for.' } };
-  await env.DB.prepare('INSERT OR IGNORE INTO actor_claims(actor,user_id,at) VALUES(?,?,?)').bind(reviewer, user.id, now()).run();
-  return { status: 202, body: { reviewer, status: 'requested' } };
+  const held = await env.DB.prepare("SELECT count(*) AS n FROM actors WHERE user_id=? AND via='legacy'").bind(user.id).first<{ n: number }>();
+  if ((held?.n ?? 0) >= CLAIMS) return { status: 429, body: { detail: 'This account already holds as many old reviewer ids as one may.' } };
+  await env.DB.prepare("INSERT OR IGNORE INTO actors(actor,user_id,via,at) VALUES(?,?,'legacy',?)").bind(reviewer, user.id, now()).run();
+  const now_held = await env.DB.prepare('SELECT user_id FROM actors WHERE actor=?').bind(reviewer).first<{ user_id: string }>();
+  return now_held?.user_id === user.id ? { status: 200, body: { reviewer, status: 'held' } }
+    : { status: 409, body: { detail: 'Another account already holds this reviewer id.' } };
 }

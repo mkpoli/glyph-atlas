@@ -303,6 +303,8 @@
   "forms.notice.redone": "已重做",
   "history.batch.undo": "全部復原",
   "history.batch.other": "一次將{count}個標為{character}",
+  "history.byUser": "{name}的審閱",
+  "history.byUser.clear": "顯示所有人",
   "history.characterFilter.aria": "依字篩選",
   "history.characterFilter.placeholder": "依字篩選",
   "history.decision.match": "沒有問題",
@@ -318,6 +320,7 @@
   "history.noMore": "沒有更多編輯了",
   "history.onlyMine": "只看我的",
   "history.onlyMine.aria": "只顯示我的編輯",
+  "history.reviewer.you": "你",
   "history.row.inspect": "開啟{label}",
   "copyId.copy": "複製ID",
   "copyId.copied": "已複製",
@@ -481,6 +484,8 @@
   "quiz.empty.chooseCharacter": "請選擇要審閱的字。",
   "quiz.findCategory.aria": "查找分類",
   "quiz.findCategory.placeholder": "查找讀音…",
+  "quiz.forms.label": "{char}的字樣",
+  "quiz.forms.hint": "按1–0將已選取的裁切標為該字樣。Shift+點擊選範圍。",
   "quiz.focus.changeSelection": "更換選取",
   "quiz.focus.chooseProblem": "選擇問題",
   "quiz.focus.cropNumber": "裁切{number}",
@@ -750,10 +755,5 @@
   "admin.submission.other.one": "提交{count}個裁切",
   "admin.submission.other.other": "提交{count}個裁切",
   "admin.unavailable.one": "{count}筆紀錄未變更：其中有裁切已不在館藏中。",
-  "admin.unavailable.other": "{count}筆紀錄未變更：其中有裁切已不在館藏中。",
-  "admin.claims.title": "申請認領者",
-  "admin.claims.give": "分配給此人",
-  "admin.claims.given": "{id}現已歸屬{name}。",
-  "admin.claims.count.one": "{count}人申請認領",
-  "admin.claims.count.other": "{count}人申請認領"
+  "admin.unavailable.other": "{count}筆紀錄未變更：其中有裁切已不在館藏中。"
 }

@@ -300,6 +300,8 @@
   "forms.notice.redone": "다시 實行했습니다",
   "history.batch.undo": "모두 되돌리기",
   "history.batch.other": "{count}個를 한꺼번에 {character}(으)로 고침",
+  "history.byUser": "{name}님의 檢討",
+  "history.byUser.clear": "모두 보기",
   "history.characterFilter.aria": "文字로 거르기",
   "history.characterFilter.placeholder": "文字로 거르기",
   "history.decision.match": "맞음",
@@ -315,6 +317,7 @@
   "history.noMore": "더 以上 編輯이 없습니다",
   "history.onlyMine": "내 編輯만",
   "history.onlyMine.aria": "내 編輯만 보기",
+  "history.reviewer.you": "本人",
   "history.row.inspect": "{label} 열기",
   "copyId.copy": "ID 複寫",
   "copyId.copied": "複寫됨",
@@ -481,6 +484,8 @@
   "quiz.empty.chooseCharacter": "檢討할 文字를 고르십시오.",
   "quiz.findCategory.aria": "分類 檢索",
   "quiz.findCategory.placeholder": "讀音 檢索…",
+  "quiz.forms.label": "{char}의 字形",
+  "quiz.forms.hint": "1–0을 누르면 選擇한 크롭을 해당 字形으로 表示합니다. Shift+클릭으로 範圍를 選擇합니다.",
   "quiz.focus.changeSelection": "選擇 바꾸기",
   "quiz.focus.chooseProblem": "問題를 고르십시오",
   "quiz.focus.cropNumber": "크롭 {number}",
@@ -731,10 +736,5 @@
   "admin.submission.other.one": "크롭 {count}個 提出",
   "admin.submission.other.other": "크롭 {count}個 提出",
   "admin.unavailable.one": "修正한 크롭이 所藏 資料에 더 以上 없어 {count}件은 그대로 두었습니다.",
-  "admin.unavailable.other": "修正한 크롭이 所藏 資料에 더 以上 없어 {count}件은 그대로 두었습니다.",
-  "admin.claims.title": "이 ID를 要請한 사람",
-  "admin.claims.give": "이 사람에게 賦與",
-  "admin.claims.given": "{id}이(가) 이제 {name}에게 歸屬되었습니다.",
-  "admin.claims.count.one": "{count}名 要請 中",
-  "admin.claims.count.other": "{count}名 要請 中"
+  "admin.unavailable.other": "修正한 크롭이 所藏 資料에 더 以上 없어 {count}件은 그대로 두었습니다."
 }
