@@ -75,7 +75,7 @@ def _crops(dataset: Path) -> tuple[dict[str, list[str]], dict[str, bytes], dict[
     for category in summary["categories"]:
         offset = 0
         while True:
-            page = client.get("/atlas", params={"purpose": "browse", "production": "all", "reading": category["label"],
+            page = client.get("/atlas", params={"purpose": "browse", "production": "all", "character": category["label"],
                                                 "limit": 96, "offset": offset}).json()
             for item in page["items"]:
                 found = re.fullmatch(r"/atlas/media/([0-9a-f]{64})\.webp", item["image"] or "")

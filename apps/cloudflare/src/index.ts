@@ -508,8 +508,8 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   if (review && offset > ROUND_OFFSET_MAX) throw new Problem(404, 'A round does not page this far.');
   // One rest window for the counts and the listing.
   const since = restSince(), state = stateFor(reviewer, since);
-  // An empty `reading` names no character. A round names its grapheme, and deals every character of it.
-  const reading = q.get('reading') || null;
+  // An empty `character` names none. A round names its grapheme, and deals every character of it.
+  const character = q.get('character') || null;
   const grapheme = graphemeKey(q.get('grapheme'));
   const scoped = review && grapheme !== null;
   const members = scoped ? await graphemeMembers(env, grapheme) : null;
@@ -552,7 +552,7 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   // alone takes its total from them; counting it again would read every crop it holds on each page.
   // Any other filter clears this, and the listing is counted.
   let tally: ((row: Facet) => boolean)[] | null = review ? null : [];
-  if (reading) { where.push('character=?'); values.push(reading); tally?.push(row => row.label === reading) }
+  if (character) { where.push('character=?'); values.push(character); tally?.push(row => row.label === character) }
   const document = text(q.get('document'), 256, 'document');
   if (document) { where.push('document=?'); values.push(document); tally?.push(row => row.document === document) }
   // A grapheme is a family's representative code point, or a label's own code points. Every named crop
@@ -567,7 +567,7 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   }
   // With a character, a grapheme or a search named, its own index finds the few crops and the script only filters
   // them (`+`); the script's index would read every crop of that script.
-  if (q.get('group') && q.get('group') !== 'all') { where.push(reading || grapheme || q.get('q') ? '+category=?' : 'category=?'); values.push(q.get('group')!); tally = null }
+  if (q.get('group') && q.get('group') !== 'all') { where.push(character || grapheme || q.get('q') ? '+category=?' : 'category=?'); values.push(q.get('group')!); tally = null }
   // `attention` is the Flagged view: every crop waiting for a person, flagged or hard to read. The
   // review state is worked out per crop, so the query starts from the few that can qualify.
   if (q.get('state') === 'attention') { where[0] = "+origin='local'"; where.push(ATTENTION_CANDIDATES, `${state} IN ('flagged','hard')`); tally = null }
@@ -580,7 +580,7 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   if (flaggedView && q.get('reported') === 'hide') { where.push(`NOT ${REVIEWED_IN_INSPECTOR}`); tally = null }
   // A grapheme's round deals its named and then its untouched corpus glyphs after its local crops.
   // Corpus glyphs belong to no work of the collection, so a round narrowed to one work deals none.
-  const dealt = scoped && !reading && !document && ['all', 'pending'].includes(q.get('state') || 'all') && !q.get('q')
+  const dealt = scoped && !character && !document && ['all', 'pending'].includes(q.get('state') || 'all') && !q.get('q')
     && (!q.get('group') || q.get('group') === 'all' || members!.every(member => categoryOf(member) === q.get('group')));
   const named = dealt ? { sql: namedRoundQuery(materials, state), values: [JSON.stringify(members), ...materialValues] } : null;
   const from = named ? `(SELECT * FROM units WHERE ${where.join(' AND ')} UNION ALL ${named.sql}) AS units` : `units WHERE ${where.join(' AND ')}`;
@@ -595,7 +595,7 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   // Browse deals crops in `shuffle` order from a point the seed picks, and wraps round past the
   // highest: an index serves that order, where a seed-scrambled order sorts every row on each visit.
   // A named character is found through `unit_character` instead, and its few crops sort in memory.
-  const rotated = !review && !flaggedView && !reading && !q.get('q');
+  const rotated = !review && !flaggedView && !character && !q.get('q');
   const start = seed % SHUFFLE_RANGE;
   const side = (test: '>=' | '<') => `SELECT ${columns} FROM units WHERE ${where.join(' AND ')} AND shuffle${test}? ORDER BY shuffle,rowid LIMIT ? OFFSET ?`;
   const results = await env.DB.batch([

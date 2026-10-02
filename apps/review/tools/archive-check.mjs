@@ -24,7 +24,7 @@ browser.listeners.push(event => {
     if (path === '/layers/suggest' && url.searchParams.get('q') === 'ム') return fulfill(requestId, {
       items: [{ code_point: 'U+30E0', char: 'ム', script: 'katakana' }, { code_point: 'U+53B6', char: '厶', script: 'han' }], more: 0,
     })
-    if (path === '/atlas' && !url.searchParams.get('q') && !url.searchParams.get('reading')) {
+    if (path === '/atlas' && !url.searchParams.get('q') && !url.searchParams.get('character')) {
       const [response, citedResponse] = await Promise.all([fetch(request.url), fetch(base + '/atlas/characters/' + encodeURIComponent(citedId))])
       const payload = await response.json()
       if (citedResponse.ok) { const cited = await citedResponse.json(); payload.items = [cited, ...(payload.items ?? []).filter(item => item.id !== citedId)] }

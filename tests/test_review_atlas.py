@@ -58,7 +58,7 @@ def dataset(tmp_path: Path, monkeypatch):
 
 
 def round_payload(client, count=4):
-    data = client.get('/atlas', params={"reading": "あ", "state": "pending", "limit": count}).json()
+    data = client.get('/atlas', params={"character": "あ", "state": "pending", "limit": count}).json()
     return {"id": str(uuid4()), "client_id": "fixture-reviewer", "grapheme": grapheme_of("あ"),
             "answers": [{"id": item["id"], "revision": item["revision"], "image_sha256": item["image_sha256"], "verdict": "match"}
                         for item in data['items']]}
@@ -70,7 +70,7 @@ def test_catalogue_filters_and_shuffle(dataset):
     assert data['available'] == 16
     assert data['counts'] == {"pending": 16}
     assert {c['label'] for c in data['categories']} == {"あ", "シ"}
-    assert client.get('/atlas?reading=シ').json()['total'] == 4
+    assert client.get('/atlas?character=シ').json()['total'] == 4
     assert client.get('/atlas?group=kanji').json()['total'] == 0
     assert client.get('/atlas?group=kana').json()['total'] == 16
     assert client.get('/atlas?seed=12').json()['items'] != client.get('/atlas?seed=13').json()['items']
@@ -99,7 +99,7 @@ def test_catalogue_counts_and_filters_by_book(dataset):
     assert [(b['id'], b['title'], b['total'], b['pending']) for b in shelf] == [('d', 'Fixture', 16, 16), ('e', 'Second', 2, 2)]
     second = client.get('/atlas?document=e').json()
     assert second['total'] == 2 and {i['id'] for i in second['items']} == {'second-0', 'second-1'}
-    assert client.get('/atlas?document=e&reading=シ').json()['total'] == 0
+    assert client.get('/atlas?document=e&character=シ').json()['total'] == 0
     assert client.get('/atlas?document=missing').json()['total'] == 0
     assert client.get('/atlas?document=').json()['total'] == 18
 
@@ -163,7 +163,7 @@ def test_quick_review_excludes_movable_type_until_explicitly_selected(dataset):
         result = client.get('/atlas', params={'purpose': 'review', 'production': scope}).json()
         assert result['total'] == total, scope
     assert client.get('/atlas?purpose=review&production=woodblock').status_code == 422
-    paged = [client.get('/atlas', params={'purpose': 'review', 'reading': '字', 'limit': 1,
+    paged = [client.get('/atlas', params={'purpose': 'review', 'character': '字', 'limit': 1,
                                         'offset': offset, 'seed': 5}).json()['items'][0]
              for offset in range(4)]
     assert len({i['id'] for i in paged}) == 4
@@ -236,7 +236,7 @@ def test_round_persists_distinct_verdicts_and_can_be_undone_after_restart(datase
 
 def test_partial_round_leaves_unselected_crops_unreviewed(dataset):
     client = TestClient(create_app(dataset))
-    shown = client.get('/atlas?reading=あ&state=pending&limit=12').json()['items']
+    shown = client.get('/atlas?character=あ&state=pending&limit=12').json()['items']
     payload = {"id": str(uuid4()), "client_id": "problems-only", "grapheme": grapheme_of("あ"),
                "answers": [{"id": item['id'], "revision": item['revision'],
                             "image_sha256": item['image_sha256'], "verdict": "wrong", "issue": issue}
@@ -350,7 +350,7 @@ def test_round_rejects_other_category_or_repeated_character(dataset):
 
 def test_crop_edit_publishes_new_image_and_old_review_still_conflicts(dataset):
     client = TestClient(create_app(dataset))
-    item = client.get('/atlas?reading=あ').json()['items'][0]
+    item = client.get('/atlas?character=あ').json()['items'][0]
     payload = {"id": str(uuid4()), "client_id": "editor", "revision": item['revision'], "image_sha256": item['image_sha256'],
                "verdict": "match", "box": {**item['box'], "w": item['box']['w'] - 5}}
     result = client.post('/atlas/characters/' + item['id'], json=payload)
@@ -545,12 +545,12 @@ def test_changed_url_keyed_image_cannot_be_saved_as_the_image_seen(dataset, tmp_
     tables.write(dataset / 'pages.parquet', [page], Page)
     client = TestClient(create_app(dataset))
     payload = round_payload(client, count=1)
-    old_image = client.get('/atlas?reading=あ&limit=1').json()['items'][0]['image']
+    old_image = client.get('/atlas?character=あ&limit=1').json()['items'][0]['image']
     changed = tmp_path / 'changed.jpg'
     Image.new('RGB', (400, 600), 'gray').save(changed)
     images.register(changed, page.image)
     assert client.get(old_image).status_code == 200
-    assert client.get('/atlas?reading=あ&limit=1').json()['items'][0]['image'] != old_image
+    assert client.get('/atlas?character=あ&limit=1').json()['items'][0]['image'] != old_image
     response = client.post('/atlas/rounds', json=payload)
     assert response.status_code == 409
     assert Store(dataset).events() == []
@@ -846,7 +846,7 @@ def test_an_occurrence_with_a_written_identity_and_no_reading_is_findable(search
     # filter asks the same question the label answers.
     category = next(c for c in body["categories"] if c["label"] == SUPPLEMENTARY)
     assert category["total"] == 4, "the category holds every occurrence, this one among them"
-    opened = client.get("/atlas", params={"reading": SUPPLEMENTARY}).json()
+    opened = client.get("/atlas", params={"character": SUPPLEMENTARY}).json()
     assert f"{LINE}:noreading" in {item["id"] for item in opened["items"]}
 
 
@@ -1640,12 +1640,12 @@ def seen_round(client, shown, flagged=()):
 
 def test_a_seen_crop_is_not_dealt_again_and_is_no_confirmation(dataset):
     client = TestClient(create_app(dataset))
-    shown = client.get('/atlas?reading=あ&state=pending&limit=4').json()['items']
+    shown = client.get('/atlas?character=あ&state=pending&limit=4').json()['items']
     payload = seen_round(client, shown, flagged={shown[0]['id']})
     assert client.post('/atlas/rounds', json=payload).status_code == 200
     counts = client.get('/atlas').json()['counts']
     assert counts == {"flagged": 1, "seen": 3, "pending": 12}
-    pending = {i['id'] for i in client.get('/atlas?reading=あ&state=pending&limit=96').json()['items']}
+    pending = {i['id'] for i in client.get('/atlas?character=あ&state=pending&limit=96').json()['items']}
     assert not pending & {item['id'] for item in shown}
     store = Store(dataset)
     seen = [e for e in store.events() if e.field == "seen"]
@@ -1658,7 +1658,7 @@ def test_a_seen_crop_is_not_dealt_again_and_is_no_confirmation(dataset):
 
 def test_a_flagged_crop_is_not_dealt_and_keeps_its_flag(dataset):
     client = TestClient(create_app(dataset))
-    listing = '/atlas?reading=あ&state=pending&purpose=review&seed=3&limit=96'
+    listing = '/atlas?character=あ&state=pending&purpose=review&seed=3&limit=96'
     before = client.get(listing).json()['total']
     shown = client.get(listing).json()['items'][:4]
     flagged = shown[0]['id']
@@ -1671,7 +1671,7 @@ def test_a_flagged_crop_is_not_dealt_and_keeps_its_flag(dataset):
 
 def test_undoing_a_round_that_flagged_a_seen_crop_leaves_it_seen(dataset):
     client = TestClient(create_app(dataset))
-    shown = client.get('/atlas?reading=あ&state=pending&limit=4').json()['items']
+    shown = client.get('/atlas?character=あ&state=pending&limit=4').json()['items']
     assert client.post('/atlas/rounds', json=seen_round(client, shown)).status_code == 200
     item = client.get('/atlas/characters/' + shown[0]['id']).json()
     flag = {"id": str(uuid4()), "client_id": "second", "grapheme": grapheme_of("あ"), "seen": [],
@@ -1680,7 +1680,7 @@ def test_undoing_a_round_that_flagged_a_seen_crop_leaves_it_seen(dataset):
     assert client.post('/atlas/rounds', json=flag).status_code == 200
     assert client.post('/atlas/rounds/' + flag['id'] + '/undo', json={"client_id": "second"}).status_code == 200
     assert client.get('/atlas').json()['counts'] == {"seen": 4, "pending": 12}
-    assert item['id'] not in {i['id'] for i in client.get('/atlas?reading=あ&state=pending&limit=96').json()['items']}
+    assert item['id'] not in {i['id'] for i in client.get('/atlas?character=あ&state=pending&limit=96').json()['items']}
 
 
 def skip_round(shown, reviewer, skipped):
@@ -1692,22 +1692,22 @@ def skip_round(shown, reviewer, skipped):
 
 def test_a_skipped_crop_rests_for_its_reviewer_and_comes_first_for_others(dataset):
     client = TestClient(create_app(dataset))
-    shown = client.get('/atlas?reading=あ&state=pending&limit=4').json()['items']
+    shown = client.get('/atlas?character=あ&state=pending&limit=4').json()['items']
     crop = shown[1]['id']
     assert client.post('/atlas/rounds', json=skip_round(shown, "alice", {crop})).status_code == 200
     # Nothing about the crop changed: it is still pending for everyone, and nothing is exported.
     assert client.get('/atlas/characters/' + crop).json()['state'] == 'pending'
     assert crop not in {r['event']['target_id'] for r in client.get('/atlas/reviews').json()['reviews']}
-    mine = client.get('/atlas?reading=あ&state=pending&purpose=review&reviewer=alice&limit=96').json()
+    mine = client.get('/atlas?character=あ&state=pending&purpose=review&reviewer=alice&limit=96').json()
     assert crop not in {i['id'] for i in mine['items']}
     assert next(c for c in mine['categories'] if c['label'] == 'あ')['skipped'] == 1
-    theirs = client.get('/atlas?reading=あ&state=pending&purpose=review&reviewer=bob&seed=3&limit=96').json()
+    theirs = client.get('/atlas?character=あ&state=pending&purpose=review&reviewer=bob&seed=3&limit=96').json()
     assert theirs['items'][0]['id'] == crop
 
 
 def test_a_crop_two_reviewers_skip_is_hard_and_an_undo_takes_a_skip_back(dataset):
     client = TestClient(create_app(dataset))
-    shown = client.get('/atlas?reading=あ&state=pending&limit=4').json()['items']
+    shown = client.get('/atlas?character=あ&state=pending&limit=4').json()['items']
     crop = shown[0]['id']
     assert client.post('/atlas/rounds', json=skip_round(shown, "alice", {crop})).status_code == 200
     second = skip_round(shown, "bob", {crop})
@@ -1716,7 +1716,7 @@ def test_a_crop_two_reviewers_skip_is_hard_and_an_undo_takes_a_skip_back(dataset
     # The Flagged view lists it with the flagged crops.
     assert crop in {i['id'] for i in client.get('/atlas?state=attention&limit=96').json()['items']}
     assert crop not in {i['id'] for i in client.get(
-        '/atlas?reading=あ&state=pending&purpose=review&reviewer=carol&limit=96').json()['items']}
+        '/atlas?character=あ&state=pending&purpose=review&reviewer=carol&limit=96').json()['items']}
     assert client.get('/atlas').json()['counts'] == {"hard": 1, "pending": 15}
     assert client.post('/atlas/rounds/' + second['id'] + '/undo', json={"client_id": "bob"}).status_code == 200
     assert client.get('/atlas').json()['counts'] == {"pending": 16}
@@ -1738,7 +1738,7 @@ def test_undoing_a_second_skip_keeps_the_same_reviewers_first():
 
 def test_undoing_a_skip_leaves_an_earlier_seen_record(dataset):
     client = TestClient(create_app(dataset))
-    shown = client.get('/atlas?reading=あ&state=pending&limit=2').json()['items']
+    shown = client.get('/atlas?character=あ&state=pending&limit=2').json()['items']
     assert client.post('/atlas/rounds', json=seen_round(client, shown[:1])).status_code == 200
     skip = skip_round(shown, "bob", {shown[0]['id']})
     assert client.post('/atlas/rounds', json=skip).status_code == 200
@@ -1748,7 +1748,7 @@ def test_undoing_a_skip_leaves_an_earlier_seen_record(dataset):
 
 def test_undoing_a_round_makes_its_seen_crops_pending_again(dataset):
     client = TestClient(create_app(dataset))
-    shown = client.get('/atlas?reading=あ&state=pending&limit=4').json()['items']
+    shown = client.get('/atlas?character=あ&state=pending&limit=4').json()['items']
     payload = seen_round(client, shown)
     assert payload['answers'] == []
     assert client.post('/atlas/rounds', json=payload).status_code == 200
@@ -1760,7 +1760,7 @@ def test_undoing_a_round_makes_its_seen_crops_pending_again(dataset):
 
 def test_a_crop_whose_box_moved_since_it_was_seen_is_pending_again(dataset):
     client = TestClient(create_app(dataset))
-    shown = client.get('/atlas?reading=あ&state=pending&limit=1').json()['items']
+    shown = client.get('/atlas?character=あ&state=pending&limit=1').json()['items']
     assert client.post('/atlas/rounds', json=seen_round(client, shown)).status_code == 200
     store = Store(dataset)
     unit = store.unit(shown[0]['id'])
@@ -1781,7 +1781,7 @@ def test_a_seen_crop_pins_nothing_for_the_repair_or_the_scan(dataset):
     from glyph_atlas.review import preflight
 
     client = TestClient(create_app(dataset))
-    shown = client.get('/atlas?reading=あ&state=pending&limit=2').json()['items']
+    shown = client.get('/atlas?character=あ&state=pending&limit=2').json()['items']
     assert client.post('/atlas/rounds', json=seen_round(client, shown)).status_code == 200
     assert repair.human_state(dataset).units == {}
     assert preflight._human_targets(Store(dataset)) == set()
@@ -1790,7 +1790,7 @@ def test_a_seen_crop_pins_nothing_for_the_repair_or_the_scan(dataset):
 def test_a_seen_crop_keeps_its_revision_so_an_answer_on_it_is_not_stale(dataset):
     """Passing a crop changes nothing about it, so a second reviewer's flag on it still saves."""
     client = TestClient(create_app(dataset))
-    shown = client.get('/atlas?reading=あ&state=pending&limit=2').json()['items']
+    shown = client.get('/atlas?character=あ&state=pending&limit=2').json()['items']
     assert client.post('/atlas/rounds', json=seen_round(client, shown)).status_code == 200
     assert Store(dataset).revision(shown[0]['id']) == shown[0]['revision']
     flag = {"id": str(uuid4()), "client_id": "second-reviewer", "grapheme": grapheme_of("あ"),
@@ -1801,7 +1801,7 @@ def test_a_seen_crop_keeps_its_revision_so_an_answer_on_it_is_not_stale(dataset)
 
 def test_undoing_a_round_survives_a_later_edit_of_a_seen_crop(dataset):
     client = TestClient(create_app(dataset))
-    shown = client.get('/atlas?reading=あ&state=pending&limit=2').json()['items']
+    shown = client.get('/atlas?character=あ&state=pending&limit=2').json()['items']
     payload = seen_round(client, shown, flagged={shown[0]['id']})
     assert client.post('/atlas/rounds', json=payload).status_code == 200
     store = Store(dataset)
@@ -1814,7 +1814,7 @@ def test_undoing_a_round_survives_a_later_edit_of_a_seen_crop(dataset):
 
 def test_a_seen_crop_retired_since_the_round_was_drawn_is_skipped(dataset):
     client = TestClient(create_app(dataset))
-    shown = client.get('/atlas?reading=あ&state=pending&limit=2').json()['items']
+    shown = client.get('/atlas?character=あ&state=pending&limit=2').json()['items']
     store = Store(dataset)
     store.record(ReviewRequest(target_id=shown[1]['id'], field="active", new=False,
                                base_revision=store.revision(shown[1]['id']), client_id="fixture",
@@ -1825,7 +1825,7 @@ def test_a_seen_crop_retired_since_the_round_was_drawn_is_skipped(dataset):
 
 def test_a_rebuilt_store_agrees_with_the_live_one_about_seen_crops(dataset):
     client = TestClient(create_app(dataset))
-    shown = client.get('/atlas?reading=あ&state=pending&limit=3').json()['items']
+    shown = client.get('/atlas?character=あ&state=pending&limit=3').json()['items']
     assert client.post('/atlas/rounds', json=seen_round(client, shown)).status_code == 200
     before = {item['id']: Store(dataset).revision(item['id']) for item in shown}
     apply(dataset)
@@ -1837,7 +1837,7 @@ def test_the_audit_does_not_read_a_seen_crop_as_reviewed(dataset):
     from glyph_atlas import audit
 
     client = TestClient(create_app(dataset))
-    shown = client.get('/atlas?reading=あ&state=pending&limit=2').json()['items']
+    shown = client.get('/atlas?character=あ&state=pending&limit=2').json()['items']
     assert client.post('/atlas/rounds', json=seen_round(client, shown)).status_code == 200
     apply(dataset)
     assert not set(audit._reviewed_units(dataset)) & {item['id'] for item in shown}
@@ -1846,7 +1846,7 @@ def test_the_audit_does_not_read_a_seen_crop_as_reviewed(dataset):
 def test_a_seen_crop_may_name_the_image_the_round_showed(dataset):
     """The quiz sends the crop image it dealt; the local check compares the crop digest, so it is accepted."""
     client = TestClient(create_app(dataset))
-    shown = client.get('/atlas?reading=あ&state=pending&limit=1').json()['items']
+    shown = client.get('/atlas?character=あ&state=pending&limit=1').json()['items']
     payload = seen_round(client, shown)
     payload['seen'][0]['image'] = shown[0]['image']
     assert client.post('/atlas/rounds', json=payload).status_code == 200
@@ -1856,7 +1856,7 @@ def test_a_seen_crop_may_name_the_image_the_round_showed(dataset):
 def test_a_crop_re_cut_after_the_round_was_dealt_is_not_seen(dataset):
     """A crop drawn from its page keeps the page's hash when it is re-cut; its image does not."""
     client = TestClient(create_app(dataset))
-    shown = client.get('/atlas?reading=あ&state=pending&limit=1').json()['items']
+    shown = client.get('/atlas?character=あ&state=pending&limit=1').json()['items']
     store = Store(dataset)
     unit = store.unit(shown[0]['id'])
     moved = unit.box.model_copy(update={"y": unit.box.y + 3}).model_dump()
@@ -1870,7 +1870,7 @@ def test_a_crop_re_cut_after_the_round_was_dealt_is_not_seen(dataset):
 
 def test_history_lists_reviewer_decisions_newest_first_with_paging_and_filters(dataset):
     client = TestClient(create_app(dataset))
-    pending = client.get('/atlas', params={"reading": "あ", "state": "pending", "limit": 7}).json()['items']
+    pending = client.get('/atlas', params={"character": "あ", "state": "pending", "limit": 7}).json()['items']
     alice_answers, seen_crop, untouched = pending[:4], pending[4], pending[5]
     alice = {"id": str(uuid4()), "client_id": "alice", "grapheme": grapheme_of("あ"),
              "answers": [{"id": item["id"], "revision": item["revision"], "image_sha256": item["image_sha256"],
@@ -1878,7 +1878,7 @@ def test_history_lists_reviewer_decisions_newest_first_with_paging_and_filters(d
              "seen": [{"id": seen_crop["id"], "image_sha256": seen_crop["image_sha256"]}]}
     assert client.post('/atlas/rounds', json=alice).status_code == 200
 
-    shi = client.get('/atlas', params={"reading": "シ", "state": "pending", "limit": 2}).json()['items']
+    shi = client.get('/atlas', params={"character": "シ", "state": "pending", "limit": 2}).json()['items']
     bob = {"id": str(uuid4()), "client_id": "bob", "grapheme": grapheme_of("シ"),
            "answers": [{"id": item["id"], "revision": item["revision"], "image_sha256": item["image_sha256"],
                         "verdict": "wrong", "issue": "character", "character": "ミ"} for item in shi]}
@@ -1930,7 +1930,7 @@ def test_a_crop_carries_its_suspect_mark(dataset):
         first: {"p": 0.01, "reads_as": "お", "label": "あ", "box": box},
         # Made for another cut of the crop: it no longer holds.
         second: {"p": 0.01, "reads_as": "お", "label": "あ", "box": box}}}))
-    items = TestClient(create_app(dataset)).get('/atlas', params={"reading": "あ", "limit": 96}).json()["items"]
+    items = TestClient(create_app(dataset)).get('/atlas', params={"character": "あ", "limit": 96}).json()["items"]
     marks = {item["id"]: item["suspect"] for item in items}
     assert marks[first] == {"p": 0.01, "reads_as": "お"}
     assert {mark for identity, mark in marks.items() if identity != first} == {None}

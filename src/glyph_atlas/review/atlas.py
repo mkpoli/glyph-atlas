@@ -867,7 +867,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
 
     @api.get("/atlas")
     def catalogue(
-        reading: str | None = None,
+        character: str | None = None,
         q: str | None = None,
         group: Literal["all", "kana", "kanji", "hangul", "gugyeol"] = "all",
         state: Literal["all", "pending", "seen", "checked", "flagged", "hard", "skipped", "attention"] = "all",
@@ -930,7 +930,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         counts = Counter(states[u.id] for u, _ in records)
         searched = matches(records, q) if q else records
         families = {name: grapheme_of(name) for name in categories}
-        selected = [(u, rev) for u, rev in searched if (reading is None or shown(u) == reading)
+        selected = [(u, rev) for u, rev in searched if (character is None or shown(u) == character)
                     and (grapheme is None or families[shown(u)] == grapheme)
                     and (document is None or books[u.id] == document)
                     and (group == "all" or character_group(u) == group)

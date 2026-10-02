@@ -233,7 +233,7 @@ try {
     const response = await mf.dispatchFetch(base + `/atlas/documents/${missing}/characters`)
     assert.deepEqual([response.status, response.headers.get('access-control-allow-origin')], [404, '*'], 'a page can tell a missing document apart')
   }
-  const flaggedOrder = async () => (await call('/atlas?reading=ラ&state=flagged')).items.map(i => i.id)
+  const flaggedOrder = async () => (await call('/atlas?character=ラ&state=flagged')).items.map(i => i.id)
   assert.deepEqual(await flaggedOrder(), ['flag-a', 'flag-b'], 'flagged crops nobody has reviewed keep their shuffled order')
   const inspected = { id: crypto.randomUUID(), revision: 1,
     image_sha256: hash, verdict: 'wrong', issue: 'crop' }
@@ -241,7 +241,7 @@ try {
   assert.deepEqual(await flaggedOrder(), ['flag-b', 'flag-a'], 'a crop reviewed in the inspector moves behind one nobody has looked at')
   // `reported=hide` leaves the crop reviewed in the inspector out, and counts it; `reported=show`,
   // the default, leaves every other caller unaffected.
-  const flagged = async (reported) => call('/atlas?reading=ラ&state=flagged' + (reported ? `&reported=${reported}` : ''))
+  const flagged = async (reported) => call('/atlas?character=ラ&state=flagged' + (reported ? `&reported=${reported}` : ''))
   assert.equal((await flagged()).reported_count, 1, 'reported=show is the default, and counts what it would hide')
   assert.equal((await flagged('show')).reported_count, 1)
   const hiddenView = await flagged('hide')
@@ -334,12 +334,12 @@ try {
   assert.equal((await call('/atlas/characters/skip-b')).state, 'pending', 'a skip changes nothing about the crop')
   const second = skipBy('skip-b')
   await call('/atlas/rounds', second, 200, 'bob')
-  assert.deepEqual((await call('/atlas?state=hard&reading=ソ')).items.map(i => i.id), ['skip-b'], 'two skips make a crop hard')
-  assert.ok((await call('/atlas?state=attention&reading=ソ')).items.some(i => i.id === 'skip-b'), 'the Flagged view lists hard crops')
+  assert.deepEqual((await call('/atlas?state=hard&character=ソ')).items.map(i => i.id), ['skip-b'], 'two skips make a crop hard')
+  assert.ok((await call('/atlas?state=attention&character=ソ')).items.some(i => i.id === 'skip-b'), 'the Flagged view lists hard crops')
   assert.ok(!(await dealtTo('carol')).includes('skip-b'), 'a hard crop leaves the rounds')
   // A crop is hard at the box it was skipped at, whoever moves the box: a refresh updating it in place,
   // or a publication writing the crop anew.
-  const hardSo = async () => (await call('/atlas?state=hard&reading=ソ')).items.map(i => i.id)
+  const hardSo = async () => (await call('/atlas?state=hard&character=ソ')).items.map(i => i.id)
   const moveBox = box => db.prepare("UPDATE units SET data=json_set(data,'$.box',json(?)) WHERE id='skip-b'").bind(box).run()
   await moveBox('{"x":9,"y":2,"w":3,"h":4}')
   assert.deepEqual(await hardSo(), [], 'a crop moved to another box is not hard there')
@@ -353,7 +353,7 @@ try {
   await rewrite(skipB.data)
   assert.deepEqual(await hardSo(), ['skip-b'])
   await call(`/atlas/rounds/${second.id}/undo`, {}, 200, 'bob')
-  assert.deepEqual((await call('/atlas?state=hard&reading=ソ')).items, [], 'an undo takes a skip back')
+  assert.deepEqual((await call('/atlas?state=hard&character=ソ')).items, [], 'an undo takes a skip back')
   // Corpus glyphs in Quick review: a character's local crops first, then its assigned, proxyable
   // corpus glyphs, until a round names them and they become `units` rows like any other crop.
   const worker = await import(bundle)
@@ -482,7 +482,7 @@ try {
   assert.deepEqual(pairedRound.categories.map(c => c.label).sort(), ['ナ', 'ヌ'])
   assert.equal((await call('/atlas?purpose=review&limit=1')).categories.find(c => c.label === 'ヌ').grapheme, 'U+30CA', 'a corpus-only character is filed under its family')
   await call('/atlas?purpose=review&grapheme=U%2B30CC', undefined, 422)
-  assert.deepEqual((await call('/atlas?purpose=review&grapheme=U%2B30CA&reading=ヌ&state=pending')).items.map(i => i.id), [], 'a character narrows a grapheme to its own crops, none of them local')
+  assert.deepEqual((await call('/atlas?purpose=review&grapheme=U%2B30CA&character=ヌ&state=pending')).items.map(i => i.id), [], 'a character narrows a grapheme to its own crops, none of them local')
   const nuShown = pairedRound.items.find(i => i.id === 'nu-shown')
   const memberRound = { id: crypto.randomUUID(), grapheme: 'U+30CA', answers: [{ id: 'nu-shown', revision: nuShown.revision,
     source_revision: nuShown.source_revision, verdict: 'wrong', issue: 'crop' }] }
@@ -1172,7 +1172,7 @@ try {
   assert.deepEqual(await searched('𪜈'), [await matching('𪜈'), ['find-ligature']], 'a search matches the written character')
   assert.deepEqual(await searched('とも'), [0, []], 'typed kana reach a character through the alias index, not the crop search')
   // A picked character within a script: the script still filters.
-  const pickedIn = async group => (await call(`/atlas?reading=${encodeURIComponent('仮')}&group=${group}&limit=96`)).items.map(i => i.id).filter(id => id.startsWith('fam-')).sort()
+  const pickedIn = async group => (await call(`/atlas?character=${encodeURIComponent('仮')}&group=${group}&limit=96`)).items.map(i => i.id).filter(id => id.startsWith('fam-')).sort()
   assert.deepEqual(await pickedIn('kanji'), ['fam-b', 'fam-c'], 'a picked character keeps its crops in its script')
   assert.deepEqual(await pickedIn('kana'), [], 'and has none in another')
   // A refresh rewrites `units` in place and stamps the catalogue; the cached browse counts follow.
@@ -1185,16 +1185,16 @@ try {
   assert.equal(await checkedKa(), checkedBefore + 1, 'a refresh shows in the browse counts')
   // A browse listing filtered by character, book or state alone takes its total from those counts.
   await db.batch([db.prepare("UPDATE units SET document='hk:tally' WHERE id IN ('fam-b','fam-c')"), stamp('third refresh')])
-  for (const [query, where] of [['', '1=1'], ['reading=仮', "character='仮'"], ['document=hk:tally', "document='hk:tally'"],
-    ['state=checked', "state='checked'"], ['reading=仮&document=hk:tally&state=pending', "character='仮' AND document='hk:tally' AND state='pending'"]])
+  for (const [query, where] of [['', '1=1'], ['character=仮', "character='仮'"], ['document=hk:tally', "document='hk:tally'"],
+    ['state=checked', "state='checked'"], ['character=仮&document=hk:tally&state=pending', "character='仮' AND document='hk:tally' AND state='pending'"]])
     assert.equal((await call(`/atlas?${encodeURI(query)}&limit=1`)).total, await localCount(where), `browse ${query || 'everything'} totals what it lists`)
   // A crop written without a stamp is not in those counts yet: the listing did not count the table.
-  const listedBefore = (await call('/atlas?limit=1')).total, pickedBefore = (await call(`/atlas?${encodeURI('reading=仮')}&limit=1`)).total
+  const listedBefore = (await call('/atlas?limit=1')).total, pickedBefore = (await call(`/atlas?${encodeURI('character=仮')}&limit=1`)).total
   const unstamped = { id: 'unstamped', label: '仮', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
   await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind('unstamped', 'local', '仮', null, null,
     'handwritten', 'kanji', 'pending', 0, 0, 1, 1, JSON.stringify(unstamped), JSON.stringify({ character: unstamped }), '{}', '{}', null).run()
   assert.equal((await call('/atlas?limit=1')).total, listedBefore, 'an unfiltered browse page does not count the table')
-  assert.equal((await call(`/atlas?${encodeURI('reading=仮')}&limit=1`)).total, pickedBefore, 'nor does one filtered by character')
+  assert.equal((await call(`/atlas?${encodeURI('character=仮')}&limit=1`)).total, pickedBefore, 'nor does one filtered by character')
   assert.equal((await call('/atlas?group=kanji&limit=1')).total, await localCount("category='kanji'"), 'a listing its counts cannot answer is counted')
   await stamp('fourth refresh').run()
   assert.equal((await call('/atlas?limit=1')).total, listedBefore + 1, 'and the next stamp brings the crop in')
@@ -1325,7 +1325,7 @@ try {
   const formed = await call(formPath, formSave)
   assert.deepEqual([formed.written_form, formed.label, formed.state, formed.revision], ['⿺辶𦊷', '還', 'pending', 0])
   assert.equal((await call('/atlas/characters/form-local')).written_form, '⿺辶𦊷', 'the inspector reads it')
-  assert.equal((await call('/atlas?reading=' + encodeURIComponent('還'))).items.find(item => item.id === 'form-local').written_form, '⿺辶𦊷', 'a listing reads it')
+  assert.equal((await call('/atlas?character=' + encodeURIComponent('還'))).items.find(item => item.id === 'form-local').written_form, '⿺辶𦊷', 'a listing reads it')
   assert.equal((await call(formPath, formSave)).written_form, '⿺辶𦊷', 'a retry answers with the crop')
   await call(formPath, { ...formSave, form: '𮟃' }, 409)
   for (const form of ['⿺辶', '⿰木木木', '還還', 'a⿰', '⿰木a', ' '.repeat(3) + '⿰'])
