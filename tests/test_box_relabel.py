@@ -201,3 +201,25 @@ def test_a_gap_holding_a_token_of_several_characters_is_not_filled():
            unit(5, "四", BOXES[3]).model_copy(update={"id": "n5"})]
     statuses = [record["status"] for record in box_relabel.relabel(old, new)]
     assert statuses.count("unplaced") == 2
+
+
+def test_a_line_the_alignment_placed_nothing_on_gets_no_gap_fill():
+    old = stale_units()
+    new = [unit(index + 1, char, None).model_copy(update={"id": f"n{index}"}) for index, char in enumerate(TEXT)]
+    assert {record["status"] for record in box_relabel.relabel(old, new)} == {"unplaced"}
+
+
+def test_a_page_the_detections_do_not_cover_is_left_as_it_is(tmp_path, monkeypatch):
+    from glyph_atlas import images, tables
+    from glyph_atlas.schema import Page
+
+    monkeypatch.setattr(images, "path_for", lambda url, **_: tmp_path / "page.png")
+    source = tmp_path / "source"
+    tables.write(source / "pages.parquet", [Page(id="hl:item:0", document_id="hl:item", seq=0,
+                                                  image="https://example.org/page.jpg", width=200, height=200)], Page)
+    tables.write(source / "lines.parquet", [line()], Line)
+    tables.write(source / "units.parquet", stale_units(), Unit)
+    (tmp_path / "detections.jsonl").write_text('{"kind": "glyph-atlas-ainu-detections", "version": 1, "settings": null}\n')
+    result = box_relabel.relabel_directory(source, tmp_path / "out", run=run(), classifier=None,
+                                           detections=tmp_path / "detections.jsonl")
+    assert result["pages_without_detections"] == 1 and result["lines"] == 0

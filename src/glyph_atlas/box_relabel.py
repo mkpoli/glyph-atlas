@@ -143,8 +143,11 @@ def gap_fills(old: Sequence[Unit], new: Sequence[Unit], placed: dict[tuple[int, 
     Between two placed characters, or before the first or after the last, the alignment may skip k
     written characters while k old boxes lie there unplaced, in reading order. The line then says
     what those boxes hold, one character each in order, and they are filled. A run whose count of
-    boxes and characters differ, or that holds a box the alignment used otherwise, is left unplaced.
+    boxes and characters differ, or that holds a box the alignment used otherwise, is left unplaced,
+    and so is every box of a line the alignment placed nothing on: there the count alone would decide.
     """
+    if not placed:
+        return {}
     ranks = reading_ranks([box_key(unit.box) for unit in old if unit.box is not None] + list(placed))
     free = sorted({(ranks[box_key(unit.box)], box_key(unit.box)) for unit in old
                    if unit.box is not None and box_key(unit.box) not in placed})
@@ -353,8 +356,11 @@ def relabel_directory(directory: Path, out: Path, *, run: align.Run, classifier:
     # Without its page image the classifier scores every crop at the floor and the alignment places by
     # position alone, which is the guess this repair exists to replace: such a line is left as it is.
     unread = {page for page, record in page_records.items() if images.path_for(record.image) is None}
-    lines = [line for line in lines if line.page_id not in unread]
-    repaired, records = repair(units, lines, ainu.read_detections(Path(detections)), run=run, classifier=classifier,
+    found_boxes = ainu.read_detections(Path(detections))
+    # A page the cache holds no detections for would be aligned against nothing.
+    undetected = {page for page in page_records if not found_boxes.get(page)}
+    lines = [line for line in lines if line.page_id not in unread | undetected]
+    repaired, records = repair(units, lines, found_boxes, run=run, classifier=classifier,
                                crop_of=align._crop_reader(dataset, page_records),
                                protected=set(protect) | set(human.units), every=every)
     out.mkdir(parents=True, exist_ok=True)
@@ -371,4 +377,5 @@ def relabel_directory(directory: Path, out: Path, *, run: align.Run, classifier:
     tables.write(out / "units.parquet", repaired, Unit)
     write_records(out / "relabels.jsonl", records)
     return {"units": len(units), "chosen_lines": len(wanted), "lines": len(lines), "horizontal_lines": len(horizontal),
-            "pages_without_image": len(unread), "store_protected": len(human.units), **counts(records)}
+            "pages_without_image": len(unread),
+            "pages_without_detections": len(undetected), "store_protected": len(human.units), **counts(records)}
