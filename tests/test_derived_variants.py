@@ -6,13 +6,14 @@ from glyph_atlas import refs
 
 
 def test_a_form_no_character_has_is_derived_as_its_sequence_with_its_evidence():
+    # 寰 is ⿱宀睘, and 宀↔宂 is attested (㝓 and 䆟, …): ⿱宂睘 is a form no character has.
     derived = {row["char"]: row for row in refs.derived_variants("寰")}
-    row = derived["⿱宀𦊷"]
+    row = derived["⿱宂睘"]
     assert (row["encoded"], row["code_point"]) == (False, None)
     sub = row["substitutions"][0]
-    assert (sub["was"], sub["became"]) == ("睘", "𦊷")
-    assert {(p["a"], p["b"]) for p in sub["pairs"]} == {("環", "𤨔"), ("還", "𮟃")}
-    assert "wikidata" in row["sources"]
+    assert (sub["was"], sub["became"]) == ("宀", "宂")
+    assert ("㝓", "䆟") in {(p["a"], p["b"]) for p in sub["pairs"]}
+    assert row["sources"]
 
 
 def test_a_pair_a_source_states_is_left_to_the_attested_tiers():

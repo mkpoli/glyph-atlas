@@ -290,8 +290,8 @@ def variant_sources() -> dict[str, str]:
 
 @cache
 def component_variant_sources() -> dict[str, str]:
-    """The citation of each source line of han-component-variants.tsv, `derived-ids` included."""
-    return _source_citations(COMPONENT_VARIANTS_TSV)
+    """The citation of each source of han-component-variants.tsv, and of the `derived-ids` tier."""
+    return {**_source_citations(COMPONENT_VARIANTS_TSV), DERIVED_IDS: DERIVED_IDS_CITATION}
 
 
 @cache
@@ -321,6 +321,11 @@ def variants(char: str) -> list[tuple[str, tuple[str, ...]]]:
 #: and a reader meets them as derived, each with the pairs that attest its substitution. This is not
 #: `derived`, which is the kana a 字母 is written as.
 DERIVED_IDS = "derived-ids"
+DERIVED_IDS_CITATION = (
+    "Predicted component variants (derived, not attested): one substitution of "
+    "data/vocab/han-component-variants.tsv made in a character's BabelStone IDS; "
+    "Glyph Atlas, CC BY-SA 4.0 (LICENSE-DATA)"
+)
 #: How many derived forms a character card lists, and how many of them may be forms no character has
 #: (the export stores the same ones: the closest sequences first, one substitution at a time).
 DERIVED_SHOWN = 32
