@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // Run through devrun. All editorial writes use a disposable dataset.
 import { join } from 'node:path'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, readdirSync } from 'node:fs'
 import Browser from './browser.mjs'
 import { boot, options, events, units } from './harness.mjs'
 const config = options(), service = await boot(config)
@@ -317,6 +317,45 @@ try {
   await click('.close-inspector')
   await browser.setViewport(1440, 1000)
   console.log('PASS written form picked, typed as a description, saved without a review')
+
+  // The header fits a phone, a tablet and the narrowest full header in every language without
+  // widening the page. On a phone it holds the wordmark, Quick review and the menu; the menu leads
+  // with the nav's destinations, closes on Escape with focus back on its button and on a tap outside
+  // it, and a destination chosen in it closes it.
+  for (const [width, height] of [[360, 780], [800, 1000], [1100, 800]]) {
+    await browser.setViewport(width, height)
+    for (const tag of readdirSync(join(import.meta.dir, '../src/locales')).map(name => name.slice(0, -5))) {
+      await browser.goto(`${service.base}/${tag}`)
+      assert(await browser.evaluate('document.documentElement.scrollWidth <= innerWidth'), `the header widens the page in ${tag} at ${width} px`)
+      assert(await browser.evaluate('[...document.querySelectorAll(".site-header a, .site-header button")].filter(e => e.offsetParent).every(e => { const r = e.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth })'),
+        `a header control leaves the screen in ${tag} at ${width} px`)
+    }
+  }
+  await browser.setViewport(360, 780)
+  await browser.goto(`${service.base}/en`)
+  const menuState = 'document.querySelector(".menu-button").getAttribute("aria-expanded") + " " + document.querySelector("#site-menu").hidden'
+  assert(await browser.evaluate('document.querySelector(".site-nav").offsetParent === null'), 'the header nav shows on a phone')
+  await click('.menu-button')
+  await browser.waitFor(`${menuState} === "true false"`)
+  assert(await browser.evaluate('JSON.stringify([...document.querySelectorAll(".menu-nav a")].map(a => a.href)) === JSON.stringify([...document.querySelectorAll(".site-nav a")].map(a => a.href))'),
+    'the menu lacks a destination of the nav')
+  assert(await browser.evaluate('[...document.querySelectorAll("#site-menu a, #site-menu button")].every(e => e.getBoundingClientRect().height >= 44 && e.getBoundingClientRect().right <= innerWidth)'),
+    'a menu row is under 44 px or off the screen')
+  assert(await browser.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'the open menu widens the page')
+  await browser.screenshot(join(screenshots, 'phone-menu.png'))
+  await browser.key('Escape')
+  await browser.waitFor(`${menuState} === "false true"`)
+  assert(await browser.evaluate('document.activeElement === document.querySelector(".menu-button")'), 'Escape leaves focus off the menu button')
+  await click('.menu-button')
+  await browser.waitFor(`${menuState} === "true false"`)
+  await browser.click(175, 36)
+  await browser.waitFor(`${menuState} === "false true"`)
+  await click('.menu-button')
+  await click('.menu-nav a[href$="/history"]')
+  await browser.waitFor(`location.pathname === "/en/history" && ${menuState} === "false true"`)
+  await browser.setViewport(1440, 1000)
+  assert(await browser.evaluate('document.querySelector(".site-nav").offsetParent !== null && document.querySelector(".menu-nav").offsetParent === null'), 'the wide header lost its nav')
+  console.log('PASS phone menu: every destination, Escape, a tap outside, no sideways scroll')
 
   await browser.send('Network.enable')
   await browser.send('Network.setBlockedURLs', { urls: ['*/atlas/media/*', '*/atlas/characters/*/image*'] })
