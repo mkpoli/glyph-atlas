@@ -1,4 +1,5 @@
 <script>
+  import ContributionTerms from './ContributionTerms.svelte'
   import ProductionBadge from './ProductionBadge.svelte'
   import StyleField from './StyleField.svelte'
   import WrittenFormField from './WrittenFormField.svelte'
@@ -275,6 +276,7 @@
     <button class="primary save-character" bind:this={saveButton} disabled={busy || !data || !loaded || imageFailed} onclick={() => save()}>{busy ? t('common.saving') : issue ? (onVerdict ? t('character.save.useError') : t(advancing ? 'character.save.issue.next' : 'character.save.issue.close')) : (onVerdict ? t('character.save.backToSelection') : t(advancing ? 'character.save.looksRight.next' : 'character.save.looksRight.close'))} {#if onVerdict || advancing}<span>→</span>{:else if !issue}<span>✓</span>{/if}</button>
     {#if issue}<button class="quiet-link looks-right" disabled={busy || !loaded || imageFailed} onclick={() => { discardProposals(); save(true) }}>{onVerdict ? t('character.save.removeSelection') : t('character.save.itLooksRight')}</button>{/if}
     <button class="skip-character" disabled={busy} onclick={skip} title={skipHint()}>{t(advancing ? 'common.skip.next' : 'common.skip.close')}</button>
+    <ContributionTerms />
   </footer>
 </dialog>
 

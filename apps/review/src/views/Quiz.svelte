@@ -1,4 +1,5 @@
 <script>
+  import ContributionTerms from '../components/ContributionTerms.svelte'
   import ProductionBadge from '../components/ProductionBadge.svelte'
   // Select problems, then give each crop its issue, with the correction offered under it, before moving on.
   // Only explicitly marked problems are saved as reviews. An unmarked crop that was on screen is
@@ -697,6 +698,7 @@
     {:else if focusIndex < queue.length - 1}<button class="primary next-crop" disabled={loading || saving || !(choices[current?.id] || skipped[current?.id])} onclick={primary}>{t('quiz.nextCrop')} <span>→</span></button>
     {:else if !answered}<button class="primary finish-issues" disabled={loading || saving || !(choices[current?.id] || skipped[current?.id])} onclick={primary}>{t('quiz.reviewRemaining')} <span>→</span></button>
     {:else}<button class="primary save-round" disabled={loading || saving || loadingMore || !ready} onclick={submit}>{saving ? t('common.saving') : t('quiz.saveIssues')} <span>✓</span></button>{/if}
+    <ContributionTerms />
   </div></div>{/if}
 </section>
 
