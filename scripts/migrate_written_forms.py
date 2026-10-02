@@ -21,8 +21,12 @@ Each journal row is one reviewer's save, replayed in the order they were made:
 A claim rests on the crop version its reviewer saw: the crop, the pixels the row names, and the box
 when it can be shown to be the one they saw (the crop still has those pixels, and on the site only
 one version with them). Where it cannot, the box is written `?`, which no version has, so the claim is
-kept and stands on nothing until someone looks at the crop again. The rows' ids derive from the
-journal row, so applying the output twice, or running a dataset twice, adds nothing.
+kept and stands on nothing until someone looks at the crop again. The site has recorded versions
+only since migration 0047, so a crop recut before then and not since shows one version, and a claim
+about it lands on its current box. The rows' ids derive from the journal row, so applying the output
+twice, or running a dataset twice, adds nothing. Run it before anyone sets a form with the picker: a
+claim made there since is not seen by the replay, and the reviewer's old and new claims would both
+stand.
 """
 from __future__ import annotations
 
