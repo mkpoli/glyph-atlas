@@ -69,7 +69,9 @@ def quote(value) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
-CROP_KEYS = ("box", "crop_box", "image")
+#: What a crop is cut from and where: its evidence version (`glyph_atlas.evidence`) is the page's checksum
+#: and the box, so a page scanned anew is a new crop as much as a new box is.
+CROP_KEYS = ("box", "crop_box", "image", "image_sha256")
 # What a publication owns: set on the live row without a new revision, reviewed or not.
 IN_PLACE_KEYS = ("context_image", "context_box", "repair", "page_number")
 
