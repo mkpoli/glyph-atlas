@@ -31,10 +31,11 @@
 
 {#if item?.style}
   <div class="style-field">
-    <span class="style-value">{t('style.label')}: <b>{t(`style.kind.${item.style}`)}</b>
-      {#if item.style_basis !== 'none'}<span class="style-basis">{t(`style.basis.${basis}`)}</span>{/if}</span>
+    <!-- A style nobody assessed says nothing, so only the menu to set one is shown. -->
+    {#if item.style !== 'unassessed'}<span class="style-value">{t('style.label')}: <b>{t(`style.kind.${item.style}`)}</b>
+      {#if item.style_basis !== 'none'}<span class="style-basis">{t(`style.basis.${basis}`)}</span>{/if}</span>{/if}
     {#if item.style_editable && editable}
-      <label class="style-own">{t('style.own')}
+      <label class="style-own">{item.style === 'unassessed' ? t('style.label') : t('style.own')}
         <select value={own} {disabled} onchange={choose}>
           <option value="unassessed">{t('style.inherit')}</option>
           {#each STYLES as value}<option {value}>{t(`style.kind.${value}`)}</option>{/each}
@@ -50,6 +51,9 @@
   .style-value b{color:var(--ink);font-weight:600}
   .style-basis{margin-left:6px}
   .style-own{display:inline-flex;gap:6px;align-items:center}
-  .style-own select{font:inherit}
+  .style-own select{appearance:none;font:inherit;font-size:12px;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:4px 24px 4px 9px;cursor:pointer;
+    background:var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238a8a93' stroke-width='1.4'/%3E%3C/svg%3E") no-repeat right 8px center/9px 6px}
+  .style-own select:hover:not(:disabled){border-color:var(--line-strong)}
+  .style-own select:focus-visible{outline:3px solid var(--focus-ring);outline-offset:2px}
   .style-error{color:var(--wrong)}
 </style>

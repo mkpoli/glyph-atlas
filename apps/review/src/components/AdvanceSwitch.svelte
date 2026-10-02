@@ -13,10 +13,11 @@
 </button>
 
 <style>
+  /* Off, the knob stays lighter than its track in both schemes, so the switch reads as a switch. */
   .advance-switch{display:inline-flex;align-items:center;gap:10px;border:0;background:transparent;padding:6px 2px;font-size:12px;color:var(--muted);white-space:nowrap}
   .advance-switch:not(:disabled):hover{color:var(--ink)}
-  .advance-track{position:relative;flex-shrink:0;width:40px;height:22px;border-radius:11px;background:var(--surface-sunken);box-shadow:inset 0 0 0 1px var(--line);transition:background .18s,box-shadow .18s}
-  .advance-knob{position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--surface);box-shadow:0 1px 3px var(--shadow);display:flex;align-items:center;justify-content:center;font-size:10px;line-height:1;color:transparent;transition:transform .2s cubic-bezier(.3,1.4,.5,1),color .18s}
+  .advance-track{position:relative;flex-shrink:0;width:40px;height:22px;border-radius:11px;background:var(--surface-sunken);box-shadow:inset 0 0 0 1px light-dark(var(--line), #5a5866);transition:background .18s,box-shadow .18s}
+  .advance-knob{position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:light-dark(var(--surface), #c9c7d2);box-shadow:0 1px 3px var(--shadow);display:flex;align-items:center;justify-content:center;font-size:10px;line-height:1;color:transparent;transition:transform .2s cubic-bezier(.3,1.4,.5,1),color .18s}
   .advance-switch[aria-checked="true"]{color:var(--ink)}
   .advance-switch[aria-checked="true"] .advance-track{background:var(--accent-solid);box-shadow:inset 0 0 0 1px var(--accent-solid)}
   .advance-switch[aria-checked="true"] .advance-knob{transform:translateX(18px);color:var(--accent-solid)}

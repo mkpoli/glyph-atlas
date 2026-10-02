@@ -55,7 +55,7 @@ try {
   const order = await browser.evaluate('Array.from(document.querySelectorAll(".glyph-grid [data-unit]")).map(i=>i.dataset.unit)')
   const scroll = await browser.evaluate('scrollY')
   await browser.evaluate('window.sameCollection = document.querySelector(".glyph-grid")')
-  assert(!await browser.evaluate('document.querySelector(".advanced-edit").open'), 'manual typing should be optional')
+  assert(!await browser.evaluate('!!document.querySelector("dialog[open] .advanced-edit, dialog[open] .reading-input")'), 'the inspector has no typed character or reading fields')
   await click('dialog .issue-card[data-issue="merged"]')
   await browser.waitFor('document.querySelector("dialog .suggestion-options") !== null')
   assert(await browser.evaluate('document.querySelector(".save-character").innerText.includes("Save problem")'), 'reporting an error must not confirm the wrong label')
@@ -76,7 +76,7 @@ try {
   await browser.waitFor('document.querySelector("dialog .suggestion-options button")?.innerText === "カ"')
   await click('dialog .suggestion-options button')
   await click('dialog .no-suggestion')
-  assert(await browser.evaluate('document.querySelector(".written-input input").value === document.querySelector(".inspector-title h2").textContent'),
+  assert(!await browser.evaluate('!!document.querySelector("dialog .suggestion-options button[aria-pressed=true]")'),
     'None of these cancels the proposed identity')
   await click('dialog .suggestion-options button')
   await click('.save-character')
@@ -89,16 +89,19 @@ try {
 
   await click(reportedTile)
   await browser.waitFor(inspectorReady)
-  await click('.advanced-edit summary')
+  await click('dialog .issue-card[data-issue="crop"]')
   await click('.adjust-crop')
   await browser.waitFor('document.querySelector(".context-region img")?.naturalWidth > 0')
   await browser.evaluate('document.querySelector(".context-region").scrollIntoView({block:"center"})')
   const region = await browser.evaluate('(() => { const r=document.querySelector(".context-region").getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}; })()')
   await browser.drag({x:region.x+region.w*.25,y:region.y+region.h*.25},{x:region.x+region.w*.65,y:region.y+region.h*.72})
   assert(await browser.evaluate('document.querySelector(".crop-change") !== null'), 'dragging adjusts crop')
+  assert(await browser.evaluate('document.querySelector(".save-character").innerText.includes("Save & close")'), 'a redrawn crop is saved, not reported')
   await click('.save-character')
   await browser.waitFor('document.querySelector("dialog[open]") === null')
   assert(events(config.directory).some(e => e.field === 'box'), 'crop adjustment saved')
+  // The redrawn crop is fixed by the save, so it is reviewed, not left needing fixing.
+  assert(events(config.directory).filter(e => e.target_id === originalId && e.field === 'review').at(-1)?.new === 'reviewed', 'a redrawn crop stays flagged')
   console.log('PASS optional crop adjustment')
 
   await route('/en/review/U+3042', roundReady)
@@ -299,7 +302,7 @@ try {
   const formAfter = units(config.directory)[formId]
   assert(formAfter.written_form === '⿺辶𦊷' && formAfter.unicode === formBefore.unicode && formAfter.review === formBefore.review,
     'the crop keeps its character and review')
-  assert(!await browser.evaluate('document.querySelector("dialog[open] .state-pill").classList.contains("flagged")'), 'the crop is not flagged')
+  assert(!await browser.evaluate('!!document.querySelector("dialog[open] .state-pill.flagged")'), 'the crop is not flagged')
   assert(!await browser.evaluate('document.querySelector(".save-character").disabled'), 'the crop can still be reviewed')
   await click('.close-inspector')
   await browser.waitFor('document.querySelector("dialog[open]") === null')

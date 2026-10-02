@@ -139,9 +139,6 @@
   min-height: 96px; padding: 10px; font-size: .78rem; text-align: center; border: 1px dashed var(--line); border-radius: 8px; }
 .corpus-open b { font-family: "Kureedo Kata", "GenZui Sans", system-ui, sans-serif; font-size: 1.6rem; }
 .corpus-open small { color: var(--ink-soft); }
-.written-input, .reading-input { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: .85rem; }
-.written-input input { font-family: "Kureedo Kata", "GenZui Sans", system-ui, sans-serif; font-size: 1.2rem; width: 5.5rem; }
-.written-note { margin: 2px 0 6px; font-size: .74rem; color: var(--ink-soft); }
 .candidate-more { display: block; width: 100%; padding: 8px 10px; margin-top: 2px; background: none; border: 0;
   border-top: 1px solid var(--line); font-size: .82rem; cursor: pointer; color: var(--ink-soft); }
 .repair-note { font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; padding: 1px 6px;

@@ -330,7 +330,7 @@ try {
     await browser.waitFor('document.querySelector(".character-dialog .crop-viewport")?.dataset.ready === "true"')
     await browser.waitFor('document.querySelector(".save-character")?.disabled === false')
     assert(!await browser.evaluate('!!document.querySelector(".inspector-crop, .nearby")'), 'standalone reviewer retained duplicate panels')
-    await click('.advanced-edit > summary')
+    await click('.character-dialog .issue-card[data-issue="crop"]')
     await click('.adjust-crop')
     await browser.waitFor('document.querySelector(".context-region.drawing img")?.naturalWidth > 0')
     assert(!await browser.evaluate('!!document.querySelector(".character-dialog .crop-viewport")'), 'crop editor duplicated the viewport')
