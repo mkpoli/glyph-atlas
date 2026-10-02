@@ -10,4 +10,4 @@
 
 <Seo title={t('nav.pages')} index={false} />
 
-{#if session.state.clientId}<Pages clientId={session.state.clientId} pageId={page.params.id ?? ''} inspect={inspector.inspect.bind(inspector)} />{/if}
+{#if session.state.ready}<Pages pageId={page.params.id ?? ''} inspect={inspector.inspect.bind(inspector)} />{/if}

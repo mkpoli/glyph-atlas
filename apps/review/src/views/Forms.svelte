@@ -10,7 +10,7 @@
   import { showsContext, clearContext } from '../lib/glyphContext.svelte.js'
   import { families as loadFamilies, family as loadFamily, members as loadMembers, split as loadSplit } from '../lib/forms.js'
   import { history, step, undo, redo } from '../lib/formHistory.svelte.js'
-  import { number, reviewer, stored, remember } from '../lib/client.js'
+  import { number, stored, remember } from '../lib/client.js'
   import { t, around, localize } from '../lib/i18n.svelte.js'
   import { characterAddress } from '../lib/gallery.js'
   import { originText, originTitle } from '../lib/origin.js'
@@ -127,9 +127,9 @@
       await step({ family: code, cluster: open ?? targets[0] }, async send => {
         // A decision covers at most 1,000 glyphs; a larger selection is sent in parts.
         for (let i = 0; i < units.length; i += 1000)
-          result.count += (await send({ kind: kind ?? 'glyph', units: units.slice(i, i + 1000), client_id: reviewer(), ...(kind === 'inherit' ? {} : { form }) })).count
+          result.count += (await send({ kind: kind ?? 'glyph', units: units.slice(i, i + 1000), ...(kind === 'inherit' ? {} : { form }) })).count
         // One decision per cluster, so each keeps its own record and can be withdrawn on its own.
-        for (const id of targets) result.count += (await send({ kind: 'cluster', cluster: id, form, client_id: reviewer() })).count
+        for (const id of targets) result.count += (await send({ kind: 'cluster', cluster: id, form })).count
       })
       picked = new Set(); pickAnchor = null
       notice = form ? t('forms.notice.assigned', { form, count: result.count })
@@ -153,7 +153,7 @@
       const wrong = issue === 'character' && correction.trim() ? { character: correction.trim() } : {}
       let count = 0
       await step({ family: code, cluster: targets[0] }, async send => {
-        for (const id of targets) count += (await send({ kind: 'cluster', cluster: id, issue, client_id: reviewer(), ...wrong })).count
+        for (const id of targets) count += (await send({ kind: 'cluster', cluster: id, issue, ...wrong })).count
       })
       picked = new Set(); pickAnchor = null; correcting = false; correction = ''
       notice = issue === 'mixed' ? t('forms.notice.mixed', { count: targets.length }) : t('forms.notice.reported', { count, issue: issueName(issue) })
@@ -175,7 +175,7 @@
       const units = [...chosen], result = { count: 0 }
       await step({ family: code, cluster: open }, async send => {
         for (let i = 0; i < units.length; i += 1000)
-          result.count += (await send({ kind: 'glyph', units: units.slice(i, i + 1000), issue, client_id: reviewer(),
+          result.count += (await send({ kind: 'glyph', units: units.slice(i, i + 1000), issue,
             ...(issue === 'character' && correction.trim() ? { character: correction.trim() } : {}) })).count
       })
       notice = t('forms.notice.reported', { count: result.count, issue: issueName(issue) })
@@ -481,13 +481,13 @@
   .family-list ol{list-style:none;margin:0;padding:0;overflow:auto;border-top:1px solid var(--line)}
   .family-list button{display:grid;grid-template-columns:40px 1fr;grid-template-rows:auto 3px;gap:4px 10px;width:100%;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;padding:9px 6px;text-align:left}
   .family-list button.current{background:var(--accent-light)}
-  .family-char{grid-row:1/3;font-size:24px;line-height:1.3;font-family:"Noto Sans CJK JP","Yu Gothic",sans-serif}
+  .family-char{grid-row:1/3;font-size:24px;line-height:1.3;font-family:"Noto Sans CJK JP","Yu Gothic","GenZui Sans",sans-serif}
   .family-meta{display:flex;justify-content:space-between;font-size:12px;font-variant-numeric:tabular-nums}
   .family-meta small{font-size:10px;color:var(--muted)}
   .family-progress{display:flex;background:light-dark(#ececef, #2e2e35);border-radius:2px;overflow:hidden}.family-progress i{display:block;height:100%;background:var(--accent)}.family-progress i.rejected{background:var(--wrong);opacity:.55}
   .family-title{display:flex;align-items:baseline;gap:18px;border-bottom:1px solid var(--line);padding-bottom:12px}
   .family-link{color:inherit;text-decoration:none}.family-link:hover{color:var(--accent)}
-  .family-title h2{font-size:48px;font-weight:500;font-family:"Noto Sans CJK JP","Yu Gothic",sans-serif}
+  .family-title h2{font-size:48px;font-weight:500;font-family:"Noto Sans CJK JP","Yu Gothic","GenZui Sans",sans-serif}
   .family-title p{font-size:12px;color:var(--muted)}
   .history-actions{margin-left:auto;display:flex;gap:4px}.history-actions button{font-size:11px;padding:6px 10px}.family-title strong{color:var(--ink);font-weight:500}
   .form-palette{position:sticky;top:0;z-index:3;background:var(--overlay-page);backdrop-filter:blur(12px);padding:14px 0;border-bottom:1px solid var(--line)}
@@ -495,9 +495,9 @@
   .palette-forms{display:flex;flex-wrap:wrap;gap:6px;align-items:stretch}
   .form-choice{position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:66px;padding:8px 8px 6px;background:var(--surface)}
   .form-choice:not(:disabled):hover{border-color:var(--accent);background:var(--accent-hover)}
-  .form-source{font-size:12px;min-height:16px;font-family:"Noto Sans CJK JP","Yu Gothic",sans-serif}
-  .form-choice small{font-size:8px;color:var(--muted);font-family:ui-monospace,monospace}
-  .form-choice kbd{position:absolute;top:4px;right:5px;font-size:8px;color:var(--faint);font-family:ui-monospace,monospace}
+  .form-source{font-size:12px;min-height:16px;font-family:"Noto Sans CJK JP","Yu Gothic","GenZui Sans",sans-serif}
+  .form-choice small{font-size:8px;color:var(--muted);font-family:"GenZui Sans",ui-monospace,monospace}
+  .form-choice kbd{position:absolute;top:4px;right:5px;font-size:8px;color:var(--faint);font-family:"GenZui Sans",ui-monospace,monospace}
   .palette-other{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto;align-content:flex-start;max-width:260px}.palette-other button{font-size:11px;padding:8px 11px}
   .palette-other kbd{font-size:9px;color:var(--muted)}
   .palette-other .accept-majority{color:var(--accent);border-color:light-dark(#cfc9f7, #756ab9);background:var(--accent-light)}

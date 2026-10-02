@@ -1,5 +1,4 @@
 import { decide } from './forms.js'
-import { reviewer } from './client.js'
 
 // The form decisions made in this tab, one step per action. A step keeps every decision it sent and,
 // for each, the decisions the server named to restore what it changed. Both kinds set a state rather
@@ -31,7 +30,7 @@ export async function undo() {
   history.busy = true
   try {
     for (const { undo } of [...last.sent].reverse())
-      for (const decision of undo) await decide({ ...decision, client_id: reviewer() })
+      for (const decision of undo) await decide({ ...decision })
     history.done.splice(history.done.indexOf(last), 1); history.undone.push(last)
     return last
   } finally { history.busy = false }

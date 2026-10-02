@@ -92,9 +92,9 @@ describe('historyQuery', () => {
     expect(sql).toContain('ORDER BY at DESC,id DESC');
     expect(values).toEqual([]);
   });
-  it('adds actor, label and cursor filters as bound parameters', () => {
+  it('adds user, label and cursor filters as bound parameters', () => {
     const { sql, values } = historyQuery('alice', 'ア', { at: '2026-01-02T00:00:00.000Z', id: 'cf:one' });
-    expect(sql).toContain('actor=?');
+    expect(sql).toContain('actor IN (SELECT actor FROM actors WHERE user_id=?)');
     expect(sql).toContain('AS label');
     expect(sql).toContain('(at,id)<(?,?)');
     expect(values).toEqual(['alice', 'ア', '2026-01-02T00:00:00.000Z', 'cf:one']);
@@ -107,20 +107,22 @@ describe('historyItem', () => {
       old: 'machine', new: 'reviewed', role: 'reviewer', actor: 'alice', at: '2026-01-02T00:00:00.000Z',
       evidence: JSON.stringify({ kind: 'character-review', verdict: 'wrong', issue: 'character',
         suggested_character: 'U+30D7', suggested_reading: 'ぷ', round: null }) });
-    expect(historyItem({ id: 'cf:e1', at: '2026-01-02T00:00:00.000Z', actor: 'alice', target: 'one',
-      kind: 'review', event, label: 'ア' })).toEqual({
-      id: 'cf:e1', at: '2026-01-02T00:00:00.000Z', actor: 'alice', target: 'one', label: 'ア', kind: 'review',
-      verdict: 'wrong', issue: 'character', character: 'プ', reading: 'ぷ', round: null, undoes: null,
+    expect(historyItem({ id: 'cf:e1', at: '2026-01-02T00:00:00.000Z', actor: 'reviewer-0a1b2c3d', target: 'one',
+      kind: 'review', event, label: 'ア', user: 'u1', name: 'Alice' }, 'u1')).toEqual({
+      id: 'cf:e1', at: '2026-01-02T00:00:00.000Z', target: 'one', label: 'ア', kind: 'review',
+      reviewer: { user: 'u1', name: 'Alice', mine: true },
+      verdict: 'wrong', issue: 'character', character: 'プ', reading: 'ぷ', round: null, batch: null, undoes: null,
     });
   });
   it('maps an undo row, naming the event it reverses and leaving the review fields null', () => {
     const event = JSON.stringify({ id: 'cf:e2', target_type: 'unit', target_id: 'one', field: 'review',
       old: 'reviewed', new: 'machine', role: 'reviewer', actor: 'alice', at: '2026-01-03T00:00:00.000Z',
       evidence: 'undo of cf:e1' });
-    expect(historyItem({ id: 'cf:e2', at: '2026-01-03T00:00:00.000Z', actor: 'alice', target: 'one',
-      kind: 'undo', event, label: null })).toEqual({
-      id: 'cf:e2', at: '2026-01-03T00:00:00.000Z', actor: 'alice', target: 'one', label: null, kind: 'undo',
-      verdict: null, issue: null, character: null, reading: null, round: null, undoes: 'cf:e1',
+    expect(historyItem({ id: 'cf:e2', at: '2026-01-03T00:00:00.000Z', actor: 'reviewer-0a1b2c3d', target: 'one',
+      kind: 'undo', event, label: null, user: null, name: null }, 'u1')).toEqual({
+      id: 'cf:e2', at: '2026-01-03T00:00:00.000Z', target: 'one', label: null, kind: 'undo',
+      reviewer: { user: null, name: 'reviewer-0a1b2c3d', mine: false },
+      verdict: null, issue: null, character: null, reading: null, round: null, batch: null, undoes: 'cf:e1',
     });
   });
   it('carries a round id when the review came from a visual quiz round', () => {
@@ -128,7 +130,7 @@ describe('historyItem', () => {
       old: 'machine', new: 'reviewed', role: 'reviewer', actor: 'bob', at: '2026-01-04T00:00:00.000Z',
       evidence: JSON.stringify({ kind: 'visual-quiz', round: 'round-1', label: 'ア', verdict: 'match', issue: null }) });
     expect(historyItem({ id: 'cf:e3', at: '2026-01-04T00:00:00.000Z', actor: 'bob', target: 'two',
-      kind: 'review', event, label: 'ア' }).round).toBe('round-1');
+      kind: 'review', event, label: 'ア', user: 'u2', name: 'Bob' }).round).toBe('round-1');
   });
 });
 

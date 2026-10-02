@@ -3,11 +3,15 @@ import { ROUND_MAX } from './rounds';
 import { formsRoute, withForm, formed, FORM_COLUMNS, type FormTools, type UnitForm } from './forms';
 import { similarCrops } from './similar';
 import { componentSearch, componentTerm } from './components';
+import { formProblem, type FormProblem } from './writtenForm';
+import { auth, claim, grant, owned, providers, viewer } from './auth';
+import { reviewers, submissions } from './admin';
 export { leastTypicalQuery } from './forms';
 export { componentMatchQuery } from './components';
 type Json = Record<string, any>;
 type UnitRow = { id: string; origin: string; character: string | null; state: string; revision: number;
   quiz: number; category?: string; data: string; snapshot: string; context: string; visual: string; style?: string;
+  written_form?: string | null;
   // A corpus glyph nothing has named yet: it has no `units` row, and this is where it is published.
   fresh?: CorpusRow };
 type CorpusRow = {id:string;character:string|null;family:string|null;visual_group:string|null;production:string;style:string;shuffle:number;object:string;offset:number;size:number};
@@ -89,9 +93,9 @@ const productionOf=(data:Json)=>typeof data.production==='string'?data.productio
 // in the same batch and before the rows that reference it.
 function materialise(env:Env,row:UnitRow&{fresh:CorpusRow}){
   const d=parse(row.data);
-  return env.DB.prepare('INSERT OR IGNORE INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+  return env.DB.prepare('INSERT OR IGNORE INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
     .bind(row.id,'corpus',d.written_character||null,d.reading||null,d.grapheme||(d.written_character?cp(d.written_character):null),d.visual_group?.id||null,row.fresh.production,
-      row.category||categoryOf(d.label),d.state,d.revision,row.quiz,1,row.fresh.shuffle,row.data,row.snapshot,row.context,row.visual,null,row.fresh.style);
+      row.category||categoryOf(d.label),d.state,d.revision,row.quiz,1,row.fresh.shuffle,row.data,row.snapshot,row.context,row.visual,null,row.fresh.style,null);
 }
 async function corpusData(env:Env,row:CorpusRow):Promise<Json>{
   if(row.size>128*1024)throw new Problem(503,'Invalid published record.');
@@ -118,8 +122,10 @@ async function itemsFor(env: Env, ids: string[]): Promise<Map<string, Json>> {
   return found;
 }
 function compact(row: UnitRow): Json {
-  return { ...listing(parse(row.data)), ...(row.style ? { style: row.style } : {}) };
+  return { ...listing(parse(row.data)), ...(row.style ? { style: row.style } : {}), ...(row.written_form ? { written_form: row.written_form } : {}) };
 }
+// A crop's record as its inspector reads it, with the written form its row holds (0038).
+const record = (row: UnitRow): Json => ({ ...parse(row.data), written_form: row.written_form ?? null });
 // A record as a listing shows it, without the fields only its inspector needs.
 function listing(d: Json): Json {
   const { text, line, context_image, context_box, crop_box, ...rest } = d;
@@ -158,8 +164,8 @@ const EFFECTIVE_STATE = `iif(state='pending',coalesce(${MARK},state),state)`;
 const SKIP_REST_MS = 3 * 24 * 60 * 60 * 1000;
 const quoted = (value: string) => `'${value.replaceAll("'", "''")}'`;
 const restSince = () => new Date(Date.now() - SKIP_REST_MS).toISOString();
-// A reviewer's own skip that still rests: at the crop's current box, from a round not undone.
-const OWN_SKIP = (reviewer: string, since: string) => `EXISTS(SELECT 1 ${SKIPS} AND k.actor=${quoted(reviewer)} AND k.at>${quoted(since)})`;
+// A reviewer's own skip that still rests, under any id they have written as: at the crop's current box, from a round not undone.
+const OWN_SKIP = (reviewer: string, since: string) => `EXISTS(SELECT 1 ${SKIPS} AND k.actor IN ${owned(reviewer)} AND k.at>${quoted(since)})`;
 // The state as one reviewer sees it: a crop they skipped lately is `skipped` for them.
 export function stateFor(reviewer: string | null, since = restSince()): string {
   if (!reviewer) return EFFECTIVE_STATE;
@@ -336,7 +342,7 @@ export function facetsQueries(review: boolean, reviewer: string | null, where: s
     FROM unit_marks m CROSS JOIN units ON units.id=m.id WHERE ${filter} AND state='pending' GROUP BY 1,2,3`;
   if (!reviewer) return { stored, marked, skipped: null };
   const skipped = `SELECT character AS label,${book} AS document,'skipped' AS state,count(*) AS n FROM units
-    WHERE id IN (SELECT target FROM skips WHERE actor=${quoted(reviewer)} AND at>${quoted(since)}) AND ${filter}
+    WHERE id IN (SELECT target FROM skips WHERE actor IN ${owned(reviewer)} AND at>${quoted(since)}) AND ${filter}
     AND state='pending' AND ${MARK} IS NULL AND ${OWN_SKIP(reviewer, since)} GROUP BY 1,2`;
   return { stored, marked, skipped };
 }
@@ -436,7 +442,7 @@ async function ngramOccurrences(env: Env, url: URL, size: number, run: string) {
   const { n: total, vertical } = count.results[0] as { n: number; vertical: number | null };
   return { text: value, size, document, total, vertical: 2 * (vertical ?? 0) >= total, next_offset: offset + items.length, items };
 }
-async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
+async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: string | null) {
   const q = url.searchParams;
   const purpose = q.get('purpose') || 'browse';
   const production = q.get('production') || (purpose === 'review' ? REVIEW_SCOPE : 'all');
@@ -445,7 +451,6 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   const seed = integer(q, 'seed', 0, 2147483647);
   const limit = integer(q, 'limit', 60, 96), offset = integer(q, 'offset', 0);
   if (review && offset > ROUND_OFFSET_MAX) throw new Problem(404, 'A round does not page this far.');
-  const reviewer = q.get('reviewer') ? text(q.get('reviewer'), 128, 'reviewer', true)! : null;
   // One rest window for the counts and the listing.
   const since = restSince(), state = stateFor(reviewer, since);
   // An empty `reading` names no character.
@@ -528,7 +533,7 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL) {
   const fromValues = named ? [...values, ...named.values] : values;
   // A crop another reviewer skipped comes first in a round: it needs a second pair of eyes. Then a
   // character's local crops, then its named corpus glyphs.
-  const others = review ? `EXISTS(SELECT 1 ${SKIPS}${reviewer ? ` AND k.actor!=${quoted(reviewer)}` : ''}) DESC,origin='corpus',` : '';
+  const others = review ? `EXISTS(SELECT 1 ${SKIPS}${reviewer ? ` AND k.actor NOT IN ${owned(reviewer)}` : ''}) DESC,origin='corpus',` : '';
   const order = others + (review && seed % 5 ? 'priority,' : '');
   // Flagged view: a crop already looked at in the inspector queues behind the ones nobody has reviewed yet.
   const reviewedLast = flaggedView ? `${REVIEWED_IN_INSPECTOR},` : '';
@@ -636,16 +641,17 @@ async function corpusRound(env: Env, character: string, production: string, seed
 // while `corpus_units` still names the object and offset it came from; `scripts/fill_corpus_gallery.py`
 // copies the rest after a publication. A glyph a review has named shows its `units` row.
 const SAMPLE_RANGE = 4194304;
-export const gallerySampleQuery = (side: '>=' | '<') => `SELECT s.data,u.data AS current,${FORM_COLUMNS.split(',').map(c => `f.${c}`).join(',')}
+export const gallerySampleQuery = (side: '>=' | '<') => `SELECT s.data,u.data AS current,u.written_form AS current_form,${FORM_COLUMNS.split(',').map(c => `f.${c}`).join(',')}
   FROM corpus_gallery s JOIN corpus_units c ON c.id=s.id AND c.object=s.object AND c.offset=s.offset
   LEFT JOIN units u ON u.id=s.id LEFT JOIN form_units f ON f.id=s.id
   WHERE s.shuffle${side}? ORDER BY s.shuffle LIMIT ?`;
 async function gallery(env: Env, q: URLSearchParams) {
   const limit = integer(q, 'limit', 24, 96), start = integer(q, 'seed', 0, 2147483647) % SAMPLE_RANGE;
-  type Row = UnitForm & { data: string; current: string | null };
+  type Row = UnitForm & { data: string; current: string | null; current_form: string | null };
   const rows = (await env.DB.prepare(gallerySampleQuery('>=')).bind(start, limit).all<Row>()).results;
   if (rows.length < limit) rows.push(...(await env.DB.prepare(gallerySampleQuery('<')).bind(start, limit - rows.length).all<Row>()).results);
-  const items = rows.map(r => r.current ? parse(r.current) : formed(parse(r.data), r.id ? r : null, formTools));
+  const items = rows.map(r => r.current ? { ...parse(r.current), ...(r.current_form ? { written_form: r.current_form } : {}) }
+    : formed(parse(r.data), r.id ? r : null, formTools));
   return { status: 'ok', available: items.length, items };
 }
 function chunks<T>(list: T[], size: number): T[][] {
@@ -692,10 +698,10 @@ export const widenedCropsCountQuery = (n: number, extra = '') => `SELECT count(*
 // A glyph's style is its published row's; a named glyph's `units` row carries the same.
 export const corpusSelection = (field: 'character' | 'family', n: number) => {
   const list = n === 1 ? '=?' : ` IN (${Array(n).fill('?').join(',')})`;
-  return `SELECT c.*,c.${field} AS k,c.style_order AS s,c.id AS i,u.data AS overlay,u.visual_group AS overlay_group,u.character AS overlay_character
+  return `SELECT c.*,c.${field} AS k,c.style_order AS s,c.id AS i,u.data AS overlay,u.visual_group AS overlay_group,u.character AS overlay_character,u.written_form AS overlay_form
     FROM corpus_units c LEFT JOIN units u ON c.id=u.id
     WHERE c.${field}${list} AND (u.id IS NULL OR u.${field}=c.${field})
-    UNION ALL SELECT c.*,u.${field} AS k,u.style_order AS s,u.id AS i,u.data AS overlay,u.visual_group AS overlay_group,u.character AS overlay_character
+    UNION ALL SELECT c.*,u.${field} AS k,u.style_order AS s,u.id AS i,u.data AS overlay,u.visual_group AS overlay_group,u.character AS overlay_character,u.written_form AS overlay_form
     FROM units u${field === 'character' ? ' INDEXED BY unit_corpus_character_style' : ''} JOIN corpus_units c ON c.id=u.id
     WHERE u.origin='corpus' AND u.${field}${list} AND c.${field} IS NOT u.${field}`;
 };
@@ -874,8 +880,8 @@ async function corpusOccurrences(env:Env,data:Json,q:URLSearchParams){
   const items=[];
   // Bound simultaneous R2 streams; a corpus page may contain 200 records.
   for(let i=0;i<rows.results.length;i+=8){
-    items.push(...await Promise.all((rows.results.slice(i,i+8) as (CorpusRow&{overlay:string|null})[])
-      .map(async row=>({...(row.overlay?parse(row.overlay):await corpusData(env,row)),style:row.style}))));
+    items.push(...await Promise.all((rows.results.slice(i,i+8) as (CorpusRow&{overlay:string|null;overlay_form:string|null})[])
+      .map(async row=>({...(row.overlay?parse(row.overlay):await corpusData(env,row)),style:row.style,...(row.overlay_form?{written_form:row.overlay_form}:{})}))));
   }
   const info=await known(env,data.char),familyCode=data.grapheme?.code_point||data.code_point;
   const familyCounts=await env.DB.prepare(`SELECT count(*) AS total,sum(written IS NULL) AS unassigned FROM (
@@ -973,12 +979,12 @@ function validateAnswer(answer: Json, current: Json, round: boolean, corpus=fals
     throw new Problem(422,'Choose a different character or a different issue.');
   if(answer.box) throw new Problem(422,'Crop geometry changes are queued as crop issues on this publication.');
 }
-async function submit(env: Env, request: Request, target?: string) {
+async function submit(env: Env, request: Request, actor: string, target?: string) {
   const input=await body(request);
   const corpus=target==='@corpus', batch=target==='@batch';
   if(corpus)target=text(input.identity,512,'corpus identity',true)!;
   if(batch)target=undefined;
-  const id=text(input.id,64,'submission id',true)!, actor=text(input.client_id,128,'reviewer',true)!;
+  const id=text(input.id,64,'submission id',true)!;
   if(!/^[0-9a-f-]{36}$/i.test(id))throw new Problem(422,'Invalid submission id.');
   // A retry is the same submission whatever else came on screen meanwhile: the seen crops are left
   // out of the signature, as the local server compares only the answers, and the first result stands.
@@ -1087,7 +1093,7 @@ async function submit(env: Env, request: Request, target?: string) {
       }
     });
   }
-  const result=corpus?{...(changes[0].next),origin:'corpus',event:changes[0].event}
+  const result=corpus?{...(changes[0].next),origin:'corpus',written_form:changes[0].row.written_form??null,event:changes[0].event}
     :batch?{id,results:changes.map(c=>({target_id:c.row.id,revision:c.next.revision,state:c.next.state})),unchanged}
     :{id,results:[...changes.map(c=>({id:c.event.id,target_id:c.row.id,field:'review',revision:c.next.revision,state:c.next.state})),
       ...shown.map(crop=>({target_id:crop.id,field:'seen'})),...passed.map(crop=>({target_id:crop.id,field:'skip'}))]};
@@ -1113,16 +1119,83 @@ async function submit(env: Env, request: Request, target?: string) {
   }
   return result;
 }
-async function undo(env:Env,request:Request,id:string){
-  const input=await body(request),actor=text(input.client_id,128,'reviewer',true)!,key=actor+':'+id;
-  const submission=await env.DB.prepare('SELECT * FROM submissions WHERE id=?').bind(key).first<Json>();
+const FORM_PROBLEMS: Record<FormProblem, string> = {
+  character: 'Write one character or an ideographic description sequence.',
+  component: 'A description is built from ideographs, radicals and strokes.',
+  missing: 'This description is missing a component.',
+  extra: 'This description has more components than its operators take.',
+};
+// A reviewer's word on what a crop's letterforms are written as (0038), for a crop by its path or a
+// corpus glyph by `identity`. It names the revision and pixels the reviewer saw, and a crop that has
+// moved on since is refused; the save moves nothing else, so a review open against the crop still
+// saves. A form that is the crop's own character clears it. A retry answers with the crop as it is,
+// and the same id sent with anything else is refused.
+async function writeForm(env: Env, request: Request, actor: string, target: string | null) {
+  const input = await body(request);
+  const id = text(input.id, 64, 'submission id', true)!;
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Problem(422, 'Invalid submission id.');
+  const crop = target ?? text(input.identity, 512, 'corpus identity', true)!;
+  const key = actor + ':' + id, signature = canonical({ target: crop, input });
+  const repeat = async () => {
+    const saved = await env.DB.prepare('SELECT request FROM written_forms WHERE submission=?').bind(key).first<{ request: string }>();
+    if (saved && saved.request !== signature) throw new Problem(409, 'This written form was already saved with different values.');
+    return saved ? record(await unit(env, crop)) : null;
+  };
+  const previous = await repeat();
+  if (previous) return previous;
+  const row = await unit(env, crop), data = parse(row.data), glyph = row.origin === 'corpus';
+  if (!Number.isSafeInteger(input.revision) || input.revision !== row.revision) throw new Problem(409, 'This character changed. Reload it.');
+  const seen = glyph ? input.source_revision : input.image_sha256;
+  if (typeof seen !== 'string' || seen !== (glyph ? data.source_revision : data.image_sha256)) throw new Problem(409, 'The source image changed. Reload it.');
+  const typed = input.form == null ? null : text(input.form, 256, 'written form');
+  let form = typed ? literal(typed) : null;
+  if (form === data.label) form = null;
+  const problem = form === null ? null : formProblem(form);
+  if (problem) throw new Problem(422, FORM_PROBLEMS[problem]);
+  const statements = row.fresh ? [materialise(env, row as UnitRow & { fresh: CorpusRow })] : [];
+  statements.push(env.DB.prepare('INSERT INTO written_forms(id,submission,target,actor,revision,pixels,label,form,request,at) VALUES(?,?,?,?,?,?,?,?,?,?)')
+    .bind('cf:' + crypto.randomUUID(), key, row.id, actor, row.revision, seen, data.label, form, signature, new Date().toISOString()));
+  try { await env.DB.batch(statements) } catch (error) {
+    const again = await repeat();
+    if (again) return again;
+    if (String(error).includes('written_form_revision_conflict')) throw new Problem(409, 'Another review changed this crop. Reload it.');
+    throw error;
+  }
+  return { ...data, origin: row.origin, written_form: form };
+}
+// Every written form saved here, oldest first, for `glyph_atlas.review.cloudflare_import`: the crop,
+// the label, revision and pixels the reviewer saw, and whether it is the crop's latest.
+export const writtenFormsQuery = () => `SELECT w.id,w.target,u.origin,w.actor,w.revision,w.pixels,w.label,w.form,w.at,
+  w.rowid=(SELECT max(l.rowid) FROM written_forms l WHERE l.target=w.target) AS current
+  FROM written_forms w JOIN units u ON u.id=w.target ORDER BY w.rowid`;
+async function writtenForms(env: Env) {
+  const rows = await env.DB.prepare(writtenFormsQuery()).all<Json>();
+  return { version: 1, kind: 'atlas-written-forms', publication: await meta(env, 'published_at'),
+    forms: rows.results.map(row => ({ ...row, current: Boolean(row.current) })) };
+}
+// A submission is keyed by the id it was written under, so a user's own is found under any of theirs.
+async function undo(env:Env,request:Request,actor:string,id:string){
+  await body(request);
+  const submission=await env.DB.prepare("SELECT * FROM submissions WHERE id IN (SELECT actor||':'||? FROM actors WHERE user_id=?)").bind(id,actor).first<Json>();
   if(!submission)throw new Problem(404,'No saved round belongs to this reviewer.');
-  if(submission.undone)return {id,results:[],duplicate:true};
+  return {id,...await revert(env,submission,actor)};
+}
+// Undo a submission as `actor`: each crop goes back to what it was before, unless a later review has
+// changed it since. A rejection is the same undo made by an admin, recorded with its reason.
+async function revert(env:Env,submission:Json,actor:string,rejection?:{reason:string;reviewer?:[string,string[]]}){
+  const key=submission.id as string;
+  if(submission.undone)return {results:[],duplicate:true};
   const rows=await env.DB.prepare("SELECT * FROM events WHERE submission=? AND kind='review'").bind(key).all<Json>();
   const statements:D1PreparedStatement[]=[],results=[];const at=new Date().toISOString();
   for(const r of rows.results){
     const current=await unit(env,r.target);
-    if(current.revision!==r.expected_revision+1)throw new Problem(409,'A later review changed this crop. It cannot be undone.');
+    // Rejecting all of one reviewer's work also passes over their own later changes to the crop that
+    // are already undone, and the undos themselves; anyone else's later change, or one of theirs that
+    // still stands, stops it.
+    const later=current.revision!==r.expected_revision+1&&(!rejection?.reviewer||await env.DB.prepare(`SELECT 1 FROM events e LEFT JOIN submissions s ON s.id=e.submission
+      WHERE e.target=? AND e.expected_revision>? AND (s.actor IS NULL OR s.actor NOT IN ${rejection.reviewer[0]} OR (s.undone=0 AND e.kind='review')) LIMIT 1`)
+      .bind(r.target,r.expected_revision,...rejection.reviewer[1]).first());
+    if(later)throw new Problem(409,'A later review changed this crop. It cannot be undone.');
     const restored={...parse(r.before_data),revision:current.revision+1};
     const event={...parse(r.event),id:'cf:'+crypto.randomUUID(),old:parse(r.event).new,new:parse(r.event).old,evidence:'undo of '+r.id,at};
     statements.push(env.DB.prepare('INSERT INTO events(id,submission,target,actor,expected_revision,before_data,after_data,event,snapshot,kind,at) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
@@ -1134,8 +1207,54 @@ async function undo(env:Env,request:Request,id:string){
     results.push({id:event.id,target_id:r.target,revision:restored.revision,review:event});
   }
   statements.push(env.DB.prepare('UPDATE submissions SET undone=1 WHERE id=?').bind(key));
+  if(rejection)statements.push(env.DB.prepare('INSERT INTO rejections(submission,by,reason,at) VALUES(?,?,?,?)').bind(key,actor,rejection.reason,at));
   try{await env.DB.batch(statements)}catch(error){if(String(error).includes('review_revision_conflict'))throw new Problem(409,'A later review changed this crop.');throw error}
-  return {id,results};
+  return {results};
+}
+// Reject an admin's selection: the named submissions, or all of one reviewer's a page at a time.
+// They go newest first, so a crop two of them touched goes back step by step. One that a later
+// review by someone else has built on is left as it is and reported; `next` continues after the page.
+const REJECT_PAGE=40;
+// Each crop a rejection puts back costs a few queries, and one request may make a thousand: a page
+// stops before the crops it has put back pass this many.
+const REJECT_CROPS=250;
+async function reject(env:Env,admin:string,input:Json){
+  const reason=text(input.reason??'',500,'reason')??'';
+  const crops='(SELECT count(*) FROM events WHERE submission=submissions.id AND kind=\'review\') AS crops';
+  let rows:Json[],reviewer:[string,string[]]|undefined;
+  if(Array.isArray(input.submissions)){
+    const keys=input.submissions.slice(0,REJECT_PAGE).map((key:unknown)=>text(key,256,'submission',true)!);
+    if(!keys.length)throw new Problem(422,'Name the submissions to reject.');
+    rows=(await env.DB.prepare(`SELECT *,${crops} FROM submissions WHERE id IN (${keys.map(()=>'?').join(',')}) AND undone=0 ORDER BY at DESC,id DESC`).bind(...keys).all<Json>()).results;
+  }else{
+    reviewer=reviewerActors(input);
+    const [actors,values]=reviewer,before=input.next?decodeCursor(text(input.next,512,'cursor',true)!):{at:'9999',id:''};
+    rows=(await env.DB.prepare(`SELECT *,${crops} FROM submissions WHERE undone=0 AND actor IN ${actors} AND (at,id)<(?,?) ORDER BY at DESC,id DESC LIMIT ?`)
+      .bind(...values,before.at,before.id,REJECT_PAGE).all<Json>()).results;
+  }
+  let rejected=0,spent=0;const conflicts:string[]=[],unavailable:string[]=[],done:Json[]=[];
+  for(const submission of rows){
+    if(spent&&spent+submission.crops>REJECT_CROPS)break;
+    spent+=submission.crops;done.push(submission);
+    try{await revert(env,submission,admin,{reason,reviewer});rejected++}
+    catch(error){
+      // A crop someone else has changed since stays as it is; a crop no longer in the collection
+      // cannot be put back. Either way the rest go on.
+      if(error instanceof Problem&&error.status===409)conflicts.push(submission.id);
+      else if(error instanceof Problem&&error.status===404)unavailable.push(submission.id);
+      else throw error;
+    }
+  }
+  const last=done.at(-1),more=done.length<rows.length||(!Array.isArray(input.submissions)&&rows.length===REJECT_PAGE);
+  return {rejected,conflicts,unavailable,
+    next:!Array.isArray(input.submissions)&&more&&last?encodeCursor(last.at,last.id):null,
+    left:Array.isArray(input.submissions)?rows.slice(done.length).map(row=>row.id):[]};
+}
+// The journal ids of one reviewer: a user's, or one id from before accounts that nobody holds.
+export function reviewerActors(input:Json):[string,string[]]{
+  if(typeof input.user==='string')return ['(SELECT actor FROM actors WHERE user_id=?)',[text(input.user,64,'user',true)!]];
+  if(typeof input.actor==='string')return ['(?)',[text(input.actor,128,'actor',true)!]];
+  throw new Problem(422,'Name a user or a reviewer id.');
 }
 // A review's label sits in evidence.label (a round) or evidence.snapshot.character.label (a single
 // correction); evidence is itself a JSON string, parsed once. An undo's own evidence is the plain string
@@ -1144,13 +1263,17 @@ async function undo(env:Env,request:Request,id:string){
 // This text is repeated verbatim in migration 0011's expression index; keep the two in sync.
 export const historyLabelExpr = () => `(CASE kind WHEN 'review' THEN coalesce(json_extract(json_extract(event,'$.evidence'),'$.label'),json_extract(json_extract(event,'$.evidence'),'$.snapshot.character.label')) WHEN 'undo' THEN json_extract(snapshot,'$.character.label') END)`;
 // Newest first, keyset-paged on (at,id): `before` is strictly older than that pair, in index order.
-export function historyQuery(actor: string | null, label: string | null, cursor: { at: string; id: string } | null): { sql: string; values: (string | number)[] } {
+// A user's rows are those written under any id `actors` gives them; each row names the user who holds
+// its id now, or none for a reviewer id from before accounts that nobody has claimed.
+export function historyQuery(user: string | null, label: string | null, cursor: { at: string; id: string } | null): { sql: string; values: (string | number)[] } {
   const where = [`kind IN ('review','undo')`];
   const values: (string | number)[] = [];
-  if (actor) { where.push('actor=?'); values.push(actor) }
+  if (user) { where.push('actor IN (SELECT actor FROM actors WHERE user_id=?)'); values.push(user) }
   if (label !== null) { where.push(`${historyLabelExpr()}=?`); values.push(label) }
   if (cursor) { where.push('(at,id)<(?,?)'); values.push(cursor.at, cursor.id) }
-  const sql = `SELECT id,at,actor,target,kind,event,${historyLabelExpr()} AS label FROM events WHERE ${where.join(' AND ')} ORDER BY at DESC,id DESC LIMIT ?`;
+  const sql = `SELECT h.*,a.user_id AS user,u.name AS name FROM (SELECT id,at,actor,target,kind,event,${historyLabelExpr()} AS label
+    FROM events WHERE ${where.join(' AND ')} ORDER BY at DESC,id DESC LIMIT ?) h
+    LEFT JOIN actors a ON a.actor=h.actor LEFT JOIN "user" u ON u.id=a.user_id ORDER BY h.at DESC,h.id DESC`;
   return { sql, values };
 }
 export function encodeCursor(at: string, id: string): string {
@@ -1163,15 +1286,17 @@ export function decodeCursor(value: string): { at: string; id: string } {
     return { at: decoded[0], id: decoded[1] };
   } catch { throw new Problem(422, 'Invalid cursor.') }
 }
-type HistoryRow = { id: string; at: string; actor: string; target: string; kind: string; event: string; label: string | null };
+type HistoryRow = { id: string; at: string; actor: string; target: string; kind: string; event: string; label: string | null;
+  user: string | null; name: string | null };
 // A review's evidence names its own verdict, issue and correction; an undo's evidence is only the id
 // of the event it reverses, so those fields stay null and `undoes` names that event instead.
-export function historyItem(row: HistoryRow): Json {
+export function historyItem(row: HistoryRow, me: string | null = null): Json {
   const undo = row.kind === 'undo';
   const parsedEvent = parse(row.event);
   const evidence = undo ? null : parse(parsedEvent.evidence);
   return {
-    id: row.id, at: row.at, actor: row.actor, target: row.target, label: row.label, kind: row.kind as 'review' | 'undo',
+    id: row.id, at: row.at, target: row.target, label: row.label, kind: row.kind as 'review' | 'undo',
+    reviewer: { user: row.user, name: row.name ?? row.actor, mine: Boolean(me && row.user === me) },
     verdict: evidence?.verdict ?? null,
     issue: evidence?.issue ?? null,
     character: evidence?.suggested_character ? literal(evidence.suggested_character) : null,
@@ -1181,14 +1306,15 @@ export function historyItem(row: HistoryRow): Json {
     undoes: undo ? String(parsedEvent.evidence).replace(/^undo of /, '') : null,
   };
 }
-async function history(env: Env, q: URLSearchParams) {
+async function history(env: Env, q: URLSearchParams, me: string | null) {
   const limit = Math.max(1, integer(q, 'limit', 40, 100));
-  const actor = q.get('actor') ? text(q.get('actor'), 128, 'actor', true) : null;
+  if (q.get('mine') === 'true' && !me) return { items: [], next: null };
+  const user = q.get('mine') === 'true' ? me : q.get('user') ? text(q.get('user'), 64, 'user', true) : null;
   const label = q.get('label') ? text(q.get('label'), 32, 'label', true) : null;
   const before = q.get('before') ? decodeCursor(q.get('before')!) : null;
-  const { sql, values } = historyQuery(actor, label, before);
+  const { sql, values } = historyQuery(user, label, before);
   const rows = await env.DB.prepare(sql).bind(...values, limit + 1).all<HistoryRow>();
-  const items = rows.results.slice(0, limit).map(historyItem);
+  const items = rows.results.slice(0, limit).map(row => historyItem(row, me));
   // The cursor is the last row returned; the next page starts strictly after it.
   const next = rows.results.length > limit ? encodeCursor(rows.results[limit - 1].at, rows.results[limit - 1].id) : null;
   return { items, next };
@@ -1220,33 +1346,58 @@ export default {
   async fetch(request:Request,env:Env,ctx:ExecutionContext):Promise<Response>{
     const url=new URL(request.url),path=url.pathname,q=url.searchParams;
     try{
+      if(path.startsWith('/api/auth/'))return await auth(env,url.origin).handler(request);
       if(request.method==='POST'){
-        if(path==='/atlas/corpus/reviews')return json(await submit(env,request,'@corpus'));
-        if(path==='/atlas/rounds')return json(await submit(env,request));
+        // Every write is made by the user the request is signed in as; a browser starts an anonymous
+        // session before its first one.
+        const me=await viewer(env,request,true);
+        if(!me)throw new Problem(401,'Sign in to save.');
+        // An admin's page: rejecting what a reviewer saved. Banning and roles are Better Auth's own.
+        if(path.startsWith('/api/admin/')&&!me.admin)throw new Problem(403,'Only an admin can do this.');
+        if(path==='/api/admin/reject')return json(await reject(env,me.id,await body(request)));
+        if(path==='/api/admin/claims'){const input=await body(request);const {status,body:out}=await grant(env,text(input.actor,128,'actor',true)!,text(input.user,64,'user',true)!);return json(out,status)}
+        if(path==='/api/account/claim'){const {status,body:out}=await claim(env,me,String((await body(request)).reviewer??''));return json(out,status)}
+        if(path==='/atlas/corpus/reviews')return json(await submit(env,request,me.id,'@corpus'));
+        if(path==='/atlas/rounds')return json(await submit(env,request,me.id));
         if(path==='/atlas/corrections'){
           // A batch changes many crops at once, so each address is held to a rate.
           const {success}=await env.CORRECTIONS.limit({key:request.headers.get('cf-connecting-ip')??'local'});
           if(!success)throw new Problem(429,'Too many corrections at once. Wait a minute and try again.');
-          return json(await submit(env,request,'@batch'));
+          return json(await submit(env,request,me.id,'@batch'));
+        }
+        const form=path.match(/^\/atlas\/characters\/([^/]+)\/written-form$/);
+        if(form||path==='/atlas/corpus/written-forms'){
+          // Each save is one small row, and one address is held to a rate as batch corrections are.
+          const {success}=await env.WRITTEN_FORMS.limit({key:request.headers.get('cf-connecting-ip')??'local'});
+          if(!success)throw new Problem(429,'Too many written forms at once. Wait a minute and try again.');
+          return json(await writeForm(env,request,me.id,form?decodeURIComponent(form[1]):null));
         }
         const undone=path.match(/^\/atlas\/(?:rounds|corrections)\/([^/]+)\/undo$/);
-        if(undone)return json(await undo(env,request,decodeURIComponent(undone[1])));
+        if(undone)return json(await undo(env,request,me.id,decodeURIComponent(undone[1])));
         const edit=path.match(/^\/(?:atlas\/characters|layers\/units)\/([^/]+)$/);
-        if(edit)return json(await submit(env,request,decodeURIComponent(edit[1])));
-        const formed=await formsRoute(env,request,path,q,formTools,ctx);
+        if(edit)return json(await submit(env,request,me.id,decodeURIComponent(edit[1])));
+        const formed=await formsRoute(env,request,path,q,formTools,ctx,me.id);
         if(formed)return formed instanceof Response?formed:json(formed);
         throw new Problem(404,'Unknown endpoint.');
       }
       if(!['GET','HEAD'].includes(request.method))throw new Problem(405,'Method not allowed.');
+      if(path.startsWith('/api/admin/')){
+        if(!(await viewer(env,request,true))?.admin)throw new Problem(403,'Only an admin can see this.');
+        if(path==='/api/admin/reviewers')return json(await reviewers(env,q));
+        if(path==='/api/admin/submissions')return json(await submissions(env,q,reviewerActors(Object.fromEntries(q))));
+        throw new Problem(404,'Unknown endpoint.');
+      }
+      if(path==='/api/account')return json({user:await viewer(env,request,true),providers:providers(env)});
       if(path==='/health')return json({ok:true,published_at:await meta(env,'published_at')});
       const image=path.match(/^\/atlas\/media\/([a-f0-9]{64})\.webp$/);
       if(image)return await media(env,request,image[1],ctx);
-      if(path==='/atlas')return json(await catalogue(env,ctx,url));
-      if(path==='/atlas/history')return json(await history(env,q));
+      // A round leaves out what its reviewer skipped lately, so it reads who is asking.
+      if(path==='/atlas')return json(await catalogue(env,ctx,url,q.get('purpose')==='review'?(await viewer(env,request))?.id??null:null));
+      if(path==='/atlas/history')return json(await history(env,q,(await viewer(env,request))?.id??null));
       const run=path.match(/^\/atlas\/ngrams\/(\d+)(?:\/([^/]+))?$/);
       if(run)return json(run[2]===undefined?await ngrams(env,ctx,url,ngramSize(run[1])):await ngramOccurrences(env,url,ngramSize(run[1]),decodeURIComponent(run[2])));
       if(path==='/atlas/corpus/characters')return json(await corpusCharacters(env,ctx,url),200,{'cache-control':'private, max-age=300'});
-      if(path==='/atlas/corpus/character')return json(parse((await unit(env,q.get('id')||'')).data));
+      if(path==='/atlas/corpus/character')return json(record(await unit(env,q.get('id')||'')));
       if(path==='/atlas/collection/status')return json(await meta(env,'collection'));
       const document=path.match(/^\/atlas\/documents\/([^/]+)\/characters$/);
       if(document){let id:string;try{id=decodeURIComponent(document[1])}catch{throw new Problem(404,'No characters are published for this document.')}
@@ -1255,6 +1406,8 @@ export default {
       if(visualSample){const data=parse((await unit(env,decodeURIComponent(visualSample[1]))).data);
         if(!data.image)throw new Problem(404,'Image not found.');
         return Response.redirect(new URL(data.image,url).href,302)}
+      if(path==='/atlas/written-forms'||path==='/atlas/written-forms.json')return json(await writtenForms(env),200,
+        path.endsWith('.json')?{'content-disposition':'attachment; filename="atlas-written-forms.json"'}:{});
       if(path==='/atlas/reviews'||path==='/atlas/reviews.json')return json(await reviews(env,q.get('include_processed')==='true'),200,
         path.endsWith('.json')?{'content-disposition':'attachment; filename="atlas-character-reviews.json"'}:{});
       const similar=path.match(/^\/atlas\/characters\/([^/]+)\/similar$/);
@@ -1267,7 +1420,7 @@ export default {
           if(q.get('revision')!==String(row.revision)||!samePixels(q,row.origin,data))throw new Problem(409,'Character changed.');
           return json(parse(character[2].endsWith('/context')?row.context:row.visual));
         }
-        return json(parse(row.data));
+        return json(record(row));
       }
       if(path==='/layers/suggest')return json(await suggest(env,q));
       if(path==='/layers/search'){const found=await suggest(env,q);return json({...found,results:found.items,match:found.items[0]||null})}

@@ -1,6 +1,7 @@
 <script>
   import ProductionBadge from './ProductionBadge.svelte'
   import StyleField from './StyleField.svelte'
+  import WrittenFormField from './WrittenFormField.svelte'
   import ZiLink from './ZiLink.svelte'
   import CopyId from './CopyId.svelte'
   import { onMount, untrack, tick } from 'svelte'
@@ -21,7 +22,7 @@
   // closes, or does something else. Without the prop a skip goes where a save would: the next
   // occurrence when the reader goes through the list in a row and there is one, otherwise close.
   // `initial` is the record the server rendered the page with, so the first load needs no request.
-  let { id, clientId, close, saved, changed = null, onVerdict = null, onskip = null,
+  let { id, close, saved, changed = null, onVerdict = null, onskip = null,
         previous = null, next = null, position = '', initial = null } = $props()
   const first = untrack(() => initial)
   const session = useSession()
@@ -183,12 +184,12 @@
       ? '/layers/units/' + encodeURIComponent(target)
       : '/atlas/characters/' + encodeURIComponent(target)
     const payload = correctingCharacter
-      ? { client_id: clientId, revision: data.revision, image_sha256: data.image_sha256,
+      ? { revision: data.revision, image_sha256: data.image_sha256,
           verdict: matches ? 'match' : decision(issue || 'character').verdict,
           issue: ['character', 'reading', 'crop', 'merged', 'blank', 'other'].includes(issue)
             ? issue : 'character',
           note, character: written, ...readingEdit, ...(box ? { box } : {}) }
-      : { client_id: clientId, revision: data.revision, image_sha256: data.image_sha256,
+      : { revision: data.revision, image_sha256: data.image_sha256,
           ...value, issue: resolvedIssue, note, ...readingEdit, ...(box ? { box } : {}) }
     const signature = JSON.stringify(payload)
     if (!submission || submission.signature !== signature) submission = { signature, id: crypto.randomUUID() }
@@ -245,7 +246,7 @@
     {#if replaced}<p class="replaced-note" role="status">{t('character.replaced')}</p>{/if}
     {#if error}<div class="error-message" role="alert">{error}<button disabled={busy} onclick={() => load(id)}>{t('character.reload')}</button></div>{/if}
     {#if data}
-      <div class="inspector-production"><ProductionBadge item={data} /><StyleField item={data} {clientId} editable={!onVerdict} disabled={busy} working={value => busy = value} saved={styled} /></div>
+      <div class="inspector-production"><ProductionBadge item={data} /><StyleField item={data} editable={!onVerdict} disabled={busy} working={value => busy = value} saved={styled} /><WrittenFormField item={data} editable={!onVerdict} disabled={busy} working={value => busy = value} saved={styled} /></div>
       <div class="inspector-title"><h2 lang="ja">{data.label}</h2><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{:else if repairOf(data)?.label === 'no-class'}<span class="repair-note" title={t('repair.reason.noClass')}>{t('repair.noClass')}</span>{/if}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.state === 'checked' ? t('state.checked') : data.state === 'flagged' ? t('state.flagged') : t('state.unreviewed')}</span></div><CopyId id={data.id} />
       <div class="inspector-figure">
         {#if editingBox && data.context && data.context_box}

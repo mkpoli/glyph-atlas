@@ -319,6 +319,33 @@ def test_a_retry_is_one_event_and_a_different_body_conflicts(corpus):
     assert conflict.status_code == 409, conflict.text
 
 
+def test_a_written_form_leaves_the_character_and_the_review_alone(corpus):
+    client = corpus["client"]
+    before = client.get("/atlas/corpus/character", params={"id": UNIT}).json()
+    assert before["written_form"] is None
+    body = {"id": str(uuid4()), "identity": UNIT, "client_id": "reviewer-1", "revision": before["revision"],
+            "source_revision": before["source_revision"], "form": "⿰女氵"}
+    saved = client.post("/atlas/corpus/written-forms", json=body)
+    assert saved.status_code == 200, saved.text
+    after = saved.json()
+    assert after["written_form"] == "⿰女氵"
+    assert {key: after[key] for key in ("label", "code_point", "state", "revision")} == \
+        {key: before[key] for key in ("label", "code_point", "state", "revision")}
+    assert corpus["reviews"].exports() == [], "a written form is no review"
+    assert client.post("/atlas/corpus/written-forms", json=body).json()["written_form"] == "⿰女氵"
+    assert client.post("/atlas/corpus/written-forms", json={**body, "form": "ぬ"}).status_code == 409
+    assert client.post("/atlas/corpus/written-forms", json={**body, "id": str(uuid4()), "form": "⿰女"}).status_code == 422
+    assert client.post("/atlas/corpus/written-forms",
+                       json={**body, "id": str(uuid4()), "source_revision": "b" * 64}).status_code == 409
+    # A review saved against the revision the glyph was opened at still stands, and keeps the form.
+    reviewed, _ = save(client, UNIT, revision=before["revision"])
+    assert reviewed.status_code == 200, reviewed.text
+    assert reviewed.json()["written_form"] == "⿰女氵"
+    cleared = client.post("/atlas/corpus/written-forms", json={**body, "id": str(uuid4()), "revision": 1,
+                                                               "form": reviewed.json()["label"]})
+    assert cleared.json()["written_form"] is None
+
+
 def test_a_stale_revision_or_source_is_refused(corpus):
     client = corpus["client"]
     payload = edit(UNIT)

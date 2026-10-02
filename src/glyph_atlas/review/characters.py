@@ -252,6 +252,14 @@ def _row(character: Character, counts: dict[str, int], *, reason: str | None = N
     return row
 
 
+def form_row(character: Character, counts: dict[str, int]) -> dict[str, Any]:
+    """A member of the family a card is about: its row without the family's evidence, which the
+    card states once as its own `grapheme`. A family of 26 forms would otherwise repeat it 26 times."""
+    row = _row(character, counts)
+    row["grapheme"] = {key: value for key, value in row["grapheme"].items() if key != "evidence"}
+    return row
+
+
 def _forms(code_point: str) -> list[str]:
     """Every code point that is a form of the same grapheme, the character itself first."""
     grapheme = refs.grapheme(code_point)
@@ -369,6 +377,8 @@ class Layers:
             "variants": [variant.model_dump() for variant in unit.variants],
             "exact": exact,
             "reading": unit.reading,
+            # The shape the letterforms take when a reviewer said it differs from the label.
+            "written_form": unit.written_form,
             "kind": str(unit.kind),
             "granularity": unit.granularity,
             "classification": str(unit.classification),
@@ -480,7 +490,7 @@ def character_view(character: Character, layer: Layers, *, expand: str = "none",
         # A modern kana's 字源, from its Japanese Wikipedia articles: where its shape came from, which
         # is not a 字母 (the kanji a hentaigana is a form of) and is shown apart from one.
         "origin": refs.origin_of(character.code_point),
-        "characters": [_row(row, counts) for row in forms if row is not None],
+        "characters": [form_row(row, counts) for row in forms if row is not None],
         "visual_analysis": visual_families.family_analysis(character.code_point),
         # The widenings this character offers, with the one the request already applied marked
         # enabled: a card is what a reader navigates the three layers from, so it carries the same

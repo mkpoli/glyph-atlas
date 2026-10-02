@@ -8,7 +8,7 @@
   // a save is under way, so its own save waits: both carry the crop's revision. In a review round
   // (`editable` false) the style is only shown, since a change would move the revision the round
   // was dealt at and the round's save would be refused.
-  let { item, clientId, editable = true, disabled = false, working = null, saved } = $props()
+  let { item, editable = true, disabled = false, working = null, saved } = $props()
   let error = $state('')
   const own = $derived(item?.style_basis === 'unit' ? item.style : 'unassessed')
   // The server names the basis `document-confirmed`; a catalogue key has no hyphen.
@@ -20,7 +20,7 @@
     working?.(true); error = ''
     try {
       const result = await request(`/atlas/characters/${encodeURIComponent(item.id)}/style`,
-        { id: crypto.randomUUID(), client_id: clientId, revision: item.revision, style })
+        { id: crypto.randomUUID(), revision: item.revision, style })
       saved?.(result)
     } catch (e) {
       error = e.message

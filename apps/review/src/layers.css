@@ -27,8 +27,8 @@
 .reference-glyph.lg { font-size: 1.9rem; }
 .reference-glyph.xl { font-size: 2.4rem; }
 .reference-glyph.xxl { font-size: 3.4rem; }
-.reference-glyph.uncovered .glyph-fallback { font-family: ui-monospace, monospace; font-size: .55em; color: var(--ink-soft); }
-.glyph-codepoint { display: block; font-family: ui-monospace, monospace; font-size: .7rem; color: var(--ink-soft); }
+.reference-glyph.uncovered .glyph-fallback { font-family: "GenZui Sans", ui-monospace, monospace; font-size: .55em; color: var(--ink-soft); }
+.glyph-codepoint { display: block; font-family: "GenZui Sans", ui-monospace, monospace; font-size: .7rem; color: var(--ink-soft); }
 
 .character-search { position: relative; min-width: min(420px, 92vw); }
 .character-search.compact { min-width: min(300px, 80vw); }
@@ -45,7 +45,7 @@
 .candidate-line { display: flex; gap: 8px; align-items: baseline; }
 .candidate-char { font-size: 1.15rem; }
 .candidate-reading { font-size: 1rem; }
-.candidate-code, .candidate-name { font-family: ui-monospace, monospace; font-size: .74rem; color: var(--ink-soft); }
+.candidate-code, .candidate-name { font-family: "GenZui Sans", ui-monospace, monospace; font-size: .74rem; color: var(--ink-soft); }
 .candidate-counts { font-size: .8rem; color: var(--ink-soft); }
 .candidate-status { margin: 0; padding: 10px 12px; font-size: .85rem; color: var(--ink-soft); }
 .tag { font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; border: 1px solid currentColor;
@@ -56,7 +56,7 @@
 .layer-glyph { flex: 0 0 auto; }
 .layer-identity { min-width: 0; flex: 1; }
 .layer-identity h2 { margin: 2px 0 4px; font-size: 1.5rem; display: flex; gap: 10px; align-items: baseline; }
-.layer-code { font-family: ui-monospace, monospace; font-size: .85rem; color: var(--ink-soft); }
+.layer-code { font-family: "GenZui Sans", ui-monospace, monospace; font-size: .85rem; color: var(--ink-soft); }
 .layer-name { margin: 0 0 8px; font-size: .82rem; color: var(--ink-soft); }
 .layer-facts { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; font-size: .9rem; }
 .fact.confusable { color: var(--ink-soft); }
@@ -123,7 +123,7 @@
 .layer-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 10px 0 4px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
   border: 1px solid var(--line); font-size: .84rem; background: var(--surface); }
-.chip-identity { font-family: ui-monospace, monospace; gap: 8px; }
+.chip-identity { font-family: "GenZui Sans", ui-monospace, monospace; gap: 8px; }
 .chip-reading { font-family: inherit; }
 .chip-ligature { font-size: 1rem; }
 .chip-count { font-weight: 600; }

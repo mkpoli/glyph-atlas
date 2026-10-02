@@ -8,7 +8,7 @@
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import { members as loadMembers } from '../lib/forms.js'
   import { history, step } from '../lib/formHistory.svelte.js'
-  import { number, reviewer } from '../lib/client.js'
+  import { number } from '../lib/client.js'
   import { t } from '../lib/i18n.svelte.js'
 
   let { family, start = 0, isOpen, onsaved, onexit } = $props()
@@ -61,13 +61,13 @@
       // as a whole, in one decision that clearing the cluster takes back.
       const whole = !form && !mixed && units.length === total && glyphs.length === total && glyphs.every(g => g.basis !== 'form_glyph')
       await step({ family: family.code_point, cluster: cluster.id }, async send => {
-        if (whole) await send({ kind: 'cluster', cluster: cluster.id, issue, client_id: reviewer(), ...wrong })
+        if (whole) await send({ kind: 'cluster', cluster: cluster.id, issue, ...wrong })
         // A decision covers at most 1,000 glyphs; a larger mark goes in parts.
         else for (let i = 0; i < units.length; i += 1000)
-          await send({ kind: 'glyph', units: units.slice(i, i + 1000), issue, client_id: reviewer(), ...wrong })
+          await send({ kind: 'glyph', units: units.slice(i, i + 1000), issue, ...wrong })
         // Marked glyphs are reported first, so a cluster marked mixed keeps them.
-        if (mixed) await send({ kind: 'cluster', cluster: cluster.id, issue: 'mixed', client_id: reviewer() })
-        if (form) await send({ kind: 'cluster', cluster: cluster.id, form, client_id: reviewer() })
+        if (mixed) await send({ kind: 'cluster', cluster: cluster.id, issue: 'mixed' })
+        if (form) await send({ kind: 'cluster', cluster: cluster.id, form })
       })
       const from = index, order = family.items.map(c => c.id)
       await onsaved({ reported: units.length, issue, mixed, form, count: cluster.count - units.length })
@@ -158,7 +158,7 @@
   .review-hint{font-size:12px;color:var(--muted);margin:0}
   .review-actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
   .review-actions button{font-size:12px;padding:8px 12px}
-  .review-actions kbd,.review-form kbd{font-size:9px;color:var(--muted);font-family:ui-monospace,monospace}
+  .review-actions kbd,.review-form kbd{font-size:9px;color:var(--muted);font-family:"GenZui Sans",ui-monospace,monospace}
   .review-actions .primary{margin-left:auto}.review-actions .primary kbd{color:inherit;opacity:.75;font-size:11px}
   .review-actual{width:72px;padding:7px 9px;font-size:14px}
   .review-forms{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
@@ -169,7 +169,7 @@
   span.review-glyph{display:block}.review-glyph.marked{border-color:var(--wrong);background:light-dark(#fdeceb, rgb(255 146 159 / 15%))}
   .review-glyph.marked::after{content:"✕";position:absolute;top:2px;left:6px;font-size:13px;color:var(--wrong)}
   .review-glyph.reported{opacity:.55}
-  .review-flag{position:absolute;top:3px;right:6px;font-size:14px;color:var(--wrong);font-family:"Noto Sans CJK JP","Yu Gothic",sans-serif}
+  .review-flag{position:absolute;top:3px;right:6px;font-size:14px;color:var(--wrong);font-family:"Noto Sans CJK JP","Yu Gothic","GenZui Sans",sans-serif}
   .review-form-mark{position:absolute;top:3px;right:6px;font-size:14px;color:var(--accent);font-family:"Kureedo Kata","GenZui Sans",system-ui,sans-serif}
   .review-done{padding:48px 0;font-size:14px;color:var(--muted);text-align:center}
   @media(max-width:700px){.review-grid{grid-template-columns:repeat(auto-fill,minmax(76px,1fr))}.review-actions .primary{margin-left:0}}

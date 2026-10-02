@@ -4,6 +4,7 @@
   import ScriptText from './ScriptText.svelte'
   import ScriptLegend from './ScriptLegend.svelte'
   import ProductionBadge from './ProductionBadge.svelte'
+  import WrittenFormField from './WrittenFormField.svelte'
   import AdvanceSwitch from './AdvanceSwitch.svelte'
   import { useSession } from '../lib/session.svelte.js'
   import ZiLink from './ZiLink.svelte'
@@ -18,7 +19,8 @@
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import CropContext from './CropContext.svelte'
   // `initial` is the record the server rendered the page with, so the first load needs no request.
-  let { id, clientId, close, saved, previous = null, next = null, position = '', initial = null } = $props()
+  // `changed` hears about a write that keeps the dialog open (a written form), as the crop dialog's does.
+  let { id, close, saved, changed = null, previous = null, next = null, position = '', initial = null } = $props()
   const first = untrack(() => initial)
   const session = useSession()
   // Going on to the next crop disables the focused save button while it loads, which drops its focus;
@@ -61,7 +63,7 @@
     const target = id, current = generation
     if (data.identity_status === 'unassigned' && (matches || !issue)) return
     if (matches) { issue = null; correction = null; noneSelected = false }
-    const payload = { identity: target, client_id: clientId, revision: data.revision,
+    const payload = { identity: target, revision: data.revision,
       source_revision: data.source_revision, verdict: issue ? 'wrong' : 'match',
       issue, note, ...(issue && correction ? isSingle(correction)
         ? { character: correction, issue: 'character' } : { correction } : {}) }
@@ -75,6 +77,12 @@
     } catch (e) { if (!closed && current === generation) error = e.message }
     finally { busy = false }
   }
+  // A written form saved for one glyph may come back after the dialog has moved to another; the
+  // glyph is marked as changed either way, and the record on screen is replaced only when it is that one.
+  function formed(result) {
+    changed?.(result.id, result)
+    if (!closed && result.id === data?.id) data = result
+  }
 </script>
 
 <dialog class="character-dialog corpus-dialog" bind:this={dialog} open oncancel={close} onclick={e => { if (e.target === dialog) close() }} aria-label={t('corpus.dialog.label')}>
@@ -82,7 +90,7 @@
     <header class="inspector-header"><span class="overline">{data?.needs_segmentation ? t('corpus.overline.group') : t('character.overline')}</span><div class="inspector-navigation"><span>{position}</span><button class="icon-button previous-character" aria-label={t('common.previousCharacter')} disabled={busy || !previous} onclick={() => previous?.()}>←</button><button class="icon-button next-character" aria-label={t('common.nextCharacter')} disabled={busy || !next} onclick={() => next?.()}>→</button><button class="icon-button close-inspector" aria-label={t('common.closeReviewer')} onclick={close}>×</button></div></header>
     {#if error}<div class="error-message" role="alert">{error}<button disabled={busy} onclick={() => load(id)}>{t('character.reload')}</button></div>{/if}
     {#if data}
-      <div class="inspector-production"><ProductionBadge item={data} /></div>
+      <div class="inspector-production"><ProductionBadge item={data} />{#if data.identity_status !== 'unassigned' && !data.needs_segmentation}<WrittenFormField item={data} corpus disabled={busy} working={value => busy = value} saved={formed} />{/if}</div>
       <div class="inspector-title"><h2 class:unassigned-title={data.identity_status === 'unassigned'}>{#if data.identity_status === 'unassigned'}{t('corpus.unassigned')}{#if graphemeChar(data)}<span class="title-grapheme" lang="ja" title={t('chips.grapheme')}>{graphemeChar(data)}</span>{/if}{:else}<ReferenceGlyph char={data.written_character ?? data.label} code_point={data.code_point} size="lg" />{/if}</h2>{#if data.identity_status !== 'unassigned'}<ZiLink character={data.written_character ?? data.label} />{/if}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.needs_segmentation ? t('corpus.state.needsSplitting') : data.state === 'checked' ? t('corpus.state.checkedHere') : data.state === 'flagged' ? t('state.flagged') : data.state === 'stale' ? t('corpus.state.sourceChanged') : t('state.unreviewed')}</span></div><CopyId id={data.id} />
       <p class="corpus-source-label">{#if data.needs_segmentation}<span>{t('corpus.characterCount', { count: data.character_count })} · </span>{/if}{t('corpus.sourceLabel', { source: sourceName })} <b lang="ja">{data.source_label}</b> <ZiLink character={data.source_label} compact />{#if data.identity_status !== 'unassigned' && data.label !== data.source_label}<span> → <b lang="ja">{data.label}</b> · {t('corpus.atlasCorrection')}</span>{/if}</p>
       <div class="inspector-figure">

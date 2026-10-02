@@ -71,6 +71,12 @@ SEEN = "seen"
 #: Events that are recorded and change no state: how long a line was open, free notes, and crops
 #: seen without a flag.
 STATELESS = frozenset({"timing", "note", SEEN})
+#: What a unit's letterforms are written as (`Unit.written_form`). It describes the crop and decides
+#: nothing: the character and the review stay as they are, so its event does not move the revision,
+#: and a review a reader is writing against the crop is still current after it.
+WRITTEN_FORM = "written_form"
+#: The fields whose events leave the target's revision where it is.
+UNREVISED = frozenset({SEEN, WRITTEN_FORM})
 #: The keys a split entry may carry. The identity and lifecycle fields belong to the server.
 SPLIT_KEYS = frozenset(
     {
@@ -807,7 +813,7 @@ class Store:
                      request.client_id or "", request.idempotency_key),
                 )
                 self._persist(conn, state, change)
-                if event.field != SEEN:
+                if event.field not in UNREVISED:
                     self._bump(conn, event.target_id)
                 result = self._build_result(conn, event, change, state)
                 conn.execute("UPDATE events SET result = ? WHERE id = ?", (_json(result), event.id))
@@ -1460,7 +1466,7 @@ class Store:
         )
         change.event = event
         self._persist(conn, state, change)
-        if event.field != SEEN:
+        if event.field not in UNREVISED:
             self._bump(conn, event.target_id)
         result = self._build_result(conn, event, change, state)
         conn.execute("UPDATE events SET result = ? WHERE id = ?", (_json(result), event.id))
@@ -1570,9 +1576,10 @@ class Store:
         self, conn: sqlite3.Connection, state: State, events: list[Review], state_seq: int
     ) -> None:
         """Replace the state and the revisions with what the log says they are."""
-        # A seen crop was not changed, so its event is not a revision: counting it here would give a
-        # rebuilt store other revisions than the live one handed out.
-        revisions = Counter(event.target_id for event in events if event.field != SEEN)
+        # A seen crop was not changed, and a written form changes no decision, so neither event is a
+        # revision: counting one here would give a rebuilt store other revisions than the live one
+        # handed out.
+        revisions = Counter(event.target_id for event in events if event.field not in UNREVISED)
         with self._transaction(conn):
             conn.execute("DELETE FROM lines")
             conn.execute("DELETE FROM units")

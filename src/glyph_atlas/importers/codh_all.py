@@ -325,7 +325,7 @@ def document_of(book: Book, record_rights: Rights, manifest: dict | None = None)
 def classification_of(code_point: int) -> Classification:
     """`unassessed` for a kana letter, whose hentaigana form the source does not record.
 
-    Kanji classes spanning several curated written forms stay unassessed too.
+    Kanji classes whose grapheme family spans several written forms stay unassessed too.
     """
     return Classification.UNASSESSED if is_kana(code_point) else codh.classification_of(code_point)
 
@@ -397,7 +397,8 @@ def import_all(
 
     The returned mapping holds the row counts of `documents` and `pages`, the number of `units`
     character units, the number of `reports` units counted apart (the units table holds both), the
-    number of `kana_unassessed` units, and the number of `books` imported. `MANIFEST.json` is written
+    number of `unassessed` units — a kana letter, or a kanji whose grapheme family spans several
+    written forms — and the number of `books` imported. `MANIFEST.json` is written
     by the merge.
     """
     out = Path(out)
@@ -459,7 +460,7 @@ def import_all(
         "pages": written.get("pages", 0),
         "units": len(units) - reports,
         "reports": reports,
-        "kana_unassessed": sum(
+        "unassessed": sum(
             1
             for unit in units
             if unit.kind is not UnitKind.UNREADABLE and unit.classification is Classification.UNASSESSED

@@ -126,7 +126,7 @@
   .variant{display:inline-flex;align-items:baseline;gap:6px;padding:4px 10px;border:1px solid var(--line);border-radius:7px;color:var(--ink);text-decoration:none;font-size:22px;line-height:1.2}
   .variant:hover{border-color:var(--accent)}
   .variant small{font-size:11px;color:var(--muted)}
-  .variant .code{font-family:ui-monospace,monospace;font-size:10px}
+  .variant .code{font-family:"GenZui Sans",ui-monospace,monospace;font-size:10px}
   .include-variants{justify-self:start;margin-left:92px}
   @media(max-width:600px){.include-variants{margin-left:0}}
   .variant-sources{margin:0;padding-left:92px;font-size:11px;color:var(--muted)}

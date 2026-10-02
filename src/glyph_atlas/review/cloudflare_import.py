@@ -1,18 +1,19 @@
-"""Import hosted reviews only when their published pixels and revision lineage still match."""
+"""Import hosted reviews by their revision lineage and written forms by their pixels."""
 from __future__ import annotations
 
 import json
 import re
 from collections import Counter, defaultdict
 from copy import deepcopy
+from datetime import datetime
 
-from .. import refs
+from .. import refs, written_form
 from ..schema import Review
 from ..unit_scope import character_count
 from .atlas import identity_text, label, reading_of, script_of_identity, single_character
 from .characters import _source_digest, reading_is_allowed, written_identity
 from .receipts import fingerprint
-from .store import _change
+from .store import UNREVISED, WRITTEN_FORM, _change
 
 REMOTE_ID = re.compile(r"cf:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$", re.IGNORECASE)
 POLICY = "cloudflare-import-v1"
@@ -138,7 +139,10 @@ def _append(store, conn, remote, field, value, evidence, event_id):
                  (event.id, event.target_type, event.target_id, event.field, _json(event.old), _json(event.new),
                   event.role, event.actor, event.evidence, event.at.isoformat(), event.actor, event_id))
     store._persist(conn, state, change)
-    store._bump(conn, event.target_id)
+    # A seen crop and a written form record without changing the target, so neither moves the
+    # revision the journal counts out (as `Store.record` holds them back the same way).
+    if field not in UNREVISED:
+        store._bump(conn, event.target_id)
     result = store._build_result(conn, event, change, state)
     conn.execute("UPDATE events SET result=? WHERE id=?", (_json(result), event.id))
     store._set_meta(conn, "state_seq", str(store._last_seq(conn)))
@@ -283,6 +287,86 @@ def ingest_cloudflare(store, payload: dict, *, apply=False) -> tuple[dict, dict]
     except _PreviewRollback:
         pass
     return {**payload, "reviews": output}, {"counts": dict(Counter(item["status"] for item in report)), "items": report}
+
+
+def ingest_written_forms(store, payload: dict, *, apply=False) -> tuple[dict, dict]:
+    """Return the hosted written-form journal plus an import report; previews write nothing.
+
+    A written form says what one crop's letterforms are written as and moves no revision, so it
+    has no lineage to rebuild: the pixels the reviewer saw are the whole claim, and a row lands
+    only while the local crop still has them. Rows this store cannot hold — another origin, or an
+    id this importer did not make — pass through as they came; the rest are replayed in the order
+    the site saved them, so a crop's latest form is the site's latest form the local pixels still
+    answer to.
+    """
+    output, kept = [], []
+    for row in payload.get("forms", []):
+        if row.get("origin", "local") == "local" and REMOTE_ID.fullmatch(str(row.get("id", ""))):
+            kept.append(row)
+        else:
+            output.append(row)
+    if not kept:
+        return {**payload, "forms": output}, {"counts": {}, "items": []}
+    report = []
+    try:
+        with store._lock, store._connection() as conn, store._transaction(conn):
+            for row in kept:
+                item = {"event_id": row["id"], "unit_id": row.get("target"), "status": "rejected"}
+                report.append(item)
+                conn.execute("SAVEPOINT remote_form")
+                try:
+                    prior = conn.execute("SELECT target_id,new FROM events WHERE id=?", (row["id"],)).fetchone()
+                    if prior:
+                        if prior["target_id"] != row["target"] or json.loads(prior["new"]) != row.get("form"):
+                            raise Rejected("remote event ID was reused with different content")
+                        item["status"] = "duplicate"
+                        output.append(row)
+                        continue
+                    form = row.get("form")
+                    if form is not None:
+                        try:
+                            written_form.check(form)
+                        except ValueError as error:
+                            raise Rejected(str(error)) from error
+                    unit = store._unit_row(conn, row["target"])
+                    if unit is None or not unit.active:
+                        raise Rejected("local occurrence is absent or retired")
+                    digest = _source_digest(store, unit)
+                    if not digest:
+                        # Nothing is judged of a checkout that lacks the image: a run with it still imports.
+                        item.update(status="unavailable", reason="the source image is not in the local image cache")
+                        continue
+                    if digest != row["pixels"]:
+                        raise Rejected("remote pixels no longer match the local crop")
+                    # A form names the shape of the character the reviewer saw; a crop relabelled since
+                    # is no longer what they described.
+                    if written_identity(unit) != row["label"]:
+                        raise Rejected("the local crop's character changed after the form was saved")
+                    # A form a local reviewer saved later is the newer word on the crop, and stands.
+                    saved = datetime.fromisoformat(row["at"])
+                    if any(datetime.fromisoformat(later["at"]) > saved for later in conn.execute(
+                            "SELECT at FROM events WHERE target_id=? AND field=? AND role!='model' AND id NOT LIKE 'cf:%'",
+                            (row["target"], WRITTEN_FORM))):
+                        raise Rejected("a later local written form must be preserved")
+                    evidence = _json({"kind": "written-form-review", "label": row["label"],
+                                      "cloudflare_import": {"policy": POLICY,
+                                                            "publication": payload.get("publication"),
+                                                            "remote": row}})
+                    _append(store, conn, {"target_id": row["target"], "actor": row["actor"], "at": row["at"]},
+                            WRITTEN_FORM, form, evidence, row["id"])
+                    item["status"] = "imported" if apply else "ready"
+                    if apply:
+                        output.append(row)
+                except (Rejected, KeyError, TypeError, ValueError) as error:
+                    conn.execute("ROLLBACK TO remote_form")
+                    item["reason"] = str(error) if isinstance(error, Rejected) else "invalid remote written form structure"
+                finally:
+                    conn.execute("RELEASE remote_form")
+            if not apply:
+                raise _PreviewRollback()
+    except _PreviewRollback:
+        pass
+    return {**payload, "forms": output}, {"counts": dict(Counter(item["status"] for item in report)), "items": report}
 
 
 def bind_remote_outcomes(result: dict, imports: dict) -> None:

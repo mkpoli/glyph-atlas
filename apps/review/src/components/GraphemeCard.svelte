@@ -32,7 +32,7 @@
   ul{list-style:none;margin:6px 0 0;padding:0;max-height:260px;overflow:auto}
   li button{display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:10px;width:100%;min-height:0;border:0;border-radius:5px;background:transparent;padding:5px 6px;text-align:left}
   li button:hover,li button:focus-visible{background:var(--accent-light);color:var(--accent)}
-  code{font-family:ui-monospace,monospace;font-size:10px;color:var(--muted)}
+  code{font-family:"GenZui Sans",ui-monospace,monospace;font-size:10px;color:var(--muted)}
   li small{margin-left:auto;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
   .card-all{display:block;min-height:0;width:100%;margin-top:6px;border:0;border-top:1px solid var(--line);border-radius:0;background:transparent;padding:8px 6px 2px;text-align:left;font-size:12px;color:var(--accent)}
   .card-all:hover,.card-all:focus-visible{text-decoration:underline;text-underline-offset:3px}

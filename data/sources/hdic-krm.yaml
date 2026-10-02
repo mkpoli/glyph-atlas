@@ -1,0 +1,48 @@
+id: hdic-krm
+name: KRM 観智院本類聚名義抄データベース（HDIC 平安時代漢字字書総合データベース）
+publisher: 平安時代漢字字書総合データベース編纂委員会（HDIC project）
+kind: transcription-corpus
+url: https://github.com/shikeda/krm
+revision: 9fc4f644674f307891442f1f39b3e436528c2392
+version: 1.2.24
+doi: 10.5281/zenodo.22164768
+licence: CC-BY-SA-4.0
+licence_evidence: https://github.com/shikeda/krm/blob/9fc4f644674f307891442f1f39b3e436528c2392/README.md
+attribution: "池田証寿, HDIC project『KRM: Database of the Kanchi-in Manuscript of Ruiju Myōgishō』(krm_main.tsv 1.2.24), CC BY-SA 4.0, doi:10.5281/zenodo.22164768"
+access:
+  repository: https://github.com/shikeda/krm
+  integrated_repository: https://github.com/shikeda/HDIC
+  viewer: https://hdic.chise.org
+format:
+  entries: "krm_main.tsv: one row per entry; `#` header lines, then entry_id, hanzi_id, kazama_location, tenri_location, volume_name, radical_name, volume_radical_index, hanzi_entry, original_entry, definition"
+  tenri_location: "T + volume (a/b/c) + 天理図書館善本叢書 page (3 digits) + line (1 digit) + segment (1 digit) + order in the segment (1 digit)"
+  headwords: "hanzi_entry is the collated form, original_entry the form written (〇 when the same); characters separated by ／; ー（X） the repetition mark standing for X; ［X］ a character the editors supply; IDS, CHISE/GlyphWiki references and a Greek suffix (僕β) for forms Unicode lacks; ■ an unreadable character"
+  frames: "krm_ndl.tsv: Book, Radical, Kazama page, Tenri page, NDL_url (pid and frame of the NDL facsimile)"
+images:
+  title: 類聚名義抄（貴重図書複製会, 1937）
+  publisher: 貴重図書複製会
+  holder: 国立国会図書館
+  shelfmark: 本別11-6
+  terms: https://dl.ndl.go.jp/ja/help_iiif
+  attribution: 国立国会図書館デジタルコレクション
+  volumes:
+    - {volume: 仏上, pid: "2586891"}
+    - {volume: 仏中, pid: "2586892"}
+    - {volume: 仏下本, pid: "2586893"}
+    - {volume: 仏下末, pid: "2586894"}
+    - {volume: 法上, pid: "2586895"}
+    - {volume: 法中, pid: "2586896"}
+    - {volume: 法下, pid: "2586897"}
+    - {volume: 僧上, pid: "2586898"}
+    - {volume: 僧中, pid: "2586899"}
+    - {volume: 僧下, pid: "2586900"}
+dating:
+  literal: the latter half of the 12th century
+  start: 1150
+  end: 1199
+  evidence: https://github.com/shikeda/krm/blob/9fc4f644674f307891442f1f39b3e436528c2392/krm_main.tsv
+notes:
+  - The NDL manifests of all ten volumes state Access Restrictions PDM (read 2026-10-01). Each frame shows one opening of the facsimile, a photographic plate of the manuscript holding two 天理 pages.
+  - HDIC dates the Kanchi-in manuscript, reorganised edition, to the latter half of the 12th century; the header does not say whether the date is of the reorganisation or of this copy, so the dating kind stays unknown.
+  - HDIC transcribes characters in collated Kangxi-dictionary forms and gives the written form in original_entry only where it differs. Definitions are normalised and carry editorial tone marks, so only headwords are placed on the page.
+  - krm_ndl.tsv predates the March 2025 specification change and lists some Tenri pages twice; a page is joined to its frame through volume_name and the Tenri page number.

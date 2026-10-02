@@ -16,6 +16,14 @@
   "observability": {"enabled": true, "head_sampling_rate": 0.1},
   "d1_databases": [{"binding": "DB", "database_name": "glyph-atlas", "database_id": "556cb20f-db02-4f2a-8044-f7fd86776db6", "migrations_dir": "migrations"}],
   "r2_buckets": [{"binding": "MEDIA", "bucket_name": "glyph-atlas"}],
-  // Batch corrections change up to 144 crops a request; one address gets 20 of them a minute.
-  "ratelimits": [{"name": "CORRECTIONS", "namespace_id": "4401", "simple": {"limit": 20, "period": 60}}]
+  // Sign-in codes are sent from MAIL_FROM, on a domain onboarded to Email Sending.
+  "send_email": [{"name": "EMAIL"}],
+  "vars": {"MAIL_FROM": "sign-in@glyphatlas.org"},
+  // BETTER_AUTH_SECRET is a secret, and so is each sign-in provider's app id and secret (GITHUB_CLIENT_ID,
+  // GITHUB_CLIENT_SECRET, and GOOGLE_, DISCORD_, LINE_ and KAKAO_ likewise); a provider without them is not offered.
+  // BETTER_AUTH_SECRET: `wrangler secret put BETTER_AUTH_SECRET`, and `.dev.vars` locally.
+  // Batch corrections change up to 144 crops a request; one address gets 20 of them a minute. A written
+  // form names one crop, and one address gets 30 a minute.
+  "ratelimits": [{"name": "CORRECTIONS", "namespace_id": "4401", "simple": {"limit": 20, "period": 60}},
+                 {"name": "WRITTEN_FORMS", "namespace_id": "4402", "simple": {"limit": 30, "period": 60}}]
 }

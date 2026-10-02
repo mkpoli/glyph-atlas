@@ -115,6 +115,7 @@ One located unit: a character, a ligature, a mark, a gap, or a sequence awaiting
 | `classification` | `unassessed`, `identified`, `ambiguous` (several candidates remain), `unencoded` (identified, no code point exists), `unidentified` |
 | `script` | `hiragana`, `hentaigana`, `katakana`, `han`, `hangul`, `gugyeol`, `symbol`, `latin`, `unknown`; the character layer is the authority |
 | `style` | style of this unit's letterforms, a value of `data/vocab/style.yaml`. `unassessed` takes the page's, then the document's; a `mixed` page or document passes nothing down, and the unit stays unassessed |
+| `written_form` | the shape the letterforms take when a reviewer records that it differs from the character: one character or an Ideographic Description Sequence, such as `𮟃` for a 還 written that way or `⿺辶𦊷`. Null when they are written as the character. The character, its grapheme and the review stay as they are |
 | `variants` | list of `{scheme, id, version}` with scheme `mj`, `ivs`, `glyphwiki` or `local`; several may apply |
 | `candidates` | scored alternatives `{unicode, p}` when `classification` is `ambiguous` |
 | `antecedent_ids` | for an iteration mark, the units it repeats, across a line break if needed |
