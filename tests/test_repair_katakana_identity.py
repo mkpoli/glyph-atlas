@@ -93,6 +93,7 @@ def test_the_site_takes_the_same_repair_once_and_never_over_a_review(tmp_path: P
     out = tmp_path / "d1"
     assert repair.write_site_parts(out, plan, "built") == 1
     part = (out / "parts" / "001.sql").read_text()
+    assert "units_refreshed_at" in (out / "parts" / "002.sql").read_text(), "the stamp is a part of its own"
     for _ in range(2):
         db.executescript(part)
     character, family, revision, data, snapshot = db.execute(
@@ -101,6 +102,39 @@ def test_the_site_takes_the_same_repair_once_and_never_over_a_review(tmp_path: P
     assert json.loads(data)["label"] == "バ" and json.loads(snapshot)["character"]["revision"] == 5
     assert db.execute("SELECT character FROM units WHERE id='seen'").fetchone() == ("ぶ",)
     assert "time-travel restore" in (out / "apply.sh").read_text()
+
+
+def test_a_review_saved_on_the_site_before_the_part_keeps_its_crop(tmp_path: Path):
+    db = site(tmp_path)
+    rows = [{"id": "ba", "character": "ば", "reading": "バ", "revision": 4, "state": "pending", "script": "katakana", "reviewed": 0}]
+    out = tmp_path / "d1"
+    repair.write_site_parts(out, repair.plan_site(rows, {"ba": ("U+3070", 4)}), "built")
+    db.execute("INSERT INTO submissions(id,actor,request,response,at) VALUES('s','a','{}','{}','t')")
+    db.execute("INSERT INTO events(id,submission,target,actor,expected_revision,before_data,after_data,event,snapshot,kind,at) "
+               "SELECT 'e','s','ba','a',4,data,json_set(data,'$.state','pending'),'{}','{}','review','t' FROM units WHERE id='ba'")
+    # The trigger applied the review; put the row back at the revision the part was built against.
+    db.execute("UPDATE units SET revision=4, character='ば' WHERE id='ba'")
+    db.executescript((out / "parts" / "001.sql").read_text())
+    assert db.execute("SELECT character FROM units WHERE id='ba'").fetchone() == ("ば",)
+
+
+def test_the_local_repair_waits_for_the_site(store: Store):
+    """A published crop is repaired once the site holds its katakana, and left alone while it does not."""
+    plan = repair.plan_dataset(store, {"ba": {"character": "ば", "revision": 0}})
+    assert plan.repairs == [] and {"id": "ba", "reason": "the site holds ば at revision 0"} in [
+        {"id": row["id"], "reason": row["reason"]} for row in plan.conflicts]
+    revision = store.revision("ba")
+    plan = repair.plan_dataset(store, {"ba": {"character": "バ", "revision": revision + 1}})
+    assert [row["id"] for row in plan.repairs] == ["ba"]
+    assert [row["id"] for row in repair.plan_dataset(store, {}).repairs] == ["ba"], "an unpublished crop is repaired"
+    plan = repair.plan_dataset(store, {"ba": {"character": "バ", "revision": revision + 1, "reviewed": 1}})
+    assert plan.repairs == [], "a crop reviewed on the site waits for that review's import"
+
+
+def test_a_person_s_local_decision_keeps_the_site_row(tmp_path: Path):
+    rows = [{"id": "ba", "character": "ば", "reading": "バ", "revision": 4, "state": "pending", "script": "katakana", "reviewed": 0}]
+    plan = repair.plan_site(rows, {"ba": ("U+3070", 4)}, {"ba"})
+    assert plan.repairs == [] and plan.conflicts[0]["reason"] == "a person decided it locally"
 
 
 def test_only_the_katakana_of_the_same_kana_counts():
