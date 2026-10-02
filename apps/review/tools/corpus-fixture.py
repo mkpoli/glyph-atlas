@@ -20,7 +20,7 @@ page = Page(id="codh:200008316:200008316_00030_2", document_id=doc.id, seq=51,
             image="https://codh.rois.ac.jp/char-shape/iiif/200008316/200008316_00030_2.tif",
             width=2878, height=4252)
 units = [Unit(id=f"{page.id}:B0001:C00{n}", document_id=doc.id, page_id=page.id,
-              seq=n, text_source=char, reading=char, unicode=f"U+{ord(char):04X}", method="import",
+              seq=n, text_source=char, unicode=f"U+{ord(char):04X}", method="import",
               box=Box(x=2305, y=1498+n*240, w=81, h=210)) for n, char in enumerate(['在', '在', '有'])]
 for name, rows, model in [('documents', [doc], Document), ('pages', [page], Page), ('units', units, Unit)]:
     tables.write(out / f'{name}.parquet', rows, model)

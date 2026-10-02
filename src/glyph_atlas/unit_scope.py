@@ -36,7 +36,7 @@ def character_count(text: str | None) -> int:
 def unit_scope(row: dict[str, Any]) -> dict[str, Any]:
     identity = encoded_text(row.get("unicode") or row.get("codepoint") or row.get("code_point"))
     text = identity if identity is not None else (
-        row.get("text_source") or row.get("char") or row.get("label") or row.get("reading"))
+        row.get("text_source") or row.get("char") or row.get("label"))
     count = character_count(text)
     granularity = row.get("granularity")
     needs_split = count != 1 or granularity in {"block", "sequence", "line"} or row.get("kind") == "sequence"

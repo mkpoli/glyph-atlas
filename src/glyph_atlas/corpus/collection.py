@@ -83,7 +83,7 @@ def archive_statistics(root: Path) -> dict:
         for file in corpus.parquet_files("units"):
             parquet = pq.ParquetFile(file)
             columns = [name for name in ("document_id", "unicode", "active", "box", "crop",
-                       "granularity", "kind", "text_source", "reading") if name in parquet.schema_arrow.names]
+                       "granularity", "kind", "text_source") if name in parquet.schema_arrow.names]
             for batch in parquet.iter_batches(batch_size=8192, columns=columns):
                 for row in batch.to_pylist():
                     if _character_unit_row(row):

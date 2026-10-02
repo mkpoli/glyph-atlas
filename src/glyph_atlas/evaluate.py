@@ -189,11 +189,11 @@ def compare(
     """Match predictions to truth page by page.
 
     `label_of` returns the label a unit is compared under; by default the code point when it is set
-    and the reading otherwise. Two units agree when their labels are equal.
+    and the transcription otherwise. Two units agree when their labels are equal.
     """
     if label_of is None:
         def label_of(unit: Unit) -> str:
-            return unit.unicode or unit.reading or ""
+            return unit.unicode or unit.text_source or ""
     truth_by_page: dict[str, list[Unit]] = {}
     for unit in truth:
         if unit.active:

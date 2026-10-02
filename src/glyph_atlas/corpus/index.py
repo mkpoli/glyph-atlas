@@ -1344,7 +1344,7 @@ def _renderable_unit_counts(corpora: Sequence[Any]) -> dict[str, int]:
         dataset = ds.dataset([str(f) for f in files], format="parquet")
         names = dataset.schema.names
         columns = [c for c in ("unicode", "active", "box", "crop", "granularity",
-                              "kind", "text_source", "reading") if c in names]
+                              "kind", "text_source") if c in names]
         if "unicode" not in columns or "box" not in columns:
             continue
         for row in dataset.to_table(columns=columns).to_pylist():
@@ -1443,7 +1443,6 @@ def located_units(
                 "kind",
                 "granularity",
                 "text_source",
-                "reading",
                 "unicode",
                 "method",
                 "review",
@@ -1525,7 +1524,6 @@ def _unit_row(
         "kind": row.get("kind"),
         **unit_scope(row),
         "text_source": row.get("text_source"),
-        "reading": row.get("reading"),
         "box": box,
         "crop": row.get("crop"),
         "crop_sha256": row.get("crop_sha256"),
@@ -1644,7 +1642,7 @@ def sample_units(
                     rows.append(
                         {
                             "unit_id": row.get("id"),
-                            "char": _char_of_codepoint(row.get("unicode") or "") or row.get("text_source") or row.get("reading"),
+                            "char": _char_of_codepoint(row.get("unicode") or "") or row.get("text_source"),
                             "codepoint": row.get("unicode"),
                             "corpus": corpus.name,
                             "document_id": doc_id,

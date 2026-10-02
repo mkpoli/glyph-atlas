@@ -420,7 +420,7 @@ def eval_alignment(
     predicted_units = _units_of(tables.Dataset(pred), wanted)
 
     def label(unit: object) -> str:
-        text = unit.unicode or unit.reading or ""
+        text = unit.unicode or unit.text_source or ""
         if not unit.unicode:
             return text
         try:

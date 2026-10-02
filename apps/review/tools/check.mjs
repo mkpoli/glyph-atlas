@@ -242,8 +242,8 @@ await step('split (s): one segmentation event retires the unit and creates two',
     field: 'segmentation',
     new: {
       split: [
-        { box: { ...unit.box, h: half }, reading: unit.reading },
-        { box: { ...unit.box, y: unit.box.y + half, h: unit.box.h - half }, reading: unit.reading },
+        { box: { ...unit.box, h: half }, text_source: unit.text_source },
+        { box: { ...unit.box, y: unit.box.y + half, h: unit.box.h - half }, text_source: unit.text_source },
       ],
     },
     base_revision: unit.revision,
@@ -349,7 +349,7 @@ await step('merge (m): the two halves become one ligature unit', async () => {
   const mergeEvent = both.result.created[0]
   const unit = unitsInState()[mergeEvent]
   assert(unit.kind === 'ligature' && unit.active, 'the merged unit is not an active ligature')
-  return `${mergeEvent} reading ${JSON.stringify(unit.reading)}`
+  return `${mergeEvent} text ${JSON.stringify(unit.text_source)}`
 })
 
 await step('undo of a merge: the output is retired, the inputs stay retired', async () => {
@@ -394,7 +394,7 @@ await step('create a unit (c): POST /units', async () => {
     body: {
       line_id: lineId,
       box: { x: 520, y: 140, w: 60, h: 60 },
-      reading: 'そ',
+      text_source: 'そ',
       client_id: clientId,
       idempotency_key: key(),
     },
@@ -433,7 +433,7 @@ await step('409: a stale base revision answers the current state', async () => {
   const { status, result } = await review({
     target_type: 'unit',
     target_id: current.id,
-    field: 'reading',
+    field: 'text_source',
     new: 'く',
     base_revision: 0,
     client_id: clientId,
@@ -443,7 +443,7 @@ await step('409: a stale base revision answers the current state', async () => {
   assert(result.error === 'stale-revision', `error ${result.error}`)
   assert(result.revision === current.revision && result.base_revision === 0, 'the revisions are not reported')
   assert(result.state && result.state.id === current.id, 'the current state is missing')
-  return `base 0, current ${result.revision}, state reading ${JSON.stringify(result.state.reading)}`
+  return `base 0, current ${result.revision}, state text ${JSON.stringify(result.state.text_source)}`
 })
 
 await step('409: reapplying from the reported revision is accepted', async () => {
@@ -453,7 +453,7 @@ await step('409: reapplying from the reported revision is accepted', async () =>
   const refusal = await review({
     target_type: 'unit',
     target_id: current.id,
-    field: 'reading',
+    field: 'text_source',
     new: 'く',
     base_revision: current.revision - 1,
     client_id: clientId,
@@ -463,14 +463,14 @@ await step('409: reapplying from the reported revision is accepted', async () =>
   const reapplied = await review({
     target_type: 'unit',
     target_id: current.id,
-    field: 'reading',
+    field: 'text_source',
     new: 'く',
     base_revision: refusal.result.revision,
     client_id: clientId,
     idempotency_key: key(),
   })
   assert(reapplied.status === 200, `reapplying answered ${reapplied.status}`)
-  assert(reapplied.result.state.reading === 'く', 'the reapplied reading is not stored')
+  assert(reapplied.result.state.text_source === 'く', 'the reapplied text is not stored')
   return `reapplied from revision ${refusal.result.revision} as ${reapplied.result.id}`
 })
 
@@ -479,7 +479,7 @@ await step('409: a retired unit answers retired with its state', async () => {
   const { status, result } = await review({
     target_type: 'unit',
     target_id: retired,
-    field: 'reading',
+    field: 'text_source',
     new: 'く',
     client_id: clientId,
     idempotency_key: key(),
@@ -494,7 +494,7 @@ await step('a repeated idempotency key answers the earlier result', async () => 
   const body = {
     target_type: 'unit',
     target_id: `${lineId}:u3`,
-    field: 'reading',
+    field: 'text_source',
     new: 'さ',
     base_revision: 0,
     client_id: clientId,

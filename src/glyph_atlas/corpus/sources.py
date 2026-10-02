@@ -30,12 +30,12 @@ LINES_DIR = "lines"
 UNITS = "units.parquet"
 
 #: Text columns per table, most authoritative first. The order matters: a line's
-#: ``text_raw`` is what the transcriber wrote, ``text`` is the normalised reading.
+#: ``text_raw`` is what the transcriber wrote, ``text`` is its normalised form.
 TEXT_COLUMNS = {
     "lines": ("text_raw", "text"),
     "page_texts": ("text_raw",),
     "pages": ("transcription",),
-    "units": ("text_source", "reading", "unicode"),
+    "units": ("text_source", "unicode"),
 }
 
 
