@@ -31,7 +31,7 @@ from glyph_atlas.review import corpus_source
 from glyph_atlas.review.characters import Layers
 from glyph_atlas.review.server import create_app
 from glyph_atlas.review.store import ReviewRequest, Store
-from glyph_atlas.schema import Box, Document, Line, Page, Unit, VariantRef
+from glyph_atlas.schema import Box, Document, Line, Page, Unit
 
 PAGE = "hk:entry:9"
 LINE = PAGE + ":L3"
@@ -411,7 +411,6 @@ def test_historical_family_keeps_written_characters_readings_and_ink_distinct(da
             id=f"variant:{index}", document_id="d", page_id=PAGE, line_id=LINE,
             seq=10 + index, unicode=refs.to_code_point(char), reading=reading,
             box=Box(x=20 + index * 30, y=20, w=25, h=50),
-            variants=[VariantRef(scheme="local", id=f"ink-{index}")],
         ))
     tables.write(dataset / "units.parquet", units, Unit)
     api = client(dataset)
@@ -432,7 +431,6 @@ def test_historical_family_keeps_written_characters_readings_and_ink_distinct(da
     assert grouped["counts"]["total"] == 3 and grouped["counts"]["exact_total"] == 1
     assert {row["code_point"] for row in grouped["items"]} == {"U+4EEE", "U+5047"}
     assert len({row["id"] for row in grouped["items"]}) == 3
-    assert {row["variants"][0]["id"] for row in grouped["items"]} == {"ink-0", "ink-1", "ink-2"}
     assert {row["grapheme"]["code_point"] for row in grouped["items"]} == {"U+4EEE"}
     for query in ["仮", "假", "U+5047"]:
         rows = api.get("/layers/graphemes", params={"q": query, "group": "han"}).json()["items"]

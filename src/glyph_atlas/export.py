@@ -806,7 +806,6 @@ def figures_of(
                 units_by_label_coverage["reading" if unit.reading else "no reading"] += 1
                 units_by_label_coverage["unicode" if unit.unicode else "no unicode"] += 1
                 units_by_label_coverage["jibo" if refs.jibo_of(unit.unicode) else "no jibo"] += 1
-                units_by_label_coverage["variants" if unit.variants else "no variants"] += 1
                 document = licences.get(unit.document_id or "")
                 units_by_image[_licence_of(document.image_rights if document else None)] += 1
                 units_by_text[_licence_of(document.text_rights if document else None)] += 1

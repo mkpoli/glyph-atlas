@@ -351,7 +351,6 @@ class Layers:
             "written_character": written_identity(unit) or None,
             "code_point": form,
             "grapheme": _grapheme_head(refs.character(form), self.per_character) if refs.character(form) else None,
-            "variants": [variant.model_dump() for variant in unit.variants],
             "exact": exact,
             "kind": str(unit.kind),
             "granularity": unit.granularity,

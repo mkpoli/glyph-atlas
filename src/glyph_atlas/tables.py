@@ -43,8 +43,9 @@ from .schema import RETIRED_UNIT_FIELDS, Box, Document, Group, Line, Page, PageT
 #: `Unit.jibo`: the 字母 is metadata on a character now, and `data/vocab/characters.tsv` states it.
 #: Version 3 added `Document.style`, `Page.style` and `Unit.style`; a table written before reads them
 #: as `unassessed`. Version 4 added `Unit.written_form`, which a table written before reads as null.
-#: Version 5 removed it again: a crop's form is a claim of the assertion ledger. A table that still
-#: holds the column reads as without it while every value is empty (`schema.RETIRED_UNIT_FIELDS`).
+#: Version 5 removed it again, and `Unit.variants`: a crop's form is a claim of the assertion ledger,
+#: and a shape id names a form. A table that still holds either column reads as without it while every
+#: value is empty (`schema.RETIRED_UNIT_FIELDS`).
 SCHEMA_VERSION = 5
 BATCH_SIZE = 65_536
 MANIFEST_NAME = "MANIFEST.json"

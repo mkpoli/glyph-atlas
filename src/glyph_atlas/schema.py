@@ -364,8 +364,9 @@ class ReviewState(StrEnum):
 #: written then still carries them; one that holds that value reads as without it, and one that holds
 #: anything else is refused, so nothing it said is dropped unread. The form a crop is written in is a
 #: claim of the assertion ledger now (`review.crop_forms`), and `scripts/migrate_written_forms.py`
-#: moves a dataset's written forms there.
-RETIRED_UNIT_FIELDS: dict[str, Any] = {"written_form": None}
+#: moves a dataset's written forms there; a crop's MJ, IVS or GlyphWiki shape id names that form
+#: (`glyph_atlas.representation`).
+RETIRED_UNIT_FIELDS: dict[str, Any] = {"written_form": None, "variants": []}
 
 
 class Unit(BaseModel):
@@ -404,7 +405,6 @@ class Unit(BaseModel):
     classification: Classification = Classification.UNASSESSED
     script: Script = Script.UNKNOWN
     style: Style = Field(default=style.UNASSESSED, description="style of this unit's letterforms; unassessed takes the page's")
-    variants: list[VariantRef] = Field(default_factory=list, description="MJ, IVS, GlyphWiki or local shape ids")
     candidates: list[Candidate] = Field(default_factory=list, description="scored alternatives when classification is ambiguous")
     antecedent_ids: list[str] = Field(default_factory=list, description="units an iteration mark repeats")
     group_id: str | None = Field(default=None, description="連綿 group this unit belongs to")

@@ -90,7 +90,6 @@ SPLIT_KEYS = frozenset(
         "script",
         "classification",
         "voicing",
-        "variants",
         "candidates",
         "confidence",
         "crop",
@@ -1887,7 +1886,6 @@ def _merge(state: State, event: Review, ids: Any, *, guard: bool) -> Change:
             "classification": Classification.UNASSESSED.value,
             "candidates": [],
             "voicing": None,
-            "variants": [],
             "confidence": None,
             "antecedent_ids": [],
             "group_id": None,
@@ -1956,7 +1954,7 @@ def _machine_child(data: dict[str, Any], entry: dict[str, Any], parent: Unit, ev
         # The split followed what a reviewer typed; name that review so the child can be traced to it.
         meta["feedback_split"].update(basis=stated["basis"], source_event_id=stated.get("source_event_id"))
     return {"meta": meta, "crop": None, "crop_sha256": None, "candidates": [], "confidence": None,
-            "variants": [], "group_id": None, "antecedent_ids": [], "voicing": None,
+            "group_id": None, "antecedent_ids": [], "voicing": None,
             "classification": Classification.UNASSESSED.value,
             "text_source": entry.get("text_source", data.get("reading")), "script": script,
             "kind": UnitKind.CHAR.value if single else UnitKind.SEQUENCE.value,
