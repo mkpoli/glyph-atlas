@@ -9,17 +9,20 @@ character data (`Character.readings`). For every units table under the given dir
 - sets `schema_version` to 6 in the dataset's `MANIFEST.json`.
 
 It does the same for every review store (`review.sqlite`) under the directories: the units the store
-holds, the units it imported, and the units and split entries its events carry, because a store
-rebuilds units from its events when it replays them. An event that set a reading stays as it was
-written: it is history, it moved its unit's revision, and replaying it now changes nothing.
+holds, the units it imported, and the units and split entries its events carry and answered with,
+because a store rebuilds units from its events when it replays them. An event that set a reading
+stays as it was written: it is history, it moved its unit's revision, and replaying it now changes nothing.
 
-A table or store that needs none of this is left untouched, so the script can run again.
+Every table is read and validated before anything is written. A table that does not validate as
+version 6 once its readings are dropped is reported and left alone: one still holding `jibo` goes
+through `scripts/migrate_schema_v2.py` first, and one whose written forms or shape ids hold values
+through `scripts/migrate_written_forms.py`. Directories named `backups` are snapshots and
+are skipped. A table or store that needs none of this is left untouched, so the script can run again.
 
     uv run python scripts/migrate_schema_v6.py work            # report what would change
     uv run python scripts/migrate_schema_v6.py work --apply    # archive, then rewrite
 
-A units table whose written forms or shape ids still hold values goes through
-`scripts/migrate_written_forms.py` first. Stop every process that opens a review store first. A store holding events that are not yet in
+Stop every process that opens a review store first. A store holding events that are not yet in
 `reviews.jsonl` refuses to open after its tables change, so run `atlas review apply` on it before
 migrating.
 """
@@ -45,13 +48,20 @@ from glyph_atlas.schema import Unit
 
 RETIRED = "reading"
 COMMAND = "scripts/migrate_schema_v6.py"
+SNAPSHOTS = "backups"
+BATCH = 5000
+
+
+def _live(path: Path, root: Path) -> bool:
+    return SNAPSHOTS not in path.relative_to(root).parts
 
 
 def units_tables(root: Path) -> list[Path]:
-    """Every units table under `root`: a `units.parquet` file or a `units/` directory of shards."""
+    """Every units table under `root` outside a snapshot directory: a `units.parquet` file or a
+    `units/` directory of shards."""
     found = [path for path in root.rglob("units.parquet") if path.is_file()]
     found += [path for path in root.rglob("units") if path.is_dir() and any(path.glob("*.parquet"))]
-    return sorted(found)
+    return sorted(path for path in found if _live(path, root))
 
 
 def needs_migration(path: Path) -> bool:
@@ -89,12 +99,22 @@ def archive_table(path: Path, archive: Path) -> int:
     return len(rows)
 
 
-def migrate_table(path: Path) -> int:
-    """Rewrite one units table as v6 under its lock; return its number of rows."""
+def read_v6(path: Path) -> list[Unit]:
+    """Every row of one table as a v6 unit; raises when a row does not validate as one."""
+    return [tables._row_to_model({key: value for key, value in row.items() if key != RETIRED}, Unit)
+            for file in tables._table_files(path) for row in pq.read_table(file).to_pylist()]
+
+
+def migrate_table(path: Path, archive: Path) -> tuple[int, int]:
+    """Archive one table's telling readings and rewrite it as v6 under its lock.
+
+    Returns its number of rows and of archived readings. The rows are validated before the archive
+    is written, so a table that cannot be migrated leaves neither.
+    """
     with tables.locked(path):
-        units = [tables._row_to_model({key: value for key, value in row.items() if key != RETIRED}, Unit)
-                 for file in tables._table_files(path) for row in pq.read_table(file).to_pylist()]
-        return tables._write_unlocked(path, units, Unit, shard=path.is_dir(), command=COMMAND)
+        units = read_v6(path)
+        kept = archive_table(path, archive)
+        return tables._write_unlocked(path, units, Unit, shard=path.is_dir(), command=COMMAND), kept
 
 
 def without_reading(value: Any) -> Any:
@@ -120,14 +140,26 @@ def _json_rewrite(text: str | None) -> str | None:
 
 
 def review_stores(root: Path) -> list[Path]:
-    return sorted(path for path in root.rglob("review.sqlite") if path.is_file())
+    return sorted(path for path in root.rglob("review.sqlite") if path.is_file() and _live(path, root))
+
+
+def _rows(conn: sqlite3.Connection, sql: str):
+    """`sql`, which selects the rowid first and ends in `rowid > ?`, in batches of `BATCH` rows."""
+    last = -1
+    while True:
+        rows = conn.execute(sql + " ORDER BY rowid LIMIT ?", (last, BATCH)).fetchall()
+        if not rows:
+            return
+        yield from rows
+        last = rows[-1][0]
 
 
 def migrate_store(path: Path, *, apply: bool) -> dict[str, int]:
     """Take readings out of the units a review store holds; return how many rows of each kind change.
 
     The reads and the writes are one transaction, taken before the first read, so a store written in
-    between cannot have its new rows replaced by ones read before them. An event whose field is
+    between cannot have its new rows replaced by ones read before them. Rows are read and rewritten
+    in batches, so a store of a million imported rows is not held in memory. An event whose field is
     `reading` keeps its value: that is what it recorded.
     """
     counts = {"units": 0, "imported": 0, "events": 0}
@@ -135,31 +167,32 @@ def migrate_store(path: Path, *, apply: bool) -> dict[str, int]:
     with closing(sqlite3.connect(uri, uri=True, isolation_level=None)) as conn:
         conn.execute("BEGIN IMMEDIATE" if apply else "BEGIN")
         present = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-        updates: list[tuple[str, tuple]] = []
+
+        def write(statement: str, parameters: tuple) -> None:
+            if apply:
+                conn.execute(statement, parameters)
+
         if "units" in present:
-            for unit_id, data in conn.execute("SELECT id, data FROM units"):
+            for rowid, data in _rows(conn, "SELECT rowid, data FROM units WHERE rowid > ?"):
                 new = _json_rewrite(data)
                 if new is not None:
                     counts["units"] += 1
-                    updates.append(("UPDATE units SET data = ? WHERE id = ?", (new, unit_id)))
+                    write("UPDATE units SET data = ? WHERE rowid = ?", (new, rowid))
         if "imported_records" in present:
-            for record_id, data in conn.execute("SELECT id, data FROM imported_records WHERE table_name = 'units'"):
-                new = _json_rewrite(data)
+            for rowid, name, data in _rows(conn, "SELECT rowid, table_name, data FROM imported_records WHERE rowid > ?"):
+                new = _json_rewrite(data) if name == "units" else None
                 if new is not None:
                     counts["imported"] += 1
-                    updates.append(("UPDATE imported_records SET data = ? WHERE table_name = 'units' AND id = ?",
-                                    (new, record_id)))
+                    write("UPDATE imported_records SET data = ? WHERE rowid = ?", (new, rowid))
         if "events" in present:
-            for seq, field, old, new in conn.execute("SELECT seq, field, old, new FROM events"):
+            for seq, field, old, new, result in _rows(conn, "SELECT seq, field, old, new, result FROM events WHERE seq > ?"):
                 if field == RETIRED:
                     continue
-                old_after, new_after = _json_rewrite(old), _json_rewrite(new)
-                if old_after is not None or new_after is not None:
+                after = (_json_rewrite(old), _json_rewrite(new), _json_rewrite(result))
+                if any(value is not None for value in after):
                     counts["events"] += 1
-                    updates.append(("UPDATE events SET old = COALESCE(?, old), new = COALESCE(?, new) WHERE seq = ?",
-                                    (old_after, new_after, seq)))
-        for statement, parameters in updates if apply else ():
-            conn.execute(statement, parameters)
+                    write("UPDATE events SET old = COALESCE(?, old), new = COALESCE(?, new), "
+                          "result = COALESCE(?, result) WHERE seq = ?", (*after, seq))
         conn.execute("COMMIT")
     return counts
 
@@ -181,14 +214,21 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("roots", nargs="+", type=Path, help="directories to search for datasets")
     parser.add_argument("--apply", action="store_true", help="archive and rewrite; without it, only report")
-    parser.add_argument("--archive", type=Path, default=Path("work/reading-purge/unit-readings.jsonl"),
+    parser.add_argument("--archive", type=Path, default=ROOT / "work/reading-purge/unit-readings.jsonl",
                         help="where the readings a transcription and a code point do not repeat are kept")
     arguments = parser.parse_args(argv)
     pending = [path for root in arguments.roots for path in units_tables(root) if needs_migration(path)]
+    refused: dict[Path, str] = {}
     for path in pending:
+        try:
+            read_v6(path)
+        except ValueError as error:
+            refused[path] = str(error).splitlines()[0]
+    for path, reason in refused.items():
+        print(f"left unchanged: {path} does not validate as version 6 ({reason})", file=sys.stderr)
+    for path in (path for path in pending if path not in refused):
         if arguments.apply:
-            kept = archive_table(path, arguments.archive)
-            rows = migrate_table(path)
+            rows, kept = migrate_table(path, arguments.archive)
             manifest = " and its manifest" if migrate_manifest(path.parent) else ""
             print(f"migrated {path}{manifest} ({rows} units, {kept} readings archived)")
         else:
@@ -206,7 +246,7 @@ def main(argv: list[str] | None = None) -> int:
                       f"{counts['events']} events)")
     if not stores:
         print("every review store is already version 6")
-    return 0
+    return 1 if refused else 0
 
 
 if __name__ == "__main__":

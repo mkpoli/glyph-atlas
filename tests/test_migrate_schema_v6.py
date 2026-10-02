@@ -140,3 +140,19 @@ def test_a_migrated_store_opens_and_replays_its_reading_event_as_a_no_op(tmp_pat
     assert units["ke"][0].text_source == "け"
     with pytest.raises(BadRequest, match="reading"):
         Store(root).record(ReviewRequest(target_id="ki", field="reading", new="キ", client_id="reviewer"))
+
+
+def test_a_table_an_older_schema_wrote_is_left_alone_and_snapshots_are_skipped(tmp_path):
+    """A table that still holds `jibo` does not validate as version 6: nothing of it is written or
+    archived, the run says so and fails, and a `backups` snapshot is not touched at all."""
+    root = tmp_path / "work"
+    root.mkdir()
+    older = v4_dataset(root / "older")
+    table = pq.read_table(older)
+    pq.write_table(table.append_column("jibo", pa.array(["加", None, None])), older)
+    snapshot = v4_dataset(root / "backups")
+    before = {path: path.read_bytes() for path in (older, snapshot)}
+    archive = tmp_path / "archive.jsonl"
+    assert migrate.main([str(root), "--apply", "--archive", str(archive)]) == 1
+    assert {path: path.read_bytes() for path in before} == before
+    assert not archive.exists()
