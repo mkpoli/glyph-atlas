@@ -77,6 +77,14 @@ try {
   await browser.waitFor(`document.querySelector(".target-character").innerText === ${JSON.stringify(third)}`)
   console.log(`ok   Next deals ${third} in a new entry, and Back returns to ${second}`)
 
+  // A crop opened in the inspector takes its own entry over the round's; closing it leaves the round as it was.
+  await browser.evaluate('document.querySelector(".inspect-choice").click()')
+  await browser.waitFor('location.pathname.startsWith("/en/crop/") && !!document.querySelector("dialog[open]")', 30000)
+  await browser.evaluate('document.querySelector(".close-inspector").click()')
+  await browser.waitFor('!document.querySelector("dialog[open]")', 30000); await settle()
+  assert(await target() === third && await here() === `/en/review/${keyOf(third)}?production=unknown`, `closing the inspector returns to the round (${await here()})`)
+  console.log('ok   the inspector opens a crop over the round and closing it returns to the round')
+
   // The header's Quick Review link picks a grapheme again, and the address names the round it deals.
   await browser.evaluate('document.querySelector(".review-link").click()')
   await browser.waitFor('location.pathname.startsWith("/en/review/")', 30000); await settle()
