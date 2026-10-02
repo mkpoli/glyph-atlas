@@ -78,9 +78,8 @@ async function claimLegacy() {
   if (!reviewer) return
   const response = await fetch('/api/account/claim', { method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ reviewer }) })
-  // Asked for, held, or held by another account, the id is settled from here; an admin grants a
-  // claim. A failure tries again next time.
-  if ([200, 202, 409, 422, 429].includes(response.status)) forget(LEGACY)
+  // Held now, or held by another account, the id is settled from here. A failure tries again next time.
+  if ([200, 409, 422, 429].includes(response.status)) forget(LEGACY)
 }
 
 /** Make sure the browser is signed in before a write. */

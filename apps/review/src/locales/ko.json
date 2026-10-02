@@ -736,10 +736,5 @@
   "admin.submission.other.one": "크롭 {count}개 제출",
   "admin.submission.other.other": "크롭 {count}개 제출",
   "admin.unavailable.one": "수정한 크롭이 소장 자료에 더 이상 없어 {count}건은 그대로 두었습니다.",
-  "admin.unavailable.other": "수정한 크롭이 소장 자료에 더 이상 없어 {count}건은 그대로 두었습니다.",
-  "admin.claims.title": "이 ID를 요청한 사람",
-  "admin.claims.give": "이 사람에게 부여",
-  "admin.claims.given": "{id}이(가) 이제 {name}에게 귀속되었습니다.",
-  "admin.claims.count.one": "{count}명 요청 중",
-  "admin.claims.count.other": "{count}명 요청 중"
+  "admin.unavailable.other": "수정한 크롭이 소장 자료에 더 이상 없어 {count}건은 그대로 두었습니다."
 }

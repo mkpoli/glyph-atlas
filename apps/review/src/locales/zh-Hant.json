@@ -755,10 +755,5 @@
   "admin.submission.other.one": "提交{count}個裁切",
   "admin.submission.other.other": "提交{count}個裁切",
   "admin.unavailable.one": "{count}筆紀錄未變更：其中有裁切已不在館藏中。",
-  "admin.unavailable.other": "{count}筆紀錄未變更：其中有裁切已不在館藏中。",
-  "admin.claims.title": "申請認領者",
-  "admin.claims.give": "分配給此人",
-  "admin.claims.given": "{id}現已歸屬{name}。",
-  "admin.claims.count.one": "{count}人申請認領",
-  "admin.claims.count.other": "{count}人申請認領"
+  "admin.unavailable.other": "{count}筆紀錄未變更：其中有裁切已不在館藏中。"
 }

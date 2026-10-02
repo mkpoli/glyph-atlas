@@ -779,11 +779,6 @@
   "admin.submission.other.other": "Submission of {count} crops",
   "admin.unavailable.one": "{count} was left: a crop it changed is no longer in the collection.",
   "admin.unavailable.other": "{count} were left: a crop they changed is no longer in the collection.",
-  "admin.claims.title": "Asked for by",
-  "admin.claims.give": "Give to them",
-  "admin.claims.given": "{id} now belongs to {name}.",
-  "admin.claims.count.one": "{count} asking",
-  "admin.claims.count.other": "{count} asking",
   "history.reviewer.you": "you",
   "history.byUser": "Reviews by {name}",
   "history.byUser.clear": "Show everyone"

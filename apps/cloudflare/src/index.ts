@@ -4,7 +4,7 @@ import { formsRoute, withForm, formed, FORM_COLUMNS, type FormTools, type UnitFo
 import { similarCrops } from './similar';
 import { componentSearch, componentTerm } from './components';
 import { formProblem, type FormProblem } from './writtenForm';
-import { auth, claim, grant, owned, providers, viewer } from './auth';
+import { auth, claim, owned, providers, viewer } from './auth';
 import { reviewers, submissions } from './admin';
 export { leastTypicalQuery } from './forms';
 export { componentMatchQuery } from './components';
@@ -1391,7 +1391,6 @@ export default {
         // An admin's page: rejecting what a reviewer saved. Banning and roles are Better Auth's own.
         if(path.startsWith('/api/admin/')&&!me.admin)throw new Problem(403,'Only an admin can do this.');
         if(path==='/api/admin/reject')return json(await reject(env,me.id,await body(request)));
-        if(path==='/api/admin/claims'){const input=await body(request);const {status,body:out}=await grant(env,text(input.actor,128,'actor',true)!,text(input.user,64,'user',true)!);return json(out,status)}
         if(path==='/api/account/claim'){const {status,body:out}=await claim(env,me,String((await body(request)).reviewer??''));return json(out,status)}
         if(path==='/atlas/corpus/reviews')return json(await submit(env,request,me.id,'@corpus'));
         if(path==='/atlas/rounds')return json(await submit(env,request,me.id));
