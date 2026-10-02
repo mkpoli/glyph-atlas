@@ -157,7 +157,6 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 .character-dialog .inspector-savebar{background:var(--overlay-page);flex-direction:row;flex-wrap:wrap;justify-content:flex-end;align-items:center;padding:14px max(4.4vw,calc((100vw - 1440px)/2 + 4.4vw))}
 .character-dialog .inspector-savebar .primary{width:auto;min-width:300px}
 .character-dialog .inspector-savebar .looks-right{align-self:auto}
-.character-dialog .inspector-savebar .skip-character{order:-1}
 .character-dialog .inspector-savebar .advance-switch{order:-2;margin-right:auto;align-self:center}
 }
 .options-menu button[aria-pressed="true"]{color:var(--accent);font-weight:500}
@@ -167,9 +166,7 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 .credit-beside{display:none;margin-top:10px}.credit-after{margin-top:24px}
 .inspector-header{justify-content:flex-end}
 @media(min-width:1000px){.credit-beside{display:block}.credit-after{display:none}}
-/* Skip is the other way out of a crop, so it is as tall and as legible as the button beside it. */
-.inspector-savebar .skip-character{padding:14px 22px;font-size:13px;border-radius:7px;background:var(--surface)}
-.inspector-savebar .skip-character,.inspector-savebar .save-character{min-height:52px}
+.inspector-savebar .save-character{min-height:52px}
 .inspector-savebar .advance-switch{align-self:flex-start}
 @media(min-width:1000px){.character-dialog .inspector-savebar{align-items:stretch}.character-dialog .inspector-savebar .looks-right{align-self:center}}
 .tile-id{margin-top:3px;font-family:ui-monospace,SFMono-Regular,Consolas,"GenZui Sans",monospace;font-size:9px;color:light-dark(#8a8a93, #9d9da6);white-space:normal!important;word-break:break-all;overflow:visible!important}.record-id{display:flex;align-items:center;gap:10px;margin:6px 0 0;font-size:11px;color:var(--muted)}.record-id code{font-family:ui-monospace,SFMono-Regular,Consolas,"GenZui Sans",monospace;font-size:10px;word-break:break-all}.copy-id{border:0;background:transparent;padding:2px 4px;font-size:11px;color:var(--muted);text-decoration:underline;flex-shrink:0}.copy-id:hover{color:var(--ink)}

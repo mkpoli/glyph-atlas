@@ -749,6 +749,6 @@
   "admin.unavailable.other": "{count}筆紀錄未變更：其中有裁切已不在館藏中。",
   "character.save.changes.close": "儲存 · 關閉",
   "character.save.changes.next": "儲存 · 下一個",
-  "quiz.keyboardHint.issues": "W M B X問題類型 · S略過 · ←→ 切換裁切",
+  "quiz.keyboardHint.issues": "W M B X問題類型 · S略過 · ←→切換裁切",
   "suggestions.pick.next": "下一個字…"
 }

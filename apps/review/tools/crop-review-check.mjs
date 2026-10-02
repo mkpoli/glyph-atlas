@@ -60,8 +60,25 @@ try {
   assert(units(config.directory)[id].unicode === 'U+30AB', `the picked character was not saved: ${units(config.directory)[id].unicode}`)
   console.log('PASS another character is picked from the search and saved')
 
+  // Under joined characters the characters are picked one after another.
+  const other = ids.find(each => each !== id)
+  await browser.evaluate(`document.querySelector('.glyph-grid [data-unit="${other}"]').click()`)
+  await browser.waitFor(ready, 60000)
+  await browser.key('m')
+  await browser.waitFor('!!document.querySelector("dialog[open] .suggestion-pick input")')
+  for (const [char, point] of [['ア', 'U+30A2'], ['カ', 'U+30AB']]) {
+    await browser.evaluate(`(() => { const i = document.querySelector('dialog[open] .suggestion-pick input'); i.focus(); i.value = '${char}'; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+    await browser.waitFor(`[...document.querySelectorAll('dialog[open] .suggestion-pick .candidate')].some(c => c.textContent.includes('${point}'))`, 20000)
+    await browser.evaluate(`[...document.querySelectorAll('dialog[open] .suggestion-pick .candidate')].find(c => c.textContent.includes('${point}')).click()`)
+  }
+  await browser.waitFor('document.querySelector("dialog[open] .suggestion-choice.picked")?.textContent.includes("アカ")')
+  assert(await browser.evaluate(pressed('merged')), 'picking a character left joined characters')
+  await browser.evaluate('document.querySelector("dialog[open] .close-inspector").click()')
+  await browser.waitFor('document.querySelector("dialog[open]") === null')
+  console.log('PASS joined characters are picked one after another')
+
   // The Skip card closes without writing.
-  await browser.evaluate(`document.querySelector('.glyph-grid [data-unit="${ids.find(each => each !== id)}"]').click()`)
+  await browser.evaluate(`document.querySelector('.glyph-grid [data-unit="${other}"]').click()`)
   await browser.waitFor(ready, 60000)
   const skipMark = events(config.directory).length
   await browser.key('s')

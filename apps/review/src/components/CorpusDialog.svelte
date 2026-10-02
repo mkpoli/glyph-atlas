@@ -56,7 +56,8 @@
   // ← and → step through the list, as the arrows in the header do; the crop view keeps its own arrows.
   function stepKey(event) {
     if (event.defaultPrevented || busy || event.metaKey || event.ctrlKey || event.altKey) return
-    if (event.target.closest?.('input, textarea, select, .crop-viewport')) return
+    if (event.target.closest?.('input, textarea, select, .crop-viewport, .character-search')) return
+    if ([...document.querySelectorAll('dialog[open]')].at(-1) !== dialog) return
     if (event.key === 'ArrowLeft' && previous) { event.preventDefault(); previous() }
     else if (event.key === 'ArrowRight' && next) { event.preventDefault(); next() }
   }

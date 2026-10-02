@@ -59,7 +59,7 @@
     <div class="suggestion-end">
       <div class="suggestion-pick"><CharacterSearch compact codePoints bind:value={query} label={joined && picked ? t('suggestions.pick.next') : t('corpus.chooseAnother')}
         placeholder={joined && picked ? t('suggestions.pick.next') : t('search.placeholder')} onselect={pickOther} /></div>
-      <button type="button" class="no-suggestion" class:chosen={noneSelected} aria-pressed={noneSelected} {disabled} onclick={() => choose(null, true)}>{#if noneSelected}<span aria-hidden="true">✓ </span>{/if}{t('suggestions.noneOfThese')}<kbd>N</kbd></button>
+      <button type="button" class="no-suggestion" class:chosen={noneSelected} aria-pressed={noneSelected} {disabled} onclick={() => choose(null, true)}>{#if noneSelected}<span aria-hidden="true">✓ </span>{/if}{t('suggestions.noneOfThese')}<kbd aria-hidden="true">N</kbd></button>
     </div>
   </div>
 {/if}
