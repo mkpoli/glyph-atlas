@@ -31,10 +31,11 @@
 
 {#if item?.style}
   <div class="style-field">
-    <span class="style-value">{t('style.label')}: <b>{t(`style.kind.${item.style}`)}</b>
-      {#if item.style_basis !== 'none'}<span class="style-basis">{t(`style.basis.${basis}`)}</span>{/if}</span>
+    <!-- A style nobody assessed says nothing, so only the menu to set one is shown. -->
+    {#if item.style !== 'unassessed'}<span class="style-value">{t('style.label')}: <b>{t(`style.kind.${item.style}`)}</b>
+      {#if item.style_basis !== 'none'}<span class="style-basis">{t(`style.basis.${basis}`)}</span>{/if}</span>{/if}
     {#if item.style_editable && editable}
-      <label class="style-own">{t('style.own')}
+      <label class="style-own">{item.style === 'unassessed' ? t('style.label') : t('style.own')}
         <select value={own} {disabled} onchange={choose}>
           <option value="unassessed">{t('style.inherit')}</option>
           {#each STYLES as value}<option {value}>{t(`style.kind.${value}`)}</option>{/each}
