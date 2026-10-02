@@ -232,11 +232,16 @@ EVERYWHERE = frozenset({"*"})
 
 
 def regions(sequence: str) -> frozenset[str]:
-    """The source regions a sequence describes: `⿱⺈巴(GHTJKPV)` gives G, H, T, J, K, P and V."""
+    """The source regions a sequence describes: `⿱⺈巴(GHTJKPV)` gives G, H, T, J, K, P and V.
+    A bracketed letter (`(GHTKP[B])`) is BabelStone's annotation of the glyph, not a region the
+    sequence is tagged for, and is left out; a tag of bracketed letters alone (`([G])`) is read as no
+    tag."""
     tag = REGION.search(sequence)
     if not tag:
         return EVERYWHERE
-    return frozenset({tag[1]}) if tag[1] == "UCS2003" else frozenset(re.findall(r"[A-Z]", tag[1]))
+    if tag[1] == "UCS2003":
+        return frozenset({tag[1]})
+    return frozenset(re.findall(r"[A-Z]", re.sub(r"\[[^\]]*\]", "", tag[1]))) or EVERYWHERE
 
 
 def _overlap(x: frozenset[str], y: frozenset[str]) -> bool:

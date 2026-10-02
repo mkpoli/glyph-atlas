@@ -313,3 +313,9 @@ def test_a_difference_inside_a_named_part_stays_one_position_when_the_part_is_sp
     found = v.attest(desc, sources(("甲", "乙"), ("丙", "丁")))
     assert found[v.ordered("奚", "𢀖")].contexts == ("渓/溪",)
     assert [(item.a, item.b) for item in v.kept(found)] == [v.ordered("溪", "渓")]
+
+
+def test_a_bracketed_letter_of_a_region_tag_is_no_region():
+    assert v.regions("⿱⺈⿸⿻口丿乚(GHTKP[B])") == frozenset("GHTKP")
+    assert v.regions("⿰口夂(G[B])") & v.regions("⿰厶夂(J[B])") == frozenset()
+    assert v.regions("⿰口夂([G])") == v.regions("⿰口夂") == v.EVERYWHERE
