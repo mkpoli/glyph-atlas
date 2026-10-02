@@ -46,7 +46,7 @@ SOURCES = {"wiktionary", "unihan", "joined", "editorial"}
 # (email, PIN, the address you@example.org), and stay in Latin letters.
 KEEP = {"CODH", "Unicode", "HI", "Lab", "Minna", "de", "Honkoku", "JSON", "ID", "IDS", "Ctrl", "Esc", "Home", "Enter", "Shift",
         "click", "qwerty", "zi", "tools", "Wikipedia", "roneo", "scan", "Gothic", "C", "J", "K", "M", "V", "X", "Z", "n", "s",
-        "CC", "BY", "SA", "email", "PIN", "you", "example", "org"}
+        "CC", "BY", "SA", "email", "PIN", "you", "example", "org", "Gravatar"}
 
 KAIKKI = "https://kaikki.org/dictionary/Vietnamese/kaikki.org-dictionary-Vietnamese.jsonl"
 UNIHAN = "https://www.unicode.org/Public/18.0.0/ucd/Unihan.zip"
