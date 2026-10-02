@@ -70,12 +70,14 @@
 
 <style>
   .similar-crops{margin:24px 0 0}.similar-crops h3{margin:0;font-size:12px;font-weight:500;color:var(--muted)}
-  .similar-note{color:var(--muted);font-size:13px;margin-top:8px}
-  .similar-skeleton{height:96px;border-radius:8px;background:var(--surface-disabled);margin-top:8px}
+  .similar-note{color:var(--muted);font-size:13px;margin-top:8px;min-height:104px}
+  .similar-skeleton{height:144px;border-radius:8px;background:var(--surface-disabled);margin-top:8px}
   .similar-tabs{display:flex;gap:6px;margin:8px 0}
   .similar-tabs button{font-size:11px;padding:7px 10px;border-radius:5px;background:var(--surface-disabled);border-color:transparent}
   .similar-tabs button[aria-pressed="true"]{color:var(--accent);background:var(--accent-light)}
-  .similar-grid{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px}
+  /* One row, scrolled sideways: the section keeps one height whatever the count. */
+  .similar-grid{list-style:none;padding:0 0 4px;margin:0;display:flex;gap:6px;overflow:auto hidden;height:104px;scrollbar-width:thin}
+  .similar-grid li{flex:0 0 72px}
   .similar-grid a{display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px;border:1px solid var(--line);border-radius:6px;color:inherit;text-decoration:none}
   .similar-grid img,.similar-missing{width:60px;height:60px;object-fit:contain;display:grid;place-items:center;font-size:28px}
   .similar-grid img{background:#fff}

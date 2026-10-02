@@ -15,6 +15,7 @@
   import { t } from '../lib/i18n.svelte.js'
   import { cropAddress, useInspector } from '../lib/inspector.svelte.js'
   import CropContext from './CropContext.svelte'
+  import Glyph from './Glyph.svelte'
   import { repairOf } from '../lib/cropDetails.js'
   import SimilarCrops from './SimilarCrops.svelte'
   import CropReview from './CropReview.svelte'
@@ -279,29 +280,36 @@
     {#if replaced}<p class="replaced-note" role="status">{t('character.replaced')}</p>{/if}
     {#if error}<div class="error-message" role="alert">{error}<button disabled={busy} onclick={() => load(id)}>{t('character.reload')}</button></div>{/if}
     {#if data}
-      <div class="inspector-production">{#if productionLabel(data)}<ProductionBadge item={data} />{/if}<StyleField item={data} editable={!onVerdict} disabled={busy || !fresh} working={value => busy = value} saved={styled} /></div>
-      <div class="inspector-title"><CropTitle char={data.label} script={data.script} /><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{:else if repairOf(data)?.label === 'no-class'}<span class="repair-note" title={t('repair.reason.noClass')}>{t('repair.noClass')}</span>{/if}{#if data.state === 'checked' || data.state === 'flagged'}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.state === 'checked' ? t('state.checked') : t('state.flagged')}</span>{/if}</div><CopyId id={data.id} />
-      <div class="inspector-figure">
-        {#if editingBox && data.context && data.context_box}
-          <figure class="nearby crop-adjustment" bind:this={nearby}>
-            <div class="context-region drawing" bind:this={contextElement} onpointerdown={down} onpointermove={move} onpointerup={() => start = null} onpointercancel={() => start = null} role="img" aria-label={t('character.crop.dragToAdjust')}>
-              <img src={data.context_image} alt={t('character.context.alt')} draggable="false" onload={() => { loaded = true; imageFailed = false }} onerror={() => { editingBox = false; error = t('character.context.loadError') }} />
-              {#if boxStyle}<span class="context-outline" style={boxStyle}></span>{/if}
-            </div>
-            <figcaption><button type="button" disabled={busy} onclick={() => editingBox = false}>{t('character.crop.doneAdjusting')}</button></figcaption>
-          </figure>
-        {:else}
-          {#key data.image}<CropContext item={data} detail={data} cropBox={box ? toSource(box) : null} disabled={busy} onload={() => { loaded = true; imageFailed = false }} onerror={() => imageFailed = true} />{/key}
-        {/if}
+      <!-- The crop alone, in a box of one size for every crop, then the page around it further down. -->
+      <div class="inspector-left">
+        <figure class="crop-box">{#key data.image}<Glyph item={data} eager onload={() => { loaded = true; imageFailed = false }} onerror={() => imageFailed = true} />{/key}</figure>
+        <div class="inspector-figure">
+          {#if editingBox && data.context && data.context_box}
+            <figure class="nearby crop-adjustment" bind:this={nearby}>
+              <div class="context-region drawing" bind:this={contextElement} onpointerdown={down} onpointermove={move} onpointerup={() => start = null} onpointercancel={() => start = null} role="img" aria-label={t('character.crop.dragToAdjust')}>
+                <img src={data.context_image} alt={t('character.context.alt')} draggable="false" onerror={() => { editingBox = false; error = t('character.context.loadError') }} />
+                {#if boxStyle}<span class="context-outline" style={boxStyle}></span>{/if}
+              </div>
+              <figcaption><button type="button" disabled={busy} onclick={() => editingBox = false}>{t('character.crop.doneAdjusting')}</button></figcaption>
+            </figure>
+          {:else}
+            {#key data.image}<CropContext item={data} detail={data} cropBox={box ? toSource(box) : null} disabled={busy} />{/key}
+          {/if}
+        </div>
         <div class="credit-beside"><SourceCredit item={data} /></div>
       </div>
-      {#snippet formBar()}{#if !onVerdict}<CropForm crop={data} chosen={form} onchoose={value => form = value} disabled={busy || !fresh} />{/if}{/snippet}
-      <CropReview forms={formBar} {issue} onissue={chooseIssue} suggested={suggestedIssue} disabled={busy || !fresh} onskip={skip}
-        targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={suggestions} loading={suggesting} contextResult={contextSuggestions} contextLoading={contextSuggesting} label={data.label} value={issue === 'character' ? written : correction} onchoose={chooseSuggestion} />
-      {#if issue === 'crop' && !onVerdict && data.context && data.crop_editable !== false}<div class="crop-change">{#if box}{t('character.crop.adjusted')}<button type="button" disabled={busy} onclick={() => box = null}>{t('common.reset')}</button>{:else}<button type="button" class="quiet-link adjust-crop" disabled={busy || editingBox} onclick={beginCrop}>{t('character.crop.adjust')}</button>{/if}</div>{/if}
-      <SimilarCrops id={data.id} label={data.label} ready={fresh && loaded} />
+      <div class="inspector-right">
+        <div class="inspector-production">{#if productionLabel(data)}<ProductionBadge item={data} />{/if}<StyleField item={data} editable={!onVerdict} disabled={busy || !fresh} working={value => busy = value} saved={styled} /></div>
+        <div class="inspector-title"><CropTitle char={data.label} script={data.script} /><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{:else if repairOf(data)?.label === 'no-class'}<span class="repair-note" title={t('repair.reason.noClass')}>{t('repair.noClass')}</span>{/if}{#if data.state === 'checked' || data.state === 'flagged'}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.state === 'checked' ? t('state.checked') : t('state.flagged')}</span>{/if}</div>
+        <CopyId id={data.id} />
+        {#snippet formBar()}{#if !onVerdict}<CropForm crop={data} chosen={form} onchoose={value => form = value} disabled={busy || !fresh} />{/if}{/snippet}
+        <CropReview forms={formBar} {issue} onissue={chooseIssue} suggested={suggestedIssue} disabled={busy || !fresh} onskip={skip}
+          targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={suggestions} loading={suggesting} contextResult={contextSuggestions} contextLoading={contextSuggesting} label={data.label} value={issue === 'character' ? written : correction} onchoose={chooseSuggestion} />
+        {#if issue === 'crop' && !onVerdict && data.context && data.crop_editable !== false}<div class="crop-change">{#if box}{t('character.crop.adjusted')}<button type="button" disabled={busy} onclick={() => box = null}>{t('common.reset')}</button>{:else}<button type="button" class="quiet-link adjust-crop" disabled={busy || editingBox} onclick={beginCrop}>{t('character.crop.adjust')}</button>{/if}</div>{/if}
+        <SimilarCrops id={data.id} label={data.label} ready={fresh && loaded} />
+      </div>
       <div class="credit-after"><SourceCredit item={data} /></div>
-    {:else if !error}<div class="inspector-skeleton"></div>{/if}
+    {:else if !error}<div class="inspector-left"><div class="crop-box shimmer"></div></div><div class="inspector-right"><div class="inspector-skeleton"></div></div>{/if}
   </div>
   <footer class="inspector-savebar">
     <!-- Always there outside a round, so the choice is visible before a list is opened. -->
