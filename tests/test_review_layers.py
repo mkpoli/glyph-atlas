@@ -8,8 +8,8 @@ The case the layer exists for is U+2A708 𪜈: a character whose Unicode name sa
 * a character with no occurrence in the corpus still answers its identity, its components and its
   reading, with the count reported as zero;
 * located crops and transcription hits are never added into one number or drawn as one thing;
-* a character correction and a reading correction are two events on two fields, so a phonetic reading
-  never overwrites the encoded written identity.
+* a character correction and a crop correction are separate events on their own fields, and a
+  correction writes no reading.
 
 No test reaches the network: the corpus service is the `http_server` fixture, which serves files.
 """
@@ -579,49 +579,38 @@ def test_no_corpus_index_still_answers_the_character_layer(dataset):
 
 # The one write -----------------------------------------------------------------------------------
 
-def test_a_correction_keeps_the_character_and_the_reading_apart(dataset):
-    """The layers are two events: a reading never rewrites the code point it was written with."""
+def test_a_correction_writes_the_character_and_no_reading(dataset):
+    """The identity and the script it carries are two events; no reading is written alongside."""
     api = client(dataset)
     unit = api.get("/layers/characters/U+30CD").json()["samples"][0]
     payload = {"id": str(uuid4()), "client_id": "fixture-reviewer", "revision": unit["revision"],
-               "image_sha256": digest_of(dataset), "character": "𪜈", "reading": "とも",
+               "image_sha256": digest_of(dataset), "character": "𪜈",
                "note": "the ligature, not ネ", "verdict": "wrong", "issue": "character"}
 
     answer = api.post(f"/layers/units/{unit['id']}", json=payload).json()
-    assert answer["changed"] == ["character", "script", "reading"]
+    assert answer["changed"] == ["character", "script"]
     assert answer["layers"]["code_point"] == "U+2A708"
     assert answer["layers"]["character"] == "𪜈"
-    assert answer["layers"]["reading"] == "とも"
+    assert "reading" not in answer["layers"]
     assert answer["layers"]["jibo"] == []
-    assert [row["field"] for row in answer["results"]] == ["unicode", "script", "reading", "review"]
+    assert [row["field"] for row in answer["results"]] == ["unicode", "script", "review"]
 
     log = [event for event in Store(dataset).events() if event.target_id == unit["id"]]
     written = {event.field: json.loads(event.evidence)["layer"] for event in log if event.field != "review"}
-    assert written == {"unicode": "character", "script": "script", "reading": "reading"}
+    assert written == {"unicode": "character", "script": "script"}
     assert json.loads(next(e for e in log if e.field == "unicode").evidence)["from"] == "U+30CD"
     review = json.loads(next(e for e in log if e.field == "review").evidence)
     assert review["kind"] == "character-review", "the review export reads this kind"
-    assert review["correction"]["reading"] == "とも"
-    assert review["layer_correction"]["changed"] == ["character", "script", "reading"]
+    assert "reading" not in review["correction"] and "reading" not in review["before"]
+    assert review["layer_correction"]["changed"] == ["character", "script"]
 
     stored = next(row for row, _ in Store(dataset).unit_snapshot(unit["id"]) if row.active)
     assert stored.unicode == "U+2A708", "the encoded written identity is stored on the unit"
-    assert stored.reading == "とも"
     # 𪜈 is encoded as a Han ideograph, so the script label follows the layer to `han` rather than
     # to the katakana the shape is used as: the layer states the encoding, the ligature states the use.
     assert str(stored.script) == "han"
     assert api.get("/layers/characters/U+2A708").json()["occurrence_count"] == 2
     assert api.get("/layers/characters/U+30CD").json()["occurrence_count"] == 0
-
-    # A reading-only correction leaves the identity exactly where it was.
-    again = api.get("/layers/characters/U+2A708").json()["samples"][0]
-    second = api.post(f"/layers/units/{again['id']}", json={
-        **payload, "id": str(uuid4()), "revision": again["revision"], "character": None,
-        "reading": "とも", "issue": "reading", "client_id": "second-reviewer"}).json()
-    assert second["changed"] == ["reading"]
-    assert second["layers"]["code_point"] == "U+2A708"
-    stored = next(row for row, _ in Store(dataset).unit_snapshot(again["id"]) if row.active)
-    assert stored.unicode == "U+2A708" and stored.reading == "とも"
 
 
 def test_a_correction_records_the_issues_the_reviewer_offers(dataset):
@@ -630,15 +619,13 @@ def test_a_correction_records_the_issues_the_reviewer_offers(dataset):
     unit = api.get("/layers/characters/U+5B50").json()["samples"][0]
     answer = api.post(f"/layers/units/{unit['id']}", json={
         "id": str(uuid4()), "client_id": "fixture-reviewer", "revision": unit["revision"],
-        "image_sha256": digest_of(dataset), "character": "U+2A708", "reading": None,
+        "image_sha256": digest_of(dataset), "character": "U+2A708",
         "verdict": "wrong", "issue": "merged", "note": "two characters in one crop"}).json()
-    # 𪜈 is the ligature ト + モ, so the reading follows the corrected character to とも.
-    assert answer["changed"] == ["character", "script", "reading"]
+    assert answer["changed"] == ["character", "script"]
     review = json.loads(next(e for e in Store(dataset).events()
                              if e.target_id == unit["id"] and e.field == "review").evidence)
     assert review["issue"] == "merged"
-    assert review["layer_correction"]["changed"] == ["character", "script", "reading"]
-    assert review["layer_correction"]["reading"] == "とも"
+    assert review["layer_correction"]["changed"] == ["character", "script"]
 
 
 def test_a_retried_correction_answers_the_first_result(dataset):
@@ -651,19 +638,19 @@ def test_a_retried_correction_answers_the_first_result(dataset):
     api = client(dataset)
     unit = api.get("/layers/characters/U+30CD").json()["samples"][0]
     payload = {"id": str(uuid4()), "client_id": "fixture-reviewer", "revision": unit["revision"],
-               "image_sha256": digest_of(dataset), "character": "𪜈", "reading": "とも",
+               "image_sha256": digest_of(dataset), "character": "𪜈",
                "verdict": "wrong", "issue": "character", "note": "retry me"}
 
     first = api.post(f"/layers/units/{unit['id']}", json=payload)
     assert first.status_code == 200, first.text
     events = len(Store(dataset).events())
-    assert first.json()["changed"] == ["character", "script", "reading"]
+    assert first.json()["changed"] == ["character", "script"]
 
     # The identical body, sent again after the occurrence has already changed: the same answer.
     retry = api.post(f"/layers/units/{unit['id']}", json=payload)
     assert retry.status_code == 200, retry.text
     assert retry.json()["duplicate"] is True
-    assert retry.json()["changed"] == ["character", "script", "reading"]
+    assert retry.json()["changed"] == ["character", "script"]
     assert retry.json()["layers"]["code_point"] == "U+2A708"
     assert [row["id"] for row in retry.json()["results"]] == [row["id"] for row in first.json()["results"]]
     assert len(Store(dataset).events()) == events, "a retry writes nothing"
@@ -674,7 +661,7 @@ def test_a_retried_correction_answers_the_first_result(dataset):
     again = api.get("/layers/characters/U+2A708").json()["samples"]
     assert api.post(f"/layers/units/{unit['id']}", json={**payload, "id": str(uuid4()),
                     "revision": next(row["revision"] for row in again if row["id"] == unit["id"]),
-                    "reading": "トモ", "issue": "reading"}).status_code == 200
+                    "character": "子"}).status_code == 200
     later = api.post(f"/layers/units/{unit['id']}", json=payload)
     assert later.status_code == 200 and later.json()["duplicate"] is True
     assert len(Store(dataset).events()) == events + 2, "the retry added no event of its own"
@@ -689,20 +676,16 @@ def test_a_correction_refuses_a_second_character_and_a_stale_revision(dataset):
     api = client(dataset)
     unit = api.get("/layers/characters/U+306D").json()["samples"][0]
     base = {"id": str(uuid4()), "client_id": "fixture-reviewer", "revision": unit["revision"],
-            "image_sha256": digest_of(dataset), "reading": None, "verdict": "wrong",
+            "image_sha256": digest_of(dataset), "verdict": "wrong",
             "issue": "character", "note": ""}
     assert api.post(f"/layers/units/{unit['id']}", json={**base, "character": "トモ"}).status_code == 422
     assert api.post(f"/layers/units/{unit['id']}", json={**base, "character": "U+306D"}).status_code == 422
-    # A reading is one character, unless the character is a ligature and the reading is the one the
-    # layer states for it: 𪜈 reads トモ, and 子 does not read とも.
-    plain = api.get("/layers/characters/U+5B50").json()["samples"][0]
-    two_kana = {**base, "id": str(uuid4()), "revision": plain["revision"], "character": None,
-                "reading": "とも"}
-    assert api.post(f"/layers/units/{plain['id']}", json=two_kana).status_code == 422
+    # A reading is no layer this route writes, and `reading` is no longer an issue.
     ligature = api.get("/layers/characters/U+2A708").json()["samples"][0]
-    allowed = {**base, "id": str(uuid4()), "revision": ligature["revision"], "character": None,
-               "reading": "とも", "issue": "reading"}
-    assert api.post(f"/layers/units/{ligature['id']}", json=allowed).status_code == 200
+    phonetic = {**base, "id": str(uuid4()), "revision": ligature["revision"], "character": None}
+    assert api.post(f"/layers/units/{ligature['id']}", json={**phonetic, "reading": "とも"}).status_code == 422
+    assert api.post(f"/layers/units/{ligature['id']}", json={**phonetic, "issue": "reading",
+                    "character": "U+30CD"}).status_code == 422
     assert api.post(f"/layers/units/{unit['id']}", json={**base, "revision": 99,
                     "character": "ね"}).status_code == 409
     assert api.post(f"/layers/units/{unit['id']}", json={**base, "image_sha256": "0" * 64,
@@ -848,7 +831,7 @@ def correct(api, unit_id: str, revision: int, dataset: Path, **fields):
     """Post one correction with the fixture's defaults."""
     return api.post(f"/layers/units/{unit_id}", json={
         "id": str(uuid4()), "client_id": "fixture-reviewer", "revision": revision,
-        "image_sha256": digest_of(dataset), "character": None, "reading": None,
+        "image_sha256": digest_of(dataset), "character": None,
         "verdict": "wrong", "issue": "character", "note": "", **fields})
 
 
@@ -856,9 +839,10 @@ def test_a_unit_written_as_an_ideographic_space_can_still_be_corrected(dataset):
     store = Store(dataset)
     store.record(ReviewRequest(target_id=f"{LINE}:u0", field="unicode", new="U+3000", client_id="reviewer-1"))
     answer = correct(client(dataset), f"{LINE}:u0", store.revision(f"{LINE}:u0"), dataset,
-                     reading="あ", issue="reading")
+                     character="あ")
     assert answer.status_code == 200, answer.text
-    assert answer.json()["changed"] == ["reading"]
+    assert answer.json()["changed"] == ["character", "script"]
+    assert answer.json()["layers"]["code_point"] == "U+3042"
 
 
 def test_a_compatibility_ideograph_is_stored_as_itself(dataset):
@@ -873,7 +857,7 @@ def test_a_submission_id_answers_only_for_its_own_occurrence(dataset):
     api = client(dataset)
     first, second = api.get("/layers/characters/U+1B127").json()["samples"][:2]
     payload = {"id": str(uuid4()), "client_id": "fixture-reviewer", "revision": first["revision"],
-               "image_sha256": digest_of(dataset), "character": "U+30CD", "reading": None,
+               "image_sha256": digest_of(dataset), "character": "U+30CD",
                "verdict": "wrong", "issue": "character", "note": ""}
     assert api.post(f"/layers/units/{first['id']}", json=payload).status_code == 200
     reused = api.post(f"/layers/units/{second['id']}", json={**payload, "revision": second["revision"]})
@@ -893,8 +877,8 @@ def test_a_character_with_a_mark_takes_its_script_and_can_be_browsed(dataset):
     assert card.json()["occurrence_count"] == 1
 
 
-def test_a_corrected_character_carries_its_reading_and_keeps_the_transcription(dataset):
-    """い corrected to り reads り; what the transcriber typed stays in `text_source`."""
+def test_a_corrected_character_keeps_the_transcription_and_the_reading(dataset):
+    """い corrected to り writes the identity only: `text_source` and the stored reading stay."""
     store = Store(dataset)
     target = f"{LINE}:u4"
     store.record(ReviewRequest(target_id=target, field="unicode", new="U+3044", client_id="reviewer-1"))
@@ -902,14 +886,7 @@ def test_a_corrected_character_carries_its_reading_and_keeps_the_transcription(d
     source = store.unit(target).text_source
     answer = correct(client(dataset), target, store.revision(target), dataset, character="り")
     assert answer.status_code == 200, answer.text
-    assert {"character", "reading"} <= set(answer.json()["changed"])
+    assert "character" in answer.json()["changed"] and "reading" not in answer.json()["changed"]
     stored = next(row for row, _ in Store(dataset).unit_snapshot(target) if row.active)
-    assert stored.unicode == "U+308A" and stored.reading == "り" and stored.text_source == source
-
-
-def test_a_typed_reading_wins_over_the_one_the_character_carries(dataset):
-    store = Store(dataset)
-    target = f"{LINE}:u4"
-    answer = correct(client(dataset), target, store.revision(target), dataset, character="り", reading="ね")
-    assert answer.status_code == 200, answer.text
-    assert next(row for row, _ in Store(dataset).unit_snapshot(target) if row.active).reading == "ね"
+    assert stored.unicode == "U+308A" and stored.reading == "い" and stored.text_source == source
+    assert [event.field for event in Store(dataset).events() if event.target_id == target].count("reading") == 1

@@ -240,7 +240,7 @@ def test_partial_round_leaves_unselected_crops_unreviewed(dataset):
     payload = {"id": str(uuid4()), "client_id": "problems-only", "grapheme": grapheme_of("あ"),
                "answers": [{"id": item['id'], "revision": item['revision'],
                             "image_sha256": item['image_sha256'], "verdict": "wrong", "issue": issue}
-                           for item, issue in zip(shown[:2], ['reading', 'crop'], strict=True)]}
+                           for item, issue in zip(shown[:2], ['character', 'crop'], strict=True)]}
     assert client.post('/atlas/rounds', json=payload).status_code == 200
     reopened = TestClient(create_app(dataset))
     assert reopened.get('/atlas').json()['counts'] == {"flagged": 2, "pending": 14}
@@ -351,19 +351,19 @@ def test_round_rejects_other_category_or_repeated_character(dataset):
 def test_crop_edit_publishes_new_image_and_old_review_still_conflicts(dataset):
     client = TestClient(create_app(dataset))
     item = client.get('/atlas?reading=あ').json()['items'][0]
-    payload = {"id": str(uuid4()), "client_id": "editor", "reading": "い", "revision": item['revision'], "image_sha256": item['image_sha256'],
+    payload = {"id": str(uuid4()), "client_id": "editor", "revision": item['revision'], "image_sha256": item['image_sha256'],
                "verdict": "match", "box": {**item['box'], "w": item['box']['w'] - 5}}
     result = client.post('/atlas/characters/' + item['id'], json=payload)
     assert result.status_code == 200, result.text
     detail = client.get('/atlas/characters/' + item['id']).json()
-    assert detail['label'] == 'い' and detail['state'] == 'checked' and detail['revision'] == 3
+    assert detail['label'] == 'あ' and detail['state'] == 'checked' and detail['revision'] == 2
     assert detail['box']['w'] == item['box']['w'] - 5
     assert detail['image'] != item['image']
     assert client.get(item['image']).status_code == 200  # immutable reviewed pixels remain available
     assert client.get(detail['image']).status_code == 200
     payload['id'] = str(uuid4())
     assert client.post('/atlas/characters/' + item['id'], json=payload).status_code == 409
-    assert len(Store(dataset).events()) == 3
+    assert len(Store(dataset).events()) == 2
 
 
 def test_round_survives_apply_and_replay(dataset):
@@ -573,11 +573,11 @@ def test_issue_can_be_saved_without_transcribing_joined_characters(dataset):
     assert client.post('/atlas/characters/' + item['id'], json=payload).status_code == 422
 
 
-def test_round_issues_and_optional_reading_corrections_survive_retry_and_undo(dataset):
+def test_round_issues_and_character_corrections_survive_retry_and_undo(dataset):
     import json
     client = TestClient(create_app(dataset))
     payload = round_payload(client, 4)
-    payload['answers'][0].update(verdict='wrong', issue='reading', correction='い')
+    payload['answers'][0].update(verdict='wrong', issue='character', character='い')
     payload['answers'][1].update(verdict='wrong', issue='merged', correction='シヨロ')
     payload['answers'][2].update(verdict='wrong', issue='blank')
     result = client.post('/atlas/rounds', json=payload)
@@ -587,7 +587,8 @@ def test_round_issues_and_optional_reading_corrections_survive_retry_and_undo(da
     assert current['label'] == 'い' and current['state'] == 'checked'
     merged = client.get('/atlas/characters/' + payload['answers'][1]['id']).json()
     assert merged['label'] == 'あ' and merged['state'] == 'flagged'
-    assert any(json.loads(e.evidence).get('suggested_reading') == 'シヨロ' for e in Store(dataset).events())
+    assert any(json.loads(e.evidence).get('suggested_text') == 'シヨロ' for e in Store(dataset).events())
+    assert 'reading' not in {e.field for e in Store(dataset).events()}
     assert all(r['current'] for r in client.get('/atlas/reviews').json()['reviews'])
     assert client.post('/atlas/rounds', json=payload).status_code == 200
     assert len(Store(dataset).events()) == 5
@@ -604,7 +605,7 @@ def test_round_issues_and_optional_reading_corrections_survive_retry_and_undo(da
 def test_corrected_round_undo_cannot_overwrite_an_intervening_edit(dataset):
     client = TestClient(create_app(dataset))
     payload = round_payload(client, 3)
-    payload['answers'][0].update(verdict='wrong', issue='reading', correction='い')
+    payload['answers'][0].update(verdict='wrong', issue='character', character='い')
     assert client.post('/atlas/rounds', json=payload).status_code == 200
     target = payload['answers'][0]['id']
     client.post('/reviews', json={'target_type':'unit', 'target_id':target, 'field':'note', 'new':'Later', 'client_id':'another'})
@@ -614,11 +615,11 @@ def test_corrected_round_undo_cannot_overwrite_an_intervening_edit(dataset):
     assert client.get('/atlas/characters/' + target).json()['label'] == 'い'
 
 
-@pytest.mark.parametrize('change', [{'issue':'blank'}, {'correction':'ア'}, {'issue':'merged', 'correction':'アカ'}])
-def test_retry_cannot_change_saved_error_type_or_reading(dataset, change):
+@pytest.mark.parametrize('change', [{'issue':'blank'}, {'character':'ア'}, {'issue':'merged', 'character':None, 'correction':'アカ'}])
+def test_retry_cannot_change_saved_error_type_or_character(dataset, change):
     client = TestClient(create_app(dataset))
     payload = round_payload(client, 1)
-    payload['answers'][0].update(verdict='wrong', issue='reading', correction='い')
+    payload['answers'][0].update(verdict='wrong', issue='character', character='い')
     assert client.post('/atlas/rounds', json=payload).status_code == 200
     payload['answers'][0].update(change)
     assert client.post('/atlas/rounds', json=payload).status_code == 422
@@ -939,7 +940,7 @@ def test_a_drag_in_a_scaled_page_saves_a_page_box(scaled: Path):
 
     saved = client.post("/atlas/characters/" + unit, json={
         "id": str(uuid4()), "client_id": "dragger", "revision": body["revision"],
-        "image_sha256": body["image_sha256"], "reading": "あ", "verdict": "wrong", "issue": "crop",
+        "image_sha256": body["image_sha256"], "verdict": "wrong", "issue": "crop",
         "box": dragged})
     assert saved.status_code == 200, saved.text
 
@@ -962,7 +963,7 @@ def test_a_drag_at_the_page_edge_saves_a_box_inside_the_page(scaled: Path):
     dragged = {"x": round(right) - 40, "y": round(bottom) - 40, "w": 40, "h": 40}
     saved = client.post("/atlas/characters/" + unit, json={
         "id": str(uuid4()), "client_id": "dragger", "revision": body["revision"],
-        "image_sha256": body["image_sha256"], "reading": "あ", "verdict": "wrong", "issue": "crop",
+        "image_sha256": body["image_sha256"], "verdict": "wrong", "issue": "crop",
         "box": dragged})
     assert saved.status_code == 200, saved.text
     after = client.get("/atlas/characters/" + unit).json()
@@ -985,11 +986,10 @@ def test_a_crop_only_record_has_no_context_and_no_grab_to_adjust(scaled: Path):
 
 
 def test_an_exported_review_says_whether_it_still_stands(searched: Path):
-    """Currentness is about the reading and the box a review recorded, not the row's written label.
+    """Currentness is about the identity and the box a review recorded.
 
-    Three cases, and the one that matters here is a record written as one character and read as
-    another: `evidence.correction.reading` holds the reading, so a review of that record is current
-    while the reading is unchanged, even though the written identity differs from it.
+    Three cases, and the first is a record written as one character and read as another: a match
+    records no identity, so it is held to the written character it was shown, whatever the reading.
     """
     client = TestClient(create_app(searched))
 
@@ -1008,22 +1008,22 @@ def test_an_exported_review_says_whether_it_still_stands(searched: Path):
     assert matched.status_code == 200, matched.text
     assert export_for("matcher")["current"] is True, "an unchanged match is current"
 
-    # A reading correction: current while the record still reads that way.
+    # A character correction: current while the record still holds that identity.
     unit = client.get("/atlas/characters/" + f"{LINE}:k0").json()
     corrected = client.post("/atlas/rounds", json={
         "id": str(uuid4()), "client_id": "corrector", "grapheme": grapheme_of(unit["label"]),
         "answers": [{"id": unit["id"], "revision": unit["revision"],
-                     "image_sha256": unit["image_sha256"], "verdict": "wrong", "issue": "reading",
-                     "correction": "ヌ"}]})
+                     "image_sha256": unit["image_sha256"], "verdict": "wrong", "issue": "character",
+                     "character": "ヌ"}]})
     assert corrected.status_code == 200, corrected.text
-    assert export_for("corrector")["current"] is True, "the correction is what the record now reads"
+    assert export_for("corrector")["current"] is True, "the correction is what the record now holds"
 
     # A later edit to the same unit leaves the earlier review behind it.
     later = client.post("/atlas/characters/" + unit["id"], json={
         "id": str(uuid4()), "client_id": "later", "revision": client.get(
             "/atlas/characters/" + unit["id"]).json()["revision"],
         "image_sha256": client.get("/atlas/characters/" + unit["id"]).json()["image_sha256"],
-        "reading": "メ", "verdict": "match"})
+        "verdict": "match"})
     assert later.status_code == 200, later.text
     assert export_for("corrector")["current"] is False, "a newer decision supersedes the earlier one"
 
@@ -1218,8 +1218,8 @@ def test_a_written_character_correction_keeps_the_reading(searched: Path):
     assert fields == {"unicode", "review"}, f"a reading event was written: {fields}"
 
 
-def test_the_round_records_the_identity_and_the_reading_snapshot(searched: Path):
-    """The evidence says which identity was proposed and what the record read at the time."""
+def test_the_round_records_the_identity_it_proposed(searched: Path):
+    """The evidence says which identity was proposed and which one the record now holds."""
     client = TestClient(create_app(searched))
     unit = client.get("/atlas/characters/" + f"{LINE}:k0").json()
     answer = client.post("/atlas/rounds", json={
@@ -1232,7 +1232,7 @@ def test_the_round_records_the_identity_and_the_reading_snapshot(searched: Path)
     evidence = json.loads(event["review"]["evidence"])
     assert evidence["suggested_character"] == "U+30CD"
     assert evidence["correction"]["unicode"] == "U+30CD"
-    assert evidence["correction"]["reading"] == "ね", "the reading is snapshotted, not replaced"
+    assert "reading" not in evidence["correction"]
     assert event["review"]["new"] == "U+30CD"
 
 
@@ -1316,16 +1316,19 @@ def test_a_character_answer_refuses_what_is_not_one_written_character(searched: 
         return client.post("/atlas/rounds", json=body)
 
     assert answer(character="トモ").status_code == 422, "two kana are not one identity"
-    assert answer(character="ネ", issue="reading").status_code == 422, "an identity needs its issue"
+    assert answer(character="ネ", issue="reading").status_code == 422, "`reading` is no longer an issue"
     assert answer(character="ネ", verdict="match").status_code == 422, "a match claims no issue"
-    # The reading route is unchanged: とも is a reading, and two kana are not an identity.
-    assert answer(character=None, issue="reading", correction="とも").status_code == 422
+    # Typed characters belong to a joined crop: one or two of them on a wrong-character issue are refused.
+    assert answer(character=None, correction="ヌ").status_code == 422
+    assert answer(character=None, correction="とも").status_code == 422
+    # Naming the character already stored is no correction.
+    assert answer(occurrence="k1", label="ネ").status_code == 422
 
     # A well-formed identity on one occurrence is taken, and a second round on that same occurrence
     # is a new decision against a revision that has moved.
-    first = answer(occurrence="k1", label="ネ")
+    first = answer(occurrence="k1", label="ネ", character="わ")
     assert first.status_code == 200, first.text
-    assert answer(occurrence="k1", label="ネ", character="わ", revision=0).status_code == 409
+    assert answer(occurrence="k1", label="ネ", character="を", revision=0).status_code == 409
 
 
 @pytest.fixture
@@ -1614,8 +1617,8 @@ def test_context_suggestions_are_independent_fresh_and_revision_bound(dataset, m
     assert "あい" not in [c['text'] for c in updated['candidates']]
 
 
-def test_a_round_that_corrects_the_character_carries_its_reading(searched: Path):
-    """A crop read ね corrected to り reads り, and a retry of the same round is still one save."""
+def test_a_round_that_corrects_the_character_writes_no_reading(searched: Path):
+    """A crop ね corrected to り writes the identity only, and a retry of the same round is still one save."""
     client = TestClient(create_app(searched))
     unit = client.get("/atlas/characters/" + f"{LINE}:k0").json()
     payload = {"id": str(uuid4()), "client_id": "reviewer", "grapheme": grapheme_of("ね"),
@@ -1623,9 +1626,9 @@ def test_a_round_that_corrects_the_character_carries_its_reading(searched: Path)
                             "verdict": "wrong", "issue": "character", "character": "り"}]}
     answer = client.post("/atlas/rounds", json=payload)
     assert answer.status_code == 200, answer.text
-    assert {row["field"] for row in answer.json()["results"]} == {"unicode", "reading", "review"}
+    assert {row["field"] for row in answer.json()["results"]} == {"unicode", "review"}
     after = client.get("/atlas/characters/" + unit["id"]).json()
-    assert after["label"] == "り" and after["reading"] == "り"
+    assert after["label"] == "り" and after["reading"] == "ね"
     retry = client.post("/atlas/rounds", json=payload)
     assert retry.status_code == 200 and all(r["duplicate"] for r in retry.json()["results"])
 

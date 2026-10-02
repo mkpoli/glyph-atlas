@@ -25,13 +25,12 @@ expansion produced it. A character the corpus never used is still a character: s
 its identity, its components ト + モ and its reading even when the occurrence index is empty, and the
 occurrence count is reported as zero rather than as an error.
 
-The write, `POST /layers/units/{unit_id}`, records a **character** correction and a **reading**
-correction as two separate review events, on `unicode` and on `reading`. A phonetic reading never
-overwrites the encoded written identity, and a corrected identity is stored where the layer that owns
-it lives: `Unit.unicode`, which is what every other view derives the character from. When the new
-identity is a character the table knows, the unit's `script` follows the layer, because the layer is
-its authority. Each event's evidence names its own layer, so the log says which of the three a
-reviewer changed.
+The write, `POST /layers/units/{unit_id}`, records a **character** correction and a **crop**
+correction as separate review events, on `unicode` and on `box`. A corrected identity is stored where
+the layer that owns it lives: `Unit.unicode`, which is what every other view derives the character
+from. When the new identity is a character the table knows, the unit's `script` follows the layer,
+because the layer is its authority. Each event's evidence names its own layer, so the log says which
+one a reviewer changed.
 
 The corpus is read, never rebuilt here: `/layers/candidates` and the counts on every candidate row
 come from the corpus index through `corpus_source`, which calls the corpus worker's own in-process
@@ -59,7 +58,6 @@ from .atlas import (
     canonical_identity,
     identity_text,
     label,
-    reading_of,
     review_state,
     script_of_identity,
     single_character,
@@ -117,8 +115,8 @@ class LayerEdit(BaseModel):
     """A correction to one layer of one occurrence, and to no other layer.
 
     `character` is the encoded written identity — a character or a `U+XXXX` sequence — and is stored
-    in `Unit.unicode`. `reading` is the diplomatic reading and is stored in `Unit.reading`. A request
-    that carries both writes two events, and a request that carries one leaves the other alone.
+    in `Unit.unicode`. `box` is the ink the crop is cut from. A request that carries both writes two
+    events, and a request that carries one leaves the other alone.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -129,11 +127,10 @@ class LayerEdit(BaseModel):
     image_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     character: str | None = Field(default=None, max_length=64,
                                   description="the character or U+XXXX sequence the source printed")
-    reading: str | None = Field(default=None, min_length=1, max_length=32)
     box: Box | None = Field(default=None, description="a corrected crop, in page pixels")
     note: str = Field(default="", max_length=2000)
     verdict: Literal["match", "wrong", "unsure"] = "wrong"
-    issue: Literal["character", "reading", "crop", "merged", "blank", "unclear", "other"] = "character"
+    issue: Literal["character", "crop", "merged", "blank", "unclear", "other"] = "character"
 
 
 def _source_digest(store: Store, unit: Unit) -> str | None:
@@ -186,25 +183,6 @@ def _item(store: Store, unit: Unit, revision: int) -> dict[str, Any]:
         "document_id": document_id,
         "document_title": document.title if document else None,
     }
-
-
-def reading_is_allowed(reading: str, identity: str | None) -> bool:
-    """Whether a reading may be written for an occurrence with this identity.
-
-    A unit is one character and reads as one kana, so a reading is one character — unless the
-    character is a ligature, whose reading is the two kana it is made of: 𪜈 reads トモ and refusing
-    that would make the phonetic layer lose what the shape says. The allowance is not free text: the
-    reading has to be the one the character layer states for that ligature, katakana and hiragana
-    being one reading, so a reviewer cannot type a phrase into a reading field.
-    """
-    if single_character(reading):
-        return True
-    if not identity:
-        return False
-    ligature = refs.ligature(identity)
-    if ligature is None or not ligature.reading:
-        return False
-    return refs.to_hiragana(reading) == refs.to_hiragana(ligature.reading)
 
 
 def to_row(character: Character | None) -> dict[str, Any]:
@@ -1135,17 +1113,15 @@ def router(store: Store) -> APIRouter:
 
     @api.post("/layers/units/{unit_id}")
     def correct(unit_id: str, edit: LayerEdit) -> dict[str, Any]:
-        """Correct the character, the reading or the crop of one occurrence — each in its own layer.
+        """Correct the character or the crop of one occurrence — each in its own layer.
 
         The layers are separate events with separate evidence: `unicode` is the encoded written
-        identity, `reading` is what the occurrence reads, `box` is the ink the crop is cut from, and
-        `script` follows the character layer because the layer is its authority. A reading never
-        rewrites a code point, and a code point never rewrites a reading a reviewer typed.
+        identity, `box` is the ink the crop is cut from, and `script` follows the character layer
+        because the layer is its authority.
 
         The evidence carries the same shape the character editor writes (`kind: character-review`,
-        `snapshot`, `correction.reading`, `correction.box`), so `/atlas/reviews` reports a correction
-        from here exactly as it reports one from there, and adds `layer_correction` for the layer that
-        changed.
+        `snapshot`, `correction.box`), so `/atlas/reviews` reports a correction from here exactly as it
+        reports one from there, and adds `layer_correction` for the layer that changed.
         """
         records = store.unit_snapshot(unit_id)
         if not records or not records[0][0].active:
@@ -1184,7 +1160,7 @@ def router(store: Store) -> APIRouter:
                     or edit.box.x + edit.box.w > page.width or edit.box.y + edit.box.h > page.height):
                 raise BadRequest("The crop must stay inside the source image.")
 
-        before = {"code_point": stored_identity(unit), "character": written_identity(unit), "reading": label(unit),
+        before = {"code_point": stored_identity(unit), "character": written_identity(unit),
                   "script": str(unit.script), "box": unit.box.model_dump() if unit.box else None}
         evidence_base = {"kind": "character-review", "request": edit.model_dump(mode="json"),
                          "issue": edit.issue, "note": edit.note, "before": before,
@@ -1194,7 +1170,6 @@ def router(store: Store) -> APIRouter:
         revision = edit.revision
         changed: list[str] = []
         identity: str | None = None
-        reading: str | None = None
 
         if edit.box is not None and edit.box.model_dump() != before["box"]:
             requests.append(ReviewRequest(
@@ -1237,42 +1212,13 @@ def router(store: Store) -> APIRouter:
                     revision += 1
                     changed.append("script")
 
-        # A corrected character carries its reading along unless the reviewer typed one: い corrected
-        # to り reads り. What the transcriber typed stays in `text_source`.
-        derived = reading_of(identity_text(identity)) if "character" in changed and edit.reading is None else None
-        if derived is not None and derived != label(unit):
-            reading = derived
-            requests.append(ReviewRequest(
-                target_type="unit", target_id=unit_id, field="reading", new=derived,
-                base_revision=revision, client_id=edit.client_id,
-                idempotency_key=f"layer:{edit.id}:reading",
-                evidence=json.dumps({**evidence_base, "layer": "reading", "from": unit.reading,
-                                     "to": derived, "authority": "character layer"}, ensure_ascii=False),
-            ))
-            revision += 1
-            changed.append("reading")
-        if edit.reading is not None:
-            reading = identity_text(edit.reading)
-            if not reading_is_allowed(reading, identity or stored_identity(unit)):
-                raise BadRequest("A reading is one character, or the two a ligature reads as.")
-            if reading != label(unit):
-                requests.append(ReviewRequest(
-                    target_type="unit", target_id=unit_id, field="reading", new=reading,
-                    base_revision=revision, client_id=edit.client_id,
-                    idempotency_key=f"layer:{edit.id}:reading",
-                    evidence=json.dumps({**evidence_base, "layer": "reading", "from": unit.reading,
-                                         "to": reading}, ensure_ascii=False),
-                ))
-                revision += 1
-                changed.append("reading")
-
         if not requests:
-            raise BadRequest("Nothing changed: the character, the reading and the crop already read that way.")
+            raise BadRequest("Nothing changed: the character and the crop are already recorded that way.")
 
         # An explicit wrong-character correction *with a character that differs from the one on the
         # record* resolves the occurrence: the identity is now what the reviewer says it is, so the
         # record is checked rather than left flagged. Everything else stays disputed — a crop, joined
-        # characters, a blank, a reading-only edit, `unclear` — and so does a wrong-character issue
+        # characters, a blank, `unclear` — and so does a wrong-character issue
         # whose character is the one already stored, which is a contradiction and not a correction.
         resolved = (edit.verdict == "wrong" and edit.issue == "character" and "character" in changed)
 
@@ -1280,7 +1226,6 @@ def router(store: Store) -> APIRouter:
         correction = {
             "code_point": written if written and len(identity_text(written)) == 1 else None,
             "character": identity_text(written) if written else None,
-            "reading": reading if "reading" in changed else label(unit),
             "box": (edit.box.model_dump() if "crop" in changed else before["box"]),
             "jibo": refs.jibo_of(written),
             "script": str(refs.script_of(identity_text(written))) if written else before["script"],
@@ -1291,7 +1236,7 @@ def router(store: Store) -> APIRouter:
             base_revision=revision, client_id=edit.client_id, idempotency_key=f"layer:{edit.id}:review",
             evidence=json.dumps({**evidence_base, "layer": "review", "verdict": edit.verdict,
                                  "resolved": resolved,
-                                 "correction": {key: correction[key] for key in ("reading", "box")},
+                                 "correction": {"box": correction["box"]},
                                  "layer_correction": {"changed": changed, **correction}},
                                 ensure_ascii=False),
         ))

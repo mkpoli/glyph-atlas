@@ -158,9 +158,9 @@ def reviewer_reading(feedback) -> str | None:
     """
     from ..unit_scope import character_count
 
-    if feedback.decision != "joined" or not feedback.typed_reading or not feedback.proposed_text:
+    if feedback.decision != "joined" or not feedback.typed_text or not feedback.proposed_text:
         return None
-    typed = "".join(identity_text(feedback.typed_reading).split())
+    typed = "".join(identity_text(feedback.typed_text).split())
     if typed != "".join(identity_text(feedback.proposed_text).split()):
         return None
     return typed if character_count(typed) >= 2 else None

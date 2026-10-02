@@ -45,6 +45,8 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from . import recorded_terms
+
 #: The export this understands.
 KIND = "atlas-character-reviews"
 VERSION = 1
@@ -170,9 +172,9 @@ class Feedback:
     proposed_box: dict[str, int] | None = None
     #: The reviewer's typed correction, before any precedence was applied.
     requested_text: str | None = None
-    #: What the reviewer wrote the crop as reading: the typed correction, else the saved
-    #: suggested reading. A local review's own words, never a model's offer.
-    typed_reading: str | None = None
+    #: What the reviewer typed or chose for the crop: the typed correction, else the saved
+    #: suggestion. A local review's own words, never a model's offer.
+    typed_text: str | None = None
     #: The saved unit reading. The effective state, not the proposal.
     effective_text: str | None = None
 
@@ -251,14 +253,14 @@ def _local_parts(event: Mapping[str, Any], record: Mapping[str, Any]) -> dict[st
     # Proposal precedence, highest first:
     #   1. request.character    an explicit identity request from the layer
     #   2. request.correction   what the reviewer actually typed
-    #   3. suggested_reading    the reviewer's own suggestion
+    #   3. suggested_text       the reviewer's own suggestion
     # `evidence.correction` is the *effective saved unit state*, not the proposal: when
     # a merge carries a two-character correction the save path does not resolve it, so
     # the stored reading stays the old label. Reading that back as the proposal would
     # turn every joined sequence into a single character.
     explicit = _text(request.get("character"))
     requested = _text(request.get("correction"))
-    suggested = _text(evidence.get("suggested_reading"))
+    suggested = _text(recorded_terms.typed_text(evidence))
 
     return {
         "door": "local",
@@ -273,8 +275,8 @@ def _local_parts(event: Mapping[str, Any], record: Mapping[str, Any]) -> dict[st
         "source_revision": character.get("revision", snapshot.get("revision")),
         "proposed_text": explicit or requested or suggested,
         "requested_text": requested,
-        "suggested_reading": suggested,
-        "typed_reading": requested or suggested,
+        "suggested_text": suggested,
+        "typed_text": requested or suggested,
         # The saved state, kept for audit and usable as an identity only in the legacy
         # wrong+reading case, where the correction was what got resolved into the unit.
         "effective_text": _text(correction.get("reading")),
@@ -311,7 +313,7 @@ def _corpus_parts(event: Mapping[str, Any], record: Mapping[str, Any]) -> dict[s
         # `new.character` is the accepted identity when the corpus layer set one.
         "proposed_text": _text(new.get("character")),
         "requested_text": None,
-        "suggested_reading": None,
+        "suggested_text": None,
         "effective_text": _text(_as_mapping(new.get("correction")).get("reading")),
         "proposed_box": _box(_as_mapping(new.get("correction")).get("box")),
         "explicit_character": _text(new.get("character")),
@@ -533,7 +535,7 @@ def _one(record: Mapping[str, Any]) -> Feedback:
         proposed_text=proposal if proposal is not None else parts.get("proposed_text"),
         proposed_box=parts.get("proposed_box"),
         requested_text=parts.get("requested_text"),
-        typed_reading=parts.get("typed_reading"),
+        typed_text=parts.get("typed_text"),
         effective_text=parts.get("effective_text"),
         door=parts.get("door", "unknown"),
         target_type=_text(event.get("target_type")),

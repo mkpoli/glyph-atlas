@@ -27,7 +27,7 @@ class CorpusEdit(BaseModel):
     revision: int = Field(ge=0)
     source_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
     verdict: Literal["match", "wrong"]
-    issue: Literal["reading", "character", "merged", "crop", "blank", "other"] | None = None
+    issue: Literal["character", "merged", "crop", "blank", "other"] | None = None
     character: str | None = Field(default=None, max_length=32)
     correction: str | None = Field(default=None, max_length=32)
     note: str = Field(default="", max_length=2000)
@@ -197,8 +197,10 @@ class CorpusReviews:
             raise HTTPException(422, "A match cannot also carry an error or correction.")
         if edit.verdict == "wrong" and not edit.issue:
             raise HTTPException(422, "Choose an error type.")
-        if edit.character and edit.issue not in ("character", "reading"):
+        if edit.character and edit.issue != "character":
             raise HTTPException(422, "A character correction needs a wrong-character issue.")
+        if edit.correction and edit.issue != "merged":
+            raise HTTPException(422, "Typed characters belong to a joined-character issue.")
         with closing(self.connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             repeated = db.execute("SELECT * FROM glyph_reviews WHERE id=?", (str(edit.id),)).fetchone()

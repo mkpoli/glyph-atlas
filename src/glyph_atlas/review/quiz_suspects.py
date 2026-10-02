@@ -97,7 +97,7 @@ class Labels:
 
     def __init__(self, classes: list[str], lookalikes: Iterable[frozenset[str]] = ()):
         from .. import refs
-        from .atlas import reading_of
+        from .atlas import kana_of
         from .suggestions import _class_family
 
         self.lookalikes = set(lookalikes)
@@ -123,7 +123,7 @@ class Labels:
         for (family, members), char in zip(families, self.chars, strict=True):
             names.setdefault(index[family], members[0] if members else char)
         self.names = [names[i] for i in range(len(keys))]
-        self.readings = [reading_of(char) if char else None for char in self.chars]
+        self.kana_values = [kana_of(char) if char else None for char in self.chars]
         self._masks: dict[str, np.ndarray] = {}
 
     def mask(self, label: str) -> np.ndarray:
@@ -134,18 +134,18 @@ class Labels:
         names the other.
         """
         if label not in self._masks:
-            from .atlas import reading_of
+            from .atlas import kana_of
 
-            readings = {label, reading_of(label)} - {None}
-            self._masks[label] = np.array([char == label or label in members or reading in readings
-                                           for char, members, reading in zip(self.chars, self.members, self.readings,
-                                                                             strict=True)])
+            values = {label, kana_of(label)} - {None}
+            self._masks[label] = np.array([char == label or label in members or kana in values
+                                           for char, members, kana in zip(self.chars, self.members, self.kana_values,
+                                                                          strict=True)])
         return self._masks[label]
 
     def expected(self, label: str, reads: str) -> bool:
         """Whether reading `label` as `reads` is what the classifier does with good crops too."""
         from .. import refs
-        from .atlas import reading_of
+        from .atlas import kana_of
 
         if (frozenset((label, reads)) in self.lookalikes or reads in self.cursive.get(label, ())
                 or (label, reads) in self.forms):
@@ -154,7 +154,7 @@ class Labels:
         # kanji, not the label's cursive, so one that only sounds like it (以 read as イ) is not.
         if "KATAKANA" in unicodedata.name(reads[0], ""):
             return False
-        readings = {reads, reading_of(reads), *refs.readings(refs.to_code_point(reads))} - {None}
+        readings = {reads, kana_of(reads), *refs.readings(refs.to_code_point(reads))} - {None}
         return bool(readings & self.kana.get(label, set()))
 
     def judge(self, probabilities: np.ndarray, labels: list[str]) -> list[dict | None]:

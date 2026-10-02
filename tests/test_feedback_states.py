@@ -3,8 +3,7 @@
 An explicit wrong-character correction — verdict `wrong`, issue `character`, and a character that
 differs from the one on the record — is a resolution: the identity now says what a person says it is,
 so the occurrence is `checked` and no longer sits in the review queue. Every other answer keeps the
-existing contract: a crop, joined characters, a blank, a reading-only edit and `unclear` are
-`disputed`, and a wrong-character issue that names the character already on the record is a
+existing contract: a crop, joined characters, a blank and `unclear` are `disputed`, and a wrong-character issue that names the character already on the record is a
 contradiction rather than a correction, so it never confirms anything on its own.
 
 The tests run the real service over a temporary dataset. `glyph_atlas.review.characters` is loaded
@@ -67,7 +66,7 @@ def dataset(tmp_path: Path, monkeypatch):
 def edit(unit_id: str, revision: int, digest: str, **overrides) -> dict:
     payload = {"id": str(uuid4()), "client_id": "reviewer-1", "revision": revision,
                "image_sha256": digest, "verdict": "wrong", "issue": "character",
-               "character": KO, "reading": None, "box": None, "note": ""}
+               "character": KO, "box": None, "note": ""}
     payload.update(overrides)
     return payload
 
@@ -109,37 +108,21 @@ def test_an_explicit_character_correction_resolves_the_occurrence(dataset):
 
     answer = client.post(f"/layers/units/{unit}", json=edit(unit, 0, digest)).json()
     assert answer["resolved"] is True
-    assert answer["changed"] == ["character", "script", "reading"], "the identity, its script and its reading"
-    assert [row["field"] for row in answer["results"]] == ["unicode", "script", "reading", "review"]
+    assert answer["changed"] == ["character", "script"], "the identity and its script"
+    assert [row["field"] for row in answer["results"]] == ["unicode", "script", "review"]
     assert answer["results"][-1]["review"]["new"] == "reviewed", "the review confirms the record"
     assert answer["layers"]["code_point"] == KO_POINT and answer["layers"]["character"] == KO
 
     detail = sample(client, unit)
-    assert detail["label"] == KO and detail["reading"] == KO, "the reading follows the corrected character"
+    assert detail["label"] == KO
     assert detail["state"] == "checked", "a resolved occurrence leaves the queue"
     names = [event.field for event in events_for(client, unit, characters)]
-    assert names == ["unicode", "script", "reading", "review"]
+    assert names == ["unicode", "script", "review"], "a correction records no reading event"
     review = next(event for event in events_for(client, unit, characters) if event.field == "review")
     evidence = json.loads(review.evidence)
     assert evidence["resolved"] is True and evidence["issue"] == "character"
     assert evidence["layer_correction"]["code_point"] == KO_POINT
-    assert evidence["layer_correction"]["reading"] == KO, "the reading follows the corrected character"
-
-
-def test_the_reading_follows_the_character_unless_one_is_typed(dataset):
-    client, digest = dataset["client"], dataset["digest"]
-    unit = f"{LINE}:u0"
-    client.post(f"/layers/units/{unit}", json=edit(unit, 0, digest))
-    stored = events_for(client, unit, characters)
-    assert [event.new for event in stored if event.field == "reading"] == ["こ"], "ち corrected to こ reads こ"
-
-    other = f"{LINE}:u1"
-    answer = client.post(f"/layers/units/{other}", json=edit(
-        other, 0, digest, character=TSU, reading="つ")).json()
-    assert answer["resolved"] is True
-    assert answer["changed"] == ["character", "script", "reading"]
-    assert answer["layers"]["reading"] == "つ"
-    assert state_of(client, other) == "checked"
+    assert "reading" not in evidence["layer_correction"] and "reading" not in evidence["correction"]
 
 
 def test_a_wrong_character_issue_that_names_the_stored_character_confirms_nothing(dataset):
@@ -170,7 +153,7 @@ def test_every_other_answer_stays_disputed(dataset):
     answers = [
         ("crop", f"{LINE}:u0", edit(f"{LINE}:u0", 0, digest, issue="crop", character=None, box=moved)),
         ("merged", f"{LINE}:u1", edit(f"{LINE}:u1", 0, digest, issue="merged", character=None,
-                                      reading="つ")),
+                                      box={"x": 80, "y": 10, "w": 40, "h": 120})),
         ("blank", f"{LINE}:u1", edit(f"{LINE}:u1", 0, digest, issue="blank", character=None,
                                      box=moved)),
         ("unclear", f"{LINE}:u1", edit(f"{LINE}:u1", 0, digest, verdict="unsure", issue="unclear",
@@ -187,21 +170,17 @@ def test_every_other_answer_stays_disputed(dataset):
         assert "character" not in body["changed"], name
 
 
-def test_a_reading_only_edit_is_disputed(dataset):
-    """A phonetic edit is recorded where it belongs and does not move the written identity."""
+def test_a_reading_is_not_a_layer_the_route_writes(dataset):
+    """A phonetic edit, or the retired `reading` issue, is refused and moves nothing."""
     client, digest = dataset["client"], dataset["digest"]
     unit = f"{LINE}:u0"
-    reading = client.post(f"/layers/units/{unit}", json=edit(
-        unit, 0, digest, issue="reading", character=None, reading="つ", verdict="wrong"))
-    assert reading.status_code == 200, reading.text
-    body = reading.json()
-    assert body["resolved"] is False
-    assert body["changed"] == ["reading"]
-    assert body["results"][-1]["review"]["new"] == "disputed"
+    for overrides in ({"issue": "crop", "reading": "つ"}, {"issue": "reading"}):
+        refused = client.post(f"/layers/units/{unit}", json=edit(
+            unit, 0, digest, character=None, box={"x": 25, "y": 10, "w": 40, "h": 60}, **overrides))
+        assert refused.status_code == 422, refused.text
+    assert events_for(client, unit, characters) == []
     detail = sample(client, unit)
-    assert detail["label"] == CHI, "the identity is the source's, not the reading's"
-    assert detail["reading"] == "つ"
-    assert detail["state"] == "flagged"
+    assert detail["label"] == CHI and detail["state"] == "pending"
 
 
 # The journal, the export and the retry -----------------------------------------------------------
@@ -217,7 +196,7 @@ def test_the_export_reports_the_resolution_and_the_retry_answers_it(dataset):
     assert replay.status_code == 200, replay.text
     assert replay.json()["duplicate"] is True and replay.json()["resolved"] is True
     assert replay.json()["layers"]["code_point"] == KO_POINT
-    assert len(events_for(client, unit, characters)) == 4, "a retry writes no event"
+    assert len(events_for(client, unit, characters)) == 3, "a retry writes no event"
 
     exported = client.get("/atlas/reviews").json()["reviews"]
     row = next(row for row in exported if row["event"]["target_id"] == unit)

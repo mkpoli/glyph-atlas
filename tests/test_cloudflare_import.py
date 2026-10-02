@@ -48,8 +48,11 @@ def baseline(store):
             "source_refs": {"book": "fixture"}}
 
 
-def remote(publication, *, before=None, issue="character", character="を", correction=None, reading=None,
-           current=True, round_review=False):
+def remote(publication, *, before=None, issue="character", character="を", correction=None,
+           current=True, round_review=False, recorded_words=False):
+    """A review as the Worker saves it. `recorded_words` saves it as the Worker did while crops carried
+    a reading: the wrong-character issue named `reading`, typed characters as `suggested_reading`, and
+    the reading the crop was left with in `correction`."""
     shown = deepcopy(before or publication["character"])
     request = {"id": str(uuid4()), "client_id": "reviewer-test", "revision": shown["revision"],
                "image_sha256": shown["image_sha256"], "verdict": "wrong", "issue": issue}
@@ -57,19 +60,16 @@ def remote(publication, *, before=None, issue="character", character="を", corr
         request["character"] = character
     if correction:
         request["correction"] = correction
-    if reading:
-        request["reading"] = reading
     label = bridge.identity_text(character) if character else shown["label"]
-    # As the Worker saves it: a corrected character brings its registered reading unless one was given.
-    saved_reading = (reading or (correction if issue == "reading" else None)
-                     or (bridge.reading_of(label) if character else None) or shown["reading"])
-    after = {**shown, "label": label, "reading": saved_reading, "revision": shown["revision"] + 1}
+    after = {**shown, "label": label, "revision": shown["revision"] + 1}
     snapshot = {**deepcopy(publication), "character": shown}
     evidence = {"kind": "character-review", "verdict": "wrong", "issue": issue, "request": request,
                 "snapshot": snapshot, "suggested_character": " ".join(f"U+{ord(c):04X}" for c in after["label"]) if character else None,
-                "suggested_reading": correction,
-                "correction": {"unicode": " ".join(f"U+{ord(c):04X}" for c in after["label"]),
-                               "reading": after["reading"], "box": after["box"]}}
+                "suggested_text": correction,
+                "correction": {"unicode": " ".join(f"U+{ord(c):04X}" for c in after["label"]), "box": after["box"]}}
+    if recorded_words:
+        evidence["suggested_reading"] = evidence.pop("suggested_text")
+        evidence["correction"]["reading"] = shown.get("reading")
     if round_review == "batch":
         # As the Worker saves a batch correction: the event names its batch and keeps no request.
         evidence.pop("request")
@@ -83,7 +83,7 @@ def remote(publication, *, before=None, issue="character", character="を", corr
         # As rounds saved before: the round's whole request in every event.
         evidence.update(kind="visual-quiz", request={"id": str(uuid4()), "client_id": request["client_id"],
             "label": shown["label"], "answers": [{**request, "id": shown["id"]}]})
-    resolved = bool(issue == "character" and character) or bool(issue == "reading" and (reading or correction))
+    resolved = bool(issue in ("character", "reading") and character)
     record = {"event": {"id": "cf:" + str(uuid4()), "target_type": "unit", "target_id": "u",
                         "field": "review", "old": "machine", "new": "reviewed" if resolved else "disputed",
                         "role": "reviewer", "actor": "reviewer-test", "evidence": json.dumps(evidence, ensure_ascii=False),
@@ -116,7 +116,8 @@ def test_preview_import_refinement_and_original_receipts(store, tmp_path):
     assert not store.events() and store.revision("u") == 0
     bound, report = bridge.ingest_cloudflare(store, source, apply=True)
     assert report["counts"] == {"imported": 1}
-    assert store.unit("u").unicode == "U+3092" and store.unit("u").reading == "を"
+    assert store.unit("u").unicode == "U+3092"
+    assert "reading" not in {event.field for event in store.events()}
     assert store.events()[-1].id == record["event"]["id"]
     event = bound["reviews"][0]["event"]
     provenance = json.loads(event["evidence"])["cloudflare_import"]
@@ -134,7 +135,7 @@ def test_preview_import_refinement_and_original_receipts(store, tmp_path):
     assert refine_feedback(store, retry, apply=True)["counts"] == {"already-processed": 1}
 
 
-@pytest.mark.parametrize("change", ["revision", "pixels", "box", "label", "reading"])
+@pytest.mark.parametrize("change", ["revision", "pixels", "box", "label"])
 def test_changed_local_occurrence_is_rejected(store, monkeypatch, change):
     record, _ = remote(baseline(store))
     if change == "pixels":
@@ -143,7 +144,7 @@ def test_changed_local_occurrence_is_rejected(store, monkeypatch, change):
         store.record(ReviewRequest(target_id="u", field="review", new="reviewed", client_id="local"))
     else:
         field, value = {"box": ("box", {"x": 11, "y": 10, "w": 30, "h": 40}),
-                        "label": ("unicode", "U+624B U+624B"), "reading": ("reading", "て")}[change]
+                        "label": ("unicode", "U+624B U+624B")}[change]
         store.record(ReviewRequest(target_id="u", field=field, new=value, client_id="local"))
     count = len(store.events())
     bound, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
@@ -164,13 +165,30 @@ def test_full_remote_chain_imports_only_current_review(store):
 
 
 @pytest.mark.parametrize("round_review", [False, True, "answer", "batch"])
-def test_site_character_correction_imports_as_reviewed_with_its_reading(store, round_review):
-    record, after = remote(baseline(store), character="ナ", round_review=round_review)
-    assert after["reading"] == "な" and record["event"]["new"] == "reviewed"
+def test_site_character_correction_imports_as_reviewed(store, round_review):
+    record, _ = remote(baseline(store), character="ナ", round_review=round_review)
+    assert record["event"]["new"] == "reviewed"
     _, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
     assert report["counts"] == {"imported": 1}
     unit = store.unit("u")
-    assert (unit.unicode, unit.reading, unit.review) == ("U+30CA", "な", "reviewed")
+    assert (unit.unicode, unit.review) == ("U+30CA", "reviewed")
+    assert "reading" not in {event.field for event in store.events()}
+
+
+@pytest.mark.parametrize("round_review", [False, "answer"])
+def test_a_review_saved_with_the_recorded_reading_words_still_imports(store, round_review):
+    record, _ = remote(baseline(store), issue="reading", character="ナ", round_review=round_review,
+                       recorded_words=True)
+    evidence = json.loads(record["event"]["evidence"])
+    assert evidence["issue"] == "reading" and "suggested_reading" in evidence
+    assert evidence["correction"]["reading"] == "手" and record["event"]["new"] == "reviewed"
+    bound, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
+    assert report["counts"] == {"imported": 1}
+    unit = store.unit("u")
+    assert (unit.unicode, unit.review) == ("U+30CA", "reviewed")
+    assert "reading" not in {event.field for event in store.events()}
+    local = json.loads(bound["reviews"][0]["event"]["evidence"])
+    assert json.loads(local["cloudflare_import"]["remote_event"]["evidence"]) == evidence
 
 
 
@@ -203,10 +221,10 @@ def test_round_answer_for_another_occurrence_is_rejected(store):
     assert report["items"][0]["reason"] == "round answer names another occurrence"
 
 
-def test_character_correction_whose_saved_reading_is_not_the_workers_is_rejected(store):
+def test_character_correction_whose_saved_identity_is_not_the_workers_is_rejected(store):
     record, _ = remote(baseline(store), character="ナ")
     evidence = json.loads(record["event"]["evidence"])
-    evidence["correction"]["reading"] = "手"
+    evidence["correction"]["unicode"] = "U+624B"
     record["event"]["evidence"] = json.dumps(evidence, ensure_ascii=False)
     _, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
     assert report["items"][0]["reason"] == "saved effective state disagrees with the explicit correction"
@@ -216,11 +234,11 @@ def test_character_correction_whose_saved_reading_is_not_the_workers_is_rejected
 def test_two_review_site_chain_imports_in_order(store):
     publication = baseline(store)
     first, after = remote(publication, character="ナ", current=False)
-    second, _ = remote(publication, before=after, issue="reading", character=None, correction="に")
+    second, _ = remote(publication, before=after, character="ニ")
     _, report = bridge.ingest_cloudflare(store, payload(second, first), apply=True)
     assert report["counts"] == {"imported": 1}
     unit = store.unit("u")
-    assert (unit.unicode, unit.reading, unit.review) == ("U+30CA", "に", "reviewed")
+    assert (unit.unicode, unit.review) == ("U+30CB", "reviewed")
     chain = json.loads(store.events()[-1].evidence)["cloudflare_import"]["remote_chain"]
     assert [event["id"] for event in chain] == [first["event"]["id"], second["event"]["id"]]
 
@@ -334,15 +352,15 @@ def test_joined_identity_and_sequence_reach_refinement_without_confirming_parent
     assert json.loads(bound["reviews"][0]["event"]["evidence"])["cloudflare_import"]["remote_event"] == record["event"]
 
 
-def test_phonetic_correction_keeps_written_identity(store):
-    record, _ = remote(baseline(store), issue="reading", character=None, correction="て")
-    bound, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
-    assert report["counts"] == {"imported": 1}
-    assert refine_feedback(store, bound, apply=True)["counts"] == {"unchanged": 1}
-    assert store.unit("u").unicode == "U+624B" and store.unit("u").reading == "て"
+def test_a_recorded_phonetic_correction_that_claimed_confirmation_is_rejected(store):
+    record, _ = remote(baseline(store), issue="reading", character=None, correction="て", recorded_words=True)
+    record["event"]["new"] = "reviewed"
+    _, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
+    assert report["items"][0]["reason"] == "review certainty exceeds the saved decision"
+    assert not store.events() and store.unit("u").unicode == "U+624B"
 
 
-def test_joined_import_splits_by_the_typed_reading(store):
+def test_joined_import_splits_by_the_typed_characters(store):
     record, _ = remote(baseline(store), issue="merged", correction="を手", round_review=True)
     bound, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
     assert report["counts"] == {"imported": 1}

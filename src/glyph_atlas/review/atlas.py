@@ -24,7 +24,7 @@ from fastapi.responses import JSONResponse, Response
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field
 
-from .. import images, refs
+from .. import images, recorded_terms, refs
 from .. import production as production_metadata
 from .. import style as style_module
 from .. import written_form as written_form_module
@@ -354,12 +354,12 @@ def stored_identity(unit: Unit) -> str | None:
     return " ".join(refs.to_code_points(written)) if written else None
 
 
-def reading_of(identity: str) -> str | None:
-    """What a corrected written identity reads as, when the character layer says so in one way.
+def kana_of(identity: str) -> str | None:
+    """The kana a character stands for, when the character layer states one.
 
-    A kana with one stated reading reads that (リ reads り), a ligature reads what its components read
-    (𪜈 reads とも), and a kanji, which the layer gives no kana reading, reads as itself. A character
-    with several stated readings (𛄝: ん, む, も) leaves the choice to a person, so none is derived.
+    A kana with one stated value stands for that (リ for り), a ligature for its components (𪜈 for
+    とも), and a kanji, which the layer gives no kana, for itself. A character with several stated
+    values (𛄝: ん, む, も) stands for none of them alone.
     """
     character = refs.character(" ".join(refs.to_code_points(identity))) if identity else None
     if character is None:
@@ -540,11 +540,10 @@ class Answer(BaseModel):
     revision: int = Field(ge=0)
     image_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     verdict: Literal["match", "wrong", "unsure"]
-    issue: Literal["reading", "character", "crop", "merged", "blank", "unclear", "other"] | None = None
+    issue: Literal["character", "crop", "merged", "blank", "unclear", "other"] | None = None
+    #: The characters a joined crop holds, as the reviewer typed or chose them.
     correction: str | None = Field(default=None, max_length=32)
     #: The written identity the reviewer says this crop is, as a character or a `U+XXXX` sequence.
-    #: Separate from `correction`, which is a reading: the two are different layers, and a correction
-    #: to one never rewrites the other.
     character: str | None = Field(default=None, max_length=32)
 
 
@@ -604,9 +603,9 @@ class CharacterEdit(BaseModel):
     client_id: str = Field(min_length=1, max_length=128)
     revision: int = Field(ge=0)
     image_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    reading: str | None = Field(default=None, min_length=1, max_length=32)
     verdict: Literal["match", "wrong", "unsure"]
-    issue: Literal["reading", "crop", "merged", "blank", "unclear", "other"] = "reading"
+    issue: Literal["character", "crop", "merged", "blank", "unclear", "other"] | None = None
+    #: The characters a joined crop holds, as the reviewer typed or chose them.
     correction: str | None = Field(default=None, max_length=32)
     note: str = Field(default="", max_length=2000)
     box: Box | None = None
@@ -1068,11 +1067,10 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 "line_revision": store.revision(line.id) if line else None}
 
     def correction_text(value: str | None, issue: str | None) -> str | None:
+        """The characters typed for a joined crop; a single character is a `character` instead."""
         text = unicodedata.normalize("NFC", value.strip()) if value else None
-        if text and (not single_character(text) and issue != "merged"):
-            raise BadRequest("Choose one character, or report joined characters.")
-        if text and issue not in ("reading", "merged"):
-            raise BadRequest("A reading suggestion belongs to a reading or joined-character issue.")
+        if text and issue != "merged":
+            raise BadRequest("Typed characters belong to a joined-character issue; name one character as `character`.")
         return text
 
     def identity_correction(value: str | None, issue: str | None) -> str | None:
@@ -1114,7 +1112,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 old = json.loads(next(r for r in reviews if r["target_id"] == answer.id)["review"]["evidence"])
                 if (old.get("grapheme") != round.grapheme or old["verdict"] != answer.verdict
                         or old.get("issue") != answer.issue
-                        or old.get("suggested_reading") != correction_text(answer.correction, answer.issue)
+                        or old.get("suggested_text") != correction_text(answer.correction, answer.issue)
                         or old.get("suggested_character") != identity_correction(answer.character, answer.issue)
                         or old["snapshot"]["image_sha256"] != answer.image_sha256):
                     raise BadRequest("This round was already saved with different answers.")
@@ -1131,31 +1129,21 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             if answer.image_sha256 != image_source(unit)[0].stem:
                 raise HTTPException(409, "The source image changed. Reload this round.")
             if shown(unit) not in members:
-                raise HTTPException(409, "A character's reading changed. Reload this round.")
+                raise HTTPException(409, "A character changed. Reload this round.")
             correction = correction_text(answer.correction, answer.issue)
             identity = identity_correction(answer.character, answer.issue)
             if answer.verdict == "match" and (answer.issue or correction or identity):
                 raise BadRequest("A matching character cannot also have an unresolved issue.")
-            resolved = bool(answer.issue == "reading" and correction and single_character(correction))
-            if resolved and correction == shown(unit):
-                raise BadRequest("Choose a different reading or mark the character as matching.")
-            # The written identity is a different layer from the reading, so it is a separate event. A
-            # corrected character carries its reading along: い corrected to り reads り, and what the
-            # transcriber typed stays in `text_source`.
-            written = bool(identity and identity != stored_identity(unit))
-            # `correction` stays what the reviewer sent, which a retry is compared against.
-            reading = correction if resolved else None
-            if written and not resolved:
-                derived = reading_of(identity_text(identity))
-                reading = derived if derived and derived != label(unit) else None
+            if identity and identity == stored_identity(unit):
+                raise BadRequest("Choose a different character or mark the character as matching.")
+            written = bool(identity)
             base = answer.revision
             evidence = json.dumps({"kind": "visual-quiz", "round": str(round.id), "grapheme": round.grapheme,
                                    "label": shown(unit), "verdict": answer.verdict, "issue": answer.issue,
-                                   "suggested_reading": correction,
+                                   "suggested_text": correction,
                                    "suggested_character": identity,
                                    "snapshot": snapshot(unit, revision),
-                                   "correction": {"reading": reading or label(unit),
-                                                  "unicode": identity if written else stored_identity(unit),
+                                   "correction": {"unicode": identity if written else stored_identity(unit),
                                                   "box": unit.box.model_dump() if unit.box else None}},
                                   ensure_ascii=False)
             if written:
@@ -1165,16 +1153,9 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                     idempotency_key=prefix + answer.id + ":character", evidence=evidence,
                 ))
                 base += 1
-            if reading:
-                requests.append(ReviewRequest(
-                    target_type="unit", target_id=answer.id, field="reading", new=reading,
-                    base_revision=base, client_id=round.client_id,
-                    idempotency_key=prefix + answer.id + ":reading", evidence=evidence,
-                ))
-                base += 1
             requests.append(ReviewRequest(
                 target_type="unit", target_id=answer.id, field="review",
-                new="reviewed" if answer.verdict == "match" or resolved or written else "disputed",
+                new="reviewed" if answer.verdict == "match" or written else "disputed",
                 base_revision=base, client_id=round.client_id,
                 idempotency_key=prefix + answer.id, evidence=evidence,
             ))
@@ -1231,7 +1212,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                     evidence = json.loads(event.evidence) if event.evidence else {}
                 except ValueError:
                     evidence = {}
-                open_issue[event.target_id] = (evidence.get("issue") if isinstance(evidence, dict) else None) \
+                open_issue[event.target_id] = (recorded_terms.issue(evidence.get("issue")) if isinstance(evidence, dict) else None) \
                     if event.new == ReviewState.DISPUTED else None
         refused, chosen, unchanged = [], [], []
         for crop in correction.crops:
@@ -1257,14 +1238,12 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         requests = []
         for crop, unit, revision, same in chosen:
             kept = open_issue.get(crop.id)
-            kept = kept if kept not in (None, "character", "reading") else None
-            derived = None if same else reading_of(identity_text(identity))
-            reading = derived if derived and derived != label(unit) else None
+            kept = kept if kept not in (None, "character") else None
             evidence = json.dumps({"kind": "character-review", "batch": str(correction.id), "request_sha256": signature,
                                    "verdict": "match" if same else "wrong", "issue": kept or (None if same else "character"),
-                                   "suggested_reading": None, "suggested_character": None if same else identity,
+                                   "suggested_character": None if same else identity,
                                    "snapshot": snapshot(unit, revision),
-                                   "correction": {"reading": reading or label(unit), "unicode": identity,
+                                   "correction": {"unicode": identity,
                                                   "box": unit.box.model_dump() if unit.box else None}},
                                   ensure_ascii=False)
             base = revision
@@ -1272,11 +1251,6 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 requests.append(ReviewRequest(target_type="unit", target_id=crop.id, field="unicode", new=identity,
                                               base_revision=base, client_id=correction.client_id,
                                               idempotency_key=prefix + crop.id + ":character", evidence=evidence))
-                base += 1
-            if reading:
-                requests.append(ReviewRequest(target_type="unit", target_id=crop.id, field="reading", new=reading,
-                                              base_revision=base, client_id=correction.client_id,
-                                              idempotency_key=prefix + crop.id + ":reading", evidence=evidence))
                 base += 1
             requests.append(ReviewRequest(target_type="unit", target_id=crop.id, field="review",
                                           new="disputed" if kept else "reviewed",
@@ -1320,17 +1294,14 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             return repeat(previous)
         unit, current_revision = one(unit_id)
         correction = correction_text(edit.correction, edit.issue)
-        supplied = unicodedata.normalize("NFC", edit.reading.strip()) if edit.reading else None
-        if supplied is not None and not single_character(supplied):
-            raise BadRequest("Use one character for the reading, or report joined characters.")
         if not eligible(unit):
             raise BadRequest("This character has no available crop to review.")
         if edit.image_sha256 != image_source(unit)[0].stem:
             raise HTTPException(409, "The source image changed. Reload this character.")
-        resolved = bool(edit.issue == "reading" and correction and single_character(correction))
-        if edit.verdict == "match" and edit.issue not in (None, "reading"):
-            raise BadRequest("A matching character cannot also have a crop or joined-character issue.")
-        reading = correction if resolved else supplied or label(unit)
+        if edit.verdict == "match" and (edit.issue or correction):
+            raise BadRequest("A matching character cannot also have an issue.")
+        if edit.verdict == "wrong" and not edit.issue:
+            raise BadRequest("Choose an issue.")
         requests = []
         revision = edit.revision
         if edit.box is not None:
@@ -1344,23 +1315,16 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 evidence=edit.note or "Crop adjusted in character review",
             ))
             revision += 1
-        if reading != label(unit):
-            requests.append(ReviewRequest(
-                target_type="unit", target_id=unit_id, field="reading", new=reading,
-                base_revision=revision, client_id=edit.client_id, idempotency_key=f"edit:{edit.id}:reading",
-                evidence=edit.note or "Character review",
-            ))
-            revision += 1
         evidence = json.dumps({"kind": "character-review", "verdict": edit.verdict,
-                               "issue": edit.issue, "note": edit.note, "suggested_reading": correction,
+                               "issue": edit.issue, "note": edit.note, "suggested_text": correction,
                                "request": edit.model_dump(mode="json"),
                                "snapshot": snapshot(unit, current_revision),
-                               "correction": {"reading": reading, "box": edit.box.model_dump()
+                               "correction": {"box": edit.box.model_dump()
                                               if edit.box else unit.box.model_dump() if unit.box else None}},
                               ensure_ascii=False)
         requests.append(ReviewRequest(
             target_type="unit", target_id=unit_id, field="review",
-            new="reviewed" if edit.verdict == "match" or resolved else "disputed",
+            new="reviewed" if edit.verdict == "match" else "disputed",
             base_revision=revision, client_id=edit.client_id, idempotency_key=f"edit:{edit.id}:review",
             evidence=evidence,
         ))
@@ -1468,9 +1432,9 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         return {
             "label": crop_label,
             "verdict": evidence.get("verdict"),
-            "issue": evidence.get("issue"),
+            "issue": recorded_terms.issue(evidence.get("issue")),
             "character": identity_text(points) if points else None,
-            "reading": evidence.get("suggested_reading"),
+            "text": recorded_terms.typed_text(evidence),
             "round": evidence.get("round"),
             "batch": evidence.get("batch"),
         }
@@ -1488,7 +1452,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         return {"id": event.id, "at": event.at.isoformat(), "actor": event.actor,
                 "target": event.target_id, "label": info.get("label"), "kind": kind,
                 "verdict": info.get("verdict"), "issue": info.get("issue"),
-                "character": info.get("character"), "reading": info.get("reading"),
+                "character": info.get("character"), "text": info.get("text"),
                 "round": info.get("round"), "undoes": undoes}
 
     @api.get("/atlas/history")
@@ -1558,41 +1522,29 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             evidence = json.loads(event.evidence)
             observed = evidence.get("snapshot")
             correction = evidence.get("correction", {})
-            expected_label = correction.get("reading", evidence.get("label"))
             expected_box = correction.get("box", observed["character"]["box"] if observed else None)
-            # A written-identity correction, wherever the route that made it recorded one: a round
-            # writes `correction.unicode` and the layers route writes `layer_correction.character`,
-            # and both name `Unit.unicode`. It is compared only when the evidence says the identity
-            # was what changed — a round that corrected a reading also records the identity it left
-            # alone, and holding it to that would report every reading correction as stale the moment
-            # the identity moved for another reason.
-            changed_layers = {evidence.get("layer")} | set(
-                (evidence.get("layer_correction") or {}).get("changed") or ())
-            expected_unicode = None
-            if "character" in changed_layers:
-                layer = evidence.get("layer_correction") or {}
-                # `correction.unicode` is the stored form and already canonical; the layers route's
-                # `layer_correction.character` is the literal character, and the record holds a code
-                # point, so it goes through the same canonicaliser before the two are compared. A
-                # literal that is not one character is not a comparable identity and is left out
-                # rather than made to look like a mismatch.
-                recorded = correction.get("unicode") or layer.get("code_point")
-                if recorded:
-                    expected_unicode = canonical_identity(recorded)
-                elif layer.get("character"):
-                    try:
-                        expected_unicode = canonical_identity(str(layer["character"]))
-                    except BadRequest:
-                        expected_unicode = None
+            # The identity the review left the crop with: a round and a batch record it as
+            # `correction.unicode`, the layers route as `layer_correction`. Both name `Unit.unicode`,
+            # in two spellings, so each goes through the same canonicaliser. A review that recorded no
+            # identity is held to the character it was shown.
+            layer = evidence.get("layer_correction") or {}
+            recorded = correction.get("unicode") or layer.get("code_point") or layer.get("character")
+            try:
+                expected_unicode = canonical_identity(str(recorded)) if recorded else None
+            except BadRequest:
+                expected_unicode = None
+            shown_label = evidence.get("label")
+            if shown_label is None and observed:
+                shown_label = (observed.get("character") or {}).get("label")
+            # A refinement that applied this review's own proposal leaves the review standing.
+            repair = unit.meta.get("feedback_repair") or {}
+            applied = repair.get("source_event_id") == event.id and repair.get("result") == "resolved"
+            same_identity = applied or (stored_identity(unit) == expected_unicode if expected_unicode
+                                        else shown(unit) == shown_label)
             image = image_source(unit)
-            # `evidence.correction.reading` records the unit's reading field, so the comparison is
-            # against the reading and not against the written identity a row is labelled with: the
-            # two differ on 340 units of this corpus, and a correction that changed the reading is
-            # current exactly when the record still reads that way.
-            current = bool(unit.active and observed and latest.get(unit.id) == event.id and label(unit) == expected_label
+            current = bool(unit.active and observed and latest.get(unit.id) == event.id and same_identity
                            and image and image[0].stem == observed["image_sha256"]
-                           and (unit.box.model_dump() if unit.box else None) == expected_box
-                           and (not expected_unicode or stored_identity(unit) == expected_unicode))
+                           and (unit.box.model_dump() if unit.box else None) == expected_box)
             processing = unit.meta.get("feedback_repair")
             if unit.split_into:
                 split = next((e for e in reversed(all_events) if e.target_id == unit.id
