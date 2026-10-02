@@ -13,6 +13,9 @@ CROP, V1, V2 = "hk:1", "hk:1@" + "a" * 64 + "@1,2,3,4", "hk:1@" + "a" * 64 + "@1
 @pytest.fixture
 def conn():
     db = sqlite3.connect(":memory:", isolation_level=None)
+    # The crops the ledger's rows are about; a claim about a crop may go only once the crop has.
+    db.execute("CREATE TABLE units (id TEXT PRIMARY KEY)")
+    db.execute("INSERT INTO units VALUES(?)", (CROP,))
     ledger.schema(db)
     return db
 
@@ -203,7 +206,7 @@ def test_the_catalogue_refuses_what_a_predicate_does_not_take(conn):
     assert conn.execute("SELECT count(*) FROM assertions").fetchone()[0] == 0
 
 
-def test_ledger_rows_are_never_changed_or_removed(conn):
+def test_ledger_rows_are_never_changed_and_go_only_with_their_crop(conn):
     made = claim(conn, "ann", "unresolved")["assertions"][0]
     act(conn, "bob", made, "accept")
     for sql in ("UPDATE assertions SET value='\"unreadable\"'", "DELETE FROM assertions",
@@ -211,6 +214,14 @@ def test_ledger_rows_are_never_changed_or_removed(conn):
                 "UPDATE assertion_evidence SET ref='x'", "DELETE FROM assertion_evidence"):
         with pytest.raises(sqlite3.IntegrityError, match="ledger_immutable"):
             conn.execute(sql)
+    # Once the crop has left (a withdrawn document), its claims may go, and then what rests on them.
+    conn.execute("DELETE FROM units")
+    for sql in ("DELETE FROM assertion_actions", "DELETE FROM assertion_evidence"):
+        with pytest.raises(sqlite3.IntegrityError, match="ledger_immutable"):
+            conn.execute(sql)
+    for sql in ("DELETE FROM assertions", "DELETE FROM assertion_actions", "DELETE FROM assertion_evidence"):
+        conn.execute(sql)
+    assert conn.execute("SELECT count(*) FROM assertions").fetchone()[0] == 0
 
 
 def test_the_resolver_names_its_version():

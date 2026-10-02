@@ -68,8 +68,9 @@ Every claim is one row of `assertions`:
 | `legacy` | the journal row the claim was migrated from |
 
 `assertion_evidence` names what supports a claim: a crop version, a page locator, or a source row and
-its hash. `assertion_premises` names the assertions a derivation rests on. Rows are never updated or
-deleted.
+its hash. `assertion_premises` names the assertions a derivation rests on. Rows are never updated. A
+claim about a crop is deleted only once the crop has left the site, as a withdrawn document's crops
+do, and its evidence, premises and actions with it.
 
 Acceptance is its own row in `assertion_actions`: `accept`, `reject`, `retract` (by the asserter) or
 `adjudicate` (by an adjudicator). A predicate catalogue (`data/vocab/ledger.json`) states each

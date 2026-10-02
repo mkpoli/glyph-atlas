@@ -1,6 +1,8 @@
 -- The assertion ledger (docs/design/form-model.md): every claim about a crop, a form or a grapheme, who
 -- made it, on what evidence, and each acceptance, rejection, retraction and adjudication of it. Rows are
--- never changed or removed. `current_claims` is the ledger resolved slot by slot by the resolver in
+-- never changed. A claim about a crop is removed only once the crop has left the site, which is what
+-- taking a withdrawn document down does (`scripts/withdraw_documents.py`), and its evidence, premises
+-- and actions only once it is gone; every other row stays. `current_claims` is the ledger resolved slot by slot by the resolver in
 -- `data/ledger.json`, written again whenever one of the slot's rows is added. The local review service
 -- keeps the same tables in its store, made from this file.
 --
@@ -66,6 +68,8 @@ BEGIN
  SELECT RAISE(ABORT,'ledger_immutable');
 END;
 CREATE TRIGGER IF NOT EXISTS assertion_kept_delete BEFORE DELETE ON assertions
+ WHEN EXISTS (SELECT 1 FROM units WHERE id=OLD.subject)
+   OR NOT EXISTS (SELECT 1 FROM assertion_evidence e WHERE e.assertion=OLD.id AND e.kind='crop')
 BEGIN
  SELECT RAISE(ABORT,'ledger_immutable');
 END;
@@ -74,6 +78,7 @@ BEGIN
  SELECT RAISE(ABORT,'ledger_immutable');
 END;
 CREATE TRIGGER IF NOT EXISTS evidence_kept_delete BEFORE DELETE ON assertion_evidence
+ WHEN EXISTS (SELECT 1 FROM assertions WHERE id=OLD.assertion)
 BEGIN
  SELECT RAISE(ABORT,'ledger_immutable');
 END;
@@ -82,6 +87,7 @@ BEGIN
  SELECT RAISE(ABORT,'ledger_immutable');
 END;
 CREATE TRIGGER IF NOT EXISTS premise_kept_delete BEFORE DELETE ON assertion_premises
+ WHEN EXISTS (SELECT 1 FROM assertions WHERE id=OLD.assertion)
 BEGIN
  SELECT RAISE(ABORT,'ledger_immutable');
 END;
@@ -90,6 +96,7 @@ BEGIN
  SELECT RAISE(ABORT,'ledger_immutable');
 END;
 CREATE TRIGGER IF NOT EXISTS action_kept_delete BEFORE DELETE ON assertion_actions
+ WHEN EXISTS (SELECT 1 FROM assertions WHERE id=OLD.assertion)
 BEGIN
  SELECT RAISE(ABORT,'ledger_immutable');
 END;
