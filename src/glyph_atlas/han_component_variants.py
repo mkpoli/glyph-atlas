@@ -282,15 +282,25 @@ def substitutions(desc: Descriptions, a: str, b: str) -> dict[tuple[str, str], s
     analyses show each character's own looseness rather than a way the two differ. Only trees of a
     common source region are compared when the two have any (免 is ⿱⺈… in G, H, T, K and P and
     ⿱{2}儿 in J, and 𭀠 is ⿱𠂉… in J, so 免's J tree is the one set against 𭀠); with none in
-    common, every tree is."""
+    common, every tree is. A shared tree counts whatever its regions.
+
+    A flattened reading (`Descriptions.flattened`) brings a part's own parts to the top, so a
+    difference the trees as written find inside a named part (奚 against 𢀖 inside 溪 against 渓)
+    would also turn up at the top. It is recorded at the top only when the trees as written do not
+    find it at all (鳥 against 鸟 in 鸂 ⿰溪鳥 and 㶉 ⿲氵奚鸟), so it stays the one position it is."""
     ours, theirs = desc.trees.get(a, ()), desc.trees.get(b, ())
     if {desc.folded_text(tree) for tree in ours} & {desc.folded_text(tree) for tree in theirs}:
         return {}
     compared = [(x, y) for x, rx in zip(ours, desc.regions.get(a, ()), strict=True)
                 for y, ry in zip(theirs, desc.regions.get(b, ()), strict=True) if _overlap(rx, ry)]
+    own = {text(tree) for tree in desc.own.get(a, ())} | {text(tree) for tree in desc.own.get(b, ())}
     found: dict[tuple[str, str], set[tuple[str, str] | None]] = defaultdict(set)
+    flat: dict[tuple[str, str], set[tuple[str, str] | None]] = defaultdict(set)
     for x, y in compared or [(x, y) for x in ours for y in theirs]:
-        _single(desc, x, y, 0, None, found)
+        _single(desc, x, y, 0, None, found if text(x) in own and text(y) in own else flat)
+    for sub, hosts in flat.items():
+        hosts = hosts - {None} if sub in found else hosts
+        found[sub] |= hosts
     return dict(found)
 
 

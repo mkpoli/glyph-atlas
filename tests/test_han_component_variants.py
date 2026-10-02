@@ -303,3 +303,13 @@ def test_every_attesting_pair_is_among_the_predictions():
     item = v.Attested(*v.ordered("口", "厶"), (("㗀", "㗁", ("s",)),), ("㗀/㗁",))
     predicted = v.predictions(desc, [item])
     assert tuple(sorted(("㗀", "㗁"), key=ord)) in predicted[(item.a, item.b)]
+
+
+def test_a_difference_inside_a_named_part_stays_one_position_when_the_part_is_spelled_out():
+    # 溪 and 渓 differ in 奚 against 𢀖; spelled out, ⿰溪鳥 and ⿰渓鳥 also differ there at the top,
+    # but both pairs reach it through 溪 against 渓, which is one position.
+    desc = descriptions({"甲": ["⿰溪鳥"], "乙": ["⿰渓鳥"], "丙": ["⿰溪木"], "丁": ["⿰渓木"],
+                         "溪": ["⿰氵奚"], "渓": ["⿰氵𢀖"]})
+    found = v.attest(desc, sources(("甲", "乙"), ("丙", "丁")))
+    assert found[v.ordered("奚", "𢀖")].contexts == ("渓/溪",)
+    assert [(item.a, item.b) for item in v.kept(found)] == [v.ordered("溪", "渓")]
