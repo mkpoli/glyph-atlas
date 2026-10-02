@@ -1,6 +1,7 @@
 <script>
   // The bar over a round's selection: how many crops are chosen, the forms of the round's grapheme to
   // mark them as, and the result of the last marking with its undo.
+  import ScriptText from './ScriptText.svelte'
   import { t } from '../lib/i18n.svelte.js'
   let { count = 0, forms = [], grapheme = '', busy = false, error = '', done = null,
     onassign, onclear, onundo, ondismiss } = $props()
@@ -18,7 +19,7 @@
     <div class="form-chips" role="group" aria-label={t('quiz.forms.label', { char: grapheme })}>
       {#each forms as form, i (form)}
         <button class="form-chip" disabled={busy} onclick={() => onassign(form)} title={t('bulk.apply', { char: form })} aria-label={t('bulk.apply', { char: form })}>
-          <span lang="ja">{form}</span>{#if i < KEYS.length}<kbd>{KEYS[i]}</kbd>{/if}
+          <ScriptText text={form} />{#if i < KEYS.length}<kbd>{KEYS[i]}</kbd>{/if}
         </button>
       {/each}
     </div>
