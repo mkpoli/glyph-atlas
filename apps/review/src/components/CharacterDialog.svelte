@@ -5,12 +5,10 @@
   import ZiLink from './ZiLink.svelte'
   import CopyId from './CopyId.svelte'
   import { onMount, untrack, tick } from 'svelte'
-  import { replaceState } from '$app/navigation'
-  import { page } from '$app/state'
   import { character, request, suggestionsFor } from '../lib/client.js'
   import { decision, isSingle, suggestsReading, greetSuggestions, skipHint } from '../lib/issues.js'
   import { t } from '../lib/i18n.svelte.js'
-  import { cropAddress } from '../lib/inspector.svelte.js'
+  import { cropAddress, useInspector } from '../lib/inspector.svelte.js'
   import CropContext from './CropContext.svelte'
   import { repairOf } from '../lib/cropDetails.js'
   import SimilarCrops from './SimilarCrops.svelte'
@@ -26,7 +24,7 @@
   let { id, close, saved, changed = null, onVerdict = null, onskip = null,
         previous = null, next = null, position = '', initial = null } = $props()
   const first = untrack(() => initial)
-  const session = useSession()
+  const session = useSession(), inspector = useInspector()
   // Going on to the next crop disables the focused save button while it loads, which drops its focus;
   // once the crop is ready, focus returns to the button the reader was pressing. The save names the
   // crop it leaves, and the load of another crop arms the return.
@@ -93,7 +91,7 @@
       // A link to a retired crop opens the crop that replaced it, and the address follows. A round's
       // tile does not: its verdict belongs to the crop it was dealt, so the round reports the error.
       if (e.replacedBy && !onVerdict && !redirected) {
-        if (location.pathname === cropAddress(target)) replaceState(cropAddress(e.replacedBy), page.state)
+        if (location.pathname === cropAddress(target)) inspector.replaced(e.replacedBy)
         return load(e.replacedBy, true)
       }
       replaced = false
@@ -102,7 +100,8 @@
   }
   // Only the first load, of the crop the page was rendered for, starts from `initial`.
   let preloaded = first
-  $effect(() => { const target = id; untrack(() => { load(target, false, preloaded); preloaded = null }) })
+  // The entry of a replaced crop is rewritten to the crop on screen, which is already loaded.
+  $effect(() => { const target = id; untrack(() => { if (replaced && target === data?.id) return; load(target, false, preloaded); preloaded = null }) })
   // The server renders the dialog open, so the page reads whole before any script runs; once it does,
   // the dialog is reopened as a modal.
   onMount(() => { if (dialog.open) dialog.close(); dialog.showModal(); return () => { closed = true; generation++ } })
