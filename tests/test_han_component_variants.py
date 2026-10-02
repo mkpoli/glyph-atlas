@@ -136,15 +136,15 @@ def rows() -> list[dict[str, str]]:
 
 
 def test_a_substitution_whose_predictions_the_graph_mostly_does_not_state_is_not_kept():
-    # 口 and 厶 swap in four pairs of characters; the graph gives one of them as variants.
+    # 口 and 厶 swap in four pairs of characters; one attests it, and the other three are measured.
     desc = descriptions({"㗀": ["⿰口夂"], "㗁": ["⿰厶夂"], "㗂": ["⿰口日"], "㗃": ["⿰厶日"],
                          "㗄": ["⿰口月"], "㗅": ["⿰厶月"], "㗆": ["⿰口木"], "㗇": ["⿰厶木"]})
-    item = v.Attested(*v.ordered("口", "厶"), (("㗀", "㗁", ("s",)),), ("x/y",))
+    item = v.Attested(*v.ordered("口", "厶"), (("㗀", "㗁", ("s",)),), ("x/y",), (("x/y",),))
     predicted = v.predictions(desc, [item])
     assert predicted[(item.a, item.b)] == {("㗀", "㗁"), ("㗂", "㗃"), ("㗄", "㗅"), ("㗆", "㗇")}
     assert v.agreeing([item], predicted, {("㗀", "㗁")}) == []
     kept = v.agreeing([item], predicted, {("㗀", "㗁"), ("㗂", "㗃")})
-    assert [(k.predicted, k.agreed) for k in kept] == [(4, 2)]
+    assert [(k.predicted, k.agreed) for k in kept] == [(3, 1)]
 
 
 def test_the_committed_table_holds_only_what_the_threshold_and_the_agreement_keep():
@@ -236,6 +236,26 @@ def test_a_component_without_a_description_of_its_own_still_predicts_its_bare_pa
     item = v.Attested(*v.ordered("火", "灬"), (("炎", "炎", ("s",)),), ("炎/炎",))
     predicted = v.predictions(desc, [item])
     assert ("火", "灬") in predicted[v.ordered("火", "灬")]
+
+
+def test_an_attesting_pair_counts_only_where_the_others_predict_it_without_it():
+    key = v.ordered("口", "厶")
+    two = v.Attested(*key, (("㗀", "㗁", ("s",)), ("㗂", "㗃", ("s",))), ("a", "b"), (("a",), ("b",)))
+    # Two pairs predicting only themselves: either one held out, the other alone is no pattern.
+    assert v.agreeing([two], {key: {("㗀", "㗁"), ("㗂", "㗃")}}, {("㗀", "㗁"), ("㗂", "㗃")}) == []
+    # One more prediction the graph states is the whole measure, and it agrees.
+    wider = {key: {("㗀", "㗁"), ("㗂", "㗃"), ("㗄", "㗅")}}
+    kept = v.agreeing([two], wider, {("㗀", "㗁"), ("㗂", "㗃"), ("㗄", "㗅")})
+    assert [(k.predicted, k.agreed) for k in kept] == [(1, 1)]
+    assert v.agreeing([two], wider, {("㗀", "㗁"), ("㗂", "㗃")}) == []
+    # Three pairs in three contexts: each is predicted by the other two, so each counts.
+    three = v.Attested(*key, (("㗀", "㗁", ("s",)), ("㗂", "㗃", ("s",)), ("㗄", "㗅", ("s",))),
+                       ("a", "b", "c"), (("a",), ("b",), ("c",)))
+    kept = v.agreeing([three], wider, {("㗀", "㗁"), ("㗂", "㗃"), ("㗄", "㗅")})
+    assert [(k.predicted, k.agreed) for k in kept] == [(3, 3)]
+    # Three pairs from two contexts: holding out the pair with a context of its own leaves one.
+    shared = v.Attested(*key, three.pairs, ("a", "b"), (("a",), ("a",), ("b",)))
+    assert [shared.held_out(at) for at in range(3)] == [True, True, False]
 
 
 def test_a_substitution_makes_a_form_at_any_depth_of_the_characters_own_sequence():

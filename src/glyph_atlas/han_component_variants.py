@@ -343,14 +343,18 @@ class Attested:
     """A substitution with the pairs that attest it, each with the sources that state the pair, and
     the contexts it was seen in: each pair where it is a part of the character itself, and each
     enclosing substitution where it is inside one (𧈧→虽 for 厶→口 in 強 and 强). The contexts are
-    what `THRESHOLD` counts, so 灬 against 一 in the thousand pairs of 魚 and 鱼 counts once."""
+    what `THRESHOLD` counts: pairs reaching a nested substitution through the same enclosing one are
+    one position however many share it, so repetition across a family of pairs passes for nothing."""
 
     a: str
     b: str
     pairs: tuple[tuple[str, str, tuple[str, ...]], ...]
     contexts: tuple[str, ...]
-    #: How many pairs of encoded characters it predicts, and how many of those the graph gives as
-    #: written variants (`agreeing`); zero until measured.
+    #: The contexts each pair of `pairs` was seen in, in the same order.
+    contexts_of: tuple[tuple[str, ...], ...] = ()
+    #: How many pairs of encoded characters it predicts and how many of those the graph gives as
+    #: written variants, each attesting pair counted only where it is `held_out` (`agreeing`); zero
+    #: until measured.
     predicted: int = 0
     agreed: int = 0
 
@@ -358,24 +362,34 @@ class Attested:
     def count(self) -> int:
         return len(self.contexts)
 
+    def held_out(self, index: int) -> bool:
+        """Whether the substitution passes `THRESHOLD` on its other pairs alone, so that it predicts
+        the pair `pairs[index]` without having learned it from that pair."""
+        rest = {context for at, contexts in enumerate(self.contexts_of) if at != index for context in contexts}
+        return len(self.pairs) - 1 >= THRESHOLD and len(rest) >= THRESHOLD
+
 
 def attest(desc: Descriptions, pairs: Iterable[tuple[str, str, Iterable[str]]]) -> dict[tuple[str, str], Attested]:
     """Every substitution the pairs attest, with the pairs behind it, each pair once."""
     found: dict[tuple[str, str], dict[tuple[str, str], set[str]]] = defaultdict(dict)
-    contexts: dict[tuple[str, str], set[str]] = defaultdict(set)
+    contexts: dict[tuple[str, str], dict[tuple[str, str], set[str]]] = defaultdict(dict)
     for a, b, sources in pairs:
-        pair = tuple(sorted((a, b), key=ord))
+        sources = tuple(sources)  # read once per substitution below, so never a spent generator
+        pair: tuple[str, str] = tuple(sorted((a, b), key=ord))
         for sub, hosts in substitutions(desc, a, b).items():
             found[sub].setdefault(pair, set()).update(sources)
-            contexts[sub].update("/".join(host or pair) for host in hosts)
-    return {
-        sub: Attested(*sub, tuple((p, q, tuple(sorted(s))) for (p, q), s in sorted(by.items(), key=lambda i: (ord(i[0][0]), ord(i[0][1])))),
-                      tuple(sorted(contexts[sub])))
-        for sub, by in found.items()
-    }
+            contexts[sub].setdefault(pair, set()).update("/".join(host or pair) for host in hosts)
+    out = {}
+    for sub, by in found.items():
+        order = sorted(by, key=lambda pair: (ord(pair[0]), ord(pair[1])))
+        out[sub] = Attested(
+            *sub, tuple((p, q, tuple(sorted(by[p, q]))) for p, q in order),
+            tuple(sorted(set().union(*contexts[sub].values()))),
+            tuple(tuple(sorted(contexts[sub][pair])) for pair in order))
+    return out
 
 
-def kept(found: dict[str, Attested]) -> list[Attested]:
+def kept(found: dict[tuple[str, str], Attested]) -> list[Attested]:
     """What may predict: `THRESHOLD` distinct attesting pairs seen in `THRESHOLD` distinct contexts.
 
     Two pairs from one position (one enclosing substitution reached by both) are one claim twice,
@@ -400,15 +414,25 @@ def predictions(desc: Descriptions, items: Iterable[Attested],
 
 def agreeing(items: Iterable[Attested], predicted: dict[tuple[str, str], set[tuple[str, str]]],
              written: set[tuple[str, str]]) -> list[Attested]:
-    """The substitutions at least `AGREEMENT` of whose predicted pairs are written pairs of the graph,
-    each with those two counts: one that predicts mostly pairs no source states is not a rule of
-    writing but a coincidence of meaning (口 and 氵, 日 and 木)."""
+    """The substitutions at least `AGREEMENT` of whose predicted pairs are written pairs of the
+    graph, each with those two counts. One that predicts mostly pairs no source states is a
+    coincidence of meaning (口 and 氵, 日 and 木) rather than a way of writing.
+
+    A pair that attests the substitution is always predicted and always written, so it is counted
+    only when it is held out: when the other pairs alone pass `THRESHOLD`, and the substitution
+    predicts it without having learned it from it (`Attested.held_out`). A substitution with two
+    attesting pairs is measured on the other pairs it predicts, and one with three is measured on
+    each of the three too. Scoring only the pairs beyond the attesting ones would leave almost
+    nothing to agree with: a written pair that differs by the substitution is found by `attest` and
+    is one of them."""
     out = []
     for item in items:
-        pairs = predicted.get((item.a, item.b), set())
-        agreed = len(pairs & written)
-        if pairs and agreed / len(pairs) >= AGREEMENT:
-            out.append(replace(item, predicted=len(pairs), agreed=agreed))
+        attesting = {(p, q): at for at, (p, q, _) in enumerate(item.pairs)}
+        counted = {pair for pair in predicted.get((item.a, item.b), set())
+                   if pair not in attesting or item.held_out(attesting[pair])}
+        agreed = counted & written
+        if counted and len(agreed) / len(counted) >= AGREEMENT:
+            out.append(replace(item, predicted=len(counted), agreed=len(agreed)))
     return out
 
 

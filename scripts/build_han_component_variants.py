@@ -13,7 +13,8 @@ the one differing part sits at the top of a character, the enclosing substitutio
 inside a component (𧈧→虽 for 厶→口). One pair is one source's word for two characters, and one
 position replicated across a thousand pairs is one claim, so neither predicts alone. Each candidate is
 then applied to every character, and it is kept only when at least `han_component_variants.AGREEMENT`
-of the pairs of encoded characters it predicts are written pairs the graph already gives
+of the pairs of encoded characters it predicts are written pairs the graph already gives, an attesting
+pair counted only where the substitution would predict it without having learned it from it
 (`han_component_variants.agreeing`). The run prints the distributions the cut-offs were chosen
 against, and how many kept substitutions add a component to the other side (政 and 正) rather than
 swap one; the prediction pass runs over every character on several processes.
@@ -89,8 +90,8 @@ def header(table: list[tuple]) -> list[str]:
         ),
         (
             f"# agreement: at least {v.AGREEMENT:.0%} of the pairs of encoded characters a substitution "
-            "predicts (predicted) must be written pairs the graph already gives (agreed); the attesting "
-            "pairs are among both."
+            "predicts (predicted) must be written pairs the graph already gives (agreed); an attesting "
+            "pair is counted only when the other attesting pairs pass the threshold without it."
         ),
         (
             "# substitution: undirected, a before b by length then code point; pairs are "
@@ -186,7 +187,7 @@ def main(argv: list[str] | None = None) -> int:
         key = v.ordered(*pair)
         item, row = found.get(key), by_key.get(key)
         print(f"  {key[0]}↔{key[1]}: count {item.count if item else 0} over {len(item.pairs) if item else 0} pairs, "
-              + (f"kept, {row[4]} of {row[3]} predicted pairs stated" if row else "not kept"))
+              + (f"kept, {row[4]} of {row[3]} counted predictions stated" if row else "not kept"))
 
     args.out.write_text(
         "\n".join(header(table) + ["\t".join(COLUMNS)]
