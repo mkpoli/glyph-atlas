@@ -25,9 +25,9 @@ export type LedgerTools = {
   body: (request: Request) => Promise<Json>;
   text: (value: unknown, max: number, name: string, required?: boolean) => string | null;
   canonical: (value: unknown) => string;
-  // A crop subject as the site holds it: its current evidence version, and the statement that writes its
-  // `units` row first when it is a corpus glyph nothing has named yet.
-  crop: (env: Env, id: string) => Promise<{ id: string; version: string | null; materialise: D1PreparedStatement | null }>;
+  // A crop subject as the site holds it, and its current evidence version. A corpus glyph nothing has
+  // named yet gets its `units` row when the client saw the version that row will have (`expected`).
+  crop: (env: Env, id: string, expected: unknown) => Promise<{ id: string; version: string | null }>;
   // The actor ids one user holds (`actors`), as SQL.
   owned: (user: string) => string;
 };
@@ -98,11 +98,10 @@ export async function writeClaim(env: Env, input: Json, actor: string, tools: Le
   let subject = tools.text(input.subject, 512, 'subject', true)!, version: string | null = null;
   const statements: D1PreparedStatement[] = [];
   if (spec.subject === 'crop') {
-    const crop = await tools.crop(env, subject);
+    const crop = await tools.crop(env, subject, input.crop_version);
     subject = crop.id, version = crop.version;
     if (!version) tools.fail(409, 'This crop has no image to make a claim about.');
     if (input.crop_version !== version) tools.fail(409, 'This crop was cut again. Reload it.');
-    if (crop.materialise) statements.push(crop.materialise);
   } else tools.fail(422, `${predicate} has no subject the site can check yet.`);
   statements.push(...extra.statements ?? []);
   const at = new Date().toISOString(), set = members.length > 1 ? 'cf:' + crypto.randomUUID() : null;

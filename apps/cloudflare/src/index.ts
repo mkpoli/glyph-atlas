@@ -1079,8 +1079,15 @@ const formTools: FormTools = {fail:(status,message,extra)=>{throw new Problem(st
 // What the ledger needs of the rest of the Worker (`ledger.ts`): a crop subject is a crop the site
 // holds, or a corpus glyph whose row a first claim writes, as a first review would.
 const ledgerTools: LedgerTools = {fail:(status,message)=>{throw new Problem(status,message)},body,text,canonical:value=>canonical(value),owned,
-  crop:async(env,id)=>{const row=await unit(env,id),data=parse(row.data);
-    return {id:row.id,version:row.crop_version??cropVersion(row.id,data),materialise:row.fresh?materialise(env,row as UnitRow&{fresh:CorpusRow}):null}}};
+  // A corpus glyph nothing has named gets its row first, as its first review would give it one, so the
+  // claim names the version SQLite gives the row (`units.crop_version`); a client that saw another
+  // version is refused before anything is written.
+  crop:async(env,id,expected)=>{let row=await unit(env,id);
+    if(row.fresh){
+      if(cropVersion(row.id,parse(row.data))!==expected)return {id:row.id,version:cropVersion(row.id,parse(row.data))};
+      await materialise(env,row as UnitRow&{fresh:CorpusRow}).run();row=await unit(env,row.id);
+    }
+    return {id:row.id,version:row.crop_version??null}}};
 export function canonical(value: unknown): string {
   if(value===null||typeof value!=='object')return JSON.stringify(value);
   if(Array.isArray(value))return '['+value.map(canonical).join(',')+']';
