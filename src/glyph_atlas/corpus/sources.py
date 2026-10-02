@@ -138,6 +138,7 @@ ID_FAMILIES = {
     "hng-kiridashi": "hng-kiridashi",
     "glossary-headwords": "glossary-headwords",
     "hdic-krm": "hdic-krm",
+    "hdic-ktb": "hdic-ktb",
 }
 
 #: Known corpora, with the rights and shape a caller needs before showing a result.
@@ -189,6 +190,11 @@ KNOWN: tuple[dict[str, Any], ...] = (
         "name": "hdic-krm",
         "note": "観智院本類聚名義抄 headwords on the NDL facsimile (貴重図書複製会, 1937), "
                 "labelled from HDIC's KRM database (scripts/cut_hdic_headwords.py).",
+    },
+    {
+        "name": "hdic-ktb",
+        "note": "高山寺本篆隷萬象名義 headwords on the NDL 崇文叢書 edition, labelled from HDIC's KTB database, "
+                "with the seal-script forms HDIC boxed (scripts/cut_hdic_headwords.py).",
     },
 )
 

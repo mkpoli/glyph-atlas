@@ -71,15 +71,20 @@ git clone https://github.com/chise/hng-kiridashi-data cache/hng-kiridashi-data
 git -C cache/hng-kiridashi-data checkout 346bc74071b9a8393b841b171bbdd6c8e82774a7
 ```
 
-The headwords of the 観智院本類聚名義抄 are cut from the NDL facsimile (貴重図書複製会, 1937) and
-labelled from HDIC's KRM database, at the commit `data/sources/hdic-krm.yaml` pins. The script
-fetches each frame KRM names into the image cache and runs the detector and the classifier on CUDA;
-`glyph_atlas.hdic` says how a headword is placed and when it is left out:
+Headwords of Heian dictionaries are cut from NDL facsimiles and labelled from HDIC's databases, at
+the commits their source files pin: the 観智院本類聚名義抄 (`data/sources/hdic-krm.yaml`, on the
+貴重図書複製会 edition) and the 高山寺本篆隷萬象名義 (`hdic-ktb.yaml`, on the 崇文叢書 edition, with
+HDIC's own boxes around its seal-script forms). The script fetches each frame HDIC names into the
+image cache and runs the detector, the classifier and NDLkotenOCR on CUDA; `glyph_atlas.hdic` says
+how a headword is placed and when it is left out:
 
 ```sh
 git clone https://github.com/shikeda/krm cache/krm
 git -C cache/krm checkout 9fc4f644674f307891442f1f39b3e436528c2392
 uv run scripts/cut_hdic_headwords.py krm work/hdic-krm --clone cache/krm --report work/hdic-krm.report.json   # 20,662 units on 563 frames, 1.5 h with downloads
+git clone https://github.com/shikeda/HDIC cache/hdic
+git -C cache/hdic checkout bf93470cc5a65ea0f191188c3f768cbbf170615f
+uv run scripts/cut_hdic_headwords.py ktb work/hdic-ktb --clone cache/hdic --report work/hdic-ktb.report.json
 ```
 
 ## 3. Images

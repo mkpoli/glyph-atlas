@@ -48,6 +48,7 @@ UNIT_ID_PREFIXES = {
     "hng-kiridashi:": "hng-kiridashi",
     "gl:": "glossary-headwords",
     "krm:": "hdic-krm",
+    "ktb:": "hdic-ktb",
 }
 
 #: Tables whose content a resolved detail depends on. A change to any of them, or to
