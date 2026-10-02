@@ -5,6 +5,7 @@
   // end, and while more are to come the grid shows whole rows only.
   import { untrack } from 'svelte'
   import NgramImage from './NgramImage.svelte'
+  import ScriptText from './ScriptText.svelte'
   import SiteLinks from './SiteLinks.svelte'
   import { ngramOccurrences, ngramWords } from '../lib/ngrams.js'
   import { collectionAddress } from '../lib/gallery.js'
@@ -61,7 +62,7 @@
   </div>
   <header class="ngram-heading">
     <a class="quiet-link" href={localize(collectionAddress({ work }))}>← {words.name()}</a>
-    <p><b lang="ja" class:vertical>{text}</b>{#if total !== null}<span>{t('ngram.occurrences', { count: number(total) })}</span>{/if}</p>
+    <p><b class:vertical><ScriptText {text} /></b>{#if total !== null}<span>{t('ngram.occurrences', { count: number(total) })}</span>{/if}</p>
   </header>
   {#if error}<div class="error-message" role="alert">{error}<button onclick={() => load(items.length > 0)}>{t('common.tryAgain')}</button></div>{/if}
   <div class="ngram-grid" bind:this={grid} aria-busy={loading}>
@@ -82,7 +83,7 @@
   .ngram-heading p{display:flex;align-items:baseline;gap:14px;margin:0}
   .ngram-heading b{font-size:40px;font-weight:500;line-height:1.1}
   .ngram-heading b.vertical{writing-mode:vertical-rl;text-orientation:upright}
-  .ngram-heading span{color:var(--muted);font-size:13px}
+  .ngram-heading p>span{color:var(--muted);font-size:13px}
   .ngram-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line)}
   .ngram-occurrence{display:flex;flex-direction:column;background:var(--surface-tile);min-width:0}
   .ngram-page{height:clamp(190px,15vw,270px);padding:12px}
