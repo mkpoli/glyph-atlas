@@ -66,7 +66,7 @@ def ngram_statements(units: Iterable[str], ngrams: list[Run], batch: int = 200) 
     Every run starting at one of `units` is removed first, so a unit whose successors changed or went
     away since an earlier publication keeps no stale run. A run is then recorded only when all of its
     crops are on the site as its own; its text and book are read from the rows the site holds, whose
-    labels may have been reviewed since. The triggers of migration 0039 keep them in step; a run's
+    labels may have been reviewed since. The triggers of migration 0043 keep them in step; a run's
     direction is its line's, which no review changes.
     """
     quote = lambda value: "'" + value.replace("'", "''") + "'"

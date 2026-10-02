@@ -16,12 +16,12 @@ def unit(seq, y=None, line="L1", **fields):
 
 
 def site(units):
-    """A D1 catalogue with `units` as (id, origin, character, document) rows, every migration applied."""
+    """A D1 catalogue with `units` as (id, origin, character, document) rows and the ngram migrations applied."""
     db = sqlite3.connect(":memory:")
     db.execute("CREATE TABLE units (id TEXT PRIMARY KEY, origin TEXT, character TEXT, document TEXT)")
     db.execute("CREATE TABLE unit_pairs (first TEXT PRIMARY KEY, second TEXT NOT NULL, text TEXT, document TEXT)")
     for migration in MIGRATIONS:
-        if migration.name >= "0039":
+        if "ngram" in migration.name:
             db.executescript(migration.read_text())
     db.executemany("INSERT INTO units VALUES(?,?,?,?)", units)
     return db
@@ -108,7 +108,7 @@ def test_the_pairs_recorded_before_carry_over():
             db.executescript(migration.read_text())
     db.execute("INSERT INTO unit_pairs VALUES('a','b','申候','book')")
     for migration in MIGRATIONS:
-        if migration.name >= "0039":
+        if "ngram" in migration.name:
             db.executescript(migration.read_text())
     assert db.execute("SELECT first,size,second,third,text,document,vertical FROM unit_ngrams").fetchall() == [
         ("a", 2, "b", None, "申候", "book", 1)]
