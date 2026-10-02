@@ -4,7 +4,8 @@
  *
  * A round carries its grapheme through a material with nothing to deal and a step back through the
  * history, and a round the service refuses says so in the reader's language, never in the service's
- * English. The local service has no accounts, so the browser's anonymous sign-in is answered here, and
+ * English. When the site has been deployed again since the page loaded, a refused round offers a reload
+ * instead, and the reload deals the round again with its choices. The local service has no accounts, so the browser's anonymous sign-in is answered here, and
  * every round it posts is refused here: nothing is written.
  *
  * Run through devrun:
@@ -26,13 +27,17 @@ const json = (requestId, status, value) => browser.send('Fetch.fulfillRequest', 
 try {
   browser = await Browser.launch({ width: 1280, height: 1000 })
   const posted = [], errors = []
-  await browser.send('Fetch.enable', { patterns: [{ urlPattern: '*/api/auth/sign-in/anonymous' }, { urlPattern: '*/atlas/rounds' }, { urlPattern: '*/suggestions?*' }] })
+  let deployed = false
+  await browser.send('Fetch.enable', { patterns: [{ urlPattern: '*/api/auth/sign-in/anonymous' }, { urlPattern: '*/atlas/rounds' }, { urlPattern: '*/suggestions?*' }, { urlPattern: '*/_app/version.json' }] })
   browser.listeners.push(m => {
     if (m.method === 'Runtime.exceptionThrown') errors.push(m.params.exceptionDetails?.text)
     if (m.method !== 'Fetch.requestPaused') return
     const { requestId, request } = m.params
     if (request.url.includes('/api/auth/')) json(requestId, 200, { token: 'round-check', user: { id: 'round-check', name: 'Anonymous', isAnonymous: true } })
-    else if (request.url.includes('/atlas/rounds')) { posted.push(JSON.parse(request.postData || '{}')); json(requestId, 422, { detail: 'A round names its grapheme.' }) }
+    else if (request.url.includes('/_app/version.json')) {
+      if (deployed) json(requestId, 200, { version: 'a-newer-deployment' })
+      else browser.send('Fetch.continueRequest', { requestId })
+    } else if (request.url.includes('/atlas/rounds')) { posted.push(JSON.parse(request.postData || '{}')); json(requestId, 422, { detail: 'A round names its grapheme.' }) }
     else json(requestId, 200, { status: 'ready', candidates: [] })
   })
   const material = value => browser.evaluate(`(() => { const s = document.querySelector('.review-material select'); s.value = ${JSON.stringify(value)}; s.dispatchEvent(new Event('change', { bubbles: true })) })()`)
@@ -69,6 +74,26 @@ try {
   assert(refusal === koKore['quiz.roundNotSaved'], `a refused round is reported in the reader's language, got "${refusal}"`)
   assert(await browser.evaluate('document.querySelector(".quiz-workspace [data-issue=blank]")?.getAttribute("aria-pressed") === "true"'), 'a refused round keeps its choices')
   console.log(`ok   a refused round reads "${refusal}" and keeps its choices`)
+
+  // The site is deployed again: the same refusal now offers the reload, which keeps the round's choices.
+  const chosen = await browser.evaluate('document.querySelector(".focus-figure").dataset.unit')
+  deployed = true
+  await click('.save-round')
+  await browser.waitFor('!!document.querySelector(".update-notice")', 20000)
+  const notice = await browser.evaluate('document.querySelector(".update-notice span").innerText')
+  assert(notice === koKore['quiz.newVersion'], `the notice reads in the reader's language, got "${notice}"`)
+  assert(!await browser.evaluate('document.querySelector(".quiz-workspace .error-message")'), 'the reload is offered in place of the error')
+  console.log(`ok   a refusal after a deployment offers the reload: "${notice}"`)
+  deployed = false
+  await click('.update-notice button')
+  await browser.waitFor(`document.querySelector('.quiz-tile[data-unit="${chosen}"]')?.classList.contains('selected')`, 60000)
+  assert(await target() === first, 'the reload deals the same round')
+  assert(await browser.evaluate('sessionStorage.getItem("atlas.quiz.carried")') === null, 'the kept round is taken back once')
+  await click('.review-selected')
+  await browser.waitFor('!!document.querySelector(".issue-picker")')
+  assert(await browser.evaluate('document.querySelector(".quiz-workspace [data-issue=blank]")?.getAttribute("aria-pressed") === "true"'), 'the reload keeps the chosen problem')
+  assert(!await browser.evaluate('document.querySelector(".update-notice")'), 'the reloaded page is current')
+  console.log('ok   the reload deals the round again with its selection and problem')
   assert(errors.length === 0, 'browser exceptions: ' + errors.join(', '))
   console.log('\nround-check passed')
 } catch (error) {
