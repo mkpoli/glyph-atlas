@@ -135,16 +135,11 @@ try {
       throw new Error(`${error.message} :: ${state}`)
     }
   }
-  const fieldsOf = async () => JSON.parse(await browser.evaluate(`JSON.stringify({
-    reading: document.querySelector('.reading-input input')?.value,
-    written: document.querySelector('.written-input input')?.value })`))
-
-  await step('the reviewer opens on the reading, not on the written character', async () => {
+  await step('the inspector names the written character', async () => {
     await openReviewer(LAYERED)
-    const fields = await fieldsOf()
-    assert(fields.written === 'ネ', `written field holds ${fields.written}, expected ネ`)
-    assert(fields.reading === 'ね', `reading field holds ${fields.reading}, expected ね`)
-    return `${fields.written} / ${fields.reading}`
+    const shown = await browser.evaluate(`document.querySelector('dialog[open] .inspector-title h2')?.textContent`)
+    assert(shown === 'ネ', `the title shows ${shown}, expected ネ`)
+    return shown
   })
 
   await step('saving without an edit writes no reading event', async () => {
@@ -164,8 +159,10 @@ try {
 
   await step('correcting the character carries its reading and lands in the export', async () => {
     await openReviewer(LAYERED)
+    await browser.evaluate(`document.querySelector('dialog[open] .issue-card[data-issue="reading"]').click()`)
+    await browser.waitFor(`!!document.querySelector('dialog[open] .typed-choice input')`)
     await browser.evaluate(`(() => {
-      const input = document.querySelector('.written-input input')
+      const input = document.querySelector('dialog[open] .typed-choice input')
       input.value = 'ヌ'
       input.dispatchEvent(new Event('input', { bubbles: true }))
     })()`)

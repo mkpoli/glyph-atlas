@@ -160,6 +160,10 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 }
 .options-menu button[aria-pressed="true"]{color:var(--accent);font-weight:500}
 .options-menu button[aria-pressed="true"]::after{content:" ✓"}
+/* The source line sits under the crop on a wide screen and after everything else on a narrow one, so
+   it never pushes the decision down. */
+.credit-beside{display:none;margin-top:10px}.credit-after{margin-top:24px}
+@media(min-width:1000px){.credit-beside{display:block}.credit-after{display:none}}
 /* Skip is the other way out of a crop, so it is as tall and as legible as the button beside it. */
 .inspector-savebar .skip-character{padding:14px 22px;font-size:13px;border-radius:7px;background:var(--surface)}
 .inspector-savebar .skip-character,.inspector-savebar .save-character{min-height:52px}

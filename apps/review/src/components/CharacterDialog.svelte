@@ -1,6 +1,7 @@
 <script>
   import ContributionTerms from './ContributionTerms.svelte'
-  import ProductionBadge from './ProductionBadge.svelte'
+  import ProductionBadge, { productionLabel } from './ProductionBadge.svelte'
+  import SourceCredit from './SourceCredit.svelte'
   import StyleField from './StyleField.svelte'
   import WrittenFormField from './WrittenFormField.svelte'
   import ZiLink from './ZiLink.svelte'
@@ -35,14 +36,10 @@
   // A round's crop returns to its round, and a crop opened on its own has nowhere to go on to.
   const advancing = $derived(!onVerdict && !onskip && session.state.advance && Boolean(next))
   let dialog, data = $state(first), error = $state(''), busy = $state(false)
-  let reading = $state(first?.reading ?? first?.label ?? ''), note = $state(''), issue = $state(null), noneSelected = $state(false), correction = $state(null)
-  // The character the source printed and the reading it has are two layers: this holds the encoded
-  // written identity, which is corrected on `unicode`, while `reading` is corrected on `reading`.
-  // A phonetic edit never rewrites the identity, and this never rewrites the reading. Each field
-  // carries whether a reviewer touched it, because a field nobody edited must not be written: on
-  // this corpus 340 units are written in hiragana and read in katakana, so the label is not the
-  // reading and saving one over the other would silently rewrite the layer nobody looked at.
-  let written = $state(first?.label ?? ''), writtenDirty = $state(false), readingDirty = $state(false)
+  let issue = $state(null), noneSelected = $state(false), correction = $state(null)
+  // The character a reviewer chose for a wrong-character crop, and whether one was chosen: an
+  // untouched crop writes no character.
+  let written = $state(first?.label ?? ''), writtenDirty = $state(false)
   let editingBox = $state(false), box = $state(null), start = null, contextElement = $state(null)
   let suggestions = $state(null), suggesting = $state(false), loaded = $state(false), imageFailed = $state(false)
   let contextSuggestions = $state(null), contextSuggesting = $state(false)
@@ -69,8 +66,8 @@
     const current = ++generation
     replaced = redirected
     dialog?.scrollTo({ top: 0 })
-    data = preloaded; error = ''; issue = null; correction = null; noneSelected = false; note = ''; box = null; start = null; editingBox = false
-    written = ''; writtenDirty = false; readingDirty = false
+    data = preloaded; error = ''; issue = null; correction = null; noneSelected = false; box = null; start = null; editingBox = false
+    written = ''; writtenDirty = false
     contextSuggestions = null; contextSuggesting = false
     loaded = false; imageFailed = false; suggestions = null; suggesting = false; submission = null
     if (leaving && target !== leaving) { refocus = true; leaving = null }
@@ -78,10 +75,6 @@
       const result = preloaded ?? await character(target)
       if (closed || current !== generation) return
       data = result
-      // `label` is the character the record was written with and `reading` is what it reads; the
-      // reading field starts at the reading, and falls back to the label only for a record that has
-      // none, so an untouched save writes neither.
-      reading = result.reading ?? result.label
       written = result.label ?? ''
       contextSuggesting = true
       suggestionsFor(result, 'context').then(value => { if (!closed && current === generation) { contextSuggestions = value; contextSuggesting = false } })
@@ -109,6 +102,8 @@
   function chooseIssue(value) {
     if (issue === 'character') { written = data?.label ?? ''; writtenDirty = false }
     issue = value; correction = null; noneSelected = false; submission = null
+    // A crop is redrawn only for a bad crop; choosing another problem drops the new box.
+    if (value !== 'crop') { box = null; editingBox = false }
     // The suggestion area appears with this choice, so the next action is the one focused. An issue
     // with no suggestions moves nothing, and no later arrival takes the focus back.
     if (!suggestsReading(value)) return
@@ -136,12 +131,11 @@
   function discardProposals() {
     issue = null; correction = null; noneSelected = false
     written = data?.label ?? ''; writtenDirty = false
-    reading = data?.reading ?? data?.label ?? ''; readingDirty = false
-    box = null
+    box = null; editingBox = false
   }
 
   /**
-   * Leave this occurrence without judging it: no reading, no crop, no review, nothing written.
+   * Leave this occurrence without judging it: no character, no crop, no review, nothing written.
    *
    * The proposals on screen are dropped rather than kept, because a queued write is still a write.
    * A reader who wants the change kept saves it; Skip is the way to say "not this one" and move on.
@@ -164,8 +158,7 @@
     if (matches) discardProposals()
     const value = matches || !issue ? { verdict: 'match' } : { ...decision(issue), correction }
     if (onVerdict) {
-      // The round gets the identity in its own field, and never as a reading: a character the reader
-      // chose is `character`, and the reading it already had stays untouched.
+      // The round gets the identity in its own field: a character the reader chose is `character`.
       const identity = writtenDirty && written && written !== data.label ? { character: written } : {}
       onVerdict(value.verdict === 'match' ? { unselect: true } : { ...value, ...identity, noneSelected })
       close()
@@ -173,7 +166,6 @@
     }
     busy = true; error = ''
     const correctingCharacter = writtenDirty && Boolean(written) && written !== data.label
-    const readingEdit = readingDirty && reading !== data.reading ? { reading } : {}
     // `/atlas/characters` records reading issues; a character issue with no new character is one.
     const resolvedIssue = matches || (issue === 'character' && !correctingCharacter) ? 'reading'
       : issue || (correctingCharacter ? 'character' : 'reading')
@@ -188,9 +180,9 @@
           verdict: matches ? 'match' : decision(issue || 'character').verdict,
           issue: ['character', 'reading', 'crop', 'merged', 'blank', 'other'].includes(issue)
             ? issue : 'character',
-          note, character: written, ...readingEdit, ...(box ? { box } : {}) }
+          character: written, ...(box ? { box } : {}) }
       : { revision: data.revision, image_sha256: data.image_sha256,
-          ...value, issue: resolvedIssue, note, ...readingEdit, ...(box ? { box } : {}) }
+          ...value, issue: resolvedIssue, ...(box ? { box } : {}) }
     const signature = JSON.stringify(payload)
     if (!submission || submission.signature !== signature) submission = { signature, id: crypto.randomUUID() }
     try {
@@ -242,12 +234,12 @@
 
 <dialog class="character-dialog" bind:this={dialog} open oncancel={close} onclick={e => { if (e.target === dialog) close() }} aria-label={t('character.dialog.label')}>
   <div class="inspector">
-    <header class="inspector-header"><span class="overline">{t('character.overline')}</span><div class="inspector-navigation"><span>{position}</span><button class="icon-button previous-character" aria-label={t('common.previousCharacter')} disabled={busy || !previous} onclick={() => previous?.()}>←</button><button class="icon-button next-character" aria-label={t('common.nextCharacter')} disabled={busy || !next} onclick={() => next?.()}>→</button><button class="icon-button close-inspector" aria-label={t('common.closeReviewer')} onclick={close}>×</button></div></header>
+    <header class="inspector-header"><div class="inspector-navigation"><span>{position}</span><button class="icon-button previous-character" aria-label={t('common.previousCharacter')} disabled={busy || !previous} onclick={() => previous?.()}>←</button><button class="icon-button next-character" aria-label={t('common.nextCharacter')} disabled={busy || !next} onclick={() => next?.()}>→</button><button class="icon-button close-inspector" aria-label={t('common.closeReviewer')} onclick={close}>×</button></div></header>
     {#if replaced}<p class="replaced-note" role="status">{t('character.replaced')}</p>{/if}
     {#if error}<div class="error-message" role="alert">{error}<button disabled={busy} onclick={() => load(id)}>{t('character.reload')}</button></div>{/if}
     {#if data}
-      <div class="inspector-production"><ProductionBadge item={data} /><StyleField item={data} editable={!onVerdict} disabled={busy} working={value => busy = value} saved={styled} /><WrittenFormField item={data} editable={!onVerdict} disabled={busy} working={value => busy = value} saved={styled} /></div>
-      <div class="inspector-title"><h2 lang="ja">{data.label}</h2><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{:else if repairOf(data)?.label === 'no-class'}<span class="repair-note" title={t('repair.reason.noClass')}>{t('repair.noClass')}</span>{/if}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.state === 'checked' ? t('state.checked') : data.state === 'flagged' ? t('state.flagged') : t('state.unreviewed')}</span></div><CopyId id={data.id} />
+      <div class="inspector-production">{#if productionLabel(data)}<ProductionBadge item={data} />{/if}<StyleField item={data} editable={!onVerdict} disabled={busy} working={value => busy = value} saved={styled} /><WrittenFormField item={data} editable={!onVerdict} disabled={busy} working={value => busy = value} saved={styled} /></div>
+      <div class="inspector-title"><h2 lang="ja">{data.label}</h2><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{:else if repairOf(data)?.label === 'no-class'}<span class="repair-note" title={t('repair.reason.noClass')}>{t('repair.noClass')}</span>{/if}{#if data.state === 'checked' || data.state === 'flagged'}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.state === 'checked' ? t('state.checked') : t('state.flagged')}</span>{/if}</div><CopyId id={data.id} />
       <div class="inspector-figure">
         {#if editingBox && data.context && data.context_box}
           <figure class="nearby crop-adjustment" bind:this={nearby}>
@@ -260,13 +252,13 @@
         {:else}
           {#key data.image}<CropContext item={data} detail={data} cropBox={box ? toSource(box) : null} disabled={busy} onload={() => { loaded = true; imageFailed = false }} onerror={() => imageFailed = true} />{/key}
         {/if}
+        <div class="credit-beside"><SourceCredit item={data} /></div>
       </div>
-      {#if data.licence}<div class="image-credit"><span>{data.source}</span><small>{[data.attribution || data.holder, data.licence].filter(Boolean).join(' · ')}</small>{#if data.rights_url}<a href={data.rights_url} target="_blank" rel="noreferrer">{t('character.sourceRights')}</a>{/if}</div>{/if}
-      <SimilarCrops id={data.id} label={data.label} />
-      <div class="inspector-question"><strong>{t('character.question.whatsWrong')}</strong><span>{t('character.question.chooseOne')}</span></div>
       <IssuePicker value={issue} choose={chooseIssue} suggested={suggestedIssue} disabled={busy} />
+      {#if issue === 'crop' && !onVerdict && data.context && data.crop_editable !== false}<div class="crop-change">{#if box}{t('character.crop.adjusted')}<button type="button" disabled={busy} onclick={() => box = null}>{t('common.reset')}</button>{:else}<button type="button" class="quiet-link adjust-crop" disabled={busy || editingBox} onclick={beginCrop}>{t('character.crop.adjust')}</button>{/if}</div>{/if}
       <ReadingSuggestions targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={suggestions} loading={suggesting} contextResult={contextSuggestions} contextLoading={contextSuggesting} {issue} reading={data.label} value={issue === 'character' ? written : correction} disabled={busy} choose={chooseSuggestion} />
-      {#if !onVerdict}<details class="advanced-edit"><summary>{t('character.advancedEdit.summary')}</summary><label class="written-input">{t('character.field.character')}<input lang="ja" aria-label={t('character.field.character.aria')} bind:value={written} oninput={() => writtenDirty = true} maxlength="8" disabled={busy} placeholder={data.label} /></label>{#if writtenDirty && written && written !== data.label}<p class="written-note" role="status">{t('character.field.character.note')}</p>{/if}<label class="reading-input">{t('character.field.reading')}<input lang="ja" aria-label={t('character.field.reading.aria')} bind:value={reading} oninput={() => readingDirty = true} maxlength="32" disabled={busy} /></label>{#if data.context && data.crop_editable !== false}<button type="button" class="quiet-link adjust-crop" onclick={beginCrop}>{t('character.crop.adjust')}</button>{/if}<textarea aria-label={t('character.note.aria')} bind:value={note} rows="2" maxlength="2000" placeholder={t('character.note.placeholder')} disabled={busy}></textarea>{#if box}<div class="crop-change">{t('character.crop.adjusted')}<button type="button" onclick={() => box = null}>{t('common.reset')}</button></div>{/if}</details>{/if}
+      <SimilarCrops id={data.id} label={data.label} />
+      <div class="credit-after"><SourceCredit item={data} /></div>
     {:else if !error}<div class="inspector-skeleton"></div>{/if}
   </div>
   <footer class="inspector-savebar">
@@ -280,7 +272,6 @@
 </dialog>
 
 <style>
-  .image-credit{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);margin:12px 0 24px}.image-credit a{color:inherit}
   .crop-adjustment{flex:1 1 100%;width:100%;gap:10px}
   .crop-adjustment .context-region{max-height:360px}
   .crop-adjustment .context-region img{max-height:360px;filter:none}

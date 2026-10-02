@@ -55,7 +55,7 @@ try {
   const order = await browser.evaluate('Array.from(document.querySelectorAll(".glyph-grid [data-unit]")).map(i=>i.dataset.unit)')
   const scroll = await browser.evaluate('scrollY')
   await browser.evaluate('window.sameCollection = document.querySelector(".glyph-grid")')
-  assert(!await browser.evaluate('document.querySelector(".advanced-edit").open'), 'manual typing should be optional')
+  assert(!await browser.evaluate('!!document.querySelector("dialog[open] .advanced-edit, dialog[open] .reading-input")'), 'the inspector has no typed character or reading fields')
   await click('dialog .issue-card[data-issue="merged"]')
   await browser.waitFor('document.querySelector("dialog .suggestion-options") !== null')
   assert(await browser.evaluate('document.querySelector(".save-character").innerText.includes("Save problem")'), 'reporting an error must not confirm the wrong label')
@@ -76,7 +76,7 @@ try {
   await browser.waitFor('document.querySelector("dialog .suggestion-options button")?.innerText === "カ"')
   await click('dialog .suggestion-options button')
   await click('dialog .no-suggestion')
-  assert(await browser.evaluate('document.querySelector(".written-input input").value === document.querySelector(".inspector-title h2").textContent'),
+  assert(!await browser.evaluate('!!document.querySelector("dialog .suggestion-options button[aria-pressed=true]")'),
     'None of these cancels the proposed identity')
   await click('dialog .suggestion-options button')
   await click('.save-character')
@@ -89,7 +89,7 @@ try {
 
   await click(reportedTile)
   await browser.waitFor(inspectorReady)
-  await click('.advanced-edit summary')
+  await click('dialog .issue-card[data-issue="crop"]')
   await click('.adjust-crop')
   await browser.waitFor('document.querySelector(".context-region img")?.naturalWidth > 0')
   await browser.evaluate('document.querySelector(".context-region").scrollIntoView({block:"center"})')
@@ -299,7 +299,7 @@ try {
   const formAfter = units(config.directory)[formId]
   assert(formAfter.written_form === '⿺辶𦊷' && formAfter.unicode === formBefore.unicode && formAfter.review === formBefore.review,
     'the crop keeps its character and review')
-  assert(!await browser.evaluate('document.querySelector("dialog[open] .state-pill").classList.contains("flagged")'), 'the crop is not flagged')
+  assert(!await browser.evaluate('!!document.querySelector("dialog[open] .state-pill.flagged")'), 'the crop is not flagged')
   assert(!await browser.evaluate('document.querySelector(".save-character").disabled'), 'the crop can still be reviewed')
   await click('.close-inspector')
   await browser.waitFor('document.querySelector("dialog[open]") === null')

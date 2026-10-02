@@ -4,7 +4,8 @@
   import { graphemeChar } from '../lib/identity.js'
   import ScriptText from './ScriptText.svelte'
   import ScriptLegend from './ScriptLegend.svelte'
-  import ProductionBadge from './ProductionBadge.svelte'
+  import ProductionBadge, { productionLabel } from './ProductionBadge.svelte'
+  import SourceCredit from './SourceCredit.svelte'
   import WrittenFormField from './WrittenFormField.svelte'
   import AdvanceSwitch from './AdvanceSwitch.svelte'
   import { useSession } from '../lib/session.svelte.js'
@@ -32,13 +33,13 @@
   $effect(() => { if (refocus && loaded && !busy && saveButton) { refocus = false; tick().then(() => saveButton?.focus({ preventScroll: true })) } })
   const advancing = $derived(session.state.advance && Boolean(next))
   let dialog, data = $state(first), error = $state(''), busy = $state(false)
-  let issue = $state(null), noneSelected = $state(false), correction = $state(null), note = $state(''), search = $state('')
+  let issue = $state(null), noneSelected = $state(false), correction = $state(null), search = $state('')
   let loaded = $state(false), imageFailed = $state(false), suggestionsElement = $state(null)
   let generation = 0, closed = false, submission = null
   const sourceName = $derived(data?.source?.corpus === 'codh-full' ? 'CODH' : data?.source?.corpus || t('corpus.genericName'))
   async function load(target, preloaded = null) {
     const current = ++generation
-    data = preloaded; error = ''; issue = null; correction = null; noneSelected = false; note = ''; search = ''
+    data = preloaded; error = ''; issue = null; correction = null; noneSelected = false; search = ''
     loaded = false; imageFailed = false; submission = null
     if (leaving && target !== leaving) { refocus = true; leaving = null }
     dialog?.scrollTo({ top: 0 })
@@ -66,7 +67,7 @@
     if (matches) { issue = null; correction = null; noneSelected = false }
     const payload = { identity: target, revision: data.revision,
       source_revision: data.source_revision, verdict: issue ? 'wrong' : 'match',
-      issue, note, ...(issue && correction ? isSingle(correction)
+      issue, ...(issue && correction ? isSingle(correction)
         ? { character: correction, issue: 'character' } : { correction } : {}) }
     const signature = JSON.stringify(payload)
     if (!submission || submission.signature !== signature) submission = { signature, id: crypto.randomUUID() }
@@ -88,16 +89,18 @@
 
 <dialog class="character-dialog corpus-dialog" bind:this={dialog} open oncancel={close} onclick={e => { if (e.target === dialog) close() }} aria-label={t('corpus.dialog.label')}>
   <div class="inspector">
-    <header class="inspector-header"><span class="overline">{data?.needs_segmentation ? t('corpus.overline.group') : t('character.overline')}</span><div class="inspector-navigation"><span>{position}</span><button class="icon-button previous-character" aria-label={t('common.previousCharacter')} disabled={busy || !previous} onclick={() => previous?.()}>←</button><button class="icon-button next-character" aria-label={t('common.nextCharacter')} disabled={busy || !next} onclick={() => next?.()}>→</button><button class="icon-button close-inspector" aria-label={t('common.closeReviewer')} onclick={close}>×</button></div></header>
+    <header class="inspector-header"><div class="inspector-navigation"><span>{position}</span><button class="icon-button previous-character" aria-label={t('common.previousCharacter')} disabled={busy || !previous} onclick={() => previous?.()}>←</button><button class="icon-button next-character" aria-label={t('common.nextCharacter')} disabled={busy || !next} onclick={() => next?.()}>→</button><button class="icon-button close-inspector" aria-label={t('common.closeReviewer')} onclick={close}>×</button></div></header>
     {#if error}<div class="error-message" role="alert">{error}<button disabled={busy} onclick={() => load(id)}>{t('character.reload')}</button></div>{/if}
     {#if data}
-      <div class="inspector-production"><ProductionBadge item={data} />{#if data.identity_status !== 'unassigned' && !data.needs_segmentation}<WrittenFormField item={data} corpus disabled={busy} working={value => busy = value} saved={formed} />{/if}</div>
-      <div class="inspector-title"><h2 class:unassigned-title={data.identity_status === 'unassigned'}>{#if data.identity_status === 'unassigned'}{t('corpus.unassigned')}{#if graphemeChar(data)}<span class="title-grapheme" lang="ja" title={t('chips.grapheme')}>{graphemeChar(data)}</span>{/if}{:else}<ReferenceGlyph char={data.written_character ?? data.label} code_point={data.code_point} size="lg" />{/if}</h2>{#if data.identity_status !== 'unassigned'}<ZiLink character={data.written_character ?? data.label} />{/if}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.needs_segmentation ? t('corpus.state.needsSplitting') : data.state === 'checked' ? t('corpus.state.checkedHere') : data.state === 'flagged' ? t('state.flagged') : data.state === 'stale' ? t('corpus.state.sourceChanged') : t('state.unreviewed')}</span></div><CopyId id={data.id} />
-      <p class="corpus-source-label">{#if data.needs_segmentation}<span>{t('corpus.characterCount', { count: data.character_count })} · </span>{/if}{t('corpus.sourceLabel', { source: sourceName })} <b lang="ja">{data.source_label}</b> <ZiLink character={data.source_label} compact />{#if data.identity_status !== 'unassigned' && data.label !== data.source_label}<span> → <b lang="ja">{data.label}</b> · {t('corpus.atlasCorrection')}</span>{/if}</p>
+      <div class="inspector-production">{#if productionLabel(data)}<ProductionBadge item={data} />{/if}{#if data.identity_status !== 'unassigned' && !data.needs_segmentation}<WrittenFormField item={data} corpus disabled={busy} working={value => busy = value} saved={formed} />{/if}</div>
+      <div class="inspector-title"><h2 class:unassigned-title={data.identity_status === 'unassigned'}>{#if data.identity_status === 'unassigned'}{t('corpus.unassigned')}{#if graphemeChar(data)}<span class="title-grapheme" lang="ja" title={t('chips.grapheme')}>{graphemeChar(data)}</span>{/if}{:else}<ReferenceGlyph char={data.written_character ?? data.label} code_point={data.code_point} size="lg" />{/if}</h2>{#if data.identity_status !== 'unassigned'}<ZiLink character={data.written_character ?? data.label} />{/if}{#if data.needs_segmentation || ['checked', 'flagged', 'stale'].includes(data.state)}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.needs_segmentation ? t('corpus.state.needsSplitting') : data.state === 'checked' ? t('corpus.state.checkedHere') : data.state === 'flagged' ? t('state.flagged') : t('corpus.state.sourceChanged')}</span>{/if}</div><CopyId id={data.id} />
+      <!-- What the source itself labelled the glyph, shown when it is not what the crop now reads. -->
+      {#if data.needs_segmentation || data.label !== data.source_label}<p class="corpus-source-label">{#if data.needs_segmentation}<span>{t('corpus.characterCount', { count: data.character_count })} · </span>{/if}{t('corpus.sourceLabel', { source: sourceName })} <b lang="ja">{data.source_label}</b> <ZiLink character={data.source_label} compact />{#if data.identity_status !== 'unassigned' && data.label !== data.source_label}<span> → <b lang="ja">{data.label}</b> · {t('corpus.atlasCorrection')}</span>{/if}</p>{/if}
       <div class="inspector-figure">
         {#if data.image && data.proxyable}
           {#key data.id + ':' + data.revision}<CropContext item={data} detail={data} corpus disabled={busy} onload={() => { loaded = true; imageFailed = false }} onerror={() => imageFailed = true} />{/key}
         {:else}<span>{t('character.image.unavailable')}</span>{/if}
+        <div class="credit-beside"><SourceCredit item={data} corpus /></div>
       </div>
       {#if data.identity_status === 'unassigned'}
         <div class="assignment-options" aria-label={t('corpus.assign.label')}>
@@ -108,16 +111,14 @@
         </div>
         <ScriptLegend />
       {/if}
-      <div class="inspector-question"><strong>{t('character.question.whatsWrong')}</strong><span>{t('character.question.chooseOne')}</span></div>
       <IssuePicker value={issue} choose={chooseIssue} disabled={busy} suggested={data.state === 'flagged' ? data.issue : null} />
       <!-- Any other character is chosen beside the suggestions, in the same row as "None of these"; a crop of
            joined characters takes what it holds as typed text. -->
-      {#snippet other()}<div class="corpus-pick"><span>{t('corpus.chooseAnother')}</span><CharacterSearch bind:value={search} label={t('corpus.correctCharacter.label')} placeholder={t('corpus.correctCharacter.placeholder')} onselect={item => choose(item.char)} /></div>{/snippet}
+      {#snippet other()}<div class="corpus-pick"><span>{t('corpus.chooseAnother')}</span><CharacterSearch bind:value={search} label={t('corpus.correctCharacter.label')} placeholder={t('suggestions.type.placeholder')} onselect={item => choose(item.char)} /></div>{/snippet}
       <ReadingSuggestions typing={issue === 'merged'} targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={{ candidates: data.suggestions }} {issue} reading={data.label} value={correction} disabled={busy} {choose} other={['reading', 'character'].includes(issue) ? other : null} />
       {#if ['reading', 'character'].includes(issue) && correction}<p class="corpus-choice" role="status"><span lang="ja">{data.label}</span> → <b lang="ja">{correction}</b><button disabled={busy} onclick={() => choose(null)}>{t('common.clear')}</button></p>{/if}
-      <details class="advanced-edit"><summary>{t('corpus.addNote')}</summary><textarea aria-label={t('character.note.aria')} bind:value={note} rows="2" maxlength="2000" placeholder={t('character.note.placeholder')} disabled={busy}></textarea></details>
       <SimilarCrops id={data.id} label={data.label} />
-      <div class="corpus-credit"><span>{data.source?.title}</span><small>{[data.attribution || data.source?.holder, data.licence].filter(Boolean).join(' · ')}</small>{#if data.text_attribution}<small>{t('corpus.labelCredit', { credit: data.text_attribution })}</small>{/if}{#if /^https?:\/\//i.test(data.record_url ?? '')}<a href={data.record_url} target="_blank" rel="noreferrer">{t('corpus.sourceRecord')}</a>{/if}</div>
+      <div class="credit-after"><SourceCredit item={data} corpus /></div>
     {:else if !error}<div class="inspector-skeleton"></div>{/if}
   </div>
   <footer class="inspector-savebar">
@@ -136,5 +137,4 @@
   .title-grapheme{margin-left:12px;font-size:40px;color:var(--muted)}
   .corpus-source-label{font-size:12px;color:var(--muted);margin:-6px 0 18px}.corpus-source-label b{font-size:17px;color:var(--ink);margin-left:6px}
   .corpus-pick{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--muted);flex:1 1 16em;min-width:0}.corpus-pick :global(.character-search){width:100%;min-width:0}.corpus-choice{display:flex;align-items:center;gap:12px;margin-top:12px}.corpus-choice b{font-size:24px}.corpus-choice button{margin-left:auto;padding:5px 10px}
-  .corpus-credit{display:flex;flex-direction:column;gap:6px;margin-top:24px;color:var(--muted);font-size:12px}.corpus-credit a{align-self:flex-start;text-decoration:underline;text-underline-offset:3px;font-size:11px}
 </style>
