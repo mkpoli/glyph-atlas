@@ -181,7 +181,7 @@
       <button type="button" class="zoom-in" aria-label={t('crop.zoomIn')} title={t('crop.zoomIn')} disabled={disabled || !ready || zoom >= 4} onclick={() => magnify(1.25)}>+</button>
     </div>
   </div>
-  {#if data?.text}<details class="context-text"><summary>{t('crop.transcription')}</summary><p lang="ja">{data.text}</p></details>{/if}
+  {#if data?.text}<div class="context-text"><span>{t('crop.transcription')}</span><p lang="ja">{data.text}</p></div>{/if}
 </div>
 
 <style>
@@ -205,7 +205,6 @@
   .crop-tools svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.5}
   .crop-only{position:absolute;left:12px;bottom:18px;font-size:11px;color:var(--muted);background:light-dark(rgb(255 255 255 / 90%), rgb(27 27 31 / 90%));padding:4px 7px;border-radius:4px}
   .context-text{margin-top:10px;text-align:left;font-size:11px;color:var(--muted)}
-  summary{cursor:pointer}
-  .context-text p{font-size:15px;line-height:1.8;max-height:7em;overflow:auto;overflow-wrap:anywhere;margin:8px 0}
+  .context-text p{font-size:15px;line-height:1.8;max-height:7em;overflow:auto;overflow-wrap:anywhere;margin:4px 0 0;color:var(--ink)}
   @media(max-width:760px){.crop-viewport{height:300px}}
 </style>

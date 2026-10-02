@@ -1,6 +1,6 @@
 <script>
   // The crops that look most like this one, and those among them filed under another character,
-  // as `atlas similar neighbours` lists them. Loaded when the section is first opened.
+  // as `atlas similar neighbours` lists them. Loaded once the section comes near the screen.
   import { similar } from '../lib/client.js'
   import { t, localize } from '../lib/i18n.svelte.js'
   import { isUnassigned } from '../lib/identity.js'
@@ -8,7 +8,7 @@
   // `label` is the crop's current reading: a look-alike relabelled to it since the lists were
   // computed is no longer filed differently.
   let { id, label = null } = $props()
-  let open = $state(false)
+  let open = $state(false), section = $state(null)
   let result = $state(null)
   let failed = $state(false)
   let tab = $state('similar')
@@ -24,11 +24,18 @@
       const value = await similar(wanted)
       if (loaded === wanted) result = value
     } catch {
-      // A failed load is asked again the next time the section opens.
+      // A failed load is asked again when the dialog moves to this crop again.
       if (loaded === wanted) { failed = true; loaded = null }
     }
   }
   $effect(() => { id; open; load() })
+  $effect(() => {
+    if (!section) return
+    const observer = new IntersectionObserver(entries => { if (entries.some(entry => entry.isIntersecting)) { open = true; observer.disconnect() } },
+      { rootMargin: '0px 0px 400px 0px' })
+    observer.observe(section)
+    return () => observer.disconnect()
+  })
   const list = $derived(!result ? [] : tab === 'similar' ? result.similar ?? []
     : (result.filed_differently ?? []).filter(item => !label || item.label !== label))
   const shown = item => isUnassigned(item) ? t('corpus.unassigned') : item.label ?? ''
@@ -37,8 +44,8 @@
     : tab === 'similar' ? t('similar.none') : t('similar.noneFiledDifferently'))
 </script>
 
-<details class="similar-crops" bind:open>
-  <summary>{t('similar.title')}</summary>
+<section class="similar-crops" bind:this={section} aria-label={t('similar.title')}>
+  <h3>{t('similar.title')}</h3>
   {#if failed}<p class="similar-note" role="status">{t('similar.unavailable')}</p>
   {:else if !result}<div class="similar-skeleton"></div>
   {:else}
@@ -57,10 +64,10 @@
       </ul>
     {:else}<p class="similar-note">{empty}</p>{/if}
   {/if}
-</details>
+</section>
 
 <style>
-  .similar-crops{margin:12px 0}.similar-crops summary{cursor:pointer;font-weight:600}
+  .similar-crops{margin:24px 0 0}.similar-crops h3{margin:0;font-size:12px;font-weight:500;color:var(--muted)}
   .similar-note{color:var(--muted);font-size:13px;margin-top:8px}
   .similar-skeleton{height:96px;border-radius:8px;background:var(--surface-disabled);margin-top:8px}
   .similar-tabs{display:flex;gap:6px;margin:8px 0}
