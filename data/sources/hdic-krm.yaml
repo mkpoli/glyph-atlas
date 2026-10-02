@@ -18,6 +18,8 @@ format:
   tenri_location: "T + volume (a/b/c) + 天理図書館善本叢書 page (3 digits) + line (1 digit) + segment (1 digit) + order in the segment (1 digit)"
   headwords: "hanzi_entry is the collated form, original_entry the form written (〇 when the same); characters separated by ／; ー（X） the repetition mark standing for X; ［X］ a character the editors supply; IDS, CHISE/GlyphWiki references and a Greek suffix (僕β) for forms Unicode lacks; ■ an unreadable character"
   frames: "krm_ndl.tsv: Book, Radical, Kazama page, Tenri page, NDL_url (pid and frame of the NDL facsimile)"
+title: 類聚名義抄（観智院本）
+register: mixed
 images:
   title: 類聚名義抄（貴重図書複製会, 1937）
   publisher: 貴重図書複製会
@@ -26,16 +28,16 @@ images:
   terms: https://dl.ndl.go.jp/ja/help_iiif
   attribution: 国立国会図書館デジタルコレクション
   volumes:
-    - {volume: 仏上, pid: "2586891"}
-    - {volume: 仏中, pid: "2586892"}
-    - {volume: 仏下本, pid: "2586893"}
-    - {volume: 仏下末, pid: "2586894"}
-    - {volume: 法上, pid: "2586895"}
-    - {volume: 法中, pid: "2586896"}
-    - {volume: 法下, pid: "2586897"}
-    - {volume: 僧上, pid: "2586898"}
-    - {volume: 僧中, pid: "2586899"}
-    - {volume: 僧下, pid: "2586900"}
+    - {pid: "2586891", label: 仏上}
+    - {pid: "2586892", label: 仏中}
+    - {pid: "2586893", label: 仏下本}
+    - {pid: "2586894", label: 仏下末}
+    - {pid: "2586895", label: 法上}
+    - {pid: "2586896", label: 法中}
+    - {pid: "2586897", label: 法下}
+    - {pid: "2586898", label: 僧上}
+    - {pid: "2586899", label: 僧中}
+    - {pid: "2586900", label: 僧下}
 dating:
   literal: the latter half of the 12th century
   start: 1150
