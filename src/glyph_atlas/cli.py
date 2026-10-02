@@ -1009,6 +1009,33 @@ def repair_diagnose(
             typer.echo(f"derived {name:<14} {value}")
 
 
+@repair_app.command("relabel")
+def repair_relabel(
+    directory: Annotated[Path, typer.Argument(help="dataset whose units were aligned in the old order")],
+    out: Annotated[Path, typer.Argument(help="where to write the derived dataset")],
+    detections: Annotated[Path, typer.Option(help="the detections the units were cut from, by page")],
+    run: Annotated[str, typer.Option(help="run configuration under models/align/runs/<name>.yaml")] = "collection-v2",
+    classifier: Annotated[Path | None, typer.Option(help="the run's classifier export, if not at its path")] = None,
+    protect: Annotated[Path | None, typer.Option(help="unit ids, one a line, whose labels stay")] = None,
+    every: Annotated[bool, typer.Option("--every-line", help="realign every aligned line, not only stale ones")] = False,
+) -> None:
+    """Give every box of a line aligned in the old detection order the character the current aligner
+    places on it, keeping each unit id on its box. The source is never written to."""
+    from . import align as align_module
+    from . import box_relabel
+    from .classify import Classifier
+
+    config = align_module.load_run(Path("models/align/runs") / f"{run}.yaml", run)
+    if classifier is not None:
+        config = config.model_copy(update={"classifier": str(classifier)})
+    align_module.check_classifier(config)
+    ids = protect.read_text(encoding="utf-8").split() if protect else []
+    result = box_relabel.relabel_directory(directory, out, run=config, classifier=Classifier(config.classifier),
+                                           detections=detections, protect=ids, every=every)
+    for name, value in result.items():
+        typer.echo(f"{name:<14} {value:>10}")
+
+
 @repair_app.command("apply")
 def repair_apply(
     plan: Annotated[Path, typer.Argument(help="the plan to apply")],
