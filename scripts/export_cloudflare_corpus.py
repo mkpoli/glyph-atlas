@@ -144,22 +144,47 @@ def unit_corpora(names=None):
     return [corpus for corpus in found if corpus.name in names]
 
 
-def stale_lines(dataset) -> set[str]:
-    """The lines of a unit table whose detect-align units were aligned in the old detection order.
+def line_orientation(corpus) -> dict[str, bool]:
+    """Each line's `vertical` flag, from the corpus's lines table, or nothing when it has none."""
+    path = corpus.table("lines")
+    if path is None:
+        return {}
+    lines = ds.dataset(str(path), format="parquet")
+    if not {"id", "vertical"} <= set(lines.schema.names):
+        return {}
+    table = lines.to_table(columns=["id", "vertical"])
+    return dict(zip(table["id"].to_pylist(), table["vertical"].to_pylist(), strict=True))
+
+
+def stale_units(dataset, vertical=None) -> set[str]:
+    """The ids of the units on lines whose detect-align units were aligned in the old detection order.
 
     Their labels sit on the wrong boxes (`glyph_atlas.box_relabel`), so a publication leaves them out
-    until `atlas repair relabel` has given each box its character.
+    until `atlas repair relabel` has given each box its character. `vertical` gives each line's
+    orientation where it is known.
     """
     from glyph_atlas.schema import Box
 
-    if not {"line_id", "seq", "box", "method", "kind"} <= set(dataset.schema.names):
+    if not {"id", "line_id", "seq", "box", "method"} <= set(dataset.schema.names):
         return set()
-    lines = {}
-    table = dataset.to_table(columns=["line_id", "seq", "box", "kind"], filter=ds.field("method") == "detect-align")
+    lines, ids = {}, {}
+    table = dataset.to_table(columns=["id", "line_id", "seq", "box"], filter=ds.field("method") == "detect-align")
     for row in table.to_pylist():
-        if row["line_id"] and row["seq"] is not None and row["box"] and row["kind"] == "char":
-            lines.setdefault(row["line_id"], []).append((row["seq"], Box(**row["box"])))
-    return {line for line, placed in lines.items() if box_relabel.stale(placed)}
+        if row["line_id"]:
+            ids.setdefault(row["line_id"], []).append(row["id"])
+            if row["seq"] is not None and row["box"]:
+                lines.setdefault(row["line_id"], []).append((row["seq"], Box(**row["box"])))
+    known = vertical or {}
+    return {unit for line, placed in lines.items() if box_relabel.stale(placed, vertical=known.get(line))
+            for unit in ids[line]}
+
+
+def drop_stale(db, ids) -> int:
+    """Remove from an export's `corpus_units` the glyphs of stale lines an earlier run wrote."""
+    db.execute("CREATE TEMP TABLE IF NOT EXISTS stale_units (id TEXT PRIMARY KEY)")
+    db.execute("DELETE FROM stale_units")
+    db.executemany("INSERT OR IGNORE INTO stale_units VALUES (?)", [(i,) for i in ids])
+    return db.execute("DELETE FROM corpus_units WHERE id IN (SELECT id FROM stale_units)").rowcount
 
 
 def export(output, *, resume=False, published=None, corpora=None, skip=frozenset(), holder_images=False):
@@ -196,22 +221,24 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
             continue
         context = _MetaCache(corpus)
         dataset = ds.dataset([str(p) for p in paths], format="parquet")
-        stale = stale_lines(dataset)
+        stale = stale_units(dataset, line_orientation(corpus))
+        counts["stale-order-dropped"] += drop_stale(db, stale)
+        db.commit()
         columns = [c for c in ("id", "document_id", "page_id", "line_id", "seq", "box", "crop", "crop_sha256",
                    "kind", "granularity", "text_source", "reading", "unicode", "method", "review", "active", "upstream",
                    "style")
                    if c in dataset.schema.names]
         for batch in dataset.scanner(columns=columns, batch_size=2048, use_threads=False).to_batches():
             for row in batch.to_pylist():
+                if row["id"] in stale:
+                    counts["stale-order"] += 1
+                    continue
                 if row["id"] in existing:
                     continue
                 if row["document_id"] in withdrawn.documents():
                     counts["withdrawn"] += 1
                     continue
                 if not _character_unit_row(row):
-                    continue
-                if row.get("line_id") in stale:
-                    counts["stale-order"] += 1
                     continue
                 char = _char_of_codepoint(row.get("unicode")) or row.get("text_source")
                 if not char:

@@ -356,7 +356,7 @@ def test_a_label_credit_that_repeats_the_image_credit_is_left_out(scripts):
     assert export.text_attribution(joined) == "HDIC KRM, CC BY-SA 4.0"
 
 
-def test_an_export_finds_the_lines_aligned_in_the_old_detection_order(scripts, tmp_path):
+def test_an_export_finds_and_drops_the_glyphs_of_lines_aligned_in_the_old_detection_order(scripts, tmp_path):
     import pyarrow as pa
     import pyarrow.dataset as ds
     import pyarrow.parquet as pq
@@ -365,9 +365,17 @@ def test_an_export_finds_the_lines_aligned_in_the_old_detection_order(scripts, t
     rows = []
     for line, ys in (("stale", (90, 10, 130, 50)), ("read", (10, 50, 90, 130))):
         for seq, y in enumerate(ys, start=1):
-            rows.append({"line_id": line, "seq": seq, "box": {"x": 100, "y": y, "w": 30, "h": 28},
+            rows.append({"id": f"{line}:{seq}", "line_id": line, "seq": seq, "box": {"x": 100, "y": y, "w": 30, "h": 28},
                          "method": "detect-align", "kind": "char"})
-    rows.append({"line_id": "imported", "seq": 1, "box": {"x": 0, "y": 0, "w": 1, "h": 1}, "method": "import",
-                 "kind": "char"})
+    rows.append({"id": "imported:1", "line_id": "imported", "seq": 1, "box": {"x": 0, "y": 0, "w": 1, "h": 1},
+                 "method": "import", "kind": "char"})
     pq.write_table(pa.Table.from_pylist(rows), tmp_path / "units.parquet")
-    assert export.stale_lines(ds.dataset(tmp_path / "units.parquet")) == {"stale"}
+    stale = export.stale_units(ds.dataset(tmp_path / "units.parquet"), {"stale": True, "read": True})
+    assert stale == {f"stale:{seq}" for seq in range(1, 5)}
+    with sqlite3.connect(tmp_path / "corpus.sqlite") as db:
+        db.executescript(SCHEMA)
+        for unit in ("stale:1", "read:1"):
+            db.execute("INSERT INTO corpus_units(id,character,family,shuffle,object,offset,size) "
+                       "VALUES(?,'a','U+0061',1,'o',0,1)", (unit,))
+        assert export.drop_stale(db, stale) == 1
+        assert [r[0] for r in db.execute("SELECT id FROM corpus_units")] == ["read:1"]
