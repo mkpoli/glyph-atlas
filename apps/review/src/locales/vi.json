@@ -112,6 +112,7 @@
   "corpus.correctCharacter.placeholder": "Chữ hoặc âm đọc…",
   "corpus.dialog.label": "Duyệt chữ trong kho ngữ liệu",
   "corpus.genericName": "Kho ngữ liệu",
+  "corpus.labelCredit": "Nhãn: {credit}",
   "corpus.overline.group": "Nhóm chữ",
   "corpus.save.awaitingSegmentation": "Chờ tách chữ",
   "corpus.save.chooseCharacterOrIssue": "Hãy chọn một chữ hoặc một vấn đề",

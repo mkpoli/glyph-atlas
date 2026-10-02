@@ -112,6 +112,7 @@
   "corpus.correctCharacter.placeholder": "글자 또는 독음…",
   "corpus.dialog.label": "말뭉치 글자 검토 창",
   "corpus.genericName": "말뭉치",
+  "corpus.labelCredit": "표시: {credit}",
   "corpus.overline.group": "글자 그룹",
   "corpus.save.awaitingSegmentation": "분할 대기 중",
   "corpus.save.chooseCharacterOrIssue": "글자 또는 문제를 선택하세요",

@@ -113,6 +113,7 @@
   "corpus.correctCharacter.placeholder": "𡨸或音讀…",
   "corpus.dialog.label": "閱𡨸𥪝庫語料",
   "corpus.genericName": "庫語料",
+  "corpus.labelCredit": "眼：{credit}",
   "corpus.overline.group": "佔𡨸",
   "corpus.save.awaitingSegmentation": "徐索𡨸",
   "corpus.save.chooseCharacterOrIssue": "唉𫾗𠬠𡨸或𠬠問題",

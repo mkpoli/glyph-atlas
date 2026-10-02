@@ -115,6 +115,7 @@
   "corpus.correctCharacter.placeholder": "字或讀音…",
   "corpus.dialog.label": "語料庫單字審閱",
   "corpus.genericName": "語料庫",
+  "corpus.labelCredit": "標籤：{credit}",
   "corpus.overline.group": "字組",
   "corpus.save.awaitingSegmentation": "等待切分",
   "corpus.save.chooseCharacterOrIssue": "請選擇字或問題類型",
