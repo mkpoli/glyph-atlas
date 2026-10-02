@@ -3,6 +3,7 @@
   import { cropDetails } from '../lib/cropDetails.js'
   import ZiLink from './ZiLink.svelte'
   import CopyId from './CopyId.svelte'
+  import ScriptLine from './ScriptLine.svelte'
   // Keep the same crop and context visible while its issue and correction are chosen.
   import Glyph from './Glyph.svelte'
   import CropContext from './CropContext.svelte'
@@ -28,7 +29,7 @@
         {#key item.id + ':' + item.revision + ':' + item.image_sha256}<CropContext {item} {disabled} />{/key}
       </div>
       <div class="focus-image-meta"><ProductionBadge {item} /><ZiLink character={item.written_character ?? item.label} /></div>
-      {#if details.length}<p class="focus-details">{details.join(' · ')}</p>{/if}
+      {#if details.length}<p class="focus-details">{#each details as line, i (i)}{#if i}{' · '}{/if}<ScriptLine {line} />{/each}</p>{/if}
       <CopyId id={item.id} />
     </div>
   {/if}

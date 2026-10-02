@@ -177,6 +177,16 @@ export function around(key, name, params = {}) {
   return at < 0 ? [text, ''] : [text.slice(0, at), text.slice(at + name.length + 2)]
 }
 
+/**
+ * A message with one character in it set apart, as `{ before, text, after }`: the character a
+ * placeholder names, and the words around it. `ScriptLine` draws the character in its script's colour.
+ */
+export function withText(key, name, params) {
+  const { [name]: text, ...rest } = params
+  const [before, after] = around(key, name, rest)
+  return { before, text, after }
+}
+
 /** The project's name in the interface language, or null where that language uses the English wordmark. */
 export function localName() {
   const name = byTag[current].messages['app.name']
