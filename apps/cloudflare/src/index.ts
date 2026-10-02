@@ -695,7 +695,7 @@ function chunks<T>(list: T[], size: number): T[][] {
 // A character's edges in the 異体字 graph, both ways (0033): each by the key or by `b`'s index.
 export const variantEdgesQuery = () => `SELECT b AS other,relation,source,detail,widens FROM character_variants WHERE a=?
   UNION ALL SELECT a AS other,relation,source,detail,widens FROM character_variants WHERE b=? LIMIT 2000`;
-// A character's derived list (0042), in the order and caps refs.derived_variants gives it: one key range.
+// A character's derived list (0046), in the order and caps refs.derived_variants gives it: one key range.
 export const derivedEdgesQuery = () => `SELECT b AS other,subs FROM character_derived WHERE a=? ORDER BY rank`;
 // What the substitutions a derived list came by are backed by: each one's count and every attesting
 // pair with the sources that state it (the `component_variants` rows, keyed by substitution), at most
