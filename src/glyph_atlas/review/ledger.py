@@ -312,10 +312,11 @@ HISTORY_LIMIT = 200
 
 
 def history(conn: sqlite3.Connection, subject: str) -> list[dict]:
-    """A subject's claims, oldest first, each with its evidence and the actions taken on it."""
+    """A subject's latest claims, oldest first, each with its evidence and the actions taken on it."""
     names = [c[0] for c in conn.execute("SELECT * FROM assertions LIMIT 0").description]
     out = []
-    for row in conn.execute("SELECT * FROM assertions WHERE subject=? ORDER BY asserted_at,id LIMIT ?", (subject, HISTORY_LIMIT)):
+    for row in conn.execute("SELECT * FROM (SELECT * FROM assertions WHERE subject=? ORDER BY asserted_at DESC,id DESC LIMIT ?) "
+                            "ORDER BY asserted_at,id", (subject, HISTORY_LIMIT)):
         item = dict(zip(names, row, strict=True))
         item["value"] = None if item["value"] is None else json.loads(item["value"])
         item["evidence"] = [dict(zip(("kind", "ref", "locator"), e, strict=True)) for e in conn.execute(

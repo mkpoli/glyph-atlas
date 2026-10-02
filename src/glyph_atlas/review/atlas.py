@@ -627,7 +627,8 @@ class ClaimMember(BaseModel):
     model_config = ConfigDict(extra="forbid")
     object: str | None = Field(default=None, min_length=1, max_length=128)
     value: str | None = Field(default=None, min_length=1, max_length=64)
-    confidence: float | None = None
+    # A number, as the Worker takes it: a numeric string is refused.
+    confidence: float | None = Field(default=None, strict=True)
     confidence_scheme: str | None = Field(default=None, min_length=1, max_length=64)
 
 

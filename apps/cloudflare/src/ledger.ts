@@ -175,13 +175,13 @@ export async function actOnClaim(env: Env, input: Json, target: string, actor: s
   return { ...response, current: await currentOf(env, found.subject) };
 }
 
-// A subject's claims, oldest first, each with its evidence and the actions taken on it: one range of
-// `assertion_slot`, and each claim's rows by their own keys.
-export const claimHistoryQuery = () => `SELECT a.*,
+// A subject's latest claims, oldest first, each with its evidence and the actions taken on it: one
+// range of `assertion_subject` read backwards, and each claim's rows by their own keys.
+export const claimHistoryQuery = () => `SELECT * FROM (SELECT a.*,
   (SELECT json_group_array(json_object('kind',e.kind,'ref',e.ref,'locator',e.locator)) FROM assertion_evidence e WHERE e.assertion=a.id) AS evidence,
   (SELECT json_group_array(json_object('assertion',p.premise,'role',p.role)) FROM assertion_premises p WHERE p.assertion=a.id) AS premises,
   (SELECT json_group_array(json_object('id',x.id,'action',x.action,'actor',x.actor,'at',x.at,'reason',x.reason)) FROM assertion_actions x WHERE x.assertion=a.id) AS actions
-  FROM assertions a WHERE a.subject=? ORDER BY a.asserted_at,a.id LIMIT ${HISTORY_MAX}`;
+  FROM assertions a WHERE a.subject=? ORDER BY a.asserted_at DESC,a.id DESC LIMIT ${HISTORY_MAX}) ORDER BY asserted_at,id`;
 const parseClaim = (row: Json) => ({ ...row, value: row.value === null ? null : JSON.parse(row.value),
   evidence: JSON.parse(row.evidence), premises: JSON.parse(row.premises), actions: JSON.parse(row.actions) });
 export async function claimsOf(env: Env, subject: string) {

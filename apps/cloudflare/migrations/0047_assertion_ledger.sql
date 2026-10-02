@@ -30,6 +30,7 @@ CREATE INDEX IF NOT EXISTS assertion_slot ON assertions(subject,predicate,scope,
 CREATE INDEX IF NOT EXISTS assertion_object ON assertions(object) WHERE object IS NOT NULL;
 CREATE INDEX IF NOT EXISTS assertion_set ON assertions(alternative_set) WHERE alternative_set IS NOT NULL;
 CREATE INDEX IF NOT EXISTS assertion_actor ON assertions(asserted_by,asserted_at);
+CREATE INDEX IF NOT EXISTS assertion_subject ON assertions(subject,asserted_at,id);
 -- What a claim rests on. `crop` is the evidence version of the subject crop (0046), and the claim stands
 -- only while that is the crop's current version; `page` a page locator; `source` a source row and hash.
 CREATE TABLE IF NOT EXISTS assertion_evidence (

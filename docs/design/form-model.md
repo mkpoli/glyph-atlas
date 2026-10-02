@@ -73,7 +73,7 @@ claim about a crop is deleted only once the crop has left the site, as a withdra
 do, and its evidence, premises and actions with it.
 
 Acceptance is its own row in `assertion_actions`: `accept`, `reject`, `retract` (by the asserter) or
-`adjudicate` (by an adjudicator). A predicate catalogue (`data/vocab/ledger.json`) states each
+`adjudicate` (by an adjudicator). A predicate catalogue (`data/ledger.json`) states each
 predicate's subject and object types and its cardinality, and every write is checked against it.
 
 ### Resolution
