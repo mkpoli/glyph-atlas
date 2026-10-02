@@ -620,16 +620,7 @@
   "quiz.reference.seen": "已查看",
   "state.hard": "难读：两位审阅者已跳过",
   "meta.character.description": "从历史写本与刻本中裁切的“{character}”（{codePoint}）图像，每字附有来源与使用条款。",
-  "written.label": "字形",
-  "written.change": "更改",
-  "written.input": "其他字形或IDS",
-  "written.note": "一个字，或⿺辶𦊷这样的汉字描述序列（IDS）。字本身不变。",
-  "written.save": "采用此字形",
   "written.detail": "字形：{form}",
-  "written.problem.character": "请输入一个字或一个汉字描述序列。",
-  "written.problem.component": "描述序列只能由汉字、部首和笔画组成。",
-  "written.problem.missing": "描述序列缺少部件。",
-  "written.problem.extra": "描述序列的部件多于结构符所需。",
   "signIn.open": "登录",
   "signIn.title": "登录",
   "signIn.lede": "在任何设备上，都以同一个名字记录你的审阅。",
@@ -750,5 +741,8 @@
   "character.save.changes.close": "保存 · 关闭",
   "character.save.changes.next": "保存 · 下一个",
   "quiz.keyboardHint.issues": "W M B X选择问题 · S跳过 · ←→切换裁切",
-  "suggestions.pick.next": "下一个字…"
+  "suggestions.pick.next": "下一个字…",
+  "form.add": "添加字形",
+  "form.derived": "推导",
+  "script.hentaigana": "变体假名"
 }

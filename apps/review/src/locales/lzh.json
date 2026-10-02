@@ -619,16 +619,7 @@
   "ziLink.aria": "於zi.tools查{char}",
   "ziLink.text": "zi.tools ↗",
   "meta.character.description": "古寫本、刻本所截「{character}」（{codePoint}）之字，各附其出處與用約。",
-  "written.label": "字形",
-  "written.change": "易",
-  "written.input": "別形",
-  "written.note": "書一字，或以⿺辶𦊷之類述其構。其字不易。",
-  "written.save": "用此形",
   "written.detail": "作{form}",
-  "written.problem.character": "書一字或一構式。",
-  "written.problem.component": "構式唯用字、部首、筆畫。",
-  "written.problem.missing": "構式缺件。",
-  "written.problem.extra": "構式之件過數。",
   "signIn.open": "登入",
   "signIn.title": "登入",
   "signIn.lede": "隨所用之機，所校皆歸一名。",
@@ -749,5 +740,8 @@
   "character.save.changes.close": "錄 · 闔",
   "character.save.changes.next": "錄 · 次",
   "quiz.keyboardHint.issues": "W M B X誤 · S置 · ←→截",
-  "suggestions.pick.next": "次字…"
+  "suggestions.pick.next": "次字…",
+  "form.add": "增形",
+  "form.derived": "推",
+  "script.hentaigana": "變體假名"
 }
