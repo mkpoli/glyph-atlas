@@ -14,7 +14,7 @@
   import { issues, suggestsReading, isSingle, greetSuggestions, skipLabel, skipHint } from '../lib/issues.js'
   import { nextGrapheme, roundGraphemes, graphemeText, ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
   import { t, around, localize } from '../lib/i18n.svelte.js'
-  let { clientId, initialGrapheme = '', inspect } = $props()
+  let { initialGrapheme = '', inspect } = $props()
   let data = $state(null), items = $state([]), choices = $state({}), selected = $state({})
   let loaded = $state({}), failed = $state({}), suggestions = $state({}), contextSuggestions = $state({})
   // Crops the reader declined to judge: no choice, no request, not counted (see `skip`).
@@ -158,13 +158,13 @@
     const id = ++requestId
     loading = true; loadingMore = false; error = ''; errorStatus = 0; categoryOpen = false
     try {
-      const summary = await catalogue({ purpose: 'review', reviewer: clientId, production: scope, limit: 1, state: 'pending' })
+      const summary = await catalogue({ purpose: 'review', production: scope, limit: 1, state: 'pending' })
       if (closed || id !== requestId) return
       data = summary
-      const epochKey = 'atlas.review-epoch.' + clientId
+      const epochKey = 'atlas.review-epoch'
       if (stored(epochKey, null) !== (summary.review_epoch ?? null)) {
         last = null; completed = 0; history = []; historyIndex = -1
-        remember('atlas.last-round.' + clientId, null)
+        remember('atlas.last-round', null)
         remember(epochKey, summary.review_epoch ?? null)
       }
       // A grapheme whose count promised crops that cannot be dealt gives way to the next one.
@@ -173,7 +173,7 @@
         chosen = tries === 0 && target && available.some(c => c.label === target) ? target
           : nextGrapheme(available, scope === production ? grapheme : '', history.filter(r => r.production === scope), randomSeed())
         if (!chosen) break
-        result = await catalogue({ purpose: 'review', reviewer: clientId, production: scope, grapheme: chosen, state: 'pending', limit: ROUND_BATCH, seed })
+        result = await catalogue({ purpose: 'review', production: scope, grapheme: chosen, state: 'pending', limit: ROUND_BATCH, seed })
         if (closed || id !== requestId) return
         if (result.items.length) break
         available = available.filter(c => c.label !== chosen)
@@ -212,7 +212,7 @@
     try {
       const batchLimit = Math.min(MORE_BATCH, roundLimit - items.length)
       while (additions.length < batchLimit) {
-        const result = await catalogue({ purpose: 'review', reviewer: clientId, production, grapheme, state: 'pending', limit: 48, offset, seed: roundSeed })
+        const result = await catalogue({ purpose: 'review', production, grapheme, state: 'pending', limit: 48, offset, seed: roundSeed })
         if (closed || id !== requestId || round !== roundId) return
         const fresh = unique(result.items).filter(item => !seen.has(item.id))
         const room = batchLimit - additions.length
@@ -243,8 +243,8 @@
     if (!target) { references = []; return }
     try {
       const [checked, seen] = await Promise.all([
-        catalogue({ purpose: 'review', reviewer: clientId, production: scope, grapheme: target, state: 'checked', limit: REFERENCE_LIMIT, seed: roundSeed }),
-        catalogue({ purpose: 'review', reviewer: clientId, production: scope, grapheme: target, state: 'seen', limit: REFERENCE_LIMIT, seed: roundSeed }),
+        catalogue({ purpose: 'review', production: scope, grapheme: target, state: 'checked', limit: REFERENCE_LIMIT, seed: roundSeed }),
+        catalogue({ purpose: 'review', production: scope, grapheme: target, state: 'seen', limit: REFERENCE_LIMIT, seed: roundSeed }),
       ])
       if (closed || round !== roundId) return
       references = mergeReferences(checked.items ?? [], seen.items ?? [])
@@ -454,9 +454,9 @@
     if (!answers.length && !seen.length && !passed.length) { await load(); return }
     saving = true; error = ''; errorStatus = 0
     try {
-      await request('/atlas/rounds', { id: roundId, client_id: clientId, grapheme, answers, seen, skipped: passed })
+      await request('/atlas/rounds', { id: roundId, grapheme, answers, seen, skipped: passed })
       last = { id: roundId, count: answers.length, grapheme, production }
-      remember('atlas.last-round.' + clientId, last); completed += answers.length
+      remember('atlas.last-round', last); completed += answers.length
       announceSaved(answers.length + seen.length + passed.length, graphemeLabel)
       markRecorded(answers, 'flagged'); markRecorded(seen, 'seen'); markRecorded(passed, 'skip')
       choices = {}; selected = {}; step = 'select'; at = 0; roundId = crypto.randomUUID()
@@ -475,9 +475,9 @@
     if ((!seen.length && !passed.length) || openSelection.length) return true
     saving = true; error = ''; errorStatus = 0
     try {
-      await request('/atlas/rounds', { id: roundId, client_id: clientId, grapheme, seen, skipped: passed })
+      await request('/atlas/rounds', { id: roundId, grapheme, seen, skipped: passed })
       last = { id: roundId, count: 0, grapheme, production }
-      remember('atlas.last-round.' + clientId, last)
+      remember('atlas.last-round', last)
       announceSaved(seen.length + passed.length, graphemeLabel)
       markRecorded(seen, 'seen'); markRecorded(passed, 'skip')
       choices = {}; selected = {}; step = 'select'; at = 0; roundId = crypto.randomUUID()
@@ -493,11 +493,11 @@
     if (!last || saving) return
     saving = true; error = ''; errorStatus = 0
     try {
-      await request(`/atlas/rounds/${last.id}/undo`, { client_id: clientId })
+      await request(`/atlas/rounds/${last.id}/undo`, {})
       // A round stored by an older version may name a scope the menu no longer offers.
       const target = last.grapheme, scope = MATERIALS.some(([value]) => value === last.production) ? last.production : production
       completed = Math.max(0, completed - last.count); last = null
-      remember('atlas.last-round.' + clientId, null); await load({ target, scope })
+      remember('atlas.last-round', null); await load({ target, scope })
     } catch (e) { error = e.message; errorStatus = e.status ?? 0 }
     finally { saving = false }
   }
@@ -533,7 +533,7 @@
       : a.dealt - b.dealt)
   }
   function toggleShape() { byShape = !byShape; remember('atlas.quiz.shape-order', byShape); items = arranged(items) }
-  onMount(() => { last = stored('atlas.last-round.' + clientId, null); load({ target: initialGrapheme || null }); return () => { closed = true } })
+  onMount(() => { last = stored('atlas.last-round', null); load({ target: initialGrapheme || null }); return () => { closed = true } })
 </script>
 
 <svelte:window onkeydown={keydown} />

@@ -14,7 +14,8 @@
   import CharacterChips from '../components/CharacterChips.svelte'
   import WorkFilter from '../components/WorkFilter.svelte'
   import GraphemeGrid from '../components/GraphemeGrid.svelte'
-  import PairGrid from '../components/PairGrid.svelte'
+  import NgramGrid from '../components/NgramGrid.svelte'
+  import { NGRAM_KINDS, ngramCounts } from '../lib/ngrams.js'
   import SiteLinks from '../components/SiteLinks.svelte'
   import { catalogue, character, request, randomSeed, number, formatSerial, stored, remember } from '../lib/client.js'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery } from '../lib/layers.js'
@@ -31,7 +32,6 @@
   // `shown` is the character on show, for the page's title; the view changes it in place.
   let { flagged = false, addressed = false, inspect, ink = 'original', onink = () => {}, initial = null, gallery = null, shown = $bindable() } = $props()
   const session = useSession()
-  const clientId = $derived(session?.state.clientId ?? '')
   const asked = untrack(() => initial), first = asked?.result ? asked : null, opened = untrack(() => gallery)
   let data = $state(first?.result ?? (opened ? { query: opened.picked.char, total: opened.total, available: opened.available,
     categories: opened.summary?.categories ?? [], documents: opened.summary?.documents ?? [], counts: opened.summary?.counts ?? {} } : null))
@@ -127,21 +127,22 @@
     return [...groups.values()].sort((a, b) => direction * (b.count - a.count) || a.key.localeCompare(b.key))
   })
   const chosenGrapheme = $derived(graphemes.find(group => group.key === grapheme))
-  // The browse panel counts single graphemes or two-character pairs; the choice is remembered. Pairs
-  // are counted for the work chosen, or the whole collection, and read when the panel first shows them.
-  // A save can relabel half of a pair, so it drops the counts and the panel reads them again.
-  let unit = $state(stored('atlas.browseUnit', 'grapheme')), pairs = $state(null), pairsFailed = $state(false), pairsWork = null, pairsRequest = 0
+  // The browse panel counts single graphemes, pairs or trigrams; the choice is remembered. Runs are
+  // counted for the work chosen, or the whole collection, and read when the panel first shows them.
+  // A save can relabel part of a run, so it drops the counts and the panel reads them again.
+  let unit = $state(stored('atlas.browseUnit', 'grapheme')), runs = $state(null), runsFailed = $state(false), runsFor = null, runsRequest = 0
+  const counting = $derived(Object.hasOwn(NGRAM_KINDS, unit) && !flagged)
   function countBy(value) { unit = value; remember('atlas.browseUnit', value) }
-  async function loadPairs() {
-    const scope = work, id = ++pairsRequest
-    pairsWork = scope; pairs = null; pairsFailed = false
+  async function loadRuns() {
+    const scope = work, kind = unit, id = ++runsRequest
+    runsFor = kind + '|' + scope; runs = null; runsFailed = false
     try {
-      const found = await request('/atlas/pairs' + (scope ? `?document=${encodeURIComponent(scope)}` : ''))
-      if (!closed && id === pairsRequest) pairs = found.items
-    } catch { if (!closed && id === pairsRequest) pairsFailed = true }
+      const found = await ngramCounts(kind, scope)
+      if (!closed && id === runsRequest) runs = found.items
+    } catch { if (!closed && id === runsRequest) runsFailed = true }
   }
-  function pairsChanged() { if (unit === 'pair' && !flagged) loadPairs(); else { pairsWork = null; pairsRequest += 1 } }
-  $effect(() => { if (unit === 'pair' && !flagged && work !== pairsWork) untrack(loadPairs) })
+  function runsChanged() { if (counting) loadRuns(); else { runsFor = null; runsRequest += 1 } }
+  $effect(() => { if (counting && unit + '|' + work !== runsFor) untrack(loadRuns) })
   /** The grapheme a corpus row is filed under, as the catalogue files a label. */
   const codesOf = text => [...text].map(c => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')).join(' ')
   const rowGrapheme = row => row.grapheme?.code_point ?? row.grapheme ?? codesOf(row.label ?? '')
@@ -460,7 +461,7 @@
       // collection's own rows. Updating the wrong one leaves the tile showing its old state.
       const replace = item => item.id !== id ? [item] : (flagged && !waiting(updated.state)) || !fitsGallery(updated) ? [] : [updated]
       keepPlace(id, () => { if (picked) local = local.flatMap(replace); else items = items.flatMap(replace) })
-      pairsChanged()
+      runsChanged()
       const summary = await catalogue({ grapheme, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
         reported: flagged ? (showReported ? 'show' : 'hide') : null, limit: 1 })
       if (!closed) data = { ...data, counts: summary.counts, categories: summary.categories, documents: summary.documents, total: summary.total, available: summary.available, reported_count: summary.reported_count }
@@ -522,7 +523,7 @@
   }
   async function applyBulk() {
     const target = bulkTarget
-    if (!target || bulkBusy || !clientId) return
+    if (!target || bulkBusy) return
     const chosen = display.filter(item => selected.has(item.id) && selectable(item))
     // A tile a person already checked as the character has nothing to change; every other one is sent,
     // and one already written as the character is confirmed.
@@ -534,7 +535,7 @@
     try {
       for (let at = 0; at < crops.length; at += BATCH) {
         const part = crops.slice(at, at + BATCH), id = crypto.randomUUID()
-        const result = await request('/atlas/corrections', { id, client_id: clientId, character: target,
+        const result = await request('/atlas/corrections', { id, character: target,
           crops: part.map(item => ({ id: item.id, revision: item.revision,
             ...(item.origin === 'corpus' ? { source_revision: item.source_revision } : { image_sha256: item.image_sha256 }) })) })
         saved.push(id)
@@ -553,7 +554,7 @@
     if (saved.length) {
       patch(after)
       bulkDone = { batches: saved, count: Object.keys(after).length, char: target, before, kept }
-      pairsChanged()
+      runsChanged()
     }
     // What was saved or refused leaves the selection; what a later batch never reached stays selected.
     selected = new Set([...selected].filter(id => !handled.has(id))); anchor = null
@@ -564,12 +565,12 @@
     if (!done || bulkBusy) return
     bulkBusy = true; bulkError = ''
     try {
-      for (const id of [...done.batches].reverse()) await request(`/atlas/corrections/${id}/undo`, { client_id: clientId })
+      for (const id of [...done.batches].reverse()) await request(`/atlas/corrections/${id}/undo`, {})
       bulkDone = null
       const shown = new Set([...items, ...local, ...corpus, ...sample].map(item => item.id))
       if (Object.keys(done.before).every(id => shown.has(id))) patch(done.before)
       else await load()
-      pairsChanged()
+      runsChanged()
     } catch (e) { bulkError = e.message }
     finally { bulkBusy = false }
   }
@@ -645,12 +646,12 @@
     {#snippet browse(close)}
       {#if flagged}<p class="candidate-status">{t('explore.graphemes')}</p>
       {:else}<div class="browse-unit" role="group" aria-label={t('explore.browseUnit')}>
-        {#each [['grapheme', () => t('explore.graphemes')], ['pair', () => t('explore.pairs')]] as [value, text]}<button type="button" aria-pressed={unit === value} onclick={() => countBy(value)}>{text()}</button>{/each}
+        {#each [['grapheme', () => t('explore.graphemes')], ['pair', () => t('explore.pairs')], ['trigram', () => t('explore.trigrams')]] as [value, text]}<button type="button" aria-pressed={unit === value} onclick={() => countBy(value)}>{text()}</button>{/each}
       </div>{/if}
-      {#if unit !== 'pair' || flagged}<div class="browse-unit" role="group" aria-label={t('explore.browseOrder')}>
+      {#if !counting}<div class="browse-unit" role="group" aria-label={t('explore.browseOrder')}>
         {#each [['most', () => t('explore.order.most')], ['fewest', () => t('explore.order.fewest')]] as [value, text]}<button type="button" aria-pressed={order === value} onclick={() => orderBy(value)}>{text()}</button>{/each}
       </div>{/if}
-      {#if unit === 'pair' && !flagged}<PairGrid {pairs} failed={pairsFailed} onretry={loadPairs} {work} />
+      {#if counting}<NgramGrid kind={unit} {runs} failed={runsFailed} onretry={loadRuns} {work} />
       {:else}<GraphemeGrid groups={graphemes} value={grapheme} onchoose={key => { close(); openGrapheme(key) }}
                     onform={form => { close(); pick({ code_point: codesOf(form), char: form }, 'exact') }} />{/if}
     {/snippet}
@@ -708,7 +709,7 @@
   :global(.glyph-tile.selected){outline:2px solid var(--accent);outline-offset:-2px;background:var(--accent-light)}
   :global(.glyph-tile.selected) .tile-select{opacity:1;background:var(--accent-solid);border-color:var(--accent-solid)}
   .visual-grid-heading{grid-column:1/-1;font-size:14px;padding:20px 2px 12px;color:var(--muted);background:var(--paper)}
-  .tile-production{font-family:system-ui,sans-serif;font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tile-production{font-family:"GenZui Sans",system-ui,sans-serif;font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .tile-number{margin-left:auto}
   .tile-footer .tile-arrow{margin-left:0}
   .tile-footer .status-dot{flex-shrink:0}

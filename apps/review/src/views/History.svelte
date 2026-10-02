@@ -3,7 +3,7 @@
   import { history as fetchHistory, request, stored, remember } from '../lib/client.js'
   import { issues } from '../lib/issues.js'
   import { t, formatDateTime } from '../lib/i18n.svelte.js'
-  let { clientId, inspect } = $props()
+  let { inspect } = $props()
   let items = $state([]), loading = $state(true), loadingMore = $state(false), error = $state('')
   let cursor = $state(null), hasMore = $state(true)
   let onlyMine = $state(stored('atlas.history.onlyMine', false))
@@ -25,7 +25,7 @@
     try {
       const result = await fetchHistory({
         limit: 40, before: append ? cursor : undefined,
-        actor: onlyMine ? clientId : undefined, label: characterFilter.trim() || undefined,
+        mine: onlyMine || undefined, user: new URL(location.href).searchParams.get('user') || undefined, label: characterFilter.trim() || undefined,
       })
       if (closed || id !== requestId) return
       items = append ? [...items, ...result.items] : result.items
@@ -61,7 +61,7 @@
   let undoing = $state('')
   async function undoBatch(batch) {
     undoing = batch; error = ''
-    try { await request(`/atlas/corrections/${batch}/undo`, { client_id: clientId }); await load() }
+    try { await request(`/atlas/corrections/${batch}/undo`, {}); await load() }
     catch (e) { error = e.message }
     finally { undoing = '' }
   }
@@ -93,11 +93,11 @@
           <li class="history-batch">
             <div class="history-row">
               <span class="history-time">{when(item.at)}</span>
-              <span class="history-actor">{item.actor}</span>
+              <span class="history-actor">{item.reviewer?.name ?? item.actor}</span>
               <span class="history-label" lang="ja">{item.character ?? item.label ?? t('history.noLabel')}</span>
               <span class="history-decision">{t('history.batch', { count: row.items.length, character: item.character ?? item.label ?? '' })}
                 <span class="history-batch-labels" lang="ja">{row.items.map(entry => entry.label).filter(Boolean).slice(0, 12).join(' ')}</span></span>
-              {#if item.actor === clientId}<button class="quiet-link" disabled={undoing === row.batch} onclick={() => undoBatch(row.batch)}>{t('history.batch.undo')}</button>{/if}
+              {#if item.reviewer?.mine}<button class="quiet-link" disabled={undoing === row.batch} onclick={() => undoBatch(row.batch)}>{t('history.batch.undo')}</button>{/if}
             </div>
           </li>
         {:else}
@@ -106,7 +106,7 @@
               <button class="history-row" class:undo={item.kind === 'undo'} onclick={() => inspect(item.target)}
                       aria-label={t('history.row.inspect', { label: item.label ?? item.target })}>
                 <span class="history-time">{when(item.at)}</span>
-                <span class="history-actor">{item.actor}</span>
+                <span class="history-actor">{item.reviewer?.name ?? item.actor}</span>
                 <span class="history-label" lang="ja">{item.label ?? t('history.noLabel')}</span>
                 <span class="history-decision">{decisionText(item)}</span>
               </button>

@@ -27,6 +27,39 @@ ATLAS_REVIEW_API=http://127.0.0.1:8770 devrun bun run --cwd apps/review preview
 Open <http://127.0.0.1:4173/>. For frontend development, run `vite dev` with the same variable.
 Run development servers through `devrun`.
 
+Accounts are always served by the Worker over D1, also beside the local service. Put a
+`BETTER_AUTH_SECRET` (`openssl rand -hex 32`) in `apps/cloudflare/.dev.vars` and apply the migrations
+to the local database once: `bunx wrangler d1 migrations apply glyph-atlas --local` in `apps/cloudflare`.
+
+## Accounts
+
+Every write is made by a signed-in user. A browser with no session starts an anonymous one before
+its first write. A browser that reviewed before accounts kept a `reviewer-…` id; its session asks
+for that id once. The history shows those ids to everyone, so an admin grants the claim, and the work
+saved under the id then becomes the user's. The journal is never rewritten:
+`actors` records which user each id written into it belongs to.
+
+There are no passwords. A reader signs in with a passkey, with a six-digit code sent by mail, or with
+an account elsewhere; signing in from an anonymous session brings its work along. The form marks the
+way this browser signed in last, and a reader signed in by mail is offered a passkey for next time.
+
+- **Mail.** Codes are sent through Cloudflare Email Sending from `MAIL_FROM` (`wrangler.jsonc`), whose
+  domain has to be onboarded first: `bunx wrangler email sending enable glyphatlas.org`. A local
+  Worker writes each mail under `.wrangler/tmp/email/`.
+- **Other accounts.** GitHub, Google, Discord, LINE and Kakao are offered once their app's id and
+  secret are set as Worker secrets (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, and so on). Each app's
+  callback is `https://glyphatlas.org/api/auth/callback/<provider>`, as `…/callback/github`.
+- **Admins** see a page at `/admin` that lists reviewers and their submissions. Rejecting one undoes
+  it as its author's own undo would, recorded with the admin and a reason in `rejections`; rejecting
+  all of a reviewer's work also passes over their own later changes to a crop, and leaves any crop
+  someone else has changed since, or that one of their own submissions still standing has changed.
+  Old reviewer ids someone has asked for come first under **Old ids**, each with everyone who asked;
+  the admin gives the id to one of them. An admin can ban a user and make another user an admin. The first
+  admin is made in D1:
+  `bunx wrangler d1 execute glyph-atlas --remote --command "UPDATE \"user\" SET role='admin' WHERE email='…'"`.
+- **Passkeys** are bound to the host the page is served from, so a local check uses `localhost`
+  rather than `127.0.0.1`.
+
 `bun run --cwd apps/cloudflare deploy` builds this app and deploys it with the Worker configuration in
 `apps/cloudflare/wrangler.jsonc`.
 

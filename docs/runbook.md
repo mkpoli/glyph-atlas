@@ -71,6 +71,17 @@ git clone https://github.com/chise/hng-kiridashi-data cache/hng-kiridashi-data
 git -C cache/hng-kiridashi-data checkout 346bc74071b9a8393b841b171bbdd6c8e82774a7
 ```
 
+The headwords of the 観智院本類聚名義抄 are cut from the NDL facsimile (貴重図書複製会, 1937) and
+labelled from HDIC's KRM database, at the commit `data/sources/hdic-krm.yaml` pins. The script
+fetches each frame KRM names into the image cache and runs the detector and the classifier on CUDA;
+`glyph_atlas.krm` says how a headword is placed and when it is left out:
+
+```sh
+git clone https://github.com/shikeda/krm cache/krm
+git -C cache/krm checkout 9fc4f644674f307891442f1f39b3e436528c2392
+uv run scripts/cut_krm_headwords.py work/hdic-krm --report work/hdic-krm.report.json   # 20,662 units on 563 frames, 1.5 h with downloads
+```
+
 ## 3. Images
 
 ```sh

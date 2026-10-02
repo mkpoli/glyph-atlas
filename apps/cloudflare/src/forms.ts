@@ -107,9 +107,8 @@ async function split(env: Env, clusterId: string, q: URLSearchParams, tools: For
     items: g.slice(0, shown).map(member) })) };
 }
 
-async function decide(env: Env, request: Request, tools: FormTools) {
+async function decide(env: Env, request: Request, tools: FormTools, actor: string) {
   const input = await tools.body(request);
-  const actor = tools.text(input.client_id, 128, 'reviewer', true)!;
   const note = tools.text(input.note ?? '', 2000, 'note') ?? '';
   const kind = input.kind;
   if (!['cluster', 'glyph', 'inherit'].includes(kind)) tools.fail(422, 'Unknown decision kind.');
@@ -302,7 +301,7 @@ async function cached(url: URL, state: FormsState, key: string, read: () => Prom
   return value;
 }
 
-export async function formsRoute(env: Env, request: Request, path: string, q: URLSearchParams, tools: FormTools, ctx: ExecutionContext): Promise<Response | Json | null> {
+export async function formsRoute(env: Env, request: Request, path: string, q: URLSearchParams, tools: FormTools, ctx: ExecutionContext, actor: string | null = null): Promise<Response | Json | null> {
   const state = (await env.DB.prepare(`SELECT EXISTS(SELECT 1 FROM form_loading) AS loading,(SELECT value FROM metadata WHERE key='forms_loaded_at') AS loaded,
     (SELECT revision FROM form_families LIMIT 1) AS revision,(SELECT max(rowid) FROM form_decisions) AS decision,
     EXISTS(SELECT 1 FROM corpus_follow) AS following`).first<FormsState>())!;
@@ -314,7 +313,8 @@ export async function formsRoute(env: Env, request: Request, path: string, q: UR
   const follow = () => ctx.waitUntil(followCorpus(env).catch(error => console.error('corpus follow', error)));
   if (request.method === 'POST') {
     if (path !== '/atlas/forms/decisions') return null;
-    const decided = await decide(env, request, tools);
+    if (!actor) tools.fail(401, 'Sign in to decide forms.');
+    const decided = await decide(env, request, tools, actor!);
     follow();
     return decided;
   }

@@ -9,5 +9,5 @@
 
 <Seo title={t('nav.history')} index={false} />
 
-<!-- "Only mine" needs the reviewer id, which exists only in the browser. -->
-{#if session.state.clientId}<History clientId={session.state.clientId} inspect={inspector.inspect.bind(inspector)} />{/if}
+<!-- "Only mine" needs to know who is signed in, which is known once the page runs in a browser. -->
+{#if session.state.ready}<History inspect={inspector.inspect.bind(inspector)} />{/if}

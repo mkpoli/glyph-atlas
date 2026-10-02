@@ -1,13 +1,14 @@
 import { env } from '$env/dynamic/private'
 import worker from '../../cloudflare/src/index.ts'
+import { viewer } from '../../cloudflare/src/auth.ts'
 import { LOCALES, LOCALE_COOKIE, isLocale, localize, negotiate } from '$lib/i18n.svelte.js'
 import { THEME_COOKIE, colorScheme, isTheme, themeColorMedia } from '$lib/theme.js'
 
 /** Headers that describe one connection, not the request, and are not passed on. */
 const HOP = ['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade']
 
-/** The paths the API owns; every other path is a page. */
-const API = /^\/(atlas|layers|images|reviews)(\/|$)|^\/health$/
+/** The paths the API owns; every other path is a page. Accounts (`/api`) are always the Worker's. */
+const API = /^\/(api|atlas|layers|images|reviews)(\/|$)|^\/health$/
 
 /**
  * Answer an API path. `ATLAS_REVIEW_API` names the local review service, which owns the journal and
@@ -17,12 +18,17 @@ const API = /^\/(atlas|layers|images|reviews)(\/|$)|^\/health$/
  */
 async function api(event) {
   const upstream = env.ATLAS_REVIEW_API
-  if (!upstream) return worker.fetch(event.request, event.platform.env, event.platform.ctx)
+  if (!upstream || event.url.pathname.startsWith('/api/')) return worker.fetch(event.request, event.platform.env, event.platform.ctx)
   const headers = new Headers(event.request.headers)
   // The page server's fetch asks for an encoding it can decode; passing the browser's own list on can
   // bring back one it cannot (zstd), whose bytes would then reach the browser labelled as plain.
   for (const name of ['host', 'accept-encoding', ...HOP]) headers.delete(name)
-  const body = ['GET', 'HEAD'].includes(event.request.method) ? undefined : event.request.body
+  let body = ['GET', 'HEAD'].includes(event.request.method) ? undefined : event.request.body
+  // The local service names a write's reviewer in its body; here that is the signed-in user.
+  if (body && headers.get('content-type')?.startsWith('application/json')) {
+    const user = await viewer(event.platform.env, event.request).catch(() => null)
+    if (user) { body = JSON.stringify({ ...await event.request.json(), client_id: user.id }); headers.delete('content-length') }
+  }
   let response
   try {
     response = await fetch(new URL(event.url.pathname + event.url.search, upstream), {

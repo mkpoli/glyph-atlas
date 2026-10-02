@@ -7,7 +7,7 @@
   import { t, localize } from '../lib/i18n.svelte.js'
   // The page photos of the dataset, with every active box drawn over them. With Draw on, a drag on
   // the photo records a new box in page pixels; the box then asks for its character.
-  let { clientId, pageId = '', inspect } = $props()
+  let { pageId = '', inspect } = $props()
   let documents = $state(null), data = $state(null), error = $state(''), notice = $state('')
   let stage = $state(null), scale = $state(1), tx = $state(0), ty = $state(0), fitted = 1
   let drawing = $state(false), draft = $state(null), busy = $state(false), open = $state(null)
@@ -94,7 +94,7 @@
     if (!box || box.w < MIN_BOX || box.h < MIN_BOX) return
     busy = true
     try {
-      const result = await drawBox(data.id, { box, client_id: clientId, idempotency_key: crypto.randomUUID() })
+      const result = await drawBox(data.id, { box, idempotency_key: crypto.randomUUID() })
       await loadPage(data.id, { keepView: true })
       open = result.item
     } catch (e) { error = e.message }
@@ -213,7 +213,7 @@
       </div>
     {:else if !error}<p class="find-count" role="status">{t('pages.loading')}</p>{/if}
   </section>
-  {#if open && data}<DrawnBoxDialog unit={open} page={data} {clientId} close={() => open = null} {changed} />{/if}
+  {#if open && data}<DrawnBoxDialog unit={open} page={data} close={() => open = null} {changed} />{/if}
   {#if notice}<div class="save-toast" role="status">✓ {notice}</div>{/if}
 {:else}
   <section class="explore pages-index">

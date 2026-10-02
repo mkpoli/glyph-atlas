@@ -3,9 +3,16 @@ import { t } from './i18n.svelte.js'
 // `options.fetch` is the fetch a page's load function was given, which answers API paths on the
 // server as well as in the browser.
 export async function request(path, body, { fetch: send = fetch, ...options } = {}) {
-  const response = await send(path, { ...options, ...(body === undefined ? {} : {
+  const post = () => send(path, { ...options, ...(body === undefined ? {} : {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
   }) })
+  // A write is made by the signed-in user; a browser without a session starts an anonymous one first,
+  // and one whose session has lapsed starts another and sends the write again.
+  const writes = body !== undefined && typeof window !== 'undefined'
+  const { ensureSignedIn } = writes ? await import('./session.svelte.js') : {}
+  if (writes) await ensureSignedIn()
+  let response = await post()
+  if (writes && response.status === 401) { await ensureSignedIn({ again: true }); response = await post() }
   const value = await response.json()
   if (!response.ok) {
     // FastAPI reports a validation failure as a list of problems; show their messages.
@@ -40,11 +47,8 @@ export function stored(key, fallback) {
 export function remember(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* Server records remain available. */ }
 }
-export function reviewer() {
-  const key = 'atlas.reviewer'
-  let id = stored(key, null)
-  if (!id) { id = 'reviewer-' + crypto.randomUUID().slice(0, 8); remember(key, id) }
-  return id
+export function forget(key) {
+  try { localStorage.removeItem(key) } catch { /* Nothing was stored. */ }
 }
 export function download(value, name) {
   const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2) + '\n'], { type: 'application/json' }))

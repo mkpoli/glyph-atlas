@@ -11,5 +11,5 @@
 
 <Seo title={t('nav.quickReview')} index={false} />
 
-<!-- A round is dealt for one reviewer, whose id exists only in the browser. -->
-{#if session.state.clientId}{#key grapheme}<Quiz clientId={session.state.clientId} initialGrapheme={grapheme} inspect={inspector.inspect.bind(inspector)} />{/key}{/if}
+<!-- A round is dealt for one reviewer, who is known once the page runs in a browser. -->
+{#if session.state.ready}{#key grapheme}<Quiz initialGrapheme={grapheme} inspect={inspector.inspect.bind(inspector)} />{/key}{/if}

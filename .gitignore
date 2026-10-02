@@ -22,3 +22,6 @@ logs/
 *.tif
 *.tiff
 .DS_Store
+
+# Local Worker secrets.
+.dev.vars*
