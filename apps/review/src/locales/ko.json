@@ -290,6 +290,8 @@
   "history.characterFilter.aria": "글자로 거르기",
   "history.characterFilter.placeholder": "글자로 거르기",
   "history.decision.match": "맞음",
+  "history.decision.passed.one": "한 라운드에서 크롭{count}개를 문제 표시 없이 넘김",
+  "history.decision.passed.other": "한 라운드에서 크롭{count}개를 문제 표시 없이 넘김",
   "history.decision.reported": "문제 신고",
   "history.decision.undo": "검토 되돌림",
   "history.decision.unsure": "잘 모르겠음",

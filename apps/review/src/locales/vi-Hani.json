@@ -283,6 +283,8 @@
   "history.characterFilter.aria": "𤀓蹺𡨸",
   "history.characterFilter.placeholder": "𤀓蹺𡨸",
   "history.decision.match": "中",
+  "history.decision.passed.one": "㐌閱過{count}塳割𥪝𠬠釯𦓡空打唒問題",
+  "history.decision.passed.other": "㐌閱過{count}塳割𥪝𠬠釯𦓡空打唒問題",
   "history.decision.reported": "㐌報問題",
   "history.decision.undo": "㐌毀𠬠吝閱",
   "history.decision.unsure": "㐌𠬃過位空𠓑",

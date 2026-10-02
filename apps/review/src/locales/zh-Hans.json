@@ -293,6 +293,8 @@
   "history.characterFilter.aria": "按字筛选",
   "history.characterFilter.placeholder": "按字筛选",
   "history.decision.match": "没有问题",
+  "history.decision.passed.one": "一轮审阅中有{count}张裁切未标记问题",
+  "history.decision.passed.other": "一轮审阅中有{count}张裁切未标记问题",
   "history.decision.reported": "报告了问题",
   "history.decision.undo": "撤销了审阅",
   "history.decision.unsure": "不确定",

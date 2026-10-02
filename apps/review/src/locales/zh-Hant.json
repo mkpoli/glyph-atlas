@@ -293,6 +293,8 @@
   "history.characterFilter.aria": "依字篩選",
   "history.characterFilter.placeholder": "依字篩選",
   "history.decision.match": "沒有問題",
+  "history.decision.passed.one": "一輪審閱中有{count}個裁切未標記問題",
+  "history.decision.passed.other": "一輪審閱中有{count}個裁切未標記問題",
   "history.decision.reported": "回報了問題",
   "history.decision.undo": "撤銷了審閱",
   "history.decision.unsure": "不確定",

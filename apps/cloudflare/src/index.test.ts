@@ -85,12 +85,14 @@ describe('historyQuery', () => {
     expect(sql).toContain('ORDER BY at DESC,id DESC LIMIT ?1');
     expect(values).toEqual([]);
   });
-  it('binds the label and cursor once, then one id per arm, with the LIMIT after them', () => {
+  it('binds the filters once per kind of row, then one id per arm, with the LIMIT after them', () => {
     const { sql, values } = historyQuery(['u1', 'reviewer-0a1b2c3d'], 'ア', { at: '2026-01-02T00:00:00.000Z', id: 'cf:one' });
-    expect(sql).toContain('(at,id)<(?2,?3) AND actor=?4 UNION ALL SELECT');
-    expect(sql).toContain('(at,id)<(?2,?3) AND actor=?5');
-    expect(sql).toContain('LIMIT ?6');
-    expect(values).toEqual(['ア', '2026-01-02T00:00:00.000Z', 'cf:one', 'u1', 'reviewer-0a1b2c3d']);
+    expect(sql).toContain('(at,id)<(?2,?3) AND actor=?7 UNION ALL SELECT');
+    expect(sql).toContain("json_extract(request,'$.input.label')=?4 AND (at,id)<(?5,?6) AND actor=?8");
+    expect(sql).toContain('(at,id)<(?2,?3) AND actor=?9');
+    expect(sql).toContain('LIMIT ?11');
+    expect(values).toEqual(['ア', '2026-01-02T00:00:00.000Z', 'cf:one', 'ア', '2026-01-02T00:00:00.000Z', 'cf:one',
+      'u1', 'u1', 'reviewer-0a1b2c3d', 'reviewer-0a1b2c3d']);
   });
 });
 

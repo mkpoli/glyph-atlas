@@ -287,6 +287,8 @@
   "history.characterFilter.aria": "文字で絞り込む",
   "history.characterFilter.placeholder": "文字で絞り込む",
   "history.decision.match": "問題なし",
+  "history.decision.passed.one": "1ラウンドで切り出し{count}件への指摘なし",
+  "history.decision.passed.other": "1ラウンドで切り出し{count}件への指摘なし",
   "history.decision.reported": "問題を報告",
   "history.decision.undo": "レビューを取り消し",
   "history.decision.unsure": "判断保留",
