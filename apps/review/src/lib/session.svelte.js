@@ -14,8 +14,8 @@ let current = null
  * known once the page runs in a browser, the image style, whether a save in the inspector goes on to
  * the next crop, and the collection-progress dialog.
  */
-export function createSession() {
-  const state = $state({ ready: false, user: null, providers: [], signingIn: false, ink: 'original', advance: false, progress: false })
+export function createSession(account = { user: null, providers: [] }) {
+  const state = $state({ ready: false, user: account.user, providers: account.providers, signingIn: false, ink: 'original', advance: false, progress: false })
   let starting = null
   const session = {
     state,
@@ -26,13 +26,9 @@ export function createSession() {
       // Most crops in the collection are right, so a save closes the inspector unless the reader has
       // chosen to go through them in a row.
       state.advance = stored('atlas.advance', false) === true
-      try {
-        const account = await (await fetch('/api/account')).json()
-        state.user = account.user
-        state.providers = account.providers ?? []
-        // A browser that reviewed before accounts brings that work into its session.
-        if (stored(LEGACY, null)) await session.ensure()
-      } catch { /* Signed out: the first write starts a session. */ }
+      // The page arrives knowing who is signed in. A browser that reviewed before accounts brings that
+      // work into its session.
+      try { if (stored(LEGACY, null)) await session.ensure() } catch { /* The first write tries again. */ }
       state.ready = true
     },
     /** The signed-in user, starting an anonymous session if there is none. */
@@ -78,9 +74,8 @@ async function claimLegacy() {
   if (!reviewer) return
   const response = await fetch('/api/account/claim', { method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ reviewer }) })
-  // Asked for, held, or held by another account, the id is settled from here; an admin grants a
-  // claim. A failure tries again next time.
-  if ([200, 202, 409, 422, 429].includes(response.status)) forget(LEGACY)
+  // Held now, or held by another account, the id is settled from here. A failure tries again next time.
+  if ([200, 409, 422, 429].includes(response.status)) forget(LEGACY)
 }
 
 /** Make sure the browser is signed in before a write. */

@@ -203,3 +203,13 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 .menu-account{display:none}.options-menu .menu-admin{display:block;font-size:13px;padding:10px 14px;border-radius:7px}.options-menu .menu-admin:hover{background:var(--accent-hover)}
 @media(max-width:700px){.sign-in-link,.account-link{display:none}.options-menu .menu-account{display:block;width:100%;text-align:left;border:0;font-size:14px;padding:10px 14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-bottom:1px solid var(--line);border-radius:0;margin-bottom:4px}}
 .avatar{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;overflow:hidden;flex-shrink:0;background:var(--accent-light);color:var(--accent);font-size:13px;font-weight:600}.avatar img{width:100%;height:100%;object-fit:cover}.avatar.large{width:56px;height:56px;font-size:22px}
+
+/* The mark assembles once when the page loads: the three filled cells settle in reading order, then the
+   empty fourth cell is outlined, clockwise from its top-left corner, the way a crop box is drawn. Each
+   part starts from its own geometry and ends in the static mark, so the box never changes size. */
+.atlas-symbol .cell{transform-box:fill-box;transform-origin:center;animation:atlas-cell .28s cubic-bezier(.2,.7,.2,1) backwards}
+.atlas-symbol .cell:nth-child(1){animation-delay:.06s}.atlas-symbol .cell:nth-child(2){animation-delay:.17s}.atlas-symbol .cell:nth-child(3){animation-delay:.28s}
+.atlas-symbol .open-cell{animation:atlas-outline .42s cubic-bezier(.45,0,.25,1) .42s backwards}
+@keyframes atlas-cell{from{opacity:0;transform:scale(.55)}}
+@keyframes atlas-outline{from{stroke-dasharray:1 1;stroke-dashoffset:1}to{stroke-dasharray:1 1;stroke-dashoffset:0}}
+@media(prefers-reduced-motion:reduce){.atlas-symbol .cell,.atlas-symbol .open-cell{animation:none}}

@@ -4,7 +4,7 @@ import { formsRoute, withForm, formed, FORM_COLUMNS, type FormTools, type UnitFo
 import { similarCrops } from './similar';
 import { componentSearch, componentTerm } from './components';
 import { formProblem, type FormProblem } from './writtenForm';
-import { auth, claim, grant, owned, providers, viewer } from './auth';
+import { auth, claim, owned, providers, viewer } from './auth';
 import { reviewers, submissions } from './admin';
 export { leastTypicalQuery } from './forms';
 export { componentMatchQuery } from './components';
@@ -1307,7 +1307,7 @@ export function historyQuery(user: string | null, label: string | null, cursor: 
   if (user) { where.push('actor IN (SELECT actor FROM actors WHERE user_id=?)'); values.push(user) }
   if (label !== null) { where.push(`${historyLabelExpr()}=?`); values.push(label) }
   if (cursor) { where.push('(at,id)<(?,?)'); values.push(cursor.at, cursor.id) }
-  const sql = `SELECT h.*,a.user_id AS user,u.name AS name FROM (SELECT id,at,actor,target,kind,event,${historyLabelExpr()} AS label
+  const sql = `SELECT h.*,a.user_id AS user,u.name AS name,u.image AS image FROM (SELECT id,at,actor,target,kind,event,${historyLabelExpr()} AS label
     FROM events WHERE ${where.join(' AND ')} ORDER BY at DESC,id DESC LIMIT ?) h
     LEFT JOIN actors a ON a.actor=h.actor LEFT JOIN "user" u ON u.id=a.user_id ORDER BY h.at DESC,h.id DESC`;
   return { sql, values };
@@ -1323,7 +1323,7 @@ export function decodeCursor(value: string): { at: string; id: string } {
   } catch { throw new Problem(422, 'Invalid cursor.') }
 }
 type HistoryRow = { id: string; at: string; actor: string; target: string; kind: string; event: string; label: string | null;
-  user: string | null; name: string | null };
+  user: string | null; name: string | null; image: string | null };
 // A review's evidence names its own verdict, issue and correction; an undo's evidence is only the id
 // of the event it reverses, so those fields stay null and `undoes` names that event instead.
 export function historyItem(row: HistoryRow, me: string | null = null): Json {
@@ -1332,7 +1332,7 @@ export function historyItem(row: HistoryRow, me: string | null = null): Json {
   const evidence = undo ? null : parse(parsedEvent.evidence);
   return {
     id: row.id, at: row.at, target: row.target, label: row.label, kind: row.kind as 'review' | 'undo',
-    reviewer: { user: row.user, name: row.name ?? row.actor, mine: Boolean(me && row.user === me) },
+    reviewer: { user: row.user, name: row.name ?? row.actor, image: row.image, mine: Boolean(me && row.user === me) },
     verdict: evidence?.verdict ?? null,
     issue: evidence?.issue ?? null,
     character: evidence?.suggested_character ? literal(evidence.suggested_character) : null,
@@ -1391,7 +1391,6 @@ export default {
         // An admin's page: rejecting what a reviewer saved. Banning and roles are Better Auth's own.
         if(path.startsWith('/api/admin/')&&!me.admin)throw new Problem(403,'Only an admin can do this.');
         if(path==='/api/admin/reject')return json(await reject(env,me.id,await body(request)));
-        if(path==='/api/admin/claims'){const input=await body(request);const {status,body:out}=await grant(env,text(input.actor,128,'actor',true)!,text(input.user,64,'user',true)!);return json(out,status)}
         if(path==='/api/account/claim'){const {status,body:out}=await claim(env,me,String((await body(request)).reviewer??''));return json(out,status)}
         if(path==='/atlas/corpus/reviews')return json(await submit(env,request,me.id,'@corpus'));
         if(path==='/atlas/rounds')return json(await submit(env,request,me.id));

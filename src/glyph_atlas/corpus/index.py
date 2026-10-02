@@ -1503,6 +1503,9 @@ def _unit_row(
     rights = doc.get("image_rights") or {}
     if isinstance(rights, str):
         rights = _json(rights)
+    text_rights = doc.get("text_rights") or {}
+    if isinstance(text_rights, str):
+        text_rights = _json(text_rights)
     upstream = row.get("upstream") or {}
     if isinstance(upstream, str):
         upstream = _json(upstream)
@@ -1538,6 +1541,7 @@ def _unit_row(
         "record_url": upstream.get("url"),
         "image_licence": (rights or {}).get("licence"),
         "image_rights": rights,
+        "text_attribution": (text_rights or {}).get("attribution"),
         "grid_safe": True,
         "note": (
             "detector/alignment unit with a measured rectangle"

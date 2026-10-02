@@ -345,3 +345,12 @@ def test_a_corpus_glyph_carries_its_sources_credit_line(scripts):
     assert exporter.attribution({"image_rights": {"licence": "CC-BY-4.0", "attribution": credit}}) == credit
     assert exporter.attribution({"image_rights": {"licence": "PD"}}) is None
     assert exporter.attribution({}) is None
+
+
+def test_a_label_credit_that_repeats_the_image_credit_is_left_out(scripts):
+    export = importlib.import_module("export_cloudflare_corpus")
+    same = "『日本古典籍くずし字データセット』（国文研ほか所蔵／CODH加工）"
+    joined = {"image_rights": {"attribution": same}, "text_attribution": same}
+    assert export.text_attribution(joined) is None
+    joined = {"image_rights": {"attribution": "国立国会図書館デジタルコレクション"}, "text_attribution": "HDIC KRM, CC BY-SA 4.0"}
+    assert export.text_attribution(joined) == "HDIC KRM, CC BY-SA 4.0"

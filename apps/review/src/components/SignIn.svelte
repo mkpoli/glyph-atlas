@@ -74,6 +74,9 @@
   }
   onMount(() => {
     let closed = false
+    // What the browser can tell at once is shown at once; the accounts client loads behind it.
+    passkey = { supported: typeof PublicKeyCredential !== 'undefined', autofill: false }
+    last = document.cookie.match(/(?:^|;\s*)better-auth\.last_used_login_method=([^;]+)/)?.[1] ?? null
     ;(async () => {
       const client = await authClient()
       last = client.getLastUsedLoginMethod()
