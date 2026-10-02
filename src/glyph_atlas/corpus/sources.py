@@ -188,7 +188,7 @@ KNOWN: tuple[dict[str, Any], ...] = (
     {
         "name": "hdic-krm",
         "note": "観智院本類聚名義抄 headwords on the NDL facsimile (貴重図書複製会, 1937), "
-                "labelled from HDIC's KRM database (scripts/cut_krm_headwords.py).",
+                "labelled from HDIC's KRM database (scripts/cut_hdic_headwords.py).",
     },
 )
 
