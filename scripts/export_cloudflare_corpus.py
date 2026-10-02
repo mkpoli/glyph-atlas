@@ -225,7 +225,7 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
         counts["stale-order-dropped"] += drop_stale(db, stale)
         db.commit()
         columns = [c for c in ("id", "document_id", "page_id", "line_id", "seq", "box", "crop", "crop_sha256",
-                   "kind", "granularity", "text_source", "reading", "unicode", "method", "review", "active", "upstream",
+                   "kind", "granularity", "text_source", "unicode", "method", "review", "active", "upstream",
                    "style")
                    if c in dataset.schema.names]
         for batch in dataset.scanner(columns=columns, batch_size=2048, use_threads=False).to_batches():
@@ -294,7 +294,7 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
                     ("document_id", "page_id", "line_id", "title", "holder", "shelfmark", "image_service")},
                     "source_url": joined.get("canvas")}
                 detail = resolver._assemble(identity=row["id"], unit_id=row["id"], label=char,
-                    source_label=row.get("text_source"), reading=row.get("reading"), code_point=row.get("unicode"),
+                    source_label=row.get("text_source"), code_point=row.get("unicode"),
                     box=box, image=image, image_reason=None, crop_sha256=row.get("crop_sha256"),
                     source_crop=row.get("crop"), proxyable=True, licence=joined.get("image_licence"),
                     source=source, context_box=context_box, context_image=context_image,

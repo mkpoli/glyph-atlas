@@ -48,8 +48,8 @@ def reviewed_baselines(db, corpus):
             # A character written with a mark is several code points; `grapheme` takes the whole sequence.
             own = " ".join(refs.to_code_points(written))
             current["grapheme"] = refs.grapheme(own) or own
-        db.execute("INSERT OR REPLACE INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
-            identity, "corpus", written, current.get("reading"), current.get("grapheme"),
+        db.execute("INSERT OR REPLACE INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+            identity, "corpus", written, current.get("grapheme"),
             (current.get("visual_group") or {}).get("id"), current.get("production") or "unknown",
             category_of(current.get("label")),
             # Dealt in Quick review, as the Worker decides, when its image may be served and it names a character.

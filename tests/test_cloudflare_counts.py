@@ -12,8 +12,8 @@ COUNTED = """SELECT origin,coalesce(character,''),coalesce(document,''),state,co
 
 
 def unit(db, identity, character="ア", document="hk:a", state="pending", family="U+30A2", source="Book A", quiz=1):
-    db.execute("INSERT OR IGNORE INTO units(id,origin,character,reading,family,visual_group,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual,document) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
-        identity, "local", character, character, family, None, "handwritten", "kana", state, 0, quiz, 1, 0,
+    db.execute("INSERT OR IGNORE INTO units(id,origin,character,family,visual_group,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual,document) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+        identity, "local", character, family, None, "handwritten", "kana", state, 0, quiz, 1, 0,
         json.dumps({"id": identity, "label": character, "source": source}), "{}", "{}", "{}", document))
 
 

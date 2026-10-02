@@ -57,7 +57,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-COLUMNS = ("origin", "character", "reading", "family", "visual_group", "production", "category",
+COLUMNS = ("origin", "character", "family", "visual_group", "production", "category",
            "state", "quiz", "priority", "shuffle", "data", "snapshot", "context", "visual", "style")
 
 
