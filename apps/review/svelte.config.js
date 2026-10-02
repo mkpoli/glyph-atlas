@@ -19,5 +19,8 @@ export default {
     // Put each page's stylesheets in its HTML. As separate files they block the first paint behind
     // extra requests that, on a slow phone connection, finish after the first glyph images arrive.
     inlineStyleThreshold: 64 * 1024,
+    // A tab left open across a deployment learns of the new page, so a round it saves is not refused
+    // without the reader knowing why (Quick Review offers the reload).
+    version: { pollInterval: 5 * 60 * 1000 },
   },
 }
