@@ -736,10 +736,5 @@
   "admin.submission.other.one": "크롭 {count}個 提出",
   "admin.submission.other.other": "크롭 {count}個 提出",
   "admin.unavailable.one": "修正한 크롭이 所藏 資料에 더 以上 없어 {count}件은 그대로 두었습니다.",
-  "admin.unavailable.other": "修正한 크롭이 所藏 資料에 더 以上 없어 {count}件은 그대로 두었습니다.",
-  "admin.claims.title": "이 ID를 要請한 사람",
-  "admin.claims.give": "이 사람에게 賦與",
-  "admin.claims.given": "{id}이(가) 이제 {name}에게 歸屬되었습니다.",
-  "admin.claims.count.one": "{count}名 要請 中",
-  "admin.claims.count.other": "{count}名 要請 中"
+  "admin.unavailable.other": "修正한 크롭이 所藏 資料에 더 以上 없어 {count}件은 그대로 두었습니다."
 }

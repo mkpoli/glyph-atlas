@@ -49,14 +49,6 @@
   const rejectAll = () => rejecting(chosen, { ...who(chosen), reason: reason.trim() })
   const summary = ({ rejected, conflicts, unavailable }) => [t('admin.rejected', { count: rejected }),
     conflicts ? t('admin.conflicts', { count: conflicts }) : '', unavailable ? t('admin.unavailable', { count: unavailable }) : ''].filter(Boolean).join(' ')
-  async function give(claimant) {
-    busy = 'grant'; error = ''; notice = ''
-    try {
-      await request('/api/admin/claims', { actor: chosen.actor, user: claimant.user })
-      notice = t('admin.claims.given', { id: chosen.actor, name: claimant.name })
-      chosen = null; await list()
-    } catch (failure) { error = failure.message } finally { busy = '' }
-  }
   async function account(action) {
     busy = action; error = ''; notice = ''
     try {
@@ -91,7 +83,7 @@
             <span class="avatar">{#if person.image}<img src={person.image} alt="" />{:else}{(person.name || '?').slice(0, 1).toUpperCase()}{/if}</span>
             <span class="admin-person-text"><strong>{person.name}</strong>
               <small>{person.email ?? (person.actor ? t('admin.unclaimed') : person.anonymous ? t('admin.anonymous') : '')}</small>
-              <small>{#if person.claims?.length}<b class="admin-asked">{t('admin.claims.count', { count: person.claims.length })}</b> · {/if}{t('admin.saved', { count: person.submissions ?? 0 })}{person.rejected ? ' · ' + t('admin.rejectedCount', { count: person.rejected }) : ''}{person.last ? ' · ' + when(person.last) : ''}</small></span>
+              <small>{t('admin.saved', { count: person.submissions ?? 0 })}{person.rejected ? ' · ' + t('admin.rejectedCount', { count: person.rejected }) : ''}{person.last ? ' · ' + when(person.last) : ''}</small></span>
             {#if person.role === 'admin'}<span class="admin-pill">{t('admin.role.admin')}</span>{/if}
             {#if person.banned}<span class="admin-pill danger">{t('admin.banned')}</span>{/if}
           </button></li>
@@ -118,15 +110,6 @@
               {:else}<button disabled={Boolean(busy)} onclick={() => account('promote')}>{t('admin.promote')}</button>{/if}{/if}
             {/if}
           </div>
-          {#if chosen.claims?.length}
-            <div class="admin-claims">
-              <p>{t('admin.claims.title')}</p>
-              <ul>{#each chosen.claims as claimant (claimant.user)}
-                <li><span>{claimant.name}<small>{claimant.email ?? t('admin.anonymous')} · {when(claimant.at)}</small></span>
-                  <button disabled={Boolean(busy)} onclick={() => give(claimant)}>{t('admin.claims.give')}</button></li>
-              {/each}</ul>
-            </div>
-          {/if}
           {#if confirming === 'all' || (confirming && confirming !== 'ban')}
             <form class="admin-confirm" onsubmit={event => { event.preventDefault(); confirming === 'all' ? rejectAll() : rejectSome([confirming]) }}>
               <p>{confirming === 'all' ? t('admin.rejectAll.confirm', { count: standing, name: chosen.name }) : t('admin.reject.confirm')}</p>
@@ -177,15 +160,6 @@
   .admin-person-text small { font-size: 10px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .admin-pill { flex-shrink: 0; font-size: 9px; letter-spacing: .3px; padding: 3px 7px; border-radius: 20px; color: var(--accent); background: var(--accent-light); }
   .admin-pill.danger { color: var(--wrong); background: var(--wrong-light); }
-  .admin-asked { font-weight: 600; color: var(--uncertain); }
-  .admin-claims { margin-top: 16px; padding: 14px; border-radius: 9px; background: var(--uncertain-light); }
-  .admin-claims p { font-size: 12px; margin-bottom: 8px; }
-  .admin-claims ul { list-style: none; margin: 0; padding: 0; }
-  .admin-claims li { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 13px; }
-  .admin-claims li:first-child { border-top: 0; }
-  .admin-claims li span { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .admin-claims small { font-size: 10px; color: var(--muted); }
-  .admin-claims button { font-size: 12px; padding: 7px 12px; }
   .admin-empty { font-size: 12px; color: var(--muted); padding: 18px 8px; text-align: center; }
   .admin-more { display: block; margin: 12px auto 0; }
   .admin-card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px; margin-bottom: 14px; }

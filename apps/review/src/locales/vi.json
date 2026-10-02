@@ -737,10 +737,5 @@
   "admin.submission.other.one": "Lượt gửi {count} vùng cắt",
   "admin.submission.other.other": "Lượt gửi {count} vùng cắt",
   "admin.unavailable.one": "Đã giữ nguyên {count} lượt gửi: một vùng cắt được sửa trong đó không còn trong bộ sưu tập.",
-  "admin.unavailable.other": "Đã giữ nguyên {count} lượt gửi: một vùng cắt được sửa trong đó không còn trong bộ sưu tập.",
-  "admin.claims.title": "Người xin nhận ID",
-  "admin.claims.give": "Giao cho người này",
-  "admin.claims.given": "{id} nay thuộc về {name}.",
-  "admin.claims.count.one": "{count} người xin nhận",
-  "admin.claims.count.other": "{count} người xin nhận"
+  "admin.unavailable.other": "Đã giữ nguyên {count} lượt gửi: một vùng cắt được sửa trong đó không còn trong bộ sưu tập."
 }

@@ -738,10 +738,5 @@
   "admin.submission.other.one": "吝寄{count}塳割",
   "admin.submission.other.other": "吝寄{count}塳割",
   "admin.unavailable.one": "㐌𡨹原{count}吝寄：𠬠塳割特𢯢𥪝妬空羣𥪝部蒐集。",
-  "admin.unavailable.other": "㐌𡨹原{count}吝寄：𠬠塳割特𢯢𥪝妬空羣𥪝部蒐集。",
-  "admin.claims.title": "𠊛吀認ID",
-  "admin.claims.give": "交朱𠊛呢",
-  "admin.claims.given": "{id}尼屬𧗱{name}。",
-  "admin.claims.count.one": "{count}𠊛吀認",
-  "admin.claims.count.other": "{count}𠊛吀認"
+  "admin.unavailable.other": "㐌𡨹原{count}吝寄：𠬠塳割特𢯢𥪝妬空羣𥪝部蒐集。"
 }
