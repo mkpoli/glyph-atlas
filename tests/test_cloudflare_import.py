@@ -505,3 +505,57 @@ def test_command_imports_written_forms_with_the_reviews(store, tmp_path, monkeyp
     result = json.loads(report.read_text())
     assert result["written_forms"]["counts"] == {"imported": 1}
     assert store.unit("u").written_form == "⿺辶𦊷"
+
+
+def redrawn(publication, box, *, before=None):
+    """A site review that redraws the crop's box: a match, saved with the new box, as the Worker does."""
+    record, after = remote(publication, before=before, character=None, issue="reading")
+    evidence = json.loads(record["event"]["evidence"])
+    evidence["request"].update(verdict="match", issue="reading", box=box)
+    after = {**after, "box": box}
+    evidence.update(verdict="match", issue="reading", correction={**evidence["correction"], "box": box},
+                    recrop={"from": publication["character"]["box"], "to": box,
+                            "pixels": publication["character"]["image_sha256"]})
+    record["event"].update(evidence=json.dumps(evidence, ensure_ascii=False), new="reviewed")
+    return record, after
+
+
+def test_a_box_redrawn_on_the_site_imports_as_the_crops_new_box(store):
+    box = {"x": 12, "y": 11, "w": 26, "h": 38}
+    record, _ = redrawn(baseline(store), box)
+    _, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
+    assert report["counts"] == {"imported": 1}, report
+    unit = store.unit("u")
+    assert unit.box.model_dump() == box and unit.review == "reviewed" and unit.unicode == "U+624B"
+    fields = [event.field for event in store.events()[-2:]]
+    assert fields == ["box", "review"]
+
+
+@pytest.mark.parametrize("box", [{"x": 190, "y": 10, "w": 30, "h": 40}, {"x": 10, "y": 10, "w": 1, "h": 40},
+                                 {"x": 10.5, "y": 10, "w": 30, "h": 40}, {"x": 10, "y": 10, "w": 30}])
+def test_a_redrawn_box_off_the_page_or_malformed_is_refused(store, box):
+    record, _ = redrawn(baseline(store), box)
+    _, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
+    assert report["counts"] == {"rejected": 1}
+    assert store.unit("u").box.model_dump() == {"x": 10, "y": 10, "w": 30, "h": 40}
+
+
+def test_a_redrawn_box_with_a_reported_problem_is_refused(store):
+    record, _ = redrawn(baseline(store), {"x": 12, "y": 11, "w": 26, "h": 38})
+    evidence = json.loads(record["event"]["evidence"])
+    evidence["request"].update(verdict="wrong", issue="crop")
+    evidence.update(verdict="wrong", issue="crop")
+    record["event"].update(evidence=json.dumps(evidence, ensure_ascii=False), new="disputed")
+    _, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
+    assert report["counts"] == {"rejected": 1}
+
+
+def test_a_review_after_a_redrawn_box_imports_on_the_new_box(store):
+    box = {"x": 12, "y": 11, "w": 26, "h": 38}
+    first, after = redrawn(baseline(store), box)
+    first["current"] = False
+    second, _ = remote(baseline(store), before=after, character="を")
+    _, report = bridge.ingest_cloudflare(store, payload(first, second), apply=True)
+    assert report["counts"] == {"imported": 1}, report
+    unit = store.unit("u")
+    assert unit.box.model_dump() == box and unit.unicode == "U+3092"

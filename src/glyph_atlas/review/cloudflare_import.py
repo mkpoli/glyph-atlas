@@ -115,8 +115,17 @@ def _step(record, before):
         if not reading_is_allowed(reading, " ".join(refs.to_code_points(after["label"]))):
             raise Rejected("reading is not allowed for this identity")
         after["reading"] = reading
-    if answer.get("box"):
-        raise Rejected("hosted geometry edits require a separate importer")
+    if answer.get("box") is not None:
+        # A crop the site's reviewer redrew: the review fixes it, and the box is its new geometry,
+        # cut from the same pixels the review names (checked above), on the next publication.
+        box = answer["box"]
+        if (not isinstance(box, dict) or set(box) != {"x", "y", "w", "h"}
+                or not all(type(box[key]) is int for key in box) or box["x"] < 0 or box["y"] < 0
+                or box["w"] < 2 or box["h"] < 2):
+            raise Rejected("redrawn box is malformed")
+        if verdict != "match" or issue not in (None, "reading") or written:
+            raise Rejected("a redrawn box is saved as the crop's fix")
+        after["box"] = {key: box[key] for key in ("x", "y", "w", "h")}
     correction = evidence.get("correction", {})
     if (correction.get("unicode") != " ".join(refs.to_code_points(after["label"]))
             or correction.get("reading") != after["reading"] or correction.get("box") != after["box"]):
@@ -265,8 +274,16 @@ def ingest_cloudflare(store, payload: dict, *, apply=False) -> tuple[dict, dict]
                             values["script"] = script
                     if before["reading"] != actual["reading"]:
                         values["reading"] = before["reading"]
+                    if before["box"] != actual["box"]:
+                        page = store.page(unit.page_id) if unit.page_id else None
+                        box = before["box"]
+                        if (not page or box["x"] + box["w"] > page.width or box["y"] + box["h"] > page.height):
+                            raise Rejected("redrawn box leaves the page")
+                        values = {"box": box, **values}
                     for field, value in values.items():
-                        if getattr(unit, field) != value:
+                        if field == "box":
+                            _append(store, conn, remote, field, value, encoded, remote["id"] + ":" + field)
+                        elif getattr(unit, field) != value:
                             _append(store, conn, remote, field, value, encoded, remote["id"] + ":" + field)
                     local_event = _append(store, conn, remote, "review", remote["new"], encoded, remote["id"])
                     revision = store._revision(conn, target)
