@@ -30,7 +30,10 @@ try {
   const ids = await browser.evaluate(tileIds)
   const before = await Promise.all(ids.slice(0, 3).map(written))
 
-  await clickTile(0)
+  // A real click, which leaves the crop's button focused: the form keys still work from there.
+  const { x, y } = await browser.centre('.quiz-choice')
+  await browser.click(x, y)
+  assert(await browser.evaluate(`document.activeElement?.classList.contains('quiz-choice')`), 'the clicked crop has focus')
   await clickTile(2, true)
   assert(await browser.evaluate(`document.querySelector('.form-bar .selection-count')?.innerText`) === '3 selected', 'Shift-click selects the range')
   const forms = await browser.evaluate(`[...document.querySelectorAll('.form-chip span')].map(s => s.innerText)`)
