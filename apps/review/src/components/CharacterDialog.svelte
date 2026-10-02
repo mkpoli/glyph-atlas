@@ -46,7 +46,7 @@
   // The character a reviewer chose for a wrong-character crop, and whether one was chosen: an
   // untouched crop writes no character.
   let written = $state(first?.label ?? ''), writtenDirty = $state(false)
-  let editingBox = $state(false), box = $state(null), start = null, contextElement = $state(null)
+  let editingBox = $state(false), box = $state(null), contextElement = $state(null)
   let suggestions = $state(null), suggesting = $state(false), loaded = $state(false), imageFailed = $state(false)
   let contextSuggestions = $state(null), contextSuggesting = $state(false)
   let closed = false, generation = 0, submission = null, nearby = $state(null), suggestionsElement = $state(null)
@@ -74,7 +74,7 @@
     dialog?.scrollTo({ top: 0 })
     // The list's row stands in until the record arrives; nothing can be saved from it.
     data = preloaded ?? (preview?.id === target ? preview : null); fresh = Boolean(preloaded); asked = false
-    error = ''; form = null; issue = null; correction = null; noneSelected = false; box = null; start = null; editingBox = false
+    error = ''; form = null; issue = null; correction = null; noneSelected = false; box = null; drag = null; editingBox = false
     written = ''; writtenDirty = false
     contextSuggestions = null; contextSuggesting = false
     loaded = false; imageFailed = false; suggestions = null; suggesting = false; submission = null
@@ -121,7 +121,7 @@
   // ← and → step through the list, as the arrows in the header do; the crop view keeps its own arrows.
   function stepKey(event) {
     if (event.defaultPrevented || busy || event.metaKey || event.ctrlKey || event.altKey) return
-    if (event.target.closest?.('input, textarea, select, .crop-viewport, .character-search')) return
+    if (event.target.closest?.('input, textarea, select, .crop-viewport, .character-search, .crop-adjustment')) return
     if ([...document.querySelectorAll('dialog[open]')].at(-1) !== dialog) return
     if (event.key === 'ArrowLeft' && previous) { event.preventDefault(); previous() }
     else if (event.key === 'ArrowRight' && next) { event.preventDefault(); next() }
@@ -131,6 +131,8 @@
     issue = value; correction = null; noneSelected = false; submission = null
     // A crop is redrawn only for a bad crop; choosing another problem drops the new box.
     if (value !== 'crop') { box = null; editingBox = false }
+    // A bad crop is redrawn there and then, where the crop can be adjusted.
+    else if (!onVerdict && data?.context && data.context_box && data.crop_editable !== false) beginCrop()
     // The suggestion area appears with this choice, so the next action is the one focused. An issue
     // with no suggestions moves nothing, and no later arrival takes the focus back.
     if (!suggestsReading(value)) return
@@ -242,6 +244,7 @@
   async function beginCrop() {
     editingBox = true
     await tick()
+    contextElement?.focus({ preventScroll: true })
     // The stroke view is small and sits under the crop, so adjusting means looking at it: bring it
     // into view rather than leaving the reader to find it. No focus is taken, since the drag follows.
     nearby?.scrollIntoView({ block: 'nearest', behavior: 'instant' })
@@ -254,17 +257,59 @@
     const fy = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height))
     return { x: Math.round((c.x + fx * c.w) / scale[0]), y: Math.round((c.y + fy * c.h) / scale[1]) }
   }
-  function down(e) { if (!editingBox || !data.context_box || busy) return; e.preventDefault(); start = point(e); contextElement.setPointerCapture(e.pointerId) }
+  /** The crop's rectangle in page pixels: the one drawn here, else the one it was cut with. */
+  function currentBox() {
+    if (box) return box
+    if (data.box) return data.box
+    const b = data.crop_box
+    return b ? { x: Math.round(b.x / scale[0]), y: Math.round(b.y / scale[1]), w: Math.round(b.w / scale[0]), h: Math.round(b.h / scale[1]) } : null
+  }
+  /** Keep a rectangle inside the context, at least two pixels each way. */
+  function bounded({ x, y, w, h }) {
+    const limits = pageBounds(), right = limits.x + limits.w, bottom = limits.y + limits.h
+    x = Math.max(limits.x, Math.min(x, right - 2)); y = Math.max(limits.y, Math.min(y, bottom - 2))
+    return { x: Math.round(x), y: Math.round(y), w: Math.round(Math.max(2, Math.min(w, right - x))), h: Math.round(Math.max(2, Math.min(h, bottom - y))) }
+  }
+  // A drag on a handle resizes the box from that edge or corner, a drag inside it moves it, and a drag
+  // anywhere else draws a new one. `drag` holds where it began and the box it began from.
+  let drag = null
+  function down(e) {
+    if (!editingBox || !data.context_box || busy) return
+    e.preventDefault()
+    const at = point(e), from = currentBox(), edge = e.target.dataset?.edge
+    const inside = from && at.x >= from.x && at.x <= from.x + from.w && at.y >= from.y && at.y <= from.y + from.h
+    drag = { at, from, mode: edge ? 'resize' : inside ? 'move' : 'draw', edge }
+    contextElement.setPointerCapture(e.pointerId)
+  }
   function move(e) {
-    if (!start) return
+    if (!drag) return
     // `point` answers in page pixels and so does the drag, so the new box is a page box; the outline
     // converts it back to the view's pixels to draw it.
-    const end = point(e), limits = pageBounds()
-    const x = Math.min(limits.x + limits.w - 1, Math.min(start.x, end.x))
-    const y = Math.min(limits.y + limits.h - 1, Math.min(start.y, end.y))
-    box = { x, y,
-      w: Math.min(limits.x + limits.w - x, Math.max(1, Math.abs(end.x - start.x))),
-      h: Math.min(limits.y + limits.h - y, Math.max(1, Math.abs(end.y - start.y))) }
+    const end = point(e), { at, from, mode, edge } = drag, dx = end.x - at.x, dy = end.y - at.y
+    if (mode === 'draw') {
+      box = bounded({ x: Math.min(at.x, end.x), y: Math.min(at.y, end.y), w: Math.abs(end.x - at.x), h: Math.abs(end.y - at.y) })
+    } else if (mode === 'move') {
+      const limits = pageBounds()
+      box = bounded({ ...from, x: Math.min(from.x + dx, limits.x + limits.w - from.w), y: Math.min(from.y + dy, limits.y + limits.h - from.h) })
+    } else {
+      let { x, y, w, h } = from
+      if (edge.includes('w')) { x = Math.min(from.x + dx, from.x + from.w - 2); w = from.x + from.w - x }
+      if (edge.includes('e')) w = from.w + dx
+      if (edge.includes('n')) { y = Math.min(from.y + dy, from.y + from.h - 2); h = from.y + from.h - y }
+      if (edge.includes('s')) h = from.h + dy
+      box = bounded({ x, y, w, h })
+    }
+  }
+  /** The arrows move the box a step, and with Shift they grow or shrink it from its right and bottom. */
+  function nudge(e) {
+    const dx = { ArrowLeft: -1, ArrowRight: 1 }[e.key] ?? 0, dy = { ArrowUp: -1, ArrowDown: 1 }[e.key] ?? 0
+    if (!editingBox || busy || (!dx && !dy)) return
+    e.preventDefault(); e.stopPropagation()
+    const from = currentBox(), step = Math.max(1, Math.round(pageBounds().w / 100)) * (e.altKey ? 1 : 2)
+    box = e.shiftKey ? bounded({ ...from, w: from.w + dx * step, h: from.h + dy * step })
+      : (() => { const limits = pageBounds()
+          return bounded({ ...from, x: Math.max(limits.x, Math.min(from.x + dx * step, limits.x + limits.w - from.w)),
+            y: Math.max(limits.y, Math.min(from.y + dy * step, limits.y + limits.h - from.h)) }) })()
   }
   /** The context rectangle in page pixels, which is what a drag is bounded by. */
   function pageBounds() {
@@ -296,11 +341,12 @@
         <div class="inspector-figure">
           {#if editingBox && data.context && data.context_box}
             <figure class="nearby crop-adjustment" bind:this={nearby}>
-              <div class="context-region drawing" bind:this={contextElement} onpointerdown={down} onpointermove={move} onpointerup={() => start = null} onpointercancel={() => start = null} role="img" aria-label={t('character.crop.dragToAdjust')}>
+              <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+              <div class="context-region drawing" bind:this={contextElement} tabindex="0" onpointerdown={down} onpointermove={move} onpointerup={() => drag = null} onpointercancel={() => drag = null} onkeydown={nudge} role="application" aria-label={t('character.crop.dragToAdjust')} aria-describedby="crop-keys">
                 <img src={data.context_image} alt={t('character.context.alt')} draggable="false" onerror={() => { editingBox = false; error = t('character.context.loadError') }} />
-                {#if boxStyle}<span class="context-outline" style={boxStyle}></span>{/if}
+                {#if boxStyle}<span class="context-outline adjustable" style={boxStyle}>{#each ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as edge (edge)}<span class="handle {edge}" data-edge={edge}></span>{/each}</span>{/if}
               </div>
-              <figcaption><button type="button" disabled={busy} onclick={() => editingBox = false}>{t('character.crop.doneAdjusting')}</button></figcaption>
+              <figcaption><span id="crop-keys" class="crop-keys">{t('character.crop.keys')}</span><button type="button" disabled={busy} onclick={() => editingBox = false}>{t('character.crop.doneAdjusting')}</button></figcaption>
             </figure>
           {:else}
             {#key data.image}<CropContext item={data} detail={data} cropBox={box ? toSource(box) : null} disabled={busy} />{/key}
@@ -325,4 +371,13 @@
   .crop-adjustment{flex:1 1 100%;width:100%;gap:10px}
   .crop-adjustment .context-region{max-height:360px}
   .crop-adjustment .context-region img{max-height:360px;filter:none}
+  .crop-adjustment .context-region:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+  .crop-adjustment figcaption{gap:12px;align-items:center;flex-wrap:wrap}
+  .crop-keys{font-size:10px;color:var(--muted)}
+  .context-outline.adjustable{cursor:move}
+  .handle{position:absolute;width:12px;height:12px;margin:-6px 0 0 -6px;background:var(--surface);border:2px solid var(--accent-solid);border-radius:3px;pointer-events:auto;touch-action:none}
+  .handle.nw{left:0;top:0;cursor:nwse-resize}.handle.n{left:50%;top:0;cursor:ns-resize}.handle.ne{left:100%;top:0;cursor:nesw-resize}
+  .handle.e{left:100%;top:50%;cursor:ew-resize}.handle.se{left:100%;top:100%;cursor:nwse-resize}.handle.s{left:50%;top:100%;cursor:ns-resize}
+  .handle.sw{left:0;top:100%;cursor:nesw-resize}.handle.w{left:0;top:50%;cursor:ew-resize}
+  @media(pointer:coarse){.handle{width:22px;height:22px;margin:-11px 0 0 -11px}}
 </style>

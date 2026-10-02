@@ -742,5 +742,6 @@
   "quiz.keyboardHint.issues": "W M B X誤 · S置 · ←→截",
   "suggestions.pick.next": "次字…",
   "form.add": "增形",
-  "script.hentaigana": "變體假名"
+  "script.hentaigana": "變體假名",
+  "character.crop.keys": "曳框或角 · 矢以移 · Shift+矢以縮放"
 }

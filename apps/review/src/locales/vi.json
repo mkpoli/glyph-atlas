@@ -725,5 +725,6 @@
   "quiz.keyboardHint.issues": "W M B X vấn đề · S bỏ qua · ←→ vùng cắt",
   "suggestions.pick.next": "Chữ tiếp theo…",
   "form.add": "Thêm dạng chữ",
-  "script.hentaigana": "Hentaigana"
+  "script.hentaigana": "Hentaigana",
+  "character.crop.keys": "Kéo khung hoặc góc · phím mũi tên để di chuyển · Shift và mũi tên để đổi cỡ"
 }
