@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import { authClient } from '../lib/auth.js'
   import { request } from '../lib/client.js'
+  import ScriptText from '../components/ScriptText.svelte'
   import { useSession } from '../lib/session.svelte.js'
   import { t, formatDateTime, localize, formatNumber } from '../lib/i18n.svelte.js'
   const session = useSession()
@@ -129,7 +130,7 @@
           {#each work as item (item.id)}
             <li class:gone={item.state !== 'standing'}>
               <span class="admin-time">{when(item.at)}</span>
-              <span class="admin-label" lang="ja">{item.label ?? '—'}</span>
+              <span class="admin-label">{#if item.label}<ScriptText text={item.label} />{:else}—{/if}</span>
               <span class="admin-what">{t(`admin.submission.${item.kind}`, { count: item.crops })}<small>{verdicts(item)}</small></span>
               {#if item.state === 'standing'}<button class="quiet-link" disabled={Boolean(busy)} onclick={() => { confirming = item.id; reason = '' }}>{t('admin.reject')}</button>
               {:else}<span class="admin-pill" class:danger={item.state === 'rejected'} title={item.rejection ? `${item.rejection.by}${item.rejection.reason ? ': ' + item.rejection.reason : ''}` : ''}>{t(`admin.state.${item.state}`)}</span>{/if}
