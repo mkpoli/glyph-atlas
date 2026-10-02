@@ -116,7 +116,7 @@
       {#if ['reading', 'character'].includes(issue) && correction}<p class="corpus-choice" role="status"><span lang="ja">{data.label}</span> → <b lang="ja">{correction}</b><button disabled={busy} onclick={() => choose(null)}>{t('common.clear')}</button></p>{/if}
       <details class="advanced-edit"><summary>{t('corpus.addNote')}</summary><textarea aria-label={t('character.note.aria')} bind:value={note} rows="2" maxlength="2000" placeholder={t('character.note.placeholder')} disabled={busy}></textarea></details>
       <SimilarCrops id={data.id} label={data.label} />
-      <div class="corpus-credit"><span>{data.source?.title}</span><small>{[data.attribution || data.source?.holder, data.licence].filter(Boolean).join(' · ')}</small>{#if /^https?:\/\//i.test(data.record_url ?? '')}<a href={data.record_url} target="_blank" rel="noreferrer">{t('corpus.sourceRecord')}</a>{/if}</div>
+      <div class="corpus-credit"><span>{data.source?.title}</span><small>{[data.attribution || data.source?.holder, data.licence].filter(Boolean).join(' · ')}</small>{#if data.text_attribution}<small>{t('corpus.labelCredit', { credit: data.text_attribution })}</small>{/if}{#if /^https?:\/\//i.test(data.record_url ?? '')}<a href={data.record_url} target="_blank" rel="noreferrer">{t('corpus.sourceRecord')}</a>{/if}</div>
     {:else if !error}<div class="inspector-skeleton"></div>{/if}
   </div>
   <footer class="inspector-savebar">

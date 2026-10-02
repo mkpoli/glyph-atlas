@@ -18,15 +18,15 @@ def test_an_sql_file_splits_into_whole_statements():
         prepare.statements("UPDATE a SET b=1\n")
 
 
-def test_a_publication_applies_the_pairs_sealing_wrote():
-    pair_sql = ["DELETE FROM unit_pairs WHERE first IN ('hk:1','hk:2');\n",
-                "INSERT OR IGNORE INTO unit_pairs(first,second,text,document) SELECT p.column1 FROM (VALUES ('hk:1','hk:2')) AS p;\n"]
+def test_a_publication_applies_the_runs_sealing_wrote():
+    ngram_sql = ["DELETE FROM unit_ngrams WHERE first IN ('hk:1','hk:2');\n",
+                 "INSERT OR IGNORE INTO unit_ngrams(first,second,text,document) SELECT p.column1 FROM (VALUES ('hk:1','hk:2')) AS p;\n"]
     sql = ("INSERT OR REPLACE INTO \"media\" VALUES('aa','pack',0,1,'image/webp');\n"
            "INSERT OR IGNORE INTO \"units\" VALUES('hk:1','local');\n"
-           "INSERT OR IGNORE INTO \"units\" VALUES('hk:2','local');\n" + "".join(pair_sql))
-    media, units, pairs = prepare.split_sealed(sql, wanted={"aa"}, fresh={"hk:2"})
+           "INSERT OR IGNORE INTO \"units\" VALUES('hk:2','local');\n" + "".join(ngram_sql))
+    media, units, ngrams = prepare.split_sealed(sql, wanted={"aa"}, fresh={"hk:2"})
     assert len(media) == 1 and units == ["INSERT OR IGNORE INTO \"units\" VALUES('hk:2','local');\n"]
-    assert pairs == pair_sql
+    assert ngrams == ngram_sql
 
 
 def test_parts_keep_their_order_and_stay_under_the_size(tmp_path, monkeypatch):

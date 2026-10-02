@@ -7,7 +7,8 @@
    An export stopped mid-write leaves rows past the end of its last pack; the crops using them are
    left out here and deleted from the export's own catalogue, so `export_cloudflare.py --resume`
    cuts them again. They are listed in OUTPUT/lost.json.
-2. Only units whose id starts with one of `--prefix` are kept, and the copy is sealed.
+2. Only units whose id starts with one of `--prefix` are kept, less those of withdrawn documents
+   (`data/vocab/withdrawn.yaml`), and the copy is sealed.
 3. The units the site already holds are read from D1 (or from `--live`, one JSON object per unit
    with id, origin, revision, quiz, data, style, written_form, reviewed, formed) and planned by `refresh_published_units.plan`:
    new crops are inserted, changed ones updated in place or replaced, a reviewed crop whose crop
@@ -15,8 +16,8 @@
    live crop's current box on its page, which a reviewer may have moved there, is left out and
    listed in OUTPUT/overlapping.json. Only the image rows and packs of the crops published are
    uploaded; the rest are already on the site.
-4. The SQL parts hold, in order: image rows, new units, the refresh, the adjacent crop pairs of every
-   unit kept (`glyph_atlas.unit_pairs`, which need both crops on the site), each `--extra` file whole, and
+4. The SQL parts hold, in order: image rows, new units, the refresh, the pairs and trigrams of crops
+   starting at every unit kept (`glyph_atlas.ngrams`, which need all their crops on the site), each `--extra` file whole, and
    with `--status` the collection status row, and last the row the Worker keys its cached listings
    on (`units_refreshed_at`), so they change once the rest has. Each part stays under D1's upload size and every
    statement under its statement limit; `publication.json` lists the parts.
@@ -41,6 +42,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from cloudflare_schema import schema
 from seal_cloudflare import seal
 
+from glyph_atlas import withdrawn
 from glyph_atlas.extraction_queue import overlaps
 from glyph_atlas.schema import Box
 
@@ -92,11 +94,13 @@ def drop_truncated(export: Path, catalogue: Path) -> dict:
     return {"units": lost_units, "media": sorted(lost_media)}
 
 
-def keep_prefixes(catalogue: Path, prefixes: list[str]) -> None:
+def select_units(catalogue: Path, prefixes: list[str]) -> None:
     with sqlite3.connect(catalogue) as db:
         if prefixes:
             clause = " AND ".join("id NOT LIKE ?" for _ in prefixes)
             db.execute(f"DELETE FROM units WHERE {clause}", [p + "%" for p in prefixes])
+        gone = sorted(withdrawn.documents())
+        db.execute(f"DELETE FROM units WHERE document IN ({','.join('?' * len(gone))})", gone)
         db.execute("DELETE FROM metadata WHERE key='catalogue'")
 
 
@@ -222,18 +226,18 @@ def write_parts(sealed: Path, groups: list[list[str]]) -> list[str]:
 
 def split_sealed(sql: str, wanted: set[str], fresh: set[str]) -> tuple[list[str], list[str], list[str]]:
     """A sealed catalogue's statements this publication applies: the image rows of `wanted` media keys,
-    the rows of `fresh` units, and every adjacent pair statement, in the order sealing wrote them."""
-    media, units, pairs = [], [], []
+    the rows of `fresh` units, and every pair and trigram statement, in the order sealing wrote them."""
+    media, units, ngrams = [], [], []
     for line in sql.splitlines(keepends=True):
-        if line.startswith(("DELETE FROM unit_pairs ", "INSERT OR IGNORE INTO unit_pairs(")):
-            pairs.append(line)
+        if line.startswith(("DELETE FROM unit_ngrams ", "INSERT OR IGNORE INTO unit_ngrams(")):
+            ngrams.append(line)
         elif line.startswith('INSERT OR REPLACE INTO "media"'):
             if MEDIA_KEY.match(line).group(1) in wanted:
                 media.append(line.replace('INSERT OR REPLACE INTO "media"', 'INSERT OR IGNORE INTO "media"', 1))
         elif line.startswith('INSERT OR IGNORE INTO "units"') and \
                 UNIT_ID.match(line).group(1).replace("''", "'") in fresh:
             units.append(line)
-    return media, units, pairs
+    return media, units, ngrams
 
 
 def main() -> None:
@@ -253,7 +257,7 @@ def main() -> None:
     catalogue = snapshot(args.export, out)
     lost = drop_truncated(args.export, catalogue)
     (out / "lost.json").write_text(json.dumps(lost, indent=1))
-    keep_prefixes(catalogue, args.prefix)
+    select_units(catalogue, args.prefix)
 
     corpus = out / "empty-corpus"
     corpus.mkdir(exist_ok=True)
@@ -284,10 +288,10 @@ def main() -> None:
             wanted.update(key_of(json.loads(data).get(f)) for f in ("image", "context_image"))
     wanted.discard("")
     objects = {obj for key, obj in atlas.execute("SELECT key, object FROM media") if key in wanted}
-    media, units, pairs = split_sealed((sealed / "catalogue.sql").read_text(encoding="utf-8"), wanted, fresh)
+    media, units, ngrams = split_sealed((sealed / "catalogue.sql").read_text(encoding="utf-8"), wanted, fresh)
     extras = [statements(path.read_text(encoding="utf-8")) for path in args.extra]
     # The version row goes last, so the Worker's cached listings change only once every row has.
-    groups = [media, units, updates, pairs, *extras] + ([[status_row()]] if args.status else []) + [[refresh.VERSION_BUMP]]
+    groups = [media, units, updates, ngrams, *extras] + ([[status_row()]] if args.status else []) + [[refresh.VERSION_BUMP]]
     parts = write_parts(sealed, groups)
 
     manifest = json.loads((sealed / "publication.json").read_text())

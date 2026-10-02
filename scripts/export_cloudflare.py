@@ -19,7 +19,7 @@ import export_character_variants
 from cloudflare_schema import schema
 from PIL import Image
 
-from glyph_atlas import refs, style, unit_pairs
+from glyph_atlas import ngrams, refs, style, withdrawn
 from glyph_atlas.corpus.api import PROXYABLE, CorpusAPI
 from glyph_atlas.review import atlas, characters, collection, corpus_source
 from glyph_atlas.review.context_suggestions import context_guesses
@@ -173,7 +173,8 @@ def export(dataset: Path, output: Path, *, resume=False):
             unit = units[item["id"]]
             page = pages.get(unit.page_id)
             doc = documents.get(unit.document_id or (page.document_id if page else None))
-            if not doc or not doc.image_rights or str(doc.image_rights.licence) not in PROXYABLE:
+            if (not doc or doc.id in withdrawn.documents() or not doc.image_rights
+                    or str(doc.image_rights.licence) not in PROXYABLE):
                 db.execute("DELETE FROM units WHERE id=?", (item["id"],))
                 continue
             if item["id"] in existing:
@@ -238,9 +239,9 @@ def export(dataset: Path, output: Path, *, resume=False):
             if i % 500 == 0:
                 db.commit()
                 print(encoded({"stage": "local-crops", "done": i}), flush=True)
-        # Only pairs whose two crops were published above are recorded.
-        db.execute("DELETE FROM unit_pairs")
-        for statement in unit_pairs.pair_statements([], unit_pairs.adjacent_pairs(units.values())):
+        # Only runs whose crops were all published above are recorded.
+        db.execute("DELETE FROM unit_ngrams")
+        for statement in ngrams.ngram_statements([], ngrams.adjacent_ngrams(units.values(), store.horizontal_lines())):
             db.execute(statement)
         db.commit()
         read_crops(db, media)

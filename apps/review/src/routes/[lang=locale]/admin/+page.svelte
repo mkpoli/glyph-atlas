@@ -8,4 +8,4 @@
 
 <Seo title={t('admin.title')} index={false} />
 
-{#if session.state.ready}{#if session.state.user?.admin}<Admin />{:else}<div class="empty"><span class="empty-mark">∅</span><h2>{t('admin.only')}</h2></div>{/if}{/if}
+{#if session.state.user?.admin}<Admin />{:else}<div class="empty"><span class="empty-mark">∅</span><h2>{t('admin.only')}</h2></div>{/if}

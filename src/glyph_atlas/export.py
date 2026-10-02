@@ -39,7 +39,7 @@ import pyarrow.parquet as pq
 import yaml
 from pydantic import BaseModel
 
-from . import reconcile, refs, registry, tables
+from . import reconcile, refs, registry, tables, withdrawn
 from . import rights as rights_module
 from .schema import Document, Group, Licence, Line, Page, PageText, ReviewState, Rights, Script, Unit
 
@@ -505,8 +505,8 @@ def rights_ok(rights: Rights | None, target: Licence) -> bool:
 
 
 def images_ok(document: Document, target: Licence) -> bool:
-    """Whether crops of this document's pages may be redistributed."""
-    return rights_ok(document.image_rights, target)
+    """Whether crops of this document's pages may be redistributed; never for a withdrawn document."""
+    return document.id not in withdrawn.documents() and rights_ok(document.image_rights, target)
 
 
 def _unit_row(unit: Unit, normaliser: Normaliser, columns: Sequence[str]) -> dict[str, Any]:
