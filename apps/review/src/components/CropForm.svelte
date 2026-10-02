@@ -9,11 +9,12 @@
   import { t } from '../lib/i18n.svelte.js'
   let { crop, chosen = null, onchoose, disabled = false } = $props()
   let offered = $state({ char: null, members: [], variants: [], derived: [] }), added = $state([])
-  let picking = $state(false), query = $state(''), root = $state(null), failed = $state(false)
+  let picking = $state(false), query = $state(''), root = $state(null), failed = $state(false), addButton = $state(null)
   const written = $derived(crop?.written_character ?? crop?.label ?? '')
   const current = $derived(formOf(crop))
   const BAR = 10
   $effect(() => {
+    void crop?.id
     const char = written
     added = []; picking = false; query = ''; failed = false
     listForms(char).then(found => { if (char === written) offered = { char, ...found } })
@@ -45,12 +46,13 @@
   // 1–0 choose the bar's forms, as Quick Review's form bar does; a key typed into a field is the field's.
   function keydown(event) {
     if (disabled || event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return
-    if (event.target.closest?.('input, textarea, select, [contenteditable="true"]')) return
-    const dialog = document.querySelector('dialog[open]')
-    if (dialog && !dialog.contains(root)) return
+    const dialog = [...document.querySelectorAll('dialog[open]')].at(-1)
+    if (dialog ? !dialog.contains(root) : root.closest('dialog')) return
+    // Escape closes the picker, from its search too, before it can close the dialog.
+    if (event.key === 'Escape' && picking) { event.preventDefault(); picking = false; query = ''; addButton?.focus(); return }
+    if (event.target.closest?.('input, textarea, select, [contenteditable="true"], .character-search')) return
     const index = '1234567890'.indexOf(event.key)
     if (index >= 0 && bar[index]) { event.preventDefault(); choose(bar[index].char) }
-    else if (event.key === 'Escape' && picking) { event.preventDefault(); picking = false }
   }
 </script>
 
@@ -58,7 +60,7 @@
 
 <div class="crop-form" bind:this={root}>
   <FormChips forms={bar} chosen={chosen} {current} {disabled} label={t('quiz.forms.label', { char: written })} onchoose={choose}>
-    <button type="button" class="form-add" {disabled} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>+</button>
+    <button type="button" class="form-add" bind:this={addButton} {disabled} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>+</button>
   </FormChips>
   {#if picking}
     <div class="form-picker" role="dialog" aria-label={t('form.add')}>

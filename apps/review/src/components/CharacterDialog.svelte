@@ -178,13 +178,16 @@
       return
     }
     busy = true; error = ''
-    // A chosen form is written first; the review that follows names the revision it left.
-    if (form != null) {
+    // A chosen form is written first, and the review that follows names the revision it left. A wrong
+    // character names the crop's character itself, so a form chosen beside it is not written.
+    if (form != null && issue !== 'reading' && issue !== 'character') {
       try {
         const formed = await setForm(data, form)
-        changed?.(target, formed)
+        changed?.(target, formed.crop)
         if (closed || current !== generation) return
-        data = { ...data, ...formed }; form = null
+        data = { ...data, ...formed.crop }; form = null
+        // A form that named the crop's character was a review already; nothing more to say.
+        if (formed.reviewed && (matches || !issue)) { leaving = advancing ? target : null; saved(target, formed.crop); busy = false; return }
       } catch (e) { if (!closed && current === generation) error = e.message; busy = false; return }
     }
     const correctingCharacter = writtenDirty && Boolean(written) && written !== data.label

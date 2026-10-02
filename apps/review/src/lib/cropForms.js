@@ -4,8 +4,8 @@ import { character as readCard } from './layers.js'
 /**
  * What a crop is written as, read and set through two calls the interface uses and nothing else:
  * `listForms` for the forms a crop may be marked as, and `setForm` to mark it. Today they sit on the
- * correction route Quick Review's form bar uses and the written-form route; the form ledger replaces
- * this module's body, not its callers.
+ * crop's own review route and the written-form route; the form ledger replaces this module's body,
+ * not its callers.
  */
 
 /** `U+3042` for あ; null for a sequence, which has no card of its own. */
@@ -39,38 +39,53 @@ export function listForms(char) {
 /** The form a crop is shown as now: its recorded form, or the character it is written as. */
 export const formOf = crop => crop?.written_form ?? crop?.written_character ?? crop?.label ?? ''
 
-const pixels = crop => crop.origin === 'corpus' ? { source_revision: crop.source_revision } : { image_sha256: crop.image_sha256 }
+const corpusOf = crop => crop.origin === 'corpus'
 const reread = async crop => {
-  const record = crop.origin === 'corpus' ? await corpusCharacter(crop.id) : await readCrop(crop.id)
+  const record = corpusOf(crop) ? await corpusCharacter(crop.id) : await readCrop(crop.id)
   return crop.origin ? { ...record, origin: crop.origin } : record
 }
 
+// One submission id per crop, revision and value, so a retry after a lost answer is the same write.
+const submissions = new Map()
+const submission = (...parts) => {
+  const key = parts.join('\u0000')
+  if (!submissions.has(key)) submissions.set(key, crypto.randomUUID())
+  return submissions.get(key)
+}
+
+/** Record `form` (or none) as the crop's written form; the crop keeps its character and revision. */
 async function writeForm(crop, form) {
-  const corpus = crop.origin === 'corpus'
-  const body = corpus
-    ? { id: crypto.randomUUID(), identity: crop.id, revision: crop.revision, source_revision: crop.source_revision, form }
-    : { id: crypto.randomUUID(), revision: crop.revision, image_sha256: crop.image_sha256, form }
-  await request(corpus ? '/atlas/corpus/written-forms' : `/atlas/characters/${encodeURIComponent(crop.id)}/written-form`, body)
+  const id = submission('form', crop.id, crop.revision, form ?? '')
+  if (corpusOf(crop)) await request('/atlas/corpus/written-forms', { id, identity: crop.id, revision: crop.revision, source_revision: crop.source_revision, form })
+  else await request(`/atlas/characters/${encodeURIComponent(crop.id)}/written-form`, { id, revision: crop.revision, image_sha256: crop.image_sha256, form })
+  return reread(crop)
+}
+
+/** Name the crop's character, as a review of that crop: a checked crop can be named again. */
+async function writeCharacter(crop, character) {
+  const id = submission('character', crop.id, crop.revision, character)
+  if (corpusOf(crop)) await request('/atlas/corpus/reviews', { id, identity: crop.id, revision: crop.revision,
+    source_revision: crop.source_revision, verdict: 'wrong', issue: 'character', character })
+  else await request('/layers/units/' + encodeURIComponent(crop.id), { id, revision: crop.revision,
+    image_sha256: crop.image_sha256, verdict: 'wrong', issue: 'character', character })
   return reread(crop)
 }
 
 /**
- * Mark `crop` as `form`, and answer the crop as it now stands.
+ * Mark `crop` as `form`, and answer `{ crop, reviewed }`: the crop as it now stands, and whether the
+ * marking was itself a review of it.
  *
  * A form that is an encoded member of the crop's own grapheme (仮 and 假, は and 𛂞) is that character,
- * so the crop's identity follows it, as Quick Review's form bar marks a selection; a form recorded
- * before is cleared. Any other form (a variant, a derived shape, an IDS) is recorded as the written
+ * so the crop is reviewed as written with it; a form recorded before is cleared first, since clearing
+ * moves no revision. Any other form (a variant, a derived shape, an IDS) is recorded as the written
  * form alone, and the crop keeps its character.
  */
 export async function setForm(crop, form) {
   const written = crop.written_character ?? crop.label
   const { members } = await listForms(written)
-  if (!members.some(member => member.char === form)) return writeForm(crop, form)
-  let now = crop
-  if (form !== written) {
-    await request('/atlas/corrections', { id: crypto.randomUUID(), character: form,
-      crops: [{ id: crop.id, revision: crop.revision, ...pixels(crop) }] })
-    now = await reread(crop)
-  }
-  return now.written_form ? writeForm(now, null) : now
+  if (!members.some(member => member.char === form)) return { crop: await writeForm(crop, form), reviewed: false }
+  let now = crop.written_form ? await writeForm(crop, null) : crop
+  if (form === written) return { crop: now, reviewed: false }
+  now = await writeCharacter(now, form)
+  return { crop: now, reviewed: true }
 }

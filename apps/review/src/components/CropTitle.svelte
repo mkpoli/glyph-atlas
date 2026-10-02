@@ -7,9 +7,10 @@
   // The script is the character's own, by its code point; the record's statement is used only for a
   // character the code point does not place. A hentaigana is coloured as hiragana and named for itself.
   const point = $derived([...char].length === 1 ? char.codePointAt(0) : 0)
-  const hentaigana = $derived(point >= 0x1B002 && point <= 0x1B11F)
+  const hentaigana = $derived(point >= 0x1B002 && point <= 0x1B11E)
   const own = $derived(scriptInfo(char).key)
-  const key = $derived(own === 'unknown' ? scriptInfo(char, script).key : own)
+  const KNOWN = ['hiragana', 'katakana', 'kanji', 'hangul', 'gugyeol', 'symbol', 'mixed', 'unknown']
+  const key = $derived(own !== 'unknown' ? own : KNOWN.includes(scriptInfo(char, script).key) ? scriptInfo(char, script).key : 'unknown')
   const name = $derived(hentaigana ? t('script.hentaigana') : t(`script.${key}`))
 </script>
 

@@ -62,12 +62,29 @@ try {
   assert(events(config.directory).slice(mark).some(e => e.target_id === first && e.field === 'review'), 'the save recorded no review')
   console.log(`PASS a member chosen with its number key marks the crop as ${forms[1]}`)
 
+  // The crop, now checked, can be marked again: back to あ, in one review.
+  await open(first)
+  const again = events(config.directory).length
+  await browser.evaluate(`[...${chips}].find(c => c.textContent.includes('あ')).click()`)
+  assert((await label()).startsWith('Save'), 'choosing あ on a crop marked otherwise does not offer Save')
+  await browser.evaluate('document.querySelector(".save-character").click()')
+  await browser.waitFor('document.querySelector("dialog[open]") === null', 30000)
+  assert(units(config.directory)[first].unicode === 'U+3042', `a checked crop could not be marked again: ${units(config.directory)[first].unicode}`)
+  const reviews = events(config.directory).slice(again).filter(e => e.target_id === first && e.field === 'review')
+  assert(reviews.length === 1, `marking a form wrote ${reviews.length} reviews`)
+  console.log('PASS a checked crop is marked again, with one review')
+
   // Another form comes from the picker: its sections and the character search. It is the crop's
   // written form; the crop keeps its character.
   await open(second)
   await browser.evaluate('document.querySelector("dialog[open] .form-add").click()')
   await browser.waitFor('!!document.querySelector("dialog[open] .form-picker .character-search input")')
   await browser.screenshot(join(screenshots, 'form-picker-light.png'))
+  await browser.key('Escape')
+  await browser.waitFor('!document.querySelector("dialog[open] .form-picker")')
+  assert(await browser.evaluate('!!document.querySelector("dialog[open]")'), 'Escape in the picker closed the inspector')
+  await browser.evaluate('document.querySelector("dialog[open] .form-add").click()')
+  await browser.waitFor('!!document.querySelector("dialog[open] .form-picker .character-search input")')
   await browser.evaluate(`(() => { const i = document.querySelector('dialog[open] .form-picker input'); i.focus(); i.value = 'ゑ'; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
   await browser.waitFor(`[...document.querySelectorAll('dialog[open] .form-picker .candidate')].some(c => c.textContent.includes('U+3091'))`, 20000)
   await browser.evaluate(`[...document.querySelectorAll('dialog[open] .form-picker .candidate')].find(c => c.textContent.includes('U+3091')).click()`)

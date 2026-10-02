@@ -74,13 +74,16 @@
     if (data.identity_status === 'unassigned' && (matches || !issue)) return
     if (matches) { issue = null; correction = null; noneSelected = false; form = null }
     busy = true; error = ''
-    // A chosen form is written first; the review that follows names the revision it left.
-    if (form != null) {
+    // A chosen form is written first, and the review that follows names the revision it left. A wrong
+    // character names the glyph's character itself, so a form chosen beside it is not written.
+    if (form != null && issue !== 'reading' && issue !== 'character') {
       try {
         const formed = await setForm({ ...data, origin: 'corpus' }, form)
-        changed?.(target, formed)
+        changed?.(target, formed.crop)
         if (closed || current !== generation) return
-        data = { ...data, ...formed }; form = null
+        data = { ...data, ...formed.crop }; form = null
+        // A form that named the glyph's character was a review already; nothing more to say.
+        if (formed.reviewed && (matches || !issue)) { leaving = advancing ? target : null; saved(target, formed.crop); busy = false; return }
       } catch (e) { if (!closed && current === generation) error = e.message; busy = false; return }
     }
     const payload = { identity: target, revision: data.revision,
