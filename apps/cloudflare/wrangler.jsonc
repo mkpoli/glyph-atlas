@@ -23,7 +23,8 @@
   // GITHUB_CLIENT_SECRET, and GOOGLE_, DISCORD_, LINE_ and KAKAO_ likewise); a provider without them is not offered.
   // BETTER_AUTH_SECRET: `wrangler secret put BETTER_AUTH_SECRET`, and `.dev.vars` locally.
   // Batch corrections change up to 144 crops a request; one address gets 20 of them a minute. A written
-  // form names one crop, and one address gets 30 a minute.
+  // form names one crop, and one address gets 30 a minute; a claim or an action on one, 30 too.
   "ratelimits": [{"name": "CORRECTIONS", "namespace_id": "4401", "simple": {"limit": 20, "period": 60}},
-                 {"name": "WRITTEN_FORMS", "namespace_id": "4402", "simple": {"limit": 30, "period": 60}}]
+                 {"name": "WRITTEN_FORMS", "namespace_id": "4402", "simple": {"limit": 30, "period": 60}},
+                 {"name": "CLAIMS", "namespace_id": "4403", "simple": {"limit": 30, "period": 60}}]
 }

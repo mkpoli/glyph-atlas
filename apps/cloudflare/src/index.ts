@@ -9,8 +9,10 @@ import { AVATAR_PATH, avatar, setAvatar } from './avatar';
 import { ranking } from './ranking';
 import { reviewers, submissions } from './admin';
 import { READ_BUDGET, RETRY_AFTER, described, retried, transient } from './busy';
+import { actOnClaim, claimsOf, ledgerPage, writeClaim, type LedgerTools } from './ledger';
 export { leastTypicalQuery } from './forms';
 export { componentMatchQuery } from './components';
+export { claimHistoryQuery, currentClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery, resolveWriteQuery } from './ledger';
 type Json = Record<string, any>;
 type UnitRow = { id: string; origin: string; character: string | null; state: string; revision: number;
   quiz: number; category?: string; data: string; snapshot: string; context: string; visual: string; style?: string;
@@ -1074,6 +1076,11 @@ function text(value: unknown, max: number, name: string, required=false): string
 // A character's grapheme family, as a reviewed correction takes it; one the catalogue lacks is its own.
 const formTools: FormTools = {fail:(status,message,extra)=>{throw new Problem(status,message,extra)},body,text,codePoints:cp,
   family:async(env,char)=>(await known(env,char).catch(()=>null))?.data.grapheme?.code_point||cp(char)};
+// What the ledger needs of the rest of the Worker (`ledger.ts`): a crop subject is a crop the site
+// holds, or a corpus glyph whose row a first claim writes, as a first review would.
+const ledgerTools: LedgerTools = {fail:(status,message)=>{throw new Problem(status,message)},body,text,canonical:value=>canonical(value),owned,
+  crop:async(env,id)=>{const row=await unit(env,id),data=parse(row.data);
+    return {id:row.id,version:row.crop_version??cropVersion(row.id,data),materialise:row.fresh?materialise(env,row as UnitRow&{fresh:CorpusRow}):null}}};
 export function canonical(value: unknown): string {
   if(value===null||typeof value!=='object')return JSON.stringify(value);
   if(Array.isArray(value))return '['+value.map(canonical).join(',')+']';
@@ -1534,6 +1541,14 @@ const routes = {
           if(!success)throw new Problem(429,'Too many written forms at once. Wait a minute and try again.');
           return json(await writeForm(env,request,me.id,form?decodeURIComponent(form[1]):null));
         }
+        const acted=path.match(/^\/atlas\/claims\/([^/]+)\/actions$/);
+        if(path==='/atlas/claims'||acted){
+          // A claim or an action is a few small rows, and one address is held to a rate as written forms are.
+          const {success}=await env.CLAIMS.limit({key:request.headers.get('cf-connecting-ip')??'local'});
+          if(!success)throw new Problem(429,'Too many claims at once. Wait a minute and try again.');
+          const input=await body(request);
+          return json(acted?await actOnClaim(env,input,decodeURIComponent(acted[1]),me.id,me.admin,ledgerTools):await writeClaim(env,input,me.id,ledgerTools));
+        }
         const undone=path.match(/^\/atlas\/(?:rounds|corrections)\/([^/]+)\/undo$/);
         if(undone)return json(await undo(env,request,me.id,decodeURIComponent(undone[1])));
         const edit=path.match(/^\/(?:atlas\/characters|layers\/units)\/([^/]+)$/);
@@ -1571,6 +1586,9 @@ const routes = {
       if(visualSample){const data=parse((await unit(env,decodeURIComponent(visualSample[1]))).data);
         if(!data.image)throw new Problem(404,'Image not found.');
         return Response.redirect(new URL(data.image,url).href,302)}
+      if(path==='/atlas/claims')return json(await claimsOf(env,text(q.get('subject'),512,'subject',true)!));
+      if(path==='/atlas/ledger'||path==='/atlas/ledger.json')return json(await ledgerPage(env,q,integer),200,
+        path.endsWith('.json')?{'content-disposition':'attachment; filename="atlas-ledger.json"'}:{});
       if(path==='/atlas/written-forms'||path==='/atlas/written-forms.json')return json(await writtenForms(env),200,
         path.endsWith('.json')?{'content-disposition':'attachment; filename="atlas-written-forms.json"'}:{});
       if(path==='/atlas/reviews'||path==='/atlas/reviews.json')return json(await reviews(env,q.get('include_processed')==='true'),200,
