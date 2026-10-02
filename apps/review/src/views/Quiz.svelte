@@ -531,13 +531,15 @@
   const CARRIED = 'atlas.quiz.carried'
   function reloadKeepingRound() {
     try {
-      sessionStorage.setItem(CARRIED, JSON.stringify({ grapheme, production, seed: roundSeed,
+      sessionStorage.setItem(CARRIED, JSON.stringify({ at: Date.now(), grapheme, production, seed: roundSeed,
         ...$state.snapshot({ choices, selected, skipped }) }))
     } catch { /* The page reloads without the choices. */ }
     location.reload()
   }
   function carried() {
-    try { const round = JSON.parse(sessionStorage.getItem(CARRIED) ?? 'null'); sessionStorage.removeItem(CARRIED); return round }
+    // Only the reload that kept it: a round left behind by a reload that went elsewhere, or copied into a
+    // duplicated tab, is not dealt in place of the one asked for later.
+    try { const round = JSON.parse(sessionStorage.getItem(CARRIED) ?? 'null'); sessionStorage.removeItem(CARRIED); return round && Date.now() - round.at < 2 * 60 * 1000 ? round : null }
     catch { return null }
   }
   async function resume(round) {
