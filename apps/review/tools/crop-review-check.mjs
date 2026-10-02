@@ -99,6 +99,16 @@ try {
   await browser.waitFor(`document.querySelector('.quiz-focus [data-issue="skip"]')?.getAttribute('aria-pressed') === 'true' || document.querySelector('.focus-thumb.skipped') !== null`)
   console.log('PASS Quick Review answers the same keys with the same panel')
 
+  // Its form bar marks the crop on show, with the same number keys as the inspector's.
+  await browser.waitFor('document.querySelectorAll(".quiz-focus .crop-form .form-chip").length > 1', 30000)
+  const marked = await browser.evaluate('document.querySelector(".focus-figure").dataset.unit')
+  const second = await browser.evaluate('document.querySelectorAll(".quiz-focus .crop-form .form-chip")[1].querySelector(".script-text").textContent')
+  await browser.key('2')
+  await browser.waitFor(`document.querySelector(".focus-figure")?.dataset.unit !== ${JSON.stringify(marked)} || !document.querySelector(".quiz-focus")`, 30000)
+  const point = 'U+' + second.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')
+  assert(units(config.directory)[marked].unicode === point, `the form key did not mark the crop as ${second}: ${units(config.directory)[marked].unicode}`)
+  console.log(`PASS Quick Review's form bar marks the crop on show as ${second}`)
+
   assert(!errors.length, 'page errors: ' + errors.join('; '))
   console.log('PASS crop review')
 } finally {
