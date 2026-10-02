@@ -8,6 +8,7 @@
   --script-hangul: light-dark(#9c2f3f, #f596a5);
   --script-gugyeol: light-dark(#4a7a1f, #aad477);
   --script-symbol: light-dark(#74406a, #d5a0cd);
+  --script-latin: light-dark(#665f12, #cfc56c);
   --script-unknown: light-dark(#53515b, #aaa6b6);
 }
 .script-char[data-script="hiragana"] { color: var(--script-hiragana); }
@@ -16,6 +17,7 @@
 .script-char[data-script="hangul"] { color: var(--script-hangul); }
 .script-char[data-script="gugyeol"] { color: var(--script-gugyeol); }
 .script-char[data-script="symbol"] { color: var(--script-symbol); }
+.script-char[data-script="latin"] { color: var(--script-latin); }
 .script-char[data-script="unknown"], .script-char[data-script="mixed"] { color: var(--script-unknown); }
 @media (forced-colors: active) {
   .script-char[data-script] { color: inherit; }

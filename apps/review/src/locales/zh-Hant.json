@@ -561,6 +561,7 @@
   "script.hiragana": "平假名",
   "script.kanji": "漢字",
   "script.katakana": "片假名",
+  "script.latin": "拉丁字母",
   "script.legend.label": "文字色彩圖例",
   "script.mixed": "混合",
   "script.symbol": "符號",

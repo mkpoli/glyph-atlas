@@ -591,6 +591,7 @@
   "script.hiragana": "Hiragana",
   "script.kanji": "Kanji",
   "script.katakana": "Katakana",
+  "script.latin": "Latin",
   "script.legend.label": "Character colour legend",
   "script.mixed": "Mixed",
   "script.symbol": "Symbol",
