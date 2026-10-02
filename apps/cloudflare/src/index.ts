@@ -363,54 +363,84 @@ export function moved(stored: Facet[], moves: Facet[]): Facet[] {
   }
   return [...rows.values()].filter(row => row.n > 0);
 }
-// The two-character frequencies Explore's grid shows: crops that follow each other on a line
-// (`unit_pairs`), counted by the text their labels make, most frequent first. The whole collection's
-// count reads every pair and a book's reads its own, through the index that also groups them; the edge
-// keeps one copy per catalogue version and book.
-const PAIRS_MAX = 480;
-export function pairsQuery(document: boolean) {
-  return `SELECT text,count(*) AS n FROM unit_pairs
-    WHERE ${document ? 'document=? AND ' : ''}text IS NOT NULL GROUP BY text ORDER BY n DESC,text LIMIT ${PAIRS_MAX}`;
+// The pair and trigram frequencies Explore's grid shows: runs of crops that follow each other on a
+// line (`unit_ngrams`), counted by the text their labels make, most frequent first. The whole
+// collection's count reads every run of the length asked for and a book's reads its own, through the
+// index that also groups them; the edge keeps one copy per catalogue version, length and book. A run is
+// shown down the page where most of its occurrences are written that way.
+const NGRAMS_MAX = 480, NGRAM_SIZES = new Set(['2', '3']);
+function ngramSize(value: string) {
+  if (!NGRAM_SIZES.has(value)) throw new Problem(404, 'Runs of two or three characters are counted.');
+  return Number(value);
 }
-async function pairs(env: Env, ctx: ExecutionContext, url: URL) {
+export function ngramsQuery(document: boolean) {
+  return `SELECT text,count(*) AS n,2*sum(vertical)>=count(*) AS vertical FROM unit_ngrams
+    WHERE ${document ? 'document=? AND ' : ''}size=? AND text IS NOT NULL GROUP BY text ORDER BY n DESC,text LIMIT ${NGRAMS_MAX}`;
+}
+async function ngrams(env: Env, ctx: ExecutionContext, url: URL, size: number) {
   const document = text(url.searchParams.get('document'), 256, 'document');
-  const key = new Request(`${url.origin}/atlas/pairs?document=${encodeURIComponent(document ?? '')}&v=${encodeURIComponent(await catalogueVersion(env))}`);
+  const key = new Request(`${url.origin}/atlas/ngrams/${size}?document=${encodeURIComponent(document ?? '')}&v=${encodeURIComponent(await catalogueVersion(env))}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json() as Json;
-  const rows = await env.DB.prepare(pairsQuery(Boolean(document))).bind(...(document ? [document] : [])).all<{ text: string; n: number }>();
-  const body = { items: rows.results, limit: PAIRS_MAX };
+  const rows = await env.DB.prepare(ngramsQuery(Boolean(document))).bind(...(document ? [document] : []), size).all<{ text: string; n: number; vertical: number }>();
+  const body = { items: rows.results.map(row => ({ ...row, vertical: Boolean(row.vertical) })), limit: NGRAMS_MAX };
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return body;
 }
-// One pair's occurrences: the two crops of each, in the order the pair's index keeps (by the first crop's
-// id), each crop found by its key. A book's are read through the index it shares with the count. The
-// join order is fixed and the origin test kept off its index (`+`): the planner would otherwise start
-// from every local crop.
-const PAIR_PAGE_MAX = 96, PAIR_OFFSET_MAX = 2000;
-export function pairOccurrencesQuery(document: boolean) {
-  return `SELECT a.data AS first, b.data AS second FROM unit_pairs p
+// One run's occurrences: its crops in reading order, each with its box on the page, whether their line
+// is written down the page, and the page around them (`ngramPage`); the run as a whole is written the way
+// most of its occurrences are. They come in the order the run's index keeps (by the first crop's id), each crop
+// found by its key; a trigram's third is joined only when there is one. A book's are read through the
+// index it shares with the count. The join order is fixed and the origin test kept off its index (`+`):
+// the planner would otherwise start from every local crop.
+const NGRAM_PAGE_MAX = 96, NGRAM_OFFSET_MAX = 2000;
+const NGRAM_CROPS = `FROM unit_ngrams p
     CROSS JOIN units a ON a.id=p.first AND +a.origin='local' CROSS JOIN units b ON b.id=p.second AND +b.origin='local'
-    WHERE ${document ? 'p.document=? AND ' : ''}p.text=? ORDER BY p.first LIMIT ? OFFSET ?`;
+    LEFT JOIN units c ON c.id=p.third AND +c.origin='local'`;
+export function ngramOccurrencesQuery(document: boolean) {
+  return `SELECT a.data AS first, b.data AS second, c.data AS third, p.vertical ${NGRAM_CROPS}
+    WHERE ${document ? 'p.document=? AND ' : ''}p.size=? AND p.text=? AND (p.third IS NULL OR c.id IS NOT NULL) ORDER BY p.first LIMIT ? OFFSET ?`;
 }
-export function pairCountQuery(document: boolean) {
-  return `SELECT count(*) AS n FROM unit_pairs p
-    CROSS JOIN units a ON a.id=p.first AND +a.origin='local' CROSS JOIN units b ON b.id=p.second AND +b.origin='local'
-    WHERE ${document ? 'p.document=? AND ' : ''}p.text=?`;
+export function ngramCountQuery(document: boolean) {
+  return `SELECT count(*) AS n, sum(p.vertical) AS vertical ${NGRAM_CROPS}
+    WHERE ${document ? 'p.document=? AND ' : ''}p.size=? AND p.text=? AND (p.third IS NULL OR c.id IS NOT NULL)`;
 }
-async function pairOccurrences(env: Env, url: URL, pair: string) {
+// The page around a run, from one of its crops' context renders: the box holding every crop, with a
+// margin of a fifth of the largest, clipped to the render. A render shows the page a few characters
+// around its own crop, so it nearly always holds the whole run; the smallest that does is the sharpest.
+// Null when a crop has no box or no render holds them all: the run's crops are then laid out apart.
+type Rect = { x: number; y: number; w: number; h: number };
+export function ngramPage(crops: Json[]): { image: string; box: Rect; region: Rect } | null {
+  const boxes = crops.map(c => c.crop_box as Rect | null);
+  if (boxes.some(b => !b)) return null;
+  const left = Math.min(...boxes.map(b => b!.x)), top = Math.min(...boxes.map(b => b!.y));
+  const right = Math.max(...boxes.map(b => b!.x + b!.w)), bottom = Math.max(...boxes.map(b => b!.y + b!.h));
+  const holds = (r: Rect) => r.x <= left && r.y <= top && r.x + r.w >= right && r.y + r.h >= bottom;
+  const render = crops.filter(c => c.context_image && c.context_box && holds(c.context_box))
+    .sort((a, b) => a.context_box.w * a.context_box.h - b.context_box.w * b.context_box.h)[0];
+  if (!render) return null;
+  const box = render.context_box as Rect, margin = Math.max(...boxes.flatMap(b => [b!.w, b!.h])) / 5;
+  const x = Math.max(box.x, left - margin), y = Math.max(box.y, top - margin);
+  return { image: render.context_image, box,
+    region: { x, y, w: Math.min(box.x + box.w, right + margin) - x, h: Math.min(box.y + box.h, bottom + margin) - y } };
+}
+async function ngramOccurrences(env: Env, url: URL, size: number, run: string) {
   const q = url.searchParams;
-  const value = text(pair, 64, 'pair', true)!;
+  const value = text(run, 96, 'text', true)!;
   const document = text(q.get('document'), 256, 'document');
-  const limit = integer(q, 'limit', 48, PAIR_PAGE_MAX), offset = integer(q, 'offset', 0);
-  if (offset > PAIR_OFFSET_MAX) throw new Problem(404, 'A pair does not page this far.');
-  const bound = [...(document ? [document] : []), value];
+  const limit = integer(q, 'limit', 48, NGRAM_PAGE_MAX), offset = integer(q, 'offset', 0);
+  if (offset > NGRAM_OFFSET_MAX) throw new Problem(404, 'A run does not page this far.');
+  const bound = [...(document ? [document] : []), size, value];
   const [count, page] = await env.DB.batch([
-    env.DB.prepare(pairCountQuery(Boolean(document))).bind(...bound),
-    env.DB.prepare(pairOccurrencesQuery(Boolean(document))).bind(...bound, limit, offset),
+    env.DB.prepare(ngramCountQuery(Boolean(document))).bind(...bound),
+    env.DB.prepare(ngramOccurrencesQuery(Boolean(document))).bind(...bound, limit, offset),
   ]) as D1Result<any>[];
-  const items = (page.results as { first: string; second: string }[])
-    .map(row => ({ first: listing(parse(row.first)), second: listing(parse(row.second)) }));
-  return { text: value, document, total: (count.results[0] as { n: number }).n, next_offset: offset + items.length, items };
+  const items = (page.results as { first: string; second: string; third: string | null; vertical: number }[]).map(row => {
+    const crops = [row.first, row.second, row.third].filter(Boolean).map(data => parse(data!));
+    return { crops: crops.map(c => ({ ...listing(c), crop_box: c.crop_box ?? null })), vertical: Boolean(row.vertical), page: ngramPage(crops) };
+  });
+  const { n: total, vertical } = count.results[0] as { n: number; vertical: number | null };
+  return { text: value, size, document, total, vertical: 2 * (vertical ?? 0) >= total, next_offset: offset + items.length, items };
 }
 async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: string | null) {
   const q = url.searchParams;
@@ -1364,9 +1394,8 @@ export default {
       // A round leaves out what its reviewer skipped lately, so it reads who is asking.
       if(path==='/atlas')return json(await catalogue(env,ctx,url,q.get('purpose')==='review'?(await viewer(env,request))?.id??null:null));
       if(path==='/atlas/history')return json(await history(env,q,(await viewer(env,request))?.id??null));
-      if(path==='/atlas/pairs')return json(await pairs(env,ctx,url));
-      const pair=path.match(/^\/atlas\/pairs\/([^/]+)$/);
-      if(pair)return json(await pairOccurrences(env,url,decodeURIComponent(pair[1])));
+      const run=path.match(/^\/atlas\/ngrams\/(\d+)(?:\/([^/]+))?$/);
+      if(run)return json(run[2]===undefined?await ngrams(env,ctx,url,ngramSize(run[1])):await ngramOccurrences(env,url,ngramSize(run[1]),decodeURIComponent(run[2])));
       if(path==='/atlas/corpus/characters')return json(await corpusCharacters(env,ctx,url),200,{'cache-control':'private, max-age=300'});
       if(path==='/atlas/corpus/character')return json(record(await unit(env,q.get('id')||'')));
       if(path==='/atlas/collection/status')return json(await meta(env,'collection'));
