@@ -584,12 +584,38 @@ try {
   const countPlan = await plan({ sql: worker.variantCountsQuery(2), values: [] }, ['假', '反'])
   assert.ok(countPlan.some(d => /SEARCH unit_counts USING PRIMARY KEY \(origin=\? AND character=\?\)/.test(d)), countPlan.join('; '))
   assert.ok(!countPlan.some(d => /^SCAN/.test(d)), countPlan.join('; '))
+  // The derived tier stands apart: a character no source relates to 仮 and a form no character has,
+  // each with the substitution it came by and the pairs behind it, cited as derived-ids beside the
+  // pairs' own sources, and never among the variants a gallery widens to.
+  await db.batch([
+    db.prepare(`INSERT INTO component_variants VALUES('反','𠬝',3,'[{"a":"扳","b":"𢪃","sources":["wikidata"]},{"a":"返","b":"𮞉","sources":["cjkvi-variants","wikidata"]}]')`),
+    db.prepare(`INSERT INTO character_derived VALUES('仮',1,'⿰亻𠬝','[["反","𠬝"]]')`),
+    db.prepare(`INSERT INTO character_derived VALUES('仮',0,'𠈌','[["反","𠬝"]]')`),
+    db.prepare(`INSERT INTO character_derived VALUES('𠈌',0,'仮','[["反","𠬝"]]')`),
+    db.prepare(`INSERT INTO character_derived VALUES('伋',0,'⿰亻𠬝','[["反","𠬝"]]')`),
+    db.prepare(`INSERT OR REPLACE INTO metadata VALUES('variant_sources','{"wikidata":"Wikidata, P5475; CC0-1.0","opencc":"OpenCC; Apache-2.0","cjkvi-variants":"CJKVI; PD","unihan":"Unihan; Unicode-3.0","derived-ids":"Predicted component variants (derived, not attested)"}')`),
+    db.prepare("INSERT OR REPLACE INTO metadata VALUES('units_refreshed_at','\"variants-test-derived\"')"),
+  ])
+  const derivedCard = await call('/layers/characters/U%2B4EEE')
+  assert.deepEqual(derivedCard.variants.derived.map(v => [v.char, v.code_point, v.encoded]),
+    [['𠈌', 'U+2020C', true], ['⿰亻𠬝', null, false]], 'in rank order; another character\'s rows are its own')
+  assert.deepEqual(derivedCard.variants.derived[0].substitutions.map(s => [s.was, s.became, s.count, s.pairs.length]), [['反', '𠬝', 3, 2]])
+  assert.deepEqual(derivedCard.variants.derived[0].sources, ['cjkvi-variants', 'wikidata'])
+  assert.equal(derivedCard.variants.sources['derived-ids'], 'Predicted component variants (derived, not attested)')
+  assert.ok(!derivedCard.variants.items.some(v => v.char === '𠈌') && !derivedCard.variants.related.some(v => v.char === '𠈌'), 'a derived form is in no attested tier')
+  const derivedPlan = await plan({ sql: worker.derivedEdgesQuery(), values: [] }, ['仮'])
+  assert.ok(derivedPlan.includes('SEARCH character_derived USING PRIMARY KEY (a=?)'), derivedPlan.join('; '))
+  assert.ok(!derivedPlan.some(d => /TEMP B-TREE/.test(d)), derivedPlan.join('; '))
   // A gallery widened to its variants deals a variant's crops with the character's own, and only then.
   const variantCrop = { id: 'variant-crop', label: '假', reading: '假', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
   await db.prepare(`INSERT INTO units(${UNIT_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind('variant-crop', 'local', '假', '假', 'U+4EEE', null,
     'handwritten', 'kanji', 'pending', 0, 1, 1, 1, JSON.stringify(variantCrop), JSON.stringify({ character: variantCrop }), '{}', '{}', null).run()
   assert.ok(!(await call('/layers/occurrences?code_point=U%2B4EEE')).items.some(i => i.id === 'variant-crop'), 'the exact character alone')
   assert.ok((await call('/layers/occurrences?code_point=U%2B4EEE&expand=variants')).items.some(i => i.id === 'variant-crop'), 'widened to 假')
+  const derivedCrop = { ...variantCrop, id: 'derived-crop', label: '𠈌', reading: '𠈌' }
+  await db.prepare(`INSERT INTO units(${UNIT_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind('derived-crop', 'local', '𠈌', '𠈌', 'U+2020C', null,
+    'handwritten', 'kanji', 'pending', 0, 1, 1, 1, JSON.stringify(derivedCrop), JSON.stringify({ character: derivedCrop }), '{}', '{}', null).run()
+  assert.ok(!(await call('/layers/occurrences?code_point=U%2B4EEE&expand=variants')).items.some(i => i.id === 'derived-crop'), 'a derived form is not widened to')
   // A crop of 伋 is not dealt: a source calls the pair a simplification, so it is kept apart.
   const apart = { ...variantCrop, id: 'apart-crop', label: '伋', reading: '伋' }
   await db.prepare(`INSERT INTO units(${UNIT_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind('apart-crop', 'local', '伋', '伋', 'U+4EEE', null,

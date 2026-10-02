@@ -696,6 +696,14 @@ function chunks<T>(list: T[], size: number): T[][] {
 // A character's edges in the 異体字 graph, both ways (0033): each by the key or by `b`'s index.
 export const variantEdgesQuery = () => `SELECT b AS other,relation,source,detail,widens FROM character_variants WHERE a=?
   UNION ALL SELECT a AS other,relation,source,detail,widens FROM character_variants WHERE b=? LIMIT 2000`;
+// A character's derived list (0046), in the order and caps refs.derived_variants gives it: one key range.
+export const derivedEdgesQuery = () => `SELECT b AS other,subs FROM character_derived WHERE a=? ORDER BY rank`;
+// What the substitutions a derived list came by are backed by: each one's count and every attesting
+// pair with the sources that state it (the `component_variants` rows, keyed by substitution), at most
+// SUBSTITUTIONS_READ at a time so no statement binds more than D1's hundred parameters.
+export const substitutionQuery = (n: number) => `SELECT a,b,count,pairs FROM component_variants WHERE ${
+  Array(n).fill('(a=? AND b=?)').join(' OR ')}`;
+const SUBSTITUTIONS_READ = 50;
 // How many crops each of a bounded list of characters has here and in the corpus, from the counts the
 // triggers keep (0032, 0006): one key range per character, never a scan of the crops.
 export const variantCountsQuery = (n: number) => `SELECT character,sum(n) AS n FROM unit_counts WHERE origin='local' AND character IN (${Array(n).fill('?').join(',')}) GROUP BY character`;
@@ -703,6 +711,8 @@ export const variantCorpusCountsQuery = (n: number) => `SELECT character,sum(n) 
 // Each row of a card's variants lists at most this many, the most attested first; a gallery widens to
 // exactly the first row. The Python layer's VARIANTS_SHOWN.
 const VARIANTS_SHOWN = 32;
+// The tier of predictions, as its own source id: the citation comes from the export's metadata.
+const DERIVED_IDS = 'derived-ids';
 // A pair any source calls simplified is kept apart even where another lists it as a plain variant
 // (refs.KEPT_APART): cjkvi pairs 干 with 乾 and 幹, which four sources give as simplifications.
 const KEPT_APART = new Set(['simplified']);
@@ -769,6 +779,7 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, char:
   const cached = await caches.default.match(key);
   if (cached) return await cached.json();
   const edges = (await env.DB.prepare(variantEdgesQuery()).bind(char, char).all<VariantEdge>()).results;
+  const derivedRows = (await env.DB.prepare(derivedEdgesQuery()).bind(char).all<{ other: string; subs: string }>()).results;
   const byChar = new Map<string, VariantRow & { edges: VariantEdge[] }>();
   for (const edge of edges) {
     if (edge.other === char) continue;
@@ -782,7 +793,8 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, char:
     widens: pair.some(e => e.widens) && !pair.some(e => KEPT_APART.has(e.relation)) }))
     .sort((a, b) => attested(b) - attested(a) || (a.char.codePointAt(0)! - b.char.codePointAt(0)!));
   const shown = [...ordered.filter(e => e.widens).slice(0, VARIANTS_SHOWN), ...ordered.filter(e => !e.widens).slice(0, VARIANTS_SHOWN)];
-  const chars = shown.map(entry => entry.char);
+  const derived = await derivedOf(env, derivedRows);
+  const chars = [...shown.map(entry => entry.char), ...derived.filter(entry => entry.encoded).map(entry => entry.char)];
   const [local, corpus] = chars.length ? await env.DB.batch([
     env.DB.prepare(variantCountsQuery(chars.length)).bind(...chars),
     env.DB.prepare(variantCorpusCountsQuery(chars.length)).bind(...chars),
@@ -792,11 +804,38 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, char:
   const cited: Record<string, string> = (await meta(env, 'variant_sources')) || {};
   const rows = shown.map(entry => ({ ...entry, sources: [...new Set(entry.relations.map(r => r.source))].sort(),
     count: here.get(entry.char) ?? 0, corpus_count: there.get(entry.char) ?? 0 }));
+  const predicted = derived.map(entry => ({ ...entry,
+    count: here.get(entry.char) ?? 0, corpus_count: there.get(entry.char) ?? 0 }));
   const used = new Set(rows.flatMap(row => row.sources));
-  const found = { items: rows.filter(row => row.widens), related: rows.filter(row => !row.widens), total: byChar.size,
-    sources: Object.fromEntries([...used].sort().map(source => [source, cited[source] ?? source])) };
+  for (const entry of predicted) for (const source of entry.sources) used.add(source);
+  if (predicted.length) used.add(DERIVED_IDS);
+  const found = { items: rows.filter(row => row.widens), related: rows.filter(row => !row.widens), derived: predicted,
+    total: byChar.size, sources: Object.fromEntries([...used].sort().map(source => [source, cited[source] ?? source])) };
   ctx.waitUntil(caches.default.put(key, Response.json(found, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return found;
+}
+type DerivedEntry = { char: string; code_point: string | null; encoded: boolean;
+  substitutions: { was: string; became: string; count: number; pairs: { a: string; b: string; sources: string[] }[] }[];
+  sources: string[] };
+// The derived group of one character as the export ranked it, each row's substitutions backed by
+// their `component_variants` rows. A form of one character is encoded, a sequence is not.
+async function derivedOf(env: Env, rows: { other: string; subs: string }[]): Promise<DerivedEntry[]> {
+  const listed = rows.map(row => ({ other: row.other, subs: JSON.parse(row.subs) as [string, string][] }))
+  const keys = [...new Map(listed.flatMap(row => row.subs).map(sub => [sub.join('\u0000'), sub])).values()];
+  const backed = keys.length ? (await env.DB.batch(chunks(keys, SUBSTITUTIONS_READ).map(part =>
+    env.DB.prepare(substitutionQuery(part.length)).bind(...part.flat()))) as D1Result<{ a: string; b: string; count: number; pairs: string }>[])
+    .flatMap(result => result.results) : [];
+  const evidence = new Map(backed.map(row => [`${row.a}\u0000${row.b}`, row]));
+  return listed.flatMap(row => {
+    const substitutions = row.subs.flatMap(([was, became]) => {
+      const found = evidence.get(`${was}\u0000${became}`);
+      return found ? [{ was, became, count: found.count, pairs: JSON.parse(found.pairs) as DerivedEntry['substitutions'][0]['pairs'] }] : [];
+    });
+    if (!substitutions.length) return [];
+    const encoded = [...row.other].length === 1;
+    return [{ char: row.other, code_point: encoded ? cp(row.other) : null, encoded, substitutions,
+      sources: [...new Set(substitutions.flatMap(sub => sub.pairs.flatMap(pair => pair.sources)))].sort() }];
+  });
 }
 async function known(env: Env, value: string) {
   const key = cp(literal(value));

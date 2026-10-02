@@ -11,8 +11,11 @@
   const members = $derived(card?.grapheme?.members ?? [{code_point: card?.code_point, char: card?.char}])
   // The Forms family this character is clustered in, by its grapheme or its own code point; none, no link.
   const formsFamily = $derived([card?.grapheme?.code_point, card?.code_point].find(code => code && page.data.forms?.includes(code)))
-  // The 異体字 graph: the variants a gallery widens to, and characters related otherwise.
-  const variants = $derived(card?.variants ?? { items: [], related: [], sources: {} })
+  // The 異体字 graph: the variants a gallery widens to, characters related otherwise, and the
+  // derived tier — forms one attested component substitution may write this character as, listed
+  // after the attested variants with a mark, no gallery widening to them.
+  // A card cached before the derived tier existed has no `derived`; it reads as none.
+  const variants = $derived({ items: [], related: [], sources: {}, ...card?.variants, derived: card?.variants?.derived ?? [] })
   // Every relation of kanji-variants.tsv in the reader's language; one the table gains later reads as its id.
   const RELATION_NAMES = {
     variant: () => t('chips.relation.variant'), equivalent: () => t('chips.relation.equivalent'),
@@ -32,6 +35,10 @@
     return [...by].map(([relation, sources]) => ({ relation, name: relationName(relation), sources: [...sources] }))
   }
   const relationTitle = v => `${v.char} ${v.code_point}\n` + relationsOf(v).map(r => `${r.name}: ${r.sources.join(', ')}`).join('\n')
+  // A derived chip's evidence, after the word that marks it: each substitution it came by
+  // (undirected, as the table spells it), how many contexts attest it, and those pairs with their sources.
+  const derivedTitle = v => `${v.char} · ${t('chips.derived')}\n` + v.substitutions.map(s =>
+    `${s.was} ↔ ${s.became} · ${s.count}\n` + s.pairs.map(p => `${p.a} ${p.b} ${p.sources.join(', ')}`).join('\n')).join('\n\n')
   const crops = v => (v.count ?? 0) + (v.corpus_count ?? 0)
   // Outside the unified ideographs' main block a character may be missing from the reader's fonts or
   // look like another (a compatibility ideograph, a Kangxi radical), so it shows its code point too.
@@ -57,12 +64,19 @@
         {/each}
       </div>
     </div>
-    {#if variants.items.length}
+    {#if variants.items.length || variants.derived.length}
       <div class="layer-row">
         <span class="layer-label">{t('chips.variants')}</span>
         <div class="variant-chips">
           {#each variants.items as v (v.code_point)}
             <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><span lang="zh">{v.char}</span>{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if crops(v)}<small>{formatNumber(crops(v))}</small>{/if}</a>
+          {/each}
+          {#each variants.derived as v (v.code_point ?? v.char)}
+            {#if v.code_point}
+              <a class="variant" href={localize(characterAddress(v.code_point))} title={derivedTitle(v)}><span lang="zh">{v.char}</span><sup class="derived-mark" aria-hidden="true">*</sup><span class="visually-hidden">{t('chips.derived')}</span>{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if crops(v)}<small>{formatNumber(crops(v))}</small>{/if}</a>
+            {:else}
+              <span class="variant unencoded" title={derivedTitle(v)}><span lang="zh">{v.char}</span><sup class="derived-mark" aria-hidden="true">*</sup><span class="visually-hidden">{t('chips.derived')}</span></span>
+            {/if}
           {/each}
         </div>
       </div>
@@ -77,7 +91,7 @@
         </div>
       </div>
     {/if}
-    {#if variants.items.length || variants.related.length}
+    {#if variants.items.length || variants.related.length || variants.derived.length}
       {#if variants.items.length}<button class="chip chip-action include-variants" class:active={expand === 'variants'} aria-pressed={expand === 'variants'}
         onclick={() => expand = expand === 'variants' ? 'none' : 'variants'}>{t('chips.includeVariants')}{#if variants.items.some(crops)} <small>{formatNumber(variants.items.reduce((n, v) => n + crops(v), 0))}</small>{/if}</button>{/if}
       <details class="variant-sources">
@@ -125,6 +139,11 @@
   .variant-chips{display:flex;flex-wrap:wrap;gap:6px;flex:1}
   .variant{display:inline-flex;align-items:baseline;gap:6px;padding:4px 10px;border:1px solid var(--line);border-radius:7px;color:var(--ink);text-decoration:none;font-size:22px;line-height:1.2}
   .variant:hover{border-color:var(--accent)}
+  /* A derived chip is a prediction: a small mark after the character says so; a form no character
+     has is set smaller, as its sequence is longer than a character. */
+  .derived-mark{font-size:11px;color:var(--muted);margin-left:-4px;align-self:flex-start}
+  .variant.unencoded span[lang="zh"]{font-size:15px}
+  .variant.unencoded:hover{border-color:var(--accent)}
   .variant small{font-size:11px;color:var(--muted)}
   .variant .code{font-family:"GenZui Sans",ui-monospace,monospace;font-size:10px}
   .include-variants{justify-self:start;margin-left:92px}

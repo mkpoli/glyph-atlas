@@ -31,6 +31,7 @@ readings stand for one another. `to_code_points` and `from_code_points` convert 
 from __future__ import annotations
 
 import csv
+import json
 import re
 import unicodedata
 from collections.abc import Iterable
@@ -40,6 +41,7 @@ from typing import Any
 
 import yaml
 
+from . import han_component_variants, han_components
 from .schema import Character, Ligature, Script, VariantRef
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -54,6 +56,7 @@ MJ_VERSION = re.compile(r"Ver\.(?P<version>[0-9.]+)")
 EQUIVALENTS_TSV = "kanji-equivalents.tsv"
 VARIANTS_TSV = "kanji-variants.tsv"
 FAMILIES_TSV = "grapheme-families.tsv"
+COMPONENT_VARIANTS_TSV = "han-component-variants.tsv"
 KANA_ORIGINS_TSV = "kana-origins.tsv"
 SUSPECT_FORMS_TSV = "suspect-forms.tsv"
 POLICIES_YAML = "equivalence-policies.yaml"
@@ -65,6 +68,7 @@ BUILT_BY = {
     EQUIVALENTS_TSV: "scripts/build_kanji_equivalents.py",
     VARIANTS_TSV: "scripts/build_kanji_variants.py",
     FAMILIES_TSV: "scripts/build_character_table.py",
+    COMPONENT_VARIANTS_TSV: "scripts/build_han_component_variants.py",
     KANA_ORIGINS_TSV: "scripts/build_kana_origins.py",
     SUSPECT_FORMS_TSV: "nothing: it is kept by hand from reviewers' decisions",
 }
@@ -262,20 +266,32 @@ def variant_edges_of(char: str) -> tuple[dict[str, Any], ...]:
 
 
 @cache
-def variant_sources() -> dict[str, str]:
-    """The citation of each source of the 異体字 graph, as the table's header states it."""
-    path = VOCAB / VARIANTS_TSV
+def _source_citations(name: str) -> dict[str, str]:
+    """The `# source <id>: <citation>` lines of one vocab table, by id, up to its first row."""
+    path = VOCAB / name
     if not path.exists():
-        raise MissingTable(f"{path} is missing; run {BUILT_BY[VARIANTS_TSV]} to write it")
+        raise MissingTable(f"{path} is missing; run {BUILT_BY[name]} to write it")
     found = {}
     with path.open(encoding="utf-8") as handle:
         for line in handle:
             if not line.startswith("#"):
                 break
             if line.startswith("# source ") and ": " in line:
-                name, citation = line[len("# source "):].rstrip("\n").split(": ", 1)
-                found[name] = citation
+                key, citation = line[len("# source "):].rstrip("\n").split(": ", 1)
+                found[key] = citation
     return found
+
+
+@cache
+def variant_sources() -> dict[str, str]:
+    """The citation of each source of the 異体字 graph, as the table's header states it."""
+    return _source_citations(VARIANTS_TSV)
+
+
+@cache
+def component_variant_sources() -> dict[str, str]:
+    """The citation of each source of han-component-variants.tsv, and of the `derived-ids` tier."""
+    return {**_source_citations(COMPONENT_VARIANTS_TSV), DERIVED_IDS: DERIVED_IDS_CITATION}
 
 
 @cache
@@ -298,6 +314,172 @@ def variants(char: str) -> list[tuple[str, tuple[str, ...]]]:
     """
     found = _variant_neighbours().get(char, {})
     return [(other, tuple(sorted(found[other]))) for other in sorted(found, key=lambda o: (-len(found[o]), o))]
+
+
+#: The tier of predictions, as its own source id: substitutions from han-component-variants.tsv made
+#: inside a character's decomposition. Nothing widens or merges to these — no gallery, no grapheme —
+#: and a reader meets them as derived, each with the pairs that attest its substitution. This is not
+#: `derived`, which is the kana a 字母 is written as.
+DERIVED_IDS = "derived-ids"
+DERIVED_IDS_CITATION = (
+    "Predicted component variants (derived, not attested): one substitution of "
+    "data/vocab/han-component-variants.tsv made in a character's BabelStone IDS; "
+    "Glyph Atlas, CC BY-SA 4.0 (LICENSE-DATA)"
+)
+#: How many derived forms a character card lists, and how many of them may be forms no character has
+#: (the export stores the same ones: the closest sequences first, one substitution at a time).
+DERIVED_SHOWN = 32
+DERIVED_IDS_SHOWN = 12
+
+
+@cache
+def component_variants() -> dict[tuple[str, str], dict[str, Any]]:
+    """The kept substitutions of han-component-variants.tsv, each with the pairs that attest it.
+
+    Keys are substitutions in the table's own order (the shorter or smaller side first); a row is
+    `{"count": …, "pairs": [{"a": …, "b": …, "sources": […]}, …]}`, most of the sources the 異体字
+    graph cites, because that is what attested them.
+    """
+    table: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in _read_tsv(COMPONENT_VARIANTS_TSV):
+        pairs = []
+        for token in row["pairs"].split(" "):
+            shape, _, stated = token.partition("=")
+            left, _, right = shape.partition(":")
+            pairs.append({"a": left, "b": right, "sources": stated.split("+")})
+        table[_substitution(row["a"], row["b"])] = {"count": int(row["count"]), "pairs": pairs}
+    return table
+
+
+def _substitution(left: str, right: str) -> tuple[str, str]:
+    """A substitution's own spelling: the shorter (then smaller) side first, as the table stores it."""
+    return (left, right) if (len(left), left) <= (len(right), right) else (right, left)
+
+
+@cache
+def _descriptions() -> han_component_variants.Descriptions:
+    """Every character's usable sequences, read so that equal shapes are equal trees (6 seconds)."""
+    return han_component_variants.Descriptions(dict(han_components._sequences()), han_components.unified())
+
+
+@cache
+def _substitution_table() -> dict[str, set[str]]:
+    """Each component mapped to the ones the kept substitutions put in its place, both ways."""
+    table: dict[str, set[str]] = {}
+    for left, right in component_variants():
+        table.setdefault(left, set()).add(right)
+        table.setdefault(right, set()).add(left)
+    return table
+
+
+@cache
+def _stated_pairs() -> frozenset[tuple[str, str]]:
+    """Every pair the 異体字 graph holds under any relation: a source already states its own tier."""
+    return frozenset(
+        tuple(sorted((edge["a"], edge["b"]), key=ord))
+        for edge in variant_edges() if edge["a"] != edge["b"]
+    )
+
+
+def _derive(char: str) -> list[dict[str, Any]]:
+    """Every form one kept substitution makes of `char`: the characters it may be, then the sequences
+    no character has, closest to its own shape first.
+
+    A pair some source states (under any relation) is left to the graph's own tiers, and so is the
+    bare substitution of two components against each other: the attesting pairs show the components
+    inside characters, and a page of the two components themselves is a claim no pair makes. What
+    remains is one substitution made anywhere in `char`'s own decomposition, as another character
+    when some character's sequence is the result and as the sequence itself when none is. Two
+    characters of the CJK Unified Ideographs block are never derived from each other, and a sequence
+    is written only for a swap of one part of the character's own sequence.
+    """
+    found: dict[str, dict[str, Any]] = {}
+    # A form no character has is written only when the substitution swaps one part of the character's
+    # own sequence: ⿱宀𦊷 for 寰 (⿱宀睘), never a sequence rebuilt inside 睘's own tree.
+    parts = {han_component_variants.text(part) for tree in _descriptions().trees.get(char, ())
+             if not isinstance(tree, str) for part in tree[1]}
+    for form in han_component_variants.derive(_descriptions(), _substitution_table(), [char]):
+        if form.encoded:
+            if tuple(sorted((char, form.other), key=ord)) in _stated_pairs():
+                continue
+            if {form.was, form.became} == {char, form.other}:
+                continue
+            # Two characters of the CJK Unified Ideographs block every source covers, none of which
+            # relates them, are two characters: 也↔它 (蛇 and 虵) would make 馳 a form of 駝.
+            if han_components.tier(char) == han_components.tier(form.other) == 0:
+                continue
+        elif form.was not in parts:
+            continue
+        was, became = _substitution(form.was, form.became)
+        evidence = component_variants().get((was, became))
+        if evidence is None:
+            continue
+        entry = found.setdefault(form.other, {
+            "char": form.other,
+            "code_point": to_code_point(form.other) if form.encoded else None,
+            "encoded": form.encoded,
+            "substitutions": [],
+        })
+        if any(sub["was"] == was and sub["became"] == became for sub in entry["substitutions"]):
+            continue
+        # The substitution is undirected, so every side spells it the way the table does: a card
+        # shows 厶 ↔ 口 whatever direction the character was written in.
+        entry["substitutions"].append({
+            "was": was, "became": became,
+            "count": evidence["count"], "pairs": evidence["pairs"],
+        })
+    for entry in found.values():
+        entry["substitutions"].sort(key=lambda sub: -sub["count"])
+        entry["sources"] = sorted({
+            source for sub in entry["substitutions"] for pair in sub["pairs"] for source in pair["sources"]
+        })
+    encoded = sorted((entry for entry in found.values() if entry["encoded"]),
+                     key=lambda entry: (-entry["substitutions"][0]["count"], entry["char"]))
+    # A sequence as close to the character as its own shape comes first: one component of the
+    # character's own tree swapped (寰 is ⿱宀睘, so ⿱宀𦊷 before a form rebuilt inside 睘's tree).
+    unencoded = sorted((entry for entry in found.values() if not entry["encoded"]),
+                       key=lambda entry: (len(entry["char"]), -entry["substitutions"][0]["count"], entry["char"]))
+    return [*encoded, *unencoded]
+
+
+_derived_cache: dict[str, tuple[dict[str, Any], ...]] = {}
+
+
+def derived_variants(char: str, *, limit: int | None = DERIVED_SHOWN) -> list[dict[str, Any]]:
+    """The `derived-ids` tier of `char`: forms one attested substitution may write it as.
+
+    The encoded characters first, strongest substitutions first within them and then in code point
+    order, then the `DERIVED_IDS_SHOWN` closest forms no character has — shortest sequence first —
+    written as their sequence, at most `limit` rows in total. The export stores the same rows, so a
+    page reads them off D1 exactly as this returns them; `None` takes every form (a measurement).
+    """
+    if char not in _derived_cache:
+        _derived_cache[char] = tuple(_derive(char))
+    found = _derived_cache[char]
+    if limit is None:
+        return list(found)
+    ids = [entry for entry in found if not entry["encoded"]][:DERIVED_IDS_SHOWN]
+    encoded = [entry for entry in found if entry["encoded"]][: max(limit - len(ids), 0)]
+    return [*encoded, *ids]
+
+
+def derived_rows() -> Iterable[tuple[str, int, str, str]]:
+    """Every row of the tier as the export stores it: (character, rank, form, substitutions).
+
+    One row per entry of `derived_variants(character)`, in its order (`rank` from 0), so a page reads
+    the same rows in the same order off D1. A derivation is not symmetric, so each character keeps its
+    own rows. Substitutions are the entry's `[was, became]` pairs, in the entry's order; each one's
+    count and attesting pairs are the table's own row.
+    """
+    for char in sorted(_descriptions().trees):
+        yield from derived_rows_of(char)
+
+
+def derived_rows_of(char: str) -> list[tuple[str, int, str, str]]:
+    """The export's rows for one character: `derived_variants(char)`, ranked."""
+    return [(char, rank, entry["char"], json.dumps([[sub["was"], sub["became"]] for sub in entry["substitutions"]],
+                                                   ensure_ascii=False, separators=(",", ":")))
+            for rank, entry in enumerate(derived_variants(char))]
 
 
 @cache
@@ -389,11 +571,19 @@ def derived(char: str) -> list[str]:
 
 def clear_cache() -> None:
     """Drop every cached table, so the next call reads the files again."""
+    _derived_cache.clear()
     for cached in (
         _unicode_rows,
         _mj_rows,
         _character_rows,
         _equivalence_rows,
+        _source_citations,
+        variant_sources,
+        component_variant_sources,
+        component_variants,
+        _descriptions,
+        _substitution_table,
+        _stated_pairs,
         _policies,
         _ligature_rows,
         _mj_variants,
