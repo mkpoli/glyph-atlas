@@ -147,7 +147,11 @@ try {
     { ...decision, id: 'two' }, { ...decision, revision: 0 },
   ] }, 409)
   assert.equal((await call('/atlas/characters/two')).revision, 0, 'stale rounds are atomic')
+  // A review saved before 0056 recorded the crop with its reading; undoing it restores the crop without one.
+  await db.prepare("UPDATE events SET before_data=json_set(before_data,'$.reading','ア') WHERE target='one'").run()
   await call(`/atlas/rounds/${round.id}/undo`, {})
+  assert.equal((await db.prepare("SELECT json_type(data,'$.reading') AS kept FROM units WHERE id='one'").first()).kept, null,
+    'an undo restores no reading')
   const restored = await call('/atlas/characters/one')
   assert.equal(restored.state, 'pending')
   assert.equal(restored.revision, 2)

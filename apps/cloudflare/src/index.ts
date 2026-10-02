@@ -1293,7 +1293,9 @@ async function revert(env:Env,submission:Json,actor:string,rejection?:{reason:st
       WHERE e.target=? AND e.expected_revision>? AND (s.actor IS NULL OR s.actor NOT IN ${rejection.reviewer[0]} OR (s.undone=0 AND e.kind='review')) LIMIT 1`)
       .bind(r.target,r.expected_revision,...rejection.reviewer[1]).first());
     if(later)throw new Problem(409,'A later review changed this crop. It cannot be undone.');
-    const restored={...parse(r.before_data),revision:current.revision+1};
+    // A record saved before 0056 carries a reading; the crop it restores does not.
+    const {reading:_reading,...before}=parse(r.before_data);
+    const restored={...before,revision:current.revision+1};
     const event={...parse(r.event),id:'cf:'+crypto.randomUUID(),old:parse(r.event).new,new:parse(r.event).old,evidence:'undo of '+r.id,at};
     statements.push(env.DB.prepare('INSERT INTO events(id,submission,target,actor,expected_revision,before_data,after_data,event,snapshot,kind,at) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
       .bind(event.id,key,r.target,actor,current.revision,current.data,JSON.stringify(restored),JSON.stringify(event),r.snapshot,'undo',at));
