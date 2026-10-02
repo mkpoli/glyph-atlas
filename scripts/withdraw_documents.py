@@ -3,12 +3,14 @@
     python scripts/withdraw_documents.py > withdraw.sql
     (cd apps/cloudflare && bunx wrangler d1 execute glyph-atlas --remote --file ../../withdraw.sql)
 
-For each document, its own crops (`units.document`) go with everything that names them: review rows,
-marks, shapes, suspects, redirects, pairs, form placements, written forms and their image rows. Its
-corpus glyphs are the `corpus_units` ids in `withdrawn.corpus_range`, removed with their gallery,
-form and follow rows. The corpus counts are then recounted, and the stamp the Worker keys its cached
-listings on is written last. The pack bytes stay in R2, reachable by no row. Nothing is sent to D1
-here, and a second run of the statements removes nothing more.
+For each document, its crops are the `units` rows naming it and the ids in `withdrawn.corpus_range`,
+which holds its corpus glyphs and the `units` rows a round or review wrote for them (with no
+document). They go with everything that names them: review rows, marks, shapes, suspects, redirects,
+pairs, form placements, written forms, gallery and follow rows, and the image rows of its own crops.
+The corpus counts are then recounted, and the stamp the Worker keys its cached listings on is
+written last. Pack bytes stay in R2. The image rows of corpus display crops and form tiles are not
+derivable here and stay, keyed by content hash and named by no row. Nothing is sent to D1 here, and a
+second run of the statements removes nothing more.
 """
 from __future__ import annotations
 
@@ -40,22 +42,21 @@ def statements(documents) -> list[str]:
     sql = []
     for document in sorted(documents):
         mine = f"{ORIGINS} AND document={quote(document)}"
-        own = f"(SELECT id FROM units WHERE {mine})"
         low, high = map(quote, withdrawn.corpus_range(document))
         corpus = f"id>={low} AND id<{high}"
+        own = f"(SELECT id FROM units WHERE {mine} UNION SELECT id FROM units WHERE {corpus})"
         keys = " UNION ".join(f"SELECT {MEDIA_KEY.format(field=field)} FROM units WHERE {mine}"
                               for field in ("image", "context_image"))
         sql += [
             *(f"DELETE FROM {table} WHERE target IN {own};" for table in ("events", "seen", "skips", "written_forms")),
-            *(f"DELETE FROM {table} WHERE id IN {own};"
-              for table in ("unit_marks", "unit_shapes", "unit_suspects", "form_units", "form_bases")),
+            *(f"DELETE FROM {table} WHERE id IN {own};" for table in ("unit_marks", "unit_shapes", "unit_suspects")),
+            *(f"DELETE FROM {table} WHERE id IN {own} OR {corpus};" for table in ("form_units", "form_bases")),
             f"DELETE FROM unit_redirects WHERE id IN {own} OR target IN {own};",
             f"DELETE FROM unit_pairs WHERE document={quote(document)} OR first IN {own} OR second IN {own};",
             f"DELETE FROM document_characters WHERE document={quote(document)};",
             f"DELETE FROM media WHERE key IN ({keys});",
-            f"DELETE FROM units WHERE {mine};",
-            *(f"DELETE FROM {table} WHERE {corpus};"
-              for table in ("form_units", "form_bases", "corpus_follow", "corpus_gallery", "corpus_units")),
+            f"DELETE FROM units WHERE {mine} OR {corpus};",
+            *(f"DELETE FROM {table} WHERE {corpus};" for table in ("corpus_follow", "corpus_gallery", "corpus_units")),
         ]
     return sql + [CORPUS_REFRESH.strip(), refresh.VERSION_BUMP.strip()]
 

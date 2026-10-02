@@ -45,6 +45,11 @@ def site():
     for glyph in ("hl:gone_0_000:x:1", "hl:gone_1_002:x:4", "hl:gonearound_0_000:x:1", "hl:kept_0_000:x:1"):
         db.execute("INSERT INTO corpus_units(id,character,shuffle,object,offset,size) VALUES(?,'字',0,'o',0,1)", (glyph,))
         db.execute("INSERT INTO corpus_gallery VALUES(?,0,'o',0,'{}')", (glyph,))
+    # A round wrote this glyph's `units` row, which names no document, and a reviewer has seen it.
+    db.execute("INSERT INTO units(id,origin,character,production,category,state,revision,quiz,priority,shuffle,"
+               "data,snapshot,context,visual) VALUES('hl:gone_0_000:x:1','corpus','字','unknown','kanji','pending',"
+               "0,1,0,0,'{}','{}','{}','{}')")
+    db.execute("INSERT INTO seen VALUES('hl:gone_0_000:x:1','s',NULL,'h','t')")
     return db
 
 
@@ -57,6 +62,8 @@ def test_the_statements_take_a_withdrawn_document_off_the_site_and_nothing_else(
         assert sorted(r for r, in db.execute("SELECT key FROM media")) == ["3a", "3b"]
         assert db.execute("SELECT count(*) FROM seen").fetchone()[0] == 0
         assert db.execute("SELECT count(*) FROM unit_marks").fetchone()[0] == 0
+        assert db.execute("SELECT coalesce(sum(n),0) FROM unit_counts WHERE document IS NULL OR document<>'hl:kept'"
+                          ).fetchone()[0] == 0
         kept = ["hl:gonearound_0_000:x:1", "hl:kept_0_000:x:1"]
         assert sorted(r for r, in db.execute("SELECT id FROM corpus_units")) == kept
         assert sorted(r for r, in db.execute("SELECT id FROM corpus_gallery")) == kept
@@ -71,3 +78,12 @@ def test_a_release_cuts_no_crop_of_a_withdrawn_document(monkeypatch):
     assert export.images_ok(document, Licence.CC_BY_SA_4)
     monkeypatch.setattr(withdrawn, "documents", lambda: frozenset({"hl:gone"}))
     assert not export.images_ok(document, Licence.CC_BY_SA_4)
+
+
+def test_form_clustering_admits_no_glyph_of_a_withdrawn_document(tmp_path, monkeypatch):
+    from glyph_atlas import form_quality
+
+    monkeypatch.setenv("ATLAS_FORM_DECISIONS", str(tmp_path / "decisions.jsonl"))
+    admission = form_quality.Admission(tmp_path)
+    monkeypatch.setattr(withdrawn, "documents", lambda: frozenset({"hl:gone"}))
+    assert admission.reason({"id": "hl:gone_0_000:x:1", "document_id": "hl:gone"}) == "withdrawn"

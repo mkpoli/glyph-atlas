@@ -385,7 +385,8 @@ class Queue:
 
         A supplement of an earlier policy that has not run is superseded: `claim_supplement` takes
         only the current policy's, and this one covers what it would have added. Returns how many
-        rows were added; a page already listed for `POLICY` is left as it is.
+        rows were added; a page already listed for `POLICY` is left as it is. A withdrawn document's
+        pages get none, and those not yet run are superseded.
         """
         now = datetime.now(UTC).isoformat()
         # A page completed before the queue recorded policies has it read from its report, once.
@@ -399,10 +400,15 @@ class Queue:
             self.db.executemany("UPDATE pages SET policy=? WHERE id=?", policies)
             self.db.execute("""UPDATE supplements SET status='superseded',updated_at=?
                 WHERE policy!=? AND status IN ('pending','running')""", (now, POLICY))
+            gone = sorted(withdrawn.documents())
+            marks = ",".join("?" * len(gone))
+            self.db.execute(f"""UPDATE supplements SET status='superseded',updated_at=?
+                WHERE status IN ('pending','running')
+                AND page_id IN (SELECT id FROM pages WHERE document_id IN ({marks}))""", (now, *gone))
             changed = self.db.total_changes
-            self.db.execute("""INSERT OR IGNORE INTO supplements (page_id,policy)
-                SELECT id,? FROM pages WHERE status='complete' AND policy IS NOT NULL AND policy!=?""",
-                (POLICY, POLICY))
+            self.db.execute(f"""INSERT OR IGNORE INTO supplements (page_id,policy)
+                SELECT id,? FROM pages WHERE status='complete' AND policy IS NOT NULL AND policy!=?
+                AND document_id NOT IN ({marks})""", (POLICY, POLICY, *gone))
         return self.db.total_changes - changed
 
     def claim_supplement(self, worker, *, lease=LEASE_SECONDS):

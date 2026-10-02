@@ -14,7 +14,7 @@ from pathlib import Path
 import pyarrow.compute as pc
 import pyarrow.dataset as ds
 
-from . import forms, production, refs
+from . import forms, production, refs, withdrawn
 from .feedback import REPORT_ACTOR_KINDS
 
 POLICY = "reviewed-form-inputs-v1"
@@ -94,6 +94,8 @@ class Admission:
         self.bad_lines = backwards_lines(rows, horizontal)
 
     def reason(self, row: dict) -> str | None:
+        if row.get("document_id") in withdrawn.documents():
+            return "withdrawn"
         decision = self.decisions.get(row["id"], {})
         if decision.get("issue") in {"character", "crop"}:
             return "reported-" + decision["issue"]
