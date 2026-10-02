@@ -481,6 +481,8 @@
   "quiz.empty.chooseCharacter": "검토할 글자를 선택하세요.",
   "quiz.findCategory.aria": "카테고리 찾기",
   "quiz.findCategory.placeholder": "독음 찾기…",
+  "quiz.forms.label": "{char}의 자형",
+  "quiz.forms.hint": "1–0을 누르면 선택한 크롭을 해당 자형으로 표시합니다. Shift+클릭으로 범위를 선택합니다.",
   "quiz.focus.changeSelection": "선택 변경",
   "quiz.focus.chooseProblem": "문제 선택",
   "quiz.focus.cropNumber": "크롭 {number}",

@@ -480,6 +480,8 @@
   "quiz.empty.chooseCharacter": "校閱スベキ字ヲ選ブベシ",
   "quiz.findCategory.aria": "部類ヲ索ム",
   "quiz.findCategory.placeholder": "讀ヲ索ム…",
+  "quiz.forms.label": "{char}ノ字體",
+  "quiz.forms.hint": "1–0ヲ以テ選ビタル截片ヲ其ノ字體トス　Shiftニテ範圍ヲ取ル",
   "quiz.focus.changeSelection": "選擇ヲ改ム",
   "quiz.focus.chooseProblem": "誤ヲ選ブベシ",
   "quiz.focus.cropNumber": "截片第{number}",

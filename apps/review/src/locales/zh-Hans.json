@@ -481,6 +481,8 @@
   "quiz.empty.chooseCharacter": "选择一个字进行审阅。",
   "quiz.findCategory.aria": "查找分类",
   "quiz.findCategory.placeholder": "查找读音…",
+  "quiz.forms.label": "{char}的字样",
+  "quiz.forms.hint": "按1–0将已选裁切标为该字样。Shift+点击选范围。",
   "quiz.focus.changeSelection": "更改选择",
   "quiz.focus.chooseProblem": "选择问题",
   "quiz.focus.cropNumber": "裁切{number}",

@@ -506,6 +506,8 @@
   "quiz.empty.chooseCharacter": "Choose a character to review.",
   "quiz.findCategory.aria": "Find a reading",
   "quiz.findCategory.placeholder": "Find a reading…",
+  "quiz.forms.label": "Forms of {char}",
+  "quiz.forms.hint": "1–0 marks the selected crops as that form. Shift-click selects a range.",
   "quiz.focus.changeSelection": "Change selection",
   "quiz.focus.chooseProblem": "Choose the problem",
   "quiz.focus.cropNumber": "Crop {number}",

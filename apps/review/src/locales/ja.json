@@ -477,6 +477,8 @@
   "quiz.empty.chooseCharacter": "レビューする文字を選択してください。",
   "quiz.findCategory.aria": "カテゴリを検索",
   "quiz.findCategory.placeholder": "読みを検索…",
+  "quiz.forms.label": "{char}の字体",
+  "quiz.forms.hint": "1–0で選択した切り出しをその字体にします。Shift+クリックで範囲選択。",
   "quiz.focus.changeSelection": "選択を変更",
   "quiz.focus.chooseProblem": "問題を選択",
   "quiz.focus.cropNumber": "切り出し{number}",

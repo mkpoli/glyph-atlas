@@ -483,6 +483,8 @@
   "quiz.empty.chooseCharacter": "擇所校字",
   "quiz.findCategory.aria": "尋類",
   "quiz.findCategory.placeholder": "尋讀…",
+  "quiz.forms.label": "{char}之體",
+  "quiz.forms.hint": "1–0標所擇截爲其體，Shift取區間",
   "quiz.focus.changeSelection": "易所擇",
   "quiz.focus.chooseProblem": "擇誤",
   "quiz.focus.cropNumber": "第{number}截",

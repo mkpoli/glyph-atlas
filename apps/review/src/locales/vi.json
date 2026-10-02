@@ -467,6 +467,8 @@
   "quiz.empty.chooseCharacter": "Hãy chọn một chữ để duyệt.",
   "quiz.findCategory.aria": "Tìm âm đọc",
   "quiz.findCategory.placeholder": "Tìm âm đọc…",
+  "quiz.forms.label": "Tự dạng của {char}",
+  "quiz.forms.hint": "Nhấn 1–0 để đánh dấu các vùng cắt đã chọn là tự dạng đó. Shift+click để chọn khoảng.",
   "quiz.focus.changeSelection": "Đổi lựa chọn",
   "quiz.focus.chooseProblem": "Chọn vấn đề",
   "quiz.focus.cropNumber": "Vùng cắt {number}",
