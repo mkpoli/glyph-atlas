@@ -520,7 +520,7 @@ def _blocks(*spans: tuple[int, int], height: int = 100) -> Image.Image:
 def test_reading_division_cuts_the_widest_blank_gap_without_a_model():
     # A narrow gap inside the first character (like the two strokes of ニ) and a wide one after it.
     crop = _blocks((5, 20), (24, 40), (60, 94))
-    proposal = sp.divide_by_reading(crop, "ニシ", ligature=lambda _: sp.LigatureCheck())
+    proposal = sp.divide_by_text(crop, "ニシ", ligature=lambda _: sp.LigatureCheck())
     assert proposal.accepted and proposal.text == ["ニ", "シ"]
     assert 41 <= proposal.cuts[0] <= 59
     assert [box.h for box in proposal.boxes] == [proposal.cuts[0], 100 - proposal.cuts[0]]
@@ -528,7 +528,7 @@ def test_reading_division_cuts_the_widest_blank_gap_without_a_model():
 
 def test_reading_division_refuses_a_child_with_only_a_speck_of_ink():
     crop = _blocks((5, 60), (84, 84))
-    proposal = sp.divide_by_reading(crop, "ニシ", ligature=lambda _: sp.LigatureCheck())
+    proposal = sp.divide_by_text(crop, "ニシ", ligature=lambda _: sp.LigatureCheck())
     assert not proposal.accepted
     assert proposal.reason == "every division into 2 leaves a child with less than 0.03 of the ink"
 

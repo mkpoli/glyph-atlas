@@ -10,7 +10,7 @@ serves the page images of the local cache by checksum.
     GET  /images/{sha256}               a page image from `cache/images`
     GET  /pages/{page_id}/lines         the lines of a page, in reading order
     GET  /lines/{line_id}/units         the active units of a line, with their revisions
-    GET  /units/{unit_id}/candidates    the code points the unit's reading may have been written
+    GET  /units/{unit_id}/candidates    the code points the unit's kana may have been written
                                         with, with 字母, NINJAL reference glyphs and 字母 classifier
                                         scores
     GET  /queue                         the lines to review, by strategy, document and page
@@ -547,9 +547,9 @@ def create_app(directory: Path, *, source: Path | str | None = None,
 
     @app.get("/units/{unit_id}/candidates")
     def unit_candidates(unit_id: str) -> dict[str, Any]:
-        """The code points a unit's reading may have been written with.
+        """The code points a unit's kana may have been written with.
 
-        The ordinary kana of the reading comes first, then every hentaigana with that 音価 from
+        The ordinary kana comes first, then every hentaigana with that 音価 from
         `data/vocab/mj-hentaigana.tsv`, each with its 字母, its NINJAL reference glyph URL where the
         table has one, and the 字母 classifier score where the unit carries one.
         """
@@ -686,17 +686,20 @@ def cached_image(sha256: str) -> Path | None:
 
 
 def candidates_for(unit: Unit) -> dict[str, Any]:
-    """The candidates of a unit's reading, with 字母, grapheme, reference glyphs and scores.
+    """The characters that share a unit's kana, with 字母, grapheme, reference glyphs and scores.
 
-    The row names the unit's own character first, when the table holds it, so that a reviewer sees
-    the letter the record carries even where no reading reaches it. The list is `refs.forms`, which
-    is every character written for the reading: the ordinary kana, every hentaigana of the 音価 and
-    the historic kana of Unicode 18.0. Each candidate carries what the character layer says about
+    The kana is the one the unit's written character stands for, or else its transcription. The row
+    names the unit's own character first, when the table holds it, so that a reviewer sees the letter
+    the record carries even where no kana reaches it. The list is `refs.forms`, which is every
+    character written for the kana: the ordinary kana, every hentaigana of the 音価 and the historic
+    kana of Unicode 18.0. Each candidate carries what the character layer says about
     it, which is where the 字母 and the modern kana come from; a candidate the layer does not hold
     keeps only its code point.
     """
-    reading = unit.reading or unit.text_source or ""
-    code_points = refs.forms(reading)
+    from .atlas import identity_text, kana_of
+
+    kana = (kana_of(identity_text(unit.unicode)) if unit.unicode else None) or unit.text_source or ""
+    code_points = refs.forms(kana)
     scored = {candidate.unicode: candidate for candidate in unit.candidates}
     extras = [candidate.unicode for candidate in unit.candidates if candidate.unicode not in code_points]
     if unit.unicode and unit.unicode not in code_points and unit.unicode not in extras:
@@ -734,7 +737,7 @@ def candidates_for(unit: Unit) -> dict[str, Any]:
         entries.append(entry)
     return {
         "unit_id": unit.id,
-        "reading": reading or None,
+        "kana": kana or None,
         "unicode": unit.unicode,
         "jibo": refs.jibo_of_unit(unit.unicode),
         "grapheme": refs.grapheme(unit.unicode) if unit.unicode else None,

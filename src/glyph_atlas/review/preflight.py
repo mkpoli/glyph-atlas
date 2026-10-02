@@ -510,7 +510,7 @@ def _human_targets(store: Any) -> set[str]:
 
 def _identity(unit: Unit) -> tuple[str, str | None]:
     """The label a reviewer would see and the written identity, both for the report alone."""
-    return atlas.label(unit), atlas.written_identity(unit) or None
+    return atlas.written_identity(unit) or atlas.transcription(unit), atlas.written_identity(unit) or None
 
 
 def _readable_single(unit: Unit) -> bool:

@@ -8,7 +8,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from glyph_atlas import images
-from glyph_atlas.review.atlas import image_size, label, single_character, written_identity
+from glyph_atlas.review.atlas import image_size, single_character, transcription, written_identity
 from glyph_atlas.review.media import MediaCache
 from glyph_atlas.review.server import cached_image
 from glyph_atlas.review.store import Store
@@ -36,7 +36,7 @@ def main():
     count = skipped = 0
     for unit in units:
         if (not unit.active or unit.granularity != "char"
-                or not (single_character(label(unit)) or single_character(written_identity(unit)))):
+                or not (single_character(transcription(unit)) or single_character(written_identity(unit)))):
             continue
         page, page_path = page_source(unit.page_id)
         path = cached_image(unit.crop_sha256) if unit.crop_sha256 else None

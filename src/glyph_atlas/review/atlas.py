@@ -38,8 +38,9 @@ _IMAGE_SLOTS = threading.BoundedSemaphore(2)
 CONFIRMED = {ReviewState.REVIEWED, ReviewState.DOUBLE_REVIEWED, ReviewState.ADJUDICATED}
 
 
-def label(unit: Unit) -> str:
-    return unicodedata.normalize("NFC", unit.reading or unit.text_source or "").strip()
+def transcription(unit: Unit) -> str:
+    """What the transcriber wrote for a unit, in NFC."""
+    return unicodedata.normalize("NFC", unit.text_source or "").strip()
 
 
 def review_state(decision: str | None) -> str:
@@ -183,7 +184,8 @@ def review_priority(unit: Unit) -> int:
 
 
 def character_group(unit: Unit) -> str:
-    char = label(unit)[0] if label(unit) else ""
+    shown = written_identity(unit) or transcription(unit)
+    char = shown[0] if shown else ""
     name = unicodedata.name(char, "") if char else ""
     if name.startswith(("HIRAGANA", "KATAKANA", "HENTAIGANA")):
         return "kana"
@@ -301,15 +303,14 @@ def search_term(q: str) -> str:
 def written_identity(unit: Unit) -> str:
     """The character a unit is recorded as having been written with, as characters, in NFC.
 
-    `Unit.unicode` is the written identity and is the field a search for one character has to reach:
-    a reading says how a character is pronounced, and several characters share one. A unit that
-    carries no `unicode` falls back to its own character, which is a base and its marks when the
-    source wrote a voiced kana as two code points.
+    `Unit.unicode` is the written identity and is the field a search for one character has to reach.
+    A unit that carries no `unicode` falls back to its transcription when that is one character, which
+    is a base and its marks when the source wrote a voiced kana as two code points.
     """
     recorded = (unit.unicode or "").strip()
     if recorded:
         return identity_text(recorded)
-    return identity_text(one_character(label(unit)))
+    return identity_text(one_character(transcription(unit)))
 
 
 def one_character(text: str) -> str:
@@ -382,7 +383,7 @@ def script_of_identity(text: str) -> str:
 def is_space_identity(text: str) -> bool:
     """Whether a written identity is only whitespace, which has no glyph to review or to find.
 
-    The corpus records 1,220 U+3000 and 5 U+0020 units with no reading. They are real records and
+    The corpus records 1,220 U+3000 and 5 U+0020 units. They are real records and
     are kept, but they are not reviewable characters: their crops all show the same blank paper and a
     search for a space is a search for nothing.
     """
@@ -393,8 +394,8 @@ def matches(records: list[tuple[Unit, int]], q: str) -> list[tuple[Unit, int]]:
     """The units recorded as having been written with the character the query names.
 
     The match is exact and on the written identity, which is what makes the answer trustworthy: a
-    search for one character does not silently widen to every form that shares its reading or its
-    字母. `refs.search` answers a different question — what the character layer knows about a reading
+    search for one character does not silently widen to every form that shares its kana or its
+    字母. `refs.search` answers a different question — what the character layer knows about a kana
     — and is deliberately not used here.
     """
     wanted = search_term(q)
@@ -766,18 +767,15 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
     def shown(unit: Unit) -> str:
         """What a row is labelled with: the character the record was written with.
 
-        The written character is what the collection is made of and what the find box matches, so a
-        row labelled with its reading would answer a different question than the one that found it:
-        340 units of this corpus are written in hiragana and read in katakana, so a search for ば
-        would list rows labelled バ. A record that names no character falls back to its reading, and
-        the reading itself is always on the record.
+        The written character is what the collection is made of and what the find box matches. A
+        record that names no character falls back to its transcription.
         """
         written = written_identity(unit)
-        return written if single_character(written) else label(unit)
+        return written if single_character(written) else transcription(unit)
 
     def eligible(unit: Unit) -> bool:
-        readable = single_character(label(unit)) or (
-            not label(unit) and single_character(written_identity(unit))
+        readable = single_character(transcription(unit)) or (
+            not transcription(unit) and single_character(written_identity(unit))
             and not is_space_identity(written_identity(unit))
         )
         return unit.active and unit.granularity == "char" and bool(readable) and bool(
@@ -951,7 +949,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 if states[u.id] == "pending" and at is not None and at > rested:
                     states[u.id] = "skipped"
         categories: dict[str, Counter] = {}
-        # The books the crops come from, counted like the readings: `document` picks one.
+        # The books the crops come from, counted like the characters: `document` picks one.
         shelves: dict[str, Counter] = {}
         for unit, _ in records:
             groups = [categories.setdefault(shown(unit), Counter())]
@@ -1328,7 +1326,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 refused.append({"id": crop.id, "reason": "changed"})
                 continue
             state = review_state(unit.review)
-            same = identity == stored_identity(unit) or (not unit.unicode and identity_text(identity) == label(unit))
+            same = identity == stored_identity(unit) or (not unit.unicode and identity_text(identity) == transcription(unit))
             if same and state == "checked":
                 unchanged.append(crop.id)
             elif state == "checked":

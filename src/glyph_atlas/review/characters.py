@@ -57,11 +57,11 @@ from . import corpus_source, status
 from .atlas import (
     canonical_identity,
     identity_text,
-    label,
     review_state,
     script_of_identity,
     single_character,
     stored_identity,
+    transcription,
     written_identity,
 )
 from .request_cache import file_stamp, lookup_scope, memoize
@@ -168,7 +168,7 @@ def _item(store: Store, unit: Unit, revision: int) -> dict[str, Any]:
     digest = _source_digest(store, unit)
     return {
         "id": unit.id,
-        "label": label(unit),
+        "label": written_identity(unit) or transcription(unit),
         "script": str(unit.script),
         "jibo": refs.jibo_of_unit(unit.unicode),
         "revision": revision,
@@ -347,7 +347,7 @@ class Layers:
         state = self.state(unit.id)
         return {
             "id": unit.id,
-            "label": written_identity(unit) or label(unit) or form,
+            "label": written_identity(unit) or transcription(unit) or form,
             "written_character": written_identity(unit) or None,
             "code_point": form,
             "grapheme": _grapheme_head(refs.character(form), self.per_character) if refs.character(form) else None,
