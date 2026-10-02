@@ -534,7 +534,7 @@
   "quiz.reviewRemaining": "校其餘",
   "quiz.reviewSelected": "校所擇（{count}）",
   "quiz.roundChanged": "此一過已改，所擇猶存。復載以續",
-  "quiz.roundNotSaved": "此一過未得存，所擇俱在。可再試",
+  "quiz.roundNotSaved": "此一過未得錄，所擇猶存",
   "quiz.roundSaved.one": "已存「{reading}」截{count}",
   "quiz.roundSaved.other": "已存「{reading}」截{count}",
   "quiz.saveIssues": "錄誤",
