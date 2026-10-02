@@ -1,8 +1,10 @@
 <script>
   import { onMount } from 'svelte'
+  import { goto } from '$app/navigation'
+  import { page } from '$app/state'
   import { history as fetchHistory, request, stored, remember } from '../lib/client.js'
   import { issues } from '../lib/issues.js'
-  import { t, formatDateTime } from '../lib/i18n.svelte.js'
+  import { t, formatDateTime, localize } from '../lib/i18n.svelte.js'
   let { inspect } = $props()
   let items = $state([]), loading = $state(true), loadingMore = $state(false), error = $state('')
   let cursor = $state(null), hasMore = $state(true)
@@ -18,6 +20,7 @@
     return { destroy() { observer.disconnect(); nearEnd = false } }
   }
   async function load(append = false) {
+    shownFor = userFilter
     const id = ++requestId
     if (append) loadingMore = true
     else { loading = true; items = []; cursor = null; hasMore = true }
@@ -25,7 +28,7 @@
     try {
       const result = await fetchHistory({
         limit: 40, before: append ? cursor : undefined,
-        mine: onlyMine || undefined, user: new URL(location.href).searchParams.get('user') || undefined, label: characterFilter.trim() || undefined,
+        mine: (onlyMine && !userFilter) || undefined, user: userFilter || undefined, label: characterFilter.trim() || undefined,
       })
       if (closed || id !== requestId) return
       items = append ? [...items, ...result.items] : result.items
@@ -33,6 +36,13 @@
     } catch (e) { if (!closed && id === requestId) error = e.message }
     finally { if (!closed && id === requestId) { loading = false; loadingMore = false } }
   }
+  // `?user=` narrows the history to one reviewer, as the admin page links to it; it takes the place of
+  // "Only mine" while it is set.
+  const userFilter = $derived(page.url.searchParams.get('user') ?? '')
+  let shownFor = null
+  $effect(() => { const wanted = userFilter; if (shownFor !== null && wanted !== shownFor) load() })
+  const clearUser = () => goto(localize('/history'), { replaceState: true, noScroll: true, keepFocus: true })
+  const initial = name => [...(name || '?')][0].toUpperCase()
   function toggleMine() { onlyMine = !onlyMine; remember('atlas.history.onlyMine', onlyMine); load() }
   function seekCharacter(value) {
     characterFilter = value
@@ -70,16 +80,31 @@
   onMount(() => { load(); return () => { closed = true; clearTimeout(filterTimer) } })
 </script>
 
+{#snippet reviewer(item)}
+  {@const who = item.reviewer ?? { name: item.actor, user: null, image: null, mine: false }}
+  <span class="history-actor" class:mine={who.mine} class:unclaimed={!who.user} title={who.name}>
+    <span class="avatar history-avatar" aria-hidden="true">{#if who.image}<img src={who.image} alt="" loading="lazy" referrerpolicy="no-referrer" />{:else}{initial(who.name)}{/if}</span>
+    <span class="history-name">{who.name}{#if who.mine}<small>{t('history.reviewer.you')}</small>{/if}</span>
+  </span>
+{/snippet}
+
 <section class="explore history">
   <h1 class="visually-hidden">{t('history.heading')}</h1>
   <div class="collection-toolbar">
     <div class="filter-tabs" aria-label={t('history.onlyMine.aria')}>
-      <button class:active={onlyMine} aria-pressed={onlyMine} onclick={toggleMine}>{t('history.onlyMine')}</button>
+      <button class:active={onlyMine && !userFilter} aria-pressed={onlyMine && !userFilter} disabled={Boolean(userFilter)} onclick={toggleMine}>{t('history.onlyMine')}</button>
     </div>
     <input class="history-character-filter" type="text" lang="ja" value={characterFilter}
            oninput={e => seekCharacter(e.currentTarget.value)}
            placeholder={t('history.characterFilter.placeholder')} aria-label={t('history.characterFilter.aria')} />
   </div>
+  {#if userFilter}
+    <div class="history-by-user">
+      {#if items[0]?.reviewer?.user === userFilter}{@render reviewer(items[0])}{/if}
+      <span>{t('history.byUser', { name: items.find(item => item.reviewer?.user === userFilter)?.reviewer.name ?? (loading ? '…' : userFilter.slice(0, 8)) })}</span>
+      <a class="quiet-link" href={localize('/history')} onclick={event => { event.preventDefault(); clearUser() }}>{t('history.byUser.clear')}</a>
+    </div>
+  {/if}
   {#if error}<div class="error-message" role="alert">{error}<button onclick={() => load()}>{t('common.retry')}</button></div>{/if}
   {#if loading && !items.length}
     <p class="find-count" role="status">{t('history.loading')}</p>
@@ -93,7 +118,7 @@
           <li class="history-batch">
             <div class="history-row">
               <span class="history-time">{when(item.at)}</span>
-              <span class="history-actor">{item.reviewer?.name ?? item.actor}</span>
+              {@render reviewer(item)}
               <span class="history-label" lang="ja">{item.character ?? item.label ?? t('history.noLabel')}</span>
               <span class="history-decision">{t('history.batch', { count: row.items.length, character: item.character ?? item.label ?? '' })}
                 <span class="history-batch-labels" lang="ja">{row.items.map(entry => entry.label).filter(Boolean).slice(0, 12).join(' ')}</span></span>
@@ -106,7 +131,7 @@
               <button class="history-row" class:undo={item.kind === 'undo'} onclick={() => inspect(item.target)}
                       aria-label={t('history.row.inspect', { label: item.label ?? item.target })}>
                 <span class="history-time">{when(item.at)}</span>
-                <span class="history-actor">{item.reviewer?.name ?? item.actor}</span>
+                {@render reviewer(item)}
                 <span class="history-label" lang="ja">{item.label ?? t('history.noLabel')}</span>
                 <span class="history-decision">{decisionText(item)}</span>
               </button>
@@ -136,12 +161,23 @@
   .history-batch-labels { margin-left: 10px; color: var(--muted); }
   .history-batch .quiet-link { flex: 0 0 auto; }
   .history-time { flex: 0 0 150px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
-  .history-actor { flex: 0 0 130px; color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .history-actor { flex: 0 0 150px; display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--ink-soft); font-size: 12px; }
+  .history-actor.unclaimed { color: var(--muted); }
+  .history-actor.unclaimed .history-avatar { background: var(--surface-badge); color: var(--muted); }
+  .history-actor.mine .history-avatar { box-shadow: 0 0 0 2px var(--accent); }
+  .history-avatar { width: 22px; height: 22px; font-size: 10px; }
+  .history-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .history-name small { margin-left: 5px; font-size: 10px; color: var(--accent); }
+  .history-by-user { display: flex; align-items: center; gap: 12px; padding: 12px 6px; font-size: 13px; }
+  .history-by-user .history-actor { flex: 0 0 auto; }
+  .history-by-user .history-name { display: none; }
   .history-label { flex: 0 0 40px; font-size: 20px; text-align: center; }
   .history-decision { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .load-more-row { display: flex; justify-content: center; padding: 22px 0; }
   @media (max-width: 700px) {
     .history-time { flex-basis: 90px; }
-    .history-actor { display: none; }
+    .history-row { gap: 10px; }
+    .history-actor { flex-basis: 22px; }
+    .history-actor .history-name { display: none; }
   }
 </style>
