@@ -57,12 +57,12 @@ records with coordinates and receives no crops.
 
 ### Missing information
 
-Fields are filled independently, so partial records are expected. Units carrying a
-`unicode` value, a 字母 resolved from the character layer and a `variants` entry:
-{{counts.units_by_label_coverage}}. A unit whose form is identified and has no code point keeps
-`unicode` null and a local shape id; the 字母 follows from the code point, so it is present exactly
-when `unicode` names a kana the character layer has one for. Documents by production type, genre and
-dating coverage: {{counts.documents_by_metadata}}.
+Fields are filled independently, so partial records are expected. Units carrying a `unicode` value,
+a 字母 resolved from the character layer and a `variants` entry: {{counts.units_by_label_coverage}}. A
+unit whose form is identified and has no code point keeps `unicode` null and a local shape id; the
+字母 follows from the code point, so it is present exactly when `unicode` names a kana the character
+layer has one for. Documents by production type, genre and dating coverage:
+{{counts.documents_by_metadata}}.
 
 ### Splits
 
@@ -130,11 +130,11 @@ matching and display.
 ### Labelling
 
 The code point starts from the transcription. For a kana unit the classifier scores the code points
-of the transcribed kana and the 字母 then follows from the chosen code point. Kanji are recorded as written, so 旧字
-and 新字 stay apart in the classification layer. Voicing marks are recorded as present or absent with
-their own rectangle, iteration marks link to the units they repeat, and units joined by continuous
-strokes carry a 連綿 group id. A label is machine-assigned (`method=detect-align`) or set by a person
-(`method=manual`). Units by method: {{counts.units_by_method}}.
+of the transcribed kana and the 字母 then follows from the chosen code point. Kanji are recorded as
+written, so 旧字 and 新字 stay apart in the classification layer. Voicing marks are recorded as present
+or absent with their own rectangle, iteration marks link to the units they repeat, and units joined
+by continuous strokes carry a 連綿 group id. A label is machine-assigned (`method=detect-align`) or
+set by a person (`method=manual`). Units by method: {{counts.units_by_method}}.
 
 ### Derived columns
 

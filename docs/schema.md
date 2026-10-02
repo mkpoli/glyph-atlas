@@ -23,8 +23,8 @@ The kanji 子 remains a separate character and family, while `Character.jibo` re
 its derivation relation to 𛄧. A shared 字母 alone does not establish a family.
 Small kana and ligatures retain distinct families.
 
-A unit's `unicode` identifies the written character. `variants` can identify an MJ, IVS, GlyphWiki or local form. Grouping a character
-never rewrites these fields or the source transcription.
+A unit's `unicode` identifies the written character. `variants` can identify an MJ, IVS, GlyphWiki
+or local form. Grouping a character never rewrites these fields or the source transcription.
 
 `/layers/graphemes/{code_point}` resolves either member to its family and lists
 `characters`. Each character can be selected for exact occurrences; an explicit

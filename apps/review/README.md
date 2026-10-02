@@ -3,7 +3,7 @@
 A character atlas over the local Atlas review journal.
 
 - **Explore** shows shuffled character crops, with character filters and kana/kanji groups.
-- **Quick review** groups up to twelve crops by their grapheme. Select mismatches, choose an illustrated error type, then save. **Select all** handles rounds with widespread errors.
+- **Quick review** deals crops by grapheme, 48 to a round and 24 more on request. Select mismatches, choose an illustrated error type, then save. **Select all** handles rounds with widespread errors.
 - **Flagged** collects unresolved human decisions. The character reviewer advances through the visible collection after each save, preserving its order and scroll position.
 - **Pages** lists the page photos of the dataset and shows each one with its boxes. It appears only on the local review service.
 
@@ -73,16 +73,17 @@ Images that fail to load are excluded. Selections without an error type cannot b
 **Skip** leaves a crop unjudged: too faint to read, or set aside for later. Nothing is written and
 the crop stays pending for a later round.
 
-OCR suggestions appear for wrong characters and joined characters. Selecting a suggestion is optional;
-**None of these** leaves the issue ready to save. Joined text is evidence for later segmentation, and
-it is typed only for joined characters.
+OCR suggestions appear for a wrong character or joined characters. Selecting a suggestion is optional;
+**None of these** leaves the issue ready to save. Typed text is accepted only for joined characters, as
+evidence for later segmentation.
 
 The keyboard positions are `Q W E R T Y A S D F G H`. Use `1`–`4` for the four error types,
 Enter to save, and Escape to clear the selection.
 
 Opening a crop from a gallery shows it in the inspector. Choose an error and **Save problem**, or use
 **Looks right**; saving closes the inspector and returns to the gallery, where the tile shows its
-verdict. The previous/next arrows and Skip move between crops without saving.
+verdict. The previous/next arrows and Skip move between crops without saving. Character input, crop
+adjustment and notes are under **Adjust character or crop**.
 
 Each round is one atomic journal transaction. A conflicting edit refuses the entire round and
 preserves the browser's choices. Optional single-character corrections are part of that transaction.

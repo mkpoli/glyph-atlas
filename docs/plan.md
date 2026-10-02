@@ -8,12 +8,13 @@ extracted characters, and human-reviewed forms. The resource survey below dates 
 ## 1. The dataset
 
 One record per graphic occurrence: in most cases one written character on a page image, and
-otherwise a standalone crop without page placement or a block holding several characters, with
-the granularity stated on the record. A record holds the rectangle on the full-size image, the transcriber's string, Unicode code points (hentaigana code points
-for kana forms that Unicode encodes), the 字母 of kana, a variant key for kanji written in a form
-other than the transcribed one, the line and the neighbours, and the document's production type,
-genre, register and date. Every record also carries the licence of its image and of its text, and
-how it was produced: imported from an existing dataset, aligned by machine, or reviewed by a person.
+otherwise a standalone crop without page placement or a block holding several characters, with the
+granularity stated on the record. A record holds the rectangle on the full-size image, the
+transcriber's string, Unicode code points (hentaigana code points for kana forms that Unicode
+encodes), the 字母 of kana, a variant key for kanji written in a form other than the transcribed one,
+the line and the neighbours, and the document's production type, genre, register and date. Every
+record also carries the licence of its image and of its text, and how it was produced: imported from
+an existing dataset, aligned by machine, or reviewed by a person.
 
 Images are addressed by IIIF region URL and checksum. Crops are materialised for releases only where
 the image licence allows redistribution; for other images the release carries the coordinates and
@@ -131,15 +132,15 @@ Three layers, each fillable on its own:
 3. Normalisation: modern kana, 新字, voicing supplied by an editor. Computed at export from the
    layers above and a named policy; never stored on the record.
 
-Kana. The code point starts from the transcription, which is evidence and not the written form:
-a transcriber may have written い for a form that is ゐ on the page, so the candidate set includes
-the historical spellings that the source's normalisation maps onto the transcribed kana. Unicode's names list and the MJ table give the code points that share that
-kana (か has twelve, KA-KE included). A classifier and, where reviewed, a person choose among them from the
-image, and the 字母 follows from the code point. For the 52 (音価, 字母) pairs that Unicode split across
-several code points, the record carries the code point once the form is identified and a local
-shape id where a finer distinction is needed; a shape Unicode never encoded gets `unicode` null,
-its 字母 where known, and a local shape id. Katakana keeps its own script value; a 字母 may still be
-recorded, as for the 子-shaped ネ.
+Kana. The code point starts from the transcription, which is only evidence: a transcriber may have
+written い for a form that is ゐ on the page, so the candidate set includes the historical spellings
+that the source's normalisation maps onto the transcribed kana. Unicode's names list and the MJ
+table give the code points that share that kana (か has twelve, KA-KE included). A classifier and,
+where reviewed, a person choose among them from the image, and the 字母 follows from the code point.
+For the 52 (音価, 字母) pairs that Unicode split across several code points, the record carries the code
+point once the form is identified and a local shape id where a finer distinction is needed; a shape
+Unicode never encoded gets `unicode` null, its 字母 where known, and a local shape id. Katakana keeps
+its own script value; a 字母 may still be recorded, as for the 子-shaped ネ.
 
 Kanji. The transcriber's string stays in the source layer (国 when the guidelines asked for 当用漢字).
 The classification layer records the character as written: `unicode` U+570B when the page shows 國,
