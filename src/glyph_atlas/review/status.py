@@ -7,7 +7,7 @@ each is a plausible shortcut.
   one an `atlas review apply` wrote back, has no local event at all, so it was reported as untouched
   machine output.
 * It treated every event on a decision field as a person deciding. A metadata write or a crop
-  adjustment is not a reading, and an event with no actor is not evidence that anybody looked.
+  adjustment verifies nothing, and an event with no actor is not evidence that anybody looked.
 * It accumulated the fields ever touched, so an undo could not take `checked` away: the history kept
   saying a person had been there even after the record was back to what the pipeline wrote.
 
@@ -32,7 +32,6 @@ from typing import Any, Literal
 DECISION_FIELDS = frozenset(
     {
         "box",
-        "reading",
         "text_source",
         "unicode",
         "kind",
@@ -64,12 +63,11 @@ HUMAN_ROLES = frozenset({"transcriber", "reviewer", "adjudicator"})
 #: The review states a person can choose. The value the pipeline writes is not one of them.
 HUMAN_REVIEW_STATES = frozenset({"reviewed", "double-reviewed", "adjudicated", "disputed"})
 
-#: Fields that verify a reading, a boundary or an identity, as opposed to tidying the record.
-#: Fields that verify a reading, a boundary or an identity, as opposed to tidying the record. The
+#: Fields that verify a transcription, a boundary or an identity, as opposed to tidying the record. The
 #: 字母 is not one: it is metadata on the character a unit names, so a reviewer changes it by
 #: changing `unicode`, and the character layer states it.
-VERIFYING_FIELDS = frozenset({"reading", "unicode", "text_source", "classification", "script", "voicing"})
-#: Fields that describe the crop or the bookkeeping. A change to one is not a reading.
+VERIFYING_FIELDS = frozenset({"unicode", "text_source", "classification", "script", "voicing"})
+#: Fields that describe the crop or the bookkeeping. A change to one verifies nothing.
 ADJUSTING_FIELDS = frozenset(
     {"box", "crop", "crop_sha256", "meta", "group_id", "granularity", "antecedent_ids",
      "split_into", "merged_into", "active"}
@@ -94,14 +92,14 @@ def _kind_of(field_name: str, value: Any, initial: Any = None, *, seen: bool = F
     """What a value written into `field_name` says, or None when it says nothing about the record.
 
     A review state is the clearest case: `reviewed`, `adjudicated` and `disputed` are choices a person
-    makes, while `machine` and `rejected` are what the pipeline concluded. A reading field verifies
-    when it carries a value and undoes when it is cleared, which is how removing a reading takes a
+    makes, while `machine` and `rejected` are what the pipeline concluded. A verifying field verifies
+    when it carries a value and undoes when it is cleared, which is how removing an identity takes a
     verification away. A crop or a metadata write adjusts the record without claiming anything was
     read, and a change to something outside both sets says nothing at all.
 
     `initial` is the value the record started with. Writing that value back is an undo rather than a
-    decision, which is the case that decides whether the dashboard can be trusted after one: undoing a
-    reading the pipeline wrote must restore the pipeline's provenance, not claim a person confirmed it.
+    decision, which is the case that decides whether the dashboard can be trusted after one: undoing an
+    identity the pipeline wrote must restore the pipeline's provenance, not claim a person confirmed it.
     `seen` says whether the field has had a human decision already, so the first write of a value is a
     decision and only a later return to the baseline is an undo.
     """
@@ -209,7 +207,7 @@ class UnitReview:
     def checked(self) -> bool:
         """A decision is what the record currently says.
 
-        Either a person's reading or identity stands, or the review state itself is one a person
+        Either a person's identity or transcription stands, or the review state itself is one a person
         chose. The state has to count on its own: a record can be marked reviewed with no field-level
         detail, which is exactly what an import or an apply writes.
         """
@@ -275,7 +273,7 @@ def unit_reviews(
     `units` are the records as they now stand and `events` the journal rows, oldest first, each with
     `target_id`, `field`, `new` and an optional `actor`. `exported` names units whose present state was
     written by an apply rather than imported, which is recorded in the standing's author so a caller
-    can tell the two apart. A unit whose journal ends with a person's reading, or with a review state
+    can tell the two apart. A unit whose journal ends with a person's identity, or with a review state
     a person chose, is checked; one whose last word on every decision field is machine output or a
     reverted value is not, whether or not a person was there earlier.
     """
@@ -312,11 +310,11 @@ def unit_reviews(
             kinds=["verified" if review in HUMAN_REVIEW_STATES else "state"],
         )
         # A field's value is a baseline, not evidence. The detector put a box there and the
-        # classifier put a reading there; neither is a person confirming anything, so these fields
+        # classifier put a code point there; neither is a person confirming anything, so these fields
         # start with no decision recorded. Only an explicit review state the record already carries
         # is editorial standing, and only a journal event can make a field a decision.
         opened = earliest.get(unit.id, {})
-        for name in ("reading", "unicode", "text_source", "box", "classification"):
+        for name in ("unicode", "text_source", "box", "classification"):
             if not hasattr(unit, name):
                 continue
             value = _value_of(unit, name)
@@ -340,7 +338,7 @@ def unit_reviews(
         seen = bool(before.kinds) if before else False
         kind = _kind_of(field_name, event.new, record.baseline.get(field_name), seen=seen)
         if kind is None:
-            # Clearing a reading or an identity is how a decision is taken back, so an empty value on
+            # Clearing an identity or a transcription is how a decision is taken back, so an empty value on
             # a verifying field is an undo rather than an event with nothing to say. Any other field
             # an event writes nothing into is not a decision at all.
             if field_name in VERIFYING_FIELDS and event.new in (None, "", [], {}):
