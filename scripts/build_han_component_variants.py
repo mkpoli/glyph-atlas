@@ -170,7 +170,8 @@ def main(argv: list[str] | None = None) -> int:
     pair_distribution = Counter(len(item.pairs) for item in found.values())
     print("attesting pairs each (first eight):",
           "  ".join(f"{count}×{pair_distribution[count]}" for count in sorted(pair_distribution)[:8]))
-    shares = Counter(min(int(row[4] / row[3] * 10), 9) for row in table)
+    # Tenths, with exactly 1.0 a bin of its own; the small epsilon keeps 3/10 in the 0.3 bin.
+    shares = Counter(min(int(row[4] / row[3] * 10 + 1e-9), 10) for row in table)
     print("agreement of the kept, by tenth:", "  ".join(f"{k / 10:.1f}×{shares[k]}" for k in sorted(shares)))
     by_key = {(row[0], row[1]): row for row in table}
     for pair in (("睘", "𦊷"), ("厶", "口"), ("𧈧", "虽"), ("口", "氵")):
