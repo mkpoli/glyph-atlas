@@ -26,8 +26,10 @@ export function createSession(account = { user: null, providers: [] }) {
       // Most crops in the collection are right, so a save closes the inspector unless the reader has
       // chosen to go through them in a row.
       state.advance = stored('atlas.advance', false) === true
-      // The page arrives knowing who is signed in. A browser that reviewed before accounts brings that
-      // work into its session.
+      // The page arrives knowing who is signed in. If it could not tell, the browser asks once, so a
+      // reader who is signed in is never taken for a new one.
+      if (!state.user) try { state.user = (await (await fetch('/api/account')).json()).user } catch { /* Signed out. */ }
+      // A browser that reviewed before accounts brings that work into its session.
       try { if (stored(LEGACY, null)) await session.ensure() } catch { /* The first write tries again. */ }
       state.ready = true
     },
