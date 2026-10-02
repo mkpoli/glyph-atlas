@@ -779,5 +779,7 @@
   "account.picture.upload": "Upload",
   "account.picture.saved": "Picture saved.",
   "account.picture.noGravatar": "Gravatar has no picture for this address.",
-  "account.picture.unreadable": "That image could not be read."
+  "account.picture.unreadable": "That image could not be read.",
+  "character.save.changes.close": "Save & close",
+  "character.save.changes.next": "Save & next"
 }

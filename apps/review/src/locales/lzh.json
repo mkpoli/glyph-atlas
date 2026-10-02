@@ -752,5 +752,7 @@
   "admin.submission.other.one": "呈截{count}",
   "admin.submission.other.other": "呈截{count}",
   "admin.unavailable.one": "{count}則未動：所改之截有已不在藏中者。",
-  "admin.unavailable.other": "{count}則未動：所改之截有已不在藏中者。"
+  "admin.unavailable.other": "{count}則未動：所改之截有已不在藏中者。",
+  "character.save.changes.close": "錄 · 闔",
+  "character.save.changes.next": "錄 · 次"
 }

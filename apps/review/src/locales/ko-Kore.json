@@ -734,5 +734,7 @@
   "admin.submission.other.one": "크롭 {count}個 提出",
   "admin.submission.other.other": "크롭 {count}個 提出",
   "admin.unavailable.one": "修正한 크롭이 所藏 資料에 더 以上 없어 {count}件은 그대로 두었습니다.",
-  "admin.unavailable.other": "修正한 크롭이 所藏 資料에 더 以上 없어 {count}件은 그대로 두었습니다."
+  "admin.unavailable.other": "修正한 크롭이 所藏 資料에 더 以上 없어 {count}件은 그대로 두었습니다.",
+  "character.save.changes.close": "貯藏 · 닫기",
+  "character.save.changes.next": "貯藏 · 다음"
 }

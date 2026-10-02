@@ -750,5 +750,7 @@
   "admin.unavailable.other": "{count}件はそのまま残されました。変更された切り出しがコレクション内に存在しません。",
   "history.reviewer.you": "自分",
   "history.byUser": "{name}のレビュー",
-  "history.byUser.clear": "全員を表示"
+  "history.byUser.clear": "全員を表示",
+  "character.save.changes.close": "保存・閉じる",
+  "character.save.changes.next": "保存・次へ"
 }

@@ -32,7 +32,8 @@
   $effect(() => {
     if (!section) return
     const observer = new IntersectionObserver(entries => { if (entries.some(entry => entry.isIntersecting)) { open = true; observer.disconnect() } },
-      { rootMargin: '0px 0px 400px 0px' })
+      // The dialog is what scrolls, so the margin is measured against it.
+      { root: section.closest('dialog'), rootMargin: '0px 0px 400px 0px' })
     observer.observe(section)
     return () => observer.disconnect()
   })

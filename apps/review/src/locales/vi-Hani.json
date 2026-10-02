@@ -736,5 +736,7 @@
   "admin.submission.other.one": "𧙷𠳚{count}塳割",
   "admin.submission.other.other": "𧙷𠳚{count}塳割",
   "admin.unavailable.one": "㐌𡨹原{count}𧙷𠳚：𠬠塳割特𢯢𥪝妬空羣𥪝部搜集。",
-  "admin.unavailable.other": "㐌𡨹原{count}𧙷𠳚：𠬠塳割特𢯢𥪝妬空羣𥪝部搜集。"
+  "admin.unavailable.other": "㐌𡨹原{count}𧙷𠳚：𠬠塳割特𢯢𥪝妬空羣𥪝部搜集。",
+  "character.save.changes.close": "留 · 㨂",
+  "character.save.changes.next": "留 · 接"
 }

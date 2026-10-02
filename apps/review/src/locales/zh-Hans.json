@@ -753,5 +753,7 @@
   "admin.submission.other.one": "提交{count}张裁切",
   "admin.submission.other.other": "提交{count}张裁切",
   "admin.unavailable.one": "{count}条记录未改动：其中有裁切已不在馆藏中。",
-  "admin.unavailable.other": "{count}条记录未改动：其中有裁切已不在馆藏中。"
+  "admin.unavailable.other": "{count}条记录未改动：其中有裁切已不在馆藏中。",
+  "character.save.changes.close": "保存 · 关闭",
+  "character.save.changes.next": "保存 · 下一个"
 }

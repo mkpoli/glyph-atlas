@@ -156,7 +156,9 @@
     // A replaced crop is saved as the crop on screen, not the retired one the link named.
     const target = data.id ?? id, current = generation
     if (matches) discardProposals()
-    const value = matches || !issue ? { verdict: 'match' } : { ...decision(issue), correction }
+    // A bad crop redrawn here is fixed by the save, so the crop is reviewed with its new box.
+    const fixed = issue === 'crop' && box
+    const value = matches || !issue || fixed ? { verdict: 'match' } : { ...decision(issue), correction }
     if (onVerdict) {
       // The round gets the identity in its own field: a character the reader chose is `character`.
       const identity = writtenDirty && written && written !== data.label ? { character: written } : {}
@@ -167,7 +169,7 @@
     busy = true; error = ''
     const correctingCharacter = writtenDirty && Boolean(written) && written !== data.label
     // `/atlas/characters` records reading issues; a character issue with no new character is one.
-    const resolvedIssue = matches || (issue === 'character' && !correctingCharacter) ? 'reading'
+    const resolvedIssue = matches || fixed || (issue === 'character' && !correctingCharacter) ? 'reading'
       : issue || (correctingCharacter ? 'character' : 'reading')
     // Two routes with two contracts: the character editor takes the review request shape, and the
     // layer route takes the layers it records and nothing else (it forbids extra fields). The payload
@@ -264,7 +266,7 @@
   <footer class="inspector-savebar">
     {#if position && !onVerdict}<AdvanceSwitch disabled={busy} />{/if}
     {#if imageFailed}<span role="alert">{t('character.image.unavailable')}</span>{/if}
-    <button class="primary save-character" bind:this={saveButton} disabled={busy || !data || !loaded || imageFailed} onclick={() => save()}>{busy ? t('common.saving') : issue ? (onVerdict ? t('character.save.useError') : t(advancing ? 'character.save.issue.next' : 'character.save.issue.close')) : (onVerdict ? t('character.save.backToSelection') : t(advancing ? 'character.save.looksRight.next' : 'character.save.looksRight.close'))} {#if onVerdict || advancing}<span>→</span>{:else if !issue}<span>✓</span>{/if}</button>
+    <button class="primary save-character" bind:this={saveButton} disabled={busy || !data || !loaded || imageFailed} onclick={() => save()}>{busy ? t('common.saving') : issue === 'crop' && box ? t(advancing ? 'character.save.changes.next' : 'character.save.changes.close') : issue ? (onVerdict ? t('character.save.useError') : t(advancing ? 'character.save.issue.next' : 'character.save.issue.close')) : (onVerdict ? t('character.save.backToSelection') : t(advancing ? 'character.save.looksRight.next' : 'character.save.looksRight.close'))} {#if onVerdict || advancing}<span>→</span>{:else if !issue}<span>✓</span>{/if}</button>
     {#if issue}<button class="quiet-link looks-right" disabled={busy || !loaded || imageFailed} onclick={() => { discardProposals(); save(true) }}>{onVerdict ? t('character.save.removeSelection') : t('character.save.itLooksRight')}</button>{/if}
     <button class="skip-character" disabled={busy} onclick={skip} title={skipHint()}>{t(advancing ? 'common.skip.next' : 'common.skip.close')}</button>
     <ContributionTerms />

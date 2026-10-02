@@ -753,5 +753,7 @@
   "admin.submission.other.one": "提交{count}個裁切",
   "admin.submission.other.other": "提交{count}個裁切",
   "admin.unavailable.one": "{count}筆紀錄未變更：其中有裁切已不在館藏中。",
-  "admin.unavailable.other": "{count}筆紀錄未變更：其中有裁切已不在館藏中。"
+  "admin.unavailable.other": "{count}筆紀錄未變更：其中有裁切已不在館藏中。",
+  "character.save.changes.close": "儲存 · 關閉",
+  "character.save.changes.next": "儲存 · 下一個"
 }

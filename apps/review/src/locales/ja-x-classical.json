@@ -750,5 +750,7 @@
   "admin.unavailable.other": "{count}件ハ殘セリ：改メタル截片ガ最早集成ニ無ケレバナリ。",
   "history.reviewer.you": "己",
   "history.byUser": "{name}ノ校閱",
-  "history.byUser.clear": "諸人ヲ示ス"
+  "history.byUser.clear": "諸人ヲ示ス",
+  "character.save.changes.close": "保存シテ閉ヅ",
+  "character.save.changes.next": "保存シテ次ヘ"
 }

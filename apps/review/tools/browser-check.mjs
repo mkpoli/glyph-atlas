@@ -96,9 +96,12 @@ try {
   const region = await browser.evaluate('(() => { const r=document.querySelector(".context-region").getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}; })()')
   await browser.drag({x:region.x+region.w*.25,y:region.y+region.h*.25},{x:region.x+region.w*.65,y:region.y+region.h*.72})
   assert(await browser.evaluate('document.querySelector(".crop-change") !== null'), 'dragging adjusts crop')
+  assert(await browser.evaluate('document.querySelector(".save-character").innerText.includes("Save & close")'), 'a redrawn crop is saved, not reported')
   await click('.save-character')
   await browser.waitFor('document.querySelector("dialog[open]") === null')
   assert(events(config.directory).some(e => e.field === 'box'), 'crop adjustment saved')
+  // The redrawn crop is fixed by the save, so it is reviewed, not left needing fixing.
+  assert(events(config.directory).filter(e => e.target_id === originalId && e.field === 'review').at(-1)?.new === 'reviewed', 'a redrawn crop stays flagged')
   console.log('PASS optional crop adjustment')
 
   await route('/en/review?grapheme=U%2B3042', roundReady)
