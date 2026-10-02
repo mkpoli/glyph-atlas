@@ -250,7 +250,10 @@ def _token_of(text: str, start: int, end: int, role: str, column: int | None, po
     ordinary = code_points[0] if code_points else None
     candidates = refs.candidates(text) if len(text) == 1 else []
     if candidates:
-        code_points = set(candidates)
+        # The candidates of a kana are the forms of its sound, which for a katakana list the hiragana
+        # and not the katakana itself: バ alone would be identified as ば. The transcribed character
+        # is always one of them.
+        code_points = set(candidates) | ({ordinary} if ordinary else set())
     script = _script_of(text, candidates)
     kind = _kind_of(text, script)
     return Token(
