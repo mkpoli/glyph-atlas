@@ -9,6 +9,8 @@
   import { page, updated } from '$app/state'
   import Glyph from '../components/Glyph.svelte'
   import CropReview from '../components/CropReview.svelte'
+  import CropForm from '../components/CropForm.svelte'
+  import { setForm, formOf } from '../lib/cropForms.js'
   import QuizFocus from '../components/QuizFocus.svelte'
   import CopyId from '../components/CopyId.svelte'
   import FormBar from '../components/FormBar.svelte'
@@ -151,7 +153,7 @@
     roundId = round.roundId; roundSeed = round.roundSeed; hasMore = round.hasMore; nextOffset = round.nextOffset ?? 0
     entry = round.entry ?? null
     loaded = {}; failed = {}; viewed = {}; step = 'select'; at = 0; error = ''; errorStatus = 0; categoryOpen = false
-    anchor = null; formDone = null; formError = ''
+    anchor = null; formDone = null; formError = ''; lastMark = null
   }
   function visit(index, { followed = false } = {}) {
     if (saving || loading || index < 0 || index >= history.length || index === historyIndex) return
@@ -532,6 +534,42 @@
       if (suggestsReading(value.issue)) suggest(item)
     })
   }
+  /**
+   * Mark the crop on show as one of its grapheme's forms, as the inspector's form bar does: the crop is
+   * decided, leaves the problems to answer, and the step goes on to the next one.
+   */
+  // The last crop marked here, so it can be marked back: { id, form, before, after }.
+  let lastMark = $state(null)
+  async function markCurrent(form) {
+    if (!current || form == null || saving || loading) return
+    const item = current
+    saving = true; error = ''; errorStatus = 0
+    try {
+      const { crop, reviewed } = await setForm(item, form)
+      items = items.map(i => i.id === item.id ? { ...i, ...crop } : i)
+      // A form that named the crop's character decided it; a written form alone leaves it for the round.
+      if (reviewed) markRecorded([item], 'assigned')
+      selected = without(selected, [item.id]); choices = without(choices, [item.id])
+      lastMark = { id: item.id, form, before: item, after: { ...item, ...crop }, reviewed }
+    } catch (e) { error = e.message; errorStatus = e.status ?? 0 }
+    finally { saving = false }
+    await tick()
+    if (!queue.length) back()
+  }
+  /** Mark the last crop back as the form it had, and put it back among the problems. */
+  async function undoMark() {
+    const mark = lastMark
+    if (!mark || saving) return
+    saving = true; error = ''; errorStatus = 0
+    try {
+      const { crop } = await setForm(mark.after, formOf(mark.before))
+      items = items.map(i => i.id === mark.id ? { ...i, ...crop } : i)
+      recorded = without(recorded, [mark.id])
+      selected = { ...selected, [mark.id]: true }
+      lastMark = null
+    } catch (e) { error = e.message; errorStatus = e.status ?? 0 }
+    finally { saving = false }
+  }
   function chooseSuggestion(id, value, noneSelected = false) {
     const current = choices[id]
     if (!current) return
@@ -779,7 +817,9 @@
   {:else if current}
     <QuizFocus items={queue} {skipped} index={focusIndex} label={t('quiz.focus.chooseProblem')} disabled={saving} onback={back} onjump={jump} onprev={() => move(-1)} onnext={() => move(1)}>
       <!-- One panel per crop, so a search begun for one crop never shows in the next one's. -->
-      {#key current.id}<CropReview issue={currentIssue} onissue={assignCurrent} disabled={saving}
+      {#snippet formBar()}<CropForm crop={current} others onchoose={markCurrent} disabled={saving || loading} />
+        {#if lastMark}<p class="mark-done" role="status">{t('bulk.done', { count: 1, char: lastMark.form })}<button class="quiet-link" disabled={saving} onclick={undoMark}>{t('bulk.undo')}</button></p>{/if}{/snippet}
+      {#key current.id}<CropReview forms={formBar} issue={currentIssue} onissue={assignCurrent} disabled={saving}
         onskip={() => skip([current.id])} skipped={!!skipped[current.id]}
         targetId={current.id} bind:element={suggestionsElement} result={suggestions[current.id]} loading={!suggestions[current.id]} contextResult={contextSuggestions[current.id] ?? null} contextLoading={!contextSuggestions[current.id]} label={current.label} value={choices[current.id]?.character || choices[current.id]?.correction} noneSelected={choices[current.id]?.noneSelected ?? false} onchoose={(value, none) => chooseSuggestion(current.id, value, none)} />{/key}
     </QuizFocus>
@@ -788,7 +828,7 @@
   {#if step === 'select' && !loading && !items.length}<div class="empty"><span class="empty-mark">字</span><h2>{categories.length ? t('quiz.empty.chooseCharacter') : t('quiz.empty.allCaughtUp')}</h2>{#if categories.length}<button class="primary" onclick={() => categoryOpen = true}>{t('quiz.chooseCharacterButton')}</button>{:else}<a href={localize('/flagged')} class="primary">{t('quiz.reviewFlagged')}</a>{/if}</div>
   {:else}<div class="quiz-actionbar">{#if step === 'select' && (openSelection.length || formDone || formError)}<FormBar count={openSelection.length} forms={members} grapheme={graphemeLabel} busy={saving} error={formError} done={formDone}
     onassign={assignForm} onclear={clearSelection} onundo={undoForm} ondismiss={() => { formDone = null; formError = '' }} />{/if}<div class="round-selection"><span class="selection-dot" class:has-flags={decided > 0}></span><strong>{t('quiz.decided', { count: decided })}</strong>{#if undecided}<span>{t('quiz.undecided', { count: undecided })}</span>{/if}{#if Object.keys(skipped).length}<small>{t('quiz.skippedNotSaved', { count: Object.keys(skipped).length })}</small>{/if}{#if Object.keys(failed).length}<small>{t('quiz.unavailableCount', { count: Object.keys(failed).length })}</small>{/if}</div><div class="quiz-submit">
-    <span class="keyboard-hint">{step === 'select' ? t('quiz.keyboardHint.select') : suggestsReading(currentIssue) ? t('quiz.keyboardHint.correct') + ' · ' + t('quiz.keyboardHint.issues') : t('quiz.keyboardHint.issues')}</span>
+    <span class="keyboard-hint">{step === 'select' ? t('quiz.keyboardHint.select') : t('quiz.keyboardHint.forms') + ' · ' + (suggestsReading(currentIssue) ? t('quiz.keyboardHint.correct') + ' · ' + t('quiz.keyboardHint.issues') : t('quiz.keyboardHint.issues'))}</span>
     {#if step === 'select'}<button class="quiet-link skip-selected" disabled={loading || saving || exhausted || (!decidable.length && !selection.length)} onclick={() => skip(selection.length ? selection : decidable.map(i => i.id))} title={skipHint()}>{selection.length ? t('quiz.skipSelected', { skip: skipLabel() }) : skipLabel()}</button>{/if}
     {#if exhausted || !openSelection.length}<button class="primary next-round" disabled={loading || saving || (!canNext && !recordable)} onclick={pass}>{t('quiz.nextCharacterLabel')} <span>→</span></button>
     {:else if step === 'select'}<button class="primary review-selected" disabled={loading || saving || loadingMore || !ready} onclick={reviewSelected}>{t('quiz.reviewSelected', { count: selection.length })} <span>→</span></button>
@@ -859,4 +899,5 @@
   .quiz-tile.assigned { border-color:var(--good); }
   /* The form bar sits over the actions, on a row of its own. */
   .quiz-actionbar { flex-wrap:wrap; }
+  .mark-done { display:flex; gap:10px; align-items:center; margin:-6px 0 12px; font-size:12px; color:var(--muted); }
 </style>

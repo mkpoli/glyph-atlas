@@ -7,7 +7,9 @@
   import CharacterSearch from './CharacterSearch.svelte'
   import { listForms, formOf } from '../lib/cropForms.js'
   import { t } from '../lib/i18n.svelte.js'
-  let { crop, chosen = null, onchoose, disabled = false } = $props()
+  // `others` leaves the crop's own form off the bar, where choosing a form marks the crop at once and
+  // its own form would mark nothing.
+  let { crop, chosen = null, onchoose, disabled = false, others = false } = $props()
   let offered = $state({ char: null, members: [], variants: [], derived: [] }), added = $state([])
   let picking = $state(false), query = $state(''), root = $state(null), failed = $state(false), addButton = $state(null)
   const written = $derived(crop?.written_character ?? crop?.label ?? '')
@@ -24,9 +26,9 @@
   // The bar: the grapheme's first forms, the crop's own form when it is none of them, and what the
   // picker added.
   const bar = $derived.by(() => {
-    const chips = listed.members.slice(0, BAR)
+    const chips = listed.members.filter(member => !others || member.char !== current).slice(0, BAR)
     const has = char => chips.some(chip => chip.char === char)
-    if (current && !has(current)) chips.push({ char: current, script: '' })
+    if (current && !others && !has(current)) chips.push({ char: current, script: '' })
     for (const form of added) if (!has(form.char)) chips.push(form)
     return chips
   })

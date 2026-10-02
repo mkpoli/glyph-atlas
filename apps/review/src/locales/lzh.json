@@ -743,5 +743,6 @@
   "suggestions.pick.next": "次字…",
   "form.add": "增形",
   "script.hentaigana": "變體假名",
-  "character.crop.keys": "曳框或角 · 矢以移 · Shift+矢以縮放"
+  "character.crop.keys": "曳框或角 · 矢以移 · Shift+矢以縮放",
+  "quiz.keyboardHint.forms": "1–0形"
 }

@@ -726,5 +726,6 @@
   "suggestions.pick.next": "Chữ tiếp theo…",
   "form.add": "Thêm dạng chữ",
   "script.hentaigana": "Hentaigana",
-  "character.crop.keys": "Kéo khung hoặc góc · phím mũi tên để di chuyển · Shift và mũi tên để đổi cỡ"
+  "character.crop.keys": "Kéo khung hoặc góc · phím mũi tên để di chuyển · Shift và mũi tên để đổi cỡ",
+  "quiz.keyboardHint.forms": "1–0 dạng chữ"
 }
