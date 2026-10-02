@@ -94,8 +94,8 @@ const productionOf=(data:Json)=>typeof data.production==='string'?data.productio
 // in the same batch and before the rows that reference it.
 function materialise(env:Env,row:UnitRow&{fresh:CorpusRow}){
   const d=parse(row.data);
-  return env.DB.prepare('INSERT OR IGNORE INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
-    .bind(row.id,'corpus',d.written_character||null,d.reading||null,d.grapheme||(d.written_character?cp(d.written_character):null),d.visual_group?.id||null,row.fresh.production,
+  return env.DB.prepare('INSERT OR IGNORE INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+    .bind(row.id,'corpus',d.written_character||null,d.grapheme||(d.written_character?cp(d.written_character):null),d.visual_group?.id||null,row.fresh.production,
       row.category||categoryOf(d.label),d.state,d.revision,row.quiz,1,row.fresh.shuffle,row.data,row.snapshot,row.context,row.visual,null,row.fresh.style,null);
 }
 async function corpusData(env:Env,row:CorpusRow):Promise<Json>{
@@ -556,13 +556,11 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   // has a family (its own code points when the character table gives none), so browsing one is one
   // lookup that `unit_family_sample` serves in shuffle order.
   if (grapheme && !scoped) { where.push('family=?'); values.push(grapheme); tally = null }
-  // A search finds a crop by its character or its reading. Each is one range of its own index; an OR
-  // across the two columns would read every local crop instead. The origin test is kept off its index
-  // (`+`), so the query starts from the ids the search found.
+  // A search finds a local crop by its written character, one range of `unit_character`. Typed kana
+  // such as トモ reach a character through the alias index first (`/atlas/suggest`).
   if (q.get('q')) {
-    where[0] = "+origin='local'";
-    where.push("id IN (SELECT id FROM units WHERE origin='local' AND character=? UNION SELECT id FROM units WHERE origin='local' AND reading=?)");
-    values.push(literal(q.get('q')!), literal(q.get('q')!)); tally = null;
+    where.push('character=?');
+    values.push(literal(q.get('q')!)); tally = null;
   }
   // With a character, a grapheme or a search named, its own index finds the few crops and the script only filters
   // them (`+`); the script's index would read every crop of that script.
