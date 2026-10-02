@@ -30,8 +30,10 @@ A key holding null is the same as no key: the Worker reads both as nothing, and 
 older catalogues lack keys a newer one writes as null (`shape_order`, which the Worker reads from
 `unit_shapes`, and `suspect`, which it reads from `unit_suspects`).
 
-A crop is the same when its box, crop box and image (the crop's media key) are unchanged; the
-image hash names the page the crop was cut from, so it cannot tell two crops apart.
+A crop is the same when its box, crop box, image (the crop's media key) and page checksum are
+unchanged, as its evidence version (`glyph_atlas.evidence`) is: the page checksum alone names the page
+the crop was cut from, so it cannot tell two crops of one page apart, and a page scanned anew is a new
+crop in the same box.
 
 A replaced unit's new revision must differ from the live one: an open page holding the old row
 sends the old revision and is refused. Every statement is guarded by the revision the live row
