@@ -208,6 +208,8 @@
   }
   async function load({ target = null, replace = false, scope = production, seed: dealt = null, how = replace ? 'replace' : 'push' } = {}) {
     checkpoint()
+    // A round dealt again in place keeps its history entry.
+    const kept = replace ? entry : null
     const id = ++requestId
     loading = true; loadingMore = false; error = ''; errorStatus = 0; categoryOpen = false
     try {
@@ -251,7 +253,7 @@
         suggestions: {}, contextSuggestions: {}, roundId: crypto.randomUUID(), roundSeed: seed,
         hasMore: (result.next_offset ?? result.items.length) < result.total, nextOffset: result.next_offset ?? result.items.length,
         production: scope, summary })
-      entry = crypto.randomUUID()
+      entry = kept ?? crypto.randomUUID()
       address(how)
       if (replace && historyIndex >= 0) history[historyIndex] = snapshot()
       else {
