@@ -58,14 +58,14 @@
   // rectangle only when the cached image is the page's own size, so the scale converts between them.
   const scale = $derived(data?.source_scale || [1, 1])
   const toSource = (b) => ({ x: b.x * scale[0], y: b.y * scale[1], w: b.w * scale[0], h: b.h * scale[1] })
+  // A box saved on the site waits for the next publication to cut it; until then it is drawn the same way.
+  const drawn = $derived(box ?? (data?.box_pending ? data.box : null))
   const boxStyle = $derived(data?.context_box ? (() => {
-    const c = data.context_box, b = box ? toSource(box) : data.crop_box
+    const c = data.context_box, b = drawn ? toSource(drawn) : data.crop_box
     if (!b) return ''
     return `left:${100 * (b.x - c.x) / c.w}%;top:${100 * (b.y - c.y) / c.h}%;width:${100 * b.w / c.w}%;height:${100 * b.h / c.h}%`
   })() : '')
   // The redrawn box in the page view's pixels, and the page view itself, for the crop box's preview.
-  // A box saved on the site waits for the next publication to cut it; until then it is drawn the same way.
-  const drawn = $derived(box ?? (data?.box_pending ? data.box : null))
   const draft = $derived(drawn && data?.context_box && data.context_image ? { b: toSource(drawn), c: data.context_box } : null)
   // NDL reads lines, so a confident reading longer than one character hints at a merged crop.
   // Results stored before votes were recorded carry NDL's reading only among the candidates.
@@ -227,9 +227,9 @@
           verdict: matches ? 'match' : decision(issue || 'character').verdict,
           issue: ['character', 'reading', 'crop', 'merged', 'blank', 'other'].includes(issue)
             ? issue : 'character',
-          character: written, ...(box ? { box } : {}) }
+          character: written }
       : { revision: data.revision, image_sha256: data.image_sha256,
-          ...value, issue: resolvedIssue, ...(box ? { box } : {}) }
+          ...value, issue: resolvedIssue, ...(fixed ? { box } : {}) }
     const signature = JSON.stringify(payload)
     if (!submission || submission.signature !== signature) submission = { signature, id: crypto.randomUUID() }
     try {
@@ -365,7 +365,7 @@
               <figcaption><span id="crop-keys" class="crop-keys">{t('character.crop.keys')}</span><button type="button" disabled={busy} onclick={endCrop}>{t('character.crop.doneAdjusting')}</button></figcaption>
             </figure>
           {:else}
-            {#key data.image}<CropContext item={data} detail={data} cropBox={box ? toSource(box) : null} disabled={busy} />{/key}
+            {#key data.image}<CropContext item={data} detail={data} cropBox={drawn ? toSource(drawn) : null} disabled={busy} />{/key}
           {/if}
         </div>
         <div class="credit-beside"><SourceCredit item={data} /></div>
