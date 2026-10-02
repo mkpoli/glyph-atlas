@@ -518,6 +518,8 @@
   function skippedCrops() {
     return items.filter(i => skipped[i.id] && !failed[i.id] && viewed[i.id] && !recorded[i.id]).map(i => ({ id: i.id, ...pixels(i), image: i.image }))
   }
+  // A round the site refused is reported in the reader's language; the service's messages are English.
+  const roundError = e => e.status === 409 ? t('quiz.roundChanged') : t('quiz.roundNotSaved')
   function markRecorded(crops, how) { recorded = { ...recorded, ...Object.fromEntries(crops.map(crop => [crop.id, how])) } }
   async function submit() {
     if (saving || loadingMore || !ready) return
@@ -545,7 +547,7 @@
       markRecorded(answers, 'flagged'); markRecorded(seen, 'seen'); markRecorded(passed, 'skip')
       choices = {}; selected = {}; step = 'select'; at = 0; roundId = crypto.randomUUID()
       await load()
-    } catch (e) { error = e.status === 409 ? t('quiz.roundChanged') : e.message; errorStatus = e.status ?? 0 }
+    } catch (e) { error = roundError(e); errorStatus = e.status ?? 0 }
     finally { saving = false }
   }
   // Moving on from a round with nothing flagged: the crops it showed were seen, so they are recorded
@@ -566,7 +568,7 @@
       markRecorded(seen, 'seen'); markRecorded(passed, 'skip')
       choices = {}; selected = {}; step = 'select'; at = 0; roundId = crypto.randomUUID()
       return true
-    } catch (e) { error = e.message; errorStatus = e.status ?? 0; return false }
+    } catch (e) { error = roundError(e); errorStatus = e.status ?? 0; return false }
     finally { saving = false }
   }
   async function pass() {

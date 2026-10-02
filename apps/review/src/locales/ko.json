@@ -532,6 +532,7 @@
   "quiz.reviewRemaining": "남은 항목 검토",
   "quiz.reviewSelected": "선택한 항목 검토({count}개)",
   "quiz.roundChanged": "이 라운드가 변경되었습니다. 선택 내용은 유지됩니다. 계속하려면 라운드를 다시 불러오세요.",
+  "quiz.roundNotSaved": "이 라운드를 저장할 수 없습니다. 선택 내용은 유지됩니다. 다시 시도하세요.",
   "quiz.roundSaved.one": "{reading} 크롭 {count}개를 저장했습니다",
   "quiz.roundSaved.other": "{reading} 크롭 {count}개를 저장했습니다",
   "quiz.saveIssues": "문제 저장",
