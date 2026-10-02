@@ -196,7 +196,6 @@ def split_a_unit(store: Store) -> None:
                         {
                             "box": {"x": 40, "y": 2, "w": 14, "h": 40},
                             "unicode": "U+3044",
-                            "reading": "い",
                             "text_source": "い",
                             "script": "hiragana",
                             "kind": "char",
@@ -205,7 +204,6 @@ def split_a_unit(store: Store) -> None:
                         {
                             "box": {"x": 55, "y": 2, "w": 15, "h": 40},
                             "unicode": "U+3046",
-                            "reading": "う",
                             "text_source": "う",
                             "script": "hiragana",
                             "kind": "char",
@@ -1450,11 +1448,11 @@ def test_erase_phase_is_committed_before_return(tmp_path, monkeypatch):
 
 def test_reset_removes_embedded_feedback_history():
     from glyph_atlas.schema import Unit
-    unit = Unit(id="x", text_source="を", reading="を", unicode="U+3092",
+    unit = Unit(id="x", text_source="を", unicode="U+3092",
                 meta={"feedback_repair": {"source_actor": "person", "source_event_id": "rv1"},
                       "alignment_repair": {"withheld": True}})
     result, _, _ = reset_module._reset_unit(unit)
-    assert result.reading == "を" and "feedback_repair" not in result.meta
+    assert result.text_source == "を" and "feedback_repair" not in result.meta
     assert result.meta["alignment_repair"]["withheld"]
 
 
@@ -1462,7 +1460,7 @@ def test_a_withheld_row_is_neither_flagged_nor_dealt_after_a_reset():
     """The reset keeps the withhold, and the withhold alone keeps the row out of review rounds."""
     from glyph_atlas.review import atlas, status
     from glyph_atlas.schema import Unit
-    unit = Unit(id="w", text_source="を", reading="を", unicode="U+3092", review=ReviewState.DISPUTED,
+    unit = Unit(id="w", text_source="を", unicode="U+3092", review=ReviewState.DISPUTED,
                 meta={"alignment_repair": {"withheld": True, "quiz": False, "status": "uncertain"}})
     result, was_reset, kept = reset_module._reset_unit(unit)
     assert result.review == ReviewState.MACHINE and was_reset and kept

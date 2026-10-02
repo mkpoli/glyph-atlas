@@ -39,7 +39,7 @@ def test_a_mixed_page_or_document_passes_nothing_down():
 
 def test_a_table_written_before_the_column_reads_as_unassessed(tmp_path):
     units = tmp_path / "units.parquet"
-    pq.write_table(pa.table({"id": ["u"], "reading": ["あ"]}), units)
+    pq.write_table(pa.table({"id": ["u"], "text_source": ["あ"]}), units)
     assert [u.style for u in tables.read(units, Unit)] == ["unassessed"]
     pages = tmp_path / "pages.parquet"
     pq.write_table(pa.table({"id": ["p"], "document_id": ["d"], "seq": [0], "image": ["x"], "width": [1], "height": [1]}), pages)

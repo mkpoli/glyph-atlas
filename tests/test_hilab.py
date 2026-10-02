@@ -128,7 +128,7 @@ def test_import_reads_the_listing_and_leaves_the_crops_alone(tmp_path, http_serv
     assert hiragana.page_id is None and hiragana.line_id is None and hiragana.box is None
     assert hiragana.crop == f"all.zip!all/characters/{HIRAGANA}/1001.jpg"
     assert hiragana.crop_sha256 is None and "width" not in hiragana.upstream
-    assert hiragana.unicode == HIRAGANA and hiragana.text_source == "あ" and hiragana.reading == "あ"
+    assert hiragana.unicode == HIRAGANA and hiragana.text_source == "あ"
     assert hiragana.script is Script.HIRAGANA
     assert hiragana.classification is Classification.UNASSESSED
     assert hiragana.granularity == "char" and hiragana.kind is UnitKind.CHAR
@@ -140,7 +140,7 @@ def test_import_reads_the_listing_and_leaves_the_crops_alone(tmp_path, http_serv
     }
     kanji = units["hi:1003"]
     assert kanji.crop == f"all.zip!all/characters/{KANJI}/1003.jpg"
-    assert kanji.unicode == KANJI and kanji.text_source == "一" and kanji.reading == "一"
+    assert kanji.unicode == KANJI and kanji.text_source == "一"
     assert kanji.script is Script.HAN and kanji.classification is Classification.IDENTIFIED
 
 

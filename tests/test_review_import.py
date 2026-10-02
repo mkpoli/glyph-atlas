@@ -15,7 +15,7 @@ def dataset(root: Path, prefix: str) -> Path:
                 width=100, height=100)
     line = Line(id=f"{prefix}:l", page_id=page.id, seq=0, text="仮", text_raw="仮")
     unit = Unit(id=f"{prefix}:u", page_id=page.id, document_id=prefix, line_id=line.id,
-                seq=0, reading="仮", box=Box(x=1, y=1, w=10, h=10))
+                seq=0, text_source="仮", box=Box(x=1, y=1, w=10, h=10))
     for name, row in (("documents", doc), ("pages", page), ("lines", line), ("units", unit)):
         tables.write(root / f"{name}.parquet", [row], type(row))
     return root
@@ -29,13 +29,13 @@ def test_import_preserves_review_retries_replay_and_live_metadata(tmp_path):
     publisher = Store(root)
     assert publisher.import_dataset(new) == {"documents": 1, "pages": 1, "lines": 1, "units": 1}
     assert live.page("new:p") and live.document("new")
-    live.record(ReviewRequest(target_type="unit", target_id="new:u", field="reading", new="假",
+    live.record(ReviewRequest(target_type="unit", target_id="new:u", field="text_source", new="假",
                               base_revision=0, client_id="test", idempotency_key="one"))
     assert publisher.import_dataset(new) == {"documents": 0, "pages": 0, "lines": 0, "units": 0}
-    assert live.unit("new:u").reading == "假"
+    assert live.unit("new:u").text_source == "假"
     assert live.revision("new:u") == 1 and len(live.events()) == 1
     live.rebuild()
-    assert Store(root).unit("new:u").reading == "假"
+    assert Store(root).unit("new:u").text_source == "假"
     assert Store(root).page("new:p") is not None
     live.export()
     # An exported dataset must be portable without the database's imported baseline.
@@ -45,7 +45,7 @@ def test_import_preserves_review_retries_replay_and_live_metadata(tmp_path):
     replay(root)
     restored = Store(root)
     assert restored.document("new") and restored.page("new:p")
-    assert restored.unit("new:u").reading == "假"
+    assert restored.unit("new:u").text_source == "假"
 
 
 def test_conflicting_or_orphan_import_is_atomic(tmp_path):
@@ -61,11 +61,11 @@ def test_conflicting_or_orphan_import_is_atomic(tmp_path):
     units[0].line_id = "new:l"
     tables.write(new / "units.parquet", units, Unit)
     store.import_dataset(new)
-    units[0].reading = "違"
+    units[0].text_source = "違"
     tables.write(new / "units.parquet", units, Unit)
     with pytest.raises(BadRequest, match="Conflicting"):
         store.import_dataset(new)
-    assert store.unit("new:u").reading == "仮"
+    assert store.unit("new:u").text_source == "仮"
 
 
 @pytest.mark.parametrize("name", ["pages", "documents"])

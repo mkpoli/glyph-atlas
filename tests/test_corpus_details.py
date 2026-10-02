@@ -481,7 +481,6 @@ class TestPublicFields:
             seq=9,
             box=Box(x=20, y=30, w=60, h=70),
             text_source="ね",
-            reading="ね",
             unicode="U+30CD",  # ネ
             kind="char",
             method="import",

@@ -204,7 +204,7 @@ def test_two_books_merge_into_one_directory(tmp_path, cache, books_file, zips, m
     ]
     kanji = units["codh:900000001:900000001_00003_1:B0001:C0001"]
     assert kanji.box.iiif_region() == "10,20,30,40"
-    assert kanji.unicode == "U+6F22" and kanji.text_source == "漢" and kanji.reading == "漢"
+    assert kanji.unicode == "U+6F22" and kanji.text_source == "漢"
     assert kanji.page_id == "codh:900000001:900000001_00003_1" and kanji.document_id == "codh:900000001"
     assert kanji.method == "import" and kanji.review is ReviewState.TRANSCRIBER and kanji.active
     assert kanji.upstream == {
@@ -236,7 +236,7 @@ def test_a_report_row_becomes_an_unreadable_unit(tmp_path, cache, books_file, zi
     units = {unit.id: unit for unit in tables.Dataset(tmp_path / "out").read("units")}
     report = units["codh:900000001:900000001_00003_1:report:1"]
     assert report.kind is UnitKind.UNREADABLE and report.review is ReviewState.REJECTED
-    assert report.text_source is None and report.reading is None and report.unicode is None
+    assert report.text_source is None and report.unicode is None
     assert report.box is None and report.page_id == "codh:900000001:900000001_00003_1"
     assert report.document_id == "codh:900000001" and report.method == "import"
     assert report.upstream["report"] == "虫損"

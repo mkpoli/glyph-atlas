@@ -50,10 +50,10 @@ def units_of(box: Box | None = None, encoded: str = NE_POINT) -> list[Unit]:
         # was printed: the two differ on purpose, as they do on 340 units of the real corpus.
         Unit(id=UNIT, document_id=DOC, page_id=PAGE, line_id=LINE, seq=0,
              box=box or Box(x=40, y=30, w=24, h=30), unicode=encoded, text_source="ね",
-             reading="ね", script="katakana", method="import"),
+             script="katakana", method="import"),
         Unit(id=ALT_UNIT, document_id=DOC, page_id=PAGE, line_id=LINE, seq=1,
              box=Box(x=80, y=30, w=24, h=30), unicode=TOMO_POINT, text_source=TOMO,
-             reading="とも", script="han", method="import"),
+             script="han", method="import"),
     ]
 
 

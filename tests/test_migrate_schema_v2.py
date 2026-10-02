@@ -79,7 +79,7 @@ def test_a_review_store_holding_schema_1_units_is_migrated_and_replays(tmp_path)
         Unit(id="koku", document_id="d", page_id="p", box=Box(x=0, y=0, w=1, h=1), unicode="U+56FD",
              script=Script.HAN),
     ], Unit)
-    Store(root).record(ReviewRequest(target_id="ni", field="reading", new="に", client_id="reviewer"))
+    Store(root).record(ReviewRequest(target_id="ni", field="text_source", new="に", client_id="reviewer"))
     # The store as schema 1 left it: a jibo on the cached unit, and the kanji label.
     with sqlite3.connect(root / "review.sqlite") as conn:
         for unit_id, patch in (("ni", {"jibo": "尓"}), ("koku", {"script": "kanji", "jibo": None})):
@@ -91,7 +91,7 @@ def test_a_review_store_holding_schema_1_units_is_migrated_and_replays(tmp_path)
     migrate.main([str(tmp_path), "--apply"])
     replay(root)
     units = {unit.id: unit for unit, _ in Store(root).unit_snapshot()}
-    assert units["ni"].reading == "に", "the recorded event replays over the migrated store"
+    assert units["ni"].text_source == "に", "the recorded event replays over the migrated store"
     assert units["koku"].script is Script.HAN
 
 
@@ -116,7 +116,7 @@ def test_a_store_with_jibo_decisions_is_left_for_a_person(tmp_path, capsys):
     tables.write(root / "pages.parquet", [Page(id="p", document_id="d", seq=0, image="x", width=10, height=10)], Page)
     tables.write(root / "units.parquet", [Unit(id="ni", document_id="d", page_id="p",
                  box=Box(x=0, y=0, w=1, h=1), unicode="U+306B")], Unit)
-    Store(root).record(ReviewRequest(target_id="ni", field="reading", new="に", client_id="reviewer"))
+    Store(root).record(ReviewRequest(target_id="ni", field="text_source", new="に", client_id="reviewer"))
     with sqlite3.connect(root / "review.sqlite") as conn:
         conn.execute("UPDATE events SET field = 'jibo', new = '\"尓\"'")
         before = conn.execute("SELECT data FROM units").fetchall()

@@ -17,7 +17,7 @@ PAGE = f"hk:{ENTRY}:0"
 
 def unit(n: int, x: int, text: str, review: ReviewState = ReviewState.MACHINE, **extra) -> Unit:
     return Unit(id=f"{PAGE}:L0:r:{n}", document_id=f"hk:{ENTRY}", page_id=PAGE, line_id=f"{PAGE}:L0", seq=n,
-                box=Box(x=x, y=100, w=40, h=50), text_source=text, reading=text,
+                box=Box(x=x, y=100, w=40, h=50), text_source=text,
                 unicode=" ".join(refs.to_code_points(text)), review=review, **extra)
 
 
@@ -134,7 +134,7 @@ def record(atlas: Path, target: str, name: str, new, role: str = "reviewer") -> 
     Store(atlas).record_batch([ReviewRequest(target_id=target, field=name, new=new, client_id="reviewer-1")], role=role)
 
 
-def test_a_unit_a_person_acted_on_keeps_its_reading_and_replay_agrees(world, tmp_path):
+def test_a_unit_a_person_acted_on_keeps_its_character_and_replay_agrees(world, tmp_path):
     atlas, records = world
     record(atlas, uid(1), "unicode", "U+30C4")  # a person names the ink ツ, where ainu-records reads ト
     result = ainu_characters.plan(atlas, records)
@@ -158,8 +158,8 @@ def test_a_machine_event_is_no_decision_and_replay_keeps_the_merge(world, tmp_pa
 def test_a_split_a_person_made_survives_the_merge(world, tmp_path):
     atlas, records = world
     record(atlas, uid(4), "segmentation", {"split": [
-        {"box": {"x": 900, "y": 100, "w": 20, "h": 50}, "unicode": "U+30AB", "reading": "カ", "text_source": "カ"},
-        {"box": {"x": 920, "y": 100, "w": 20, "h": 50}, "unicode": "U+30AB", "reading": "カ", "text_source": "カ"}]})
+        {"box": {"x": 900, "y": 100, "w": 20, "h": 50}, "unicode": "U+30AB", "text_source": "カ"},
+        {"box": {"x": 920, "y": 100, "w": 20, "h": 50}, "unicode": "U+30AB", "text_source": "カ"}]})
     children = [u.id for u in ainu_characters.read_log(atlas).units.values() if u.active and u.id.startswith(f"{PAGE}:L0:m")]
     assert len(children) == 2
     out = tmp_path / "merged"

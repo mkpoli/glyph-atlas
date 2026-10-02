@@ -52,12 +52,12 @@ def dataset(tmp_path: Path) -> Path:
                  text="トモ", box=Box(x=60, y=60, w=240, h=200))], Line)
     tables.write(root / "units.parquet", [
         Unit(id=JOINED, document_id="doc", page_id=PAGE, line_id=LINE, seq=0, unicode="U+51FA",
-             reading="出", text_source="出", box=PARENT_BOX, crop="https://example.org/crop.jpg",
+             text_source="出", box=PARENT_BOX, crop="https://example.org/crop.jpg",
              crop_sha256="a" * 64, granularity="char", kind="char",
              script="han", classification="identified", group_id="g1", antecedent_ids=["x"],
              meta={"alignment_repair": {"from": "U+30C8"}, "sample": "s0"}),
         Unit(id=f"{LINE}:u1", document_id="doc", page_id=PAGE, line_id=LINE, seq=1, unicode="U+30CD",
-             reading="ね", text_source="ネ", box=Box(x=200, y=100, w=30, h=40)),
+             text_source="ネ", box=Box(x=200, y=100, w=30, h=40)),
     ], Unit)
     return root
 
@@ -67,8 +67,8 @@ def split_request(*, revision: int = 0, entries: list[dict] | None = None,
     return ReviewRequest(
         target_type="unit", target_id=JOINED, field="segmentation",
         new={"split": entries if entries is not None else [
-            {"box": {"x": 100, "y": 100, "w": 38, "h": 40}, "unicode": "U+30C8", "reading": "ト"},
-            {"box": {"x": 142, "y": 100, "w": 38, "h": 40}, "unicode": "U+30E2", "reading": "モ"},
+            {"box": {"x": 100, "y": 100, "w": 38, "h": 40}, "unicode": "U+30C8"},
+            {"box": {"x": 142, "y": 100, "w": 38, "h": 40}, "unicode": "U+30E2"},
         ]},
         base_revision=revision, client_id="splitter-v1", idempotency_key=key, evidence=EVIDENCE)
 
@@ -91,14 +91,14 @@ def event_of(directory: Path, field: str = "segmentation"):
 def test_a_model_batch_records_the_model_role_and_the_actor(dataset):
     store = Store(dataset)
     result = store.record_batch([ReviewRequest(
-        target_type="unit", target_id=f"{LINE}:u1", field="reading", new="ネ",
+        target_type="unit", target_id=f"{LINE}:u1", field="text_source", new="ネ",
         base_revision=0, client_id="pipeline-1", idempotency_key="m1")], role="model")
     assert result[0]["review"]["role"] == "model"
     assert result[0]["review"]["actor"] == "pipeline-1"
     assert Store(dataset).events()[0].role == "model"
 
     store.record_batch([ReviewRequest(
-        target_type="unit", target_id=f"{LINE}:u1", field="reading", new="ね",
+        target_type="unit", target_id=f"{LINE}:u1", field="text_source", new="ね",
         base_revision=1, client_id="reviewer-1", idempotency_key="m2")])
     roles = [event.role for event in Store(dataset).events()]
     assert roles == ["model", "reviewer"], "the default role is still the reviewer"
@@ -127,7 +127,7 @@ def test_a_machine_split_is_detect_align_machine_and_provenanced(dataset):
         assert child.method == "detect-align", "a machine split is not a transcriber's work"
         assert child.review is ReviewState.MACHINE
         assert child.unicode == ("U+30C8", "U+30E2")[index]
-        assert child.reading == ("ト", "モ")[index]
+        assert child.text_source == ("ト", "モ")[index]
         assert child.meta["feedback_split"] == {
             "parent_id": JOINED, "evidence_sha256": hashlib.sha256(EVIDENCE.encode()).hexdigest(),
             "model": "splitter-v1", "automated": True}
@@ -186,28 +186,36 @@ def test_the_caller_evidence_is_kept_exactly(dataset):
 
 def test_every_machine_child_states_its_own_identity_and_box(dataset):
     for entry in ({"box": {"x": 100, "y": 100, "w": 38, "h": 40}},
-                  {"unicode": "U+30C8", "reading": "ト"},
-                  {"box": {"x": 100, "y": 100, "w": 38, "h": 40}, "unicode": "U+30C8"},
-                  {"box": {"x": 100, "y": 100, "w": 38, "h": 40}, "reading": "ト"}):
+                  {"unicode": "U+30C8"},
+                  {"box": {"x": 100, "y": 100, "w": 38, "h": 40}, "text_source": "ト"}):
         with pytest.raises(BadRequest):
             Store(dataset).record_batch([split_request(entries=[
-                entry, {"box": {"x": 142, "y": 100, "w": 38, "h": 40}, "unicode": "U+30E2",
-                        "reading": "モ"}], key=f"bad-{len(entry)}")], role="model")
+                entry, {"box": {"x": 142, "y": 100, "w": 38, "h": 40}, "unicode": "U+30E2"}],
+                key=f"bad-{len(entry)}")], role="model")
+
+
+@pytest.mark.parametrize("role", ["model", "reviewer"])
+def test_a_split_entry_cannot_carry_a_reading(dataset, role):
+    with pytest.raises(BadRequest, match="cannot set reading"):
+        Store(dataset).record_batch([split_request(entries=[
+            {"box": {"x": 100, "y": 100, "w": 38, "h": 40}, "unicode": "U+30C8", "reading": "ト"},
+            {"box": {"x": 142, "y": 100, "w": 38, "h": 40}, "unicode": "U+30E2"},
+        ])], role=role)
 
 
 def test_overlapping_children_are_refused(dataset):
     with pytest.raises(BadRequest):
         Store(dataset).record_batch([split_request(entries=[
-            {"box": {"x": 100, "y": 100, "w": 60, "h": 40}, "unicode": "U+30C8", "reading": "ト"},
-            {"box": {"x": 120, "y": 100, "w": 60, "h": 40}, "unicode": "U+30E2", "reading": "モ"},
+            {"box": {"x": 100, "y": 100, "w": 60, "h": 40}, "unicode": "U+30C8"},
+            {"box": {"x": 120, "y": 100, "w": 60, "h": 40}, "unicode": "U+30E2"},
         ])], role="model")
 
 
 def test_a_child_outside_the_parent_is_refused(dataset):
     with pytest.raises(BadRequest):
         Store(dataset).record_batch([split_request(entries=[
-            {"box": {"x": 100, "y": 100, "w": 38, "h": 40}, "unicode": "U+30C8", "reading": "ト"},
-            {"box": {"x": 200, "y": 100, "w": 40, "h": 40}, "unicode": "U+30E2", "reading": "モ"},
+            {"box": {"x": 100, "y": 100, "w": 38, "h": 40}, "unicode": "U+30C8"},
+            {"box": {"x": 200, "y": 100, "w": 40, "h": 40}, "unicode": "U+30E2"},
         ])], role="model")
 
 
@@ -216,7 +224,7 @@ def test_a_child_covering_a_neighbour_is_refused(dataset):
     tables.write(dataset / "units.parquet", [
         next(unit for unit, _ in Store(dataset).unit_snapshot() if unit.id == JOINED),
         Unit(id=NEIGHBOUR, document_id="doc", page_id=PAGE, line_id=LINE, seq=1, unicode="U+30CD",
-             reading="ね", text_source="ネ", box=Box(x=150, y=110, w=20, h=20)),
+             text_source="ネ", box=Box(x=150, y=110, w=20, h=20)),
     ], Unit)
     with pytest.raises(BadRequest):
         Store(dataset).record_batch([split_request()], role="model")
@@ -248,14 +256,14 @@ def test_partial_split_keeps_connected_child_as_sequence(dataset):
     store = Store(dataset)
     request = split_request(entries=[
         {"box": {"x": 100, "y": 100, "w": 38, "h": 40},
-         "unicode": "U+3068 U+308A", "reading": "とり", "text_source": "とり"},
+         "unicode": "U+3068 U+308A", "text_source": "とり"},
         {"box": {"x": 142, "y": 100, "w": 38, "h": 40},
-         "unicode": "U+3044", "reading": "い", "text_source": "い"},
+         "unicode": "U+3044", "text_source": "い"},
     ])
     store.record_batch([request], role="model")
     children = sorted(children_of(dataset), key=lambda unit: unit.id)
     assert children[0].granularity == "sequence" and children[0].kind.value == "sequence"
-    assert children[1].granularity == "char" and children[1].reading == "い"
+    assert children[1].granularity == "char" and children[1].text_source == "い"
     apply(dataset)
     replay(dataset)
     assert children_of(dataset)[0].granularity == "sequence"
@@ -273,7 +281,7 @@ def add_other_line(dataset: Path, box: Box) -> None:
                  text="一", box=Box(x=100, y=100, w=40, h=40))], Line)
     units = tables.read(dataset / "units.parquet", Unit)
     tables.write(dataset / "units.parquet", [*units, Unit(id=f"{OTHER_LINE}:u0", document_id="doc", page_id=PAGE,
-                 line_id=OTHER_LINE, seq=0, unicode="U+4E00", reading="一", box=box)], Unit)
+                 line_id=OTHER_LINE, seq=0, unicode="U+4E00", text_source="一", box=box)], Unit)
 
 
 def test_a_machine_child_may_not_cover_a_unit_of_another_line(dataset):

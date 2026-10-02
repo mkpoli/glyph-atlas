@@ -35,7 +35,7 @@ def unit(seq: int, *, height: int, width: int = 30, text: str = "ア", unicode: 
     return Unit(
         id=f"{line}:fp:{seq}", page_id=page, document_id="hk:doc", line_id=line, seq=seq,
         box=Box(x=10, y=100 + seq * 60, w=width, h=height), kind=kind, text_source=text,
-        reading=text, unicode=unicode or f"U+{ord(text[0]):04X}", review=review, method="detect-align",
+        unicode=unicode or f"U+{ord(text[0]):04X}", review=review, method="detect-align",
     )
 
 

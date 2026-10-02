@@ -37,7 +37,7 @@ def store(tmp_path, monkeypatch):
                                              width=200, height=200, sha256=digest)], Page)
     tables.write(root / "lines.parquet", [Line(id="l", page_id="p", seq=0, text="手", text_raw="手")], Line)
     tables.write(root / "units.parquet", [Unit(id="u", document_id="d", page_id="p", line_id="l",
-                 unicode="U+624B", reading="手", text_source="手", box=Box(x=10, y=10, w=30, h=40))], Unit)
+                 unicode="U+624B", text_source="手", box=Box(x=10, y=10, w=30, h=40))], Unit)
     return Store(root)
 
 
@@ -335,7 +335,7 @@ def test_joined_identity_and_sequence_reach_refinement_without_confirming_parent
     assert report["counts"] == {"imported": 1}
     result = refine_feedback(store, bound, apply=True)
     assert result["counts"] == {"split": 1} and result["items"][0]["decision"] == "joined"
-    assert result["items"][0]["assessment"]["reading"] == "を手"
+    assert result["items"][0]["assessment"]["typed"] == "を手"
     parent = store.unit("u")
     assert parent.unicode == "U+3092" and parent.review == "disputed" and not parent.active
     assert all(store.unit(child).review == "machine" for child in parent.split_into)
@@ -359,7 +359,7 @@ def test_joined_import_splits_by_the_typed_characters(store):
     parent = store.unit("u")
     assert not parent.active
     children = [store.unit(identity) for identity in parent.split_into]
-    assert [unit.reading for unit in children] == ["を", "手"]
+    assert [unit.text_source for unit in children] == ["を", "手"]
     assert all(unit.review == "machine" for unit in children)
     local_event = bound["reviews"][0]["event"]["id"]
     assert all(unit.meta["feedback_split"]["source_event_id"] == local_event for unit in children)

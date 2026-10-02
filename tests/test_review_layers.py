@@ -156,7 +156,7 @@ def dataset(tmp_path: Path, monkeypatch):
     tables.write(root / "lines.parquet", [Line(id=LINE, page_id=PAGE, seq=3, text_raw="𪜈", text="𪜈",
                  box=Box(x=0, y=0, w=400, h=600))], Line)
     units = [Unit(id=f"{LINE}:u{i}", document_id="d", page_id=PAGE, line_id=LINE, seq=i,
-                  unicode=code_point, reading=refs.from_code_points(code_point.split()),
+                  unicode=code_point, text_source=refs.from_code_points(code_point.split()),
                   box=Box(x=20 + i % 3 * 90, y=20 + i // 3 * 130, w=65, h=100))
              for i, code_point in enumerate(WRITTEN)]
     tables.write(root / "units.parquet", units, Unit)
@@ -404,12 +404,12 @@ def test_summary_counts_the_layer_and_the_ink(dataset):
     assert warm["occurrences"]["characters_used"] == len(set(WRITTEN))
 
 
-def test_historical_family_keeps_written_characters_readings_and_ink_distinct(dataset):
+def test_historical_family_keeps_written_characters_transcriptions_and_ink_distinct(dataset):
     units = list(tables.read(dataset / "units.parquet", Unit))
-    for index, (char, reading) in enumerate([("仮", "か"), ("假", "かり"), ("假", "け")]):
+    for index, (char, text) in enumerate([("仮", "か"), ("假", "かり"), ("假", "け")]):
         units.append(Unit(
             id=f"variant:{index}", document_id="d", page_id=PAGE, line_id=LINE,
-            seq=10 + index, unicode=refs.to_code_point(char), reading=reading,
+            seq=10 + index, unicode=refs.to_code_point(char), text_source=text,
             box=Box(x=20 + index * 30, y=20, w=25, h=50),
         ))
     tables.write(dataset / "units.parquet", units, Unit)
@@ -440,9 +440,9 @@ def test_historical_family_keeps_written_characters_readings_and_ink_distinct(da
         for row in suggestions:
             if row["char"] in ("仮", "假"):
                 assert row["grapheme"]["label"] == "仮 = 假"
-    # Grouping never changes the stored source character, reading or crop.
+    # Grouping never changes the stored source character, transcription or crop.
     stored = Store(dataset).unit("variant:1")
-    assert stored.unicode == "U+5047" and stored.reading == "かり" and stored.box.x == 50
+    assert stored.unicode == "U+5047" and stored.text_source == "かり" and stored.box.x == 50
 
 
 def test_background_import_refreshes_existing_layer_counts_without_review_events(dataset, tmp_path):
@@ -452,7 +452,7 @@ def test_background_import_refreshes_existing_layer_counts_without_review_events
     additions.mkdir()
     tables.write(additions / "units.parquet", [Unit(
         id="new:old-character", document_id="d", page_id=PAGE, line_id=LINE,
-        unicode="U+5047", reading="かり", box=Box(x=20, y=20, w=25, h=50),
+        unicode="U+5047", text_source="かり", box=Box(x=20, y=20, w=25, h=50),
     )], Unit)
     publisher = Store(dataset)
     assert publisher.import_generation() == 0
@@ -874,16 +874,16 @@ def test_a_character_with_a_mark_takes_its_script_and_can_be_browsed(dataset):
     assert card.json()["occurrence_count"] == 1
 
 
-def test_a_corrected_character_keeps_the_transcription_and_the_reading(dataset):
-    """い corrected to り writes the identity only: `text_source` and the stored reading stay."""
+def test_a_corrected_character_keeps_the_transcription(dataset):
+    """い corrected to り writes the identity only: `text_source` stays as the transcriber wrote it."""
     store = Store(dataset)
     target = f"{LINE}:u4"
     store.record(ReviewRequest(target_id=target, field="unicode", new="U+3044", client_id="reviewer-1"))
-    store.record(ReviewRequest(target_id=target, field="reading", new="い", client_id="reviewer-1"))
     source = store.unit(target).text_source
     answer = correct(client(dataset), target, store.revision(target), dataset, character="り")
     assert answer.status_code == 200, answer.text
-    assert "character" in answer.json()["changed"] and "reading" not in answer.json()["changed"]
+    assert "character" in answer.json()["changed"]
     stored = next(row for row, _ in Store(dataset).unit_snapshot(target) if row.active)
-    assert stored.unicode == "U+308A" and stored.reading == "い" and stored.text_source == source
-    assert [event.field for event in Store(dataset).events() if event.target_id == target].count("reading") == 1
+    assert stored.unicode == "U+308A" and stored.text_source == source
+    fields = [event.field for event in Store(dataset).events() if event.target_id == target]
+    assert "text_source" not in fields and "reading" not in fields
