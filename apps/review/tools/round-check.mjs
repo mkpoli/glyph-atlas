@@ -88,6 +88,7 @@ try {
   await click('.update-notice button')
   await browser.waitFor(`document.querySelector('.quiz-tile[data-unit="${chosen}"]')?.classList.contains('selected')`, 60000)
   assert(await target() === first, 'the reload deals the same round')
+  await browser.waitFor(`location.pathname === "/ko-Kore/review/${key.split(' ').join('-')}"`)
   assert(await browser.evaluate('sessionStorage.getItem("atlas.quiz.carried")') === null, 'the kept round is taken back once')
   await click('.review-selected')
   await browser.waitFor('!!document.querySelector(".issue-picker")')

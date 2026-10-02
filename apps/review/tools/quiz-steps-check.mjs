@@ -68,7 +68,7 @@ const currentId = () => browser.evaluate('document.querySelector(".focus-figure"
 const noneState = () => browser.evaluate('document.querySelector(".no-suggestion").getAttribute("aria-pressed")')
 try {
   await browser.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] })
-  await browser.goto(base + '/en/review?grapheme=' + encodeURIComponent(startRound.label), { waitFor: 'document.querySelectorAll(".quiz-choice").length > 0' })
+  await browser.goto(base + '/en/review/' + startRound.label.split(' ').join('-'), { waitFor: 'document.querySelectorAll(".quiz-choice").length > 0' })
   await browser.waitFor('document.querySelectorAll(".quiz-choice:not(:disabled)").length >= 4')
   await check('questions cover joined characters and bad cuts', async () => {
     const heading = await browser.evaluate('document.querySelector(".quiz-title").innerText')
