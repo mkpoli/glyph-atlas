@@ -1,6 +1,9 @@
 -- A claim about a crop stands only on the crop's current evidence version (0046, 0047). A publication
 -- that recuts a crop, writes it anew or deletes it leaves no claim standing on it, so its resolved rows
--- go with the old version, and the claims stay in the ledger to be reassessed on the new one.
+-- go with the old version, and the claims stay in the ledger to be reassessed on the new one. A slot is
+-- resolved again when a claim, an action or a publication names it, so a crop cut back to an earlier
+-- version, or a corpus glyph that gains its row after a publication brought its claims, shows those
+-- claims from the next one.
 CREATE TRIGGER IF NOT EXISTS current_claim_recut AFTER UPDATE OF data ON units
  WHEN NEW.crop_version IS NOT OLD.crop_version
 BEGIN
