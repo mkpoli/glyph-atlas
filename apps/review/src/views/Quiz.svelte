@@ -303,23 +303,24 @@
    * a batch correction each 144 crops, undone together. A crop already checked as that form has
    * nothing to change; a refused crop leaves the round, which deals it again as it now stands.
    */
-  let formBusy = $state(false), formError = $state(''), formDone = $state(null)
+  // A marking and its undo hold the round as a save does: nothing moves to another round meanwhile.
+  let formError = $state(''), formDone = $state(null)
   const CORRECTION_BATCH = 144
   async function assignForm(form) {
-    if (formBusy || saving || loading || step !== 'select') return
+    if (saving || loading || step !== 'select') return
     const chosen = openSelection.map(id => items.find(i => i.id === id)).filter(i => i && selectable(i.id))
     if (!chosen.length) return
     const crops = chosen.filter(i => !((i.written_character || i.label) === form && i.state === 'checked'))
     let kept = chosen.length - crops.length, refused = []
     const saved = [], before = {}, after = {}
-    formBusy = true; formError = ''
+    saving = true; formError = ''
     try {
       for (let from = 0; from < crops.length; from += CORRECTION_BATCH) {
         const part = crops.slice(from, from + CORRECTION_BATCH), id = crypto.randomUUID()
         const result = await request('/atlas/corrections', { id, client_id: clientId, character: form,
           crops: part.map(i => ({ id: i.id, revision: i.revision, ...pixels(i) })) })
-        saved.push(id)
         const byId = Object.fromEntries((result.results ?? []).map(r => [r.target_id, r]))
+        saved.push({ id, ids: part.filter(i => byId[i.id]).map(i => i.id) })
         kept += (result.unchanged ?? []).length
         for (const i of part) if (byId[i.id]) {
           before[i.id] = i
@@ -330,7 +331,7 @@
     } catch (e) {
       refused = (e.targets ?? []).map(target => target.id)
       formError = refused.length ? t('bulk.refused', { count: refused.length }) : e.status === 429 ? t('bulk.tooMany') : e.status === 409 ? t('bulk.changed') : e.message
-    } finally { formBusy = false }
+    } finally { saving = false }
     const handled = [...Object.keys(after), ...chosen.filter(i => !crops.includes(i)).map(i => i.id), ...refused]
     if (saved.length) {
       items = items.map(i => after[i.id] ?? i)
@@ -342,18 +343,29 @@
   }
   async function undoForm() {
     const done = formDone
-    if (!done || formBusy) return
-    formBusy = true; formError = ''
+    if (!done || saving) return
+    saving = true; formError = ''
+    const left = [...done.batches]
     try {
-      for (const id of [...done.batches].reverse()) await request(`/atlas/corrections/${id}/undo`, { client_id: clientId })
-      // An undo is a change of its own: each crop is read again for the revision it now has.
-      const now = Object.fromEntries(await Promise.all(Object.values(done.before).map(async i =>
-        [i.id, { ...i, ...(i.origin === 'corpus' ? await corpusCharacter(i.id) : await character(i.id)) }])))
-      items = items.map(i => now[i.id] ?? i)
-      recorded = without(recorded, Object.keys(done.before))
-      formDone = null
+      // Newest batch first. An undo is a change of its own, so a batch's crops are read again for the
+      // revision they now have as soon as it is undone; a batch that fails leaves only itself and the
+      // older ones to undo.
+      while (left.length) {
+        const batch = left.at(-1)
+        await request(`/atlas/corrections/${batch.id}/undo`, { client_id: clientId })
+        left.pop()
+        const now = Object.fromEntries(await Promise.all(batch.ids.map(async id => {
+          const i = done.before[id]
+          return [id, { ...i, ...(i.origin === 'corpus' ? await corpusCharacter(id) : await character(id)) }]
+        })))
+        items = items.map(i => now[i.id] ?? i)
+        recorded = without(recorded, batch.ids)
+      }
     } catch (e) { formError = e.message }
-    finally { formBusy = false }
+    finally {
+      saving = false
+      formDone = left.length ? { ...done, batches: left, count: left.reduce((n, batch) => n + batch.ids.length, 0) } : null
+    }
   }
   function without(map, ids) {
     const next = { ...map }
@@ -585,7 +597,7 @@
       if (index >= 0 && shown[index] && !control) { e.preventDefault(); toggle(shown[index].id) }
       // 1–0 mark the selection as the grapheme's forms, in the bar's order.
       const form = members['1234567890'.indexOf(e.key)]
-      if (/^[0-9]$/.test(e.key) && form && openSelection.length && !control) { e.preventDefault(); assignForm(form) }
+      if (/^[0-9]$/.test(e.key) && form && openSelection.length) { e.preventDefault(); assignForm(form) }
       if (e.key === 'Escape') clearSelection()
       return
     }
@@ -676,7 +688,7 @@
   {/if}
 
   {#if step === 'select' && !loading && !items.length}<div class="empty"><span class="empty-mark">字</span><h2>{categories.length ? t('quiz.empty.chooseCharacter') : t('quiz.empty.allCaughtUp')}</h2>{#if categories.length}<button class="primary" onclick={() => categoryOpen = true}>{t('quiz.chooseCharacterButton')}</button>{:else}<a href={localize('/flagged')} class="primary">{t('quiz.reviewFlagged')}</a>{/if}</div>
-  {:else}<div class="quiz-actionbar">{#if step === 'select' && (openSelection.length || formDone || formError)}<FormBar count={openSelection.length} forms={members} grapheme={graphemeLabel} busy={formBusy || saving} error={formError} done={formDone}
+  {:else}<div class="quiz-actionbar">{#if step === 'select' && (openSelection.length || formDone || formError)}<FormBar count={openSelection.length} forms={members} grapheme={graphemeLabel} busy={saving} error={formError} done={formDone}
     onassign={assignForm} onclear={clearSelection} onundo={undoForm} ondismiss={() => { formDone = null; formError = '' }} />{/if}<div class="round-selection"><span class="selection-dot" class:has-flags={decided > 0}></span><strong>{t('quiz.decided', { count: decided })}</strong>{#if undecided}<span>{t('quiz.undecided', { count: undecided })}</span>{/if}{#if Object.keys(skipped).length}<small>{t('quiz.skippedNotSaved', { count: Object.keys(skipped).length })}</small>{/if}{#if Object.keys(failed).length}<small>{t('quiz.unavailableCount', { count: Object.keys(failed).length })}</small>{/if}</div><div class="quiz-submit">
     <span class="keyboard-hint">{step === 'select' ? t('quiz.keyboardHint.select') : suggestsReading(currentIssue) ? t('quiz.keyboardHint.correct') + ' · ' + t('quiz.keyboardHint.issue') : t('quiz.keyboardHint.issue')}</span>
     {#if step === 'select'}<button class="quiet-link skip-selected" disabled={loading || saving || exhausted || (!decidable.length && !selection.length)} onclick={() => skip(selection.length ? selection : decidable.map(i => i.id))} title={skipHint()}>{selection.length ? t('quiz.skipSelected', { skip: skipLabel() }) : skipLabel()}</button>{/if}
