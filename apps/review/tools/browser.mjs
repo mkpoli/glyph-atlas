@@ -156,6 +156,24 @@ export class Browser {
     })
   }
 
+  /**
+   * Make every page a disposable reviewer's. A fixture has no account service, so the page is told it
+   * is signed in as `clientId`, and each JSON write carries the id the page server would add for a
+   * signed-in account.
+   */
+  async writeAs(clientId) {
+    await this.send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => {
+      const send = window.fetch
+      window.fetch = (input, init = {}) => {
+        if (String(input) === '/api/account') return Promise.resolve(Response.json({ user: { id: ${JSON.stringify(clientId)}, name: ${JSON.stringify(clientId)}, anonymous: true } }))
+        if (init.method === 'POST' && typeof init.body === 'string') {
+          try { init = { ...init, body: JSON.stringify({ ...JSON.parse(init.body), client_id: ${JSON.stringify(clientId)} }) } } catch {}
+        }
+        return send(input, init)
+      }
+    })()` })
+  }
+
   /** Load a URL and wait until the app has hydrated it: before that, a click reaches no handler. */
   async goto(url, { waitFor = null, timeout = 30000 } = {}) {
     const loaded = this.once('Page.loadEventFired', timeout).catch(() => null)
