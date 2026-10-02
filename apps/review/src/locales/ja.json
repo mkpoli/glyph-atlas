@@ -752,5 +752,8 @@
   "admin.claims.give": "割り当てる",
   "admin.claims.given": "{id}を{name}に割り当てました。",
   "admin.claims.count.one": "申請{count}件",
-  "admin.claims.count.other": "申請{count}件"
+  "admin.claims.count.other": "申請{count}件",
+  "history.reviewer.you": "自分",
+  "history.byUser": "{name}のレビュー",
+  "history.byUser.clear": "全員を表示"
 }

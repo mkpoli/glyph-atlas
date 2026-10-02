@@ -752,5 +752,8 @@
   "admin.claims.give": "此ノ人ニ與フ",
   "admin.claims.given": "{id}ハ今{name}ニ屬ス。",
   "admin.claims.count.one": "{count}人請求中",
-  "admin.claims.count.other": "{count}人請求中"
+  "admin.claims.count.other": "{count}人請求中",
+  "history.reviewer.you": "己",
+  "history.byUser": "{name}ノ校閱",
+  "history.byUser.clear": "諸人ヲ示ス"
 }
