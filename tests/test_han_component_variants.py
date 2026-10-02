@@ -176,6 +176,53 @@ def test_口_厶_is_kept_and_a_swap_of_meaning_is_not():
     assert v.ordered("口", "氵") not in by_key and v.ordered("扌", "木") not in by_key
 
 
+def test_色_𮎜_keeps_the_token_its_sequence_writes():
+    # 色 is ⿱⺈巴 and 𮎜 ⿱𠂉巴; ⺈ reads as 刀 only while two trees are compared, so the
+    # substitution is ⺈ against 𠂉, and a 刀 written as 刀 is never rewritten by it.
+    desc = descriptions({"色": ["⿱⺈巴(GHTJKPV)"], "𮎜": ["⿱𠂉巴(J)"], "分": ["⿱八刀(GHTJKPV)"],
+                         "㓀": ["⿱刀巴"]}, {"⺈": "刀"})
+    assert v.substitutions(desc, "色", "𮎜") == {v.ordered("⺈", "𠂉"): {None}}
+    assert v.substitutions(desc, "色", "㓀") == {}
+    table = v.equivalents([v.Attested(*v.ordered("⺈", "𠂉"), (), ())])
+    assert {(d.char, d.other) for d in v.derive(desc, table, ["色", "分", "㓀"])} == {("色", "𮎜")}
+
+
+def test_only_trees_of_a_common_region_are_compared():
+    # 免's J tree is ⿱{2}儿 and 𭀠 is J only: set against it, two parts differ, so the pair
+    # attests nothing; 免's G tree, ⿱⺈…, describes a glyph 𭀠 is not drawn beside.
+    sequences = {"免": ["⿱⺈⿸⿻口丿乚(GHTKP[B])", "⿱{2}儿(JV)"], "𭀠": ["⿱𠂉⿸⿻口丿乚(J)"]}
+    assert v.substitutions(descriptions(sequences, {"⺈": "刀"}), "免", "𭀠") == {}
+    # With no region in common, every tree is compared.
+    elsewhere = {**sequences, "𭀠": ["⿱𠂉⿸⿻口丿乚(K)"], "免": ["⿱⺈⿸⿻口丿乚(G)", "⿱{2}儿(J)"]}
+    assert set(v.substitutions(descriptions(elsewhere), "免", "𭀠")) == {v.ordered("⺈", "𠂉")}
+
+
+def test_a_description_that_names_a_component_matches_one_that_spells_it_out_across_the_operator():
+    # 鸂 is ⿰溪鳥 with 溪 ⿰氵奚; 㶉 spells 溪 out across the operator as ⿲氵奚鸟, and differs in
+    # 鳥 against 鸟.
+    desc = descriptions({"鸂": ["⿰溪鳥"], "溪": ["⿰氵奚"], "奚": ["⿱爫𡗞"], "㶉": ["⿲氵奚鸟"]})
+    assert v.substitutions(desc, "鸂", "㶉") == {("鳥", "鸟"): {None}}
+    # The form comes out as the character, and the spelled-out reading writes no second sequence.
+    assert {(d.other, d.encoded) for d in v.derive(desc, {"鳥": {"鸟"}}, ["鸂"])} == {("㶉", True)}
+
+
+def test_a_component_spelled_out_inside_a_description_reads_the_same_shape():
+    # 蘂 is ⿱艹橤 with 橤 ⿱惢木; 蘃 writes the same stack spelled out as ⿳艹歮木.
+    # 惢 is itself ⿱心𢗰, which flattens 橤 to ⿳心𢗰木; 蘂 still reads ⿳艹惢木.
+    desc = descriptions({"蘂": ["⿱艹橤"], "橤": ["⿱惢木"], "惢": ["⿱心𢗰"], "蘃": ["⿳艹歮木"]})
+    assert v.substitutions(desc, "蘂", "蘃") == {("惢", "歮"): {None}}
+    assert {(d.other, d.encoded) for d in v.derive(desc, {"惢": {"歮"}}, ["蘂"])} == {("蘃", True)}
+
+
+def test_a_pair_that_shares_a_tree_attests_nothing():
+    # 㤁 and 忝 are both ⿱天心 in one analysis: their other analyses show each character's own
+    # looseness, not a way the two differ.
+    desc = descriptions({"㤁": ["⿱天心"], "忝": ["⿱天心", "⿱夭心"]})
+    assert v.substitutions(desc, "㤁", "忝") == {}
+    alone = descriptions({"㤞": ["⿱天心"], "㤟": ["⿱夭心"]})
+    assert set(v.substitutions(alone, "㤞", "㤟")) == {v.ordered("天", "夭")}
+
+
 def test_a_component_without_a_description_of_its_own_still_predicts_its_bare_pair():
     # 火 and 灬 have no description of their own (their sequence is themselves); the pair they make
     # with each other is still a prediction.
@@ -183,3 +230,22 @@ def test_a_component_without_a_description_of_its_own_still_predicts_its_bare_pa
     item = v.Attested(*v.ordered("火", "灬"), (("炎", "炎", ("s",)),), ("炎/炎",))
     predicted = v.predictions(desc, [item])
     assert ("火", "灬") in predicted[v.ordered("火", "灬")]
+
+
+def test_a_substitution_makes_a_form_at_any_depth_of_the_characters_own_sequence():
+    desc = descriptions({"㑑": ["⿱⿰宀口大"], "㑒": ["⿱⿰宀厶大"]})
+    derived = list(v.derive(desc, {"口": {"厶"}}, ["㑑"]))
+    assert [(d.other, d.encoded, d.was, d.became) for d in derived] == [("㑒", True, "口", "厶")]
+
+
+def test_a_sequence_marked_approximate_subtracted_or_unrepresentable_describes_nothing():
+    desc = v.Descriptions({"㑞": ["〾⿻一乚"], "㐆": ["㇯上一"], "㑇": ["⿰口？"]}, {})
+    assert not ({"㑞", "㐆", "㑇"} & desc.trees.keys())
+    assert all(not desc.trees.get(char) for char in ("㑞", "㐆", "㑇"))
+
+
+def test_every_attesting_pair_is_among_the_predictions():
+    desc = descriptions({"㗀": ["⿰口夂"], "㗁": ["⿰厶夂"]})
+    item = v.Attested(*v.ordered("口", "厶"), (("㗀", "㗁", ("s",)),), ("㗀/㗁",))
+    predicted = v.predictions(desc, [item])
+    assert tuple(sorted(("㗀", "㗁"), key=ord)) in predicted[(item.a, item.b)]
