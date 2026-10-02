@@ -12,7 +12,7 @@ import pyarrow.dataset as ds
 from cloudflare_schema import CORPUS_REFRESH, schema
 from export_cloudflare import Packs, encoded
 
-from glyph_atlas import style, withdrawn
+from glyph_atlas import box_relabel, style, withdrawn
 from glyph_atlas.corpus import sources
 from glyph_atlas.corpus.api import PROXYABLE, CorpusAPI
 from glyph_atlas.corpus.details import DetailResolver, _iiif_region, _viewport
@@ -144,6 +144,24 @@ def unit_corpora(names=None):
     return [corpus for corpus in found if corpus.name in names]
 
 
+def stale_lines(dataset) -> set[str]:
+    """The lines of a unit table whose detect-align units were aligned in the old detection order.
+
+    Their labels sit on the wrong boxes (`glyph_atlas.box_relabel`), so a publication leaves them out
+    until `atlas repair relabel` has given each box its character.
+    """
+    from glyph_atlas.schema import Box
+
+    if not {"line_id", "seq", "box", "method", "kind"} <= set(dataset.schema.names):
+        return set()
+    lines = {}
+    table = dataset.to_table(columns=["line_id", "seq", "box", "kind"], filter=ds.field("method") == "detect-align")
+    for row in table.to_pylist():
+        if row["line_id"] and row["seq"] is not None and row["box"] and row["kind"] == "char":
+            lines.setdefault(row["line_id"], []).append((row["seq"], Box(**row["box"])))
+    return {line for line, placed in lines.items() if box_relabel.stale(placed)}
+
+
 def export(output, *, resume=False, published=None, corpora=None, skip=frozenset(), holder_images=False):
     """Export every unit corpus, or only those named in `corpora`, leaving out the ids in `skip`.
 
@@ -178,6 +196,7 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
             continue
         context = _MetaCache(corpus)
         dataset = ds.dataset([str(p) for p in paths], format="parquet")
+        stale = stale_lines(dataset)
         columns = [c for c in ("id", "document_id", "page_id", "line_id", "seq", "box", "crop", "crop_sha256",
                    "kind", "granularity", "text_source", "reading", "unicode", "method", "review", "active", "upstream",
                    "style")
@@ -190,6 +209,9 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
                     counts["withdrawn"] += 1
                     continue
                 if not _character_unit_row(row):
+                    continue
+                if row.get("line_id") in stale:
+                    counts["stale-order"] += 1
                     continue
                 char = _char_of_codepoint(row.get("unicode")) or row.get("text_source")
                 if not char:

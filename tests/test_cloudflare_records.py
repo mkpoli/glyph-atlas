@@ -354,3 +354,20 @@ def test_a_label_credit_that_repeats_the_image_credit_is_left_out(scripts):
     assert export.text_attribution(joined) is None
     joined = {"image_rights": {"attribution": "国立国会図書館デジタルコレクション"}, "text_attribution": "HDIC KRM, CC BY-SA 4.0"}
     assert export.text_attribution(joined) == "HDIC KRM, CC BY-SA 4.0"
+
+
+def test_an_export_finds_the_lines_aligned_in_the_old_detection_order(scripts, tmp_path):
+    import pyarrow as pa
+    import pyarrow.dataset as ds
+    import pyarrow.parquet as pq
+
+    export = importlib.import_module("export_cloudflare_corpus")
+    rows = []
+    for line, ys in (("stale", (90, 10, 130, 50)), ("read", (10, 50, 90, 130))):
+        for seq, y in enumerate(ys, start=1):
+            rows.append({"line_id": line, "seq": seq, "box": {"x": 100, "y": y, "w": 30, "h": 28},
+                         "method": "detect-align", "kind": "char"})
+    rows.append({"line_id": "imported", "seq": 1, "box": {"x": 0, "y": 0, "w": 1, "h": 1}, "method": "import",
+                 "kind": "char"})
+    pq.write_table(pa.Table.from_pylist(rows), tmp_path / "units.parquet")
+    assert export.stale_lines(ds.dataset(tmp_path / "units.parquet")) == {"stale"}
