@@ -5,6 +5,7 @@ import { similarCrops } from './similar';
 import { componentSearch, componentTerm } from './components';
 import { formProblem, type FormProblem } from './writtenForm';
 import { auth, claim, owned, providers, viewer } from './auth';
+import { AVATAR_PATH, avatar, setAvatar } from './avatar';
 import { reviewers, submissions } from './admin';
 export { leastTypicalQuery } from './forms';
 export { componentMatchQuery } from './components';
@@ -1405,6 +1406,11 @@ export default {
         // An admin's page: rejecting what a reviewer saved. Banning and roles are Better Auth's own.
         if(path.startsWith('/api/admin/')&&!me.admin)throw new Problem(403,'Only an admin can do this.');
         if(path==='/api/admin/reject')return json(await reject(env,me.id,await body(request)));
+        if(path==='/api/account/avatar'){
+          const origin=request.headers.get('origin');
+          if(origin&&origin!==url.origin)throw new Problem(403,'Use the account page on this site.');
+          const {status,body:out}=await setAvatar(env,me,q.get('source')??'',request);return json(out,status);
+        }
         if(path==='/api/account/claim'){const {status,body:out}=await claim(env,me,String((await body(request)).reviewer??''));return json(out,status)}
         if(path==='/atlas/corpus/reviews')return json(await submit(env,request,me.id,'@corpus'));
         if(path==='/atlas/rounds')return json(await submit(env,request,me.id));
@@ -1436,6 +1442,8 @@ export default {
         if(path==='/api/admin/submissions')return json(await submissions(env,q,reviewerActors(Object.fromEntries(q))));
         throw new Problem(404,'Unknown endpoint.');
       }
+      const picture=path.match(AVATAR_PATH);
+      if(picture)return await avatar(env,picture[1],picture[2]);
       if(path==='/api/account')return json({user:await viewer(env,request,true),providers:providers(env)});
       if(path==='/health')return json({ok:true,published_at:await meta(env,'published_at')});
       const image=path.match(/^\/atlas\/media\/([a-f0-9]{64})\.webp$/);

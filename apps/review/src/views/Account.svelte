@@ -35,6 +35,35 @@
     } catch (failure) { if (failure?.code !== 'AUTH_CANCELLED') error = failure?.message || t('signIn.error.other') }
     finally { busy = '' }
   }
+  // A picture: the initial, an account elsewhere, Gravatar, or an upload cropped to a square here.
+  let pictureInput = $state()
+  async function picture(source, bytes = null) {
+    busy = 'picture'; error = ''; notice = ''
+    try {
+      const response = await fetch('/api/account/avatar?source=' + source, { method: 'POST',
+        headers: { 'content-type': bytes ? 'image/webp' : 'application/json' }, body: bytes ?? '{}' })
+      const value = await response.json()
+      if (!response.ok) throw new Error(source === 'gravatar' && response.status === 404 ? t('account.picture.noGravatar') : value.detail)
+      await session.refresh()
+      notice = t('account.picture.saved')
+    } catch (failure) { error = failure.message || t('signIn.error.other') } finally { busy = '' }
+  }
+  async function upload(event) {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    if (!file) return
+    try {
+      const bitmap = await createImageBitmap(file)
+      const side = Math.min(bitmap.width, bitmap.height), size = Math.min(256, side)
+      const canvas = new OffscreenCanvas(size, size)
+      canvas.getContext('2d').drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, size, size)
+      const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.86 })
+      if (blob.type !== 'image/webp') throw new Error(t('account.picture.unreadable'))
+      await picture('upload', blob)
+    } catch (failure) { error = failure.message || t('account.picture.unreadable') }
+  }
+  const pictureFrom = $derived(!session.state.user?.image ? 'initial' : session.state.user.image.startsWith('/api/avatars/') ? 'upload'
+    : session.state.user.image.includes('gravatar.com') ? 'gravatar' : session.state.user.image.includes('avatars.githubusercontent.com') ? 'github' : 'other')
   const rename = event => { event.preventDefault(); return act('name', async client => { const r = await client.updateUser({ name: name.trim() }); await session.refresh(); return r }, t('account.name.saved')) }
   const link = provider => act(provider, client => client.linkSocial({ provider, callbackURL: location.pathname }))
   const unlink = provider => act(provider, client => client.unlinkAccount({ accountId: accounts.find(account => account.providerId === provider).id }))
@@ -69,6 +98,21 @@
     {#if error}<p class="error-message" role="alert">{error}</p>{/if}
     {#if notice}<p class="replaced-note" role="status">{notice}</p>{/if}
     {#if !loaded}<div class="account-card"><div class="account-loading shimmer"></div></div>{:else}
+
+    <div class="account-card">
+      <h2>{t('account.picture.title')}</h2>
+      <p class="account-hint">{t('account.picture.hint')}</p>
+      <div class="picture-choices">
+        <span class="avatar large" aria-hidden="true">{#if session.state.user.image}<img src={session.state.user.image} alt="" referrerpolicy="no-referrer" />{:else}{[...user.name][0]?.toUpperCase()}{/if}</span>
+        <div class="picture-options" role="group" aria-label={t('account.picture.title')}>
+          <button aria-pressed={pictureFrom === 'initial'} disabled={busy === 'picture'} onclick={() => picture('initial')}>{t('account.picture.initial')}</button>
+          {#if linked.has('github')}<button aria-pressed={pictureFrom === 'github'} disabled={busy === 'picture'} onclick={() => picture('github')}>GitHub</button>{/if}
+          {#if email && !email.endsWith('.invalid')}<button aria-pressed={pictureFrom === 'gravatar'} disabled={busy === 'picture'} onclick={() => picture('gravatar')}>Gravatar</button>{/if}
+          <button aria-pressed={pictureFrom === 'upload'} disabled={busy === 'picture'} onclick={() => pictureInput.click()}>{t('account.picture.upload')}</button>
+          <input class="visually-hidden" type="file" accept="image/*" bind:this={pictureInput} onchange={upload} tabindex="-1" aria-hidden="true" />
+        </div>
+      </div>
+    </div>
 
     <div class="account-card">
       <h2>{t('account.name.title')}</h2>
@@ -142,6 +186,10 @@
   .account-list small { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
   .account-list button:not(.quiet-link) { font-size: 12px; padding: 7px 12px; }
   .method-icon { width: 18px; display: grid; place-items: center; flex-shrink: 0; }
+  .picture-choices { display: flex; align-items: center; gap: 18px; }
+  .picture-options { display: flex; flex-wrap: wrap; gap: 6px; }
+  .picture-options button { font-size: 12px; padding: 8px 12px; }
+  .picture-options button[aria-pressed='true'] { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
   .account-loading { height: 220px; border-radius: 8px; }
   .session-dot { width: 8px; height: 8px; margin: 0 5px; border-radius: 50%; background: var(--line-strong); flex-shrink: 0; }
   .session-dot.here { background: var(--good); box-shadow: 0 0 0 4px var(--good-light); }
