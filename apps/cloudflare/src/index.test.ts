@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { canonical, samePixels, literal, hira, single, readingFrom, validRound, categoryOf,
+import { canonical, samePixels, literal, hira, single, validRound, categoryOf,
   encodeCursor, decodeCursor, historyItem, historyQuery, moved } from './index';
 import { ROUND_MAX } from './rounds';
 import { componentTerm, rankMatches } from './components';
@@ -27,13 +27,6 @@ it('a compatibility ideograph stays the character it is, and a voiced kana still
   expect(literal('U+FA30')).toBe('侮')
   expect(literal('侮')).toBe('侮')
   expect(literal('が')).toBe('が')
-})
-
-it('a corrected character carries the reading the character layer states', () => {
-  expect(readingFrom({ char: 'り', script: 'hiragana', readings: ['り'] })).toBe('り')
-  expect(readingFrom({ char: '𪜈', script: 'han', readings: [], ligature: { reading: 'トモ' } })).toBe('とも')
-  expect(readingFrom({ char: '国', script: 'han', readings: [] })).toBe('国')
-  expect(readingFrom({ char: '𛄝', script: 'hentaigana', readings: ['ん', 'む', 'も'] })).toBe(null)
 })
 
 describe('a round names flagged answers, seen crops, or both', () => {
@@ -106,13 +99,21 @@ describe('historyItem', () => {
     const event = JSON.stringify({ id: 'cf:e1', target_type: 'unit', target_id: 'one', field: 'review',
       old: 'machine', new: 'reviewed', role: 'reviewer', actor: 'alice', at: '2026-01-02T00:00:00.000Z',
       evidence: JSON.stringify({ kind: 'character-review', verdict: 'wrong', issue: 'character',
-        suggested_character: 'U+30D7', suggested_reading: 'ぷ', round: null }) });
+        suggested_character: 'U+30D7', round: null }) });
     expect(historyItem({ id: 'cf:e1', at: '2026-01-02T00:00:00.000Z', actor: 'reviewer-0a1b2c3d', target: 'one',
       kind: 'review', event, label: 'ア', user: 'u1', name: 'Alice', image: null }, 'u1')).toEqual({
       id: 'cf:e1', at: '2026-01-02T00:00:00.000Z', target: 'one', label: 'ア', kind: 'review',
       reviewer: { user: 'u1', name: 'Alice', image: null, mine: true },
-      verdict: 'wrong', issue: 'character', character: 'プ', reading: 'ぷ', round: null, batch: null, undoes: null,
+      verdict: 'wrong', issue: 'character', character: 'プ', text: null, round: null, batch: null, undoes: null,
     });
+  });
+  it('reads a review saved with the reading-era words in the terms reviews use now', () => {
+    const event = JSON.stringify({ id: 'cf:e0', target_type: 'unit', target_id: 'one', field: 'review',
+      old: 'machine', new: 'disputed', role: 'reviewer', actor: 'alice', at: '2026-01-01T00:00:00.000Z',
+      evidence: JSON.stringify({ kind: 'visual-quiz', verdict: 'wrong', issue: 'reading', suggested_reading: 'ハツ' }) });
+    const item = historyItem({ id: 'cf:e0', at: '2026-01-01T00:00:00.000Z', actor: 'alice', target: 'one',
+      kind: 'review', event, label: '表', user: null, name: null, image: null });
+    expect([item.issue, item.text]).toEqual(['character', 'ハツ']);
   });
   it('maps an undo row, naming the event it reverses and leaving the review fields null', () => {
     const event = JSON.stringify({ id: 'cf:e2', target_type: 'unit', target_id: 'one', field: 'review',
@@ -122,7 +123,7 @@ describe('historyItem', () => {
       kind: 'undo', event, label: null, user: null, name: null, image: null }, 'u1')).toEqual({
       id: 'cf:e2', at: '2026-01-03T00:00:00.000Z', target: 'one', label: null, kind: 'undo',
       reviewer: { user: null, name: 'reviewer-0a1b2c3d', image: null, mine: false },
-      verdict: null, issue: null, character: null, reading: null, round: null, batch: null, undoes: 'cf:e1',
+      verdict: null, issue: null, character: null, text: null, round: null, batch: null, undoes: 'cf:e1',
     });
   });
   it('carries a round id when the review came from a visual quiz round', () => {
