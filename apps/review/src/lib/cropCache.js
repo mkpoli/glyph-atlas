@@ -1,10 +1,12 @@
-import { character, corpusCharacter } from './client.js'
+import { character, corpusCharacter, afterWrite } from './client.js'
 
 // Crops read ahead of the reader: when one opens, its neighbours in the list are read and their
-// images warmed, so ← → and "next after saving" show the next crop at once. An entry is used once,
-// lives a minute, and goes when its crop is written.
+// images warmed, so ← → and "next after saving" show the next crop at once. An entry lives twenty
+// seconds, and every write empties the cache, since a write may change any crop (a bulk correction,
+// a round, an undo).
 const kept = new Map()
-const LIFE = 60000, ROOM = 12
+const LIFE = 20000, ROOM = 12
+afterWrite(() => kept.clear())
 const keyOf = (id, origin) => (origin === 'corpus' ? 'corpus:' : 'crop:') + id
 const read = (id, origin) => origin === 'corpus' ? corpusCharacter(id) : character(id)
 
@@ -26,7 +28,6 @@ export function prefetchCrop(id, origin = 'collection') {
 /** The crop, from what was read ahead when it is fresh, else from the service. */
 export function readCrop(id, origin = 'collection') {
   const key = keyOf(id, origin), hit = kept.get(key)
-  kept.delete(key)
   return hit && Date.now() - hit.at < LIFE ? hit.promise : read(id, origin)
 }
 

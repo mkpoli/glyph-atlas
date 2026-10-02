@@ -45,7 +45,7 @@
   let written = $state({})
   const initial = $derived(routed && shown?.id === routed.id && !written[routed.id] ? page.data.record : null)
   // The list's own row for the crop on show, drawn while its record loads.
-  const preview = $derived(index >= 0 ? inspector.queue[index] : null)
+  const preview = $derived(index >= 0 && inspector.queue[index]?.image ? inspector.queue[index] : null)
   // The crops either side are read ahead once this one is on show, so stepping finds them ready.
   $effect(() => {
     const queue = inspector.queue, near = [queue[index + 1], queue[index - 1]].filter(Boolean)

@@ -1,5 +1,9 @@
 import { t } from './i18n.svelte.js'
 
+// Whoever keeps records read ahead hears of every write, which may have changed any of them.
+const writeListeners = new Set()
+export const afterWrite = listener => { writeListeners.add(listener); return () => writeListeners.delete(listener) }
+
 // `options.fetch` is the fetch a page's load function was given, which answers API paths on the
 // server as well as in the browser.
 export async function request(path, body, { fetch: send = fetch, ...options } = {}) {
@@ -12,6 +16,7 @@ export async function request(path, body, { fetch: send = fetch, ...options } = 
   const { ensureSignedIn } = writes ? await import('./session.svelte.js') : {}
   if (writes) await ensureSignedIn()
   let response = await post()
+  if (writes) for (const listener of writeListeners) listener()
   if (writes && response.status === 401) { await ensureSignedIn({ again: true }); response = await post() }
   const value = await response.json()
   if (!response.ok) {

@@ -49,7 +49,7 @@
     dialog?.scrollTo({ top: 0 })
     try {
       const result = preloaded ?? await readCrop(target, 'corpus')
-      if (!closed && current === generation) { data = result; fresh = true }
+      if (!closed && current === generation) { if (result.image !== data?.image) loaded = false; data = result; fresh = true }
     } catch (e) { if (!closed && current === generation) error = e.message }
   }
   // Only the first load, of the crop the page was rendered for, starts from `initial`.
@@ -122,11 +122,11 @@
         <div class="credit-beside"><SourceCredit item={data} corpus /></div>
       </div>
       {#if data.identity_status === 'unassigned'}
-        <div class="assignment-options"><FormChips forms={data.family_members ?? []} chosen={issue === 'character' ? correction : null} disabled={busy} label={t('corpus.assign.label')}
+        <div class="assignment-options"><FormChips forms={data.family_members ?? []} chosen={issue === 'character' ? correction : null} disabled={busy || !fresh} label={t('corpus.assign.label')}
           onchoose={char => { chooseIssue('character'); choose(char) }} /></div>
       {/if}
-      {#snippet formBar()}{#if data.identity_status !== 'unassigned' && !data.needs_segmentation}<CropForm crop={data} chosen={form} onchoose={value => form = value} disabled={busy} />{/if}{/snippet}
-      <CropReview forms={formBar} {issue} onissue={chooseIssue} disabled={busy} suggested={data.state === 'flagged' ? data.issue : null} onskip={skip}
+      {#snippet formBar()}{#if data.identity_status !== 'unassigned' && !data.needs_segmentation}<CropForm crop={data} chosen={form} onchoose={value => form = value} disabled={busy || !fresh} />{/if}{/snippet}
+      <CropReview forms={formBar} {issue} onissue={chooseIssue} disabled={busy || !fresh} suggested={data.state === 'flagged' ? data.issue : null} onskip={skip}
         targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={{ candidates: data.suggestions }} label={data.label} value={correction} onchoose={choose} />
       <SimilarCrops id={data.id} label={data.label} ready={fresh && loaded} />
       <div class="credit-after"><SourceCredit item={data} corpus /></div>
