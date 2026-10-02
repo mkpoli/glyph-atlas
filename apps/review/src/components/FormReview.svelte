@@ -8,7 +8,7 @@
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import { members as loadMembers } from '../lib/forms.js'
   import { history, step } from '../lib/formHistory.svelte.js'
-  import { number, reviewer } from '../lib/client.js'
+  import { number } from '../lib/client.js'
   import { t } from '../lib/i18n.svelte.js'
 
   let { family, start = 0, isOpen, onsaved, onexit } = $props()
@@ -61,13 +61,13 @@
       // as a whole, in one decision that clearing the cluster takes back.
       const whole = !form && !mixed && units.length === total && glyphs.length === total && glyphs.every(g => g.basis !== 'form_glyph')
       await step({ family: family.code_point, cluster: cluster.id }, async send => {
-        if (whole) await send({ kind: 'cluster', cluster: cluster.id, issue, client_id: reviewer(), ...wrong })
+        if (whole) await send({ kind: 'cluster', cluster: cluster.id, issue, ...wrong })
         // A decision covers at most 1,000 glyphs; a larger mark goes in parts.
         else for (let i = 0; i < units.length; i += 1000)
-          await send({ kind: 'glyph', units: units.slice(i, i + 1000), issue, client_id: reviewer(), ...wrong })
+          await send({ kind: 'glyph', units: units.slice(i, i + 1000), issue, ...wrong })
         // Marked glyphs are reported first, so a cluster marked mixed keeps them.
-        if (mixed) await send({ kind: 'cluster', cluster: cluster.id, issue: 'mixed', client_id: reviewer() })
-        if (form) await send({ kind: 'cluster', cluster: cluster.id, form, client_id: reviewer() })
+        if (mixed) await send({ kind: 'cluster', cluster: cluster.id, issue: 'mixed' })
+        if (form) await send({ kind: 'cluster', cluster: cluster.id, form })
       })
       const from = index, order = family.items.map(c => c.id)
       await onsaved({ reported: units.length, issue, mixed, form, count: cluster.count - units.length })

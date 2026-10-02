@@ -14,12 +14,12 @@ export const drawBox = (pageId, body) => request('/atlas/pages/' + encodeURIComp
 /** A character named for a drawn box goes through the character layer, as any identity correction does. */
 export const nameCharacter = (unitId, body) => request('/layers/units/' + encodeURIComponent(unitId), body)
 /** Keeping a proposed box records that a person saw a mark there, so a newer proposer never retires it. */
-export const keepBox = (unit, clientId) => request('/reviews', {
+export const keepBox = unit => request('/reviews', {
   target_type: 'unit', target_id: unit.id, field: 'review', new: 'reviewed',
-  base_revision: unit.revision, client_id: clientId, idempotency_key: 'keep:' + unit.id + ':' + unit.revision,
+  base_revision: unit.revision, idempotency_key: 'keep:' + unit.id + ':' + unit.revision,
 })
 /** Retiring keeps the unit and its history in the journal; it only leaves the page. */
-export const retireBox = (unit, clientId) => request('/reviews', {
+export const retireBox = unit => request('/reviews', {
   target_type: 'unit', target_id: unit.id, field: 'active', new: false,
-  base_revision: unit.revision, client_id: clientId, idempotency_key: 'retire:' + unit.id + ':' + unit.revision,
+  base_revision: unit.revision, idempotency_key: 'retire:' + unit.id + ':' + unit.revision,
 })

@@ -10,7 +10,7 @@
   import { showsContext, clearContext } from '../lib/glyphContext.svelte.js'
   import { families as loadFamilies, family as loadFamily, members as loadMembers, split as loadSplit } from '../lib/forms.js'
   import { history, step, undo, redo } from '../lib/formHistory.svelte.js'
-  import { number, reviewer, stored, remember } from '../lib/client.js'
+  import { number, stored, remember } from '../lib/client.js'
   import { t, around, localize } from '../lib/i18n.svelte.js'
   import { characterAddress } from '../lib/gallery.js'
   import { originText, originTitle } from '../lib/origin.js'
@@ -127,9 +127,9 @@
       await step({ family: code, cluster: open ?? targets[0] }, async send => {
         // A decision covers at most 1,000 glyphs; a larger selection is sent in parts.
         for (let i = 0; i < units.length; i += 1000)
-          result.count += (await send({ kind: kind ?? 'glyph', units: units.slice(i, i + 1000), client_id: reviewer(), ...(kind === 'inherit' ? {} : { form }) })).count
+          result.count += (await send({ kind: kind ?? 'glyph', units: units.slice(i, i + 1000), ...(kind === 'inherit' ? {} : { form }) })).count
         // One decision per cluster, so each keeps its own record and can be withdrawn on its own.
-        for (const id of targets) result.count += (await send({ kind: 'cluster', cluster: id, form, client_id: reviewer() })).count
+        for (const id of targets) result.count += (await send({ kind: 'cluster', cluster: id, form })).count
       })
       picked = new Set(); pickAnchor = null
       notice = form ? t('forms.notice.assigned', { form, count: result.count })
@@ -153,7 +153,7 @@
       const wrong = issue === 'character' && correction.trim() ? { character: correction.trim() } : {}
       let count = 0
       await step({ family: code, cluster: targets[0] }, async send => {
-        for (const id of targets) count += (await send({ kind: 'cluster', cluster: id, issue, client_id: reviewer(), ...wrong })).count
+        for (const id of targets) count += (await send({ kind: 'cluster', cluster: id, issue, ...wrong })).count
       })
       picked = new Set(); pickAnchor = null; correcting = false; correction = ''
       notice = issue === 'mixed' ? t('forms.notice.mixed', { count: targets.length }) : t('forms.notice.reported', { count, issue: issueName(issue) })
@@ -175,7 +175,7 @@
       const units = [...chosen], result = { count: 0 }
       await step({ family: code, cluster: open }, async send => {
         for (let i = 0; i < units.length; i += 1000)
-          result.count += (await send({ kind: 'glyph', units: units.slice(i, i + 1000), issue, client_id: reviewer(),
+          result.count += (await send({ kind: 'glyph', units: units.slice(i, i + 1000), issue,
             ...(issue === 'character' && correction.trim() ? { character: correction.trim() } : {}) })).count
       })
       notice = t('forms.notice.reported', { count: result.count, issue: issueName(issue) })

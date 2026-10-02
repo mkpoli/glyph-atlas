@@ -58,7 +58,7 @@ describe('form decisions outside cluster membership', () => {
 });
 
 // D1's prepare/bind/first/run/batch over bun:sqlite, a batch in one transaction as D1 runs it.
-function d1(db: Database) {
+export function d1(db: Database) {
   const statement = (sql: string, args: unknown[] = []) => ({
     sql, args,
     bind: (...values: unknown[]) => statement(sql, values),
@@ -97,9 +97,9 @@ describe('a decision’s corpus glyphs', () => {
       text: (value: unknown) => value as string, codePoints: (value: string) => value, family: async () => 'U+305F',
     };
     const request = new Request('https://atlas.test/atlas/forms/decisions', { method: 'POST',
-      body: JSON.stringify({ kind: 'cluster', cluster: 'c', form: '𛁠', client_id: 'r' }) });
+      body: JSON.stringify({ kind: 'cluster', cluster: 'c', form: '𛁠' }) });
     const decided = await formsRoute(env, request, '/atlas/forms/decisions', new URLSearchParams(), tools,
-      { waitUntil: (p: Promise<unknown>) => pending.push(p) } as unknown as ExecutionContext) as Record<string, any>;
+      { waitUntil: (p: Promise<unknown>) => pending.push(p) } as unknown as ExecutionContext, 'r') as Record<string, any>;
     expect(decided.count).toBe(count);
     expect(pending).toHaveLength(1);
     await Promise.all(pending);

@@ -14,7 +14,7 @@
   // encode. The save moves the form alone: character, grapheme, revision and verdict stay as they
   // are. `saved` receives the record after the write; `working` holds the dialog's own save, as the
   // style field's does, so the two never race.
-  let { item, clientId, corpus = false, editable = true, disabled = false, working = null, saved } = $props()
+  let { item, corpus = false, editable = true, disabled = false, working = null, saved } = $props()
   // `variants` names the character its list belongs to, so a list that arrives after the dialog has
   // moved to another crop is never shown for it.
   let picker, typed = $state(''), error = $state(''), variants = $state({ point: null, list: [] }), loading = $state(false)
@@ -53,9 +53,9 @@
     working?.(true); error = ''
     try {
       const body = corpus
-        ? { id: crypto.randomUUID(), identity: item.id, client_id: clientId, revision: item.revision,
+        ? { id: crypto.randomUUID(), identity: item.id, revision: item.revision,
             source_revision: item.source_revision, form }
-        : { id: crypto.randomUUID(), client_id: clientId, revision: item.revision,
+        : { id: crypto.randomUUID(), revision: item.revision,
             image_sha256: item.image_sha256, form }
       const result = await request(corpus ? '/atlas/corpus/written-forms'
         : `/atlas/characters/${encodeURIComponent(item.id)}/written-form`, body)

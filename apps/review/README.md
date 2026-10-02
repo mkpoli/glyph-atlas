@@ -27,6 +27,18 @@ ATLAS_REVIEW_API=http://127.0.0.1:8770 devrun bun run --cwd apps/review preview
 Open <http://127.0.0.1:4173/>. For frontend development, run `vite dev` with the same variable.
 Run development servers through `devrun`.
 
+Accounts are always served by the Worker over D1, also beside the local service. Put a
+`BETTER_AUTH_SECRET` (`openssl rand -hex 32`) in `apps/cloudflare/.dev.vars` and apply the migrations
+to the local database once: `bunx wrangler d1 migrations apply glyph-atlas --local` in `apps/cloudflare`.
+
+## Accounts
+
+Every write is made by a signed-in user. A browser with no session starts an anonymous one before
+its first write. A browser that reviewed before accounts kept a `reviewer-…` id; its session asks
+for that id once. The history shows those ids to everyone, so an admin grants the claim, and the work
+saved under the id then becomes the user's. The journal is never rewritten:
+`actors` records which user each id written into it belongs to.
+
 `bun run --cwd apps/cloudflare deploy` builds this app and deploys it with the Worker configuration in
 `apps/cloudflare/wrangler.jsonc`.
 

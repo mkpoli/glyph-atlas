@@ -8,7 +8,7 @@
   // drawn by mistake or proposed where there is no mark. A proposal can also be kept unnamed, which
   // records that a person saw a mark there; closing leaves it proposed. `changed` is called after a write so the
   // page reloads its boxes.
-  let { unit, page, clientId, close, changed } = $props()
+  let { unit, page, close, changed } = $props()
   let dialog, query = $state(''), chosen = $state(null), busy = $state(false), error = $state('')
   let submission = null
   const crop = $derived(`/atlas/characters/${encodeURIComponent(unit.id)}/image?revision=${unit.revision}&image_sha256=${page.image_sha256}`)
@@ -18,7 +18,7 @@
   async function save() {
     if (busy || !chosen) return
     busy = true; error = ''
-    const payload = { client_id: clientId, revision: unit.revision, image_sha256: page.image_sha256,
+    const payload = { revision: unit.revision, image_sha256: page.image_sha256,
                       character: chosen.code_point, verdict: 'wrong', issue: 'character' }
     // The same answer retried keeps its submission id, so a lost response is not saved twice.
     const signature = JSON.stringify(payload)
@@ -35,7 +35,7 @@
     if (busy) return
     busy = true; error = ''
     try {
-      await keepBox(unit, clientId)
+      await keepBox(unit)
       changed(t('pages.box.kept'))
       close()
     } catch (e) { error = e.message }
@@ -46,7 +46,7 @@
     if (busy) return
     busy = true; error = ''
     try {
-      await retireBox(unit, clientId)
+      await retireBox(unit)
       changed(t('pages.box.removed'))
       close()
     } catch (e) { error = e.message }
