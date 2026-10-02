@@ -727,5 +727,6 @@
   "form.add": "Thêm dạng chữ",
   "script.hentaigana": "Hentaigana",
   "character.crop.keys": "Kéo khung hoặc góc · phím mũi tên để di chuyển · Shift và mũi tên để đổi cỡ",
-  "quiz.keyboardHint.forms": "1–0 dạng chữ"
+  "quiz.keyboardHint.forms": "1–0 dạng chữ",
+  "character.crop.pending": "Đã sửa khung, chờ cắt lại"
 }

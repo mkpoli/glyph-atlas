@@ -1332,6 +1332,40 @@ try {
   assert.deepEqual([formExport.forms[0].label, formExport.forms[0].pixels, formExport.forms[0].origin, formExport.forms[3].origin], ['還', hash, 'local', 'corpus'])
   const formPlan = (await db.prepare('EXPLAIN QUERY PLAN ' + worker.writtenFormsQuery()).all()).results.map(row => row.detail).join(' | ')
   assert.ok(!/SCAN l\b/.test(formPlan), 'each form finds its crop\'s latest through the index: ' + formPlan)
+  // A reviewer redraws a local crop's box: inside the page view, on the pixels it names, as the fix.
+  {
+    const d = { id: 'recrop', label: 'ア', reading: 'ア', state: 'flagged', issue: 'crop', revision: 0, image_sha256: hash,
+      production: 'handwritten', repair: { quiz: false }, box: { x: 100, y: 200, w: 40, h: 50 }, context: true,
+      context_box: { x: 80, y: 360, w: 120, h: 240 }, crop_box: { x: 100, y: 400, w: 40, h: 100 }, source_scale: [1, 2] }
+    await db.prepare(`INSERT INTO units(${UNIT_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+      // Not dealt to rounds (`quiz` 0), so the listings checked further on keep their crops.
+      'recrop', 'local', 'ア', 'ア', 'U+3042', null, 'handwritten', 'kana', 'flagged', 0, 0, 1, 1,
+      JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
+    assert.equal((await call('/atlas/characters/recrop')).crop_editable, true, 'a local crop with a page view can be redrawn')
+    const fix = box => ({ id: crypto.randomUUID(), revision: 0, image_sha256: hash, verdict: 'match', issue: 'reading', box })
+    await call('/atlas/characters/recrop', fix({ x: 79, y: 190, w: 40, h: 50 }), 422)
+    await call('/atlas/characters/recrop', fix({ x: 90, y: 190, w: 120, h: 50 }), 422)
+    await call('/atlas/characters/recrop', fix({ x: 90, y: 190, w: 40.5, h: 50 }), 422)
+    await call('/atlas/characters/recrop', { ...fix({ x: 90, y: 190, w: 40, h: 50 }), verdict: 'wrong', issue: 'crop' }, 422)
+    await call('/atlas/characters/recrop', { ...fix({ x: 90, y: 190, w: 40, h: 50 }), image_sha256: 'c'.repeat(64) }, 409)
+    const redraw = fix({ x: 90, y: 190, w: 44, h: 60 }), redrawId = redraw.id
+    await call('/atlas/characters/recrop', redraw)
+    const redrawn = await call('/atlas/characters/recrop')
+    assert.deepEqual([redrawn.box, redrawn.box_pending, redrawn.state, redrawn.revision], [{ x: 90, y: 190, w: 44, h: 60 }, true, 'checked', 1],
+      'the redrawn box is the crop\'s, awaiting the next cut, and the crop is fixed')
+    const row = (await call('/atlas/reviews.json')).reviews.filter(r => r.event.target_id === 'recrop').pop()
+    const evidence = JSON.parse(row.event.evidence)
+    assert.deepEqual(evidence.recrop, { from: { x: 100, y: 200, w: 40, h: 50 }, to: { x: 90, y: 190, w: 44, h: 60 }, pixels: hash },
+      'the review records the box claim and the evidence it was made on')
+    assert.deepEqual(evidence.correction.box, { x: 90, y: 190, w: 44, h: 60 })
+    await call('/atlas/corrections', { id: crypto.randomUUID(), character: 'ア',
+      crops: [{ id: 'recrop', revision: 1, image_sha256: hash, box: { x: 90, y: 190, w: 40, h: 50 } }] }, 422)
+    // Undoing the redraw puts the old box back, and nothing awaits a cut.
+    await call(`/atlas/rounds/${redrawId}/undo`, {})
+    const undone = await call('/atlas/characters/recrop')
+    assert.deepEqual([undone.box, undone.box_pending ?? false], [{ x: 100, y: 200, w: 40, h: 50 }, false], 'undo restores the box')
+    assert.equal((await call('/atlas/corpus/character?id=' + encodeURIComponent(corpus.id))).crop_editable ?? false, false, 'a corpus glyph keeps its source box')
+  }
   // One address gets 30 written forms a minute.
   let formsLimited = false
   for (let i = 0; i < 40 && !formsLimited; i++) {
@@ -1346,7 +1380,7 @@ try {
     rateLimited = response.status === 429
   }
   assert.ok(rateLimited, 'batches are rate-rateLimited per address')
-  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms, batch corrections, written forms.')
+  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms, batch corrections, written forms, redrawn boxes.')
 } finally {
   await mf.dispose()
   await rm(bundleDir, { recursive: true, force: true })

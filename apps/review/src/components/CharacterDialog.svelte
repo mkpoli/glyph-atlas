@@ -58,13 +58,15 @@
   // rectangle only when the cached image is the page's own size, so the scale converts between them.
   const scale = $derived(data?.source_scale || [1, 1])
   const toSource = (b) => ({ x: b.x * scale[0], y: b.y * scale[1], w: b.w * scale[0], h: b.h * scale[1] })
+  // A box saved on the site waits for the next publication to cut it; until then it is drawn the same way.
+  const drawn = $derived(box ?? (data?.box_pending ? data.box : null))
   const boxStyle = $derived(data?.context_box ? (() => {
-    const c = data.context_box, b = box ? toSource(box) : data.crop_box
+    const c = data.context_box, b = drawn ? toSource(drawn) : data.crop_box
     if (!b) return ''
     return `left:${100 * (b.x - c.x) / c.w}%;top:${100 * (b.y - c.y) / c.h}%;width:${100 * b.w / c.w}%;height:${100 * b.h / c.h}%`
   })() : '')
   // The redrawn box in the page view's pixels, and the page view itself, for the crop box's preview.
-  const draft = $derived(box && data?.context_box && data.context_image ? { b: toSource(box), c: data.context_box } : null)
+  const draft = $derived(drawn && data?.context_box && data.context_image ? { b: toSource(drawn), c: data.context_box } : null)
   // NDL reads lines, so a confident reading longer than one character hints at a merged crop.
   // Results stored before votes were recorded carry NDL's reading only among the candidates.
   const lineReading = $derived([...(suggestions?.votes || []), ...(suggestions?.candidates || [])].find(vote => vote.engine === 'NDLkotenOCR'))
@@ -225,9 +227,9 @@
           verdict: matches ? 'match' : decision(issue || 'character').verdict,
           issue: ['character', 'reading', 'crop', 'merged', 'blank', 'other'].includes(issue)
             ? issue : 'character',
-          character: written, ...(box ? { box } : {}) }
+          character: written }
       : { revision: data.revision, image_sha256: data.image_sha256,
-          ...value, issue: resolvedIssue, ...(box ? { box } : {}) }
+          ...value, issue: resolvedIssue, ...(fixed ? { box } : {}) }
     const signature = JSON.stringify(payload)
     if (!submission || submission.signature !== signature) submission = { signature, id: crypto.randomUUID() }
     try {
@@ -343,7 +345,7 @@
       <figure class="crop-box">{#key data.image}<Glyph item={data} eager onload={() => { loaded = true; imageFailed = false }} onerror={() => imageFailed = true} />{/key}{#if draft}<svg class="crop-preview" viewBox={`${draft.b.x} ${draft.b.y} ${draft.b.w} ${draft.b.h}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={t('character.crop.adjusted')}><image href={data.context_image} x={draft.c.x} y={draft.c.y} width={draft.c.w} height={draft.c.h} preserveAspectRatio="none" /></svg>{/if}</figure>
       <div class="inspector-right">
         <div class="inspector-production">{#if productionLabel(data)}<ProductionBadge item={data} />{/if}<StyleField item={data} editable={!onVerdict} disabled={busy || !fresh} working={value => busy = value} saved={styled} /></div>
-        <div class="inspector-title"><CropTitle char={data.label} script={data.script} /><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{:else if repairOf(data)?.label === 'no-class'}<span class="repair-note" title={t('repair.reason.noClass')}>{t('repair.noClass')}</span>{/if}{#if data.state === 'checked' || data.state === 'flagged'}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.state === 'checked' ? t('state.checked') : t('state.flagged')}</span>{/if}</div>
+        <div class="inspector-title"><CropTitle char={data.label} script={data.script} /><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{:else if repairOf(data)?.label === 'no-class'}<span class="repair-note" title={t('repair.reason.noClass')}>{t('repair.noClass')}</span>{/if}{#if data.box_pending}<span class="state-pill">{t('character.crop.pending')}</span>{:else if data.state === 'checked' || data.state === 'flagged'}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.state === 'checked' ? t('state.checked') : t('state.flagged')}</span>{/if}</div>
         <CopyId id={data.id} />
         {#snippet formBar()}{#if !onVerdict}<CropForm crop={data} chosen={form} onchoose={value => form = value} disabled={busy || !fresh} />{/if}{/snippet}
         <CropReview forms={formBar} {issue} onissue={chooseIssue} suggested={suggestedIssue} disabled={busy || !fresh} onskip={skip}
@@ -363,7 +365,7 @@
               <figcaption><span id="crop-keys" class="crop-keys">{t('character.crop.keys')}</span><button type="button" disabled={busy} onclick={endCrop}>{t('character.crop.doneAdjusting')}</button></figcaption>
             </figure>
           {:else}
-            {#key data.image}<CropContext item={data} detail={data} cropBox={box ? toSource(box) : null} disabled={busy} />{/key}
+            {#key data.image}<CropContext item={data} detail={data} cropBox={drawn ? toSource(drawn) : null} disabled={busy} />{/key}
           {/if}
         </div>
         <div class="credit-beside"><SourceCredit item={data} /></div>

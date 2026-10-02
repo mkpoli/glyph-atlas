@@ -109,7 +109,10 @@ def plan(new: dict, live: dict) -> tuple[str, str | None]:
     reformed = new.get("written_form") != live["written_form"] and (moved or not live["formed"])
     if reformed and not moved:
         guard = guard.removesuffix(";") + " AND NOT EXISTS(SELECT 1 FROM written_forms w WHERE w.target=units.id);"
-    if live["reviewed"]:
+    # A box a reviewer redrew on the site waits on the live row for this cut: the catalogue's crop is cut
+    # from that same box, so it takes the row, the site's review having come back through the import.
+    recut = moved and bool(live_data.get("box_pending")) and live_data.get("box") == new_data.get("box")
+    if live["reviewed"] and not recut:
         if moved:
             return "hold", None
         # Only ever out of the quiz: a reviewed (or flagged) crop is not dealt again.
@@ -118,7 +121,7 @@ def plan(new: dict, live: dict) -> tuple[str, str | None]:
     # The revision is part of the comparison: a unit left at the old lineage's revision could not
     # have its later site reviews imported.
     # Compared as JSON: D1 and the catalogue may write the same object with different spacing.
-    elif new_data != live_data or int(new["revision"]) != int(live["revision"]):
+    elif recut or new_data != live_data or int(new["revision"]) != int(live["revision"]):
         if int(new["revision"]) == int(live["revision"]):
             raise Collision(f"{new['id']}: catalogue revision {new['revision']} equals the live one")
         columns = ", ".join(f"{column}={quote(new[column])}"

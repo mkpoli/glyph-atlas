@@ -742,5 +742,6 @@
   "form.add": "字形を追加",
   "script.hentaigana": "変体仮名",
   "character.crop.keys": "枠か角をドラッグ · 矢印キーで移動 · Shift+矢印キーで大きさを変更",
-  "quiz.keyboardHint.forms": "1–0字形"
+  "quiz.keyboardHint.forms": "1–0字形",
+  "character.crop.pending": "切り出し修正済み・再切り出し待ち"
 }
