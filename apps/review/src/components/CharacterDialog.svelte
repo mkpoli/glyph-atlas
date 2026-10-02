@@ -241,12 +241,18 @@
     changed?.(result.id, result)
     if (!closed && result.id === data?.id) data = result
   }
+  /** Leave the editor, keeping the box, with the focus on what follows it. */
+  async function endCrop() {
+    editingBox = false
+    await tick()
+    ;(dialog?.querySelector('.crop-change button') ?? saveButton)?.focus({ preventScroll: true })
+  }
   async function beginCrop() {
     editingBox = true
     await tick()
     contextElement?.focus({ preventScroll: true })
-    // The stroke view is small and sits under the crop, so adjusting means looking at it: bring it
-    // into view rather than leaving the reader to find it. No focus is taken, since the drag follows.
+    // The stroke view sits under the crop, so adjusting means looking at it: bring it into view, and
+    // give it the keyboard so the arrows adjust the box at once.
     nearby?.scrollIntoView({ block: 'nearest', behavior: 'instant' })
   }
   function point(e) {
@@ -267,8 +273,9 @@
   /** Keep a rectangle inside the context, at least two pixels each way. */
   function bounded({ x, y, w, h }) {
     const limits = pageBounds(), right = limits.x + limits.w, bottom = limits.y + limits.h
-    x = Math.max(limits.x, Math.min(x, right - 2)); y = Math.max(limits.y, Math.min(y, bottom - 2))
-    return { x: Math.round(x), y: Math.round(y), w: Math.round(Math.max(2, Math.min(w, right - x))), h: Math.round(Math.max(2, Math.min(h, bottom - y))) }
+    // Whole pixels, the position first, so the rounded box never reaches past the page view.
+    x = Math.round(Math.max(Math.ceil(limits.x), Math.min(x, right - 2))); y = Math.round(Math.max(Math.ceil(limits.y), Math.min(y, bottom - 2)))
+    return { x, y, w: Math.round(Math.max(2, Math.min(w, Math.floor(right) - x))), h: Math.round(Math.max(2, Math.min(h, Math.floor(bottom) - y))) }
   }
   // A drag on a handle resizes the box from that edge or corner, a drag inside it moves it, and a drag
   // anywhere else draws a new one. `drag` holds where it began and the box it began from.
@@ -293,19 +300,23 @@
       box = bounded({ ...from, x: Math.min(from.x + dx, limits.x + limits.w - from.w), y: Math.min(from.y + dy, limits.y + limits.h - from.h) })
     } else {
       let { x, y, w, h } = from
-      if (edge.includes('w')) { x = Math.min(from.x + dx, from.x + from.w - 2); w = from.x + from.w - x }
+      const limits = pageBounds()
+      // A left or top edge stops at the page view's edge, so the opposite edge stays where it was.
+      if (edge.includes('w')) { x = Math.max(limits.x, Math.min(from.x + dx, from.x + from.w - 2)); w = from.x + from.w - x }
       if (edge.includes('e')) w = from.w + dx
-      if (edge.includes('n')) { y = Math.min(from.y + dy, from.y + from.h - 2); h = from.y + from.h - y }
+      if (edge.includes('n')) { y = Math.max(limits.y, Math.min(from.y + dy, from.y + from.h - 2)); h = from.y + from.h - y }
       if (edge.includes('s')) h = from.h + dy
       box = bounded({ x, y, w, h })
     }
   }
   /** The arrows move the box a step, and with Shift they grow or shrink it from its right and bottom. */
   function nudge(e) {
+    // Escape leaves the editor and keeps the box; it never closes the inspector from here.
+    if (e.key === 'Escape' && editingBox) { e.preventDefault(); e.stopPropagation(); endCrop(); return }
     const dx = { ArrowLeft: -1, ArrowRight: 1 }[e.key] ?? 0, dy = { ArrowUp: -1, ArrowDown: 1 }[e.key] ?? 0
     if (!editingBox || busy || (!dx && !dy)) return
     e.preventDefault(); e.stopPropagation()
-    const from = currentBox(), step = Math.max(1, Math.round(pageBounds().w / 100)) * (e.altKey ? 1 : 2)
+    const from = currentBox(), step = Math.max(1, Math.round(pageBounds().w / 50))
     box = e.shiftKey ? bounded({ ...from, w: from.w + dx * step, h: from.h + dy * step })
       : (() => { const limits = pageBounds()
           return bounded({ ...from, x: Math.max(limits.x, Math.min(from.x + dx * step, limits.x + limits.w - from.w)),
@@ -346,7 +357,7 @@
                 <img src={data.context_image} alt={t('character.context.alt')} draggable="false" onerror={() => { editingBox = false; error = t('character.context.loadError') }} />
                 {#if boxStyle}<span class="context-outline adjustable" style={boxStyle}>{#each ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as edge (edge)}<span class="handle {edge}" data-edge={edge}></span>{/each}</span>{/if}
               </div>
-              <figcaption><span id="crop-keys" class="crop-keys">{t('character.crop.keys')}</span><button type="button" disabled={busy} onclick={() => editingBox = false}>{t('character.crop.doneAdjusting')}</button></figcaption>
+              <figcaption><span id="crop-keys" class="crop-keys">{t('character.crop.keys')}</span><button type="button" disabled={busy} onclick={endCrop}>{t('character.crop.doneAdjusting')}</button></figcaption>
             </figure>
           {:else}
             {#key data.image}<CropContext item={data} detail={data} cropBox={box ? toSource(box) : null} disabled={busy} />{/key}
@@ -374,7 +385,6 @@
   .crop-adjustment .context-region:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
   .crop-adjustment figcaption{gap:12px;align-items:center;flex-wrap:wrap}
   .crop-keys{font-size:10px;color:var(--muted)}
-  .context-outline.adjustable{cursor:move}
   .handle{position:absolute;width:12px;height:12px;margin:-6px 0 0 -6px;background:var(--surface);border:2px solid var(--accent-solid);border-radius:3px;pointer-events:auto;touch-action:none}
   .handle.nw{left:0;top:0;cursor:nwse-resize}.handle.n{left:50%;top:0;cursor:ns-resize}.handle.ne{left:100%;top:0;cursor:nesw-resize}
   .handle.e{left:100%;top:50%;cursor:ew-resize}.handle.se{left:100%;top:100%;cursor:nwse-resize}.handle.s{left:50%;top:100%;cursor:ns-resize}

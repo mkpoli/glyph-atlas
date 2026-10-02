@@ -70,6 +70,11 @@ try {
   assert(await browser.evaluate('!!document.querySelector("dialog[open]")'), 'an arrow in the crop editor left the crop')
   assert((await browser.evaluate('document.querySelector(".save-character").innerText')).startsWith('Save'), 'the button does not say it saves the new box')
   await browser.screenshot(join(screenshots, 'recrop-desktop-light.png'))
+  // Escape leaves the editor with the new box kept, and the inspector stays open.
+  await browser.key('Escape')
+  await browser.waitFor('!document.querySelector("dialog[open] .context-region.drawing")')
+  assert(await browser.evaluate('!!document.querySelector("dialog[open]") && !!document.querySelector("dialog[open] .crop-change button")'), 'Escape closed the inspector or dropped the box')
+  assert(await browser.evaluate('document.activeElement?.closest(".crop-change, .inspector-savebar") != null'), 'the focus was lost leaving the editor')
 
   const mark = events(config.directory).length
   await browser.evaluate('document.querySelector(".save-character").click()')
