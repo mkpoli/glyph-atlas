@@ -49,6 +49,11 @@ try {
   // The page view may end close to the crop's right edge, where the box stops growing.
   assert(grown.w > start.w && grown.h > start.h + 10 && Math.abs(grown.x - start.x) < 2 && Math.abs(grown.y - start.y) < 2, `the corner did not resize the box: ${JSON.stringify([start, grown])}`)
 
+  // The crop box previews what the new box cuts: the page view clipped to it.
+  const view = await browser.evaluate(`document.querySelector('dialog[open] .crop-box .crop-preview')?.getAttribute('viewBox')`)
+  assert(view, 'the crop box does not preview the redrawn box')
+  const [, , vw, vh] = view.split(' ').map(Number)
+  assert(Math.abs(vw / vh - grown.w / grown.h) < 0.05, `the preview is not the drawn box: ${view} for ${JSON.stringify(grown)}`)
   // A finger drags the top edge down.
   await browser.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 })
   const top = await handle('n')

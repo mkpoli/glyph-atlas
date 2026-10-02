@@ -63,6 +63,8 @@
     if (!b) return ''
     return `left:${100 * (b.x - c.x) / c.w}%;top:${100 * (b.y - c.y) / c.h}%;width:${100 * b.w / c.w}%;height:${100 * b.h / c.h}%`
   })() : '')
+  // The redrawn box in the page view's pixels, and the page view itself, for the crop box's preview.
+  const draft = $derived(box && data?.context_box && data.context_image ? { b: toSource(box), c: data.context_box } : null)
   // NDL reads lines, so a confident reading longer than one character hints at a merged crop.
   // Results stored before votes were recorded carry NDL's reading only among the candidates.
   const lineReading = $derived([...(suggestions?.votes || []), ...(suggestions?.candidates || [])].find(vote => vote.engine === 'NDLkotenOCR'))
@@ -337,7 +339,8 @@
     {#if error}<div class="error-message" role="alert">{error}<button disabled={busy} onclick={() => load(id)}>{t('character.reload')}</button></div>{/if}
     {#if data}
       <!-- The crop alone, in a box of one size for every crop, then the page around it further down. -->
-      <figure class="crop-box">{#key data.image}<Glyph item={data} eager onload={() => { loaded = true; imageFailed = false }} onerror={() => imageFailed = true} />{/key}</figure>
+      <!-- While a new box is drawn, the crop box shows what it will cut: the page view clipped to it. -->
+      <figure class="crop-box">{#key data.image}<Glyph item={data} eager onload={() => { loaded = true; imageFailed = false }} onerror={() => imageFailed = true} />{/key}{#if draft}<svg class="crop-preview" viewBox={`${draft.b.x} ${draft.b.y} ${draft.b.w} ${draft.b.h}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={t('character.crop.adjusted')}><image href={data.context_image} x={draft.c.x} y={draft.c.y} width={draft.c.w} height={draft.c.h} preserveAspectRatio="none" /></svg>{/if}</figure>
       <div class="inspector-right">
         <div class="inspector-production">{#if productionLabel(data)}<ProductionBadge item={data} />{/if}<StyleField item={data} editable={!onVerdict} disabled={busy || !fresh} working={value => busy = value} saved={styled} /></div>
         <div class="inspector-title"><CropTitle char={data.label} script={data.script} /><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{:else if repairOf(data)?.label === 'no-class'}<span class="repair-note" title={t('repair.reason.noClass')}>{t('repair.noClass')}</span>{/if}{#if data.state === 'checked' || data.state === 'flagged'}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.state === 'checked' ? t('state.checked') : t('state.flagged')}</span>{/if}</div>
@@ -385,6 +388,8 @@
   .crop-adjustment .context-region:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
   .crop-adjustment figcaption{gap:12px;align-items:center;flex-wrap:wrap}
   .crop-keys{font-size:10px;color:var(--muted)}
+  .crop-box{position:relative}
+  .crop-preview{position:absolute;inset:18px;width:calc(100% - 36px);height:calc(100% - 36px);background:light-dark(#ebe8e3, #ebe8e3)}
   .handle{position:absolute;width:12px;height:12px;margin:-6px 0 0 -6px;background:var(--surface);border:2px solid var(--accent-solid);border-radius:3px;pointer-events:auto;touch-action:none}
   .handle.nw{left:0;top:0;cursor:nwse-resize}.handle.n{left:50%;top:0;cursor:ns-resize}.handle.ne{left:100%;top:0;cursor:nesw-resize}
   .handle.e{left:100%;top:50%;cursor:ew-resize}.handle.se{left:100%;top:100%;cursor:nwse-resize}.handle.s{left:50%;top:100%;cursor:ns-resize}
