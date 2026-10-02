@@ -20,37 +20,49 @@ export async function setForm(env: Env, input: Json, cropId: string, actor: stri
   const id = submissionId(input, tools), key = actor + ':' + id, signature = tools.canonical({ crop: cropId, input });
   const previous = await savedSubmission(env, key, signature, tools.fail);
   if (previous) return { id: previous.subject, form: (await formsFor(env, [previous.subject])).get(previous.subject) ?? null };
+  // The value is checked, and a clear finds the reader's own claim, before anything is written: a
+  // corpus glyph nothing has named gets its row only for a save that will land.
   const typedForm = input.form == null ? null : tools.text(input.form, 256, 'form');
+  const representation = typedForm ? typed(tools.literal(typedForm)) : null;
+  if (typeof representation === 'string') tools.fail(422, PROBLEMS[representation]);
+  const ownClaim = () => env.DB.prepare(`SELECT a.id FROM assertions a WHERE a.subject=? AND a.predicate='has_form' AND a.scope='' AND a.slot=''
+    AND (a.asserted_by=? OR a.asserted_by IN ${tools.owned(actor)}) AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract')
+    ORDER BY a.rowid DESC LIMIT 1`).bind(cropId, actor).first<{ id: string }>();
+  const own = representation ? null : await ownClaim();
+  if (!representation && !own) tools.fail(409, 'You have no form on this crop to clear.');
   const crop = await tools.crop(env, cropId, input.crop_version);
   if (!crop.version) tools.fail(409, 'This crop has no image to make a claim about.');
   if (input.crop_version !== crop.version) tools.fail(409, 'This crop was cut again. Reload it.');
   const at = new Date().toISOString(), plan: Plan = { statements: [], keys: [] };
-  if (typedForm) {
-    const representation = typed(tools.literal(typedForm));
-    if (typeof representation === 'string') tools.fail(422, PROBLEMS[representation]);
+  if (representation) {
     const named = await representationId(representation), form = await anchoredForm(named);
     plan.statements.push(env.DB.prepare('INSERT OR IGNORE INTO representations(id,scheme,value,namespace,version) VALUES(?,?,?,?,?)')
       .bind(named, representation.scheme, representation.value, representation.namespace, representation.version));
-    // The first choice of a value names its form: the form and the claim that the value names it.
+    // The first choice of a value names its form: the form and the claim that the value names it,
+    // under an id derived from the form, so two first choices made at once name it once.
     if (!await env.DB.prepare('SELECT 1 FROM forms WHERE id=?').bind(form).first()) {
-      plan.statements.push(env.DB.prepare('INSERT OR IGNORE INTO forms(id,anchor,created_by,created_at) VALUES(?,?,?,?)').bind(form, named, actor, at));
-      const naming = await planClaim(env, { key, actor, subject: form, predicate: 'represented_by', scope: '', at, tier: 'editorial', method: 'form-picker',
-        members: [{ object: named, value: null, confidence: null, confidence_scheme: null }], version: null }, tools);
-      plan.statements.push(...naming.statements); plan.keys.push(...naming.keys);
+      plan.statements.push(env.DB.prepare('INSERT OR IGNORE INTO forms(id,anchor,created_by,created_at) VALUES(?,?,?,?)').bind(form, named, actor, at),
+        env.DB.prepare(`INSERT OR IGNORE INTO assertions(id,submission,subject,predicate,scope,slot,object,tier,asserted_by,asserted_at,method)
+          VALUES(?,?,?,'represented_by','',?,?,'editorial',?,?,'form-picker')`).bind(await namingId(form), key, form, named, named, actor, at));
+      plan.keys.push([form, 'represented_by', '', named]);
     }
     const claim = await planClaim(env, { key, actor, subject: crop.id, predicate: 'has_form', scope: '', at, method: 'form-picker',
       members: [{ object: form, value: null, confidence: null, confidence_scheme: null }], version: crop.version }, tools);
     plan.statements.push(...claim.statements); plan.keys.push(...claim.keys);
   } else {
-    const own = await env.DB.prepare(`SELECT a.id FROM assertions a WHERE a.subject=? AND a.predicate='has_form' AND a.scope='' AND a.slot=''
-      AND (a.asserted_by=? OR a.asserted_by IN ${tools.owned(actor)}) AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract')
-      ORDER BY a.rowid DESC LIMIT 1`).bind(crop.id, actor).first<{ id: string }>();
-    if (!own) tools.fail(409, 'You have no form on this crop to clear.');
-    const cleared = await planAction(env, { key, actor, target: own!.id, action: 'retract', reason: 'cleared', admin: false, at }, tools);
+    const cleared = await planAction(env, { key, actor, target: (own ?? await ownClaim())!.id, action: 'retract', reason: 'cleared', admin: false, at }, tools);
     plan.statements.push(...cleared.statements); plan.keys.push(...cleared.keys);
   }
   await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, subject: crop.id }, tools);
   return { id: crop.id, form: (await formsFor(env, [crop.id])).get(crop.id) ?? null };
+}
+
+// The id of the claim that names a form, in the shape of the site's other ids and the same for every
+// first choice of its value.
+async function namingId(form: string) {
+  const hex = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('named\n' + form)))]
+    .map(b => b.toString(16).padStart(2, '0')).join('');
+  return `cf:${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 }
 
 // The form claims of a page of crops that hold on each crop's current version: one key of

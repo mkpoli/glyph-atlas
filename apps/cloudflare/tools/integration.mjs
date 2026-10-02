@@ -1352,6 +1352,11 @@ try {
   await call(formPath, { id: crypto.randomUUID(), crop_version: formVersion, form: null }, 409)
   // The same value chosen again names the same form; the form was named once.
   assert.equal(await db.prepare("SELECT count(*) AS n FROM assertions WHERE predicate='represented_by' AND subject=?").bind(formRow.id).first('n'), 1)
+  // A refused save writes nothing, not even a corpus glyph's row.
+  const unnamed = (await call('/atlas/corpus/character?id=nu-private')).crop_version
+  await call('/atlas/characters/nu-private/form', { id: crypto.randomUUID(), crop_version: unnamed, form: '⿰木' }, 422)
+  await call('/atlas/characters/nu-private/form', { id: crypto.randomUUID(), crop_version: unnamed, form: null }, 409)
+  assert.equal(await db.prepare("SELECT 1 FROM units WHERE id='nu-private'").first(), null)
   // A corpus glyph nothing has named gets its `units` row, and stays unflagged and unreviewed.
   const glyphVersion = (await call('/atlas/corpus/character?id=na-5')).crop_version
   const glyphForm = await call('/atlas/characters/na-5/form', { id: crypto.randomUUID(), crop_version: glyphVersion, form: '⿱十乚' })

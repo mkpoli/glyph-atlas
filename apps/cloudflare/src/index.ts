@@ -1496,8 +1496,10 @@ const routes = {
           const {success}=await env.CLAIMS.limit({key:request.headers.get('cf-connecting-ip')??'local'});
           if(!success)throw new Problem(429,'Too many claims at once. Wait a minute and try again.');
           const input=await body(request);
-          if(picked)return json(await setForm(env,input,decodeURIComponent(picked[1]),me.id,{...ledgerTools,literal}));
-          return json(acted?await actOnClaim(env,input,decodeURIComponent(acted[1]),me.id,me.admin,ledgerTools):await writeClaim(env,input,me.id,ledgerTools));
+          let target='';
+          try{target=decodeURIComponent((acted??picked)?.[1]??'')}catch{throw new Problem(404,acted?'No such claim.':'This character is not in the published collection.')}
+          if(picked)return json(await setForm(env,input,target,me.id,{...ledgerTools,literal}));
+          return json(acted?await actOnClaim(env,input,target,me.id,me.admin,ledgerTools):await writeClaim(env,input,me.id,ledgerTools));
         }
         const undone=path.match(/^\/atlas\/(?:rounds|corrections)\/([^/]+)\/undo$/);
         if(undone)return json(await undo(env,request,me.id,decodeURIComponent(undone[1])));
