@@ -9,7 +9,8 @@
   import ZiLink from './ZiLink.svelte'
   import CopyId from './CopyId.svelte'
   import { onMount, untrack, tick } from 'svelte'
-  import { character, request, suggestionsFor } from '../lib/client.js'
+  import { request, suggestionsFor } from '../lib/client.js'
+  import { readCrop } from '../lib/cropCache.js'
   import { decision, isSingle, suggestsReading, greetSuggestions } from '../lib/issues.js'
   import { t } from '../lib/i18n.svelte.js'
   import { cropAddress, useInspector } from '../lib/inspector.svelte.js'
@@ -24,8 +25,9 @@
   // closes, or does something else. Without the prop a skip goes where a save would: the next
   // occurrence when the reader goes through the list in a row and there is one, otherwise close.
   // `initial` is the record the server rendered the page with, so the first load needs no request.
+  // `preview` is the list's own row for the crop, drawn while the record loads.
   let { id, close, saved, changed = null, onVerdict = null, onskip = null,
-        previous = null, next = null, position = '', initial = null } = $props()
+        previous = null, next = null, position = '', initial = null, preview = null } = $props()
   const first = untrack(() => initial)
   const session = useSession(), inspector = useInspector()
   // Going on to the next crop disables the focused save button while it loads, which drops its focus;
@@ -33,7 +35,7 @@
   // crop it leaves, and the load of another crop arms the return.
   let saveButton = $state(null), refocus = $state(false), leaving = null
   // The button is enabled on the render after the crop is ready, so focus waits for it.
-  $effect(() => { if (refocus && loaded && !busy && saveButton) { refocus = false; tick().then(() => saveButton?.focus({ preventScroll: true })) } })
+  $effect(() => { if (refocus && loaded && fresh && !busy && saveButton) { refocus = false; tick().then(() => saveButton?.focus({ preventScroll: true })) } })
   // A round's crop returns to its round, and a crop opened on its own has nowhere to go on to.
   const advancing = $derived(!onVerdict && !onskip && session.state.advance && Boolean(next))
   let dialog, data = $state(first), error = $state(''), busy = $state(false)
@@ -69,20 +71,18 @@
     const current = ++generation
     replaced = redirected
     dialog?.scrollTo({ top: 0 })
-    data = preloaded; error = ''; form = null; issue = null; correction = null; noneSelected = false; box = null; start = null; editingBox = false
+    // The list's row stands in until the record arrives; nothing can be saved from it.
+    data = preloaded ?? (preview?.id === target ? preview : null); fresh = Boolean(preloaded); asked = false
+    error = ''; form = null; issue = null; correction = null; noneSelected = false; box = null; start = null; editingBox = false
     written = ''; writtenDirty = false
     contextSuggestions = null; contextSuggesting = false
     loaded = false; imageFailed = false; suggestions = null; suggesting = false; submission = null
     if (leaving && target !== leaving) { refocus = true; leaving = null }
     try {
-      const result = preloaded ?? await character(target)
+      const result = preloaded ?? await readCrop(target)
       if (closed || current !== generation) return
-      data = result
+      data = result; fresh = true
       written = result.label ?? ''
-      contextSuggesting = true
-      suggestionsFor(result, 'context').then(value => { if (!closed && current === generation) { contextSuggestions = value; contextSuggesting = false } })
-      suggesting = true
-      suggestionsFor(result).then(value => { if (!closed && current === generation) { suggestions = value; suggesting = false } })
     } catch (e) {
       if (closed || current !== generation) return
       // A link to a retired crop opens the crop that replaced it, and the address follows. A round's
@@ -95,6 +95,18 @@
       error = e.message
     }
   }
+  // The suggestions are asked for once the crop is on screen and can be judged, so they never hold up
+  // the crop's own images.
+  let fresh = $state(Boolean(first)), asked = false
+  $effect(() => {
+    if (!loaded || !fresh || !data || asked) return
+    asked = true
+    const result = data, current = generation
+    contextSuggesting = true
+    suggestionsFor(result, 'context').then(value => { if (!closed && current === generation) { contextSuggestions = value; contextSuggesting = false } })
+    suggesting = true
+    suggestionsFor(result).then(value => { if (!closed && current === generation) { suggestions = value; suggesting = false } })
+  })
   // Only the first load, of the crop the page was rendered for, starts from `initial`.
   let preloaded = first
   // The entry of a replaced crop is rewritten to the crop on screen, which is already loaded.
@@ -163,7 +175,7 @@
   }
 
   async function save(matches = false) {
-    if (busy || !data || !loaded || imageFailed) return
+    if (busy || !data || !fresh || !loaded || imageFailed) return
     // A replaced crop is saved as the crop on screen, not the retired one the link named.
     const target = data.id ?? id, current = generation
     if (matches) discardProposals()
@@ -284,7 +296,7 @@
       <CropReview forms={formBar} {issue} onissue={chooseIssue} suggested={suggestedIssue} disabled={busy} onskip={skip}
         targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={suggestions} loading={suggesting} contextResult={contextSuggestions} contextLoading={contextSuggesting} label={data.label} value={issue === 'character' ? written : correction} onchoose={chooseSuggestion} />
       {#if issue === 'crop' && !onVerdict && data.context && data.crop_editable !== false}<div class="crop-change">{#if box}{t('character.crop.adjusted')}<button type="button" disabled={busy} onclick={() => box = null}>{t('common.reset')}</button>{:else}<button type="button" class="quiet-link adjust-crop" disabled={busy || editingBox} onclick={beginCrop}>{t('character.crop.adjust')}</button>{/if}</div>{/if}
-      <SimilarCrops id={data.id} label={data.label} />
+      <SimilarCrops id={data.id} label={data.label} ready={fresh && loaded} />
       <div class="credit-after"><SourceCredit item={data} /></div>
     {:else if !error}<div class="inspector-skeleton"></div>{/if}
   </div>
@@ -292,7 +304,7 @@
     <!-- Always there outside a round, so the choice is visible before a list is opened. -->
     {#if !onVerdict}<AdvanceSwitch disabled={busy} />{/if}
     {#if imageFailed}<span role="alert">{t('character.image.unavailable')}</span>{/if}
-    <button class="primary save-character" bind:this={saveButton} disabled={busy || !data || !loaded || imageFailed} onclick={() => save()}>{busy ? t('common.saving') : (issue === 'crop' && box) || (!issue && form != null) ? t(advancing ? 'character.save.changes.next' : 'character.save.changes.close') : issue ? (onVerdict ? t('character.save.useError') : t(advancing ? 'character.save.issue.next' : 'character.save.issue.close')) : (onVerdict ? t('character.save.backToSelection') : t(advancing ? 'character.save.looksRight.next' : 'character.save.looksRight.close'))} {#if onVerdict || advancing}<span>→</span>{:else if !issue}<span>✓</span>{/if}</button>
+    <button class="primary save-character" bind:this={saveButton} disabled={busy || !data || !fresh || !loaded || imageFailed} onclick={() => save()}>{busy ? t('common.saving') : (issue === 'crop' && box) || (!issue && form != null) ? t(advancing ? 'character.save.changes.next' : 'character.save.changes.close') : issue ? (onVerdict ? t('character.save.useError') : t(advancing ? 'character.save.issue.next' : 'character.save.issue.close')) : (onVerdict ? t('character.save.backToSelection') : t(advancing ? 'character.save.looksRight.next' : 'character.save.looksRight.close'))} {#if onVerdict || advancing}<span>→</span>{:else if !issue}<span>✓</span>{/if}</button>
     {#if issue}<button class="quiet-link looks-right" disabled={busy || !loaded || imageFailed} onclick={() => { discardProposals(); save(true) }}>{onVerdict ? t('character.save.removeSelection') : t('character.save.itLooksRight')}</button>{/if}
     <ContributionTerms />
   </footer>

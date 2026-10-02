@@ -7,7 +7,8 @@
 
   // `label` is the crop's current reading: a look-alike relabelled to it since the lists were
   // computed is no longer filed differently.
-  let { id, label = null } = $props()
+  // `ready` holds the request back until the crop it belongs to can be judged.
+  let { id, label = null, ready = true } = $props()
   let open = $state(false), section = $state(null)
   let result = $state(null)
   let failed = $state(false)
@@ -15,7 +16,7 @@
   let loaded = null
 
   async function load() {
-    if (!open || loaded === id) return
+    if (!open || !ready || loaded === id) return
     const wanted = id
     loaded = wanted
     result = null
@@ -28,7 +29,7 @@
       if (loaded === wanted) { failed = true; loaded = null }
     }
   }
-  $effect(() => { id; open; load() })
+  $effect(() => { id; open; ready; load() })
   $effect(() => {
     if (!section) return
     const observer = new IntersectionObserver(entries => { if (entries.some(entry => entry.isIntersecting)) { open = true; observer.disconnect() } },
