@@ -36,6 +36,8 @@
     groupOf = null,
     onchoosegroup = () => {},
     onform = () => {},
+    // Rows name the code point rather than the reading.
+    codePoints = false,
   } = $props()
 
   const listId = `candidates-${Math.random().toString(36).slice(2, 9)}`
@@ -223,7 +225,7 @@
     <span class="candidate-body">
       <span class="candidate-line">
         <b class="candidate-char"><ReferenceGlyph char={item.char} code_point={item.code_point} script={item.script} size="sm" /></b>
-        <span class="candidate-reading">{#if item.reading}<ScriptText text={item.reading} />{:else}{item.code_point}{/if}</span>
+        <span class="candidate-reading">{#if item.reading && !codePoints}<ScriptText text={item.reading} />{:else}{item.code_point}{/if}</span>
         {#if item.kind === 'ligature'}<span class="tag">{t('search.ligature')}</span>{/if}
       </span>
       <span class="candidate-counts">{countsLabel(item.candidates) || ownLabel(item)}{#if item.grapheme?.character_count > 1}<span> · <ScriptText text={item.grapheme.label} /></span>{/if}</span>

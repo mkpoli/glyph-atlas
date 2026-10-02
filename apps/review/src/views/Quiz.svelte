@@ -8,8 +8,7 @@
   import { pushState, replaceState } from '$app/navigation'
   import { page, updated } from '$app/state'
   import Glyph from '../components/Glyph.svelte'
-  import IssuePicker from '../components/IssuePicker.svelte'
-  import ReadingSuggestions from '../components/ReadingSuggestions.svelte'
+  import CropReview from '../components/CropReview.svelte'
   import QuizFocus from '../components/QuizFocus.svelte'
   import CopyId from '../components/CopyId.svelte'
   import FormBar from '../components/FormBar.svelte'
@@ -17,7 +16,7 @@
   import ScriptLine from '../components/ScriptLine.svelte'
   import { catalogue, character, corpusCharacter, randomSeed, request, remember, stored, number, suggestionsFor } from '../lib/client.js'
   import { cropDetails } from '../lib/cropDetails.js'
-  import { issues, suggestsReading, isSingle, greetSuggestions, skipLabel, skipHint } from '../lib/issues.js'
+  import { suggestsReading, isSingle, greetSuggestions, skipLabel, skipHint } from '../lib/issues.js'
   import { nextGrapheme, roundGraphemes, graphemeText, roundAddress, ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
   import { t, around, localize, delocalize } from '../lib/i18n.svelte.js'
   import { unslug } from '../lib/gallery.js'
@@ -536,7 +535,8 @@
   function chooseSuggestion(id, value, noneSelected = false) {
     const current = choices[id]
     if (!current) return
-    choices = { ...choices, [id]: value && isSingle(value)
+    // One character names the character, except under joined characters, which picks them in turn.
+    choices = { ...choices, [id]: value && isSingle(value) && current.issue !== 'merged'
       ? { verdict: 'wrong', issue: 'character', character: value, correction: null, noneSelected: false }
       : { ...current, issue: current.issue === 'character' ? 'reading' : current.issue,
           character: null, correction: value, noneSelected } }
@@ -680,6 +680,8 @@
     // control has focus — choosing a crop or a suggestion must never post the round.
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); primary(); return }
     if (e.metaKey || e.ctrlKey || e.altKey) return
+    // The character search's list is its own: its arrows and letters never reach the round.
+    if (e.target.closest?.('.character-search')) return
     const control = e.target.closest('button, a, input, textarea, select, summary, [contenteditable="true"]')
     if (step === 'select') {
       const index = keys.indexOf(e.key.toLowerCase())
@@ -693,9 +695,7 @@
     if (e.key === 'ArrowLeft') { e.preventDefault(); move(-1); return }
     if (e.key === 'ArrowRight') { e.preventDefault(); move(1); return }
     if (e.key === 'Escape') { e.preventDefault(); back(); return }
-    if (/^[1-4]$/.test(e.key)) { e.preventDefault(); assignCurrent(issues[Number(e.key) - 1].id) }
-    if ((e.key.toLowerCase() === 's' || e.key === '5') && current) { e.preventDefault(); skip([current.id]) }
-    if (e.key.toLowerCase() === 'n' && !control && current && suggestsReading(choices[current.id]?.issue)) { e.preventDefault(); chooseSuggestion(current.id, null, true) }
+    // The problem keys, Skip and None of these belong to the crop's review panel.
   }
   // A round is dealt as before; shown in shape order, the crops of one form sit together and a crop
   // unlike its neighbours stands out. `dealt` keeps the dealt order for switching back.
@@ -778,17 +778,17 @@
     {/if}
   {:else if current}
     <QuizFocus items={queue} {skipped} index={focusIndex} label={t('quiz.focus.chooseProblem')} disabled={saving} onback={back} onjump={jump} onprev={() => move(-1)} onnext={() => move(1)}>
-      <IssuePicker value={currentIssue} choose={assignCurrent} disabled={saving}
-        skip={() => skip([current.id])} skipped={!!skipped[current.id]} />
-      <!-- One panel per crop, so text typed for one crop never shows in the next one's field. -->
-      {#key current.id}<ReadingSuggestions targetId={current.id} bind:element={suggestionsElement} result={suggestions[current.id]} loading={!suggestions[current.id]} contextResult={contextSuggestions[current.id] ?? null} contextLoading={!contextSuggestions[current.id]} issue={currentIssue} reading={current.label} value={choices[current.id]?.character || choices[current.id]?.correction} noneSelected={choices[current.id]?.noneSelected ?? false} disabled={saving} choose={(value, none) => chooseSuggestion(current.id, value, none)} />{/key}
+      <!-- One panel per crop, so a search begun for one crop never shows in the next one's. -->
+      {#key current.id}<CropReview issue={currentIssue} onissue={assignCurrent} disabled={saving}
+        onskip={() => skip([current.id])} skipped={!!skipped[current.id]}
+        targetId={current.id} bind:element={suggestionsElement} result={suggestions[current.id]} loading={!suggestions[current.id]} contextResult={contextSuggestions[current.id] ?? null} contextLoading={!contextSuggestions[current.id]} label={current.label} value={choices[current.id]?.character || choices[current.id]?.correction} noneSelected={choices[current.id]?.noneSelected ?? false} onchoose={(value, none) => chooseSuggestion(current.id, value, none)} />{/key}
     </QuizFocus>
   {/if}
 
   {#if step === 'select' && !loading && !items.length}<div class="empty"><span class="empty-mark">字</span><h2>{categories.length ? t('quiz.empty.chooseCharacter') : t('quiz.empty.allCaughtUp')}</h2>{#if categories.length}<button class="primary" onclick={() => categoryOpen = true}>{t('quiz.chooseCharacterButton')}</button>{:else}<a href={localize('/flagged')} class="primary">{t('quiz.reviewFlagged')}</a>{/if}</div>
   {:else}<div class="quiz-actionbar">{#if step === 'select' && (openSelection.length || formDone || formError)}<FormBar count={openSelection.length} forms={members} grapheme={graphemeLabel} busy={saving} error={formError} done={formDone}
     onassign={assignForm} onclear={clearSelection} onundo={undoForm} ondismiss={() => { formDone = null; formError = '' }} />{/if}<div class="round-selection"><span class="selection-dot" class:has-flags={decided > 0}></span><strong>{t('quiz.decided', { count: decided })}</strong>{#if undecided}<span>{t('quiz.undecided', { count: undecided })}</span>{/if}{#if Object.keys(skipped).length}<small>{t('quiz.skippedNotSaved', { count: Object.keys(skipped).length })}</small>{/if}{#if Object.keys(failed).length}<small>{t('quiz.unavailableCount', { count: Object.keys(failed).length })}</small>{/if}</div><div class="quiz-submit">
-    <span class="keyboard-hint">{step === 'select' ? t('quiz.keyboardHint.select') : suggestsReading(currentIssue) ? t('quiz.keyboardHint.correct') + ' · ' + t('quiz.keyboardHint.issue') : t('quiz.keyboardHint.issue')}</span>
+    <span class="keyboard-hint">{step === 'select' ? t('quiz.keyboardHint.select') : suggestsReading(currentIssue) ? t('quiz.keyboardHint.correct') + ' · ' + t('quiz.keyboardHint.issues') : t('quiz.keyboardHint.issues')}</span>
     {#if step === 'select'}<button class="quiet-link skip-selected" disabled={loading || saving || exhausted || (!decidable.length && !selection.length)} onclick={() => skip(selection.length ? selection : decidable.map(i => i.id))} title={skipHint()}>{selection.length ? t('quiz.skipSelected', { skip: skipLabel() }) : skipLabel()}</button>{/if}
     {#if exhausted || !openSelection.length}<button class="primary next-round" disabled={loading || saving || (!canNext && !recordable)} onclick={pass}>{t('quiz.nextCharacterLabel')} <span>→</span></button>
     {:else if step === 'select'}<button class="primary review-selected" disabled={loading || saving || loadingMore || !ready} onclick={reviewSelected}>{t('quiz.reviewSelected', { count: selection.length })} <span>→</span></button>

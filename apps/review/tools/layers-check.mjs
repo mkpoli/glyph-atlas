@@ -15,6 +15,7 @@ async function step(name, body) {
 }
 try {
   browser = await Browser.launch({ width: 1440, height: 1000 })
+  await browser.writeAs('layers-check')
   const errors = []
   browser.listeners.push(m => {
     if (m.method === 'Runtime.exceptionThrown') {
@@ -160,12 +161,16 @@ try {
   await step('correcting the character carries its reading and lands in the export', async () => {
     await openReviewer(LAYERED)
     await browser.evaluate(`document.querySelector('dialog[open] .issue-card[data-issue="reading"]').click()`)
-    await browser.waitFor(`!!document.querySelector('dialog[open] .typed-choice input')`)
+    // Another character is picked from the search, never typed in as it stands.
+    await browser.waitFor(`!!document.querySelector('dialog[open] .suggestion-pick input')`)
     await browser.evaluate(`(() => {
-      const input = document.querySelector('dialog[open] .typed-choice input')
-      input.value = 'ヌ'
+      const input = document.querySelector('dialog[open] .suggestion-pick input')
+      input.focus(); input.value = 'ヌ'
       input.dispatchEvent(new Event('input', { bubbles: true }))
     })()`)
+    await browser.waitFor(`[...document.querySelectorAll('dialog[open] .suggestion-pick .candidate')].some(c => c.textContent.includes('U+30CC'))`, 10000)
+    await browser.evaluate(`[...document.querySelectorAll('dialog[open] .suggestion-pick .candidate')].find(c => c.textContent.includes('U+30CC')).click()`)
+    await browser.waitFor(`!!document.querySelector('dialog[open] .suggestion-choice.picked')`)
     const point = await browser.centre('.save-character')
     await browser.click(point.x, point.y)
     await browser.waitFor('document.querySelector("dialog[open]") === null', 6000)
@@ -236,7 +241,8 @@ try {
     assert(!errors.length, errors.join(' | ').slice(0, 400))
     // The fixture keeps one page's image uncached on purpose, so its tiles answer 422; that is the
     // case the collection is built to survive and not a failure of this flow.
-    const unexpected = bad.filter(url => !/^4\d\d .*\/atlas\/characters\/.+\/image\?/.test(url))
+    // The local review service publishes no similar crops, which the inspector now asks for when it opens.
+    const unexpected = bad.filter(url => !/^4\d\d .*\/atlas\/characters\/.+\/image\?/.test(url) && !/^404 .*\/similar$/.test(url))
     assert(!unexpected.length, `unexpected: ${unexpected.slice(0, 3).join(' | ')} (all ${bad.length})`)
     return `${bad.filter(url => /^4/.test(url)).length} expected uncached-page tiles`
   })

@@ -92,8 +92,6 @@
   "common.retry": "Retry",
   "common.saving": "Saving…",
   "common.skip": "Skip",
-  "common.skip.close": "Not sure · Skip & close",
-  "common.skip.next": "Not sure · Skip →",
   "common.skip.hint": "Can’t tell, or leave it for later",
   "common.tryAgain": "Try again",
   "corpus.assign.label": "Assign written character",
@@ -101,7 +99,6 @@
   "corpus.characterCount.one": "{count} character",
   "corpus.characterCount.other": "{count} characters",
   "corpus.chooseAnother": "Choose another character",
-  "corpus.correctCharacter.label": "Correct character",
   "corpus.dialog.label": "Corpus character reviewer",
   "corpus.genericName": "Corpus",
   "corpus.labelCredit": "Labels: {credit}",
@@ -515,7 +512,6 @@
   "quiz.issuesSavedSession.one": "{count} problem saved this session",
   "quiz.issuesSavedSession.other": "{count} problems saved this session",
   "quiz.keyboardHint.correct": "n none of these",
-  "quiz.keyboardHint.issue": "1–4 problem · s skip · ←→ crop",
   "quiz.keyboardHint.pickCrop": "qwerty… picks a crop",
   "quiz.keyboardHint.select": "qwerty… · Ctrl/⌘+Enter continues",
   "quiz.loadMore.allLoaded": "All {reading} loaded",
@@ -634,8 +630,6 @@
   "suggestions.label": "Suggestions",
   "suggestions.none": "No clear suggestion.",
   "suggestions.noneOfThese": "None of these / not sure",
-  "suggestions.type.label": "Or type it (optional)",
-  "suggestions.type.placeholder": "Character…",
   "tile.machineAligned": "Machine-aligned, not yet checked",
   "tile.notYetConfirmed": "Not yet confirmed",
   "tile.noClass": "Machine-aligned; no classifier class",
@@ -780,5 +774,7 @@
   "account.picture.noGravatar": "Gravatar has no picture for this address.",
   "account.picture.unreadable": "That image could not be read.",
   "character.save.changes.close": "Save & close",
-  "character.save.changes.next": "Save & next"
+  "character.save.changes.next": "Save & next",
+  "quiz.keyboardHint.issues": "W M B X problem · S skip · ←→ crop",
+  "suggestions.pick.next": "Next character…"
 }

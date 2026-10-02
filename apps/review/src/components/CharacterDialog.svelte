@@ -8,14 +8,13 @@
   import CopyId from './CopyId.svelte'
   import { onMount, untrack, tick } from 'svelte'
   import { character, request, suggestionsFor } from '../lib/client.js'
-  import { decision, isSingle, suggestsReading, greetSuggestions, skipHint } from '../lib/issues.js'
+  import { decision, isSingle, suggestsReading, greetSuggestions } from '../lib/issues.js'
   import { t } from '../lib/i18n.svelte.js'
   import { cropAddress, useInspector } from '../lib/inspector.svelte.js'
   import CropContext from './CropContext.svelte'
   import { repairOf } from '../lib/cropDetails.js'
   import SimilarCrops from './SimilarCrops.svelte'
-  import IssuePicker from './IssuePicker.svelte'
-  import ReadingSuggestions from './ReadingSuggestions.svelte'
+  import CropReview from './CropReview.svelte'
   import AdvanceSwitch from './AdvanceSwitch.svelte'
   import { useSession } from '../lib/session.svelte.js'
   // `onskip` is supplied by the caller that owns the queue. The dialog never decides what "next"
@@ -99,6 +98,14 @@
   // The server renders the dialog open, so the page reads whole before any script runs; once it does,
   // the dialog is reopened as a modal.
   onMount(() => { if (dialog.open) dialog.close(); dialog.showModal(); return () => { closed = true; generation++ } })
+  // ← and → step through the list, as the arrows in the header do; the crop view keeps its own arrows.
+  function stepKey(event) {
+    if (event.defaultPrevented || busy || event.metaKey || event.ctrlKey || event.altKey) return
+    if (event.target.closest?.('input, textarea, select, .crop-viewport, .character-search')) return
+    if ([...document.querySelectorAll('dialog[open]')].at(-1) !== dialog) return
+    if (event.key === 'ArrowLeft' && previous) { event.preventDefault(); previous() }
+    else if (event.key === 'ArrowRight' && next) { event.preventDefault(); next() }
+  }
   function chooseIssue(value) {
     if (issue === 'character') { written = data?.label ?? ''; writtenDirty = false }
     issue = value; correction = null; noneSelected = false; submission = null
@@ -116,7 +123,7 @@
     if (!value && issue === 'character') {
       written = data?.label ?? ''; writtenDirty = false; issue = 'reading'
     }
-    if (value && isSingle(value)) {
+    if (value && isSingle(value) && issue !== 'merged') {
       // One character names the character: the chosen value is carried as the written identity, and
       // the suggestion list highlights it from `written` rather than from `correction`. A round
       // refuses reading text on a character issue, so nothing goes into `correction`, and the reading
@@ -234,6 +241,7 @@
   }
 </script>
 
+<svelte:window onkeydown={stepKey} />
 <dialog class="character-dialog" bind:this={dialog} open oncancel={close} onclick={e => { if (e.target === dialog) close() }} aria-label={t('character.dialog.label')}>
   <div class="inspector">
     <header class="inspector-header"><div class="inspector-navigation"><span>{position}</span><button class="icon-button previous-character" aria-label={t('common.previousCharacter')} disabled={busy || !previous} onclick={() => previous?.()}>←</button><button class="icon-button next-character" aria-label={t('common.nextCharacter')} disabled={busy || !next} onclick={() => next?.()}>→</button><button class="icon-button close-inspector" aria-label={t('common.closeReviewer')} onclick={close}>×</button></div></header>
@@ -256,9 +264,9 @@
         {/if}
         <div class="credit-beside"><SourceCredit item={data} /></div>
       </div>
-      <IssuePicker value={issue} choose={chooseIssue} suggested={suggestedIssue} disabled={busy} />
+      <CropReview {issue} onissue={chooseIssue} suggested={suggestedIssue} disabled={busy} onskip={skip}
+        targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={suggestions} loading={suggesting} contextResult={contextSuggestions} contextLoading={contextSuggesting} label={data.label} value={issue === 'character' ? written : correction} onchoose={chooseSuggestion} />
       {#if issue === 'crop' && !onVerdict && data.context && data.crop_editable !== false}<div class="crop-change">{#if box}{t('character.crop.adjusted')}<button type="button" disabled={busy} onclick={() => box = null}>{t('common.reset')}</button>{:else}<button type="button" class="quiet-link adjust-crop" disabled={busy || editingBox} onclick={beginCrop}>{t('character.crop.adjust')}</button>{/if}</div>{/if}
-      <ReadingSuggestions targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={suggestions} loading={suggesting} contextResult={contextSuggestions} contextLoading={contextSuggesting} {issue} reading={data.label} value={issue === 'character' ? written : correction} disabled={busy} choose={chooseSuggestion} />
       <SimilarCrops id={data.id} label={data.label} />
       <div class="credit-after"><SourceCredit item={data} /></div>
     {:else if !error}<div class="inspector-skeleton"></div>{/if}
@@ -269,7 +277,6 @@
     {#if imageFailed}<span role="alert">{t('character.image.unavailable')}</span>{/if}
     <button class="primary save-character" bind:this={saveButton} disabled={busy || !data || !loaded || imageFailed} onclick={() => save()}>{busy ? t('common.saving') : issue === 'crop' && box ? t(advancing ? 'character.save.changes.next' : 'character.save.changes.close') : issue ? (onVerdict ? t('character.save.useError') : t(advancing ? 'character.save.issue.next' : 'character.save.issue.close')) : (onVerdict ? t('character.save.backToSelection') : t(advancing ? 'character.save.looksRight.next' : 'character.save.looksRight.close'))} {#if onVerdict || advancing}<span>→</span>{:else if !issue}<span>✓</span>{/if}</button>
     {#if issue}<button class="quiet-link looks-right" disabled={busy || !loaded || imageFailed} onclick={() => { discardProposals(); save(true) }}>{onVerdict ? t('character.save.removeSelection') : t('character.save.itLooksRight')}</button>{/if}
-    <button class="skip-character" disabled={busy} onclick={skip} title={skipHint()}>{t(advancing ? 'common.skip.next' : 'common.skip.close')}</button>
     <ContributionTerms />
   </footer>
 </dialog>

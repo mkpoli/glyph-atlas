@@ -15,6 +15,7 @@ console.log('ok build')
 if (!server) process.exit(0)
 const assert = (value, message) => { if (!value) throw new Error(message) }
 const browser = await Browser.launch({ width: 1440, height: 1000 })
+await browser.writeAs('quiz-steps-check')
 const posted = [], errors = [], heldSuggestions = []
 let holdContext = false
 let mismatchDetail = null
