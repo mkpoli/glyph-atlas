@@ -232,8 +232,9 @@ def font(catalogue: dict) -> None:
     if lacking := [chr(c) for c in wanted if c not in covered]:
         raise SystemExit(f"Plangothic lacks {''.join(lacking)}")
     merged = Merger().merge(parts) if len(parts) > 1 else TTFont(parts[0])
-    # The source's own timestamp, so the same characters always give the same file.
-    merged["head"].modified = TTFont(FONT_CACHE / next(iter(FONTS)))["head"].modified
+    # The source's own timestamps, so the same characters always give the same file; merging stamps the time it ran.
+    source_head = TTFont(FONT_CACHE / next(iter(FONTS)))["head"]
+    merged["head"].created, merged["head"].modified = source_head.created, source_head.modified
     merged.recalcTimestamp = False
     merged.flavor = "woff2"
     merged.save(FONT_OUT)
