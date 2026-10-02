@@ -7,7 +7,7 @@ recrop or a re-segmentation changes the box or the image, and so makes a new ver
 stays, with whatever was said about it.
 
 The id joins the three, `{unit}@{pixels}@{x},{y},{w},{h}`, with an empty box for a whole pre-cut file.
-The Worker computes the same id in SQL (`units.crop_version`, migration 0046). A box is four whole
+The Worker computes the same id in SQL (`units.crop_version`, migration 0047). A box is four whole
 numbers, which both write alike; a crop whose box is anything else has no version, as in SQL.
 """
 

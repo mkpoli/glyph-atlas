@@ -13,7 +13,7 @@ type Json = Record<string, any>;
 type UnitRow = { id: string; origin: string; character: string | null; state: string; revision: number;
   quiz: number; category?: string; data: string; snapshot: string; context: string; visual: string; style?: string;
   written_form?: string | null;
-  // The crop's evidence version (0046): its id, image checksum and box, as SQLite joins them.
+  // The crop's evidence version (0047): its id, image checksum and box, as SQLite joins them.
   crop_version?: string | null;
   // A corpus glyph nothing has named yet: it has no `units` row, and this is where it is published.
   fresh?: CorpusRow };
@@ -129,7 +129,7 @@ function compact(row: UnitRow): Json {
   return { ...listing(parse(row.data)), ...(row.style ? { style: row.style } : {}), ...(row.written_form ? { written_form: row.written_form } : {}) };
 }
 // A crop's record as its inspector reads it, with the written form its row holds (0038) and its
-// evidence version (0046).
+// evidence version (0047).
 const record = (row: UnitRow): Json => {
   const data = parse(row.data);
   return { ...data, written_form: row.written_form ?? null, crop_version: row.crop_version ?? cropVersion(row.id, data),
@@ -147,7 +147,7 @@ export function cropVersion(id: string, data: Json): string | null {
   const values = ['x', 'y', 'w', 'h'].map(key => box[key]);
   return values.every(Number.isSafeInteger) ? `${id}@${pixels}@${values.join(',')}` : null;
 }
-// Every evidence version a crop has had here, oldest first (0046); `current` is the one it has now.
+// Every evidence version a crop has had here, oldest first (0047); `current` is the one it has now.
 // One range of `crop_version_unit`, and a crop recut more often than this lists its first ones.
 const VERSIONS_LISTED = 200;
 export const cropVersionsQuery = () => `SELECT id,pixels,box,document,image,at FROM crop_versions WHERE unit=? ORDER BY at,id LIMIT ${VERSIONS_LISTED}`;
