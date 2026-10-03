@@ -32,10 +32,23 @@
     for (const form of added) if (!has(form.char)) chips.push(form)
     return chips
   })
+  // One row, never a scrollbar: as many chips as fit, the crop's own and the chosen one among them,
+  // and the rest under "+n", in the picker.
+  let width = $state(0)
+  const fit = $derived(Math.max(1, Math.min(BAR, Math.floor((width - 56) / (width < 500 ? 50 : 62)))))
+  const shown = $derived.by(() => {
+    const visible = bar.slice(0, fit)
+    for (const char of [current, chosen]) {
+      const chip = bar.find(item => item.char === char)
+      if (chip && !visible.includes(chip)) visible.splice(Math.max(0, visible.length - 1), 1, chip)
+    }
+    return visible
+  })
+  const hidden = $derived(bar.filter(chip => !shown.includes(chip)))
   const q = $derived(query.trim().toUpperCase())
   const matches = item => !q || item.char.toUpperCase().includes(q) || (item.code_point ?? '').includes(q)
   const sections = $derived([
-    ['grapheme', t('chips.grapheme'), listed.members.slice(BAR)],
+    ['grapheme', t('chips.grapheme'), [...hidden, ...listed.members.slice(BAR)]],
     ['variants', t('chips.variants'), listed.variants],
     ['derived', t('chips.derived'), listed.derived],
   ].map(([key, title, items]) => [key, title, items.filter(matches)]).filter(([, , items]) => items.length))
@@ -54,15 +67,15 @@
     if (event.key === 'Escape' && picking) { event.preventDefault(); picking = false; query = ''; addButton?.focus(); return }
     if (event.target.closest?.('input, textarea, select, [contenteditable="true"], .character-search')) return
     const index = '1234567890'.indexOf(event.key)
-    if (index >= 0 && bar[index]) { event.preventDefault(); choose(bar[index].char) }
+    if (index >= 0 && shown[index]) { event.preventDefault(); choose(shown[index].char) }
   }
 </script>
 
 <svelte:window onkeydown={keydown} />
 
-<div class="crop-form" bind:this={root}>
-  <FormChips forms={bar} chosen={chosen} {current} {disabled} label={t('quiz.forms.label', { char: written })} onchoose={choose}>
-    <button type="button" class="form-add" bind:this={addButton} {disabled} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>+</button>
+<div class="crop-form" bind:this={root} bind:clientWidth={width}>
+  <FormChips forms={shown} chosen={chosen} {current} {disabled} label={t('quiz.forms.label', { char: written })} onchoose={choose}>
+    <button type="button" class="form-add" bind:this={addButton} {disabled} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>{hidden.length ? `+${hidden.length}` : '+'}</button>
   </FormChips>
   {#if picking}
     <div class="form-picker" role="dialog" aria-label={t('form.add')}>
@@ -86,6 +99,7 @@
 
 <style>
   .crop-form{display:flex;flex-direction:column;gap:10px;margin:0 0 16px}
+  .crop-form :global(.form-chips){flex-wrap:nowrap;overflow:hidden}
   .form-add{min-width:40px;padding:4px 10px;font-size:20px;line-height:1.2;color:var(--muted);border-style:dashed}
   .form-add[aria-expanded="true"]{color:var(--accent);border-color:var(--accent)}
   .form-picker{display:flex;flex-direction:column;gap:12px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
