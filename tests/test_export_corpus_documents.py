@@ -22,3 +22,11 @@ def test_the_statements_fill_each_glyph_once_and_repeat_safely():
     db.executescript(sql)
     assert db.execute("SELECT id,document FROM corpus_units ORDER BY id").fetchall() == [
         ("a:1", "A"), ("a:2", "A"), ("b:1", "B"), ("z:9", None)]
+
+
+def test_each_documents_glyphs_are_counted():
+    db = sqlite3.connect(":memory:")
+    db.execute("CREATE TABLE corpus_document_counts(document TEXT PRIMARY KEY, n INTEGER NOT NULL)")
+    db.execute("INSERT INTO corpus_document_counts VALUES('gone', 9)")
+    db.executescript("".join(export.counts([("a:1", "A"), ("a:2", "A"), ("b:1", "B")])))
+    assert db.execute("SELECT document,n FROM corpus_document_counts ORDER BY 1").fetchall() == [("A", 2), ("B", 1)]
