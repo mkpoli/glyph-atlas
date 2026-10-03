@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte'
   import { goto } from '$app/navigation'
-  import { authClient, passkeys } from '../lib/auth.js'
+  import { addPasskey, authClient, deviceName, passkeys } from '../lib/auth.js'
   import { useSession } from '../lib/session.svelte.js'
   import { t, formatDateTime, localize } from '../lib/i18n.svelte.js'
   import ProviderIcon from '$components/ProviderIcon.svelte'
@@ -67,17 +67,13 @@
   const rename = event => { event.preventDefault(); return act('name', async client => { const r = await client.updateUser({ name: name.trim() }); await session.refresh(); return r }, t('account.name.saved')) }
   const link = provider => act(provider, client => client.linkSocial({ provider, callbackURL: location.pathname }))
   const unlink = provider => act(provider, client => client.unlinkAccount({ accountId: accounts.find(account => account.providerId === provider).id }))
-  const addKey = () => act('add', client => client.passkey.addPasskey({ name: navigator.platform || undefined }), t('account.passkeys.added'))
+  const addKey = () => act('add', client => addPasskey(client), t('account.passkeys.added'))
   const dropKey = id => act(id, client => client.passkey.deletePasskey({ id }))
   const revoke = token => act(token, client => client.revokeSession({ token }))
   const revokeOthers = () => act('others', client => client.revokeOtherSessions())
   async function signOut() { await session.signOut(); goto(localize('/')) }
   // A browser and its system, read from the session's user agent, which is all a session records of its device.
-  function device(agent = '') {
-    const browser = /Edg\//.test(agent) ? 'Edge' : /Firefox\//.test(agent) ? 'Firefox' : /Chrome\//.test(agent) ? 'Chrome' : /Safari\//.test(agent) ? 'Safari' : ''
-    const system = /iPhone|iPad/.test(agent) ? 'iOS' : /Android/.test(agent) ? 'Android' : /Mac OS X/.test(agent) ? 'macOS' : /Windows/.test(agent) ? 'Windows' : /Linux/.test(agent) ? 'Linux' : ''
-    return [browser, system].filter(Boolean).join(' · ') || t('account.sessions.unknown')
-  }
+  const device = agent => deviceName(agent ?? '') || t('account.sessions.unknown')
   const when = at => { try { return formatDateTime(at) } catch { return String(at) } }
   $effect(() => { if (user && !user.anonymous) name = user.name })
   onMount(async () => {

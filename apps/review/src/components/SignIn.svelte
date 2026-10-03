@@ -1,6 +1,6 @@
 <script>
   import { onMount, tick } from 'svelte'
-  import { authClient, passkeys } from '../lib/auth.js'
+  import { addPasskey as registerPasskey, authClient, passkeys } from '../lib/auth.js'
   import { useSession } from '../lib/session.svelte.js'
   import { t } from '../lib/i18n.svelte.js'
   import ProviderIcon from './ProviderIcon.svelte'
@@ -67,7 +67,7 @@
   }
   async function addPasskey() {
     busy = 'add'; error = ''
-    const { error: failure } = await (await authClient()).passkey.addPasskey({ name: navigator.platform || undefined })
+    const { error: failure } = await registerPasskey(await authClient())
     busy = ''
     if (failure && failure.code !== 'AUTH_CANCELLED') { error = problem(failure); return }
     done()
