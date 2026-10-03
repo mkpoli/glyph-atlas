@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte'
   import { t, formatNumber as number, formatDateTime, around } from '../lib/i18n.svelte.js'
+  import DateStats from './DateStats.svelte'
   let { close } = $props()
   /** A click on the backdrop closes the dialog. The backdrop has no element of its own, so a click on
    * it lands on the dialog; its position outside the dialog's box is what tells it apart. */
@@ -51,6 +52,7 @@
       </div>
       <p class="progress-note">{t('progress.archive.textWorks', { count: data.archive.text_works })}</p>
     {/if}
+    <DateStats />
     <div class="sources">
       {#if data.extraction}
         <section class="source extraction" aria-label={t('progress.extraction.label')}>
