@@ -242,9 +242,10 @@ def test_an_unjudged_headword_between_two_read_ones_is_kept() -> None:
         char = reads.get(box.y) if box.x == columns[0] - 80 else None
         return [code(char)] if char and char != "?" else [code("ノ")]
 
-    result = hdic.place(column_entries("天", "⿱一丷", "地", "⿰口天"), boxes, grid, UNIT, rank,
+    others = [entry(f"L{line}-{k}", line, 1, k, "傮") for line in range(2, 9) for k in range(4)]
+    result = hdic.place(column_entries("天", "⿱一丷", "地", "⿰口天") + others, boxes, grid, UNIT, rank,
                         known={code("天"), code("地"), code("ノ")}, layout=TSJ)
-    kept = {p.glyph.text: p.box.y for p in result.pairs if p.kept}
+    kept = {p.glyph.text: p.box.y for p in result.pairs if p.kept and p.entry.line == 1}
     # ⿱一丷 sits between 天 and 地, both read. ⿰口天 has no read glyph after it, and with a large
     # gloss character in the column the boxes outnumber the headwords, so nothing vouches for it.
     assert kept == {"天": 400, "⿱一丷": 1100, "地": 1800}
@@ -337,3 +338,14 @@ def test_a_second_seal_form_of_an_entry_keeps_its_own_id(tmp_path: Path) -> None
     seals = hdic.read_ktb_seals(tmp_path)
     assert [(s.seal_id, s.entry_id, s.frame, s.entry) for s in seals] == [
         ("1_016_B31", "1_016_B31", 19, "祉"), ("1_016_B31_2", "1_016_B31", 19, "祉")]
+
+
+def test_a_grid_anchored_one_column_in_is_moved_back() -> None:
+    boxes, columns = running_page()
+    # The page's last column (line 8) holds two headwords, too few to anchor the grid on.
+    boxes = [b for b in boxes if not (abs(b.x + b.w / 2 - columns[-1]) < 1 and b.y >= 1800)]
+    entries = [entry(f"L{line}-{k}", line, 1, k, "傮") for line in range(1, 8) for k in range(4)]
+    entries += [entry(f"L8-{k}", 8, 1, k, "傮") for k in range(2)]
+    fitted = hdic.Grid(tuple(c + 250 for c in columns), 250.0, (500.0,), 3200.0)  # one column to the right
+    assert hdic.column_shift(entries, boxes, fitted, UNIT, TSJ, (160.0, 160.0)) == 1
+    assert hdic.column_shift(entries, boxes, hdic.shifted(fitted, 1), UNIT, TSJ, (160.0, 160.0)) == 0

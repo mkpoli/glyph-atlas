@@ -27,7 +27,9 @@ character Unicode lacks, and `■` is one nobody could read.
    repetition mark (`is_mark`). Where the gloss is as large as the headwords, every character is
    kept and a headword is told by its place, the head of its tier (`Layout.heads`).
 2. The right page is anchored on the frame's rightmost column of headwords and the left page on
-   its leftmost, since the gutter between them may be as narrow as a column or several wide. `fit`
+   its leftmost, since the gutter between them may be as narrow as a column or several wide. An outer
+   column with too few headwords to be seen leaves the grid one column in; `column_shift` moves it
+   back by comparing each column's candidates with the headwords HDIC puts there. `fit`
    finds each page's column pitch, and for a tiered layout the tiers over its headwords' tops, their
    pitch held to `Layout.tier_pitch` times the column pitch. A grid stands only when enough of its columns
    (`Layout.held`) and every tier line hold headwords. A layout of one tier takes each column whole.
@@ -578,6 +580,34 @@ def align_cell(glyphs: Sequence[Glyph], boxes: Sequence[Box], verdicts: Callable
     return pairs[::-1]
 
 
+def shifted(grid: Grid, k: int) -> Grid:
+    """The grid moved `k` columns toward the left (line 1 onto the old line 1 + k)."""
+    return Grid(tuple(c - k * grid.pitch for c in grid.columns), grid.pitch, grid.tiers, grid.tier_pitch)
+
+
+def column_shift(entries: Sequence[Entry], boxes: Sequence[Box], grid: Grid, unit: float, layout: Layout,
+                 headword: tuple[float, float]) -> int:
+    """How many columns the fitted grid is off, by the count of headwords HDIC gives each column.
+
+    A page's outer column is its anchor; when that column holds too few headwords to be seen, the
+    grid starts one column in. Each cell HDIC puts headwords in has its candidates counted against
+    them, for the grid as fitted and moved one column either way; the closest wins, and the fitted grid
+    on a tie. A cell HDIC gives nothing (a title, the end of a section) is not counted.
+    """
+    expected: dict[tuple[int, int], int] = {}
+    for entry in entries:
+        if entry.line <= len(grid.columns) and entry.segment <= len(grid.tiers):
+            cell = (entry.line, entry.segment)
+            expected[cell] = expected.get(cell, 0) + sum(1 for g in entry.glyphs if g.text != MARK)
+
+    def misfit(k: int) -> int:
+        moved = shifted(grid, k)
+        return sum(abs(n - len(cell_boxes(boxes, moved, line, segment, unit, layout, headword)))
+                   for (line, segment), n in expected.items() if n)
+
+    return min((0, -1, 1), key=lambda k: (misfit(k), k != 0))
+
+
 def place(entries: Sequence[Entry], boxes: Sequence[Box], grid: Grid, unit: float,
           rank: Callable[[Box], list[str]], known: set[str], layout: Layout,
           second: Callable[[Box], str | None] | None = None) -> Placement:
@@ -599,6 +629,11 @@ def place(entries: Sequence[Entry], boxes: Sequence[Box], grid: Grid, unit: floa
     heads = [b for b in boxes if grid.holds(b) and is_big(b, unit)]
     headword = ((float(np.median([min(b.w, b.h) for b in heads])), float(np.median([max(b.w, b.h) for b in heads])))
                 if heads else (0.0, 0.0))
+    if k := column_shift(entries, boxes, grid, unit, layout, headword):
+        grid = shifted(grid, k)
+        result.count("column-shifted", k)
+        windows = {(line, segment): [b for b in cell_window(boxes, grid, line, segment) if max(b.w, b.h) >= INK * unit]
+                   for line in range(1, len(grid.columns) + 1) for segment in range(1, len(grid.tiers) + 1)}
     for (line, segment), members in sorted(cells.items()):
         if line > len(grid.columns) or segment > len(grid.tiers):
             result.count("off-grid")
