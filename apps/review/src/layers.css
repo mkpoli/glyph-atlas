@@ -6,10 +6,12 @@
   font-family: "GenZui Sans";
   src: url("/fonts/GenZuiSans-Kana.woff2") format("woff2");
   font-display: swap;
-  /* The subset's cmap, printed by `scripts/build_genzui_subset.py`: the supplementary kana blocks
-     and four kana ligatures. */
-  unicode-range: U+1AFF0-1AFF3, U+1AFF5-1AFFB, U+1AFFD-1AFFE, U+1B000-1B128, U+1B132, U+1B150-1B152,
-    U+1B155, U+1B164-1B168, U+2A708, U+2CEFF-2CF00, U+2CF02;
+  /* The subset's cmap, printed by `scripts/build_genzui_subset.py`: the supplementary kana blocks,
+     four kana ligatures, and the combining voicing marks a hentaigana is voiced with. A stack that
+     names a font with the marks earlier (Kureedo Kata) still draws 𛂞 + U+3099 here: that font
+     lacks 𛂞, so the whole cluster comes from this one. */
+  unicode-range: U+3099-309A, U+1AFF0-1AFF3, U+1AFF5-1AFFB, U+1AFFD-1AFFE, U+1B000-1B128, U+1B132,
+    U+1B150-1B152, U+1B155, U+1B164-1B168, U+2A708, U+2CEFF-2CF00, U+2CF02;
 }
 
 @font-face {
