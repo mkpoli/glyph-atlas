@@ -770,7 +770,7 @@
   "privacy.saving.title": "存校錄",
   "privacy.saving.body": "初存校錄時，本站即爲此瀏覽器設無名帳戶，名如anon-1a2b3c，以Cookie維持登入。每存所定，皆并其帳戶、字截與時刻錄之。",
   "privacy.account.title": "登入",
-  "privacy.account.body": "帳戶存電郵址、所示之名，若自擇小像，亦存之。以GitHub、Google、Discord、LINE或Kakao登入，本站即得該處之姓名、電郵址、小像及帳戶編號；餘無所求。",
+  "privacy.account.body": "帳戶存電郵址、所示之名，若自擇小像，亦存之。以GitHub、Google、Discord、LINE或Kakao登入，本站即得該處之姓名、用者名、電郵址、小像及帳戶編號；隨所連之帳戶存之，唯示於己之帳戶頁，以辨所連者；餘無所求。",
   "privacy.account.methods": "登入碼由Cloudflare Email Service寄送，經雜湊後存十分鐘。通行密鑰唯留公開金鑰於此。已登入之機各留一錄，記其IP位址與瀏覽器名，列於帳戶頁；登出或滿九十日則終止。",
   "privacy.public.title": "他人所見",
   "privacy.public.body": "凡所存之定論及其時刻，皆以所示之名與小像列於改錄及名次中，隨蒐集依CC BY-SA 4.0刊布，亦以此名署之。電郵址終不公開。",

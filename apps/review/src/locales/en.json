@@ -795,7 +795,7 @@
   "privacy.saving.title": "Saving reviews",
   "privacy.saving.body": "The first time you save a review, the site starts an anonymous account for your browser, named like anon-1a2b3c, and keeps it signed in with a cookie. Each decision you save is recorded with that account, the crop and the time.",
   "privacy.account.title": "Signing in",
-  "privacy.account.body": "An account holds your email address, your display name and, if you choose one, a picture. Signing in with GitHub, Google, Discord, LINE or Kakao gives the site your name, email address, picture and your account number there; nothing else is asked for.",
+  "privacy.account.body": "An account holds your email address, your display name and, if you choose one, a picture. Signing in with GitHub, Google, Discord, LINE or Kakao gives the site your name, username, email address, picture and your account number there. They are kept with that connection and shown only to you, on your account page, so you can tell which account is connected; nothing else is asked for.",
   "privacy.account.methods": "A sign-in code is sent by Cloudflare Email Service and kept, hashed, for ten minutes. A passkey leaves only its public key here. Each signed-in device keeps a session with its IP address and browser name, which your account page lists; a session ends when you sign out or after 90 days.",
   "privacy.public.title": "What others see",
   "privacy.public.body": "The decisions you save, with their time, appear in the history and the ranking under your display name and picture, and are released with the collection under CC BY-SA 4.0, credited to that name. Your email address is never shown.",
