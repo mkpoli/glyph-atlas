@@ -141,3 +141,34 @@ def test_the_swap_moves_forms_codes_and_a_local_records_grapheme(module):
     assert db.execute("SELECT family FROM form_bases").fetchone() == ("U+9084",)
     # the moved head's row folds into the head it joins, whose row stays
     assert db.execute("SELECT code_point FROM form_families").fetchall() == [("U+9084",)]
+
+
+def test_a_sequence_the_site_lacks_is_inserted_and_its_crops_follow(module):
+    """𛂞 + U+3099 has no row on the site yet: the swap writes it with its aliases, and files a crop
+    written as it, and the バ crops, under ば."""
+    db = schema()
+    ha = "\U0001B09E゙"
+    for point, char in (("U+3070", "ば"), ("U+30D0", "バ")):
+        db.execute("INSERT INTO characters VALUES(?,?,'',?,'{}')", (point, char, json.dumps({"grapheme": {"code_point": point}})))
+    unit(db, "l1", "local", "バ", "U+30D0", {})
+    unit(db, "l2", "local", ha, "U+1B09E U+3099", {})
+    data = {"grapheme": {"code_point": "U+3070", "members": refs.grapheme_info("U+3070")["members"]}}
+    rows = {point: (data, {}) for point in ("U+3070", "U+30D0", "U+1B09E U+3099")}
+    fill, swap = module.statements(rows)
+    db.executescript("".join(fill) + "".join(swap))
+    assert db.execute("SELECT character,json_extract(data,'$.grapheme.code_point') FROM characters"
+                      " WHERE code_point='U+1B09E U+3099'").fetchone() == (ha, "U+3070")
+    assert {row[0] for row in db.execute("SELECT query FROM aliases WHERE code_point='U+1B09E U+3099'")} == {
+        ha, "u+1b09e u+3099"}
+    assert db.execute("SELECT family FROM units ORDER BY id").fetchall() == [("U+3070",), ("U+3070",)]
+    db.executescript("".join(fill) + "".join(swap))  # a rerun inserts nothing twice
+    assert db.execute("SELECT count(*) FROM characters").fetchone() == (3,)
+
+
+def test_a_fresh_row_is_shaped_like_a_published_one(module):
+    found = module.fresh("U+1B09E U+3099")
+    assert found["data"]["grapheme"]["code_point"] == "U+3070"
+    assert found["data"]["kind"] == "kana" and found["data"]["char"] == "\U0001B09E゙"
+    data, detail = module.rewritten("U+1B09E U+3099", {"U+1B09E U+3099": found}, {})
+    assert detail["characters"][0]["code_point"] == "U+1B09E U+3099"
+    assert {row["code_point"] for row in detail["characters"]} == set(refs.graphemes()["U+3070"])

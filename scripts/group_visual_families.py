@@ -151,7 +151,8 @@ def run(root, anchors_path=None):
             written, radius, votes = anchored_support(members, distances.cpu().tolist(), anchors, radius)
             assignment_enabled = not any(v.get("blocks_group_assignment") for v in votes)
             member_characters = members[0].get("member_characters", []) or [
-                chr(int(v[2:], 16)) if isinstance(v, str) and v.startswith("U+") else v  # noqa: FURB166
+                "".join(chr(int(point[2:], 16)) for point in v.split())  # noqa: FURB166
+                if isinstance(v, str) and v.startswith("U+") else v
                 for v in members[0]["members"]]
             if written and written not in member_characters:
                 raise ValueError("An anchor assigns a character outside the family")

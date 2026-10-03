@@ -55,6 +55,7 @@ import argparse
 import csv
 import re
 import sys
+import unicodedata
 import zipfile
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
@@ -74,6 +75,7 @@ VARIANTS_NAME = "kanji-variants.tsv"
 EQUIVALENTS_NAME = "kanji-equivalents.tsv"
 MJ_KANJI_NAME = "mj-kanji.tsv"
 FAMILIES_NAME = "grapheme-families.tsv"
+VOICING_NAME = "kana-voicing.tsv"
 FAMILY_FIELDS = ("head", "a", "b", "relation", "source", "role", "detail")
 
 #: The Unicode release the cached files and the generated table are from. Every file of the release
@@ -513,10 +515,14 @@ def build(
     ucd: Path,
     vocab: Path | None = None,
     refused: list[tuple[str, shape_families.Edge]] | None = None,
+    voicing: list[Voicing] | None = None,
 ) -> tuple[list[Character], list[shape_families.Family]]:
     """Every character in code point order, and the kanji families of more than one character.
 
-    `refused`, when given, collects the merges `shape_families` turned down, for the summary.
+    A voiced kana written as a letter and a combining mark (𛂞 + U+3099) is a row of its own, keyed
+    by its code points and placed right after its letter. `refused`, when given, collects the merges
+    `shape_families` turned down, for the summary; `voicing` collects what each member of a voiced
+    grapheme rests on, for `kana-voicing.tsv`.
     """
     vocab = vocab or ROOT / "data" / "vocab"
     blocks = read_ranges(ucd / "Blocks.txt")
@@ -546,8 +552,12 @@ def build(
     _add_voiced_graphemes(characters, voiced, curated)
     families = _add_shape_families(characters, document, ucd, vocab, refused)
     _add_confusables(characters, lookalikes)
-    _check_graphemes(characters)
-    return [characters[point] for point in sorted(characters)], families
+    sequences, evidence = _voiced_sequences(characters, voiced, mj)
+    _check_graphemes(characters, sequences)
+    if voicing is not None:
+        voicing.extend(evidence)
+    rows = [*characters.values(), *sequences]
+    return sorted(rows, key=lambda row: [int(point.removeprefix("U+"), 16) for point in row.code_point.split()]), families
 
 
 def read_table(path: Path) -> list[dict[str, str]]:
@@ -598,7 +608,7 @@ def _add_shape_families(
     return families
 
 
-def _check_graphemes(characters: dict[int, Character]) -> None:
+def _check_graphemes(characters: dict[int, Character], sequences: list[Character] = ()) -> None:
     """Fail the build when a character hangs under a grapheme it does not belong to.
 
     Two rules, both of which a reader depends on:
@@ -614,7 +624,7 @@ def _check_graphemes(characters: dict[int, Character]) -> None:
     how ヶ once ended up under け, so the build checks them rather than trusting them.
     """
     broken = []
-    for row in characters.values():
+    for row in [*characters.values(), *sequences]:
         grapheme = characters.get(int(row.grapheme.removeprefix("U+"), 16)) if row.grapheme else None
         if row.script == "hentaigana":
             if grapheme is None or grapheme.script != "hiragana" or not (
@@ -824,6 +834,127 @@ def _add_voiced_graphemes(
             row.grapheme = head
 
 
+@dataclass
+class Voicing:
+    """One row of `kana-voicing.tsv`: a fact one member of a voiced grapheme rests on."""
+
+    head: str
+    member: str
+    char: str
+    relation: str  # `voicing`: the mark voices the base; `base`: the letter is a form of the base
+    tier: str  # `attested`: the source states it; `derived`: this build joins two stated facts
+    source: str
+    detail: str
+
+
+VOICING_FIELDS = ("head", "member", "char", "relation", "tier", "source", "detail")
+
+
+def _voiced_sequences(
+    characters: dict[int, Character], voiced: dict[int, tuple[int, int]], mj: dict[str, dict[str, str]]
+) -> tuple[list[Character], list[Voicing]]:
+    """Each form of a kana written with a voicing mark after it, and what each member rests on.
+
+    ば is は + U+3099, so every form of は written with U+3099 after it is a form of ば: 𛂞 + U+3099
+    and each other hentaigana of は. No hentaigana has a precomposed voiced form, so a hentaigana is
+    voiced only this way. A sequence NFC composes to a character of its own (は + U+3099 is ば, ハ +
+    U+3099 is バ) is that character, which the table already holds, and makes no row: the site stores
+    every written character composed. A voicing is taken from a precomposed kana Unicode decomposes
+    to a letter and the mark; a mark no such kana attests (あ + U+3099, the ツ + U+309A of the Ainu
+    orthography) makes no row, and neither does a voicing no hiragana names (ヷ, わ + U+3099).
+
+    A letter joins only where a source reads it as the base: its Unicode name (HENTAIGANA LETTER
+    HA-1) or its MJ 音価. The archaic WU letters are under う by this build's own readings, which no
+    source states, so they make no voiced sequence. A sequence keeps its letter's script, age, block
+    and 字母, and has no reading, as ば has none.
+
+    Each member cites the decomposition that voices it (`voicing`) and, for a sequence, the source
+    that reads its letter as the base (`base`). A precomposed kana's voicing is `attested`: Unicode
+    decomposes it. A sequence's voicing is `derived`: Unicode decomposes ば to は + U+3099 and reads
+    𛂞 as は, and the build joins the two.
+    """
+    groups: dict[tuple[str, int], list[Character]] = defaultdict(list)
+    for point, (base, mark) in sorted(voiced.items()):
+        row, under = characters.get(point), characters.get(base)
+        if row is not None and under is not None:
+            groups[(under.grapheme or under.code_point, mark)].append(row)
+    members: dict[str, list[Character]] = defaultdict(list)
+    for row in characters.values():
+        if row.script in ("hiragana", "katakana", "hentaigana"):
+            members[row.grapheme or row.code_point].append(row)
+    sequences: list[Character] = []
+    evidence: list[Voicing] = []
+
+    def decomposition(row: Character) -> str:
+        base, mark = voiced[int(row.code_point.removeprefix("U+"), 16)]
+        return f"UnicodeData.txt: {row.code_point} {row.char} decomposes to {code_point(base)} {code_point(mark)}"
+
+    def stated(letter: Character, reading: str) -> list[tuple[str, str]]:
+        """The sources that read `letter` as `reading`, with what each says."""
+        found = []
+        if reading in reading_of(letter.name):
+            found.append(("unicode-ucd", f"NamesList.txt: {letter.code_point} {letter.name}, read {reading}"))
+        entry = mj.get(letter.code_point)
+        if entry and reading in entry["readings"].split("/"):
+            found.append(("mj-hentaigana", f"{entry['mj']} {entry['name']}: 音価 {entry['readings']}"))
+        return found
+
+    for (base, mark), precomposed in sorted(groups.items(), key=lambda item: (_modern_first(item[0][0]), item[0][1])):
+        head = precomposed[0].grapheme
+        if not HIRAGANA_FIRST <= int(head.removeprefix("U+"), 16) <= HIRAGANA_LAST:
+            # ヷ to ヺ voice わ, ゐ, ゑ and を, and no hiragana spells those voicings to name the
+            # grapheme a voiced hentaigana would be a form of; the precomposed katakana stay alone.
+            continue
+        # The voicing of the base itself (ば for は), else the first that voices a form of it (ヷ).
+        basis = next((row for row in precomposed
+                      if code_point(voiced[int(row.code_point.removeprefix("U+"), 16)][0]) == base), precomposed[0])
+        for row in sorted(precomposed, key=lambda row: (row.code_point != head, _modern_first(row.code_point))):
+            evidence.append(Voicing(head, row.code_point, row.char, "voicing", "attested", "unicode-ucd",
+                                    decomposition(row)))
+        reading = characters[int(base.removeprefix("U+"), 16)].char
+        for letter in sorted(members[base], key=lambda row: _modern_first(row.code_point)):
+            char = letter.char + chr(mark)
+            if len(unicodedata.normalize("NFC", char)) == 1:
+                continue  # は + U+3099 is ば
+            sources = stated(letter, reading)
+            if not sources:
+                continue  # under the base by this build's own reading only
+            sequence = Character(
+                code_point=f"{letter.code_point} {code_point(mark)}", char=char, script=letter.script,
+                age=letter.age, block=letter.block, jibo=list(letter.jibo), grapheme=head)
+            sequences.append(sequence)
+            evidence.append(Voicing(head, sequence.code_point, char, "voicing", "derived", "unicode-ucd",
+                                    f"{decomposition(basis)}; {letter.code_point} {letter.char} reads {reading}, "
+                                    f"so {letter.char} + {code_point(mark)} is its voicing"))
+            evidence.extend(Voicing(head, sequence.code_point, char, "base", "attested", source, detail)
+                            for source, detail in sources)
+    return sequences, evidence
+
+
+def write_voicing(evidence: list[Voicing], target: Path) -> None:
+    """Write what each member of a voiced kana grapheme rests on, with its sources in the header."""
+    lines = [
+        "# Voiced kana graphemes: each member and what it rests on; see scripts/build_character_table.py.",
+        "# A member is a precomposed voiced kana or a form of its base with the combining mark after it.",
+    ]
+    for identifier in sorted({row.source for row in evidence}):
+        record = yaml.safe_load((ROOT / "data" / "sources" / f"{identifier}.yaml").read_text(encoding="utf-8"))
+        lines.append(f"# source {identifier}: {record['name']}; {record['licence']} "
+                     f"({record['licence_evidence']}); {record['attribution']}")
+    lines += [
+        f"#   unicode-ucd: UnicodeData.txt and NamesList.txt of Unicode {RELEASE}",
+        ("# relation: voicing is the decomposition the mark voices the base by; base is what puts the letter "
+         "under the base."),
+        ("# tier: attested is stated by the source; derived joins a stated decomposition and a stated "
+         "reading, which no source states together."),
+        (f"# graphemes: {len({row.head for row in evidence})}, members: {len({row.member for row in evidence})}, "
+         f"rows: {len(evidence)}"),
+        "\t".join(VOICING_FIELDS),
+    ]
+    lines += ["\t".join(getattr(row, name) for name in VOICING_FIELDS) for row in evidence]
+    target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def _self_named(kana: dict[str, str]) -> dict[str, str]:
     """The rows of the 音価 map that name their own character, as reading -> code point.
 
@@ -1029,9 +1160,11 @@ def main(argv: list[str] | None = None) -> int:
     arguments = parser.parse_args(argv)
 
     refused: list[tuple[str, shape_families.Edge]] = []
-    rows, families = build(arguments.ucd, arguments.vocab, refused)
+    voicing: list[Voicing] = []
+    rows, families = build(arguments.ucd, arguments.vocab, refused, voicing)
     write(rows, arguments.out)
     write_families(families, arguments.out.with_name(FAMILIES_NAME), arguments.vocab)
+    write_voicing(voicing, arguments.out.with_name(VOICING_NAME))
     scripts = Counter(row.script for row in rows)
     ages = Counter(row.age for row in rows)
     print(f"{len(rows)} rows from Unicode {RELEASE} -> {arguments.out}")

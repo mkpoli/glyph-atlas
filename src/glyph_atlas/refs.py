@@ -56,6 +56,7 @@ MJ_VERSION = re.compile(r"Ver\.(?P<version>[0-9.]+)")
 EQUIVALENTS_TSV = "kanji-equivalents.tsv"
 VARIANTS_TSV = "kanji-variants.tsv"
 FAMILIES_TSV = "grapheme-families.tsv"
+VOICING_TSV = "kana-voicing.tsv"
 COMPONENT_VARIANTS_TSV = "han-component-variants.tsv"
 KANA_ORIGINS_TSV = "kana-origins.tsv"
 SUSPECT_FORMS_TSV = "suspect-forms.tsv"
@@ -68,6 +69,7 @@ BUILT_BY = {
     EQUIVALENTS_TSV: "scripts/build_kanji_equivalents.py",
     VARIANTS_TSV: "scripts/build_kanji_variants.py",
     FAMILIES_TSV: "scripts/build_character_table.py",
+    VOICING_TSV: "scripts/build_character_table.py",
     COMPONENT_VARIANTS_TSV: "scripts/build_han_component_variants.py",
     KANA_ORIGINS_TSV: "scripts/build_kana_origins.py",
     SUSPECT_FORMS_TSV: "nothing: it is kept by hand from reviewers' decisions",
@@ -125,13 +127,14 @@ class MissingTable(RuntimeError):
 
 
 def to_code_point(char: str) -> str:
-    """`"か"` -> `"U+304B"`."""
-    return f"U+{ord(char):04X}"
+    """`"か"` -> `"U+304B"`; a sequence is its code points joined by a space, as the layer keys it:
+    `"𛂞゙"` -> `"U+1B09E U+3099"`."""
+    return " ".join(f"U+{ord(one):04X}" for one in char)
 
 
 def to_char(code_point: str) -> str:
-    """`"U+304B"` -> `"か"`."""
-    return chr(int(code_point.removeprefix("U+"), 16))
+    """`"U+304B"` -> `"か"`, and a key of several code points the sequence it spells."""
+    return "".join(chr(int(point.removeprefix("U+"), 16)) for point in code_point.split())
 
 
 def to_code_points(text: str) -> list[str]:
@@ -594,6 +597,7 @@ def clear_cache() -> None:
         graphemes,
         _source_record,
         _grapheme_families,
+        _voicing,
         _grapheme_info,
         _by_code_point,
         _by_reading,
@@ -741,7 +745,12 @@ def _split(cell: str) -> list[str]:
 
 @cache
 def _ordered_characters() -> tuple[Character, ...]:
-    return tuple(row for _, row in sorted(_characters().items()))
+    """The rows in code point order, a sequence right after its letter (𛂞, then 𛂞 + U+3099)."""
+    return tuple(sorted(_characters().values(), key=lambda row: _point_order(row.code_point)))
+
+
+def _point_order(code_point: str) -> list[int]:
+    return [int(point.removeprefix("U+"), 16) for point in code_point.split()]
 
 
 def characters() -> list[Character]:
@@ -807,8 +816,7 @@ def _grapheme_families() -> dict[str, dict]:
         family = document.get("families", {}).get(head)
         stated = [to_code_point(char) for char in family["members"]] if family else [head]
         joined = {to_code_point(row[end]) for row in edges.get(head, ()) for end in ("a", "b")}
-        members = stated + sorted(joined - set(stated),
-                                  key=lambda point: int(point.removeprefix("U+"), 16))
+        members = stated + sorted(joined - set(stated), key=_point_order)
         if set(members) != set(graphemes().get(head, [])):
             raise ValueError(f"family {head} disagrees with characters.tsv; rebuild the character table")
         evidence = [{"id": key, **document["sources"][key]} for key in family["sources"]] if family else []
@@ -828,9 +836,33 @@ def _grapheme_families() -> dict[str, dict]:
 
 
 @cache
+def _voicing() -> dict[str, dict]:
+    """The voiced kana graphemes of kana-voicing.tsv: each head's members in the table's order (the
+    precomposed kana, then its letter's forms with the mark), with the evidence each rests on."""
+    found: dict[str, dict] = {}
+    for row in _read_tsv(VOICING_TSV):
+        family = found.setdefault(row["head"], {"members": [], "sources": {}})
+        if row["member"] not in family["members"]:
+            family["members"].append(row["member"])
+        family["sources"].setdefault(row["source"], []).append({
+            "a": row["char"], "b": to_char(row["head"]), "relation": row["relation"], "role": "member",
+            "tier": row["tier"], "detail": row["detail"]})
+    families = {}
+    for head, family in found.items():
+        if set(family["members"]) != set(graphemes().get(head, [])):
+            raise ValueError(f"voiced grapheme {head} disagrees with characters.tsv; rebuild the character table")
+        evidence = []
+        for source, edges in sorted(family["sources"].items()):
+            record = _source_record(source)
+            evidence.append({"id": source, "title": record["name"], "url": record["url"], "edges": edges})
+        families[head] = {"members": family["members"], "relation": "kana-family", "evidence": evidence}
+    return families
+
+
+@cache
 def _grapheme_info(head: str) -> dict:
     row = character(head)
-    stated = _grapheme_families().get(head)
+    stated = _grapheme_families().get(head) or _voicing().get(head)
     points = (stated["members"] if stated else
               [head] + [point for point in graphemes()[head] if point != head])
     members = [{"code_point": point, "char": to_char(point)} for point in points]

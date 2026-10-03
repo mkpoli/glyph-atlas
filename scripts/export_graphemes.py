@@ -10,7 +10,13 @@ reader may choose (`detail.expansions`) and the visual analysis the family is ke
 in the row is the live row's own, which this reads from D1 (read-only) when it runs: the counts of
 crops and corpus glyphs are the site's, and only a full publication rewrites them.
 
-The parts fill a staging table, `grapheme_rows_next`; the last part swaps the rows in, moves the crops
+A character the site does not hold yet - a sequence the table now keys, such as 𛂞 + U+3099 - is
+written whole, the way a publication writes it, and gets the aliases a publication gives it (its text
+and its code points). Its crops are not counted: a crop already written as it on the site counts in
+its family's totals from the next full publication on.
+
+The parts fill a staging table, `grapheme_rows_next`; the last part swaps the rows in, inserts the
+new ones, moves the crops
 (`units.family`, and a corpus crop's `grapheme` and `family_members`) and the corpus glyphs
 (`corpus_units.family`) of those characters to their new family, remaps the family codes the Forms
 tables store (so a later `FORMS_REAPPLY` does not put an old head back on a decided glyph), and
@@ -98,7 +104,7 @@ def changed(previous: dict[str, tuple[str, frozenset[str]]]) -> list[str]:
     return sorted(
         (point for point in now_set
          if previous.get(point, (point, frozenset({point}))) != (now_head[point], now_set[point])),
-        key=lambda point: int(point.removeprefix("U+"), 16))
+        key=lambda point: [int(part.removeprefix("U+"), 16) for part in point.split()])
 
 
 def d1(sql: str, tries: int = 4) -> list[dict[str, Any]]:
@@ -148,6 +154,25 @@ def rewritten(point: str, live: dict[str, dict[str, Any]], counts: dict[str, int
     return data, detail
 
 
+def fresh(point: str) -> dict[str, Any]:
+    """The row a publication writes for a character the site does not hold, before its family parts.
+
+    The same fields as `export_cloudflare.py` writes; a character no crop is written as yet has no
+    counts, and the corpus index is not read here, so its candidates are what an empty index gives.
+    """
+    row = refs.character(point)
+    info = characters._row(row, {})
+    info["origin"] = refs.origin_of(point)
+    info["candidates"] = characters.candidate_summary(row.char, live=None, local=0)
+    info["kind"] = ("ligature" if row.ligature else "han" if str(row.script) == "han"
+                    else "hangul" if str(row.script) == "hangul"
+                    else "gugyeol" if str(row.script) == "gugyeol" else "kana")
+    detail = {**info, "alias": row.alias, "category": row.category,
+              "confusables": [characters.to_row(refs.character(cp)) for cp in row.confusables],
+              "derived": [], "expansions": [], "visual_analysis": {}}
+    return {"data": info, "detail": detail}
+
+
 def _expansions(row, counts: dict[str, int], detail: dict[str, Any]) -> list[dict[str, Any]]:
     """The widenings with the family one recomputed. The kana written as a kanji are not among the
     changed rows, so their counts are unknown here and the live row's `jibo` entry is kept as it is."""
@@ -190,13 +215,13 @@ def statements(rows: dict[str, tuple[dict, dict]]) -> list[list[str]]:
     mismatch guard that makes a rerun skip what it already moved.
     """
     fill = [f"DROP TABLE IF EXISTS {STAGING};\n",
-            (f"CREATE TABLE {STAGING} (code_point TEXT PRIMARY KEY, character TEXT NOT NULL, family TEXT NOT NULL,"
-             " data TEXT NOT NULL, detail TEXT NOT NULL) WITHOUT ROWID;\n")]
-    head = f"INSERT OR REPLACE INTO {STAGING}(code_point,character,family,data,detail) VALUES"
+            (f"CREATE TABLE {STAGING} (code_point TEXT PRIMARY KEY, character TEXT NOT NULL, name TEXT NOT NULL,"
+             " family TEXT NOT NULL, data TEXT NOT NULL, detail TEXT NOT NULL) WITHOUT ROWID;\n")]
+    head = f"INSERT OR REPLACE INTO {STAGING}(code_point,character,name,family,data,detail) VALUES"
     values, size = [], 0
     for point, (data, detail) in rows.items():
-        value = (f"({quote(point)},{quote(refs.to_char(point))},{quote(data['grapheme']['code_point'])},"
-                 f"{quote(encoded(data))},{quote(encoded(detail))})")
+        value = (f"({quote(point)},{quote(refs.to_char(point))},{quote(refs.character(point).name or '')},"
+                 f"{quote(data['grapheme']['code_point'])},{quote(encoded(data))},{quote(encoded(detail))})")
         if values and size + len(value.encode()) + 1 > STATEMENT_BYTES - len(head):
             fill.append(head + ",".join(values) + ";\n")
             values, size = [], 0
@@ -204,8 +229,16 @@ def statements(rows: dict[str, tuple[dict, dict]]) -> list[list[str]]:
         size += len(value.encode()) + 1
     if values:
         fill.append(head + ",".join(values) + ";\n")
-    swap: list[str] = []
-    points = sorted(rows, key=lambda point: int(point.removeprefix("U+"), 16))
+    # A character the site lacks is inserted, with the aliases a publication gives it; a rerun finds it.
+    # A plain INSERT: a row that collides with another's text fails the part rather than going missing.
+    swap: list[str] = [
+        (f"INSERT INTO characters(code_point,character,name,data,detail)"
+         f" SELECT code_point,character,name,data,detail FROM {STAGING} n"
+         " WHERE NOT EXISTS (SELECT 1 FROM characters c WHERE c.code_point=n.code_point);\n"),
+        (f"INSERT OR IGNORE INTO aliases(query,code_point,rank) SELECT character,code_point,0 FROM {STAGING}"
+         " UNION ALL SELECT lower(code_point),code_point,0 FROM " + STAGING + ";\n"),
+    ]
+    points = sorted(rows, key=lambda point: [int(part.removeprefix("U+"), 16) for part in point.split()])
     for start in range(0, len(points), BATCH):
         batch = points[start:start + BATCH]
         cps = ",".join(quote(point) for point in batch)
@@ -344,6 +377,7 @@ def main() -> None:
         raise SystemExit(f"--probe {arguments.probe}: its family has not changed")
     published = d1("SELECT value FROM metadata WHERE key='published_at'")[0]
     live = live_rows(points)
+    created = [point for point in points if point not in live]
     stale = [point for point in live
              if {member["code_point"] for member in live[point]["data"]["grapheme"]["members"]}
              != previous.get(point, (point, frozenset({point})))[1]]
@@ -351,16 +385,17 @@ def main() -> None:
         raise SystemExit(f"{len(stale)} live rows disagree with --previous, e.g. {stale[:5]}; "
                          "pass the table the site was published from")
     counts = {point: found["data"].get("occurrence_count", 0) for point, found in live.items()}
-    rows = {point: rewritten(point, live, counts) for point in points if point in live}
+    live.update({point: fresh(point) for point in created})
+    rows = {point: rewritten(point, live, counts) for point in points}
     paths = write_parts(out, statements(rows))
     apply = out / "apply.sh"
     apply.write_text(APPLY.format(
         wrangler=WRANGLER, importer=ROOT / "scripts" / "d1_import.sh", published=encoded(published), probe_head=head,
         probe_chars=",".join(quote(refs.to_char(point)) for point in refs.graphemes()[head]),
-        probe_rows=sum(point in live for point in refs.graphemes()[head])),
+        probe_rows=sum(point in rows for point in refs.graphemes()[head])),
         encoding="utf-8")
     apply.chmod(0o755)
-    print(json.dumps({"changed": len(points), "rows": len(rows), "absent_from_site": len(points) - len(rows),
+    print(json.dumps({"changed": len(points), "rows": len(rows), "created": len(created),
                       "families": len({data["grapheme"]["code_point"] for data, _ in rows.values()}),
                       "parts": [str(path.relative_to(out)) for path in paths]}))
 

@@ -40149,10 +40149,15 @@ U+1B007	𛀇	HENTAIGANA LETTER I-2		hentaigana	Lo	10.0	Kana Supplement	伊	い	U
 U+1B008	𛀈	HENTAIGANA LETTER I-3		hentaigana	Lo	10.0	Kana Supplement	意	い	U+3044	
 U+1B009	𛀉	HENTAIGANA LETTER I-4		hentaigana	Lo	10.0	Kana Supplement	移	い	U+3044	
 U+1B00A	𛀊	HENTAIGANA LETTER U-1		hentaigana	Lo	10.0	Kana Supplement	宇	う	U+3046	
+U+1B00A U+3099	𛀊゙			hentaigana		10.0	Kana Supplement	宇		U+3094	
 U+1B00B	𛀋	HENTAIGANA LETTER U-2		hentaigana	Lo	10.0	Kana Supplement	宇	う	U+3046	
+U+1B00B U+3099	𛀋゙			hentaigana		10.0	Kana Supplement	宇		U+3094	
 U+1B00C	𛀌	HENTAIGANA LETTER U-3		hentaigana	Lo	10.0	Kana Supplement	憂	う	U+3046	
+U+1B00C U+3099	𛀌゙			hentaigana		10.0	Kana Supplement	憂		U+3094	
 U+1B00D	𛀍	HENTAIGANA LETTER U-4		hentaigana	Lo	10.0	Kana Supplement	有	う	U+3046	
+U+1B00D U+3099	𛀍゙			hentaigana		10.0	Kana Supplement	有		U+3094	
 U+1B00E	𛀎	HENTAIGANA LETTER U-5		hentaigana	Lo	10.0	Kana Supplement	雲	う	U+3046	
+U+1B00E U+3099	𛀎゙			hentaigana		10.0	Kana Supplement	雲		U+3094	
 U+1B00F	𛀏	HENTAIGANA LETTER E-2		hentaigana	Lo	10.0	Kana Supplement	盈	え	U+3048	
 U+1B010	𛀐	HENTAIGANA LETTER E-3		hentaigana	Lo	10.0	Kana Supplement	縁	え	U+3048	
 U+1B011	𛀑	HENTAIGANA LETTER E-4		hentaigana	Lo	10.0	Kana Supplement	衣	え	U+3048	
@@ -40162,108 +40167,211 @@ U+1B014	𛀔	HENTAIGANA LETTER O-1		hentaigana	Lo	10.0	Kana Supplement	於	お	U
 U+1B015	𛀕	HENTAIGANA LETTER O-2		hentaigana	Lo	10.0	Kana Supplement	於	お	U+304A	
 U+1B016	𛀖	HENTAIGANA LETTER O-3		hentaigana	Lo	10.0	Kana Supplement	隱	お	U+304A	
 U+1B017	𛀗	HENTAIGANA LETTER KA-1		hentaigana	Lo	10.0	Kana Supplement	佳	か	U+304B	
+U+1B017 U+3099	𛀗゙			hentaigana		10.0	Kana Supplement	佳		U+304C	
 U+1B018	𛀘	HENTAIGANA LETTER KA-2		hentaigana	Lo	10.0	Kana Supplement	加	か	U+304B	
+U+1B018 U+3099	𛀘゙			hentaigana		10.0	Kana Supplement	加		U+304C	
 U+1B019	𛀙	HENTAIGANA LETTER KA-3		hentaigana	Lo	10.0	Kana Supplement	可	か	U+304B	
+U+1B019 U+3099	𛀙゙			hentaigana		10.0	Kana Supplement	可		U+304C	
 U+1B01A	𛀚	HENTAIGANA LETTER KA-4		hentaigana	Lo	10.0	Kana Supplement	可	か	U+304B	
+U+1B01A U+3099	𛀚゙			hentaigana		10.0	Kana Supplement	可		U+304C	
 U+1B01B	𛀛	HENTAIGANA LETTER KA-5		hentaigana	Lo	10.0	Kana Supplement	嘉	か	U+304B	
+U+1B01B U+3099	𛀛゙			hentaigana		10.0	Kana Supplement	嘉		U+304C	
 U+1B01C	𛀜	HENTAIGANA LETTER KA-6		hentaigana	Lo	10.0	Kana Supplement	我	か	U+304B	
+U+1B01C U+3099	𛀜゙			hentaigana		10.0	Kana Supplement	我		U+304C	
 U+1B01D	𛀝	HENTAIGANA LETTER KA-7		hentaigana	Lo	10.0	Kana Supplement	歟	か	U+304B	
+U+1B01D U+3099	𛀝゙			hentaigana		10.0	Kana Supplement	歟		U+304C	
 U+1B01E	𛀞	HENTAIGANA LETTER KA-8		hentaigana	Lo	10.0	Kana Supplement	賀	か	U+304B	
+U+1B01E U+3099	𛀞゙			hentaigana		10.0	Kana Supplement	賀		U+304C	
 U+1B01F	𛀟	HENTAIGANA LETTER KA-9		hentaigana	Lo	10.0	Kana Supplement	閑	か	U+304B	
+U+1B01F U+3099	𛀟゙			hentaigana		10.0	Kana Supplement	閑		U+304C	
 U+1B020	𛀠	HENTAIGANA LETTER KA-10		hentaigana	Lo	10.0	Kana Supplement	香	か	U+304B	
+U+1B020 U+3099	𛀠゙			hentaigana		10.0	Kana Supplement	香		U+304C	
 U+1B021	𛀡	HENTAIGANA LETTER KA-11		hentaigana	Lo	10.0	Kana Supplement	駕	か	U+304B	
+U+1B021 U+3099	𛀡゙			hentaigana		10.0	Kana Supplement	駕		U+304C	
 U+1B022	𛀢	HENTAIGANA LETTER KA-KE		hentaigana	Lo	10.0	Kana Supplement	家	か け	U+304B	
+U+1B022 U+3099	𛀢゙			hentaigana		10.0	Kana Supplement	家		U+304C	
 U+1B023	𛀣	HENTAIGANA LETTER KI-1		hentaigana	Lo	10.0	Kana Supplement	喜	き	U+304D	
+U+1B023 U+3099	𛀣゙			hentaigana		10.0	Kana Supplement	喜		U+304E	
 U+1B024	𛀤	HENTAIGANA LETTER KI-2		hentaigana	Lo	10.0	Kana Supplement	幾	き	U+304D	
+U+1B024 U+3099	𛀤゙			hentaigana		10.0	Kana Supplement	幾		U+304E	
 U+1B025	𛀥	HENTAIGANA LETTER KI-3		hentaigana	Lo	10.0	Kana Supplement	幾	き	U+304D	
+U+1B025 U+3099	𛀥゙			hentaigana		10.0	Kana Supplement	幾		U+304E	
 U+1B026	𛀦	HENTAIGANA LETTER KI-4		hentaigana	Lo	10.0	Kana Supplement	支	き	U+304D	
+U+1B026 U+3099	𛀦゙			hentaigana		10.0	Kana Supplement	支		U+304E	
 U+1B027	𛀧	HENTAIGANA LETTER KI-5		hentaigana	Lo	10.0	Kana Supplement	木	き	U+304D	
+U+1B027 U+3099	𛀧゙			hentaigana		10.0	Kana Supplement	木		U+304E	
 U+1B028	𛀨	HENTAIGANA LETTER KI-6		hentaigana	Lo	10.0	Kana Supplement	祈	き	U+304D	
+U+1B028 U+3099	𛀨゙			hentaigana		10.0	Kana Supplement	祈		U+304E	
 U+1B029	𛀩	HENTAIGANA LETTER KI-7		hentaigana	Lo	10.0	Kana Supplement	貴	き	U+304D	
+U+1B029 U+3099	𛀩゙			hentaigana		10.0	Kana Supplement	貴		U+304E	
 U+1B02A	𛀪	HENTAIGANA LETTER KI-8		hentaigana	Lo	10.0	Kana Supplement	起	き	U+304D	
+U+1B02A U+3099	𛀪゙			hentaigana		10.0	Kana Supplement	起		U+304E	
 U+1B02B	𛀫	HENTAIGANA LETTER KU-1		hentaigana	Lo	10.0	Kana Supplement	久	く	U+304F	
+U+1B02B U+3099	𛀫゙			hentaigana		10.0	Kana Supplement	久		U+3050	
 U+1B02C	𛀬	HENTAIGANA LETTER KU-2		hentaigana	Lo	10.0	Kana Supplement	久	く	U+304F	
+U+1B02C U+3099	𛀬゙			hentaigana		10.0	Kana Supplement	久		U+3050	
 U+1B02D	𛀭	HENTAIGANA LETTER KU-3		hentaigana	Lo	10.0	Kana Supplement	九	く	U+304F	
+U+1B02D U+3099	𛀭゙			hentaigana		10.0	Kana Supplement	九		U+3050	
 U+1B02E	𛀮	HENTAIGANA LETTER KU-4		hentaigana	Lo	10.0	Kana Supplement	供	く	U+304F	
+U+1B02E U+3099	𛀮゙			hentaigana		10.0	Kana Supplement	供		U+3050	
 U+1B02F	𛀯	HENTAIGANA LETTER KU-5		hentaigana	Lo	10.0	Kana Supplement	倶	く	U+304F	
+U+1B02F U+3099	𛀯゙			hentaigana		10.0	Kana Supplement	倶		U+3050	
 U+1B030	𛀰	HENTAIGANA LETTER KU-6		hentaigana	Lo	10.0	Kana Supplement	具	く	U+304F	
+U+1B030 U+3099	𛀰゙			hentaigana		10.0	Kana Supplement	具		U+3050	
 U+1B031	𛀱	HENTAIGANA LETTER KU-7		hentaigana	Lo	10.0	Kana Supplement	求	く	U+304F	
+U+1B031 U+3099	𛀱゙			hentaigana		10.0	Kana Supplement	求		U+3050	
 U+1B032	𛀲	HENTAIGANA LETTER KE-1		hentaigana	Lo	10.0	Kana Supplement	介	け	U+3051	
+U+1B032 U+3099	𛀲゙			hentaigana		10.0	Kana Supplement	介		U+3052	
 U+1B033	𛀳	HENTAIGANA LETTER KE-2		hentaigana	Lo	10.0	Kana Supplement	介	け	U+3051	
+U+1B033 U+3099	𛀳゙			hentaigana		10.0	Kana Supplement	介		U+3052	
 U+1B034	𛀴	HENTAIGANA LETTER KE-3		hentaigana	Lo	10.0	Kana Supplement	希	け	U+3051	
+U+1B034 U+3099	𛀴゙			hentaigana		10.0	Kana Supplement	希		U+3052	
 U+1B035	𛀵	HENTAIGANA LETTER KE-4		hentaigana	Lo	10.0	Kana Supplement	氣	け	U+3051	
+U+1B035 U+3099	𛀵゙			hentaigana		10.0	Kana Supplement	氣		U+3052	
 U+1B036	𛀶	HENTAIGANA LETTER KE-5		hentaigana	Lo	10.0	Kana Supplement	計	け	U+3051	
+U+1B036 U+3099	𛀶゙			hentaigana		10.0	Kana Supplement	計		U+3052	
 U+1B037	𛀷	HENTAIGANA LETTER KE-6		hentaigana	Lo	10.0	Kana Supplement	遣	け	U+3051	
+U+1B037 U+3099	𛀷゙			hentaigana		10.0	Kana Supplement	遣		U+3052	
 U+1B038	𛀸	HENTAIGANA LETTER KO-1		hentaigana	Lo	10.0	Kana Supplement	古	こ	U+3053	
+U+1B038 U+3099	𛀸゙			hentaigana		10.0	Kana Supplement	古		U+3054	
 U+1B039	𛀹	HENTAIGANA LETTER KO-2		hentaigana	Lo	10.0	Kana Supplement	故	こ	U+3053	
+U+1B039 U+3099	𛀹゙			hentaigana		10.0	Kana Supplement	故		U+3054	
 U+1B03A	𛀺	HENTAIGANA LETTER KO-3		hentaigana	Lo	10.0	Kana Supplement	許	こ	U+3053	
+U+1B03A U+3099	𛀺゙			hentaigana		10.0	Kana Supplement	許		U+3054	
 U+1B03B	𛀻	HENTAIGANA LETTER KO-KI		hentaigana	Lo	10.0	Kana Supplement	期	こ き	U+3053	
+U+1B03B U+3099	𛀻゙			hentaigana		10.0	Kana Supplement	期		U+3054	
 U+1B03C	𛀼	HENTAIGANA LETTER SA-1		hentaigana	Lo	10.0	Kana Supplement	乍	さ	U+3055	
+U+1B03C U+3099	𛀼゙			hentaigana		10.0	Kana Supplement	乍		U+3056	
 U+1B03D	𛀽	HENTAIGANA LETTER SA-2		hentaigana	Lo	10.0	Kana Supplement	佐	さ	U+3055	
+U+1B03D U+3099	𛀽゙			hentaigana		10.0	Kana Supplement	佐		U+3056	
 U+1B03E	𛀾	HENTAIGANA LETTER SA-3		hentaigana	Lo	10.0	Kana Supplement	佐	さ	U+3055	
+U+1B03E U+3099	𛀾゙			hentaigana		10.0	Kana Supplement	佐		U+3056	
 U+1B03F	𛀿	HENTAIGANA LETTER SA-4		hentaigana	Lo	10.0	Kana Supplement	左	さ	U+3055	
+U+1B03F U+3099	𛀿゙			hentaigana		10.0	Kana Supplement	左		U+3056	
 U+1B040	𛁀	HENTAIGANA LETTER SA-5		hentaigana	Lo	10.0	Kana Supplement	差	さ	U+3055	
+U+1B040 U+3099	𛁀゙			hentaigana		10.0	Kana Supplement	差		U+3056	
 U+1B041	𛁁	HENTAIGANA LETTER SA-6		hentaigana	Lo	10.0	Kana Supplement	散	さ	U+3055	
+U+1B041 U+3099	𛁁゙			hentaigana		10.0	Kana Supplement	散		U+3056	
 U+1B042	𛁂	HENTAIGANA LETTER SA-7		hentaigana	Lo	10.0	Kana Supplement	斜	さ	U+3055	
+U+1B042 U+3099	𛁂゙			hentaigana		10.0	Kana Supplement	斜		U+3056	
 U+1B043	𛁃	HENTAIGANA LETTER SA-8		hentaigana	Lo	10.0	Kana Supplement	沙	さ	U+3055	
+U+1B043 U+3099	𛁃゙			hentaigana		10.0	Kana Supplement	沙		U+3056	
 U+1B044	𛁄	HENTAIGANA LETTER SI-1		hentaigana	Lo	10.0	Kana Supplement	之	し	U+3057	
+U+1B044 U+3099	𛁄゙			hentaigana		10.0	Kana Supplement	之		U+3058	
 U+1B045	𛁅	HENTAIGANA LETTER SI-2		hentaigana	Lo	10.0	Kana Supplement	之	し	U+3057	
+U+1B045 U+3099	𛁅゙			hentaigana		10.0	Kana Supplement	之		U+3058	
 U+1B046	𛁆	HENTAIGANA LETTER SI-3		hentaigana	Lo	10.0	Kana Supplement	事	し	U+3057	
+U+1B046 U+3099	𛁆゙			hentaigana		10.0	Kana Supplement	事		U+3058	
 U+1B047	𛁇	HENTAIGANA LETTER SI-4		hentaigana	Lo	10.0	Kana Supplement	四	し	U+3057	
+U+1B047 U+3099	𛁇゙			hentaigana		10.0	Kana Supplement	四		U+3058	
 U+1B048	𛁈	HENTAIGANA LETTER SI-5		hentaigana	Lo	10.0	Kana Supplement	志	し	U+3057	
+U+1B048 U+3099	𛁈゙			hentaigana		10.0	Kana Supplement	志		U+3058	
 U+1B049	𛁉	HENTAIGANA LETTER SI-6		hentaigana	Lo	10.0	Kana Supplement	新	し	U+3057	
+U+1B049 U+3099	𛁉゙			hentaigana		10.0	Kana Supplement	新		U+3058	
 U+1B04A	𛁊	HENTAIGANA LETTER SU-1		hentaigana	Lo	10.0	Kana Supplement	受	す	U+3059	
+U+1B04A U+3099	𛁊゙			hentaigana		10.0	Kana Supplement	受		U+305A	
 U+1B04B	𛁋	HENTAIGANA LETTER SU-2		hentaigana	Lo	10.0	Kana Supplement	壽	す	U+3059	
+U+1B04B U+3099	𛁋゙			hentaigana		10.0	Kana Supplement	壽		U+305A	
 U+1B04C	𛁌	HENTAIGANA LETTER SU-3		hentaigana	Lo	10.0	Kana Supplement	數	す	U+3059	
+U+1B04C U+3099	𛁌゙			hentaigana		10.0	Kana Supplement	數		U+305A	
 U+1B04D	𛁍	HENTAIGANA LETTER SU-4		hentaigana	Lo	10.0	Kana Supplement	數	す	U+3059	
+U+1B04D U+3099	𛁍゙			hentaigana		10.0	Kana Supplement	數		U+305A	
 U+1B04E	𛁎	HENTAIGANA LETTER SU-5		hentaigana	Lo	10.0	Kana Supplement	春	す	U+3059	
+U+1B04E U+3099	𛁎゙			hentaigana		10.0	Kana Supplement	春		U+305A	
 U+1B04F	𛁏	HENTAIGANA LETTER SU-6		hentaigana	Lo	10.0	Kana Supplement	春	す	U+3059	
+U+1B04F U+3099	𛁏゙			hentaigana		10.0	Kana Supplement	春		U+305A	
 U+1B050	𛁐	HENTAIGANA LETTER SU-7		hentaigana	Lo	10.0	Kana Supplement	須	す	U+3059	
+U+1B050 U+3099	𛁐゙			hentaigana		10.0	Kana Supplement	須		U+305A	
 U+1B051	𛁑	HENTAIGANA LETTER SU-8		hentaigana	Lo	10.0	Kana Supplement	須	す	U+3059	
+U+1B051 U+3099	𛁑゙			hentaigana		10.0	Kana Supplement	須		U+305A	
 U+1B052	𛁒	HENTAIGANA LETTER SE-1		hentaigana	Lo	10.0	Kana Supplement	世	せ	U+305B	
+U+1B052 U+3099	𛁒゙			hentaigana		10.0	Kana Supplement	世		U+305C	
 U+1B053	𛁓	HENTAIGANA LETTER SE-2		hentaigana	Lo	10.0	Kana Supplement	世	せ	U+305B	
+U+1B053 U+3099	𛁓゙			hentaigana		10.0	Kana Supplement	世		U+305C	
 U+1B054	𛁔	HENTAIGANA LETTER SE-3		hentaigana	Lo	10.0	Kana Supplement	世	せ	U+305B	
+U+1B054 U+3099	𛁔゙			hentaigana		10.0	Kana Supplement	世		U+305C	
 U+1B055	𛁕	HENTAIGANA LETTER SE-4		hentaigana	Lo	10.0	Kana Supplement	勢	せ	U+305B	
+U+1B055 U+3099	𛁕゙			hentaigana		10.0	Kana Supplement	勢		U+305C	
 U+1B056	𛁖	HENTAIGANA LETTER SE-5		hentaigana	Lo	10.0	Kana Supplement	聲	せ	U+305B	
+U+1B056 U+3099	𛁖゙			hentaigana		10.0	Kana Supplement	聲		U+305C	
 U+1B057	𛁗	HENTAIGANA LETTER SO-1		hentaigana	Lo	10.0	Kana Supplement	所	そ	U+305D	
+U+1B057 U+3099	𛁗゙			hentaigana		10.0	Kana Supplement	所		U+305E	
 U+1B058	𛁘	HENTAIGANA LETTER SO-2		hentaigana	Lo	10.0	Kana Supplement	所	そ	U+305D	
+U+1B058 U+3099	𛁘゙			hentaigana		10.0	Kana Supplement	所		U+305E	
 U+1B059	𛁙	HENTAIGANA LETTER SO-3		hentaigana	Lo	10.0	Kana Supplement	曾	そ	U+305D	
+U+1B059 U+3099	𛁙゙			hentaigana		10.0	Kana Supplement	曾		U+305E	
 U+1B05A	𛁚	HENTAIGANA LETTER SO-4		hentaigana	Lo	10.0	Kana Supplement	曾	そ	U+305D	
+U+1B05A U+3099	𛁚゙			hentaigana		10.0	Kana Supplement	曾		U+305E	
 U+1B05B	𛁛	HENTAIGANA LETTER SO-5		hentaigana	Lo	10.0	Kana Supplement	楚	そ	U+305D	
+U+1B05B U+3099	𛁛゙			hentaigana		10.0	Kana Supplement	楚		U+305E	
 U+1B05C	𛁜	HENTAIGANA LETTER SO-6		hentaigana	Lo	10.0	Kana Supplement	蘇	そ	U+305D	
+U+1B05C U+3099	𛁜゙			hentaigana		10.0	Kana Supplement	蘇		U+305E	
 U+1B05D	𛁝	HENTAIGANA LETTER SO-7		hentaigana	Lo	10.0	Kana Supplement	處	そ	U+305D	
+U+1B05D U+3099	𛁝゙			hentaigana		10.0	Kana Supplement	處		U+305E	
 U+1B05E	𛁞	HENTAIGANA LETTER TA-1		hentaigana	Lo	10.0	Kana Supplement	堂	た	U+305F	
+U+1B05E U+3099	𛁞゙			hentaigana		10.0	Kana Supplement	堂		U+3060	
 U+1B05F	𛁟	HENTAIGANA LETTER TA-2		hentaigana	Lo	10.0	Kana Supplement	多	た	U+305F	
+U+1B05F U+3099	𛁟゙			hentaigana		10.0	Kana Supplement	多		U+3060	
 U+1B060	𛁠	HENTAIGANA LETTER TA-3		hentaigana	Lo	10.0	Kana Supplement	多	た	U+305F	
+U+1B060 U+3099	𛁠゙			hentaigana		10.0	Kana Supplement	多		U+3060	
 U+1B061	𛁡	HENTAIGANA LETTER TA-4		hentaigana	Lo	10.0	Kana Supplement	當	た	U+305F	
+U+1B061 U+3099	𛁡゙			hentaigana		10.0	Kana Supplement	當		U+3060	
 U+1B062	𛁢	HENTAIGANA LETTER TI-1		hentaigana	Lo	10.0	Kana Supplement	千	ち	U+3061	
+U+1B062 U+3099	𛁢゙			hentaigana		10.0	Kana Supplement	千		U+3062	
 U+1B063	𛁣	HENTAIGANA LETTER TI-2		hentaigana	Lo	10.0	Kana Supplement	地	ち	U+3061	
+U+1B063 U+3099	𛁣゙			hentaigana		10.0	Kana Supplement	地		U+3062	
 U+1B064	𛁤	HENTAIGANA LETTER TI-3		hentaigana	Lo	10.0	Kana Supplement	智	ち	U+3061	
+U+1B064 U+3099	𛁤゙			hentaigana		10.0	Kana Supplement	智		U+3062	
 U+1B065	𛁥	HENTAIGANA LETTER TI-4		hentaigana	Lo	10.0	Kana Supplement	知	ち	U+3061	
+U+1B065 U+3099	𛁥゙			hentaigana		10.0	Kana Supplement	知		U+3062	
 U+1B066	𛁦	HENTAIGANA LETTER TI-5		hentaigana	Lo	10.0	Kana Supplement	知	ち	U+3061	
+U+1B066 U+3099	𛁦゙			hentaigana		10.0	Kana Supplement	知		U+3062	
 U+1B067	𛁧	HENTAIGANA LETTER TI-6		hentaigana	Lo	10.0	Kana Supplement	致	ち	U+3061	
+U+1B067 U+3099	𛁧゙			hentaigana		10.0	Kana Supplement	致		U+3062	
 U+1B068	𛁨	HENTAIGANA LETTER TI-7		hentaigana	Lo	10.0	Kana Supplement	遲	ち	U+3061	
+U+1B068 U+3099	𛁨゙			hentaigana		10.0	Kana Supplement	遲		U+3062	
 U+1B069	𛁩	HENTAIGANA LETTER TU-1		hentaigana	Lo	10.0	Kana Supplement	川	つ	U+3064	
+U+1B069 U+3099	𛁩゙			hentaigana		10.0	Kana Supplement	川		U+3065	
 U+1B06A	𛁪	HENTAIGANA LETTER TU-2		hentaigana	Lo	10.0	Kana Supplement	川	つ	U+3064	
+U+1B06A U+3099	𛁪゙			hentaigana		10.0	Kana Supplement	川		U+3065	
 U+1B06B	𛁫	HENTAIGANA LETTER TU-3		hentaigana	Lo	10.0	Kana Supplement	津	つ	U+3064	
+U+1B06B U+3099	𛁫゙			hentaigana		10.0	Kana Supplement	津		U+3065	
 U+1B06C	𛁬	HENTAIGANA LETTER TU-4		hentaigana	Lo	10.0	Kana Supplement	都	つ	U+3064	
+U+1B06C U+3099	𛁬゙			hentaigana		10.0	Kana Supplement	都		U+3065	
 U+1B06D	𛁭	HENTAIGANA LETTER TU-TO		hentaigana	Lo	10.0	Kana Supplement	徒	つ と	U+3064	
+U+1B06D U+3099	𛁭゙			hentaigana		10.0	Kana Supplement	徒		U+3065	
 U+1B06E	𛁮	HENTAIGANA LETTER TE-1		hentaigana	Lo	10.0	Kana Supplement	亭	て	U+3066	
+U+1B06E U+3099	𛁮゙			hentaigana		10.0	Kana Supplement	亭		U+3067	
 U+1B06F	𛁯	HENTAIGANA LETTER TE-2		hentaigana	Lo	10.0	Kana Supplement	低	て	U+3066	
+U+1B06F U+3099	𛁯゙			hentaigana		10.0	Kana Supplement	低		U+3067	
 U+1B070	𛁰	HENTAIGANA LETTER TE-3		hentaigana	Lo	10.0	Kana Supplement	傳	て	U+3066	
+U+1B070 U+3099	𛁰゙			hentaigana		10.0	Kana Supplement	傳		U+3067	
 U+1B071	𛁱	HENTAIGANA LETTER TE-4		hentaigana	Lo	10.0	Kana Supplement	天	て	U+3066	
+U+1B071 U+3099	𛁱゙			hentaigana		10.0	Kana Supplement	天		U+3067	
 U+1B072	𛁲	HENTAIGANA LETTER TE-5		hentaigana	Lo	10.0	Kana Supplement	天	て	U+3066	
+U+1B072 U+3099	𛁲゙			hentaigana		10.0	Kana Supplement	天		U+3067	
 U+1B073	𛁳	HENTAIGANA LETTER TE-6		hentaigana	Lo	10.0	Kana Supplement	天	て	U+3066	
+U+1B073 U+3099	𛁳゙			hentaigana		10.0	Kana Supplement	天		U+3067	
 U+1B074	𛁴	HENTAIGANA LETTER TE-7		hentaigana	Lo	10.0	Kana Supplement	帝	て	U+3066	
+U+1B074 U+3099	𛁴゙			hentaigana		10.0	Kana Supplement	帝		U+3067	
 U+1B075	𛁵	HENTAIGANA LETTER TE-8		hentaigana	Lo	10.0	Kana Supplement	弖	て	U+3066	
+U+1B075 U+3099	𛁵゙			hentaigana		10.0	Kana Supplement	弖		U+3067	
 U+1B076	𛁶	HENTAIGANA LETTER TE-9		hentaigana	Lo	10.0	Kana Supplement	轉	て	U+3066	
+U+1B076 U+3099	𛁶゙			hentaigana		10.0	Kana Supplement	轉		U+3067	
 U+1B077	𛁷	HENTAIGANA LETTER TO-1		hentaigana	Lo	10.0	Kana Supplement	土	と	U+3068	
+U+1B077 U+3099	𛁷゙			hentaigana		10.0	Kana Supplement	土		U+3069	
 U+1B078	𛁸	HENTAIGANA LETTER TO-2		hentaigana	Lo	10.0	Kana Supplement	度	と	U+3068	
+U+1B078 U+3099	𛁸゙			hentaigana		10.0	Kana Supplement	度		U+3069	
 U+1B079	𛁹	HENTAIGANA LETTER TO-3		hentaigana	Lo	10.0	Kana Supplement	東	と	U+3068	
+U+1B079 U+3099	𛁹゙			hentaigana		10.0	Kana Supplement	東		U+3069	
 U+1B07A	𛁺	HENTAIGANA LETTER TO-4		hentaigana	Lo	10.0	Kana Supplement	登	と	U+3068	
+U+1B07A U+3099	𛁺゙			hentaigana		10.0	Kana Supplement	登		U+3069	
 U+1B07B	𛁻	HENTAIGANA LETTER TO-5		hentaigana	Lo	10.0	Kana Supplement	登	と	U+3068	
+U+1B07B U+3099	𛁻゙			hentaigana		10.0	Kana Supplement	登		U+3069	
 U+1B07C	𛁼	HENTAIGANA LETTER TO-6		hentaigana	Lo	10.0	Kana Supplement	砥	と	U+3068	
+U+1B07C U+3099	𛁼゙			hentaigana		10.0	Kana Supplement	砥		U+3069	
 U+1B07D	𛁽	HENTAIGANA LETTER TO-RA		hentaigana	Lo	10.0	Kana Supplement	等	と ら	U+3068	
+U+1B07D U+3099	𛁽゙			hentaigana		10.0	Kana Supplement	等		U+3069	
 U+1B07E	𛁾	HENTAIGANA LETTER NA-1		hentaigana	Lo	10.0	Kana Supplement	南	な	U+306A	
 U+1B07F	𛁿	HENTAIGANA LETTER NA-2		hentaigana	Lo	10.0	Kana Supplement	名	な	U+306A	
 U+1B080	𛂀	HENTAIGANA LETTER NA-3		hentaigana	Lo	10.0	Kana Supplement	奈	な	U+306A	
@@ -40297,41 +40405,113 @@ U+1B09B	𛂛	HENTAIGANA LETTER NO-3		hentaigana	Lo	10.0	Kana Supplement	能	の	
 U+1B09C	𛂜	HENTAIGANA LETTER NO-4		hentaigana	Lo	10.0	Kana Supplement	能	の	U+306E	
 U+1B09D	𛂝	HENTAIGANA LETTER NO-5		hentaigana	Lo	10.0	Kana Supplement	農	の	U+306E	
 U+1B09E	𛂞	HENTAIGANA LETTER HA-1		hentaigana	Lo	10.0	Kana Supplement	八	は	U+306F	
+U+1B09E U+3099	𛂞゙			hentaigana		10.0	Kana Supplement	八		U+3070	
+U+1B09E U+309A	𛂞゚			hentaigana		10.0	Kana Supplement	八		U+3071	
 U+1B09F	𛂟	HENTAIGANA LETTER HA-2		hentaigana	Lo	10.0	Kana Supplement	半	は	U+306F	
+U+1B09F U+3099	𛂟゙			hentaigana		10.0	Kana Supplement	半		U+3070	
+U+1B09F U+309A	𛂟゚			hentaigana		10.0	Kana Supplement	半		U+3071	
 U+1B0A0	𛂠	HENTAIGANA LETTER HA-3		hentaigana	Lo	10.0	Kana Supplement	婆	は	U+306F	
+U+1B0A0 U+3099	𛂠゙			hentaigana		10.0	Kana Supplement	婆		U+3070	
+U+1B0A0 U+309A	𛂠゚			hentaigana		10.0	Kana Supplement	婆		U+3071	
 U+1B0A1	𛂡	HENTAIGANA LETTER HA-4		hentaigana	Lo	10.0	Kana Supplement	波	は	U+306F	
+U+1B0A1 U+3099	𛂡゙			hentaigana		10.0	Kana Supplement	波		U+3070	
+U+1B0A1 U+309A	𛂡゚			hentaigana		10.0	Kana Supplement	波		U+3071	
 U+1B0A2	𛂢	HENTAIGANA LETTER HA-5		hentaigana	Lo	10.0	Kana Supplement	盤	は	U+306F	
+U+1B0A2 U+3099	𛂢゙			hentaigana		10.0	Kana Supplement	盤		U+3070	
+U+1B0A2 U+309A	𛂢゚			hentaigana		10.0	Kana Supplement	盤		U+3071	
 U+1B0A3	𛂣	HENTAIGANA LETTER HA-6		hentaigana	Lo	10.0	Kana Supplement	盤	は	U+306F	
+U+1B0A3 U+3099	𛂣゙			hentaigana		10.0	Kana Supplement	盤		U+3070	
+U+1B0A3 U+309A	𛂣゚			hentaigana		10.0	Kana Supplement	盤		U+3071	
 U+1B0A4	𛂤	HENTAIGANA LETTER HA-7		hentaigana	Lo	10.0	Kana Supplement	破	は	U+306F	
+U+1B0A4 U+3099	𛂤゙			hentaigana		10.0	Kana Supplement	破		U+3070	
+U+1B0A4 U+309A	𛂤゚			hentaigana		10.0	Kana Supplement	破		U+3071	
 U+1B0A5	𛂥	HENTAIGANA LETTER HA-8		hentaigana	Lo	10.0	Kana Supplement	者	は	U+306F	
+U+1B0A5 U+3099	𛂥゙			hentaigana		10.0	Kana Supplement	者		U+3070	
+U+1B0A5 U+309A	𛂥゚			hentaigana		10.0	Kana Supplement	者		U+3071	
 U+1B0A6	𛂦	HENTAIGANA LETTER HA-9		hentaigana	Lo	10.0	Kana Supplement	者	は	U+306F	
+U+1B0A6 U+3099	𛂦゙			hentaigana		10.0	Kana Supplement	者		U+3070	
+U+1B0A6 U+309A	𛂦゚			hentaigana		10.0	Kana Supplement	者		U+3071	
 U+1B0A7	𛂧	HENTAIGANA LETTER HA-10		hentaigana	Lo	10.0	Kana Supplement	葉	は	U+306F	
+U+1B0A7 U+3099	𛂧゙			hentaigana		10.0	Kana Supplement	葉		U+3070	
+U+1B0A7 U+309A	𛂧゚			hentaigana		10.0	Kana Supplement	葉		U+3071	
 U+1B0A8	𛂨	HENTAIGANA LETTER HA-11		hentaigana	Lo	10.0	Kana Supplement	頗	は	U+306F	
+U+1B0A8 U+3099	𛂨゙			hentaigana		10.0	Kana Supplement	頗		U+3070	
+U+1B0A8 U+309A	𛂨゚			hentaigana		10.0	Kana Supplement	頗		U+3071	
 U+1B0A9	𛂩	HENTAIGANA LETTER HI-1		hentaigana	Lo	10.0	Kana Supplement	悲	ひ	U+3072	
+U+1B0A9 U+3099	𛂩゙			hentaigana		10.0	Kana Supplement	悲		U+3073	
+U+1B0A9 U+309A	𛂩゚			hentaigana		10.0	Kana Supplement	悲		U+3074	
 U+1B0AA	𛂪	HENTAIGANA LETTER HI-2		hentaigana	Lo	10.0	Kana Supplement	日	ひ	U+3072	
+U+1B0AA U+3099	𛂪゙			hentaigana		10.0	Kana Supplement	日		U+3073	
+U+1B0AA U+309A	𛂪゚			hentaigana		10.0	Kana Supplement	日		U+3074	
 U+1B0AB	𛂫	HENTAIGANA LETTER HI-3		hentaigana	Lo	10.0	Kana Supplement	比	ひ	U+3072	
+U+1B0AB U+3099	𛂫゙			hentaigana		10.0	Kana Supplement	比		U+3073	
+U+1B0AB U+309A	𛂫゚			hentaigana		10.0	Kana Supplement	比		U+3074	
 U+1B0AC	𛂬	HENTAIGANA LETTER HI-4		hentaigana	Lo	10.0	Kana Supplement	避	ひ	U+3072	
+U+1B0AC U+3099	𛂬゙			hentaigana		10.0	Kana Supplement	避		U+3073	
+U+1B0AC U+309A	𛂬゚			hentaigana		10.0	Kana Supplement	避		U+3074	
 U+1B0AD	𛂭	HENTAIGANA LETTER HI-5		hentaigana	Lo	10.0	Kana Supplement	非	ひ	U+3072	
+U+1B0AD U+3099	𛂭゙			hentaigana		10.0	Kana Supplement	非		U+3073	
+U+1B0AD U+309A	𛂭゚			hentaigana		10.0	Kana Supplement	非		U+3074	
 U+1B0AE	𛂮	HENTAIGANA LETTER HI-6		hentaigana	Lo	10.0	Kana Supplement	飛	ひ	U+3072	
+U+1B0AE U+3099	𛂮゙			hentaigana		10.0	Kana Supplement	飛		U+3073	
+U+1B0AE U+309A	𛂮゚			hentaigana		10.0	Kana Supplement	飛		U+3074	
 U+1B0AF	𛂯	HENTAIGANA LETTER HI-7		hentaigana	Lo	10.0	Kana Supplement	飛	ひ	U+3072	
+U+1B0AF U+3099	𛂯゙			hentaigana		10.0	Kana Supplement	飛		U+3073	
+U+1B0AF U+309A	𛂯゚			hentaigana		10.0	Kana Supplement	飛		U+3074	
 U+1B0B0	𛂰	HENTAIGANA LETTER HU-1		hentaigana	Lo	10.0	Kana Supplement	不	ふ	U+3075	
+U+1B0B0 U+3099	𛂰゙			hentaigana		10.0	Kana Supplement	不		U+3076	
+U+1B0B0 U+309A	𛂰゚			hentaigana		10.0	Kana Supplement	不		U+3077	
 U+1B0B1	𛂱	HENTAIGANA LETTER HU-2		hentaigana	Lo	10.0	Kana Supplement	婦	ふ	U+3075	
+U+1B0B1 U+3099	𛂱゙			hentaigana		10.0	Kana Supplement	婦		U+3076	
+U+1B0B1 U+309A	𛂱゚			hentaigana		10.0	Kana Supplement	婦		U+3077	
 U+1B0B2	𛂲	HENTAIGANA LETTER HU-3		hentaigana	Lo	10.0	Kana Supplement	布	ふ	U+3075	
+U+1B0B2 U+3099	𛂲゙			hentaigana		10.0	Kana Supplement	布		U+3076	
+U+1B0B2 U+309A	𛂲゚			hentaigana		10.0	Kana Supplement	布		U+3077	
 U+1B0B3	𛂳	HENTAIGANA LETTER HE-1		hentaigana	Lo	10.0	Kana Supplement	倍	へ	U+3078	
+U+1B0B3 U+3099	𛂳゙			hentaigana		10.0	Kana Supplement	倍		U+3079	
+U+1B0B3 U+309A	𛂳゚			hentaigana		10.0	Kana Supplement	倍		U+307A	
 U+1B0B4	𛂴	HENTAIGANA LETTER HE-2		hentaigana	Lo	10.0	Kana Supplement	弊	へ	U+3078	
+U+1B0B4 U+3099	𛂴゙			hentaigana		10.0	Kana Supplement	弊		U+3079	
+U+1B0B4 U+309A	𛂴゚			hentaigana		10.0	Kana Supplement	弊		U+307A	
 U+1B0B5	𛂵	HENTAIGANA LETTER HE-3		hentaigana	Lo	10.0	Kana Supplement	弊	へ	U+3078	
+U+1B0B5 U+3099	𛂵゙			hentaigana		10.0	Kana Supplement	弊		U+3079	
+U+1B0B5 U+309A	𛂵゚			hentaigana		10.0	Kana Supplement	弊		U+307A	
 U+1B0B6	𛂶	HENTAIGANA LETTER HE-4		hentaigana	Lo	10.0	Kana Supplement	遍	へ	U+3078	
+U+1B0B6 U+3099	𛂶゙			hentaigana		10.0	Kana Supplement	遍		U+3079	
+U+1B0B6 U+309A	𛂶゚			hentaigana		10.0	Kana Supplement	遍		U+307A	
 U+1B0B7	𛂷	HENTAIGANA LETTER HE-5		hentaigana	Lo	10.0	Kana Supplement	邊	へ	U+3078	
+U+1B0B7 U+3099	𛂷゙			hentaigana		10.0	Kana Supplement	邊		U+3079	
+U+1B0B7 U+309A	𛂷゚			hentaigana		10.0	Kana Supplement	邊		U+307A	
 U+1B0B8	𛂸	HENTAIGANA LETTER HE-6		hentaigana	Lo	10.0	Kana Supplement	邊	へ	U+3078	
+U+1B0B8 U+3099	𛂸゙			hentaigana		10.0	Kana Supplement	邊		U+3079	
+U+1B0B8 U+309A	𛂸゚			hentaigana		10.0	Kana Supplement	邊		U+307A	
 U+1B0B9	𛂹	HENTAIGANA LETTER HE-7		hentaigana	Lo	10.0	Kana Supplement	部	へ	U+3078	
+U+1B0B9 U+3099	𛂹゙			hentaigana		10.0	Kana Supplement	部		U+3079	
+U+1B0B9 U+309A	𛂹゚			hentaigana		10.0	Kana Supplement	部		U+307A	
 U+1B0BA	𛂺	HENTAIGANA LETTER HO-1		hentaigana	Lo	10.0	Kana Supplement	保	ほ	U+307B	
+U+1B0BA U+3099	𛂺゙			hentaigana		10.0	Kana Supplement	保		U+307C	
+U+1B0BA U+309A	𛂺゚			hentaigana		10.0	Kana Supplement	保		U+307D	
 U+1B0BB	𛂻	HENTAIGANA LETTER HO-2		hentaigana	Lo	10.0	Kana Supplement	保	ほ	U+307B	
+U+1B0BB U+3099	𛂻゙			hentaigana		10.0	Kana Supplement	保		U+307C	
+U+1B0BB U+309A	𛂻゚			hentaigana		10.0	Kana Supplement	保		U+307D	
 U+1B0BC	𛂼	HENTAIGANA LETTER HO-3		hentaigana	Lo	10.0	Kana Supplement	報	ほ	U+307B	
+U+1B0BC U+3099	𛂼゙			hentaigana		10.0	Kana Supplement	報		U+307C	
+U+1B0BC U+309A	𛂼゚			hentaigana		10.0	Kana Supplement	報		U+307D	
 U+1B0BD	𛂽	HENTAIGANA LETTER HO-4		hentaigana	Lo	10.0	Kana Supplement	奉	ほ	U+307B	
+U+1B0BD U+3099	𛂽゙			hentaigana		10.0	Kana Supplement	奉		U+307C	
+U+1B0BD U+309A	𛂽゚			hentaigana		10.0	Kana Supplement	奉		U+307D	
 U+1B0BE	𛂾	HENTAIGANA LETTER HO-5		hentaigana	Lo	10.0	Kana Supplement	寶	ほ	U+307B	
+U+1B0BE U+3099	𛂾゙			hentaigana		10.0	Kana Supplement	寶		U+307C	
+U+1B0BE U+309A	𛂾゚			hentaigana		10.0	Kana Supplement	寶		U+307D	
 U+1B0BF	𛂿	HENTAIGANA LETTER HO-6		hentaigana	Lo	10.0	Kana Supplement	本	ほ	U+307B	
+U+1B0BF U+3099	𛂿゙			hentaigana		10.0	Kana Supplement	本		U+307C	
+U+1B0BF U+309A	𛂿゚			hentaigana		10.0	Kana Supplement	本		U+307D	
 U+1B0C0	𛃀	HENTAIGANA LETTER HO-7		hentaigana	Lo	10.0	Kana Supplement	本	ほ	U+307B	
+U+1B0C0 U+3099	𛃀゙			hentaigana		10.0	Kana Supplement	本		U+307C	
+U+1B0C0 U+309A	𛃀゚			hentaigana		10.0	Kana Supplement	本		U+307D	
 U+1B0C1	𛃁	HENTAIGANA LETTER HO-8		hentaigana	Lo	10.0	Kana Supplement	豐	ほ	U+307B	
+U+1B0C1 U+3099	𛃁゙			hentaigana		10.0	Kana Supplement	豐		U+307C	
+U+1B0C1 U+309A	𛃁゚			hentaigana		10.0	Kana Supplement	豐		U+307D	
 U+1B0C2	𛃂	HENTAIGANA LETTER MA-1		hentaigana	Lo	10.0	Kana Supplement	万	ま	U+307E	
 U+1B0C3	𛃃	HENTAIGANA LETTER MA-2		hentaigana	Lo	10.0	Kana Supplement	末	ま	U+307E	
 U+1B0C4	𛃄	HENTAIGANA LETTER MA-3		hentaigana	Lo	10.0	Kana Supplement	末	ま	U+307E	

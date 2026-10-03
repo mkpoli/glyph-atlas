@@ -2046,3 +2046,16 @@ def test_a_correction_gives_crops_one_character_with_the_sites_rules(dataset):
     assert same.status_code == 200 and same.json()['unchanged'] == [chosen[0]['id']]
     assert client.post('/atlas/corrections/' + payload['id'] + '/undo', json={"client_id": "batch"}).status_code == 200
     assert [client.get('/atlas/characters/' + i['id']).json()['label'] for i in chosen] == [i['label'] for i in chosen]
+
+
+def test_a_voiced_sequence_is_filed_under_its_grapheme():
+    """𛂞 + U+3099 is a form of ば; ツ + U+309A, which no precomposed kana voices, files under itself."""
+    from glyph_atlas.review.atlas import BadRequest, grapheme_members
+
+    assert grapheme_of("\U0001B09E゙") == grapheme_of("バ") == "U+3070"
+    assert grapheme_of("ツ゚") == "U+30C4 U+309A"
+    members = grapheme_members("U+3070")
+    assert members[:2] == ["ば", "バ"] and "\U0001B09E゙" in members
+    assert len(members) == len(set(members)) == 13
+    with pytest.raises(BadRequest):
+        grapheme_members("U+1B09E U+3099")

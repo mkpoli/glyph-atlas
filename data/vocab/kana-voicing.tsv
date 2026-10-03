@@ -1,0 +1,601 @@
+# Voiced kana graphemes: each member and what it rests on; see scripts/build_character_table.py.
+# A member is a precomposed voiced kana or a form of its base with the combining mark after it.
+# source mj-hentaigana: MJ文字情報一覧表 変体仮名編; CC-BY-SA-2.1-JP (https://moji.or.jp/mojikiban/mjlist/); 文字情報基盤 MJ文字情報一覧表 変体仮名編（IPA）, CC BY-SA 2.1 JP
+# source unicode-ucd: Unicode Character Database and Ideographic Variation Database; Unicode-3.0 (https://www.unicode.org/license.txt); Copyright Unicode, Inc.; Unicode License v3
+#   unicode-ucd: UnicodeData.txt and NamesList.txt of Unicode 18.0.0
+# relation: voicing is the decomposition the mark voices the base by; base is what puts the letter under the base.
+# tier: attested is stated by the source; derived joins a stated decomposition and a stated reading, which no source states together.
+# graphemes: 26, members: 232, rows: 592
+head	member	char	relation	tier	source	detail
+U+3094	U+3094	ゔ	voicing	attested	unicode-ucd	UnicodeData.txt: U+3094 ゔ decomposes to U+3046 U+3099
+U+3094	U+30F4	ヴ	voicing	attested	unicode-ucd	UnicodeData.txt: U+30F4 ヴ decomposes to U+30A6 U+3099
+U+3094	U+1B00A U+3099	𛀊゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3094 ゔ decomposes to U+3046 U+3099; U+1B00A 𛀊 reads う, so 𛀊 + U+3099 is its voicing
+U+3094	U+1B00A U+3099	𛀊゙	base	attested	unicode-ucd	NamesList.txt: U+1B00A HENTAIGANA LETTER U-1, read う
+U+3094	U+1B00A U+3099	𛀊゙	base	attested	mj-hentaigana	MJ090009 HENTAIGANA LETTER U-1: 音価 う
+U+3094	U+1B00B U+3099	𛀋゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3094 ゔ decomposes to U+3046 U+3099; U+1B00B 𛀋 reads う, so 𛀋 + U+3099 is its voicing
+U+3094	U+1B00B U+3099	𛀋゙	base	attested	unicode-ucd	NamesList.txt: U+1B00B HENTAIGANA LETTER U-2, read う
+U+3094	U+1B00B U+3099	𛀋゙	base	attested	mj-hentaigana	MJ090010 HENTAIGANA LETTER U-2: 音価 う
+U+3094	U+1B00C U+3099	𛀌゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3094 ゔ decomposes to U+3046 U+3099; U+1B00C 𛀌 reads う, so 𛀌 + U+3099 is its voicing
+U+3094	U+1B00C U+3099	𛀌゙	base	attested	unicode-ucd	NamesList.txt: U+1B00C HENTAIGANA LETTER U-3, read う
+U+3094	U+1B00C U+3099	𛀌゙	base	attested	mj-hentaigana	MJ090011 HENTAIGANA LETTER U-3: 音価 う
+U+3094	U+1B00D U+3099	𛀍゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3094 ゔ decomposes to U+3046 U+3099; U+1B00D 𛀍 reads う, so 𛀍 + U+3099 is its voicing
+U+3094	U+1B00D U+3099	𛀍゙	base	attested	unicode-ucd	NamesList.txt: U+1B00D HENTAIGANA LETTER U-4, read う
+U+3094	U+1B00D U+3099	𛀍゙	base	attested	mj-hentaigana	MJ090012 HENTAIGANA LETTER U-4: 音価 う
+U+3094	U+1B00E U+3099	𛀎゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3094 ゔ decomposes to U+3046 U+3099; U+1B00E 𛀎 reads う, so 𛀎 + U+3099 is its voicing
+U+3094	U+1B00E U+3099	𛀎゙	base	attested	unicode-ucd	NamesList.txt: U+1B00E HENTAIGANA LETTER U-5, read う
+U+3094	U+1B00E U+3099	𛀎゙	base	attested	mj-hentaigana	MJ090013 HENTAIGANA LETTER U-5: 音価 う
+U+304C	U+304C	が	voicing	attested	unicode-ucd	UnicodeData.txt: U+304C が decomposes to U+304B U+3099
+U+304C	U+30AC	ガ	voicing	attested	unicode-ucd	UnicodeData.txt: U+30AC ガ decomposes to U+30AB U+3099
+U+304C	U+1B017 U+3099	𛀗゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+304C が decomposes to U+304B U+3099; U+1B017 𛀗 reads か, so 𛀗 + U+3099 is its voicing
+U+304C	U+1B017 U+3099	𛀗゙	base	attested	unicode-ucd	NamesList.txt: U+1B017 HENTAIGANA LETTER KA-1, read か
+U+304C	U+1B017 U+3099	𛀗゙	base	attested	mj-hentaigana	MJ090023 HENTAIGANA LETTER KA-1: 音価 か
+U+304C	U+1B018 U+3099	𛀘゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+304C が decomposes to U+304B U+3099; U+1B018 𛀘 reads か, so 𛀘 + U+3099 is its voicing
+U+304C	U+1B018 U+3099	𛀘゙	base	attested	unicode-ucd	NamesList.txt: U+1B018 HENTAIGANA LETTER KA-2, read か
+U+304C	U+1B018 U+3099	𛀘゙	base	attested	mj-hentaigana	MJ090024 HENTAIGANA LETTER KA-2: 音価 か
+U+304C	U+1B019 U+3099	𛀙゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+304C が decomposes to U+304B U+3099; U+1B019 𛀙 reads か, so 𛀙 + U+3099 is its voicing
+U+304C	U+1B019 U+3099	𛀙゙	base	attested	unicode-ucd	NamesList.txt: U+1B019 HENTAIGANA LETTER KA-3, read か
+U+304C	U+1B019 U+3099	𛀙゙	base	attested	mj-hentaigana	MJ090025 HENTAIGANA LETTER KA-3: 音価 か
+U+304C	U+1B01A U+3099	𛀚゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+304C が decomposes to U+304B U+3099; U+1B01A 𛀚 reads か, so 𛀚 + U+3099 is its voicing
+U+304C	U+1B01A U+3099	𛀚゙	base	attested	unicode-ucd	NamesList.txt: U+1B01A HENTAIGANA LETTER KA-4, read か
+U+304C	U+1B01A U+3099	𛀚゙	base	attested	mj-hentaigana	MJ090026 HENTAIGANA LETTER KA-4: 音価 か
+U+304C	U+1B01B U+3099	𛀛゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+304C が decomposes to U+304B U+3099; U+1B01B 𛀛 reads か, so 𛀛 + U+3099 is its voicing
+U+304C	U+1B01B U+3099	𛀛゙	base	attested	unicode-ucd	NamesList.txt: U+1B01B HENTAIGANA LETTER KA-5, read か
+U+304C	U+1B01B U+3099	𛀛゙	base	attested	mj-hentaigana	MJ090027 HENTAIGANA LETTER KA-5: 音価 か
+U+304C	U+1B01C U+3099	𛀜゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+304C が decomposes to U+304B U+3099; U+1B01C 𛀜 reads か, so 𛀜 + U+3099 is its voicing
+U+304C	U+1B01C U+3099	𛀜゙	base	attested	unicode-ucd	NamesList.txt: U+1B01C HENTAIGANA LETTER KA-6, read か
+U+304C	U+1B01C U+3099	𛀜゙	base	attested	mj-hentaigana	MJ090029 HENTAIGANA LETTER KA-6: 音価 か
+U+304C	U+1B01D U+3099	𛀝゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+304C が decomposes to U+304B U+3099; U+1B01D 𛀝 reads か, so 𛀝 + U+3099 is its voicing
+U+304C	U+1B01D U+3099	𛀝゙	base	attested	unicode-ucd	NamesList.txt: U+1B01D HENTAIGANA LETTER KA-7, read か
+U+304C	U+1B01D U+3099	𛀝゙	base	attested	mj-hentaigana	MJ090030 HENTAIGANA LETTER KA-7: 音価 か
+U+304C	U+1B01E U+3099	𛀞゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+304C が decomposes to U+304B U+3099; U+1B01E 𛀞 reads か, so 𛀞 + U+3099 is its voicing
+U+304C	U+1B01E U+3099	𛀞゙	base	attested	unicode-ucd	NamesList.txt: U+1B01E HENTAIGANA LETTER KA-8, read か
+U+304C	U+1B01E U+3099	𛀞゙	base	attested	mj-hentaigana	MJ090031 HENTAIGANA LETTER KA-8: 音価 か
+U+304C	U+1B01F U+3099	𛀟゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+304C が decomposes to U+304B U+3099; U+1B01F 𛀟 reads か, so 𛀟 + U+3099 is its voicing
+U+304C	U+1B01F U+3099	𛀟゙	base	attested	unicode-ucd	NamesList.txt: U+1B01F HENTAIGANA LETTER KA-9, read か
+U+304C	U+1B01F U+3099	𛀟゙	base	attested	mj-hentaigana	MJ090032 HENTAIGANA LETTER KA-9: 音価 か
+U+304C	U+1B020 U+3099	𛀠゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+304C が decomposes to U+304B U+3099; U+1B020 𛀠 reads か, so 𛀠 + U+3099 is its voicing
+U+304C	U+1B020 U+3099	𛀠゙	base	attested	unicode-ucd	NamesList.txt: U+1B020 HENTAIGANA LETTER KA-10, read か
+U+304C	U+1B020 U+3099	𛀠゙	base	attested	mj-hentaigana	MJ090033 HENTAIGANA LETTER KA-10: 音価 か
+U+304C	U+1B021 U+3099	𛀡゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+304C が decomposes to U+304B U+3099; U+1B021 𛀡 reads か, so 𛀡 + U+3099 is its voicing
+U+304C	U+1B021 U+3099	𛀡゙	base	attested	unicode-ucd	NamesList.txt: U+1B021 HENTAIGANA LETTER KA-11, read か
+U+304C	U+1B021 U+3099	𛀡゙	base	attested	mj-hentaigana	MJ090034 HENTAIGANA LETTER KA-11: 音価 か
+U+304C	U+1B022 U+3099	𛀢゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+304C が decomposes to U+304B U+3099; U+1B022 𛀢 reads か, so 𛀢 + U+3099 is its voicing
+U+304C	U+1B022 U+3099	𛀢゙	base	attested	unicode-ucd	NamesList.txt: U+1B022 HENTAIGANA LETTER KA-KE, read か
+U+304C	U+1B022 U+3099	𛀢゙	base	attested	mj-hentaigana	MJ090028 HENTAIGANA LETTER KA-KE: 音価 か/け
+U+304E	U+304E	ぎ	voicing	attested	unicode-ucd	UnicodeData.txt: U+304E ぎ decomposes to U+304D U+3099
+U+304E	U+30AE	ギ	voicing	attested	unicode-ucd	UnicodeData.txt: U+30AE ギ decomposes to U+30AD U+3099
+U+304E	U+1B023 U+3099	𛀣゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+304E ぎ decomposes to U+304D U+3099; U+1B023 𛀣 reads き, so 𛀣 + U+3099 is its voicing
+U+304E	U+1B023 U+3099	𛀣゙	base	attested	unicode-ucd	NamesList.txt: U+1B023 HENTAIGANA LETTER KI-1, read き
+U+304E	U+1B023 U+3099	𛀣゙	base	attested	mj-hentaigana	MJ090035 HENTAIGANA LETTER KI-1: 音価 き
+U+304E	U+1B024 U+3099	𛀤゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+304E ぎ decomposes to U+304D U+3099; U+1B024 𛀤 reads き, so 𛀤 + U+3099 is its voicing
+U+304E	U+1B024 U+3099	𛀤゙	base	attested	unicode-ucd	NamesList.txt: U+1B024 HENTAIGANA LETTER KI-2, read き
+U+304E	U+1B024 U+3099	𛀤゙	base	attested	mj-hentaigana	MJ090036 HENTAIGANA LETTER KI-2: 音価 き
+U+304E	U+1B025 U+3099	𛀥゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+304E ぎ decomposes to U+304D U+3099; U+1B025 𛀥 reads き, so 𛀥 + U+3099 is its voicing
+U+304E	U+1B025 U+3099	𛀥゙	base	attested	unicode-ucd	NamesList.txt: U+1B025 HENTAIGANA LETTER KI-3, read き
+U+304E	U+1B025 U+3099	𛀥゙	base	attested	mj-hentaigana	MJ090037 HENTAIGANA LETTER KI-3: 音価 き
+U+304E	U+1B026 U+3099	𛀦゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+304E ぎ decomposes to U+304D U+3099; U+1B026 𛀦 reads き, so 𛀦 + U+3099 is its voicing
+U+304E	U+1B026 U+3099	𛀦゙	base	attested	unicode-ucd	NamesList.txt: U+1B026 HENTAIGANA LETTER KI-4, read き
+U+304E	U+1B026 U+3099	𛀦゙	base	attested	mj-hentaigana	MJ090038 HENTAIGANA LETTER KI-4: 音価 き
+U+304E	U+1B027 U+3099	𛀧゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+304E ぎ decomposes to U+304D U+3099; U+1B027 𛀧 reads き, so 𛀧 + U+3099 is its voicing
+U+304E	U+1B027 U+3099	𛀧゙	base	attested	unicode-ucd	NamesList.txt: U+1B027 HENTAIGANA LETTER KI-5, read き
+U+304E	U+1B027 U+3099	𛀧゙	base	attested	mj-hentaigana	MJ090040 HENTAIGANA LETTER KI-5: 音価 き
+U+304E	U+1B028 U+3099	𛀨゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+304E ぎ decomposes to U+304D U+3099; U+1B028 𛀨 reads き, so 𛀨 + U+3099 is its voicing
+U+304E	U+1B028 U+3099	𛀨゙	base	attested	unicode-ucd	NamesList.txt: U+1B028 HENTAIGANA LETTER KI-6, read き
+U+304E	U+1B028 U+3099	𛀨゙	base	attested	mj-hentaigana	MJ090041 HENTAIGANA LETTER KI-6: 音価 き
+U+304E	U+1B029 U+3099	𛀩゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+304E ぎ decomposes to U+304D U+3099; U+1B029 𛀩 reads き, so 𛀩 + U+3099 is its voicing
+U+304E	U+1B029 U+3099	𛀩゙	base	attested	unicode-ucd	NamesList.txt: U+1B029 HENTAIGANA LETTER KI-7, read き
+U+304E	U+1B029 U+3099	𛀩゙	base	attested	mj-hentaigana	MJ090042 HENTAIGANA LETTER KI-7: 音価 き
+U+304E	U+1B02A U+3099	𛀪゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+304E ぎ decomposes to U+304D U+3099; U+1B02A 𛀪 reads き, so 𛀪 + U+3099 is its voicing
+U+304E	U+1B02A U+3099	𛀪゙	base	attested	unicode-ucd	NamesList.txt: U+1B02A HENTAIGANA LETTER KI-8, read き
+U+304E	U+1B02A U+3099	𛀪゙	base	attested	mj-hentaigana	MJ090043 HENTAIGANA LETTER KI-8: 音価 き
+U+3050	U+3050	ぐ	voicing	attested	unicode-ucd	UnicodeData.txt: U+3050 ぐ decomposes to U+304F U+3099
+U+3050	U+30B0	グ	voicing	attested	unicode-ucd	UnicodeData.txt: U+30B0 グ decomposes to U+30AF U+3099
+U+3050	U+1B02B U+3099	𛀫゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3050 ぐ decomposes to U+304F U+3099; U+1B02B 𛀫 reads く, so 𛀫 + U+3099 is its voicing
+U+3050	U+1B02B U+3099	𛀫゙	base	attested	unicode-ucd	NamesList.txt: U+1B02B HENTAIGANA LETTER KU-1, read く
+U+3050	U+1B02B U+3099	𛀫゙	base	attested	mj-hentaigana	MJ090044 HENTAIGANA LETTER KU-1: 音価 く
+U+3050	U+1B02C U+3099	𛀬゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3050 ぐ decomposes to U+304F U+3099; U+1B02C 𛀬 reads く, so 𛀬 + U+3099 is its voicing
+U+3050	U+1B02C U+3099	𛀬゙	base	attested	unicode-ucd	NamesList.txt: U+1B02C HENTAIGANA LETTER KU-2, read く
+U+3050	U+1B02C U+3099	𛀬゙	base	attested	mj-hentaigana	MJ090045 HENTAIGANA LETTER KU-2: 音価 く
+U+3050	U+1B02D U+3099	𛀭゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3050 ぐ decomposes to U+304F U+3099; U+1B02D 𛀭 reads く, so 𛀭 + U+3099 is its voicing
+U+3050	U+1B02D U+3099	𛀭゙	base	attested	unicode-ucd	NamesList.txt: U+1B02D HENTAIGANA LETTER KU-3, read く
+U+3050	U+1B02D U+3099	𛀭゙	base	attested	mj-hentaigana	MJ090046 HENTAIGANA LETTER KU-3: 音価 く
+U+3050	U+1B02E U+3099	𛀮゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3050 ぐ decomposes to U+304F U+3099; U+1B02E 𛀮 reads く, so 𛀮 + U+3099 is its voicing
+U+3050	U+1B02E U+3099	𛀮゙	base	attested	unicode-ucd	NamesList.txt: U+1B02E HENTAIGANA LETTER KU-4, read く
+U+3050	U+1B02E U+3099	𛀮゙	base	attested	mj-hentaigana	MJ090047 HENTAIGANA LETTER KU-4: 音価 く
+U+3050	U+1B02F U+3099	𛀯゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3050 ぐ decomposes to U+304F U+3099; U+1B02F 𛀯 reads く, so 𛀯 + U+3099 is its voicing
+U+3050	U+1B02F U+3099	𛀯゙	base	attested	unicode-ucd	NamesList.txt: U+1B02F HENTAIGANA LETTER KU-5, read く
+U+3050	U+1B02F U+3099	𛀯゙	base	attested	mj-hentaigana	MJ090048 HENTAIGANA LETTER KU-5: 音価 く
+U+3050	U+1B030 U+3099	𛀰゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3050 ぐ decomposes to U+304F U+3099; U+1B030 𛀰 reads く, so 𛀰 + U+3099 is its voicing
+U+3050	U+1B030 U+3099	𛀰゙	base	attested	unicode-ucd	NamesList.txt: U+1B030 HENTAIGANA LETTER KU-6, read く
+U+3050	U+1B030 U+3099	𛀰゙	base	attested	mj-hentaigana	MJ090049 HENTAIGANA LETTER KU-6: 音価 く
+U+3050	U+1B031 U+3099	𛀱゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3050 ぐ decomposes to U+304F U+3099; U+1B031 𛀱 reads く, so 𛀱 + U+3099 is its voicing
+U+3050	U+1B031 U+3099	𛀱゙	base	attested	unicode-ucd	NamesList.txt: U+1B031 HENTAIGANA LETTER KU-7, read く
+U+3050	U+1B031 U+3099	𛀱゙	base	attested	mj-hentaigana	MJ090050 HENTAIGANA LETTER KU-7: 音価 く
+U+3052	U+3052	げ	voicing	attested	unicode-ucd	UnicodeData.txt: U+3052 げ decomposes to U+3051 U+3099
+U+3052	U+30B2	ゲ	voicing	attested	unicode-ucd	UnicodeData.txt: U+30B2 ゲ decomposes to U+30B1 U+3099
+U+3052	U+1B032 U+3099	𛀲゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3052 げ decomposes to U+3051 U+3099; U+1B032 𛀲 reads け, so 𛀲 + U+3099 is its voicing
+U+3052	U+1B032 U+3099	𛀲゙	base	attested	unicode-ucd	NamesList.txt: U+1B032 HENTAIGANA LETTER KE-1, read け
+U+3052	U+1B032 U+3099	𛀲゙	base	attested	mj-hentaigana	MJ090052 HENTAIGANA LETTER KE-1: 音価 け
+U+3052	U+1B033 U+3099	𛀳゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3052 げ decomposes to U+3051 U+3099; U+1B033 𛀳 reads け, so 𛀳 + U+3099 is its voicing
+U+3052	U+1B033 U+3099	𛀳゙	base	attested	unicode-ucd	NamesList.txt: U+1B033 HENTAIGANA LETTER KE-2, read け
+U+3052	U+1B033 U+3099	𛀳゙	base	attested	mj-hentaigana	MJ090051 HENTAIGANA LETTER KE-2: 音価 け
+U+3052	U+1B034 U+3099	𛀴゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3052 げ decomposes to U+3051 U+3099; U+1B034 𛀴 reads け, so 𛀴 + U+3099 is its voicing
+U+3052	U+1B034 U+3099	𛀴゙	base	attested	unicode-ucd	NamesList.txt: U+1B034 HENTAIGANA LETTER KE-3, read け
+U+3052	U+1B034 U+3099	𛀴゙	base	attested	mj-hentaigana	MJ090054 HENTAIGANA LETTER KE-3: 音価 け
+U+3052	U+1B035 U+3099	𛀵゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3052 げ decomposes to U+3051 U+3099; U+1B035 𛀵 reads け, so 𛀵 + U+3099 is its voicing
+U+3052	U+1B035 U+3099	𛀵゙	base	attested	unicode-ucd	NamesList.txt: U+1B035 HENTAIGANA LETTER KE-4, read け
+U+3052	U+1B035 U+3099	𛀵゙	base	attested	mj-hentaigana	MJ090055 HENTAIGANA LETTER KE-4: 音価 け
+U+3052	U+1B036 U+3099	𛀶゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3052 げ decomposes to U+3051 U+3099; U+1B036 𛀶 reads け, so 𛀶 + U+3099 is its voicing
+U+3052	U+1B036 U+3099	𛀶゙	base	attested	unicode-ucd	NamesList.txt: U+1B036 HENTAIGANA LETTER KE-5, read け
+U+3052	U+1B036 U+3099	𛀶゙	base	attested	mj-hentaigana	MJ090056 HENTAIGANA LETTER KE-5: 音価 け
+U+3052	U+1B037 U+3099	𛀷゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3052 げ decomposes to U+3051 U+3099; U+1B037 𛀷 reads け, so 𛀷 + U+3099 is its voicing
+U+3052	U+1B037 U+3099	𛀷゙	base	attested	unicode-ucd	NamesList.txt: U+1B037 HENTAIGANA LETTER KE-6, read け
+U+3052	U+1B037 U+3099	𛀷゙	base	attested	mj-hentaigana	MJ090057 HENTAIGANA LETTER KE-6: 音価 け
+U+3054	U+3054	ご	voicing	attested	unicode-ucd	UnicodeData.txt: U+3054 ご decomposes to U+3053 U+3099
+U+3054	U+30B4	ゴ	voicing	attested	unicode-ucd	UnicodeData.txt: U+30B4 ゴ decomposes to U+30B3 U+3099
+U+3054	U+1B038 U+3099	𛀸゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3054 ご decomposes to U+3053 U+3099; U+1B038 𛀸 reads こ, so 𛀸 + U+3099 is its voicing
+U+3054	U+1B038 U+3099	𛀸゙	base	attested	unicode-ucd	NamesList.txt: U+1B038 HENTAIGANA LETTER KO-1, read こ
+U+3054	U+1B038 U+3099	𛀸゙	base	attested	mj-hentaigana	MJ090058 HENTAIGANA LETTER KO-1: 音価 こ
+U+3054	U+1B039 U+3099	𛀹゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3054 ご decomposes to U+3053 U+3099; U+1B039 𛀹 reads こ, so 𛀹 + U+3099 is its voicing
+U+3054	U+1B039 U+3099	𛀹゙	base	attested	unicode-ucd	NamesList.txt: U+1B039 HENTAIGANA LETTER KO-2, read こ
+U+3054	U+1B039 U+3099	𛀹゙	base	attested	mj-hentaigana	MJ090060 HENTAIGANA LETTER KO-2: 音価 こ
+U+3054	U+1B03A U+3099	𛀺゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3054 ご decomposes to U+3053 U+3099; U+1B03A 𛀺 reads こ, so 𛀺 + U+3099 is its voicing
+U+3054	U+1B03A U+3099	𛀺゙	base	attested	unicode-ucd	NamesList.txt: U+1B03A HENTAIGANA LETTER KO-3, read こ
+U+3054	U+1B03A U+3099	𛀺゙	base	attested	mj-hentaigana	MJ090062 HENTAIGANA LETTER KO-3: 音価 こ
+U+3054	U+1B03B U+3099	𛀻゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3054 ご decomposes to U+3053 U+3099; U+1B03B 𛀻 reads こ, so 𛀻 + U+3099 is its voicing
+U+3054	U+1B03B U+3099	𛀻゙	base	attested	unicode-ucd	NamesList.txt: U+1B03B HENTAIGANA LETTER KO-KI, read こ
+U+3054	U+1B03B U+3099	𛀻゙	base	attested	mj-hentaigana	MJ090061 HENTAIGANA LETTER KO-KI: 音価 こ/き
+U+3056	U+3056	ざ	voicing	attested	unicode-ucd	UnicodeData.txt: U+3056 ざ decomposes to U+3055 U+3099
+U+3056	U+30B6	ザ	voicing	attested	unicode-ucd	UnicodeData.txt: U+30B6 ザ decomposes to U+30B5 U+3099
+U+3056	U+1B03C U+3099	𛀼゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3056 ざ decomposes to U+3055 U+3099; U+1B03C 𛀼 reads さ, so 𛀼 + U+3099 is its voicing
+U+3056	U+1B03C U+3099	𛀼゙	base	attested	unicode-ucd	NamesList.txt: U+1B03C HENTAIGANA LETTER SA-1, read さ
+U+3056	U+1B03C U+3099	𛀼゙	base	attested	mj-hentaigana	MJ090063 HENTAIGANA LETTER SA-1: 音価 さ
+U+3056	U+1B03D U+3099	𛀽゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3056 ざ decomposes to U+3055 U+3099; U+1B03D 𛀽 reads さ, so 𛀽 + U+3099 is its voicing
+U+3056	U+1B03D U+3099	𛀽゙	base	attested	unicode-ucd	NamesList.txt: U+1B03D HENTAIGANA LETTER SA-2, read さ
+U+3056	U+1B03D U+3099	𛀽゙	base	attested	mj-hentaigana	MJ090064 HENTAIGANA LETTER SA-2: 音価 さ
+U+3056	U+1B03E U+3099	𛀾゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3056 ざ decomposes to U+3055 U+3099; U+1B03E 𛀾 reads さ, so 𛀾 + U+3099 is its voicing
+U+3056	U+1B03E U+3099	𛀾゙	base	attested	unicode-ucd	NamesList.txt: U+1B03E HENTAIGANA LETTER SA-3, read さ
+U+3056	U+1B03E U+3099	𛀾゙	base	attested	mj-hentaigana	MJ090065 HENTAIGANA LETTER SA-3: 音価 さ
+U+3056	U+1B03F U+3099	𛀿゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3056 ざ decomposes to U+3055 U+3099; U+1B03F 𛀿 reads さ, so 𛀿 + U+3099 is its voicing
+U+3056	U+1B03F U+3099	𛀿゙	base	attested	unicode-ucd	NamesList.txt: U+1B03F HENTAIGANA LETTER SA-4, read さ
+U+3056	U+1B03F U+3099	𛀿゙	base	attested	mj-hentaigana	MJ090066 HENTAIGANA LETTER SA-4: 音価 さ
+U+3056	U+1B040 U+3099	𛁀゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3056 ざ decomposes to U+3055 U+3099; U+1B040 𛁀 reads さ, so 𛁀 + U+3099 is its voicing
+U+3056	U+1B040 U+3099	𛁀゙	base	attested	unicode-ucd	NamesList.txt: U+1B040 HENTAIGANA LETTER SA-5, read さ
+U+3056	U+1B040 U+3099	𛁀゙	base	attested	mj-hentaigana	MJ090067 HENTAIGANA LETTER SA-5: 音価 さ
+U+3056	U+1B041 U+3099	𛁁゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3056 ざ decomposes to U+3055 U+3099; U+1B041 𛁁 reads さ, so 𛁁 + U+3099 is its voicing
+U+3056	U+1B041 U+3099	𛁁゙	base	attested	unicode-ucd	NamesList.txt: U+1B041 HENTAIGANA LETTER SA-6, read さ
+U+3056	U+1B041 U+3099	𛁁゙	base	attested	mj-hentaigana	MJ090068 HENTAIGANA LETTER SA-6: 音価 さ
+U+3056	U+1B042 U+3099	𛁂゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3056 ざ decomposes to U+3055 U+3099; U+1B042 𛁂 reads さ, so 𛁂 + U+3099 is its voicing
+U+3056	U+1B042 U+3099	𛁂゙	base	attested	unicode-ucd	NamesList.txt: U+1B042 HENTAIGANA LETTER SA-7, read さ
+U+3056	U+1B042 U+3099	𛁂゙	base	attested	mj-hentaigana	MJ090069 HENTAIGANA LETTER SA-7: 音価 さ
+U+3056	U+1B043 U+3099	𛁃゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3056 ざ decomposes to U+3055 U+3099; U+1B043 𛁃 reads さ, so 𛁃 + U+3099 is its voicing
+U+3056	U+1B043 U+3099	𛁃゙	base	attested	unicode-ucd	NamesList.txt: U+1B043 HENTAIGANA LETTER SA-8, read さ
+U+3056	U+1B043 U+3099	𛁃゙	base	attested	mj-hentaigana	MJ090070 HENTAIGANA LETTER SA-8: 音価 さ
+U+3058	U+3058	じ	voicing	attested	unicode-ucd	UnicodeData.txt: U+3058 じ decomposes to U+3057 U+3099
+U+3058	U+30B8	ジ	voicing	attested	unicode-ucd	UnicodeData.txt: U+30B8 ジ decomposes to U+30B7 U+3099
+U+3058	U+1B044 U+3099	𛁄゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3058 じ decomposes to U+3057 U+3099; U+1B044 𛁄 reads し, so 𛁄 + U+3099 is its voicing
+U+3058	U+1B044 U+3099	𛁄゙	base	attested	unicode-ucd	NamesList.txt: U+1B044 HENTAIGANA LETTER SI-1, read し
+U+3058	U+1B044 U+3099	𛁄゙	base	attested	mj-hentaigana	MJ090071 HENTAIGANA LETTER SI-1: 音価 し
+U+3058	U+1B045 U+3099	𛁅゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3058 じ decomposes to U+3057 U+3099; U+1B045 𛁅 reads し, so 𛁅 + U+3099 is its voicing
+U+3058	U+1B045 U+3099	𛁅゙	base	attested	unicode-ucd	NamesList.txt: U+1B045 HENTAIGANA LETTER SI-2, read し
+U+3058	U+1B045 U+3099	𛁅゙	base	attested	mj-hentaigana	MJ090072 HENTAIGANA LETTER SI-2: 音価 し
+U+3058	U+1B046 U+3099	𛁆゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3058 じ decomposes to U+3057 U+3099; U+1B046 𛁆 reads し, so 𛁆 + U+3099 is its voicing
+U+3058	U+1B046 U+3099	𛁆゙	base	attested	unicode-ucd	NamesList.txt: U+1B046 HENTAIGANA LETTER SI-3, read し
+U+3058	U+1B046 U+3099	𛁆゙	base	attested	mj-hentaigana	MJ090073 HENTAIGANA LETTER SI-3: 音価 し
+U+3058	U+1B047 U+3099	𛁇゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3058 じ decomposes to U+3057 U+3099; U+1B047 𛁇 reads し, so 𛁇 + U+3099 is its voicing
+U+3058	U+1B047 U+3099	𛁇゙	base	attested	unicode-ucd	NamesList.txt: U+1B047 HENTAIGANA LETTER SI-4, read し
+U+3058	U+1B047 U+3099	𛁇゙	base	attested	mj-hentaigana	MJ090074 HENTAIGANA LETTER SI-4: 音価 し
+U+3058	U+1B048 U+3099	𛁈゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3058 じ decomposes to U+3057 U+3099; U+1B048 𛁈 reads し, so 𛁈 + U+3099 is its voicing
+U+3058	U+1B048 U+3099	𛁈゙	base	attested	unicode-ucd	NamesList.txt: U+1B048 HENTAIGANA LETTER SI-5, read し
+U+3058	U+1B048 U+3099	𛁈゙	base	attested	mj-hentaigana	MJ090075 HENTAIGANA LETTER SI-5: 音価 し
+U+3058	U+1B049 U+3099	𛁉゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3058 じ decomposes to U+3057 U+3099; U+1B049 𛁉 reads し, so 𛁉 + U+3099 is its voicing
+U+3058	U+1B049 U+3099	𛁉゙	base	attested	unicode-ucd	NamesList.txt: U+1B049 HENTAIGANA LETTER SI-6, read し
+U+3058	U+1B049 U+3099	𛁉゙	base	attested	mj-hentaigana	MJ090076 HENTAIGANA LETTER SI-6: 音価 し
+U+305A	U+305A	ず	voicing	attested	unicode-ucd	UnicodeData.txt: U+305A ず decomposes to U+3059 U+3099
+U+305A	U+30BA	ズ	voicing	attested	unicode-ucd	UnicodeData.txt: U+30BA ズ decomposes to U+30B9 U+3099
+U+305A	U+1B04A U+3099	𛁊゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+305A ず decomposes to U+3059 U+3099; U+1B04A 𛁊 reads す, so 𛁊 + U+3099 is its voicing
+U+305A	U+1B04A U+3099	𛁊゙	base	attested	unicode-ucd	NamesList.txt: U+1B04A HENTAIGANA LETTER SU-1, read す
+U+305A	U+1B04A U+3099	𛁊゙	base	attested	mj-hentaigana	MJ090077 HENTAIGANA LETTER SU-1: 音価 す
+U+305A	U+1B04B U+3099	𛁋゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+305A ず decomposes to U+3059 U+3099; U+1B04B 𛁋 reads す, so 𛁋 + U+3099 is its voicing
+U+305A	U+1B04B U+3099	𛁋゙	base	attested	unicode-ucd	NamesList.txt: U+1B04B HENTAIGANA LETTER SU-2, read す
+U+305A	U+1B04B U+3099	𛁋゙	base	attested	mj-hentaigana	MJ090078 HENTAIGANA LETTER SU-2: 音価 す
+U+305A	U+1B04C U+3099	𛁌゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+305A ず decomposes to U+3059 U+3099; U+1B04C 𛁌 reads す, so 𛁌 + U+3099 is its voicing
+U+305A	U+1B04C U+3099	𛁌゙	base	attested	unicode-ucd	NamesList.txt: U+1B04C HENTAIGANA LETTER SU-3, read す
+U+305A	U+1B04C U+3099	𛁌゙	base	attested	mj-hentaigana	MJ090079 HENTAIGANA LETTER SU-3: 音価 す
+U+305A	U+1B04D U+3099	𛁍゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+305A ず decomposes to U+3059 U+3099; U+1B04D 𛁍 reads す, so 𛁍 + U+3099 is its voicing
+U+305A	U+1B04D U+3099	𛁍゙	base	attested	unicode-ucd	NamesList.txt: U+1B04D HENTAIGANA LETTER SU-4, read す
+U+305A	U+1B04D U+3099	𛁍゙	base	attested	mj-hentaigana	MJ090080 HENTAIGANA LETTER SU-4: 音価 す
+U+305A	U+1B04E U+3099	𛁎゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+305A ず decomposes to U+3059 U+3099; U+1B04E 𛁎 reads す, so 𛁎 + U+3099 is its voicing
+U+305A	U+1B04E U+3099	𛁎゙	base	attested	unicode-ucd	NamesList.txt: U+1B04E HENTAIGANA LETTER SU-5, read す
+U+305A	U+1B04E U+3099	𛁎゙	base	attested	mj-hentaigana	MJ090081 HENTAIGANA LETTER SU-5: 音価 す
+U+305A	U+1B04F U+3099	𛁏゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+305A ず decomposes to U+3059 U+3099; U+1B04F 𛁏 reads す, so 𛁏 + U+3099 is its voicing
+U+305A	U+1B04F U+3099	𛁏゙	base	attested	unicode-ucd	NamesList.txt: U+1B04F HENTAIGANA LETTER SU-6, read す
+U+305A	U+1B04F U+3099	𛁏゙	base	attested	mj-hentaigana	MJ090082 HENTAIGANA LETTER SU-6: 音価 す
+U+305A	U+1B050 U+3099	𛁐゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+305A ず decomposes to U+3059 U+3099; U+1B050 𛁐 reads す, so 𛁐 + U+3099 is its voicing
+U+305A	U+1B050 U+3099	𛁐゙	base	attested	unicode-ucd	NamesList.txt: U+1B050 HENTAIGANA LETTER SU-7, read す
+U+305A	U+1B050 U+3099	𛁐゙	base	attested	mj-hentaigana	MJ090083 HENTAIGANA LETTER SU-7: 音価 す
+U+305A	U+1B051 U+3099	𛁑゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+305A ず decomposes to U+3059 U+3099; U+1B051 𛁑 reads す, so 𛁑 + U+3099 is its voicing
+U+305A	U+1B051 U+3099	𛁑゙	base	attested	unicode-ucd	NamesList.txt: U+1B051 HENTAIGANA LETTER SU-8, read す
+U+305A	U+1B051 U+3099	𛁑゙	base	attested	mj-hentaigana	MJ090084 HENTAIGANA LETTER SU-8: 音価 す
+U+305C	U+305C	ぜ	voicing	attested	unicode-ucd	UnicodeData.txt: U+305C ぜ decomposes to U+305B U+3099
+U+305C	U+30BC	ゼ	voicing	attested	unicode-ucd	UnicodeData.txt: U+30BC ゼ decomposes to U+30BB U+3099
+U+305C	U+1B052 U+3099	𛁒゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+305C ぜ decomposes to U+305B U+3099; U+1B052 𛁒 reads せ, so 𛁒 + U+3099 is its voicing
+U+305C	U+1B052 U+3099	𛁒゙	base	attested	unicode-ucd	NamesList.txt: U+1B052 HENTAIGANA LETTER SE-1, read せ
+U+305C	U+1B052 U+3099	𛁒゙	base	attested	mj-hentaigana	MJ090085 HENTAIGANA LETTER SE-1: 音価 せ
+U+305C	U+1B053 U+3099	𛁓゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+305C ぜ decomposes to U+305B U+3099; U+1B053 𛁓 reads せ, so 𛁓 + U+3099 is its voicing
+U+305C	U+1B053 U+3099	𛁓゙	base	attested	unicode-ucd	NamesList.txt: U+1B053 HENTAIGANA LETTER SE-2, read せ
+U+305C	U+1B053 U+3099	𛁓゙	base	attested	mj-hentaigana	MJ090086 HENTAIGANA LETTER SE-2: 音価 せ
+U+305C	U+1B054 U+3099	𛁔゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+305C ぜ decomposes to U+305B U+3099; U+1B054 𛁔 reads せ, so 𛁔 + U+3099 is its voicing
+U+305C	U+1B054 U+3099	𛁔゙	base	attested	unicode-ucd	NamesList.txt: U+1B054 HENTAIGANA LETTER SE-3, read せ
+U+305C	U+1B054 U+3099	𛁔゙	base	attested	mj-hentaigana	MJ090087 HENTAIGANA LETTER SE-3: 音価 せ
+U+305C	U+1B055 U+3099	𛁕゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+305C ぜ decomposes to U+305B U+3099; U+1B055 𛁕 reads せ, so 𛁕 + U+3099 is its voicing
+U+305C	U+1B055 U+3099	𛁕゙	base	attested	unicode-ucd	NamesList.txt: U+1B055 HENTAIGANA LETTER SE-4, read せ
+U+305C	U+1B055 U+3099	𛁕゙	base	attested	mj-hentaigana	MJ090088 HENTAIGANA LETTER SE-4: 音価 せ
+U+305C	U+1B056 U+3099	𛁖゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+305C ぜ decomposes to U+305B U+3099; U+1B056 𛁖 reads せ, so 𛁖 + U+3099 is its voicing
+U+305C	U+1B056 U+3099	𛁖゙	base	attested	unicode-ucd	NamesList.txt: U+1B056 HENTAIGANA LETTER SE-5, read せ
+U+305C	U+1B056 U+3099	𛁖゙	base	attested	mj-hentaigana	MJ090089 HENTAIGANA LETTER SE-5: 音価 せ
+U+305E	U+305E	ぞ	voicing	attested	unicode-ucd	UnicodeData.txt: U+305E ぞ decomposes to U+305D U+3099
+U+305E	U+30BE	ゾ	voicing	attested	unicode-ucd	UnicodeData.txt: U+30BE ゾ decomposes to U+30BD U+3099
+U+305E	U+1B057 U+3099	𛁗゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+305E ぞ decomposes to U+305D U+3099; U+1B057 𛁗 reads そ, so 𛁗 + U+3099 is its voicing
+U+305E	U+1B057 U+3099	𛁗゙	base	attested	unicode-ucd	NamesList.txt: U+1B057 HENTAIGANA LETTER SO-1, read そ
+U+305E	U+1B057 U+3099	𛁗゙	base	attested	mj-hentaigana	MJ090090 HENTAIGANA LETTER SO-1: 音価 そ
+U+305E	U+1B058 U+3099	𛁘゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+305E ぞ decomposes to U+305D U+3099; U+1B058 𛁘 reads そ, so 𛁘 + U+3099 is its voicing
+U+305E	U+1B058 U+3099	𛁘゙	base	attested	unicode-ucd	NamesList.txt: U+1B058 HENTAIGANA LETTER SO-2, read そ
+U+305E	U+1B058 U+3099	𛁘゙	base	attested	mj-hentaigana	MJ090091 HENTAIGANA LETTER SO-2: 音価 そ
+U+305E	U+1B059 U+3099	𛁙゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+305E ぞ decomposes to U+305D U+3099; U+1B059 𛁙 reads そ, so 𛁙 + U+3099 is its voicing
+U+305E	U+1B059 U+3099	𛁙゙	base	attested	unicode-ucd	NamesList.txt: U+1B059 HENTAIGANA LETTER SO-3, read そ
+U+305E	U+1B059 U+3099	𛁙゙	base	attested	mj-hentaigana	MJ090092 HENTAIGANA LETTER SO-3: 音価 そ
+U+305E	U+1B05A U+3099	𛁚゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+305E ぞ decomposes to U+305D U+3099; U+1B05A 𛁚 reads そ, so 𛁚 + U+3099 is its voicing
+U+305E	U+1B05A U+3099	𛁚゙	base	attested	unicode-ucd	NamesList.txt: U+1B05A HENTAIGANA LETTER SO-4, read そ
+U+305E	U+1B05A U+3099	𛁚゙	base	attested	mj-hentaigana	MJ090093 HENTAIGANA LETTER SO-4: 音価 そ
+U+305E	U+1B05B U+3099	𛁛゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+305E ぞ decomposes to U+305D U+3099; U+1B05B 𛁛 reads そ, so 𛁛 + U+3099 is its voicing
+U+305E	U+1B05B U+3099	𛁛゙	base	attested	unicode-ucd	NamesList.txt: U+1B05B HENTAIGANA LETTER SO-5, read そ
+U+305E	U+1B05B U+3099	𛁛゙	base	attested	mj-hentaigana	MJ090094 HENTAIGANA LETTER SO-5: 音価 そ
+U+305E	U+1B05C U+3099	𛁜゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+305E ぞ decomposes to U+305D U+3099; U+1B05C 𛁜 reads そ, so 𛁜 + U+3099 is its voicing
+U+305E	U+1B05C U+3099	𛁜゙	base	attested	unicode-ucd	NamesList.txt: U+1B05C HENTAIGANA LETTER SO-6, read そ
+U+305E	U+1B05C U+3099	𛁜゙	base	attested	mj-hentaigana	MJ090095 HENTAIGANA LETTER SO-6: 音価 そ
+U+305E	U+1B05D U+3099	𛁝゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+305E ぞ decomposes to U+305D U+3099; U+1B05D 𛁝 reads そ, so 𛁝 + U+3099 is its voicing
+U+305E	U+1B05D U+3099	𛁝゙	base	attested	unicode-ucd	NamesList.txt: U+1B05D HENTAIGANA LETTER SO-7, read そ
+U+305E	U+1B05D U+3099	𛁝゙	base	attested	mj-hentaigana	MJ090096 HENTAIGANA LETTER SO-7: 音価 そ
+U+3060	U+3060	だ	voicing	attested	unicode-ucd	UnicodeData.txt: U+3060 だ decomposes to U+305F U+3099
+U+3060	U+30C0	ダ	voicing	attested	unicode-ucd	UnicodeData.txt: U+30C0 ダ decomposes to U+30BF U+3099
+U+3060	U+1B05E U+3099	𛁞゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3060 だ decomposes to U+305F U+3099; U+1B05E 𛁞 reads た, so 𛁞 + U+3099 is its voicing
+U+3060	U+1B05E U+3099	𛁞゙	base	attested	unicode-ucd	NamesList.txt: U+1B05E HENTAIGANA LETTER TA-1, read た
+U+3060	U+1B05E U+3099	𛁞゙	base	attested	mj-hentaigana	MJ090097 HENTAIGANA LETTER TA-1: 音価 た
+U+3060	U+1B05F U+3099	𛁟゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3060 だ decomposes to U+305F U+3099; U+1B05F 𛁟 reads た, so 𛁟 + U+3099 is its voicing
+U+3060	U+1B05F U+3099	𛁟゙	base	attested	unicode-ucd	NamesList.txt: U+1B05F HENTAIGANA LETTER TA-2, read た
+U+3060	U+1B05F U+3099	𛁟゙	base	attested	mj-hentaigana	MJ090098 HENTAIGANA LETTER TA-2: 音価 た
+U+3060	U+1B060 U+3099	𛁠゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3060 だ decomposes to U+305F U+3099; U+1B060 𛁠 reads た, so 𛁠 + U+3099 is its voicing
+U+3060	U+1B060 U+3099	𛁠゙	base	attested	unicode-ucd	NamesList.txt: U+1B060 HENTAIGANA LETTER TA-3, read た
+U+3060	U+1B060 U+3099	𛁠゙	base	attested	mj-hentaigana	MJ090099 HENTAIGANA LETTER TA-3: 音価 た
+U+3060	U+1B061 U+3099	𛁡゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3060 だ decomposes to U+305F U+3099; U+1B061 𛁡 reads た, so 𛁡 + U+3099 is its voicing
+U+3060	U+1B061 U+3099	𛁡゙	base	attested	unicode-ucd	NamesList.txt: U+1B061 HENTAIGANA LETTER TA-4, read た
+U+3060	U+1B061 U+3099	𛁡゙	base	attested	mj-hentaigana	MJ090100 HENTAIGANA LETTER TA-4: 音価 た
+U+3062	U+3062	ぢ	voicing	attested	unicode-ucd	UnicodeData.txt: U+3062 ぢ decomposes to U+3061 U+3099
+U+3062	U+30C2	ヂ	voicing	attested	unicode-ucd	UnicodeData.txt: U+30C2 ヂ decomposes to U+30C1 U+3099
+U+3062	U+1B062 U+3099	𛁢゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3062 ぢ decomposes to U+3061 U+3099; U+1B062 𛁢 reads ち, so 𛁢 + U+3099 is its voicing
+U+3062	U+1B062 U+3099	𛁢゙	base	attested	unicode-ucd	NamesList.txt: U+1B062 HENTAIGANA LETTER TI-1, read ち
+U+3062	U+1B062 U+3099	𛁢゙	base	attested	mj-hentaigana	MJ090101 HENTAIGANA LETTER TI-1: 音価 ち
+U+3062	U+1B063 U+3099	𛁣゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3062 ぢ decomposes to U+3061 U+3099; U+1B063 𛁣 reads ち, so 𛁣 + U+3099 is its voicing
+U+3062	U+1B063 U+3099	𛁣゙	base	attested	unicode-ucd	NamesList.txt: U+1B063 HENTAIGANA LETTER TI-2, read ち
+U+3062	U+1B063 U+3099	𛁣゙	base	attested	mj-hentaigana	MJ090102 HENTAIGANA LETTER TI-2: 音価 ち
+U+3062	U+1B064 U+3099	𛁤゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3062 ぢ decomposes to U+3061 U+3099; U+1B064 𛁤 reads ち, so 𛁤 + U+3099 is its voicing
+U+3062	U+1B064 U+3099	𛁤゙	base	attested	unicode-ucd	NamesList.txt: U+1B064 HENTAIGANA LETTER TI-3, read ち
+U+3062	U+1B064 U+3099	𛁤゙	base	attested	mj-hentaigana	MJ090103 HENTAIGANA LETTER TI-3: 音価 ち
+U+3062	U+1B065 U+3099	𛁥゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3062 ぢ decomposes to U+3061 U+3099; U+1B065 𛁥 reads ち, so 𛁥 + U+3099 is its voicing
+U+3062	U+1B065 U+3099	𛁥゙	base	attested	unicode-ucd	NamesList.txt: U+1B065 HENTAIGANA LETTER TI-4, read ち
+U+3062	U+1B065 U+3099	𛁥゙	base	attested	mj-hentaigana	MJ090104 HENTAIGANA LETTER TI-4: 音価 ち
+U+3062	U+1B066 U+3099	𛁦゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3062 ぢ decomposes to U+3061 U+3099; U+1B066 𛁦 reads ち, so 𛁦 + U+3099 is its voicing
+U+3062	U+1B066 U+3099	𛁦゙	base	attested	unicode-ucd	NamesList.txt: U+1B066 HENTAIGANA LETTER TI-5, read ち
+U+3062	U+1B066 U+3099	𛁦゙	base	attested	mj-hentaigana	MJ090105 HENTAIGANA LETTER TI-5: 音価 ち
+U+3062	U+1B067 U+3099	𛁧゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3062 ぢ decomposes to U+3061 U+3099; U+1B067 𛁧 reads ち, so 𛁧 + U+3099 is its voicing
+U+3062	U+1B067 U+3099	𛁧゙	base	attested	unicode-ucd	NamesList.txt: U+1B067 HENTAIGANA LETTER TI-6, read ち
+U+3062	U+1B067 U+3099	𛁧゙	base	attested	mj-hentaigana	MJ090106 HENTAIGANA LETTER TI-6: 音価 ち
+U+3062	U+1B068 U+3099	𛁨゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3062 ぢ decomposes to U+3061 U+3099; U+1B068 𛁨 reads ち, so 𛁨 + U+3099 is its voicing
+U+3062	U+1B068 U+3099	𛁨゙	base	attested	unicode-ucd	NamesList.txt: U+1B068 HENTAIGANA LETTER TI-7, read ち
+U+3062	U+1B068 U+3099	𛁨゙	base	attested	mj-hentaigana	MJ090107 HENTAIGANA LETTER TI-7: 音価 ち
+U+3065	U+3065	づ	voicing	attested	unicode-ucd	UnicodeData.txt: U+3065 づ decomposes to U+3064 U+3099
+U+3065	U+30C5	ヅ	voicing	attested	unicode-ucd	UnicodeData.txt: U+30C5 ヅ decomposes to U+30C4 U+3099
+U+3065	U+1B069 U+3099	𛁩゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3065 づ decomposes to U+3064 U+3099; U+1B069 𛁩 reads つ, so 𛁩 + U+3099 is its voicing
+U+3065	U+1B069 U+3099	𛁩゙	base	attested	unicode-ucd	NamesList.txt: U+1B069 HENTAIGANA LETTER TU-1, read つ
+U+3065	U+1B069 U+3099	𛁩゙	base	attested	mj-hentaigana	MJ090108 HENTAIGANA LETTER TU-1: 音価 つ
+U+3065	U+1B06A U+3099	𛁪゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3065 づ decomposes to U+3064 U+3099; U+1B06A 𛁪 reads つ, so 𛁪 + U+3099 is its voicing
+U+3065	U+1B06A U+3099	𛁪゙	base	attested	unicode-ucd	NamesList.txt: U+1B06A HENTAIGANA LETTER TU-2, read つ
+U+3065	U+1B06A U+3099	𛁪゙	base	attested	mj-hentaigana	MJ090109 HENTAIGANA LETTER TU-2: 音価 つ
+U+3065	U+1B06B U+3099	𛁫゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3065 づ decomposes to U+3064 U+3099; U+1B06B 𛁫 reads つ, so 𛁫 + U+3099 is its voicing
+U+3065	U+1B06B U+3099	𛁫゙	base	attested	unicode-ucd	NamesList.txt: U+1B06B HENTAIGANA LETTER TU-3, read つ
+U+3065	U+1B06B U+3099	𛁫゙	base	attested	mj-hentaigana	MJ090111 HENTAIGANA LETTER TU-3: 音価 つ
+U+3065	U+1B06C U+3099	𛁬゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3065 づ decomposes to U+3064 U+3099; U+1B06C 𛁬 reads つ, so 𛁬 + U+3099 is its voicing
+U+3065	U+1B06C U+3099	𛁬゙	base	attested	unicode-ucd	NamesList.txt: U+1B06C HENTAIGANA LETTER TU-4, read つ
+U+3065	U+1B06C U+3099	𛁬゙	base	attested	mj-hentaigana	MJ090112 HENTAIGANA LETTER TU-4: 音価 つ
+U+3065	U+1B06D U+3099	𛁭゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3065 づ decomposes to U+3064 U+3099; U+1B06D 𛁭 reads つ, so 𛁭 + U+3099 is its voicing
+U+3065	U+1B06D U+3099	𛁭゙	base	attested	unicode-ucd	NamesList.txt: U+1B06D HENTAIGANA LETTER TU-TO, read つ
+U+3065	U+1B06D U+3099	𛁭゙	base	attested	mj-hentaigana	MJ090110 HENTAIGANA LETTER TU-TO: 音価 つ/と
+U+3067	U+3067	で	voicing	attested	unicode-ucd	UnicodeData.txt: U+3067 で decomposes to U+3066 U+3099
+U+3067	U+30C7	デ	voicing	attested	unicode-ucd	UnicodeData.txt: U+30C7 デ decomposes to U+30C6 U+3099
+U+3067	U+1B06E U+3099	𛁮゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3067 で decomposes to U+3066 U+3099; U+1B06E 𛁮 reads て, so 𛁮 + U+3099 is its voicing
+U+3067	U+1B06E U+3099	𛁮゙	base	attested	unicode-ucd	NamesList.txt: U+1B06E HENTAIGANA LETTER TE-1, read て
+U+3067	U+1B06E U+3099	𛁮゙	base	attested	mj-hentaigana	MJ090113 HENTAIGANA LETTER TE-1: 音価 て
+U+3067	U+1B06F U+3099	𛁯゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3067 で decomposes to U+3066 U+3099; U+1B06F 𛁯 reads て, so 𛁯 + U+3099 is its voicing
+U+3067	U+1B06F U+3099	𛁯゙	base	attested	unicode-ucd	NamesList.txt: U+1B06F HENTAIGANA LETTER TE-2, read て
+U+3067	U+1B06F U+3099	𛁯゙	base	attested	mj-hentaigana	MJ090114 HENTAIGANA LETTER TE-2: 音価 て
+U+3067	U+1B070 U+3099	𛁰゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3067 で decomposes to U+3066 U+3099; U+1B070 𛁰 reads て, so 𛁰 + U+3099 is its voicing
+U+3067	U+1B070 U+3099	𛁰゙	base	attested	unicode-ucd	NamesList.txt: U+1B070 HENTAIGANA LETTER TE-3, read て
+U+3067	U+1B070 U+3099	𛁰゙	base	attested	mj-hentaigana	MJ090115 HENTAIGANA LETTER TE-3: 音価 て
+U+3067	U+1B071 U+3099	𛁱゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3067 で decomposes to U+3066 U+3099; U+1B071 𛁱 reads て, so 𛁱 + U+3099 is its voicing
+U+3067	U+1B071 U+3099	𛁱゙	base	attested	unicode-ucd	NamesList.txt: U+1B071 HENTAIGANA LETTER TE-4, read て
+U+3067	U+1B071 U+3099	𛁱゙	base	attested	mj-hentaigana	MJ090116 HENTAIGANA LETTER TE-4: 音価 て
+U+3067	U+1B072 U+3099	𛁲゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3067 で decomposes to U+3066 U+3099; U+1B072 𛁲 reads て, so 𛁲 + U+3099 is its voicing
+U+3067	U+1B072 U+3099	𛁲゙	base	attested	unicode-ucd	NamesList.txt: U+1B072 HENTAIGANA LETTER TE-5, read て
+U+3067	U+1B072 U+3099	𛁲゙	base	attested	mj-hentaigana	MJ090117 HENTAIGANA LETTER TE-5: 音価 て
+U+3067	U+1B073 U+3099	𛁳゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3067 で decomposes to U+3066 U+3099; U+1B073 𛁳 reads て, so 𛁳 + U+3099 is its voicing
+U+3067	U+1B073 U+3099	𛁳゙	base	attested	unicode-ucd	NamesList.txt: U+1B073 HENTAIGANA LETTER TE-6, read て
+U+3067	U+1B073 U+3099	𛁳゙	base	attested	mj-hentaigana	MJ090118 HENTAIGANA LETTER TE-6: 音価 て
+U+3067	U+1B074 U+3099	𛁴゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3067 で decomposes to U+3066 U+3099; U+1B074 𛁴 reads て, so 𛁴 + U+3099 is its voicing
+U+3067	U+1B074 U+3099	𛁴゙	base	attested	unicode-ucd	NamesList.txt: U+1B074 HENTAIGANA LETTER TE-7, read て
+U+3067	U+1B074 U+3099	𛁴゙	base	attested	mj-hentaigana	MJ090119 HENTAIGANA LETTER TE-7: 音価 て
+U+3067	U+1B075 U+3099	𛁵゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3067 で decomposes to U+3066 U+3099; U+1B075 𛁵 reads て, so 𛁵 + U+3099 is its voicing
+U+3067	U+1B075 U+3099	𛁵゙	base	attested	unicode-ucd	NamesList.txt: U+1B075 HENTAIGANA LETTER TE-8, read て
+U+3067	U+1B075 U+3099	𛁵゙	base	attested	mj-hentaigana	MJ090120 HENTAIGANA LETTER TE-8: 音価 て
+U+3067	U+1B076 U+3099	𛁶゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3067 で decomposes to U+3066 U+3099; U+1B076 𛁶 reads て, so 𛁶 + U+3099 is its voicing
+U+3067	U+1B076 U+3099	𛁶゙	base	attested	unicode-ucd	NamesList.txt: U+1B076 HENTAIGANA LETTER TE-9, read て
+U+3067	U+1B076 U+3099	𛁶゙	base	attested	mj-hentaigana	MJ090122 HENTAIGANA LETTER TE-9: 音価 て
+U+3069	U+3069	ど	voicing	attested	unicode-ucd	UnicodeData.txt: U+3069 ど decomposes to U+3068 U+3099
+U+3069	U+30C9	ド	voicing	attested	unicode-ucd	UnicodeData.txt: U+30C9 ド decomposes to U+30C8 U+3099
+U+3069	U+1B077 U+3099	𛁷゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3069 ど decomposes to U+3068 U+3099; U+1B077 𛁷 reads と, so 𛁷 + U+3099 is its voicing
+U+3069	U+1B077 U+3099	𛁷゙	base	attested	unicode-ucd	NamesList.txt: U+1B077 HENTAIGANA LETTER TO-1, read と
+U+3069	U+1B077 U+3099	𛁷゙	base	attested	mj-hentaigana	MJ090123 HENTAIGANA LETTER TO-1: 音価 と
+U+3069	U+1B078 U+3099	𛁸゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3069 ど decomposes to U+3068 U+3099; U+1B078 𛁸 reads と, so 𛁸 + U+3099 is its voicing
+U+3069	U+1B078 U+3099	𛁸゙	base	attested	unicode-ucd	NamesList.txt: U+1B078 HENTAIGANA LETTER TO-2, read と
+U+3069	U+1B078 U+3099	𛁸゙	base	attested	mj-hentaigana	MJ090124 HENTAIGANA LETTER TO-2: 音価 と
+U+3069	U+1B079 U+3099	𛁹゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3069 ど decomposes to U+3068 U+3099; U+1B079 𛁹 reads と, so 𛁹 + U+3099 is its voicing
+U+3069	U+1B079 U+3099	𛁹゙	base	attested	unicode-ucd	NamesList.txt: U+1B079 HENTAIGANA LETTER TO-3, read と
+U+3069	U+1B079 U+3099	𛁹゙	base	attested	mj-hentaigana	MJ090126 HENTAIGANA LETTER TO-3: 音価 と
+U+3069	U+1B07A U+3099	𛁺゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3069 ど decomposes to U+3068 U+3099; U+1B07A 𛁺 reads と, so 𛁺 + U+3099 is its voicing
+U+3069	U+1B07A U+3099	𛁺゙	base	attested	unicode-ucd	NamesList.txt: U+1B07A HENTAIGANA LETTER TO-4, read と
+U+3069	U+1B07A U+3099	𛁺゙	base	attested	mj-hentaigana	MJ090127 HENTAIGANA LETTER TO-4: 音価 と
+U+3069	U+1B07B U+3099	𛁻゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3069 ど decomposes to U+3068 U+3099; U+1B07B 𛁻 reads と, so 𛁻 + U+3099 is its voicing
+U+3069	U+1B07B U+3099	𛁻゙	base	attested	unicode-ucd	NamesList.txt: U+1B07B HENTAIGANA LETTER TO-5, read と
+U+3069	U+1B07B U+3099	𛁻゙	base	attested	mj-hentaigana	MJ090128 HENTAIGANA LETTER TO-5: 音価 と
+U+3069	U+1B07C U+3099	𛁼゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3069 ど decomposes to U+3068 U+3099; U+1B07C 𛁼 reads と, so 𛁼 + U+3099 is its voicing
+U+3069	U+1B07C U+3099	𛁼゙	base	attested	unicode-ucd	NamesList.txt: U+1B07C HENTAIGANA LETTER TO-6, read と
+U+3069	U+1B07C U+3099	𛁼゙	base	attested	mj-hentaigana	MJ090129 HENTAIGANA LETTER TO-6: 音価 と
+U+3069	U+1B07D U+3099	𛁽゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3069 ど decomposes to U+3068 U+3099; U+1B07D 𛁽 reads と, so 𛁽 + U+3099 is its voicing
+U+3069	U+1B07D U+3099	𛁽゙	base	attested	unicode-ucd	NamesList.txt: U+1B07D HENTAIGANA LETTER TO-RA, read と
+U+3069	U+1B07D U+3099	𛁽゙	base	attested	mj-hentaigana	MJ090130 HENTAIGANA LETTER TO-RA: 音価 と/ら
+U+3070	U+3070	ば	voicing	attested	unicode-ucd	UnicodeData.txt: U+3070 ば decomposes to U+306F U+3099
+U+3070	U+30D0	バ	voicing	attested	unicode-ucd	UnicodeData.txt: U+30D0 バ decomposes to U+30CF U+3099
+U+3070	U+1B09E U+3099	𛂞゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3070 ば decomposes to U+306F U+3099; U+1B09E 𛂞 reads は, so 𛂞 + U+3099 is its voicing
+U+3070	U+1B09E U+3099	𛂞゙	base	attested	unicode-ucd	NamesList.txt: U+1B09E HENTAIGANA LETTER HA-1, read は
+U+3070	U+1B09E U+3099	𛂞゙	base	attested	mj-hentaigana	MJ090163 HENTAIGANA LETTER HA-1: 音価 は
+U+3070	U+1B09F U+3099	𛂟゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3070 ば decomposes to U+306F U+3099; U+1B09F 𛂟 reads は, so 𛂟 + U+3099 is its voicing
+U+3070	U+1B09F U+3099	𛂟゙	base	attested	unicode-ucd	NamesList.txt: U+1B09F HENTAIGANA LETTER HA-2, read は
+U+3070	U+1B09F U+3099	𛂟゙	base	attested	mj-hentaigana	MJ090164 HENTAIGANA LETTER HA-2: 音価 は
+U+3070	U+1B0A0 U+3099	𛂠゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3070 ば decomposes to U+306F U+3099; U+1B0A0 𛂠 reads は, so 𛂠 + U+3099 is its voicing
+U+3070	U+1B0A0 U+3099	𛂠゙	base	attested	unicode-ucd	NamesList.txt: U+1B0A0 HENTAIGANA LETTER HA-3, read は
+U+3070	U+1B0A0 U+3099	𛂠゙	base	attested	mj-hentaigana	MJ090165 HENTAIGANA LETTER HA-3: 音価 は
+U+3070	U+1B0A1 U+3099	𛂡゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3070 ば decomposes to U+306F U+3099; U+1B0A1 𛂡 reads は, so 𛂡 + U+3099 is its voicing
+U+3070	U+1B0A1 U+3099	𛂡゙	base	attested	unicode-ucd	NamesList.txt: U+1B0A1 HENTAIGANA LETTER HA-4, read は
+U+3070	U+1B0A1 U+3099	𛂡゙	base	attested	mj-hentaigana	MJ090166 HENTAIGANA LETTER HA-4: 音価 は
+U+3070	U+1B0A2 U+3099	𛂢゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3070 ば decomposes to U+306F U+3099; U+1B0A2 𛂢 reads は, so 𛂢 + U+3099 is its voicing
+U+3070	U+1B0A2 U+3099	𛂢゙	base	attested	unicode-ucd	NamesList.txt: U+1B0A2 HENTAIGANA LETTER HA-5, read は
+U+3070	U+1B0A2 U+3099	𛂢゙	base	attested	mj-hentaigana	MJ090167 HENTAIGANA LETTER HA-5: 音価 は
+U+3070	U+1B0A3 U+3099	𛂣゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3070 ば decomposes to U+306F U+3099; U+1B0A3 𛂣 reads は, so 𛂣 + U+3099 is its voicing
+U+3070	U+1B0A3 U+3099	𛂣゙	base	attested	unicode-ucd	NamesList.txt: U+1B0A3 HENTAIGANA LETTER HA-6, read は
+U+3070	U+1B0A3 U+3099	𛂣゙	base	attested	mj-hentaigana	MJ090168 HENTAIGANA LETTER HA-6: 音価 は
+U+3070	U+1B0A4 U+3099	𛂤゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3070 ば decomposes to U+306F U+3099; U+1B0A4 𛂤 reads は, so 𛂤 + U+3099 is its voicing
+U+3070	U+1B0A4 U+3099	𛂤゙	base	attested	unicode-ucd	NamesList.txt: U+1B0A4 HENTAIGANA LETTER HA-7, read は
+U+3070	U+1B0A4 U+3099	𛂤゙	base	attested	mj-hentaigana	MJ090169 HENTAIGANA LETTER HA-7: 音価 は
+U+3070	U+1B0A5 U+3099	𛂥゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3070 ば decomposes to U+306F U+3099; U+1B0A5 𛂥 reads は, so 𛂥 + U+3099 is its voicing
+U+3070	U+1B0A5 U+3099	𛂥゙	base	attested	unicode-ucd	NamesList.txt: U+1B0A5 HENTAIGANA LETTER HA-8, read は
+U+3070	U+1B0A5 U+3099	𛂥゙	base	attested	mj-hentaigana	MJ090170 HENTAIGANA LETTER HA-8: 音価 は
+U+3070	U+1B0A6 U+3099	𛂦゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3070 ば decomposes to U+306F U+3099; U+1B0A6 𛂦 reads は, so 𛂦 + U+3099 is its voicing
+U+3070	U+1B0A6 U+3099	𛂦゙	base	attested	unicode-ucd	NamesList.txt: U+1B0A6 HENTAIGANA LETTER HA-9, read は
+U+3070	U+1B0A6 U+3099	𛂦゙	base	attested	mj-hentaigana	MJ090171 HENTAIGANA LETTER HA-9: 音価 は
+U+3070	U+1B0A7 U+3099	𛂧゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3070 ば decomposes to U+306F U+3099; U+1B0A7 𛂧 reads は, so 𛂧 + U+3099 is its voicing
+U+3070	U+1B0A7 U+3099	𛂧゙	base	attested	unicode-ucd	NamesList.txt: U+1B0A7 HENTAIGANA LETTER HA-10, read は
+U+3070	U+1B0A7 U+3099	𛂧゙	base	attested	mj-hentaigana	MJ090172 HENTAIGANA LETTER HA-10: 音価 は
+U+3070	U+1B0A8 U+3099	𛂨゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3070 ば decomposes to U+306F U+3099; U+1B0A8 𛂨 reads は, so 𛂨 + U+3099 is its voicing
+U+3070	U+1B0A8 U+3099	𛂨゙	base	attested	unicode-ucd	NamesList.txt: U+1B0A8 HENTAIGANA LETTER HA-11, read は
+U+3070	U+1B0A8 U+3099	𛂨゙	base	attested	mj-hentaigana	MJ090173 HENTAIGANA LETTER HA-11: 音価 は
+U+3071	U+3071	ぱ	voicing	attested	unicode-ucd	UnicodeData.txt: U+3071 ぱ decomposes to U+306F U+309A
+U+3071	U+30D1	パ	voicing	attested	unicode-ucd	UnicodeData.txt: U+30D1 パ decomposes to U+30CF U+309A
+U+3071	U+1B09E U+309A	𛂞゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+3071 ぱ decomposes to U+306F U+309A; U+1B09E 𛂞 reads は, so 𛂞 + U+309A is its voicing
+U+3071	U+1B09E U+309A	𛂞゚	base	attested	unicode-ucd	NamesList.txt: U+1B09E HENTAIGANA LETTER HA-1, read は
+U+3071	U+1B09E U+309A	𛂞゚	base	attested	mj-hentaigana	MJ090163 HENTAIGANA LETTER HA-1: 音価 は
+U+3071	U+1B09F U+309A	𛂟゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+3071 ぱ decomposes to U+306F U+309A; U+1B09F 𛂟 reads は, so 𛂟 + U+309A is its voicing
+U+3071	U+1B09F U+309A	𛂟゚	base	attested	unicode-ucd	NamesList.txt: U+1B09F HENTAIGANA LETTER HA-2, read は
+U+3071	U+1B09F U+309A	𛂟゚	base	attested	mj-hentaigana	MJ090164 HENTAIGANA LETTER HA-2: 音価 は
+U+3071	U+1B0A0 U+309A	𛂠゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+3071 ぱ decomposes to U+306F U+309A; U+1B0A0 𛂠 reads は, so 𛂠 + U+309A is its voicing
+U+3071	U+1B0A0 U+309A	𛂠゚	base	attested	unicode-ucd	NamesList.txt: U+1B0A0 HENTAIGANA LETTER HA-3, read は
+U+3071	U+1B0A0 U+309A	𛂠゚	base	attested	mj-hentaigana	MJ090165 HENTAIGANA LETTER HA-3: 音価 は
+U+3071	U+1B0A1 U+309A	𛂡゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+3071 ぱ decomposes to U+306F U+309A; U+1B0A1 𛂡 reads は, so 𛂡 + U+309A is its voicing
+U+3071	U+1B0A1 U+309A	𛂡゚	base	attested	unicode-ucd	NamesList.txt: U+1B0A1 HENTAIGANA LETTER HA-4, read は
+U+3071	U+1B0A1 U+309A	𛂡゚	base	attested	mj-hentaigana	MJ090166 HENTAIGANA LETTER HA-4: 音価 は
+U+3071	U+1B0A2 U+309A	𛂢゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+3071 ぱ decomposes to U+306F U+309A; U+1B0A2 𛂢 reads は, so 𛂢 + U+309A is its voicing
+U+3071	U+1B0A2 U+309A	𛂢゚	base	attested	unicode-ucd	NamesList.txt: U+1B0A2 HENTAIGANA LETTER HA-5, read は
+U+3071	U+1B0A2 U+309A	𛂢゚	base	attested	mj-hentaigana	MJ090167 HENTAIGANA LETTER HA-5: 音価 は
+U+3071	U+1B0A3 U+309A	𛂣゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+3071 ぱ decomposes to U+306F U+309A; U+1B0A3 𛂣 reads は, so 𛂣 + U+309A is its voicing
+U+3071	U+1B0A3 U+309A	𛂣゚	base	attested	unicode-ucd	NamesList.txt: U+1B0A3 HENTAIGANA LETTER HA-6, read は
+U+3071	U+1B0A3 U+309A	𛂣゚	base	attested	mj-hentaigana	MJ090168 HENTAIGANA LETTER HA-6: 音価 は
+U+3071	U+1B0A4 U+309A	𛂤゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+3071 ぱ decomposes to U+306F U+309A; U+1B0A4 𛂤 reads は, so 𛂤 + U+309A is its voicing
+U+3071	U+1B0A4 U+309A	𛂤゚	base	attested	unicode-ucd	NamesList.txt: U+1B0A4 HENTAIGANA LETTER HA-7, read は
+U+3071	U+1B0A4 U+309A	𛂤゚	base	attested	mj-hentaigana	MJ090169 HENTAIGANA LETTER HA-7: 音価 は
+U+3071	U+1B0A5 U+309A	𛂥゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+3071 ぱ decomposes to U+306F U+309A; U+1B0A5 𛂥 reads は, so 𛂥 + U+309A is its voicing
+U+3071	U+1B0A5 U+309A	𛂥゚	base	attested	unicode-ucd	NamesList.txt: U+1B0A5 HENTAIGANA LETTER HA-8, read は
+U+3071	U+1B0A5 U+309A	𛂥゚	base	attested	mj-hentaigana	MJ090170 HENTAIGANA LETTER HA-8: 音価 は
+U+3071	U+1B0A6 U+309A	𛂦゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+3071 ぱ decomposes to U+306F U+309A; U+1B0A6 𛂦 reads は, so 𛂦 + U+309A is its voicing
+U+3071	U+1B0A6 U+309A	𛂦゚	base	attested	unicode-ucd	NamesList.txt: U+1B0A6 HENTAIGANA LETTER HA-9, read は
+U+3071	U+1B0A6 U+309A	𛂦゚	base	attested	mj-hentaigana	MJ090171 HENTAIGANA LETTER HA-9: 音価 は
+U+3071	U+1B0A7 U+309A	𛂧゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+3071 ぱ decomposes to U+306F U+309A; U+1B0A7 𛂧 reads は, so 𛂧 + U+309A is its voicing
+U+3071	U+1B0A7 U+309A	𛂧゚	base	attested	unicode-ucd	NamesList.txt: U+1B0A7 HENTAIGANA LETTER HA-10, read は
+U+3071	U+1B0A7 U+309A	𛂧゚	base	attested	mj-hentaigana	MJ090172 HENTAIGANA LETTER HA-10: 音価 は
+U+3071	U+1B0A8 U+309A	𛂨゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+3071 ぱ decomposes to U+306F U+309A; U+1B0A8 𛂨 reads は, so 𛂨 + U+309A is its voicing
+U+3071	U+1B0A8 U+309A	𛂨゚	base	attested	unicode-ucd	NamesList.txt: U+1B0A8 HENTAIGANA LETTER HA-11, read は
+U+3071	U+1B0A8 U+309A	𛂨゚	base	attested	mj-hentaigana	MJ090173 HENTAIGANA LETTER HA-11: 音価 は
+U+3073	U+3073	び	voicing	attested	unicode-ucd	UnicodeData.txt: U+3073 び decomposes to U+3072 U+3099
+U+3073	U+30D3	ビ	voicing	attested	unicode-ucd	UnicodeData.txt: U+30D3 ビ decomposes to U+30D2 U+3099
+U+3073	U+1B0A9 U+3099	𛂩゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3073 び decomposes to U+3072 U+3099; U+1B0A9 𛂩 reads ひ, so 𛂩 + U+3099 is its voicing
+U+3073	U+1B0A9 U+3099	𛂩゙	base	attested	unicode-ucd	NamesList.txt: U+1B0A9 HENTAIGANA LETTER HI-1, read ひ
+U+3073	U+1B0A9 U+3099	𛂩゙	base	attested	mj-hentaigana	MJ090174 HENTAIGANA LETTER HI-1: 音価 ひ
+U+3073	U+1B0AA U+3099	𛂪゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3073 び decomposes to U+3072 U+3099; U+1B0AA 𛂪 reads ひ, so 𛂪 + U+3099 is its voicing
+U+3073	U+1B0AA U+3099	𛂪゙	base	attested	unicode-ucd	NamesList.txt: U+1B0AA HENTAIGANA LETTER HI-2, read ひ
+U+3073	U+1B0AA U+3099	𛂪゙	base	attested	mj-hentaigana	MJ090175 HENTAIGANA LETTER HI-2: 音価 ひ
+U+3073	U+1B0AB U+3099	𛂫゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3073 び decomposes to U+3072 U+3099; U+1B0AB 𛂫 reads ひ, so 𛂫 + U+3099 is its voicing
+U+3073	U+1B0AB U+3099	𛂫゙	base	attested	unicode-ucd	NamesList.txt: U+1B0AB HENTAIGANA LETTER HI-3, read ひ
+U+3073	U+1B0AB U+3099	𛂫゙	base	attested	mj-hentaigana	MJ090176 HENTAIGANA LETTER HI-3: 音価 ひ
+U+3073	U+1B0AC U+3099	𛂬゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3073 び decomposes to U+3072 U+3099; U+1B0AC 𛂬 reads ひ, so 𛂬 + U+3099 is its voicing
+U+3073	U+1B0AC U+3099	𛂬゙	base	attested	unicode-ucd	NamesList.txt: U+1B0AC HENTAIGANA LETTER HI-4, read ひ
+U+3073	U+1B0AC U+3099	𛂬゙	base	attested	mj-hentaigana	MJ090177 HENTAIGANA LETTER HI-4: 音価 ひ
+U+3073	U+1B0AD U+3099	𛂭゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3073 び decomposes to U+3072 U+3099; U+1B0AD 𛂭 reads ひ, so 𛂭 + U+3099 is its voicing
+U+3073	U+1B0AD U+3099	𛂭゙	base	attested	unicode-ucd	NamesList.txt: U+1B0AD HENTAIGANA LETTER HI-5, read ひ
+U+3073	U+1B0AD U+3099	𛂭゙	base	attested	mj-hentaigana	MJ090178 HENTAIGANA LETTER HI-5: 音価 ひ
+U+3073	U+1B0AE U+3099	𛂮゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3073 び decomposes to U+3072 U+3099; U+1B0AE 𛂮 reads ひ, so 𛂮 + U+3099 is its voicing
+U+3073	U+1B0AE U+3099	𛂮゙	base	attested	unicode-ucd	NamesList.txt: U+1B0AE HENTAIGANA LETTER HI-6, read ひ
+U+3073	U+1B0AE U+3099	𛂮゙	base	attested	mj-hentaigana	MJ090179 HENTAIGANA LETTER HI-6: 音価 ひ
+U+3073	U+1B0AF U+3099	𛂯゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3073 び decomposes to U+3072 U+3099; U+1B0AF 𛂯 reads ひ, so 𛂯 + U+3099 is its voicing
+U+3073	U+1B0AF U+3099	𛂯゙	base	attested	unicode-ucd	NamesList.txt: U+1B0AF HENTAIGANA LETTER HI-7, read ひ
+U+3073	U+1B0AF U+3099	𛂯゙	base	attested	mj-hentaigana	MJ090180 HENTAIGANA LETTER HI-7: 音価 ひ
+U+3074	U+3074	ぴ	voicing	attested	unicode-ucd	UnicodeData.txt: U+3074 ぴ decomposes to U+3072 U+309A
+U+3074	U+30D4	ピ	voicing	attested	unicode-ucd	UnicodeData.txt: U+30D4 ピ decomposes to U+30D2 U+309A
+U+3074	U+1B0A9 U+309A	𛂩゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+3074 ぴ decomposes to U+3072 U+309A; U+1B0A9 𛂩 reads ひ, so 𛂩 + U+309A is its voicing
+U+3074	U+1B0A9 U+309A	𛂩゚	base	attested	unicode-ucd	NamesList.txt: U+1B0A9 HENTAIGANA LETTER HI-1, read ひ
+U+3074	U+1B0A9 U+309A	𛂩゚	base	attested	mj-hentaigana	MJ090174 HENTAIGANA LETTER HI-1: 音価 ひ
+U+3074	U+1B0AA U+309A	𛂪゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+3074 ぴ decomposes to U+3072 U+309A; U+1B0AA 𛂪 reads ひ, so 𛂪 + U+309A is its voicing
+U+3074	U+1B0AA U+309A	𛂪゚	base	attested	unicode-ucd	NamesList.txt: U+1B0AA HENTAIGANA LETTER HI-2, read ひ
+U+3074	U+1B0AA U+309A	𛂪゚	base	attested	mj-hentaigana	MJ090175 HENTAIGANA LETTER HI-2: 音価 ひ
+U+3074	U+1B0AB U+309A	𛂫゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+3074 ぴ decomposes to U+3072 U+309A; U+1B0AB 𛂫 reads ひ, so 𛂫 + U+309A is its voicing
+U+3074	U+1B0AB U+309A	𛂫゚	base	attested	unicode-ucd	NamesList.txt: U+1B0AB HENTAIGANA LETTER HI-3, read ひ
+U+3074	U+1B0AB U+309A	𛂫゚	base	attested	mj-hentaigana	MJ090176 HENTAIGANA LETTER HI-3: 音価 ひ
+U+3074	U+1B0AC U+309A	𛂬゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+3074 ぴ decomposes to U+3072 U+309A; U+1B0AC 𛂬 reads ひ, so 𛂬 + U+309A is its voicing
+U+3074	U+1B0AC U+309A	𛂬゚	base	attested	unicode-ucd	NamesList.txt: U+1B0AC HENTAIGANA LETTER HI-4, read ひ
+U+3074	U+1B0AC U+309A	𛂬゚	base	attested	mj-hentaigana	MJ090177 HENTAIGANA LETTER HI-4: 音価 ひ
+U+3074	U+1B0AD U+309A	𛂭゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+3074 ぴ decomposes to U+3072 U+309A; U+1B0AD 𛂭 reads ひ, so 𛂭 + U+309A is its voicing
+U+3074	U+1B0AD U+309A	𛂭゚	base	attested	unicode-ucd	NamesList.txt: U+1B0AD HENTAIGANA LETTER HI-5, read ひ
+U+3074	U+1B0AD U+309A	𛂭゚	base	attested	mj-hentaigana	MJ090178 HENTAIGANA LETTER HI-5: 音価 ひ
+U+3074	U+1B0AE U+309A	𛂮゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+3074 ぴ decomposes to U+3072 U+309A; U+1B0AE 𛂮 reads ひ, so 𛂮 + U+309A is its voicing
+U+3074	U+1B0AE U+309A	𛂮゚	base	attested	unicode-ucd	NamesList.txt: U+1B0AE HENTAIGANA LETTER HI-6, read ひ
+U+3074	U+1B0AE U+309A	𛂮゚	base	attested	mj-hentaigana	MJ090179 HENTAIGANA LETTER HI-6: 音価 ひ
+U+3074	U+1B0AF U+309A	𛂯゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+3074 ぴ decomposes to U+3072 U+309A; U+1B0AF 𛂯 reads ひ, so 𛂯 + U+309A is its voicing
+U+3074	U+1B0AF U+309A	𛂯゚	base	attested	unicode-ucd	NamesList.txt: U+1B0AF HENTAIGANA LETTER HI-7, read ひ
+U+3074	U+1B0AF U+309A	𛂯゚	base	attested	mj-hentaigana	MJ090180 HENTAIGANA LETTER HI-7: 音価 ひ
+U+3076	U+3076	ぶ	voicing	attested	unicode-ucd	UnicodeData.txt: U+3076 ぶ decomposes to U+3075 U+3099
+U+3076	U+30D6	ブ	voicing	attested	unicode-ucd	UnicodeData.txt: U+30D6 ブ decomposes to U+30D5 U+3099
+U+3076	U+1B0B0 U+3099	𛂰゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3076 ぶ decomposes to U+3075 U+3099; U+1B0B0 𛂰 reads ふ, so 𛂰 + U+3099 is its voicing
+U+3076	U+1B0B0 U+3099	𛂰゙	base	attested	unicode-ucd	NamesList.txt: U+1B0B0 HENTAIGANA LETTER HU-1, read ふ
+U+3076	U+1B0B0 U+3099	𛂰゙	base	attested	mj-hentaigana	MJ090181 HENTAIGANA LETTER HU-1: 音価 ふ
+U+3076	U+1B0B1 U+3099	𛂱゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3076 ぶ decomposes to U+3075 U+3099; U+1B0B1 𛂱 reads ふ, so 𛂱 + U+3099 is its voicing
+U+3076	U+1B0B1 U+3099	𛂱゙	base	attested	unicode-ucd	NamesList.txt: U+1B0B1 HENTAIGANA LETTER HU-2, read ふ
+U+3076	U+1B0B1 U+3099	𛂱゙	base	attested	mj-hentaigana	MJ090182 HENTAIGANA LETTER HU-2: 音価 ふ
+U+3076	U+1B0B2 U+3099	𛂲゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3076 ぶ decomposes to U+3075 U+3099; U+1B0B2 𛂲 reads ふ, so 𛂲 + U+3099 is its voicing
+U+3076	U+1B0B2 U+3099	𛂲゙	base	attested	unicode-ucd	NamesList.txt: U+1B0B2 HENTAIGANA LETTER HU-3, read ふ
+U+3076	U+1B0B2 U+3099	𛂲゙	base	attested	mj-hentaigana	MJ090183 HENTAIGANA LETTER HU-3: 音価 ふ
+U+3077	U+3077	ぷ	voicing	attested	unicode-ucd	UnicodeData.txt: U+3077 ぷ decomposes to U+3075 U+309A
+U+3077	U+30D7	プ	voicing	attested	unicode-ucd	UnicodeData.txt: U+30D7 プ decomposes to U+30D5 U+309A
+U+3077	U+1B0B0 U+309A	𛂰゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+3077 ぷ decomposes to U+3075 U+309A; U+1B0B0 𛂰 reads ふ, so 𛂰 + U+309A is its voicing
+U+3077	U+1B0B0 U+309A	𛂰゚	base	attested	unicode-ucd	NamesList.txt: U+1B0B0 HENTAIGANA LETTER HU-1, read ふ
+U+3077	U+1B0B0 U+309A	𛂰゚	base	attested	mj-hentaigana	MJ090181 HENTAIGANA LETTER HU-1: 音価 ふ
+U+3077	U+1B0B1 U+309A	𛂱゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+3077 ぷ decomposes to U+3075 U+309A; U+1B0B1 𛂱 reads ふ, so 𛂱 + U+309A is its voicing
+U+3077	U+1B0B1 U+309A	𛂱゚	base	attested	unicode-ucd	NamesList.txt: U+1B0B1 HENTAIGANA LETTER HU-2, read ふ
+U+3077	U+1B0B1 U+309A	𛂱゚	base	attested	mj-hentaigana	MJ090182 HENTAIGANA LETTER HU-2: 音価 ふ
+U+3077	U+1B0B2 U+309A	𛂲゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+3077 ぷ decomposes to U+3075 U+309A; U+1B0B2 𛂲 reads ふ, so 𛂲 + U+309A is its voicing
+U+3077	U+1B0B2 U+309A	𛂲゚	base	attested	unicode-ucd	NamesList.txt: U+1B0B2 HENTAIGANA LETTER HU-3, read ふ
+U+3077	U+1B0B2 U+309A	𛂲゚	base	attested	mj-hentaigana	MJ090183 HENTAIGANA LETTER HU-3: 音価 ふ
+U+3079	U+3079	べ	voicing	attested	unicode-ucd	UnicodeData.txt: U+3079 べ decomposes to U+3078 U+3099
+U+3079	U+30D9	ベ	voicing	attested	unicode-ucd	UnicodeData.txt: U+30D9 ベ decomposes to U+30D8 U+3099
+U+3079	U+1B0B3 U+3099	𛂳゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3079 べ decomposes to U+3078 U+3099; U+1B0B3 𛂳 reads へ, so 𛂳 + U+3099 is its voicing
+U+3079	U+1B0B3 U+3099	𛂳゙	base	attested	unicode-ucd	NamesList.txt: U+1B0B3 HENTAIGANA LETTER HE-1, read へ
+U+3079	U+1B0B3 U+3099	𛂳゙	base	attested	mj-hentaigana	MJ090184 HENTAIGANA LETTER HE-1: 音価 へ
+U+3079	U+1B0B4 U+3099	𛂴゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3079 べ decomposes to U+3078 U+3099; U+1B0B4 𛂴 reads へ, so 𛂴 + U+3099 is its voicing
+U+3079	U+1B0B4 U+3099	𛂴゙	base	attested	unicode-ucd	NamesList.txt: U+1B0B4 HENTAIGANA LETTER HE-2, read へ
+U+3079	U+1B0B4 U+3099	𛂴゙	base	attested	mj-hentaigana	MJ090186 HENTAIGANA LETTER HE-2: 音価 へ
+U+3079	U+1B0B5 U+3099	𛂵゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3079 べ decomposes to U+3078 U+3099; U+1B0B5 𛂵 reads へ, so 𛂵 + U+3099 is its voicing
+U+3079	U+1B0B5 U+3099	𛂵゙	base	attested	unicode-ucd	NamesList.txt: U+1B0B5 HENTAIGANA LETTER HE-3, read へ
+U+3079	U+1B0B5 U+3099	𛂵゙	base	attested	mj-hentaigana	MJ090185 HENTAIGANA LETTER HE-3: 音価 へ
+U+3079	U+1B0B6 U+3099	𛂶゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3079 べ decomposes to U+3078 U+3099; U+1B0B6 𛂶 reads へ, so 𛂶 + U+3099 is its voicing
+U+3079	U+1B0B6 U+3099	𛂶゙	base	attested	unicode-ucd	NamesList.txt: U+1B0B6 HENTAIGANA LETTER HE-4, read へ
+U+3079	U+1B0B6 U+3099	𛂶゙	base	attested	mj-hentaigana	MJ090187 HENTAIGANA LETTER HE-4: 音価 へ
+U+3079	U+1B0B7 U+3099	𛂷゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3079 べ decomposes to U+3078 U+3099; U+1B0B7 𛂷 reads へ, so 𛂷 + U+3099 is its voicing
+U+3079	U+1B0B7 U+3099	𛂷゙	base	attested	unicode-ucd	NamesList.txt: U+1B0B7 HENTAIGANA LETTER HE-5, read へ
+U+3079	U+1B0B7 U+3099	𛂷゙	base	attested	mj-hentaigana	MJ090188 HENTAIGANA LETTER HE-5: 音価 へ
+U+3079	U+1B0B8 U+3099	𛂸゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3079 べ decomposes to U+3078 U+3099; U+1B0B8 𛂸 reads へ, so 𛂸 + U+3099 is its voicing
+U+3079	U+1B0B8 U+3099	𛂸゙	base	attested	unicode-ucd	NamesList.txt: U+1B0B8 HENTAIGANA LETTER HE-6, read へ
+U+3079	U+1B0B8 U+3099	𛂸゙	base	attested	mj-hentaigana	MJ090189 HENTAIGANA LETTER HE-6: 音価 へ
+U+3079	U+1B0B9 U+3099	𛂹゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+3079 べ decomposes to U+3078 U+3099; U+1B0B9 𛂹 reads へ, so 𛂹 + U+3099 is its voicing
+U+3079	U+1B0B9 U+3099	𛂹゙	base	attested	unicode-ucd	NamesList.txt: U+1B0B9 HENTAIGANA LETTER HE-7, read へ
+U+3079	U+1B0B9 U+3099	𛂹゙	base	attested	mj-hentaigana	MJ090190 HENTAIGANA LETTER HE-7: 音価 へ
+U+307A	U+307A	ぺ	voicing	attested	unicode-ucd	UnicodeData.txt: U+307A ぺ decomposes to U+3078 U+309A
+U+307A	U+30DA	ペ	voicing	attested	unicode-ucd	UnicodeData.txt: U+30DA ペ decomposes to U+30D8 U+309A
+U+307A	U+1B0B3 U+309A	𛂳゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+307A ぺ decomposes to U+3078 U+309A; U+1B0B3 𛂳 reads へ, so 𛂳 + U+309A is its voicing
+U+307A	U+1B0B3 U+309A	𛂳゚	base	attested	unicode-ucd	NamesList.txt: U+1B0B3 HENTAIGANA LETTER HE-1, read へ
+U+307A	U+1B0B3 U+309A	𛂳゚	base	attested	mj-hentaigana	MJ090184 HENTAIGANA LETTER HE-1: 音価 へ
+U+307A	U+1B0B4 U+309A	𛂴゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+307A ぺ decomposes to U+3078 U+309A; U+1B0B4 𛂴 reads へ, so 𛂴 + U+309A is its voicing
+U+307A	U+1B0B4 U+309A	𛂴゚	base	attested	unicode-ucd	NamesList.txt: U+1B0B4 HENTAIGANA LETTER HE-2, read へ
+U+307A	U+1B0B4 U+309A	𛂴゚	base	attested	mj-hentaigana	MJ090186 HENTAIGANA LETTER HE-2: 音価 へ
+U+307A	U+1B0B5 U+309A	𛂵゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+307A ぺ decomposes to U+3078 U+309A; U+1B0B5 𛂵 reads へ, so 𛂵 + U+309A is its voicing
+U+307A	U+1B0B5 U+309A	𛂵゚	base	attested	unicode-ucd	NamesList.txt: U+1B0B5 HENTAIGANA LETTER HE-3, read へ
+U+307A	U+1B0B5 U+309A	𛂵゚	base	attested	mj-hentaigana	MJ090185 HENTAIGANA LETTER HE-3: 音価 へ
+U+307A	U+1B0B6 U+309A	𛂶゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+307A ぺ decomposes to U+3078 U+309A; U+1B0B6 𛂶 reads へ, so 𛂶 + U+309A is its voicing
+U+307A	U+1B0B6 U+309A	𛂶゚	base	attested	unicode-ucd	NamesList.txt: U+1B0B6 HENTAIGANA LETTER HE-4, read へ
+U+307A	U+1B0B6 U+309A	𛂶゚	base	attested	mj-hentaigana	MJ090187 HENTAIGANA LETTER HE-4: 音価 へ
+U+307A	U+1B0B7 U+309A	𛂷゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+307A ぺ decomposes to U+3078 U+309A; U+1B0B7 𛂷 reads へ, so 𛂷 + U+309A is its voicing
+U+307A	U+1B0B7 U+309A	𛂷゚	base	attested	unicode-ucd	NamesList.txt: U+1B0B7 HENTAIGANA LETTER HE-5, read へ
+U+307A	U+1B0B7 U+309A	𛂷゚	base	attested	mj-hentaigana	MJ090188 HENTAIGANA LETTER HE-5: 音価 へ
+U+307A	U+1B0B8 U+309A	𛂸゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+307A ぺ decomposes to U+3078 U+309A; U+1B0B8 𛂸 reads へ, so 𛂸 + U+309A is its voicing
+U+307A	U+1B0B8 U+309A	𛂸゚	base	attested	unicode-ucd	NamesList.txt: U+1B0B8 HENTAIGANA LETTER HE-6, read へ
+U+307A	U+1B0B8 U+309A	𛂸゚	base	attested	mj-hentaigana	MJ090189 HENTAIGANA LETTER HE-6: 音価 へ
+U+307A	U+1B0B9 U+309A	𛂹゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+307A ぺ decomposes to U+3078 U+309A; U+1B0B9 𛂹 reads へ, so 𛂹 + U+309A is its voicing
+U+307A	U+1B0B9 U+309A	𛂹゚	base	attested	unicode-ucd	NamesList.txt: U+1B0B9 HENTAIGANA LETTER HE-7, read へ
+U+307A	U+1B0B9 U+309A	𛂹゚	base	attested	mj-hentaigana	MJ090190 HENTAIGANA LETTER HE-7: 音価 へ
+U+307C	U+307C	ぼ	voicing	attested	unicode-ucd	UnicodeData.txt: U+307C ぼ decomposes to U+307B U+3099
+U+307C	U+30DC	ボ	voicing	attested	unicode-ucd	UnicodeData.txt: U+30DC ボ decomposes to U+30DB U+3099
+U+307C	U+1B0BA U+3099	𛂺゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+307C ぼ decomposes to U+307B U+3099; U+1B0BA 𛂺 reads ほ, so 𛂺 + U+3099 is its voicing
+U+307C	U+1B0BA U+3099	𛂺゙	base	attested	unicode-ucd	NamesList.txt: U+1B0BA HENTAIGANA LETTER HO-1, read ほ
+U+307C	U+1B0BA U+3099	𛂺゙	base	attested	mj-hentaigana	MJ090191 HENTAIGANA LETTER HO-1: 音価 ほ
+U+307C	U+1B0BB U+3099	𛂻゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+307C ぼ decomposes to U+307B U+3099; U+1B0BB 𛂻 reads ほ, so 𛂻 + U+3099 is its voicing
+U+307C	U+1B0BB U+3099	𛂻゙	base	attested	unicode-ucd	NamesList.txt: U+1B0BB HENTAIGANA LETTER HO-2, read ほ
+U+307C	U+1B0BB U+3099	𛂻゙	base	attested	mj-hentaigana	MJ090192 HENTAIGANA LETTER HO-2: 音価 ほ
+U+307C	U+1B0BC U+3099	𛂼゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+307C ぼ decomposes to U+307B U+3099; U+1B0BC 𛂼 reads ほ, so 𛂼 + U+3099 is its voicing
+U+307C	U+1B0BC U+3099	𛂼゙	base	attested	unicode-ucd	NamesList.txt: U+1B0BC HENTAIGANA LETTER HO-3, read ほ
+U+307C	U+1B0BC U+3099	𛂼゙	base	attested	mj-hentaigana	MJ090193 HENTAIGANA LETTER HO-3: 音価 ほ
+U+307C	U+1B0BD U+3099	𛂽゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+307C ぼ decomposes to U+307B U+3099; U+1B0BD 𛂽 reads ほ, so 𛂽 + U+3099 is its voicing
+U+307C	U+1B0BD U+3099	𛂽゙	base	attested	unicode-ucd	NamesList.txt: U+1B0BD HENTAIGANA LETTER HO-4, read ほ
+U+307C	U+1B0BD U+3099	𛂽゙	base	attested	mj-hentaigana	MJ090194 HENTAIGANA LETTER HO-4: 音価 ほ
+U+307C	U+1B0BE U+3099	𛂾゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+307C ぼ decomposes to U+307B U+3099; U+1B0BE 𛂾 reads ほ, so 𛂾 + U+3099 is its voicing
+U+307C	U+1B0BE U+3099	𛂾゙	base	attested	unicode-ucd	NamesList.txt: U+1B0BE HENTAIGANA LETTER HO-5, read ほ
+U+307C	U+1B0BE U+3099	𛂾゙	base	attested	mj-hentaigana	MJ090195 HENTAIGANA LETTER HO-5: 音価 ほ
+U+307C	U+1B0BF U+3099	𛂿゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+307C ぼ decomposes to U+307B U+3099; U+1B0BF 𛂿 reads ほ, so 𛂿 + U+3099 is its voicing
+U+307C	U+1B0BF U+3099	𛂿゙	base	attested	unicode-ucd	NamesList.txt: U+1B0BF HENTAIGANA LETTER HO-6, read ほ
+U+307C	U+1B0BF U+3099	𛂿゙	base	attested	mj-hentaigana	MJ090196 HENTAIGANA LETTER HO-6: 音価 ほ
+U+307C	U+1B0C0 U+3099	𛃀゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+307C ぼ decomposes to U+307B U+3099; U+1B0C0 𛃀 reads ほ, so 𛃀 + U+3099 is its voicing
+U+307C	U+1B0C0 U+3099	𛃀゙	base	attested	unicode-ucd	NamesList.txt: U+1B0C0 HENTAIGANA LETTER HO-7, read ほ
+U+307C	U+1B0C0 U+3099	𛃀゙	base	attested	mj-hentaigana	MJ090197 HENTAIGANA LETTER HO-7: 音価 ほ
+U+307C	U+1B0C1 U+3099	𛃁゙	voicing	derived	unicode-ucd	UnicodeData.txt: U+307C ぼ decomposes to U+307B U+3099; U+1B0C1 𛃁 reads ほ, so 𛃁 + U+3099 is its voicing
+U+307C	U+1B0C1 U+3099	𛃁゙	base	attested	unicode-ucd	NamesList.txt: U+1B0C1 HENTAIGANA LETTER HO-8, read ほ
+U+307C	U+1B0C1 U+3099	𛃁゙	base	attested	mj-hentaigana	MJ090198 HENTAIGANA LETTER HO-8: 音価 ほ
+U+307D	U+307D	ぽ	voicing	attested	unicode-ucd	UnicodeData.txt: U+307D ぽ decomposes to U+307B U+309A
+U+307D	U+30DD	ポ	voicing	attested	unicode-ucd	UnicodeData.txt: U+30DD ポ decomposes to U+30DB U+309A
+U+307D	U+1B0BA U+309A	𛂺゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+307D ぽ decomposes to U+307B U+309A; U+1B0BA 𛂺 reads ほ, so 𛂺 + U+309A is its voicing
+U+307D	U+1B0BA U+309A	𛂺゚	base	attested	unicode-ucd	NamesList.txt: U+1B0BA HENTAIGANA LETTER HO-1, read ほ
+U+307D	U+1B0BA U+309A	𛂺゚	base	attested	mj-hentaigana	MJ090191 HENTAIGANA LETTER HO-1: 音価 ほ
+U+307D	U+1B0BB U+309A	𛂻゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+307D ぽ decomposes to U+307B U+309A; U+1B0BB 𛂻 reads ほ, so 𛂻 + U+309A is its voicing
+U+307D	U+1B0BB U+309A	𛂻゚	base	attested	unicode-ucd	NamesList.txt: U+1B0BB HENTAIGANA LETTER HO-2, read ほ
+U+307D	U+1B0BB U+309A	𛂻゚	base	attested	mj-hentaigana	MJ090192 HENTAIGANA LETTER HO-2: 音価 ほ
+U+307D	U+1B0BC U+309A	𛂼゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+307D ぽ decomposes to U+307B U+309A; U+1B0BC 𛂼 reads ほ, so 𛂼 + U+309A is its voicing
+U+307D	U+1B0BC U+309A	𛂼゚	base	attested	unicode-ucd	NamesList.txt: U+1B0BC HENTAIGANA LETTER HO-3, read ほ
+U+307D	U+1B0BC U+309A	𛂼゚	base	attested	mj-hentaigana	MJ090193 HENTAIGANA LETTER HO-3: 音価 ほ
+U+307D	U+1B0BD U+309A	𛂽゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+307D ぽ decomposes to U+307B U+309A; U+1B0BD 𛂽 reads ほ, so 𛂽 + U+309A is its voicing
+U+307D	U+1B0BD U+309A	𛂽゚	base	attested	unicode-ucd	NamesList.txt: U+1B0BD HENTAIGANA LETTER HO-4, read ほ
+U+307D	U+1B0BD U+309A	𛂽゚	base	attested	mj-hentaigana	MJ090194 HENTAIGANA LETTER HO-4: 音価 ほ
+U+307D	U+1B0BE U+309A	𛂾゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+307D ぽ decomposes to U+307B U+309A; U+1B0BE 𛂾 reads ほ, so 𛂾 + U+309A is its voicing
+U+307D	U+1B0BE U+309A	𛂾゚	base	attested	unicode-ucd	NamesList.txt: U+1B0BE HENTAIGANA LETTER HO-5, read ほ
+U+307D	U+1B0BE U+309A	𛂾゚	base	attested	mj-hentaigana	MJ090195 HENTAIGANA LETTER HO-5: 音価 ほ
+U+307D	U+1B0BF U+309A	𛂿゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+307D ぽ decomposes to U+307B U+309A; U+1B0BF 𛂿 reads ほ, so 𛂿 + U+309A is its voicing
+U+307D	U+1B0BF U+309A	𛂿゚	base	attested	unicode-ucd	NamesList.txt: U+1B0BF HENTAIGANA LETTER HO-6, read ほ
+U+307D	U+1B0BF U+309A	𛂿゚	base	attested	mj-hentaigana	MJ090196 HENTAIGANA LETTER HO-6: 音価 ほ
+U+307D	U+1B0C0 U+309A	𛃀゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+307D ぽ decomposes to U+307B U+309A; U+1B0C0 𛃀 reads ほ, so 𛃀 + U+309A is its voicing
+U+307D	U+1B0C0 U+309A	𛃀゚	base	attested	unicode-ucd	NamesList.txt: U+1B0C0 HENTAIGANA LETTER HO-7, read ほ
+U+307D	U+1B0C0 U+309A	𛃀゚	base	attested	mj-hentaigana	MJ090197 HENTAIGANA LETTER HO-7: 音価 ほ
+U+307D	U+1B0C1 U+309A	𛃁゚	voicing	derived	unicode-ucd	UnicodeData.txt: U+307D ぽ decomposes to U+307B U+309A; U+1B0C1 𛃁 reads ほ, so 𛃁 + U+309A is its voicing
+U+307D	U+1B0C1 U+309A	𛃁゚	base	attested	unicode-ucd	NamesList.txt: U+1B0C1 HENTAIGANA LETTER HO-8, read ほ
+U+307D	U+1B0C1 U+309A	𛃁゚	base	attested	mj-hentaigana	MJ090198 HENTAIGANA LETTER HO-8: 音価 ほ

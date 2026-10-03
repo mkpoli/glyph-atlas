@@ -136,7 +136,7 @@ def candidates(family_map):
         row["source_label_is_verified"]=False
         row["exact_character"]=None
         row["members"]=family_map[row["family"]]
-        row["member_characters"]=[chr(int(cp[2:],16)) for cp in row["members"]]  # noqa: FURB166
+        row["member_characters"]=[refs.to_char(cp) for cp in row["members"]]
         row["source_rights"]=docs[row["document_id"]].image_rights.model_dump(mode="json")
     return rows
 

@@ -61,20 +61,21 @@ def table() -> dict[str, dict[str, str]]:
 # The table --------------------------------------------------------------------------------------
 
 
-def test_the_table_is_one_row_per_code_point():
+def test_the_table_is_one_row_per_character():
+    """One row per code point, and one per voiced sequence: a letter and a combining voicing mark."""
     rows = rows_of(TABLE)
     assert len(rows) == len({row["code_point"] for row in rows})
     assert all(row["code_point"].startswith("U+") and row["char"] for row in rows)
     for row in rows:
-        assert len(row["char"]) == 1
-        assert int(row["code_point"].removeprefix("U+"), 16) == ord(row["char"])
+        assert row["code_point"] == " ".join(f"U+{ord(char):04X}" for char in row["char"])
+        assert len(row["char"]) == 1 or (len(row["char"]) == 2 and row["char"][1] in "\u3099\u309a"), row["code_point"]
 
 
 def test_the_table_holds_the_kana_and_the_kanji():
     rows = rows_of(TABLE)
     scripts = {row["script"] for row in rows}
     assert scripts == {"gugyeol", "han", "hangul", "hiragana", "hentaigana", "katakana", "symbol"}
-    assert len([row for row in rows if row["script"] == "hentaigana"]) == 285
+    assert len([row for row in rows if row["script"] == "hentaigana" and len(row["char"]) == 1]) == 285
     assert len([row for row in rows if row["script"] == "han"]) > 90_000
 
 
@@ -166,7 +167,8 @@ def test_every_hentaigana_of_the_kana_tables_is_a_form_of_a_grapheme():
     for row in table().values():
         if row["script"] != "hentaigana":
             continue
-        assert row["grapheme"] and row["jibo"], row["code_point"]
+        # A voiced sequence's 字母 is its letter's, which refs.jibo_of reads through the sequence.
+        assert row["grapheme"] and (row["jibo"] or refs.jibo_of(row["code_point"])), row["code_point"]
         assert refs.character(row["grapheme"]) is not None
 
 
@@ -178,7 +180,7 @@ def test_every_hentaigana_hangs_under_a_modern_hiragana():
     while the 音価 map listed the archaic katakana 𛄠 before the hiragana.
     """
     rows = table()
-    hentaigana = [row for row in rows.values() if row["script"] == "hentaigana"]
+    hentaigana = [row for row in rows.values() if row["script"] == "hentaigana" and len(row["char"]) == 1]
     assert len(hentaigana) == 285
     for row in hentaigana:
         grapheme = rows[row["grapheme"]]
@@ -236,6 +238,49 @@ def test_a_voiced_katakana_is_a_form_of_its_hiragana():
     # iteration marks are not the voicing of a kana.
     for point in ("U+30F7", "U+30F8", "U+30F9", "U+30FA", "U+309E", "U+30FE"):
         assert refs.grapheme(point) == point, point
+
+
+def test_a_voiced_grapheme_holds_every_written_form_of_it():
+    """ば is written ば, バ, and each hentaigana of は with U+3099. は or ハ with U+3099 is ば or バ
+    itself, spelled apart: NFC composes it, and the site stores it composed, so it is no row."""
+    ba = refs.graphemes()["U+3070"]
+    ha = [point for point in refs.graphemes()["U+306F"] if refs.character(point).script == "hentaigana"]
+    assert len(ha) == 11 and "U+1B09E U+3099" in ba
+    assert set(ba) == {"U+3070", "U+30D0", *(f"{point} U+3099" for point in ha)}
+    assert refs.character("U+306F U+3099") is None and refs.character("U+30CF U+3099") is None
+    pa = refs.graphemes()["U+3071"]
+    assert set(pa) == {"U+3071", "U+30D1", *(f"{point} U+309A" for point in ha)}
+    assert refs.grapheme("U+1B09E U+309A") == "U+3071" and refs.grapheme("U+1B09E U+3099") == "U+3070"
+    assert refs.character("U+1B09E U+3099").char == "\U0001B09E\u3099"
+    assert refs.jibo_of("U+1B09E U+3099") == ["八"]
+    # The plain kana keep exactly their forms; no sequence joins them.
+    assert all(" " not in point for point in refs.graphemes()["U+306F"])
+    assert not any(" " in point for point in refs.graphemes()["U+3089"])
+    # A mark no precomposed kana attests makes no member, and ヷ names no grapheme to voice into.
+    assert refs.character("U+3042 U+3099") is None and refs.character("U+30C4 U+309A") is None
+    assert refs.character("U+308F U+3099") is None and refs.graphemes()["U+30F7"] == ["U+30F7"]
+    # 𛄟 is under う by this build's reading alone, which no source states, so it is not voiced.
+    assert refs.grapheme("U+1B11F") == "U+3046" and refs.character("U+1B11F U+3099") is None
+    # A sequence sorts right after its letter.
+    order = [row.code_point for row in refs.characters()]
+    assert order.index("U+1B09E U+3099") == order.index("U+1B09E") + 1
+
+
+def test_every_voiced_member_cites_its_basis():
+    """The voicing decomposition for every member, and the letter's own row for a hentaigana's."""
+    info = refs.grapheme_info("U+3070")
+    assert info["members"][:2] == [{"code_point": "U+3070", "char": "ば"}, {"code_point": "U+30D0", "char": "バ"}]
+    edges = {source["id"]: source["edges"] for source in info["evidence"]}
+    for member in info["members"]:
+        cited = [edge for edges_ in edges.values() for edge in edges_ if edge["a"] == member["char"]]
+        assert any(edge["relation"] == "voicing" for edge in cited), member
+        if " " in member["code_point"]:
+            assert any(edge["relation"] == "base" for edge in cited), member
+            assert {edge["tier"] for edge in cited if edge["relation"] == "voicing"} == {"derived"}, member
+    ha1 = [edge["detail"] for source in edges.values() for edge in source if edge["a"] == "\U0001B09E\u3099"]
+    assert any(detail.startswith("UnicodeData.txt: U+3070 ば decomposes to U+306F U+3099") for detail in ha1)
+    assert any("HENTAIGANA LETTER HA-1" in detail for detail in ha1)
+    assert any(edge["a"] == "\U0001B09E\u3099" for edge in edges["mj-hentaigana"])
 
 
 def test_no_hentaigana_is_filed_under_a_small_kana():
