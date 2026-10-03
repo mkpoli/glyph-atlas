@@ -28,8 +28,8 @@ character Unicode lacks, and `■` is one nobody could read.
    kept and a headword is told by its place, the head of its tier (`Layout.heads`).
 2. The right page is anchored on the frame's rightmost column of headwords and the left page on
    its leftmost, since the gutter between them may be as narrow as a column or several wide. An outer
-   column with too few headwords to be seen leaves the grid one column in; `column_shift` moves it
-   back by comparing each column's candidates with the headwords HDIC puts there. `fit`
+   column with too few headwords to be seen leaves the grid one column in; `place` also tries the
+   grid moved one column outward and keeps whichever the readers, or HDIC's counts, bear out. `fit`
    finds each page's column pitch, and for a tiered layout the tiers over its headwords' tops, their
    pitch held to `Layout.tier_pitch` times the column pitch. A grid stands only when enough of its columns
    (`Layout.held`) and every tier line hold headwords. A layout of one tier takes each column whole.
@@ -395,6 +395,8 @@ class Grid:
     pitch: float
     tiers: tuple[float, ...]
     tier_pitch: float
+    #: Which way the page's outer column lies, in `shifted`'s sense: -1 right, +1 left.
+    outward: int = 0
 
     def holds(self, box: Box) -> bool:
         """Whether a box's centre falls inside the page's columns."""
@@ -463,7 +465,7 @@ def page_grids(boxes: Sequence[Box], unit: float, layout: Layout) -> dict[str, G
         if layout.tiers == 1:
             # `cell_boxes` opens a cell a quarter of its height above the tier line.
             top, bottom = min(b.y for b in inside) - unit, max(b.y + b.h for b in inside) + unit
-            grids[name] = Grid(tuple(columns), pitch, (top + 0.25 * (bottom - top),), bottom - top)
+            grids[name] = Grid(tuple(columns), pitch, (top + 0.25 * (bottom - top),), bottom - top, -direction)
             continue
         tops = entry_tops(inside, columns, pitch, unit) if layout.heads == "tier" else [b.y for b in inside]
         low, high = layout.tier_pitch
@@ -473,7 +475,7 @@ def page_grids(boxes: Sequence[Box], unit: float, layout: Layout) -> dict[str, G
         tiers = [top + k * tier_pitch for k in range(layout.tiers)]
         if any(sum(1 for y in tops if abs(y - t) < 0.1 * tier_pitch) < TIER_HELD for t in tiers):
             continue
-        grids[name] = Grid(tuple(columns), pitch, tuple(tiers), tier_pitch)
+        grids[name] = Grid(tuple(columns), pitch, tuple(tiers), tier_pitch, -direction)
     return grids
 
 
@@ -582,30 +584,26 @@ def align_cell(glyphs: Sequence[Glyph], boxes: Sequence[Box], verdicts: Callable
 
 def shifted(grid: Grid, k: int) -> Grid:
     """The grid moved `k` columns toward the left (line 1 onto the old line 1 + k)."""
-    return Grid(tuple(c - k * grid.pitch for c in grid.columns), grid.pitch, grid.tiers, grid.tier_pitch)
+    return Grid(tuple(c - k * grid.pitch for c in grid.columns), grid.pitch, grid.tiers, grid.tier_pitch, grid.outward)
 
 
-def column_shift(entries: Sequence[Entry], boxes: Sequence[Box], grid: Grid, unit: float, layout: Layout,
-                 headword: tuple[float, float]) -> int:
-    """How many columns the fitted grid is off, by the count of headwords HDIC gives each column.
+#: Least drop in miscounted headwords for the outward grid to win on counts alone.
+SHIFT_MARGIN = 2
 
-    A page's outer column is its anchor; when that column holds too few headwords to be seen, the
-    grid starts one column in. Each cell HDIC puts headwords in has its candidates counted against
-    them, for the grid as fitted and moved one column either way; the closest wins, and the fitted grid
-    on a tie. A cell HDIC gives nothing (a title, the end of a section) is not counted.
-    """
+
+def misfit(entries: Sequence[Entry], boxes: Sequence[Box], grid: Grid, unit: float, layout: Layout) -> tuple[int, int]:
+    """How far a grid's candidate counts are from HDIC's, over the cells HDIC fills, and how many columns it fills."""
+    heads = [b for b in boxes if grid.holds(b) and is_big(b, unit)]
+    headword = ((float(np.median([min(b.w, b.h) for b in heads])), float(np.median([max(b.w, b.h) for b in heads])))
+                if heads else (0.0, 0.0))
     expected: dict[tuple[int, int], int] = {}
     for entry in entries:
         if entry.line <= len(grid.columns) and entry.segment <= len(grid.tiers):
             cell = (entry.line, entry.segment)
             expected[cell] = expected.get(cell, 0) + sum(1 for g in entry.glyphs if g.text != MARK)
-
-    def misfit(k: int) -> int:
-        moved = shifted(grid, k)
-        return sum(abs(n - len(cell_boxes(boxes, moved, line, segment, unit, layout, headword)))
-                   for (line, segment), n in expected.items() if n)
-
-    return min((0, -1, 1), key=lambda k: (misfit(k), k != 0))
+    found = {cell: sum(1 for b in cell_boxes(boxes, grid, *cell, unit, layout, headword) if not is_mark(b, unit))
+             for cell in expected}
+    return sum(abs(n - found[cell]) for cell, n in expected.items() if n), len({line for (line, _), n in expected.items() if n})
 
 
 def place(entries: Sequence[Entry], boxes: Sequence[Box], grid: Grid, unit: float,
@@ -616,7 +614,47 @@ def place(entries: Sequence[Entry], boxes: Sequence[Box], grid: Grid, unit: floa
     `rank(box)` is the classifier's five best classes for a box, `known` all its classes. `second(box)`,
     when given, is another reader's text for the box: a glyph it reads as written, or as its standard
     form, counts as read there. It only ever confirms; its reading something else refuses nothing.
+
+    A page's grid is anchored on its outer column, and an outer column with too few headwords to be
+    seen leaves the grid one column in. When the column beyond the outer one holds boxes, the page is
+    placed on the grid moved there too. The placement with more of its glyphs read where they stand,
+    less those refused, is taken; when the readers cannot tell the two apart, the one that misses
+    HDIC's headword counts by `SHIFT_MARGIN` fewer, on a page HDIC fills at least half the columns of.
+    Failing both, the page keeps nothing: no evidence says which column a headword stands in.
     """
+    fitted = _place(entries, boxes, grid, unit, rank, known, layout, second)
+    outer = shifted(grid, grid.outward) if grid.outward else None
+    edge = 1 if grid.outward < 0 else len(grid.columns)
+    if outer is None or not any(cell_boxes(boxes, outer, edge, segment, unit, layout)
+                                for segment in range(1, len(grid.tiers) + 1)):
+        return fitted
+    moved = _place(entries, boxes, outer, unit, rank, known, layout, second)
+
+    def evidence(placement: Placement) -> int:
+        return sum(1 for p in placement.pairs if p.verdict) - sum(1 for p in placement.pairs if p.verdict is False)
+
+    if evidence(moved) != evidence(fitted):
+        choice = moved if evidence(moved) > evidence(fitted) else fitted
+    else:
+        (here, filled), (there, _) = misfit(entries, boxes, grid, unit, layout), misfit(entries, boxes, outer, unit, layout)
+        decided = filled * 2 >= len(grid.columns) and abs(here - there) >= SHIFT_MARGIN
+        choice = None if not decided else moved if there < here else fitted
+    if choice is None:
+        # Either grid fits as well: nothing on the page says which column a headword stands in.
+        fitted.count("column-ambiguous")
+        fitted.count("dropped-with-page", fitted.counts.pop("kept", 0))
+        for pair in fitted.pairs:
+            pair.kept = False
+        return fitted
+    if choice is moved:
+        moved.count("column-shifted")
+    return choice
+
+
+def _place(entries: Sequence[Entry], boxes: Sequence[Box], grid: Grid, unit: float,
+           rank: Callable[[Box], list[str]], known: set[str], layout: Layout,
+           second: Callable[[Box], str | None] | None) -> Placement:
+    """`place` on one grid."""
     result = Placement()
     cells: dict[tuple[int, int], list[Entry]] = {}
     for entry in entries:
@@ -629,11 +667,6 @@ def place(entries: Sequence[Entry], boxes: Sequence[Box], grid: Grid, unit: floa
     heads = [b for b in boxes if grid.holds(b) and is_big(b, unit)]
     headword = ((float(np.median([min(b.w, b.h) for b in heads])), float(np.median([max(b.w, b.h) for b in heads])))
                 if heads else (0.0, 0.0))
-    if k := column_shift(entries, boxes, grid, unit, layout, headword):
-        grid = shifted(grid, k)
-        result.count("column-shifted", k)
-        windows = {(line, segment): [b for b in cell_window(boxes, grid, line, segment) if max(b.w, b.h) >= INK * unit]
-                   for line in range(1, len(grid.columns) + 1) for segment in range(1, len(grid.tiers) + 1)}
     for (line, segment), members in sorted(cells.items()):
         if line > len(grid.columns) or segment > len(grid.tiers):
             result.count("off-grid")

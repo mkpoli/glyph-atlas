@@ -242,10 +242,9 @@ def test_an_unjudged_headword_between_two_read_ones_is_kept() -> None:
         char = reads.get(box.y) if box.x == columns[0] - 80 else None
         return [code(char)] if char and char != "?" else [code("ノ")]
 
-    others = [entry(f"L{line}-{k}", line, 1, k, "傮") for line in range(2, 9) for k in range(4)]
-    result = hdic.place(column_entries("天", "⿱一丷", "地", "⿰口天") + others, boxes, grid, UNIT, rank,
+    result = hdic.place(column_entries("天", "⿱一丷", "地", "⿰口天"), boxes, grid, UNIT, rank,
                         known={code("天"), code("地"), code("ノ")}, layout=TSJ)
-    kept = {p.glyph.text: p.box.y for p in result.pairs if p.kept and p.entry.line == 1}
+    kept = {p.glyph.text: p.box.y for p in result.pairs if p.kept}
     # ⿱一丷 sits between 天 and 地, both read. ⿰口天 has no read glyph after it, and with a large
     # gloss character in the column the boxes outnumber the headwords, so nothing vouches for it.
     assert kept == {"天": 400, "⿱一丷": 1100, "地": 1800}
@@ -340,12 +339,49 @@ def test_a_second_seal_form_of_an_entry_keeps_its_own_id(tmp_path: Path) -> None
         ("1_016_B31", "1_016_B31", 19, "祉"), ("1_016_B31_2", "1_016_B31", 19, "祉")]
 
 
-def test_a_grid_anchored_one_column_in_is_moved_back() -> None:
+def left_page() -> tuple[list[Box], list[float]]:
+    """A left page of eight columns whose last column (line 8) holds only two headwords."""
     boxes, columns = running_page()
-    # The page's last column (line 8) holds two headwords, too few to anchor the grid on.
     boxes = [b for b in boxes if not (abs(b.x + b.w / 2 - columns[-1]) < 1 and b.y >= 1800)]
-    entries = [entry(f"L{line}-{k}", line, 1, k, "傮") for line in range(1, 8) for k in range(4)]
-    entries += [entry(f"L8-{k}", 8, 1, k, "傮") for k in range(2)]
-    fitted = hdic.Grid(tuple(c + 250 for c in columns), 250.0, (500.0,), 3200.0)  # one column to the right
-    assert hdic.column_shift(entries, boxes, fitted, UNIT, TSJ, (160.0, 160.0)) == 1
-    assert hdic.column_shift(entries, boxes, hdic.shifted(fitted, 1), UNIT, TSJ, (160.0, 160.0)) == 0
+    return boxes, columns
+
+
+def column_counts(columns: list[float]) -> list[hdic.Entry]:
+    """HDIC's headwords for the page: four in each of lines 1 to 7, two in line 8, none of them classed."""
+    return ([entry(f"L{line}-{k}", line, 1, k, "傮") for line in range(1, 8) for k in range(4)]
+            + [entry(f"L8-{k}", 8, 1, k, "傮") for k in range(2)])
+
+
+def test_a_grid_anchored_one_column_in_is_moved_outward() -> None:
+    boxes, columns = left_page()
+    # Anchored on line 7, the grid sits one column to the right of the page's own.
+    fitted = hdic.Grid(tuple(c + 250 for c in columns), 250.0, (500.0,), 3200.0, outward=1)
+    result = hdic.place(column_counts(columns), boxes, fitted, UNIT, lambda b: [code("ノ")], {code("ノ")}, TSJ)
+    assert result.counts.get("column-shifted") == 1
+    assert {p.box.x + p.box.w // 2 for p in result.pairs if p.entry.line == 8} == {int(columns[-1])}
+
+
+def test_a_well_fitted_grid_stays_where_it_is() -> None:
+    boxes, columns = left_page()
+    grid = hdic.Grid(tuple(columns), 250.0, (500.0,), 3200.0, outward=1)
+    result = hdic.place(column_counts(columns), boxes, grid, UNIT, lambda b: [code("ノ")], {code("ノ")}, TSJ)
+    assert "column-shifted" not in result.counts  # nothing lies beyond line 8
+
+
+def test_counts_alone_do_not_move_a_grid_over_a_page_hdic_barely_fills() -> None:
+    boxes, columns = running_page()
+    boxes.append(headword_box(columns[0], 2850))
+    boxes += [headword_box(columns[0] + 250, 400 + 700 * k) for k in range(4)]  # a column beyond line 1
+    grid = hdic.Grid(tuple(columns), 250.0, (500.0,), 3200.0, outward=-1)
+    result = hdic.place(column_entries("傮", "傮", "傮", "傮"), boxes, grid, UNIT, lambda b: [code("ノ")], {code("ノ")}, TSJ)
+    assert "column-shifted" not in result.counts
+
+
+def test_a_page_whose_column_nothing_settles_keeps_nothing() -> None:
+    boxes, columns = left_page()
+    fitted = hdic.Grid(tuple(c + 250 for c in columns), 250.0, (500.0,), 3200.0, outward=1)
+    # HDIC fills only lines 6 to 8, as on the first page of a volume after its table of contents.
+    entries = [e for e in column_counts(columns) if e.line >= 6]
+    result = hdic.place(entries, boxes, fitted, UNIT, lambda b: [code("ノ")], {code("ノ")}, TSJ)
+    assert result.counts.get("column-ambiguous") == 1
+    assert not [p for p in result.pairs if p.kept]
