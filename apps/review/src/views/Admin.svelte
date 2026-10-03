@@ -4,8 +4,9 @@
   import { request } from '../lib/client.js'
   import ScriptText from '../components/ScriptText.svelte'
   import { useSession } from '../lib/session.svelte.js'
+  import { useInspector } from '../lib/inspector.svelte.js'
   import { t, formatDateTime, localize, formatNumber } from '../lib/i18n.svelte.js'
-  const session = useSession()
+  const session = useSession(), inspector = useInspector()
   const KINDS = ['active', 'accounts', 'anonymous', 'banned', 'admins', 'unclaimed']
   let kind = $state('active'), find = $state(''), people = $state([]), more = $state(null), loading = $state(false)
   let chosen = $state(null), work = $state([]), workMore = $state(null), busy = $state(''), error = $state(''), notice = $state('')
@@ -130,8 +131,9 @@
           {#each work as item (item.id)}
             <li class:gone={item.state !== 'standing'}>
               <span class="admin-time">{when(item.at)}</span>
-              <span class="admin-label">{#if item.label}<ScriptText text={item.label} />{:else}—{/if}</span>
-              <span class="admin-what">{t(`admin.submission.${item.kind}`, { count: item.crops })}<small>{verdicts(item)}</small></span>
+              <span class="admin-label">{#if item.label ?? item.targets[0]?.label}<ScriptText text={item.label ?? item.targets[0].label} />{:else}—{/if}</span>
+              <span class="admin-what">{t(`admin.submission.${item.kind}`, { count: item.crops })}<small>{verdicts(item)}</small>
+                {#if item.targets.length}<span class="admin-crops">{#each item.targets as crop (crop.id)}<button class="admin-crop" onclick={() => inspector.inspect(crop.id)} aria-label={t('history.row.inspect', { label: crop.label ?? crop.id })}>{#if crop.label}<ScriptText text={crop.label} />{:else}·{/if}</button>{/each}{#if item.crops > item.targets.length}<small>+{item.crops - item.targets.length}</small>{/if}</span>{/if}</span>
               {#if item.state === 'standing'}<button class="quiet-link" disabled={Boolean(busy)} onclick={() => { confirming = item.id; reason = '' }}>{t('admin.reject')}</button>
               {:else}<span class="admin-pill" class:danger={item.state === 'rejected'} title={item.rejection ? `${item.rejection.by}${item.rejection.reason ? ': ' + item.rejection.reason : ''}` : ''}>{t(`admin.state.${item.state}`)}</span>{/if}
             </li>
@@ -185,6 +187,9 @@
   .admin-label { flex: 0 0 34px; font-size: 20px; text-align: center; }
   .admin-what { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .admin-what small { font-size: 10px; color: var(--muted); }
+  .admin-crops { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; margin-top: 5px; }
+  .admin-crop { min-width: 28px; padding: 2px 6px; font-size: 15px; border-radius: 5px; background: var(--surface-subtle); }
+  .admin-crop:hover { border-color: var(--accent); color: var(--accent); }
   @media (max-width: 900px) {
     .admin-layout { grid-template-columns: minmax(0, 1fr); }
     .admin-people { position: static; }

@@ -1,6 +1,8 @@
 // What the admin page reads: who has saved work, and each reviewer's submissions.
 type Json = Record<string, any>;
 const PAGE = 50;
+// The crops a submission lists by name, to open from the admin page; a larger one says how many more.
+const SHOWN = 24;
 
 // A user's reviewer ids, as a subquery on the `u` row.
 const HELD = 'SELECT actor FROM actors WHERE user_id=u.id';
@@ -40,10 +42,13 @@ const page = (rows: Json[], offset: number) => ({ items: rows.slice(0, PAGE), ne
 export async function submissions(env: Env, q: URLSearchParams, actors: [string, string[]]) {
   const offset = Math.max(0, Number(q.get('offset') ?? 0) | 0);
   const rows = await env.DB.prepare(`SELECT s.id,s.actor,s.at,s.undone,s.request,r.by,r.reason,r.at AS rejected_at,ru.name AS rejected_by,
-      (SELECT count(*) FROM events e WHERE e.submission=s.id AND e.kind='review') AS crops
+      (SELECT count(*) FROM events e WHERE e.submission=s.id AND e.kind='review') AS crops,
+      (SELECT json_group_array(json_object('id',target,'label',label)) FROM (SELECT e.target,json_extract(e.before_data,'$.label') AS label
+        FROM events e WHERE e.submission=s.id AND e.kind='review' ORDER BY e.rowid LIMIT ${SHOWN})) AS targets
     FROM submissions s LEFT JOIN rejections r ON r.submission=s.id LEFT JOIN "user" ru ON ru.id=r.by
     WHERE s.actor IN ${actors[0]} ORDER BY s.at DESC,s.id DESC LIMIT ? OFFSET ?`).bind(...actors[1], PAGE + 1, offset).all<Json>();
   return page(rows.results.map(row => ({ id: row.id, at: row.at, crops: row.crops, ...summary(row.request),
+    targets: JSON.parse(row.targets ?? '[]') as { id: string; label: string | null }[],
     state: row.by ? 'rejected' : row.undone ? 'undone' : 'standing',
     rejection: row.by ? { by: row.rejected_by ?? row.by, reason: row.reason, at: row.rejected_at } : null })), offset);
 }

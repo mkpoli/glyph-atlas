@@ -116,7 +116,7 @@
               {@render reviewer(item)}
               <span class="history-label">{@render label(item.character ?? item.label)}</span>
               <span class="history-decision"><ScriptLine line={withText('history.batch', 'character', { count: row.items.length, character: item.character ?? item.label ?? '' })} />
-                <span class="history-batch-labels">{#each row.items.map(entry => entry.label).filter(Boolean).slice(0, 12) as text, i (i)}{#if i}{' '}{/if}<ScriptText {text} />{/each}</span></span>
+                <span class="history-batch-labels">{#each row.items.filter(entry => entry.label).slice(0, 12) as entry (entry.id)}<button class="history-batch-crop" onclick={() => inspect(entry.target)} aria-label={t('history.row.inspect', { label: entry.label })}><ScriptText text={entry.label} /></button>{/each}</span></span>
               {#if item.reviewer?.mine}<button class="quiet-link" disabled={undoing === row.batch} onclick={() => undoBatch(row.batch)}>{t('history.batch.undo')}</button>{/if}
             </div>
           </li>
@@ -209,7 +209,9 @@
   .history-row.undo .history-decision { color: var(--wrong); }
   .history-row.passed .history-decision { color: var(--muted); }
   .history-year { margin-left: auto; flex: 0 0 auto; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
-  .history-batch-labels { margin-left: 10px; color: var(--muted); }
+  .history-batch-labels { margin-left: 10px; color: var(--muted); display: inline-flex; flex-wrap: wrap; gap: 2px; }
+  .history-batch-crop { border: 0; background: transparent; padding: 1px 4px; border-radius: 4px; color: inherit; font: inherit; }
+  .history-batch-crop:hover { background: var(--accent-light); color: var(--accent); }
   .history-batch .quiet-link { flex: 0 0 auto; }
   .history-time { flex: 0 0 150px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
   .history-actor { flex: 0 0 150px; display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--ink-soft); font-size: 12px; }
