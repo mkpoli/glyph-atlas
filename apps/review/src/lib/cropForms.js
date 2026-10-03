@@ -10,8 +10,8 @@ import { character as readCard } from './layers.js'
  * saw (`crop_version`). A crop's record carries the forms that hold on it now, as `form`.
  */
 
-/** `U+3042` for あ; null for a sequence, which has no card of its own. */
-const pointOf = char => [...char].length === 1 ? 'U+' + char.codePointAt(0).toString(16).toUpperCase().padStart(4, '0') : null
+/** `U+3042` for あ, `U+1B09E U+3099` for 𛂞 with a voicing mark: the key of the character's card. */
+const pointOf = char => [...char].map(c => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')).join(' ')
 const entry = item => ({ char: item.char, code_point: item.code_point ?? pointOf(item.char), script: item.script ?? '' })
 
 const cards = new Map()
@@ -23,8 +23,8 @@ const cards = new Map()
 export function listForms(char) {
   if (!char) return Promise.resolve({ members: [], variants: [], derived: [] })
   if (!cards.has(char)) {
-    const point = pointOf(char)
-    const loaded = (point ? readCard(point) : Promise.resolve(null)).then(card => {
+    // A sequence the table has no card for (ツ + U+309A) offers itself alone.
+    const loaded = readCard(pointOf(char)).catch(error => error?.status === 404 ? null : Promise.reject(error)).then(card => {
       const members = (card?.grapheme?.members ?? [{ char }]).map(entry)
       const variants = [...card?.variants?.items ?? [], ...card?.variants?.related ?? []].map(entry)
       const derived = (card?.variants?.derived ?? []).map(entry)
