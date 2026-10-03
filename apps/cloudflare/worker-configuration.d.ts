@@ -7,8 +7,11 @@ interface __BaseEnv_Env {
 	EMAIL: SendEmail;
 	CORRECTIONS: RateLimit;
 	CLAIMS: RateLimit;
+	REVERSE_QUERIES: RateLimit;
+	SIMILAR_INDEX: VectorizeIndex;
 	ASSETS: Fetcher;
 	MAIL_FROM: "sign-in@glyphatlas.org";
+	SIMILAR_INDEX_NAME: "glyph-atlas-similar-5dc40a3e";
 	BETTER_AUTH_SECRET: string;
 	GITHUB_CLIENT_ID: string;
 	GITHUB_CLIENT_SECRET: string;
