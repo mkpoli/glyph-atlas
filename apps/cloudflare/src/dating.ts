@@ -79,7 +79,7 @@ export function yearOptions(q: URLSearchParams, fail: (status: number, message: 
   if (raw === 'undated') years = 'undated';
   else if (raw) {
     const found = YEARS.exec(raw);
-    if (!found || Number(found[1]) > Number(found[2])) fail(422, 'A year range is two years, the earlier first: 1601-1700.');
+    if (!found || Number(found[1]) > Number(found[2])) fail(422, 'A year range is two years, the earlier first: 1600-1699.');
     years = { from: Number(found![1]), to: Number(found![2]) };
   }
   return order === 'year' || years || axis === 'composed' ? { axis, order, years } : null;

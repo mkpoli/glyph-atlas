@@ -682,9 +682,11 @@ try {
   assert.ok(decadeCounts.local.some(([decade, n]) => decade === 1790 && n === 1), JSON.stringify(decadeCounts))
   assert.ok(decadeCounts.local.some(([decade]) => decade === null), 'the undated are counted')
   assert.ok(Array.isArray((await call('/layers/candidates?code_point=U%2B4EEE&order=year')).glyph_items))
-  for (const [sql, values] of [[worker.localDecadesQuery(false, 'witness'), ['local', '仮']], [worker.localDecadesQuery(true, 'witness'), ['local', 'U+4EEE', 'local', '仮']]]) {
+  const datedFrom = "FROM units u LEFT JOIN document_dating d ON d.document=u.document AND d.axis='witness' WHERE u.origin=? AND u.character=?"
+  for (const [sql, values] of [[worker.localDecadesQuery(false, 'witness'), ['local', '仮']], [worker.localDecadesQuery(true, 'witness'), ['local', 'U+4EEE', 'local', '仮']],
+    [worker.corpusDecadesQuery(false, 'witness'), ['仮', '仮']], [worker.datedCropsQuery(datedFrom, '', 'year'), ['local', '仮', 60, 0]]]) {
     const details = await plan({ sql, values: [] }, values)
-    assert.ok(!details.some(d => /^SCAN (units|u|d)\b/.test(d)), details.join('; '))
+    assert.ok(!details.some(d => /^SCAN (units|corpus_units|u|c|d)\b/.test(d)), details.join('; '))
   }
   for (const [sql, values] of [[worker.datingQuery(2), ['a', 'b']], [worker.dateClaimsQuery(), ['doc:dated']]]) {
     const details = await plan({ sql, values: [] }, values)

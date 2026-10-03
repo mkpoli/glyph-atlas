@@ -10,7 +10,7 @@ import { ranking } from './ranking';
 import { reviewers, submissions } from './admin';
 import { READ_BUDGET, RETRY_AFTER, described, retried, transient } from './busy';
 import { actOnClaim, claimsOf, ledgerPage, writeClaim, type LedgerTools } from './ledger';
-import { datingJoin, datingOf, decadeColumn, documentDates, documentOf, withDating, yearCondition, yearOptions, yearOrder, type YearOptions } from './dating';
+import { YEAR_KEY, datingJoin, datingOf, decadeColumn, documentDates, documentOf, withDating, yearCondition, yearOptions, yearOrder, type YearOptions } from './dating';
 export { leastTypicalQuery } from './forms';
 export { componentMatchQuery } from './components';
 export { dateClaimsQuery, datingQuery } from './dating';
@@ -969,9 +969,10 @@ async function occurrences(env: Env, code: string, q: URLSearchParams, origin = 
     const from = `FROM units u${datingJoin('u.document', dated.axis)} WHERE ${grapheme
       ? 'u.id IN (SELECT id FROM units WHERE origin=? AND family=? UNION SELECT id FROM units WHERE origin=? AND character=?)' : 'u.origin=? AND u.character=?'}`;
     const keys = grapheme ? [origin, family, origin, data.char] : [origin, data.char];
-    const order = dated.order === 'year' ? yearOrder('u.style_order,u.id') : 'u.style_order,u.id';
     counted = env.DB.prepare(`SELECT u.style_order AS s,count(*) AS n ${from}${tail}${cond} GROUP BY 1`).bind(...keys, ...extra, ...years);
-    listed = env.DB.prepare(`SELECT u.* ${from}${styled}${cond} ORDER BY ${order} LIMIT ? OFFSET ?`).bind(...keys, ...styledExtra, ...years, limit, offset);
+    // The page is found by row and sort key alone, and only its own rows are read whole: a crop's
+    // JSON is kilobytes, and sorting it with every crop of the character costs more the further it pages.
+    listed = env.DB.prepare(datedCropsQuery(from, styled + cond, dated.order)).bind(...keys, ...styledExtra, ...years, limit, offset);
   } else if (q.get('scope') === 'grapheme' || q.get('expand') === 'grapheme') {
     // A grapheme's crops are its family's and its own character's. Each is one range of its own index
     // (`unit_family_style`, `unit_character_style`), and the page merges the two in style and id order;
@@ -991,6 +992,19 @@ async function occurrences(env: Env, code: string, q: URLSearchParams, origin = 
     counts:{ total, exact:total, exact_total:total }, styles, style_groups: STYLE_NAMES, scope:q.get('scope') || 'character', status:'ok',
     ...(dated ? { order: dated.order, axis: dated.axis, years: dated.years } : {}) };
 }
+// A page of crops placed by date: their rows and sort keys, then the rows themselves, in that order.
+export const datedCropsQuery = (from: string, conditions: string, order: 'style' | 'year') =>
+  `SELECT u.* FROM (SELECT u.rowid AS r,${YEAR_KEY} AS y,coalesce(d.end,d.start) AS z,u.style_order AS so,u.id AS i ${from}${conditions}
+    ORDER BY ${order === 'year' ? 'y IS NULL,y,z,so,i' : 'so,i'} LIMIT ? OFFSET ?) k CROSS JOIN units u ON u.rowid=k.r
+    ORDER BY ${order === 'year' ? 'k.y IS NULL,k.y,k.z,k.so,k.i' : 'k.so,k.i'}`;
+// The stamps the decades and the time axis are kept at the edge by: a publication or refresh of the
+// crops, a recount of the corpus, the corpus glyphs' documents and the dates. A review moves a crop to
+// another character only until the hour is out.
+async function axisVersion(env: Env): Promise<string> {
+  const stamps = await env.DB.prepare(`SELECT key,value FROM metadata WHERE key IN
+    ('published_at','units_refreshed_at','corpus_counts_at','corpus_documents_at','dates_at') ORDER BY key`).all<{ key: string; value: string }>();
+  return stamps.results.map(r => `${r.key}=${r.value}`).join(':');
+}
 // How many of a character's crops, or its grapheme's, each decade holds by its book's date, the
 // collection's and the corpus's apart, with the undated as decade null. Every visitor gets the same
 // answer, so the edge keeps one copy per catalogue, corpus count and dates version.
@@ -1004,8 +1018,7 @@ async function decades(env: Env, ctx: ExecutionContext, url: URL) {
   const q = url.searchParams, { data } = await known(env, q.get('code_point') || '');
   const axis = q.get('axis') === 'composed' ? 'composed' : 'witness', grapheme = q.get('scope') === 'grapheme';
   const family = data.grapheme?.code_point || data.code_point;
-  const stamps = await env.DB.prepare("SELECT key,value FROM metadata WHERE key IN ('dates_at','corpus_counts_at')").all<{ key: string; value: string }>();
-  const version = [await catalogueVersion(env), ...stamps.results.map(r => `${r.key}=${r.value}`).sort()].join(':');
+  const version = await axisVersion(env);
   const key = new Request(`${url.origin}/layers/decades?v=${encodeURIComponent(version)}&c=${encodeURIComponent(data.code_point)}&s=${grapheme}&a=${axis}`);
   const cached = await caches.default.match(key);
   if (cached) return cached.json();
