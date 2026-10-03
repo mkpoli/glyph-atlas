@@ -7,7 +7,9 @@
 //   `models/<version>/classifier.onnx` and `models/<version>/classes.json`;
 // - `runtime/onnxruntime-web-<version>/`: the onnxruntime-web WebAssembly the page runs it with, and
 //   `runtime.json`, its size and SHA-256;
-// - `index.json`: the encoder, revision and width of the vectors the bound index holds.
+// - `index/<index name>.json`: the encoder, revision and width of the vectors that index holds. The
+//   Worker reads the pointer of the index it is bound to (`SIMILAR_INDEX_NAME`), so a new index can be
+//   filled and published before a deploy binds it.
 // The page offers the model for download and asks for its files here; nothing is fetched until the
 // reader chooses to.
 import { resolveNeighbours, type ItemsFor } from './similar';
@@ -19,6 +21,9 @@ export type IndexPointer = { index: string; encoder: string; revision: string; c
 export const MAX_BODY = 16384;
 export const CANDIDATES = 5;
 const CHARACTERS_PER_CANDIDATE = 16;
+/** A label is a character or a short sequence; a candidate string longer than this is no label. */
+const CODE_POINTS_PER_CHARACTER = 8;
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 /** Crops shown in the "looks like, any character" list and in each candidate's list. */
 export const SIMILAR_LIMIT = 24;
 export const CANDIDATE_LIMIT = 12;
@@ -30,10 +35,22 @@ export function resetPointers() {
   pointers = null;
 }
 
+const isModel = (value: any) => value && typeof value.version === 'string' && /^[0-9a-f]{16}$/.test(value.version)
+  && typeof value.encoder === 'string' && ['model', 'classes'].every(name => typeof value.files?.[name]?.name === 'string'
+    && Number.isInteger(value.files[name].bytes) && typeof value.files[name].sha256 === 'string');
+const isIndex = (value: any) => value && typeof value.index === 'string' && typeof value.encoder === 'string'
+  && typeof value.revision === 'string' && Number.isInteger(value.dimensions) && value.dimensions > 0;
+
 async function current(env: Env) {
   if (pointers && Date.now() - pointers.read < POINTER_SECONDS * 1000) return pointers;
-  const read = async (key: string) => { const object = await env.MEDIA.get(key); return object ? object.json<any>() : null };
-  const [model, index] = await Promise.all([read('reverse/model.json'), read('reverse/index.json')]);
+  // A pointer that is missing or malformed counts as none, and is not reread on every request.
+  const read = async (key: string, valid: (value: any) => boolean) => {
+    try { const object = await env.MEDIA.get(key); const value = object ? await object.json<any>() : null; return valid(value) ? value : null }
+    catch { return null }
+  };
+  const name = env.SIMILAR_INDEX_NAME;
+  const [model, index] = await Promise.all([read('reverse/model.json', isModel),
+    name ? read(`reverse/index/${name}.json`, value => isIndex(value) && value.index === name) : null]);
   pointers = { model, index, read: Date.now() };
   return pointers;
 }
@@ -46,21 +63,62 @@ export async function modelInfo(env: Env): Promise<Json> {
       files: Object.fromEntries(['model', 'classes'].map(name => [name, { path: `models/${model.version}/${model.files[name].name}`,
         bytes: model.files[name].bytes, sha256: model.files[name].sha256 }])) },
     index: index && { revision: index.revision, crops: index.crops, encoder: index.encoder },
-    ready: Boolean(model && index && env.SIMILAR_INDEX && model.encoder === index.encoder),
+    ready: Boolean(model && index && env.SIMILAR_INDEX && model.encoder === index.encoder && model.features === index.dimensions),
   };
 }
 
 const FILE = /^(models\/[0-9a-f]{16}\/(?:classifier\.onnx|classes\.json)|runtime\/onnxruntime-web-\d+\.\d+\.\d+(?:-[\w.]+)?\/[\w.-]+\.(?:wasm|mjs|json))$/;
 const TYPES: Record<string, string> = { onnx: 'application/octet-stream', json: 'application/json', wasm: 'application/wasm', mjs: 'text/javascript' };
 
-/** A model or runtime file. Each path names one immutable version, so a browser keeps it for good. */
-export async function modelFile(env: Env, path: string): Promise<Response | null> {
+/**
+ * A model or runtime file. Each path names one immutable version, so a browser keeps it for good and
+ * the edge cache answers repeats without reading R2.
+ */
+export async function modelFile(env: Env, path: string, request?: Request, ctx?: ExecutionContext): Promise<Response | null> {
   if (!FILE.test(path)) return null;
-  const object = await env.MEDIA.get(`reverse/${path}`);
+  const cache = request && typeof caches !== 'undefined' ? (caches as any).default as Cache : null;
+  const key = request ? new Request(request.url) : null;
+  const hit = cache && key ? await cache.match(key) : undefined;
+  if (hit) return request?.method === 'HEAD' ? new Response(null, { headers: hit.headers }) : hit;
+  const head = request?.method === 'HEAD';
+  const object = head ? await env.MEDIA.head(`reverse/${path}`) : await env.MEDIA.get(`reverse/${path}`);
   if (!object) return null;
-  return new Response(object.body, { headers: {
-    'content-type': TYPES[path.split('.').pop()!], 'content-length': String(object.size), etag: object.httpEtag,
-    'cache-control': 'public, max-age=31536000, immutable', 'x-content-type-options': 'nosniff' } });
+  const headers = { 'content-type': TYPES[path.split('.').pop()!], 'content-length': String(object.size), etag: object.httpEtag,
+    'cache-control': 'public, max-age=31536000, immutable', 'x-content-type-options': 'nosniff' };
+  if (head) return new Response(null, { headers });
+  const response = new Response((object as R2ObjectBody).body, { headers });
+  if (cache && key && ctx) ctx.waitUntil(cache.put(key, response.clone()));
+  return response;
+}
+
+/** A rate-limit key for an address: an IPv6 client holds a whole /64, so it is keyed by that prefix. */
+export function addressKey(address: string | null): string {
+  if (!address) return 'local';
+  if (!address.includes(':')) return address;
+  const [head, tail = ''] = address.split('::');
+  const left = head ? head.split(':') : [], right = tail ? tail.split(':') : [];
+  const groups = address.includes('::') ? [...left, ...Array(8 - left.length - right.length).fill('0'), ...right] : left;
+  return groups.slice(0, 4).map(group => group.toLowerCase().replace(/^0+(?=.)/, '')).join(':') + '::/64';
+}
+
+/** The body as text, or null once it passes `limit` bytes; a larger body is never held in full. */
+export async function boundedText(request: Request, limit: number): Promise<string | null> {
+  const declared = Number(request.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > limit) return null;
+  if (!request.body) return '';
+  const reader = request.body.getReader(), parts: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > limit) { await reader.cancel(); return null }
+    parts.push(value);
+  }
+  const bytes = new Uint8Array(size);
+  let at = 0;
+  for (const part of parts) { bytes.set(part, at); at += part.byteLength }
+  return new TextDecoder().decode(bytes);
 }
 
 export class QueryError extends Error {
@@ -87,7 +145,8 @@ export function decodeCandidates(value: unknown): string[][] {
   if (!Array.isArray(value) || value.length > CANDIDATES) throw new QueryError(400, `Name at most ${CANDIDATES} candidates.`);
   return value.map(set => {
     if (!Array.isArray(set) || !set.length || set.length > CHARACTERS_PER_CANDIDATE
-      || !set.every(c => typeof c === 'string' && c.length > 0 && c.length <= 16))
+      || !set.every(c => typeof c === 'string' && c.length > 0 && [...c].length <= CODE_POINTS_PER_CHARACTER
+        && !LONE_SURROGATE.test(c) && !/\p{Cc}/u.test(c)))
       throw new QueryError(400, 'A candidate is a list of characters.');
     return [...new Set(set as string[])];
   });
@@ -109,15 +168,23 @@ export async function query(env: Env, input: Json, itemsFor: ItemsFor): Promise<
   const search = (topK: number, filter?: VectorizeVectorMetadataFilter) =>
     env.SIMILAR_INDEX.query(vector, { topK, returnMetadata: 'none', returnValues: false, ...(filter ? { filter } : {}) })
       .then(found => found.matches.map(m => [m.id, Math.round(m.score * 1000) / 1000] as [string, number]));
-  const [similar, ...perCandidate] = await Promise.all([
-    search(SIMILAR_LIMIT * 2),
-    ...candidates.map(set => search(CANDIDATE_LIMIT * 2, { label: set.length === 1 ? set[0] : { $in: set } })),
-  ]);
+  let similar: [string, number][], perCandidate: [string, number][][];
+  try {
+    // A candidate's list is filtered by the label the index was filled with; a crop relabelled since
+    // is dropped below, so each list asks for more than it shows.
+    [similar, ...perCandidate] = await Promise.all([
+      search(SIMILAR_LIMIT * 2),
+      ...candidates.map(set => search(CANDIDATE_LIMIT * 3, { label: set.length === 1 ? set[0] : { $in: set } })),
+    ]);
+  } catch {
+    throw new QueryError(503, 'Image search is not available right now. Try again later.');
+  }
   const known = new Map<string, Json | null>();
   return {
     revision: index.revision,
     similar: await resolveNeighbours(env, similar, SIMILAR_LIMIT, itemsFor, known),
     candidates: await Promise.all(perCandidate.map(async (list, n) => ({
-      characters: candidates[n], crops: await resolveNeighbours(env, list, CANDIDATE_LIMIT, itemsFor, known) }))),
+      characters: candidates[n],
+      crops: await resolveNeighbours(env, list, CANDIDATE_LIMIT, itemsFor, known, item => candidates[n].includes(item.label)) }))),
   };
 }

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
-import { CANDIDATE_LIMIT, QueryError, decodeCandidates, decodeVector, modelFile, modelInfo, query, resetPointers } from './reverse';
+import { CANDIDATE_LIMIT, QueryError, addressKey, boundedText, decodeCandidates, decodeVector, modelFile, modelInfo, query, resetPointers } from './reverse';
 
 const encoder = 'a'.repeat(64);
 const model = { version: '0123456789abcdef', encoder, features: 4, preprocessing: { size: 128 },
@@ -14,6 +14,7 @@ function bucket(objects: Record<string, string>) {
       const bytes = new TextEncoder().encode(value);
       return { body: new Response(bytes).body!, size: bytes.length, httpEtag: '"e"', json: async () => JSON.parse(value) };
     },
+    async head(key: string) { return objects[key] === undefined ? null : { size: objects[key].length, httpEtag: '"e"' } },
   };
 }
 
@@ -24,7 +25,8 @@ function encode(values: number[]) {
 
 function environment(matches: Record<string, [string, number][]>, asked: any[] = []) {
   return {
-    MEDIA: bucket({ 'reverse/model.json': JSON.stringify(model), 'reverse/index.json': JSON.stringify(pointer),
+    SIMILAR_INDEX_NAME: pointer.index,
+    MEDIA: bucket({ 'reverse/model.json': JSON.stringify(model), [`reverse/index/${pointer.index}.json`]: JSON.stringify(pointer),
       'reverse/models/0123456789abcdef/classifier.onnx': 'onnx bytes' }),
     SIMILAR_INDEX: {
       async query(vector: number[], options: any) {
@@ -67,8 +69,34 @@ describe('image search', () => {
     expect(result.similar.map((c: any) => [c.id, c.score])).toEqual([['x:字', 0.91], ['y:宇', 0.8]]);
     expect(result.candidates.map((c: any) => [c.characters, c.crops.map((i: any) => i.id)]))
       .toEqual([[['字'], ['x:字']], [['国', '國'], ['z:國']]]);
-    expect(asked[1].options).toMatchObject({ topK: CANDIDATE_LIMIT * 2, returnMetadata: 'none', filter: { label: '字' } });
+    expect(asked[1].options).toMatchObject({ topK: CANDIDATE_LIMIT * 3, returnMetadata: 'none', filter: { label: '字' } });
     expect(asked[0].vector).toEqual(vector);
+  });
+
+  it('leaves out a candidate’s crop relabelled since the index was filled', async () => {
+    const env = environment({ '"字"': [['x:宇', 0.9], ['y:字', 0.8]] });
+    const result = await query(env, { encoder, vector: encode([1, 0, 0, 0]), candidates: [['字']] }, held);
+    expect(result.candidates[0].crops.map((c: any) => c.id)).toEqual(['y:字']);
+  });
+
+  it('reads the pointer of the index it is bound to, and answers 503 when Vectorize fails', async () => {
+    const other = { ...environment({}), SIMILAR_INDEX_NAME: 'glyph-atlas-similar-bbbbbbbb' } as unknown as Env;
+    expect((await modelInfo(other)).ready).toBe(false);
+    resetPointers();
+    const failing = { ...environment({}), SIMILAR_INDEX: { query: async () => { throw new Error('down') } } } as unknown as Env;
+    expect((await query(failing, { encoder, vector: encode([1, 0, 0, 0]) }, held).catch(e => e)).status).toBe(503);
+    resetPointers();
+    const broken = { ...environment({}), MEDIA: bucket({ 'reverse/model.json': '{"version":1}' }) } as unknown as Env;
+    expect(await modelInfo(broken)).toEqual({ model: null, index: null, ready: false });
+  });
+
+  it('keys an IPv6 address by its /64 and reads no more body than allowed', async () => {
+    expect(addressKey('2001:db8:0:1:aaaa:bbbb:cccc:dddd')).toBe('2001:db8:0:1::/64');
+    expect(addressKey('2001:db8::1')).toBe('2001:db8:0:0::/64');
+    expect(addressKey('192.0.2.1')).toBe('192.0.2.1');
+    const big = new Request('https://x/', { method: 'POST', body: new ReadableStream({ start(c) { for (let i = 0; i < 4; i++) c.enqueue(new Uint8Array(8000)); c.close() } }) });
+    expect(await boundedText(big, 16384)).toBeNull();
+    expect(await boundedText(new Request('https://x/', { method: 'POST', body: '{"a":1}' }), 16384)).toBe('{"a":1}');
   });
 
   it('refuses another model’s vectors with the version to update to', async () => {
@@ -87,12 +115,12 @@ describe('image search', () => {
   it('accepts at most five candidates of short character lists', () => {
     expect(decodeCandidates(undefined)).toEqual([]);
     expect(decodeCandidates([['か']])).toEqual([['か']]);
-    for (const bad of [[[]], [['x'.repeat(17)]], [[1]], 'か', Array(6).fill(['か']), [Array(17).fill('か')]])
+    for (const bad of [[[]], [['x'.repeat(9)]], [[1]], 'か', Array(6).fill(['か']), [Array(17).fill('か')], [['\uD800']], [['a\u0000']]])
       expect(() => decodeCandidates(bad)).toThrow(QueryError);
   });
 
   it('answers 503 before an index is published', async () => {
-    const env = { MEDIA: bucket({}), SIMILAR_INDEX: {} } as unknown as Env;
+    const env = { MEDIA: bucket({}), SIMILAR_INDEX: {}, SIMILAR_INDEX_NAME: pointer.index } as unknown as Env;
     expect((await query(env, {}, held).catch(e => e)).status).toBe(503);
     resetPointers();
     expect((await modelInfo(env)).ready).toBe(false);

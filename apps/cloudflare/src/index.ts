@@ -2,7 +2,7 @@
 import { ROUND_MAX } from './rounds';
 import { formsRoute, withForm, formed, FORM_COLUMNS, type FormTools, type UnitForm } from './forms';
 import { similarCrops } from './similar';
-import { MAX_BODY, QueryError, modelFile, modelInfo, query as imageQuery } from './reverse';
+import { MAX_BODY, QueryError, addressKey, boundedText, modelFile, modelInfo, query as imageQuery } from './reverse';
 import { componentSearch, componentTerm } from './components';
 import { formsFor, setForm, withForms } from './cropForms';
 import { auth, claim, owned, providers, viewer } from './auth';
@@ -1472,10 +1472,10 @@ const routes = {
       if(request.method==='POST'&&path==='/atlas/similar/query'){
         // An image search writes nothing and needs no session; one address is held to a rate. The
         // body is a vector, never an image, and it is neither stored nor logged.
-        const {success}=await env.REVERSE_QUERIES.limit({key:request.headers.get('cf-connecting-ip')??'local'});
+        const {success}=await env.REVERSE_QUERIES.limit({key:addressKey(request.headers.get('cf-connecting-ip'))});
         if(!success)throw new Problem(429,'Too many image searches at once. Wait a minute and try again.');
-        const text=await request.text();
-        if(text.length>MAX_BODY)throw new Problem(413,'The search request is too large.');
+        const text=await boundedText(request,MAX_BODY);
+        if(text===null)throw new Problem(413,'The search request is too large.');
         let input:Json;try{input=JSON.parse(text)}catch{throw new Problem(400,'The search request is not JSON.')}
         if(!input||typeof input!=='object'||Array.isArray(input))throw new Problem(400,'The search request is not an object.');
         try{return json(await imageQuery(env,input,itemsFor))}
@@ -1561,7 +1561,7 @@ const routes = {
         return json(await cropVersions(env,id))}
       if(path==='/atlas/similar/model')return json(await modelInfo(env));
       if(path.startsWith('/atlas/similar/files/')){
-        const file=await modelFile(env,path.slice('/atlas/similar/files/'.length));
+        const file=await modelFile(env,path.slice('/atlas/similar/files/'.length),request,ctx);
         if(!file)throw new Problem(404,'No such model file.');
         return file;
       }

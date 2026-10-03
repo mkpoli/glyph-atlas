@@ -47,10 +47,11 @@ export async function similarCrops(env: Env, id: string, limit: number, itemsFor
 /**
  * The first `limit` crops of a neighbour list that the site holds, with their scores. The list is
  * resolved in order, `limit` ids at a time: a corpus glyph costs a record read, so the crops past what
- * is shown are never looked up. `known` carries the lookups between the lists of one answer.
+ * is shown are never looked up. `known` carries the lookups between the lists of one answer; `keep`
+ * leaves out a crop the caller does not want, such as one relabelled since the list was made.
  */
 export async function resolveNeighbours(env: Env, list: Neighbour[], limit: number, itemsFor: ItemsFor,
-  known: Map<string, Json | null>): Promise<Json[]> {
+  known: Map<string, Json | null>, keep: (item: Json) => boolean = () => true): Promise<Json[]> {
   const shown: Json[] = [];
   for (let start = 0; start < list.length && shown.length < limit; start += limit) {
     const batch = list.slice(start, start + limit);
@@ -59,7 +60,7 @@ export async function resolveNeighbours(env: Env, list: Neighbour[], limit: numb
     for (const n of wanted) known.set(n, found.get(n) ?? null);
     for (const [n, score] of batch) {
       const item = known.get(n);
-      if (item && shown.length < limit) shown.push({ ...item, score });
+      if (item && keep(item) && shown.length < limit) shown.push({ ...item, score });
     }
   }
   return shown;

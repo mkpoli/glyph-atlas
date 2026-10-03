@@ -18,7 +18,8 @@
   "r2_buckets": [{"binding": "MEDIA", "bucket_name": "glyph-atlas"}],
   // Sign-in codes are sent from MAIL_FROM, on a domain onboarded to Email Sending.
   "send_email": [{"name": "EMAIL"}],
-  "vars": {"MAIL_FROM": "sign-in@glyphatlas.org"},
+  // SIMILAR_INDEX_NAME names the Vectorize index bound as SIMILAR_INDEX, whose pointer the image search reads.
+  "vars": {"MAIL_FROM": "sign-in@glyphatlas.org", "SIMILAR_INDEX_NAME": "glyph-atlas-similar-5dc40a3e"},
   // BETTER_AUTH_SECRET is a secret, and so is each sign-in provider's app id and secret (GITHUB_CLIENT_ID,
   // GITHUB_CLIENT_SECRET, and GOOGLE_, DISCORD_, LINE_ and KAKAO_ likewise); a provider without them is not offered.
   // BETTER_AUTH_SECRET: `wrangler secret put BETTER_AUTH_SECRET`, and `.dev.vars` locally.
@@ -29,6 +30,7 @@
                  // An image search is a few Vectorize queries and record reads; one address gets 30 a minute.
                  {"name": "REVERSE_QUERIES", "namespace_id": "4404", "simple": {"limit": 30, "period": 60}}],
   // The image search's vectors, one index per classifier encoder (`glyph-atlas-similar-<encoder[:8]>`).
-  // `scripts/publish_reverse.sh create` makes it and `publish` fills it; it has to exist before a deploy.
+  // `scripts/publish_reverse.sh create` makes it and `publish` fills it; it has to exist before a deploy,
+  // and SIMILAR_INDEX_NAME above names it too.
   "vectorize": [{"binding": "SIMILAR_INDEX", "index_name": "glyph-atlas-similar-5dc40a3e"}]
 }
