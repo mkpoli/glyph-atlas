@@ -111,7 +111,7 @@ def d1(sql: str, tries: int = 4) -> list[dict]:
     since over a slow connection D1 answers `fetch failed` now and then; the last failure is raised."""
     for attempt in range(tries):
         result = subprocess.run(["bunx", "wrangler", "d1", "execute", "glyph-atlas", "--remote", "--json", "--command", sql],
-                                cwd=ROOT / "apps" / "cloudflare", capture_output=True, text=True)
+                                cwd=ROOT / "apps" / "cloudflare", capture_output=True, text=True, check=False)
         if result.returncode == 0:
             return json.loads(result.stdout)[0]["results"]
         if attempt < tries - 1:
