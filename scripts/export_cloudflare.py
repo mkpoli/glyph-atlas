@@ -252,8 +252,9 @@ def export(dataset: Path, output: Path, *, resume=False):
             db.execute(statement)
         db.commit()
         read_crops(db, media)
+        # Keyed as the character layer keys a row, so a sequence it holds (𛂞 + U+3099) is counted too.
         counts = Counter({refs.to_code_point(char): n for char, n in db.execute(
-            "SELECT character,count(*) FROM units GROUP BY character") if len(char) == 1})
+            "SELECT character,count(*) FROM units GROUP BY character") if char})
         print(encoded({"stage": "characters"}), flush=True)
         live_counts = {row["char"]: corpus._count_row(row["char"], row) for row in corpus.index.characters()}
         export_character_variants.fill(db)
