@@ -5,7 +5,8 @@
   "and whether one claim may name alternatives. `resolve` is the SQL that turns a slot's claims into its",
   "`current_claims` row; the Worker, the review service and the publication run it after a `WITH crop_now(unit,version)`",
   "of their own, which names the current evidence version of the crops being resolved, and bind ?1 to a JSON array of",
-  "[subject, predicate, scope, slot] keys. Lines starting with -- are comments."
+  "[subject, predicate, scope, slot] keys. Lines starting with -- are comments.",
+  "A `date_*` predicate dates a document: its value is a date as `glyph_atlas.dates` reads it ({of, text, start, end, precision, qualifier, uncertain, day, calendar, conversion, note}), and it lists no `values` because only a publication writes one, from a data/sources record (`scripts/export_dates_cloudflare.py`)."
  ],
  "resolver": "ledger-r1",
  "tiers": [
@@ -41,6 +42,78 @@
     "representation"
    ],
    "cardinality": "many"
+  },
+  "date_composed": {
+   "label": "when the text a document carries was composed (成立)",
+   "subject": "document",
+   "objects": [],
+   "values": [],
+   "cardinality": "many",
+   "value_shape": "date"
+  },
+  "date_copied": {
+   "label": "when this copy was written out (書写, 補写)",
+   "subject": "document",
+   "objects": [],
+   "values": [],
+   "cardinality": "many",
+   "value_shape": "date"
+  },
+  "date_colophon": {
+   "label": "a date a colophon, preface or postface of this copy states (奥書, 識語, 序, 跋, 刊記)",
+   "subject": "document",
+   "objects": [],
+   "values": [],
+   "cardinality": "many",
+   "value_shape": "date"
+  },
+  "date_annotated": {
+   "label": "when reading marks were added (加点)",
+   "subject": "document",
+   "objects": [],
+   "values": [],
+   "cardinality": "many",
+   "value_shape": "date"
+  },
+  "date_printed": {
+   "label": "when this copy, or the work, was printed (刊行)",
+   "subject": "document",
+   "objects": [],
+   "values": [],
+   "cardinality": "many",
+   "value_shape": "date"
+  },
+  "date_edition": {
+   "label": "a later impression or edition this copy is (後印, 再版)",
+   "subject": "document",
+   "objects": [],
+   "values": [],
+   "cardinality": "many",
+   "value_shape": "date"
+  },
+  "date_exemplar": {
+   "label": "the date of the copy or edition this one reproduces (元奥書, 底本)",
+   "subject": "document",
+   "objects": [],
+   "values": [],
+   "cardinality": "many",
+   "value_shape": "date"
+  },
+  "date_produced": {
+   "label": "the date the holder gives the item, without saying what it dates",
+   "subject": "document",
+   "objects": [],
+   "values": [],
+   "cardinality": "many",
+   "value_shape": "date"
+  },
+  "date_other": {
+   "label": "another date a source gives, such as that of the content (内容年代)",
+   "subject": "document",
+   "objects": [],
+   "values": [],
+   "cardinality": "many",
+   "value_shape": "date"
   }
  },
  "resolve": [
