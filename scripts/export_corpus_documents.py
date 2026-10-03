@@ -86,7 +86,9 @@ def main() -> None:
     (args.output / "sql").mkdir(exist_ok=True)
     for old in (args.output / "sql").glob("*.sql"):
         old.unlink()
-    found_statements = statements(runs)
+    # The last part stamps `corpus_documents_at`, which the Worker keeps a gallery's decades by.
+    found_statements = statements(runs) + [
+        "INSERT OR REPLACE INTO metadata(key,value) VALUES('corpus_documents_at',json_quote(strftime('%Y-%m-%dT%H:%M:%fZ','now')));\n"]
     parts = []
     for i in range(0, len(found_statements), PER_PART):
         name = f"sql/part-{len(parts) + 1:03d}.sql"
