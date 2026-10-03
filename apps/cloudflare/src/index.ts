@@ -382,14 +382,15 @@ export function graphemeKey(value: string | null | undefined): string | null {
   return key;
 }
 // The characters a grapheme is written as, by the character table: は's family is は, ハ and its
-// hentaigana. A key that names no family (a sequence, or a character the table lacks) is its own text
-// alone; a key that names a family's member rather than the family is refused.
+// hentaigana, and ば's is ば, バ and each hentaigana of は with U+3099. A key that names no family
+// (ツ + U+309A, or a character the table lacks) is its own text alone; a key that names a family's
+// member rather than the family is refused, a sequence such as 𛂞 + U+3099 as much as a character.
+// A key's own text is composed, as every written character is stored.
 export async function graphemeMembers(env: Env, key: string): Promise<string[]> {
-  const row = key.includes(' ') ? null
-    : await env.DB.prepare("SELECT json_extract(data,'$.grapheme') AS grapheme FROM characters WHERE code_point=?").bind(key).first<{ grapheme: string | null }>();
+  const row = await env.DB.prepare("SELECT json_extract(data,'$.grapheme') AS grapheme FROM characters WHERE code_point=?").bind(key).first<{ grapheme: string | null }>();
   const family = row?.grapheme ? parse(row.grapheme) as { code_point: string; char: string; members?: { char: string }[] } : null;
   if (family && family.code_point !== key) throw new Problem(422, `${graphemeText(key)} is filed under ${family.char}.`);
-  return family?.members?.length ? family.members.map(member => member.char) : [graphemeText(key)];
+  return family?.members?.length ? family.members.map(member => member.char) : [compose(graphemeText(key))];
 }
 // The crops a listing starts from: local ones, those a round may deal, in the material asked for.
 // A round and its reference strips name their grapheme's characters, and read each through

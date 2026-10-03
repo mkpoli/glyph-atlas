@@ -1487,6 +1487,28 @@ try {
     const table = /^(SCAN|SEARCH) (a|x|e|p|u|assertions|assertion_actions|assertion_evidence|assertion_premises|current_claims|units)\b/
     assert.ok(!plan.some(d => table.test(d) && (/AUTOMATIC/.test(d) || (d.startsWith('SCAN') && !/USING (COVERING )?INDEX|USING INTEGER PRIMARY KEY/.test(d)))), plan.join('; '))
   }
+  // ば's grapheme holds ば, バ and each hentaigana of は with U+3099. A round lists them, a sequence
+  // member is refused as a round of its own, and a crop marked as 𛂞 + U+3099 stays filed under ば.
+  {
+    const ha = '\u{1B09E}\u3099', key = point => [...point].map(c => 'U+' + c.codePointAt(0).toString(16).toUpperCase()).join(' ')
+    const grapheme = { code_point: 'U+3070', char: 'ば', members: ['ば', 'バ', ha].map(char => ({ char, code_point: key(char) })) }
+    for (const { char, code_point } of grapheme.members) {
+      const data = { char, code_point, grapheme, candidates: {} }
+      await db.prepare('INSERT INTO characters VALUES(?,?,?,?,?)').bind(code_point, char, '', JSON.stringify(data), JSON.stringify(data)).run()
+    }
+    const d = { id: 'ba-1', label: 'ば', reading: 'ば', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten', repair: { quiz: false } }
+    await db.prepare(`INSERT INTO units(${UNIT_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+      'ba-1', 'local', 'ば', 'ば', 'U+3070', null, 'handwritten', 'kana', 'pending', 0, 0, 1, 1,
+      JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
+    assert.deepEqual((await call('/atlas?purpose=review&grapheme=U%2B3070')).grapheme.members, ['ば', 'バ', ha], 'a round lists the sequence member')
+    await call('/atlas?purpose=review&grapheme=' + encodeURIComponent(key(ha)), undefined, 422)
+    assert.deepEqual((await call('/atlas?purpose=review&grapheme=U%2B306F%20U%2B3099')).grapheme.members, ['ば'], 'a key with no row is its text, composed')
+    const card = await call('/layers/characters/' + encodeURIComponent(key(ha)))
+    assert.equal(card.grapheme.code_point, 'U+3070', 'a sequence member has a card of its own, under ば')
+    await call('/layers/units/ba-1', { id: crypto.randomUUID(), revision: 0, image_sha256: hash, verdict: 'wrong', issue: 'character', character: ha })
+    assert.deepEqual(await db.prepare("SELECT character,family FROM units WHERE id='ba-1'").first(), { character: ha, family: 'U+3070' },
+      'a crop marked as a sequence member stays filed under its grapheme')
+  }
   // One address is held to a number of claims a minute.
   let claimsLimited = false
   for (let i = 0; i < 120 && !claimsLimited; i++) {
