@@ -41,9 +41,7 @@ def run(path, pixels):
 
 
 def test_the_half_export_keeps_float32_inputs_and_outputs_and_the_answers(tmp_path):
-    if not torch.cuda.is_available():
-        pytest.skip("float16 convolutions are traced on the GPU")
-    model = Tiny().cuda().eval()
+    model = Tiny().to("cuda" if torch.cuda.is_available() else "cpu").eval()
     full = export_onnx.export(model, tmp_path / "full.onnx", 0.8, 32, 17, False)
     half = export_onnx.export(model, tmp_path / "half.onnx", 0.8, 32, 17, False, half=True)
     assert (full["precision"], half["precision"]) == ("float32", "float16")

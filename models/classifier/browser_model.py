@@ -15,8 +15,9 @@ Writes `<out>/<version>/`:
   they come from (the `encoder` of a similar-crop index built with it), the preprocessing, each
   file's size and SHA-256, and the parity check against the float32 PyTorch model.
 
-The version is the first 16 hex digits of the SHA-256 over both files, so a new export or a new class
-list is a new version. `scripts/publish_browser_model.sh` uploads a version to R2.
+The version is the first 16 hex digits of the SHA-256 over both files, the encoder and the
+preprocessing, so a new export, class list or checkpoint is a new version. A build whose parity check
+does not pass writes nothing. `scripts/publish_browser_model.sh` uploads a version to R2.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ import hashlib
 import json
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 import export_onnx
@@ -48,7 +50,10 @@ def feature_width(path: Path) -> int:
     import onnx
 
     output = next(value for value in onnx.load(str(path)).graph.output if value.name == "features")
-    return int(output.type.tensor_type.shape.dim[1].dim_value)
+    width = int(output.type.tensor_type.shape.dim[1].dim_value)
+    if width < 1:
+        raise SystemExit(f"{path}: the `features` output has no fixed width")
+    return width
 
 
 def class_entries(classes: list[str]) -> list[dict]:
@@ -67,22 +72,26 @@ def main() -> None:
     parser.add_argument("--checkpoint", type=Path, default=ROOT / "models/classifier/artifacts/best.pt")
     parser.add_argument("--out", type=Path, default=ROOT / "work/browser-model")
     parser.add_argument("--data", type=Path, default=None, help="the manifests the parity check reads")
-    parser.add_argument("--parity", type=int, default=200, help="val crops to compare; 0 skips the check")
+    parser.add_argument("--parity", type=int, default=200, help="val crops to compare with the float32 model")
     args = parser.parse_args()
 
     if not args.checkpoint.is_file():
         raise SystemExit(f"{args.checkpoint} is missing")
+    if args.parity < 1:
+        raise SystemExit("--parity must compare at least one crop: a model the browser downloads is always checked")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model, classes, temperature, config = export_onnx.build(args.checkpoint, device, args.config)
     train.check_classes(model, classes, where=str(args.checkpoint))
     size = int(config["preprocessing"]["size"])
 
-    staging = args.out / ".partial"
-    shutil.rmtree(staging, ignore_errors=True)
-    staging.mkdir(parents=True)
+    args.out.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=".partial-", dir=args.out))
     onnx_path = staging / "classifier.onnx"
     report = export_onnx.export(model, onnx_path, temperature, size, int(config["artifacts"]["opset"]),
                                 str(config["artifacts"]["exporter"]) == "dynamo", half=True)
+    import onnx
+
+    onnx.checker.check_model(str(onnx_path))
     width = export_onnx.exported_classes(onnx_path)
     if width != len(classes):
         raise SystemExit(f"{onnx_path}: the graph returns {width} classes and the class list names {len(classes)}")
@@ -90,32 +99,34 @@ def main() -> None:
     classes_path.write_text(json.dumps(class_entries(classes), ensure_ascii=False, separators=(",", ":")) + "\n",
                             encoding="utf-8")
 
-    compared = None
-    if args.parity:
-        data = args.data or (ROOT / config["data"]["directory"])
-        compared = export_onnx.parity(model, classes, onnx_path, data, config, count=args.parity, split="val",
-                                      device=device, precision="fp32", temperature=temperature,
-                                      tolerance=export_onnx.HALF_TOLERANCE)
-        print(json.dumps(compared, indent=2), flush=True)
-        if compared.get("passed") is False:
-            raise SystemExit("the float16 export does not reproduce the PyTorch probabilities")
+    data = args.data or (ROOT / config["data"]["directory"])
+    compared = export_onnx.parity(model, classes, onnx_path, data, config, count=args.parity, split="val",
+                                  device=device, precision="fp32", temperature=temperature,
+                                  tolerance=export_onnx.HALF_TOLERANCE)
+    print(json.dumps(compared, indent=2), flush=True)
+    if compared.get("passed") is not True:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise SystemExit("the float16 export does not reproduce the PyTorch model, or no crop was compared")
 
     files = {name: {"name": path.name, "bytes": path.stat().st_size, "sha256": digest(path)}
              for name, path in (("model", onnx_path), ("classes", classes_path))}
-    version = hashlib.sha256((files["model"]["sha256"] + files["classes"]["sha256"]).encode()).hexdigest()[:16]
+    encoder = digest(args.checkpoint)
+    preprocessing = {"size": size, "grey": True, "pad": classify.PAD, "mean": classify.MEAN, "std": classify.STD,
+                     "resample": "bilinear"}
+    version = hashlib.sha256(json.dumps([files["model"]["sha256"], files["classes"]["sha256"], encoder, preprocessing],
+                                        sort_keys=True).encode()).hexdigest()[:16]
     manifest = {
         "version": version,
-        "encoder": digest(args.checkpoint),
+        "encoder": encoder,
         "precision": report["precision"],
         "opset": report["opset"],
         "classes": len(classes),
         "features": feature_width(onnx_path),
-        "preprocessing": {"size": size, "grey": True, "pad": classify.PAD, "mean": classify.MEAN,
-                          "std": classify.STD, "resample": "bilinear"},
+        "preprocessing": preprocessing,
         "files": files,
         "parity": compared,
     }
-    (staging / "model.json").write_text(json.dumps(manifest, indent=1) + "\n")
+    (staging / "model.json").write_text(json.dumps(manifest, indent=1, allow_nan=False) + "\n")
     target = args.out / version
     shutil.rmtree(target, ignore_errors=True)
     staging.replace(target)

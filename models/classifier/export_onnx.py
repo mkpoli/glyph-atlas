@@ -49,6 +49,10 @@ TOLERANCE = 1e-4
 #: moves by up to a few thousandths when every weight and activation is rounded to 11 bits.
 HALF_TOLERANCE = 1e-2
 
+#: The smallest cosine between an export's features and the PyTorch model's that a passing export may
+#: show: the features are what a nearest-neighbour search compares.
+FEATURE_COSINE = 0.999
+
 
 class Wrapper(torch.nn.Module):
     """The model as a function of one tensor, with the temperature applied before the softmax."""
@@ -57,11 +61,11 @@ class Wrapper(torch.nn.Module):
         super().__init__()
         # A copy, so the float32 model stays the reference the parity check compares against.
         self.model = copy.deepcopy(model).half() if half else model
-        self.half = half
+        self.float16 = half
         self.register_buffer("temperature", torch.tensor(float(temperature), dtype=torch.float32))
 
     def forward(self, pixel_values: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        pooled = self.model.forward_features(pixel_values.half() if self.half else pixel_values)
+        pooled = self.model.forward_features(pixel_values.half() if self.float16 else pixel_values)
         logits = self.model.forward_head(pooled).float()
         # The penultimate representation keeps the shape information class logits discard; the
         # visual families embed crops with it.
@@ -150,8 +154,8 @@ def parity(
     """Compare the PyTorch probabilities against the exported file on `count` val crops.
 
     The comparison is between the probabilities rather than between the logits: the softmax is what
-    a caller reads, so the export passes when the two agree to `tolerance` on every crop. The
-    features are compared by cosine, which is what a nearest-neighbour search reads.
+    a caller reads, so the export passes when the two agree to `tolerance` on every crop and every
+    crop's features, which a nearest-neighbour search reads, are finite and within `FEATURE_COSINE`.
     """
     import onnxruntime as ort
 
@@ -203,8 +207,9 @@ def parity(
         "max_probability_difference": float(difference.max()),
         "mean_probability_difference": float(difference.mean()),
         "top1_agreement": float(np.mean(exported.argmax(axis=-1) == reference.argmax(axis=-1))),
-        "min_feature_cosine": float(cosine.min()),
-        "passed": bool(difference.max() <= tolerance),
+        "min_feature_cosine": float(np.nan_to_num(cosine.min(), nan=-1.0)),
+        "passed": bool(np.isfinite(features).all() and difference.max() <= tolerance
+                       and np.nan_to_num(cosine.min(), nan=-1.0) >= FEATURE_COSINE),
     }
 
 
