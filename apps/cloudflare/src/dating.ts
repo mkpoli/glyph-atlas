@@ -43,18 +43,15 @@ export async function datingOf(env: Env, documents: (string | null | undefined)[
   return found;
 }
 
-/** `items`, each with its document's `dating` where the document is dated. */
+/** `items`, each with its document's `dating`: its axes, or `{}` for a book no source dates. */
 export async function withDating<T extends Json>(env: Env, items: T[], documentFor: (item: T) => string | null = documentOf): Promise<T[]> {
   const dating = await datingOf(env, items.map(documentFor));
-  return items.map(item => {
-    const found = dating.get(documentFor(item) ?? '');
-    return found ? { ...item, dating: found } : item;
-  });
+  return items.map(item => ({ ...item, dating: dating.get(documentFor(item) ?? '') ?? {} }));
 }
 
 /** A document's dating with the claims it was resolved from, for the inspector. */
 export async function documentDates(env: Env, document: string | null): Promise<Json> {
-  if (!document) return {};
+  if (!document) return { dating: {} };
   const [axes, claims] = await env.DB.batch([
     env.DB.prepare(datingQuery(1)).bind(document),
     env.DB.prepare(dateClaimsQuery()).bind(document),
@@ -67,5 +64,5 @@ export async function documentDates(env: Env, document: string | null): Promise<
       calendar: value.calendar, hutime: value.conversion?.query ?? null, note: value.note ?? null, tier: row.tier,
       source: row.source, locator: row.locator };
   });
-  return { ...(Object.keys(dating).length ? { dating } : {}), ...(dates.length ? { dates } : {}) };
+  return { dating, ...(dates.length ? { dates } : {}) };
 }

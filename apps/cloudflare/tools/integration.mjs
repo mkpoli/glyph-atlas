@@ -662,7 +662,7 @@ try {
   ])
   const datedItem = (await call('/layers/occurrences?code_point=U%2B4EEE')).items.find(i => i.id === 'dated-crop')
   assert.deepEqual([datedItem.dating.witness.kind, datedItem.dating.witness.label, datedItem.dating.witness.hutime], ['copied', '1791', JSON.parse(conversion).query])
-  assert.ok((await call('/layers/occurrences?code_point=U%2B4EEE')).items.filter(i => i.id !== 'dated-crop').every(i => !i.dating), 'an undated book gives no dating')
+  assert.ok((await call('/layers/occurrences?code_point=U%2B4EEE')).items.filter(i => i.id !== 'dated-crop').every(i => i.dating && !Object.keys(i.dating).length), 'an undated book gives an empty dating')
   const inspectedDates = (await call('/atlas/characters/dated-crop')).dates
   assert.deepEqual(inspectedDates.map(d => [d.kind, d.text, d.source, d.locator]), [['copied', '寛政三年', 'kokusho', 'https://kokusho.nijl.ac.jp/biblio/1#bpublish.0']])
   for (const [sql, values] of [[worker.datingQuery(2), ['a', 'b']], [worker.dateClaimsQuery(), ['doc:dated']]]) {

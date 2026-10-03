@@ -133,7 +133,7 @@ async function itemsFor(env: Env, ids: string[]): Promise<Map<string, Json>> {
     for (const record of records) if (record) found.set(record[0], { ...listing(record[1]), origin: 'corpus' });
   }
   const dating = await datingOf(env, [...found.values()].map(documentOf));
-  for (const [id, item] of found) { const dated = dating.get(documentOf(item) ?? ''); if (dated) found.set(id, { ...item, dating: dated }) }
+  for (const [id, item] of found) found.set(id, { ...item, dating: dating.get(documentOf(item) ?? '') ?? {} });
   return found;
 }
 function compact(row: UnitRow): Json {
@@ -533,7 +533,7 @@ async function ngramOccurrences(env: Env, url: URL, size: number, run: string) {
   const items = found.map(row => {
     const crops = [row.first, row.second, row.third].filter(Boolean).map(data => parse(data!));
     const dated = row.document ? dating.get(row.document) : undefined;
-    return { crops: crops.map(c => ({ ...listing(c), crop_box: c.crop_box ?? null, ...(dated ? { dating: dated } : {}) })),
+    return { crops: crops.map(c => ({ ...listing(c), crop_box: c.crop_box ?? null, dating: dated ?? {} })),
       vertical: Boolean(row.vertical), page: ngramPage(crops) };
   });
   const { n: total, vertical } = count.results[0] as { n: number; vertical: number | null };
@@ -1601,7 +1601,7 @@ const routes = {
         return json({items:rows.results.map(r=>parse(r.data)),total:rows.results.length})}
       if(path==='/atlas/corpus/reviews'){
         const rows=await env.DB.prepare("SELECT * FROM units WHERE origin='corpus' AND state='flagged' ORDER BY id LIMIT 96").all<UnitRow>();
-        return json({items:await withForms(env,rows.results.map(compact)),total:rows.results.length})}
+        return json({items:await withDating(env,await withForms(env,rows.results.map(compact))),total:rows.results.length})}
       if(path.startsWith('/atlas/forms/')){const formed=await formsRoute(env,request,path,q,formTools,ctx);
         if(formed)return formed instanceof Response?formed:json(formed)}
       throw new Problem(404,'Unknown endpoint.');
