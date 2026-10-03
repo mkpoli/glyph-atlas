@@ -82,8 +82,8 @@ Enter to save, and Escape to clear the selection.
 
 Opening a crop from a gallery shows it in the inspector. Choose an error and **Save problem**, or use
 **Looks right**; saving closes the inspector and returns to the gallery, where the tile shows its
-verdict. The previous/next arrows and Skip move between crops without saving. Character input, crop
-adjustment and notes are under **Adjust character or crop**.
+verdict. The previous/next arrows and Skip move between crops without saving. A bad crop is redrawn under
+**Bad crop**.
 
 Each round is one atomic journal transaction. A conflicting edit refuses the entire round and
 preserves the browser's choices. Optional single-character corrections are part of that transaction.
