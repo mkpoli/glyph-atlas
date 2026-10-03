@@ -4,7 +4,7 @@
 // `corpus_units.character` follows it for search and counts shortly after (`followCorpus`).
 type Json = Record<string, any>;
 export type FormTools = {
-  fail: (status: number, message: string) => never;
+  fail: (status: number, message: string, extra?: Record<string, unknown>) => never;
   body: (request: Request) => Promise<Json>;
   text: (value: unknown, max: number, name: string, required?: boolean) => string | null;
   codePoints: (value: string) => string;
@@ -307,7 +307,7 @@ export async function formsRoute(env: Env, request: Request, path: string, q: UR
     EXISTS(SELECT 1 FROM corpus_follow) AS following`).first<FormsState>())!;
   // A publication is reloading the clustering; the migration's trigger refuses a decision meanwhile.
   if (path !== '/atlas/forms/decisions.jsonl' && state.loading)
-    tools.fail(503, 'The forms are being republished. Try again in a few minutes.');
+    tools.fail(503, 'The forms are being republished. Try again in a few minutes.', { code: 'busy' });
   // The decision answers once its own rows are written; its corpus glyphs move after. Glyphs a drain cut
   // short left listed are moved by the next request that finds them.
   const follow = () => ctx.waitUntil(followCorpus(env).catch(error => console.error('corpus follow', error)));
