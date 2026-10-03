@@ -14,7 +14,7 @@ the file it comes from.
 Glyph Atlas (字形大圖譜) is a character-shape dataset of pre-modern writing across the Sinosphere:
 Chinese characters and the scripts written with them in China, Korea, Japan and Vietnam. One record is one
 graphic occurrence, in most cases one written character on a page image: its rectangle, the
-transcriber's string, a diplomatic reading, the Unicode code points including hentaigana, the 字母 of
+transcriber's string, the Unicode code points including hentaigana, the 字母 of
 kana forms, a variant key for kanji, and the document's production type, genre, register and date.
 
 The dataset is built for training and evaluating character detection, segmentation and
@@ -57,12 +57,12 @@ records with coordinates and receives no crops.
 
 ### Missing information
 
-Fields are filled independently, so partial records are expected. Units carrying a `reading`, a
-`unicode` value, a 字母 resolved from the character layer and a `variants` entry:
-{{counts.units_by_label_coverage}}. A unit whose form is identified and has no code point keeps
-`unicode` null and a local shape id; the 字母 follows from the code point, so it is present exactly
-when `unicode` names a kana the character layer has one for. Documents by production type, genre and
-dating coverage: {{counts.documents_by_metadata}}.
+Fields are filled independently, so partial records are expected. Units carrying a `unicode` value,
+a 字母 resolved from the character layer and a `variants` entry: {{counts.units_by_label_coverage}}. A
+unit whose form is identified and has no code point keeps `unicode` null and a local shape id; the
+字母 follows from the code point, so it is present exactly when `unicode` names a kana the character
+layer has one for. Documents by production type, genre and dating coverage:
+{{counts.documents_by_metadata}}.
 
 ### Splits
 
@@ -73,7 +73,7 @@ holders and production types.
 ### Sensitive content
 
 The material is published and archival writing from open collections. Records reproduce historical
-text as written, with a diplomatic reading and document metadata; the dataset adds no modernisation.
+text as written, with document metadata; the dataset adds no modernisation.
 
 ## Collection process
 
@@ -107,12 +107,11 @@ reported in the audit report for the sample.
 
 ### Layers
 
-Four layers are recorded, each fillable on its own:
+Three layers are recorded, each fillable on its own:
 
 | Layer | Fields | Content |
 | --- | --- | --- |
 | Source | `text_source` | the transcriber's string for the unit, verbatim |
-| Reading | `reading` | the diplomatic reading, historical spelling kept (けふ stays けふ) |
 | Classification | `unicode`, `script`, `variants` | the code point, the script, the variant key |
 | Normalisation | derived columns | modern kana and 新字, computed at export under a named policy |
 
@@ -130,12 +129,12 @@ matching and display.
 
 ### Labelling
 
-The reading starts from the transcription. For a kana unit the classifier scores the code points of
-that reading and the 字母 then follows from the chosen code point. Kanji are recorded as written, so 旧字
-and 新字 stay apart in the classification layer. Voicing marks are recorded as present or absent with
-their own rectangle, iteration marks link to the units they repeat, and units joined by continuous
-strokes carry a 連綿 group id. A label is machine-assigned (`method=detect-align`) or set by a person
-(`method=manual`). Units by method: {{counts.units_by_method}}.
+The code point starts from the transcription. For a kana unit the classifier scores the code points
+of the transcribed kana and the 字母 then follows from the chosen code point. Kanji are recorded as
+written, so 旧字 and 新字 stay apart in the classification layer. Voicing marks are recorded as present
+or absent with their own rectangle, iteration marks link to the units they repeat, and units joined
+by continuous strokes carry a 連綿 group id. A label is machine-assigned (`method=detect-align`) or
+set by a person (`method=manual`). Units by method: {{counts.units_by_method}}.
 
 ### Derived columns
 
@@ -251,7 +250,7 @@ tables of a released version do not change. The upstream pins of each version ar
 | `{{counts.units_by_review}}` | units by `review` state | `COUNTS.md` |
 | `{{counts.units_by_script}}` | units by `script` | `COUNTS.md` |
 | `{{counts.units_by_classification}}` | units by `classification` | `COUNTS.md` |
-| `{{counts.units_by_label_coverage}}` | units carrying `reading`, `unicode`, a 字母 from the character layer and `variants` | `COUNTS.md` |
+| `{{counts.units_by_label_coverage}}` | units carrying `unicode`, a 字母 from the character layer and `variants` | `COUNTS.md` |
 | `{{counts.units_by_rights}}` | units by image licence and by text licence | `COUNTS.md` |
 | `{{counts.documents_by_metadata}}` | documents by production type, genre and dating coverage | `COUNTS.md` |
 | `{{counts.crops}}` | materialised crops by bucket | `COUNTS.md` |

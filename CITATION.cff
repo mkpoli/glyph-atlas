@@ -16,7 +16,7 @@ abstract: >-
   Chinese characters and the scripts written with them in China, Korea, Japan and Vietnam. The first
   sources are Japanese. One record is one
   graphic occurrence, in most cases one written character on a page image: its rectangle, the
-  transcriber's string, a diplomatic reading, the Unicode code points including hentaigana, the 字母
+  transcriber's string, the Unicode code points including hentaigana, the 字母
   of kana forms, a variant key for kanji, and the document's production type, genre, register and
   date. Records come from open transcriptions aligned to open page images and from existing
   character-level datasets, with the licence of every image and text recorded per record. The
