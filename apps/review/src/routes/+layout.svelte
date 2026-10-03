@@ -114,6 +114,7 @@
     · {t('footer.images')}
     · {around('footer.code', 'license')[0]}<a href="https://github.com/mkpoli/glyph-atlas/blob/main/LICENSE" rel="noopener" target="_blank">MIT</a>{around('footer.code', 'license')[1]}
     · <a href="https://github.com/mkpoli/glyph-atlas" rel="noopener" target="_blank">GitHub ↗</a>
+    · <a href={localize('/privacy')}>{t('footer.privacy')}</a>
     · <ChatLinks /></p>
 </footer>
 {#if shown}{#if shown.origin === 'corpus'}<CorpusDialog id={shown.id} {preview} {changed} {close} {saved} {previous} {next} {position} {initial} />{:else}<CharacterDialog id={shown.id} {preview} {changed} {close} onVerdict={inspector.onVerdict} {saved} {previous} {next} {position} {initial} />{/if}{/if}
