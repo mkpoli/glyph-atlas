@@ -37,10 +37,14 @@
   const offerable = $derived(Boolean(info?.model && info?.runtime && info?.ready))
   const usable = $derived(Boolean(kept && info?.ready && !outdated))
 
+  // Counts removals, so a refresh that read the cache before one never brings the removed model back.
+  let removals = 0
   async function refresh() {
+    const at = removals
     infoFailed = false
     try { info = await offered() } catch { infoFailed = true }
-    kept = await installed().catch(() => null)
+    const found = await installed().catch(() => null)
+    if (at === removals) kept = found
     persisted = (await storage()).persisted
   }
 
@@ -57,10 +61,11 @@
   }
 
   async function removeModel() {
-    // A search still running would otherwise show its answer after the model is gone.
-    querying?.abort(); runs++; running = false
+    // A search still running would otherwise show its answer after the model is gone, and the panel
+    // stops offering a search at once, before the files are deleted.
+    querying?.abort(); runs++; removals++; running = false
+    kept = null; result = null; preview = null; searchedBox = null; runError = ''
     await remove()
-    kept = null; result = null
   }
 
   // -- the image -------------------------------------------------------------------------------------
@@ -99,9 +104,12 @@
 
   // A paste into a text field is the field's: only one onto the page itself opens an image here. The
   // search box hands its own pasted image over through `given`.
-  const typing = target => target instanceof Element && Boolean(target.closest('input, textarea, [contenteditable]:not([contenteditable="false"])'))
+  // The event's own target, inside a shadow root too; an input that takes no text is no text field.
+  const TEXT_INPUTS = new Set(['', 'text', 'search', 'url', 'tel', 'email', 'password', 'number'])
+  const typing = target => target instanceof HTMLTextAreaElement || (target instanceof HTMLElement && target.isContentEditable)
+    || (target instanceof HTMLInputElement && TEXT_INPUTS.has(target.type))
   function pasted(event) {
-    if (typing(event.target)) return
+    if (typing(event.composedPath?.()[0] ?? event.target)) return
     const found = [...(event.clipboardData?.items ?? [])].find(item => item.kind === 'file' && item.type.startsWith('image/'))
     if (!found || !usable) return
     event.preventDefault()

@@ -125,7 +125,11 @@ export async function remove() {
 let loaded = null
 
 /** Free the running session, whose weights are as large as the model. */
+// Counts releases: a load that was under way when its model was released or replaced drops its session.
+let generation = 0
+
 async function release() {
+  generation++
   const session = loaded?.session
   loaded = null
   await session?.release?.().catch(() => {})
@@ -140,6 +144,7 @@ async function cached(path) {
 /** The installed model, ready to run: WebGPU where the browser offers it, else WebAssembly on one thread. */
 export async function load(record) {
   if (loaded?.version === record.version) return loaded
+  const started = generation
   const [modelPath, classesPath, runtimePath] = record.paths
   const [ort, model, classes, wasm] = await Promise.all([
     import('onnxruntime-web/webgpu'),
@@ -160,6 +165,10 @@ export async function load(record) {
     } catch { session = null }
   }
   session ??= await ort.InferenceSession.create(model, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' })
+  if (started !== generation) {
+    await session.release?.().catch(() => {})
+    throw new DOMException('The model was removed while it loaded.', 'AbortError')
+  }
   loaded = { version: record.version, encoder: record.encoder, session, classes, backend, ort,
     size: record.preprocessing?.size ?? 128, mean: record.preprocessing?.mean ?? 0.449, std: record.preprocessing?.std ?? 0.226 }
   return loaded
