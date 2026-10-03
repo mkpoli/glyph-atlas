@@ -191,6 +191,28 @@ otherwise, and calls `onnxruntime.preload_dlls()` before a CUDA session, which t
 because cuDNN comes from the `nvidia-cudnn-cu13` package — the same arrangement as `Detector` in
 `src/glyph_atlas/detect.py`.
 
+## Browser model
+
+The image search on the site runs the classifier in the reader's browser. `browser_model.py`
+exports the checkpoint with `export_onnx.py --half`: weights and arithmetic in float16, the input and
+the outputs `logits`, `probs` and `features` in float32. It writes the export, a `classes.json` that
+names the characters each output stands for (every member of a family CODH trained as one class)
+and a `model.json` manifest under `work/browser-model/<version>/`. The manifest's `encoder` is the
+SHA-256 of the checkpoint, the same digest a similar-crop index built with it records, so a reader's
+vectors are searched only against an index of the same model.
+
+Measured against the float32 PyTorch model on 300 `val` crops (2026-10-03): largest probability
+difference 0.0020, the same top-1 answer on every crop, smallest feature cosine 0.999999. The file
+is 62,895,385 bytes. onnxruntime-web 1.30's WASM backend, one thread, runs one crop in 147 ms on
+the workstation's CPU (74 ms for the float32 export); WebGPU runs float16 natively.
+
+```sh
+uv run python models/classifier/browser_model.py --parity 300
+scripts/publish_browser_model.sh work/browser-model/<version>   # uploads to R2, then names it current
+```
+
+A reader downloads a version only when they choose to, and is offered a newer one as an update.
+
 ## Tests
 
 `tests/test_classify.py` needs no trained checkpoint, no GPU and no network: it builds a tiny ONNX

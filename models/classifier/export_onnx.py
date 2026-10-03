@@ -7,6 +7,10 @@ them; `probs` (batch, classes), the same logits divided by the temperature the c
 and passed through a softmax; and `features` (batch, width), the model's penultimate
 representation. `glyph_atlas.classify.Classifier` reads the file and takes the size from its input.
 
+`--half` writes the weights and the arithmetic in float16, at half the size, for a reader that
+downloads the model, such as the browser's image search (`browser_model.py`). Its input and its three
+outputs stay float32, and the temperature and the softmax are applied in float32.
+
 The temperature is baked in, so the served probabilities are the calibrated ones and the class list
 beside the export is the only other file a caller needs.
 
@@ -24,6 +28,7 @@ what a smoke run before training has.
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 from pathlib import Path
 from typing import Any
@@ -40,21 +45,27 @@ OUTPUT_NAMES = ("logits", "probs", "features")
 #: The largest difference between the two sets of probabilities a passing export may show.
 TOLERANCE = 1e-4
 
+#: The same for a float16 export, compared with the float32 PyTorch model: a probability of a crop
+#: moves by up to a few thousandths when every weight and activation is rounded to 11 bits.
+HALF_TOLERANCE = 1e-2
+
 
 class Wrapper(torch.nn.Module):
     """The model as a function of one tensor, with the temperature applied before the softmax."""
 
-    def __init__(self, model: Any, temperature: float) -> None:
+    def __init__(self, model: Any, temperature: float, *, half: bool = False) -> None:
         super().__init__()
-        self.model = model
+        # A copy, so the float32 model stays the reference the parity check compares against.
+        self.model = copy.deepcopy(model).half() if half else model
+        self.half = half
         self.register_buffer("temperature", torch.tensor(float(temperature), dtype=torch.float32))
 
     def forward(self, pixel_values: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        pooled = self.model.forward_features(pixel_values)
-        logits = self.model.forward_head(pooled)
+        pooled = self.model.forward_features(pixel_values.half() if self.half else pixel_values)
+        logits = self.model.forward_head(pooled).float()
         # The penultimate representation keeps the shape information class logits discard; the
         # visual families embed crops with it.
-        features = self.model.forward_head(pooled, pre_logits=True)
+        features = self.model.forward_head(pooled, pre_logits=True).float()
         return logits, torch.softmax(logits / self.temperature, dim=-1), features
 
 
@@ -76,10 +87,11 @@ def build(checkpoint: Path | None, device: torch.device, config_path: Path) -> t
     return model.to(device), classes, temperature, config
 
 
-def export(model: Any, path: Path, temperature: float, size: int, opset: int, dynamo: bool) -> dict:
+def export(model: Any, path: Path, temperature: float, size: int, opset: int, dynamo: bool, *,
+           half: bool = False) -> dict:
     """Write the ONNX file and report how it was written."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    wrapper = Wrapper(model, temperature).eval()
+    wrapper = Wrapper(model, temperature, half=half).eval()
     device = next(model.parameters()).device
     argument = torch.zeros(1, 3, size, size, dtype=torch.float32, device=device)
     torch.onnx.export(
@@ -103,6 +115,7 @@ def export(model: Any, path: Path, temperature: float, size: int, opset: int, dy
         "temperature": temperature,
         "bytes": path.stat().st_size,
         "outputs": list(OUTPUT_NAMES),
+        "precision": "float16" if half else "float32",
     }
 
 
@@ -132,12 +145,13 @@ def parity(
     device: torch.device,
     precision: str,
     temperature: float,
+    tolerance: float = TOLERANCE,
 ) -> dict:
     """Compare the PyTorch probabilities against the exported file on `count` val crops.
 
     The comparison is between the probabilities rather than between the logits: the softmax is what
-    a caller reads, so the export passes when the two agree to `TOLERANCE` on every crop and the
-    top-1 answer is the same one.
+    a caller reads, so the export passes when the two agree to `tolerance` on every crop. The
+    features are compared by cosine, which is what a nearest-neighbour search reads.
     """
     import onnxruntime as ort
 
@@ -164,35 +178,33 @@ def parity(
     pixels = [batch for batch, _ in loader]
     with torch.no_grad():
         wrapper = Wrapper(model, temperature).eval()
-        reference = np.concatenate(
-            [
-                torch.softmax(
-                    model(batch.to(device)) / wrapper.temperature, dim=-1
-                ).float().cpu().numpy()
-                for batch in pixels
-            ],
-            axis=0,
-        ).astype(np.float64)
+        outputs = [wrapper(batch.to(device)) for batch in pixels]
+        reference = np.concatenate([probs.cpu().numpy() for _, probs, _ in outputs], axis=0).astype(np.float64)
+        reference_features = np.concatenate([features.cpu().numpy() for _, _, features in outputs], axis=0)
 
     options = ort.SessionOptions()
     options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
     session = ort.InferenceSession(str(path), sess_options=options, providers=["CPUExecutionProvider"])
     # The export fixes the batch at 1, as a crop is always one crop, so the sample goes through one
     # at a time; the graph would take a dynamic batch, but nothing serves one.
-    exported = np.concatenate(
-        [
-            np.asarray(session.run(["probs"], {"pixel_values": frame[None]})[0], dtype=np.float64)
-            for frame in np.concatenate([batch.numpy() for batch in pixels], axis=0)
-        ],
-        axis=0,
-    )
+    runs = [session.run(["probs", "features"], {"pixel_values": frame[None]})
+            for frame in np.concatenate([batch.numpy() for batch in pixels], axis=0)]
+    exported = np.concatenate([np.asarray(probs, dtype=np.float64) for probs, _ in runs], axis=0)
+    features = np.concatenate([np.asarray(f, dtype=np.float64) for _, f in runs], axis=0)
     difference = np.abs(exported - reference)
+
+    def unit(values):
+        values = np.asarray(values, dtype=np.float64)
+        return values / np.linalg.norm(values, axis=1, keepdims=True)
+
+    cosine = np.sum(unit(features) * unit(reference_features), axis=1)
     return {
         "crops": len(sample),
         "max_probability_difference": float(difference.max()),
         "mean_probability_difference": float(difference.mean()),
         "top1_agreement": float(np.mean(exported.argmax(axis=-1) == reference.argmax(axis=-1))),
-        "passed": bool(difference.max() <= TOLERANCE),
+        "min_feature_cosine": float(cosine.min()),
+        "passed": bool(difference.max() <= tolerance),
     }
 
 
@@ -208,6 +220,7 @@ def main() -> None:
     parser.add_argument("--precision", choices=["bf16", "fp16", "fp32"], default="fp32")
     parser.add_argument("--device", default=None)
     parser.add_argument("--dynamo", action="store_true", help="use the dynamo exporter")
+    parser.add_argument("--half", action="store_true", help="float16 weights and arithmetic")
     args = parser.parse_args()
 
     config = train.load_config(args.config)
@@ -229,6 +242,7 @@ def main() -> None:
         size,
         int(config["artifacts"]["opset"]),
         bool(args.dynamo) if args.dynamo else str(config["artifacts"]["exporter"]) == "dynamo",
+        half=args.half,
     )
     print(json.dumps(report, indent=2), flush=True)
 
@@ -255,6 +269,7 @@ def main() -> None:
             device=device,
             precision=args.precision,
             temperature=temperature,
+            tolerance=HALF_TOLERANCE if args.half else TOLERANCE,
         )
         print(json.dumps(compared, indent=2), flush=True)
         if compared.get("passed") is False:
