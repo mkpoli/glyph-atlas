@@ -341,3 +341,9 @@ def test_a_copy_dated_only_by_a_named_period_shows_it_without_years():
     found = dates.resolve([period], "unknown")["witness"]
     assert (found.start, found.end, found.text, dates.label(found)) == (None, None, "[江戸後期]", "[江戸後期]")
     assert dates.resolve([period, make("produced", 1820, source="iiif-manifests")], "unknown")["witness"].start == 1820
+
+
+def test_an_era_date_not_converted_keeps_its_words_and_no_years(tmp_path):
+    offline = dates.HuTime(tmp_path / "empty", offline=True)
+    found = dates.claim("d", "寛政三年", kind="printed", scope="witness", tier="attested", source="s", locator="l", calendar=offline)
+    assert (found.start, found.end, found.precision, found.note) == (None, None, "period", "not converted")

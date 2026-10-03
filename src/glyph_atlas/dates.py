@@ -186,6 +186,8 @@ class Interval:
     note: str | None = None
 
 
+#: An era date as written, for keeping one HuTime has not converted: two CJK characters, a year, 年.
+_UNREAD_ERA = re.compile(r"[\u3400-\u9fff]{2}(?:元|\d+|[〇一二三四五六七八九十]+)年")
 #: Characters no Japanese era name holds: the numerals of a year, and the words dates are written with.
 _NOT_IN_ERA = frozenset("〇零一二三四五六七八九十年月日同写寫刊序跋版板本巻冊之第丁頁号部間中頃以後前")
 
@@ -541,6 +543,9 @@ def claim(document: str, text: str, *, kind: str, scope: str, tier: str, source:
             or found.qualifier == "circa") else None
         found = Interval(years[0], years[1], given, qualifier, found.uncertain if found else False,
                          calendar=found.calendar if found else "unstated")
+    if found is None and _UNREAD_ERA.search(normalise(text)):
+        # An era date with no conversion (HuTime unasked or without it) keeps its words and no years.
+        found = Interval(None, None, "period", note="not converted")
     if found is None:
         return None
     value = {"scope": scope, "text": text, "start": found.start, "end": found.end, "precision": found.precision,

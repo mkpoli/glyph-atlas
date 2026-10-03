@@ -238,7 +238,7 @@ document shows is `document_dating` (migration 0051).
 | `scope` | `witness` for this copy, `work` for the work it carries: 国書's work dates and every `composed` |
 | `text` | the date as the source writes it, verbatim |
 | `start`, `end` | first and last year in the Western calendar (Julian before 1582-10-15, Gregorian after, as HuTime's 101.1); one is null for `before` or `after` |
-| `precision` | `day`, `month`, `year`, `years` (a range or an era span), `decade`, `century`, or `period` (a named period with no years, such as 江戸後期) |
+| `precision` | `day`, `month`, `year`, `years` (a range or an era span), `decade`, `century`, or `period`: words that name a time with no years read from them, a named period such as 江戸後期 or an era date HuTime could not convert, kept as written |
 | `qualifier`, `uncertain` | `circa`, `before` or `after`; a question mark or 推定 in the source |
 | `day`, `calendar`, `conversion` | the Western-calendar day of a dated day; whether the text is in the Japanese calendar; the HuTime request that converted it |
 | `tier` | `attested` (a catalogue field states it), `derived` (read from a free-text note), `editorial` (a curated record) |
@@ -250,7 +250,7 @@ A document with no claim that has years stays undated.
 
 What a document shows (`dates.resolve`): on the witness axis, the first kind with a dated claim about
 this copy, in the order copied, colophon, produced, annotated, printed, edition for handwriting and
-printed, edition, produced, colophon, copied, annotated for print; on the composed axis, its
+edition, printed, produced, colophon, copied, annotated for print (a later impression dates the copy in hand more closely than the first printing); on the composed axis, its
 composition. Within a kind, attested wins over editorial and derived, a holder's manifest over 国書 and
 the aggregators, then the more precise claim. A claim that does not overlap the chosen one makes the
 date `disputed`, and every claim stays listed.
