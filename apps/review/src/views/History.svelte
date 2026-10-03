@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte'
+  import { tileDate } from '../lib/dating.js'
   import { goto } from '$app/navigation'
   import { page } from '$app/state'
   import { history as fetchHistory, request, stored, remember } from '../lib/client.js'
@@ -137,6 +138,7 @@
                   {@render reviewer(item)}
                   <span class="history-label">{@render label(item.label)}</span>
                   <span class="history-decision"><ScriptLine line={decisionText(item)} /></span>
+                  {#if tileDate(item)}<span class="history-year">{tileDate(item)}</span>{/if}
                 </button>
               {/if}
             </li>
@@ -206,6 +208,7 @@
   .history-row:hover { background: var(--surface-tile); }
   .history-row.undo .history-decision { color: var(--wrong); }
   .history-row.passed .history-decision { color: var(--muted); }
+  .history-year { margin-left: auto; flex: 0 0 auto; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
   .history-batch-labels { margin-left: 10px; color: var(--muted); }
   .history-batch .quiet-link { flex: 0 0 auto; }
   .history-time { flex: 0 0 150px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }

@@ -150,6 +150,16 @@ function doubleHour(at) {
     + (quarter ? `${hanziNumber(quarter)}刻` : '') + (rest ? `${hanziNumber(rest)}分` : '')
 }
 
+/**
+ * A year as the language writes one: 1791 in digits, with no grouping; 一七九一 digit by digit in Chinese
+ * numerals; 一千七百九十一 in the classical way. A count (a century, 18) is `formatNumber`'s.
+ */
+export function formatYear(value) {
+  const n = Number(value)
+  if (!hanzi() || !Number.isInteger(n) || n < 0) return String(value)
+  return numerals() === 'classical' ? hanziNumber(n) : [...String(n)].map(digit => DIGITS[digit]).join('')
+}
+
 const dateFormats = {}
 
 /** A moment in the current language: date and time, or with `{ date: false }` the time alone. Throws on an invalid date. */
@@ -159,7 +169,7 @@ export function formatDateTime(value, { date = true } = {}) {
   if (hanzi()) {
     const time = numerals() === 'classical' ? doubleHour(at) : `${hanziNumber(at.getHours())}時${at.getMinutes() ? `${hanziNumber(at.getMinutes())}分` : ''}`
     if (!date) return time
-    const year = numerals() === 'classical' ? hanziNumber(at.getFullYear()) : [...String(at.getFullYear())].map(digit => DIGITS[digit]).join('')
+    const year = formatYear(at.getFullYear())
     return `${year}年${hanziNumber(at.getMonth() + 1)}月${hanziNumber(at.getDate())}日 ${time}`
   }
   const key = `${base()} ${date}`
