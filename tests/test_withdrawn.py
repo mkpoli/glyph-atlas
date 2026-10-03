@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import sqlite3
 from pathlib import Path
 
@@ -35,15 +36,15 @@ def site():
         db.execute("INSERT INTO units(id,origin,character,production,category,state,revision,quiz,priority,shuffle,"
                    "data,snapshot,context,visual,document) VALUES(?,'local','字','unknown','kanji','pending',0,1,0,0,?,"
                    "'{}','{}','{}',?)",
-                   (unit, f'{{"image":"/atlas/media/{unit[3]}a.webp","context_image":"/atlas/media/{unit[3]}b.webp"}}',
-                    document))
+                   (unit, json.dumps({"image": f"/atlas/media/{unit[3]}a.webp", "context_image": f"/atlas/media/{unit[3]}b.webp",
+                                      "image_sha256": "page", "box": {"x": 1, "y": 2, "w": 3, "h": 4}}), document))
         for key in ("a", "b"):
             db.execute("INSERT INTO media VALUES(?,'pack',0,1,'image/webp')", (unit[3] + key,))
     # A trigram of the kept book whose last crop is a withdrawn one, and a pair wholly in the kept book.
     db.executemany("INSERT INTO unit_ngrams(first,size,second,third,text,document) VALUES(?,?,?,?,?,?)",
                    [("ex:3", 3, "ex:3", "ex:1", "字字字", "hl:kept"), ("ex:3", 2, "ex:3", None, "字字", "hl:kept")])
     db.execute("INSERT INTO submissions(id,actor,request,response,at) VALUES('s','a','{}','{}','t')")
-    db.execute("INSERT INTO seen VALUES('ex:1','s',NULL,'h','t')")
+    db.execute("INSERT INTO seen VALUES('ex:1','s','{\"x\":1,\"y\":2,\"w\":3,\"h\":4}','h','t')")
     assert db.execute("SELECT count(*) FROM unit_marks").fetchone()[0] == 1
     for glyph in ("hl:gone_0_000:x:1", "hl:gone_1_002:x:4", "hl:gonearound_0_000:x:1", "hl:kept_0_000:x:1"):
         db.execute("INSERT INTO corpus_units(id,character,shuffle,object,offset,size) VALUES(?,'字',0,'o',0,1)", (glyph,))
@@ -51,7 +52,7 @@ def site():
     # A round wrote this glyph's `units` row, which names no document, and a reviewer has seen it.
     db.execute("INSERT INTO units(id,origin,character,production,category,state,revision,quiz,priority,shuffle,"
                "data,snapshot,context,visual) VALUES('hl:gone_0_000:x:1','corpus','字','unknown','kanji','pending',"
-               "0,1,0,0,'{}','{}','{}','{}')")
+               "0,1,0,0,'{\"source_revision\":\"glyph\"}','{}','{}','{}')")
     db.execute("INSERT INTO seen VALUES('hl:gone_0_000:x:1','s',NULL,'h','t')")
     return db
 
@@ -72,6 +73,7 @@ def test_the_statements_take_a_withdrawn_document_off_the_site_and_nothing_else(
         assert sorted(r for r, in db.execute("SELECT id FROM corpus_units")) == kept
         assert sorted(r for r, in db.execute("SELECT id FROM corpus_gallery")) == kept
         assert db.execute("SELECT count(*) FROM metadata WHERE key='units_refreshed_at'").fetchone()[0] == 1
+        assert [r for r, in db.execute("SELECT unit FROM crop_versions")] == ["ex:3"], "the versions go with their crops"
 
 
 def test_a_release_cuts_no_crop_of_a_withdrawn_document(monkeypatch):

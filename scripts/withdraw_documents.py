@@ -6,7 +6,8 @@
 For each document, its crops are the `units` rows naming it and the ids in `withdrawn.corpus_range`,
 which holds its corpus glyphs and the `units` rows a round or review wrote for them (with no
 document). They go with everything that names them: review rows, marks, shapes, suspects, redirects,
-pairs, form placements, written forms, gallery and follow rows, and the image rows of its own crops.
+pairs, form placements, written forms, gallery and follow rows, the crops' evidence versions, and the
+image rows of its own crops.
 The corpus counts are then recounted, and the stamp the Worker keys its cached listings on is
 written last. Pack bytes stay in R2. The image rows of corpus display crops and form tiles are not
 derivable here and stay, keyed by content hash and named by no row. Nothing is sent to D1 here, and a
@@ -56,6 +57,9 @@ def statements(documents) -> list[str]:
             f"DELETE FROM document_characters WHERE document={quote(document)};",
             f"DELETE FROM media WHERE key IN ({keys});",
             f"DELETE FROM units WHERE {mine} OR {corpus};",
+            # A crop's evidence versions may go once the crop has left the site, so they follow it.
+            f"DELETE FROM crop_versions WHERE document={quote(document)};",
+            f"DELETE FROM crop_versions WHERE unit>={low} AND unit<{high};",
             *(f"DELETE FROM {table} WHERE {corpus};" for table in ("corpus_follow", "corpus_gallery", "corpus_units")),
         ]
     return sql + [CORPUS_REFRESH.strip(), refresh.VERSION_BUMP.strip()]

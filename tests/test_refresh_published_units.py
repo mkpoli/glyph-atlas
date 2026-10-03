@@ -51,6 +51,12 @@ def test_a_reviewed_unit_whose_crop_changed_is_held_back():
                         live(reviewed=True)) == ("hold", None)
 
 
+def test_a_page_scanned_anew_is_a_new_crop_even_in_the_same_box():
+    rescanned = {**unit(), "data": json.dumps({**json.loads(unit()["data"]), "image_sha256": "rescan"})}
+    assert refresh.plan(rescanned, live(reviewed=True)) == ("hold", None), "its evidence version changed"
+    assert refresh.plan({**rescanned, "revision": 2}, live())[0] == "replace"
+
+
 def test_an_unreviewed_unit_whose_only_change_is_the_revision_is_replaced():
     action, sql = refresh.plan(unit(revision=2), live(revision=1000001))
     assert action == "replace" and "revision=2 WHERE" in sql
