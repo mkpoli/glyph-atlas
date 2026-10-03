@@ -771,7 +771,7 @@
   "privacy.saving.title": "儲存審閱",
   "privacy.saving.body": "首次儲存審閱時，網站會為你的瀏覽器建立一個名稱類似anon-1a2b3c的匿名帳號，並透過Cookie維持登入狀態。你儲存的每項判斷都會連同該帳號、相關裁切和儲存時間一併記錄。",
   "privacy.account.title": "登入",
-  "privacy.account.body": "帳號會儲存你的電子郵件地址、顯示名稱，以及你自行選擇的大頭貼。透過GitHub、Google、Discord、LINE或Kakao登入時，網站會取得你在該服務中的姓名、電子郵件地址、大頭貼和帳號編號，不會索取其他資料。",
+  "privacy.account.body": "帳號會儲存你的電子郵件地址、顯示名稱，以及你自行選擇的大頭貼。透過GitHub、Google、Discord、LINE或Kakao登入時，網站會取得你在該服務中的姓名、使用者名稱、電子郵件地址、大頭貼和帳號編號。這些資料隨該連結儲存，只在你自己的帳號頁面上顯示，方便你確認連結的是哪個帳號；不會索取其他資料。",
   "privacy.account.methods": "登入驗證碼透過Cloudflare Email Service傳送，經雜湊處理後保留10分鐘。通行密鑰僅在本站留下公開金鑰。每台已登入的裝置都有一個工作階段，其中記錄IP位址和瀏覽器名稱，你可以在帳號頁面查看。工作階段會在登出或90天後結束。",
   "privacy.public.title": "公開的資訊",
   "privacy.public.body": "你儲存的判斷及其時間會與你的顯示名稱和大頭貼一起出現在編輯歷史和排名中，並隨館藏以CC BY-SA 4.0發布，以該顯示名稱署名。你的電子郵件地址不會公開。",
