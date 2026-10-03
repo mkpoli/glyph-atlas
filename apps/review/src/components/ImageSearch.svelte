@@ -11,6 +11,7 @@
   import ScriptLine from './ScriptLine.svelte'
   import ScriptLegend from './ScriptLegend.svelte'
   import { cropDetails } from '../lib/cropDetails.js'
+  import { datingLine, tileDate } from '../lib/dating.js'
   import { isUnassigned } from '../lib/identity.js'
   import { t, formatNumber } from '../lib/i18n.svelte.js'
   import { offered, installed, download, remove, storage, load, embed, candidatesOf, search, downloadSize, supported, RUNTIME_VERSION } from '../lib/imageSearch.js'
@@ -178,6 +179,8 @@
   const shown = $derived(!result ? [] : tab === 'similar' ? result.similar : result.candidates[chosen]?.crops ?? [])
   const percent = value => `${formatNumber(Math.round(value * 100))}%`
   const label = item => isUnassigned(item) ? t('corpus.unassigned') : item.label ?? ''
+  // The work and its holder, as a tile names them; the date is the year beside the score, as on Explore's tiles.
+  const sourceLines = item => { const dating = datingLine(item); return cropDetails(item).filter(line => line !== dating).slice(-2) }
   function openCrop(item) {
     const origin = entry => entry.origin === 'corpus' ? 'corpus' : 'collection'
     inspect(item.id, null, shown.map(entry => ({ ...entry, origin: origin(entry) })), null, origin(item))
@@ -290,8 +293,8 @@
             <li><button type="button" class="result-tile" onclick={() => openCrop(item)} aria-label={t('similar.open', { label: label(item) })}>
               <span class="result-label">{#if isUnassigned(item)}{label(item)}{:else}<ScriptText text={item.label} />{/if}</span>
               {#if item.image && (item.origin !== 'corpus' || item.proxyable)}<img src={item.image} alt="" loading={i < 12 ? 'eager' : 'lazy'} decoding="async" />{:else}<span class="result-missing">{label(item)}</span>{/if}
-              <span class="result-details">{#each cropDetails(item).slice(-2) as line}<span><ScriptLine {line} /></span>{/each}</span>
-              <small class="result-score">{item.score.toFixed(2)}</small>
+              <span class="result-details">{#each sourceLines(item) as line}<span><ScriptLine {line} /></span>{/each}</span>
+              <small class="result-score">{#if tileDate(item)}<span class="result-year">{tileDate(item)}</span>{/if}{item.score.toFixed(2)}</small>
             </button></li>
           {/each}
         </ul>
@@ -346,7 +349,8 @@
   .result-missing{font-size:34px;color:var(--muted)}
   .result-details{position:absolute;left:10px;right:44px;bottom:7px;display:flex;flex-direction:column;font-size:9px;line-height:1.3;color:var(--muted);text-align:left}
   .result-details span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .result-score{position:absolute;right:9px;bottom:8px;font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .result-score{position:absolute;right:9px;bottom:8px;display:flex;flex-direction:column;align-items:end;font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .result-year{color:var(--ink)}
   .result-legend{margin-top:10px}
   @media(max-width:760px){
     .image-search{padding:14px 14px 18px}
