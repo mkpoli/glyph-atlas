@@ -56,12 +56,13 @@ const reread = async crop => {
 }
 
 // One submission id per crop, revision or version, and value, so a retry after a lost answer is the
-// same write.
+// same write. A form claim's id is dropped once the site has answered, since the version stays the
+// same across renames and reviews and the same value chosen again later is a new claim.
 const submissions = new Map()
 const submission = (...parts) => {
   const key = parts.join('\u0000')
   if (!submissions.has(key)) submissions.set(key, crypto.randomUUID())
-  return submissions.get(key)
+  return { id: submissions.get(key), answered: () => submissions.delete(key) }
 }
 
 /** Claim `form` as the crop's, on the version the reader has; with `form` null take back the reader's
@@ -69,14 +70,18 @@ const submission = (...parts) => {
 async function claimForm(crop, form) {
   // A record read from a listing may not name its version; the crop as it stands does.
   const seen = crop.crop_version ? crop : { ...crop, ...await reread(crop) }
-  const id = submission('form', crop.id, seen.crop_version, form ?? '')
-  const result = await request(`/atlas/characters/${encodeURIComponent(crop.id)}/form`, { id, crop_version: seen.crop_version, form })
+  const { id, answered } = submission('form', crop.id, seen.crop_version, form ?? '')
+  let result
+  try {
+    result = await request(`/atlas/characters/${encodeURIComponent(crop.id)}/form`, { id, crop_version: seen.crop_version, form })
+  } catch (error) { if (error.status) answered(); throw error }
+  answered()
   return { ...seen, form: result.form }
 }
 
 /** Name the crop's character, as a review of that crop: a checked crop can be named again. */
 async function writeCharacter(crop, character) {
-  const id = submission('character', crop.id, crop.revision, character)
+  const { id } = submission('character', crop.id, crop.revision, character)
   if (corpusOf(crop)) await request('/atlas/corpus/reviews', { id, identity: crop.id, revision: crop.revision,
     source_revision: crop.source_revision, verdict: 'wrong', issue: 'character', character })
   else await request('/layers/units/' + encodeURIComponent(crop.id), { id, revision: crop.revision,
