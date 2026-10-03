@@ -10,10 +10,10 @@ import { ranking } from './ranking';
 import { reviewers, submissions } from './admin';
 import { READ_BUDGET, RETRY_AFTER, described, retried, transient } from './busy';
 import { actOnClaim, claimsOf, ledgerPage, writeClaim, type LedgerTools } from './ledger';
-import { YEAR_KEY, datingJoin, datingOf, decadeColumn, documentDates, documentOf, withDating, yearCondition, yearOptions, yearOrder, type YearOptions } from './dating';
+import { YEAR_KEY, dateStats, datingJoin, datingOf, decadeColumn, documentDates, documentOf, withDating, yearCondition, yearOptions, yearOrder, type YearOptions } from './dating';
 export { leastTypicalQuery } from './forms';
 export { componentMatchQuery } from './components';
-export { dateClaimsQuery, datingQuery } from './dating';
+export { dateClaimsQuery, dateStatsQuery, datingQuery, tallyDates } from './dating';
 export { claimHistoryQuery, currentClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery, resolveWriteQuery } from './ledger';
 export { cropFormsQuery, formNamesQuery } from './cropForms';
 type Json = Record<string, any>;
@@ -1728,6 +1728,7 @@ const routes = {
       if(path==='/atlas/corpus/characters')return json(await corpusCharacters(env,ctx,url),200,{'cache-control':'private, max-age=300'});
       if(path==='/atlas/corpus/character')return json(await inspected(env,await unit(env,q.get('id')||'')));
       if(path==='/atlas/collection/status')return json(await meta(env,'collection'));
+      if(path==='/atlas/dates/stats')return json(await dateStats(env,ctx,url));
       const document=path.match(/^\/atlas\/documents\/([^/]+)\/characters$/);
       if(document){let id:string;try{id=decodeURIComponent(document[1])}catch{throw new Problem(404,'No characters are published for this document.')}
         return await documentCharacters(env,url,id,ctx)}

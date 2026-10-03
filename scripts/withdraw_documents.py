@@ -70,6 +70,7 @@ def statements(documents) -> list[str]:
             f"DELETE FROM crop_versions WHERE document={quote(document)};",
             f"DELETE FROM crop_versions WHERE unit>={low} AND unit<{high};",
             *(f"DELETE FROM {table} WHERE {corpus};" for table in ("corpus_follow", "corpus_gallery", "corpus_units")),
+            f"DELETE FROM corpus_document_counts WHERE document={quote(document)};",
         ]
     return sql + [CORPUS_REFRESH.strip(), refresh.VERSION_BUMP.strip()]
 

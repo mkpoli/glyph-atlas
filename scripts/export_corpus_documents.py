@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections import Counter
 from pathlib import Path
 
 import pyarrow.dataset as ds
@@ -56,14 +57,22 @@ def statements(runs: list[tuple[str, str, str]]) -> list[str]:
             f"AND document IS NOT {q(document)};\n" for first, last, document in runs]
 
 
+def counts(found: list[tuple[str, str]]) -> list[str]:
+    """The statements that write each document's glyph count, replacing the earlier ones."""
+    per = Counter(document for _, document in found)
+    rows = [f"({q(document)},{n})" for document, n in sorted(per.items())]
+    return ["DELETE FROM corpus_document_counts;\n"] + [
+        f"INSERT OR REPLACE INTO corpus_document_counts(document,n) VALUES{','.join(rows[i:i + 200])};\n" for i in range(0, len(rows), 200)]
+
+
 APPLY = """#!/usr/bin/env bash
 # Fill corpus_units.document for {glyphs} glyphs of {documents} documents ({runs} ranges). Each part repeats safely.
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 cd "$(git -C "$here" rev-parse --show-toplevel)/apps/cloudflare"
 q() {{ bunx wrangler d1 execute glyph-atlas --remote --json --command "$1" 2>/dev/null | jq -c '.[0].results[0]'; }}
-[ "$(q "SELECT count(*) AS n FROM pragma_table_info('corpus_units') WHERE name='document'")" = '{{"n":1}}' ] \\
-  || {{ echo "apply migration 0053 first" >&2; exit 1; }}
+[ "$(q "SELECT (SELECT count(*) FROM pragma_table_info('corpus_units') WHERE name='document')+(SELECT count(*) FROM sqlite_master WHERE name='corpus_document_counts') AS n")" = '{{"n":2}}' ] \\
+  || {{ echo "apply migrations 0053 and 0054 first" >&2; exit 1; }}
 for part in "$here"/sql/part-*.sql; do
   done=0
   for try in 1 2 3 4; do
@@ -86,8 +95,9 @@ def main() -> None:
     (args.output / "sql").mkdir(exist_ok=True)
     for old in (args.output / "sql").glob("*.sql"):
         old.unlink()
-    # The last part stamps `corpus_documents_at`, which the Worker keeps a gallery's decades by.
-    found_statements = statements(runs) + [
+    # The last part writes how many glyphs each document has (0054) and stamps `corpus_documents_at`,
+    # which the Worker keeps its date counts by.
+    found_statements = statements(runs) + counts(found) + [
         "INSERT OR REPLACE INTO metadata(key,value) VALUES('corpus_documents_at',json_quote(strftime('%Y-%m-%dT%H:%M:%fZ','now')));\n"]
     parts = []
     for i in range(0, len(found_statements), PER_PART):
