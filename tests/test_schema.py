@@ -1,5 +1,7 @@
+import pytest
+
 from glyph_atlas import refs
-from glyph_atlas.schema import Box, Character, Classification, Script, Unit, VariantRef
+from glyph_atlas.schema import Box, Character, Classification, Script, Unit
 
 
 def test_unit_keeps_hentaigana_and_the_modern_reading_apart():
@@ -30,7 +32,9 @@ def test_a_standalone_crop_needs_no_page():
     assert unit.page_id is None and unit.box is None
 
 
-def test_a_split_pair_keeps_a_local_shape_id_beside_the_code_point():
-    unit = Unit(id="u2", page_id="p1", box=Box(x=0, y=0, w=1, h=1), reading="か", unicode="U+1B019",
-                script=Script.HENTAIGANA, variants=[VariantRef(scheme="mj", id="MJ090024"), VariantRef(scheme="local", id="ka-ka-a")])
-    assert [v.scheme for v in unit.variants] == ["mj", "local"]
+def test_a_unit_written_with_the_fields_an_earlier_schema_had_reads_while_they_are_empty():
+    unit = Unit.model_validate({"id": "u2", "unicode": "U+1B019", "written_form": None, "variants": []})
+    assert "variants" not in unit.model_dump() and "written_form" not in unit.model_dump()
+    for retired in ({"variants": [{"scheme": "mj", "id": "MJ090024"}]}, {"written_form": "𮟃"}):
+        with pytest.raises(ValueError, match="migrate_written_forms"):
+            Unit.model_validate({"id": "u2", **retired})

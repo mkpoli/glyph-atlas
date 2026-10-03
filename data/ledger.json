@@ -24,13 +24,23 @@
   "has_form": {
    "label": "the form a crop's letterforms are written in",
    "subject": "crop",
-   "objects": [],
+   "objects": [
+    "form"
+   ],
    "values": [
     "unresolved",
     "unreadable"
    ],
    "cardinality": "one",
    "alternatives": true
+  },
+  "represented_by": {
+   "label": "a representation that names the form",
+   "subject": "form",
+   "objects": [
+    "representation"
+   ],
+   "cardinality": "many"
   }
  },
  "resolve": [

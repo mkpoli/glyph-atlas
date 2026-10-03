@@ -97,16 +97,6 @@ def payload(*records):
     return {"version": 1, "kind": "atlas-character-reviews", "publication": "fixture-publication", "reviews": list(records)}
 
 
-def forms_payload(store, *, form="⿺辶𦊷", pixels=None, origin="local", target="u", event_id=None, label="手"):
-    """The site's `/atlas/written-forms` export as one row against the fixture's crop."""
-    row = store.unit("u")
-    return {"version": 1, "kind": "atlas-written-forms", "publication": "fixture-publication",
-            "forms": [{"id": event_id or "cf:" + str(uuid4()), "target": target, "origin": origin,
-                       "actor": "reviewer-site", "revision": store.revision("u"),
-                       "pixels": pixels if pixels is not None else bridge._source_digest(store, row),
-                       "label": label, "form": form, "at": "2026-09-22T00:00:00.000Z", "current": True}]}
-
-
 def test_preview_import_refinement_and_original_receipts(store, tmp_path):
     record, _ = remote(baseline(store))
     source = payload(record)
@@ -451,78 +441,6 @@ def test_receipt_failure_rolls_back_both_identities_and_retry_recovers(store, tm
     assert result["cloudflare_import"]["counts"] == {"duplicate": 1}
     assert result["feedback"]["counts"] == {"already-processed": 1}
     assert receipts.processed() == {fingerprint(record), result["feedback"]["items"][0]["local_event_fingerprint"]}
-
-
-def test_written_forms_import_by_pixels_and_move_no_revision(store):
-    source = forms_payload(store)
-    frozen = deepcopy(source)
-    preview, report = bridge.ingest_written_forms(store, source)
-    assert report["counts"] == {"ready": 1} and preview["forms"] == []
-    assert not store.events() and store.unit("u").written_form is None
-    bound, report = bridge.ingest_written_forms(store, source, apply=True)
-    assert report["counts"] == {"imported": 1} and bound["forms"] == source["forms"]
-    assert source == frozen
-    event = store.events()[-1]
-    assert (event.id, event.field, event.new) == (source["forms"][0]["id"], "written_form", "⿺辶𦊷")
-    assert json.loads(event.evidence)["cloudflare_import"]["remote"]["label"] == "手"
-    # The form describes the crop and decides nothing: the journal grew, the revision did not.
-    assert (store.revision("u"), store.unit("u").written_form) == (0, "⿺辶𦊷")
-    _, report = bridge.ingest_written_forms(store, source, apply=True)
-    assert report["counts"] == {"duplicate": 1} and len(store.events()) == 1
-    reused = forms_payload(store, form="𮟃", event_id=source["forms"][0]["id"])
-    _, report = bridge.ingest_written_forms(store, reused, apply=True)
-    assert report["counts"] == {"rejected": 1} and "reused" in report["items"][0]["reason"]
-    assert store.unit("u").written_form == "⿺辶𦊷"
-
-
-def test_a_form_against_other_pixels_or_an_invalid_shape_is_refused_and_corpus_passes_through(store):
-    _, report = bridge.ingest_written_forms(store, forms_payload(store, pixels="0" * 64), apply=True)
-    assert report["counts"] == {"rejected": 1} and "pixels" in report["items"][0]["reason"]
-    _, report = bridge.ingest_written_forms(store, forms_payload(store, form="⿰木"), apply=True)
-    assert report["counts"] == {"rejected": 1}
-    through = forms_payload(store, form="⿱十乚", origin="corpus", target="na-5")
-    bound, report = bridge.ingest_written_forms(store, through, apply=True)
-    assert report["counts"] == {} and bound["forms"] == through["forms"]
-    assert not store.events() and store.unit("u").written_form is None
-
-
-def test_a_form_for_a_relabelled_crop_or_older_than_a_local_one_is_refused(store):
-    _, report = bridge.ingest_written_forms(store, forms_payload(store, label="毛"), apply=True)
-    assert report["counts"] == {"rejected": 1} and "character changed" in report["items"][0]["reason"]
-    store.record(ReviewRequest(target_type="unit", target_id="u", field="written_form", new="𮟃",
-                               client_id="reviewer-local", idempotency_key="local-form"))
-    _, report = bridge.ingest_written_forms(store, forms_payload(store), apply=True)
-    assert report["counts"] == {"rejected": 1} and "later local" in report["items"][0]["reason"]
-    assert store.unit("u").written_form == "𮟃"
-
-
-def test_a_form_for_a_crop_whose_image_is_absent_waits_for_a_checkout_that_has_it(store, monkeypatch):
-    monkeypatch.setattr(bridge, "_source_digest", lambda _store, _unit: None)
-    bound, report = bridge.ingest_written_forms(store, forms_payload(store, pixels="0" * 64), apply=True)
-    assert report["counts"] == {"unavailable": 1}
-    assert "cache" in report["items"][0]["reason"] and bound["forms"] == []
-    assert not store.events() and store.unit("u").written_form is None
-
-
-def test_command_imports_written_forms_with_the_reviews(store, tmp_path, monkeypatch):
-    import runpy
-    import sys
-    from pathlib import Path
-
-    record, _ = remote(baseline(store))
-    source = tmp_path / "reviews.json"
-    source.write_text(json.dumps(payload(record)))
-    forms = tmp_path / "forms.json"
-    # Saved on the site after the review there made the crop を.
-    forms.write_text(json.dumps(forms_payload(store, label="を")))
-    report = tmp_path / "result.json"
-    script = Path(__file__).resolve().parents[1] / "scripts/refine_feedback.py"
-    monkeypatch.setattr(sys, "argv", [str(script), str(store.directory), str(source), "--output", str(report),
-                                      "--forms", str(forms), "--apply"])
-    runpy.run_path(str(script), run_name="__main__")
-    result = json.loads(report.read_text())
-    assert result["written_forms"]["counts"] == {"imported": 1}
-    assert store.unit("u").written_form == "⿺辶𦊷"
 
 
 def redrawn(publication, box, *, before=None):

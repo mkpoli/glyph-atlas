@@ -27,13 +27,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from .. import evidence, images, recorded_terms, refs
 from .. import production as production_metadata
 from .. import style as style_module
-from .. import written_form as written_form_module
 from ..context import CONTEXT_REACH, reach
 from ..production import production_info
 from ..schema import Box, ReviewState, Script, Unit
 from . import ledger, quiz_shapes, quiz_suspects, status
 from .request_cache import file_stamp, memoize
-from .store import SEEN, WRITTEN_FORM, BadRequest, Conflict, ReviewRequest, Store
+from .store import SEEN, BadRequest, ReviewRequest, Store
 
 _IMAGE_SLOTS = threading.BoundedSemaphore(2)
 CONFIRMED = {ReviewState.REVIEWED, ReviewState.DOUBLE_REVIEWED, ReviewState.ADJUDICATED}
@@ -657,15 +656,14 @@ class ClaimAction(BaseModel):
     reason: str = Field(default="", max_length=500)
 
 
-class WrittenFormEdit(BaseModel):
-    """What a reviewer says one crop's letterforms are written as: a character or a description, or
-    `None` for the crop's own character. The revision and image are the ones the reviewer saw."""
+class FormEdit(BaseModel):
+    """A reviewer's form for one crop, picked or typed, on the evidence version they saw; `None` clears
+    their own."""
 
     model_config = ConfigDict(extra="forbid")
     id: UUID
     client_id: str = Field(min_length=1, max_length=128)
-    revision: int = Field(ge=0)
-    image_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    crop_version: str = Field(min_length=1, max_length=1024)
     form: str | None = Field(default=None, max_length=256)
 
 
@@ -826,8 +824,6 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 **production,
                 "script": unit.script, "jibo": refs.jibo_of_unit(unit.unicode), "revision": revision,
                 "state": state, "page_id": unit.page_id, "line_id": unit.line_id,
-                # The shape the letterforms take when a reviewer said it differs from the label.
-                "written_form": unit.written_form,
                 # A mended alignment is an uncertainty about the crop, so it travels with the item
                 # rather than staying in the table: `None` for a unit the pass never touched, so a
                 # view can tell "not repaired" from "repaired and fine".
@@ -1005,7 +1001,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                                 ("total", "pending", "seen", "checked", "flagged", "hard", "skipped")}}
                               for key, c in sorted(shelves.items(), key=lambda x: (-x[1]["total"], titles.get(x[0]) or "", x[0]))],
                 "reported_count": reported_count,
-                "items": [item(u, rev, states[u.id]) for u, rev in selected[offset:offset + limit]]}
+                "items": with_forms([item(u, rev, states[u.id]) for u, rev in selected[offset:offset + limit]])}
 
     @api.get("/atlas/characters/{unit_id}")
     def character(unit_id: str) -> dict:
@@ -1045,6 +1041,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             result["crop_box"] = {"x": x, "y": y, "w": w, "h": h}
         # The pixels a claim made in this inspector is about, named as the Worker names them.
         result["crop_version"] = evidence.record_version(result)
+        result["form"] = store.forms_for({unit_id: result["crop_version"]}).get(unit_id)
         return result
 
     def crop_now(subject: str) -> str | None:
@@ -1060,6 +1057,11 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             except HTTPException:
                 return None
         return None
+
+    def with_forms(items: list[dict]) -> list[dict]:
+        """Listing items with the form each crop holds on the version it is listed with."""
+        forms = store.forms_for({entry["id"]: evidence.record_version(entry) for entry in items})
+        return [{**entry, "form": forms.get(entry["id"])} for entry in items]
 
     def ledger_call(write, **arguments):
         try:
@@ -1464,46 +1466,26 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             raise BadRequest("This style was already saved with different values.")
         return character(unit_id)
 
-    @api.post("/atlas/characters/{unit_id}/written-form")
-    def set_written_form(unit_id: str, edit: WrittenFormEdit) -> dict:
-        """Record what one crop's letterforms are written as, and return the crop as it now is.
+    @api.post("/atlas/characters/{unit_id}/form")
+    def set_form(unit_id: str, edit: FormEdit) -> dict:
+        """Set or clear the reviewer's form for one crop, as the Worker's route does, and return its form.
 
-        The crop keeps its character, grapheme and review, and the event leaves its revision where it
-        was. A form that is the crop's own character clears it. A request saved before under this id
-        is answered as `set_style` answers one.
+        The crop is a unit of this dataset or a corpus glyph, and the save names the evidence version
+        the reviewer saw; one made after the crop was recut is refused. Its character, grapheme, review
+        and revision stay as they are. A retry answers with the crop's form.
         """
-        unit, revision = one(unit_id)
-        form = identity_text(edit.form) if edit.form and edit.form.strip() else None
-        if form == shown(unit):
-            form = None
-        if form is not None:
-            try:
-                written_form_module.check(form)
-            except ValueError as error:
-                raise HTTPException(422, str(error)) from error
-
-        def same(event: dict) -> bool:
-            return (event["target_id"] == unit_id and event["new"] == form
-                    and json.loads(event["evidence"]).get("request") == edit.model_dump(mode="json"))
-
-        previous = store.submission_results(edit.client_id, f"written-form:{edit.id}")
-        if previous:
-            if not same(previous[0]["review"]):
-                raise BadRequest("This written form was already saved with different values.")
-            return character(unit_id)
-        source = image_source(unit)
-        if edit.revision != revision or edit.image_sha256 != (source[0].stem if source else None):
-            raise Conflict("stale-revision", target_type="unit", target_id=unit_id,
-                           base_revision=edit.revision, revision=revision)
-        result = store.record(ReviewRequest(
-            target_type="unit", target_id=unit_id, field=WRITTEN_FORM, new=form,
-            base_revision=edit.revision, client_id=edit.client_id, idempotency_key=f"written-form:{edit.id}",
-            evidence=json.dumps({"kind": "written-form-review", "label": shown(unit),
-                                 "request": edit.model_dump(mode="json")}, ensure_ascii=False),
-        ))
-        if not same(result["review"]):
-            raise BadRequest("This written form was already saved with different values.")
-        return character(unit_id)
+        key, request = f"{edit.client_id}:{edit.id}", {"crop": unit_id, "input": edit.model_dump(mode="json")}
+        previous = ledger_call(store.claim_submission, key=key, request=request)
+        if previous is not None:
+            return {"id": unit_id, "form": store.forms_for({unit_id: crop_now(unit_id)}).get(unit_id),
+                    "replaced": previous.get("replaced")}
+        version = crop_now(unit_id)
+        if version is None:
+            raise HTTPException(404, "This crop is not in the collection, or has no image to make a claim about.")
+        if edit.crop_version != version:
+            raise HTTPException(409, "This crop was cut again. Reload it.")
+        return ledger_call(store.set_form, key=key, actor=edit.client_id, request=request, crop=unit_id, crop_version=version,
+                           form=identity_text(edit.form) if edit.form and edit.form.strip() else None)
 
     def schedule_refinement(background: BackgroundTasks, unit_ids: set[str]) -> None:
         from .refine import background_refine

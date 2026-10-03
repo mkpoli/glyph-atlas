@@ -20,8 +20,8 @@ const mf = new Miniflare(convertV4MiniflareOptions({workers:[{
   modules: true, script: await readFile(bundle, 'utf8'), compatibilityDate: '2026-09-22', compatibilityFlags: ['nodejs_compat'],
   d1Databases: ['DB'], r2Buckets: ['MEDIA'], bindings: { BETTER_AUTH_SECRET: 'integration-test-secret-integration-test' },
   ratelimits: { CORRECTIONS: { namespace_id: '4401', simple: { limit: 20, period: 60 } },
-    WRITTEN_FORMS: { namespace_id: '4402', simple: { limit: 30, period: 60 } },
-    CLAIMS: { namespace_id: '4403', simple: { limit: 30, period: 60 } } },
+    // The ledger and form sections make more claims than the site's 30 a minute; the limit itself is checked at the end.
+    CLAIMS: { namespace_id: '4403', simple: { limit: 100, period: 60 } } },
 }]}))
 try {
   const db = await mf.getD1Database('DB')
@@ -1319,46 +1319,63 @@ try {
     'each round event names its round and carries only its own answer')
   assert.deepEqual(await call('/atlas/rounds', fullRound), firstRound, 'a retried round returns the first result')
   await countsMatch('the counts follow a full round')
-  // A written form: the crop keeps its character, state and revision, and every listing shows it.
-  await addLocal('form-local', '還')
-  const formPath = '/atlas/characters/form-local/written-form'
-  const formSave = { id: crypto.randomUUID(), revision: 0, image_sha256: hash, form: '⿺辶𦊷' }
+  // A crop's form: the picker's value names a representation and its form, and the crop gets a
+  // form claim; its character, state and revision stay as they are, and every listing shows the form.
+  await addLocal('form-local', '還', { box: { x: 1, y: 2, w: 3, h: 4 } })
+  const formPath = '/atlas/characters/form-local/form'
+  const formVersion = (await call('/atlas/characters/form-local')).crop_version
+  assert.equal((await call('/atlas/characters/form-local')).form, null, 'a crop nobody has looked at is unsorted')
+  const formSave = { id: crypto.randomUUID(), crop_version: formVersion, form: '⿺辶𦊷' }
   const formed = await call(formPath, formSave)
-  assert.deepEqual([formed.written_form, formed.label, formed.state, formed.revision], ['⿺辶𦊷', '還', 'pending', 0])
-  assert.equal((await call('/atlas/characters/form-local')).written_form, '⿺辶𦊷', 'the inspector reads it')
-  assert.equal((await call('/atlas?character=' + encodeURIComponent('還'))).items.find(item => item.id === 'form-local').written_form, '⿺辶𦊷', 'a listing reads it')
-  assert.equal((await call(formPath, formSave)).written_form, '⿺辶𦊷', 'a retry answers with the crop')
+  assert.deepEqual([formed.form.status, formed.form.values.map(v => [v.scheme, v.text]), formed.form.by, formed.replaced],
+    ['asserted', [['ids', '⿺辶𦊷']], [(await user('integration')).id], null], 'the form names who holds it, and a first save replaces nothing')
+  const inspectedForm = await call('/atlas/characters/form-local')
+  assert.deepEqual([inspectedForm.form.values[0].text, inspectedForm.label, inspectedForm.state, inspectedForm.revision], ['⿺辶𦊷', '還', 'pending', 0], 'the inspector reads it')
+  assert.equal((await call('/atlas?character=' + encodeURIComponent('還'))).items.find(item => item.id === 'form-local').form.values[0].text, '⿺辶𦊷', 'a listing reads it')
+  assert.deepEqual(await call(formPath, formSave), formed, 'a retry answers with the crop\'s form')
   await call(formPath, { ...formSave, form: '𮟃' }, 409)
-  for (const form of ['⿺辶', '⿰木木木', '還還', 'a⿰', '⿰木a', ' '.repeat(3) + '⿰'])
+  for (const form of ['⿺辶', '⿰木木木', '還還', 'a⿰', '⿰木a', ' '.repeat(3) + '⿰', '\uE000'])
     await call(formPath, { ...formSave, id: crypto.randomUUID(), form }, 422)
-  await call(formPath, { ...formSave, id: crypto.randomUUID(), revision: 1 }, 409)
-  await call(formPath, { ...formSave, id: crypto.randomUUID(), image_sha256: 'c'.repeat(64) }, 409)
+  await call(formPath, { ...formSave, id: crypto.randomUUID(), crop_version: 'form-local@' + 'c'.repeat(64) + '@1,2,3,4' }, 409)
   const variant = await call(formPath, { ...formSave, id: crypto.randomUUID(), form: 'U+2E7C3' })
-  assert.equal(variant.written_form, '𮟃', 'a code point is read as its character')
+  assert.deepEqual([variant.form.values.map(v => [v.scheme, v.text]), variant.replaced], [[['unicode', '𮟃']], '⿺辶𦊷'],
+    'a code point is read as its character, and replaces the reviewer\'s own, which the answer names')
+  const [formRow] = (await db.prepare("SELECT id,anchor FROM forms WHERE id=?").bind(variant.form.values[0].form).all()).results
+  assert.equal((await db.prepare('SELECT value FROM representations WHERE id=?').bind(formRow.anchor).first()).value, '𮟃')
+  // Choosing the crop's own character confirms it: that is a form claim too, never a clear.
+  const confirmed = await call(formPath, { ...formSave, id: crypto.randomUUID(), form: '還' }, 200, 'inspector')
+  assert.deepEqual([confirmed.form.status, confirmed.form.values.map(v => v.text)], ['disputed', ['𮟃', '還']], 'two reviewers who see different forms both stand')
   // A review saved against the revision the crop was opened at still stands, and keeps the form.
   await call('/atlas/characters/form-local', { id: crypto.randomUUID(), revision: 0, image_sha256: hash, verdict: 'match' })
   const reviewedForm = await call('/atlas/characters/form-local')
-  assert.deepEqual([reviewedForm.state, reviewedForm.revision, reviewedForm.written_form], ['checked', 1, '𮟃'])
-  assert.equal((await call(formPath, { ...formSave, id: crypto.randomUUID(), revision: 1, form: '還' })).written_form, null, 'its own character clears it')
+  assert.deepEqual([reviewedForm.state, reviewedForm.revision, reviewedForm.form.status], ['checked', 1, 'disputed'])
+  const cleared = await call(formPath, { id: crypto.randomUUID(), crop_version: formVersion, form: null })
+  assert.deepEqual([cleared.form.status, cleared.form.values.map(v => v.text), cleared.replaced], ['asserted', ['還'], '𮟃'], 'clearing retracts the reviewer\'s own form')
+  await call(formPath, { id: crypto.randomUUID(), crop_version: formVersion, form: null }, 409)
+  // The same value chosen again names the same form; the form was named once.
+  assert.equal(await db.prepare("SELECT count(*) AS n FROM assertions WHERE predicate='represented_by' AND subject=?").bind(formRow.id).first('n'), 1)
+  // A refused save writes nothing, not even a corpus glyph's row.
+  const unnamed = (await call('/atlas/corpus/character?id=nu-private')).crop_version
+  await call('/atlas/characters/nu-private/form', { id: crypto.randomUUID(), crop_version: unnamed, form: '⿰木' }, 422)
+  await call('/atlas/characters/nu-private/form', { id: crypto.randomUUID(), crop_version: unnamed, form: null }, 409)
+  assert.equal(await db.prepare("SELECT 1 FROM units WHERE id='nu-private'").first(), null)
   // A corpus glyph nothing has named gets its `units` row, and stays unflagged and unreviewed.
-  const glyphForm = await call('/atlas/corpus/written-forms', { id: crypto.randomUUID(), identity: 'na-5',
-    revision: 0, source_revision: createHash('sha256').update('na-5').digest('hex'), form: '⿱十乚' })
-  assert.deepEqual([glyphForm.written_form, glyphForm.label, glyphForm.state, glyphForm.revision], ['⿱十乚', 'ナ', 'pending', 0])
-  assert.deepEqual(await db.prepare("SELECT origin,state,written_form FROM units WHERE id='na-5'").first(), { origin: 'corpus', state: 'pending', written_form: '⿱十乚' })
-  assert.equal((await call('/atlas/corpus/character?id=na-5')).written_form, '⿱十乚')
+  const glyphVersion = (await call('/atlas/corpus/character?id=na-5')).crop_version
+  const glyphForm = await call('/atlas/characters/na-5/form', { id: crypto.randomUUID(), crop_version: glyphVersion, form: '⿱十乚' })
+  assert.equal(glyphForm.form.values[0].text, '⿱十乚')
+  assert.deepEqual(await db.prepare("SELECT origin,state FROM units WHERE id='na-5'").first(), { origin: 'corpus', state: 'pending' })
+  assert.equal((await call('/atlas/corpus/character?id=na-5')).form.values[0].text, '⿱十乚')
   const naRow = { char: 'ナ', code_point: 'U+30CA', candidates: {} }
   await db.prepare('INSERT OR IGNORE INTO characters VALUES(?,?,?,?,?)').bind('U+30CA', 'ナ', '', JSON.stringify(naRow), JSON.stringify(naRow)).run()
-  assert.equal((await call('/layers/candidates?code_point=U%2B30CA&limit=200')).glyph_items.find(item => item.id === 'na-5')?.written_form, '⿱十乚',
+  assert.equal((await call('/layers/candidates?code_point=U%2B30CA&limit=200')).glyph_items.find(item => item.id === 'na-5')?.form?.values[0].text, '⿱十乚',
     'a corpus gallery reads it')
   assert.equal((await db.prepare("SELECT count(*) AS n FROM events WHERE target IN ('na-5','form-local') AND json_extract(json_extract(event,'$.evidence'),'$.kind')!='character-review'").first()).n, 0,
-    'a written form writes no review event')
-  const formExport = await call('/atlas/written-forms')
-  assert.equal(formExport.kind, 'atlas-written-forms')
-  assert.deepEqual(formExport.forms.map(f => [f.target, f.form, f.revision, f.current]),
-    [['form-local', '⿺辶𦊷', 0, false], ['form-local', '𮟃', 0, false], ['form-local', null, 1, true], ['na-5', '⿱十乚', 0, true]])
-  assert.deepEqual([formExport.forms[0].label, formExport.forms[0].pixels, formExport.forms[0].origin, formExport.forms[3].origin], ['還', hash, 'local', 'corpus'])
-  const formPlan = (await db.prepare('EXPLAIN QUERY PLAN ' + worker.writtenFormsQuery()).all()).results.map(row => row.detail).join(' | ')
-  assert.ok(!/SCAN l\b/.test(formPlan), 'each form finds its crop\'s latest through the index: ' + formPlan)
+    'a form writes no review event')
+  assert.equal(await db.prepare('SELECT count(*) AS n FROM written_forms').first('n'), 0, 'nothing writes the old journal')
+  for (const [sql, bound] of [[worker.cropFormsQuery(), [JSON.stringify(['form-local', 'na-5'])]], [worker.formNamesQuery(), [JSON.stringify([formRow.id])]]]) {
+    const plan = (await db.prepare('EXPLAIN QUERY PLAN ' + sql).bind(...bound).all()).results.map(row => row.detail)
+    assert.ok(!plan.some(d => /^SCAN (c|u|f|r|current_claims|units|forms|representations)\b/.test(d) && !/USING (COVERING )?INDEX|USING INTEGER PRIMARY KEY/.test(d)), plan.join('; '))
+  }
   // A reviewer redraws a local crop's box: inside the page view, on the pixels it names, as the fix.
   {
     const d = { id: 'recrop', label: 'ア', reading: 'ア', state: 'flagged', issue: 'crop', revision: 0, image_sha256: hash,
@@ -1459,8 +1476,9 @@ try {
   const firstPage = await call('/atlas/ledger?limit=3')
   assert.deepEqual([firstPage.kind, firstPage.assertions.length, firstPage.done], ['atlas-ledger', 3, false])
   const laterPage = await call(`/atlas/ledger?after=${firstPage.next.after}&actions_after=${firstPage.next.actions_after}`)
-  assert.equal(firstPage.assertions.length + laterPage.assertions.length, 5)
-  assert.ok(laterPage.done && laterPage.actions.length + firstPage.actions.length === 4, 'two retractions, an adjudication and an acceptance')
+  assert.equal(firstPage.assertions.length + laterPage.assertions.length, await db.prepare('SELECT count(*) AS n FROM assertions').first('n'))
+  assert.ok(laterPage.done && laterPage.actions.length + firstPage.actions.length === await db.prepare('SELECT count(*) AS n FROM assertion_actions').first('n'),
+    'every claim and action, a page at a time')
   for (const [sql, bound] of [[worker.ledgerClaimsQuery(), [0, 3]], [worker.ledgerActionsQuery(), [0, 3]], [worker.claimHistoryQuery(), ['claimed']],
     [worker.currentClaimsQuery(), ['claimed']], [worker.resolveWriteQuery(), [JSON.stringify([['claimed', 'has_form', '', '']])]], [worker.resolveClearQuery(), [JSON.stringify([['claimed', 'has_form', '', '']])]]]) {
     // No ledger table, nor `units`, is read whole or through an index built for the query; the
@@ -1469,13 +1487,13 @@ try {
     const table = /^(SCAN|SEARCH) (a|x|e|p|u|assertions|assertion_actions|assertion_evidence|assertion_premises|current_claims|units)\b/
     assert.ok(!plan.some(d => table.test(d) && (/AUTOMATIC/.test(d) || (d.startsWith('SCAN') && !/USING (COVERING )?INDEX|USING INTEGER PRIMARY KEY/.test(d)))), plan.join('; '))
   }
-  // One address gets 30 written forms a minute.
-  let formsLimited = false
-  for (let i = 0; i < 40 && !formsLimited; i++) {
-    const response = await mf.dispatchFetch(base + formPath, { method: 'POST', headers: { 'content-type': 'application/json', origin: base, cookie: users.integration.cookie }, body: '{}' })
-    formsLimited = response.status === 429
+  // One address is held to a number of claims a minute.
+  let claimsLimited = false
+  for (let i = 0; i < 120 && !claimsLimited; i++) {
+    const response = await mf.dispatchFetch(base + formPath, { method: 'POST', headers: { 'content-type': 'application/json', origin: base, cookie: (await user('integration')).cookie }, body: '{}' })
+    claimsLimited = response.status === 429
   }
-  assert.ok(formsLimited, 'written forms are rate-limited per address')
+  assert.ok(claimsLimited, 'claims are rate-limited per address')
   // One address gets 20 batches a minute.
   let rateLimited = false
   for (let i = 0; i < 25 && !rateLimited; i++) {
@@ -1483,7 +1501,7 @@ try {
     rateLimited = response.status === 429
   }
   assert.ok(rateLimited, 'batches are rate-rateLimited per address')
-  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms, batch corrections, written forms, redrawn boxes, crop versions, the assertion ledger.')
+  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms, batch corrections, redrawn boxes, crop versions, the assertion ledger, crop forms.')
 } finally {
   await mf.dispose()
   await rm(bundleDir, { recursive: true, force: true })

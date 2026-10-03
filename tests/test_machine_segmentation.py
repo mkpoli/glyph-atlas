@@ -132,7 +132,7 @@ def test_a_machine_split_is_detect_align_machine_and_provenanced(dataset):
             "parent_id": JOINED, "evidence_sha256": hashlib.sha256(EVIDENCE.encode()).hexdigest(),
             "model": "splitter-v1", "automated": True}
         assert child.confidence is None and child.candidates == [], "the parent's scoring is not the child's"
-        assert child.variants == [] and child.group_id is None and child.antecedent_ids == [], "parent relations are cleared"
+        assert child.group_id is None and child.antecedent_ids == [], "parent relations are cleared"
     parent = next(unit for unit, _ in Store(dataset).unit_snapshot() if unit.id == JOINED)
     assert parent.active is False and parent.split_into == [child.id for child in children]
     assert "U+30C8" not in parent.unicode

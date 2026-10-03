@@ -37,13 +37,16 @@ import pyarrow.parquet as pq
 from pydantic import BaseModel, ValidationError
 
 from . import __version__
-from .schema import Box, Document, Group, Line, Page, PageText, Unit
+from .schema import RETIRED_UNIT_FIELDS, Box, Document, Group, Line, Page, PageText, Unit
 
 #: The version of the dataset tables' schema, written into every `MANIFEST.json`. Version 2 removed
 #: `Unit.jibo`: the 字母 is metadata on a character now, and `data/vocab/characters.tsv` states it.
 #: Version 3 added `Document.style`, `Page.style` and `Unit.style`; a table written before reads them
 #: as `unassessed`. Version 4 added `Unit.written_form`, which a table written before reads as null.
-SCHEMA_VERSION = 4
+#: Version 5 removed it again, and `Unit.variants`: a crop's form is a claim of the assertion ledger,
+#: and a shape id names a form. A table that still holds either column reads as without it while every
+#: value is empty (`schema.RETIRED_UNIT_FIELDS`).
+SCHEMA_VERSION = 5
 BATCH_SIZE = 65_536
 MANIFEST_NAME = "MANIFEST.json"
 
@@ -217,6 +220,9 @@ class SchemaMismatch(ValueError):
 #: The columns a schema version removed, by model. A table that still holds one was written before
 #: that version and is refused rather than read with the column silently dropped.
 RETIRED_COLUMNS: dict[str, frozenset[str]] = {"Unit": frozenset({"jibo"})}
+#: The columns a schema version removed that a table may still hold empty: they are read, and the
+#: model refuses a row in which one holds a value (`schema.RETIRED_UNIT_FIELDS`).
+_EMPTIED: dict[str, frozenset[str]] = {"Unit": frozenset(RETIRED_UNIT_FIELDS)}
 
 
 def _known_columns(file: Path, model: type[BaseModel]) -> list[str]:
@@ -232,7 +238,8 @@ def _known_columns(file: Path, model: type[BaseModel]) -> list[str]:
             f"{file} has {', '.join(retired)}, which schema version 2 removed; "
             "migrate the dataset with scripts/migrate_schema_v2.py"
         )
-    return [name for name in names if name in model.model_fields]
+    emptied = _EMPTIED.get(model.__name__, frozenset())
+    return [name for name in names if name in model.model_fields or name in emptied]
 
 
 def _row_to_model(row: dict[str, Any], model: type[BaseModel]) -> BaseModel:
@@ -242,7 +249,7 @@ def _row_to_model(row: dict[str, Any], model: type[BaseModel]) -> BaseModel:
     column a schema retired: that one reaches validation and fails it, so old data is never read
     as if it were current.
     """
-    retired = RETIRED_COLUMNS.get(model.__name__, frozenset())
+    retired = RETIRED_COLUMNS.get(model.__name__, frozenset()) | _EMPTIED.get(model.__name__, frozenset())
     row = {name: value for name, value in row.items() if name in model.model_fields or name in retired}
     _, decoders = _codecs(model)
     for name, decode in decoders.items():

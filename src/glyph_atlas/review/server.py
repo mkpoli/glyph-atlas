@@ -631,7 +631,7 @@ def create_app(directory: Path, *, source: Path | str | None = None,
 
         corpus_reviews = CorpusReviews(corpus)
         corpus._atlas_reviews = corpus_reviews
-        app.include_router(corpus_review_router(corpus_reviews))
+        app.include_router(corpus_review_router(corpus_reviews, forms=store.forms_for))
     if corpus is not None:
         try:
             from ..corpus.fastapi_router import corpus_router

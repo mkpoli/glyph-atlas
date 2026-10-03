@@ -10,7 +10,7 @@
 2. Only units whose id starts with one of `--prefix` are kept, less those of withdrawn documents
    (`data/vocab/withdrawn.yaml`), and the copy is sealed.
 3. The units the site already holds are read from D1 (or from `--live`, one JSON object per unit
-   with id, origin, revision, quiz, data, style, written_form, reviewed, formed) and planned by `refresh_published_units.plan`:
+   with id, origin, revision, quiz, data, style, reviewed) and planned by `refresh_published_units.plan`:
    new crops are inserted, changed ones updated in place or replaced, a reviewed crop whose crop
    changed is held and listed in OUTPUT/held.json. A new extracted crop (`ex:`) whose box overlaps a
    live crop's current box on its page, which a reviewer may have moved there, is left out and
@@ -119,9 +119,8 @@ def read_live(prefixes: list[str]) -> list[dict]:
         got = []
         bounds = [prefix] + [prefix + c for c in ID_CHARS[1:]] + [prefix + "~"]
         for low, high in itertools.pairwise(bounds):
-            got += d1("SELECT u.id, u.origin, u.revision, u.quiz, u.data, u.style, u.written_form, "
-                      "EXISTS(SELECT 1 FROM events e WHERE e.target=u.id) AS reviewed, "
-                      "EXISTS(SELECT 1 FROM written_forms w WHERE w.target=u.id) AS formed "
+            got += d1("SELECT u.id, u.origin, u.revision, u.quiz, u.data, u.style, "
+                      "EXISTS(SELECT 1 FROM events e WHERE e.target=u.id) AS reviewed "
                       f"FROM units u WHERE u.id >= '{low}' AND u.id < '{high}'")
         if len(got) != expected:
             raise SystemExit(f"read {len(got)} live {prefix} units, D1 holds {expected}")
@@ -225,7 +224,7 @@ def write_parts(sealed: Path, groups: list[list[str]]) -> list[str]:
     return parts
 
 
-LEDGER_LINES = ("INSERT OR IGNORE INTO assertions(", "INSERT OR IGNORE INTO assertion_evidence(",
+LEDGER_LINES = ("INSERT OR IGNORE INTO representations(", "INSERT OR IGNORE INTO forms(", "INSERT OR IGNORE INTO assertions(", "INSERT OR IGNORE INTO assertion_evidence(",
                 "INSERT OR IGNORE INTO assertion_premises(", "INSERT OR IGNORE INTO assertion_actions(",
                 "DELETE FROM current_claims ", "INSERT INTO current_claims(")
 

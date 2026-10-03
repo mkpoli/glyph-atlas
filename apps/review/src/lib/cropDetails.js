@@ -1,5 +1,6 @@
 import { t, withText } from './i18n.svelte.js'
 import { productionLabel } from '../components/ProductionBadge.svelte'
+import { formNames } from './cropForms.js'
 
 /** What a record says about its own reliability, in one badge: withheld, machine, outside the classifier's classes, or confirmed.
  *
@@ -37,8 +38,10 @@ export function cropDetails(item) {
   const origin = item.origin === 'corpus' ? ((item.source?.corpus ?? item.corpus) === 'codh-full' ? t('tile.origin.codh') : t('tile.origin.corpus')) : null
   const work = typeof item.source === 'string' ? item.source : (item.source?.title ?? item.title)
   const page = item.page_number ? t('tile.page', { page: item.page_number }) : null
-  // A written form a reviewer recorded: the shape the letterforms take, the crop still filed under its label.
-  const written = item.written_form && item.written_form !== item.label ? withText('written.detail', 'form', { form: item.written_form }) : null
+  // The form the site holds for the crop, when it is other than the label: the shape the letterforms
+  // take, the crop still filed under its label. Competing forms are named together.
+  const names = formNames(item.form)
+  const written = names.length && names.join(' / ') !== item.label ? withText('written.detail', 'form', { form: names.join(' / ') }) : null
   return [written, productionLabel(item), state, origin,
     [work, page].filter(Boolean).join(' · ') || null, typeof item.source === 'string' ? item.holder : (item.source?.holder ?? item.holder)]
     .filter(Boolean)

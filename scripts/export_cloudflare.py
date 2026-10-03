@@ -27,6 +27,10 @@ from glyph_atlas.review.media import MediaCache
 from glyph_atlas.review.request_cache import lookup_scope
 from glyph_atlas.review.store import Store
 
+#: The columns a publication writes into `units`, by name: the table has columns no publication fills.
+UNIT_COLUMNS = ("id,origin,character,family,visual_group,production,category,state,revision,quiz,priority,shuffle,"
+                "data,snapshot,context,visual,document,style")
+
 
 def encoded(value):
     text = json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
@@ -167,9 +171,9 @@ def export(dataset: Path, output: Path, *, resume=False):
         counts = Counter()
         print(encoded({"stage": "local-crops", "total": len(listing["items"])}), flush=True)
         for i, item in enumerate(listing["items"]):
-            # A written form is its row's column (migration 0038), which the Worker adds to the record.
+            # A crop's form is the site's ledger's, which the Worker adds to the record it serves.
             item = dict(item)
-            form = item.pop("written_form", None)
+            item.pop("form", None)
             unit = units[item["id"]]
             page = pages.get(unit.page_id)
             doc = documents.get(unit.document_id or (page.document_id if page else None))
@@ -193,9 +197,9 @@ def export(dataset: Path, output: Path, *, resume=False):
                               attribution=doc.image_rights.attribution, rights_url=doc.image_rights.evidence,
                               page_number=shown["page_number"])
                 kept["page_index"] = shown["page_index"]
-                db.execute("UPDATE units SET data=?,snapshot=?,document=?,family=?,style=?,written_form=? WHERE id=?",
+                db.execute("UPDATE units SET data=?,snapshot=?,document=?,family=?,style=? WHERE id=?",
                            (encoded(detail), encoded(kept), doc.id, atlas.grapheme_of(item["label"]),
-                            style.style_of(unit, page, doc), form, item["id"]))
+                            style.style_of(unit, page, doc), item["id"]))
                 continue
             if unit.line_id not in lines:
                 lines[unit.line_id] = store.line(unit.line_id) if unit.line_id else None
@@ -235,14 +239,13 @@ def export(dataset: Path, output: Path, *, resume=False):
             counts[cp] += 1
             # A label with no family is its own grapheme, so every named crop is one `family` lookup.
             family = atlas.grapheme_of(item["label"])
-            # `reading`, the fourth column, stays in D1 unread until a rebuild of the table drops it.
-            db.execute("INSERT INTO units VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
-                item["id"], "local", item["label"], None, family, None,
+            db.execute(f"INSERT INTO units({UNIT_COLUMNS}) VALUES ({','.join('?' * (UNIT_COLUMNS.count(',') + 1))})", (
+                item["id"], "local", item["label"], family, None,
                 item["production"], atlas.character_group(unit), item["state"], item["revision"],
                 int(not atlas.repair_withheld(unit)), atlas.review_priority(unit),
                 int(hashlib.sha256(item["id"].encode()).hexdigest()[:7], 16),
                 encoded(detail), encoded(snapshot), encoded(context), encoded(visual), doc.id,
-                style.style_of(unit, page, doc), form))
+                style.style_of(unit, page, doc)))
             if i % 500 == 0:
                 db.commit()
                 print(encoded({"stage": "local-crops", "done": i}), flush=True)

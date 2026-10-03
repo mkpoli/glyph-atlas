@@ -9,6 +9,8 @@
  * Run through devrun:
  *   devrun bun apps/review/tools/crop-review-check.mjs
  */
+import { Database } from 'bun:sqlite'
+import { join } from 'node:path'
 import Browser from './browser.mjs'
 import { boot, events, options, units } from './harness.mjs'
 
@@ -19,6 +21,16 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
 const shown = 'document.querySelector("dialog[open] .record-id code")?.textContent'
 const ready = 'document.querySelector("dialog[open] .crop-viewport")?.dataset.ready === "true" && !document.querySelector(".save-character")?.disabled'
 const pressed = issue => `document.querySelector('dialog[open] [data-issue="${issue}"]')?.getAttribute('aria-pressed') === 'true'`
+
+// A crop's standing form claims in the ledger, oldest first, by the value each names.
+const claimed = id => {
+  const db = new Database(join(config.directory, 'review.sqlite'), { readonly: true })
+  try {
+    return db.query(`SELECT r.value FROM assertions a JOIN forms f ON f.id=a.object JOIN representations r ON r.id=f.anchor
+      WHERE a.subject=? AND a.predicate='has_form' AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract')
+      ORDER BY a.rowid`).all(id).map(row => row.value)
+  } finally { db.close() }
+}
 
 try {
   browser = await Browser.launch({ width: 1440, height: 1000 })
@@ -108,10 +120,12 @@ try {
   await browser.waitFor(`document.querySelector(".focus-figure")?.dataset.unit !== ${JSON.stringify(marked)} || !document.querySelector(".quiz-focus")`, 30000)
   const point = 'U+' + second.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')
   assert(units(config.directory)[marked].unicode === point, `the form key did not mark the crop as ${second}: ${units(config.directory)[marked].unicode}`)
+  assert(JSON.stringify(claimed(marked)) === JSON.stringify([second]), `the marking was not claimed as the crop's form: ${claimed(marked)}`)
   await browser.waitFor('!!document.querySelector(".quiz-focus .mark-done button")')
   await browser.evaluate('document.querySelector(".quiz-focus .mark-done button").click()')
   await browser.waitFor('!document.querySelector(".quiz-focus .mark-done")', 30000)
   assert(units(config.directory)[marked].unicode === before, `Undo did not mark the crop back to ${before}: ${units(config.directory)[marked].unicode}`)
+  assert(!claimed(marked).length, `Undo left a form claim the reader never made: ${claimed(marked)}`)
   console.log(`PASS Quick Review's form bar marks the crop on show as ${second}, and Undo marks it back`)
 
   assert(!errors.length, 'page errors: ' + errors.join('; '))

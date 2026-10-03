@@ -3,7 +3,7 @@ import { ROUND_MAX } from './rounds';
 import { formsRoute, withForm, formed, FORM_COLUMNS, type FormTools, type UnitForm } from './forms';
 import { similarCrops } from './similar';
 import { componentSearch, componentTerm } from './components';
-import { formProblem, type FormProblem } from './writtenForm';
+import { formsFor, setForm, withForms } from './cropForms';
 import { auth, claim, owned, providers, viewer } from './auth';
 import { AVATAR_PATH, avatar, setAvatar } from './avatar';
 import { ranking } from './ranking';
@@ -13,10 +13,10 @@ import { actOnClaim, claimsOf, ledgerPage, writeClaim, type LedgerTools } from '
 export { leastTypicalQuery } from './forms';
 export { componentMatchQuery } from './components';
 export { claimHistoryQuery, currentClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery, resolveWriteQuery } from './ledger';
+export { cropFormsQuery, formNamesQuery } from './cropForms';
 type Json = Record<string, any>;
 type UnitRow = { id: string; origin: string; character: string | null; state: string; revision: number;
   quiz: number; category?: string; data: string; snapshot: string; context: string; visual: string; style?: string;
-  written_form?: string | null;
   // The crop's evidence version (0047): its id, image checksum and box, as SQLite joins them.
   crop_version?: string | null;
   // A corpus glyph nothing has named yet: it has no `units` row, and this is where it is published.
@@ -100,10 +100,10 @@ const productionOf=(data:Json)=>typeof data.production==='string'?data.productio
 // in the same batch and before the rows that reference it.
 function materialise(env:Env,row:UnitRow&{fresh:CorpusRow}){
   const d=parse(row.data);
-  // `reading` (the fourth column) stays in the table unread until a rebuild drops it.
-  return env.DB.prepare('INSERT OR IGNORE INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
-    .bind(row.id,'corpus',d.written_character||null,null,d.grapheme||(d.written_character?cp(d.written_character):null),d.visual_group?.id||null,row.fresh.production,
-      row.category||categoryOf(d.label),d.state,d.revision,row.quiz,1,row.fresh.shuffle,row.data,row.snapshot,row.context,row.visual,null,row.fresh.style,null);
+  return env.DB.prepare(`INSERT OR IGNORE INTO units(id,origin,character,family,visual_group,production,category,state,revision,quiz,priority,shuffle,
+    data,snapshot,context,visual,document,style) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .bind(row.id,'corpus',d.written_character||null,d.grapheme||(d.written_character?cp(d.written_character):null),d.visual_group?.id||null,row.fresh.production,
+      row.category||categoryOf(d.label),d.state,d.revision,row.quiz,1,row.fresh.shuffle,row.data,row.snapshot,row.context,row.visual,null,row.fresh.style);
 }
 async function corpusData(env:Env,row:CorpusRow):Promise<Json>{
   if(row.size>128*1024)throw new Problem(503,'Invalid published record.');
@@ -120,6 +120,8 @@ async function itemsFor(env: Env, ids: string[]): Promise<Map<string, Json>> {
   const rows = await env.DB.prepare(`SELECT * FROM units WHERE id IN (${marks(ids.length)}) AND origin!='retired'`)
     .bind(...ids).all<UnitRow>();
   for (const row of rows.results) found.set(row.id, { ...compact(row), origin: row.origin });
+  const forms = await formsFor(env, [...found.keys()]);
+  for (const [id, item] of found) item.form = forms.get(id) ?? null;
   const rest = ids.filter(id => !found.has(id));
   if (rest.length) {
     const pointers = await env.DB.prepare(`SELECT * FROM corpus_units WHERE id IN (${marks(rest.length)})`)
@@ -130,15 +132,14 @@ async function itemsFor(env: Env, ids: string[]): Promise<Map<string, Json>> {
   return found;
 }
 function compact(row: UnitRow): Json {
-  return { ...listing(parse(row.data)), ...(row.style ? { style: row.style } : {}), ...(row.written_form ? { written_form: row.written_form } : {}) };
+  return { ...listing(parse(row.data)), ...(row.style ? { style: row.style } : {}) };
 }
-// A crop's record as its inspector reads it, with the written form its row holds (0038) and its
-// evidence version (0047).
+// A crop's record with its evidence version (0047), and as its inspector reads it, with its form too.
 const record = (row: UnitRow): Json => {
   const data = parse(row.data);
-  return { ...data, written_form: row.written_form ?? null, crop_version: row.crop_version ?? cropVersion(row.id, data),
-    crop_editable: row.origin !== 'corpus' && Boolean(redrawLimits(data)) };
+  return { ...data, crop_version: row.crop_version ?? cropVersion(row.id, data), crop_editable: row.origin !== 'corpus' && Boolean(redrawLimits(data)) };
 };
+const inspected = async (env: Env, row: UnitRow) => (await withForms(env, [record(row)]))[0];
 // A crop's evidence version as `units.crop_version` computes it, for a corpus glyph that has no row yet:
 // its id, its image checksum and its box in whole pixels; a box of anything else has none. JSON.parse
 // reads a whole number written as a real (`1.0`) as an integer, which SQLite does not, so a claim names
@@ -641,9 +642,9 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
     const wrapped = await env.DB.prepare(side('<')).bind(...values, start, limit - rows.length, Math.max(offset - above, 0)).all();
     rows.push(...wrapped.results as typeof rows);
   }
-  const items: Json[] = rows
+  const items: Json[] = await withForms(env, rows
     .map(row => { const item = compact(row); return { ...item, state: row.effective, shape_order: row.shape_order,
-      suspect: suspectOf(row.suspect ? parse(row.suspect) as Suspect : null, item) } });
+      suspect: suspectOf(row.suspect ? parse(row.suspect) as Suspect : null, item) } }));
   // Positions run through the `units` rows and then the untouched corpus glyphs. A glyph its record
   // keeps out still takes its position, so `next_offset` can run ahead of the items, and once the
   // glyphs run out `total` is what was there to deal.
@@ -728,17 +729,16 @@ async function corpusRound(env: Env, characters: string[], production: string, s
 // while `corpus_units` still names the object and offset it came from; `scripts/fill_corpus_gallery.py`
 // copies the rest after a publication. A glyph a review has named shows its `units` row.
 const SAMPLE_RANGE = 4194304;
-export const gallerySampleQuery = (side: '>=' | '<') => `SELECT s.data,u.data AS current,u.written_form AS current_form,${FORM_COLUMNS.split(',').map(c => `f.${c}`).join(',')}
+export const gallerySampleQuery = (side: '>=' | '<') => `SELECT s.data,u.data AS current,${FORM_COLUMNS.split(',').map(c => `f.${c}`).join(',')}
   FROM corpus_gallery s JOIN corpus_units c ON c.id=s.id AND c.object=s.object AND c.offset=s.offset
   LEFT JOIN units u ON u.id=s.id LEFT JOIN form_units f ON f.id=s.id
   WHERE s.shuffle${side}? ORDER BY s.shuffle LIMIT ?`;
 async function gallery(env: Env, q: URLSearchParams) {
   const limit = integer(q, 'limit', 24, 96), start = integer(q, 'seed', 0, 2147483647) % SAMPLE_RANGE;
-  type Row = UnitForm & { data: string; current: string | null; current_form: string | null };
+  type Row = UnitForm & { data: string; current: string | null };
   const rows = (await env.DB.prepare(gallerySampleQuery('>=')).bind(start, limit).all<Row>()).results;
   if (rows.length < limit) rows.push(...(await env.DB.prepare(gallerySampleQuery('<')).bind(start, limit - rows.length).all<Row>()).results);
-  const items = rows.map(r => r.current ? { ...parse(r.current), ...(r.current_form ? { written_form: r.current_form } : {}) }
-    : formed(parse(r.data), r.id ? r : null, formTools));
+  const items = await withForms(env, rows.map(r => r.current ? parse(r.current) : formed(parse(r.data), r.id ? r : null, formTools)));
   return { status: 'ok', available: items.length, items };
 }
 function chunks<T>(list: T[], size: number): T[][] {
@@ -795,10 +795,10 @@ export const widenedCropsCountQuery = (n: number, extra = '') => `SELECT count(*
 // A glyph's style is its published row's; a named glyph's `units` row carries the same.
 export const corpusSelection = (field: 'character' | 'family', n: number) => {
   const list = n === 1 ? '=?' : ` IN (${Array(n).fill('?').join(',')})`;
-  return `SELECT c.*,c.${field} AS k,c.style_order AS s,c.id AS i,u.data AS overlay,u.visual_group AS overlay_group,u.character AS overlay_character,u.written_form AS overlay_form
+  return `SELECT c.*,c.${field} AS k,c.style_order AS s,c.id AS i,u.data AS overlay,u.visual_group AS overlay_group,u.character AS overlay_character
     FROM corpus_units c LEFT JOIN units u ON c.id=u.id
     WHERE c.${field}${list} AND (u.id IS NULL OR u.${field}=c.${field})
-    UNION ALL SELECT c.*,u.${field} AS k,u.style_order AS s,u.id AS i,u.data AS overlay,u.visual_group AS overlay_group,u.character AS overlay_character,u.written_form AS overlay_form
+    UNION ALL SELECT c.*,u.${field} AS k,u.style_order AS s,u.id AS i,u.data AS overlay,u.visual_group AS overlay_group,u.character AS overlay_character
     FROM units u${field === 'character' ? ' INDEXED BY unit_corpus_character_style' : ''} JOIN corpus_units c ON c.id=u.id
     WHERE u.origin='corpus' AND u.${field}${list} AND c.${field} IS NOT u.${field}`;
 };
@@ -942,7 +942,7 @@ async function occurrences(env: Env, code: string, q: URLSearchParams, origin = 
     ]);
     const counted = (count.results[0] as { n: number }).n, total = Math.min(counted, WIDENED_CAP);
     return { ...data.candidates, query: data.code_point, code_point: data.code_point,
-      total, capped: counted > WIDENED_CAP, available: rows.results.length, items: (rows.results as UnitRow[]).map(compact),
+      total, capped: counted > WIDENED_CAP, available: rows.results.length, items: await withForms(env, (rows.results as UnitRow[]).map(compact)),
       counts: { total, exact: total, exact_total: total }, style_groups: STYLE_NAMES, scope: 'variants', status: 'ok' };
   }
   let counted: D1PreparedStatement, listed: D1PreparedStatement;
@@ -961,7 +961,7 @@ async function occurrences(env: Env, code: string, q: URLSearchParams, origin = 
   const [count, rows] = await env.DB.batch([counted, listed]);
   const { styles, total } = styleCounts(count.results as { s: number; n: number }[], group);
   return { ...data.candidates, query: data.code_point, code_point: data.code_point,
-    total, available: rows.results.length, items:(rows.results as UnitRow[]).map(compact),
+    total, available: rows.results.length, items:await withForms(env,(rows.results as UnitRow[]).map(compact)),
     counts:{ total, exact:total, exact_total:total }, styles, style_groups: STYLE_NAMES, scope:q.get('scope') || 'character', status:'ok' };
 }
 // A grapheme's crops counted by style group, each branch read along its own index.
@@ -997,9 +997,10 @@ async function corpusOccurrences(env:Env,data:Json,q:URLSearchParams){
   const items=[];
   // Bound simultaneous R2 streams; a corpus page may contain 200 records.
   for(let i=0;i<rows.results.length;i+=8){
-    items.push(...await Promise.all((rows.results.slice(i,i+8) as (CorpusRow&{overlay:string|null;overlay_form:string|null})[])
-      .map(async row=>({...(row.overlay?parse(row.overlay):await corpusData(env,row)),style:row.style,...(row.overlay_form?{written_form:row.overlay_form}:{})}))));
+    items.push(...await Promise.all((rows.results.slice(i,i+8) as (CorpusRow&{overlay:string|null})[])
+      .map(async row=>({...(row.overlay?parse(row.overlay):await corpusData(env,row)),style:row.style}))));
   }
+  const formed=await withForms(env,items);
   const info=await known(env,data.char),familyCode=data.grapheme?.code_point||data.code_point;
   const familyCounts=await env.DB.prepare(`SELECT count(*) AS total,sum(written IS NULL) AS unassigned FROM (
     SELECT CASE WHEN u.id IS NULL THEN c.character ELSE u.character END AS written
@@ -1008,7 +1009,7 @@ async function corpusOccurrences(env:Env,data:Json,q:URLSearchParams){
       WHERE u.origin='corpus' AND u.family=? AND c.family IS NOT u.family
     )`).bind(familyCode,familyCode).first<{total:number;unassigned:number}>();
   return {...data.candidates,code_point:data.code_point,total:widened?Math.min(counted,WIDENED_CAP):counted,capped:widened&&counted>WIDENED_CAP,
-    available:items.length,items,...(grouped?{styles:grouped.styles}:{}),scope:family?'grapheme':widened?'variants':'character',status:'ok',
+    available:formed.length,items:formed,...(grouped?{styles:grouped.styles}:{}),scope:family?'grapheme':widened?'variants':'character',status:'ok',
     visual_analysis:info.detail.visual_analysis,family_total:familyCounts?.total||0,unassigned_count:familyCounts?.unassigned||0};
 }
 // A document's characters in source order. The primary key serves the filter and the order, and each
@@ -1128,8 +1129,10 @@ async function submit(env: Env, request: Request, actor: string, target?: string
   const {seen:_,skipped:__,...signed}=input;
   const signature=canonical({target:batch?'@batch':target||null,input:signed});
   const key=actor+':'+id;
+  // A corpus glyph's inspector shows the record it gets back, with the form its ledger holds now.
+  const answered=async(value:Json)=>corpus?(await withForms(env,[value]))[0]:value;
   const previous=await env.DB.prepare('SELECT request,response FROM submissions WHERE id=?').bind(key).first<{request:string;response:string}>();
-  if(previous){if(previous.request!==signature)throw new Problem(409,'This submission was already saved with different answers.');return parse(previous.response)}
+  if(previous){if(previous.request!==signature)throw new Problem(409,'This submission was already saved with different answers.');return answered(parse(previous.response))}
   const round=!target&&!batch;
   // A round names its grapheme; each crop it answers or saw is one of the grapheme's characters.
   const grapheme=round?graphemeKey(input.grapheme):null;
@@ -1232,7 +1235,7 @@ async function submit(env: Env, request: Request, actor: string, target?: string
       }
     });
   }
-  const result=corpus?{...(changes[0].next),origin:'corpus',written_form:changes[0].row.written_form??null,event:changes[0].event}
+  const result=corpus?{...(changes[0].next),origin:'corpus',event:changes[0].event}
     :batch?{id,results:changes.map(c=>({target_id:c.row.id,revision:c.next.revision,state:c.next.state})),unchanged}
     :{id,results:[...changes.map(c=>({id:c.event.id,target_id:c.row.id,field:'review',revision:c.next.revision,state:c.next.state})),
       ...shown.map(crop=>({target_id:crop.id,field:'seen'})),...passed.map(crop=>({target_id:crop.id,field:'skip'}))]};
@@ -1252,65 +1255,11 @@ async function submit(env: Env, request: Request, actor: string, target?: string
     .bind(key,actor,pixels(crop),at,crop.id));
   try{await env.DB.batch(statements)}catch(error){
     const repeat=await env.DB.prepare('SELECT request,response FROM submissions WHERE id=?').bind(key).first<{request:string;response:string}>();
-    if(repeat?.request===signature)return parse(repeat.response);
+    if(repeat?.request===signature)return answered(parse(repeat.response));
     if(String(error).includes('review_revision_conflict'))throw new Problem(409,'Another review changed this crop. Reload it.');
     throw error;
   }
-  return result;
-}
-const FORM_PROBLEMS: Record<FormProblem, string> = {
-  character: 'Write one character or an ideographic description sequence.',
-  component: 'A description is built from ideographs, radicals and strokes.',
-  missing: 'This description is missing a component.',
-  extra: 'This description has more components than its operators take.',
-};
-// A reviewer's word on what a crop's letterforms are written as (0038), for a crop by its path or a
-// corpus glyph by `identity`. It names the revision and pixels the reviewer saw, and a crop that has
-// moved on since is refused; the save moves nothing else, so a review open against the crop still
-// saves. A form that is the crop's own character clears it. A retry answers with the crop as it is,
-// and the same id sent with anything else is refused.
-async function writeForm(env: Env, request: Request, actor: string, target: string | null) {
-  const input = await body(request);
-  const id = text(input.id, 64, 'submission id', true)!;
-  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Problem(422, 'Invalid submission id.');
-  const crop = target ?? text(input.identity, 512, 'corpus identity', true)!;
-  const key = actor + ':' + id, signature = canonical({ target: crop, input });
-  const repeat = async () => {
-    const saved = await env.DB.prepare('SELECT request FROM written_forms WHERE submission=?').bind(key).first<{ request: string }>();
-    if (saved && saved.request !== signature) throw new Problem(409, 'This written form was already saved with different values.');
-    return saved ? record(await unit(env, crop)) : null;
-  };
-  const previous = await repeat();
-  if (previous) return previous;
-  const row = await unit(env, crop), data = parse(row.data), glyph = row.origin === 'corpus';
-  if (!Number.isSafeInteger(input.revision) || input.revision !== row.revision) throw new Problem(409, 'This character changed. Reload it.');
-  const seen = glyph ? input.source_revision : input.image_sha256;
-  if (typeof seen !== 'string' || seen !== (glyph ? data.source_revision : data.image_sha256)) throw new Problem(409, 'The source image changed. Reload it.');
-  const typed = input.form == null ? null : text(input.form, 256, 'written form');
-  let form = typed ? literal(typed) : null;
-  if (form === data.label) form = null;
-  const problem = form === null ? null : formProblem(form);
-  if (problem) throw new Problem(422, FORM_PROBLEMS[problem]);
-  const statements = row.fresh ? [materialise(env, row as UnitRow & { fresh: CorpusRow })] : [];
-  statements.push(env.DB.prepare('INSERT INTO written_forms(id,submission,target,actor,revision,pixels,label,form,request,at) VALUES(?,?,?,?,?,?,?,?,?,?)')
-    .bind('cf:' + crypto.randomUUID(), key, row.id, actor, row.revision, seen, data.label, form, signature, new Date().toISOString()));
-  try { await env.DB.batch(statements) } catch (error) {
-    const again = await repeat();
-    if (again) return again;
-    if (String(error).includes('written_form_revision_conflict')) throw new Problem(409, 'Another review changed this crop. Reload it.');
-    throw error;
-  }
-  return { ...data, origin: row.origin, written_form: form };
-}
-// Every written form saved here, oldest first, for `glyph_atlas.review.cloudflare_import`: the crop,
-// the label, revision and pixels the reviewer saw, and whether it is the crop's latest.
-export const writtenFormsQuery = () => `SELECT w.id,w.target,u.origin,w.actor,w.revision,w.pixels,w.label,w.form,w.at,
-  w.rowid=(SELECT max(l.rowid) FROM written_forms l WHERE l.target=w.target) AS current
-  FROM written_forms w JOIN units u ON u.id=w.target ORDER BY w.rowid`;
-async function writtenForms(env: Env) {
-  const rows = await env.DB.prepare(writtenFormsQuery()).all<Json>();
-  return { version: 1, kind: 'atlas-written-forms', publication: await meta(env, 'published_at'),
-    forms: rows.results.map(row => ({ ...row, current: Boolean(row.current) })) };
+  return answered(result);
 }
 // A submission is keyed by the id it was written under, so a user's own is found under any of theirs.
 async function undo(env:Env,request:Request,actor:string,id:string){
@@ -1541,20 +1490,15 @@ const routes = {
           if(!success)throw new Problem(429,'Too many corrections at once. Wait a minute and try again.');
           return json(await submit(env,request,me.id,'@batch'));
         }
-        const form=path.match(/^\/atlas\/characters\/([^/]+)\/written-form$/);
-        if(form||path==='/atlas/corpus/written-forms'){
-          // Each save is one small row, and one address is held to a rate as batch corrections are.
-          const {success}=await env.WRITTEN_FORMS.limit({key:request.headers.get('cf-connecting-ip')??'local'});
-          if(!success)throw new Problem(429,'Too many written forms at once. Wait a minute and try again.');
-          return json(await writeForm(env,request,me.id,form?decodeURIComponent(form[1]):null));
-        }
-        const acted=path.match(/^\/atlas\/claims\/([^/]+)\/actions$/);
-        if(path==='/atlas/claims'||acted){
-          // A claim or an action is a few small rows, and one address is held to a rate as written forms are.
+        const acted=path.match(/^\/atlas\/claims\/([^/]+)\/actions$/),picked=path.match(/^\/atlas\/characters\/([^/]+)\/form$/);
+        if(path==='/atlas/claims'||acted||picked){
+          // A claim, an action or a crop's form is a few small rows, and one address is held to a rate.
           const {success}=await env.CLAIMS.limit({key:request.headers.get('cf-connecting-ip')??'local'});
           if(!success)throw new Problem(429,'Too many claims at once. Wait a minute and try again.');
           const input=await body(request);
-          let target='';if(acted){try{target=decodeURIComponent(acted[1])}catch{throw new Problem(404,'No such claim.')}}
+          let target='';
+          try{target=decodeURIComponent((acted??picked)?.[1]??'')}catch{throw new Problem(404,acted?'No such claim.':'This character is not in the published collection.')}
+          if(picked)return json(await setForm(env,input,target,me.id,{...ledgerTools,literal}));
           return json(acted?await actOnClaim(env,input,target,me.id,me.admin,ledgerTools):await writeClaim(env,input,me.id,ledgerTools));
         }
         const undone=path.match(/^\/atlas\/(?:rounds|corrections)\/([^/]+)\/undo$/);
@@ -1585,7 +1529,7 @@ const routes = {
       const run=path.match(/^\/atlas\/ngrams\/(\d+)(?:\/([^/]+))?$/);
       if(run)return json(run[2]===undefined?await ngrams(env,ctx,url,ngramSize(run[1])):await ngramOccurrences(env,url,ngramSize(run[1]),decodeURIComponent(run[2])));
       if(path==='/atlas/corpus/characters')return json(await corpusCharacters(env,ctx,url),200,{'cache-control':'private, max-age=300'});
-      if(path==='/atlas/corpus/character')return json(record(await unit(env,q.get('id')||'')));
+      if(path==='/atlas/corpus/character')return json(await inspected(env,await unit(env,q.get('id')||'')));
       if(path==='/atlas/collection/status')return json(await meta(env,'collection'));
       const document=path.match(/^\/atlas\/documents\/([^/]+)\/characters$/);
       if(document){let id:string;try{id=decodeURIComponent(document[1])}catch{throw new Problem(404,'No characters are published for this document.')}
@@ -1597,8 +1541,6 @@ const routes = {
       if(path==='/atlas/claims')return json(await claimsOf(env,text(q.get('subject'),512,'subject',true)!));
       if(path==='/atlas/ledger'||path==='/atlas/ledger.json')return json(await ledgerPage(env,q,integer),200,
         path.endsWith('.json')?{'content-disposition':'attachment; filename="atlas-ledger.json"'}:{});
-      if(path==='/atlas/written-forms'||path==='/atlas/written-forms.json')return json(await writtenForms(env),200,
-        path.endsWith('.json')?{'content-disposition':'attachment; filename="atlas-written-forms.json"'}:{});
       if(path==='/atlas/reviews'||path==='/atlas/reviews.json')return json(await reviews(env,q.get('include_processed')==='true'),200,
         path.endsWith('.json')?{'content-disposition':'attachment; filename="atlas-character-reviews.json"'}:{});
       const versions=path.match(/^\/atlas\/characters\/([^/]+)\/versions$/);
@@ -1614,7 +1556,7 @@ const routes = {
           if(q.get('revision')!==String(row.revision)||!samePixels(q,row.origin,data))throw new Problem(409,'Character changed.');
           return json(parse(character[2].endsWith('/context')?row.context:row.visual));
         }
-        return json(record(row));
+        return json(await inspected(env,row));
       }
       if(path==='/layers/suggest')return json(await suggest(env,q));
       if(path==='/layers/search'){const found=await suggest(env,q);return json({...found,results:found.items,match:found.items[0]||null})}
@@ -1632,7 +1574,7 @@ const routes = {
         return json({items:rows.results.map(r=>parse(r.data)),total:rows.results.length})}
       if(path==='/atlas/corpus/reviews'){
         const rows=await env.DB.prepare("SELECT * FROM units WHERE origin='corpus' AND state='flagged' ORDER BY id LIMIT 96").all<UnitRow>();
-        return json({items:rows.results.map(compact),total:rows.results.length})}
+        return json({items:await withForms(env,rows.results.map(compact)),total:rows.results.length})}
       if(path.startsWith('/atlas/forms/')){const formed=await formsRoute(env,request,path,q,formTools,ctx);
         if(formed)return formed instanceof Response?formed:json(formed)}
       throw new Problem(404,'Unknown endpoint.');

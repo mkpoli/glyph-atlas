@@ -11,7 +11,7 @@ The hierarchy is grapheme → character → form.
 | --- | --- | --- |
 | Grapheme | A curated family, such as 仮 and 假 | `Character.grapheme` points to its representative |
 | Character | The written identity and its code point | `data/vocab/characters.tsv`, one row per code point |
-| Form | Exact ink in a source occurrence | `Unit`, its crop, placement and optional variant identifiers |
+| Form | A category of written appearance a crop is written in | the assertion ledger: a crop's `has_form` claim names a form, and a form's representations name it ([docs/design/form-model.md](design/form-model.md)) |
 
 仮 (`U+4EEE`) and 假 (`U+5047`) share a family represented by 仮. Their individual
 characters and occurrence counts remain separate. The 271 supported one-to-one
@@ -23,8 +23,9 @@ The kanji 子 remains a separate character and family, while `Character.jibo` re
 its derivation relation to 𛄧. A shared 字母 alone does not establish a family.
 Small kana and ligatures retain distinct families.
 
-A unit's `unicode` identifies the written character. `variants` can identify an MJ, IVS, GlyphWiki
-or local form. Grouping a character never rewrites these fields or the source transcription.
+A unit's `unicode` identifies the written character. The form its ink is written in is a claim of
+the assertion ledger, and an MJ id, an IVS, a GlyphWiki name or an IDS is a representation of that
+form. Grouping a character never rewrites these fields or the source transcription.
 
 `/layers/graphemes/{code_point}` resolves either member to its family and lists
 `characters`. Each character can be selected for exact occurrences; an explicit
@@ -113,8 +114,6 @@ One located unit: a character, a ligature, a mark, a gap, or a sequence awaiting
 | `classification` | `unassessed`, `identified`, `ambiguous` (several candidates remain), `unencoded` (identified, no code point exists), `unidentified` |
 | `script` | `hiragana`, `hentaigana`, `katakana`, `han`, `hangul`, `gugyeol`, `symbol`, `latin`, `unknown`; the character layer is the authority |
 | `style` | style of this unit's letterforms, a value of `data/vocab/style.yaml`. `unassessed` takes the page's, then the document's; a `mixed` page or document passes nothing down, and the unit stays unassessed |
-| `written_form` | the shape the letterforms take when a reviewer records that it differs from the character: one character or an Ideographic Description Sequence, such as `𮟃` for a 還 written that way or `⿺辶𦊷`. Null when they are written as the character. The character, its grapheme and the review stay as they are |
-| `variants` | list of `{scheme, id, version}` with scheme `mj`, `ivs`, `glyphwiki` or `local`; several may apply |
 | `candidates` | scored alternatives `{unicode, p}` when `classification` is `ambiguous` |
 | `antecedent_ids` | for an iteration mark, the units it repeats, across a line break if needed |
 | `group_id` | 連綿 group |
@@ -129,8 +128,12 @@ One located unit: a character, a ligature, a mark, a gap, or a sequence awaiting
 
 A hentaigana form of か derived from 可 has `unicode` U+1B019 (KA-3), `script` hentaigana, and, in
 the character layer, 字母 可 and the kana か in `readings`.
-U+1B01A (KA-4) derives from 可 as well, so a record of this pair also carries a local shape id in
-`variants`. The modern spelling is derived at export.
+U+1B01A (KA-4) derives from 可 as well; which shape a crop of the pair shows is its form claim. The
+modern spelling is derived at export.
+
+Schema version 5 removed `written_form` and `variants` from the unit: a table or a review store
+that still holds them reads as without them while they are empty, and refuses a value, which
+`scripts/migrate_written_forms.py` moves into the ledger.
 
 ### characters
 
@@ -150,7 +153,7 @@ from one Unicode release's `UnicodeData.txt`, `Blocks.txt`, `Scripts.txt`, `Deri
 | `readings` | what the character reads as, historical spelling kept; empty when it is not a kana or a 구결자; a Hangul compatibility jamo reads as itself, a syllable or conjoining jamo has none |
 | `grapheme` | the representative of its curated family; its own code point when no family is stated |
 | `confusables` | the characters Unicode's confusables table pairs with this one, both directions |
-| `variants` | as on a unit, when a shape registry has an id for the character |
+| `variants` | list of `{scheme, id, version}` with scheme `mj`, `ivs`, `glyphwiki` or `local`, when a shape registry has an id for the character |
 
 The table covers every kana of the kana blocks and every CJK unified ideograph, because the ideographs
 are the 字母 the kana point at and the characters a source text is written in. It does not cover the
