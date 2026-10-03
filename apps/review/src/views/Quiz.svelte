@@ -53,7 +53,7 @@
   let savedNotice = $state(''), savedTimer
   function announceSaved(count, label) {
     clearTimeout(savedTimer)
-    savedNotice = t('quiz.roundSaved', { count, reading: label })
+    savedNotice = t('quiz.roundSaved', { count, grapheme: label })
     savedTimer = setTimeout(() => savedNotice = '', 3500)
   }
   // True while the load-more row is on screen or close to it: scrolling down loads the next batch.
@@ -762,7 +762,7 @@
 <svelte:window onkeydown={keydown} />
 <section class="quiz-workspace">
   <div class="quiz-topline"><a href={localize('/')} class="quiet-link">{t('quiz.backToCollection')}</a><div class="round-count"><span class="live-dot"></span>{t('quiz.issuesSavedSession', { count: completed })}</div><button class="undo-round shape-toggle" aria-pressed={byShape} onclick={toggleShape}>{byShape ? t('quiz.shapeToggle.byShape') : t('quiz.shapeToggle.dealt')}</button><button class="undo-round suspect-toggle" aria-pressed={onlySuspects} disabled={saving || loading || selection.length > 0 || step !== 'select'} onclick={toggleSuspects}>{onlySuspects ? t('quiz.suspectToggle.only') : t('quiz.suspectToggle.all')}</button>{#if last}<button class="undo-round" disabled={saving} onclick={undo}>{t('quiz.undoLastRound')}</button>{/if}</div>
-  <div class="quiz-heading"><div class="target-character" aria-label={t('quiz.targetReading', { reading: graphemeLabel })}>{#if graphemeLabel}<ScriptText text={graphemeLabel} />{:else}<span lang="ja">字</span>{/if}</div><div class="quiz-title"><h1>{step === 'select' ? t('quiz.heading.select') : t('quiz.heading.issue')}</h1>{#if step === 'select'}<p>{around('quiz.selectHint', 'reading')[0]}<b>{#if graphemeLabel}<ScriptText text={graphemeLabel} />{:else}…{/if}</b>{around('quiz.selectHint', 'reading')[1]}</p>{/if}{#if members.length > 1}<p class="round-members">{#each members as member, i (i)}{#if i}{' '}{/if}<ScriptText text={member} />{/each}</p>{/if}</div><div class="round-switch"><button class="category-toggle" disabled={saving || loading} onclick={() => categoryOpen = !categoryOpen}>{t('quiz.changeCharacter')}</button><button class="quiet-link" disabled={saving || loading || (!canNext && !recordable)} onclick={pass}>{t('quiz.nextCharacterArrow')}</button></div></div>
+  <div class="quiz-heading"><div class="target-character" aria-label={t('quiz.targetGrapheme', { grapheme: graphemeLabel })}>{#if graphemeLabel}<ScriptText text={graphemeLabel} />{:else}<span lang="ja">字</span>{/if}</div><div class="quiz-title"><h1>{step === 'select' ? t('quiz.heading.select') : t('quiz.heading.issue')}</h1>{#if step === 'select'}<p>{around('quiz.selectHint', 'grapheme')[0]}<b>{#if graphemeLabel}<ScriptText text={graphemeLabel} />{:else}…{/if}</b>{around('quiz.selectHint', 'grapheme')[1]}</p>{/if}{#if members.length > 1}<p class="round-members">{#each members as member, i (i)}{#if i}{' '}{/if}<ScriptText text={member} />{/each}</p>{/if}</div><div class="round-switch"><button class="category-toggle" disabled={saving || loading} onclick={() => categoryOpen = !categoryOpen}>{t('quiz.changeCharacter')}</button><button class="quiet-link" disabled={saving || loading || (!canNext && !recordable)} onclick={pass}>{t('quiz.nextCharacterArrow')}</button></div></div>
   {#if categoryOpen}<div class="round-categories"><input aria-label={t('quiz.findCategory.aria')} placeholder={t('quiz.findCategory.placeholder')} bind:value={search}/><div class="category-options">{#each categories as c (c.label)}<button disabled={saving} onclick={() => chooseCategory(c.label)}><span><ScriptText text={c.char} /></span>{#if c.members.length > 1}<small class="category-members"><ScriptText text={c.members.map(m => m.label).join('')} /></small>{/if}<small>{c.pending}</small></button>{/each}</div></div>{/if}
   <label class="review-material">{t('quiz.material.label')}
     <select aria-label={t('quiz.material.aria')} value={production} disabled={saving || loading || loadingMore}
@@ -772,9 +772,9 @@
   </label>
   {#if history.length > 1}
     <nav class="character-history" aria-label={t('quiz.history.label')}>
-      <button class="previous-reading" aria-label={t('quiz.history.previousRound')} disabled={saving || loading || historyIndex <= 0} onclick={() => visit(historyIndex - 1)}>{t('quiz.history.previous')}</button>
-      <div class="history-characters">{#each history as round, i (round.roundId)}<button class="history-character" class:current={i === historyIndex} aria-current={i === historyIndex ? 'step' : undefined} aria-label={t('quiz.history.returnTo', { reading: graphemeText(round.grapheme) })} disabled={saving || loading} onclick={() => visit(i)}><ScriptText text={graphemeText(round.grapheme)} /></button>{/each}</div>
-      <button class="forward-reading" aria-label={t('quiz.history.nextRound')} disabled={saving || loading || historyIndex >= history.length - 1} onclick={() => visit(historyIndex + 1)}>→</button>
+      <button class="history-previous" aria-label={t('quiz.history.previousRound')} disabled={saving || loading || historyIndex <= 0} onclick={() => visit(historyIndex - 1)}>{t('quiz.history.previous')}</button>
+      <div class="history-characters">{#each history as round, i (round.roundId)}<button class="history-character" class:current={i === historyIndex} aria-current={i === historyIndex ? 'step' : undefined} aria-label={t('quiz.history.returnTo', { grapheme: graphemeText(round.grapheme) })} disabled={saving || loading} onclick={() => visit(i)}><ScriptText text={graphemeText(round.grapheme)} /></button>{/each}</div>
+      <button class="history-next" aria-label={t('quiz.history.nextRound')} disabled={saving || loading || historyIndex >= history.length - 1} onclick={() => visit(historyIndex + 1)}>→</button>
     </nav>
   {/if}
   {#if updated.current}<div class="update-notice" role="status"><span>{t('quiz.newVersion')}</span><button disabled={saving} onclick={reloadKeepingRound}>{t('quiz.reloadNewVersion')}</button></div>{/if}
@@ -799,8 +799,8 @@
     {#if items.length}<div class="load-more-row" use:watchEnd role="status">
       {#if loadingMore}<span class="load-more-status"><span class="load-more-spinner" aria-hidden="true"></span>{t('quiz.loadMore.loading')}</span>
       {:else if hasMore && items.length >= roundLimit}<span class="load-more-status">{t('quiz.loadMore.saveToLoad')}</span>
-      {:else if hasMore}<button class="load-more" disabled={loading || saving} onclick={loadMore}>{loadMoreFailed && error ? t('common.retry') : t('quiz.loadMore.more', { reading: graphemeLabel })}</button>
-      {:else}<span class="load-more-status">{t('quiz.loadMore.allLoaded', { reading: graphemeLabel })}</span>{/if}
+      {:else if hasMore}<button class="load-more" disabled={loading || saving} onclick={loadMore}>{loadMoreFailed && error ? t('common.retry') : t('quiz.loadMore.more', { grapheme: graphemeLabel })}</button>
+      {:else}<span class="load-more-status">{t('quiz.loadMore.allLoaded', { grapheme: graphemeLabel })}</span>{/if}
     </div>{/if}
     {#if references.length}
       <section class="quiz-reference" aria-label={t('quiz.reference.label')}>

@@ -5,7 +5,7 @@
   import { t, localize } from '../lib/i18n.svelte.js'
   import { isUnassigned } from '../lib/identity.js'
 
-  // `label` is the crop's current reading: a look-alike relabelled to it since the lists were
+  // `label` is the crop's current character: a look-alike relabelled to it since the lists were
   // computed is no longer filed differently.
   // `ready` holds the request back until the crop it belongs to can be judged.
   let { id, label = null, ready = true } = $props()
