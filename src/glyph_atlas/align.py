@@ -79,7 +79,6 @@ class Token(BaseModel):
     text: str
     start: int
     end: int
-    reading: str | None = None
     unicode: str | None = None
     code_points: set[str] = Field(default_factory=set)
     kind: UnitKind = UnitKind.CHAR
@@ -235,7 +234,6 @@ def tokens_of(line: Line, policy: str = "align-v1") -> list[Token]:
             base.text += char.text
             base.end = char.end
             base.code_points |= token.code_points
-            base.reading = (base.reading or "") + char.text
             continue
         tokens.append(token)
     return tokens
@@ -257,7 +255,6 @@ def _token_of(text: str, start: int, end: int, role: str, column: int | None, po
         text=text,
         start=start,
         end=end,
-        reading=text,
         unicode=ordinary,
         code_points=code_points,
         kind=kind,
@@ -273,7 +270,7 @@ def _script_of(text: str, candidates: list[str]) -> Script:
     The layer is what knows: a transcription may hold a character this project never saw, such as
     the alternate katakana of Unicode 18.0, and a range list written here would not. A token that
     is a kana with more than one candidate code point is a hentaigana whatever the layer says about
-    the character transcribed, because the alternatives are what the reading leaves open.
+    the character transcribed, because the alternatives are what the transcription leaves open.
     """
     if len(text) != 1:
         return Script.UNKNOWN
@@ -433,7 +430,6 @@ def align_line(
                 box=None,
                 kind=UnitKind.CHAR,
                 text_source=token.text,
-                reading=token.text,
                 unicode=token.unicode,
                 classification=Classification.UNASSESSED,
                 script=token.script,
@@ -506,7 +502,6 @@ def _unit_of(
         kind=token.kind,
         granularity=granularity,  # type: ignore[arg-type]
         text_source=token.text or None,
-        reading=token.reading,
         unicode=unicode,
         classification=classification,
         script=token.script,

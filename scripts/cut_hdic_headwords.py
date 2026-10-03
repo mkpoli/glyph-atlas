@@ -57,7 +57,7 @@ def seal_records(seals: list[hdic.Seal], page: Page, lines: list[Line], units: l
                           meta={"source": "hdic-ktb", "entry_id": seal.entry_id, "file": "KTB_ndl_Seal.tsv"}))
         units.append(Unit(
             id=f"ktb:{seal.seal_id}:seal", document_id=page.document_id, page_id=page.id, line_id=line_id, seq=0,
-            box=seal.box, text_source=seal.entry, reading=seal.entry, unicode=code,
+            box=seal.box, text_source=seal.entry, unicode=code,
             classification=Classification.IDENTIFIED if code else Classification.UNIDENTIFIED,
             script=Script.HAN, style="seal", method="import", review=ReviewState.TRANSCRIBER,
             upstream={"source": "hdic-ktb", "entry_id": seal.entry_id, "seal_id": f"T{seal.seal_id}"},
@@ -201,7 +201,7 @@ def main() -> int:
                     meta["standard_form"] = pair.glyph.standard
                 units.append(Unit(
                     id=f"{dictionary.name}:{entry_id}:{pair.slot}", document_id=page.document_id, page_id=page.id,
-                    line_id=line_id, seq=pair.slot, box=pair.box, text_source=pair.glyph.text, reading=pair.glyph.text,
+                    line_id=line_id, seq=pair.slot, box=pair.box, text_source=pair.glyph.text,
                     unicode=code, classification=Classification.IDENTIFIED if code else Classification.UNIDENTIFIED,
                     script=Script.HAN, method="detect-align", review=ReviewState.MACHINE,
                     upstream={"source": corpus, "entry_id": entry_id,

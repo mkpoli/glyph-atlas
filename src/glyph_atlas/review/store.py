@@ -13,7 +13,7 @@ present, so replaying a log over tables that `apply` wrote changes nothing.
 
 An event carries one editorial decision: a field of a line or a unit, a whole unit drawn by a
 reviewer, or a segmentation. Segmentation is one event with `field = "segmentation"` and
-`new = {"split": [{"box": …, "reading": …}, …]}` or `new = {"merge": [ids]}`; the inputs are retired
+`new = {"split": [{"box": …, "unicode": …}, …]}` or `new = {"merge": [ids]}`; the inputs are retired
 with `active` false and `split_into` or `merged_into` set, and the outputs take the reviewer ids
 `{line_id}:m{n}`.
 
@@ -40,7 +40,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from .. import tables
+from .. import recorded_terms, tables
 from ..schema import (
     PAGE_SCOPE,
     Box,
@@ -82,7 +82,6 @@ UNREVISED = frozenset({SEEN, WRITTEN_FORM})
 SPLIT_KEYS = frozenset(
     {
         "box",
-        "reading",
         "text_source",
         "unicode",
         "kind",
@@ -293,7 +292,6 @@ class UnitRequest(BaseModel):
     line_id: str
     box: Box
     seq: int | None = None
-    reading: str | None = None
     text_source: str | None = None
     unicode: str | None = None
     kind: UnitKind = UnitKind.CHAR
@@ -1040,7 +1038,6 @@ class Store:
             line_id=request.line_id,
             seq=request.seq,
             box=request.box,
-            reading=request.reading,
             text_source=request.text_source,
             unicode=request.unicode,
             kind=request.kind,
@@ -1694,6 +1691,9 @@ def _change(state: State, event: Review, *, guard: bool) -> Change:
         return _segment(state, event, guard=guard)
     if event.field in STATELESS or event.target_type not in ("unit", "line"):
         return Change(event=event)
+    if guard and event.field in recorded_terms.FORMER_UNIT_FIELDS:
+        # A recorded decision on a field units no longer have: it moved the revision and changes nothing.
+        return Change(event=event)
     return _field_change(state, event, guard=guard)
 
 
@@ -1728,7 +1728,7 @@ def _field_change(state: State, event: Review, *, guard: bool) -> Change:
 def _create_change(state: State, event: Review, *, guard: bool) -> Change:
     model = Unit if event.target_type == "unit" else Line
     try:
-        record = model.model_validate(event.new)
+        record = model.model_validate(recorded_terms.unit_record(event.new) if guard and model is Unit else event.new)
     except ValidationError as exc:
         raise BadRequest(f"{event.target_type}: {_problem(exc)}") from exc
     if state.get(record.id) is not None:
@@ -1783,6 +1783,8 @@ def _split(state: State, event: Review, entries: Any, *, guard: bool) -> Change:
     for index, entry in enumerate(entries):
         if not isinstance(entry, dict) or "box" not in entry:
             raise BadRequest("every split entry needs a box")
+        if guard:
+            entry = recorded_terms.unit_record(entry)
         unknown = set(entry) - SPLIT_KEYS
         if unknown:
             raise BadRequest(f"a split entry cannot set {', '.join(sorted(unknown))}")
@@ -1795,9 +1797,8 @@ def _split(state: State, event: Review, entries: Any, *, guard: bool) -> Change:
         if machine:
             # A machine split says what each child is; inheriting the parent's one character would
             # put the same identity on two boxes, which is the corruption a split exists to undo.
-            for field in ("unicode", "reading"):
-                if field not in entry:
-                    raise BadRequest(f"a machine split entry must state its own {field}")
+            if "unicode" not in entry:
+                raise BadRequest("a machine split entry must state its own unicode")
             _inside_parent(box, unit.box)
         number += 1
         data = unit.model_dump(mode="json")
@@ -1871,7 +1872,6 @@ def _merge(state: State, event: Review, ids: Any, *, guard: bool) -> Change:
     output_id = f"{line_id}:m{_next_number(state.units, f'{line_id}:m')}"
     boxes = [unit.box for unit in ordered]
     box = _union(boxes) if all(box is not None for box in boxes) else None
-    readings = "".join(unit.reading or "" for unit in ordered)
     unicodes = [unit.unicode for unit in ordered]
     texts = "".join(unit.text_source or "" for unit in ordered)
     data = ordered[0].model_dump(mode="json")
@@ -1879,7 +1879,6 @@ def _merge(state: State, event: Review, ids: Any, *, guard: bool) -> Change:
         {
             "id": output_id,
             "box": box.model_dump() if box else None,
-            "reading": readings or None,
             "text_source": texts or None,
             "unicode": " ".join(unicodes) if all(unicodes) else None,
             "kind": UnitKind.LIGATURE.value,
@@ -1934,13 +1933,13 @@ def _machine_child(data: dict[str, Any], entry: dict[str, Any], parent: Unit, ev
     parent's crop is not the child's picture), the parent's scoring is dropped because it was never
     measured on this box, the repair note the parent may carry is cleared because the split is what
     answers it, and the link back to the run that produced it is written where a reader can find it.
-    The transcription and the script are the child's own: stated by the entry, or else its reading
-    and the script of its one character. The event's own evidence is left exactly as the caller sent it.
+    The transcription and the script are the child's own: stated by the entry, or else its character
+    and the script of that one character. The event's own evidence is left exactly as the caller sent it.
     """
     from .. import refs
     from ..unit_scope import character_count, encoded_text
 
-    text = encoded_text(data.get("unicode")) or data.get("reading", "")
+    text = encoded_text(data.get("unicode")) or entry.get("text_source") or ""
     single = character_count(text) == 1
     script = entry.get("script") or (refs.script_of(text) if single else Script.UNKNOWN).value
     meta = {key: value for key, value in (data.get("meta") or {}).items()
@@ -1957,7 +1956,7 @@ def _machine_child(data: dict[str, Any], entry: dict[str, Any], parent: Unit, ev
     return {"meta": meta, "crop": None, "crop_sha256": None, "candidates": [], "confidence": None,
             "group_id": None, "antecedent_ids": [], "voicing": None,
             "classification": Classification.UNASSESSED.value,
-            "text_source": entry.get("text_source", data.get("reading")), "script": script,
+            "text_source": entry.get("text_source", text or None), "script": script,
             "kind": UnitKind.CHAR.value if single else UnitKind.SEQUENCE.value,
             "granularity": "char" if single else "sequence"}
 

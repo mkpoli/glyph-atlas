@@ -80,7 +80,7 @@ def line(ident: str = "l1", **overrides) -> Line:
 def unit(ident: str = "u1", **overrides) -> Unit:
     fields = {"id": ident, "document_id": "d1", "page_id": "p1", "line_id": None, "seq": 0,
               "box": Box(x=10, y=20, w=30, h=40), "crop": None, "kind": UnitKind.CHAR, "granularity": "char",
-              "text_source": "か", "reading": "か", "unicode": "U+304B",
+              "text_source": "か", "unicode": "U+304B",
               "classification": Classification.IDENTIFIED, "script": Script.HIRAGANA}
     return Unit(**{**fields, **overrides})
 
@@ -116,7 +116,7 @@ SAMPLES = {
     Unit: Unit(
         id="u1", document_id="d1", page_id="p1", line_id="l1", seq=2, box=Box(x=1, y=2, w=3, h=4),
         crop="crops/u1.jpg", crop_sha256="b" * 64, kind=UnitKind.ITERATION_MARK, granularity="sequence",
-        text_source="ゝ", reading="か", unicode="U+304B", classification=Classification.AMBIGUOUS,
+        text_source="ゝ", unicode="U+304B", classification=Classification.AMBIGUOUS,
         script=Script.HENTAIGANA,
         candidates=[Candidate(unicode="U+304B", p=0.6, jibo="可"), Candidate(unicode="U+1B019", p=0.3)],
         antecedent_ids=["u0"], group_id="g1", voicing="dakuten", method="detect-align",
@@ -320,7 +320,7 @@ def test_merge_collapses_an_identical_duplicate(tmp_path):
 def test_merge_prints_both_rows_of_a_conflicting_duplicate(tmp_path):
     first = write_dataset(tmp_path / "first", documents=[document()], units=[unit("u1")])
     second = write_dataset(tmp_path / "second", documents=[document()],
-                           units=[unit("u1", unicode="U+1B003", reading="か", script=Script.HENTAIGANA)])
+                           units=[unit("u1", unicode="U+1B003", script=Script.HENTAIGANA)])
     with pytest.raises(tables.DuplicateIdError) as excinfo:
         tables.Dataset(first).merge([tables.Dataset(second)], tmp_path / "merged")
     message = str(excinfo.value)

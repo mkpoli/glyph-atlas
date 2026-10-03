@@ -172,7 +172,7 @@ def test_a_hentaigana_token_stays_unassessed_and_keeps_its_candidates():
     unit = units[0]
     assert unit.script.value == "hiragana"
     assert unit.classification.value == "unassessed"
-    assert unit.reading == "か" and unit.unicode == "U+304B"
+    assert unit.text_source == "か" and unit.unicode == "U+304B"
     assert len(unit.candidates) >= 13
 
 

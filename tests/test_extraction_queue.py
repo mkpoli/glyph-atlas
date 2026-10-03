@@ -6,7 +6,7 @@ from glyph_atlas.schema import Box, Candidate, Document, Line, Page, ReviewState
 
 
 def unit(**kwargs):
-    return Unit(id="test", text_source="字", reading="字", box=Box(x=10,y=10,w=30,h=35), **kwargs)
+    return Unit(id="test", text_source="字", box=Box(x=10,y=10,w=30,h=35), **kwargs)
 
 
 def votes(text="字"):
@@ -407,7 +407,7 @@ def test_extraction_publishes_out_of_vocabulary_units_tagged_unconfirmed(tmp_pat
     monkeypatch.setattr(extraction_queue.images, "path_for", lambda _: image)
 
     def placed(text, x, review, box=True, w=40):
-        return Unit(id=f"u{x}", page_id="d:0", line_id="d:0:l", text_source=text, reading=text, review=review,
+        return Unit(id=f"u{x}", page_id="d:0", line_id="d:0:l", text_source=text, review=review,
                     box=Box(x=x, y=10, w=w, h=45) if box else None)
     # The classifier reads 字 on every 40-pixel crop, and 高 on the 50-pixel 飍 at x=100.
     found = [placed("字", 10, ReviewState.MACHINE), placed("飍", 100, ReviewState.REJECTED, w=50),
@@ -517,7 +517,7 @@ def supplement_records():
 
 
 def placed(ident, x, gate):
-    return Unit(id=ident, document_id="d", page_id="d:0", line_id="d:0:L", reading="飍", text_source="飍",
+    return Unit(id=ident, document_id="d", page_id="d:0", line_id="d:0:L", text_source="飍",
                 box=Box(x=x, y=10, w=40, h=45), meta={"extraction": {"gate": gate}})
 
 

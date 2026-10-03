@@ -61,13 +61,13 @@ def test_family_probability_cannot_supply_an_exact_child_label():
 
 def test_child_records_keep_source_and_distinguish_character_from_group():
     parent = Unit(id='source:1', document_id='d', page_id='p', line_id='l', seq=2,
-                  box=Box(x=100, y=200, w=50, h=180), reading='とりい',
+                  box=Box(x=100, y=200, w=50, h=180),
                   text_source='とりい', unicode='U+3068 U+308A U+3044', granularity='block')
     proposal = propose_partial(crop(), 'とりい', recognize)
     retired, children = child_units(parent, proposal, 'a' * 64)
     assert not retired.active and retired.text_source == 'とりい'
     assert children[0].kind == 'sequence' and children[0].granularity == 'sequence'
-    assert children[1].kind == 'char' and children[1].reading == 'い'
+    assert children[1].kind == 'char' and children[1].text_source == 'い'
     assert all(c.review == 'machine' and c.antecedent_ids == [parent.id] for c in children)
     assert children[0].box.y == 200 and children[1].box.y == 200 + proposal['cuts'][0]
     assert [c.id for c in child_units(parent, proposal, 'a' * 64)[1]] == retired.split_into

@@ -121,7 +121,7 @@ def read(zip_path: Path, title: str | None = None) -> tuple[Document, list[Page]
         units.append(Unit(
             id=f"codh:{bid}:{image}:{block}:{char_id}", document_id=document.id, page_id=pages[image].id, line_id=None, seq=None,
             box=Box(x=int(row["X"]), y=int(row["Y"]), w=int(row["Width"]), h=int(row["Height"])),
-            kind=kind_of(cp), text_source=char, reading=char, unicode=f"U+{cp:04X}", script=script_of(cp),
+            kind=kind_of(cp), text_source=char, unicode=f"U+{cp:04X}", script=script_of(cp),
             classification=classification_of(cp), method="import", review=ReviewState.TRANSCRIBER,
             upstream={"source": SOURCE, "ref": f"{bid}/{image}/{block}/{char_id}", "block": block,
                       "identity_basis": "normalized_transcription", "source_code_point": f"U+{cp:04X}",

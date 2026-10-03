@@ -3,12 +3,12 @@
 The journal is append-only. Human-selected text remains attached to its original
 review; inferred boundaries and labels retain model provenance.
 
-A joined crop whose reviewer typed its reading is split by that reading: the text
-sets how many children there are and what each one is, and the ink places the cuts
-(`split_proposals.divide_by_reading`). No OCR runs on that path. The split is
+A joined crop whose reviewer typed its characters is split by them: the text sets
+how many children there are and what each one is, and the ink places the cuts
+(`split_proposals.divide_by_text`). No OCR runs on that path. The split is
 withheld only when the ink cannot be cut into that many characters, for the reasons
-`divide_by_reading` lists, or when the reading is one encoded ligature. Without a
-typed reading the OCR-gated `SplitEngine` decides, as before. Either way the
+`divide_by_text` lists, or when the text is one encoded ligature. Without typed
+characters the OCR-gated `SplitEngine` decides, as before. Either way the
 children are machine proposals, dealt again in Quick review.
 
 A report withheld earlier is assessed again when its batch is rerun with
@@ -109,7 +109,7 @@ class SplitEngine:
         from .suggestions import LOCK
         if identity and refs.ligature(identity):
             return {"accepted": False, "reason": "the parent is an encoded ligature", "identity": identity}
-        # With no encoded identity the ordinary splitter must consult its reading
+        # With no encoded identity the ordinary splitter must consult its text
         # ligature guard; the fallback cannot bypass that check.
         fallback_text = expected if identity else None
         with LOCK:
@@ -130,7 +130,7 @@ class SplitEngine:
                 return self._blank_gap_fallback(crop, fallback_text,
                     {"accepted": False, "reason": "no joined sequence recognized", **evidence})
             if expected and sequence["text"] != expected:
-                # A contradictory whole-crop reading stays unresolved even if a
+                # A contradictory whole-crop recognition stays unresolved even if a
                 # few small pieces happen to resemble the requested characters.
                 return {"accepted": False, "reason": "sequence OCR disagrees with the saved decision", **evidence}
             if sequence["score"] < (.90 if expected else .98):
@@ -149,12 +149,12 @@ class SplitEngine:
             return assessed if assessed["accepted"] else self._blank_gap_fallback(crop, fallback_text, assessed)
 
 
-def reviewer_reading(feedback) -> str | None:
-    """The reading a reviewer typed for a joined crop, when the joined decision rests on it.
+def reviewer_text(feedback) -> str | None:
+    """The characters a reviewer typed for a joined crop, when the joined decision rests on them.
 
     Two or more characters, counted with a combining mark or a variation selector as part
     of its base. Whitespace is not ink and is dropped. `None` means the OCR-gated path
-    applies: no typed reading, one character, or a decision taken from some other text.
+    applies: nothing typed, one character, or a decision taken from some other text.
     """
     from ..unit_scope import character_count
 
@@ -166,19 +166,19 @@ def reviewer_reading(feedback) -> str | None:
     return typed if character_count(typed) >= 2 else None
 
 
-def assess_reading(unit, crop: Image.Image, reading: str) -> dict:
-    """Child boxes for the characters a reviewer read: the reading decides, the ink cuts.
+def assess_text(unit, crop: Image.Image, typed: str) -> dict:
+    """Child boxes for the characters a reviewer typed: the text decides, the ink cuts.
 
     The ligature guard is always asked: a typed トモ may be the one encoded character 𪜈,
-    and a reading cannot tell the two apart.
+    and the text cannot tell the two apart.
     """
-    from ..split_proposals import divide_by_reading
+    from ..split_proposals import divide_by_text
 
-    basis = {"basis": "reviewer-reading", "reading": reading}
+    basis = {"basis": "reviewer-text", "typed": typed}
     if unit.unicode and refs.ligature(unit.unicode):
         return {"accepted": False, "reason": "the parent is an encoded ligature", "identity": unit.unicode,
                 **basis}
-    return {**divide_by_reading(crop, reading).model_dump(mode="json"), **basis}
+    return {**divide_by_text(crop, typed).model_dump(mode="json"), **basis}
 
 
 def _reconciles(event, source_event_id) -> bool:
@@ -266,7 +266,7 @@ def _reuse_existing_child(store, unit, assessment, boxes, others, *, base_revisi
         return None
     index = uncovered[0]
     remaining = assessment["text"][index]
-    typed = assessment.get("basis") == "reviewer-reading"
+    typed = assessment.get("basis") == "reviewer-text"
     if remaining != written_identity(unit) and not typed:
         return None
     evidence = {"kind": "feedback-reconciliation", "policy": POLICY,
@@ -283,7 +283,7 @@ def _reuse_existing_child(store, unit, assessment, boxes, others, *, base_revisi
         "reason": "measured blank gap separated a neighbouring character already represented by its own crop"}
     values = {"box": boxes[index].model_dump(), "review": "machine", "meta": meta}
     if remaining != written_identity(unit):
-        values.update(unicode=encoded(remaining), reading=remaining, text_source=remaining,
+        values.update(unicode=encoded(remaining), text_source=remaining,
                       script=script_of_identity(remaining))
         evidence["character"] = remaining
     results = _changes(store, unit, values, evidence, base_revision=base_revision)
@@ -306,7 +306,7 @@ def split_unit(store, unit, assessment, *, base_revision, source_event_id=None, 
         return {"status": "withheld", "reason": "child would duplicate another occurrence", "overlap": collision}
     from ..unit_scope import character_count
 
-    entries = [{"box": b.model_dump(), "unicode": encoded(char), "reading": char,
+    entries = [{"box": b.model_dump(), "unicode": encoded(char),
                 "text_source": char, "script": script_of_identity(char),
                 "kind": "char" if character_count(char) == 1 else "sequence",
                 "granularity": "char" if character_count(char) == 1 else "sequence"} for b, char in zip(boxes, assessment["text"], strict=True)]
@@ -420,9 +420,9 @@ def refine_feedback(store: Store, payload: dict, *, apply=False, engine=None, ma
             if f.issue == "merged":
                 try:
                     crop, _ = crop_for(store, unit)
-                    reading = reviewer_reading(f)
-                    if reading:
-                        assessment = assess_reading(unit, crop, reading)
+                    typed = reviewer_text(f)
+                    if typed:
+                        assessment = assess_text(unit, crop, typed)
                     else:
                         engine = engine or SplitEngine()
                         expected = f.proposed_text if f.decision == "joined" else None
@@ -490,8 +490,7 @@ def repair_adjacent_labels(store: Store, *, limit=128, apply=False, engine=None)
     rows = [(u, rev) for u, rev in store.unit_snapshot()
             if u.active and u.id not in human and u.box and u.line_id
             and str(u.review) in ("machine", "rejected") and str(u.kind) == "char"
-            and not refs.ligature(u.unicode or "")
-            and written_identity(u) == u.reading]
+            and not refs.ligature(u.unicode or "")]
     random.Random(20260920).shuffle(rows)
     output = []
     for unit, revision in rows[:max(0, min(limit, 256))]:
@@ -506,7 +505,7 @@ def repair_adjacent_labels(store: Store, *, limit=128, apply=False, engine=None)
                     for name in ("NDLkotenOCR", "Atlas classifier")]
             seq, char = tops
             if (not seq or not char or not seq["text"] or len(seq["text"]) != 1
-                    or seq["text"] == unit.reading):
+                    or seq["text"] == written_identity(unit)):
                 continue
             agreed = (char.get("identity_scope", "character") == "character"
                       and seq["text"] == char["text"] and seq["score"] >= .98 and char["score"] >= .90)
@@ -523,7 +522,7 @@ def repair_adjacent_labels(store: Store, *, limit=128, apply=False, engine=None)
                 continue
             evidence = {"kind": "adjacent-label-repair", "policy": POLICY, "automated": True,
                         "source_image_sha256": digest, "box": unit.box.model_dump(),
-                        "before": unit.reading, "character": prediction,
+                        "before": written_identity(unit), "character": prediction,
                         "neighbours": [u.id for u in neighbours], "recognition": result,
                         "basis": "model-agreement" if agreed else "sequence-and-neighbour-classifier-abstained"}
             item.update(status="identity-proposed", evidence=evidence)
@@ -531,7 +530,7 @@ def repair_adjacent_labels(store: Store, *, limit=128, apply=False, engine=None)
                 if _source_digest(store, unit) != digest:
                     item["status"] = "stale"
                     continue
-                values = {"unicode": encoded(prediction), "reading": prediction,
+                values = {"unicode": encoded(prediction),
                           "script": script_of_identity(prediction), "review": "machine",
                           "meta": {**unit.meta, "feedback_identity": evidence}}
                 _changes(store, unit, values, evidence, base_revision=revision)

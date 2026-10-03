@@ -29,7 +29,7 @@ def api(tmp_path, monkeypatch):
     )], Page)
     tables.write(out / "units.parquet", [Unit(
         id=f"codh:unit:{i}", document_id="codh:book", page_id="codh:book:page",
-        text_source=char, reading=char, unicode=f"U+{ord(char):04X}",
+        text_source=char, unicode=f"U+{ord(char):04X}",
         kind="char", method="import", box=Box(x=10+i*20, y=10, w=16, h=20),
     ) for i, char in enumerate(("仮", "仮", "假"))], Unit)
     index = tmp_path / "index"

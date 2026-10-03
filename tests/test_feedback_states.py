@@ -56,9 +56,9 @@ def dataset(tmp_path: Path, monkeypatch):
                  text="チ", box=Box(x=0, y=0, w=300, h=300))], Line)
     tables.write(root / "units.parquet", [
         Unit(id=f"{LINE}:u0", document_id="d", page_id=PAGE, line_id=LINE, seq=0, unicode=CHI_POINT,
-             reading="ち", text_source="チ", box=Box(x=20, y=10, w=40, h=60)),
+             text_source="チ", box=Box(x=20, y=10, w=40, h=60)),
         Unit(id=f"{LINE}:u1", document_id="d", page_id=PAGE, line_id=LINE, seq=1, unicode=CHI_POINT,
-             reading="ち", text_source="チ", box=Box(x=80, y=10, w=40, h=60)),
+             text_source="チ", box=Box(x=80, y=10, w=40, h=60)),
     ], Unit)
     return {"root": root, "digest": digest, "client": TestClient(create_app(root))}
 

@@ -2,9 +2,9 @@
 
 The journal is history: an event keeps the words it was saved with, because its fingerprint, its
 place in a unit's revision count and the feedback receipts that name it all depend on those words.
-Events saved while crops carried a reading layer name the wrong-character issue `reading` and keep
-the typed characters as `suggested_reading`. A reader of the journal asks here instead of reading
-those keys itself.
+Events saved while crops carried a reading layer name the wrong-character issue `reading`, keep
+the typed characters as `suggested_reading`, and may set or carry a unit's `reading`. A reader of
+the journal asks here instead of reading those keys itself.
 """
 
 from __future__ import annotations
@@ -22,3 +22,14 @@ def typed_text(evidence: Mapping[str, Any]) -> str | None:
     """The characters a reviewer typed or chose for a crop, under either recorded key."""
     value = evidence.get("suggested_text", evidence.get("suggested_reading"))
     return value if isinstance(value, str) else None
+
+
+#: Unit fields a recorded event may name that units no longer have.
+FORMER_UNIT_FIELDS = frozenset({"reading"})
+
+
+def unit_record(data: Any) -> Any:
+    """A unit as an event recorded it, without the fields units no longer have."""
+    if not isinstance(data, Mapping):
+        return data
+    return {key: value for key, value in data.items() if key not in FORMER_UNIT_FIELDS}

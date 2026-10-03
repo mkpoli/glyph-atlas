@@ -59,11 +59,11 @@ PLACEHOLDER = re.compile(r"\{\{([^{}]+)\}\}")
 # The columns the units table carries before the derived ones are added, in the store's order.
 DERIVED_KEYS = ("modern_kana", "shinji")
 #: The scripts whose forms have a modern kana. A kanji's grapheme is its family's representative
-#: rather than a reading — 國 and 国 are one family, and the shinji column is the one that says
+#: rather than a kana — 國 and 国 are one family, and the shinji column is the one that says
 #: so — so a han character is never rewritten by the modern_kana policy.
 KANA_FORMS = frozenset({Script.HIRAGANA, Script.HENTAIGANA, Script.KATAKANA})
 #: The blocks of the modern katakana. A letter there is already a modern kana, so the column leaves
-#: it alone; its grapheme is the hiragana of the same reading, which is not what was written.
+#: it alone; its grapheme is the hiragana of the same kana, which is not what was written.
 MODERN_KATAKANA_BLOCKS = frozenset({"Katakana", "Katakana Phonetic Extensions"})
 
 
@@ -803,7 +803,6 @@ def figures_of(
                 units_by_review[str(unit.review)] += 1
                 units_by_script[str(unit.script)] += 1
                 units_by_classification[str(unit.classification)] += 1
-                units_by_label_coverage["reading" if unit.reading else "no reading"] += 1
                 units_by_label_coverage["unicode" if unit.unicode else "no unicode"] += 1
                 units_by_label_coverage["jibo" if refs.jibo_of(unit.unicode) else "no jibo"] += 1
                 document = licences.get(unit.document_id or "")
@@ -1214,7 +1213,7 @@ def dataset_card(out: Path, figures: Figures) -> str:
                 f"{counts.get('units', 0)} units in {counts.get('lines', 0)} lines, "
                 f"{counts.get('pages', 0)} pages and {counts.get('documents', 0)} documents of "
                 "pre-modern Japanese writing, each unit carrying its rectangle, the transcriber's "
-                "string, a diplomatic reading, code points, the 字母 of kana forms and a variant key "
+                "string, code points, the 字母 of kana forms and a variant key "
                 "for kanji."
             ),
             "",
@@ -1256,8 +1255,8 @@ def zenodo_metadata(figures: Figures) -> dict[str, Any]:
             "description": (
                 f"<p>{counts.get('units', 0)} units in {counts.get('lines', 0)} lines, "
                 f"{counts.get('pages', 0)} pages and {counts.get('documents', 0)} documents. Each unit "
-                "carries the rectangle on the page image, the transcriber's string, a diplomatic "
-                "reading, the Unicode code points including hentaigana, the 字母 of kana forms and a "
+                "carries the rectangle on the page image, the transcriber's string, "
+                "the Unicode code points including hentaigana, the 字母 of kana forms and a "
                 "variant key for kanji written in a form other than the transcribed one.</p>"
                 "<p>The annotations and the compilation are CC BY-SA 4.0; every record carries the "
                 "licence of its image and of its text. See ATTRIBUTION.md.</p>"

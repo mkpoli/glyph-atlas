@@ -10,7 +10,7 @@ stratum up rather than let a large one drown it. The draw is reproducible from t
 seed fixes it, and a rerun against the same tables selects the same units.
 
 The second rule is that an audit sample is not a training set. A unit in an audit sample is reviewed
-blind, with the machine's confidence, reading, code point and 字母 hidden, and nothing in the project
+blind, with the machine's confidence, code point and 字母 hidden, and nothing in the project
 may tune a threshold, a cost or a model on it. `sample` leaves out every unit an earlier sample
 already holds, and `report` names the sample the units came from.
 
@@ -50,7 +50,7 @@ from .schema import ReviewState, Unit
 AUDIT_DIR = "audit"
 AUDIT_INDEX = "audit/index.json"
 DESIGN_FIELDS = ("document", "script", "kind")
-HIDDEN_FIELDS = ("confidence", "reading", "unicode", "candidates")
+HIDDEN_FIELDS = ("confidence", "unicode", "candidates")
 LABEL_IOU = 0.5
 BOOTSTRAP_SAMPLES = 2000
 
@@ -296,7 +296,6 @@ def _prediction_of(unit: Unit) -> dict[str, Any]:
     """What the pipeline said about a unit, kept for the report and hidden while reviewing."""
     return {
         "box": unit.box.model_dump(mode="json") if unit.box else None,
-        "reading": unit.reading,
         "unicode": unit.unicode,
         "jibo": refs.jibo_of_unit(unit.unicode),
         "classification": unit.classification.value,

@@ -4,13 +4,14 @@ from glyph_atlas import refs
 from glyph_atlas.schema import Box, Character, Classification, Script, Unit
 
 
-def test_unit_keeps_hentaigana_and_the_modern_reading_apart():
+def test_a_unit_names_its_character_and_the_character_layer_has_its_kana():
     unit = Unit(
         id="u1", page_id="p1", box=Box(x=10, y=20, w=30, h=40),
-        text_source="あ", reading="あ", unicode="U+1B003", script=Script.HENTAIGANA,
+        text_source="あ", unicode="U+1B003", script=Script.HENTAIGANA,
     )
     assert unit.box.iiif_region() == "10,20,30,40"
-    assert unit.unicode == "U+1B003" and unit.reading == "あ"
+    assert unit.unicode == "U+1B003" and "reading" not in Unit.model_fields
+    assert refs.character("U+1B003").readings == ["あ"]
     # The 字母 is not a field of the unit: it belongs to the character, and the layer has it.
     assert refs.jibo_of_unit(unit.unicode) == "愛"
     assert refs.character("U+1B003").jibo == ["愛"]

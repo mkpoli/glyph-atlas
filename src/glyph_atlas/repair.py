@@ -77,7 +77,7 @@ PLAN_NAME = "repair-plan.json"
 REPORT_NAME = "repair-report.json"
 #: The table a derived dataset's human-readable correction list is written to.
 TABLE_NAME = "repairs.tsv"
-#: The reading log the review store writes its events to.
+#: The review log the review store writes its events to.
 REVIEWS_NAME = "reviews.jsonl"
 #: The store a review server keeps its own copy of the tables in.
 STORE_NAME = "review.sqlite"
@@ -508,7 +508,6 @@ class Neighbour(BaseModel):
 
     seq: int | None = None
     text: str | None = None
-    reading: str | None = None
     unicode: str | None = None
     box: Box | None = None
 
@@ -518,9 +517,8 @@ class RepairRecord(BaseModel):
 
     The record is the unit of review and the unit of reversal: it names the unit, the two boxes, the
     hypothesis, the margins that decided it, the characters on either side and the checksums of what
-    it was computed from. `reading` and `unicode` are kept apart on purpose — the reading is what the
-    transcription says the character reads, the code point is which character it is — and this pass
-    changes neither: a box correction is a claim about ink, not about text. `machine` and `verified`
+    it was computed from. `text_source` is what the transcription says and `unicode` is which character
+    it is, and this pass changes neither: a box correction is a claim about ink, not about text. `machine` and `verified`
     are explicit so a viewer never has to infer from a status string whether a person has seen this,
     and `layer` says whether a rule or a model decided it.
     """
@@ -532,7 +530,6 @@ class RepairRecord(BaseModel):
     document_id: str | None = None
     seq: int | None = None
     text_source: str | None = None
-    reading: str | None = None
     unicode: str | None = None
     kind: UnitKind = UnitKind.CHAR
     granularity: str = "char"
@@ -955,7 +952,6 @@ def _record(view: LineView, unit: UnitView, line: Line) -> RepairRecord:
         page_id=line.page_id,
         seq=unit.unit.seq if unit.unit is not None else unit.index + 1,
         text_source=token.text or None,
-        reading=token.reading,
         unicode=token.unicode,
         kind=token.kind,
         granularity=unit.unit.granularity if unit.unit is not None else "char",
@@ -983,7 +979,7 @@ def _neighbour(unit: UnitView | None) -> Neighbour | None:
     if unit is None:
         return None
     return Neighbour(seq=unit.unit.seq if unit.unit is not None else unit.index + 1,
-                     text=unit.token.text or None, reading=unit.token.reading,
+                     text=unit.token.text or None,
                      unicode=unit.token.unicode,
                      box=unit.detection.box if unit.detection is not None else unit.old_box)
 
@@ -1773,14 +1769,14 @@ def write_log(path: Path, plan: RepairPlan, records: Sequence[RepairRecord]) -> 
 
 def write_table(path: Path, records: Sequence[RepairRecord]) -> int:
     """Write the same records as a tab-separated table, for a person reading the pass's work."""
-    fields = ("id", "status", "unit_id", "seq", "text_source", "reading", "unicode", "old_box",
+    fields = ("id", "status", "unit_id", "seq", "text_source", "unicode", "old_box",
               "new_box", "phase", "unit_margin", "phase_margin", "hypothesis", "reason")
     with path.open("w", encoding="utf-8") as handle:
         handle.write("\t".join(fields) + "\n")
         for record in records:
             row = {
                 "id": record.id, "status": record.status, "unit_id": record.unit_id,
-                "seq": record.seq, "text_source": record.text_source, "reading": record.reading,
+                "seq": record.seq, "text_source": record.text_source,
                 "unicode": record.unicode,
                 "old_box": _box_text(record.old_box), "new_box": _box_text(record.new_box),
                 "phase": record.phase,

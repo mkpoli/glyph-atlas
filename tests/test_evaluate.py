@@ -9,7 +9,7 @@ from glyph_atlas.schema import Box, Unit
 def unit(unit_id: str, box: tuple[int, int, int, int], label: str, page: str = "p1") -> Unit:
     x, y, w, h = box
     return Unit(id=unit_id, document_id="d1", page_id=page, box=Box(x=x, y=y, w=w, h=h),
-                text_source=label, reading=label, unicode=label)
+                text_source=label, unicode=label)
 
 
 def test_iou_of_disjoint_and_identical_boxes():

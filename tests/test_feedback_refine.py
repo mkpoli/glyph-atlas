@@ -36,10 +36,10 @@ def store(tmp_path, monkeypatch):
     tables.write(root / "lines.parquet", [Line(id="l", page_id="p", seq=0, text="に四を",
                  text_raw="に四を", box=Box(x=10, y=10, w=40, h=170))], Line)
     tables.write(root / "units.parquet", [Unit(id="u", document_id="d", page_id="p", line_id="l",
-                 seq=0, unicode="U+624B", reading="手", text_source="手", script="han",
+                 seq=0, unicode="U+624B", text_source="手", script="han",
                  box=Box(x=10, y=10, w=40, h=80)),
                  Unit(id="v", document_id="d", page_id="p", line_id="l", seq=1,
-                      unicode="U+3092", reading="を", box=Box(x=10, y=110, w=40, h=40))], Unit)
+                      unicode="U+3092", text_source="を", box=Box(x=10, y=110, w=40, h=40))], Unit)
     return Store(root)
 
 
@@ -125,7 +125,7 @@ def test_resolves_selected_identity_preserving_source_and_journal(store):
     assert result["counts"] == {"resolved": 1}
     assert store.unit("u").unicode == "U+3092"
     assert store.unit("u").review == "reviewed"
-    assert store.unit("u").reading == "手"  # the separate reading is preserved
+    assert store.unit("u").text_source == "手"  # the transcription is preserved
     assert store.events()[0].model_dump(mode="json") == original
     assert all(e.role == "model" for e in store.events()[1:])
     assert (store.directory / "units.parquet").read_bytes() == source
@@ -155,7 +155,7 @@ def test_base_plus_mark_identity_resolves_rather_than_going_stale(store):
 def test_stale_feedback_is_never_applied(store, change):
     payload = feedback(store)
     if change == "revision":
-        store.record(ReviewRequest(target_id="u", field="reading", new="い", client_id="another"))
+        store.record(ReviewRequest(target_id="u", field="text_source", new="い", client_id="another"))
     elif change == "pixels":
         payload["reviews"][0]["event"]["evidence"] = payload["reviews"][0]["event"]["evidence"].replace(
             refine._source_digest(store, store.unit("u")), "f" * 64)
@@ -176,7 +176,7 @@ def test_machine_split_retires_parent_and_keeps_original_feedback(store):
     parent = store.unit("u")
     assert not parent.active
     children = [store.unit(i) for i in parent.split_into]
-    assert [u.reading for u in children] == ["に", "四"]
+    assert [u.text_source for u in children] == ["に", "四"]
     assert all(u.review == "machine" and u.method == "detect-align" for u in children)
     assert all(u.meta["feedback_split"]["parent_id"] == "u" for u in children)
     assert store.events()[0].model_dump(mode="json") == original
@@ -198,15 +198,15 @@ def test_ambiguous_join_cannot_be_a_positive_example(store):
 
 def test_changed_during_inference_is_rejected(store, monkeypatch):
     payload = feedback(store, issue="merged", proposal="に四")
-    measure = refine.assess_reading
+    measure = refine.assess_text
 
     def racing(*args):
-        store.record(ReviewRequest(target_id="u", field="reading", new="ぬ", client_id="another"))
+        store.record(ReviewRequest(target_id="u", field="text_source", new="ぬ", client_id="another"))
         return measure(*args)
-    monkeypatch.setattr(refine, "assess_reading", racing)
+    monkeypatch.setattr(refine, "assess_text", racing)
     with pytest.raises(Conflict):
         refine.refine_feedback(store, payload, apply=True)
-    assert store.unit("u").active and store.unit("u").reading == "ぬ"
+    assert store.unit("u").active and store.unit("u").text_source == "ぬ"
 
 
 def test_saved_join_automatically_runs_extraction(store):
@@ -234,7 +234,7 @@ def test_adjacent_evidence_accepts_abstention_but_rejects_disagreement(store, cl
     assert row["status"] == expected
     unit = store.unit("u")
     if expected == "identity-repaired":
-        assert unit.unicode == "U+3092" and unit.reading == "を"
+        assert unit.unicode == "U+3092"
         assert unit.text_source == "手" and unit.review == "machine"
         assert all(e.role == "model" for e in store.events())
     else:
@@ -362,10 +362,10 @@ class UncertainOCR:
         return {"engines": [], "candidates": [candidate], "votes": [candidate]}
 
 
-@pytest.mark.parametrize("reading,labels", [("ニシ", ["ニ", "シ"]),
-                                            ("葛\U000E0100シ", ["葛\U000E0100", "シ"])])
-def test_typed_reading_splits_a_join_the_ocr_is_unsure_of(store, reading, labels):
-    payload = feedback(store, issue="merged", proposal=reading)
+@pytest.mark.parametrize("typed,labels", [("ニシ", ["ニ", "シ"]),
+                                          ("葛\U000E0100シ", ["葛\U000E0100", "シ"])])
+def test_typed_text_splits_a_join_the_ocr_is_unsure_of(store, typed, labels):
+    payload = feedback(store, issue="merged", proposal=typed)
     event_id = payload["reviews"][0]["event"]["id"]
     result = refine.refine_feedback(store, payload, apply=True, engine=refine.SplitEngine(UncertainOCR()))
     assert result["counts"] == {"split": 1}
@@ -373,13 +373,13 @@ def test_typed_reading_splits_a_join_the_ocr_is_unsure_of(store, reading, labels
     assert not parent.active
     children = [store.unit(i) for i in parent.split_into]
     assert [refine.written_identity(u) for u in children] == labels
-    assert [u.reading for u in children] == labels
+    assert [u.text_source for u in children] == labels
     top, bottom = (u.box for u in children)
     assert top.y == 10 and top.y + top.h == bottom.y and 44 < bottom.y < 56, "cut in the blank gap"
     for child in children:
         assert child.review == "machine" and child.method == "detect-align"
         assert "alignment_repair" not in child.meta
-        assert child.meta["feedback_split"]["basis"] == "reviewer-reading"
+        assert child.meta["feedback_split"]["basis"] == "reviewer-text"
         assert child.meta["feedback_split"]["source_event_id"] == event_id
     # Machine children go back into Quick review as unchecked crops.
     listing = TestClient(create_app(store.directory)).get(
@@ -389,7 +389,7 @@ def test_typed_reading_splits_a_join_the_ocr_is_unsure_of(store, reading, labels
 
 
 @pytest.mark.parametrize("variant", ["selected-suggestion", "nothing-typed"])
-def test_without_a_typed_reading_uncertain_ocr_still_withholds(store, variant):
+def test_without_typed_text_uncertain_ocr_still_withholds(store, variant):
     if variant == "selected-suggestion":
         # A joined decision taken from a chosen suggestion, with nothing typed.
         payload = feedback(store, issue="merged", proposal=None,
@@ -404,13 +404,14 @@ def test_without_a_typed_reading_uncertain_ocr_still_withholds(store, variant):
     assert unit.active and unit.review == "disputed"
 
 
-def test_a_reading_the_ink_cannot_divide_into_is_withheld(store):
+def test_typed_text_the_ink_cannot_divide_into_is_withheld(store):
     # Three characters typed; the ink offers one gap, so no division gives three children.
     payload = feedback(store, issue="merged", proposal="ニシマ")
     result = refine.refine_feedback(store, payload, apply=True)
     assert result["counts"] == {"withheld": 1}
     assessment = result["items"][0]["assessment"]
-    assert assessment["basis"] == "reviewer-reading" and not assessment["accepted"]
+    assert assessment["basis"] == "reviewer-text" and not assessment["accepted"]
+    assert assessment["typed"] == "ニシマ"
     assert assessment["reason"] == ("every low-ink row would leave a child too small or too large to "
                                     "be a character")
     unit = store.unit("u")
@@ -418,7 +419,7 @@ def test_a_reading_the_ink_cannot_divide_into_is_withheld(store):
     assert unit.meta["feedback_repair"]["assessment"]["reason"] == assessment["reason"]
 
 
-def test_a_typed_reading_still_refuses_to_duplicate_an_occurrence(store):
+def test_typed_text_still_refuses_to_duplicate_an_occurrence(store):
     store.record_batch([
         ReviewRequest(target_id="v", field="unicode", new="U+30CC", client_id="setup"),
         ReviewRequest(target_id="v", field="box", new=Box(x=10, y=52, w=40, h=38).model_dump(),
@@ -453,7 +454,7 @@ def test_a_rejected_placement_does_not_stop_a_join_reusing_its_neighbour(store):
     # v already crops ル over the top half; w, a placement the aligner rejected, sits on the lower half.
     root = store.directory
     units = tables.read(root / "units.parquet", Unit)
-    w = units[1].model_copy(update={"id": "w", "seq": 2, "unicode": "U+30EB", "reading": "ル",
+    w = units[1].model_copy(update={"id": "w", "seq": 2, "unicode": "U+30EB", "text_source": "ル",
                                     "box": Box(x=11, y=52, w=38, h=36), "review": "rejected"})
     tables.write(root / "units.parquet", [*units, w], Unit)
     for leftover in root.glob("review.sqlite*"):
@@ -476,14 +477,14 @@ def test_a_rejected_placement_does_not_stop_a_join_reusing_its_neighbour(store):
 
 def test_a_withheld_report_is_assessed_again_from_its_own_events(store, monkeypatch):
     payload = feedback(store, issue="merged", proposal="ニシ")
-    # An earlier run without the typed-reading path: the unsure OCR withholds the split.
+    # An earlier run without the typed-text path: the unsure OCR withholds the split.
     with monkeypatch.context() as earlier:
-        earlier.setattr(refine, "reviewer_reading", lambda f: None)
+        earlier.setattr(refine, "reviewer_text", lambda f: None)
         first = refine.refine_feedback(store, payload, apply=True, engine=refine.SplitEngine(UncertainOCR()))
     assert first["counts"] == {"withheld": 1}
     assert store.revision("u") > payload["reviews"][0]["current_revision"]
     # The repair's own withheld record is the only change since the review, so the report is
-    # still current and the reading now splits it.
+    # still current and the typed text now splits it.
     again = refine.refine_feedback(store, payload, apply=True, engine=refine.SplitEngine(UncertainOCR()))
     assert again["counts"] == {"split": 1}
     assert [refine.written_identity(store.unit(i)) for i in store.unit("u").split_into] == ["ニ", "シ"]
@@ -492,7 +493,7 @@ def test_a_withheld_report_is_assessed_again_from_its_own_events(store, monkeypa
 def test_a_withheld_report_a_person_has_acted_on_since_stays_stale(store, monkeypatch):
     payload = feedback(store, issue="merged", proposal="ニシ")
     with monkeypatch.context() as earlier:
-        earlier.setattr(refine, "reviewer_reading", lambda f: None)
+        earlier.setattr(refine, "reviewer_text", lambda f: None)
         refine.refine_feedback(store, payload, apply=True, engine=refine.SplitEngine(UncertainOCR()))
     store.record(ReviewRequest(target_id="u", field="unicode", new="U+30CB", client_id="person2",
                                base_revision=store.revision("u")))
@@ -500,7 +501,7 @@ def test_a_withheld_report_a_person_has_acted_on_since_stays_stale(store, monkey
     assert store.unit("u").active and not store.unit("u").split_into
 
 
-@pytest.mark.parametrize("basis,expected", [("reviewer-reading", "recropped"), (None, "withheld")])
+@pytest.mark.parametrize("basis,expected", [("reviewer-text", "recropped"), (None, "withheld")])
 def test_a_typed_join_trims_to_the_character_not_yet_cropped(store, basis, expected):
     # u is labelled 手 but holds ル over ラ; v already crops ル.
     store.record_batch([
@@ -518,7 +519,7 @@ def test_a_typed_join_trims_to_the_character_not_yet_cropped(store, basis, expec
     target = store.unit("u")
     if expected == "recropped":
         assert target.box == Box(x=10, y=50, w=40, h=40)
-        assert (target.unicode, target.reading, target.script) == ("U+30E9", "ラ", "katakana")
+        assert (target.unicode, target.text_source, target.script) == ("U+30E9", "ラ", "katakana")
         assert target.review == "machine" and target.meta["feedback_repair"]["character"] == "ラ"
     else:
         assert target.unicode == "U+624B" and target.box == Box(x=10, y=10, w=40, h=80)

@@ -4,7 +4,7 @@ Each test here is a case the first version of the module got wrong. They use pla
 the store, because the question is what a given journal means, not how the journal is written.
 
 The distinction under test is between *activity* and a *decision*. A note, a timing event, a crop
-nudged into place and a metadata write all show that somebody was there; none of them says the reading
+nudged into place and a metadata write all show that somebody was there; none of them says the character
 is right or the boundary is right. A dashboard that counted them would report progress that does not
 exist, which is worse than reporting none.
 """
@@ -27,7 +27,6 @@ class Unit:
     document_id: str = "d1"
     review: str = "machine"
     active: bool = True
-    reading: str | None = None
     unicode: str | None = None
     text_source: str | None = None
     box: Any = None
@@ -79,10 +78,10 @@ def test_an_apply_written_review_is_told_apart_from_an_imported_one() -> None:
 
 
 def test_metadata_without_an_actor_is_not_a_decision() -> None:
-    """Audit bookkeeping and pipeline writes must not look like somebody confirming a reading.
+    """Audit bookkeeping and pipeline writes must not look like somebody confirming a character.
 
-    Two mistakes are possible and both are tested: a metadata write is not a reading even when a
-    person made it, and an event with no actor is the pipeline's own conclusion even when it touches a
+    Two mistakes are possible and both are tested: a metadata write is not a verification even when
+    a person made it, and an event with no actor is the pipeline's own conclusion even when it touches a
     field a person could have decided.
     """
     machine_meta = review_of(Unit(), [Event("u1", "meta", {"source": "audit"}, actor=None)])
@@ -95,14 +94,20 @@ def test_metadata_without_an_actor_is_not_a_decision() -> None:
     assert person_meta.verified == []
 
 
-def test_a_crop_adjustment_does_not_verify_the_reading() -> None:
-    """Moving a boundary is not the same decision as saying the character reads as something."""
+def test_a_crop_adjustment_does_not_verify_the_transcription() -> None:
+    """Moving a boundary is not the same decision as saying what the character is."""
     moved = review_of(Unit(), [Event("u1", "box", {"x": 1, "y": 2, "w": 3, "h": 4}, actor="r1")])
     assert moved.kind == "draft"
     assert moved.adjusted == ["box"] and moved.verified == []
 
-    read = review_of(Unit(), [Event("u1", "reading", "あ", actor="r1")])
-    assert read.kind == "checked" and read.verified == ["reading"]
+    read = review_of(Unit(), [Event("u1", "text_source", "あ", actor="r1")])
+    assert read.kind == "checked" and read.verified == ["text_source"]
+
+
+def test_a_recorded_reading_event_decides_nothing() -> None:
+    """A crop has no reading, so an event the journal kept on that field verifies nothing."""
+    recorded = review_of(Unit(), [Event("u1", "reading", "あ", actor="r1")])
+    assert recorded.kind == "machine" and recorded.verified == [] and recorded.adjusted == []
 
 
 def test_an_undo_takes_the_checked_state_away() -> None:
@@ -121,10 +126,10 @@ def test_an_undo_takes_the_checked_state_away() -> None:
     assert standing.verified == [] and standing.human_review is None
 
     cleared = review_of(Unit(review="machine"), [
-        Event("u1", "reading", "あ", actor="r1"),
-        Event("u1", "reading", None, actor="r1", old="あ"),
+        Event("u1", "text_source", "あ", actor="r1"),
+        Event("u1", "text_source", None, actor="r1", old="あ"),
     ])
-    assert cleared.kind == "machine", "a reading cleared by its author is not a verification"
+    assert cleared.kind == "machine", "a transcription cleared by its author is not a verification"
 
 
 def test_counts_reverse_after_an_undo() -> None:
@@ -145,11 +150,11 @@ def test_counts_reverse_after_an_undo() -> None:
 def test_a_pipeline_write_takes_the_decision_back() -> None:
     """An apply or a rerun that writes its own value is the last word on that field."""
     standing = review_of(Unit(review="machine"), [
-        Event("u1", "reading", "あ", actor="r1"),
-        Event("u1", "reading", "い", actor=None),
+        Event("u1", "text_source", "あ", actor="r1"),
+        Event("u1", "text_source", "い", actor=None),
     ])
     assert standing.kind == "machine"
-    assert standing.fields["reading"].author == "machine"
+    assert standing.fields["text_source"].author == "machine"
     assert standing.verified == []
 
 
@@ -209,7 +214,6 @@ def schema_unit(**overrides: Any):
         "seq": 1,
         "box": Box(x=10, y=20, w=30, h=40),
         "text_source": "あ",
-        "reading": "あ",
         "unicode": "U+3042",
         "kind": UnitKind.CHAR,
         "method": "detect-align",
@@ -219,10 +223,10 @@ def schema_unit(**overrides: Any):
     return Unit(**fields)
 
 
-def test_a_machine_box_and_reading_are_not_a_verification() -> None:
+def test_a_machine_box_and_identity_are_not_a_verification() -> None:
     """The bug the fake units hid: every imported row was reported as checked.
 
-    A detector box, a classifier reading and an upstream `text_source` are all nonempty on an
+    A detector box, a classifier code point and an upstream `text_source` are all nonempty on an
     untouched machine unit, and the first version recorded each as a decision because it only asked
     whether the value was empty. Sixteen hundred such units would have shown as reviewed work.
     """
@@ -230,8 +234,8 @@ def test_a_machine_box_and_reading_are_not_a_verification() -> None:
     standing = status.unit_reviews([unit], [])[unit.id]
     assert standing.kind == "machine"
     assert standing.verified == [] and standing.adjusted == []
-    assert standing.fields["reading"].value == "あ", "the value is still readable"
-    assert standing.fields["reading"].kinds == [], "it is a baseline, not a decision"
+    assert standing.fields["text_source"].value == "あ", "the value is still readable"
+    assert standing.fields["text_source"].kinds == [], "it is a baseline, not a decision"
     assert standing.fields["box"].kinds == []
 
 
@@ -243,7 +247,7 @@ def test_an_imported_review_state_is_standing_and_an_edit_is_still_a_draft() -> 
     edited = schema_unit()
     events = [Event(edited.id, "box", {"x": 1, "y": 2, "w": 3, "h": 4}, actor="r1")]
     standing = status.unit_reviews([edited], events)[edited.id]
-    assert standing.kind == "draft", "moving a box is not confirming a reading"
+    assert standing.kind == "draft", "moving a box is not confirming a character"
     assert standing.adjusted == ["box"]
 
     confirmed = schema_unit()
@@ -255,28 +259,29 @@ def test_an_imported_review_state_is_standing_and_an_edit_is_still_a_draft() -> 
 
 
 def test_undo_restores_the_machine_baseline_not_a_verification() -> None:
-    """A reading restored to what the pipeline wrote is the pipeline's value again.
+    """A transcription restored to what the pipeline wrote is the pipeline's value again.
 
-    Two undos have to be told apart from a decision. Editing a reading and then putting the original
-    back leaves the value the machine produced, so the field's last provenance is a restoration and
-    not a person confirming the reading. Clearing a reading takes the verification away entirely.
+    Two undos have to be told apart from a decision. Editing a transcription and then putting the
+    original back leaves the value the machine produced, so the field's last provenance is a
+    restoration and not a person confirming it. Clearing a transcription takes the verification away
+    entirely.
     """
     restored = schema_unit()
     events = [
-        Event(restored.id, "reading", "い", actor="r1", old="あ"),
-        Event(restored.id, "reading", "あ", actor="r1", old="い"),
+        Event(restored.id, "text_source", "い", actor="r1", old="あ"),
+        Event(restored.id, "text_source", "あ", actor="r1", old="い"),
     ]
     standing = status.unit_reviews([restored], events)[restored.id]
-    assert standing.fields["reading"].value == "あ", "the detector's reading is back"
-    assert standing.fields["reading"].kinds[-1] == "restored", "and it is recorded as a restoration"
+    assert standing.fields["text_source"].value == "あ", "the imported transcription is back"
+    assert standing.fields["text_source"].kinds[-1] == "restored", "and it is recorded as a restoration"
     assert standing.kind == "machine", "so the unit is not counted as reviewed"
     assert standing.verified == []
 
-    cleared = schema_unit(reading=None, unicode=None, text_source=None)
+    cleared = schema_unit(unicode=None, text_source=None)
     assert cleared.unicode is None and cleared.text_source is None
     events = [
-        Event(cleared.id, "reading", "い", actor="r1"),
-        Event(cleared.id, "reading", None, actor="r1", old="い"),
+        Event(cleared.id, "text_source", "い", actor="r1"),
+        Event(cleared.id, "text_source", None, actor="r1", old="い"),
     ]
     after = status.unit_reviews([cleared], events)[cleared.id]
     assert after.kind == "machine" and after.verified == []
@@ -304,13 +309,14 @@ def test_the_effective_review_state_and_activity_follow_the_journal() -> None:
 # -- through the real store, because the bug these cover was in what it hands over -------------
 
 
-def test_two_reading_edits_through_the_store_are_both_decisions(tmp_path: Path) -> None:
+def test_two_transcription_edits_through_the_store_are_both_decisions(tmp_path: Path) -> None:
     """The regression: `/project` passes the store's *effective* records, so a baseline taken from
     them makes the last of any two edits equal its own starting point.
 
-    Two ordinary reading edits in a row must both count as decisions. The earlier version derived the
-    baseline from the record it was handed — which is the final value — so the second edit looked like
-    a restoration and the unit fell back to `machine` while its reading was the reviewer's.
+    Two ordinary transcription edits in a row must both count as decisions. The earlier version
+    derived the baseline from the record it was handed — which is the final value — so the second edit
+    looked like a restoration and the unit fell back to `machine` while its transcription was the
+    reviewer's.
     """
     from glyph_atlas import tables
     from glyph_atlas.review.store import ReviewRequest, Store
@@ -326,20 +332,20 @@ def test_two_reading_edits_through_the_store_are_both_decisions(tmp_path: Path) 
                        text_raw="あ", text="あ")], Line)
     tables.write(directory / "units.parquet",
                  [Unit(id="d:0:L0:f:1", page_id="d:0", document_id="d", line_id="d:0:L0", seq=1,
-                       box=Box(x=1, y=1, w=5, h=5), reading="あ", text_source="あ",
+                       box=Box(x=1, y=1, w=5, h=5), text_source="あ",
                        kind=UnitKind.CHAR, review=ReviewState.MACHINE)], Unit)
 
     store = Store(directory)
-    for reading in ("い", "う"):
-        store.record(ReviewRequest(target_type="unit", target_id="d:0:L0:f:1", field="reading",
-                                   new=reading, client_id="reviewer"))
+    for text in ("い", "う"):
+        store.record(ReviewRequest(target_type="unit", target_id="d:0:L0:f:1", field="text_source",
+                                   new=text, client_id="reviewer"))
     # What `GET /project` does: hand the standing derivation the effective records.
     standing = status.unit_reviews(list(store.iter_units()), store.events())[  # type: ignore[attr-defined]
         "d:0:L0:f:1"
     ]
-    assert standing.fields["reading"].value == "う", "the reviewer's last reading is the record"
+    assert standing.fields["text_source"].value == "う", "the reviewer's last transcription is the record"
     assert standing.kind == "checked", "two edits are decisions, not restorations"
-    assert standing.verified == ["reading"]
+    assert standing.verified == ["text_source"]
 
 
 def test_an_undo_through_the_store_reverses_the_counter(tmp_path: Path) -> None:
@@ -358,17 +364,17 @@ def test_an_undo_through_the_store_reverses_the_counter(tmp_path: Path) -> None:
                        text_raw="あ", text="あ")], Line)
     tables.write(directory / "units.parquet",
                  [Unit(id="d:0:L0:f:1", page_id="d:0", document_id="d", line_id="d:0:L0", seq=1,
-                       box=Box(x=1, y=1, w=5, h=5), reading="あ", text_source="あ",
+                       box=Box(x=1, y=1, w=5, h=5), text_source="あ",
                        kind=UnitKind.CHAR, review=ReviewState.MACHINE)], Unit)
 
     store = Store(directory)
-    first = store.record(ReviewRequest(target_type="unit", target_id="d:0:L0:f:1", field="reading",
+    first = store.record(ReviewRequest(target_type="unit", target_id="d:0:L0:f:1", field="text_source",
                                        new="い", client_id="reviewer"))
     before = status.summarize(status.unit_reviews(list(store.iter_units()), store.events()).values())
     assert before["checked"] == 1
 
     # `Session.undo` posts the compensating event with the id of the event it reverses.
-    store.record(ReviewRequest(target_type="unit", target_id="d:0:L0:f:1", field="reading",
+    store.record(ReviewRequest(target_type="unit", target_id="d:0:L0:f:1", field="text_source",
                                new="あ", client_id="reviewer",
                                evidence=f"undo of {first['review']['id']}"))
     after = status.unit_reviews(list(store.iter_units()), store.events())["d:0:L0:f:1"]
@@ -393,7 +399,7 @@ def test_a_model_actor_is_not_a_decision() -> None:
     from glyph_atlas.schema import Review
 
     unit = schema_unit()
-    event = Review(id="e1", target_id=unit.id, field="reading", new="い", role="model",
+    event = Review(id="e1", target_id=unit.id, field="text_source", new="い", role="model",
                    actor="rtdetr_r18vd-6e", at=datetime.now(UTC))
     standing = status.unit_reviews([unit], [event])[unit.id]
     assert standing.kind == "machine" and standing.verified == []

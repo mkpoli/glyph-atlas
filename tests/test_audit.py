@@ -38,7 +38,6 @@ def unit(
         page_id=page,
         box=box or Box(x=index * 10, y=0, w=10, h=10),
         text_source="一",
-        reading="いち",
         unicode=unicode,
         classification=Classification.IDENTIFIED,
         script=script,

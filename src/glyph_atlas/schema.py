@@ -2,8 +2,8 @@
 
 Every image is addressed, never copied: a page is a IIIF image or a plain URL plus a checksum, and a
 unit is a rectangle on that page. Crops are materialised only for releases. Labels sit in layers that
-can be filled independently: the transcriber's text, the diplomatic reading, the classification
-(code points, script, variant), and the review state.
+can be filled independently: the transcriber's text, the classification (code points, script,
+variant), and the review state.
 
 The three browsing layers retain different identities:
 
@@ -12,8 +12,9 @@ The three browsing layers retain different identities:
 - Form: the exact ink of a source occurrence, represented by a Unit and its crop.
 
 `Character.grapheme` points to the family's representative; `Unit.unicode` points
-at the written character. Readings remain independent. 字母 is character metadata
-in `Character.jibo`; sharing a 字母 alone does not establish a grapheme family.
+at the written character. The kana a character stands for is character data in
+`Character.readings`. 字母 is character metadata in `Character.jibo`; sharing a 字母
+alone does not establish a grapheme family.
 
 """
 
@@ -396,7 +397,6 @@ class Unit(BaseModel):
     kind: UnitKind = UnitKind.CHAR
     granularity: Literal["char", "sequence", "block"] = "char"
     text_source: str | None = Field(default=None, description="the transcriber's string for this unit")
-    reading: str | None = Field(default=None, description="diplomatic reading, historical spelling kept")
     unicode: str | None = Field(
         default=None,
         description="code point sequence naming the character layer, e.g. U+1B002 or U+304B U+3099; "

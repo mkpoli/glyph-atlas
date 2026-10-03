@@ -117,7 +117,7 @@ def line_of(page_id: str, seq: int, box: Box, text: str, **extra) -> Line:
 
 
 def units_of(line: Line, boxes: list[Box], offset: int = 0, kind: str = "char") -> list[Unit]:
-    """Units for one line: readings walk the kana table, code points follow them."""
+    """Units for one line: transcriptions walk the kana table, code points follow them."""
     made = []
     for number, box in enumerate(boxes):
         index = (number + offset) % len(KANA)
@@ -130,7 +130,6 @@ def units_of(line: Line, boxes: list[Box], offset: int = 0, kind: str = "char") 
                 line_id=line.id,
                 seq=number,
                 box=box,
-                reading=KANA[index],
                 text_source=KANA[index],
                 unicode=CODE_POINTS[index],
                 classification=Classification.IDENTIFIED,
@@ -207,27 +206,26 @@ def build(directory: Path, *, long_units: int = 240) -> dict:
         units.extend(made)
         images.setdefault("doc-1:p1", []).extend(made)
 
-    # doc-1:p1 — two units written as one character and read as another. The supplementary-plane
+    # doc-1:p1 — two units written as one character and transcribed as another. The supplementary-plane
     # 𪜈 (U+2A708) is the character the search box has to handle: Python indexes it as one character
     # and JavaScript as two UTF-16 units. No imported corpus records an occurrence, so this fixture
-    # is the only place a search for it can find one; ゐ read as い is the case that tells a search
-    # on the written character from a search on the reading.
+    # is the only place a search for it can find one; ゐ transcribed い is the case that tells a search
+    # on the written character from a search on the transcription.
     written_line = line_of("doc-1:p1", 3, Box(x=980, y=120, w=200, h=1500), "𪜈ゐ")
     lines.append(written_line)
     written = [
         Unit(id="doc-1:p1:l3:u0", document_id="doc-1", page_id="doc-1:p1", line_id=written_line.id,
-             seq=0, box=Box(x=1000, y=160, w=160, h=300), reading="い", text_source="い",
+             seq=0, box=Box(x=1000, y=160, w=160, h=300), text_source="い",
              unicode="U+2A708", script=Script.HAN, classification=Classification.IDENTIFIED,
              method="detect-align"),
         Unit(id="doc-1:p1:l3:u1", document_id="doc-1", page_id="doc-1:p1", line_id=written_line.id,
-             seq=1, box=Box(x=1000, y=560, w=160, h=300), reading="い", text_source="い",
+             seq=1, box=Box(x=1000, y=560, w=160, h=300), text_source="い",
              unicode="U+3090", script=Script.HIRAGANA, classification=Classification.IDENTIFIED,
              method="detect-align"),
-        # The three layers on one record, which is what the reviewer has to keep apart: written ネ
-        # (U+30CD), read ね. A correction of the character changes `unicode`, and a kana with one
-        # stated reading carries it along (ヌ reads ぬ); the fixture keeps the layers visibly different.
+        # Two layers on one record, which the reviewer has to keep apart: written ネ (U+30CD),
+        # transcribed ね. A correction of the character changes `unicode` and leaves the transcription.
         Unit(id="doc-1:p1:l3:u2", document_id="doc-1", page_id="doc-1:p1", line_id=written_line.id,
-             seq=2, box=Box(x=1000, y=960, w=160, h=300), reading="ね", text_source="ね",
+             seq=2, box=Box(x=1000, y=960, w=160, h=300), text_source="ね",
              unicode="U+30CD", script=Script.KATAKANA, classification=Classification.IDENTIFIED,
              method="detect-align"),
     ]

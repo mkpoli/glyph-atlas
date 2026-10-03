@@ -51,7 +51,7 @@ def line_of(text: str, box: Box | None = None) -> Line:
 def unit_of(seq: int, text: str, box: Box | None, *, review: ReviewState = ReviewState.MACHINE,
             crop: str | None = None, confidence: Confidence | None = None) -> Unit:
     return Unit(id=f"doc:0:L0:test:{seq}", page_id="doc:0", document_id="doc", line_id="doc:0:L0",
-                seq=seq, box=box, text_source=text, reading=text, unicode=f"U+{ord(text):04X}",
+                seq=seq, box=box, text_source=text, unicode=f"U+{ord(text):04X}",
                 kind=UnitKind.CHAR, method="detect-align", review=review, crop=crop,
                 crop_sha256=crop.split("/")[-1] if crop else None, confidence=confidence)
 

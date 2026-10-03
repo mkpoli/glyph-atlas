@@ -486,9 +486,9 @@ def test_character_gallery_excludes_blocks_but_keeps_encoded_ligatures(tmp_path)
 
     root, directory = tmp_path / "corpora", tmp_path / "index"
     units = [TestLocatedUnitsScan.unit("kokatsuji", i) for i in range(1, 5)]
-    units[1] = units[1].model_copy(update={"text_source": "とりい", "reading": "とりい",
+    units[1] = units[1].model_copy(update={"text_source": "とりい",
         "unicode": "U+3068 U+308A U+3044", "kind": UnitKind.LIGATURE, "granularity": "block"})
-    units[2] = units[2].model_copy(update={"text_source": "トモ", "reading": "トモ",
+    units[2] = units[2].model_copy(update={"text_source": "トモ",
         "unicode": "U+2A708", "kind": UnitKind.LIGATURE})
     units[3] = units[3].model_copy(update={"granularity": "block"})
     TestLocatedUnitsScan.corpus(root, "kokatsuji", units)

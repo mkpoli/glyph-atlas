@@ -1,11 +1,11 @@
-"""Can the classifier propose a reading for a character crop without being told the transcription?
+"""Can the classifier propose the character of a crop without being told the transcription?
 
-A reviewer correcting a reading needs suggestions they can click instead of typing one. The obvious
+A reviewer correcting a character needs suggestions they can click instead of typing one. The obvious
 source is the `candidates` already recorded on a unit — and it is the wrong one. The aligner knows the
 transcription, so for a unit it identified from the text it can write a candidate at p=1.0 without
 looking at the crop at all: 5,037 of the 5,075 units that carry such a candidate are that echo, and
 5,069 of them equal the unit's own `unicode` field. A suggestion drawn from it would restate the
-reading the reviewer is looking at, and on this corpus the reading is exactly what the alignment's
+character the reviewer is looking at, and on this corpus that character is exactly what the alignment's
 ordering makes least trustworthy.
 
 What is left is the classifier, which sees only the crop. Measured on a stratified sample of 120 boxed
@@ -30,7 +30,7 @@ reason the accepted share here is 9 percent against the pilot's 17.
 So a suggestion control has to be one of two things and not the third. It can offer the line's own
 characters as the alternatives — those are the source's text read off the page, and the misordering
 above does not touch them — or it can stay empty. What it must not do is present the classifier's top
-classes as if they were readings: on 82 percent of these crops the top class is not the character, and
+classes as if they were the character: on 82 percent of these crops the top class is not the character, and
 a reviewer clicking the most confident wrong answer is worse off than one who types. Rebuilding the
 suggestions after the ordering is fixed is the version worth measuring again, because 53 percent on
 units with no text label is the classifier working on ink alone.
@@ -61,22 +61,22 @@ from glyph_atlas.schema import Page, Unit
 OTHER = "other"
 
 
-def reading_of(unit: Unit) -> str:
-    return unicodedata.normalize("NFC", unit.reading or unit.text_source or "").strip()
+def transcription_of(unit: Unit) -> str:
+    return unicodedata.normalize("NFC", unit.text_source or "").strip()
 
 
 def codepoint_of(unit: Unit) -> str | None:
     """The unit's own code point, as the class names spell it.
 
     `Unit.unicode` is already written that way (`U+3057`), so it is used as it stands; a unit that
-    carries none is spelled from its reading when that reading is a single code point.
+    carries none is spelled from its transcription when that is a single code point.
     """
     text = (unit.unicode or "").strip()
     if text.startswith("U+"):
         return text
-    reading = reading_of(unit)
-    if len(reading) == 1 and not unicodedata.combining(reading):
-        return f"U+{ord(reading):04X}"
+    text = transcription_of(unit)
+    if len(text) == 1 and not unicodedata.combining(text):
+        return f"U+{ord(text):04X}"
     return None
 
 
@@ -130,7 +130,7 @@ def main() -> int:
         order = probabilities.argsort()[::-1]
         top = [(model.classes[index], float(probabilities[index])) for index in order[: args.top]]
         own = codepoint_of(unit)
-        records.append({"unit": unit.id, "reading": reading_of(unit), "own": own,
+        records.append({"unit": unit.id, "text": transcription_of(unit), "own": own,
                         "classification": str(unit.classification), "top": top})
 
     if not records:
@@ -164,11 +164,11 @@ def main() -> int:
               f"abstains {others / len(subset):>4.0%}, median top probability {best:.2f}")
     print()
 
-    print(f"a suggestion is only useful when the classifier is sure and the reading differs: "
+    print(f"a suggestion is only useful when the classifier is sure and the character differs: "
           f"{len(confident_disagree)} of {len(records)} sampled units")
     for probability, record in sorted(confident_disagree, reverse=True)[:10]:
         proposals = ", ".join(f"{name} {p:.2f}" for name, p in record["top"][:3])
-        print(f"  assigned {record['reading'] or '·'!r:>6} ({record['own']}) -> {proposals}")
+        print(f"  assigned {record['text'] or '·'!r:>6} ({record['own']}) -> {proposals}")
     print()
     distinct = {r["own"] for r in records}
     print(f"the sample covers {len(distinct)} distinct assigned code points")

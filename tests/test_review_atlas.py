@@ -48,11 +48,11 @@ def dataset(tmp_path: Path, monkeypatch):
     tables.write(root / "lines.parquet", [Line(id=LINE, page_id=PAGE, seq=3,
                  text_raw="あいう", text="あいう", box=Box(x=0, y=0, w=400, h=600))], Line)
     units = [Unit(id=LINE + f":u{i}", document_id="d", page_id=PAGE, line_id=LINE, seq=i,
-                  reading="あ" if i < 12 else "シ", script="hiragana" if i < 12 else "katakana",
+                  text_source="あ" if i < 12 else "シ", script="hiragana" if i < 12 else "katakana",
                   box=Box(x=20 + i % 4 * 90, y=20 + i // 4 * 130, w=65, h=100)) for i in range(16)]
-    units.extend([Unit(id="blank", reading="　", box=Box(x=1, y=1, w=10, h=10), page_id=PAGE),
-                  Unit(id="no-box", reading="あ", page_id=PAGE),
-                  Unit(id="retired", reading="あ", box=Box(x=1, y=1, w=10, h=10), page_id=PAGE, active=False)])
+    units.extend([Unit(id="blank", text_source="　", box=Box(x=1, y=1, w=10, h=10), page_id=PAGE),
+                  Unit(id="no-box", text_source="あ", page_id=PAGE),
+                  Unit(id="retired", text_source="あ", box=Box(x=1, y=1, w=10, h=10), page_id=PAGE, active=False)])
     tables.write(root / "units.parquet", units, Unit)
     return root
 
@@ -78,7 +78,7 @@ def test_catalogue_filters_and_shuffle(dataset):
 
 def test_catalogue_filters_hangul_as_its_own_group(dataset):
     units = list(tables.read(dataset / 'units.parquet', Unit))
-    units.extend(Unit(id=f'jamo-{char}', document_id='d', page_id=PAGE, reading=char, script='hangul',
+    units.extend(Unit(id=f'jamo-{char}', document_id='d', page_id=PAGE, text_source=char, script='hangul',
                       box=Box(x=10, y=10, w=20, h=30)) for char in ('ㅿ', 'ᄫ', '한'))
     tables.write(dataset / 'units.parquet', units, Unit)
     client = TestClient(create_app(dataset))
@@ -91,7 +91,7 @@ def test_catalogue_filters_hangul_as_its_own_group(dataset):
 def test_catalogue_counts_and_filters_by_book(dataset):
     tables.write(dataset / 'documents.parquet', [Document(id='d', title='Fixture'), Document(id='e', title='Second')], Document)
     units = list(tables.read(dataset / 'units.parquet', Unit))
-    units.extend(Unit(id=f'second-{i}', document_id='e', page_id=PAGE, reading='あ', script='hiragana',
+    units.extend(Unit(id=f'second-{i}', document_id='e', page_id=PAGE, text_source='あ', script='hiragana',
                       box=Box(x=10, y=10, w=20, h=30)) for i in range(2))
     tables.write(dataset / 'units.parquet', units, Unit)
     client = TestClient(create_app(dataset))
@@ -106,7 +106,7 @@ def test_catalogue_counts_and_filters_by_book(dataset):
 
 def test_catalogue_files_labels_under_graphemes_and_filters_by_one(dataset):
     units = list(tables.read(dataset / 'units.parquet', Unit))
-    units.extend(Unit(id=f'extra-{i}', document_id='d', page_id=PAGE, reading=char, script='hiragana',
+    units.extend(Unit(id=f'extra-{i}', document_id='d', page_id=PAGE, text_source=char, script='hiragana',
                       box=Box(x=10, y=10, w=20, h=30)) for i, char in enumerate(('\U0001B002', '\U0001B002', '※')))
     tables.write(dataset / 'units.parquet', units, Unit)
     client = TestClient(create_app(dataset))
@@ -120,7 +120,7 @@ def test_catalogue_files_labels_under_graphemes_and_filters_by_one(dataset):
 
 
 def test_character_group_follows_the_script_of_the_first_character():
-    groups = {char: atlas_module.character_group(Unit(id=char, reading=char))
+    groups = {char: atlas_module.character_group(Unit(id=char, text_source=char))
               for char in ('あ', 'ア', '𛀁', '仮', 'ㅿ', 'ᄫ', '한', '㉠', '', 'A')}
     assert groups == {'あ': 'kana', 'ア': 'kana', '𛀁': 'kana', '仮': 'kanji', 'ㅿ': 'hangul', 'ᄫ': 'hangul',
                       '한': 'hangul', '㉠': 'hangul', '': 'gugyeol', 'A': 'other'}
@@ -128,7 +128,7 @@ def test_character_group_follows_the_script_of_the_first_character():
 
 def test_catalogue_filters_gugyeol_as_its_own_group(dataset):
     units = list(tables.read(dataset / 'units.parquet', Unit))
-    units.extend(Unit(id=f'gugyeol-{char}', document_id='d', page_id=PAGE, reading=char, script='gugyeol',
+    units.extend(Unit(id=f'gugyeol-{char}', document_id='d', page_id=PAGE, text_source=char, script='gugyeol',
                       box=Box(x=10, y=10, w=20, h=30)) for char in ('', ''))
     tables.write(dataset / 'units.parquet', units, Unit)
     client = TestClient(create_app(dataset))
@@ -145,7 +145,7 @@ def test_quick_review_excludes_movable_type_until_explicitly_selected(dataset):
                                                 for kind in kinds]
     tables.write(dataset / 'documents.parquet', docs, Document)
     units = list(tables.read(dataset / 'units.parquet', Unit))
-    units.extend(Unit(id=ids[kind], document_id=ids[kind], page_id=PAGE, reading='字',
+    units.extend(Unit(id=ids[kind], document_id=ids[kind], page_id=PAGE, text_source='字',
                       box=Box(x=10, y=10, w=20, h=30)) for kind in kinds)
     tables.write(dataset / 'units.parquet', units, Unit)
     client = TestClient(create_app(dataset))
@@ -259,7 +259,7 @@ def test_partial_round_leaves_unselected_crops_unreviewed(dataset):
 def test_round_accepts_problems_from_additional_same_character_crops(dataset):
     units = list(tables.read(dataset / 'units.parquet', Unit))
     units.extend(Unit(id=f'extra-{i}', document_id='d', page_id=PAGE, line_id=LINE,
-                      reading='あ', script='hiragana', box=Box(x=10 + i * 10, y=570, w=8, h=10))
+                      text_source='あ', script='hiragana', box=Box(x=10 + i * 10, y=570, w=8, h=10))
                  for i in range(20))
     tables.write(dataset / 'units.parquet', units, Unit)
     client = TestClient(create_app(dataset))
@@ -280,11 +280,11 @@ def test_a_stale_round_writes_nothing(dataset):
     client = TestClient(create_app(dataset))
     payload = round_payload(client)
     client.post('/reviews', json={"target_type": "unit", "target_id": payload['answers'][-1]['id'],
-                "field": "reading", "new": "い", "client_id": "someone-else"})
+                "field": "text_source", "new": "い", "client_id": "someone-else"})
     # The stale revision is checked atomically even if the earlier answers are valid.
     payload['answers'][-1]['revision'] = 0
     payload['grapheme'] = grapheme_of('あ')
-    # Change a note instead so the reading/category check does not short-circuit the transaction.
+    # Change a note instead so the character/category check does not short-circuit the transaction.
     payload = round_payload(client)
     client.post('/reviews', json={"target_type": "unit", "target_id": payload['answers'][-1]['id'],
                 "field": "note", "new": "Another edit", "client_id": "someone-else"})
@@ -415,7 +415,7 @@ def test_export_preserves_the_reviewed_snapshot_and_marks_undone_answers(dataset
     assert exported['current'] is True
     assert exported['reviewed']['character']['label'] == 'あ'
     client.post('/reviews', json={"target_type": "unit", "target_id": payload['answers'][0]['id'],
-                "field": "reading", "new": "い", "client_id": "later-reviewer"})
+                "field": "text_source", "new": "い", "client_id": "later-reviewer"})
     changed = client.get('/atlas/reviews').json()['reviews'][0]
     assert changed['current'] is False
     assert changed['reviewed']['character']['label'] == 'あ'
@@ -439,7 +439,7 @@ def test_invalid_crop_geometry_is_rejected_without_writes(dataset, box):
     client = TestClient(create_app(dataset))
     item = client.get('/atlas').json()['items'][0]
     payload = {"id": str(uuid4()), "client_id": "reader", "revision": item['revision'], "image_sha256": item['image_sha256'],
-               "reading": item['label'], "verdict": "match", "box": box}
+               "verdict": "match", "box": box}
     assert client.post('/atlas/characters/' + item['id'], json=payload).status_code == 422
     assert Store(dataset).events() == []
 
@@ -662,11 +662,12 @@ SUPPLEMENTARY = "\U0002A708"
 
 @pytest.fixture
 def searched(tmp_path: Path, monkeypatch):
-    """A catalogue holding U+2A708 three times, three other characters once each, and no reading.
+    """A catalogue holding U+2A708 three times, three other characters once each, and records whose
+    transcription is missing or names another character.
 
     Disposable: no imported corpus records U+2A708, so the character can only be exercised on a
-    fixture. The units carry no `reading` of their own beyond the character, which is what makes the
-    test distinguish a search on the written identity from one on the reading.
+    fixture. The records whose transcription and character disagree are what make the test
+    distinguish a search on the written identity from one on the transcription.
     """
     root = tmp_path / "searched"
     root.mkdir()
@@ -687,31 +688,31 @@ def searched(tmp_path: Path, monkeypatch):
                  text_raw=SUPPLEMENTARY, text=SUPPLEMENTARY, box=Box(x=0, y=0, w=300, h=300))], Line)
     units = [
         Unit(id=f"{LINE}:s{i}", document_id="d", page_id=PAGE, line_id=LINE, seq=i,
-             reading=SUPPLEMENTARY, unicode="U+2A708", script="han",
+             text_source=SUPPLEMENTARY, unicode="U+2A708", script="han",
              box=Box(x=20 + i * 10, y=20, w=60, h=60))
         for i in range(3)
     ]
     units += [
         Unit(id=f"{LINE}:k{i}", document_id="d", page_id=PAGE, line_id=LINE, seq=10 + i,
-             reading=char, unicode=code, script="hiragana",
+             text_source=char, unicode=code, script="hiragana",
              box=Box(x=200 + i * 10, y=20, w=60, h=60))
-        # ね and ネ share a reading and a grapheme; が is one character written two ways in Unicode.
+        # ね and ネ share a kana and a grapheme; が is one character written two ways in Unicode.
         for i, (char, code) in enumerate((("ね", "U+306D"), ("ネ", "U+30CD"), ("が", "U+304C")))
     ]
     units += [
-        # The written identity and the reading disagree: this is the case that tells a search on the
-        # written character apart from a search on the reading. A source may record the character it
-        # printed while reading it another way, and ゐ read as い is exactly that.
+        # The written identity and the transcription disagree: this is the case that tells a search on
+        # the written character apart from a search on the transcription. A source may print one
+        # character and transcribe it as another, and ゐ transcribed as い is exactly that.
         Unit(id=f"{LINE}:hira", document_id="d", page_id=PAGE, line_id=LINE, seq=20,
-             reading="い", unicode="U+3090", script="hiragana", box=Box(x=20, y=200, w=60, h=60)),
-        # A recorded written identity with no reading at all: reviewable, and findable by its
+             text_source="い", unicode="U+3090", script="hiragana", box=Box(x=20, y=200, w=60, h=60)),
+        # A recorded written identity with no transcription at all: reviewable, and findable by its
         # character, which is the only name it has.
-        Unit(id=f"{LINE}:noreading", document_id="d", page_id=PAGE, line_id=LINE, seq=21,
-             reading=None, text_source=None, unicode="U+2A708", script="han",
+        Unit(id=f"{LINE}:notext", document_id="d", page_id=PAGE, line_id=LINE, seq=21,
+             text_source=None, unicode="U+2A708", script="han",
              box=Box(x=100, y=200, w=60, h=60)),
         # The 1,220 U+3000 units of the real corpus: recorded, not reviewable, and not findable.
         Unit(id=f"{LINE}:space", document_id="d", page_id=PAGE, line_id=LINE, seq=22,
-             reading=None, text_source=None, unicode="U+3000", script="unknown",
+             text_source=None, unicode="U+3000", script="unknown",
              box=Box(x=180, y=200, w=60, h=60)),
     ]
     tables.write(root / "units.parquet", units, Unit)
@@ -726,7 +727,7 @@ def test_search_finds_every_occurrence_of_a_supplementary_character(searched: Pa
     assert body["matched"] == 4
     assert body["query"] == SUPPLEMENTARY
     assert {item["id"] for item in body["items"]} == (
-        {f"{LINE}:s{i}" for i in range(3)} | {f"{LINE}:noreading"})
+        {f"{LINE}:s{i}" for i in range(3)} | {f"{LINE}:notext"})
     assert all(item["label"] == SUPPLEMENTARY for item in body["items"])
 
 
@@ -779,7 +780,7 @@ def test_search_reaches_every_match_through_pagination(searched: Path):
     assert not ({item["id"] for item in first["items"]}
                 & {item["id"] for item in second["items"]}), "the pages do not overlap"
     assert ({item["id"] for item in first["items"]} | {item["id"] for item in second["items"]}
-            == {f"{LINE}:s{i}" for i in range(3)} | {f"{LINE}:noreading"})
+            == {f"{LINE}:s{i}" for i in range(3)} | {f"{LINE}:notext"})
 
 
 def test_search_that_matches_nothing_answers_zero_and_the_collection_still_loads(searched: Path):
@@ -812,33 +813,33 @@ def test_a_search_result_is_a_real_occurrence_a_reviewer_can_decide_on(searched:
     assert undo.status_code == 200, undo.text
 
 
-def test_search_matches_the_written_character_not_the_reading(searched: Path):
-    """ゐ recorded with the reading い is found by ゐ and by U+3090, and not by い.
+def test_search_matches_the_written_character_not_the_transcription(searched: Path):
+    """ゐ transcribed as い is found by ゐ and by U+3090, and not by い.
 
-    This is the difference between a search on what the source printed and a search on how it is
-    read: a reading is shared by several characters, so a search that answered from it would return
-    the wrong records and would miss this one when the reader knows the character.
+    This is the difference between a search on what the source printed and a search on how it was
+    transcribed: one kana stands for several characters, so a search that answered from the
+    transcription would return the wrong records and would miss this one when the reader knows the
+    character.
     """
     client = TestClient(create_app(searched))
     written = client.get("/atlas", params={"q": "ゐ"}).json()
     assert written["total"] == 1, written
     assert written["items"][0]["id"] == f"{LINE}:hira"
     assert client.get("/atlas", params={"q": "U+3090"}).json()["total"] == 1
-    # The record is not found by its reading. Other records reading い are found by theirs, which is
-    # a different question and is answered by the character they were written with.
-    by_reading = client.get("/atlas", params={"q": "い"}).json()
-    assert f"{LINE}:hira" not in {item["id"] for item in by_reading["items"]}
+    # The record is not found by its transcription. Other records written い are found by theirs,
+    # which is a different question and is answered by the character they were written with.
+    by_text = client.get("/atlas", params={"q": "い"}).json()
+    assert f"{LINE}:hira" not in {item["id"] for item in by_text["items"]}
 
 
-def test_an_occurrence_with_a_written_identity_and_no_reading_is_findable(searched: Path):
-    """A record that names its character and carries no reading is still an occurrence.
+def test_an_occurrence_with_a_written_identity_and_no_transcription_is_findable(searched: Path):
+    """A record that names its character and carries no transcription is still an occurrence.
 
-    Eligibility used to ask for a reading, which hid exactly this record before a search could reach
-    it. It is shown by its character, and it can be decided on like any other occurrence.
+    It is shown by its character, and it can be decided on like any other occurrence.
     """
     client = TestClient(create_app(searched))
     body = client.get("/atlas", params={"q": "U+2A708"}).json()
-    record = next(item for item in body["items"] if item["id"] == f"{LINE}:noreading")
+    record = next(item for item in body["items"] if item["id"] == f"{LINE}:notext")
     assert record["label"] == SUPPLEMENTARY, "shown by the character it was written with"
     assert "reading" not in record
     assert client.get(record["image"]).status_code == 200
@@ -847,7 +848,7 @@ def test_an_occurrence_with_a_written_identity_and_no_reading_is_findable(search
     category = next(c for c in body["categories"] if c["label"] == SUPPLEMENTARY)
     assert category["total"] == 4, "the category holds every occurrence, this one among them"
     opened = client.get("/atlas", params={"character": SUPPLEMENTARY}).json()
-    assert f"{LINE}:noreading" in {item["id"] for item in opened["items"]}
+    assert f"{LINE}:notext" in {item["id"] for item in opened["items"]}
 
 
 def test_the_recorded_space_units_are_not_reviewable_rows(searched: Path):
@@ -888,7 +889,7 @@ def scaled(tmp_path: Path, monkeypatch):
     tables.write(root / "lines.parquet", [Line(id=LINE, page_id=PAGE, seq=0,
                  text_raw="あ", text="あ", box=Box(x=0, y=0, w=800, h=600))], Line)
     units = [Unit(id=f"{LINE}:u0", document_id="d", page_id=PAGE,
-                  line_id=LINE, seq=0, reading="あ", unicode="U+3042", script="hiragana",
+                  line_id=LINE, seq=0, text_source="あ", unicode="U+3042", script="hiragana",
                   box=Box(x=100, y=100, w=200, h=200))]
     # A record whose image is a pre-cut crop file rather than a page: it has no surroundings, which
     # is the case the interface must not offer to adjust.
@@ -899,7 +900,7 @@ def scaled(tmp_path: Path, monkeypatch):
     crop_folder.mkdir(parents=True, exist_ok=True)
     (crop_folder / (crop_digest + ".jpg")).write_bytes(crop_file.read_bytes())
     units.append(Unit(id=f"{LINE}:u1", document_id="d", page_id=None, line_id=LINE, seq=1,
-                      reading="い", unicode="U+3044", script="hiragana", crop_sha256=crop_digest))
+                      text_source="い", unicode="U+3044", script="hiragana", crop_sha256=crop_digest))
     tables.write(root / "units.parquet", units, Unit)
     return root
 
@@ -991,8 +992,9 @@ def test_a_crop_only_record_has_no_context_and_no_grab_to_adjust(scaled: Path):
 def test_an_exported_review_says_whether_it_still_stands(searched: Path):
     """Currentness is about the identity and the box a review recorded.
 
-    Three cases, and the first is a record written as one character and read as another: a match
-    records no identity, so it is held to the written character it was shown, whatever the reading.
+    Three cases, and the first is a record written as one character and transcribed as another: a
+    match records no identity, so it is held to the written character it was shown, whatever the
+    transcription.
     """
     client = TestClient(create_app(searched))
 
@@ -1001,7 +1003,7 @@ def test_an_exported_review_says_whether_it_still_stands(searched: Path):
                  if r["event"]["actor"] == client_id]
         return found[0] if found else None
 
-    # A record whose written identity and reading differ.
+    # A record whose written identity and transcription differ.
     written = client.get("/atlas/characters/" + f"{LINE}:hira").json()
     assert written["label"] == "ゐ", "the fixture's differing record"
     matched = client.post("/atlas/rounds", json={
@@ -1057,9 +1059,9 @@ def repaired(tmp_path: Path, monkeypatch):
     tables.write(root / "lines.parquet", [Line(id=LINE, page_id=PAGE, seq=0,
                  text_raw="あいうえ", text="あいうえ", box=Box(x=0, y=0, w=400, h=300))], Line)
 
-    def unit(name: str, seq: int, reading: str, **meta: object) -> Unit:
+    def unit(name: str, seq: int, char: str, **meta: object) -> Unit:
         return Unit(id=f"{LINE}:{name}", document_id="d", page_id=PAGE, line_id=LINE, seq=seq,
-                    reading=reading, unicode=f"U+{ord(reading):04X}", script="hiragana",
+                    text_source=char, unicode=f"U+{ord(char):04X}", script="hiragana",
                     box=Box(x=30 + seq * 40, y=30, w=70, h=80),
                     meta={"alignment_repair": meta} if meta else {})
 
@@ -1133,7 +1135,7 @@ def test_a_mended_crop_a_person_settled_stays_a_candidate_and_a_human_decision(r
 
 def test_an_extracted_crop_says_which_gate_let_it_through(repaired: Path):
     units = tables.Dataset(repaired).read("units")
-    extracted = units[-1].model_copy(update={"id": f"{LINE}:extracted", "seq": 4, "reading": "飍", "unicode": "U+98CD",
+    extracted = units[-1].model_copy(update={"id": f"{LINE}:extracted", "seq": 4, "text_source": "飍", "unicode": "U+98CD",
                                              "meta": {"extraction": {"gate": "unconfirmed", "quiz": True}}})
     # The fixture's recorded review is not needed here, and a store refuses tables that changed under it.
     for store_file in repaired.glob("review.sqlite*"):
@@ -1381,15 +1383,15 @@ def damaged(tmp_path: Path, monkeypatch):
     tables.write(root / "units.parquet", [
         # Only the damaged crop: nothing valid is behind it.
         Unit(id=f"{LINE}:onlybroken", document_id="d", page_id=None, line_id=LINE, seq=0,
-             reading="あ", unicode="U+3042", script="hiragana", crop_sha256=broken_digest),
+             text_source="あ", unicode="U+3042", script="hiragana", crop_sha256=broken_digest),
         # The damaged crop, but the unit still has its page and box.
         Unit(id=f"{LINE}:fallback", document_id="d", page_id=PAGE, line_id=LINE, seq=1,
-             reading="い", unicode="U+3044", script="hiragana",
+             text_source="い", unicode="U+3044", script="hiragana",
              box=Box(x=40, y=40, w=80, h=90), crop_sha256=broken_digest),
         # A sound crop of its own, so the fallback is not simply everything failing: it must not
         # share bytes with the page, or damaging the page would damage it as well.
         Unit(id=f"{LINE}:good", document_id="d", page_id=None, line_id=LINE, seq=2,
-             reading="う", unicode="U+3046", script="hiragana", crop_sha256=sound_digest),
+             text_source="う", unicode="U+3046", script="hiragana", crop_sha256=sound_digest),
     ], Unit)
     return root
 
@@ -1586,7 +1588,7 @@ def test_the_export_is_the_same_payload_as_a_file(searched: Path):
 def test_context_suggestions_are_independent_fresh_and_revision_bound(dataset, monkeypatch):
     from glyph_atlas.review import suggestions
     units = [Unit(id=LINE + f":ctx{i}", line_id=LINE, page_id=PAGE, seq=i + 1,
-                  text_source=text, reading=text, box=Box(x=20, y=20 + i * 100, w=65, h=80))
+                  text_source=text, box=Box(x=20, y=20 + i * 100, w=65, h=80))
              for i, text in enumerate("あいう")]
     tables.write(dataset / "units.parquet", units, Unit)
 

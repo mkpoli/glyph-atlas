@@ -297,7 +297,7 @@ def _unit_row(row: dict[str, Any]) -> dict[str, Any]:
         "holder": row.get("holder") or source.get("holder"),
         "title": row.get("title") or source.get("title"),
         "shelfmark": row.get("shelfmark"),
-        "text_raw": row.get("text") or row.get("reading"),
+        "text_raw": row.get("text"),
         "corpus": row.get("corpus"),
         "document_id": row.get("document_id"),
         "page_id": row.get("page_id"),

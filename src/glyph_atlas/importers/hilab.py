@@ -277,7 +277,6 @@ def unit_of(member: Member, raw: dict, measured: Measured | None = None) -> Unit
         kind=kind_of(member.code_point),
         granularity="char",
         text_source=member.character,
-        reading=member.character,
         unicode=f"U+{member.code_point:04X}",
         classification=Classification.UNASSESSED if script in KANA else Classification.IDENTIFIED,
         script=script,

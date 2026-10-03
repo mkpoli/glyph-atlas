@@ -110,7 +110,6 @@ def build(directory: Path) -> Fixture:
                         line_id=line_id,
                         seq=number,
                         box=Box(x=100 + 120 * number, y=60 + 400 * seq, w=100, h=100),
-                        reading="あいう"[number],
                         text_source="あいう"[number],
                         unicode=f"U+304{2 + 2 * number}",
                         classification=Classification.IDENTIFIED,
@@ -226,7 +225,7 @@ def test_page_lines_and_line_units(client: TestClient, fixture: Fixture) -> None
 
 def test_candidates_carry_jibo_reference_glyphs_and_scores(client: TestClient, fixture: Fixture) -> None:
     body = client.get(f"/units/{fixture.ambiguous}/candidates").json()
-    assert body["reading"] == "あ" and body["classification"] == "ambiguous"
+    assert body["kana"] == "あ" and body["classification"] == "ambiguous"
     code_points = [candidate["unicode"] for candidate in body["candidates"]]
     assert code_points[0] == "U+3042"
     assert "U+1B002" in code_points
@@ -261,7 +260,7 @@ def test_queue_strategies_filter_and_paginate(client: TestClient, fixture: Fixtu
 # -- recording reviews ---------------------------------------------------------------------------
 
 
-def test_box_move_and_reading_change(client: TestClient, fixture: Fixture) -> None:
+def test_box_move_and_text_change(client: TestClient, fixture: Fixture) -> None:
     box = {"x": 510, "y": 80, "w": 40, "h": 40}
     moved = review(client, target_type="unit", target_id=fixture.unit, field="box", new=box, base_revision=0)
     status, result = moved
@@ -269,14 +268,14 @@ def test_box_move_and_reading_change(client: TestClient, fixture: Fixture) -> No
     assert result["review"]["old"] == {"x": 100, "y": 60, "w": 100, "h": 100}
     assert result["review"]["role"] == "reviewer" and result["review"]["at"]
     renamed = review(
-        client, target_type="unit", target_id=fixture.unit, field="reading", new="き", base_revision=1
+        client, target_type="unit", target_id=fixture.unit, field="text_source", new="き", base_revision=1
     )
     status, result = renamed
-    assert status == 200 and result["revision"] == 2 and result["state"]["reading"] == "き"
+    assert status == 200 and result["revision"] == 2 and result["state"]["text_source"] == "き"
     assert result["review"]["old"] == "あ"
     units = client.get(f"/lines/{fixture.line}/units").json()["items"]
     match = next(unit for unit in units if unit["id"] == fixture.unit)
-    assert match["box"] == box and match["reading"] == "き" and match["revision"] == 2
+    assert match["box"] == box and match["text_source"] == "き" and match["revision"] == 2
 
 
 def test_line_review_and_a_page_timing_event(client: TestClient, fixture: Fixture) -> None:
@@ -298,22 +297,22 @@ def test_line_review_and_a_page_timing_event(client: TestClient, fixture: Fixtur
 def test_stale_base_revision_answers_409_with_the_current_state(
     client: TestClient, fixture: Fixture
 ) -> None:
-    review(client, target_type="unit", target_id=fixture.unit, field="reading", new="き", base_revision=0)
+    review(client, target_type="unit", target_id=fixture.unit, field="text_source", new="き", base_revision=0)
     status, detail = review(
-        client, target_type="unit", target_id=fixture.unit, field="reading", new="く", base_revision=0
+        client, target_type="unit", target_id=fixture.unit, field="text_source", new="く", base_revision=0
     )
     assert status == 409
     assert detail["error"] == "stale-revision"
     assert detail["base_revision"] == 0 and detail["revision"] == 1
-    assert detail["state"]["reading"] == "き"
-    assert state(client, fixture.unit).reading == "き"
+    assert detail["state"]["text_source"] == "き"
+    assert state(client, fixture.unit).text_source == "き"
 
 
 def test_repeated_idempotency_key_answers_the_earlier_result(client: TestClient, fixture: Fixture) -> None:
     body = {
         "target_type": "unit",
         "target_id": fixture.unit,
-        "field": "reading",
+        "field": "text_source",
         "new": "き",
         "base_revision": 0,
         "client_id": "reviewer-1",
@@ -324,7 +323,7 @@ def test_repeated_idempotency_key_answers_the_earlier_result(client: TestClient,
     assert again["duplicate"] is True and first["duplicate"] is False
     assert again["id"] == first["id"] and again["revision"] == 1
     assert len(client.app.state.store.events()) == 1
-    assert state(client, fixture.unit).reading == "き"
+    assert state(client, fixture.unit).text_source == "き"
 
 
 def test_split_then_merge(client: TestClient, fixture: Fixture) -> None:
@@ -336,8 +335,8 @@ def test_split_then_merge(client: TestClient, fixture: Fixture) -> None:
         field="segmentation",
         new={
             "split": [
-                {"box": {"x": 100, "y": 60, "w": 50, "h": 100}, "reading": "か"},
-                {"box": {"x": 150, "y": 60, "w": 50, "h": 100}, "reading": "か"},
+                {"box": {"x": 100, "y": 60, "w": 50, "h": 100}, "text_source": "か"},
+                {"box": {"x": 150, "y": 60, "w": 50, "h": 100}, "text_source": "か"},
             ]
         },
         base_revision=0,
@@ -351,7 +350,7 @@ def test_split_then_merge(client: TestClient, fixture: Fixture) -> None:
     assert state(client, unit).split_into == created
     assert active_units(client, line) == [*created, f"{line}:u1", f"{line}:u2"]
     assert state(client, created[0]).seq == 0 and state(client, created[1]).seq == 1
-    assert state(client, created[0]).reading == "か"
+    assert state(client, created[0]).text_source == "か"
     assert state(client, created[0]).method == "manual"
 
     merge = review(
@@ -367,7 +366,7 @@ def test_split_then_merge(client: TestClient, fixture: Fixture) -> None:
     merged = f"{line}:m3"
     assert result["created"] == [merged] and result["retired"] == created
     assert state(client, merged).active is True
-    assert state(client, merged).reading == "かか"
+    assert state(client, merged).text_source == "かか"
     assert state(client, merged).kind == "ligature"
     assert state(client, merged).box == Box(x=100, y=60, w=100, h=100)
     assert [state(client, name).merged_into for name in created] == [merged, merged]
@@ -382,8 +381,8 @@ def test_split_outside_the_line_box_is_accepted_and_flagged(client: TestClient, 
         field="segmentation",
         new={
             "split": [
-                {"box": {"x": 10, "y": 10, "w": 40, "h": 40}, "reading": "か"},
-                {"box": {"x": 600, "y": 60, "w": 40, "h": 40}, "reading": "か"},
+                {"box": {"x": 10, "y": 10, "w": 40, "h": 40}, "text_source": "か"},
+                {"box": {"x": 600, "y": 60, "w": 40, "h": 40}, "text_source": "か"},
             ]
         },
         base_revision=0,
@@ -402,14 +401,14 @@ def test_review_of_a_retired_unit_answers_409(client: TestClient, fixture: Fixtu
         field="segmentation",
         new={
             "split": [
-                {"box": {"x": 100, "y": 60, "w": 50, "h": 100}, "reading": "か"},
-                {"box": {"x": 150, "y": 60, "w": 50, "h": 100}, "reading": "か"},
+                {"box": {"x": 100, "y": 60, "w": 50, "h": 100}, "text_source": "か"},
+                {"box": {"x": 150, "y": 60, "w": 50, "h": 100}, "text_source": "か"},
             ]
         },
         base_revision=0,
     )
     status, detail = review(
-        client, target_type="unit", target_id=fixture.unit, field="reading", new="き", base_revision=1
+        client, target_type="unit", target_id=fixture.unit, field="text_source", new="き", base_revision=1
     )
     assert status == 409
     assert detail["error"] == "retired"
@@ -447,7 +446,7 @@ def test_a_unit_on_an_existing_line(client: TestClient, fixture: Fixture) -> Non
         json={
             "line_id": line,
             "box": {"x": 520, "y": 80, "w": 60, "h": 60},
-            "reading": "え",
+            "text_source": "え",
             "unicode": "U+3048",
             "client_id": "reviewer-2",
         },
@@ -477,7 +476,7 @@ def test_unknown_field_and_a_timing_event(client: TestClient, fixture: Fixture) 
     assert status == 200 and result["revision"] == 1
     assert result["review"]["new"] == {"opened_ms": 1200}
     assert state(client, fixture.unit).box == Box(x=100, y=60, w=100, h=100)
-    assert review(client, target_type="unit", target_id="nope", field="reading", new="x")[0] == 404
+    assert review(client, target_type="unit", target_id="nope", field="text_source", new="x")[0] == 404
 
 
 # -- apply and replay ----------------------------------------------------------------------------
@@ -490,7 +489,7 @@ def digests(directory: Path) -> dict[str, str]:
 
 
 def reviewed(client: TestClient, fixture: Fixture) -> None:
-    """A move, a reading change, a split and a merge, so that apply has work to do."""
+    """A move, a transcription change, a split and a merge, so that apply has work to do."""
     review(
         client,
         target_type="unit",
@@ -507,8 +506,8 @@ def reviewed(client: TestClient, fixture: Fixture) -> None:
         field="segmentation",
         new={
             "split": [
-                {"box": {"x": 220, "y": 60, "w": 50, "h": 100}, "reading": "い"},
-                {"box": {"x": 270, "y": 60, "w": 50, "h": 100}, "reading": "い"},
+                {"box": {"x": 220, "y": 60, "w": 50, "h": 100}, "text_source": "い"},
+                {"box": {"x": 270, "y": 60, "w": 50, "h": 100}, "text_source": "い"},
             ]
         },
         base_revision=0,
@@ -558,7 +557,7 @@ def test_replay_repairs_a_state_a_crash_left_behind(client: TestClient, fixture:
         client,
         target_type="unit",
         target_id=fixture.unit,
-        field="reading",
+        field="text_source",
         new="き",
         base_revision=0,
         client_id="reviewer-1",
@@ -567,15 +566,15 @@ def test_replay_repairs_a_state_a_crash_left_behind(client: TestClient, fixture:
     database = fixture.directory / "review.sqlite"
     conn = sqlite3.connect(database)
     stale = json.loads(conn.execute("SELECT data FROM units WHERE id = ?", (fixture.unit,)).fetchone()[0])
-    stale["reading"] = "あ"
+    stale["text_source"] = "あ"
     conn.execute("UPDATE units SET data = ? WHERE id = ?", (json.dumps(stale, ensure_ascii=False), fixture.unit))
     conn.execute("UPDATE meta SET value = '0' WHERE key = 'state_seq'")
     conn.commit()
     conn.close()
-    assert client.app.state.store.unit(fixture.unit).reading == "あ"
+    assert client.app.state.store.unit(fixture.unit).text_source == "あ"
     rebuilt = replay(fixture.directory)
     assert rebuilt["repaired"] == 1
-    assert client.app.state.store.unit(fixture.unit).reading == "き"
+    assert client.app.state.store.unit(fixture.unit).text_source == "き"
     assert client.app.state.store.revision(fixture.unit) == 1
 
 
@@ -584,7 +583,7 @@ def test_replay_adds_an_event_the_state_never_saw(client: TestClient, fixture: F
         client,
         target_type="unit",
         target_id=fixture.unit,
-        field="reading",
+        field="text_source",
         new="き",
         base_revision=0,
         client_id="reviewer-1",
@@ -593,7 +592,7 @@ def test_replay_adds_an_event_the_state_never_saw(client: TestClient, fixture: F
     conn = sqlite3.connect(database)
     conn.execute(
         "INSERT INTO events (id, target_type, target_id, field, old, new, role, actor, at, client_id) "
-        "VALUES ('rv00000002', 'unit', ?, 'reading', ?, ?, 'reviewer', 'reviewer-1', ?, '')",
+        "VALUES ('rv00000002', 'unit', ?, 'text_source', ?, ?, 'reviewer', 'reviewer-1', ?, '')",
         (
             fixture.unit,
             json.dumps("き", ensure_ascii=False),
@@ -605,7 +604,7 @@ def test_replay_adds_an_event_the_state_never_saw(client: TestClient, fixture: F
     conn.close()
     rebuilt = replay(fixture.directory)
     assert rebuilt["repaired"] == 1 and rebuilt["events"] == 2
-    assert client.app.state.store.unit(fixture.unit).reading == "く"
+    assert client.app.state.store.unit(fixture.unit).text_source == "く"
     assert client.app.state.store.revision(fixture.unit) == 2
 
 
@@ -651,7 +650,7 @@ def test_apply_reaches_events_a_changed_table_would_hide(fixture: Fixture) -> No
     unreachable and the only exit would be deleting the database and losing them.
     """
     client = TestClient(create_app(fixture.directory))
-    review(client, target_type="unit", target_id=fixture.unit, field="reading", new="き",
+    review(client, target_type="unit", target_id=fixture.unit, field="text_source", new="き",
            base_revision=0, client_id="reviewer-1")
     # Rewrite the units table under the open store, as an alignment run would.
     path = fixture.directory / "units.parquet"
@@ -1052,3 +1051,14 @@ def test_a_page_with_text_and_no_boxes_is_not_reported_as_nothing_to_do(ainu_dat
         "one page of the two has a box, which is what says whether the witness can be reviewed"
     )
     assert document["lines"] == 1
+
+
+def test_candidates_follow_the_written_character_not_a_stale_transcription() -> None:
+    """A unit relabelled バ whose transcription still says イ is offered the forms of バ."""
+    from glyph_atlas.review.server import candidates_for
+    from glyph_atlas.schema import Unit
+
+    body = candidates_for(Unit(id="relabelled", unicode="U+30D0", text_source="イ"))
+    assert body["kana"] != "イ"
+    assert "U+30D0" in {entry["unicode"] for entry in body["candidates"]}
+    assert "U+30A4" not in {entry["unicode"] for entry in body["candidates"]}

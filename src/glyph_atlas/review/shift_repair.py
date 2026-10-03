@@ -2,7 +2,7 @@
 
 The Ainu records label a block's crops by cutting its transcription into as many ink boxes as it has
 characters and giving box i character i. One bad cut moves every later label of the block: the crop
-of 金 is filed under 表, the character written before it. Such a crop is not a new reading; the
+of 金 is filed under 表, the character written before it. Such a crop is not a new character; the
 character it shows is in the block's own text, one or two places away.
 
 Every crop is read by the classifier, and each crop gets the probability that it shows the label at
@@ -207,7 +207,7 @@ def run(dataset: Path, *, checkpoint: Path, apply: bool = False, protect: Iterab
         character = item["character"]
         evidence = {"kind": "block-shift-repair", "method": METHOD, "automated": True,
                     **{k: v for k, v in item.items() if k not in ("unit_id", "status")}}
-        values = {"unicode": encoded(character), "reading": character, "script": script_of_identity(character),
+        values = {"unicode": encoded(character), "script": script_of_identity(character),
                   "review": "machine", "meta": {**(unit.meta or {}), "feedback_identity": evidence}}
         try:
             _changes(store, unit, values, evidence, base_revision=revision)
