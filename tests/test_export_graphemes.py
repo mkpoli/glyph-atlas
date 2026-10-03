@@ -169,6 +169,6 @@ def test_a_fresh_row_is_shaped_like_a_published_one(module):
     found = module.fresh("U+1B09E U+3099")
     assert found["data"]["grapheme"]["code_point"] == "U+3070"
     assert found["data"]["kind"] == "kana" and found["data"]["char"] == "\U0001B09E゙"
-    data, detail = module.rewritten("U+1B09E U+3099", {"U+1B09E U+3099": found}, {})
+    _, detail = module.rewritten("U+1B09E U+3099", {"U+1B09E U+3099": found}, {})
     assert detail["characters"][0]["code_point"] == "U+1B09E U+3099"
     assert {row["code_point"] for row in detail["characters"]} == set(refs.graphemes()["U+3070"])
