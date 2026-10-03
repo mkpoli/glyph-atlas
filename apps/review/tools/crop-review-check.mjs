@@ -40,6 +40,8 @@ try {
   console.log('PASS W M B X choose the problem cards')
 
   const position = await browser.evaluate(shown)
+  // B took the keyboard into the page view to redraw the crop, where the arrows belong to the view.
+  await browser.evaluate('document.activeElement?.blur()')
   await browser.key('ArrowRight')
   await browser.waitFor(`${shown} && ${shown} !== ${JSON.stringify(position)}`)
   await browser.key('ArrowLeft')

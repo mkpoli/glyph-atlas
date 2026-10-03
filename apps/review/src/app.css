@@ -147,17 +147,16 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 .character-dialog{inset:0;width:100vw;max-width:100vw;background:var(--paper);box-shadow:none}
 .character-dialog[open]{display:flex;flex-direction:column}
 .character-dialog[open]>.inspector{flex:1 0 auto;width:100%}
-.character-dialog .inspector{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(380px,1fr);column-gap:48px;align-items:start;padding:18px max(4.4vw,calc((100vw - 1440px)/2 + 4.4vw)) 28px}
+.character-dialog .inspector{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);column-gap:48px;align-items:start;padding:18px max(4.4vw,calc((100vw - 1440px)/2 + 4.4vw)) 28px}
 .character-dialog .inspector>*{grid-column:2;min-width:0}
 .character-dialog .inspector>.inspector-header,.character-dialog .inspector>.inspector-skeleton{grid-column:1/-1}
 .character-dialog .inspector-header{background:var(--paper);border-bottom:1px solid var(--line);margin-bottom:18px}
 .character-dialog .inspector>.replaced-note,.character-dialog .inspector>.error-message{grid-column:1/-1;grid-row:2}
-.character-dialog .inspector>.crop-box{grid-column:1;grid-row:3}
-.character-dialog .inspector>.inspector-right{grid-column:2;grid-row:3/span 2}
-.character-dialog .inspector>.inspector-page{grid-column:1;grid-row:4;margin-top:14px}
-.character-dialog .crop-box{height:300px}
-.character-dialog .inspector-figure .crop-viewport{height:440px}
-.character-dialog .inspector-figure{min-height:522px}.character-dialog .context-text{height:72px;overflow:hidden}.character-dialog .context-text p{max-height:3.6em}
+.character-dialog .inspector{align-content:start}
+.character-dialog .inspector>.inspector-page{grid-column:1;grid-row:3}
+.character-dialog .inspector>.inspector-right{grid-column:2;grid-row:3}
+.character-dialog .inspector-figure .crop-viewport{height:560px}
+.character-dialog .inspector-figure{min-height:642px}.character-dialog .context-text{height:72px;overflow:hidden}.character-dialog .context-text p{max-height:3.6em}
 .character-dialog .inspector-title{margin-top:0}
 .character-dialog .inspector-savebar{background:var(--overlay-page);flex-direction:row;flex-wrap:wrap;justify-content:flex-end;align-items:center;padding:14px max(4.4vw,calc((100vw - 1440px)/2 + 4.4vw))}
 .character-dialog .inspector-savebar .primary{width:auto;min-width:300px}
@@ -169,19 +168,23 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 /* Every block of the inspector keeps its size from crop to crop: the crop alone in a box of one size,
    the page around it in another further down, so stepping changes only the pixels inside them. On a
    narrow screen the columns dissolve into one, the decision before the page. */
-.crop-box{margin:0;height:220px;display:flex;align-items:center;justify-content:center;padding:18px;border-radius:12px;background:light-dark(#ebe8e3, #ebe8e3)}
-.crop-box.shimmer{background:linear-gradient(100deg,var(--surface-sunken) 35%,var(--paper) 50%,var(--surface-sunken) 65%);background-size:200% 100%}
-.crop-box img{width:100%;height:100%;object-fit:contain}
-/* The box keeps the scan's paper in both schemes, so what is written on it is dark in both. */
-.crop-box>span,.crop-box .missing-glyph{font-size:12px;color:#5a5862}
-.inspector-figure .crop-viewport{height:300px}
-.crop-form .form-chips{flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px}
+.inspector-figure .crop-viewport{height:340px}
+.inspector-figure.shimmer{height:340px;border-radius:12px}
+/* The dialog keeps room for its scrollbar, so content growing never narrows the page view and reframes it. */
+.character-dialog{scrollbar-gutter:stable}
+.character-dialog .inspector-figure{display:block}
+.figure-note{display:flex;align-items:center;justify-content:center;height:340px;border-radius:12px;background:#ebe8e3;color:#5a5862;font-size:12px}
+/* The crop's ID, out of the decision: small and quiet in the header, still selectable and copyable. */
+.inspector-header .record-id{margin:0 auto 0 0;min-width:0}.inspector-header .record-id code{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .inspector-production{min-height:22px}
-@media(max-width:999px){.inspector-page{margin-top:20px}.crop-box+.inspector-right{margin-top:14px}.inspector-production:empty{display:none}}
+@media(min-width:1000px){.character-dialog .inspector-figure.shimmer,.character-dialog .figure-note{height:560px}}
+@media(max-width:999px){.inspector-page+.inspector-right{margin-top:16px}.inspector-production:empty{display:none}}
 /* The source line sits under the crop on a wide screen and after everything else on a narrow one, so
    it never pushes the decision down. */
 .credit-beside{display:none;margin-top:10px}.credit-after{margin-top:24px}
-.inspector-header{justify-content:flex-end}
+.inspector-header{justify-content:flex-end;min-height:48px}
+.character-dialog .inspector-figure{min-height:422px}
+@media(min-width:1000px){.character-dialog .inspector-figure{min-height:642px}}
 @media(min-width:1000px){.credit-beside{display:block}.credit-after{display:none}}
 .inspector-savebar .save-character{min-height:52px}
 .inspector-savebar .advance-switch{align-self:flex-start}

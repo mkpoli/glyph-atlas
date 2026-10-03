@@ -30,13 +30,10 @@
   "bulk.dismiss": "閉",
   "bulk.changed": "載後有截已改，請重載再試。",
   "bulk.hint": "Ctrl/⌘或X增減，Shift取區間，Esc釋",
-  "character.context.alt": "字旁筆畫",
-  "character.context.loadError": "旁圖不能載",
   "character.replaced": "此截已易，今所示者其代也。",
   "character.crop.adjust": "改截 ↗",
   "character.crop.adjusted": "截已改",
   "character.crop.doneAdjusting": "改畢",
-  "character.crop.dragToAdjust": "曳以改截",
   "character.dialog.label": "校字",
   "character.glyph.alt": "字{label}",
   "character.image.unavailable": "圖不可得",
@@ -782,5 +779,7 @@
   "privacy.choices.body": "於帳戶頁可易名與小像，除登入之法，或使餘機登出。欲刪帳戶，請致書{email}：電郵址、小像、登入之法及已登入之機之錄皆刪之，所定仍留於蒐集之錄，署爲「無名」。",
   "privacy.changes.title": "更易",
   "privacy.changes.body": "本頁更易之錄，列於本站在GitHub之公開儲存庫；上方所記，爲末次更易之日。",
-  "footer.privacy": "私隱"
+  "footer.privacy": "私隱",
+  "similar.previous": "前似截",
+  "similar.next": "次似截"
 }

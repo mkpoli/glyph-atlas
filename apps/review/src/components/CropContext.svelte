@@ -2,8 +2,11 @@
   import { request } from '../lib/client.js'
   import Glyph from './Glyph.svelte'
   import { t } from '../lib/i18n.svelte.js'
-  let { item, detail = null, corpus = false, cropBox = null, disabled = false,
-    onload = () => {}, onerror = () => {} } = $props()
+  // `cropBox` is a box drawn over the crop (a redraw), in source pixels; the view stays framed on the
+  // crop as it was cut. `editing` turns the box into one the reader moves and resizes here, and
+  // `onedit` hears each new box, in source pixels, `onexit` an Escape.
+  let { item, detail = null, corpus = false, cropBox = null, disabled = false, editing = false,
+    onedit = null, onexit = null, onload = () => {}, onerror = () => {} } = $props()
   let viewport = $state(null), data = $state(null), loading = $state(true), detailFailed = $state(false)
   let contextReady = $state(false), contextFailed = $state(false), fullReady = $state(false), fullFailed = $state(false)
   let expandPage = $state(false)
@@ -53,7 +56,10 @@
   const contextual = $derived(Boolean((corpus || data?.context) && data?.context_box && data?.crop_box && data?.context_image))
   const fullPage = $derived(contextual && !corpus && data?.full_page_available !== false && (expandPage || contextFailed) && Boolean(data?.image_sha256))
   const ready = $derived(contextual && (fullReady || contextReady))
+  // The box shown and outlined, and the one the view is framed on: the cut crop, so a redraw moves
+  // the outline and never the page.
   const crop = $derived(cropBox || data?.crop_box)
+  const frame = $derived(data?.crop_box || cropBox)
   $effect(() => {
     if ((ready || cropReady) && notified !== 'loaded') { notified = 'loaded'; onload(item.id) }
     else if (!ready && !cropReady && !loading && cropFailed
@@ -61,26 +67,20 @@
       notified = 'failed'; onerror(item.id)
     }
   })
-  // The first view centres the character and shows the whole context image around it, up to five
-  // neighbours above and below and three columns to each side, measured in the character's own size,
-  // so a reading can be checked against its line. A crop without a context shows with a margin.
-  const unit = $derived(crop ? Math.max(crop.w, crop.h) : 1)
-  const reach = $derived.by(() => {
-    const c = contextual ? data.context_box : null
-    if (!crop || !c) return { x: unit * 1.8, y: unit * 2.8 }
-    const cx = crop.x + crop.w / 2, cy = crop.y + crop.h / 2
-    return {
-      x: Math.min(unit * 3.5, Math.max(crop.w / 2, cx - c.x, c.x + c.w - cx)),
-      y: Math.min(unit * 5.5, Math.max(crop.h / 2, cy - c.y, c.y + c.h - cy)),
-    }
-  })
-  const baseScale = $derived(crop ? Math.min(size.width / (reach.x * 2), size.height / (reach.y * 2), 8) : 1)
+  // Every crop opens on one rule: centred, its longer side about a third of the view's shorter one,
+  // with the page around it. Nothing reframes it afterwards but the reader's own zoom and pan.
+  const unit = $derived(frame ? Math.max(frame.w, frame.h) : 1)
+  const baseScale = $derived(frame ? Math.min(Math.min(size.width, size.height) * .34 / unit, 8) : 1)
   const scale = $derived(baseScale * zoom)
   // Both images and the crop mask use source-image pixels, not the page's metadata scale.
-  const origin = $derived(crop ? {
-    x: size.width / 2 - (crop.x + crop.w / 2) * scale + pan.x,
-    y: size.height / 2 - (crop.y + crop.h / 2) * scale + pan.y,
+  const origin = $derived(frame ? {
+    x: size.width / 2 - (frame.x + frame.w / 2) * scale + pan.x,
+    y: size.height / 2 - (frame.y + frame.h / 2) * scale + pan.y,
   } : { x: 0, y: 0 })
+  const rect = box => box ? { x: origin.x + box.x * scale, y: origin.y + box.y * scale, w: box.w * scale, h: box.h * scale } : null
+  const at = r => r ? `left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px` : ''
+  // Until the page arrives, the crop itself stands where the page will put it.
+  const early = $derived(at(rect(data?.crop_box)))
   const transform = $derived(`translate(${origin.x}px, ${origin.y}px) scale(${scale})`)
   const mask = $derived(crop ? `left:${origin.x + crop.x * scale}px;top:${origin.y + crop.y * scale}px;width:${crop.w * scale}px;height:${crop.h * scale}px` : '')
   // A viewport-sized shade stays complete even when the crop is panned far off screen.
@@ -94,7 +94,7 @@
   }
   function limitPan(next) {
     const bounds = fullReady ? { x: 0, y: 0, w: pageSize.width, h: pageSize.height } : data.context_box
-    const center = { x: crop.x + crop.w / 2, y: crop.y + crop.h / 2 }
+    const center = { x: frame.x + frame.w / 2, y: frame.y + frame.h / 2 }
     // Keep some photograph in reach at an edge; reset always returns to the reviewed crop.
     const edge = 32
     return {
@@ -117,12 +117,31 @@
     expandPage = true
     event.preventDefault()
     viewport.focus({ preventScroll: true })
-    pointer = { id: event.pointerId, x: event.clientX, y: event.clientY, pan: { ...pan } }
+    // While editing, a handle resizes the box and a drag inside it moves it; anywhere else still pans.
+    const edge = editing ? event.target.dataset?.edge : null
+    const r = editing ? rect(crop) : null, bounds = viewport.getBoundingClientRect()
+    const x = event.clientX - bounds.left, y = event.clientY - bounds.top
+    const inside = r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h
+    pointer = { id: event.pointerId, x: event.clientX, y: event.clientY, pan: { ...pan },
+      edit: editing && (edge || inside) ? { edge: edge ?? null, from: { ...crop } } : null }
     dragging = true
     viewport.setPointerCapture(event.pointerId)
   }
   function move(event) {
     if (!pointer || pointer.id !== event.pointerId) return
+    if (pointer.edit) {
+      const dx = (event.clientX - pointer.x) / scale, dy = (event.clientY - pointer.y) / scale, { from, edge } = pointer.edit
+      let { x, y, w, h } = from
+      if (!edge) { x += dx; y += dy }
+      else {
+        if (edge.includes('w')) { x = Math.min(from.x + dx, from.x + from.w - 2); w = from.x + from.w - x }
+        if (edge.includes('e')) w = Math.max(2, from.w + dx)
+        if (edge.includes('n')) { y = Math.min(from.y + dy, from.y + from.h - 2); h = from.y + from.h - y }
+        if (edge.includes('s')) h = Math.max(2, from.h + dy)
+      }
+      onedit?.({ x, y, w, h })
+      return
+    }
     pan = limitPan({ x: pointer.pan.x + event.clientX - pointer.x, y: pointer.pan.y + event.clientY - pointer.y })
   }
   function up(event) {
@@ -133,6 +152,15 @@
   function keydown(event) {
     if (event.ctrlKey || event.metaKey || event.altKey) return
     const directions = { ArrowLeft: [1, 0], ArrowRight: [-1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] }
+    // While editing, the arrows move the box a few screen pixels, and with Shift grow or shrink it from
+    // its right and bottom; Escape leaves the editing.
+    if (editing && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onexit?.(); return }
+    if (editing && directions[event.key] && crop) {
+      event.preventDefault(); event.stopPropagation()
+      const [x, y] = directions[event.key].map(d => -d * 3 / scale)
+      onedit?.(event.shiftKey ? { ...crop, w: Math.max(2, crop.w + x), h: Math.max(2, crop.h + y) } : { ...crop, x: crop.x + x, y: crop.y + y })
+      return
+    }
     // Consume viewer arrows even while loading, so they cannot advance the review queue.
     if (directions[event.key]) {
       event.preventDefault(); event.stopPropagation()
@@ -158,7 +186,8 @@
        aria-busy={loading} data-ready={ready} data-pan-x={pan.x} data-pan-y={pan.y} data-zoom={zoom}
        onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up}
        onlostpointercapture={() => { pointer = null; dragging = false }} onkeydown={keydown}>
-    {#if !ready}<div class="crop-fallback" data-context-fallback>{#key item.image}<Glyph {item} eager onload={() => cropReady = true} onerror={() => cropFailed = true} />{/key}</div>{/if}
+    {#if !ready && contextual}<img class="crop-early" src={item.image} alt="" draggable="false" style={early} onload={() => cropReady = true} onerror={() => cropFailed = true} />
+    {:else if !ready && !loading}<div class="crop-fallback" data-context-fallback>{#key item.image}<Glyph {item} eager onload={() => cropReady = true} onerror={() => cropFailed = true} />{/key}</div>{/if}
     {#if contextual}
       <div class="crop-plane" style={`transform:${transform}`} aria-hidden="true">
         {#if !fullReady && !contextFailed}<img class="context-photo" src={data.context_image} alt="" draggable="false"
@@ -171,7 +200,7 @@
       </div>
       {#if ready}
         <svg class="context-shade" viewBox={`0 0 ${size.width} ${size.height}`} preserveAspectRatio="none" aria-hidden="true"><path d={shadePath} fill-rule="evenodd" /></svg>
-        <span class="crop-mask" style={mask} aria-hidden="true"></span>
+        <span class="crop-mask" class:editing style={mask} aria-hidden="true">{#if editing}{#each ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as edge (edge)}<span class="handle {edge}" data-edge={edge}></span>{/each}{/if}</span>
       {/if}
     {/if}
     {#if !loading && !ready && (detailFailed || !contextual || (contextFailed && (!fullPage || fullFailed)))}<span class="crop-only">{t('crop.only')}</span>{/if}
@@ -196,6 +225,14 @@
   .page-photo{left:0;top:0}
   .context-shade{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;fill:light-dark(rgb(24 20 17 / 42%), rgb(24 20 17 / 42%))}
   .crop-mask{position:absolute;pointer-events:none;box-shadow:0 0 12px 3px light-dark(rgb(24 20 17 / 24%), rgb(24 20 17 / 24%))}
+  .crop-early{position:absolute;display:block;max-width:none;object-fit:fill;pointer-events:none}
+  /* A box being redrawn: a thin outline with small square handles, each with a finger-sized hit area. */
+  .crop-mask.editing{pointer-events:auto;cursor:move;outline:1px solid var(--accent-solid);outline-offset:0}
+  .handle{position:absolute;width:8px;height:8px;margin:-4px 0 0 -4px;background:#fff;border:1.5px solid #2b2930;border-radius:1px;pointer-events:auto;touch-action:none}
+  .handle::before{content:"";position:absolute;inset:-9px}
+  .handle.nw{left:0;top:0;cursor:nwse-resize}.handle.n{left:50%;top:0;cursor:ns-resize}.handle.ne{left:100%;top:0;cursor:nesw-resize}
+  .handle.e{left:100%;top:50%;cursor:ew-resize}.handle.se{left:100%;top:100%;cursor:nwse-resize}.handle.s{left:50%;top:100%;cursor:ns-resize}
+  .handle.sw{left:0;top:100%;cursor:nesw-resize}.handle.w{left:0;top:50%;cursor:ew-resize}
   .crop-fallback{position:absolute;inset:28px;display:flex;align-items:center;justify-content:center}
   .crop-fallback :global(img){width:100%;height:100%;object-fit:contain;filter:none}
   .crop-tools{position:absolute;right:12px;bottom:12px;display:flex;gap:2px;background:light-dark(rgb(255 255 255 / 94%), rgb(27 27 31 / 94%));padding:3px;border-radius:8px;box-shadow:0 2px 12px light-dark(rgb(0 0 0 / 12%), rgb(0 0 0 / 40%));cursor:default}

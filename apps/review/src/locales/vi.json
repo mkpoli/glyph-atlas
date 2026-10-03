@@ -29,13 +29,10 @@
   "bulk.dismiss": "Đóng",
   "bulk.changed": "Có vùng cắt đã thay đổi sau khi trang tải. Hãy tải lại rồi thử lại.",
   "bulk.hint": "Ctrl/⌘+click hoặc X để thêm hay bớt, Shift+click để chọn khoảng, Esc để bỏ chọn",
-  "character.context.alt": "Nét bút quanh chữ này",
-  "character.context.loadError": "Không tải được ảnh xung quanh.",
   "character.replaced": "Vùng cắt này đã được thay. Đây là bản thay thế.",
   "character.crop.adjust": "Chỉnh vùng cắt ↗",
   "character.crop.adjusted": "Đã chỉnh vùng cắt",
   "character.crop.doneAdjusting": "Xong",
-  "character.crop.dragToAdjust": "Kéo để chỉnh vùng cắt",
   "character.dialog.label": "Duyệt chữ",
   "character.glyph.alt": "Chữ {label}",
   "character.image.unavailable": "Không có ảnh",
@@ -765,5 +762,7 @@
   "privacy.choices.body": "Trên trang tài khoản, bạn có thể đổi tên và ảnh đại diện, gỡ cách đăng nhập và đăng xuất khỏi các thiết bị khác. Để xóa tài khoản, hãy gửi email đến {email}: địa chỉ email, ảnh đại diện, các cách đăng nhập và phiên đăng nhập của bạn sẽ bị xóa; các quyết định của bạn vẫn được giữ trong bản ghi của bộ sưu tập dưới tên Ẩn danh.",
   "privacy.changes.title": "Thay đổi",
   "privacy.changes.body": "Các thay đổi của trang này được ghi lại trong kho mã nguồn công khai của trang trên GitHub. Ngày ở trên cho biết lần cập nhật gần nhất.",
-  "footer.privacy": "Quyền riêng tư"
+  "footer.privacy": "Quyền riêng tư",
+  "similar.previous": "Các vùng cắt giống trước",
+  "similar.next": "Các vùng cắt giống tiếp"
 }

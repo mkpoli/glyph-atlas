@@ -29,13 +29,10 @@
   "bulk.dismiss": "閉ヅ",
   "bulk.changed": "讀込ミノ後ニ改メラレタル截片アリ。讀ミ直シテ再ビ試ミヨ。",
   "bulk.hint": "Ctrl/⌘ヲ押シテ或ハXニテ選ビ又ハ除キ、Shiftニテ範圍ヲ取リ、Escニテ解ク",
-  "character.context.alt": "此字ノ近傍ノ筆畫",
-  "character.context.loadError": "前後ノ畫像ヲ開クコト能ハズ",
   "character.replaced": "此截片ハ差替ヘラレタリ　今示スハ新截片ナリ",
   "character.crop.adjust": "截片ヲ改ム ↗",
   "character.crop.adjusted": "截片ヲ改メタリ",
   "character.crop.doneAdjusting": "改メ了ル",
-  "character.crop.dragToAdjust": "引キテ截片ヲ改ムベシ",
   "character.dialog.label": "文字校閱",
   "character.glyph.alt": "字{label}",
   "character.image.unavailable": "畫像無之",
@@ -780,5 +777,7 @@
   "privacy.choices.body": "アカウント頁ニテハ、名及ビ畫像ノ變更、登入方法ノ解除、他ノ端末ノ退出ヲ行フコトヲ得。アカウントノ削除ヲ望ム際ハ{email}ヘ連絡サレタシ。電子書簡宛先、畫像、登入ノ方法及ビセッションハ削除セラレ、保存セル判定ハ蒐集ノ記錄ニ「無名」トシテ殘ル。",
   "privacy.changes.title": "改定",
   "privacy.changes.body": "本頁ノ變更履歷ハGitHubノ公開リポジトリニ記錄セラレ、上記ノ日附ハ最新ノ改定日ヲ示ス。",
-  "footer.privacy": "プライバシー"
+  "footer.privacy": "プライバシー",
+  "similar.previous": "前ノ似タル截片",
+  "similar.next": "次ノ似タル截片"
 }
