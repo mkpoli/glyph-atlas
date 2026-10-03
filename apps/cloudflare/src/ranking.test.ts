@@ -9,7 +9,7 @@ describe('the reviewer ranking', () => {
     const migrations = new URL('../migrations/', import.meta.url);
     for (const file of readdirSync(migrations).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL(file, migrations), 'utf8'));
     // The rows stand alone here, without the crops they apply to.
-    db.exec('DROP TRIGGER event_revision_guard; DROP TRIGGER event_apply; DROP TRIGGER written_form_revision_guard; DROP TRIGGER written_form_apply;');
+    db.exec('DROP TRIGGER event_revision_guard; DROP TRIGGER event_apply;');
     const at = '2026-10-02T00:00:00.000Z';
     db.exec(`INSERT INTO "user"(id,name,email,emailVerified,image,createdAt,updatedAt,isAnonymous) VALUES
         ('u1','まくぽり','m@x',1,'https://x/a.png','${at}','${at}',0),('u2','anon-00aa11','b@anonymous.invalid',0,NULL,'${at}','${at}',1);
