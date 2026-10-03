@@ -19,7 +19,7 @@ def line() -> Line:
 
 def unit(seq: int, text: str, box: Box | None, review: ReviewState = ReviewState.MACHINE) -> Unit:
     return Unit(id=f"hl:item_0_001:old:{seq}", page_id="hl:item:0", line_id="hl:item_0_001", seq=seq, box=box,
-                kind=UnitKind.CHAR, text_source=text, reading=text, method="detect-align", review=review)
+                kind=UnitKind.CHAR, text_source=text, method="detect-align", review=review)
 
 
 def stale_units(order=(2, 0, 3, 1)) -> list[Unit]:

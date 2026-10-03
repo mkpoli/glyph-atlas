@@ -53,7 +53,7 @@ try {
   const order = await browser.evaluate('Array.from(document.querySelectorAll(".glyph-grid [data-unit]")).map(i=>i.dataset.unit)')
   const scroll = await browser.evaluate('scrollY')
   await browser.evaluate('window.sameCollection = document.querySelector(".glyph-grid")')
-  assert(!await browser.evaluate('!!document.querySelector("dialog[open] .advanced-edit, dialog[open] .reading-input")'), 'the inspector has no typed character or reading fields')
+  assert(!await browser.evaluate('!!document.querySelector("dialog[open] .advanced-edit")'), 'the inspector has no typed character or reading fields')
   await click('dialog .issue-card[data-issue="merged"]')
   await browser.waitFor('document.querySelector("dialog .suggestion-options") !== null')
   assert(await browser.evaluate('document.querySelector(".save-character").innerText.includes("Save problem")'), 'reporting an error must not confirm the wrong label')

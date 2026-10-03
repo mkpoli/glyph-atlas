@@ -252,7 +252,7 @@ def applied(unit: Unit, record: dict[str, Any]) -> Unit:
     note = {"method": METHOD, "status": status, "before": record["before"], "after": record["after"]}
     meta = {**(unit.meta or {}), "box_relabel": note}
     if status == "unplaced":
-        return unit.model_copy(update={"seq": None, "text_source": None, "reading": None, "unicode": None,
+        return unit.model_copy(update={"seq": None, "text_source": None, "unicode": None,
                                        "candidates": [], "group_id": None, "granularity": "char",
                                        "review": ReviewState.REJECTED, "meta": meta})
     return unit.model_copy(update={"meta": meta, **record["fields"]})
@@ -260,7 +260,7 @@ def applied(unit: Unit, record: dict[str, Any]) -> Unit:
 
 def fields_of(unit: Unit) -> dict[str, Any]:
     """What a relabelled unit takes from the new unit on its box."""
-    return {key: getattr(unit, key) for key in ("seq", "kind", "granularity", "group_id", "text_source", "reading",
+    return {key: getattr(unit, key) for key in ("seq", "kind", "granularity", "group_id", "text_source",
                                                 "unicode", "classification", "script", "candidates", "confidence",
                                                 "review")}
 
