@@ -21,7 +21,7 @@ mkdirSync(screenshots, { recursive: true })
 let browser
 const assert = (condition, message) => { if (!condition) throw new Error(message) }
 const ready = 'document.querySelector("dialog[open] .crop-viewport")?.dataset.ready === "true" && !document.querySelector(".save-character")?.disabled'
-const outline = () => browser.evaluate(`(() => { const r = document.querySelector('dialog[open] .crop-mask').getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height } })()`)
+const outline = () => browser.evaluate(`(() => { const r = document.querySelector('dialog[open] .crop-mask, dialog[open] .box-editor').getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height } })()`)
 const framing = () => browser.evaluate(`document.querySelector('dialog[open] .crop-plane')?.style.transform`)
 const handle = edge => browser.evaluate(`(() => { const r = document.querySelector('dialog[open] .handle.${edge}').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } })()`)
 
@@ -40,7 +40,7 @@ try {
   await browser.evaluate('document.querySelector("dialog[open] .crop-viewport").scrollIntoView({ block: "center" })')
   const framed = await framing()
   await browser.key('b')
-  await browser.waitFor('document.querySelectorAll("dialog[open] .crop-mask.editing .handle").length === 8', 30000)
+  await browser.waitFor('document.querySelectorAll("dialog[open] .box-editor .handle").length === 8', 30000)
   assert(await framing() === framed, 'starting to redraw moved the page view: ' + framed + ' → ' + await framing() + ' ' + await browser.evaluate('JSON.stringify(document.querySelector("dialog[open] .crop-viewport").getBoundingClientRect())'))
   assert(await browser.evaluate('document.activeElement?.classList.contains("crop-viewport")'), 'the view does not take the keyboard')
   assert(await browser.evaluate('document.querySelectorAll("dialog[open] .crop-box, dialog[open] .crop-preview, dialog[open] .crop-adjustment").length') === 0, 'a second view is shown')
@@ -90,7 +90,7 @@ try {
   await browser.screenshot(join(screenshots, 'recrop-desktop-light.png'))
   // Escape leaves the editor with the new box kept, and the inspector stays open.
   await browser.key('Escape')
-  await browser.waitFor('!document.querySelector("dialog[open] .crop-mask.editing")')
+  await browser.waitFor('!document.querySelector("dialog[open] .box-editor")')
   assert(await browser.evaluate('!!document.querySelector("dialog[open]") && !!document.querySelector("dialog[open] .crop-change button")'), 'Escape closed the inspector or dropped the box')
   assert(await browser.evaluate('document.activeElement?.closest(".crop-change, .inspector-savebar") != null'), 'the focus was lost leaving the editor')
 
