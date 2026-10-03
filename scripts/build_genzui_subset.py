@@ -6,7 +6,8 @@
 
 The subset holds the kana almost no installed font draws: every character GenZui Sans has in Kana
 Extended-B, Kana Supplement, Kana Extended-A and Small Kana Extension (U+1AFF0–U+1B16F), and the
-four kana ligatures encoded as CJK ideographs (𪜈 U+2A708, 𬻿 U+2CEFF, 𬼀 U+2CF00, 𬼂 U+2CF02).
+four kana ligatures encoded as CJK ideographs (𪜈 U+2A708, 𬻿 U+2CEFF, 𬼀 U+2CF00, 𬼂 U+2CF02), and
+the combining voicing marks U+3099 and U+309A, which voice a hentaigana (𛂞 + U+3099).
 The release is fetched from the GenZui repository at a pinned commit, checked against its SHA-256
 and cached under `cache/fonts/`; the output is `apps/review/static/fonts/GenZuiSans-Kana.woff2`.
 The unicode-range in `apps/review/src/layers.css` and the covered ranges in `ReferenceGlyph.svelte`
@@ -32,6 +33,10 @@ OUTPUT = ROOT / "apps" / "review" / "static" / "fonts" / "GenZuiSans-Kana.woff2"
 
 KANA_BLOCKS = (0x1AFF0, 0x1B16F)
 LIGATURES = (0x2A708, 0x2CEFF, 0x2CF00, 0x2CF02)
+#: The combining voicing marks. A hentaigana is voiced by writing U+3099 or U+309A after it, and no
+#: precomposed character exists, so the mark has to come from the font that draws the letter: a mark
+#: drawn by another font sits where that font's em box puts it, not on the hentaigana.
+MARKS = (0x3099, 0x309A)
 
 
 def fetch() -> Path:
@@ -58,8 +63,8 @@ def main() -> None:
     source = fetch()
     cmap = TTFont(source).getBestCmap()
     low, high = KANA_BLOCKS
-    points = [p for p in cmap if low <= p <= high] + [p for p in LIGATURES if p in cmap]
-    missing = [f"U+{p:X}" for p in LIGATURES if p not in cmap]
+    points = [p for p in cmap if low <= p <= high] + [p for p in (*LIGATURES, *MARKS) if p in cmap]
+    missing = [f"U+{p:X}" for p in (*LIGATURES, *MARKS) if p not in cmap]
     if missing:
         raise SystemExit(f"GenZui Sans lacks {', '.join(missing)}")
 
