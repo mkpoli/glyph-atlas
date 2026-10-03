@@ -446,7 +446,7 @@ def vectorize_plan(directory: Path, state: Path, out: Path) -> dict:
             metadata = {"origin": rows["origin"][n]}
             if rows["label"][n]:
                 metadata["label"] = rows["label"][n]
-            # A float16 value has four significant digits.
+            # Four significant digits: within 5e-4 of the float16 value, which a cosine search does not notice.
             values = "[" + ",".join(f"{v:.4g}" for v in vectors[n].astype(np.float32).tolist()) + "]"
             lines.append(f'{{"id":{json.dumps(rows["id"][n])},"values":{values},'
                          f'"metadata":{json.dumps(metadata, ensure_ascii=False)}}}')
