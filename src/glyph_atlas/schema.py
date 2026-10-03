@@ -126,6 +126,42 @@ class Dating(BaseModel):
     evidence: str | None = None
 
 
+#: What a dated event is. `composed` dates the text itself; the others date this witness or, at
+#: `scope` `work`, the work's printing history.
+DateKind = Literal["composed", "copied", "colophon", "annotated", "printed", "edition", "exemplar", "produced",
+                   "other"]
+
+
+class DateClaim(BaseModel):
+    """One attributed statement of when something about a document happened (`docs/schema.md`)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: str
+    document: str
+    kind: DateKind
+    scope: Literal["witness", "work"] = Field(description="this copy, or the work it carries")
+    text: str = Field(description="the date as the source writes it, verbatim")
+    start: int | None = Field(default=None, description="first year it can fall in, proleptic Gregorian")
+    end: int | None = Field(default=None, description="last year it can fall in")
+    precision: Literal["day", "month", "year", "years", "decade", "century", "period"]
+    qualifier: Literal["circa", "before", "after"] | None = None
+    uncertain: bool = False
+    day: str | None = Field(default=None, description="the Gregorian day, ISO 8601, for a dated day")
+    calendar: Literal["japanese", "gregorian", "unstated"] = "unstated"
+    conversion: dict[str, str] | None = Field(default=None, description="how a calendar date was read as years")
+    tier: Literal["attested", "derived", "editorial"]
+    source: str = Field(description="id of the data/sources record")
+    locator: str = Field(description="where in the source: a record URL and its field")
+    note: str | None = None
+
+    @model_validator(mode="after")
+    def _ordered(self) -> DateClaim:
+        if self.start is not None and self.end is not None and self.start > self.end:
+            raise ValueError(f"{self.id}: starts {self.start} after it ends {self.end}")
+        return self
+
+
 class Document(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 
