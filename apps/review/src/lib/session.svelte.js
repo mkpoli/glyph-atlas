@@ -16,9 +16,12 @@ let current = null
  */
 export function createSession(account = { user: null, providers: [] }) {
   const state = $state({ ready: false, user: account.user, providers: account.providers, signingIn: false, ink: 'original', advance: false, progress: false })
-  let starting = null
+  let starting = null, begun
   const session = {
     state,
+    // Settles once `start` has read who is signed in; a save kept from an earlier page waits for it,
+    // so it is never sent as a new anonymous reader before the page knows.
+    started: new Promise(resolve => { begun = resolve }),
     async start() {
       // A manuscript scan is a colour photograph of paper and ink, so Original is the default and B&W
       // is the reader's choice. One preference serves the collection, the round and the reviewer.
@@ -32,6 +35,7 @@ export function createSession(account = { user: null, providers: [] }) {
       // A browser that reviewed before accounts brings that work into its session.
       try { if (stored(LEGACY, null)) await session.ensure() } catch { /* The first write tries again. */ }
       state.ready = true
+      begun()
     },
     /** The signed-in user, starting an anonymous session if there is none. */
     async ensure({ again = false } = {}) {
@@ -82,6 +86,8 @@ async function claimLegacy() {
 
 /** Make sure the browser is signed in before a write. */
 export const ensureSignedIn = options => current?.ensure(options)
+/** Settles once the page knows who is signed in. */
+export const sessionStarted = () => current?.started
 
 export const provideSession = session => setContext(KEY, session)
 export const useSession = () => getContext(KEY)

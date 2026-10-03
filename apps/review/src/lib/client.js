@@ -1,5 +1,6 @@
 import { t } from './i18n.svelte.js'
-import { isBusy, waitOut } from './busy.svelte.js'
+import { isBusy, retryAfter, waitOut } from './busy.svelte.js'
+import { deliver, outbox, useSender } from './outbox.svelte.js'
 
 // Whoever keeps records read ahead hears of every write, which may have changed any of them.
 const writeListeners = new Set()
@@ -9,36 +10,66 @@ export const afterWrite = listener => { writeListeners.add(listener); return () 
 // server as well as in the browser. `wait: false` reports a busy database at once, for a read made
 // ahead of the reader.
 export async function request(path, body, { fetch: send = fetch, wait = true, ...options } = {}) {
-  const post = () => send(path, { ...options, ...(body === undefined ? {} : {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
-  }) })
-  // A write is made by the signed-in user; a browser without a session starts an anonymous one first,
-  // and one whose session has lapsed starts another and sends the write again.
-  const writes = body !== undefined && typeof window !== 'undefined'
-  const { ensureSignedIn } = writes ? await import('./session.svelte.js') : {}
-  if (writes) await ensureSignedIn()
-  const answer = async () => { const response = await post(); return { response, value: await response.json() } }
-  let { response, value } = await answer()
-  if (writes) for (const listener of writeListeners) listener()
-  if (writes && response.status === 401) { await ensureSignedIn({ again: true }); ({ response, value } = await answer()) }
+  if (body !== undefined) return typeof window === 'undefined' ? settle(await posted(path, body, send, options)) : save(path, body, send, options)
+  const answer = async () => { const response = await send(path, options); return { response, value: await response.json() } }
+  let answered = await answer()
   // A read the database is too busy for is asked again in the browser, and the page keeps what it
   // shows meanwhile. A page rendered on the server does not wait: its view reads again itself.
-  if (!writes && wait && typeof window !== 'undefined' && isBusy(response, value)) ({ response, value } = await waitOut(answer, { response, value }, options.signal))
-  if (!response.ok) {
-    // FastAPI reports a validation failure as a list of problems; show their messages.
-    const listed = Array.isArray(value.detail) ? value.detail.map(problem => problem.msg).filter(Boolean).join('; ') : ''
-    const error = new Error(isBusy(response, value) ? t('client.busy') : typeof value.detail === 'string' ? value.detail : listed ? listed
-      : response.status === 409 ? t('client.changed') : t('client.saveFailed'))
-    error.code = value.code
-    error.status = response.status
-    // A crop a publication retired names the crop that replaced it.
-    if (typeof value.replaced_by === 'string') error.replacedBy = value.replaced_by
-    // A batch the site refused names the crops it refused.
-    if (Array.isArray(value.targets)) error.targets = value.targets
-    throw error
-  }
-  return value
+  if (wait && typeof window !== 'undefined' && isBusy(answered.response, answered.value)) answered = await waitOut(answer, answered, options.signal)
+  return settle(answered)
 }
+
+/** The value of an answer, or the error a view shows for it. */
+function settle({ response, value }) {
+  if (response.ok) return value
+  // FastAPI reports a validation failure as a list of problems; show their messages.
+  const listed = Array.isArray(value.detail) ? value.detail.map(problem => problem.msg).filter(Boolean).join('; ') : ''
+  const error = new Error(isBusy(response, value) ? t('client.busy') : typeof value.detail === 'string' ? value.detail : listed ? listed
+    : response.status === 409 ? t('client.changed') : t('client.saveFailed'))
+  error.code = value.code
+  error.status = response.status
+  // A crop a publication retired names the crop that replaced it.
+  if (typeof value.replaced_by === 'string') error.replacedBy = value.replaced_by
+  // A batch the site refused names the crops it refused.
+  if (Array.isArray(value.targets)) error.targets = value.targets
+  throw error
+}
+
+async function posted(path, body, send, options) {
+  const response = await send(path, { ...options, method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  return { response, value: await response.json() }
+}
+
+/**
+ * One write, made by the signed-in user: a browser without a session starts an anonymous one first,
+ * and one whose session has lapsed starts another and sends the write again. `user` is the account
+ * a kept save was made by; it is sent only while that account is signed in.
+ */
+async function write(path, body, { send = fetch, options = {}, user = null } = {}) {
+  const { ensureSignedIn, sessionStarted } = await import('./session.svelte.js')
+  await sessionStarted()
+  const post = () => posted(path, body, send, options)
+  const me = await ensureSignedIn()
+  if (user && me && me.id !== user) return { response: { ok: false, status: 409 }, value: { detail: t('client.keptForAnother') } }
+  let answered = await post()
+  for (const listener of writeListeners) listener()
+  if (answered.response.status === 401) { await ensureSignedIn({ again: true }); answered = await post() }
+  return { ...answered, user: me?.id ?? null }
+}
+useSender({ send: entry => write(entry.path, entry.body, { user: entry.user }), settle })
+
+// A save the site cannot take yet (the database is busy, the browser is offline) is kept on this
+// device and sent in order when it can be; a save made while others wait joins the end of the line,
+// so none overtakes one made before it.
+async function save(path, body, send, options) {
+  if (outbox.pending) return deliver(path, body, (await signedIn())?.id)
+  let answered
+  try { answered = await write(path, body, { send, options }) }
+  catch (error) { if (error instanceof TypeError) return deliver(path, body, (await signedIn())?.id, 0); throw error }
+  if (isBusy(answered.response, answered.value)) return deliver(path, body, answered.user, retryAfter(answered.response))
+  return settle(answered)
+}
+const signedIn = async () => { try { return await (await import('./session.svelte.js')).ensureSignedIn() } catch { return null } }
 // `purpose` says what the collection is being read for: `browse` is the gallery and keeps every
 // record, including the ones a review round withholds; `review` asks for the records a round may
 // put in front of a reviewer. It is sent on every call rather than defaulted by the server, so a
