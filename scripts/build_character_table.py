@@ -7,7 +7,8 @@ belongs to one written occurrence, so a unit or a crop never repeats a column of
 
 Sources, all from one Unicode release:
 
-- `UnicodeData.txt` for the name, the general category and the range ends.
+- `UnicodeData.txt` for the name, the general category, the range ends, and the canonical
+  decomposition that says which kana a voiced kana is the voicing of (ば is は + U+3099).
 - `Blocks.txt` for the block name.
 - `Scripts.txt` for the script property; hentaigana, which Unicode classifies as Hiragana or
   Katakana and names `HENTAIGANA LETTER ...`, is labelled `hentaigana` here.
@@ -300,6 +301,28 @@ def unicode_data(path: Path) -> tuple[dict[int, tuple[str, str]], list[Range]]:
     return data, ranges
 
 
+#: The combining voicing marks: U+3099 voices a kana (は to ば) and U+309A half-voices it (は to ぱ).
+VOICING_MARKS = (0x3099, 0x309A)
+
+
+def voicings(path: Path) -> dict[int, tuple[int, int]]:
+    """The kana `UnicodeData.txt` decomposes canonically to a kana and a voicing mark.
+
+    Field 5 is the decomposition: `30D0;KATAKANA LETTER BA;Lo;0;L;30CF 3099;;;;N;;;;;` says バ is ハ
+    with U+3099. Only canonical two-part decompositions ending in a voicing mark are kept, and only
+    for letters: ゞ is ゝ + U+3099 too, but an iteration mark is not the voicing of a kana.
+    """
+    found: dict[int, tuple[int, int]] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        cells = line.split(";")
+        if len(cells) < 6 or not NAME.match(cells[1]):
+            continue
+        parts = cells[5].split()
+        if len(parts) == 2 and not parts[0].startswith("<") and int(parts[1], 16) in VOICING_MARKS:
+            found[int(cells[0], 16)] = (int(parts[0], 16), int(parts[1], 16))
+    return found
+
+
 def names_list(path: Path) -> tuple[dict[int, str], dict[int, str]]:
     """`NamesList.txt` as code point -> name, and code point -> the kanji it derives from.
 
@@ -500,6 +523,7 @@ def build(
     scripts = read_ranges(ucd / "Scripts.txt")
     ages = read_ranges(ucd / "DerivedAge.txt")
     data, ranges = unicode_data(ucd / "UnicodeData.txt")
+    voiced = voicings(ucd / "UnicodeData.txt")
     names, derived = names_list(ucd / "NamesList.txt")
     lookalikes = confusables(ucd / "confusables.txt")
     jamo = jamo_short_names(ucd / "Jamo.txt")
@@ -519,6 +543,7 @@ def build(
     _add_jibo(characters, mj, derived)
     _add_readings(characters)
     _add_graphemes(characters, kana, curated)
+    _add_voiced_graphemes(characters, voiced, curated)
     families = _add_shape_families(characters, document, ucd, vocab, refused)
     _add_confusables(characters, lookalikes)
     _check_graphemes(characters)
@@ -774,6 +799,29 @@ def _add_graphemes(
             continue
         named = _named_grapheme(row, by_reading, by_name)
         row.grapheme = named if named is not None else row.code_point
+
+
+def _add_voiced_graphemes(
+    characters: dict[int, Character], voiced: dict[int, tuple[int, int]], curated: dict[str, dict]
+) -> None:
+    """Put each voiced kana under the voicing of its base's grapheme.
+
+    ば is は + U+3099 and バ is ハ + U+3099 by their canonical decompositions, and は and ハ are one
+    grapheme, so ば and バ are one grapheme too: a katakana letter and its hiragana are one grapheme
+    whether or not the letter is voiced. The hiragana of the modern block names it, as it names the
+    grapheme of the base. A voicing no hiragana spells - ヷ is ワ + U+3099, and no hiragana is わ with
+    the mark - is named by its lowest code point. A curated `grapheme` still wins.
+    """
+    groups: dict[tuple[str, int], list[Character]] = defaultdict(list)
+    for point, (base, mark) in sorted(voiced.items()):
+        row, under = characters.get(point), characters.get(base)
+        if row is None or under is None or (curated.get(row.code_point) or {}).get("grapheme"):
+            continue
+        groups[(under.grapheme or under.code_point, mark)].append(row)
+    for rows in groups.values():
+        head = min(rows, key=lambda row: _modern_first(row.code_point)).code_point
+        for row in rows:
+            row.grapheme = head
 
 
 def _self_named(kana: dict[str, str]) -> dict[str, str]:
