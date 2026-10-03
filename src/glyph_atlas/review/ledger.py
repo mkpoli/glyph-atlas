@@ -6,7 +6,7 @@ a row of its own, and no row is ever changed. `data/ledger.json` holds the predi
 every write is checked against, and the SQL resolver that turns a slot's claims into its
 `current_claims` row; the Worker runs the same resolver over D1, so the two cannot disagree on what a
 slot holds. The tables are made from the Worker's migrations (`0048_assertion_ledger.sql`,
-`0050_forms.sql`), so the review store and D1 hold the same shape.
+`0051_forms.sql`), so the review store and D1 hold the same shape.
 
 Every function here runs inside its caller's transaction on the caller's connection. `version_of`
 gives a crop subject's current evidence version (`glyph_atlas.evidence`), and None for a subject that
@@ -27,8 +27,8 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[3]
 CATALOGUE_PATH = ROOT / "data" / "ledger.json"
-#: The Worker's migrations that make the ledger's tables and the forms it names (0048, 0050).
-DDL_PATHS = tuple(ROOT / "apps" / "cloudflare" / "migrations" / name for name in ("0048_assertion_ledger.sql", "0050_forms.sql"))
+#: The Worker's migrations that make the ledger's tables and the forms it names (0048, 0051).
+DDL_PATHS = tuple(ROOT / "apps" / "cloudflare" / "migrations" / name for name in ("0048_assertion_ledger.sql", "0051_forms.sql"))
 
 CATALOGUE: dict[str, Any] = json.loads(CATALOGUE_PATH.read_text(encoding="utf-8"))
 RESOLVER: str = CATALOGUE["resolver"]
@@ -67,7 +67,7 @@ def resolve_statements(crop_now: str) -> tuple[str, str]:
 
 
 def schema(conn: sqlite3.Connection) -> None:
-    """Make the ledger's tables and the forms', as migrations 0048 and 0050 make them in D1."""
+    """Make the ledger's tables and the forms', as migrations 0048 and 0051 make them in D1."""
     for path in DDL_PATHS:
         conn.executescript(path.read_text(encoding="utf-8"))
 
@@ -336,7 +336,7 @@ def history(conn: sqlite3.Connection, subject: str) -> list[dict]:
 
 #: The ledger's tables in the order a publication copies them, each claim before its rows.
 TABLES = ("assertions", "assertion_evidence", "assertion_premises", "assertion_actions")
-#: The forms and representations claims name (migration 0050), copied before the claims.
+#: The forms and representations claims name (migration 0051), copied before the claims.
 FORM_TABLES = ("representations", "forms")
 
 
