@@ -79,7 +79,8 @@
 .issue-card{position:relative;display:flex;flex-direction:column;align-items:flex-start;text-align:left;gap:6px;padding:15px;border:1px solid light-dark(#e3e2e9, #323039);background:light-dark(#fafafb, #202025);border-radius:10px;min-width:0;transition:background .15s,border-color .15s}
 .issue-card:hover:not(:disabled){border-color:var(--accent);background:var(--accent-hover)}
 .issue-card.chosen{border:2px solid var(--accent);padding:14px;background:light-dark(#f0edff, rgb(156 146 255 / 16%))}
-.issue-card:disabled{opacity:1;color:var(--ink)}
+/* A card that cannot be chosen yet keeps the scheme's own surface, quieter, never the browser's grey. */
+.issue-card:disabled{opacity:1;cursor:default;color:var(--muted);background:var(--surface-disabled);border-color:var(--line)}.issue-card:disabled .issue-example{opacity:.55}.issue-card:disabled .issue-name{color:var(--muted)}
 .issue-picker.compact .issue-card:disabled{background:var(--surface-disabled);color:light-dark(#73717e, #9d9da6);border-color:light-dark(#e9e8ed, #323039)}
 .issue-example{height:42px;display:flex;align-items:center;justify-content:flex-start;gap:7px;font-size:29px;font-weight:500;color:light-dark(#3c394c, #dad5ef);line-height:1}
 .issue-example svg{height:27px;width:27px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
