@@ -790,5 +790,11 @@
   "date.undated": "Không rõ niên đại",
   "date.disputed": "Các nguồn ghi niên đại khác nhau",
   "date.hutime": "Ngày theo lịch Nhật được đổi sang dương lịch bằng HuTime (ap.hutime.org). Đổi ngày khác tại {form}",
-  "date.source.holder": "mục lục của nơi lưu giữ"
+  "date.source.holder": "mục lục của nơi lưu giữ",
+  "period.label": "Niên đại",
+  "period.all": "Mọi niên đại",
+  "period.order.label": "Thứ tự",
+  "period.order.style": "Theo kiểu chữ",
+  "period.order.year": "Cũ trước",
+  "date.noYear": "Không rõ năm"
 }

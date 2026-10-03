@@ -807,5 +807,11 @@
   "date.undated": "年無考",
   "date.disputed": "諸據所記年異",
   "date.hutime": "和曆換西曆，據HuTime（ap.hutime.org）。他日可於{form}換之",
-  "date.source.holder": "藏者目錄"
+  "date.source.holder": "藏者目錄",
+  "period.label": "世",
+  "period.all": "諸世",
+  "period.order.label": "序",
+  "period.order.style": "依體",
+  "period.order.year": "自古",
+  "date.noYear": "年無考"
 }

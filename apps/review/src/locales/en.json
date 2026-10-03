@@ -835,5 +835,11 @@
   "date.undated": "No date recorded",
   "date.disputed": "The sources give dates that disagree",
   "date.hutime": "Japanese dates are converted to the Western calendar with HuTime (ap.hutime.org). Convert others at {form}",
-  "date.source.holder": "the holder's catalogue"
+  "date.source.holder": "the holder's catalogue",
+  "period.label": "Period",
+  "period.all": "All periods",
+  "period.order.label": "Order",
+  "period.order.style": "By style",
+  "period.order.year": "Oldest first",
+  "date.noYear": "No year recorded"
 }

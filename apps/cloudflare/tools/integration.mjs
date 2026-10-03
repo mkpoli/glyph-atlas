@@ -665,6 +665,29 @@ try {
   assert.ok((await call('/layers/occurrences?code_point=U%2B4EEE')).items.filter(i => i.id !== 'dated-crop').every(i => i.dating && !Object.keys(i.dating).length), 'an undated book gives an empty dating')
   const inspectedDates = (await call('/atlas/characters/dated-crop')).dates
   assert.deepEqual(inspectedDates.map(d => [d.kind, d.text, d.source, d.locator]), [['copied', '寛政三年', 'kokusho', 'https://kokusho.nijl.ac.jp/biblio/1#bpublish.0']])
+  // A gallery placed by date lists the dated crop first and the undated after; a range keeps the dated
+  // one, `undated` the rest; the decades count both.
+  const undatedCrop = { ...datedCrop, id: 'undated-crop' }
+  await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind('undated-crop', 'local', '仮', 'U+4EEE', null,
+    'handwritten', 'kanji', 'pending', 0, 1, 1, 0, JSON.stringify(undatedCrop), JSON.stringify({ character: undatedCrop }), '{}', '{}', 'doc:undated').run()
+  assert.deepEqual((await call('/layers/occurrences?code_point=U%2B4EEE')).items.find(i => i.id === 'undated-crop').dating, {})
+  const byYear = (await call('/layers/occurrences?code_point=U%2B4EEE&order=year&limit=200')).items.map(i => i.id)
+  assert.deepEqual([byYear[0], byYear.at(-1)], ['dated-crop', 'undated-crop'], 'oldest first, undated last')
+  assert.deepEqual((await call('/layers/occurrences?code_point=U%2B4EEE&years=undated')).items.map(i => i.id), ['undated-crop'])
+  assert.deepEqual((await call('/layers/occurrences?code_point=U%2B4EEE&years=1700-1800')).items.map(i => i.id), ['dated-crop'])
+  assert.ok(!(await call('/layers/occurrences?code_point=U%2B4EEE&years=undated&limit=200')).items.some(i => i.id === 'dated-crop'))
+  assert.equal((await call('/layers/occurrences?code_point=U%2B4EEE&years=1800-1900')).total, 0)
+  await call('/layers/occurrences?code_point=U%2B4EEE&years=1900-1800', undefined, 422)
+  const decadeCounts = await call('/layers/decades?code_point=U%2B4EEE')
+  assert.ok(decadeCounts.local.some(([decade, n]) => decade === 1790 && n === 1), JSON.stringify(decadeCounts))
+  assert.ok(decadeCounts.local.some(([decade]) => decade === null), 'the undated are counted')
+  assert.ok(Array.isArray((await call('/layers/candidates?code_point=U%2B4EEE&order=year')).glyph_items))
+  const datedFrom = "FROM units u LEFT JOIN document_dating d ON d.document=u.document AND d.axis='witness' WHERE u.origin=? AND u.character=?"
+  for (const [sql, values] of [[worker.localDecadesQuery(false, 'witness'), ['local', '仮']], [worker.localDecadesQuery(true, 'witness'), ['local', 'U+4EEE', 'local', '仮']],
+    [worker.corpusDecadesQuery(false, 'witness'), ['仮', '仮']], [worker.datedCropsQuery(datedFrom, '', 'year'), ['local', '仮', 60, 0]]]) {
+    const details = await plan({ sql, values: [] }, values)
+    assert.ok(!details.some(d => /^SCAN (units|corpus_units|u|c|d)\b/.test(d)), details.join('; '))
+  }
   for (const [sql, values] of [[worker.datingQuery(2), ['a', 'b']], [worker.dateClaimsQuery(), ['doc:dated']]]) {
     const details = await plan({ sql, values: [] }, values)
     assert.ok(!details.some(d => /^SCAN (document_dating|assertions|a)\b/.test(d)), details.join('; '))

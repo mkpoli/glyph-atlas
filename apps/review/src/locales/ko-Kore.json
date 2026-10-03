@@ -789,5 +789,11 @@
   "date.undated": "年代 未詳",
   "date.disputed": "出處마다 年代가 다름",
   "date.hutime": "日本 年號의 西曆 換算은 HuTime(ap.hutime.org)에 따름. 다른 날짜는 {form}에서 換算",
-  "date.source.holder": "所藏 機關 目錄"
+  "date.source.holder": "所藏 機關 目錄",
+  "period.label": "年代",
+  "period.all": "모든 年代",
+  "period.order.label": "整列",
+  "period.order.style": "書體順",
+  "period.order.year": "오래된 順",
+  "date.noYear": "年度 未詳"
 }
