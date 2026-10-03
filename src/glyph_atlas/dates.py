@@ -186,11 +186,21 @@ class Interval:
     note: str | None = None
 
 
+#: Characters no Japanese era name holds: the numerals of a year, and the words dates are written with.
+_NOT_IN_ERA = frozenset("〇零一二三四五六七八九十年月日同写寫刊序跋版板本巻冊之第丁頁号部間中頃以後前")
+
+
+def could_be_era(name: str) -> bool:
+    """Whether `name` may be a Japanese era name, before HuTime is asked: CJK characters, none of them a
+    numeral or a word dates are written with."""
+    return all(_CJK.match(c) and c not in _NOT_IN_ERA for c in name)
+
+
 def _era_at(text: str, i: int, calendar: Calendar) -> tuple[str, re.Match] | None:
     """The era name starting at `i` and the year after it, the longest name first."""
     for n in (4, 3, 2):
         name = text[i:i + n]
-        if len(name) == n and all(_CJK.match(c) for c in name) and calendar.era(name) \
+        if len(name) == n and could_be_era(name) and calendar.era(name) \
                 and (found := _AFTER_ERA.match(text, i + n)):
             return name, found
     return None
@@ -254,9 +264,9 @@ def read(text: str, calendar: Calendar | None = None) -> Reading:
         for match in _ERA_SPAN.finditer(value):
             names = re.split(r"[・、]", match.group("eras"))
             # The run before the first name may hold other words: 巻末寛永中 names 寛永.
-            names[0] = next((names[0][-n:] for n in (4, 3, 2) if len(names[0]) >= n and calendar.era(names[0][-n:])),
+            names[0] = next((names[0][-n:] for n in (4, 3, 2) if len(names[0]) >= n and could_be_era(names[0][-n:]) and calendar.era(names[0][-n:])),
                             names[0])
-            if all(calendar.era(name) for name in names):
+            if all(could_be_era(name) and calendar.era(name) for name in names):
                 spans.extend(names)
                 value = value[:match.start()] + " " * (match.end() - match.start()) + value[match.end():]
     eras, rest = _eras_in(value, calendar)
@@ -480,12 +490,12 @@ def era_candidates(text: str) -> set[str]:
     for i in range(len(value)):
         for n in (2, 3, 4):
             name = value[i:i + n]
-            if len(name) == n and all(_CJK.match(c) for c in name) and _AFTER_ERA.match(value, i + n):
+            if len(name) == n and could_be_era(name) and _AFTER_ERA.match(value, i + n):
                 found.add(name)
     for match in _ERA_SPAN.finditer(value):
         names = re.split(r"[・、]", match.group("eras"))
-        found.update(names)
-        found.update(names[0][-n:] for n in (4, 3, 2) if len(names[0]) >= n)
+        found.update(name for name in names if could_be_era(name))
+        found.update(names[0][-n:] for n in (4, 3, 2) if len(names[0]) >= n and could_be_era(names[0][-n:]))
     for match in _ABBREVIATED_YEAR.finditer(value):
         found.add(_ABBREVIATED[match.group("era")])
     return found
