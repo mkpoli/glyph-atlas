@@ -90,7 +90,6 @@
   "client.keptSending.other": "{count} saves kept on this device; sending…",
   "client.keptRefused": "A save kept on this device was not accepted: {reason}",
   "client.keptDismiss": "Dismiss",
-  "client.keptForAnother": "It was made while another account was signed in, so it was not sent.",
   "common.clear": "Clear",
   "common.closeReviewer": "Close reviewer",
   "common.nextCharacter": "Next character",

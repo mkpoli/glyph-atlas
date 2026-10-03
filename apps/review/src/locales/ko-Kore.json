@@ -85,7 +85,6 @@
   "client.keptSending.other": "이 機器에 {count}件 貯藏됨. 보내는 中…",
   "client.keptRefused": "이 機器에 貯藏해 둔 內容이 받아들여지지 않았습니다: {reason}",
   "client.keptDismiss": "닫기",
-  "client.keptForAnother": "다른 計定으로 로그인했을 때 貯藏한 것이라 보내지 않았습니다.",
   "client.signInAgain": "로그인 세션이 滿了되었습니다. 貯藏하려면 다시 로그인하십시오.",
   "common.clear": "除去",
   "common.closeReviewer": "檢討 닫기",

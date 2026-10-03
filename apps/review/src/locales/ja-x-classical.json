@@ -85,7 +85,6 @@
   "client.keptSending.other": "{count}件ヲ此端末ニ留ム　送信中…",
   "client.keptRefused": "此端末ニ留メタル保存ハ受ケラレズ：{reason}",
   "client.keptDismiss": "閉ヅ",
-  "client.keptForAnother": "他ノ賬戶ニテ登入セシ時ノ保存ナレバ送ラズ",
   "common.clear": "消去",
   "common.closeReviewer": "校閱ヲ閉ヅ",
   "common.nextCharacter": "次字",

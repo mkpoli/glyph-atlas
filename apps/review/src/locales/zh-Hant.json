@@ -88,7 +88,6 @@
   "client.keptSending.other": "已在此裝置儲存{count}項，正在傳送…",
   "client.keptRefused": "此裝置儲存的一項未被接受：{reason}",
   "client.keptDismiss": "關閉",
-  "client.keptForAnother": "這是另一個帳號登入時儲存的，因此未傳送。",
   "client.signInAgain": "登入已失效。請重新登入後儲存。",
   "common.clear": "清除",
   "common.closeReviewer": "關閉審閱視窗",

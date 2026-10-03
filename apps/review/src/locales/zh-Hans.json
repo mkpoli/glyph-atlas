@@ -88,7 +88,6 @@
   "client.keptSending.other": "已在本设备保存{count}项，正在发送…",
   "client.keptRefused": "本设备保存的一项未被接受：{reason}",
   "client.keptDismiss": "关闭",
-  "client.keptForAnother": "这是另一个账号登录时保存的，因此未发送。",
   "client.signInAgain": "登录已失效。请重新登录后保存。",
   "common.clear": "清除",
   "common.closeReviewer": "关闭审阅器",
