@@ -840,5 +840,6 @@
   "period.all": "All periods",
   "period.order.label": "Order",
   "period.order.style": "By style",
-  "period.order.year": "Oldest first"
+  "period.order.year": "Oldest first",
+  "date.noYear": "No year recorded"
 }

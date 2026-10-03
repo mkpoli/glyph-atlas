@@ -207,9 +207,14 @@
   const styles = $derived(styleCounts(visual ? shownStyles(visibleLocal) : localStyles, corpusStyles))
   const galleryTiles = $derived.by(() => {
     if (byYear) {
-      const shownUpTo = Math.min(localNextYear, corpusNextYear)
+      // A tile's place is its year and then its list, the collection's first: a corpus glyph of 1650 waits
+      // while the collection may still bring one of 1650, and the undated wait the same way.
+      const before = (a, b) => a[0] < b[0] || (a[0] === b[0] && a[1] <= b[1])
+      // A list with nothing more to bring holds nothing back.
+      const localNext = localDone ? [Infinity, 2] : [localNextYear, 0], corpusNext = corpusDone ? [Infinity, 2] : [corpusNextYear, 1]
+      const upTo = before(localNext, corpusNext) ? localNext : corpusNext
       return [...visibleLocal.map(item => [yearKey(item), 0, item]), ...corpusOnly.map(item => [yearKey(item), 1, item])]
-        .filter(([year]) => year <= shownUpTo).sort((a, b) => (a[0] - b[0] || 0) || a[1] - b[1]).map(([, , item]) => item)
+        .filter(place => before(place, upTo)).sort((a, b) => before(a, b) ? (before(b, a) ? 0 : -1) : 1).map(([, , item]) => item)
     }
     if (!merged) return [...visibleLocal, ...corpusOnly]
     const shownUpTo = Math.min(localNext, corpusNext)
@@ -243,7 +248,7 @@
   const tiles = $derived(whole ? display.slice(0, whole) : display)
   function more() {
     // The list whose next page goes first; with a style group chosen, the collection's own crops first.
-    if (picked) { if (!localDone && (byYear ? localNextYear <= corpusNextYear : !merged || localNext < corpusNext)) load(true); else moreCorpus() }
+    if (picked) { if (!localDone && (byYear ? corpusDone || localNextYear <= corpusNextYear : !merged || localNext < corpusNext)) load(true); else moreCorpus() }
     else { offset = items.length; load(true) }
   }
   $effect(() => { if (nearEnd && hasMore && !loading && !error) untrack(more) })
@@ -440,6 +445,8 @@
     requestId += 1
     const current = ++pickId
     picked = null
+    // A year range is the last character's; another may have nothing in it.
+    yearRange = ''
     // A chip passes a code point and a candidate row passes itself; whichever it is, the card is
     // given the fields the chips read so a half-known character never renders as undefined.
     const bare = { char: '', characters: [], derived: [], jibo: [], expansions: [], candidates: null }

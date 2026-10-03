@@ -795,5 +795,6 @@
   "period.all": "Mọi niên đại",
   "period.order.label": "Thứ tự",
   "period.order.style": "Theo kiểu chữ",
-  "period.order.year": "Cũ trước"
+  "period.order.year": "Cũ trước",
+  "date.noYear": "Không rõ năm"
 }

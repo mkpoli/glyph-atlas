@@ -812,5 +812,6 @@
   "period.all": "諸世",
   "period.order.label": "序",
   "period.order.style": "依體",
-  "period.order.year": "自古"
+  "period.order.year": "自古",
+  "date.noYear": "年無考"
 }

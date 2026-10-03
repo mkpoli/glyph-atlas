@@ -1,6 +1,6 @@
 <script>
   // A gallery's crops by the date of their books: in style order or oldest first, and narrowed to one
-  // hundred years or to the books no source dates. `counts` is the gallery's decades, [decade, crops]
+  // hundred years or to the books no source gives a year (some name only a period, such as 江戸後期). `counts` is the gallery's decades, [decade, crops]
   // with decade null for the undated, the collection's and the corpus's added together.
   import { t, formatNumber } from '../lib/i18n.svelte.js'
   import { dateLabel } from '../lib/dating.js'
@@ -16,6 +16,12 @@
   const undated = $derived((counts ?? []).filter(([decade]) => decade === null).reduce((sum, [, n]) => sum + n, 0))
   const total = $derived((counts ?? []).reduce((sum, [, n]) => sum + n, 0))
   const range = start => `${start}-${start + 99}`
+  // A range the chips do not name (a decade an axis linked to, or one this gallery has nothing in).
+  const other = $derived.by(() => {
+    const found = /^(-?\d+)-(-?\d+)$/.exec(value)
+    if (!found || hundreds.some(([start]) => range(start) === value)) return null
+    return dateLabel({ start: Number(found[1]), end: Number(found[2]), precision: 'years' })
+  })
   const label = start => dateLabel({ start, end: start + 99, precision: 'years' })
 </script>
 
@@ -33,9 +39,10 @@
         <span>{label(start)}</span><small>{formatNumber(n)}</small>
       </button>
     {/each}
-    {#if undated}
+    {#if other}<button class="active" aria-pressed="true" onclick={() => onchange('')}><span>{other}</span></button>{/if}
+    {#if undated || value === 'undated'}
       <button class:active={value === 'undated'} aria-pressed={value === 'undated'} onclick={() => onchange('undated')}>
-        <span>{t('date.undated')}</span><small>{formatNumber(undated)}</small>
+        <span>{t('date.noYear')}</span><small>{formatNumber(undated)}</small>
       </button>
     {/if}
   </nav>

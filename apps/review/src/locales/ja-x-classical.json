@@ -809,6 +809,7 @@
   "period.label": "年代",
   "period.all": "總テノ年代",
   "period.order.label": "次第",
-  "period.order.style": "書風ノ順",
-  "period.order.year": "古キ順"
+  "period.order.style": "書體ノ順",
+  "period.order.year": "古キ順",
+  "date.noYear": "年詳ナラズ"
 }

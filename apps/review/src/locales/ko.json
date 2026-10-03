@@ -793,6 +793,7 @@
   "period.label": "연대",
   "period.all": "모든 연대",
   "period.order.label": "정렬",
-  "period.order.style": "서풍순",
-  "period.order.year": "오래된 순"
+  "period.order.style": "서체순",
+  "period.order.year": "오래된 순",
+  "date.noYear": "연도 미상"
 }

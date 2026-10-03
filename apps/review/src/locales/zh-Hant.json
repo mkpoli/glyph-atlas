@@ -812,6 +812,7 @@
   "period.label": "年代",
   "period.all": "全部年代",
   "period.order.label": "排序",
-  "period.order.style": "按書風",
-  "period.order.year": "由古至今"
+  "period.order.style": "按書體",
+  "period.order.year": "由古至今",
+  "date.noYear": "年份不詳"
 }

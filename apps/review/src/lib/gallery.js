@@ -46,7 +46,11 @@ export function styleCounts(...lists) {
 
 /** An address's order (`year`, oldest first) and year range (`1601-1700`, or `undated`), or '' for none. */
 export const orderParam = value => value === 'year' ? 'year' : ''
-export const yearsParam = value => value === 'undated' || /^-?\d{1,4}--?\d{1,4}$/.test(value ?? '') ? value : ''
+export function yearsParam(value) {
+  if (value === 'undated') return value
+  const found = /^(-?\d{1,4})-(-?\d{1,4})$/.exec(value ?? '')
+  return found && Number(found[1]) <= Number(found[2]) ? value : ''
+}
 
 /**
  * Everything the collection view shows for one character: its card, its first page of occurrences and

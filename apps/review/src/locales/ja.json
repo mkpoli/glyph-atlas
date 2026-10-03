@@ -809,6 +809,7 @@
   "period.label": "年代",
   "period.all": "すべての年代",
   "period.order.label": "並び順",
-  "period.order.style": "書風順",
-  "period.order.year": "古い順"
+  "period.order.style": "書体順",
+  "period.order.year": "古い順",
+  "date.noYear": "年未詳"
 }
