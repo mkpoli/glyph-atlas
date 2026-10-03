@@ -691,6 +691,10 @@ try {
   assert.equal((await call('/layers/chronology?code_point=U%2B4EEE&production=printed')).buckets.length, 0)
   assert.equal((await call('/layers/chronology?code_point=U%2B4EEE&production=handwritten&chars=%E4%BB%AE')).buckets.length, 1)
   await call('/layers/chronology?code_point=U%2B4EEE&production=Robert%27);', undefined, 422)
+  for (const [sql, values] of [[worker.localChronologyQuery(false, 'witness'), ['local', '仮', 6]], [worker.corpusChronologyQuery(false, 'witness'), ['仮', '仮', 6]]]) {
+    const details = await plan({ sql, values: [] }, values)
+    assert.ok(!details.some(d => /^SCAN (units|corpus_units|u|c|d)\b/.test(d)), details.join('; '))
+  }
   const datedFrom = "FROM units u LEFT JOIN document_dating d ON d.document=u.document AND d.axis='witness' WHERE u.origin=? AND u.character=?"
   for (const [sql, values] of [[worker.localDecadesQuery(false, 'witness'), ['local', '仮']], [worker.localDecadesQuery(true, 'witness'), ['local', 'U+4EEE', 'local', '仮']],
     [worker.corpusDecadesQuery(false, 'witness'), ['仮', '仮']], [worker.datedCropsQuery(datedFrom, '', 'year'), ['local', '仮', 60, 0]]]) {
