@@ -771,5 +771,12 @@
   "script.hentaigana": "Hentaigana",
   "character.crop.keys": "Drag the box or its handles · arrows move it · Shift and arrows resize it",
   "quiz.keyboardHint.forms": "1–0 form",
-  "character.crop.pending": "Box corrected, awaiting re-cut"
+  "character.crop.pending": "Box corrected, awaiting re-cut",
+  "ranking.title": "Reviewers",
+  "ranking.overline": "Ranking",
+  "ranking.hint": "Every decision that still stands counts once: each crop judged in a round, a correction or a review, each written form, and each form decision.",
+  "ranking.anonymous": "Anonymous",
+  "ranking.empty": "Nobody has decided anything yet.",
+  "ranking.total.one": "{count} decision",
+  "ranking.total.other": "{count} decisions"
 }

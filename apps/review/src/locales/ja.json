@@ -742,5 +742,12 @@
   "script.hentaigana": "変体仮名",
   "character.crop.keys": "枠か角をドラッグ · 矢印キーで移動 · Shift+矢印キーで大きさを変更",
   "quiz.keyboardHint.forms": "1–0字形",
-  "character.crop.pending": "切り出し修正済み・再切り出し待ち"
+  "character.crop.pending": "切り出し修正済み・再切り出し待ち",
+  "ranking.title": "レビュー参加者",
+  "ranking.overline": "ランキング",
+  "ranking.hint": "現在も有効な判断を1件ずつ数えます。ラウンド・修正・レビューで判断した切り出し、記録した字形、字体の指定が対象です。",
+  "ranking.anonymous": "匿名",
+  "ranking.empty": "まだ誰も判断していません。",
+  "ranking.total.one": "判断{count}件",
+  "ranking.total.other": "判断{count}件"
 }

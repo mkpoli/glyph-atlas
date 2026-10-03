@@ -744,5 +744,12 @@
   "script.hentaigana": "變體假名",
   "character.crop.keys": "曳框或角 · 矢以移 · Shift+矢以縮放",
   "quiz.keyboardHint.forms": "1–0形",
-  "character.crop.pending": "截已正，待再截"
+  "character.crop.pending": "截已正，待再截",
+  "ranking.title": "校者",
+  "ranking.overline": "名次",
+  "ranking.hint": "凡所定而今猶存者，各計一次：一過校閱、訂正或覆校所判之截，所記之字形，所定之字體，皆計之。",
+  "ranking.anonymous": "無名",
+  "ranking.empty": "尚無人有所定。",
+  "ranking.total.one": "所定{count}次",
+  "ranking.total.other": "所定{count}次"
 }
