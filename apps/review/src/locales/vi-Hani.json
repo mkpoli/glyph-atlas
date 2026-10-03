@@ -773,7 +773,6 @@
   "licence.restricted": "勤吀法",
   "date.after": "𢖕{date}",
   "date.before": "𠓀{date}",
-  "date.hundreds": "仍𢆥{year}",
   "date.century": "世紀{n}",
   "date.centuries": "世紀{first}–{last}",
   "date.decade": "十年{year}",

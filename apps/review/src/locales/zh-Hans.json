@@ -790,7 +790,6 @@
   "licence.restricted": "需获许可",
   "date.after": "{date}以后",
   "date.before": "{date}以前",
-  "date.hundreds": "{year}年代",
   "date.century": "{n}世纪",
   "date.centuries": "{first}–{last}世纪",
   "date.decade": "{year}年代",
@@ -808,6 +807,6 @@
   "date.kind.other": "内容{date}",
   "date.undated": "年代不详",
   "date.disputed": "各来源所记年代不一",
-  "date.hutime": "日本年号与公历的换算据HuTime（ap.hutime.org）。其他日期可在{form}换算",
+  "date.hutime": "日本年号与西历的换算据HuTime（ap.hutime.org）。其他日期可在{form}换算",
   "date.source.holder": "收藏机构目录"
 }

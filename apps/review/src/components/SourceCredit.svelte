@@ -5,16 +5,18 @@
   import { licenceName, holderName } from '../lib/licence.js'
   import DateMark from './DateMark.svelte'
   let { item, corpus = false } = $props()
-  const parts = $derived(corpus
+  const shown = $derived((corpus
     ? [item.source?.title, holderName(item.attribution || item.source?.holder), licenceName(item.licence)]
-    : [item.source, holderName(item.attribution || item.holder), licenceName(item.licence)])
+    : [item.source, holderName(item.attribution || item.holder), licenceName(item.licence)]).filter(Boolean))
   const credit = $derived(corpus && item.text_attribution ? t('corpus.labelCredit', { credit: item.text_attribution }) : null)
   const link = $derived(corpus
     ? (/^https?:\/\//i.test(item.record_url ?? '') ? { href: item.record_url, label: t('corpus.sourceRecord') } : null)
     : (item.rights_url ? { href: item.rights_url, label: t('character.sourceRights') } : null))
 </script>
 
-<p class="source-credit">{#each parts.filter(Boolean) as part}{part}{' · '}{/each}<DateMark {item} />{#if credit}{' · '}{credit}{/if}{#if link}{' · '}<a href={link.href} target="_blank" rel="noreferrer">{link.label}</a>{/if}</p>
+{#if shown.length || item.dating || credit || link}
+  <p class="source-credit">{shown.join(' · ')}{#if item.dating}{#if shown.length}{' · '}{/if}<DateMark {item} />{/if}{#if credit}{#if shown.length || item.dating}{' · '}{/if}{credit}{/if}{#if link}{#if shown.length || item.dating || credit}{' · '}{/if}<a href={link.href} target="_blank" rel="noreferrer">{link.label}</a>{/if}</p>
+{/if}
 
 <style>
   .source-credit{margin:0;font-size:11px;line-height:1.5;color:var(--faint);overflow-wrap:anywhere}

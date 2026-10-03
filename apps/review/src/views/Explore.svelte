@@ -721,7 +721,7 @@
   .visual-grid-heading{grid-column:1/-1;font-size:14px;padding:20px 2px 12px;color:var(--muted);background:var(--paper)}
   .tile-production{font-family:"GenZui Sans",system-ui,sans-serif;font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   /* The copy's year, the tile's one date: in the footer's small type, its digits all one width. */
-  .tile-year{font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;flex-shrink:0}
+  .tile-year{min-width:0;font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .tile-number{margin-left:auto}
   .tile-footer .tile-arrow{margin-left:0}
   .tile-footer .status-dot{flex-shrink:0}

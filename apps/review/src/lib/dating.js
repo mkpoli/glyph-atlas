@@ -30,7 +30,6 @@ export function dateLabel(date) {
   let text
   if (qualifier === 'after') text = t('date.after', { date: formatYear(start) })
   else if (qualifier === 'before') text = t('date.before', { date: formatYear(end) })
-  else if (precision === 'century' && start % 100 === 0 && end === start + 99) text = t('date.hundreds', { year: formatYear(start) })
   else if (precision === 'century' && start % 100 === 1 && end % 100 === 0) {
     const first = (start - 1) / 100 + 1, last = end / 100
     text = first === last ? t('date.century', { n: first, ordinal: ordinal(first) })
@@ -45,15 +44,22 @@ export function dateLabel(date) {
 /** What one dated event says: copied 1271, printed 1791, text composed c. 1000. */
 export const eventLabel = (kind, date) => t(`date.kind.${kind}`, { date: dateLabel(date) })
 
-/** The dates a crop's book shows, in one line: this copy's, then its text's; undated when neither is known. */
+/**
+ * The dates a crop's book shows, in one line: this copy's, then its text's; "no date recorded" when no
+ * source dates the copy. A listing that gives no `dating` at all says nothing.
+ */
 export function datingLine(item) {
-  const { witness, composed } = item?.dating ?? {}
+  if (!item?.dating) return null
+  const { witness, composed } = item.dating
   return [witness ? eventLabel(witness.kind, witness) : t('date.undated'), composed ? eventLabel('composed', composed) : null]
     .filter(Boolean).join(' · ')
 }
 
-/** The same in a tile's corner: the copy's year alone, or nothing for an undated copy. */
-export const tileDate = item => item?.dating?.witness ? dateLabel(item.dating.witness) : ''
+/** The same in a tile's corner: the copy's years, or nothing for a copy with none (a named period has no room there). */
+export const tileDate = item => {
+  const date = item?.dating?.witness
+  return date && (date.start != null || date.end != null) ? dateLabel(date) : ''
+}
 
 /**
  * What the date says on hover: each dated event as its source wrote it, with the source, whether the

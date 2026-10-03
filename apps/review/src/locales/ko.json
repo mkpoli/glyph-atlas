@@ -771,7 +771,6 @@
   "licence.restricted": "이용 허락 필요",
   "date.after": "{date} 이후",
   "date.before": "{date} 이전",
-  "date.hundreds": "{year}년대",
   "date.century": "{n}세기",
   "date.centuries": "{first}–{last}세기",
   "date.decade": "{year}년대",

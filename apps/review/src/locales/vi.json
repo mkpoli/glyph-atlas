@@ -772,7 +772,6 @@
   "licence.restricted": "Cần xin phép",
   "date.after": "sau {date}",
   "date.before": "trước {date}",
-  "date.hundreds": "những năm {year}",
   "date.century": "thế kỷ {n}",
   "date.centuries": "thế kỷ {first}–{last}",
   "date.decade": "thập niên {year}",

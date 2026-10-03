@@ -787,7 +787,6 @@
   "licence.restricted": "利用には許諾が必要",
   "date.after": "{date}以後",
   "date.before": "{date}以前",
-  "date.hundreds": "{year}年代",
   "date.century": "{n}世紀",
   "date.centuries": "{first}–{last}世紀",
   "date.decade": "{year}年代",
