@@ -2000,6 +2000,9 @@ def test_a_form_is_a_claim_that_leaves_the_character_and_the_review_alone(datase
     assert client.post(path, json=body).json() == saved.json()
     assert client.post(path, json={**body, "form": "𮟃"}).status_code == 409
     assert client.post(path, json={**body, "id": str(uuid4()), "form": "⿺辶"}).status_code == 422
+    # A form chosen as another member of the grapheme names the review that renamed the crop.
+    assert client.post(path, json={**body, "id": str(uuid4()), "review": str(uuid4())}).status_code == 200
+    assert client.post(path, json={**body, "id": str(uuid4()), "review": "not-a-review"}).status_code == 422
     assert client.post(path, json={**body, "id": str(uuid4()), "crop_version": unit + "@0@1,2,3,4"}).status_code == 409
     # The crop's own character is a confirmation, and clearing retracts it: the crop is unsorted again.
     confirmed = client.post(path, json={**body, "id": str(uuid4()), "form": detail["label"]}).json()
