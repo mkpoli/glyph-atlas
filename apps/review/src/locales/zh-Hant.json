@@ -673,6 +673,8 @@
   "account.methods.email": "電子郵件驗證碼",
   "account.methods.link": "連結",
   "account.methods.unlink": "解除連結",
+  "account.methods.connected": "已連結",
+  "account.methods.since": "連結於{date}",
   "account.passkeys.title": "通行密鑰",
   "account.passkeys.hint": "通行密鑰可讓你透過裝置的解鎖方式登入。請為每台使用的裝置新增一個。",
   "account.passkeys.add": "新增通行密鑰",

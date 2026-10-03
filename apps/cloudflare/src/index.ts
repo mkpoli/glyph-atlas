@@ -8,6 +8,7 @@ import { formsFor, setForm, withForms } from './cropForms';
 import { auth, claim, owned, providers, viewer } from './auth';
 import { AVATAR_PATH, avatar, setAvatar } from './avatar';
 import { ranking } from './ranking';
+import { connections } from './connections';
 import { reviewers, submissions } from './admin';
 import { READ_BUDGET, RETRY_AFTER, described, retried, transient } from './busy';
 import { actOnClaim, claimsOf, ledgerPage, writeClaim, type LedgerTools } from './ledger';
@@ -1728,6 +1729,7 @@ const routes = {
       }
       const picture=path.match(AVATAR_PATH);
       if(picture)return await avatar(env,picture[1],picture[2]);
+      if(path==='/api/account/connections'){const me=await viewer(env,request,true);if(!me)throw new Problem(401,'Sign in to see your account.');return json(await connections(env,me.id))}
       if(path==='/api/account')return json({user:await viewer(env,request,true),providers:providers(env)});
       if(path==='/health')return json({ok:true,published_at:await meta(env,'published_at')});
       const image=path.match(/^\/atlas\/media\/([a-f0-9]{64})\.webp$/);

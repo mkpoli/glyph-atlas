@@ -9,7 +9,7 @@
   const session = useSession()
   const NAMES = { github: 'GitHub', google: 'Google', discord: 'Discord', line: 'LINE', kakao: 'Kakao' }
   let name = $state(''), accounts = $state([]), keys = $state([]), sessions = $state([]), current = $state('')
-  let loaded = $state(false), busy = $state(''), error = $state(''), notice = $state(''), canPasskey = $state(false), email = $state('')
+  let connected = $state({}), loaded = $state(false), busy = $state(''), error = $state(''), notice = $state(''), canPasskey = $state(false), email = $state('')
   const user = $derived(session.state.user)
   const linked = $derived(new Set(accounts.map(account => account.providerId)))
   // An account keeps one way in: the last sign-in method cannot be removed. Its address takes a code.
@@ -17,7 +17,9 @@
 
   async function load() {
     const client = await authClient()
-    const [mine, listed, open, now] = await Promise.all([client.listAccounts(), client.passkey.listUserPasskeys(), client.listSessions(), client.getSession()])
+    const [mine, listed, open, now, who] = await Promise.all([client.listAccounts(), client.passkey.listUserPasskeys(), client.listSessions(), client.getSession(),
+      fetch('/api/account/connections').then(response => response.ok ? response.json() : { items: [] }).catch(() => ({ items: [] }))])
+    connected = Object.fromEntries(who.items.map(item => [item.provider, item]))
     accounts = (mine.data ?? []).filter(account => account.providerId !== 'credential')
     keys = listed.data ?? []
     sessions = (open.data ?? []).sort((a, b) => (b.updatedAt > a.updatedAt ? 1 : -1))
@@ -124,7 +126,10 @@
       <ul class="account-list">
         {#if email && !email.endsWith('.invalid')}<li><span class="method-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg></span><span>{t('account.methods.email')}<small>{email}</small></span></li>{/if}
         {#each session.state.providers as provider (provider)}
-          <li><span class="method-icon"><ProviderIcon name={provider} /></span><span>{NAMES[provider]}</span>
+          {@const who = connected[provider]}
+          <li><span class="method-icon"><ProviderIcon name={provider} /></span>
+            <span>{NAMES[provider]}{#if linked.has(provider)}<small>{[who?.handle ? '@' + who.handle : null, who?.name, who?.email].filter(Boolean).join(' · ') || t('account.methods.connected')}{who ? ' · ' + t('account.methods.since', { date: when(who.connected) }) : ''}</small>{/if}</span>
+            {#if who?.image}<img class="method-avatar" src={who.image} alt="" referrerpolicy="no-referrer" />{/if}
             {#if linked.has(provider)}<button class="quiet-link" disabled={methods < 2 || busy === provider} onclick={() => unlink(provider)}>{t('account.methods.unlink')}</button>
             {:else}<button disabled={busy === provider} onclick={() => link(provider)}>{t('account.methods.link')}</button>{/if}</li>
         {/each}
@@ -181,6 +186,7 @@
   .account-list li > span:nth-child(2) { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .account-list small { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
   .account-list button:not(.quiet-link) { font-size: 12px; padding: 7px 12px; }
+  .method-avatar { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
   .method-icon { width: 18px; display: grid; place-items: center; flex-shrink: 0; }
   .picture-choices { display: flex; align-items: center; gap: 18px; }
   .picture-options { display: flex; flex-wrap: wrap; gap: 6px; }
