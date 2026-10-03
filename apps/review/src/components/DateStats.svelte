@@ -47,7 +47,7 @@
       <div class="hundreds">
         {#each hundreds as row (row[0])}
           <div class="column" title={`${formatYear(row[0])}–${formatYear(row[0] + 99)}: ${formatNumber(row[at])}`}>
-            <span class="value">{formatNumber(row[at])}</span>
+            <span class="value">{row[at] === most ? formatNumber(row[at]) : ""}</span>
             <span class="pillar" style:height="{Math.max(2, row[at] / most * 64)}px"></span>
           </div>
         {/each}
