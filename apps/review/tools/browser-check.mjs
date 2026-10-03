@@ -87,7 +87,7 @@ try {
   await browser.waitFor(inspectorReady)
   // A bad crop is redrawn in the view itself: its corner handle is dragged out.
   await click('dialog .issue-card[data-issue="crop"]')
-  await browser.waitFor('!!document.querySelector("dialog[open] .crop-mask.editing .handle.se")')
+  await browser.waitFor('!!document.querySelector("dialog[open] .box-editor .handle.se")')
   await browser.evaluate('document.querySelector("dialog[open] .crop-viewport").scrollIntoView({block:"center"})')
   const corner = await browser.evaluate('(() => { const r=document.querySelector("dialog[open] .handle.se").getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}; })()')
   await browser.drag(corner, { x: corner.x + 20, y: corner.y + 16 })

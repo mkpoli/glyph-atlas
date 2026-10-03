@@ -38,6 +38,9 @@
     onform = () => {},
     // Rows name the code point rather than the reading.
     codePoints = false,
+    // A page that searches by image gives `onimage`: the box then offers it, and an image dropped on or
+    // pasted into the box goes to it.
+    onimage = null,
   } = $props()
 
   const listId = `candidates-${Math.random().toString(36).slice(2, 9)}`
@@ -118,6 +121,13 @@
     } finally {
       if (!closed && current === generation) loading = false
     }
+  }
+
+  /** An image dropped on the box or pasted into it, for a page that searches by image. */
+  function imageOf(transfer) {
+    if (!onimage || !transfer) return null
+    const files = [...(transfer.files ?? [])], items = [...(transfer.items ?? [])]
+    return files.find(f => f.type.startsWith('image/')) ?? items.find(i => i.kind === 'file' && i.type.startsWith('image/'))?.getAsFile() ?? null
   }
 
   function clear() {
@@ -245,8 +255,12 @@
            oncompositionend={e => { composing = false; typed(e.currentTarget.value) }}
            oninput={e => { if (!composing && !e.isComposing) typed(e.currentTarget.value) }}
            onfocus={() => { if (quiet) return; if (value.trim() && !items.length) seek(value); else if (items.length || browse) open = true }}
-           onkeydown={keys} />
+           onkeydown={keys}
+           onpaste={e => { const image = imageOf(e.clipboardData); if (image) { e.preventDefault(); e.stopPropagation(); onimage(image) } }}
+           ondragover={e => { if (onimage) e.preventDefault() }}
+           ondrop={e => { const image = imageOf(e.dataTransfer); if (image) { e.preventDefault(); onimage(image) } }} />
     {#if value}<button type="button" class="find-clear" aria-label={t('search.clear')} onclick={clear}>×</button>{/if}
+    {#if onimage}<button type="button" class="find-image" aria-label={t('imageSearch.open')} title={t('imageSearch.open')} onclick={() => onimage(null)}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2.2l1.4-2h5.8l1.4 2h2.2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z"/><circle cx="12" cy="12.5" r="3.4"/></svg></button>{/if}
   </form>
 
   {#if browsing}
@@ -289,6 +303,9 @@
 </div>
 
 <style>
+  .find-image{flex-shrink:0;display:grid;place-items:center;width:30px;height:30px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--muted)}
+  .find-image:hover{color:var(--accent);background:var(--accent-light)}
+  .find-image svg{width:19px;height:19px}
   .candidate-row{display:flex;align-items:center;gap:8px;padding-right:12px}
   .candidate-row .candidate{flex:1;min-width:0}
   .candidate-legend{padding:10px 14px;border-top:1px solid var(--line)}
