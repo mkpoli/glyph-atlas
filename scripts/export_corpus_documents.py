@@ -1,4 +1,4 @@
-"""Write the D1 SQL that fills `corpus_units.document` (migration 0052) for the glyphs published before it.
+"""Write the D1 SQL that fills `corpus_units.document` (migration 0053) for the glyphs published before it.
 
     uv run scripts/export_corpus_documents.py OUTPUT
     OUTPUT/apply.sh
@@ -63,7 +63,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 cd "$(git -C "$here" rev-parse --show-toplevel)/apps/cloudflare"
 q() {{ bunx wrangler d1 execute glyph-atlas --remote --json --command "$1" 2>/dev/null | jq -c '.[0].results[0]'; }}
 [ "$(q "SELECT count(*) AS n FROM pragma_table_info('corpus_units') WHERE name='document'")" = '{{"n":1}}' ] \\
-  || {{ echo "apply migration 0052 first" >&2; exit 1; }}
+  || {{ echo "apply migration 0053 first" >&2; exit 1; }}
 for part in "$here"/sql/part-*.sql; do
   done=0
   for try in 1 2 3 4; do

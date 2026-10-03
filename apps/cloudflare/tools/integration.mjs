@@ -648,7 +648,7 @@ try {
   assert.ok(!(await call('/layers/occurrences?code_point=U%2B4EEE&expand=variants')).items.some(i => i.id === 'apart-crop'), 'a simplified pair is not widened to')
   assert.equal((await call('/layers/candidates?code_point=U%2B4EEE&scope=variants')).retry, false, 'the corpus side widens without error')
   await call('/layers/occurrences?code_point=U%2B4EEE&expand=variants&offset=2001', undefined, 404)
-  // A crop's book's dates (0051) travel with it in a listing and, with the claims behind them, in its inspector.
+  // A crop's book's dates (0052) travel with it in a listing and, with the claims behind them, in its inspector.
   const datedCrop = { ...variantCrop, id: 'dated-crop', label: '仮', source: '某書' }
   await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind('dated-crop', 'local', '仮', 'U+4EEE', null,
     'handwritten', 'kanji', 'pending', 0, 1, 1, 1, JSON.stringify(datedCrop), JSON.stringify({ character: datedCrop }), '{}', '{}', 'doc:dated').run()

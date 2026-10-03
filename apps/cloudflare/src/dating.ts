@@ -1,4 +1,4 @@
-// When the book a crop comes from was written, copied or printed (migration 0051, `glyph_atlas.dates`).
+// When the book a crop comes from was written, copied or printed (migration 0052, `glyph_atlas.dates`).
 // A listing gives each crop its document's `dating`: the date of the copy itself (`witness`) and of the
 // text it carries (`composed`), as the publication resolved them from the ledger's `date_*` claims. The
 // inspector also lists the claims themselves, each with its words, source and locator.

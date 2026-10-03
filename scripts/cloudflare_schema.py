@@ -57,7 +57,7 @@ def corpus_upsert(values) -> str:
 
     A rewrite updates every column but `named`, which records that a round or review reached the glyph
     and is D1's own: a publication that reset it would deal a named glyph twice until its last part ran.
-    A row with no `document`, from an export made before 0052, keeps the one D1 holds.
+    A row with no `document`, from an export made before 0053, keeps the one D1 holds.
     """
     quoted = ("NULL" if v is None else str(v) if isinstance(v, int) else "'" + str(v).replace("'", "''") + "'"
               for v in values)

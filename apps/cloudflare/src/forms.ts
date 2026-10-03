@@ -92,7 +92,7 @@ async function members(env: Env, clusterId: string, q: URLSearchParams, tools: F
   const offset = count(q, 'offset', 0, 1_000_000, tools), limit = count(q, 'limit', 120, 500, tools);
   const order = q.get('order') === 'unusual' ? 'unusual' : 'typical';
   const rows = await env.DB.prepare(membersQuery(order)).bind(clusterId, limit, offset).all<Json>();
-  // Each glyph carries the dates of its book, which its crop's row or its corpus pointer names (0052).
+  // Each glyph carries the dates of its book, which its crop's row or its corpus pointer names (0053).
   return { id: clusterId, total: cluster!.count, offset, order, form: cluster!.form, issue: cluster!.issue,
     items: await withDating(env, rows.results.map(r => ({ ...member(r), rank: r.rank, similarity: r.similarity, document: r.document }))) };
 }
