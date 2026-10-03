@@ -1376,7 +1376,16 @@ export function historyQuery(actors: string[] | null, label: string | null, curs
   if (label !== null) where.push(`${historyLabelExpr()}=${bind(label)}`);
   if (cursor) where.push(`(at,id)<(${bind(cursor.at)},${bind(cursor.id)})`);
   const select = (filter: string[]) => `SELECT id,at,actor,target,kind,event,${historyLabelExpr()} AS label FROM events WHERE ${filter.join(' AND ')}`;
-  const arms = actors === null ? [select(where)] : actors.map(actor => select([...where, `actor=${bind(actor)}`]));
+  // A standing round is listed once more for the crops it passed: a pass is not a review of the crop,
+  // so it is its own row, with how many crops it passed and the round's character.
+  const passedWhere = ['undone=0', `EXISTS(SELECT 1 FROM seen k WHERE k.submission=submissions.id)`];
+  if (label !== null) passedWhere.push(`json_extract(request,'$.input.label')=${bind(label)}`);
+  if (cursor) passedWhere.push(`(at,id)<(${bind(cursor.at)},${bind(cursor.id)})`);
+  const passed = (filter: string[]) => `SELECT id,at,actor,NULL AS target,'passed' AS kind,
+    (SELECT count(*) FROM seen k WHERE k.submission=submissions.id) AS event,json_extract(request,'$.input.label') AS label
+    FROM submissions WHERE ${filter.join(' AND ')}`;
+  const arms = actors === null ? [select(where), passed(passedWhere)]
+    : actors.flatMap(actor => [select([...where, `actor=${bind(actor)}`]), passed([...passedWhere, `actor=${bind(actor)}`])]);
   const sql = `SELECT h.*,a.user_id AS user,u.name AS name,u.image AS image FROM (${arms.join(' UNION ALL ')}
     ORDER BY at DESC,id DESC LIMIT ?${values.length + 1}) h
     LEFT JOIN actors a ON a.actor=h.actor LEFT JOIN "user" u ON u.id=a.user_id ORDER BY h.at DESC,h.id DESC`;
@@ -1405,12 +1414,15 @@ type HistoryRow = { id: string; at: string; actor: string; target: string; kind:
 // A review's evidence names its own verdict, issue and correction; an undo's evidence is only the id
 // of the event it reverses, so those fields stay null and `undoes` names that event instead.
 export function historyItem(row: HistoryRow, me: string | null = null): Json {
+  const reviewer = { user: row.user, name: row.name ?? row.actor, image: row.image, mine: Boolean(me && row.user === me) };
+  if (row.kind === 'passed') return { id: row.id, at: row.at, target: null, label: row.label, kind: 'passed', reviewer,
+    passed: Number(row.event), verdict: null, issue: null, character: null, reading: null, round: row.id, batch: null, undoes: null };
   const undo = row.kind === 'undo';
   const parsedEvent = parse(row.event);
   const evidence = undo ? null : parse(parsedEvent.evidence);
   return {
     id: row.id, at: row.at, target: row.target, label: row.label, kind: row.kind as 'review' | 'undo',
-    reviewer: { user: row.user, name: row.name ?? row.actor, image: row.image, mine: Boolean(me && row.user === me) },
+    reviewer,
     verdict: evidence?.verdict ?? null,
     issue: recordedIssue(evidence?.issue),
     character: evidence?.suggested_character ? literal(evidence.suggested_character) : null,

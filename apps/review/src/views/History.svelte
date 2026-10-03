@@ -57,6 +57,7 @@
    * `ScriptLine` to colour; otherwise the issue that was reported, or the plain verdict. */
   function decisionText(item) {
     if (item.kind === 'undo') return t('history.decision.undo')
+    if (item.kind === 'passed') return t('history.decision.passed', { count: item.passed })
     if (item.character) return withText('history.decision.wrongCharacter', 'character', { character: item.character })
     // A wrong-character review saved before characters were named on their own kept the typed text.
     if (item.issue === 'character' && item.text) return withText('history.decision.wrongCharacter', 'character', { character: item.text })
@@ -121,13 +122,23 @@
         {:else}
           {#each row.items as item (item.id)}
             <li>
-              <button class="history-row" class:undo={item.kind === 'undo'} onclick={() => inspect(item.target)}
-                      aria-label={t('history.row.inspect', { label: item.label ?? item.target })}>
-                <span class="history-time">{when(item.at)}</span>
-                {@render reviewer(item)}
-                <span class="history-label">{@render label(item.label)}</span>
-                <span class="history-decision"><ScriptLine line={decisionText(item)} /></span>
-              </button>
+              {#if item.kind === 'passed'}
+                <!-- A passed round names no single crop to open. -->
+                <div class="history-row passed">
+                  <span class="history-time">{when(item.at)}</span>
+                  {@render reviewer(item)}
+                  <span class="history-label">{@render label(item.label)}</span>
+                  <span class="history-decision"><ScriptLine line={decisionText(item)} /></span>
+                </div>
+              {:else}
+                <button class="history-row" class:undo={item.kind === 'undo'} onclick={() => inspect(item.target)}
+                        aria-label={t('history.row.inspect', { label: item.label ?? item.target })}>
+                  <span class="history-time">{when(item.at)}</span>
+                  {@render reviewer(item)}
+                  <span class="history-label">{@render label(item.label)}</span>
+                  <span class="history-decision"><ScriptLine line={decisionText(item)} /></span>
+                </button>
+              {/if}
             </li>
           {/each}
         {/if}
@@ -194,6 +205,7 @@
   }
   .history-row:hover { background: var(--surface-tile); }
   .history-row.undo .history-decision { color: var(--wrong); }
+  .history-row.passed .history-decision { color: var(--muted); }
   .history-batch-labels { margin-left: 10px; color: var(--muted); }
   .history-batch .quiet-link { flex: 0 0 auto; }
   .history-time { flex: 0 0 150px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }

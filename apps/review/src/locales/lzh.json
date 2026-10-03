@@ -292,6 +292,8 @@
   "history.characterFilter.aria": "以字篩",
   "history.characterFilter.placeholder": "以字篩",
   "history.decision.match": "無誤",
+  "history.decision.passed.one": "一過校截{count}，未舉其誤",
+  "history.decision.passed.other": "一過校截{count}，未舉其誤",
   "history.decision.reported": "舉誤",
   "history.decision.undo": "撤所校",
   "history.decision.unsure": "未詳",

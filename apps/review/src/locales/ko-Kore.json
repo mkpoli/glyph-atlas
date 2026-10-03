@@ -290,6 +290,8 @@
   "history.characterFilter.aria": "文字로 거르기",
   "history.characterFilter.placeholder": "文字로 거르기",
   "history.decision.match": "맞음",
+  "history.decision.passed.one": "한 回次에서 크롭{count}個를 問題 表示 없이 넘김",
+  "history.decision.passed.other": "한 回次에서 크롭{count}個를 問題 表示 없이 넘김",
   "history.decision.reported": "問題 報告",
   "history.decision.undo": "檢討 取消",
   "history.decision.unsure": "未詳",

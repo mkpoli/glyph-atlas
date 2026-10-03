@@ -519,18 +519,24 @@ try {
   // GET /atlas/history: all history newest first, by user, and by label, each served by its own partial index.
   // A user's page merges one index-ordered read per id they hold, so it stops at the LIMIT.
   const held = ['integration', 'reviewer-0000000a']
-  shapes.push([{ sql: worker.historyQuery(null, null, null).sql, values: [] }, [41], 'event_history'])
+  const historyAll = worker.historyQuery(null, null, null)
+  shapes.push([{ sql: historyAll.sql, values: [] }, [...historyAll.values, 41], 'event_history'])
   const byUser = worker.historyQuery(held, null, null)
   shapes.push([{ sql: byUser.sql, values: [] }, [...byUser.values, 41], 'event_actor_history'])
-  shapes.push([{ sql: worker.historyQuery(null, 'ア', null).sql, values: [] }, ['ア', 41], 'event_label_history'])
+  const historyByLabel = worker.historyQuery(null, 'ア', null)
+  shapes.push([{ sql: historyByLabel.sql, values: [] }, [...historyByLabel.values, 41], 'event_label_history'])
   // The keyset cursor stays on the same index once a page is under way, for the plain and the user shape.
   const cursor = { at: '2026-01-01T00:00:00.000Z', id: 'cf:0' }
-  shapes.push([{ sql: worker.historyQuery(null, null, cursor).sql, values: [] }, [cursor.at, cursor.id, 41], 'event_history'])
+  const allAfter = worker.historyQuery(null, null, cursor)
+  shapes.push([{ sql: allAfter.sql, values: [] }, [...allAfter.values, 41], 'event_history'])
   const byUserAfter = worker.historyQuery(held, null, cursor)
   shapes.push([{ sql: byUserAfter.sql, values: [] }, [...byUserAfter.values, 41], 'event_actor_history'])
   for (const shape of [byUser, byUserAfter]) {
     const reads = (await plan({ sql: shape.sql, values: [] }, [...shape.values, 41])).filter(d => /^(SCAN|SEARCH) events\b/.test(d))
     assert.ok(reads.length === held.length && reads.every(d => /USING INDEX event_actor_history \(actor=\?/.test(d)), `one index read per id: ${reads.join('; ')}`)
+    // Each id's passed rounds are read the same way, from its own partial index.
+    const rounds = (await plan({ sql: shape.sql, values: [] }, [...shape.values, 41])).filter(d => /^(SCAN|SEARCH) submissions\b/.test(d))
+    assert.ok(rounds.length === held.length && rounds.every(d => /USING INDEX submission_actor_history \(actor=\?/.test(d)), `one round read per id: ${rounds.join('; ')}`)
   }
   // Browsing one grapheme deals its crops from the seed's point in shuffle order, as `catalogue` asks.
   shapes.push([{ sql: "SELECT * FROM units WHERE origin='local' AND family=? AND shuffle>=? ORDER BY shuffle,rowid LIMIT ? OFFSET ?", values: [] },
@@ -903,11 +909,13 @@ try {
   const unframed = await call('/atlas/characters/framed')
   assert.deepEqual([unframed.state, unframed.context_image, unframed.context_box], ['pending', '/atlas/media/wide.webp', wide],
     'undo restores the review state and keeps the wider context')
-  // GET /atlas/history: every review and undo, newest first, filterable by user or by label; a kind outside
-  // ('review','undo') never appears even though its row sits in the same table.
+  // GET /atlas/history: every review and undo, and each standing round with the crops it passed, newest
+  // first, filterable by user or by label; another kind of event never appears though it sits in the same table.
   const get = async path => { const response = await mf.dispatchFetch(base + path); assert.equal(response.status, 200); return response.json() }
   const all = await get('/atlas/history?limit=100')
-  assert.ok(all.items.every(i => ['review', 'undo'].includes(i.kind)), 'only review and undo rows are ever listed')
+  assert.ok(all.items.every(i => ['review', 'undo', 'passed'].includes(i.kind)), 'only reviews, undos and passed rounds are listed')
+  assert.ok(all.items.some(i => i.kind === 'passed') && all.items.filter(i => i.kind === 'passed').every(i => i.passed > 0 && i.target === null),
+    'a passed round names how many crops it passed')
   const sorted = [...all.items].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : (a.id < b.id ? 1 : -1)))
   assert.deepEqual(all.items.map(i => i.id), sorted.map(i => i.id), 'newest first, tied at ties broken by id')
   const byLabel = await get('/atlas/history?label=%E3%83%A9&limit=100')

@@ -282,6 +282,8 @@
   "history.characterFilter.aria": "Lọc theo chữ",
   "history.characterFilter.placeholder": "Lọc theo chữ",
   "history.decision.match": "Đúng",
+  "history.decision.passed.one": "Đã duyệt qua {count} vùng cắt trong một vòng mà không đánh dấu vấn đề",
+  "history.decision.passed.other": "Đã duyệt qua {count} vùng cắt trong một vòng mà không đánh dấu vấn đề",
   "history.decision.reported": "Đã báo vấn đề",
   "history.decision.undo": "Đã hủy một lần duyệt",
   "history.decision.unsure": "Đã bỏ qua vì không rõ",

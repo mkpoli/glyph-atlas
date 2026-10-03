@@ -780,5 +780,7 @@
   "ranking.total.one": "{count} decision",
   "ranking.total.other": "{count} decisions",
   "history.group.count.one": "{count} decision",
-  "history.group.count.other": "{count} decisions"
+  "history.group.count.other": "{count} decisions",
+  "history.decision.passed.one": "Passed {count} crop in a round",
+  "history.decision.passed.other": "Passed {count} crops in a round"
 }

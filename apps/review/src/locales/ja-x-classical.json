@@ -287,6 +287,8 @@
   "history.characterFilter.aria": "字ニテ絞ル",
   "history.characterFilter.placeholder": "字ニテ絞ル",
   "history.decision.match": "可ナリ",
+  "history.decision.passed.one": "一巡ニテ截片{count}件ノ誤ヲ指摘セズ",
+  "history.decision.passed.other": "一巡ニテ截片{count}件ノ誤ヲ指摘セズ",
   "history.decision.reported": "誤ヲ報告セリ",
   "history.decision.undo": "校閱ヲ取リ消セリ",
   "history.decision.unsure": "判ジ難シ",

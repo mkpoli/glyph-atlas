@@ -132,3 +132,22 @@ describe('admin summaries', () => {
       .toEqual({ kind: 'crop', target: 'u1', label: 'う', verdicts: { wrong: 1 } });
   });
 });
+
+describe('passed rounds in the history', () => {
+  it('list a standing round once, with the crops it passed, and drop an undone one', () => {
+    const { db, event } = migrated();
+    const at = '2026-10-01T00:05:00.000Z';
+    db.exec(`INSERT INTO submissions(id,actor,request,response,at,undone) VALUES
+        ('u1:r1','u1','{"input":{"label":"あ"},"target":null}','{}','${at}',0),('u1:r2','u1','{"input":{"label":"い"},"target":null}','{}','${at}',1);
+      PRAGMA foreign_keys=OFF;
+      INSERT INTO seen(target,submission,box,image_sha256,at) VALUES('a','u1:r1',NULL,'h','${at}'),('b','u1:r1',NULL,'h','${at}'),('c','u1:r2',NULL,'h','${at}');`);
+    event('e1', 'u1', 1);
+    const { sql, values } = historyQuery(['u1', 'reviewer-0000000a'], null, null);
+    const rows = db.query(sql).all(...values, 10) as Record<string, unknown>[];
+    expect(rows.map(r => [r.id, r.kind, r.label, r.event])).toEqual([['u1:r1', 'passed', 'あ', 2], ['e1', 'review', null, '{"evidence":"{}"}']]);
+    const label = historyQuery(null, 'あ', null);
+    expect((db.query(label.sql).all(...label.values, 10) as Record<string, unknown>[]).map(r => r.id)).toEqual(['u1:r1']);
+    db.close();
+  });
+});
+
