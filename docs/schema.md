@@ -62,7 +62,7 @@ One physical exemplar (a copy, a manuscript, an archival document).
 | `style` | style of the letterforms throughout, a value of `data/vocab/style.yaml`; `mixed` when pages differ, `unassessed` until someone judges it |
 | `genre` | one or more ids from `data/vocab/genre.yaml` |
 | `text_register` | `wabun`, `kanbun`, `kanbun-kundoku`, `sorobun`, `mixed`, `unknown` |
-| `dating` | list; each with `literal` as written (文政3), `start` and `end` years, `kind` (composition, copying, publication, impression), `evidence` |
+| `dating` | what the corpus's own source states, as its importer read it: each with `literal` as written (文政3), `start` and `end` years, `kind` (composition, copying, publication, impression), `evidence`. Every dated statement about a document, this one and those of other sources, becomes a claim in `dates` below |
 | `hands` | free-text notes on scribes where known |
 | `image_rights`, `text_rights` | licence, holder, attribution string, evidence URL, date checked; `holder_terms` keeps the holder's own statement where the images of a public-domain work are recorded as PD (`docs/licensing.md`) |
 
@@ -221,6 +221,39 @@ done
 curl -o cache/ucd/confusables.txt https://www.unicode.org/Public/security/latest/confusables.txt
 uv run python scripts/build_character_table.py cache/ucd
 ```
+
+### dates
+
+`atlas dates` collects every dated statement the sources make about each document as an attributed
+claim (`DateClaim`, written to `work/dates/claims.jsonl`), and resolves what each document shows
+(`resolved.jsonl`). On the site each claim is an assertion of the ledger (`docs/design/form-model.md`):
+subject the document, predicate `date_<kind>`, the fields below but its id, kind, tier and source as its
+value, asserted by `source:<id>` with an evidence row naming the source and the locator. What each
+document shows is `document_dating` (migration 0051).
+
+| Field | Meaning |
+| --- | --- |
+| `id`, `document` | the claim's id, from its document, source, locator, text and kind |
+| `kind` | `composed` (成立, the text itself), `copied` (書写, 補写 noted), `colophon` (奥書, 識語, 序, 跋, 刊記), `annotated` (加点), `printed` (刊行), `edition` (a later impression or edition), `exemplar` (the date of the copy it was copied from, 元奥書), `produced` (the holder dates the item and says no more), `other` (a date of the content, 内容年代) |
+| `scope` | `witness` for this copy, `work` for the work it carries: 国書's work dates and every `composed` |
+| `text` | the date as the source writes it, verbatim |
+| `start`, `end` | first and last year, proleptic Gregorian; one is null for `before` or `after` |
+| `precision` | `day`, `month`, `year`, `years` (a range or an era span), `decade`, `century`, or `period` (a named period with no years, such as 江戸後期) |
+| `qualifier`, `uncertain` | `circa`, `before` or `after`; a question mark or 推定 in the source |
+| `day`, `calendar`, `conversion` | the Gregorian day of a dated day; whether the text is in the Japanese calendar; the HuTime request that converted it |
+| `tier` | `attested` (a catalogue field states it), `derived` (read from a free-text note), `editorial` (a curated record) |
+| `source`, `locator`, `note` | the data/sources id, the record URL and its field (`#bpublish.0`, `#metadata=Publication Date`), and the note or work the date belongs to |
+
+An era year is placed in the Gregorian year its first day falls in (寛政3年, 1791-02-03 to
+1792-01-23, is 1791); where the source writes the Gregorian year beside the era, the source's stands.
+A document with no claim that has years stays undated.
+
+What a document shows (`dates.resolve`): on the witness axis, the first kind with a dated claim about
+this copy, in the order copied, colophon, produced, annotated, printed, edition for handwriting and
+printed, edition, produced, colophon, copied, annotated for print; on the composed axis, its
+composition. Within a kind, attested wins over editorial and derived, a holder's manifest over 国書 and
+the aggregators, then the more precise claim. A claim that does not overlap the chosen one makes the
+date `disputed`, and every claim stays listed.
 
 ## Exports
 

@@ -44,6 +44,26 @@ def sources() -> None:
 
 
 @app.command()
+def dates(
+    out: Annotated[Path, typer.Option(help="directory for claims.jsonl, resolved.jsonl and counts.json")] = Path("work/dates"),
+    root: Annotated[Path, typer.Option(help="corpus root")] = Path("work"),
+    cache: Annotated[Path, typer.Option(help="download cache")] = Path("cache"),
+    fetch: Annotated[bool, typer.Option(help="read the 国書 records and manifests the cache lacks")] = False,
+    convert: Annotated[bool, typer.Option(help="ask HuTime the conversions its cache lacks")] = True,
+    site: Annotated[Path | None, typer.Option(help="file of the document ids the site publishes; "
+                                                    "--fetch reads records only for these")] = None,
+) -> None:
+    """Collect every document's dates as attributed claims and resolve what each one shows."""
+    from . import date_claims
+
+    published = set(site.read_text(encoding="utf-8").split()) if site else None
+    claims, resolved, counts = date_claims.build(root, cache, fetch=fetch, convert=convert, site=published)
+    date_claims.write(out, claims, resolved, counts)
+    for name, value in sorted(counts.items()):
+        typer.echo(f"{name:<40} {value:>8}")
+
+
+@app.command()
 def character(
     code_point: Annotated[
         list[str] | None,

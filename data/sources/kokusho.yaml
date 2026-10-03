@@ -22,3 +22,9 @@ access:
   record_json: https://kokusho.nijl.ac.jp/api/biblioDetail/{bid}
   manifest: https://kokusho.nijl.ac.jp/biblio/{bid}/manifest
   doi: https://doi.org/10.20730/{bid}
+dates:
+  # Read by `atlas dates` (src/glyph_atlas/date_claims.py). A record dates two things: the copy, an
+  # item of one holder, and the works it carries (著作, the 国書総目録 entry).
+  bpublish: "this copy's own 刊年 (the first entry of 出版事項); printed for 刊, copied for 写"
+  chuki: "the notes 〈奥〉〈識〉〈序〉〈跋〉〈刊〉〈版〉〈写〉〈書〉〈加〉 that name a date; read from free text, so derived; （元奥書） is the exemplar's colophon"
+  work_year: "the work's date: bare (文明一七) its composition, 刊 its first printing, 序 or 跋 its preface or postface; never the date of this copy"

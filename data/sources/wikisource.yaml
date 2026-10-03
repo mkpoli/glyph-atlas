@@ -1,0 +1,18 @@
+# Wikisource reading pages that carry a scanned book's transcription. The scan importers keep the
+# year a reading page states for its text (`year_stated`) as the text's composition date, and its
+# page URL as the evidence. A wiki page states what its editors wrote, usually from the printed
+# edition, without a citation of its own; such a date is shown as the text's composition date and
+# never as the date of the scan's copy.
+#
+# The Commons file pages of the same scans carry a `date` field that is mostly the date of upload or
+# scanning (2017-05-01 on every 四部叢刊 volume); `atlas dates` reads none of them.
+id: wikisource
+name: Wikisource
+publisher: Wikimedia Foundation and Wikisource contributors
+kind: transcription-corpus
+url: https://wikisource.org/
+licence: CC-BY-SA-4.0
+licence_evidence: https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use
+attribution: Wikisource contributors, CC BY-SA 4.0
+notes:
+  - Weak source for dates: a wiki's stated year, unsourced on the page.
