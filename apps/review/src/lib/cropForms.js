@@ -68,26 +68,27 @@ const submission = (...parts) => {
 /** Claim `form` as the crop's, on the version the reader has; with `form` null take back the reader's
  *  own claim. The crop keeps its character, review and revision. Answers the crop with its form now,
  *  and `replaced`, the value of the reader's own claim the save took back (null for none). */
-async function claimForm(crop, form) {
+async function claimForm(crop, form, review = null) {
   // A record read from a listing may not name its version; the crop as it stands does.
   const seen = crop.crop_version ? crop : { ...crop, ...await reread(crop) }
   const { id, answered } = submission('form', crop.id, seen.crop_version, form ?? '')
   let result
   try {
-    result = await request(`/atlas/characters/${encodeURIComponent(crop.id)}/form`, { id, crop_version: seen.crop_version, form })
+    result = await request(`/atlas/characters/${encodeURIComponent(crop.id)}/form`, { id, crop_version: seen.crop_version, form, ...(review ? { review } : {}) })
   } catch (error) { if (error.status) answered(); throw error }
   answered()
   return { crop: { ...seen, form: result.form }, replaced: result.replaced ?? null }
 }
 
-/** Name the crop's character, as a review of that crop: a checked crop can be named again. */
+/** Name the crop's character, as a review of that crop: a checked crop can be named again. Answers the
+ *  crop as it now stands and the review's submission id. */
 async function writeCharacter(crop, character) {
   const { id } = submission('character', crop.id, crop.revision, character)
   if (corpusOf(crop)) await request('/atlas/corpus/reviews', { id, identity: crop.id, revision: crop.revision,
     source_revision: crop.source_revision, verdict: 'wrong', issue: 'character', character })
   else await request('/layers/units/' + encodeURIComponent(crop.id), { id, revision: crop.revision,
     image_sha256: crop.image_sha256, verdict: 'wrong', issue: 'character', character })
-  return reread(crop)
+  return { crop: await reread(crop), review: id }
 }
 
 /**
@@ -104,8 +105,9 @@ export async function setForm(crop, form) {
   const written = crop.written_character ?? crop.label
   const { members } = await listForms(written)
   if (form === written || !members.some(member => member.char === form)) return { ...await claimForm(crop, form), reviewed: false }
+  // The claim names the review, so the two count as one decision.
   const named = await writeCharacter(crop, form)
-  return { ...await claimForm(named, form), reviewed: true }
+  return { ...await claimForm(named.crop, form, named.review), reviewed: true }
 }
 
 /**
@@ -117,6 +119,6 @@ export async function setForm(crop, form) {
 export async function restoreForm(after, before, replaced = null) {
   const was = before.written_character ?? before.label
   let now = after, reviewed = false
-  if ((after.written_character ?? after.label) !== was) { now = await writeCharacter(after, was); reviewed = true }
+  if ((after.written_character ?? after.label) !== was) { now = (await writeCharacter(after, was)).crop; reviewed = true }
   return { crop: (await claimForm(now, replaced)).crop, reviewed }
 }

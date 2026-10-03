@@ -23,6 +23,9 @@ export async function setForm(env: Env, input: Json, cropId: string, actor: stri
   if (saved) return { id: saved.subject, form: (await formsFor(env, [saved.subject])).get(saved.subject) ?? null, replaced: saved.replaced ?? null };
   // The value is checked, and a clear finds the reader's own claim, before anything is written: a
   // corpus glyph nothing has named gets its row only for a save that will land.
+  // A form chosen as another member of the crop's grapheme renames the crop first; the claim names that
+  // review's submission id, so the ranking counts the two as one decision.
+  if (input.review != null && !(typeof input.review === 'string' && /^[0-9a-f-]{36}$/i.test(input.review))) tools.fail(422, 'Invalid review id.');
   const typedForm = input.form == null ? null : tools.text(input.form, 256, 'form');
   const representation = typedForm ? typed(tools.literal(typedForm)) : null;
   if (typeof representation === 'string') tools.fail(422, PROBLEMS[representation]);
