@@ -863,7 +863,7 @@
   "chronology.bar": "{decade}: {count}",
   "chronology.empty": "No crop of this character has a year recorded yet.",
   "chronology.empty.composed": "No text of this character's books has a composition year recorded.",
-  "chronology.method": "Each crop stands at the decade its book's date begins in; a range of years starts at its first. Dates come from the catalogues and editions cited with each record. Above, the bars draw the whole span to scale; below them, fifty years or more with no crop are folded and marked.",
+  "chronology.method": "Each crop stands at the decade of the first year its book's date gives; a date given only as before a year stands at that year. Dates come from the catalogues and editions cited with each record. The bars draw the whole span and their counts to scale; in the strip below them, fifty years or more with no crop are folded and marked.",
   "chronology.hutime": "Japanese dates converted with HuTime ↗",
   "chronology.gap": "No crop in {range}"
 }

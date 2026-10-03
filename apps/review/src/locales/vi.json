@@ -818,7 +818,7 @@
   "chronology.bar": "{decade}: {count}",
   "chronology.empty": "Chưa có tự hình nào của chữ này được ghi năm.",
   "chronology.empty.composed": "Chưa có sách nào của chữ này được ghi năm soạn.",
-  "chronology.method": "Mỗi tự hình đặt ở thập niên mà niên đại của sách bắt đầu; nếu niên đại là một khoảng, đặt ở năm đầu. Niên đại lấy theo mục lục và các nguồn ghi ở mỗi bản ghi. Phần trên vẽ cả khoảng năm, mỗi thập niên bằng nhau; ở phần dưới, những khoảng nhiều thập niên không có tự hình được thu lại và đánh dấu.",
+  "chronology.method": "Mỗi tự hình đặt ở thập niên của năm đầu mà niên đại của sách ghi; nếu niên đại chỉ ghi trước một năm, đặt ở năm đó. Niên đại lấy theo mục lục và các nguồn ghi ở mỗi bản ghi. Phần trên vẽ cả khoảng năm và số tự hình, mỗi thập niên bằng nhau; ở phần dưới, những khoảng nhiều thập niên không có tự hình được thu lại và đánh dấu.",
   "chronology.hutime": "Đổi lịch Nhật: HuTime ↗",
   "chronology.gap": "Không có tự hình trong {range}"
 }

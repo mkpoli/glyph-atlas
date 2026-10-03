@@ -836,7 +836,7 @@
   "chronology.bar": "{decade}：{count}",
   "chronology.empty": "此字的字形尚无年份记录。",
   "chronology.empty.composed": "此字所在典籍尚无成书年份记录。",
-  "chronology.method": "每个字形置于其典籍年代开始的十年；年代为一段时间的，置于其起始之年。年代依据各记录所列的目录与整理本。上方柱状图按同一比例显示全部年代；下方条带中，五十年以上没有字形的时段折叠并标出。",
+  "chronology.method": "每个字形置于其典籍年代所记最早一年所在的十年；只记“某年以前”的，置于该年。年代依据各记录所列的目录与整理本。上方柱状图按同一比例显示全部年代与字形数；下方条带中，五十年以上没有字形的时段折叠并标出。",
   "chronology.hutime": "日本年号换算：HuTime ↗",
   "chronology.gap": "{range}：无字形"
 }

@@ -835,7 +835,7 @@
   "chronology.bar": "{decade}：{count}",
   "chronology.empty": "此字之形，猶無年可考。",
   "chronology.empty.composed": "此字諸書，文成之年無考。",
-  "chronology.method": "字形各置於其書年次所始之十年；年有起訖者，置於其起。年次據各錄所舉之目錄與校本。上圖盡其年次而等其尺；下列五十年以上無形者，摺而標之。",
+  "chronology.method": "形置於其書所記初年之十年；但云某年以前者，置於其年。年次據各錄所舉之目錄與校本。上圖年次與數皆等其尺；下列五十年以上無形者，摺而標之。",
   "chronology.hutime": "和曆換算：HuTime ↗",
   "chronology.gap": "{range}：無形"
 }

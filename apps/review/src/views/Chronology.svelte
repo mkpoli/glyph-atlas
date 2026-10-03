@@ -70,10 +70,13 @@
   // The overview names every century it has room for, at least 44 pixels apart.
   const tickStep = $derived(Math.max(1, Math.ceil(centuries.length * 44 / Math.max(1, overviewWidth))))
   const jump = decade => track?.scrollTo({ left: Math.max(0, (strip.at.get(decade) ?? 0) - DECADE), behavior: 'smooth' })
-  // The gallery of one decade's crops, oldest first.
+  // The gallery of one decade's crops, oldest first, in the same style group. The gallery places crops
+  // by their copy's date and narrows by style alone, so with the text's date, a production or a script
+  // chosen it would show other crops than the count, and the count links nowhere.
+  const linkable = $derived(chosen.axis !== 'composed' && !chosen.production && !chosen.script)
   const decadeGallery = decade => localize(characterAddress(card.code_point, { scope: chosen.scope === 'grapheme' ? 'family' : 'exact',
-    order: 'year', years: `${decade}-${decade + 9}` }))
-  const undatedGallery = $derived(localize(characterAddress(card.code_point, { scope: chosen.scope === 'grapheme' ? 'family' : 'exact', years: 'undated' })))
+    style: chosen.style, order: 'year', years: `${decade}-${decade + 9}` }))
+  const undatedGallery = $derived(localize(characterAddress(card.code_point, { scope: chosen.scope === 'grapheme' ? 'family' : 'exact', style: chosen.style, years: 'undated' })))
   const title = item => {
     const date = item.dating?.[chosen.axis === 'composed' ? 'composed' : 'witness']
     const work = typeof item.source === 'string' ? item.source : item.source?.title
@@ -132,7 +135,7 @@
       <div class="overview-bars">
         {#each buckets as bucket (bucket.decade)}
           <button class="bar" style:left="{share(bucket.decade)}%" style:width="max(2px, {share(from + 10)}%)"
-                  style:height="{Math.max(2, Math.sqrt(count(bucket) / most) * 44)}px" onclick={() => jump(bucket.decade)}
+                  style:height="{Math.max(2, count(bucket) / most * 44)}px" tabindex="-1" onclick={() => jump(bucket.decade)}
                   aria-label={t('chronology.bar', { decade: decadeName(bucket.decade), count: count(bucket) })} title={t('chronology.bar', { decade: decadeName(bucket.decade), count: count(bucket) })}></button>
         {/each}
       </div>
@@ -145,12 +148,14 @@
       <div class="track-inner" style:width="{strip.width}px">
         {#each strip.lines as line (line.year)}<span class="century" class:faint={!line.century} style:left="{line.x}px"><span>{formatYear(line.year)}</span></span>{/each}
         {#each strip.gaps as gap (gap.from)}<span class="gap" style:left="{gap.x}px" style:width="{GAP}px" title={dateLabel({ start: gap.from, end: gap.to, precision: 'years' })}
-          aria-label={t('chronology.gap', { range: dateLabel({ start: gap.from, end: gap.to, precision: 'years' }) })}><span>{formatYear(gap.from)}–{formatYear(gap.to + 1)}</span></span>{/each}
+          role="img" aria-label={t('chronology.gap', { range: dateLabel({ start: gap.from, end: gap.to, precision: 'years' }) })}><span>{formatYear(gap.from)}–{formatYear(gap.to)}</span></span>{/each}
         {#each buckets as bucket (bucket.decade)}
           <div class="decade" style:left="{strip.at.get(bucket.decade)}px" style:width="{DECADE}px">
-            <a class="decade-count" href={decadeGallery(bucket.decade)} title={t('chronology.bar', { decade: decadeName(bucket.decade), count: count(bucket) })}>{formatNumber(count(bucket))}</a>
+            {#if linkable}<a class="decade-count" href={decadeGallery(bucket.decade)} title={t('chronology.bar', { decade: decadeName(bucket.decade), count: count(bucket) })}
+              aria-label={t('chronology.bar', { decade: decadeName(bucket.decade), count: count(bucket) })}>{formatNumber(count(bucket))}</a>
+            {:else}<span class="decade-count" title={t('chronology.bar', { decade: decadeName(bucket.decade), count: count(bucket) })}>{formatNumber(count(bucket))}</span>{/if}
             {#each bucket.items as item (item.id)}{@render crop(item)}{/each}
-            {#if count(bucket) > bucket.items.length}<a class="decade-more" href={decadeGallery(bucket.decade)}>+{formatNumber(count(bucket) - bucket.items.length)}</a>{/if}
+            {#if count(bucket) > bucket.items.length}{#if linkable}<a class="decade-more" href={decadeGallery(bucket.decade)}>+{formatNumber(count(bucket) - bucket.items.length)}</a>{:else}<span class="decade-more">+{formatNumber(count(bucket) - bucket.items.length)}</span>{/if}{/if}
           </div>
         {/each}
       </div>
@@ -163,7 +168,7 @@
     <section class="undated">
       <h2>{t('date.noYear')} <small>{formatNumber(undated)}</small></h2>
       <div class="undated-crops">{#each axis.undated.items as item (item.id)}{@render crop(item)}{/each}
-        {#if undated > axis.undated.items.length}<a class="decade-more" href={undatedGallery}>+{formatNumber(undated - axis.undated.items.length)}</a>{/if}</div>
+        {#if undated > axis.undated.items.length}{#if linkable}<a class="decade-more" href={undatedGallery}>+{formatNumber(undated - axis.undated.items.length)}</a>{:else}<span class="decade-more">+{formatNumber(undated - axis.undated.items.length)}</span>{/if}{/if}</div>
     </section>
   {/if}
 

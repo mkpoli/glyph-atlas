@@ -819,7 +819,7 @@
   "chronology.bar": "{decade}: {count}",
   "chronology.empty": "𣗓𣎏字形𱜢𧵑𡨸呢特𥱬𢆥。",
   "chronology.empty.composed": "𣗓𣎏冊𱜢𧵑𡨸呢特𥱬𢆥撰。",
-  "chronology.method": "每字形撻於十年𦓡年代𧵑冊扒頭；裊年代羅𠬠曠，撻於𢆥頭。年代𥙩蹺目錄吧各源𥱬於每本𥱬。分𨕭𦘧哿曠𢆥，每十年憑𦣗；於分𠁑，仍曠𡗉十年空𣎏字形特收吏吧打唒。",
+  "chronology.method": "每字形撻於十年𧵑𢆥頭𦓡年代𧵑冊𥱬；裊年代只𥱬𠓀𠬠𢆥，撻於𢆥妬。年代𥙩蹺目錄吧各源𥱬於每本𥱬。分𨕭𦘧哿曠𢆥吧數字形，每十年憑𦣗；於分𠁑，仍曠𡗉十年空𣎏字形特收吏吧打唒。",
   "chronology.hutime": "對曆日：HuTime ↗",
   "chronology.gap": "空𣎏字形𥪝{range}"
 }
