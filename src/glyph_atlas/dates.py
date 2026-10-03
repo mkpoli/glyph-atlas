@@ -35,8 +35,8 @@ from .schema import DateClaim
 #: printing; a manuscript by its copying, then by what its colophons say.
 WITNESS_ORDER = {
     "handwritten": ("copied", "colophon", "produced", "annotated", "printed", "edition"),
-    "printed": ("printed", "edition", "produced", "colophon", "copied", "annotated"),
-    "unknown": ("copied", "printed", "produced", "colophon", "edition", "annotated"),
+    "printed": ("edition", "printed", "produced", "colophon", "copied", "annotated"),
+    "unknown": ("copied", "edition", "printed", "produced", "colophon", "annotated"),
 }
 #: Tiers in the order a disagreement is settled.
 TIER_ORDER = ("attested", "editorial", "derived")
@@ -47,12 +47,15 @@ RESOLVER = "dates-1"
 
 _KANJI_DIGITS = {"〇": 0, "零": 0, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
 _NUMBER = r"(?:元|\d+|[〇零一二三四五六七八九十]+)"
-#: A run of CJK characters followed by a year: the run ends with the era's name.
-_ERA_YEAR = re.compile(rf"(?P<run>[㐀-鿿々]{{2,8}}?)(?P<year>{_NUMBER})(?=年|[^\d〇零一二三四五六七八九十]|$)"
-                       rf"(?:年)?(?:(?P<leap>閏)?(?P<month>{_NUMBER})月(?:(?P<day>{_NUMBER})日)?)?")
+#: What may follow an era year: 年, a date's own words (刊, 写, 序 …), a bracket, a separator or the end.
+#: 文化三巻 is volume three of a work named 文化…, no date.
+_YEAR_END = r"(?=年|[刊写寫序跋成版板奥奧識以頃ご後再増補新印中・、，,。(（)）\[\]［］/\-~〜～\s]|$)"
+#: An era year after its era's name, with an optional month and day.
+_AFTER_ERA = re.compile(rf"(?P<year>{_NUMBER}){_YEAR_END}(?:年)?(?:(?P<leap>閏)?(?P<month>{_NUMBER})月(?:(?P<day>{_NUMBER})日)?)?")
 #: 同二 in a list of editions: the era named before.
-_SAME_ERA = re.compile(rf"同(?P<year>{_NUMBER})(?=年|[^\d〇零一二三四五六七八九十]|$)")
+_SAME_ERA = re.compile(rf"(?:(?<=^)|(?<=[、，,・\s]))同(?P<year>{_NUMBER}){_YEAR_END}")
 _SAME_ERA_RANGE = re.compile(rf"\s*[-–~〜～]\s*(?P<year>{_NUMBER})年?(?![\d\u3400-\u9fff])")
+_CJK = re.compile(r"[\u3400-\u9fff々]")
 #: NDL's abbreviated modern eras: 明17.6, 昭11.
 _ABBREVIATED = {"明": "明治", "大": "大正", "昭": "昭和", "平": "平成"}
 _ABBREVIATED_YEAR = re.compile(r"(?<![㐀-鿿])(?P<era>[明大昭平])(?P<year>\d{1,2})(?:\.(?P<month>\d{1,2}))?(?!\d)")
@@ -62,14 +65,15 @@ _ISO_DAY = re.compile(r"(?<!\d)(?P<y>\d{4})-(?P<m>\d{2})-(?P<d>\d{2})(?!\d)")
 _ISO_MONTH = re.compile(r"(?<!\d)(?P<y>\d{4})[-.](?P<m>\d{1,2})(?![\d-])")
 _RANGE = re.compile(r"(?<!\d)(?P<a>\d{3,4})\s*[-–—~〜～]\s*(?P<b>\d{2,4})(?![\d-])")
 _CENTURY_DASHES = re.compile(r"(?<!\d)(?P<c>\d{2})--(?!\d)")
-_DECADE_DASH = re.compile(r"(?<!\d)(?P<d>\d{3})-(?![\d-])")
-_YEAR = re.compile(r"(?<![\d.])(?P<y>\d{3,4})(?![\d])")
-_CENTURY = re.compile(r"(?<!\d)(?P<a>\d{1,2})(?:\s*(?:世紀|세기|C\b|th|st|nd|rd))?\s*[-–~〜～]\s*(?P<b>\d{1,2})\s*(?:世紀|세기|C\b|th c|st c|nd c|rd c)"
-                      r"|(?<!\d)(?P<c>\d{1,2})\s*(?:世紀|세기|C\b|th century|st century|nd century|rd century|th c\.?|st c\.?|nd c\.?|rd c\.?)",
-                      re.IGNORECASE)
+_DECADE_DASH = re.compile(r"(?<!\d)(?P<d>\d{3})-(?![\d-]|\s*\d)")
+#: A bare year, never a count: 200丁, 3巻 and 106コマ are leaves, volumes and frames.
+_YEAR = re.compile(r"(?<![\d.])(?P<y>\d{3,4})(?!\d|\s*(?:丁|巻|冊|頁|枚|コマ|cm|mm|号|番|葉|張|部|帖|軸|点|種|ページ|p\b))")
+_CENTURY_WORD = r"(?:世紀|세기|(?-i:C)\b|th century|st century|nd century|rd century|th c\.?|st c\.?|nd c\.?|rd c\.?)"
+_CENTURY = re.compile(rf"(?<!\d)(?P<a>\d{{1,2}})(?:\s*(?:世紀|세기|th|st|nd|rd))?\s*[-–~〜～]\s*(?P<b>\d{{1,2}})\s*{_CENTURY_WORD}"
+                      rf"|(?<!\d)(?P<c>\d{{1,2}})\s*{_CENTURY_WORD}", re.IGNORECASE)
 _PERIOD = re.compile(r"[㐀-鿿]{1,4}(?:時代|前期|中期|後期|末期|初期|中頃|中葉)")
 
-_CIRCA = re.compile(r"頃|ごろ|\bca\.|\bc\.|circa|\bcirca\b|경$|약\s", re.IGNORECASE)
+_CIRCA = re.compile(r"頃|ごろ|\bca\.|(?<![a-z])c\.\s*\d|\bcirca\b|경$|약\s", re.IGNORECASE)
 _UNCERTAIN = re.compile(r"\?|？|推定|추정|カ\]|か\]")
 #: 以後 and 以前 qualify a date they follow at the end of the text (嘉元元以後), not a word inside it
 #: (明治検定以前の教科書).
@@ -79,12 +83,13 @@ _BEFORE = re.compile(r"(?:以前|이전)\s*[)\]）］]?\s*$|^\s*before\b", re.IG
 #: Words that say what a date dates, checked in this order.
 KIND_WORDS = (
     ("annotated", re.compile(r"加点|加點|訓点|訓點")),
-    ("exemplar", re.compile(r"元奥書|本奥書|底本|(?:刊|版|本)の(?:再版|補刻|再校|影写|覆刻|翻刻|後印|後刷)|の影写|の写")),
+    ("exemplar", re.compile(r"元奥書|本奥書|底本|(?:刊|版|本)の(?:再版|補刻|再校|影写|覆刻|翻刻|後印|後刷)|の影写|の写"
+                            r"|(?:板|版|刊|刊本)(?:写|寫)|影写|影寫|透写|模写|臨写")),
     ("edition", re.compile(r"後印|後刷|再刷|求版|再版|補刻|覆刻|再刻|増補")),
     ("copied", re.compile(r"書写|書寫|筆写|筆寫|写|寫|필사|copied")),
     ("colophon", re.compile(r"奥書|奧書|識語|序|跋|刊記|奥付")),
     ("printed", re.compile(r"刊|版|刷|印行|発行|發行|出版|간행|간|published|printed")),
-    ("composed", re.compile(r"成立|著|撰|composed")),
+    ("composed", re.compile(r"成立|著|撰|composed|(?<=[\d〇一二三四五六七八九十元])成")),
 )
 
 
@@ -118,6 +123,7 @@ class Calendar(Protocol):
 
     def era(self, name: str) -> tuple[str, str] | None: ...
     def year(self, era: str, year: int) -> tuple[str, str] | None: ...
+    def month(self, era: str, year: int, month: int, leap: bool) -> tuple[str, str] | None: ...
     def day(self, era: str, year: int, month: int, leap: bool, day: int) -> str | None: ...
     def query(self, kind: str, value: str) -> str: ...
 
@@ -131,6 +137,10 @@ class EraDate:
     month: int | None = None
     leap: bool = False
     day: int | None = None
+
+    @property
+    def month_text(self) -> str:
+        return f"{self.era}{self.year}年{'閏' if self.leap else ''}{self.month}月"
 
     @property
     def text(self) -> str:
@@ -176,26 +186,44 @@ class Interval:
     note: str | None = None
 
 
+def _era_at(text: str, i: int, calendar: Calendar) -> tuple[str, re.Match] | None:
+    """The era name starting at `i` and the year after it, the longest name first."""
+    for n in (4, 3, 2):
+        name = text[i:i + n]
+        if len(name) == n and all(_CJK.match(c) for c in name) and calendar.era(name) \
+                and (found := _AFTER_ERA.match(text, i + n)):
+            return name, found
+    return None
+
+
 def _eras_in(text: str, calendar: Calendar | None) -> tuple[list[EraDate], str]:
-    """The Japanese era dates of `text`, and `text` with them blanked out."""
+    """The Japanese era dates of `text`, and `text` with them blanked out.
+
+    Every position is tried as the start of an era name, so a name after other words (書写元禄三年) or one
+    that starts with 元 (元和, 元禄) is found as well as one at the start.
+    """
     found: list[EraDate] = []
     blanked = text
     if calendar is None:
         return found, blanked
     spans: list[tuple[int, int]] = []
-    for match in _ERA_YEAR.finditer(text):
-        run = match.group("run")
-        era = next((run[-n:] for n in (4, 3, 2) if len(run) >= n and calendar.era(run[-n:])), None)
-        if era is None:
+    i = 0
+    while i < len(text):
+        hit = _era_at(text, i, calendar) if _CJK.match(text[i]) else None
+        if hit is None:
+            i += 1
             continue
+        era, match = hit
         month = match.group("month")
         found.append(EraDate(era, number(match.group("year")), number(month) if month else None,
                              bool(match.group("leap")), number(match.group("day")) if match.group("day") else None))
-        spans.append((match.start("run") + len(run) - len(era), match.end()))
+        spans.append((i, match.end()))
+        i = match.end()
         # 明治6年-13年: a range within one era names the era once.
-        if until := _SAME_ERA_RANGE.match(text, match.end()):
+        if until := _SAME_ERA_RANGE.match(text, i):
             found.append(EraDate(era, number(until.group("year"))))
             spans.append((until.start(), until.end()))
+            i = until.end()
     for match in _ABBREVIATED_YEAR.finditer(text):
         if any(a <= match.start() < b for a, b in spans):
             continue
@@ -206,7 +234,7 @@ def _eras_in(text: str, calendar: Calendar | None) -> tuple[list[EraDate], str]:
         spans.append((match.start(), match.end()))
     if found:
         for match in _SAME_ERA.finditer(text):
-            before = [f for f, (a, _) in zip(found, spans, strict=False) if a < match.start()]
+            before = [f for f, (a, _) in sorted(zip(found, spans, strict=True), key=lambda x: x[1]) if a < match.start()]
             if before:
                 found.append(EraDate(before[-1].era, number(match.group("year"))))
                 spans.append((match.start(), match.end()))
@@ -237,6 +265,9 @@ def read(text: str, calendar: Calendar | None = None) -> Reading:
         return Reading(eras=tuple(eras), spans=tuple(spans), stated=stated, qualifier=qualifier, uncertain=uncertain)
     if (m := _ISO_DAY.search(rest)) and 1 <= int(m.group("m")) <= 12:
         y = int(m.group("y"))
+        if m.group("m") == "01" and m.group("d") == "01":
+            # W3CDTF pads a year to its first day (1777-01-01 beside 1777(序)); it states a year.
+            return Reading(years=(y, y), precision="year", qualifier=qualifier, uncertain=uncertain)
         return Reading(years=(y, y), precision="day", day=m.group(0), qualifier=qualifier, uncertain=uncertain)
     if m := _CENTURY.search(rest):
         first = int(m.group("a") or m.group("c"))
@@ -300,6 +331,15 @@ def interval(reading: Reading, calendar: Calendar | None = None) -> Interval | N
             days.append(found_day)
             queries.append(calendar.query("date", era.text))
             continue
+        if era.month:
+            # A month is placed by its own first day: 康応元年12月 began on 1389-12-18.
+            found_month = calendar.month(era.era, era.year, era.month, era.leap)
+            if found_month is None:
+                return None
+            starts.append(_year(found_month[0]))
+            ends.append(_year(found_month[0]))
+            queries.append(calendar.query("month", era.month_text))
+            continue
         found = calendar.year(era.era, era.year)
         if found is None:
             return None
@@ -316,8 +356,12 @@ def interval(reading: Reading, calendar: Calendar | None = None) -> Interval | N
         precision = "day" if era.month and era.day else "month" if era.month else "year"
     note = None
     if reading.stated and len(reading.eras) == 1 and not reading.spans and reading.stated[0] != start:
-        note = f"the source gives {reading.stated[0]}; HuTime places {reading.eras[0].text} in {start}"
-        start = end = reading.stated[0]
+        if abs(reading.stated[0] - start) <= 1:
+            # A lunisolar year runs into the next Gregorian one; the source's own reading stands.
+            note = f"the source gives {reading.stated[0]}; HuTime places {reading.eras[0].text} in {start}"
+            start = end = reading.stated[0]
+        else:
+            note = f"the source's bracketed {reading.stated[0]} is not {reading.eras[0].text}, which HuTime places in {start}"
     conversion = {"service": "hutime", "query": queries[0] if len(queries) == 1 else "\n".join(queries)}
     return _qualified(Interval(start, end, precision, reading.qualifier, reading.uncertain,
                                day=days[0] if len(days) == 1 and precision == "day" else None,
@@ -390,6 +434,10 @@ class HuTime:
         found = self._ask("year", f"{era}{year}年")
         return tuple(found) if found else None
 
+    def month(self, era: str, year: int, month: int, leap: bool) -> tuple[str, str] | None:
+        found = self._ask("month", EraDate(era, year, month, leap).month_text)
+        return tuple(found) if found else None
+
     def day(self, era: str, year: int, month: int, leap: bool, day: int) -> str | None:
         return self._ask("date", EraDate(era, year, month, leap, day).text)
 
@@ -425,12 +473,15 @@ class HuTime:
 
 
 def era_candidates(text: str) -> set[str]:
-    """Every string in `text` that could be a Japanese era name, for asking HuTime in one batch."""
+    """Every string in `text` that could be a Japanese era name, for asking HuTime in one batch: each run
+    of two to four CJK characters followed by a year, and each named before 年間 or 中."""
     value = normalise(text)
     found: set[str] = set()
-    for match in _ERA_YEAR.finditer(value):
-        run = match.group("run")
-        found.update(run[-n:] for n in (4, 3, 2) if len(run) >= n)
+    for i in range(len(value)):
+        for n in (2, 3, 4):
+            name = value[i:i + n]
+            if len(name) == n and all(_CJK.match(c) for c in name) and _AFTER_ERA.match(value, i + n):
+                found.add(name)
     for match in _ERA_SPAN.finditer(value):
         names = re.split(r"[・、]", match.group("eras"))
         found.update(names)
@@ -440,20 +491,22 @@ def era_candidates(text: str) -> set[str]:
     return found
 
 
-def year_questions(text: str, calendar: Calendar) -> tuple[set[str], set[str]]:
-    """The era years and days `text` asks about, once its era names are known to `calendar`."""
-    reading = read(text, calendar)
-    years = {f"{e.era}{e.year}年" for e in reading.eras if not (e.month and e.day)}
-    days = {e.text for e in reading.eras if e.month and e.day}
-    return years, days
+def year_questions(text: str, calendar: Calendar) -> dict[str, set[str]]:
+    """The era years, months and days `text` asks about once its era names are known to `calendar`, by kind."""
+    eras = read(text, calendar).eras
+    return {"year": {f"{e.era}{e.year}年" for e in eras if not e.month},
+            "month": {e.month_text for e in eras if e.month and not e.day},
+            "date": {e.text for e in eras if e.month and e.day}}
 
 
 # --- Claims, resolution and labels --------------------------------------------------------------
 
 
-def claim_id(document: str, source: str, locator: str, text: str, kind: str) -> str:
-    """A claim's id, which is its assertion's id in the ledger: the same statement always has the same one."""
-    digest = hashlib.sha256(f"{document}\x1f{source}\x1f{locator}\x1f{text}\x1f{kind}".encode()).hexdigest()
+def claim_id(document: str, source: str, locator: str, kind: str, value: dict[str, Any]) -> str:
+    """A claim's id, the key of its assertion in the ledger: the same statement read the same way always has
+    the same one, and a statement read anew (a better reading, a conversion corrected) has another."""
+    digest = hashlib.sha256(f"{document}\x1f{source}\x1f{locator}\x1f{kind}\x1f"
+                            f"{json.dumps(value, ensure_ascii=False, sort_keys=True)}".encode()).hexdigest()
     return f"dt:{digest[:24]}"
 
 
@@ -472,17 +525,20 @@ def claim(document: str, text: str, *, kind: str, scope: str, tier: str, source:
     if years is not None and (years[0] is not None or years[1] is not None):
         # The source's own reading of its words stands; ours only supplies what it leaves out.
         given = precision or (found.precision if found else "year" if years[0] == years[1] else "years")
-        found = replace(found, start=years[0], end=years[1], precision=given) if found else \
-            Interval(years[0], years[1], given)
+        # The years are the importer's, not a conversion of ours; a qualifier stays only where they agree with it.
+        qualifier = found.qualifier if found and (
+            (found.qualifier == "after" and years[1] is None) or (found.qualifier == "before" and years[0] is None)
+            or found.qualifier == "circa") else None
+        found = Interval(years[0], years[1], given, qualifier, found.uncertain if found else False,
+                         calendar=found.calendar if found else "unstated")
     if found is None:
         return None
-    notes = "; ".join(n for n in (note, found.note) if n) or None
-    return DateClaim(
-        id=claim_id(document, source, locator, text, kind), document=document, kind=kind, scope=scope, text=text,
-        start=found.start, end=found.end, precision=found.precision, qualifier=found.qualifier,
-        uncertain=found.uncertain, day=found.day, calendar=found.calendar, conversion=found.conversion,
-        tier=tier, source=source, locator=locator, note=notes,
-    )
+    value = {"scope": scope, "text": text, "start": found.start, "end": found.end, "precision": found.precision,
+             "qualifier": found.qualifier, "uncertain": found.uncertain, "day": found.day, "calendar": found.calendar,
+             "conversion": found.conversion, "tier": tier,
+             "note": "; ".join(n for n in (note, found.note) if n) or None}
+    return DateClaim(id=claim_id(document, source, locator, kind, value), document=document, kind=kind,
+                     source=source, locator=locator, **value)
 
 
 @dataclass(frozen=True)
@@ -523,13 +579,18 @@ def _overlap(a: DateClaim, b: DateClaim) -> bool:
     return lo(a) <= hi(b) and lo(b) <= hi(a)
 
 
-def _pick(axis: str, candidates: Sequence[DateClaim]) -> Resolved | None:
-    dated = [c for c in candidates if c.start is not None or c.end is not None]
+def _dated(c: DateClaim) -> bool:
+    return c.start is not None or c.end is not None
+
+
+def _pick(axis: str, candidates: Sequence[DateClaim], others: Sequence[DateClaim] = ()) -> Resolved | None:
+    """The best of `candidates`, disputed when it does not overlap another of them or one of `others`."""
+    dated = [c for c in candidates if _dated(c)]
     if not dated:
         return None
     ranked = sorted(dated, key=lambda c: (_rank(c), c.id))
     best = ranked[0]
-    disagree = [c for c in ranked[1:] if not _overlap(best, c)]
+    disagree = [c for c in ranked[1:] + [o for o in others if _dated(o)] if not _overlap(best, c)]
     status = "disputed" if disagree else "agreed" if len(ranked) > 1 else "single"
     return Resolved(axis=axis, kind=best.kind, start=best.start, end=best.end, precision=best.precision,
                     qualifier=best.qualifier, uncertain=best.uncertain, text=best.text, status=status,
@@ -543,13 +604,15 @@ def resolve(claims: Iterable[DateClaim], production: str = "unknown") -> dict[st
     The witness axis takes the first kind of `WITNESS_ORDER` for how the document was made that has a
     dated claim about this copy. Within the kind, the attested claim wins over the editorial and the
     derived one, then a holder's own catalogue over an aggregator's, then the more precise. A claim that
-    does not overlap the chosen one makes the date `disputed`; every claim stays listed.
+    does not overlap the chosen one makes the date `disputed`, and so does a date the holder gives the
+    item (`produced`) that does not overlap it; every claim stays listed.
     """
     claims = list(claims)
     order = WITNESS_ORDER.get(production.split("/")[0], WITNESS_ORDER["unknown"])
     found: dict[str, Resolved] = {}
     for kind in order:
-        picked = _pick("witness", [c for c in claims if c.scope == "witness" and c.kind == kind])
+        produced = [c for c in claims if c.scope == "witness" and c.kind == "produced"] if kind != "produced" else []
+        picked = _pick("witness", [c for c in claims if c.scope == "witness" and c.kind == kind], produced)
         if picked:
             found["witness"] = picked
             break

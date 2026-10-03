@@ -10,7 +10,7 @@ ERAS = {
     "寛政": ("1789-02-19", "1801-03-18"), "天明": ("1781-04-25", "1789-02-19"), "文化": ("1804-02-11", "1818-05-26"),
     "慶長": ("1596-12-16", "1615-09-05"), "元和": ("1615-09-05", "1624-04-17"), "嘉元": ("1303-09-16", "1307-01-18"),
     "明治": ("1868-10-23", "1912-07-30"), "享和": ("1801-03-19", "1804-03-22"), "元禄": ("1688-10-23", "1704-04-16"),
-    "天平勝宝": ("0749-08-19", "0757-09-06"),
+    "天平勝宝": ("0749-08-19", "0757-09-06"), "康応": ("1389-03-07", "1390-04-12"),
 }
 #: Era years as HuTime gives them; 寛政3年 began on 1791-02-03.
 YEARS = {"寛政3年": ("1791-02-03", "1792-01-23"), "天明7年": ("1787-01-19", "1788-02-06"),
@@ -19,6 +19,7 @@ YEARS = {"寛政3年": ("1791-02-03", "1792-01-23"), "天明7年": ("1787-01-19"
          "文化1年": ("1804-01-12", "1805-01-30"), "明治17年": ("1884-01-01", "1884-12-31"),
          "元禄15年": ("1702-01-28", "1703-02-16"), "天平勝宝2年": ("0750-02-17", "0751-02-06")}
 DAYS = {"元禄15年閏8月1日": "1702-09-22", "元禄15年8月1日": "1702-08-23"}
+MONTHS = {"明治17年6月": ("1884-06-01", "1884-06-30"), "康応1年12月": ("1389-12-18", "1390-01-16")}
 
 
 class Calendar:
@@ -26,7 +27,7 @@ class Calendar:
 
     def __new__(cls, tmp_path: Path) -> dates.HuTime:
         answers = {f"era|{k}": list(v) for k, v in ERAS.items()} | {f"year|{k}": list(v) for k, v in YEARS.items()} \
-            | {f"date|{k}": v for k, v in DAYS.items()}
+            | {f"date|{k}": v for k, v in DAYS.items()} | {f"month|{k}": list(v) for k, v in MONTHS.items()}
         (tmp_path / "hutime").mkdir(exist_ok=True)
         (tmp_path / "hutime" / "answers.json").write_text(json.dumps(answers, ensure_ascii=False), encoding="utf-8")
         return dates.HuTime(tmp_path / "hutime", offline=True)
@@ -133,10 +134,9 @@ def make(kind, start, end=None, *, tier="attested", source="kokusho", scope="wit
     from glyph_atlas.schema import DateClaim
 
     end = start if end is None else end
-    text = text or str(start)
-    return DateClaim(id=dates.claim_id("d", source, f"{source}#{kind}", text, kind), document="d", kind=kind,
-                     scope=scope, text=text, start=start, end=end, precision=precision, tier=tier, source=source,
-                     locator=f"{source}#{kind}")
+    value = {"scope": scope, "text": text or str(start), "start": start, "end": end, "precision": precision, "tier": tier}
+    return DateClaim(id=dates.claim_id("d", source, f"{source}#{kind}", kind, value), document="d", kind=kind,
+                     source=source, locator=f"{source}#{kind}", **value)
 
 
 def test_a_manuscript_is_dated_by_its_copying_and_a_printed_book_by_its_printing():
@@ -279,3 +279,54 @@ def test_a_word_ending_in_before_does_not_qualify_the_date(calendar):
 def test_an_era_year_range(calendar):
     calendar.answers |= {"year|明治6年": ["1873-01-01", "1873-12-31"], "year|明治13年": ["1880-01-01", "1880-12-31"]}
     assert reading("（明治6年-13年）", calendar) == (1873, 1880, "years", None)
+
+
+def test_an_era_after_other_words_or_starting_with_its_own_year_word(calendar):
+    calendar.answers |= {"year|元禄3年": ["1690-02-08", "1691-01-28"]}
+    assert reading("書写元禄三年", calendar) == (1690, 1690, "year", None)
+    assert reading("文化三巻", calendar) is None
+
+
+def test_a_month_is_placed_by_its_own_first_day(calendar):
+    assert reading("康応元年12月", calendar) == (1389, 1389, "month", None)
+
+
+@pytest.mark.parametrize(("text", "expected"), [
+    ("1777-01-01", (1777, 1777, "year", None)),
+    ("18th c.", (1701, 1800, "century", None)),
+    ("vol. 3 c. 1800", (1800, 1800, "year", "circa")),
+    ("827- 835", (827, 835, "years", None)),
+    ("200丁", None),
+])
+def test_counts_and_padding_are_not_dates(text, expected, calendar):
+    assert reading(text, calendar) == expected
+
+
+def test_a_bracketed_number_that_is_not_the_eras_year_does_not_replace_it(calendar):
+    found = dates.interval(dates.read("寛政三年 [123]", calendar), calendar)
+    assert found.start == 1791 and "is not 寛政3年" in found.note
+
+
+def test_a_copy_of_a_printing_is_dated_by_its_exemplar():
+    assert dates.kind_of("寛文７年板写", "copied") == "exemplar"
+
+
+def test_a_work_date_of_several_events_is_split():
+    assert date_claims.events("寛政四成、同五序、同八刊") == ["寛政四成", "寛政五序", "寛政八刊"]
+    assert [dates.kind_of(e, "composed") for e in date_claims.events("寛政四成、同五序、同八刊")] == ["composed", "colophon", "printed"]
+    assert date_claims.events("寛政四刊（1792）") == ["寛政四刊（1792）"]
+
+
+def test_a_later_impression_dates_a_printed_copy_before_its_first_printing():
+    assert dates.resolve([make("printed", 1755), make("edition", 1764)], "printed")["witness"].start == 1764
+
+
+def test_the_holders_own_date_disputes_another_kind():
+    found = dates.resolve([make("printed", 1834), make("produced", 1900, source="iiif-manifests")], "printed")["witness"]
+    assert (found.start, found.status) == (1834, "disputed")
+
+
+def test_importer_years_carry_no_conversion_of_ours(calendar):
+    found = dates.claim("d", "寛政三年以後", kind="printed", scope="witness", tier="attested", source="s", locator="l",
+                        calendar=calendar, years=(1791, 1795))
+    assert (found.start, found.end, found.qualifier, found.conversion) == (1791, 1795, None, None)
