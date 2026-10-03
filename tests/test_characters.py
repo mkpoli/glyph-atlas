@@ -225,6 +225,19 @@ def test_a_small_kana_is_not_a_form_of_the_kana_it_is_small():
     assert refs.grapheme("U+1B132") == "U+1B132" and refs.grapheme("U+1B155") == "U+1B155"
 
 
+def test_a_voiced_katakana_is_a_form_of_its_hiragana():
+    """バ is ハ + U+3099 and ハ is a form of は, so バ is a form of ば, as ラ is of ら."""
+    for katakana, hiragana in (("U+30D0", "U+3070"), ("U+30D1", "U+3071"), ("U+30AC", "U+304C"),
+                               ("U+30C5", "U+3065"), ("U+30F4", "U+3094")):
+        assert refs.grapheme(hiragana) == hiragana, hiragana
+        assert refs.grapheme(katakana) == hiragana, katakana
+    assert refs.grapheme("U+30E9") == "U+3089", "the plain katakana keep their hiragana"
+    # No hiragana is わ, ゐ, ゑ or を with the mark, so ヷ to ヺ name their own graphemes, and the
+    # iteration marks are not the voicing of a kana.
+    for point in ("U+30F7", "U+30F8", "U+30F9", "U+30FA", "U+309E", "U+30FE"):
+        assert refs.grapheme(point) == point, point
+
+
 def test_no_hentaigana_is_filed_under_a_small_kana():
     for grapheme, members in refs.graphemes().items():
         kinds = {refs.character(member).name for member in members}
