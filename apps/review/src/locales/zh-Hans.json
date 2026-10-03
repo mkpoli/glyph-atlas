@@ -673,6 +673,8 @@
   "account.methods.email": "邮件验证码",
   "account.methods.link": "关联",
   "account.methods.unlink": "解除关联",
+  "account.methods.connected": "已关联",
+  "account.methods.since": "关联于{date}",
   "account.passkeys.title": "通行密钥",
   "account.passkeys.hint": "通行密钥可让你通过设备的解锁方式登录。请为每台使用的设备添加一个。",
   "account.passkeys.add": "添加通行密钥",

@@ -654,6 +654,8 @@
   "account.methods.email": "이메일 코드",
   "account.methods.link": "連結",
   "account.methods.unlink": "連結 解除",
+  "account.methods.connected": "連結됨",
+  "account.methods.since": "{date}에 連結",
   "account.passkeys.title": "패스키",
   "account.passkeys.hint": "機器의 잠금 解除 方式으로 로그인합니다. 使用하는 機器마다 패스키를 追加하세요.",
   "account.passkeys.add": "패스키 追加",

@@ -655,6 +655,8 @@
   "account.methods.email": "Mã qua email",
   "account.methods.link": "Kết nối",
   "account.methods.unlink": "Ngắt kết nối",
+  "account.methods.connected": "Đã kết nối",
+  "account.methods.since": "đã kết nối vào {date}",
   "account.passkeys.title": "Khóa truy cập",
   "account.passkeys.hint": "Dùng khóa truy cập để đăng nhập bằng cách mở khóa thiết bị. Hãy thêm một khóa truy cập cho mỗi thiết bị bạn dùng.",
   "account.passkeys.add": "Thêm khóa truy cập",

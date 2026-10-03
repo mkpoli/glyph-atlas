@@ -666,6 +666,8 @@
   "account.methods.email": "メールでコードを受信",
   "account.methods.link": "連携",
   "account.methods.unlink": "連携解除",
+  "account.methods.connected": "連携済み",
+  "account.methods.since": "{date}に連携",
   "account.passkeys.title": "パスキー",
   "account.passkeys.hint": "パスキーを使うと端末のロックでサインインできます。利用する端末ごとに追加してください。",
   "account.passkeys.add": "パスキーを追加",

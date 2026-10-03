@@ -666,6 +666,8 @@
   "account.methods.email": "電子書簡ニテ符號",
   "account.methods.link": "結ブ",
   "account.methods.unlink": "解ク",
+  "account.methods.connected": "結ビタリ",
+  "account.methods.since": "{date}ニ結ビタリ",
   "account.passkeys.title": "パスキー",
   "account.passkeys.hint": "パスキーハ端末ノ施錠ヲ以テ登入スルモノナリ。用フル端末每ニ一ツ加フベシ。",
   "account.passkeys.add": "パスキーヲ加フ",

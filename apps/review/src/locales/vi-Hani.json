@@ -656,6 +656,8 @@
   "account.methods.email": "碼過email",
   "account.methods.link": "結綏",
   "account.methods.unlink": "𢪰結綏",
+  "account.methods.connected": "㐌結綏",
+  "account.methods.since": "㐌結綏𠓨{date}",
   "account.passkeys.title": "鎖追及",
   "account.passkeys.hint": "用鎖追及底登入憑格𨷑鎖設備。唉添𠬠鎖追及朱每設備伴用。",
   "account.passkeys.add": "添鎖追及",

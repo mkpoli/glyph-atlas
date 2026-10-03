@@ -926,5 +926,7 @@
   "imageSearch.candidates.family": "family",
   "imageSearch.candidates.other": "{percent} may be a character the model does not know. Look under “Looks like, any character”.",
   "imageSearch.results.none": "No crops found.",
-  "imageSearch.megabytes": "{size} MB"
+  "imageSearch.megabytes": "{size} MB",
+  "account.methods.connected": "Connected",
+  "account.methods.since": "connected {date}"
 }

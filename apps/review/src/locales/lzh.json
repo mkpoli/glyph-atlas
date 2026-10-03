@@ -672,6 +672,8 @@
   "account.methods.email": "電郵收碼",
   "account.methods.link": "連",
   "account.methods.unlink": "斷",
+  "account.methods.connected": "已連",
+  "account.methods.since": "連於{date}",
   "account.passkeys.title": "通行密鑰",
   "account.passkeys.hint": "通行密鑰可憑機上解鎖之法登入。凡所用之機，各設其一。",
   "account.passkeys.add": "增設通行密鑰",

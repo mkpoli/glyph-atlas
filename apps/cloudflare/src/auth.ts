@@ -7,6 +7,7 @@ import { APIError } from 'better-auth/api';
 import { admin, anonymous, emailOTP, lastLoginMethod } from 'better-auth/plugins';
 import { passkey } from '@better-auth/passkey';
 import { MAIL, signInMail } from './mail';
+import { recordProfile } from './connections';
 
 export type Viewer = { id: string; name: string; image: string | null; anonymous: boolean; admin: boolean };
 type Auth = ReturnType<typeof build>;
@@ -77,6 +78,11 @@ function build(env: Env, origin: string) {
       '/sign-in/anonymous': { window: 3600, max: 30 },
     } },
     databaseHooks: {
+      // Who an account elsewhere is, read while its token is fresh: on connecting, and on each sign-in.
+      account: {
+        create: { after: async account => { await recordProfile(env, account.id).catch(() => {}) } },
+        update: { after: async account => { if (account?.id) await recordProfile(env, account.id).catch(() => {}) } },
+      },
       user: {
         create: {
           // A sign-in that gives no name (a code by mail) is called `anon-…`; nobody new is named like
