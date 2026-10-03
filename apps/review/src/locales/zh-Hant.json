@@ -83,6 +83,8 @@
   "chips.variantSources": "來源",
   "client.changed": "此字已變更，請重新載入以審閱最新版本。",
   "client.saveFailed": "無法儲存審閱結果。",
+  "client.busy": "資料庫仍在更新，請幾分鐘後再試。",
+  "client.busyRetrying": "資料庫正在更新，正在重試…",
   "client.signInAgain": "登入已失效。請重新登入後儲存。",
   "common.clear": "清除",
   "common.closeReviewer": "關閉審閱視窗",

@@ -12,6 +12,7 @@
   import CorpusDialog from '$components/CorpusDialog.svelte'
   import ExportReviews from '$components/ExportReviews.svelte'
   import CollectionProgress from '$components/CollectionProgress.svelte'
+  import DatabaseStatus from '$components/DatabaseStatus.svelte'
   import SignInDialog from '$components/SignInDialog.svelte'
   import { createInspector, provideInspector } from '$lib/inspector.svelte.js'
   import { prefetchCrop, forgetCrop } from '$lib/cropCache.js'
@@ -118,6 +119,7 @@
 </footer>
 {#if shown}{#if shown.origin === 'corpus'}<CorpusDialog id={shown.id} {preview} {changed} {close} {saved} {previous} {next} {position} {initial} />{:else}<CharacterDialog id={shown.id} {preview} {changed} {close} onVerdict={inspector.onVerdict} {saved} {previous} {next} {position} {initial} />{/if}{/if}
 {#if savedNotice}<div class="save-toast" role="status">✓ {savedNotice}</div>{/if}
+<DatabaseStatus />
 {#if exporting}<ExportReviews close={() => { exporting = false; menuButton?.focus() }} />{/if}
 {#if session.state.signingIn}<SignInDialog close={() => session.state.signingIn = false} />{/if}
 {#if session.state.progress}<CollectionProgress close={() => { session.state.progress = false; menuButton?.focus() }} />{/if}

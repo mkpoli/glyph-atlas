@@ -1,4 +1,5 @@
 import { t } from './i18n.svelte.js'
+import { isBusy, waitOut } from './busy.svelte.js'
 
 // Whoever keeps records read ahead hears of every write, which may have changed any of them.
 const writeListeners = new Set()
@@ -15,15 +16,19 @@ export async function request(path, body, { fetch: send = fetch, ...options } = 
   const writes = body !== undefined && typeof window !== 'undefined'
   const { ensureSignedIn } = writes ? await import('./session.svelte.js') : {}
   if (writes) await ensureSignedIn()
-  let response = await post()
+  const answer = async () => { const response = await post(); return { response, value: await response.json() } }
+  let { response, value } = await answer()
   if (writes) for (const listener of writeListeners) listener()
-  if (writes && response.status === 401) { await ensureSignedIn({ again: true }); response = await post() }
-  const value = await response.json()
+  if (writes && response.status === 401) { await ensureSignedIn({ again: true }); ({ response, value } = await answer()) }
+  // A read the database is too busy for is asked again in the browser, and the page keeps what it
+  // shows meanwhile. A page rendered on the server does not wait: its view reads again itself.
+  if (!writes && typeof window !== 'undefined' && isBusy(response, value)) ({ response, value } = await waitOut(answer, { response, value }, options.signal))
   if (!response.ok) {
     // FastAPI reports a validation failure as a list of problems; show their messages.
     const listed = Array.isArray(value.detail) ? value.detail.map(problem => problem.msg).filter(Boolean).join('; ') : ''
-    const error = new Error(typeof value.detail === 'string' ? value.detail : listed ? listed : response.status === 409
-      ? t('client.changed') : t('client.saveFailed'))
+    const error = new Error(isBusy(response, value) ? t('client.busy') : typeof value.detail === 'string' ? value.detail : listed ? listed
+      : response.status === 409 ? t('client.changed') : t('client.saveFailed'))
+    error.code = value.code
     error.status = response.status
     // A crop a publication retired names the crop that replaced it.
     if (typeof value.replaced_by === 'string') error.replacedBy = value.replaced_by
