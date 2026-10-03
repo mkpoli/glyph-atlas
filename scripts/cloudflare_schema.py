@@ -49,7 +49,7 @@ GUGYEOL = ((0xF67E, 0xF77C),)
 
 # A published corpus row, in the order `corpus_upsert` takes it.
 CORPUS_COLUMNS = ("id", "character", "family", "visual_group", "shuffle", "object", "offset", "size", "production",
-                  "style")
+                  "style", "document")
 
 
 def corpus_upsert(values) -> str:
@@ -57,10 +57,12 @@ def corpus_upsert(values) -> str:
 
     A rewrite updates every column but `named`, which records that a round or review reached the glyph
     and is D1's own: a publication that reset it would deal a named glyph twice until its last part ran.
+    A row with no `document`, from an export made before 0052, keeps the one D1 holds.
     """
     quoted = ("NULL" if v is None else str(v) if isinstance(v, int) else "'" + str(v).replace("'", "''") + "'"
               for v in values)
-    updates = ",".join(f"{c}=excluded.{c}" for c in CORPUS_COLUMNS[1:])
+    updates = ",".join("document=coalesce(excluded.document,corpus_units.document)" if c == "document"
+                       else f"{c}=excluded.{c}" for c in CORPUS_COLUMNS[1:])
     return (f"INSERT INTO corpus_units({','.join(CORPUS_COLUMNS)}) VALUES({','.join(quoted)}) "
             f"ON CONFLICT(id) DO UPDATE SET {updates};")
 

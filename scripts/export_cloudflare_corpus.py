@@ -318,10 +318,10 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
                 document_id = joined.get("document_id") or None
                 written_style = style.resolve_values(row.get("style"), page.get("style"), document_id,
                                                      context.document(document_id or "").get("style"))[0]
-                db.execute("INSERT OR IGNORE INTO corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,style) VALUES(?,?,?,?,?,?,?,?,?,?)", (
+                db.execute("INSERT OR IGNORE INTO corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,style,document) VALUES(?,?,?,?,?,?,?,?,?,?,?)", (
                     row["id"], detail.get("written_character"), family, visual.get("id"),
                     int(hashlib.sha256(row["id"].encode()).hexdigest()[:7], 16), record_name, record_file.tell(), len(raw),
-                    detail.get("production") or "unknown", written_style))
+                    detail.get("production") or "unknown", written_style, document_id))
                 record_file.write(raw)
                 counts[corpus.name] += 1
             if record_file:
