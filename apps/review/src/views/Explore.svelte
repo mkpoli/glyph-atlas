@@ -7,6 +7,7 @@
   import { tileDate } from '../lib/dating.js'
   import VisualGroups from '../components/VisualGroups.svelte'
   import StyleFilter from '../components/StyleFilter.svelte'
+  import PeriodFilter from '../components/PeriodFilter.svelte'
   import { STYLE_GROUPS, styleRank } from '../lib/style.js'
   import { isUnassigned, writtenLabel, visualGroup, matchesVisualGroup, graphemeChar } from '../lib/identity.js'
   import Glyph from '../components/Glyph.svelte'
@@ -21,7 +22,7 @@
   import { NGRAM_KINDS, ngramCounts } from '../lib/ngrams.js'
   import SiteLinks from '../components/SiteLinks.svelte'
   import { catalogue, character, request, randomSeed, number, formatSerial, stored, remember } from '../lib/client.js'
-  import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery } from '../lib/layers.js'
+  import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery, decades } from '../lib/layers.js'
   import { t, around, withText, localName, locale, localize, delocalize } from '../lib/i18n.svelte.js'
   import { characterAddress, collectionAddress, corpusScope, expandFor, scopeFor, styleCounts, unslug } from '../lib/gallery.js'
   import { useSession } from '../lib/session.svelte.js'
@@ -61,6 +62,10 @@
   // The style group the gallery is narrowed to ('' for all), and each list's counts by style group.
   // `styled` is whether the server files crops by style at all.
   let style = $state(opened?.style ?? ''), styled = $state(opened?.styled ?? false)
+  // A gallery placed by its books' dates (`year`, oldest first) instead of by style, and the years it is
+  // narrowed to ('1600-1699', `undated`, or '' for all), with each decade's crops for the period filter.
+  let dateOrder = $state(opened?.order ?? ''), yearRange = $state(opened?.years ?? ''), decadeCounts = $state(null)
+  const dateParams = () => expand === 'variants' ? {} : { order: dateOrder || undefined, years: yearRange || undefined }
   let localStyles = $state(opened?.localStyles ?? null), corpusStyles = $state(opened?.corpusStyles ?? null)
   // Whether the corpus has answered this gallery's first page; a page the server rendered has it.
   let corpusAnswered = $state(Boolean(opened))
@@ -74,7 +79,7 @@
     // While a crop is open the address is the crop's; the list's own entry keeps the list's.
     if (!addressed || page.state.inspect) return
     const [path, search = ''] = (picked?.code_point
-      ? characterAddress(picked.code_point, { scope: scopeFor(expand, picked), visual, style })
+      ? characterAddress(picked.code_point, { scope: scopeFor(expand, picked), visual, style, ...(expand === 'variants' ? {} : { order: dateOrder, years: yearRange }) })
       // Text still being chosen from the candidate list is not a search yet.
       : collectionAddress({ q: choosing ? '' : query.trim(), grapheme, work, group: filter })).split('?')
     const target = localize(path) + (search && '?' + search)
@@ -185,17 +190,27 @@
   // nothing more to bring holds nothing back. A variants widening lists each character in turn, in
   // style order within it, so its two lists are shown one after the other, as are those of a server
   // that files no crop by style.
-  const merged = $derived(styled && !style && expand !== 'variants')
+  // Placed by date, the two lists merge the same way by their books' years, the undated last.
+  const byYear = $derived(dateOrder === 'year' && expand !== 'variants')
+  const merged = $derived(styled && !style && expand !== 'variants' && !byYear)
   const localDone = $derived(Boolean(visual) || local.length >= (data?.total ?? 0))
   // The corpus has said nothing until its first page arrives, and may yet bring running and cursive glyphs.
   const corpusDone = $derived(Boolean(corpusFault) || (corpusAnswered && corpusOffset >= corpusTotal))
   const localNext = $derived(localDone ? Infinity : 2 * (local.length ? styleRank(local.at(-1)) : 0))
   const corpusNext = $derived(corpusDone ? Infinity : 2 * (corpus.length ? styleRank(corpus.at(-1)) : 0) + 1)
+  const yearKey = item => { const date = item.dating?.witness; return date ? date.start ?? date.end ?? Infinity : Infinity }
+  const localNextYear = $derived(localDone ? Infinity : local.length ? yearKey(local.at(-1)) : -Infinity)
+  const corpusNextYear = $derived(corpusDone ? Infinity : corpus.length ? yearKey(corpus.at(-1)) : -Infinity)
   // The counts by style group. Under a visual group the collection's own crops are narrowed here, in
   // the view, so theirs are counted from the tiles shown.
   const shownStyles = items => Object.fromEntries(STYLE_GROUPS.map((group, rank) => [group, items.filter(item => styleRank(item) === rank).length]))
   const styles = $derived(styleCounts(visual ? shownStyles(visibleLocal) : localStyles, corpusStyles))
   const galleryTiles = $derived.by(() => {
+    if (byYear) {
+      const shownUpTo = Math.min(localNextYear, corpusNextYear)
+      return [...visibleLocal.map(item => [yearKey(item), 0, item]), ...corpusOnly.map(item => [yearKey(item), 1, item])]
+        .filter(([year]) => year <= shownUpTo).sort((a, b) => (a[0] - b[0] || 0) || a[1] - b[1]).map(([, , item]) => item)
+    }
     if (!merged) return [...visibleLocal, ...corpusOnly]
     const shownUpTo = Math.min(localNext, corpusNext)
     return [...visibleLocal.map(item => [2 * styleRank(item), item]), ...corpusOnly.map(item => [2 * styleRank(item) + 1, item])]
@@ -228,7 +243,7 @@
   const tiles = $derived(whole ? display.slice(0, whole) : display)
   function more() {
     // The list whose next page goes first; with a style group chosen, the collection's own crops first.
-    if (picked) { if (!localDone && (!merged || localNext < corpusNext)) load(true); else moreCorpus() }
+    if (picked) { if (!localDone && (byYear ? localNextYear <= corpusNextYear : !merged || localNext < corpusNext)) load(true); else moreCorpus() }
     else { offset = items.length; load(true) }
   }
   $effect(() => { if (nearEnd && hasMore && !loading && !error) untrack(more) })
@@ -264,7 +279,7 @@
         if (!append) { local = []; corpus = []; corpusTotal = 0; corpusOffset = 0; localStyles = null; corpusStyles = null; corpusAnswered = false }
         // Local records page by their own count, and they are shown before the corpus is asked:
         // a corpus that cannot answer must not hide the records this collection does hold.
-        const found = await occurrences(picked.code_point, { expand, limit: 60, offset: append ? local.length : 0, style: style || undefined })
+        const found = await occurrences(picked.code_point, { expand, limit: 60, offset: append ? local.length : 0, style: style || undefined, ...dateParams() })
         if (closed || id !== requestId) return
         const rows = found.items.map(item => ({ ...item, origin: 'collection' }))
         local = append ? [...local, ...rows] : rows
@@ -278,12 +293,13 @@
           .then(card => { if (!closed && id === requestId) picked = { ...picked, ...card } })
           .catch(() => {})
         if (append) return
+        loadDecades(picked.code_point, expand)
         // The corpus leads are fetched whole, because their service pins located anchors first and a
         // page of text hits would bury them.
         corpusFault = null
         try {
           const leads = await layerCandidates(picked.code_point, 60, 0,
-            { scope: corpusScope(expand), visual_group: visual || undefined, style: style || undefined })
+            { scope: corpusScope(expand), visual_group: visual || undefined, style: style || undefined, ...dateParams() })
           if (closed || id !== requestId) return
           corpusStyles = leads.styles ?? null; corpusAnswered = true
           corpus = (leads.glyph_items ?? []).map(item => ({ ...item, label: writtenLabel(item), origin: 'corpus' }))
@@ -306,6 +322,19 @@
       if (!append) await showSample(id, sampled, result.items)
     } catch (e) { if (!closed && id === requestId && e.name !== 'AbortError') error = e.message }
     finally { if (!closed && id === requestId) loading = false }
+  }
+  // A gallery the server rendered reads its decades once it is in the browser.
+  $effect(() => { const code = picked?.code_point, scope = expand; if (code) untrack(() => loadDecades(code, scope)) })
+  // The decades of the gallery on show, for the period filter; they depend on the character and scope only.
+  let decadesFor = ''
+  function loadDecades(code, scope) {
+    const key = `${code} ${scope}`
+    if (scope === 'variants') { decadeCounts = null; decadesFor = ''; return }
+    if (key === decadesFor) return
+    decadesFor = key; decadeCounts = null
+    decades(code, { scope: scope === 'grapheme' ? 'grapheme' : 'character' })
+      .then(found => { if (!closed && decadesFor === key) decadeCounts = [...found.local, ...found.corpus] })
+      .catch(() => { if (decadesFor === key) decadesFor = '' })
   }
   /** The homepage's corpus half: bounded, deduplicated against the local rows, never a scan. */
   function requestSample() {
@@ -392,7 +421,7 @@
     loading = true
     try {
       const page = await layerCandidates(target, 60, corpusOffset,
-        { scope: corpusScope(expand), visual_group: visual || undefined, style: style || undefined })
+        { scope: corpusScope(expand), visual_group: visual || undefined, style: style || undefined, ...dateParams() })
       if (closed || current !== pickId || id !== requestId || picked?.code_point !== target) return
       const rows = (page.glyph_items ?? []).map(item => ({ ...item, label: writtenLabel(item), origin: 'corpus' }))
       corpusOffset += rows.length
@@ -683,6 +712,7 @@
   {#if picked}
     <CharacterChips card={picked} bind:expand onselect={item => pick({ code_point: item }, 'exact')} />
     {#if styled || style}<StyleFilter counts={styles} value={style} onchange={value => { style = value; load() }} />{/if}
+    {#if picked && expand !== 'variants'}<PeriodFilter counts={decadeCounts} value={yearRange} order={dateOrder} onchange={value => { yearRange = value; load() }} onorder={value => { dateOrder = value; load() }} />{/if}
     {#if expand === 'grapheme'}<VisualGroups {analysis} count={familyTotal} unassigned={unassignedCount} value={visual} onchange={value => { visual = value; load() }} />{/if}
     <p class="find-count" role="status">
       {t('explore.meta.glyphs', { count: display.length })}
@@ -721,7 +751,10 @@
   .visual-grid-heading{grid-column:1/-1;font-size:14px;padding:20px 2px 12px;color:var(--muted);background:var(--paper)}
   .tile-production{font-family:"GenZui Sans",system-ui,sans-serif;font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   /* The copy's year, the tile's one date: in the footer's small type, its digits all one width. */
-  .tile-year{min-width:0;font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tile-year{flex-shrink:0;font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .tile-production{min-width:0}
+  /* On a phone the year takes the running number's place; a range wider still ends in an ellipsis. */
+  @media(max-width:700px){.tile-year{flex-shrink:1;min-width:0;overflow:hidden;text-overflow:ellipsis}.tile-footer:has(.tile-year) .tile-number{display:none}}
   .tile-number{margin-left:auto}
   .tile-footer .tile-arrow{margin-left:0}
   .tile-footer .status-dot{flex-shrink:0}

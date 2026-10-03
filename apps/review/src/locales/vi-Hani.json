@@ -791,5 +791,10 @@
   "date.undated": "空𠓑年代",
   "date.disputed": "各源𥱬年代恪𦣗",
   "date.hutime": "𣈜蹺曆日特對𨖅陽曆憑HuTime（ap.hutime.org）。對𣈜恪在{form}",
-  "date.source.holder": "目錄𧵑坭留𡨹"
+  "date.source.holder": "目錄𧵑坭留𡨹",
+  "period.label": "年代",
+  "period.all": "每年代",
+  "period.order.label": "次序",
+  "period.order.style": "蹺矯𡨸",
+  "period.order.year": "寠𠓀"
 }

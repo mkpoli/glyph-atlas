@@ -808,5 +808,10 @@
   "date.undated": "年代不詳",
   "date.disputed": "各來源所記年代不一",
   "date.hutime": "日本年號與西曆的換算據HuTime（ap.hutime.org）。其他日期可於{form}換算",
-  "date.source.holder": "收藏機構目錄"
+  "date.source.holder": "收藏機構目錄",
+  "period.label": "年代",
+  "period.all": "全部年代",
+  "period.order.label": "排序",
+  "period.order.style": "按書風",
+  "period.order.year": "由古至今"
 }

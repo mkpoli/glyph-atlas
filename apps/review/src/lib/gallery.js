@@ -24,9 +24,9 @@ export const scopeFor = (expand, card) => expand === 'variants' ? 'variants'
 /** The corpus side of a widening: the grapheme family, the character and its variants, or the character. */
 export const corpusScope = expand => expand === 'grapheme' ? 'grapheme' : expand === 'variants' ? 'variants' : 'character'
 
-/** The page of a character in the collection view, with the scope, visual group and style group it is shown with. */
-export function characterAddress(codePoint, { scope = null, visual = '', style = '' } = {}) {
-  const query = new URLSearchParams(Object.entries({ scope, visual, style }).filter(([, value]) => value))
+/** The page of a character in the collection view, with the scope, visual group, style group, order and years it is shown with. */
+export function characterAddress(codePoint, { scope = null, visual = '', style = '', order = '', years = '' } = {}) {
+  const query = new URLSearchParams(Object.entries({ scope, visual, style, order, years }).filter(([, value]) => value))
   return '/character/' + slug(codePoint) + (query.size ? '?' + query : '')
 }
 
@@ -44,21 +44,28 @@ export function styleCounts(...lists) {
   return Object.fromEntries(STYLE_GROUPS.map(group => [group, lists.reduce((sum, counts) => sum + (counts[group] ?? 0), 0)]))
 }
 
+/** An address's order (`year`, oldest first) and year range (`1601-1700`, or `undated`), or '' for none. */
+export const orderParam = value => value === 'year' ? 'year' : ''
+export const yearsParam = value => value === 'undated' || /^-?\d{1,4}--?\d{1,4}$/.test(value ?? '') ? value : ''
+
 /**
  * Everything the collection view shows for one character: its card, its first page of occurrences and
  * of corpus leads, and the counts beside them. A corpus that cannot answer leaves `corpusFault` set and
  * the occurrences still shown.
  */
-export async function characterGallery(codePoint, { scope = null, visual = '', style = '' } = {}, options = {}) {
+export async function characterGallery(codePoint, { scope = null, visual = '', style = '', order = '', years = '' } = {}, options = {}) {
   const card = { ...bare, ...await layerCharacter(codePoint, 'none', options) }
   const expand = expandFor(scope, card)
   style = styleParam(style)
+  // A variants widening lists each character in turn, and is placed by style alone.
+  order = expand === 'variants' ? '' : orderParam(order); years = expand === 'variants' ? '' : yearsParam(years)
+  const dated = { order: order || undefined, years: years || undefined }
   const [found, widened, leads] = await Promise.all([
-    occurrences(codePoint, { expand, limit: 60, offset: 0, style: style || undefined }, options),
+    occurrences(codePoint, { expand, limit: 60, offset: 0, style: style || undefined, ...dated }, options),
     // The chips read which widening is in force from the card fetched with it; a variants widening
     // changes no field of the card.
     expand === 'none' || expand === 'variants' ? card : layerCharacter(codePoint, expand, options).catch(() => card),
-    layerCandidates(codePoint, 60, 0, { scope: corpusScope(expand), visual_group: visual || undefined, style: style || undefined }, options)
+    layerCandidates(codePoint, 60, 0, { scope: corpusScope(expand), visual_group: visual || undefined, style: style || undefined, ...dated }, options)
       .catch(error => ({ fault: error.status === 502 ? 'error' : 'not-loaded' })),
   ])
   const corpus = (leads.glyph_items ?? []).map(item => ({ ...item, label: writtenLabel(item), origin: 'corpus' }))
@@ -67,6 +74,8 @@ export async function characterGallery(codePoint, { scope = null, visual = '', s
     expand,
     visual,
     style,
+    order,
+    years,
     // Only a server that files crops by style names its groups; the local review server does not.
     styled: Boolean(found.style_groups),
     localStyles: found.styles ?? null,

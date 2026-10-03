@@ -805,5 +805,10 @@
   "date.undated": "年代詳ナラズ",
   "date.disputed": "典據ニヨリ年代異ナル",
   "date.hutime": "和曆ノ西曆換算ハHuTime（ap.hutime.org）ニ據ル。他ノ日附ハ{form}ニテ換算スベシ",
-  "date.source.holder": "所藏機關ノ目錄"
+  "date.source.holder": "所藏機關ノ目錄",
+  "period.label": "年代",
+  "period.all": "總テノ年代",
+  "period.order.label": "次第",
+  "period.order.style": "書風ノ順",
+  "period.order.year": "古キ順"
 }

@@ -789,5 +789,10 @@
   "date.undated": "연대 미상",
   "date.disputed": "출처마다 연대가 다름",
   "date.hutime": "일본 연호의 서력 환산은 HuTime(ap.hutime.org)에 따름. 다른 날짜는 {form}에서 환산",
-  "date.source.holder": "소장 기관 목록"
+  "date.source.holder": "소장 기관 목록",
+  "period.label": "연대",
+  "period.all": "모든 연대",
+  "period.order.label": "정렬",
+  "period.order.style": "서풍순",
+  "period.order.year": "오래된 순"
 }

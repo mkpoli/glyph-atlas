@@ -805,5 +805,10 @@
   "date.undated": "年代未詳",
   "date.disputed": "典拠により年代が異なる",
   "date.hutime": "和暦の西暦換算はHuTime（ap.hutime.org）による。ほかの日付は{form}で換算できる",
-  "date.source.holder": "所蔵機関の目録"
+  "date.source.holder": "所蔵機関の目録",
+  "period.label": "年代",
+  "period.all": "すべての年代",
+  "period.order.label": "並び順",
+  "period.order.style": "書風順",
+  "period.order.year": "古い順"
 }

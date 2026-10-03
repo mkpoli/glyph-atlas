@@ -23,7 +23,7 @@ const ordinal = n => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : { 1: 'st', 2
  * A date in a few characters, honest about its range and doubt: 1791, c. 1800, 1789–1801, 18th c.,
  * after 1855. A named period with no years (江戸後期) is written as its source wrote it.
  */
-export function dateLabel(date) {
+export function dateLabel(date, { short = false } = {}) {
   if (!date) return ''
   const { start, end, precision, qualifier, uncertain } = date
   if (start == null && end == null) return date.text
@@ -36,7 +36,13 @@ export function dateLabel(date) {
       : t('date.centuries', { first, last, firstOrdinal: ordinal(first), lastOrdinal: ordinal(last) })
   } else if (precision === 'decade') text = t('date.decade', { year: formatYear(start) })
   else if (start === end) text = formatYear(start)
-  else text = t('date.range', { start: formatYear(start), end: formatYear(end) })
+  else {
+    // In a tile's corner a range within one century names the century once: 1624–45.
+    const last = formatYear(end), first = formatYear(start)
+    // Only where a year is written digit by digit (not 一千六百二十四).
+    const shorter = short && Math.floor(start / 100) === Math.floor(end / 100) && start >= 1000 && first.length === String(start).length && last.length === String(end).length
+    text = t('date.range', { start: first, end: shorter ? last.slice(-2) : last })
+  }
   if (qualifier === 'circa') text = t('date.circa', { date: text })
   return uncertain ? t('date.uncertain', { date: text }) : text
 }
@@ -58,7 +64,7 @@ export function datingLine(item) {
 /** The same in a tile's corner: the copy's years, or nothing for a copy with none (a named period has no room there). */
 export const tileDate = item => {
   const date = item?.dating?.witness
-  return date && (date.start != null || date.end != null) ? dateLabel(date) : ''
+  return date && (date.start != null || date.end != null) ? dateLabel(date, { short: true }) : ''
 }
 
 /**
