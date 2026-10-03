@@ -701,6 +701,16 @@ try {
     const details = await plan({ sql, values: [] }, values)
     assert.ok(!details.some(d => /^SCAN (units|corpus_units|u|c|d)\b/.test(d)), details.join('; '))
   }
+  // The collection's dates in numbers, from the cached counts: the dated crop's book in its hundred
+  // years, decade and kind, a corpus book with no date among the undated works.
+  await db.prepare("INSERT INTO corpus_document_counts(document,n) VALUES('doc:corpus-undated',4)").run()
+  const dateNumbers = await call('/atlas/dates/stats')
+  assert.ok(dateNumbers.hundreds.some(([start, crops, works]) => start === 1700 && crops === 1 && works === 1), JSON.stringify(dateNumbers))
+  assert.ok(dateNumbers.decades.some(([start]) => start === 1790))
+  assert.deepEqual(dateNumbers.kinds.find(([kind]) => kind === 'copied'), ['copied', 1, 1])
+  assert.ok(dateNumbers.total.works - dateNumbers.dated.works >= 1 && dateNumbers.total.crops >= dateNumbers.dated.crops + 4)
+  const statsPlan = await plan({ sql: worker.dateStatsQuery(), values: [] }, [])
+  assert.ok(!statsPlan.some(d => /^SCAN (units|corpus_units)\b/.test(d)), statsPlan.join('; '))
   for (const [sql, values] of [[worker.datingQuery(2), ['a', 'b']], [worker.dateClaimsQuery(), ['doc:dated']]]) {
     const details = await plan({ sql, values: [] }, values)
     assert.ok(!details.some(d => /^SCAN (document_dating|assertions|a)\b/.test(d)), details.join('; '))

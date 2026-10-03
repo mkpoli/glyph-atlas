@@ -99,3 +99,49 @@ export function yearCondition(years: YearOptions['years']): { sql: string; value
 export const yearOrder = (rest: string) => `${YEAR_KEY} IS NULL,${YEAR_KEY},coalesce(d.end,d.start),${rest}`;
 // How many crops each decade holds, `decade` null for the undated.
 export const decadeColumn = `CASE WHEN ${YEAR_KEY} IS NULL THEN NULL ELSE (${YEAR_KEY} - (((${YEAR_KEY} % 10) + 10) % 10)) END`;
+// The collection's dates in numbers: how many crops and works are dated, by hundred years and by
+// decade of the year a work's copy is dated from, and by what the date dates. A work is a document; the
+// collection's crops are counted from `unit_counts` and the corpus glyphs from
+// `corpus_document_counts` (0053), so no request reads a crop. The answer is kept at the edge by the
+// stamps those counts and the dates are written with.
+export const dateStatsQuery = () => `SELECT x.document,x.n,d.kind,d.start,d.end,c.start AS composed
+  FROM (SELECT document,sum(n) AS n FROM unit_counts WHERE origin='local' AND document<>'' GROUP BY document
+        UNION ALL SELECT document,n FROM corpus_document_counts) x
+  LEFT JOIN document_dating d ON d.document=x.document AND d.axis='witness'
+  LEFT JOIN document_dating c ON c.document=x.document AND c.axis='composed'`;
+type Tally = { crops: number; works: number };
+const add = (map: Map<string | number, Tally>, key: string | number, crops: number, work: boolean) => {
+  const found = map.get(key) ?? { crops: 0, works: 0 };
+  found.crops += crops; if (work) found.works += 1;
+  map.set(key, found);
+};
+/** The tallies of `rows`, one row a document's crops in one list (the collection's or the corpus's). */
+export function tallyDates(rows: { document: string; n: number; kind: string | null; start: number | null; end: number | null; composed: number | null }[]) {
+  const seen = new Set<string>(), hundreds = new Map<string | number, Tally>(), decades = new Map<string | number, Tally>(), kinds = new Map<string | number, Tally>();
+  const total = { crops: 0, works: 0 }, dated = { crops: 0, works: 0 }, composed = { crops: 0, works: 0 };
+  for (const row of rows) {
+    const work = !seen.has(row.document); seen.add(row.document);
+    total.crops += row.n; if (work) total.works += 1;
+    const year = row.start ?? row.end;
+    if (row.kind) add(kinds, row.kind, row.n, work);
+    if (row.composed !== null) { composed.crops += row.n; if (work) composed.works += 1 }
+    if (year === null || year === undefined) continue;
+    dated.crops += row.n; if (work) dated.works += 1;
+    add(hundreds, Math.floor(year / 100) * 100, row.n, work);
+    add(decades, Math.floor(year / 10) * 10, row.n, work);
+  }
+  const listed = (map: Map<string | number, Tally>) => [...map].map(([key, t]) => [key, t.crops, t.works]).sort((a, b) => (a[0] as number) - (b[0] as number));
+  return { total, dated, composed, hundreds: listed(hundreds), decades: listed(decades),
+    kinds: [...kinds].map(([kind, t]) => [kind, t.crops, t.works]).sort((a, b) => (b[1] as number) - (a[1] as number)) };
+}
+export async function dateStats(env: Env, ctx: ExecutionContext, url: URL) {
+  const stamps = await env.DB.prepare(`SELECT key,value FROM metadata WHERE key IN
+    ('published_at','units_refreshed_at','corpus_documents_at','dates_at') ORDER BY key`).all<{ key: string; value: string }>();
+  const key = new Request(`${url.origin}/atlas/dates/stats?v=${encodeURIComponent(stamps.results.map(r => `${r.key}=${r.value}`).join(':'))}`);
+  const cached = await caches.default.match(key);
+  if (cached) return cached.json();
+  const rows = await env.DB.prepare(dateStatsQuery()).all<{ document: string; n: number; kind: string | null; start: number | null; end: number | null; composed: number | null }>();
+  const body = tallyDates(rows.results);
+  ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': 'public, max-age=3600' } })));
+  return body;
+}
