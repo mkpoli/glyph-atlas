@@ -750,7 +750,7 @@
   "privacy.who.body": "Tự Hình Đại Đồ Phổ do mkpoli duy trì và vận hành. Nếu có câu hỏi về dữ liệu của bạn hoặc muốn xem hay xóa dữ liệu đó, hãy gửi email đến {email}.",
   "privacy.browsing.title": "Xem trang",
   "privacy.browsing.body": "Bạn không cần tài khoản để xem trang. Ngôn ngữ và chế độ màu bạn chọn được lưu trong hai cookie; các thiết lập hiển thị như kiểu ảnh được lưu trong bộ nhớ của trình duyệt. Các thiết lập này nằm trên thiết bị của bạn.",
-  "privacy.browsing.measure": "Cloudflare cung cấp hạ tầng cho trang và đo tốc độ tải trang bằng Cloudflare Web Analytics, không đặt cookie hay lập hồ sơ về bạn. Cloudflare cũng lưu một phần bản ghi yêu cầu trong thời gian ngắn để tìm lỗi.",
+  "privacy.browsing.measure": "Cloudflare cung cấp hạ tầng cho trang và đo tốc độ tải trang bằng Cloudflare Web Analytics. Dịch vụ phân tích này không đặt cookie hay lập hồ sơ về bạn. Cloudflare cũng lưu một phần bản ghi yêu cầu trong thời gian ngắn để tìm lỗi.",
   "privacy.saving.title": "Lưu kết quả duyệt",
   "privacy.saving.body": "Lần đầu bạn lưu kết quả duyệt, trang tạo một tài khoản ẩn danh cho trình duyệt của bạn, có tên dạng anon-1a2b3c, và dùng cookie để duy trì đăng nhập. Mỗi quyết định bạn lưu được ghi lại cùng tài khoản đó, vùng cắt và thời gian.",
   "privacy.account.title": "Đăng nhập",
