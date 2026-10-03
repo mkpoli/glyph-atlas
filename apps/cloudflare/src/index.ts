@@ -8,6 +8,7 @@ import { auth, claim, owned, providers, viewer } from './auth';
 import { AVATAR_PATH, avatar, setAvatar } from './avatar';
 import { ranking } from './ranking';
 import { reviewers, submissions } from './admin';
+import { READ_BUDGET, RETRY_AFTER, described, retried, transient } from './busy';
 export { leastTypicalQuery } from './forms';
 export { componentMatchQuery } from './components';
 type Json = Record<string, any>;
@@ -1046,7 +1047,7 @@ function text(value: unknown, max: number, name: string, required=false): string
   return compose(value.trim());
 }
 // A character's grapheme family, as a reviewed correction takes it; one the catalogue lacks is its own.
-const formTools: FormTools = {fail:(status,message)=>{throw new Problem(status,message)},body,text,codePoints:cp,
+const formTools: FormTools = {fail:(status,message,extra)=>{throw new Problem(status,message,extra)},body,text,codePoints:cp,
   family:async(env,char)=>(await known(env,char).catch(()=>null))?.data.grapheme?.code_point||cp(char)};
 export function canonical(value: unknown): string {
   if(value===null||typeof value!=='object')return JSON.stringify(value);
@@ -1474,7 +1475,7 @@ export function samePixels(q: URLSearchParams, origin: string, data: Json): bool
   return data.image_sha256 ? q.get('image_sha256') === data.image_sha256 : q.get('image') === data.image;
 }
 
-export default {
+const routes = {
   async fetch(request:Request,env:Env,ctx:ExecutionContext):Promise<Response>{
     const url=new URL(request.url),path=url.pathname,q=url.searchParams;
     try{
@@ -1583,9 +1584,24 @@ export default {
       throw new Problem(404,'Unknown endpoint.');
     }catch(error){
       const open=path.startsWith('/atlas/documents/')?OPEN:{};
-      if(error instanceof Problem)return json({detail:error.message,...error.extra},error.status,open);
-      console.error(JSON.stringify({event:'request_failed',path,error:error instanceof Error?error.name:'unknown'}));
-      return json({detail:'The request could not be completed. Please retry.'},503,open);
+      if(error instanceof Problem)return json({detail:error.message,...error.extra},error.status,
+        error.extra.code==='busy'?{...open,'retry-after':String(RETRY_AFTER)}:open);
+      throw error;
     }
+  },
+};
+
+export default {
+  async fetch(request:Request,env:Env,ctx:ExecutionContext):Promise<Response>{
+    // A read is tried again while D1 is busy; a write is answered at once, and the browser keeps it
+    // until the database is back.
+    const read=request.method==='GET'||request.method==='HEAD';
+    const outcome=await retried(()=>routes.fetch(request,env,ctx),read?READ_BUDGET:0);
+    if('value' in outcome)return outcome.value;
+    const path=new URL(request.url).pathname,open=path.startsWith('/atlas/documents/')?OPEN:{};
+    const busy=transient(outcome.error);
+    console.error(JSON.stringify({event:'request_failed',path,method:request.method,busy,attempts:outcome.attempts,...described(outcome.error)}));
+    if(busy)return json({detail:'The database is updating. Try again in a moment.',code:'busy'},503,{...open,'retry-after':String(RETRY_AFTER)});
+    return json({detail:'The request could not be completed.',code:'failed'},500,open);
   },
 } satisfies ExportedHandler<Env>;

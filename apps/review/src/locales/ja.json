@@ -80,6 +80,8 @@
   "chips.variantSources": "出典",
   "client.changed": "この文字は更新されました。再読み込みして最新版をレビューしてください。",
   "client.saveFailed": "レビューを保存できませんでした。",
+  "client.busy": "データベースの更新がまだ続いています。数分後にもう一度お試しください。",
+  "client.busyRetrying": "データベースを更新中です。自動で再試行しています…",
   "common.clear": "クリア",
   "common.closeReviewer": "レビューを閉じる",
   "common.nextCharacter": "次の文字",

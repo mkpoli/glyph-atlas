@@ -11,6 +11,7 @@ async function get(path, params = {}, { fetch: send = fetch, ...options } = {}) 
   if (!response.ok) {
     const error = new Error(typeof value.detail === 'string' ? value.detail : t('layers.readError'))
     error.status = response.status
+    error.code = value.code
     throw error
   }
   return value

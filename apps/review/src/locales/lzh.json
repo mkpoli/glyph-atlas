@@ -81,6 +81,8 @@
   "chips.variantSources": "據",
   "client.changed": "此字已改，復載而校其新",
   "client.saveFailed": "所校不能存",
+  "client.busy": "庫更未畢，少頃再試",
+  "client.busyRetrying": "庫方更，且再試…",
   "client.signInAgain": "登入已逾期，復登入乃可存",
   "common.clear": "除",
   "common.closeReviewer": "闔校字",

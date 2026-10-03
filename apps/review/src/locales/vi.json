@@ -80,6 +80,8 @@
   "chips.variantSources": "Nguồn",
   "client.changed": "Chữ này đã thay đổi. Tải lại để duyệt bản mới nhất.",
   "client.saveFailed": "Không lưu được kết quả duyệt.",
+  "client.busy": "Cơ sở dữ liệu vẫn đang cập nhật. Hãy thử lại sau vài phút.",
+  "client.busyRetrying": "Cơ sở dữ liệu đang cập nhật; đang thử lại…",
   "client.signInAgain": "Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại để lưu.",
   "common.clear": "Xóa",
   "common.closeReviewer": "Đóng cửa sổ duyệt",

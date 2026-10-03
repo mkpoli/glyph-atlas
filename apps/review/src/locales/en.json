@@ -84,6 +84,8 @@
   "chips.variantSources": "Sources",
   "client.changed": "This character changed. Reload to review the current version.",
   "client.saveFailed": "The review could not be saved.",
+  "client.busy": "The database is still updating. Try again in a few minutes.",
+  "client.busyRetrying": "The database is updating; trying again…",
   "common.clear": "Clear",
   "common.closeReviewer": "Close reviewer",
   "common.nextCharacter": "Next character",

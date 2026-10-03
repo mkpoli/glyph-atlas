@@ -8,6 +8,7 @@ export async function load({ fetch, params }) {
   } catch (e) {
     // A crop a publication retired has moved to the crop that replaced it.
     if (e.replacedBy) redirect(301, localize('/crop/' + encodeURIComponent(e.replacedBy), params.lang))
-    error(e.status === 404 ? 404 : 503, e.message)
+    // A busy database is named, so the page loads itself again once it is back.
+    error(e.status === 404 ? 404 : 503, { message: e.message, code: e.code === 'busy' ? 'busy' : undefined })
   }
 }
