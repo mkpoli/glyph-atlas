@@ -330,3 +330,14 @@ def test_importer_years_carry_no_conversion_of_ours(calendar):
     found = dates.claim("d", "寛政三年以後", kind="printed", scope="witness", tier="attested", source="s", locator="l",
                         calendar=calendar, years=(1791, 1795))
     assert (found.start, found.end, found.qualifier, found.conversion) == (1791, 1795, None, None)
+
+
+def test_a_copy_dated_only_by_a_named_period_shows_it_without_years():
+    from glyph_atlas.schema import DateClaim
+
+    value = {"scope": "witness", "text": "[江戸後期]", "start": None, "end": None, "precision": "period", "tier": "attested"}
+    period = DateClaim(id=dates.claim_id("d", "iiif-manifests", "m", "produced", value), document="d", kind="produced",
+                       source="iiif-manifests", locator="m", **value)
+    found = dates.resolve([period], "unknown")["witness"]
+    assert (found.start, found.end, found.text, dates.label(found)) == (None, None, "[江戸後期]", "[江戸後期]")
+    assert dates.resolve([period, make("produced", 1820, source="iiif-manifests")], "unknown")["witness"].start == 1820

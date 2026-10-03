@@ -583,9 +583,11 @@ def _dated(c: DateClaim) -> bool:
     return c.start is not None or c.end is not None
 
 
-def _pick(axis: str, candidates: Sequence[DateClaim], others: Sequence[DateClaim] = ()) -> Resolved | None:
-    """The best of `candidates`, disputed when it does not overlap another of them or one of `others`."""
-    dated = [c for c in candidates if _dated(c)]
+def _pick(axis: str, candidates: Sequence[DateClaim], others: Sequence[DateClaim] = (), named: bool = False
+          ) -> Resolved | None:
+    """The best of `candidates`, disputed when it does not overlap another of them or one of `others`.
+    With `named`, a named period with no years (江戸後期) counts too."""
+    dated = [c for c in candidates if _dated(c) or (named and c.precision == "period")]
     if not dated:
         return None
     ranked = sorted(dated, key=lambda c: (_rank(c), c.id))
@@ -605,7 +607,9 @@ def resolve(claims: Iterable[DateClaim], production: str = "unknown") -> dict[st
     dated claim about this copy. Within the kind, the attested claim wins over the editorial and the
     derived one, then a holder's own catalogue over an aggregator's, then the more precise. A claim that
     does not overlap the chosen one makes the date `disputed`, and so does a date the holder gives the
-    item (`produced`) that does not overlap it; every claim stays listed.
+    item (`produced`) that does not overlap it; every claim stays listed. A copy no claim gives years
+    to is shown by the period its source names, if one does, with no years: it is placed nowhere on a
+    time axis, and its words are kept.
     """
     claims = list(claims)
     order = WITNESS_ORDER.get(production.split("/")[0], WITNESS_ORDER["unknown"])
@@ -616,6 +620,11 @@ def resolve(claims: Iterable[DateClaim], production: str = "unknown") -> dict[st
         if picked:
             found["witness"] = picked
             break
+    else:
+        for kind in order:
+            if picked := _pick("witness", [c for c in claims if c.scope == "witness" and c.kind == kind], named=True):
+                found["witness"] = picked
+                break
     composed = _pick("composed", [c for c in claims if c.kind == "composed"])
     if composed:
         found["composed"] = composed
