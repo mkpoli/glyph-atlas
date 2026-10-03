@@ -13,7 +13,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from glyph_atlas import tables
-from glyph_atlas.review.store import BadRequest, ReviewRequest, Store, replay
+from glyph_atlas.review.store import BadRequest, ReviewRequest, Store, apply, replay
 from glyph_atlas.schema import Box, Document, Line, Page, Unit
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,7 +36,7 @@ def unit(ident: str, seq: int, text: str, code: str) -> Unit:
                 box=Box(x=0, y=seq * 20, w=10, h=20), text_source=text, unicode=code)
 
 
-def v4_dataset(root: Path) -> Path:
+def v5_dataset(root: Path) -> Path:
     """A dataset and review store as schema 5 left them: `reading` on units, entries and dumps."""
     root.mkdir()
     tables.write(root / "documents.parquet", [Document(id="d", title="t")], Document)
@@ -50,6 +50,8 @@ def v4_dataset(root: Path) -> Path:
     store = Store(root)
     store.record(ReviewRequest(target_id="ki", field="text_source", new="き", client_id="reviewer"))
     store.record(ReviewRequest(target_id="ka", field="segmentation", new=SPLIT, client_id="reviewer"))
+    # As the owner runs it: every store event is in reviews.jsonl before the tables are migrated.
+    apply(root)
 
     table = pq.read_table(path)
     readings = pa.array([READINGS.get(ident) for ident in table["id"].to_pylist()])
@@ -80,14 +82,14 @@ def store_rows(root: Path) -> dict[str, list]:
 
 
 def test_a_table_with_a_reading_column_is_refused_and_names_the_migration(tmp_path):
-    path = v4_dataset(tmp_path / "old")
+    path = v5_dataset(tmp_path / "old")
     with pytest.raises(tables.SchemaMismatch, match="reading.*scripts/migrate_schema_v6.py"):
         tables.read(path, Unit)
 
 
 def test_a_dry_run_changes_nothing(tmp_path, capsys):
     root = tmp_path / "old"
-    path = v4_dataset(root)
+    path = v5_dataset(root)
     before = (path.read_bytes(), (root / tables.MANIFEST_NAME).read_bytes(), store_rows(root))
     archive = tmp_path / "archive.jsonl"
     assert migrate.main([str(tmp_path), "--archive", str(archive)]) == 0
@@ -99,7 +101,7 @@ def test_a_dry_run_changes_nothing(tmp_path, capsys):
 
 def test_the_migration_archives_telling_readings_and_drops_the_column(tmp_path, capsys):
     root = tmp_path / "old"
-    path = v4_dataset(root)
+    path = v5_dataset(root)
     archive = tmp_path / "purge" / "readings.jsonl"
     migrate.main([str(tmp_path), "--apply", "--archive", str(archive)])
 
@@ -126,7 +128,7 @@ def test_the_migration_archives_telling_readings_and_drops_the_column(tmp_path, 
 
 def test_a_migrated_store_opens_and_replays_its_reading_event_as_a_no_op(tmp_path):
     root = tmp_path / "old"
-    v4_dataset(root)
+    v5_dataset(root)
     with pytest.raises(Exception, match="reading"):
         replay(root)
 
@@ -147,10 +149,10 @@ def test_a_table_an_older_schema_wrote_is_left_alone_and_snapshots_are_skipped(t
     archived, the run says so and fails, and a `backups` snapshot is not touched at all."""
     root = tmp_path / "work"
     root.mkdir()
-    older = v4_dataset(root / "older")
+    older = v5_dataset(root / "older")
     table = pq.read_table(older)
-    pq.write_table(table.append_column("jibo", pa.array(["加", None, None])), older)
-    snapshot = v4_dataset(root / "backups")
+    pq.write_table(table.append_column("jibo", pa.array(["加"] + [None] * (table.num_rows - 1))), older)
+    snapshot = v5_dataset(root / "backups")
     before = {path: path.read_bytes() for path in (older, snapshot)}
     archive = tmp_path / "archive.jsonl"
     assert migrate.main([str(root), "--apply", "--archive", str(archive)]) == 1
