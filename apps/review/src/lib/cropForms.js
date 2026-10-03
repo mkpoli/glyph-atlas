@@ -57,12 +57,14 @@ const reread = async crop => {
 
 // One submission id per crop, revision or version, and value, so a retry after a lost answer is the
 // same write. A form claim's id is dropped once the site has answered, since the version stays the
-// same across renames and reviews and the same value chosen again later is a new claim.
+// same across renames and reviews and the same value chosen again later is a new claim. A claim keeps
+// the review it names with its id, so a retry sends the same request.
 const submissions = new Map()
-const submission = (...parts) => {
+const submission = (parts, review = null) => {
   const key = parts.join('\u0000')
-  if (!submissions.has(key)) submissions.set(key, crypto.randomUUID())
-  return { id: submissions.get(key), answered: () => submissions.delete(key) }
+  if (!submissions.has(key)) submissions.set(key, { id: crypto.randomUUID(), review })
+  const { id, review: named } = submissions.get(key)
+  return { id, review: named, answered: () => submissions.delete(key) }
 }
 
 /** Claim `form` as the crop's, on the version the reader has; with `form` null take back the reader's
@@ -71,10 +73,10 @@ const submission = (...parts) => {
 async function claimForm(crop, form, review = null) {
   // A record read from a listing may not name its version; the crop as it stands does.
   const seen = crop.crop_version ? crop : { ...crop, ...await reread(crop) }
-  const { id, answered } = submission('form', crop.id, seen.crop_version, form ?? '')
+  const { id, review: named, answered } = submission(['form', crop.id, seen.crop_version, form ?? ''], review)
   let result
   try {
-    result = await request(`/atlas/characters/${encodeURIComponent(crop.id)}/form`, { id, crop_version: seen.crop_version, form, ...(review ? { review } : {}) })
+    result = await request(`/atlas/characters/${encodeURIComponent(crop.id)}/form`, { id, crop_version: seen.crop_version, form, ...(named ? { review: named } : {}) })
   } catch (error) { if (error.status) answered(); throw error }
   answered()
   return { crop: { ...seen, form: result.form }, replaced: result.replaced ?? null }
@@ -83,7 +85,7 @@ async function claimForm(crop, form, review = null) {
 /** Name the crop's character, as a review of that crop: a checked crop can be named again. Answers the
  *  crop as it now stands and the review's submission id. */
 async function writeCharacter(crop, character) {
-  const { id } = submission('character', crop.id, crop.revision, character)
+  const { id } = submission(['character', crop.id, crop.revision, character])
   if (corpusOf(crop)) await request('/atlas/corpus/reviews', { id, identity: crop.id, revision: crop.revision,
     source_revision: crop.source_revision, verdict: 'wrong', issue: 'character', character })
   else await request('/layers/units/' + encodeURIComponent(crop.id), { id, revision: crop.revision,
@@ -118,7 +120,8 @@ export async function setForm(crop, form) {
  */
 export async function restoreForm(after, before, replaced = null) {
   const was = before.written_character ?? before.label
-  let now = after, reviewed = false
-  if ((after.written_character ?? after.label) !== was) { now = (await writeCharacter(after, was)).crop; reviewed = true }
-  return { crop: (await claimForm(now, replaced)).crop, reviewed }
+  let now = after, reviewed = false, review = null
+  if ((after.written_character ?? after.label) !== was) { ({ crop: now, review } = await writeCharacter(after, was)); reviewed = true }
+  // A renaming back is a review, which a claim put back with it names.
+  return { crop: (await claimForm(now, replaced, replaced ? review : null)).crop, reviewed }
 }
