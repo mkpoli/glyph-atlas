@@ -1,6 +1,6 @@
 import { t } from './i18n.svelte.js'
 import { isBusy, retryAfter, waitOut } from './busy.svelte.js'
-import { deliver, outbox, useSender } from './outbox.svelte.js'
+import { anyKept, deliver, keepable, offline, useSender } from './outbox.svelte.js'
 
 // Whoever keeps records read ahead hears of every write, which may have changed any of them.
 const writeListeners = new Set()
@@ -42,34 +42,70 @@ async function posted(path, body, send, options) {
 
 /**
  * One write, made by the signed-in user: a browser without a session starts an anonymous one first,
- * and one whose session has lapsed starts another and sends the write again. `user` is the account
- * a kept save was made by; it is sent only while that account is signed in.
+ * and one whose session has lapsed starts another and sends the write again.
  */
-async function write(path, body, { send = fetch, options = {}, user = null } = {}) {
-  const { ensureSignedIn, sessionStarted } = await import('./session.svelte.js')
-  await sessionStarted()
+async function write(path, body, { send = fetch, options = {} } = {}) {
+  const { ensureSignedIn } = await import('./session.svelte.js')
   const post = () => posted(path, body, send, options)
-  const me = await ensureSignedIn()
-  if (user && me && me.id !== user) return { response: { ok: false, status: 409 }, value: { detail: t('client.keptForAnother') } }
+  let me = await ensureSignedIn()
   let answered = await post()
   for (const listener of writeListeners) listener()
-  if (answered.response.status === 401) { await ensureSignedIn({ again: true }); answered = await post() }
-  return { ...answered, user: me?.id ?? null }
+  if (answered.response.status === 401) { me = await ensureSignedIn({ again: true }); answered = await post() }
+  return { ...answered, user: me ?? null }
 }
-useSender({ send: entry => write(entry.path, entry.body, { user: entry.user }), settle })
+
+/**
+ * A kept save, sent as the reader it was made by. One made by an account waits until that account is
+ * signed in again, and the outbox never starts a session to send it: only a save made anonymously
+ * may go out under a new anonymous session, as a direct write would after one lapses.
+ */
+async function resend(entry) {
+  const { ensureSignedIn, sessionStarted, signedInUser } = await import('./session.svelte.js')
+  await sessionStarted()
+  const me = signedInUser()
+  if (!mine(entry, me)) return { skip: true }
+  if (!me) { try { await ensureSignedIn() } catch { return { wait: true } } }
+  let answered = await posted(entry.path, entry.body, fetch, {})
+  for (const listener of writeListeners) listener()
+  if (answered.response.status === 401) {
+    // An account whose session ended is asked to sign in again; the save waits for it.
+    if (!entry.anonymous) { try { await ensureSignedIn({ again: true }) } catch { /* The sign-in form is open. */ } return { wait: true } }
+    try { await ensureSignedIn({ again: true }) } catch { return { wait: true } }
+    answered = await posted(entry.path, entry.body, fetch, {})
+  }
+  return answered
+}
+/** Whether the reader signed in now (or nobody yet) may send a kept save. */
+function mine(entry, me) {
+  if (!entry.user) return true
+  if (!me) return entry.anonymous
+  return me.id === entry.user || (entry.anonymous && me.anonymous)
+}
+useSender({ send: resend, settle, mine: entry => mine(entry, currentUser()) })
+let currentUser = () => null
+if (typeof window !== 'undefined') import('./session.svelte.js').then(session => { currentUser = session.signedInUser }).catch(() => {})
 
 // A save the site cannot take yet (the database is busy, the browser is offline) is kept on this
 // device and sent in order when it can be; a save made while others wait joins the end of the line,
-// so none overtakes one made before it.
+// so none overtakes one made before it. A save that names no submission is never kept: sending it
+// twice could record it twice.
 async function save(path, body, send, options) {
-  if (outbox.pending) return deliver(path, body, (await signedIn())?.id)
+  const kept = keepable(path, body)
+  if (kept && await anyKept()) return deliver(path, body, await reader())
   let answered
   try { answered = await write(path, body, { send, options }) }
-  catch (error) { if (error instanceof TypeError) return deliver(path, body, (await signedIn())?.id, 0); throw error }
-  if (isBusy(answered.response, answered.value)) return deliver(path, body, answered.user, retryAfter(answered.response))
+  catch (error) { if (kept && offline(error)) return deliver(path, body, await reader(), 0); throw error }
+  if (kept && isBusy(answered.response, answered.value)) return deliver(path, body, answered.user, retryAfter(answered.response))
   return settle(answered)
 }
-const signedIn = async () => { try { return await (await import('./session.svelte.js')).ensureSignedIn() } catch { return null } }
+/** Who a save is made by, once the page knows; signing in anonymously if nobody is, as a write does. */
+async function reader() {
+  try {
+    const { ensureSignedIn, sessionStarted } = await import('./session.svelte.js')
+    await sessionStarted()
+    return await ensureSignedIn()
+  } catch { return null }
+}
 // `purpose` says what the collection is being read for: `browse` is the gallery and keeps every
 // record, including the ones a review round withholds; `review` asks for the records a round may
 // put in front of a reviewer. It is sent on every call rather than defaulted by the server, so a

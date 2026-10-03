@@ -88,6 +88,8 @@ async function claimLegacy() {
 export const ensureSignedIn = options => current?.ensure(options)
 /** Settles once the page knows who is signed in. */
 export const sessionStarted = () => current?.started
+/** Who is signed in, as far as the page knows, without starting a session. */
+export const signedInUser = () => current?.state.user ?? null
 
 export const provideSession = session => setContext(KEY, session)
 export const useSession = () => getContext(KEY)

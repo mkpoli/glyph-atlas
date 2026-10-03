@@ -113,6 +113,44 @@ try {
   assert(await browser.evaluate(kept) === 0, 'nothing is left on the device after the reload')
   console.log('PASS a save kept when the page closed is sent by the next page, once')
 
+  // Two saves kept one after another, the second made while the first waits: both are sent, in order,
+  // each recorded once.
+  await browser.key('Escape')
+  await browser.waitFor('!document.querySelector("dialog[open]")')
+  const [one, two] = [await tile(10), await tile(11)], pathOf = id => '/atlas/characters/' + encodeURIComponent(id)
+  busy = (request, url) => request.method === 'POST' && [pathOf(one), pathOf(two)].includes(url.pathname)
+  for (const id of [one, two]) {
+    await click(`.glyph-grid [data-unit="${id}"]`)
+    await browser.waitFor(inspectorReady, 30000)
+    await click('.save-character')
+    await browser.waitFor(noteSays('on this device'), 10000)
+    await browser.key('Escape')
+    await browser.waitFor('!document.querySelector("dialog[open]")')
+  }
+  await browser.waitFor(noteSays('2 saves kept on this device'), 10000)
+  const sent = posts.length
+  busy = () => false
+  await browser.waitFor(`!(${shown})`, 20000)
+  const went = posts.slice(sent).map(p => p.path)
+  assert(went.indexOf(pathOf(one)) >= 0 && went.indexOf(pathOf(one)) < went.indexOf(pathOf(two)), `the saves went in order: ${went}`)
+  assert(saves(one).size === 1 && saves(two).size === 1, 'each save is recorded once')
+  assert(await browser.evaluate(kept) === 0, 'nothing is left on the device')
+  console.log('PASS two saves kept one after another are both sent, in order, once each')
+
+  // A save kept for an account that is not signed in waits for it: it is neither sent nor counted.
+  await browser.evaluate(`new Promise(done => { const asked = indexedDB.open('atlas-outbox'); asked.onsuccess = () => {
+    const put = asked.result.transaction('saves', 'readwrite').objectStore('saves').put({ key: '/atlas/rounds#x', path: '/atlas/rounds',
+      body: { id: '00000000-0000-4000-8000-000000000000' }, user: 'someone-else', anonymous: false, seq: 1 }); put.onsuccess = () => done(true) } })`)
+  const posted = posts.length
+  await browser.goto(service.base + '/en', { waitFor: 'document.querySelectorAll(".glyph-tile").length > 0' })
+  await Bun.sleep(2000)
+  assert(!await browser.evaluate(shown), 'another account\'s save is not shown as sending')
+  assert(!posts.slice(posted).some(p => p.path === '/atlas/rounds'), 'another account\'s save is not sent')
+  assert(await browser.evaluate(kept) === 1, 'another account\'s save stays kept')
+  await browser.evaluate(`new Promise(done => { const asked = indexedDB.open('atlas-outbox'); asked.onsuccess = () => {
+    const gone = asked.result.transaction('saves', 'readwrite').objectStore('saves').clear(); gone.onsuccess = () => done(true) } })`)
+  console.log('PASS a save kept for another account waits, unsent and uncounted')
+
   // A kept save the crop moved past meanwhile is refused when it is sent, and the inspector shows the
   // refusal as it shows any.
   const moved = await tile(8), movedPath = '/atlas/characters/' + encodeURIComponent(moved)
