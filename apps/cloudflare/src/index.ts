@@ -1033,6 +1033,117 @@ async function decades(env: Env, ctx: ExecutionContext, url: URL) {
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': 'public, max-age=3600' } })));
   return body;
 }
+// A character's or grapheme's crops along its time axis (編年): each decade's crops counted, and a few of
+// them drawn by their shuffle so each decade shows a fair sample; the undated as decade null. A crop is
+// placed by its book's date on `axis`, and the crops may be narrowed to a style group, a kind of
+// production (`handwritten`, `printed`, `inscribed` and what is under it) or some of the grapheme's
+// characters (a script's). The answer is the same for every visitor, so the edge keeps it by the
+// stamps the decades are kept by (`axisVersion`).
+const CHRONOLOGY_MAX = 240;
+export type ChronologyFilter = { style: number | null; production: string | null; chars: string[] };
+function chronologyFilter(q: URLSearchParams): ChronologyFilter {
+  const production = q.get('production');
+  if (production && !/^[a-z_]+(\/[a-z_]+)*$/.test(production)) throw new Problem(422, 'Unknown production.');
+  const chars = (q.get('chars') ?? '').split(',').filter(Boolean);
+  if (chars.length > 20 || chars.some(c => [...c].length > 4)) throw new Problem(422, 'Name at most 20 characters.');
+  return { style: styleGroup(q), production, chars };
+}
+/** The conditions of `filter` on a row whose style order, production and character are these columns. */
+export function chronologyConditions(filter: ChronologyFilter, columns: { style: string; production: string; character: string }) {
+  const sql: string[] = [], values: (string | number)[] = [];
+  if (filter.style !== null) { sql.push(`${columns.style}=?`); values.push(filter.style) }
+  // A production and every node under it: `printed` takes `printed/woodblock`, compared as text, not as a LIKE pattern.
+  if (filter.production) { sql.push(`(${columns.production}=? OR substr(${columns.production},1,?)=?)`); values.push(filter.production, filter.production.length + 1, filter.production + '/') }
+  if (filter.chars.length) { sql.push(`${columns.character} IN (${filter.chars.map(() => '?').join(',')})`); values.push(...filter.chars) }
+  return { sql: sql.map(c => ' AND ' + c).join(''), values };
+}
+// Each decade is ranked on its keys alone, and only the crops kept are read whole: a crop's JSON is
+// kilobytes, and sorting it with every crop of a common character would cost more than the answer.
+export const localChronologyQuery = (grapheme: boolean, axis: YearOptions['axis'], conditions = '') =>
+  `SELECT u.*,k.decade,k.r,k.bucket FROM (SELECT * FROM (SELECT u.rowid AS rid,${decadeColumn} AS decade,
+    row_number() OVER (PARTITION BY ${decadeColumn} ORDER BY u.shuffle,u.id) AS r,count(*) OVER (PARTITION BY ${decadeColumn}) AS bucket
+    FROM units u${datingJoin('u.document', axis)} WHERE ${grapheme
+      ? 'u.id IN (SELECT id FROM units WHERE origin=? AND family=? UNION SELECT id FROM units WHERE origin=? AND character=?)'
+      : 'u.origin=? AND u.character=?'}${conditions}) WHERE r<=?) k CROSS JOIN units u ON u.rowid=k.rid ORDER BY k.decade,k.r`;
+// A corpus gallery's glyphs by their keys only (`corpusSelection` without the records' JSON): the
+// character a decision gave a named glyph, its style group and its document.
+export const corpusKeys = (field: 'character' | 'family') => `SELECT c.id AS id,c.document AS document,c.shuffle AS shuffle,
+    c.style_order AS s,c.production AS production,CASE WHEN u.id IS NULL THEN c.character ELSE u.character END AS ch
+    FROM corpus_units c LEFT JOIN units u ON c.id=u.id WHERE c.${field}=? AND (u.id IS NULL OR u.${field}=c.${field})
+  UNION ALL SELECT c.id,c.document,c.shuffle,u.style_order,c.production,u.character
+    FROM units u${field === 'character' ? ' INDEXED BY unit_corpus_character_style' : ''} JOIN corpus_units c ON c.id=u.id
+    WHERE u.origin='corpus' AND u.${field}=? AND c.${field} IS NOT u.${field}`;
+export const corpusChronologyQuery = (grapheme: boolean, axis: YearOptions['axis'], conditions = '') =>
+  `SELECT * FROM (SELECT x.id,${decadeColumn} AS decade,row_number() OVER (PARTITION BY ${decadeColumn} ORDER BY x.shuffle,x.id) AS r,
+    count(*) OVER (PARTITION BY ${decadeColumn}) AS bucket FROM (${corpusKeys(grapheme ? 'family' : 'character')}) x${datingJoin('x.document', axis)}
+    WHERE 1=1${conditions}) WHERE r<=? ORDER BY decade,r`;
+// The rows of the corpus glyphs kept, with the row a round or decision gave a named one.
+export const corpusRowsQuery = (n: number) => `SELECT c.*,u.data AS overlay,u.written_form AS overlay_form
+  FROM corpus_units c LEFT JOIN units u ON u.id=c.id WHERE c.id IN (${Array(n).fill('?').join(',')})`;
+async function chronology(env: Env, ctx: ExecutionContext, url: URL) {
+  const q = url.searchParams, { data } = await known(env, q.get('code_point') || '');
+  const axis = q.get('axis') === 'composed' ? 'composed' : 'witness', grapheme = q.get('scope') === 'grapheme';
+  const per = Math.max(1, integer(q, 'per', 6, 12)), filter = chronologyFilter(q);
+  const family = data.grapheme?.code_point || data.code_point, selected = grapheme ? family : data.char;
+  const version = await axisVersion(env);
+  const key = new Request(`${url.origin}/layers/chronology?v=${encodeURIComponent(version)}&c=${encodeURIComponent(data.code_point)}&s=${grapheme}&a=${axis}&p=${per}`
+    + `&f=${encodeURIComponent(JSON.stringify(filter))}`);
+  const cached = await caches.default.match(key);
+  if (cached) return cached.json();
+  const local = chronologyConditions(filter, { style: 'u.style_order', production: 'u.production', character: 'u.character' });
+  const corpus = chronologyConditions(filter, { style: 's', production: 'production', character: 'ch' });
+  const [own, glyphs] = await env.DB.batch([
+    env.DB.prepare(localChronologyQuery(grapheme, axis, local.sql))
+      .bind(...(grapheme ? ['local', family, 'local', data.char] : ['local', data.char]), ...local.values, per),
+    env.DB.prepare(corpusChronologyQuery(grapheme, axis, corpus.sql)).bind(selected, selected, ...corpus.values, per),
+  ]);
+  // At most CHRONOLOGY_MAX crops of each list are drawn: across many decades, each shows fewer.
+  const fewer = <T extends { r: number }>(found: T[]) => {
+    let k = per;
+    while (k > 1 && found.filter(row => row.r <= k).length > CHRONOLOGY_MAX) k--;
+    // More decades than the cap: the earliest keep one crop each.
+    return found.filter(row => row.r <= k).slice(0, CHRONOLOGY_MAX);
+  };
+  type Bucket = { decade: number | null; local: number; corpus: number; items: Json[] };
+  const buckets = new Map<number | null, Bucket>();
+  const bucketOf = (decade: number | null) => buckets.get(decade) ?? buckets.set(decade, { decade, local: 0, corpus: 0, items: [] }).get(decade)!;
+  for (const row of own.results as (UnitRow & { decade: number | null; r: number; bucket: number })[]) {
+    bucketOf(row.decade).local = row.bucket;
+  }
+  for (const row of fewer(own.results as (UnitRow & { decade: number | null; r: number; bucket: number })[])) {
+    bucketOf(row.decade).items.push({ ...compact(row), origin: 'collection' });
+  }
+  const found = glyphs.results as { id: string; decade: number | null; r: number; bucket: number }[];
+  for (const row of found) bucketOf(row.decade).corpus = row.bucket;
+  // A decade shows the collection's crops first; the corpus fills what is left of its `per`, and only
+  // those glyphs' records are read.
+  const room = (decade: number | null) => per - (buckets.get(decade)?.items.length ?? 0);
+  const kept = fewer(found).filter(row => row.r <= room(row.decade));
+  const decadeOf = new Map(kept.map(row => [row.id, row.decade]));
+  const rows: (CorpusRow & { overlay: string | null; overlay_form: string | null })[] = [];
+  for (let i = 0; i < kept.length; i += 90) {
+    const ids = kept.slice(i, i + 90).map(row => row.id);
+    rows.push(...(await env.DB.prepare(corpusRowsQuery(ids.length)).bind(...ids).all<CorpusRow & { overlay: string | null; overlay_form: string | null }>()).results);
+  }
+  const order = new Map(kept.map((row, i) => [row.id, i]));
+  rows.sort((a, b) => order.get(a.id)! - order.get(b.id)!);
+  // Bound simultaneous R2 streams, as a corpus gallery page does.
+  for (let i = 0; i < rows.length; i += 8) {
+    const records = await Promise.all(rows.slice(i, i + 8).map(async row => ({ row,
+      item: { ...(row.overlay ? parse(row.overlay) : await corpusData(env, row)), style: row.style, ...(row.overlay_form ? { written_form: row.overlay_form } : {}) } })));
+    for (const { row, item } of records) bucketOf(decadeOf.get(row.id) ?? null).items.push({ ...listing(item), origin: 'corpus' });
+  }
+  // A decade shows `per` crops, the collection's first, as many as it has, then the corpus's.
+  const all = [...buckets.values()];
+  for (const bucket of all) bucket.items = bucket.items.slice(0, per);
+  const dated = await withDating(env, all.flatMap(b => b.items));
+  let at = 0;
+  for (const bucket of all) bucket.items = dated.slice(at, at += bucket.items.length);
+  const body = { code_point: data.code_point, char: data.char, axis, scope: grapheme ? 'grapheme' : 'character', per,
+    buckets: all.filter(b => b.decade !== null).sort((a, b) => a.decade! - b.decade!), undated: buckets.get(null) ?? { decade: null, local: 0, corpus: 0, items: [] } };
+  ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': 'public, max-age=3600' } })));
+  return body;
+}
 // A grapheme's crops counted by style group, each branch read along its own index.
 export const graphemeCountsQuery = (extra = '') => `SELECT style_order AS s,count(*) AS n FROM units
   WHERE id IN (SELECT id FROM units WHERE origin=? AND family=? UNION SELECT id FROM units WHERE origin=? AND character=?)${extra} GROUP BY 1`;
@@ -1654,6 +1765,7 @@ const routes = {
         return json({...found,glyphs:found.total,glyph_items:found.items,retry:false})}
       if(path==='/layers/gallery')return json(await gallery(env,q));
       if(path==='/layers/decades')return json(await decades(env,ctx,url));
+      if(path==='/layers/chronology')return json(await chronology(env,ctx,url));
       if(path==='/layers/summary')return json(await meta(env,'corpus_index'));
       if(path==='/layers/graphemes'||path==='/layers/ligatures'){
         const selector=path.endsWith('ligatures')?"json_extract(data,'$.ligature') IS NOT NULL":"json_array_length(json_extract(data,'$.grapheme.members'))>1";

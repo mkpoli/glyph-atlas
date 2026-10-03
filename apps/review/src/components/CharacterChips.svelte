@@ -1,5 +1,6 @@
 <script>
   import ScriptLegend from './ScriptLegend.svelte'
+  import { chronologyAddress } from '../lib/chronology.js'
   import ZiLink from './ZiLink.svelte'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import ScriptText from './ScriptText.svelte'
@@ -106,6 +107,7 @@
       <span class="layer-label">{t('chips.forms')}</span>
       <span>{#if expand === 'grapheme'}{t('chips.allForms')}{:else}<ScriptText text={card.char} script={card.script} />{/if}</span>
       {#if formsFamily}<a class="forms-link" href={localize('/forms/' + formsFamily)}>{t('nav.forms')} →</a>{/if}
+      {#if card.code_point}<a class="forms-link" href={localize(chronologyAddress(card.code_point, { scope: expand === 'grapheme' ? 'grapheme' : '' }))}>{t('nav.chronology')} →</a>{/if}
       {#if expand !== 'grapheme' && card.candidates?.known && countsLabel(card.candidates)}<small>{countsLabel(card.candidates)}</small>{/if}
     </div>
     {#if card.ligature || card.jibo?.length || card.origin?.length || card.derived?.length || card.expansions?.some(o => o.key !== 'grapheme') || onreview}
