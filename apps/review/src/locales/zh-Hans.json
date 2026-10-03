@@ -782,5 +782,10 @@
   "privacy.changes.body": "本页的变更记录可在网站的GitHub公开仓库中查看，上方日期为最后更新日期。",
   "footer.privacy": "隐私政策",
   "similar.previous": "上一组相似裁切",
-  "similar.next": "下一组相似裁切"
+  "similar.next": "下一组相似裁切",
+  "licence.pd": "公有领域",
+  "licence.pdm": "公有领域标识",
+  "licence.bespoke": "注明出处即可自由使用",
+  "licence.rsNocCr": "无版权，有合同限制",
+  "licence.restricted": "需获许可"
 }

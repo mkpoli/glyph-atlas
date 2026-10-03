@@ -781,5 +781,10 @@
   "privacy.changes.body": "本頁更易之錄，列於本站在GitHub之公開儲存庫；上方所記，爲末次更易之日。",
   "footer.privacy": "私隱",
   "similar.previous": "前似截",
-  "similar.next": "次似截"
+  "similar.next": "次似截",
+  "licence.pd": "公有",
+  "licence.pdm": "公有標",
+  "licence.bespoke": "記出處則可自由用",
+  "licence.rsNocCr": "無著作權，有約制",
+  "licence.restricted": "須許可"
 }

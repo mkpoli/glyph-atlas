@@ -764,5 +764,10 @@
   "privacy.changes.body": "Các thay đổi của trang này được ghi lại trong kho mã nguồn công khai của trang trên GitHub. Ngày ở trên cho biết lần cập nhật gần nhất.",
   "footer.privacy": "Quyền riêng tư",
   "similar.previous": "Các vùng cắt giống trước",
-  "similar.next": "Các vùng cắt giống tiếp"
+  "similar.next": "Các vùng cắt giống tiếp",
+  "licence.pd": "Không còn bản quyền",
+  "licence.pdm": "Dấu không còn bản quyền",
+  "licence.bespoke": "Dùng tự do khi ghi nguồn",
+  "licence.rsNocCr": "Không bản quyền, có hạn chế theo hợp đồng",
+  "licence.restricted": "Cần xin phép"
 }

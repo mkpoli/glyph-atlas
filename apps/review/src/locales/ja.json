@@ -779,5 +779,10 @@
   "privacy.changes.body": "本ページの変更履歴はGitHubの公開リポジトリに記録され、上記の日付は最新の改訂日を示しています。",
   "footer.privacy": "プライバシー",
   "similar.previous": "前の似た切り出し",
-  "similar.next": "次の似た切り出し"
+  "similar.next": "次の似た切り出し",
+  "licence.pd": "パブリックドメイン",
+  "licence.pdm": "パブリック・ドメイン・マーク",
+  "licence.bespoke": "出典明記で自由利用",
+  "licence.rsNocCr": "著作権なし・契約上の制限あり",
+  "licence.restricted": "利用には許諾が必要"
 }

@@ -782,5 +782,10 @@
   "privacy.changes.body": "本頁的變更紀錄可在網站的GitHub公開儲存庫中查看，上方日期為最後更新日期。",
   "footer.privacy": "隱私權政策",
   "similar.previous": "上一組相似裁切",
-  "similar.next": "下一組相似裁切"
+  "similar.next": "下一組相似裁切",
+  "licence.pd": "公有領域",
+  "licence.pdm": "公有領域標章",
+  "licence.bespoke": "註明出處即可自由使用",
+  "licence.rsNocCr": "無版權，有契約限制",
+  "licence.restricted": "需獲許可"
 }

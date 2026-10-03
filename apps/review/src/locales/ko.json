@@ -763,5 +763,10 @@
   "privacy.changes.body": "이 페이지의 변경 내역은 GitHub의 사이트 공개 저장소에 기록됩니다. 위 날짜는 마지막으로 수정한 날짜입니다.",
   "footer.privacy": "개인정보 처리방침",
   "similar.previous": "이전 비슷한 크롭",
-  "similar.next": "다음 비슷한 크롭"
+  "similar.next": "다음 비슷한 크롭",
+  "licence.pd": "퍼블릭 도메인",
+  "licence.pdm": "퍼블릭 도메인 마크",
+  "licence.bespoke": "출처 표시 후 자유 이용",
+  "licence.rsNocCr": "저작권 없음 · 계약상 제한",
+  "licence.restricted": "이용 허락 필요"
 }

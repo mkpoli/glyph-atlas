@@ -809,5 +809,10 @@
   "privacy.changes.body": "Changes to this page are listed in the site's public repository on GitHub, and the date above shows the latest.",
   "footer.privacy": "Privacy",
   "similar.previous": "Previous similar crops",
-  "similar.next": "More similar crops"
+  "similar.next": "More similar crops",
+  "licence.pd": "Public domain",
+  "licence.pdm": "Public Domain Mark",
+  "licence.bespoke": "Free to use with credit",
+  "licence.rsNocCr": "No copyright, contractual restrictions",
+  "licence.restricted": "Permission required"
 }

@@ -763,5 +763,10 @@
   "privacy.changes.body": "이 페이지의 變更 內譯은 GitHub의 사이트 公開 貯藏所에 記錄됩니다. 위 날짜는 마지막으로 修正한 날짜입니다.",
   "footer.privacy": "個人情報 處理方針",
   "similar.previous": "以前 비슷한 크롭",
-  "similar.next": "다음 비슷한 크롭"
+  "similar.next": "다음 비슷한 크롭",
+  "licence.pd": "퍼블릭 도메인",
+  "licence.pdm": "퍼블릭 도메인 마크",
+  "licence.bespoke": "出處 表示 後 自由 利用",
+  "licence.rsNocCr": "著作權 없음 · 契約上 制限",
+  "licence.restricted": "利用 許諾 必要"
 }
