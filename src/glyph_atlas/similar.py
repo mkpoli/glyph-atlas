@@ -25,6 +25,10 @@ Two kinds of crop are embedded, keyed by the ids the site serves:
 A crop whose image, box and encoder are unchanged since the current revision keeps its vector, so a
 run embeds only what is new; a changed label or source makes a new revision without re-embedding.
 `<out>/current` then points at the revision. `neighbours` adds `<revision>/neighbours/`.
+
+`vectorize_plan` writes the upserts and deletions that bring a Cloudflare Vectorize index to a
+revision. The image search queries that index with the vector a reader's browser computes from an
+uploaded image; `scripts/publish_reverse.sh` applies the plan.
 """
 from __future__ import annotations
 
@@ -389,3 +393,71 @@ def neighbours(directory: Path, *, k: int = NEIGHBOURS, block: int = 1024, galle
     shutil.rmtree(target, ignore_errors=True)
     os.replace(staging, target)
     return manifest
+
+
+#: Vectorize keeps an id of at most this many bytes.
+VECTORIZE_ID_BYTES = 64
+#: Vectors in one upsert file: the most the Cloudflare API takes in one batch.
+VECTORIZE_BATCH = 5000
+
+
+def vectorize_index_name(encoder: str) -> str:
+    """The Vectorize index that holds one encoder's vectors: a new encoder is a new index, so a reader
+    whose model differs from the index's is never searched against it."""
+    return f"glyph-atlas-similar-{encoder[:8]}"
+
+
+def vectorize_plan(directory: Path, state: Path, out: Path) -> dict:
+    """What a Vectorize index needs to hold `directory`'s crops, given what `state` says it holds.
+
+    `state` is the parquet `publish_reverse.sh` keeps beside the index after each upload (`id`,
+    `fingerprint`, `label`, `origin`); it is absent for a new index. Writes to `out`:
+
+    - `upsert-NNNN.ndjson`: every crop that is new, or whose vector, label or origin changed, as
+      Vectorize records `{"id", "values", "metadata": {"label", "origin"}}`, `VECTORIZE_BATCH` a
+      file. `label` is left out for a crop filed under no character;
+    - `delete.txt`: the ids the index holds that the revision no longer has, one a line;
+    - `state.parquet`: what the index holds once both are applied;
+    - `plan.json`: the index name, the encoder, the revision and the counts.
+
+    A crop id longer than Vectorize allows stops the run before anything is written.
+    """
+    manifest = json.loads((directory / "manifest.json").read_text())
+    encoder = manifest["encoder"]
+    rows = pq.read_table(directory / "units.parquet", columns=["id", "label", "origin", "fingerprint"]).to_pydict()
+    long = [i for i in rows["id"] if len(i.encode()) > VECTORIZE_ID_BYTES]
+    if long:
+        raise ValueError(f"{len(long)} crop ids are longer than {VECTORIZE_ID_BYTES} bytes, such as {long[0]!r}")
+    held: dict[str, tuple] = {}
+    if state.is_file():
+        old = pq.read_table(state).to_pydict()
+        if old.get("encoder") and set(old["encoder"]) != {encoder}:
+            raise ValueError(f"{state} holds another encoder's vectors; a new encoder takes a new index")
+        held = {i: (f, label, o) for i, f, label, o in
+                zip(old["id"], old["fingerprint"], old["label"], old["origin"], strict=True)}
+    vectors = np.load(directory / "vectors.npy", mmap_mode="r")
+    shutil.rmtree(out, ignore_errors=True)
+    out.mkdir(parents=True)
+    changed = [n for n, i in enumerate(rows["id"])
+               if held.get(i) != (rows["fingerprint"][n], rows["label"][n], rows["origin"][n])]
+    for start in range(0, len(changed), VECTORIZE_BATCH):
+        lines = []
+        for n in changed[start:start + VECTORIZE_BATCH]:
+            metadata = {"origin": rows["origin"][n]}
+            if rows["label"][n]:
+                metadata["label"] = rows["label"][n]
+            # Four significant digits: within 5e-4 of the float16 value, which a cosine search does not notice.
+            values = "[" + ",".join(f"{v:.4g}" for v in vectors[n].astype(np.float32).tolist()) + "]"
+            lines.append(f'{{"id":{json.dumps(rows["id"][n])},"values":{values},'
+                         f'"metadata":{json.dumps(metadata, ensure_ascii=False)}}}')
+        (out / f"upsert-{start // VECTORIZE_BATCH:04d}.ndjson").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    current = set(rows["id"])
+    gone = sorted(i for i in held if i not in current)
+    (out / "delete.txt").write_text("".join(f"{i}\n" for i in gone))
+    pq.write_table(pa.table({**{k: rows[k] for k in ("id", "fingerprint", "label", "origin")},
+                             "encoder": [encoder] * len(rows["id"])}), out / "state.parquet")
+    plan = {"index": vectorize_index_name(encoder), "encoder": encoder, "revision": manifest["revision"],
+            "crops": len(rows["id"]), "dimensions": int(vectors.shape[1]), "upsert": len(changed),
+            "delete": len(gone), "files": -(-len(changed) // VECTORIZE_BATCH)}
+    (out / "plan.json").write_text(json.dumps(plan, indent=1) + "\n")
+    return plan

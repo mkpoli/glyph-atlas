@@ -1267,6 +1267,22 @@ def similar_neighbours(
     typer.echo(json.dumps(neighbours((out / "current").resolve(), k=k)))
 
 
+@similar_app.command("vectorize")
+def similar_vectorize(
+    out: Annotated[Path, typer.Option(help="directory holding the revisions and `current`")] = Path("work/similar"),
+    state: Annotated[Path | None, typer.Option(help="what the Vectorize index holds; default work/similar/vectorize/<index>/state.parquet")] = None,
+    plan: Annotated[Path, typer.Option(help="directory the upsert files and the plan are written to")] = Path("work/similar/vectorize/plan"),
+) -> None:
+    """Write the Vectorize upserts and deletions that bring the image-search index to `current`."""
+    from .similar import vectorize_index_name, vectorize_plan
+
+    directory = (out / "current").resolve()
+    if state is None:
+        encoder = json.loads((directory / "manifest.json").read_text())["encoder"]
+        state = out / "vectorize" / vectorize_index_name(encoder) / "state.parquet"
+    typer.echo(json.dumps(vectorize_plan(directory, state, plan)))
+
+
 @forms_app.command("audit")
 def forms_audit(
     root: Annotated[Path, typer.Option(help="corpus root")] = Path("work"),

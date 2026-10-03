@@ -168,3 +168,45 @@ def test_neighbours_list_the_nearest_and_the_nearest_filed_differently(tmp_path)
     assert [n for n, _ in entries["d"]["similar"]] == ["e", "c"]
     # An unlabelled crop is a neighbour, but has no list of its own of differently filed ones.
     assert "filed_differently" not in entries["e"]
+
+
+def revision(directory: Path, rows: list[tuple[str, str | None, str]], encoder: str = "e" * 64) -> Path:
+    """A similar-crop revision of `(id, label, fingerprint)` rows with unit vectors."""
+    import pyarrow as pa
+
+    directory.mkdir(parents=True, exist_ok=True)
+    pq.write_table(pa.table({"id": [r[0] for r in rows], "label": [r[1] for r in rows],
+                             "origin": ["local"] * len(rows), "source": ["x"] * len(rows),
+                             "fingerprint": [r[2] for r in rows]}), directory / "units.parquet")
+    vectors = np.eye(len(rows), 4, dtype=np.float16)
+    np.save(directory / "vectors.npy", vectors)
+    (directory / "manifest.json").write_text(json.dumps({"revision": "r1", "encoder": encoder}))
+    return directory
+
+
+def test_vectorize_plans_only_what_changed(tmp_path):
+    first = revision(tmp_path/"r1", [("a:1", "字", "f1"), ("a:2", None, "f2"), ("a:3", "宇", "f3")])
+    plan = similar.vectorize_plan(first, tmp_path/"state.parquet", tmp_path/"plan")
+    assert plan["index"] == "glyph-atlas-similar-eeeeeeee"
+    assert (plan["upsert"], plan["delete"], plan["files"], plan["dimensions"]) == (3, 0, 1, 4)
+    records = [json.loads(line) for line in (tmp_path/"plan"/"upsert-0000.ndjson").read_text().splitlines()]
+    assert records[0] == {"id": "a:1", "values": [1, 0, 0, 0], "metadata": {"origin": "local", "label": "字"}}
+    assert records[1]["metadata"] == {"origin": "local"}, "a crop filed under nothing has no label"
+    (tmp_path/"plan"/"state.parquet").replace(tmp_path/"state.parquet")
+    # A relabel and a new fingerprint are sent again; a crop the revision dropped is deleted.
+    second = revision(tmp_path/"r2", [("a:1", "学", "f1"), ("a:2", None, "f2b")])
+    plan = similar.vectorize_plan(second, tmp_path/"state.parquet", tmp_path/"plan")
+    assert (plan["upsert"], plan["delete"]) == (2, 1)
+    assert (tmp_path/"plan"/"delete.txt").read_text() == "a:3\n"
+
+
+def test_vectorize_refuses_another_encoder_and_long_ids(tmp_path):
+    import pytest
+    first = revision(tmp_path/"r1", [("a:1", "字", "f1")])
+    similar.vectorize_plan(first, tmp_path/"none.parquet", tmp_path/"plan")
+    other = revision(tmp_path/"r2", [("a:1", "字", "f1")], encoder="d" * 64)
+    with pytest.raises(ValueError, match="another encoder"):
+        similar.vectorize_plan(other, tmp_path/"plan"/"state.parquet", tmp_path/"plan2")
+    long = revision(tmp_path/"r3", [("a:" + "x" * 63, "字", "f1")])
+    with pytest.raises(ValueError, match="longer than 64 bytes"):
+        similar.vectorize_plan(long, tmp_path/"none.parquet", tmp_path/"plan3")
