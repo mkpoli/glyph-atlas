@@ -10,7 +10,7 @@ import { ranking } from './ranking';
 import { reviewers, submissions } from './admin';
 import { READ_BUDGET, RETRY_AFTER, described, retried, transient } from './busy';
 import { actOnClaim, claimsOf, ledgerPage, writeClaim, type LedgerTools } from './ledger';
-import { datingOf, documentDates, documentOf, withDating } from './dating';
+import { datingJoin, datingOf, decadeColumn, documentDates, documentOf, withDating, yearCondition, yearOptions, yearOrder, type YearOptions } from './dating';
 export { leastTypicalQuery } from './forms';
 export { componentMatchQuery } from './components';
 export { dateClaimsQuery, datingQuery } from './dating';
@@ -960,7 +960,19 @@ async function occurrences(env: Env, code: string, q: URLSearchParams, origin = 
       counts: { total, exact: total, exact_total: total }, style_groups: STYLE_NAMES, scope: 'variants', status: 'ok' };
   }
   let counted: D1PreparedStatement, listed: D1PreparedStatement;
-  if (q.get('scope') === 'grapheme' || q.get('expand') === 'grapheme') {
+  const dated = yearOptions(q, (status, message) => { throw new Problem(status, message) });
+  if (dated) {
+    // Placed or narrowed by date: each crop joins its book's date by key, and the page is sorted here.
+    const grapheme = q.get('scope') === 'grapheme' || q.get('expand') === 'grapheme';
+    const family = data.grapheme?.code_point || data.code_point;
+    const { sql: cond, values: years } = yearCondition(dated.years);
+    const from = `FROM units u${datingJoin('u.document', dated.axis)} WHERE ${grapheme
+      ? 'u.id IN (SELECT id FROM units WHERE origin=? AND family=? UNION SELECT id FROM units WHERE origin=? AND character=?)' : 'u.origin=? AND u.character=?'}`;
+    const keys = grapheme ? [origin, family, origin, data.char] : [origin, data.char];
+    const order = dated.order === 'year' ? yearOrder('u.style_order,u.id') : 'u.style_order,u.id';
+    counted = env.DB.prepare(`SELECT u.style_order AS s,count(*) AS n ${from}${tail}${cond} GROUP BY 1`).bind(...keys, ...extra, ...years);
+    listed = env.DB.prepare(`SELECT u.* ${from}${styled}${cond} ORDER BY ${order} LIMIT ? OFFSET ?`).bind(...keys, ...styledExtra, ...years, limit, offset);
+  } else if (q.get('scope') === 'grapheme' || q.get('expand') === 'grapheme') {
     // A grapheme's crops are its family's and its own character's. Each is one range of its own index
     // (`unit_family_style`, `unit_character_style`), and the page merges the two in style and id order;
     // an OR across the two columns would read every crop of the origin instead.
@@ -976,7 +988,36 @@ async function occurrences(env: Env, code: string, q: URLSearchParams, origin = 
   const { styles, total } = styleCounts(count.results as { s: number; n: number }[], group);
   return { ...data.candidates, query: data.code_point, code_point: data.code_point,
     total, available: rows.results.length, items: await withDating(env, await withForms(env, (rows.results as UnitRow[]).map(compact))),
-    counts:{ total, exact:total, exact_total:total }, styles, style_groups: STYLE_NAMES, scope:q.get('scope') || 'character', status:'ok' };
+    counts:{ total, exact:total, exact_total:total }, styles, style_groups: STYLE_NAMES, scope:q.get('scope') || 'character', status:'ok',
+    ...(dated ? { order: dated.order, axis: dated.axis, years: dated.years } : {}) };
+}
+// How many of a character's crops, or its grapheme's, each decade holds by its book's date, the
+// collection's and the corpus's apart, with the undated as decade null. Every visitor gets the same
+// answer, so the edge keeps one copy per catalogue, corpus count and dates version.
+export const localDecadesQuery = (grapheme: boolean, axis: YearOptions['axis']) =>
+  `SELECT ${decadeColumn} AS decade,count(*) AS n FROM units u${datingJoin('u.document', axis)} WHERE ${grapheme
+    ? 'u.id IN (SELECT id FROM units WHERE origin=? AND family=? UNION SELECT id FROM units WHERE origin=? AND character=?)'
+    : 'u.origin=? AND u.character=?'} GROUP BY 1 ORDER BY 1`;
+export const corpusDecadesQuery = (grapheme: boolean, axis: YearOptions['axis']) =>
+  `SELECT ${decadeColumn} AS decade,count(*) AS n FROM (${corpusSelection(grapheme ? 'family' : 'character', 1)}) x${datingJoin('x.document', axis)} GROUP BY 1 ORDER BY 1`;
+async function decades(env: Env, ctx: ExecutionContext, url: URL) {
+  const q = url.searchParams, { data } = await known(env, q.get('code_point') || '');
+  const axis = q.get('axis') === 'composed' ? 'composed' : 'witness', grapheme = q.get('scope') === 'grapheme';
+  const family = data.grapheme?.code_point || data.code_point;
+  const stamps = await env.DB.prepare("SELECT key,value FROM metadata WHERE key IN ('dates_at','corpus_counts_at')").all<{ key: string; value: string }>();
+  const version = [await catalogueVersion(env), ...stamps.results.map(r => `${r.key}=${r.value}`).sort()].join(':');
+  const key = new Request(`${url.origin}/layers/decades?v=${encodeURIComponent(version)}&c=${encodeURIComponent(data.code_point)}&s=${grapheme}&a=${axis}`);
+  const cached = await caches.default.match(key);
+  if (cached) return cached.json();
+  const selected = grapheme ? family : data.char;
+  const [local, corpus] = await env.DB.batch([
+    env.DB.prepare(localDecadesQuery(grapheme, axis)).bind(...(grapheme ? ['local', family, 'local', data.char] : ['local', data.char])),
+    env.DB.prepare(corpusDecadesQuery(grapheme, axis)).bind(selected, selected),
+  ]);
+  const rows = (r: D1Result) => (r.results as { decade: number | null; n: number }[]).map(row => [row.decade, row.n]);
+  const body = { code_point: data.code_point, axis, scope: grapheme ? 'grapheme' : 'character', local: rows(local), corpus: rows(corpus) };
+  ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': 'public, max-age=3600' } })));
+  return body;
 }
 // A grapheme's crops counted by style group, each branch read along its own index.
 export const graphemeCountsQuery = (extra = '') => `SELECT style_order AS s,count(*) AS n FROM units
@@ -998,13 +1039,16 @@ async function corpusOccurrences(env:Env,data:Json,q:URLSearchParams){
   const where=['1=1'],values:(string|number)[]=[...selected,...selected];
   if(q.get('visual_group')){if(q.get('visual_group')==='unassigned')where.push('(CASE WHEN overlay IS NULL THEN character ELSE overlay_character END) IS NULL');
     else{where.push('(CASE WHEN overlay IS NULL THEN visual_group ELSE overlay_group END)=?');values.push(q.get('visual_group')!)}}
-  const join=`FROM (${corpusSelection(field,selected.length)})`;
+  // Placed or narrowed by date: each glyph joins its book's date by key (`corpus_units.document`, 0052).
+  const dated=widened?null:yearOptions(q,(status,message)=>{throw new Problem(status,message)});
+  const join=dated?`FROM (${corpusSelection(field,selected.length)}) x${datingJoin('x.document',dated.axis)}`:`FROM (${corpusSelection(field,selected.length)})`;
+  if(dated){const {sql,values:years}=yearCondition(dated.years);if(sql){where.push(sql.slice(5));values.push(...years)}}
   const styled=group===null?where:[...where,'s=?'],styledValues=group===null?values:[...values,group];
   const [count,rows]=await env.DB.batch([
     // A widening counts no further than its cap, and so has no style counts.
     widened?env.DB.prepare(`SELECT count(*) AS n FROM (SELECT 1 ${join} WHERE ${styled.join(' AND ')} LIMIT ${WIDENED_CAP+1})`).bind(...styledValues)
       :env.DB.prepare(`SELECT s,count(*) AS n ${join} WHERE ${where.join(' AND ')} GROUP BY s`).bind(...values),
-    env.DB.prepare(`SELECT * ${join} WHERE ${styled.join(' AND ')} ORDER BY k,s,i LIMIT ? OFFSET ?`).bind(...styledValues,limit,offset),
+    env.DB.prepare(`SELECT ${dated?'x.*':'*'} ${join} WHERE ${styled.join(' AND ')} ORDER BY ${dated?.order==='year'?yearOrder('k,s,i'):'k,s,i'} LIMIT ? OFFSET ?`).bind(...styledValues,limit,offset),
   ]);
   const grouped=widened?null:styleCounts(count.results as {s:number;n:number}[],group);
   const counted=grouped?grouped.total:(count.results[0] as {n:number}).n;
@@ -1024,7 +1068,8 @@ async function corpusOccurrences(env:Env,data:Json,q:URLSearchParams){
     )`).bind(familyCode,familyCode).first<{total:number;unassigned:number}>();
   return {...data.candidates,code_point:data.code_point,total:widened?Math.min(counted,WIDENED_CAP):counted,capped:widened&&counted>WIDENED_CAP,
     available:formed.length,items:await withDating(env,formed),...(grouped?{styles:grouped.styles}:{}),scope:family?'grapheme':widened?'variants':'character',status:'ok',
-    visual_analysis:info.detail.visual_analysis,family_total:familyCounts?.total||0,unassigned_count:familyCounts?.unassigned||0};
+    visual_analysis:info.detail.visual_analysis,family_total:familyCounts?.total||0,unassigned_count:familyCounts?.unassigned||0,
+    ...(dated?{order:dated.order,axis:dated.axis,years:dated.years}:{})};
 }
 // A document's characters in source order. The primary key serves the filter and the order, and each
 // row joins its unit by id: a published unit gives its current character, state and revision.
@@ -1594,6 +1639,7 @@ const routes = {
       if(path==='/layers/candidates'){const found=await occurrences(env,q.get('code_point')||'',q,'corpus');
         return json({...found,glyphs:found.total,glyph_items:found.items,retry:false})}
       if(path==='/layers/gallery')return json(await gallery(env,q));
+      if(path==='/layers/decades')return json(await decades(env,ctx,url));
       if(path==='/layers/summary')return json(await meta(env,'corpus_index'));
       if(path==='/layers/graphemes'||path==='/layers/ligatures'){
         const selector=path.endsWith('ligatures')?"json_extract(data,'$.ligature') IS NOT NULL":"json_array_length(json_extract(data,'$.grapheme.members'))>1";

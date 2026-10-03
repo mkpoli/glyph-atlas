@@ -66,3 +66,36 @@ export async function documentDates(env: Env, document: string | null): Promise<
   });
   return { dating, ...(dates.length ? { dates } : {}) };
 }
+
+// A gallery placed or narrowed by date: `order=year` lists its crops oldest first, undated last;
+// `years=1601-1700` keeps those whose book's date overlaps the range, `years=undated` those whose has
+// none. `axis` picks the date: the copy's (`witness`, the default) or its text's (`composed`).
+export type YearOptions = { axis: 'witness' | 'composed'; order: 'style' | 'year'; years: { from: number; to: number } | 'undated' | null };
+const YEARS = /^(-?\d{1,4})-(-?\d{1,4})$/;
+export function yearOptions(q: URLSearchParams, fail: (status: number, message: string) => never): YearOptions | null {
+  const order = q.get('order') === 'year' ? 'year' : 'style', raw = q.get('years');
+  const axis = q.get('axis') === 'composed' ? 'composed' : 'witness';
+  let years: YearOptions['years'] = null;
+  if (raw === 'undated') years = 'undated';
+  else if (raw) {
+    const found = YEARS.exec(raw);
+    if (!found || Number(found[1]) > Number(found[2])) fail(422, 'A year range is two years, the earlier first: 1601-1700.');
+    years = { from: Number(found![1]), to: Number(found![2]) };
+  }
+  return order === 'year' || years || axis === 'composed' ? { axis, order, years } : null;
+}
+/** The join that gives each crop of `column`'s book its date on the chosen axis, as `d`. */
+export const datingJoin = (column: string, axis: YearOptions['axis']) =>
+  ` LEFT JOIN document_dating d ON d.document=${column} AND d.axis='${axis === 'composed' ? 'composed' : 'witness'}'`;
+// A dated crop's first year; for a date with only an end (`before 1600`), that end.
+export const YEAR_KEY = 'coalesce(d.start,d.end)';
+/** The condition `years` puts on the joined date, and its values. */
+export function yearCondition(years: YearOptions['years']): { sql: string; values: number[] } {
+  if (years === null) return { sql: '', values: [] };
+  if (years === 'undated') return { sql: ` AND ${YEAR_KEY} IS NULL`, values: [] };
+  return { sql: ` AND coalesce(d.end,d.start)>=? AND ${YEAR_KEY}<=?`, values: [years.from, years.to] };
+}
+/** Oldest first, undated last, then `rest`. */
+export const yearOrder = (rest: string) => `${YEAR_KEY} IS NULL,${YEAR_KEY},coalesce(d.end,d.start),${rest}`;
+// How many crops each decade holds, `decade` null for the undated.
+export const decadeColumn = `CASE WHEN ${YEAR_KEY} IS NULL THEN NULL ELSE (${YEAR_KEY} - (((${YEAR_KEY} % 10) + 10) % 10)) END`;
