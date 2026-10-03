@@ -217,9 +217,28 @@ def kokusho_statements(record: dict[str, Any]) -> Iterator[Statement]:
                                 source="kokusho", locator=f"{url}#chuki.{i}", note=note.strip())
     for i, work in enumerate(record.get("work") or []):
         year = (work.get("year") or "").strip()
-        if year:
-            yield Statement(text=year, kind=dates.kind_of(year, "composed"), scope="work", tier="attested",
+        for event in events(year):
+            yield Statement(text=event, kind=dates.kind_of(event, "composed"), scope="work", tier="attested",
                             source="kokusho", locator=f"{url}#work.{i}.year", note=work.get("name"), fixed=True)
+
+
+_ERA_NAME = re.compile(r"[\u3400-\u9fff]{2,4}?(?=元|\d|[０-９]|[〇一二三四五六七八九十])")
+
+
+def events(text: str) -> list[str]:
+    """The events of one 国書 work date, each with its own kind: 寛政四成、同五序、同八刊 is a composition,
+    a preface and a printing, read as 寛政四成, 寛政五序 and 寛政八刊. A date of one event stays whole."""
+    parts = [p.strip() for p in re.split(r"[、，,]", text) if p.strip()]
+    if len(parts) < 2 or not all(dates.kind_of(p, "") for p in parts):
+        return [text] if text else []
+    out, era = [], None
+    for part in parts:
+        if part.startswith("同") and era:
+            part = era + part[1:]
+        elif found := _ERA_NAME.match(part):
+            era = found.group(0)
+        out.append(part)
+    return out
 
 
 def metadata_statements(entries: Iterable[tuple[str, str]], *, source: str, locator: str) -> Iterator[Statement]:
@@ -232,6 +251,9 @@ def metadata_statements(entries: Iterable[tuple[str, str]], *, source: str, loca
         if fuller and present.get(fuller):
             continue
         value = re.sub(r"<[^>]+>", " ", value).strip()
+        # A value given in several languages or forms is joined by " / " (平安時代・12世紀 / Heian period/12th
+        # century; 1777(序) / 1777-01-01): the first states it as the holder wrote it.
+        value = value.split(" / ")[0].strip()
         if not value or value.strip("0") == "" or re.fullmatch(r"\d", value) or not _DATE_LIKE.search(value):
             continue
         yield Statement(text=value, kind=kind, scope="witness", tier="attested", source=source,
@@ -335,14 +357,12 @@ def build(root: Path, cache: Path, *, fetch: bool = False, convert: bool = False
     candidates = set().union(*(dates.era_candidates(t) for t in japanese)) if japanese else set()
     if convert:
         calendar.prefetch("era", candidates)
-        years: set[str] = set()
-        days: set[str] = set()
+        asked: dict[str, set[str]] = {"year": set(), "month": set(), "date": set()}
         for text in japanese:
-            y, d = dates.year_questions(text, calendar)
-            years |= y
-            days |= d
-        calendar.prefetch("year", years)
-        calendar.prefetch("date", days)
+            for kind, values in dates.year_questions(text, calendar).items():
+                asked[kind] |= values
+        for kind, values in asked.items():
+            calendar.prefetch(kind, values)
     claims: list[DateClaim] = []
     resolved: dict[str, dict[str, Any]] = {}
     counts: Counter = Counter()
