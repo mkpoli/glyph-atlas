@@ -48,7 +48,7 @@ KEEP = {"CODH", "Unicode", "HI", "Lab", "Minna", "de", "Honkoku", "JSON", "ID", 
         "click", "qwerty", "zi", "tools", "Wikipedia", "Hentaigana", "roneo", "scan", "Gothic", "B", "C", "J", "K", "M", "S", "V", "W", "X", "Z", "n", "s",
         "CC", "BY", "SA", "email", "PIN", "you", "example", "org", "Gravatar",
         "Cloudflare", "Web", "Analytics", "Email", "Service", "GitHub", "Google", "Discord", "LINE", "Kakao", "IP", "cookie",
-        "mkpoli", "anon", "a", "b", "c", "HuTime", "hutime", "ap"}
+        "mkpoli", "anon", "a", "b", "c", "HuTime", "hutime", "ap", "MB"}
 
 KAIKKI = "https://kaikki.org/dictionary/Vietnamese/kaikki.org-dictionary-Vietnamese.jsonl"
 UNIHAN = "https://www.unicode.org/Public/18.0.0/ucd/Unihan.zip"

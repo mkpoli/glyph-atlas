@@ -15,6 +15,7 @@
   import ScriptLine from '../components/ScriptLine.svelte'
   import ImageStyleToggle from '../components/ImageStyleToggle.svelte'
   import CharacterSearch from '../components/CharacterSearch.svelte'
+  import ImageSearch from '../components/ImageSearch.svelte'
   import CharacterChips from '../components/CharacterChips.svelte'
   import WorkFilter from '../components/WorkFilter.svelte'
   import GraphemeGrid from '../components/GraphemeGrid.svelte'
@@ -44,6 +45,8 @@
   let grapheme = $state(asked?.grapheme ?? ''), work = $state(asked?.work ?? ''), offset = $state(0), seed = $state(asked?.seed ?? randomSeed())
   let query = $state(asked?.q ?? opened?.picked.char ?? '')
   let choosing = $state(false), catalogueRequest = null
+  // Search by image: open with the image the box was given, or none yet.
+  let imaging = $state(null)
   let filter = $state(asked?.group ?? 'all'), requestId = 0, closed = false
   // The Flagged view hides crops already reviewed in the inspector by default; the choice is
   // remembered across visits.
@@ -704,7 +707,8 @@
     <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} {groupOf} onchoosegroup={chooseGrapheme}
                      onform={form => pick({ code_point: codesOf(form), char: form }, true)}
                      token={grapheme ? charOf(grapheme) : ''} tokenLabel={t('explore.clearGrapheme', { grapheme: charOf(grapheme) })} ontokenclear={() => select('')}
-                     onsubmit={() => { clearTimeout(searchTimer); offset = 0; submitQuery() }} />
+                     onsubmit={() => { clearTimeout(searchTimer); offset = 0; submitQuery() }}
+                     onimage={flagged ? null : file => { if (file || !imaging) imaging = { file, key: (imaging?.key ?? 0) + 1 } }} />
     <div class="filter-tabs" aria-label={t('explore.filter.label')}>{#each [['all', () => t('explore.filter.all')], ['kana', () => t('explore.filter.kana')], ['kanji', () => t('explore.filter.kanji')], ['hangul', () => t('explore.filter.hangul')], ['gugyeol', () => t('explore.filter.gugyeol')]] as [value, text]}<button class:active={filter === value} onclick={() => { filter = value; offset = 0; load() }}>{text()}</button>{/each}</div>
     <!-- A work narrows the collection's listing; choosing one leaves a picked character's gallery. -->
     <WorkFilter {works} value={work} onchange={value => { work = value; if (picked || query) clearQuery(); else { offset = 0; load() } }} />
@@ -715,6 +719,7 @@
     {#if flagged && data?.reported_count}<button class="quiet-link" onclick={toggleReported}>{showReported ? t('explore.flagged.hideReported') : t('explore.flagged.showReported', { count: data.reported_count })}</button>{/if}
     <button class="shuffle" onclick={shuffle} disabled={loading} aria-label={t('explore.shuffle.aria')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h3c4 0 8 12 12 12h3M17 14l4 4-4 4M3 18h3c1.7 0 3.5-2.3 5-5M14 8c1.5-1.4 2.6-2 4-2h3M17 2l4 4-4 4"/></svg>{t('explore.shuffle')}</button>
   </div>
+  {#if imaging}{#key imaging.key}<ImageSearch file={imaging.file} onclose={() => imaging = null} {inspect} />{/key}{/if}
   {#if error}<div class="error-message" role="alert">{error}<button onclick={() => load()}>{t('common.retry')}</button></div>{/if}
   {#if picked}
     <CharacterChips card={picked} bind:expand onselect={item => pick({ code_point: item }, 'exact')} />
