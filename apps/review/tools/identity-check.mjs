@@ -22,4 +22,8 @@ assert.equal(encodeURIComponent('𪜈'), '%F0%AA%9C%88')
 assert.deepEqual(scriptParts('假ムが※').map(part => [part.text, part.key]),
   [['假', 'kanji'], ['ム', 'katakana'], ['が', 'hiragana'], ['※', 'symbol']])
 assert.equal(scriptParts('𪜈', 'katakana').length, 1)
+// A hentaigana and the voicing mark after it are one unit in the hentaigana's colour, stated or not;
+// ハ with the mark stays katakana.
+for (const stated of ['', 'hentaigana']) assert.deepEqual(scriptParts('𛂞\u3099', stated).map(part => [part.text, part.key]), [['𛂞\u3099', 'hiragana']])
+assert.deepEqual(scriptParts('𛂞\u309Aハ\u3099').map(part => [part.text, part.key]), [['𛂞\u309A', 'hiragana'], ['ハ\u3099', 'katakana']])
 console.log('Identity display and script distinctions passed.')

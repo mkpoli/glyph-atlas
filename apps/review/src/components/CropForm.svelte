@@ -51,10 +51,12 @@
     return visible
   })
   const hidden = $derived(bar.filter(chip => !shown.includes(chip)))
+  // The forms under "+n": those cut from the row and a grapheme's forms past the first ten.
+  const rest = $derived([...hidden, ...listed.members.slice(BAR)])
   const q = $derived(query.trim().toUpperCase())
   const matches = item => !q || item.char.toUpperCase().includes(q) || (item.code_point ?? '').includes(q)
   const sections = $derived([
-    ['grapheme', t('chips.grapheme'), [...hidden, ...listed.members.slice(BAR)]],
+    ['grapheme', t('chips.grapheme'), rest],
     ['variants', t('chips.variants'), listed.variants],
     ['derived', t('chips.derived'), listed.derived],
   ].map(([key, title, items]) => [key, title, items.filter(matches)]).filter(([, , items]) => items.length))
@@ -81,7 +83,7 @@
 
 <div class="crop-form" bind:this={root}>
   <div class="form-row" bind:clientWidth={width}><div class="form-fit"><FormChips forms={shown} chosen={chosen} {current} {disabled} label={t('quiz.forms.label', { char: written })} onchoose={choose} /></div>
-    <button type="button" class="form-add" bind:this={addButton} {disabled} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>{hidden.length ? `+${hidden.length}` : '+'}</button></div>
+    <button type="button" class="form-add" bind:this={addButton} {disabled} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>{rest.length ? `+${rest.length}` : '+'}</button></div>
   {#if picking}
     <div class="form-picker" role="dialog" aria-label={t('form.add')}>
       <CharacterSearch compact codePoints autofocus bind:value={query} label={t('form.add')} placeholder={t('search.placeholder')} onselect={add} />
