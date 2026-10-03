@@ -1052,7 +1052,7 @@ async function corpusOccurrences(env:Env,data:Json,q:URLSearchParams){
   const where=['1=1'],values:(string|number)[]=[...selected,...selected];
   if(q.get('visual_group')){if(q.get('visual_group')==='unassigned')where.push('(CASE WHEN overlay IS NULL THEN character ELSE overlay_character END) IS NULL');
     else{where.push('(CASE WHEN overlay IS NULL THEN visual_group ELSE overlay_group END)=?');values.push(q.get('visual_group')!)}}
-  // Placed or narrowed by date: each glyph joins its book's date by key (`corpus_units.document`, 0052).
+  // Placed or narrowed by date: each glyph joins its book's date by key (`corpus_units.document`, 0053).
   const dated=widened?null:yearOptions(q,(status,message)=>{throw new Problem(status,message)});
   const join=dated?`FROM (${corpusSelection(field,selected.length)}) x${datingJoin('x.document',dated.axis)}`:`FROM (${corpusSelection(field,selected.length)})`;
   if(dated){const {sql,values:years}=yearCondition(dated.years);if(sql){where.push(sql.slice(5));values.push(...years)}}
