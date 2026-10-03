@@ -3,12 +3,12 @@
 // restarting and will answer the same query once it is free again
 // (https://developers.cloudflare.com/d1/observability/debug-d1/#error-list and
 // https://developers.cloudflare.com/d1/best-practices/retry-queries/). A local database answers
-// `database is locked` instead.
+// `database is locked` instead. A query that runs out of D1's memory or CPU time is left out: it
+// fails the same way when asked again.
 const TRANSIENT = new RegExp([
   'Network connection lost', 'storage caused object to be reset', 'reset because its code was updated',
   'D1 DB is overloaded', 'Cannot resolve D1 DB due to transient issue', 'Internal error while starting up D1 DB storage',
-  'D1 DB storage operation exceeded timeout', "D1 DB's isolate exceeded its memory limit", 'D1 DB exceeded its CPU time limit',
-  'SQLITE_BUSY', 'database is locked',
+  'D1 DB storage operation exceeded timeout', 'SQLITE_BUSY', 'database is locked',
 ].map(text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'));
 
 /** Whether an error is D1 being busy or restarting, judged by it and the errors it was caused by. */
