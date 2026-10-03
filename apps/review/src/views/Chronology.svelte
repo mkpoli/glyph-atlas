@@ -148,10 +148,10 @@
     </figure>
 
     <div class="strip">
-    {#if strip.width > shownWidth}
+    <div class="turns">{#if strip.width > shownWidth}
       <button class="turn earlier" aria-label={t('chronology.earlier')} disabled={scrolled <= 0} onclick={() => turn(-1)}>‹</button>
       <button class="turn later" aria-label={t('chronology.later')} disabled={scrolled >= strip.width - shownWidth - 1} onclick={() => turn(1)}>›</button>
-    {/if}
+    {/if}</div>
     <div class="track" bind:this={track} bind:clientWidth={shownWidth} onscroll={() => scrolled = track.scrollLeft}>
       <div class="track-inner" style:width="{strip.width}px">
         {#each strip.lines as line (line.year)}<span class="century" class:faint={!line.century} style:left="{line.x}px"><span>{formatYear(line.year)}</span></span>{/each}
@@ -205,11 +205,11 @@
   .overview-ticks span{position:absolute;top:4px;transform:translateX(-50%)}
   .overview-ticks span:first-child{transform:none}
   .overview-ticks span:last-child:not(:first-child){transform:translateX(-100%)}
-  .strip{position:relative;margin-top:18px}
+  .strip{margin-top:10px}
+  .turns{display:flex;justify-content:flex-end;gap:4px;height:28px;margin-bottom:4px}
   .track{overflow-x:auto;overflow-y:hidden;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--surface-subtle);scrollbar-width:none}
   .track::-webkit-scrollbar{display:none}
-  .turn{position:absolute;top:0;z-index:2;width:28px;height:28px;display:flex;align-items:center;justify-content:center;padding:0;border:0;border-bottom:1px solid var(--line);background:var(--surface-subtle);color:var(--muted);font-size:16px;line-height:1}
-  .turn.earlier{right:28px;border-left:1px solid var(--line)}.turn.later{right:0;border-left:1px solid var(--line)}
+  .turn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;padding:0;border:1px solid var(--line);border-radius:6px;background:var(--surface-subtle);color:var(--muted);font-size:16px;line-height:1}
   .turn:hover:not(:disabled){color:var(--accent)}.turn:disabled{color:var(--faint);opacity:.5}
   .track-inner{position:relative;height:calc(28px + 6 * 60px + 40px);min-width:100%}
   .century{position:absolute;top:0;bottom:0;border-left:1px solid var(--line)}
