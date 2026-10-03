@@ -1,8 +1,10 @@
 // A crop as the classifier takes it, computed as `glyph_atlas.classify.preprocess` and `crop_array`
-// compute it with Pillow and NumPy, so the browser's vector for an image is the one the index would
-// hold for it: grey on white, padded to a centred square, resized to `size` with Pillow's bilinear
-// filter, scaled to [0, 1], normalised and repeated into three channels. Each integer step follows
-// Pillow's own fixed-point arithmetic; tests/test_image_search_preprocess.py compares the two.
+// compute it with Pillow and NumPy: grey on white, padded to a centred square, resized to `size` with
+// Pillow's bilinear filter, scaled to [0, 1], normalised and repeated into three channels. Each integer
+// step follows Pillow's own fixed-point arithmetic, and tests/test_image_search_preprocess.py compares
+// the two on the same RGBA pixels. What the browser hands over can still differ from what Pillow would
+// decode: a canvas keeps partly transparent pixels premultiplied, and some browsers add noise to
+// canvas reads; an opaque scan or photo is read as it is.
 
 /** Pillow's alpha composite of one pixel over opaque white, for one channel (libImaging/AlphaComposite.c). */
 function overWhite(value, alpha) {

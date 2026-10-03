@@ -30,8 +30,9 @@
   // A box over an image that a drag inside moves and its eight handles resize. `box` is in the image's
   // own units; `scale` is screen pixels per unit and `origin` the screen position of the image's
   // corner, inside the positioned element that holds the editor. `onedit` hears each new box, and
-  // whether it was a move or a resize; the caller keeps it inside its bounds.
-  let { box, scale, origin, onedit, disabled = false } = $props()
+  // whether it was a move or a resize; the caller keeps it inside its bounds. `onstart` hears a drag
+  // begin, so the view can take the keyboard as a drag on itself would give it.
+  let { box, scale, origin, onedit, onstart = () => {}, disabled = false } = $props()
   let pointer = null
 
   const style = $derived(box ? `left:${origin.x + box.x * scale}px;top:${origin.y + box.y * scale}px;width:${box.w * scale}px;height:${box.h * scale}px` : '')
@@ -43,6 +44,7 @@
     event.stopPropagation()
     pointer = { id: event.pointerId, x: event.clientX, y: event.clientY, edge: event.target.dataset?.edge ?? null, from: { ...box } }
     event.currentTarget.setPointerCapture(event.pointerId)
+    onstart()
   }
   function move(event) {
     if (!pointer || pointer.id !== event.pointerId) return

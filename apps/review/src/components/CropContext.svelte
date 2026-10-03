@@ -184,7 +184,8 @@
       </div>
       {#if ready}
         <svg class="context-shade" viewBox={`0 0 ${size.width} ${size.height}`} preserveAspectRatio="none" aria-hidden="true"><path d={shadePath} fill-rule="evenodd" /></svg>
-        {#if editing}<BoxEditor box={crop} {scale} {origin} {disabled} onedit={(box, mode) => onedit?.(box, mode)} />
+        {#if editing}<BoxEditor box={crop} {scale} {origin} {disabled} onedit={(box, mode) => onedit?.(box, mode)}
+          onstart={() => { expandPage = true; viewport.focus({ preventScroll: true }) }} />
         {:else}<span class="crop-mask" style={mask} aria-hidden="true"></span>{/if}
       {/if}
     {/if}

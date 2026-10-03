@@ -3,7 +3,8 @@
 //
 // The model is downloaded only when the reader asks for it, and kept in Cache Storage under the
 // version the site published (`/atlas/similar/model`), with the onnxruntime-web WebAssembly that runs
-// it. A newer version the site publishes is offered as an update; the kept one is used until then.
+// it. A newer version, or a page built with another onnxruntime-web, is offered as an update, which
+// the reader downloads before searching again.
 import { preprocess, tensor } from './preprocess.js'
 
 const CACHE = 'glyph-atlas-image-search'
@@ -102,6 +103,8 @@ export async function download(info, onprogress = () => {}, signal = undefined) 
     fetched.push([path, buffer, type])
     before += bytes
   }
+  if (signal?.aborted) throw new DOMException('The download was cancelled.', 'AbortError')
+  await release()
   await caches.delete(CACHE)
   const cache = await caches.open(CACHE)
   for (const [path, buffer, type] of fetched)
@@ -110,17 +113,23 @@ export async function download(info, onprogress = () => {}, signal = undefined) 
     paths: files.map(([path]) => path), preprocessing: model.preprocessing, saved: new Date().toISOString() }
   await cache.put(INSTALLED, Response.json(record))
   await navigator.storage?.persist?.().catch(() => false)
-  loaded = null
   return record
 }
 
 /** Remove the kept model and runtime. */
 export async function remove() {
-  loaded = null
+  await release()
   await caches.delete(CACHE)
 }
 
 let loaded = null
+
+/** Free the running session, whose weights are as large as the model. */
+async function release() {
+  const session = loaded?.session
+  loaded = null
+  await session?.release?.().catch(() => {})
+}
 
 async function cached(path) {
   const response = await (await caches.open(CACHE)).match(FILES + path)

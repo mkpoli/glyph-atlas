@@ -13,21 +13,27 @@
   import { cropDetails } from '../lib/cropDetails.js'
   import { isUnassigned } from '../lib/identity.js'
   import { t, formatNumber } from '../lib/i18n.svelte.js'
-  import { offered, installed, download, remove, storage, load, embed, candidatesOf, search, downloadSize, supported } from '../lib/imageSearch.js'
+  import { offered, installed, download, remove, storage, load, embed, candidatesOf, search, downloadSize, supported, RUNTIME_VERSION } from '../lib/imageSearch.js'
 
-  // `file` is an image the search box was given; `inspect` opens a crop in the inspector.
-  let { file = null, onclose = () => {}, inspect } = $props()
+  // `given` is `{ file, key }`: an image the search box was given, opened each time `key` changes, so a
+  // second image goes to the panel already open. `inspect` opens a crop in the inspector.
+  let { given = null, onclose = () => {}, inspect } = $props()
 
   let info = $state(null), infoFailed = $state(false), kept = $state(null), persisted = $state(false)
   let progress = $state(null), downloadError = $state(''), aborter = null
   let image = $state(null), imageError = $state(''), box = $state(null), stage = $state(null), stageSize = $state({ width: 0, height: 0 })
-  let preview = $state(null), running = $state(false), runError = $state(''), result = $state(null), searchedBox = null
+  let preview = $state(null), running = $state(false), runError = $state(''), result = $state(null), searchedBox = $state(null)
   let chosen = $state(0), tab = $state('candidates'), dragOver = $state(false), picker = $state(null)
-  let source = null
+  // The decoded image, kept as a bitmap: only the boxed part is ever drawn to a canvas. `opening` and
+  // `runs` count the images opened and the searches started, so a slower, older one never lands last.
+  let bitmap = null, opening = 0, runs = 0, querying = null
 
   const megabytes = bytes => t('imageSearch.megabytes', { size: formatNumber(Math.max(1, Math.round(bytes / 1e6))) })
   const size = $derived(downloadSize(info))
-  const outdated = $derived(Boolean(kept && info?.model && kept.version !== info.model.version))
+  // A kept model is out of date when the site publishes another version, or when this page runs another
+  // onnxruntime-web than the one kept with it. Until the reader updates, the panel offers the update.
+  const outdated = $derived(Boolean(kept && info?.model && (kept.version !== info.model.version || kept.runtime !== RUNTIME_VERSION)))
+  const offerable = $derived(Boolean(info?.model && info?.runtime && info?.ready))
   const usable = $derived(Boolean(kept && info?.ready && !outdated))
 
   async function refresh() {
@@ -56,31 +62,48 @@
 
   // -- the image -------------------------------------------------------------------------------------
 
-  async function open(given) {
-    imageError = ''; result = null; runError = ''; preview = null
-    if (!given?.type?.startsWith('image/')) { imageError = t('imageSearch.image.notImage'); return }
+  async function open(file) {
+    if (!usable || !file) return
+    const ticket = ++opening
+    querying?.abort(); runs++
+    imageError = ''; result = null; runError = ''; preview = null; searchedBox = null
+    if (!file.type?.startsWith('image/')) { imageError = t('imageSearch.image.notImage'); return }
     try {
-      const bitmap = await createImageBitmap(given)
-      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
-      canvas.getContext('2d', { willReadFrequently: true }).drawImage(bitmap, 0, 0)
+      // The photo's own pixel values, as Pillow reads them: no colour-profile conversion. Its
+      // orientation is applied, as the image on screen shows it.
+      const decoded = await createImageBitmap(file, { imageOrientation: 'from-image', colorSpaceConversion: 'none', premultiplyAlpha: 'none' })
+      if (ticket !== opening) { decoded.close(); return }
+      bitmap?.close()
       if (image?.url) URL.revokeObjectURL(image.url)
-      source = canvas
-      image = { url: URL.createObjectURL(given), width: bitmap.width, height: bitmap.height }
-      bitmap.close()
+      bitmap = decoded
+      image = { url: URL.createObjectURL(file), width: decoded.width, height: decoded.height }
       // The box starts on the middle of the image; the reader moves it onto the character.
       box = { x: Math.round(image.width * .2), y: Math.round(image.height * .2), w: Math.round(image.width * .6), h: Math.round(image.height * .6) }
-    } catch { imageError = t('imageSearch.image.unreadable') }
+    } catch { if (ticket === opening) imageError = t('imageSearch.image.unreadable') }
+  }
+
+  /**
+   * The boxed part of the image as RGBA. A box of more than `LARGEST` pixels a side is drawn smaller
+   * first: the model sees 128, and a whole phone photo would not fit some browsers' canvases.
+   */
+  const LARGEST = 2048
+  function boxed({ x, y, w, h }) {
+    const shrink = Math.min(1, LARGEST / Math.max(w, h)), width = Math.max(1, Math.round(w * shrink)), height = Math.max(1, Math.round(h * shrink))
+    const canvas = new OffscreenCanvas(width, height), context = canvas.getContext('2d', { willReadFrequently: true })
+    context.drawImage(bitmap, x, y, w, h, 0, 0, width, height)
+    return { pixels: context.getImageData(0, 0, width, height).data, width, height }
   }
 
   function pasted(event) {
     const found = [...(event.clipboardData?.items ?? [])].find(item => item.kind === 'file' && item.type.startsWith('image/'))
-    if (!found) return
+    if (!found || !usable) return
     event.preventDefault()
     open(found.getAsFile())
   }
 
   function dropped(event) {
     event.preventDefault(); dragOver = false
+    if (!usable) return
     const found = [...(event.dataTransfer?.files ?? [])].find(f => f.type.startsWith('image/'))
     if (found) open(found); else imageError = t('imageSearch.image.notImage')
   }
@@ -105,7 +128,7 @@
   }
   const edit = (next, mode) => { box = bounded(next, mode) }
   function keydown(event) {
-    if (!box || event.ctrlKey || event.metaKey || event.altKey) return
+    if (!box || running || event.ctrlKey || event.metaKey || event.altKey) return
     const step = Math.max(1, 3 / scale)
     const next = nudged(box, event, [step, step])
     if (!next) return
@@ -117,25 +140,29 @@
   // -- the search ------------------------------------------------------------------------------------
 
   async function run() {
-    if (!usable || !box || !source || running) return
+    if (!usable || !box || !bitmap || running) return
+    const ticket = ++runs, asked = { ...box }
+    querying = new AbortController()
     running = true; runError = ''
     try {
       const model = await load(kept)
-      const { x, y, w, h } = box
-      const pixels = source.getContext('2d', { willReadFrequently: true }).getImageData(x, y, w, h)
-      const { probs, features, grey } = await embed(model, pixels.data, w, h)
+      const { pixels, width, height } = boxed(asked)
+      const { probs, features, grey } = await embed(model, pixels, width, height)
+      if (ticket !== runs) return
       preview = grey
       const { candidates, other } = candidatesOf(model.classes, probs)
-      const found = await search(model.encoder, features, candidates)
-      searchedBox = { ...box }
+      const found = await search(model.encoder, features, candidates, querying.signal)
+      if (ticket !== runs) return
+      searchedBox = asked
       result = { candidates: candidates.map((c, n) => ({ ...c, crops: found.candidates[n]?.crops ?? [] })), other, similar: found.similar }
       chosen = 0
       tab = candidates.length ? 'candidates' : 'similar'
     } catch (error) {
+      if (ticket !== runs || error.name === 'AbortError') return
       runError = error.status === 429 ? t('imageSearch.search.tooMany') : error.status === 409 ? t('imageSearch.search.outdated')
         : error.status === 503 ? t('imageSearch.unavailable') : t('imageSearch.search.failed')
       if (error.status === 409) await refresh()
-    } finally { running = false }
+    } finally { if (ticket === runs) running = false }
   }
 
   // The grey square the model saw, drawn small beside the box.
@@ -156,11 +183,18 @@
     inspect(item.id, null, shown.map(entry => ({ ...entry, origin: origin(entry) })), null, origin(item))
   }
 
+  // An image the search box was given opens once the kept model is known to be usable.
+  let openedKey = null
+  $effect(() => {
+    const request = given
+    if (!usable || !request?.file || request.key === openedKey) return
+    openedKey = request.key
+    untrack(() => open(request.file))
+  })
+
   onMount(() => {
     refresh()
-    const given = untrack(() => file)
-    if (given) open(given)
-    return () => { aborter?.abort(); if (image?.url) URL.revokeObjectURL(image.url) }
+    return () => { aborter?.abort(); querying?.abort(); bitmap?.close(); if (image?.url) URL.revokeObjectURL(image.url) }
   })
 </script>
 
@@ -173,15 +207,15 @@
     <button type="button" class="icon-button" aria-label={t('imageSearch.close')} onclick={onclose}>×</button>
   </header>
 
-  <div class="model-panel" aria-live="polite">
+  <div class="model-panel">
     {#if !supported()}<p class="model-note">{t('imageSearch.unsupported')}</p>
     {:else if infoFailed}<p class="model-note">{t('imageSearch.infoFailed')} <button type="button" class="quiet-link" onclick={refresh}>{t('common.retry')}</button></p>
     {:else if !info}<p class="model-note">{t('imageSearch.checking')}</p>
-    {:else if !info.model || !info.runtime || !info.ready}<p class="model-note">{t('imageSearch.unavailable')}</p>
+    {:else if !usable && !offerable}<p class="model-note" role="status">{t('imageSearch.unavailable')}</p>
     {:else if progress}
       <div class="model-progress">
-        <progress max={progress.total} value={progress.received}></progress>
-        <span>{t('imageSearch.download.progress', { received: megabytes(progress.received), total: megabytes(progress.total) })}</span>
+        <progress max={progress.total} value={progress.received} aria-labelledby="image-search-progress"></progress>
+        <span id="image-search-progress">{t('imageSearch.download.progress', { received: megabytes(progress.received), total: megabytes(progress.total) })}</span>
         <button type="button" class="quiet-link" onclick={() => aborter?.abort()}>{t('imageSearch.download.cancel')}</button>
       </div>
     {:else if !kept}
@@ -192,13 +226,14 @@
         <small>{t('imageSearch.download.kept')}</small>
       </div>
     {:else}
-      <div class="model-status">
-        <span>{t('imageSearch.model.kept', { size: megabytes(kept.bytes), version: kept.version.slice(0, 8) })}{#if persisted} · {t('imageSearch.model.persisted')}{/if}</span>
-        {#if outdated}<button type="button" class="update" onclick={fetchModel}>{t('imageSearch.model.update', { size: megabytes(size) })}</button>{/if}
+      <div class="model-status" role="status">
+        <span>{[t('imageSearch.model.kept', { size: megabytes(kept.bytes), version: kept.version.slice(0, 8) }), persisted ? t('imageSearch.model.persisted') : null].filter(Boolean).join(' · ')}</span>
+        {#if outdated && offerable}<button type="button" class="update" onclick={fetchModel}>{t('imageSearch.model.update', { size: megabytes(size) })}</button>{/if}
         <button type="button" class="quiet-link" onclick={removeModel}>{t('imageSearch.model.remove')}</button>
       </div>
     {/if}
     {#if downloadError}<p class="model-error" role="alert">{downloadError}</p>{/if}
+    {#if !usable && imageError}<p class="model-error" role="alert">{imageError}</p>{/if}
   </div>
 
   {#if usable}
@@ -214,14 +249,14 @@
           <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
           <div class="image-stage" bind:this={stage} tabindex="0" role="application" aria-label={t('imageSearch.box.label')} aria-describedby="image-search-keys" onkeydown={keydown}>
             <img src={image.url} alt="" draggable="false" style={`left:${origin.x}px;top:${origin.y}px;width:${image.width * scale}px;height:${image.height * scale}px`} />
-            {#if box}<BoxEditor {box} {scale} {origin} onedit={edit} disabled={running} />{/if}
+            {#if box}<BoxEditor {box} {scale} {origin} onedit={edit} onstart={() => stage?.focus({ preventScroll: true })} disabled={running} />{/if}
           </div>
           <p class="image-keys" id="image-search-keys">{t('imageSearch.box.keys')}</p>
         </div>
         <div class="image-side">
           {#if preview}<figure class="model-view"><canvas bind:this={previewCanvas} aria-hidden="true"></canvas><figcaption>{t('imageSearch.box.seen')}</figcaption></figure>{/if}
           <button type="button" class="primary" disabled={running || !changed} onclick={run}>{running ? t('imageSearch.search.running') : result ? t('imageSearch.search.again') : t('imageSearch.search')}</button>
-          <button type="button" class="quiet-link" onclick={() => picker?.click()}>{t('imageSearch.image.another')}</button>
+          <button type="button" class="quiet-link" disabled={running} onclick={() => picker?.click()}>{t('imageSearch.image.another')}</button>
           <p class="model-privacy">{t('imageSearch.privacy')}</p>
         </div>
       </div>
@@ -234,9 +269,9 @@
 
   {#if result}
     <div class="image-results">
-      <div class="result-tabs" role="tablist">
-        <button type="button" role="tab" aria-selected={tab === 'candidates'} disabled={!result.candidates.length} onclick={() => tab = 'candidates'}>{t('imageSearch.tab.candidates')}</button>
-        <button type="button" role="tab" aria-selected={tab === 'similar'} onclick={() => tab = 'similar'}>{t('imageSearch.tab.similar')}</button>
+      <div class="result-tabs" role="group">
+        <button type="button" aria-pressed={tab === 'candidates'} disabled={!result.candidates.length} onclick={() => tab = 'candidates'}>{t('imageSearch.tab.candidates')}</button>
+        <button type="button" aria-pressed={tab === 'similar'} onclick={() => tab = 'similar'}>{t('imageSearch.tab.similar')}</button>
       </div>
       {#if tab === 'candidates'}
         <div class="candidate-chips" role="group" aria-label={t('imageSearch.candidates.label')}>
@@ -297,7 +332,7 @@
   .image-results{margin-top:20px;border-top:1px solid var(--line);padding-top:14px}
   .result-tabs{display:flex;gap:6px}
   .result-tabs button{font-size:12px;padding:7px 11px;border-radius:5px;background:var(--surface-disabled);border-color:transparent}
-  .result-tabs button[aria-selected="true"]{color:var(--accent);background:var(--accent-light)}
+  .result-tabs button[aria-pressed="true"]{color:var(--accent);background:var(--accent-light)}
   .candidate-chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
   .candidate-chips button{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:64px;padding:8px 12px;border-radius:8px}
   .candidate-chips button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-light)}
