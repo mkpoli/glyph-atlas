@@ -23,8 +23,8 @@ def schema():
 
 
 def unit(db, id_, origin, character, family, data):
-    db.execute("INSERT INTO units(id,origin,character,reading,family,visual_group,production,category,state,revision,"
-               "quiz,priority,shuffle,data,snapshot,context,visual) VALUES(?,?,?,NULL,?,NULL,'unknown','han',"
+    db.execute("INSERT INTO units(id,origin,character,family,visual_group,production,category,state,revision,"
+               "quiz,priority,shuffle,data,snapshot,context,visual) VALUES(?,?,?,?,NULL,'unknown','han',"
                "'unreviewed',1,0,0,0,?,'{}','{}','{}')", (id_, origin, character, family, json.dumps(data)))
 
 

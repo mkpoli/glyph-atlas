@@ -94,8 +94,9 @@ const productionOf=(data:Json)=>typeof data.production==='string'?data.productio
 // in the same batch and before the rows that reference it.
 function materialise(env:Env,row:UnitRow&{fresh:CorpusRow}){
   const d=parse(row.data);
+  // `reading` (the fourth column) stays in the table unread until a rebuild drops it.
   return env.DB.prepare('INSERT OR IGNORE INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
-    .bind(row.id,'corpus',d.written_character||null,d.reading||null,d.grapheme||(d.written_character?cp(d.written_character):null),d.visual_group?.id||null,row.fresh.production,
+    .bind(row.id,'corpus',d.written_character||null,null,d.grapheme||(d.written_character?cp(d.written_character):null),d.visual_group?.id||null,row.fresh.production,
       row.category||categoryOf(d.label),d.state,d.revision,row.quiz,1,row.fresh.shuffle,row.data,row.snapshot,row.context,row.visual,null,row.fresh.style,null);
 }
 async function corpusData(env:Env,row:CorpusRow):Promise<Json>{
@@ -556,13 +557,11 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   // has a family (its own code points when the character table gives none), so browsing one is one
   // lookup that `unit_family_sample` serves in shuffle order.
   if (grapheme && !scoped) { where.push('family=?'); values.push(grapheme); tally = null }
-  // A search finds a crop by its character or its reading. Each is one range of its own index; an OR
-  // across the two columns would read every local crop instead. The origin test is kept off its index
-  // (`+`), so the query starts from the ids the search found.
+  // A search finds a local crop by its written character, one range of `unit_character`. Typed kana
+  // such as トモ reach a character through the alias index first (`/atlas/suggest`).
   if (q.get('q')) {
-    where[0] = "+origin='local'";
-    where.push("id IN (SELECT id FROM units WHERE origin='local' AND character=? UNION SELECT id FROM units WHERE origin='local' AND reading=?)");
-    values.push(literal(q.get('q')!), literal(q.get('q')!)); tally = null;
+    where.push('character=?');
+    values.push(literal(q.get('q')!)); tally = null;
   }
   // With a character, a grapheme or a search named, its own index finds the few crops and the script only filters
   // them (`+`); the script's index would read every crop of that script.
@@ -1295,7 +1294,9 @@ async function revert(env:Env,submission:Json,actor:string,rejection?:{reason:st
       WHERE e.target=? AND e.expected_revision>? AND (s.actor IS NULL OR s.actor NOT IN ${rejection.reviewer[0]} OR (s.undone=0 AND e.kind='review')) LIMIT 1`)
       .bind(r.target,r.expected_revision,...rejection.reviewer[1]).first());
     if(later)throw new Problem(409,'A later review changed this crop. It cannot be undone.');
-    const restored={...parse(r.before_data),revision:current.revision+1};
+    // A record saved before 0056 carries a reading; the crop it restores does not.
+    const {reading:_reading,...before}=parse(r.before_data);
+    const restored={...before,revision:current.revision+1};
     const event={...parse(r.event),id:'cf:'+crypto.randomUUID(),old:parse(r.event).new,new:parse(r.event).old,evidence:'undo of '+r.id,at};
     statements.push(env.DB.prepare('INSERT INTO events(id,submission,target,actor,expected_revision,before_data,after_data,event,snapshot,kind,at) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
       .bind(event.id,key,r.target,actor,current.revision,current.data,JSON.stringify(restored),JSON.stringify(event),r.snapshot,'undo',at));

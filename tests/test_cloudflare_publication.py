@@ -28,11 +28,11 @@ def publication(tmp_path, monkeypatch):
     key, denied = "a" * 64, "b" * 64
     data = json.dumps({"id": "one", "label": "ア", "image": f"/atlas/media/{key}.webp"})
     with database(local / "catalogue.sqlite") as db:
-        db.execute("INSERT INTO units(id,origin,character,reading,family,visual_group,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual,document) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
-            "one", "local", "ア", "ア", None, None, "handwritten", "kana", "pending", 0, 1, 1, 0,
+        db.execute("INSERT INTO units(id,origin,character,family,visual_group,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual,document) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+            "one", "local", "ア", None, None, "handwritten", "kana", "pending", 0, 1, 1, 0,
             data, "{}", "{}", "{}", None))
-        db.execute("INSERT INTO units(id,origin,character,reading,family,visual_group,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual,document) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
-            "two", "local", "ウ", "ウ", None, None, "handwritten", "kana", "pending", 0, 1, 1, 0,
+        db.execute("INSERT INTO units(id,origin,character,family,visual_group,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual,document) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+            "two", "local", "ウ", None, None, "handwritten", "kana", "pending", 0, 1, 1, 0,
             json.dumps({"id": "two", "label": "ウ"}), "{}", "{}", "{}", None))
         db.execute("INSERT INTO unit_ngrams(first,size,second,text,vertical) VALUES('one',2,'two','アウ',0)")
         db.executemany("INSERT INTO media VALUES(?,?,?,?,?)", [

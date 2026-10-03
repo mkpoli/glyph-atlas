@@ -302,7 +302,6 @@ class DetailResolver:
             unit_id=None,
             label=entry.char,
             source_label=entry.char,
-            reading=None,
             code_point=entry.codepoint,
             box=box,
             image=image,
@@ -356,7 +355,6 @@ class DetailResolver:
         cp = row.get("unicode")
         encoded = _char_of(cp)
         source_label = row.get("text_source")
-        reading = joined_reading = row.get("reading")
         label = encoded if encoded is not None else source_label
         context = _MetaCache(corpus)
         joined = _unit_row(corpus, context, row, label or "", cp or "")
@@ -373,7 +371,6 @@ class DetailResolver:
             unit_id=identity,
             label=label,
             source_label=source_label,
-            reading=reading or joined_reading,
             code_point=cp,
             box=box,
             image=image,
@@ -547,7 +544,6 @@ class DetailResolver:
                     "kind",
                     "granularity",
                     "text_source",
-                    "reading",
                     "unicode",
                     "method",
                     "review",
@@ -583,7 +579,6 @@ class DetailResolver:
         unit_id: str | None,
         label: Any,
         source_label: Any,
-        reading: Any,
         code_point: Any,
         box: dict[str, int] | None,
         image: str | None,
@@ -614,9 +609,8 @@ class DetailResolver:
             "while source_label retains the source transcription; neither implies human confirmation",
             "source_label": source_label,
             "source_label_note": "the source corpus's own transcription, imported "
-            "unverified; it may be a reading rather than the glyph",
+            "unverified; it may name the modern kana rather than the written form",
             "source_label_is_verified": False,
-            "reading": reading,
             "code_point": code_point,
             "box": box,
             "crop_box": crop_box,

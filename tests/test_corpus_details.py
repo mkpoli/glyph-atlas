@@ -431,7 +431,6 @@ class TestPublicFields:
             "unit_id",
             "char",
             "label",
-            "reading",
             "code_point",
             "box",
             "image",
@@ -472,7 +471,7 @@ class TestPublicFields:
         assert payload["char"] == "一"
         assert payload["code_point"] == "U+4E00"
 
-    def test_the_label_is_the_written_character_not_the_reading(self, viewer, tmp_path):
+    def test_the_label_is_the_written_character_not_the_transcription(self, viewer, tmp_path):
         """ネ written, ね read: the panel must show the glyph, not the reading."""
         api, root, _ = viewer
         written = Unit(
@@ -509,7 +508,7 @@ class TestPublicFields:
         assert payload["label"] == "ネ"  # written
         assert payload["char"] == "ネ"
         assert payload["source_label"] == "ね"  # the source's own transcription
-        assert payload["reading"] == "ね"  # kept separate, not conflated
+        assert "reading" not in payload
         assert payload["code_point"] == "U+30CD"
 
     def test_the_exact_original_box_is_returned(self, viewer):

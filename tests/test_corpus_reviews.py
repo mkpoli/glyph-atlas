@@ -143,19 +143,19 @@ def test_a_review_round_trips_and_the_source_is_never_written(corpus):
     assert saved["review_event"] and saved["origin"] == "corpus"
 
     detail = corpus["client"].get("/atlas/corpus/character", params={"id": UNIT}).json()
-    assert detail["label"] == NU and detail["reading"] == "ね"
+    assert detail["label"] == NU and "reading" not in detail
     assert detail["source"]["holder"] == "Fixture Holder"
     assert saved["accepted_event"] == payload["id"], "the answer acknowledges the id that was sent"
     assert fingerprint(corpus["source"]) == before, "the source tables are not written by a review"
     assert (corpus["index"] / "reviews.sqlite").is_file(), "the journal is the one file written"
 
 
-def test_the_encoded_identity_the_transcription_and_the_reading_are_three_layers(corpus):
-    # What the resolver reports: the encoded character, the source's own transcription, the reading.
+def test_the_encoded_identity_and_the_transcription_are_two_layers(corpus):
+    # What the resolver reports: the encoded character and the source's own transcription.
     resolved = details.detail(corpus["api"], UNIT)
     assert resolved["label"] == NE and resolved["code_point"] == NE_POINT
     assert resolved["source_label"] == "ね", "the source's own transcription is kept as it was imported"
-    assert resolved["reading"] == "ね"
+    assert "reading" not in resolved
     assert resolved["label_is_verified"] is False and resolved["source_label_is_verified"] is False
 
     # The overlay preserves the transcription and encoded source class separately.
@@ -163,7 +163,7 @@ def test_the_encoded_identity_the_transcription_and_the_reading_are_three_layers
     assert detail["label"] == NE and detail["char"] == NE and detail["code_point"] == NE_POINT
     assert detail["source_label"] == "ね" and detail["source_code_point"] == NE_POINT
     assert detail["written_character"] is None
-    assert detail["reading"] == "ね"
+    assert "reading" not in detail
 
     typed, _ = save(corpus["client"], ALT_UNIT, issue="character", character=None, correction="とも")
     assert typed.status_code == 422, "typed characters belong to a joined-character issue"
@@ -177,7 +177,7 @@ def test_the_encoded_identity_the_transcription_and_the_reading_are_three_layers
     assert identity.json()["label"] == TOMO and identity.json()["code_point"] == TOMO_POINT
     assert identity.json()["state"] == "checked"
     # Correcting the identity leaves the reading the source was imported with.
-    assert identity.json()["reading"] == "とも" and identity.json()["source_label"] == TOMO
+    assert identity.json()["source_label"] == TOMO
 
 
 def test_the_link_is_the_registered_canvas(corpus):

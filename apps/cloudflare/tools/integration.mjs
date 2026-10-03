@@ -26,6 +26,8 @@ try {
   const db = await mf.getD1Database('DB')
   // The columns a fixture row fills; later ones (`style`) take their defaults.
   const UNIT_COLUMNS = 'id,origin,character,reading,family,visual_group,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual,document'
+  // The columns a crop is written with once 0056 left `reading` unread.
+  const CROP_COLUMNS = UNIT_COLUMNS.replace(',reading,', ',')
   const CORPUS_COLUMNS = 'id,character,family,visual_group,shuffle,object,offset,size,production,named'
   // Every migration, in order, the way a new deployment applies them. Rows published and reviewed
   // before 0006 are written first, to show what it makes of them.
@@ -56,12 +58,15 @@ try {
     'woodblock', 'kana', 'pending', 0, 0, 1, 1, JSON.stringify(oldPrint), JSON.stringify({ character: oldPrint }), '{}', '{}').run()
   for (const name of migrations.filter(name => name >= '0010' && name < '0055')) await apply(name)
   // A crop flagged as another character before 0055 names the issue `reading`.
-  const flaggedBefore = { id: 'flagged-before', label: 'ト', state: 'flagged', issue: 'reading', revision: 1 }
+  const flaggedBefore = { id: 'flagged-before', label: 'ト', reading: 'ト', state: 'flagged', issue: 'reading', revision: 1 }
   await db.prepare(`INSERT INTO units(${UNIT_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind('flagged-before', 'local', 'ト', 'ト', null, null,
     'printed', 'kana', 'flagged', 1, 0, 1, 2, JSON.stringify(flaggedBefore), JSON.stringify({ character: flaggedBefore }), '{}', '{}', null).run()
   for (const name of migrations.filter(name => name >= '0055')) await apply(name)
   assert.equal((await db.prepare("SELECT json_extract(data,'$.issue') AS issue FROM units WHERE id='flagged-before'").first()).issue, 'character',
     'a crop flagged under the old issue name carries the wrong-character issue')
+  assert.ok(!(await db.prepare("SELECT sql FROM sqlite_master WHERE name='event_apply'").first()).sql.includes('reading'),
+    'the event trigger writes no reading')
+  assert.equal(await db.prepare("SELECT 1 FROM sqlite_master WHERE name='unit_reading'").first(), null, 'the reading index is gone')
   await db.prepare("DELETE FROM units WHERE id='flagged-before'").run()
   assert.deepEqual((await db.prepare("SELECT id,production,named FROM corpus_units WHERE character='ト' ORDER BY id").all()).results, [
     { id: 'codh-omt:1', production: 'printed/type', named: 0 },
@@ -77,10 +82,10 @@ try {
     { quiz: 1, category: 'kana', shuffle: 79 }, 'a reviewed corpus row gets the quiz, category and shuffle the Worker gives one')
   const hash = 'a'.repeat(64), sourceRevision = 'b'.repeat(64)
   for (const id of ['one', 'two']) {
-    const d = { id, label: 'ア', reading: 'ア', state: 'pending', revision: 0, image_sha256: hash,
+    const d = { id, label: 'ア', state: 'pending', revision: 0, image_sha256: hash,
       production: 'handwritten', repair: { quiz: true } }
-    await db.prepare(`INSERT INTO units(${UNIT_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
-      id, 'local', 'ア', 'ア', 'U+3042', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
+    await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+      id, 'local', 'ア', 'U+3042', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
       JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
   }
   // Each row names its family and the family's members, as the character table writes them.
@@ -92,7 +97,7 @@ try {
       await db.prepare('INSERT INTO characters VALUES(?,?,?,?,?)').bind(code_point, char, '', JSON.stringify(data), JSON.stringify(data)).run()
     }
   }
-  const corpus = { id: 'codh:fixture', origin: 'corpus', label: '仮', source_label: '仮', reading: '仮',
+  const corpus = { id: 'codh:fixture', origin: 'corpus', label: '仮', source_label: '仮',
     written_character: null, identity_status: 'unassigned', grapheme: 'U+4EEE', visual_group: { id: 'group-one' },
     state: 'pending', revision: 0, proxyable: true, source_revision: sourceRevision }
   const raw = JSON.stringify(corpus)
@@ -142,7 +147,11 @@ try {
     { ...decision, id: 'two' }, { ...decision, revision: 0 },
   ] }, 409)
   assert.equal((await call('/atlas/characters/two')).revision, 0, 'stale rounds are atomic')
+  // A review saved before 0056 recorded the crop with its reading; undoing it restores the crop without one.
+  await db.prepare("UPDATE events SET before_data=json_set(before_data,'$.reading','ア') WHERE target='one'").run()
   await call(`/atlas/rounds/${round.id}/undo`, {})
+  assert.equal((await db.prepare("SELECT json_type(data,'$.reading') AS kept FROM units WHERE id='one'").first()).kept, null,
+    'an undo restores no reading')
   const restored = await call('/atlas/characters/one')
   assert.equal(restored.state, 'pending')
   assert.equal(restored.revision, 2)
@@ -153,7 +162,6 @@ try {
   const fixed = await call('/atlas/corpus/reviews', correction)
   assert.equal(fixed.origin, 'corpus')
   assert.equal(fixed.label, '假')
-  assert.equal(fixed.reading, '仮', 'written identity does not replace the source reading')
   assert.deepEqual(await call('/atlas/corpus/reviews', correction), fixed)
   assert.equal((await call(unassigned)).glyphs, 0)
   assert.equal((await call('/layers/candidates?code_point=U%2B5047')).glyphs, 1, 'corrected occurrence enters new search')
@@ -191,10 +199,10 @@ try {
   assert.deepEqual(browsed, marked, 'browse carries the same doubt')
   // Flagged order: a crop already reviewed in the character inspector queues behind one nobody has.
   for (const id of ['flag-a', 'flag-b']) {
-    const d = { id, label: 'ラ', reading: 'ラ', state: 'pending', revision: 0, image_sha256: hash,
+    const d = { id, label: 'ラ', state: 'pending', revision: 0, image_sha256: hash,
       production: 'handwritten', repair: { quiz: true } }
-    await db.prepare(`INSERT INTO units(${UNIT_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
-      id, 'local', 'ラ', 'ラ', 'U+3042', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
+    await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+      id, 'local', 'ラ', 'U+3042', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
       JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
   }
   const flagRound = { id: crypto.randomUUID(), grapheme: 'U+30E9', answers: [
@@ -260,10 +268,10 @@ try {
   assert.equal((await call('/layers/candidates?code_point=U%2B4EEE&scope=grapheme')).family_total, 0)
   // Seen crops: a round may record the crops it showed and left unflagged, and they leave the queue.
   for (const id of ['seen-a', 'seen-b', 'seen-c']) {
-    const d = { id, label: 'セ', reading: 'セ', state: 'pending', revision: 0, image_sha256: hash,
+    const d = { id, label: 'セ', state: 'pending', revision: 0, image_sha256: hash,
       image: `/atlas/media/${id}.webp`, production: 'handwritten', box: { x: 1, y: 2, w: 3, h: 4 }, repair: { quiz: true } }
-    await db.prepare(`INSERT INTO units(${UNIT_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
-      id, 'local', 'セ', 'セ', 'U+30BB', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
+    await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+      id, 'local', 'セ', 'U+30BB', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
       JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
   }
   // Browse counts are cached per version of the data, so each write below must show in them at once.
@@ -305,10 +313,10 @@ try {
   // Skipped crops: recorded against the reviewer, dealt first to others, rested for the one who
   // skipped, hard once two reviewers skipped them, and taken back by an undo.
   for (const id of ['skip-a', 'skip-b', 'skip-c']) {
-    const d = { id, label: 'ソ', reading: 'ソ', state: 'pending', revision: 0, image_sha256: hash,
+    const d = { id, label: 'ソ', state: 'pending', revision: 0, image_sha256: hash,
       production: 'handwritten', box: { x: 1, y: 2, w: 3, h: 4 }, repair: { quiz: true } }
-    await db.prepare(`INSERT INTO units(${UNIT_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
-      id, 'local', 'ソ', 'ソ', 'U+30BD', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
+    await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+      id, 'local', 'ソ', 'U+30BD', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
       JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
   }
   const dealtTo = async reviewer => (await call('/atlas?purpose=review&grapheme=U%2B30BD&state=pending&seed=3&limit=96', undefined, 200, reviewer)).items.map(i => i.id)
@@ -350,7 +358,7 @@ try {
   // corpus glyphs, until a round names them and they become `units` rows like any other crop.
   const worker = await import(bundle)
   const glyph = (id, fields = {}) => ({ id, origin: 'corpus', label: 'ナ', char: 'ナ', written_character: 'ナ',
-    identity_status: 'assigned', source_label: 'ナ', reading: 'ナ', grapheme: 'U+30CA', state: 'pending', revision: 0,
+    identity_status: 'assigned', source_label: 'ナ', grapheme: 'U+30CA', state: 'pending', revision: 0,
     proxyable: true, production: 'printed/woodblock', image: `/atlas/media/${id}.webp`, box: { x: 1, y: 2, w: 3, h: 4 },
     source: { corpus: 'codh-full', title: 'A woodblock book' }, source_revision: createHash('sha256').update(id).digest('hex'), ...fields })
   // shuffle 50,10,40,20,30: from seed 0 the order is na-2, na-4, na-5, na-3, na-1.
@@ -373,10 +381,10 @@ try {
   assert.equal(refresh.length, 3)
   await db.batch(refresh.map(sql => db.prepare(sql)))
   for (const id of ['na-local-a', 'na-local-b']) {
-    const d = { id, label: 'ナ', reading: 'ナ', state: 'pending', revision: 0, image_sha256: hash,
+    const d = { id, label: 'ナ', state: 'pending', revision: 0, image_sha256: hash,
       production: 'handwritten', box: { x: 1, y: 2, w: 3, h: 4 }, repair: { quiz: true } }
-    await db.prepare(`INSERT INTO units(${UNIT_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
-      id, 'local', 'ナ', 'ナ', 'U+30CA', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
+    await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+      id, 'local', 'ナ', 'U+30CA', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
       JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
   }
   const roundOf = async (params = '', as = null) => call(`/atlas?purpose=review&grapheme=U%2B30CA&state=pending${params.includes('limit=') ? '' : '&limit=96'}${params}`, undefined, 200, as)
@@ -617,8 +625,8 @@ try {
   assert.ok(derivedPlan.includes('SEARCH character_derived USING PRIMARY KEY (a=?)'), derivedPlan.join('; '))
   assert.ok(!derivedPlan.some(d => /TEMP B-TREE/.test(d)), derivedPlan.join('; '))
   // A gallery widened to its variants deals a variant's crops with the character's own, and only then.
-  const variantCrop = { id: 'variant-crop', label: '假', reading: '假', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
-  await db.prepare(`INSERT INTO units(${UNIT_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind('variant-crop', 'local', '假', '假', 'U+4EEE', null,
+  const variantCrop = { id: 'variant-crop', label: '假', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
+  await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind('variant-crop', 'local', '假', 'U+4EEE', null,
     'handwritten', 'kanji', 'pending', 0, 1, 1, 1, JSON.stringify(variantCrop), JSON.stringify({ character: variantCrop }), '{}', '{}', null).run()
   assert.ok(!(await call('/layers/occurrences?code_point=U%2B4EEE')).items.some(i => i.id === 'variant-crop'), 'the exact character alone')
   assert.ok((await call('/layers/occurrences?code_point=U%2B4EEE&expand=variants')).items.some(i => i.id === 'variant-crop'), 'widened to 假')
@@ -627,8 +635,8 @@ try {
     'handwritten', 'kanji', 'pending', 0, 1, 1, 1, JSON.stringify(derivedCrop), JSON.stringify({ character: derivedCrop }), '{}', '{}', null).run()
   assert.ok(!(await call('/layers/occurrences?code_point=U%2B4EEE&expand=variants')).items.some(i => i.id === 'derived-crop'), 'a derived form is not widened to')
   // A crop of 伋 is not dealt: a source calls the pair a simplification, so it is kept apart.
-  const apart = { ...variantCrop, id: 'apart-crop', label: '伋', reading: '伋' }
-  await db.prepare(`INSERT INTO units(${UNIT_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind('apart-crop', 'local', '伋', '伋', 'U+4EEE', null,
+  const apart = { ...variantCrop, id: 'apart-crop', label: '伋' }
+  await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind('apart-crop', 'local', '伋', 'U+4EEE', null,
     'handwritten', 'kanji', 'pending', 0, 1, 1, 1, JSON.stringify(apart), JSON.stringify({ character: apart }), '{}', '{}', null).run()
   assert.ok(!(await call('/layers/occurrences?code_point=U%2B4EEE&expand=variants')).items.some(i => i.id === 'apart-crop'), 'a simplified pair is not widened to')
   assert.equal((await call('/layers/candidates?code_point=U%2B4EEE&scope=variants')).retry, false, 'the corpus side widens without error')
@@ -818,20 +826,20 @@ try {
   }
   // A row published as `other` before Hangul had a category reads `hangul` once 0008 has run, and
   // the listing filters it by that group.
-  const jamo = { id: 'hangul', label: 'ㅿ', reading: 'ㅿ', state: 'pending', revision: 0, image_sha256: hash,
+  const jamo = { id: 'hangul', label: 'ㅿ', state: 'pending', revision: 0, image_sha256: hash,
     production: 'printed/woodblock', repair: { quiz: true } }
-  await db.prepare(`INSERT INTO units(${UNIT_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
-    jamo.id, 'local', 'ㅿ', 'ㅿ', 'U+317F', null, 'printed/woodblock', 'other', 'pending', 0, 1, 1, 1,
+  await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+    jamo.id, 'local', 'ㅿ', 'U+317F', null, 'printed/woodblock', 'other', 'pending', 0, 1, 1, 1,
     JSON.stringify(jamo), JSON.stringify({ character: jamo }), '{}', '{}', null).run()
   await apply('0008_hangul_category.sql')
   assert.deepEqual((await call('/atlas?group=hangul')).items.map(i => i.id), ['hangul'], 'a Hangul label is in the hangul group')
   assert.ok(!(await call('/atlas?group=kana')).items.some(i => i.id === 'hangul'), 'and in no other')
   // A row published as `other` before gugyeol had a category reads `gugyeol` once 0012 has run, and
   // the listing filters it by that group.
-  const gugyeol = { id: 'gugyeol', label: '', reading: '', state: 'pending', revision: 0, image_sha256: hash,
+  const gugyeol = { id: 'gugyeol', label: '', state: 'pending', revision: 0, image_sha256: hash,
     production: 'printed/woodblock', repair: { quiz: true } }
-  await db.prepare(`INSERT INTO units(${UNIT_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
-    gugyeol.id, 'local', '', '', 'U+F67F', null, 'printed/woodblock', 'other', 'pending', 0, 1, 1, 1,
+  await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+    gugyeol.id, 'local', '', 'U+F67F', null, 'printed/woodblock', 'other', 'pending', 0, 1, 1, 1,
     JSON.stringify(gugyeol), JSON.stringify({ character: gugyeol }), '{}', '{}', null).run()
   await apply('0012_gugyeol_category.sql')
   assert.deepEqual((await call('/atlas?group=gugyeol')).items.map(i => i.id), ['gugyeol'], 'a gugyeol label is in the gugyeol group')
@@ -839,10 +847,10 @@ try {
   // Explore narrows to one book: the listing counts crops per book, and `document` lists one book's.
   // Crops written straight to D1 and stamped, as a refresh writes them, show in a reviewer's counts.
   for (const [id, book, title] of [['book-a1', 'hl:A', '甲'], ['book-a2', 'hl:A', '甲'], ['book-b1', 'hl:B', '乙']]) {
-    const d = { id, label: 'ヌ', reading: 'ヌ', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten',
+    const d = { id, label: 'ヌ', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten',
       source: title, page_id: `${book}:1`, repair: { quiz: true } }
-    await db.prepare(`INSERT INTO units(${UNIT_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
-      id, 'local', 'ヌ', 'ヌ', 'U+30CC', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
+    await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+      id, 'local', 'ヌ', 'U+30CC', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
       JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', book).run()
   }
   await db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at',?)").bind(JSON.stringify('books')).run()
@@ -853,9 +861,9 @@ try {
   // under U+4EEE, and ※, which the character table gives no family, under its own code point, as the
   // publication writes it.
   for (const [id, label, family] of [['kari-1', '仮', 'U+4EEE'], ['kari-2', '假', 'U+4EEE'], ['mark', '※', 'U+203B']]) {
-    const d = { id, label, reading: label, state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten', repair: { quiz: true } }
-    await db.prepare(`INSERT INTO units(${UNIT_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
-      id, 'local', label, label, family, null, 'handwritten', 'kanji', 'pending', 0, 1, 1, 1,
+    const d = { id, label, state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten', repair: { quiz: true } }
+    await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+      id, 'local', label, family, null, 'handwritten', 'kanji', 'pending', 0, 1, 1, 1,
       JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
   }
   await db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at',?)").bind(JSON.stringify('graphemes')).run()
@@ -880,10 +888,10 @@ try {
     if (worker.categoryOf(String.fromCodePoint(c)) !== sql) assert.fail(`U+${c.toString(16)}: ${worker.categoryOf(String.fromCodePoint(c))} vs ${sql}`)
   }
   // A context widened in place survives a review and its undo.
-  const framed = { id: 'framed', label: 'カ', reading: 'カ', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten',
+  const framed = { id: 'framed', label: 'カ', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten',
     repair: { quiz: true }, context: true, context_image: '/atlas/media/narrow.webp', context_box: { x: 5, y: 5, w: 40, h: 60 } }
-  await db.prepare(`INSERT INTO units(${UNIT_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
-    framed.id, 'local', 'カ', 'カ', 'U+30AB', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
+  await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+    framed.id, 'local', 'カ', 'U+30AB', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
     JSON.stringify(framed), JSON.stringify({ character: framed }), '{}', '{}', null).run()
   const wide = { x: 0, y: 0, w: 90, h: 120 }
   const framedRound = { id: crypto.randomUUID(), grapheme: 'U+30AB',
@@ -1056,10 +1064,10 @@ try {
     [['glyph', 'character', 'テ'], ['glyph', 'character', 'テ'], ['glyph', 'character', 'テ'], ['cluster', 'mixed', undefined],
       ['cluster', 'mixed', undefined], ['cluster', 'character', 'テ']])
   // A repair verdict changed in place survives a review and its undo, and so does the quiz it decides.
-  const vetted = { id: 'vetted', label: 'キ', reading: 'キ', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten',
+  const vetted = { id: 'vetted', label: 'キ', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten',
     repair: { status: 'joined', quiz: true } }
-  await db.prepare(`INSERT INTO units(${UNIT_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
-    vetted.id, 'local', 'キ', 'キ', 'U+30AD', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
+  await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+    vetted.id, 'local', 'キ', 'U+30AD', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
     JSON.stringify(vetted), JSON.stringify({ character: vetted }), '{}', '{}', null).run()
   const vettedRound = { id: crypto.randomUUID(), grapheme: 'U+30AD',
     answers: [{ id: 'vetted', revision: 0, image_sha256: hash, verdict: 'wrong', issue: 'blank' }] }
@@ -1069,9 +1077,9 @@ try {
   const vettedRow = await db.prepare("SELECT quiz, json_extract(data,'$.repair.quiz') AS dealt, json_extract(data,'$.state') AS state FROM units WHERE id='vetted'").first()
   assert.deepEqual(vettedRow, { quiz: 0, dealt: 0, state: 'pending' }, 'undo restores the review state and keeps the newer repair verdict out of the quiz')
   // A retired crop names the crop that replaced it: deleted, kept for its history, or through a chain.
-  const retiredCrop = { id: 'retired-kept', label: 'ア', reading: 'ア', state: 'flagged', revision: 1, image_sha256: hash, production: 'handwritten' }
-  await db.prepare(`INSERT INTO units(${UNIT_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
-    retiredCrop.id, 'retired', 'ア', 'ア', 'U+30A2', null, 'handwritten', 'kana', 'flagged', 1, 0, 1, 1,
+  const retiredCrop = { id: 'retired-kept', label: 'ア', state: 'flagged', revision: 1, image_sha256: hash, production: 'handwritten' }
+  await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+    retiredCrop.id, 'retired', 'ア', 'U+30A2', null, 'handwritten', 'kana', 'flagged', 1, 0, 1, 1,
     JSON.stringify(retiredCrop), JSON.stringify({ character: retiredCrop }), '{}', '{}', null).run()
   await db.batch([['retired-gone', 'retired-kept'], ['retired-kept', 'two'], ['loop-a', 'loop-b'], ['loop-b', 'loop-a']]
     .map(([id, target]) => db.prepare('INSERT INTO unit_redirects VALUES(?,?)').bind(id, target)))
@@ -1102,8 +1110,8 @@ try {
   assert.deepEqual(later.slice().sort(), fromZero.slice().sort(), 'and wraps round to the same crops')
   // A grapheme lists its family's crops and its own character's, each once.
   for (const [id, character, family] of [['fam-a', '假', 'U+4EEE'], ['fam-b', '仮', null], ['fam-c', '仮', 'U+4EEE'], ['fam-other', '何', 'U+4F55']]) {
-    const d = { id, label: character, reading: character, state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
-    await db.prepare(`INSERT INTO units(${UNIT_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, 'local', character, character, family, null,
+    const d = { id, label: character, state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
+    await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, 'local', character, family, null,
       'handwritten', 'kanji', 'pending', 0, 0, 1, 1, JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
   }
   const inGrapheme = async query => { const found = await call('/layers/occurrences?code_point=U%2B4EEE' + query); return [found.total, found.items.map(i => i.id).filter(id => id.startsWith('fam-'))] }
@@ -1117,8 +1125,8 @@ try {
   // A gallery lists running and cursive crops first, then those nobody has judged, then the formal
   // ones, and each style can be asked for alone; the counts by style are taken over the other filters.
   for (const [id, style] of [['sty-a', 'regular'], ['sty-b', 'cursive'], ['sty-c', 'unassessed'], ['sty-d', 'running'], ['sty-e', 'ming']]) {
-    const d = { id, label: '仮', reading: '仮', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
-    await db.prepare(`INSERT INTO units(${UNIT_COLUMNS},style) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, 'local', '仮', '仮', 'U+4EEE', null,
+    const d = { id, label: '仮', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
+    await db.prepare(`INSERT INTO units(${CROP_COLUMNS},style) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, 'local', '仮', 'U+4EEE', null,
       'handwritten', 'kanji', 'pending', 0, 0, 1, 1, JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null, style).run()
   }
   const styled = async query => { const found = await call('/layers/occurrences?code_point=U%2B4EEE&limit=200' + query); return { found, ids: found.items.map(i => i.id).filter(id => id.startsWith('sty-')) } }
@@ -1140,21 +1148,21 @@ try {
   await call('/layers/occurrences?code_point=U%2B4EEE&style=constructor', undefined, 422)
   // A named corpus glyph's row follows its published row's style.
   await db.batch([db.prepare(`INSERT INTO corpus_units(${CORPUS_COLUMNS}) VALUES('sty-corpus','仮','U+4EEE',NULL,9,'none',0,1,'unknown',1)`),
-    db.prepare(`INSERT INTO units(${UNIT_COLUMNS}) VALUES('sty-corpus','corpus','仮','仮','U+4EEE',NULL,'unknown','kanji','checked',1,0,1,9,'{}','{}','{}','{}',NULL)`)])
+    db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES('sty-corpus','corpus','仮','U+4EEE',NULL,'unknown','kanji','checked',1,0,1,9,'{}','{}','{}','{}',NULL)`)])
   await db.prepare("UPDATE corpus_units SET style='running' WHERE id='sty-corpus'").run()
   assert.equal((await db.prepare("SELECT style FROM units WHERE id='sty-corpus'").first()).style, 'running')
   await db.batch([db.prepare("DELETE FROM units WHERE id='sty-corpus'"), db.prepare("DELETE FROM corpus_units WHERE id='sty-corpus'")])
   await db.prepare("DELETE FROM units WHERE id LIKE 'sty-%'").run()
-  // Search finds a crop by its character or by its reading, each once.
-  for (const [id, character, reading] of [['find-both', 'とも', 'とも'], ['find-reading', '𪜈', 'とも'], ['find-neither', '𪜈', '𪜈']]) {
-    const d = { id, label: character, reading, state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
-    await db.prepare(`INSERT INTO units(${UNIT_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, 'local', character, reading, null, null,
+  // Search finds a crop by its written character, each once.
+  for (const [id, character] of [['find-kana', 'と'], ['find-ligature', '𪜈'], ['find-other', 'も']]) {
+    const d = { id, label: character, state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
+    await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, 'local', character, null, null,
       'handwritten', 'kana', 'pending', 0, 0, 1, 1, JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
   }
   const searched = async term => { const found = await call(`/atlas?q=${encodeURIComponent(term)}&limit=96`); return [found.total, found.items.map(i => i.id).filter(id => id.startsWith('find-')).sort()] }
-  const matching = async term => (await db.prepare("SELECT count(*) AS n FROM units WHERE origin='local' AND (character=? OR reading=?)").bind(term, term).first()).n
-  assert.deepEqual(await searched('とも'), [await matching('とも'), ['find-both', 'find-reading']], 'a search matches the character or the reading')
-  assert.deepEqual(await searched('𪜈'), [await matching('𪜈'), ['find-neither', 'find-reading']])
+  const matching = async term => (await db.prepare("SELECT count(*) AS n FROM units WHERE origin='local' AND character=?").bind(term).first()).n
+  assert.deepEqual(await searched('𪜈'), [await matching('𪜈'), ['find-ligature']], 'a search matches the written character')
+  assert.deepEqual(await searched('とも'), [0, []], 'typed kana reach a character through the alias index, not the crop search')
   // A picked character within a script: the script still filters.
   const pickedIn = async group => (await call(`/atlas?reading=${encodeURIComponent('仮')}&group=${group}&limit=96`)).items.map(i => i.id).filter(id => id.startsWith('fam-')).sort()
   assert.deepEqual(await pickedIn('kanji'), ['fam-b', 'fam-c'], 'a picked character keeps its crops in its script')
@@ -1174,8 +1182,8 @@ try {
     assert.equal((await call(`/atlas?${encodeURI(query)}&limit=1`)).total, await localCount(where), `browse ${query || 'everything'} totals what it lists`)
   // A crop written without a stamp is not in those counts yet: the listing did not count the table.
   const listedBefore = (await call('/atlas?limit=1')).total, pickedBefore = (await call(`/atlas?${encodeURI('reading=仮')}&limit=1`)).total
-  const unstamped = { id: 'unstamped', label: '仮', reading: '仮', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
-  await db.prepare(`INSERT INTO units(${UNIT_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind('unstamped', 'local', '仮', '仮', null, null,
+  const unstamped = { id: 'unstamped', label: '仮', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
+  await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind('unstamped', 'local', '仮', null, null,
     'handwritten', 'kanji', 'pending', 0, 0, 1, 1, JSON.stringify(unstamped), JSON.stringify({ character: unstamped }), '{}', '{}', null).run()
   assert.equal((await call('/atlas?limit=1')).total, listedBefore, 'an unfiltered browse page does not count the table')
   assert.equal((await call(`/atlas?${encodeURI('reading=仮')}&limit=1`)).total, pickedBefore, 'nor does one filtered by character')
@@ -1226,16 +1234,16 @@ try {
   const countsMatch = async what => assert.deepEqual(await groups('SELECT * FROM unit_counts'), await groups(`SELECT origin,coalesce(character,''),coalesce(document,''),state,
     coalesce(family,''),production,quiz,coalesce(json_extract(data,'$.source'),''),count(*) FROM units GROUP BY 1,2,3,4,5,6,7,8`), what)
   const addLocal = async (id, label, extra = {}) => {
-    const d = { id, label, reading: label, state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten', repair: { quiz: true }, ...extra }
-    await db.prepare(`INSERT INTO units(id,origin,character,reading,family,visual_group,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual,document)
-      VALUES(?,'local',?,?,NULL,NULL,'handwritten','kana',?,0,1,1,1,?,?,'{}','{}',NULL)`).bind(id, label, label, d.state, JSON.stringify(d), JSON.stringify({ character: d })).run()
+    const d = { id, label, state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten', repair: { quiz: true }, ...extra }
+    await db.prepare(`INSERT INTO units(id,origin,character,family,visual_group,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual,document)
+      VALUES(?,'local',?,NULL,NULL,'handwritten','kana',?,0,1,1,1,?,?,'{}','{}',NULL)`).bind(id, label, d.state, JSON.stringify(d), JSON.stringify({ character: d })).run()
   }
   await addLocal('batch-a', 'ア'); await addLocal('batch-b', 'ウ')
   await addLocal('batch-crop', 'エ', { state: 'flagged', issue: 'crop' })
   await addLocal('batch-same', 'タ'); await addLocal('batch-done', 'タ', { state: 'checked', written_character: 'タ' })
   // Two corpus glyphs: one that can be shown, one whose image the site may not show.
   for (const [id, proxyable, shuffle] of [['codh:batch', true, 3], ['codh:hidden', false, 4]]) {
-    const record = JSON.stringify({ id, origin: 'corpus', label: 'ウ', source_label: 'ウ', reading: 'ウ', written_character: 'ウ', identity_status: 'assigned',
+    const record = JSON.stringify({ id, origin: 'corpus', label: 'ウ', source_label: 'ウ', written_character: 'ウ', identity_status: 'assigned',
       state: 'pending', revision: 0, proxyable, source_revision: sourceRevision })
     await bucket.put(id, record)
     await db.prepare(`INSERT INTO corpus_units(${CORPUS_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?)`).bind(id, 'ウ', 'U+30A6', null, shuffle, id, 0, new TextEncoder().encode(record).length, 'unknown', 0).run()
