@@ -7,6 +7,8 @@ interface __BaseEnv_Env {
 	EMAIL: SendEmail;
 	CORRECTIONS: RateLimit;
 	CLAIMS: RateLimit;
+	REVERSE_QUERIES: RateLimit;
+	SIMILAR_INDEX: VectorizeIndex;
 	ASSETS: Fetcher;
 	MAIL_FROM: "sign-in@glyphatlas.org";
 	BETTER_AUTH_SECRET: string;

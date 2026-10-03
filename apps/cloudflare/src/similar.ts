@@ -3,7 +3,7 @@
 // shard is the first `shard_digits` hex digits of the SHA-256 of its id. `similar/current.json`
 // names the revision the site reads. A neighbour the site no longer holds is left out.
 type Json = Record<string, any>;
-type Neighbour = [string, number];
+export type Neighbour = [string, number];
 type Entry = { similar?: Neighbour[]; filed_differently?: Neighbour[] };
 type Pointer = { revision: string; shard_digits: number };
 export type ItemsFor = (env: Env, ids: string[]) => Promise<Map<string, Json>>;
@@ -38,23 +38,29 @@ export async function similarCrops(env: Env, id: string, limit: number, itemsFor
   if (!object) return { ...empty, revision: at.revision };
   const shard = JSON.parse(await new Response(object.body.pipeThrough(new DecompressionStream('gzip'))).text());
   const entry: Entry = shard[id] ?? {};
-  // Each list is resolved in order, `limit` ids at a time, until it has `limit` crops the site holds:
-  // a corpus glyph costs a record read, so the crops past what is shown are never looked up.
   const known = new Map<string, Json | null>();
-  async function pick(list: Neighbour[]) {
-    const shown: Json[] = [];
-    for (let start = 0; start < list.length && shown.length < limit; start += limit) {
-      const batch = list.slice(start, start + limit);
-      const wanted = batch.map(([n]) => n).filter(n => !known.has(n));
-      const found = wanted.length ? await itemsFor(env, wanted) : new Map();
-      for (const n of wanted) known.set(n, found.get(n) ?? null);
-      for (const [n, score] of batch) {
-        const item = known.get(n);
-        if (item && shown.length < limit) shown.push({ ...item, score });
-      }
+  const similar = await resolveNeighbours(env, entry.similar ?? [], limit, itemsFor, known);
+  return { revision: at.revision, similar,
+    filed_differently: await resolveNeighbours(env, entry.filed_differently ?? [], limit, itemsFor, known) };
+}
+
+/**
+ * The first `limit` crops of a neighbour list that the site holds, with their scores. The list is
+ * resolved in order, `limit` ids at a time: a corpus glyph costs a record read, so the crops past what
+ * is shown are never looked up. `known` carries the lookups between the lists of one answer.
+ */
+export async function resolveNeighbours(env: Env, list: Neighbour[], limit: number, itemsFor: ItemsFor,
+  known: Map<string, Json | null>): Promise<Json[]> {
+  const shown: Json[] = [];
+  for (let start = 0; start < list.length && shown.length < limit; start += limit) {
+    const batch = list.slice(start, start + limit);
+    const wanted = batch.map(([n]) => n).filter(n => !known.has(n));
+    const found = wanted.length ? await itemsFor(env, wanted) : new Map();
+    for (const n of wanted) known.set(n, found.get(n) ?? null);
+    for (const [n, score] of batch) {
+      const item = known.get(n);
+      if (item && shown.length < limit) shown.push({ ...item, score });
     }
-    return shown;
   }
-  const similar = await pick(entry.similar ?? []);
-  return { revision: at.revision, similar, filed_differently: await pick(entry.filed_differently ?? []) };
+  return shown;
 }

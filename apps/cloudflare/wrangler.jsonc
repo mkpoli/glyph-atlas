@@ -25,5 +25,10 @@
   // Batch corrections change up to 144 crops a request; one address gets 20 of them a minute. A claim,
   // an action on one or a crop's form names one crop, and one address gets 30 a minute.
   "ratelimits": [{"name": "CORRECTIONS", "namespace_id": "4401", "simple": {"limit": 20, "period": 60}},
-                 {"name": "CLAIMS", "namespace_id": "4403", "simple": {"limit": 30, "period": 60}}]
+                 {"name": "CLAIMS", "namespace_id": "4403", "simple": {"limit": 30, "period": 60}},
+                 // An image search is a few Vectorize queries and record reads; one address gets 30 a minute.
+                 {"name": "REVERSE_QUERIES", "namespace_id": "4404", "simple": {"limit": 30, "period": 60}}],
+  // The image search's vectors, one index per classifier encoder (`glyph-atlas-similar-<encoder[:8]>`).
+  // `scripts/publish_reverse.sh create` makes it and `publish` fills it; it has to exist before a deploy.
+  "vectorize": [{"binding": "SIMILAR_INDEX", "index_name": "glyph-atlas-similar-5dc40a3e"}]
 }
