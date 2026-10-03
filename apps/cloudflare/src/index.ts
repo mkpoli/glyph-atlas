@@ -1442,7 +1442,7 @@ type HistoryRow = { id: string; at: string; actor: string; target: string; kind:
 export function historyItem(row: HistoryRow, me: string | null = null): Json {
   const reviewer = { user: row.user, name: row.name ?? row.actor, image: row.image, mine: Boolean(me && row.user === me) };
   if (row.kind === 'passed') return { id: row.id, at: row.at, target: null, label: row.label, kind: 'passed', reviewer,
-    passed: Number(row.event), verdict: null, issue: null, character: null, reading: null, round: row.id, batch: null, undoes: null };
+    passed: Number(row.event), verdict: null, issue: null, character: null, text: null, round: row.id, batch: null, undoes: null };
   const undo = row.kind === 'undo';
   const parsedEvent = parse(row.event);
   const evidence = undo ? null : parse(parsedEvent.evidence);
