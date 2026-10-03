@@ -68,8 +68,8 @@ export async function documentDates(env: Env, document: string | null): Promise<
 }
 
 // A gallery placed or narrowed by date: `order=year` lists its crops oldest first, undated last;
-// `years=1601-1700` keeps those whose book's date overlaps the range, `years=undated` those whose has
-// none. `axis` picks the date: the copy's (`witness`, the default) or its text's (`composed`).
+// `years=1600-1699` keeps those whose book's date begins in the range, as the decades count them and a
+// time axis places them, and `years=undated` those whose has none. `axis` picks the date: the copy's (`witness`, the default) or its text's (`composed`).
 export type YearOptions = { axis: 'witness' | 'composed'; order: 'style' | 'year'; years: { from: number; to: number } | 'undated' | null };
 const YEARS = /^(-?\d{1,4})-(-?\d{1,4})$/;
 export function yearOptions(q: URLSearchParams, fail: (status: number, message: string) => never): YearOptions | null {
@@ -93,7 +93,7 @@ export const YEAR_KEY = 'coalesce(d.start,d.end)';
 export function yearCondition(years: YearOptions['years']): { sql: string; values: number[] } {
   if (years === null) return { sql: '', values: [] };
   if (years === 'undated') return { sql: ` AND ${YEAR_KEY} IS NULL`, values: [] };
-  return { sql: ` AND coalesce(d.end,d.start)>=? AND ${YEAR_KEY}<=?`, values: [years.from, years.to] };
+  return { sql: ` AND ${YEAR_KEY} BETWEEN ? AND ?`, values: [years.from, years.to] };
 }
 /** Oldest first, undated last, then `rest`. */
 export const yearOrder = (rest: string) => `${YEAR_KEY} IS NULL,${YEAR_KEY},coalesce(d.end,d.start),${rest}`;
