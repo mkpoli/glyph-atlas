@@ -36,6 +36,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -105,10 +106,34 @@ def select_units(catalogue: Path, prefixes: list[str]) -> None:
         db.execute("DELETE FROM metadata WHERE key='catalogue'")
 
 
-def d1(sql: str) -> list[dict]:
-    result = subprocess.run(["bunx", "wrangler", "d1", "execute", "glyph-atlas", "--remote", "--json", "--command", sql],
-                            cwd=ROOT / "apps" / "cloudflare", capture_output=True, text=True, check=True)
-    return json.loads(result.stdout)[0]["results"]
+def d1(sql: str, tries: int = 4) -> list[dict]:
+    """One read of the live database. A request that does not come back is sent again after a pause,
+    since over a slow connection D1 answers `fetch failed` now and then; the last failure is raised."""
+    for attempt in range(tries):
+        result = subprocess.run(["bunx", "wrangler", "d1", "execute", "glyph-atlas", "--remote", "--json", "--command", sql],
+                                cwd=ROOT / "apps" / "cloudflare", capture_output=True, text=True, check=False)
+        if result.returncode == 0:
+            return json.loads(result.stdout)[0]["results"]
+        if attempt < tries - 1:
+            time.sleep(10 * (attempt + 1))
+    raise subprocess.CalledProcessError(result.returncode, result.args, result.stdout, result.stderr)
+
+
+def read_range(low: str, high: str, depth: int = 0) -> list[dict]:
+    """The live units with ids in [low, high). A range whose answer does not come back (too large to
+    send in one response, or a dropped connection) is read again as the ranges one id character
+    longer, so a crowded range ends up in pieces small enough for one response."""
+    sql = ("SELECT u.id, u.origin, u.revision, u.quiz, u.data, u.style, "
+           "EXISTS(SELECT 1 FROM events e WHERE e.target=u.id) AS reviewed "
+           f"FROM units u WHERE u.id >= '{low}' AND u.id < '{high}'")
+    try:
+        return d1(sql, tries=2)
+    except subprocess.CalledProcessError:
+        pass
+    if depth >= 3:
+        raise SystemExit(f"could not read live units in [{low}, {high})")
+    parts = [low] + [low + c for c in ID_CHARS[1:]] + [high]
+    return [row for a, b in itertools.pairwise(parts) for row in read_range(a, b, depth + 1)]
 
 
 def read_live(prefixes: list[str]) -> list[dict]:
@@ -119,9 +144,7 @@ def read_live(prefixes: list[str]) -> list[dict]:
         got = []
         bounds = [prefix] + [prefix + c for c in ID_CHARS[1:]] + [prefix + "~"]
         for low, high in itertools.pairwise(bounds):
-            got += d1("SELECT u.id, u.origin, u.revision, u.quiz, u.data, u.style, "
-                      "EXISTS(SELECT 1 FROM events e WHERE e.target=u.id) AS reviewed "
-                      f"FROM units u WHERE u.id >= '{low}' AND u.id < '{high}'")
+            got += read_range(low, high)
         if len(got) != expected:
             raise SystemExit(f"read {len(got)} live {prefix} units, D1 holds {expected}")
         rows += got
