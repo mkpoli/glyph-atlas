@@ -30,3 +30,16 @@ def test_each_documents_glyphs_are_counted():
     db.execute("INSERT INTO corpus_document_counts VALUES('gone', 9)")
     db.executescript("".join(export.counts([("a:1", "A"), ("a:2", "A"), ("b:1", "B")])))
     assert db.execute("SELECT document,n FROM corpus_document_counts ORDER BY 1").fetchall() == [("A", 2), ("B", 1)]
+
+
+def test_a_corpus_publication_counts_the_documents_it_publishes():
+    from cloudflare_schema import document_count_statements
+
+    export_db = sqlite3.connect(":memory:")
+    export_db.execute("CREATE TABLE corpus_units(id TEXT PRIMARY KEY, document TEXT)")
+    export_db.executemany("INSERT INTO corpus_units VALUES(?,?)", [("a:1", "A"), ("a:2", "A"), ("x:1", None), ("b:1", "B's")])
+    site = sqlite3.connect(":memory:")
+    site.execute("CREATE TABLE corpus_document_counts(document TEXT PRIMARY KEY, n INTEGER NOT NULL)")
+    site.execute("INSERT INTO corpus_document_counts VALUES('A', 9), ('other', 3)")
+    site.executescript("\n".join(document_count_statements(export_db)))
+    assert site.execute("SELECT document,n FROM corpus_document_counts ORDER BY 1").fetchall() == [("A", 2), ("B's", 1), ("other", 3)]

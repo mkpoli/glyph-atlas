@@ -67,6 +67,15 @@ def corpus_upsert(values) -> str:
             f"ON CONFLICT(id) DO UPDATE SET {updates};")
 
 
+def document_count_statements(db) -> list[str]:
+    """The glyph count of each document a corpus publication holds (0053), replacing the one D1 has.
+    A document is published whole by one export, so its count here is its count on the site."""
+    rows = [f"('{document.replace("'", "''")}',{n})" for document, n in db.execute(
+        "SELECT document,count(*) FROM corpus_units WHERE document IS NOT NULL GROUP BY document ORDER BY document")]
+    return [f"INSERT OR REPLACE INTO corpus_document_counts(document,n) VALUES{','.join(rows[i:i + 200])};"
+            for i in range(0, len(rows), 200)]
+
+
 def category_of(label: str | None) -> str:
     """A label's category, by its first character's script, as the Worker writes it."""
     point = ord(label[0]) if label else -1

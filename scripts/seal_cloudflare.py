@@ -9,7 +9,14 @@ import re
 import sqlite3
 from pathlib import Path
 
-from cloudflare_schema import CORPUS_COLUMNS, CORPUS_REFRESH, category_of, corpus_upsert, schema
+from cloudflare_schema import (
+    CORPUS_COLUMNS,
+    CORPUS_REFRESH,
+    category_of,
+    corpus_upsert,
+    document_count_statements,
+    schema,
+)
 from export_cloudflare import UNIT_COLUMNS, encoded
 
 from glyph_atlas.ngrams import Run, ngram_statements
@@ -190,6 +197,8 @@ def seal(catalogue: Path, corpus: Path, output: Path):
             sql.write(statement)
         # Counted in D1 from the rows it now holds, which may include rows earlier publications left.
         sql.write(CORPUS_REFRESH + "\n")
+        for statement in document_count_statements(db):
+            sql.write(statement + "\n")
     counts = {table: db.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
               for table in ("units", "characters", "corpus_units", "media")}
     counts["unit_ngrams"] = len(ngrams)

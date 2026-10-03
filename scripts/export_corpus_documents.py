@@ -62,7 +62,7 @@ def counts(found: list[tuple[str, str]]) -> list[str]:
     per = Counter(document for _, document in found)
     rows = [f"({q(document)},{n})" for document, n in sorted(per.items())]
     return ["DELETE FROM corpus_document_counts;\n"] + [
-        f"INSERT INTO corpus_document_counts(document,n) VALUES{','.join(rows[i:i + 200])};\n" for i in range(0, len(rows), 200)]
+        f"INSERT OR REPLACE INTO corpus_document_counts(document,n) VALUES{','.join(rows[i:i + 200])};\n" for i in range(0, len(rows), 200)]
 
 
 APPLY = """#!/usr/bin/env bash

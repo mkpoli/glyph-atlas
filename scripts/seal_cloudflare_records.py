@@ -21,7 +21,7 @@ import os
 import sqlite3
 from pathlib import Path
 
-from cloudflare_schema import CORPUS_COLUMNS, CORPUS_REFRESH, corpus_upsert
+from cloudflare_schema import CORPUS_COLUMNS, CORPUS_REFRESH, corpus_upsert, document_count_statements
 
 PART_BYTES = 90 * 1024**2
 
@@ -71,6 +71,8 @@ def seal(corpus: Path, output: Path) -> dict:
         parts.append(f"sql/{len(parts) + 1:03}.sql")
         handle = (output / parts[-1]).open("w")
     handle.write(CORPUS_REFRESH + "\n")
+    for statement in document_count_statements(db):
+        handle.write(statement + "\n")
     handle.close()
     count = db.execute("SELECT count(*) FROM corpus_units").fetchone()[0]
     images = db.execute("SELECT count(*) FROM media").fetchone()[0]
