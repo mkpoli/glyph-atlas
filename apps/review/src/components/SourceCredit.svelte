@@ -5,6 +5,8 @@
   import { licenceName, holderName } from '../lib/licence.js'
   import DateMark from './DateMark.svelte'
   let { item, corpus = false } = $props()
+  // A no-break space keeps each · with the part before it.
+  const SEPARATOR = '\u00a0· '
   const shown = $derived((corpus
     ? [item.source?.title, holderName(item.attribution || item.source?.holder), licenceName(item.licence)]
     : [item.source, holderName(item.attribution || item.holder), licenceName(item.licence)]).filter(Boolean))
@@ -15,11 +17,14 @@
 </script>
 
 {#if shown.length || item.dating || credit || link}
-  <p class="source-credit">{shown.join(' · ')}{#if item.dating}{#if shown.length}{' · '}{/if}<DateMark {item} />{/if}{#if credit}{#if shown.length || item.dating}{' · '}{/if}{credit}{/if}{#if link}{#if shown.length || item.dating || credit}{' · '}{/if}<a href={link.href} target="_blank" rel="noreferrer">{link.label}</a>{/if}</p>
+  <!-- Each part stays whole and the line breaks only after a separator; a part longer than the line wraps inside itself. -->
+  <p class="source-credit">{#each shown as part, i}{#if i}{SEPARATOR}{/if}<span class="part">{part}</span>{/each}{#if item.dating}{#if shown.length}{SEPARATOR}{/if}<DateMark {item} />{/if}{#if credit}{#if shown.length || item.dating}{SEPARATOR}{/if}<span class="part">{credit}</span>{/if}{#if link}{#if shown.length || item.dating || credit}{SEPARATOR}{/if}<a class="part" href={link.href} target="_blank" rel="noreferrer">{link.label}</a>{/if}</p>
 {/if}
 
 <style>
   .source-credit{margin:0;font-size:11px;line-height:1.5;color:var(--faint);overflow-wrap:anywhere}
   .source-credit a{color:inherit;text-decoration:underline;text-underline-offset:2px}
   .source-credit a:hover{color:var(--muted)}
+  .part{display:inline-block;max-width:100%;vertical-align:top}
+  .source-credit :global(.date-mark > a),.source-credit :global(.date-mark > span:not(.disputed)){white-space:nowrap}
 </style>

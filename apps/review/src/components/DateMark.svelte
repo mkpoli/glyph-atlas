@@ -10,7 +10,7 @@
 </script>
 
 {#snippet event(kind, date)}{#if date.hutime}<a href={date.hutime} target="_blank" rel="noreferrer" {title} aria-label={`${eventLabel(kind, date)}. ${title}`}>{eventLabel(kind, date)}</a>{:else}<span tabindex="0" {title} aria-label={`${eventLabel(kind, date)}. ${title}`}>{eventLabel(kind, date)}</span>{/if}{/snippet}
-{#if item?.dating}<span class="date-mark">{#if witness}{@render event(witness.kind, witness)}{:else}<span class="undated">{t('date.undated')}</span>{/if}{#if composed}{' · '}{@render event('composed', composed)}{/if}{#if witness?.status === 'disputed' || composed?.status === 'disputed'}<span class="disputed" role="img" aria-label={t('date.disputed')} title={t('date.disputed')}>*</span>{/if}</span>{/if}
+{#if item?.dating}<span class="date-mark">{#if witness}{@render event(witness.kind, witness)}{:else}<span class="undated">{t('date.undated')}</span>{/if}{#if composed}{'\u00a0· '}{@render event('composed', composed)}{/if}{#if witness?.status === 'disputed' || composed?.status === 'disputed'}<span class="disputed" role="img" aria-label={t('date.disputed')} title={t('date.disputed')}>*</span>{/if}</span>{/if}
 
 <style>
   .date-mark{font-variant-numeric:tabular-nums}
