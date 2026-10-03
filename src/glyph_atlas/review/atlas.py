@@ -139,11 +139,12 @@ def reviewed_targets(events: Iterable[Any]) -> set[str]:
 
 def grapheme_of(text: str) -> str | None:
     """The grapheme a label is filed under: its family's representative code point, or, for a label
-    with no family (a symbol, a sequence), its own code points. Publication writes the same value."""
+    with no family (a symbol, ツ + U+309A), its own code points. A sequence the character layer
+    holds (𛂞 + U+3099) is filed under its family like a character. Publication writes the same value."""
     if not text:
         return None
     own = " ".join(refs.to_code_points(text))
-    return (refs.grapheme(own) if len(text) == 1 else None) or own
+    return refs.grapheme(own) or own
 
 
 GRAPHEME_KEY = r"^U\+[0-9A-F]{4,6}( U\+[0-9A-F]{4,6})*$"
@@ -156,12 +157,12 @@ def grapheme_members(key: str) -> list[str]:
     points = key.split(" ")
     if not re.fullmatch(GRAPHEME_KEY, key) or any(int(point.removeprefix("U+"), 16) > 0x10FFFF for point in points):
         raise BadRequest("Invalid grapheme.")
-    head = refs.grapheme(points[0]) if len(points) == 1 else None
+    head = refs.grapheme(key)
     if head and head != key:
         raise BadRequest(f"{refs.from_code_points(points)} is filed under {refs.to_char(head)}.")
-    family = refs.graphemes().get(key, [])
+    info = refs.grapheme_info(key) if head else None
     # The family's head first, as the character table lists its members.
-    return [refs.to_char(point) for point in sorted(family, key=lambda point: point != key)] or [refs.from_code_points(points)]
+    return [member["char"] for member in info["members"]] if info else [refs.from_code_points(points)]
 
 
 def single_character(text: str) -> bool:
