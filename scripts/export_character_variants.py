@@ -171,12 +171,7 @@ q() {{ bunx wrangler d1 execute glyph-atlas --remote --json --command "$1" 2>/de
 echo "before: $(q "$count")"
 echo "started $(date -u +%Y-%m-%dT%H:%M:%SZ); undo: bunx wrangler d1 time-travel restore glyph-atlas --timestamp=<that time>"
 for part in "$here"/sql/part-*.sql; do
-  done=0
-  for try in 1 2 3 4; do
-    if bunx wrangler d1 execute glyph-atlas --remote --yes --file "$part" 2>&1 | tee /dev/stderr | grep -q "Executed"; then done=1; break; fi
-    sleep 30
-  done
-  [ "$done" -eq 1 ] || {{ echo "$(basename "$part") failed four times; the live table is unchanged unless it was the last part. Rerun." >&2; exit 1; }}
+  ../../scripts/d1_import.sh "$part" || {{ echo "$(basename "$part") did not apply; the live table is unchanged unless it was the last part. Rerun." >&2; exit 1; }}
 done
 after=$(q "$count")
 echo "after: $after"

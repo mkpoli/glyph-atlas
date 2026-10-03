@@ -317,17 +317,8 @@ published=$(q "SELECT value FROM metadata WHERE key='published_at'")
 check="SELECT count(*) AS rows FROM characters WHERE json_extract(data,'$.grapheme.code_point')='{probe_head}'"
 check_units="SELECT count(*) AS wrong FROM units WHERE character IN ({probe_chars}) AND family IS NOT '{probe_head}'"
 echo "before: $(q "$check"), crops not under the head: $(q "$check_units")"
-last=$(basename "$(ls "$here"/sql/part-*.sql | tail -1)")
 for part in "$here"/sql/part-*.sql; do
-  done=0
-  for try in 1 2 3 4; do
-    # The last part may have committed although wrangler's answer was lost; it drops the staging table,
-    # so a retry would fail on it.
-    if [ "$try" -gt 1 ] && [ "$(basename "$part")" = "$last" ] && [ "$(q "$check")" = '{{"rows":{probe_rows}}}' ]; then done=1; break; fi
-    if bunx wrangler d1 execute glyph-atlas --remote --yes --file "$part" 2>&1 | tee /dev/stderr | grep -q "Executed"; then done=1; break; fi
-    sleep 30
-  done
-  [ "$done" -eq 1 ] || {{ echo "$(basename "$part") failed four times; rerun the apply — every part repeats safely." >&2; exit 1; }}
+  {importer} "$part" || {{ echo "$(basename "$part") did not apply; rerun the apply — every part repeats safely." >&2; exit 1; }}
 done
 after=$(q "$check")
 echo "after: $after"
@@ -364,7 +355,7 @@ def main() -> None:
     paths = write_parts(out, statements(rows))
     apply = out / "apply.sh"
     apply.write_text(APPLY.format(
-        wrangler=WRANGLER, published=encoded(published), probe_head=head,
+        wrangler=WRANGLER, importer=ROOT / "scripts" / "d1_import.sh", published=encoded(published), probe_head=head,
         probe_chars=",".join(quote(refs.to_char(point)) for point in refs.graphemes()[head]),
         probe_rows=sum(point in live for point in refs.graphemes()[head])),
         encoding="utf-8")

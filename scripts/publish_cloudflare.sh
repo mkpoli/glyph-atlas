@@ -30,14 +30,11 @@ missing=$(jq -r '.objects[].key' "$publication/publication.json" | grep -cvxFf "
 [ "$missing" -eq 0 ] || { echo "$missing objects did not upload; rerun to send them" >&2; exit 1; }
 
 # A part fails whole and changes nothing, and D1 takes one import at a time, so a refused part is
-# retried; every part is written to be applied again safely.
+# retried; every part is written to be applied again safely. d1_import.sh confirms each part by a
+# stamp it reads back, since wrangler can report an applied import as failed.
 for part in "${parts[@]}"; do
   echo "d1 $part"
-  for try in 1 2 3 4; do
-    bunx wrangler d1 execute glyph-atlas --remote --yes --file "$publication/$part" && break
-    [ "$try" -lt 4 ] || { echo "$part failed four times; rerun to continue" >&2; exit 1; }
-    sleep 30
-  done
+  ../../scripts/d1_import.sh "$publication/$part" || { echo "$part did not apply; rerun to continue" >&2; exit 1; }
 done
 # The homepage gallery deals copies of published records; bring them up to date with the rows just
 # written. The parts go beside the publication, in a directory of their own for each run.
@@ -45,6 +42,6 @@ gallery="$publication/gallery-$(date -u +%Y%m%dT%H%M%SZ)"
 uv run ../../scripts/fill_corpus_gallery.py "$gallery"
 for part in "$gallery"/*.sql; do
   echo "d1 $part"
-  bunx wrangler d1 execute glyph-atlas --remote --yes --file "$part"
+  ../../scripts/d1_import.sh "$part" || { echo "$part did not apply; rerun the gallery refill" >&2; exit 1; }
 done
 echo "published"
