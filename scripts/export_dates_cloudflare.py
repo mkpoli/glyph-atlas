@@ -122,14 +122,14 @@ def statements(source: Path, stamp: str) -> tuple[list[list[str]], dict[str, int
 
 APPLY = """#!/usr/bin/env bash
 # Publish the documents' dates of export {stamp}. Each part is one D1 transaction and repeats safely;
-# a failed run is rerun from the start. The ledger (0048) and document_dating (0051) must be on the site.
+# a failed run is rerun from the start. The ledger (0048) and document_dating (0052) must be on the site.
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 # The checkout the export sits in (under its work/), whichever one that is.
 cd "$(git -C "$here" rev-parse --show-toplevel)/apps/cloudflare"
 q() {{ bunx wrangler d1 execute glyph-atlas --remote --json --command "$1" 2>/dev/null | jq -c '.[0].results[0]'; }}
 tables=$(q "SELECT count(*) AS n FROM sqlite_master WHERE type='table' AND name IN ('assertions','document_dating')")
-[ "$tables" = '{{"n":2}}' ] || {{ echo "apply migrations 0048 and 0051 first ($tables)" >&2; exit 1; }}
+[ "$tables" = '{{"n":2}}' ] || {{ echo "apply migrations 0048 and 0052 first ($tables)" >&2; exit 1; }}
 for part in "$here"/sql/part-*.sql; do
   done=0
   for try in 1 2 3 4; do

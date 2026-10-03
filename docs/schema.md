@@ -229,7 +229,7 @@ claim (`DateClaim`, written to `work/dates/claims.jsonl`), and resolves what eac
 (`resolved.jsonl`). On the site each claim is an assertion of the ledger (`docs/design/form-model.md`):
 subject the document, predicate `date_<kind>`, the fields below but its id, kind, tier and source as its
 value, asserted by `source:<id>` with an evidence row naming the source and the locator. What each
-document shows is `document_dating` (migration 0051).
+document shows is `document_dating` (migration 0052).
 
 | Field | Meaning |
 | --- | --- |

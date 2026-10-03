@@ -20,7 +20,7 @@ def site():
     db = sqlite3.connect(":memory:")
     db.executescript("CREATE TABLE metadata(key TEXT PRIMARY KEY, value TEXT);\n"
                      "CREATE TABLE units(id TEXT PRIMARY KEY, data TEXT, crop_version TEXT);\n")
-    for name in ("0048_assertion_ledger.sql", "0051_document_dates.sql"):
+    for name in ("0048_assertion_ledger.sql", "0052_document_dates.sql"):
         db.executescript((ROOT / "apps/cloudflare/migrations" / name).read_text())
     return db
 
