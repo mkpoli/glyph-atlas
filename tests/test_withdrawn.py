@@ -54,6 +54,14 @@ def site():
                "data,snapshot,context,visual) VALUES('hl:gone_0_000:x:1','corpus','字','unknown','kanji','pending',"
                "0,1,0,0,'{\"source_revision\":\"glyph\"}','{}','{}','{}')")
     db.execute("INSERT INTO seen VALUES('hl:gone_0_000:x:1','s',NULL,'h','t')")
+    # A claim about each book's crop, one accepted, and a claim about the round's glyph.
+    # The last was made on a cut of ex:2 the site never had.
+    for claim, subject, version in (("cf:1", "ex:1", "ex:1@page@1,2,3,4"), ("cf:2", "ex:3", "ex:3@page@1,2,3,4"),
+                                    ("cf:3", "hl:gone_0_000:x:1", "hl:gone_0_000:x:1@glyph@"), ("cf:4", "ex:2", "ex:2@page@9,9,9,9")):
+        db.execute("INSERT INTO assertions(id,subject,predicate,value,tier,asserted_by,asserted_at) "
+                   "VALUES(?,?,'has_form','\"unreadable\"','observed','a','t')", (claim, subject))
+        db.execute("INSERT INTO assertion_evidence(assertion,kind,ref) VALUES(?,'crop',?)", (claim, version))
+        db.execute("INSERT INTO assertion_actions(id,assertion,action,actor,at) VALUES(?,?,'accept','b','t')", (claim + "a", claim))
     return db
 
 
@@ -74,6 +82,8 @@ def test_the_statements_take_a_withdrawn_document_off_the_site_and_nothing_else(
         assert sorted(r for r, in db.execute("SELECT id FROM corpus_gallery")) == kept
         assert db.execute("SELECT count(*) FROM metadata WHERE key='units_refreshed_at'").fetchone()[0] == 1
         assert [r for r, in db.execute("SELECT unit FROM crop_versions")] == ["ex:3"], "the versions go with their crops"
+        for table, column in (("assertions", "id"), ("assertion_evidence", "assertion"), ("assertion_actions", "assertion")):
+            assert [r for r, in db.execute(f"SELECT {column} FROM {table}")] == ["cf:2"], f"the claims go with their crops: {table}"
 
 
 def test_a_release_cuts_no_crop_of_a_withdrawn_document(monkeypatch):

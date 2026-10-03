@@ -20,7 +20,8 @@ const mf = new Miniflare(convertV4MiniflareOptions({workers:[{
   modules: true, script: await readFile(bundle, 'utf8'), compatibilityDate: '2026-09-22', compatibilityFlags: ['nodejs_compat'],
   d1Databases: ['DB'], r2Buckets: ['MEDIA'], bindings: { BETTER_AUTH_SECRET: 'integration-test-secret-integration-test' },
   ratelimits: { CORRECTIONS: { namespace_id: '4401', simple: { limit: 20, period: 60 } },
-    WRITTEN_FORMS: { namespace_id: '4402', simple: { limit: 30, period: 60 } } },
+    WRITTEN_FORMS: { namespace_id: '4402', simple: { limit: 30, period: 60 } },
+    CLAIMS: { namespace_id: '4403', simple: { limit: 30, period: 60 } } },
 }]}))
 try {
   const db = await mf.getD1Database('DB')
@@ -1413,6 +1414,61 @@ try {
   assert.equal(await db.prepare("SELECT 1 FROM units WHERE id='na-unassigned'").first(), null)
   assert.equal((await call('/atlas/corpus/character?id=na-unassigned')).crop_version,
     `na-unassigned@${createHash('sha256').update('na-unassigned').digest('hex')}@1,2,3,4`, 'a corpus glyph with no row yet names the version its row would have')
+  // The assertion ledger: claims, actions, their resolution, a recrop, the export and its query plans.
+  // Saves are made as signed-in reviewers (`call`'s fourth argument), and `judge` is an admin.
+  await addLocal('claimed', '仮', { box: { x: 1, y: 2, w: 3, h: 4 } })
+  const claimedVersion = (await call('/atlas/characters/claimed')).crop_version
+  const claimOn = (fields = {}) => ({ id: crypto.randomUUID(), subject: 'claimed', predicate: 'has_form', crop_version: claimedVersion, claims: [{ value: 'unresolved' }], ...fields })
+  const firstClaim = claimOn()
+  const made = await call('/atlas/claims', firstClaim)
+  assert.deepEqual([made.current[0].status, made.current[0].value, made.current[0].supporting], ['asserted', 'unresolved', made.assertions])
+  assert.deepEqual(await call('/atlas/claims', firstClaim), made, 'a retried claim answers with the first')
+  await call('/atlas/claims', { ...firstClaim, claims: [{ value: 'unreadable' }] }, 409)
+  await call('/atlas/claims', claimOn({ crop_version: 'claimed@x@1,2,3,4' }), 409)
+  for (const bad of [{ claims: [{ value: 'legible' }] }, { predicate: 'reads_as' }, { claims: [] }, { claims: [{ value: 'unresolved', confidence: 0.4 }] }])
+    await call('/atlas/claims', claimOn(bad), 422)
+  const rival = await call('/atlas/claims', claimOn({ claims: [{ value: 'unreadable' }] }), 200, 'inspector')
+  assert.deepEqual([rival.current[0].status, rival.current[0].value, rival.current[0].claims.length], ['disputed', null, 2], 'two people disagree')
+  await call(`/atlas/claims/${made.assertions[0]}/actions`, { id: crypto.randomUUID(), action: 'retract' }, 403, 'inspector')
+  await call(`/atlas/claims/${made.assertions[0]}/actions`, { id: crypto.randomUUID(), action: 'accept' }, 422)
+  await call(`/atlas/claims/${made.assertions[0]}/actions`, { id: crypto.randomUUID(), action: 'adjudicate' }, 403, 'bob')
+  await db.prepare(`UPDATE "user" SET role='admin' WHERE id=?`).bind((await user('judge')).id).run()
+  const decided = await call(`/atlas/claims/${rival.assertions[0]}/actions`, { id: crypto.randomUUID(), action: 'adjudicate', reason: 'the ink is lost' }, 200, 'judge')
+  assert.deepEqual([decided.current[0].status, decided.current[0].value, decided.current[0].supporting], ['adjudicated', 'unreadable', rival.assertions])
+  // A reviewer's new claim retracts their own earlier one; an alternative set is one claim.
+  const changed = await call('/atlas/claims', claimOn({ claims: [{ value: 'unresolved', confidence: 0.6, confidence_scheme: 'reviewer-weight' },
+    { value: 'unreadable', confidence: 0.4, confidence_scheme: 'reviewer-weight' }] }))
+  assert.deepEqual(changed.retracted, made.assertions)
+  await call(`/atlas/claims/${rival.assertions[0]}/actions`, { id: crypto.randomUUID(), action: 'retract' }, 200, 'inspector')
+  const [set] = (await call('/atlas/claims?subject=claimed')).current
+  assert.deepEqual([set.status, set.object, set.members.map(m => [m.value, m.confidence])], ['asserted', null, [['unreadable', 0.4], ['unresolved', 0.6]]])
+  await call(`/atlas/claims/${changed.assertions[1]}/actions`, { id: crypto.randomUUID(), action: 'accept' }, 200, 'bob')
+  assert.equal((await call('/atlas/claims?subject=claimed')).current[0].status, 'accepted', 'accepting one alternative accepts the set')
+  // A recrop leaves no claim standing; the claims stay to be read.
+  await db.prepare("UPDATE units SET data=json_set(data,'$.box.w',5) WHERE id='claimed'").run()
+  const recutClaims = await call("/atlas/claims?subject=claimed")
+  assert.deepEqual([recutClaims.current, recutClaims.history.length], [[], 4], 'the recut crop is unsorted and its claims stay')
+  assert.deepEqual(recutClaims.history[0].evidence, [{ kind: 'crop', ref: claimedVersion, locator: null }])
+  assert.equal(await db.prepare("SELECT count(*) AS n FROM current_claims WHERE subject='claimed'").first('n'), 0, 'the resolved row went with the old cut')
+  // A corpus glyph nothing has named gets its row with its first claim.
+  const glyphClaim = await call('/atlas/claims', { id: crypto.randomUUID(), subject: 'nu-shown', predicate: 'has_form',
+    crop_version: (await call('/atlas/corpus/character?id=nu-shown')).crop_version, claims: [{ value: 'unreadable' }] })
+  assert.equal(glyphClaim.current[0].value, 'unreadable')
+  assert.equal((await db.prepare("SELECT origin,state FROM units WHERE id='nu-shown'").first()).state, 'pending', 'the glyph stays unreviewed')
+  // The export, a page at a time, and every ledger read by its index.
+  const firstPage = await call('/atlas/ledger?limit=3')
+  assert.deepEqual([firstPage.kind, firstPage.assertions.length, firstPage.done], ['atlas-ledger', 3, false])
+  const laterPage = await call(`/atlas/ledger?after=${firstPage.next.after}&actions_after=${firstPage.next.actions_after}`)
+  assert.equal(firstPage.assertions.length + laterPage.assertions.length, 5)
+  assert.ok(laterPage.done && laterPage.actions.length + firstPage.actions.length === 4, 'two retractions, an adjudication and an acceptance')
+  for (const [sql, bound] of [[worker.ledgerClaimsQuery(), [0, 3]], [worker.ledgerActionsQuery(), [0, 3]], [worker.claimHistoryQuery(), ['claimed']],
+    [worker.currentClaimsQuery(), ['claimed']], [worker.resolveWriteQuery(), [JSON.stringify([['claimed', 'has_form', '', '']])]], [worker.resolveClearQuery(), [JSON.stringify([['claimed', 'has_form', '', '']])]]]) {
+    // No ledger table, nor `units`, is read whole or through an index built for the query; the
+    // resolver's own intermediate results may be.
+    const plan = (await db.prepare('EXPLAIN QUERY PLAN ' + sql).bind(...bound).all()).results.map(row => row.detail)
+    const table = /^(SCAN|SEARCH) (a|x|e|p|u|assertions|assertion_actions|assertion_evidence|assertion_premises|current_claims|units)\b/
+    assert.ok(!plan.some(d => table.test(d) && (/AUTOMATIC/.test(d) || (d.startsWith('SCAN') && !/USING (COVERING )?INDEX|USING INTEGER PRIMARY KEY/.test(d)))), plan.join('; '))
+  }
   // One address gets 30 written forms a minute.
   let formsLimited = false
   for (let i = 0; i < 40 && !formsLimited; i++) {
@@ -1427,7 +1483,7 @@ try {
     rateLimited = response.status === 429
   }
   assert.ok(rateLimited, 'batches are rate-rateLimited per address')
-  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms, batch corrections, written forms, redrawn boxes, crop versions.')
+  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms, batch corrections, written forms, redrawn boxes, crop versions, the assertion ledger.')
 } finally {
   await mf.dispose()
   await rm(bundleDir, { recursive: true, force: true })

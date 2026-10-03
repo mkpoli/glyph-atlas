@@ -1,13 +1,14 @@
-"""Import hosted reviews by their revision lineage and written forms by their pixels."""
+"""Import hosted reviews by their revision lineage, written forms by their pixels, and the ledger as it stands."""
 from __future__ import annotations
 
 import json
 import re
+import sqlite3
 from collections import Counter, defaultdict
 from copy import deepcopy
 from datetime import datetime
 
-from .. import recorded_terms, refs, written_form
+from .. import evidence, recorded_terms, refs, written_form
 from ..schema import Review
 from ..unit_scope import character_count
 from .atlas import identity_text, script_of_identity, single_character
@@ -373,6 +374,108 @@ def ingest_written_forms(store, payload: dict, *, apply=False) -> tuple[dict, di
     except _PreviewRollback:
         pass
     return {**payload, "forms": output}, {"counts": dict(Counter(item["status"] for item in report)), "items": report}
+
+
+#: The columns of a claim the site and this store must agree on for one id.
+_CLAIM_COLUMNS = ("subject", "predicate", "scope", "slot", "object", "value", "alternative_set", "tier", "asserted_by",
+                  "asserted_at", "confidence", "confidence_scheme", "method", "run", "legacy")
+_ACTION_COLUMNS = ("assertion", "action", "actor", "at", "reason")
+
+
+def merge_ledger_pages(pages: list[dict]) -> dict:
+    """The pages of `/atlas/ledger`, read one after another, as one payload."""
+    return {"kind": "atlas-ledger", "assertions": [row for page in pages for row in page.get("assertions", [])],
+            "actions": [row for page in pages for row in page.get("actions", [])]}
+
+
+def ingest_ledger(store, payload: dict, *, apply=False) -> dict:
+    """Copy the site's ledger rows about this dataset's crops into the store; previews write nothing.
+
+    A claim names the evidence version it was made on, so it is copied as it stands whatever the
+    local crop looks like now: the local resolution treats a claim on another version as not standing,
+    as the site does. A row already here under its id is a duplicate when it agrees and is rejected when
+    it does not. Rows about crops this dataset does not hold, and actions on claims it does not hold,
+    are left to the store that does. The slots that gained rows are resolved again.
+    """
+    from . import ledger
+
+    report = []
+    try:
+        with store._lock, store._connection() as conn, store._transaction(conn):
+            subjects = set()
+            for row in payload.get("assertions", []):
+                item = {"id": row.get("id"), "kind": "claim", "status": "rejected"}
+                report.append(item)
+                # A claim lands whole or not at all: its evidence and premises with it.
+                conn.execute("SAVEPOINT remote_claim")
+                try:
+                    if not REMOTE_ID.fullmatch(str(row.get("id", ""))):
+                        raise Rejected("a claim id this importer did not make")
+                    prior = ledger.assertion(conn, row["id"])
+                    if prior is not None:
+                        if any(prior[c] != row.get(c) for c in _CLAIM_COLUMNS):
+                            raise Rejected("remote claim ID was reused with different content")
+                        item["status"] = "duplicate"
+                        continue
+                    if store._unit_row(conn, row["subject"]) is None:
+                        item["status"] = "elsewhere"
+                        continue
+                    conn.execute(f"INSERT INTO assertions(id,submission,{','.join(_CLAIM_COLUMNS)}) "
+                                 f"VALUES(?,?,{','.join('?' * len(_CLAIM_COLUMNS))})",
+                                 (row["id"], row.get("submission"), *(row.get(c) for c in _CLAIM_COLUMNS)))
+                    for support in row.get("evidence", []):
+                        conn.execute("INSERT INTO assertion_evidence(assertion,kind,ref,locator) VALUES(?,?,?,?)",
+                                     (row["id"], support["kind"], support["ref"], support.get("locator")))
+                    for premise in row.get("premises", []):
+                        conn.execute("INSERT INTO assertion_premises(assertion,premise,role) VALUES(?,?,?)",
+                                     (row["id"], premise["premise"], premise.get("role", "premise")))
+                    subjects.add(row["subject"])
+                    item["status"] = "imported" if apply else "ready"
+                except Rejected as error:
+                    conn.execute("ROLLBACK TO remote_claim")
+                    item["reason"] = str(error)
+                except (KeyError, TypeError, ValueError, sqlite3.IntegrityError):
+                    conn.execute("ROLLBACK TO remote_claim")
+                    item["reason"] = "invalid remote claim structure"
+                finally:
+                    conn.execute("RELEASE remote_claim")
+            for row in payload.get("actions", []):
+                item = {"id": row.get("id"), "kind": "action", "status": "rejected"}
+                report.append(item)
+                try:
+                    if not REMOTE_ID.fullmatch(str(row.get("id", ""))):
+                        raise Rejected("an action id this importer did not make")
+                    prior = conn.execute(f"SELECT {','.join(_ACTION_COLUMNS)} FROM assertion_actions WHERE id=?",
+                                         (row["id"],)).fetchone()
+                    if prior is not None:
+                        if tuple(prior) != tuple(row.get(c) for c in _ACTION_COLUMNS):
+                            raise Rejected("remote action ID was reused with different content")
+                        item["status"] = "duplicate"
+                        continue
+                    target = ledger.assertion(conn, row["assertion"])
+                    if target is None:
+                        item["status"] = "elsewhere"
+                        continue
+                    conn.execute(f"INSERT INTO assertion_actions(id,submission,{','.join(_ACTION_COLUMNS)}) "
+                                 f"VALUES(?,?,{','.join('?' * len(_ACTION_COLUMNS))})",
+                                 (row["id"], row.get("submission"), *(row.get(c) for c in _ACTION_COLUMNS)))
+                    subjects.add(target["subject"])
+                    item["status"] = "imported" if apply else "ready"
+                except Rejected as error:
+                    item["reason"] = str(error)
+                except (KeyError, TypeError, ValueError, sqlite3.IntegrityError):
+                    item["reason"] = "invalid remote action structure"
+
+            def version_of(subject):
+                unit = store._unit_row(conn, subject)
+                return evidence.crop_version(unit.id, _source_digest(store, unit), unit.box) if unit and unit.active else None
+
+            ledger.resolve(conn, ledger.slots(conn, subjects), version_of)
+            if not apply:
+                raise _PreviewRollback()
+    except _PreviewRollback:
+        pass
+    return {"counts": dict(Counter(f"{item['kind']}:{item['status']}" for item in report)), "items": report}
 
 
 def bind_remote_outcomes(result: dict, imports: dict) -> None:

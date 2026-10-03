@@ -7,7 +7,7 @@ from uuid import uuid4
 import pytest
 from PIL import Image, ImageDraw
 
-from glyph_atlas import tables
+from glyph_atlas import evidence, tables
 from glyph_atlas.review import cloudflare_import as bridge
 from glyph_atlas.review.receipts import FeedbackReceipts, complete_batch, fingerprint
 from glyph_atlas.review.refine import refine_feedback
@@ -586,3 +586,76 @@ def test_a_box_claim_that_names_another_starting_box_is_refused(store):
     record["event"]["evidence"] = json.dumps(evidence, ensure_ascii=False)
     _, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
     assert report["counts"] == {"rejected": 1}
+
+
+def site_claim(store, *, subject="u", value="unreadable", version=None, **fields):
+    unit = store.unit("u")
+    version = version or evidence.crop_version("u", bridge._source_digest(store, unit), unit.box)
+    return {"seq": 1, "id": "cf:" + str(uuid4()), "submission": "user-1:" + str(uuid4()), "subject": subject,
+            "predicate": "has_form", "scope": "", "slot": "", "object": None, "value": json.dumps(value),
+            "alternative_set": None, "tier": "observed", "asserted_by": "user-1", "asserted_at": "2026-10-02T00:00:00.000Z",
+            "confidence": None, "confidence_scheme": None, "method": None, "run": None, "legacy": None,
+            "evidence": [{"kind": "crop", "ref": version, "locator": None}], "premises": [], **fields}
+
+
+def site_action(target, action="accept", actor="user-2"):
+    return {"seq": 1, "id": "cf:" + str(uuid4()), "submission": actor + ":" + str(uuid4()), "assertion": target,
+            "action": action, "actor": actor, "at": "2026-10-02T00:01:00.000Z", "reason": ""}
+
+
+def test_the_site_ledger_imports_as_it_stands_and_resolves_here(store):
+    made, elsewhere = site_claim(store), site_claim(store, subject="not-here")
+    pages = [{"assertions": [made, elsewhere], "actions": []},
+             {"assertions": [], "actions": [site_action(made["id"]), site_action("cf:" + str(uuid4()))]}]
+    payload = bridge.merge_ledger_pages(pages)
+    preview = bridge.ingest_ledger(store, payload)
+    assert preview["counts"] == {"claim:ready": 1, "claim:elsewhere": 1, "action:ready": 1, "action:elsewhere": 1}
+    version = made["evidence"][0]["ref"]
+    assert store.claims("u", version)["history"] == [], "a preview writes nothing"
+    applied = bridge.ingest_ledger(store, payload, apply=True)
+    assert applied["counts"] == {"claim:imported": 1, "claim:elsewhere": 1, "action:imported": 1, "action:elsewhere": 1}
+    [row] = store.claims("u", version)["current"]
+    assert (row["status"], row["value"], row["supporting"]) == ("accepted", "unreadable", [made["id"]])
+    again = bridge.ingest_ledger(store, payload, apply=True)
+    assert again["counts"] == {"claim:duplicate": 1, "claim:elsewhere": 1, "action:duplicate": 1, "action:elsewhere": 1}
+    reused = bridge.ingest_ledger(store, {"assertions": [{**made, "value": json.dumps("unresolved")}], "actions": []}, apply=True)
+    assert reused["items"][0]["reason"] == "remote claim ID was reused with different content"
+    assert store.claims("u", version)["current"][0]["value"] == "unreadable"
+
+
+def test_a_site_claim_on_another_cut_is_kept_and_does_not_stand_here(store):
+    unit = store.unit("u")
+    other = evidence.crop_version("u", bridge._source_digest(store, unit), {**unit.box.model_dump(), "w": 31})
+    report = bridge.ingest_ledger(store, {"assertions": [site_claim(store, version=other)], "actions": []}, apply=True)
+    assert report["counts"] == {"claim:imported": 1}
+    current = evidence.crop_version("u", bridge._source_digest(store, unit), unit.box)
+    claims = store.claims("u", current)
+    assert claims["current"] == [] and len(claims["history"]) == 1
+
+
+def test_command_imports_the_ledger_with_the_reviews(store, tmp_path, monkeypatch):
+    import runpy
+    import sys
+    from pathlib import Path
+
+    source = tmp_path / "reviews.json"
+    source.write_text(json.dumps({"version": 1, "kind": "atlas-character-reviews", "reviews": []}))
+    page = tmp_path / "ledger-1.json"
+    page.write_text(json.dumps({"assertions": [site_claim(store)], "actions": []}))
+    report = tmp_path / "result.json"
+    script = Path(__file__).resolve().parents[1] / "scripts/refine_feedback.py"
+    monkeypatch.setattr(sys, "argv", [str(script), str(store.directory), str(source), "--output", str(report),
+                                      "--ledger", str(page), "--apply"])
+    runpy.run_path(str(script), run_name="__main__")
+    assert json.loads(report.read_text())["ledger"]["counts"] == {"claim:imported": 1}
+
+
+def test_a_malformed_site_claim_lands_not_at_all_and_the_rest_still_import(store):
+    good = site_claim(store)
+    torn = site_claim(store, evidence=[{"kind": "crop", "ref": "x"}, {"kind": "crop"}])
+    doubled = site_claim(store, evidence=[{"kind": "crop", "ref": "x"}, {"kind": "crop", "ref": "x"}])
+    report = bridge.ingest_ledger(store, {"assertions": [torn, doubled, good], "actions": []}, apply=True)
+    assert [item["status"] for item in report["items"]] == ["rejected", "rejected", "imported"]
+    with store._connection() as conn:
+        assert [r[0] for r in conn.execute("SELECT id FROM assertions")] == [good["id"]]
+        assert conn.execute("SELECT count(*) FROM assertion_evidence").fetchone()[0] == 1
