@@ -1,6 +1,7 @@
 import { t, withText } from './i18n.svelte.js'
 import { productionLabel } from '../components/ProductionBadge.svelte'
 import { formNames } from './cropForms.js'
+import { datingLine } from './dating.js'
 
 /** What a record says about its own reliability, in one badge: withheld, machine, outside the classifier's classes, or confirmed.
  *
@@ -27,7 +28,7 @@ export function repairOf(item) {
 }
 
 /** What a crop's details list: the written form, the material, how far the record
- * has been checked, where it comes from, the work and page, and the holder. A line that names a character is
+ * has been checked, where it comes from, the work and page, when the copy and its text were made, and the holder. A line that names a character is
  * `{ before, text, after }`, for `ScriptLine` to draw the character in its script's colour; the others are text. */
 export function cropDetails(item) {
   const repair = repairOf(item)
@@ -43,6 +44,6 @@ export function cropDetails(item) {
   const names = formNames(item.form)
   const written = names.length && names.join(' / ') !== item.label ? withText('written.detail', 'form', { form: names.join(' / ') }) : null
   return [written, productionLabel(item), state, origin,
-    [work, page].filter(Boolean).join(' · ') || null, typeof item.source === 'string' ? item.holder : (item.source?.holder ?? item.holder)]
+    [work, page].filter(Boolean).join(' · ') || null, datingLine(item), typeof item.source === 'string' ? item.holder : (item.source?.holder ?? item.holder)]
     .filter(Boolean)
 }

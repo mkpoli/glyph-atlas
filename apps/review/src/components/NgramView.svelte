@@ -8,6 +8,7 @@
   import ScriptText from './ScriptText.svelte'
   import SiteLinks from './SiteLinks.svelte'
   import { ngramOccurrences, ngramWords } from '../lib/ngrams.js'
+  import { tileDate } from '../lib/dating.js'
   import { collectionAddress } from '../lib/gallery.js'
   import { number } from '../lib/client.js'
   import { t, localize } from '../lib/i18n.svelte.js'
@@ -52,7 +53,7 @@
     observer.observe(sentinel)
     return () => observer.disconnect()
   })
-  const where = crop => [crop.source, crop.page_number ? t('tile.page', { page: crop.page_number }) : null].filter(Boolean).join(' · ')
+  const where = crop => [crop.source, crop.page_number ? t('tile.page', { page: crop.page_number }) : null, tileDate(crop) || null].filter(Boolean).join(' · ')
 </script>
 
 <section class="explore ngram-view">

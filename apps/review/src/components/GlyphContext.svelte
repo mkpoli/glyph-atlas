@@ -1,5 +1,6 @@
 <script>
   import CropContext from './CropContext.svelte'
+  import { tileDate } from '../lib/dating.js'
   import ScriptText from './ScriptText.svelte'
   import { corpusCharacter } from '../lib/client.js'
   import { glyphContext } from '../lib/glyphContext.svelte.js'
@@ -27,7 +28,7 @@
 {#if id}
   <aside class="glyph-context" class:pinned class:left={glyphContext.side === 'left'} aria-label={t('forms.context.label')}>
     <header>
-      {#if data}<span class="context-source"><b><ScriptText text={data.source_label} /></b> {data.source?.title ?? ''}</span>{:else}<span class="shimmer line"></span>{/if}
+      {#if data}<span class="context-source"><b><ScriptText text={data.source_label} /></b> {data.source?.title ?? ''}{#if tileDate(data)} · {tileDate(data)}{/if}</span>{:else}<span class="shimmer line"></span>{/if}
       {#if pinned}<button class="icon-button" aria-label={t('forms.context.close')} onclick={() => glyphContext.pinned = null}>×</button>{/if}
     </header>
     <div class="context-figure">

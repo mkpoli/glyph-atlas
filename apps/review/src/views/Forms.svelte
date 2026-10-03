@@ -1,5 +1,6 @@
 <script>
   import { onMount, onDestroy, untrack } from 'svelte'
+  import { tileDate } from '../lib/dating.js'
   import SiteLinks from '../components/SiteLinks.svelte'
   import { replaceState } from '$app/navigation'
   import { page } from '$app/state'
@@ -427,6 +428,7 @@
                   {#if glyph.image}<img class="glyph-image" src={glyph.image} alt="" loading="lazy" use:settle />{/if}
                   {#if glyph.reported}<span class="member-flag" title={t('forms.reported', { reason: glyph.reported })}>{glyph.character ?? '⚠'}</span>
                   {:else if glyph.basis === 'form_glyph'}<span class="member-form">{glyph.form ?? '×'}</span>{/if}
+                  {#if tileDate(glyph)}<span class="member-year">{tileDate(glyph)}</span>{/if}
                 </button>
               {/each}
             </div>
@@ -543,6 +545,7 @@
   .split-group{margin-bottom:22px}.split-group header{display:flex;align-items:baseline;gap:12px;font-size:13px;margin-bottom:8px}.split-group header span{color:var(--muted);font-size:11px}.split-more{font-size:11px;color:var(--muted);margin-top:6px}
   .member-flag{position:absolute;top:3px;right:5px;font-size:12px;color:var(--wrong)}
   .correct-char{display:flex;gap:4px}.correct-char input{width:64px;padding:6px 8px;font-size:14px}.correct-char button{font-size:11px;padding:6px 9px}
+  .member-year{position:absolute;bottom:3px;left:5px;font-size:9px;line-height:1;color:var(--muted);font-variant-numeric:tabular-nums;pointer-events:none}
   .member-form{position:absolute;top:3px;right:5px;font-size:14px;color:var(--accent);font-family:"Kureedo Kata","GenZui Sans",system-ui,sans-serif}
   @media(max-width:900px){.forms-layout{grid-template-columns:1fr}.family-list{position:static;max-height:260px}.cluster-grid{grid-template-columns:1fr}}
   @media(max-width:700px){.forms{padding:16px 16px 40px}.form-choice{min-width:54px}.palette-other{flex-direction:row;margin-left:0;width:100%}}

@@ -648,6 +648,27 @@ try {
   assert.ok(!(await call('/layers/occurrences?code_point=U%2B4EEE&expand=variants')).items.some(i => i.id === 'apart-crop'), 'a simplified pair is not widened to')
   assert.equal((await call('/layers/candidates?code_point=U%2B4EEE&scope=variants')).retry, false, 'the corpus side widens without error')
   await call('/layers/occurrences?code_point=U%2B4EEE&expand=variants&offset=2001', undefined, 404)
+  // A crop's book's dates (0052) travel with it in a listing and, with the claims behind them, in its inspector.
+  const datedCrop = { ...variantCrop, id: 'dated-crop', label: '仮', source: '某書' }
+  await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind('dated-crop', 'local', '仮', 'U+4EEE', null,
+    'handwritten', 'kanji', 'pending', 0, 1, 1, 1, JSON.stringify(datedCrop), JSON.stringify({ character: datedCrop }), '{}', '{}', 'doc:dated').run()
+  const conversion = JSON.stringify({ service: 'hutime', query: 'https://ap.hutime.org/cal/?method=conv&ival=寛政3年' })
+  const dateValue = JSON.stringify({ of: 'witness', text: '寛政三年', start: 1791, end: 1791, precision: 'year', calendar: 'japanese', conversion: JSON.parse(conversion) })
+  await db.batch([
+    db.prepare(`INSERT INTO document_dating(document,axis,kind,start,end,precision,qualifier,uncertain,text,label,status,claims,calendar,conversion,source,resolver,export)
+      VALUES('doc:dated','witness','copied',1791,1791,'year',NULL,0,'寛政三年','1791','single','["dt:1"]','japanese',?,'kokusho','dates-1','x')`).bind(conversion),
+    db.prepare(`INSERT INTO assertions(id,subject,predicate,scope,slot,value,tier,asserted_by,asserted_at) VALUES('dt:1','doc:dated','date_copied','',?,?,'attested','source:kokusho','x')`).bind(dateValue, dateValue),
+    db.prepare("INSERT INTO assertion_evidence(assertion,kind,ref,locator) VALUES('dt:1','source','kokusho','https://kokusho.nijl.ac.jp/biblio/1#bpublish.0')"),
+  ])
+  const datedItem = (await call('/layers/occurrences?code_point=U%2B4EEE')).items.find(i => i.id === 'dated-crop')
+  assert.deepEqual([datedItem.dating.witness.kind, datedItem.dating.witness.label, datedItem.dating.witness.hutime], ['copied', '1791', JSON.parse(conversion).query])
+  assert.ok((await call('/layers/occurrences?code_point=U%2B4EEE')).items.filter(i => i.id !== 'dated-crop').every(i => i.dating && !Object.keys(i.dating).length), 'an undated book gives an empty dating')
+  const inspectedDates = (await call('/atlas/characters/dated-crop')).dates
+  assert.deepEqual(inspectedDates.map(d => [d.kind, d.text, d.source, d.locator]), [['copied', '寛政三年', 'kokusho', 'https://kokusho.nijl.ac.jp/biblio/1#bpublish.0']])
+  for (const [sql, values] of [[worker.datingQuery(2), ['a', 'b']], [worker.dateClaimsQuery(), ['doc:dated']]]) {
+    const details = await plan({ sql, values: [] }, values)
+    assert.ok(!details.some(d => /^SCAN (document_dating|assertions|a)\b/.test(d)), details.join('; '))
+  }
   // The widening reads the character's edges by key and index, and each widened page and count reads
   // the chosen characters in index order: no temporary sort, a count that stops at the cap.
   const widenPlan = await plan({ sql: worker.writtenVariantsQuery(), values: [] }, ['仮', '仮', '仮'])
