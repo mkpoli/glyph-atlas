@@ -109,7 +109,7 @@ One located unit: a character, a ligature, a mark, a gap, or a sequence awaiting
 | `crop`, `crop_sha256` | URL or archive path of a standalone crop image, and its checksum |
 | `granularity` | `char`, `sequence` (an unresolved run), `block` (a type block holding several characters) |
 | `kind` | `char`, `sequence`, `ligature`, `iteration-mark`, `voicing-mark`, `punctuation`, `gap`, `unreadable` |
-| `text_source` | the transcriber's string for this unit |
+| `text_source` | the transcriber's string for this unit. When it writes a kana in a different script from the unit's character (`unicode`), such as ツ for つ, no other field of the unit records that choice; the form model ([#501](https://github.com/mkpoli/glyph-atlas/pull/501)) is to take it as a form proposal from the transcription |
 | `unicode` | code point sequence, `U+1B002` or `U+304B U+3099`; null when no code point fits |
 | `classification` | `unassessed`, `identified`, `ambiguous` (several candidates remain), `unencoded` (identified, no code point exists), `unidentified` |
 | `script` | `hiragana`, `hentaigana`, `katakana`, `han`, `hangul`, `gugyeol`, `symbol`, `latin`, `unknown`; the character layer is the authority |
