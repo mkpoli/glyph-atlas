@@ -539,19 +539,19 @@
    * Mark the crop on show as one of its grapheme's forms, as the inspector's form bar does: the crop is
    * decided, leaves the problems to answer, and the step goes on to the next one.
    */
-  // The last crop marked here, so it can be marked back: { id, form, before, after }.
+  // The last crop marked here, so it can be marked back: { id, form, before, after, reviewed, replaced }.
   let lastMark = $state(null)
   async function markCurrent(form) {
     if (!current || form == null || saving || loading) return
     const item = current
     saving = true; error = ''; errorStatus = 0
     try {
-      const { crop, reviewed } = await setForm(item, form)
+      const { crop, reviewed, replaced } = await setForm(item, form)
       items = items.map(i => i.id === item.id ? { ...i, ...crop } : i)
       // A form that named the crop's character decided it; a written form alone leaves it for the round.
       if (reviewed) markRecorded([item], 'assigned')
       selected = without(selected, [item.id]); choices = without(choices, [item.id])
-      lastMark = { id: item.id, form, before: item, after: { ...item, ...crop }, reviewed }
+      lastMark = { id: item.id, form, before: item, after: { ...item, ...crop }, reviewed, replaced }
     } catch (e) { error = e.message; errorStatus = e.status ?? 0 }
     finally { saving = false }
     await tick()
@@ -563,7 +563,7 @@
     if (!mark || saving) return
     saving = true; error = ''; errorStatus = 0
     try {
-      const { crop } = await restoreForm(mark.after, mark.before)
+      const { crop } = await restoreForm(mark.after, mark.before, mark.replaced)
       items = items.map(i => i.id === mark.id ? { ...i, ...crop } : i)
       recorded = without(recorded, [mark.id])
       selected = { ...selected, [mark.id]: true }

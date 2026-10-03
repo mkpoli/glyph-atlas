@@ -43,18 +43,20 @@ def set_form(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping
     """Set (or with `form` None, clear) `actor`'s form for one crop, and return the submission.
 
     `crop_version` is the evidence version the reviewer saw, which the caller has checked is the crop's
-    current one. A repeat of `key` with the same request answers with the first response.
+    current one. The response names in `replaced` the value of the actor's own claim the save took
+    back, or None. A repeat of `key` with the same request answers with the first response.
     """
     signature = ledger.canonical(request)
     saved = ledger.previous(conn, key, signature)
     if saved is not None:
         return saved
     at = at or ledger.now()
+    own = conn.execute(
+        "SELECT a.id, r.value FROM assertions a LEFT JOIN forms f ON f.id=a.object LEFT JOIN representations r ON r.id=f.anchor "
+        "WHERE a.subject=? AND a.predicate='has_form' AND a.scope='' AND a.slot='' AND a.asserted_by=? "
+        "AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract') "
+        "ORDER BY a.rowid DESC LIMIT 1", (crop, actor)).fetchone()
     if form is None:
-        own = conn.execute(
-            "SELECT a.id FROM assertions a WHERE a.subject=? AND a.predicate='has_form' AND a.scope='' AND a.slot='' "
-            "AND a.asserted_by=? AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract') "
-            "ORDER BY a.rowid DESC LIMIT 1", (crop, actor)).fetchone()
         if own is None:
             raise LedgerError(409, "You have no form on this crop to clear.")
         ledger.act(conn, key=f"{key}/retract", actor=actor, request={"target": own[0], "action": "retract"}, target=own[0],
@@ -69,7 +71,7 @@ def set_form(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping
         ledger.write_claims(conn, key=f"{key}/has_form", actor=actor, request={"crop": crop, "form": chosen}, subject=crop,
                             predicate="has_form", claims=[Claim(object=chosen)], crop_version=crop_version,
                             method=method, legacy=legacy, objects={chosen: "form"}, prefix=prefix, at=at, mint=mint)
-    response = {"submission": key, "subject": crop}
+    response = {"submission": key, "subject": crop, "replaced": own[1] if own else None}
     conn.execute("INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,?,?)",
                  (key, actor, signature, ledger.canonical(response), at))
     return response

@@ -1477,7 +1477,8 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         key, request = f"{edit.client_id}:{edit.id}", {"crop": unit_id, "input": edit.model_dump(mode="json")}
         previous = ledger_call(store.claim_submission, key=key, request=request)
         if previous is not None:
-            return {"id": unit_id, "form": store.forms_for({unit_id: crop_now(unit_id)}).get(unit_id)}
+            return {"id": unit_id, "form": store.forms_for({unit_id: crop_now(unit_id)}).get(unit_id),
+                    "replaced": previous.get("replaced")}
         version = crop_now(unit_id)
         if version is None:
             raise HTTPException(404, "This crop is not in the collection, or has no image to make a claim about.")

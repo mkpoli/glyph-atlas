@@ -15,20 +15,21 @@ const PROBLEMS: Record<FormProblem | 'private', string> = {
   private: 'A private-use character names nothing without the namespace of its mapping.',
 };
 
-/** Set (or with `form` null, clear) `actor`'s form for one crop, and answer with the crop's form. */
+/** Set (or with `form` null, clear) `actor`'s form for one crop, and answer with the crop's form and
+ *  `replaced`: the value of the actor's own claim the save took back, or null, so a client can put it back. */
 export async function setForm(env: Env, input: Json, cropId: string, actor: string, tools: LedgerTools & { literal: (value: string) => string }) {
   const id = submissionId(input, tools), key = actor + ':' + id, signature = tools.canonical({ crop: cropId, input });
-  const previous = await savedSubmission(env, key, signature, tools.fail);
-  if (previous) return { id: previous.subject, form: (await formsFor(env, [previous.subject])).get(previous.subject) ?? null };
+  const saved = await savedSubmission(env, key, signature, tools.fail);
+  if (saved) return { id: saved.subject, form: (await formsFor(env, [saved.subject])).get(saved.subject) ?? null, replaced: saved.replaced ?? null };
   // The value is checked, and a clear finds the reader's own claim, before anything is written: a
   // corpus glyph nothing has named gets its row only for a save that will land.
   const typedForm = input.form == null ? null : tools.text(input.form, 256, 'form');
   const representation = typedForm ? typed(tools.literal(typedForm)) : null;
   if (typeof representation === 'string') tools.fail(422, PROBLEMS[representation]);
-  const ownClaim = () => env.DB.prepare(`SELECT a.id FROM assertions a WHERE a.subject=? AND a.predicate='has_form' AND a.scope='' AND a.slot=''
-    AND (a.asserted_by=? OR a.asserted_by IN ${tools.owned(actor)}) AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract')
-    ORDER BY a.rowid DESC LIMIT 1`).bind(cropId, actor).first<{ id: string }>();
-  const own = representation ? null : await ownClaim();
+  const own = await env.DB.prepare(`SELECT a.id, r.value AS text FROM assertions a LEFT JOIN forms f ON f.id=a.object LEFT JOIN representations r ON r.id=f.anchor
+    WHERE a.subject=? AND a.predicate='has_form' AND a.scope='' AND a.slot='' AND (a.asserted_by=? OR a.asserted_by IN ${tools.owned(actor)})
+    AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract')
+    ORDER BY a.rowid DESC LIMIT 1`).bind(cropId, actor).first<{ id: string; text: string | null }>();
   if (!representation && !own) tools.fail(409, 'You have no form on this crop to clear.');
   const crop = await tools.crop(env, cropId, input.crop_version);
   if (!crop.version) tools.fail(409, 'This crop has no image to make a claim about.');
@@ -50,11 +51,12 @@ export async function setForm(env: Env, input: Json, cropId: string, actor: stri
       members: [{ object: form, value: null, confidence: null, confidence_scheme: null }], version: crop.version }, tools);
     plan.statements.push(...claim.statements); plan.keys.push(...claim.keys);
   } else {
-    const cleared = await planAction(env, { key, actor, target: (own ?? await ownClaim())!.id, action: 'retract', reason: 'cleared', admin: false, at }, tools);
+    const cleared = await planAction(env, { key, actor, target: own!.id, action: 'retract', reason: 'cleared', admin: false, at }, tools);
     plan.statements.push(...cleared.statements); plan.keys.push(...cleared.keys);
   }
-  await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, subject: crop.id }, tools);
-  return { id: crop.id, form: (await formsFor(env, [crop.id])).get(crop.id) ?? null };
+  const replaced = own?.text ?? null;
+  await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, subject: crop.id, replaced }, tools);
+  return { id: crop.id, form: (await formsFor(env, [crop.id])).get(crop.id) ?? null, replaced };
 }
 
 // The id of the claim that names a form, in the shape of the site's other ids and the same for every

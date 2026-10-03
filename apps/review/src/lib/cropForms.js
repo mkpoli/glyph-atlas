@@ -66,7 +66,8 @@ const submission = (...parts) => {
 }
 
 /** Claim `form` as the crop's, on the version the reader has; with `form` null take back the reader's
- *  own claim. The crop keeps its character, review and revision. */
+ *  own claim. The crop keeps its character, review and revision. Answers the crop with its form now,
+ *  and `replaced`, the value of the reader's own claim the save took back (null for none). */
 async function claimForm(crop, form) {
   // A record read from a listing may not name its version; the crop as it stands does.
   const seen = crop.crop_version ? crop : { ...crop, ...await reread(crop) }
@@ -76,7 +77,7 @@ async function claimForm(crop, form) {
     result = await request(`/atlas/characters/${encodeURIComponent(crop.id)}/form`, { id, crop_version: seen.crop_version, form })
   } catch (error) { if (error.status) answered(); throw error }
   answered()
-  return { ...seen, form: result.form }
+  return { crop: { ...seen, form: result.form }, replaced: result.replaced ?? null }
 }
 
 /** Name the crop's character, as a review of that crop: a checked crop can be named again. */
@@ -90,8 +91,9 @@ async function writeCharacter(crop, character) {
 }
 
 /**
- * Mark `crop` as `form`, and answer `{ crop, reviewed }`: the crop as it now stands, and whether the
- * marking was itself a review of it.
+ * Mark `crop` as `form`, and answer `{ crop, reviewed, replaced }`: the crop as it now stands, whether
+ * the marking was itself a review of it, and the value of the reader's own form claim it replaced
+ * (null for none), which `restoreForm` puts back.
  *
  * A form that is an encoded member of the crop's own grapheme (仮 and 假, は and 𛂞) is that character,
  * so the crop is reviewed as written with it, and the form is claimed on it. Any other form (a variant,
@@ -101,21 +103,20 @@ async function writeCharacter(crop, character) {
 export async function setForm(crop, form) {
   const written = crop.written_character ?? crop.label
   const { members } = await listForms(written)
-  if (form === written || !members.some(member => member.char === form)) return { crop: await claimForm(crop, form), reviewed: false }
+  if (form === written || !members.some(member => member.char === form)) return { ...await claimForm(crop, form), reviewed: false }
   const named = await writeCharacter(crop, form)
-  return { crop: await claimForm(named, form), reviewed: true }
+  return { ...await claimForm(named, form), reviewed: true }
 }
 
 /**
- * Take back a marking: `after` is the crop as `setForm` left it, `before` as it was. A crop renamed by
- * the marking is named back, which is a review; the reader's claim is taken back, and the form the
- * crop showed before is claimed again only when it was the reader's own and so went with it.
+ * Take back a marking: `after` is the crop as `setForm` left it, `before` as it was, and `replaced` the
+ * reader's own form claim the marking replaced, as `setForm` answered it. A crop renamed by the
+ * marking is named back, which is a review; the reader's earlier form is claimed again, or, when they
+ * had none, their claim is taken back.
  */
-export async function restoreForm(after, before) {
+export async function restoreForm(after, before, replaced = null) {
   const was = before.written_character ?? before.label
   let now = after, reviewed = false
   if ((after.written_character ?? after.label) !== was) { now = await writeCharacter(after, was); reviewed = true }
-  try { now = await claimForm(now, null) } catch (error) { if (error.status !== 409) throw error }
-  if (formNames(before.form).length && formOf(now) !== formOf(before)) now = await claimForm(now, formOf(before))
-  return { crop: now, reviewed }
+  return { crop: (await claimForm(now, replaced)).crop, reviewed }
 }

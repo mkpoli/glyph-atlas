@@ -1152,11 +1152,12 @@ class Store:
                     "history": ledger.history(conn, subject)}
 
     def set_form(self, **form: Any) -> dict[str, Any]:
-        """Set or clear one crop's form (`crop_forms.set_form`) in one transaction, and return its form."""
+        """Set or clear one crop's form (`crop_forms.set_form`) in one transaction, and return its form and
+        the value of the reviewer's own claim it took back (`replaced`)."""
         with self._lock, self._connection() as conn, self._transaction(conn):
             response = crop_forms.set_form(conn, **form)
             current = crop_forms.forms_for(conn, {form["crop"]: form["crop_version"]})
-        return {"id": response["subject"], "form": current.get(response["subject"])}
+        return {"id": response["subject"], "form": current.get(response["subject"]), "replaced": response.get("replaced")}
 
     def forms_for(self, versions: dict[str, str | None]) -> dict[str, dict]:
         """Each crop's form, for crops given with their current evidence versions (`crop_forms.forms_for`)."""

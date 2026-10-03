@@ -2002,8 +2002,9 @@ def test_a_form_is_a_claim_that_leaves_the_character_and_the_review_alone(datase
     # The crop's own character is a confirmation, and clearing retracts it: the crop is unsorted again.
     confirmed = client.post(path, json={**body, "id": str(uuid4()), "form": detail["label"]}).json()
     assert [v["text"] for v in confirmed["form"]["values"]] == [detail["label"]]
+    assert confirmed["replaced"] == "⿺辶𦊷", "the answer names the reviewer's own form it replaced"
     cleared = client.post(path, json={**body, "id": str(uuid4()), "form": None}).json()
-    assert cleared["form"] is None
+    assert (cleared["form"], cleared["replaced"]) == (None, detail["label"])
     assert client.post(path, json={**body, "id": str(uuid4()), "form": None}).status_code == 409
     review = {"id": str(uuid4()), "client_id": "fixture-reviewer", "revision": detail["revision"],
               "image_sha256": detail["image_sha256"], "verdict": "match"}
