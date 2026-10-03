@@ -34,13 +34,19 @@
   })
   // One row, never a scrollbar: as many chips as fit, the crop's own and the chosen one among them,
   // and the rest under "+n", in the picker.
-  let width = $state(0)
-  const fit = $derived(Math.max(1, Math.min(BAR, Math.floor((width - 56) / (width < 500 ? 50 : 62)))))
+  // A chip is about 62 px with its key and 50 px on a phone, where keys are hidden; the add button
+  // sits outside the row, so it is never the one cut off.
+  let width = $state(0), screen = $state(1000)
+  const fit = $derived(width ? Math.max(1, Math.min(BAR, Math.floor((width - 52) / (screen <= 700 ? 50 : 62)))) : BAR)
   const shown = $derived.by(() => {
     const visible = bar.slice(0, fit)
     for (const char of [current, chosen]) {
       const chip = bar.find(item => item.char === char)
-      if (chip && !visible.includes(chip)) visible.splice(Math.max(0, visible.length - 1), 1, chip)
+      if (!chip || visible.includes(chip)) continue
+      // Into the last slot that holds neither the crop's own form nor the chosen one.
+      let slot = visible.length - 1
+      while (slot > 0 && [current, chosen].includes(visible[slot].char)) slot--
+      visible.splice(Math.max(0, slot), 1, chip)
     }
     return visible
   })
@@ -71,12 +77,11 @@
   }
 </script>
 
-<svelte:window onkeydown={keydown} />
+<svelte:window onkeydown={keydown} bind:innerWidth={screen} />
 
-<div class="crop-form" bind:this={root} bind:clientWidth={width}>
-  <FormChips forms={shown} chosen={chosen} {current} {disabled} label={t('quiz.forms.label', { char: written })} onchoose={choose}>
-    <button type="button" class="form-add" bind:this={addButton} {disabled} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>{hidden.length ? `+${hidden.length}` : '+'}</button>
-  </FormChips>
+<div class="crop-form" bind:this={root}>
+  <div class="form-row" bind:clientWidth={width}><div class="form-fit"><FormChips forms={shown} chosen={chosen} {current} {disabled} label={t('quiz.forms.label', { char: written })} onchoose={choose} /></div>
+    <button type="button" class="form-add" bind:this={addButton} {disabled} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>{hidden.length ? `+${hidden.length}` : '+'}</button></div>
   {#if picking}
     <div class="form-picker" role="dialog" aria-label={t('form.add')}>
       <CharacterSearch compact codePoints autofocus bind:value={query} label={t('form.add')} placeholder={t('search.placeholder')} onselect={add} />
@@ -99,7 +104,8 @@
 
 <style>
   .crop-form{display:flex;flex-direction:column;gap:10px;margin:0 0 16px}
-  .crop-form :global(.form-chips){flex-wrap:nowrap;overflow:hidden}
+  .form-row{display:flex;gap:6px;align-items:center}.form-fit{flex:0 1 auto;min-width:0;overflow:hidden}
+  .crop-form :global(.form-chips){flex-wrap:nowrap}
   .form-add{min-width:40px;padding:4px 10px;font-size:20px;line-height:1.2;color:var(--muted);border-style:dashed}
   .form-add[aria-expanded="true"]{color:var(--accent);border-color:var(--accent)}
   .form-picker{display:flex;flex-direction:column;gap:12px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}

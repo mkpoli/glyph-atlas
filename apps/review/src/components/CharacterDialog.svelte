@@ -272,9 +272,15 @@
     return { x, y, w: Math.round(Math.max(2, Math.min(w, Math.floor(right) - x))), h: Math.round(Math.max(2, Math.min(h, Math.floor(bottom) - y))) }
   }
   /** A box the page view drew, in its source pixels, as the crop's page box inside the page view. */
-  function edited(source) {
+  function edited(source, mode = 'resize') {
     if (!editingBox || busy) return
-    box = bounded({ x: source.x / scale[0], y: source.y / scale[1], w: source.w / scale[0], h: source.h / scale[1] })
+    const next = { x: source.x / scale[0], y: source.y / scale[1], w: source.w / scale[0], h: source.h / scale[1] }
+    // A move stops at the page view's edge with its size kept; only a resize changes the size.
+    if (mode === 'move') {
+      const limits = pageBounds(), w = Math.round(next.w), h = Math.round(next.h)
+      next.x = Math.max(limits.x, Math.min(next.x, limits.x + limits.w - w)); next.y = Math.max(limits.y, Math.min(next.y, limits.y + limits.h - h))
+    }
+    box = bounded(next)
   }
   /** The context rectangle in page pixels, which is what a drag is bounded by. */
   function pageBounds() {
@@ -293,7 +299,7 @@
       <!-- The crop alone, in a box of one size for every crop, then the page around it further down. -->
       <div class="inspector-page">
         <div class="inspector-figure" bind:this={figure}>
-          {#key data.image}<CropContext item={data} detail={data} cropBox={drawn ? toSource(drawn) : null} disabled={busy} editing={editingBox} onedit={edited} onexit={endCrop}
+          {#key data.image}<CropContext item={data} detail={data} cropBox={drawn ? toSource(drawn) : null} disabled={busy} editing={editingBox} onedit={edited} onexit={endCrop} describedby="crop-keys"
             onload={() => { loaded = true; imageFailed = false }} onerror={() => imageFailed = true} />{/key}
           {#if editingBox}<p class="crop-keys" id="crop-keys">{t('character.crop.keys')}<button type="button" disabled={busy} onclick={endCrop}>{t('character.crop.doneAdjusting')}</button></p>{/if}
         </div>

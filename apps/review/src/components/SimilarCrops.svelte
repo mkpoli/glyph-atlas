@@ -45,7 +45,8 @@
   const per = $derived(Math.max(1, Math.floor((width + 6) / 78)))
   const pages = $derived(Math.max(1, Math.ceil(list.length / per)))
   $effect(() => { id; tab; pageAt = 0 })
-  const visible = $derived(list.slice(pageAt * per, pageAt * per + per))
+  const at = $derived(Math.min(pageAt, pages - 1))
+  const visible = $derived(list.slice(at * per, at * per + per))
   const shown = item => isUnassigned(item) ? t('corpus.unassigned') : item.label ?? ''
   const href = item => localize((item.origin === 'corpus' ? '/corpus/' : '/crop/') + encodeURIComponent(item.id))
   const empty = $derived(result?.revision === null ? t('similar.notPublished')
@@ -60,7 +61,7 @@
     <div class="similar-tabs">
       <button aria-pressed={tab === 'similar'} onclick={() => tab = 'similar'}>{t('similar.tab.similar')}</button>
       <button aria-pressed={tab === 'filed_differently'} onclick={() => tab = 'filed_differently'}>{t('similar.tab.filedDifferently')}</button>
-      {#if pages > 1}<span class="similar-pages"><button aria-label={t('similar.previous')} disabled={pageAt === 0} onclick={() => pageAt--}>‹</button><button aria-label={t('similar.next')} disabled={pageAt >= pages - 1} onclick={() => pageAt++}>›</button></span>{/if}
+      {#if pages > 1}<span class="similar-pages"><button aria-label={t('similar.previous')} disabled={at === 0} onclick={() => pageAt = at - 1}>‹</button><button aria-label={t('similar.next')} disabled={at >= pages - 1} onclick={() => pageAt = at + 1}>›</button></span>{/if}
     </div>
     {#if list.length}
       <ul class="similar-grid" bind:clientWidth={width}>

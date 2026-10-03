@@ -6,7 +6,7 @@
   // crop as it was cut. `editing` turns the box into one the reader moves and resizes here, and
   // `onedit` hears each new box, in source pixels, `onexit` an Escape.
   let { item, detail = null, corpus = false, cropBox = null, disabled = false, editing = false,
-    onedit = null, onexit = null, onload = () => {}, onerror = () => {} } = $props()
+    onedit = null, onexit = null, describedby = undefined, onload = () => {}, onerror = () => {} } = $props()
   let viewport = $state(null), data = $state(null), loading = $state(true), detailFailed = $state(false)
   let contextReady = $state(false), contextFailed = $state(false), fullReady = $state(false), fullFailed = $state(false)
   let expandPage = $state(false)
@@ -139,7 +139,7 @@
         if (edge.includes('n')) { y = Math.min(from.y + dy, from.y + from.h - 2); h = from.y + from.h - y }
         if (edge.includes('s')) h = Math.max(2, from.h + dy)
       }
-      onedit?.({ x, y, w, h })
+      onedit?.({ x, y, w, h }, edge ? 'resize' : 'move')
       return
     }
     pan = limitPan({ x: pointer.pan.x + event.clientX - pointer.x, y: pointer.pan.y + event.clientY - pointer.y })
@@ -157,8 +157,11 @@
     if (editing && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onexit?.(); return }
     if (editing && directions[event.key] && crop) {
       event.preventDefault(); event.stopPropagation()
-      const [x, y] = directions[event.key].map(d => -d * 3 / scale)
-      onedit?.(event.shiftKey ? { ...crop, w: Math.max(2, crop.w + x), h: Math.max(2, crop.h + y) } : { ...crop, x: crop.x + x, y: crop.y + y })
+      // A step is a few screen pixels, and never less than one page pixel, which is what a box is kept in.
+      const page = data?.source_scale ?? [1, 1]
+      const [x, y] = directions[event.key].map((d, i) => -d * Math.max(3 / scale, page[i]))
+      onedit?.(event.shiftKey ? { ...crop, w: Math.max(2, crop.w + x), h: Math.max(2, crop.h + y) } : { ...crop, x: crop.x + x, y: crop.y + y },
+        event.shiftKey ? 'resize' : 'move')
       return
     }
     // Consume viewer arrows even while loading, so they cannot advance the review queue.
@@ -182,12 +185,12 @@
   <!-- This bounded image widget supplies arrow/Home/zoom keyboard controls alongside pointer panning. -->
   <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
   <div class="crop-viewport" class:ready class:dragging bind:this={viewport} tabindex="0"
-       role="application" aria-label={t('crop.viewer.label')}
+       role="application" aria-label={t('crop.viewer.label')} aria-describedby={editing ? describedby : undefined}
        aria-busy={loading} data-ready={ready} data-pan-x={pan.x} data-pan-y={pan.y} data-zoom={zoom}
        onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up}
        onlostpointercapture={() => { pointer = null; dragging = false }} onkeydown={keydown}>
     {#if !ready && contextual}<img class="crop-early" src={item.image} alt="" draggable="false" style={early} onload={() => cropReady = true} onerror={() => cropFailed = true} />
-    {:else if !ready && !loading}<div class="crop-fallback" data-context-fallback>{#key item.image}<Glyph {item} eager onload={() => cropReady = true} onerror={() => cropFailed = true} />{/key}</div>{/if}
+    {:else if !ready}<div class="crop-fallback" data-context-fallback>{#key item.image}<Glyph {item} eager onload={() => cropReady = true} onerror={() => cropFailed = true} />{/key}</div>{/if}
     {#if contextual}
       <div class="crop-plane" style={`transform:${transform}`} aria-hidden="true">
         {#if !fullReady && !contextFailed}<img class="context-photo" src={data.context_image} alt="" draggable="false"
