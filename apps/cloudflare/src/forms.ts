@@ -2,6 +2,7 @@
 // The clustering is published by scripts/export_forms_cloudflare.py; decisions are recorded here and
 // applied to the same rows in one D1 batch, so `form_units.form` always holds a glyph's current form.
 // `corpus_units.character` follows it for search and counts shortly after (`followCorpus`).
+import { withDating } from './dating';
 type Json = Record<string, any>;
 export type FormTools = {
   fail: (status: number, message: string, extra?: Record<string, unknown>) => never;
@@ -80,15 +81,20 @@ async function family(env: Env, codePoint: string, q: URLSearchParams, tools: Fo
 const member = (r: Json) => ({ id: r.id, image: r.image, form: r.form, basis: basis(r as any),
   reported: r.issue, character: r.issue_character });
 
+export const membersQuery = (order: 'typical' | 'unusual') => `SELECT f.id,f.image,f.rank,f.similarity,f.form,f.glyph_set,f.issue,f.issue_character,
+  coalesce(u.document,json_extract(u.data,'$.source.document_id'),c.document) AS document
+  FROM form_units f LEFT JOIN units u ON u.id=f.id LEFT JOIN corpus_units c ON c.id=f.id
+  WHERE f.cluster=? AND f.clustered=1 ORDER BY f.rank ${order === 'unusual' ? 'DESC' : 'ASC'} LIMIT ? OFFSET ?`;
+
 async function members(env: Env, clusterId: string, q: URLSearchParams, tools: FormTools) {
   const cluster = await env.DB.prepare('SELECT id,form,issue,count FROM form_clusters WHERE id=?').bind(clusterId).first<Json>();
   if (!cluster) tools.fail(404, 'Unknown cluster.');
   const offset = count(q, 'offset', 0, 1_000_000, tools), limit = count(q, 'limit', 120, 500, tools);
   const order = q.get('order') === 'unusual' ? 'unusual' : 'typical';
-  const rows = await env.DB.prepare(`SELECT id,image,rank,similarity,form,glyph_set,issue,issue_character FROM form_units WHERE cluster=? AND clustered=1 ORDER BY rank ${order === 'unusual' ? 'DESC' : 'ASC'} LIMIT ? OFFSET ?`)
-    .bind(clusterId, limit, offset).all<Json>();
+  const rows = await env.DB.prepare(membersQuery(order)).bind(clusterId, limit, offset).all<Json>();
+  // Each glyph carries the dates of its book, which its crop's row or its corpus pointer names (0052).
   return { id: clusterId, total: cluster!.count, offset, order, form: cluster!.form, issue: cluster!.issue,
-    items: rows.results.map(r => ({ ...member(r), rank: r.rank, similarity: r.similarity })) };
+    items: await withDating(env, rows.results.map(r => ({ ...member(r), rank: r.rank, similarity: r.similarity, document: r.document }))) };
 }
 
 async function split(env: Env, clusterId: string, q: URLSearchParams, tools: FormTools) {

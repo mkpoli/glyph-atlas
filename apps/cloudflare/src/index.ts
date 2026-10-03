@@ -10,13 +10,16 @@ import { ranking } from './ranking';
 import { reviewers, submissions } from './admin';
 import { READ_BUDGET, RETRY_AFTER, described, retried, transient } from './busy';
 import { actOnClaim, claimsOf, ledgerPage, writeClaim, type LedgerTools } from './ledger';
+import { datingOf, documentDates, documentOf, withDating } from './dating';
 export { leastTypicalQuery } from './forms';
 export { componentMatchQuery } from './components';
+export { dateClaimsQuery, datingQuery } from './dating';
 export { claimHistoryQuery, currentClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery, resolveWriteQuery } from './ledger';
 export { cropFormsQuery, formNamesQuery } from './cropForms';
 type Json = Record<string, any>;
 type UnitRow = { id: string; origin: string; character: string | null; state: string; revision: number;
   quiz: number; category?: string; data: string; snapshot: string; context: string; visual: string; style?: string;
+  document?: string | null;
   // The crop's evidence version (0047): its id, image checksum and box, as SQLite joins them.
   crop_version?: string | null;
   // A corpus glyph nothing has named yet: it has no `units` row, and this is where it is published.
@@ -129,17 +132,18 @@ async function itemsFor(env: Env, ids: string[]): Promise<Map<string, Json>> {
     const records = await Promise.all(pointers.results.map(p => corpusData(env, p).then(d => [p.id, d] as const, () => null)));
     for (const record of records) if (record) found.set(record[0], { ...listing(record[1]), origin: 'corpus' });
   }
+  const dating = await datingOf(env, [...found.values()].map(documentOf));
+  for (const [id, item] of found) { const dated = dating.get(documentOf(item) ?? ''); if (dated) found.set(id, { ...item, dating: dated }) }
   return found;
 }
 function compact(row: UnitRow): Json {
-  return { ...listing(parse(row.data)), ...(row.style ? { style: row.style } : {}) };
+  return { ...listing(parse(row.data)), ...(row.document ? { document: row.document } : {}), ...(row.style ? { style: row.style } : {}) };
 }
-// A crop's record with its evidence version (0047), and as its inspector reads it, with its form too.
+// A crop's record with its evidence version (0047).
 const record = (row: UnitRow): Json => {
   const data = parse(row.data);
   return { ...data, crop_version: row.crop_version ?? cropVersion(row.id, data), crop_editable: row.origin !== 'corpus' && Boolean(redrawLimits(data)) };
 };
-const inspected = async (env: Env, row: UnitRow) => (await withForms(env, [record(row)]))[0];
 // A crop's evidence version as `units.crop_version` computes it, for a corpus glyph that has no row yet:
 // its id, its image checksum and its box in whole pixels; a box of anything else has none. JSON.parse
 // reads a whole number written as a real (`1.0`) as an integer, which SQLite does not, so a claim names
@@ -161,6 +165,11 @@ async function cropVersions(env: Env, id: string) {
   const versions = (await env.DB.prepare(cropVersionsQuery()).bind(row.id).all<Json>()).results;
   return { id: row.id, current: record(row).crop_version, versions };
 }
+// A crop's record for its inspector, with its form, its book's dates and the claims they rest on.
+const inspected = async (env: Env, row: UnitRow): Promise<Json> => {
+  const found = (await withForms(env, [record(row)]))[0];
+  return { ...found, ...await documentDates(env, row.document ?? found.source?.document_id ?? null) };
+};
 // The page rectangle a reviewer may redraw a local crop's box in, in page pixels: the context the
 // inspector shows, which lies inside the page. A corpus glyph's box belongs to its source, so it has none.
 export function redrawLimits(data: Json): { x: number; y: number; w: number; h: number } | null {
@@ -481,7 +490,7 @@ const NGRAM_CROPS = `FROM unit_ngrams p
     CROSS JOIN units a ON a.id=p.first AND +a.origin='local' CROSS JOIN units b ON b.id=p.second AND +b.origin='local'
     LEFT JOIN units c ON c.id=p.third AND +c.origin='local'`;
 export function ngramOccurrencesQuery(document: boolean) {
-  return `SELECT a.data AS first, b.data AS second, c.data AS third, p.vertical ${NGRAM_CROPS}
+  return `SELECT a.data AS first, b.data AS second, c.data AS third, a.document AS document, p.vertical ${NGRAM_CROPS}
     WHERE ${document ? 'p.document=? AND ' : ''}p.size=? AND p.text=? AND (p.third IS NULL OR c.id IS NOT NULL) ORDER BY p.first LIMIT ? OFFSET ?`;
 }
 export function ngramCountQuery(document: boolean) {
@@ -518,9 +527,14 @@ async function ngramOccurrences(env: Env, url: URL, size: number, run: string) {
     env.DB.prepare(ngramCountQuery(Boolean(document))).bind(...bound),
     env.DB.prepare(ngramOccurrencesQuery(Boolean(document))).bind(...bound, limit, offset),
   ]) as D1Result<any>[];
-  const items = (page.results as { first: string; second: string; third: string | null; vertical: number }[]).map(row => {
+  const found = page.results as { first: string; second: string; third: string | null; document: string | null; vertical: number }[];
+  // The crops of one run stand on one page, so they share their document's dates.
+  const dating = await datingOf(env, found.map(row => row.document));
+  const items = found.map(row => {
     const crops = [row.first, row.second, row.third].filter(Boolean).map(data => parse(data!));
-    return { crops: crops.map(c => ({ ...listing(c), crop_box: c.crop_box ?? null })), vertical: Boolean(row.vertical), page: ngramPage(crops) };
+    const dated = row.document ? dating.get(row.document) : undefined;
+    return { crops: crops.map(c => ({ ...listing(c), crop_box: c.crop_box ?? null, ...(dated ? { dating: dated } : {}) })),
+      vertical: Boolean(row.vertical), page: ngramPage(crops) };
   });
   const { n: total, vertical } = count.results[0] as { n: number; vertical: number | null };
   return { text: value, size, document, total, vertical: 2 * (vertical ?? 0) >= total, next_offset: offset + items.length, items };
@@ -666,7 +680,7 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
     categories: [...categories.values()].sort((a,b) => b.total-a.total || a.label.localeCompare(b.label)),
     documents: [...documents.values()].sort((a,b) => b.total-a.total || (a.title ?? '').localeCompare(b.title ?? '') || a.id.localeCompare(b.id)),
     reported_count: reportedCount ? (reportedCount.results[0] as { n: number }).n : 0,
-    items };
+    items: await withDating(env, items) };
 }
 // Untouched assigned corpus glyphs per character in this material, of every character or of a grapheme's.
 export function corpusCountQuery(production: string, characters: string[] | null = null) {
@@ -739,7 +753,7 @@ async function gallery(env: Env, q: URLSearchParams) {
   const rows = (await env.DB.prepare(gallerySampleQuery('>=')).bind(start, limit).all<Row>()).results;
   if (rows.length < limit) rows.push(...(await env.DB.prepare(gallerySampleQuery('<')).bind(start, limit - rows.length).all<Row>()).results);
   const items = await withForms(env, rows.map(r => r.current ? parse(r.current) : formed(parse(r.data), r.id ? r : null, formTools)));
-  return { status: 'ok', available: items.length, items };
+  return { status: 'ok', available: items.length, items: await withDating(env, items) };
 }
 function chunks<T>(list: T[], size: number): T[][] {
   const out: T[][] = [];
@@ -942,7 +956,7 @@ async function occurrences(env: Env, code: string, q: URLSearchParams, origin = 
     ]);
     const counted = (count.results[0] as { n: number }).n, total = Math.min(counted, WIDENED_CAP);
     return { ...data.candidates, query: data.code_point, code_point: data.code_point,
-      total, capped: counted > WIDENED_CAP, available: rows.results.length, items: await withForms(env, (rows.results as UnitRow[]).map(compact)),
+      total, capped: counted > WIDENED_CAP, available: rows.results.length, items: await withDating(env, await withForms(env, (rows.results as UnitRow[]).map(compact))),
       counts: { total, exact: total, exact_total: total }, style_groups: STYLE_NAMES, scope: 'variants', status: 'ok' };
   }
   let counted: D1PreparedStatement, listed: D1PreparedStatement;
@@ -961,7 +975,7 @@ async function occurrences(env: Env, code: string, q: URLSearchParams, origin = 
   const [count, rows] = await env.DB.batch([counted, listed]);
   const { styles, total } = styleCounts(count.results as { s: number; n: number }[], group);
   return { ...data.candidates, query: data.code_point, code_point: data.code_point,
-    total, available: rows.results.length, items:await withForms(env,(rows.results as UnitRow[]).map(compact)),
+    total, available: rows.results.length, items: await withDating(env, await withForms(env, (rows.results as UnitRow[]).map(compact))),
     counts:{ total, exact:total, exact_total:total }, styles, style_groups: STYLE_NAMES, scope:q.get('scope') || 'character', status:'ok' };
 }
 // A grapheme's crops counted by style group, each branch read along its own index.
@@ -1009,7 +1023,7 @@ async function corpusOccurrences(env:Env,data:Json,q:URLSearchParams){
       WHERE u.origin='corpus' AND u.family=? AND c.family IS NOT u.family
     )`).bind(familyCode,familyCode).first<{total:number;unassigned:number}>();
   return {...data.candidates,code_point:data.code_point,total:widened?Math.min(counted,WIDENED_CAP):counted,capped:widened&&counted>WIDENED_CAP,
-    available:formed.length,items:formed,...(grouped?{styles:grouped.styles}:{}),scope:family?'grapheme':widened?'variants':'character',status:'ok',
+    available:formed.length,items:await withDating(env,formed),...(grouped?{styles:grouped.styles}:{}),scope:family?'grapheme':widened?'variants':'character',status:'ok',
     visual_analysis:info.detail.visual_analysis,family_total:familyCounts?.total||0,unassigned_count:familyCounts?.unassigned||0};
 }
 // A document's characters in source order. The primary key serves the filter and the order, and each
@@ -1421,6 +1435,19 @@ export function historyItem(row: HistoryRow, me: string | null = null): Json {
     undoes: undo ? String(parsedEvent.evidence).replace(/^undo of /, '') : null,
   };
 }
+// Each decision with the dates of the book its crop comes from: a local crop's row names the book, a
+// named corpus glyph's record its source.
+export const historyDocumentsQuery = (n: number) => `SELECT id,coalesce(document,json_extract(data,'$.source.document_id')) AS document
+  FROM units WHERE id IN (${Array(n).fill('?').join(',')})`;
+async function historyDating(env: Env, items: Json[]): Promise<Json[]> {
+  const targets = [...new Set(items.map(item => item.target).filter(Boolean))] as string[];
+  if (!targets.length) return items;
+  const documents = new Map<string, string>();
+  for (const part of chunks(targets, 90))
+    for (const row of (await env.DB.prepare(historyDocumentsQuery(part.length)).bind(...part).all<{ id: string; document: string | null }>()).results)
+      if (row.document) documents.set(row.id, row.document);
+  return withDating(env, items, item => documents.get(item.target) ?? null);
+}
 export async function history(env: Env, q: URLSearchParams, me: string | null) {
   const limit = Math.max(1, integer(q, 'limit', 40, 100));
   if (q.get('mine') === 'true' && !me) return { items: [], next: null };
@@ -1435,7 +1462,7 @@ export async function history(env: Env, q: URLSearchParams, me: string | null) {
   }));
   const rows = pages.flatMap(page => page.results);
   if (pages.length > 1) rows.sort((a, b) => a.at === b.at ? (a.id < b.id ? 1 : a.id > b.id ? -1 : 0) : a.at < b.at ? 1 : -1);
-  const items = rows.slice(0, limit).map(row => historyItem(row, me));
+  const items = await historyDating(env, rows.slice(0, limit).map(row => historyItem(row, me)));
   // The cursor is the last row returned; the next page starts strictly after it.
   const next = rows.length > limit ? encodeCursor(rows[limit - 1].at, rows[limit - 1].id) : null;
   return { items, next };
