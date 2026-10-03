@@ -1106,7 +1106,9 @@ async function chronology(env: Env, ctx: ExecutionContext, url: URL) {
       item: { ...(row.overlay ? parse(row.overlay) : await corpusData(env, row)), style: row.style, ...(row.overlay_form ? { written_form: row.overlay_form } : {}) } })));
     for (const { row, item } of records) bucketOf(row.decade).items.push({ ...listing(item), origin: 'corpus' });
   }
+  // A decade shows `per` crops, the collection's first, as many as it has, then the corpus's.
   const all = [...buckets.values()];
+  for (const bucket of all) bucket.items = bucket.items.slice(0, per);
   const dated = await withDating(env, all.flatMap(b => b.items));
   let at = 0;
   for (const bucket of all) bucket.items = dated.slice(at, at += bucket.items.length);
