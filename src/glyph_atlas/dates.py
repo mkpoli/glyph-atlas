@@ -2,8 +2,8 @@
 
 A source writes a date the way its cataloguers do: 寛政三年, 天明7 [1787], 文化年間, [18--], c. 827-835,
 平安時代・12世紀. `read` finds what such a text states, and `interval` turns it into years, converting
-Japanese era dates through a `Calendar`. The years are proleptic Gregorian; an era year is placed in the
-Gregorian year its first day falls in (寛政3年 began on 1791-02-03 and is 1791), the convention of the
+Japanese era dates through a `Calendar`. The years are those of the Western calendar, Julian before
+1582-10-15 and Gregorian after, as HuTime gives them; an era year is placed in the year its first day falls in (寛政3年 began on 1791-02-03 and is 1791), the convention of the
 catalogues themselves, and the converted span is kept with the claim. A text that states no date this
 module can read keeps no years: the claim shows its words and the document stays undated.
 
@@ -119,7 +119,7 @@ def normalise(text: str) -> str:
 
 
 class Calendar(Protocol):
-    """Converts Japanese calendar dates. Each answer is a pair of Gregorian days, or None."""
+    """Converts Japanese calendar dates. Each answer is a pair of Western-calendar days, or None."""
 
     def era(self, name: str) -> tuple[str, str] | None: ...
     def year(self, era: str, year: int) -> tuple[str, str] | None: ...
@@ -357,7 +357,7 @@ def interval(reading: Reading, calendar: Calendar | None = None) -> Interval | N
     note = None
     if reading.stated and len(reading.eras) == 1 and not reading.spans and reading.stated[0] != start:
         if abs(reading.stated[0] - start) <= 1:
-            # A lunisolar year runs into the next Gregorian one; the source's own reading stands.
+            # A lunisolar year runs into the next Western one; the source's own reading stands.
             note = f"the source gives {reading.stated[0]}; HuTime places {reading.eras[0].text} in {start}"
             start = end = reading.stated[0]
         else:
@@ -380,14 +380,14 @@ def _qualified(found: Interval) -> Interval:
 # --- HuTime -------------------------------------------------------------------------------------
 
 HUTIME = "https://ap.hutime.org/cal/"
-#: HuTime's calendar ids: 1001.1 the Japanese calendar (和暦), 101.1 the Gregorian.
+#: HuTime's calendar ids: 1001.1 the Japanese calendar (和暦), 101.1 the Western calendar, Julian before 1582-10-15.
 JAPANESE, GREGORIAN = "1001.1", "101.1"
 #: Items per batch request; HuTime's form takes 100 lines.
 BATCH = 100
 
 
 def hutime_url(kind: str, value: str) -> str:
-    """The GET request that converts one Japanese `value` (an `era`, a `year` or a `date`) to Gregorian days.
+    """The GET request that converts one Japanese `value` (an `era`, a `year` or a `date`) to Western-calendar days.
 
     The answer is plain text a reader can check against the source: the first and last day for an era or
     a year, the day for a date.

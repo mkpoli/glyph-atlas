@@ -1,10 +1,10 @@
-# HuTime Web API (Calendar Calculation): converts the Japanese calendar (和暦) to the Gregorian, era
+# HuTime Web API (Calendar Calculation): converts the Japanese calendar (和暦) to the Western, era
 # names, era years and lunisolar days with their leap months (閏月, written 閏8月).
 #
 # `atlas dates --fetch` asks it in batches of up to 100 lines through `net` and keeps every answer in
 # `cache/hutime/answers.json`; each claim it converted keeps the single GET request that reproduces
 # the answer (`conversion.query`), and the site links each converted date to it. Calendar ids: 1001.1
-# is 和暦, 101.1 the Gregorian calendar. An era year is asked as a year (`itype=year`, both ends),
+# is 和暦, 101.1 the Western calendar (西暦: Julian up to 1582-10-04, Gregorian from 1582-10-15; 1582-10-10 has no answer). An era year is asked as a year (`itype=year`, both ends),
 # an era name as an era, a dated day as a date.
 #
 # The terms (checked 2026-10-03, section 4 of the API page): 「本Web APIは無償で自由に利用できます。」

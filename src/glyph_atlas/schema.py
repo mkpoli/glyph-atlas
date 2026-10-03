@@ -142,12 +142,12 @@ class DateClaim(BaseModel):
     kind: DateKind
     scope: Literal["witness", "work"] = Field(description="this copy, or the work it carries")
     text: str = Field(description="the date as the source writes it, verbatim")
-    start: int | None = Field(default=None, description="first year it can fall in, proleptic Gregorian")
+    start: int | None = Field(default=None, description="first year it can fall in, Western calendar (Julian, then Gregorian)")
     end: int | None = Field(default=None, description="last year it can fall in")
     precision: Literal["day", "month", "year", "years", "decade", "century", "period"]
     qualifier: Literal["circa", "before", "after"] | None = None
     uncertain: bool = False
-    day: str | None = Field(default=None, description="the Gregorian day, ISO 8601, for a dated day")
+    day: str | None = Field(default=None, description="the Western-calendar day, ISO 8601, for a dated day")
     calendar: Literal["japanese", "gregorian", "unstated"] = "unstated"
     conversion: dict[str, str] | None = Field(default=None, description="how a calendar date was read as years")
     tier: Literal["attested", "derived", "editorial"]

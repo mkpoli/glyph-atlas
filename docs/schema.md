@@ -237,15 +237,15 @@ document shows is `document_dating` (migration 0051).
 | `kind` | `composed` (成立, the text itself), `copied` (書写, 補写 noted), `colophon` (奥書, 識語, 序, 跋, 刊記), `annotated` (加点), `printed` (刊行), `edition` (a later impression or edition), `exemplar` (the date of the copy it was copied from, 元奥書), `produced` (the holder dates the item and says no more), `other` (a date of the content, 内容年代) |
 | `scope` | `witness` for this copy, `work` for the work it carries: 国書's work dates and every `composed` |
 | `text` | the date as the source writes it, verbatim |
-| `start`, `end` | first and last year, proleptic Gregorian; one is null for `before` or `after` |
+| `start`, `end` | first and last year in the Western calendar (Julian before 1582-10-15, Gregorian after, as HuTime's 101.1); one is null for `before` or `after` |
 | `precision` | `day`, `month`, `year`, `years` (a range or an era span), `decade`, `century`, or `period` (a named period with no years, such as 江戸後期) |
 | `qualifier`, `uncertain` | `circa`, `before` or `after`; a question mark or 推定 in the source |
-| `day`, `calendar`, `conversion` | the Gregorian day of a dated day; whether the text is in the Japanese calendar; the HuTime request that converted it |
+| `day`, `calendar`, `conversion` | the Western-calendar day of a dated day; whether the text is in the Japanese calendar; the HuTime request that converted it |
 | `tier` | `attested` (a catalogue field states it), `derived` (read from a free-text note), `editorial` (a curated record) |
 | `source`, `locator`, `note` | the data/sources id, the record URL and its field (`#bpublish.0`, `#metadata=Publication Date`), and the note or work the date belongs to |
 
-An era year is placed in the Gregorian year its first day falls in (寛政3年, 1791-02-03 to
-1792-01-23, is 1791); where the source writes the Gregorian year beside the era, the source's stands.
+An era year is placed in the Western year its first day falls in (寛政3年, 1791-02-03 to
+1792-01-23, is 1791); where the source writes the Western year beside the era, the source's stands.
 A document with no claim that has years stays undated.
 
 What a document shows (`dates.resolve`): on the witness axis, the first kind with a dated claim about
