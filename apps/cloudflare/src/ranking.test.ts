@@ -26,9 +26,9 @@ describe('the reviewer ranking', () => {
       INSERT INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,note) VALUES('d1','${at}','u1','cluster','U+3042','𛀂','c','r','[]','');`);
     // The ledger: u2 chooses a form (its naming claim beside it counts as nobody's), then chooses
     // another, which retracts the first; chooses a member of the grapheme, which renamed the crop by a
-    // review the claim names; claims an alternative set of two; accepts u1's claim. u1's own claim and a
-    // retraction count once and not at all; a source's and a model's claims, and a claim moved from the
-    // written forms, count as nobody's.
+    // review the claim names; claims an alternative set of two; accepts u1's claim, twice. u1's own claim and a
+    // retraction count once and not at all; a source's claims (attested or editorial) and a model's, and
+    // a claim moved from the written forms, count as nobody's.
     db.exec(`INSERT INTO submissions(id,actor,request,response,at,undone) VALUES('u2:rename','u2','{}','{}','${at}',0);
       INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES
         ('u2:f1','u2','{"crop":"t","input":{"form":"⿺辶𦊷"}}','{}','${at}'),('u2:f2','u2','{"crop":"t","input":{"form":"𮟃"}}','{}','${at}'),
@@ -44,10 +44,11 @@ describe('the reviewer ranking', () => {
     claim.run('a5', 'u2:set', 't3', 'has_form', 'fm:2', null, 's', 'observed', 'u2', null, null);
     claim.run('a6', 'u1:c', 't4', 'has_form', null, '"unreadable"', null, 'observed', 'u1', null, null);
     claim.run('a7', null, 'doc', 'date_written', null, '{}', null, 'attested', 'source:x', null, null);
+    claim.run('a7e', null, 'doc', 'date_written', null, '{"of":"x"}', null, 'editorial', 'source:x', null, null);
     claim.run('a8', null, 't5', 'has_form', 'fm:1', null, null, 'derived', 'model', 'run-1', null);
-    claim.run('a9', null, 't6', 'has_form', 'fm:1', null, null, 'observed', 'u2', null, 'written_forms:w1');
+    claim.run('a9', 'u2:w', 't6', 'has_form', 'fm:1', null, null, 'observed', 'u2', null, 'written_forms:w1');
     db.exec(`INSERT INTO assertion_actions(id,submission,assertion,action,actor,at) VALUES
-      ('x1','u2:f2','a1','retract','u2','${at}'),('x2','u2:ok','a6','accept','u2','${at}');`);
+      ('x1','u2:f2','a1','retract','u2','${at}'),('x2','u2:ok','a6','accept','u2','${at}'),('x3','u2:ok2','a6','accept','u2','${at}');`);
     const rows = db.query(rankingQuery()).all().map((row, i) => rankingRow(row as Record<string, unknown>, i + 1));
     expect(rows).toEqual([
       { place: 1, total: 7, user: 'u1', anonymous: false, name: 'まくぽり', image: 'https://x/a.png' },
