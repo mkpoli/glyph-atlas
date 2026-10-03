@@ -835,5 +835,7 @@
   "chronology.empty.composed": "此ノ字ノ典籍ニ、本文成立ノ年ノ記錄無シ。",
   "chronology.method": "字形ハ、典籍ノ年代ノ示ス最初ノ年ノ十年ニ置ク。「某年以前」トノミアルモノハ、其ノ年ニ置ク。年代ハ各記錄ニ擧ゲタル目錄・翻刻ニ據ル。上ノ棒圖ハ全期間ト字形數トヲ等尺ニテ示ス。下ノ帶ニハ、字形無キ五十年以上ノ期間ヲ疊ミテ示ス。",
   "chronology.hutime": "和曆ノ換算：HuTime ↗",
-  "chronology.gap": "{range}：字形無シ"
+  "chronology.gap": "{range}：字形無シ",
+  "chronology.earlier": "前ヘ",
+  "chronology.later": "後ヘ"
 }

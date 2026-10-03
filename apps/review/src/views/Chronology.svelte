@@ -70,6 +70,9 @@
   // The overview names every century it has room for, at least 44 pixels apart.
   const tickStep = $derived(Math.max(1, Math.ceil(centuries.length * 44 / Math.max(1, overviewWidth))))
   const jump = decade => track?.scrollTo({ left: Math.max(0, (strip.at.get(decade) ?? 0) - DECADE), behavior: 'smooth' })
+  // The strip shows no scrollbar: ‹ › turn it by most of its width, and a touch or a wheel still moves it.
+  let scrolled = $state(0), shownWidth = $state(0)
+  const turn = direction => track?.scrollBy({ left: direction * Math.max(DECADE, shownWidth - 2 * DECADE), behavior: 'smooth' })
   // The gallery of one decade's crops, oldest first, in the same style group. The gallery places crops
   // by their copy's date and narrows by style alone, so with the text's date, a production or a script
   // chosen it would show other crops than the count, and the count links nowhere.
@@ -144,7 +147,12 @@
       </div>
     </figure>
 
-    <div class="track" bind:this={track}>
+    <div class="strip">
+    {#if strip.width > shownWidth}
+      <button class="turn earlier" aria-label={t('chronology.earlier')} disabled={scrolled <= 0} onclick={() => turn(-1)}>‹</button>
+      <button class="turn later" aria-label={t('chronology.later')} disabled={scrolled >= strip.width - shownWidth - 1} onclick={() => turn(1)}>›</button>
+    {/if}
+    <div class="track" bind:this={track} bind:clientWidth={shownWidth} onscroll={() => scrolled = track.scrollLeft}>
       <div class="track-inner" style:width="{strip.width}px">
         {#each strip.lines as line (line.year)}<span class="century" class:faint={!line.century} style:left="{line.x}px"><span>{formatYear(line.year)}</span></span>{/each}
         {#each strip.gaps as gap (gap.from)}<span class="gap" style:left="{gap.x}px" style:width="{GAP}px" title={dateLabel({ start: gap.from, end: gap.to, precision: 'years' })}
@@ -159,6 +167,7 @@
           </div>
         {/each}
       </div>
+    </div>
     </div>
   {:else if !loading}
     <p class="empty">{chosen.axis === 'composed' ? t('chronology.empty.composed') : t('chronology.empty')}</p>
@@ -196,7 +205,12 @@
   .overview-ticks span{position:absolute;top:4px;transform:translateX(-50%)}
   .overview-ticks span:first-child{transform:none}
   .overview-ticks span:last-child:not(:first-child){transform:translateX(-100%)}
-  .track{overflow-x:auto;overflow-y:hidden;margin-top:18px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--surface-subtle);scrollbar-width:thin}
+  .strip{position:relative;margin-top:18px}
+  .track{overflow-x:auto;overflow-y:hidden;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--surface-subtle);scrollbar-width:none}
+  .track::-webkit-scrollbar{display:none}
+  .turn{position:absolute;top:0;z-index:2;width:28px;height:28px;display:flex;align-items:center;justify-content:center;padding:0;border:0;border-bottom:1px solid var(--line);background:var(--surface-subtle);color:var(--muted);font-size:16px;line-height:1}
+  .turn.earlier{right:28px;border-left:1px solid var(--line)}.turn.later{right:0;border-left:1px solid var(--line)}
+  .turn:hover:not(:disabled){color:var(--accent)}.turn:disabled{color:var(--faint);opacity:.5}
   .track-inner{position:relative;height:calc(28px + 6 * 60px + 40px);min-width:100%}
   .century{position:absolute;top:0;bottom:0;border-left:1px solid var(--line)}
   .century span{position:absolute;top:6px;left:6px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}

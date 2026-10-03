@@ -819,5 +819,7 @@
   "chronology.empty.composed": "이 글자의 典籍에는 本文 成立 年度 記錄이 없다.",
   "chronology.method": "字形은 典籍의 年代가 보이는 첫해가 속한 10年에 놓는다. ‘어느 해 以前’으로만 적힌 것은 그해에 놓는다. 年代는 各 記錄에 든 目錄과 整理本에 따른다. 위의 막대는 全體 期間과 字形 數를 같은 縮尺으로 보인다. 아래 띠에서는 字形이 없는 50年 以上의 期間을 접어서 表示한다.",
   "chronology.hutime": "日本 年號 換算: HuTime ↗",
-  "chronology.gap": "{range}: 字形 없음"
+  "chronology.gap": "{range}: 字形 없음",
+  "chronology.earlier": "以前",
+  "chronology.later": "以後"
 }
