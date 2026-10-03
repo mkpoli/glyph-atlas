@@ -57,6 +57,8 @@
   }
 
   async function removeModel() {
+    // A search still running would otherwise show its answer after the model is gone.
+    querying?.abort(); runs++; running = false
     await remove()
     kept = null; result = null
   }
@@ -95,7 +97,11 @@
     return { pixels: context.getImageData(0, 0, width, height).data, width, height }
   }
 
+  // A paste into a text field is the field's: only one onto the page itself opens an image here. The
+  // search box hands its own pasted image over through `given`.
+  const typing = target => target instanceof Element && Boolean(target.closest('input, textarea, [contenteditable]:not([contenteditable="false"])'))
   function pasted(event) {
+    if (typing(event.target)) return
     const found = [...(event.clipboardData?.items ?? [])].find(item => item.kind === 'file' && item.type.startsWith('image/'))
     if (!found || !usable) return
     event.preventDefault()
