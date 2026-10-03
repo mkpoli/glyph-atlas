@@ -106,10 +106,17 @@ def select_units(catalogue: Path, prefixes: list[str]) -> None:
         db.execute("DELETE FROM metadata WHERE key='catalogue'")
 
 
-def d1(sql: str) -> list[dict]:
-    result = subprocess.run(["bunx", "wrangler", "d1", "execute", "glyph-atlas", "--remote", "--json", "--command", sql],
-                            cwd=ROOT / "apps" / "cloudflare", capture_output=True, text=True, check=True)
-    return json.loads(result.stdout)[0]["results"]
+def d1(sql: str, tries: int = 4) -> list[dict]:
+    """One read of the live database. A request that does not come back is sent again after a pause,
+    since over a slow connection D1 answers `fetch failed` now and then; the last failure is raised."""
+    for attempt in range(tries):
+        result = subprocess.run(["bunx", "wrangler", "d1", "execute", "glyph-atlas", "--remote", "--json", "--command", sql],
+                                cwd=ROOT / "apps" / "cloudflare", capture_output=True, text=True)
+        if result.returncode == 0:
+            return json.loads(result.stdout)[0]["results"]
+        if attempt < tries - 1:
+            time.sleep(10 * (attempt + 1))
+    raise subprocess.CalledProcessError(result.returncode, result.args, result.stdout, result.stderr)
 
 
 def read_range(low: str, high: str, depth: int = 0) -> list[dict]:
@@ -119,12 +126,10 @@ def read_range(low: str, high: str, depth: int = 0) -> list[dict]:
     sql = ("SELECT u.id, u.origin, u.revision, u.quiz, u.data, u.style, "
            "EXISTS(SELECT 1 FROM events e WHERE e.target=u.id) AS reviewed "
            f"FROM units u WHERE u.id >= '{low}' AND u.id < '{high}'")
-    for attempt in range(2):
-        try:
-            return d1(sql)
-        except subprocess.CalledProcessError:
-            if attempt == 0:
-                time.sleep(5)
+    try:
+        return d1(sql, tries=2)
+    except subprocess.CalledProcessError:
+        pass
     if depth >= 3:
         raise SystemExit(f"could not read live units in [{low}, {high})")
     parts = [low] + [low + c for c in ID_CHARS[1:]] + [high]
