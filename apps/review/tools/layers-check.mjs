@@ -154,13 +154,13 @@ try {
     const readings = written.filter(row => row.event.field === 'reading')
     assert(readings.length === 0, `${readings.length} reading events were written by an untouched save`)
     const stored = await (await fetch(service.base + '/atlas/characters/' + encodeURIComponent(LAYERED))).json()
-    assert(stored.reading === 'ね' && stored.label === 'ネ', `record is now ${stored.label} / ${stored.reading}`)
+    assert(stored.label === 'ネ' && !('reading' in stored), `record is now ${JSON.stringify(stored.label)}`)
     return `${written.length} review event(s), none of them a reading`
   })
 
-  await step('correcting the character carries its reading and lands in the export', async () => {
+  await step('correcting the character lands in the export', async () => {
     await openReviewer(LAYERED)
-    await browser.evaluate(`document.querySelector('dialog[open] .issue-card[data-issue="reading"]').click()`)
+    await browser.evaluate(`document.querySelector('dialog[open] .issue-card[data-issue="character"]').click()`)
     // Another character is picked from the search, never typed in as it stands.
     await browser.waitFor(`!!document.querySelector('dialog[open] .suggestion-pick input')`)
     await browser.evaluate(`(() => {
@@ -177,8 +177,6 @@ try {
     await new Promise(resolve => setTimeout(resolve, 400))
     const stored = await (await fetch(service.base + '/atlas/characters/' + encodeURIComponent(LAYERED))).json()
     assert(stored.label === 'ヌ', `stored character is ${stored.label}, expected ヌ`)
-    // ヌ has one stated reading, so the correction carries it: the reading follows the character.
-    assert(stored.reading === 'ぬ', `stored reading is ${stored.reading}, expected ぬ from the character layer`)
     // The export holds one row per review, and the layer correction is its evidence: the unicode
     // event itself is in the journal, which is what the export's `current` check reads.
     const exportBody = await (await fetch(service.base + '/atlas/reviews')).json()
@@ -188,12 +186,11 @@ try {
     const correction = evidence.layer_correction ?? {}
     assert(correction.changed?.includes('character'), `changed is ${JSON.stringify(correction.changed)}`)
     assert(correction.code_point === 'U+30CC', `correction code point is ${correction.code_point}`)
-    assert(correction.character === 'ヌ' && correction.reading === 'ぬ',
-      `correction reads ${correction.character} / ${correction.reading}`)
+    assert(correction.character === 'ヌ' && !('reading' in correction), `correction is ${JSON.stringify(correction)}`)
     assert(row.current === true, 'the exported review does not read as current')
     const journal = await (await fetch(service.base + '/atlas/reviews.json')).json()
     assert(journal.kind === 'atlas-character-reviews', 'the export attachment has the wrong kind')
-    return `${correction.character} ${correction.code_point}, reading ${correction.reading}, current`
+    return `${correction.character} ${correction.code_point}, current`
   })
 
   await step('Back to a saved crop page reopens it current, and it saves again', async () => {

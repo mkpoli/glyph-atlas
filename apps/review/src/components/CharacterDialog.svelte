@@ -11,7 +11,7 @@
   import { onMount, untrack, tick } from 'svelte'
   import { request, suggestionsFor } from '../lib/client.js'
   import { readCrop } from '../lib/cropCache.js'
-  import { decision, isSingle, suggestsReading, greetSuggestions } from '../lib/issues.js'
+  import { decision, isSingle, offersSuggestions, greetSuggestions } from '../lib/issues.js'
   import { t } from '../lib/i18n.svelte.js'
   import { cropAddress, useInspector } from '../lib/inspector.svelte.js'
   import CropContext from './CropContext.svelte'
@@ -139,7 +139,7 @@
     else if (!onVerdict && data?.context && data.context_box && data.crop_editable !== false) beginCrop()
     // The suggestion area appears with this choice, so the next action is the one focused. An issue
     // with no suggestions moves nothing, and no later arrival takes the focus back.
-    if (!suggestsReading(value)) return
+    if (!offersSuggestions(value)) return
     queueMicrotask(() => greetSuggestions(suggestionsElement, { focus: true }))
   }
   /** A suggestion that is one character names the character, so it corrects the written identity. */
@@ -147,16 +147,18 @@
     noneSelected = none
     submission = null
     if (!value && issue === 'character') {
-      written = data?.label ?? ''; writtenDirty = false; issue = 'reading'
+      written = data?.label ?? ''; writtenDirty = false
     }
     if (value && isSingle(value) && issue !== 'merged') {
       // One character names the character: the chosen value is carried as the written identity, and
       // the suggestion list highlights it from `written` rather than from `correction`. A round
-      // refuses reading text on a character issue, so nothing goes into `correction`, and the reading
-      // the record already had is left exactly as it was.
+      // takes typed characters only for a joined crop, so nothing goes into `correction`.
       written = value; writtenDirty = true; correction = null; noneSelected = false; issue = 'character'
       return
     }
+    // Typed characters belong to a joined crop; on any other issue they name nothing, and a character
+    // half-typed before them is not kept either.
+    if (value && issue !== 'merged') { written = data?.label ?? ''; writtenDirty = false; correction = null; return }
     correction = value
   }
 
@@ -202,7 +204,7 @@
     busy = true; error = ''
     // A chosen form is written first, and the review that follows names the revision it left. A wrong
     // character names the crop's character itself, so a form chosen beside it is not written.
-    if (form != null && issue !== 'reading' && issue !== 'character') {
+    if (form != null && issue !== 'character') {
       try {
         const formed = await setForm(data, form)
         changed?.(target, formed.crop)
@@ -213,9 +215,8 @@
       } catch (e) { if (!closed && current === generation) error = e.message; busy = false; return }
     }
     const correctingCharacter = writtenDirty && Boolean(written) && written !== data.label
-    // `/atlas/characters` records reading issues; a character issue with no new character is one.
-    const resolvedIssue = matches || fixed || (issue === 'character' && !correctingCharacter) ? 'reading'
-      : issue || (correctingCharacter ? 'character' : 'reading')
+    // A match, and a crop fixed by its redrawn box, carry no issue.
+    const resolvedIssue = value.verdict === 'match' ? null : issue
     // Two routes with two contracts: the character editor takes the review request shape, and the
     // layer route takes the layers it records and nothing else (it forbids extra fields). The payload
     // is built for the route it is sent to rather than passed through from the other one.
@@ -225,7 +226,7 @@
     const payload = correctingCharacter
       ? { revision: data.revision, image_sha256: data.image_sha256,
           verdict: matches ? 'match' : decision(issue || 'character').verdict,
-          issue: ['character', 'reading', 'crop', 'merged', 'blank', 'other'].includes(issue)
+          issue: ['character', 'crop', 'merged', 'blank', 'other'].includes(issue)
             ? issue : 'character',
           character: written }
       : { revision: data.revision, image_sha256: data.image_sha256,

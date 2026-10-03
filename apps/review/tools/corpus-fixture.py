@@ -31,6 +31,6 @@ reviews = CorpusReviews(CorpusAPI(root, directory))
 item = reviews.detail(units[0].id)
 reviews.record(CorpusEdit(id=UUID('3f7990bb-c834-41e9-b8fe-cb9db1c5757e'), identity=item['id'],
                client_id='reported-example', revision=0, source_revision=item['source_revision'],
-               verdict='wrong', issue='reading'), actor_kind='user-report',
+               verdict='wrong', issue='character'), actor_kind='user-report',
                suggestions=[{'text': '有', 'engine': 'Reported correction'}])
 print(json.dumps({'reported': units[0].id, 'next': units[1].id}))

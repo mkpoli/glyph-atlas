@@ -31,7 +31,7 @@ try {
   await browser.evaluate(`document.querySelector('.glyph-grid [data-unit="${id}"]').click()`)
   await browser.waitFor(ready, 60000)
 
-  for (const [key, issue] of [['w', 'reading'], ['m', 'merged'], ['b', 'crop'], ['x', 'blank']]) {
+  for (const [key, issue] of [['w', 'character'], ['m', 'merged'], ['b', 'crop'], ['x', 'blank']]) {
     await browser.key(key)
     await browser.waitFor(pressed(issue))
   }

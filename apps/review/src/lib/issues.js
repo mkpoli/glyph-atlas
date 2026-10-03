@@ -4,7 +4,7 @@ import { t } from './i18n.svelte.js'
 // language switch is reflected without rebuilding this list. The keys are letters, because the
 // number keys choose a crop's form.
 export const issues = [
-  { id: 'reading', example: 'ア → カ', key: 'w' },
+  { id: 'character', example: 'ア → カ', key: 'w' },
   { id: 'merged', example: 'アカ', key: 'm' },
   { id: 'crop', example: 'ア', key: 'b' },
   { id: 'blank', example: '', key: 'x' },
@@ -30,11 +30,9 @@ export const skipHint = () => t('common.skip.hint')
 export const prefersReducedMotion = () =>
   typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
-/** Whether choosing this issue offers suggestions, so the next action has somewhere to go.
- *
- * A character correction offers them as well: the suggestion names the character that was printed,
- * which is the identity layer, and the reader still has to see and choose it. */
-export const suggestsReading = issue => ['reading', 'merged', 'character'].includes(issue)
+/** Whether choosing this issue offers suggestions, so the next action has somewhere to go: the
+ * character that was written, or the characters a joined crop holds. */
+export const offersSuggestions = issue => ['character', 'merged'].includes(issue)
 
 /**
  * Bring the suggestion area into sight, and in the reviewer put the keyboard in it.

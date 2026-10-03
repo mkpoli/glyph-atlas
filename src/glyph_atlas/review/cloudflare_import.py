@@ -7,11 +7,11 @@ from collections import Counter, defaultdict
 from copy import deepcopy
 from datetime import datetime
 
-from .. import refs, written_form
+from .. import recorded_terms, refs, written_form
 from ..schema import Review
 from ..unit_scope import character_count
-from .atlas import identity_text, label, reading_of, script_of_identity, single_character
-from .characters import _source_digest, reading_is_allowed, written_identity
+from .atlas import identity_text, script_of_identity, single_character
+from .characters import _source_digest, written_identity
 from .receipts import fingerprint
 from .store import UNREVISED, WRITTEN_FORM, _change
 
@@ -41,7 +41,7 @@ def _snapshot(record):
 
 def _same_view(a, b):
     return all(a.get(key) == b.get(key) for key in
-               ("id", "label", "reading", "box", "image_sha256", "page_id"))
+               ("id", "label", "box", "image_sha256", "page_id"))
 
 
 def _answer(evidence, identity, snapshot=None):
@@ -91,30 +91,19 @@ def _step(record, before):
     verdict, issue = answer.get("verdict"), answer.get("issue")
     if verdict != evidence.get("verdict") or issue != evidence.get("issue"):
         raise Rejected("request and saved decision disagree")
+    issue = recorded_terms.issue(issue)
     if verdict not in ("match", "wrong") or (evidence.get("kind") == "visual-quiz" and verdict != "wrong"):
         raise Rejected("skipped or implicit round confirmations are not imported")
-    if issue not in (None, "character", "reading", "merged", "crop", "blank", "other"):
+    if issue not in (None, "character", "merged", "crop", "blank", "other"):
         raise Rejected("unsupported issue")
     if verdict == "wrong" and not issue:
         raise Rejected("missing issue")
     written = identity_text(answer["character"]) if answer.get("character") else None
     if written and (not single_character(written) or verdict != "wrong"):
         raise Rejected("written identity does not match the decision")
-    reading = answer.get("reading")
-    if not reading and issue == "reading" and answer.get("correction") and single_character(answer["correction"]):
-        reading = answer["correction"]
-    if not reading and written:
-        # The Worker carries a corrected character's registered reading along: い corrected to り reads り.
-        derived = reading_of(written)
-        if derived and derived != before["reading"]:
-            reading = derived
     after = {**before, "revision": revision + 1}
     if written:
         after["label"] = written
-    if reading:
-        if not reading_is_allowed(reading, " ".join(refs.to_code_points(after["label"]))):
-            raise Rejected("reading is not allowed for this identity")
-        after["reading"] = reading
     if answer.get("box") is not None:
         # A crop the site's reviewer redrew: the review fixes it, and the box is its new geometry,
         # cut from the same pixels the review names (checked above), on the next publication.
@@ -123,7 +112,7 @@ def _step(record, before):
                 or not all(type(box[key]) is int for key in box) or box["x"] < 0 or box["y"] < 0
                 or box["w"] < 2 or box["h"] < 2):
             raise Rejected("redrawn box is malformed")
-        if verdict != "match" or issue not in (None, "reading") or written:
+        if verdict != "match" or issue not in (None, "character") or written:
             raise Rejected("a redrawn box is saved as the crop's fix")
         after["box"] = {key: box[key] for key in ("x", "y", "w", "h")}
         recrop = evidence.get("recrop")
@@ -132,9 +121,9 @@ def _step(record, before):
             raise Rejected("the box claim names another crop or other pixels")
     correction = evidence.get("correction", {})
     if (correction.get("unicode") != " ".join(refs.to_code_points(after["label"]))
-            or correction.get("reading") != after["reading"] or correction.get("box") != after["box"]):
+            or correction.get("box") != after["box"]):
         raise Rejected("saved effective state disagrees with the explicit correction")
-    resolved = verdict == "match" or bool(issue == "character" and written) or bool(issue == "reading" and reading)
+    resolved = verdict == "match" or bool(issue == "character" and written)
     if event.get("new") != ("reviewed" if resolved else "disputed"):
         raise Rejected("review certainty exceeds the saved decision")
     return after
@@ -238,7 +227,7 @@ def ingest_cloudflare(store, payload: dict, *, apply=False) -> tuple[dict, dict]
                         before = deepcopy(publication["character"])
                         if type(before.get("revision")) is not int or store._revision(conn, target) != before["revision"]:
                             raise Rejected("local revision differs from the published baseline")
-                    actual = {"id": unit.id, "label": written_identity(unit), "reading": label(unit),
+                    actual = {"id": unit.id, "label": written_identity(unit),
                               "box": unit.box.model_dump() if unit.box else None, "page_id": unit.page_id,
                               "image_sha256": _source_digest(store, unit)}
                     if not actual["image_sha256"] or not _same_view(actual, before):
@@ -257,8 +246,8 @@ def ingest_cloudflare(store, payload: dict, *, apply=False) -> tuple[dict, dict]
                     evidence["cloudflare_import"] = {"policy": POLICY, "publication": payload.get("publication"),
                         "remote_fingerprint": source_fingerprint, "remote_event": deepcopy(remote),
                         "remote_chain": [deepcopy(r["event"]) for r in chain], "publication_snapshot": publication}
-                    # Hosted reading edits already distinguish pronunciation from
-                    # identity. Do not run the normalizer's legacy identity inference.
+                    # A hosted review names its identity explicitly. Do not run the normalizer's
+                    # legacy identity inference on it.
                     evidence["layer"] = "review"
                     answer = _answer(evidence, target, evidence.get("snapshot"))
                     if evidence.get("kind") != "visual-quiz" and answer.get("character"):
@@ -276,8 +265,6 @@ def ingest_cloudflare(store, payload: dict, *, apply=False) -> tuple[dict, dict]
                         script = script_of_identity(before["label"])
                         if script != "unknown":
                             values["script"] = script
-                    if before["reading"] != actual["reading"]:
-                        values["reading"] = before["reading"]
                     if before["box"] != actual["box"]:
                         page = store.page(unit.page_id) if unit.page_id else None
                         box = before["box"]
@@ -285,9 +272,7 @@ def ingest_cloudflare(store, payload: dict, *, apply=False) -> tuple[dict, dict]
                             raise Rejected("redrawn box leaves the page")
                         values = {"box": box, **values}
                     for field, value in values.items():
-                        if field == "box":
-                            _append(store, conn, remote, field, value, encoded, remote["id"] + ":" + field)
-                        elif getattr(unit, field) != value:
+                        if field == "box" or getattr(unit, field) != value:
                             _append(store, conn, remote, field, value, encoded, remote["id"] + ":" + field)
                     local_event = _append(store, conn, remote, "review", remote["new"], encoded, remote["id"])
                     revision = store._revision(conn, target)

@@ -165,10 +165,12 @@ def test_the_encoded_identity_the_transcription_and_the_reading_are_three_layers
     assert detail["written_character"] is None
     assert detail["reading"] == "ね"
 
-    reading_only, _ = save(corpus["client"], ALT_UNIT, issue="reading", character=None, correction="とも")
-    assert reading_only.status_code == 200, reading_only.text
-    assert reading_only.json()["label"] == TOMO and reading_only.json()["code_point"] == TOMO_POINT
-    assert reading_only.json()["state"] == "flagged", "a reading edit does not confirm the identity"
+    typed, _ = save(corpus["client"], ALT_UNIT, issue="character", character=None, correction="とも")
+    assert typed.status_code == 422, "typed characters belong to a joined-character issue"
+    joined, _ = save(corpus["client"], ALT_UNIT, issue="merged", character=None, correction="とも")
+    assert joined.status_code == 200, joined.text
+    assert joined.json()["label"] == TOMO and joined.json()["code_point"] == TOMO_POINT
+    assert joined.json()["state"] == "flagged", "a joined-crop report does not confirm the identity"
 
     identity, _ = save(corpus["client"], ALT_UNIT, revision=1, issue="character", character=TOMO)
     assert identity.status_code == 200, identity.text

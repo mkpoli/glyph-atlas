@@ -24,7 +24,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 from ..schema import Page, ReviewState, Unit
-from .atlas import label, written_identity
+from .atlas import written_identity
 from .characters import page_digest
 from .store import DETECT, MANUAL, DrawRequest, Store
 
@@ -47,7 +47,6 @@ def router(store: Store) -> APIRouter:
             "box": unit.box.model_dump() if unit.box else None,
             "character": written_identity(unit) or None,
             "code_point": unit.unicode,
-            "reading": label(unit) or None,
             "manual": unit.method == MANUAL,
             "detected": unit.method == DETECT,
             "proposed": unit.method == DETECT and unit.review == ReviewState.MACHINE,

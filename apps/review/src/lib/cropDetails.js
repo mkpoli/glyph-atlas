@@ -25,7 +25,7 @@ export function repairOf(item) {
   return null
 }
 
-/** What a crop's details list: the reading when it differs, the written form, the material, how far the record
+/** What a crop's details list: the written form, the material, how far the record
  * has been checked, where it comes from, the work and page, and the holder. A line that names a character is
  * `{ before, text, after }`, for `ScriptLine` to draw the character in its script's colour; the others are text. */
 export function cropDetails(item) {
@@ -39,7 +39,7 @@ export function cropDetails(item) {
   const page = item.page_number ? t('tile.page', { page: item.page_number }) : null
   // A written form a reviewer recorded: the shape the letterforms take, the crop still filed under its label.
   const written = item.written_form && item.written_form !== item.label ? withText('written.detail', 'form', { form: item.written_form }) : null
-  return [item.reading && item.reading !== item.label ? { before: '', text: item.reading, after: '' } : null, written, productionLabel(item), state, origin,
+  return [written, productionLabel(item), state, origin,
     [work, page].filter(Boolean).join(' · ') || null, typeof item.source === 'string' ? item.holder : (item.source?.holder ?? item.holder)]
     .filter(Boolean)
 }

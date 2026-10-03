@@ -868,15 +868,6 @@ async function known(env: Env, value: string) {
   if (!row) throw new Problem(404, 'Character not found.');
   return { data: parse(row.data), detail: parse(row.detail) };
 }
-// What a corrected character reads as, by the review server's rule: a kana's one stated reading, a
-// ligature's reading, a kanji itself; several stated readings are a person's choice, so none.
-export function readingFrom(data: Json | null | undefined): string | null {
-  if (!data) return null;
-  if (data.ligature?.reading) return hira(data.ligature.reading);
-  const readings: string[] = data.readings || [];
-  if (readings.length === 1) return readings[0];
-  return !readings.length && data.script === 'han' ? data.char : null;
-}
 async function suggest(env: Env, q: URLSearchParams) {
   const term = (q.get('q') || '').slice(0, 128).trim();
   if (!term) return { items: [], total: 0, status: 'idle' };
@@ -993,7 +984,7 @@ async function corpusOccurrences(env:Env,data:Json,q:URLSearchParams){
     visual_analysis:info.detail.visual_analysis,family_total:familyCounts?.total||0,unassigned_count:familyCounts?.unassigned||0};
 }
 // A document's characters in source order. The primary key serves the filter and the order, and each
-// row joins its unit by id: a published unit gives its current reading, state and revision.
+// row joins its unit by id: a published unit gives its current character, state and revision.
 export const documentCharactersQuery = () => `SELECT c.unit,c.data,u.character,u.state,u.revision,json_extract(u.data,'$.issue') AS issue
   FROM document_characters c LEFT JOIN units u ON u.id=c.unit WHERE c.document=? ORDER BY c.ord`;
 // Other sites read this listing from the browser, so it is served to any origin, errors included. The
@@ -1066,11 +1057,13 @@ function validateAnswer(answer: Json, current: Json, round: boolean, corpus=fals
   if(!Number.isSafeInteger(answer.revision)||answer.revision!==current.revision)throw new Problem(409,'This character changed. Reload it.');
   if(corpus?answer.source_revision!==current.source_revision:answer.image_sha256!==current.image_sha256)throw new Problem(409,'The source image changed. Reload it.');
   if(!['match','wrong','unsure'].includes(answer.verdict))throw new Problem(422,'Choose a review decision.');
-  if(answer.issue!=null&&!['character','reading','merged','crop','blank','other','unclear'].includes(answer.issue))throw new Problem(422,'Unknown issue.');
-  if(answer.verdict==='match'&&(answer.character||answer.correction||(round&&answer.issue)||(!round&&answer.issue&&answer.issue!=='reading')))
+  if(answer.issue!=null&&!['character','merged','crop','blank','other','unclear'].includes(answer.issue))throw new Problem(422,'Unknown issue.');
+  if(answer.verdict==='match'&&(answer.character||answer.correction||answer.issue))
     throw new Problem(422,'A matching crop cannot also have an issue.');
   if(answer.verdict==='wrong'&&!answer.issue)throw new Problem(422,'Choose an issue.');
-  for(const field of ['character','correction','reading'])text(answer[field],32,field);
+  for(const field of ['character','correction'])text(answer[field],32,field);
+  // Typed characters describe a joined crop; one character is named as `character`.
+  if(answer.correction&&answer.issue!=='merged')throw new Problem(422,'Typed characters belong to a joined-character issue.');
   text(answer.note,2000,'note');
   if(answer.character)writtenCharacter(answer.character);
   if(answer.verdict==='wrong' && answer.character && literal(answer.character)===current.written_character)
@@ -1078,7 +1071,7 @@ function validateAnswer(answer: Json, current: Json, round: boolean, corpus=fals
   if(answer.box!==undefined){
     // A redrawn box is the crop's fix: saved as a match on the pixels it names, never in a round.
     if(round||corpus||batch)throw new Problem(422,'This crop cannot be redrawn here.');
-    if(answer.verdict!=='match'||(answer.issue!=null&&answer.issue!=='reading')||answer.character||answer.correction)
+    if(answer.verdict!=='match'||answer.issue!=null||answer.character||answer.correction)
       throw new Problem(422,'A redrawn crop is saved as fixed.');
     answer.box=redrawnBox(answer.box,current);
   }
@@ -1148,28 +1141,18 @@ async function submit(env: Env, request: Request, actor: string, target?: string
     const current:Json={...stored,category:row.category||categoryOf(stored.label)};
     row.data=JSON.stringify(current);
     validateAnswer(answer,current,round,glyph,batch);
-    if(answer.reading&&!single(answer.reading)){
-      const identity=answer.character||current.written_character||current.label;
-      const registered=await lookup(identity);
-      if(!registered?.data.ligature?.reading||hira(registered.data.ligature.reading)!==hira(answer.reading))
-        throw new Problem(422,'Use the registered ligature reading or one character.');
-    }
     if(glyph&&(!current.proxyable||(current.identity_status==='unassigned'&&answer.verdict==='match')))
       throw new Problem(422,'Choose a written character or report an issue.');
     if(round&&(!row.quiz||!members!.includes(current.label)))throw new Problem(409,'This round changed. Reload it.');
     const written=answer.character?literal(answer.character):null;
-    // A corrected character carries its reading along unless one was typed: い corrected to り reads り.
-    const derived=written&&!answer.reading?readingFrom((await lookup(written))?.data):null;
-    const reading=answer.reading || (answer.issue==='reading'&&answer.correction&&single(answer.correction)?answer.correction:null)
-      || (derived&&derived!==current.reading?derived:null);
     // A batch names the character only: a crop reported for its box, a blank or a merge stays reported.
-    const kept=batch&&current.state==='flagged'&&current.issue&&!['character','reading'].includes(current.issue)?current.issue:null;
-    const resolved=!kept&&(answer.verdict==='match'||Boolean(answer.issue==='character'&&written)||Boolean(answer.issue==='reading'&&reading));
+    const kept=batch&&current.state==='flagged'&&current.issue&&current.issue!=='character'?current.issue:null;
+    const resolved=!kept&&(answer.verdict==='match'||Boolean(answer.issue==='character'&&written));
     const family=written?(await lookup(written))?.data.grapheme?.code_point:null;
     const next:Json={...current,revision:current.revision+1,state:resolved?'checked':'flagged',
       ...(written?{label:written,char:written,code_point:cp(written),written_character:written,identity_status:'assigned',identity_basis:'human_review',script:/\p{Script=Katakana}/u.test(written)?'katakana':/\p{Script=Hiragana}/u.test(written)?'hiragana':/\p{Script=Han}/u.test(written)?'han':/\p{Script=Hangul}/u.test(written)?'hangul':isGugyeol(written)?'gugyeol':'symbol'}:{}),
       ...(written?{grapheme:family||cp(written),visual_group:null,category:categoryOf(written)}:{}),
-      ...(reading?{reading}:{}),issue:resolved?null:kept??answer.issue,
+      issue:resolved?null:kept??answer.issue,
       // A redrawn box is the crop's until the next publication cuts it; the image shown is still the old cut.
       ...(answer.box?{box:answer.box,box_pending:true}:{})};
     const snapshot={...parse(row.snapshot),character:compact(row)};
@@ -1178,8 +1161,8 @@ async function submit(env: Env, request: Request, actor: string, target?: string
     // keeps its request whole: it is that one answer.
     const evidence={kind:round?'visual-quiz':'character-review',...(round?{round:id,grapheme,label:current.label}:{}),...(batch?{batch:id}:round?{answer}:{request:input}),
       verdict:answer.verdict,issue:answer.issue||null,note:answer.note||'',
-      suggested_character:written?cp(written):null,suggested_reading:answer.correction||null,snapshot,
-      correction:{unicode:cp(next.label),reading:next.reading,box:next.box},
+      suggested_character:written?cp(written):null,suggested_text:answer.correction||null,snapshot,
+      correction:{unicode:cp(next.label),box:next.box},
       // The box claim and the evidence it was made on: the pixels and the box the crop was cut with.
       ...(answer.box?{recrop:{from:current.box??null,to:answer.box,pixels:current.image_sha256}}:{})};
     const event={id:'cf:'+crypto.randomUUID(),target_type:'unit',target_id:row.id,field:'review',
@@ -1410,6 +1393,11 @@ export function decodeCursor(value: string): { at: string; id: string } {
     return { at: decoded[0], id: decoded[1] };
   } catch { throw new Problem(422, 'Invalid cursor.') }
 }
+// A review keeps the words it was saved with. One saved while crops carried a reading names the
+// wrong-character issue `reading` and its typed characters `suggested_reading`.
+export const recordedIssue = (issue: unknown) => issue === 'reading' ? 'character' : issue ?? null;
+export const typedText = (evidence: Json | null | undefined): string | null =>
+  evidence?.suggested_text ?? evidence?.suggested_reading ?? null;
 type HistoryRow = { id: string; at: string; actor: string; target: string; kind: string; event: string; label: string | null;
   user: string | null; name: string | null; image: string | null };
 // A review's evidence names its own verdict, issue and correction; an undo's evidence is only the id
@@ -1422,9 +1410,9 @@ export function historyItem(row: HistoryRow, me: string | null = null): Json {
     id: row.id, at: row.at, target: row.target, label: row.label, kind: row.kind as 'review' | 'undo',
     reviewer: { user: row.user, name: row.name ?? row.actor, image: row.image, mine: Boolean(me && row.user === me) },
     verdict: evidence?.verdict ?? null,
-    issue: evidence?.issue ?? null,
+    issue: recordedIssue(evidence?.issue),
     character: evidence?.suggested_character ? literal(evidence.suggested_character) : null,
-    reading: evidence?.suggested_reading ?? null,
+    text: typedText(evidence),
     round: evidence?.round ?? null,
     batch: evidence?.batch ?? null,
     undoes: undo ? String(parsedEvent.evidence).replace(/^undo of /, '') : null,
@@ -1456,7 +1444,7 @@ async function reviews(env:Env,all:boolean){
   return {version:1,kind:'atlas-character-reviews',reviews:rows.results.map(r=>{
     const event=parse(r.event),snapshot=parse(r.snapshot);
     if(r.origin==='corpus'){const e=parse(event.evidence);return {origin:'corpus',event:{...event,new:{verdict:e.verdict,issue:e.issue,
-      character:e.suggested_character?literal(e.suggested_character):null,correction:e.suggested_reading,note:e.note}},
+      character:e.suggested_character?literal(e.suggested_character):null,correction:typedText(e),note:e.note}},
       reviewed:snapshot,current:!r.superseded,current_revision:r.revision,
       source_update:{identity:event.target_id,source_revision:snapshot.source_revision,source:snapshot.source,box:snapshot.box,
         original_character:snapshot.source_code_point?literal(snapshot.source_code_point):snapshot.source_label,

@@ -118,10 +118,10 @@ try {
 
   // 4. Choosing an issue that offers suggestions puts the keyboard in them.
   await browser.evaluate(`document.querySelector('.issue-card').click()`)
-  await browser.waitFor(`document.querySelector('.reading-suggestions') !== null`)
+  await browser.waitFor(`document.querySelector('.character-suggestions') !== null`)
   const focused = await browser.evaluate(`(() => {
     const active = document.activeElement
-    const area = document.querySelector('.reading-suggestions')
+    const area = document.querySelector('.character-suggestions')
     return { inArea: area.contains(active), tag: active.tagName, text: (active.textContent || '').slice(0, 20),
              hasOptions: !!document.querySelector('.suggestion-options button') }
   })()`)

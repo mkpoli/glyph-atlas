@@ -54,7 +54,15 @@ try {
   const oldPrint = { id: 'old-print', label: 'ト', reading: 'ト', state: 'pending', revision: 0, production: 'woodblock', production_label: 'Woodblock' }
   await db.prepare('INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind('old-print', 'local', 'ト', 'ト', null, null,
     'woodblock', 'kana', 'pending', 0, 0, 1, 1, JSON.stringify(oldPrint), JSON.stringify({ character: oldPrint }), '{}', '{}').run()
-  for (const name of migrations.filter(name => name >= '0010')) await apply(name)
+  for (const name of migrations.filter(name => name >= '0010' && name < '0055')) await apply(name)
+  // A crop flagged as another character before 0055 names the issue `reading`.
+  const flaggedBefore = { id: 'flagged-before', label: 'ト', state: 'flagged', issue: 'reading', revision: 1 }
+  await db.prepare(`INSERT INTO units(${UNIT_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind('flagged-before', 'local', 'ト', 'ト', null, null,
+    'printed', 'kana', 'flagged', 1, 0, 1, 2, JSON.stringify(flaggedBefore), JSON.stringify({ character: flaggedBefore }), '{}', '{}', null).run()
+  for (const name of migrations.filter(name => name >= '0055')) await apply(name)
+  assert.equal((await db.prepare("SELECT json_extract(data,'$.issue') AS issue FROM units WHERE id='flagged-before'").first()).issue, 'character',
+    'a crop flagged under the old issue name carries the wrong-character issue')
+  await db.prepare("DELETE FROM units WHERE id='flagged-before'").run()
   assert.deepEqual((await db.prepare("SELECT id,production,named FROM corpus_units WHERE character='ト' ORDER BY id").all()).results, [
     { id: 'codh-omt:1', production: 'printed/type', named: 0 },
     { id: 'codh-omtz:1', production: 'unknown', named: 0 },
@@ -238,10 +246,12 @@ try {
   assert.deepEqual((await flagged('hide')).items.map(i => i.id).sort(), ['flag-a', 'flag-b'])
   const ligature = { char: '𪜈', code_point: 'U+2A708', grapheme: { code_point: 'U+2A708' }, ligature: { reading: 'トモ' }, candidates: {} }
   await db.prepare('INSERT INTO characters VALUES(?,?,?,?,?)').bind('U+2A708', '𪜈', '', JSON.stringify(ligature), JSON.stringify(ligature)).run()
-  const reading = { id: crypto.randomUUID(), revision: 0,
-    image_sha256: hash, verdict: 'wrong', issue: 'character', character: '𪜈', reading: 'とも' }
-  await call('/atlas/characters/two', reading)
-  assert.equal((await call('/atlas/characters/two')).reading, 'とも')
+  const ligatureCorrection = { id: crypto.randomUUID(), revision: 0,
+    image_sha256: hash, verdict: 'wrong', issue: 'character', character: '𪜈' }
+  await call('/atlas/characters/two', ligatureCorrection)
+  assert.equal((await call('/atlas/characters/two')).label, '𪜈', 'a ligature is one written character')
+  await call('/atlas/characters/one', { ...ligatureCorrection, id: crypto.randomUUID(), revision: (await call('/atlas/characters/one')).revision,
+    issue: 'crop', character: undefined, correction: 'ア' }, 422) // typed characters belong to a joined crop
   const renamed = (await call('/atlas/documents/hk%3Aother/characters')).characters[0]
   assert.deepEqual([renamed.label, renamed.source], ['𪜈', 'review'], 'a label corrected on the site is the review\'s')
   const moved = { ...correction, id: crypto.randomUUID(), revision: 1, character: '𪜈' }
@@ -1309,7 +1319,7 @@ try {
   const variant = await call(formPath, { ...formSave, id: crypto.randomUUID(), form: 'U+2E7C3' })
   assert.equal(variant.written_form, '𮟃', 'a code point is read as its character')
   // A review saved against the revision the crop was opened at still stands, and keeps the form.
-  await call('/atlas/characters/form-local', { id: crypto.randomUUID(), revision: 0, image_sha256: hash, verdict: 'match', issue: 'reading' })
+  await call('/atlas/characters/form-local', { id: crypto.randomUUID(), revision: 0, image_sha256: hash, verdict: 'match' })
   const reviewedForm = await call('/atlas/characters/form-local')
   assert.deepEqual([reviewedForm.state, reviewedForm.revision, reviewedForm.written_form], ['checked', 1, '𮟃'])
   assert.equal((await call(formPath, { ...formSave, id: crypto.randomUUID(), revision: 1, form: '還' })).written_form, null, 'its own character clears it')
@@ -1342,7 +1352,7 @@ try {
       'recrop', 'local', 'ア', 'ア', 'U+3042', null, 'handwritten', 'kana', 'flagged', 0, 0, 1, 1,
       JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
     assert.equal((await call('/atlas/characters/recrop')).crop_editable, true, 'a local crop with a page view can be redrawn')
-    const fix = box => ({ id: crypto.randomUUID(), revision: 0, image_sha256: hash, verdict: 'match', issue: 'reading', box })
+    const fix = box => ({ id: crypto.randomUUID(), revision: 0, image_sha256: hash, verdict: 'match', box })
     await call('/atlas/characters/recrop', fix({ x: 79, y: 190, w: 40, h: 50 }), 422)
     await call('/atlas/characters/recrop', fix({ x: 90, y: 190, w: 120, h: 50 }), 422)
     await call('/atlas/characters/recrop', fix({ x: 90, y: 190, w: 40.5, h: 50 }), 422)

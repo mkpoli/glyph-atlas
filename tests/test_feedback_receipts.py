@@ -177,7 +177,7 @@ def test_default_export_is_new_feedback_and_history_keeps_processed_and_undo(dat
     assert client.post(f"/atlas/rounds/{round['id']}/undo",
                        json={"client_id": round["client_id"]}).status_code == 200
     latest = atlas_tests.round_payload(client, count=1)
-    latest["answers"][0].update(verdict="wrong", issue="reading")
+    latest["answers"][0].update(verdict="wrong", issue="character")
     assert client.post("/atlas/rounds", json=latest).status_code == 200
     assert len(client.get("/atlas/reviews").json()["reviews"]) == 2
     assert len(client.get("/atlas/reviews?include_processed=true").json()["reviews"]) == 3

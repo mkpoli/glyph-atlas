@@ -52,12 +52,13 @@
     filterTimer = setTimeout(() => load(), 250)
   }
   const hasIssueTitle = id => issues.some(issue => issue.id === id)
-  /** What a row says was decided: a written-character correction and a reading correction each name
-   * what they changed to, for `ScriptLine` to colour; otherwise the issue that was reported, or the plain verdict. */
+  /** What a row says was decided: a written-character correction names what it changed to, for
+   * `ScriptLine` to colour; otherwise the issue that was reported, or the plain verdict. */
   function decisionText(item) {
     if (item.kind === 'undo') return t('history.decision.undo')
     if (item.character) return withText('history.decision.wrongCharacter', 'character', { character: item.character })
-    if (item.issue === 'reading' && item.reading) return withText('history.decision.wrongReading', 'reading', { reading: item.reading })
+    // A wrong-character review saved before characters were named on their own kept the typed text.
+    if (item.issue === 'character' && item.text) return withText('history.decision.wrongCharacter', 'character', { character: item.text })
     if (item.issue && hasIssueTitle(item.issue)) return t(`issue.${item.issue}.title`)
     if (item.verdict === 'match') return t('history.decision.match')
     if (item.verdict === 'unsure') return t('history.decision.unsure')
