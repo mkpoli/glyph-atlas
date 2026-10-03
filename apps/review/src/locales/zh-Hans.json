@@ -298,6 +298,8 @@
   "history.decision.unsure": "不确定",
   "history.decision.wrongCharacter": "错字 → {character}",
   "history.empty": "还没有编辑",
+  "history.group.count.one": "{count}次审阅",
+  "history.group.count.other": "{count}次审阅",
   "history.heading": "编辑历史",
   "history.loading": "加载中…",
   "history.noLabel": "—",

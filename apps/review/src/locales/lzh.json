@@ -297,6 +297,8 @@
   "history.decision.unsure": "未詳",
   "history.decision.wrongCharacter": "字誤 → {character}",
   "history.empty": "尚無所改",
+  "history.group.count.one": "所校{count}則",
+  "history.group.count.other": "所校{count}則",
   "history.heading": "改錄",
   "history.loading": "方載…",
   "history.noLabel": "—",

@@ -292,6 +292,8 @@
   "history.decision.unsure": "判ジ難シ",
   "history.decision.wrongCharacter": "字ノ誤 → {character}",
   "history.empty": "編輯未ダ無之",
+  "history.group.count.one": "{count}件ノ校閱",
+  "history.group.count.other": "{count}件ノ校閱",
   "history.heading": "編輯ノ履歷",
   "history.loading": "讀込中…",
   "history.noLabel": "—",

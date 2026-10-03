@@ -295,6 +295,8 @@
   "history.decision.unsure": "未詳",
   "history.decision.wrongCharacter": "잘못된 文字 → {character}",
   "history.empty": "아직 編輯이 없습니다",
+  "history.group.count.one": "{count}件의 檢討",
+  "history.group.count.other": "{count}件의 檢討",
   "history.heading": "編輯 記錄",
   "history.loading": "불러오는 中…",
   "history.noLabel": "—",

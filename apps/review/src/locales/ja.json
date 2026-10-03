@@ -292,6 +292,8 @@
   "history.decision.unsure": "判断保留",
   "history.decision.wrongCharacter": "文字違い → {character}",
   "history.empty": "まだ編集はありません",
+  "history.group.count.one": "{count}件のレビュー",
+  "history.group.count.other": "{count}件のレビュー",
   "history.heading": "編集履歴",
   "history.loading": "読み込み中…",
   "history.noLabel": "—",

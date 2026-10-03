@@ -298,6 +298,8 @@
   "history.decision.unsure": "不確定",
   "history.decision.wrongCharacter": "錯字 → {character}",
   "history.empty": "尚無編輯",
+  "history.group.count.one": "{count}次審閱",
+  "history.group.count.other": "{count}次審閱",
   "history.heading": "編輯歷史",
   "history.loading": "載入中…",
   "history.noLabel": "—",

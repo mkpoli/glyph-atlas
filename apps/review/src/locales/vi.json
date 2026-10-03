@@ -287,6 +287,8 @@
   "history.decision.unsure": "Đã bỏ qua vì không rõ",
   "history.decision.wrongCharacter": "Sai chữ → {character}",
   "history.empty": "Chưa có chỉnh sửa nào",
+  "history.group.count.one": "{count} lần duyệt",
+  "history.group.count.other": "{count} lần duyệt",
   "history.heading": "Lịch sử chỉnh sửa",
   "history.loading": "Đang tải…",
   "history.noLabel": "—",

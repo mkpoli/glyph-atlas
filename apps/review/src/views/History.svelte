@@ -7,6 +7,7 @@
   import ScriptText from '../components/ScriptText.svelte'
   import ScriptLine from '../components/ScriptLine.svelte'
   import { t, withText, formatDateTime, localize } from '../lib/i18n.svelte.js'
+  import { groupRuns } from '../lib/historyGroups.js'
   let { inspect } = $props()
   let items = $state([]), loading = $state(true), loadingMore = $state(false), error = $state('')
   let cursor = $state(null), hasMore = $state(true)
@@ -71,6 +72,15 @@
     else list.push({ id: item.id, batch: item.batch ?? null, items: [item] })
     return list
   }, []))
+  // A run of three or more rows by one reviewer starts folded.
+  const RUN = 3
+  const groups = $derived(groupRuns(rows))
+  let open = $state(new Set())
+  const toggle = id => { const next = new Set(open); next.has(id) ? next.delete(id) : next.add(id); open = next }
+  const span = group => {
+    const newest = group.items[0].at, oldest = group.items.at(-1).at
+    try { return `${formatDateTime(oldest)} – ${formatDateTime(newest, { date: false })}` } catch { return oldest }
+  }
   let undoing = $state('')
   async function undoBatch(batch) {
     undoing = batch; error = ''
@@ -92,6 +102,36 @@
     <span class="avatar history-avatar" aria-hidden="true">{#if who.image}<img src={who.image} alt="" loading="lazy" referrerpolicy="no-referrer" />{:else}{initial(who.name)}{/if}</span>
     <span class="history-name">{who.name}{#if who.mine}<small>{t('history.reviewer.you')}</small>{/if}</span>
   </span>
+{/snippet}
+
+{#snippet entries(list)}
+      {#each list as row (row.id)}
+        {#if row.batch && row.items.length > 1}
+          {@const item = row.items[0]}
+          <li class="history-batch">
+            <div class="history-row">
+              <span class="history-time">{when(item.at)}</span>
+              {@render reviewer(item)}
+              <span class="history-label">{@render label(item.character ?? item.label)}</span>
+              <span class="history-decision"><ScriptLine line={withText('history.batch', 'character', { count: row.items.length, character: item.character ?? item.label ?? '' })} />
+                <span class="history-batch-labels">{#each row.items.map(entry => entry.label).filter(Boolean).slice(0, 12) as text, i (i)}{#if i}{' '}{/if}<ScriptText {text} />{/each}</span></span>
+              {#if item.reviewer?.mine}<button class="quiet-link" disabled={undoing === row.batch} onclick={() => undoBatch(row.batch)}>{t('history.batch.undo')}</button>{/if}
+            </div>
+          </li>
+        {:else}
+          {#each row.items as item (item.id)}
+            <li>
+              <button class="history-row" class:undo={item.kind === 'undo'} onclick={() => inspect(item.target)}
+                      aria-label={t('history.row.inspect', { label: item.label ?? item.target })}>
+                <span class="history-time">{when(item.at)}</span>
+                {@render reviewer(item)}
+                <span class="history-label">{@render label(item.label)}</span>
+                <span class="history-decision"><ScriptLine line={decisionText(item)} /></span>
+              </button>
+            </li>
+          {/each}
+        {/if}
+      {/each}
 {/snippet}
 
 <section class="explore history">
@@ -119,32 +159,20 @@
     <div class="empty"><span class="empty-mark">∅</span><h2>{t('history.empty')}</h2></div>
   {:else}
     <ul class="history-list">
-      {#each rows as row (row.id)}
-        {#if row.batch && row.items.length > 1}
-          {@const item = row.items[0]}
-          <li class="history-batch">
-            <div class="history-row">
-              <span class="history-time">{when(item.at)}</span>
-              {@render reviewer(item)}
-              <span class="history-label">{@render label(item.character ?? item.label)}</span>
-              <span class="history-decision"><ScriptLine line={withText('history.batch', 'character', { count: row.items.length, character: item.character ?? item.label ?? '' })} />
-                <span class="history-batch-labels">{#each row.items.map(entry => entry.label).filter(Boolean).slice(0, 12) as text, i (i)}{#if i}{' '}{/if}<ScriptText {text} />{/each}</span></span>
-              {#if item.reviewer?.mine}<button class="quiet-link" disabled={undoing === row.batch} onclick={() => undoBatch(row.batch)}>{t('history.batch.undo')}</button>{/if}
-            </div>
+      {#each groups as group (group.id)}
+        {#if group.items.length >= RUN}
+          {@const first = group.items[0]}
+          <li class="history-group" class:open={open.has(group.id)}>
+            <button class="history-row history-group-head" aria-expanded={open.has(group.id)} onclick={() => toggle(group.id)}>
+              <span class="history-time">{span(group)}</span>
+              {@render reviewer(first)}
+              <span class="history-group-count">{t('history.group.count', { count: group.items.length })}</span>
+              <span class="history-decision history-group-labels">{#each group.items.map(entry => entry.character ?? entry.label).filter(Boolean).slice(0, 40) as text, i (i)}{#if i}{' '}{/if}<ScriptText {text} />{/each}</span>
+              <span class="history-group-toggle" aria-hidden="true">{open.has(group.id) ? '−' : '+'}</span>
+            </button>
+            {#if open.has(group.id)}<ul class="history-group-rows">{@render entries(group.rows)}</ul>{/if}
           </li>
-        {:else}
-          {#each row.items as item (item.id)}
-            <li>
-              <button class="history-row" class:undo={item.kind === 'undo'} onclick={() => inspect(item.target)}
-                      aria-label={t('history.row.inspect', { label: item.label ?? item.target })}>
-                <span class="history-time">{when(item.at)}</span>
-                {@render reviewer(item)}
-                <span class="history-label">{@render label(item.label)}</span>
-                <span class="history-decision"><ScriptLine line={decisionText(item)} /></span>
-              </button>
-            </li>
-          {/each}
-        {/if}
+        {:else}{@render entries(group.rows)}{/if}
       {/each}
     </ul>
     <div class="load-more-row" use:watchEnd>
@@ -181,6 +209,13 @@
   .history-by-user .history-name { display: none; }
   .history-label { flex: 0 0 40px; font-size: 20px; text-align: center; }
   .history-decision { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .history-group-head { font-weight: 500; }
+  .history-group-count { flex: 0 0 auto; color: var(--ink); }
+  .history-group-labels { color: var(--muted); font-weight: 400; }
+  .history-group-toggle { flex: 0 0 18px; text-align: center; color: var(--muted); font-size: 16px; }
+  .history-group.open > .history-group-head { background: var(--surface-tile); }
+  .history-group-rows { list-style: none; margin: 0; padding: 0 0 0 18px; border-top: 1px solid var(--line); background: var(--surface-subtle); }
+  .history-group-rows li:last-child { border-bottom: 0; }
   .load-more-row { display: flex; justify-content: center; padding: 22px 0; }
   @media (max-width: 700px) {
     .history-time { flex-basis: 90px; }
