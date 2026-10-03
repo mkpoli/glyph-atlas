@@ -44,9 +44,10 @@ export function formNames(form) {
   return (form?.values ?? []).filter(value => value.text).map(value => value.text)
 }
 
-/** The form a crop is shown as now: the form the site holds for it (the first, when people disagree),
- *  or the character it is written as. */
-export const formOf = crop => formNames(crop?.form)[0] ?? crop?.written_character ?? crop?.label ?? ''
+/** The form a crop is shown as now: the form the site holds for it, or the character it is written
+ *  as; none while people disagree, so that any form chosen is a claim. */
+export const formOf = crop => crop?.form?.status === 'disputed' ? ''
+  : formNames(crop?.form)[0] ?? crop?.written_character ?? crop?.label ?? ''
 
 const corpusOf = crop => crop.origin === 'corpus'
 const reread = async crop => {
