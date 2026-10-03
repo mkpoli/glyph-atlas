@@ -91,8 +91,9 @@ def test_document_carries_the_rights_of_the_source_file(tmp_path, cache, archive
     assert document.origin == "japan"
     assert document.text_register is Register.WABUN
     assert document.source_refs == {"codh-kokatsuji": "001", "ndl-pid": "2544701"}
-    assert [(d.literal, d.start, d.end, d.kind) for d in document.dating] == [
-        ("慶長・元和年間", 1596, 1624, "publication"),
+    assert [(d.literal, d.start, d.end, d.kind, d.evidence) for d in document.dating] == [
+        ("[慶長・元和年間]", 1596, 1624, "publication",
+         "https://dl.ndl.go.jp/api/iiif/2544701/manifest.json#metadata=Publication Date"),
     ]
     assert document.image_rights.licence.value == "CC-BY-4.0"
     assert document.image_rights.attribution == source["attribution"]

@@ -69,10 +69,13 @@ AUTHOR = "吉田兼好"
 HOLDER = "国立国会図書館"
 NDL_PID = "2544701"
 NDL_URL = f"https://dl.ndl.go.jp/pid/{NDL_PID}"
-#: 慶長 1596–1615 and 元和 1615–1624, the years the NDL item is dated to.
-DATING_LITERAL = "慶長・元和年間"
+#: The NDL item's date as its IIIF manifest states it (`Publication Date`, read 2026-10-03), and the
+#: years of 慶長 (1596–1615) and 元和 (1615–1624) as HuTime gives them.
+NDL_MANIFEST = f"https://dl.ndl.go.jp/api/iiif/{NDL_PID}/manifest.json"
+DATING_LITERAL = "[慶長・元和年間]"
 DATING_START = 1596
 DATING_END = 1624
+DATING_EVIDENCE = f"{NDL_MANIFEST}#metadata=Publication Date"
 
 CSV_NAME = "dataset.csv"
 PAGE_DIR = "page"
@@ -266,7 +269,8 @@ def document_of(record_rights: Rights) -> Document:
         holder=HOLDER,
         production="printed/type",
         text_register=Register.WABUN,
-        dating=[Dating(literal=DATING_LITERAL, start=DATING_START, end=DATING_END, kind="publication")],
+        dating=[Dating(literal=DATING_LITERAL, start=DATING_START, end=DATING_END, kind="publication",
+                       evidence=DATING_EVIDENCE)],
         image_rights=record_rights,
         text_rights=record_rights,
         meta={"author": AUTHOR, "ndl_url": NDL_URL},
