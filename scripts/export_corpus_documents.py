@@ -95,7 +95,7 @@ def main() -> None:
     (args.output / "sql").mkdir(exist_ok=True)
     for old in (args.output / "sql").glob("*.sql"):
         old.unlink()
-    # The last part writes how many glyphs each document has (0053) and stamps `corpus_documents_at`,
+    # The last part writes how many glyphs each document has (0054) and stamps `corpus_documents_at`,
     # which the Worker keeps its date counts by.
     found_statements = statements(runs) + counts(found) + [
         "INSERT OR REPLACE INTO metadata(key,value) VALUES('corpus_documents_at',json_quote(strftime('%Y-%m-%dT%H:%M:%fZ','now')));\n"]

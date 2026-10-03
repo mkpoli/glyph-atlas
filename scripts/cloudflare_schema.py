@@ -68,7 +68,7 @@ def corpus_upsert(values) -> str:
 
 
 def document_count_statements(db) -> list[str]:
-    """The glyph count of each document a corpus publication holds (0053), replacing the one D1 has.
+    """The glyph count of each document a corpus publication holds (0054), replacing the one D1 has.
     A document is published whole by one export, so its count here is its count on the site."""
     rows = [f"('{document.replace("'", "''")}',{n})" for document, n in db.execute(
         "SELECT document,count(*) FROM corpus_units WHERE document IS NOT NULL GROUP BY document ORDER BY document")]
