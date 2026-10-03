@@ -857,5 +857,5 @@
   "progress.dates.kind.produced": "所藏機關ノ年代",
   "progress.dates.kind.other": "其ノ他",
   "progress.dates.kind.composed": "成立",
-  "progress.dates.note": "典籍ハ、其ノ寫本・刊本ノ年代ノ始マル年ニ數フ。字形ハ其ノ典籍ニ從フ。"
+  "progress.dates.note": "典籍ハ、其ノ寫本・刊本ノ年代ノ示ス最初ノ年ニ數ヘ、「某年以前」トノミアルモノハ其ノ年ニ數フ。字形ハ其ノ典籍ニ從フ。時代ノ名ノミニテ年代ヲ記スモノハ、種類ニハ數フレドモ年ニハ數ヘズ。"
 }

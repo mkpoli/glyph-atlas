@@ -841,5 +841,5 @@
   "progress.dates.kind.produced": "所藏 機關의 年代",
   "progress.dates.kind.other": "其他",
   "progress.dates.kind.composed": "成立",
-  "progress.dates.note": "典籍은 그 寫本·刊本의 年代가 始作되는 해에 센다. 字形은 그 典籍을 따른다."
+  "progress.dates.note": "典籍은 그 寫本·刊本의 年代가 보이는 첫해에 세고, ‘어느 해 以前’으로만 적힌 것은 그해에 센다. 字形은 그 典籍을 따른다. 時代 이름으로만 年代를 적은 것은 種類에는 세지만 年度에는 세지 않는다."
 }

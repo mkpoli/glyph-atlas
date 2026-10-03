@@ -841,5 +841,5 @@
   "progress.dates.kind.produced": "소장 기관의 연대",
   "progress.dates.kind.other": "기타",
   "progress.dates.kind.composed": "성립",
-  "progress.dates.note": "전적은 그 사본·간본의 연대가 시작되는 해에 센다. 자형은 그 전적을 따른다."
+  "progress.dates.note": "전적은 그 사본·간본의 연대가 보이는 첫해에 세고, ‘어느 해 이전’으로만 적힌 것은 그해에 센다. 자형은 그 전적을 따른다. 시대 이름으로만 연대를 적은 것은 종류에는 세지만 연도에는 세지 않는다."
 }

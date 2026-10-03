@@ -13,13 +13,20 @@
   })
   const at = $derived(measure === 'crops' ? 1 : 2)
   const percent = (part, whole) => whole ? Math.round(part / whole * 100) : 0
-  const hundreds = $derived(stats?.hundreds ?? [])
+  // Every hundred years from the first dated to the last, an empty one as a gap.
+  const hundreds = $derived.by(() => {
+    const found = new Map((stats?.hundreds ?? []).map(row => [row[0], row]))
+    if (!found.size) return []
+    const starts = [...found.keys()], first = Math.min(...starts), last = Math.max(...starts)
+    return Array.from({ length: (last - first) / 100 + 1 }, (_, i) => found.get(first + i * 100) ?? [first + i * 100, 0, 0])
+  })
   const most = $derived(Math.max(1, ...hundreds.map(row => row[at])))
   // The decades on one line to scale, from the first hundred years with a date to the last.
   const from = $derived(hundreds.length ? hundreds[0][0] : 0), to = $derived(hundreds.length ? hundreds.at(-1)[0] + 100 : 0)
   const decadeMost = $derived(Math.max(1, ...(stats?.decades ?? []).map(row => row[at])))
   const share = year => (year - from) / Math.max(1, to - from) * 100
   const kindMost = $derived(Math.max(1, ...(stats?.kinds ?? []).map(row => row[at])))
+  const kinds = $derived([...(stats?.kinds ?? [])].sort((a, b) => b[at] - a[at]))
   const step = $derived(Math.max(1, Math.ceil(hundreds.length / 6)))
 </script>
 
@@ -32,7 +39,7 @@
         <button class:active={measure === 'works'} aria-pressed={measure === 'works'} onclick={() => measure = 'works'}>{t('progress.dates.works')}</button>
       </div>
     </div>
-    <div class="share" role="img" aria-label={t('progress.dates.share', { crops: percent(stats.dated.crops, stats.total.crops), works: percent(stats.dated.works, stats.total.works) })}>
+    <div class="share" aria-hidden="true">
       <span style:width="{percent(stats.dated[measure], stats.total[measure])}%"></span>
     </div>
     <p class="share-text">{t('progress.dates.share', { crops: percent(stats.dated.crops, stats.total.crops), works: percent(stats.dated.works, stats.total.works) })}</p>
@@ -43,8 +50,12 @@
     </dl>
 
     {#if hundreds.length}
-      <h4>{t('progress.dates.hundreds')}</h4>
-      <div class="hundreds">
+      <h4 id="date-hundreds">{t('progress.dates.hundreds')}</h4>
+      <!-- The charts are drawn for the eye; the same numbers are a table for a screen reader. -->
+      <table class="visually-hidden" aria-labelledby="date-hundreds">
+        <tbody>{#each hundreds as row (row[0])}<tr><th scope="row">{formatYear(row[0])}–{formatYear(row[0] + 99)}</th><td>{formatNumber(row[at])}</td></tr>{/each}</tbody>
+      </table>
+      <div class="hundreds" aria-hidden="true">
         {#each hundreds as row (row[0])}
           <div class="column" title={`${formatYear(row[0])}–${formatYear(row[0] + 99)}: ${formatNumber(row[at])}`}>
             <span class="value">{row[at] === most ? formatNumber(row[at]) : ""}</span>
@@ -56,7 +67,7 @@
         {#each hundreds as row, i (row[0])}<span>{i % step === 0 ? formatYear(row[0]) : ''}</span>{/each}
       </div>
       <h4>{t('progress.dates.decades')}</h4>
-      <div class="decades" role="img" aria-label={t('progress.dates.decades')}>
+      <div class="decades" aria-hidden="true">
         {#each stats.decades as row (row[0])}<span style:left="{share(row[0])}%" style:width="{share(from + 10)}%" style:height="{Math.max(1, Math.sqrt(row[at] / decadeMost) * 28)}px"
           title={`${t('date.decade', { year: formatYear(row[0]) })}: ${formatNumber(row[at])}`}></span>{/each}
       </div>
@@ -66,7 +77,7 @@
     {#if stats.kinds.length}
       <h4>{t('progress.dates.kinds')}</h4>
       <dl class="kinds">
-        {#each stats.kinds as row (row[0])}
+        {#each kinds as row (row[0])}
           <div><dt>{t(`progress.dates.kind.${row[0]}`)}</dt><dd><span class="kind-bar" style:width="{row[at] / kindMost * 100}%"></span><b>{formatNumber(row[at])}</b></dd></div>
         {/each}
       </dl>

@@ -842,5 +842,5 @@
   "progress.dates.kind.produced": "Niên đại nơi lưu giữ ghi",
   "progress.dates.kind.other": "Khác",
   "progress.dates.kind.composed": "Soạn",
-  "progress.dates.note": "Mỗi sách được tính vào năm mà niên đại của bản bắt đầu; tự hình theo sách của nó."
+  "progress.dates.note": "Mỗi sách được tính vào năm đầu mà niên đại của bản ghi; nếu niên đại chỉ ghi trước một năm, tính vào năm đó. Tự hình theo sách của nó. Bản chỉ ghi tên một khoảng thời gian được tính vào loại nhưng không vào năm."
 }

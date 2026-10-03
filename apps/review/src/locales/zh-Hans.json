@@ -860,5 +860,5 @@
   "progress.dates.kind.produced": "收藏机构所记年代",
   "progress.dates.kind.other": "其他",
   "progress.dates.kind.composed": "成书",
-  "progress.dates.note": "典籍按其抄本或刊本年代开始之年计入；字形随其典籍。"
+  "progress.dates.note": "典籍按其抄本或刊本年代所记最早一年计入，只记“某年以前”的计入该年；字形随其典籍。只以时代名记年代的，计入种类而不计入年份。"
 }
