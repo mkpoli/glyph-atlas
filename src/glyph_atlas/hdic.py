@@ -27,7 +27,9 @@ character Unicode lacks, and `■` is one nobody could read.
    repetition mark (`is_mark`). Where the gloss is as large as the headwords, every character is
    kept and a headword is told by its place, the head of its tier (`Layout.heads`).
 2. The right page is anchored on the frame's rightmost column of headwords and the left page on
-   its leftmost, since the gutter between them may be as narrow as a column or several wide. `fit`
+   its leftmost, since the gutter between them may be as narrow as a column or several wide. An outer
+   column with too few headwords to be seen leaves the grid one column in; `place` also tries the
+   grid moved one column outward and keeps whichever the readers, or HDIC's counts, bear out. `fit`
    finds each page's column pitch, and for a tiered layout the tiers over its headwords' tops, their
    pitch held to `Layout.tier_pitch` times the column pitch. A grid stands only when enough of its columns
    (`Layout.held`) and every tier line hold headwords. A layout of one tier takes each column whole.
@@ -43,7 +45,8 @@ its place admits no doubt: every written glyph of the cell sits on its own headw
 left over, and another glyph of the cell was read where it was placed or the cell's first box stands
 at the tier line; or the glyph is the cell's first headword character on the cell's first box, at
 the tier line; or the glyphs before and after it in the cell were both read, on the boxes either
-side of its own. On a page whose tiers open with seal forms, a tier where none was seen keeps only
+side of its own. Any of these needs the page's grid borne out by the readers: `PAGE_READ` glyphs
+read where they stand and at most half as many refused. On a page whose tiers open with seal forms, a tier where none was seen keeps only
 a head the classifier reads. A pair the classifier refuses is left out, and a page on which more than
 `REFUSED_SHARE` of the judged pairs are refused is left out whole, since that is how a misfitted grid
 looks. The caller tries a frame's pages on its two grids, one page to a grid (`assign_pages`).
@@ -393,6 +396,8 @@ class Grid:
     pitch: float
     tiers: tuple[float, ...]
     tier_pitch: float
+    #: Which way the page's outer column lies, in `shifted`'s sense: -1 right, +1 left.
+    outward: int = 0
 
     def holds(self, box: Box) -> bool:
         """Whether a box's centre falls inside the page's columns."""
@@ -461,7 +466,7 @@ def page_grids(boxes: Sequence[Box], unit: float, layout: Layout) -> dict[str, G
         if layout.tiers == 1:
             # `cell_boxes` opens a cell a quarter of its height above the tier line.
             top, bottom = min(b.y for b in inside) - unit, max(b.y + b.h for b in inside) + unit
-            grids[name] = Grid(tuple(columns), pitch, (top + 0.25 * (bottom - top),), bottom - top)
+            grids[name] = Grid(tuple(columns), pitch, (top + 0.25 * (bottom - top),), bottom - top, direction)
             continue
         tops = entry_tops(inside, columns, pitch, unit) if layout.heads == "tier" else [b.y for b in inside]
         low, high = layout.tier_pitch
@@ -471,7 +476,7 @@ def page_grids(boxes: Sequence[Box], unit: float, layout: Layout) -> dict[str, G
         tiers = [top + k * tier_pitch for k in range(layout.tiers)]
         if any(sum(1 for y in tops if abs(y - t) < 0.1 * tier_pitch) < TIER_HELD for t in tiers):
             continue
-        grids[name] = Grid(tuple(columns), pitch, tuple(tiers), tier_pitch)
+        grids[name] = Grid(tuple(columns), pitch, tuple(tiers), tier_pitch, direction)
     return grids
 
 
@@ -578,6 +583,36 @@ def align_cell(glyphs: Sequence[Glyph], boxes: Sequence[Box], verdicts: Callable
     return pairs[::-1]
 
 
+def shifted(grid: Grid, k: int) -> Grid:
+    """The grid moved `k` columns toward the left (line 1 onto the old line 1 + k)."""
+    return Grid(tuple(c - k * grid.pitch for c in grid.columns), grid.pitch, grid.tiers, grid.tier_pitch, grid.outward)
+
+
+#: Least lead, in read glyphs or in miscounted headwords, for one of two grids to win over the other.
+SHIFT_MARGIN = 2
+#: Least number of a page's glyphs read where they stand, with at most half as many refused, before a
+#: glyph no reader can judge is kept there on its place in the grid.
+PAGE_READ = 3
+#: Least number of headword candidates the column beyond a page's outer one holds for the page to be
+#: tried there: a ruler, a folio number or a label in the margin holds fewer.
+OUTER_HELD = 2
+
+
+def misfit(entries: Sequence[Entry], boxes: Sequence[Box], grid: Grid, unit: float, layout: Layout) -> tuple[int, int]:
+    """How far a grid's candidate counts are from HDIC's, over the cells HDIC fills, and how many columns it fills."""
+    heads = [b for b in boxes if grid.holds(b) and is_big(b, unit)]
+    headword = ((float(np.median([min(b.w, b.h) for b in heads])), float(np.median([max(b.w, b.h) for b in heads])))
+                if heads else (0.0, 0.0))
+    expected: dict[tuple[int, int], int] = {}
+    for entry in entries:
+        if entry.line <= len(grid.columns) and entry.segment <= len(grid.tiers):
+            cell = (entry.line, entry.segment)
+            expected[cell] = expected.get(cell, 0) + sum(1 for g in entry.glyphs if g.text != MARK)
+    found = {cell: sum(1 for b in cell_boxes(boxes, grid, *cell, unit, layout, headword) if not is_mark(b, unit))
+             for cell in expected}
+    return sum(abs(n - found[cell]) for cell, n in expected.items() if n), len({line for (line, _), n in expected.items() if n})
+
+
 def place(entries: Sequence[Entry], boxes: Sequence[Box], grid: Grid, unit: float,
           rank: Callable[[Box], list[str]], known: set[str], layout: Layout,
           second: Callable[[Box], str | None] | None = None) -> Placement:
@@ -586,7 +621,51 @@ def place(entries: Sequence[Entry], boxes: Sequence[Box], grid: Grid, unit: floa
     `rank(box)` is the classifier's five best classes for a box, `known` all its classes. `second(box)`,
     when given, is another reader's text for the box: a glyph it reads as written, or as its standard
     form, counts as read there. It only ever confirms; its reading something else refuses nothing.
+
+    A page's grid is anchored on its outer column, and an outer column with too few headwords to be
+    seen leaves the grid one column in. When the column beyond the outer one holds `OUTER_HELD`
+    candidates, the page is placed on the grid moved there too, and the placements are weighed: the one
+    with `SHIFT_MARGIN` more glyphs read where they stand, less those refused; else, on a page HDIC
+    fills at least half the columns of, the one that misses HDIC's headword counts by `SHIFT_MARGIN`
+    fewer. Failing both, the page keeps nothing: no evidence says which column a headword stands in.
     """
+    fitted = _place(entries, boxes, grid, unit, rank, known, layout, second)
+    if not grid.outward:
+        return fitted
+    outer = shifted(grid, grid.outward)
+    edge = 1 if grid.outward < 0 else len(grid.columns)
+    beyond = sum(1 for segment in range(1, len(grid.tiers) + 1)
+                 for b in cell_boxes(boxes, outer, edge, segment, unit, layout) if not is_mark(b, unit))
+    if beyond < OUTER_HELD:
+        return fitted
+    moved = _place(entries, boxes, outer, unit, rank, known, layout, second)
+
+    def evidence(placement: Placement) -> int:
+        return sum(1 for p in placement.pairs if p.verdict) - sum(1 for p in placement.pairs if p.verdict is False)
+
+    choice: Placement | None = None
+    if abs(evidence(moved) - evidence(fitted)) >= SHIFT_MARGIN:
+        choice = moved if evidence(moved) > evidence(fitted) else fitted
+    else:
+        (here, filled), (there, _) = misfit(entries, boxes, grid, unit, layout), misfit(entries, boxes, outer, unit, layout)
+        if filled * 2 >= len(grid.columns) and abs(here - there) >= SHIFT_MARGIN:
+            choice = moved if there < here else fitted
+    if choice is None:
+        # Either grid fits as well: nothing on the page says which column a headword stands in.
+        fitted.count("column-ambiguous")
+        fitted.count("dropped-with-page", fitted.counts.pop("kept", 0))
+        for pair in fitted.pairs:
+            pair.kept = False
+        return fitted
+    if choice is moved and moved.counts.get("kept"):
+        moved.count("column-shifted")
+    return choice
+
+
+def _place(entries: Sequence[Entry], boxes: Sequence[Box], grid: Grid, unit: float,
+           rank: Callable[[Box], list[str]], known: set[str], layout: Layout,
+           second: Callable[[Box], str | None] | None) -> Placement:
+    """`place` on one grid."""
     result = Placement()
     cells: dict[tuple[int, int], list[Entry]] = {}
     for entry in entries:
@@ -655,6 +734,16 @@ def place(entries: Sequence[Entry], boxes: Sequence[Box], grid: Grid, unit: floa
             result.count("kept" if pair.kept else "refused" if pair.verdict is False else "unanchored")
         result.count("unpaired", len(written) - len(pairs))
         result.pairs += pairs
+    read = sum(1 for p in result.pairs if p.verdict)
+    refused = sum(1 for p in result.pairs if p.verdict is False)
+    if read < PAGE_READ or 2 * refused > read:
+        # Nothing on the page bears the grid out: a glyph no reader judged stands only on the grid.
+        unjudged = [p for p in result.pairs if p.kept and p.verdict is None]
+        for pair in unjudged:
+            pair.kept = False
+        if unjudged:
+            result.count("unconfirmed-page", len(unjudged))
+            result.counts["kept"] = result.counts.get("kept", 0) - len(unjudged)
     judged_pairs = [p for p in result.pairs if p.verdict is not None]
     if judged_pairs and sum(1 for p in judged_pairs if p.verdict is False) > REFUSED_SHARE * len(judged_pairs):
         result.count("page-refused")

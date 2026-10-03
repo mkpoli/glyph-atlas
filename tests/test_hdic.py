@@ -124,8 +124,8 @@ def test_a_page_grid_is_anchored_on_its_outer_columns() -> None:
 def test_headwords_are_kept_where_the_classifier_reads_them() -> None:
     boxes = page(COLUMNS, TIERS)
     grid = hdic.page_grids(boxes, UNIT, KRM)["right"]
-    labels = {(1, 1): "仿", (1, 2): "像", (2, 1): "傮"}
-    entries = [entry("F1", 1, 1, 0, "仿"), entry("F2", 1, 2, 0, "像"), entry("F3", 2, 1, 0, "傮")]
+    labels = {(1, 1): "仿", (1, 2): "像", (2, 1): "傮", (3, 1): "人"}
+    entries = [entry("F1", 1, 1, 0, "仿"), entry("F2", 1, 2, 0, "像"), entry("F3", 2, 1, 0, "傮"), entry("F4", 3, 1, 0, "人")]
 
     def rank(box: Box) -> list[str]:
         for (line, seg), char in labels.items():
@@ -134,9 +134,10 @@ def test_headwords_are_kept_where_the_classifier_reads_them() -> None:
                 return [code(char)] if char != "傮" else [code("僧")]
         return [code("ノ")]
 
-    result = hdic.place(entries, boxes, grid, UNIT, rank, known={code("仿"), code("像"), code("僧"), code("ノ")}, layout=KRM)
+    result = hdic.place(entries, boxes, grid, UNIT, rank, known={code("仿"), code("像"), code("僧"), code("人"), code("ノ")},
+                        layout=KRM)
     kept = {p.entry.entry_id: p for p in result.pairs if p.kept}
-    assert set(kept) == {"F1", "F2", "F3"}
+    assert set(kept) == {"F1", "F2", "F3", "F4"}
     assert kept["F1"].verdict is True and kept["F3"].verdict is None  # 傮: no class, anchored at the tier line
     assert (kept["F2"].box.x, kept["F2"].box.y) == (COLUMNS[0] - 80, TIERS[1])
 
@@ -232,7 +233,8 @@ def column_entries(*glyphs: str) -> list[hdic.Entry]:
     return [entry(f"E{k}", 1, 1, k, g) for k, g in enumerate(glyphs)]
 
 
-def test_an_unjudged_headword_between_two_read_ones_is_kept() -> None:
+def test_an_unjudged_headword_between_two_read_ones_is_kept(monkeypatch) -> None:
+    monkeypatch.setattr(hdic, "PAGE_READ", 0)  # about the cells and the grid, not the page's confirmation
     boxes, columns = running_page()
     boxes.append(headword_box(columns[0], 2850))  # a large character in the last gloss
     grid = hdic.page_grids(boxes, UNIT, TSJ)["right"]
@@ -297,7 +299,8 @@ def test_a_neighbour_vouches_only_for_the_glyph_next_to_it() -> None:
     assert kept == {"天", "地"}
 
 
-def test_only_a_headword_box_anchors_a_cell_at_its_tier_line() -> None:
+def test_only_a_headword_box_anchors_a_cell_at_its_tier_line(monkeypatch) -> None:
+    monkeypatch.setattr(hdic, "PAGE_READ", 0)  # about the cells and the grid, not the page's confirmation
     grid = hdic.Grid(columns=(1000.0,), pitch=250.0, tiers=(500.0,), tier_pitch=800.0)
     gloss_below = [Box(x=970, y=1050 + 90 * k, w=60, h=70) for k in range(3)]
 
@@ -337,3 +340,95 @@ def test_a_second_seal_form_of_an_entry_keeps_its_own_id(tmp_path: Path) -> None
     seals = hdic.read_ktb_seals(tmp_path)
     assert [(s.seal_id, s.entry_id, s.frame, s.entry) for s in seals] == [
         ("1_016_B31", "1_016_B31", 19, "祉"), ("1_016_B31_2", "1_016_B31", 19, "祉")]
+
+
+def left_page() -> tuple[list[Box], list[float]]:
+    """A left page of eight columns whose last column (line 8) holds only two headwords."""
+    boxes, columns = running_page()
+    boxes = [b for b in boxes if not (abs(b.x + b.w / 2 - columns[-1]) < 1 and b.y >= 1800)]
+    return boxes, columns
+
+
+def column_counts(columns: list[float]) -> list[hdic.Entry]:
+    """HDIC's headwords for the page: four in each of lines 1 to 7, two in line 8, none of them classed."""
+    return ([entry(f"L{line}-{k}", line, 1, k, "傮") for line in range(1, 8) for k in range(4)]
+            + [entry(f"L8-{k}", 8, 1, k, "傮") for k in range(2)])
+
+
+def test_a_grid_anchored_one_column_in_is_moved_outward(monkeypatch) -> None:
+    monkeypatch.setattr(hdic, "PAGE_READ", 0)  # about the cells and the grid, not the page's confirmation
+    boxes, columns = left_page()
+    # Anchored on line 7, the grid sits one column to the right of the page's own.
+    fitted = hdic.Grid(tuple(c + 250 for c in columns), 250.0, (500.0,), 3200.0, outward=1)
+    result = hdic.place(column_counts(columns), boxes, fitted, UNIT, lambda b: [code("ノ")], {code("ノ")}, TSJ)
+    assert result.counts.get("column-shifted") == 1
+    assert {p.box.x + p.box.w // 2 for p in result.pairs if p.entry.line == 8} == {int(columns[-1])}
+
+
+def test_a_well_fitted_grid_stays_where_it_is() -> None:
+    boxes, columns = left_page()
+    grid = hdic.Grid(tuple(columns), 250.0, (500.0,), 3200.0, outward=1)
+    result = hdic.place(column_counts(columns), boxes, grid, UNIT, lambda b: [code("ノ")], {code("ノ")}, TSJ)
+    assert "column-shifted" not in result.counts  # nothing lies beyond line 8
+
+
+def test_counts_alone_do_not_move_a_grid_over_a_page_hdic_barely_fills() -> None:
+    boxes, columns = running_page()
+    boxes.append(headword_box(columns[0], 2850))
+    boxes += [headword_box(columns[0] + 250, 400 + 700 * k) for k in range(4)]  # a column beyond line 1
+    grid = hdic.Grid(tuple(columns), 250.0, (500.0,), 3200.0, outward=-1)
+    result = hdic.place(column_entries("傮", "傮", "傮", "傮"), boxes, grid, UNIT, lambda b: [code("ノ")], {code("ノ")}, TSJ)
+    assert "column-shifted" not in result.counts
+
+
+def test_a_page_whose_column_nothing_settles_keeps_nothing() -> None:
+    boxes, columns = left_page()
+    fitted = hdic.Grid(tuple(c + 250 for c in columns), 250.0, (500.0,), 3200.0, outward=1)
+    # HDIC fills only lines 6 to 8, as on the first page of a volume after its table of contents.
+    entries = [e for e in column_counts(columns) if e.line >= 6]
+    result = hdic.place(entries, boxes, fitted, UNIT, lambda b: [code("ノ")], {code("ノ")}, TSJ)
+    assert result.counts.get("column-ambiguous") == 1
+    assert not [p for p in result.pairs if p.kept]
+
+
+def test_page_grids_point_outward_and_a_sparse_outer_column_is_recovered(monkeypatch) -> None:
+    monkeypatch.setattr(hdic, "PAGE_READ", 0)  # about the cells and the grid, not the page's confirmation
+    boxes, columns = running_page()
+    # The right page's own line 1 holds only two headwords, too few to anchor on.
+    boxes = [b for b in boxes if not (abs(b.x + b.w / 2 - columns[0]) < 1 and b.y >= 1800)]
+    grids = hdic.page_grids(boxes, UNIT, TSJ)
+    right = grids["right"]
+    assert right.outward == -1 and grids["left"].outward == 1
+    assert round(right.columns[0]) == columns[1]  # anchored one column in
+    entries = ([entry(f"L1-{k}", 1, 1, k, "傮") for k in range(2)]
+               + [entry(f"L{line}-{k}", line, 1, k, "傮") for line in range(2, 9) for k in range(4)])
+    result = hdic.place(entries, boxes, right, UNIT, lambda b: [code("ノ")], {code("ノ")}, TSJ)
+    assert result.counts.get("column-shifted") == 1
+    assert {p.box.x + p.box.w // 2 for p in result.pairs if p.entry.line == 1} == {columns[0]}
+
+
+def test_a_ruler_beyond_the_outer_column_does_not_unseat_a_page() -> None:
+    boxes, columns = running_page()
+    ruler = [Box(x=columns[0] + 230, y=400 + 300 * k, w=20, h=200) for k in range(8)]  # thin, tall: marks
+    grid = hdic.page_grids(boxes, UNIT, TSJ)["right"]
+    entries = [entry(f"L{line}-{k}", line, 1, k, "傮") for line in range(1, 4) for k in range(4)]
+    result = hdic.place(entries, boxes + ruler, grid, UNIT, lambda b: [code("ノ")], {code("ノ")}, TSJ)
+    assert "column-ambiguous" not in result.counts and "column-shifted" not in result.counts
+
+
+def test_a_glyph_no_reader_judges_is_kept_only_on_a_page_the_readers_bear_out() -> None:
+    boxes, columns = running_page()
+    grid = hdic.page_grids(boxes, UNIT, TSJ)["right"]
+
+    def kept(reads: int) -> list[str]:
+        read_at = {400 + 700 * k for k in range(reads)}
+
+        def rank(box: Box) -> list[str]:
+            return [code("天")] if box.x == columns[0] - 80 and box.y in read_at else [code("ノ")]
+
+        page = column_entries(*(["天"] * reads + ["傮"] * (4 - reads)))
+        result = hdic.place(page, boxes, grid, UNIT, rank, {code("天"), code("ノ")}, TSJ)
+        return [p.glyph.text for p in result.pairs if p.kept]
+
+    assert kept(2) == ["天", "天"]  # two reads: the unread pair stands on the grid alone
+    assert kept(3) == ["天", "天", "天", "傮"]
