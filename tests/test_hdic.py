@@ -385,3 +385,27 @@ def test_a_page_whose_column_nothing_settles_keeps_nothing() -> None:
     result = hdic.place(entries, boxes, fitted, UNIT, lambda b: [code("ノ")], {code("ノ")}, TSJ)
     assert result.counts.get("column-ambiguous") == 1
     assert not [p for p in result.pairs if p.kept]
+
+
+def test_page_grids_point_outward_and_a_sparse_outer_column_is_recovered() -> None:
+    boxes, columns = running_page()
+    # The right page's own line 1 holds only two headwords, too few to anchor on.
+    boxes = [b for b in boxes if not (abs(b.x + b.w / 2 - columns[0]) < 1 and b.y >= 1800)]
+    grids = hdic.page_grids(boxes, UNIT, TSJ)
+    right = grids["right"]
+    assert right.outward == -1 and grids["left"].outward == 1
+    assert round(right.columns[0]) == columns[1]  # anchored one column in
+    entries = ([entry(f"L1-{k}", 1, 1, k, "傮") for k in range(2)]
+               + [entry(f"L{line}-{k}", line, 1, k, "傮") for line in range(2, 9) for k in range(4)])
+    result = hdic.place(entries, boxes, right, UNIT, lambda b: [code("ノ")], {code("ノ")}, TSJ)
+    assert result.counts.get("column-shifted") == 1
+    assert {p.box.x + p.box.w // 2 for p in result.pairs if p.entry.line == 1} == {columns[0]}
+
+
+def test_a_ruler_beyond_the_outer_column_does_not_unseat_a_page() -> None:
+    boxes, columns = running_page()
+    ruler = [Box(x=columns[0] + 230, y=400 + 300 * k, w=20, h=200) for k in range(8)]  # thin, tall: marks
+    grid = hdic.page_grids(boxes, UNIT, TSJ)["right"]
+    entries = [entry(f"L{line}-{k}", line, 1, k, "傮") for line in range(1, 4) for k in range(4)]
+    result = hdic.place(entries, boxes + ruler, grid, UNIT, lambda b: [code("ノ")], {code("ノ")}, TSJ)
+    assert "column-ambiguous" not in result.counts and "column-shifted" not in result.counts
