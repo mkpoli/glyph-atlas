@@ -71,8 +71,8 @@ set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 cd "$(git -C "$here" rev-parse --show-toplevel)/apps/cloudflare"
 q() {{ bunx wrangler d1 execute glyph-atlas --remote --json --command "$1" 2>/dev/null | jq -c '.[0].results[0]'; }}
-[ "$(q "SELECT count(*) AS n FROM pragma_table_info('corpus_units') WHERE name='document'")" = '{{"n":1}}' ] \\
-  || {{ echo "apply migration 0053 first" >&2; exit 1; }}
+[ "$(q "SELECT (SELECT count(*) FROM pragma_table_info('corpus_units') WHERE name='document')+(SELECT count(*) FROM sqlite_master WHERE name='corpus_document_counts') AS n")" = '{{"n":2}}' ] \\
+  || {{ echo "apply migrations 0053 and 0054 first" >&2; exit 1; }}
 for part in "$here"/sql/part-*.sql; do
   done=0
   for try in 1 2 3 4; do
