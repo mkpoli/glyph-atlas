@@ -85,12 +85,12 @@ try {
 
   await click(reportedTile)
   await browser.waitFor(inspectorReady)
+  // A bad crop is redrawn in the view itself: its corner handle is dragged out.
   await click('dialog .issue-card[data-issue="crop"]')
-  await click('.adjust-crop')
-  await browser.waitFor('document.querySelector(".context-region img")?.naturalWidth > 0')
-  await browser.evaluate('document.querySelector(".context-region").scrollIntoView({block:"center"})')
-  const region = await browser.evaluate('(() => { const r=document.querySelector(".context-region").getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}; })()')
-  await browser.drag({x:region.x+region.w*.25,y:region.y+region.h*.25},{x:region.x+region.w*.65,y:region.y+region.h*.72})
+  await browser.waitFor('!!document.querySelector("dialog[open] .crop-mask.editing .handle.se")')
+  await browser.evaluate('document.querySelector("dialog[open] .crop-viewport").scrollIntoView({block:"center"})')
+  const corner = await browser.evaluate('(() => { const r=document.querySelector("dialog[open] .handle.se").getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}; })()')
+  await browser.drag(corner, { x: corner.x + 20, y: corner.y + 16 })
   assert(await browser.evaluate('document.querySelector(".crop-change") !== null'), 'dragging adjusts crop')
   assert(await browser.evaluate('document.querySelector(".save-character").innerText.includes("Save & close")'), 'a redrawn crop is saved, not reported')
   await click('.save-character')

@@ -15,7 +15,6 @@
   import { t } from '../lib/i18n.svelte.js'
   import { cropAddress, useInspector } from '../lib/inspector.svelte.js'
   import CropContext from './CropContext.svelte'
-  import Glyph from './Glyph.svelte'
   import { repairOf } from '../lib/cropDetails.js'
   import SimilarCrops from './SimilarCrops.svelte'
   import CropReview from './CropReview.svelte'
@@ -46,10 +45,10 @@
   // The character a reviewer chose for a wrong-character crop, and whether one was chosen: an
   // untouched crop writes no character.
   let written = $state(first?.label ?? ''), writtenDirty = $state(false)
-  let editingBox = $state(false), box = $state(null), contextElement = $state(null)
+  let editingBox = $state(false), box = $state(null)
   let suggestions = $state(null), suggesting = $state(false), loaded = $state(false), imageFailed = $state(false)
   let contextSuggestions = $state(null), contextSuggesting = $state(false)
-  let closed = false, generation = 0, submission = null, nearby = $state(null), suggestionsElement = $state(null)
+  let closed = false, generation = 0, submission = null, figure = $state(null), suggestionsElement = $state(null)
   // The character and the strokes around it come from one source image at one revision, so the
   // outline is the crop's own rectangle as a fraction of the context rectangle, both reported by
   // the server from the bounds it cut. A client-side adjustment replaces the rectangle.
@@ -65,8 +64,6 @@
     if (!b) return ''
     return `left:${100 * (b.x - c.x) / c.w}%;top:${100 * (b.y - c.y) / c.h}%;width:${100 * b.w / c.w}%;height:${100 * b.h / c.h}%`
   })() : '')
-  // The redrawn box in the page view's pixels, and the page view itself, for the crop box's preview.
-  const draft = $derived(drawn && data?.context_box && data.context_image ? { b: toSource(drawn), c: data.context_box } : null)
   // NDL reads lines, so a confident reading longer than one character hints at a merged crop.
   // Results stored before votes were recorded carry NDL's reading only among the candidates.
   const lineReading = $derived([...(suggestions?.votes || []), ...(suggestions?.candidates || [])].find(vote => vote.engine === 'NDLkotenOCR'))
@@ -78,7 +75,7 @@
     dialog?.scrollTo({ top: 0 })
     // The list's row stands in until the record arrives; nothing can be saved from it.
     data = preloaded ?? (preview?.id === target ? preview : null); fresh = Boolean(preloaded); asked = false
-    error = ''; form = null; issue = null; correction = null; noneSelected = false; box = null; drag = null; editingBox = false
+    error = ''; form = null; issue = null; correction = null; noneSelected = false; box = null; editingBox = false
     written = ''; writtenDirty = false
     contextSuggestions = null; contextSuggesting = false
     loaded = false; imageFailed = false; suggestions = null; suggesting = false; submission = null
@@ -125,7 +122,7 @@
   // ← and → step through the list, as the arrows in the header do; the crop view keeps its own arrows.
   function stepKey(event) {
     if (event.defaultPrevented || busy || event.metaKey || event.ctrlKey || event.altKey) return
-    if (event.target.closest?.('input, textarea, select, .crop-viewport, .character-search, .crop-adjustment')) return
+    if (event.target.closest?.('input, textarea, select, .crop-viewport, .character-search')) return
     if ([...document.querySelectorAll('dialog[open]')].at(-1) !== dialog) return
     if (event.key === 'ArrowLeft' && previous) { event.preventDefault(); previous() }
     else if (event.key === 'ArrowRight' && next) { event.preventDefault(); next() }
@@ -246,27 +243,19 @@
     changed?.(result.id, result)
     if (!closed && result.id === data?.id) data = result
   }
-  /** Leave the editor, keeping the box, with the focus on what follows it. */
+  /** Leave the editing, keeping the box, with the focus on what follows it. */
   async function endCrop() {
     editingBox = false
     await tick()
     ;(dialog?.querySelector('.crop-change button') ?? saveButton)?.focus({ preventScroll: true })
   }
+  // A bad crop is redrawn in the page view as it stands: nothing reframes or moves, and the view takes
+  // the keyboard so the arrows adjust the box at once.
   async function beginCrop() {
     editingBox = true
     await tick()
-    contextElement?.focus({ preventScroll: true })
-    // The stroke view sits under the crop, so adjusting means looking at it: bring it into view, and
-    // give it the keyboard so the arrows adjust the box at once.
-    nearby?.scrollIntoView({ block: 'nearest', behavior: 'instant' })
-  }
-  function point(e) {
-    // The pointer's place in the context view, as a page pixel: the view is the source rectangle, so
-    // its fraction is the fraction of the page rectangle the scale corresponds to.
-    const r = contextElement.getBoundingClientRect(), c = data.context_box
-    const fx = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width))
-    const fy = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height))
-    return { x: Math.round((c.x + fx * c.w) / scale[0]), y: Math.round((c.y + fy * c.h) / scale[1]) }
+    figure?.querySelector('.crop-viewport')?.focus({ preventScroll: true })
+    figure?.scrollIntoView({ block: 'nearest', behavior: 'instant' })
   }
   /** The crop's rectangle in page pixels: the one drawn here, else the one it was cut with. */
   function currentBox() {
@@ -282,50 +271,16 @@
     x = Math.round(Math.max(Math.ceil(limits.x), Math.min(x, right - 2))); y = Math.round(Math.max(Math.ceil(limits.y), Math.min(y, bottom - 2)))
     return { x, y, w: Math.round(Math.max(2, Math.min(w, Math.floor(right) - x))), h: Math.round(Math.max(2, Math.min(h, Math.floor(bottom) - y))) }
   }
-  // A drag on a handle resizes the box from that edge or corner, a drag inside it moves it, and a drag
-  // anywhere else draws a new one. `drag` holds where it began and the box it began from.
-  let drag = null
-  function down(e) {
-    if (!editingBox || !data.context_box || busy) return
-    e.preventDefault()
-    const at = point(e), from = currentBox(), edge = e.target.dataset?.edge
-    const inside = from && at.x >= from.x && at.x <= from.x + from.w && at.y >= from.y && at.y <= from.y + from.h
-    drag = { at, from, mode: edge ? 'resize' : inside ? 'move' : 'draw', edge }
-    contextElement.setPointerCapture(e.pointerId)
-  }
-  function move(e) {
-    if (!drag) return
-    // `point` answers in page pixels and so does the drag, so the new box is a page box; the outline
-    // converts it back to the view's pixels to draw it.
-    const end = point(e), { at, from, mode, edge } = drag, dx = end.x - at.x, dy = end.y - at.y
-    if (mode === 'draw') {
-      box = bounded({ x: Math.min(at.x, end.x), y: Math.min(at.y, end.y), w: Math.abs(end.x - at.x), h: Math.abs(end.y - at.y) })
-    } else if (mode === 'move') {
-      const limits = pageBounds()
-      box = bounded({ ...from, x: Math.min(from.x + dx, limits.x + limits.w - from.w), y: Math.min(from.y + dy, limits.y + limits.h - from.h) })
-    } else {
-      let { x, y, w, h } = from
-      const limits = pageBounds()
-      // A left or top edge stops at the page view's edge, so the opposite edge stays where it was.
-      if (edge.includes('w')) { x = Math.max(limits.x, Math.min(from.x + dx, from.x + from.w - 2)); w = from.x + from.w - x }
-      if (edge.includes('e')) w = from.w + dx
-      if (edge.includes('n')) { y = Math.max(limits.y, Math.min(from.y + dy, from.y + from.h - 2)); h = from.y + from.h - y }
-      if (edge.includes('s')) h = from.h + dy
-      box = bounded({ x, y, w, h })
+  /** A box the page view drew, in its source pixels, as the crop's page box inside the page view. */
+  function edited(source, mode = 'resize') {
+    if (!editingBox || busy) return
+    const next = { x: source.x / scale[0], y: source.y / scale[1], w: source.w / scale[0], h: source.h / scale[1] }
+    // A move stops at the page view's edge with its size kept; only a resize changes the size.
+    if (mode === 'move') {
+      const limits = pageBounds(), w = Math.round(next.w), h = Math.round(next.h)
+      next.x = Math.max(limits.x, Math.min(next.x, limits.x + limits.w - w)); next.y = Math.max(limits.y, Math.min(next.y, limits.y + limits.h - h))
     }
-  }
-  /** The arrows move the box a step, and with Shift they grow or shrink it from its right and bottom. */
-  function nudge(e) {
-    // Escape leaves the editor and keeps the box; it never closes the inspector from here.
-    if (e.key === 'Escape' && editingBox) { e.preventDefault(); e.stopPropagation(); endCrop(); return }
-    const dx = { ArrowLeft: -1, ArrowRight: 1 }[e.key] ?? 0, dy = { ArrowUp: -1, ArrowDown: 1 }[e.key] ?? 0
-    if (!editingBox || busy || (!dx && !dy)) return
-    e.preventDefault(); e.stopPropagation()
-    const from = currentBox(), step = Math.max(1, Math.round(pageBounds().w / 50))
-    box = e.shiftKey ? bounded({ ...from, w: from.w + dx * step, h: from.h + dy * step })
-      : (() => { const limits = pageBounds()
-          return bounded({ ...from, x: Math.max(limits.x, Math.min(from.x + dx * step, limits.x + limits.w - from.w)),
-            y: Math.max(limits.y, Math.min(from.y + dy * step, limits.y + limits.h - from.h)) }) })()
+    box = bounded(next)
   }
   /** The context rectangle in page pixels, which is what a drag is bounded by. */
   function pageBounds() {
@@ -337,42 +292,30 @@
 <svelte:window onkeydown={stepKey} />
 <dialog class="character-dialog" bind:this={dialog} open oncancel={close} onclick={e => { if (e.target === dialog) close() }} aria-label={t('character.dialog.label')}>
   <div class="inspector">
-    <header class="inspector-header"><div class="inspector-navigation"><span>{position}</span><button class="icon-button previous-character" aria-label={t('common.previousCharacter')} disabled={busy || !previous} onclick={() => previous?.()}>←</button><button class="icon-button next-character" aria-label={t('common.nextCharacter')} disabled={busy || !next} onclick={() => next?.()}>→</button><button class="icon-button close-inspector" aria-label={t('common.closeReviewer')} onclick={close}>×</button></div></header>
+    <header class="inspector-header">{#if data}<CopyId id={data.id} />{/if}<div class="inspector-navigation"><span>{position}</span><button class="icon-button previous-character" aria-label={t('common.previousCharacter')} disabled={busy || !previous} onclick={() => previous?.()}>←</button><button class="icon-button next-character" aria-label={t('common.nextCharacter')} disabled={busy || !next} onclick={() => next?.()}>→</button><button class="icon-button close-inspector" aria-label={t('common.closeReviewer')} onclick={close}>×</button></div></header>
     {#if replaced}<p class="replaced-note" role="status">{t('character.replaced')}</p>{/if}
     {#if error}<div class="error-message" role="alert">{error}<button disabled={busy} onclick={() => load(id)}>{t('character.reload')}</button></div>{/if}
     {#if data}
       <!-- The crop alone, in a box of one size for every crop, then the page around it further down. -->
-      <!-- While a new box is drawn, the crop box shows what it will cut: the page view clipped to it. -->
-      <figure class="crop-box">{#key data.image}<Glyph item={data} eager onload={() => { loaded = true; imageFailed = false }} onerror={() => imageFailed = true} />{/key}{#if draft}<svg class="crop-preview" viewBox={`${draft.b.x} ${draft.b.y} ${draft.b.w} ${draft.b.h}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={t('character.crop.adjusted')}><image href={data.context_image} x={draft.c.x} y={draft.c.y} width={draft.c.w} height={draft.c.h} preserveAspectRatio="none" /></svg>{/if}</figure>
-      <div class="inspector-right">
-        <div class="inspector-production">{#if productionLabel(data)}<ProductionBadge item={data} />{/if}<StyleField item={data} editable={!onVerdict} disabled={busy || !fresh} working={value => busy = value} saved={styled} /></div>
-        <div class="inspector-title"><CropTitle char={data.label} script={data.script} /><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{:else if repairOf(data)?.label === 'no-class'}<span class="repair-note" title={t('repair.reason.noClass')}>{t('repair.noClass')}</span>{/if}{#if data.box_pending}<span class="state-pill">{t('character.crop.pending')}</span>{:else if data.state === 'checked' || data.state === 'flagged'}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.state === 'checked' ? t('state.checked') : t('state.flagged')}</span>{/if}</div>
-        <CopyId id={data.id} />
-        {#snippet formBar()}{#if !onVerdict}<CropForm crop={data} chosen={form} onchoose={value => form = value} disabled={busy || !fresh} />{/if}{/snippet}
-        <CropReview forms={formBar} {issue} onissue={chooseIssue} suggested={suggestedIssue} disabled={busy || !fresh} onskip={skip}
-          targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={suggestions} loading={suggesting} contextResult={contextSuggestions} contextLoading={contextSuggesting} label={data.label} value={issue === 'character' ? written : correction} onchoose={chooseSuggestion} />
-        {#if issue === 'crop' && !onVerdict && data.context && data.crop_editable !== false}<div class="crop-change">{#if box}{t('character.crop.adjusted')}<button type="button" disabled={busy} onclick={() => box = null}>{t('common.reset')}</button>{:else}<button type="button" class="quiet-link adjust-crop" disabled={busy || editingBox} onclick={beginCrop}>{t('character.crop.adjust')}</button>{/if}</div>{/if}
-        <SimilarCrops id={data.id} label={data.label} ready={fresh && loaded} />
-      </div>
       <div class="inspector-page">
-        <div class="inspector-figure">
-          {#if editingBox && data.context && data.context_box}
-            <figure class="nearby crop-adjustment" bind:this={nearby}>
-              <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-              <div class="context-region drawing" bind:this={contextElement} tabindex="0" onpointerdown={down} onpointermove={move} onpointerup={() => drag = null} onpointercancel={() => drag = null} onkeydown={nudge} role="application" aria-label={t('character.crop.dragToAdjust')} aria-describedby="crop-keys">
-                <img src={data.context_image} alt={t('character.context.alt')} draggable="false" onerror={() => { editingBox = false; error = t('character.context.loadError') }} />
-                {#if boxStyle}<span class="context-outline adjustable" style={boxStyle}>{#each ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as edge (edge)}<span class="handle {edge}" data-edge={edge}></span>{/each}</span>{/if}
-              </div>
-              <figcaption><span id="crop-keys" class="crop-keys">{t('character.crop.keys')}</span><button type="button" disabled={busy} onclick={endCrop}>{t('character.crop.doneAdjusting')}</button></figcaption>
-            </figure>
-          {:else}
-            {#key data.image}<CropContext item={data} detail={data} cropBox={drawn ? toSource(drawn) : null} disabled={busy} />{/key}
-          {/if}
+        <div class="inspector-figure" bind:this={figure}>
+          {#key data.image}<CropContext item={data} detail={data} cropBox={drawn ? toSource(drawn) : null} disabled={busy} editing={editingBox} onedit={edited} onexit={endCrop} describedby="crop-keys"
+            onload={() => { loaded = true; imageFailed = false }} onerror={() => imageFailed = true} />{/key}
+          {#if editingBox}<p class="crop-keys" id="crop-keys">{t('character.crop.keys')}<button type="button" disabled={busy} onclick={endCrop}>{t('character.crop.doneAdjusting')}</button></p>{/if}
         </div>
         <div class="credit-beside"><SourceCredit item={data} /></div>
       </div>
+      <div class="inspector-right">
+        <div class="inspector-production">{#if productionLabel(data)}<ProductionBadge item={data} />{/if}<StyleField item={data} editable={!onVerdict} disabled={busy || !fresh} working={value => busy = value} saved={styled} /></div>
+        <div class="inspector-title"><CropTitle char={data.label} script={data.script} /><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{:else if repairOf(data)?.label === 'no-class'}<span class="repair-note" title={t('repair.reason.noClass')}>{t('repair.noClass')}</span>{/if}{#if data.box_pending}<span class="state-pill">{t('character.crop.pending')}</span>{:else if data.state === 'checked' || data.state === 'flagged'}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.state === 'checked' ? t('state.checked') : t('state.flagged')}</span>{/if}</div>
+        {#snippet formBar()}{#if !onVerdict}<CropForm crop={data} chosen={form} onchoose={value => form = value} disabled={busy || !fresh} />{/if}{/snippet}
+        <CropReview forms={formBar} {issue} onissue={chooseIssue} suggested={suggestedIssue} disabled={busy || !fresh} onskip={skip}
+          targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={suggestions} loading={suggesting} contextResult={contextSuggestions} contextLoading={contextSuggesting} label={data.label} value={issue === 'character' ? written : correction} onchoose={chooseSuggestion} />
+        {#if issue === 'crop' && !onVerdict && data.context && data.crop_editable !== false && (box || !editingBox)}<div class="crop-change">{#if box}{t('character.crop.adjusted')}<button type="button" disabled={busy} onclick={() => box = null}>{t('common.reset')}</button>{:else}<button type="button" class="quiet-link adjust-crop" disabled={busy || editingBox} onclick={beginCrop}>{t('character.crop.adjust')}</button>{/if}</div>{/if}
+        <SimilarCrops id={data.id} label={data.label} ready={fresh && loaded} />
+      </div>
       <div class="credit-after"><SourceCredit item={data} /></div>
-    {:else if !error}<div class="crop-box shimmer"></div><div class="inspector-right"><div class="inspector-skeleton"></div></div>{/if}
+    {:else if !error}<div class="inspector-page"><div class="inspector-figure shimmer"></div></div><div class="inspector-right"><div class="inspector-skeleton"></div></div>{/if}
   </div>
   <footer class="inspector-savebar">
     <!-- Always there outside a round, so the choice is visible before a list is opened. -->
@@ -385,17 +328,6 @@
 </dialog>
 
 <style>
-  .crop-adjustment{flex:1 1 100%;width:100%;gap:10px}
-  .crop-adjustment .context-region{max-height:360px}
-  .crop-adjustment .context-region img{max-height:360px;filter:none}
-  .crop-adjustment .context-region:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
-  .crop-adjustment figcaption{gap:12px;align-items:center;flex-wrap:wrap}
-  .crop-keys{font-size:10px;color:var(--muted)}
-  .crop-box{position:relative}
-  .crop-preview{position:absolute;inset:18px;width:calc(100% - 36px);height:calc(100% - 36px);background:light-dark(#ebe8e3, #ebe8e3)}
-  .handle{position:absolute;width:12px;height:12px;margin:-6px 0 0 -6px;background:var(--surface);border:2px solid var(--accent-solid);border-radius:3px;pointer-events:auto;touch-action:none}
-  .handle.nw{left:0;top:0;cursor:nwse-resize}.handle.n{left:50%;top:0;cursor:ns-resize}.handle.ne{left:100%;top:0;cursor:nesw-resize}
-  .handle.e{left:100%;top:50%;cursor:ew-resize}.handle.se{left:100%;top:100%;cursor:nwse-resize}.handle.s{left:50%;top:100%;cursor:ns-resize}
-  .handle.sw{left:0;top:100%;cursor:nesw-resize}.handle.w{left:0;top:50%;cursor:ew-resize}
-  @media(pointer:coarse){.handle{width:22px;height:22px;margin:-11px 0 0 -11px}}
+  .crop-keys{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:8px 0 0;font-size:10px;color:var(--muted)}
+  .crop-keys button{font-size:10px;padding:4px 8px}
 </style>

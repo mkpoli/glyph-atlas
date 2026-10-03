@@ -32,13 +32,10 @@
   "bulk.dismiss": "關閉",
   "bulk.changed": "頁面載入後部分裁切已被修改，請重新載入後再試。",
   "bulk.hint": "Ctrl/⌘+點擊或按X增減，Shift+點擊選範圍，Esc取消",
-  "character.context.alt": "此字附近的筆畫",
-  "character.context.loadError": "無法載入周邊影像。",
   "character.replaced": "此裁切範圍已被替換，現顯示替換後的裁切範圍。",
   "character.crop.adjust": "調整裁切範圍 ↗",
   "character.crop.adjusted": "裁切範圍已調整",
   "character.crop.doneAdjusting": "調整完成",
-  "character.crop.dragToAdjust": "拖曳以調整裁切範圍",
   "character.dialog.label": "單字審閱",
   "character.glyph.alt": "「{label}」字",
   "character.image.unavailable": "影像無法顯示",
@@ -783,5 +780,12 @@
   "privacy.choices.body": "你可以在帳號頁面修改名稱和大頭貼、移除登入方式，或登出其他裝置。如需刪除帳號，請聯絡{email}：你的電子郵件地址、大頭貼、登入方式和工作階段將被刪除，已儲存的判斷則會以匿名形式保留在館藏紀錄中。",
   "privacy.changes.title": "政策變更",
   "privacy.changes.body": "本頁的變更紀錄可在網站的GitHub公開儲存庫中查看，上方日期為最後更新日期。",
-  "footer.privacy": "隱私權政策"
+  "footer.privacy": "隱私權政策",
+  "similar.previous": "上一組相似裁切",
+  "similar.next": "下一組相似裁切",
+  "licence.pd": "公有領域",
+  "licence.pdm": "公有領域標章",
+  "licence.bespoke": "註明出處即可自由使用",
+  "licence.rsNocCr": "無版權，有契約限制",
+  "licence.restricted": "需獲許可"
 }

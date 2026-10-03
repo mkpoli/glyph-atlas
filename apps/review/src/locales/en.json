@@ -33,13 +33,10 @@
   "bulk.dismiss": "Dismiss",
   "bulk.changed": "Some of these crops changed after the page loaded. Reload and try again.",
   "bulk.hint": "Ctrl/⌘-click or X adds or removes a tile, Shift-click takes a range, Esc clears.",
-  "character.context.alt": "Strokes near this character",
-  "character.context.loadError": "The context image could not be loaded.",
   "character.replaced": "This crop was replaced. The one shown is its replacement.",
   "character.crop.adjust": "Adjust crop ↗",
   "character.crop.adjusted": "Crop adjusted",
   "character.crop.doneAdjusting": "Done adjusting",
-  "character.crop.dragToAdjust": "Drag to adjust the crop",
   "character.dialog.label": "Character reviewer",
   "character.glyph.alt": "Character {label}",
   "character.image.unavailable": "Image unavailable",
@@ -810,5 +807,12 @@
   "privacy.choices.body": "On your account page you can change your name and picture, remove ways to sign in, and sign out other devices. To delete your account, write to {email}: your email address, picture, sign-in methods and sessions are deleted, and your decisions remain in the collection's record as Anonymous.",
   "privacy.changes.title": "Changes",
   "privacy.changes.body": "Changes to this page are listed in the site's public repository on GitHub, and the date above shows the latest.",
-  "footer.privacy": "Privacy"
+  "footer.privacy": "Privacy",
+  "similar.previous": "Previous similar crops",
+  "similar.next": "More similar crops",
+  "licence.pd": "Public domain",
+  "licence.pdm": "Public Domain Mark",
+  "licence.bespoke": "Free to use with credit",
+  "licence.rsNocCr": "No copyright, contractual restrictions",
+  "licence.restricted": "Permission required"
 }

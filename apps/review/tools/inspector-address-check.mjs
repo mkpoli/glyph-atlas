@@ -67,7 +67,13 @@ try {
   console.log('PASS Back closes the crop')
 
   // A character page keeps its own address under the crop.
-  await browser.goto(`${service.base}/en/character/U+3044`, { waitFor: 'document.querySelectorAll("[data-unit]").length > 0', timeout: 90000 })
+  // The fixture's service reads a character's card slowly the first time, and the page server gives up
+  // after 15 s; a second load finds it ready.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await browser.goto(`${service.base}/en/character/U+3044`, { timeout: 90000 })
+    if (await browser.evaluate('document.querySelectorAll("[data-unit]").length > 0')) break
+  }
+  await browser.waitFor('document.querySelectorAll("[data-unit]").length > 0', 90000)
   await browser.waitFor('document.documentElement.dataset.hydrated !== undefined', 60000)
   const listed = await path()
   await browser.evaluate('document.querySelector("[data-unit]").click()')

@@ -30,13 +30,10 @@
   "bulk.dismiss": "㨂",
   "bulk.changed": "𣎏塳割㐌台對𢖕欺張載。唉載吏耒試吏。",
   "bulk.hint": "Ctrl/⌘+click或X底添咍扒，Shift+click底𫾗曠，Esc底𠬃𫾗",
-  "character.context.alt": "涅筆縈𡨸呢",
-  "character.context.loadError": "空載特影沖縈。",
   "character.replaced": "塳割呢㐌特台。低羅本台替。",
   "character.crop.adjust": "整塳割 ↗",
   "character.crop.adjusted": "㐌整塳割",
   "character.crop.doneAdjusting": "冲",
-  "character.crop.dragToAdjust": "捁底整塳割",
   "character.dialog.label": "閱𡨸",
   "character.glyph.alt": "𡨸{label}",
   "character.image.unavailable": "空𣎏影",
@@ -766,5 +763,12 @@
   "privacy.choices.body": "𨕭張財款，伴固體對𠸜吧影代面，攑格登入吧登出塊各設備恪。底挅財款，唉𠳚email𦤾{email}：地址email，影代面，各格登入吧番登入𧵑伴士被挅；各決定𧵑伴𫪏特𡨹𥪝本𥱬𧵑部搜集𠁑𠸜隱名。",
   "privacy.changes.title": "台對",
   "privacy.changes.body": "各台對𧵑張呢特𥱬吏𥪝庫碼源公開𧵑張𨕭GitHub。𣈜於𨕭朱別吝及日𧵆一。",
-  "footer.privacy": "權𥢅私"
+  "footer.privacy": "權𥢅私",
+  "similar.previous": "各塳割種𠓀",
+  "similar.next": "各塳割種接",
+  "licence.pd": "空羣版權",
+  "licence.pdm": "唒空羣版權",
+  "licence.bespoke": "用自由欺𥱬源",
+  "licence.rsNocCr": "空版權，𣎏限制蹺合同",
+  "licence.restricted": "勤吀法"
 }

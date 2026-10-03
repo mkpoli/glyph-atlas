@@ -19,7 +19,6 @@
   import { t } from '../lib/i18n.svelte.js'
   import CropReview from './CropReview.svelte'
   import CropContext from './CropContext.svelte'
-  import Glyph from './Glyph.svelte'
   // `initial` is the record the server rendered the page with, so the first load needs no request.
   // `changed` hears about a write that keeps the dialog open (a written form), as the crop dialog's does.
   // `preview` is the list's own row for the glyph, drawn while the record loads.
@@ -109,14 +108,19 @@
 <svelte:window onkeydown={stepKey} />
 <dialog class="character-dialog corpus-dialog" bind:this={dialog} open oncancel={close} onclick={e => { if (e.target === dialog) close() }} aria-label={t('corpus.dialog.label')}>
   <div class="inspector">
-    <header class="inspector-header"><div class="inspector-navigation"><span>{position}</span><button class="icon-button previous-character" aria-label={t('common.previousCharacter')} disabled={busy || !previous} onclick={() => previous?.()}>←</button><button class="icon-button next-character" aria-label={t('common.nextCharacter')} disabled={busy || !next} onclick={() => next?.()}>→</button><button class="icon-button close-inspector" aria-label={t('common.closeReviewer')} onclick={close}>×</button></div></header>
+    <header class="inspector-header">{#if data}<CopyId id={data.id} />{/if}<div class="inspector-navigation"><span>{position}</span><button class="icon-button previous-character" aria-label={t('common.previousCharacter')} disabled={busy || !previous} onclick={() => previous?.()}>←</button><button class="icon-button next-character" aria-label={t('common.nextCharacter')} disabled={busy || !next} onclick={() => next?.()}>→</button><button class="icon-button close-inspector" aria-label={t('common.closeReviewer')} onclick={close}>×</button></div></header>
     {#if error}<div class="error-message" role="alert">{error}<button disabled={busy} onclick={() => load(id)}>{t('character.reload')}</button></div>{/if}
     {#if data}
       <!-- The glyph alone, in a box of one size for every glyph, then the page around it further down. -->
-      <figure class="crop-box">{#if data.image && data.proxyable}{#key data.id + ':' + data.revision}<Glyph item={data} eager onload={() => { loaded = true; imageFailed = false }} onerror={() => imageFailed = true} />{/key}{:else}<span>{t('character.image.unavailable')}</span>{/if}</figure>
+      <div class="inspector-page">
+        <div class="inspector-figure">
+          {#if data.image && data.proxyable}{#key data.id + ':' + data.revision}<CropContext item={data} detail={data} corpus disabled={busy} onload={() => { loaded = true; imageFailed = false }} onerror={() => imageFailed = true} />{/key}{:else}<span class="figure-note">{t('character.image.unavailable')}</span>{/if}
+        </div>
+        <div class="credit-beside"><SourceCredit item={data} corpus /></div>
+      </div>
       <div class="inspector-right">
         <div class="inspector-production">{#if productionLabel(data)}<ProductionBadge item={data} />{/if}</div>
-        <div class="inspector-title">{#if data.identity_status !== 'unassigned'}<CropTitle char={data.written_character ?? data.label} script={data.script} />{:else}<h2 class="unassigned-title">{t('corpus.unassigned')}{#if graphemeChar(data)}<span class="title-grapheme" lang="ja" title={t('chips.grapheme')}>{graphemeChar(data)}</span>{/if}</h2>{/if}{#if data.identity_status !== 'unassigned'}<ZiLink character={data.written_character ?? data.label} />{/if}{#if data.needs_segmentation || ['checked', 'flagged', 'stale'].includes(data.state)}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.needs_segmentation ? t('corpus.state.needsSplitting') : data.state === 'checked' ? t('corpus.state.checkedHere') : data.state === 'flagged' ? t('state.flagged') : t('corpus.state.sourceChanged')}</span>{/if}</div><CopyId id={data.id} />
+        <div class="inspector-title">{#if data.identity_status !== 'unassigned'}<CropTitle char={data.written_character ?? data.label} script={data.script} />{:else}<h2 class="unassigned-title">{t('corpus.unassigned')}{#if graphemeChar(data)}<span class="title-grapheme" lang="ja" title={t('chips.grapheme')}>{graphemeChar(data)}</span>{/if}</h2>{/if}{#if data.identity_status !== 'unassigned'}<ZiLink character={data.written_character ?? data.label} />{/if}{#if data.needs_segmentation || ['checked', 'flagged', 'stale'].includes(data.state)}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.needs_segmentation ? t('corpus.state.needsSplitting') : data.state === 'checked' ? t('corpus.state.checkedHere') : data.state === 'flagged' ? t('state.flagged') : t('corpus.state.sourceChanged')}</span>{/if}</div>
         <!-- What the source itself labelled the glyph, shown when it is not what the crop now reads. -->
         {#if data.needs_segmentation || data.identity_status === 'unassigned' || (data.written_character ?? data.label) !== data.source_label}<p class="corpus-source-label">{#if data.needs_segmentation}<span>{t('corpus.characterCount', { count: data.character_count })} · </span>{/if}{t('corpus.sourceLabel', { source: sourceName })} <b lang="ja">{data.source_label}</b> <ZiLink character={data.source_label} compact />{#if data.identity_status !== 'unassigned' && (data.written_character ?? data.label) !== data.source_label}<span> → <b lang="ja">{data.written_character ?? data.label}</b> · {t('corpus.atlasCorrection')}</span>{/if}</p>{/if}
         {#if data.identity_status === 'unassigned'}
@@ -128,14 +132,8 @@
           targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={{ candidates: data.suggestions }} label={data.label} value={correction} onchoose={choose} />
         <SimilarCrops id={data.id} label={data.label} ready={fresh && loaded} />
       </div>
-      <div class="inspector-page">
-        <div class="inspector-figure">
-          {#if data.image && data.proxyable}{#key data.id + ':' + data.revision}<CropContext item={data} detail={data} corpus disabled={busy} />{/key}{/if}
-        </div>
-        <div class="credit-beside"><SourceCredit item={data} corpus /></div>
-      </div>
       <div class="credit-after"><SourceCredit item={data} corpus /></div>
-    {:else if !error}<div class="crop-box shimmer"></div><div class="inspector-right"><div class="inspector-skeleton"></div></div>{/if}
+    {:else if !error}<div class="inspector-page"><div class="inspector-figure shimmer"></div></div><div class="inspector-right"><div class="inspector-skeleton"></div></div>{/if}
   </div>
   <footer class="inspector-savebar">
     <AdvanceSwitch disabled={busy} />

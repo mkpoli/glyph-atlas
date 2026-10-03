@@ -29,13 +29,10 @@
   "bulk.dismiss": "닫기",
   "bulk.changed": "불러온 뒤 바뀐 크롭이 있습니다. 새로 고친 뒤 다시 해 보세요.",
   "bulk.hint": "Ctrl/⌘+클릭 또는 X로 追加·除去, Shift+클릭으로 範圍, Esc로 解除",
-  "character.context.alt": "이 文字 周邊의 劃",
-  "character.context.loadError": "周邊 이미지를 불러오지 못했습니다.",
   "character.replaced": "이 크롭은 交替되었습니다. 交替된 크롭을 表示합니다.",
   "character.crop.adjust": "크롭 調整 ↗",
   "character.crop.adjusted": "크롭 調整됨",
   "character.crop.doneAdjusting": "調整 完了",
-  "character.crop.dragToAdjust": "끌어서 크롭 調整",
   "character.dialog.label": "文字 檢討",
   "character.glyph.alt": "文字 {label}",
   "character.image.unavailable": "이미지 없음",
@@ -764,5 +761,12 @@
   "privacy.choices.body": "計定 페이지에서 이름과 프로필 寫眞을 바꾸고, 로그인 方法을 削除하고, 다른 機器에서 로그아웃할 수 있습니다. 計定을 削除하려면 {email}로 要請해 주세요. 이메일 住所, 프로필 寫眞, 로그인 方法, 세션은 削除되며, 貯藏한 判斷은 蒐集 資料의 記錄에 匿名으로 남습니다.",
   "privacy.changes.title": "變更 事項",
   "privacy.changes.body": "이 페이지의 變更 內譯은 GitHub의 사이트 公開 貯藏所에 記錄됩니다. 위 날짜는 마지막으로 修正한 날짜입니다.",
-  "footer.privacy": "個人情報 處理方針"
+  "footer.privacy": "個人情報 處理方針",
+  "similar.previous": "以前 비슷한 크롭",
+  "similar.next": "다음 비슷한 크롭",
+  "licence.pd": "퍼블릭 도메인",
+  "licence.pdm": "퍼블릭 도메인 마크",
+  "licence.bespoke": "出處 表示 後 自由 利用",
+  "licence.rsNocCr": "著作權 없음 · 契約上 制限",
+  "licence.restricted": "利用 許諾 必要"
 }

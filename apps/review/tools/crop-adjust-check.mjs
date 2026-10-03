@@ -21,7 +21,8 @@ mkdirSync(screenshots, { recursive: true })
 let browser
 const assert = (condition, message) => { if (!condition) throw new Error(message) }
 const ready = 'document.querySelector("dialog[open] .crop-viewport")?.dataset.ready === "true" && !document.querySelector(".save-character")?.disabled'
-const outline = () => browser.evaluate(`(() => { const r = document.querySelector('dialog[open] .context-outline').getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height } })()`)
+const outline = () => browser.evaluate(`(() => { const r = document.querySelector('dialog[open] .crop-mask').getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height } })()`)
+const framing = () => browser.evaluate(`document.querySelector('dialog[open] .crop-plane')?.style.transform`)
 const handle = edge => browser.evaluate(`(() => { const r = document.querySelector('dialog[open] .handle.${edge}').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } })()`)
 
 try {
@@ -35,11 +36,16 @@ try {
   const before = stored[id].box
   await browser.goto(`${service.base}/en/crop/${encodeURIComponent(id)}`, { waitFor: ready, timeout: 90000 })
 
+  // The crop is redrawn in the one view, as it is framed: nothing reframes or moves when editing starts.
+  await browser.evaluate('document.querySelector("dialog[open] .crop-viewport").scrollIntoView({ block: "center" })')
+  const framed = await framing()
   await browser.key('b')
-  await browser.waitFor('document.querySelector("dialog[open] .context-region.drawing img")?.naturalWidth > 0', 30000)
-  assert(await browser.evaluate('document.querySelectorAll("dialog[open] .handle").length') === 8, 'the crop editor shows no handles')
-  assert(await browser.evaluate('document.activeElement?.classList.contains("context-region")'), 'the crop editor does not take the keyboard')
-  await browser.evaluate('document.querySelector("dialog[open] .context-region").scrollIntoView({ block: "center" })')
+  await browser.waitFor('document.querySelectorAll("dialog[open] .crop-mask.editing .handle").length === 8', 30000)
+  assert(await framing() === framed, 'starting to redraw moved the page view: ' + framed + ' → ' + await framing() + ' ' + await browser.evaluate('JSON.stringify(document.querySelector("dialog[open] .crop-viewport").getBoundingClientRect())'))
+  assert(await browser.evaluate('document.activeElement?.classList.contains("crop-viewport")'), 'the view does not take the keyboard')
+  assert(await browser.evaluate('document.querySelectorAll("dialog[open] .crop-box, dialog[open] .crop-preview, dialog[open] .crop-adjustment").length') === 0, 'a second view is shown')
+  const size = await browser.evaluate(`document.querySelector('dialog[open] .handle.se').getBoundingClientRect().width`)
+  assert(size <= 9, `the handles are ${size} px wide`)
   const start = await outline()
 
   // A mouse drags the bottom-right handle out.
@@ -49,11 +55,7 @@ try {
   // The page view may end close to the crop's right edge, where the box stops growing.
   assert(grown.w > start.w && grown.h > start.h + 10 && Math.abs(grown.x - start.x) < 2 && Math.abs(grown.y - start.y) < 2, `the corner did not resize the box: ${JSON.stringify([start, grown])}`)
 
-  // The crop box previews what the new box cuts: the page view clipped to it.
-  const view = await browser.evaluate(`document.querySelector('dialog[open] .crop-box .crop-preview')?.getAttribute('viewBox')`)
-  assert(view, 'the crop box does not preview the redrawn box')
-  const [, , vw, vh] = view.split(' ').map(Number)
-  assert(Math.abs(vw / vh - grown.w / grown.h) < 0.05, `the preview is not the drawn box: ${view} for ${JSON.stringify(grown)}`)
+  assert(await framing() === framed, 'resizing the box moved the page view')
   // A finger drags the top edge down.
   await browser.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 })
   const top = await handle('n')
@@ -65,19 +67,30 @@ try {
   assert(touched.y > grown.y + 8 && touched.h < grown.h - 8, `a touch on the top edge did not move it: ${JSON.stringify([grown, touched])}`)
 
   // The arrows move it, and Shift with the arrows resizes it; an arrow here never steps to another crop.
-  await browser.evaluate('document.querySelector("dialog[open] .context-region").focus()')
+  await browser.evaluate('document.querySelector("dialog[open] .crop-viewport").focus()')
   await browser.key('ArrowLeft')
   const moved = await outline()
   assert(moved.x < touched.x && Math.abs(moved.w - touched.w) < 1, `ArrowLeft did not move the box: ${JSON.stringify([touched, moved])}`)
+  // Zoomed in, a step is still at least one page pixel, so the arrows keep moving the box.
+  for (let i = 0; i < 6; i++) await browser.evaluate(`document.querySelector('dialog[open] .crop-viewport').dispatchEvent(new KeyboardEvent('keydown', { key: '+', bubbles: true }))`)
+  const zoomed = await outline()
+  await browser.key('ArrowLeft')
+  assert((await outline()).x < zoomed.x, 'zoomed in, ArrowLeft no longer moves the box')
+  await browser.evaluate(`document.querySelector('dialog[open] .crop-viewport').dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }))`)
+  const homed = await outline()
+  await browser.key('ArrowRight')
+  const back = await outline()
+  assert(back.x > homed.x, 'ArrowRight did not move the box back')
+  const moved2 = back
   await browser.key('ArrowDown', { shift: true })
   const taller = await outline()
-  assert(taller.h > moved.h && Math.abs(taller.y - moved.y) < 1, 'Shift+ArrowDown did not make the box taller')
+  assert(taller.h > moved2.h && Math.abs(taller.y - moved2.y) < 1, 'Shift+ArrowDown did not make the box taller')
   assert(await browser.evaluate('!!document.querySelector("dialog[open]")'), 'an arrow in the crop editor left the crop')
   assert((await browser.evaluate('document.querySelector(".save-character").innerText')).startsWith('Save'), 'the button does not say it saves the new box')
   await browser.screenshot(join(screenshots, 'recrop-desktop-light.png'))
   // Escape leaves the editor with the new box kept, and the inspector stays open.
   await browser.key('Escape')
-  await browser.waitFor('!document.querySelector("dialog[open] .context-region.drawing")')
+  await browser.waitFor('!document.querySelector("dialog[open] .crop-mask.editing")')
   assert(await browser.evaluate('!!document.querySelector("dialog[open]") && !!document.querySelector("dialog[open] .crop-change button")'), 'Escape closed the inspector or dropped the box')
   assert(await browser.evaluate('document.activeElement?.closest(".crop-change, .inspector-savebar") != null'), 'the focus was lost leaving the editor')
 
@@ -105,7 +118,10 @@ try {
   await browser.goto(`${service.base}/en/character/${units(config.directory)[id].unicode}`, { waitFor: `!!document.querySelector('[data-unit="${id}"]')`, timeout: 90000 })
   await browser.evaluate(`document.querySelector('[data-unit="${id}"]').click()`)
   await browser.waitFor(`document.querySelector('dialog[open] .state-pill')?.textContent === 'Box corrected, awaiting re-cut'`, 30000)
-  assert(await browser.evaluate('!!document.querySelector("dialog[open] .crop-box .crop-preview")'), 'a box awaiting its cut is not shown')
+  // The saved box is the one outlined on the page.
+  await browser.waitFor(`!!document.querySelector('dialog[open] .crop-mask')`, 30000)
+  const shownBox = await browser.evaluate(`(() => { const r = document.querySelector('dialog[open] .crop-mask')?.getBoundingClientRect(); return r ? r.width / r.height : null })()`)
+  assert(shownBox && Math.abs(shownBox - recorded.w / (recorded.h * (record.source_scale?.[1] ?? 1) / (record.source_scale?.[0] ?? 1))) < 0.1, `a box awaiting its cut is not outlined: ${shownBox}`)
   await browser.screenshot(join(screenshots, 'recrop-pending-light.png'))
   console.log('PASS a saved box awaiting its cut is named and shown')
 

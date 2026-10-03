@@ -32,13 +32,10 @@
   "bulk.dismiss": "关闭",
   "bulk.changed": "页面载入后部分裁切已被修改，请重新载入后再试。",
   "bulk.hint": "Ctrl/⌘+点击或按X增减，Shift+点击选范围，Esc取消",
-  "character.context.alt": "该字附近的笔画",
-  "character.context.loadError": "无法加载上下文图像。",
   "character.replaced": "此裁切已被替换，现显示替换后的裁切。",
   "character.crop.adjust": "调整裁切 ↗",
   "character.crop.adjusted": "裁切已调整",
   "character.crop.doneAdjusting": "调整完成",
-  "character.crop.dragToAdjust": "拖动以调整裁切",
   "character.dialog.label": "单字审阅",
   "character.glyph.alt": "“{label}”字",
   "character.image.unavailable": "图像不可用",
@@ -783,5 +780,12 @@
   "privacy.choices.body": "你可以在账号页面修改名称和头像、移除登录方式，或退出其他设备上的登录。如需删除账号，请联系{email}：你的邮箱地址、头像、登录方式和会话将被删除，已保存的判断则会以匿名形式保留在馆藏记录中。",
   "privacy.changes.title": "政策变更",
   "privacy.changes.body": "本页的变更记录可在网站的GitHub公开仓库中查看，上方日期为最后更新日期。",
-  "footer.privacy": "隐私政策"
+  "footer.privacy": "隐私政策",
+  "similar.previous": "上一组相似裁切",
+  "similar.next": "下一组相似裁切",
+  "licence.pd": "公有领域",
+  "licence.pdm": "公有领域标识",
+  "licence.bespoke": "注明出处即可自由使用",
+  "licence.rsNocCr": "无版权，有合同限制",
+  "licence.restricted": "需获许可"
 }
