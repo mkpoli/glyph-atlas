@@ -171,3 +171,9 @@ entries:
     holder: 北海道大学附属図書館
     images_via: 国書データベース
     image_licence: https://creativecommons.org/licenses/by-sa/4.0/deed.ja
+dates:
+  # The curation's `date` is the work's date and `copied` a witness's copying (its header comment,
+  # data/sources.yaml at https://github.com/mkpoli/ainu-records). `atlas dates` keeps them as
+  # editorial claims: composed for `date`, copied for `copied`.
+  date: composed
+  copied: copied

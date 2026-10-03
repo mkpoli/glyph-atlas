@@ -1,0 +1,21 @@
+# The IIIF manifests of the holders whose images the documents show: NDL, the University of Tokyo,
+# Kyoto University, ADEAC's municipal libraries, 東京学芸大学 and the others a document's
+# `source_refs.iiif-manifest` names. Each holder catalogues its own items, and a manifest's metadata
+# carries its catalogue's date fields (Publication Date, 作成年代始（和暦), 時代, 日付 / Date …).
+#
+# `atlas dates` reads them from `cache/manifests/<sha256 of url>.json`, the cache the importers fill,
+# and a claim's locator is the manifest URL and the label it read (`#metadata=Publication Date`). The
+# label names the field and nothing more: a `Publication Date` is how the holder dates the item, and
+# whether that is a printing or a copying is read from the value's own words (刊, 写, 序, 跋) or left
+# `produced`. Holders write the same date differently, and some give a date field that holds a
+# publisher list; a value with no date in it is not a claim.
+id: iiif-manifests
+name: Holders' IIIF manifests
+publisher: The holding institutions, each for its own manifests
+kind: reference-table
+url: https://iiif.io/api/presentation/
+licence: PD  # the dates read are bibliographic facts; each manifest states the licence of its own images
+attribution: The holding institution named in each manifest
+notes:
+  - Bibliographic metadata is factual; the holder of each manifest is credited with the document.
+  - A manifest of a facsimile describes the facsimile. Corpora whose importer dates the original from an edition of it (HDIC, HNG) do not read their manifests.

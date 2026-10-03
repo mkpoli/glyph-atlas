@@ -1,0 +1,31 @@
+# HuTime Web API (Calendar Calculation): converts the Japanese calendar (和暦) to the Western, era
+# names, era years and lunisolar days with their leap months (閏月, written 閏8月).
+#
+# `atlas dates --fetch` asks it in batches of up to 100 lines through `net` and keeps every answer in
+# `cache/hutime/answers.json`; each claim it converted keeps the single GET request that reproduces
+# the answer (`conversion.query`), and the site links each converted date to it. Calendar ids: 1001.1
+# is 和暦, 101.1 the Western calendar (西暦: Julian up to 1582-10-04, Gregorian from 1582-10-15; 1582-10-10 has no answer). An era year is asked as a year (`itype=year`, both ends),
+# an era name as an era, a dated day as a date.
+#
+# The terms (checked 2026-10-03, section 4 of the API page): 「本Web APIは無償で自由に利用できます。」
+# and 「本Web APIを利用した研究、開発等の成果を公表する場合は、その旨を明示してください。」 The site
+# states its use wherever a converted date is shown. The service publishes no version number; a
+# conversion records its query and the date it was asked.
+id: hutime
+name: HuTime Web API（暦変換）
+publisher: HuTime Project（人間文化研究機構）
+kind: reference-table
+url: https://ap.hutime.org/cal/
+licence: bespoke-free
+licence_evidence: https://ap.hutime.org/cal/
+attribution: HuTime Web API（暦変換）, https://ap.hutime.org/cal/ ; 関野樹 (2017) 暦に関するWeb API － 暦法の変換と期間の計算. 情報処理学会シンポジウムシリーズ 2017
+access:
+  api: https://ap.hutime.org/cal/
+  form: https://www.hutime.jp/basicdata/calendar/form.html
+  japanese_format: https://www.hutime.jp/basicdata/calendar/calendars/JapaneseFormat.html
+format:
+  request: "method=conv&ical=1001.1&itype={era|year|date}&ival=...&ocal=101.1&otype=date&ep=be&oform=yyyy-MM-dd&out=json"
+  answer: "one {text} per input and end, null for a date the calendar does not have (寛政3年閏2月 has no such month)"
+notes:
+  - Checked 2026-10-03 with 元禄15年閏8月1日 → 1702-09-22 (and 元禄15年8月1日 → 1702-08-23), the leap month spelled 閏8月 as the format page gives it.
+  - The human form (`access.form`) converts up to 100 lines pasted into it; it takes no query in its address, so a link to one date is the API request itself, which answers in plain text.

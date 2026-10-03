@@ -15,3 +15,4 @@ format:
   coordinates: x1, y1, x2, y2 per movable-type block, with 文字 and 字母 columns; 連彫活字 blocks hold several characters
 notes:
   - Movable-type (古活字) printing; every kana block carries its 字母, the labelling this dataset uses for all kana.
+  - The book's date is NDL's, from the IIIF manifest of pid 2544701 (`Publication Date` [慶長・元和年間], read 2026-10-03, https://dl.ndl.go.jp/api/iiif/2544701/manifest.json); the dataset itself states none.

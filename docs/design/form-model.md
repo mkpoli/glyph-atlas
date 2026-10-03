@@ -45,7 +45,8 @@ re-segmentation makes a new version; the old one stays. A version is removed onl
 a withdrawn document is taken off the site.
 
 **Facets.** Style, production, cursiveness, date, script and hand, set on a crop or inherited from its
-page and document. A value set on the crop stays distinguishable from an inherited one. A sub-form is
+page and document. A document's dates are claims of the ledger, one `date_<kind>` assertion for each
+date a source states (`docs/schema.md`, `dates`). A value set on the crop stays distinguishable from an inherited one. A sub-form is
 made only when the shape differs in a way no facet explains.
 
 **Hand.** A distinguishable writing hand, possibly anonymous, spanning crops and documents. Attributing
