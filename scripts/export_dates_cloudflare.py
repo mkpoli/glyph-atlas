@@ -41,21 +41,36 @@ def literal(value) -> str:
     return q(value)
 
 
+def _live(key: str, alias: str = "a") -> str:
+    """SQL true when an assertion of claim `key` stands: `key` itself, or its re-assertion `key@<export>`."""
+    return (f"({alias}.id={q(key)} OR ({alias}.id>{q(key + '@')} AND {alias}.id<{q(key + 'A')})) "
+            f"AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion={alias}.id AND x.action='retract')")
+
+
 def claim_statements(claims: list[DateClaim], stamp: str) -> tuple[list[str], list[tuple[str, str, str, str]]]:
-    """Each claim's assertion and evidence rows, and the slots they fall in."""
+    """Each claim's assertion and evidence rows, and the slots they fall in.
+
+    A claim is its id. One that stands already is left as it is; one an earlier export retracted, and that
+    a source states again, is asserted anew as `<id>@<export>`, since a retraction is never undone.
+    """
     rows, keys = [], []
     for claim in claims:
         found = assertion(claim)
+        key = found["id"]
         value = ledger.canonical(found["value"])
-        values = {"id": found["id"], "subject": found["subject"], "predicate": found["predicate"], "scope": "",
-                  "slot": value, "value": value, "tier": found["tier"], "asserted_by": found["asserted_by"],
-                  "asserted_at": stamp, "method": METHOD, "run": RESOLVER}
+        values = {"subject": found["subject"], "predicate": found["predicate"], "scope": "", "slot": value,
+                  "value": value, "tier": found["tier"], "asserted_by": found["asserted_by"], "asserted_at": stamp,
+                  "method": METHOD, "run": RESOLVER}
+        identity = (f"CASE WHEN EXISTS (SELECT 1 FROM assertions r WHERE r.id={q(key)}) THEN {q(key + '@' + stamp)} "
+                    f"ELSE {q(key)} END")
         rows.append(f"INSERT OR IGNORE INTO assertions({','.join(ASSERTION_COLUMNS)}) "
-                    f"VALUES({','.join(q(values[c]) for c in ASSERTION_COLUMNS)});\n")
+                    f"SELECT {identity},{','.join(q(values[c]) for c in ASSERTION_COLUMNS[1:])} "
+                    f"WHERE NOT EXISTS (SELECT 1 FROM assertions a WHERE {_live(key)});\n")
         evidence = found["evidence"]
         rows.append("INSERT OR IGNORE INTO assertion_evidence(assertion,kind,ref,locator) "
-                    f"VALUES({q(found['id'])},{q(evidence['kind'])},{q(evidence['ref'])},{q(evidence['locator'])});\n")
-        rows.append(f"INSERT OR IGNORE INTO {STAGING}(id) VALUES({q(found['id'])});\n")
+                    f"SELECT a.id,{q(evidence['kind'])},{q(evidence['ref'])},{q(evidence['locator'])} "
+                    f"FROM assertions a WHERE {_live(key)};\n")
+        rows.append(f"INSERT OR IGNORE INTO {STAGING}(id) VALUES({q(key)});\n")
         keys.append((found["subject"], found["predicate"], "", value))
     return rows, keys
 
@@ -63,12 +78,13 @@ def claim_statements(claims: list[DateClaim], stamp: str) -> tuple[list[str], li
 def retractions(stamp: str) -> list[str]:
     """Retract the dates an earlier export stated and this one does not, then resolve their slots."""
     mark = f"dt-retract:%:{stamp}"
+    key = "CASE WHEN instr(a.id,'@')>0 THEN substr(a.id,1,instr(a.id,'@')-1) ELSE a.id END"
     retract = (
         "INSERT OR IGNORE INTO assertion_actions(id,submission,assertion,action,actor,at,reason) "
         f"SELECT 'dt-retract:'||a.id||':'||{q(stamp)},NULL,a.id,'retract',a.asserted_by,{q(stamp)},"
         f"{q('no source states it at export ' + stamp)} FROM assertions a "
         "WHERE substr(a.predicate,1,5)='date_' AND substr(a.asserted_by,1,7)='source:' "
-        f"AND a.id NOT IN (SELECT id FROM {STAGING}) "
+        f"AND {key} NOT IN (SELECT id FROM {STAGING}) "
         "AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract');\n")
     retracted = ("(SELECT json_group_array(json_array(a.subject,a.predicate,a.scope,a.slot)) FROM assertions a "
                  f"JOIN assertion_actions x ON x.assertion=a.id WHERE x.id LIKE {q(mark)})")

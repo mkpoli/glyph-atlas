@@ -66,3 +66,21 @@ def test_a_date_no_source_states_any_more_is_retracted_and_a_rerun_changes_nothi
     assert db.execute("SELECT assertion,action,actor FROM assertion_actions").fetchall() == [(old.id, "retract", "source:kokusho")]
     assert db.execute("SELECT predicate FROM current_claims ORDER BY 1").fetchall() == [("date_copied",)]
     assert db.execute("SELECT kind,export FROM document_dating").fetchall() == [("copied", "2026-10-04T00:00:00Z")]
+
+
+def test_a_reading_that_changes_and_a_claim_that_returns_are_asserted_anew(tmp_path):
+    first = make("printed", 1659, text="万治２")
+    db = site()
+    write(tmp_path, [first])
+    apply(db, tmp_path, "2026-10-03T00:00:00Z")
+    changed = make("printed", 1660, text="万治２")
+    write(tmp_path, [changed])
+    apply(db, tmp_path, "2026-10-04T00:00:00Z")
+    assert json.loads(db.execute("SELECT value FROM current_claims").fetchone()[0])["start"] == 1660
+    write(tmp_path, [first])
+    apply(db, tmp_path, "2026-10-05T00:00:00Z")
+    standing = db.execute("SELECT id FROM assertions a WHERE NOT EXISTS (SELECT 1 FROM assertion_actions x "
+                          "WHERE x.assertion=a.id AND x.action='retract')").fetchall()
+    assert standing == [(f"{first.id}@2026-10-05T00:00:00Z",)]
+    assert json.loads(db.execute("SELECT value FROM current_claims").fetchone()[0])["start"] == 1659
+    assert db.execute("SELECT count(*) FROM assertion_evidence WHERE assertion=?", (standing[0][0],)).fetchone() == (1,)
