@@ -78,6 +78,10 @@ def seal(catalogue: Path, corpus: Path, output: Path):
     db.execute("INSERT INTO media SELECT * FROM corpus_source.media")
     # Named columns: an export made before corpus rows carried their material is refused here.
     columns = "id,character,family,visual_group,shuffle,object,offset,size,production,style"
+    # A glyph's document (0052) comes along where the export holds it; an older export's rows keep the
+    # one the site holds (`corpus_upsert`).
+    if any(row[1] == "document" for row in db.execute("PRAGMA corpus_source.table_info(corpus_units)")):
+        columns += ",document"
     db.execute(f"INSERT INTO corpus_units({columns}) SELECT {columns} FROM corpus_source.corpus_units")
     # An export made while a corpus was still published as corpus glyphs holds rows the site now
     # publishes as its own crops, under the same ids; they are not sealed again.
