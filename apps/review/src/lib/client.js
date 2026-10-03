@@ -6,8 +6,9 @@ const writeListeners = new Set()
 export const afterWrite = listener => { writeListeners.add(listener); return () => writeListeners.delete(listener) }
 
 // `options.fetch` is the fetch a page's load function was given, which answers API paths on the
-// server as well as in the browser.
-export async function request(path, body, { fetch: send = fetch, ...options } = {}) {
+// server as well as in the browser. `wait: false` reports a busy database at once, for a read made
+// ahead of the reader.
+export async function request(path, body, { fetch: send = fetch, wait = true, ...options } = {}) {
   const post = () => send(path, { ...options, ...(body === undefined ? {} : {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
   }) })
@@ -22,7 +23,7 @@ export async function request(path, body, { fetch: send = fetch, ...options } = 
   if (writes && response.status === 401) { await ensureSignedIn({ again: true }); ({ response, value } = await answer()) }
   // A read the database is too busy for is asked again in the browser, and the page keeps what it
   // shows meanwhile. A page rendered on the server does not wait: its view reads again itself.
-  if (!writes && typeof window !== 'undefined' && isBusy(response, value)) ({ response, value } = await waitOut(answer, { response, value }, options.signal))
+  if (!writes && wait && typeof window !== 'undefined' && isBusy(response, value)) ({ response, value } = await waitOut(answer, { response, value }, options.signal))
   if (!response.ok) {
     // FastAPI reports a validation failure as a list of problems; show their messages.
     const listed = Array.isArray(value.detail) ? value.detail.map(problem => problem.msg).filter(Boolean).join('; ') : ''
