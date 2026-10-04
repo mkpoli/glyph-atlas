@@ -24,8 +24,8 @@ A word is a row of its own, and a spelling is linked to the word, not to another
   (`ja/ばかり/副助詞`), so that the particle のみ and 飲み are two words.
 - `data/vocab/word-spellings.tsv` holds one row per source statement that a sequence of Han
   characters writes a word. A spelling is a sequence: 而已 is one spelling. The row quotes the
-  source, and says whether the source names the word or only gives a reading the project took as
-  this word (`word_by`). `basis` and `related` (斗, confused in shape with 計) are filled only where
+  source, and says whether the source names the word or only gives a reading of it (`word_by`:
+  `source` or `reading`). `basis` and `related` (斗, confused in shape with 計) are filled only where
   the source gives a reason. They record what the source says about characters; a form written for
   another stays a `substitutes-for` link between forms in the ledger.
 - Two spellings are related only through a word they both write: `refs.spellings_of(word)` and
