@@ -562,7 +562,9 @@ export function runPage(crops: Json[]): { image: string; box: Rect; region: Rect
 // (`CONTEXT_REACH`), so its middle crop's holds about eleven, and `runPage` finds the run in it.
 // The corpus index holds pairs alone (`corpus_ngrams`): a corpus run of any length chains them from its
 // rarest pair, and its glyphs are read from their published records. A run's occurrences are the
-// collection's first and then the corpus's; a book narrows them to the collection's.
+// collection's first and then the corpus's. A book narrows the corpus's by the first glyph's document,
+// tested off the index (`+`): the anchor's rows are read either way, and the commonest pair holds a
+// few thousand.
 const RUN_MAX = 8, RUN_PAGE_CROPS = 192, RUN_COUNT_MAX = 2000, RUN_PROBE_MAX = 5000;
 const NGRAM_COLUMNS = ['first', 'second', 'third'];
 const graphemes = new Intl.Segmenter('ja', { granularity: 'grapheme' });
@@ -612,13 +614,14 @@ export function corpusRunFrom(size: number, anchor: number) {
   const glyphs = crops.map((crop, i) => `CROSS JOIN corpus_units g${i} ON g${i}.id=${crop}`);
   return { from: ['FROM corpus_ngrams a', ...joins, ...glyphs].join(' '), links };
 }
-export function corpusRunQuery(size: number, anchor: number) {
+const corpusWhere = (document: boolean) => `a.text=?${document ? ' AND +g0.document=?' : ''}`;
+export function corpusRunQuery(size: number, anchor: number, document = false) {
   return `SELECT ${Array.from({ length: size }, (_, i) => `g${i}.id AS i${i},g${i}.object AS o${i},g${i}."offset" AS f${i},g${i}.size AS s${i}`).join(',')}, a.vertical
-    ${corpusRunFrom(size, anchor).from} WHERE a.text=? ORDER BY a.first LIMIT ? OFFSET ?`;
+    ${corpusRunFrom(size, anchor).from} WHERE ${corpusWhere(document)} ORDER BY a.first LIMIT ? OFFSET ?`;
 }
-export function corpusRunCountQuery(size: number, anchor: number) {
+export function corpusRunCountQuery(size: number, anchor: number, document = false) {
   return `SELECT count(*) AS n, sum(v) AS vertical FROM (SELECT a.vertical AS v ${corpusRunFrom(size, anchor).from}
-    WHERE a.text=? LIMIT ${RUN_COUNT_MAX + 1})`;
+    WHERE ${corpusWhere(document)} LIMIT ${RUN_COUNT_MAX + 1})`;
 }
 /** How many corpus pairs make a text, counting no further than RUN_PROBE_MAX. */
 export const corpusProbeQuery = () => `SELECT count(*) AS n FROM (SELECT 1 FROM corpus_ngrams WHERE text=? LIMIT ${RUN_PROBE_MAX})`;
@@ -637,25 +640,25 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
   const key = new Request(`${url.origin}/atlas/runs?${new URLSearchParams({ text: value, document: document ?? '', limit: String(limit), offset: String(offset), v: await catalogueVersion(env) })}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json() as Json;
-  const size = parts.length, scope = document ? [document] : [], corpus = !document;
+  const size = parts.length, scope = document ? [document] : [];
   const span = (from: number, length: number) => parts.slice(from, from + length).join('');
   // Each source's run starts from its rarest row: a trigram of the collection's, a pair of the corpus's.
   const probing = [
     ...(size > 3 ? Array.from({ length: size - 2 }, (_, i) => env.DB.prepare(runProbeQuery(Boolean(document))).bind(...scope, span(i, 3))) : []),
-    ...(corpus && size > 2 ? Array.from({ length: size - 1 }, (_, i) => env.DB.prepare(corpusProbeQuery()).bind(span(i, 2))) : []),
+    ...(size > 2 ? Array.from({ length: size - 1 }, (_, i) => env.DB.prepare(corpusProbeQuery()).bind(span(i, 2))) : []),
   ];
   const probes = probing.length ? await env.DB.batch(probing) as D1Result<{ n: number }>[] : [];
   const counts = probes.map(probe => probe.results[0].n), rarest = (n: number[]) => n.length ? n.indexOf(Math.min(...n)) : 0;
   const anchor = size > 3 ? rarest(counts.slice(0, size - 2)) : 0, corpusAnchor = rarest(counts.slice(size > 3 ? size - 2 : 0));
   const { links } = runFrom(size, anchor);
   const bound = [...links.map(i => span(i, 2)), ...scope, Math.min(size, 3), span(anchor, Math.min(size, 3))];
-  const corpusBound = [...corpusRunFrom(size, corpusAnchor).links.map(i => span(i, 2)), span(corpusAnchor, 2)];
+  const corpusBound = [...corpusRunFrom(size, corpusAnchor).links.map(i => span(i, 2)), span(corpusAnchor, 2), ...scope];
   // The collection's count says where its occurrences end and the corpus's begin, so every page reads it;
   // the corpus's is read on the first page alone, for the total.
-  const [localCount, page, corpusCount] = await env.DB.batch([
-    env.DB.prepare(runCountQuery(size, anchor, Boolean(document))).bind(...bound),
+  const [page, localCount, corpusCount] = await env.DB.batch([
     env.DB.prepare(runOccurrencesQuery(size, anchor, Boolean(document))).bind(...bound, limit, offset),
-    ...(corpus && !offset ? [env.DB.prepare(corpusRunCountQuery(size, corpusAnchor)).bind(...corpusBound)] : []),
+    env.DB.prepare(runCountQuery(size, anchor, Boolean(document))).bind(...bound),
+    ...(!offset ? [env.DB.prepare(corpusRunCountQuery(size, corpusAnchor, Boolean(document))).bind(...corpusBound)] : []),
   ]) as D1Result<any>[];
   const local = localCount.results[0] as Counted;
   const found = page.results as ({ document: string | null; vertical: number } & Record<`c${number}`, string>)[];
@@ -668,7 +671,7 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
       vertical: Boolean(row.vertical), page: runPage(crops) };
   });
   const rest = limit - items.length, from = Math.max(0, offset - local.n);
-  if (corpus && rest > 0 && from < RUN_COUNT_MAX) items.push(...await corpusOccurrencesOf(env, parts.length, corpusAnchor, corpusBound, rest, from));
+  if (rest > 0 && from < RUN_COUNT_MAX) items.push(...await corpusOccurrencesOf(env, parts.length, corpusAnchor, Boolean(document), corpusBound, rest, from));
   const counted = corpusCount ? [local, corpusCount.results[0] as Counted] : offset ? [] : [local];
   const n = counted.reduce((sum, c) => sum + c.n, 0), down = counted.reduce((sum, c) => sum + (c.vertical ?? 0), 0);
   const body = { text: value, size, document, next_offset: offset + items.length, items,
@@ -679,8 +682,8 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
 // A page of a corpus run's occurrences: each glyph as the site holds it once a review has written its row,
 // else its published record, read from its pack. A record that cannot be read fails the page, which is
 // asked again, so the offsets stay those of the rows.
-async function corpusOccurrencesOf(env: Env, size: number, anchor: number, bound: string[], limit: number, offset: number) {
-  const rows = (await env.DB.prepare(corpusRunQuery(size, anchor)).bind(...bound, limit, offset).all<Record<string, any>>()).results;
+async function corpusOccurrencesOf(env: Env, size: number, anchor: number, document: boolean, bound: string[], limit: number, offset: number) {
+  const rows = (await env.DB.prepare(corpusRunQuery(size, anchor, document)).bind(...bound, limit, offset).all<Record<string, any>>()).results;
   const ids = rows.flatMap(row => Array.from({ length: size }, (_, i) => row[`i${i}`] as string));
   const held = new Map(ids.length ? (await env.DB.prepare(`SELECT id,data FROM units WHERE id IN (SELECT value FROM json_each(?)) AND origin!='retired'`)
     .bind(JSON.stringify(ids)).all<{ id: string; data: string }>()).results.map(r => [r.id, parse(r.data)] as const) : []);

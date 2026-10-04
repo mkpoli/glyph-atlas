@@ -945,10 +945,10 @@ try {
   }
   const probePlan = await plan({ sql: worker.corpusProbeQuery(), values: [] }, ['にて'])
   assert.ok(probePlan.some(d => /USING COVERING INDEX corpus_ngram_text\b/.test(d)), probePlan.join('; '))
-  for (let size = 2; size <= 8; size++) for (let anchor = 0; anchor <= size - 2; anchor++) {
-    const bound = [...worker.corpusRunFrom(size, anchor).links.map(() => 'にて'), 'にて']
-    corpusServed(await plan({ sql: worker.corpusRunQuery(size, anchor), values: [] }, [...bound, 48, 0]))
-    corpusServed(await plan({ sql: worker.corpusRunCountQuery(size, anchor), values: [] }, bound))
+  for (const document of [false, true]) for (let size = 2; size <= 8; size++) for (let anchor = 0; anchor <= size - 2; anchor++) {
+    const bound = [...worker.corpusRunFrom(size, anchor).links.map(() => 'にて'), 'にて', ...(document ? ['codh:run'] : [])]
+    corpusServed(await plan({ sql: worker.corpusRunQuery(size, anchor, document), values: [] }, [...bound, 48, 0]))
+    corpusServed(await plan({ sql: worker.corpusRunCountQuery(size, anchor, document), values: [] }, bound))
   }
   for (const index of ['corpus_ngram_text', 'corpus_ngram_second']) {
     const create = (await db.prepare('SELECT sql FROM sqlite_master WHERE name=?').bind(index).first()).sql
@@ -968,6 +968,7 @@ try {
     await db.prepare(`INSERT INTO corpus_units(${CORPUS_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?)`).bind(id, label, 'U+3057', null, 7, 'pack-run', offset, new TextEncoder().encode(bytes).length, 'unknown', 0).run()
   }
   await bucket.put('pack-run', runPack)
+  await db.prepare("UPDATE corpus_units SET document='codh:run' WHERE id LIKE 'cr-%'").run()
   await db.batch([db.prepare(`INSERT INTO corpus_ngrams(first,second,text,vertical) VALUES('cr-1','cr-2','にて',1),('cr-2','cr-3','てを',1),('cr-3','cr-4','をし',1),('ghost-1','ghost-2','をし',1)`)])
   const corpusIds = run => run.items.map(o => o.crops.map(c => c.id))
   const pairRun = await runOf('にて')
@@ -977,7 +978,8 @@ try {
   assert.deepEqual(corpusIds(await runOf('にてをし')), [['cr-1', 'cr-2', 'cr-3', 'cr-4']], 'a corpus run chains its pairs')
   assert.equal((await runOf('にてし')).total, 0, 'a missing corpus pair breaks the run')
   assert.equal((await runOf('をし')).total, 1, 'a pair whose glyphs are not published is not shown')
-  assert.equal((await runOf('にてをし', '&document=codh%3Arun')).total, 0, 'a book narrows a run to the collection')
+  assert.equal((await runOf('にてをし', '&document=codh%3Arun')).total, 1, 'a book holds its corpus runs')
+  assert.equal((await runOf('にてをし', '&document=codh%3Aother')).total, 0, 'a book narrows the corpus runs to its own')
   // にて made commoner than てを by unpublished rows: the run starts inside and reaches に leftwards.
   await db.batch([db.prepare(`INSERT INTO corpus_ngrams(first,second,text,vertical) VALUES('ghost-3','ghost-4','にて',1),('ghost-5','ghost-6','にて',1)`),
     db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at','corpus-leftward')")])

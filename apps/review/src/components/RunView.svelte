@@ -10,6 +10,7 @@
   import SiteLinks from './SiteLinks.svelte'
   import { runOccurrences } from '../lib/ngrams.js'
   import { tileDate } from '../lib/dating.js'
+  import { sourceTitle } from '../lib/seo.js'
   import { collectionAddress } from '../lib/gallery.js'
   import { t, localize } from '../lib/i18n.svelte.js'
 
@@ -55,8 +56,8 @@
     observer.observe(sentinel)
     return () => observer.disconnect()
   })
-  // A corpus glyph names its source as a record, with its title.
-  const where = crop => [typeof crop.source === 'string' ? crop.source : crop.source?.title, crop.page_number ? t('tile.page', { page: crop.page_number }) : null, tileDate(crop) || null].filter(Boolean).join(' · ')
+  // A corpus glyph says it comes from the corpus index, as its tile does elsewhere.
+  const where = crop => [sourceTitle(crop), crop.origin === 'corpus' ? (crop.source?.corpus === 'codh-full' ? t('tile.origin.codh') : t('tile.origin.corpus')) : null, crop.page_number ? t('tile.page', { page: crop.page_number }) : null, tileDate(crop) || null].filter(Boolean).join(' · ')
 </script>
 
 <section class="explore run-view">
@@ -73,7 +74,7 @@
     {#if loading && !items.length}{#each Array(12) as _}<div class="glyph-skeleton"></div>{/each}{/if}
     {#each shown as occurrence (occurrence.crops[0].id)}
       <article class="run-occurrence">
-        <div class="run-page"><RunImage crops={occurrence.crops} page={occurrence.page} vertical={occurrence.vertical} oninspect={id => inspect(id, null, crops, null, crops.find(c => c.id === id)?.origin === 'corpus' ? 'corpus' : 'collection')} /></div>
+        <div class="run-page"><RunImage crops={occurrence.crops} page={occurrence.page} vertical={occurrence.vertical} oninspect={id => inspect(id, null, crops, null, occurrence.crops.find(c => c.id === id)?.origin === 'corpus' ? 'corpus' : 'collection')} /></div>
         <p class="run-where">{where(occurrence.crops[0])}</p>
       </article>
     {/each}

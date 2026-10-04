@@ -31,8 +31,9 @@ from refresh_published_units import VERSION_BUMP
 from glyph_atlas.corpus import sources
 from glyph_atlas.ngrams import Glyph, corpus_pair_statements, glyph_pairs
 
-#: The corpora whose glyphs stand on lines of a page. HI Lab and the HNG headword lists are single
-#: characters cut apart and have no line to read.
+#: The corpora whose glyphs stand on lines of a page. `hilab` and `hng` are single characters cut apart
+#: and have no line to read. A corpus is read from its tables (`units.parquet`), as its glyphs' published
+#: records are built, though `honkoku-lines` keeps a review store beside them.
 CORPORA = ("codh-full", "kokatsuji", "honkoku-lines", "hng-kiridashi", "hdic-krm", "hdic-ktb", "hdic-tsj",
            "ainu-records", "glossary-headwords")
 CODH_ORDER = re.compile(r":(B\d+):C(\d+)$")
@@ -85,12 +86,19 @@ def main() -> None:
     args = parser.parse_args()
     found = {corpus.name: corpus for corpus in sources.discover(args.root)}
     ids, pairs, report = [], [], {}
+    unknown = [name for name in args.corpora if name not in found]
+    if unknown:
+        raise SystemExit(f"no such corpus under {args.root}: {', '.join(unknown)}")
     for name in args.corpora:
-        corpus = found.get(name)
-        if corpus is None or corpus.table("units") is None:
+        corpus = found[name]
+        if corpus.table("units") is None:
             report[name] = "no units"
             continue
         glyphs, every = corpus_glyphs(corpus)
+        # A glyph twice over would hold its position twice and break the line there unnoticed.
+        repeated = len(every) - len(set(every))
+        if repeated:
+            raise SystemExit(f"{name}: {repeated} glyph ids appear more than once")
         found_pairs = glyph_pairs(glyphs)
         ids += every
         pairs += found_pairs

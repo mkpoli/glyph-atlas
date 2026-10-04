@@ -1,6 +1,9 @@
 -- Pairs of corpus glyphs that follow each other on a line, as `scripts/export_corpus_ngrams.py`
 -- finds them in the corpora: each glyph and the one after it (`first` names one pair), the text
--- their corpus transcribes, and whether the second stands below the first. Longer runs chain pairs
+-- their corpus transcribes, and whether the second stands below the first. The text is the
+-- transcription, not the written form the site labels a glyph with (a CODH kana labelled in its
+-- hentaigana form is found by the kana), and a later form decision leaves it as exported. The
+-- direction comes from the two boxes, where a collection run's comes from its line. Longer runs chain pairs
 -- (`/atlas/runs`): rightwards by the key, leftwards through `corpus_ngram_second`; a run starts
 -- from its rarest pair, read along `corpus_ngram_text` in key order.
 CREATE TABLE IF NOT EXISTS corpus_ngrams (
