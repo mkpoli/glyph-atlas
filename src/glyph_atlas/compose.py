@@ -764,6 +764,9 @@ class Composer:
             if len(here) != len(children) + 1:
                 continue
             same = [key(t) in w for t, w in zip(here[1:], wanted)]
+            if len(children) > 2 and not any(same):
+                # Three operands all unlike the teacher's are better shared as `SHARES` has it.
+                continue
             gaps = [(abs(math.log(max(self.ink(t), 1) / i)), abs(math.log(self.aspect(t) / a)))
                     for t, i, a in zip(here[1:], inks, aspects)]
             if any(not s and max(g) > math.log(UNLIKE) for s, g in zip(same, gaps)):
