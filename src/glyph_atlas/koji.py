@@ -194,6 +194,7 @@ _HENTAIGANA = "\u1b000-\u1b12f"
 BRACKET_KINDS: dict[str, tuple[str, int, int]] = {
     "振り仮名": ("ruby", 2, 3),
     "迎え仮名": ("ruby", 2, 3),
+    "ルビ": ("ruby", 2, 3),
     "割書": ("warigaki", 1, 4),
     "見せ消ち": ("misekechi", 1, 2),
     "訂正": ("misekechi", 1, 2),
