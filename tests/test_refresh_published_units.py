@@ -228,6 +228,17 @@ def test_a_new_style_is_set_in_place_reviewed_or_not(reviewed):
     assert sql == "UPDATE units SET style='cursive' WHERE id='hk:1' AND revision=1000001;"
 
 
+@pytest.mark.parametrize("reviewed", [False, True])
+def test_a_new_production_is_set_in_place_with_its_column_reviewed_or_not(reviewed):
+    new = {**unit(revision=1000001), "production": "printed/type",
+           "data": data(revision=1000001, production="printed/type", production_label="Movable type")}
+    action, sql = refresh.plan(new, live(reviewed=reviewed, production="unknown", production_label="Not classified"))
+    assert action == "in-place"
+    assert sql == ("UPDATE units SET data=json_set(data, '$.production', json('\"printed/type\"'), "
+                   "'$.production_label', json('\"Movable type\"')), production='printed/type' "
+                   "WHERE id='hk:1' AND revision=1000001;")
+
+
 def test_a_replaced_unit_takes_the_catalogues_style():
     _, sql = refresh.plan(unit(box={"x": 1, "y": 2, "w": 3, "h": 4}, style="running"), live())
     assert "style='running'" in sql

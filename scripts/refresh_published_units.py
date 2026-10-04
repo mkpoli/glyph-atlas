@@ -19,7 +19,9 @@ This writes the UPDATE statements that bring such units up to date:
   later reviews and undos, so an undo brings back neither, and undo decides the quiz with the
   repair status the row holds;
 - a unit whose resolved style changed takes it in place too, reviewed or not: the style is the
-  publication's (its document's, page's or own), and no review records it.
+  publication's (its document's, page's or own), and no review records it. Its production (how it
+  was made, with the evidence and label shown for it) is assessed the same way and moves in place
+  with its `production` column.
 
 The file ends by stamping `metadata.units_refreshed_at`, which the Worker's cached listings are keyed by.
 
@@ -70,7 +72,8 @@ def quote(value) -> str:
 #: and the box, so a page scanned anew is a new crop as much as a new box is.
 CROP_KEYS = ("box", "crop_box", "image", "image_sha256")
 # What a publication owns: set on the live row without a new revision, reviewed or not.
-IN_PLACE_KEYS = ("context_image", "context_box", "repair", "page_number")
+IN_PLACE_KEYS = ("context_image", "context_box", "repair", "page_number",
+                 "production", "production_evidence", "production_label")
 
 
 def same_crop(new_data: str, live_data: str) -> bool:
@@ -133,6 +136,8 @@ def plan(new: dict, live: dict) -> tuple[str, str | None]:
     restyled = new["style"] != live["style"]
     if restyled:
         sets.append(f"style={quote(new['style'])}")
+    if "production" in in_place:
+        sets.append(f"production={quote(new['production'])}")
     if not sets:
         return "skip", None
     return ("in-place" if in_place or restyled else "quiz"), f"UPDATE units SET {', '.join(sets)}" + guard
