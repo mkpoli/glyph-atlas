@@ -945,6 +945,11 @@ async function suggest(env: Env, q: URLSearchParams) {
     const found = await env.DB.prepare('SELECT data,5 AS rank FROM characters WHERE name LIKE ? LIMIT ?').bind('%'+term+'%',limit+1).all<{data:string;rank:number}>();
     rows.results.push(...found.results);
   }
+  // A description sequence no alias names is the character it describes, which has no table entry.
+  if (!rows.results.length && idsCharacter(literal(term))) {
+    const item = { ...describedCard(literal(term)).data, rank: 0 };
+    return { query: term, items: [item], total: 1, more: 0, status: 'ok', corpus: { ready: true } };
+  }
   // A term no alias names that is two or more ideographs asks for the characters built from them.
   const wanted = rows.results.length ? null : componentTerm(literal(term));
   if (wanted) {

@@ -186,6 +186,8 @@ describe('a character Unicode lacks, written as an ideographic description seque
     expect(categoryOf('⿰亻胃')).toBe('kanji');
     expect(categoryOf('⿰亻⿱亠女')).toBe('kanji');
     expect(categoryOf('⿰亻')).toBe('other');
+    expect(categoryOf('〾木')).toBe('kanji');
+    expect(categoryOf('⿲木木')).toBe('other');
   });
   it('has a card of its own, its own grapheme', () => {
     const { data, detail } = describedCard('⿰亻胃');
