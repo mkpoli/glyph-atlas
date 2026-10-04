@@ -1,9 +1,9 @@
 <script>
-  // Every occurrence of a run of characters: the crops that follow each other on a line, shown as they
-  // sit on the page (`RunImage`), with the book and page they come from. The run's own text is written
-  // the way most of its occurrences are: down the page or across it. Pages arrive as the reader nears the
-  // end, and while more are to come the grid shows whole rows only. A run of many characters gets a
-  // taller cell, so its crops stay legible down a column.
+  // Every occurrence of a run of characters, the collection's and then the corpus index's: the crops
+  // that follow each other on a line, shown as they sit on the page (`RunImage`), with the book and page
+  // they come from. The run's own text is written the way most of its occurrences are: down the page or
+  // across it. Pages arrive as the reader nears the end, and while more are to come the grid shows whole
+  // rows only. A run of many characters gets a taller cell, so its crops stay legible down a column.
   import { untrack } from 'svelte'
   import RunImage from './RunImage.svelte'
   import ScriptText from './ScriptText.svelte'
@@ -55,7 +55,8 @@
     observer.observe(sentinel)
     return () => observer.disconnect()
   })
-  const where = crop => [crop.source, crop.page_number ? t('tile.page', { page: crop.page_number }) : null, tileDate(crop) || null].filter(Boolean).join(' · ')
+  // A corpus glyph names its source as a record, with its title.
+  const where = crop => [typeof crop.source === 'string' ? crop.source : crop.source?.title, crop.page_number ? t('tile.page', { page: crop.page_number }) : null, tileDate(crop) || null].filter(Boolean).join(' · ')
 </script>
 
 <section class="explore run-view">
@@ -72,7 +73,7 @@
     {#if loading && !items.length}{#each Array(12) as _}<div class="glyph-skeleton"></div>{/each}{/if}
     {#each shown as occurrence (occurrence.crops[0].id)}
       <article class="run-occurrence">
-        <div class="run-page"><RunImage crops={occurrence.crops} page={occurrence.page} vertical={occurrence.vertical} oninspect={id => inspect(id, null, crops)} /></div>
+        <div class="run-page"><RunImage crops={occurrence.crops} page={occurrence.page} vertical={occurrence.vertical} oninspect={id => inspect(id, null, crops, null, crops.find(c => c.id === id)?.origin === 'corpus' ? 'corpus' : 'collection')} /></div>
         <p class="run-where">{where(occurrence.crops[0])}</p>
       </article>
     {/each}

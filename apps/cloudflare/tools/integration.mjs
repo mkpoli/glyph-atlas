@@ -933,6 +933,62 @@ try {
   assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent(pairText + pairText) + '&limit=49')).status, 422, 'a longer run pages fewer occurrences')
   const nextPage = await runOf(pairText, '&offset=1')
   assert.ok(!('total' in nextPage) && nextPage.next_offset === 1, 'a later page carries no count')
+  // Corpus runs chain the corpus index's pairs from the rarest one: read along `corpus_ngram_text` in key
+  // order, rightwards by the key, leftwards through `corpus_ngram_second`, each glyph by its id; never
+  // sorted or scanned, for every length and every pair a run can start from.
+  const corpusServed = details => {
+    assert.ok(details.some(d => /^SEARCH a USING (COVERING )?INDEX corpus_ngram_text\b/.test(d)), details.join('; '))
+    assert.ok(!details.some(d => d.includes('TEMP B-TREE') || /^SCAN \w+/.test(d)), details.join('; '))
+    assert.ok(details.filter(d => /^SEARCH r\d+ /.test(d)).every(d => d.includes('USING PRIMARY KEY (first=?)')), details.join('; '))
+    assert.ok(details.filter(d => /^SEARCH l\d+ /.test(d)).every(d => d.includes('USING INDEX corpus_ngram_second (second=?)')), details.join('; '))
+    assert.ok(details.filter(d => /^SEARCH g\d+ /.test(d)).every(d => /USING (COVERING )?INDEX sqlite_autoindex_corpus_units_1 \(id=\?\)$/.test(d)), details.join('; '))
+  }
+  const probePlan = await plan({ sql: worker.corpusProbeQuery(), values: [] }, ['にて'])
+  assert.ok(probePlan.some(d => /USING COVERING INDEX corpus_ngram_text\b/.test(d)), probePlan.join('; '))
+  for (let size = 2; size <= 8; size++) for (let anchor = 0; anchor <= size - 2; anchor++) {
+    const bound = [...worker.corpusRunFrom(size, anchor).links.map(() => 'にて'), 'にて']
+    corpusServed(await plan({ sql: worker.corpusRunQuery(size, anchor), values: [] }, [...bound, 48, 0]))
+    corpusServed(await plan({ sql: worker.corpusRunCountQuery(size, anchor), values: [] }, bound))
+  }
+  for (const index of ['corpus_ngram_text', 'corpus_ngram_second']) {
+    const create = (await db.prepare('SELECT sql FROM sqlite_master WHERE name=?').bind(index).first()).sql
+    await db.prepare(`DROP INDEX ${index}`).run()
+    await assert.rejects(async () => corpusServed(await plan({ sql: worker.corpusRunQuery(4, 1) + ' ', values: [] }, ['にて', 'にて', 'にて', 48, 0])),
+      `the corpus check fails without ${index}`)
+    await db.prepare(create).run()
+  }
+  // A column of four corpus glyphs, に て を し, from one pack; a glyph that is not published starts no run.
+  const runGlyph = (id, label, y) => ({ id, origin: 'corpus', label, source_label: label, written_character: label, grapheme: 'U+3057', state: 'pending', revision: 0,
+    proxyable: true, image: `/atlas/media/${id}.webp`, box: { x: 10, y, w: 10, h: 10 }, crop_box: { x: 10, y, w: 10, h: 10 },
+    context_image: '/atlas/media/column.webp', context_box: { x: 0, y: 0, w: 40, h: 80 }, source: { corpus: 'codh-full', document_id: 'codh:run', title: '試' } })
+  let runPack = ''
+  for (const [id, label, y] of [['cr-1', 'に', 10], ['cr-2', 'て', 22], ['cr-3', 'を', 34], ['cr-4', 'し', 46]]) {
+    const bytes = JSON.stringify(runGlyph(id, label, y)), offset = new TextEncoder().encode(runPack).length
+    runPack += bytes
+    await db.prepare(`INSERT INTO corpus_units(${CORPUS_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?)`).bind(id, label, 'U+3057', null, 7, 'pack-run', offset, new TextEncoder().encode(bytes).length, 'unknown', 0).run()
+  }
+  await bucket.put('pack-run', runPack)
+  await db.batch([db.prepare(`INSERT INTO corpus_ngrams(first,second,text,vertical) VALUES('cr-1','cr-2','にて',1),('cr-2','cr-3','てを',1),('cr-3','cr-4','をし',1),('ghost-1','ghost-2','をし',1)`)])
+  const corpusIds = run => run.items.map(o => o.crops.map(c => c.id))
+  const pairRun = await runOf('にて')
+  assert.deepEqual([pairRun.total, corpusIds(pairRun), pairRun.items[0].crops[0].origin], [1, [['cr-1', 'cr-2']], 'corpus'], 'a corpus pair is an occurrence')
+  assert.equal(pairRun.items[0].crops[0].source.title, '試', 'a corpus glyph keeps its source')
+  assert.ok(pairRun.items[0].page, 'a corpus run is drawn from its context render')
+  assert.deepEqual(corpusIds(await runOf('にてをし')), [['cr-1', 'cr-2', 'cr-3', 'cr-4']], 'a corpus run chains its pairs')
+  assert.equal((await runOf('にてし')).total, 0, 'a missing corpus pair breaks the run')
+  assert.equal((await runOf('をし')).total, 1, 'a pair whose glyphs are not published is not shown')
+  assert.equal((await runOf('にてをし', '&document=codh%3Arun')).total, 0, 'a book narrows a run to the collection')
+  // にて made commoner than てを by unpublished rows: the run starts inside and reaches に leftwards.
+  await db.batch([db.prepare(`INSERT INTO corpus_ngrams(first,second,text,vertical) VALUES('ghost-3','ghost-4','にて',1),('ghost-5','ghost-6','にて',1)`),
+    db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at','corpus-leftward')")])
+  assert.deepEqual(corpusIds(await runOf('にてを')), [['cr-1', 'cr-2', 'cr-3']], 'a corpus run reached leftwards keeps its reading order')
+  // The collection's occurrences come first and the corpus's after them, across pages.
+  await db.prepare("UPDATE unit_ngrams SET text='にて' WHERE first='one' AND size=2").run()
+  await db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at','corpus-paging')").run()
+  const mixedFirst = await runOf('にて', '&limit=1'), mixedSecond = await runOf('にて', '&limit=1&offset=1')
+  assert.deepEqual([mixedFirst.total, corpusIds(mixedFirst), corpusIds(mixedSecond), 'total' in mixedSecond], [2, [['one', 'two']], [['cr-1', 'cr-2']], false],
+    'the collection pages before the corpus')
+  await db.batch([db.prepare("DELETE FROM corpus_ngrams"), db.prepare("DELETE FROM corpus_units WHERE id LIKE 'cr-%'")])
   await db.prepare('DELETE FROM unit_ngrams').run()
   for (const [index, create] of Object.entries(keys)) {
     await db.prepare(`DROP INDEX ${index}`).run()

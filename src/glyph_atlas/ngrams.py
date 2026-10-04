@@ -25,14 +25,18 @@ class Run(NamedTuple):
 REACH = 1.6
 
 
-def _centre(unit: Unit) -> tuple[float, float]:
-    return unit.box.x + unit.box.w / 2, unit.box.y + unit.box.h / 2
+Box = tuple[float, float, float, float]
+
+
+def _near_boxes(a: Box, b: Box) -> bool:
+    """Whether two boxes, (x, y, w, h), stand close enough to be neighbours on a line (`REACH`)."""
+    ax, ay, bx, by = a[0] + a[2] / 2, a[1] + a[3] / 2, b[0] + b[2] / 2, b[1] + b[3] / 2
+    reach = REACH * max(a[2], a[3], b[2], b[3])
+    return (ax - bx) ** 2 + (ay - by) ** 2 <= reach ** 2
 
 
 def _near(a: Unit, b: Unit) -> bool:
-    (ax, ay), (bx, by) = _centre(a), _centre(b)
-    reach = REACH * max(a.box.w, a.box.h, b.box.w, b.box.h)
-    return (ax - bx) ** 2 + (ay - by) ** 2 <= reach ** 2
+    return _near_boxes((a.box.x, a.box.y, a.box.w, a.box.h), (b.box.x, b.box.y, b.box.w, b.box.h))
 
 
 def adjacent_ngrams(units: Iterable[Unit], horizontal: Container[str] = frozenset()) -> list[Run]:
@@ -87,4 +91,62 @@ def ngram_statements(units: Iterable[str], ngrams: list[Run], batch: int = 200) 
             + ") AS p" + joins + ";"
             for start in range(0, len(runs), batch)
         ]
+    return statements
+
+
+class Glyph(NamedTuple):
+    """A located glyph of a corpus: its line, its position on it, its box and the text it transcribes."""
+    id: str
+    line: str
+    seq: int
+    box: Box
+    text: str
+
+
+class Pair(NamedTuple):
+    """Two corpus glyphs that follow each other on a line, the text they make, and whether the second
+    stands below the first rather than beside it."""
+    first: str
+    second: str
+    text: str
+    vertical: bool
+
+
+def glyph_pairs(glyphs: Iterable[Glyph]) -> list[Pair]:
+    """Each glyph and the one at the next position on its line, under the rules `adjacent_ngrams`
+    keeps: a position with no glyph, or with two, breaks the line there, and so do two neighbours too
+    far apart on the page. The caller passes only glyphs that can be part of a run."""
+    lines: dict[str, dict[int, list[Glyph]]] = defaultdict(lambda: defaultdict(list))
+    for glyph in glyphs:
+        lines[glyph.line][glyph.seq].append(glyph)
+    pairs = []
+    for positions in lines.values():
+        held = {seq: found[0] for seq, found in positions.items() if len(found) == 1}
+        for seq, glyph in sorted(held.items()):
+            following = held.get(seq + 1)
+            if following and _near_boxes(glyph.box, following.box):
+                (ax, ay, aw, ah), (bx, by, bw, bh) = glyph.box, following.box
+                down = abs(by + bh / 2 - ay - ah / 2) >= abs(bx + bw / 2 - ax - aw / 2)
+                pairs.append(Pair(glyph.id, following.id, glyph.text + following.text, down))
+    return pairs
+
+
+def corpus_pair_statements(glyphs: Iterable[str], pairs: list[Pair], batch: int = 500) -> list[str]:
+    """D1 statements that make `pairs` the pairs starting at `glyphs`, as the site holds them.
+
+    Every pair starting at one of `glyphs` is removed first, so a glyph whose neighbour changed keeps no
+    stale pair. A pair is then recorded only when both its glyphs are published (`corpus_units`)."""
+    quote = lambda value: "'" + value.replace("'", "''") + "'"
+    ids = sorted(set(glyphs))
+    statements = [
+        "DELETE FROM corpus_ngrams WHERE first IN (" + ",".join(map(quote, ids[start:start + batch])) + ");"
+        for start in range(0, len(ids), batch)
+    ]
+    head = ("INSERT OR IGNORE INTO corpus_ngrams(first,second,text,vertical) "
+            "SELECT p.column1,p.column2,p.column3,p.column4 FROM (VALUES ")
+    tail = ") AS p JOIN corpus_units a ON a.id=p.column1 JOIN corpus_units b ON b.id=p.column2;"
+    statements += [
+        head + ",".join(f"({quote(p.first)},{quote(p.second)},{quote(p.text)},{int(p.vertical)})" for p in pairs[start:start + batch]) + tail
+        for start in range(0, len(pairs), batch)
+    ]
     return statements

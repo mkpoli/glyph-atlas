@@ -2,7 +2,15 @@ import sqlite3
 from pathlib import Path
 
 from glyph_atlas import tables
-from glyph_atlas.ngrams import Run, adjacent_ngrams, ngram_statements
+from glyph_atlas.ngrams import (
+    Glyph,
+    Pair,
+    Run,
+    adjacent_ngrams,
+    corpus_pair_statements,
+    glyph_pairs,
+    ngram_statements,
+)
 from glyph_atlas.review.store import Store
 from glyph_atlas.schema import Box, Line, Unit, UnitKind
 
@@ -119,3 +127,28 @@ def test_the_review_store_names_the_lines_written_across(tmp_path):
     tables.write(tmp_path / "lines.parquet", [Line(id="H", page_id="P", seq=0, text_raw="ab", text="ab", vertical=False),
                                               Line(id="V", page_id="P", seq=1, text_raw="cd", text="cd")], Line)
     assert Store(tmp_path).horizontal_lines() == {"H"}
+
+
+def glyph(id, seq, text, y=None, x=0, line="B1"):
+    return Glyph(id, line, seq, (x, seq * 40 if y is None else y, 36, 36), text)
+
+
+def test_corpus_pairs_follow_the_same_rules_as_runs():
+    glyphs = [glyph("a", 1, "に"), glyph("b", 2, "て"), glyph("c", 3, "を"), glyph("d", 4, "し", y=400),
+              glyph("e", 5, "て"), glyph("f", 5, "も"), glyph("g", 6, "な"), glyph("h", 1, "左", line="B2", y=0, x=0),
+              glyph("i", 2, "右", line="B2", y=0, x=-40)]
+    # A neighbour too far off breaks the line, and so does a position two glyphs share; a line read
+    # across gives a pair that is not written down the page.
+    assert glyph_pairs(glyphs) == [Pair("a", "b", "にて", True), Pair("b", "c", "てを", True), Pair("h", "i", "左右", False)]
+
+
+def test_d1_corpus_pairs_need_both_glyphs_published():
+    db = sqlite3.connect(":memory:")
+    db.execute("CREATE TABLE corpus_units (id TEXT PRIMARY KEY)")
+    db.executescript(next(m for m in MIGRATIONS if "corpus_ngrams" in m.name).read_text())
+    db.executemany("INSERT INTO corpus_units VALUES(?)", [("a",), ("b",), ("c",)])
+    db.execute("INSERT INTO corpus_ngrams VALUES('a','z','にな',1)")
+    pairs = [Pair("a", "b", "にて", True), Pair("b", "c", "てを", True), Pair("c", "x", "をし", True)]
+    for statement in corpus_pair_statements(["a", "b", "c"], pairs) * 2:
+        db.execute(statement)
+    assert db.execute("SELECT * FROM corpus_ngrams ORDER BY first").fetchall() == [("a", "b", "にて", 1), ("b", "c", "てを", 1)]

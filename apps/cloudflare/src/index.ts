@@ -560,6 +560,9 @@ export function runPage(crops: Json[]): { image: string; box: Rect; region: Rect
 // RUN_PAGE_CROPS crops, so a longer run comes in fewer occurrences at a time.
 // RUN_MAX keeps a run inside one context render: a render reaches five character sizes along a column
 // (`CONTEXT_REACH`), so its middle crop's holds about eleven, and `runPage` finds the run in it.
+// The corpus index holds pairs alone (`corpus_ngrams`): a corpus run of any length chains them from its
+// rarest pair, and its glyphs are read from their published records. A run's occurrences are the
+// collection's first and then the corpus's; a book narrows them to the collection's.
 const RUN_MAX = 8, RUN_PAGE_CROPS = 192, RUN_COUNT_MAX = 2000, RUN_PROBE_MAX = 5000;
 const NGRAM_COLUMNS = ['first', 'second', 'third'];
 const graphemes = new Intl.Segmenter('ja', { granularity: 'grapheme' });
@@ -594,6 +597,32 @@ export function runCountQuery(size: number, anchor: number, document: boolean) {
 export function runProbeQuery(document: boolean) {
   return `SELECT count(*) AS n FROM (SELECT 1 FROM unit_ngrams WHERE ${document ? 'document=? AND ' : ''}size=3 AND text=? LIMIT ${RUN_PROBE_MAX})`;
 }
+/** How a corpus run of `size` glyphs is read when its pair `a` starts at glyph `anchor`, as `runFrom`. */
+export function corpusRunFrom(size: number, anchor: number) {
+  const crops: string[] = [], joins: string[] = [], links: number[] = [];
+  crops[anchor] = 'a.first'; crops[anchor + 1] = 'a.second';
+  for (let i = anchor + 1; i < size - 1; i++) {
+    joins.push(`CROSS JOIN corpus_ngrams r${i} ON r${i}.first=${crops[i]} AND +r${i}.text=?`);
+    crops[i + 1] = `r${i}.second`; links.push(i);
+  }
+  for (let i = anchor - 1; i >= 0; i--) {
+    joins.push(`CROSS JOIN corpus_ngrams l${i} ON l${i}.second=${crops[i + 1]} AND +l${i}.text=?`);
+    crops[i] = `l${i}.first`; links.push(i);
+  }
+  const glyphs = crops.map((crop, i) => `CROSS JOIN corpus_units g${i} ON g${i}.id=${crop}`);
+  return { from: ['FROM corpus_ngrams a', ...joins, ...glyphs].join(' '), links };
+}
+export function corpusRunQuery(size: number, anchor: number) {
+  return `SELECT ${Array.from({ length: size }, (_, i) => `g${i}.id AS i${i},g${i}.object AS o${i},g${i}."offset" AS f${i},g${i}.size AS s${i}`).join(',')}, a.vertical
+    ${corpusRunFrom(size, anchor).from} WHERE a.text=? ORDER BY a.first LIMIT ? OFFSET ?`;
+}
+export function corpusRunCountQuery(size: number, anchor: number) {
+  return `SELECT count(*) AS n, sum(v) AS vertical FROM (SELECT a.vertical AS v ${corpusRunFrom(size, anchor).from}
+    WHERE a.text=? LIMIT ${RUN_COUNT_MAX + 1})`;
+}
+/** How many corpus pairs make a text, counting no further than RUN_PROBE_MAX. */
+export const corpusProbeQuery = () => `SELECT count(*) AS n FROM (SELECT 1 FROM corpus_ngrams WHERE text=? LIMIT ${RUN_PROBE_MAX})`;
+type Counted = { n: number; vertical: number | null };
 async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
   const q = url.searchParams;
   const value = text(q.get('text'), 96, 'text', true)!;
@@ -608,19 +637,27 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
   const key = new Request(`${url.origin}/atlas/runs?${new URLSearchParams({ text: value, document: document ?? '', limit: String(limit), offset: String(offset), v: await catalogueVersion(env) })}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json() as Json;
-  const size = parts.length, scope = document ? [document] : [];
+  const size = parts.length, scope = document ? [document] : [], corpus = !document;
   const span = (from: number, length: number) => parts.slice(from, from + length).join('');
-  let anchor = 0;
-  if (size > 3) {
-    const probes = await env.DB.batch(Array.from({ length: size - 2 }, (_, i) =>
-      env.DB.prepare(runProbeQuery(Boolean(document))).bind(...scope, span(i, 3)))) as D1Result<{ n: number }>[];
-    const counts = probes.map(probe => probe.results[0].n);
-    anchor = counts.indexOf(Math.min(...counts));
-  }
+  // Each source's run starts from its rarest row: a trigram of the collection's, a pair of the corpus's.
+  const probing = [
+    ...(size > 3 ? Array.from({ length: size - 2 }, (_, i) => env.DB.prepare(runProbeQuery(Boolean(document))).bind(...scope, span(i, 3))) : []),
+    ...(corpus && size > 2 ? Array.from({ length: size - 1 }, (_, i) => env.DB.prepare(corpusProbeQuery()).bind(span(i, 2))) : []),
+  ];
+  const probes = probing.length ? await env.DB.batch(probing) as D1Result<{ n: number }>[] : [];
+  const counts = probes.map(probe => probe.results[0].n), rarest = (n: number[]) => n.length ? n.indexOf(Math.min(...n)) : 0;
+  const anchor = size > 3 ? rarest(counts.slice(0, size - 2)) : 0, corpusAnchor = rarest(counts.slice(size > 3 ? size - 2 : 0));
   const { links } = runFrom(size, anchor);
   const bound = [...links.map(i => span(i, 2)), ...scope, Math.min(size, 3), span(anchor, Math.min(size, 3))];
-  const occurrences = env.DB.prepare(runOccurrencesQuery(size, anchor, Boolean(document))).bind(...bound, limit, offset);
-  const [page, count] = await env.DB.batch(offset ? [occurrences] : [occurrences, env.DB.prepare(runCountQuery(size, anchor, Boolean(document))).bind(...bound)]) as D1Result<any>[];
+  const corpusBound = [...corpusRunFrom(size, corpusAnchor).links.map(i => span(i, 2)), span(corpusAnchor, 2)];
+  // The collection's count says where its occurrences end and the corpus's begin, so every page reads it;
+  // the corpus's is read on the first page alone, for the total.
+  const [localCount, page, corpusCount] = await env.DB.batch([
+    env.DB.prepare(runCountQuery(size, anchor, Boolean(document))).bind(...bound),
+    env.DB.prepare(runOccurrencesQuery(size, anchor, Boolean(document))).bind(...bound, limit, offset),
+    ...(corpus && !offset ? [env.DB.prepare(corpusRunCountQuery(size, corpusAnchor)).bind(...corpusBound)] : []),
+  ]) as D1Result<any>[];
+  const local = localCount.results[0] as Counted;
   const found = page.results as ({ document: string | null; vertical: number } & Record<`c${number}`, string>)[];
   // The crops of one run stand on one page, so they share their document's dates.
   const dating = await datingOf(env, found.map(row => row.document));
@@ -630,11 +667,27 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
     return { crops: crops.map(c => ({ ...listing(c), crop_box: c.crop_box ?? null, dating: dated ?? {} })),
       vertical: Boolean(row.vertical), page: runPage(crops) };
   });
-  const counted = count?.results[0] as { n: number; vertical: number | null } | undefined;
+  const rest = limit - items.length, from = Math.max(0, offset - local.n);
+  if (corpus && rest > 0 && from < RUN_COUNT_MAX) items.push(...await corpusOccurrencesOf(env, parts.length, corpusAnchor, corpusBound, rest, from));
+  const counted = corpusCount ? [local, corpusCount.results[0] as Counted] : offset ? [] : [local];
+  const n = counted.reduce((sum, c) => sum + c.n, 0), down = counted.reduce((sum, c) => sum + (c.vertical ?? 0), 0);
   const body = { text: value, size, document, next_offset: offset + items.length, items,
-    ...(counted && { total: Math.min(counted.n, RUN_COUNT_MAX), more: counted.n > RUN_COUNT_MAX, vertical: 2 * (counted.vertical ?? 0) >= counted.n }) };
+    ...(counted.length && { total: Math.min(n, RUN_COUNT_MAX), more: n > RUN_COUNT_MAX, vertical: 2 * down >= n }) };
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return body;
+}
+// A page of a corpus run's occurrences: each glyph's published record, read from its pack. An occurrence
+// whose record cannot be read is left out.
+async function corpusOccurrencesOf(env: Env, size: number, anchor: number, bound: string[], limit: number, offset: number) {
+  const rows = (await env.DB.prepare(corpusRunQuery(size, anchor)).bind(...bound, limit, offset).all<Record<string, any>>()).results;
+  const read = await Promise.all(rows.map(row => Promise.all(Array.from({ length: size }, (_, i) =>
+    corpusData(env, { id: row[`i${i}`], object: row[`o${i}`], offset: row[`f${i}`], size: row[`s${i}`] } as CorpusRow)))
+    .then(crops => ({ crops, vertical: Boolean(row.vertical) }), () => null)));
+  const found = read.filter(Boolean) as { crops: Json[]; vertical: boolean }[];
+  const dating = await datingOf(env, found.map(o => documentOf(o.crops[0])));
+  return found.map(({ crops, vertical }) => ({
+    crops: crops.map(c => ({ ...listing(c), origin: 'corpus', crop_box: c.crop_box ?? null, dating: dating.get(documentOf(c) ?? '') ?? {} })),
+    vertical, page: runPage(crops) }));
 }
 // A crop's neighbours on its line, in reading order: the pairs `unit_ngrams` holds are followed forward
 // by their first crop (the primary key) and backward by their second (`unit_ngram_second`), at most
