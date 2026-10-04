@@ -497,6 +497,49 @@ def test_a_review_after_a_redrawn_box_imports_on_the_new_box(store):
     assert unit.box.model_dump() == box and unit.unicode == "U+3092"
 
 
+#: A site user's id (anonymised), as the Worker records the actor of a signed-in write.
+ACCOUNT = "0f2d6c1e-7a4b-4c3d-9e8f-1a2b3c4d5e6f"
+
+
+def signed_in(record, *, actor=ACCOUNT, client_id=None):
+    """The review as the Worker saves it since accounts: the actor is the session's user id, and the
+    request names no reviewer (unless `client_id` puts one back)."""
+    evidence = json.loads(record["event"]["evidence"])
+    evidence["request"].pop("client_id")
+    if client_id is not None:
+        evidence["request"]["client_id"] = client_id
+    record["event"].update(actor=actor, evidence=json.dumps(evidence, ensure_ascii=False), at="2026-10-02T23:57:02.136Z")
+    return record
+
+
+def test_a_signed_in_correction_imports_under_its_account(store):
+    record = signed_in(remote(baseline(store), character="ナ")[0])
+    _, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
+    assert report["counts"] == {"imported": 1}, report
+    local = [e for e in store.events() if e.field == "review"][-1]
+    assert local.actor == ACCOUNT and store.unit("u").unicode == "U+30CA"
+
+
+def test_a_box_redrawn_while_signed_in_imports_as_the_crops_new_box(store):
+    box = {"x": 12, "y": 11, "w": 26, "h": 38}
+    record = signed_in(redrawn(baseline(store), box)[0])
+    _, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
+    assert report["counts"] == {"imported": 1}, report
+    assert store.unit("u").box.model_dump() == box
+
+
+@pytest.mark.parametrize("actor, client_id", [
+    (ACCOUNT, "reviewer-0a1b2c3d"),        # an old reviewer id, which the export cannot tie to the account
+    (ACCOUNT, "1e2d3c4b-5a69-4788-97a6-b5c4d3e2f100"),  # another user
+    ("reviewer-0a1b2c3d", None),           # an id from before accounts, whose requests always named it
+])
+def test_a_request_that_names_another_reviewer_is_rejected(store, actor, client_id):
+    record = signed_in(remote(baseline(store), character="ナ")[0], actor=actor, client_id=client_id)
+    _, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
+    assert report["items"][0]["reason"] == "request provenance disagrees with the reviewed occurrence"
+    assert not store.events()
+
+
 def test_a_box_claim_that_names_another_starting_box_is_refused(store):
     record, _ = redrawn(baseline(store), {"x": 12, "y": 11, "w": 26, "h": 38})
     evidence = json.loads(record["event"]["evidence"])

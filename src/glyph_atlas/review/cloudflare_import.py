@@ -16,6 +16,8 @@ from .receipts import fingerprint
 from .store import UNREVISED, _change
 
 REMOTE_ID = re.compile(r"cf:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$", re.IGNORECASE)
+#: A site user's id, which the Worker records as the actor of every write since accounts.
+ACCOUNT_ID = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", re.IGNORECASE)
 POLICY = "cloudflare-import-v1"
 
 
@@ -71,6 +73,21 @@ def _answer(evidence, identity, snapshot=None):
     return request
 
 
+def _same_reviewer(event, evidence):
+    """Whether the request a review carries was made by the event's actor, as the Worker records one.
+
+    Before accounts the Worker took the actor from the request's `client_id`, so the two are equal.
+    Since then it takes the actor from the session, a user id, and the request names no reviewer. A
+    request naming any other id disagrees: the export does not show which ids an account holds.
+    """
+    if "request" not in evidence:
+        return True
+    client = evidence["request"].get("client_id")
+    if client is None:
+        return bool(ACCOUNT_ID.fullmatch(event["actor"]))
+    return client == event["actor"]
+
+
 def _step(record, before):
     event = record["event"]
     shown, evidence = _snapshot(record)
@@ -83,10 +100,8 @@ def _step(record, before):
             or event.get("target_id") != before["id"]):
         raise Rejected("unsupported remote event")
     answer = _answer(evidence, before["id"], evidence.get("snapshot"))
-    # The reviewer is the event's actor; a request carried in the evidence must name the same one.
-    client = evidence["request"].get("client_id") if "request" in evidence else event["actor"]
     if (answer.get("revision") != revision or answer.get("image_sha256") != before["image_sha256"]
-            or client != event["actor"]):
+            or not _same_reviewer(event, evidence)):
         raise Rejected("request provenance disagrees with the reviewed occurrence")
     verdict, issue = answer.get("verdict"), answer.get("issue")
     if verdict != evidence.get("verdict") or issue != evidence.get("issue"):
