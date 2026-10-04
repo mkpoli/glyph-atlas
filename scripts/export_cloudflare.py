@@ -49,7 +49,11 @@ class Packs:
     def __init__(self, output, db):
         self.output, self.db = output, db
         self.file = None
-        self.index = max([int(p.stem.split("-")[-1]) for p in output.glob("pack-*.bin")], default=0)
+        # Numbered past every pack the catalogue names, on disk or not: an earlier run's packs may be
+        # deleted once published, and a new pack under one of their names would put new bytes under
+        # the rows still pointing into it.
+        names = {p.name for p in output.glob("pack-*.bin")} | {o for o, in db.execute("SELECT DISTINCT object FROM media")}
+        self.index = max([int(m[1]) for n in names if (m := re.fullmatch(r"pack-(\d+)\.bin", n))], default=0)
         self.seen = {r[0] for r in db.execute("SELECT key FROM media")}
 
     def add(self, key, path, content_type="image/webp"):
