@@ -126,3 +126,13 @@ class TestSerialisation:
         assert payload["has_glyph_rect"] is False
         assert payload["review_state"] == "machine"
         json.dumps(payload, ensure_ascii=False)
+
+
+def test_a_sequence_names_each_of_its_code_points():
+    from glyph_atlas.corpus.index import _char_of_codepoint
+    from glyph_atlas.corpus.occurrence import codepoint
+
+    assert codepoint("か") == "U+304B"
+    assert codepoint("𛂞゙") == "U+1B09E U+3099"
+    assert _char_of_codepoint("U+1B09E U+3099") == "𛂞゙"
+    assert _char_of_codepoint("U+304B") == "か"
