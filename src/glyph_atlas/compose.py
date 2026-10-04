@@ -30,6 +30,7 @@ from __future__ import annotations
 import hashlib
 import math
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from functools import cached_property
 from itertools import combinations
@@ -122,6 +123,18 @@ def key(node: Node) -> str:
 
 #: A sequence's source regions: (GJ), (G[B]) or (UTC2003).
 REGIONS = re.compile(r"^(.*?)\(([A-Z0-9\[\]]+)\)$")
+
+
+def japanese_characters() -> set[str]:
+    """The ideographs BabelStone gives a sequence for Japan."""
+    out = set()
+    for row in read_rows("han-ids.tsv"):
+        for item in row[2].split():
+            match = REGIONS.match(item)
+            if match and "J" in match.group(2):
+                out.add(row[1])
+                break
+    return out
 
 
 def japanese_sequences() -> dict[str, str]:
@@ -334,6 +347,8 @@ STEM_CURVE = ((85.34, -1.324), (86.93, -1.914))
 SLOTS = {"⿰": "LR", "⿲": "LCR", "⿱": "TB", "⿳": "TMB"}
 #: The table's position names for a radical's positional form.
 FORM_POSITION = {"left": "L", "right": "R", "top": "T", "bottom": "B"}
+#: Least number of Japanese characters that must write a positional form in a place for it to be used there.
+JAPANESE_USE = 3
 #: Most an operand may differ from the teacher's, in ink or in proportions, for the teacher's layout to hold.
 UNLIKE = 2.0
 #: Most an enclosed part's or a whole glyph's proportions may change on the way into its box.
@@ -604,10 +619,22 @@ class Composer:
             node = self.by_sequence[key(node)]
             out.append(node)
         if isinstance(node, str):
-            # The operand's own positional forms, then those of the character it is a variant of (王 of 玉).
+            # The operand's own positional forms, then those of the character it is a variant of (王 of
+            # 玉), as Japanese characters write them there: the table also lists Chinese simplified
+            # forms (讠 beside 訁), which a Japanese font does not draw in these places.
+            forms = []
             for base in (node, *self.bases.get(node, ())):
-                out.extend(form for form, where in self.forms.get(base, []) if where == place and form not in out)
+                forms.extend(form for form, where in self.forms.get(base, []) if where == place and form not in out + forms)
+            used = sorted((f for f in forms if self.usage[(place, f)] >= JAPANESE_USE), key=lambda f: -self.usage[(place, f)])
+            out.extend(used)
         return out
+
+    @cached_property
+    def usage(self) -> Counter:
+        """(position, operand) → how many characters with a Japanese sequence write that operand there."""
+        hosts, _ = self._index
+        japanese = japanese_characters()
+        return Counter({k: sum(1 for char, *_ in v if char in japanese) for k, v in hosts.items()})
 
     @cached_property
     def bases(self) -> dict[str, list[str]]:
