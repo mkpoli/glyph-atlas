@@ -1232,7 +1232,7 @@ def rare_chars(
 @app.command("ruby-spellings")
 def ruby_spellings(
     clone: Annotated[Path | None, typer.Option(help="みんなで翻刻データ clone; cache/honkoku-data when unset")] = None,
-    word: Annotated[list[str] | None, typer.Option(help="a reading to collect; ばかり, はかり, など, なと and のみ when unset")] = None,
+    word: Annotated[list[str] | None, typer.Option(help="a reading to collect; ruby_spellings.WORDS when unset")] = None,
     out: Annotated[Path, typer.Option(help="spellings TSV")] = Path("data/vocab/ruby-spellings.tsv"),
     project: Annotated[list[str] | None, typer.Option(help="only these projects")] = None,
     workers: Annotated[int, typer.Option(help="processes reading the entries")] = 4,
