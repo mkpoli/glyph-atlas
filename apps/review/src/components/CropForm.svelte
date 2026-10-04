@@ -32,27 +32,8 @@
     for (const form of added) if (!has(form.char)) chips.push(form)
     return chips
   })
-  // One row, never a scrollbar: as many chips as fit, the crop's own and the chosen one among them,
-  // and the rest under "+n", in the picker.
-  // A chip is about 62 px with its key and 50 px on a phone, where keys are hidden; the add button
-  // sits outside the row, so it is never the one cut off.
-  let width = $state(0), screen = $state(1000)
-  const fit = $derived(width ? Math.max(1, Math.min(BAR, Math.floor((width - 52) / (screen <= 700 ? 50 : 62)))) : BAR)
-  const shown = $derived.by(() => {
-    const visible = bar.slice(0, fit)
-    for (const char of [current, chosen]) {
-      const chip = bar.find(item => item.char === char)
-      if (!chip || visible.includes(chip)) continue
-      // Into the last slot that holds neither the crop's own form nor the chosen one.
-      let slot = visible.length - 1
-      while (slot > 0 && [current, chosen].includes(visible[slot].char)) slot--
-      visible.splice(Math.max(0, slot), 1, chip)
-    }
-    return visible
-  })
-  const hidden = $derived(bar.filter(chip => !shown.includes(chip)))
-  // The forms under "+n": those cut from the row and a grapheme's forms past the first ten.
-  const rest = $derived([...hidden, ...listed.members.slice(BAR)])
+  // The bar wraps onto further rows; only a grapheme's forms past the first ten wait in the picker.
+  const rest = $derived(listed.members.slice(BAR))
   const q = $derived(query.trim().toUpperCase())
   const matches = item => !q || item.char.toUpperCase().includes(q) || (item.code_point ?? '').includes(q)
   const sections = $derived([
@@ -75,15 +56,17 @@
     if (event.key === 'Escape' && picking) { event.preventDefault(); picking = false; query = ''; addButton?.focus(); return }
     if (event.target.closest?.('input, textarea, select, [contenteditable="true"], .character-search')) return
     const index = '1234567890'.indexOf(event.key)
-    if (index >= 0 && shown[index]) { event.preventDefault(); choose(shown[index].char) }
+    if (index >= 0 && bar[index]) { event.preventDefault(); choose(bar[index].char) }
   }
 </script>
 
-<svelte:window onkeydown={keydown} bind:innerWidth={screen} />
+<svelte:window onkeydown={keydown} />
 
 <div class="crop-form" bind:this={root}>
-  <div class="form-row" bind:clientWidth={width}><div class="form-fit"><FormChips forms={shown} chosen={chosen} {current} {disabled} label={t('quiz.forms.label', { char: written })} onchoose={choose} /></div>
-    <button type="button" class="form-add" bind:this={addButton} {disabled} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>{rest.length ? `+${rest.length}` : '+'}</button></div>
+  <div class="form-row">
+    <FormChips forms={bar} {chosen} {current} {disabled} label={t('quiz.forms.label', { char: written })} onchoose={choose} />
+    <button type="button" class="form-add" bind:this={addButton} {disabled} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>{rest.length ? `+${rest.length}` : '+⌕'}</button>
+  </div>
   {#if picking}
     <div class="form-picker" role="dialog" aria-label={t('form.add')}>
       <CharacterSearch compact codePoints autofocus bind:value={query} label={t('form.add')} placeholder={t('search.placeholder')} onselect={add} />
@@ -106,9 +89,9 @@
 
 <style>
   .crop-form{display:flex;flex-direction:column;gap:10px;margin:0 0 16px}
-  .form-row{display:flex;gap:6px;align-items:center}.form-fit{flex:0 1 auto;min-width:0;overflow:hidden}
-  .crop-form :global(.form-chips){flex-wrap:nowrap}
-  .form-add{min-width:40px;padding:4px 10px;font-size:20px;line-height:1.2;color:var(--muted);border-style:dashed}
+  .form-row{display:flex;gap:6px;align-items:flex-start}
+  .crop-form :global(.form-chips){flex:1 1 0}
+  .form-add{flex:none;min-width:40px;padding:4px 10px;font-size:20px;line-height:1.2;color:var(--muted);border-style:dashed}
   .form-add[aria-expanded="true"]{color:var(--accent);border-color:var(--accent)}
   .form-picker{display:flex;flex-direction:column;gap:12px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
   .form-picker :global(.character-search){width:100%;min-width:0}

@@ -41,13 +41,14 @@ try {
   browser.listeners.push(m => { if (m.method === 'Runtime.exceptionThrown') errors.push(m.params.exceptionDetails?.text) })
   await browser.goto(`${service.base}/en/crop/${encodeURIComponent(id)}`, { waitFor: ready, timeout: 90000 })
   await browser.waitFor(`${chips}.length > 2`, 30000)
-  // One row of chips; the forms that do not fit are counted on the add button and listed in the picker.
+  // The first ten forms wrap onto further rows; the rest are counted on the add button and listed in the picker.
   const forms = await browser.evaluate(`[...${chips}].map(c => c.querySelector('.script-text').textContent)`)
+  assert(forms.length === 10, `the bar shows ${forms.length} forms, not ten`)
   assert(forms[0] === 'ば' && forms[1] === 'バ', `the bar does not lead with ば and バ: ${forms.join(' ')}`)
   assert(forms.includes(HA), `the bar lacks 𛂞 + U+3099: ${forms.join(' ')}`)
   const parts = await browser.evaluate(`[...${chips}].find(c => c.textContent.includes(${JSON.stringify(HA)})).querySelectorAll('.script-char').length`)
   assert(parts === 1, `𛂞 + U+3099 is coloured as ${parts} parts`)
-  assert(await browser.evaluate(`(() => { const row = document.querySelector('dialog[open] .form-fit'); return row.scrollWidth <= row.clientWidth + 1 })()`), 'the bar overflows its row')
+  assert(await browser.evaluate(`(() => { const row = document.querySelector('dialog[open] .form-chips'); return row.scrollWidth <= row.clientWidth + 1 })()`), 'the bar overflows its width')
   const overflow = await browser.evaluate('document.querySelector("dialog[open] .form-add").textContent.trim()')
   for (const scheme of ['light', 'dark']) {
     await browser.setColorScheme(scheme)
