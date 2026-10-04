@@ -802,7 +802,7 @@ class Composer:
 
     def compose(self, sequence: str) -> list[Placed]:
         """The parts that draw `sequence`; LookupError when an operand can be drawn no way."""
-        placed = self._node(parse(sequence), self.face, whole=True)
+        placed = self._node(parse(sequence), self.face, at_root=True)
         if self.weighted:
             self._balance(placed)
         return placed
@@ -829,34 +829,35 @@ class Composer:
             p.target = tuple(target)
             p.weight = (weight[0], weight[1])
 
-    def _node(self, node: Node, region: Box, whole: bool = False) -> list[Placed]:
-        whole = node if isinstance(node, str) else self.by_sequence.get(key(node))
-        if whole is not None and whole not in self._expanding and (isinstance(node, str) or whole not in self.exclude):
-            glyph = self.font.glyph(whole)
+    def _node(self, node: Node, region: Box, at_root: bool = False) -> list[Placed]:
+        """`node` drawn into `region`; at the root, the whole character, laid out in the em."""
+        encoded = node if isinstance(node, str) else self.by_sequence.get(key(node))
+        if encoded is not None and encoded not in self._expanding and (isinstance(node, str) or encoded not in self.exclude):
+            glyph = self.font.glyph(encoded)
             tree = node if isinstance(node, tuple) else None
-            if tree is None and whole in self.sequences and whole not in self.exclude:
+            if tree is None and encoded in self.sequences and encoded not in self.exclude:
                 try:
-                    tree = parse(self.sequences[whole])
+                    tree = parse(self.sequences[encoded])
                 except ValueError as error:
                     if glyph is None:
-                        raise LookupError(f"{whole} has no glyph, and its sequence is malformed: {error}") from error
+                        raise LookupError(f"{encoded} has no glyph, and its sequence is malformed: {error}") from error
             # A glyph that would be squeezed out of shape is drawn from its sequence instead, whose
             # parts come from characters that draw them in such a box (鮮 flat on top as ⿰魚羊).
             squeezed = glyph is not None and self.hosted and self._stretch(glyph.box, region) > STRETCH
             if glyph is not None and not (squeezed and tree is not None):
-                return [self._place(glyph, region, self.ink(whole), f"glyph {whole}")]
+                return [self._place(glyph, region, self.ink(encoded), f"glyph {encoded}")]
             if tree is None:
-                raise LookupError(f"No glyph or sequence draws {whole}.")
+                raise LookupError(f"No glyph or sequence draws {encoded}.")
             # A character whose sequence leads back to itself is not expanded again.
-            self._expanding.add(whole)
+            self._expanding.add(encoded)
             try:
-                return self._node(tree, region)
+                return self._node(tree, region, at_root)
             except LookupError:
                 if glyph is None:
                     raise
-                return [self._place(glyph, region, self.ink(whole), f"glyph {whole}")]
+                return [self._place(glyph, region, self.ink(encoded), f"glyph {encoded}")]
             finally:
-                self._expanding.discard(whole)
+                self._expanding.discard(encoded)
         if isinstance(node, str):
             glyph = self.font.glyph(node)
             if glyph is None:
@@ -868,14 +869,14 @@ class Composer:
         instance = self._instance(node, region)
         if instance is not None:
             return [instance]
-        found = self._template(op, children, region, absolute=whole)
+        found = self._template(op, children, region, absolute=at_root)
         if found is None:
             return self._shares(op, children, region)
         host, same = found
         groups: list[list[Placed]] = []
         for i, (child, piece) in enumerate(zip(children, host.pieces)):
             if host.layout:
-                box = mapped(host.layout[i], (0, 0, 1, 1), (0.0, ASCENT - EM, EM, ASCENT) if whole else region)
+                box = mapped(host.layout[i], (0, 0, 1, 1), (0.0, ASCENT - EM, EM, ASCENT) if at_root else region)
             else:
                 box = mapped(piece.box, host.frame, region)
             if op in ENCLOSE and i == 1 and not same[0]:
@@ -895,7 +896,7 @@ class Composer:
                 # it: where that host drew it in the em, for a whole character drawn from a whole one.
                 axis = AXIS[op]
                 frame, target = drawn.frame, list(box)
-                if whole and drawn.whole:
+                if at_root and drawn.whole:
                     target[1 - axis], target[3 - axis] = source.box[1 - axis], source.box[3 - axis]
                 else:
                     lo, span = region[1 - axis], region[3 - axis] - region[1 - axis]
