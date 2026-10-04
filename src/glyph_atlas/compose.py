@@ -353,6 +353,8 @@ FORM_POSITION = {"left": "L", "right": "R", "top": "T", "bottom": "B"}
 STROKE_SHARE = 0.25
 STROKE_HOSTS = 60
 STROKE_EVIDENCE = 4
+#: How many hosts of each place an instance of a sequence is looked for in.
+INSTANCE_HOSTS = 12
 #: Least number of Japanese characters that must write a positional form in a place for it to be used there.
 JAPANESE_USE = 3
 #: Most an operand may differ from the teacher's, in ink or in proportions, for the teacher's layout to hold.
@@ -495,6 +497,14 @@ class Composer:
                     continue
                 walk(char, tree, tree, ())
         return hosts, templates
+
+    @cached_property
+    def _places(self) -> dict[str, list[tuple[str, str]]]:
+        """operand → the (place, operand) keys it is held under."""
+        out: dict[str, list[tuple[str, str]]] = {}
+        for place, written in self._index[0]:
+            out.setdefault(written, []).append((place, written))
+        return out
 
     @cached_property
     def face(self) -> Box:
@@ -832,6 +842,9 @@ class Composer:
         op, children = node[0], list(node[1:])
         if op not in AXIS and op not in ENCLOSE:
             raise LookupError(f"{op} is not laid out.")
+        instance = self._instance(node, region)
+        if instance is not None:
+            return [instance]
         found = self._template(op, children, region)
         if found is None and len(children) == 3:
             # Three operands no drawn character lays out as three are laid out as two, the last two together.
@@ -865,6 +878,33 @@ class Composer:
                 target = fitted(source.box, box)
             groups.append([Placed(source, source.box, target, native=self.ink(drawn.char), origin=f"host {drawn.char}")])
         return [p for group in groups for p in group]
+
+    def _instance(self, node: tuple, region: Box) -> Placed | None:
+        """A sequence drawn whole somewhere in the font, in any place: 爫 (⿱㇒𭕄) over 采, 丘 in 岳.
+        A designer drew it as one shape, which a composition of its strokes cannot match. The
+        instance closest to the region's proportions is used, if it needs no more than `STRETCH`."""
+        if not self.hosted:
+            return None
+        names = {key(node)} | ({self.by_sequence[key(node)]} if key(node) in self.by_sequence else set())
+        if names & self.exclude:
+            # A character redrawn to test is not taken from where another character draws it whole.
+            return None
+        best = None
+        for place, written in (k for name in names for k in self._places.get(name, ())):
+            for char, tree, path, i in self._index[0][(place, written)][:INSTANCE_HOSTS]:
+                if char in self.exclude:
+                    continue
+                host = self._host_node(char, tree, path)
+                if host is None:
+                    continue
+                piece = host.pieces[i]
+                stretch = self._stretch(piece.box, region)
+                if stretch <= STRETCH and (best is None or stretch < best[0]):
+                    best = (stretch, piece, char)
+        if best is None:
+            return None
+        _, piece, char = best
+        return Placed(piece, piece.box, region, native=self.ink(char), origin=f"instance {char}")
 
     @staticmethod
     def _stretch(source: Box, target: Box) -> float:
