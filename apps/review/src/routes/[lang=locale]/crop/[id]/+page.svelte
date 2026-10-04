@@ -1,7 +1,8 @@
 <script>
   import { page } from '$app/state'
   import Seo from '$components/Seo.svelte'
-  import { cropImage, holderOf, sourceTitle } from '$lib/seo.js'
+  import { holderOf, sourceTitle } from '$lib/seo.js'
+  import { cropEntry, linkedData } from '$worker/citation.ts'
   import { isUnassigned } from '$lib/identity.js'
   import { t } from '$lib/i18n.svelte.js'
   import Explore from '$views/Explore.svelte'
@@ -18,7 +19,7 @@
 </script>
 
 <Seo title={source ? `${label} · ${source}` : label} {description} {image} type="article"
-     data={image ? cropImage(record, image) : null} />
+     data={linkedData(cropEntry(record, 'collection'), page.url.origin, image)} />
 
 <!-- The crop itself is drawn by the layout's inspector, over the collection. -->
 <Explore inspect={inspector.inspect.bind(inspector)} ink={session.state.ink} onink={value => session.setInk(value)} />
