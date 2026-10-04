@@ -45,8 +45,9 @@ its place admits no doubt: every written glyph of the cell sits on its own headw
 left over, and another glyph of the cell was read where it was placed or the cell's first box stands
 at the tier line; or the glyph is the cell's first headword character on the cell's first box, at
 the tier line; or the glyphs before and after it in the cell were both read, on the boxes either
-side of its own. Any of these needs the page's grid borne out by the readers: `PAGE_READ` glyphs
-read where they stand and at most half as many refused. On a page whose tiers open with seal forms, a tier where none was seen keeps only
+side of its own. Any of these needs the page's grid borne out by the readers: `Layout.confirm`
+glyphs read where they stand and at most half as many refused. KTB asks for one: a page of twelve
+tier heads, each the first character of its tier, has little room to sit a column off unseen. On a page whose tiers open with seal forms, a tier where none was seen keeps only
 a head the classifier reads. A pair the classifier refuses is left out, and a page on which more than
 `REFUSED_SHARE` of the judged pairs are refused is left out whole, since that is how a misfitted grid
 looks. The caller tries a frame's pages on its two grids, one page to a grid (`assign_pages`).
@@ -102,7 +103,9 @@ class Layout:
     seal-script form written above the headword and the headword is the second. With `centred`, a
     headword's centre lies within that share of the column pitch of the column's axis, where a gloss
     written in two lines stands to either side. With `counted`, a cell whose written glyphs and
-    candidate boxes are as many as each other vouches for its pairing by that count alone. With
+    candidate boxes are as many as each other vouches for its pairing by that count alone. `confirm` is
+    how many of a page's glyphs must be read where they stand (with at most half as many refused) for
+    a glyph no reader judges to be kept there. With
     `whole`, a candidate's shorter side is at least that share of the shorter side of the page's
     median headword, and its longer side at most the inverse share of the longer: a headword the
     detector cut in two leaves a narrow or a flat piece, and one it joined to its gloss a tall box.
@@ -116,6 +119,7 @@ class Layout:
     centred: float | None = None
     counted: bool = False
     whole: float | None = None
+    confirm: int = 3
 
 
 @dataclass(frozen=True)
@@ -336,7 +340,7 @@ DICTIONARIES = {
     # 天理 pages: the even page of an opening is on the right.
     "krm": Dictionary("krm", read_krm, Layout(columns=8, tiers=4, held=6), lambda page: page % 2 == 0),
     # Half-leaves: an opening shows a verso (B, b) on the right and the next recto on the left.
-    "ktb": Dictionary("ktb", read_ktb, Layout(columns=6, tiers=2, held=4, tier_pitch=(4.5, 7.5), heads="tier"),
+    "ktb": Dictionary("ktb", read_ktb, Layout(columns=6, tiers=2, held=4, tier_pitch=(4.5, 7.5), heads="tier", confirm=1),
                       lambda page: page.endswith("B")),
     "tsj": Dictionary("tsj", read_tsj, Layout(columns=8, tiers=1, held=6, centred=0.2, counted=True, whole=0.7), lambda page: page.endswith("b")),
 }
@@ -439,9 +443,6 @@ def entry_tops(heads: Sequence[Box], columns: Sequence[float], pitch: float, uni
     return tops
 
 
-#: Least number of a page's glyphs read where they stand, with at most half as many refused, before a
-#: glyph no reader can judge is kept there on its place in the grid.
-PAGE_READ = 3
 #: How far a known pitch may stretch on another page of the same book.
 PITCH_SLACK = 0.03
 
@@ -774,7 +775,7 @@ def _place(entries: Sequence[Entry], boxes: Sequence[Box], grid: Grid, unit: flo
         result.pairs += pairs
     read = sum(1 for p in result.pairs if p.verdict)
     refused = sum(1 for p in result.pairs if p.verdict is False)
-    if read < PAGE_READ or 2 * refused > read:
+    if read < layout.confirm or 2 * refused > read:
         # Nothing on the page bears the grid out: a glyph no reader judged stands only on the grid.
         unjudged = [p for p in result.pairs if p.kept and p.verdict is None]
         for pair in unjudged:

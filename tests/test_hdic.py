@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
 from glyph_atlas import hdic
@@ -209,6 +210,9 @@ def test_two_pages_never_share_one_grid() -> None:
 
 
 TSJ = hdic.DICTIONARIES["tsj"].layout
+#: Layouts that keep an unjudged glyph whatever the page: for tests about the cells and the grid.
+TSJ_ANY = dataclasses.replace(TSJ, confirm=0)
+KRM_ANY = dataclasses.replace(KRM, confirm=0)
 
 
 def running_page() -> tuple[list[Box], list[float]]:
@@ -233,8 +237,7 @@ def column_entries(*glyphs: str) -> list[hdic.Entry]:
     return [entry(f"E{k}", 1, 1, k, g) for k, g in enumerate(glyphs)]
 
 
-def test_an_unjudged_headword_between_two_read_ones_is_kept(monkeypatch) -> None:
-    monkeypatch.setattr(hdic, "PAGE_READ", 0)  # about the cells and the grid, not the page's confirmation
+def test_an_unjudged_headword_between_two_read_ones_is_kept() -> None:
     boxes, columns = running_page()
     boxes.append(headword_box(columns[0], 2850))  # a large character in the last gloss
     grid = hdic.page_grids(boxes, UNIT, TSJ)["right"]
@@ -245,7 +248,7 @@ def test_an_unjudged_headword_between_two_read_ones_is_kept(monkeypatch) -> None
         return [code(char)] if char and char != "?" else [code("ノ")]
 
     result = hdic.place(column_entries("天", "⿱一丷", "地", "⿰口天"), boxes, grid, UNIT, rank,
-                        known={code("天"), code("地"), code("ノ")}, layout=TSJ)
+                        known={code("天"), code("地"), code("ノ")}, layout=TSJ_ANY)
     kept = {p.glyph.text: p.box.y for p in result.pairs if p.kept}
     # ⿱一丷 sits between 天 and 地, both read. ⿰口天 has no read glyph after it, and with a large
     # gloss character in the column the boxes outnumber the headwords, so nothing vouches for it.
@@ -299,14 +302,13 @@ def test_a_neighbour_vouches_only_for_the_glyph_next_to_it() -> None:
     assert kept == {"天", "地"}
 
 
-def test_only_a_headword_box_anchors_a_cell_at_its_tier_line(monkeypatch) -> None:
-    monkeypatch.setattr(hdic, "PAGE_READ", 0)  # about the cells and the grid, not the page's confirmation
+def test_only_a_headword_box_anchors_a_cell_at_its_tier_line() -> None:
     grid = hdic.Grid(columns=(1000.0,), pitch=250.0, tiers=(500.0,), tier_pitch=800.0)
     gloss_below = [Box(x=970, y=1050 + 90 * k, w=60, h=70) for k in range(3)]
 
     def kept(*boxes: Box) -> list[bool]:
         result = hdic.place([entry("F1", 1, 1, 0, "傮")], [*boxes, *gloss_below], grid, UNIT, lambda b: [code("ノ")],
-                            known={code("ノ")}, layout=KRM)
+                            known={code("ノ")}, layout=KRM_ANY)
         return [p.kept for p in result.pairs]
 
     # A small box on the tier line does not make a headword box well below it the cell's opening...
@@ -355,12 +357,11 @@ def column_counts(columns: list[float]) -> list[hdic.Entry]:
             + [entry(f"L8-{k}", 8, 1, k, "傮") for k in range(2)])
 
 
-def test_a_grid_anchored_one_column_in_is_moved_outward(monkeypatch) -> None:
-    monkeypatch.setattr(hdic, "PAGE_READ", 0)  # about the cells and the grid, not the page's confirmation
+def test_a_grid_anchored_one_column_in_is_moved_outward() -> None:
     boxes, columns = left_page()
     # Anchored on line 7, the grid sits one column to the right of the page's own.
     fitted = hdic.Grid(tuple(c + 250 for c in columns), 250.0, (500.0,), 3200.0, outward=1)
-    result = hdic.place(column_counts(columns), boxes, fitted, UNIT, lambda b: [code("ノ")], {code("ノ")}, TSJ)
+    result = hdic.place(column_counts(columns), boxes, fitted, UNIT, lambda b: [code("ノ")], {code("ノ")}, TSJ_ANY)
     assert result.counts.get("column-shifted") == 1
     assert {p.box.x + p.box.w // 2 for p in result.pairs if p.entry.line == 8} == {int(columns[-1])}
 
@@ -391,8 +392,7 @@ def test_a_page_whose_column_nothing_settles_keeps_nothing() -> None:
     assert not [p for p in result.pairs if p.kept]
 
 
-def test_page_grids_point_outward_and_a_sparse_outer_column_is_recovered(monkeypatch) -> None:
-    monkeypatch.setattr(hdic, "PAGE_READ", 0)  # about the cells and the grid, not the page's confirmation
+def test_page_grids_point_outward_and_a_sparse_outer_column_is_recovered() -> None:
     boxes, columns = running_page()
     # The right page's own line 1 holds only two headwords, too few to anchor on.
     boxes = [b for b in boxes if not (abs(b.x + b.w / 2 - columns[0]) < 1 and b.y >= 1800)]
@@ -402,7 +402,7 @@ def test_page_grids_point_outward_and_a_sparse_outer_column_is_recovered(monkeyp
     assert round(right.columns[0]) == columns[1]  # anchored one column in
     entries = ([entry(f"L1-{k}", 1, 1, k, "傮") for k in range(2)]
                + [entry(f"L{line}-{k}", line, 1, k, "傮") for line in range(2, 9) for k in range(4)])
-    result = hdic.place(entries, boxes, right, UNIT, lambda b: [code("ノ")], {code("ノ")}, TSJ)
+    result = hdic.place(entries, boxes, right, UNIT, lambda b: [code("ノ")], {code("ノ")}, TSJ_ANY)
     assert result.counts.get("column-shifted") == 1
     assert {p.box.x + p.box.w // 2 for p in result.pairs if p.entry.line == 1} == {columns[0]}
 
