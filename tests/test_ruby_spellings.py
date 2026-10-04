@@ -73,6 +73,7 @@ def test_damage_marks_stay_and_struck_text_leaves_the_base():
     assert ruby_spellings.rubies("計（ば■かり）") == [("計", "ば■かり")]
     assert ruby_spellings.rubies("《振り仮名：《見せ消ち：斗｜計》｜ばかり》") == [("計", "ばかり")]
     assert ruby_spellings.rubies("《迎え仮名：計｜ばかり》") == [("計", "ばかり")]
+    assert ruby_spellings.rubies("《ルビ：抔｜ナト》と云") == [("抔", "ナト")]
     # A padded reading keeps the whole base: the padding does not say how many characters it skips.
     assert ruby_spellings.rubies("三尺斗（　　　ばかり）") == [("三尺斗", "　　　ばかり")]
     # A damage mark at the head of a reading is in the reading.
