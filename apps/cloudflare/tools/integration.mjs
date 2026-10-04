@@ -814,7 +814,7 @@ try {
   }
   // Pair and trigram frequencies group along their own index, for the collection and for one book. The
   // sort by count is over the grouped rows, which is why the answer is kept at the edge.
-  const ngramShapes = [[false, [2], 'unit_ngram_text'], [true, ['hk:doc', 2], 'unit_ngram_document']]
+  const ngramShapes = [[false, [2], 'unit_ngram_order'], [true, ['hk:doc', 2], 'unit_ngram_work']]
   const ngramServed = (details, index) => {
     assert.ok(details.some(d => new RegExp(`USING (COVERING )?INDEX ${index}\\b`).test(d)), `${index}: ${details.join('; ')}`)
     assert.ok(!details.some(d => d.includes('USE TEMP B-TREE FOR GROUP BY')), details.join('; '))
@@ -859,7 +859,7 @@ try {
     assert.ok(details.filter(d => /^SEARCH r\d+ /.test(d)).every(d => d.includes('USING PRIMARY KEY (first=? AND size=?)')), `rightward pairs are found by their keys: ${details.join('; ')}`)
     assert.ok(details.filter(d => /^SEARCH l\d+ /.test(d)).every(d => d.includes('unit_ngram_second')), `leftward pairs go through unit_ngram_second: ${details.join('; ')}`)
   }
-  for (const [document, scope, index] of [[false, [], 'unit_ngram_text'], [true, ['hk:doc'], 'unit_ngram_document']]) {
+  for (const [document, scope, index] of [[false, [], 'unit_ngram_order'], [true, ['hk:doc'], 'unit_ngram_work']]) {
     const probe = await plan({ sql: worker.runProbeQuery(document), values: [] }, [...scope, 'ナリケ'])
     assert.ok(probe.some(d => new RegExp(`USING COVERING INDEX ${index}\\b`).test(d)), probe.join('; '))
     for (let size = 2; size <= 8; size++) for (let anchor = 0; anchor <= Math.max(0, size - 3); anchor++) {
@@ -877,7 +877,7 @@ try {
   }
   const leftward = (await db.prepare("SELECT sql FROM sqlite_master WHERE name='unit_ngram_second'").first()).sql
   await db.prepare('DROP INDEX unit_ngram_second').run()
-  await assert.rejects(async () => occurrenceServed(await plan({ sql: worker.runOccurrencesQuery(5, 2, false) + ' ', values: [] }, ['ナリ', 'ナリ', 3, 'ナリ', 48, 0]), 'unit_ngram_text'),
+  await assert.rejects(async () => occurrenceServed(await plan({ sql: worker.runOccurrencesQuery(5, 2, false) + ' ', values: [] }, ['ナリ', 'ナリ', 3, 'ナリ', 48, 0]), 'unit_ngram_order'),
     'the leftward check fails without unit_ngram_second')
   await db.prepare(leftward).run()
   const runOf = async (text, query = '') => (await mf.dispatchFetch(base + '/atlas/runs?' + new URLSearchParams({ text }) + query)).json()
@@ -933,6 +933,26 @@ try {
   assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent(pairText + pairText) + '&limit=49')).status, 422, 'a longer run pages fewer occurrences')
   const nextPage = await runOf(pairText, '&offset=1')
   assert.ok(!('total' in nextPage) && nextPage.next_offset === 1, 'a later page carries no count')
+  // A run's occurrences come handwritten first, then what nobody has judged, then print, each group
+  // in its first crops' shuffle order; the style and shuffle follow the crop, however the run was written.
+  for (const [id, style, shuffle] of [['o-print', 'regular', 1], ['o-plain', 'unassessed', 5], ['o-late', 'cursive', 9], ['o-early', 'running', 2]]) {
+    const d = { id, label: 'ナ', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten', repair: { quiz: true } }
+    await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+      id, 'local', 'ナ', 'U+30CA', null, 'handwritten', 'kana', 'pending', 0, 1, 1, shuffle,
+      JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
+    await db.prepare('UPDATE units SET style=? WHERE id=?').bind(style, id).run()
+  }
+  await db.prepare(`INSERT INTO unit_ngrams(first,size,second,third,text,document) SELECT id,2,'two',NULL,'ナリ',NULL FROM units WHERE id LIKE 'o-%'`).run()
+  // The edge keeps an answer per catalogue version, so a change moves the version first.
+  let version = 0
+  const firsts = async (query = '') => { await db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at',?)").bind('order' + ++version).run()
+    return (await runOf('ナリ', query)).items.map(o => o.crops[0].id) }
+  assert.deepEqual(await firsts(), ['o-early', 'o-late', 'o-plain', 'o-print'], 'handwritten first, then unjudged, then print, each by shuffle')
+  assert.deepEqual(await firsts('&limit=2&offset=2'), ['o-plain', 'o-print'], 'a later page continues the same order')
+  await db.prepare("UPDATE units SET style='regular' WHERE id='o-early'").run()
+  assert.deepEqual(await firsts(), ['o-late', 'o-plain', 'o-print', 'o-early'], 'a crop judged afterwards moves its runs')
+  await db.prepare("UPDATE units SET style='cursive',shuffle=0 WHERE id='o-print'").run()
+  assert.deepEqual(await firsts(), ['o-print', 'o-late', 'o-plain', 'o-early'], 'its shuffle moves them too')
   await db.prepare('DELETE FROM unit_ngrams').run()
   for (const [index, create] of Object.entries(keys)) {
     await db.prepare(`DROP INDEX ${index}`).run()

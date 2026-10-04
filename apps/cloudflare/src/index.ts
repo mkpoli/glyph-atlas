@@ -553,7 +553,8 @@ export function runPage(crops: Json[]): { image: string; box: Rect; region: Rect
 // reaches the rest of its crops a pair at a time: publication writes a pair only where two crops follow
 // each other and stand near, so a chain of pairs holds the runs a longer row would.
 // The first row is read along the index its text (and book) share with the counts, so occurrences come
-// in that index's order; every other row is found by its key, rightwards by the primary key and leftwards
+// in that index's order: the style group of its first crop (handwritten first, 0058), then that crop's
+// shuffle and id. Every other row is found by its key, rightwards by the primary key and leftwards
 // through `unit_ngram_second`, and every crop by its id. The join order is fixed and the origin test kept
 // off its index (`+`): the planner would otherwise start from every local crop. Counting stops past
 // RUN_COUNT_MAX, which is as deep as a run pages, and the first page alone counts. A page holds up to
@@ -584,7 +585,7 @@ export function runFrom(size: number, anchor: number) {
 const runWhere = (document: boolean) => `${document ? 'a.document=? AND ' : ''}a.size=? AND a.text=?`;
 export function runOccurrencesQuery(size: number, anchor: number, document: boolean) {
   return `SELECT ${Array.from({ length: size }, (_, i) => `u${i}.data AS c${i}`).join(',')}, u0.document AS document, a.vertical
-    ${runFrom(size, anchor).from} WHERE ${runWhere(document)} ORDER BY a.first LIMIT ? OFFSET ?`;
+    ${runFrom(size, anchor).from} WHERE ${runWhere(document)} ORDER BY a.style_order,a.shuffle,a.first LIMIT ? OFFSET ?`;
 }
 export function runCountQuery(size: number, anchor: number, document: boolean) {
   return `SELECT count(*) AS n, sum(v) AS vertical FROM (SELECT a.vertical AS v ${runFrom(size, anchor).from}
