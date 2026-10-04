@@ -567,6 +567,43 @@ def review_shift_repair(
     typer.echo(json.dumps({k: v for k, v in result.items() if k != "items"}, ensure_ascii=False))
 
 
+@review_app.command("consensus-relabel")
+def review_consensus_relabel(
+    directory: Annotated[Path, typer.Argument(help="dataset directory whose crops are checked")],
+    out: Annotated[Path, typer.Option(help="report of every proposed relabel")],
+    apply: Annotated[bool, typer.Option("--apply/--dry-run", help="record the relabels in the dataset's journal")] = False,
+    undo: Annotated[bool, typer.Option(help="restore what this method's relabels replaced instead (with --apply; "
+                                       "a dry run lists them)")] = False,
+    setting: Annotated[str, typer.Option(help="bar a relabel has to clear: strict, default or loose")] = "default",
+    similar: Annotated[Path, typer.Option(help="similar-crop index revision (`atlas similar index`)")] = Path("work/similar/current"),
+    export: Annotated[list[Path] | None, typer.Option(help="catalogue export whose labels and pages replace the index's "
+                                                      "for crops outside the dataset; repeat in publication order")] = None,
+    protect: Annotated[Path | None, typer.Option(help="file of unit ids never relabelled, one per line (reviewed on the site)")] = None,
+    reviews: Annotated[Path | None, typer.Option(help="the site's review export (/atlas/reviews.json), to measure the rule against")] = None,
+    checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
+) -> None:
+    """Relabel crops whose nearest crops and the classifier agree on another character (needs CUDA)."""
+    from .review import consensus_relabel
+
+    if undo:
+        result = consensus_relabel.undo(directory, apply=apply)
+    else:
+        if setting not in consensus_relabel.SETTINGS:
+            raise typer.BadParameter(f"setting must be one of {', '.join(consensus_relabel.SETTINGS)}")
+        ids = set(protect.read_text().split()) if protect else set()
+        site = json.loads(reviews.read_text()) if reviews else None
+        verdicts = consensus_relabel.last_reviews(site) if site else {}
+        # A crop reviewed on the site is protected whether or not the protect file names it.
+        ids |= set(verdicts)
+        seen = {k: v["label"] for k, v in verdicts.items() if v.get("label")} or None
+        result = consensus_relabel.run(directory, similar=similar, checkpoint=checkpoint, setting=setting, apply=apply,
+                                       protect=ids, exports=export or (), seen=seen)
+        if site:
+            result["measured"] = consensus_relabel.evaluate(result, site)
+    consensus_relabel.write(result, out)
+    typer.echo(json.dumps({k: v for k, v in result.items() if k != "items"}, ensure_ascii=False))
+
+
 @review_app.command("lookalikes")
 def review_lookalikes(
     split: Annotated[Path, typer.Argument(help="held-out classifier split")] = Path("work/classifier-combined/test.parquet"),
