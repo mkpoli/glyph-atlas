@@ -5,6 +5,7 @@ import { similarCrops } from './similar';
 import { MAX_BODY, QueryError, addressKey, boundedText, modelFile, modelInfo, query as imageQuery } from './reverse';
 import { componentSearch, componentTerm } from './components';
 import { formsFor, setForm, withForms } from './cropForms';
+import { formProblem, isSequence } from './representation';
 import { auth, claim, owned, providers, viewer } from './auth';
 import { AVATAR_PATH, avatar, setAvatar } from './avatar';
 import { ranking } from './ranking';
@@ -38,7 +39,9 @@ const unavailable = { status: 'unavailable', candidates: [] };
 // A label's category is its first character's script, as the migrations and publication scripts compute it.
 // 구결자 have no Unicode script property, so they are tested by their Hanyang private-use range.
 const isGugyeol=(value:string)=>{const c=value.codePointAt(0)??-1;return c>=0xF67E&&c<=0xF77C};
-export const categoryOf=(value:string)=>{const first=[...value][0]??'';return /[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(first)?'kana':/\p{Script=Han}/u.test(first)?'kanji':/\p{Script=Hangul}/u.test(first)?'hangul':isGugyeol(first)?'gugyeol':'other'};
+// A well-formed ideographic description sequence describes one Han character Unicode lacks.
+const idsCharacter = (value: string) => isSequence(value) && formProblem(value) === null;
+export const categoryOf=(value:string)=>{const first=[...value][0]??'';if(idsCharacter(value))return 'kanji';return /[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(first)?'kana':/\p{Script=Han}/u.test(first)?'kanji':/\p{Script=Hangul}/u.test(first)?'hangul':isGugyeol(first)?'gugyeol':'other'};
 const cp = (value: string) => [...value].map(c => 'U+' + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')).join(' ');
 // NFC composes a voiced kana, but it also maps each CJK compatibility ideograph to its unified twin,
 // and those are characters of their own here; they are kept as written.
@@ -910,8 +913,26 @@ async function derivedOf(env: Env, rows: { other: string; subs: string }[]): Pro
 async function known(env: Env, value: string) {
   const key = cp(literal(value));
   const row = await env.DB.prepare('SELECT data,detail FROM characters WHERE code_point=?').bind(key).first<{data:string;detail:string}>();
-  if (!row) throw new Problem(404, 'Character not found.');
-  return { data: parse(row.data), detail: parse(row.detail) };
+  if (row) return { data: parse(row.data), detail: parse(row.detail) };
+  if (idsCharacter(literal(value))) return describedCard(literal(value));
+  throw new Problem(404, 'Character not found.');
+}
+
+/** The card of a character Unicode lacks, written as an ideographic description sequence: it has no
+ * entry in the character table and is its own grapheme, in the shape the table's cards have. */
+export function describedCard(value: string) {
+  const code_point = cp(value), url = '/layers/characters/' + code_point;
+  const self = { code_point, char: value, name: null, script: 'han' };
+  const grapheme = { ...self, label: value, members: [{ code_point, char: value }], character_count: 1, relation: 'self',
+    evidence: [], url: '/layers/graphemes/' + code_point, is_self: true, occurrence_count: 0 };
+  const data = { ...self, age: null, block: null, readings: [], reading: null, jibo: [], ligature: null, occurrence_count: 0,
+    url, grapheme, default_scope: 'character', kind: 'han',
+    candidates: { status: 'ok', known: false, glyphs: 0, lines: 0, pages: 0, total: 0, sources: [],
+      counts_kind: 'source_transcription_classes', requires_family_scope: false, source_glyphs: 0, family_glyphs: 0, imported: 0 } };
+  const detail = { ...data, alias: null, category: null, confusables: [], characters: [data], derived: [], expansions: [],
+    visual_analysis: { status: 'not_analyzed', family: code_point, model_revision: null, sample_count: 0, assigned_count: 0,
+      unassigned_count: 0, groups: [] } };
+  return { data, detail };
 }
 async function suggest(env: Env, q: URLSearchParams) {
   const term = (q.get('q') || '').slice(0, 128).trim();

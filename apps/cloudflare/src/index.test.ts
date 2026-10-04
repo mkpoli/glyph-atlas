@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { canonical, samePixels, literal, hira, single, validRound, categoryOf,
+import { canonical, samePixels, literal, hira, single, validRound, categoryOf, describedCard,
   encodeCursor, decodeCursor, historyItem, historyQuery, moved } from './index';
 import { ROUND_MAX } from './rounds';
 import { componentTerm, rankMatches } from './components';
@@ -180,3 +180,18 @@ describe('a search of ideographs asks for the characters built from them', () =>
     expect(rankMatches(rows).map(r => r.code_point)).toEqual(['U+660E', 'U+3B0C', 'U+2493C', 'U+80C4'])
   })
 })
+
+describe('a character Unicode lacks, written as an ideographic description sequence', () => {
+  it('is filed as kanji, and a stray description character is not', () => {
+    expect(categoryOf('⿰亻胃')).toBe('kanji');
+    expect(categoryOf('⿰亻⿱亠女')).toBe('kanji');
+    expect(categoryOf('⿰亻')).toBe('other');
+  });
+  it('has a card of its own, its own grapheme', () => {
+    const { data, detail } = describedCard('⿰亻胃');
+    expect(data.code_point).toBe('U+2FF0 U+4EBB U+80C3');
+    expect(data.grapheme.members).toEqual([{ code_point: 'U+2FF0 U+4EBB U+80C3', char: '⿰亻胃' }]);
+    expect(detail.characters).toEqual([data]);
+    expect(detail.visual_analysis.family).toBe('U+2FF0 U+4EBB U+80C3');
+  });
+});
