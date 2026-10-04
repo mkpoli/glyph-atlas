@@ -99,6 +99,7 @@ by the command, which works on review datasets.
       --protect PROTECT.txt --reviews reviews.json --export CATALOGUE.sqlite ...
 
 `--apply` records each relabel as a model event with its evidence (the vote, the five nearest crops,
-the classifier's reading and the setting) under `feedback_identity`; `--undo` restores what every
-relabel of `neighbour-consensus-v1` replaced, except on a crop a person reviewed or another pass
-changed since.
+the classifier's reading and the setting) under `feedback_identity`. `--undo --apply` restores the
+label, script and `feedback_identity` note every relabel of `neighbour-consensus-v1` replaced, except
+on a crop a person reviewed or another pass relabelled since; `--undo` alone lists them. A crop named
+in `--reviews` is protected like one named in `--protect`.
