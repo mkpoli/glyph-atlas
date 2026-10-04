@@ -109,6 +109,7 @@ class Layout:
     `whole`, a candidate's shorter side is at least that share of the shorter side of the page's
     median headword, and its longer side at most the inverse share of the longer: a headword the
     detector cut in two leaves a narrow or a flat piece, and one it joined to its gloss a tall box.
+    With tier heads, a head of another shape leaves its cell empty.
     """
 
     columns: int
@@ -340,7 +341,7 @@ DICTIONARIES = {
     # 天理 pages: the even page of an opening is on the right.
     "krm": Dictionary("krm", read_krm, Layout(columns=8, tiers=4, held=6), lambda page: page % 2 == 0),
     # Half-leaves: an opening shows a verso (B, b) on the right and the next recto on the left.
-    "ktb": Dictionary("ktb", read_ktb, Layout(columns=6, tiers=2, held=4, tier_pitch=(4.5, 7.5), heads="tier", confirm=1),
+    "ktb": Dictionary("ktb", read_ktb, Layout(columns=6, tiers=2, held=4, tier_pitch=(4.5, 7.5), heads="tier", confirm=1, whole=0.5),
                       lambda page: page.endswith("B")),
     "tsj": Dictionary("tsj", read_tsj, Layout(columns=8, tiers=1, held=6, centred=0.2, counted=True, whole=0.7), lambda page: page.endswith("b")),
 }
@@ -535,6 +536,13 @@ def sealed(cell: Sequence[Box], unit: float) -> bool:
     return len(cell) > 1 and is_big(cell[0], unit) and is_big(cell[1], unit)
 
 
+def whole(box: Box, headword: tuple[float, float], share: float) -> bool:
+    """Whether a box is shaped like a whole headword: its shorter side at least `share` of the median
+    headword's shorter side, its longer side at most the inverse share of the longer."""
+    short, long = headword
+    return min(box.w, box.h) >= share * short and max(box.w, box.h) <= long / share
+
+
 def cell_boxes(boxes: Sequence[Box], grid: Grid, line: int, segment: int, unit: float, layout: Layout,
                headword: tuple[float, float] = (0.0, 0.0)) -> list[Box]:
     """The candidate headword boxes of a cell, top to bottom.
@@ -547,14 +555,17 @@ def cell_boxes(boxes: Sequence[Box], grid: Grid, line: int, segment: int, unit: 
         cell = [b for b in cell if max(b.w, b.h) >= INK * unit]
         if not cell:
             return []
-        return [cell[1]] if sealed(cell, unit) else [cell[0]]
+        head = cell[1] if sealed(cell, unit) else cell[0]
+        # A flat or narrow head is a piece of one the detector cut, or a stroke of the rule: the cell
+        # has no head to place, and the box after it is the gloss.
+        if layout.whole is not None and all(headword) and not whole(head, headword, layout.whole):
+            return []
+        return [head]
     if layout.centred is not None:
         x = grid.columns[line - 1]
         cell = [b for b in cell if abs(b.x + b.w / 2 - x) <= layout.centred * grid.pitch]
     if layout.whole is not None and all(headword):
-        short, long = headword
-        cell = [b for b in cell if not is_big(b, unit)
-                or (min(b.w, b.h) >= layout.whole * short and max(b.w, b.h) <= long / layout.whole)]
+        cell = [b for b in cell if not is_big(b, unit) or whole(b, headword, layout.whole)]
     return [b for b in cell if is_big(b, unit) or is_mark(b, unit)]
 
 

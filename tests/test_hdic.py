@@ -269,6 +269,16 @@ def test_a_tier_head_is_the_headword_after_a_seal_form_or_the_first_character() 
     assert hdic.cell_boxes(boxes, grid, 1, 2, UNIT, KTB) == [plain[0]]
 
 
+def test_a_flat_tier_head_leaves_its_cell_empty() -> None:
+    grid = hdic.Grid(columns=(1000.0,), pitch=250.0, tiers=(500.0,), tier_pitch=1800.0)
+    piece = Box(x=920, y=500, w=160, h=20)
+    head = headword_box(1000, 700)
+    gloss = [Box(x=970, y=900 + 90 * k, w=60, h=70) for k in range(3)]
+    shape = (float(min(head.w, head.h)), float(max(head.w, head.h)))
+    assert hdic.cell_boxes([piece, head, *gloss], grid, 1, 1, UNIT, KTB, shape) == []
+    assert hdic.cell_boxes([head, *gloss], grid, 1, 1, UNIT, KTB, shape) == [head]
+
+
 def test_a_second_reader_confirms_but_never_refuses() -> None:
     boxes = page(COLUMNS, TIERS)
     grid = hdic.page_grids(boxes, UNIT, KRM)["right"]
