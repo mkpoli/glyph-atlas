@@ -546,26 +546,28 @@ export function runPage(crops: Json[]): { image: string; box: Rect; region: Rect
     region: { x, y, w: Math.min(box.x + box.w, right + margin) - x, h: Math.min(box.y + box.h, bottom + margin) - y } };
 }
 // One run's occurrences: every place its characters follow each other on a line, as their crops in
-// reading order, each with its box on the page, whether their line is written down the page, and the
-// page around them (`runPage`); the run as a whole is written the way most of its occurrences are.
-// The text is split into graphemes, one crop each, as a label holds one. A run of two or three is one
-// row of `unit_ngrams`. A longer one starts from one of its trigrams, the rarest (`runProbeQuery`), and
-// reaches the rest of its crops a pair at a time: publication writes a pair only where two crops follow
-// each other and stand near, so a chain of pairs holds the runs a longer row would.
-// The first row is read along the index of its text (or its book and text), so occurrences come in that
-// index's order: how its first crop's letterforms were made (shaped by hand first, 0062), then that
-// crop's shuffle and id. Every other row is found by its key, rightwards by the primary key and leftwards
-// through `unit_ngram_second` (the length kept off its index, `+`, or the planner reads every pair), and
-// every member by its id: its `units` row and its `corpus_units` row, either of which may be missing. A
-// member stands on the site as a local crop or as a corpus glyph, whose record is its `units` row once a
-// round named it and its published record (R2) before. Left joins keep the join order. Counting stops past
-// RUN_COUNT_MAX, which is as deep as a run pages, and the first page alone counts. A page holds up to
-// RUN_PAGE_CROPS crops, so a longer run comes in fewer occurrences at a time.
-// RUN_MAX keeps a run inside one context render: a render reaches five character sizes along a column
-// (`CONTEXT_REACH`), so its middle crop's holds about eleven, and `runPage` finds the run in it.
+// reading order, each with its box on the page, whether their line is written down the page, and the page
+// around them (`runPage`); the run as a whole is written the way most of its occurrences are. The text is
+// split into graphemes, one crop each, as a label holds one, and each is folded to its grapheme
+// (`runGraphemes`), so a run is found by its graphemes (0071) whichever form each crop is written in; the
+// crops shown are as written. A run of two or three is one row of `unit_ngrams`. A longer one starts from
+// one of its trigrams, the rarest (`runProbeQuery`), and reaches the rest of its crops a pair at a time:
+// publication writes a pair only where two crops follow each other and stand near, so a chain of pairs
+// holds the runs a longer row would. The first row is read along the index of its graphemes (or its book
+// and graphemes), so occurrences come in that index's order: how its first crop's letterforms were made
+// (shaped by hand first, 0062), then that crop's shuffle and id. Every other row is found by its key,
+// rightwards by the primary key and leftwards through `unit_ngram_second` (the length kept off its index,
+// `+`, or the planner reads every pair), and every member by its id: its `units` row and its
+// `corpus_units` row, either of which may be missing. A member stands on the site as a local crop or as a
+// corpus glyph, whose record is its `units` row once a round named it and its published record (R2)
+// before. Left joins keep the join order. Counting stops past RUN_COUNT_MAX, which is as deep as a run
+// pages, and the first page alone counts. A page holds up to RUN_PAGE_CROPS crops, so a longer run comes
+// in fewer occurrences at a time. RUN_MAX keeps a run inside one context render: a render reaches five
+// character sizes along a column (`CONTEXT_REACH`), so its middle crop's holds about eleven, and
+// `runPage` finds the run in it.
 // How a run's letterforms were made, as `hand_order` (0062) numbers its first member: shaped by hand
-// (handwritten, inscribed, cut or drawn for the page, or written in a running or cursive hand), not known,
-// and set from type. A run's page lists them in this order and narrows to one (`hand`).
+// (handwritten, inscribed, cut or drawn for the page, or written in a running or cursive hand), not
+// known, and set from type. A run's page lists them in this order and narrows to one (`hand`).
 export const HAND_ORDER: Record<string, number> = { hand: 0, unknown: 1, type: 2 };
 const HAND_NAMES = Object.keys(HAND_ORDER);
 function handGroup(q: URLSearchParams): number | null {
@@ -585,17 +587,17 @@ export function runFrom(size: number, anchor: number) {
   const span = Math.min(size, 3), crops: string[] = [], joins: string[] = [], links: number[] = [];
   for (let i = 0; i < span; i++) crops[anchor + i] = `a.${NGRAM_COLUMNS[i]}`;
   for (let i = anchor + span - 1; i < size - 1; i++) {
-    joins.push(`CROSS JOIN unit_ngrams r${i} ON r${i}.first=${crops[i]} AND r${i}.size=2 AND +r${i}.text=?`);
+    joins.push(`CROSS JOIN unit_ngrams r${i} ON r${i}.first=${crops[i]} AND r${i}.size=2 AND +r${i}.graphemes=?`);
     crops[i + 1] = `r${i}.second`; links.push(i);
   }
   for (let i = anchor - 1; i >= 0; i--) {
-    joins.push(`CROSS JOIN unit_ngrams l${i} ON l${i}.second=${crops[i + 1]} AND +l${i}.size=2 AND +l${i}.text=?`);
+    joins.push(`CROSS JOIN unit_ngrams l${i} ON l${i}.second=${crops[i + 1]} AND +l${i}.size=2 AND +l${i}.graphemes=?`);
     crops[i] = `l${i}.first`; links.push(i);
   }
   const units = crops.map((crop, i) => `LEFT JOIN units u${i} ON u${i}.id=${crop} LEFT JOIN corpus_units k${i} ON k${i}.id=${crop}`);
   return { from: ['FROM unit_ngrams a', ...joins, ...units].join(' '), links };
 }
-const runWhere = (document: boolean, size: number, hand = false) => `${document ? 'a.document=? AND ' : ''}a.size=? AND a.text=?${hand ? ' AND a.hand_order=?' : ''}`
+const runWhere = (document: boolean, size: number, hand = false) => `${document ? 'a.document=? AND ' : ''}a.size=? AND a.graphemes=?${hand ? ' AND a.hand_order=?' : ''}`
   + Array.from({ length: size }, (_, i) => ` AND (u${i}.origin='local' OR k${i}.id IS NOT NULL)`).join('');
 // A group of how the letterforms were made (`hand`, the first row's `hand_order`, 0062) and a book
 // (`document`) narrow the run through the index that leads with what they name; `sort=source` lists a
@@ -635,9 +637,18 @@ async function runRecords(env: Env, rows: RunRow[], size: number): Promise<(Json
     return members.every(Boolean) ? members as Json[] : null;
   });
 }
+// A query is folded as a run's graphemes are (0071): each character to its grapheme's head, through the
+// table of characters the site knows (`character_text`); one the table does not know stands for itself.
+export const runGraphemesQuery = () => `SELECT c.character AS character, h.character AS head FROM characters c
+  JOIN characters h ON h.code_point=json_extract(c.data,'$.grapheme.code_point') WHERE c.character IN (SELECT value FROM json_each(?))`;
+async function runGraphemes(env: Env, parts: string[]): Promise<string[]> {
+  const heads = new Map((await env.DB.prepare(runGraphemesQuery()).bind(JSON.stringify(parts)).all<{ character: string; head: string }>())
+    .results.map(row => [row.character, row.head]));
+  return parts.map(part => heads.get(part) ?? part);
+}
 /** How many rows of a trigram there are, counting no further than RUN_PROBE_MAX. */
 export function runProbeQuery(document: boolean) {
-  return `SELECT count(*) AS n FROM (SELECT 1 FROM unit_ngrams WHERE ${document ? 'document=? AND ' : ''}size=3 AND text=? LIMIT ${RUN_PROBE_MAX})`;
+  return `SELECT count(*) AS n FROM (SELECT 1 FROM unit_ngrams WHERE ${document ? 'document=? AND ' : ''}size=3 AND graphemes=? LIMIT ${RUN_PROBE_MAX})`;
 }
 async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
   const q = url.searchParams;
@@ -655,8 +666,8 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
   const key = new Request(`${url.origin}/atlas/runs?${new URLSearchParams({ text: value, document: document ?? '', hand: String(group ?? ''), sort, limit: String(limit), offset: String(offset), v: await catalogueVersion(env) })}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json() as Json;
-  const size = parts.length, scope = document ? [document] : [];
-  const span = (from: number, length: number) => parts.slice(from, from + length).join('');
+  const size = parts.length, scope = document ? [document] : [], folded = await runGraphemes(env, parts);
+  const span = (from: number, length: number) => folded.slice(from, from + length).join('');
   let anchor = 0;
   if (size > 3) {
     const probes = await env.DB.batch(Array.from({ length: size - 2 }, (_, i) =>
@@ -687,7 +698,7 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
   });
   const counted = count?.results[0] as { n: number; vertical: number | null } | undefined;
   const works = rest.length ? await runWorks(env, rest.pop()!.results as { document: string; n: number; sample: string }[]) : null;
-  const body = { text: value, size, document, hand: group === null ? 'all' : HAND_NAMES[group], sort, next_offset: offset + found.length, items,
+  const body = { text: value, graphemes: folded.join(''), size, document, hand: group === null ? 'all' : HAND_NAMES[group], sort, next_offset: offset + found.length, items,
     ...(counted && { total: Math.min(counted.n, RUN_COUNT_MAX), more: counted.n > RUN_COUNT_MAX, vertical: 2 * (counted.vertical ?? 0) >= counted.n,
       hands: Object.fromEntries(HAND_NAMES.map((name, i) => [name, Math.min((rest[i].results[0] as { n: number }).n, RUN_COUNT_MAX)])), hand_groups: HAND_NAMES, works }) };
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));

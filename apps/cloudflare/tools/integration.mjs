@@ -904,16 +904,16 @@ try {
     assert.ok(details.filter(d => /^SEARCH r\d+ /.test(d)).every(d => d.includes('USING PRIMARY KEY (first=? AND size=?)')), `rightward pairs are found by their keys: ${details.join('; ')}`)
     assert.ok(details.filter(d => /^SEARCH l\d+ /.test(d)).every(d => d.includes('unit_ngram_second')), `leftward pairs go through unit_ngram_second: ${details.join('; ')}`)
   }
-  for (const [document, scope, index] of [[false, [], 'unit_ngram_order'], [true, ['hk:doc'], 'unit_ngram_work']]) {
+  for (const [document, scope, index] of [[false, [], 'unit_ngram_graphemes'], [true, ['hk:doc'], 'unit_ngram_graphemes_work']]) {
     const probe = await plan({ sql: worker.runProbeQuery(document), values: [] }, [...scope, 'ナリケ'])
     // A book's probe is served as well by the index that places a run by book (0059), which leads with the same terms.
-    assert.ok(probe.some(d => new RegExp(`USING COVERING INDEX (${index}|${document ? 'unit_ngram_source' : index})\\b`).test(d)), probe.join('; '))
+    assert.ok(probe.some(d => new RegExp(`USING COVERING INDEX (${index}|${document ? 'unit_ngram_graphemes_source' : index})\\b`).test(d)), probe.join('; '))
     for (let size = 2; size <= 8; size++) for (let anchor = 0; anchor <= Math.max(0, size - 3); anchor++) for (const style of [false, true]) {
       const links = worker.runFrom(size, anchor).links.map(() => 'ナリ'), bound = [...links, ...scope, Math.min(size, 3), 'ナリ', ...(style ? [0] : [])]
       for (const shape of [{ sql: worker.runOccurrencesQuery(size, anchor, document, style), values: [] }, { sql: worker.runCountQuery(size, anchor, document, style), values: [] }]) {
         const args = shape.sql.includes('OFFSET') ? [...bound, 48, 0] : bound
         // A book's count asks for no order, and the index that places a run by book (0059) serves it as well.
-        occurrenceServed(await plan(shape, args), document && !shape.sql.includes('OFFSET') ? `(?:${index}|unit_ngram_source)` : index)
+        occurrenceServed(await plan(shape, args), document && !shape.sql.includes('OFFSET') ? `(?:${index}|unit_ngram_graphemes_source)` : index)
         if (size !== 5 || anchor !== 1 || style) continue
         const create = (await db.prepare('SELECT sql FROM sqlite_master WHERE name=?').bind(index).first()).sql
         await db.prepare(`DROP INDEX ${index}`).run()
@@ -926,11 +926,11 @@ try {
   for (let size = 2; size <= 8; size++) for (let anchor = 0; anchor <= Math.max(0, size - 3); anchor++) for (const style of [false, true]) {
     const links = worker.runFrom(size, anchor).links.map(() => 'ナリ'), bound = [...links, Math.min(size, 3), 'ナリ', ...(style ? [0] : []), 48, 0]
     const shape = { sql: worker.runOccurrencesQuery(size, anchor, false, style, 'source'), values: [] }
-    occurrenceServed(await plan(shape, bound), 'unit_ngram_source')
+    occurrenceServed(await plan(shape, bound), 'unit_ngram_graphemes_source')
     if (size !== 5 || anchor !== 1 || style) continue
-    const create = (await db.prepare('SELECT sql FROM sqlite_master WHERE name=?').bind('unit_ngram_source').first()).sql
-    await db.prepare('DROP INDEX unit_ngram_source').run()
-    await assert.rejects(async () => occurrenceServed(await plan({ ...shape, sql: shape.sql + ' ' }, bound), 'unit_ngram_source'), 'the check on unit_ngram_source fails without it')
+    const create = (await db.prepare('SELECT sql FROM sqlite_master WHERE name=?').bind('unit_ngram_graphemes_source').first()).sql
+    await db.prepare('DROP INDEX unit_ngram_graphemes_source').run()
+    await assert.rejects(async () => occurrenceServed(await plan({ ...shape, sql: shape.sql + ' ' }, bound), 'unit_ngram_graphemes_source'), 'the check on unit_ngram_graphemes_source fails without it')
     await db.prepare(create).run()
   }
   // The books of a run are grouped from a capped read of it, and the runs near it from one range of the index.
@@ -938,7 +938,7 @@ try {
     assert.ok(details.some(d => new RegExp(`SEARCH \\w+ USING (COVERING )?INDEX ${index}\\b`).test(d)), `${index}: ${details.join('; ')}`)
     assert.ok(!details.some(d => /^SCAN \w+ ?$/.test(d) || /^SCAN [a-z]\d? *$/.test(d)), details.join('; '))
   }
-  for (const [sql, bound, index] of [[worker.runWorksQuery(2, 0), [2, 'ナリ'], 'unit_ngram_source'], [worker.runWorksQuery(5, 1), ['ナリ', 'ナリ', 3, 'ナリ'], 'unit_ngram_source'],
+  for (const [sql, bound, index] of [[worker.runWorksQuery(2, 0), [2, 'ナリ'], 'unit_ngram_graphemes_source'], [worker.runWorksQuery(5, 1), ['ナリ', 'ナリ', 3, 'ナリ'], 'unit_ngram_graphemes_source'],
   ]) {
     nearServed(await plan({ sql, values: [] }, bound), index)
     const create = (await db.prepare('SELECT sql FROM sqlite_master WHERE name=?').bind(index).first()).sql
@@ -954,7 +954,7 @@ try {
   }
   const leftward = (await db.prepare("SELECT sql FROM sqlite_master WHERE name='unit_ngram_second'").first()).sql
   await db.prepare('DROP INDEX unit_ngram_second').run()
-  await assert.rejects(async () => occurrenceServed(await plan({ sql: worker.runOccurrencesQuery(5, 2, false) + ' ', values: [] }, ['ナリ', 'ナリ', 3, 'ナリ', 48, 0]), 'unit_ngram_order'),
+  await assert.rejects(async () => occurrenceServed(await plan({ sql: worker.runOccurrencesQuery(5, 2, false) + ' ', values: [] }, ['ナリ', 'ナリ', 3, 'ナリ', 48, 0]), 'unit_ngram_graphemes'),
     'the leftward check fails without unit_ngram_second')
   await db.prepare(leftward).run()
   const runOf = async (text, query = '') => (await mf.dispatchFetch(base + '/atlas/runs?' + new URLSearchParams({ text }) + query)).json()
@@ -1023,6 +1023,10 @@ try {
     await db.prepare('UPDATE units SET style=? WHERE id=?').bind(style, id).run()
   }
   await db.prepare(`INSERT INTO unit_ngrams(first,size,second,third,text,document) SELECT id,2,'two',NULL,'ナリ',CASE WHEN id IN ('o-early','o-late') THEN 'hk:a' ELSE 'hk:b' END FROM units WHERE id LIKE 'o-%'`).run()
+  // These runs are written with a text their members do not spell, so they are read as written (0071 folds
+  // a run from its members; the graphemes test below covers that).
+  const readAsWritten = () => db.prepare('UPDATE unit_ngrams SET graphemes=text WHERE graphemes IS NOT text').run()
+  await readAsWritten()
   // The edge keeps an answer per catalogue version, so a change moves the version first.
   let version = 0
   const firsts = async (query = '') => { await db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at',?)").bind('order' + ++version).run()
@@ -1137,6 +1141,27 @@ try {
     assert.deepEqual([await textOf('hl:run:0'), await textOf('hl:run:1'), await textOf('hl:run:0', 3), await countOf('下候')], ['申下', null, null, 0])
     await db.prepare("DELETE FROM corpus_units WHERE id IN ('hl:run:0','hl:run:1')").run()
   }
+  // A run is folded to its members' graphemes (0071) and found by what a reader types: ん followed by し
+  // written in a hentaigana form (𛁅) is found as んし, and as ん𛁅, whose query folds the same way.
+  await db.batch([
+    db.prepare('INSERT OR IGNORE INTO characters VALUES(?,?,?,?,?)').bind('U+3057', 'し', '', JSON.stringify({ char: 'し', grapheme: { code_point: 'U+3057' } }), '{}'),
+    db.prepare('INSERT OR IGNORE INTO characters VALUES(?,?,?,?,?)').bind('U+1B045', '𛁅', '', JSON.stringify({ char: '𛁅', grapheme: { code_point: 'U+3057' } }), '{}'),
+  ])
+  for (const [id, label] of [['fold-1', 'ん'], ['fold-2', '𛁅']]) {
+    const d = { id, label, state: 'pending', revision: 0, image_sha256: hash, production: 'unknown', repair: { quiz: true } }
+    await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+      id, 'local', label, null, null, 'unknown', 'kana', 'pending', 0, 1, 1, 3, JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
+  }
+  await db.prepare("INSERT INTO unit_ngrams(first,size,second,text,document) VALUES('fold-1',2,'fold-2','ん𛁅',NULL)").run()
+  assert.equal((await db.prepare("SELECT graphemes FROM unit_ngrams WHERE first='fold-1'").first()).graphemes, 'んし', 'a run is folded as it is written')
+  await db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at','fold')").run()
+  const folded = await runOf('んし'), written = await runOf('ん𛁅')
+  assert.deepEqual([folded.total, folded.graphemes, folded.items.map(o => o.crops.map(c => c.label))], [1, 'んし', [['ん', '𛁅']]], 'a run is found by its graphemes and shown as written')
+  assert.equal(written.total, 1, 'a written form folds to the same graphemes')
+  // A review that relabels a member folds the run again.
+  await db.prepare("UPDATE units SET character='か' WHERE id='fold-2'").run()
+  assert.equal((await db.prepare("SELECT graphemes FROM unit_ngrams WHERE first='fold-1'").first()).graphemes, 'んか')
+  await db.batch([db.prepare("DELETE FROM unit_ngrams WHERE first='fold-1'"), db.prepare("DELETE FROM units WHERE id LIKE 'fold-%'")])
   // A run filed under an empty book is counted once, on the whole site.
   await db.prepare("INSERT INTO unit_ngrams(first,size,second,text,document) VALUES('blank1',2,'blank2','空白','')").run()
   assert.deepEqual((await db.prepare("SELECT scope,n FROM ngram_counts WHERE text='空白'").all()).results, [{ scope: '', n: 1 }])
