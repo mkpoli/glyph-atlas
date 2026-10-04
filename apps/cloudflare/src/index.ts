@@ -263,17 +263,55 @@ export function validRound(input: Json, target?: string): { answers: Json[]; see
 }
 // A batch correction names one written character and the crops a reader selected as that character:
 // each crop becomes a `wrong`/`character` answer, checked against its own revision and pixels.
-export function validBatch(input: Json): { character: string; crops: Json[] } {
-  const character = writtenCharacter(text(input.character, 32, 'character', true)!);
+// A line's correction (`line: true`) names a character for each crop instead, or `issue: 'blank'` for
+// a box that is no character; a crop that changed or was checked meanwhile is skipped and reported.
+export function validBatch(input: Json): { character: string | null; line: boolean; crops: Json[] } {
+  if (input.line !== undefined && typeof input.line !== 'boolean') throw new Problem(422, 'A line correction is true or absent.');
+  const line = input.line === true;
+  if (line && input.character !== undefined) throw new Problem(422, 'A line correction names a character for each crop.');
+  const character = line ? null : writtenCharacter(text(input.character, 32, 'character', true)!);
   const crops = input.crops;
   if (!Array.isArray(crops) || crops.length < 1 || crops.length > ROUND_MAX || new Set(crops.map(crop => crop?.id)).size !== crops.length)
     throw new Problem(422, `A correction needs 1–${ROUND_MAX} distinct crops.`);
   for (const crop of crops) {
     text(crop?.id, 512, 'crop id', true);
-    // A batch names a character only; a crop is redrawn one at a time, in its own review.
-    if (crop.box !== undefined) throw new Problem(422, 'A correction of many crops cannot redraw one.');
+    // A batch names a character only; a crop is redrawn one at a time, in its own review. A line's crop may
+    // carry its redrawn box beside its character: the box is checked against the crop itself later.
+    if (crop.box !== undefined && (!line || crop.issue !== undefined || crop.box === null || typeof crop.box !== 'object')) throw new Problem(422, 'A correction of many crops cannot redraw one.');
+    if (!line && (crop.character !== undefined || crop.issue !== undefined)) throw new Problem(422, 'Only a line correction names a character for each crop.');
+    if (line) {
+      if (crop.issue !== undefined && (crop.issue !== 'blank' || crop.character !== undefined)) throw new Problem(422, 'A box is marked as no character by itself.');
+      if (crop.issue === undefined) crop.character = writtenCharacter(text(crop.character, 32, 'character', true)!);
+    }
   }
-  return { character, crops };
+  return { character, line, crops };
+}
+// What a batch does to each crop it names: the crops to write, the crops refused (changed since the
+// reader loaded them, without an image to judge, missing, or already checked as another character) and
+// the crops already written as the character, which need no write. A one-character correction refuses
+// as a whole; a line's skips them (`validBatch`).
+export function judgeBatch(batch: { character: string | null; line: boolean }, answers: Json[], rows: Map<string, UnitRow | Problem>) {
+  const refused: Json[] = [], chosen: Json[] = [], unchanged: string[] = [];
+  for (const crop of answers) {
+    const row = rows.get(crop.id)!;
+    if (row instanceof Problem) { refused.push({ id: crop.id, reason: 'missing' }); continue }
+    const data = parse(row.data), glyph = row.origin === 'corpus';
+    if (!Number.isSafeInteger(crop.revision) || crop.revision !== data.revision || (glyph ? crop.source_revision !== data.source_revision : crop.image_sha256 !== data.image_sha256)) { refused.push({ id: crop.id, reason: 'changed' }); continue }
+    if (glyph && !data.proxyable) { refused.push({ id: crop.id, reason: 'unavailable' }); continue }
+    if (crop.issue === 'blank') {
+      if (data.state === 'checked') refused.push({ id: crop.id, reason: 'checked' });
+      else chosen.push({ ...crop, verdict: 'wrong', issue: 'blank' });
+      continue;
+    }
+    const character = crop.character ?? batch.character;
+    const identity = glyph ? data.written_character : (data.written_character || data.label);
+    if (identity === character) {
+      if (data.state === 'checked') unchanged.push(crop.id);
+      else chosen.push({ id: crop.id, revision: crop.revision, image_sha256: crop.image_sha256, source_revision: crop.source_revision, verdict: 'match', ...(crop.box ? { box: crop.box } : {}) });
+    } else if (data.state === 'checked') refused.push({ id: crop.id, reason: 'checked' });
+    else chosen.push({ ...crop, verdict: 'wrong', issue: 'character', character });
+  }
+  return { chosen, refused, unchanged };
 }
 // A written character a reviewer names: one character, which may carry combining marks or a variation
 // selector, and may be a private-use code point (구결자 are encoded there). Control, format, surrogate
@@ -593,6 +631,39 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
   const body = { text: value, size, document, next_offset: offset + items.length, items,
     ...(counted && { total: Math.min(counted.n, RUN_COUNT_MAX), more: counted.n > RUN_COUNT_MAX, vertical: 2 * (counted.vertical ?? 0) >= counted.n }) };
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
+  return body;
+}
+// A crop's neighbours on its line, in reading order: the pairs `unit_ngrams` holds are followed forward
+// by their first crop (the primary key) and backward by their second (`unit_ngram_second`), at most
+// `LINE_REACH` steps each way, one row a step. The length test is kept off the backward step's index (`+`), or the planner would start from every pair. No sort is asked of SQLite; the offsets order them.
+const LINE_REACH = 4;
+export const lineQuery = () => `WITH RECURSIVE ahead(id,d) AS (SELECT ?1,0 UNION ALL
+    SELECT p.second,a.d+1 FROM ahead a CROSS JOIN unit_ngrams p ON p.first=a.id AND p.size=2 WHERE a.d<${LINE_REACH}),
+  behind(id,d) AS (SELECT ?1,0 UNION ALL
+    SELECT p.first,b.d-1 FROM behind b CROSS JOIN unit_ngrams p ON p.second=b.id AND +p.size=2 WHERE b.d>-${LINE_REACH})
+  SELECT n.d AS d,u.id AS id,u.data AS data FROM (SELECT * FROM ahead UNION ALL SELECT * FROM behind WHERE d<0) n
+    CROSS JOIN units u ON u.id=n.id AND +u.origin='local'`;
+// What the inspector's line strip needs of each neighbour: the crop as the review path judges it
+// (revision and pixels) and the label it carries now. A crop with no neighbours has an empty line.
+export function lineItems(rows: { d: number; id: string; data: string }[]): Json[] {
+  const seen = new Set<string>();
+  const items = [...rows].sort((a, b) => a.d - b.d).flatMap(row => {
+    if (seen.has(row.id)) return [];
+    seen.add(row.id);
+    const d = parse(row.data);
+    return [{ id: row.id, offset: row.d, label: d.label ?? null, image: d.image ?? null, revision: d.revision, image_sha256: d.image_sha256 ?? null,
+      state: d.state ?? null, issue: d.issue ?? null }];
+  });
+  return items.length > 1 ? items : [];
+}
+// The edge keeps a copy per catalogue version, as for a book's characters; a review or an undo makes a new key.
+async function line(env: Env, ctx: ExecutionContext, url: URL, id: string) {
+  const key = new Request(`${url.origin}${url.pathname}?v=${encodeURIComponent(await catalogueVersion(env))}`);
+  const cached = await caches.default.match(key);
+  if (cached) return await cached.json() as Json;
+  const rows = await env.DB.prepare(lineQuery()).bind(id).all<{ d: number; id: string; data: string }>();
+  const body = { id, reach: LINE_REACH, items: lineItems(rows.results) };
+  ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': 'public, max-age=60' } })));
   return body;
 }
 async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: string | null) {
@@ -1356,7 +1427,7 @@ export function canonical(value: unknown): string {
   if(Array.isArray(value))return '['+value.map(canonical).join(',')+']';
   return '{'+Object.keys(value).sort().map(k=>JSON.stringify(k)+':'+canonical((value as Json)[k])).join(',')+'}';
 }
-function validateAnswer(answer: Json, current: Json, round: boolean, corpus=false, batch=false) {
+function validateAnswer(answer: Json, current: Json, round: boolean, corpus=false, batch=false, line=false) {
   if(!Number.isSafeInteger(answer.revision)||answer.revision!==current.revision)throw new Problem(409,'This character changed. Reload it.');
   if(corpus?answer.source_revision!==current.source_revision:answer.image_sha256!==current.image_sha256)throw new Problem(409,'The source image changed. Reload it.');
   if(!['match','wrong','unsure'].includes(answer.verdict))throw new Problem(422,'Choose a review decision.');
@@ -1372,10 +1443,12 @@ function validateAnswer(answer: Json, current: Json, round: boolean, corpus=fals
   if(answer.verdict==='wrong' && answer.character && literal(answer.character)===current.written_character)
     throw new Problem(422,'Choose a different character or a different issue.');
   if(answer.box!==undefined){
-    // A redrawn box is the crop's fix: saved as a match on the pixels it names, never in a round.
-    if(round||corpus||batch)throw new Problem(422,'This crop cannot be redrawn here.');
-    if(answer.verdict!=='match'||answer.issue!=null||answer.character||answer.correction)
-      throw new Problem(422,'A redrawn crop is saved as fixed.');
+    // A redrawn box is the crop's fix: saved as a match on the pixels it names, never in a round. A line's
+    // crop may also be relabelled in the same save.
+    if(round||corpus||(batch&&!line))throw new Problem(422,'This crop cannot be redrawn here.');
+    const fixed=answer.verdict==='match'&&answer.issue==null&&!answer.character&&!answer.correction;
+    const relabelled=line&&answer.verdict==='wrong'&&answer.issue==='character'&&answer.character&&!answer.correction;
+    if(!fixed&&!relabelled)throw new Problem(422,'A redrawn crop is saved as fixed.');
     answer.box=redrawnBox(answer.box,current);
   }
 }
@@ -1404,7 +1477,7 @@ async function submit(env: Env, request: Request, actor: string, target?: string
   const correction=batch?validBatch(input):null;
   const {answers,seen,skipped}=batch?{answers:correction!.crops,seen:[],skipped:[]}:validRound(input,target);
   // A redrawn box is held to the rate batch corrections are, by address.
-  if(answers.some(answer=>answer.box!==undefined)){
+  if(!batch&&answers.some(answer=>answer.box!==undefined)){
     const {success}=await env.CORRECTIONS.limit({key:request.headers.get('cf-connecting-ip')??'local'});
     if(!success)throw new Problem(429,'Too many corrections at once. Wait a minute and try again.');
   }
@@ -1413,24 +1486,15 @@ async function submit(env: Env, request: Request, actor: string, target?: string
   // since the page loaded, one whose image cannot be shown, or one a person already checked as another
   // character is refused (all are named, and nothing is saved); one already written as the character
   // is confirmed, unless a person already checked it, when it is left as it is.
-  const unchanged:string[]=[];
+  let unchanged:string[]=[];
+  const skippedCrops:Json[]=[];
   if(batch){
-    const refused:Json[]=[], chosen:Json[]=[];
-    for(const crop of answers){
-      const row=rows.get(crop.id)!;
-      if(row instanceof Problem){refused.push({id:crop.id,reason:'missing'});continue}
-      const data=parse(row.data), glyph=row.origin==='corpus';
-      if(!Number.isSafeInteger(crop.revision)||crop.revision!==data.revision||(glyph?crop.source_revision!==data.source_revision:crop.image_sha256!==data.image_sha256)){refused.push({id:crop.id,reason:'changed'});continue}
-      if(glyph&&!data.proxyable){refused.push({id:crop.id,reason:'unavailable'});continue}
-      const identity=glyph?data.written_character:(data.written_character||data.label);
-      if(identity===correction!.character){
-        if(data.state==='checked')unchanged.push(crop.id);
-        else chosen.push({...crop,verdict:'match'});
-      }else if(data.state==='checked')refused.push({id:crop.id,reason:'checked'});
-      else chosen.push({...crop,verdict:'wrong',issue:'character',character:correction!.character});
-    }
-    if(refused.length)throw new Problem(409,'Some of these crops changed or were already checked. Reload them.',{targets:refused});
-    answers.splice(0,answers.length,...chosen);
+    const judged=judgeBatch(correction!,answers,rows);
+    // A line's correction saves the crops that still stand and reports the rest; a crop that changed is never overwritten.
+    if(judged.refused.length&&!correction!.line)throw new Problem(409,'Some of these crops changed or were already checked. Reload them.',{targets:judged.refused});
+    skippedCrops.push(...judged.refused);
+    unchanged=judged.unchanged;
+    answers.splice(0,answers.length,...judged.chosen);
   }
   // One round usually corrects many crops to the same few characters; each is read once.
   const lookups=new Map<string,Promise<{data:Json;detail:Json}|null>>();
@@ -1445,7 +1509,7 @@ async function submit(env: Env, request: Request, actor: string, target?: string
     const row=found, stored=parse(row.data), glyph=row.origin==='corpus';
     const current:Json={...stored,category:row.category||categoryOf(stored.label)};
     row.data=JSON.stringify(current);
-    validateAnswer(answer,current,round,glyph,batch);
+    validateAnswer(answer,current,round,glyph,batch,Boolean(correction?.line));
     if(glyph&&(!current.proxyable||(current.identity_status==='unassigned'&&answer.verdict==='match')))
       throw new Problem(422,'Choose a written character or report an issue.');
     if(round&&(!row.quiz||!members!.includes(current.label)))throw new Problem(409,'This round changed. Reload it.');
@@ -1498,7 +1562,7 @@ async function submit(env: Env, request: Request, actor: string, target?: string
     });
   }
   const result=corpus?{...(changes[0].next),origin:'corpus',event:changes[0].event}
-    :batch?{id,results:changes.map(c=>({target_id:c.row.id,revision:c.next.revision,state:c.next.state})),unchanged}
+    :batch?{id,results:changes.map(c=>({target_id:c.row.id,revision:c.next.revision,state:c.next.state})),unchanged,...(correction!.line?{skipped:skippedCrops}:{})}
     :{id,results:[...changes.map(c=>({id:c.event.id,target_id:c.row.id,field:'review',revision:c.next.revision,state:c.next.state})),
       ...shown.map(crop=>({target_id:crop.id,field:'seen'})),...passed.map(crop=>({target_id:crop.id,field:'skip'}))]};
   const statements=[env.DB.prepare('INSERT INTO submissions(id,actor,request,response,at) VALUES (?,?,?,?,?)').bind(key,actor,signature,JSON.stringify(result),at)];
@@ -1834,6 +1898,9 @@ const routes = {
         path.endsWith('.json')?{'content-disposition':'attachment; filename="atlas-ledger.json"'}:{});
       if(path==='/atlas/reviews'||path==='/atlas/reviews.json')return json(await reviews(env,q.get('include_processed')==='true'),200,
         path.endsWith('.json')?{'content-disposition':'attachment; filename="atlas-character-reviews.json"'}:{});
+      const neighbours=path.match(/^\/atlas\/characters\/([^/]+)\/line$/);
+      if(neighbours){let id:string;try{id=decodeURIComponent(neighbours[1])}catch{throw new Problem(404,'This character is not in the published collection.')}
+        return json(await line(env,ctx,url,id),200,{'cache-control':'no-cache'})}
       const versions=path.match(/^\/atlas\/characters\/([^/]+)\/versions$/);
       if(versions){let id:string;try{id=decodeURIComponent(versions[1])}catch{throw new Problem(404,'This character is not in the published collection.')}
         return json(await cropVersions(env,id))}
