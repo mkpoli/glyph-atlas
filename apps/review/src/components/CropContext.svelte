@@ -1,8 +1,8 @@
 <script>
   import { request } from '../lib/client.js'
-  import Glyph from './Glyph.svelte'
   import BoxEditor, { nudged } from './BoxEditor.svelte'
   import { t } from '../lib/i18n.svelte.js'
+  import { toSource } from '../lib/cropBox.js'
   // `cropBox` is a box drawn over the crop (a redraw), in source pixels; the view stays framed on the
   // crop as it was cut. `editing` turns the box into one the reader moves and resizes here, and
   // `onedit` hears each new box, in source pixels, `onexit` an Escape.
@@ -78,10 +78,16 @@
     x: size.width / 2 - (frame.x + frame.w / 2) * scale + pan.x,
     y: size.height / 2 - (frame.y + frame.h / 2) * scale + pan.y,
   } : { x: 0, y: 0 })
-  const rect = box => box ? { x: origin.x + box.x * scale, y: origin.y + box.y * scale, w: box.w * scale, h: box.h * scale } : null
-  const at = r => r ? `left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px` : ''
-  // Until the page arrives, the crop itself stands where the page will put it.
-  const early = $derived(at(rect(data?.crop_box)))
+  // Until the page arrives, the crop itself stands where the page will put it: the same rule, written
+  // for the stylesheet so it holds from the first paint, before any script measures the view. The box is
+  // the record's, else a listing row's page box in source pixels; with neither, the image's own
+  // proportions fill the rule's square.
+  const known = $derived(data?.crop_box ?? item.crop_box ?? (item.box ? toSource(item, item.box) : null))
+  const early = $derived.by(() => {
+    if (!known) return ''
+    const side = `min(34cqw, 34cqh, ${8 * Math.max(known.w, known.h)}px)`, longer = Math.max(known.w, known.h)
+    return `width:calc(${side} * ${known.w / longer});height:calc(${side} * ${known.h / longer})`
+  })
   const transform = $derived(`translate(${origin.x}px, ${origin.y}px) scale(${scale})`)
   const mask = $derived(crop ? `left:${origin.x + crop.x * scale}px;top:${origin.y + crop.y * scale}px;width:${crop.w * scale}px;height:${crop.h * scale}px` : '')
   // A viewport-sized shade stays complete even when the crop is panned far off screen.
@@ -170,8 +176,10 @@
        aria-busy={loading} data-ready={ready} data-pan-x={pan.x} data-pan-y={pan.y} data-zoom={zoom}
        onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up}
        onlostpointercapture={() => { pointer = null; dragging = false }} onkeydown={keydown}>
-    {#if !ready && contextual}<img class="crop-early" src={item.image} alt="" draggable="false" style={early} onload={() => cropReady = true} onerror={() => cropFailed = true} />
-    {:else if !ready}<div class="crop-fallback" data-context-fallback>{#key item.image}<Glyph {item} eager onload={() => cropReady = true} onerror={() => cropFailed = true} />{/key}</div>{/if}
+    <!-- One crop image from the first paint: where the page will put it once the record is in, and by
+         the same rule before then, so neither the record nor the page around it moves it. -->
+    {#if !ready && item.image && !cropFailed}<img class="crop-early" class:placed={known} src={item.image} alt={contextual ? '' : t('character.glyph.alt', { label: item.label })}
+      draggable="false" fetchpriority="high" style={early} onload={() => cropReady = true} onerror={() => cropFailed = true} />{/if}
     {#if contextual}
       <div class="crop-plane" style={`transform:${transform}`} aria-hidden="true">
         {#if !fullReady && !contextFailed}<img class="context-photo" src={data.context_image} alt="" draggable="false"
@@ -202,7 +210,7 @@
 <style>
   .crop-viewer{width:100%;min-width:0}
   /* Keep the scan canvas, shade and crop mask independent of the UI scheme. */
-  .crop-viewport{height:380px;position:relative;overflow:clip;border-radius:12px;background:light-dark(#ebe8e3, #ebe8e3);isolation:isolate;touch-action:none;outline-offset:4px;user-select:none}
+  .crop-viewport{height:380px;position:relative;container-type:size;overflow:clip;border-radius:12px;background:light-dark(#ebe8e3, #ebe8e3);isolation:isolate;touch-action:none;outline-offset:4px;user-select:none}
   .crop-viewport.ready{cursor:grab}
   .crop-viewport.dragging{cursor:grabbing}
   .crop-viewport:focus-visible{outline:2px solid var(--accent)}
@@ -211,9 +219,9 @@
   .page-photo{left:0;top:0}
   .context-shade{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;fill:light-dark(rgb(24 20 17 / 42%), rgb(24 20 17 / 42%))}
   .crop-mask{position:absolute;pointer-events:none;box-shadow:0 0 12px 3px light-dark(rgb(24 20 17 / 24%), rgb(24 20 17 / 24%))}
-  .crop-early{position:absolute;display:block;max-width:none;object-fit:fill;pointer-events:none}
-  .crop-fallback{position:absolute;inset:28px;display:flex;align-items:center;justify-content:center}
-  .crop-fallback :global(img){width:100%;height:100%;object-fit:contain;filter:none}
+  /* The framing rule: centred, its longer side 34% of the view's shorter one. */
+  .crop-early{position:absolute;left:50%;top:50%;width:min(34cqw,34cqh);height:min(34cqw,34cqh);translate:-50% -50%;display:block;max-width:none;max-height:none;object-fit:contain;filter:none;pointer-events:none}
+  .crop-early.placed{object-fit:fill}
   .crop-tools{position:absolute;right:12px;bottom:12px;display:flex;gap:2px;background:light-dark(rgb(255 255 255 / 94%), rgb(27 27 31 / 94%));padding:3px;border-radius:8px;box-shadow:0 2px 12px light-dark(rgb(0 0 0 / 12%), rgb(0 0 0 / 40%));cursor:default}
   .crop-tools button{display:flex;align-items:center;justify-content:center;width:32px;height:32px;padding:0;border:0;border-radius:5px;background:transparent;font-size:22px;color:var(--ink);cursor:pointer}
   .crop-tools button:hover:enabled{background:var(--accent-light)}
