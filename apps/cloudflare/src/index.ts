@@ -12,6 +12,7 @@ import { connections } from './connections';
 import { reviewers, submissions } from './admin';
 import { READ_BUDGET, RETRY_AFTER, described, retried, transient } from './busy';
 import { actOnClaim, claimsOf, ledgerPage, writeClaim, type LedgerTools } from './ledger';
+import { honkokuPage } from './honkoku';
 import { YEAR_KEY, dateStats, datingJoin, datingOf, decadeColumn, documentDates, documentOf, withDating, yearCondition, yearOptions, yearOrder, type YearOptions } from './dating';
 export { leastTypicalQuery } from './forms';
 export { componentMatchQuery } from './components';
@@ -170,7 +171,9 @@ async function cropVersions(env: Env, id: string) {
 // A crop's record for its inspector, with its form, its book's dates and the claims they rest on.
 const inspected = async (env: Env, row: UnitRow): Promise<Json> => {
   const found = (await withForms(env, [record(row)]))[0];
-  return { ...found, ...await documentDates(env, row.document ?? found.source?.document_id ?? null) };
+  const document = row.document ?? found.source?.document_id ?? null;
+  const honkoku = honkokuPage(found, document);
+  return { ...found, ...(honkoku ? { honkoku_url: honkoku } : {}), ...await documentDates(env, document) };
 };
 // The page rectangle a reviewer may redraw a local crop's box in, in page pixels: the context the
 // inspector shows, which lies inside the page. A corpus glyph's box belongs to its source, so it has none.
