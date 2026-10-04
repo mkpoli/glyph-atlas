@@ -16,12 +16,13 @@ def unit(seq, y=None, line="L1", **fields):
 
 
 def catalogue():
-    """`units` and `corpus_units` with the columns the ngram migrations' triggers read."""
+    """`units`, `corpus_units` and `characters` with the columns the ngram migrations' triggers read."""
     db = sqlite3.connect(":memory:")
     columns = ("character TEXT, document TEXT, production TEXT NOT NULL DEFAULT 'unknown', style TEXT NOT NULL DEFAULT 'unassessed', "
                "style_order INTEGER NOT NULL DEFAULT 1, shuffle INTEGER NOT NULL DEFAULT 0")
     db.execute(f"CREATE TABLE units (id TEXT PRIMARY KEY, origin TEXT, {columns})")
     db.execute(f"CREATE TABLE corpus_units (id TEXT PRIMARY KEY, {columns})")
+    db.execute("CREATE TABLE characters (code_point TEXT PRIMARY KEY, character TEXT UNIQUE, data TEXT)")
     return db
 
 
