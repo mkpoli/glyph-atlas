@@ -144,6 +144,15 @@ def test_short_form_furigana_carries_a_left_reading():
     ]
 
 
+def test_ruby_tag_is_furigana():
+    # The honkokuv1 project writes 振り仮名 as 《ルビ：base｜reading》.
+    parsed = koji.parse("《ルビ：等｜など》に")
+    assert parsed.nodes[0].kind == "ruby"
+    assert [(char.text, char.role) for char in parsed.chars] == [
+        ("等", "main"), ("な", "ruby"), ("ど", "ruby"), ("に", "main"),
+    ]
+
+
 def test_bracket_furigana_keeps_the_base_and_marks_the_readings():
     parsed = koji.parse("《振り仮名：獅子｜しし｜ライオン》")
     (ruby,) = parsed.nodes

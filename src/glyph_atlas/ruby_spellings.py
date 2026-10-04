@@ -23,9 +23,9 @@ What a row holds:
 - `documents` counts entries. One entry can repeat a spelling on every page, so a spelling attested
   by many documents is a convention and one attested by a single document may be a scribe's habit.
 
-Only bases holding a Han character are counted. `《迎え仮名：…》` is read as 振り仮名, as the parser
-files it; the clone at revision be63dc2 holds none. `《ルビ：…》`, which the honkokuv1 project uses,
-is not a construct the parser knows, so its readings are not counted.
+Only bases holding a Han character are counted. `《ルビ：…》`, which the honkokuv1 project uses, and
+`《迎え仮名：…》` are read as 振り仮名, as the parser files them; the clone at revision be63dc2 holds no
+迎え仮名.
 
 The source does not say whether a 振り仮名 stands on the page or was added by the transcriber, and
 transcribers are asked to type modern forms (https://wiki.honkoku.org/doku.php?id=guidelines), so a
@@ -75,7 +75,7 @@ def rubies(text: str) -> list[tuple[str, str]]:
     right-hand ruby text whose innermost ruby is this one. A damage mark belongs to whichever field it
     stands in.
     """
-    if "（" not in text and "仮名" not in text:
+    if "（" not in text and "《" not in text:
         return []
     parsed = koji.parse(text)
     elements = [element for element in koji.walk(parsed.nodes) if element.kind == "ruby"]
