@@ -750,8 +750,14 @@ class Composer:
         operand or a positional form of it, beside siblings that hold about as much ink, at about
         the size and proportions of `box`. With `placed`, `box` is in the em, and a part a character
         draws at its top level close to that very box is preferred: it needs the least scaling."""
+        ranked = self._ranked(op, index, node, siblings, box, placed)
+        return (ranked[0][1], ranked[0][2]) if ranked else None
+
+    def _ranked(self, op: str, index: int, node: Node, siblings: list[Node], box: Box,
+                placed: bool = False) -> list[tuple[tuple, Host, int]]:
+        """Every host `_host` weighs, best first, for the first form of the operand that has any."""
         if not self.hosted:
-            return None
+            return []
         hosts, _ = self._index
         want = sum(self.ink(s) for s in siblings)
         aspect = (box[2] - box[0]) / max(box[3] - box[1], 1)
@@ -767,7 +773,7 @@ class Composer:
                 exact = here[0] == op and [key(n) for n in others] == [key(s) for s in siblings]
                 ratio = abs(math.log(max(sum(self.ink(s) for s in others), 1) / max(want, 1)))
                 scored.append((not exact, ratio, len(path), char, tree, path, i))
-            best = None
+            found_all = []
             for exact, ratio, depth, char, tree, path, i in sorted(scored, key=lambda r: r[:3])[:32 if placed else 16]:
                 found = self._host_node(char, tree, path)
                 if found is None:
@@ -780,12 +786,10 @@ class Composer:
                 if placed:
                     near = (float(np.mean(np.abs(np.array(piece) - np.array(box)))) / PLACED_UNITS if found.whole
                             else PLACED_NESTED)
-                rank = (exact, ratio + shape + 0.5 * size + 0.1 * depth + near)
-                if best is None or rank < best[0]:
-                    best = (rank, (found, i))
-            if best:
-                return best[1]
-        return None
+                found_all.append(((exact, ratio + shape + 0.5 * size + 0.1 * depth + near), found, i))
+            if found_all:
+                return sorted(found_all, key=lambda r: r[0])
+        return []
 
     def _template(self, op: str, children: list[Node], region: Box, absolute: bool = False) -> tuple[Host, list[bool]] | None:
         """A drawn character with a node of `op` whose operands are most like `children`, cut into
