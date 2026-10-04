@@ -132,7 +132,9 @@ def read_range(low: str, high: str, depth: int = 0) -> list[dict]:
         pass
     if depth >= 3:
         raise SystemExit(f"could not read live units in [{low}, {high})")
-    parts = [low] + [low + c for c in ID_CHARS[1:]] + [high]
+    # The pieces start at `low` followed by each id character, kept to those inside the range: a range
+    # from a bare prefix (`ex:` to `ex:1`) holds only ids continuing it with `0`.
+    parts = sorted({low, high} | {low + c for c in ID_CHARS if low < low + c < high})
     return [row for a, b in itertools.pairwise(parts) for row in read_range(a, b, depth + 1)]
 
 

@@ -125,3 +125,20 @@ def test_a_new_extracted_crop_on_the_ink_of_a_live_crop_is_left_out():
     assert prepare.live_overlaps(atlas, fresh, live) == ["ex:a"]
     # A live file written before the origin column was read counts every row as local.
     assert prepare.live_overlaps(atlas, fresh, [{"id": "ex:r", "data": data("p", 500)}]) == ["ex:d"]
+
+
+def test_a_crowded_live_range_is_read_in_pieces_each_id_once(monkeypatch):
+    import re
+    import subprocess
+
+    ids = [f"ex:{a}{b}{c}" for a in "0az" for b in "019" for c in "05x"] + ["ex:1", "ex:10", "ex:zz"]
+    def d1(sql, tries=4):
+        low, high = re.search(r"u.id >= '([^']*)' AND u.id < '([^']*)'", sql).groups()
+        found = [{"id": i} for i in ids if low <= i < high]
+        if len(found) > 4:  # too large for one response
+            raise subprocess.CalledProcessError(1, "wrangler")
+        return found
+    monkeypatch.setattr(prepare, "d1", d1)
+    got = [row["id"] for low, high in [("ex:", "ex:1"), ("ex:1", "ex:2"), ("ex:z", "ex:~")]
+           for row in prepare.read_range(low, high)]
+    assert sorted(got) == sorted(i for i in ids if i.startswith(("ex:0", "ex:1", "ex:z")))
