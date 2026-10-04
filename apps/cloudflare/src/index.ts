@@ -1000,8 +1000,8 @@ function chunks<T>(list: T[], size: number): T[][] {
 // A character's edges in the 異体字 graph, both ways (0033): each by the key or by `b`'s index.
 export const variantEdgesQuery = () => `SELECT b AS other,relation,source,detail,widens FROM character_variants WHERE a=?
   UNION ALL SELECT a AS other,relation,source,detail,widens FROM character_variants WHERE b=? LIMIT 2000`;
-// A character's derived list (0046, 0067), in the order and caps refs.derived_variants gives it: one key range.
-export const derivedEdgesQuery = () => `SELECT b AS other,routes FROM character_derived WHERE a=? ORDER BY rank`;
+// A character's derived list (0070): its one row, the forms in the order and caps refs.derived_variants gives them.
+export const derivedEdgesQuery = () => `SELECT forms FROM character_derived WHERE a=?`;
 // What the substitutions a derived list came by are backed by: each one's count and every pair behind
 // it with the sources that state it (the `component_variants` rows, keyed by substitution), at most
 // SUBSTITUTIONS_READ at a time so no statement binds more than D1's hundred parameters.
@@ -1083,7 +1083,8 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, char:
   const cached = await caches.default.match(key);
   if (cached) return await cached.json();
   const edges = (await env.DB.prepare(variantEdgesQuery()).bind(char, char).all<VariantEdge>()).results;
-  const derivedRows = (await env.DB.prepare(derivedEdgesQuery()).bind(char).all<DerivedRow>()).results;
+  const derivedRow = await env.DB.prepare(derivedEdgesQuery()).bind(char).first<{ forms: string }>();
+  const derivedRows: DerivedRow[] = derivedRow ? (JSON.parse(derivedRow.forms) as [string, [string, string][][]][]).map(([other, routes]) => ({ other, routes })) : [];
   const byChar = new Map<string, VariantRow & { edges: VariantEdge[] }>();
   for (const edge of edges) {
     if (edge.other === char) continue;
@@ -1164,7 +1165,7 @@ async function wordsOf(env: Env, ctx: ExecutionContext, origin: string, char: st
   return found;
 }
 type Substitution = { was: string; became: string; count: number; pairs: { a: string; b: string; sources: string[] }[] };
-type DerivedRow = { other: string; routes: string };
+type DerivedRow = { other: string; routes: [string, string][][] };
 type DerivedEntry = { char: string; code_point: string | null; encoded: boolean; routes: Substitution[][]; sources: string[] };
 type SubstitutionRow = { a: string; b: string; count: number; pairs: string };
 // A substitution's own spelling, as refs._substitution writes it: the side of fewer code points
@@ -1179,7 +1180,7 @@ export function substitutionKey(left: string, right: string): [string, string] {
 // their `component_variants` rows. A form of one character is encoded, a sequence is not. A route
 // whose substitution the table no longer holds is dropped, and a form left with none is dropped.
 async function derivedOf(env: Env, rows: DerivedRow[]): Promise<DerivedEntry[]> {
-  const listed = rows.map(row => ({ ...row, routes: JSON.parse(row.routes) as [string, string][][] }));
+  const listed = rows;
   const keys = [...new Map(listed.flatMap(row => row.routes.flat()).map(([was, became]) => substitutionKey(was, became))
     .map(key => [key.join('\u0000'), key])).values()];
   const backed = keys.length ? (await env.DB.batch(chunks(keys, SUBSTITUTIONS_READ).map(part =>

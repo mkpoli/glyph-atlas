@@ -36,7 +36,7 @@ try {
   const apply = async name => {
     const schema = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8')
     // Comments go first: a comment line that starts with a keyword would otherwise read as a statement.
-    const statements = schema.replace(/^\s*--.*$/gm, '').match(/CREATE TRIGGER[\s\S]*?\nEND;|(?:CREATE (?:TABLE|(?:UNIQUE )?INDEX)|DROP (?:TRIGGER|INDEX)|UPDATE|ALTER TABLE|DELETE FROM|INSERT INTO) [\s\S]*?;/g)
+    const statements = schema.replace(/^\s*--.*$/gm, '').match(/CREATE TRIGGER[\s\S]*?\nEND;|(?:CREATE (?:TABLE|(?:UNIQUE )?INDEX)|DROP (?:TRIGGER|INDEX|TABLE)|UPDATE|ALTER TABLE|DELETE FROM|INSERT INTO) [\s\S]*?;/g)
     await db.batch(statements.map(sql => db.prepare(sql)))
   }
   for (const name of migrations.filter(name => name < '0006')) await apply(name)
@@ -616,11 +616,9 @@ try {
   await db.batch([
     db.prepare(`INSERT INTO component_variants VALUES('反','𠬝',3,'[{"a":"扳","b":"𢪃","sources":["wikidata"]},{"a":"返","b":"𮞉","sources":["cjkvi-variants","wikidata"]}]')`),
     db.prepare(`INSERT INTO component_variants VALUES('亻','彳',1,'[{"a":"亻","b":"彳","sources":["mkpoli-2026-10-04"]}]')`),
-    db.prepare(`INSERT INTO character_derived VALUES('仮',2,'⿰彳𠬝','[[["亻","彳"],["反","𠬝"]]]')`),
-    db.prepare(`INSERT INTO character_derived VALUES('仮',1,'⿰亻𠬝','[[["反","𠬝"]]]')`),
-    db.prepare(`INSERT INTO character_derived VALUES('仮',0,'𠈌','[[["反","𠬝"]]]')`),
-    db.prepare(`INSERT INTO character_derived VALUES('𠈌',0,'仮','[[["𠬝","反"]]]')`),
-    db.prepare(`INSERT INTO character_derived VALUES('伋',0,'⿰亻𠬝','[[["反","𠬝"]]]')`),
+    db.prepare(`INSERT INTO character_derived VALUES('仮','[["𠈌",[[["反","𠬝"]]]],["⿰亻𠬝",[[["反","𠬝"]]]],["⿰彳𠬝",[[["亻","彳"],["反","𠬝"]]]]]')`),
+    db.prepare(`INSERT INTO character_derived VALUES('𠈌','[["仮",[[["𠬝","反"]]]]]')`),
+    db.prepare(`INSERT INTO character_derived VALUES('伋','[["⿰亻𠬝",[[["反","𠬝"]]]]]')`),
     db.prepare(`INSERT OR REPLACE INTO metadata VALUES('variant_sources','{"wikidata":"Wikidata, P5475; CC0-1.0","opencc":"OpenCC; Apache-2.0","cjkvi-variants":"CJKVI; PD","unihan":"Unihan; Unicode-3.0","derived-ids":"Predicted component variants (derived, not attested)","mkpoli-2026-10-04":"mkpoli, instruction of 2026-10-04"}')`),
     db.prepare("INSERT OR REPLACE INTO metadata VALUES('units_refreshed_at','\"variants-test-derived\"')"),
   ])
