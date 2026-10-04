@@ -4,6 +4,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from glyph_atlas.representation import described
+
 MIGRATIONS = Path(__file__).resolve().parents[1] / "apps/cloudflare/migrations"
 
 # A decided glyph's corpus character is its form or the character it or its cluster was reported as, or, with none decided, the character it had before
@@ -76,15 +78,11 @@ def document_count_statements(db) -> list[str]:
             for i in range(0, len(rows), 200)]
 
 
-#: Ideographic description characters: a label that opens with one and goes on to its components
-#: describes a Han character Unicode lacks. The operator alone is a symbol.
-IDS_OPERATORS = ((0x2FF0, 0x2FFF), (0x31EF, 0x31EF))
-
-
 def category_of(label: str | None) -> str:
     """A label's category, by its first character's script, as the Worker writes it."""
     point = ord(label[0]) if label else -1
-    if len(label or "") > 1 and any(a <= point <= b for a, b in IDS_OPERATORS):
+    # A well-formed ideographic description sequence describes a Han character Unicode lacks.
+    if label and described(label):
         return "kanji"
     if any(a <= point <= b for a, b in KANA):
         return "kana"

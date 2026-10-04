@@ -38,5 +38,11 @@ def test_an_ideographic_description_sequence_is_one_character() -> None:
     assert character_count("⿰亻胃") == 1
     assert character_count("⿰亻⿱亠女") == 1
     assert character_count("⿱⿱一丷兀") == 1
-    assert character_count("人⿰亻胃") == 2
+    assert character_count("⿾木") == 1
+    assert character_count("⿰亻？") == 1
+    # Anything else is counted character by character: a description with text around it, one short
+    # of a component, or one naming a part no description may name.
+    assert character_count("人⿰亻胃") == 4
+    assert character_count("⿲木木") == 3
+    assert character_count("⿰AB") == 3
     assert unit_scope({"unicode": None, "text_source": "⿰亻胃"})["needs_segmentation"] is False

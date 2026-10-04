@@ -187,9 +187,10 @@ def test_the_migration_and_the_publication_scripts_agree_on_a_label_category(scr
         ["kana", "kana", "kanji", "kanji", "other", "other", "other"]
 
 
-def test_a_description_sequence_is_kanji_and_its_operator_alone_is_not(scripts):
+def test_a_well_formed_description_sequence_is_kanji(scripts):
     cloudflare_schema = importlib.import_module("cloudflare_schema")
-    assert [cloudflare_schema.category_of(v) for v in ("⿰亻哥", "⿰亻⿱亠女", "⿰")] == ["kanji", "kanji", "other"]
+    assert [cloudflare_schema.category_of(v) for v in ("⿰亻哥", "⿰亻⿱亠女", "〾木", "⿰", "⿰亻", "⿲木木")] == \
+        ["kanji", "kanji", "kanji", "other", "other", "other"]
 
 
 def test_the_hangul_migration_and_the_publication_scripts_agree_on_a_hangul_label(scripts):
