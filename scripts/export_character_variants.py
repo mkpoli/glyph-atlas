@@ -13,7 +13,8 @@ untouched; a rerun starts the staging tables again.
 attested substitution with its count and pairs, and each editorial one with its statement) and
 `character_derived` (each character's derived list, ranked as `refs.derived_variants` lists it, each
 form with its routes and tier), read through `refs.derived_rows_of`. Up to two substitutions per form
-make that about twenty minutes of work, spread over the processors and computed once per run.
+make that about twenty-five minutes of work on one processor; spread over fourteen it took three
+minutes and about 960,000 rows (2026-10-04), computed once per run.
 `words` and `word_spellings` are the hand tables of decision 0004, read through `refs.words` and
 `refs.word_spellings`, which joins each 振り仮名 row to its counts; a character card shows them
 beside its variants.
@@ -70,11 +71,13 @@ def _derived_part(chars: list[str]) -> list[tuple[str, int, str, str, str]]:
 @cache
 def derived_rows() -> tuple[tuple[str, int, str, str, str], ...]:
     """Every row of the derived tier (refs.derived_rows), computed once per run on forked processes
-    that share the descriptions read before the pool starts."""
+    that share the descriptions read before the pool starts. Each chunk runs in a fresh process, so
+    what a derivation keeps of each part never grows past one chunk's characters."""
     chars = sorted(refs._descriptions().trees)
     refs._maker()
+    refs._stated_pairs()
     chunks = [chars[i::256] for i in range(256)]
-    with multiprocessing.get_context("fork").Pool(max(1, (os.cpu_count() or 2) - 2)) as pool:
+    with multiprocessing.get_context("fork").Pool(max(1, (os.cpu_count() or 2) - 2), maxtasksperchild=1) as pool:
         found = [row for part in pool.imap_unordered(_derived_part, chunks) for row in part]
     return tuple(sorted(found, key=lambda row: (row[0], row[1])))
 
