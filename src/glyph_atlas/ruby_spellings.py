@@ -48,10 +48,12 @@ from .rare_chars import DOCUMENT_ROLES, _lines, is_han
 from .refs import to_hiragana
 
 #: Readings counted when none are named: the words of data/vocab/words.tsv in historical kana, and the
-#: forms transcribers also type for them: without the dakuten (はかり, なと, まて), in modern kana
-#: (すなわち, なお), and なを, the spelling of なほ common in Edo-period writing.
+#: forms transcribers also type for them: without the dakuten (はかり, なと, まて, ことし, ことく), with
+#: the iteration mark (たゞ), in modern kana (すなわち, なお, ゆえ, もって), an inflected form (ごとく), and
+#: なを and ゆへ, spellings of なほ and ゆゑ common in Edo-period writing.
 WORDS = ("ばかり", "はかり", "など", "なと", "のみ", "さて", "まで", "まて", "およそ", "すなはち", "すなわち",
-         "なほ", "なを", "なお", "ほか")
+         "なほ", "なを", "なお", "ほか", "また", "ただ", "たゞ", "これ", "この", "その", "ごとし", "ごとく", "ことし",
+         "ことく", "ゆゑ", "ゆへ", "ゆえ", "ころ", "ため", "もつて", "もって")
 #: Example locations kept per row, each from a different entry.
 EXAMPLES = 5
 #: Roles of a ruby's base: the document text without what a 見せ消ち strikes out.
