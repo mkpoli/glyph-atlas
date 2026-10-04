@@ -12,12 +12,12 @@
 #   unihan      the kVietnamese reading in Unihan 18.0.0 (Unicode, 2026-07-31).
 #   joined      a compound joined here from syllables each attested in one of those two; the whole
 #               word is not attested in that spelling.
-#   editorial   chosen here without one of those sources: Sino-Vietnamese words written with their
-#               Han etymon, and the script names.
-# Where the sources attest several spellings of a word, the choice among them is editorial: the one
+#   reviewer    typed by the project's reviewers without one of those sources: Sino-Vietnamese
+#               words written with their Han etymon, and the script names.
+# Where the sources attest several spellings of a word, the reviewers chose among them: the one
 # for the sense the interface means (trong 𥪝 "in", theo 蹺 "along"), else the most attested.
-# The spellings are an editorial reconstruction of how modern interface wording would be written in
-# chữ Nôm; no Nôm text attests most of these phrases, and no native reader has reviewed them yet.
+# The spellings reconstruct how modern interface wording would be written in chữ Nôm; no Nôm text
+# attests most of these phrases, and no native reader has reviewed them yet.
 word	hannom	source	note
 ai	埃	wiktionary	
 ba	𠀧	wiktionary	"three" sense
@@ -85,12 +85,12 @@ của	𧵑	wiktionary
 cửa	𨷯	wiktionary	
 danh sách	名冊	joined	each syllable attested
 di	移	wiktionary	
-duyệt	閱	editorial	Unihan gives the variant 閲
+duyệt	閱	reviewer	Unihan gives the variant 閲
 dính	酩	wiktionary	
 dò	𠻀	wiktionary	
 dòng	𣳔	wiktionary	
 dùng	用	wiktionary	
-dư	餘	editorial	Wiktionary gives 餘 as the etymon; Unihan reads 余 dư too
+dư	餘	reviewer	Wiktionary gives 餘 as the etymon; Unihan reads 余 dư too
 dưới	𠁑	wiktionary	
 dạng	樣	unihan	
 dấu	唒	wiktionary	
@@ -110,7 +110,7 @@ giấy	紙	wiktionary
 giống	種	wiktionary	
 giữ	𡨹	wiktionary	
 giữa	𡧲	wiktionary	
-gugyeol	口訣	editorial	the script names written in Han characters
+gugyeol	口訣	reviewer	the script names written in Han characters
 gán	檊	wiktionary	
 gì	之	wiktionary	
 gốc	㭲	wiktionary	
@@ -121,9 +121,9 @@ gỡ	攑	wiktionary	the sense "to detach"
 gợi	𢭮	wiktionary	
 gửi	𠳚	wiktionary	the Nôm form glossed "to send"; 寄 is the Old Chinese source of the word, read ký
 hai	𠄩	wiktionary	
-hangul	諺文	editorial	the script names written in Han characters
+hangul	諺文	reviewer	the script names written in Han characters
 hay	咍	wiktionary	the sense "or"
-hiragana	平假名	editorial	the script names written in Han characters
+hiragana	平假名	reviewer	the script names written in Han characters
 hiển thị	顯示	wiktionary	etymology
 hiện	現	unihan	
 hiệu lực	效力	wiktionary	etymology
@@ -144,8 +144,8 @@ hệ thống	系統	joined	each syllable attested
 hỗn hợp	混合	wiktionary	
 hủy	毀	wiktionary	spelled huỷ there
 in	印	wiktionary	
-kana	假名	editorial	the script names written in Han characters
-katakana	片假名	editorial	the script names written in Han characters
+kana	假名	reviewer	the script names written in Han characters
+katakana	片假名	reviewer	the script names written in Han characters
 khi	欺	wiktionary	
 kho ngữ liệu	庫語料	joined	each syllable attested
 khoảng	曠	wiktionary	
@@ -158,7 +158,7 @@ khóa	鎖	wiktionary	spelled khoá there; the sense "lock"
 khôi phục	恢復	wiktionary	
 không	空	wiktionary	
 không thể	空體	wiktionary	
-khải thư	楷書	editorial	Sino-Vietnamese, written with its Han etymon; neither source reads 楷 khải
+khải thư	楷書	reviewer	Sino-Vietnamese, written with its Han etymon; neither source reads 楷 khải
 khỏi	塊	wiktionary	
 khớp	級	wiktionary	
 kim loại	金類	joined	each syllable attested
@@ -170,12 +170,12 @@ kiểu	矯	unihan
 kèm	兼	wiktionary	
 kém	劔	wiktionary	the variant of 劍, which spells kiếm here
 kéo	捁	wiktionary	
-kích thước	戟𢭑	editorial	Wiktionary gives no etymon for this kích; 戟 is the only character Unihan reads kích, so the spelling is uncertain
+kích thước	戟𢭑	reviewer	Wiktionary gives no etymon for this kích; 戟 is the only character Unihan reads kích, so the spelling is uncertain
 ký hiệu	記號	wiktionary	spelled kí hiệu there
 kết nối	結綏	joined	each syllable attested; nối 綏 the most attested of its Nôm forms, Wiktionary also gives 𦀼
 kết quả	結果	wiktionary	
 kỹ thuật	技術	wiktionary	spelled kĩ thuật there
-latinh	拉丁	editorial	the script names written in Han characters; 拉丁 is how Chinese writes the name, and no Nôm spelling of Latinh is attested, so the spelling is uncertain
+latinh	拉丁	reviewer	the script names written in Han characters; 拉丁 is how Chinese writes the name, and no Nôm spelling of Latinh is attested, so the spelling is uncertain
 liên quan	聯關	joined	each syllable attested
 liền	連	wiktionary	
 loại	類	wiktionary	
@@ -191,8 +191,8 @@ lấy	𥙩	wiktionary
 lần	吝	wiktionary	
 lẫn	吝	wiktionary	Unihan reads 悋 lẫn
 lập	立	wiktionary	
-lệ thư	隸書	editorial	Sino-Vietnamese, written with its Han etymon; neither source reads 隸 lệ
-lệ định	隸定	editorial	Sino-Vietnamese, written with its Han etymon; neither source reads 隸 lệ
+lệ thư	隸書	reviewer	Sino-Vietnamese, written with its Han etymon; neither source reads 隸 lệ
+lệ định	隸定	reviewer	Sino-Vietnamese, written with its Han etymon; neither source reads 隸 lệ
 lệch	瀝	wiktionary	
 lệnh	令	wiktionary	etymology
 lịch sử	歷史	wiktionary	
@@ -307,7 +307,7 @@ thu hồi	收回	wiktionary	etymology
 thu nhỏ	收𡮈	joined	each syllable attested
 thu thập	收拾	joined	each syllable attested
 thuyết	説	unihan	
-thuyết văn	說文	editorial	Sino-Vietnamese, written with its Han etymon; the sources give the variant 説
+thuyết văn	說文	reviewer	Sino-Vietnamese, written with its Han etymon; the sources give the variant 説
 thành	成	wiktionary	
 thêm	添	wiktionary	
 thông dụng	通用	joined	each syllable attested
@@ -317,7 +317,7 @@ thảo thư	草書	joined	each syllable attested
 thấy	𧡊	wiktionary	
 thống kê	統計	wiktionary	etymology
 thời gian	時間	wiktionary	
-thứ tự	次序	editorial	Sino-Vietnamese reading of the Han word
+thứ tự	次序	reviewer	Sino-Vietnamese reading of the Han word
 thừa	乘	wiktionary	
 thử	試	wiktionary	
 thực	實	wiktionary	
@@ -343,7 +343,7 @@ trộn	遁	wiktionary
 trở	𧿨	wiktionary	
 trừ	除	wiktionary	
 tài khoản	財款	wiktionary	etymology
-tài liệu	材料	editorial	Sino-Vietnamese, written with its Han etymon; neither source reads 材 tài
+tài liệu	材料	reviewer	Sino-Vietnamese, written with its Han etymon; neither source reads 材 tài
 tác phẩm	作品	wiktionary	
 tách	索	wiktionary	
 tân tự thể	新字體	joined	each syllable attested
@@ -360,11 +360,11 @@ tắt	𢴑	wiktionary
 tối	𣋁	wiktionary	the sense "dark"; 最 is Sino-Vietnamese tối "most"
 từ	自	wiktionary	
 từ ngữ	詞語	joined	từ 詞 from Wiktionary's etymology of the sense "word"; ngữ 語 from Unihan
-từ khóa	詞鎖	editorial	khoá 鎖 in Wiktionary
+từ khóa	詞鎖	reviewer	khoá 鎖 in Wiktionary
 từng	曾	wiktionary	
 tự dạng	字樣	joined	each syllable attested
 tự hình	字形	joined	each syllable attested
-tự hình đại đồ phổ	字形大圖譜	editorial	the project name 字形大圖譜
+tự hình đại đồ phổ	字形大圖譜	reviewer	the project name 字形大圖譜
 tự tộc	字族	joined	each syllable attested
 tự vị	字位	joined	each syllable attested
 viên	員	wiktionary	etymology; the suffix "member"
@@ -404,7 +404,7 @@ yêu cầu	要求	wiktionary	etymology
 yêu	㤇	wiktionary	"to love" sense; 腰 is glossed so too but is chiefly eo "waist"
 áp dụng	壓用	wiktionary	
 ít	𠃣	wiktionary	
-ô	烏	editorial	Wiktionary gives no Hán-Nôm form for the sense "square marked on a surface"; 烏 is the attested spelling of its homophones, so the spelling is uncertain
+ô	烏	reviewer	Wiktionary gives no Hán-Nôm form for the sense "square marked on a surface"; 烏 is the attested spelling of its homophones, so the spelling is uncertain
 ý	意	wiktionary	
 đa	多	unihan	Sino-Vietnamese đa 'many'; Wiktionary's 栘 is đa 'banyan'
 đang	當	wiktionary	
@@ -436,7 +436,7 @@ yêu	㤇	wiktionary	"to love" sense; 腰 is glossed so too but is chiefly eo "wa
 địa phương	地方	joined	each syllable attested
 định vị	定位	wiktionary	
 đọc	讀	wiktionary	
-đồ phổ	圖譜	editorial	圖譜
+đồ phổ	圖譜	reviewer	圖譜
 đồng	銅	wiktionary	
 đồng bộ	同步	wiktionary	etymology; the sense "to sync"
 đồng nghĩa	同義	joined	each syllable attested
@@ -465,7 +465,7 @@ giá trị	價值	wiktionary	etymology
 giờ	𣇞	wiktionary	
 gần	𧵆	wiktionary	
 hạ tầng	下層	joined	Wiktionary: 下 + tầng, a non-Sino-Vietnamese reading of 層
-hồ sơ	胡疏	editorial	Wiktionary gives no etymology; the Sino-Vietnamese spelling is uncertain
+hồ sơ	胡疏	reviewer	Wiktionary gives no etymology; the Sino-Vietnamese spelling is uncertain
 kết thúc	結束	wiktionary	etymology
 kho	庫	wiktionary	the noun "storehouse"
 liệt kê	列計	wiktionary	etymology
@@ -489,7 +489,7 @@ tự do	自由	wiktionary	etymology: Sino-Vietnamese word from 自由
 hạn chế	限制	wiktionary	etymology: Sino-Vietnamese word from 限制
 hợp đồng	合同	wiktionary	etymology: Sino-Vietnamese word from 合同
 xin	吀	wiktionary	Wiktionary's xin (verb) gives 嗔 and 吀; 吀 is its Nôm form only of xin and xiên, while 嗔 also writes chân and rân and reads sân as Sino-Vietnamese
-bạt	跋	editorial	Sino-Vietnamese, 跋 "postface"; Unihan 18.0.0 gives 跋 no kVietnamese reading
+bạt	跋	reviewer	Sino-Vietnamese, 跋 "postface"; Unihan 18.0.0 gives 跋 no kVietnamese reading
 dung	容	wiktionary	nội dung 內容 "content"
 dương	陽	wiktionary	dương lịch 陽曆 "solar calendar"
 kỷ	紀	unihan	kVietnamese kỉ, the same syllable written with y; thế kỷ 世紀 "century"

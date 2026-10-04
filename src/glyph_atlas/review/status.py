@@ -16,8 +16,8 @@ replays the journal to the state the record is in now and asks what that state i
 then an ordinary case rather than a special one: the value a person set is no longer the value, so
 their decision is no longer what the record says.
 
-An **atlas review is an editorial decision**, in the words of the publishing project's own README: it
-records that a decision was made, not that the person who made it was human. Nothing here claims
+An **atlas review is a decision**: it records that a decision was made, not that the person who made
+it was human. Nothing here claims
 authorship; `actor` carries whoever the client said it was, or nothing.
 """
 
@@ -137,7 +137,7 @@ class FieldStanding:
     def decided_locally(self) -> bool:
         """A decision this field currently carries, whoever recorded it.
 
-        An imported or applied *review state* is editorial standing and counts; a baseline value from
+        An imported or applied *review state* is a reviewer's decision and counts; a baseline value from
         the detector or the classifier does not, which is why `kinds` has to carry a decision as well
         as `author` saying where it came from.
         """
@@ -312,7 +312,7 @@ def unit_reviews(
         # A field's value is a baseline, not evidence. The detector put a box there and the
         # classifier put a code point there; neither is a person confirming anything, so these fields
         # start with no decision recorded. Only an explicit review state the record already carries
-        # is editorial standing, and only a journal event can make a field a decision.
+        # stands as a reviewer's decision, and only a journal event can make a field a decision.
         opened = earliest.get(unit.id, {})
         for name in ("unicode", "text_source", "box", "classification"):
             if not hasattr(unit, name):

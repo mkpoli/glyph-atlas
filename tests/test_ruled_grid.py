@@ -31,7 +31,7 @@ def page(columns: list[str], *, n_cols: int = 7, rows: int = 11, blank_top: dict
     return np.asarray(im, dtype=np.float32)
 
 
-def test_characters_drop_markup_and_editorial_punctuation():
+def test_characters_drop_markup_and_added_punctuation():
     text = "{{여백|2em}}並書。如虯字，{{*|臣}}<section begin=\"x\"/>\n=== 中聲解 ===\n{{nop}}"
     assert ruled_grid.characters(text) == list("並書如虯字臣中聲解")
 

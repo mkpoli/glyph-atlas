@@ -1670,8 +1670,8 @@ try {
   const cleared = await call(formPath, { id: crypto.randomUUID(), crop_version: formVersion, form: null })
   assert.deepEqual([cleared.form.status, cleared.form.values.map(v => v.text), cleared.replaced], ['asserted', ['還'], '𮟃'], 'clearing retracts the reviewer\'s own form')
   await call(formPath, { id: crypto.randomUUID(), crop_version: formVersion, form: null }, 409)
-  // The same value chosen again names the same form; the form was named once.
-  assert.equal(await db.prepare("SELECT count(*) AS n FROM assertions WHERE predicate='represented_by' AND subject=?").bind(formRow.id).first('n'), 1)
+  // The same value chosen again names the same form; the form was named once, by the reviewer who chose it first.
+  assert.deepEqual((await db.prepare("SELECT tier FROM assertions WHERE predicate='represented_by' AND subject=?").bind(formRow.id).all()).results, [{ tier: 'observed' }])
   // A refused save writes nothing, not even a corpus glyph's row.
   const unnamed = (await call('/atlas/corpus/character?id=nu-private')).crop_version
   await call('/atlas/characters/nu-private/form', { id: crypto.randomUUID(), crop_version: unnamed, form: '⿰木' }, 422)

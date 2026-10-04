@@ -275,10 +275,10 @@ def curated_statements(row: dict[str, Any]) -> Iterator[Statement]:
     refs = _json(row.get("source_refs")) or {}
     where = f"{AINU_CURATION}#{refs.get('ainu-work') or ''}"
     if meta.get("curated_date"):
-        yield Statement(text=str(meta["curated_date"]), kind="composed", scope="work", tier="editorial",
+        yield Statement(text=str(meta["curated_date"]), kind="composed", scope="work", tier="attested",
                         source="ainu-records", locator=where, fixed=True)
     if meta.get("curated_copied"):
-        yield Statement(text=str(meta["curated_copied"]), kind="copied", scope="witness", tier="editorial",
+        yield Statement(text=str(meta["curated_copied"]), kind="copied", scope="witness", tier="attested",
                         source="ainu-records", locator=f"{where}/{refs.get('ainu-witness') or ''}", fixed=True)
 
 

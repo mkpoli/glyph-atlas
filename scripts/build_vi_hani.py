@@ -41,7 +41,7 @@ FONT_OUT = ROOT / "apps/review/static/fonts/Plangothic-vi-Hani.woff2"
 LOCALE = {"name": "㗂越（𡨸漢喃）", "base": "vi", "matches": ["vi-hani"], "numerals": "hanzi"}
 # Abbreviations in vi.json, written out so the word table spells them: "tr." is trang (page), "s" giây.
 EXPAND = (("tr. {page}", "trang {page}"), ("{seconds}s ", "{seconds} giây "))
-SOURCES = {"wiktionary", "unihan", "joined", "editorial"}
+SOURCES = {"wiktionary", "unihan", "joined", "reviewer"}
 # Latin words that are names, keys, file formats, licence codes or loanwords written in Latin letters
 # (email, PIN, the address you@example.org), and stay in Latin letters.
 KEEP = {"CODH", "Unicode", "HI", "Lab", "Minna", "de", "Honkoku", "JSON", "ID", "IDS", "Ctrl", "Esc", "Home", "Enter", "Shift",

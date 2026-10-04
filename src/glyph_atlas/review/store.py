@@ -11,7 +11,7 @@ neither.
 store holds and repairs the difference. Rebuilding leaves an event alone when its effect is already
 present, so replaying a log over tables that `apply` wrote changes nothing.
 
-An event carries one editorial decision: a field of a line or a unit, a whole unit drawn by a
+An event carries one reviewer's decision: a field of a line or a unit, a whole unit drawn by a
 reviewer, or a segmentation. Segmentation is one event with `field = "segmentation"` and
 `new = {"split": [{"box": …, "unicode": …}, …]}` or `new = {"merge": [ids]}`; the inputs are retired
 with `active` false and `split_into` or `merged_into` set, and the outputs take the reviewer ids
@@ -218,7 +218,7 @@ class ReviewRequest(BaseModel):
 
 
 class CorrectionRequest(BaseModel):
-    """One editorial correction a client asks the server to record.
+    """One correction a client asks the server to record.
 
     `base_revision` is the page revision the client edited from, so a tab that has been open since
     before somebody else's correction is told rather than silently overwriting.

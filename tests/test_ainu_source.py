@@ -215,7 +215,7 @@ def test_an_unmappable_proposal_is_never_written(source: AinuSource) -> None:
 
 
 def test_drafts_keep_the_records_already_there(source: AinuSource) -> None:
-    """A submission adds to the editorial layer; it does not replace the file."""
+    """A submission adds to the correction layer; it does not replace the file."""
     proposal = Proposal(unit="ezo-kiko/ryukoku", page=16, id="ezo-kiko-ryukoku-new", line=1,
                         original="あ", corrected="い", note="n")
     files = source.drafts([proposal])

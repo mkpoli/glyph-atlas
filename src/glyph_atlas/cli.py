@@ -21,7 +21,7 @@ rights_app = typer.Typer(help="Resolve licences and report the rights of a datas
 import_app = typer.Typer(help="Import an upstream dataset into the tables.", no_args_is_help=True)
 pilot_app = typer.Typer(help="Assemble and measure the pilot packages.", no_args_is_help=True)
 eval_app = typer.Typer(help="Measure a prediction against adjudicated truth.", no_args_is_help=True)
-review_app = typer.Typer(help="Serve and apply editorial reviews.", no_args_is_help=True)
+review_app = typer.Typer(help="Serve and apply reviews.", no_args_is_help=True)
 audit_app = typer.Typer(help="Draw a blind audit sample and publish its precision.", no_args_is_help=True)
 ainu_app = typer.Typer(help="The アイヌ関連資料 records: line boxes, and the characters ainu-records publishes.", no_args_is_help=True)
 lines_app = typer.Typer(help="Place and evaluate transcription line boxes.", no_args_is_help=True)

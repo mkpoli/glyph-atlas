@@ -1,8 +1,8 @@
 """The form a crop is written in, as the 字形 picker sets it (docs/design/form-model.md).
 
 What a reviewer picks or types names a representation (`glyph_atlas.representation`) and that value's
-broad form. The first choice of a value creates the form, together with an editorial claim that the
-representation names it; the crop then gets a `has_form` claim on the evidence version the reviewer
+broad form. The first choice of a value creates the form, together with the reviewer's claim that
+the representation names it; the crop then gets a `has_form` claim on the evidence version the reviewer
 saw. Clearing retracts the reviewer's own claim. The Worker's `cropForms.ts` does the same.
 
 Every function runs inside its caller's transaction on the caller's connection.
@@ -31,7 +31,7 @@ def ensure_form(conn: sqlite3.Connection, named: representation.Representation, 
     if conn.execute("SELECT 1 FROM forms WHERE id=?", (form,)).fetchone() is None:
         conn.execute("INSERT INTO forms(id,anchor,created_by,created_at) VALUES(?,?,?,?)", (form, named.id, actor, at))
         ledger.write_claims(conn, key=f"{key}/represented_by", actor=actor, request={"form": form, "representation": named.id},
-                            subject=form, predicate="represented_by", claims=[Claim(object=named.id)], tier="editorial",
+                            subject=form, predicate="represented_by", claims=[Claim(object=named.id)], tier="observed",
                             method=METHOD, objects={named.id: "representation"}, prefix=prefix, at=at, mint=mint)
     return form
 

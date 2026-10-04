@@ -1,6 +1,6 @@
 -- When each document was written, copied, printed or composed. Every date a source states is a claim
 -- of the assertion ledger (0048): subject the document, predicate `date_<kind>` (data/ledger.json), the
--- date as its value, tier attested, derived or editorial, asserted by `source:<id>` of its
+-- date as its value, tier attested or derived, asserted by `source:<id>` of its
 -- data/sources record, and an evidence row naming that source and where in it (`scripts/
 -- export_dates_cloudflare.py`). A date a source no longer states is retracted by the publication.
 -- `document_dating` is what each axis shows for a document, resolved from those claims at publication

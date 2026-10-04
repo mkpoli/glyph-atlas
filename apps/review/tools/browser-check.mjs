@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// Run through devrun. All editorial writes use a disposable dataset.
+// Run through devrun. All review writes use a disposable dataset.
 import { join } from 'node:path'
 import { mkdirSync, readdirSync } from 'node:fs'
 import Browser from './browser.mjs'

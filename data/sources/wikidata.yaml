@@ -26,5 +26,5 @@ references:
 notes:
   - Wikidata has no releases; the build records the date the query ran and the digest of its result.
   - Most statements cite 教育部《異體字字典》 (Q10427532). The relations are facts and are used under Wikidata's CC0 like every other statement.
-  - Statements are unsigned editorial claims; a few carry qualifiers the build does not map (component, 則天文字, not yet determined) and keep them only as Q-ids.
+  - Statements are unsigned claims by Wikidata's contributors; a few carry qualifiers the build does not map (component, 則天文字, not yet determined) and keep them only as Q-ids.
 checked: 2026-09-27

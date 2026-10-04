@@ -16,5 +16,5 @@ export function licenceName(id) {
   return null
 }
 
-/** A holder as a reader sees it: the source's name, without the editorial note a statement's label carries. */
+/** A holder as a reader sees it: the source's name, without the parenthetical note a statement's label carries. */
 export const holderName = text => (text ?? '').replace(/\s*[(（][^()（）]*[)）]\s*$/, '').trim() || null

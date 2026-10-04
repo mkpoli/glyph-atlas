@@ -240,7 +240,7 @@ def test_a_machine_box_and_identity_are_not_a_verification() -> None:
 
 
 def test_an_imported_review_state_is_standing_and_an_edit_is_still_a_draft() -> None:
-    """Editorial standing can be imported; editing a value is a draft until it is confirmed."""
+    """A review state can be imported; editing a value is a draft until it is confirmed."""
     imported = schema_unit(review="reviewed")
     assert status.unit_reviews([imported], [])[imported.id].kind == "checked"
 

@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS assertions (
  id TEXT PRIMARY KEY, submission TEXT,
  subject TEXT NOT NULL, predicate TEXT NOT NULL, scope TEXT NOT NULL DEFAULT '', slot TEXT NOT NULL DEFAULT '',
  object TEXT, value TEXT, alternative_set TEXT,
- tier TEXT NOT NULL CHECK (tier IN ('attested','observed','derived','editorial')),
+ tier TEXT NOT NULL CHECK (tier IN ('attested','observed','derived')),
  asserted_by TEXT NOT NULL, asserted_at TEXT NOT NULL,
  confidence REAL, confidence_scheme TEXT, method TEXT, run TEXT, legacy TEXT,
  CHECK ((object IS NULL) <> (value IS NULL)),

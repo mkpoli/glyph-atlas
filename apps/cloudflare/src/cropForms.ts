@@ -47,7 +47,7 @@ export async function setForm(env: Env, input: Json, cropId: string, actor: stri
     if (!await env.DB.prepare('SELECT 1 FROM forms WHERE id=?').bind(form).first()) {
       plan.statements.push(env.DB.prepare('INSERT OR IGNORE INTO forms(id,anchor,created_by,created_at) VALUES(?,?,?,?)').bind(form, named, actor, at),
         env.DB.prepare(`INSERT OR IGNORE INTO assertions(id,submission,subject,predicate,scope,slot,object,tier,asserted_by,asserted_at,method)
-          VALUES(?,?,?,'represented_by','',?,?,'editorial',?,?,'form-picker')`).bind(await namingId(form), key, form, named, named, actor, at));
+          VALUES(?,?,?,'represented_by','',?,?,'observed',?,?,'form-picker')`).bind(await namingId(form), key, form, named, named, actor, at));
       plan.keys.push([form, 'represented_by', '', named]);
     }
     const claim = await planClaim(env, { key, actor, subject: crop.id, predicate: 'has_form', scope: '', at, method: 'form-picker',

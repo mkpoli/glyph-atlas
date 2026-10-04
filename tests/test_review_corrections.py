@@ -320,7 +320,7 @@ def test_the_json_is_the_sources_array_shape(dataset: Path) -> None:
 
 
 def test_a_note_and_a_timing_event_do_not_touch_the_corrections(dataset: Path) -> None:
-    """Context events stay out of the editorial layer, which the status module also insists on."""
+    """Context events stay out of the correction layer, which the status module also insists on."""
     from glyph_atlas.review.store import ReviewRequest
 
     store = Store(dataset)
