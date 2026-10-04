@@ -1000,10 +1000,10 @@ function chunks<T>(list: T[], size: number): T[][] {
 // A character's edges in the 異体字 graph, both ways (0033): each by the key or by `b`'s index.
 export const variantEdgesQuery = () => `SELECT b AS other,relation,source,detail,widens FROM character_variants WHERE a=?
   UNION ALL SELECT a AS other,relation,source,detail,widens FROM character_variants WHERE b=? LIMIT 2000`;
-// A character's derived list (0046), in the order and caps refs.derived_variants gives it: one key range.
-export const derivedEdgesQuery = () => `SELECT b AS other,subs FROM character_derived WHERE a=? ORDER BY rank`;
-// What the substitutions a derived list came by are backed by: each one's count and every attesting
-// pair with the sources that state it (the `component_variants` rows, keyed by substitution), at most
+// A character's derived list (0046, 0067), in the order and caps refs.derived_variants gives it: one key range.
+export const derivedEdgesQuery = () => `SELECT b AS other,routes FROM character_derived WHERE a=? ORDER BY rank`;
+// What the substitutions a derived list came by are backed by: each one's count and every pair behind
+// it with the sources that state it (the `component_variants` rows, keyed by substitution), at most
 // SUBSTITUTIONS_READ at a time so no statement binds more than D1's hundred parameters.
 export const substitutionQuery = (n: number) => `SELECT a,b,count,pairs FROM component_variants WHERE ${
   Array(n).fill('(a=? AND b=?)').join(' OR ')}`;
@@ -1083,7 +1083,7 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, char:
   const cached = await caches.default.match(key);
   if (cached) return await cached.json();
   const edges = (await env.DB.prepare(variantEdgesQuery()).bind(char, char).all<VariantEdge>()).results;
-  const derivedRows = (await env.DB.prepare(derivedEdgesQuery()).bind(char).all<{ other: string; subs: string }>()).results;
+  const derivedRows = (await env.DB.prepare(derivedEdgesQuery()).bind(char).all<DerivedRow>()).results;
   const byChar = new Map<string, VariantRow & { edges: VariantEdge[] }>();
   for (const edge of edges) {
     if (edge.other === char) continue;
@@ -1163,27 +1163,41 @@ async function wordsOf(env: Env, ctx: ExecutionContext, origin: string, char: st
   ctx.waitUntil(caches.default.put(key, Response.json(found, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return found;
 }
-type DerivedEntry = { char: string; code_point: string | null; encoded: boolean;
-  substitutions: { was: string; became: string; count: number; pairs: { a: string; b: string; sources: string[] }[] }[];
-  sources: string[] };
-// The derived group of one character as the export ranked it, each row's substitutions backed by
-// their `component_variants` rows. A form of one character is encoded, a sequence is not.
-async function derivedOf(env: Env, rows: { other: string; subs: string }[]): Promise<DerivedEntry[]> {
-  const listed = rows.map(row => ({ other: row.other, subs: JSON.parse(row.subs) as [string, string][] }))
-  const keys = [...new Map(listed.flatMap(row => row.subs).map(sub => [sub.join('\u0000'), sub])).values()];
+type Substitution = { was: string; became: string; count: number; pairs: { a: string; b: string; sources: string[] }[] };
+type DerivedRow = { other: string; routes: string };
+type DerivedEntry = { char: string; code_point: string | null; encoded: boolean; routes: Substitution[][]; sources: string[] };
+type SubstitutionRow = { a: string; b: string; count: number; pairs: string };
+// A substitution's own spelling, as refs._substitution writes it: the side of fewer code points
+// first, then the smaller by code point.
+export function substitutionKey(left: string, right: string): [string, string] {
+  const l = [...left].map(c => c.codePointAt(0)!), r = [...right].map(c => c.codePointAt(0)!);
+  if (l.length !== r.length) return l.length < r.length ? [left, right] : [right, left];
+  for (let i = 0; i < l.length; i++) if (l[i] !== r[i]) return l[i] < r[i] ? [left, right] : [right, left];
+  return [left, right];
+}
+// The derived group of one character as the export ranked it, each route's substitutions backed by
+// their `component_variants` rows. A form of one character is encoded, a sequence is not. A route
+// whose substitution the table no longer holds is dropped, and a form left with none is dropped.
+async function derivedOf(env: Env, rows: DerivedRow[]): Promise<DerivedEntry[]> {
+  const listed = rows.map(row => ({ ...row, routes: JSON.parse(row.routes) as [string, string][][] }));
+  const keys = [...new Map(listed.flatMap(row => row.routes.flat()).map(([was, became]) => substitutionKey(was, became))
+    .map(key => [key.join('\u0000'), key])).values()];
   const backed = keys.length ? (await env.DB.batch(chunks(keys, SUBSTITUTIONS_READ).map(part =>
-    env.DB.prepare(substitutionQuery(part.length)).bind(...part.flat()))) as D1Result<{ a: string; b: string; count: number; pairs: string }>[])
+    env.DB.prepare(substitutionQuery(part.length)).bind(...part.flat()))) as D1Result<SubstitutionRow>[])
     .flatMap(result => result.results) : [];
   const evidence = new Map(backed.map(row => [`${row.a}\u0000${row.b}`, row]));
+  const made = (was: string, became: string): Substitution | null => {
+    const found = evidence.get(substitutionKey(was, became).join('\u0000'));
+    if (!found) return null;
+    return { was, became, count: found.count, pairs: JSON.parse(found.pairs) };
+  };
   return listed.flatMap(row => {
-    const substitutions = row.subs.flatMap(([was, became]) => {
-      const found = evidence.get(`${was}\u0000${became}`);
-      return found ? [{ was, became, count: found.count, pairs: JSON.parse(found.pairs) as DerivedEntry['substitutions'][0]['pairs'] }] : [];
-    });
-    if (!substitutions.length) return [];
+    const routes = row.routes.map(route => route.map(([was, became]) => made(was, became)))
+      .filter((route): route is Substitution[] => route.every(Boolean));
+    if (!routes.length) return [];
     const encoded = [...row.other].length === 1;
-    return [{ char: row.other, code_point: encoded ? cp(row.other) : null, encoded, substitutions,
-      sources: [...new Set(substitutions.flatMap(sub => sub.pairs.flatMap(pair => pair.sources)))].sort() }];
+    const sources = new Set(routes.flatMap(route => route.flatMap(sub => sub.pairs.flatMap(pair => pair.sources))));
+    return [{ char: row.other, code_point: encoded ? cp(row.other) : null, encoded, routes, sources: [...sources].sort() }];
   });
 }
 async function known(env: Env, value: string) {

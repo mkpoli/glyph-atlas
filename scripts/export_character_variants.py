@@ -10,11 +10,13 @@ last part swaps them in, bumps the listing version and cites the sources. A fail
 untouched; a rerun starts the staging tables again.
 
 `character_variants` is the 異体字 graph itself. The derived tier is `component_variants` (each
-attested substitution with its count and pairs) and `character_derived` (each character's derived
-list, ranked as `refs.derived_variants` lists it), read through `refs.derived_rows`, which takes
-about half a minute and is computed once per run. `words` and `word_spellings` are the hand tables of
-decision 0004, read through `refs.words` and `refs.word_spellings`, which joins each 振り仮名 row to its
-counts; a character card shows them beside its variants.
+substitution with its count and pairs) and `character_derived` (each character's derived list, ranked
+as `refs.derived_variants` lists it, each form with its routes), read through `refs.derived_rows_of`. Up to two substitutions per form
+make that about half an hour of work on one processor; spread over fourteen it took three and a half
+minutes and wrote 2,343,125 rows, 110 MB (2026-10-04), computed once per run.
+`words` and `word_spellings` are the hand tables of decision 0004, read through `refs.words` and
+`refs.word_spellings`, which joins each 振り仮名 row to its counts; a character card shows them
+beside its variants.
 
 OUT/sql/part-NN.sql are the parts in order and OUT/apply.sh imports them, retrying a refused part,
 and checks the counts it expects. The full export (`export_cloudflare.py`) fills the same tables
@@ -24,6 +26,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import multiprocessing
+import os
 import sqlite3
 from functools import cache
 from pathlib import Path
@@ -37,7 +41,8 @@ COLUMNS = ("a", "b", "relation", "source", "detail", "written", "widens")
 STAGING = "character_variants_next"
 SUBSTITUTIONS_STAGING = "component_variants_next"
 DERIVED_STAGING = "character_derived_next"
-DERIVED_COLUMNS = ("a", "rank", "b", "subs")
+DERIVED_COLUMNS = ("a", "rank", "b", "routes")
+SUBSTITUTION_COLUMNS = ("a", "b", "count", "pairs")
 WORDS_STAGING = "words_next"
 WORD_COLUMNS = ("id", "language", "reading", "class")
 SPELLINGS_STAGING = "word_spellings_next"
@@ -58,10 +63,28 @@ def quote(value) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
+def _derived_part(chars: list[str]) -> list[tuple[str, int, str, str]]:
+    return [row for char in chars for row in refs.derived_rows_of(char)]
+
+
 @cache
 def derived_rows() -> tuple[tuple[str, int, str, str], ...]:
-    """Every row of the derived tier (refs.derived_rows), computed once per run."""
-    return tuple(refs.derived_rows())
+    """Every row of the derived tier (refs.derived_rows), computed once per run on forked processes
+    that share the descriptions read before the pool starts. Each chunk runs in a fresh process, so
+    what a derivation keeps of each part never grows past one chunk's characters."""
+    chars = sorted(refs._descriptions().trees)
+    refs._maker()
+    refs._stated_pairs()
+    chunks = [chars[i::256] for i in range(256)]
+    with multiprocessing.get_context("fork").Pool(max(1, (os.cpu_count() or 2) - 2), maxtasksperchild=1) as pool:
+        found = [row for part in pool.imap_unordered(_derived_part, chunks) for row in part]
+    return tuple(sorted(found, key=lambda row: (row[0], row[1])))
+
+
+def substitution_rows() -> list[tuple[str, str, int, str]]:
+    """`component_variants`: each substitution with its count and the pairs behind it."""
+    return [(left, right, item["count"], json.dumps(item["pairs"], ensure_ascii=False, separators=(",", ":")))
+            for (left, right), item in sorted(refs.component_variants().items())]
 
 
 def citations() -> str:
@@ -88,7 +111,7 @@ def expected() -> dict[str, int]:
     rows = {(e["a"], e["b"], e["relation"], e["source"]): e for e in refs.variant_edges()}
     return {"edges": len(rows), "written": sum(e["written"] for e in rows.values()),
             "widens": sum(e["widens"] for e in rows.values()),
-            "substitutions": len(refs.component_variants()), "derived": len(derived_rows()),
+            "substitutions": len(substitution_rows()), "derived": len(derived_rows()),
             "words": len(word_rows()), "spellings": len(spelling_rows())}
 
 
@@ -120,7 +143,7 @@ def statements() -> list[list[str]]:
          " pairs TEXT NOT NULL, PRIMARY KEY(a,b)) WITHOUT ROWID;\n"),
         f"DROP TABLE IF EXISTS {DERIVED_STAGING};\n",
         (f"CREATE TABLE {DERIVED_STAGING} (a TEXT NOT NULL, rank INTEGER NOT NULL, b TEXT NOT NULL,"
-         " subs TEXT NOT NULL, PRIMARY KEY(a,rank)) WITHOUT ROWID;\n"),
+         " routes TEXT NOT NULL, PRIMARY KEY(a,rank)) WITHOUT ROWID;\n"),
         f"DROP TABLE IF EXISTS {WORDS_STAGING};\n",
         (f"CREATE TABLE {WORDS_STAGING} (id TEXT PRIMARY KEY, language TEXT NOT NULL, reading TEXT NOT NULL,"
          " class TEXT NOT NULL) WITHOUT ROWID;\n"),
@@ -132,16 +155,14 @@ def statements() -> list[list[str]]:
     ]
     fill += insert_rows(STAGING, COLUMNS, (tuple(edge[column] for column in COLUMNS)
                                             for edge in refs.variant_edges()))
-    fill += insert_rows(SUBSTITUTIONS_STAGING, ("a", "b", "count", "pairs"), (
-        (left, right, item["count"], json.dumps(item["pairs"], ensure_ascii=False, separators=(",", ":")))
-        for (left, right), item in sorted(refs.component_variants().items())))
+    fill += insert_rows(SUBSTITUTIONS_STAGING, SUBSTITUTION_COLUMNS, substitution_rows())
     fill += insert_rows(DERIVED_STAGING, DERIVED_COLUMNS, derived_rows())
     fill += insert_rows(WORDS_STAGING, WORD_COLUMNS, word_rows())
     fill += insert_rows(SPELLINGS_STAGING, SPELLING_COLUMNS, spelling_rows())
     swap = []
     for live, staging, columns in (
         ("character_variants", STAGING, COLUMNS),
-        ("component_variants", SUBSTITUTIONS_STAGING, ("a", "b", "count", "pairs")),
+        ("component_variants", SUBSTITUTIONS_STAGING, SUBSTITUTION_COLUMNS),
         ("character_derived", DERIVED_STAGING, DERIVED_COLUMNS),
         ("words", WORDS_STAGING, WORD_COLUMNS),
         ("word_spellings", SPELLINGS_STAGING, SPELLING_COLUMNS),
@@ -165,11 +186,11 @@ def fill(db: sqlite3.Connection) -> None:
                    [tuple(int(edge[c]) if c in ("written", "widens") else edge[c] for c in COLUMNS)
                     for edge in refs.variant_edges()])
     db.execute("DELETE FROM component_variants")
-    db.executemany("INSERT OR REPLACE INTO component_variants(a,b,count,pairs) VALUES (?,?,?,?)",
-                   [(left, right, item["count"], json.dumps(item["pairs"], ensure_ascii=False, separators=(",", ":")))
-                    for (left, right), item in refs.component_variants().items()])
+    db.executemany(f"INSERT OR REPLACE INTO component_variants({','.join(SUBSTITUTION_COLUMNS)}) VALUES (?,?,?,?)",
+                   substitution_rows())
     db.execute("DELETE FROM character_derived")
-    db.executemany("INSERT OR REPLACE INTO character_derived(a,rank,b,subs) VALUES (?,?,?,?)", derived_rows())
+    db.executemany(f"INSERT OR REPLACE INTO character_derived({','.join(DERIVED_COLUMNS)}) VALUES (?,?,?,?)",
+                   derived_rows())
     db.execute("INSERT OR REPLACE INTO metadata(key,value) VALUES('variant_sources',?)", (citations(),))
     db.execute("DELETE FROM words")
     db.executemany(f"INSERT INTO words({','.join(WORD_COLUMNS)}) VALUES ({','.join('?' * len(WORD_COLUMNS))})", word_rows())
