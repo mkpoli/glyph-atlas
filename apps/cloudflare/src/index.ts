@@ -520,7 +520,7 @@ export function runPage(crops: Json[]): { image: string; box: Rect; region: Rect
 // RUN_PAGE_CROPS crops, so a longer run comes in fewer occurrences at a time.
 // RUN_MAX keeps a run inside one context render: a render reaches five character sizes along a column
 // (`CONTEXT_REACH`), so its middle crop's holds about eleven, and `runPage` finds the run in it.
-const RUN_MAX = 8, RUN_PAGE_CROPS = 192, RUN_COUNT_MAX = 2000, RUN_PROBE_MAX = 5000;
+const RUN_MAX = 8, RUN_PAGE_CROPS = 192, RUN_COUNT_MAX = 2000, RUN_PROBE_MAX = 5000, RUN_WORKS_MAX = 60, RUN_NEAR_MAX = 12;
 const NGRAM_COLUMNS = ['first', 'second', 'third'];
 const graphemes = new Intl.Segmenter('ja', { granularity: 'grapheme' });
 /** The characters of a run, one crop each. */
@@ -541,14 +541,22 @@ export function runFrom(size: number, anchor: number) {
   const units = crops.map((crop, i) => `CROSS JOIN units u${i} ON u${i}.id=${crop} AND +u${i}.origin='local'`);
   return { from: ['FROM unit_ngrams a', ...joins, ...units].join(' '), links };
 }
-const runWhere = (document: boolean) => `${document ? 'a.document=? AND ' : ''}a.size=? AND a.text=?`;
-export function runOccurrencesQuery(size: number, anchor: number, document: boolean) {
+const runWhere = (document: boolean, style = false) => `${document ? 'a.document=? AND ' : ''}a.size=? AND a.text=?${style ? ' AND a.style_order=?' : ''}`;
+// A style group (`style`, the first row's `style_order`) and a book (`document`) narrow the run through
+// the index that leads with what they name; `sort=source` lists a run by book (0059) instead.
+export function runOccurrencesQuery(size: number, anchor: number, document: boolean, style = false, sort: 'style' | 'source' = 'style') {
   return `SELECT ${Array.from({ length: size }, (_, i) => `u${i}.data AS c${i}`).join(',')}, u0.document AS document, a.vertical
-    ${runFrom(size, anchor).from} WHERE ${runWhere(document)} ORDER BY a.style_order,a.shuffle,a.first LIMIT ? OFFSET ?`;
+    ${runFrom(size, anchor).from} WHERE ${runWhere(document, style)}
+    ORDER BY ${sort === 'source' && !document ? 'a.document,a.first' : 'a.style_order,a.shuffle,a.first'} LIMIT ? OFFSET ?`;
 }
-export function runCountQuery(size: number, anchor: number, document: boolean) {
+export function runCountQuery(size: number, anchor: number, document: boolean, style = false) {
   return `SELECT count(*) AS n, sum(v) AS vertical FROM (SELECT a.vertical AS v ${runFrom(size, anchor).from}
-    WHERE ${runWhere(document)} LIMIT ${RUN_COUNT_MAX + 1})`;
+    WHERE ${runWhere(document, style)} LIMIT ${RUN_COUNT_MAX + 1})`;
+}
+/** The books a run is in, with their occurrences (counted among the first RUN_COUNT_MAX) and one crop of each to name them by. */
+export function runWorksQuery(size: number, anchor: number) {
+  return `SELECT d AS document, count(*) AS n, min(f) AS sample FROM (SELECT a.document AS d, a.first AS f ${runFrom(size, anchor).from}
+    WHERE ${runWhere(false)} AND a.document IS NOT NULL LIMIT ${RUN_COUNT_MAX + 1}) GROUP BY d ORDER BY n DESC,d LIMIT ${RUN_WORKS_MAX}`;
 }
 /** How many rows of a trigram there are, counting no further than RUN_PROBE_MAX. */
 export function runProbeQuery(document: boolean) {
@@ -561,11 +569,13 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
   if (parts.length < 2 || parts.length > RUN_MAX) throw new Problem(422, `A run is two to ${RUN_MAX} characters.`);
   const document = text(q.get('document'), 256, 'document');
   const most = Math.floor(RUN_PAGE_CROPS / parts.length);
-  const offset = integer(q, 'offset', 0);
+  const offset = integer(q, 'offset', 0), group = styleGroup(q);
+  const sort = q.get('sort') === 'source' ? 'source' : q.get('sort') && q.get('sort') !== 'style' ? null : 'style';
+  if (!sort) throw new Problem(422, 'Invalid sort.');
   // A page ends where the count does.
   if (offset >= RUN_COUNT_MAX) throw new Problem(404, 'A run does not page this far.');
   const limit = Math.min(integer(q, 'limit', Math.min(48, most), most), RUN_COUNT_MAX - offset);
-  const key = new Request(`${url.origin}/atlas/runs?${new URLSearchParams({ text: value, document: document ?? '', limit: String(limit), offset: String(offset), v: await catalogueVersion(env) })}`);
+  const key = new Request(`${url.origin}/atlas/runs?${new URLSearchParams({ text: value, document: document ?? '', style: String(group ?? ''), sort, limit: String(limit), offset: String(offset), v: await catalogueVersion(env) })}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json() as Json;
   const size = parts.length, scope = document ? [document] : [];
@@ -579,8 +589,15 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
   }
   const { links } = runFrom(size, anchor);
   const bound = [...links.map(i => span(i, 2)), ...scope, Math.min(size, 3), span(anchor, Math.min(size, 3))];
-  const occurrences = env.DB.prepare(runOccurrencesQuery(size, anchor, Boolean(document))).bind(...bound, limit, offset);
-  const [page, count] = await env.DB.batch(offset ? [occurrences] : [occurrences, env.DB.prepare(runCountQuery(size, anchor, Boolean(document))).bind(...bound)]) as D1Result<any>[];
+  const styled = (n: number) => [...bound, n];
+  const occurrences = env.DB.prepare(runOccurrencesQuery(size, anchor, Boolean(document), group !== null, sort)).bind(...(group === null ? bound : styled(group)), limit, offset);
+  // The first page also counts the run, as a whole or in its style group, and each style group, and names its books.
+  const first = offset ? [] : [
+    env.DB.prepare(runCountQuery(size, anchor, Boolean(document), group !== null)).bind(...(group === null ? bound : styled(group))),
+    ...STYLE_NAMES.map(name => env.DB.prepare(runCountQuery(size, anchor, Boolean(document), true)).bind(...styled(STYLE_ORDER[name]))),
+    env.DB.prepare(runWorksQuery(size, anchor)).bind(...links.map(i => span(i, 2)), Math.min(size, 3), span(anchor, Math.min(size, 3))),
+  ];
+  const [page, count, ...rest] = await env.DB.batch([occurrences, ...first]) as D1Result<any>[];
   const found = page.results as ({ document: string | null; vertical: number } & Record<`c${number}`, string>)[];
   // The crops of one run stand on one page, so they share their document's dates.
   const dating = await datingOf(env, found.map(row => row.document));
@@ -591,8 +608,48 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
       vertical: Boolean(row.vertical), page: runPage(crops) };
   });
   const counted = count?.results[0] as { n: number; vertical: number | null } | undefined;
-  const body = { text: value, size, document, next_offset: offset + items.length, items,
-    ...(counted && { total: Math.min(counted.n, RUN_COUNT_MAX), more: counted.n > RUN_COUNT_MAX, vertical: 2 * (counted.vertical ?? 0) >= counted.n }) };
+  const works = rest.length ? await runWorks(env, rest.pop()!.results as { document: string; n: number; sample: string }[]) : null;
+  const body = { text: value, size, document, style: group === null ? 'all' : STYLE_NAMES[group], sort, next_offset: offset + items.length, items,
+    ...(counted && { total: Math.min(counted.n, RUN_COUNT_MAX), more: counted.n > RUN_COUNT_MAX, vertical: 2 * (counted.vertical ?? 0) >= counted.n,
+      styles: Object.fromEntries(STYLE_NAMES.map((name, i) => [name, Math.min((rest[i].results[0] as { n: number }).n, RUN_COUNT_MAX)])), style_groups: STYLE_NAMES, works }) };
+  ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
+  return body;
+}
+// A book's name is its crops' source title, read from one of its crops by key.
+async function runWorks(env: Env, rows: { document: string; n: number; sample: string }[]) {
+  if (!rows.length) return [];
+  const titles = await env.DB.prepare(`SELECT id,json_extract(data,'$.source') AS title FROM units WHERE id IN (${rows.map(() => '?').join(',')})`)
+    .bind(...rows.map(row => row.sample)).all<{ id: string; title: string | null }>();
+  const named = new Map(titles.results.map(row => [row.id, row.title]));
+  return rows.map(row => ({ id: row.document, title: named.get(row.sample) ?? null, count: row.n }));
+}
+// The runs near one, to move between them: the shorter runs a trigram or four holds, the trigrams a pair
+// begins, and the runs of the same length that begin with the same characters (a pair's first, a
+// trigram's first two), most frequent first. A prefix is one range of the runs' index, and the answer is
+// kept at the edge per catalogue version like the counts.
+export const runRangeQuery = () => `SELECT text,count(*) AS n,2*sum(vertical)>=count(*) AS vertical FROM unit_ngrams
+  WHERE size=? AND text>=? AND text<? AND text<>? GROUP BY text ORDER BY n DESC,text LIMIT ${RUN_NEAR_MAX}`;
+export const runHasQuery = () => 'SELECT text FROM unit_ngrams WHERE size=? AND text=? LIMIT 1';
+async function runRelated(env: Env, ctx: ExecutionContext, url: URL) {
+  const value = text(url.searchParams.get('text'), 96, 'text', true)!;
+  const parts = runCharacters(value);
+  if (parts.length < 2 || parts.length > RUN_MAX) throw new Problem(422, `A run is two to ${RUN_MAX} characters.`);
+  const key = new Request(`${url.origin}/atlas/runs/related?${new URLSearchParams({ text: value, v: await catalogueVersion(env) })}`);
+  const cached = await caches.default.match(key);
+  if (cached) return await cached.json() as Json;
+  const size = parts.length, join = (from: number, to: number) => parts.slice(from, to).join('');
+  const beyond = (prefix: string) => prefix + '\u{10FFFF}';
+  const near = (length: number, prefix: string, except = '') => env.DB.prepare(runRangeQuery()).bind(length, prefix, beyond(prefix), except);
+  const lead = size === 2 ? join(0, 1) : join(0, 2);
+  const inside = size === 3 || size === 4 ? [join(0, size - 1), join(1, size)] : [];
+  const [longer, siblings, ...held] = await env.DB.batch([
+    size === 2 ? near(3, value) : env.DB.prepare('SELECT 1 WHERE 0'),
+    size === 2 || size === 3 ? near(size, lead, value) : env.DB.prepare('SELECT 1 WHERE 0'),
+    ...inside.map(part => env.DB.prepare(runHasQuery()).bind(size - 1, part)),
+  ]) as D1Result<any>[];
+  const shown = (rows: Json[]) => rows.map(row => ({ ...row, vertical: Boolean(row.vertical) }));
+  const body = { text: value, size, lead, inside: held.flatMap(result => result.results.map((row: Json) => row.text as string)),
+    longer: size === 2 ? shown(longer.results) : [], siblings: size === 2 || size === 3 ? shown(siblings.results) : [], limit: RUN_NEAR_MAX };
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return body;
 }
@@ -1817,6 +1874,7 @@ const routes = {
       if(path==='/atlas/history')return json(await history(env,q,(await viewer(env,request))?.id??null));
       const counted=path.match(/^\/atlas\/ngrams\/(\d+)$/);
       if(counted)return json(await ngrams(env,ctx,url,ngramSize(counted[1])));
+      if(path==='/atlas/runs/related')return json(await runRelated(env,ctx,url));
       if(path==='/atlas/runs')return json(await runOccurrences(env,ctx,url));
       if(path==='/atlas/corpus/characters')return json(await corpusCharacters(env,ctx,url),200,{'cache-control':'private, max-age=300'});
       if(path==='/atlas/corpus/character')return json(await inspected(env,await unit(env,q.get('id')||'')));
