@@ -4,17 +4,20 @@
 GenZui Sans. The goal is a drawing a reader takes for a character the type designer drew. Each
 target below is measured by `scripts/compose_ids.py bench` on the font's own encoded kanji, redrawn
 from their BabelStone sequences with nothing taken from the character itself; the plain way to
-compose, each operand's own glyph squeezed into its share, scores 0.331 on the same set.
+compose, each operand's own glyph squeezed into its share, scores 0.337 on the same set. By
+structure: ⿰ 0.767 (1,093 kanji), ⿱ 0.637 (478), enclosures 0.37–0.61, nested parts 0.54–0.64.
+With every part placed in the real glyph's own boxes, the parts the composer chooses score 0.76
+and the best parts any host offers 0.81: layout is the larger remaining loss, stacked layouts most.
 
 ## Targets
 
 | Measure | Set | Now | Target |
 |---|---|---|---|
-| Ink overlap with the real glyph (intersection over union, 96 px), mean | 1,981 compound jōyō kanji | 0.637 | 0.72 |
-| Ink overlap, tenth percentile | same | 0.396 | 0.55 |
-| Outline length within 15% of the real glyph's (no stroke missing or added) | same | 97.3% | 99.5% |
-| Drawn at all | same | 1,935 of 1,981 | all |
-| Stroke width against the real glyph, median, across x and across y | same | 0.996, 0.999 | within 0.97–1.03 |
+| Ink overlap with the real glyph (intersection over union, 96 px), mean | 1,981 compound jōyō kanji | 0.690 | 0.75 |
+| Ink overlap, tenth percentile | same | 0.444 | 0.55 |
+| Outline length within 15% of the real glyph's (no stroke missing or added) | same | 92.9% | 99.5% |
+| Drawn at all | same | 1,967 of 1,981 | all |
+| Stroke width against the real glyph, median, across x and across y | same | 0.997, 1.000 | within 0.97–1.03 |
 | Facing gap between neighbouring parts within the 5–95% range of drawn characters | same | not yet measured | 99% |
 | Drawn at all | distinct HDIC headword sequences: KRM 3,029, TSJ 356, KTB 9 | 2,997, 355, 9 (all failures ⿻) | all |
 | Preferred over zi.tools by a reviewer, side by side | 96 KRM headwords | not yet judged | 80% |
