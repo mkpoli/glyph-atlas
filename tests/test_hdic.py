@@ -279,6 +279,18 @@ def test_a_flat_tier_head_leaves_its_cell_empty() -> None:
     assert hdic.cell_boxes([head, *gloss], grid, 1, 1, UNIT, KTB, shape) == [head]
 
 
+def test_a_flat_head_is_caught_where_headwords_are_as_small_as_their_gloss() -> None:
+    columns = (1000.0, 1250.0, 1500.0)
+    grid = hdic.Grid(columns=columns, pitch=250.0, tiers=(500.0,), tier_pitch=1800.0)
+    boxes = [Box(x=int(x) - 40, y=500 + 90 * k, w=80, h=80) for x in columns[1:] for k in range(4)]
+    piece = Box(x=960, y=500, w=80, h=10)
+    boxes += [piece, *[Box(x=960, y=600 + 90 * k, w=80, h=80) for k in range(3)]]
+    shape = hdic.headword_shape(boxes, grid, UNIT, KTB)
+    assert shape == (80.0, 80.0)
+    assert hdic.cell_boxes(boxes, grid, 1, 1, UNIT, KTB, shape) == []
+    assert hdic.cell_boxes(boxes, grid, 2, 1, UNIT, KTB, shape) == [boxes[0]]
+
+
 def test_a_second_reader_confirms_but_never_refuses() -> None:
     boxes = page(COLUMNS, TIERS)
     grid = hdic.page_grids(boxes, UNIT, KRM)["right"]

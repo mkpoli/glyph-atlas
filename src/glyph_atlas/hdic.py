@@ -648,11 +648,27 @@ SHIFT_MARGIN = 2
 OUTER_HELD = 2
 
 
+def headword_shape(boxes: Sequence[Box], grid: Grid, unit: float, layout: Layout) -> tuple[float, float]:
+    """The median headword's shorter and longer side on a page, (0, 0) when it has none. With tier
+    heads, the heads themselves, since in later books a headword is no larger than its gloss; else
+    the headword-sized boxes."""
+    if layout.heads == "tier":
+        heads = []
+        for line in range(1, len(grid.columns) + 1):
+            for segment in range(1, len(grid.tiers) + 1):
+                cell = [b for b in cell_window(boxes, grid, line, segment) if max(b.w, b.h) >= INK * unit]
+                if cell:
+                    heads.append(cell[1] if sealed(cell, unit) else cell[0])
+    else:
+        heads = [b for b in boxes if grid.holds(b) and is_big(b, unit)]
+    if not heads:
+        return (0.0, 0.0)
+    return float(np.median([min(b.w, b.h) for b in heads])), float(np.median([max(b.w, b.h) for b in heads]))
+
+
 def misfit(entries: Sequence[Entry], boxes: Sequence[Box], grid: Grid, unit: float, layout: Layout) -> tuple[int, int]:
     """How far a grid's candidate counts are from HDIC's, over the cells HDIC fills, and how many columns it fills."""
-    heads = [b for b in boxes if grid.holds(b) and is_big(b, unit)]
-    headword = ((float(np.median([min(b.w, b.h) for b in heads])), float(np.median([max(b.w, b.h) for b in heads])))
-                if heads else (0.0, 0.0))
+    headword = headword_shape(boxes, grid, unit, layout)
     expected: dict[tuple[int, int], int] = {}
     for entry in entries:
         if entry.line <= len(grid.columns) and entry.segment <= len(grid.tiers):
@@ -725,9 +741,7 @@ def _place(entries: Sequence[Entry], boxes: Sequence[Box], grid: Grid, unit: flo
     windows = {(line, segment): [b for b in cell_window(boxes, grid, line, segment) if max(b.w, b.h) >= INK * unit]
                for line in range(1, len(grid.columns) + 1) for segment in range(1, len(grid.tiers) + 1)}
     seal_page = layout.heads == "tier" and any(sealed(cell, unit) for cell in windows.values())
-    heads = [b for b in boxes if grid.holds(b) and is_big(b, unit)]
-    headword = ((float(np.median([min(b.w, b.h) for b in heads])), float(np.median([max(b.w, b.h) for b in heads])))
-                if heads else (0.0, 0.0))
+    headword = headword_shape(boxes, grid, unit, layout)
     for (line, segment), members in sorted(cells.items()):
         if line > len(grid.columns) or segment > len(grid.tiers):
             result.count("off-grid")
