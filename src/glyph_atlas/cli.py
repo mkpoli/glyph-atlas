@@ -572,7 +572,8 @@ def review_consensus_relabel(
     directory: Annotated[Path, typer.Argument(help="dataset directory whose crops are checked")],
     out: Annotated[Path, typer.Option(help="report of every proposed relabel")],
     apply: Annotated[bool, typer.Option("--apply/--dry-run", help="record the relabels in the dataset's journal")] = False,
-    undo: Annotated[bool, typer.Option(help="restore what this method's relabels replaced instead")] = False,
+    undo: Annotated[bool, typer.Option(help="restore what this method's relabels replaced instead (with --apply; "
+                                       "a dry run lists them)")] = False,
     setting: Annotated[str, typer.Option(help="bar a relabel has to clear: strict, default or loose")] = "default",
     similar: Annotated[Path, typer.Option(help="similar-crop index revision (`atlas similar index`)")] = Path("work/similar/current"),
     export: Annotated[list[Path] | None, typer.Option(help="catalogue export whose labels and pages replace the index's "
@@ -585,13 +586,16 @@ def review_consensus_relabel(
     from .review import consensus_relabel
 
     if undo:
-        result = consensus_relabel.undo(directory)
+        result = consensus_relabel.undo(directory, apply=apply)
     else:
         if setting not in consensus_relabel.SETTINGS:
             raise typer.BadParameter(f"setting must be one of {', '.join(consensus_relabel.SETTINGS)}")
-        ids = protect.read_text().split() if protect else ()
+        ids = set(protect.read_text().split()) if protect else set()
         site = json.loads(reviews.read_text()) if reviews else None
-        seen = {k: v["label"] for k, v in consensus_relabel.last_reviews(site).items() if v.get("label")} if site else None
+        verdicts = consensus_relabel.last_reviews(site) if site else {}
+        # A crop reviewed on the site is protected whether or not the protect file names it.
+        ids |= set(verdicts)
+        seen = {k: v["label"] for k, v in verdicts.items() if v.get("label")} or None
         result = consensus_relabel.run(directory, similar=similar, checkpoint=checkpoint, setting=setting, apply=apply,
                                        protect=ids, exports=export or (), seen=seen)
         if site:

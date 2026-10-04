@@ -34,8 +34,10 @@ Measured on 2026-10-04 (docs/reports/consensus-relabel.md) against the 1,105 cro
 site: at the `default` bar the rule relabels 50 reviewed crops, 43 to the reviewer's correction, 1 to
 another character, 1 that the reviewer confirmed, 2 the reviewer reported as bad crops and 3 the
 reviewer reported as a wrong reading; it finds 43 of the 136 wrong-character reports in the index.
-Of 48 random relabels among unreviewed crops, the 34 of the collection (ar:, hk:, ex:) were 30 plainly
-right and 4 uncertain by eye; the 14 HI Lab glyphs were 1 right, 11 uncertain and 2 wrong.
+Of 48 random relabels of unreviewed `ar:` and `hk:` crops, 30 were plainly right by eye, 18 uncertain
+(cursive kanji, abbreviations) and none plainly wrong. HI Lab glyphs have no box to test and fared
+worse (of 14 in an earlier sample, 1 right, 11 uncertain, 2 wrong); the command works on review
+datasets and does not relabel corpus glyphs.
 
 A crop a person reviewed (any event of a role other than `model`), one named in `protect` (the ids
 the site holds reviews for, or subjects of observed or editorial ledger claims), and one whose review
@@ -265,7 +267,7 @@ def _top(vectors: np.ndarray, rows: Sequence[int], fetch: int, block: int = 2048
     gallery = np.asarray(vectors, dtype=np.float32)
     for start in range(0, len(rows), block // 8):
         scores = gallery[np.asarray(rows[start:start + block // 8])] @ gallery.T
-        top = np.argpartition(-scores, fetch + 1, axis=1)[:, :fetch + 1]
+        top = np.argpartition(-scores, fetch, axis=1)[:, :fetch + 1]
         order = np.take_along_axis(scores, top, 1).argsort(1)[:, ::-1]
         top = np.take_along_axis(top, order, 1)
         yield start, (top, np.take_along_axis(scores, top, 1))
@@ -429,7 +431,8 @@ def record(store, items: list[dict], units: dict[str, tuple[Any, int]]) -> None:
         if item["status"] != "proposed":
             continue
         unit, revision = units[item["unit_id"]]
-        evidence = {"kind": "consensus-relabel", "method": METHOD, "automated": True,
+        # The revision keeps a relabel made again after an undo from being taken for the first one.
+        evidence = {"kind": "consensus-relabel", "method": METHOD, "automated": True, "revision": revision,
                     **{k: v for k, v in item.items() if k not in ("unit_id", "status")}}
         values = {"unicode": encoded(item["character"]), "script": script_of_identity(item["character"]),
                   "review": "machine", "meta": {**(unit.meta or {}), "feedback_identity": evidence}}
@@ -442,61 +445,80 @@ def record(store, items: list[dict], units: dict[str, tuple[Any, int]]) -> None:
         item["status"] = "relabelled"
 
 
-def undo(dataset: Path) -> dict:
-    """Restore what every relabel of this method replaced, where the unit still holds the relabel.
+def undo(dataset: Path, *, apply: bool = False) -> dict:
+    """Restore, with `apply`, what the relabels of this method replaced, where the unit still holds
+    what they wrote.
 
-    A unit a person reviewed since, or whose fields another pass changed since, keeps what it holds
-    and is reported.
+    The label and script go back to what the first relabel since the last undo replaced, and the
+    unit's `feedback_identity` note to the one it held then; the rest of its `meta` is kept. A unit a
+    person reviewed since, or whose label or script another pass changed since, keeps what it holds.
     """
     from .refine import _changes
     from .store import SEEN, Conflict, Store
 
     store = Store(dataset)
     events = store.events()
-    later_review = defaultdict(int)
-    for n, event in enumerate(events):
-        if event.role != "model" and event.field != SEEN:
-            later_review[event.target_id] = n
-    # Per unit and field: what the first relabel replaced and what the last one wrote.
+    # Per unit: the label fields the relabels changed (what the first replaced, what the last wrote),
+    # the note the first replaced, the relabel events, and whether anything else touched the unit since.
     changes: dict[str, dict[str, list]] = defaultdict(dict)
-    first: dict[str, int] = {}
-    for n, event in enumerate(events):
-        if event.role != "model" or not event.evidence:
-            continue
-        try:
-            evidence = json.loads(event.evidence)
-        except ValueError:
-            continue
-        if not isinstance(evidence, dict) or evidence.get("method") != METHOD:
-            continue
-        if evidence.get("kind") == "consensus-relabel-undo":
+    note: dict[str, Any] = {}
+    undone: dict[str, list[str]] = defaultdict(list)
+    touched: set[str] = set()
+    for event in events:
+        evidence = _evidence(event.evidence) if event.role == "model" else None
+        ours = isinstance(evidence, dict) and evidence.get("method") == METHOD
+        if ours and evidence.get("kind") == "consensus-relabel-undo":
             # Undone already: a later relabel starts afresh.
-            changes.pop(event.target_id, None)
-            first.pop(event.target_id, None)
+            for found in (changes, note, undone):
+                found.pop(event.target_id, None)
+            touched.discard(event.target_id)
             continue
-        changes[event.target_id].setdefault(event.field, [event.old, None])[1] = event.new
-        first.setdefault(event.target_id, n)
+        if ours:
+            if event.field == "meta":
+                note.setdefault(event.target_id, (event.old or {}).get("feedback_identity"))
+            else:
+                changes[event.target_id].setdefault(event.field, [event.old, None])[1] = event.new
+            if event.id not in undone[event.target_id]:
+                undone[event.target_id].append(event.id)
+            continue
+        if event.target_id in changes and event.field != SEEN and (
+                event.role != "model" or event.field in ("unicode", "script")):
+            touched.add(event.target_id)
     counts, items = Counter(), []
     current = {unit.id: (unit, revision) for unit, revision in store.unit_snapshot() if unit.id in changes}
     for identity, fields in sorted(changes.items()):
         unit, revision = current.get(identity, (None, 0))
-        status = "restored"
         if unit is None:
             status = "gone"
-        elif later_review.get(identity, -1) > first[identity]:
-            status = "reviewed since"
-        elif any(_value(getattr(unit, field, None)) != new for field, (_old, new) in fields.items() if field != "meta"):
+        elif identity in touched or any(_value(getattr(unit, field, None)) != new
+                                        for field, (_old, new) in fields.items() if field != "review"):
             status = "changed since"
+        elif not apply:
+            status = "to restore"
         else:
-            evidence = {"kind": "consensus-relabel-undo", "method": METHOD, "automated": True}
+            status = "restored"
+            meta = {k: v for k, v in (unit.meta or {}).items() if k != "feedback_identity"}
+            if note.get(identity) is not None:
+                meta["feedback_identity"] = note[identity]
+            values = {field: old for field, (old, _new) in fields.items()} | {"meta": meta}
+            # Naming the events undone keeps a second undo after a second relabel from being taken
+            # for the first.
+            evidence = {"kind": "consensus-relabel-undo", "method": METHOD, "automated": True,
+                        "undoes": undone[identity]}
             try:
-                _changes(store, unit, {field: old for field, (old, _new) in fields.items()}, evidence,
-                         base_revision=revision)
+                _changes(store, unit, values, evidence, base_revision=revision)
             except Conflict:
                 status = "stale"
         counts[status] += 1
         items.append({"unit_id": identity, "status": status})
     return {"method": METHOD, "counts": dict(counts), "items": items}
+
+
+def _evidence(text: str | None) -> Any:
+    try:
+        return json.loads(text) if text else None
+    except ValueError:
+        return None
 
 
 def _value(value: Any) -> Any:

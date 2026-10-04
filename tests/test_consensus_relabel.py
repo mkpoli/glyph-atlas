@@ -57,6 +57,20 @@ def test_nearest_leaves_out_the_crop_and_its_page():
     assert scores[0, 0] > scores[0, 1]
 
 
+def test_nearest_without_a_gpu(monkeypatch):
+    import builtins
+
+    real = builtins.__import__
+
+    def no_torch(name, *args, **kwargs):
+        if name == "torch":
+            raise ImportError(name)
+        return real(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", no_torch)
+    test_nearest_leaves_out_the_crop_and_its_page()
+
+
 def test_document_of_a_page():
     assert cr.document_of("hk:abc:12", "x") == "hk:abc"
     assert cr.document_of(None, "hi:1") == "hi:1"
@@ -97,13 +111,46 @@ def test_a_relabel_is_recorded_with_its_evidence_and_undone(dataset: Path):
     assert unit.meta["feedback_identity"]["method"] == cr.METHOD
     assert unit.meta["feedback_identity"]["vote"] == {"count": 9}
 
-    result = cr.undo(dataset)
+    assert cr.undo(dataset)["counts"] == {"to restore": 1}  # a dry run writes nothing
+    assert written_identity(Store(dataset).unit_snapshot(f"{LINE}:u0")[0][0]) == "ナ"
+    result = cr.undo(dataset, apply=True)
     assert result["counts"] == {"restored": 1}
     unit = Store(dataset).unit_snapshot(f"{LINE}:u0")[0][0]
     assert written_identity(unit) == "レ"
     assert "feedback_identity" not in (unit.meta or {})
     # Undone once, a second undo finds nothing to restore.
-    assert cr.undo(dataset)["counts"] == {}
+    assert cr.undo(dataset, apply=True)["counts"] == {}
+
+
+def test_a_relabel_made_again_after_an_undo_is_recorded_and_undone_again(dataset: Path):
+    from glyph_atlas.review.atlas import written_identity
+    from glyph_atlas.review.store import Store
+
+    identity = f"{LINE}:u0"
+    for _ in range(2):
+        store = Store(dataset)
+        units = {unit.id: (unit, revision) for unit, revision in store.unit_snapshot()}
+        item = {"unit_id": identity, "before": "レ", "character": "ナ", "status": "proposed"}
+        cr.record(store, [item], units)
+        assert written_identity(Store(dataset).unit_snapshot(identity)[0][0]) == "ナ"
+        assert cr.undo(dataset, apply=True)["counts"] == {"restored": 1}
+        assert written_identity(Store(dataset).unit_snapshot(identity)[0][0]) == "レ"
+
+
+def test_undo_keeps_what_another_pass_wrote_in_meta(dataset: Path):
+    from glyph_atlas.review.refine import _changes
+    from glyph_atlas.review.store import Store
+
+    identity = f"{LINE}:u0"
+    store = Store(dataset)
+    units = {unit.id: (unit, revision) for unit, revision in store.unit_snapshot()}
+    cr.record(store, [{"unit_id": identity, "before": "レ", "character": "ナ", "status": "proposed"}], units)
+    unit, revision = Store(dataset).unit_snapshot(identity)[0]
+    _changes(store, unit, {"meta": {**unit.meta, "alignment_repair": {"status": "withheld"}}},
+             {"method": "other-pass"}, base_revision=revision)
+    assert cr.undo(dataset, apply=True)["counts"] == {"restored": 1}
+    unit = Store(dataset).unit_snapshot(identity)[0][0]
+    assert unit.meta == {"alignment_repair": {"status": "withheld"}}
 
 
 def test_undo_keeps_a_label_a_person_reviewed_since(dataset: Path):
@@ -116,7 +163,7 @@ def test_undo_keeps_a_label_a_person_reviewed_since(dataset: Path):
     revision = store.revision(identity)
     store.record(ReviewRequest(target_id=identity, field="review", new="reviewed", base_revision=revision,
                                client_id="reviewer-1", idempotency_key="r1"))
-    assert cr.undo(dataset)["counts"] == {"reviewed since": 1}
+    assert cr.undo(dataset, apply=True)["counts"] == {"changed since": 1}
 
 
 def test_measured_against_the_site_reviews():
