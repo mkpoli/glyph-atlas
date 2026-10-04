@@ -30,3 +30,13 @@ def test_missing_identity_and_whitespace_are_not_characters():
 def test_old_sample_rows_are_checked_by_codepoint_or_label():
     assert unit_scope({"char": "とりい"})["needs_segmentation"]
     assert not unit_scope({"char": "トモ", "codepoint": "U+2A708"})["needs_segmentation"]
+
+
+def test_an_ideographic_description_sequence_is_one_character() -> None:
+    from glyph_atlas.unit_scope import character_count, unit_scope
+
+    assert character_count("⿰亻胃") == 1
+    assert character_count("⿰亻⿱亠女") == 1
+    assert character_count("⿱⿱一丷兀") == 1
+    assert character_count("人⿰亻胃") == 2
+    assert unit_scope({"unicode": None, "text_source": "⿰亻胃"})["needs_segmentation"] is False
