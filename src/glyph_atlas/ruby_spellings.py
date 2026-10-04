@@ -10,17 +10,21 @@ What a row holds:
 - `spelling` is the whole base of one ruby, as `koji.parse` delimits it: a run of kanji in the legacy
   form `base（reading）`, cut by a space or `／`, or the first field of `《振り仮名：base｜reading》`.
   A transcriber who did not cut the run gives a longer spelling (屋等 for など), and the row keeps it.
+  So does one who placed the reading with leading spaces (`三尺斗（　　　ばかり）`): the spaces say
+  the reading stands over the end of the base without saying over how many characters.
+  A struck-out character (the first field of 見せ消ち) is not part of the base.
   A ruby nested inside another counts for both: `《振り仮名：孿（ふた）胎｜サンタイ》` gives 孿 for
   ふた and 孿胎 for サンタイ.
 - `reading` is the right-hand 振り仮名 with spaces removed and katakana mapped to hiragana; `ruby`
-  lists the forms as typed. A left-hand 振り仮名 (左訓) often glosses the meaning, so it is not read.
+  lists the forms as typed. A damage mark (■ □ 〓) stays in the reading, so の〓み is not のみ. A left-hand 振り仮名 (左訓) often glosses the meaning, so it is not read.
   A reading written without its dakuten (はかり) is its own key: nothing here says it is the same
   word.
 - `documents` counts entries. One entry can repeat a spelling on every page, so a spelling attested
   by many documents is a convention and one attested by a single document may be a scribe's habit.
 
-Only bases holding a Han character are counted. The parser files `《迎え仮名：…》` under the same kind
-as 振り仮名; the clone at revision be63dc2 holds none.
+Only bases holding a Han character are counted. `《迎え仮名：…》` is read as 振り仮名, as the parser
+files it; the clone at revision be63dc2 holds none. `《ルビ：…》`, which the honkokuv1 project uses,
+is not a construct the parser knows, so its readings are not counted.
 
 The source does not say whether a 振り仮名 stands on the page or was added by the transcriber, and
 transcribers are asked to type modern forms (https://wiki.honkoku.org/doku.php?id=guidelines), so a
@@ -47,6 +51,10 @@ from .refs import to_hiragana
 WORDS = ("ばかり", "はかり", "など", "なと", "のみ")
 #: Example locations kept per row, each from a different entry.
 EXAMPLES = 5
+#: Roles of a ruby's base: the document text without what a 見せ消ち strikes out.
+BASE_ROLES = DOCUMENT_ROLES - {"cancelled"}
+#: Roles of a damage mark, which can stand in a reading as well as in a base.
+DAMAGE_ROLES = frozenset({"gap", "unreadable"})
 COLUMNS = ("reading", "spelling", "code_points", "documents", "occurrences", "projects", "ruby", "examples")
 
 
@@ -65,7 +73,7 @@ def rubies(text: str) -> list[tuple[str, str]]:
     The base is every document character inside the ruby, nested rubies included; the reading is the
     right-hand ruby text whose innermost ruby is this one, with spaces left out.
     """
-    if "（" not in text and "振り仮名" not in text:
+    if "（" not in text and "仮名" not in text:
         return []
     parsed = koji.parse(text)
     order = [element.id for element in koji.walk(parsed.nodes) if element.kind == "ruby"]
@@ -76,10 +84,14 @@ def rubies(text: str) -> list[tuple[str, str]]:
     readings = {ruby: "" for ruby in order}
     for char in parsed.chars:
         mine = [node for node in char.path if node in wanted]
-        if char.role in DOCUMENT_ROLES:
+        if not mine:
+            continue
+        if char.role in DAMAGE_ROLES and readings[mine[-1]]:
+            readings[mine[-1]] += char.text
+        elif char.role in BASE_ROLES or char.role in DAMAGE_ROLES:
             for ruby in mine:
                 bases[ruby] += char.text
-        elif char.role == "ruby" and mine and not char.text.isspace():
+        elif char.role == "ruby" and not char.text.isspace():
             readings[mine[-1]] += char.text
     return [(bases[ruby], readings[ruby]) for ruby in order]
 

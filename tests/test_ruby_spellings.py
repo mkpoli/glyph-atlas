@@ -66,3 +66,12 @@ def test_rows_order_and_write(tmp_path):
     lines = out.read_text(encoding="utf-8").splitlines()
     assert lines[0].startswith("# ") and "revision abc" in lines[2]
     assert lines[5].split("\t") == list(ruby_spellings.COLUMNS)
+
+
+def test_damage_marks_stay_and_struck_text_leaves_the_base():
+    assert ruby_spellings.rubies("《振り仮名：斗｜の〓み》") == [("斗", "の〓み")]
+    assert ruby_spellings.rubies("計（ば■かり）") == [("計", "ば■かり")]
+    assert ruby_spellings.rubies("《振り仮名：《見せ消ち：斗｜計》｜ばかり》") == [("計", "ばかり")]
+    assert ruby_spellings.rubies("《迎え仮名：計｜ばかり》") == [("計", "ばかり")]
+    # A padded reading keeps the whole base: the padding does not say how many characters it skips.
+    assert ruby_spellings.rubies("三尺斗（　　　ばかり）") == [("三尺斗", "ばかり")]
