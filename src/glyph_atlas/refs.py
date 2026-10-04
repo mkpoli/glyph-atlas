@@ -35,6 +35,7 @@ import json
 import re
 import unicodedata
 from collections.abc import Iterable
+from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 from typing import Any
@@ -327,18 +328,24 @@ def variants(char: str) -> list[tuple[str, tuple[str, ...]]]:
 
 #: The tier of predictions, as its own source id: substitutions from han-component-variants.tsv made
 #: inside a character's decomposition. Nothing widens or merges to these — no gallery, no grapheme —
-#: and a reader meets them as derived, each with the pairs that attest its substitution. This is not
+#: and a reader meets them as derived, each with the pairs that back its substitutions. This is not
 #: `derived`, which is the kana a 字母 is written as.
 DERIVED_IDS = "derived-ids"
 DERIVED_IDS_CITATION = (
-    "Predicted component variants (derived, not attested): one substitution of "
+    "Predicted component variants (derived, not attested): up to two substitutions of "
     "data/vocab/han-component-variants.tsv made in a character's BabelStone IDS; "
     "Glyph Atlas, CC BY-SA 4.0 (LICENSE-DATA)"
 )
-#: How many derived forms a character card lists, and how many of them may be forms no character has
-#: (the export stores the same ones: the closest sequences first, one substitution at a time).
-DERIVED_SHOWN = 32
-DERIVED_IDS_SHOWN = 12
+#: How many derived forms a character card and the form picker list, and how many of them may be forms
+#: no character has (the export stores the same ones: the fewest substitutions first, then the closest
+#: sequences). Two substitutions make many sequences: 疑 has 118, and ⿰⿱匕失⿱コ疋 is the 44th.
+DERIVED_SHOWN = 64
+DERIVED_IDS_SHOWN = 48
+#: How many routes a form keeps as its evidence, the shortest and strongest first.
+DERIVED_ROUTES = 3
+#: How deep a substitution may sit in a form no character has: a part of the character's own
+#: sequence (1) or a part of that part's own sequence (2), as 矢 sits in 𠤕 in 疑.
+DERIVED_IDS_DEPTH = 2
 
 
 @cache
@@ -382,6 +389,12 @@ def _substitution_table() -> dict[str, set[str]]:
 
 
 @cache
+def _maker() -> han_component_variants.Maker:
+    """One derivation kept across characters, so 睘 is worked once for 還, 環 and 寰."""
+    return han_component_variants.Maker(_descriptions(), _substitution_table(), han_component_variants.STEPS)
+
+
+@cache
 def _stated_pairs() -> frozenset[tuple[str, str]]:
     """Every pair the 異体字 graph holds under any relation: a source already states its own tier."""
     return frozenset(
@@ -390,64 +403,71 @@ def _stated_pairs() -> frozenset[tuple[str, str]]:
     )
 
 
+def _evidence(was: str, became: str) -> dict[str, Any]:
+    """One substitution as a derived form shows it: as it was made (`was` in the character, `became`
+    in the form), with its table row's count and the pairs behind it."""
+    row = component_variants()[_substitution(was, became)]
+    return {"was": was, "became": became, "count": row["count"], "pairs": row["pairs"]}
+
+
+def _strength(route: list[dict[str, Any]]) -> int:
+    """A route is as strong as its weakest substitution's contexts."""
+    return min(sub["count"] for sub in route)
+
+
 def _derive(char: str) -> list[dict[str, Any]]:
-    """Every form one kept substitution makes of `char`: the characters it may be, then the sequences
-    no character has, closest to its own shape first.
+    """Every form up to `STEPS` substitutions make of `char`: the characters it may be, then the
+    sequences no character has, the fewest substitutions and the closest shape first.
 
     A pair some source states (under any relation) is left to the graph's own tiers, and so is the
     bare substitution of two components against each other: the attesting pairs show the components
-    inside characters, and a page of the two components themselves is a claim no pair makes. What
-    remains is one substitution made anywhere in `char`'s own decomposition, as another character
-    when some character's sequence is the result and as the sequence itself when none is. Two
-    characters of the CJK Unified Ideographs block are never derived from each other, and a sequence
-    is written only for a swap of one part of the character's own sequence.
+    inside characters, and a page of the two components themselves is a claim no pair makes. Two
+    characters of the CJK Unified Ideographs block are never derived from each other. A sequence is
+    written only when each substitution sits at most `DERIVED_IDS_DEPTH` deep: ⿱宀𦊷 for 寰 (⿱宀睘),
+    ⿰⿱匕失⿱コ疋 for 疑 (𠤕 is ⿱匕矢), never a sequence rebuilt three levels down.
     """
     found: dict[str, dict[str, Any]] = {}
-    # A form no character has is written only when the substitution swaps one part of the character's
-    # own sequence: ⿱宀𦊷 for 寰 (⿱宀睘), never a sequence rebuilt inside 睘's own tree.
-    parts = {han_component_variants.text(part) for tree in _descriptions().trees.get(char, ())
-             if not isinstance(tree, str) for part in tree[1]}
-    for form in han_component_variants.derive(_descriptions(), _substitution_table(), [char]):
+    for form in han_component_variants.derive(_descriptions(), _substitution_table(), [char], made=_maker()):
         if form.encoded:
             if tuple(sorted((char, form.other), key=ord)) in _stated_pairs():
                 continue
-            if {form.was, form.became} == {char, form.other}:
+            if len(form.route) == 1 and {form.route[0][0], form.route[0][1]} == {char, form.other}:
                 continue
             # Two characters of the CJK Unified Ideographs block every source covers, none of which
             # relates them, are two characters: 也↔它 (蛇 and 虵) would make 馳 a form of 駝.
             if han_components.tier(char) == han_components.tier(form.other) == 0:
                 continue
-        elif form.was not in parts:
+        elif any(not 1 <= depth <= DERIVED_IDS_DEPTH for _, _, depth in form.route):
+            # A swap of the whole character spelled as a sequence is a row of the table, not a form.
             continue
-        was, became = _substitution(form.was, form.became)
-        evidence = component_variants().get((was, became))
-        if evidence is None:
-            continue
+        route = [_evidence(was, became) for was, became, _ in form.route]
         entry = found.setdefault(form.other, {
             "char": form.other,
             "code_point": to_code_point(form.other) if form.encoded else None,
             "encoded": form.encoded,
-            "substitutions": [],
+            "ids": form.sequence,
+            "routes": [],
         })
-        if any(sub["was"] == was and sub["became"] == became for sub in entry["substitutions"]):
+        spelled = sorted((sub["was"], sub["became"]) for sub in route)
+        if any(spelled == sorted((sub["was"], sub["became"]) for sub in known) for known, _ in entry["routes"]):
             continue
-        # The substitution is undirected, so every side spells it the way the table does: a card
-        # shows 厶 ↔ 口 whatever direction the character was written in.
-        entry["substitutions"].append({
-            "was": was, "became": became,
-            "count": evidence["count"], "pairs": evidence["pairs"],
-        })
+        entry["routes"].append((route, max(depth for _, _, depth in form.route)))
     for entry in found.values():
-        entry["substitutions"].sort(key=lambda sub: -sub["count"])
-        entry["sources"] = sorted({
-            source for sub in entry["substitutions"] for pair in sub["pairs"] for source in pair["sources"]
-        })
+        entry["routes"].sort(key=lambda made: (len(made[0]), made[1], -_strength(made[0])))
+        entry["depth"] = entry["routes"][0][1]
+        entry["routes"] = [route for route, _ in entry["routes"][:DERIVED_ROUTES]]
+        entry["sources"] = sorted({source for route in entry["routes"] for sub in route
+                                   for pair in sub["pairs"] for source in pair["sources"]})
+    best = lambda entry: entry["routes"][0]
     encoded = sorted((entry for entry in found.values() if entry["encoded"]),
-                     key=lambda entry: (-entry["substitutions"][0]["count"], entry["char"]))
-    # A sequence as close to the character as its own shape comes first: one component of the
-    # character's own tree swapped (寰 is ⿱宀睘, so ⿱宀𦊷 before a form rebuilt inside 睘's tree).
+                     key=lambda entry: (len(best(entry)), -_strength(best(entry)), entry["char"]))
+    # A sequence as close to the character as its own shape comes first: fewer substitutions, made
+    # higher in its tree (寰 is ⿱宀睘, so ⿱宀𦊷 before a form rebuilt inside 睘's tree), shorter.
     unencoded = sorted((entry for entry in found.values() if not entry["encoded"]),
-                       key=lambda entry: (len(entry["char"]), -entry["substitutions"][0]["count"], entry["char"]))
+                       key=lambda entry: (len(best(entry)), entry["depth"], len(entry["char"]),
+                                          -_strength(best(entry)), entry["char"]))
+    for entry in found.values():
+        del entry["depth"]
     return [*encoded, *unencoded]
 
 
@@ -455,12 +475,12 @@ _derived_cache: dict[str, tuple[dict[str, Any], ...]] = {}
 
 
 def derived_variants(char: str, *, limit: int | None = DERIVED_SHOWN) -> list[dict[str, Any]]:
-    """The `derived-ids` tier of `char`: forms one attested substitution may write it as.
+    """The `derived-ids` tier of `char`: forms up to two substitutions may write it as.
 
-    The encoded characters first, strongest substitutions first within them and then in code point
-    order, then the `DERIVED_IDS_SHOWN` closest forms no character has — shortest sequence first —
-    written as their sequence, at most `limit` rows in total. The export stores the same rows, so a
-    page reads them off D1 exactly as this returns them; `None` takes every form (a measurement).
+    The encoded characters first, fewest substitutions and strongest first, then the
+    `DERIVED_IDS_SHOWN` closest forms no character has, at most `limit` rows in total. The export
+    stores the same rows, so a page reads them off D1 exactly as this returns them; `None` takes every
+    form (a measurement).
     """
     if char not in _derived_cache:
         _derived_cache[char] = tuple(_derive(char))
@@ -472,13 +492,33 @@ def derived_variants(char: str, *, limit: int | None = DERIVED_SHOWN) -> list[di
     return [*encoded, *ids]
 
 
+@dataclass(frozen=True)
+class DerivedForm:
+    """One derived form of a character, as a renderer takes it: `form` is the encoded character or,
+    when none has the shape, the sequence itself; `ids` the description it was derived as;
+    `substitutions` the (was, became) pairs its first route makes, in the order of the parts."""
+
+    form: str
+    ids: str
+    encoded: bool
+    substitutions: tuple[tuple[str, str], ...]
+
+
+def derived_forms(char: str, *, limit: int | None = DERIVED_SHOWN) -> list[DerivedForm]:
+    """The derived forms of `char`, in the order of `derived_variants(char, limit=limit)`: the ones
+    the site lists by default, every one with `limit=None`."""
+    return [DerivedForm(entry["char"], entry["ids"], entry["encoded"],
+                        tuple((sub["was"], sub["became"]) for sub in entry["routes"][0]))
+            for entry in derived_variants(char, limit=limit)]
+
+
 def derived_rows() -> Iterable[tuple[str, int, str, str]]:
-    """Every row of the tier as the export stores it: (character, rank, form, substitutions).
+    """Every row of the tier as the export stores it: (character, rank, form, routes).
 
     One row per entry of `derived_variants(character)`, in its order (`rank` from 0), so a page reads
     the same rows in the same order off D1. A derivation is not symmetric, so each character keeps its
-    own rows. Substitutions are the entry's `[was, became]` pairs, in the entry's order; each one's
-    count and attesting pairs are the table's own row.
+    own rows. Routes are the entry's routes, each a list of `[was, became]` as made; each
+    substitution's count and pairs are its `component_variants` row.
     """
     for char in sorted(_descriptions().trees):
         yield from derived_rows_of(char)
@@ -486,8 +526,9 @@ def derived_rows() -> Iterable[tuple[str, int, str, str]]:
 
 def derived_rows_of(char: str) -> list[tuple[str, int, str, str]]:
     """The export's rows for one character: `derived_variants(char)`, ranked."""
-    return [(char, rank, entry["char"], json.dumps([[sub["was"], sub["became"]] for sub in entry["substitutions"]],
-                                                   ensure_ascii=False, separators=(",", ":")))
+    return [(char, rank, entry["char"],
+             json.dumps([[[sub["was"], sub["became"]] for sub in route] for route in entry["routes"]],
+                        ensure_ascii=False, separators=(",", ":")))
             for rank, entry in enumerate(derived_variants(char))]
 
 
@@ -592,6 +633,7 @@ def clear_cache() -> None:
         component_variants,
         _descriptions,
         _substitution_table,
+        _maker,
         _stated_pairs,
         _policies,
         _ligature_rows,

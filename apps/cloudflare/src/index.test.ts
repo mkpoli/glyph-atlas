@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'bun:test';
 import { canonical, samePixels, literal, hira, single, validRound, categoryOf, describedCard,
-  encodeCursor, decodeCursor, historyItem, historyQuery, moved } from './index';
+  encodeCursor, decodeCursor, historyItem, historyQuery, moved, substitutionKey } from './index';
 import { ROUND_MAX } from './rounds';
 import { componentTerm, rankMatches } from './components';
 
@@ -195,5 +195,16 @@ describe('a character Unicode lacks, written as an ideographic description seque
     expect(data.grapheme.members).toEqual([{ code_point: 'U+2FF0 U+4EBB U+80C3', char: '⿰亻胃' }]);
     expect(detail.characters).toEqual([data]);
     expect(detail.visual_analysis.family).toBe('U+2FF0 U+4EBB U+80C3');
+  });
+});
+
+describe('derived substitutions', () => {
+  it('spells a substitution as the export does, by code points rather than UTF-16 units', () => {
+    expect(substitutionKey('𠬝', '反')).toEqual(['反', '𠬝']);
+    expect(substitutionKey('矢', '失')).toEqual(['失', '矢']);
+    expect(substitutionKey('龴', 'コ')).toEqual(['コ', '龴']);
+    // U+FF1F sorts after a surrogate pair as UTF-16, before it as a code point.
+    expect(substitutionKey('𠀀', '？')).toEqual(['？', '𠀀']);
+    expect(substitutionKey('⿱口矢', '吴')).toEqual(['吴', '⿱口矢']);
   });
 });

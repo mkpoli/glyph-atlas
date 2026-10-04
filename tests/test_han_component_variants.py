@@ -92,16 +92,33 @@ def test_a_substitution_makes_one_form_and_never_stacks_with_another():
         v.Attested(*v.ordered("口", "厶"), ((("㒺", "㒺", ("s",)),)), ("㒺/㒺",)),
         v.Attested(*v.ordered("日", "月"), ((("㒺", "㒺", ("s",)),)), ("㒺/㒺",)),
     ])
-    forms = {(item.was, item.became) for item in v.derive(desc, table)}
+    forms = {item.route[0][:2] for item in v.derive(desc, table)}
     assert forms == {("口", "厶"), ("日", "月")}
-    assert len(list(v.derive(desc, table))) == 2, "two substitutions never stack in one form"
+    assert len(list(v.derive(desc, table))) == 2, "one step: two substitutions never stack in one form"
+
+
+def test_two_steps_stack_substitutions_in_different_parts_and_record_each_with_its_depth():
+    # 疑 is ⿰𠤕⿱龴疋 and 𠤕 is ⿱匕矢: 矢→失 sits inside 𠤕, 龴→コ beside it.
+    desc = descriptions({"疑": ["⿰𠤕⿱龴疋"], "𠤕": ["⿱匕矢"]})
+    table = {"矢": {"失"}, "失": {"矢"}, "龴": {"コ"}, "コ": {"龴"}}
+    forms = {item.other: item.route for item in v.derive(desc, table, ["疑"], steps=2)}
+    assert forms["⿰⿱匕失⿱コ疋"] == (("矢", "失", 2), ("龴", "コ", 2))
+    assert forms["⿰𠤕⿱コ疋"] == (("龴", "コ", 2),)
+    assert all(len(route) <= 2 for route in forms.values())
+
+
+def test_two_steps_never_swap_one_part_twice():
+    desc = descriptions({"㒻": ["⿰口日"]})
+    table = {"口": {"厶"}, "厶": {"口", "ム"}, "ム": {"厶"}}
+    forms = {item.other for item in v.derive(desc, table, steps=2)}
+    assert forms == {"⿰厶日"}, "口→厶 then 厶→ム in the same place is no form of 㒻"
 
 
 def test_a_form_no_character_has_comes_out_as_its_sequence():
     desc = descriptions({"杏": ["⿱宀口"]})
     table = v.equivalents([v.Attested(*v.ordered("口", "厶"), (("杏", "杏", ("s",)),), ("x/y",))])
     derived = list(v.derive(desc, table))
-    assert [(item.other, item.encoded, item.was, item.became) for item in derived] == [
+    assert [(item.other, item.encoded, *item.route[0][:2]) for item in derived] == [
         ("⿱宀厶", False, "口", "厶")]
 
 
@@ -147,11 +164,24 @@ def test_a_substitution_whose_predictions_the_graph_mostly_does_not_state_is_not
     assert [(k.predicted, k.agreed) for k in kept] == [(3, 1)]
 
 
+STATED = Path("data/vocab/han-component-variants-stated.tsv")
+
+
+def stated_keys() -> set[tuple[str, str]]:
+    with STATED.open(encoding="utf-8") as handle:
+        return {(row["a"], row["b"]) for row in csv.DictReader((line for line in handle if not line.startswith("#")), delimiter="\t")}
+
+
 def test_the_committed_table_holds_only_what_the_threshold_and_the_agreement_keep():
     found = rows()
     assert len(found) > 1500
     assert found == sorted(found, key=lambda row: (row["a"], row["b"]))
+    stated = stated_keys()
     for row in found:
+        if (row["a"], row["b"]) in stated:
+            # A stated substitution is kept whatever the cut-offs; its statement is one of its pairs.
+            assert f"{row['a']}:{row['b']}=" in row["pairs"]
+            continue
         assert int(row["count"]) >= v.THRESHOLD
         assert int(row["agreed"]) >= v.AGREEMENT * int(row["predicted"]) > 0
         pairs = row["pairs"].split(" ")
@@ -289,7 +319,7 @@ def test_an_attesting_pair_counts_only_where_the_others_predict_it_without_it():
 def test_a_substitution_makes_a_form_at_any_depth_of_the_characters_own_sequence():
     desc = descriptions({"㑑": ["⿱⿰宀口大"], "㑒": ["⿱⿰宀厶大"]})
     derived = list(v.derive(desc, {"口": {"厶"}}, ["㑑"]))
-    assert [(d.other, d.encoded, d.was, d.became) for d in derived] == [("㑒", True, "口", "厶")]
+    assert [(d.other, d.encoded, *d.route[0][:2]) for d in derived] == [("㑒", True, "口", "厶")]
 
 
 def test_a_sequence_marked_approximate_subtracted_or_unrepresentable_describes_nothing():
@@ -319,3 +349,13 @@ def test_a_bracketed_letter_of_a_region_tag_is_no_region():
     assert v.regions("⿱⺈⿸⿻口丿乚(GHTKP[B])") == frozenset("GHTKP")
     assert v.regions("⿰口夂(G[B])") & v.regions("⿰厶夂(J[B])") == frozenset()
     assert v.regions("⿰口夂([G])") == v.regions("⿰口夂") == v.EVERYWHERE
+
+
+def test_a_stated_substitution_carries_the_statement_as_its_own_pair_beside_the_attesting_ones():
+    desc = descriptions({"㤛": ["⿰口堯"], "低": ["⿰厶堯"]})
+    found = v.attest(desc, sources(("㤛", "低")))
+    item = v.stated(found, "厶", "口", "someone")
+    assert ("厶", "口", ("someone",)) in item.pairs and ("㤛", "低", ("source",)) in item.pairs
+    assert item.count == 2 and len(item.contexts_of) == len(item.pairs)
+    alone = v.stated({}, "コ", "龴", "someone")
+    assert (alone.pairs, alone.count) == ((("コ", "龴", ("someone",)),), 1)

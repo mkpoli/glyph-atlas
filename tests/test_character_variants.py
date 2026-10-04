@@ -53,7 +53,7 @@ def migrated() -> sqlite3.Connection:
 
 def test_the_parts_fill_a_staging_table_and_only_the_last_swaps_it_in(tmp_path, monkeypatch):
     # The whole derived tier takes half a minute; a few rows of it stand in.
-    rows = (("寰", 0, "⿱宂睘", '[["宀","宂"]]'), ("還", 0, "⿺廴睘", '[["廴","辶"]]'))
+    rows = (("寰", 0, "⿱宂睘", '[[["宀","宂"]]]'), ("還", 0, "⿺廴睘", '[[["廴","辶"]]]'))
     monkeypatch.setattr(export, "derived_rows", lambda: rows)
     db = migrated()
     db.execute("INSERT INTO character_variants VALUES('a','b','variant','x','',1,1)")
@@ -81,8 +81,11 @@ def test_the_parts_fill_a_staging_table_and_only_the_last_swaps_it_in(tmp_path, 
     cited = db.execute("SELECT value FROM metadata WHERE key='variant_sources'").fetchone()[0]
     assert "cjkvi-variants" in cited and "derived-ids" in cited
     assert db.execute("SELECT count(*) FROM component_variants").fetchone() == (want["substitutions"],)
-    assert db.execute("SELECT rank, b, subs FROM character_derived WHERE a='寰'").fetchall() == [
-        (0, "⿱宂睘", '[["宀","宂"]]')]
+    assert db.execute("SELECT rank, b, routes FROM character_derived WHERE a='寰'").fetchall() == [
+        (0, "⿱宂睘", '[[["宀","宂"]]]')]
+    pairs = json.loads(db.execute("SELECT pairs FROM component_variants WHERE a='コ' AND b='龴'").fetchone()[0])
+    assert pairs == [{"a": "コ", "b": "龴", "sources": ["mkpoli-2026-10-04"]}]
+    assert "mkpoli-2026-10-04" in cited
     pairs = db.execute("SELECT pairs FROM component_variants WHERE a='宀' AND b='宂'").fetchone()[0]
     assert ("㝓", "䆟") in {(p["a"], p["b"]) for p in json.loads(pairs)}
 

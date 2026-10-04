@@ -15,14 +15,16 @@
 #   opencc: https://raw.githubusercontent.com/BYVoid/OpenCC/2939943bd6f4d459b46d7fdcf07a885ab3f01761/data/dictionary/… (TSCharacters.txt, JPShinjitaiCharacters.txt, TWVariants.txt, HKVariants.txt, SealVariants.txt)
 #   mj-shrink-map: https://moji.or.jp/wp-content/mojikiban/oscdl/MJShrinkMap.1.2.0.json sha256:275b57ecd5929edb; figures from data/vocab/mj-kanji.tsv
 #   hng-basic-data: https://raw.githubusercontent.com/chise/hng-basic-data/e2174a30844b8100c34af1c0dbe1e301f186883e/all_table_v.5.0_2019-01-15.csv, columns 文字, 異体字, 統合ID
+# source mkpoli-2026-10-04: mkpoli (Glyph Atlas maintainer), instruction of 2026-10-04: 矢↔失, コ↔龴 and 匕↔上 are "common interchangeable components in manuscripts"; a statement without cited examples
 # source unicode-ucd: Unicode Character Database and Ideographic Variation Database; Unicode-3.0 (https://www.unicode.org/license.txt); Copyright Unicode, Inc.; Unicode License v3
 #   unicode-ucd: https://www.unicode.org/Public/18.0.0/ucd/EquivalentUnifiedIdeograph.txt sha256:c86c80f6a0d1d47c; Kangxi Radicals by NFKC
 # strokes: never a component: the CJK Strokes block and the ideographs whose Unihan kTotalStrokes is 1 (https://www.unicode.org/Public/18.0.0/ucd/Unihan.zip, Unihan_IRGSources.txt).
 # threshold: 2 distinct attesting pairs seen in 2 distinct contexts: the pairs themselves at the top of a character, the enclosing substitutions inside a component; one pair or one repeated position alone never predicts.
 # agreement: at least 30% of the pairs of encoded characters a substitution predicts (predicted) must be written pairs the graph already gives (agreed); an attesting pair is counted only when the other attesting pairs pass the threshold without it.
+# stated: a substitution data/vocab/han-component-variants-stated.tsv states is kept whatever the threshold and agreement; the statement is its own pair `a:b=<source>`.
 # substitution: undirected, a before b by length then code point; pairs are `A:B=source+source`, a pair and b in code point order, sources sorted.
 # columns: a, b, count, predicted, agreed, pairs
-# rows: 1916
+# rows: 1918
 a	b	count	predicted	agreed	pairs
 {10}	⿻{10}丶	3	3	3	羸:𦏞=cjkvi-variants+mj-shrink-map+wikidata 贏:𦢼=cjkvi-variants+mj-shrink-map+wikidata 𦝠:𦟀=cjkvi-variants+wikidata
 {1}	{59}	2	6	6	廌:𢊁=cjkvi-variants+wikidata 潟:澙=cjkvi-variants+wikidata+yitizi 舃:舄=cjkvi-variants+mj-shrink-map+unihan+wikidata+yitizi 𡦱:𡦵=cjkvi-variants+wikidata 𡦲:𡦳=cjkvi-variants
@@ -60,6 +62,7 @@ a	b	count	predicted	agreed	pairs
 ⿻口土	⿻口龶	2	5	4	斳:𣂷=cjkvi-variants+wikidata 斳:𣂼=cjkvi-variants+wikidata 騹:𩥕=cjkvi-variants+wikidata 𡅤:𡅸=cjkvi-variants
 ⿻土从	⿻土吅	2	4	3	䘮:喪=cjkvi-variants+mj-shrink-map+wikidata 墻:𫮶=cjkvi-variants 檣:𣞸=cjkvi-variants+wikidata 穡:穯=cjkvi-variants+wikidata
 ⿻𰍧八	⿲糸⿱二口糸	4	41	32	㡩:帟=cjkvi-variants 䜌:亦=cjkvi-variants 圞:𪢮=cjkvi-variants+opencc+unihan+wikidata+yitizi 塆:壪=cjkvi-variants+opencc+unihan+wikidata+yitizi 奕:奱=cjkvi-variants 孪:孿=cjkvi-variants+opencc+unihan+wikidata+yitizi 峦:巒=cjkvi-variants+opencc+unihan+wikidata+yitizi 弈:𢍶=cjkvi-variants 弯:彎=cjkvi-variants+hng-basic-data+mj-shrink-map+opencc+unihan+wikidata+yitizi 恋:戀=cjkvi-variants+hng-basic-data+mj-shrink-map+opencc+unihan+wikidata+yitizi 挛:攣=cjkvi-variants+opencc+unihan+wikidata+yitizi 栾:欒=cjkvi-variants+mj-shrink-map+opencc+unihan+wikidata+yitizi 洂:𤅇=cjkvi-variants 湾:灣=cjkvi-variants+mj-shrink-map+opencc+unihan+wikidata+yitizi 滦:灤=cjkvi-variants+opencc+unihan+wikidata+yitizi 癴:𰣽=unihan+wikidata 纞:𦃳=cjkvi-variants 脔:臠=cjkvi-variants+mj-shrink-map+opencc+unihan+wikidata+yitizi 蛮:蠻=cjkvi-variants+hng-basic-data+mj-shrink-map+opencc+unihan+wikidata+yitizi 跡:𨇼=cjkvi-variants 銮:鑾=cjkvi-variants+mj-shrink-map+opencc+unihan+wikidata+yitizi 鵉:鸞=cjkvi-variants+wikidata+yitizi 𡤶:𮱐=unihan+wikidata 𢺈:𫼬=cjkvi-variants+wikidata 𢺳:𪮳=cjkvi-variants+opencc+unihan+wikidata 𥽸:𬖛=cjkvi-variants+wikidata 𦮰:𧄶=cjkvi-variants 𧖦:𬠱=cjkvi-variants+unihan+wikidata 𨂺:𨈊=cjkvi-variants+opencc+unihan+wikidata+yitizi 𨄄:𨈌=cjkvi-variants+opencc+unihan+wikidata+yitizi 𪁂:𪈮=cjkvi-variants 𫣢:𱏣=wikidata
+コ	龴	1	0	0	コ:龴=mkpoli-2026-10-04
 㐁	百	2	10	4	㝛:宿=cjkvi-variants+mj-shrink-map+opencc+unihan+wikidata+yitizi 弻:弼=cjkvi-variants+mj-shrink-map+opencc+wikidata 摍:𢴀=cjkvi-variants+opencc+wikidata 縮:𦄲=cjkvi-variants+mj-shrink-map+opencc+wikidata 蓿:𰱵=wikidata
 㐁	舌	3	10	3	恬:𢙖=cjkvi-variants+mj-shrink-map+wikidata 栝:𣐸=cjkvi-variants+mj-shrink-map+wikidata 𤌜:𦧡=cjkvi-variants+wikidata
 㐄	巾	2	18	9	幃:𭘮=wikidata 洚:𣴗=cjkvi-variants+wikidata 絳:𥿸=cjkvi-variants+mj-shrink-map+wikidata 衛:𫟘=mj-shrink-map+wikidata 諱:𮘪=mj-shrink-map+wikidata 違:𨔻=cjkvi-variants+mj-shrink-map+wikidata 闈:𨵾=cjkvi-variants+wikidata 降:𨹓=cjkvi-variants+mj-shrink-map+wikidata 韋:𮧯=mj-shrink-map+wikidata
@@ -242,7 +245,7 @@ a	b	count	predicted	agreed	pairs
 万	⿱艹禺	2	28	22	虿:蠆=cjkvi-variants+opencc+unihan+wikidata+yitizi 趸:躉=cjkvi-variants+opencc+unihan+wikidata+yitizi
 万	萬	13	30	24	㒖:𮯵=unihan+wikidata 䊪:𥸯=cjkvi-variants 劢:勱=cjkvi-variants+opencc+unihan+wikidata+yitizi 励:勵=cjkvi-variants+hng-basic-data+mj-shrink-map+opencc+unihan+wikidata+yitizi 厉:厲=cjkvi-variants+mj-shrink-map+opencc+unihan+wikidata+yitizi 噧:𱒀=unihan 杤:𣜜=cjkvi-variants 栃:櫔=cjkvi-variants 澫:𬇕=cjkvi-variants+opencc+unihan+wikidata 濿:𪵱=cjkvi-variants+opencc+unihan+wikidata 爄:𤇃=cjkvi-variants+opencc+unihan+wikidata+yitizi 疠:癘=cjkvi-variants+opencc+unihan+wikidata+yitizi 砺:礪=cjkvi-variants+opencc+unihan+wikidata+yitizi 粝:糲=cjkvi-variants+mj-shrink-map+opencc+unihan+wikidata+yitizi 虿:蠆=cjkvi-variants+opencc+unihan+wikidata+yitizi 蛎:蠣=cjkvi-variants+opencc+unihan+wikidata+yitizi 趸:躉=cjkvi-variants+opencc+unihan+wikidata+yitizi 迈:邁=cjkvi-variants+opencc+unihan+wikidata+yitizi 𠠏:𫥵=cjkvi-variants+unihan+wikidata 𢶯:𰒽=wikidata 𥒿:𬒪=cjkvi-variants+wikidata 𨞺:𫟫=cjkvi-variants+opencc+unihan+wikidata 𫬱:𰇥=unihan
 三	彡	3	14	7	丯:丰=cjkvi-variants+wikidata 叁:参=cjkvi-variants+mj-shrink-map 毵:𣮟=cjkvi-variants 𢁘:𢁚=cjkvi-variants+wikidata
-上	匕	8	36	12	㫖:旨=cjkvi-variants+mj-shrink-map+wikidata 潁:𣾢=wikidata 耆:𮋝=mj-shrink-map+wikidata 脂:𮌖=mj-shrink-map+wikidata 鑙:𨮺=cjkvi-variants+unihan+wikidata 顈:𦅐=cjkvi-variants+wikidata 𠤏:𠦀=cjkvi-variants+wikidata 𠭢:𠭮=cjkvi-variants 𥬜:𥬿=wikidata 𧊙:𮔍=wikidata 𪊨:𫜎=cjkvi-variants
+上	匕	9	36	12	㫖:旨=cjkvi-variants+mj-shrink-map+wikidata 上:匕=mkpoli-2026-10-04 潁:𣾢=wikidata 耆:𮋝=mj-shrink-map+wikidata 脂:𮌖=mj-shrink-map+wikidata 鑙:𨮺=cjkvi-variants+unihan+wikidata 顈:𦅐=cjkvi-variants+wikidata 𠤏:𠦀=cjkvi-variants+wikidata 𠭢:𠭮=cjkvi-variants 𥬜:𥬿=wikidata 𧊙:𮔍=wikidata 𪊨:𫜎=cjkvi-variants
 丌	兀	4	15	6	㚦:𡚲=cjkvi-variants 䟚:𧿙=cjkvi-variants 亓:元=cjkvi-variants 𥾎:𥾕=cjkvi-variants 𧿁:𧿄=cjkvi-variants
 丌	其	4	8	5	䭶:騏=cjkvi-variants+mj-shrink-map+wikidata 期:𣍣=cjkvi-variants+mj-shrink-map+wikidata 祺:𰧮=wikidata 踑:𧿄=cjkvi-variants+wikidata
 丌	廾	4	17	8	㑭:𠉶=cjkvi-variants+wikidata 亓:开=cjkvi-variants+wikidata 畀:𢌿=cjkvi-variants+mj-shrink-map+wikidata 畁:𢍁=cjkvi-variants+wikidata 𡌸:𡌹=cjkvi-variants 𢍚:𤱿=cjkvi-variants+wikidata 𢮅:𢮧=cjkvi-variants 𦂖:𦂢=wikidata
@@ -832,6 +835,7 @@ a	b	count	predicted	agreed	pairs
 失	⿱壬儿	4	4	4	㲳:𣱎=cjkvi-variants+wikidata 帙:𢂮=cjkvi-variants+mj-shrink-map+wikidata 詄:𧧲=cjkvi-variants+wikidata 镻:𨱷=cjkvi-variants+wikidata
 失	⿳㇒士儿	4	4	4	㲳:𣱎=cjkvi-variants+wikidata 帙:𢂮=cjkvi-variants+mj-shrink-map+wikidata 詄:𧧲=cjkvi-variants+wikidata 镻:𨱷=cjkvi-variants+wikidata
 失	⿳一士儿	4	4	4	㲳:𣱎=cjkvi-variants+wikidata 帙:𢂮=cjkvi-variants+mj-shrink-map+wikidata 詄:𧧲=cjkvi-variants+wikidata 镻:𨱷=cjkvi-variants+wikidata
+失	矢	4	25	3	失:矢=mkpoli-2026-10-04 迭:𨒔=wikidata 鉃:鉄=cjkvi-variants+mj-shrink-map 雉:𨾤=cjkvi-variants+wikidata
 夸	𡗢	8	11	9	䠸:𨉀=cjkvi-variants+wikidata 刳:𰄨=wikidata 胯:𰮞=wikidata 胯:𰮟=wikidata 誇:𧧳=cjkvi-variants+mj-shrink-map+wikidata 跨:𨀗=cjkvi-variants+mj-shrink-map+wikidata 骻:𱅯=wikidata 鮬:𩶮=cjkvi-variants+mj-shrink-map+wikidata
 夸	𡘆	12	17	14	侉:𪝄=cjkvi-variants 刳:𪟉=cjkvi-variants+wikidata 匏:𠣻=cjkvi-variants+wikidata 姱:𡝻=cjkvi-variants 瓠:𤬄=cjkvi-variants+wikidata 胯:𦜮=cjkvi-variants+wikidata 袴:𫋾=cjkvi-variants+mj-shrink-map 誇:𧩊=cjkvi-variants+mj-shrink-map+wikidata 跨:𨂍=cjkvi-variants+wikidata 郀:𨜆=cjkvi-variants+wikidata 銙:𨨆=cjkvi-variants+wikidata 陓:𨺈=cjkvi-variants+wikidata 𦾀:𫉌=cjkvi-variants
 夸	𭑃	3	4	4	洿:𣳹=wikidata 跨:𰸉=wikidata 陓:𱀍=wikidata

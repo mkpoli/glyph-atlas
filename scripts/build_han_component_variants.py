@@ -19,6 +19,10 @@ pair counted only where the substitution would predict it without having learned
 against, and how many kept substitutions add a component to the other side (政 and 正) rather than
 swap one; the prediction pass runs over every character on several processes.
 
+A substitution a source states outright, a row of `data/vocab/han-component-variants-stated.tsv`, is
+kept whatever the threshold and the agreement say; the statement is a pair of its own (`失:矢` cited to
+that source) beside any pairs the graph attests it with, and it is measured like the rest.
+
 Each row records the substitution with every pair that attests it and the sources that state each
 pair; a substitution is undirected. The header cites the sources the rows come through.
 
@@ -46,7 +50,8 @@ TARGET = VOCAB / "han-component-variants.tsv"
 #: table it names. kanji-variants.tsv is cited for the sources the rows' pairs name (`None` here);
 #: han-component-forms.tsv only for EquivalentUnifiedIdeograph (`han_components.unified`).
 FEEDS = (("han-ids.tsv", frozenset({"babelstone-ids"})), ("kanji-variants.tsv", None),
-         ("han-component-forms.tsv", frozenset({"unicode-ucd"})))
+         ("han-component-variants-stated.tsv", None), ("han-component-forms.tsv", frozenset({"unicode-ucd"})))
+STATED = VOCAB / "han-component-variants-stated.tsv"
 #: Where `han_component_variants.STROKES` comes from.
 STROKES = (
     "# strokes: never a component: the CJK Strokes block and the ideographs whose Unihan kTotalStrokes "
@@ -94,6 +99,10 @@ def header(table: list[tuple]) -> list[str]:
             "pair is counted only when the other attesting pairs pass the threshold without it."
         ),
         (
+            "# stated: a substitution data/vocab/han-component-variants-stated.tsv states is kept whatever "
+            "the threshold and agreement; the statement is its own pair `a:b=<source>`."
+        ),
+        (
             "# substitution: undirected, a before b by length then code point; pairs are "
             "`A:B=source+source`, a pair and b in code point order, sources sorted."
         ),
@@ -110,6 +119,12 @@ def attested_pairs() -> dict[tuple[str, str], set[str]]:
             pair = tuple(sorted((edge["a"], edge["b"]), key=ord))
             pairs.setdefault(pair, set()).add(edge["source"])
     return pairs
+
+
+def stated_rows() -> list[tuple[str, str, str]]:
+    """The substitutions a source states outright: (a, b, source id)."""
+    lines = [line for line in STATED.read_text(encoding="utf-8").splitlines() if line and not line.startswith("#")]
+    return [tuple(line.split("\t")[:3]) for line in lines[1:]]
 
 
 def describe() -> v.Descriptions:
@@ -149,8 +164,16 @@ def rows() -> tuple[list[tuple], dict[tuple[str, str], v.Attested], list[v.Attes
     desc = describe()
     written = attested_pairs()
     found = v.attest(desc, ((a, b, sources) for (a, b), sources in written.items()))
+    named = set()
+    for a, b, source in stated_rows():
+        found[v.ordered(a, b)] = v.stated(found, a, b, source)
+        named.add(v.ordered(a, b))
     candidates = v.kept(found)
-    kept = v.agreeing(candidates, predicted(desc, candidates), set(written))
+    measured = [*candidates, *(found[key] for key in sorted(named) if found[key] not in candidates)]
+    predictions = predicted(desc, measured)
+    kept = v.agreeing(candidates, predictions, set(written))
+    kept += [v.measured(found[key], predictions, set(written)) for key in sorted(named)
+             if key not in {(item.a, item.b) for item in kept}]
     out = []
     for item in sorted(kept, key=lambda item: (item.a, item.b)):
         pairs = " ".join(

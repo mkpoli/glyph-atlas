@@ -610,22 +610,29 @@ try {
   assert.ok(countPlan.some(d => /SEARCH unit_counts USING PRIMARY KEY \(origin=\? AND character=\?\)/.test(d)), countPlan.join('; '))
   assert.ok(!countPlan.some(d => /^SCAN/.test(d)), countPlan.join('; '))
   // The derived tier stands apart: a character no source relates to 仮 and a form no character has,
-  // each with the substitution it came by and the pairs behind it, cited as derived-ids beside the
-  // pairs' own sources, and never among the variants a gallery widens to.
+  // each with the routes it came by and the pairs behind each substitution (a source's own statement
+  // of two components among them), cited as derived-ids beside the pairs' sources, and never among the
+  // variants a gallery widens to.
   await db.batch([
     db.prepare(`INSERT INTO component_variants VALUES('反','𠬝',3,'[{"a":"扳","b":"𢪃","sources":["wikidata"]},{"a":"返","b":"𮞉","sources":["cjkvi-variants","wikidata"]}]')`),
-    db.prepare(`INSERT INTO character_derived VALUES('仮',1,'⿰亻𠬝','[["反","𠬝"]]')`),
-    db.prepare(`INSERT INTO character_derived VALUES('仮',0,'𠈌','[["反","𠬝"]]')`),
-    db.prepare(`INSERT INTO character_derived VALUES('𠈌',0,'仮','[["反","𠬝"]]')`),
-    db.prepare(`INSERT INTO character_derived VALUES('伋',0,'⿰亻𠬝','[["反","𠬝"]]')`),
-    db.prepare(`INSERT OR REPLACE INTO metadata VALUES('variant_sources','{"wikidata":"Wikidata, P5475; CC0-1.0","opencc":"OpenCC; Apache-2.0","cjkvi-variants":"CJKVI; PD","unihan":"Unihan; Unicode-3.0","derived-ids":"Predicted component variants (derived, not attested)"}')`),
+    db.prepare(`INSERT INTO component_variants VALUES('亻','彳',1,'[{"a":"亻","b":"彳","sources":["mkpoli-2026-10-04"]}]')`),
+    db.prepare(`INSERT INTO character_derived VALUES('仮',2,'⿰彳𠬝','[[["亻","彳"],["反","𠬝"]]]')`),
+    db.prepare(`INSERT INTO character_derived VALUES('仮',1,'⿰亻𠬝','[[["反","𠬝"]]]')`),
+    db.prepare(`INSERT INTO character_derived VALUES('仮',0,'𠈌','[[["反","𠬝"]]]')`),
+    db.prepare(`INSERT INTO character_derived VALUES('𠈌',0,'仮','[[["𠬝","反"]]]')`),
+    db.prepare(`INSERT INTO character_derived VALUES('伋',0,'⿰亻𠬝','[[["反","𠬝"]]]')`),
+    db.prepare(`INSERT OR REPLACE INTO metadata VALUES('variant_sources','{"wikidata":"Wikidata, P5475; CC0-1.0","opencc":"OpenCC; Apache-2.0","cjkvi-variants":"CJKVI; PD","unihan":"Unihan; Unicode-3.0","derived-ids":"Predicted component variants (derived, not attested)","mkpoli-2026-10-04":"mkpoli, instruction of 2026-10-04"}')`),
     db.prepare("INSERT OR REPLACE INTO metadata VALUES('units_refreshed_at','\"variants-test-derived\"')"),
   ])
   const derivedCard = await call('/layers/characters/U%2B4EEE')
   assert.deepEqual(derivedCard.variants.derived.map(v => [v.char, v.code_point, v.encoded]),
-    [['𠈌', 'U+2020C', true], ['⿰亻𠬝', null, false]], 'in rank order; another character\'s rows are its own')
-  assert.deepEqual(derivedCard.variants.derived[0].substitutions.map(s => [s.was, s.became, s.count, s.pairs.length]), [['反', '𠬝', 3, 2]])
+    [['𠈌', 'U+2020C', true], ['⿰亻𠬝', null, false], ['⿰彳𠬝', null, false]], 'in rank order; another character\'s rows are its own')
+  assert.deepEqual(derivedCard.variants.derived[0].routes.map(route => route.map(s => [s.was, s.became, s.count, s.pairs.length])), [[['反', '𠬝', 3, 2]]])
   assert.deepEqual(derivedCard.variants.derived[0].sources, ['cjkvi-variants', 'wikidata'])
+  assert.deepEqual(derivedCard.variants.derived[2].routes[0].map(s => [s.was, s.became]), [['亻', '彳'], ['反', '𠬝']])
+  assert.deepEqual(derivedCard.variants.derived[2].sources, ['cjkvi-variants', 'mkpoli-2026-10-04', 'wikidata'])
+  assert.ok(!('tier' in derivedCard.variants.derived[2]), 'a derived form carries no tier')
+  assert.equal(derivedCard.variants.sources['mkpoli-2026-10-04'], 'mkpoli, instruction of 2026-10-04')
   assert.equal(derivedCard.variants.sources['derived-ids'], 'Predicted component variants (derived, not attested)')
   assert.ok(!derivedCard.variants.items.some(v => v.char === '𠈌') && !derivedCard.variants.related.some(v => v.char === '𠈌'), 'a derived form is in no attested tier')
   const derivedPlan = await plan({ sql: worker.derivedEdgesQuery(), values: [] }, ['仮'])

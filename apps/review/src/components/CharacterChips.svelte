@@ -16,7 +16,7 @@
   // The Forms family this character is clustered in, by its grapheme or its own code point; none, no link.
   const formsFamily = $derived([card?.grapheme?.code_point, card?.code_point].find(code => code && page.data.forms?.includes(code)))
   // The 異体字 graph: the variants a gallery widens to, characters related otherwise, and the
-  // derived tier — forms one attested component substitution may write this character as, listed
+  // derived tier — forms up to two component substitutions may write this character as, listed
   // after the attested variants with a mark, no gallery widening to them.
   // A card cached before the derived tier existed has no `derived`; it reads as none.
   const variants = $derived({ items: [], related: [], sources: {}, ...card?.variants, derived: card?.variants?.derived ?? [] })
@@ -39,10 +39,10 @@
     return [...by].map(([relation, sources]) => ({ relation, name: relationName(relation), sources: [...sources] }))
   }
   const relationTitle = v => `${v.char} ${v.code_point}\n` + relationsOf(v).map(r => `${r.name}: ${r.sources.join(', ')}`).join('\n')
-  // A derived chip's evidence, after the word that marks it: each substitution it came by
-  // (undirected, as the table spells it), how many contexts attest it, and those pairs with their sources.
-  const derivedTitle = v => `${v.char} · ${t('chips.derived')}\n` + v.substitutions.map(s =>
-    `${s.was} ↔ ${s.became} · ${s.count}\n` + s.pairs.map(p => `${p.a} ${p.b} ${p.sources.join(', ')}`).join('\n')).join('\n\n')
+  // A derived chip's evidence, after the word that marks it: each route it came by, each substitution
+  // as made with its count of contexts and the pairs behind it with their sources.
+  const derivedTitle = v => `${v.char} · ${t('chips.derived')}\n` + (v.routes ?? []).map(route => route.map(s =>
+    `${s.was} → ${s.became} · ${s.count}\n` + s.pairs.map(p => `${p.a} ${p.b} ${p.sources.join(', ')}`).join('\n')).join('\n+ ')).join('\n\n')
   const crops = v => (v.count ?? 0) + (v.corpus_count ?? 0)
   // The words this character is cited as writing (decision 0004), each with the other spellings cited
   // for it: characters that write the same word, kept out of the variant tiers and the widening. A card

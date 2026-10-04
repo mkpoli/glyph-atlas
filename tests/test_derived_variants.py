@@ -1,4 +1,4 @@
-"""The `derived-ids` tier: forms one attested component substitution makes of a character."""
+"""The `derived-ids` tier: forms up to two component substitutions make of a character."""
 
 import json
 
@@ -10,7 +10,7 @@ def test_a_form_no_character_has_is_derived_as_its_sequence_with_its_evidence():
     derived = {row["char"]: row for row in refs.derived_variants("寰")}
     row = derived["⿱宂睘"]
     assert (row["encoded"], row["code_point"]) == (False, None)
-    sub = row["substitutions"][0]
+    sub, = row["routes"][0]
     assert (sub["was"], sub["became"]) == ("宀", "宂")
     assert ("㝓", "䆟") in {(p["a"], p["b"]) for p in sub["pairs"]}
     assert row["sources"]
@@ -40,5 +40,28 @@ def test_the_exported_rows_are_the_characters_own_list_in_order():
         listed = refs.derived_variants(char)
         rows = refs.derived_rows_of(char)
         assert [(rank, form) for _, rank, form, _ in rows] == list(enumerate(e["char"] for e in listed))
-        for (_, _, _, subs), entry in zip(rows, listed, strict=True):
-            assert json.loads(subs) == [[s["was"], s["became"]] for s in entry["substitutions"]]
+        for (_, _, _, routes), entry in zip(rows, listed, strict=True):
+            assert json.loads(routes) == [[[s["was"], s["became"]] for s in route] for route in entry["routes"]]
+
+
+def test_the_owners_form_of_yi_is_derived_by_two_substitutions():
+    # 疑 is ⿰𠤕⿱龴疋 and 𠤕 is ⿱匕矢: 矢→失 inside 𠤕 and 龴→コ beside it.
+    forms = {form.form: form for form in refs.derived_forms("疑", limit=None)}
+    form = forms["⿰⿱匕失⿱コ疋"]
+    assert (form.ids, form.encoded, form.substitutions) == ("⿰⿱匕失⿱コ疋", False, (("矢", "失"), ("龴", "コ")))
+    row = next(row for row in refs.derived_variants("疑", limit=None) if row["char"] == "⿰⿱匕失⿱コ疋")
+    assert "mkpoli-2026-10-04" in row["sources"] and "tier" not in row
+
+
+def test_a_stated_substitution_is_a_row_like_any_other_with_its_statement_as_a_pair():
+    row = refs.component_variants()[("失", "矢")]
+    assert {"a": "失", "b": "矢", "sources": ["mkpoli-2026-10-04"]} in row["pairs"]
+    assert ("迭", "𨒔") in {(p["a"], p["b"]) for p in row["pairs"]}
+    assert refs.component_variants()[("コ", "龴")]["pairs"] == [{"a": "コ", "b": "龴", "sources": ["mkpoli-2026-10-04"]}]
+    assert refs.component_variant_sources()["mkpoli-2026-10-04"].startswith("mkpoli (Glyph Atlas maintainer), instruction of 2026-10-04")
+
+
+def test_a_whole_character_swap_is_no_sequence_of_its_own():
+    # 䍃 is itself a component the table swaps; its rows spelled out are not forms of it.
+    assert not [row for row in refs.derived_variants("䍃", limit=None) if not row["encoded"]
+                and any(sub["was"] == "䍃" for route in row["routes"] for sub in route)]
