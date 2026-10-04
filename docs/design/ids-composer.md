@@ -16,7 +16,7 @@ compose, each operand's own glyph squeezed into its share, scores 0.331 on the s
 | Drawn at all | same | 1,935 of 1,981 | all |
 | Stroke width against the real glyph, median, across x and across y | same | 0.996, 0.999 | within 0.97–1.03 |
 | Facing gap between neighbouring parts within the 5–95% range of drawn characters | same | not yet measured | 99% |
-| Drawn at all | HDIC headwords written as sequences (KRM 3,088, TSJ 358, KTB 9) | not yet measured | all |
+| Drawn at all | distinct HDIC headword sequences: KRM 3,029, TSJ 356, KTB 9 | 2,997, 355, 9 (all failures ⿻) | all |
 | Preferred over zi.tools by a reviewer, side by side | 96 KRM headwords | not yet judged | 80% |
 
 ## Method
