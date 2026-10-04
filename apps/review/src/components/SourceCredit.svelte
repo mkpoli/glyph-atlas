@@ -11,14 +11,16 @@
     ? [item.source?.title, holderName(item.attribution || item.source?.holder), licenceName(item.licence)]
     : [item.source, holderName(item.attribution || item.holder), licenceName(item.licence)]).filter(Boolean))
   const credit = $derived(corpus && item.text_attribution ? t('corpus.labelCredit', { credit: item.text_attribution }) : null)
-  const link = $derived(corpus
+  const record = $derived(corpus
     ? (/^https?:\/\//i.test(item.record_url ?? '') ? { href: item.record_url, label: t('corpus.sourceRecord') } : null)
     : (item.rights_url ? { href: item.rights_url, label: t('character.sourceRights') } : null))
+  const honkoku = $derived(/^https:\/\/app\.honkoku\.org\//.test(item.honkoku_url ?? '') ? { href: item.honkoku_url, label: t('character.sourceHonkoku') } : null)
+  const links = $derived([record, honkoku].filter(Boolean))
 </script>
 
-{#if shown.length || item.dating || credit || link}
+{#if shown.length || item.dating || credit || links.length}
   <!-- Each part stays whole and the line breaks only after a separator; a part longer than the line wraps inside itself. -->
-  <p class="source-credit">{#each shown as part, i}{#if i}{SEPARATOR}{/if}<span class="part">{part}</span>{/each}{#if item.dating}{#if shown.length}{SEPARATOR}{/if}<DateMark {item} />{/if}{#if credit}{#if shown.length || item.dating}{SEPARATOR}{/if}<span class="part">{credit}</span>{/if}{#if link}{#if shown.length || item.dating || credit}{SEPARATOR}{/if}<a class="part" href={link.href} target="_blank" rel="noreferrer">{link.label}</a>{/if}</p>
+  <p class="source-credit">{#each shown as part, i}{#if i}{SEPARATOR}{/if}<span class="part">{part}</span>{/each}{#if item.dating}{#if shown.length}{SEPARATOR}{/if}<DateMark {item} />{/if}{#if credit}{#if shown.length || item.dating}{SEPARATOR}{/if}<span class="part">{credit}</span>{/if}{#each links as link, i}{#if i || shown.length || item.dating || credit}{SEPARATOR}{/if}<a class="part" href={link.href} target="_blank" rel="noreferrer">{link.label}</a>{/each}</p>
 {/if}
 
 <style>
