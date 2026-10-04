@@ -408,18 +408,19 @@ def _derive(char: str) -> list[dict[str, Any]]:
     parts = {han_component_variants.text(part) for tree in _descriptions().trees.get(char, ())
              if not isinstance(tree, str) for part in tree[1]}
     for form in han_component_variants.derive(_descriptions(), _substitution_table(), [char]):
+        (was, became, _), = form.route
         if form.encoded:
             if tuple(sorted((char, form.other), key=ord)) in _stated_pairs():
                 continue
-            if {form.was, form.became} == {char, form.other}:
+            if {was, became} == {char, form.other}:
                 continue
             # Two characters of the CJK Unified Ideographs block every source covers, none of which
             # relates them, are two characters: 也↔它 (蛇 and 虵) would make 馳 a form of 駝.
             if han_components.tier(char) == han_components.tier(form.other) == 0:
                 continue
-        elif form.was not in parts:
+        elif was not in parts:
             continue
-        was, became = _substitution(form.was, form.became)
+        was, became = _substitution(was, became)
         evidence = component_variants().get((was, became))
         if evidence is None:
             continue
