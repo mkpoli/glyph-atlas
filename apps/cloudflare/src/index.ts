@@ -15,6 +15,7 @@ import { READ_BUDGET, RETRY_AFTER, described, retried, transient } from './busy'
 import { actOnClaim, claimsOf, ledgerPage, writeClaim, type LedgerTools } from './ledger';
 import { honkokuPage } from './honkoku';
 import { YEAR_KEY, dateStats, datingJoin, datingOf, decadeColumn, documentDates, documentOf, withDating, yearCondition, yearOptions, yearOrder, type YearOptions } from './dating';
+import { FavouriteError, favouriteCrops, favouriteIds, setFavourite } from './favourites';
 export { leastTypicalQuery } from './forms';
 export { componentMatchQuery } from './components';
 export { dateClaimsQuery, dateStatsQuery, datingQuery, tallyDates } from './dating';
@@ -1987,6 +1988,10 @@ const routes = {
           if(origin&&origin!==url.origin)throw new Problem(403,'Use the account page on this site.');
           const {status,body:out}=await setAvatar(env,me,q.get('source')??'',request);return json(out,status);
         }
+        if(path==='/api/favourites'){
+          try{return json(await setFavourite(env,me.id,await body(request)))}
+          catch(error){if(error instanceof FavouriteError)throw new Problem(error.status,error.message);throw error}
+        }
         if(path==='/api/account/claim'){const {status,body:out}=await claim(env,me,String((await body(request)).reviewer??''));return json(out,status)}
         if(path==='/atlas/corpus/reviews')return json(await submit(env,request,me.id,'@corpus'));
         if(path==='/atlas/rounds')return json(await submit(env,request,me.id));
@@ -2025,6 +2030,12 @@ const routes = {
       const picture=path.match(AVATAR_PATH);
       if(picture)return await avatar(env,picture[1],picture[2]);
       if(path==='/api/account/connections'){const me=await viewer(env,request,true);if(!me)throw new Problem(401,'Sign in to see your account.');return json(await connections(env,me.id))}
+      if(path==='/api/favourites'||path==='/api/favourites/crops'){
+        // A browser that has never signed in has starred nothing, and reading starts no session.
+        const me=await viewer(env,request);
+        if(path==='/api/favourites')return json(me?await favouriteIds(env,me.id):{ids:[]},200,{'cache-control':'private, no-store'});
+        return json(me?await favouriteCrops(env,me.id,integer(q,'offset',0),integer(q,'limit',60,60),itemsFor,replacement):{items:[],total:0,offset:0,next:null},200,{'cache-control':'private, no-store'});
+      }
       if(path==='/api/account')return json({user:await viewer(env,request,true),providers:providers(env)});
       if(path==='/health')return json({ok:true,published_at:await meta(env,'published_at')});
       const image=path.match(/^\/atlas\/media\/([a-f0-9]{64})\.webp$/);

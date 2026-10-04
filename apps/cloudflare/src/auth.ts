@@ -123,6 +123,11 @@ function build(env: Env, origin: string) {
         // Signing in with an account from an anonymous session brings that session's work along.
         onLinkAccount: async ({ anonymousUser, newUser }) => {
           await env.DB.prepare('UPDATE actors SET user_id=? WHERE user_id=?').bind(newUser.user.id, anonymousUser.user.id).run();
+          // Its stars too; a crop the account had starred already keeps the account's own.
+          await env.DB.batch([
+            env.DB.prepare('INSERT OR IGNORE INTO favourites(user_id,unit,at) SELECT ?,unit,at FROM favourites WHERE user_id=?').bind(newUser.user.id, anonymousUser.user.id),
+            env.DB.prepare('DELETE FROM favourites WHERE user_id=?').bind(anonymousUser.user.id),
+          ]);
           // An account made by this sign-in keeps the name the anonymous one wrote under. A name that is
           // an old reviewer id goes with the id, and the anonymous user, left with neither, is renamed.
           if (Date.now() - new Date(newUser.user.createdAt).getTime() < 60_000 && GENERATED.test(newUser.user.name))
