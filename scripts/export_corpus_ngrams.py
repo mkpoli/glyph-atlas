@@ -3,7 +3,8 @@
 A corpus glyph's runs are found the way a crop's are (`glyph_atlas.ngrams.adjacent_ngrams`): by its
 line and position on that line, in the unit corpora the corpus publication exports
 (`export_cloudflare_corpus.unit_corpora`). A corpus whose units carry no line, such as a set of
-pre-cut crops, has none. An aligned unit's place on its line is read from its box (`in_reading_order`).
+pre-cut crops, has none; a CODH unit's line and place are read from its id (`codh_all.reading_place`).
+An aligned unit's place on its line is read from its box (`in_reading_order`).
 The glyphs of withdrawn documents are left out, and a run is recorded only while all of its glyphs
 are on the site, so a glyph the publication left out breaks the runs it would be part of. Each corpus's runs replace those recorded for its glyphs before, so the parts
 may be applied any number of times, in order, once the corpus glyphs are published:
@@ -27,6 +28,7 @@ from prepare_publication import write_parts
 from refresh_published_units import VERSION_BUMP
 
 from glyph_atlas import withdrawn
+from glyph_atlas.importers.codh_all import reading_place
 from glyph_atlas.ngrams import (
     Glyph,
     Run,
@@ -36,13 +38,21 @@ from glyph_atlas.ngrams import (
     in_reading_order,
 )
 
-COLUMNS = ("id", "document_id", "line_id", "seq", "box", "kind", "granularity", "active", "method")
+COLUMNS = ("id", "document_id", "page_id", "line_id", "seq", "box", "kind", "granularity", "active", "method")
 #: Units whose line numbers come from the aligner, which numbered a line's boxes in a scrambled order
 #: until 2026-09-24 (`glyph_atlas.box_relabel`): their places are read from their boxes instead.
 ALIGNED = "detect-align"
 #: Ids whose runs one statement removes: two runs at most start at each, so a statement deletes at
 #: most twice this many rows, well inside what D1 changes in one go.
 SLICE = 5000
+
+
+def placed(row: dict) -> dict:
+    """A unit row with its line and position: its own, or those its dataset's ids carry
+    (`codh_all.reading_place`)."""
+    if row.get("line_id") is None and (place := reading_place(row["id"], row.get("page_id"))):
+        row["line_id"], row["seq"] = place
+    return row
 
 
 def corpus_runs(corpus) -> tuple[list[Run], list[str]]:
@@ -55,9 +65,9 @@ def corpus_runs(corpus) -> tuple[list[Run], list[str]]:
         return [], []
     vertical = line_orientation(corpus)
     gone = withdrawn.documents()
-    rows = [row for row in dataset.to_table(columns=[c for c in COLUMNS if c in dataset.schema.names],
-                                            filter=ds.field("line_id").is_valid()).to_pylist()
+    rows = [placed(row) for row in dataset.to_table(columns=[c for c in COLUMNS if c in dataset.schema.names]).to_pylist()
             if row.get("document_id") not in gone]
+    rows = [row for row in rows if row.get("line_id")]
     horizontal = {line for line, down in vertical.items() if down is False}
     glyphs = [Glyph.of(row) for row in rows if row.get("method") != ALIGNED]
     glyphs += in_reading_order((Glyph.of(row) for row in rows if row.get("method") == ALIGNED), horizontal)

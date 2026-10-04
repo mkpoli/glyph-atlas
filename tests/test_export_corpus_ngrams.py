@@ -143,3 +143,23 @@ def test_the_summary_counts_each_corpus_by_length_and_direction():
         "pairs": 4, "trigrams": 2, "horizontal_pairs": 1, "horizontal_trigrams": 0}
     assert json.dumps(export.summary(Counter()))
 
+
+
+def test_a_codh_unit_takes_its_line_and_place_from_its_id():
+    from glyph_atlas.importers.codh_all import reading_place
+
+    page = "codh:100241706:100241706_00004_2"
+    assert reading_place(f"{page}:B0001:C0012", page) == (f"{page}:B0001", 12)
+    assert reading_place(f"{page}:report:3", page) is None
+    assert reading_place("hi:34000001", None) is None
+
+
+def test_codh_units_run_in_the_annotators_order(tmp_path):
+    page = "codh:b:b_00001_1"
+    # C1, C2 down one column and C3, C4 down the next, far from C2: the step between them breaks the run.
+    boxes = {1: (500, 0), 2: (500, 40), 3: (400, 0), 4: (400, 40)}
+    units = [Unit(id=f"{page}:B0001:C{n:04}", document_id="codh:b", page_id=page, box=Box(x=x, y=y + 1000 * (n == 3 or n == 4), w=36, h=36))
+             for n, (x, y) in boxes.items()]
+    runs, placed = export.corpus_runs(corpus(tmp_path, units))
+    assert sorted(run.units for run in runs) == [(f"{page}:B0001:C0001", f"{page}:B0001:C0002"), (f"{page}:B0001:C0003", f"{page}:B0001:C0004")]
+    assert len(placed) == 4
