@@ -1036,7 +1036,7 @@ def _write_units(
 
     Three rules fix what survives. A unit of another run stays, so two configurations can be compared
     on one directory. A unit a person has reviewed or adjudicated stays whatever run wrote it,
-    because an alignment is not allowed to throw away editorial work. And with `replace`, this run's
+    because an alignment is not allowed to throw away reviewers' work. And with `replace`, this run's
     own units are dropped only on the pages it is about to write, so a run over one group of pages
     adds to the pages outside the group rather than clearing the directory — which is what a
     held-out run over 452 pages did to the calibration pages aligned before it.

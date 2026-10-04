@@ -1410,7 +1410,7 @@ class HumanState:
     or a group. Those have no row for this pass to overlay — a correction is a layer over the source
     text and the store's own projection leaves it in the journal — so they are carried as they stand
     into `reviews.jsonl` while the overlay stays unit-and-line only. A derived dataset that dropped
-    them would be a dataset whose editorial decisions are silently narrower than the source's.
+    them would be a dataset whose review decisions are silently narrower than the source's.
     """
 
     units: dict[str, Unit] = field(default_factory=dict)
@@ -1574,7 +1574,7 @@ def apply_plan(plan: RepairPlan, out: Path | str, *, source: Path | str | None =
             shutil.copy2(path, target)
         counts[f"copied-{name}"] = 1
     # The lines a person changed are written as the store has them, box included, so the derived
-    # dataset states the same editorial facts as the source it came from.
+    # dataset states the same review decisions as the source it came from.
     source_lines = dataset.tables.get("lines")
     lines_path = out / Path(source_lines).name if source_lines is not None else out / "lines.parquet"
     if human.lines and lines_path.exists():
@@ -1722,7 +1722,7 @@ def decode_event(row: dict[str, Any]) -> dict[str, Any]:
 def _without_repair_note(unit: Unit) -> Unit:
     """A unit as the store has it, with anything this pass wrote about it removed.
 
-    The store is the editorial state; this pass is a machine proposal. A human row is written as it
+    The store is the reviewers' state; this pass is a machine proposal. A human row is written as it
     stands — its box is the ink their answer was read against — and the repair's note is dropped,
     because a note about a box the row no longer has is worse than no note.
     """

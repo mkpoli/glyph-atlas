@@ -17,7 +17,7 @@ as written, and bibliographic metadata usable for filtering by period, genre and
 
 Implementation is in progress. The [character workspace](apps/review/README.md) provides a shuffled
 glyph collection, category-based visual review rounds and a character inspector. Saved decisions
-retain their reviewed crop and source identity. Machine output still requires editorial review.
+retain their reviewed crop and source identity. Machine output still requires review.
 
 `docs/plan.md` has the survey of existing datasets, the goals and the pipeline;
 `docs/schema.md` the data model; `docs/licensing.md` how upstream licences compose;

@@ -91,7 +91,7 @@ Retries use the same submission ID. **Undo last round** restores characters and 
 available after reloading and refuses to overwrite intervening edits.
 
 Imported model rejections remain pending. Human mismatches and uncertainty appear in **Flagged**.
-Counts describe available cached crops and editorial decisions; they are not an accuracy estimate.
+Counts describe available cached crops and review decisions; they are not an accuracy estimate.
 
 ## Drawing boxes
 

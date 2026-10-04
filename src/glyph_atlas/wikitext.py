@@ -18,7 +18,7 @@ split annotation is a note and the characters after it are the annotation again.
 page text: each line break, `<br>` and `{{換行頂格}}` (`DG`) starts a new column, and a template that
 spans a line break keeps its role in the next column.
 
-Editorial punctuation, which the transcribers add and the prints do not carry, is dropped, as are
+Punctuation the transcribers add, which the prints do not carry, is dropped, as are
 `{{Interpretive apparatus}}` (`ia`), `{{nop}}`, `{{gap}}`, anchors, embedded files, comments and
 HTML tags (their content is kept). `[[target|label]]` keeps its label, and `-{…}-` its text or, for
 a conversion rule, its traditional (`zh-hant`, `zh-tw`, `zh-hk`) form.

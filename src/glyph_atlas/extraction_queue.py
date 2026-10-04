@@ -582,7 +582,7 @@ def out_of_vocabulary(unit, classes) -> bool:
 
     Alignment scores a token through its candidate code points, so a katakana unit read through its
     hiragana class is in vocabulary. Marks, punctuation and symbols (not category Lo) never are
-    out of vocabulary here: many are editorial notation with no ink of their own.
+    out of vocabulary here: many are transcribers' notation with no ink of their own.
     """
     return letter_out_of_vocabulary(unit.text_source or "", (c.unicode for c in unit.candidates), classes)
 

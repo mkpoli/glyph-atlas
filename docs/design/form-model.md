@@ -60,7 +60,7 @@ Every claim is one row of `assertions`:
 | Field | Meaning |
 | --- | --- |
 | `subject`, `predicate`, `object` or `value` | what is claimed: an entity id, or a typed value |
-| `scope` | the grouping or editorial scope the claim holds in; empty for the default |
+| `scope` | the grouping scope the claim holds in; empty for the default |
 | `alternative_set` | shared by the members of one "F or G" claim |
 | `tier` | `attested` (a source states it), `observed` (a person looked), `derived` (an algorithm) |
 | `asserted_by`, `asserted_at` | the journal actor (account or reviewer id) or source, and when |

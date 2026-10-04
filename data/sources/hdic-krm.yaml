@@ -46,5 +46,5 @@ dating:
 notes:
   - The NDL manifests of all ten volumes state Access Restrictions PDM (read 2026-10-01). Each frame shows one opening of the facsimile, a photographic plate of the manuscript holding two 天理 pages.
   - HDIC dates the Kanchi-in manuscript, reorganised edition, to the latter half of the 12th century; the header does not say whether the date is of the reorganisation or of this copy, so the dating kind stays unknown.
-  - HDIC transcribes characters in collated Kangxi-dictionary forms and gives the written form in original_entry only where it differs. Definitions are normalised and carry editorial tone marks, so only headwords are placed on the page.
+  - HDIC transcribes characters in collated Kangxi-dictionary forms and gives the written form in original_entry only where it differs. Definitions are normalised and carry tone marks HDIC added, so only headwords are placed on the page.
   - krm_ndl.tsv predates the March 2025 specification change and lists some Tenri pages twice; a page is joined to its frame through volume_name and the Tenri page number.

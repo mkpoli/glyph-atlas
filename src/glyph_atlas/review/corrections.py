@@ -1,4 +1,4 @@
-"""Editorial corrections to a page's transcription, as a layer over the source text.
+"""Corrections to a page's transcription, as a layer over the source text.
 
 The atlas imports a transcription and does not own it. A reviewer working here may see that a
 character on the scan is not what the transcription says, and the honest place to record that is not
@@ -9,7 +9,7 @@ This module is that layer.
 keeping the two apart means the imported text stays byte-identical to what the platform published, a
 correction can be shown as a diff, and a reimport cannot collide with an edit. It is also exactly how
 the publishing project works: its `data/editorial/corrections/<work>/<witness>/p<page>.json` records
-are decisions applied at render time, and its README says an editorial decision is not a claim about
+are decisions applied at render time, and its README says a decision is not a claim about
 who made it.
 
 **A correction is validated the way the source validates it.** It must name a one-based line and an
@@ -56,7 +56,7 @@ class CorrectionError(RuntimeError):
 
 @dataclass
 class Correction:
-    """One editorial decision about a page's transcription.
+    """One reviewer's decision about a page's transcription.
 
     `line` and `original` locate the decision the way the source does, and `corrected` is what the
     text should say there. `note` is required by the source's schema and by common sense: a correction

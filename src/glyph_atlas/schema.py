@@ -470,7 +470,7 @@ class Group(BaseModel):
 
 
 class Review(BaseModel):
-    """One editorial decision, appended to the review log."""
+    """One reviewer's decision, appended to the review log."""
 
     id: str
     target_type: Literal["unit", "line", "page", "document", "group"] = "unit"

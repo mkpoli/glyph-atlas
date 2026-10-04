@@ -41,7 +41,7 @@ _PRINTED = re.compile(r"\{\{(?:\*|더더크게|더크게|크게)\|([^{}]*)\}\}")
 _MARKUP = (re.compile(r"\{\{[^{}]*\}\}"), re.compile(r"<[^>]+>"), re.compile(r"=+"))
 #: Punctuation the transcription adds. The print marks a pause with a small circle beside the
 #: character, in no cell of its own.
-EDITORIAL = frozenset("，。、,.：；「」 \n\t")
+ADDED_PUNCTUATION = frozenset("，。、,.：；「」 \n\t")
 
 
 @dataclass(frozen=True)
@@ -62,7 +62,7 @@ def characters(wikitext: str) -> list[str]:
         text = pattern.sub("", text)
     out: list[str] = []
     for c in text:
-        if c in EDITORIAL:
+        if c in ADDED_PUNCTUATION:
             continue
         cp = ord(c)
         joins = unicodedata.category(c) in ("Mn", "Mc") or 0x1160 <= cp <= 0x11FF or 0xD7B0 <= cp <= 0xD7FF

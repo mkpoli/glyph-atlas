@@ -1,6 +1,6 @@
 # Schema
 
-Tables are Parquet files under `out/<release>/`; editorial logs are JSON Lines. The Pydantic models in
+Tables are Parquet files under `out/<release>/`; review logs are JSON Lines. The Pydantic models in
 `src/glyph_atlas/schema.py` are the reference; this page explains the fields.
 
 ## Three layers

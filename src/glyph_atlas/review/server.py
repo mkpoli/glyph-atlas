@@ -14,7 +14,7 @@ serves the page images of the local cache by checksum.
                                         with, with 字母, NINJAL reference glyphs and 字母 classifier
                                         scores
     GET  /queue                         the lines to review, by strategy, document and page
-    POST /reviews                       record editorial decisions
+    POST /reviews                       record review decisions
     POST /lines                         record a line the detector missed
     POST /units                         record a unit drawn on a line
 

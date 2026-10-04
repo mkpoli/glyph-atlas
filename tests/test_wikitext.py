@@ -44,7 +44,7 @@ def test_notes_and_substituted_forms_keep_their_role():
         ("踏", "substituted")]
 
 
-def test_editorial_templates_files_comments_and_spacing_are_not_text():
+def test_apparatus_templates_files_comments_and_spacing_are_not_text():
     columns = glyphs("{{ia|：}}從来<!--\n-->帝王{{nop}}{{gap|4em}}[[File:A.jpg|frameless|center]]<small>治</small>")
     assert [text(c) for c in columns] == ["從来帝王治"]
     assert [text(c) for c in glyphs("{{gap|4em}}{{letter-spacing|1em|錚錚其烈}}")] == ["錚錚其烈"]

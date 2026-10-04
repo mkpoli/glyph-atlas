@@ -2,7 +2,7 @@
 
 The アイヌ関連資料 records come from みんなで翻刻 and are published by `aynumosir/ainu-records`. Both
 projects hold the same pages, with different jobs: the source owns the diplomatic transcription and
-its editorial corrections, and the atlas owns the images, the detector's boxes, the alignment and the
+its corrections, and the atlas owns the images, the detector's boxes, the alignment and the
 review work done here. This module is the correspondence between them, and it is deliberately the only
 place that knows both vocabularies.
 
@@ -281,7 +281,7 @@ def place(lines: Iterable[str], *, line: int, original: str, corrected: str | No
 
 
 class AinuSource:
-    """The source project's editorial data, read from a checkout of it.
+    """The source project's corrections, read from a checkout of it.
 
     `root` must be a checkout of `aynumosir/ainu-records` at a current `main`. Nothing here writes:
     `drafts` renders the files a submission would add, so a reviewer sees the change before any branch
@@ -416,7 +416,7 @@ class AinuSource:
     def drafts(self, proposals: Iterable[Proposal]) -> dict[Path, list[dict[str, Any]]]:
         """The files a submission would write, keyed by the path in the source repository.
 
-        Existing records for a page are kept: a submission adds to the editorial layer rather than
+        Existing records for a page are kept: a submission adds to the correction layer rather than
         replacing it. A proposal that cannot be placed is not written here at all — the caller reports
         it as `unmappable` — because the source's build fails on a correction whose original no longer
         matches, and a review workspace must not be able to produce that.
