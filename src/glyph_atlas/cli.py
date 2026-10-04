@@ -550,13 +550,20 @@ def review_shift_repair(
     protect: Annotated[Path | None, typer.Option(help="file of unit ids never relabelled, one per line (reviewed on the site)")] = None,
     checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
     min_p: Annotated[float, typer.Option(help="least probability a relabelled crop shows its new label with")] = 0.8,
+    boundaries: Annotated[bool, typer.Option(help="settle the edges of shifted runs instead: where two crops claim one "
+                                             "place of the text, relabel the one that belongs further on or withhold "
+                                             "the extra box")] = False,
 ) -> None:
     """Relabel crops whose block is one or two places out of step with its text (needs CUDA)."""
-    from .review import shift_repair
+    from .review import shift_boundary, shift_repair
 
     ids = protect.read_text().split() if protect else ()
-    result = shift_repair.run(directory, checkpoint=checkpoint, apply=apply, protect=ids, min_p=min_p)
-    shift_repair.write(result, out)
+    if boundaries:
+        result = shift_boundary.run(directory, checkpoint=checkpoint, apply=apply, protect=ids)
+        shift_boundary.write(result, out)
+    else:
+        result = shift_repair.run(directory, checkpoint=checkpoint, apply=apply, protect=ids, min_p=min_p)
+        shift_repair.write(result, out)
     typer.echo(json.dumps({k: v for k, v in result.items() if k != "items"}, ensure_ascii=False))
 
 
