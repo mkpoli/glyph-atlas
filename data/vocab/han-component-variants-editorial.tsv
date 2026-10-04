@@ -1,0 +1,8 @@
+# Component substitutions stated editorially; they are not in han-component-variants.tsv, and every form derived with one is tier `editorial`. Kept by hand.
+# source editorial-substitutions: Glyph Atlas editorial component substitutions, data/vocab/han-component-variants-editorial.tsv; each row names who stated it, when, and on what basis; no row passes the attested table's threshold and agreement; Glyph Atlas, CC BY-SA 4.0 (LICENSE-DATA)
+# substitution: undirected, a before b by length then code point, as han-component-variants.tsv spells it; no row may repeat a substitution of that table.
+# note: what the 異体字 graph says about the substitution, measured with scripts/build_han_component_variants.py on 2026-10-04 (threshold 2, agreement 30%).
+# columns: a, b, asserted_by, asserted_at, basis, note
+a	b	asserted_by	asserted_at	basis	note
+コ	龴	mkpoli	2026-10-04	common interchangeable components in manuscripts	No attesting pair: BabelStone IDS writes no katakana, so no pair of the graph can show コ against 龴. The nearest measured substitutions of 龴 are 口↔龴 (5 pairs in 2 contexts, 6 of 95 predicted pairs stated) and 匕↔龴 (1 pair, 通:𨓛).
+失	矢	mkpoli	2026-10-04	common interchangeable components in manuscripts	Three written pairs show it (迭:𨒔 wikidata; 鉃:鉄 cjkvi-variants, mj-shrink-map; 雉:𨾤 cjkvi-variants, wikidata), but only 3 of the 25 pairs it predicts are stated, under the 30% agreement, so the attested table leaves it out.

@@ -575,8 +575,8 @@ def variant_card(char: str, counts: dict[str, int]) -> dict[str, Any]:
     """The characters `char` is related to in the 異体字 graph, as the Worker's card lists them.
 
     `items` are the variants a gallery widens to, `related` the rest (simplified, borrowed, …), at most
-    VARIANTS_SHOWN each; `derived` is the `derived-ids` tier, forms one attested component substitution
-    may write the character as, no gallery widening to them. Every edge keeps its relation, source and
+    VARIANTS_SHOWN each; `derived` is the `derived-ids` tier, forms up to two component substitutions
+    may write the character as (tier `attested` or `editorial`), no gallery widening to them. Every edge keeps its relation, source and
     claims; `sources` cites each source used, and a card with a derived row cites `derived-ids` too.
     """
     widening, other = variant_pairs(char)
@@ -590,7 +590,7 @@ def variant_card(char: str, counts: dict[str, int]) -> dict[str, Any]:
     rows = [{**e, "sources": sorted({r["source"] for r in e["relations"]}),
              "count": counts.get(e["code_point"], 0),
              "corpus_count": int(((corpus_counts or {}).get(e["char"]) or {}).get("n_glyphs") or 0)} for e in shown]
-    predictions = [{**e, "count": counts.get(e["code_point"], 0),
+    predictions = [{**{k: v for k, v in e.items() if k != "ids"}, "count": counts.get(e["code_point"], 0),
                     "corpus_count": int(((corpus_counts or {}).get(e["char"]) or {}).get("n_glyphs") or 0)}
                    for e in derived]
     used = {source for row in rows for source in row["sources"]}

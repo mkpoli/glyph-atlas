@@ -10,8 +10,11 @@ stay recoverable with their original meaning.
 
 **Reference data.** Characters (`data/vocab/characters.tsv`), their Ideographic Description Sequences
 (`han-ids.tsv`), source variant edges (`kanji-variants.tsv`, served from D1 `character_variants`) and
-derived component variants (`character_derived`, tier `derived`). They come from sources and are read
-only. Crops never attach to them directly.
+derived component variants (`character_derived`, tier `derived`): forms up to two component substitutions
+make of a character, each form marked by the standing of its substitutions, `attested`
+(`han-component-variants.tsv`) or `editorial` (`han-component-variants-editorial.tsv`, each row naming
+who stated it, when and why). They come from sources and are read only. Crops never attach to them
+directly.
 
 **Grapheme.** A stable id with a scope and a display label. The Atlas default grouping is one scope.
 Which forms and characters a grapheme holds is decided by a versioned grouping policy (the curated
