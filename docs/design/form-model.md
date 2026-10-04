@@ -62,7 +62,7 @@ Every claim is one row of `assertions`:
 | `subject`, `predicate`, `object` or `value` | what is claimed: an entity id, or a typed value |
 | `scope` | the grouping or editorial scope the claim holds in; empty for the default |
 | `alternative_set` | shared by the members of one "F or G" claim |
-| `tier` | `attested` (a source states it), `observed` (a person looked), `derived` (an algorithm), `editorial` (a curated policy) |
+| `tier` | `attested` (a source states it), `observed` (a person looked), `derived` (an algorithm) |
 | `asserted_by`, `asserted_at` | the journal actor (account or reviewer id) or source, and when |
 | `confidence`, `confidence_scheme` | a score and what it measures; a score is never read as a probability |
 | `method`, `run` | how the claim was produced, and which run produced it |

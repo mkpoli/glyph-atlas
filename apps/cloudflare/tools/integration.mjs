@@ -36,7 +36,7 @@ try {
   const apply = async name => {
     const schema = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8')
     // Comments go first: a comment line that starts with a keyword would otherwise read as a statement.
-    const statements = schema.replace(/^\s*--.*$/gm, '').match(/CREATE TRIGGER[\s\S]*?\nEND;|(?:CREATE (?:TABLE|(?:UNIQUE )?INDEX)|DROP (?:TRIGGER|INDEX)|UPDATE|ALTER TABLE|DELETE FROM|INSERT INTO) [\s\S]*?;/g)
+    const statements = schema.replace(/^\s*--.*$/gm, '').match(/CREATE TRIGGER[\s\S]*?\nEND;|(?:CREATE (?:TABLE|(?:UNIQUE )?INDEX)|DROP (?:TRIGGER|INDEX|TABLE)|UPDATE|ALTER TABLE|DELETE FROM|INSERT INTO) [\s\S]*?;/g)
     await db.batch(statements.map(sql => db.prepare(sql)))
   }
   for (const name of migrations.filter(name => name < '0006')) await apply(name)
@@ -1672,8 +1672,8 @@ try {
   const cleared = await call(formPath, { id: crypto.randomUUID(), crop_version: formVersion, form: null })
   assert.deepEqual([cleared.form.status, cleared.form.values.map(v => v.text), cleared.replaced], ['asserted', ['還'], '𮟃'], 'clearing retracts the reviewer\'s own form')
   await call(formPath, { id: crypto.randomUUID(), crop_version: formVersion, form: null }, 409)
-  // The same value chosen again names the same form; the form was named once.
-  assert.equal(await db.prepare("SELECT count(*) AS n FROM assertions WHERE predicate='represented_by' AND subject=?").bind(formRow.id).first('n'), 1)
+  // The same value chosen again names the same form; the form was named once, by the reviewer who chose it first.
+  assert.deepEqual((await db.prepare("SELECT tier FROM assertions WHERE predicate='represented_by' AND subject=?").bind(formRow.id).all()).results, [{ tier: 'observed' }])
   // A refused save writes nothing, not even a corpus glyph's row.
   const unnamed = (await call('/atlas/corpus/character?id=nu-private')).crop_version
   await call('/atlas/characters/nu-private/form', { id: crypto.randomUUID(), crop_version: unnamed, form: '⿰木' }, 422)

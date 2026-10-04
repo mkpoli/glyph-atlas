@@ -151,7 +151,7 @@ class DateClaim(BaseModel):
     day: str | None = Field(default=None, description="the Western-calendar day, ISO 8601, for a dated day")
     calendar: Literal["japanese", "gregorian", "unstated"] = "unstated"
     conversion: dict[str, str] | None = Field(default=None, description="how a calendar date was read as years")
-    tier: Literal["attested", "derived", "editorial"]
+    tier: Literal["attested", "derived"]
     source: str = Field(description="id of the data/sources record")
     locator: str = Field(description="where in the source: a record URL and its field")
     note: str | None = None

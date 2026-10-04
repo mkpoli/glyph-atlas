@@ -174,6 +174,6 @@ entries:
 dates:
   # The curation's `date` is the work's date and `copied` a witness's copying (its header comment,
   # data/sources.yaml at https://github.com/mkpoli/ainu-records). `atlas dates` keeps them as
-  # editorial claims: composed for `date`, copied for `copied`.
+  # attested claims of the curation: composed for `date`, copied for `copied`.
   date: composed
   copied: copied

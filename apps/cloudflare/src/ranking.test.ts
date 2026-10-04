@@ -27,7 +27,7 @@ describe('the reviewer ranking', () => {
     // The ledger: u2 chooses a form (its naming claim beside it counts as nobody's), then chooses
     // another, which retracts the first; chooses a member of the grapheme, which renamed the crop by a
     // review the claim names; claims an alternative set of two; accepts u1's claim, twice. u1's own claim and a
-    // retraction count once and not at all; a source's claims (attested or editorial) and a model's, and
+    // retraction count once and not at all; a source's claims (attested or derived) and a model's, and
     // a claim moved from the written forms, count as nobody's.
     db.exec(`INSERT INTO submissions(id,actor,request,response,at,undone) VALUES('u2:rename','u2','{}','{}','${at}',0);
       INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES
@@ -37,14 +37,14 @@ describe('the reviewer ranking', () => {
     const claim = db.prepare(`INSERT INTO assertions(id,submission,subject,predicate,object,value,alternative_set,tier,asserted_by,asserted_at,run,legacy)
       VALUES(?,?,?,?,?,?,?,?,?,'${at}',?,?)`);
     claim.run('a1', 'u2:f1', 't', 'has_form', 'fm:1', null, null, 'observed', 'u2', null, null);
-    claim.run('a1n', 'u2:f1', 'fm:1', 'represented_by', 'rp:1', null, null, 'editorial', 'u2', null, null);
+    claim.run('a1n', 'u2:f1', 'fm:1', 'represented_by', 'rp:1', null, null, 'observed', 'u2', null, null);
     claim.run('a2', 'u2:f2', 't', 'has_form', 'fm:2', null, null, 'observed', 'u2', null, null);
     claim.run('a3', 'u2:f3', 't2', 'has_form', 'fm:3', null, null, 'observed', 'u2', null, null);
     claim.run('a4', 'u2:set', 't3', 'has_form', 'fm:1', null, 's', 'observed', 'u2', null, null);
     claim.run('a5', 'u2:set', 't3', 'has_form', 'fm:2', null, 's', 'observed', 'u2', null, null);
     claim.run('a6', 'u1:c', 't4', 'has_form', null, '"unreadable"', null, 'observed', 'u1', null, null);
     claim.run('a7', null, 'doc', 'date_written', null, '{}', null, 'attested', 'source:x', null, null);
-    claim.run('a7e', null, 'doc', 'date_written', null, '{"of":"x"}', null, 'editorial', 'source:x', null, null);
+    claim.run('a7e', null, 'doc', 'date_written', null, '{"of":"x"}', null, 'derived', 'source:x', null, null);
     claim.run('a8', null, 't5', 'has_form', 'fm:1', null, null, 'derived', 'model', 'run-1', null);
     claim.run('a9', 'u2:w', 't6', 'has_form', 'fm:1', null, null, 'observed', 'u2', null, 'written_forms:w1');
     db.exec(`INSERT INTO assertion_actions(id,submission,assertion,action,actor,at) VALUES

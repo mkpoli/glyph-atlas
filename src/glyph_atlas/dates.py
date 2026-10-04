@@ -39,7 +39,7 @@ WITNESS_ORDER = {
     "unknown": ("copied", "edition", "printed", "produced", "colophon", "annotated"),
 }
 #: Tiers in the order a disagreement is settled.
-TIER_ORDER = ("attested", "editorial", "derived")
+TIER_ORDER = ("attested", "derived")
 #: Sources in the order a disagreement within one tier is settled: a holder's own catalogue first.
 SOURCE_ORDER = ("iiif-manifests", "kokusho", "ndl-minhon", "honkoku-data", "ainu-records")
 #: The version of `resolve`, published with each resolved date.
@@ -619,10 +619,10 @@ def resolve(claims: Iterable[DateClaim], production: str = "unknown") -> dict[st
     """The witness date and the composition date of one document's claims, each where one is dated.
 
     The witness axis takes the first kind of `WITNESS_ORDER` for how the document was made that has a
-    dated claim about this copy. Within the kind, the attested claim wins over the editorial and the
-    derived one, then a holder's own catalogue over an aggregator's, then the more precise. A claim that
-    does not overlap the chosen one makes the date `disputed`, and so does a date the holder gives the
-    item (`produced`) that does not overlap it; every claim stays listed. A copy no claim gives years
+    dated claim about this copy. Within the kind, the attested claim wins over the derived one, then a
+    holder's own catalogue over an aggregator's, then the more precise. A claim that does not overlap
+    the chosen one makes the date `disputed`, and so does a date the holder gives the item (`produced`)
+    that does not overlap it; every claim stays listed. A copy no claim gives years
     to is shown by the period its source names, if one does, with no years: it is placed nowhere on a
     time axis, and its words are kept.
     """

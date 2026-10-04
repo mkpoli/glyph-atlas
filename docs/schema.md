@@ -244,7 +244,7 @@ document shows is `document_dating` (migration 0052).
 | `precision` | `day`, `month`, `year`, `years` (a range or an era span), `decade`, `century`, or `period`: words that name a time with no years read from them, a named period such as 江戸後期 or an era date HuTime could not convert, kept as written |
 | `qualifier`, `uncertain` | `circa`, `before` or `after`; a question mark or 推定 in the source |
 | `day`, `calendar`, `conversion` | the Western-calendar day of a dated day; whether the text is in the Japanese calendar; the HuTime request that converted it |
-| `tier` | `attested` (a catalogue field states it), `derived` (read from a free-text note), `editorial` (a curated record) |
+| `tier` | `attested` (a catalogue field states it), `derived` (read from a free-text note) |
 | `source`, `locator`, `note` | the data/sources id, the record URL and its field (`#bpublish.0`, `#metadata=Publication Date`), and the note or work the date belongs to |
 
 An era year is placed in the Western year its first day falls in (寛政3年, 1791-02-03 to
@@ -254,7 +254,7 @@ A document with no claim that has years stays undated.
 What a document shows (`dates.resolve`): on the witness axis, the first kind with a dated claim about
 this copy, in the order copied, colophon, produced, annotated, printed, edition for handwriting and
 edition, printed, produced, colophon, copied, annotated for print (a later impression dates the copy in hand more closely than the first printing); on the composed axis, its
-composition. Within a kind, attested wins over editorial and derived, a holder's manifest over 国書 and
+composition. Within a kind, attested wins over derived, a holder's manifest over 国書 and
 the aggregators, then the more precise claim. A claim that does not overlap the chosen one makes the
 date `disputed`, and every claim stays listed.
 
