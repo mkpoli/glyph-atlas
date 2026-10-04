@@ -1,0 +1,52 @@
+# Spellings of a word: one row per source statement that a sequence of Han characters writes a word of
+# data/vocab/words.tsv. Kept by hand; see docs/decisions/0004-word-spellings.md.
+# tier: attested (a source states it), observed (a person read an occurrence: a transcriber's 振り仮名), editorial (the project decides).
+# word_by: source (the source names the word) or editorial (the source gives a reading, and the project took it as this word).
+# basis and related are filled only where the source gives a reason: shape-confusion means the source says the spelling's form was confused with that of `related`.
+# source unihan-kjapanese: Unicode Han Database (Unihan) 18.0.0, Unihan_Readings.txt, field kJapanese, whose data UAX #38 (revision 41) attributes to the 文字情報基盤 database of CITPC; Unicode-3.0 (https://www.unicode.org/license.txt); Copyright Unicode, Inc.; Unicode License v3. A reading list, Provisional in UAX #38: it does not name the word or the sense.
+# source wiktionary-ja: Wiktionary 日本語版; CC-BY-SA-4.0 (https://ja.wiktionary.org/wiki/Wiktionary:著作権); Wiktionary 日本語版の執筆者 (revision in the locator). An open wiki, not a reviewed dictionary.
+# source kanjipedia: 漢字ペディア, 日本漢字能力検定協会 (https://www.kanjipedia.jp/), accessed 2026-10-04, archived at the locator; quoted, all rights reserved by the publisher. A modern dictionary's web edition, giving no period or dated example for a sense.
+# source chiebukuro-garan-2022: がらん, answer to 「「斗」はなんと読みますか？」, Yahoo!知恵袋, 2022-05-15 (https://detail.chiebukuro.yahoo.co.jp/qa/question_detail/q13261788763, archived https://web.archive.org/web/20261004062928/https://detail.chiebukuro.yahoo.co.jp/qa/question_detail/q13261788763). An anonymous forum answer chosen as best by the asker, citing no source.
+# source honkoku-ruby: 振り仮名 of the みんなで翻刻 transcriptions, counted in data/vocab/ruby-spellings.tsv (みんなで翻刻（https://honkoku.org/）翻刻データ, CC BY-SA 4.0, revision be63dc2); crowd transcriptions with 1.5 errors or spelling inconsistencies per 100 characters in an expert audit, transcribers are asked to type modern forms, and the markup guide does not say whether a 振り仮名 is on the page. Only spellings that table attests in at least two documents are listed. The statement is the project's: the spelling with the reading the table keys it by, which the locator names; the forms as typed are in that table's `ruby` column. Readings without their dakuten are included for など (なと) and left out for ばかり (はかり), which also spells the verb はかる (計り, 量り).
+word	spelling	tier	word_by	basis	related	source	statement	locator
+ja/など/副助詞	抔	observed	editorial			honkoku-ruby	抔（なと）	ruby-spellings.tsv なと 抔
+ja/など/副助詞	抔	observed	editorial			honkoku-ruby	抔（など）	ruby-spellings.tsv など 抔
+ja/など/副助詞	抔	attested	editorial			kanjipedia	②など（等）。複数を示す語。	抔 (https://www.kanjipedia.jp/kanji/0006340300, archived https://web.archive.org/web/20261004063100/https://www.kanjipedia.jp/kanji/0006340300)
+ja/など/副助詞	抔	attested	editorial			unihan-kjapanese	ホウ ブ ハイ ヘ すくう など なんど	U+6294 kJapanese
+ja/など/副助詞	抔	attested	source			wiktionary-ja	【'''[[抔#助詞|抔]]・[[等#助詞|等]]'''】	など, revision 2321513 (https://ja.wiktionary.org/w/index.php?oldid=2321513)
+ja/など/副助詞	杯	observed	editorial			honkoku-ruby	杯（なと）	ruby-spellings.tsv なと 杯
+ja/など/副助詞	杯	observed	editorial			honkoku-ruby	杯（など）	ruby-spellings.tsv など 杯
+ja/など/副助詞	等	observed	editorial			honkoku-ruby	等（なと）	ruby-spellings.tsv なと 等
+ja/など/副助詞	等	observed	editorial			honkoku-ruby	等（など）	ruby-spellings.tsv など 等
+ja/など/副助詞	等	attested	editorial			unihan-kjapanese	トウ タイ ひとしい など ら	U+7B49 kJapanese
+ja/など/副助詞	等	attested	source			wiktionary-ja	【'''[[抔#助詞|抔]]・[[等#助詞|等]]'''】	など, revision 2321513 (https://ja.wiktionary.org/w/index.php?oldid=2321513)
+ja/のみ/副助詞	也已	attested	source			wiktionary-ja	{{ja-parti|耳|已|而已|而已矣|也已|爾}}	のみ, revision 2015613 (https://ja.wiktionary.org/w/index.php?oldid=2015613)
+ja/のみ/副助詞	尓	observed	editorial			honkoku-ruby	尓（のみ）	ruby-spellings.tsv のみ 尓
+ja/のみ/副助詞	己	attested	editorial			unihan-kjapanese	コ キ イ おのれ つちのと すでに やむ のみ	U+5DF1 kJapanese
+ja/のみ/副助詞	已	observed	editorial			honkoku-ruby	已（のみ）	ruby-spellings.tsv のみ 已
+ja/のみ/副助詞	已	attested	editorial			unihan-kjapanese	イ シ コ キ すでに のみ はなはだ やむ やめる み おのれ	U+5DF2 kJapanese
+ja/のみ/副助詞	已	attested	source			wiktionary-ja	{{ja-parti|耳|已|而已|而已矣|也已|爾}}	のみ, revision 2015613 (https://ja.wiktionary.org/w/index.php?oldid=2015613)
+ja/のみ/副助詞	已而	observed	editorial			honkoku-ruby	已而（のみ）	ruby-spellings.tsv のみ 已而
+ja/のみ/副助詞	爾	observed	editorial			honkoku-ruby	爾（のみ）	ruby-spellings.tsv のみ 爾
+ja/のみ/副助詞	爾	attested	editorial			unihan-kjapanese	ジ ニ デイ ナイ しかり なんじ のみ その	U+723E kJapanese
+ja/のみ/副助詞	爾	attested	source			wiktionary-ja	{{ja-parti|耳|已|而已|而已矣|也已|爾}}	のみ, revision 2015613 (https://ja.wiktionary.org/w/index.php?oldid=2015613)
+ja/のみ/副助詞	矣	observed	editorial			honkoku-ruby	矣（のみ）	ruby-spellings.tsv のみ 矣
+ja/のみ/副助詞	而	observed	editorial			honkoku-ruby	而（のみ）	ruby-spellings.tsv のみ 而
+ja/のみ/副助詞	而己	observed	editorial			honkoku-ruby	而己（のみ）	ruby-spellings.tsv のみ 而己
+ja/のみ/副助詞	而已	observed	editorial			honkoku-ruby	而已（のみ）	ruby-spellings.tsv のみ 而已
+ja/のみ/副助詞	而已	attested	source			wiktionary-ja	{{ja-parti|耳|已|而已|而已矣|也已|爾}}	のみ, revision 2015613 (https://ja.wiktionary.org/w/index.php?oldid=2015613)
+ja/のみ/副助詞	而已矣	attested	source			wiktionary-ja	{{ja-parti|耳|已|而已|而已矣|也已|爾}}	のみ, revision 2015613 (https://ja.wiktionary.org/w/index.php?oldid=2015613)
+ja/のみ/副助詞	而巳	observed	editorial			honkoku-ruby	而巳（のみ）	ruby-spellings.tsv のみ 而巳
+ja/のみ/副助詞	耳	observed	editorial			honkoku-ruby	耳（のみ）	ruby-spellings.tsv のみ 耳
+ja/のみ/副助詞	耳	attested	editorial			unihan-kjapanese	ジ ニ ジョウ ニョウ みみ のみ	U+8033 kJapanese
+ja/のみ/副助詞	耳	attested	source			wiktionary-ja	{{ja-parti|耳|已|而已|而已矣|也已|爾}}	のみ, revision 2015613 (https://ja.wiktionary.org/w/index.php?oldid=2015613)
+ja/ばかり/副助詞	可	attested	source			wiktionary-ja	'''ばかり'''【[[許]]り・[[所]]り・[[可]]り・[[計]]り】（[[副助詞]]。	ばかり, revision 2291631 (https://ja.wiktionary.org/w/index.php?oldid=2291631)
+ja/ばかり/副助詞	所	attested	source			wiktionary-ja	'''ばかり'''【[[許]]り・[[所]]り・[[可]]り・[[計]]り】（[[副助詞]]。	ばかり, revision 2291631 (https://ja.wiktionary.org/w/index.php?oldid=2291631)
+ja/ばかり/副助詞	斗	attested	editorial	shape-confusion	計	chiebukuro-garan-2022	本来は「計」のくずし字ですが、日本の古文書えは升・斗のくずしと混同されて、どれも「はかり」と読まれています	best answer, 2022-05-15 7:40
+ja/ばかり/副助詞	斗	observed	editorial			honkoku-ruby	斗（ばかり）	ruby-spellings.tsv ばかり 斗
+ja/ばかり/副助詞	而已	observed	editorial			honkoku-ruby	而已（ばかり）	ruby-spellings.tsv ばかり 而已
+ja/ばかり/副助詞	計	observed	editorial			honkoku-ruby	計（ばかり）	ruby-spellings.tsv ばかり 計
+ja/ばかり/副助詞	計	attested	source			wiktionary-ja	'''ばかり'''【[[許]]り・[[所]]り・[[可]]り・[[計]]り】（[[副助詞]]。	ばかり, revision 2291631 (https://ja.wiktionary.org/w/index.php?oldid=2291631)
+ja/ばかり/副助詞	許	observed	editorial			honkoku-ruby	許（ばかり）	ruby-spellings.tsv ばかり 許
+ja/ばかり/副助詞	許	attested	editorial			unihan-kjapanese	キョ コ ク ゆるす ばかり もと ゆるし	U+8A31 kJapanese
+ja/ばかり/副助詞	許	attested	source			wiktionary-ja	'''ばかり'''【[[許]]り・[[所]]り・[[可]]り・[[計]]り】（[[副助詞]]。	ばかり, revision 2291631 (https://ja.wiktionary.org/w/index.php?oldid=2291631)

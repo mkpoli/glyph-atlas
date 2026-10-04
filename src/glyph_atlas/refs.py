@@ -60,6 +60,9 @@ VOICING_TSV = "kana-voicing.tsv"
 COMPONENT_VARIANTS_TSV = "han-component-variants.tsv"
 KANA_ORIGINS_TSV = "kana-origins.tsv"
 SUSPECT_FORMS_TSV = "suspect-forms.tsv"
+WORDS_TSV = "words.tsv"
+WORD_SPELLINGS_TSV = "word-spellings.tsv"
+RUBY_SPELLINGS_TSV = "ruby-spellings.tsv"
 POLICIES_YAML = "equivalence-policies.yaml"
 LIGATURES_YAML = "ligatures.yaml"
 BUILT_BY = {
@@ -73,6 +76,9 @@ BUILT_BY = {
     COMPONENT_VARIANTS_TSV: "scripts/build_han_component_variants.py",
     KANA_ORIGINS_TSV: "scripts/build_kana_origins.py",
     SUSPECT_FORMS_TSV: "nothing: it is kept by hand from reviewers' decisions",
+    WORDS_TSV: "nothing: it is kept by hand, citing a source per row",
+    WORD_SPELLINGS_TSV: "nothing: it is kept by hand, citing a source per row",
+    RUBY_SPELLINGS_TSV: "atlas ruby-spellings",
 }
 #: hentaigana.tsv and mj-hentaigana.tsv joined, with the character layer for everything the two
 #: kana tables do not state: the Unicode name and 字母, the MJ figure, the 音価 merged into
@@ -951,6 +957,61 @@ def suspect_forms() -> frozenset[tuple[str, str]]:
     the classifier took it for the reading (可 for 一, a cursive form; 千 for 干, a print look-alike).
     """
     return frozenset((row["label"], row["reads_as"]) for row in _read_tsv(SUSPECT_FORMS_TSV))
+
+
+@cache
+def words() -> dict[str, dict[str, str]]:
+    """The words of words.tsv by id: `ja/ばかり/副助詞` is the particle ばかり."""
+    return {row["id"]: row for row in _read_tsv(WORDS_TSV)}
+
+
+@cache
+def word_spellings() -> tuple[dict[str, Any], ...]:
+    """The rows of word-spellings.tsv, one per source statement that a spelling writes a word.
+
+    A `honkoku-ruby` row carries the `documents` and `occurrences` that ruby-spellings.tsv counts for
+    the reading and spelling its locator names (`ruby-spellings.tsv なと 抔`); every other row carries
+    neither. The two tables are built apart, so a ruby row that the regenerated table no longer holds
+    raises KeyError. Nothing here relates two characters:
+    the spellings of one word are found through the word, never stored as a pair, and no row reaches
+    the 異体字 graph, a grapheme family or a gallery.
+    """
+    counts = {(row["reading"], row["spelling"]): row for row in _read_tsv(RUBY_SPELLINGS_TSV)}
+    found = []
+    for row in _read_tsv(WORD_SPELLINGS_TSV):
+        row = dict(row)
+        if row["source"] == "honkoku-ruby":
+            _, reading, spelling = row["locator"].split(" ")
+            ruby = counts[(reading, spelling)]
+            row["documents"], row["occurrences"] = int(ruby["documents"]), int(ruby["occurrences"])
+        found.append(row)
+    return tuple(found)
+
+
+@cache
+def word_sources() -> dict[str, str]:
+    """The citation of each source of words.tsv, as the table's header states it."""
+    return _source_citations(WORDS_TSV)
+
+
+@cache
+def word_spelling_sources() -> dict[str, str]:
+    """The citation of each source of word-spellings.tsv, as the table's header states it."""
+    return _source_citations(WORD_SPELLINGS_TSV)
+
+
+def spellings_of(word: str) -> dict[str, list[dict[str, Any]]]:
+    """The spellings of a word, each with the rows that cite it, in the order the table lists them."""
+    found: dict[str, list[dict[str, Any]]] = {}
+    for row in word_spellings():
+        if row["word"] == word:
+            found.setdefault(row["spelling"], []).append(row)
+    return found
+
+
+def words_of(spelling: str) -> list[str]:
+    """The words a spelling is cited as writing: 斗 gives `ja/ばかり/副助詞`."""
+    return list(dict.fromkeys(row["word"] for row in word_spellings() if row["spelling"] == spelling))
 
 
 def jibo_of(unicode: str | None) -> list[str]:
