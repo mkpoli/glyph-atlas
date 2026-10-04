@@ -21,7 +21,7 @@
 </nav>
 
 <style>
-  .style-filter{display:flex;gap:8px;overflow-x:auto;padding:12px 0 2px}
+  .style-filter{display:flex;flex-wrap:wrap;gap:8px;padding:12px 0 2px}
   button{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:transparent;border-radius:8px;padding:7px 12px;font-size:12px;white-space:nowrap;flex-shrink:0}
   small{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
   .active{border-color:var(--accent);background:var(--accent-light);color:var(--accent)}
