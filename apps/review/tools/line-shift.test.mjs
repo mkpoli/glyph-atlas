@@ -35,6 +35,12 @@ describe('a shift of a line', () => {
     expect(shiftBody('s', plan.writes)).toEqual({ id: 's', line: true, crops: [
       { id: 'c2', revision: 1, image_sha256: 'h', character: 'き' }, { id: 'c3', revision: 1, image_sha256: 'h', issue: 'blank' }] })
   })
+  it('carries the box redrawn for a crop beside its label, and none for a box that is no character', () => {
+    const plan = planShift(items, { offset: -1, cut: 3, blanks: new Set([1]) })
+    const box = { x: 1, y: 2, w: 3, h: 4 }
+    expect(shiftBody('s', plan.writes, { 0: box, 1: box }).crops).toEqual([
+      { id: 'c2', revision: 1, image_sha256: 'h', character: 'き', box }, { id: 'c3', revision: 1, image_sha256: 'h', issue: 'blank' }])
+  })
   it('moves the chosen box one place, past the crop itself and not beyond the line', () => {
     expect(moveOffset(items, -1, 1)).toBe(1)
     expect(moveOffset(items, 1, -1)).toBe(-1)

@@ -31,8 +31,9 @@ export function moveOffset(items, offset, direction) {
   return next ?? offset
 }
 
-/** The body of the correction that records a shift: one entry for each crop it writes. */
-export function shiftBody(id, steps) {
-  return { id, line: true, crops: steps.map(({ box, label, blank }) => ({ id: box.id, revision: box.revision, image_sha256: box.image_sha256,
-    ...(blank ? { issue: 'blank' } : { character: label }) })) }
+/** The body of the correction that records a shift: one entry for each crop it writes, with the box
+ *  redrawn for it (`boxes`, by offset, in page pixels) beside its label. A box that is no character keeps its own. */
+export function shiftBody(id, steps, boxes = {}) {
+  return { id, line: true, crops: steps.map(({ at, box, label, blank }) => ({ id: box.id, revision: box.revision, image_sha256: box.image_sha256,
+    ...(blank ? { issue: 'blank' } : { character: label, ...(boxes[at] ? { box: boxes[at] } : {}) }) })) }
 }
