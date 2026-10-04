@@ -16,6 +16,7 @@
   import { tileDate } from '../lib/dating.js'
   import { collectionAddress } from '../lib/gallery.js'
   import { number } from '../lib/client.js'
+  import { sourceTitle } from '../lib/seo.js'
   import { t, localize } from '../lib/i18n.svelte.js'
 
   let { text, work: given = '', style: styled = '', sort: ordered = '', first = null, related = null, inspect } = $props()
@@ -76,7 +77,8 @@
     observer.observe(sentinel)
     return () => observer.disconnect()
   })
-  const where = crop => [crop.source, crop.page_number ? t('tile.page', { page: crop.page_number }) : null, tileDate(crop) || null].filter(Boolean).join(' · ')
+  // A corpus glyph's record names its book in `source.title`, a crop's in `source`.
+  const where = crop => [sourceTitle(crop), crop.page_number ? t('tile.page', { page: crop.page_number }) : null, tileDate(crop) || null].filter(Boolean).join(' · ')
 </script>
 
 <section class="explore run-view">
