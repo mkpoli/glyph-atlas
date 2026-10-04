@@ -1221,6 +1221,25 @@ def rare_chars(
     typer.echo(f"-> {out}")
 
 
+@app.command("ruby-spellings")
+def ruby_spellings(
+    clone: Annotated[Path | None, typer.Option(help="みんなで翻刻データ clone; cache/honkoku-data when unset")] = None,
+    word: Annotated[list[str] | None, typer.Option(help="a reading to collect; ばかり, はかり, など, なと and のみ when unset")] = None,
+    out: Annotated[Path, typer.Option(help="spellings TSV")] = Path("data/vocab/ruby-spellings.tsv"),
+    project: Annotated[list[str] | None, typer.Option(help="only these projects")] = None,
+    workers: Annotated[int, typer.Option(help="processes reading the entries")] = 4,
+) -> None:
+    """Count the spellings the transcriptions' 振り仮名 give each reading, by documents and occurrences."""
+    from . import ruby_spellings as spellings
+    from .importers import honkoku_data
+
+    clone = clone or honkoku_data.default_clone()
+    found = spellings.rows(spellings.count(clone, word or spellings.WORDS, projects=project, workers=workers))
+    spellings.write(found, out, revision=honkoku_data.clone_revision(clone))
+    typer.echo(json.dumps({"rows": len(found), "occurrences": sum(row["occurrences"] for row in found)}, ensure_ascii=False))
+    typer.echo(f"-> {out}")
+
+
 @quality_app.command("index")
 def quality_index(
     store: Annotated[Path, typer.Option(help="review store whose crops are measured")] = Path("work/ainu-gallery"),
