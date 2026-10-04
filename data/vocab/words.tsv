@@ -1,0 +1,8 @@
+# Words that characters are cited as writing; see docs/decisions/0004-word-spellings.md. Kept by hand.
+# An id is the language, the reading in historical kana and the word class, so that the particle のみ
+# and the verb form のみ (飲み) are two words.
+# source wiktionary-ja: Wiktionary 日本語版; CC-BY-SA-4.0 (https://ja.wiktionary.org/wiki/Wiktionary:著作権); Wiktionary 日本語版の執筆者 (revision in the detail of each row)
+id	language	reading	class	source	detail
+ja/ばかり/副助詞	ja	ばかり	副助詞	wiktionary-ja	ばかり, revision 2291631 (2026-06-30): ===助詞=== [[Category:{{ja}}_助詞_副助詞]]
+ja/など/副助詞	ja	など	副助詞	wiktionary-ja	など, revision 2321513 (2026-08-14): ===助詞=== {{head|jpn|parti|cat2=助詞 副助詞}}
+ja/のみ/副助詞	ja	のみ	副助詞	wiktionary-ja	のみ, revision 2015613 (2024-10-18): ===助詞=== [[カテゴリ:{{ja}}_助詞_副助詞]]

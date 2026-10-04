@@ -210,6 +210,9 @@ IDS.TXT, and `data/vocab/han-component-forms.tsv` the component forms that stand
 (⺡ for 氵, 氵 for 水); `scripts/build_han_components.py` writes both, and search reads them to find a
 character by its components. `data/vocab/graphemes.yaml` states the curated kana assignments, 字母
 overrides and cited orthographic families. A new value must state its source.
+`data/vocab/words.tsv` and `data/vocab/word-spellings.tsv` record the characters cited as writing a
+word (計, 許 and 斗 for the particle ばかり), one row per source statement; the spellings of a word are
+read through the word, never as a pair of characters (decision 0004).
 
 Refresh the cached Unicode files before rebuilding the character table; they live in `cache/ucd/`
 and are not in git.
