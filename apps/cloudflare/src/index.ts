@@ -1105,6 +1105,42 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, char:
   ctx.waitUntil(caches.default.put(key, Response.json(found, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return found;
 }
+// The spellings of every word a character is cited as writing (0063): the words by the `spelling`
+// index, then each word's rows by the key. The table is hand-kept and small; the limit bounds a
+// character that writes many words.
+export const wordSpellingsQuery = () => `SELECT s.word,w.reading,w.class,s.spelling,s.source,s.tier,s.documents
+  FROM word_spellings s JOIN words w ON w.id=s.word
+  WHERE s.word IN (SELECT word FROM word_spellings WHERE spelling=?) LIMIT 500`;
+type WordRow = { word: string; reading: string; class: string; spelling: string; source: string; tier: string; documents: number | null };
+type WordSpelling = { spelling: string; code_point: string | null; current: boolean; sources: { source: string; tier: string; documents: number | null }[] };
+// The words `char` is cited as writing, each with every spelling cited for it, most cited first, then
+// by documents, then by code point; `sources` cites each source used. The local review service's
+// `word_card` returns the same shape. Nothing here widens a gallery.
+async function wordsOf(env: Env, ctx: ExecutionContext, origin: string, char: string) {
+  const key = new Request(`${origin}/layers/words?c=${encodeURIComponent(char)}&v=${encodeURIComponent(await catalogueVersion(env))}`);
+  const cached = await caches.default.match(key);
+  if (cached) return await cached.json();
+  const rows = (await env.DB.prepare(wordSpellingsQuery()).bind(char).all<WordRow>()).results;
+  const words = new Map<string, { id: string; reading: string; class: string; spellings: Map<string, WordSpelling> }>();
+  for (const row of rows) {
+    const word = words.get(row.word) ?? { id: row.word, reading: row.reading, class: row.class, spellings: new Map() };
+    const single = [...row.spelling].length === 1;
+    const entry = word.spellings.get(row.spelling) ?? { spelling: row.spelling, code_point: single ? cp(row.spelling) : null,
+      current: row.spelling === char, sources: [] };
+    entry.sources.push({ source: row.source, tier: row.tier, documents: row.documents });
+    word.spellings.set(row.spelling, entry);
+    words.set(row.word, word);
+  }
+  const cited = (entry: WordSpelling) => new Set(entry.sources.map(s => s.source)).size;
+  const most = (entry: WordSpelling) => Math.max(0, ...entry.sources.map(s => s.documents ?? 0));
+  const items = [...words.values()].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0).map(word => ({ id: word.id, reading: word.reading, class: word.class,
+    spellings: [...word.spellings.values()].sort((a, b) => cited(b) - cited(a) || most(b) - most(a) || (a.spelling < b.spelling ? -1 : a.spelling > b.spelling ? 1 : 0)) }));
+  const all: Record<string, string> = (await meta(env, 'word_sources')) || {};
+  const used = [...new Set(rows.map(row => row.source))].sort();
+  const found = { items, sources: Object.fromEntries(used.map(source => [source, all[source] ?? source])) };
+  ctx.waitUntil(caches.default.put(key, Response.json(found, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
+  return found;
+}
 type DerivedEntry = { char: string; code_point: string | null; encoded: boolean;
   substitutions: { was: string; became: string; count: number; pairs: { a: string; b: string; sources: string[] }[] }[];
   sources: string[] };
@@ -2024,7 +2060,7 @@ const routes = {
       if(path==='/layers/search'){const found=await suggest(env,q);return json({...found,results:found.items,match:found.items[0]||null})}
       const layer=path.match(/^\/layers\/characters\/([^/]+)$/);
       if(layer){const value=decodeURIComponent(layer[1]),{detail}=await known(env,value);const found=await occurrences(env,value,q);
-        return json({...detail,variants:await variantsOf(env,ctx,url.origin,detail.char),query:detail.code_point,samples:found.items,occurrences:{...found.counts,filtered:found.total}})}
+        return json({...detail,variants:await variantsOf(env,ctx,url.origin,detail.char),words:await wordsOf(env,ctx,url.origin,detail.char),query:detail.code_point,samples:found.items,occurrences:{...found.counts,filtered:found.total}})}
       if(path==='/layers/occurrences')return json(await occurrences(env,q.get('code_point')||'',q));
       if(path==='/layers/candidates'){const found=await occurrences(env,q.get('code_point')||'',q,'corpus');
         return json({...found,glyphs:found.total,glyph_items:found.items,retry:false})}

@@ -476,7 +476,38 @@ def character_view(character: Character, layer: Layers, *, expand: str = "none",
         "samples": [layer.item(unit, revision, form, exact) for unit, revision, form, exact in window],
         "candidates": candidates,
         "variants": variant_card(character.char, counts),
+        "words": word_card(character.char),
     }
+
+
+def word_card(char: str) -> dict[str, Any]:
+    """The words `char` is cited as writing, each with every spelling cited for it (decision 0004).
+
+    A spelling lists the sources that cite it, each with its tier and, for transcribers' 振り仮名, the
+    documents counted; spellings come most cited first, then by documents, then by code point. The
+    Worker's card returns the same shape. Nothing here widens the gallery.
+    """
+    rows = refs.word_spellings()
+    found = list(dict.fromkeys(row["word"] for row in rows if row["spelling"] == char))
+    items, used = [], set()
+    for word in found:
+        spellings: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            if row["word"] == word:
+                spellings.setdefault(row["spelling"], []).append(row)
+                used.add(row["source"])
+        entries = [{
+            "spelling": spelling,
+            "code_point": refs.to_code_point(spelling) if len(spelling) == 1 else None,
+            "current": spelling == char,
+            "sources": [{"source": r["source"], "tier": r["tier"], "documents": r.get("documents")} for r in cited],
+        } for spelling, cited in spellings.items()]
+        entries.sort(key=lambda e: (-len({s["source"] for s in e["sources"]}),
+                                    -max((s["documents"] or 0) for s in e["sources"]), e["spelling"]))
+        info = refs.words()[word]
+        items.append({"id": word, "reading": info["reading"], "class": info["class"], "spellings": entries})
+    cited = {**refs.word_sources(), **refs.word_spelling_sources()}
+    return {"items": items, "sources": {source: cited[source] for source in sorted(used)}}
 
 
 #: Each row of a card's variants lists at most this many, the most attested first; the gallery widens
