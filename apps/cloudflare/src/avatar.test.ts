@@ -37,6 +37,15 @@ describe('a reader\'s picture', () => {
     expect(image()).toBeNull();
     expect(stored.size).toBe(0);
   });
+  it('comes from a connected Google account, when it has a picture', async () => {
+    const { db, env, me, image } = setup();
+    expect((await setAvatar(env, me, 'google', post('{}'))).status).toBe(404);
+    const at = '2026-10-02T00:00:00.000Z';
+    db.exec(`INSERT INTO account(id,accountId,providerId,userId,createdAt,updatedAt) VALUES('a2','1234','google','00000000-0000-0000-0000-000000000001','${at}','${at}');
+      INSERT INTO account_profiles(account,provider,image,at) VALUES('a2','google','https://lh3.googleusercontent.com/a/x=s256-c','${at}');`);
+    expect((await setAvatar(env, me, 'google', post('{}'))).status).toBe(200);
+    expect(image()).toBe('https://lh3.googleusercontent.com/a/x=s256-c');
+  });
   it('refuses what is not a small WebP, and an anonymous user', async () => {
     const { env, me } = setup();
     expect((await setAvatar(env, me, 'upload', post(new Uint8Array([137, 80, 78, 71, 0, 0, 0, 0, 0, 0, 0, 0, 0]), 'image/webp'))).status).toBe(415);

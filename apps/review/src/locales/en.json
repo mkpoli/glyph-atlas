@@ -802,7 +802,7 @@
   "privacy.account.methods": "A sign-in code is sent by Cloudflare Email Service and kept, hashed, for ten minutes. A passkey leaves only its public key here. Each signed-in device keeps a session with its IP address and browser name, which your account page lists; a session ends when you sign out or after 90 days.",
   "privacy.public.title": "What others see",
   "privacy.public.body": "The decisions you save, with their time, appear in the history and the ranking under your display name and picture, and are released with the collection under CC BY-SA 4.0, credited to that name. Your email address is never shown.",
-  "privacy.public.gravatar": "A Gravatar picture is fetched from Gravatar by each reader's browser, and its address contains a hash of your email address. A GitHub picture is fetched from GitHub in the same way.",
+  "privacy.public.gravatar": "A Gravatar picture is fetched from Gravatar by each reader's browser, and its address contains a hash of your email address. The picture of a connected account, such as GitHub or Google, is fetched from that service in the same way.",
   "privacy.processors.title": "Other services",
   "privacy.processors.body": "Cloudflare hosts the site, its database, uploaded pictures and the sign-in mail. The provider you sign in with sees that you signed in here. The site shows no advertising, sells no data and does not track you on other sites.",
   "privacy.choices.title": "Your choices",

@@ -64,8 +64,10 @@
       await picture('upload', blob)
     } catch (failure) { error = failure.message || t('account.picture.unreadable') }
   }
+  const pictured = $derived(session.state.providers.filter(provider => linked.has(provider) && (provider === 'github' || connected[provider]?.image?.startsWith('https://'))))
   const pictureFrom = $derived(!session.state.user?.image ? 'initial' : session.state.user.image.startsWith('/api/avatars/') ? 'upload'
-    : session.state.user.image.includes('gravatar.com') ? 'gravatar' : session.state.user.image.includes('avatars.githubusercontent.com') ? 'github' : 'other')
+    : session.state.user.image.includes('gravatar.com') ? 'gravatar' : session.state.user.image.includes('avatars.githubusercontent.com') ? 'github'
+    : pictured.find(provider => connected[provider]?.image === session.state.user.image) ?? 'other')
   const rename = event => { event.preventDefault(); return act('name', async client => { const r = await client.updateUser({ name: name.trim() }); await session.refresh(); return r }, t('account.name.saved')) }
   const link = provider => act(provider, client => client.linkSocial({ provider, callbackURL: location.pathname }))
   const unlink = provider => act(provider, client => client.unlinkAccount({ accountId: accounts.find(account => account.providerId === provider).id }))
@@ -104,7 +106,7 @@
         <span class="avatar large" aria-hidden="true">{#if session.state.user.image}<img src={session.state.user.image} alt="" referrerpolicy="no-referrer" />{:else}{[...user.name][0]?.toUpperCase()}{/if}</span>
         <div class="picture-options" role="group" aria-label={t('account.picture.title')}>
           <button aria-pressed={pictureFrom === 'initial'} disabled={busy === 'picture'} onclick={() => picture('initial')}>{t('account.picture.initial')}</button>
-          {#if linked.has('github')}<button aria-pressed={pictureFrom === 'github'} disabled={busy === 'picture'} onclick={() => picture('github')}>GitHub</button>{/if}
+          {#each pictured as provider (provider)}<button aria-pressed={pictureFrom === provider} disabled={busy === 'picture'} onclick={() => picture(provider)}>{NAMES[provider]}</button>{/each}
           {#if email && !email.endsWith('.invalid')}<button aria-pressed={pictureFrom === 'gravatar'} disabled={busy === 'picture'} onclick={() => picture('gravatar')}>Gravatar</button>{/if}
           <button aria-pressed={pictureFrom === 'upload'} disabled={busy === 'picture'} onclick={() => pictureInput.click()}>{t('account.picture.upload')}</button>
           <input class="visually-hidden" type="file" accept="image/*" bind:this={pictureInput} onchange={upload} tabindex="-1" aria-hidden="true" />

@@ -5,6 +5,8 @@ import type { Viewer } from './auth';
 
 type Answer = { status: number; body: Record<string, unknown> };
 const UPLOAD_MAX = 256 * 1024;
+// Connected accounts whose picture is the one read from the provider when the account was connected.
+const PICTURED = new Set(['google', 'discord', 'line', 'kakao']);
 export const AVATAR_PATH = /^\/api\/avatars\/([0-9a-f-]{36})\/([0-9a-f]{16})\.webp$/;
 
 const hex = (bytes: ArrayBuffer) => [...new Uint8Array(bytes)].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -39,6 +41,11 @@ export async function setAvatar(env: Env, me: Viewer, source: string, request: R
     const account = await env.DB.prepare("SELECT accountId FROM account WHERE userId=? AND providerId='github'").bind(me.id).first<{ accountId: string }>();
     if (!account) return { status: 404, body: { detail: 'No GitHub account is connected.' } };
     image = `https://avatars.githubusercontent.com/u/${encodeURIComponent(account.accountId)}?v=4`;
+  } else if (PICTURED.has(source)) {
+    const profile = await env.DB.prepare('SELECT p.image FROM account a JOIN account_profiles p ON p.account=a.id WHERE a.userId=? AND a.providerId=?')
+      .bind(me.id, source).first<{ image: string | null }>();
+    if (!profile?.image?.startsWith('https://')) return { status: 404, body: { detail: 'That account has no picture.' } };
+    image = profile.image;
   } else if (source === 'upload') {
     if (request.headers.get('content-type') !== 'image/webp') return { status: 415, body: { detail: 'Send the picture as WebP.' } };
     const bytes = new Uint8Array(await request.arrayBuffer());

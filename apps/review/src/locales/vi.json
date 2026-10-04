@@ -760,7 +760,7 @@
   "privacy.account.methods": "Mã đăng nhập được gửi qua Cloudflare Email Service và lưu dưới dạng băm trong mười phút. Với khóa truy cập, trang chỉ lưu khóa công khai. Mỗi thiết bị đã đăng nhập có một phiên kèm địa chỉ IP và tên trình duyệt, được liệt kê trên trang tài khoản của bạn; phiên kết thúc khi bạn đăng xuất hoặc sau 90 ngày.",
   "privacy.public.title": "Thông tin người khác thấy",
   "privacy.public.body": "Các quyết định bạn lưu cùng thời gian được hiển thị trong lịch sử và bảng xếp hạng dưới tên hiển thị và ảnh đại diện của bạn, đồng thời được công bố cùng bộ sưu tập theo CC BY-SA 4.0 và ghi công bằng tên đó. Địa chỉ email của bạn không bao giờ được hiển thị.",
-  "privacy.public.gravatar": "Trình duyệt của mỗi người xem tải ảnh Gravatar từ Gravatar, và địa chỉ ảnh chứa giá trị băm của địa chỉ email của bạn. Ảnh GitHub cũng được tải từ GitHub theo cách tương tự.",
+  "privacy.public.gravatar": "Trình duyệt của mỗi người xem tải ảnh Gravatar từ Gravatar, và địa chỉ ảnh chứa giá trị băm của địa chỉ email của bạn. Ảnh của tài khoản đã kết nối, như GitHub hay Google, cũng được tải từ dịch vụ đó theo cách tương tự.",
   "privacy.processors.title": "Các dịch vụ khác",
   "privacy.processors.body": "Cloudflare cung cấp hạ tầng cho trang, cơ sở dữ liệu, ảnh tải lên và email đăng nhập. Nhà cung cấp dịch vụ bạn dùng để đăng nhập biết rằng bạn đã đăng nhập vào trang này. Trang không hiển thị quảng cáo, bán dữ liệu hay theo dõi bạn trên các trang khác.",
   "privacy.choices.title": "Lựa chọn của bạn",

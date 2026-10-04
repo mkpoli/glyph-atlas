@@ -778,7 +778,7 @@
   "privacy.account.methods": "登录验证码通过Cloudflare Email Service发送，经哈希处理后保留10分钟。通行密钥仅在本站留下公钥。每台已登录的设备都有一个会话，其中记录IP地址和浏览器名称，你可以在账号页面查看。会话会在退出登录或90天后结束。",
   "privacy.public.title": "公开的信息",
   "privacy.public.body": "你保存的判断及其时间会与你的显示名称和头像一起出现在编辑历史和排名中，并随馆藏以CC BY-SA 4.0发布，以该显示名称署名。你的邮箱地址不会公开。",
-  "privacy.public.gravatar": "Gravatar头像由每位访客的浏览器直接从Gravatar获取，头像地址中包含你邮箱地址的哈希值。GitHub头像也以同样的方式从GitHub获取。",
+  "privacy.public.gravatar": "Gravatar头像由每位访客的浏览器直接从Gravatar获取，头像地址中包含你邮箱地址的哈希值。GitHub、Google等已关联账号的头像也以同样的方式从相应服务获取。",
   "privacy.processors.title": "其他服务",
   "privacy.processors.body": "Cloudflare为网站、数据库、上传的头像和登录邮件提供服务。你用于登录的服务商会知道你登录了本站。本站不展示广告，不出售数据，也不跟踪你在其他网站上的活动。",
   "privacy.choices.title": "你的选择",
