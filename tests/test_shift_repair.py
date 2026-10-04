@@ -69,3 +69,15 @@ def test_a_record_crop_is_placed_in_its_block_even_on_a_line():
         ("block", "ezo", 3, "ocr2"), 7)
     assert shift_repair.place(_Unit(line_id="hk:x:3:L1", seq=4)) == (("line", "hk:x:3:L1"), 4)
     assert shift_repair.place(_Unit()) is None
+
+
+def test_a_lower_bar_relabels_a_less_sure_crop_of_a_run_only_when_it_prefers_the_shift():
+    blocks = block("一此湖水の")
+    sure, doubtful = shows(1, 0.5), shows(1, 0.4)
+    doubtful[OFFSETS.index(0)] = 0.45
+    shown = {"u0": shows(0), "u1": sure, "u2": shows(1), "u3": doubtful, "u4": shows(0)}
+    sizes = dict.fromkeys(shown, (30, 30))
+    assert {p["unit_id"] for p in propose(blocks, shown, sizes, set())} == {"u2"}
+    lowered = propose(blocks, shown, sizes, set(), min_p=0.3)
+    assert {p["unit_id"]: p["character"] for p in lowered} == {"u1": "湖", "u2": "水"}
+    assert {p["min_p"] for p in lowered} == {0.3}
