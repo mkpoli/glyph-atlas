@@ -450,6 +450,8 @@ class Host:
     frame: Box
     gap: float
     layout: list[Box] | None = None
+    #: Whether the node is the whole character, so its pieces stand where the designer put them in the em.
+    whole: bool = False
 
 
 @dataclass
@@ -660,7 +662,7 @@ class Composer:
                 return None
             part, node = cut[0][step], node[1 + step]
         cut = self._cut(part, node, strict)
-        return None if cut is None else Host(char, cut[0], part.box, cut[1])
+        return None if cut is None else Host(char, cut[0], part.box, cut[1], whole=not path)
 
     def alternatives(self, node: Node, place: str) -> list[str]:
         """What an operand may be drawn as in `place`: itself, then its positional forms there
@@ -734,7 +736,7 @@ class Composer:
                 return best[1]
         return None
 
-    def _template(self, op: str, children: list[Node], region: Box) -> tuple[Host, list[bool]] | None:
+    def _template(self, op: str, children: list[Node], region: Box, absolute: bool = False) -> tuple[Host, list[bool]] | None:
         """A drawn character with a node of `op` whose operands are most like `children`, cut into
         them: its layout is a type designer's balance for operands like these. Each flag says
         whether that operand is written there as the target writes it, so its piece is used as is."""
@@ -778,13 +780,20 @@ class Composer:
         # frame, averaged over the closest teachers, the closer weighing more.
         chosen = found_all[:self.teachers]
         weights = np.array([math.exp(rank - r) for r, _, _ in chosen])
-        shares = np.array([[_share(p.box, f.frame) for p in f.pieces] for _, f, _ in chosen])
+        if absolute:
+            # A whole character: boxes in the em as its teachers' designers placed them, a teacher
+            # node within a character carried into the full character's box.
+            em = (0.0, ASCENT - EM, EM, ASCENT)
+            shares = np.array([[_share(p.box if f.whole else mapped(p.box, f.frame, region), em) for p in f.pieces]
+                               for _, f, _ in chosen])
+        else:
+            shares = np.array([[_share(p.box, f.frame) for p in f.pieces] for _, f, _ in chosen])
         best.layout = [tuple(float(v) for v in row) for row in np.tensordot(weights / weights.sum(), shares, axes=1)]
         return best, same
 
     def compose(self, sequence: str) -> list[Placed]:
         """The parts that draw `sequence`; LookupError when an operand can be drawn no way."""
-        placed = self._node(parse(sequence), self.face)
+        placed = self._node(parse(sequence), self.face, whole=True)
         if self.weighted:
             self._balance(placed)
         return placed
@@ -811,7 +820,7 @@ class Composer:
             p.target = tuple(target)
             p.weight = (weight[0], weight[1])
 
-    def _node(self, node: Node, region: Box) -> list[Placed]:
+    def _node(self, node: Node, region: Box, whole: bool = False) -> list[Placed]:
         whole = node if isinstance(node, str) else self.by_sequence.get(key(node))
         if whole is not None and whole not in self._expanding and (isinstance(node, str) or whole not in self.exclude):
             glyph = self.font.glyph(whole)
@@ -850,7 +859,7 @@ class Composer:
         instance = self._instance(node, region)
         if instance is not None:
             return [instance]
-        found = self._template(op, children, region)
+        found = self._template(op, children, region, absolute=whole)
         if found is None and len(children) == 3:
             # Three operands no drawn character lays out as three are laid out as two, the last two together.
             binary = {"⿲": "⿰", "⿳": "⿱"}[op]
@@ -860,7 +869,10 @@ class Composer:
         host, same = found
         groups: list[list[Placed]] = []
         for i, (child, piece) in enumerate(zip(children, host.pieces)):
-            box = mapped(host.layout[i], (0, 0, 1, 1), region) if host.layout else mapped(piece.box, host.frame, region)
+            if host.layout:
+                box = mapped(host.layout[i], (0, 0, 1, 1), (0.0, ASCENT - EM, EM, ASCENT) if whole else region)
+            else:
+                box = mapped(piece.box, host.frame, region)
             if op in ENCLOSE and i == 1 and not same[0]:
                 # The teacher's room was left by another enclosing part: the room is found in this one.
                 box = self._room(op, groups[0], region) or box
@@ -874,13 +886,17 @@ class Composer:
             drawn, k = part
             source = drawn.pieces[k]
             if op in AXIS:
-                # Along the axis the teacher's share; across it, the extent the part's own host gave it.
+                # Along the axis the teacher's share; across it, the extent the part's own host gave
+                # it: where that host drew it in the em, for a whole character drawn from a whole one.
                 axis = AXIS[op]
                 frame, target = drawn.frame, list(box)
-                lo, span = region[1 - axis], region[3 - axis] - region[1 - axis]
-                width = frame[3 - axis] - frame[1 - axis]
-                target[1 - axis] = lo + (source.box[1 - axis] - frame[1 - axis]) / width * span
-                target[3 - axis] = lo + (source.box[3 - axis] - frame[1 - axis]) / width * span
+                if whole and drawn.whole:
+                    target[1 - axis], target[3 - axis] = source.box[1 - axis], source.box[3 - axis]
+                else:
+                    lo, span = region[1 - axis], region[3 - axis] - region[1 - axis]
+                    width = frame[3 - axis] - frame[1 - axis]
+                    target[1 - axis] = lo + (source.box[1 - axis] - frame[1 - axis]) / width * span
+                    target[3 - axis] = lo + (source.box[3 - axis] - frame[1 - axis]) / width * span
                 target = tuple(target)
             else:
                 target = fitted(source.box, box)
