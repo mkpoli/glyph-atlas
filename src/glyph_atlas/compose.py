@@ -355,6 +355,8 @@ STROKE_HOSTS = 60
 STROKE_EVIDENCE = 4
 #: How many hosts of each place an instance of a sequence is looked for in.
 INSTANCE_HOSTS = 12
+#: An enclosed part's room stays this many stroke widths clear of the enclosing part's ink.
+ROOM_MARGIN = 0.8
 #: Least number of Japanese characters that must write a positional form in a place for it to be used there.
 JAPANESE_USE = 3
 #: Most an operand may differ from the teacher's, in ink or in proportions, for the teacher's layout to hold.
@@ -856,6 +858,9 @@ class Composer:
         groups: list[list[Placed]] = []
         for i, (child, piece) in enumerate(zip(children, host.pieces)):
             box = mapped(host.layout[i], (0, 0, 1, 1), region) if host.layout else mapped(piece.box, host.frame, region)
+            if op in ENCLOSE and i == 1 and not same[0]:
+                # The teacher's room was left by another enclosing part: the room is found in this one.
+                box = self._room(op, groups[0], region) or box
             if same[i]:
                 groups.append([Placed(piece, piece.box, box, native=self.ink(host.char), origin=f"teacher {host.char}")])
                 continue
@@ -905,6 +910,45 @@ class Composer:
             return None
         _, piece, char = best
         return Placed(piece, piece.box, region, native=self.ink(char), origin=f"instance {char}")
+
+    def _room(self, op: str, outer: list[Placed], region: Box, size: int = 48) -> Box | None:
+        """The largest empty box inside `region` that the placed enclosing part closes on its
+        closed sides (`ENCLOSE`), at least `ROOM_MARGIN` stroke widths clear of its ink."""
+        rings = [ring for p in outer for ring in _rings(p.part.contours, p.contours())]
+        ink = fill(rings, size, region)
+        margin = max(1, round(ROOM_MARGIN * self.font.stem[0][0] / ((region[2] - region[0]) / size)))
+        grown = ink.copy()
+        for _ in range(margin):
+            step = grown.copy()
+            step[1:] |= grown[:-1]
+            step[:-1] |= grown[1:]
+            step[:, 1:] |= grown[:, :-1]
+            step[:, :-1] |= grown[:, 1:]
+            grown = step
+        free = ~grown
+        best, heights = None, np.zeros(size, int)
+        for row in range(size):
+            heights = np.where(free[row], heights + 1, 0)
+            stack: list[int] = []
+            for col in range(size + 1):
+                h = heights[col] if col < size else 0
+                while stack and heights[stack[-1]] >= h:
+                    top = stack.pop()
+                    height, left = heights[top], (stack[-1] + 1 if stack else 0)
+                    width = col - left
+                    if not height or not width:
+                        continue
+                    r0, r1, c0, c1 = row - height + 1, row + 1, left, col
+                    # Each closed side must have ink between the room and the region's edge.
+                    sides = {"L": ink[r0:r1, :c0], "R": ink[r0:r1, c1:], "T": ink[:r0, c0:c1], "B": ink[r1:, c0:c1]}
+                    if all(sides[side].any() for side in ENCLOSE[op]) and (best is None or height * width > best[0]):
+                        best = (height * width, r0, r1, c0, c1)
+                stack.append(col)
+        if best is None:
+            return None
+        _, r0, r1, c0, c1 = best
+        w, h = (region[2] - region[0]) / size, (region[3] - region[1]) / size
+        return (region[0] + c0 * w, region[3] - r1 * h, region[0] + c1 * w, region[3] - r0 * h)
 
     @staticmethod
     def _stretch(source: Box, target: Box) -> float:
