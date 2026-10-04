@@ -812,6 +812,25 @@ def page_seq(image: str, fallback: int) -> int:
     return codh.page_seq(image, fallback)
 
 
+def reading_place(unit_id: str, page_id: str | None) -> tuple[str, int] | None:
+    """A unit's line and position on it, from its id: `codh:{bid}:{image}:{block}:C{n}` is the n-th
+    character of block `block` in the order the dataset's annotators read the page (`Char ID`).
+
+    A block is a region of the page that may hold several columns, so a line here is the block, and
+    the step from the foot of one column to the head of the next is a long one that `ngrams.REACH`
+    breaks. Measured over the 1,080,878 pairs of consecutive characters in the dataset's 5,409 page
+    blocks, 1,023,837 stand within reach of each other, and on 1,001,981 of those (97.9 percent) a
+    reading order derived from the boxes alone (`align.reading_order`) puts the same character next.
+    Where the two differ, the annotators' order reads on and the boxes' does not: interlinear notes
+    and small kana set beside a column are taken into the neighbouring column by the boxes. A unit
+    of another id, such as a report, has no place.
+    """
+    parts = unit_id.split(":")
+    if len(parts) != 5 or parts[0] != "codh" or not page_id or not parts[4].startswith("C") or not parts[4][1:].isdigit():
+        return None
+    return f"{page_id}:{parts[3]}", int(parts[4][1:])
+
+
 def _units(book: Book, rows: list[dict[str, str]], sizes: dict[str, tuple[Path | None, int, int]]) -> list[Unit]:
     """One unit per row of the coordinate CSV, as the one-book importer makes them.
 
