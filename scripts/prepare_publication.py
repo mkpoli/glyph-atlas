@@ -125,15 +125,22 @@ def unpacked(catalogue: Path, export: Path) -> list[str]:
 
 
 def read_media(keys: list[str]) -> dict[str, tuple[str, int, int]]:
-    """The site's media rows for `keys`, as (object, offset, size), read in chunks, several at a time."""
+    """The site's media rows for `keys`, as (object, offset, size), read in chunks, two at a time. A chunk
+    whose answer does not come back is read again in halves, as `read_range` splits a crowded range."""
     if any(not re.fullmatch(r"[0-9a-f]{64}", k) for k in keys):
         raise SystemExit("an image key is not a sha256")
     chunks = [keys[i:i + MEDIA_CHUNK] for i in range(0, len(keys), MEDIA_CHUNK)]
 
-    def read(chunk):
+    def read(chunk, depth=0):
         listed = ",".join(f"'{k}'" for k in chunk)
-        return d1(f"SELECT key, object, offset, size FROM media WHERE key IN ({listed})")
-    with ThreadPoolExecutor(4) as pool:
+        try:
+            return d1(f"SELECT key, object, offset, size FROM media WHERE key IN ({listed})", tries=2)
+        except subprocess.CalledProcessError:
+            if depth >= 3 or len(chunk) < 2:
+                raise SystemExit(f"could not read the site's media rows for {chunk[0]}..{chunk[-1]}") from None
+        half = len(chunk) // 2
+        return read(chunk[:half], depth + 1) + read(chunk[half:], depth + 1)
+    with ThreadPoolExecutor(2) as pool:
         return {row["key"]: (row["object"], row["offset"], row["size"]) for rows in pool.map(read, chunks) for row in rows}
 
 

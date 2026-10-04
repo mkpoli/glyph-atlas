@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import re
 import sqlite3
 from pathlib import Path
 
@@ -222,3 +223,21 @@ def test_a_pack_written_under_a_deleted_packs_name_is_refused_before_the_export_
         prepare_run(tmp_path, monkeypatch, export, ["ar:1"], {A: ("packs/x.bin", 0, 5)})
     with sqlite3.connect(export / "catalogue.sqlite") as db:
         assert db.execute("SELECT count(*) FROM media").fetchone() == (4,)
+
+
+def test_a_media_chunk_that_does_not_come_back_is_read_in_halves(monkeypatch):
+    import subprocess
+
+    keys = [f"{i:064x}" for i in range(8)]
+
+    def d1(sql, tries=4):
+        asked = re.findall(r"'([0-9a-f]{64})'", sql)
+        if len(asked) > 2:  # too large for one response, or a dropped connection
+            raise subprocess.CalledProcessError(1, "wrangler")
+        return [{"key": k, "object": "packs/p.bin", "offset": int(k, 16), "size": 1} for k in asked]
+    monkeypatch.setattr(prepare, "d1", d1)
+    monkeypatch.setattr(prepare, "MEDIA_CHUNK", 8)
+    assert prepare.read_media(keys) == {k: ("packs/p.bin", i, 1) for i, k in enumerate(keys)}
+    monkeypatch.setattr(prepare, "d1", lambda sql, tries=4: (_ for _ in ()).throw(subprocess.CalledProcessError(1, "wrangler")))
+    with pytest.raises(SystemExit, match=f"could not read the site's media rows for {keys[0]}"):
+        prepare.read_media(keys)
