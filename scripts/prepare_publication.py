@@ -46,7 +46,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 from cloudflare_schema import schema
-from seal_cloudflare import MEDIA_URL, seal
+from seal_cloudflare import MEDIA_URL, crossing_packs, seal
 
 from glyph_atlas import withdrawn
 from glyph_atlas.extraction_queue import overlaps
@@ -319,6 +319,11 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
 
     catalogue = snapshot(args.export, out)
+    # Checked before `drop_truncated`, which would delete from the export the earlier run's rows that
+    # reach past the end of the later pack under the same name.
+    with sqlite3.connect(catalogue) as db:
+        if crossing := [o for o in crossing_packs(db) if (args.export / o).exists()]:
+            raise SystemExit(f"packs hold images of two export runs under one name: {', '.join(crossing)}")
     lost = drop_truncated(args.export, catalogue)
     (out / "lost.json").write_text(json.dumps(lost, indent=1))
     select_units(catalogue, args.prefix)

@@ -26,6 +26,17 @@ IMMUTABLE = ("metadata", "characters", "aliases", "corpus_units", "media")
 MEDIA_URL = re.compile(r"/atlas/media/([0-9a-f]{64})\.webp")
 
 
+def crossing_packs(db, table="media") -> list[str]:
+    """Packs in which two image rows share bytes. A pack written under the name of an earlier one
+    that was deleted leaves both runs' rows pointing into it, and the earlier rows read the wrong bytes."""
+    crossing, last = set(), (None, 0)
+    for obj, offset, size in db.execute(f"SELECT object,offset,size FROM {table} ORDER BY object,offset"):
+        if obj == last[0] and offset < last[1]:
+            crossing.add(obj)
+        last = (obj, max(offset + size, last[1]) if obj == last[0] else offset + size)
+    return sorted(crossing)
+
+
 def reviewed_baselines(db, corpus):
     """Carry reviewed identities and outstanding issues into the published baseline."""
     from glyph_atlas.corpus.api import CorpusAPI
@@ -131,6 +142,8 @@ def seal(catalogue: Path, corpus: Path, output: Path, published: dict[str, tuple
         if source is None and published[key][2] != size:
             raise ValueError(f"image {key} is {size} bytes here and {published[key][2]} on the site")
         local[key] = source
+    if crossing := [o for o in crossing_packs(db) if any((root / o).exists() for root in (corpus, catalogue))]:
+        raise ValueError(f"packs hold images of two export runs under one name: {', '.join(crossing)}")
     # Already on the site: the row names the object the site serves, and no bytes are packed.
     db.executemany("UPDATE media SET object=?,offset=? WHERE key=?",
                    ((published[k][0], published[k][1], k) for k, source in local.items() if source is None))

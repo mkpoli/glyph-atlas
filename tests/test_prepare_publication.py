@@ -210,3 +210,15 @@ def test_an_image_neither_on_disk_nor_on_the_site_is_named(tmp_path, monkeypatch
         prepare_run(tmp_path, monkeypatch, export, ["ar:1"], {A: ("packs/x.bin", 0, 5)})
     assert json.loads((tmp_path / "out" / "unserved.json").read_text()) == [D]
 
+
+def test_a_pack_written_under_a_deleted_packs_name_is_refused_before_the_export_is_touched(tmp_path, monkeypatch):
+    export = resumed_export(tmp_path, {"ar:1": A, "ar:2": B})
+    # An export run before packs were numbered past deleted ones wrote its new crop into pack-0001 again.
+    with sqlite3.connect(export / "catalogue.sqlite") as db:
+        db.execute("UPDATE media SET object='pack-0001.bin' WHERE key=?", (B,))
+    (export / "pack-0003.bin").rename(export / "pack-0001.bin")
+    (export / "pack-0001.bin").write_bytes(b"cut")
+    with pytest.raises(SystemExit, match="two export runs under one name: pack-0001.bin"):
+        prepare_run(tmp_path, monkeypatch, export, ["ar:1"], {A: ("packs/x.bin", 0, 5)})
+    with sqlite3.connect(export / "catalogue.sqlite") as db:
+        assert db.execute("SELECT count(*) FROM media").fetchone() == (4,)
