@@ -48,11 +48,9 @@
   // for it: characters that write the same word, kept out of the variant tiers and the widening. A card
   // cached before the word tables existed has no `words`; it reads as none.
   const words = $derived({ items: [], sources: {}, ...card?.words })
-  const TIERS = { attested: () => t('chips.tier.attested'), observed: () => t('chips.tier.observed'),
-    editorial: () => t('chips.tier.editorial') }
   // One line per source: a 振り仮名 row names the reading it counts, since 抔 is counted under など and なと.
   const spellingTitle = s => s.spelling + '\n' + s.sources.map(c => [c.ruby ? `${c.source} ${c.ruby}` : c.source,
-    TIERS[c.tier]?.() ?? c.tier, c.documents ? t('chips.documents', { count: c.documents }) : ''].filter(Boolean).join(' · ')).join('\n')
+    c.documents ? t('chips.documents', { count: c.documents }) : ''].filter(Boolean).join(' · ')).join('\n')
   // Outside the unified ideographs' main block a character may be missing from the reader's fonts or
   // look like another (a compatibility ideograph, a Kangxi radical), so it shows its code point too.
   const named = v => { const p = v.char.codePointAt(0); return !(p >= 0x4e00 && p <= 0x9fff) }
