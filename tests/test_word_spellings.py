@@ -7,7 +7,14 @@ from glyph_atlas.rare_chars import is_han
 
 TIERS = {"attested", "observed", "editorial"}
 WORD_BY = {"source", "editorial"}
-BASES = {"", "shape"}
+BASES = {"", "shape-confusion"}
+
+
+def test_every_word_cites_its_source():
+    sources = refs.word_sources()
+    for word, row in refs.words().items():
+        assert word == f"{row['language']}/{row['reading']}/{row['class']}", row
+        assert row["source"] in sources and row["detail"], row
 
 
 def test_every_row_names_a_word_a_cited_source_and_a_tier():
@@ -20,18 +27,23 @@ def test_every_row_names_a_word_a_cited_source_and_a_tier():
         assert row["spelling"] and all(is_han(char) for char in row["spelling"]), row
 
 
-def test_a_reason_is_given_only_with_what_it_stands_for():
+def test_a_reason_names_the_character_it_is_about():
     for row in refs.word_spellings():
         assert row["basis"] in BASES, row
-        assert bool(row["basis"]) == bool(row["substitutes_for"]), row
+        assert bool(row["basis"]) == bool(row["related"]), row
 
 
-def test_ruby_rows_carry_their_counts_and_need_two_documents():
+def test_ruby_rows_are_observed_carry_their_counts_and_need_two_documents():
     ruby = [row for row in refs.word_spellings() if row["source"] == "honkoku-ruby"]
     assert ruby
     for row in ruby:
+        _, reading, spelling = row["locator"].split(" ")
+        assert row["tier"] == "observed" and spelling == row["spelling"], row
         assert row["documents"] >= 2 and row["occurrences"] >= row["documents"], row
-        assert row["statement"] == f"{row['spelling']}（{refs.words()[row['word']]['reading']}）", row
+        assert row["statement"] == f"{spelling}（{reading}）", row
+    # なと, without its dakuten, counts for など under its own key.
+    assert {row["locator"] for row in ruby if row["spelling"] == "抔"} == {
+        "ruby-spellings.tsv など 抔", "ruby-spellings.tsv なと 抔"}
 
 
 def test_spellings_are_found_through_the_word():

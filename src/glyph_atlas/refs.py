@@ -970,7 +970,9 @@ def word_spellings() -> tuple[dict[str, Any], ...]:
     """The rows of word-spellings.tsv, one per source statement that a spelling writes a word.
 
     A `honkoku-ruby` row carries the `documents` and `occurrences` that ruby-spellings.tsv counts for
-    its reading and spelling; every other row carries neither. Nothing here relates two characters:
+    the reading and spelling its locator names (`ruby-spellings.tsv なと 抔`); every other row carries
+    neither. The two tables are built apart, so a ruby row that the regenerated table no longer holds
+    raises KeyError. Nothing here relates two characters:
     the spellings of one word are found through the word, never stored as a pair, and no row reaches
     the 異体字 graph, a grapheme family or a gallery.
     """
@@ -979,10 +981,17 @@ def word_spellings() -> tuple[dict[str, Any], ...]:
     for row in _read_tsv(WORD_SPELLINGS_TSV):
         row = dict(row)
         if row["source"] == "honkoku-ruby":
-            ruby = counts[(words()[row["word"]]["reading"], row["spelling"])]
+            _, reading, spelling = row["locator"].split(" ")
+            ruby = counts[(reading, spelling)]
             row["documents"], row["occurrences"] = int(ruby["documents"]), int(ruby["occurrences"])
         found.append(row)
     return tuple(found)
+
+
+@cache
+def word_sources() -> dict[str, str]:
+    """The citation of each source of words.tsv, as the table's header states it."""
+    return _source_citations(WORDS_TSV)
 
 
 @cache
