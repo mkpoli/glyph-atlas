@@ -812,16 +812,16 @@ try {
     event_actor_history: "CREATE INDEX event_actor_history ON events(actor, at DESC, id DESC) WHERE kind IN ('review','undo')",
     event_label_history: `CREATE INDEX event_label_history ON events(${worker.historyLabelExpr()}, at DESC, id DESC) WHERE kind IN ('review','undo')`,
   }
-  // Pair and trigram frequencies group along their own index, for the collection and for one book. The
-  // sort by count is over the grouped rows, which is why the answer is kept at the edge.
-  const ngramShapes = [[false, [2], 'unit_ngram_order'], [true, ['hk:doc', 2], 'unit_ngram_work']]
+  // Pair and trigram frequencies, the whole site's and a book's: the first page of the counts the
+  // triggers keep, read in rank order with no sort.
+  const ngramShapes = [[false, ['', 2], 'ngram_count_rank'], [true, ['hk:doc', 2], 'ngram_count_rank']]
   const ngramServed = (details, index) => {
-    assert.ok(details.some(d => new RegExp(`USING (COVERING )?INDEX ${index}\\b`).test(d)), `${index}: ${details.join('; ')}`)
-    assert.ok(!details.some(d => d.includes('USE TEMP B-TREE FOR GROUP BY')), details.join('; '))
-    assert.ok(!details.some(d => /^SCAN \w+/.test(d) && !/USING (COVERING )?INDEX/.test(d)), details.join('; '))
+    assert.ok(details.some(d => new RegExp(`SEARCH ngram_counts USING COVERING INDEX ${index} \\(scope=\\? AND size=\\?\\)`).test(d)), `${index}: ${details.join('; ')}`)
+    assert.ok(!details.some(d => d.includes('TEMP B-TREE')), details.join('; '))
+    assert.ok(!details.some(d => /^SCAN \w+/.test(d)), details.join('; '))
   }
-  for (const [document, bound, index] of ngramShapes) {
-    const shape = { sql: worker.ngramsQuery(document), values: [] }
+  for (const [, bound, index] of ngramShapes) {
+    const shape = { sql: worker.ngramsQuery(), values: [] }
     ngramServed(await plan(shape, bound), index)
     const create = (await db.prepare('SELECT sql FROM sqlite_master WHERE name=?').bind(index).first()).sql
     await db.prepare(`DROP INDEX ${index}`).run()
@@ -847,6 +847,8 @@ try {
   assert.equal((await db.prepare("SELECT text FROM unit_ngrams WHERE first='one'").first()).text, firstLabel + secondLabel)
   await db.prepare("UPDATE units SET character='ヰ' WHERE id='two'").run()
   assert.equal((await db.prepare("SELECT text FROM unit_ngrams WHERE first='one'").first()).text, firstLabel + 'ヰ')
+  assert.deepEqual((await db.prepare("SELECT text,n FROM ngram_counts WHERE scope='' AND size=2 AND text IN (?,?) ORDER BY text").bind(firstLabel + secondLabel, firstLabel + 'ヰ').all()).results,
+    [{ text: firstLabel + 'ヰ', n: 1 }], 'the counts follow a relabelled run')
   await db.prepare("UPDATE units SET character=? WHERE id='two'").bind(secondLabel).run()
   // One run's occurrences: read along the first row's index in its key order, every other row and each
   // crop by its key, never sorted or scanned, for every length and every row a long run can start from;
@@ -861,12 +863,14 @@ try {
   }
   for (const [document, scope, index] of [[false, [], 'unit_ngram_order'], [true, ['hk:doc'], 'unit_ngram_work']]) {
     const probe = await plan({ sql: worker.runProbeQuery(document), values: [] }, [...scope, 'ナリケ'])
-    assert.ok(probe.some(d => new RegExp(`USING COVERING INDEX ${index}\\b`).test(d)), probe.join('; '))
+    // A book's probe is served as well by the index that places a run by book (0059), which leads with the same terms.
+    assert.ok(probe.some(d => new RegExp(`USING COVERING INDEX (${index}|${document ? 'unit_ngram_source' : index})\\b`).test(d)), probe.join('; '))
     for (let size = 2; size <= 8; size++) for (let anchor = 0; anchor <= Math.max(0, size - 3); anchor++) for (const style of [false, true]) {
       const links = worker.runFrom(size, anchor).links.map(() => 'ナリ'), bound = [...links, ...scope, Math.min(size, 3), 'ナリ', ...(style ? [0] : [])]
       for (const shape of [{ sql: worker.runOccurrencesQuery(size, anchor, document, style), values: [] }, { sql: worker.runCountQuery(size, anchor, document, style), values: [] }]) {
         const args = shape.sql.includes('OFFSET') ? [...bound, 48, 0] : bound
-        occurrenceServed(await plan(shape, args), index)
+        // A book's count asks for no order, and the index that places a run by book (0059) serves it as well.
+        occurrenceServed(await plan(shape, args), document && !shape.sql.includes('OFFSET') ? `(?:${index}|unit_ngram_source)` : index)
         if (size !== 5 || anchor !== 1 || style) continue
         const create = (await db.prepare('SELECT sql FROM sqlite_master WHERE name=?').bind(index).first()).sql
         await db.prepare(`DROP INDEX ${index}`).run()
@@ -892,12 +896,18 @@ try {
     assert.ok(!details.some(d => /^SCAN \w+ ?$/.test(d) || /^SCAN [a-z]\d? *$/.test(d)), details.join('; '))
   }
   for (const [sql, bound, index] of [[worker.runWorksQuery(2, 0), [2, 'ナリ'], 'unit_ngram_source'], [worker.runWorksQuery(5, 1), ['ナリ', 'ナリ', 3, 'ナリ'], 'unit_ngram_source'],
-    [worker.runRangeQuery(), [3, 'ナリ', 'ナリ\u{10FFFF}', 'ナリ'], 'unit_ngram_order'], [worker.runHasQuery(), [2, 'ナリ'], 'unit_ngram_order']]) {
+  ]) {
     nearServed(await plan({ sql, values: [] }, bound), index)
     const create = (await db.prepare('SELECT sql FROM sqlite_master WHERE name=?').bind(index).first()).sql
     await db.prepare(`DROP INDEX ${index}`).run()
     await assert.rejects(async () => nearServed(await plan({ sql: sql + ' ', values: [] }, bound), index), `the check on ${index} fails without it`)
     await db.prepare(create).run()
+  }
+  // The runs near one read the site's counts by their key: a prefix is one key range, a text one key.
+  for (const [sql, bound, key] of [[worker.runRangeQuery(), [3, 'ナリ', 'ナリ\u{10FFFF}', 'ナリ'], /^SEARCH ngram_counts USING PRIMARY KEY \(scope=\? AND size=\? AND text>\? AND text<\?\)$/],
+    [worker.runHasQuery(), [2, 'ナリ'], /^SEARCH ngram_counts USING PRIMARY KEY \(scope=\? AND size=\? AND text=\?\)$/]]) {
+    const details = await plan({ sql, values: [] }, bound)
+    assert.ok(details.some(d => key.test(d)) && !details.some(d => /^SCAN /.test(d)), details.join('; '))
   }
   const leftward = (await db.prepare("SELECT sql FROM sqlite_master WHERE name='unit_ngram_second'").first()).sql
   await db.prepare('DROP INDEX unit_ngram_second').run()
@@ -1010,7 +1020,11 @@ try {
   assert.deepEqual([triple.inside, triple.siblings.map(r => r.text), triple.longer, triple.lead], [['ナリ'], ['ナリイ'], [], 'ナリ'], 'a trigram offers the pairs it holds that the site has, and the trigrams that share its first two')
   assert.deepEqual((await near('ナリアイ')).inside, ['ナリア'], 'a run of four offers the trigrams inside it that the site has')
   assert.equal((await mf.dispatchFetch(base + '/atlas/runs/related?text=' + encodeURIComponent('ナ'))).status, 422)
+  // A run filed under an empty book is counted once, on the whole site.
+  await db.prepare("INSERT INTO unit_ngrams(first,size,second,text,document) VALUES('blank1',2,'blank2','空白','')").run()
+  assert.deepEqual((await db.prepare("SELECT scope,n FROM ngram_counts WHERE text='空白'").all()).results, [{ scope: '', n: 1 }])
   await db.prepare('DELETE FROM unit_ngrams').run()
+  assert.equal((await db.prepare('SELECT count(*) AS n FROM ngram_counts').first()).n, 0, 'every count goes with its runs')
   for (const [index, create] of Object.entries(keys)) {
     await db.prepare(`DROP INDEX ${index}`).run()
     for (const [shape, bound] of shapes.filter(s => s[2] === index))

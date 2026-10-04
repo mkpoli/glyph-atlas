@@ -504,24 +504,23 @@ export function moved(stored: Facet[], moves: Facet[]): Facet[] {
 }
 // The pair and trigram frequencies Explore's grid shows: runs of crops that follow each other on a
 // line (`unit_ngrams`), counted by the text their labels make, most frequent first. The whole
-// collection's count reads every run of the length asked for and a book's reads its own, through the
-// index that also groups them; the edge keeps one copy per catalogue version, length and book. A run is
+// collection's count and a book's are each the first page of the counts the triggers keep
+// (`ngram_counts`, 0060). The edge keeps one copy per catalogue version, length and book. A run is
 // shown down the page where most of its occurrences are written that way.
 const NGRAMS_MAX = 480, NGRAM_SIZES = new Set(['2', '3']);
 function ngramSize(value: string) {
   if (!NGRAM_SIZES.has(value)) throw new Problem(404, 'Runs of two or three characters are counted.');
   return Number(value);
 }
-export function ngramsQuery(document: boolean) {
-  return `SELECT text,count(*) AS n,2*sum(vertical)>=count(*) AS vertical FROM unit_ngrams
-    WHERE ${document ? 'document=? AND ' : ''}size=? AND text IS NOT NULL GROUP BY text ORDER BY n DESC,text LIMIT ${NGRAMS_MAX}`;
+export function ngramsQuery() {
+  return `SELECT text,n,2*down>=n AS vertical FROM ngram_counts WHERE scope=? AND size=? ORDER BY n DESC,text LIMIT ${NGRAMS_MAX}`;
 }
 async function ngrams(env: Env, ctx: ExecutionContext, url: URL, size: number) {
   const document = text(url.searchParams.get('document'), 256, 'document');
   const key = new Request(`${url.origin}/atlas/ngrams/${size}?document=${encodeURIComponent(document ?? '')}&v=${encodeURIComponent(await catalogueVersion(env))}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json() as Json;
-  const rows = await env.DB.prepare(ngramsQuery(Boolean(document))).bind(...(document ? [document] : []), size).all<{ text: string; n: number; vertical: number }>();
+  const rows = await env.DB.prepare(ngramsQuery()).bind(document ?? '', size).all<{ text: string; n: number; vertical: number }>();
   const body = { items: rows.results.map(row => ({ ...row, vertical: Boolean(row.vertical) })), limit: NGRAMS_MAX };
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return body;
@@ -666,11 +665,12 @@ async function runWorks(env: Env, rows: { document: string; n: number; sample: s
 }
 // The runs near one, to move between them: the shorter runs a trigram or four holds, the trigrams a pair
 // begins, and the runs of the same length that begin with the same characters (a pair's first, a
-// trigram's first two), most frequent first. A prefix is one range of the runs' index, and the answer is
-// kept at the edge per catalogue version like the counts.
-export const runRangeQuery = () => `SELECT text,count(*) AS n,2*sum(vertical)>=count(*) AS vertical FROM unit_ngrams
-  WHERE size=? AND text>=? AND text<? AND text<>? GROUP BY text ORDER BY n DESC,text LIMIT ${RUN_NEAR_MAX}`;
-export const runHasQuery = () => 'SELECT text FROM unit_ngrams WHERE size=? AND text=? LIMIT 1';
+// trigram's first two), most frequent first. A prefix is one key range of the site's counts (`ngram_counts`,
+// 0060), a row per text rather than one per occurrence, and the answer is kept at the edge per catalogue
+// version like the counts.
+export const runRangeQuery = () => `SELECT text,n,2*down>=n AS vertical FROM ngram_counts
+  WHERE scope='' AND size=? AND text>=? AND text<? AND text<>? ORDER BY n DESC,text LIMIT ${RUN_NEAR_MAX}`;
+export const runHasQuery = () => "SELECT text FROM ngram_counts WHERE scope='' AND size=? AND text=?";
 async function runRelated(env: Env, ctx: ExecutionContext, url: URL) {
   const value = text(url.searchParams.get('text'), 96, 'text', true)!;
   const parts = runCharacters(value);
