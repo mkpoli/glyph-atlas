@@ -405,15 +405,23 @@ class Placed:
         return [(c.light + (c.heavy - c.light) * weight - centre) * scale + goal for c in self.part.contours]
 
 
+def _share(box: Box, frame: Box) -> Box:
+    """`box` as shares of `frame`: (0, 0, 1, 1) fills it."""
+    w, h = max(frame[2] - frame[0], 1), max(frame[3] - frame[1], 1)
+    return ((box[0] - frame[0]) / w, (box[1] - frame[1]) / h, (box[2] - frame[0]) / w, (box[3] - frame[1]) / h)
+
+
 @dataclass
 class Host:
     """A node of a drawn character cut into its operands: the character, the pieces, the box of the
-    node's ink, and the mean gap between the pieces."""
+    node's ink, and the mean gap between the pieces. A teacher also carries `layout`, each
+    operand's box as shares of the node's, agreed among the closest teachers."""
 
     char: str
     pieces: list[Part]
     frame: Box
     gap: float
+    layout: list[Box] | None = None
 
 
 @dataclass
@@ -427,6 +435,8 @@ class Composer:
     #: into its share, the plainest way to compose, for comparison.
     hosted: bool = True
     weighted: bool = True
+    #: How many of the closest teachers the layout is agreed among.
+    teachers: int = 3
     _expanding: set[str] = field(default_factory=set, init=False, repr=False)
     _inks: dict[str, float] = field(default_factory=dict, init=False, repr=False)
     _sketches: dict[str, Part | None] = field(default_factory=dict, init=False, repr=False)
@@ -673,17 +683,25 @@ class Composer:
                 continue
             unlike = sum(0 if s else 1 + g[0] + g[1] for s, g in zip(same, gaps))
             scored.append((unlike, len(path), char, tree, path, same))
-        best = None
+        found_all = []
         for unlike, depth, char, tree, path, same in sorted(scored, key=lambda r: r[:2])[:24]:
             found = self._host_node(char, tree, path)
             if found is None:
                 continue
             frame = found.frame
             shape = abs(math.log(((frame[2] - frame[0]) / max(frame[3] - frame[1], 1)) / aspect))
-            rank = unlike + shape + 0.1 * depth
-            if best is None or rank < best[0]:
-                best = (rank, (found, same))
-        return best[1] if best else None
+            found_all.append((unlike + shape + 0.1 * depth, found, same))
+        if not found_all:
+            return None
+        found_all.sort(key=lambda r: r[0])
+        rank, best, same = found_all[0]
+        # The layout is the teachers' consensus: each operand's box, as a share of its teacher's
+        # frame, averaged over the closest teachers, the closer weighing more.
+        chosen = found_all[:self.teachers]
+        weights = np.array([math.exp(rank - r) for r, _, _ in chosen])
+        shares = np.array([[_share(p.box, f.frame) for p in f.pieces] for _, f, _ in chosen])
+        best.layout = [tuple(float(v) for v in row) for row in np.tensordot(weights / weights.sum(), shares, axes=1)]
+        return best, same
 
     def compose(self, sequence: str) -> list[Placed]:
         """The parts that draw `sequence`; LookupError when an operand can be drawn no way."""
@@ -760,7 +778,7 @@ class Composer:
         host, same = found
         placed = []
         for i, (child, piece) in enumerate(zip(children, host.pieces)):
-            box = mapped(piece.box, host.frame, region)
+            box = mapped(host.layout[i], (0, 0, 1, 1), region) if host.layout else mapped(piece.box, host.frame, region)
             if same[i]:
                 placed.append(Placed(piece, piece.box, box, native=self.ink(host.char), origin=f"teacher {host.char}"))
                 continue
