@@ -59,3 +59,9 @@ def test_a_stated_substitution_is_a_row_like_any_other_with_its_statement_as_a_p
     assert ("迭", "𨒔") in {(p["a"], p["b"]) for p in row["pairs"]}
     assert refs.component_variants()[("コ", "龴")]["pairs"] == [{"a": "コ", "b": "龴", "sources": ["mkpoli-2026-10-04"]}]
     assert refs.component_variant_sources()["mkpoli-2026-10-04"].startswith("mkpoli (Glyph Atlas maintainer), instruction of 2026-10-04")
+
+
+def test_a_whole_character_swap_is_no_sequence_of_its_own():
+    # 䍃 is itself a component the table swaps; its rows spelled out are not forms of it.
+    assert not [row for row in refs.derived_variants("䍃", limit=None) if not row["encoded"]
+                and any(sub["was"] == "䍃" for route in row["routes"] for sub in route)]

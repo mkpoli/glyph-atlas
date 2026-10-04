@@ -437,7 +437,8 @@ def _derive(char: str) -> list[dict[str, Any]]:
             # relates them, are two characters: 也↔它 (蛇 and 虵) would make 馳 a form of 駝.
             if han_components.tier(char) == han_components.tier(form.other) == 0:
                 continue
-        elif any(depth > DERIVED_IDS_DEPTH for _, _, depth in form.route):
+        elif any(not 1 <= depth <= DERIVED_IDS_DEPTH for _, _, depth in form.route):
+            # A swap of the whole character spelled as a sequence is a row of the table, not a form.
             continue
         route = [_evidence(was, became) for was, became, _ in form.route]
         entry = found.setdefault(form.other, {
