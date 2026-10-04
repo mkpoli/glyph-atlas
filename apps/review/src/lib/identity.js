@@ -1,3 +1,5 @@
+import { arity, descriptionEnd, isDescription } from './ids.js'
+
 /** A transcription bucket cannot identify the character written in its image. */
 export const isUnassigned = item => item?.identity_status === 'unassigned'
   || (item?.written_character === null && item?.identity_basis === 'normalized_transcription')
@@ -31,33 +33,6 @@ const SCRIPT_NAMES = { hiragana: 'Hiragana', hentaigana: 'Hiragana', katakana: '
 
 // ー belongs to Unicode's Common script and to `symbol` in the character table; it is coloured as katakana.
 const KATAKANA_MARKS = new Set(['ー'])
-// An ideographic description sequence (⿰亻哥 is 亻 beside 哥) describes one Han character Unicode
-// lacks, by the rules of the Worker's `representation.ts`: each operator takes its own number of
-// descriptions, and a component is an ideograph, a radical, a stroke, a private-use character or ？,
-// with an optional variation selector.
-const IDS_ARITY = new Map([...[...'⿰⿱⿴⿵⿶⿷⿸⿹⿺⿻⿼⿽㇯'].map(c => [c, 2]), ...[...'⿲⿳'].map(c => [c, 3]), ...[...'⿾⿿〾'].map(c => [c, 1])])
-const IDS_COMPONENTS = [[0x2E80, 0x2FDF], [0x31C0, 0x31EE], [0x3400, 0x4DBF], [0x4E00, 0x9FFF], [0xE000, 0xF8FF],
-  [0xF900, 0xFAFF], [0xFF1F, 0xFF1F], [0x20000, 0x3FFFD], [0xF0000, 0x10FFFD]]
-const isSelector = char => char !== undefined && /^[\uFE00-\uFE0F\u{E0100}-\u{E01EF}]$/u.test(char)
-/** Where the description starting at `chars[at]` ends, or -1 when none well-formed starts there. */
-function descriptionEnd(chars, at) {
-  const char = chars[at]
-  if (char === undefined) return -1
-  const arity = IDS_ARITY.get(char) ?? 0
-  if (!arity) {
-    const cp = char.codePointAt(0)
-    if (!IDS_COMPONENTS.some(([low, high]) => cp >= low && cp <= high)) return -1
-    return isSelector(chars[at + 1]) ? at + 2 : at + 1
-  }
-  let end = at + 1
-  for (let k = 0; k < arity && end >= 0; k++) end = descriptionEnd(chars, end)
-  return end
-}
-const isDescription = text => {
-  const chars = [...text ?? '']
-  return IDS_ARITY.has(chars[0]) && chars.length <= 64 && descriptionEnd(chars, 0) === chars.length
-}
-
 export function scriptInfo(text, stated = '') {
   if (text && [...text].every(char => KATAKANA_MARKS.has(char))) return { key: 'katakana', label: SCRIPT_NAMES.katakana }
   if (isDescription(text)) return { key: 'kanji', label: SCRIPT_NAMES.kanji }
@@ -92,7 +67,7 @@ function segments(text) {
   const parts = []
   for (let k = 0; k < all.length;) {
     const { segment, index } = all[k]
-    const chars = IDS_ARITY.has(segment) ? [...text.slice(index)] : []
+    const chars = arity(segment) ? [...text.slice(index)] : []
     const end = chars.length ? descriptionEnd(chars, 0) : -1
     const length = end > 0 && end <= 64 ? chars.slice(0, end).join('').length : 0
     const next = length ? all.findIndex(item => item.index >= index + length) : -1

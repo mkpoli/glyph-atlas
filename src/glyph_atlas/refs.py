@@ -372,6 +372,43 @@ def _substitution(left: str, right: str) -> tuple[str, str]:
     return (left, right) if (len(left), left) <= (len(right), right) else (right, left)
 
 
+#: How many substitutes a component lists in the IDS editor, most contexts first.
+SUBSTITUTES_SHOWN = 24
+
+
+def ids_sequences(char: str) -> list[str]:
+    """The descriptions of `char` an editor can start from: its BabelStone sequences without their
+    region tags, each once, those a written form may hold (no unencoded `{n}` part, no approximate
+    or subtracting description)."""
+    from .representation import described
+
+    found: list[str] = []
+    for sequence in han_components._sequences().get(char, ()):
+        text = re.sub(r"\([^)]*\)$", "", sequence)
+        if text != char and text not in found and described(text):
+            found.append(text)
+    return found
+
+
+def substitutes(component: str) -> list[dict[str, Any]]:
+    """What may stand in `component`'s place: each substitution of han-component-variants.tsv naming
+    it, as `{"char", "count"}`, most contexts first, at most `SUBSTITUTES_SHOWN`."""
+    found = [{"char": right if left == component else left, "count": row["count"]}
+             for (left, right), row in component_variants().items() if component in (left, right)]
+    found.sort(key=lambda row: (-row["count"], row["char"]))
+    return found[:SUBSTITUTES_SHOWN]
+
+
+def structure(char: str) -> dict[str, Any]:
+    """What the IDS editor starts from for `char`: its descriptions, and the substitutes of every
+    component they name, as the Worker's `/layers/structure` answers."""
+    sequences = ids_sequences(char)
+    parts = sorted({part for text in sequences for part in han_components.TOKEN.findall(text)
+                    if part not in han_components.BINARY | han_components.TERNARY | han_components.UNARY})
+    return {"char": char, "sequences": sequences,
+            "substitutes": {part: found for part in parts if (found := substitutes(part))}}
+
+
 @cache
 def _descriptions() -> han_component_variants.Descriptions:
     """Every character's usable sequences, read so that equal shapes are equal trees (6 seconds)."""

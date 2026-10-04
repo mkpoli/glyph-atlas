@@ -11,7 +11,7 @@ def test_a_character_or_a_description_is_a_form_a_reviewer_may_type(value):
 
 
 @pytest.mark.parametrize("value", ["", " 還", "還還", "⿰木", "⿰木木木", "⿲木木", "⿰木a", "⿰木 木", "゙",
-                                   "⿰", "x" * 65, "⿰木\u200b"])
+                                   "⿰", "x" * 65, "⿰木\u200b", "⿰木あ", "⿰木ー"])
 def test_anything_else_is_refused(value):
     with pytest.raises(ValueError):
         representation.check_text(value)

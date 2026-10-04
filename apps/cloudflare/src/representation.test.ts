@@ -12,7 +12,9 @@ test('anything else names what is wrong with it', () => {
   expect(['', ' 還', '還還', '\u3099', 'x'.repeat(65), '⿰木\u200b', '⿰木 木', '🇯🇵', '👍🏽', '\u1100\u1161'].map(formProblem)).toEqual(Array(10).fill('character'))
   expect(['⿰木', '⿰', '⿲木木'].map(formProblem)).toEqual(['missing', 'missing', 'missing'])
   expect(['⿰木木木', '⿰木木︀木'].map(formProblem)).toEqual(['extra', 'extra'])
-  expect(['⿰木a', '⿰木ア'].map(formProblem)).toEqual(['component', 'component'])
+  expect(['⿰木a', '⿰木あ', '⿰木ー'].map(formProblem)).toEqual(['component', 'component', 'component'])
+  // A katakana letter stands for a component of its shape, as manuscripts write 疑 with コ.
+  expect(['⿰⿱匕失⿱コ疋', '⿰木ア'].map(formProblem)).toEqual([null, null])
 })
 
 test('what is typed takes the scheme it is written in', () => {
