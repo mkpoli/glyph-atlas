@@ -487,7 +487,7 @@ async function ngrams(env: Env, ctx: ExecutionContext, url: URL, size: number) {
 // around its own crop, so it nearly always holds the whole run; the smallest that does is the sharpest.
 // Null when a crop has no box or no render holds them all: the run's crops are then laid out apart.
 type Rect = { x: number; y: number; w: number; h: number };
-export function ngramPage(crops: Json[]): { image: string; box: Rect; region: Rect } | null {
+export function runPage(crops: Json[]): { image: string; box: Rect; region: Rect } | null {
   const boxes = crops.map(c => c.crop_box as Rect | null);
   if (boxes.some(b => !b)) return null;
   const left = Math.min(...boxes.map(b => b!.x)), top = Math.min(...boxes.map(b => b!.y));
@@ -503,7 +503,7 @@ export function ngramPage(crops: Json[]): { image: string; box: Rect; region: Re
 }
 // One run's occurrences: every place its characters follow each other on a line, as their crops in
 // reading order, each with its box on the page, whether their line is written down the page, and the
-// page around them (`ngramPage`); the run as a whole is written the way most of its occurrences are.
+// page around them (`runPage`); the run as a whole is written the way most of its occurrences are.
 // The text is split into graphemes, one crop each, as a label holds one. A run of two or three is one
 // row of `unit_ngrams`. A longer one starts from one of its trigrams, the rarest (`runProbeQuery`), and
 // reaches the rest of its crops a pair at a time: publication writes a pair only where two crops follow
@@ -512,8 +512,11 @@ export function ngramPage(crops: Json[]): { image: string; box: Rect; region: Re
 // in that index's order; every other row is found by its key, rightwards by the primary key and leftwards
 // through `unit_ngram_second`, and every crop by its id. The join order is fixed and the origin test kept
 // off its index (`+`): the planner would otherwise start from every local crop. Counting stops past
-// RUN_COUNT_MAX, which is as deep as a run pages.
-const RUN_MAX = 8, RUN_PAGE_MAX = 96, RUN_COUNT_MAX = 2000, RUN_PROBE_MAX = 5000;
+// RUN_COUNT_MAX, which is as deep as a run pages, and the first page alone counts. A page holds up to
+// RUN_PAGE_CROPS crops, so a longer run comes in fewer occurrences at a time.
+// RUN_MAX keeps a run inside one context render: a render reaches five character sizes along a column
+// (`CONTEXT_REACH`), so its middle crop's holds about eleven, and `runPage` finds the run in it.
+const RUN_MAX = 8, RUN_PAGE_CROPS = 192, RUN_COUNT_MAX = 2000, RUN_PROBE_MAX = 5000;
 const NGRAM_COLUMNS = ['first', 'second', 'third'];
 const graphemes = new Intl.Segmenter('ja', { granularity: 'grapheme' });
 /** The characters of a run, one crop each. */
@@ -553,11 +556,11 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
   const parts = runCharacters(value);
   if (parts.length < 2 || parts.length > RUN_MAX) throw new Problem(422, `A run is two to ${RUN_MAX} characters.`);
   const document = text(q.get('document'), 256, 'document');
-  let limit = integer(q, 'limit', 48, RUN_PAGE_MAX);
+  const most = Math.floor(RUN_PAGE_CROPS / parts.length);
   const offset = integer(q, 'offset', 0);
   // A page ends where the count does.
   if (offset >= RUN_COUNT_MAX) throw new Problem(404, 'A run does not page this far.');
-  limit = Math.min(limit, RUN_COUNT_MAX - offset);
+  const limit = Math.min(integer(q, 'limit', Math.min(48, most), most), RUN_COUNT_MAX - offset);
   const key = new Request(`${url.origin}/atlas/runs?${new URLSearchParams({ text: value, document: document ?? '', limit: String(limit), offset: String(offset), v: await catalogueVersion(env) })}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json() as Json;
@@ -572,23 +575,20 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
   }
   const { links } = runFrom(size, anchor);
   const bound = [...links.map(i => span(i, 2)), ...scope, Math.min(size, 3), span(anchor, Math.min(size, 3))];
-  const [count, page] = await env.DB.batch([
-    env.DB.prepare(runCountQuery(size, anchor, Boolean(document))).bind(...bound),
-    env.DB.prepare(runOccurrencesQuery(size, anchor, Boolean(document))).bind(...bound, limit, offset),
-  ]) as D1Result<any>[];
-  const found = page.results as ({ document: string | null; vertical: number } & Record<string, string>)[];
+  const occurrences = env.DB.prepare(runOccurrencesQuery(size, anchor, Boolean(document))).bind(...bound, limit, offset);
+  const [page, count] = await env.DB.batch(offset ? [occurrences] : [occurrences, env.DB.prepare(runCountQuery(size, anchor, Boolean(document))).bind(...bound)]) as D1Result<any>[];
+  const found = page.results as ({ document: string | null; vertical: number } & Record<`c${number}`, string>)[];
   // The crops of one run stand on one page, so they share their document's dates.
   const dating = await datingOf(env, found.map(row => row.document));
   const items = found.map(row => {
     const crops = parts.map((_, i) => parse(row[`c${i}`]));
     const dated = row.document ? dating.get(row.document) : undefined;
     return { crops: crops.map(c => ({ ...listing(c), crop_box: c.crop_box ?? null, dating: dated ?? {} })),
-      vertical: Boolean(row.vertical), page: ngramPage(crops) };
+      vertical: Boolean(row.vertical), page: runPage(crops) };
   });
-  const { n, vertical } = count.results[0] as { n: number; vertical: number | null };
-  const total = Math.min(n, RUN_COUNT_MAX);
-  const body = { text: value, size, document, total, more: n > RUN_COUNT_MAX, vertical: 2 * (vertical ?? 0) >= n,
-    next_offset: offset + items.length, items };
+  const counted = count?.results[0] as { n: number; vertical: number | null } | undefined;
+  const body = { text: value, size, document, next_offset: offset + items.length, items,
+    ...(counted && { total: Math.min(counted.n, RUN_COUNT_MAX), more: counted.n > RUN_COUNT_MAX, vertical: 2 * (counted.vertical ?? 0) >= counted.n }) };
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return body;
 }

@@ -24,9 +24,10 @@ export function ngramCounts(kind, work = '', options = {}) {
   return request(`/atlas/ngrams/${NGRAM_KINDS[kind]}` + (work ? '?' + new URLSearchParams({ document: work }) : ''), undefined, options)
 }
 
-/** One page of a run's occurrences: `{ text, total, more, next_offset, items: [{ crops }] }`, where `more`
- *  says the count stopped at `total`. */
-export function runOccurrences(text, { work = '', offset = 0, limit = 48 } = {}, options = {}) {
-  const query = new URLSearchParams({ text, offset: String(offset), limit: String(limit), ...(work ? { document: work } : {}) })
+/** One page of a run's occurrences: `{ text, size, next_offset, items: [{ crops }] }`, and on the first
+ *  page `total`, `more` (the count stopped at `total`) and `vertical`. Without a `limit` the page is as
+ *  long as the run allows. */
+export function runOccurrences(text, { work = '', offset = 0, limit } = {}, options = {}) {
+  const query = new URLSearchParams({ text, offset: String(offset), ...(limit ? { limit: String(limit) } : {}), ...(work ? { document: work } : {}) })
   return request('/atlas/runs?' + query, undefined, options)
 }

@@ -855,7 +855,8 @@ try {
     assert.ok(details.some(d => new RegExp(`SEARCH a USING (COVERING )?INDEX ${index}\\b`).test(d)), `${index}: ${details.join('; ')}`)
     assert.ok(!details.some(d => d.includes('TEMP B-TREE')), details.join('; '))
     assert.ok(!details.some(d => /^SCAN \w+/.test(d)), details.join('; '))
-    assert.ok(!details.some(d => /^SEARCH (u\d+|r\d+) USING INDEX unit_/.test(d)), `crops and rightward pairs are found by their keys: ${details.join('; ')}`)
+    assert.ok(details.filter(d => /^SEARCH u\d+ /.test(d)).every(d => /USING INDEX sqlite_autoindex_units_1 \(id=\?\)$/.test(d)), `crops are found by their ids: ${details.join('; ')}`)
+    assert.ok(details.filter(d => /^SEARCH r\d+ /.test(d)).every(d => d.includes('USING PRIMARY KEY (first=? AND size=?)')), `rightward pairs are found by their keys: ${details.join('; ')}`)
     assert.ok(details.filter(d => /^SEARCH l\d+ /.test(d)).every(d => d.includes('unit_ngram_second')), `leftward pairs go through unit_ngram_second: ${details.join('; ')}`)
   }
   for (const [document, scope, index] of [[false, [], 'unit_ngram_text'], [true, ['hk:doc'], 'unit_ngram_document']]) {
@@ -888,12 +889,12 @@ try {
   // The page around a run is the smallest context render that holds all its crops, clipped to them with
   // a margin of a fifth of the largest crop that stays inside the render.
   const placed = (x, y, context) => ({ crop_box: { x, y, w: 10, h: 10 }, context_image: `/atlas/media/${x}-${y}.webp`, context_box: context })
-  assert.deepEqual(worker.ngramPage([placed(50, 50, { x: 0, y: 0, w: 200, h: 200 }), placed(50, 62, { x: 20, y: 20, w: 100, h: 100 })]),
+  assert.deepEqual(worker.runPage([placed(50, 50, { x: 0, y: 0, w: 200, h: 200 }), placed(50, 62, { x: 20, y: 20, w: 100, h: 100 })]),
     { image: '/atlas/media/50-62.webp', box: { x: 20, y: 20, w: 100, h: 100 }, region: { x: 48, y: 48, w: 14, h: 26 } })
-  assert.deepEqual(worker.ngramPage([placed(21, 21, { x: 20, y: 20, w: 100, h: 100 }), placed(21, 33, { x: 20, y: 20, w: 100, h: 100 })]).region,
+  assert.deepEqual(worker.runPage([placed(21, 21, { x: 20, y: 20, w: 100, h: 100 }), placed(21, 33, { x: 20, y: 20, w: 100, h: 100 })]).region,
     { x: 20, y: 20, w: 13, h: 25 }, 'the margin stays inside the render')
-  assert.equal(worker.ngramPage([placed(50, 50, { x: 45, y: 45, w: 20, h: 20 }), placed(50, 70, { x: 45, y: 65, w: 20, h: 20 })]), null, 'no render holds both crops')
-  assert.equal(worker.ngramPage([placed(50, 50, { x: 0, y: 0, w: 200, h: 200 }), { crop_box: null }]), null, 'a crop without a box has no page')
+  assert.equal(worker.runPage([placed(50, 50, { x: 45, y: 45, w: 20, h: 20 }), placed(50, 70, { x: 45, y: 65, w: 20, h: 20 })]), null, 'no render holds both crops')
+  assert.equal(worker.runPage([placed(50, 50, { x: 0, y: 0, w: 200, h: 200 }), { crop_box: null }]), null, 'a crop without a box has no page')
   assert.ok('page' in occurrences.items[0] && 'crop_box' in occurrences.items[0].crops[0], 'an occurrence carries its page and its crops\' boxes')
   assert.deepEqual([occurrences.vertical, occurrences.items[0].vertical], [true, true], 'a run is written the way its line is')
   // A trigram is shown only while its third crop is live as well.
@@ -929,6 +930,9 @@ try {
   assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent('一二三四五六七八九'))).status, 422, 'a run is eight characters or fewer')
   assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent(pairText) + '&offset=2000')).status, 404, 'a run does not page past its cap')
   assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent(pairText) + '&limit=97')).status, 422, 'a page is bounded')
+  assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent(pairText + pairText) + '&limit=49')).status, 422, 'a longer run pages fewer occurrences')
+  const nextPage = await runOf(pairText, '&offset=1')
+  assert.ok(!('total' in nextPage) && nextPage.next_offset === 1, 'a later page carries no count')
   await db.prepare('DELETE FROM unit_ngrams').run()
   for (const [index, create] of Object.entries(keys)) {
     await db.prepare(`DROP INDEX ${index}`).run()
