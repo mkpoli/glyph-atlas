@@ -798,6 +798,8 @@
   "form.ids.insert": "Add a component",
   "form.ids.search": "Find a component",
   "form.ids.use": "Use this form",
+  "form.ids.swaps": "In place of {part}",
+  "form.ids.split": "Split {part} into its parts",
   "form.ids.tag": "IDS",
   "form.ids.named": "{ids}: a form named by its ideographic description sequence",
   "form.ids.problem.character": "Start with an operator such as ⿰ or ⿱.",

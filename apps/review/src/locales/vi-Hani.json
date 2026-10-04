@@ -760,6 +760,8 @@
   "form.ids.insert": "添分𡨸",
   "form.ids.search": "尋分𡨸",
   "form.ids.use": "用字形呢",
+  "form.ids.swaps": "台{part}憑",
+  "form.ids.split": "索{part}成分𡨸",
   "form.ids.tag": "IDS",
   "form.ids.named": "{ids}：字形𥱬憑IDS",
   "form.ids.problem.character": "唉曰記號扱如 ⿰ 或 ⿱ 於頭。",

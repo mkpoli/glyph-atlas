@@ -777,6 +777,8 @@
   "form.ids.insert": "插入部件",
   "form.ids.search": "查找部件",
   "form.ids.use": "采用此字形",
+  "form.ids.swaps": "替换{part}",
+  "form.ids.split": "把{part}拆成部件",
   "form.ids.tag": "IDS",
   "form.ids.named": "{ids}：以IDS表示的字形",
   "form.ids.problem.character": "请以⿰、⿱等结构符开头。",

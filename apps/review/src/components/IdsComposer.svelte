@@ -1,15 +1,34 @@
 <script>
-  // A written form typed or built as an ideographic description sequence. The field takes the
+  // A written form typed or built as an ideographic description sequence. It starts from what the
+  // reader typed, or else from the description of the crop's character (`char`). The field takes the
   // sequence as text; the operator keys and the component search write into it at the caret, or,
   // with a part of the structure below chosen, act on that part: an operator splits it (⿰ round 失
-  // gives ⿰失？) and a component found replaces it. The sequence is checked as typed, by the rules the
-  // site saves it under, and is used only once it is whole.
+  // gives ⿰失？), a component found replaces it, a component with a description of its own can be
+  // split into it (𠤕 into ⿱匕矢), and the components the variant table puts in its place are offered
+  // first. The sequence is checked as typed, by the rules the site saves it under, and is used only
+  // once it is whole.
+  import { untrack } from 'svelte'
   import CharacterSearch from './CharacterSearch.svelte'
   import { OPERATORS, parse, write, replaceAt, partAt, wrap } from '../lib/ids.js'
+  import { structure } from '../lib/layers.js'
   import { t } from '../lib/i18n.svelte.js'
-  let { start = '', disabled = false, onuse } = $props()
+  let { start = '', char = '', disabled = false, onuse } = $props()
   let draft = $state(''), chosen = $state(null), query = $state(''), field = $state(null)
-  $effect(() => { draft = start; chosen = null })
+  // What the variant table says of each component met so far, and the descriptions of each.
+  let swaps = $state({}), own = $state({})
+  const learn = found => {
+    if (!found) return
+    swaps = { ...swaps, ...found.substitutes }
+    own = { ...own, [found.char]: found.sequences }
+  }
+  const read = async c => { if (!(c in own)) { own = { ...own, [c]: [] }; learn(await structure(c).catch(() => null)) } return own[c] }
+  $effect(() => {
+    const typed = start, of = char
+    untrack(() => {
+      chosen = null; draft = typed
+      if (!typed && of) read(of).then(found => { if (!draft && found?.length) draft = found[0] })
+    })
+  })
   const parsed = $derived(parse(draft))
   const tree = $derived(parsed.tree ?? null)
   // The problem shown once something is typed; an empty field asks for nothing.
@@ -33,7 +52,19 @@
     if (tree && chosen) { draft = write(replaceAt(tree, chosen, item.char)); chosen = null }
     else insert(item.char)
   }
-  function choose(path) { chosen = same(chosen, path) ? null : path }
+  function choose(path) {
+    chosen = same(chosen, path) ? null : path
+    const part = chosen && tree ? partAt(tree, chosen) : null
+    if (typeof part === 'string') read(part)
+  }
+  const picked = $derived(chosen && tree ? partAt(tree, chosen) : null)
+  const offered = $derived(typeof picked === 'string' ? swaps[picked] ?? [] : [])
+  const splits = $derived(typeof picked === 'string' ? (own[picked] ?? []) : [])
+  function swap(item) {
+    const found = parse(item.char).tree ?? item.char
+    draft = write(replaceAt(tree, chosen, found)); chosen = null
+  }
+  function split(sequence) { draft = write(replaceAt(tree, chosen, parse(sequence).tree)); chosen = null }
   function use() { if (tree && !disabled) onuse(draft) }
 </script>
 
@@ -66,6 +97,19 @@
     <div class="ids-tree" role="group" aria-label={t('form.ids.structure')}>{@render node(tree, [])}</div>
   {/if}
   {#if problem}<p class="ids-problem" role="status">{problem}</p>{/if}
+  {#if offered.length || splits.length}
+    <div class="ids-swaps" role="group" aria-label={t('form.ids.swaps', { part: picked })}>
+      <span class="ids-title">{t('form.ids.swaps', { part: picked })}</span>
+      <div class="ids-options">
+        {#each offered as item (item.char)}
+          <button type="button" class="ids-swap" {disabled} title={`${picked} → ${item.char} · ${item.count}`} onclick={() => swap(item)}>{item.char}</button>
+        {/each}
+        {#each splits as sequence (sequence)}
+          <button type="button" class="ids-swap ids-split" {disabled} title={t('form.ids.split', { part: picked })} onclick={() => split(sequence)}>{sequence}</button>
+        {/each}
+      </div>
+    </div>
+  {/if}
   <div class="ids-search">
     <span class="ids-title">{chosen && tree ? t('form.ids.replace', { part: write(partAt(tree, chosen)) }) : t('form.ids.insert')}</span>
     <CharacterSearch compact codePoints bind:value={query} label={t('form.ids.search')} placeholder={t('search.placeholder')} onselect={component} />
@@ -92,6 +136,11 @@
   .ids-op{color:var(--muted)}
   .ids-part:hover,.ids-op:hover{border-color:var(--line-strong)}
   .ids-part.chosen{border:2px solid var(--accent);padding:0 3px;background:var(--accent-light)}
+  .ids-swaps{display:flex;flex-direction:column;gap:4px}
+  .ids-options{display:flex;flex-wrap:wrap;gap:6px}
+  .ids-swap{min-width:40px;padding:3px 8px;font-size:20px;line-height:1.2;font-family:"GenZui Sans","Klee One","LXGW WenKai TC",serif}
+  .ids-split{font-size:16px;color:var(--muted)}
+  .ids-swap:not(:disabled):hover{border-color:var(--accent)}
   .ids-problem{margin:0;font-size:12px;color:var(--fault)}
   .ids-search{display:flex;flex-direction:column;gap:4px}
   .ids-search :global(.character-search){width:100%;min-width:0}

@@ -758,6 +758,8 @@
   "form.ids.insert": "構成 要素 넣기",
   "form.ids.search": "構成 要素 찾기",
   "form.ids.use": "이 字形으로 하기",
+  "form.ids.swaps": "{part} 代身",
+  "form.ids.split": "{part}을(를) 構成 要素로 나누기",
   "form.ids.tag": "IDS",
   "form.ids.named": "{ids}: IDS로 나타낸 字形",
   "form.ids.problem.character": "⿰, ⿱ 같은 演算子로 始作하세요.",

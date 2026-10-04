@@ -759,6 +759,8 @@
   "form.ids.insert": "Thêm phần chữ",
   "form.ids.search": "Tìm phần chữ",
   "form.ids.use": "Dùng tự hình này",
+  "form.ids.swaps": "Thay {part} bằng",
+  "form.ids.split": "Tách {part} thành phần chữ",
   "form.ids.tag": "IDS",
   "form.ids.named": "{ids}: tự hình ghi bằng IDS",
   "form.ids.problem.character": "Hãy viết ký hiệu ghép như ⿰ hoặc ⿱ ở đầu.",

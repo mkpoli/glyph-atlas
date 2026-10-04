@@ -774,6 +774,8 @@
   "form.ids.insert": "部品を入る",
   "form.ids.search": "部品を探る",
   "form.ids.use": "此の字形とす",
+  "form.ids.swaps": "{part}に代へて",
+  "form.ids.split": "{part}を部品に分つ",
   "form.ids.tag": "IDS",
   "form.ids.named": "{ids}：IDSにて表せる字形",
   "form.ids.problem.character": "⿰・⿱等の符より始むべし。",

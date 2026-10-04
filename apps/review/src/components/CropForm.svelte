@@ -39,12 +39,10 @@
   const rest = $derived(listed.members.slice(BAR))
   const q = $derived(query.trim().toUpperCase())
   const matches = item => !q || item.char.toUpperCase().includes(q) || (item.code_point ?? '').includes(q)
-  // Derived forms by the standing of their substitutions: attested ones, then editorial ones apart.
   const sections = $derived([
     ['grapheme', t('chips.grapheme'), rest],
     ['variants', t('chips.variants'), listed.variants],
-    ['derived', t('chips.derived'), listed.derived.filter(item => item.tier !== 'editorial')],
-    ['editorial', t('chips.derivedEditorial'), listed.derived.filter(item => item.tier === 'editorial')],
+    ['derived', t('chips.derived'), listed.derived],
   ].map(([key, title, items]) => [key, title, items.filter(matches)]).filter(([, , items]) => items.length))
   function choose(char) { onchoose(char === current ? null : char) }
   function add(item) {
@@ -54,7 +52,7 @@
   }
   // A derived option names how it was made: each substitution of its first route, as made.
   const optionTitle = item => item.routes?.length
-    ? `${item.char}\n` + item.routes[0].map(sub => `${sub.was} → ${sub.became}${sub.tier === 'editorial' ? ` · ${sub.asserted_by} ${sub.asserted_at}` : ''}`).join('\n')
+    ? `${item.char}\n` + item.routes[0].map(sub => `${sub.was} → ${sub.became}`).join('\n')
     : item.code_point ?? item.char
   // 1–0 choose the bar's forms, as Quick Review's form bar does; a key typed into a field is the field's.
   function keydown(event) {
@@ -84,7 +82,7 @@
           <span class="form-section-title">{title}</span>
           <div class="form-options">
             {#each items as item (item.char)}
-              <button type="button" class="form-option" class:editorial={key === 'editorial'} {disabled} title={optionTitle(item)} onclick={() => add(item)}>
+              <button type="button" class="form-option" {disabled} title={optionTitle(item)} onclick={() => add(item)}>
                 <FormText text={item.char} script={item.script} />{#if item.encoded !== false && item.code_point}<small>{item.code_point}</small>{/if}
               </button>
             {/each}
@@ -92,7 +90,7 @@
         </div>
       {/each}
       {#if composing}
-        <IdsComposer {disabled} start={query.trim()} onuse={char => add({ char })} />
+        <IdsComposer {disabled} start={query.trim()} char={written} onuse={char => add({ char })} />
       {:else}
         <button type="button" class="form-compose" {disabled} onclick={() => composing = true}>{t('form.ids.compose')}</button>
       {/if}
@@ -116,7 +114,6 @@
     font-family:"Kureedo Kata","Klee One","LXGW WenKai TC","LXGW WenKai","GenZui Sans",serif}
   .form-option small{font-family:ui-monospace,monospace;font-size:9px;color:var(--muted)}
   .form-option:not(:disabled):hover{border-color:var(--accent)}
-  .form-option.editorial{border-style:dashed}
   .form-compose{align-self:flex-start;font-size:13px;padding:4px 10px}
   .form-note{margin:0;font-size:11px;color:var(--muted)}
 </style>

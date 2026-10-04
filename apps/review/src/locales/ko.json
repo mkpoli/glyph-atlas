@@ -758,6 +758,8 @@
   "form.ids.insert": "구성 요소 넣기",
   "form.ids.search": "구성 요소 찾기",
   "form.ids.use": "이 자형으로 하기",
+  "form.ids.swaps": "{part} 대신",
+  "form.ids.split": "{part}을(를) 구성 요소로 나누기",
   "form.ids.tag": "IDS",
   "form.ids.named": "{ids}: IDS로 나타낸 자형",
   "form.ids.problem.character": "⿰, ⿱ 같은 연산자로 시작하세요.",
