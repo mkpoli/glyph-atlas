@@ -19,6 +19,7 @@
   import SimilarCrops from './SimilarCrops.svelte'
   import CropReview from './CropReview.svelte'
   import LineStrip from './LineStrip.svelte'
+  import { fromEdit, toSource as pageToSource } from '../lib/cropBox.js'
   import AdvanceSwitch from './AdvanceSwitch.svelte'
   import { useSession } from '../lib/session.svelte.js'
   // `onskip` is supplied by the caller that owns the queue. The dialog never decides what "next"
@@ -61,8 +62,7 @@
   // An edit is held in page pixels, because that is what the API stores and validates; the context
   // view measures source pixels, because that is what the crop was cut from. The two are the same
   // rectangle only when the cached image is the page's own size, so the scale converts between them.
-  const scale = $derived(data?.source_scale || [1, 1])
-  const toSource = (b) => ({ x: b.x * scale[0], y: b.y * scale[1], w: b.w * scale[0], h: b.h * scale[1] })
+  const toSource = b => pageToSource(data, b)
   // A box saved on the site waits for the next publication to cut it; until then it is drawn the same way.
   const drawn = $derived(box ?? (data?.box_pending ? data.box : null))
   const boxStyle = $derived(data?.context_box ? (() => {
@@ -301,35 +301,10 @@
     figure?.querySelector('.crop-viewport')?.focus({ preventScroll: true })
     figure?.scrollIntoView({ block: 'nearest', behavior: 'instant' })
   }
-  /** The crop's rectangle in page pixels: the one drawn here, else the one it was cut with. */
-  function currentBox() {
-    if (box) return box
-    if (data.box) return data.box
-    const b = data.crop_box
-    return b ? { x: Math.round(b.x / scale[0]), y: Math.round(b.y / scale[1]), w: Math.round(b.w / scale[0]), h: Math.round(b.h / scale[1]) } : null
-  }
-  /** Keep a rectangle inside the context, at least two pixels each way. */
-  function bounded({ x, y, w, h }) {
-    const limits = pageBounds(), right = limits.x + limits.w, bottom = limits.y + limits.h
-    // Whole pixels, the position first, so the rounded box never reaches past the page view.
-    x = Math.round(Math.max(Math.ceil(limits.x), Math.min(x, right - 2))); y = Math.round(Math.max(Math.ceil(limits.y), Math.min(y, bottom - 2)))
-    return { x, y, w: Math.round(Math.max(2, Math.min(w, Math.floor(right) - x))), h: Math.round(Math.max(2, Math.min(h, Math.floor(bottom) - y))) }
-  }
-  /** A box the page view drew, in its source pixels, as the crop's page box inside the page view. */
+  /** A box the page view drew, in its source pixels. */
   function edited(source, mode = 'resize') {
     if (!editingBox || busy) return
-    const next = { x: source.x / scale[0], y: source.y / scale[1], w: source.w / scale[0], h: source.h / scale[1] }
-    // A move stops at the page view's edge with its size kept; only a resize changes the size.
-    if (mode === 'move') {
-      const limits = pageBounds(), w = Math.round(next.w), h = Math.round(next.h)
-      next.x = Math.max(limits.x, Math.min(next.x, limits.x + limits.w - w)); next.y = Math.max(limits.y, Math.min(next.y, limits.y + limits.h - h))
-    }
-    box = bounded(next)
-  }
-  /** The context rectangle in page pixels, which is what a drag is bounded by. */
-  function pageBounds() {
-    const c = data.context_box
-    return { x: c.x / scale[0], y: c.y / scale[1], w: c.w / scale[0], h: c.h / scale[1] }
+    box = fromEdit(data, source, mode)
   }
 </script>
 
