@@ -645,8 +645,8 @@ try {
   const wordCard = await call('/layers/characters/U%2B4EEE')
   assert.deepEqual(wordCard.words.items.map(w => [w.id, w.spellings.map(s => [s.spelling, s.code_point, s.current])]),
     [['ja/ばかり/副助詞', [['計', 'U+8A08', false], ['仮', 'U+4EEE', true], ['而已', null, false]]]])
-  assert.deepEqual(wordCard.words.items[0].spellings[0].sources.map(s => [s.source, s.tier, s.documents]),
-    [['honkoku-ruby', 'observed', 48], ['wiktionary-ja', 'attested', null]])
+  assert.deepEqual(wordCard.words.items[0].spellings[0].sources.map(s => [s.source, s.tier, s.ruby, s.documents]),
+    [['honkoku-ruby', 'observed', 'ばかり', 48], ['wiktionary-ja', 'attested', null, null]], 'a 振り仮名 row names the reading it counts')
   assert.equal(wordCard.words.sources['wiktionary-ja'], 'Wiktionary 日本語版')
   assert.ok(!wordCard.variants.items.concat(wordCard.variants.related).some(v => v.char === '計'), 'a shared word is no variant')
   assert.deepEqual((await call('/layers/characters/U%2B5047')).words.items, [], 'a character no source cites writes no word')

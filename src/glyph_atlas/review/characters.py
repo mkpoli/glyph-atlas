@@ -480,15 +480,21 @@ def character_view(character: Character, layer: Layers, *, expand: str = "none",
     }
 
 
+def _ruby_of(locator: str) -> str | None:
+    """The 振り仮名 a row counts, from its locator (`ruby-spellings.tsv なと 抔`), or None."""
+    return locator.split(" ")[1] if locator.startswith("ruby-spellings.tsv ") else None
+
+
 def word_card(char: str) -> dict[str, Any]:
     """The words `char` is cited as writing, each with every spelling cited for it (decision 0004).
 
-    A spelling lists the sources that cite it, each with its tier and, for transcribers' 振り仮名, the
-    documents counted; spellings come most cited first, then by documents, then by code point. The
-    Worker's card returns the same shape. Nothing here widens the gallery.
+    Words come by id. A spelling lists the sources that cite it, each with its tier and, for
+    transcribers' 振り仮名, the reading counted (抔 under など and under なと) and its documents; spellings
+    come most sources first, then most documents in all, then by code point. The Worker's card returns
+    the same shape. Nothing here widens the gallery.
     """
     rows = refs.word_spellings()
-    found = list(dict.fromkeys(row["word"] for row in rows if row["spelling"] == char))
+    found = sorted({row["word"] for row in rows if row["spelling"] == char})
     items, used = [], set()
     for word in found:
         spellings: dict[str, list[dict[str, Any]]] = {}
@@ -500,10 +506,11 @@ def word_card(char: str) -> dict[str, Any]:
             "spelling": spelling,
             "code_point": refs.to_code_point(spelling) if len(spelling) == 1 else None,
             "current": spelling == char,
-            "sources": [{"source": r["source"], "tier": r["tier"], "documents": r.get("documents")} for r in cited],
+            "sources": [{"source": r["source"], "tier": r["tier"], "ruby": _ruby_of(r["locator"]),
+                         "documents": r.get("documents")} for r in cited],
         } for spelling, cited in spellings.items()]
         entries.sort(key=lambda e: (-len({s["source"] for s in e["sources"]}),
-                                    -max((s["documents"] or 0) for s in e["sources"]), e["spelling"]))
+                                    -sum((s["documents"] or 0) for s in e["sources"]), e["spelling"]))
         info = refs.words()[word]
         items.append({"id": word, "reading": info["reading"], "class": info["class"], "spellings": entries})
     cited = {**refs.word_sources(), **refs.word_spelling_sources()}

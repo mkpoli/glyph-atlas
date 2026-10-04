@@ -126,3 +126,10 @@ def test_the_card_lists_the_words_a_character_writes():
     assert [entry["current"] for entry in word["spellings"]].count(True) == 1
     assert "chiebukuro-garan-2022" in card["sources"]
     assert characters.word_card("盃") == {"items": [], "sources": {}}
+
+
+def test_a_spelling_counted_under_two_readings_names_each():
+    (word,) = characters.word_card("等")["items"]
+    (pou,) = [entry for entry in word["spellings"] if entry["spelling"] == "抔"]
+    assert {s["ruby"] for s in pou["sources"] if s["source"] == "honkoku-ruby"} == {"など", "なと"}
+    assert all(s["ruby"] is None for s in pou["sources"] if s["source"] != "honkoku-ruby")

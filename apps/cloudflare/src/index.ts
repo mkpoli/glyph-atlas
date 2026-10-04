@@ -1077,8 +1077,8 @@ type VariantRow = { char: string; code_point: string; widens: boolean; relations
 // The characters `char` shares an edge with, as the card lists them: `items` a gallery widens to (a
 // pair with a widening edge and none that keeps it apart), `related` the rest; each most attested
 // first (sources, then code point), every edge kept. `sources` cites each source used.
-async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, char: string) {
-  const key = new Request(`${origin}/layers/variants?c=${encodeURIComponent(char)}&v=${encodeURIComponent(await catalogueVersion(env))}`);
+async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, char: string, version: string) {
+  const key = new Request(`${origin}/layers/variants?c=${encodeURIComponent(char)}&v=${encodeURIComponent(version)}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json();
   const edges = (await env.DB.prepare(variantEdgesQuery()).bind(char, char).all<VariantEdge>()).results;
@@ -1120,16 +1120,25 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, char:
 // The spellings of every word a character is cited as writing (0064): the words by the `spelling`
 // index, then each word's rows by the key. The table is hand-kept and small; the limit bounds a
 // character that writes many words.
-export const wordSpellingsQuery = () => `SELECT s.word,w.reading,w.class,s.spelling,s.source,s.tier,s.documents
+export const wordSpellingsQuery = () => `SELECT s.word,w.reading,w.class,s.spelling,s.source,s.locator,s.tier,s.documents
   FROM word_spellings s JOIN words w ON w.id=s.word
   WHERE s.word IN (SELECT word FROM word_spellings WHERE spelling=?) LIMIT 500`;
-type WordRow = { word: string; reading: string; class: string; spelling: string; source: string; tier: string; documents: number | null };
-type WordSpelling = { spelling: string; code_point: string | null; current: boolean; sources: { source: string; tier: string; documents: number | null }[] };
-// The words `char` is cited as writing, each with every spelling cited for it, most cited first, then
-// by documents, then by code point; `sources` cites each source used. The local review service's
+type WordRow = { word: string; reading: string; class: string; spelling: string; source: string; locator: string; tier: string; documents: number | null };
+type WordSpelling = { spelling: string; code_point: string | null; current: boolean; sources: { source: string; tier: string; ruby: string | null; documents: number | null }[] };
+// The 振り仮名 a row counts, from its locator (`ruby-spellings.tsv なと 抔`): 抔 is counted under など and
+// under なと, and a reader tells the two apart by it.
+const rubyOf = (locator: string) => locator.startsWith('ruby-spellings.tsv ') ? locator.split(' ')[1] : null;
+// Strings by code point, as Python compares them; `<` compares UTF-16 units and puts 𠀀 before 﨑.
+const byCodePoint = (a: string, b: string) => {
+  const x = [...a], y = [...b];
+  for (let i = 0; i < Math.min(x.length, y.length); i++) if (x[i] !== y[i]) return x[i].codePointAt(0)! - y[i].codePointAt(0)!;
+  return x.length - y.length;
+};
+// The words `char` is cited as writing, by id, each with every spelling cited for it: most sources first,
+// then most documents in all, then by code point; `sources` cites each source used. The local review service's
 // `word_card` returns the same shape. Nothing here widens a gallery.
-async function wordsOf(env: Env, ctx: ExecutionContext, origin: string, char: string) {
-  const key = new Request(`${origin}/layers/words?c=${encodeURIComponent(char)}&v=${encodeURIComponent(await catalogueVersion(env))}`);
+async function wordsOf(env: Env, ctx: ExecutionContext, origin: string, char: string, version: string) {
+  const key = new Request(`${origin}/layers/words?c=${encodeURIComponent(char)}&v=${encodeURIComponent(version)}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json();
   const rows = (await env.DB.prepare(wordSpellingsQuery()).bind(char).all<WordRow>()).results;
@@ -1139,14 +1148,14 @@ async function wordsOf(env: Env, ctx: ExecutionContext, origin: string, char: st
     const single = [...row.spelling].length === 1;
     const entry = word.spellings.get(row.spelling) ?? { spelling: row.spelling, code_point: single ? cp(row.spelling) : null,
       current: row.spelling === char, sources: [] };
-    entry.sources.push({ source: row.source, tier: row.tier, documents: row.documents });
+    entry.sources.push({ source: row.source, tier: row.tier, ruby: rubyOf(row.locator), documents: row.documents });
     word.spellings.set(row.spelling, entry);
     words.set(row.word, word);
   }
   const cited = (entry: WordSpelling) => new Set(entry.sources.map(s => s.source)).size;
-  const most = (entry: WordSpelling) => Math.max(0, ...entry.sources.map(s => s.documents ?? 0));
-  const items = [...words.values()].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0).map(word => ({ id: word.id, reading: word.reading, class: word.class,
-    spellings: [...word.spellings.values()].sort((a, b) => cited(b) - cited(a) || most(b) - most(a) || (a.spelling < b.spelling ? -1 : a.spelling > b.spelling ? 1 : 0)) }));
+  const documents = (entry: WordSpelling) => entry.sources.reduce((n, s) => n + (s.documents ?? 0), 0);
+  const items = [...words.values()].sort((a, b) => byCodePoint(a.id, b.id)).map(word => ({ id: word.id, reading: word.reading, class: word.class,
+    spellings: [...word.spellings.values()].sort((a, b) => cited(b) - cited(a) || documents(b) - documents(a) || byCodePoint(a.spelling, b.spelling)) }));
   const all: Record<string, string> = (await meta(env, 'word_sources')) || {};
   const used = [...new Set(rows.map(row => row.source))].sort();
   const found = { items, sources: Object.fromEntries(used.map(source => [source, all[source] ?? source])) };
@@ -2072,7 +2081,8 @@ const routes = {
       if(path==='/layers/search'){const found=await suggest(env,q);return json({...found,results:found.items,match:found.items[0]||null})}
       const layer=path.match(/^\/layers\/characters\/([^/]+)$/);
       if(layer){const value=decodeURIComponent(layer[1]),{detail}=await known(env,value);const found=await occurrences(env,value,q);
-        return json({...detail,variants:await variantsOf(env,ctx,url.origin,detail.char),words:await wordsOf(env,ctx,url.origin,detail.char),query:detail.code_point,samples:found.items,occurrences:{...found.counts,filtered:found.total}})}
+        const version=await catalogueVersion(env),[variants,words]=await Promise.all([variantsOf(env,ctx,url.origin,detail.char,version),wordsOf(env,ctx,url.origin,detail.char,version)]);
+        return json({...detail,variants,words,query:detail.code_point,samples:found.items,occurrences:{...found.counts,filtered:found.total}})}
       if(path==='/layers/occurrences')return json(await occurrences(env,q.get('code_point')||'',q));
       if(path==='/layers/candidates'){const found=await occurrences(env,q.get('code_point')||'',q,'corpus');
         return json({...found,glyphs:found.total,glyph_items:found.items,retry:false})}
