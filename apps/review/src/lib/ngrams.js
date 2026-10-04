@@ -16,7 +16,7 @@ export const ngramWords = kind => WORDS[kind]
 
 /** The address of a run's page, within a work when one is chosen. */
 export function runAddress(text, work = '') {
-  return '/run/' + encodeURIComponent(text) + (work ? '?' + new URLSearchParams({ work }) : '')
+  return '/sequence/' + encodeURIComponent(text) + (work ? '?' + new URLSearchParams({ work }) : '')
 }
 
 /** The runs of a kind, most frequent first: `{ items: [{ text, n }], limit }`. */

@@ -912,11 +912,22 @@ try {
   const five = await runOf(pairText + pairText + firstLabel)
   assert.deepEqual(five.items.map(o => o.crops.map(c => c.id)), [['one', 'two', 'one', 'two', 'one']], 'a run of five')
   assert.equal((await runOf(pairText + secondLabel + secondLabel)).total, 0, 'a link whose pair is missing breaks the run')
+  // Rows of one→two→one whose crops are not live make it the commoner trigram, so the runs start from
+  // two→one→two inside them and reach their first crop leftwards. A refresh moves the catalogue version
+  // past the answers the edge keeps.
+  await db.batch([db.prepare(`INSERT INTO unit_ngrams(first,size,second,third,text,document) VALUES('ghost1',3,'ghost2','ghost3',?1,NULL),('ghost2',3,'ghost3','ghost4',?1,NULL)`).bind(pairText + firstLabel),
+    db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at','leftward')")])
+  const inner = await runOf(pairText + pairText)
+  assert.deepEqual(inner.items.map(o => o.crops.map(c => c.id)), [['one', 'two', 'one', 'two']], 'a run reached leftwards keeps its reading order')
+  assert.deepEqual((await runOf(pairText + pairText + firstLabel)).items.map(o => o.crops.map(c => c.id)), [['one', 'two', 'one', 'two', 'one']],
+    'a run reached both ways from an inner trigram')
+  assert.equal((await runOf(firstLabel + firstLabel + secondLabel + firstLabel)).total, 0, 'a missing link on the left breaks the run')
+  await db.prepare("DELETE FROM unit_ngrams WHERE first LIKE 'ghost%'").run()
   assert.equal((await runOf(pairText + pairText, '&document=hk%3Aother')).total, 0, 'a book holds only its own runs')
   assert.equal((await runOf('申候')).total, 0, 'pairs whose crops are not live are not shown')
   assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent(firstLabel))).status, 422, 'a run is two characters or more')
   assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent('一二三四五六七八九'))).status, 422, 'a run is eight characters or fewer')
-  assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent(pairText) + '&offset=2001')).status, 404, 'a run does not page past its cap')
+  assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent(pairText) + '&offset=2000')).status, 404, 'a run does not page past its cap')
   assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent(pairText) + '&limit=97')).status, 422, 'a page is bounded')
   await db.prepare('DELETE FROM unit_ngrams').run()
   for (const [index, create] of Object.entries(keys)) {

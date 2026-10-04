@@ -553,8 +553,11 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
   const parts = runCharacters(value);
   if (parts.length < 2 || parts.length > RUN_MAX) throw new Problem(422, `A run is two to ${RUN_MAX} characters.`);
   const document = text(q.get('document'), 256, 'document');
-  const limit = integer(q, 'limit', 48, RUN_PAGE_MAX), offset = integer(q, 'offset', 0);
-  if (offset > RUN_COUNT_MAX) throw new Problem(404, 'A run does not page this far.');
+  let limit = integer(q, 'limit', 48, RUN_PAGE_MAX);
+  const offset = integer(q, 'offset', 0);
+  // A page ends where the count does.
+  if (offset >= RUN_COUNT_MAX) throw new Problem(404, 'A run does not page this far.');
+  limit = Math.min(limit, RUN_COUNT_MAX - offset);
   const key = new Request(`${url.origin}/atlas/runs?${new URLSearchParams({ text: value, document: document ?? '', limit: String(limit), offset: String(offset), v: await catalogueVersion(env) })}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json() as Json;
