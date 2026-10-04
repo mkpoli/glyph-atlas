@@ -569,6 +569,7 @@
   "search.narrowQuery": "殘ヲ見ルニハ檢索語ヲ絞ルベシ",
   "search.noMatch": "合フ字無之",
   "search.placeholder": "字ヲ索ム…",
+  "search.run": "文字列",
   "search.others.other": "他ノ字 {count}",
   "search.loading": "讀込中…",
   "search.searching": "檢索中…",

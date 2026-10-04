@@ -21,6 +21,8 @@
   import GraphemeGrid from '../components/GraphemeGrid.svelte'
   import NgramGrid from '../components/NgramGrid.svelte'
   import { NGRAM_KINDS, ngramCounts } from '../lib/ngrams.js'
+  import { runText } from '../lib/runs.js'
+  import RunCandidate from '../components/RunCandidate.svelte'
   import SiteLinks from '../components/SiteLinks.svelte'
   import { catalogue, character, request, randomSeed, number, formatSerial, stored, remember } from '../lib/client.js'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery, decades } from '../lib/layers.js'
@@ -382,6 +384,9 @@
       .map(row => ({ ...row, label: writtenLabel(row), origin: 'corpus' }))
   }
 
+  // A query of two to eight characters is also a run, which the candidate list offers (`RunCandidate`).
+  const run = $derived(flagged ? '' : runText(query))
+
   let searchTimer
   function seek(value) {
     query = value; visual = ''; analysis = null; familyTotal = null; unassignedCount = null
@@ -704,7 +709,8 @@
       {:else}<GraphemeGrid groups={graphemes} value={grapheme} onchoose={key => { close(); openGrapheme(key) }}
                     onform={form => { close(); pick({ code_point: codesOf(form), char: form }, 'exact') }} />{/if}
     {/snippet}
-    <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} {groupOf} onchoosegroup={chooseGrapheme}
+    {#snippet runLead()}{#key run}<RunCandidate text={run} />{/key}{/snippet}
+    <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} {groupOf} onchoosegroup={chooseGrapheme} lead={run ? runLead : null}
                      onform={form => pick({ code_point: codesOf(form), char: form }, true)}
                      token={grapheme ? charOf(grapheme) : ''} tokenLabel={t('explore.clearGrapheme', { grapheme: charOf(grapheme) })} ontokenclear={() => select('')}
                      onsubmit={() => { clearTimeout(searchTimer); offset = 0; submitQuery() }}
