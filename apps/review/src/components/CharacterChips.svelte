@@ -16,8 +16,9 @@
   // The Forms family this character is clustered in, by its grapheme or its own code point; none, no link.
   const formsFamily = $derived([card?.grapheme?.code_point, card?.code_point].find(code => code && page.data.forms?.includes(code)))
   // The 異体字 graph: the variants a gallery widens to, characters related otherwise, and the
-  // derived tier — forms one attested component substitution may write this character as, listed
-  // after the attested variants with a mark, no gallery widening to them.
+  // derived tier — forms up to two component substitutions may write this character as, listed
+  // after the attested variants with a mark (* for attested substitutions, † for editorial ones), no
+  // gallery widening to them.
   // A card cached before the derived tier existed has no `derived`; it reads as none.
   const variants = $derived({ items: [], related: [], sources: {}, ...card?.variants, derived: card?.variants?.derived ?? [] })
   // Every relation of kanji-variants.tsv in the reader's language; one the table gains later reads as its id.
@@ -39,10 +40,15 @@
     return [...by].map(([relation, sources]) => ({ relation, name: relationName(relation), sources: [...sources] }))
   }
   const relationTitle = v => `${v.char} ${v.code_point}\n` + relationsOf(v).map(r => `${r.name}: ${r.sources.join(', ')}`).join('\n')
-  // A derived chip's evidence, after the word that marks it: each substitution it came by
-  // (undirected, as the table spells it), how many contexts attest it, and those pairs with their sources.
-  const derivedTitle = v => `${v.char} · ${t('chips.derived')}\n` + v.substitutions.map(s =>
-    `${s.was} ↔ ${s.became} · ${s.count}\n` + s.pairs.map(p => `${p.a} ${p.b} ${p.sources.join(', ')}`).join('\n')).join('\n\n')
+  // A derived chip's evidence, after the word that marks its tier: each route it came by, each
+  // substitution as made with how many contexts attest it and those pairs with their sources, or who
+  // stated it editorially, when and why.
+  const tierName = v => v.tier === 'editorial' ? t('chips.derivedEditorial') : t('chips.derived')
+  const substitutionText = s => s.tier === 'editorial'
+    ? `${s.was} → ${s.became} · ${s.asserted_by} ${s.asserted_at}: ${s.basis}`
+    : `${s.was} → ${s.became} · ${s.count}\n` + s.pairs.map(p => `${p.a} ${p.b} ${p.sources.join(', ')}`).join('\n')
+  const derivedTitle = v => `${v.char} · ${tierName(v)}\n` + (v.routes ?? []).map(route => route.map(substitutionText).join('\n+ ')).join('\n\n')
+  const mark = v => v.tier === 'editorial' ? '†' : '*'
   const crops = v => (v.count ?? 0) + (v.corpus_count ?? 0)
   // The words this character is cited as writing (decision 0004), each with the other spellings cited
   // for it: characters that write the same word, kept out of the variant tiers and the widening. A card
@@ -86,9 +92,9 @@
           {/each}
           {#each variants.derived as v (v.code_point ?? v.char)}
             {#if v.code_point}
-              <a class="variant" href={localize(characterAddress(v.code_point))} title={derivedTitle(v)}><span lang="zh">{v.char}</span><sup class="derived-mark" aria-hidden="true">*</sup><span class="visually-hidden">{t('chips.derived')}</span>{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if crops(v)}<small>{formatNumber(crops(v))}</small>{/if}</a>
+              <a class="variant" class:editorial={v.tier === 'editorial'} href={localize(characterAddress(v.code_point))} title={derivedTitle(v)}><span lang="zh">{v.char}</span><sup class="derived-mark" aria-hidden="true">{mark(v)}</sup><span class="visually-hidden">{tierName(v)}</span>{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if crops(v)}<small>{formatNumber(crops(v))}</small>{/if}</a>
             {:else}
-              <span class="variant unencoded" title={derivedTitle(v)}><span lang="zh">{v.char}</span><sup class="derived-mark" aria-hidden="true">*</sup><span class="visually-hidden">{t('chips.derived')}</span></span>
+              <span class="variant unencoded" class:editorial={v.tier === 'editorial'} title={derivedTitle(v)}><span lang="zh">{v.char}</span><sup class="derived-mark" aria-hidden="true">{mark(v)}</sup><span class="visually-hidden">{tierName(v)}</span></span>
             {/if}
           {/each}
         </div>
@@ -173,6 +179,7 @@
   /* A derived chip is a prediction: a small mark after the character says so; a form no character
      has is set smaller, as its sequence is longer than a character. */
   .derived-mark{font-size:11px;color:var(--muted);margin-left:-4px;align-self:flex-start}
+  .variant.editorial{border-style:dashed}
   .variant.unencoded span[lang="zh"]{font-size:15px}
   .variant.unencoded:hover{border-color:var(--accent)}
   .variant small{font-size:11px;color:var(--muted)}

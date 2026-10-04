@@ -60,6 +60,7 @@
   "chips.variants": "異體",
   "chips.related": "聯關",
   "chips.derived": "派生",
+  "chips.derivedEditorial": "派生，𠊛撰提出",
   "chips.relation.variant": "異體",
   "chips.relation.equivalent": "同等",
   "chips.relation.overlap": "通用𠬠分",

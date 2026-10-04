@@ -59,6 +59,7 @@
   "chips.variants": "이체자",
   "chips.related": "관련 글자",
   "chips.derived": "파생",
+  "chips.derivedEditorial": "파생(편자 안)",
   "chips.relation.variant": "이체자",
   "chips.relation.equivalent": "전등 이체",
   "chips.relation.overlap": "부분 통용",

@@ -59,6 +59,7 @@
   "chips.variants": "異體字",
   "chips.related": "關聯 글자",
   "chips.derived": "派生",
+  "chips.derivedEditorial": "派生(編者案)",
   "chips.relation.variant": "異體字",
   "chips.relation.equivalent": "全等 異體",
   "chips.relation.overlap": "部分 通用",

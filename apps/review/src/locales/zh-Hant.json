@@ -62,6 +62,7 @@
   "chips.variants": "異體字",
   "chips.related": "相關字",
   "chips.derived": "推導",
+  "chips.derivedEditorial": "推導（編者擬）",
   "chips.relation.variant": "異體字",
   "chips.relation.equivalent": "全等異體",
   "chips.relation.overlap": "部分通用",

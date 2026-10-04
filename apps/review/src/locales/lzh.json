@@ -60,6 +60,7 @@
   "chips.variants": "異體",
   "chips.related": "相關",
   "chips.derived": "推",
+  "chips.derivedEditorial": "擬",
   "chips.relation.variant": "異體",
   "chips.relation.equivalent": "全同",
   "chips.relation.overlap": "偏通",
