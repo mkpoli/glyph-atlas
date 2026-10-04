@@ -7,7 +7,7 @@
 # source wiktionary-ja: Wiktionary 日本語版; CC-BY-SA-4.0 (https://ja.wiktionary.org/wiki/Wiktionary:著作権); Wiktionary 日本語版の執筆者 (revision in the locator). An open wiki, not a reviewed dictionary.
 # source kanjipedia: 漢字ペディア, 日本漢字能力検定協会 (https://www.kanjipedia.jp/), accessed 2026-10-04, archived at the locator; quoted, all rights reserved by the publisher. A modern dictionary's web edition, giving no period or dated example for a sense.
 # source chiebukuro-garan-2022: がらん, answer to 「「斗」はなんと読みますか？」, Yahoo!知恵袋, 2022-05-15 (https://detail.chiebukuro.yahoo.co.jp/qa/question_detail/q13261788763, archived https://web.archive.org/web/20261004062928/https://detail.chiebukuro.yahoo.co.jp/qa/question_detail/q13261788763). An anonymous forum answer chosen as best by the asker, citing no source.
-# source honkoku-ruby: 振り仮名 of the みんなで翻刻 transcriptions, counted in data/vocab/ruby-spellings.tsv (みんなで翻刻（https://honkoku.org/）翻刻データ, CC BY-SA 4.0, revision be63dc2); crowd transcriptions with 1.5 errors or spelling inconsistencies per 100 characters in an expert audit, transcribers are asked to type modern forms, and the markup guide does not say whether a 振り仮名 is on the page. Only spellings that table attests in at least two documents are listed. The statement is the project's: the spelling with the reading the table keys it by, which the locator names; the forms as typed are in that table's `ruby` column. Readings without their dakuten are included for など (なと) and まで (まて) and left out for ばかり (はかり), which also spells the verb はかる (計り, 量り); すなわち and なお, typed in modern kana, count for すなはち and なほ, and so does なを, an Edo-period spelling of なほ. Spellings of another word with the same reading are left out (直 and 治 for なほす, 待 and 蟶 for まて, 最 and 尤 for the two words もつとも), and so is 他事 for ほか, whose three documents are copies of one text.
+# source honkoku-ruby: 振り仮名 of the みんなで翻刻 transcriptions, counted in data/vocab/ruby-spellings.tsv (みんなで翻刻（https://honkoku.org/）翻刻データ, CC BY-SA 4.0, revision be63dc2); crowd transcriptions with 1.5 errors or spelling inconsistencies per 100 characters in an expert audit, transcribers are asked to type modern forms, and the markup guide does not say whether a 振り仮名 is on the page. Only spellings that table attests in at least two documents are listed. The statement is the project's: the spelling with the reading the table keys it by, which the locator names; the forms as typed are in that table's `ruby` column. Readings without their dakuten are included for など (なと) and まで (まて) and left out for ばかり (はかり), which also spells the verb はかる (計り, 量り); すなわち and なお, typed in modern kana, count for すなはち and なほ, and so does なを, an Edo-period spelling of なほ. Spellings of another word with the same reading are left out: 直, 治, 愈, 癒, 修 and 療 for なほす, 名 for 名を, 待, 蟶 and 馬刀 for まて. So are 他事 and 別 for ほか, each of whose documents are copies of one text; 却 for さて, which both documents read as half of 却説（さてまた）; and 麦介, which sits inside garbled 割書 markup. もつとも is not counted: Wiktionary gives 最も and 尤も as two words.
 word	spelling	tier	word_by	basis	related	source	statement	locator
 ja/およそ/副詞	凡	observed	reading			honkoku-ruby	凡（およそ）	ruby-spellings.tsv およそ 凡
 ja/およそ/副詞	凡	attested	reading			unihan-kjapanese	ボン ハン およそ すべて	U+51E1 kJapanese
@@ -18,7 +18,6 @@ ja/およそ/副詞	約	observed	reading			honkoku-ruby	約（およそ）	ruby-
 ja/さて/接続詞	偖	observed	reading			honkoku-ruby	偖（さて）	ruby-spellings.tsv さて 偖
 ja/さて/接続詞	偖	attested	reading			unihan-kjapanese	シャ さて	U+5056 kJapanese
 ja/さて/接続詞	偖	attested	source			wiktionary-ja	{{head|ja|conjunction}}【[[扠]], [[扨]], [[偖]]】	さて, revision 1741084 (https://ja.wiktionary.org/w/index.php?oldid=1741084)
-ja/さて/接続詞	却	observed	reading			honkoku-ruby	却（さて）	ruby-spellings.tsv さて 却
 ja/さて/接続詞	扠	observed	reading			honkoku-ruby	扠（さて）	ruby-spellings.tsv さて 扠
 ja/さて/接続詞	扠	attested	reading			unihan-kjapanese	サ タイ サイ シャ テ セ さす さて やす	U+6260 kJapanese
 ja/さて/接続詞	扠	attested	source			wiktionary-ja	{{head|ja|conjunction}}【[[扠]], [[扨]], [[偖]]】	さて, revision 1741084 (https://ja.wiktionary.org/w/index.php?oldid=1741084)
@@ -105,7 +104,6 @@ ja/ほか/名詞	他	attested	source			wiktionary-ja	{{ja-noun|他|外}}	ほか,
 ja/ほか/名詞	佗	observed	reading			honkoku-ruby	佗（ほか）	ruby-spellings.tsv ほか 佗
 ja/ほか/名詞	佗	attested	reading			unihan-kjapanese	タ ダ イ ほか わびる	U+4F57 kJapanese
 ja/ほか/名詞	余	observed	reading			honkoku-ruby	余（ほか）	ruby-spellings.tsv ほか 余
-ja/ほか/名詞	別	observed	reading			honkoku-ruby	別（ほか）	ruby-spellings.tsv ほか 別
 ja/ほか/名詞	外	observed	reading			honkoku-ruby	外（ほか）	ruby-spellings.tsv ほか 外
 ja/ほか/名詞	外	attested	reading			unihan-kjapanese	ガイ ゲ ウイ ガツ ガチ そと ほか はずす はずれる	U+5916 kJapanese
 ja/ほか/名詞	外	attested	source			wiktionary-ja	{{ja-noun|他|外}}	ほか, revision 1986937 (https://ja.wiktionary.org/w/index.php?oldid=1986937)
