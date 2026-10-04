@@ -759,7 +759,7 @@
   "privacy.account.methods": "로그인 코드는 Cloudflare Email Service로 發送하며, 해시 處理한 形態로 10分間 保管합니다. 패스키는 公開 키만 사이트에 貯藏합니다. 로그인한 機器마다 IP 住所와 브라우저 이름이 包含된 세션이 維持되며, 이 情報는 計定 페이지에 表示됩니다. 세션은 로그아웃하거나 90日이 지나면 終了됩니다.",
   "privacy.public.title": "다른 사람에게 公開되는 情報",
   "privacy.public.body": "貯藏한 判斷과 그 時刻은 表示 이름 및 프로필 寫眞과 함께 記錄과 順位에 表示됩니다. 이 判斷은 表示 이름을 寄與者로 表記하여 蒐集 資料와 함께 CC BY-SA 4.0으로 公開됩니다. 이메일 住所는 公開되지 않습니다.",
-  "privacy.public.gravatar": "Gravatar 프로필 寫眞은 各 訪問者의 브라우저가 Gravatar에서 直接 불러오며, 寫眞 住所에는 이메일 住所의 해시값이 包含됩니다. GitHub 프로필 寫眞도 같은 方式으로 GitHub에서 불러옵니다.",
+  "privacy.public.gravatar": "Gravatar 프로필 寫眞은 各 訪問者의 브라우저가 Gravatar에서 直接 불러오며, 寫眞 住所에는 이메일 住所의 해시값이 包含됩니다. GitHub, Google 等 連結된 計定의 프로필 寫眞도 같은 方式으로 該當 서비스에서 불러옵니다.",
   "privacy.processors.title": "外部 서비스",
   "privacy.processors.body": "Cloudflare는 사이트, 데이터베이스, 업로드한 寫眞, 로그인 이메일 서비스를 提供합니다. 로그인에 使用한 서비스 提供者는 이 사이트에 로그인했다는 事實을 알 수 있습니다. 사이트는 廣告를 表示하거나 데이터를 販賣하지 않으며, 다른 사이트에서의 活動을 追跡하지 않습니다.",
   "privacy.choices.title": "個人情報 管理",

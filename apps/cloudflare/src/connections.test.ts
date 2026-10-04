@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
 import { d1 } from './forms.test';
-import { connections } from './connections';
+import { connections, recordProfile } from './connections';
 
 const realFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = realFetch });
@@ -30,6 +30,20 @@ describe('connected accounts', () => {
     asked.length = 0;
     await connections(env, 'u1');
     expect(asked).toEqual([]);
+    db.close();
+  });
+  it('keep a user on their Google picture when they change it at Google', async () => {
+    const db = new Database(':memory:');
+    const migrations = new URL('../migrations/', import.meta.url);
+    for (const file of readdirSync(migrations).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL(file, migrations), 'utf8'));
+    const at = '2026-10-03T00:00:00.000Z';
+    const old = 'https://lh3.googleusercontent.com/a/old=s256-c';
+    db.prepare(`INSERT INTO "user"(id,name,email,emailVerified,image,createdAt,updatedAt) VALUES('u1','M','m@x',1,?,?,?)`).run(old, at, at);
+    db.prepare(`INSERT INTO account(id,accountId,providerId,userId,idToken,createdAt,updatedAt) VALUES('a2','1234','google','u1',?,?,?)`)
+      .run(token({ picture: 'https://lh3.googleusercontent.com/a/new=s96-c' }), at, at);
+    db.prepare(`INSERT INTO account_profiles(account,provider,image,at) VALUES('a2','google',?,?)`).run(old, at);
+    await recordProfile({ DB: d1(db) } as unknown as Env, 'a2');
+    expect((db.query('SELECT image FROM "user"').get() as { image: string }).image).toBe('https://lh3.googleusercontent.com/a/new=s256-c');
     db.close();
   });
 });

@@ -777,7 +777,7 @@
   "privacy.account.methods": "登入碼由Cloudflare Email Service寄送，經雜湊後存十分鐘。通行密鑰唯留公開金鑰於此。已登入之機各留一錄，記其IP位址與瀏覽器名，列於帳戶頁；登出或滿九十日則終止。",
   "privacy.public.title": "他人所見",
   "privacy.public.body": "凡所存之定論及其時刻，皆以所示之名與小像列於改錄及名次中，隨蒐集依CC BY-SA 4.0刊布，亦以此名署之。電郵址終不公開。",
-  "privacy.public.gravatar": "Gravatar小像由各閱者之瀏覽器向Gravatar取得，其網址含電郵址之雜湊值。GitHub小像亦如是取自GitHub。",
+  "privacy.public.gravatar": "Gravatar小像由各閱者之瀏覽器向Gravatar取得，其網址含電郵址之雜湊值。GitHub、Google諸所連之號，其小像亦如是取自其處。",
   "privacy.processors.title": "他項服務",
   "privacy.processors.body": "本站、資料庫、所上傳之圖及登入郵件，皆由Cloudflare承辦。所用之登入服務商可知己曾登入本站。本站不刊廣告，不售資料，亦不追蹤閱者於他站之所行。",
   "privacy.choices.title": "可自定者",

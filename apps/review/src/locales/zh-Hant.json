@@ -778,7 +778,7 @@
   "privacy.account.methods": "登入驗證碼透過Cloudflare Email Service傳送，經雜湊處理後保留10分鐘。通行密鑰僅在本站留下公開金鑰。每台已登入的裝置都有一個工作階段，其中記錄IP位址和瀏覽器名稱，你可以在帳號頁面查看。工作階段會在登出或90天後結束。",
   "privacy.public.title": "公開的資訊",
   "privacy.public.body": "你儲存的判斷及其時間會與你的顯示名稱和大頭貼一起出現在編輯歷史和排名中，並隨館藏以CC BY-SA 4.0發布，以該顯示名稱署名。你的電子郵件地址不會公開。",
-  "privacy.public.gravatar": "Gravatar大頭貼由每位訪客的瀏覽器直接從Gravatar取得，大頭貼網址中包含你電子郵件地址的雜湊值。GitHub大頭貼也以同樣的方式從GitHub取得。",
+  "privacy.public.gravatar": "Gravatar大頭貼由每位訪客的瀏覽器直接從Gravatar取得，大頭貼網址中包含你電子郵件地址的雜湊值。GitHub、Google等已連結帳號的大頭貼也以同樣的方式從相應服務取得。",
   "privacy.processors.title": "其他服務",
   "privacy.processors.body": "Cloudflare為網站、資料庫、上傳的大頭貼和登入郵件提供服務。你用於登入的服務商會知道你登入了本站。本站不顯示廣告，不出售資料，也不追蹤你在其他網站上的活動。",
   "privacy.choices.title": "你的選擇",

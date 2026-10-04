@@ -25,7 +25,8 @@ async function read(row: AccountRow): Promise<Profile | null> {
   switch (row.providerId) {
     case 'google':
     case 'line':
-      return id ? { handle: null, name: text(id.name), email: text(id.email), image: text(id.picture) } : null;
+      // Google serves its picture at 96 pixels unless the address asks for more.
+      return id ? { handle: null, name: text(id.name), email: text(id.email), image: text(id.picture)?.replace(/=s\d+-c$/, '=s256-c') ?? null } : null;
     case 'github': {
       // The public profile by account number serves an account whose token has lapsed.
       const user = (row.accessToken && await json('https://api.github.com/user', row.accessToken))
@@ -57,7 +58,12 @@ export async function recordProfile(env: Env, id: string) {
   const row = await env.DB.prepare('SELECT id,providerId,accountId,accessToken,idToken,createdAt FROM account WHERE id=?').bind(id).first<AccountRow>();
   if (!row || row.providerId === 'credential') return;
   const profile = await read(row);
-  if (profile) await save(env, row, profile);
+  if (!profile) return;
+  const before = await env.DB.prepare('SELECT image FROM account_profiles WHERE account=?').bind(id).first<{ image: string | null }>();
+  await save(env, row, profile);
+  // A user showing this account's picture keeps showing it after they change it there.
+  if (before?.image && profile.image && before.image !== profile.image)
+    await env.DB.prepare('UPDATE "user" SET image=? WHERE id=(SELECT userId FROM account WHERE id=?) AND image=?').bind(profile.image, id, before.image).run();
 }
 
 /** A user's connected accounts, each with who it is at its provider and when it was connected. */

@@ -775,7 +775,7 @@
   "privacy.account.methods": "登入符號ハCloudflare Email Serviceニヨリ送信セラレ、ハッシュ化サレテ十分間保持セラル。パスキーハ公開鍵ノミヲ此處ニ殘ス。登入セル端末每ニ、IPアドレスト閲覽器名ヲ含ムセッションガ維持セラレ、アカウント頁ニ一覧セラル。セッションハ退出ノ際、又ハ九十日ノ後ニ終了ス。",
   "privacy.public.title": "公開セラルル情報",
   "privacy.public.body": "保存シタル判定ハ其ノ日時ト共ニ、表示名及ビ畫像ノ下ニ履歷及ビ順位ニ現レ、其ノ表示名ヲ著シテCC BY-SA 4.0ノ下ニ蒐集ト共ニ公開セラル。電子書簡宛先ガ示サルルコトハ決シテナシ。",
-  "privacy.public.gravatar": "Gravatarノ畫像ハ各閱覽者ノ閲覽器ニヨリ直接Gravatarヨリ取得セラレ、其ノアドレスニハ電子書簡宛先ノハッシュ値ガ含マル。GitHubノ畫像モ亦タ同樣ニGitHubヨリ取得セラル。",
+  "privacy.public.gravatar": "Gravatarノ畫像ハ各閱覽者ノ閲覽器ニヨリ直接Gravatarヨリ取得セラレ、其ノアドレスニハ電子書簡宛先ノハッシュ値ガ含マル。GitHub・Google等連携セル賬戶ノ畫像モ亦タ同樣ニ其ノ處ヨリ取得セラル。",
   "privacy.processors.title": "外部サービス",
   "privacy.processors.body": "Cloudflareハ本サイト、其ノ資料庫、アップロードセラレタル畫像、及ビ登入用ノ電子書簡ヲホストス。登入ニ用ヰタルプロバイダーニハ、本サイトニ登入シタル旨ガ傳ハル。本サイトハ廣告ヲ揭ゲズ、データヲ賣ラズ、他ノサイトニ於テ利用者ヲ追跡スルコトモナシ。",
   "privacy.choices.title": "利用者ノ選擇肢",

@@ -759,7 +759,7 @@
   "privacy.account.methods": "로그인 코드는 Cloudflare Email Service로 발송하며, 해시 처리한 형태로 10분간 보관합니다. 패스키는 공개 키만 사이트에 저장합니다. 로그인한 기기마다 IP 주소와 브라우저 이름이 포함된 세션이 유지되며, 이 정보는 계정 페이지에 표시됩니다. 세션은 로그아웃하거나 90일이 지나면 종료됩니다.",
   "privacy.public.title": "다른 사람에게 공개되는 정보",
   "privacy.public.body": "저장한 판단과 그 시각은 표시 이름 및 프로필 사진과 함께 편집 기록과 순위에 표시됩니다. 이 판단은 표시 이름을 기여자로 표기하여 컬렉션과 함께 CC BY-SA 4.0으로 공개됩니다. 이메일 주소는 공개되지 않습니다.",
-  "privacy.public.gravatar": "Gravatar 프로필 사진은 각 방문자의 브라우저가 Gravatar에서 직접 불러오며, 사진 주소에는 이메일 주소의 해시값이 포함됩니다. GitHub 프로필 사진도 같은 방식으로 GitHub에서 불러옵니다.",
+  "privacy.public.gravatar": "Gravatar 프로필 사진은 각 방문자의 브라우저가 Gravatar에서 직접 불러오며, 사진 주소에는 이메일 주소의 해시값이 포함됩니다. GitHub, Google 등 연결된 계정의 프로필 사진도 같은 방식으로 해당 서비스에서 불러옵니다.",
   "privacy.processors.title": "외부 서비스",
   "privacy.processors.body": "Cloudflare는 사이트, 데이터베이스, 업로드한 프로필 사진, 로그인 이메일 서비스를 제공합니다. 로그인에 사용한 서비스 제공자는 해당 계정으로 이 사이트에 로그인했다는 사실을 알 수 있습니다. 사이트는 광고를 표시하거나 데이터를 판매하지 않으며, 다른 사이트에서의 활동을 추적하지 않습니다.",
   "privacy.choices.title": "개인정보 관리",
