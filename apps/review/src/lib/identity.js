@@ -31,6 +31,9 @@ const SCRIPT_NAMES = { hiragana: 'Hiragana', hentaigana: 'Hiragana', katakana: '
 
 // ー belongs to Unicode's Common script and to `symbol` in the character table; it is coloured as katakana.
 const KATAKANA_MARKS = new Set(['ー'])
+// The operators of an ideographic description sequence (⿰亻哥 is 亻 beside 哥), with the number of
+// descriptions each takes. A sequence describes one Han character Unicode lacks.
+const IDS_ARITY = new Map([...[...'⿰⿱⿴⿵⿶⿷⿸⿹⿺⿻⿼⿽㇯'].map(c => [c, 2]), ...[...'⿲⿳'].map(c => [c, 3]), ...[...'⿾⿿〾'].map(c => [c, 1])])
 
 export function scriptInfo(text, stated = '') {
   if (text && [...text].every(char => KATAKANA_MARKS.has(char))) return { key: 'katakana', label: SCRIPT_NAMES.katakana }
@@ -42,6 +45,7 @@ export function scriptInfo(text, stated = '') {
     && !(char.codePointAt(0) >= 0xE0100 && char.codePointAt(0) <= 0xE01EF)).map(char => {
     const cp = char.codePointAt(0)
     if (KATAKANA_MARKS.has(char)) return 'katakana'
+    if (IDS_ARITY.has(char)) return 'kanji'
     if (/\p{Script=Hiragana}/u.test(char) || (cp >= 0x1B001 && cp <= 0x1B11F) || cp === 0x1B123) return 'hiragana'
     if (/\p{Script=Katakana}/u.test(char) || cp === 0x2A708 || cp === 0x1B000 || (cp >= 0x1B120 && cp <= 0x1B122)
       || (cp >= 0x1B124 && cp <= 0x1B128) || cp === 0x1B168 || (cp >= 0x1AFF0 && cp <= 0x1AFFF)) return 'katakana'
@@ -58,7 +62,22 @@ export function scriptInfo(text, stated = '') {
 
 const graphemes = new Intl.Segmenter('ja', { granularity: 'grapheme' })
 
+// A description sequence is one part: its operator and every description the operators take.
+function described(segments) {
+  const parts = []
+  for (let at = 0; at < segments.length;) {
+    let text = '', owed = 1
+    do {
+      const segment = segments[at++]
+      text += segment
+      owed += (IDS_ARITY.get(segment) ?? 0) - 1
+    } while (owed > 0 && at < segments.length && IDS_ARITY.has(text[0]))
+    parts.push(text)
+  }
+  return parts
+}
+
 export function scriptParts(text, stated = '') {
-  const parts = [...graphemes.segment(text ?? '')].map(part => part.segment)
+  const parts = described([...graphemes.segment(text ?? '')].map(part => part.segment))
   return parts.map(part => ({ text: part, ...scriptInfo(part, parts.length === 1 ? stated : '') }))
 }

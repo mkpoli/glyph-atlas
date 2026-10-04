@@ -26,4 +26,9 @@ assert.equal(scriptParts('𪜈', 'katakana').length, 1)
 // ハ with the mark stays katakana.
 for (const stated of ['', 'hentaigana']) assert.deepEqual(scriptParts('𛂞\u3099', stated).map(part => [part.text, part.key]), [['𛂞\u3099', 'hiragana']])
 assert.deepEqual(scriptParts('𛂞\u309Aハ\u3099').map(part => [part.text, part.key]), [['𛂞\u309A', 'hiragana'], ['ハ\u3099', 'katakana']])
+// A description sequence names one Han character: it is kanji, and one part however deeply nested.
+assert.equal(scriptInfo('⿰亻哥').key, 'kanji')
+assert.deepEqual(scriptParts('⿰亻⿱亠女').map(part => [part.text, part.key]), [['⿰亻⿱亠女', 'kanji']])
+assert.deepEqual(scriptParts('⿰亻哥ム').map(part => [part.text, part.key]), [['⿰亻哥', 'kanji'], ['ム', 'katakana']])
+assert.deepEqual(scriptParts('⿰亻').map(part => [part.text, part.key]), [['⿰亻', 'kanji']])
 console.log('Identity display and script distinctions passed.')
