@@ -15,15 +15,24 @@ def unit(seq, y=None, line="L1", **fields):
                 box=Box(x=0, y=y, w=36, h=36), **fields)
 
 
+def catalogue():
+    """`units` and `corpus_units` with the columns the ngram migrations' triggers read."""
+    db = sqlite3.connect(":memory:")
+    columns = ("character TEXT, document TEXT, production TEXT NOT NULL DEFAULT 'unknown', style TEXT NOT NULL DEFAULT 'unassessed', "
+               "style_order INTEGER NOT NULL DEFAULT 1, shuffle INTEGER NOT NULL DEFAULT 0")
+    db.execute(f"CREATE TABLE units (id TEXT PRIMARY KEY, origin TEXT, {columns})")
+    db.execute(f"CREATE TABLE corpus_units (id TEXT PRIMARY KEY, {columns})")
+    return db
+
+
 def site(units):
     """A D1 catalogue with `units` as (id, origin, character, document) rows and the ngram migrations applied."""
-    db = sqlite3.connect(":memory:")
-    db.execute("CREATE TABLE units (id TEXT PRIMARY KEY, origin TEXT, character TEXT, document TEXT)")
+    db = catalogue()
     db.execute("CREATE TABLE unit_pairs (first TEXT PRIMARY KEY, second TEXT NOT NULL, text TEXT, document TEXT)")
     for migration in MIGRATIONS:
         if "ngram" in migration.name:
             db.executescript(migration.read_text())
-    db.executemany("INSERT INTO units VALUES(?,?,?,?)", units)
+    db.executemany("INSERT INTO units(id,origin,character,document) VALUES(?,?,?,?)", units)
     return db
 
 
@@ -101,8 +110,7 @@ def test_a_later_publication_replaces_a_units_runs():
 
 
 def test_the_pairs_recorded_before_carry_over():
-    db = sqlite3.connect(":memory:")
-    db.execute("CREATE TABLE units (id TEXT PRIMARY KEY, origin TEXT, character TEXT, document TEXT)")
+    db = catalogue()
     for migration in MIGRATIONS:
         if migration.name.startswith("0028"):
             db.executescript(migration.read_text())
