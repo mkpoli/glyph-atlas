@@ -360,6 +360,8 @@ ROOM_MARGIN = 0.8
 #: Least gap two neighbouring parts keep where they face each other, side by side and stacked: the
 #: median gap along their facing edges, as 95% of drawn characters keep it (measured on 800).
 FACING = (72.0, 53.0)
+#: Most of its length a part gives up to make room for its neighbour.
+SQUEEZE = 0.15
 #: How an aligned operator with no teacher shares its axis: by operand ink to `power`, the middle
 #: operands weighted by `middle`. Fitted on the drawn characters of each operator that cut cleanly
 #: (56 ⿳, 72 ⿲): a stacked middle part is compressed, a centre column is not.
@@ -980,8 +982,11 @@ class Composer:
                 continue
             half = (FACING[axis] - gap) / 2
             first, second = (a, b) if axis == 0 else (b, a)  # lower x first; y is up, so the stacked lower part first
-            _squeeze(first, axis, 0.0, -half)
-            _squeeze(second, axis, half, 0.0)
+            # No part gives up more than `SQUEEZE` of its length: parts drawn into each other are a
+            # layout fault this pass does not mend.
+            limit = lambda group: SQUEEZE * (max(p.target[axis + 2] for p in group) - min(p.target[axis] for p in group))
+            _squeeze(first, axis, 0.0, -min(half, limit(first)))
+            _squeeze(second, axis, min(half, limit(second)), 0.0)
 
     @staticmethod
     def _stretch(source: Box, target: Box) -> float:
