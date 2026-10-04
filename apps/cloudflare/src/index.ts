@@ -502,9 +502,9 @@ export function moved(stored: Facet[], moves: Facet[]): Facet[] {
   }
   return [...rows.values()].filter(row => row.n > 0);
 }
-// The pair and trigram frequencies Explore's grid shows: runs of crops that follow each other on a
-// line (`unit_ngrams`), counted by the text their labels make, most frequent first. The whole
-// collection's count and a book's are each the first page of the counts the triggers keep
+// The pair and trigram frequencies Explore's grid shows: runs of crops and of corpus glyphs that follow
+// each other on a line (`unit_ngrams`), counted by the text their characters make, most frequent first.
+// The whole site's count and a book's are each the first page of the counts the triggers keep
 // (`ngram_counts`, 0060). The edge keeps one copy per catalogue version, length and book. A run is
 // shown down the page where most of its occurrences are written that way.
 const NGRAMS_MAX = 480, NGRAM_SIZES = new Set(['2', '3']);
@@ -554,8 +554,10 @@ export function runPage(crops: Json[]): { image: string; box: Rect; region: Rect
 // The first row is read along the index its text (and book) share with the counts, so occurrences come
 // in that index's order: the style group of its first crop (handwritten first, 0058), then that crop's
 // shuffle and id. Every other row is found by its key, rightwards by the primary key and leftwards
-// through `unit_ngram_second`, and every crop by its id. The join order is fixed and the origin test kept
-// off its index (`+`): the planner would otherwise start from every local crop. Counting stops past
+// through `unit_ngram_second` (the length kept off its index, `+`, or the planner reads every pair), and
+// every member by its id: its `units` row and its `corpus_units` row, either of which may be missing. A
+// member stands on the site as a local crop or as a corpus glyph, whose record is its `units` row once a
+// round named it and its published record (R2) before. Left joins keep the join order. Counting stops past
 // RUN_COUNT_MAX, which is as deep as a run pages, and the first page alone counts. A page holds up to
 // RUN_PAGE_CROPS crops, so a longer run comes in fewer occurrences at a time.
 // RUN_MAX keeps a run inside one context render: a render reaches five character sizes along a column
@@ -575,28 +577,50 @@ export function runFrom(size: number, anchor: number) {
     crops[i + 1] = `r${i}.second`; links.push(i);
   }
   for (let i = anchor - 1; i >= 0; i--) {
-    joins.push(`CROSS JOIN unit_ngrams l${i} ON l${i}.second=${crops[i + 1]} AND l${i}.size=2 AND +l${i}.text=?`);
+    joins.push(`CROSS JOIN unit_ngrams l${i} ON l${i}.second=${crops[i + 1]} AND +l${i}.size=2 AND +l${i}.text=?`);
     crops[i] = `l${i}.first`; links.push(i);
   }
-  const units = crops.map((crop, i) => `CROSS JOIN units u${i} ON u${i}.id=${crop} AND +u${i}.origin='local'`);
+  const units = crops.map((crop, i) => `LEFT JOIN units u${i} ON u${i}.id=${crop} LEFT JOIN corpus_units k${i} ON k${i}.id=${crop}`);
   return { from: ['FROM unit_ngrams a', ...joins, ...units].join(' '), links };
 }
-const runWhere = (document: boolean, style = false) => `${document ? 'a.document=? AND ' : ''}a.size=? AND a.text=?${style ? ' AND a.style_order=?' : ''}`;
+const runWhere = (document: boolean, size: number, style = false) => `${document ? 'a.document=? AND ' : ''}a.size=? AND a.text=?${style ? ' AND a.style_order=?' : ''}`
+  + Array.from({ length: size }, (_, i) => ` AND (u${i}.origin='local' OR k${i}.id IS NOT NULL)`).join('');
 // A style group (`style`, the first row's `style_order`) and a book (`document`) narrow the run through
 // the index that leads with what they name; `sort=source` lists a run by book (0059) instead.
 export function runOccurrencesQuery(size: number, anchor: number, document: boolean, style = false, sort: 'style' | 'source' = 'style') {
-  return `SELECT ${Array.from({ length: size }, (_, i) => `u${i}.data AS c${i}`).join(',')}, u0.document AS document, a.vertical
-    ${runFrom(size, anchor).from} WHERE ${runWhere(document, style)}
+  const members = Array.from({ length: size }, (_, i) => `u${i}.data AS c${i},k${i}.object AS o${i},k${i}.offset AS f${i},k${i}.size AS s${i}`);
+  return `SELECT ${members.join(',')}, a.document AS document, a.vertical
+    ${runFrom(size, anchor).from} WHERE ${runWhere(document, size, style)}
     ORDER BY ${sort === 'source' && !document ? 'a.document,a.first' : 'a.style_order,a.shuffle,a.first'} LIMIT ? OFFSET ?`;
 }
 export function runCountQuery(size: number, anchor: number, document: boolean, style = false) {
   return `SELECT count(*) AS n, sum(v) AS vertical FROM (SELECT a.vertical AS v ${runFrom(size, anchor).from}
-    WHERE ${runWhere(document, style)} LIMIT ${RUN_COUNT_MAX + 1})`;
+    WHERE ${runWhere(document, size, style)} LIMIT ${RUN_COUNT_MAX + 1})`;
 }
 /** The books a run is in, with their occurrences (counted among the first RUN_COUNT_MAX) and one crop of each to name them by. */
 export function runWorksQuery(size: number, anchor: number) {
   return `SELECT d AS document, count(*) AS n, min(f) AS sample FROM (SELECT a.document AS d, a.first AS f ${runFrom(size, anchor).from}
-    WHERE ${runWhere(false)} AND a.document IS NOT NULL LIMIT ${RUN_COUNT_MAX + 1}) GROUP BY d ORDER BY n DESC,d LIMIT ${RUN_WORKS_MAX}`;
+    WHERE ${runWhere(false, size)} AND a.document IS NOT NULL LIMIT ${RUN_COUNT_MAX + 1}) GROUP BY d ORDER BY n DESC,d LIMIT ${RUN_WORKS_MAX}`;
+}
+// The records of a page's occurrences: each member's row where it has one, else its published record,
+// read from the packs a few at a time, as a corpus gallery reads them. An occurrence with a record that
+// cannot be read is left off the page, as a listing leaves out a glyph whose record it cannot read.
+type RunRow = { document: string | null; vertical: number } & Record<`c${number}`, string | null> & Record<`o${number}`, string | null>
+  & Record<`f${number}` | `s${number}`, number | null>;
+async function runRecords(env: Env, rows: RunRow[], size: number): Promise<(Json[] | null)[]> {
+  const wanted = rows.flatMap((row, r) => Array.from({ length: size }, (_, i) => ({ r, i }))
+    .filter(({ i }) => row[`c${i}`] === null && row[`o${i}`] !== null));
+  const read = new Map<string, Json>();
+  for (let start = 0; start < wanted.length; start += 8)
+    await Promise.all(wanted.slice(start, start + 8).map(async ({ r, i }) => {
+      const row = rows[r];
+      const record = await corpusData(env, { object: row[`o${i}`], offset: row[`f${i}`], size: row[`s${i}`] } as CorpusRow).catch(() => null);
+      if (record) read.set(`${r}:${i}`, record);
+    }));
+  return rows.map((row, r) => {
+    const members = Array.from({ length: size }, (_, i) => row[`c${i}`] !== null ? parse(row[`c${i}`]!) : read.get(`${r}:${i}`));
+    return members.every(Boolean) ? members as Json[] : null;
+  });
 }
 /** How many rows of a trigram there are, counting no further than RUN_PROBE_MAX. */
 export function runProbeQuery(document: boolean) {
@@ -638,29 +662,41 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
     env.DB.prepare(runWorksQuery(size, anchor)).bind(...links.map(i => span(i, 2)), Math.min(size, 3), span(anchor, Math.min(size, 3))),
   ];
   const [page, count, ...rest] = await env.DB.batch([occurrences, ...first]) as D1Result<any>[];
-  const found = page.results as ({ document: string | null; vertical: number } & Record<`c${number}`, string>)[];
+  const found = page.results as RunRow[];
   // The crops of one run stand on one page, so they share their document's dates.
-  const dating = await datingOf(env, found.map(row => row.document));
-  const items = found.map(row => {
-    const crops = parts.map((_, i) => parse(row[`c${i}`]));
+  const [dating, records] = await Promise.all([datingOf(env, found.map(row => row.document)), runRecords(env, found, size)]);
+  const items = found.flatMap((row, r) => {
+    const crops = records[r];
+    if (!crops) return [];
     const dated = row.document ? dating.get(row.document) : undefined;
     return { crops: crops.map(c => ({ ...listing(c), crop_box: c.crop_box ?? null, dating: dated ?? {} })),
       vertical: Boolean(row.vertical), page: runPage(crops) };
   });
   const counted = count?.results[0] as { n: number; vertical: number | null } | undefined;
   const works = rest.length ? await runWorks(env, rest.pop()!.results as { document: string; n: number; sample: string }[]) : null;
-  const body = { text: value, size, document, style: group === null ? 'all' : STYLE_NAMES[group], sort, next_offset: offset + items.length, items,
+  const body = { text: value, size, document, style: group === null ? 'all' : STYLE_NAMES[group], sort, next_offset: offset + found.length, items,
     ...(counted && { total: Math.min(counted.n, RUN_COUNT_MAX), more: counted.n > RUN_COUNT_MAX, vertical: 2 * (counted.vertical ?? 0) >= counted.n,
       styles: Object.fromEntries(STYLE_NAMES.map((name, i) => [name, Math.min((rest[i].results[0] as { n: number }).n, RUN_COUNT_MAX)])), style_groups: STYLE_NAMES, works }) };
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return body;
 }
-// A book's name is its crops' source title, read from one of its crops by key.
+// A book's name is its crops' source title, read from one of its crops by key: a crop's row, or a corpus
+// glyph's published record (`source.title`), a few at a time.
 async function runWorks(env: Env, rows: { document: string; n: number; sample: string }[]) {
   if (!rows.length) return [];
-  const titles = await env.DB.prepare(`SELECT id,json_extract(data,'$.source') AS title FROM units WHERE id IN (${rows.map(() => '?').join(',')})`)
+  const marks = rows.map(() => '?').join(',');
+  const titles = await env.DB.prepare(`SELECT id,json_extract(data,'$.source') AS title FROM units WHERE id IN (${marks})`)
     .bind(...rows.map(row => row.sample)).all<{ id: string; title: string | null }>();
-  const named = new Map(titles.results.map(row => [row.id, row.title]));
+  const named = new Map(titles.results.map(row => [row.id, typeof row.title === 'string' && row.title.startsWith('{') ? parse(row.title).title ?? null : row.title]));
+  const unnamed = rows.filter(row => !named.has(row.sample)).map(row => row.sample);
+  if (unnamed.length) {
+    const pointers = (await env.DB.prepare(`SELECT * FROM corpus_units WHERE id IN (${unnamed.map(() => '?').join(',')})`).bind(...unnamed).all<CorpusRow>()).results;
+    for (let i = 0; i < pointers.length; i += 8)
+      await Promise.all(pointers.slice(i, i + 8).map(async pointer => {
+        const record = await corpusData(env, pointer).catch(() => null);
+        named.set(pointer.id, record?.source?.title ?? null);
+      }));
+  }
   return rows.map(row => ({ id: row.document, title: named.get(row.sample) ?? null, count: row.n }));
 }
 // The runs near one, to move between them: the shorter runs a trigram or four holds, the trigrams a pair

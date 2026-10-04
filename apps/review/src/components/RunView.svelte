@@ -16,6 +16,7 @@
   import { tileDate } from '../lib/dating.js'
   import { collectionAddress } from '../lib/gallery.js'
   import { number } from '../lib/client.js'
+  import { sourceTitle } from '../lib/seo.js'
   import { t, localize } from '../lib/i18n.svelte.js'
 
   let { text, work: given = '', style: styled = '', sort: ordered = '', first = null, related = null, inspect } = $props()
@@ -24,7 +25,7 @@
   let styles = $state(opened?.styles ?? null), works = $state(opened?.works ?? [])
   let items = $state(opened?.items ?? []), total = $state(opened?.total ?? null), more = $state(opened?.more ?? false)
   let offset = $state(opened?.next_offset ?? 0), vertical = $state(opened?.vertical ?? true), size = $state(opened?.size ?? 2)
-  let loading = $state(!opened), error = $state(''), requestId = 0
+  let loading = $state(!opened), error = $state(''), ended = $state(false), requestId = 0
 
   async function load(append = false) {
     const id = ++requestId
@@ -34,7 +35,9 @@
       if (id !== requestId) return
       items = append ? [...items, ...page.items] : page.items
       // Only the first page carries the count.
-      if (!append) { total = page.total; more = page.more; vertical = page.vertical; styles = page.styles; works = page.works }
+      if (!append) { total = page.total; more = page.more; vertical = page.vertical; styles = page.styles; works = page.works; ended = false }
+      // A page that reads no further ends the list, so a run whose rows went since its count stops asking.
+      if (append && page.next_offset <= offset) ended = true
       offset = page.next_offset; size = page.size
     } catch (e) { if (id === requestId) error = e.message }
     finally { if (id === requestId) loading = false }
@@ -52,7 +55,8 @@
     [() => t('run.near.siblings', { lead: related?.lead }), related?.siblings ?? []],
   ].filter(([, runs]) => runs.length))
 
-  const hasMore = $derived(total !== null && items.length < total)
+  // An occurrence whose record cannot be read is left off its page, so the pages run on by the rows read.
+  const hasMore = $derived(total !== null && offset < total && !ended)
   // The crops the inspector steps through, in the order they are shown.
   const crops = $derived(items.flatMap(o => o.crops))
 
@@ -73,7 +77,8 @@
     observer.observe(sentinel)
     return () => observer.disconnect()
   })
-  const where = crop => [crop.source, crop.page_number ? t('tile.page', { page: crop.page_number }) : null, tileDate(crop) || null].filter(Boolean).join(' · ')
+  // A corpus glyph's record names its book in `source.title`, a crop's in `source`.
+  const where = crop => [sourceTitle(crop), crop.page_number ? t('tile.page', { page: crop.page_number }) : null, tileDate(crop) || null].filter(Boolean).join(' · ')
 </script>
 
 <section class="explore run-view">
