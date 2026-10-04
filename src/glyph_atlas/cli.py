@@ -549,12 +549,13 @@ def review_shift_repair(
     apply: Annotated[bool, typer.Option(help="record the relabels in the dataset's journal")] = False,
     protect: Annotated[Path | None, typer.Option(help="file of unit ids never relabelled, one per line (reviewed on the site)")] = None,
     checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
+    min_p: Annotated[float, typer.Option(help="least probability a relabelled crop shows its new label with")] = 0.8,
 ) -> None:
     """Relabel crops whose block is one or two places out of step with its text (needs CUDA)."""
     from .review import shift_repair
 
     ids = protect.read_text().split() if protect else ()
-    result = shift_repair.run(directory, checkpoint=checkpoint, apply=apply, protect=ids)
+    result = shift_repair.run(directory, checkpoint=checkpoint, apply=apply, protect=ids, min_p=min_p)
     shift_repair.write(result, out)
     typer.echo(json.dumps({k: v for k, v in result.items() if k != "items"}, ensure_ascii=False))
 

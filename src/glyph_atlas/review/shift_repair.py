@@ -10,7 +10,8 @@ each offset −2…+2 of its own position in the block. A Viterbi pass over the 
 per crop, paying `SWITCH` nats for each change of offset, so an offset has to be carried by a run of
 crops: a single crop the classifier misreads cannot move its label on its own. A crop is relabelled
 with the character at its chosen offset when that offset is not zero, the crop shows that character
-with at least `MIN_P`, at least `MIN_SUPPORT` crops of its run do the same, and both sides of its box
+with at least `MIN_P` (or the bar a run is given) and more than its own label, at least `MIN_SUPPORT`
+crops of its run do the same, and both sides of its box
 are at least `MIN_SIDE` pixels. The character written in the block is taken as it stands, so a crop
 filed under 表 whose text runs 前金 becomes 金 even where the scan shows a form of it.
 
@@ -85,13 +86,14 @@ def path(cost: np.ndarray, switch: float = SWITCH) -> list[int]:
 
 
 def propose(blocks: dict[Any, list[tuple[str, int, str, str]]], shown: dict[str, np.ndarray],
-            sizes: dict[str, tuple[float, float]], protected: set[str]) -> list[dict]:
+            sizes: dict[str, tuple[float, float]], protected: set[str], min_p: float = MIN_P) -> list[dict]:
     """The relabels of every block.
 
     `blocks` lists each block's crops as (id, position, the text written at that position, the crop's
     label now); `shown[id]` holds, for each offset of
     `OFFSETS`, the probability that the crop shows the label at that offset (`FLOOR` where there is
-    none). `sizes` gives each box's width and height.
+    none). `sizes` gives each box's width and height. `min_p` is the least probability a relabelled crop
+    shows its new label with; a run's support is counted at half the default `MIN_P` whatever it is.
     """
     zero = OFFSETS.index(0)
     proposals = []
@@ -116,11 +118,11 @@ def propose(blocks: dict[Any, list[tuple[str, int, str, str]]], shown: dict[str,
             while high < len(scored) - 1 and chosen[high + 1] == column:
                 high += 1
             support = int((p[low:high + 1, column] >= MIN_P / 2).sum())
-            if p[i, column] < MIN_P or support < MIN_SUPPORT or min(sizes.get(identity, (0, 0))) < MIN_SIDE:
+            if p[i, column] < min_p or p[i, column] <= p[i, zero] or support < MIN_SUPPORT or min(sizes.get(identity, (0, 0))) < MIN_SIDE:
                 continue
             proposals.append({"unit_id": identity, "before": label, "character": target, "offset": offset,
                               "p": round(float(p[i, column]), 4), "p_label": round(float(p[i, zero]), 4),
-                              "run": high - low + 1, "support": support, "block": list(key)})
+                              "run": high - low + 1, "support": support, "min_p": min_p, "block": list(key)})
     return proposals
 
 
@@ -170,7 +172,8 @@ def _shown(store, blocks, checkpoint: Path) -> dict[str, np.ndarray]:
     return shown
 
 
-def run(dataset: Path, *, checkpoint: Path, apply: bool = False, protect: Iterable[str] = ()) -> dict:
+def run(dataset: Path, *, checkpoint: Path, apply: bool = False, protect: Iterable[str] = (),
+        min_p: float = MIN_P) -> dict:
     """Propose, and with `apply` record, the relabels of every block of `dataset`."""
     from .atlas import script_of_identity, written_identity
     from .refine import _changes, encoded
@@ -197,7 +200,7 @@ def run(dataset: Path, *, checkpoint: Path, apply: bool = False, protect: Iterab
         blocks[found[0]].append((unit.id, found[1], text, label))
         sizes[unit.id] = (unit.box.w, unit.box.h)
     shown = _shown(store, blocks, checkpoint)
-    proposals = propose(blocks, shown, sizes, protected)
+    proposals = propose(blocks, shown, sizes, protected, min_p)
     counts = Counter()
     for item in proposals:
         unit, revision = units[item["unit_id"]]
