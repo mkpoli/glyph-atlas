@@ -28,7 +28,9 @@ next character, is an extra box, or a character is left without a box. A crop pa
 probability that it shows the character it takes (at least 0.01, and 0.05 for a character the
 classifier has no class for); an extra box pays −log of a prior that grows as the box shrinks against
 the block's median area (0.02 at full size, 0.5 below a fifth of it); a character left without a box
-pays −log 0.02. The cheapest alignment is taken when the next one costs at least 1 nat more.
+pays −log 0.02. The cheapest alignment is taken when the next one costs at least 1 nat more. Where no
+other alignment is possible, it is taken only if every box it withholds is under 0.6 of the median
+area. A crop the classifier did not read anchors its window.
 
 A crop that takes another character is relabelled as the block-shift repair does. An extra box is
 kept with its label and withheld: its `alignment_repair` note is `withheld`, `quiz: false`, with the
@@ -36,25 +38,29 @@ reason "the block's text has no character for this box: it holds a stroke, a dot
 neighbouring character". The site already shows such a crop as withheld with that reason and keeps
 it out of Quick review. Both are model events in the dataset's journal with the evidence that chose
 them. Crops with a review on the site (`work/shift-leftovers/protect.txt`, 213 ids), with a review
-event in the dataset, or with any review state but `machine` are never changed.
+event in the dataset, with any review state but `machine`, or whose label two readings of the ink
+confirmed (`alignment_repair` `confirmed` and reliable) are never changed. A box another pass already
+withheld keeps that pass's note. On a rerun, a box this pass withheld keeps its place in the text and
+is otherwise passed over, until a person reviews it.
 
 ## Measured
 
-Dry run over `work/ainu-characters-20260929-shift` (109,768 crops in 9,015 blocks, 16,649
+Dry run over `work/ainu-characters-20260929-shift` (109,768 crops in 9,015 blocks, 27,409
 protected):
 
 | windows | count |
 | --- | ---: |
-| settled | 2,473 |
-| left unsure (the next alignment within 1 nat) | 718 |
-| a protected crop in the pair | 71 |
-| both crops show the character | 60 |
+| settled | 2,413 |
+| left unsure (the next alignment within 1 nat, or a full-size box withheld by force) | 751 |
+| a protected crop in the pair | 102 |
+| both crops show the character | 57 |
 | too wide, or blocked by a label the text does not hold | 25 |
 
-The settled windows relabel 2,156 crops and withhold 1,310 as extra boxes (928 of them under 0.35 of
-the block's median area). Only 112 of the relabels have classifier probability 0.3 or more for the
-new character; the rest follow from the alignment. Neighbouring `ar:` crops with the same label fall
-from 3,383 to 924 pairs (1.78%), counting across a withheld box.
+The settled windows relabel 2,131 crops and withhold 1,272 as extra boxes (940 of them under 0.35 of
+the block's median area; 3 more were already withheld by another pass). Only 113 of the relabels have
+classifier probability 0.3 or more for the new character; the rest follow from the alignment.
+Neighbouring `ar:` crops with the same label fall from 3,383 to 960 pairs (1.85%), counting across a
+withheld box.
 
 Against the site's reviews (`work/site-reviews-20261004T063038Z`), with the protection lifted so
 that the reviewed crops are judged too:
@@ -77,7 +83,7 @@ right by eye on the page, 5 of them only at a larger scale: two halves of one ch
 
 ## What is not covered
 
-- The 718 unsure windows stay as they are, and so does a pair in which both crops show the character.
+- The 751 unsure windows stay as they are, and so does a pair in which both crops show the character.
 - A crop is moved at most along its own block's text; a character the text misreads stays misread.
 - A crop that is half of a character is withheld; the other half keeps the character's label and its
   partial box until a person redraws it.
