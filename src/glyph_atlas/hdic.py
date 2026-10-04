@@ -439,44 +439,85 @@ def entry_tops(heads: Sequence[Box], columns: Sequence[float], pitch: float, uni
     return tops
 
 
-def page_grids(boxes: Sequence[Box], unit: float, layout: Layout) -> dict[str, Grid]:
+#: Least number of a page's glyphs read where they stand, with at most half as many refused, before a
+#: glyph no reader can judge is kept there on its place in the grid.
+PAGE_READ = 3
+#: How far a known pitch may stretch on another page of the same book.
+PITCH_SLACK = 0.03
+
+
+def side_grid(heads: Sequence[Box], unit: float, layout: Layout, direction: int,
+              anchor: float | None, low: float, high: float) -> Grid | None:
+    """One page's grid from its heads: columns counted from `anchor` (or from whichever head fits best)
+    in `direction`, at a pitch in [low, high), then its tiers; None when it does not stand."""
+    centres = [b.x + b.w / 2 for b in heads]
+    _, start, pitch = fit(centres, layout.columns, low, high, 0.25, anchor=anchor, direction=direction)
+    if not pitch:
+        return None
+    columns = [start + direction * k * pitch for k in range(layout.columns)]
+    if direction > 0:
+        columns = columns[::-1]  # line 1 is the page's rightmost column
+    inside = [b for b in heads if Grid(tuple(columns), pitch, (), 0.0).holds(b)]
+    held = sum(1 for x in columns if any(abs(c - x) < pitch / 4 for c in centres))
+    if held < layout.held or not inside:
+        return None
+    if layout.tiers == 1:
+        # `cell_boxes` opens a cell a quarter of its height above the tier line.
+        top, bottom = min(b.y for b in inside) - unit, max(b.y + b.h for b in inside) + unit
+        return Grid(tuple(columns), pitch, (top + 0.25 * (bottom - top),), bottom - top, direction)
+    tops = entry_tops(inside, columns, pitch, unit) if layout.heads == "tier" else [b.y for b in inside]
+    lowest, highest = layout.tier_pitch
+    _, top, tier_pitch = fit(tops, layout.tiers, lowest * pitch, highest * pitch, 0.1)
+    if not tier_pitch:
+        return None
+    tiers = [top + k * tier_pitch for k in range(layout.tiers)]
+    if any(sum(1 for y in tops if abs(y - t) < 0.1 * tier_pitch) < TIER_HELD for t in tiers):
+        return None
+    return Grid(tuple(columns), pitch, tuple(tiers), tier_pitch, direction)
+
+
+def page_grids(boxes: Sequence[Box], unit: float, layout: Layout, pitch: float | None = None) -> dict[str, Grid]:
     """The grids of the two pages of a frame: `right` counted from the rightmost column, `left` ending at the leftmost.
 
     The gutter between the pages may be as wide as a column or several, so each page is anchored on
-    its outer column and only its pitch is fitted. With one tier, the cell runs from the highest
+    its outer column and only its pitch is fitted. Where heads of neighbouring columns run together
+    (glosses between them), the outer column comes out between two and the pitch wrong; a page that
+    then does not stand is fitted again at the pitch of the page that does, its columns free to settle
+    on its own side of the frame. `pitch`, when given (the book's usual pitch, for a frame on which
+    neither page stands), is used the same way for both. With one tier, the cell runs from the highest
     headword top on the page to the lowest bottom.
     """
     heads = heads_of(boxes, unit, layout)
     edges = edge_columns(heads, unit)
     if edges is None:
         return {}
-    centres = [b.x + b.w / 2 for b in heads]
+    sides = (("right", edges[0], -1), ("left", edges[1], 1))
     grids = {}
-    for name, anchor, direction in (("right", edges[0], -1), ("left", edges[1], 1)):
-        _, start, pitch = fit(centres, layout.columns, 2.2 * unit, 4.5 * unit, 0.25, anchor=anchor, direction=direction)
-        if not pitch:
-            continue
-        columns = [start + direction * k * pitch for k in range(layout.columns)]
-        if name == "left":
-            columns = columns[::-1]  # line 1 is the page's rightmost column
-        inside = [b for b in heads if Grid(tuple(columns), pitch, (), 0.0).holds(b)]
-        held = sum(1 for x in columns if any(abs(c - x) < pitch / 4 for c in centres))
-        if held < layout.held or not inside:
-            continue
-        if layout.tiers == 1:
-            # `cell_boxes` opens a cell a quarter of its height above the tier line.
-            top, bottom = min(b.y for b in inside) - unit, max(b.y + b.h for b in inside) + unit
-            grids[name] = Grid(tuple(columns), pitch, (top + 0.25 * (bottom - top),), bottom - top, direction)
-            continue
-        tops = entry_tops(inside, columns, pitch, unit) if layout.heads == "tier" else [b.y for b in inside]
-        low, high = layout.tier_pitch
-        _, top, tier_pitch = fit(tops, layout.tiers, low * pitch, high * pitch, 0.1)
-        if not tier_pitch:
-            continue
-        tiers = [top + k * tier_pitch for k in range(layout.tiers)]
-        if any(sum(1 for y in tops if abs(y - t) < 0.1 * tier_pitch) < TIER_HELD for t in tiers):
-            continue
-        grids[name] = Grid(tuple(columns), pitch, tuple(tiers), tier_pitch, direction)
+    for name, anchor, direction in sides:
+        if pitch is None:
+            grid = side_grid(heads, unit, layout, direction, anchor, 2.2 * unit, 4.5 * unit)
+        else:
+            low, high = (1 - PITCH_SLACK) * pitch, (1 + PITCH_SLACK) * pitch
+            grid = side_grid(heads, unit, layout, direction, anchor, low, high)
+            if grid is None:
+                # The outer column came out between two: let the columns settle on this half of the frame.
+                middle = (edges[0] + edges[1]) / 2
+                own = [b for b in heads if (b.x + b.w / 2 >= middle) == (direction < 0)]
+                grid = side_grid(own, unit, layout, direction, None, low, high)
+        if grid is not None:
+            grids[name] = grid
+    if pitch is None and len(grids) == 1:
+        (done, standing), = grids.items()
+        for name, _, direction in sides:
+            if name == done:
+                continue
+            # The heads beyond the standing page's inner column, on this page's side.
+            inner = min(standing.columns) - standing.pitch / 2 if direction > 0 else max(standing.columns) + standing.pitch / 2
+            own = [b for b in heads if (b.x + b.w / 2 < inner) == (direction > 0)]
+            grid = side_grid(own, unit, layout, direction, None,
+                             (1 - PITCH_SLACK) * standing.pitch, (1 + PITCH_SLACK) * standing.pitch)
+            if grid is not None:
+                grids[name] = grid
     return grids
 
 
@@ -590,9 +631,6 @@ def shifted(grid: Grid, k: int) -> Grid:
 
 #: Least lead, in read glyphs or in miscounted headwords, for one of two grids to win over the other.
 SHIFT_MARGIN = 2
-#: Least number of a page's glyphs read where they stand, with at most half as many refused, before a
-#: glyph no reader can judge is kept there on its place in the grid.
-PAGE_READ = 3
 #: Least number of headword candidates the column beyond a page's outer one holds for the page to be
 #: tried there: a ruler, a folio number or a label in the margin holds fewer.
 OUTER_HELD = 2

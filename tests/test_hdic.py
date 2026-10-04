@@ -432,3 +432,10 @@ def test_a_glyph_no_reader_judges_is_kept_only_on_a_page_the_readers_bear_out() 
 
     assert kept(2) == ["天", "天"]  # two reads: the unread pair stands on the grid alone
     assert kept(3) == ["天", "天", "天", "傮"]
+
+
+def test_a_known_pitch_fits_a_page_whose_own_pitch_came_out_wrong() -> None:
+    boxes, columns = running_page()
+    grid = hdic.page_grids(boxes, UNIT, TSJ, pitch=250.0)["right"]
+    assert abs(grid.pitch - 250) <= 250 * hdic.PITCH_SLACK
+    assert [round(x) for x in grid.columns] == columns
