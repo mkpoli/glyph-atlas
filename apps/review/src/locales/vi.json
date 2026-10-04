@@ -753,7 +753,7 @@
   "privacy.saving.title": "Lưu kết quả duyệt",
   "privacy.saving.body": "Lần đầu bạn lưu kết quả duyệt, trang tạo một tài khoản ẩn danh cho trình duyệt của bạn, có tên dạng anon-1a2b3c, và dùng cookie để duy trì đăng nhập. Mỗi quyết định bạn lưu được ghi lại cùng tài khoản đó, vùng cắt và thời gian.",
   "privacy.account.title": "Đăng nhập",
-  "privacy.account.body": "Tài khoản lưu địa chỉ email, tên hiển thị và ảnh đại diện nếu bạn chọn dùng ảnh. Khi bạn đăng nhập bằng GitHub, Google, Discord, LINE hoặc Kakao, trang nhận tên, địa chỉ email, ảnh đại diện và mã tài khoản của bạn trên dịch vụ đó; trang không yêu cầu thông tin nào khác.",
+  "privacy.account.body": "Tài khoản lưu địa chỉ email, tên hiển thị và ảnh đại diện nếu bạn chọn dùng ảnh. Khi bạn đăng nhập bằng GitHub, Google, Discord, LINE hoặc Kakao, trang nhận tên, tên người dùng, địa chỉ email, ảnh đại diện và mã tài khoản của bạn trên dịch vụ đó. Các thông tin này được lưu theo từng kết nối và chỉ hiện cho bạn trên trang tài khoản, để bạn biết tài khoản nào đang được kết nối; trang không yêu cầu thông tin nào khác.",
   "privacy.account.methods": "Mã đăng nhập được gửi qua Cloudflare Email Service và lưu dưới dạng băm trong mười phút. Với khóa truy cập, trang chỉ lưu khóa công khai. Mỗi thiết bị đã đăng nhập có một phiên kèm địa chỉ IP và tên trình duyệt, được liệt kê trên trang tài khoản của bạn; phiên kết thúc khi bạn đăng xuất hoặc sau 90 ngày.",
   "privacy.public.title": "Thông tin người khác thấy",
   "privacy.public.body": "Các quyết định bạn lưu cùng thời gian được hiển thị trong lịch sử và bảng xếp hạng dưới tên hiển thị và ảnh đại diện của bạn, đồng thời được công bố cùng bộ sưu tập theo CC BY-SA 4.0 và ghi công bằng tên đó. Địa chỉ email của bạn không bao giờ được hiển thị.",

@@ -771,7 +771,7 @@
   "privacy.saving.title": "保存审阅",
   "privacy.saving.body": "首次保存审阅时，网站会为你的浏览器创建一个名称类似anon-1a2b3c的匿名账号，并通过Cookie保持登录状态。你保存的每项判断都会连同该账号、相关裁切和保存时间一起记录。",
   "privacy.account.title": "登录",
-  "privacy.account.body": "账号会保存你的邮箱地址、显示名称，以及你自行选择的头像。通过GitHub、Google、Discord、LINE或Kakao登录时，网站会获取你在该服务中的姓名、邮箱地址、头像和账号编号，不会索取其他信息。",
+  "privacy.account.body": "账号会保存你的邮箱地址、显示名称，以及你自行选择的头像。通过GitHub、Google、Discord、LINE或Kakao登录时，网站会获取你在该服务中的姓名、用户名、邮箱地址、头像和账号编号。这些信息随该连接保存，只在你自己的账号页面上显示，方便你确认连接的是哪个账号；不会索取其他信息。",
   "privacy.account.methods": "登录验证码通过Cloudflare Email Service发送，经哈希处理后保留10分钟。通行密钥仅在本站留下公钥。每台已登录的设备都有一个会话，其中记录IP地址和浏览器名称，你可以在账号页面查看。会话会在退出登录或90天后结束。",
   "privacy.public.title": "公开的信息",
   "privacy.public.body": "你保存的判断及其时间会与你的显示名称和头像一起出现在编辑历史和排名中，并随馆藏以CC BY-SA 4.0发布，以该显示名称署名。你的邮箱地址不会公开。",
