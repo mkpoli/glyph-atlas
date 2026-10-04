@@ -2,7 +2,7 @@ import sqlite3
 from pathlib import Path
 
 from glyph_atlas import tables
-from glyph_atlas.ngrams import Run, adjacent_ngrams, ngram_statements
+from glyph_atlas.ngrams import Glyph, Run, adjacent_ngrams, ngram_statements
 from glyph_atlas.review.store import Store
 from glyph_atlas.schema import Box, Line, Unit, UnitKind
 
@@ -15,15 +15,24 @@ def unit(seq, y=None, line="L1", **fields):
                 box=Box(x=0, y=y, w=36, h=36), **fields)
 
 
+def catalogue():
+    """`units` and `corpus_units` with the columns the ngram migrations' triggers read."""
+    db = sqlite3.connect(":memory:")
+    columns = ("character TEXT, document TEXT, production TEXT NOT NULL DEFAULT 'unknown', style TEXT NOT NULL DEFAULT 'unassessed', "
+               "style_order INTEGER NOT NULL DEFAULT 1, shuffle INTEGER NOT NULL DEFAULT 0")
+    db.execute(f"CREATE TABLE units (id TEXT PRIMARY KEY, origin TEXT, {columns})")
+    db.execute(f"CREATE TABLE corpus_units (id TEXT PRIMARY KEY, {columns})")
+    return db
+
+
 def site(units):
     """A D1 catalogue with `units` as (id, origin, character, document) rows and the ngram migrations applied."""
-    db = sqlite3.connect(":memory:")
-    db.execute("CREATE TABLE units (id TEXT PRIMARY KEY, origin TEXT, character TEXT, document TEXT)")
+    db = catalogue()
     db.execute("CREATE TABLE unit_pairs (first TEXT PRIMARY KEY, second TEXT NOT NULL, text TEXT, document TEXT)")
     for migration in MIGRATIONS:
         if "ngram" in migration.name:
             db.executescript(migration.read_text())
-    db.executemany("INSERT INTO units VALUES(?,?,?,?)", units)
+    db.executemany("INSERT INTO units(id,origin,character,document) VALUES(?,?,?,?)", units)
     return db
 
 
@@ -101,8 +110,7 @@ def test_a_later_publication_replaces_a_units_runs():
 
 
 def test_the_pairs_recorded_before_carry_over():
-    db = sqlite3.connect(":memory:")
-    db.execute("CREATE TABLE units (id TEXT PRIMARY KEY, origin TEXT, character TEXT, document TEXT)")
+    db = catalogue()
     for migration in MIGRATIONS:
         if migration.name.startswith("0028"):
             db.executescript(migration.read_text())
@@ -119,3 +127,34 @@ def test_the_review_store_names_the_lines_written_across(tmp_path):
     tables.write(tmp_path / "lines.parquet", [Line(id="H", page_id="P", seq=0, text_raw="ab", text="ab", vertical=False),
                                               Line(id="V", page_id="P", seq=1, text_raw="cd", text="cd")], Line)
     assert Store(tmp_path).horizontal_lines() == {"H"}
+
+
+def test_a_run_is_placed_by_how_its_first_letterforms_were_made():
+    db = site([])
+    rows = [("w", "printed/woodblock", "unassessed"), ("c", "unknown", "cursive"), ("u", "unknown", "unassessed"),
+            ("m", "mixed", "regular"), ("t", "printed/type/wood", "running"), ("s", "inscribed/stone", "unassessed"),
+            ("p", "printed", "unassessed"), ("d", "printed/digital", "unassessed")]
+    db.executemany("INSERT INTO units(id,origin,character,production,style) VALUES(?,'local','字',?,?)", rows)
+    db.executemany("INSERT INTO unit_ngrams(first,size,second,text) VALUES(?,2,'x','字字')", [(i,) for i, *_ in rows])
+    placed = lambda: dict(db.execute("SELECT first,hand_order FROM unit_ngrams"))
+    assert placed() == {"w": 0, "c": 0, "u": 1, "m": 1, "t": 2, "s": 0, "p": 0, "d": 2}
+    # A publication rewrites a crop's production in place; a corpus glyph without a row follows its published one.
+    db.execute("UPDATE units SET production='printed/type' WHERE id='w'")
+    db.execute("INSERT INTO corpus_units(id,character,production) VALUES('k','字','handwritten')")
+    db.execute("INSERT INTO unit_ngrams(first,size,second,text) VALUES('k',2,'x','字字')")
+    db.execute("UPDATE corpus_units SET production='printed/type' WHERE id='k'")
+    assert (placed()["w"], placed()["k"]) == (2, 2)
+
+
+def test_a_block_of_columns_runs_only_down_one_column():
+    # CODH 100241706_00020_2, block B0001: C0018 heads the next column, up and to the left of C0017.
+    glyph = lambda seq, x, y: Glyph.of({"id": f"B1:C{seq}", "line_id": "B1", "seq": seq, "box": {"x": x, "y": y, "w": 230, "h": 230}})
+    column = [glyph(16, 400, 370), glyph(17, 400, 600), glyph(18, 183, 317), glyph(19, 183, 560)]
+    assert ids(adjacent_ngrams(column, blocks={"B1"})) == [("B1:C16", "B1:C17"), ("B1:C18", "B1:C19")]
+    # A short column whose neighbour's head stands lower than its foot: down, but a column aside.
+    assert ids(adjacent_ngrams([glyph(1, 400, 100), glyph(2, 140, 160)], blocks={"B1"})) == []
+    # A tall box, two characters merged, above a short one: the centre is above, the top is not.
+    tall = Glyph.of({"id": "B1:C1", "line_id": "B1", "seq": 1, "box": {"x": 400, "y": 0, "w": 230, "h": 600}})
+    assert ids(adjacent_ngrams([tall, glyph(2, 400, 250)], blocks={"B1"})) == [("B1:C1", "B1:C2")]
+    # A line of one column is left to the distance test, which these boxes pass.
+    assert ("B1:C17", "B1:C18") in ids(adjacent_ngrams(column))

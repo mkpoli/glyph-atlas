@@ -71,7 +71,9 @@ def corpus_runs(corpus) -> tuple[list[Run], list[str]]:
     horizontal = {line for line, down in vertical.items() if down is False}
     glyphs = [Glyph.of(row) for row in rows if row.get("method") != ALIGNED]
     glyphs += in_reading_order((Glyph.of(row) for row in rows if row.get("method") == ALIGNED), horizontal)
-    return adjacent_ngrams(glyphs, horizontal), [row["id"] for row in rows]
+    # A line read from the ids is a block of several columns (`adjacent_ngrams`).
+    blocks = {row["line_id"] for row in rows if reading_place(row["id"], row.get("page_id"))}
+    return adjacent_ngrams(glyphs, horizontal, blocks), [row["id"] for row in rows]
 
 
 def statements(corpora) -> tuple[list[str], dict[str, Counter]]:
