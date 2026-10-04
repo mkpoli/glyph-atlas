@@ -360,6 +360,10 @@ ROOM_MARGIN = 0.8
 #: Least gap two neighbouring parts keep where they face each other, side by side and stacked: the
 #: median gap along their facing edges, as 95% of drawn characters keep it (measured on 800).
 FACING = (72.0, 53.0)
+#: How an aligned operator with no teacher shares its axis: by operand ink to `power`, the middle
+#: operands weighted by `middle`. Fitted on the drawn characters of each operator that cut cleanly
+#: (56 ⿳, 72 ⿲): a stacked middle part is compressed, a centre column is not.
+SHARES = {("⿳", 3): (0.85, 0.75), ("⿲", 3): (0.5, 0.95)}
 #: Least number of Japanese characters that must write a positional form in a place for it to be used there.
 JAPANESE_USE = 3
 #: Most an operand may differ from the teacher's, in ink or in proportions, for the teacher's layout to hold.
@@ -860,10 +864,6 @@ class Composer:
         if instance is not None:
             return [instance]
         found = self._template(op, children, region, absolute=whole)
-        if found is None and len(children) == 3:
-            # Three operands no drawn character lays out as three are laid out as two, the last two together.
-            binary = {"⿲": "⿰", "⿳": "⿱"}[op]
-            return self._node((binary, children[0], (binary, children[1], children[2])), region)
         if found is None:
             return self._shares(op, children, region)
         host, same = found
@@ -995,28 +995,41 @@ class Composer:
         return Placed(part, part.box, fitted(part.box, target), native=native, origin=origin)
 
     def _shares(self, op: str, children: list[Node], region: Box) -> list[Placed]:
-        """With no drawn character to follow, operands share the region by their ink along an
-        aligned operator, and an enclosed operand takes the room `INSIDE` gives it."""
+        """With no drawn character to follow, operands share the region along an aligned operator by
+        `SHARES` (fitted on the drawn characters of each operator), each part still cut from a host
+        in its place where one exists; an enclosed operand takes the room its enclosing part leaves."""
         if op in ENCLOSE:
-            x0, y0, x1, y1 = INSIDE[op]
-            w, h = region[2] - region[0], region[3] - region[1]
-            room = (region[0] + x0 * w, region[1] + y0 * h, region[0] + x1 * w, region[1] + y1 * h)
-            return self._node(children[0], region) + self._node(children[1], room)
+            outer = self._node(children[0], region)
+            room = self._room(op, outer, region)
+            if room is None:
+                x0, y0, x1, y1 = INSIDE[op]
+                w, h = region[2] - region[0], region[3] - region[1]
+                room = (region[0] + x0 * w, region[1] + y0 * h, region[0] + x1 * w, region[1] + y1 * h)
+            return outer + self._node(children[1], room)
         axis = AXIS[op]
-        ink = [self.ink(c) ** 0.5 for c in children]
+        power, middle = SHARES.get((op, len(children)), (0.5, 1.0))
+        weights = [self.ink(c) ** power * (middle if 0 < k < len(children) - 1 else 1.0) for k, c in enumerate(children)]
         gap = 0.04
-        fit = (1 - gap * (len(children) - 1)) / sum(ink)
+        fit = (1 - gap * (len(children) - 1)) / sum(weights)
         lo, span = region[axis], region[axis + 2] - region[axis]
-        placed, at = [], 0.0
-        for child, share in zip(children, ink):
+        groups, at = [], 0.0
+        for i, (child, share) in enumerate(zip(children, weights)):
             a, b = at, at + share * fit
             at = b + gap
             if axis == 1:
                 a, b = 1 - b, 1 - a
             box = list(region)
             box[axis], box[axis + 2] = lo + a * span, lo + b * span
-            placed.extend(self._node(child, tuple(box)))
-        return placed
+            box = tuple(box)
+            part = self._host(op, i, child, children[:i] + children[i + 1:], box)
+            if part is not None:
+                drawn, k = part
+                source = drawn.pieces[k]
+                groups.append([Placed(source, source.box, fitted(source.box, box), native=self.ink(drawn.char), origin=f"host {drawn.char}")])
+            else:
+                groups.append(self._node(child, box))
+        self._space(axis, groups)
+        return [p for group in groups for p in group]
 
 
 def _squeeze(group: list[Placed], axis: int, low: float, high: float) -> None:
