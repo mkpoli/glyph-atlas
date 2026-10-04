@@ -9,7 +9,7 @@
   // once it is whole.
   import { untrack } from 'svelte'
   import CharacterSearch from './CharacterSearch.svelte'
-  import { OPERATORS, parse, write, replaceAt, partAt, wrap } from '../lib/ids.js'
+  import { OPERATORS, arity, isSequence, parse, write, replaceAt, partAt, wrap } from '../lib/ids.js'
   import { structure } from '../lib/layers.js'
   import { t } from '../lib/i18n.svelte.js'
   let { start = '', char = '', disabled = false, onuse } = $props()
@@ -22,9 +22,12 @@
     own = { ...own, [found.char]: found.sequences }
   }
   const read = async c => { if (!(c in own)) { own = { ...own, [c]: [] }; learn(await structure(c).catch(() => null)) } return own[c] }
+  // Each crop starts again: from a description the reader had typed into the search, or else from
+  // the character's own. What is typed into the search afterwards leaves the draft alone.
   $effect(() => {
-    const typed = start, of = char
+    const of = char
     untrack(() => {
+      const typed = isSequence(start) ? start : ''
       chosen = null; draft = typed
       if (!typed && of) read(of).then(found => { if (!draft && found?.length) draft = found[0] })
     })
@@ -44,7 +47,8 @@
     queueMicrotask(() => { field?.focus(); field?.setSelectionRange(at + text.length, at + text.length) })
   }
   function operator(op) {
-    if (tree && chosen) { draft = write(replaceAt(tree, chosen, wrap(op, partAt(tree, chosen)))); chosen = [...chosen, 1] }
+    // The new operator's second part, ？, is chosen next to be filled; a unary operator has none.
+    if (tree && chosen) { draft = write(replaceAt(tree, chosen, wrap(op, partAt(tree, chosen)))); chosen = arity(op) > 1 ? [...chosen, 1] : null }
     else insert(op)
   }
   function component(item) {

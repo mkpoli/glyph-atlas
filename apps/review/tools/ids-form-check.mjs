@@ -75,6 +75,20 @@ try {
   await browser.waitFor(`document.querySelector('dialog[open] .ids-field input')?.value === '⿰𠤕⿱龴疋'`, 20000)
   console.log('PASS the editor starts from 疑\'s own description')
 
+  // Typing into the picker's search leaves the draft alone, and a unary operator round a chosen part
+  // leaves nothing chosen that is not there.
+  await browser.evaluate(`(() => { const i = document.querySelector('dialog[open] .form-picker > .character-search input'); i.focus(); i.value = '失'; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+  await Bun.sleep(300)
+  assert(await value() === '⿰𠤕⿱龴疋', `a search reset the draft: ${await value()}`)
+  await browser.evaluate(`(() => { const i = document.querySelector('dialog[open] .form-picker > .character-search input'); i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+  await browser.evaluate(`[...document.querySelectorAll('dialog[open] .ids-part')].find(b => b.textContent === '疋').click()`)
+  await browser.evaluate(`[...document.querySelectorAll('dialog[open] .ids-key')].find(b => b.textContent === '⿾').click()`)
+  await browser.waitFor(`document.querySelector('dialog[open] .ids-field input').value === '⿰𠤕⿱龴⿾疋'`)
+  await browser.evaluate(`(() => { const i = document.querySelector('dialog[open] .ids-field input'); i.value = '⿰𠤕⿱龴疋'; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+  await browser.waitFor(`document.querySelector('dialog[open] .ids-field input').value === '⿰𠤕⿱龴疋'`)
+  assert(!errors.length, 'page errors: ' + errors.join('; '))
+  console.log('PASS a search keeps the draft, and a unary operator wraps a chosen part')
+
   await choosePart('𠤕')
   await browser.waitFor(`[...document.querySelectorAll('dialog[open] .ids-split')].some(b => b.textContent === '⿱匕矢')`)
   await pick('⿱匕矢')
