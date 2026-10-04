@@ -45,7 +45,7 @@ describe('a crop’s citation', () => {
   });
   it('is a BibTeX record whose text TeX prints as written', () => {
     const record = bibtex(cropEntry({ ...crop, source: 'A_B & 50%' }), 'https://glyphatlas.org', [2026, 10, 5]);
-    expect(record).toStartWith('@misc{glyphatlas:crop:ex:1,\n  title = {{敢 (ex:1)}},\n  howpublished = {Glyph Atlas},\n');
+    expect(record).toStartWith('@misc{glyphatlas:crop:ex:1@2c9afc05d11e-785-2131-136-123,\n  title = {{敢 (ex:1)}},\n  howpublished = {Glyph Atlas},\n');
     expect(record).toContain('  url = {https://glyphatlas.org/crop/ex%3A1?v=2c9afc05d11e-785-2131-136-123},\n  urldate = {2026-10-05},');
     expect(record).toContain('Source document: A\\_B \\& 50\\%');
   });
@@ -102,17 +102,21 @@ describe('GET /atlas/cite', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toStartWith('application/vnd.citationstyles.csl+json');
     expect(response.headers.get('access-control-allow-origin')).toBe('*');
+    expect(response.headers.get('cache-control')).toBe('no-cache');
     const [item] = await response.json() as any[];
     expect(item.version).toBe(crop.crop_version);
     expect(item.URL).toBe('https://glyphatlas.org/crop/ex%3A1?v=2c9afc05d11e-785-2131-136-123');
     expect(stored.size).toBe(1);
-    expect((await (await get('/atlas/cite/crop/ex%3A1')).json() as any[])[0].version).toBe(crop.crop_version);
+    const again = await get('/atlas/cite/crop/ex%3A1');
+    expect([again.headers.get('cache-control'), (await again.json() as any[])[0].version]).toEqual(['no-cache', crop.crop_version]);
     db.close();
   });
   it('serves the earlier version a citation names, and refuses one the crop never had', async () => {
     const { db, get } = setup();
     const [item] = await (await get('/atlas/cite/crop/ex%3A1?v=2c9afc05d11e-1-2-3-4')).json() as any[];
     expect(item.version).toBe(`ex:1@${pixels}@1,2,3,4`);
+    // The label is the crop's now, and that cut may not have shown it.
+    expect(item.title).toBe('ex:1');
     expect((await get('/atlas/cite/crop/ex%3A1?v=2c9afc05d11e-9-9-9-9')).status).toBe(404);
     expect((await get('/atlas/cite/crop/ex%3A1?v=bad%20token')).status).toBe(422);
     db.close();

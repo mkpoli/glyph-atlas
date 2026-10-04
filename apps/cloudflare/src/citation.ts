@@ -65,14 +65,16 @@ export function cropSource(record: Json): Source {
   });
 }
 
-/** A crop at one of its evidence versions, by default the one its record has now. */
+/** A crop at one of its evidence versions, by default the one its record has now. A version is pixels and
+ *  a box, and the label is the record's now; an earlier cut is cited without it, by its id alone. */
 export function cropEntry(record: Json, origin: 'collection' | 'corpus' = 'collection', version: string | null = record.crop_version ?? null): Entry {
   const id = String(record.id);
   const token = versionToken(id, version);
   const unassigned = record.identity_status === 'unassigned'
     || (record.written_character === null && record.identity_basis === 'normalized_transcription');
+  const earlier = Boolean(version) && version !== (record.crop_version ?? null);
   return {
-    kind: 'crop', id, label: unassigned ? null : text(record.written_character) ?? text(record.label) ?? null,
+    kind: 'crop', id, label: unassigned || earlier ? null : text(record.written_character) ?? text(record.label) ?? null,
     path: (origin === 'corpus' ? '/corpus/' : '/crop/') + encodeURIComponent(id) + (token ? '?v=' + encodeURIComponent(token) : ''),
     ...(token ? { version: version!, token } : {}), source: cropSource(record),
   };
@@ -136,7 +138,8 @@ const tex = (value: string) => value.replace(/[\\{}$&#^_%~]/g, c =>
 
 /** The entry as a BibTeX `@misc` record, with biblatex's `url`, `urldate` and `version`. */
 export function bibtex(entry: Entry, origin: string, accessed: Day): string {
-  const key = `glyphatlas:${entry.kind}:${entry.id}`.replace(/[^\w:.-]+/g, '-');
+  // Two cuts of one crop are two records, so the version is part of the key.
+  const key = `glyphatlas:${entry.kind}:${entry.id}${entry.token ? '@' + entry.token : ''}`.replace(/[^\w:.@-]+/g, '-');
   const lines = sourceLines(entry.source);
   const fields: [string, string | undefined][] = [
     ['title', `{${tex(title(entry))}}`], ['howpublished', tex(SITE)], ['url', origin + entry.path], ['urldate', iso(accessed)],

@@ -175,7 +175,7 @@ async function cropVersions(env: Env, id: string) {
 }
 // A citation of a crop at one of its evidence versions (`?v=`, as `versionToken` writes it; the current
 // one without), a grapheme or a form, as CSL-JSON. It is read again once anything is reviewed or
-// published, and on each new day, which is the date the citation was accessed.
+// published, and on each new day (in UTC), which is the date the citation was accessed.
 const CITE_TTL = 3600;
 const CITABLE_CHARACTER = /^U\+[0-9A-Fa-f]{4,6}(-U\+[0-9A-Fa-f]{4,6})*$/;
 async function cite(env: Env, ctx: ExecutionContext, url: URL, kind: string, raw: string): Promise<Response> {
@@ -188,7 +188,7 @@ async function cite(env: Env, ctx: ExecutionContext, url: URL, kind: string, raw
   const now = new Date(), day: Day = [now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate()];
   const key = new Request(`${url.origin}/atlas/cite/${kind}/${encodeURIComponent(id)}?v=${encodeURIComponent(token ?? '')}&d=${day.join('-')}&c=${encodeURIComponent(await catalogueVersion(env))}`);
   const cached = await caches.default.match(key);
-  if (cached) return cached;
+  if (cached) return new Response(cached.body, { headers: { ...Object.fromEntries(cached.headers), 'cache-control': 'no-cache' } });
   let entry: Entry;
   if (kind === 'crop') {
     const row = await unit(env, id), data = record(row);
@@ -202,10 +202,10 @@ async function cite(env: Env, ctx: ExecutionContext, url: URL, kind: string, raw
     entry = cropEntry({ ...data, ...(honkoku ? { honkoku_url: honkoku } : {}) }, row.origin === 'corpus' ? 'corpus' : 'collection', version);
   } else entry = characterEntry(kind as 'grapheme' | 'form', (await known(env, id.split('-').join(' '))).detail);
   const body = JSON.stringify([csl(entry, url.origin, day)], null, 2);
-  const headers = { 'content-type': 'application/vnd.citationstyles.csl+json; charset=utf-8',
-    'cache-control': `public, max-age=${CITE_TTL}`, 'x-content-type-options': 'nosniff', ...OPEN };
-  ctx.waitUntil(caches.default.put(key, new Response(body, { headers })));
-  return new Response(body, { headers });
+  // The edge keeps a copy for the day it is dated; a browser asks again, so a citation is never dated a day late.
+  const headers = { 'content-type': 'application/vnd.citationstyles.csl+json; charset=utf-8', 'x-content-type-options': 'nosniff', ...OPEN };
+  ctx.waitUntil(caches.default.put(key, new Response(body, { headers: { ...headers, 'cache-control': `public, max-age=${CITE_TTL}` } })));
+  return new Response(body, { headers: { ...headers, 'cache-control': 'no-cache' } });
 }
 // A crop's record for its inspector, with its form, its book's dates and the claims they rest on.
 const inspected = async (env: Env, row: UnitRow): Promise<Json> => {
