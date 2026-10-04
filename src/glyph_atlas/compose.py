@@ -33,7 +33,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 from functools import cached_property
-from itertools import combinations
+from itertools import combinations, pairwise
 from pathlib import Path
 
 import numpy as np
@@ -357,6 +357,9 @@ STROKE_EVIDENCE = 4
 INSTANCE_HOSTS = 12
 #: An enclosed part's room stays this many stroke widths clear of the enclosing part's ink.
 ROOM_MARGIN = 0.8
+#: Least gap two neighbouring parts keep where they face each other, side by side and stacked: the
+#: median gap along their facing edges, as 95% of drawn characters keep it (measured on 800).
+FACING = (72.0, 53.0)
 #: Least number of Japanese characters that must write a positional form in a place for it to be used there.
 JAPANESE_USE = 3
 #: Most an operand may differ from the teacher's, in ink or in proportions, for the teacher's layout to hold.
@@ -882,6 +885,8 @@ class Composer:
             else:
                 target = fitted(source.box, box)
             groups.append([Placed(source, source.box, target, native=self.ink(drawn.char), origin=f"host {drawn.char}")])
+        if op in AXIS:
+            self._space(AXIS[op], groups)
         return [p for group in groups for p in group]
 
     def _instance(self, node: tuple, region: Box) -> Placed | None:
@@ -950,6 +955,18 @@ class Composer:
         w, h = (region[2] - region[0]) / size, (region[3] - region[1]) / size
         return (region[0] + c0 * w, region[3] - r1 * h, region[0] + c1 * w, region[3] - r0 * h)
 
+    def _space(self, axis: int, groups: list[list[Placed]]) -> None:
+        """Neighbouring parts moved apart where they face each other closer than `FACING`, the gap
+        nineteen in twenty drawn characters keep: each gives up half the shortfall on its facing side."""
+        for a, b in pairwise(groups):
+            gap = _facing(a, b, axis)
+            if gap is None or gap >= FACING[axis]:
+                continue
+            half = (FACING[axis] - gap) / 2
+            first, second = (a, b) if axis == 0 else (b, a)  # lower x first; y is up, so the stacked lower part first
+            _squeeze(first, axis, 0.0, -half)
+            _squeeze(second, axis, half, 0.0)
+
     @staticmethod
     def _stretch(source: Box, target: Box) -> float:
         """How much a part from `source` changes its proportions in `target`."""
@@ -984,6 +1001,35 @@ class Composer:
             box[axis], box[axis + 2] = lo + a * span, lo + b * span
             placed.extend(self._node(child, tuple(box)))
         return placed
+
+
+def _squeeze(group: list[Placed], axis: int, low: float, high: float) -> None:
+    """A group of placed parts moved in from its low and high edges along `axis`, together."""
+    lo = min(p.target[axis] for p in group)
+    hi = max(p.target[axis + 2] for p in group)
+    new_lo, new_hi = lo + low, hi + high
+    scale = (new_hi - new_lo) / max(hi - lo, 1)
+    for p in group:
+        t = list(p.target)
+        t[axis], t[axis + 2] = new_lo + (t[axis] - lo) * scale, new_lo + (t[axis + 2] - lo) * scale
+        p.target = tuple(t)
+
+
+def _facing(a: list[Placed], b: list[Placed], axis: int, size: int = 250) -> float | None:
+    """The median gap between two groups along their facing edges, in font units: per row (side by
+    side) or column (stacked) where both have ink, from the end of the first to the start of the
+    second. `a` is the left or upper group."""
+    box = (0.0, ASCENT - EM, EM, ASCENT)
+    ma = fill([r for p in a for r in _rings(p.part.contours, p.contours())], size, box)
+    mb = fill([r for p in b for r in _rings(p.part.contours, p.contours())], size, box)
+    if axis == 0:
+        ma, mb = ma.T, mb.T
+    gaps = []
+    for line in range(size):
+        ra, rb = np.nonzero(ma[:, line])[0], np.nonzero(mb[:, line])[0]
+        if len(ra) and len(rb):
+            gaps.append(rb.min() - ra.max())
+    return float(np.median(gaps)) * EM / size if len(gaps) >= 5 else None
 
 
 # ------------------------------------------------------------------ output
