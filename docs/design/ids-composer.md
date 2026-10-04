@@ -2,18 +2,19 @@
 
 `glyph_atlas.compose` draws a character Unicode lacks from its Ideographic Description Sequence in
 GenZui Sans. The goal is a drawing a reader takes for a character the type designer drew. Each
-target below is measured by `scripts/compose_ids.py` on the font's own encoded kanji, redrawn from
-their BabelStone sequences with nothing taken from the character itself.
+target below is measured by `scripts/compose_ids.py bench` on the font's own encoded kanji, redrawn
+from their BabelStone sequences with nothing taken from the character itself; the plain way to
+compose, each operand's own glyph squeezed into its share, scores 0.331 on the same set.
 
 ## Targets
 
 | Measure | Set | Now | Target |
 |---|---|---|---|
-| Ink overlap with the real glyph (intersection over union, 96 px), mean | 1,981 compound jōyō kanji | 0.635 | 0.72 |
-| Ink overlap, tenth percentile | same | 0.394 | 0.55 |
-| Outline length within 15% of the real glyph's (no stroke missing or added) | same | 97.0% | 99.5% |
+| Ink overlap with the real glyph (intersection over union, 96 px), mean | 1,981 compound jōyō kanji | 0.637 | 0.72 |
+| Ink overlap, tenth percentile | same | 0.396 | 0.55 |
+| Outline length within 15% of the real glyph's (no stroke missing or added) | same | 97.3% | 99.5% |
 | Drawn at all | same | 1,935 of 1,981 | all |
-| Stroke width against the real glyph, median, across x and across y | 391-kanji sample | 1.00, 1.00 | within 0.97–1.03 |
+| Stroke width against the real glyph, median, across x and across y | same | 0.996, 0.999 | within 0.97–1.03 |
 | Facing gap between neighbouring parts within the 5–95% range of drawn characters | same | not yet measured | 99% |
 | Drawn at all | HDIC headwords written as sequences (KRM 3,088, TSJ 358, KTB 9) | not yet measured | all |
 | Preferred over zi.tools by a reviewer, side by side | 96 KRM headwords | not yet judged | 80% |
@@ -28,6 +29,28 @@ their BabelStone sequences with nothing taken from the character itself.
 - An enclosed part fills the room the enclosing part leaves, found in its own outline.
 - Parts facing each other closer than 95% of drawn characters keep them are moved apart.
 - Every stroke is brought to the width a real character of the result's density has.
+- Three operands with no teacher sharing one of them share the axis as the font's own ⿳ and ⿲
+  characters do: by ink, a stacked middle part compressed.
+- Components Noto Sans CJK lacks are drawn from Plangothic (SIL OFL 1.1), the Source Han Sans
+  design extended to the CJK extensions.
+
+## Next mechanisms
+
+In order of expected gain:
+
+1. Extraction scored jointly: cut candidates for all operands of a host at once, against signatures
+   learned from clean cuts (contour groups, counters, endpoints, junctions), recursively for nested
+   operands, with containment tested on outlines, not boxes.
+2. Layout by component family: teachers sharing a distinctive component first (the ⿱𡗜 family for
+   ⿱𡗜集), averaged only within a compatible shape family; the three heights of ⿳ fitted
+   together against learned priors.
+3. Enclosed parts fitted to the opening's shape (a mask or distance field), not the largest empty
+   rectangle, with the contacts drawn characters make.
+4. Designed sub-shapes found by stroke structure and contacts (丘 in 岳, 失 in 鉄, 炎 in 談, ⿱⺀㐅)
+   for sequences only strokes describe.
+5. One bounded spacing solve on the final weighted outlines, for gaps too wide as well as too tight.
+6. Compression that keeps dots, hooks and counters, preferring a donor already drawn compressed.
+7. ⿻ laid out from the font's own crossing arrangements.
 
 ## Open cases
 
@@ -77,7 +100,7 @@ These need a shape a designer drew, found by its strokes: 丘 ⿱㇒⿺丄丅, �
 
 ### Components no font here draws
 
-- 𦒱 in ⿰金𦒱, 𠂊 (which sits with no gap above what follows): drawn from Plangothic (SIL OFL 1.1),
-  which extends Source Han Sans to the CJK extensions.
+- 𦒱 in ⿰金𦒱: drawn from Plangothic since b7cf9433; its parts still need checking.
+- 𠂊 sits with no gap above what follows.
 - Sequences with ⿻ and other "not drawn" cases: every sequence should draw.
 - ⿰土⿰彳⿺𠃊⿱日安, ⿰扌𡉵: wrong drawing.
