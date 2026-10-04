@@ -631,7 +631,7 @@ try {
   const derivedPlan = await plan({ sql: worker.derivedEdgesQuery(), values: [] }, ['仮'])
   assert.ok(derivedPlan.includes('SEARCH character_derived USING PRIMARY KEY (a=?)'), derivedPlan.join('; '))
   assert.ok(!derivedPlan.some(d => /TEMP B-TREE/.test(d)), derivedPlan.join('; '))
-  // A card lists the words a character is cited as writing (0063), each with every spelling cited for
+  // A card lists the words a character is cited as writing (0064), each with every spelling cited for
   // it, most cited first; the other spellings stay out of the variant tiers.
   await db.batch([
     db.prepare("INSERT INTO words VALUES('ja/ばかり/副助詞','ja','ばかり','副助詞')"),

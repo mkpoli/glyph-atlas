@@ -1105,7 +1105,7 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, char:
   ctx.waitUntil(caches.default.put(key, Response.json(found, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return found;
 }
-// The spellings of every word a character is cited as writing (0063): the words by the `spelling`
+// The spellings of every word a character is cited as writing (0064): the words by the `spelling`
 // index, then each word's rows by the key. The table is hand-kept and small; the limit bounds a
 // character that writes many words.
 export const wordSpellingsQuery = () => `SELECT s.word,w.reading,w.class,s.spelling,s.source,s.tier,s.documents
