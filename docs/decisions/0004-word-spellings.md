@@ -47,9 +47,10 @@ count for など; the counts stay in the generated table and are joined when rea
 - A character page can show the other spellings of each word a character writes, with their
   sources, and keep its own gallery exact.
 - Several spellings rest on one weak kind of source so far: 斗 on a forum answer and the crowd
-  transcriptions; 杯, 而, 矣, 尓, 迠 (まで), 凢, 約 and 大約 (およそ), 余 (ほか), 茲 (これ, この), 這
-  and 当 (この), 時 (ころ), 猶 and 像 (ごとし), 所以 and 由縁 (ゆゑ) and 爲 (ため) on the transcriptions
-  alone; 所 and 可 (ばかり) and 焉 (すなはち) on Wiktionary alone. A 古文書 reading dictionary that
+  transcriptions; 杯, 而, 矣, 尓, 迠 (まで), 凢 and 約 (およそ), 茲 (これ, この), 這 and 当 (この), 時
+  (ころ), 猶 and 像 (ごとし), 所以 and 由縁 (ゆゑ) and 爲 (ため) on the transcriptions alone; 焉
+  (すなはち) on Wiktionary alone. 字通, 精選版 日本国語大辞典 and 漢字ペディア, searched on
+  コトバンク and kanjipedia.jp on 2026-10-04, state none of these; a 古文書 reading dictionary that
   states them adds a row beside these.
 - A reading of one crop as a word (this 斗 reads ばかり) is a claim about that crop and belongs in the
   assertion ledger, which has no predicate for it yet.
