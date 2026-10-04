@@ -2,11 +2,14 @@
 
     uv run scripts/compose_ids.py draw ⿰亻哥 > 亻哥.svg
     uv run scripts/compose_ids.py bench --sample 400
+    uv run scripts/compose_ids.py calibrate
 
-`draw` writes one SVG. `bench` redraws encoded characters from their own sequences with the
-character itself barred as a host, and scores each against the font's real glyph by the overlap of
-their ink (intersection over union, at 96 px). It reports the composer beside the plainest way to
-compose, each operand's own glyph squeezed into its share, on the same characters.
+`draw` writes one SVG. `bench` redraws encoded characters from their own sequences with nothing
+taken from the character itself, and scores each against the font's real glyph: the overlap of
+their ink (intersection over union, at 96 px), and the ratio of their stroke widths (at 400 px). It
+reports the composer beside the plainest way to compose, each operand's own glyph squeezed into its
+share, on the same characters. `calibrate` fits `compose.STEM_CURVE`, stroke width against density,
+on the font's own ideographs.
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ from __future__ import annotations
 import json
 import random
 
+import numpy as np
 import typer
 
 from glyph_atlas import compose
@@ -47,7 +51,9 @@ def bench(sample: int = 400, seed: int = 3, size: int = 96) -> None:
                 pool.append((char, seq))
     chosen = random.Random(seed).sample(pool, min(sample, len(pool)))
     plain = compose.Composer(composer.font, composer.sequences, hosted=False, weighted=False)
+    unit = compose.EM / 400
     scores: dict[str, list[float]] = {"composer": [], "plain": []}
+    widths: list[tuple[float, float]] = []
     for char, seq in chosen:
         glyph = composer.font.glyph(char)
         real = compose.raster([compose.Placed(glyph, glyph.box, glyph.box)], size)
@@ -55,15 +61,37 @@ def bench(sample: int = 400, seed: int = 3, size: int = 96) -> None:
         for item in (composer, plain):
             item.exclude = {char}
             try:
-                drawn.append(compose.raster(item.compose(seq), size))
+                drawn.append(item.compose(seq))
             except LookupError:
                 break
         if len(drawn) < 2:
             continue
-        for name, mask in zip(scores, drawn):
+        for name, placed in zip(scores, drawn):
+            mask = compose.raster(placed, size)
             scores[name].append(float((mask & real).sum()) / max(float((mask | real).sum()), 1.0))
+        made = compose.stems(compose.raster(drawn[0], 400), unit)
+        true = compose.stems(compose.raster([compose.Placed(glyph, glyph.box, glyph.box)], 400), unit)
+        widths.append((made[0] / true[0], made[1] / true[1]))
+    ratios = np.array(widths)
     print(json.dumps({"characters": len(scores["composer"]), "pool": len(pool),
-                      **{name: round(sum(v) / len(v), 3) for name, v in scores.items()}}))
+                      **{name: round(sum(v) / len(v), 3) for name, v in scores.items()},
+                      "stroke_width_ratio": [round(float(np.nanmedian(ratios[:, axis])), 3) for axis in (0, 1)]}))
+
+
+@app.command()
+def calibrate(sample: int = 1500, seed: int = 7) -> None:
+    """Fit stroke width against density on the font's own ideographs, for `compose.STEM_CURVE`."""
+    composer = _composer()
+    pool = sorted(char for char in composer.sequences if composer.font.has(char))
+    rows = []
+    for char in random.Random(seed).sample(pool, min(sample, len(pool))):
+        glyph = composer.font.glyph(char)
+        widths = compose.stems(compose.raster([compose.Placed(glyph, glyph.box, glyph.box)], 400), compose.EM / 400)
+        if all(np.isfinite(widths)):
+            rows.append((composer.ink(char), *widths))
+    data = np.array(rows)
+    fits = [np.polyfit(data[:, 0] / 1000, data[:, axis], 1) for axis in (1, 2)]
+    print(json.dumps({"characters": len(data), "STEM_CURVE": [[round(b, 2), round(a, 3)] for a, b in fits]}))
 
 
 if __name__ == "__main__":

@@ -28,26 +28,30 @@ def test_a_sequence_parses_into_its_operators_and_operands() -> None:
 
 def test_a_host_is_cut_where_no_outline_crosses() -> None:
     left, right = square(0, 0, 300, 800), square(400, 0, 900, 800)
-    pieces = compose.split(Part([right, left]), 0, 2, stem=80)
+    pieces = compose.split(Part([right, left]), 0, 2)
     assert [p.contours for p in pieces] == [[left], [right]]
     # Stacked operands come top first.
     top, bottom = square(0, 500, 900, 800), square(0, 0, 900, 400)
-    assert [p.contours for p in compose.split(Part([bottom, top]), 1, 2, stem=80)] == [[top], [bottom]]
-    # A stroke running through both halves leaves no clean cut.
+    assert [p.contours for p in compose.split(Part([bottom, top]), 1, 2)] == [[top], [bottom]]
+    # A stroke running through both halves leaves no clean cut; one reaching a little under the
+    # neighbour goes with the side that holds most of it.
     across = square(0, 350, 900, 450)
-    assert compose.split(Part([left, right, across]), 0, 2, stem=80) is None
+    assert compose.split(Part([left, right, across]), 0, 2) is None
+    reach = square(0, 0, 500, 60)
+    pieces = compose.split(Part([left, right, reach]), 0, 2)
+    assert pieces is not None and any(c is reach for c in pieces[0].contours)
 
 
 def test_a_counter_stays_with_the_outline_around_it() -> None:
     box, counter, other = square(0, 0, 300, 300), square(100, 100, 200, 200, clockwise=True), square(400, 0, 700, 300)
-    pieces = compose.split(Part([counter, box, other]), 0, 2, stem=80)
+    pieces = compose.split(Part([counter, box, other]), 0, 2)
     assert [sorted(map(id, p.contours)) for p in pieces] == [sorted([id(box), id(counter)]), [id(other)]]
 
 
 def test_contours_with_the_same_box_are_one_unit() -> None:
     a, b = square(0, 0, 300, 300), square(0, 0, 300, 300, clockwise=True)
     other = square(400, 0, 700, 300)
-    pieces = compose.split(Part([a, b, other]), 0, 2, stem=80)
+    pieces = compose.split(Part([a, b, other]), 0, 2)
     assert [len(p.contours) for p in pieces] == [2, 1]
 
 
@@ -98,6 +102,26 @@ def test_a_part_is_thickened_along_an_axis_by_its_weight() -> None:
     assert points[:, 1].min() == 0 and points[:, 1].max() == 100
 
 
+def test_stroke_width_is_the_usual_short_run() -> None:
+    mask = np.zeros((100, 100), bool)
+    mask[10:90, 20:28] = True  # a stem 8 px wide
+    mask[40:46, 10:90] = True  # a bar 6 px thick
+    across_x, across_y = compose.stems(mask, 1.0)
+    assert across_x == pytest.approx(8, abs=0.5) and across_y == pytest.approx(6, abs=0.5)
+
+
+def test_stroke_width_falls_as_a_character_fills_up() -> None:
+    for axis in (0, 1):
+        assert compose.stem(5000, axis) > compose.stem(20000, axis)
+    # Horizontal strokes thin faster than vertical ones.
+    assert compose.stem(20000, 1) < compose.stem(20000, 0)
+
+
+def test_a_part_keeps_its_proportions_within_the_stretch_allowed() -> None:
+    assert compose.fitted((0, 0, 100, 100), (0, 0, 400, 100)) == (120.0, 0, 280.0, 100)
+    assert compose.fitted((0, 0, 100, 100), (0, 0, 150, 100)) == (0, 0, 150, 100)
+
+
 @pytest.fixture(scope="module")
 def composer() -> compose.Composer:
     from glyph_atlas.images import cache_root
@@ -132,6 +156,33 @@ def test_characters_whose_sequences_name_each_other_end_in_lookup_error(composer
         looped.compose("⿰\U000f0000口")
     with pytest.raises(LookupError):
         compose.Composer(composer.font, {"\U000f0000": "⿰木"}).compose("⿱\U000f0000口")
+
+
+def test_an_operand_is_found_in_its_positional_form(composer: compose.Composer) -> None:
+    assert composer.alternatives("王", "L")[:2] == ["王", "𤣩"]
+    assert "氵" in composer.alternatives("水", "L") and "氵" not in composer.alternatives("水", "R")
+    assert "甡" in composer.alternatives(compose.parse("⿰生生"), "T")
+
+
+def test_strokes_come_out_at_the_width_of_a_real_glyph(composer: compose.Composer) -> None:
+    ratios = []
+    for char in "何謌林話縫":
+        glyph = composer.font.glyph(char)
+        composer.exclude = {char}
+        try:
+            drawn = compose.raster(composer.compose(composer.sequences[char]), 400)
+        finally:
+            composer.exclude = set()
+        made = compose.stems(drawn, compose.EM / 400)
+        true = compose.stems(compose.raster([Placed(glyph, glyph.box, glyph.box)], 400), compose.EM / 400)
+        ratios.append((made[0] / true[0], made[1] / true[1]))
+    assert np.median(np.array(ratios), axis=0) == pytest.approx([1.0, 1.0], abs=0.08)
+
+
+def test_every_part_comes_from_a_drawn_character(composer: compose.Composer) -> None:
+    placed = composer.compose("⿰亻哥")
+    assert all(p.origin.split()[0] in ("teacher", "host", "glyph") for p in placed)
+    assert any(p.origin.startswith("teacher") for p in placed)
 
 
 def test_a_character_unicode_lacks_is_drawn_from_its_parts(composer: compose.Composer) -> None:
