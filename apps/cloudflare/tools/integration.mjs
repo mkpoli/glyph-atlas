@@ -848,49 +848,91 @@ try {
   await db.prepare("UPDATE units SET character='ヰ' WHERE id='two'").run()
   assert.equal((await db.prepare("SELECT text FROM unit_ngrams WHERE first='one'").first()).text, firstLabel + 'ヰ')
   await db.prepare("UPDATE units SET character=? WHERE id='two'").bind(secondLabel).run()
-  // One run's occurrences: read along the run's index in its key order, each crop by its id, never
-  // sorted or scanned; a book's through the index it shares with the count.
+  // One run's occurrences: read along the first row's index in its key order, every other row and each
+  // crop by its key, never sorted or scanned, for every length and every row a long run can start from;
+  // a book's through the index it shares with the count.
   const occurrenceServed = (details, index) => {
-    assert.ok(details.some(d => new RegExp(`SEARCH p USING (COVERING )?INDEX ${index}\\b`).test(d)), `${index}: ${details.join('; ')}`)
+    assert.ok(details.some(d => new RegExp(`SEARCH a USING (COVERING )?INDEX ${index}\\b`).test(d)), `${index}: ${details.join('; ')}`)
     assert.ok(!details.some(d => d.includes('TEMP B-TREE')), details.join('; '))
     assert.ok(!details.some(d => /^SCAN \w+/.test(d)), details.join('; '))
+    assert.ok(details.filter(d => /^SEARCH u\d+ /.test(d)).every(d => /USING INDEX sqlite_autoindex_units_1 \(id=\?\)$/.test(d)), `crops are found by their ids: ${details.join('; ')}`)
+    assert.ok(details.filter(d => /^SEARCH r\d+ /.test(d)).every(d => d.includes('USING PRIMARY KEY (first=? AND size=?)')), `rightward pairs are found by their keys: ${details.join('; ')}`)
+    assert.ok(details.filter(d => /^SEARCH l\d+ /.test(d)).every(d => d.includes('unit_ngram_second')), `leftward pairs go through unit_ngram_second: ${details.join('; ')}`)
   }
-  for (const [document, bound, index] of [[false, [2, 'ナリ'], 'unit_ngram_text'], [true, ['hk:doc', 2, 'ナリ'], 'unit_ngram_document']]) {
-    for (const shape of [{ sql: worker.ngramOccurrencesQuery(document), values: [] }, { sql: worker.ngramCountQuery(document), values: [] }]) {
-      const args = shape.sql.includes('LIMIT') ? [...bound, 48, 0] : bound
-      occurrenceServed(await plan(shape, args), index)
-      const create = (await db.prepare('SELECT sql FROM sqlite_master WHERE name=?').bind(index).first()).sql
-      await db.prepare(`DROP INDEX ${index}`).run()
-      await assert.rejects(async () => occurrenceServed(await plan({ ...shape, sql: shape.sql + ' ' }, args), index), `the occurrence check on ${index} fails without it`)
-      await db.prepare(create).run()
+  for (const [document, scope, index] of [[false, [], 'unit_ngram_text'], [true, ['hk:doc'], 'unit_ngram_document']]) {
+    const probe = await plan({ sql: worker.runProbeQuery(document), values: [] }, [...scope, 'ナリケ'])
+    assert.ok(probe.some(d => new RegExp(`USING COVERING INDEX ${index}\\b`).test(d)), probe.join('; '))
+    for (let size = 2; size <= 8; size++) for (let anchor = 0; anchor <= Math.max(0, size - 3); anchor++) {
+      const links = worker.runFrom(size, anchor).links.map(() => 'ナリ'), bound = [...links, ...scope, Math.min(size, 3), 'ナリ']
+      for (const shape of [{ sql: worker.runOccurrencesQuery(size, anchor, document), values: [] }, { sql: worker.runCountQuery(size, anchor, document), values: [] }]) {
+        const args = shape.sql.includes('OFFSET') ? [...bound, 48, 0] : bound
+        occurrenceServed(await plan(shape, args), index)
+        if (size !== 5 || anchor !== 1) continue
+        const create = (await db.prepare('SELECT sql FROM sqlite_master WHERE name=?').bind(index).first()).sql
+        await db.prepare(`DROP INDEX ${index}`).run()
+        await assert.rejects(async () => occurrenceServed(await plan({ ...shape, sql: shape.sql + ' ' }, args), index), `the occurrence check on ${index} fails without it`)
+        await db.prepare(create).run()
+      }
     }
   }
+  const leftward = (await db.prepare("SELECT sql FROM sqlite_master WHERE name='unit_ngram_second'").first()).sql
+  await db.prepare('DROP INDEX unit_ngram_second').run()
+  await assert.rejects(async () => occurrenceServed(await plan({ sql: worker.runOccurrencesQuery(5, 2, false) + ' ', values: [] }, ['ナリ', 'ナリ', 3, 'ナリ', 48, 0]), 'unit_ngram_text'),
+    'the leftward check fails without unit_ngram_second')
+  await db.prepare(leftward).run()
+  const runOf = async (text, query = '') => (await mf.dispatchFetch(base + '/atlas/runs?' + new URLSearchParams({ text }) + query)).json()
   const pairText = firstLabel + secondLabel
-  const occurrences = await (await mf.dispatchFetch(base + '/atlas/ngrams/2/' + encodeURIComponent(pairText))).json()
+  const occurrences = await runOf(pairText)
   assert.equal(occurrences.total, 1, 'a pair counts the occurrences whose crops are both live')
   assert.deepEqual(occurrences.items.map(o => o.crops.map(c => c.id)), [['one', 'two']], 'an occurrence carries its crops in reading order')
   assert.ok(!('context_image' in occurrences.items[0].crops[0]), 'occurrences carry listing fields only')
   // The page around a run is the smallest context render that holds all its crops, clipped to them with
   // a margin of a fifth of the largest crop that stays inside the render.
   const placed = (x, y, context) => ({ crop_box: { x, y, w: 10, h: 10 }, context_image: `/atlas/media/${x}-${y}.webp`, context_box: context })
-  assert.deepEqual(worker.ngramPage([placed(50, 50, { x: 0, y: 0, w: 200, h: 200 }), placed(50, 62, { x: 20, y: 20, w: 100, h: 100 })]),
+  assert.deepEqual(worker.runPage([placed(50, 50, { x: 0, y: 0, w: 200, h: 200 }), placed(50, 62, { x: 20, y: 20, w: 100, h: 100 })]),
     { image: '/atlas/media/50-62.webp', box: { x: 20, y: 20, w: 100, h: 100 }, region: { x: 48, y: 48, w: 14, h: 26 } })
-  assert.deepEqual(worker.ngramPage([placed(21, 21, { x: 20, y: 20, w: 100, h: 100 }), placed(21, 33, { x: 20, y: 20, w: 100, h: 100 })]).region,
+  assert.deepEqual(worker.runPage([placed(21, 21, { x: 20, y: 20, w: 100, h: 100 }), placed(21, 33, { x: 20, y: 20, w: 100, h: 100 })]).region,
     { x: 20, y: 20, w: 13, h: 25 }, 'the margin stays inside the render')
-  assert.equal(worker.ngramPage([placed(50, 50, { x: 45, y: 45, w: 20, h: 20 }), placed(50, 70, { x: 45, y: 65, w: 20, h: 20 })]), null, 'no render holds both crops')
-  assert.equal(worker.ngramPage([placed(50, 50, { x: 0, y: 0, w: 200, h: 200 }), { crop_box: null }]), null, 'a crop without a box has no page')
+  assert.equal(worker.runPage([placed(50, 50, { x: 45, y: 45, w: 20, h: 20 }), placed(50, 70, { x: 45, y: 65, w: 20, h: 20 })]), null, 'no render holds both crops')
+  assert.equal(worker.runPage([placed(50, 50, { x: 0, y: 0, w: 200, h: 200 }), { crop_box: null }]), null, 'a crop without a box has no page')
   assert.ok('page' in occurrences.items[0] && 'crop_box' in occurrences.items[0].crops[0], 'an occurrence carries its page and its crops\' boxes')
   assert.deepEqual([occurrences.vertical, occurrences.items[0].vertical], [true, true], 'a run is written the way its line is')
   // A trigram is shown only while its third crop is live as well.
   await db.prepare(`INSERT INTO unit_ngrams(first,size,second,third,text,document) VALUES('one',3,'two','gone',?,NULL)`).bind(pairText + '也').run()
-  assert.equal((await (await mf.dispatchFetch(base + '/atlas/ngrams/3/' + encodeURIComponent(pairText + '也'))).json()).total, 0, 'a trigram needs its third crop live')
+  assert.equal((await runOf(pairText + '也')).total, 0, 'a trigram needs its third crop live')
   await db.prepare("UPDATE unit_ngrams SET third='one',text=? WHERE first='one' AND size=3").bind(pairText + firstLabel).run()
-  const trigram = await (await mf.dispatchFetch(base + '/atlas/ngrams/3/' + encodeURIComponent(pairText + firstLabel))).json()
+  const trigram = await runOf(pairText + firstLabel)
   assert.deepEqual([trigram.total, trigram.items.map(o => o.crops.map(c => c.id))], [1, [['one', 'two', 'one']]], 'a trigram carries its three crops')
-  assert.equal((await mf.dispatchFetch(base + '/atlas/ngrams/2/' + encodeURIComponent('申候'))).status, 200)
-  assert.equal((await (await mf.dispatchFetch(base + '/atlas/ngrams/2/' + encodeURIComponent('申候'))).json()).total, 0, 'pairs whose crops are not live are not shown')
-  assert.equal((await mf.dispatchFetch(base + '/atlas/ngrams/2/' + encodeURIComponent(pairText) + '?offset=2001')).status, 404, 'a run does not page past its cap')
-  assert.equal((await mf.dispatchFetch(base + '/atlas/ngrams/2/' + encodeURIComponent(pairText) + '?limit=97')).status, 422, 'a page is bounded')
+  // A longer run chains pairs onto its rarest trigram, leftwards and rightwards: one→two→one→two→one
+  // reads its trigrams at every start, and its pairs where they join.
+  await db.batch([
+    db.prepare(`INSERT OR REPLACE INTO unit_ngrams(first,size,second,third,text,document) VALUES('two',2,'one',NULL,?,NULL),('two',3,'one','two',?,NULL)`).bind(secondLabel + firstLabel, secondLabel + pairText),
+  ])
+  const four = await runOf(pairText + pairText)
+  assert.deepEqual([four.size, four.total, four.items.map(o => o.crops.map(c => c.id))], [4, 1, [['one', 'two', 'one', 'two']]], 'a run of four chains a pair onto a trigram')
+  const five = await runOf(pairText + pairText + firstLabel)
+  assert.deepEqual(five.items.map(o => o.crops.map(c => c.id)), [['one', 'two', 'one', 'two', 'one']], 'a run of five')
+  assert.equal((await runOf(pairText + secondLabel + secondLabel)).total, 0, 'a link whose pair is missing breaks the run')
+  // Rows of one→two→one whose crops are not live make it the commoner trigram, so the runs start from
+  // two→one→two inside them and reach their first crop leftwards. A refresh moves the catalogue version
+  // past the answers the edge keeps.
+  await db.batch([db.prepare(`INSERT INTO unit_ngrams(first,size,second,third,text,document) VALUES('ghost1',3,'ghost2','ghost3',?1,NULL),('ghost2',3,'ghost3','ghost4',?1,NULL)`).bind(pairText + firstLabel),
+    db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at','leftward')")])
+  const inner = await runOf(pairText + pairText)
+  assert.deepEqual(inner.items.map(o => o.crops.map(c => c.id)), [['one', 'two', 'one', 'two']], 'a run reached leftwards keeps its reading order')
+  assert.deepEqual((await runOf(pairText + pairText + firstLabel)).items.map(o => o.crops.map(c => c.id)), [['one', 'two', 'one', 'two', 'one']],
+    'a run reached both ways from an inner trigram')
+  assert.equal((await runOf(firstLabel + firstLabel + secondLabel + firstLabel)).total, 0, 'a missing link on the left breaks the run')
+  await db.prepare("DELETE FROM unit_ngrams WHERE first LIKE 'ghost%'").run()
+  assert.equal((await runOf(pairText + pairText, '&document=hk%3Aother')).total, 0, 'a book holds only its own runs')
+  assert.equal((await runOf('申候')).total, 0, 'pairs whose crops are not live are not shown')
+  assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent(firstLabel))).status, 422, 'a run is two characters or more')
+  assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent('一二三四五六七八九'))).status, 422, 'a run is eight characters or fewer')
+  assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent(pairText) + '&offset=2000')).status, 404, 'a run does not page past its cap')
+  assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent(pairText) + '&limit=97')).status, 422, 'a page is bounded')
+  assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent(pairText + pairText) + '&limit=49')).status, 422, 'a longer run pages fewer occurrences')
+  const nextPage = await runOf(pairText, '&offset=1')
+  assert.ok(!('total' in nextPage) && nextPage.next_offset === 1, 'a later page carries no count')
   await db.prepare('DELETE FROM unit_ngrams').run()
   for (const [index, create] of Object.entries(keys)) {
     await db.prepare(`DROP INDEX ${index}`).run()

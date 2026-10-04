@@ -485,30 +485,12 @@ async function ngrams(env: Env, ctx: ExecutionContext, url: URL, size: number) {
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return body;
 }
-// One run's occurrences: its crops in reading order, each with its box on the page, whether their line
-// is written down the page, and the page around them (`ngramPage`); the run as a whole is written the way
-// most of its occurrences are. They come in the order the run's index keeps (by the first crop's id), each crop
-// found by its key; a trigram's third is joined only when there is one. A book's are read through the
-// index it shares with the count. The join order is fixed and the origin test kept off its index (`+`):
-// the planner would otherwise start from every local crop.
-const NGRAM_PAGE_MAX = 96, NGRAM_OFFSET_MAX = 2000;
-const NGRAM_CROPS = `FROM unit_ngrams p
-    CROSS JOIN units a ON a.id=p.first AND +a.origin='local' CROSS JOIN units b ON b.id=p.second AND +b.origin='local'
-    LEFT JOIN units c ON c.id=p.third AND +c.origin='local'`;
-export function ngramOccurrencesQuery(document: boolean) {
-  return `SELECT a.data AS first, b.data AS second, c.data AS third, a.document AS document, p.vertical ${NGRAM_CROPS}
-    WHERE ${document ? 'p.document=? AND ' : ''}p.size=? AND p.text=? AND (p.third IS NULL OR c.id IS NOT NULL) ORDER BY p.first LIMIT ? OFFSET ?`;
-}
-export function ngramCountQuery(document: boolean) {
-  return `SELECT count(*) AS n, sum(p.vertical) AS vertical ${NGRAM_CROPS}
-    WHERE ${document ? 'p.document=? AND ' : ''}p.size=? AND p.text=? AND (p.third IS NULL OR c.id IS NOT NULL)`;
-}
 // The page around a run, from one of its crops' context renders: the box holding every crop, with a
 // margin of a fifth of the largest, clipped to the render. A render shows the page a few characters
 // around its own crop, so it nearly always holds the whole run; the smallest that does is the sharpest.
 // Null when a crop has no box or no render holds them all: the run's crops are then laid out apart.
 type Rect = { x: number; y: number; w: number; h: number };
-export function ngramPage(crops: Json[]): { image: string; box: Rect; region: Rect } | null {
+export function runPage(crops: Json[]): { image: string; box: Rect; region: Rect } | null {
   const boxes = crops.map(c => c.crop_box as Rect | null);
   if (boxes.some(b => !b)) return null;
   const left = Math.min(...boxes.map(b => b!.x)), top = Math.min(...boxes.map(b => b!.y));
@@ -522,28 +504,96 @@ export function ngramPage(crops: Json[]): { image: string; box: Rect; region: Re
   return { image: render.context_image, box,
     region: { x, y, w: Math.min(box.x + box.w, right + margin) - x, h: Math.min(box.y + box.h, bottom + margin) - y } };
 }
-async function ngramOccurrences(env: Env, url: URL, size: number, run: string) {
+// One run's occurrences: every place its characters follow each other on a line, as their crops in
+// reading order, each with its box on the page, whether their line is written down the page, and the
+// page around them (`runPage`); the run as a whole is written the way most of its occurrences are.
+// The text is split into graphemes, one crop each, as a label holds one. A run of two or three is one
+// row of `unit_ngrams`. A longer one starts from one of its trigrams, the rarest (`runProbeQuery`), and
+// reaches the rest of its crops a pair at a time: publication writes a pair only where two crops follow
+// each other and stand near, so a chain of pairs holds the runs a longer row would.
+// The first row is read along the index its text (and book) share with the counts, so occurrences come
+// in that index's order; every other row is found by its key, rightwards by the primary key and leftwards
+// through `unit_ngram_second`, and every crop by its id. The join order is fixed and the origin test kept
+// off its index (`+`): the planner would otherwise start from every local crop. Counting stops past
+// RUN_COUNT_MAX, which is as deep as a run pages, and the first page alone counts. A page holds up to
+// RUN_PAGE_CROPS crops, so a longer run comes in fewer occurrences at a time.
+// RUN_MAX keeps a run inside one context render: a render reaches five character sizes along a column
+// (`CONTEXT_REACH`), so its middle crop's holds about eleven, and `runPage` finds the run in it.
+const RUN_MAX = 8, RUN_PAGE_CROPS = 192, RUN_COUNT_MAX = 2000, RUN_PROBE_MAX = 5000;
+const NGRAM_COLUMNS = ['first', 'second', 'third'];
+const graphemes = new Intl.Segmenter('ja', { granularity: 'grapheme' });
+/** The characters of a run, one crop each. */
+export const runCharacters = (value: string) => [...graphemes.segment(value)].map(s => s.segment);
+/** How a run of `size` crops is read when its row `a` starts at crop `anchor`: the joins after it, and the
+ *  first crop of each pair they bind a text to, in the order they are bound. */
+export function runFrom(size: number, anchor: number) {
+  const span = Math.min(size, 3), crops: string[] = [], joins: string[] = [], links: number[] = [];
+  for (let i = 0; i < span; i++) crops[anchor + i] = `a.${NGRAM_COLUMNS[i]}`;
+  for (let i = anchor + span - 1; i < size - 1; i++) {
+    joins.push(`CROSS JOIN unit_ngrams r${i} ON r${i}.first=${crops[i]} AND r${i}.size=2 AND +r${i}.text=?`);
+    crops[i + 1] = `r${i}.second`; links.push(i);
+  }
+  for (let i = anchor - 1; i >= 0; i--) {
+    joins.push(`CROSS JOIN unit_ngrams l${i} ON l${i}.second=${crops[i + 1]} AND l${i}.size=2 AND +l${i}.text=?`);
+    crops[i] = `l${i}.first`; links.push(i);
+  }
+  const units = crops.map((crop, i) => `CROSS JOIN units u${i} ON u${i}.id=${crop} AND +u${i}.origin='local'`);
+  return { from: ['FROM unit_ngrams a', ...joins, ...units].join(' '), links };
+}
+const runWhere = (document: boolean) => `${document ? 'a.document=? AND ' : ''}a.size=? AND a.text=?`;
+export function runOccurrencesQuery(size: number, anchor: number, document: boolean) {
+  return `SELECT ${Array.from({ length: size }, (_, i) => `u${i}.data AS c${i}`).join(',')}, u0.document AS document, a.vertical
+    ${runFrom(size, anchor).from} WHERE ${runWhere(document)} ORDER BY a.first LIMIT ? OFFSET ?`;
+}
+export function runCountQuery(size: number, anchor: number, document: boolean) {
+  return `SELECT count(*) AS n, sum(v) AS vertical FROM (SELECT a.vertical AS v ${runFrom(size, anchor).from}
+    WHERE ${runWhere(document)} LIMIT ${RUN_COUNT_MAX + 1})`;
+}
+/** How many rows of a trigram there are, counting no further than RUN_PROBE_MAX. */
+export function runProbeQuery(document: boolean) {
+  return `SELECT count(*) AS n FROM (SELECT 1 FROM unit_ngrams WHERE ${document ? 'document=? AND ' : ''}size=3 AND text=? LIMIT ${RUN_PROBE_MAX})`;
+}
+async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
   const q = url.searchParams;
-  const value = text(run, 96, 'text', true)!;
+  const value = text(q.get('text'), 96, 'text', true)!;
+  const parts = runCharacters(value);
+  if (parts.length < 2 || parts.length > RUN_MAX) throw new Problem(422, `A run is two to ${RUN_MAX} characters.`);
   const document = text(q.get('document'), 256, 'document');
-  const limit = integer(q, 'limit', 48, NGRAM_PAGE_MAX), offset = integer(q, 'offset', 0);
-  if (offset > NGRAM_OFFSET_MAX) throw new Problem(404, 'A run does not page this far.');
-  const bound = [...(document ? [document] : []), size, value];
-  const [count, page] = await env.DB.batch([
-    env.DB.prepare(ngramCountQuery(Boolean(document))).bind(...bound),
-    env.DB.prepare(ngramOccurrencesQuery(Boolean(document))).bind(...bound, limit, offset),
-  ]) as D1Result<any>[];
-  const found = page.results as { first: string; second: string; third: string | null; document: string | null; vertical: number }[];
+  const most = Math.floor(RUN_PAGE_CROPS / parts.length);
+  const offset = integer(q, 'offset', 0);
+  // A page ends where the count does.
+  if (offset >= RUN_COUNT_MAX) throw new Problem(404, 'A run does not page this far.');
+  const limit = Math.min(integer(q, 'limit', Math.min(48, most), most), RUN_COUNT_MAX - offset);
+  const key = new Request(`${url.origin}/atlas/runs?${new URLSearchParams({ text: value, document: document ?? '', limit: String(limit), offset: String(offset), v: await catalogueVersion(env) })}`);
+  const cached = await caches.default.match(key);
+  if (cached) return await cached.json() as Json;
+  const size = parts.length, scope = document ? [document] : [];
+  const span = (from: number, length: number) => parts.slice(from, from + length).join('');
+  let anchor = 0;
+  if (size > 3) {
+    const probes = await env.DB.batch(Array.from({ length: size - 2 }, (_, i) =>
+      env.DB.prepare(runProbeQuery(Boolean(document))).bind(...scope, span(i, 3)))) as D1Result<{ n: number }>[];
+    const counts = probes.map(probe => probe.results[0].n);
+    anchor = counts.indexOf(Math.min(...counts));
+  }
+  const { links } = runFrom(size, anchor);
+  const bound = [...links.map(i => span(i, 2)), ...scope, Math.min(size, 3), span(anchor, Math.min(size, 3))];
+  const occurrences = env.DB.prepare(runOccurrencesQuery(size, anchor, Boolean(document))).bind(...bound, limit, offset);
+  const [page, count] = await env.DB.batch(offset ? [occurrences] : [occurrences, env.DB.prepare(runCountQuery(size, anchor, Boolean(document))).bind(...bound)]) as D1Result<any>[];
+  const found = page.results as ({ document: string | null; vertical: number } & Record<`c${number}`, string>)[];
   // The crops of one run stand on one page, so they share their document's dates.
   const dating = await datingOf(env, found.map(row => row.document));
   const items = found.map(row => {
-    const crops = [row.first, row.second, row.third].filter(Boolean).map(data => parse(data!));
+    const crops = parts.map((_, i) => parse(row[`c${i}`]));
     const dated = row.document ? dating.get(row.document) : undefined;
     return { crops: crops.map(c => ({ ...listing(c), crop_box: c.crop_box ?? null, dating: dated ?? {} })),
-      vertical: Boolean(row.vertical), page: ngramPage(crops) };
+      vertical: Boolean(row.vertical), page: runPage(crops) };
   });
-  const { n: total, vertical } = count.results[0] as { n: number; vertical: number | null };
-  return { text: value, size, document, total, vertical: 2 * (vertical ?? 0) >= total, next_offset: offset + items.length, items };
+  const counted = count?.results[0] as { n: number; vertical: number | null } | undefined;
+  const body = { text: value, size, document, next_offset: offset + items.length, items,
+    ...(counted && { total: Math.min(counted.n, RUN_COUNT_MAX), more: counted.n > RUN_COUNT_MAX, vertical: 2 * (counted.vertical ?? 0) >= counted.n }) };
+  ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
+  return body;
 }
 async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: string | null) {
   const q = url.searchParams;
@@ -1764,8 +1814,9 @@ const routes = {
       if(path==='/atlas')return json(await catalogue(env,ctx,url,q.get('purpose')==='review'?(await viewer(env,request))?.id??null:null));
       if(path==='/api/ranking')return await ranking(env,url,ctx);
       if(path==='/atlas/history')return json(await history(env,q,(await viewer(env,request))?.id??null));
-      const run=path.match(/^\/atlas\/ngrams\/(\d+)(?:\/([^/]+))?$/);
-      if(run)return json(run[2]===undefined?await ngrams(env,ctx,url,ngramSize(run[1])):await ngramOccurrences(env,url,ngramSize(run[1]),decodeURIComponent(run[2])));
+      const counted=path.match(/^\/atlas\/ngrams\/(\d+)$/);
+      if(counted)return json(await ngrams(env,ctx,url,ngramSize(counted[1])));
+      if(path==='/atlas/runs')return json(await runOccurrences(env,ctx,url));
       if(path==='/atlas/corpus/characters')return json(await corpusCharacters(env,ctx,url),200,{'cache-control':'private, max-age=300'});
       if(path==='/atlas/corpus/character')return json(await inspected(env,await unit(env,q.get('id')||'')));
       if(path==='/atlas/collection/status')return json(await meta(env,'collection'));

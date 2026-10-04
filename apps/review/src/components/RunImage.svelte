@@ -1,6 +1,6 @@
 <script>
   // One occurrence of a pair or trigram as it sits on the page: a crop's context render clipped to the
-  // run (`page`, worked out by the Worker's `ngramPage`). Where no render holds the whole run, or the
+  // run (`page`, worked out by the Worker's `runPage`). Where no render holds the whole run, or the
   // render cannot be loaded, each crop is drawn at its own place on the page, all at one scale; a crop
   // without a place takes the next cell along the line, down it or across. Every character opens its
   // crop in the inspector.
@@ -27,20 +27,20 @@
   }
 </script>
 
-<svg class="ngram-image" viewBox="{view.x} {view.y} {view.w} {view.h}" preserveAspectRatio="xMidYMid meet" role="group" aria-label={crops.map(crop => crop.label).join('')}>
+<svg class="run-image" viewBox="{view.x} {view.y} {view.w} {view.h}" preserveAspectRatio="xMidYMid meet" role="group" aria-label={crops.map(crop => crop.label).join('')}>
   <!-- The element is wider or taller than the run; the inner viewport keeps the page outside it unseen. -->
   <svg x={view.x} y={view.y} width={view.w} height={view.h} viewBox="{view.x} {view.y} {view.w} {view.h}">
     {#if whole}<image href={page.image} x={page.box.x} y={page.box.y} width={page.box.w} height={page.box.h} preserveAspectRatio="none" onerror={() => { broken = true }} />
     {:else}{#each crops as crop, i (i)}<image href={crop.image} {...cut(cells[i])} />{/each}{/if}
   </svg>
   {#each crops as crop, i (i)}
-    <rect class="ngram-hit" x={cells[i].x} y={cells[i].y} width={cells[i].w} height={cells[i].h} role="button" tabindex="0" data-unit={crop.id}
+    <rect class="run-hit" x={cells[i].x} y={cells[i].y} width={cells[i].w} height={cells[i].h} role="button" tabindex="0" data-unit={crop.id}
           aria-label={t('explore.tile.inspect', { label: crop.label })} onclick={() => oninspect(crop.id)} onkeydown={event => pressed(event, crop)} />
   {/each}
 </svg>
 
 <style>
-  .ngram-image{display:block;width:100%;height:100%}
-  .ngram-hit{fill:transparent;stroke:transparent;stroke-width:2px;vector-effect:non-scaling-stroke;cursor:pointer;outline:none}
-  .ngram-hit:hover,.ngram-hit:focus-visible{stroke:var(--accent)}
+  .run-image{display:block;width:100%;height:100%}
+  .run-hit{fill:transparent;stroke:transparent;stroke-width:2px;vector-effect:non-scaling-stroke;cursor:pointer;outline:none}
+  .run-hit:hover,.run-hit:focus-visible{stroke:var(--accent)}
 </style>

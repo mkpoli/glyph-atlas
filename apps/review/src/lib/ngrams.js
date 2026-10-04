@@ -1,22 +1,22 @@
 import { request } from './client.js'
 import { t } from './i18n.svelte.js'
 
-// Pairs and trigrams: runs of two or three crops that follow each other on a line, counted by the text
-// their labels make, and the page of one run's occurrences, in one work or all.
+// Runs of characters that follow each other on a line: the pair and trigram counts Explore lists, in one
+// work or all, and the page of any run's occurrences, from two characters to eight.
 
-/** The kinds of run, by the length the site counts them at. */
+/** The kinds of run Explore counts, by their length. */
 export const NGRAM_KINDS = { pair: 2, trigram: 3 }
 
-// What the interface calls each kind, its counts and its pages.
+// What the interface calls each kind and its counts.
 const WORDS = {
-  pair: { name: () => t('explore.pairs'), none: () => t('explore.pairs.none'), failed: () => t('explore.pairs.failed'), empty: () => t('pair.empty') },
-  trigram: { name: () => t('explore.trigrams'), none: () => t('explore.trigrams.none'), failed: () => t('explore.trigrams.failed'), empty: () => t('trigram.empty') },
+  pair: { name: () => t('explore.pairs'), none: () => t('explore.pairs.none'), failed: () => t('explore.pairs.failed') },
+  trigram: { name: () => t('explore.trigrams'), none: () => t('explore.trigrams.none'), failed: () => t('explore.trigrams.failed') },
 }
 export const ngramWords = kind => WORDS[kind]
 
 /** The address of a run's page, within a work when one is chosen. */
-export function ngramAddress(kind, text, work = '') {
-  return `/${kind}/` + encodeURIComponent(text) + (work ? '?' + new URLSearchParams({ work }) : '')
+export function runAddress(text, work = '') {
+  return '/sequence/' + encodeURIComponent(text) + (work ? '?' + new URLSearchParams({ work }) : '')
 }
 
 /** The runs of a kind, most frequent first: `{ items: [{ text, n }], limit }`. */
@@ -24,8 +24,10 @@ export function ngramCounts(kind, work = '', options = {}) {
   return request(`/atlas/ngrams/${NGRAM_KINDS[kind]}` + (work ? '?' + new URLSearchParams({ document: work }) : ''), undefined, options)
 }
 
-/** One page of a run's occurrences: `{ text, total, next_offset, items: [{ crops }] }`. */
-export function ngramOccurrences(kind, text, { work = '', offset = 0, limit = 48 } = {}, options = {}) {
-  const query = new URLSearchParams({ offset: String(offset), limit: String(limit), ...(work ? { document: work } : {}) })
-  return request(`/atlas/ngrams/${NGRAM_KINDS[kind]}/` + encodeURIComponent(text) + '?' + query, undefined, options)
+/** One page of a run's occurrences: `{ text, size, next_offset, items: [{ crops }] }`, and on the first
+ *  page `total`, `more` (the count stopped at `total`) and `vertical`. Without a `limit` the page is as
+ *  long as the run allows. */
+export function runOccurrences(text, { work = '', offset = 0, limit } = {}, options = {}) {
+  const query = new URLSearchParams({ text, offset: String(offset), ...(limit ? { limit: String(limit) } : {}), ...(work ? { document: work } : {}) })
+  return request('/atlas/runs?' + query, undefined, options)
 }

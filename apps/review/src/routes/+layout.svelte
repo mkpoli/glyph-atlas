@@ -30,8 +30,8 @@
   const session = provideSession(createSession(untrack(() => data.account)))
   let menuButton, menuRoot, menu = $state(false), exporting = $state(false), savedNotice = $state('')
   const path = $derived(delocalize(page.url.pathname).path)
-  // A pair's or trigram's page is part of Explore; a round's address is part of Quick Review.
-  const section = $derived(path.startsWith('/pages') ? '/pages' : path.startsWith('/forms') ? '/forms' : path.startsWith('/review/') ? '/review' : /^\/(pair|trigram)\//.test(path) ? '/' : path)
+  // A run's page is part of Explore; a round's address is part of Quick Review.
+  const section = $derived(path.startsWith('/pages') ? '/pages' : path.startsWith('/forms') ? '/forms' : path.startsWith('/review/') ? '/review' : path.startsWith('/sequence/') ? '/' : path)
   // A crop page is a crop opened over the collection; a crop the inspector opened takes over from it.
   // Closing it moves to the collection's address in place, and Back opens it again.
   // A shallow Back to the list keeps the crop route mounted, so the address must still be the crop's.
