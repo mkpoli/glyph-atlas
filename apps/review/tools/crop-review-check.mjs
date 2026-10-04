@@ -61,6 +61,34 @@ try {
   await browser.waitFor(ready, 60000)
   console.log('PASS ← and → step through the list')
 
+  // A crop saved as looking right shows that decision when the reader steps back to it, and its
+  // chosen button moves on without writing again.
+  {
+    const firstId = await browser.evaluate(shown)
+    const advance = on => browser.evaluate(`document.querySelector('dialog[open] .advance-switch[aria-checked="${!on}"]')?.click()`)
+    await advance(true)
+    await browser.evaluate('document.querySelector(".save-character").click()')
+    await browser.waitFor(`${shown} && ${shown} !== ${JSON.stringify(firstId)}`, 30000)
+    await browser.waitFor(ready, 60000)
+    assert(!await browser.evaluate('document.querySelector(".save-character").classList.contains("chosen")'), 'a crop not yet decided shows a decision')
+    await browser.key('ArrowLeft')
+    await browser.waitFor(`${shown} === ${JSON.stringify(firstId)}`)
+    await browser.waitFor(ready, 60000)
+    assert(await browser.evaluate('document.querySelector(".save-character").classList.contains("chosen")'), 'the saved decision is not shown on stepping back')
+    const mark = events(config.directory).length
+    await browser.evaluate('document.querySelector(".save-character").click()')
+    await browser.waitFor(`${shown} !== ${JSON.stringify(firstId)}`, 30000)
+    assert(events(config.directory).length === mark, 'the chosen decision was saved a second time')
+    await browser.key('ArrowLeft')
+    await browser.waitFor(`${shown} === ${JSON.stringify(firstId)}`)
+    await browser.waitFor(ready, 60000)
+    await browser.key('w')
+    await browser.waitFor(pressed('character'))
+    assert(!await browser.evaluate('document.querySelector(".save-character").classList.contains("chosen")'), 'a changed decision still shows as chosen')
+    await advance(false)
+    console.log('PASS a saved decision is shown on stepping back and is not saved again')
+  }
+
   // Another character is picked from the search; nothing typed is saved as it stands.
   await browser.key('w')
   await browser.waitFor('!!document.querySelector("dialog[open] .suggestion-pick input")')
