@@ -59,6 +59,8 @@ INSIDE = {"⿴": (0.2, 0.15, 0.8, 0.8), "⿵": (0.2, 0.0, 0.8, 0.8), "⿶": (0.2
           "⿺": (0.3, 0.25, 1.0, 1.0)}
 #: Least likeness of a cut piece to its operand's own glyph.
 LIKENESS = 0.45
+#: Most a cut piece's outline length for its size may differ from its operand's glyph's.
+DENSER = 1.7
 #: Characters whose median box is the box a full ideograph fills.
 FULL = "國圖體觀讀鬱識護議變顯襲驚響露臨"
 
@@ -545,6 +547,10 @@ class Composer:
                 return 1.0
         aspect = lambda box: max(box[2] - box[0], 1) / max(box[3] - box[1], 1)
         if abs(math.log(aspect(part.box) / aspect(own.box))) > 1.2:
+            return 0.0
+        # As much outline for its size as the operand's: one dot of 馬 is not 馬.
+        density = lambda p: self.ink("", p) / max(p.box[2] - p.box[0] + p.box[3] - p.box[1], 1)
+        if abs(math.log(density(part) / density(own))) > math.log(DENSER):
             return 0.0
         a, b = _shape(part), _shape(own)
         return float((a & b).sum()) / max(float((a | b).sum()), 1.0)
