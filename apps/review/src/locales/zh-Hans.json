@@ -950,5 +950,6 @@
   "favourites.count.other": "{count}张裁切",
   "favourites.empty": "还没有收藏。",
   "favourites.hint": "打开裁切，点亮星标，即可收藏到这里。",
-  "favourites.more": "显示更多"
+  "favourites.more": "显示更多",
+  "favourites.otherUser": "保存前切换了账号，本次星标更改未保存。"
 }

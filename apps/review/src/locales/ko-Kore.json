@@ -931,5 +931,6 @@
   "favourites.count.other": "크롭 {count}個",
   "favourites.empty": "아직 즐겨찾기가 없습니다.",
   "favourites.hint": "크롭을 열고 별 모양 버튼을 누르면 여기에 모아 볼 수 있습니다.",
-  "favourites.more": "더 보기"
+  "favourites.more": "더 보기",
+  "favourites.otherUser": "貯藏 前에 計定이 바뀌어 별 表示 變更 事項이 貯藏되지 않았습니다."
 }

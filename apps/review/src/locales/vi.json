@@ -931,5 +931,6 @@
   "favourites.count.other": "{count} vùng cắt",
   "favourites.empty": "Chưa có vùng cắt yêu thích nào.",
   "favourites.hint": "Mở vùng cắt rồi nhấn ngôi sao để lưu vào đây.",
-  "favourites.more": "Xem thêm"
+  "favourites.more": "Xem thêm",
+  "favourites.otherUser": "Tài khoản đã đổi trước khi lưu nên thay đổi dấu sao không được lưu."
 }

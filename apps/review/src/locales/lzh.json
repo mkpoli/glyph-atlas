@@ -949,5 +949,6 @@
   "favourites.count.other": "截{count}",
   "favourites.empty": "尚無所藏。",
   "favourites.hint": "開截，標以星，則藏於此。",
-  "favourites.more": "更示"
+  "favourites.more": "更示",
+  "favourites.otherUser": "星標未存而帳戶已易，故未存。"
 }

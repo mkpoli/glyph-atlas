@@ -1,4 +1,5 @@
 import { ensureSignedIn } from './session.svelte.js'
+import { t } from './i18n.svelte.js'
 
 // The crops the signed-in user has starred. Read once the page knows who is signed in, and again
 // whenever that changes; a browser that has never signed in has starred nothing.
@@ -22,14 +23,17 @@ export async function loadFavourites(user, { again = false } = {}) {
   const before = saved
   try {
     const response = await fetch('/api/favourites')
-    if (!response.ok) return
+    if (!response.ok) throw new Error(response.statusText)
     const ids = new Set((await response.json()).ids)
     if (state.user !== id) return
     if (saved !== before) return loadFavourites(user, { again: true })
     for (const [crop, favourite] of pending) favourite ? ids.add(crop) : ids.delete(crop)
     state.ids = ids
     state.loaded = id
-  } catch { /* Not loaded, so the next call reads again. */ }
+  } catch {
+    // Not loaded, so the next call reads again.
+    if (state.user === id) state.loaded = null
+  }
 }
 
 const show = (id, favourite) => {
@@ -41,10 +45,14 @@ const show = (id, favourite) => {
 /** Star a crop or take its star away, starting an anonymous session if there is none. After a failed
  *  save the stars are read again once the crop's saves have finished. */
 export function setFavourite(id, favourite) {
+  // A save belongs to whoever was signed in when it was asked for; it is dropped if someone else is
+  // by the time it is sent.
+  const owner = state.user
   show(id, favourite)
   pending.set(id, favourite)
   const run = (queues.get(id) ?? Promise.resolve()).catch(() => {}).then(async () => {
     const user = await ensureSignedIn()
+    if (owner !== null && user?.id !== owner) throw new Error(t('favourites.otherUser'))
     if (state.user !== (user?.id ?? null)) { state.user = user?.id ?? null; state.loaded = null }
     const response = await fetch('/api/favourites', { method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ crop: id, favourite }) })

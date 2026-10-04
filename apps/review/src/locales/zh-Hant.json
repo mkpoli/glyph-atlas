@@ -950,5 +950,6 @@
   "favourites.count.other": "{count}個裁切",
   "favourites.empty": "還沒有收藏。",
   "favourites.hint": "開啟裁切，點選星號，即可收藏到這裡。",
-  "favourites.more": "顯示更多"
+  "favourites.more": "顯示更多",
+  "favourites.otherUser": "儲存前切換了帳號，這次星號變更未儲存。"
 }

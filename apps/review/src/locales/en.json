@@ -981,5 +981,6 @@
   "favourites.count.other": "{count} crops",
   "favourites.empty": "No favourites yet.",
   "favourites.hint": "Star a crop in its inspector to keep it here.",
-  "favourites.more": "Show more"
+  "favourites.more": "Show more",
+  "favourites.otherUser": "The account changed before this star was saved, so it was not saved."
 }

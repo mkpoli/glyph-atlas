@@ -947,5 +947,6 @@
   "favourites.count.other": "截片{count}",
   "favourites.empty": "未ダ愛藏ノ截片無シ。",
   "favourites.hint": "截片ヲ開キ、星印ヲ付クレバ此處ニ收マル。",
-  "favourites.more": "更ニ示ス"
+  "favourites.more": "更ニ示ス",
+  "favourites.otherUser": "星印ヲ保存スル前ニアカウントガ替ハリタレバ、保存セズ。"
 }

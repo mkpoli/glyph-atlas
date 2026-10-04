@@ -947,5 +947,6 @@
   "favourites.count.other": "切り出し{count}件",
   "favourites.empty": "まだお気に入りはありません。",
   "favourites.hint": "切り出しを開いて星印を押すと、ここに保存されます。",
-  "favourites.more": "さらに表示"
+  "favourites.more": "さらに表示",
+  "favourites.otherUser": "保存前にアカウントが切り替わったため、星印の変更は保存されませんでした。"
 }
