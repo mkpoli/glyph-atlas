@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
 import { d1 } from './forms.test';
-import { FAVOURITES_HELD, FavouriteError, carryFavourites, favouriteCrops, favouriteIds, setFavourite } from './favourites';
+import { FAVOURITES_HELD, FavouriteError, carryFavourites, favouriteCrops, favouriteQueries, favouriteIds, setFavourite } from './favourites';
 
 function setup() {
   const db = new Database(':memory:');
@@ -66,6 +66,14 @@ describe('favourites', () => {
     star.run('u2', 'b', '2026-10-02'); star.run('u2', 'k', '2026-10-01');
     await carryFavourites(env, 'u2', 'u1');
     expect((await favouriteIds(env, 'u1')).ids.sort()).toEqual(['a', 'b', 'k']);
+    db.close();
+  });
+  it('read every page shape from the index, never sorting or scanning the table', () => {
+    const { db } = setup();
+    for (const [name, sql] of Object.entries(favouriteQueries)) {
+      const plan = (db.query('EXPLAIN QUERY PLAN ' + sql).all(...Array((sql.match(/\?/g) ?? []).length).fill('x')) as { detail: string }[]).map(r => r.detail);
+      expect({ name, plan: plan.filter(d => /TEMP B-TREE|^SCAN (?!.*USING (COVERING )?INDEX)/.test(d)) }).toEqual({ name, plan: [] });
+    }
     db.close();
   });
 });

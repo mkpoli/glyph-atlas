@@ -8,14 +8,21 @@ type Replacement = (env: Env, id: string) => Promise<string | null>;
 export const FAVOURITES_HELD = 2000;
 const PAGE = 60;
 
+// Every read of the list is one range of `favourites_recent` (0066), in its order.
+export const favouriteQueries = {
+  ids: 'SELECT unit FROM favourites WHERE user_id=? ORDER BY at DESC, unit LIMIT ?',
+  first: 'SELECT unit,at FROM favourites WHERE user_id=? ORDER BY at DESC, unit LIMIT ?',
+  after: 'SELECT unit,at FROM favourites WHERE user_id=? AND (at<? OR (at=? AND unit>?)) ORDER BY at DESC, unit LIMIT ?',
+  count: 'SELECT count(*) AS n FROM favourites WHERE user_id=?',
+};
+
 export class FavouriteError extends Error {
   constructor(readonly status: number, message: string) { super(message) }
 }
 
 /** Every crop the user has starred, newest first. */
 export async function favouriteIds(env: Env, user: string) {
-  const rows = await env.DB.prepare('SELECT unit FROM favourites WHERE user_id=? ORDER BY at DESC, unit LIMIT ?')
-    .bind(user, FAVOURITES_HELD).all<{ unit: string }>();
+  const rows = await env.DB.prepare(favouriteQueries.ids).bind(user, FAVOURITES_HELD).all<{ unit: string }>();
   return { ids: rows.results.map(r => r.unit) };
 }
 
@@ -33,10 +40,8 @@ function parseCursor(cursor: string | null) {
 export async function favouriteCrops(env: Env, user: string, cursor: string | null, limit: number, itemsFor: Items, replacement: Replacement) {
   const after = parseCursor(cursor);
   const rows = (await (after
-    ? env.DB.prepare('SELECT unit,at FROM favourites WHERE user_id=? AND (at<? OR (at=? AND unit>?)) ORDER BY at DESC, unit LIMIT ?')
-      .bind(user, after.at, after.at, after.unit, Math.min(limit, PAGE))
-    : env.DB.prepare('SELECT unit,at FROM favourites WHERE user_id=? ORDER BY at DESC, unit LIMIT ?')
-      .bind(user, Math.min(limit, PAGE))).all<{ unit: string; at: string }>()).results;
+    ? env.DB.prepare(favouriteQueries.after).bind(user, after.at, after.at, after.unit, Math.min(limit, PAGE))
+    : env.DB.prepare(favouriteQueries.first).bind(user, Math.min(limit, PAGE))).all<{ unit: string; at: string }>()).results;
   const ids = rows.map(r => r.unit);
   const found = await itemsFor(env, ids);
   const moved = new Map<string, string>();
@@ -53,7 +58,7 @@ export async function favouriteCrops(env: Env, user: string, cursor: string | nu
     const item = found.get(id) ?? replaced.get(moved.get(id) ?? '');
     if (item && !seen.has(item.id)) { seen.add(item.id); items.push(item) }
   }
-  const total = await env.DB.prepare('SELECT count(*) AS n FROM favourites WHERE user_id=?').bind(user).first<{ n: number }>();
+  const total = await env.DB.prepare(favouriteQueries.count).bind(user).first<{ n: number }>();
   return { items, total: total?.n ?? 0, moved: moved.size > 0, next: rows.length === Math.min(limit, PAGE) ? cursorOf(rows[rows.length - 1]) : null };
 }
 
