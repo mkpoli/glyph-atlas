@@ -83,7 +83,9 @@ def identity_fields(
         "identity_basis": basis,
         "identity_status": "assigned" if written else "unassigned",
         "identity_evidence": NORMALIZATION_EVIDENCE if normalized else None,
-        "grapheme": family["code_point"] if family else cp,
+        # A character with no family (one Unicode lacks, written as an IDS) is its own grapheme, as the
+        # Worker files it.
+        "grapheme": family["code_point"] if family else cp or (" ".join(refs.to_code_points(written)) if written else None),
         "family_members": family["members"] if family else [],
         "requires_family_scope": ambiguous,
         "visual_assignment": assignment,

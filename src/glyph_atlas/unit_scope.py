@@ -5,6 +5,8 @@ from __future__ import annotations
 import unicodedata
 from typing import Any
 
+from .representation import described
+
 
 def encoded_text(value: str | None) -> str | None:
     if not value:
@@ -20,11 +22,18 @@ def encoded_text(value: str | None) -> str | None:
 
 
 def character_count(text: str | None) -> int:
-    """Count bases, preserving a combining mark or variation selector with its base."""
+    """Count bases, preserving a combining mark or variation selector with its base.
+
+    A well-formed ideographic description sequence (⿰亻胃) describes one character Unicode lacks,
+    and counts as one.
+    """
     if not text or not text.strip():
         return 0
+    text = unicodedata.normalize("NFC", text)
+    if described(text.strip()):
+        return 1
     count = 0
-    for char in unicodedata.normalize("NFC", text):
+    for char in text:
         cp = ord(char)
         if unicodedata.combining(char) or 0xFE00 <= cp <= 0xFE0F or 0xE0100 <= cp <= 0xE01EF:
             continue

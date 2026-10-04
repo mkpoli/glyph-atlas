@@ -92,6 +92,16 @@ def _described(value: str, at: int = 0) -> int:
     return at
 
 
+def described(value: str) -> bool:
+    """Whether `value` is one well-formed description, which names one character Unicode lacks."""
+    if not is_sequence(value) or len(value) > LONGEST:
+        return False
+    try:
+        return _described(value) == len(value)
+    except ValueError:
+        return False
+
+
 def _single(value: str) -> bool:
     """One character: one base, with any combining marks and variation selector after it."""
     if not value or unicodedata.category(value[0]).startswith("M"):

@@ -149,3 +149,11 @@ def test_a_code_point_sequence_is_an_identity_without_a_family():
     assert fields["written_character"] == "ツ゚" and fields["family_members"] == []
     reviewed = identity_fields({"unicode": "U+30C4"}, "codh", human_character="ツ゚")
     assert reviewed["written_character"] == "ツ゚"
+
+
+def test_a_character_unicode_lacks_is_its_own_grapheme() -> None:
+    from glyph_atlas.corpus.identity import identity_fields
+
+    fields = identity_fields({"text_source": "⿰亻胃", "unicode": None, "id": "krm:F00024:0"}, "hdic-krm")
+    assert fields["written_character"] == "⿰亻胃"
+    assert fields["grapheme"] == "U+2FF0 U+4EBB U+80C3"
