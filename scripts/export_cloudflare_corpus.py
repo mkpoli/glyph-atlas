@@ -146,10 +146,11 @@ def unit_corpora(names=None):
 
 def line_orientation(corpus) -> dict[str, bool]:
     """Each line's `vertical` flag, from the corpus's lines table, or nothing when it has none."""
-    path = corpus.table("lines")
-    if path is None:
+    paths = corpus.parquet_files("lines")
+    if not paths:
         return {}
-    lines = ds.dataset(str(path), format="parquet")
+    # A sharded table's directory holds its manifest beside the shards.
+    lines = ds.dataset([str(p) for p in paths], format="parquet")
     if not {"id", "vertical"} <= set(lines.schema.names):
         return {}
     table = lines.to_table(columns=["id", "vertical"])
