@@ -939,5 +939,13 @@
   "common.cancel": "止ム",
   "line.redraw": "枠ヲ引キ直ス",
   "line.redraw.pick": "枠ヲ引キ直ス截片ヲ選ベ。",
-  "line.noBox": "此ノ截片ノ枠ハ引キ直スコト能ハズ。"
+  "line.noBox": "此ノ截片ノ枠ハ引キ直スコト能ハズ。",
+  "favourites.title": "愛藏",
+  "favourites.add": "愛藏ニ加フ",
+  "favourites.remove": "愛藏ヨリ除ク",
+  "favourites.count.one": "截片{count}",
+  "favourites.count.other": "截片{count}",
+  "favourites.empty": "未ダ愛藏ノ截片無シ。",
+  "favourites.hint": "截片ヲ開キ、星印ヲ付クレバ此處ニ收マル。",
+  "favourites.more": "更ニ示ス"
 }

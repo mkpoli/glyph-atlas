@@ -939,5 +939,13 @@
   "common.cancel": "キャンセル",
   "line.redraw": "枠を引き直す",
   "line.redraw.pick": "枠を引き直す切り出しを選んでください。",
-  "line.noBox": "この切り出しの枠は引き直せません。"
+  "line.noBox": "この切り出しの枠は引き直せません。",
+  "favourites.title": "お気に入り",
+  "favourites.add": "お気に入りに追加",
+  "favourites.remove": "お気に入りから削除",
+  "favourites.count.one": "切り出し{count}件",
+  "favourites.count.other": "切り出し{count}件",
+  "favourites.empty": "まだお気に入りはありません。",
+  "favourites.hint": "切り出しを開いて星印を押すと、ここに保存されます。",
+  "favourites.more": "さらに表示"
 }

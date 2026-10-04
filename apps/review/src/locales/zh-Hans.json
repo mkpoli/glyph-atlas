@@ -942,5 +942,13 @@
   "common.cancel": "取消",
   "line.redraw": "重画框",
   "line.redraw.pick": "请选择要重画框的裁切。",
-  "line.noBox": "该裁切的框无法重画。"
+  "line.noBox": "该裁切的框无法重画。",
+  "favourites.title": "收藏",
+  "favourites.add": "加入收藏",
+  "favourites.remove": "取消收藏",
+  "favourites.count.one": "{count}张裁切",
+  "favourites.count.other": "{count}张裁切",
+  "favourites.empty": "还没有收藏。",
+  "favourites.hint": "打开裁切，点亮星标，即可收藏到这里。",
+  "favourites.more": "显示更多"
 }

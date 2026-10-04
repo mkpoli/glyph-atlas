@@ -973,5 +973,13 @@
   "common.cancel": "Cancel",
   "line.redraw": "Redraw box",
   "line.redraw.pick": "Choose a crop in the run to redraw its box.",
-  "line.noBox": "This crop’s box cannot be redrawn."
+  "line.noBox": "This crop’s box cannot be redrawn.",
+  "favourites.title": "Favourites",
+  "favourites.add": "Add to favourites",
+  "favourites.remove": "Remove from favourites",
+  "favourites.count.one": "{count} crop",
+  "favourites.count.other": "{count} crops",
+  "favourites.empty": "No favourites yet.",
+  "favourites.hint": "Star a crop in its inspector to keep it here.",
+  "favourites.more": "Show more"
 }

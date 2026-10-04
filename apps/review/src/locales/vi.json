@@ -924,5 +924,12 @@
   "common.cancel": "Hủy",
   "line.redraw": "Vẽ lại ô",
   "line.redraw.pick": "Chọn vùng cắt cần vẽ lại ô.",
-  "line.noBox": "Không thể vẽ lại ô của vùng cắt này."
+  "line.noBox": "Không thể vẽ lại ô của vùng cắt này.",
+  "favourites.title": "Yêu thích",
+  "favourites.add": "Thêm vào yêu thích",
+  "favourites.remove": "Bỏ khỏi yêu thích",
+  "favourites.count.other": "{count} vùng cắt",
+  "favourites.empty": "Chưa có vùng cắt yêu thích nào.",
+  "favourites.hint": "Mở vùng cắt rồi nhấn ngôi sao để lưu vào đây.",
+  "favourites.more": "Xem thêm"
 }

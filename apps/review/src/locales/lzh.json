@@ -941,5 +941,13 @@
   "common.cancel": "止",
   "line.redraw": "改畫格",
   "line.redraw.pick": "擇欲改畫其格之截。",
-  "line.noBox": "此截之格不可改畫。"
+  "line.noBox": "此截之格不可改畫。",
+  "favourites.title": "所藏",
+  "favourites.add": "藏之",
+  "favourites.remove": "去藏",
+  "favourites.count.one": "截{count}",
+  "favourites.count.other": "截{count}",
+  "favourites.empty": "尚無所藏。",
+  "favourites.hint": "開截，標以星，則藏於此。",
+  "favourites.more": "更示"
 }
