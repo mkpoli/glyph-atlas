@@ -61,13 +61,26 @@ def _near(a: Unit | Glyph, b: Unit | Glyph) -> bool:
     return (ax - bx) ** 2 + (ay - by) ** 2 <= reach ** 2
 
 
-def adjacent_ngrams(units: Iterable[Unit | Glyph], horizontal: Container[str] = frozenset()) -> list[Run]:
+def _down_the_column(a: Unit | Glyph, b: Unit | Glyph) -> bool:
+    """Whether `b` continues `a`'s column: its centre below `a`'s top, which a tall box beside a short one
+    still passes, and less than a character's width aside."""
+    (ax, _), (bx, by) = _centre(a), _centre(b)
+    return by > a.box.y and abs(bx - ax) < max(a.box.w, b.box.w)
+
+
+def adjacent_ngrams(units: Iterable[Unit | Glyph], horizontal: Container[str] = frozenset(),
+                    blocks: Container[str] = frozenset()) -> list[Run]:
     """Each active character unit and the units at the next positions on its line, as runs of every
     length in `SIZES`. A line is vertical unless its id is in `horizontal`, as `Line.vertical` is.
 
     Each unit's `seq` is the one before it plus one: a position with no unit, or with two, breaks the
     run there. A gap, an unreadable unit, a mark or an unsegmented run is never part of one, and neither
     is a unit without a box. Two neighbours too far apart on the page break the run as well.
+
+    A line in `blocks` holds several columns read one after another, as a CODH block does: it steps
+    from the foot of one column to the head of the next, and with small characters that step can fall
+    within `REACH`. On such a line a neighbour that does not stand below in the same column breaks the
+    run too.
     """
     lines: dict[str, dict[int, list[Unit]]] = defaultdict(lambda: defaultdict(list))
     for unit in units:
@@ -78,9 +91,11 @@ def adjacent_ngrams(units: Iterable[Unit | Glyph], horizontal: Container[str] = 
         # The positions held by one unit that can be part of a run; any other position breaks it.
         held = {seq: found[0] for seq, found in positions.items() if len(found) == 1
                 and found[0].kind == UnitKind.CHAR and found[0].granularity == "char" and found[0].box}
+        wraps = line in blocks
         for seq, unit in sorted(held.items()):
             run = [unit]
-            while len(run) < max(SIZES) and (following := held.get(seq + len(run))) and _near(run[-1], following):
+            while (len(run) < max(SIZES) and (following := held.get(seq + len(run))) and _near(run[-1], following)
+                   and (not wraps or _down_the_column(run[-1], following))):
                 run.append(following)
             ngrams += [Run(tuple(u.id for u in run[:size]), line not in horizontal) for size in SIZES if len(run) >= size]
     return ngrams

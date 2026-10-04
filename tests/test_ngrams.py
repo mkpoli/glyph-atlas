@@ -2,7 +2,7 @@ import sqlite3
 from pathlib import Path
 
 from glyph_atlas import tables
-from glyph_atlas.ngrams import Run, adjacent_ngrams, ngram_statements
+from glyph_atlas.ngrams import Glyph, Run, adjacent_ngrams, ngram_statements
 from glyph_atlas.review.store import Store
 from glyph_atlas.schema import Box, Line, Unit, UnitKind
 
@@ -144,3 +144,17 @@ def test_a_run_is_placed_by_how_its_first_letterforms_were_made():
     db.execute("INSERT INTO unit_ngrams(first,size,second,text) VALUES('k',2,'x','字字')")
     db.execute("UPDATE corpus_units SET production='printed/type' WHERE id='k'")
     assert (placed()["w"], placed()["k"]) == (2, 2)
+
+
+def test_a_block_of_columns_runs_only_down_one_column():
+    # CODH 100241706_00020_2, block B0001: C0018 heads the next column, up and to the left of C0017.
+    glyph = lambda seq, x, y: Glyph.of({"id": f"B1:C{seq}", "line_id": "B1", "seq": seq, "box": {"x": x, "y": y, "w": 230, "h": 230}})
+    column = [glyph(16, 400, 370), glyph(17, 400, 600), glyph(18, 183, 317), glyph(19, 183, 560)]
+    assert ids(adjacent_ngrams(column, blocks={"B1"})) == [("B1:C16", "B1:C17"), ("B1:C18", "B1:C19")]
+    # A short column whose neighbour's head stands lower than its foot: down, but a column aside.
+    assert ids(adjacent_ngrams([glyph(1, 400, 100), glyph(2, 140, 160)], blocks={"B1"})) == []
+    # A tall box, two characters merged, above a short one: the centre is above, the top is not.
+    tall = Glyph.of({"id": "B1:C1", "line_id": "B1", "seq": 1, "box": {"x": 400, "y": 0, "w": 230, "h": 600}})
+    assert ids(adjacent_ngrams([tall, glyph(2, 400, 250)], blocks={"B1"})) == [("B1:C1", "B1:C2")]
+    # A line of one column is left to the distance test, which these boxes pass.
+    assert ("B1:C17", "B1:C18") in ids(adjacent_ngrams(column))
