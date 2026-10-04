@@ -127,3 +127,20 @@ def test_the_review_store_names_the_lines_written_across(tmp_path):
     tables.write(tmp_path / "lines.parquet", [Line(id="H", page_id="P", seq=0, text_raw="ab", text="ab", vertical=False),
                                               Line(id="V", page_id="P", seq=1, text_raw="cd", text="cd")], Line)
     assert Store(tmp_path).horizontal_lines() == {"H"}
+
+
+def test_a_run_is_placed_by_how_its_first_letterforms_were_made():
+    db = site([])
+    rows = [("w", "printed/woodblock", "unassessed"), ("c", "unknown", "cursive"), ("u", "unknown", "unassessed"),
+            ("m", "mixed", "regular"), ("t", "printed/type/wood", "running"), ("s", "inscribed/stone", "unassessed"),
+            ("p", "printed", "unassessed"), ("d", "printed/digital", "unassessed")]
+    db.executemany("INSERT INTO units(id,origin,character,production,style) VALUES(?,'local','字',?,?)", rows)
+    db.executemany("INSERT INTO unit_ngrams(first,size,second,text) VALUES(?,2,'x','字字')", [(i,) for i, *_ in rows])
+    placed = lambda: dict(db.execute("SELECT first,hand_order FROM unit_ngrams"))
+    assert placed() == {"w": 0, "c": 0, "u": 1, "m": 1, "t": 2, "s": 0, "p": 0, "d": 2}
+    # A publication rewrites a crop's production in place; a corpus glyph without a row follows its published one.
+    db.execute("UPDATE units SET production='printed/type' WHERE id='w'")
+    db.execute("INSERT INTO corpus_units(id,character,production) VALUES('k','字','handwritten')")
+    db.execute("INSERT INTO unit_ngrams(first,size,second,text) VALUES('k',2,'x','字字')")
+    db.execute("UPDATE corpus_units SET production='printed/type' WHERE id='k'")
+    assert (placed()["w"], placed()["k"]) == (2, 2)

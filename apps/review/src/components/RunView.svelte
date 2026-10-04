@@ -3,14 +3,14 @@
   // sit on the page (`RunImage`), with the book and page they come from. The run's own text is written
   // the way most of its occurrences are: down the page or across it. Pages arrive as the reader nears the
   // end, and while more are to come the grid shows whole rows only. A run of many characters gets a
-  // taller cell, so its crops stay legible down a column. The run can be narrowed to a style group or a
-  // work and placed by style or by work, and the sequences near it are one link away.
+  // taller cell, so its crops stay legible down a column. The run can be narrowed to a group of how its
+  // letterforms were made or to a work, and placed by that group or by work, and the sequences near it are one link away.
   import { untrack } from 'svelte'
   import { replaceState } from '$app/navigation'
   import RunImage from './RunImage.svelte'
   import ScriptText from './ScriptText.svelte'
   import SiteLinks from './SiteLinks.svelte'
-  import StyleFilter from './StyleFilter.svelte'
+  import HandFilter from './HandFilter.svelte'
   import WorkFilter from './WorkFilter.svelte'
   import { runAddress, runOccurrences } from '../lib/ngrams.js'
   import { tileDate } from '../lib/dating.js'
@@ -19,10 +19,10 @@
   import { sourceTitle } from '../lib/seo.js'
   import { t, localize } from '../lib/i18n.svelte.js'
 
-  let { text, work: given = '', style: styled = '', sort: ordered = '', first = null, related = null, inspect } = $props()
+  let { text, work: given = '', hand: handed = '', sort: ordered = '', first = null, related = null, inspect } = $props()
   const opened = untrack(() => first)
-  let work = $state(untrack(() => given)), style = $state(untrack(() => styled)), sort = $state(untrack(() => ordered))
-  let styles = $state(opened?.styles ?? null), works = $state(opened?.works ?? [])
+  let work = $state(untrack(() => given)), hand = $state(untrack(() => handed)), sort = $state(untrack(() => ordered))
+  let hands = $state(opened?.hands ?? null), works = $state(opened?.works ?? [])
   let items = $state(opened?.items ?? []), total = $state(opened?.total ?? null), more = $state(opened?.more ?? false)
   let offset = $state(opened?.next_offset ?? 0), vertical = $state(opened?.vertical ?? true), size = $state(opened?.size ?? 2)
   let loading = $state(!opened), error = $state(''), ended = $state(false), requestId = 0
@@ -31,11 +31,11 @@
     const id = ++requestId
     loading = true; error = ''
     try {
-      const page = await runOccurrences(text, { work, style, sort, offset: append ? offset : 0 })
+      const page = await runOccurrences(text, { work, hand, sort, offset: append ? offset : 0 })
       if (id !== requestId) return
       items = append ? [...items, ...page.items] : page.items
       // Only the first page carries the count.
-      if (!append) { total = page.total; more = page.more; vertical = page.vertical; styles = page.styles; works = page.works; ended = false }
+      if (!append) { total = page.total; more = page.more; vertical = page.vertical; hands = page.hands; works = page.works; ended = false }
       // A page that reads no further ends the list, so a run whose rows went since its count stops asking.
       if (append && page.next_offset <= offset) ended = true
       offset = page.next_offset; size = page.size
@@ -45,8 +45,8 @@
   $effect(() => { if (!opened) untrack(() => load()) })
   // A choice reloads the page from its start and is kept in the address, so a copy of it shows the same.
   function choose(change) {
-    work = change.work ?? work; style = change.style ?? style; sort = change.sort ?? sort
-    replaceState(localize(runAddress(text, { work, style, sort })), {})
+    work = change.work ?? work; hand = change.hand ?? hand; sort = change.sort ?? sort
+    replaceState(localize(runAddress(text, { work, hand, sort })), {})
     load()
   }
   const near = $derived([
@@ -91,10 +91,10 @@
     <p><b class:vertical><ScriptText {text} /></b>{#if total !== null}<span>{more ? t('run.occurrences.more', { count: total }) : t('run.occurrences', { count: total })}</span>{/if}</p>
   </header>
   <div class="run-controls">
-    {#if styles}<StyleFilter counts={styles} value={style} onchange={value => choose({ style: value })} />{/if}
+    {#if hands}<HandFilter counts={hands} value={hand} onchange={value => choose({ hand: value })} />{/if}
     <div class="run-order">
       <nav class="orders" aria-label={t('run.order.label')}>
-        <button class:active={sort !== 'source'} aria-pressed={sort !== 'source'} onclick={() => choose({ sort: '' })}>{t('run.order.style')}</button>
+        <button class:active={sort !== 'source'} aria-pressed={sort !== 'source'} onclick={() => choose({ sort: '' })}>{t('run.order.hand')}</button>
         <button class:active={sort === 'source'} aria-pressed={sort === 'source'} onclick={() => choose({ sort: 'source' })}>{t('run.order.source')}</button>
       </nav>
       <WorkFilter {works} value={work} onchange={value => choose({ work: value })} />
@@ -105,7 +105,7 @@
       {#each near as [label, runs] (runs[0].text)}
         <div class="near-row"><span class="near-label">{label()}</span>
           <ul>{#each runs as run (run.text)}
-            <li><a href={localize(runAddress(run.text, { work, style, sort }))}><ScriptText text={run.text} />{#if run.n}<small>{number(run.n)}</small>{/if}</a></li>
+            <li><a href={localize(runAddress(run.text, { work, hand, sort }))}><ScriptText text={run.text} />{#if run.n}<small>{number(run.n)}</small>{/if}</a></li>
           {/each}</ul>
         </div>
       {/each}
