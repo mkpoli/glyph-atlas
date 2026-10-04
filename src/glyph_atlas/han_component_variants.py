@@ -4,10 +4,12 @@
 (`data/vocab/kanji-variants.tsv`). They differ in one component, 𧈧 against 虽, and inside it in one
 more, 厶 against 口, so the pair attests both substitutions. A substitution is kept once `THRESHOLD`
 distinct pairs attest it (`attest`, `kept`) and at least `AGREEMENT` of the pairs of characters it
-predicts are pairs the graph already gives (`agreeing`). Every character is then tried with each kept
-substitution at every depth of its decomposition (`derive`): a result that is another character's
-sequence is a derived variant of it, and one no character has is an unencoded form, written as its
-sequence. 嗚 (⿰口烏) gets 呜 through 烏→乌, and ⿰厶烏 through 口→厶.
+predicts are pairs the graph already gives (`agreeing`). Every character is then tried with up to
+`STEPS` substitutions, each in a part of its own, at every depth of its decomposition (`derive`): a
+result that is another character's sequence is a derived variant of it, and one no character has is
+an unencoded form, written as its sequence. 嗚 (⿰口烏) gets 呜 through 烏→乌, and ⿰厶烏 through 口→厶.
+The table a derivation reads may hold substitutions of other standing too (`refs` adds the editorial
+ones); the route each form came by says which it used.
 
 What feeds it is the build script's business: pairs the graph says may be written for each other
 (`refs.WRITTEN_FOR`, simplifications included: a gallery keeps those apart, an attestation does not),
@@ -423,7 +425,8 @@ def predictions(desc: Descriptions, items: Iterable[Attested],
     found: dict[tuple[str, str], set[tuple[str, str]]] = defaultdict(set)
     for form in derive(desc, equivalents(items), list(desc.raw) if chars is None else chars):
         if form.encoded:
-            found[ordered(form.was, form.became)].add(tuple(sorted((form.char, form.other), key=ord)))
+            (was, became, _), = form.route
+            found[ordered(was, became)].add(tuple(sorted((form.char, form.other), key=ord)))
     return found
 
 
@@ -451,16 +454,27 @@ def agreeing(items: Iterable[Attested], predicted: dict[tuple[str, str], set[tup
     return out
 
 
+#: How many substitutions one derived form may make at once, each in a part of its own: 疑 (⿰𠤕⿱龴疋,
+#: 𠤕 ⿱匕矢) takes 矢→失 inside 𠤕 and 龴→コ beside it. Agreement is measured on one substitution.
+STEPS = 2
+
+#: A substitution as made: what the character has, what the form has instead, and how deep it was
+#: made (1 for a part of the character's own sequence, 2 for a part of that part's sequence; 0 for the
+#: whole character).
+Step = tuple[str, str, int]
+
+
 @dataclass(frozen=True)
 class Derived:
-    """A character and a form one substitution makes of it: another character, or an unencoded form
-    written as its sequence (`encoded` false)."""
+    """A character and a form substitutions make of it: another character, or an unencoded form
+    written as its sequence (`encoded` false). `route` holds the substitutions made, each in a part
+    of its own, in the order of the parts; `sequence` is the form's description as derived."""
 
     char: str
     other: str
     encoded: bool
-    was: str
-    became: str
+    route: tuple[Step, ...]
+    sequence: str = ""
 
 
 def equivalents(kept: Iterable[Attested]) -> dict[str, set[str]]:
@@ -471,16 +485,19 @@ def equivalents(kept: Iterable[Attested]) -> dict[str, set[str]]:
     return table
 
 
-def derive(desc: Descriptions, table: dict[str, set[str]], chars: Iterable[str] | None = None) -> Iterator[Derived]:
-    """Each character of `chars` (all with a description when None) with one substitution of `table`
-    made at any depth: in the character itself, in a part, or in a part of a part's own sequence.
-    A form no character has comes only from the character's own descriptions (`Descriptions.own`),
-    so a flattened reading never writes a second spelling of the same form, and a result of one
-    character that no sequence spells is left out."""
-    made = _Maker(desc, table)
+def derive(desc: Descriptions, table: dict[str, set[str]], chars: Iterable[str] | None = None,
+           steps: int = 1, made: Maker | None = None) -> Iterator[Derived]:
+    """Each character of `chars` (all with a description when None) with up to `steps` substitutions
+    of `table`, each made in a part of its own at any depth: in the character itself, in a part, or
+    in a part of a part's own sequence. A form no character has comes only from the character's own
+    descriptions (`Descriptions.own`), so a flattened reading never writes a second spelling of the
+    same form, and a result of one character that no sequence spells is left out. A form reached by
+    several routes comes once per route. A `made` kept across calls (with the same `desc`, `table`
+    and `steps`) keeps what each part becomes, so a run over every character works each part once."""
+    made = made or Maker(desc, table, steps)
     for char in desc.trees if chars is None else chars:
-        seen: set[tuple[str, str, str]] = set()
-        for was, became, tree, own in made.whole(char):
+        seen: set[tuple[str, frozenset[Step]]] = set()
+        for route, tree, own in made.whole(char):
             key = text(tree)
             found = desc.characters(tree)
             others = found - {char}
@@ -491,45 +508,54 @@ def derive(desc: Descriptions, table: dict[str, set[str]], chars: Iterable[str] 
             else:
                 others, encoded = {key}, False
             for other in others:
-                if (other, was, became) not in seen:
-                    seen.add((other, was, became))
-                    yield Derived(char, other, encoded, was, became)
+                if (other, frozenset(route)) not in seen:
+                    seen.add((other, frozenset(route)))
+                    yield Derived(char, other, encoded, route, key)
 
 
-class _Maker:
-    """The forms one substitution makes of a character, with what a part becomes kept per part: 睘
-    turns into the same forms in 還, 環 and 寰."""
+class Maker:
+    """The forms substitutions make of a character, with what a part becomes kept per part: 睘 turns
+    into the same forms in 還, 環 and 寰."""
 
-    def __init__(self, desc: Descriptions, table: dict[str, set[str]]):
-        self.desc, self.table = desc, table
-        self.parts: dict[tuple[str, int], list[tuple[str, str, Tree]]] = {}
+    def __init__(self, desc: Descriptions, table: dict[str, set[str]], steps: int = 1):
+        self.desc, self.table, self.steps = desc, table, steps
+        self.parts: dict[tuple[str, int, int], list[tuple[tuple[Step, ...], Tree]]] = {}
 
-    def whole(self, char: str) -> Iterator[tuple[str, str, Tree, bool]]:
-        """Each form of `char`, with whether it was made from one of the character's own trees."""
-        for became in self.table.get(char, ()):
-            yield char, became, self.desc.whole(parse(became)), True
+    def whole(self, char: str) -> Iterator[tuple[tuple[Step, ...], Tree, bool]]:
+        """Each form of `char` with its route, and whether it was made from one of the character's
+        own trees."""
+        for became in sorted(self.table.get(char, ())):
+            yield ((char, became, 0),), self.desc.whole(parse(became)), True
         own = {text(tree) for tree in self.desc.own.get(char, ())}
         for tree in self.desc.trees.get(char, ()):
-            for was, became, replaced in self.replaced(tree, 0):
-                yield was, became, self.desc.whole(replaced), text(tree) in own
+            for route, replaced in self.replaced(tree, 0, self.steps):
+                yield route, self.desc.whole(replaced), text(tree) in own
 
-    def replaced(self, tree: Tree, depth: int) -> Iterator[tuple[str, str, Tree]]:
-        """`tree` with one substitution made in one of its parts, at any depth below it."""
+    def replaced(self, tree: Tree, depth: int, budget: int) -> list[tuple[tuple[Step, ...], Tree]]:
+        """`tree` with one to `budget` substitutions made, each in a different part, at any depth."""
         if isinstance(tree, str):
-            return
+            return []
         operator, parts = tree
-        for i, part in enumerate(parts):
-            for was, became, new in self.part(part, depth + 1):
-                yield was, became, (operator, (*parts[:i], new, *parts[i + 1:]))
+        combos: list[tuple[tuple[Step, ...], tuple[Tree, ...]]] = [((), ())]
+        for part in parts:
+            options = self.part(part, depth + 1, budget)
+            grown = []
+            for route, done in combos:
+                grown.append((route, (*done, part)))
+                room = budget - len(route)
+                grown += [((*route, *more), (*done, new)) for more, new in options if len(more) <= room]
+            combos = grown
+        return [(route, (operator, done)) for route, done in combos if route]
 
-    def part(self, part: Tree, depth: int) -> list[tuple[str, str, Tree]]:
-        """A part replaced whole, or with a substitution inside it or inside its own sequence."""
-        key = (text(part), depth)
+    def part(self, part: Tree, depth: int, budget: int) -> list[tuple[tuple[Step, ...], Tree]]:
+        """A part replaced whole, or with substitutions inside it or inside its own sequence."""
+        key = (text(part), depth, budget)
         if key in self.parts:
             return self.parts[key]
-        found = [(key[0], became, self.desc.part(parse(became))) for became in sorted(self.table.get(key[0], ()))]
+        found = [(((key[0], became, depth),), self.desc.part(parse(became)))
+                 for became in sorted(self.table.get(key[0], ()))]
         if depth < DEPTH:
             for inner in self.desc.expansions(part):
-                found += [(was, became, self.desc.part(new)) for was, became, new in self.replaced(inner, depth)]
+                found += [(route, self.desc.part(new)) for route, new in self.replaced(inner, depth, budget)]
         self.parts[key] = found
         return found
