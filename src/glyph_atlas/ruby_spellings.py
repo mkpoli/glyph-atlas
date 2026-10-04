@@ -47,9 +47,11 @@ from .importers import honkoku_data
 from .rare_chars import DOCUMENT_ROLES, _lines, is_han
 from .refs import to_hiragana
 
-#: Readings counted when none are named: three grammatical words, and the two of them written
-#: without their dakuten.
-WORDS = ("ばかり", "はかり", "など", "なと", "のみ")
+#: Readings counted when none are named: the words of data/vocab/words.tsv in historical kana, and the
+#: forms transcribers also type for them: without the dakuten (はかり, なと, まて), in modern kana
+#: (すなわち, なお), and なを, the spelling of なほ common in Edo-period writing.
+WORDS = ("ばかり", "はかり", "など", "なと", "のみ", "さて", "まで", "まて", "およそ", "すなはち", "すなわち",
+         "なほ", "なを", "なお", "ほか")
 #: Example locations kept per row, each from a different entry.
 EXAMPLES = 5
 #: Roles of a ruby's base: the document text without what a 見せ消ち strikes out.

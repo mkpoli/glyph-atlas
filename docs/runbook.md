@@ -60,9 +60,10 @@ before a release can materialise HI Lab crops.
 Honkoku-Lines holds the line, its line box. Transcribers type modern forms, so the list is a review
 queue: a rare row can be a typing error, and a rare form on the page can hide under a common character.
 
-`atlas ruby-spellings` reads the same clone and writes `data/vocab/ruby-spellings.tsv`: for each of a
-few readings (ばかり, はかり, など, なと, のみ; `--word` names others), every spelling the transcribers'
-振り仮名 give it, counted by documents and occurrences, with one example location per entry. 斗（ばかり）
+`atlas ruby-spellings` reads the same clone and writes `data/vocab/ruby-spellings.tsv`: for each
+reading of `ruby_spellings.WORDS` (the words of `data/vocab/words.tsv` and the forms transcribers type
+for them; `--word` names others), every spelling the transcribers' 振り仮名 give it, counted by
+documents and occurrences, with one example location per entry. 斗（ばかり）
 is a transcriber's statement that this 斗 reads ばかり, so the table lists 計, 許 and 斗 under ばかり.
 A reading is a kana string, not a word: のみ also collects 飲 and 蚤.
 

@@ -7,8 +7,43 @@
 # source wiktionary-ja: Wiktionary 日本語版; CC-BY-SA-4.0 (https://ja.wiktionary.org/wiki/Wiktionary:著作権); Wiktionary 日本語版の執筆者 (revision in the locator). An open wiki, not a reviewed dictionary.
 # source kanjipedia: 漢字ペディア, 日本漢字能力検定協会 (https://www.kanjipedia.jp/), accessed 2026-10-04, archived at the locator; quoted, all rights reserved by the publisher. A modern dictionary's web edition, giving no period or dated example for a sense.
 # source chiebukuro-garan-2022: がらん, answer to 「「斗」はなんと読みますか？」, Yahoo!知恵袋, 2022-05-15 (https://detail.chiebukuro.yahoo.co.jp/qa/question_detail/q13261788763, archived https://web.archive.org/web/20261004062928/https://detail.chiebukuro.yahoo.co.jp/qa/question_detail/q13261788763). An anonymous forum answer chosen as best by the asker, citing no source.
-# source honkoku-ruby: 振り仮名 of the みんなで翻刻 transcriptions, counted in data/vocab/ruby-spellings.tsv (みんなで翻刻（https://honkoku.org/）翻刻データ, CC BY-SA 4.0, revision be63dc2); crowd transcriptions with 1.5 errors or spelling inconsistencies per 100 characters in an expert audit, transcribers are asked to type modern forms, and the markup guide does not say whether a 振り仮名 is on the page. Only spellings that table attests in at least two documents are listed. The statement is the project's: the spelling with the reading the table keys it by, which the locator names; the forms as typed are in that table's `ruby` column. Readings without their dakuten are included for など (なと) and left out for ばかり (はかり), which also spells the verb はかる (計り, 量り).
+# source honkoku-ruby: 振り仮名 of the みんなで翻刻 transcriptions, counted in data/vocab/ruby-spellings.tsv (みんなで翻刻（https://honkoku.org/）翻刻データ, CC BY-SA 4.0, revision be63dc2); crowd transcriptions with 1.5 errors or spelling inconsistencies per 100 characters in an expert audit, transcribers are asked to type modern forms, and the markup guide does not say whether a 振り仮名 is on the page. Only spellings that table attests in at least two documents are listed. The statement is the project's: the spelling with the reading the table keys it by, which the locator names; the forms as typed are in that table's `ruby` column. Readings without their dakuten are included for など (なと) and まで (まて) and left out for ばかり (はかり), which also spells the verb はかる (計り, 量り); すなわち and なお, typed in modern kana, count for すなはち and なほ, and so does なを, an Edo-period spelling of なほ. Spellings of another word with the same reading are left out: 直, 治, 愈, 癒, 修 and 療 for なほす, 名 for 名を, 待, 蟶 and 馬刀 for まて. So are 他事 and 別 for ほか, each of whose documents are copies of one text; 却 for さて, which both documents read as half of 却説（さてまた）; and 麦介, which sits inside garbled 割書 markup. もつとも is not counted: Wiktionary gives 最も and 尤も as two words.
 word	spelling	tier	word_by	basis	related	source	statement	locator
+ja/およそ/副詞	凡	observed	reading			honkoku-ruby	凡（およそ）	ruby-spellings.tsv およそ 凡
+ja/およそ/副詞	凡	attested	reading			unihan-kjapanese	ボン ハン およそ すべて	U+51E1 kJapanese
+ja/およそ/副詞	凡	attested	source			wiktionary-ja	{{ja-adv}}【凡そ】	およそ, revision 2275840 (https://ja.wiktionary.org/w/index.php?oldid=2275840)
+ja/およそ/副詞	凢	observed	reading			honkoku-ruby	凢（およそ）	ruby-spellings.tsv およそ 凢
+ja/およそ/副詞	大約	observed	reading			honkoku-ruby	大約（およそ）	ruby-spellings.tsv およそ 大約
+ja/およそ/副詞	約	observed	reading			honkoku-ruby	約（およそ）	ruby-spellings.tsv およそ 約
+ja/さて/接続詞	偖	observed	reading			honkoku-ruby	偖（さて）	ruby-spellings.tsv さて 偖
+ja/さて/接続詞	偖	attested	reading			unihan-kjapanese	シャ さて	U+5056 kJapanese
+ja/さて/接続詞	偖	attested	source			wiktionary-ja	{{head|ja|conjunction}}【[[扠]], [[扨]], [[偖]]】	さて, revision 1741084 (https://ja.wiktionary.org/w/index.php?oldid=1741084)
+ja/さて/接続詞	扠	observed	reading			honkoku-ruby	扠（さて）	ruby-spellings.tsv さて 扠
+ja/さて/接続詞	扠	attested	reading			unihan-kjapanese	サ タイ サイ シャ テ セ さす さて やす	U+6260 kJapanese
+ja/さて/接続詞	扠	attested	source			wiktionary-ja	{{head|ja|conjunction}}【[[扠]], [[扨]], [[偖]]】	さて, revision 1741084 (https://ja.wiktionary.org/w/index.php?oldid=1741084)
+ja/さて/接続詞	扨	observed	reading			honkoku-ruby	扨（さて）	ruby-spellings.tsv さて 扨
+ja/さて/接続詞	扨	attested	reading			unihan-kjapanese	さて	U+6268 kJapanese
+ja/さて/接続詞	扨	attested	source			wiktionary-ja	{{head|ja|conjunction}}【[[扠]], [[扨]], [[偖]]】	さて, revision 1741084 (https://ja.wiktionary.org/w/index.php?oldid=1741084)
+ja/すなはち/接続詞	乃	observed	reading			honkoku-ruby	乃（すなはち）	ruby-spellings.tsv すなはち 乃
+ja/すなはち/接続詞	乃	attested	reading			unihan-kjapanese	ノ ダイ ナイ アイ すなわち の なんじ	U+4E43 kJapanese
+ja/すなはち/接続詞	乃	attested	source			wiktionary-ja	'''{{PAGENAME}}'''【[[即]]ち･[[則]]ち･[[乃]]ち・[[焉]]ち・焉】	すなわち, revision 1487124 (https://ja.wiktionary.org/w/index.php?oldid=1487124)
+ja/すなはち/接続詞	便	observed	reading			honkoku-ruby	便（すなはち）	ruby-spellings.tsv すなはち 便
+ja/すなはち/接続詞	便	attested	reading			unihan-kjapanese	ベン ビン ヘン たより すなわち	U+4FBF kJapanese
+ja/すなはち/接続詞	則	observed	reading			honkoku-ruby	則（すなはち）	ruby-spellings.tsv すなはち 則
+ja/すなはち/接続詞	則	observed	reading			honkoku-ruby	則（すなわち）	ruby-spellings.tsv すなわち 則
+ja/すなはち/接続詞	則	attested	reading			unihan-kjapanese	ソク すなわち のっとる のり	U+5247 kJapanese
+ja/すなはち/接続詞	則	attested	source			wiktionary-ja	'''{{PAGENAME}}'''【[[即]]ち･[[則]]ち･[[乃]]ち・[[焉]]ち・焉】	すなわち, revision 1487124 (https://ja.wiktionary.org/w/index.php?oldid=1487124)
+ja/すなはち/接続詞	即	observed	reading			honkoku-ruby	即（すなはち）	ruby-spellings.tsv すなはち 即
+ja/すなはち/接続詞	即	observed	reading			honkoku-ruby	即（すなわち）	ruby-spellings.tsv すなわち 即
+ja/すなはち/接続詞	即	attested	reading			unihan-kjapanese	ソク ショク すなわち つく	U+5373 kJapanese
+ja/すなはち/接続詞	即	attested	source			wiktionary-ja	'''{{PAGENAME}}'''【[[即]]ち･[[則]]ち･[[乃]]ち・[[焉]]ち・焉】	すなわち, revision 1487124 (https://ja.wiktionary.org/w/index.php?oldid=1487124)
+ja/すなはち/接続詞	廼	observed	reading			honkoku-ruby	廼（すなはち）	ruby-spellings.tsv すなはち 廼
+ja/すなはち/接続詞	廼	attested	reading			unihan-kjapanese	ノ ダイ ナイ すなわち	U+5EFC kJapanese
+ja/すなはち/接続詞	焉	attested	source			wiktionary-ja	'''{{PAGENAME}}'''【[[即]]ち･[[則]]ち･[[乃]]ち・[[焉]]ち・焉】	すなわち, revision 1487124 (https://ja.wiktionary.org/w/index.php?oldid=1487124)
+ja/すなはち/接続詞	輒	observed	reading			honkoku-ruby	輒（すなはち）	ruby-spellings.tsv すなはち 輒
+ja/すなはち/接続詞	輒	attested	reading			unihan-kjapanese	チョウ すなわち	U+8F12 kJapanese
+ja/すなはち/接続詞	輙	observed	reading			honkoku-ruby	輙（すなはち）	ruby-spellings.tsv すなはち 輙
+ja/すなはち/接続詞	輙	attested	reading			unihan-kjapanese	チョウ すなわち	U+8F19 kJapanese
 ja/など/副助詞	抔	observed	reading			honkoku-ruby	抔（なと）	ruby-spellings.tsv なと 抔
 ja/など/副助詞	抔	observed	reading			honkoku-ruby	抔（など）	ruby-spellings.tsv など 抔
 ja/など/副助詞	抔	attested	reading			kanjipedia	②など（等）。複数を示す語。	抔 (https://www.kanjipedia.jp/kanji/0006340300, archived https://web.archive.org/web/20261004063100/https://www.kanjipedia.jp/kanji/0006340300)
@@ -20,6 +55,19 @@ ja/など/副助詞	等	observed	reading			honkoku-ruby	等（なと）	ruby-spe
 ja/など/副助詞	等	observed	reading			honkoku-ruby	等（など）	ruby-spellings.tsv など 等
 ja/など/副助詞	等	attested	reading			unihan-kjapanese	トウ タイ ひとしい など ら	U+7B49 kJapanese
 ja/など/副助詞	等	attested	source			wiktionary-ja	【'''[[抔#助詞|抔]]・[[等#助詞|等]]'''】	など, revision 2321513 (https://ja.wiktionary.org/w/index.php?oldid=2321513)
+ja/なほ/副詞	仍	observed	reading			honkoku-ruby	仍（なほ）	ruby-spellings.tsv なほ 仍
+ja/なほ/副詞	仍	observed	reading			honkoku-ruby	仍（なを）	ruby-spellings.tsv なを 仍
+ja/なほ/副詞	仍	attested	reading			unihan-kjapanese	ジョウ なお よる	U+4ECD kJapanese
+ja/なほ/副詞	尚	observed	reading			honkoku-ruby	尚（なお）	ruby-spellings.tsv なお 尚
+ja/なほ/副詞	尚	observed	reading			honkoku-ruby	尚（なほ）	ruby-spellings.tsv なほ 尚
+ja/なほ/副詞	尚	observed	reading			honkoku-ruby	尚（なを）	ruby-spellings.tsv なを 尚
+ja/なほ/副詞	尚	attested	reading			unihan-kjapanese	ショウ くわえる こいねがう たかい たっとぶ なお ねがう ひさしい	U+5C1A kJapanese
+ja/なほ/副詞	尚	attested	source			wiktionary-ja	{{ja-adv|尚|猶}}	なお, revision 1963703 (https://ja.wiktionary.org/w/index.php?oldid=1963703)
+ja/なほ/副詞	猶	observed	reading			honkoku-ruby	猶（なお）	ruby-spellings.tsv なお 猶
+ja/なほ/副詞	猶	observed	reading			honkoku-ruby	猶（なほ）	ruby-spellings.tsv なほ 猶
+ja/なほ/副詞	猶	observed	reading			honkoku-ruby	猶（なを）	ruby-spellings.tsv なを 猶
+ja/なほ/副詞	猶	attested	reading			unihan-kjapanese	ユウ キュウ ヨウ なお	U+7336 kJapanese
+ja/なほ/副詞	猶	attested	source			wiktionary-ja	{{ja-adv|尚|猶}}	なお, revision 1963703 (https://ja.wiktionary.org/w/index.php?oldid=1963703)
 ja/のみ/副助詞	也已	attested	source			wiktionary-ja	{{ja-parti|耳|已|而已|而已矣|也已|爾}}	のみ, revision 2015613 (https://ja.wiktionary.org/w/index.php?oldid=2015613)
 ja/のみ/副助詞	尓	observed	reading			honkoku-ruby	尓（のみ）	ruby-spellings.tsv のみ 尓
 ja/のみ/副助詞	己	attested	reading			unihan-kjapanese	コ キ イ おのれ つちのと すでに やむ のみ	U+5DF1 kJapanese
@@ -50,3 +98,18 @@ ja/ばかり/副助詞	計	attested	source			wiktionary-ja	'''ばかり'''【[[�
 ja/ばかり/副助詞	許	observed	reading			honkoku-ruby	許（ばかり）	ruby-spellings.tsv ばかり 許
 ja/ばかり/副助詞	許	attested	reading			unihan-kjapanese	キョ コ ク ゆるす ばかり もと ゆるし	U+8A31 kJapanese
 ja/ばかり/副助詞	許	attested	source			wiktionary-ja	'''ばかり'''【[[許]]り・[[所]]り・[[可]]り・[[計]]り】（[[副助詞]]。	ばかり, revision 2291631 (https://ja.wiktionary.org/w/index.php?oldid=2291631)
+ja/ほか/名詞	他	observed	reading			honkoku-ruby	他（ほか）	ruby-spellings.tsv ほか 他
+ja/ほか/名詞	他	attested	reading			unihan-kjapanese	タ ほか	U+4ED6 kJapanese
+ja/ほか/名詞	他	attested	source			wiktionary-ja	{{ja-noun|他|外}}	ほか, revision 1986937 (https://ja.wiktionary.org/w/index.php?oldid=1986937)
+ja/ほか/名詞	佗	observed	reading			honkoku-ruby	佗（ほか）	ruby-spellings.tsv ほか 佗
+ja/ほか/名詞	佗	attested	reading			unihan-kjapanese	タ ダ イ ほか わびる	U+4F57 kJapanese
+ja/ほか/名詞	余	observed	reading			honkoku-ruby	余（ほか）	ruby-spellings.tsv ほか 余
+ja/ほか/名詞	外	observed	reading			honkoku-ruby	外（ほか）	ruby-spellings.tsv ほか 外
+ja/ほか/名詞	外	attested	reading			unihan-kjapanese	ガイ ゲ ウイ ガツ ガチ そと ほか はずす はずれる	U+5916 kJapanese
+ja/ほか/名詞	外	attested	source			wiktionary-ja	{{ja-noun|他|外}}	ほか, revision 1986937 (https://ja.wiktionary.org/w/index.php?oldid=1986937)
+ja/まで/副助詞	迄	observed	reading			honkoku-ruby	迄（まて）	ruby-spellings.tsv まて 迄
+ja/まで/副助詞	迄	observed	reading			honkoku-ruby	迄（まで）	ruby-spellings.tsv まで 迄
+ja/まで/副助詞	迄	attested	reading			unihan-kjapanese	キツ コチ まで いたる	U+8FC4 kJapanese
+ja/まで/副助詞	迄	attested	source			wiktionary-ja	{{ja-parti|迄}}（{{タグ|ja|副助詞}}	まで, revision 2336640 (https://ja.wiktionary.org/w/index.php?oldid=2336640)
+ja/まで/副助詞	迠	observed	reading			honkoku-ruby	迠（まて）	ruby-spellings.tsv まて 迠
+ja/まで/副助詞	迠	observed	reading			honkoku-ruby	迠（まで）	ruby-spellings.tsv まで 迠
