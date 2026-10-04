@@ -1360,8 +1360,8 @@ def _char_of_codepoint(cp: str | None) -> str | None:
     if not cp:
         return None
     try:
-        return chr(int(cp.removeprefix("U+"), 16))
-    except (ValueError, IndexError):
+        return "".join(chr(int(point.removeprefix("U+"), 16)) for point in cp.split()) or None
+    except (ValueError, IndexError, OverflowError):
         return None
 
 

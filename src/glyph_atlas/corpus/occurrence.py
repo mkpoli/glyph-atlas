@@ -251,7 +251,9 @@ def _canonical_document(document_id: str) -> str:
 
 
 def codepoint(char: str) -> str:
-    return f"U+{ord(char):04X}"
+    """`"か"` -> `"U+304B"`; a sequence is its code points joined by a space, as `refs.to_code_point` keys
+    it: a voiced hentaigana `"𛂞゙"` -> `"U+1B09E U+3099"`."""
+    return " ".join(f"U+{ord(one):04X}" for one in char)
 
 
 def _is_blank(ch: str) -> bool:
