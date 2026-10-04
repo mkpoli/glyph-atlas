@@ -902,5 +902,8 @@
   "line.skipped.other": "{count} vùng cắt đã thay đổi trong lúc đó nên được giữ nguyên.",
   "line.here": "{label}, vùng cắt này",
   "line.box": "{label}, chọn ô này",
-  "common.cancel": "Hủy"
+  "common.cancel": "Hủy",
+  "line.redraw": "Vẽ lại ô",
+  "line.redraw.pick": "Chọn vùng cắt cần vẽ lại ô.",
+  "line.noBox": "Không thể vẽ lại ô của vùng cắt này."
 }

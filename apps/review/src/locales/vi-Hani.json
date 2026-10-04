@@ -903,5 +903,8 @@
   "line.skipped.other": "{count}塳割㐌台對𥪝𣅶妬年特𡨹原。",
   "line.here": "{label}，塳割呢",
   "line.box": "{label}，𫾗烏呢",
-  "common.cancel": "毀"
+  "common.cancel": "毀",
+  "line.redraw": "𦘧吏烏",
+  "line.redraw.pick": "𫾗塳割勤𦘧吏烏。",
+  "line.noBox": "空體𦘧吏烏𧵑塳割呢。"
 }

@@ -901,5 +901,8 @@
   "line.skipped.other": "{count}개는 그 사이 바뀌어 그대로 두었습니다.",
   "line.here": "{label}, 현재 크롭",
   "line.box": "{label}, 이 칸 선택",
-  "common.cancel": "취소"
+  "common.cancel": "취소",
+  "line.redraw": "칸 다시 그리기",
+  "line.redraw.pick": "칸을 다시 그릴 크롭을 고르세요.",
+  "line.noBox": "이 크롭의 칸은 다시 그릴 수 없습니다."
 }

@@ -901,9 +901,9 @@
   "imageSearch.results.none": "切り出しが見つかりませんでした。",
   "imageSearch.megabytes": "{size} MB",
   "line.title": "この行",
-  "line.shift": "ラベルが隣の箱にある",
-  "line.pick": "この切り出しのラベルが付いている箱を選んでください（← → でも選べます）。",
-  "line.same": "その箱のラベルは同じです。",
+  "line.shift": "ラベルが隣の枠にある",
+  "line.pick": "この切り出しのラベルが付いている枠を選んでください（← → でも選べます）。",
+  "line.same": "その枠のラベルは同じです。",
   "line.preview.other": "{count}件のラベルを付け替えます。",
   "line.kept": "確認済みの切り出しはそのままです。",
   "line.start": "始点",
@@ -916,6 +916,9 @@
   "line.saved.other": "{count}件のラベルを付け替えました。",
   "line.skipped.other": "{count}件は途中で変更されていたため、そのままにしました。",
   "line.here": "{label}（この切り出し）",
-  "line.box": "{label}（この箱を選ぶ）",
-  "common.cancel": "キャンセル"
+  "line.box": "{label}（この枠を選ぶ）",
+  "common.cancel": "キャンセル",
+  "line.redraw": "枠を引き直す",
+  "line.redraw.pick": "枠を引き直す切り出しを選んでください。",
+  "line.noBox": "この切り出しの枠は引き直せません。"
 }

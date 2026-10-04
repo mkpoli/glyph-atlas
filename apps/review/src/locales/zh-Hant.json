@@ -920,5 +920,8 @@
   "line.skipped.other": "{count}個在這段期間已被修改，未作變動。",
   "line.here": "{label}，目前的裁切",
   "line.box": "{label}，選擇此框",
-  "common.cancel": "取消"
+  "common.cancel": "取消",
+  "line.redraw": "重畫框",
+  "line.redraw.pick": "請選擇要重畫框的裁切。",
+  "line.noBox": "該裁切的框無法重畫。"
 }

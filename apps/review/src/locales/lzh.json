@@ -919,5 +919,8 @@
   "line.skipped.other": "{count}中途已改，仍舊。",
   "line.here": "{label}，此截",
   "line.box": "{label}，擇此格",
-  "common.cancel": "止"
+  "common.cancel": "止",
+  "line.redraw": "改畫格",
+  "line.redraw.pick": "擇欲改畫其格之截。",
+  "line.noBox": "此截之格不可改畫。"
 }
