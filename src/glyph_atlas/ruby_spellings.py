@@ -16,9 +16,10 @@ What a row holds:
   A ruby nested inside another counts for both: `《振り仮名：孿（ふた）胎｜サンタイ》` gives 孿 for
   ふた and 孿胎 for サンタイ.
 - `reading` is the right-hand 振り仮名 with spaces removed and katakana mapped to hiragana; `ruby`
-  lists the forms as typed. A damage mark (■ □ 〓) stays in the reading, so の〓み is not のみ. A left-hand 振り仮名 (左訓) often glosses the meaning, so it is not read.
-  A reading written without its dakuten (はかり) is its own key: nothing here says it is the same
-  word.
+  lists the forms as typed, spaces kept, separated by ` / `. A damage mark (■ □ 〓) stays in the
+  reading, so の〓み is not のみ. A left-hand 振り仮名 (左訓) often glosses the meaning, so it is not
+  read. A reading written without its dakuten (はかり) is its own key: nothing here says it is the
+  same word.
 - `documents` counts entries. One entry can repeat a spelling on every page, so a spelling attested
   by many documents is a convention and one attested by a single document may be a scribe's habit.
 
@@ -68,17 +69,20 @@ class Spelling:
 
 
 def rubies(text: str) -> list[tuple[str, str]]:
-    """The `(base, right-hand reading)` of every 振り仮名 of a raw line, in document order.
+    """The `(base, right-hand reading as typed)` of every 振り仮名 of a raw line, in document order.
 
     The base is every document character inside the ruby, nested rubies included; the reading is the
-    right-hand ruby text whose innermost ruby is this one, with spaces left out.
+    right-hand ruby text whose innermost ruby is this one. A damage mark belongs to whichever field it
+    stands in.
     """
     if "（" not in text and "仮名" not in text:
         return []
     parsed = koji.parse(text)
-    order = [element.id for element in koji.walk(parsed.nodes) if element.kind == "ruby"]
-    if not order:
+    elements = [element for element in koji.walk(parsed.nodes) if element.kind == "ruby"]
+    if not elements:
         return []
+    order = [element.id for element in elements]
+    starts = {element.id: _reading_start(text, element) for element in elements}
     wanted = set(order)
     bases = {ruby: "" for ruby in order}
     readings = {ruby: "" for ruby in order}
@@ -86,14 +90,32 @@ def rubies(text: str) -> list[tuple[str, str]]:
         mine = [node for node in char.path if node in wanted]
         if not mine:
             continue
-        if char.role in DAMAGE_ROLES and readings[mine[-1]]:
+        if char.role == "ruby" or (char.role in DAMAGE_ROLES and char.start >= starts[mine[-1]]):
             readings[mine[-1]] += char.text
         elif char.role in BASE_ROLES or char.role in DAMAGE_ROLES:
             for ruby in mine:
                 bases[ruby] += char.text
-        elif char.role == "ruby" and not char.text.isspace():
-            readings[mine[-1]] += char.text
     return [(bases[ruby], readings[ruby]) for ruby in order]
+
+
+def _reading_start(text: str, element: koji.Element) -> int:
+    """Where the reading field of a ruby element begins in the raw line.
+
+    In `base（reading）` it follows the `（`, which a base never holds. In `《振り仮名：base｜reading》`
+    it follows the first `｜` outside the constructs nested in the base.
+    """
+    if element.attrs.get("form") == "legacy":
+        return text.index("（", element.start) + 1
+    depth = 0
+    for at in range(text.index("：", element.start) + 1, element.end):
+        char = text[at]
+        if char in "《（":
+            depth += 1
+        elif char in "》）":
+            depth -= 1
+        elif char in "｜|" and depth == 0:
+            return at + 1
+    return element.end
 
 
 def _count_entry(job: tuple[str, str, str, tuple[str, ...]]) -> list[tuple[str, str, str, int, int]]:
@@ -104,7 +126,7 @@ def _count_entry(job: tuple[str, str, str, tuple[str, ...]]) -> list[tuple[str, 
     for page, path in honkoku_data.page_files(Path(root) / "v3" / project / entry):
         for number, text in enumerate(_lines(path), 1):
             for base, ruby in rubies(text):
-                reading = to_hiragana(ruby)
+                reading = to_hiragana("".join(ruby.split()))
                 if reading in wanted and any(is_han(char) for char in base):
                     found.append((reading, base, ruby, page, number))
     return found
@@ -142,7 +164,7 @@ def rows(spellings: dict[tuple[str, str], Spelling]) -> list[dict]:
         "documents": len(found.entries),
         "occurrences": found.occurrences,
         "projects": len(found.projects),
-        "ruby": " ".join(ruby for ruby, _ in found.ruby.most_common()),
+        "ruby": " / ".join(ruby for ruby, _ in found.ruby.most_common()),
         "examples": " ".join(found.examples),
     } for (reading, base), found in ordered]
 

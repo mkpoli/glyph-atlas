@@ -34,7 +34,7 @@ def test_rubies_give_the_whole_base_and_the_right_hand_reading():
     assert ruby_spellings.rubies("千人 許（ばかり）") == [("許", "ばかり")]
     # An uncut run of kanji is the base the transcriber marked.
     assert ruby_spellings.rubies("借屋等（など）") == [("借屋等", "など")]
-    assert ruby_spellings.rubies("㗊（シウ　　ヨツコ　）") == [("㗊", "シウヨツコ")]
+    assert ruby_spellings.rubies("㗊（シウ　　ヨツコ　）") == [("㗊", "シウ　　ヨツコ　")]
     # A left-hand reading is not read.
     assert ruby_spellings.rubies("斗（と｜ばかり）") == [("斗", "と")]
     # A nested ruby counts for both.
@@ -74,4 +74,8 @@ def test_damage_marks_stay_and_struck_text_leaves_the_base():
     assert ruby_spellings.rubies("《振り仮名：《見せ消ち：斗｜計》｜ばかり》") == [("計", "ばかり")]
     assert ruby_spellings.rubies("《迎え仮名：計｜ばかり》") == [("計", "ばかり")]
     # A padded reading keeps the whole base: the padding does not say how many characters it skips.
-    assert ruby_spellings.rubies("三尺斗（　　　ばかり）") == [("三尺斗", "ばかり")]
+    assert ruby_spellings.rubies("三尺斗（　　　ばかり）") == [("三尺斗", "　　　ばかり")]
+    # A damage mark at the head of a reading is in the reading.
+    assert ruby_spellings.rubies("計（〓ばかり）") == [("計", "〓ばかり")]
+    assert ruby_spellings.rubies("《振り仮名：〓計｜〓ばかり》") == [("〓計", "〓ばかり")]
+    assert ruby_spellings.rubies("《振り仮名：《見せ消ち：斗｜計》｜〓ばかり》") == [("計", "〓ばかり")]
