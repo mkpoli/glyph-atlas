@@ -9,6 +9,7 @@
   import { page } from '$app/state'
   import { t, formatNumber, localize } from '../lib/i18n.svelte.js'
   import { characterAddress } from '../lib/gallery.js'
+  import { runAddress } from '../lib/ngrams.js'
   import { originTitle } from '../lib/origin.js'
   let { card = null, expand = $bindable('none'), onselect = () => {}, onreview = null } = $props()
   const members = $derived(card?.grapheme?.members ?? [{code_point: card?.code_point, char: card?.char}])
@@ -43,6 +44,15 @@
   const derivedTitle = v => `${v.char} · ${t('chips.derived')}\n` + v.substitutions.map(s =>
     `${s.was} ↔ ${s.became} · ${s.count}\n` + s.pairs.map(p => `${p.a} ${p.b} ${p.sources.join(', ')}`).join('\n')).join('\n\n')
   const crops = v => (v.count ?? 0) + (v.corpus_count ?? 0)
+  // The words this character is cited as writing (decision 0004), each with the other spellings cited
+  // for it: characters that write the same word, kept out of the variant tiers and the widening. A card
+  // cached before the word tables existed has no `words`; it reads as none.
+  const words = $derived({ items: [], sources: {}, ...card?.words })
+  const TIERS = { attested: () => t('chips.tier.attested'), observed: () => t('chips.tier.observed'),
+    editorial: () => t('chips.tier.editorial') }
+  // One line per source: a 振り仮名 row names the reading it counts, since 抔 is counted under など and なと.
+  const spellingTitle = s => s.spelling + '\n' + s.sources.map(c => [c.ruby ? `${c.source} ${c.ruby}` : c.source,
+    TIERS[c.tier]?.() ?? c.tier, c.documents ? t('chips.documents', { count: c.documents }) : ''].filter(Boolean).join(' · ')).join('\n')
   // Outside the unified ideographs' main block a character may be missing from the reader's fonts or
   // look like another (a compatibility ideograph, a Kangxi radical), so it shows its code point too.
   const named = v => { const p = v.char.codePointAt(0); return !(p >= 0x4e00 && p <= 0x9fff) }
@@ -102,6 +112,23 @@
         <ul>{#each Object.entries(variants.sources) as [id, citation] (id)}<li><b>{id}</b> {citation}</li>{/each}</ul>
       </details>
     {/if}
+    {#each words.items as w, i (w.id)}
+      <div class="layer-row">
+        <span class="layer-label">{#if !i}{t('chips.words')}{/if}</span>
+        <div class="variant-chips">
+          <span class="word-reading" title={w.class}><ScriptText text={w.reading} titled={false} /></span>
+          {#each w.spellings.filter(s => !s.current) as s (s.spelling)}
+            <a class="variant" href={localize(s.code_point ? characterAddress(s.code_point) : runAddress(s.spelling))} title={spellingTitle(s)}><ScriptText text={s.spelling} titled={false} /></a>
+          {/each}
+        </div>
+      </div>
+    {/each}
+    {#if words.items.length}
+      <details class="variant-sources">
+        <summary>{t('chips.variantSources')}: {Object.keys(words.sources).join(' · ')}</summary>
+        <ul>{#each Object.entries(words.sources) as [id, citation] (id)}<li><b>{id}</b> {citation}</li>{/each}</ul>
+      </details>
+    {/if}
     <div class="layer-legend"><ScriptLegend /></div>
     <div class="layer-row forms-row">
       <span class="layer-label">{t('chips.forms')}</span>
@@ -149,6 +176,7 @@
   .variant.unencoded span[lang="zh"]{font-size:15px}
   .variant.unencoded:hover{border-color:var(--accent)}
   .variant small{font-size:11px;color:var(--muted)}
+  .word-reading{font-size:15px;align-self:center;margin-right:4px}
   .variant .code{font-family:"GenZui Sans",ui-monospace,monospace;font-size:10px}
   .include-variants{justify-self:start;margin-left:92px}
   @media(max-width:600px){.include-variants{margin-left:0}}

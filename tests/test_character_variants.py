@@ -70,8 +70,14 @@ def test_the_parts_fill_a_staging_table_and_only_the_last_swaps_it_in(tmp_path, 
     assert db.execute("SELECT count(*), sum(written), sum(widens) FROM character_variants").fetchone() == (
         want["edges"], want["written"], want["widens"])
     assert db.execute("SELECT written, widens FROM character_variants WHERE a='克' AND b='刻'").fetchone() == (0, 0)
-    for staging in (export.STAGING, export.SUBSTITUTIONS_STAGING, export.DERIVED_STAGING):
+    for staging in (export.STAGING, export.SUBSTITUTIONS_STAGING, export.DERIVED_STAGING, export.WORDS_STAGING,
+                    export.SPELLINGS_STAGING):
         assert db.execute("SELECT name FROM sqlite_master WHERE name=?", (staging,)).fetchone() is None
+    assert db.execute("SELECT count(*) FROM words").fetchone() == (want["words"],)
+    assert db.execute("SELECT count(*) FROM word_spellings").fetchone() == (want["spellings"],)
+    assert db.execute("SELECT documents FROM word_spellings WHERE spelling='斗' AND source='honkoku-ruby'").fetchone()[0] >= 2
+    assert db.execute("SELECT documents FROM word_spellings WHERE source='wiktionary-ja' LIMIT 1").fetchone() == (None,)
+    assert "honkoku-ruby" in db.execute("SELECT value FROM metadata WHERE key='word_sources'").fetchone()[0]
     cited = db.execute("SELECT value FROM metadata WHERE key='variant_sources'").fetchone()[0]
     assert "cjkvi-variants" in cited and "derived-ids" in cited
     assert db.execute("SELECT count(*) FROM component_variants").fetchone() == (want["substitutions"],)
@@ -109,3 +115,21 @@ def test_a_derived_form_joins_neither_the_widening_nor_the_attested_rows(monkeyp
     widened = set(characters.variant_code_points("U+5BF0"))
     assert not widened & {row["code_point"] for row in card["derived"] if row["code_point"]}
 
+
+
+def test_the_card_lists_the_words_a_character_writes():
+    card = characters.word_card("斗")
+    (word,) = card["items"]
+    assert (word["id"], word["reading"]) == ("ja/ばかり/副助詞", "ばかり")
+    spellings = [entry["spelling"] for entry in word["spellings"]]
+    assert {"計", "許", "斗"} <= set(spellings) and spellings[0] == "許", "most cited first"
+    assert [entry["current"] for entry in word["spellings"]].count(True) == 1
+    assert "chiebukuro-garan-2022" in card["sources"]
+    assert characters.word_card("盃") == {"items": [], "sources": {}}
+
+
+def test_a_spelling_counted_under_two_readings_names_each():
+    (word,) = characters.word_card("等")["items"]
+    (pou,) = [entry for entry in word["spellings"] if entry["spelling"] == "抔"]
+    assert {s["ruby"] for s in pou["sources"] if s["source"] == "honkoku-ruby"} == {"など", "なと"}
+    assert all(s["ruby"] is None for s in pou["sources"] if s["source"] != "honkoku-ruby")

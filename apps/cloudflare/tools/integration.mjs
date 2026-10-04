@@ -631,6 +631,28 @@ try {
   const derivedPlan = await plan({ sql: worker.derivedEdgesQuery(), values: [] }, ['仮'])
   assert.ok(derivedPlan.includes('SEARCH character_derived USING PRIMARY KEY (a=?)'), derivedPlan.join('; '))
   assert.ok(!derivedPlan.some(d => /TEMP B-TREE/.test(d)), derivedPlan.join('; '))
+  // A card lists the words a character is cited as writing (0064), each with every spelling cited for
+  // it, most cited first; the other spellings stay out of the variant tiers.
+  await db.batch([
+    db.prepare("INSERT INTO words VALUES('ja/ばかり/副助詞','ja','ばかり','副助詞')"),
+    db.prepare("INSERT INTO word_spellings VALUES('ja/ばかり/副助詞','仮','honkoku-ruby','ruby-spellings.tsv ばかり 仮','observed','editorial','','','仮（ばかり）',2,3)"),
+    db.prepare("INSERT INTO word_spellings VALUES('ja/ばかり/副助詞','計','honkoku-ruby','ruby-spellings.tsv ばかり 計','observed','editorial','','','計（ばかり）',48,114)"),
+    db.prepare("INSERT INTO word_spellings VALUES('ja/ばかり/副助詞','計','wiktionary-ja','ばかり, revision 2291631','attested','source','','','【計り】',NULL,NULL)"),
+    db.prepare("INSERT INTO word_spellings VALUES('ja/ばかり/副助詞','而已','honkoku-ruby','ruby-spellings.tsv ばかり 而已','observed','editorial','','','而已（ばかり）',2,3)"),
+    db.prepare(`INSERT OR REPLACE INTO metadata VALUES('word_sources','{"honkoku-ruby":"みんなで翻刻 振り仮名","wiktionary-ja":"Wiktionary 日本語版"}')`),
+    db.prepare("INSERT OR REPLACE INTO metadata VALUES('units_refreshed_at','\"words-test\"')"),
+  ])
+  const wordCard = await call('/layers/characters/U%2B4EEE')
+  assert.deepEqual(wordCard.words.items.map(w => [w.id, w.spellings.map(s => [s.spelling, s.code_point, s.current])]),
+    [['ja/ばかり/副助詞', [['計', 'U+8A08', false], ['仮', 'U+4EEE', true], ['而已', null, false]]]])
+  assert.deepEqual(wordCard.words.items[0].spellings[0].sources.map(s => [s.source, s.tier, s.ruby, s.documents]),
+    [['honkoku-ruby', 'observed', 'ばかり', 48], ['wiktionary-ja', 'attested', null, null]], 'a 振り仮名 row names the reading it counts')
+  assert.equal(wordCard.words.sources['wiktionary-ja'], 'Wiktionary 日本語版')
+  assert.ok(!wordCard.variants.items.concat(wordCard.variants.related).some(v => v.char === '計'), 'a shared word is no variant')
+  assert.deepEqual((await call('/layers/characters/U%2B5047')).words.items, [], 'a character no source cites writes no word')
+  const wordPlan = await plan({ sql: worker.wordSpellingsQuery(), values: [] }, ['仮'])
+  assert.ok(wordPlan.some(d => /word_spelling_spelling \(spelling=\?\)/.test(d)), wordPlan.join('; '))
+  assert.ok(!wordPlan.some(d => /^SCAN/.test(d)), wordPlan.join('; '))
   // A gallery widened to its variants deals a variant's crops with the character's own, and only then.
   const variantCrop = { id: 'variant-crop', label: '假', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
   await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind('variant-crop', 'local', '假', 'U+4EEE', null,
