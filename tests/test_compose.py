@@ -44,6 +44,18 @@ def test_a_counter_stays_with_the_outline_around_it() -> None:
     assert [sorted(map(id, p.contours)) for p in pieces] == [sorted([id(box), id(counter)]), [id(other)]]
 
 
+def test_contours_with_the_same_box_are_one_unit() -> None:
+    a, b = square(0, 0, 300, 300), square(0, 0, 300, 300, clockwise=True)
+    other = square(400, 0, 700, 300)
+    pieces = compose.split(Part([a, b, other]), 0, 2, stem=80)
+    assert [len(p.contours) for p in pieces] == [2, 1]
+
+
+def test_a_region_tag_of_any_form_is_read_off_a_sequence() -> None:
+    for tagged in ("⿻臼丨(G[B])", "⿰亻可(GHTJKPV)", "⿱艹化(UTC2003)"):
+        assert compose.REGIONS.match(tagged).group(1) == tagged.split("(")[0]
+
+
 def test_an_enclosed_operand_is_the_outline_deepest_inside_the_closed_sides() -> None:
     # ⿸: a 厂-like frame closing the left and the top, and a block inside it.
     frame = [square(0, 0, 100, 900), square(0, 800, 900, 900)]
@@ -105,6 +117,21 @@ def test_an_encoded_character_is_redrawn_close_to_its_glyph_without_itself(compo
         composer.exclude = set()
     real = compose.raster([Placed(glyph, glyph.box, glyph.box)], 96)
     assert (drawn & real).sum() / (drawn | real).sum() > 0.5
+
+
+def test_a_variation_sequence_draws_the_glyph_the_font_maps_it_to(composer: compose.Composer) -> None:
+    font = composer.font
+    assert font.has("葛\U000e0100") and font.glyph("葛\U000e0100").box != font.glyph("葛").box
+    assert not font.has("葛\U000e01ef")
+    assert len(composer.compose("⿰葛\U000e0100木")) == 2
+
+
+def test_characters_whose_sequences_name_each_other_end_in_lookup_error(composer: compose.Composer) -> None:
+    looped = compose.Composer(composer.font, {"\U000f0000": "⿰\U000f0001木", "\U000f0001": "⿱\U000f0000口"})
+    with pytest.raises(LookupError):
+        looped.compose("⿰\U000f0000口")
+    with pytest.raises(LookupError):
+        compose.Composer(composer.font, {"\U000f0000": "⿰木"}).compose("⿱\U000f0000口")
 
 
 def test_a_character_unicode_lacks_is_drawn_from_its_parts(composer: compose.Composer) -> None:

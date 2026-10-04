@@ -85,6 +85,11 @@ def font_file(cache: Path | None = None) -> Path:
 
 
 # ------------------------------------------------------------------ sequences
+def _selector(char: str) -> bool:
+    point = ord(char)
+    return 0xFE00 <= point <= 0xFE0F or 0xE0100 <= point <= 0xE01EF
+
+
 def parse(sequence: str) -> Node:
     """`⿰亻⿱亠女` as ('⿰', '亻', ('⿱', '亠', '女')); a character, with any variation selector, stands for itself."""
     chars = list(sequence)
@@ -98,7 +103,7 @@ def parse(sequence: str) -> Node:
         at += 1
         arity = 2 if char in BINARY else 3 if char in TERNARY else 1 if char in UNARY else 0
         if not arity:
-            if at < len(chars) and 0xFE00 <= ord(chars[at]) <= 0xFE0F:
+            if at < len(chars) and _selector(chars[at]):
                 char += chars[at]
                 at += 1
             return char
@@ -115,7 +120,8 @@ def key(node: Node) -> str:
     return node if isinstance(node, str) else node[0] + "".join(key(n) for n in node[1:])
 
 
-REGIONS = re.compile(r"^(.*?)\(([A-Z]+)\)$")
+#: A sequence's source regions: (GJ), (G[B]) or (UTC2003).
+REGIONS = re.compile(r"^(.*?)\(([A-Z0-9\[\]]+)\)$")
 
 
 def japanese_sequences() -> dict[str, str]:
@@ -182,6 +188,9 @@ class Font:
     def __init__(self, path: Path):
         self.font = TTFont(path)
         self.cmap = self.font.getBestCmap()
+        # Ideographic variation sequences: (base, selector) → glyph name, None for the base's own glyph.
+        self.variants = {(base, selector): name for table in self.font["cmap"].tables if table.format == 14
+                         for selector, pairs in table.uvsDict.items() for base, name in pairs}
         self.light = self.font.getGlyphSet(location={"wght": 400})
         self.heavy = self.font.getGlyphSet(location={"wght": HEAVY})
         self._parts: dict[str, Part | None] = {}
@@ -193,14 +202,22 @@ class Font:
         heavy = np.concatenate([c.heavy for c in part.contours])
         return part.box[axis + 2] - part.box[axis], float(heavy[:, axis].max() - heavy[:, axis].min())
 
+    def _name(self, char: str) -> str | None:
+        """The glyph a character draws with, with a variation selector only as the font maps that sequence."""
+        if len(char) == 1:
+            return self.cmap.get(ord(char))
+        if len(char) == 2 and _selector(char[1]) and (ord(char[0]), ord(char[1])) in self.variants:
+            return self.variants[(ord(char[0]), ord(char[1]))] or self.cmap.get(ord(char[0]))
+        return None
+
     def has(self, char: str) -> bool:
-        return len(char) == 1 and ord(char) in self.cmap
+        return self._name(char) is not None
 
     def glyph(self, char: str) -> Part | None:
         if char not in self._parts:
             part = None
-            if self.has(char):
-                name = self.cmap[ord(char)]
+            name = self._name(char)
+            if name is not None:
                 light, heavy = RecordingPen(), RecordingPen()
                 self.light[name].draw(light)
                 self.heavy[name].draw(heavy)
@@ -213,8 +230,13 @@ class Font:
 # ------------------------------------------------------------------ cutting hosts
 def _units(contours: list[Contour]) -> list[list[Contour]]:
     """Contours grouped with those inside them: a counter goes with the smallest contour whose box holds it."""
+    order = {id(c): k for k, c in enumerate(contours)}
+    area = lambda c: (c.box[2] - c.box[0]) * (c.box[3] - c.box[1])
+
     def inside(a: Contour, b: Contour) -> bool:
-        return a is not b and a.box[0] >= b.box[0] and a.box[1] >= b.box[1] and a.box[2] <= b.box[2] and a.box[3] <= b.box[3]
+        # Of two contours with the same box, the earlier holds the later, so no two hold each other.
+        held = a.box[0] >= b.box[0] and a.box[1] >= b.box[1] and a.box[2] <= b.box[2] and a.box[3] <= b.box[3]
+        return held and (area(a) < area(b) or (area(a) == area(b) and order[id(b)] < order[id(a)]))
 
     owner = {}
     for c in contours:
@@ -323,6 +345,7 @@ class Composer:
     #: operand's own glyph is squeezed into its share, the plainest way to compose, for comparison.
     hosted: bool = True
     weighted: bool = True
+    _expanding: set[str] = field(default_factory=set, init=False, repr=False)
 
     @cached_property
     def by_sequence(self) -> dict[str, str]:
@@ -357,18 +380,20 @@ class Composer:
         boxes = [g.box for g in map(self.font.glyph, FULL) if g]
         return tuple(float(v) for v in np.median(np.array(boxes), axis=0))
 
-    def ink(self, node: Node, part: Part | None = None) -> float:
+    def ink(self, node: Node, part: Part | None = None, seen: frozenset[str] = frozenset()) -> float:
         """How much a part holds: its outlines' length, which grows with its strokes. An operand the
-        font has no glyph for is measured by its own sequence, else as 永."""
+        font has no glyph for is measured by its own sequence, else (or in a loop of sequences) as 永."""
         if part is None and isinstance(node, str):
             part = self.font.glyph(node)
-            if part is None and node in self.sequences:
+            if part is None and node in self.sequences and node not in seen:
                 try:
-                    return self.ink(parse(self.sequences[node]))
+                    return self.ink(parse(self.sequences[node]), seen=seen | {node})
                 except ValueError:
                     pass
         if part is None:
-            return sum(self.ink(n) for n in node[1:]) if isinstance(node, tuple) else self.ink("永")
+            if isinstance(node, tuple):
+                return sum(self.ink(n, seen=seen) for n in node[1:])
+            return self.ink("永")
         return sum(float(np.linalg.norm(np.diff(np.vstack([c.light, c.light[:1]]), axis=0), axis=1).sum())
                    for c in part.contours)
 
@@ -450,8 +475,17 @@ class Composer:
             glyph = self.font.glyph(whole)
             if glyph is not None:
                 return [self._weighted(glyph, glyph.box, region)]
-            if whole in self.sequences and whole not in self.exclude:
-                return self._node(parse(self.sequences[whole]), region)
+            if whole in self.sequences and whole not in self.exclude and whole not in self._expanding:
+                try:
+                    tree = parse(self.sequences[whole])
+                except ValueError as error:
+                    raise LookupError(f"{whole} has no glyph, and its sequence is malformed: {error}") from error
+                # A character whose sequence leads back to itself is not expanded again.
+                self._expanding.add(whole)
+                try:
+                    return self._node(tree, region)
+                finally:
+                    self._expanding.discard(whole)
             raise LookupError(f"No glyph or sequence draws {whole}.")
         op, children = node[0], list(node[1:])
         if op in ENCLOSE:
