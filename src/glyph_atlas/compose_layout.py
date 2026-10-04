@@ -1,7 +1,8 @@
 """Where a whole character's two operands go, learned from every character the font draws.
 
-Each drawn character whose sequence starts ⿰ or ⿱ and whose glyph cuts cleanly into its two
-operands (`Composer._host_node`) is one example: the operands' boxes in the em are the answer. The
+Each drawn character whose sequence starts with a two-operand operator (⿰ ⿱ and the enclosures)
+and whose glyph cuts cleanly into its operands (`Composer._host_node`) is one example: the operands'
+boxes in the em are the answer. The
 features of an operand are where the font usually puts it in that place (the mean and spread of its
 boxes over the other characters holding it there, and how many those are), and the shape of its
 own glyph (box, ink, proportions, outline count, and its ink on an 8 × 8 grid). A small network
@@ -24,11 +25,12 @@ import numpy as np
 
 from . import compose as C
 
-SLOT = {"⿰": "LR", "⿱": "TB"}
+#: The operators the layout is learned for, each an input of its own.
+OPS = ("⿰", "⿱", "⿸", "⿺", "⿵", "⿹", "⿶", "⿴", "⿷")
 FOLDS = 5
 SEEDS = 3
 #: The cached model's name; a change to the features or training makes a new one.
-LAYOUT_FILE = "compose-layout-v1.npz"
+LAYOUT_FILE = "compose-layout-v2.npz"
 #: Features per operand: 4 mean, 4 spread, count, outline count; 1 flag, 4 box, ink, proportions, 8 × 8 ink.
 SHAPE = 71
 
@@ -70,7 +72,7 @@ class Table:
         sums, squares, counts, by_place = {}, {}, {}, {}
         for r in rows:
             for i, kid in enumerate(r["kids"]):
-                k, box = (SLOT[r["op"]][i], kid), np.array(r["boxes"][i])
+                k, box = (C.slot(r["op"], i), kid), np.array(r["boxes"][i])
                 sums[k] = sums.get(k, 0) + box
                 squares[k] = squares.get(k, 0) + box ** 2
                 counts[k] = counts.get(k, 0) + 1
@@ -91,9 +93,9 @@ class Table:
 
 def features(composer: C.Composer, op: str, kids: list[str], table: Table, cache: dict,
              own: list[np.ndarray] | None = None) -> list[float]:
-    out = [1.0 if op == "⿰" else 0.0]
+    out = [1.0 if op == known else 0.0 for known in OPS]
     for i, kid in enumerate(kids):
-        mean, spread, n = table.usual(SLOT[op][i], kid, None if own is None else own[i])
+        mean, spread, n = table.usual(C.slot(op, i), kid, None if own is None else own[i])
         out += [*(mean / 1000), *(spread / 100), math.log1p(n) / 5, math.log1p(outlines(composer, kid)) / 3,
                 *shape(composer, kid, cache)]
     return out
@@ -111,6 +113,8 @@ class LayoutModel:
     weights: dict[str, list[list[np.ndarray]]]
     fold_of: dict[str, int]
     _shapes: dict | None = None
+    #: The operators it lays out.
+    ops: tuple[str, ...] = OPS
 
     def predict(self, composer: C.Composer, op: str, kids: list[str], char: str | None = None) -> list[tuple]:
         """Both operands' boxes in the em; `char`, being redrawn to test, is laid out by the model
@@ -160,13 +164,13 @@ class LayoutModel:
 
 
 def examples(composer: C.Composer, workers: int = 3) -> list[dict]:
-    """Every drawn character whose ⿰ or ⿱ sequence cuts cleanly: its operands and their boxes."""
+    """Every drawn character whose two-operand sequence (`OPS`) cuts cleanly: its operands and their boxes."""
     import multiprocessing as mp
 
     global _COMPOSER
     _COMPOSER = composer
     _ = composer._index
-    chars = sorted(ch for ch, seq in composer.sequences.items() if composer.font.has(ch) and seq[0] in SLOT)
+    chars = sorted(ch for ch, seq in composer.sequences.items() if composer.font.has(ch) and seq[0] in OPS)
     with mp.get_context("fork").Pool(workers) as pool:
         rows = [r for r in pool.imap_unordered(_example, chars, chunksize=64) if r]
     return sorted(rows, key=lambda r: r["c"])

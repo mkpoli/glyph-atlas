@@ -139,7 +139,7 @@ def learn(rows: str = "", workers: int = 3) -> None:
     if rows:
         with open(rows) as lines:
             examples = [json.loads(line) for line in lines]
-        examples = [r for r in examples if r["op"] in compose_layout.SLOT and len(r["kids"]) == 2]
+        examples = [r for r in examples if r["op"] in compose_layout.OPS and len(r["kids"]) == 2]
     else:
         examples = compose_layout.examples(composer, workers)
     model = compose_layout.train(composer, examples)

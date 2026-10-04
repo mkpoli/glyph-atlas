@@ -917,7 +917,7 @@ class Composer:
         instance = self._instance(node, region)
         if instance is not None:
             return [instance]
-        if at_root and self.hosted and self.layout is not None and op in ("⿰", "⿱") and len(children) == 2:
+        if at_root and self.hosted and self.layout is not None and op in self.layout.ops and len(children) == 2:
             return self._learned(op, children)
         if at_root and op in AXIS and self.hosted:
             transplanted = self._transplant(op, children)
@@ -969,7 +969,8 @@ class Composer:
 
     def _learned(self, op: str, children: list[Node]) -> list[Placed]:
         """A whole character's two operands in the boxes the learned layout gives them, each cut from
-        the host that fits its box best, or drawn into it."""
+        the host that fits its box best, or drawn into it; an enclosed one then fitted into its
+        enclosing part's opening."""
         tested = next(iter(self.exclude)) if len(self.exclude) == 1 else None
         boxes = self.layout.predict(self, op, [key(c) for c in children], tested)
         groups = []
@@ -981,7 +982,10 @@ class Composer:
             drawn, k = part
             source = drawn.pieces[k]
             groups.append([Placed(source, source.box, box, native=self.ink(drawn.char), origin=f"learned {drawn.char}")])
-        self._space(AXIS[op], groups)
+        if op in AXIS:
+            self._space(AXIS[op], groups)
+        else:
+            _fit_inside(groups[0], groups[1], self.face, self.font.stem[0][0])
         return [p for group in groups for p in group]
 
     def _transplant(self, op: str, children: list[Node]) -> list[Placed] | None:
