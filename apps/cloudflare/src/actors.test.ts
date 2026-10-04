@@ -51,21 +51,25 @@ describe('journal actors', () => {
     expect(pages).toEqual([['a4', 'b3', 'a3'], ['b2', 'a2', 'b1'], ['a1']]);
     db.close();
   });
-  it('read a user holding more ids than one statement binds in groups, merged into one order', async () => {
+  it('read a user holding more ids than one statement takes in groups, merged into one order', async () => {
     const { db, event } = migrated();
     const env = { DB: d1(db) } as unknown as Env;
-    // The Worker reads 64 ids to a statement (index.ts HISTORY_ARMS); a Worker module exports only handlers.
-    const ARMS = 64;
-    const held = Array.from({ length: ARMS + 2 }, (_, i) => `reviewer-${String(i).padStart(8, '0')}`);
+    // The Worker reads two ids to a statement (index.ts HISTORY_IDS); a Worker module exports only handlers.
+    const held = Array.from({ length: 7 }, (_, i) => `reviewer-${String(i).padStart(8, '0')}`);
     db.exec(`INSERT INTO actors VALUES ${held.map(a => `('${a}','u1','legacy','2026-10-01T00:00:00.000Z')`).join(',')}`);
-    // The two ids sorted last fall in the second group and wrote the newest row and one tied with the first group.
-    const minute = (i: number) => i >= ARMS ? 59 - 2 * (i - ARMS) : i % 59;
-    held.forEach((actor, i) => event(`h${String(i).padStart(2, '0')}`, actor, minute(i)));
-    const want = held.map((_, i) => i).sort((a, b) => minute(b) - minute(a) || b - a).map(i => `h${String(i).padStart(2, '0')}`);
-    expect(want.slice(0, 4)).toEqual(['h64', 'h58', 'h65', 'h57']);
-    const first: any = await history(env, new URLSearchParams('user=u1&limit=5'), null);
-    const second: any = await history(env, new URLSearchParams({ user: 'u1', limit: '5', before: first.next }), null);
-    expect([...first.items, ...second.items].map((i: any) => i.id)).toEqual(want.slice(0, 10));
+    // Ids in later groups wrote the newest rows, and two rows tie across groups.
+    const minute = [3, 10, 20, 7, 30, 20, 1];
+    held.forEach((actor, i) => event(`h${i}`, actor, minute[i]));
+    const want = held.map((_, i) => i).sort((a, b) => minute[b] - minute[a] || b - a).map(i => `h${i}`);
+    expect(want).toEqual(['h4', 'h5', 'h2', 'h1', 'h3', 'h0', 'h6']);
+    const pages: string[][] = [];
+    let before: string | null = null;
+    do {
+      const page: any = await history(env, new URLSearchParams({ user: 'u1', limit: '3', ...(before ? { before } : {}) }), null);
+      pages.push(page.items.map((i: any) => i.id));
+      before = page.next;
+    } while (before);
+    expect(pages.flat()).toEqual(want);
     db.close();
   });
   it('serve a user\'s page from event_actor_history without sorting what the ids ever wrote', () => {

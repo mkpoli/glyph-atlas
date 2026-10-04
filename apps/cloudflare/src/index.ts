@@ -1642,9 +1642,10 @@ export function historyQuery(actors: string[] | null, label: string | null, curs
     LEFT JOIN actors a ON a.actor=h.actor LEFT JOIN "user" u ON u.id=a.user_id ORDER BY h.at DESC,h.id DESC`;
   return { sql, values };
 }
-// D1 binds at most 100 parameters to a statement: a user holding more ids than one statement takes is
-// read in groups, each bounded by the LIMIT, and the groups' pages merged here.
-const HISTORY_ARMS = 64;
+// D1 takes at most five terms in a compound SELECT and each id is two arms (its reviews, its passed
+// rounds), so a user holding more ids than that is read two ids to a statement, in one batch, each
+// statement bounded by the LIMIT, and the statements' pages merged here.
+const HISTORY_IDS = 2;
 export function encodeCursor(at: string, id: string): string {
   return btoa(JSON.stringify([at, id]));
 }
@@ -1703,10 +1704,10 @@ export async function history(env: Env, q: URLSearchParams, me: string | null) {
   const label = q.get('label') ? text(q.get('label'), 32, 'label', true) : null;
   const before = q.get('before') ? decodeCursor(q.get('before')!) : null;
   const actors = user ? (await env.DB.prepare('SELECT actor FROM actors WHERE user_id=? ORDER BY actor').bind(user).all<{ actor: string }>()).results.map(r => r.actor) : null;
-  const groups = actors === null ? [null] : Array.from({ length: Math.ceil(actors.length / HISTORY_ARMS) }, (_, i) => actors.slice(i * HISTORY_ARMS, (i + 1) * HISTORY_ARMS));
-  const pages = await Promise.all(groups.map(group => {
+  const groups = actors === null ? [null] : Array.from({ length: Math.ceil(actors.length / HISTORY_IDS) }, (_, i) => actors.slice(i * HISTORY_IDS, (i + 1) * HISTORY_IDS));
+  const pages = await env.DB.batch<HistoryRow>(groups.map(group => {
     const { sql, values } = historyQuery(group, label, before);
-    return env.DB.prepare(sql).bind(...values, limit + 1).all<HistoryRow>();
+    return env.DB.prepare(sql).bind(...values, limit + 1);
   }));
   const rows = pages.flatMap(page => page.results);
   if (pages.length > 1) rows.sort((a, b) => a.at === b.at ? (a.id < b.id ? 1 : a.id > b.id ? -1 : 0) : a.at < b.at ? 1 : -1);

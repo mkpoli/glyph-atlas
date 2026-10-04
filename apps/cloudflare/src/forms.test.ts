@@ -67,7 +67,11 @@ export function d1(db: Database) {
     run: async () => ({ meta: { changes: db.query(sql).run(...(args as any[])).changes } }),
   });
   return {
-    prepare: (sql: string) => statement(sql),
+    // D1 refuses a compound SELECT of more than five terms (`too many terms in compound SELECT`).
+    prepare: (sql: string) => {
+      if ((sql.match(/\bUNION\b/gi) ?? []).length > 4) throw new Error('D1_ERROR: too many terms in compound SELECT: SQLITE_ERROR');
+      return statement(sql);
+    },
     batch: async (list: ReturnType<typeof statement>[]) => db.transaction(() => list.map(s => /^\s*SELECT/i.test(s.sql)
       ? { results: db.query(s.sql).all(...(s.args as any[])), meta: { changes: 0 } }
       : { results: [], meta: { changes: db.query(s.sql).run(...(s.args as any[])).changes } }))(),
