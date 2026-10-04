@@ -635,10 +635,10 @@ try {
   // it, most cited first; the other spellings stay out of the variant tiers.
   await db.batch([
     db.prepare("INSERT INTO words VALUES('ja/ばかり/副助詞','ja','ばかり','副助詞')"),
-    db.prepare("INSERT INTO word_spellings VALUES('ja/ばかり/副助詞','仮','honkoku-ruby','ruby-spellings.tsv ばかり 仮','observed','editorial','','','仮（ばかり）',2,3)"),
-    db.prepare("INSERT INTO word_spellings VALUES('ja/ばかり/副助詞','計','honkoku-ruby','ruby-spellings.tsv ばかり 計','observed','editorial','','','計（ばかり）',48,114)"),
+    db.prepare("INSERT INTO word_spellings VALUES('ja/ばかり/副助詞','仮','honkoku-ruby','ruby-spellings.tsv ばかり 仮','observed','reading','','','仮（ばかり）',2,3)"),
+    db.prepare("INSERT INTO word_spellings VALUES('ja/ばかり/副助詞','計','honkoku-ruby','ruby-spellings.tsv ばかり 計','observed','reading','','','計（ばかり）',48,114)"),
     db.prepare("INSERT INTO word_spellings VALUES('ja/ばかり/副助詞','計','wiktionary-ja','ばかり, revision 2291631','attested','source','','','【計り】',NULL,NULL)"),
-    db.prepare("INSERT INTO word_spellings VALUES('ja/ばかり/副助詞','而已','honkoku-ruby','ruby-spellings.tsv ばかり 而已','observed','editorial','','','而已（ばかり）',2,3)"),
+    db.prepare("INSERT INTO word_spellings VALUES('ja/ばかり/副助詞','而已','honkoku-ruby','ruby-spellings.tsv ばかり 而已','observed','reading','','','而已（ばかり）',2,3)"),
     db.prepare(`INSERT OR REPLACE INTO metadata VALUES('word_sources','{"honkoku-ruby":"みんなで翻刻 振り仮名","wiktionary-ja":"Wiktionary 日本語版"}')`),
     db.prepare("INSERT OR REPLACE INTO metadata VALUES('units_refreshed_at','\"words-test\"')"),
   ])

@@ -5,8 +5,8 @@ from __future__ import annotations
 from glyph_atlas import refs
 from glyph_atlas.rare_chars import is_han
 
-TIERS = {"attested", "observed", "editorial"}
-WORD_BY = {"source", "editorial"}
+TIERS = {"attested", "observed"}
+WORD_BY = {"source", "reading"}
 BASES = {"", "shape-confusion"}
 
 
