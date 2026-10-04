@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
 import { d1 } from './forms.test';
-import { FavouriteError, favouriteCrops, favouriteIds, setFavourite } from './favourites';
+import { FAVOURITES_HELD, FavouriteError, carryFavourites, favouriteCrops, favouriteIds, setFavourite } from './favourites';
 
 function setup() {
   const db = new Database(':memory:');
@@ -36,14 +36,36 @@ describe('favourites', () => {
     await expect(setFavourite(env, 'u1', { crop: 'a' })).rejects.toBeInstanceOf(FavouriteError);
     db.close();
   });
-  it('list a page newest first, a retired crop as its replacement', async () => {
+  it("list pages newest first, moving a retired crop's star to its replacement", async () => {
     const { db, env } = setup();
     const star = db.prepare('INSERT INTO favourites(user_id,unit,at) VALUES(?,?,?)');
     star.run('u1', 'a', '2026-10-01'); star.run('u1', 'old', '2026-10-02'); star.run('u1', 'k', '2026-10-03');
-    const page = await favouriteCrops(env, 'u1', 0, 2, itemsFor, async (_env, id) => id === 'old' ? 'b' : null);
-    expect(page.items.map(i => i.id)).toEqual(['k', 'b']);
-    expect([page.total, page.next]).toEqual([3, 2]);
-    expect((await favouriteCrops(env, 'u1', 2, 2, itemsFor, async () => null)).next).toBeNull();
+    const first = await favouriteCrops(env, 'u1', null, 2, itemsFor, async (_env, id) => id === 'old' ? 'b' : null);
+    expect(first.items.map(i => i.id)).toEqual(['k', 'b']);
+    expect([first.total, first.moved]).toEqual([3, true]);
+    expect((await favouriteIds(env, 'u1')).ids).toEqual(['k', 'b', 'a']);
+    // Taking a star away before the next page is read skips nothing.
+    await setFavourite(env, 'u1', { crop: 'k', favourite: false });
+    const second = await favouriteCrops(env, 'u1', first.next, 2, itemsFor, async () => null);
+    expect(second.items.map(i => i.id)).toEqual(['a']);
+    expect(second.next).toBeNull();
+    db.close();
+  });
+  it("hold each user to the limit, and carry an anonymous user's stars up to it", async () => {
+    const { db, env } = setup();
+    const star = db.prepare('INSERT INTO favourites(user_id,unit,at) VALUES(?,?,?)');
+    db.transaction(() => { for (let n = 0; n < FAVOURITES_HELD - 1; n++) star.run('u1', `x${n}`, '2026-01-01') })();
+    await setFavourite(env, 'u1', { crop: 'a', favourite: true });
+    await expect(setFavourite(env, 'u1', { crop: 'b', favourite: true })).rejects.toBeInstanceOf(FavouriteError);
+    await setFavourite(env, 'u1', { crop: 'a', favourite: true });
+    star.run('u2', 'b', '2026-10-02'); star.run('u2', 'a', '2026-10-01');
+    await carryFavourites(env, 'u2', 'u1');
+    expect((db.query("SELECT count(*) AS n FROM favourites WHERE user_id='u1'").get() as { n: number }).n).toBe(FAVOURITES_HELD);
+    expect(db.query("SELECT count(*) AS n FROM favourites WHERE user_id='u2'").get()).toEqual({ n: 0 });
+    db.exec("DELETE FROM favourites WHERE user_id='u1' AND unit LIKE 'x%'");
+    star.run('u2', 'b', '2026-10-02'); star.run('u2', 'k', '2026-10-01');
+    await carryFavourites(env, 'u2', 'u1');
+    expect((await favouriteIds(env, 'u1')).ids.sort()).toEqual(['a', 'b', 'k']);
     db.close();
   });
 });

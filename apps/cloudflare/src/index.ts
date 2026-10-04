@@ -2034,7 +2034,8 @@ const routes = {
         // A browser that has never signed in has starred nothing, and reading starts no session.
         const me=await viewer(env,request);
         if(path==='/api/favourites')return json(me?await favouriteIds(env,me.id):{ids:[]},200,{'cache-control':'private, no-store'});
-        return json(me?await favouriteCrops(env,me.id,integer(q,'offset',0),integer(q,'limit',60,60),itemsFor,replacement):{items:[],total:0,offset:0,next:null},200,{'cache-control':'private, no-store'});
+        try{return json(me?await favouriteCrops(env,me.id,q.get('after'),integer(q,'limit',60,60),itemsFor,replacement):{items:[],total:0,moved:false,next:null},200,{'cache-control':'private, no-store'})}
+        catch(error){if(error instanceof FavouriteError)throw new Problem(error.status,error.message);throw error}
       }
       if(path==='/api/account')return json({user:await viewer(env,request,true),providers:providers(env)});
       if(path==='/health')return json({ok:true,published_at:await meta(env,'published_at')});
