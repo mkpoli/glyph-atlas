@@ -46,6 +46,12 @@ from .han_components import BINARY, TERNARY, UNARY, read_rows
 FONT_URL = "https://github.com/notofonts/noto-cjk/raw/Sans2.004/Sans/Variable/TTF/NotoSansCJKjp-VF.ttf"
 FONT_SHA256 = "240c9b83bf7b386edbae39995ae7e068ed4583f484d92e4a74c34158b5f27b1a"
 FONT_FILE = "NotoSansCJKjp-VF-2.004.ttf"
+#: Plangothic P1 and P2 (SIL OFL 1.1), static, drawing the CJK extensions in the Source Han Sans
+#: design Noto Sans CJK shares: the source of components Noto lacks (𦒱, 𡉵). Pinned as
+#: `scripts/build_vi_hani.py` pins them.
+PLANGOTHIC_URL = "https://github.com/Fitzgerald-Porthmouth-Koenigsegg/Plangothic-Project/releases/download/V2.9.5795"
+PLANGOTHIC = {"PlangothicP1-Regular.ttf": "550b5d0775b15405946b18f4843df439a51e69508d7e6778d94c1f7a53dc5ad6",
+              "PlangothicP2-Regular.ttf": "681933370adfe0fc7253f77735275a82fea09fe4f8adba907bdeb46c110daf8f"}
 EM = 1000
 #: The em's top in the font's units: an SVG path is drawn from here down.
 ASCENT = 880
@@ -69,20 +75,29 @@ Node = str | tuple
 Box = tuple[float, float, float, float]
 
 
-def font_file(cache: Path | None = None) -> Path:
-    """The composer's font under `<cache>/fonts`, fetched and checked against its SHA-256 when missing."""
+def _fetched(name: str, url: str, sha256: str, cache: Path | None) -> Path:
     import httpx
 
     from .images import cache_root
 
-    path = (cache or cache_root()) / "fonts" / FONT_FILE
+    path = (cache or cache_root()) / "fonts" / name
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
-        data = httpx.get(FONT_URL, follow_redirects=True, timeout=600).content
-        if hashlib.sha256(data).hexdigest() != FONT_SHA256:
-            raise ValueError(f"{FONT_URL} does not match its pinned SHA-256.")
+        data = httpx.get(url, follow_redirects=True, timeout=600).content
+        if hashlib.sha256(data).hexdigest() != sha256:
+            raise ValueError(f"{url} does not match its pinned SHA-256.")
         path.write_bytes(data)
     return path
+
+
+def font_file(cache: Path | None = None) -> Path:
+    """The composer's font under `<cache>/fonts`, fetched and checked against its SHA-256 when missing."""
+    return _fetched(FONT_FILE, FONT_URL, FONT_SHA256, cache)
+
+
+def fallback_files(cache: Path | None = None) -> list[Path]:
+    """Plangothic P1 and P2 under `<cache>/fonts`, fetched and checked the same way."""
+    return [_fetched(name, f"{PLANGOTHIC_URL}/{name}", sha, cache) for name, sha in PLANGOTHIC.items()]
 
 
 # ------------------------------------------------------------------ sequences
@@ -196,10 +211,14 @@ class Part:
 
 
 class Font:
-    """A variable font with a `wght` axis, read at weight 400 and at `HEAVY`."""
+    """A variable font with a `wght` axis, read at weight 400 and at `HEAVY`, and static fonts that
+    draw what it lacks: a glyph from one of those has the same points at both weights, so it keeps
+    the weight it was drawn at."""
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, fallbacks: list[Path] = ()):
         self.font = TTFont(path)
+        fonts = [TTFont(f) for f in fallbacks]
+        self.fallbacks = [(font, font.getBestCmap(), font.getGlyphSet()) for font in fonts]
         self.cmap = self.font.getBestCmap()
         # Ideographic variation sequences: (base, selector) → glyph name, None for the base's own glyph.
         self.variants = {(base, selector): name for table in self.font["cmap"].tables if table.format == 14
@@ -224,12 +243,20 @@ class Font:
         return None
 
     def has(self, char: str) -> bool:
-        return self._name(char) is not None
+        return self._name(char) is not None or (len(char) == 1 and any(ord(char) in cmap for _, cmap, _ in self.fallbacks))
 
     def glyph(self, char: str) -> Part | None:
         if char not in self._parts:
             part = None
             name = self._name(char)
+            if name is None and len(char) == 1:
+                for _, cmap, glyphs in self.fallbacks:
+                    if ord(char) in cmap:
+                        pen = RecordingPen()
+                        glyphs[cmap[ord(char)]].draw(pen)
+                        contours = [Contour(ops, p, p.copy()) for ops, p in _contours(pen)]
+                        part = Part(contours) if contours else None
+                        break
             if name is not None:
                 light, heavy = RecordingPen(), RecordingPen()
                 self.light[name].draw(light)

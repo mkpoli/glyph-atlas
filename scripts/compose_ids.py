@@ -28,7 +28,7 @@ app = typer.Typer(add_completion=False)
 
 
 def _composer(**options) -> compose.Composer:
-    return compose.Composer(compose.Font(compose.font_file()), compose.japanese_sequences(), **options)
+    return compose.Composer(compose.Font(compose.font_file(), compose.fallback_files()), compose.japanese_sequences(), **options)
 
 
 @app.command()
