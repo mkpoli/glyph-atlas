@@ -5,7 +5,7 @@
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import { number } from '../lib/client.js'
   import { t, localize } from '../lib/i18n.svelte.js'
-  import { ngramAddress, ngramWords } from '../lib/ngrams.js'
+  import { runAddress, ngramWords } from '../lib/ngrams.js'
 
   // `work` is the work the counts are for; a run opens its occurrences in it.
   let { kind = 'pair', runs = null, failed = false, onretry = () => {}, work = '' } = $props()
@@ -21,7 +21,7 @@
 {:else}
   <ul class="category-options ngram-grid">
     {#each runs as run (run.text)}
-      <li><a href={localize(ngramAddress(kind, run.text, work))} aria-label={`${run.text} ${t('ngram.occurrences', { count: number(run.n) })}`}><span class="ngram-text" class:vertical={run.vertical}><ReferenceGlyph char={run.text} size="md" /></span><small>{number(run.n)}</small></a></li>
+      <li><a href={localize(runAddress(run.text, work))} aria-label={`${run.text} ${t('ngram.occurrences', { count: number(run.n) })}`}><span class="ngram-text" class:vertical={run.vertical}><ReferenceGlyph char={run.text} size="md" /></span><small>{number(run.n)}</small></a></li>
     {/each}
   </ul>
 {/if}
