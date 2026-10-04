@@ -51,7 +51,6 @@
   function pick(item) {
     if (busy || disabled || !shift) return
     if (shift.tool === 'blank') {
-      if (item.offset < 0) return
       const blanks = new Set(shift.blanks)
       if (!blanks.delete(item.offset)) blanks.add(item.offset)
       shift = { ...shift, blanks }; submission = null
@@ -73,7 +72,7 @@
   }
   const edit = (source, mode) => { const record = records[editing]; if (record) { shift = { ...shift, boxes: { ...shift.boxes, [editing]: fromEdit(record, source, mode) } }; submission = null } }
   function resetBox() { const { [editing]: _, ...boxes } = shift.boxes; shift = { ...shift, boxes }; submission = null }
-  const trim = (key, by) => { shift = { ...shift, [key]: Math.max(0, shift[key] + by) }; editing = null; submission = null }
+  const trim = (key, by) => { shift = { ...shift, [key]: shift[key] + by }; editing = null; submission = null }
   function keydown(event) {
     if (!shift || event.metaKey || event.ctrlKey || event.altKey) return
     if (event.key === 'Escape') { event.preventDefault(); stop() }
@@ -141,11 +140,11 @@
       <p class="line-hint" role="status">{#if shift.offset == null}{t('line.pick')}{:else if !count}{t('line.same')}{:else}{t('line.preview', { count })}{#if plan.steps.some(step => step.kept)} {t('line.kept')}{/if}{/if}</p>
       <div class="line-tools">
         <span class="line-trim"><span>{t('line.start')}</span>
-          <button type="button" aria-label={t('line.startEarlier')} disabled={busy || !plan || !shift.skip} onclick={() => trim('skip', -1)}>‹</button>
+          <button type="button" aria-label={t('line.startEarlier')} disabled={busy || !plan?.more.start} onclick={() => trim('skip', -1)}>‹</button>
           <button type="button" aria-label={t('line.startLater')} disabled={busy || !plan || plan.steps.length < 2} onclick={() => trim('skip', 1)}>›</button></span>
         <span class="line-trim"><span>{t('line.end')}</span>
           <button type="button" aria-label={t('line.endEarlier')} disabled={busy || !plan || plan.steps.length < 2} onclick={() => trim('cut', 1)}>‹</button>
-          <button type="button" aria-label={t('line.endLater')} disabled={busy || !plan || !shift.cut} onclick={() => trim('cut', -1)}>›</button></span>
+          <button type="button" aria-label={t('line.endLater')} disabled={busy || !plan?.more.end} onclick={() => trim('cut', -1)}>›</button></span>
         <button type="button" class="line-mark" aria-pressed={shift.tool === 'box'} disabled={busy || !plan} onclick={() => useTool('box')}>{t('line.redraw')}</button>
         <button type="button" class="line-mark blank" aria-pressed={shift.tool === 'blank'} disabled={busy || !plan} onclick={() => useTool('blank')}>{t('issue.blank.title')}</button>
       </div>
