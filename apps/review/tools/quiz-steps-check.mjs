@@ -200,7 +200,7 @@ try {
   await check('one context viewport pans the photo and shadow opening together', async () => {
     await browser.waitFor('document.querySelector(".crop-viewport")?.dataset.ready === "true"')
     assert(pagePhotoRequests === 0, 'review downloaded full manuscript pages before any pan or zoom')
-    assert(!await browser.evaluate('!!document.querySelector(".crop-context-image, .crop-context-outline, .crop-fallback")'), 'separate crop/context images remain')
+    assert(!await browser.evaluate('!!document.querySelector(".crop-context-image, .crop-context-outline, .crop-early")'), 'separate crop/context images remain')
     const bounds = () => browser.evaluate(`(() => {
       const mask = document.querySelector('.crop-mask'), photo = document.querySelector('.crop-plane')
       const box = mask.getBoundingClientRect(), image = photo.getBoundingClientRect(), style = getComputedStyle(mask)
@@ -244,7 +244,7 @@ try {
   })
   await check('a changed detail cannot supply context for the saved crop', async () => {
     await browser.waitFor('!!document.querySelector(".crop-only")')
-    assert(await browser.evaluate('!!document.querySelector(".crop-fallback img")'), 'standalone crop fallback missing')
+    assert(await browser.evaluate('!!document.querySelector(".crop-early")'), 'standalone crop fallback missing')
     assert(!await browser.evaluate('!!document.querySelector(".crop-plane, .crop-mask")'), 'mismatched revision displayed a context')
     assert(await browser.evaluate('document.querySelector(".reset-crop").disabled'), 'pan enabled for mismatched context')
     mismatchDetail = null
