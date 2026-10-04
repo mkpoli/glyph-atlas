@@ -8,6 +8,7 @@ naming it, and never its identity. A scheme says how the value is read:
 - `ids`: an Ideographic Description Sequence for a shape Unicode does not encode, kept exactly as
   written (⿺辶𦊷 is 辶 wrapped round 𦊷). Its operators are BabelStone's as `han_components` reads
   them, each with its own number of operands; its components are ideographs, radicals, strokes,
+  katakana letters standing for a component of that shape (コ in ⿱コ疋, which no ideograph writes),
   private-use characters, or ？ for a part no character names. A normalised IDS would only be a
   versioned search key, so none is made here.
 - `mj`: an MJ 文字図形名 (`MJ012345`), with the MJ文字情報一覧表 version it was read from when known.
@@ -38,6 +39,7 @@ LONGEST = 64
 #: Code points a description may name as a component. Planes 2 and 3 hold ideographs only.
 COMPONENTS = (
     (0x2E80, 0x2FDF),  # CJK radicals and Kangxi radicals
+    (0x30A1, 0x30FA),  # katakana letters, for a component of that shape (コ, マ)
     (0x31C0, 0x31EE),  # CJK strokes
     (0x3400, 0x4DBF),
     (0x4E00, 0x9FFF),

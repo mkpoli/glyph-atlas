@@ -9,7 +9,7 @@ import { commitPlan, planAction, planClaim, savedSubmission, submissionId, type 
 type Json = Record<string, any>;
 const PROBLEMS: Record<FormProblem | 'private', string> = {
   character: 'Write one character or an ideographic description sequence.',
-  component: 'A description is built from ideographs, radicals and strokes.',
+  component: 'A description is built from ideographs, radicals, strokes and katakana letters.',
   missing: 'This description is missing a component.',
   extra: 'This description has more components than its operators take.',
   private: 'A private-use character names nothing without the namespace of its mapping.',

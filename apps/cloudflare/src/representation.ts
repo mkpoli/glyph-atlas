@@ -2,13 +2,15 @@
 // What a picker takes is one character, a character with a variation selector (an IVS), or an
 // Ideographic Description Sequence for a shape Unicode does not encode (⿺辶𦊷 is 辶 wrapped round 𦊷).
 // Each of BabelStone's operators takes its own number of descriptions; a component is an ideograph, a
-// radical, a stroke, a private-use character, or ？ for a part no character names, and may carry a
-// variation selector. The review app checks what a reader types with the same code.
+// radical, a stroke, a katakana letter standing for a component of that shape (コ in ⿱コ疋, which no
+// ideograph writes), a private-use character, or ？ for a part no character names, and may carry a
+// variation selector. The review app checks what a reader types by the same rules (`lib/ids.js`).
 export const FORM_LONGEST = 64;
 const BINARY = new Set([...'⿰⿱⿴⿵⿶⿷⿸⿹⿺⿻⿼⿽㇯']), TERNARY = new Set([...'⿲⿳']), UNARY = new Set([...'⿾⿿〾']);
 const arity = (c: string) => BINARY.has(c) ? 2 : TERNARY.has(c) ? 3 : UNARY.has(c) ? 1 : 0;
-// Radicals, strokes, the ideograph blocks, private use and ？. Planes 2 and 3 hold ideographs only.
-const COMPONENTS: [number, number][] = [[0x2E80, 0x2FDF], [0x31C0, 0x31EE], [0x3400, 0x4DBF], [0x4E00, 0x9FFF],
+// Radicals, katakana letters, strokes, the ideograph blocks, private use and ？. Planes 2 and 3 hold
+// ideographs only.
+const COMPONENTS: [number, number][] = [[0x2E80, 0x2FDF], [0x30A1, 0x30FA], [0x31C0, 0x31EE], [0x3400, 0x4DBF], [0x4E00, 0x9FFF],
   [0xE000, 0xF8FF], [0xF900, 0xFAFF], [0xFF1F, 0xFF1F], [0x20000, 0x3FFFD], [0xF0000, 0x10FFFD]];
 const component = (c: string) => { const n = c.codePointAt(0)!; return COMPONENTS.some(([low, high]) => n >= low && n <= high) };
 const selector = (c: string | undefined) => c !== undefined && /^[︀-️\u{E0100}-\u{E01EF}]$/u.test(c);
