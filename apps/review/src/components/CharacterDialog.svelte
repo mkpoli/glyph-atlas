@@ -9,7 +9,7 @@
   import ZiLink from './ZiLink.svelte'
   import CopyId from './CopyId.svelte'
   import { onMount, untrack, tick } from 'svelte'
-  import { request, suggestionsFor } from '../lib/client.js'
+  import { character, request, suggestionsFor } from '../lib/client.js'
   import { readCrop } from '../lib/cropCache.js'
   import { decision, isSingle, offersSuggestions, greetSuggestions } from '../lib/issues.js'
   import { t } from '../lib/i18n.svelte.js'
@@ -18,6 +18,7 @@
   import { repairOf } from '../lib/cropDetails.js'
   import SimilarCrops from './SimilarCrops.svelte'
   import CropReview from './CropReview.svelte'
+  import LineStrip from './LineStrip.svelte'
   import AdvanceSwitch from './AdvanceSwitch.svelte'
   import { useSession } from '../lib/session.svelte.js'
   // `onskip` is supplied by the caller that owns the queue. The dialog never decides what "next"
@@ -276,6 +277,16 @@
     if (decided?.revision != null && decided.revision === data?.revision && result.id === data.id) inspector.remember(result.id, { ...decided, revision: result.revision })
     if (!closed && result.id === data?.id) data = result
   }
+  /** A line correction changed this crop and its neighbours: the lists behind the dialog hear of each, and this crop is read again. */
+  async function relined(result) {
+    const target = data.id
+    for (const { target_id } of result.results) if (target_id !== target) character(target_id, { wait: false }).then(record => changed?.(target_id, record), () => {})
+    const record = await readCrop(target)
+    if (closed || data?.id !== target) return
+    data = record; issue = null; correction = null; noneSelected = false; form = null; kept = null; submission = null
+    written = record.label ?? ''; writtenDirty = false
+    changed?.(target, record)
+  }
   /** Leave the editing, keeping the box, with the focus on what follows it. */
   async function endCrop() {
     editingBox = false
@@ -341,6 +352,7 @@
       <div class="inspector-right">
         <div class="inspector-production">{#if productionLabel(data)}<ProductionBadge item={data} />{/if}<StyleField item={data} editable={!onVerdict} disabled={busy || !fresh} working={value => busy = value} saved={styled} /></div>
         <div class="inspector-title"><CropTitle char={data.label} script={data.script} /><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{:else if repairOf(data)?.label === 'no-class'}<span class="repair-note" title={t('repair.reason.noClass')}>{t('repair.noClass')}</span>{/if}{#if data.box_pending}<span class="state-pill">{t('character.crop.pending')}</span>{:else if data.state === 'checked' || data.state === 'flagged'}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.state === 'checked' ? t('state.checked') : t('state.flagged')}</span>{/if}</div>
+        {#if !onVerdict}<LineStrip id={data.id} ready={fresh && loaded} disabled={busy || !fresh} working={value => busy = value} saved={relined} />{/if}
         {#snippet formBar()}{#if !onVerdict}<CropForm crop={data} chosen={form} onchoose={value => form = value} disabled={busy || !fresh} />{/if}{/snippet}
         <CropReview forms={formBar} {issue} onissue={chooseIssue} suggested={suggestedIssue} disabled={busy || !fresh} onskip={skip}
           targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={suggestions} loading={suggesting} contextResult={contextSuggestions} contextLoading={contextSuggesting} label={data.label} value={issue === 'character' ? written : correction} onchoose={chooseSuggestion} />
