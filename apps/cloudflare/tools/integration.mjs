@@ -1403,6 +1403,7 @@ try {
   await call(formPath, { ...formSave, form: '𮟃' }, 409)
   for (const form of ['⿺辶', '⿰木木木', '還還', 'a⿰', '⿰木a', ' '.repeat(3) + '⿰', '\uE000'])
     await call(formPath, { ...formSave, id: crypto.randomUUID(), form }, 422)
+  await call(formPath, { ...formSave, id: crypto.randomUUID(), review: 'not-a-review' }, 422)
   await call(formPath, { ...formSave, id: crypto.randomUUID(), crop_version: 'form-local@' + 'c'.repeat(64) + '@1,2,3,4' }, 409)
   const variant = await call(formPath, { ...formSave, id: crypto.randomUUID(), form: 'U+2E7C3' })
   assert.deepEqual([variant.form.values.map(v => [v.scheme, v.text]), variant.replaced], [[['unicode', '𮟃']], '⿺辶𦊷'],

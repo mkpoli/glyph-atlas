@@ -667,6 +667,8 @@ class FormEdit(BaseModel):
     client_id: str = Field(min_length=1, max_length=128)
     crop_version: str = Field(min_length=1, max_length=1024)
     form: str | None = Field(default=None, max_length=256)
+    #: The submission id of the review that renamed the crop as this form, when it did.
+    review: UUID | None = None
 
 
 def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
