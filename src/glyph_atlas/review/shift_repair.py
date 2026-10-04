@@ -127,7 +127,7 @@ def propose(blocks: dict[Any, list[tuple[str, int, str, str]]], shown: dict[str,
 
 
 def _shown(store, blocks, checkpoint: Path, offsets: tuple[int, ...] = OFFSETS,
-           unknown: float = FLOOR) -> dict[str, np.ndarray]:
+           unknown: float = 0.0) -> dict[str, np.ndarray]:
     """Classify every crop by the display image the dataset publishes, and keep, per offset of
     `offsets`, the probability that it shows the label at that offset: `FLOOR` where the block has no
     text there, and `unknown` where the classifier has no class for the label."""
