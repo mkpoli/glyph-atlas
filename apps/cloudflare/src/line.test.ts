@@ -74,6 +74,18 @@ describe('a line\'s correction', () => {
     expect(refused({ line: 'yes', character: 'き', crops: [crop('a')] })).toContain('line correction');
     expect(validBatch({ character: 'き', crops: [crop('a')] }).line).toBe(false);
   });
+  it('lets a crop carry its redrawn box beside its label, and never a blank or a one-character batch', () => {
+    const box = { x: 1, y: 2, w: 30, h: 40 };
+    const ok = validBatch({ line: true, crops: [crop('a', 'き', { box })] });
+    expect(ok.crops[0].box).toEqual(box);
+    const refused = (input: object) => { try { validBatch(input as any); return null } catch (e: any) { return e.message } };
+    expect(refused({ line: true, crops: [crop('a', undefined, { issue: 'blank', box })] })).toContain('cannot redraw');
+    expect(refused({ line: true, crops: [crop('a', 'き', { box: null })] })).toContain('cannot redraw');
+    expect(refused({ character: 'き', crops: [crop('a', undefined, { box })] })).toContain('cannot redraw');
+    const rows = new Map([row('a', 'も'), row('b', 'き')]);
+    const judged = judgeBatch({ character: null, line: true }, [crop('a', 'き', { box }), crop('b', 'き', { box })], rows as any);
+    expect(judged.chosen.map(c => [c.id, c.verdict, c.character, c.box])).toEqual([['a', 'wrong', 'き', box], ['b', 'match', undefined, box]]);
+  });
   it('writes the crops that stand, and reports the ones changed or checked meanwhile', () => {
     const rows = new Map([row('a', 'も'), row('b', 'き'), row('c', 'も', 'checked'), row('d', 'ぬ'), row('e', 'み', 'checked')]);
     const crops = [crop('a', 'き'), crop('b', 'き'), crop('c', 'ね'), { ...crop('d', 'ね'), revision: 3 }, crop('e', 'み')];

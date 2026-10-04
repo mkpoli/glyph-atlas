@@ -272,8 +272,9 @@ export function validBatch(input: Json): { character: string | null; line: boole
     throw new Problem(422, `A correction needs 1–${ROUND_MAX} distinct crops.`);
   for (const crop of crops) {
     text(crop?.id, 512, 'crop id', true);
-    // A batch names a character only; a crop is redrawn one at a time, in its own review.
-    if (crop.box !== undefined) throw new Problem(422, 'A correction of many crops cannot redraw one.');
+    // A batch names a character only; a crop is redrawn one at a time, in its own review. A line's crop may
+    // carry its redrawn box beside its character: the box is checked against the crop itself later.
+    if (crop.box !== undefined && (!line || crop.issue !== undefined || crop.box === null || typeof crop.box !== 'object')) throw new Problem(422, 'A correction of many crops cannot redraw one.');
     if (!line && (crop.character !== undefined || crop.issue !== undefined)) throw new Problem(422, 'Only a line correction names a character for each crop.');
     if (line) {
       if (crop.issue !== undefined && (crop.issue !== 'blank' || crop.character !== undefined)) throw new Problem(422, 'A box is marked as no character by itself.');
@@ -303,7 +304,7 @@ export function judgeBatch(batch: { character: string | null; line: boolean }, a
     const identity = glyph ? data.written_character : (data.written_character || data.label);
     if (identity === character) {
       if (data.state === 'checked') unchanged.push(crop.id);
-      else chosen.push({ id: crop.id, revision: crop.revision, image_sha256: crop.image_sha256, source_revision: crop.source_revision, verdict: 'match' });
+      else chosen.push({ id: crop.id, revision: crop.revision, image_sha256: crop.image_sha256, source_revision: crop.source_revision, verdict: 'match', ...(crop.box ? { box: crop.box } : {}) });
     } else if (data.state === 'checked') refused.push({ id: crop.id, reason: 'checked' });
     else chosen.push({ ...crop, verdict: 'wrong', issue: 'character', character });
   }
@@ -1350,7 +1351,7 @@ export function canonical(value: unknown): string {
   if(Array.isArray(value))return '['+value.map(canonical).join(',')+']';
   return '{'+Object.keys(value).sort().map(k=>JSON.stringify(k)+':'+canonical((value as Json)[k])).join(',')+'}';
 }
-function validateAnswer(answer: Json, current: Json, round: boolean, corpus=false, batch=false) {
+function validateAnswer(answer: Json, current: Json, round: boolean, corpus=false, batch=false, line=false) {
   if(!Number.isSafeInteger(answer.revision)||answer.revision!==current.revision)throw new Problem(409,'This character changed. Reload it.');
   if(corpus?answer.source_revision!==current.source_revision:answer.image_sha256!==current.image_sha256)throw new Problem(409,'The source image changed. Reload it.');
   if(!['match','wrong','unsure'].includes(answer.verdict))throw new Problem(422,'Choose a review decision.');
@@ -1366,10 +1367,12 @@ function validateAnswer(answer: Json, current: Json, round: boolean, corpus=fals
   if(answer.verdict==='wrong' && answer.character && literal(answer.character)===current.written_character)
     throw new Problem(422,'Choose a different character or a different issue.');
   if(answer.box!==undefined){
-    // A redrawn box is the crop's fix: saved as a match on the pixels it names, never in a round.
-    if(round||corpus||batch)throw new Problem(422,'This crop cannot be redrawn here.');
-    if(answer.verdict!=='match'||answer.issue!=null||answer.character||answer.correction)
-      throw new Problem(422,'A redrawn crop is saved as fixed.');
+    // A redrawn box is the crop's fix: saved as a match on the pixels it names, never in a round. A line's
+    // crop may also be relabelled in the same save.
+    if(round||corpus||(batch&&!line))throw new Problem(422,'This crop cannot be redrawn here.');
+    const fixed=answer.verdict==='match'&&answer.issue==null&&!answer.character&&!answer.correction;
+    const relabelled=line&&answer.verdict==='wrong'&&answer.issue==='character'&&answer.character&&!answer.correction;
+    if(!fixed&&!relabelled)throw new Problem(422,'A redrawn crop is saved as fixed.');
     answer.box=redrawnBox(answer.box,current);
   }
 }
@@ -1398,7 +1401,7 @@ async function submit(env: Env, request: Request, actor: string, target?: string
   const correction=batch?validBatch(input):null;
   const {answers,seen,skipped}=batch?{answers:correction!.crops,seen:[],skipped:[]}:validRound(input,target);
   // A redrawn box is held to the rate batch corrections are, by address.
-  if(answers.some(answer=>answer.box!==undefined)){
+  if(!batch&&answers.some(answer=>answer.box!==undefined)){
     const {success}=await env.CORRECTIONS.limit({key:request.headers.get('cf-connecting-ip')??'local'});
     if(!success)throw new Problem(429,'Too many corrections at once. Wait a minute and try again.');
   }
@@ -1430,7 +1433,7 @@ async function submit(env: Env, request: Request, actor: string, target?: string
     const row=found, stored=parse(row.data), glyph=row.origin==='corpus';
     const current:Json={...stored,category:row.category||categoryOf(stored.label)};
     row.data=JSON.stringify(current);
-    validateAnswer(answer,current,round,glyph,batch);
+    validateAnswer(answer,current,round,glyph,batch,Boolean(correction?.line));
     if(glyph&&(!current.proxyable||(current.identity_status==='unassigned'&&answer.verdict==='match')))
       throw new Problem(422,'Choose a written character or report an issue.');
     if(round&&(!row.quiz||!members!.includes(current.label)))throw new Problem(409,'This round changed. Reload it.');
