@@ -4,14 +4,16 @@
     uv run scripts/compose_ids.py bench                 # every compound jōyō kanji
     uv run scripts/compose_ids.py bench --chars all --sample 400
     uv run scripts/compose_ids.py calibrate
+    uv run --extra detector scripts/compose_ids.py learn
 
 `draw` writes one SVG. `bench` redraws encoded characters from their own sequences with nothing
 taken from the character itself, and scores each against the font's real glyph: the overlap of
 their ink (intersection over union, at 96 px; mean and tenth percentile), how many come out with
 their outline length within 15% of the real glyph's, and the ratio of their stroke widths (at
 400 px). Characters that cannot be drawn are counted and listed. It reports the composer beside the
-plainest way to compose, each operand's own glyph squeezed into its share, each scored on its own. `calibrate` fits `compose.STEM_CURVE`, stroke width against density,
-on the font's own ideographs.
+plainest way to compose, each operand's own glyph squeezed into its share, each scored on its own.
+`calibrate` fits `compose.STEM_CURVE`, stroke width against density, on the font's own ideographs.
+`learn` trains the layout `compose_layout` describes and caches it, for `draw` and `bench` to use.
 """
 
 from __future__ import annotations
@@ -22,13 +24,22 @@ import random
 import numpy as np
 import typer
 
-from glyph_atlas import compose
+from glyph_atlas import compose, compose_layout
+from glyph_atlas.images import cache_root
 
 app = typer.Typer(add_completion=False)
 
 
+def _layout_path():
+    return cache_root() / "compose" / compose_layout.LAYOUT_FILE
+
+
 def _composer(**options) -> compose.Composer:
-    return compose.Composer(compose.Font(compose.font_file(), compose.fallback_files()), compose.japanese_sequences(), **options)
+    """The composer, with the learned layout when `learn` has made it."""
+    composer = compose.Composer(compose.Font(compose.font_file(), compose.fallback_files()), compose.japanese_sequences(), **options)
+    if _layout_path().exists():
+        composer.layout = compose_layout.LayoutModel.load(_layout_path())
+    return composer
 
 
 @app.command()
@@ -117,6 +128,24 @@ def bench(chars: str = "joyo", sample: int = 0, seed: int = 3, size: int = 96) -
     report["composer"]["stroke_width_ratio"] = [round(float(np.nanmedian(np.array(widths)[:, axis])), 3) for axis in (0, 1)]
     report["composer"]["failed_characters"] = "".join(results["composer"]["failed"])
     print(json.dumps(report, ensure_ascii=False))
+
+
+@app.command()
+def learn(rows: str = "", workers: int = 3) -> None:
+    """Learn where a whole character's two operands go, from every character that cuts cleanly
+    (needs PyTorch). `rows` reuses examples saved by an earlier run, one JSON object per line."""
+    composer = _composer()
+    composer.layout = None
+    if rows:
+        with open(rows) as lines:
+            examples = [json.loads(line) for line in lines]
+        examples = [r for r in examples if r["op"] in compose_layout.SLOT and len(r["kids"]) == 2]
+    else:
+        examples = compose_layout.examples(composer, workers)
+    model = compose_layout.train(composer, examples)
+    _layout_path().parent.mkdir(parents=True, exist_ok=True)
+    model.save(_layout_path())
+    print(json.dumps({"examples": len(examples), "model": str(_layout_path())}))
 
 
 @app.command()
