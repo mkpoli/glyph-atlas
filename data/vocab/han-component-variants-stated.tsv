@@ -1,0 +1,7 @@
+# Component substitutions a source states outright, kept by hand; scripts/build_han_component_variants.py keeps each in han-component-variants.tsv with the statement as a pair of its own.
+# source mkpoli-2026-10-04: mkpoli (Glyph Atlas maintainer), instruction of 2026-10-04: 矢↔失, コ↔龴 and 匕↔上 are "common interchangeable components in manuscripts"; a statement without cited examples
+# columns: a, b, source
+a	b	source
+上	匕	mkpoli-2026-10-04
+コ	龴	mkpoli-2026-10-04
+失	矢	mkpoli-2026-10-04

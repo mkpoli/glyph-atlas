@@ -164,11 +164,24 @@ def test_a_substitution_whose_predictions_the_graph_mostly_does_not_state_is_not
     assert [(k.predicted, k.agreed) for k in kept] == [(3, 1)]
 
 
+STATED = Path("data/vocab/han-component-variants-stated.tsv")
+
+
+def stated_keys() -> set[tuple[str, str]]:
+    with STATED.open(encoding="utf-8") as handle:
+        return {(row["a"], row["b"]) for row in csv.DictReader((line for line in handle if not line.startswith("#")), delimiter="\t")}
+
+
 def test_the_committed_table_holds_only_what_the_threshold_and_the_agreement_keep():
     found = rows()
     assert len(found) > 1500
     assert found == sorted(found, key=lambda row: (row["a"], row["b"]))
+    stated = stated_keys()
     for row in found:
+        if (row["a"], row["b"]) in stated:
+            # A stated substitution is kept whatever the cut-offs; its statement is one of its pairs.
+            assert f"{row['a']}:{row['b']}=" in row["pairs"]
+            continue
         assert int(row["count"]) >= v.THRESHOLD
         assert int(row["agreed"]) >= v.AGREEMENT * int(row["predicted"]) > 0
         pairs = row["pairs"].split(" ")
@@ -336,3 +349,13 @@ def test_a_bracketed_letter_of_a_region_tag_is_no_region():
     assert v.regions("⿱⺈⿸⿻口丿乚(GHTKP[B])") == frozenset("GHTKP")
     assert v.regions("⿰口夂(G[B])") & v.regions("⿰厶夂(J[B])") == frozenset()
     assert v.regions("⿰口夂([G])") == v.regions("⿰口夂") == v.EVERYWHERE
+
+
+def test_a_stated_substitution_carries_the_statement_as_its_own_pair_beside_the_attesting_ones():
+    desc = descriptions({"㤛": ["⿰口堯"], "低": ["⿰厶堯"]})
+    found = v.attest(desc, sources(("㤛", "低")))
+    item = v.stated(found, "厶", "口", "someone")
+    assert ("厶", "口", ("someone",)) in item.pairs and ("㤛", "低", ("source",)) in item.pairs
+    assert item.count == 2 and len(item.contexts_of) == len(item.pairs)
+    alone = v.stated({}, "コ", "龴", "someone")
+    assert (alone.pairs, alone.count) == ((("コ", "龴", ("someone",)),), 1)

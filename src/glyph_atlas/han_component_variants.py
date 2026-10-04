@@ -8,8 +8,6 @@ predicts are pairs the graph already gives (`agreeing`). Every character is then
 `STEPS` substitutions, each in a part of its own, at every depth of its decomposition (`derive`): a
 result that is another character's sequence is a derived variant of it, and one no character has is
 an unencoded form, written as its sequence. 嗚 (⿰口烏) gets 呜 through 烏→乌, and ⿰厶烏 through 口→厶.
-The table a derivation reads may hold substitutions of other standing too (`refs` adds the editorial
-ones); the route each form came by says which it used.
 
 What feeds it is the build script's business: pairs the graph says may be written for each other
 (`refs.WRITTEN_FOR`, simplifications included: a gallery keeps those apart, an attestation does not),
@@ -406,6 +404,22 @@ def attest(desc: Descriptions, pairs: Iterable[tuple[str, str, Iterable[str]]]) 
     return out
 
 
+def stated(found: dict[tuple[str, str], Attested], a: str, b: str, source: str) -> Attested:
+    """The substitution `a`↔`b` as a source states it outright: whatever pairs the graph attests it
+    with, and the statement as a pair of its own (`a`:`b`, cited to `source`) in a context of its own.
+    A stated substitution predicts whatever the threshold and the agreement say of it."""
+    key = ordered(a, b)
+    item = found.get(key) or Attested(*key, (), ())
+    pair = tuple(sorted(key, key=ord))
+    own = (*pair, (source,))
+    pairs = sorted([*(p for p in item.pairs if p[:2] != pair), own], key=lambda p: (ord(p[0]), ord(p[1])))
+    contexts_of = dict(zip((p[:2] for p in item.pairs), item.contexts_of or [()] * len(item.pairs), strict=True))
+    context = "/".join(pair)
+    contexts_of[pair] = (*contexts_of.get(pair, ()), context)
+    return replace(item, pairs=tuple(pairs), contexts=tuple(sorted({*item.contexts, context})),
+                   contexts_of=tuple(tuple(sorted(set(contexts_of.get(p[:2], ())))) for p in pairs))
+
+
 def kept(found: dict[tuple[str, str], Attested]) -> list[Attested]:
     """What may predict: `THRESHOLD` distinct attesting pairs seen in `THRESHOLD` distinct contexts.
 
@@ -430,6 +444,16 @@ def predictions(desc: Descriptions, items: Iterable[Attested],
     return found
 
 
+def measured(item: Attested, predicted: dict[tuple[str, str], set[tuple[str, str]]],
+             written: set[tuple[str, str]]) -> Attested:
+    """`item` with how many pairs of encoded characters it predicts and how many of those the graph
+    gives as written, each attesting pair counted only where it is held out (see `agreeing`)."""
+    attesting = {(p, q): at for at, (p, q, _) in enumerate(item.pairs)}
+    counted = {pair for pair in predicted.get((item.a, item.b), set())
+               if pair not in attesting or item.held_out(attesting[pair])}
+    return replace(item, predicted=len(counted), agreed=len(counted & written))
+
+
 def agreeing(items: Iterable[Attested], predicted: dict[tuple[str, str], set[tuple[str, str]]],
              written: set[tuple[str, str]]) -> list[Attested]:
     """The substitutions at least `AGREEMENT` of whose predicted pairs are written pairs of the
@@ -445,12 +469,9 @@ def agreeing(items: Iterable[Attested], predicted: dict[tuple[str, str], set[tup
     is one of them."""
     out = []
     for item in items:
-        attesting = {(p, q): at for at, (p, q, _) in enumerate(item.pairs)}
-        counted = {pair for pair in predicted.get((item.a, item.b), set())
-                   if pair not in attesting or item.held_out(attesting[pair])}
-        agreed = counted & written
-        if counted and len(agreed) / len(counted) >= AGREEMENT:
-            out.append(replace(item, predicted=len(counted), agreed=len(agreed)))
+        item = measured(item, predicted, written)
+        if item.predicted and item.agreed / item.predicted >= AGREEMENT:
+            out.append(item)
     return out
 
 
