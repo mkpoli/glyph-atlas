@@ -347,6 +347,12 @@ STEM_CURVE = ((85.34, -1.324), (86.93, -1.914))
 SLOTS = {"⿰": "LR", "⿲": "LCR", "⿱": "TB", "⿳": "TMB"}
 #: The table's position names for a radical's positional form.
 FORM_POSITION = {"left": "L", "right": "R", "top": "T", "bottom": "B"}
+#: A piece's stroke count must be at least this share of its operand's most common count in that
+#: place (馬 on the left has 10 strokes in most hosts and 9 in many; 其 never 5), over the first
+#: `STROKE_HOSTS` hosts, once `STROKE_EVIDENCE` of them have been cut.
+STROKE_SHARE = 0.25
+STROKE_HOSTS = 60
+STROKE_EVIDENCE = 4
 #: Least number of Japanese characters that must write a positional form in a place for it to be used there.
 JAPANESE_USE = 3
 #: Most an operand may differ from the teacher's, in ink or in proportions, for the teacher's layout to hold.
@@ -455,6 +461,7 @@ class Composer:
     _expanding: set[str] = field(default_factory=set, init=False, repr=False)
     _inks: dict[str, float] = field(default_factory=dict, init=False, repr=False)
     _sketches: dict[str, Part | None] = field(default_factory=dict, init=False, repr=False)
+    _strokes: dict[tuple[str, str], Counter] = field(default_factory=dict, init=False, repr=False)
 
     @cached_property
     def by_sequence(self) -> dict[str, str]:
@@ -580,14 +587,19 @@ class Composer:
         a, b = _shape(part), _shape(own)
         return float((a & b).sum()) / max(float((a | b).sum()), 1.0)
 
-    def _cut(self, part: Part, node: tuple) -> tuple[list[Part], float] | None:
+    def _cut(self, part: Part, node: tuple, strict: bool = True) -> tuple[list[Part], float] | None:
         """`part`, drawn as `node`, cut into its operands with the mean gap between them; None when
-        no clean cut exists or a piece does not look like its operand."""
+        no clean cut exists or a piece does not look like its operand. Strictly, each piece must
+        also have as many strokes as that operand usually has in that place (`strokes`): the
+        variable font keeps each stroke an outline of its own, so a piece with a stroke too many
+        or too few took one from its neighbour or left one behind."""
         if node[0] not in AXIS and node[0] not in ENCLOSE:
             return None
         if node[0] in ENCLOSE:
             best = None
             for outer, inner in enclosures(part, node[0]):
+                if strict and not (self._counted(outer, node[0], 0, node[1]) and self._counted(inner, node[0], 1, node[2])):
+                    continue
                 a, b = self.likeness(outer, node[1]), self.likeness(inner, node[2])
                 if a >= LIKENESS and b >= LIKENESS and (best is None or a + b > best[0]):
                     best = (a + b, [outer, inner])
@@ -596,18 +608,43 @@ class Composer:
         pieces = split(part, axis, len(node) - 1)
         if pieces is None or any(self.likeness(p, n) < LIKENESS for p, n in zip(pieces, node[1:])):
             return None
+        if strict and not all(self._counted(p, node[0], i, n) for i, (p, n) in enumerate(zip(pieces, node[1:]))):
+            return None
         spans = sorted((p.box[axis], p.box[axis + 2]) for p in pieces)
         return pieces, float(np.mean([spans[k + 1][0] - spans[k][1] for k in range(len(spans) - 1)]))
 
-    def _host_node(self, char: str, tree: tuple, path: tuple) -> Host | None:
+    def _counted(self, piece: Part, op: str, index: int, node: Node) -> bool:
+        """Whether a piece has a number of strokes its operand commonly has in that place."""
+        if not isinstance(node, str):
+            return True
+        counts = self.strokes(slot(op, index), node)
+        if sum(counts.values()) < STROKE_EVIDENCE:
+            return True
+        common = max(counts.values())
+        return counts.get(len(piece.contours), 0) >= STROKE_SHARE * common
+
+    def strokes(self, place: str, operand: str) -> Counter:
+        """How many strokes (outlines) an operand's piece has, over the drawn characters holding it
+        in `place`, each cut without this check."""
+        if (place, operand) not in self._strokes:
+            hosts, _ = self._index
+            counts: Counter = Counter()
+            for char, tree, path, i in hosts.get((place, operand), [])[:STROKE_HOSTS]:
+                found = self._host_node(char, tree, path, strict=False)
+                if found is not None:
+                    counts[len(found.pieces[i].contours)] += 1
+            self._strokes[(place, operand)] = counts
+        return self._strokes[(place, operand)]
+
+    def _host_node(self, char: str, tree: tuple, path: tuple, strict: bool = True) -> Host | None:
         """The node `path` leads to in `char`, cut into its operands, level by level."""
         part, node = self.font.glyph(char), tree
         for step in path:
-            cut = self._cut(part, node)
+            cut = self._cut(part, node, strict)
             if cut is None:
                 return None
             part, node = cut[0][step], node[1 + step]
-        cut = self._cut(part, node)
+        cut = self._cut(part, node, strict)
         return None if cut is None else Host(char, cut[0], part.box, cut[1])
 
     def alternatives(self, node: Node, place: str) -> list[str]:
@@ -803,15 +840,15 @@ class Composer:
         if found is None:
             return self._shares(op, children, region)
         host, same = found
-        placed = []
+        groups: list[list[Placed]] = []
         for i, (child, piece) in enumerate(zip(children, host.pieces)):
             box = mapped(host.layout[i], (0, 0, 1, 1), region) if host.layout else mapped(piece.box, host.frame, region)
             if same[i]:
-                placed.append(Placed(piece, piece.box, box, native=self.ink(host.char), origin=f"teacher {host.char}"))
+                groups.append([Placed(piece, piece.box, box, native=self.ink(host.char), origin=f"teacher {host.char}")])
                 continue
             part = self._host(op, i, child, children[:i] + children[i + 1:], box)
             if part is None:
-                placed.extend(self._node(child, box))
+                groups.append(self._node(child, box))
                 continue
             drawn, k = part
             source = drawn.pieces[k]
@@ -826,8 +863,8 @@ class Composer:
                 target = tuple(target)
             else:
                 target = fitted(source.box, box)
-            placed.append(Placed(source, source.box, target, native=self.ink(drawn.char), origin=f"host {drawn.char}"))
-        return placed
+            groups.append([Placed(source, source.box, target, native=self.ink(drawn.char), origin=f"host {drawn.char}")])
+        return [p for group in groups for p in group]
 
     @staticmethod
     def _stretch(source: Box, target: Box) -> float:
