@@ -64,7 +64,7 @@
   </div>
   <header class="ngram-heading">
     <a class="quiet-link" href={localize(collectionAddress({ work }))}>← {t('nav.explore')}</a>
-    <p><b class:vertical><ScriptText {text} /></b>{#if total !== null}<span>{more ? t('ngram.occurrences.more', { count: number(total) }) : t('ngram.occurrences', { count: number(total) })}</span>{/if}</p>
+    <p><b class:vertical><ScriptText {text} /></b>{#if total !== null}<span>{more ? t('ngram.occurrences.more', { count: total }) : t('ngram.occurrences', { count: total })}</span>{/if}</p>
   </header>
   {#if error}<div class="error-message" role="alert">{error}<button onclick={() => load(items.length > 0)}>{t('common.tryAgain')}</button></div>{/if}
   <div class="ngram-grid" bind:this={grid} aria-busy={loading} style:--run-size={size}>
