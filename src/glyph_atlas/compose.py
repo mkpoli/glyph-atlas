@@ -131,13 +131,6 @@ def parse(sequence: str) -> Node:
     return tree
 
 
-def _stroked(node: Node) -> bool:
-    """Whether a sequence names a bare stroke (CJK Strokes, U+31C0–U+31EF) among its operands."""
-    if isinstance(node, str):
-        return 0x31C0 <= ord(node[0]) <= 0x31EF
-    return any(_stroked(n) for n in node[1:])
-
-
 def key(node: Node) -> str:
     """A node written out again as a sequence."""
     return node if isinstance(node, str) else node[0] + "".join(key(n) for n in node[1:])
@@ -400,6 +393,12 @@ SQUEEZE = 0.15
 #: operands weighted by `middle`. Fitted on the drawn characters of each operator that cut cleanly
 #: (56 ⿳, 72 ⿲): a stacked middle part is compressed, a centre column is not.
 SHARES = {("⿳", 3): (0.85, 0.75), ("⿲", 3): (0.5, 0.95)}
+#: For a transplant: how many hosts each operand is looked for in, how many cut cleanly are weighed,
+#: and how far, in font units, a pair of neighbours may stand from the gap their own hosts keep
+#: (ink-ratio mismatch of their siblings counted at 40 units per unit of log ratio).
+TRANSPLANT_HOSTS = 80
+TRANSPLANT_CANDIDATES = 20
+TRANSPLANT_TOLERANCE = 40.0
 #: Least number of Japanese characters that must write a positional form in a place for it to be used there.
 JAPANESE_USE = 3
 #: Most an operand may differ from the teacher's, in ink or in proportions, for the teacher's layout to hold.
@@ -879,7 +878,7 @@ class Composer:
             # parts come from characters that draw them in such a box (鮮 flat on top as ⿰魚羊).
             squeezed = glyph is not None and self.hosted and self._stretch(glyph.box, region) > STRETCH
             # A sequence of bare strokes (𠂊 as ⿱𠂆㇇) names no designed parts: the glyph stays.
-            if tree is not None and _stroked(tree):
+            if tree is not None and self.stroked(tree):
                 squeezed = False
             if glyph is not None and not (squeezed and tree is not None):
                 return [self._place(glyph, region, self.ink(encoded), f"glyph {encoded}")]
@@ -906,6 +905,10 @@ class Composer:
         instance = self._instance(node, region)
         if instance is not None:
             return [instance]
+        if at_root and op in AXIS and self.hosted:
+            transplanted = self._transplant(op, children)
+            if transplanted is not None:
+                return transplanted
         found = self._template(op, children, region, absolute=at_root)
         if found is None:
             return self._shares(op, children, region)
@@ -947,6 +950,61 @@ class Composer:
         if op in AXIS:
             self._space(AXIS[op], groups)
         return [p for group in groups for p in group]
+
+    def _transplant(self, op: str, children: list[Node]) -> list[Placed] | None:
+        """A whole character's operands each taken unscaled, where a designer put them in the em, from
+        characters that hold them in the same place: chosen together so that each pair of
+        neighbours stands as far apart as their own characters keep their parts. Nothing is
+        stretched, so every stroke keeps its drawn shape; None when no choice fits within
+        `TRANSPLANT_TOLERANCE`."""
+        axis = AXIS[op]
+        hosts, _ = self._index
+        options = []
+        for i, child in enumerate(children):
+            siblings = children[:i] + children[i + 1:]
+            want = sum(self.ink(s) for s in siblings)
+            found = []
+            for written in self.alternatives(child, slot(op, i)):
+                for char, tree, path, k in hosts.get((slot(op, i), written), [])[:TRANSPLANT_HOSTS]:
+                    if path or char in self.exclude or tree[0] != op or len(tree) != len(children) + 1:
+                        continue
+                    others = [n for j, n in enumerate(tree[1:]) if j != k]
+                    ratio = abs(math.log(max(sum(self.ink(n) for n in others), 1) / max(want, 1)))
+                    found.append((ratio, char, tree, k))
+            found.sort(key=lambda r: r[0])
+            pieces = []
+            for ratio, char, tree, k in found:
+                cut = self._host_node(char, tree, ())
+                if cut is not None:
+                    pieces.append((ratio, char, cut.pieces[k], cut.gap))
+                if len(pieces) >= TRANSPLANT_CANDIDATES:
+                    break
+            if not pieces:
+                return None
+            options.append(pieces)
+
+        def misfit(a, b) -> float:
+            # a stands before b along the axis: left of it, or above it (y is up).
+            gap = b[2].box[0] - a[2].box[2] if axis == 0 else a[2].box[1] - b[2].box[3]
+            return abs(gap - (a[3] + b[3]) / 2) + 40 * (a[0] + b[0])
+
+        # The best chain of choices, operand by operand.
+        best = [(0.0, [p]) for p in options[0]]
+        for row in options[1:]:
+            best = [min(((cost + misfit(chain[-1], p), chain + [p]) for cost, chain in best), key=lambda r: r[0]) for p in row]
+        cost, chain = min(best, key=lambda r: r[0])
+        if cost > TRANSPLANT_TOLERANCE * (len(children) - 1):
+            return None
+        return [Placed(piece, piece.box, piece.box, native=self.ink(char), origin=f"transplant {char}")
+                for _, char, piece, _ in chain]
+
+    def stroked(self, node: Node) -> bool:
+        """Whether a sequence names a bare stroke among its operands: a CJK Strokes character, or an
+        ideograph drawn as one outline (丿, 丶, 𠃌)."""
+        if isinstance(node, str):
+            glyph = self.font.glyph(node)
+            return 0x31C0 <= ord(node[0]) <= 0x31EF or (glyph is not None and len(glyph.contours) == 1)
+        return any(self.stroked(n) for n in node[1:])
 
     def _instance(self, node: tuple, region: Box) -> Placed | None:
         """A sequence drawn whole somewhere in the font, in any place: 爫 (⿱㇒𭕄) over 采, 丘 in 岳.

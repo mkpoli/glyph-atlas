@@ -181,8 +181,8 @@ def test_strokes_come_out_at_the_width_of_a_real_glyph(composer: compose.Compose
 
 def test_every_part_comes_from_a_drawn_character(composer: compose.Composer) -> None:
     placed = composer.compose("⿰亻哥")
-    assert all(p.origin.split()[0] in ("teacher", "host", "glyph") for p in placed)
-    assert any(p.origin.startswith("teacher") for p in placed)
+    assert all(p.origin.split()[0] in ("transplant", "teacher", "host", "instance", "glyph") for p in placed)
+    assert any(p.origin.split()[0] in ("transplant", "teacher") for p in placed)
 
 
 def test_a_character_unicode_lacks_is_drawn_from_its_parts(composer: compose.Composer) -> None:
