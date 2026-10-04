@@ -6,8 +6,8 @@
   import { isSingle, offersSuggestions } from '../lib/issues.js'
   import { t } from '../lib/i18n.svelte.js'
   // What a wrong or joined crop holds: the characters the recognisers suggest, and any other picked
-  // from the character search. Nothing typed is saved as it stands; a joined crop's characters are
-  // picked one after another.
+  // from the character search. A joined crop's characters are picked one after another, or typed as a
+  // run and taken with Enter.
   let { result = null, loading = false, contextResult = undefined, contextLoading = false,
     targetId = '', issue, label, value = null, noneSelected = false, choose, disabled = false,
     element = $bindable(null) } = $props()
@@ -18,6 +18,12 @@
   function pickOther(item) {
     query = ''
     choose(joined ? picked + item.char : item.char, false)
+  }
+  function takeRun(text) {
+    const run = text.trim().normalize('NFC')
+    if (!run) return
+    query = ''
+    choose(picked + run, false)
   }
   let order = [], previousKey = null
   $effect(() => {
@@ -58,7 +64,7 @@
     {:else if !candidates.length && !picked}<p class="suggestions-empty">{t('suggestions.none')}</p>{/if}
     <div class="suggestion-end">
       <div class="suggestion-pick"><CharacterSearch compact codePoints bind:value={query} label={joined && picked ? t('suggestions.pick.next') : t('corpus.chooseAnother')}
-        placeholder={joined && picked ? t('suggestions.pick.next') : t('search.placeholder')} onselect={pickOther} /></div>
+        placeholder={joined && picked ? t('suggestions.pick.next') : t('search.placeholder')} onselect={pickOther} runs={joined} onsubmit={joined ? takeRun : null} /></div>
       <button type="button" class="no-suggestion" class:chosen={noneSelected} aria-pressed={noneSelected} {disabled} onclick={() => choose(null, true)}>{#if noneSelected}<span aria-hidden="true">✓ </span>{/if}{t('suggestions.noneOfThese')}<kbd aria-hidden="true">N</kbd></button>
     </div>
   </div>
