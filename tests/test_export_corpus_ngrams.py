@@ -190,14 +190,20 @@ def test_a_glyph_with_no_written_form_runs_under_the_label_it_is_shown_with():
 def test_the_parts_label_the_glyphs_they_place(tmp_path, monkeypatch):
     data = tmp_path / "data"
     data.mkdir()
-    units = [unit("kept", "K", 0, 0), unit("kept", "K", 1, 40)]
-    units = [units[0].model_copy(update={"unicode": "U+3093", "text_source": "ん"}), units[1].model_copy(update={"text_source": "し"})]
+    units = [unit("kept", "K", 0, 0), unit("kept", "K", 1, 40), unit("kept", "K", 2, 80), unit("kept", "L", 0, 0)]
+    units = [units[0].model_copy(update={"unicode": "U+3093", "text_source": "ん"}), units[1].model_copy(update={"text_source": "し"}),
+             units[2].model_copy(update={"text_source": "候也"}), units[3].model_copy(update={"text_source": "孤"})]
     found = corpus(data, units)
     monkeypatch.setattr(export, "unit_corpora", lambda names=None: [found])
     monkeypatch.setattr(sys, "argv", ["export_corpus_ngrams.py", str(tmp_path / "out")])
     export.main()
     db = site()
-    db.executemany("INSERT INTO corpus_units(id,character,shuffle,object,offset,size,document) VALUES(?,NULL,0,'pack',0,1,'kept')", [("K:0",), ("K:1",)])
-    for part in sorted((tmp_path / "out" / "sql").glob("part-*.sql")):
-        db.executescript(part.read_text())
-    assert db.execute("SELECT text FROM unit_ngrams").fetchall() == [("んし",)]
+    db.executemany("INSERT INTO corpus_units(id,character,shuffle,object,offset,size,document) VALUES(?,NULL,0,'pack',0,1,'kept')",
+                   [("K:0",), ("K:1",), ("K:2",), ("L:0",)])
+    for _ in range(2):
+        for part in sorted((tmp_path / "out" / "sql").glob("part-*.sql")):
+            db.executescript(part.read_text())
+    # A transcription of two characters stands for no crop, and a glyph in no run needs no label.
+    assert db.execute("SELECT first,size,text FROM unit_ngrams ORDER BY first,size").fetchall() == [
+        ("K:0", 2, "んし"), ("K:0", 3, None), ("K:1", 2, None)]
+    assert dict(db.execute("SELECT id,label FROM corpus_units")) == {"K:0": "ん", "K:1": "し", "K:2": None, "L:0": None}

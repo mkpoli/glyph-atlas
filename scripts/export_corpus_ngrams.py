@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import unicodedata
 from collections import Counter
 from pathlib import Path
 
@@ -57,6 +58,11 @@ def placed(row: dict) -> dict:
     return row
 
 
+def single(text: str) -> bool:
+    """Whether a text is one character, as the Worker splits a run's text into crops."""
+    return len(text) == 1 and not unicodedata.combining(text)
+
+
 def corpus_runs(corpus) -> tuple[list[Run], list[str], dict[str, str]]:
     """A corpus's runs, the ids of every glyph on a line, whose earlier runs the new ones replace, and
     the label each of those glyphs' records is shown with while no written form is settled."""
@@ -76,8 +82,11 @@ def corpus_runs(corpus) -> tuple[list[Run], list[str], dict[str, str]]:
     glyphs += in_reading_order((Glyph.of(row) for row in rows if row.get("method") == ALIGNED), horizontal)
     # A line read from the ids is a block of several columns (`adjacent_ngrams`).
     blocks = {row["line_id"] for row in rows if reading_place(row["id"], row.get("page_id"))}
-    labels = {row["id"]: label for row in rows if (label := unit_label(row))}
-    return adjacent_ngrams(glyphs, horizontal, blocks), [row["id"] for row in rows], labels
+    runs = adjacent_ngrams(glyphs, horizontal, blocks)
+    # A label stands for one crop of a run, so a transcription of several characters gives none.
+    members = {i for run in runs for i in run.units}
+    labels = {row["id"]: label for row in rows if row["id"] in members and (label := unit_label(row)) and single(label)}
+    return runs, [row["id"] for row in rows], labels
 
 
 def statements(corpora) -> tuple[list[str], dict[str, Counter]]:
