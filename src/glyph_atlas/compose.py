@@ -393,6 +393,10 @@ SQUEEZE = 0.15
 #: operands weighted by `middle`. Fitted on the drawn characters of each operator that cut cleanly
 #: (56 ⿳, 72 ⿲): a stacked middle part is compressed, a centre column is not.
 SHARES = {("⿳", 3): (0.85, 0.75), ("⿲", 3): (0.5, 0.95)}
+#: Choosing a part for a box in the em: font units of mean edge distance that count as one unit of
+#: mismatch, and the mismatch a part drawn inside a nested node counts as, its em place unknown.
+PLACED_UNITS = 40.0
+PLACED_NESTED = 0.5
 #: For a transplant: how many hosts each operand is looked for in, how many cut cleanly are weighed,
 #: and how far, in font units, a pair of neighbours may stand from the gap their own hosts keep
 #: (ink-ratio mismatch of their siblings counted at 40 units per unit of log ratio).
@@ -740,10 +744,12 @@ class Composer:
                 out.setdefault(form, []).append(char)
         return out
 
-    def _host(self, op: str, index: int, node: Node, siblings: list[Node], box: Box) -> tuple[Host, int] | None:
+    def _host(self, op: str, index: int, node: Node, siblings: list[Node], box: Box,
+              placed: bool = False) -> tuple[Host, int] | None:
         """The drawn part closest to what `node` needs at `index` of `op` inside `box`: written as the
         operand or a positional form of it, beside siblings that hold about as much ink, at about
-        the size and proportions of `box`."""
+        the size and proportions of `box`. With `placed`, `box` is in the em, and a part a character
+        draws at its top level close to that very box is preferred: it needs the least scaling."""
         if not self.hosted:
             return None
         hosts, _ = self._index
@@ -762,7 +768,7 @@ class Composer:
                 ratio = abs(math.log(max(sum(self.ink(s) for s in others), 1) / max(want, 1)))
                 scored.append((not exact, ratio, len(path), char, tree, path, i))
             best = None
-            for exact, ratio, depth, char, tree, path, i in sorted(scored, key=lambda r: r[:3])[:16]:
+            for exact, ratio, depth, char, tree, path, i in sorted(scored, key=lambda r: r[:3])[:32 if placed else 16]:
                 found = self._host_node(char, tree, path)
                 if found is None:
                     continue
@@ -770,7 +776,11 @@ class Composer:
                 shape = abs(math.log(((piece[2] - piece[0]) / max(piece[3] - piece[1], 1)) / aspect))
                 size = abs(math.log(max(piece[2] - piece[0], 1) * max(piece[3] - piece[1], 1)
                                     / max((box[2] - box[0]) * (box[3] - box[1]), 1)))
-                rank = (exact, ratio + shape + 0.5 * size + 0.1 * depth)
+                near = 0.0
+                if placed:
+                    near = (float(np.mean(np.abs(np.array(piece) - np.array(box)))) / PLACED_UNITS if found.whole
+                            else PLACED_NESTED)
+                rank = (exact, ratio + shape + 0.5 * size + 0.1 * depth + near)
                 if best is None or rank < best[0]:
                     best = (rank, (found, i))
             if best:
@@ -964,7 +974,7 @@ class Composer:
         boxes = self.layout.predict(self, op, [key(c) for c in children], tested)
         groups = []
         for i, (child, box) in enumerate(zip(children, boxes)):
-            part = self._host(op, i, child, children[:i] + children[i + 1:], box)
+            part = self._host(op, i, child, children[:i] + children[i + 1:], box, placed=True)
             if part is None:
                 groups.append(self._node(child, box))
                 continue
