@@ -1006,6 +1006,13 @@ class Composer:
             return 0x31C0 <= ord(node[0]) <= 0x31EF or (glyph is not None and len(glyph.contours) == 1)
         return any(self.stroked(n) for n in node[1:])
 
+    def _outlines(self, node: Node) -> int:
+        """How many outlines a sequence's operands' own glyphs have together."""
+        if isinstance(node, str):
+            glyph = self.font.glyph(node)
+            return len(glyph.contours) if glyph else 0
+        return sum(self._outlines(n) for n in node[1:])
+
     def _instance(self, node: tuple, region: Box) -> Placed | None:
         """A sequence drawn whole somewhere in the font, in any place: 爫 (⿱㇒𭕄) over 采, 丘 in 岳.
         A designer drew it as one shape, which a composition of its strokes cannot match. The
@@ -1013,8 +1020,10 @@ class Composer:
         if not self.hosted:
             return None
         names = {key(node)} | ({self.by_sequence[key(node)]} if key(node) in self.by_sequence else set())
-        if names & self.exclude:
-            # A character redrawn to test is not taken from where another character draws it whole.
+        if names & self.exclude and not self.stroked(node):
+            # A character redrawn to test is not taken from where another character draws it whole,
+            # unless its sequence names bare strokes (失 as ⿰㇒夫): no layout of parts makes that
+            # shape, and drawn inside another character (鉄) is the only way to have it.
             return None
         best = None
         for place, written in (k for name in names for k in self._places.get(name, ())):
@@ -1025,6 +1034,9 @@ class Composer:
                 if host is None:
                     continue
                 piece = host.pieces[i]
+                if self.stroked(node) and len(piece.contours) != self._outlines(node):
+                    # A sequence of strokes says how many it has: 刀 (⿹𠃌丿) is two, not 𠃌 alone.
+                    continue
                 stretch = self._stretch(piece.box, region)
                 if stretch <= STRETCH and (best is None or stretch < best[0]):
                     best = (stretch, piece, char)
