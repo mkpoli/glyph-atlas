@@ -126,9 +126,11 @@ def propose(blocks: dict[Any, list[tuple[str, int, str, str]]], shown: dict[str,
     return proposals
 
 
-def _shown(store, blocks, checkpoint: Path) -> dict[str, np.ndarray]:
-    """Classify every crop by the display image the dataset publishes, and keep, per offset, the
-    probability that it shows the label at that offset."""
+def _shown(store, blocks, checkpoint: Path, offsets: tuple[int, ...] = OFFSETS,
+           unknown: float = FLOOR) -> dict[str, np.ndarray]:
+    """Classify every crop by the display image the dataset publishes, and keep, per offset of
+    `offsets`, the probability that it shows the label at that offset: `FLOOR` where the block has no
+    text there, and `unknown` where the classifier has no class for the label."""
     import re
 
     from PIL import Image
@@ -153,7 +155,7 @@ def _shown(store, blocks, checkpoint: Path) -> dict[str, np.ndarray]:
         by_position = {position: text for _, position, text, _ in crops}
         for identity, position, _, _ in crops:
             if identity in images:
-                wanted.append((identity, [by_position.get(position + o) for o in OFFSETS]))
+                wanted.append((identity, [by_position.get(position + o) for o in offsets]))
     shown = {}
     for start in range(0, len(wanted), 512):
         batch, pixels = [], []
@@ -168,7 +170,8 @@ def _shown(store, blocks, checkpoint: Path) -> dict[str, np.ndarray]:
             continue
         _features, probabilities = encoder.classify(np.stack(pixels))
         for (identity, around), row in zip(batch, probabilities, strict=True):
-            shown[identity] = np.array([float(row[labels.mask(label)].sum()) if label else FLOOR for label in around])
+            shown[identity] = np.array([FLOOR if not label else float(row[mask].sum()) if (mask := labels.mask(label)).any()
+                                        else unknown for label in around])
     return shown
 
 
