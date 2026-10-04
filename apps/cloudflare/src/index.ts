@@ -551,9 +551,9 @@ export function runPage(crops: Json[]): { image: string; box: Rect; region: Rect
 // row of `unit_ngrams`. A longer one starts from one of its trigrams, the rarest (`runProbeQuery`), and
 // reaches the rest of its crops a pair at a time: publication writes a pair only where two crops follow
 // each other and stand near, so a chain of pairs holds the runs a longer row would.
-// The first row is read along the index its text (and book) share with the counts, so occurrences come
-// in that index's order: the style group of its first crop (handwritten first, 0058), then that crop's
-// shuffle and id. Every other row is found by its key, rightwards by the primary key and leftwards
+// The first row is read along the index of its text (or its book and text), so occurrences come in that
+// index's order: how its first crop's letterforms were made (shaped by hand first, 0062), then that
+// crop's shuffle and id. Every other row is found by its key, rightwards by the primary key and leftwards
 // through `unit_ngram_second` (the length kept off its index, `+`, or the planner reads every pair), and
 // every member by its id: its `units` row and its `corpus_units` row, either of which may be missing. A
 // member stands on the site as a local crop or as a corpus glyph, whose record is its `units` row once a
@@ -562,6 +562,17 @@ export function runPage(crops: Json[]): { image: string; box: Rect; region: Rect
 // RUN_PAGE_CROPS crops, so a longer run comes in fewer occurrences at a time.
 // RUN_MAX keeps a run inside one context render: a render reaches five character sizes along a column
 // (`CONTEXT_REACH`), so its middle crop's holds about eleven, and `runPage` finds the run in it.
+// How a run's letterforms were made, as `hand_order` (0062) numbers its first member: shaped by hand
+// (handwritten, inscribed, cut or drawn for the page, or written in a running or cursive hand), not known,
+// and set from type. A run's page lists them in this order and narrows to one (`hand`).
+export const HAND_ORDER: Record<string, number> = { hand: 0, unknown: 1, type: 2 };
+const HAND_NAMES = Object.keys(HAND_ORDER);
+function handGroup(q: URLSearchParams): number | null {
+  const value = q.get('hand');
+  if (!value || value === 'all') return null;
+  if (!Object.hasOwn(HAND_ORDER, value)) throw new Problem(422, 'Invalid group.');
+  return HAND_ORDER[value];
+}
 const RUN_MAX = 8, RUN_PAGE_CROPS = 192, RUN_COUNT_MAX = 2000, RUN_PROBE_MAX = 5000, RUN_WORKS_MAX = 60, RUN_NEAR_MAX = 12;
 const NGRAM_COLUMNS = ['first', 'second', 'third'];
 const graphemes = new Intl.Segmenter('ja', { granularity: 'grapheme' });
@@ -583,19 +594,20 @@ export function runFrom(size: number, anchor: number) {
   const units = crops.map((crop, i) => `LEFT JOIN units u${i} ON u${i}.id=${crop} LEFT JOIN corpus_units k${i} ON k${i}.id=${crop}`);
   return { from: ['FROM unit_ngrams a', ...joins, ...units].join(' '), links };
 }
-const runWhere = (document: boolean, size: number, style = false) => `${document ? 'a.document=? AND ' : ''}a.size=? AND a.text=?${style ? ' AND a.style_order=?' : ''}`
+const runWhere = (document: boolean, size: number, hand = false) => `${document ? 'a.document=? AND ' : ''}a.size=? AND a.text=?${hand ? ' AND a.hand_order=?' : ''}`
   + Array.from({ length: size }, (_, i) => ` AND (u${i}.origin='local' OR k${i}.id IS NOT NULL)`).join('');
-// A style group (`style`, the first row's `style_order`) and a book (`document`) narrow the run through
-// the index that leads with what they name; `sort=source` lists a run by book (0059) instead.
-export function runOccurrencesQuery(size: number, anchor: number, document: boolean, style = false, sort: 'style' | 'source' = 'style') {
+// A group of how the letterforms were made (`hand`, the first row's `hand_order`, 0062) and a book
+// (`document`) narrow the run through the index that leads with what they name; `sort=source` lists a
+// run by book (0059) instead.
+export function runOccurrencesQuery(size: number, anchor: number, document: boolean, hand = false, sort: 'hand' | 'source' = 'hand') {
   const members = Array.from({ length: size }, (_, i) => `u${i}.data AS c${i},k${i}.object AS o${i},k${i}.offset AS f${i},k${i}.size AS s${i}`);
   return `SELECT ${members.join(',')}, a.document AS document, a.vertical
-    ${runFrom(size, anchor).from} WHERE ${runWhere(document, size, style)}
-    ORDER BY ${sort === 'source' && !document ? 'a.document,a.first' : 'a.style_order,a.shuffle,a.first'} LIMIT ? OFFSET ?`;
+    ${runFrom(size, anchor).from} WHERE ${runWhere(document, size, hand)}
+    ORDER BY ${sort === 'source' && !document ? 'a.document,a.first' : 'a.hand_order,a.shuffle,a.first'} LIMIT ? OFFSET ?`;
 }
-export function runCountQuery(size: number, anchor: number, document: boolean, style = false) {
+export function runCountQuery(size: number, anchor: number, document: boolean, hand = false) {
   return `SELECT count(*) AS n, sum(v) AS vertical FROM (SELECT a.vertical AS v ${runFrom(size, anchor).from}
-    WHERE ${runWhere(document, size, style)} LIMIT ${RUN_COUNT_MAX + 1})`;
+    WHERE ${runWhere(document, size, hand)} LIMIT ${RUN_COUNT_MAX + 1})`;
 }
 /** The books a run is in, with their occurrences (counted among the first RUN_COUNT_MAX) and one crop of each to name them by. */
 export function runWorksQuery(size: number, anchor: number) {
@@ -633,13 +645,13 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
   if (parts.length < 2 || parts.length > RUN_MAX) throw new Problem(422, `A run is two to ${RUN_MAX} characters.`);
   const document = text(q.get('document'), 256, 'document');
   const most = Math.floor(RUN_PAGE_CROPS / parts.length);
-  const offset = integer(q, 'offset', 0), group = styleGroup(q);
-  const sort = q.get('sort') === 'source' ? 'source' : q.get('sort') && q.get('sort') !== 'style' ? null : 'style';
+  const offset = integer(q, 'offset', 0), group = handGroup(q);
+  const sort = q.get('sort') === 'source' ? 'source' : q.get('sort') && q.get('sort') !== 'hand' ? null : 'hand';
   if (!sort) throw new Problem(422, 'Invalid sort.');
   // A page ends where the count does.
   if (offset >= RUN_COUNT_MAX) throw new Problem(404, 'A run does not page this far.');
   const limit = Math.min(integer(q, 'limit', Math.min(48, most), most), RUN_COUNT_MAX - offset);
-  const key = new Request(`${url.origin}/atlas/runs?${new URLSearchParams({ text: value, document: document ?? '', style: String(group ?? ''), sort, limit: String(limit), offset: String(offset), v: await catalogueVersion(env) })}`);
+  const key = new Request(`${url.origin}/atlas/runs?${new URLSearchParams({ text: value, document: document ?? '', hand: String(group ?? ''), sort, limit: String(limit), offset: String(offset), v: await catalogueVersion(env) })}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json() as Json;
   const size = parts.length, scope = document ? [document] : [];
@@ -655,10 +667,10 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
   const bound = [...links.map(i => span(i, 2)), ...scope, Math.min(size, 3), span(anchor, Math.min(size, 3))];
   const styled = (n: number) => [...bound, n];
   const occurrences = env.DB.prepare(runOccurrencesQuery(size, anchor, Boolean(document), group !== null, sort)).bind(...(group === null ? bound : styled(group)), limit, offset);
-  // The first page also counts the run, as a whole or in its style group, and each style group, and names its books.
+  // The first page also counts the run, as a whole or in its group, and each group, and names its books.
   const first = offset ? [] : [
     env.DB.prepare(runCountQuery(size, anchor, Boolean(document), group !== null)).bind(...(group === null ? bound : styled(group))),
-    ...STYLE_NAMES.map(name => env.DB.prepare(runCountQuery(size, anchor, Boolean(document), true)).bind(...styled(STYLE_ORDER[name]))),
+    ...HAND_NAMES.map(name => env.DB.prepare(runCountQuery(size, anchor, Boolean(document), true)).bind(...styled(HAND_ORDER[name]))),
     env.DB.prepare(runWorksQuery(size, anchor)).bind(...links.map(i => span(i, 2)), Math.min(size, 3), span(anchor, Math.min(size, 3))),
   ];
   const [page, count, ...rest] = await env.DB.batch([occurrences, ...first]) as D1Result<any>[];
@@ -674,9 +686,9 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
   });
   const counted = count?.results[0] as { n: number; vertical: number | null } | undefined;
   const works = rest.length ? await runWorks(env, rest.pop()!.results as { document: string; n: number; sample: string }[]) : null;
-  const body = { text: value, size, document, style: group === null ? 'all' : STYLE_NAMES[group], sort, next_offset: offset + found.length, items,
+  const body = { text: value, size, document, hand: group === null ? 'all' : HAND_NAMES[group], sort, next_offset: offset + found.length, items,
     ...(counted && { total: Math.min(counted.n, RUN_COUNT_MAX), more: counted.n > RUN_COUNT_MAX, vertical: 2 * (counted.vertical ?? 0) >= counted.n,
-      styles: Object.fromEntries(STYLE_NAMES.map((name, i) => [name, Math.min((rest[i].results[0] as { n: number }).n, RUN_COUNT_MAX)])), style_groups: STYLE_NAMES, works }) };
+      hands: Object.fromEntries(HAND_NAMES.map((name, i) => [name, Math.min((rest[i].results[0] as { n: number }).n, RUN_COUNT_MAX)])), hand_groups: HAND_NAMES, works }) };
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return body;
 }

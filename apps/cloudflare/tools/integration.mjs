@@ -346,8 +346,8 @@ try {
   assert.deepEqual(await hardSo(), [], 'a crop moved to another box is not hard there')
   await moveBox('{"x":1,"y":2,"w":3,"h":4}')
   assert.deepEqual(await hardSo(), ['skip-b'], 'and is again once it is back')
-  // A generated column (`style_order`, `crop_version`) takes no value.
-  const { style_order: _order, crop_version: _version, ...skipB } = await db.prepare("SELECT * FROM units WHERE id='skip-b'").first()
+  // A generated column (`style_order`, `hand_order`, `crop_version`) takes no value.
+  const { style_order: _order, hand_order: _hand, crop_version: _version, ...skipB } = await db.prepare("SELECT * FROM units WHERE id='skip-b'").first()
   const rewrite = data => db.prepare(`INSERT OR REPLACE INTO units VALUES(${Object.keys(skipB).map(() => '?').join(',')})`).bind(...Object.values({ ...skipB, data })).run()
   await rewrite(JSON.stringify({ ...JSON.parse(skipB.data), box: { x: 7, y: 2, w: 3, h: 4 } }))
   assert.deepEqual(await hardSo(), [], 'nor is a crop written anew at another box')
@@ -880,7 +880,7 @@ try {
       }
     }
   }
-  // Placed by book, a run reads the index that keeps its rows in book order, whole or in a style group.
+  // Placed by book, a run reads the index that keeps its rows in book order, whole or in a group.
   for (let size = 2; size <= 8; size++) for (let anchor = 0; anchor <= Math.max(0, size - 3); anchor++) for (const style of [false, true]) {
     const links = worker.runFrom(size, anchor).links.map(() => 'ナリ'), bound = [...links, Math.min(size, 3), 'ナリ', ...(style ? [0] : []), 48, 0]
     const shape = { sql: worker.runOccurrencesQuery(size, anchor, false, style, 'source'), values: [] }
@@ -968,13 +968,15 @@ try {
   assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent(pairText + pairText) + '&limit=49')).status, 422, 'a longer run pages fewer occurrences')
   const nextPage = await runOf(pairText, '&offset=1')
   assert.ok(!('total' in nextPage) && nextPage.next_offset === 1, 'a later page carries no count')
-  // A run's occurrences come handwritten first, then what nobody has judged, then print, each group
-  // in its first crops' shuffle order; the style and shuffle follow the crop, however the run was written.
-  for (const [id, style, shuffle] of [['o-print', 'regular', 1], ['o-plain', 'unassessed', 5], ['o-late', 'cursive', 9], ['o-early', 'running', 2]]) {
-    const d = { id, label: 'ナ', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten', repair: { quiz: true },
+  // A run's occurrences come shaped by hand first (0062), then what nobody has classified, then type, each
+  // group in its first crops' shuffle order; the group follows the crop's production and style, however
+  // the run was written, and type comes last whatever the style.
+  for (const [id, production, style, shuffle] of [['o-print', 'printed/type', 'running', 1], ['o-plain', 'unknown', 'unassessed', 5],
+    ['o-late', 'unknown', 'cursive', 9], ['o-early', 'printed/woodblock', 'unassessed', 2]]) {
+    const d = { id, label: 'ナ', state: 'pending', revision: 0, image_sha256: hash, production, repair: { quiz: true },
       source: ['o-early', 'o-late'].includes(id) ? 'Book A' : 'Book B' }
     await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
-      id, 'local', 'ナ', 'U+30CA', null, 'handwritten', 'kana', 'pending', 0, 1, 1, shuffle,
+      id, 'local', 'ナ', 'U+30CA', null, production, 'kana', 'pending', 0, 1, 1, shuffle,
       JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
     await db.prepare('UPDATE units SET style=? WHERE id=?').bind(style, id).run()
   }
@@ -983,33 +985,34 @@ try {
   let version = 0
   const firsts = async (query = '') => { await db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at',?)").bind('order' + ++version).run()
     return (await runOf('ナリ', query)).items.map(o => o.crops[0].id) }
-  assert.deepEqual(await firsts(), ['o-early', 'o-late', 'o-plain', 'o-print'], 'handwritten first, then unjudged, then print, each by shuffle')
+  assert.deepEqual(await firsts(), ['o-early', 'o-late', 'o-plain', 'o-print'], 'woodblock and cursive first, then unclassified, then type, each by shuffle')
   assert.deepEqual(await firsts('&limit=2&offset=2'), ['o-plain', 'o-print'], 'a later page continues the same order')
-  await db.prepare("UPDATE units SET style='regular' WHERE id='o-early'").run()
-  assert.deepEqual(await firsts(), ['o-late', 'o-plain', 'o-print', 'o-early'], 'a crop judged afterwards moves its runs')
-  await db.prepare("UPDATE units SET style='cursive',shuffle=0 WHERE id='o-print'").run()
-  assert.deepEqual(await firsts(), ['o-print', 'o-late', 'o-plain', 'o-early'], 'its shuffle moves them too')
-  // A page narrows to a style group or a book, and is placed by book on request; the first page says what each holds.
-  await db.prepare("UPDATE units SET style='regular',shuffle=1 WHERE id='o-print'").run()
-  await db.prepare("UPDATE units SET style='running',shuffle=2 WHERE id='o-early'").run()
+  // A publication that rewrites a crop's production in place moves its runs.
+  await db.prepare("UPDATE units SET production='printed/type/wood' WHERE id='o-early'").run()
+  assert.deepEqual(await firsts(), ['o-late', 'o-plain', 'o-print', 'o-early'], 'a crop found to be type afterwards moves its runs')
+  await db.prepare("UPDATE units SET production='handwritten',shuffle=0 WHERE id='o-print'").run()
+  assert.deepEqual(await firsts(), ['o-print', 'o-late', 'o-plain', 'o-early'], 'and its shuffle moves them too')
+  // A page narrows to a group or a book, and is placed by book on request; the first page says what each holds.
+  await db.prepare("UPDATE units SET production='printed/type',shuffle=1 WHERE id='o-print'").run()
+  await db.prepare("UPDATE units SET production='printed/woodblock',shuffle=2 WHERE id='o-early'").run()
   const narrowed = async (query = '') => { await db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at',?)").bind('narrow' + ++version).run()
     return runOf('ナリ', query) }
   const firstsOf = body => body.items.map(o => o.crops[0].id)
   const whole = await narrowed()
-  assert.deepEqual(whole.styles, { cursive: 2, unassessed: 1, formal: 1 }, 'a run counts its crops by style group')
+  assert.deepEqual(whole.hands, { hand: 2, unknown: 1, type: 1 }, 'a run counts its crops by group')
   assert.deepEqual(whole.works, [{ id: 'hk:a', title: 'Book A', count: 2 }, { id: 'hk:b', title: 'Book B', count: 2 }], 'and its books, named by their crops')
-  assert.deepEqual([whole.style, whole.sort, whole.total], ['all', 'style', 4])
+  assert.deepEqual([whole.hand, whole.sort, whole.total, whole.hand_groups], ['all', 'hand', 4, ['hand', 'unknown', 'type']])
   assert.equal((await narrowed('&offset=2')).works, undefined, 'a later page does not ask for the books again')
-  assert.deepEqual(firstsOf(await narrowed('&style=cursive')), ['o-early', 'o-late'], 'a style group narrows the run')
-  const formal = await narrowed('&style=formal')
-  assert.deepEqual([formal.total, firstsOf(formal), formal.styles.cursive], [1, ['o-print'], 2], 'a group counts only its own, and the groups still say what they hold')
+  assert.deepEqual(firstsOf(await narrowed('&hand=hand')), ['o-early', 'o-late'], 'a group narrows the run')
+  const typed = await narrowed('&hand=type')
+  assert.deepEqual([typed.total, firstsOf(typed), typed.hands.hand], [1, ['o-print'], 2], 'a group counts only its own, and the groups still say what they hold')
   assert.deepEqual(firstsOf(await narrowed('&document=hk%3Ab')), ['o-plain', 'o-print'], 'a book narrows the run')
-  assert.deepEqual((await narrowed('&document=hk%3Ab')).styles, { cursive: 0, unassessed: 1, formal: 1 }, 'its styles are the book\'s')
-  assert.deepEqual(firstsOf(await narrowed('&document=hk%3Aa&style=cursive')), ['o-early', 'o-late'], 'a book and a style group together')
+  assert.deepEqual((await narrowed('&document=hk%3Ab')).hands, { hand: 0, unknown: 1, type: 1 }, 'its groups are the book\'s')
+  assert.deepEqual(firstsOf(await narrowed('&document=hk%3Aa&hand=hand')), ['o-early', 'o-late'], 'a book and a group together')
   assert.deepEqual(firstsOf(await narrowed('&sort=source')), ['o-early', 'o-late', 'o-plain', 'o-print'], 'by book, then by crop')
-  assert.deepEqual(firstsOf(await narrowed('&sort=source&style=cursive')), ['o-early', 'o-late'])
-  assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent('ナリ') + '&style=bold')).status, 422, 'only the style groups narrow')
-  assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent('ナリ') + '&sort=year')).status, 422, 'only style and book place a run')
+  assert.deepEqual(firstsOf(await narrowed('&sort=source&hand=hand')), ['o-early', 'o-late'])
+  assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent('ナリ') + '&hand=bold')).status, 422, 'only the groups narrow')
+  assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent('ナリ') + '&sort=style')).status, 422, 'only the group and the book place a run')
   // Near runs: the shorter runs inside a trigram, the trigrams a pair begins, and the runs that begin alike.
   await db.batch([db.prepare(`INSERT INTO unit_ngrams(first,size,second,third,text,document) VALUES('o-print',3,'two','o-early','ナリア',NULL),
     ('o-late',3,'two','o-early','ナリア',NULL),('o-plain',3,'two','o-early','ナリイ',NULL),('x-sibling',2,'one',NULL,'ナヌ',NULL)`)])
@@ -1046,15 +1049,18 @@ try {
     assert.equal(glyphRun.items[0].crops[1].source.title, 'A corpus book', 'its glyphs carry their published records')
     assert.equal(glyphRun.document, null)
     assert.equal((await runOf('申上', '&document=hl%3Abook')).total, 1, 'a corpus book holds its runs')
-    // A corpus run takes its first glyph's style group and shuffle, and follows a restyle of its published row.
-    const placed = async () => (await db.prepare("SELECT style_order AS s,shuffle FROM unit_ngrams WHERE first='hl:run:0' AND size=2").first())
-    assert.deepEqual(await placed(), { s: 1, shuffle: 5 }, 'unjudged, at its glyph\'s shuffle')
+    // A corpus run takes its first glyph's group and shuffle, and follows its published row's production and style.
+    const placed = async () => (await db.prepare("SELECT hand_order AS h,shuffle FROM unit_ngrams WHERE first='hl:run:0' AND size=2").first())
+    assert.deepEqual(await placed(), { h: 1, shuffle: 5 }, 'unclassified, at its glyph\'s shuffle')
     await db.prepare("UPDATE corpus_units SET style='cursive' WHERE id='hl:run:0'").run()
-    assert.deepEqual(await placed(), { s: 0, shuffle: 5 })
+    assert.deepEqual(await placed(), { h: 0, shuffle: 5 })
+    await db.prepare("UPDATE corpus_units SET production='printed/type' WHERE id='hl:run:0'").run()
+    assert.deepEqual(await placed(), { h: 2, shuffle: 5 }, 'type comes last whatever the style')
+    await db.prepare("UPDATE corpus_units SET production='printed' WHERE id='hl:run:0'").run()
     await refreshed('corpus-runs-styled')
-    const styledRun = await runOf('申上', '&style=cursive')
-    assert.deepEqual([styledRun.total, styledRun.styles.cursive, styledRun.works], [1, 1, [{ id: 'hl:book', title: 'A corpus book', count: 1 }]],
-      'a corpus run is narrowed by style, and its book named from its glyph\'s record')
+    const handRun = await runOf('申上', '&hand=hand')
+    assert.deepEqual([handRun.total, handRun.hands.hand, handRun.works], [1, 1, [{ id: 'hl:book', title: 'A corpus book', count: 1 }]],
+      'a corpus run is narrowed by group, and its book named from its glyph\'s record')
     // An occurrence whose record cannot be read is left off its page, which still pages on past it.
     await db.batch([
       db.prepare(`INSERT INTO corpus_units(${CORPUS_COLUMNS}) VALUES('hl:gone:0','申',NULL,NULL,5,'no-such-pack',0,10,'unknown',0),('hl:gone:1','上',NULL,NULL,5,'no-such-pack',10,10,'unknown',0)`),
