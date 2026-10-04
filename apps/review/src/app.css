@@ -158,7 +158,7 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 .character-dialog .inspector>*{grid-column:2;min-width:0}
 .character-dialog .inspector>.inspector-header,.character-dialog .inspector>.inspector-skeleton{grid-column:1/-1}
 .character-dialog .inspector-header{background:var(--paper);border-bottom:1px solid var(--line);margin-bottom:18px}
-.character-dialog .inspector>.replaced-note,.character-dialog .inspector>.error-message,.character-dialog .inspector>.cited-cut{grid-column:1/-1;grid-row:2}
+.character-dialog .inspector>.inspector-notices{grid-column:1/-1;grid-row:2}
 .character-dialog .inspector{align-content:start}
 .character-dialog .inspector>.inspector-page{grid-column:1;grid-row:3}
 .character-dialog .inspector>.inspector-right{grid-column:2;grid-row:3}

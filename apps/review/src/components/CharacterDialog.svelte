@@ -317,9 +317,10 @@
 <dialog class="character-dialog" bind:this={dialog} open oncancel={close} onclick={e => { if (e.target === dialog) close() }} aria-label={t('character.dialog.label')}>
   <div class="inspector">
     <header class="inspector-header">{#if data}<CopyId id={data.id}>{#if fresh}<Cite entry={cropEntry(data, 'collection')} />{/if}</CopyId>{/if}<div class="inspector-navigation">{#if data}<FavouriteButton id={data.id} />{/if}<span>{position}</span><button class="icon-button previous-character" aria-label={t('common.previousCharacter')} disabled={busy || !previous} onclick={() => previous?.()}>←</button><button class="icon-button next-character" aria-label={t('common.nextCharacter')} disabled={busy || !next} onclick={() => next?.()}>→</button><button class="icon-button close-inspector" aria-label={t('common.closeReviewer')} onclick={close}>×</button></div></header>
-    {#if replaced}<p class="replaced-note" role="status">{t('character.replaced')}</p>{/if}
-    {#if cited && !cited.current && cited.id === data?.id}<CitedCut {cited} />{/if}
-    {#if error}<div class="error-message" role="alert">{error}<button disabled={busy} onclick={() => load(id)}>{t('character.reload')}</button></div>{/if}
+    <!-- What the page has to say before the crop: a replacement, a cited earlier cut, a failed load. -->
+    <div class="inspector-notices">{#if replaced}<p class="replaced-note" role="status">{t('character.replaced')}</p>{/if}
+      {#if cited && !cited.current && cited.id === data?.id}<CitedCut {cited} />{/if}
+      {#if error}<div class="error-message" role="alert">{error}<button disabled={busy} onclick={() => load(id)}>{t('character.reload')}</button></div>{/if}</div>
     {#if data}
       <!-- The crop alone, in a box of one size for every crop, then the page around it further down. -->
       <div class="inspector-page">

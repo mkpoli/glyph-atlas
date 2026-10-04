@@ -1,14 +1,17 @@
 <script>
   // A crop's address that cites another cut than the one shown: the cut it names, when it was recorded,
-  // and that the crop has been cut again since; or that this crop has no cut by that name.
+  // and that the crop has been cut again since; or that this crop has no cut by that name. The date is
+  // the reader's own day, so it is written once the page is in the browser.
+  import { onMount } from 'svelte'
   import { t, formatDate } from '../lib/i18n.svelte.js'
   let { cited } = $props()
-  let failed = $state(false)
+  let failed = $state(''), mounted = $state(false)
+  onMount(() => { mounted = true })
 </script>
 
 <div class="cited-cut" role="status">
-  {#if cited.version?.image && !failed}<img src={cited.version.image} alt={t('cite.cut.image')} onerror={() => failed = true} />{/if}
-  <p>{cited.version ? t('cite.cut.earlier', { date: formatDate(cited.version.at) }) : t('cite.cut.missing')}</p>
+  {#if cited.version?.image && failed !== cited.version.image}<img src={cited.version.image} alt={t('cite.cut.image')} onerror={() => failed = cited.version.image} />{/if}
+  {#if cited.version}{#if mounted}<p>{t('cite.cut.earlier', { date: formatDate(cited.version.at) })}</p>{/if}{:else}<p>{t('cite.cut.missing')}</p>{/if}
 </div>
 
 <style>
