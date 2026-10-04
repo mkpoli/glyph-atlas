@@ -8,6 +8,8 @@
   import { setForm } from '../lib/cropForms.js'
   import ZiLink from './ZiLink.svelte'
   import CopyId from './CopyId.svelte'
+  import Cite from './Cite.svelte'
+  import { cropEntry } from '$worker/citation.ts'
   import FavouriteButton from './FavouriteButton.svelte'
   import { onMount, untrack, tick } from 'svelte'
   import { character, request, suggestionsFor } from '../lib/client.js'
@@ -312,7 +314,7 @@
 <svelte:window onkeydown={stepKey} />
 <dialog class="character-dialog" bind:this={dialog} open oncancel={close} onclick={e => { if (e.target === dialog) close() }} aria-label={t('character.dialog.label')}>
   <div class="inspector">
-    <header class="inspector-header">{#if data}<CopyId id={data.id} />{/if}<div class="inspector-navigation">{#if data}<FavouriteButton id={data.id} />{/if}<span>{position}</span><button class="icon-button previous-character" aria-label={t('common.previousCharacter')} disabled={busy || !previous} onclick={() => previous?.()}>←</button><button class="icon-button next-character" aria-label={t('common.nextCharacter')} disabled={busy || !next} onclick={() => next?.()}>→</button><button class="icon-button close-inspector" aria-label={t('common.closeReviewer')} onclick={close}>×</button></div></header>
+    <header class="inspector-header">{#if data}<CopyId id={data.id}>{#if fresh}<Cite entry={cropEntry(data, 'collection')} />{/if}</CopyId>{/if}<div class="inspector-navigation">{#if data}<FavouriteButton id={data.id} />{/if}<span>{position}</span><button class="icon-button previous-character" aria-label={t('common.previousCharacter')} disabled={busy || !previous} onclick={() => previous?.()}>←</button><button class="icon-button next-character" aria-label={t('common.nextCharacter')} disabled={busy || !next} onclick={() => next?.()}>→</button><button class="icon-button close-inspector" aria-label={t('common.closeReviewer')} onclick={close}>×</button></div></header>
     {#if replaced}<p class="replaced-note" role="status">{t('character.replaced')}</p>{/if}
     {#if error}<div class="error-message" role="alert">{error}<button disabled={busy} onclick={() => load(id)}>{t('character.reload')}</button></div>{/if}
     {#if data}

@@ -12,6 +12,8 @@
   import { useSession } from '../lib/session.svelte.js'
   import ZiLink from './ZiLink.svelte'
   import CopyId from './CopyId.svelte'
+  import Cite from './Cite.svelte'
+  import { cropEntry } from '$worker/citation.ts'
   import FavouriteButton from './FavouriteButton.svelte'
   import { onMount, untrack, tick } from 'svelte'
   import { request } from '../lib/client.js'
@@ -109,7 +111,7 @@
 <svelte:window onkeydown={stepKey} />
 <dialog class="character-dialog corpus-dialog" bind:this={dialog} open oncancel={close} onclick={e => { if (e.target === dialog) close() }} aria-label={t('corpus.dialog.label')}>
   <div class="inspector">
-    <header class="inspector-header">{#if data}<CopyId id={data.id} />{/if}<div class="inspector-navigation">{#if data}<FavouriteButton id={data.id} />{/if}<span>{position}</span><button class="icon-button previous-character" aria-label={t('common.previousCharacter')} disabled={busy || !previous} onclick={() => previous?.()}>←</button><button class="icon-button next-character" aria-label={t('common.nextCharacter')} disabled={busy || !next} onclick={() => next?.()}>→</button><button class="icon-button close-inspector" aria-label={t('common.closeReviewer')} onclick={close}>×</button></div></header>
+    <header class="inspector-header">{#if data}<CopyId id={data.id}>{#if fresh}<Cite entry={cropEntry(data, 'corpus')} />{/if}</CopyId>{/if}<div class="inspector-navigation">{#if data}<FavouriteButton id={data.id} />{/if}<span>{position}</span><button class="icon-button previous-character" aria-label={t('common.previousCharacter')} disabled={busy || !previous} onclick={() => previous?.()}>←</button><button class="icon-button next-character" aria-label={t('common.nextCharacter')} disabled={busy || !next} onclick={() => next?.()}>→</button><button class="icon-button close-inspector" aria-label={t('common.closeReviewer')} onclick={close}>×</button></div></header>
     {#if error}<div class="error-message" role="alert">{error}<button disabled={busy} onclick={() => load(id)}>{t('character.reload')}</button></div>{/if}
     {#if data}
       <!-- The glyph alone, in a box of one size for every glyph, then the page around it further down. -->
