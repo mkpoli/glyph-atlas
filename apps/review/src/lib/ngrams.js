@@ -19,6 +19,15 @@ export function runAddress(text, work = '') {
   return '/sequence/' + encodeURIComponent(text) + (work ? '?' + new URLSearchParams({ work }) : '')
 }
 
+const graphemes = new Intl.Segmenter('ja', { granularity: 'grapheme' })
+/** The query as a run, when it is one: two to eight characters with no space, else ''. */
+export function runText(query) {
+  const text = query.trim()
+  if (/\s/.test(text) || /^U\+[0-9a-f]{4,6}/i.test(text)) return ''
+  const length = [...graphemes.segment(text)].length
+  return length >= 2 && length <= 8 ? text : ''
+}
+
 /** The runs of a kind, most frequent first: `{ items: [{ text, n }], limit }`. */
 export function ngramCounts(kind, work = '', options = {}) {
   return request(`/atlas/ngrams/${NGRAM_KINDS[kind]}` + (work ? '?' + new URLSearchParams({ document: work }) : ''), undefined, options)

@@ -13,6 +13,7 @@
   // `token`: the filter that snippet chose, shown in the box until the reader removes it or types.
   // A page that knows its graphemes gives `groupOf`: the candidates a query names then show as the
   // same grapheme cards its browser shows, and the characters it holds none of fold away beneath them.
+  // A `lead` snippet is a row the page puts above the candidates while the list is open.
   import { onMount } from 'svelte'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import ScriptText from './ScriptText.svelte'
@@ -45,6 +46,7 @@
     // A box that takes a run of characters as typed (what a joined crop reads): Enter on more than one
     // character submits the run to `onsubmit`, and the rows wait for the arrows.
     runs = false,
+    lead = null,
   } = $props()
 
   const listId = `candidates-${Math.random().toString(36).slice(2, 9)}`
@@ -277,6 +279,7 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="candidate-list" class:carded id={listId} bind:this={list} role={carded ? 'group' : 'listbox'} aria-label={t('search.candidates.label')}
          onkeydown={e => { if (carded) walk(e) }}>
+      {#if lead}{@render lead()}{/if}
       {#if loading}<p class="candidate-status" role="status">{t('search.searching')}</p>{/if}
       {#if failed}<p class="candidate-status" role="alert">{t('search.failed')} <button type="button" onclick={() => seek(value)}>{t('common.tryAgain')}</button></p>{/if}
       {#if carded}

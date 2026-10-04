@@ -560,6 +560,7 @@
   "search.narrowQuery": "検索語を絞り込むと残りが表示されます。",
   "search.noMatch": "該当する文字がありません。",
   "search.placeholder": "文字を検索…",
+  "search.run": "文字列",
   "search.others.other": "ほかの文字 {count}件",
   "search.loading": "読み込み中…",
   "search.searching": "検索中…",

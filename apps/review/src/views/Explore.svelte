@@ -1,6 +1,6 @@
 <script>
   import { onMount, tick, untrack } from 'svelte'
-  import { replaceState } from '$app/navigation'
+  import { goto, replaceState } from '$app/navigation'
   import { page } from '$app/state'
   import { productionLabel } from '../components/ProductionBadge.svelte'
   import { cropDetails, repairOf } from '../lib/cropDetails.js'
@@ -20,7 +20,7 @@
   import WorkFilter from '../components/WorkFilter.svelte'
   import GraphemeGrid from '../components/GraphemeGrid.svelte'
   import NgramGrid from '../components/NgramGrid.svelte'
-  import { NGRAM_KINDS, ngramCounts } from '../lib/ngrams.js'
+  import { NGRAM_KINDS, ngramCounts, runAddress, runOccurrences, runText } from '../lib/ngrams.js'
   import SiteLinks from '../components/SiteLinks.svelte'
   import { catalogue, character, request, randomSeed, number, formatSerial, stored, remember } from '../lib/client.js'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery, decades } from '../lib/layers.js'
@@ -382,6 +382,20 @@
       .map(row => ({ ...row, label: writtenLabel(row), origin: 'corpus' }))
   }
 
+  // A query of two to eight characters is also a run: the list offers its occurrences, with their count
+  // read once the reader pauses. The count is the whole collection's, as a search is.
+  const run = $derived(flagged ? '' : runText(query))
+  let runCount = $state(null)
+  $effect(() => {
+    const text = run
+    runCount = null
+    if (!text) return
+    const controller = new AbortController()
+    const timer = setTimeout(() => runOccurrences(text, { limit: 1 }, { signal: controller.signal })
+      .then(found => { runCount = found }).catch(() => {}), 220)
+    return () => { clearTimeout(timer); controller.abort() }
+  })
+
   let searchTimer
   function seek(value) {
     query = value; visual = ''; analysis = null; familyTotal = null; unassignedCount = null
@@ -410,6 +424,7 @@
     const term = value.trim()
     if (/^U\+[0-9a-f]{4,6}$/i.test(term)) return pick({ code_point: term.toUpperCase(), char: term })
     if ([...term].length === 1) return pick({ code_point: 'U+' + term.codePointAt(0).toString(16).toUpperCase().padStart(4, '0'), char: term })
+    if (run && term === run) return goto(localize(runAddress(run)))
     load()
   }
   function clearQuery() {
@@ -704,7 +719,14 @@
       {:else}<GraphemeGrid groups={graphemes} value={grapheme} onchoose={key => { close(); openGrapheme(key) }}
                     onform={form => { close(); pick({ code_point: codesOf(form), char: form }, 'exact') }} />{/if}
     {/snippet}
-    <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} {groupOf} onchoosegroup={chooseGrapheme}
+    {#snippet runLead()}
+      {#if run}<a class="candidate run-candidate" href={localize(runAddress(run))}>
+        <span class="run-candidate-text"><ScriptText text={run} /></span>
+        <span class="candidate-body"><span class="candidate-reading">{t('search.run')}</span>
+          <span class="candidate-counts">{#if runCount}{runCount.more ? t('ngram.occurrences.more', { count: number(runCount.total) }) : t('ngram.occurrences', { count: number(runCount.total) })}{:else}…{/if}</span></span>
+      </a>{/if}
+    {/snippet}
+    <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} {groupOf} onchoosegroup={chooseGrapheme} lead={run ? runLead : null}
                      onform={form => pick({ code_point: codesOf(form), char: form }, true)}
                      token={grapheme ? charOf(grapheme) : ''} tokenLabel={t('explore.clearGrapheme', { grapheme: charOf(grapheme) })} ontokenclear={() => select('')}
                      onsubmit={() => { clearTimeout(searchTimer); offset = 0; submitQuery() }}
@@ -750,6 +772,8 @@
 </section>
 
 <style>
+  .run-candidate{color:inherit;text-decoration:none;border-bottom:1px solid var(--line);border-radius:8px 8px 0 0;margin-bottom:4px}
+  .run-candidate-text{flex:0 0 auto;min-width:44px;font-size:1.35rem;text-align:center}
   .browse-unit{display:flex;gap:2px;padding:8px 8px 6px}
   .browse-unit button{border:0;border-radius:5px;background:transparent;padding:5px 10px;font-size:12px;color:var(--muted)}
   .browse-unit button[aria-pressed="true"]{background:var(--surface-selected);color:var(--ink)}
