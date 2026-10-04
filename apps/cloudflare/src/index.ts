@@ -676,14 +676,16 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return body;
 }
-// A page of a corpus run's occurrences: each glyph's published record, read from its pack. An occurrence
-// whose record cannot be read is left out.
+// A page of a corpus run's occurrences: each glyph as the site holds it once a review has written its row,
+// else its published record, read from its pack. A record that cannot be read fails the page, which is
+// asked again, so the offsets stay those of the rows.
 async function corpusOccurrencesOf(env: Env, size: number, anchor: number, bound: string[], limit: number, offset: number) {
   const rows = (await env.DB.prepare(corpusRunQuery(size, anchor)).bind(...bound, limit, offset).all<Record<string, any>>()).results;
-  const read = await Promise.all(rows.map(row => Promise.all(Array.from({ length: size }, (_, i) =>
-    corpusData(env, { id: row[`i${i}`], object: row[`o${i}`], offset: row[`f${i}`], size: row[`s${i}`] } as CorpusRow)))
-    .then(crops => ({ crops, vertical: Boolean(row.vertical) }), () => null)));
-  const found = read.filter(Boolean) as { crops: Json[]; vertical: boolean }[];
+  const ids = rows.flatMap(row => Array.from({ length: size }, (_, i) => row[`i${i}`] as string));
+  const held = new Map(ids.length ? (await env.DB.prepare(`SELECT id,data FROM units WHERE id IN (SELECT value FROM json_each(?)) AND origin!='retired'`)
+    .bind(JSON.stringify(ids)).all<{ id: string; data: string }>()).results.map(r => [r.id, parse(r.data)] as const) : []);
+  const found = await Promise.all(rows.map(async row => ({ vertical: Boolean(row.vertical), crops: await Promise.all(Array.from({ length: size }, (_, i) =>
+    held.get(row[`i${i}`]) ?? corpusData(env, { id: row[`i${i}`], object: row[`o${i}`], offset: row[`f${i}`], size: row[`s${i}`] } as CorpusRow))) })));
   const dating = await datingOf(env, found.map(o => documentOf(o.crops[0])));
   return found.map(({ crops, vertical }) => ({
     crops: crops.map(c => ({ ...listing(c), origin: 'corpus', crop_box: c.crop_box ?? null, dating: dating.get(documentOf(c) ?? '') ?? {} })),

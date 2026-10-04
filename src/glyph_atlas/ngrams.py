@@ -95,12 +95,15 @@ def ngram_statements(units: Iterable[str], ngrams: list[Run], batch: int = 200) 
 
 
 class Glyph(NamedTuple):
-    """A located glyph of a corpus: its line, its position on it, its box and the text it transcribes."""
+    """A located glyph of a corpus: its line, its position on it, its box and the text it transcribes.
+    `wraps` marks an order that runs on from one column to the next, as a CODH block's does: the next
+    glyph then follows only where it stands below and in the same column."""
     id: str
     line: str
     seq: int
     box: Box
     text: str
+    wraps: bool = False
 
 
 class Pair(NamedTuple):
@@ -124,10 +127,13 @@ def glyph_pairs(glyphs: Iterable[Glyph]) -> list[Pair]:
         held = {seq: found[0] for seq, found in positions.items() if len(found) == 1}
         for seq, glyph in sorted(held.items()):
             following = held.get(seq + 1)
-            if following and _near_boxes(glyph.box, following.box):
-                (ax, ay, aw, ah), (bx, by, bw, bh) = glyph.box, following.box
-                down = abs(by + bh / 2 - ay - ah / 2) >= abs(bx + bw / 2 - ax - aw / 2)
-                pairs.append(Pair(glyph.id, following.id, glyph.text + following.text, down))
+            if not following or not _near_boxes(glyph.box, following.box):
+                continue
+            (ax, ay, aw, ah), (bx, by, bw, bh) = glyph.box, following.box
+            dx, dy = bx + bw / 2 - ax - aw / 2, by + bh / 2 - ay - ah / 2
+            if (glyph.wraps or following.wraps) and not (dy > 0 and abs(dx) < max(aw, bw)):
+                continue
+            pairs.append(Pair(glyph.id, following.id, glyph.text + following.text, abs(dy) >= abs(dx)))
     return pairs
 
 

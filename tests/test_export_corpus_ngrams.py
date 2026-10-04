@@ -14,8 +14,8 @@ def row(id, line_id=None, seq=None, page_id="codh:1:1_00004_2"):
 
 
 def test_a_codh_glyph_is_placed_by_its_block_and_character_number():
-    assert export.position(row("codh:1:1_00004_2:B0002:C0042")) == ("codh:1:1_00004_2:B0002", 42)
-    assert export.position(row("hl:x:3", "hl:x_3_001", 3)) == ("hl:x_3_001", 3)
+    assert export.position(row("codh:1:1_00004_2:B0002:C0042")) == ("codh:1:1_00004_2:B0002", 42, True)
+    assert export.position(row("hl:x:3", "hl:x_3_001", 3)) == ("hl:x_3_001", 3, False)
     assert export.position(row("hi:34000001", page_id=None)) is None
 
 

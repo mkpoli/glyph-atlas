@@ -982,6 +982,16 @@ try {
   await db.batch([db.prepare(`INSERT INTO corpus_ngrams(first,second,text,vertical) VALUES('ghost-3','ghost-4','にて',1),('ghost-5','ghost-6','にて',1)`),
     db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at','corpus-leftward')")])
   assert.deepEqual(corpusIds(await runOf('にてを')), [['cr-1', 'cr-2', 'cr-3']], 'a corpus run reached leftwards keeps its reading order')
+  // A glyph a review has written to the site is shown as the site holds it; a record that cannot be read
+  // fails the page rather than leaving a hole the next page's offset would skip.
+  await db.prepare(`INSERT INTO units(id,origin,character,family,visual_group,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual,document,style)
+    VALUES('cr-2','corpus','て','U+3066',NULL,'unknown','kana','checked',3,1,1,7,?,'{}','{}','{}',NULL,'unassessed')`).bind(JSON.stringify({ ...runGlyph('cr-2', 'て', 22), state: 'checked', revision: 3 })).run()
+  await db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at','corpus-reviewed')").run()
+  const heldGlyph = (await runOf('にて')).items[0].crops[1]
+  assert.deepEqual([heldGlyph.state, heldGlyph.revision], ['checked', 3], 'a reviewed corpus glyph is shown as the site holds it')
+  await db.batch([db.prepare("UPDATE corpus_units SET object='gone' WHERE id='cr-3'"), db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at','corpus-gone')")])
+  assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent('てを'))).status, 503, 'an unreadable record fails the page')
+  await db.batch([db.prepare("UPDATE corpus_units SET object='pack-run' WHERE id='cr-3'"), db.prepare("DELETE FROM units WHERE id='cr-2'")])
   // The collection's occurrences come first and the corpus's after them, across pages.
   await db.prepare("UPDATE unit_ngrams SET text='にて' WHERE first='one' AND size=2").run()
   await db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at','corpus-paging')").run()

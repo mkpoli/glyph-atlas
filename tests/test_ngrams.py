@@ -152,3 +152,12 @@ def test_d1_corpus_pairs_need_both_glyphs_published():
     for statement in corpus_pair_statements(["a", "b", "c"], pairs) * 2:
         db.execute(statement)
     assert db.execute("SELECT * FROM corpus_ngrams ORDER BY first").fetchall() == [("a", "b", "にて", 1), ("b", "c", "てを", 1)]
+
+
+def test_an_order_that_wraps_columns_pairs_only_down_a_column():
+    # CODH's 100241706_00020_2 B0001 C0017→C0018: the next glyph starts the next column, up and to the left.
+    top, wrapped = Glyph("a", "B1", 17, (400, 600, 230, 230), "し", True), Glyph("b", "B1", 18, (183, 317, 230, 230), "海", True)
+    below = Glyph("c", "B1", 19, (183, 560, 230, 230), "の", True)
+    assert glyph_pairs([top, wrapped, below]) == [Pair("b", "c", "海の", True)]
+    # A recorded line is read as it is.
+    assert glyph_pairs([top._replace(wraps=False), wrapped._replace(wraps=False)]) == [Pair("a", "b", "し海", True)]
