@@ -118,5 +118,36 @@ def test_doubled_counts_neighbours_across_a_withheld_box():
     assert doubled(blocks, relabel={"u2": "水"}) == (3, 0)
 
 
+def test_a_full_size_box_is_not_withheld_only_because_nothing_else_fits():
+    blocks = block("一此湖水の山", "一湖水水の山")
+    offsets = {"u1": 1, "u2": 1}
+    shown = {"u0": shows(0), "u1": shows(1), "u2": shows(1), "u3": shows(), "u4": shows(0), "u5": shows(0)}
+    windows = resolve(blocks, shown, dict.fromkeys(shown, (30, 30)), set(), offsets)
+    assert [w["status"] for w in windows] == ["unsure"]
+
+
+def test_a_withheld_box_keeps_its_place_in_the_text_on_a_rerun():
+    # u2 was withheld before and u3 took 湖 from its place; nothing is left to settle.
+    blocks = block("一此湖水の", "一此湖湖の")
+    offsets = {"u3": -1}
+    shown = {"u0": shows(0), "u1": shows(0), "u2": shows(), "u3": shows(-1), "u4": shows(0)}
+    sizes = dict.fromkeys(shown, (30, 30))
+    assert resolve(blocks, shown, sizes, set(), offsets, passed={"u2"}) == []
+    assert doubled(blocks, withheld={"u2"}) == (3, 0)
+
+
+def test_a_crop_the_classifier_did_not_read_is_never_moved():
+    blocks = block("一此湖水の山", "一湖湖の山山")
+    offsets = {"u1": 1, "u3": 1, "u4": 1}
+    shown = {"u0": shows(0), "u1": shows(1), "u3": shows(1), "u4": shows(1), "u5": shows()}
+    windows = resolve(blocks, shown, dict.fromkeys([*shown, "u2"], (30, 30)), set(), offsets)
+    assert all(not w["relabel"] for w in windows)
+
+
+def test_align_counts_an_extra_box_beside_a_skip_once():
+    top = align([[5.0]], [0.69], 1)
+    assert len({chosen for _, chosen in top}) == len(top)
+
+
 def test_the_method_is_named():
     assert shift_boundary.METHOD == "block-boundary-v1"

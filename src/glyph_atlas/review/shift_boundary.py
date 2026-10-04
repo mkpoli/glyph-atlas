@@ -15,17 +15,20 @@ character may be left without a box. A crop pays −log of the probability that 
 it takes (at least `LEAST`, and `NEUTRAL` for a character the classifier has no class for), an extra
 box pays −log of its prior (`extra_prior`: higher the smaller the box is against the block's median),
 and a character left without a box pays `SKIP`. The cheapest alignment is taken when the next one costs
-at least `MARGIN` nats more; otherwise the window is left as it is.
+at least `MARGIN` nats more or, where no other alignment is possible, when every box it withholds
+has a prior of at least `EXTRA_FORCED`; otherwise the window is left as it is. A crop the classifier
+did not read anchors its window.
 
 A crop that takes another character is relabelled, as `shift_repair` does, with its evidence. A crop
 the alignment leaves without a character is kept and withheld: its `alignment_repair` note says it is
 withheld from Quick review, with the reason, which the site already shows on a withheld crop. A crop a
-person reviewed, one named in `protect`, and one whose review state is anything but `machine` is never
-changed, and anchors its window.
+person reviewed, one named in `protect`, one whose review state is anything but `machine`, and one
+whose label two readings of the ink confirmed is never changed, and anchors its window. A box another
+pass withheld keeps that pass's note; a box this pass withheld keeps its place in the text on a rerun.
 
-Measured on 2026-10-04 in a dry run (docs/reports/block-shift-boundaries.md): the pass settles 2,473
-of 3,347 windows, relabelling 2,156 crops and withholding 1,310, and neighbouring `ar:` crops with
-one label fall from 3,383 pairs to 924. On reviewed crops it relabels 33 to the reviewer's correction
+Measured on 2026-10-04 in a dry run (docs/reports/block-shift-boundaries.md): the pass settles 2,413
+of 3,348 windows, relabelling 2,131 crops and withholding 1,272, and neighbouring `ar:` crops with
+one label fall from 3,383 pairs to 960. On reviewed crops it relabels 33 to the reviewer's correction
 and none to another character; of 40 random decisions on unreviewed crops none was wrong by eye.
 """
 from __future__ import annotations
@@ -57,6 +60,8 @@ NEUTRAL = 0.05
 SKIP = -math.log(0.02)
 #: How much cheaper the chosen alignment has to be than the next one.
 MARGIN = 1.0
+#: Where the only possible alignment withholds a box, its prior has to be at least this.
+EXTRA_FORCED = 0.08
 #: A window with more crops than this is left alone.
 MAX_WINDOW = 8
 #: The reason a withheld extra box shows on the site.
@@ -68,15 +73,17 @@ def extra_prior(area: float) -> float:
     return 0.5 if area < 0.2 else 0.25 if area < 0.35 else 0.08 if area < 0.6 else 0.02
 
 
-def claims(crops: list[tuple[str, int, str, str]], offsets: dict[str, int]) -> dict[str, int | None]:
+def claims(crops: list[tuple[str, int, str, str]], offsets: dict[str, int],
+           text: dict[int, str] | None = None) -> dict[str, int | None]:
     """The place of the block's text each crop's label is taken from.
 
     `crops` are (id, position, text at the position, label); `offsets` the offset a relabel recorded.
     A recorded offset is taken when the text there is the label; otherwise the nearest place within
     three whose text is the label, nearer before further and before after. A label the text has
-    nowhere near (a person's correction) claims no place.
+    nowhere near (a person's correction) claims no place. `text` is the block's text by position,
+    when it holds places no crop of `crops` has.
     """
-    text = {position: written for _, position, written, _ in crops}
+    text = text if text is not None else {position: written for _, position, written, _ in crops}
     found: dict[str, int | None] = {}
     for identity, position, _, label in crops:
         offset = offsets.get(identity)
@@ -100,6 +107,9 @@ def align(costs: list[list[float]], extra: list[float], places: int) -> list[tup
 
     def push(state, cost, chosen):
         found = best.setdefault(state, [])
+        # Skips are not part of an alignment, so two orders of an extra box and a skip are one alignment.
+        if any(chosen == other for _, other in found):
+            return
         found.append((cost, chosen))
         found.sort(key=lambda item: item[0])
         del found[2:]
@@ -118,29 +128,34 @@ def align(costs: list[list[float]], extra: list[float], places: int) -> list[tup
 
 def resolve(blocks: dict[Any, list[tuple[str, int, str, str]]], shown: dict[str, np.ndarray],
             sizes: dict[str, tuple[float, float]], protected: set[str],
-            offsets: dict[str, int] | None = None) -> list[dict]:
+            offsets: dict[str, int] | None = None, passed: Iterable[str] = ()) -> list[dict]:
     """Every window where two neighbouring crops claim one place of their block's text, and what to do.
 
     `blocks` lists each block's crops as (id, position, the text written at that position, the
     crop's label now). `shown[id]` holds, for each offset of `OFFSETS`, the probability that the crop
     shows the text at that offset (`nan` where the classifier has no class for it). `sizes` gives
-    each box's width and height, `offsets` the offset an earlier relabel recorded for a crop.
+    each box's width and height, `offsets` the offset an earlier relabel recorded for a crop. A crop in
+    `passed` (an extra box withheld before) keeps its place's text in the block and is otherwise left out.
+    A crop the classifier did not read anchors its window, since nothing says where it belongs.
     """
-    offsets = offsets or {}
+    offsets, passed = offsets or {}, set(passed)
     return [window for key, crops in blocks.items()
-            for window in _block(key, crops, shown, sizes, protected, offsets)]
+            for window in _block(key, crops, shown, sizes, protected, offsets, passed)]
 
 
-def _block(key, crops, shown, sizes, protected, offsets) -> list[dict]:
+def _block(key, crops, shown, sizes, protected, offsets, passed) -> list[dict]:
     """The windows of one block, as `resolve` describes them."""
     zero = OFFSETS.index(0)
     windows: list[dict] = []
     crops = sorted(crops, key=lambda crop: crop[1])
     text = {position: written for _, position, written, _ in crops}
+    crops = [crop for crop in crops if crop[0] not in passed]
+    if not crops:
+        return windows
     ids = [crop[0] for crop in crops]
     position = {crop[0]: crop[1] for crop in crops}
     label = {crop[0]: crop[3] for crop in crops}
-    claim = claims(crops, offsets)
+    claim = claims(crops, offsets, text)
     areas = [sizes.get(i, (0, 0))[0] * sizes.get(i, (0, 0))[1] for i in ids]
     median = float(np.median(areas)) or 1.0
 
@@ -157,7 +172,7 @@ def _block(key, crops, shown, sizes, protected, offsets) -> list[dict]:
         return NEUTRAL if math.isnan(value) else max(value, LEAST)
 
     def anchored(identity: str) -> bool:
-        return (identity in protected or claim[identity] is None
+        return (identity in protected or claim[identity] is None or identity not in shown
                 or (evidence(identity, claim[identity]) or 0) >= ANCHOR)
 
     area = {i: a / median for i, a in zip(ids, areas, strict=True)}
@@ -184,7 +199,8 @@ def _block(key, crops, shown, sizes, protected, offsets) -> list[dict]:
         window["crops"] = inside
         visited.update(inside)
         places = list(range(left + 1, right)) if left is not None and right is not None else []
-        if left is None or right is None or len(inside) > MAX_WINDOW or len(places) > MAX_WINDOW + 2:
+        if (left is None or right is None or left >= right or len(inside) > MAX_WINDOW
+                or len(places) > MAX_WINDOW + 2):
             window["status"] = "unfit"
             continue
         costs = [[-math.log(p) if (p := evidence(i, place)) is not None else math.inf for place in places]
@@ -204,12 +220,15 @@ def _block(key, crops, shown, sizes, protected, offsets) -> list[dict]:
             if taken is None:
                 window["extra"].append({"unit_id": identity, "label": label[identity], "area": round(size, 3),
                                         "p_label": round(before or 0, 4), "position": position[identity]})
-            elif places[taken] != claim[identity]:
+            elif text[places[taken]] != label[identity]:
                 place = places[taken]
                 window["relabel"].append({"unit_id": identity, "before": label[identity], "character": text[place],
                                           "offset": place - position[identity], "p": round(evidence(identity, place), 4),
                                           "p_label": round(before or 0, 4)})
-        window["status"] = "settled" if margin >= MARGIN else "unsure"
+        # With no other alignment possible the window's crops are all extra boxes; a full-size box is
+        # more likely a character the anchors misplace than ink without one.
+        forced_full = math.isinf(margin) and any(extra_prior(size) < EXTRA_FORCED for size in boxes)
+        window["status"] = "settled" if margin >= MARGIN and not forced_full else "unsure"
     return windows
 
 
@@ -243,21 +262,27 @@ def run(dataset: Path, *, checkpoint: Path, apply: bool = False, protect: Iterab
     store = Store(dataset)
     reviewed = {event.target_id for event in store.events() if event.role != "model" and event.field != SEEN}
     protected = reviewed | set(protect)
-    units, blocks, sizes, offsets = {}, defaultdict(list), {}, {}
+    units, blocks, sizes, offsets, passed, held = {}, defaultdict(list), {}, {}, set(), set()
     for unit, revision in store.unit_snapshot():
         found = place(unit)
         if not unit.active or str(unit.kind) != "char" or found is None or unit.box is None:
             continue
         meta = unit.meta or {}
-        # A box this pass withheld before has no place in its block's text any more.
-        if (meta.get("alignment_repair") or {}).get("method") == METHOD:
-            continue
         label = written_identity(unit)
         text = unit.text_source or label
         if not label or not text:
             continue
-        if str(unit.review) != "machine":
+        note = meta.get("alignment_repair") or {}
+        # A label two readings of the ink agree on is settled like a person's.
+        if str(unit.review) != "machine" or (note.get("status") == "confirmed" and note.get("reliable")):
             protected.add(unit.id)
+        if note.get("withheld"):
+            # A box this pass withheld before keeps its place's text and is otherwise passed over,
+            # until a person reviews it; one another pass withheld keeps that pass's note.
+            if note.get("method") == METHOD and unit.id not in protected:
+                passed.add(unit.id)
+            else:
+                held.add(unit.id)
         relabel = meta.get("feedback_identity") or {}
         if relabel.get("method") in (SHIFT_METHOD, METHOD) and relabel.get("offset") is not None:
             offsets[unit.id] = int(relabel["offset"])
@@ -265,14 +290,14 @@ def run(dataset: Path, *, checkpoint: Path, apply: bool = False, protect: Iterab
         blocks[found[0]].append((unit.id, found[1], text, label))
         sizes[unit.id] = (unit.box.w, unit.box.h)
     shown = _shown(store, blocks, checkpoint, offsets=OFFSETS, unknown=float("nan"))
-    windows = resolve(blocks, shown, sizes, protected, offsets)
+    windows = resolve(blocks, shown, sizes, protected, offsets, passed)
     settled = [w for w in windows if w["status"] == "settled"]
     relabels = {item["unit_id"]: item["character"] for w in settled for item in w["relabel"]}
     extras = [item["unit_id"] for w in settled for item in w["extra"]]
     counts: Counter = Counter()
     for window in settled:
         for item in window["relabel"] + window["extra"]:
-            item["status"] = "proposed"
+            item["status"] = "already withheld" if item["unit_id"] in held else "proposed"
         if not apply:
             continue
         for item in window["relabel"]:
@@ -283,6 +308,9 @@ def run(dataset: Path, *, checkpoint: Path, apply: bool = False, protect: Iterab
                       "review": "machine", "meta": {**(unit.meta or {}), "feedback_identity": evidence}}
             item["status"] = _record(store, unit, values, evidence, revision, _changes, Conflict, "relabelled")
         for item in window["extra"]:
+            if item["unit_id"] in held:
+                item["status"] = "already withheld"
+                continue
             unit, revision = units[item["unit_id"]]
             evidence = {"kind": "block-boundary-repair", "method": METHOD, "automated": True, "block": window["block"],
                         "margin": window["margin"], "verdict": "extra",
@@ -294,8 +322,8 @@ def run(dataset: Path, *, checkpoint: Path, apply: bool = False, protect: Iterab
             item["status"] = _record(store, unit, values, evidence, revision, _changes, Conflict, "withheld")
     for window in settled:
         counts.update(item["status"] for item in window["relabel"] + window["extra"])
-    before = doubled(_by_prefix(blocks, "ar:"))
-    after = doubled(_by_prefix(blocks, "ar:"), extras, relabels)
+    before = doubled(_by_prefix(blocks, "ar:"), passed)
+    after = doubled(_by_prefix(blocks, "ar:"), passed | set(extras), relabels)
     return {"method": METHOD, "blocks": len(blocks), "crops": len(units), "read": len(shown),
             "protected": len(protected & set(units)), "windows": dict(Counter(w["status"] for w in windows)),
             "relabels": len(relabels), "extras": len(extras), "counts": dict(counts),
