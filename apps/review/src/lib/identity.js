@@ -31,12 +31,36 @@ const SCRIPT_NAMES = { hiragana: 'Hiragana', hentaigana: 'Hiragana', katakana: '
 
 // ー belongs to Unicode's Common script and to `symbol` in the character table; it is coloured as katakana.
 const KATAKANA_MARKS = new Set(['ー'])
-// The operators of an ideographic description sequence (⿰亻哥 is 亻 beside 哥), with the number of
-// descriptions each takes. A sequence describes one Han character Unicode lacks.
+// An ideographic description sequence (⿰亻哥 is 亻 beside 哥) describes one Han character Unicode
+// lacks, by the rules of the Worker's `representation.ts`: each operator takes its own number of
+// descriptions, and a component is an ideograph, a radical, a stroke, a private-use character or ？,
+// with an optional variation selector.
 const IDS_ARITY = new Map([...[...'⿰⿱⿴⿵⿶⿷⿸⿹⿺⿻⿼⿽㇯'].map(c => [c, 2]), ...[...'⿲⿳'].map(c => [c, 3]), ...[...'⿾⿿〾'].map(c => [c, 1])])
+const IDS_COMPONENTS = [[0x2E80, 0x2FDF], [0x31C0, 0x31EE], [0x3400, 0x4DBF], [0x4E00, 0x9FFF], [0xE000, 0xF8FF],
+  [0xF900, 0xFAFF], [0xFF1F, 0xFF1F], [0x20000, 0x3FFFD], [0xF0000, 0x10FFFD]]
+const isSelector = char => char !== undefined && /^[\uFE00-\uFE0F\u{E0100}-\u{E01EF}]$/u.test(char)
+/** Where the description starting at `chars[at]` ends, or -1 when none well-formed starts there. */
+function descriptionEnd(chars, at) {
+  const char = chars[at]
+  if (char === undefined) return -1
+  const arity = IDS_ARITY.get(char) ?? 0
+  if (!arity) {
+    const cp = char.codePointAt(0)
+    if (!IDS_COMPONENTS.some(([low, high]) => cp >= low && cp <= high)) return -1
+    return isSelector(chars[at + 1]) ? at + 2 : at + 1
+  }
+  let end = at + 1
+  for (let k = 0; k < arity && end >= 0; k++) end = descriptionEnd(chars, end)
+  return end
+}
+const isDescription = text => {
+  const chars = [...text ?? '']
+  return IDS_ARITY.has(chars[0]) && chars.length <= 64 && descriptionEnd(chars, 0) === chars.length
+}
 
 export function scriptInfo(text, stated = '') {
   if (text && [...text].every(char => KATAKANA_MARKS.has(char))) return { key: 'katakana', label: SCRIPT_NAMES.katakana }
+  if (isDescription(text)) return { key: 'kanji', label: SCRIPT_NAMES.kanji }
   if (stated && stated !== 'unknown' && SCRIPT_NAMES[stated]) {
     const key = stated === 'han' ? 'kanji' : stated === 'hentaigana' ? 'hiragana' : stated
     return { key, label: SCRIPT_NAMES[stated] }
@@ -45,7 +69,6 @@ export function scriptInfo(text, stated = '') {
     && !(char.codePointAt(0) >= 0xE0100 && char.codePointAt(0) <= 0xE01EF)).map(char => {
     const cp = char.codePointAt(0)
     if (KATAKANA_MARKS.has(char)) return 'katakana'
-    if (IDS_ARITY.has(char)) return 'kanji'
     if (/\p{Script=Hiragana}/u.test(char) || (cp >= 0x1B001 && cp <= 0x1B11F) || cp === 0x1B123) return 'hiragana'
     if (/\p{Script=Katakana}/u.test(char) || cp === 0x2A708 || cp === 0x1B000 || (cp >= 0x1B120 && cp <= 0x1B122)
       || (cp >= 0x1B124 && cp <= 0x1B128) || cp === 0x1B168 || (cp >= 0x1AFF0 && cp <= 0x1AFFF)) return 'katakana'
@@ -62,22 +85,24 @@ export function scriptInfo(text, stated = '') {
 
 const graphemes = new Intl.Segmenter('ja', { granularity: 'grapheme' })
 
-// A description sequence is one part: its operator and every description the operators take.
-function described(segments) {
+// The text's characters as shown: a well-formed description sequence is one part, the rest one per grapheme.
+function segments(text) {
   const parts = []
-  for (let at = 0; at < segments.length;) {
-    let text = '', owed = 1
-    do {
-      const segment = segments[at++]
-      text += segment
-      owed += (IDS_ARITY.get(segment) ?? 0) - 1
-    } while (owed > 0 && at < segments.length && IDS_ARITY.has(text[0]))
-    parts.push(text)
+  let skip = 0
+  for (const { segment, index } of graphemes.segment(text ?? '')) {
+    if (index < skip) continue
+    const chars = [...text.slice(index)]
+    const end = IDS_ARITY.has(segment) ? descriptionEnd(chars, 0) : -1
+    if (end > 0) {
+      const part = chars.slice(0, end).join('')
+      parts.push(part)
+      skip = index + part.length
+    } else parts.push(segment)
   }
   return parts
 }
 
 export function scriptParts(text, stated = '') {
-  const parts = described([...graphemes.segment(text ?? '')].map(part => part.segment))
+  const parts = segments(text)
   return parts.map(part => ({ text: part, ...scriptInfo(part, parts.length === 1 ? stated : '') }))
 }
