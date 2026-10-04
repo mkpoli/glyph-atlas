@@ -857,7 +857,8 @@ try {
     assert.ok(details.some(d => new RegExp(`SEARCH a USING (COVERING )?INDEX ${index}\\b`).test(d)), `${index}: ${details.join('; ')}`)
     assert.ok(!details.some(d => d.includes('TEMP B-TREE')), details.join('; '))
     assert.ok(!details.some(d => /^SCAN \w+/.test(d)), details.join('; '))
-    assert.ok(details.filter(d => /^SEARCH u\d+ /.test(d)).every(d => /USING INDEX sqlite_autoindex_units_1 \(id=\?\)$/.test(d)), `crops are found by their ids: ${details.join('; ')}`)
+    assert.ok(details.filter(d => /^SEARCH u\d+ /.test(d)).every(d => /USING INDEX sqlite_autoindex_units_1 \(id=\?\)( LEFT-JOIN)?$/.test(d)), `crops are found by their ids: ${details.join('; ')}`)
+    assert.ok(details.filter(d => /^SEARCH k\d+ /.test(d)).every(d => /USING (COVERING )?INDEX sqlite_autoindex_corpus_units_1 \(id=\?\)( LEFT-JOIN)?$/.test(d)), `corpus glyphs are found by their ids: ${details.join('; ')}`)
     assert.ok(details.filter(d => /^SEARCH r\d+ /.test(d)).every(d => d.includes('USING PRIMARY KEY (first=? AND size=?)')), `rightward pairs are found by their keys: ${details.join('; ')}`)
     assert.ok(details.filter(d => /^SEARCH l\d+ /.test(d)).every(d => d.includes('unit_ngram_second')), `leftward pairs go through unit_ngram_second: ${details.join('; ')}`)
   }
@@ -1020,6 +1021,74 @@ try {
   assert.deepEqual([triple.inside, triple.siblings.map(r => r.text), triple.longer, triple.lead], [['ナリ'], ['ナリイ'], [], 'ナリ'], 'a trigram offers the pairs it holds that the site has, and the trigrams that share its first two')
   assert.deepEqual((await near('ナリアイ')).inside, ['ナリア'], 'a run of four offers the trigrams inside it that the site has')
   assert.equal((await mf.dispatchFetch(base + '/atlas/runs/related?text=' + encodeURIComponent('ナ'))).status, 422)
+  // A corpus glyph's runs are counted and listed with the crops'. Its record is read from its pack until a
+  // round names it, and a run's text follows the character the site shows for each of its glyphs: the
+  // one a decision gives its published row, then the one its `units` row carries once a round names it.
+  {
+    let pack = ''
+    for (const [id, character, y] of [['hl:run:0', '申', 0], ['hl:run:1', '上', 12], ['hl:run:2', '候', 24]]) {
+      const raw = JSON.stringify({ id, origin: 'corpus', label: character, written_character: character, proxyable: true, state: 'pending', revision: 0,
+        image: `/atlas/media/${id}.webp`, crop_box: { x: 10, y, w: 10, h: 10 }, source: { corpus: 'honkoku-lines', title: 'A corpus book' } })
+      await db.prepare(`INSERT INTO corpus_units(${CORPUS_COLUMNS},document) VALUES(?,?,?,?,?,?,?,?,?,?,?)`).bind(id, character, null, null, 5, 'pack-runs',
+        new TextEncoder().encode(pack).length, new TextEncoder().encode(raw).length, 'unknown', 0, 'hl:book').run()
+      pack += raw
+    }
+    await bucket.put('pack-runs', pack)
+    const textOf = async (first, size = 2) => (await db.prepare('SELECT text FROM unit_ngrams WHERE first=? AND size=?').bind(first, size).first())?.text ?? null
+    const countOf = async (text, size = 2) => (await db.prepare("SELECT n FROM ngram_counts WHERE scope='' AND size=? AND text=?").bind(size, text).first())?.n ?? 0
+    const refreshed = stamp => db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at',?)").bind(stamp).run()
+    await db.batch([db.prepare(`INSERT INTO unit_ngrams(first,size,second,third,text,document) VALUES('hl:run:0',2,'hl:run:1',NULL,'申上','hl:book'),
+      ('hl:run:1',2,'hl:run:2',NULL,'上候','hl:book'),('hl:run:0',3,'hl:run:1','hl:run:2','申上候','hl:book')`)])
+    await refreshed('corpus-runs')
+    assert.deepEqual((await countsOf('2')).find(row => row.text === '上候'), { text: '上候', n: 1, vertical: true }, 'a corpus run is counted with the crops\'')
+    const glyphRun = await runOf('申上候')
+    assert.deepEqual([glyphRun.total, glyphRun.items.map(o => o.crops.map(c => c.id))], [1, [['hl:run:0', 'hl:run:1', 'hl:run:2']]], 'a corpus run is listed')
+    assert.equal(glyphRun.items[0].crops[1].source.title, 'A corpus book', 'its glyphs carry their published records')
+    assert.equal(glyphRun.document, null)
+    assert.equal((await runOf('申上', '&document=hl%3Abook')).total, 1, 'a corpus book holds its runs')
+    // A corpus run takes its first glyph's style group and shuffle, and follows a restyle of its published row.
+    const placed = async () => (await db.prepare("SELECT style_order AS s,shuffle FROM unit_ngrams WHERE first='hl:run:0' AND size=2").first())
+    assert.deepEqual(await placed(), { s: 1, shuffle: 5 }, 'unjudged, at its glyph\'s shuffle')
+    await db.prepare("UPDATE corpus_units SET style='cursive' WHERE id='hl:run:0'").run()
+    assert.deepEqual(await placed(), { s: 0, shuffle: 5 })
+    await refreshed('corpus-runs-styled')
+    const styledRun = await runOf('申上', '&style=cursive')
+    assert.deepEqual([styledRun.total, styledRun.styles.cursive, styledRun.works], [1, 1, [{ id: 'hl:book', title: 'A corpus book', count: 1 }]],
+      'a corpus run is narrowed by style, and its book named from its glyph\'s record')
+    // An occurrence whose record cannot be read is left off its page, which still pages on past it.
+    await db.batch([
+      db.prepare(`INSERT INTO corpus_units(${CORPUS_COLUMNS}) VALUES('hl:gone:0','申',NULL,NULL,5,'no-such-pack',0,10,'unknown',0),('hl:gone:1','上',NULL,NULL,5,'no-such-pack',10,10,'unknown',0)`),
+      db.prepare("INSERT INTO unit_ngrams(first,size,second,third,text,document) VALUES('hl:gone:0',2,'hl:gone:1',NULL,'申上',NULL)"),
+      db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at','corpus-runs-gone')")])
+    const unread = await runOf('申上')
+    assert.deepEqual([unread.total, unread.items.map(o => o.crops[0].id), unread.next_offset], [2, ['hl:run:0'], 2])
+    await db.prepare("DELETE FROM corpus_units WHERE id LIKE 'hl:gone:%'").run()
+    assert.deepEqual(await countsOf('3?document=hl%3Abook'), [{ text: '申上候', n: 1, vertical: true }], 'and counts them')
+    // A publication files a glyph under another book: its runs and their counts follow.
+    await db.prepare("UPDATE corpus_units SET document='hl:other' WHERE id='hl:run:0'").run()
+    assert.deepEqual(await db.prepare("SELECT scope,n FROM ngram_counts WHERE size=3 AND text='申上候' ORDER BY scope").all().then(r => r.results),
+      [{ scope: '', n: 1 }, { scope: 'hl:other', n: 1 }])
+    await db.prepare("UPDATE corpus_units SET document='hl:book' WHERE id='hl:run:0'").run()
+    // A decision moves an unnamed glyph's character.
+    await db.prepare("UPDATE corpus_units SET character='下' WHERE id='hl:run:1'").run()
+    assert.deepEqual([await textOf('hl:run:0'), await textOf('hl:run:1'), await textOf('hl:run:0', 3)], ['申下', '下候', '申下候'])
+    assert.deepEqual([await countOf('申上'), await countOf('申下'), await countOf('申下候', 3)], [0, 1, 1], 'the counts follow the text')
+    // A round names the glyph: its row's character stands for it, and the glyph reads its published one again once the row goes.
+    await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind('hl:run:1', 'corpus', '工', null, null, 'unknown', 'han',
+      'checked', 1, 0, 1, 5, JSON.stringify({ id: 'hl:run:1', origin: 'corpus', label: '工', written_character: '工', state: 'checked', revision: 1 }), '{}', '{}', '{}', null).run()
+    assert.equal(await textOf('hl:run:0'), '申工')
+    await refreshed('corpus-runs-named')
+    assert.deepEqual((await runOf('申工')).items.map(o => o.crops.map(c => [c.id, c.label])), [[['hl:run:0', '申'], ['hl:run:1', '工']]], 'a named glyph shows its row')
+    await db.prepare("UPDATE units SET character='エ' WHERE id='hl:run:1'").run()
+    assert.deepEqual([await textOf('hl:run:0'), (await db.prepare("SELECT document FROM unit_ngrams WHERE first='hl:run:1' AND size=2").first()).document], ['申エ', 'hl:book'],
+      'a named glyph keeps its run\'s book')
+    await db.prepare("DELETE FROM units WHERE id='hl:run:1'").run()
+    assert.equal(await textOf('hl:run:0'), '申下')
+    // A glyph that leaves the site takes its runs along.
+    await db.prepare("DELETE FROM corpus_units WHERE id='hl:run:2'").run()
+    assert.deepEqual([await textOf('hl:run:0'), await textOf('hl:run:1'), await textOf('hl:run:0', 3), await countOf('下候')], ['申下', null, null, 0])
+    await db.prepare("DELETE FROM corpus_units WHERE id IN ('hl:run:0','hl:run:1')").run()
+  }
   // A run filed under an empty book is counted once, on the whole site.
   await db.prepare("INSERT INTO unit_ngrams(first,size,second,text,document) VALUES('blank1',2,'blank2','空白','')").run()
   assert.deepEqual((await db.prepare("SELECT scope,n FROM ngram_counts WHERE text='空白'").all()).results, [{ scope: '', n: 1 }])
