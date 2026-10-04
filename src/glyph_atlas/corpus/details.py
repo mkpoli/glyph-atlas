@@ -186,6 +186,13 @@ def _char_of(code_point: Any) -> str | None:
         return None
 
 
+def unit_label(row: dict[str, Any]) -> str | None:
+    """What an imported unit's published record is labelled while no written form is settled: its
+    encoded class (`unicode`), else its source transcription."""
+    encoded = _char_of(row.get("unicode"))
+    return encoded if encoded is not None else row.get("text_source")
+
+
 class DetailResolver:
     """Resolves one identity, with a bounded cache and a bounded lookup."""
 
@@ -353,9 +360,8 @@ class DetailResolver:
         # Encoded classes and source transcriptions remain provenance. CODH merges
         # some written forms into one class, so this alone cannot identify the ink.
         cp = row.get("unicode")
-        encoded = _char_of(cp)
         source_label = row.get("text_source")
-        label = encoded if encoded is not None else source_label
+        label = unit_label(row)
         context = _MetaCache(corpus)
         joined = _unit_row(corpus, context, row, label or "", cp or "")
         box = _public_box(joined.get("box"))

@@ -28,6 +28,7 @@ from prepare_publication import write_parts
 from refresh_published_units import VERSION_BUMP
 
 from glyph_atlas import withdrawn
+from glyph_atlas.corpus.details import unit_label
 from glyph_atlas.importers.codh_all import reading_place
 from glyph_atlas.ngrams import (
     Glyph,
@@ -38,7 +39,8 @@ from glyph_atlas.ngrams import (
     in_reading_order,
 )
 
-COLUMNS = ("id", "document_id", "page_id", "line_id", "seq", "box", "kind", "granularity", "active", "method")
+COLUMNS = ("id", "document_id", "page_id", "line_id", "seq", "box", "kind", "granularity", "active", "method", "unicode",
+           "text_source")
 #: Units whose line numbers come from the aligner, which numbered a line's boxes in a scrambled order
 #: until 2026-09-24 (`glyph_atlas.box_relabel`): their places are read from their boxes instead.
 ALIGNED = "detect-align"
@@ -55,14 +57,15 @@ def placed(row: dict) -> dict:
     return row
 
 
-def corpus_runs(corpus) -> tuple[list[Run], list[str]]:
-    """A corpus's runs, and the ids of every glyph on a line, whose earlier runs the new ones replace."""
+def corpus_runs(corpus) -> tuple[list[Run], list[str], dict[str, str]]:
+    """A corpus's runs, the ids of every glyph on a line, whose earlier runs the new ones replace, and
+    the label each of those glyphs' records is shown with while no written form is settled."""
     paths = corpus.parquet_files("units")
     if not paths:
-        return [], []
+        return [], [], {}
     dataset = ds.dataset([str(p) for p in paths], format="parquet")
     if not {"line_id", "seq"} <= set(dataset.schema.names):
-        return [], []
+        return [], [], {}
     vertical = line_orientation(corpus)
     gone = withdrawn.documents()
     rows = [placed(row) for row in dataset.to_table(columns=[c for c in COLUMNS if c in dataset.schema.names]).to_pylist()
@@ -73,16 +76,17 @@ def corpus_runs(corpus) -> tuple[list[Run], list[str]]:
     glyphs += in_reading_order((Glyph.of(row) for row in rows if row.get("method") == ALIGNED), horizontal)
     # A line read from the ids is a block of several columns (`adjacent_ngrams`).
     blocks = {row["line_id"] for row in rows if reading_place(row["id"], row.get("page_id"))}
-    return adjacent_ngrams(glyphs, horizontal, blocks), [row["id"] for row in rows]
+    labels = {row["id"]: label for row in rows if (label := unit_label(row))}
+    return adjacent_ngrams(glyphs, horizontal, blocks), [row["id"] for row in rows], labels
 
 
 def statements(corpora) -> tuple[list[str], dict[str, Counter]]:
     """Every statement that records the corpora's runs, and how many each corpus has by length and direction."""
     found, sizes = [], {}
     for corpus in corpora:
-        runs, placed = corpus_runs(corpus)
+        runs, placed, labels = corpus_runs(corpus)
         sizes[corpus.name] = Counter((len(run.units), run.vertical) for run in runs)
-        found += [s + "\n" for s in corpus_ngram_statements(id_ranges(placed, SLICE), sorted(runs))]
+        found += [s + "\n" for s in corpus_ngram_statements(id_ranges(placed, SLICE), sorted(runs), labels=labels)]
     return found, sizes
 
 
