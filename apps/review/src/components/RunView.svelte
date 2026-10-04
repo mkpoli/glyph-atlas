@@ -3,18 +3,25 @@
   // sit on the page (`RunImage`), with the book and page they come from. The run's own text is written
   // the way most of its occurrences are: down the page or across it. Pages arrive as the reader nears the
   // end, and while more are to come the grid shows whole rows only. A run of many characters gets a
-  // taller cell, so its crops stay legible down a column.
+  // taller cell, so its crops stay legible down a column. The run can be narrowed to a style group or a
+  // work and placed by style or by work, and the sequences near it are one link away.
   import { untrack } from 'svelte'
+  import { replaceState } from '$app/navigation'
   import RunImage from './RunImage.svelte'
   import ScriptText from './ScriptText.svelte'
   import SiteLinks from './SiteLinks.svelte'
-  import { runOccurrences } from '../lib/ngrams.js'
+  import StyleFilter from './StyleFilter.svelte'
+  import WorkFilter from './WorkFilter.svelte'
+  import { runAddress, runOccurrences } from '../lib/ngrams.js'
   import { tileDate } from '../lib/dating.js'
   import { collectionAddress } from '../lib/gallery.js'
+  import { number } from '../lib/client.js'
   import { t, localize } from '../lib/i18n.svelte.js'
 
-  let { text, work = '', first = null, inspect } = $props()
+  let { text, work: given = '', style: styled = '', sort: ordered = '', first = null, related = null, inspect } = $props()
   const opened = untrack(() => first)
+  let work = $state(untrack(() => given)), style = $state(untrack(() => styled)), sort = $state(untrack(() => ordered))
+  let styles = $state(opened?.styles ?? null), works = $state(opened?.works ?? [])
   let items = $state(opened?.items ?? []), total = $state(opened?.total ?? null), more = $state(opened?.more ?? false)
   let offset = $state(opened?.next_offset ?? 0), vertical = $state(opened?.vertical ?? true), size = $state(opened?.size ?? 2)
   let loading = $state(!opened), error = $state(''), requestId = 0
@@ -23,16 +30,27 @@
     const id = ++requestId
     loading = true; error = ''
     try {
-      const page = await runOccurrences(text, { work, offset: append ? offset : 0 })
+      const page = await runOccurrences(text, { work, style, sort, offset: append ? offset : 0 })
       if (id !== requestId) return
       items = append ? [...items, ...page.items] : page.items
       // Only the first page carries the count.
-      if (!append) { total = page.total; more = page.more; vertical = page.vertical }
+      if (!append) { total = page.total; more = page.more; vertical = page.vertical; styles = page.styles; works = page.works }
       offset = page.next_offset; size = page.size
     } catch (e) { if (id === requestId) error = e.message }
     finally { if (id === requestId) loading = false }
   }
   $effect(() => { if (!opened) untrack(() => load()) })
+  // A choice reloads the page from its start and is kept in the address, so a copy of it shows the same.
+  function choose(change) {
+    work = change.work ?? work; style = change.style ?? style; sort = change.sort ?? sort
+    replaceState(localize(runAddress(text, { work, style, sort })), {})
+    load()
+  }
+  const near = $derived([
+    [() => t('run.near.inside'), related?.inside?.map(run => ({ text: run })) ?? []],
+    [() => t('run.near.longer'), related?.longer ?? []],
+    [() => t('run.near.siblings', { lead: related?.lead }), related?.siblings ?? []],
+  ].filter(([, runs]) => runs.length))
 
   const hasMore = $derived(total !== null && items.length < total)
   // The crops the inspector steps through, in the order they are shown.
@@ -67,6 +85,27 @@
     <a class="quiet-link" href={localize(collectionAddress({ work }))}>← {t('nav.explore')}</a>
     <p><b class:vertical><ScriptText {text} /></b>{#if total !== null}<span>{more ? t('run.occurrences.more', { count: total }) : t('run.occurrences', { count: total })}</span>{/if}</p>
   </header>
+  <div class="run-controls">
+    {#if styles}<StyleFilter counts={styles} value={style} onchange={value => choose({ style: value })} />{/if}
+    <div class="run-order">
+      <nav class="orders" aria-label={t('run.order.label')}>
+        <button class:active={sort !== 'source'} aria-pressed={sort !== 'source'} onclick={() => choose({ sort: '' })}>{t('run.order.style')}</button>
+        <button class:active={sort === 'source'} aria-pressed={sort === 'source'} onclick={() => choose({ sort: 'source' })}>{t('run.order.source')}</button>
+      </nav>
+      <WorkFilter {works} value={work} onchange={value => choose({ work: value })} />
+    </div>
+  </div>
+  {#if near.length}
+    <nav class="run-near" aria-label={t('run.near.label')}>
+      {#each near as [label, runs] (runs[0].text)}
+        <div class="near-row"><span class="near-label">{label()}</span>
+          <ul>{#each runs as run (run.text)}
+            <li><a href={localize(runAddress(run.text, { work, style, sort }))}><ScriptText text={run.text} />{#if run.n}<small>{number(run.n)}</small>{/if}</a></li>
+          {/each}</ul>
+        </div>
+      {/each}
+    </nav>
+  {/if}
   {#if error}<div class="error-message" role="alert">{error}<button onclick={() => load(items.length > 0)}>{t('common.tryAgain')}</button></div>{/if}
   <div class="run-grid" bind:this={grid} aria-busy={loading} style:--run-size={size}>
     {#if loading && !items.length}{#each Array(12) as _}<div class="glyph-skeleton"></div>{/each}{/if}
@@ -87,6 +126,20 @@
   .run-heading b{font-size:40px;font-weight:500;line-height:1.1}
   .run-heading b.vertical{writing-mode:vertical-rl;text-orientation:upright}
   .run-heading p>span{color:var(--muted);font-size:13px}
+  .run-controls{display:flex;flex-direction:column;gap:2px;padding-bottom:12px}
+  .run-order{position:relative;display:flex;align-items:center;gap:16px;padding-top:10px;min-width:0}
+  .run-order :global(.work-control){position:static}
+  .run-order :global(.work-menu){top:100%;left:0;right:auto;width:min(360px,100%)}
+  .orders{display:flex;flex-shrink:0;border:1px solid var(--line);border-radius:8px;padding:2px}
+  .orders button{border:0;border-radius:6px;background:transparent;padding:5px 10px;font-size:12px;white-space:nowrap}
+  .orders .active{background:var(--surface-selected);color:var(--ink)}
+  .run-near{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding:12px 0 14px}
+  .near-row{display:flex;align-items:baseline;gap:12px;min-width:0}
+  .near-label{flex:0 0 auto;max-width:9em;font-size:12px;color:var(--muted)}
+  .near-row ul{display:flex;flex-wrap:wrap;gap:6px;list-style:none;margin:0;padding:0;min-width:0}
+  .near-row a{display:flex;align-items:baseline;gap:6px;border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:15px;color:inherit;text-decoration:none}
+  .near-row a:hover,.near-row a:focus-visible{background:var(--surface-selected)}
+  .near-row small{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
   .run-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line)}
   .run-occurrence{display:flex;flex-direction:column;background:var(--surface-tile);min-width:0}
   .run-page{height:calc(clamp(190px,15vw,270px) + max(0,var(--run-size) - 3) * 36px);padding:12px}
@@ -94,5 +147,5 @@
   .run-empty{color:var(--muted);padding:30px 0}
   @media(min-width:1700px){.run-grid{grid-template-columns:repeat(5,minmax(0,1fr))}}
   @media(max-width:1100px){.run-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
-  @media(max-width:700px){.run-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.run-page{height:calc(200px + max(0,var(--run-size) - 3) * 30px);padding:10px}}
+  @media(max-width:700px){.near-row{flex-direction:column;gap:6px}.near-label{max-width:none}.run-order{flex-wrap:wrap;gap:8px}.run-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.run-page{height:calc(200px + max(0,var(--run-size) - 3) * 30px);padding:10px}}
 </style>

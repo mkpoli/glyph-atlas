@@ -9,6 +9,6 @@
 
 <Seo title={`${data.text} · ${t('nav.explore')}`} index={false} />
 
-{#key data.text + '|' + data.work}
-  <RunView text={data.text} work={data.work} first={data.first} inspect={inspector.inspect.bind(inspector)} />
+{#key [data.text, data.work, data.style, data.sort].join('|')}
+  <RunView text={data.text} work={data.work} style={data.style} sort={data.sort} first={data.first} related={data.related} inspect={inspector.inspect.bind(inspector)} />
 {/key}

@@ -1,5 +1,6 @@
 import { request } from './client.js'
 import { t } from './i18n.svelte.js'
+import { styleParam } from './style.js'
 
 // Runs of characters that follow each other on a line: the pair and trigram counts Explore lists, in one
 // work or all, and the page of any run's occurrences, from two characters to eight.
@@ -14,9 +15,13 @@ const WORDS = {
 }
 export const ngramWords = kind => WORDS[kind]
 
-/** The address of a run's page, within a work when one is chosen. */
-export function runAddress(text, work = '') {
-  return '/sequence/' + encodeURIComponent(text) + (work ? '?' + new URLSearchParams({ work }) : '')
+/** A run's order: by style group (the default, handwritten first) or by work. */
+export const sortParam = value => value === 'source' ? 'source' : ''
+
+/** The address of a run's page, within a work, a style group and an order when they are chosen. */
+export function runAddress(text, { work = '', style = '', sort = '' } = {}) {
+  const query = new URLSearchParams(Object.entries({ work, style: styleParam(style), sort: sortParam(sort) }).filter(([, value]) => value))
+  return '/sequence/' + encodeURIComponent(text) + (query.size ? '?' + query : '')
 }
 
 /** The runs of a kind, most frequent first: `{ items: [{ text, n }], limit }`. */
@@ -25,9 +30,16 @@ export function ngramCounts(kind, work = '', options = {}) {
 }
 
 /** One page of a run's occurrences: `{ text, size, next_offset, items: [{ crops }] }`, and on the first
- *  page `total`, `more` (the count stopped at `total`) and `vertical`. Without a `limit` the page is as
- *  long as the run allows. */
-export function runOccurrences(text, { work = '', offset = 0, limit } = {}, options = {}) {
-  const query = new URLSearchParams({ text, offset: String(offset), ...(limit ? { limit: String(limit) } : {}), ...(work ? { document: work } : {}) })
+ *  page `total`, `more` (the count stopped at `total`), `vertical`, the crops of each style group
+ *  (`styles`) and the run's `works` (`{ id, title, count }`). Without a `limit` the page is as long as
+ *  the run allows. */
+export function runOccurrences(text, { work = '', style = '', sort = '', offset = 0, limit } = {}, options = {}) {
+  const query = new URLSearchParams({ text, offset: String(offset), ...(limit ? { limit: String(limit) } : {}), ...(work ? { document: work } : {}),
+    ...(styleParam(style) ? { style } : {}), ...(sortParam(sort) ? { sort } : {}) })
   return request('/atlas/runs?' + query, undefined, options)
+}
+
+/** The runs near one: `{ lead, inside: [text], longer: [{ text, n }], siblings: [{ text, n }] }`. */
+export function runRelated(text, options = {}) {
+  return request('/atlas/runs/related?' + new URLSearchParams({ text }), undefined, options)
 }

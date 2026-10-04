@@ -862,18 +862,42 @@ try {
   for (const [document, scope, index] of [[false, [], 'unit_ngram_order'], [true, ['hk:doc'], 'unit_ngram_work']]) {
     const probe = await plan({ sql: worker.runProbeQuery(document), values: [] }, [...scope, 'ナリケ'])
     assert.ok(probe.some(d => new RegExp(`USING COVERING INDEX ${index}\\b`).test(d)), probe.join('; '))
-    for (let size = 2; size <= 8; size++) for (let anchor = 0; anchor <= Math.max(0, size - 3); anchor++) {
-      const links = worker.runFrom(size, anchor).links.map(() => 'ナリ'), bound = [...links, ...scope, Math.min(size, 3), 'ナリ']
-      for (const shape of [{ sql: worker.runOccurrencesQuery(size, anchor, document), values: [] }, { sql: worker.runCountQuery(size, anchor, document), values: [] }]) {
+    for (let size = 2; size <= 8; size++) for (let anchor = 0; anchor <= Math.max(0, size - 3); anchor++) for (const style of [false, true]) {
+      const links = worker.runFrom(size, anchor).links.map(() => 'ナリ'), bound = [...links, ...scope, Math.min(size, 3), 'ナリ', ...(style ? [0] : [])]
+      for (const shape of [{ sql: worker.runOccurrencesQuery(size, anchor, document, style), values: [] }, { sql: worker.runCountQuery(size, anchor, document, style), values: [] }]) {
         const args = shape.sql.includes('OFFSET') ? [...bound, 48, 0] : bound
         occurrenceServed(await plan(shape, args), index)
-        if (size !== 5 || anchor !== 1) continue
+        if (size !== 5 || anchor !== 1 || style) continue
         const create = (await db.prepare('SELECT sql FROM sqlite_master WHERE name=?').bind(index).first()).sql
         await db.prepare(`DROP INDEX ${index}`).run()
         await assert.rejects(async () => occurrenceServed(await plan({ ...shape, sql: shape.sql + ' ' }, args), index), `the occurrence check on ${index} fails without it`)
         await db.prepare(create).run()
       }
     }
+  }
+  // Placed by book, a run reads the index that keeps its rows in book order, whole or in a style group.
+  for (let size = 2; size <= 8; size++) for (let anchor = 0; anchor <= Math.max(0, size - 3); anchor++) for (const style of [false, true]) {
+    const links = worker.runFrom(size, anchor).links.map(() => 'ナリ'), bound = [...links, Math.min(size, 3), 'ナリ', ...(style ? [0] : []), 48, 0]
+    const shape = { sql: worker.runOccurrencesQuery(size, anchor, false, style, 'source'), values: [] }
+    occurrenceServed(await plan(shape, bound), 'unit_ngram_source')
+    if (size !== 5 || anchor !== 1 || style) continue
+    const create = (await db.prepare('SELECT sql FROM sqlite_master WHERE name=?').bind('unit_ngram_source').first()).sql
+    await db.prepare('DROP INDEX unit_ngram_source').run()
+    await assert.rejects(async () => occurrenceServed(await plan({ ...shape, sql: shape.sql + ' ' }, bound), 'unit_ngram_source'), 'the check on unit_ngram_source fails without it')
+    await db.prepare(create).run()
+  }
+  // The books of a run are grouped from a capped read of it, and the runs near it from one range of the index.
+  const nearServed = (details, index) => {
+    assert.ok(details.some(d => new RegExp(`SEARCH \\w+ USING (COVERING )?INDEX ${index}\\b`).test(d)), `${index}: ${details.join('; ')}`)
+    assert.ok(!details.some(d => /^SCAN \w+ ?$/.test(d) || /^SCAN [a-z]\d? *$/.test(d)), details.join('; '))
+  }
+  for (const [sql, bound, index] of [[worker.runWorksQuery(2, 0), [2, 'ナリ'], 'unit_ngram_source'], [worker.runWorksQuery(5, 1), ['ナリ', 'ナリ', 3, 'ナリ'], 'unit_ngram_source'],
+    [worker.runRangeQuery(), [3, 'ナリ', 'ナリ\u{10FFFF}', 'ナリ'], 'unit_ngram_order'], [worker.runHasQuery(), [2, 'ナリ'], 'unit_ngram_order']]) {
+    nearServed(await plan({ sql, values: [] }, bound), index)
+    const create = (await db.prepare('SELECT sql FROM sqlite_master WHERE name=?').bind(index).first()).sql
+    await db.prepare(`DROP INDEX ${index}`).run()
+    await assert.rejects(async () => nearServed(await plan({ sql: sql + ' ', values: [] }, bound), index), `the check on ${index} fails without it`)
+    await db.prepare(create).run()
   }
   const leftward = (await db.prepare("SELECT sql FROM sqlite_master WHERE name='unit_ngram_second'").first()).sql
   await db.prepare('DROP INDEX unit_ngram_second').run()
@@ -936,13 +960,14 @@ try {
   // A run's occurrences come handwritten first, then what nobody has judged, then print, each group
   // in its first crops' shuffle order; the style and shuffle follow the crop, however the run was written.
   for (const [id, style, shuffle] of [['o-print', 'regular', 1], ['o-plain', 'unassessed', 5], ['o-late', 'cursive', 9], ['o-early', 'running', 2]]) {
-    const d = { id, label: 'ナ', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten', repair: { quiz: true } }
+    const d = { id, label: 'ナ', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten', repair: { quiz: true },
+      source: ['o-early', 'o-late'].includes(id) ? 'Book A' : 'Book B' }
     await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
       id, 'local', 'ナ', 'U+30CA', null, 'handwritten', 'kana', 'pending', 0, 1, 1, shuffle,
       JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
     await db.prepare('UPDATE units SET style=? WHERE id=?').bind(style, id).run()
   }
-  await db.prepare(`INSERT INTO unit_ngrams(first,size,second,third,text,document) SELECT id,2,'two',NULL,'ナリ',NULL FROM units WHERE id LIKE 'o-%'`).run()
+  await db.prepare(`INSERT INTO unit_ngrams(first,size,second,third,text,document) SELECT id,2,'two',NULL,'ナリ',CASE WHEN id IN ('o-early','o-late') THEN 'hk:a' ELSE 'hk:b' END FROM units WHERE id LIKE 'o-%'`).run()
   // The edge keeps an answer per catalogue version, so a change moves the version first.
   let version = 0
   const firsts = async (query = '') => { await db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at',?)").bind('order' + ++version).run()
@@ -953,6 +978,38 @@ try {
   assert.deepEqual(await firsts(), ['o-late', 'o-plain', 'o-print', 'o-early'], 'a crop judged afterwards moves its runs')
   await db.prepare("UPDATE units SET style='cursive',shuffle=0 WHERE id='o-print'").run()
   assert.deepEqual(await firsts(), ['o-print', 'o-late', 'o-plain', 'o-early'], 'its shuffle moves them too')
+  // A page narrows to a style group or a book, and is placed by book on request; the first page says what each holds.
+  await db.prepare("UPDATE units SET style='regular',shuffle=1 WHERE id='o-print'").run()
+  await db.prepare("UPDATE units SET style='running',shuffle=2 WHERE id='o-early'").run()
+  const narrowed = async (query = '') => { await db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at',?)").bind('narrow' + ++version).run()
+    return runOf('ナリ', query) }
+  const firstsOf = body => body.items.map(o => o.crops[0].id)
+  const whole = await narrowed()
+  assert.deepEqual(whole.styles, { cursive: 2, unassessed: 1, formal: 1 }, 'a run counts its crops by style group')
+  assert.deepEqual(whole.works, [{ id: 'hk:a', title: 'Book A', count: 2 }, { id: 'hk:b', title: 'Book B', count: 2 }], 'and its books, named by their crops')
+  assert.deepEqual([whole.style, whole.sort, whole.total], ['all', 'style', 4])
+  assert.equal((await narrowed('&offset=2')).works, undefined, 'a later page does not ask for the books again')
+  assert.deepEqual(firstsOf(await narrowed('&style=cursive')), ['o-early', 'o-late'], 'a style group narrows the run')
+  const formal = await narrowed('&style=formal')
+  assert.deepEqual([formal.total, firstsOf(formal), formal.styles.cursive], [1, ['o-print'], 2], 'a group counts only its own, and the groups still say what they hold')
+  assert.deepEqual(firstsOf(await narrowed('&document=hk%3Ab')), ['o-plain', 'o-print'], 'a book narrows the run')
+  assert.deepEqual((await narrowed('&document=hk%3Ab')).styles, { cursive: 0, unassessed: 1, formal: 1 }, 'its styles are the book\'s')
+  assert.deepEqual(firstsOf(await narrowed('&document=hk%3Aa&style=cursive')), ['o-early', 'o-late'], 'a book and a style group together')
+  assert.deepEqual(firstsOf(await narrowed('&sort=source')), ['o-early', 'o-late', 'o-plain', 'o-print'], 'by book, then by crop')
+  assert.deepEqual(firstsOf(await narrowed('&sort=source&style=cursive')), ['o-early', 'o-late'])
+  assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent('ナリ') + '&style=bold')).status, 422, 'only the style groups narrow')
+  assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent('ナリ') + '&sort=year')).status, 422, 'only style and book place a run')
+  // Near runs: the shorter runs inside a trigram, the trigrams a pair begins, and the runs that begin alike.
+  await db.batch([db.prepare(`INSERT INTO unit_ngrams(first,size,second,third,text,document) VALUES('o-print',3,'two','o-early','ナリア',NULL),
+    ('o-late',3,'two','o-early','ナリア',NULL),('o-plain',3,'two','o-early','ナリイ',NULL),('x-sibling',2,'one',NULL,'ナヌ',NULL)`)])
+  const near = async text => (await (await mf.dispatchFetch(base + '/atlas/runs/related?' + new URLSearchParams({ text }))).json())
+  const pair = await near('ナリ')
+  assert.deepEqual(pair.longer, [{ text: 'ナリア', n: 2, vertical: true }, { text: 'ナリイ', n: 1, vertical: true }], 'a pair offers the trigrams it begins, most frequent first')
+  assert.deepEqual([pair.siblings.map(r => r.text), pair.inside, pair.lead], [['ナヌ'], [], 'ナ'], 'and the pairs that share its first character')
+  const triple = await near('ナリア')
+  assert.deepEqual([triple.inside, triple.siblings.map(r => r.text), triple.longer, triple.lead], [['ナリ'], ['ナリイ'], [], 'ナリ'], 'a trigram offers the pairs it holds that the site has, and the trigrams that share its first two')
+  assert.deepEqual((await near('ナリアイ')).inside, ['ナリア'], 'a run of four offers the trigrams inside it that the site has')
+  assert.equal((await mf.dispatchFetch(base + '/atlas/runs/related?text=' + encodeURIComponent('ナ'))).status, 422)
   await db.prepare('DELETE FROM unit_ngrams').run()
   for (const [index, create] of Object.entries(keys)) {
     await db.prepare(`DROP INDEX ${index}`).run()
