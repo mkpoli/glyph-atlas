@@ -38,10 +38,10 @@ function parseCursor(cursor: string | null) {
 /** One page of the user's starred crops as listing items, newest first, after `cursor`. A star on a
  *  retired crop moves to the crop that replaced it; one with no replacement is left out. */
 export async function favouriteCrops(env: Env, user: string, cursor: string | null, limit: number, itemsFor: Items, replacement: Replacement) {
-  const after = parseCursor(cursor);
+  const after = parseCursor(cursor), size = Math.max(1, Math.min(limit, PAGE));
   const rows = (await (after
-    ? env.DB.prepare(favouriteQueries.after).bind(user, after.at, after.at, after.unit, Math.min(limit, PAGE))
-    : env.DB.prepare(favouriteQueries.first).bind(user, Math.min(limit, PAGE))).all<{ unit: string; at: string }>()).results;
+    ? env.DB.prepare(favouriteQueries.after).bind(user, after.at, after.at, after.unit, size)
+    : env.DB.prepare(favouriteQueries.first).bind(user, size)).all<{ unit: string; at: string }>()).results;
   const ids = rows.map(r => r.unit);
   const found = await itemsFor(env, ids);
   const moved = new Map<string, string>();
@@ -59,7 +59,7 @@ export async function favouriteCrops(env: Env, user: string, cursor: string | nu
     if (item && !seen.has(item.id)) { seen.add(item.id); items.push(item) }
   }
   const total = await env.DB.prepare(favouriteQueries.count).bind(user).first<{ n: number }>();
-  return { items, total: total?.n ?? 0, moved: moved.size > 0, next: rows.length === Math.min(limit, PAGE) ? cursorOf(rows[rows.length - 1]) : null };
+  return { items, total: total?.n ?? 0, moved: moved.size > 0, next: rows.length === size ? cursorOf(rows[rows.length - 1]) : null };
 }
 
 /** Star a crop or take its star away. */

@@ -49,6 +49,8 @@ describe('favourites', () => {
     const second = await favouriteCrops(env, 'u1', first.next, 2, itemsFor, async () => null);
     expect(second.items.map(i => i.id)).toEqual(['a']);
     expect(second.next).toBeNull();
+    // A page asked for no rows reads one.
+    expect((await favouriteCrops(env, 'u1', null, 0, itemsFor, async () => null)).items).toHaveLength(1);
     db.close();
   });
   it("hold each user to the limit, and carry an anonymous user's stars up to it", async () => {
