@@ -15,8 +15,9 @@
   import { originTitle } from '../lib/origin.js'
   let { card = null, expand = $bindable('none'), onselect = () => {}, onreview = null } = $props()
   const members = $derived(card?.grapheme?.members ?? [{code_point: card?.code_point, char: card?.char}])
-  // What the gallery shows, cited: the grapheme family when it is widened to it, else the one form.
-  const entry = $derived(card?.code_point ? characterEntry(expand === 'grapheme' ? 'grapheme' : 'form', card) : null)
+  // What the gallery shows, cited: the grapheme family when it is widened to it, else the one form. A
+  // widening to variants has no address of its own to cite.
+  const entry = $derived(card?.code_point && expand !== 'variants' ? characterEntry(expand === 'grapheme' ? 'grapheme' : 'form', card) : null)
   // The Forms family this character is clustered in, by its grapheme or its own code point; none, no link.
   const formsFamily = $derived([card?.grapheme?.code_point, card?.code_point].find(code => code && page.data.forms?.includes(code)))
   // The 異体字 graph: the variants a gallery widens to, characters related otherwise, and the
