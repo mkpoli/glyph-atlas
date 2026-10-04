@@ -36,4 +36,11 @@ assert.deepEqual(scriptParts('⿰亻哥ム').map(part => [part.text, part.key]),
 assert.deepEqual(scriptParts('⿰ はな').map(part => [part.text, part.key]),
   [['⿰', 'symbol'], [' ', 'unknown'], ['は', 'hiragana'], ['な', 'hiragana']])
 assert.deepEqual(scriptParts('⿲木木').map(part => part.text), ['⿲', '木', '木'])
+// A mark after the last component belongs to that component's grapheme, which the sequence would split;
+// a sequence longer than a form may be is no description. No character is lost either way.
+assert.equal(scriptParts('⿰木木\u3099').map(part => part.text).join(''), '⿰木木\u3099')
+assert.equal(scriptParts('⿰木木\u3099').length, 3)
+assert.equal(scriptParts('⿰木木\uFE00\uFE01').map(part => part.text).join(''), '⿰木木\uFE00\uFE01')
+assert.deepEqual(scriptParts('⿾'.repeat(64) + '木').map(part => part.text), ['⿾', '⿾'.repeat(63) + '木'])
+assert.deepEqual(scriptParts('⿰木木\uFE00').map(part => part.text), ['⿰木木\uFE00'])
 console.log('Identity display and script distinctions passed.')

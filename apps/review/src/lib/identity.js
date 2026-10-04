@@ -85,19 +85,25 @@ export function scriptInfo(text, stated = '') {
 
 const graphemes = new Intl.Segmenter('ja', { granularity: 'grapheme' })
 
-// The text's characters as shown: a well-formed description sequence is one part, the rest one per grapheme.
+// The text's characters as shown: a well-formed description sequence that ends where a grapheme ends
+// is one part, the rest one per grapheme.
 function segments(text) {
+  const all = [...graphemes.segment(text ?? '')]
   const parts = []
-  let skip = 0
-  for (const { segment, index } of graphemes.segment(text ?? '')) {
-    if (index < skip) continue
-    const chars = [...text.slice(index)]
-    const end = IDS_ARITY.has(segment) ? descriptionEnd(chars, 0) : -1
-    if (end > 0) {
-      const part = chars.slice(0, end).join('')
-      parts.push(part)
-      skip = index + part.length
-    } else parts.push(segment)
+  for (let k = 0; k < all.length;) {
+    const { segment, index } = all[k]
+    const chars = IDS_ARITY.has(segment) ? [...text.slice(index)] : []
+    const end = chars.length ? descriptionEnd(chars, 0) : -1
+    const length = end > 0 && end <= 64 ? chars.slice(0, end).join('').length : 0
+    const next = length ? all.findIndex(item => item.index >= index + length) : -1
+    const boundary = length && (next === -1 ? index + length === text.length : all[next].index === index + length)
+    if (boundary) {
+      parts.push(text.slice(index, index + length))
+      k = next === -1 ? all.length : next
+    } else {
+      parts.push(segment)
+      k++
+    }
   }
   return parts
 }
