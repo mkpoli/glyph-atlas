@@ -32,6 +32,11 @@ UNIT_COLUMNS = ("id,origin,character,family,visual_group,production,category,sta
                 "data,snapshot,context,visual,document,style")
 
 
+#: What a crop's record holds about its cut: kept from an earlier run of a resumed export while the
+#: crop's image is the same, since the images they describe are already packed.
+CUT_KEYS = ("context_image", "context", "context_box", "line", "source_scale", "crop_editable", "crop_box")
+
+
 def encoded(value):
     text = json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
     if re.search(r"/home/[^/\s\"]+", text):
@@ -181,44 +186,42 @@ def export(dataset: Path, output: Path, *, resume=False):
                     or str(doc.image_rights.licence) not in PROXYABLE):
                 db.execute("DELETE FROM units WHERE id=?", (item["id"],))
                 continue
+            # A crop an earlier run wrote keeps what was cut for it (its images, their boxes, its reading
+            # by the crop models) while its image is unchanged; the rest of its record is written anew,
+            # so a resumed export publishes the same record a fresh one would.
+            cut = visual = None
             if item["id"] in existing:
-                data, snapshot = db.execute("SELECT data,snapshot FROM units WHERE id=?", (item["id"],)).fetchone()
-                detail, kept = json.loads(data), json.loads(snapshot)
-            if item["id"] in existing and detail.get("image") != item["image"]:
-                # A crop whose box moved since the earlier run (a reviewer redrew it) is cut again from
-                # its new box, which is a new image and a new crop version.
-                db.execute("DELETE FROM units WHERE id=?", (item["id"],))
-                existing.discard(item["id"])
-            if item["id"] in existing:
-                # A crop an earlier run wrote takes the current licence and page number: both can
-                # change while its image does not.
-                shown = page_fields(page)
-                detail.update(licence=str(doc.image_rights.licence), holder=doc.holder,
-                              attribution=doc.image_rights.attribution, rights_url=doc.image_rights.evidence,
-                              page_number=shown["page_number"])
-                kept["page_index"] = shown["page_index"]
-                db.execute("UPDATE units SET data=?,snapshot=?,document=?,family=?,style=? WHERE id=?",
-                           (encoded(detail), encoded(kept), doc.id, atlas.grapheme_of(item["label"]),
-                            style.style_of(unit, page, doc), item["id"]))
-                continue
+                data, stored = db.execute("SELECT data,visual FROM units WHERE id=?", (item["id"],)).fetchone()
+                earlier = json.loads(data)
+                if earlier.get("image") == item["image"]:
+                    cut = {key: earlier[key] for key in CUT_KEYS if key in earlier}
+                    visual = json.loads(stored)
+                else:
+                    # A crop whose box moved since the earlier run (a reviewer redrew it) is cut again from
+                    # its new box, which is a new image and a new crop version.
+                    db.execute("DELETE FROM units WHERE id=?", (item["id"],))
+                    existing.discard(item["id"])
             if unit.line_id not in lines:
                 lines[unit.line_id] = store.line(unit.line_id) if unit.line_id else None
             line = lines[unit.line_id]
-            key = item["image"].rsplit("/", 1)[-1].removesuffix(".webp")
-            spec = json.loads((media.directory / key[:2] / (key + ".json")).read_text())
-            path = media.roots[spec["source"]] / spec["path"]
-            box = spec["box"]
-            detail = {**item, "context_image": media.local(path, box, context=True),
-                      "source": doc.title if doc else "", "text": line.text if line else "",
-                      "page_number": page_fields(page)["page_number"],
-                      "context": bool(box), "context_box": None, "line": None,
-                      "source_scale": [1, 1], "crop_editable": bool(box)}
-            if box:
-                with Image.open(path) as picture:
-                    left, top, right, bottom = atlas.crop_bounds(picture, box, context=True)
-                detail["context_box"] = {"x": left, "y": top, "w": right-left, "h": bottom-top}
-                detail["crop_box"] = dict(zip(("x", "y", "w", "h"), box, strict=True))
-                detail["source_scale"] = [box[2]/unit.box.w, box[3]/unit.box.h]
+            if cut is None:
+                key = item["image"].rsplit("/", 1)[-1].removesuffix(".webp")
+                spec = json.loads((media.directory / key[:2] / (key + ".json")).read_text())
+                path = media.roots[spec["source"]] / spec["path"]
+                box = spec["box"]
+                cut = {"context_image": media.local(path, box, context=True), "context": bool(box),
+                       "context_box": None, "line": None, "source_scale": [1, 1], "crop_editable": bool(box)}
+                if box:
+                    with Image.open(path) as picture:
+                        left, top, right, bottom = atlas.crop_bounds(picture, box, context=True)
+                    cut["context_box"] = {"x": left, "y": top, "w": right-left, "h": bottom-top}
+                    cut["crop_box"] = dict(zip(("x", "y", "w", "h"), box, strict=True))
+                    cut["source_scale"] = [box[2]/unit.box.w, box[3]/unit.box.h]
+                for url in {item["image"], cut["context_image"]}:
+                    key = url.rsplit("/", 1)[-1].removesuffix(".webp")
+                    packs.add(key, media.materialize(key))
+            detail = {**item, "source": doc.title if doc else "", "text": line.text if line else "",
+                      "page_number": page_fields(page)["page_number"], **cut}
             detail["licence"] = str(doc.image_rights.licence) if doc and doc.image_rights else None
             detail["holder"] = doc.holder if doc else None
             detail["attribution"] = doc.image_rights.attribution
@@ -226,20 +229,17 @@ def export(dataset: Path, output: Path, *, resume=False):
             # Full-resolution pages remain separate; the viewer can pan the hosted context
             # immediately without trying a local full-page endpoint.
             detail["full_page_available"] = False
-            for url in {detail["image"], detail["context_image"]}:
-                key = url.rsplit("/", 1)[-1].removesuffix(".webp")
-                packs.add(key, media.materialize(key))
             snapshot = {"character": item, "source_refs": doc.source_refs if doc else {},
                         "canvas": page.canvas if page else None,
                         "page_index": page_fields(page)["page_index"], "image_sha256": item["image_sha256"]}
             context = context_guesses(unit, line, neighbors.get(unit.line_id, []))
-            # Filled by read_crops below, which also covers rows kept from a resumed export.
-            visual = {"status": "unavailable", "candidates": []}
+            # Filled by read_crops below, which also reads a kept crop again when its models changed.
+            visual = visual or {"status": "unavailable", "candidates": []}
             cp = refs.to_code_point(item["label"]) if len(item["label"]) == 1 else None
             counts[cp] += 1
             # A label with no family is its own grapheme, so every named crop is one `family` lookup.
             family = atlas.grapheme_of(item["label"])
-            db.execute(f"INSERT INTO units({UNIT_COLUMNS}) VALUES ({','.join('?' * (UNIT_COLUMNS.count(',') + 1))})", (
+            db.execute(f"INSERT OR REPLACE INTO units({UNIT_COLUMNS}) VALUES ({','.join('?' * (UNIT_COLUMNS.count(',') + 1))})", (
                 item["id"], "local", item["label"], family, None,
                 item["production"], atlas.character_group(unit), item["state"], item["revision"],
                 int(not atlas.repair_withheld(unit)), atlas.review_priority(unit),
