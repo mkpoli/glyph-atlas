@@ -610,23 +610,30 @@ try {
   assert.ok(countPlan.some(d => /SEARCH unit_counts USING PRIMARY KEY \(origin=\? AND character=\?\)/.test(d)), countPlan.join('; '))
   assert.ok(!countPlan.some(d => /^SCAN/.test(d)), countPlan.join('; '))
   // The derived tier stands apart: a character no source relates to 仮 and a form no character has,
-  // each with the substitution it came by and the pairs behind it, cited as derived-ids beside the
-  // pairs' own sources, and never among the variants a gallery widens to.
+  // each with the routes it came by and the evidence behind each substitution, cited as derived-ids
+  // beside the pairs' own sources, and never among the variants a gallery widens to. An editorial form
+  // is its own tier, citing the editorial table and carrying its statement instead of pairs.
   await db.batch([
-    db.prepare(`INSERT INTO component_variants VALUES('反','𠬝',3,'[{"a":"扳","b":"𢪃","sources":["wikidata"]},{"a":"返","b":"𮞉","sources":["cjkvi-variants","wikidata"]}]')`),
-    db.prepare(`INSERT INTO character_derived VALUES('仮',1,'⿰亻𠬝','[["反","𠬝"]]')`),
-    db.prepare(`INSERT INTO character_derived VALUES('仮',0,'𠈌','[["反","𠬝"]]')`),
-    db.prepare(`INSERT INTO character_derived VALUES('𠈌',0,'仮','[["反","𠬝"]]')`),
-    db.prepare(`INSERT INTO character_derived VALUES('伋',0,'⿰亻𠬝','[["反","𠬝"]]')`),
-    db.prepare(`INSERT OR REPLACE INTO metadata VALUES('variant_sources','{"wikidata":"Wikidata, P5475; CC0-1.0","opencc":"OpenCC; Apache-2.0","cjkvi-variants":"CJKVI; PD","unihan":"Unihan; Unicode-3.0","derived-ids":"Predicted component variants (derived, not attested)"}')`),
+    db.prepare(`INSERT INTO component_variants VALUES('反','𠬝',3,'[{"a":"扳","b":"𢪃","sources":["wikidata"]},{"a":"返","b":"𮞉","sources":["cjkvi-variants","wikidata"]}]','attested',NULL)`),
+    db.prepare(`INSERT INTO component_variants VALUES('亻','彳',0,'[]','editorial','{"asserted_by":"mkpoli","asserted_at":"2026-10-04","basis":"common interchangeable components in manuscripts","note":""}')`),
+    db.prepare(`INSERT INTO character_derived VALUES('仮',2,'⿰彳𠬝','[[["亻","彳"],["反","𠬝"]]]','editorial')`),
+    db.prepare(`INSERT INTO character_derived VALUES('仮',1,'⿰亻𠬝','[[["反","𠬝"]]]','attested')`),
+    db.prepare(`INSERT INTO character_derived VALUES('仮',0,'𠈌','[[["反","𠬝"]]]','attested')`),
+    db.prepare(`INSERT INTO character_derived VALUES('𠈌',0,'仮','[[["𠬝","反"]]]','attested')`),
+    db.prepare(`INSERT INTO character_derived VALUES('伋',0,'⿰亻𠬝','[[["反","𠬝"]]]','attested')`),
+    db.prepare(`INSERT OR REPLACE INTO metadata VALUES('variant_sources','{"wikidata":"Wikidata, P5475; CC0-1.0","opencc":"OpenCC; Apache-2.0","cjkvi-variants":"CJKVI; PD","unihan":"Unihan; Unicode-3.0","derived-ids":"Predicted component variants (derived, not attested)","editorial-substitutions":"Glyph Atlas editorial component substitutions"}')`),
     db.prepare("INSERT OR REPLACE INTO metadata VALUES('units_refreshed_at','\"variants-test-derived\"')"),
   ])
   const derivedCard = await call('/layers/characters/U%2B4EEE')
-  assert.deepEqual(derivedCard.variants.derived.map(v => [v.char, v.code_point, v.encoded]),
-    [['𠈌', 'U+2020C', true], ['⿰亻𠬝', null, false]], 'in rank order; another character\'s rows are its own')
-  assert.deepEqual(derivedCard.variants.derived[0].substitutions.map(s => [s.was, s.became, s.count, s.pairs.length]), [['反', '𠬝', 3, 2]])
+  assert.deepEqual(derivedCard.variants.derived.map(v => [v.char, v.code_point, v.encoded, v.tier]),
+    [['𠈌', 'U+2020C', true, 'attested'], ['⿰亻𠬝', null, false, 'attested'], ['⿰彳𠬝', null, false, 'editorial']], 'in rank order; another character\'s rows are its own')
+  assert.deepEqual(derivedCard.variants.derived[0].routes.map(route => route.map(s => [s.was, s.became, s.tier, s.count, s.pairs.length])), [[['反', '𠬝', 'attested', 3, 2]]])
   assert.deepEqual(derivedCard.variants.derived[0].sources, ['cjkvi-variants', 'wikidata'])
+  const editorial = derivedCard.variants.derived[2]
+  assert.deepEqual(editorial.routes[0].map(s => [s.was, s.became, s.tier, s.asserted_by ?? null]), [['亻', '彳', 'editorial', 'mkpoli'], ['反', '𠬝', 'attested', null]])
+  assert.deepEqual(editorial.sources, ['cjkvi-variants', 'editorial-substitutions', 'wikidata'])
   assert.equal(derivedCard.variants.sources['derived-ids'], 'Predicted component variants (derived, not attested)')
+  assert.equal(derivedCard.variants.sources['editorial-substitutions'], 'Glyph Atlas editorial component substitutions')
   assert.ok(!derivedCard.variants.items.some(v => v.char === '𠈌') && !derivedCard.variants.related.some(v => v.char === '𠈌'), 'a derived form is in no attested tier')
   const derivedPlan = await plan({ sql: worker.derivedEdgesQuery(), values: [] }, ['仮'])
   assert.ok(derivedPlan.includes('SEARCH character_derived USING PRIMARY KEY (a=?)'), derivedPlan.join('; '))
