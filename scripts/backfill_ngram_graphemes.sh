@@ -4,10 +4,13 @@
 #
 #   scripts/backfill_ngram_graphemes.sh        run from anywhere; it works in apps/cloudflare
 #
-# Each step folds the next SLICE runs in key order after the cursor in `graphemes_backfill`, then moves the
-# cursor to the last of them; the runs are found by the primary key, so a step reads only its slice. A
-# step is applied whole or not at all, so the script may be stopped and run again; a step D1 refuses is
-# asked again after a growing pause, ten times at most. It ends when a step finds no run past the cursor.
+# Run it again after a grapheme publication (`export_graphemes.py`): one that moves a character to another
+# grapheme leaves the runs folded as they were. It starts from the first run (RESUME=1 continues after
+# the cursor in `graphemes_backfill` instead). Each step folds the next SLICE runs in key order after the
+# cursor, then moves the cursor to the last of them; the runs are found by the primary key, so a step
+# reads only its slice. A step is applied whole or not at all; a step D1 refuses is asked again after a
+# growing pause, ten times at most. When a step finds no run past the cursor, it moves the catalogue
+# version (`units_refreshed_at`), so answers the edge kept while runs were still unfolded are not served.
 # D1_TARGET (default --remote) can be set, e.g. D1_TARGET="--local --persist-to state".
 set -euo pipefail
 cd "$(git -C "$(dirname "$0")" rev-parse --show-toplevel)/apps/cloudflare"
@@ -20,6 +23,7 @@ step="UPDATE unit_ngrams SET graphemes=coalesce((SELECT h.character FROM charact
   WHERE first>(SELECT after FROM graphemes_backfill) AND first<=$last;
 UPDATE graphemes_backfill SET after=coalesce($last,after);
 SELECT after FROM graphemes_backfill;"
+[ "${RESUME:-0}" = 1 ] || bunx wrangler d1 execute glyph-atlas "${target[@]}" --command "UPDATE graphemes_backfill SET after=''" >/dev/null
 previous=""; fails=0
 while :; do
   out="$(bunx wrangler d1 execute glyph-atlas "${target[@]}" --json --command "$step" 2>&1)" || true
@@ -34,3 +38,6 @@ while :; do
   [ "$after" = "$previous" ] && break
   previous="$after"
 done
+bunx wrangler d1 execute glyph-atlas "${target[@]}" --command \
+  "INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at',json_quote(strftime('%Y-%m-%dT%H:%M:%fZ','now')))" >/dev/null
+echo "done"

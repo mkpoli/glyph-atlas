@@ -1147,21 +1147,26 @@ try {
     db.prepare('INSERT OR IGNORE INTO characters VALUES(?,?,?,?,?)').bind('U+3057', 'し', '', JSON.stringify({ char: 'し', grapheme: { code_point: 'U+3057' } }), '{}'),
     db.prepare('INSERT OR IGNORE INTO characters VALUES(?,?,?,?,?)').bind('U+1B045', '𛁅', '', JSON.stringify({ char: '𛁅', grapheme: { code_point: 'U+3057' } }), '{}'),
   ])
-  for (const [id, label] of [['fold-1', 'ん'], ['fold-2', '𛁅']]) {
+  for (const [id, label] of [['fold-1', 'ん'], ['fold-2', '𛁅'], ['fold-3', 'て'], ['fold-4', '𛁅']]) {
     const d = { id, label, state: 'pending', revision: 0, image_sha256: hash, production: 'unknown', repair: { quiz: true } }
     await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
       id, 'local', label, null, null, 'unknown', 'kana', 'pending', 0, 1, 1, 3, JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
   }
-  await db.prepare("INSERT INTO unit_ngrams(first,size,second,text,document) VALUES('fold-1',2,'fold-2','ん𛁅',NULL)").run()
+  await db.prepare(`INSERT INTO unit_ngrams(first,size,second,third,text,document) VALUES('fold-1',2,'fold-2',NULL,'ん𛁅',NULL),
+    ('fold-2',2,'fold-3',NULL,'𛁅て',NULL),('fold-3',2,'fold-4',NULL,'て𛁅',NULL),('fold-1',3,'fold-2','fold-3','ん𛁅て',NULL),
+    ('fold-2',3,'fold-3','fold-4','𛁅て𛁅',NULL)`).run()
   assert.equal((await db.prepare("SELECT graphemes FROM unit_ngrams WHERE first='fold-1'").first()).graphemes, 'んし', 'a run is folded as it is written')
   await db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at','fold')").run()
   const folded = await runOf('んし'), written = await runOf('ん𛁅')
   assert.deepEqual([folded.total, folded.graphemes, folded.items.map(o => o.crops.map(c => c.label))], [1, 'んし', [['ん', '𛁅']]], 'a run is found by its graphemes and shown as written')
   assert.equal(written.total, 1, 'a written form folds to the same graphemes')
+  assert.deepEqual((await runOf('んして')).items.map(o => o.crops.map(c => c.id)), [['fold-1', 'fold-2', 'fold-3']], 'a trigram is folded too')
+  assert.deepEqual((await runOf('んしてし')).items.map(o => o.crops.map(c => c.id)), [['fold-1', 'fold-2', 'fold-3', 'fold-4']],
+    'a longer run chains folded pairs')
   // A review that relabels a member folds the run again.
   await db.prepare("UPDATE units SET character='か' WHERE id='fold-2'").run()
   assert.equal((await db.prepare("SELECT graphemes FROM unit_ngrams WHERE first='fold-1'").first()).graphemes, 'んか')
-  await db.batch([db.prepare("DELETE FROM unit_ngrams WHERE first='fold-1'"), db.prepare("DELETE FROM units WHERE id LIKE 'fold-%'")])
+  await db.batch([db.prepare("DELETE FROM unit_ngrams WHERE first LIKE 'fold-%'"), db.prepare("DELETE FROM units WHERE id LIKE 'fold-%'")])
   // A run filed under an empty book is counted once, on the whole site.
   await db.prepare("INSERT INTO unit_ngrams(first,size,second,text,document) VALUES('blank1',2,'blank2','空白','')").run()
   assert.deepEqual((await db.prepare("SELECT scope,n FROM ngram_counts WHERE text='空白'").all()).results, [{ scope: '', n: 1 }])

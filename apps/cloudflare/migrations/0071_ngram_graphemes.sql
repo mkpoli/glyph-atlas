@@ -4,7 +4,8 @@
 -- query; a character the table does not know stands for itself. A member's own character is the one
 -- its text takes (0061, 0063), so the triggers that keep the text in step fold it with them, and a run
 -- is folded as it is inserted or its members change. The runs written before this migration are folded
--- by `scripts/backfill_ngram_graphemes.sh`, a slice at a time after `graphemes_backfill.after`.
+-- by `scripts/backfill_ngram_graphemes.sh`, a slice at a time after `graphemes_backfill.after`, which is
+-- run again after a grapheme publication: moving a character to another grapheme refolds no run itself.
 -- A run's occurrences, its probes and its books are found along its graphemes, so the indexes that led
 -- with the text (0058, 0059) lead with the graphemes instead; Explore's counts stay by the written text
 -- (`ngram_counts`, 0060).
