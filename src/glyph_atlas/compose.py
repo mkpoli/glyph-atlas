@@ -949,6 +949,8 @@ class Composer:
             groups.append([Placed(source, source.box, target, native=self.ink(drawn.char), origin=f"host {drawn.char}")])
         if op in AXIS:
             self._space(AXIS[op], groups)
+        elif not same[0]:
+            _fit_inside(groups[0], groups[1], region, self.font.stem[0][0])
         return [p for group in groups for p in group]
 
     def _transplant(self, op: str, children: list[Node]) -> list[Placed] | None:
@@ -1121,7 +1123,9 @@ class Composer:
                 x0, y0, x1, y1 = INSIDE[op]
                 w, h = region[2] - region[0], region[3] - region[1]
                 room = (region[0] + x0 * w, region[1] + y0 * h, region[0] + x1 * w, region[1] + y1 * h)
-            return outer + self._node(children[1], room)
+            inner = self._node(children[1], room)
+            _fit_inside(outer, inner, region, self.font.stem[0][0])
+            return outer + inner
         axis = AXIS[op]
         power, middle = SHARES.get((op, len(children)), (0.5, 1.0))
         weights = [self.ink(c) ** power * (middle if 0 < k < len(children) - 1 else 1.0) for k, c in enumerate(children)]
@@ -1146,6 +1150,67 @@ class Composer:
                 groups.append(self._node(child, box))
         self._space(axis, groups)
         return [p for group in groups for p in group]
+
+
+def _fit_inside(outer: list[Placed], inner: list[Placed], region: Box, stem: float, size: int = 64) -> None:
+    """The enclosed parts moved and scaled, together and in proportion, to the largest size at which
+    their ink fits the enclosing part's opening, clear of its ink by `ROOM_MARGIN` stems, at the
+    place nearest where they stand. Their own outline is fitted, not their box, so a part may tuck
+    under a roof or into a corner its box would overlap."""
+    w = (region[2] - region[0]) / size
+    h = (region[3] - region[1]) / size
+    ink = fill([r for p in outer for r in _rings(p.part.contours, p.contours())], size, region)
+    margin = max(1, round(ROOM_MARGIN * stem / max(w, h) / 2))
+    for _ in range(margin):
+        grown = ink.copy()
+        grown[1:] |= ink[:-1]
+        grown[:-1] |= ink[1:]
+        grown[:, 1:] |= ink[:, :-1]
+        grown[:, :-1] |= ink[:, 1:]
+        ink = grown
+    x0 = min(p.target[0] for p in inner)
+    y0 = min(p.target[1] for p in inner)
+    x1 = max(p.target[2] for p in inner)
+    y1 = max(p.target[3] for p in inner)
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    blocked = np.fft.rfft2(ink.astype(float), s=(2 * size, 2 * size))
+    for scale in np.arange(1.6, 0.45, -0.05):
+        hw, hh = (x1 - x0) * scale / 2, (y1 - y0) * scale / 2
+        box = (cx - hw, cy - hh, cx + hw, cy + hh)
+        # The inner ink, scaled about its centre, rasterised in the region's grid.
+        rings = []
+        for p in inner:
+            t = p.target
+            moved = Placed(p.part, p.source, (cx + (t[0] - cx) * scale, cy + (t[1] - cy) * scale,
+                                              cx + (t[2] - cx) * scale, cy + (t[3] - cy) * scale), p.weight)
+            rings += _rings(p.part.contours, moved.contours())
+        # A window of the region's pixel size whose top-left corner is the scaled box's.
+        mask = fill(rings, size, (box[0], box[3] - size * h, box[0] + size * w, box[3]))
+        rows, cols = np.nonzero(mask)
+        if not len(rows):
+            return
+        r0, c0 = rows.min(), cols.min()
+        mask = mask[r0: rows.max() + 1, c0: cols.max() + 1]
+        mh, mw = mask.shape
+        if mh > size or mw > size:
+            continue
+        kernel = np.fft.rfft2(mask[::-1, ::-1].astype(float), s=(2 * size, 2 * size))
+        overlap = np.fft.irfft2(blocked * kernel, s=(2 * size, 2 * size))[mh - 1:size, mw - 1:size]
+        free = overlap < 0.5
+        if not free.any():
+            continue
+        # The free top-left corners (in grid rows from the top), nearest where the part stood.
+        want_row = (region[3] - (cy + hh)) / h + r0
+        want_col = (cx - hw - region[0]) / w + c0
+        rr, cc = np.nonzero(free)
+        k = int(np.argmin((rr - want_row) ** 2 + (cc - want_col) ** 2))
+        top, left = region[3] - (rr[k] - r0) * h, region[0] + (cc[k] - c0) * w
+        dx, dy = left - (cx - hw), top - (cy + hh)
+        for p in inner:
+            t = p.target
+            p.target = (cx + (t[0] - cx) * scale + dx, cy + (t[1] - cy) * scale + dy,
+                        cx + (t[2] - cx) * scale + dx, cy + (t[3] - cy) * scale + dy)
+        return
 
 
 def _squeeze(group: list[Placed], axis: int, low: float, high: float) -> None:
