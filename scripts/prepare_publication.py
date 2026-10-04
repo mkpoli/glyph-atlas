@@ -6,7 +6,10 @@
 1. The export's catalogue is copied, and every image row is checked against the pack it points into.
    An export stopped mid-write leaves rows past the end of its last pack; the crops using them are
    left out here and deleted from the export's own catalogue, so `export_cloudflare.py --resume`
-   cuts them again. They are listed in OUTPUT/lost.json.
+   cuts them again. They are listed in OUTPUT/lost.json. A pack deleted once an earlier publication
+   uploaded it is not read: the images of the kept crops that lie in it are published by reference to
+   the object and offset the site already serves them from (`media` in D1), and one the site does not
+   serve stops the run.
 2. Only units whose id starts with one of `--prefix` are kept, less those of withdrawn documents
    (`data/vocab/withdrawn.yaml`), and the copy is sealed.
 3. The units the site already holds are read from D1 (or from `--live`, one JSON object per unit
@@ -23,7 +26,7 @@
    on (`units_refreshed_at`), so they change once the rest has. Each part stays under D1's upload size and every
    statement under its statement limit; `publication.json` lists the parts.
 
-Nothing is uploaded or written to D1 here: reading the live units is the only request.
+Nothing is uploaded or written to D1 here: reading the live units and images is the only request.
 """
 from __future__ import annotations
 
@@ -37,12 +40,13 @@ import sqlite3
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 from cloudflare_schema import schema
-from seal_cloudflare import seal
+from seal_cloudflare import MEDIA_URL, crossing_packs, seal
 
 from glyph_atlas import withdrawn
 from glyph_atlas.extraction_queue import overlaps
@@ -54,9 +58,11 @@ _spec.loader.exec_module(refresh)
 
 PART_BYTES = 45 * 1024 * 1024
 STATEMENT_BYTES = 95 * 1024
-MEDIA_KEY = re.compile(r'^INSERT OR REPLACE INTO "media"[^(]*\(\'([0-9a-f]+)\'')
+MEDIA_KEY = re.compile(r'^INSERT OR (?:REPLACE|IGNORE) INTO "media"[^(]*\(\'([0-9a-f]+)\'')
 UNIT_ID = re.compile(r'^INSERT OR IGNORE INTO "units"[^(]*\(\'((?:[^\']|\'\')*)\'')
 ID_CHARS = "0123456789abcdefghijklmnopqrstuvwxyz"
+#: Image keys read from D1 per request: 65 bytes each, under D1's statement limit.
+MEDIA_CHUNK = 1000
 
 
 def key_of(url) -> str:
@@ -85,6 +91,9 @@ def drop_truncated(export: Path, catalogue: Path) -> dict:
     db = sqlite3.connect(catalogue)
     lost_media = set()
     for obj, in db.execute("SELECT DISTINCT object FROM media"):
+        # A pack deleted after publication: its images are read from the site instead.
+        if not (export / obj).exists():
+            continue
         size = (export / obj).stat().st_size
         lost_media.update(k for k, in db.execute("SELECT key FROM media WHERE object=? AND offset+size>?", (obj, size)))
     lost_units = [i for i, data in db.execute("SELECT id, data FROM units")
@@ -104,6 +113,35 @@ def select_units(catalogue: Path, prefixes: list[str]) -> None:
         gone = sorted(withdrawn.documents())
         db.execute(f"DELETE FROM units WHERE document IN ({','.join('?' * len(gone))})", gone)
         db.execute("DELETE FROM metadata WHERE key='catalogue'")
+
+
+def unpacked(catalogue: Path, export: Path) -> list[str]:
+    """The image keys the kept crops use whose packs are no longer on disk."""
+    db = sqlite3.connect(catalogue)
+    used = set()
+    for data, snap in db.execute("SELECT data, snapshot FROM units"):
+        used.update(MEDIA_URL.findall(data + snap))
+    return sorted(k for k, obj in db.execute("SELECT key, object FROM media") if k in used and not (export / obj).exists())
+
+
+def read_media(keys: list[str]) -> dict[str, tuple[str, int, int]]:
+    """The site's media rows for `keys`, as (object, offset, size), read in chunks, two at a time. A chunk
+    whose answer does not come back is read again in halves, as `read_range` splits a crowded range."""
+    if any(not re.fullmatch(r"[0-9a-f]{64}", k) for k in keys):
+        raise SystemExit("an image key is not a sha256")
+    chunks = [keys[i:i + MEDIA_CHUNK] for i in range(0, len(keys), MEDIA_CHUNK)]
+
+    def read(chunk, depth=0):
+        listed = ",".join(f"'{k}'" for k in chunk)
+        try:
+            return d1(f"SELECT key, object, offset, size FROM media WHERE key IN ({listed})", tries=2)
+        except subprocess.CalledProcessError:
+            if depth >= 3 or len(chunk) < 2:
+                raise SystemExit(f"could not read the site's media rows for {chunk[0]}..{chunk[-1]}") from None
+        half = len(chunk) // 2
+        return read(chunk[:half], depth + 1) + read(chunk[half:], depth + 1)
+    with ThreadPoolExecutor(2) as pool:
+        return {row["key"]: (row["object"], row["offset"], row["size"]) for rows in pool.map(read, chunks) for row in rows}
 
 
 def d1(sql: str, tries: int = 4) -> list[dict]:
@@ -288,6 +326,11 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
 
     catalogue = snapshot(args.export, out)
+    # Checked before `drop_truncated`, which would delete from the export the earlier run's rows that
+    # reach past the end of the later pack under the same name.
+    with sqlite3.connect(catalogue) as db:
+        if crossing := [o for o in crossing_packs(db) if (args.export / o).exists()]:
+            raise SystemExit(f"packs hold images of two export runs under one name: {', '.join(crossing)}")
     lost = drop_truncated(args.export, catalogue)
     (out / "lost.json").write_text(json.dumps(lost, indent=1))
     select_units(catalogue, args.prefix)
@@ -299,7 +342,16 @@ def main() -> None:
     sealed = out / "sealed"
     # The seal is rebuilt on every run; the export and its packs are the source.
     shutil.rmtree(sealed, ignore_errors=True)
-    seal(out, corpus, sealed)
+    # Images in packs deleted once published are read from the site, so none is packed again.
+    missing = unpacked(catalogue, args.export)
+    published = read_media(missing) if missing else {}
+    (out / "live-media.jsonl").write_text("".join(json.dumps({"key": k, "object": o, "offset": f, "size": n}) + "\n"
+                                                  for k, (o, f, n) in sorted(published.items())))
+    if gone := sorted(set(missing) - published.keys()):
+        (out / "unserved.json").write_text(json.dumps(gone, indent=1))
+        raise SystemExit(f"{len(gone)} images are neither on disk nor on the site (listed in {out / 'unserved.json'}): "
+                         + ", ".join(gone[:5]) + (", ..." if len(gone) > 5 else ""))
+    seal(out, corpus, sealed, published)
 
     live_rows = ([json.loads(line) for line in args.live.read_text().splitlines() if line.strip()] if args.live
                  else read_live(args.prefix))
@@ -332,7 +384,9 @@ def main() -> None:
     manifest["objects"] = [o for o in manifest["objects"] if o["key"] in objects]
     manifest["sql"] = parts
     (sealed / "publication.json").write_text(json.dumps(manifest, ensure_ascii=False))
-    print(json.dumps({"lost": len(lost["units"]), "new": len(units), "ledger": len(claims), "overlapping": len(overlapping), "media": len(media), "refresh": counts,
+    referenced = sum(MEDIA_KEY.match(line).group(1) in published for line in media)
+    print(json.dumps({"lost": len(lost["units"]), "new": len(units), "ledger": len(claims), "overlapping": len(overlapping), "media": len(media),
+                      "media_on_site": referenced, "media_packed": len(media) - referenced, "refresh": counts,
                       "held": len(held), "extra": [str(p) for p in args.extra], "status": args.status,
                       "objects": len(manifest["objects"]), "parts": parts, "publication": str(sealed)}, ensure_ascii=False))
 

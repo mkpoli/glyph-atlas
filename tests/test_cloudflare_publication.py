@@ -92,6 +92,19 @@ def test_truncated_publication_is_rejected(publication):
         module.seal(local, corpus, output)
 
 
+def test_an_image_whose_pack_was_deleted_is_sealed_by_reference_to_the_site(publication):
+    module, local, corpus, output = publication
+    (local / "pack-0001.bin").unlink()
+    with pytest.raises(ValueError, match=f"image {'a' * 64} is in pack-0001.bin, which is neither on disk nor on the site"):
+        module.seal(local, corpus, output)
+    output = output.parent / "again"
+    module.seal(local, corpus, output, published={"a" * 64: ("packs/live.bin", 70, 7)})
+    manifest = json.loads((output / "publication.json").read_text())
+    assert all(b"allowed" not in (output / o["file"]).read_bytes() for o in manifest["objects"]), "no image is packed again"
+    with sqlite3.connect(output / "atlas.sqlite") as db:
+        assert db.execute("SELECT object,offset,size FROM media").fetchall() == [("packs/live.bin", 70, 7)]
+
+
 def test_the_ledger_rows_an_export_carries_are_sealed_insert_only_and_their_slots_resolved(publication):
     module, local, corpus, output = publication
     version = "one@" + "c" * 64 + "@1,2,3,4"
