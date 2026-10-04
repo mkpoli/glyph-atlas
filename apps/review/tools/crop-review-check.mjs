@@ -61,6 +61,52 @@ try {
   await browser.waitFor(ready, 60000)
   console.log('PASS ← and → step through the list')
 
+  // A crop saved as looking right shows that decision when the reader steps back to it, and its
+  // chosen button moves on without writing again.
+  {
+    const firstId = await browser.evaluate(shown)
+    const advance = on => browser.evaluate(`document.querySelector('dialog[open] .advance-switch[aria-checked="${!on}"]')?.click()`)
+    await advance(true)
+    await browser.evaluate('document.querySelector(".save-character").click()')
+    await browser.waitFor(`${shown} && ${shown} !== ${JSON.stringify(firstId)}`, 30000)
+    await browser.waitFor(ready, 60000)
+    assert(!await browser.evaluate('document.querySelector(".save-character").classList.contains("chosen")'), 'a crop not yet decided shows a decision')
+    await browser.key('ArrowLeft')
+    await browser.waitFor(`${shown} === ${JSON.stringify(firstId)}`)
+    await browser.waitFor(ready, 60000)
+    assert(await browser.evaluate('document.querySelector(".save-character").classList.contains("chosen")'), 'the saved decision is not shown on stepping back')
+    const mark = events(config.directory).length
+    await browser.evaluate('document.querySelector(".save-character").click()')
+    await browser.waitFor(`${shown} !== ${JSON.stringify(firstId)}`, 30000)
+    assert(events(config.directory).length === mark, 'the chosen decision was saved a second time')
+    await browser.key('ArrowLeft')
+    await browser.waitFor(`${shown} === ${JSON.stringify(firstId)}`)
+    await browser.waitFor(ready, 60000)
+    await browser.key('w')
+    await browser.waitFor(pressed('character'))
+    assert(!await browser.evaluate('document.querySelector(".save-character").classList.contains("chosen")'), 'a changed decision still shows as chosen')
+    await advance(false)
+    console.log('PASS a saved decision is shown on stepping back and is not saved again')
+
+    // Written since by something other than this dialog, the crop no longer shows the old decision.
+    await browser.evaluate('document.querySelector("dialog[open] .close-inspector").click()')
+    await browser.waitFor('document.querySelector("dialog[open]") === null')
+    const status = await browser.evaluate(`(async () => {
+      const crop = await (await fetch('/atlas/characters/' + encodeURIComponent(${JSON.stringify(firstId)}))).json()
+      const response = await fetch('/atlas/characters/' + encodeURIComponent(crop.id), { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: crypto.randomUUID(), revision: crop.revision, image_sha256: crop.image_sha256, verdict: 'wrong', issue: 'blank', correction: null }) })
+      return response.status
+    })()`)
+    assert(status === 200, `the outside write was refused: ${status}`)
+    // What the page read ahead of the write expires first.
+    await new Promise(resolve => setTimeout(resolve, 21000))
+    await browser.evaluate(`document.querySelector('.glyph-grid [data-unit="${firstId}"]').click()`)
+    // The redrawn page view is not needed here; the save button is enabled once the record is read.
+    await browser.waitFor(`${shown} === ${JSON.stringify(firstId)} && !document.querySelector(".save-character")?.disabled`, 60000)
+    assert(!await browser.evaluate('document.querySelector(".save-character").classList.contains("chosen")'), 'a decision overtaken by another write still shows as chosen')
+    console.log('PASS a decision overtaken by another write is not shown')
+  }
+
   // Another character is picked from the search; nothing typed is saved as it stands.
   await browser.key('w')
   await browser.waitFor('!!document.querySelector("dialog[open] .suggestion-pick input")')

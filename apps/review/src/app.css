@@ -194,6 +194,8 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 @media(min-width:1000px){.character-dialog .inspector-figure{min-height:642px}}
 @media(min-width:1000px){.credit-beside{display:block}.credit-after{display:none}}
 .inspector-savebar .save-character{min-height:52px}
+/* The decision this page already saved for the crop on show: pressing it moves on without saving again. */
+.inspector-savebar .save-character.chosen,.inspector-savebar .save-character.chosen:not(:disabled):hover{background:var(--accent-light);color:var(--accent);border-color:var(--accent)}
 .inspector-savebar .advance-switch{align-self:flex-start}
 @media(min-width:1000px){.character-dialog .inspector-savebar{align-items:stretch}.character-dialog .inspector-savebar .looks-right{align-self:center}}
 .tile-id{margin-top:3px;font-family:ui-monospace,SFMono-Regular,Consolas,"GenZui Sans",monospace;font-size:9px;color:light-dark(#8a8a93, #9d9da6);white-space:normal!important;word-break:break-all;overflow:visible!important}.record-id{display:flex;align-items:center;gap:10px;margin:6px 0 0;font-size:11px;color:var(--muted)}.record-id code{font-family:ui-monospace,SFMono-Regular,Consolas,"GenZui Sans",monospace;font-size:10px;word-break:break-all}.copy-id{border:0;background:transparent;padding:2px 4px;font-size:11px;color:var(--muted);text-decoration:underline;flex-shrink:0}.copy-id:hover{color:var(--ink)}

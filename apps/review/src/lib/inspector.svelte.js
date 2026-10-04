@@ -22,6 +22,8 @@ export const cropAddress = (id, origin = 'collection') =>
 export function createInspector() {
   const state = $state({ onVerdict: null, queue: [], key: 0 })
   let updateItem = null, lastFocus = null, closing = false
+  // What this page saved for each crop, so stepping back to one shows the decision it was given.
+  const decisions = {}
   const current = () => page.state.inspect?.key === state.key
   function show(id, origin, push) {
     closing = false
@@ -66,6 +68,8 @@ export function createInspector() {
     /** The entry changed (a close landed, or Forward reopened a crop): a close may go back again. */
     settle() { closing = false },
     restoreFocus() { if (lastFocus?.isConnected) lastFocus.focus() },
+    remember(id, decision) { decisions[id] = decision },
+    decided(id) { return decisions[id] ?? null },
   }
 }
 

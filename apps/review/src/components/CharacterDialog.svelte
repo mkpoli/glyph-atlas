@@ -47,6 +47,11 @@
   let written = $state(first?.label ?? ''), writtenDirty = $state(false)
   let editingBox = $state(false), box = $state(null)
   let suggestions = $state(null), suggesting = $state(false), loaded = $state(false), imageFailed = $state(false)
+  // The decision this page already saved for the crop, restored when the reader steps back to it. While
+  // the choices on screen are still that decision, the save button shows it chosen and only moves on.
+  let kept = $state(null)
+  const choicesNow = () => ({ issue, correction: issue ? correction : null, noneSelected, written: writtenDirty ? written : null })
+  const settled = $derived(Boolean(kept) && box == null && form == null && JSON.stringify(choicesNow()) === JSON.stringify(kept))
   let contextSuggestions = $state(null), contextSuggesting = $state(false)
   let closed = false, generation = 0, submission = null, figure = $state(null), suggestionsElement = $state(null)
   // The character and the strokes around it come from one source image at one revision, so the
@@ -76,7 +81,7 @@
     // The list's row stands in until the record arrives; nothing can be saved from it.
     data = preloaded ?? (preview?.id === target ? preview : null); fresh = Boolean(preloaded); asked = false
     error = ''; form = null; issue = null; correction = null; noneSelected = false; box = null; editingBox = false
-    written = ''; writtenDirty = false
+    written = ''; writtenDirty = false; kept = null
     contextSuggestions = null; contextSuggesting = false
     loaded = false; imageFailed = false; suggestions = null; suggesting = false; submission = null
     if (leaving && target !== leaving) { refocus = true; leaving = null }
@@ -87,7 +92,9 @@
       if (data?.id === result.id && data.revision > result.revision) { fresh = true; return }
       if (result.image !== data?.image) loaded = false
       data = result; fresh = true
-      written = result.label ?? ''
+      kept = onVerdict ? null : standing(result)
+      if (kept) { issue = kept.issue; correction = kept.correction; noneSelected = kept.noneSelected }
+      written = kept?.written ?? result.label ?? ''; writtenDirty = kept?.written != null
     } catch (e) {
       if (closed || current !== generation) return
       // A link to a retired crop opens the crop that replaced it, and the address follows. A round's
@@ -159,6 +166,25 @@
     correction = value
   }
 
+  /**
+   * The decision this page saved for a crop, while the crop still holds it. The first read after the save
+   * pins the revision it shows, and any later write (a round, a bulk correction, an undo) moves the crop
+   * past it. A write between the save and that read is caught by the crop's state.
+   */
+  function standing(record) {
+    const decided = inspector.decided(record.id)
+    if (!decided) return null
+    const { choices } = decided
+    if (decided.revision == null) {
+      // A character written into the crop shows as its label; any other decision as its state.
+      const holds = choices.written != null ? choices.written === record.label : record.state === (choices.issue ? 'flagged' : 'checked')
+      if (!holds) return null
+      inspector.remember(record.id, { choices, revision: record.revision })
+      return choices
+    }
+    return decided.revision === record.revision ? choices : null
+  }
+
   /** Drop every pending proposal: "It looks right" writes a review, not the corrections on screen. */
   function discardProposals() {
     issue = null; correction = null; noneSelected = false
@@ -188,9 +214,12 @@
     // A replaced crop is saved as the crop on screen, not the retired one the link named.
     const target = data.id ?? id, current = generation
     if (matches) discardProposals()
+    // The decision already saved is not sent again.
+    if (settled) { if (advancing) { leaving = target; next() } else close(); return }
     // A bad crop redrawn here is fixed by the save, so the crop is reviewed with its new box.
     const fixed = issue === 'crop' && box
     const value = matches || !issue || fixed ? { verdict: 'match' } : { ...decision(issue), correction }
+    const decided = value.verdict === 'match' ? { issue: null, correction: null, noneSelected: false, written: null } : choicesNow()
     if (onVerdict) {
       // The round gets the identity in its own field: a character the reader chose is `character`.
       const identity = writtenDirty && written && written !== data.label ? { character: written } : {}
@@ -208,7 +237,7 @@
         if (closed || current !== generation) return
         data = { ...data, ...formed.crop }; form = null
         // A form that named the crop's character was a review already; nothing more to say.
-        if (formed.reviewed && (matches || !issue)) { leaving = advancing ? target : null; saved(target, formed.crop); busy = false; return }
+        if (formed.reviewed && (matches || !issue)) { inspector.remember(target, { choices: decided }); leaving = advancing ? target : null; saved(target, formed.crop); busy = false; return }
       } catch (e) { if (!closed && current === generation) error = e.message; busy = false; return }
     }
     const correctingCharacter = writtenDirty && Boolean(written) && written !== data.label
@@ -233,6 +262,7 @@
     try {
       leaving = advancing ? target : null
       const result = await request(route, { id: submission.id, ...payload })
+      inspector.remember(target, { choices: decided })
       if (!closed && current === generation) saved(target, result)
     } catch (e) { if (!closed && current === generation) error = e.message }
     finally { busy = false }
@@ -241,6 +271,9 @@
   // marked as changed either way, and the record on screen is replaced only when it is that crop.
   function styled(result) {
     changed?.(result.id, result)
+    // A style leaves the decision as it was.
+    const decided = inspector.decided(result.id)
+    if (decided?.revision != null && decided.revision === data?.revision && result.id === data.id) inspector.remember(result.id, { ...decided, revision: result.revision })
     if (!closed && result.id === data?.id) data = result
   }
   /** Leave the editing, keeping the box, with the focus on what follows it. */
@@ -321,7 +354,7 @@
     <!-- Always there outside a round, so the choice is visible before a list is opened. -->
     {#if !onVerdict}<AdvanceSwitch disabled={busy} />{/if}
     {#if imageFailed}<span role="alert">{t('character.image.unavailable')}</span>{/if}
-    <button class="primary save-character" bind:this={saveButton} disabled={busy || !data || !fresh || !loaded || imageFailed} onclick={() => save()}>{busy ? t('common.saving') : (issue === 'crop' && box) || (!issue && form != null) ? t(advancing ? 'character.save.changes.next' : 'character.save.changes.close') : issue ? (onVerdict ? t('character.save.useError') : t(advancing ? 'character.save.issue.next' : 'character.save.issue.close')) : (onVerdict ? t('character.save.backToSelection') : t(advancing ? 'character.save.looksRight.next' : 'character.save.looksRight.close'))} {#if onVerdict || advancing}<span>→</span>{:else if !issue}<span>✓</span>{/if}</button>
+    <button class="primary save-character" class:chosen={settled} bind:this={saveButton} disabled={busy || !data || !fresh || !loaded || imageFailed} onclick={() => save()}>{busy ? t('common.saving') : (issue === 'crop' && box) || (!issue && form != null) ? t(advancing ? 'character.save.changes.next' : 'character.save.changes.close') : issue ? (onVerdict ? t('character.save.useError') : t(advancing ? 'character.save.issue.next' : 'character.save.issue.close')) : (onVerdict ? t('character.save.backToSelection') : t(advancing ? 'character.save.looksRight.next' : 'character.save.looksRight.close'))} {#if onVerdict || advancing}<span>{settled ? '✓ →' : '→'}</span>{:else if !issue || settled}<span>✓</span>{/if}</button>
     {#if issue}<button class="quiet-link looks-right" disabled={busy || !loaded || imageFailed} onclick={() => { discardProposals(); save(true) }}>{onVerdict ? t('character.save.removeSelection') : t('character.save.itLooksRight')}</button>{/if}
     <ContributionTerms />
   </footer>
