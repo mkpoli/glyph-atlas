@@ -3,6 +3,8 @@ import json
 import sys
 from pathlib import Path
 
+from publish_collection_status import push as push_status
+
 from glyph_atlas.corpus.collection import archive_statistics, listing_digest, publish
 
 
@@ -29,6 +31,7 @@ def main():
             failed = True
     if changed or not (root / "corpus-index/archive.json").is_file():
         archive_statistics(root)
+    push_status()
     return int(failed)
 
 

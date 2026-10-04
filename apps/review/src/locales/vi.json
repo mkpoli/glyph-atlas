@@ -441,6 +441,7 @@
   "progress.source.updatedAt": "Cập nhật lúc {time}",
   "progress.state.extracting": "Đang trích xuất",
   "progress.state.paused": "Tạm dừng",
+  "progress.state.snapshot": "Tính đến {time}",
   "progress.state.stopped": "Đã dừng",
   "progress.state.waiting": "Đang chờ",
   "progress.timedOut": "Hết thời gian chờ khi kiểm tra tiến độ. Đang hiện bản cập nhật cuối.",
