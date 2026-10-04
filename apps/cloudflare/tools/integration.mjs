@@ -976,6 +976,9 @@ try {
   assert.deepEqual([occurrences.vertical, occurrences.items[0].vertical], [true, true], 'a run is written the way its line is')
   // A trigram is shown only while its third crop is live as well.
   await db.prepare(`INSERT INTO unit_ngrams(first,size,second,third,text,document) VALUES('one',3,'two','gone',?,NULL)`).bind(pairText + '也').run()
+  // A run with a member the site does not hold keeps its text as its graphemes (0071); this one is given
+  // the graphemes its query folds to, so only the dead third crop keeps it off the page.
+  await db.prepare("UPDATE unit_ngrams SET graphemes=(SELECT graphemes FROM unit_ngrams WHERE first='one' AND size=2)||'也' WHERE first='one' AND size=3").run()
   assert.equal((await runOf(pairText + '也')).total, 0, 'a trigram needs its third crop live')
   await db.prepare("UPDATE unit_ngrams SET third='one',text=? WHERE first='one' AND size=3").bind(pairText + firstLabel).run()
   const trigram = await runOf(pairText + firstLabel)
@@ -995,6 +998,7 @@ try {
   // past the answers the edge keeps.
   await db.batch([db.prepare(`INSERT INTO unit_ngrams(first,size,second,third,text,document) VALUES('ghost1',3,'ghost2','ghost3',?1,NULL),('ghost2',3,'ghost3','ghost4',?1,NULL)`).bind(pairText + firstLabel),
     db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at','leftward')")])
+  await db.prepare("UPDATE unit_ngrams SET graphemes=(SELECT graphemes FROM unit_ngrams WHERE first='one' AND size=3) WHERE first LIKE 'ghost%'").run()
   const inner = await runOf(pairText + pairText)
   assert.deepEqual(inner.items.map(o => o.crops.map(c => c.id)), [['one', 'two', 'one', 'two']], 'a run reached leftwards keeps its reading order')
   assert.deepEqual((await runOf(pairText + pairText + firstLabel)).items.map(o => o.crops.map(c => c.id)), [['one', 'two', 'one', 'two', 'one']],
@@ -1023,8 +1027,8 @@ try {
     await db.prepare('UPDATE units SET style=? WHERE id=?').bind(style, id).run()
   }
   await db.prepare(`INSERT INTO unit_ngrams(first,size,second,third,text,document) SELECT id,2,'two',NULL,'ナリ',CASE WHEN id IN ('o-early','o-late') THEN 'hk:a' ELSE 'hk:b' END FROM units WHERE id LIKE 'o-%'`).run()
-  // These runs are written with a text their members do not spell, so they are read as written (0071 folds
-  // a run from its members; the graphemes test below covers that).
+  // These runs are written with a text their members do not spell; their graphemes are set from that text,
+  // as if the members spelled it (0071 folds a run from its members; the graphemes test below covers that).
   const readAsWritten = () => db.prepare('UPDATE unit_ngrams SET graphemes=text WHERE graphemes IS NOT text').run()
   await readAsWritten()
   // The edge keeps an answer per catalogue version, so a change moves the version first.
@@ -1143,10 +1147,11 @@ try {
   }
   // A run is folded to its members' graphemes (0071) and found by what a reader types: ん followed by し
   // written in a hentaigana form (𛁅) is found as んし, and as ん𛁅, whose query folds the same way.
-  await db.batch([
-    db.prepare('INSERT OR IGNORE INTO characters VALUES(?,?,?,?,?)').bind('U+3057', 'し', '', JSON.stringify({ char: 'し', grapheme: { code_point: 'U+3057' } }), '{}'),
-    db.prepare('INSERT OR IGNORE INTO characters VALUES(?,?,?,?,?)').bind('U+1B045', '𛁅', '', JSON.stringify({ char: '𛁅', grapheme: { code_point: 'U+3057' } }), '{}'),
-  ])
+  await db.batch([['U+3057', 'し'], ['U+1B045', '𛁅']].map(([code, char]) => db.prepare('INSERT INTO characters(code_point,character,name,data,detail) VALUES(?,?,?,?,?)')
+    .bind(code, char, '', JSON.stringify({ char, grapheme: { code_point: 'U+3057' } }), '{}')))
+  // A query is folded through the characters' own index.
+  const foldPlan = await plan({ sql: worker.runGraphemesQuery(), values: [] }, [JSON.stringify(['ん', '𛁅'])])
+  assert.ok(foldPlan.some(d => /SEARCH c USING (COVERING )?INDEX character_text/.test(d)) && !foldPlan.some(d => /^SCAN (c|h)\b/.test(d)), foldPlan.join('; '))
   for (const [id, label] of [['fold-1', 'ん'], ['fold-2', '𛁅'], ['fold-3', 'て'], ['fold-4', '𛁅']]) {
     const d = { id, label, state: 'pending', revision: 0, image_sha256: hash, production: 'unknown', repair: { quiz: true } }
     await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
@@ -1158,7 +1163,7 @@ try {
   assert.equal((await db.prepare("SELECT graphemes FROM unit_ngrams WHERE first='fold-1'").first()).graphemes, 'んし', 'a run is folded as it is written')
   await db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at','fold')").run()
   const folded = await runOf('んし'), written = await runOf('ん𛁅')
-  assert.deepEqual([folded.total, folded.graphemes, folded.items.map(o => o.crops.map(c => c.label))], [1, 'んし', [['ん', '𛁅']]], 'a run is found by its graphemes and shown as written')
+  assert.deepEqual([folded.total, folded.items.map(o => o.crops.map(c => c.label))], [1, [['ん', '𛁅']]], 'a run is found by its graphemes and shown as written')
   assert.equal(written.total, 1, 'a written form folds to the same graphemes')
   assert.deepEqual((await runOf('んして')).items.map(o => o.crops.map(c => c.id)), [['fold-1', 'fold-2', 'fold-3']], 'a trigram is folded too')
   assert.deepEqual((await runOf('んしてし')).items.map(o => o.crops.map(c => c.id)), [['fold-1', 'fold-2', 'fold-3', 'fold-4']],
@@ -1166,7 +1171,8 @@ try {
   // A review that relabels a member folds the run again.
   await db.prepare("UPDATE units SET character='か' WHERE id='fold-2'").run()
   assert.equal((await db.prepare("SELECT graphemes FROM unit_ngrams WHERE first='fold-1'").first()).graphemes, 'んか')
-  await db.batch([db.prepare("DELETE FROM unit_ngrams WHERE first LIKE 'fold-%'"), db.prepare("DELETE FROM units WHERE id LIKE 'fold-%'")])
+  await db.batch([db.prepare("DELETE FROM unit_ngrams WHERE first LIKE 'fold-%'"), db.prepare("DELETE FROM units WHERE id LIKE 'fold-%'"),
+    db.prepare("DELETE FROM characters WHERE code_point IN ('U+3057','U+1B045')")])
   // A run filed under an empty book is counted once, on the whole site.
   await db.prepare("INSERT INTO unit_ngrams(first,size,second,text,document) VALUES('blank1',2,'blank2','空白','')").run()
   assert.deepEqual((await db.prepare("SELECT scope,n FROM ngram_counts WHERE text='空白'").all()).results, [{ scope: '', n: 1 }])

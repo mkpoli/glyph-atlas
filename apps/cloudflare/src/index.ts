@@ -698,7 +698,7 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
   });
   const counted = count?.results[0] as { n: number; vertical: number | null } | undefined;
   const works = rest.length ? await runWorks(env, rest.pop()!.results as { document: string; n: number; sample: string }[]) : null;
-  const body = { text: value, graphemes: folded.join(''), size, document, hand: group === null ? 'all' : HAND_NAMES[group], sort, next_offset: offset + found.length, items,
+  const body = { text: value, size, document, hand: group === null ? 'all' : HAND_NAMES[group], sort, next_offset: offset + found.length, items,
     ...(counted && { total: Math.min(counted.n, RUN_COUNT_MAX), more: counted.n > RUN_COUNT_MAX, vertical: 2 * (counted.vertical ?? 0) >= counted.n,
       hands: Object.fromEntries(HAND_NAMES.map((name, i) => [name, Math.min((rest[i].results[0] as { n: number }).n, RUN_COUNT_MAX)])), hand_groups: HAND_NAMES, works }) };
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
