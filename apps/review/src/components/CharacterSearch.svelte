@@ -191,7 +191,7 @@
 
   const browsing = $derived(open && Boolean(browse) && !value.trim())
 
-  const focusable = () => [...(list?.querySelectorAll('button:not(:disabled), summary') ?? [])]
+  const focusable = () => [...(list?.querySelectorAll('a[href], button:not(:disabled), summary') ?? [])]
   /** Arrow keys among the cards' buttons; Escape, or an arrow past either end, returns to the box. */
   function walk(event) {
     if (event.key === 'Escape') { event.preventDefault(); done(); return }
@@ -277,9 +277,9 @@
          onkeydown={e => { if (e.key === 'Escape') { e.preventDefault(); done() } }}>{@render browse(done)}</div>
   {:else if open}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="candidate-list" class:carded id={listId} bind:this={list} role={carded ? 'group' : 'listbox'} aria-label={t('search.candidates.label')}
-         onkeydown={e => { if (carded) walk(e) }}>
-      {#if lead}{@render lead()}{/if}
+    <div class="candidate-list" class:carded bind:this={list} onkeydown={e => { if (carded || (lead && document.activeElement?.closest('.candidate-lead'))) walk(e) }}>
+      {#if lead}<div class="candidate-lead">{@render lead()}</div>{/if}
+      <div id={listId} role={carded ? 'group' : 'listbox'} aria-label={t('search.candidates.label')}>
       {#if loading}<p class="candidate-status" role="status">{t('search.searching')}</p>{/if}
       {#if failed}<p class="candidate-status" role="alert">{t('search.failed')} <button type="button" onclick={() => seek(value)}>{t('common.tryAgain')}</button></p>{/if}
       {#if carded}
@@ -305,6 +305,7 @@
       {:else if answer?.more > 0}
         <p class="candidate-status">{t('search.narrowQuery')}</p>
       {/if}
+      </div>
     </div>
   {/if}
 </div>
