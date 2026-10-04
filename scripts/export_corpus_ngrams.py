@@ -47,13 +47,11 @@ ALIGNED = "detect-align"
 SLICE = 5000
 
 
-def placed(row: dict, columns: set[str]) -> dict:
+def placed(row: dict) -> dict:
     """A unit row with its line and position: its own, or those its dataset's ids carry
-    (`codh_all.reading_place`). A line read from the ids is a block of several columns, and is added
-    to `columns`."""
+    (`codh_all.reading_place`)."""
     if row.get("line_id") is None and (place := reading_place(row["id"], row.get("page_id"))):
         row["line_id"], row["seq"] = place
-        columns.add(place[0])
     return row
 
 
@@ -67,14 +65,15 @@ def corpus_runs(corpus) -> tuple[list[Run], list[str]]:
         return [], []
     vertical = line_orientation(corpus)
     gone = withdrawn.documents()
-    columns: set[str] = set()
-    rows = [placed(row, columns) for row in dataset.to_table(columns=[c for c in COLUMNS if c in dataset.schema.names]).to_pylist()
+    rows = [placed(row) for row in dataset.to_table(columns=[c for c in COLUMNS if c in dataset.schema.names]).to_pylist()
             if row.get("document_id") not in gone]
     rows = [row for row in rows if row.get("line_id")]
     horizontal = {line for line, down in vertical.items() if down is False}
     glyphs = [Glyph.of(row) for row in rows if row.get("method") != ALIGNED]
     glyphs += in_reading_order((Glyph.of(row) for row in rows if row.get("method") == ALIGNED), horizontal)
-    return adjacent_ngrams(glyphs, horizontal, columns), [row["id"] for row in rows]
+    # A line read from the ids is a block of several columns (`adjacent_ngrams`).
+    blocks = {row["line_id"] for row in rows if reading_place(row["id"], row.get("page_id"))}
+    return adjacent_ngrams(glyphs, horizontal, blocks), [row["id"] for row in rows]
 
 
 def statements(corpora) -> tuple[list[str], dict[str, Counter]]:
