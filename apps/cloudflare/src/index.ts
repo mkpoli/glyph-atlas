@@ -1200,6 +1200,40 @@ async function derivedOf(env: Env, rows: DerivedRow[]): Promise<DerivedEntry[]> 
     return [{ char: row.other, code_point: encoded ? cp(row.other) : null, encoded, routes, sources: [...sources].sort() }];
   });
 }
+// What the form picker's IDS editor starts from (0068): a character's descriptions by key, and the
+// substitutes of each component they name, the `component_variants` rows naming it as `a` (by key) or
+// as `b` (by `component_variant_b`), at most STRUCTURE_PARTS components a request.
+export const structureQuery = () => `SELECT sequences FROM han_ids WHERE char=?`;
+export const substitutesQuery = (n: number) => `SELECT a,b,count FROM component_variants WHERE a IN (${Array(n).fill('?').join(',')})
+  UNION ALL SELECT a,b,count FROM component_variants WHERE b IN (${Array(n).fill('?').join(',')})`;
+// A description holds at most 64 code points; the components of every sequence of one character fit here.
+const STRUCTURE_PARTS = 48;
+// How many substitutes a component lists, most contexts first (refs.SUBSTITUTES_SHOWN).
+const SUBSTITUTES_SHOWN = 24;
+const IDS_OPERATOR = /[⿰-⿿㇯〾]/u;
+type Substitute = { char: string; count: number };
+async function structureOf(env: Env, ctx: ExecutionContext, origin: string, char: string) {
+  if (!char || [...char].length !== 1) throw new Problem(422, 'Name one character.');
+  const key = new Request(`${origin}/layers/structure?c=${encodeURIComponent(char)}&v=${encodeURIComponent(await catalogueVersion(env))}`);
+  const cached = await caches.default.match(key);
+  if (cached) return await cached.json();
+  const row = await env.DB.prepare(structureQuery()).bind(char).first<{ sequences: string }>();
+  const sequences: string[] = row ? JSON.parse(row.sequences) : [];
+  const parts = [...new Set(sequences.flatMap(text => [...text].filter(c => !IDS_OPERATOR.test(c))))].slice(0, STRUCTURE_PARTS);
+  const rows = parts.length ? (await env.DB.prepare(substitutesQuery(parts.length)).bind(...parts, ...parts)
+    .all<{ a: string; b: string; count: number }>()).results : [];
+  const substitutes: Record<string, Substitute[]> = {};
+  for (const part of parts) {
+    const found = rows.filter(r => r.a === part || r.b === part)
+      .map(r => ({ char: r.a === part ? r.b : r.a, count: r.count }))
+      .sort((x, y) => y.count - x.count || byCodePoint(x.char, y.char))
+      .slice(0, SUBSTITUTES_SHOWN);
+    if (found.length) substitutes[part] = found;
+  }
+  const found = { char, sequences, substitutes };
+  ctx.waitUntil(caches.default.put(key, Response.json(found, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
+  return found;
+}
 async function known(env: Env, value: string) {
   const key = cp(literal(value));
   const row = await env.DB.prepare('SELECT data,detail FROM characters WHERE code_point=?').bind(key).first<{data:string;detail:string}>();
@@ -2103,6 +2137,7 @@ const routes = {
         return json(await inspected(env,row));
       }
       if(path==='/layers/suggest')return json(await suggest(env,q));
+      if(path==='/layers/structure')return json(await structureOf(env,ctx,url.origin,q.get('c')||''));
       if(path==='/layers/search'){const found=await suggest(env,q);return json({...found,results:found.items,match:found.items[0]||null})}
       const layer=path.match(/^\/layers\/characters\/([^/]+)$/);
       if(layer){const value=decodeURIComponent(layer[1]),{detail}=await known(env,value);const found=await occurrences(env,value,q);

@@ -1,7 +1,8 @@
 <script>
-  // A grapheme's forms as a row of chips, each in its script's colour, the first ten with their number
-  // key. Quick Review's form bar marks a selection with them, and the inspector marks its crop.
-  import ScriptText from './ScriptText.svelte'
+  // A grapheme's forms as a row of chips, each in its script's colour (a description marked as one),
+  // the first ten with their number key. Quick Review's form bar marks a selection with them, and the
+  // inspector marks its crop.
+  import FormText from './FormText.svelte'
   import { t } from '../lib/i18n.svelte.js'
   let { forms = [], chosen = null, current = null, disabled = false, label = '', title = form => form, onchoose, children = null } = $props()
   const KEYS = '1234567890'
@@ -13,7 +14,7 @@
     {@const char = charOf(form)}
     <button type="button" class="form-chip" class:chosen={chosen === char} class:current={current === char && chosen == null} {disabled}
       aria-pressed={chosen === char || (current === char && chosen == null)} onclick={() => onchoose(char)} title={title(char)} aria-label={title(char)}>
-      <ScriptText text={char} script={typeof form === 'string' ? '' : form.script} />{#if i < KEYS.length}<kbd>{KEYS[i]}</kbd>{/if}
+      <FormText text={char} script={typeof form === 'string' ? '' : form.script} />{#if i < KEYS.length}<kbd>{KEYS[i]}</kbd>{/if}
     </button>
   {/each}
   {@render children?.()}

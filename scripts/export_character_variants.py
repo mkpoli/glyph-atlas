@@ -5,7 +5,7 @@ parts D1 can import.
 
 D1 imports each `--file` as one transaction: a part that fails leaves the database as it was. The
 graph is too large for one statement, so the parts fill staging tables (`character_variants_next`,
-`component_variants_next`, `character_derived_next`, `words_next`, `word_spellings_next`) and only the
+`component_variants_next`, `character_derived_next`, `han_ids_next`, `words_next`, `word_spellings_next`) and only the
 last part swaps them in, bumps the listing version and cites the sources. A failure before the last part leaves the live tables
 untouched; a rerun starts the staging tables again.
 
@@ -14,6 +14,7 @@ substitution with its count and pairs) and `character_derived` (each character's
 as `refs.derived_variants` lists it, each form with its routes), read through `refs.derived_rows_of`. Up to two substitutions per form
 make that about half an hour of work on one processor; spread over fourteen it took three and a half
 minutes and wrote 2,343,125 rows, 110 MB (2026-10-04), computed once per run.
+`han_ids` holds each character's descriptions, which the form picker's IDS editor starts from.
 `words` and `word_spellings` are the hand tables of decision 0004, read through `refs.words` and
 `refs.word_spellings`, which joins each 振り仮名 row to its counts; a character card shows them
 beside its variants.
@@ -32,7 +33,7 @@ import sqlite3
 from functools import cache
 from pathlib import Path
 
-from glyph_atlas import refs
+from glyph_atlas import han_components, refs
 
 ROOT = Path(__file__).resolve().parents[1]
 PART_BYTES = 40 * 1024 * 1024
@@ -44,6 +45,8 @@ DERIVED_STAGING = "character_derived_next"
 DERIVED_COLUMNS = ("a", "rank", "b", "routes")
 SUBSTITUTION_COLUMNS = ("a", "b", "count", "pairs")
 WORDS_STAGING = "words_next"
+IDS_STAGING = "han_ids_next"
+IDS_COLUMNS = ("char", "sequences")
 WORD_COLUMNS = ("id", "language", "reading", "class")
 SPELLINGS_STAGING = "word_spellings_next"
 SPELLING_COLUMNS = ("word", "spelling", "source", "locator", "tier", "word_by", "basis", "related", "statement",
@@ -98,6 +101,13 @@ def word_citations() -> str:
     return json.dumps({**refs.word_sources(), **refs.word_spelling_sources()}, ensure_ascii=False, separators=(",", ":"))
 
 
+@cache
+def ids_rows() -> tuple[tuple[str, str], ...]:
+    """`han_ids`: each character's descriptions the IDS editor starts from (`refs.ids_sequences`)."""
+    return tuple((char, json.dumps(found, ensure_ascii=False, separators=(",", ":")))
+                 for char in sorted(han_components._sequences()) if (found := refs.ids_sequences(char)))
+
+
 def word_rows() -> list[tuple]:
     return [tuple(row[column] for column in WORD_COLUMNS) for row in refs.words().values()]
 
@@ -112,7 +122,7 @@ def expected() -> dict[str, int]:
     return {"edges": len(rows), "written": sum(e["written"] for e in rows.values()),
             "widens": sum(e["widens"] for e in rows.values()),
             "substitutions": len(substitution_rows()), "derived": len(derived_rows()),
-            "words": len(word_rows()), "spellings": len(spelling_rows())}
+            "words": len(word_rows()), "spellings": len(spelling_rows()), "ids": len(ids_rows())}
 
 
 def insert_rows(into: str, columns: tuple[str, ...], rows) -> list[str]:
@@ -144,6 +154,8 @@ def statements() -> list[list[str]]:
         f"DROP TABLE IF EXISTS {DERIVED_STAGING};\n",
         (f"CREATE TABLE {DERIVED_STAGING} (a TEXT NOT NULL, rank INTEGER NOT NULL, b TEXT NOT NULL,"
          " routes TEXT NOT NULL, PRIMARY KEY(a,rank)) WITHOUT ROWID;\n"),
+        f"DROP TABLE IF EXISTS {IDS_STAGING};\n",
+        f"CREATE TABLE {IDS_STAGING} (char TEXT PRIMARY KEY, sequences TEXT NOT NULL) WITHOUT ROWID;\n",
         f"DROP TABLE IF EXISTS {WORDS_STAGING};\n",
         (f"CREATE TABLE {WORDS_STAGING} (id TEXT PRIMARY KEY, language TEXT NOT NULL, reading TEXT NOT NULL,"
          " class TEXT NOT NULL) WITHOUT ROWID;\n"),
@@ -157,6 +169,7 @@ def statements() -> list[list[str]]:
                                             for edge in refs.variant_edges()))
     fill += insert_rows(SUBSTITUTIONS_STAGING, SUBSTITUTION_COLUMNS, substitution_rows())
     fill += insert_rows(DERIVED_STAGING, DERIVED_COLUMNS, derived_rows())
+    fill += insert_rows(IDS_STAGING, IDS_COLUMNS, ids_rows())
     fill += insert_rows(WORDS_STAGING, WORD_COLUMNS, word_rows())
     fill += insert_rows(SPELLINGS_STAGING, SPELLING_COLUMNS, spelling_rows())
     swap = []
@@ -164,6 +177,7 @@ def statements() -> list[list[str]]:
         ("character_variants", STAGING, COLUMNS),
         ("component_variants", SUBSTITUTIONS_STAGING, SUBSTITUTION_COLUMNS),
         ("character_derived", DERIVED_STAGING, DERIVED_COLUMNS),
+        ("han_ids", IDS_STAGING, IDS_COLUMNS),
         ("words", WORDS_STAGING, WORD_COLUMNS),
         ("word_spellings", SPELLINGS_STAGING, SPELLING_COLUMNS),
     ):
@@ -191,6 +205,8 @@ def fill(db: sqlite3.Connection) -> None:
     db.execute("DELETE FROM character_derived")
     db.executemany(f"INSERT OR REPLACE INTO character_derived({','.join(DERIVED_COLUMNS)}) VALUES (?,?,?,?)",
                    derived_rows())
+    db.execute("DELETE FROM han_ids")
+    db.executemany("INSERT INTO han_ids(char,sequences) VALUES (?,?)", ids_rows())
     db.execute("INSERT OR REPLACE INTO metadata(key,value) VALUES('variant_sources',?)", (citations(),))
     db.execute("DELETE FROM words")
     db.executemany(f"INSERT INTO words({','.join(WORD_COLUMNS)}) VALUES ({','.join('?' * len(WORD_COLUMNS))})", word_rows())
@@ -233,7 +249,7 @@ APPLY = """#!/usr/bin/env bash
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 cd ~/projects/Philology/glyph-atlas/apps/cloudflare
-count="SELECT (SELECT count(*) FROM character_variants) AS edges, (SELECT count(*) FROM character_variants WHERE written=1) AS written, (SELECT count(*) FROM character_variants WHERE widens=1) AS widens, (SELECT count(*) FROM component_variants) AS substitutions, (SELECT count(*) FROM character_derived) AS derived, (SELECT count(*) FROM words) AS words, (SELECT count(*) FROM word_spellings) AS spellings"
+count="SELECT (SELECT count(*) FROM character_variants) AS edges, (SELECT count(*) FROM character_variants WHERE written=1) AS written, (SELECT count(*) FROM character_variants WHERE widens=1) AS widens, (SELECT count(*) FROM component_variants) AS substitutions, (SELECT count(*) FROM character_derived) AS derived, (SELECT count(*) FROM words) AS words, (SELECT count(*) FROM word_spellings) AS spellings, (SELECT count(*) FROM han_ids) AS ids"
 q() {{ bunx wrangler d1 execute glyph-atlas --remote --json --command "$1" 2>/dev/null | jq -c '.[0].results[0]'; }}
 echo "before: $(q "$count")"
 echo "started $(date -u +%Y-%m-%dT%H:%M:%SZ); undo: bunx wrangler d1 time-travel restore glyph-atlas --timestamp=<that time>"

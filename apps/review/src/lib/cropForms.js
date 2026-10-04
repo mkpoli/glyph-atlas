@@ -13,6 +13,8 @@ import { character as readCard } from './layers.js'
 /** `U+3042` for あ, `U+1B09E U+3099` for 𛂞 with a voicing mark: the key of the character's card. */
 const pointOf = char => [...char].map(c => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')).join(' ')
 const entry = item => ({ char: item.char, code_point: item.code_point ?? pointOf(item.char), script: item.script ?? '' })
+// A derived form keeps whether it is encoded, its tier and how it was made, which the picker shows.
+const derivedEntry = item => ({ ...entry(item), code_point: item.code_point ?? null, encoded: item.encoded, tier: item.tier, routes: item.routes })
 
 const cards = new Map()
 /**
@@ -27,7 +29,7 @@ export function listForms(char) {
     const loaded = readCard(pointOf(char)).catch(error => error?.status === 404 ? null : Promise.reject(error)).then(card => {
       const members = (card?.grapheme?.members ?? [{ char }]).map(entry)
       const variants = [...card?.variants?.items ?? [], ...card?.variants?.related ?? []].map(entry)
-      const derived = (card?.variants?.derived ?? []).map(entry)
+      const derived = (card?.variants?.derived ?? []).map(derivedEntry)
       const seen = new Set(members.map(m => m.char))
       const fresh = list => list.filter(item => !seen.has(item.char) && seen.add(item.char))
       return { members, variants: fresh(variants), derived: fresh(derived) }

@@ -65,3 +65,11 @@ def test_a_whole_character_swap_is_no_sequence_of_its_own():
     # 䍃 is itself a component the table swaps; its rows spelled out are not forms of it.
     assert not [row for row in refs.derived_variants("䍃", limit=None) if not row["encoded"]
                 and any(sub["was"] == "䍃" for route in row["routes"] for sub in route)]
+
+
+def test_the_ids_editor_starts_from_the_characters_description_with_each_components_substitutes():
+    found = refs.structure("疑")
+    assert found["sequences"] == ["⿰𠤕⿱龴疋"]
+    assert {"char": "コ", "count": 1} in found["substitutes"]["龴"]
+    assert refs.structure("𠤕")["sequences"] == ["⿱匕矢"]
+    assert "失" in {row["char"] for row in refs.substitutes("矢")}
