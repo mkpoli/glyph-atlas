@@ -451,6 +451,7 @@
   "progress.source.updatedAt": "{time}に更新",
   "progress.state.extracting": "抽出中",
   "progress.state.paused": "一時停止中",
+  "progress.state.snapshot": "{time}時点",
   "progress.state.stopped": "停止",
   "progress.state.waiting": "待機中",
   "progress.timedOut": "進捗の確認がタイムアウトしました。最後の更新を表示しています。",

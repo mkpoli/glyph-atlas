@@ -442,6 +442,7 @@
   "progress.source.updatedAt": "及日𣅶{time}",
   "progress.state.extracting": "當摘出",
   "progress.state.paused": "暫亭",
+  "progress.state.snapshot": "併𦤾{time}",
   "progress.state.stopped": "㐌亭",
   "progress.state.waiting": "當徐",
   "progress.timedOut": "歇時間徐欺檢查進度。當現本及日𣞄。",

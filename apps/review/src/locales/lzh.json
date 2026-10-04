@@ -457,6 +457,7 @@
   "progress.source.updatedAt": "更於{time}",
   "progress.state.extracting": "方截",
   "progress.state.paused": "暫止",
+  "progress.state.snapshot": "至{time}",
   "progress.state.stopped": "已止",
   "progress.state.waiting": "方俟",
   "progress.timedOut": "久未應，今示前所得",

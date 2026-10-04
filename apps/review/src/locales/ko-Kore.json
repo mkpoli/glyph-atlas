@@ -455,6 +455,7 @@
   "progress.source.updatedAt": "{time} 更新",
   "progress.state.extracting": "抽出 中",
   "progress.state.paused": "一時 停止",
+  "progress.state.snapshot": "{time} 基準",
   "progress.state.stopped": "停止",
   "progress.state.waiting": "待機 中",
   "progress.timedOut": "現況 確認 時間 超過. 마지막 更新을 表示합니다.",

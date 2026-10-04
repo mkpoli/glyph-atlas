@@ -458,6 +458,7 @@
   "progress.source.updatedAt": "更新于{time}",
   "progress.state.extracting": "提取中",
   "progress.state.paused": "已暂停",
+  "progress.state.snapshot": "截至{time}",
   "progress.state.stopped": "已停止",
   "progress.state.waiting": "等待中",
   "progress.timedOut": "进度查询超时。显示上次更新的内容。",

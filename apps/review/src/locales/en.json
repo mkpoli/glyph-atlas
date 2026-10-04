@@ -472,6 +472,7 @@
   "progress.source.updatedAt": "Updated {time}",
   "progress.state.extracting": "Extracting",
   "progress.state.paused": "Paused",
+  "progress.state.snapshot": "Snapshot of {time}",
   "progress.state.stopped": "Stopped",
   "progress.state.waiting": "Waiting",
   "progress.timedOut": "Progress check timed out. Showing the last update.",

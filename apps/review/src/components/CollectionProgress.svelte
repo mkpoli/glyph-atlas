@@ -15,6 +15,9 @@
   const phases = { discovering: () => t('progress.phase.discovering'), collecting: () => t('progress.phase.collecting'),
     publishing: () => t('progress.phase.publishing'), complete: () => t('progress.phase.complete') }
   const clock = value => value ? formatDateTime(value, { date: false }) : ''
+  const snapshotTime = source => source.status === 'snapshot' && source.updated_at ? formatDateTime(source.updated_at) : ''
+  /** A snapshot's "next work" is only a forecast made when it was taken: once passed, it says nothing. */
+  const nextAt = source => source.next_at && (source.status !== 'snapshot' || new Date(source.next_at) > new Date()) ? source.next_at : ''
   const percent = source => source.total ? Math.min(100, Math.round(source.completed / source.total * 100)) : 0
 
   async function read() {
@@ -75,6 +78,7 @@
               {#if source.status === 'running'}<i class="live-dot"></i>{phases[source.phase]?.() ?? source.phase}
               {:else if source.status === 'waiting'}{t('progress.state.waiting')}
               {:else if source.status === 'paused'}{t('progress.state.paused')}
+              {:else if snapshotTime(source)}{t('progress.state.snapshot', { time: snapshotTime(source) })}
               {:else if source.phase === 'complete'}{t('progress.phase.complete')}
               {:else}{t('progress.state.stopped')}{/if}
             </span>
@@ -95,10 +99,10 @@
           {#if source.import_geometry === 'page_text_only'}<p class="progress-note alignment">{t('progress.source.alignmentNeeded')}</p>{/if}
           {#if source.current}<p class="current" title={source.current.title}>{source.current.title ?? source.current.id}</p>{/if}
           {#if source.status === 'paused' && source.pause_reason}<p class="progress-note paused">{source.pause_reason}</p>
-          {:else if source.next_at}<p class="progress-note">{t('progress.source.nextWorkAt', { time: clock(source.next_at) })}</p>{/if}
+          {:else if nextAt(source)}<p class="progress-note">{t('progress.source.nextWorkAt', { time: clock(nextAt(source)) })}</p>{/if}
           <div class="source-foot">
             <span>{source.failed ? t('progress.source.unavailable', { count: source.failed }) : t('progress.source.pauseSeconds', { seconds: source.pause_seconds ?? 60 })}</span>
-            <span>{source.updated_at ? t('progress.source.updatedAt', { time: clock(source.updated_at) }) : ''}</span>
+            <span>{source.updated_at && !snapshotTime(source) ? t('progress.source.updatedAt', { time: clock(source.updated_at) }) : ''}</span>
           </div>
         </section>
       {/each}
