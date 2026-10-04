@@ -64,10 +64,10 @@
       await picture('upload', blob)
     } catch (failure) { error = failure.message || t('account.picture.unreadable') }
   }
-  const pictured = $derived(session.state.providers.filter(provider => linked.has(provider) && (provider === 'github' || connected[provider]?.image)))
+  const pictured = $derived(session.state.providers.filter(provider => linked.has(provider) && (provider === 'github' || connected[provider]?.image?.startsWith('https://'))))
   const pictureFrom = $derived(!session.state.user?.image ? 'initial' : session.state.user.image.startsWith('/api/avatars/') ? 'upload'
     : session.state.user.image.includes('gravatar.com') ? 'gravatar' : session.state.user.image.includes('avatars.githubusercontent.com') ? 'github'
-    : pictured.find(provider => connected[provider].image === session.state.user.image) ?? 'other')
+    : pictured.find(provider => connected[provider]?.image === session.state.user.image) ?? 'other')
   const rename = event => { event.preventDefault(); return act('name', async client => { const r = await client.updateUser({ name: name.trim() }); await session.refresh(); return r }, t('account.name.saved')) }
   const link = provider => act(provider, client => client.linkSocial({ provider, callbackURL: location.pathname }))
   const unlink = provider => act(provider, client => client.unlinkAccount({ accountId: accounts.find(account => account.providerId === provider).id }))

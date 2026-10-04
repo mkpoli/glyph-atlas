@@ -6,6 +6,9 @@ type AccountRow = { id: string; providerId: string; accountId: string; accessTok
 
 const AGENT = { 'user-agent': 'glyphatlas.org' };
 const text = (value: unknown) => (typeof value === 'string' && value ? value : null);
+// A picture's address as the site keeps it: over HTTPS, and a Google picture at 256 pixels, where Google
+// otherwise serves 96. The sign-in library keeps the address as the provider gave it.
+const picture = (url: string | null) => url?.replace(/^http:/, 'https:').replace(/(\.googleusercontent\.com\/.*)=s\d+-c$/, '$1=s256-c') ?? null;
 
 /** The claims of an ID token the provider handed over; its signature was checked when it was received. */
 function claims(token: string | null): Record<string, unknown> | null {
@@ -20,13 +23,19 @@ async function json(url: string, token?: string | null): Promise<Record<string, 
   return response?.ok ? response.json() : null;
 }
 
-async function read(row: AccountRow): Promise<Profile | null> {
+// Discord's picture as the sign-in library builds it: animated ones as GIF, and Discord's default
+// picture for an account without one.
+function discordPicture(user: Record<string, any>) {
+  if (!user.avatar) return `https://cdn.discordapp.com/embed/avatars/${!user.discriminator || user.discriminator === '0' ? Number(BigInt(user.id) >> 22n) % 6 : parseInt(user.discriminator) % 5}.png`;
+  return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${user.avatar.startsWith('a_') ? 'gif' : 'png'}`;
+}
+
+async function ask(row: AccountRow): Promise<Profile | null> {
   const id = claims(row.idToken);
   switch (row.providerId) {
     case 'google':
     case 'line':
-      // Google serves its picture at 96 pixels unless the address asks for more.
-      return id ? { handle: null, name: text(id.name), email: text(id.email), image: text(id.picture)?.replace(/=s\d+-c$/, '=s256-c') ?? null } : null;
+      return id ? { handle: null, name: text(id.name), email: text(id.email), image: text(id.picture) } : null;
     case 'github': {
       // The public profile by account number serves an account whose token has lapsed.
       const user = (row.accessToken && await json('https://api.github.com/user', row.accessToken))
@@ -36,15 +45,20 @@ async function read(row: AccountRow): Promise<Profile | null> {
     case 'discord': {
       const user = row.accessToken ? await json('https://discord.com/api/users/@me', row.accessToken) : null;
       return user ? { handle: text(user.username), name: text(user.global_name), email: text(user.email),
-        image: user.avatar ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png` : null } : null;
+        image: discordPicture(user) } : null;
     }
     case 'kakao': {
       const user = row.accessToken ? await json('https://kapi.kakao.com/v2/user/me', row.accessToken) : null;
       return user ? { handle: null, name: text(user.properties?.nickname), email: text(user.kakao_account?.email),
-        image: text(user.properties?.profile_image) } : null;
+        image: text(user.kakao_account?.profile?.profile_image_url) ?? text(user.kakao_account?.profile?.thumbnail_image_url) } : null;
     }
   }
   return null;
+}
+
+async function read(row: AccountRow): Promise<Profile | null> {
+  const profile = await ask(row);
+  return profile && { ...profile, image: picture(profile.image) };
 }
 
 async function save(env: Env, row: AccountRow, profile: Profile) {
@@ -59,11 +73,14 @@ export async function recordProfile(env: Env, id: string) {
   if (!row || row.providerId === 'credential') return;
   const profile = await read(row);
   if (!profile) return;
+  const user = await env.DB.prepare('SELECT u.id,u.image FROM "user" u JOIN account a ON a.userId=u.id WHERE a.id=?').bind(id).first<{ id: string; image: string | null }>();
   const before = await env.DB.prepare('SELECT image FROM account_profiles WHERE account=?').bind(id).first<{ image: string | null }>();
   await save(env, row, profile);
-  // A user showing this account's picture keeps showing it after they change it there.
-  if (before?.image && profile.image && before.image !== profile.image)
-    await env.DB.prepare('UPDATE "user" SET image=? WHERE id=(SELECT userId FROM account WHERE id=?) AND image=?').bind(profile.image, id, before.image).run();
+  // A user showing this account's picture, at any size, shows it as the site keeps it, and keeps showing
+  // it after they change it there. The picture a new user signs up with is this account's.
+  const shown = picture(user?.image ?? null);
+  if (user?.image && profile.image && user.image !== profile.image && (shown === profile.image || shown === before?.image))
+    await env.DB.prepare('UPDATE "user" SET image=? WHERE id=? AND image=?').bind(profile.image, user.id, user.image).run();
 }
 
 /** A user's connected accounts, each with who it is at its provider and when it was connected. */
