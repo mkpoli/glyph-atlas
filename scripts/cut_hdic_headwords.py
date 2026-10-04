@@ -23,6 +23,7 @@ import json
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
+from statistics import median
 
 import yaml
 from PIL import Image
@@ -127,7 +128,14 @@ def main() -> int:
     documents: dict[str, Document] = {}
     manifests: dict[str, list[dict]] = {}
     pages, lines, units, report = [], [], [], {}
-    for (pid, frame), on_frame in sorted(by_frame.items()):
+    # A frame on which neither page stands is tried again, after the rest of its volume, at the pitch
+    # the volume's other pages stood at.
+    pitches: dict[str, list[float]] = defaultdict(list)
+    work = [(key, on_frame, False) for key, on_frame in sorted(by_frame.items())]
+    position = 0
+    while position < len(work):
+        (pid, frame), on_frame, again = work[position]
+        position += 1
         if pid not in manifests:
             manifest = fetch_manifest(f"https://dl.ndl.go.jp/api/iiif/{pid}/manifest.json")
             manifests[pid] = canvases(manifest)
@@ -144,6 +152,13 @@ def main() -> int:
         boxes = [b for b in boxes if not any(hdic.overlap(b, s.box) > 0.5 for s in seals[(pid, frame)])]
         unit = hdic.side(boxes)
         grids = hdic.page_grids(boxes, unit, dictionary.layout) if on_frame else {}
+        if on_frame and not grids:
+            if pitches[pid]:
+                grids = hdic.page_grids(boxes, unit, dictionary.layout, pitch=median(pitches[pid]))
+            elif not again:
+                work.append(((pid, frame), on_frame, True))
+                continue
+        pitches[pid] += [grid.pitch for grid in grids.values()]
         here = seal_records(seals[(pid, frame)], page, lines, units)
         if not grids:
             report[page.id] = {"skipped": "no column grid fitted", "seals": here}

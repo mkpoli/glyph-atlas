@@ -45,8 +45,9 @@ its place admits no doubt: every written glyph of the cell sits on its own headw
 left over, and another glyph of the cell was read where it was placed or the cell's first box stands
 at the tier line; or the glyph is the cell's first headword character on the cell's first box, at
 the tier line; or the glyphs before and after it in the cell were both read, on the boxes either
-side of its own. Any of these needs the page's grid borne out by the readers: `PAGE_READ` glyphs
-read where they stand and at most half as many refused. On a page whose tiers open with seal forms, a tier where none was seen keeps only
+side of its own. Any of these needs the page's grid borne out by the readers: `Layout.confirm`
+glyphs read where they stand and at most half as many refused. KTB asks for one: a page of twelve
+tier heads, each the first character of its tier, has little room to sit a column off unseen. On a page whose tiers open with seal forms, a tier where none was seen keeps only
 a head the classifier reads. A pair the classifier refuses is left out, and a page on which more than
 `REFUSED_SHARE` of the judged pairs are refused is left out whole, since that is how a misfitted grid
 looks. The caller tries a frame's pages on its two grids, one page to a grid (`assign_pages`).
@@ -102,10 +103,13 @@ class Layout:
     seal-script form written above the headword and the headword is the second. With `centred`, a
     headword's centre lies within that share of the column pitch of the column's axis, where a gloss
     written in two lines stands to either side. With `counted`, a cell whose written glyphs and
-    candidate boxes are as many as each other vouches for its pairing by that count alone. With
+    candidate boxes are as many as each other vouches for its pairing by that count alone. `confirm` is
+    how many of a page's glyphs must be read where they stand (with at most half as many refused) for
+    a glyph no reader judges to be kept there. With
     `whole`, a candidate's shorter side is at least that share of the shorter side of the page's
     median headword, and its longer side at most the inverse share of the longer: a headword the
     detector cut in two leaves a narrow or a flat piece, and one it joined to its gloss a tall box.
+    With tier heads, a head of another shape leaves its cell empty.
     """
 
     columns: int
@@ -116,6 +120,7 @@ class Layout:
     centred: float | None = None
     counted: bool = False
     whole: float | None = None
+    confirm: int = 3
 
 
 @dataclass(frozen=True)
@@ -336,7 +341,7 @@ DICTIONARIES = {
     # 天理 pages: the even page of an opening is on the right.
     "krm": Dictionary("krm", read_krm, Layout(columns=8, tiers=4, held=6), lambda page: page % 2 == 0),
     # Half-leaves: an opening shows a verso (B, b) on the right and the next recto on the left.
-    "ktb": Dictionary("ktb", read_ktb, Layout(columns=6, tiers=2, held=4, tier_pitch=(4.5, 7.5), heads="tier"),
+    "ktb": Dictionary("ktb", read_ktb, Layout(columns=6, tiers=2, held=4, tier_pitch=(4.5, 7.5), heads="tier", confirm=1, whole=0.5),
                       lambda page: page.endswith("B")),
     "tsj": Dictionary("tsj", read_tsj, Layout(columns=8, tiers=1, held=6, centred=0.2, counted=True, whole=0.7), lambda page: page.endswith("b")),
 }
@@ -439,44 +444,82 @@ def entry_tops(heads: Sequence[Box], columns: Sequence[float], pitch: float, uni
     return tops
 
 
-def page_grids(boxes: Sequence[Box], unit: float, layout: Layout) -> dict[str, Grid]:
+#: How far a known pitch may stretch on another page of the same book.
+PITCH_SLACK = 0.03
+
+
+def side_grid(heads: Sequence[Box], unit: float, layout: Layout, direction: int,
+              anchor: float | None, low: float, high: float) -> Grid | None:
+    """One page's grid from its heads: columns counted from `anchor` (or from whichever head fits best)
+    in `direction`, at a pitch in [low, high), then its tiers; None when it does not stand."""
+    centres = [b.x + b.w / 2 for b in heads]
+    _, start, pitch = fit(centres, layout.columns, low, high, 0.25, anchor=anchor, direction=direction)
+    if not pitch:
+        return None
+    columns = [start + direction * k * pitch for k in range(layout.columns)]
+    if direction > 0:
+        columns = columns[::-1]  # line 1 is the page's rightmost column
+    inside = [b for b in heads if Grid(tuple(columns), pitch, (), 0.0).holds(b)]
+    held = sum(1 for x in columns if any(abs(c - x) < pitch / 4 for c in centres))
+    if held < layout.held or not inside:
+        return None
+    if layout.tiers == 1:
+        # `cell_boxes` opens a cell a quarter of its height above the tier line.
+        top, bottom = min(b.y for b in inside) - unit, max(b.y + b.h for b in inside) + unit
+        return Grid(tuple(columns), pitch, (top + 0.25 * (bottom - top),), bottom - top, direction)
+    tops = entry_tops(inside, columns, pitch, unit) if layout.heads == "tier" else [b.y for b in inside]
+    lowest, highest = layout.tier_pitch
+    _, top, tier_pitch = fit(tops, layout.tiers, lowest * pitch, highest * pitch, 0.1)
+    if not tier_pitch:
+        return None
+    tiers = [top + k * tier_pitch for k in range(layout.tiers)]
+    if any(sum(1 for y in tops if abs(y - t) < 0.1 * tier_pitch) < TIER_HELD for t in tiers):
+        return None
+    return Grid(tuple(columns), pitch, tuple(tiers), tier_pitch, direction)
+
+
+def page_grids(boxes: Sequence[Box], unit: float, layout: Layout, pitch: float | None = None) -> dict[str, Grid]:
     """The grids of the two pages of a frame: `right` counted from the rightmost column, `left` ending at the leftmost.
 
     The gutter between the pages may be as wide as a column or several, so each page is anchored on
-    its outer column and only its pitch is fitted. With one tier, the cell runs from the highest
+    its outer column and only its pitch is fitted. Where heads of neighbouring columns run together
+    (glosses between them), the outer column comes out between two and the pitch wrong; a page that
+    then does not stand is fitted again at the pitch of the page that does, its columns free to settle
+    on its own side of the frame. `pitch`, when given (the book's usual pitch, for a frame on which
+    neither page stands), is used the same way for both. With one tier, the cell runs from the highest
     headword top on the page to the lowest bottom.
     """
     heads = heads_of(boxes, unit, layout)
     edges = edge_columns(heads, unit)
     if edges is None:
         return {}
-    centres = [b.x + b.w / 2 for b in heads]
+    sides = (("right", edges[0], -1), ("left", edges[1], 1))
     grids = {}
-    for name, anchor, direction in (("right", edges[0], -1), ("left", edges[1], 1)):
-        _, start, pitch = fit(centres, layout.columns, 2.2 * unit, 4.5 * unit, 0.25, anchor=anchor, direction=direction)
-        if not pitch:
-            continue
-        columns = [start + direction * k * pitch for k in range(layout.columns)]
-        if name == "left":
-            columns = columns[::-1]  # line 1 is the page's rightmost column
-        inside = [b for b in heads if Grid(tuple(columns), pitch, (), 0.0).holds(b)]
-        held = sum(1 for x in columns if any(abs(c - x) < pitch / 4 for c in centres))
-        if held < layout.held or not inside:
-            continue
-        if layout.tiers == 1:
-            # `cell_boxes` opens a cell a quarter of its height above the tier line.
-            top, bottom = min(b.y for b in inside) - unit, max(b.y + b.h for b in inside) + unit
-            grids[name] = Grid(tuple(columns), pitch, (top + 0.25 * (bottom - top),), bottom - top, direction)
-            continue
-        tops = entry_tops(inside, columns, pitch, unit) if layout.heads == "tier" else [b.y for b in inside]
-        low, high = layout.tier_pitch
-        _, top, tier_pitch = fit(tops, layout.tiers, low * pitch, high * pitch, 0.1)
-        if not tier_pitch:
-            continue
-        tiers = [top + k * tier_pitch for k in range(layout.tiers)]
-        if any(sum(1 for y in tops if abs(y - t) < 0.1 * tier_pitch) < TIER_HELD for t in tiers):
-            continue
-        grids[name] = Grid(tuple(columns), pitch, tuple(tiers), tier_pitch, direction)
+    for name, anchor, direction in sides:
+        if pitch is None:
+            grid = side_grid(heads, unit, layout, direction, anchor, 2.2 * unit, 4.5 * unit)
+        else:
+            low, high = (1 - PITCH_SLACK) * pitch, (1 + PITCH_SLACK) * pitch
+            grid = side_grid(heads, unit, layout, direction, anchor, low, high)
+            if grid is None:
+                # The outer column came out between two: let the columns settle on this half of the frame.
+                middle = (edges[0] + edges[1]) / 2
+                own = [b for b in heads if (b.x + b.w / 2 >= middle) == (direction < 0)]
+                grid = side_grid(own, unit, layout, direction, None, low, high)
+        if grid is not None:
+            grids[name] = grid
+    if pitch is None and len(grids) == 1:
+        (done, standing), = grids.items()
+        for name, _, direction in sides:
+            if name == done:
+                continue
+            # The heads beyond the standing page's inner column, on this page's side.
+            inner = min(standing.columns) - standing.pitch / 2 if direction > 0 else max(standing.columns) + standing.pitch / 2
+            own = [b for b in heads if (b.x + b.w / 2 < inner) == (direction > 0)]
+            grid = side_grid(own, unit, layout, direction, None,
+                             (1 - PITCH_SLACK) * standing.pitch, (1 + PITCH_SLACK) * standing.pitch)
+            if grid is not None:
+                grids[name] = grid
     return grids
 
 
@@ -493,6 +536,13 @@ def sealed(cell: Sequence[Box], unit: float) -> bool:
     return len(cell) > 1 and is_big(cell[0], unit) and is_big(cell[1], unit)
 
 
+def whole(box: Box, headword: tuple[float, float], share: float) -> bool:
+    """Whether a box is shaped like a whole headword: its shorter side at least `share` of the median
+    headword's shorter side, its longer side at most the inverse share of the longer."""
+    short, long = headword
+    return min(box.w, box.h) >= share * short and max(box.w, box.h) <= long / share
+
+
 def cell_boxes(boxes: Sequence[Box], grid: Grid, line: int, segment: int, unit: float, layout: Layout,
                headword: tuple[float, float] = (0.0, 0.0)) -> list[Box]:
     """The candidate headword boxes of a cell, top to bottom.
@@ -505,14 +555,17 @@ def cell_boxes(boxes: Sequence[Box], grid: Grid, line: int, segment: int, unit: 
         cell = [b for b in cell if max(b.w, b.h) >= INK * unit]
         if not cell:
             return []
-        return [cell[1]] if sealed(cell, unit) else [cell[0]]
+        head = cell[1] if sealed(cell, unit) else cell[0]
+        # A flat or narrow head is a piece of one the detector cut, or a stroke of the rule: the cell
+        # has no head to place, and the box after it is the gloss.
+        if layout.whole is not None and all(headword) and not whole(head, headword, layout.whole):
+            return []
+        return [head]
     if layout.centred is not None:
         x = grid.columns[line - 1]
         cell = [b for b in cell if abs(b.x + b.w / 2 - x) <= layout.centred * grid.pitch]
     if layout.whole is not None and all(headword):
-        short, long = headword
-        cell = [b for b in cell if not is_big(b, unit)
-                or (min(b.w, b.h) >= layout.whole * short and max(b.w, b.h) <= long / layout.whole)]
+        cell = [b for b in cell if not is_big(b, unit) or whole(b, headword, layout.whole)]
     return [b for b in cell if is_big(b, unit) or is_mark(b, unit)]
 
 
@@ -590,19 +643,32 @@ def shifted(grid: Grid, k: int) -> Grid:
 
 #: Least lead, in read glyphs or in miscounted headwords, for one of two grids to win over the other.
 SHIFT_MARGIN = 2
-#: Least number of a page's glyphs read where they stand, with at most half as many refused, before a
-#: glyph no reader can judge is kept there on its place in the grid.
-PAGE_READ = 3
 #: Least number of headword candidates the column beyond a page's outer one holds for the page to be
 #: tried there: a ruler, a folio number or a label in the margin holds fewer.
 OUTER_HELD = 2
 
 
+def headword_shape(boxes: Sequence[Box], grid: Grid, unit: float, layout: Layout) -> tuple[float, float]:
+    """The median headword's shorter and longer side on a page, (0, 0) when it has none. With tier
+    heads, the heads themselves, since in later books a headword is no larger than its gloss; else
+    the headword-sized boxes."""
+    if layout.heads == "tier":
+        heads = []
+        for line in range(1, len(grid.columns) + 1):
+            for segment in range(1, len(grid.tiers) + 1):
+                cell = [b for b in cell_window(boxes, grid, line, segment) if max(b.w, b.h) >= INK * unit]
+                if cell:
+                    heads.append(cell[1] if sealed(cell, unit) else cell[0])
+    else:
+        heads = [b for b in boxes if grid.holds(b) and is_big(b, unit)]
+    if not heads:
+        return (0.0, 0.0)
+    return float(np.median([min(b.w, b.h) for b in heads])), float(np.median([max(b.w, b.h) for b in heads]))
+
+
 def misfit(entries: Sequence[Entry], boxes: Sequence[Box], grid: Grid, unit: float, layout: Layout) -> tuple[int, int]:
     """How far a grid's candidate counts are from HDIC's, over the cells HDIC fills, and how many columns it fills."""
-    heads = [b for b in boxes if grid.holds(b) and is_big(b, unit)]
-    headword = ((float(np.median([min(b.w, b.h) for b in heads])), float(np.median([max(b.w, b.h) for b in heads])))
-                if heads else (0.0, 0.0))
+    headword = headword_shape(boxes, grid, unit, layout)
     expected: dict[tuple[int, int], int] = {}
     for entry in entries:
         if entry.line <= len(grid.columns) and entry.segment <= len(grid.tiers):
@@ -675,9 +741,7 @@ def _place(entries: Sequence[Entry], boxes: Sequence[Box], grid: Grid, unit: flo
     windows = {(line, segment): [b for b in cell_window(boxes, grid, line, segment) if max(b.w, b.h) >= INK * unit]
                for line in range(1, len(grid.columns) + 1) for segment in range(1, len(grid.tiers) + 1)}
     seal_page = layout.heads == "tier" and any(sealed(cell, unit) for cell in windows.values())
-    heads = [b for b in boxes if grid.holds(b) and is_big(b, unit)]
-    headword = ((float(np.median([min(b.w, b.h) for b in heads])), float(np.median([max(b.w, b.h) for b in heads])))
-                if heads else (0.0, 0.0))
+    headword = headword_shape(boxes, grid, unit, layout)
     for (line, segment), members in sorted(cells.items()):
         if line > len(grid.columns) or segment > len(grid.tiers):
             result.count("off-grid")
@@ -736,7 +800,7 @@ def _place(entries: Sequence[Entry], boxes: Sequence[Box], grid: Grid, unit: flo
         result.pairs += pairs
     read = sum(1 for p in result.pairs if p.verdict)
     refused = sum(1 for p in result.pairs if p.verdict is False)
-    if read < PAGE_READ or 2 * refused > read:
+    if read < layout.confirm or 2 * refused > read:
         # Nothing on the page bears the grid out: a glyph no reader judged stands only on the grid.
         unjudged = [p for p in result.pairs if p.kept and p.verdict is None]
         for pair in unjudged:
