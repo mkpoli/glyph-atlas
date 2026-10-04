@@ -19,6 +19,7 @@
   import GraphemeCard from './GraphemeCard.svelte'
   import { suggest, countsLabel, ownLabel } from '../lib/layers.js'
   import { t } from '../lib/i18n.svelte.js'
+  import { isSingle } from '../lib/issues.js'
 
   let {
     value = $bindable(''),
@@ -41,6 +42,9 @@
     // A page that searches by image gives `onimage`: the box then offers it, and an image dropped on or
     // pasted into the box goes to it.
     onimage = null,
+    // A box that takes a run of characters as typed (what a joined crop reads): Enter on more than one
+    // character submits the run to `onsubmit`, and the rows wait for the arrows.
+    runs = false,
   } = $props()
 
   const listId = `candidates-${Math.random().toString(36).slice(2, 9)}`
@@ -88,7 +92,7 @@
       try {
         const result = await suggest(text, limit, searchSignal())
         if (closed || current !== generation) return
-        answer = result; items = result?.items ?? []; active = items.length ? 0 : -1
+        answer = result; items = result?.items ?? []; active = items.length && !(runs && !isSingle(text.trim())) ? 0 : -1
       } catch {
         if (!closed && current === generation) { failed = true; items = [] }
       } finally {
