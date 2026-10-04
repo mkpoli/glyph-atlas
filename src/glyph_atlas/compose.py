@@ -131,6 +131,13 @@ def parse(sequence: str) -> Node:
     return tree
 
 
+def _stroked(node: Node) -> bool:
+    """Whether a sequence names a bare stroke (CJK Strokes, U+31C0–U+31EF) among its operands."""
+    if isinstance(node, str):
+        return 0x31C0 <= ord(node[0]) <= 0x31EF
+    return any(_stroked(n) for n in node[1:])
+
+
 def key(node: Node) -> str:
     """A node written out again as a sequence."""
     return node if isinstance(node, str) else node[0] + "".join(key(n) for n in node[1:])
@@ -871,6 +878,9 @@ class Composer:
             # A glyph that would be squeezed out of shape is drawn from its sequence instead, whose
             # parts come from characters that draw them in such a box (鮮 flat on top as ⿰魚羊).
             squeezed = glyph is not None and self.hosted and self._stretch(glyph.box, region) > STRETCH
+            # A sequence of bare strokes (𠂊 as ⿱𠂆㇇) names no designed parts: the glyph stays.
+            if tree is not None and _stroked(tree):
+                squeezed = False
             if glyph is not None and not (squeezed and tree is not None):
                 return [self._place(glyph, region, self.ink(encoded), f"glyph {encoded}")]
             if tree is None:
