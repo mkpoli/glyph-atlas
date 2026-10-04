@@ -37,6 +37,25 @@ and the best parts any host offers 0.81: layout is the larger remaining loss, st
 - Components Noto Sans CJK lacks are drawn from Plangothic (SIL OFL 1.1), the Source Han Sans
   design extended to the CJK extensions.
 
+## Ceilings
+
+Measured on two-part jōyō kanji with every part placed in the real glyph's own boxes, so that only
+the parts differ:
+
+| Parts | Ink overlap |
+|---|---|
+| the composer's choice | 0.76–0.79 |
+| the best in the composer's shortlist of hosts (about 12 per operand) | 0.80 |
+| the best among about 55 hosts per operand | 0.81 |
+| the composer's choice, each warped (three bands per axis) to fit the real part as well as it can | 0.82 |
+
+The shortlist already holds a better part about as often as not, but nothing measurable before
+drawing tells which: a learned ranker over box fit, proportions, outline count and ink-grid
+distance picked as well as the current order (0.835 against 0.834 per part, held-out). The learned
+layout's boxes lose a further 0.04–0.10 to these. Reusing drawn parts therefore tops out near
+0.72 overall; the 0.75 target needs parts reshaped to their new company, which the font does not
+show how to do.
+
 ## Next mechanisms
 
 In order of expected gain:
