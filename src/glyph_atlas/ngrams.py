@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Container, Iterable, Iterator
+from collections.abc import Container, Iterable, Iterator, Mapping
 from typing import Any, NamedTuple
 
 from .schema import Unit, UnitKind
@@ -159,22 +159,33 @@ def in_reading_order(glyphs: Iterable[Glyph], horizontal: Container[str] = froze
 
 
 #: A corpus glyph's character as the site holds it: the one a round or review gave it (its `units` row)
-#: or, while it has none, its published row's, which a form decision moves (`corpus_units`).
+#: or, while it has none, its published row's, which a form decision moves (`corpus_units`), or, while
+#: no written form is settled, the label its record is shown with (`corpus_units.label`).
 def _written(i: int) -> str:
-    return f"iif(u{i}.id IS NULL,c{i}.character,u{i}.character)"
+    return f"coalesce(iif(u{i}.id IS NULL,c{i}.character,u{i}.character),c{i}.label)"
 
 
-def corpus_ngram_statements(ranges: Iterable[tuple[str, str]], ngrams: list[Run], batch: int = 200) -> list[str]:
+def corpus_ngram_statements(ranges: Iterable[tuple[str, str]], ngrams: list[Run], *,
+                            labels: Mapping[str, str] | None = None, batch: int = 200) -> list[str]:
     """D1 statements that make `ngrams` the runs of corpus glyphs starting in the id `ranges`.
 
     The runs starting in each range, an inclusive pair of corpus glyph ids, are removed first, so a
-    publication may be applied again after the lines were cut anew. A run is then recorded only while
+    publication may be applied again after the lines were cut anew. Each glyph in `labels` that has no
+    written character on the site is then given the label its record is shown with, which its runs
+    read in place of one. A run is then recorded only while
     every glyph of it is published (`corpus_units`), so one with a glyph of a withdrawn document or one
     the corpus publication left out is never recorded; its text is its glyphs' characters as the site
     holds them and its document its first glyph's.
     """
     quote = lambda value: "'" + value.replace("'", "''") + "'"
     statements = [f"DELETE FROM unit_ngrams WHERE first>={quote(low)} AND first<={quote(high)};" for low, high in ranges]
+    named = sorted((labels or {}).items())
+    statements += [
+        "UPDATE corpus_units SET label=p.column2 FROM (VALUES "
+        + ",".join(f"({quote(i)},{quote(label)})" for i, label in named[start:start + batch])
+        + ") AS p WHERE corpus_units.id=p.column1 AND corpus_units.character IS NULL AND corpus_units.label IS NOT p.column2;"
+        for start in range(0, len(named), batch)
+    ]
     for size in SIZES:
         runs = [run for run in ngrams if len(run.units) == size]
         head = (f"INSERT OR IGNORE INTO unit_ngrams(size,{','.join(COLUMNS[:size])},vertical,text,document) "

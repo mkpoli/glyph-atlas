@@ -114,7 +114,7 @@ def test_a_corpus_runs_its_lines_and_leaves_withdrawn_documents_out(tmp_path, mo
              unit("kept", "A", 0, 40, "detect-align"), unit("kept", "A", 1, 0, "detect-align"),
              unit("gone", "G", 0, 0), unit("gone", "G", 1, 40)]
     lines = [Line(id=i, page_id="P", seq=n, text_raw="ab", text="ab") for n, i in enumerate("KAG")]
-    runs, placed = export.corpus_runs(corpus(tmp_path, units, lines))
+    runs, placed, _ = export.corpus_runs(corpus(tmp_path, units, lines))
     assert sorted(run.units for run in runs) == [("A:1", "A:0"), ("K:0", "K:1")]
     assert sorted(placed) == ["A:0", "A:1", "K:0", "K:1"]
 
@@ -160,6 +160,50 @@ def test_codh_units_run_in_the_annotators_order(tmp_path):
     boxes = {1: (500, 0), 2: (500, 40), 3: (400, 0), 4: (400, 40)}
     units = [Unit(id=f"{page}:B0001:C{n:04}", document_id="codh:b", page_id=page, box=Box(x=x, y=y + 1000 * (n == 3 or n == 4), w=36, h=36))
              for n, (x, y) in boxes.items()]
-    runs, placed = export.corpus_runs(corpus(tmp_path, units))
+    runs, placed, _ = export.corpus_runs(corpus(tmp_path, units))
     assert sorted(run.units for run in runs) == [(f"{page}:B0001:C0001", f"{page}:B0001:C0002"), (f"{page}:B0001:C0003", f"{page}:B0001:C0004")]
     assert len(placed) == 4
+
+
+def test_a_glyph_with_no_written_form_runs_under_the_label_it_is_shown_with():
+    from glyph_atlas.corpus.details import unit_label
+    db = site()
+    # c:0 and c:1 have no written form; c:1's class is katakana ケ, filed under the grapheme け.
+    db.executemany("INSERT INTO corpus_units(id,character,family,shuffle,object,offset,size,document) VALUES(?,?,?,0,'pack',0,1,'book')",
+                   [("c:0", None, "U+3093"), ("c:1", None, "U+3051"), ("c:2", "候", "U+5019")])
+    labels = {"c:0": unit_label({"unicode": "U+3093", "text_source": "ん"}), "c:1": unit_label({"unicode": "U+30B1", "text_source": "け"})}
+    runs = [Run(("c:0", "c:1"), True), Run(("c:1", "c:2"), True), Run(("c:0", "c:1", "c:2"), True)]
+    apply(db, corpus_ngram_statements(id_ranges(["c:0", "c:1", "c:2"], 2), runs, labels=labels))
+    assert db.execute("SELECT first,size,text FROM unit_ngrams ORDER BY first,size").fetchall() == [
+        ("c:0", 2, "んケ"), ("c:0", 3, "んケ候"), ("c:1", 2, "ケ候")]
+    assert db.execute("SELECT n FROM ngram_counts WHERE scope='' AND size=2 AND text='んケ'").fetchone() == (1,)
+    # A form decision gives c:1 its written character: the runs move to it, and the counts with them.
+    db.execute("UPDATE corpus_units SET character='介' WHERE id='c:1'")
+    assert db.execute("SELECT text FROM unit_ngrams ORDER BY first,size").fetchall() == [("ん介",), ("ん介候",), ("介候",)]
+    assert db.execute("SELECT text,n FROM ngram_counts WHERE scope='' AND size=2 ORDER BY text").fetchall() == [("ん介", 1), ("介候", 1)]
+    # A round names c:0 without a written form: its `units` row has no character, and the label stands.
+    db.execute("INSERT INTO units(id,origin,character,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual)"
+               " VALUES('c:0','corpus',NULL,'unknown','kana','pending',0,0,1,0,'{}','{}','{}','{}')")
+    assert db.execute("SELECT text FROM unit_ngrams WHERE first='c:0' AND size=2").fetchone() == ("ん介",)
+
+
+def test_the_parts_label_the_glyphs_they_place(tmp_path, monkeypatch):
+    data = tmp_path / "data"
+    data.mkdir()
+    units = [unit("kept", "K", 0, 0), unit("kept", "K", 1, 40), unit("kept", "K", 2, 80), unit("kept", "L", 0, 0)]
+    units = [units[0].model_copy(update={"unicode": "U+3093", "text_source": "ん"}), units[1].model_copy(update={"text_source": "し"}),
+             units[2].model_copy(update={"text_source": "候也"}), units[3].model_copy(update={"text_source": "孤"})]
+    found = corpus(data, units)
+    monkeypatch.setattr(export, "unit_corpora", lambda names=None: [found])
+    monkeypatch.setattr(sys, "argv", ["export_corpus_ngrams.py", str(tmp_path / "out")])
+    export.main()
+    db = site()
+    db.executemany("INSERT INTO corpus_units(id,character,shuffle,object,offset,size,document) VALUES(?,NULL,0,'pack',0,1,'kept')",
+                   [("K:0",), ("K:1",), ("K:2",), ("L:0",)])
+    for _ in range(2):
+        for part in sorted((tmp_path / "out" / "sql").glob("part-*.sql")):
+            db.executescript(part.read_text())
+    # A transcription of two characters stands for no crop, and a glyph in no run needs no label.
+    assert db.execute("SELECT first,size,text FROM unit_ngrams ORDER BY first,size").fetchall() == [
+        ("K:0", 2, "んし"), ("K:0", 3, None), ("K:1", 2, None)]
+    assert dict(db.execute("SELECT id,label FROM corpus_units")) == {"K:0": "ん", "K:1": "し", "K:2": None, "L:0": None}
