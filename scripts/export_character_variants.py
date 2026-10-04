@@ -4,22 +4,28 @@ parts D1 can import.
     python scripts/export_character_variants.py OUT
 
 D1 imports each `--file` as one transaction: a part that fails leaves the database as it was. The
-graph is too large for one statement, so the parts fill staging tables (`character_variants_next`,
-`component_variants_next`, `character_derived_next`, `han_ids_next`, `words_next`, `word_spellings_next`) and only the
-last part swaps them in, bumps the listing version and cites the sources. A failure before the last part leaves the live tables
-untouched; a rerun starts the staging tables again.
+graph is too large for one statement, so its parts fill staging tables (`character_variants_next`,
+`component_variants_next`, `words_next`, `word_spellings_next`) and one part swaps them in, bumps the
+listing version and cites the sources. A failure before that part leaves the live tables untouched;
+a rerun starts the staging tables again.
 
 `character_variants` is the 異体字 graph itself. The derived tier is `component_variants` (each
-substitution with its count and pairs) and `character_derived` (each character's derived list, ranked
-as `refs.derived_variants` lists it, each form with its routes), read through `refs.derived_rows_of`. Up to two substitutions per form
-make that about half an hour of work on one processor; spread over fourteen it took three and a half
-minutes and wrote 2,343,125 rows, 110 MB (2026-10-04), computed once per run.
-`han_ids` holds each character's descriptions, which the form picker's IDS editor starts from.
+substitution with its count and pairs) and `character_derived`: one row per character, its derived
+list as `refs.derived_variants` ranks it, each form with its routes (`refs.derived_row`). Up to two
+substitutions per form make that about half an hour of work on one processor, spread over the
+processors and computed once per run. `character_derived` is too large to copy from staging in one
+import (110 MB on 2026-10-04), so it is written last, in parts of about `DERIVED_PART_BYTES` each that
+replace one key range of characters: each part deletes the rows of its range and inserts the new
+ones in its one transaction, and bumps the listing version, so a reader sees a character's old list or
+its new one, never neither. The parts are idempotent: a stopped run is resumed from any part
+(`FROM=part-NNN.sql apply.sh`), and a rerun from the start is the same. `han_ids` holds each
+character's descriptions, which the form picker's IDS editor starts from; it is written the same way,
+after `character_derived`.
 `words` and `word_spellings` are the hand tables of decision 0004, read through `refs.words` and
 `refs.word_spellings`, which joins each 振り仮名 row to its counts; a character card shows them
 beside its variants.
 
-OUT/sql/part-NN.sql are the parts in order and OUT/apply.sh imports them, retrying a refused part,
+OUT/sql/part-NNN.sql are the parts in order and OUT/apply.sh imports them, retrying a refused part,
 and checks the counts it expects. The full export (`export_cloudflare.py`) fills the same tables
 through `fill`.
 """
@@ -41,11 +47,11 @@ STATEMENT_BYTES = 90 * 1024
 COLUMNS = ("a", "b", "relation", "source", "detail", "written", "widens")
 STAGING = "character_variants_next"
 SUBSTITUTIONS_STAGING = "component_variants_next"
-DERIVED_STAGING = "character_derived_next"
-DERIVED_COLUMNS = ("a", "rank", "b", "routes")
+DERIVED_COLUMNS = ("a", "forms")
+#: The size of one part of `character_derived`: about 2,000 characters' lists, a few seconds of D1.
+DERIVED_PART_BYTES = 2 * 1024 * 1024
 SUBSTITUTION_COLUMNS = ("a", "b", "count", "pairs")
 WORDS_STAGING = "words_next"
-IDS_STAGING = "han_ids_next"
 IDS_COLUMNS = ("char", "sequences")
 WORD_COLUMNS = ("id", "language", "reading", "class")
 SPELLINGS_STAGING = "word_spellings_next"
@@ -66,12 +72,12 @@ def quote(value) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
-def _derived_part(chars: list[str]) -> list[tuple[str, int, str, str]]:
-    return [row for char in chars for row in refs.derived_rows_of(char)]
+def _derived_part(chars: list[str]) -> list[tuple[str, str]]:
+    return [row for char in chars if (row := refs.derived_row(char))]
 
 
 @cache
-def derived_rows() -> tuple[tuple[str, int, str, str], ...]:
+def derived_rows() -> tuple[tuple[str, str], ...]:
     """Every row of the derived tier (refs.derived_rows), computed once per run on forked processes
     that share the descriptions read before the pool starts. Each chunk runs in a fresh process, so
     what a derivation keeps of each part never grows past one chunk's characters."""
@@ -81,7 +87,7 @@ def derived_rows() -> tuple[tuple[str, int, str, str], ...]:
     chunks = [chars[i::256] for i in range(256)]
     with multiprocessing.get_context("fork").Pool(max(1, (os.cpu_count() or 2) - 2), maxtasksperchild=1) as pool:
         found = [row for part in pool.imap_unordered(_derived_part, chunks) for row in part]
-    return tuple(sorted(found, key=lambda row: (row[0], row[1])))
+    return tuple(sorted(found))
 
 
 def substitution_rows() -> list[tuple[str, str, int, str]]:
@@ -141,8 +147,35 @@ def insert_rows(into: str, columns: tuple[str, ...], rows) -> list[str]:
     return statements
 
 
+def ranged_parts(table: str, key: str, columns: tuple[str, ...], rows, budget: int) -> list[list[str]]:
+    """`rows` (sorted by `key`, their first column) as parts of about `budget` bytes, each replacing
+    one key range of `table` in its one transaction: the range's rows are deleted, the new ones
+    inserted, and the listing version bumped. The first part's range is open below and the last's
+    above, so a key no longer listed goes too."""
+    groups: list[list[tuple]] = [[]]
+    size = 0
+    for row in rows:
+        length = sum(len(str(value).encode()) for value in row) + 8
+        if groups[-1] and size + length > budget:
+            groups.append([])
+            size = 0
+        groups[-1].append(row)
+        size += length
+    parts = []
+    for at, group in enumerate(groups):
+        bounds = []
+        if at:
+            bounds.append(f"{key}>={quote(group[0][0])}")
+        if at + 1 < len(groups):
+            bounds.append(f"{key}<{quote(groups[at + 1][0][0])}")
+        where = f" WHERE {' AND '.join(bounds)}" if bounds else ""
+        parts.append([f"DELETE FROM {table}{where};\n", *insert_rows(table, columns, group), VERSION_BUMP])
+    return parts
+
+
 def statements() -> list[list[str]]:
-    """The staging fill, in statements under D1's statement limit, then the swap as the last group."""
+    """The staging fill, in statements under D1's statement limit, then the swap, then each ranged part
+    of `character_derived` as a group of its own."""
     fill = [
         f"DROP TABLE IF EXISTS {STAGING};\n",
         (f"CREATE TABLE {STAGING} (a TEXT NOT NULL, b TEXT NOT NULL, relation TEXT NOT NULL, source TEXT NOT NULL,"
@@ -151,11 +184,6 @@ def statements() -> list[list[str]]:
         f"DROP TABLE IF EXISTS {SUBSTITUTIONS_STAGING};\n",
         (f"CREATE TABLE {SUBSTITUTIONS_STAGING} (a TEXT NOT NULL, b TEXT NOT NULL, count INTEGER NOT NULL,"
          " pairs TEXT NOT NULL, PRIMARY KEY(a,b)) WITHOUT ROWID;\n"),
-        f"DROP TABLE IF EXISTS {DERIVED_STAGING};\n",
-        (f"CREATE TABLE {DERIVED_STAGING} (a TEXT NOT NULL, rank INTEGER NOT NULL, b TEXT NOT NULL,"
-         " routes TEXT NOT NULL, PRIMARY KEY(a,rank)) WITHOUT ROWID;\n"),
-        f"DROP TABLE IF EXISTS {IDS_STAGING};\n",
-        f"CREATE TABLE {IDS_STAGING} (char TEXT PRIMARY KEY, sequences TEXT NOT NULL) WITHOUT ROWID;\n",
         f"DROP TABLE IF EXISTS {WORDS_STAGING};\n",
         (f"CREATE TABLE {WORDS_STAGING} (id TEXT PRIMARY KEY, language TEXT NOT NULL, reading TEXT NOT NULL,"
          " class TEXT NOT NULL) WITHOUT ROWID;\n"),
@@ -168,16 +196,12 @@ def statements() -> list[list[str]]:
     fill += insert_rows(STAGING, COLUMNS, (tuple(edge[column] for column in COLUMNS)
                                             for edge in refs.variant_edges()))
     fill += insert_rows(SUBSTITUTIONS_STAGING, SUBSTITUTION_COLUMNS, substitution_rows())
-    fill += insert_rows(DERIVED_STAGING, DERIVED_COLUMNS, derived_rows())
-    fill += insert_rows(IDS_STAGING, IDS_COLUMNS, ids_rows())
     fill += insert_rows(WORDS_STAGING, WORD_COLUMNS, word_rows())
     fill += insert_rows(SPELLINGS_STAGING, SPELLING_COLUMNS, spelling_rows())
     swap = []
     for live, staging, columns in (
         ("character_variants", STAGING, COLUMNS),
         ("component_variants", SUBSTITUTIONS_STAGING, SUBSTITUTION_COLUMNS),
-        ("character_derived", DERIVED_STAGING, DERIVED_COLUMNS),
-        ("han_ids", IDS_STAGING, IDS_COLUMNS),
         ("words", WORDS_STAGING, WORD_COLUMNS),
         ("word_spellings", SPELLINGS_STAGING, SPELLING_COLUMNS),
     ):
@@ -190,7 +214,8 @@ def statements() -> list[list[str]]:
         "INSERT INTO metadata(key,value) VALUES('word_sources'," + quote(word_citations())
         + ") ON CONFLICT(key) DO UPDATE SET value=excluded.value;\n",
         VERSION_BUMP]
-    return [fill, swap]
+    return [fill, swap, *ranged_parts("character_derived", "a", DERIVED_COLUMNS, derived_rows(), DERIVED_PART_BYTES),
+            *ranged_parts("han_ids", "char", IDS_COLUMNS, ids_rows(), DERIVED_PART_BYTES)]
 
 
 def fill(db: sqlite3.Connection) -> None:
@@ -203,7 +228,7 @@ def fill(db: sqlite3.Connection) -> None:
     db.executemany(f"INSERT OR REPLACE INTO component_variants({','.join(SUBSTITUTION_COLUMNS)}) VALUES (?,?,?,?)",
                    substitution_rows())
     db.execute("DELETE FROM character_derived")
-    db.executemany(f"INSERT OR REPLACE INTO character_derived({','.join(DERIVED_COLUMNS)}) VALUES (?,?,?,?)",
+    db.executemany(f"INSERT OR REPLACE INTO character_derived({','.join(DERIVED_COLUMNS)}) VALUES (?,?)",
                    derived_rows())
     db.execute("DELETE FROM han_ids")
     db.executemany("INSERT INTO han_ids(char,sequences) VALUES (?,?)", ids_rows())
@@ -222,7 +247,7 @@ def write_parts(out: Path, groups: list[list[str]]) -> list[Path]:
     directory.mkdir(parents=True, exist_ok=True)
     for old in directory.glob("*.sql"):
         old.unlink()
-    fill, swap = groups
+    fill, swap, *ranged = groups
     parts, part, size = [], [], 0
     for statement in fill:
         length = len(statement.encode())
@@ -234,18 +259,22 @@ def write_parts(out: Path, groups: list[list[str]]) -> list[Path]:
         part.append(statement)
         size += length
     parts += [part, swap] if part else [swap]
+    parts += ranged
     paths = []
     for index, lines in enumerate(parts, 1):
-        path = directory / f"part-{index:02d}.sql"
+        path = directory / f"part-{index:03d}.sql"
         path.write_text("".join(lines), encoding="utf-8")
         paths.append(path)
     return paths
 
 
 APPLY = """#!/usr/bin/env bash
-# Replace the site's variant and word tables (character_variants, component_variants, character_derived,
-# words, word_spellings) with this export. Each part is one D1 transaction; the parts fill staging tables and the last one
-# swaps them in, so a failure never leaves the live tables empty. Safe to rerun.
+# Replace the site's variant and word tables (character_variants, component_variants, words,
+# word_spellings) with this export, then character_derived and han_ids range by range. Each part is
+# one D1 transaction. The first parts fill staging tables and one swaps them in, so a failure never leaves the
+# live tables empty; each later part replaces one key range of character_derived or han_ids and is
+# idempotent.
+# Safe to rerun, and to resume from a part: FROM=part-NNN.sql ./apply.sh
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 cd ~/projects/Philology/glyph-atlas/apps/cloudflare
@@ -254,7 +283,8 @@ q() {{ bunx wrangler d1 execute glyph-atlas --remote --json --command "$1" 2>/de
 echo "before: $(q "$count")"
 echo "started $(date -u +%Y-%m-%dT%H:%M:%SZ); undo: bunx wrangler d1 time-travel restore glyph-atlas --timestamp=<that time>"
 for part in "$here"/sql/part-*.sql; do
-  ../../scripts/d1_import.sh "$part" || {{ echo "$(basename "$part") did not apply; the live table is unchanged unless it was the last part. Rerun." >&2; exit 1; }}
+  [ -n "${{FROM:-}}" ] && [[ "$(basename "$part")" < "$FROM" ]] && continue
+  ../../scripts/d1_import.sh "$part" || {{ echo "$(basename "$part") did not apply; nothing of it is in the database. Resume with FROM=$(basename "$part")." >&2; exit 1; }}
 done
 after=$(q "$count")
 echo "after: $after"

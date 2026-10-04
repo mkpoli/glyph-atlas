@@ -549,24 +549,26 @@ def derived_forms(char: str, *, limit: int | None = DERIVED_SHOWN) -> list[Deriv
             for entry in derived_variants(char, limit=limit)]
 
 
-def derived_rows() -> Iterable[tuple[str, int, str, str]]:
-    """Every row of the tier as the export stores it: (character, rank, form, routes).
-
-    One row per entry of `derived_variants(character)`, in its order (`rank` from 0), so a page reads
-    the same rows in the same order off D1. A derivation is not symmetric, so each character keeps its
-    own rows. Routes are the entry's routes, each a list of `[was, became]` as made; each
-    substitution's count and pairs are its `component_variants` row.
-    """
+def derived_rows() -> Iterable[tuple[str, str]]:
+    """Every row of the tier as the export stores it: one per character that has derived forms,
+    (character, forms), in code point order. A derivation is not symmetric, so each character keeps
+    its own row."""
     for char in sorted(_descriptions().trees):
-        yield from derived_rows_of(char)
+        row = derived_row(char)
+        if row:
+            yield row
 
 
-def derived_rows_of(char: str) -> list[tuple[str, int, str, str]]:
-    """The export's rows for one character: `derived_variants(char)`, ranked."""
-    return [(char, rank, entry["char"],
-             json.dumps([[[sub["was"], sub["became"]] for sub in route] for route in entry["routes"]],
-                        ensure_ascii=False, separators=(",", ":")))
-            for rank, entry in enumerate(derived_variants(char))]
+def derived_row(char: str) -> tuple[str, str] | None:
+    """The export's row for one character: `derived_variants(char)` in its order, as the JSON list
+    `[[form, routes], …]`, each route a list of `[was, became]` as made, or None when there is none.
+    Each substitution's count and pairs are its `component_variants` row. One row per character keeps
+    a full export at one row write per character, however many forms each has."""
+    listed = derived_variants(char)
+    if not listed:
+        return None
+    return char, json.dumps([[entry["char"], [[[sub["was"], sub["became"]] for sub in route] for route in entry["routes"]]]
+                             for entry in listed], ensure_ascii=False, separators=(",", ":"))
 
 
 @cache

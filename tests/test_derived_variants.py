@@ -34,14 +34,14 @@ def test_a_card_lists_at_most_the_shown_rows_and_sequences():
 
 
 
-def test_the_exported_rows_are_the_characters_own_list_in_order():
+def test_the_exported_row_is_the_characters_own_list_in_order():
     # A derivation is not symmetric: 𪞱 derives 壳, and 壳 does not derive 𪞱.
     for char in ("壳", "㟄", "妳", "寰"):
         listed = refs.derived_variants(char)
-        rows = refs.derived_rows_of(char)
-        assert [(rank, form) for _, rank, form, _ in rows] == list(enumerate(e["char"] for e in listed))
-        for (_, _, _, routes), entry in zip(rows, listed, strict=True):
-            assert json.loads(routes) == [[[s["was"], s["became"]] for s in route] for route in entry["routes"]]
+        key, forms = refs.derived_row(char)
+        assert key == char
+        assert json.loads(forms) == [[e["char"], [[[s["was"], s["became"]] for s in route] for route in e["routes"]]]
+                                     for e in listed]
 
 
 def test_the_owners_form_of_yi_is_derived_by_two_substitutions():
