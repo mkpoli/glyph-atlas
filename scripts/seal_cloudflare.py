@@ -23,6 +23,7 @@ from glyph_atlas.ngrams import Run, ngram_statements
 from glyph_atlas.review import ledger
 
 IMMUTABLE = ("metadata", "characters", "aliases", "corpus_units", "media")
+MEDIA_URL = re.compile(r"/atlas/media/([0-9a-f]{64})\.webp")
 
 
 def reviewed_baselines(db, corpus):
@@ -64,7 +65,11 @@ def reviewed_baselines(db, corpus):
     return {"applied": applied, "stale": stale}
 
 
-def seal(catalogue: Path, corpus: Path, output: Path):
+def seal(catalogue: Path, corpus: Path, output: Path, published: dict[str, tuple[str, int, int]] | None = None):
+    """`published` holds the site's own row (object, offset, size) for image keys it already serves. An
+    image whose pack is no longer on disk (deleted once uploaded) is published by reference to it, and
+    one neither on disk nor among them is refused."""
+    published = published or {}
     output.mkdir(parents=True, exist_ok=False)
     objects = output / "objects"
     objects.mkdir()
@@ -99,7 +104,7 @@ def seal(catalogue: Path, corpus: Path, output: Path):
     # Only references from the licence-filtered publication may enter its media index.
     referenced = set()
     for data, snapshot in db.execute("SELECT data,snapshot FROM units"):
-        referenced.update(re.findall(r"/atlas/media/([0-9a-f]{64})\.webp", data + snapshot))
+        referenced.update(MEDIA_URL.findall(data + snapshot))
     db.executemany("INSERT OR IGNORE INTO media SELECT * FROM local_source.media WHERE key=?",
                    ((key,) for key in referenced))
     db.commit()
@@ -118,8 +123,22 @@ def seal(catalogue: Path, corpus: Path, output: Path):
     partial, target, part_index = None, None, 0
     updates = []
     all_media = db.execute("SELECT key,object,offset,size FROM media ORDER BY object,offset").fetchall()
+    local = {}
+    for key, original, offset, size in all_media:
+        source = next((root / original for root in (corpus, catalogue) if (root / original).exists()), None)
+        if source is None and key not in published:
+            raise ValueError(f"image {key} is in {original}, which is neither on disk nor on the site")
+        if source is None and published[key][2] != size:
+            raise ValueError(f"image {key} is {size} bytes here and {published[key][2]} on the site")
+        local[key] = source
+    # Already on the site: the row names the object the site serves, and no bytes are packed.
+    db.executemany("UPDATE media SET object=?,offset=? WHERE key=?",
+                   ((published[k][0], published[k][1], k) for k, source in local.items() if source is None))
     try:
         for key, original, offset, size in all_media:
+            source = local[key]
+            if source is None:
+                continue
             if target is None or target.tell() >= 32 * 1024**2:
                 if target:
                     target.close()
@@ -128,7 +147,6 @@ def seal(catalogue: Path, corpus: Path, output: Path):
                 part_index += 1
                 partial = output / f"media-{part_index}.tmp"
                 target, updates = partial.open("wb"), []
-            source = (corpus if (corpus / original).exists() else catalogue) / original
             with source.open("rb") as handle:
                 handle.seek(offset)
                 data = handle.read(size)

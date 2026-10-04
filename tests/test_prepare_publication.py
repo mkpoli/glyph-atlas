@@ -142,3 +142,71 @@ def test_a_crowded_live_range_is_read_in_pieces_each_id_once(monkeypatch):
     got = [row["id"] for low, high in [("ex:", "ex:1"), ("ex:1", "ex:2"), ("ex:z", "ex:~")]
            for row in prepare.read_range(low, high)]
     assert sorted(got) == sorted(i for i in ids if i.startswith(("ex:0", "ex:1", "ex:z")))
+
+
+A, B, C, D = (c * 64 for c in "abcd")
+UNIT_COLUMNS = "id,origin,character,family,visual_group,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual,document"
+
+
+def resumed_export(tmp_path, keys):
+    """An export resumed after its first run's packs were published and deleted: pack-0001 and pack-0002
+    are gone, and the crop cut again went into pack-0003."""
+    export = tmp_path / "export"
+    export.mkdir()
+    with sqlite3.connect(export / "catalogue.sqlite") as db:
+        prepare.schema(db)
+        db.executemany("INSERT INTO media VALUES(?,?,?,?,'image/webp')", [
+            (A, "pack-0001.bin", 0, 5), (C, "pack-0002.bin", 0, 5), (D, "pack-0002.bin", 5, 5), (B, "pack-0003.bin", 0, 5)])
+        for ident, key in keys.items():
+            data = json.dumps({"id": ident, "label": "a", "image": f"/atlas/media/{key}.webp"})
+            db.execute(f"INSERT INTO units({UNIT_COLUMNS}) VALUES({','.join('?' * 17)})",
+                       (ident, "local", "a", None, None, "handwritten", "latin", "pending", 1, 1, 1, 0, data, "{}", "{}", "{}", None))
+    (export / "pack-0003.bin").write_bytes(b"recut")
+    return export
+
+
+def prepare_run(tmp_path, monkeypatch, export, live_units, live_media):
+    monkeypatch.chdir(tmp_path)
+    requests = []
+
+    def d1(sql, tries=4):
+        requests.append(sql)
+        assert sql.startswith("SELECT key, object, offset, size FROM media WHERE key IN (")
+        return [{"key": k, "object": o, "offset": f, "size": n} for k, (o, f, n) in live_media.items() if f"'{k}'" in sql]
+    monkeypatch.setattr(prepare, "d1", d1)
+    monkeypatch.setattr(prepare, "MEDIA_CHUNK", 1)
+    with sqlite3.connect(export / "catalogue.sqlite") as db:
+        rows = {r[0]: r for r in db.execute("SELECT id, origin, revision, quiz, data, style FROM units")}
+    live = tmp_path / "live.jsonl"
+    live.write_text("".join(json.dumps(dict(zip(("id", "origin", "revision", "quiz", "data", "style"), rows[i], strict=True)) | {"reviewed": 0}) + "\n"
+                            for i in live_units))
+    monkeypatch.setattr("sys.argv", ["prepare", str(export), str(tmp_path / "out"), "--prefix", "ar:", "--live", str(live)])
+    prepare.main()
+    return tmp_path / "out" / "sealed", requests
+
+
+def test_images_in_packs_deleted_after_publication_are_published_by_reference(tmp_path, monkeypatch):
+    # ar:1 is on the site unchanged; ar:2 was cut again into a new pack; ar:3 is new to the site, but its
+    # image already is (it was published for another crop).
+    export = resumed_export(tmp_path, {"ar:1": A, "ar:2": B, "ar:3": C})
+    live_media = {A: ("packs/" + "1" * 64 + ".bin", 40, 5), C: ("packs/" + "2" * 64 + ".bin", 0, 5)}
+    sealed, requests = prepare_run(tmp_path, monkeypatch, export, ["ar:1"], live_media)
+    assert len(requests) == 2, "only the images whose packs are gone are read, one chunk each"
+    manifest = json.loads((sealed / "publication.json").read_text())
+    assert [(sealed / o["file"]).read_bytes() for o in manifest["objects"]] == [b"recut"], "only the new pack is uploaded"
+    with sqlite3.connect(sealed / "atlas.sqlite") as db:
+        rows = {k: (o, f, n) for k, o, f, n in db.execute("SELECT key, object, offset, size FROM media")}
+    assert rows[A] == live_media[A] and rows[C] == live_media[C]
+    assert rows[B] == (manifest["objects"][0]["key"], 0, 5)
+    sql = "".join((sealed / p).read_text() for p in manifest["sql"])
+    assert f"'{B}','{manifest['objects'][0]['key']}'" in sql and f"'{C}','{live_media[C][0]}',0,5" in sql
+    assert A not in sql, "an unchanged crop's image is not published again"
+    assert not any("pack-000" in line for line in sql.splitlines()), "no row names an export pack"
+
+
+def test_an_image_neither_on_disk_nor_on_the_site_is_named(tmp_path, monkeypatch):
+    export = resumed_export(tmp_path, {"ar:1": A, "ar:2": B, "ar:4": D})
+    with pytest.raises(SystemExit, match=f"1 images are neither on disk nor on the site .*: {D}$"):
+        prepare_run(tmp_path, monkeypatch, export, ["ar:1"], {A: ("packs/x.bin", 0, 5)})
+    assert json.loads((tmp_path / "out" / "unserved.json").read_text()) == [D]
+
