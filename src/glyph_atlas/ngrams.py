@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from collections.abc import Container, Iterable, Iterator, Mapping
 from typing import Any, NamedTuple
@@ -101,20 +102,60 @@ def adjacent_ngrams(units: Iterable[Unit | Glyph], horizontal: Container[str] = 
     return ngrams
 
 
+#: How many bytes of runs one removal names, well under D1's 100 KB statement.
+KEPT_BYTES = 60_000
+
+
+def _kept(runs: list[Run], on_site: str, quote) -> str:
+    """A condition true of a `unit_ngrams` row that one of `runs` would record again unchanged: the same
+    crops in the same direction, every one of them still on the site (`on_site`, of `k.column1`, `k.column3`
+    and `k.column4`). Its text, book and order already follow its crops (0043, 0061)."""
+    if not runs:
+        return "0"
+    return (f"EXISTS (SELECT 1 FROM (VALUES {','.join(_row(run, quote) for run in runs)}) AS k"
+            " WHERE k.column1=unit_ngrams.first AND k.column2=unit_ngrams.size AND k.column3=unit_ngrams.second"
+            f" AND k.column4 IS unit_ngrams.third AND k.column5=unit_ngrams.vertical AND {on_site}=k.column2)")
+
+
+def _row(run: Run, quote) -> str:
+    third = quote(run.units[2]) if len(run.units) > 2 else "NULL"
+    return f"({quote(run.units[0])},{len(run.units)},{quote(run.units[1])},{third},{int(run.vertical)})"
+
+
+def _groups(firsts: list[str], starting: Mapping[str, list[Run]], quote, most: int) -> Iterator[list[str]]:
+    """`firsts` in order, cut where the next would take a removal past `most` ids or `KEPT_BYTES`."""
+    group, size = [], 0
+    for first in firsts:
+        cost = len(quote(first)) + sum(len(_row(run, quote)) for run in starting.get(first, ()))
+        if group and (len(group) == most or size + cost > KEPT_BYTES):
+            yield group
+            group, size = [], 0
+        group.append(first)
+        size += cost
+    if group:
+        yield group
+
+
 def ngram_statements(units: Iterable[str], ngrams: list[Run], batch: int = 200) -> list[str]:
     """D1 statements that make `ngrams` the runs starting at `units`, as the site holds them.
 
-    Every run starting at one of `units` is removed first, so a unit whose successors changed or went
-    away since an earlier publication keeps no stale run. A run is then recorded only when all of its
+    Every run starting at one of `units` that the publication would not record again unchanged is
+    removed first, so a unit whose successors changed or went away since an earlier publication keeps
+    no stale run, and a run already held is neither removed nor written: D1 bills each row, index
+    entry and trigger write a rewrite makes. A run is then recorded only when all of its
     crops are on the site as its own; its text and book are read from the rows the site holds, whose
     labels may have been reviewed since. The triggers of migration 0043 keep them in step; a run's
     direction is its line's, which no review changes.
     """
     quote = lambda value: "'" + value.replace("'", "''") + "'"
-    ids = sorted(set(units))
+    starting = defaultdict(list)
+    for run in ngrams:
+        starting[run.units[0]].append(run)
+    local = "(SELECT count(*) FROM units WHERE origin='local' AND id IN (k.column1,k.column3,k.column4))"
     statements = [
-        "DELETE FROM unit_ngrams WHERE first IN (" + ",".join(map(quote, ids[start:start + batch])) + ");"
-        for start in range(0, len(ids), batch)
+        "DELETE FROM unit_ngrams WHERE first IN (" + ",".join(map(quote, part)) + ")"
+        f" AND NOT {_kept([run for i in part for run in starting.get(i, ())], local, quote)};"
+        for part in _groups(sorted(set(units)), starting, quote, batch)
     ]
     for size in SIZES:
         runs = [run for run in ngrams if len(run.units) == size]
@@ -170,7 +211,8 @@ def corpus_ngram_statements(ranges: Iterable[tuple[str, str]], ngrams: list[Run]
     """D1 statements that make `ngrams` the runs of corpus glyphs starting in the id `ranges`.
 
     The runs starting in each range, an inclusive pair of corpus glyph ids, are removed first, so a
-    publication may be applied again after the lines were cut anew. Each glyph in `labels` that has no
+    publication may be applied again after the lines were cut anew; a run the publication records
+    again unchanged stays, unwritten. Each glyph in `labels` that has no
     written character on the site is then given the label its record is shown with, which its runs
     read in place of one. A run is then recorded only while
     every glyph of it is published (`corpus_units`), so one with a glyph of a withdrawn document or one
@@ -178,7 +220,23 @@ def corpus_ngram_statements(ranges: Iterable[tuple[str, str]], ngrams: list[Run]
     holds them and its document its first glyph's.
     """
     quote = lambda value: "'" + value.replace("'", "''") + "'"
-    statements = [f"DELETE FROM unit_ngrams WHERE first>={quote(low)} AND first<={quote(high)};" for low, high in ranges]
+    published = "(SELECT count(*) FROM corpus_units WHERE id IN (k.column1,k.column3,k.column4))"
+    starting = defaultdict(list)
+    for run in ngrams:
+        starting[run.units[0]].append(run)
+    firsts = sorted(starting)
+    statements = []
+    for low, high in ranges:
+        # A range is removed in slices that each name few enough runs for one statement; a slice ends
+        # where the next begins, so every id in the range is in one.
+        inside = firsts[bisect_left(firsts, low):bisect_right(firsts, high)]
+        groups = list(_groups(inside, starting, quote, len(inside) or 1)) or [[]]
+        for n, group in enumerate(groups):
+            start = low if n == 0 else group[0]
+            end = f"first<{quote(groups[n + 1][0])}" if n + 1 < len(groups) else f"first<={quote(high)}"
+            runs = [run for first in group for run in starting[first]]
+            statements.append(f"DELETE FROM unit_ngrams WHERE first>={quote(start)} AND {end}"
+                              f" AND NOT {_kept(runs, published, quote)};")
     named = sorted((labels or {}).items())
     statements += [
         "UPDATE corpus_units SET label=p.column2 FROM (VALUES "

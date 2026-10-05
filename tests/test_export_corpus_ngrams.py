@@ -207,3 +207,33 @@ def test_the_parts_label_the_glyphs_they_place(tmp_path, monkeypatch):
     assert db.execute("SELECT first,size,text FROM unit_ngrams ORDER BY first,size").fetchall() == [
         ("K:0", 2, "んし"), ("K:0", 3, None), ("K:1", 2, None)]
     assert dict(db.execute("SELECT id,label FROM corpus_units")) == {"K:0": "ん", "K:1": "し", "K:2": None, "L:0": None}
+
+
+def test_applying_the_same_runs_again_writes_nothing():
+    db = site()
+    publish(db, [("c:0", "申"), ("c:1", "上"), ("c:2", "候")])
+    runs = [Run(("c:0", "c:1"), True), Run(("c:1", "c:2"), True), Run(("c:0", "c:1", "c:2"), True)]
+    apply(db, corpus_ngram_statements(id_ranges(["c:0", "c:1", "c:2"], 2), runs))
+    before = db.total_changes
+    apply(db, corpus_ngram_statements(id_ranges(["c:0", "c:1", "c:2"], 2), runs))
+    assert db.total_changes == before, "D1 bills every row, index entry and trigger write"
+    # A glyph the publication no longer holds takes its runs with it, though the lines name it.
+    db.execute("DELETE FROM corpus_units WHERE id='c:2'")
+    apply(db, corpus_ngram_statements(id_ranges(["c:0", "c:1", "c:2"], 2), runs))
+    assert db.execute("SELECT first,size,second FROM unit_ngrams").fetchall() == [("c:0", 2, "c:1")]
+
+
+def test_a_range_removed_in_slices_keeps_no_stale_run(monkeypatch):
+    from glyph_atlas import ngrams
+    monkeypatch.setattr(ngrams, "KEPT_BYTES", 60)
+    db = site()
+    ids = [f"c:{i}" for i in range(10)]
+    publish(db, [(i, "申") for i in ids])
+    apply(db, corpus_ngram_statements(id_ranges(ids, 10), [Run((a, b), True) for a, b in zip(ids, ids[1:])]))
+    # Cut anew: every other glyph now starts a run, across the page.
+    again = [Run((a, b), False) for a, b in zip(ids[::2], ids[1::2])]
+    statements = corpus_ngram_statements(id_ranges(ids, 10), again)
+    assert sum(s.startswith("DELETE") for s in statements) > 1
+    apply(db, statements)
+    assert db.execute("SELECT first,second,vertical FROM unit_ngrams ORDER BY first").fetchall() == [
+        (r.units[0], r.units[1], 0) for r in again]
