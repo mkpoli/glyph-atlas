@@ -73,9 +73,15 @@ SEEN = "seen"
 #: record of what was saved (`scripts/migrate_written_forms.py` turns them into form claims), and no
 #: longer change a unit.
 WRITTEN_FORM = "written_form"
+#: A crop to be cut again from a box redrawn where it is published, recorded by the import that
+#: brought the box back (`cloudflare_import`). `new` holds the box, the crop version the cut produces
+#: and `published_revision`, the revision the published crop reached. It changes no record and moves
+#: the revision past `published_revision`, so the new cut is published at a revision no open page
+#: holds, and the next review made on it imports on top of it.
+RECUT = "recut"
 #: Events that are recorded and change no state: how long a line was open, free notes, crops seen
-#: without a flag, and the written forms of the journal.
-STATELESS = frozenset({"timing", "note", SEEN, WRITTEN_FORM})
+#: without a flag, the written forms of the journal, and recuts.
+STATELESS = frozenset({"timing", "note", SEEN, WRITTEN_FORM, RECUT})
 #: The fields whose events leave the target's revision where it is.
 UNREVISED = frozenset({SEEN, WRITTEN_FORM})
 #: The keys a split entry may carry. The identity and lifecycle fields belong to the server.
@@ -811,8 +817,7 @@ class Store:
                      request.client_id or "", request.idempotency_key),
                 )
                 self._persist(conn, state, change)
-                if event.field not in UNREVISED:
-                    self._bump(conn, event.target_id)
+                self._advance(conn, event)
                 result = self._build_result(conn, event, change, state)
                 conn.execute("UPDATE events SET result = ? WHERE id = ?", (_json(result), event.id))
                 self._set_meta(conn, "state_seq", str(seq))
@@ -1392,7 +1397,10 @@ class Store:
         return record.model_dump(mode="json") if record else None
 
     def _check_target(self, conn: sqlite3.Connection, request: ReviewRequest) -> None:
-        """Refuse a review of a page, a document or a group that the dataset does not have."""
+        """Refuse a review of a page, a document or a group that the dataset does not have, and a recut,
+        which only the import that brings a redrawn box back records."""
+        if request.field == RECUT:
+            raise BadRequest("a recut is recorded by the import that brings its box back")
         if request.target_type == "page" and request.target_id not in self.pages():
             raise NotFound(f"no page {request.target_id}")
         if request.target_type == "document" and self.document(request.target_id) is None:
@@ -1517,8 +1525,7 @@ class Store:
         )
         change.event = event
         self._persist(conn, state, change)
-        if event.field not in UNREVISED:
-            self._bump(conn, event.target_id)
+        self._advance(conn, event)
         result = self._build_result(conn, event, change, state)
         conn.execute("UPDATE events SET result = ? WHERE id = ?", (_json(result), event.id))
         self._set_meta(conn, "state_seq", str(seq))
@@ -1532,12 +1539,16 @@ class Store:
             else:
                 self._insert_line(conn, record)
 
-    def _bump(self, conn: sqlite3.Connection, target_id: str) -> None:
-        conn.execute(
-            "INSERT INTO revisions (target_id, revision) VALUES (?, 1) "
-            "ON CONFLICT(target_id) DO UPDATE SET revision = revision + 1",
-            (target_id,),
-        )
+    def _advance(self, conn: sqlite3.Connection, event: Review) -> None:
+        """Move the target's revision as `event` does (`advanced`)."""
+        revision = self._revision(conn, event.target_id)
+        step = advanced(revision, event) - revision
+        if step:
+            conn.execute(
+                "INSERT INTO revisions (target_id, revision) VALUES (?, ?) "
+                "ON CONFLICT(target_id) DO UPDATE SET revision = revision + excluded.revision",
+                (event.target_id, step),
+            )
 
     def _build_result(
         self, conn: sqlite3.Connection, event: Review, change: Change, state: State
@@ -1629,8 +1640,14 @@ class Store:
         """Replace the state and the revisions with what the log says they are."""
         # A seen crop was not changed, and a written form changes no decision, so neither event is a
         # revision: counting one here would give a rebuilt store other revisions than the live one
-        # handed out.
-        revisions = Counter(event.target_id for event in events if event.field not in UNREVISED)
+        # handed out. A recut moves past a revision of its own, which counts from the target's base.
+        bases = {row["target_id"]: row["base"] for row in conn.execute("SELECT * FROM revision_bases")}
+        revisions: dict[str, int] = {}
+        for event in events:
+            if event.field in UNREVISED:
+                continue
+            base = bases.get(event.target_id, 0)
+            revisions[event.target_id] = advanced(base + revisions.get(event.target_id, 0), event) - base
         with self._transaction(conn):
             conn.execute("DELETE FROM lines")
             conn.execute("DELETE FROM units")
@@ -1645,6 +1662,16 @@ class Store:
                 )
             self._set_meta(conn, "state_seq", str(state_seq))
             self._set_meta(conn, "replayed_at", datetime.now(UTC).isoformat(timespec="seconds"))
+
+
+def advanced(revision: int, event: Review) -> int:
+    """The target's revision after `event`: one more, the same after an unrevised event, and after a
+    recut one more than both the revision it had and the one its crop reached where it is published."""
+    if event.field in UNREVISED:
+        return revision
+    if event.field == RECUT:
+        return max(revision, int(event.new["published_revision"])) + 1
+    return revision + 1
 
 
 def _response_keys(conn: sqlite3.Connection, response: dict[str, Any]) -> list[tuple[str, str, str, str]]:

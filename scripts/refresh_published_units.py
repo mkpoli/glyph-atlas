@@ -10,6 +10,9 @@ This writes the UPDATE statements that bring such units up to date:
 - a reviewed unit whose crop changed is held back and reported. Its events carry revisions from
   the old lineage; a lower catalogue revision would make the site call the old review current and
   the importer reject every new one. It needs a local revision above every event it has first;
+- a reviewed unit whose box a reviewer redrew on the site (`box_pending`, in the box the catalogue
+  cut) takes the new cut and the catalogue's revision. The import that brought the box back recorded
+  the recut (`store.RECUT`), which put the local revision past the live one;
 - a unit whose only changes are publication metadata takes them in place, reviewed or not, and
   keeps its revision: its context image (the page around the crop, cut again at a new reach) and
   its alignment-repair status (the rebuild's verdict on whether the crop may be dealt). Nothing a
