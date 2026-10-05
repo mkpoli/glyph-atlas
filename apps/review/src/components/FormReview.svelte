@@ -7,8 +7,9 @@
   import Glyph from './Glyph.svelte'
   import { showsContext } from '../lib/glyphContext.svelte.js'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
+  import FormText from './FormText.svelte'
   import ScriptLine from './ScriptLine.svelte'
-  import { members as loadMembers } from '../lib/forms.js'
+  import { members as loadMembers, paletteOf } from '../lib/forms.js'
   import { history, step } from '../lib/formHistory.svelte.js'
   import { number } from '../lib/client.js'
   import { t, withText } from '../lib/i18n.svelte.js'
@@ -18,6 +19,7 @@
   let marked = $state(new Set()), anchor = null, issue = $state('character'), character = $state('')
   let busy = $state(false), error = $state('')
   const cluster = $derived(family.items[index] ?? null)
+  const palette = $derived(paletteOf(family))
   const reviewed = $derived(family.items.filter(c => !isOpen(c)).length)
 
   async function load(at) {
@@ -84,7 +86,7 @@
       return
     }
     const keys = '1234567890'
-    if (keys.includes(event.key) && family.forms[keys.indexOf(event.key)]) { event.preventDefault(); save(family.forms[keys.indexOf(event.key)].char) }
+    if (keys.includes(event.key) && palette[keys.indexOf(event.key)]) { event.preventDefault(); save(palette[keys.indexOf(event.key)].char) }
     else if (event.key === 'Enter') { event.preventDefault(); save() }
     else if (event.key === 'a' || event.key === 'A') { event.preventDefault(); markAll() }
     else if (event.key === 's' || event.key === 'S') { event.preventDefault(); load(following(index)) }
@@ -124,9 +126,9 @@
       <ContributionTerms />
       <div class="review-forms" aria-label={t('forms.review.nameRest')}>
         <small>{t('forms.review.nameRest')}</small>
-        {#each family.forms as form, i (form.char)}
-          <button class="review-form" disabled={busy || loading} onclick={() => save(form.char)} title={form.name ?? form.code_point}>
-            <ReferenceGlyph char={form.char} code_point={form.code_point} script={form.script} />
+        {#each palette as form, i (form.char)}
+          <button class="review-form" disabled={busy || loading} onclick={() => save(form.char)} title={form.described ? t('form.ids.named', { ids: form.char }) : form.name ?? form.code_point}>
+            {#if form.described}<FormText text={form.char} />{:else}<ReferenceGlyph char={form.char} code_point={form.code_point} script={form.script} />{/if}
             {#if i < 10}<kbd>{'1234567890'[i]}</kbd>{/if}
           </button>
         {/each}

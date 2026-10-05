@@ -80,10 +80,14 @@ DELETE FROM form_loading;
 """
 
 
-def written_family(character: str | None) -> str | None:
-    """The grapheme family of the form or character a glyph is written as, as the Worker takes it."""
+def written_family(character: str | None, family: str) -> str | None:
+    """The grapheme family of the form or character a glyph is written as, as the Worker takes it: a
+    description is a form of the family it is named in."""
     if not character:
         return None
+    from glyph_atlas import representation
+    if representation.described(character):
+        return family
     from glyph_atlas import refs
     code_point = " ".join(refs.to_code_points(character))
     return (refs.grapheme_info(code_point) or {}).get("code_point") or code_point
@@ -222,7 +226,7 @@ def export(corpus_root: Path, out: Path, workers: int = 8, known: frozenset[str]
     for event in forms._events():
         units = event["units"]
         parts.write("INSERT OR IGNORE INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,note,issue,character,written_family) "
-                    f"VALUES({_values((event['id'], event['at'], event.get('actor', 'local'), event['kind'], event['family'], event.get('form'), event.get('cluster'), event['revision'], json.dumps(units[:UNITS_PER_STATEMENT]), event.get('note', ''), event.get('issue'), event.get('character'), written_family(event.get('form') or event.get('character'))))});")
+                    f"VALUES({_values((event['id'], event['at'], event.get('actor', 'local'), event['kind'], event['family'], event.get('form'), event.get('cluster'), event['revision'], json.dumps(units[:UNITS_PER_STATEMENT]), event.get('note', ''), event.get('issue'), event.get('character'), written_family(event.get('form') or event.get('character'), event['family'])))});")
         # D1 refuses a statement over 100 KB, so a large cluster's glyphs follow in parts. Each part
         # extends only the list it follows, which leaves a decision already in D1 as it is.
         for start in range(UNITS_PER_STATEMENT, len(units), UNITS_PER_STATEMENT):

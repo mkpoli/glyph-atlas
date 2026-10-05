@@ -11,7 +11,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from .. import form_clusters, forms, refs
+from .. import form_clusters, forms, refs, representation
 
 
 class Decision(BaseModel):
@@ -19,7 +19,8 @@ class Decision(BaseModel):
     kind: Literal["cluster", "glyph", "inherit"]
     cluster: str | None = Field(default=None, max_length=200)
     units: list[str] | None = Field(default=None, max_length=5000)
-    form: str | None = Field(default=None, max_length=8)
+    # A family's character, or a description of a shape Unicode lacks.
+    form: str | None = Field(default=None, max_length=256)
     note: str = Field(default="", max_length=2000)
     issue: Literal["mixed", "character", "crop"] | None = None
     character: str | None = Field(default=None, max_length=8)
@@ -163,8 +164,14 @@ def router(media, corpus_root: Path) -> APIRouter:
                              "unusual": [{"id": identity, "image": image(identity)} for identity in
                                          islice((identity for identity in reversed(members[12:])
                                                  if not (decided.get(identity) or {}).get("issue")), 12)]})
+        # The descriptions the family's glyphs are named with, most used first, which the palette
+        # offers after the encoded forms.
+        described = Counter(decided[identity]["form"] for cluster in found["clusters"] for identity in data["members"][cluster["id"]]
+                            if representation.described((decided.get(identity) or {}).get("form") or ""))
         return {"revision": data["revision"], **summary(found, decided), "order": order,
-                "forms": [_form_entry(char) for char in forms.family_members(code_point)], "items": clusters}
+                "forms": [_form_entry(char) for char in forms.family_members(code_point)],
+                "described": [{"char": char, "count": n} for char, n in sorted(described.items(), key=lambda item: (-item[1], item[0]))],
+                "items": clusters}
 
     @api.get("/atlas/forms/split/{cluster_id:path}")
     def split(cluster_id: str, k: Annotated[int, Query(ge=2, le=8)] = 4,

@@ -205,7 +205,9 @@ def test_a_republication_keeps_cluster_marks(tmp_path, monkeypatch, form_corpora
 def test_a_decision_carries_the_grapheme_of_what_the_glyph_is_written_as(monkeypatch):
     monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
     module = importlib.import_module("export_forms_cloudflare")
-    assert [module.written_family(c) for c in ("𛂥", "仿", "國", None)] == ["U+306F", "U+4EFF", "U+56FD", None]
+    assert [module.written_family(c, "U+5023") for c in ("𛂥", "仿", "國", None)] == ["U+306F", "U+4EFF", "U+56FD", None]
+    # A description is a form of the family it is named in.
+    assert module.written_family("⿱日𤴓", "U+662F") == "U+662F"
 
 
 def test_a_families_only_publication_refreshes_the_palette_and_nothing_else(tmp_path, monkeypatch, form_corpora):

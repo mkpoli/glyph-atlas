@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
-import { FOLLOW_BATCH, followCorpus, formed, formsRoute, leastTypicalQuery, member, membersQuery } from './forms';
+import { FOLLOW_BATCH, describedClaimsQuery, followCorpus, formed, formsRoute, leastTypicalQuery, member, membersQuery } from './forms';
 
 describe('form decisions outside cluster membership', () => {
   it('keeps the corrected identity without linking to a removed cluster', () => {
@@ -146,6 +146,77 @@ describe('a cluster\'s members', () => {
     row.run('codh:1', 1, '/atlas/media/b.webp');
     const members = (db.query(membersQuery('typical')).all('c', 10, 0) as any[]).map(member);
     expect(members.map(m => [m.id, m.tone, m.image_size])).toEqual([['a', '#d8cfbf', [47, 51]], ['codh:1', null, null]]);
+    db.close();
+  });
+});
+
+describe('a form written as a description', () => {
+  const setUp = () => {
+    const db = new Database(':memory:');
+    const migrations = new URL('../migrations/', import.meta.url);
+    for (const file of readdirSync(migrations).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL(file, migrations), 'utf8'));
+    db.exec(`INSERT INTO form_families(code_point,char,label,count,cluster_count,forms,assigned,revision,rejected)
+        VALUES('U+662F','是','是',3,2,'[{"char":"是"},{"char":"昰"}]',0,'r',0);
+      INSERT INTO form_clusters(id,family,label,count,coherence,shape_position,size_position,representatives) VALUES
+        ('c1','U+662F','c1',2,1,0,0,'[]'),('c2','U+662F','c2',1,1,1,1,'[]');
+      INSERT INTO form_units(id,family,cluster,rank,similarity,split) VALUES
+        ('g1','U+662F','c1',0,1,''),('g2','U+662F','c1',1,1,''),('g3','U+662F','c2',0,1,'');
+      INSERT INTO representations(id,scheme,value) VALUES('rp:a','ids','⿱日𤴓'),('rp:b','ids','⿱臼𤴓'),('rp:c','unicode','昰');
+      INSERT INTO forms(id,anchor,created_by,created_at) VALUES('fm:a','rp:a','x','t'),('fm:b','rp:b','x','t'),('fm:c','rp:c','x','t');
+      INSERT INTO current_claims(subject,predicate,scope,slot,status,object,members,supporting,claims,resolver,at) VALUES
+        ('g3','has_form','','','asserted','fm:b','[]','[]','[]','r','t'),('elsewhere','has_form','','','asserted','fm:a','[]','[]','[]','r','t'),
+        ('g2','has_form','','','asserted','fm:c','[]','[]','[]','r','t'),('g1','has_form','','','asserted','fm:a','[]','[]','[]','r','t');`);
+    const unit = db.prepare(`INSERT INTO units(id,origin,character,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual)
+      VALUES(?,'local','是','handwritten','kanji','pending',0,1,1,0,?,'{}','{}','{}')`);
+    for (const id of ['g1', 'g2', 'g3']) unit.run(id, JSON.stringify({ image: id + '.webp' }));
+    // g1's claim was made on a cut since replaced, so it no longer holds.
+    db.exec(`UPDATE current_claims SET crop_version=(SELECT crop_version FROM units WHERE id=subject) WHERE subject IN ('g2','g3');
+      UPDATE current_claims SET crop_version='old' WHERE subject='g1';`);
+    const env = { DB: d1(db) } as unknown as Env;
+    const tools = {
+      fail: (status: number, message: string): never => { throw new Error(`${status} ${message}`) },
+      body: async (request: Request) => request.json() as Promise<Record<string, unknown>>,
+      text: (value: unknown) => value as string, codePoints: (value: string) => value,
+      family: async (_: Env, char: string) => `U+${char.codePointAt(0)!.toString(16).toUpperCase()}`,
+    };
+    const ctx = { waitUntil: () => {} } as unknown as ExecutionContext;
+    const decide = (body: object) => formsRoute(env, new Request('https://atlas.test/atlas/forms/decisions', { method: 'POST', body: JSON.stringify(body) }),
+      '/atlas/forms/decisions', new URLSearchParams(), tools, ctx, 'r') as Promise<Record<string, any>>;
+    // Each read goes past the edge cache, which a test has none of.
+    (globalThis as any).caches = { default: { match: async () => undefined, put: async () => {} } };
+    const family = () => formsRoute(env, new Request('https://atlas.test/atlas/forms/families/U%2B662F'), '/atlas/forms/families/U%2B662F',
+      new URLSearchParams(), tools, ctx) as Promise<Record<string, any>>;
+    return { db, decide, family };
+  };
+
+  it('names a cluster and stays in the family it is named in', async () => {
+    const { db, decide, family } = setUp();
+    const decided = await decide({ kind: 'cluster', cluster: 'c1', form: '⿱日𤴓' });
+    expect(decided.count).toBe(2);
+    expect(db.query("SELECT form,written_family FROM form_units WHERE cluster='c1'").all()).toEqual([
+      { form: '⿱日𤴓', written_family: 'U+662F' }, { form: '⿱日𤴓', written_family: 'U+662F' }]);
+    expect(db.query('SELECT form,written_family FROM form_decisions').get()).toEqual({ form: '⿱日𤴓', written_family: 'U+662F' });
+    // The palette offers it after the encoded forms, with the description a crop of the family is named
+    // with in the crop dialog; one named elsewhere, on a replaced cut, or an encoded form is not offered.
+    expect((await family()).described).toEqual([{ char: '⿱日𤴓', count: 2 }, { char: '⿱臼𤴓', count: 1 }]);
+    db.close();
+  });
+
+  it('is refused when it is not well formed, as an encoded character outside the family is', async () => {
+    const { db, decide } = setUp();
+    await expect(decide({ kind: 'glyph', units: ['g1'], form: '⿱日' })).rejects.toThrow('422 ⿱日 is not a form of this family.');
+    await expect(decide({ kind: 'glyph', units: ['g1'], form: '只' })).rejects.toThrow('422 只 is not a form of this family.');
+    expect(db.query('SELECT count(*) AS n FROM form_decisions').get()).toEqual({ n: 0 });
+    db.close();
+  });
+
+  it('is found from the descriptions, not from every crop\'s form claim', () => {
+    const { db } = setUp();
+    const plan = (db.query('EXPLAIN QUERY PLAN ' + describedClaimsQuery()).all('U+662F') as { detail: string }[]).map(r => r.detail);
+    expect(plan.filter(line => line.startsWith('SEARCH representations'))).toEqual(
+      Array(3).fill('SEARCH representations USING INDEX representation_value (value>? AND value<?)'));
+    expect(plan).toContain('SEARCH c USING INDEX current_claim_object (predicate=? AND object=?)');
+    expect(plan.filter(line => /^SCAN (?!r$)/.test(line))).toEqual([]);
     db.close();
   });
 });
