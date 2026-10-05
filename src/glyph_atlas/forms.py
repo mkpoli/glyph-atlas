@@ -31,6 +31,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from . import representation
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -325,7 +327,8 @@ def record(kind: str, *, form: str | None = None, cluster: str | None = None,
     if len(families) != 1:
         raise DecisionError("A decision covers glyphs of one family.")
     family = families.pop()
-    if form is not None and form not in family_members(family):
+    # A form is one of the family's characters, or a shape Unicode lacks written as a description.
+    if form is not None and form not in family_members(family) and not representation.described(form):
         raise DecisionError(f"{form} is not a form of this family.")
     event = {"id": str(uuid.uuid4()), "at": datetime.now(UTC).isoformat(timespec="seconds"),
              "kind": kind, "family": family, "form": form, "cluster": cluster,

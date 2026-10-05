@@ -149,3 +149,51 @@ describe('a cluster\'s members', () => {
     db.close();
   });
 });
+
+describe('a form written as a description', () => {
+  const setUp = () => {
+    const db = new Database(':memory:');
+    const migrations = new URL('../migrations/', import.meta.url);
+    for (const file of readdirSync(migrations).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL(file, migrations), 'utf8'));
+    db.exec(`INSERT INTO form_families(code_point,char,label,count,cluster_count,forms,assigned,revision,rejected)
+        VALUES('U+662F','是','是',3,2,'[{"char":"是"},{"char":"昰"}]',0,'r',0);
+      INSERT INTO form_clusters(id,family,label,count,coherence,shape_position,size_position,representatives) VALUES
+        ('c1','U+662F','c1',2,1,0,0,'[]'),('c2','U+662F','c2',1,1,1,1,'[]');
+      INSERT INTO form_units(id,family,cluster,rank,similarity,split) VALUES
+        ('g1','U+662F','c1',0,1,''),('g2','U+662F','c1',1,1,''),('g3','U+662F','c2',0,1,'');
+      INSERT INTO representations(id,scheme,value) VALUES('rp:a','ids','⿱日𤴓'),('rp:b','ids','⿱臼𤴓'),('rp:c','unicode','昰');
+      INSERT INTO forms(id,anchor,created_by,created_at) VALUES('fm:a','rp:a','x','t'),('fm:b','rp:b','x','t'),('fm:c','rp:c','x','t');
+      INSERT INTO current_claims(subject,predicate,scope,slot,status,object,members,supporting,claims,resolver,at) VALUES
+        ('g3','has_form','','','asserted','fm:b','[]','[]','[]','r','t'),('elsewhere','has_form','','','asserted','fm:a','[]','[]','[]','r','t'),
+        ('g2','has_form','','','asserted','fm:c','[]','[]','[]','r','t');`);
+    const env = { DB: d1(db) } as unknown as Env;
+    const tools = {
+      fail: (status: number, message: string): never => { throw new Error(`${status} ${message}`) },
+      body: async (request: Request) => request.json() as Promise<Record<string, unknown>>,
+      text: (value: unknown) => value as string, codePoints: (value: string) => value,
+      family: async (_: Env, char: string) => `U+${char.codePointAt(0)!.toString(16).toUpperCase()}`,
+    };
+    const ctx = { waitUntil: () => {} } as unknown as ExecutionContext;
+    const decide = (body: object) => formsRoute(env, new Request('https://atlas.test/atlas/forms/decisions', { method: 'POST', body: JSON.stringify(body) }),
+      '/atlas/forms/decisions', new URLSearchParams(), tools, ctx, 'r') as Promise<Record<string, any>>;
+    return { db, decide };
+  };
+
+  it('names a cluster and stays in the family it is named in', async () => {
+    const { db, decide } = setUp();
+    const decided = await decide({ kind: 'cluster', cluster: 'c1', form: '⿱日𤴓' });
+    expect(decided.count).toBe(2);
+    expect(db.query("SELECT form,written_family FROM form_units WHERE cluster='c1'").all()).toEqual([
+      { form: '⿱日𤴓', written_family: 'U+662F' }, { form: '⿱日𤴓', written_family: 'U+662F' }]);
+    expect(db.query('SELECT form,written_family FROM form_decisions').get()).toEqual({ form: '⿱日𤴓', written_family: 'U+662F' });
+    db.close();
+  });
+
+  it('is refused when it is not well formed, as an encoded character outside the family is', async () => {
+    const { db, decide } = setUp();
+    await expect(decide({ kind: 'glyph', units: ['g1'], form: '⿱日' })).rejects.toThrow('422 ⿱日 is not a form of this family.');
+    await expect(decide({ kind: 'glyph', units: ['g1'], form: '只' })).rejects.toThrow('422 只 is not a form of this family.');
+    expect(db.query('SELECT count(*) AS n FROM form_decisions').get()).toEqual({ n: 0 });
+    db.close();
+  });
+});

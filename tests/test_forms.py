@@ -56,6 +56,7 @@ def test_a_decision_names_the_glyphs_it_covered(clustering):
 @pytest.mark.parametrize(("kind", "arguments", "message"), [
     ("cluster", {"cluster": "U+306F:none", "form": "𛂥"}, "Unknown cluster"),
     ("cluster", {"cluster": "U+306F:one", "form": "あ"}, "not a form"),
+    ("cluster", {"cluster": "U+306F:one", "form": "⿱日"}, "not a form"),
     ("glyph", {"units": ["codh:other"], "form": "𛂥"}, "not in the current clustering"),
     ("glyph", {"units": [], "form": "𛂥"}, "Choose between"),
     ("inherit", {"units": [A], "form": "𛂥"}, "takes no form"),
@@ -116,6 +117,20 @@ def test_the_api_lists_clusters_and_records_decisions(clustering, tmp_path):
     client.post("/atlas/forms/decisions", json={"kind": "glyph", "units": [B], "form": "𛂞"})
     one = client.get("/atlas/forms/families/U+306F").json()["items"][0]
     assert (one["majority"], one["majority_count"], one["count"]) == ("𛂥", 2, 3)
+
+
+def test_a_description_names_glyphs(clustering, tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from glyph_atlas.review.forms import router
+
+    app = FastAPI()
+    app.include_router(router(media=None, corpus_root=tmp_path))
+    client = TestClient(app)
+    assert client.post("/atlas/forms/decisions", json={"kind": "cluster", "cluster": "U+306F:one", "form": "⿰⿱匕失⿱コ疋"}).status_code == 200
+    assert client.post("/atlas/forms/decisions", json={"kind": "glyph", "units": [D], "form": "⿱日𤴓"}).status_code == 200
+    assert forms.form_for(A)["form"] == "⿰⿱匕失⿱コ疋" and forms.form_for(D)["form"] == "⿱日𤴓"
 
 
 def test_an_unfinished_last_line_is_not_a_decision_but_a_broken_one_is_reported(clustering):

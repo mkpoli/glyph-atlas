@@ -3,6 +3,7 @@
 // applied to the same rows in one D1 batch, so `form_units.form` always holds a glyph's current form.
 // `corpus_units.character` follows it for search and counts shortly after (`followCorpus`).
 import { withDating } from './dating';
+import { formProblem, isSequence } from './representation';
 type Json = Record<string, any>;
 export type FormTools = {
   fail: (status: number, message: string, extra?: Record<string, unknown>) => never;
@@ -46,6 +47,9 @@ async function families(env: Env) {
 // along form_unit_cluster, twelve rows a cluster.
 export const leastTypicalQuery = () => `SELECT u.cluster,u.id,u.image,u.rank FROM form_clusters c JOIN form_units u ON u.rowid IN
   (SELECT rowid FROM form_units WHERE cluster=c.id AND clustered=1 AND rank>=12 AND issue IS NULL ORDER BY rank DESC LIMIT 12) WHERE c.family=?`;
+
+/** Whether a form is written as a well-formed ideographic description sequence. */
+export const isDescription = (value: string) => isSequence(value) && formProblem(value) === null;
 
 async function family(env: Env, codePoint: string, q: URLSearchParams, tools: FormTools) {
   const found = await env.DB.prepare('SELECT * FROM form_families WHERE code_point=?').bind(codePoint).first<Json>();
@@ -119,7 +123,8 @@ async function decide(env: Env, request: Request, tools: FormTools, actor: strin
   const note = tools.text(input.note ?? '', 2000, 'note') ?? '';
   const kind = input.kind;
   if (!['cluster', 'glyph', 'inherit'].includes(kind)) tools.fail(422, 'Unknown decision kind.');
-  const form = input.form == null ? null : tools.text(input.form, 8, 'form', true);
+  // A form is one of the family's characters, or a shape Unicode lacks written as a description.
+  const form = input.form == null ? null : tools.text(input.form, 256, 'form', true);
   if (kind === 'inherit' && form != null) tools.fail(422, 'Following the cluster takes no form.');
   // A report: the glyphs are not this family's character, or their crop is bad. They keep no form.
   // A cluster can also be marked as mixed.
@@ -130,8 +135,8 @@ async function decide(env: Env, request: Request, tools: FormTools, actor: strin
   if (character != null && issue !== 'character') tools.fail(422, 'Only a wrong character names what the glyph is.');
   // A glyph takes the grapheme of what it is written as: the form named for it, or the character it
   // is reported as. A kana form keeps its family (𛂞 is は's); a kanji variant has its own (仿 is not 倣's).
-  const written = form ?? character;
-  const writtenFamily = written ? await tools.family(env, written) : null;
+  // A description is a form of the family it is named in.
+  const written = form ?? character, described = form != null && isDescription(form);
   let family: string, clusterId: string | null = null, units: string[] = [];
   if (kind === 'cluster') {
     const cluster = await env.DB.prepare('SELECT id,family FROM form_clusters WHERE id=?').bind(tools.text(input.cluster, 200, 'cluster', true)).first<Json>();
@@ -149,7 +154,8 @@ async function decide(env: Env, request: Request, tools: FormTools, actor: strin
     family = found!.family;
   }
   const allowed = await env.DB.prepare('SELECT forms,revision FROM form_families WHERE code_point=?').bind(family!).first<Json>();
-  if (form != null && !JSON.parse(allowed!.forms).some((f: Json) => f.char === form)) tools.fail(422, `${form} is not a form of this family.`);
+  if (form != null && !described && !JSON.parse(allowed!.forms).some((f: Json) => f.char === form)) tools.fail(422, `${form} is not a form of this family.`);
+  const writtenFamily = described ? family! : written ? await tools.family(env, written) : null;
   const id = crypto.randomUUID(), at = new Date().toISOString().replace(/\.\d+Z$/, '+00:00');
   const touched = kind === 'cluster' ? 'SELECT id FROM form_units WHERE cluster=?1 AND clustered=1' : 'SELECT value FROM json_each(?1)';
   const target = kind === 'cluster' ? clusterId : JSON.stringify(units);

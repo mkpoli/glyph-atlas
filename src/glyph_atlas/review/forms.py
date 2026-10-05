@@ -19,7 +19,8 @@ class Decision(BaseModel):
     kind: Literal["cluster", "glyph", "inherit"]
     cluster: str | None = Field(default=None, max_length=200)
     units: list[str] | None = Field(default=None, max_length=5000)
-    form: str | None = Field(default=None, max_length=8)
+    # A family's character, or a description of a shape Unicode lacks.
+    form: str | None = Field(default=None, max_length=256)
     note: str = Field(default="", max_length=2000)
     issue: Literal["mixed", "character", "crop"] | None = None
     character: str | None = Field(default=None, max_length=8)
