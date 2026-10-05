@@ -3,11 +3,13 @@
   // sit on the page (`RunImage`), with the book and page they come from. The run's own text is written
   // the way most of its occurrences are: down the page or across it. Pages arrive as the reader nears the
   // end, and while more are to come the grid shows whole rows only. A run of many characters gets a
-  // taller cell, so its crops stay legible down a column. The run can be narrowed to a group of how its
+  // taller cell, so its crops stay legible down a column. A card opens the occurrence (`RunOccurrence`):
+  // its page, its characters and its source. The run can be narrowed to a group of how its
   // letterforms were made or to a work, and placed by that group or by work, and the sequences near it are one link away.
   import { untrack } from 'svelte'
   import { replaceState } from '$app/navigation'
   import RunImage from './RunImage.svelte'
+  import RunOccurrence from './RunOccurrence.svelte'
   import ScriptText from './ScriptText.svelte'
   import SiteLinks from './SiteLinks.svelte'
   import HandFilter from './HandFilter.svelte'
@@ -26,6 +28,7 @@
   let items = $state(opened?.items ?? []), total = $state(opened?.total ?? null), more = $state(opened?.more ?? false)
   let offset = $state(opened?.next_offset ?? 0), vertical = $state(opened?.vertical ?? true), size = $state(opened?.size ?? 2)
   let loading = $state(!opened), error = $state(''), ended = $state(false), requestId = 0
+  let detail = $state(null)
 
   async function load(append = false) {
     const id = ++requestId
@@ -116,13 +119,17 @@
     {#if loading && !items.length}{#each Array(12) as _}<div class="glyph-skeleton"></div>{/each}{/if}
     {#each shown as occurrence (occurrence.crops[0].id)}
       <article class="run-occurrence">
-        <div class="run-page"><RunImage crops={occurrence.crops} page={occurrence.page} vertical={occurrence.vertical} oninspect={id => inspect(id, null, crops)} /></div>
-        <p class="run-where">{where(occurrence.crops[0])}</p>
+        <button class="run-open" onclick={() => { detail = occurrence }} aria-label={[t('run.detail.open', { run: occurrence.crops.map(c => c.label).join('') }), where(occurrence.crops[0])].filter(Boolean).join(' · ')}>
+          <div class="run-page"><RunImage crops={occurrence.crops} page={occurrence.page} vertical={occurrence.vertical} /></div>
+          <p class="run-where">{where(occurrence.crops[0])}</p>
+        </button>
       </article>
     {/each}
   </div>
   {#if !loading && !error && total === 0}<p class="run-empty">{t('run.empty')}</p>{/if}
   <div class="scroll-sentinel" bind:this={sentinel} aria-hidden="true">{#if hasMore && loading && items.length}…{/if}</div>
+  {#if detail}<RunOccurrence occurrence={detail} {text} close={() => { detail = null }}
+    inspect={(id, origin) => inspect(id, null, crops, null, origin)} />{/if}
 </section>
 
 <style>
@@ -147,6 +154,8 @@
   .near-row small{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
   .run-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line)}
   .run-occurrence{display:flex;flex-direction:column;background:var(--surface-tile);min-width:0}
+  .run-open{display:flex;flex-direction:column;flex:1;width:100%;border:0;border-radius:0;padding:0;background:transparent;color:inherit;text-align:start;cursor:pointer}
+  .run-open:hover,.run-open:focus-visible{background:var(--surface-selected)}
   .run-page{height:calc(clamp(190px,15vw,270px) + max(0,var(--run-size) - 3) * 36px);padding:12px}
   .run-where{margin:0;padding:8px 12px 10px;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .run-empty{color:var(--muted);padding:30px 0}

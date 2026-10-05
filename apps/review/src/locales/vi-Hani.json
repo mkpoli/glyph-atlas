@@ -372,6 +372,8 @@
   "run.occurrences.other": "{count}吝",
   "run.occurrences.more": "欣{count}吝",
   "run.empty": "𣗓𣎏吝𱜢𧵑圮𡨸呢。",
+  "run.detail.open": "𨷑{run}",
+  "run.detail.close": "㨂",
   "run.order.label": "次序",
   "run.order.hand": "曰拪𠓀",
   "run.order.source": "蹺作品",

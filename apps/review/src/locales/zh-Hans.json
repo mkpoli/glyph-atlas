@@ -385,6 +385,8 @@
   "run.occurrences.other": "{count}处",
   "run.occurrences.more": "{count}处以上",
   "run.empty": "尚无此字串的用例。",
+  "run.detail.open": "打开{run}的用例",
+  "run.detail.close": "关闭",
   "run.order.label": "排序",
   "run.order.hand": "手写优先",
   "run.order.source": "按文献",

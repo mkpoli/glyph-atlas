@@ -371,6 +371,8 @@
   "run.occurrences.other": "{count} lần",
   "run.occurrences.more": "Hơn {count} lần",
   "run.empty": "Chưa có lần nào của dãy chữ này.",
+  "run.detail.open": "Mở {run}",
+  "run.detail.close": "Đóng",
   "run.order.label": "Thứ tự",
   "run.order.hand": "Viết tay trước",
   "run.order.source": "Theo tác phẩm",
