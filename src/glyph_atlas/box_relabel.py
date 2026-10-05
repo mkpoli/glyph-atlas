@@ -397,8 +397,10 @@ def applied(unit: Unit, record: dict[str, Any]) -> Unit:
     if record.get("verdict"):
         note["review"] = {"state": str(unit.review), "verdict": record["verdict"]}
     if status == "review":
+        # The unit keeps its label, and its place in the line goes with the box: none when the
+        # realignment leaves the box empty.
         note["form"] = record["form"]
-        return unit.model_copy(update={"meta": {**(unit.meta or {}), "box_relabel": note}})
+        return unit.model_copy(update={"seq": record["seq"], "meta": {**(unit.meta or {}), "box_relabel": note}})
     meta = {**(unit.meta or {}), "box_relabel": note}
     if status == "unplaced":
         return unit.model_copy(update={"seq": None, "text_source": None, "unicode": None,

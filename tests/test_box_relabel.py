@@ -303,3 +303,8 @@ def test_review_events_count_once_in_the_order_they_were_made():
                "role": "reviewer", "at": "2026-09-28T00:00:00+00:00", "evidence": json.dumps({"verdict": "wrong"})}
     assert box_relabel.verdicts_of([later, earlier, {"target": "a", "event": json.dumps(later)}]) == {"a": "correction"}
 
+
+def test_a_unit_sent_to_review_takes_its_place_in_the_line():
+    old = stale_units()
+    repaired, _ = repair(old, forms={old[1].id: "U+56DB"})
+    assert sorted(unit.seq for unit in repaired) == [1, 2, 3, 4]

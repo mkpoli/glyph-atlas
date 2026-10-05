@@ -1098,6 +1098,9 @@ def repair_relabel(
     align_module.check_classifier(config)
     events = box_relabel.read_reviews(reviews) if reviews else []
     decided = json.loads(forms.read_text(encoding="utf-8")) if forms else {}
+    if not isinstance(decided, dict) or not all(isinstance(key, str) and isinstance(value, str)
+                                                for key, value in decided.items()):
+        raise typer.BadParameter("--forms takes a JSON object of unit id to a character or a U+ code point")
     result = box_relabel.relabel_directory(directory, out, run=config, classifier=Classifier(config.classifier),
                                            detections=detections, reviews=events, forms=decided, every=every)
     for name, value in result.items():
