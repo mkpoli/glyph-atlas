@@ -8,8 +8,6 @@
   import ScriptText from './ScriptText.svelte'
   import SourceCredit from './SourceCredit.svelte'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
-  import { tileDate } from '../lib/dating.js'
-  import { sourceTitle } from '../lib/seo.js'
   import { t } from '../lib/i18n.svelte.js'
 
   let { occurrence, text, inspect, close } = $props()
@@ -19,7 +17,8 @@
   const web = url => /^https?:\/\//i.test(url ?? '') ? url : null
   const source = $derived(corpus ? (web(lead.record_url) && { href: lead.record_url, label: t('corpus.sourceRecord') })
     : (web(lead.honkoku_url) && { href: lead.honkoku_url, label: t('character.sourceHonkoku') }))
-  const where = $derived([sourceTitle(lead), lead.page_number ? t('tile.page', { page: lead.page_number }) : null, tileDate(lead) || null].filter(Boolean).join(' · '))
+  // The credit names the work, its holder, licence and date; the page is said apart.
+  const page = $derived(lead.page_number ? t('tile.page', { page: lead.page_number }) : '')
   const open = crop => inspect(crop.id, crop.origin === 'corpus' ? 'corpus' : 'collection')
   onMount(() => dialog.showModal())
 </script>
@@ -38,8 +37,8 @@
       </button></li>
     {/each}
   </ul>
-  {#if where}<p class="occurrence-where">{where}</p>{/if}
-  <SourceCredit item={lead} {corpus} record={false} />
+  {#if page}<p class="occurrence-where">{page}</p>{/if}
+  <SourceCredit item={lead} {corpus} omit={source?.href} />
   {#if source}<a class="primary occurrence-source" href={source.href} target="_blank" rel="noreferrer">{source.label}</a>{/if}
 </dialog>
 

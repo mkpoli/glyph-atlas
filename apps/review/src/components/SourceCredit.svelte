@@ -4,8 +4,8 @@
   import { t } from '../lib/i18n.svelte.js'
   import { licenceName, holderName } from '../lib/licence.js'
   import DateMark from './DateMark.svelte'
-  // `record: false` leaves out the link to the source record, for a view that offers it on its own.
-  let { item, corpus = false, record: linked = true } = $props()
+  // `omit` is a link the view offers on its own, which the line then leaves out.
+  let { item, corpus = false, omit = null } = $props()
   // A no-break space keeps each · with the part before it.
   const SEPARATOR = '\u00a0· '
   const shown = $derived((corpus
@@ -16,7 +16,7 @@
     ? (/^https?:\/\//i.test(item.record_url ?? '') ? { href: item.record_url, label: t('corpus.sourceRecord') } : null)
     : (item.rights_url ? { href: item.rights_url, label: t('character.sourceRights') } : null))
   const honkoku = $derived(/^https:\/\/app\.honkoku\.org\//.test(item.honkoku_url ?? '') ? { href: item.honkoku_url, label: t('character.sourceHonkoku') } : null)
-  const links = $derived(linked ? [record, honkoku].filter(Boolean) : [])
+  const links = $derived([record, honkoku].filter(link => link && link.href !== omit))
 </script>
 
 {#if shown.length || item.dating || credit || links.length}
