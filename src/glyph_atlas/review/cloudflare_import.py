@@ -290,14 +290,15 @@ def ingest_cloudflare(store, payload: dict, *, apply=False) -> tuple[dict, dict]
                     for field, value in values.items():
                         if field == "box" or getattr(unit, field) != value:
                             _append(store, conn, remote, field, value, encoded, remote["id"] + ":" + field)
-                        if field == "box":
-                            # The site still shows the old cut, at the revision the chain reached; the next
-                            # publication cuts the crop from this box and must go past that revision.
-                            recut = {"box": value, "crop_version": crop_version(unit.id, actual["image_sha256"], value),
-                                     "published_revision": before["revision"]}
-                            _append(store, conn, remote, RECUT, recut,
-                                    _json({"policy": POLICY, "source_event_id": remote["id"]}),
-                                    remote["id"] + ":" + RECUT, role="model", actor=POLICY)
+                    if before["box"] != publication["character"]["box"]:
+                        # The site still shows the cut from the published box, at the revision the chain
+                        # reached; the next publication cuts the crop from the redrawn box and must go past
+                        # that revision. Every import while the cut waits moves it past the site again.
+                        recut = {"box": before["box"], "published_revision": before["revision"],
+                                 "crop_version": crop_version(unit.id, actual["image_sha256"], before["box"])}
+                        _append(store, conn, remote, RECUT, recut,
+                                _json({"policy": POLICY, "source_event_id": remote["id"]}),
+                                remote["id"] + ":" + RECUT, role="model", actor=POLICY)
                     local_event = _append(store, conn, remote, "review", remote["new"], encoded, remote["id"])
                     revision = store._revision(conn, target)
                     bound = {**deepcopy(record), "event": local_event, "current_revision": revision}

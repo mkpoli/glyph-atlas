@@ -567,6 +567,24 @@ def test_a_review_on_the_old_cut_after_a_redrawn_box_still_imports(store):
     assert store.unit("u").unicode == "U+3092"
 
 
+def test_reviews_on_the_old_cut_keep_the_recut_past_the_site(store):
+    box = {"x": 12, "y": 11, "w": 26, "h": 38}
+    publication = baseline(store)
+    first, after = redrawn(publication, box)
+    bridge.ingest_cloudflare(store, payload(first), apply=True)
+    # Four more steps on the site while the cut waits, imported together as their last one.
+    chain = [{**first, "current": False}]
+    for _ in range(4):
+        record, after = remote(publication, before=after, issue="crop", character=None, current=False)
+        chain.append(record)
+    chain[-1]["current"] = True
+    _, report = bridge.ingest_cloudflare(store, payload(*chain), apply=True)
+    assert report["counts"] == {"imported": 1}, report
+    live = after["revision"]
+    action, _ = refresh.plan(catalogue_row(store), site_row(publication, revision=live, box=box))
+    assert action == "replace" and store.revision("u") > live
+
+
 def test_a_client_cannot_record_a_recut(store):
     with pytest.raises(BadRequest):
         store.record(ReviewRequest(target_id="u", field=RECUT, new={"published_revision": 10**6}, client_id="local"))
