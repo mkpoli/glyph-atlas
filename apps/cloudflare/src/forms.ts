@@ -78,11 +78,12 @@ async function family(env: Env, codePoint: string, q: URLSearchParams, tools: Fo
     }) };
 }
 
-const member = (r: Json) => ({ id: r.id, image: r.image, form: r.form, basis: basis(r as any),
-  reported: r.issue, character: r.issue_character });
+// A local crop's row names what is painted in its place until it loads; a corpus glyph's is in its record.
+export const member = (r: Json) => ({ id: r.id, image: r.image, form: r.form, basis: basis(r as any),
+  reported: r.issue, character: r.issue_character, tone: r.tone ?? null, image_size: r.image_size ? JSON.parse(r.image_size) : null });
 
 export const membersQuery = (order: 'typical' | 'unusual') => `SELECT f.id,f.image,f.rank,f.similarity,f.form,f.glyph_set,f.issue,f.issue_character,
-  coalesce(u.document,json_extract(u.data,'$.source.document_id'),c.document) AS document
+  u.data->>'$.tone' AS tone,u.data->>'$.image_size' AS image_size,coalesce(u.document,json_extract(u.data,'$.source.document_id'),c.document) AS document
   FROM form_units f LEFT JOIN units u ON u.id=f.id LEFT JOIN corpus_units c ON c.id=f.id
   WHERE f.cluster=? AND f.clustered=1 ORDER BY f.rank ${order === 'unusual' ? 'DESC' : 'ASC'} LIMIT ? OFFSET ?`;
 

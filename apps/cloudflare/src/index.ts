@@ -803,7 +803,7 @@ export const lineQuery = () => `WITH RECURSIVE ahead(id,d) AS (SELECT ?1,0 UNION
   SELECT n.d AS d,u.id AS id,u.data AS data FROM (SELECT * FROM ahead UNION ALL SELECT * FROM behind WHERE d<0) n
     CROSS JOIN units u ON u.id=n.id AND +u.origin='local'`;
 // What the inspector's line strip needs of each neighbour: the crop as the review path judges it
-// (revision and pixels) and the label it carries now. A crop with no neighbours has an empty line.
+// (revision and pixels), the label it carries now, and what is painted in its place until it loads. A crop with no neighbours has an empty line.
 export function lineItems(rows: { d: number; id: string; data: string }[]): Json[] {
   const seen = new Set<string>();
   const items = [...rows].sort((a, b) => a.d - b.d).flatMap(row => {
@@ -811,7 +811,7 @@ export function lineItems(rows: { d: number; id: string; data: string }[]): Json
     seen.add(row.id);
     const d = parse(row.data);
     return [{ id: row.id, offset: row.d, label: d.label ?? null, image: d.image ?? null, revision: d.revision, image_sha256: d.image_sha256 ?? null,
-      state: d.state ?? null, issue: d.issue ?? null }];
+      state: d.state ?? null, issue: d.issue ?? null, tone: d.tone ?? null, image_size: d.image_size ?? null }];
   });
   return items.length > 1 ? items : [];
 }
