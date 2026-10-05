@@ -267,6 +267,21 @@ try {
   await call('/atlas/corpus/reviews', moved)
   assert.equal((await call('/layers/candidates?code_point=U%2B2A708&scope=grapheme')).family_total, 1)
   assert.equal((await call('/layers/candidates?code_point=U%2B4EEE&scope=grapheme')).family_total, 0)
+  // The family's counts are kept at the edge per catalogue version: every page reads one copy, and the version moves it.
+  const counts = async () => { const f = await call('/layers/candidates?code_point=U%2B2A708&scope=grapheme&limit=1&offset=5'); return [f.family_total, f.unassigned_count] }
+  assert.deepEqual(await counts(), [1, 0], 'a later page keeps the family counts')
+  await db.prepare(`INSERT INTO corpus_units(${CORPUS_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?)`).bind('codh:counted', null, 'U+2A708', null, 3, 'fixture', 0, 10, 'unknown', 0).run()
+  assert.deepEqual(await counts(), [1, 0], 'the copy stands while the catalogue does')
+  await db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at','counted')").run()
+  assert.deepEqual(await counts(), [2, 1], 'a new catalogue version counts again')
+  // A form decision moves corpus glyphs without a new catalogue version; its drain stamps the recount.
+  await db.prepare("UPDATE corpus_units SET character='𪜈' WHERE id='codh:counted'").run()
+  assert.deepEqual(await counts(), [2, 1], 'the copy stands until the recount is stamped')
+  await db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('corpus_counts_at','counted-named')").run()
+  assert.deepEqual(await counts(), [2, 0], 'a corpus recount counts again')
+  await db.prepare("DELETE FROM corpus_units WHERE id='codh:counted'").run()
+  await db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at','counted-gone')").run()
+  assert.deepEqual(await counts(), [1, 0])
   // Seen crops: a round may record the crops it showed and left unflagged, and they leave the queue.
   for (const id of ['seen-a', 'seen-b', 'seen-c']) {
     const d = { id, label: 'セ', state: 'pending', revision: 0, image_sha256: hash,
