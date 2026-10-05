@@ -24,6 +24,8 @@
   import { runText } from '../lib/runs.js'
   import { collage, tileAspect, LAYOUT_KEY, storedLayout } from '../lib/collage.js'
   import RunCandidate from '../components/RunCandidate.svelte'
+  import RunStrip from '../components/RunStrip.svelte'
+  import { KEPT, frequent, runsWith } from '../lib/frequentRuns.js'
   import SiteLinks from '../components/SiteLinks.svelte'
   import { catalogue, character, request, randomSeed, number, formatSerial, stored, remember } from '../lib/client.js'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery, decades } from '../lib/layers.js'
@@ -434,6 +436,28 @@
       .map(row => ({ ...row, label: writtenLabel(row), origin: 'corpus' }))
   }
 
+  // Runs are shown with the gallery without being asked for: the collection's most frequent pairs or
+  // trigrams on the bare collection page, and those a picked character is part of on its gallery. The
+  // server renders the first list of each; another is read when the view moves to it.
+  const bare = $derived(!flagged && !picked && !choosing && !query.trim() && !grapheme && !work && filter === 'all')
+  let runKind = $state('pair'), homeRuns = $state(asked?.runs ? { kind: 'pair', items: asked.runs } : null), homeRunsFailed = $state(false)
+  async function loadHomeRuns(kind) {
+    homeRunsFailed = false
+    try { const items = (await frequent(kind)).slice(0, KEPT); if (!closed && runKind === kind) homeRuns = { kind, items } }
+    catch { if (!closed && runKind === kind) homeRunsFailed = true }
+  }
+  $effect(() => { if (bare && homeRuns?.kind !== runKind) untrack(() => loadHomeRuns(runKind)) })
+  // A character's runs show once they are here, and not at all when it has none among the counted
+  // ones or they cannot be read: the strip is extra to the gallery, which loads below it meanwhile.
+  let charRuns = $state(opened?.runs ? { char: opened.picked.char, items: opened.runs } : null), charRunsFor = untrack(() => charRuns?.char ?? '')
+  async function loadCharRuns(char) {
+    try { const items = await runsWith(char); if (!closed && picked?.char === char) charRuns = { char, items } }
+    catch { /* no strip for this character */ }
+  }
+  $effect(() => { const char = picked?.char; if (char && char !== charRunsFor) { charRunsFor = char; untrack(() => loadCharRuns(char)) } })
+  const runWords = { pair: () => t('explore.pairs'), trigram: () => t('explore.trigrams') }
+  const runFailed = kind => kind === 'trigram' ? t('explore.trigrams.failed') : t('explore.pairs.failed')
+
   // A query of two to eight characters is also a run, which the candidate list offers (`RunCandidate`).
   const run = $derived(flagged ? '' : runText(query))
 
@@ -786,6 +810,7 @@
   {#if error}<div class="error-message" role="alert">{error}<button onclick={() => load()}>{t('common.retry')}</button></div>{/if}
   {#if picked}
     <CharacterChips card={picked} bind:expand onselect={item => pick({ code_point: item }, 'exact')} />
+    {#if charRuns?.char === picked.char && charRuns.items.length}<RunStrip runs={charRuns.items} heading={t('explore.runs.with', { char: picked.char })} />{/if}
     {#if styled || style}<StyleFilter counts={styles} value={style} onchange={value => { style = value; load() }} />{/if}
     {#if picked && expand !== 'variants'}<PeriodFilter counts={decadeCounts} value={yearRange} order={dateOrder} onchange={value => { yearRange = value; load() }} onorder={value => { dateOrder = value; load() }} />{/if}
     {#if expand === 'grapheme'}<VisualGroups {analysis} count={familyTotal} unassigned={unassignedCount} value={visual} onchange={value => { visual = value; load() }} />{/if}
@@ -796,6 +821,10 @@
       {#if corpusFault}<span class="separator">·</span> <span class="corpus-fault" role="status">{t('explore.samplesUnavailable')}</span> <button class="quiet-link" onclick={() => load()}>{t('common.retry')}</button>{/if}
       {#if loading}<span class="find-pending"> …</span>{/if}
     </p>
+  {/if}
+  {#if bare}<RunStrip runs={homeRuns?.kind === runKind ? homeRuns.items : null} heading={t('explore.runs.heading')} failed={homeRunsFailed ? runFailed(runKind) : ''} onretry={() => loadHomeRuns(runKind)}
+    tabs={{ value: runKind, options: Object.entries(runWords), onchange: value => { runKind = value; homeRunsFailed = false } }} />{/if}
+  {#if picked}
   {:else if !query && (items.length || homeCorpus.length || sampleFault)}
     <p class="find-count" role="status">{#if items.length}{t('explore.count.here', { count: items.length })}{/if}{#if homeCorpus.length}{#if items.length}<span class="separator">·</span> {/if}{t('explore.count.fromCorpus', { count: homeCorpus.length })}{/if}{#if sampleFault}{#if items.length || homeCorpus.length}<span class="separator">·</span> {/if}<span class="corpus-fault" role="status">{sampleFault === 'error' ? t('explore.corpus.error') : t('explore.corpus.notLoaded')}</span>{/if}{#if loading}<span class="find-pending"> …</span>{/if}</p>
   {:else if query && settled}
