@@ -222,9 +222,9 @@ def ingest_cloudflare(store, payload: dict, *, apply=False) -> tuple[dict, dict]
                         raise Rejected("local occurrence is absent or retired")
                     previous = conn.execute("SELECT * FROM cloudflare_imports WHERE target_id=? ORDER BY local_revision DESC LIMIT 1",
                                             (target,)).fetchone()
-                    if previous:
-                        if previous["publication"] != publication_key:
-                            raise Rejected("publication changed after the last import")
+                    # A crop published again since the last import (a recut) starts its lineage anew from
+                    # that publication, which was made from this store at the revision it names.
+                    if previous and previous["publication"] == publication_key:
                         before = json.loads(previous["remote_state"])
                         if not conn.execute("SELECT 1 FROM events WHERE id=?", (previous["remote_id"],)).fetchone():
                             raise Rejected("the imported journal was reset")

@@ -523,7 +523,7 @@ def site_row(publication, *, revision, box):
     return {"revision": revision, "quiz": 0, "data": json.dumps(data), "style": "unassessed", "reviewed": True}
 
 
-def test_a_redrawn_box_cut_again_is_published_past_the_site(store):
+def test_a_redrawn_box_cut_again_is_published_past_the_site_and_the_next_review_imports(store):
     box = {"x": 12, "y": 11, "w": 26, "h": 38}
     publication = baseline(store)
     # Two steps on the site, as the crops waiting in the Ainu publication took: a report, then the redraw.
@@ -539,6 +539,15 @@ def test_a_redrawn_box_cut_again_is_published_past_the_site(store):
     # The revision is the journal's: a store rebuilt from its events has the same one.
     Store(store.directory, rebuilding=True).rebuild()
     assert Store(store.directory).revision("u") == revision
+    # The site after the refresh: the new cut at the store's revision, every earlier review shown on it.
+    republished = baseline(store)
+    assert republished["character"]["revision"] == revision and republished["character"]["box"] == box
+    earlier = [{**record, "publication_snapshot": deepcopy(republished), "current": False} for record in (first, second)]
+    third, _ = remote(republished, character="を")
+    _, report = bridge.ingest_cloudflare(store, payload(*earlier, third), apply=True)
+    assert report["counts"] == {"imported": 1}, report
+    unit = store.unit("u")
+    assert (unit.unicode, unit.box.model_dump()) == ("U+3092", box) and store.revision("u") > revision
 
 
 def test_a_review_on_the_old_cut_after_a_redrawn_box_still_imports(store):
