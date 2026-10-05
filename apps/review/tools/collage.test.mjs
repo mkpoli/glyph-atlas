@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import { COLUMNS, collage, tileAspect } from '../src/lib/collage.js'
 
-const place = (style, count) => Object.fromEntries(style.split(';').map(part => part.split(':')).filter(([key]) => [`--c${count}`, `--y${count}`, `--n${count}`].includes(key)).map(([key, value]) => [key.slice(2, 3), Number(value)]))
+const place = (style, count) => Object.fromEntries(style.split(';').map(part => part.split(':')).filter(([key]) => [`--cell-c${count}`, `--cell-y${count}`, `--cell-n${count}`].includes(key)).map(([key, value]) => [key.slice(7, 8), Number(value)]))
 
 describe('the collage', () => {
   it('sizes a tile by its image, else its box, else as a square', () => {
@@ -26,7 +26,7 @@ describe('the collage', () => {
   })
   it('gives the block a height for every column count', () => {
     const { block } = collage([1, 1])
-    for (const count of COLUMNS) expect(block).toContain(`--h${count}:`)
-    expect(collage([]).block).toContain('--h2:0px')
+    for (const count of COLUMNS) expect(block).toContain(`--collage-h${count}:`)
+    expect(collage([]).block).toContain('--collage-h2:0px')
   })
 })

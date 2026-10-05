@@ -30,7 +30,7 @@ export function tileAspect(item) {
  * block's own, which holds its height for each column count.
  */
 export function collage(aspects) {
-  const places = aspects.map(a => [`--a:${a}`])
+  const places = aspects.map(a => [`--cell-a:${a}`])
   const heights = []
   for (const count of COLUMNS) {
     const columns = Array.from({ length: count }, () => ({ y: 0, n: 0 }))
@@ -38,12 +38,12 @@ export function collage(aspects) {
       let at = 0
       for (let c = 1; c < count; c++) if (columns[c].y + CHROME * columns[c].n < columns[at].y + CHROME * columns[at].n - 1e-9) at = c
       const column = columns[at]
-      places[i].push(`--c${count}:${at}`, `--y${count}:${round(column.y)}`, `--n${count}:${column.n}`)
+      places[i].push(`--cell-c${count}:${at}`, `--cell-y${count}:${round(column.y)}`, `--cell-n${count}:${column.n}`)
       column.y += a; column.n += 1
     })
     // The block is as tall as its tallest column, whichever that is at the width it is shown at.
     const used = columns.filter(column => column.n)
-    heights.push(`--h${count}:${used.length ? `max(${used.map(column => `calc(${round(column.y)} * var(--iw) + ${column.n} * var(--step))`).join(',')})` : '0px'}`)
+    heights.push(`--collage-h${count}:${used.length ? `max(${used.map(column => `calc(${round(column.y)} * var(--collage-iw) + ${column.n} * var(--collage-step))`).join(',')})` : '0px'}`)
   }
   return { tiles: places.map(place => place.join(';')), block: heights.join(';') }
 }
