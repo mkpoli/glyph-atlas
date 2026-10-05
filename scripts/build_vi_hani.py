@@ -123,6 +123,9 @@ def spell(text: str, table: dict[str, str], missing: set[str], used: set[str] | 
                 out.append(piece[i])
                 i += 1
     result = "".join(out)
+    # A separator alone (a list's comma, a sentence's stop) is written as the Han text it joins.
+    if re.fullmatch(r"[ ,.;:?]+", result):
+        return result.translate(str.maketrans({",": "，", ".": "。", ";": "；", ":": "：", "?": "？", " ": None}))
     if re.search(f"[{HAN}]", result):
         result = result.replace(" & ", " 吧 ")
         result = re.sub(r" ?\((.*?)\)", r"（\1）", result)
@@ -130,6 +133,8 @@ def spell(text: str, table: dict[str, str], missing: set[str], used: set[str] | 
             result = re.sub(rf"(?<=[{HAN}）\w}}]) ?{re.escape(ascii_mark)}( |$)", wide, result)
         # No space where Han characters meet each other, Latin letters, digits or placeholders.
         result = re.sub(rf"(?<=[{HAN}]) (?=[{HAN}{{A-Za-z0-9])|(?<=[{HAN}}}A-Za-z0-9%）]) (?=[{HAN}])", "", result)
+        # A quotation joins the Han text around it the same way: 塳割“敢”.
+        result = re.sub(rf"(?<=[{HAN}]) (?=“)|(?<=”) (?=[{HAN}])", "", result)
         # Key names written as symbols join the same way: ⌫挅, 或⌘/Ctrl, ←→塳割, qwerty…底.
         result = re.sub(rf"(?<=[{HAN}]) (?=[⌫⌘])|(?<=[⌫…]) (?=[{HAN}])|(?<=←→) (?=[{HAN}])", "", result)
     return result.strip()
