@@ -44,7 +44,7 @@ EXPAND = (("tr. {page}", "trang {page}"), ("{seconds}s ", "{seconds} giây "))
 SOURCES = {"wiktionary", "unihan", "joined", "reviewer"}
 # Latin words that are names, keys, file formats, licence codes or loanwords written in Latin letters
 # (email, PIN, the address you@example.org), and stay in Latin letters.
-KEEP = {"CODH", "Unicode", "HI", "Lab", "Minna", "de", "Honkoku", "JSON", "ID", "IDS", "Ctrl", "Esc", "Home", "Enter", "Shift",
+KEEP = {"CODH", "U", "Unicode", "HI", "Lab", "Minna", "de", "Honkoku", "JSON", "ID", "IDS", "Ctrl", "Esc", "Home", "Enter", "Shift",
         "click", "qwerty", "zi", "tools", "Wikipedia", "Hentaigana", "roneo", "scan", "Gothic", "B", "C", "J", "K", "M", "S", "V", "W", "X", "Z", "n", "s",
         "CC", "BY", "SA", "email", "PIN", "you", "example", "org", "Gravatar",
         "Cloudflare", "Web", "Analytics", "Email", "Service", "GitHub", "Google", "Discord", "LINE", "Kakao", "IP", "cookie",
