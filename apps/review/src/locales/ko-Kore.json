@@ -166,6 +166,8 @@
   "explore.trigrams": "세 文字 묶음",
   "explore.trigrams.none": "아직 集計된 세 文字 묶음이 없습니다.",
   "explore.trigrams.failed": "세 文字 묶음의 集計 結果를 불러오지 못했습니다.",
+  "explore.runs.heading": "자주 나오는 文字列",
+  "explore.runs.more": "더 보기",
   "explore.reviewGrapheme": "{grapheme} 檢討 ↗",
   "explore.samplesUnavailable": "用例를 더 불러올 수 없음",
   "explore.shuffle": "뒤섞기",

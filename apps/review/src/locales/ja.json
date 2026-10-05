@@ -165,6 +165,8 @@
   "explore.trigrams": "三字組",
   "explore.trigrams.none": "三字組はまだ集計されていません。",
   "explore.trigrams.failed": "三字組の集計結果を読み込めませんでした。",
+  "explore.runs.heading": "よく現れる文字列",
+  "explore.runs.more": "さらに表示",
   "explore.reviewGrapheme": "{grapheme}をレビュー↗",
   "explore.samplesUnavailable": "追加のサンプルを読み込めませんでした",
   "explore.shuffle": "シャッフル",

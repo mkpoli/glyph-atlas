@@ -167,6 +167,8 @@
   "explore.trigrams": "三字",
   "explore.trigrams.none": "三字尚未計數",
   "explore.trigrams.failed": "三字之數不能載",
+  "explore.runs.heading": "常見之列",
+  "explore.runs.more": "更示",
   "explore.reviewGrapheme": "校{grapheme} ↗",
   "explore.samplesUnavailable": "餘樣不可得",
   "explore.shuffle": "亂序",

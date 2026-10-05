@@ -23,6 +23,8 @@
   import { NGRAM_KINDS, ngramCounts } from '../lib/ngrams.js'
   import { runText } from '../lib/runs.js'
   import RunCandidate from '../components/RunCandidate.svelte'
+  import RunStrip from '../components/RunStrip.svelte'
+  import { KEPT, frequent } from '../lib/frequentRuns.js'
   import SiteLinks from '../components/SiteLinks.svelte'
   import { catalogue, character, request, randomSeed, number, formatSerial, stored, remember } from '../lib/client.js'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery, decades } from '../lib/layers.js'
@@ -384,6 +386,19 @@
       .map(row => ({ ...row, label: writtenLabel(row), origin: 'corpus' }))
   }
 
+  // Runs are shown with the gallery without being asked for: the collection's most frequent pairs or
+  // trigrams on the bare collection page. The server renders the pairs; trigrams are read when chosen.
+  const bare = $derived(!flagged && !picked && !choosing && !query.trim() && !grapheme && !work && filter === 'all')
+  let runKind = $state('pair'), homeRuns = $state(asked?.runs ? { kind: 'pair', items: asked.runs } : null), homeRunsFailed = $state(false)
+  async function loadHomeRuns(kind) {
+    homeRunsFailed = false
+    try { const items = (await frequent(kind)).slice(0, KEPT); if (!closed && runKind === kind) homeRuns = { kind, items } }
+    catch { if (!closed && runKind === kind) homeRunsFailed = true }
+  }
+  $effect(() => { if (bare && homeRuns?.kind !== runKind) untrack(() => loadHomeRuns(runKind)) })
+  const runWords = { pair: () => t('explore.pairs'), trigram: () => t('explore.trigrams') }
+  const runFailed = kind => kind === 'trigram' ? t('explore.trigrams.failed') : t('explore.pairs.failed')
+
   // A query of two to eight characters is also a run, which the candidate list offers (`RunCandidate`).
   const run = $derived(flagged ? '' : runText(query))
 
@@ -740,6 +755,10 @@
       {#if corpusFault}<span class="separator">·</span> <span class="corpus-fault" role="status">{t('explore.samplesUnavailable')}</span> <button class="quiet-link" onclick={() => load()}>{t('common.retry')}</button>{/if}
       {#if loading}<span class="find-pending"> …</span>{/if}
     </p>
+  {/if}
+  {#if bare}<RunStrip runs={homeRuns?.kind === runKind ? homeRuns.items : null} heading={t('explore.runs.heading')} failed={homeRunsFailed ? runFailed(runKind) : ''} onretry={() => loadHomeRuns(runKind)}
+    tabs={{ value: runKind, options: Object.entries(runWords), onchange: value => { runKind = value } }} />{/if}
+  {#if picked}
   {:else if !query && (items.length || homeCorpus.length || sampleFault)}
     <p class="find-count" role="status">{#if items.length}{t('explore.count.here', { count: items.length })}{/if}{#if homeCorpus.length}{#if items.length}<span class="separator">·</span> {/if}{t('explore.count.fromCorpus', { count: homeCorpus.length })}{/if}{#if sampleFault}{#if items.length || homeCorpus.length}<span class="separator">·</span> {/if}<span class="corpus-fault" role="status">{sampleFault === 'error' ? t('explore.corpus.error') : t('explore.corpus.notLoaded')}</span>{/if}{#if loading}<span class="find-pending"> …</span>{/if}</p>
   {:else if query && settled}
