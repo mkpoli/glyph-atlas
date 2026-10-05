@@ -731,7 +731,9 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
     const crops = records[r];
     if (!crops) return [];
     const dated = row.document ? dating.get(row.document) : undefined;
-    return { crops: crops.map(c => ({ ...listing(c), crop_box: c.crop_box ?? null, dating: dated ?? {} })),
+    // A crop transcribed on みんなで翻刻 links to its page there, as its inspector does.
+    const honkoku = honkokuPage(crops[0], row.document ?? crops[0].source?.document_id ?? null);
+    return { crops: crops.map(c => ({ ...listing(c), crop_box: c.crop_box ?? null, dating: dated ?? {}, ...(honkoku ? { honkoku_url: honkoku } : {}) })),
       vertical: Boolean(row.vertical), page: runPage(crops) };
   });
   const counted = count?.results[0] as { n: number; vertical: number | null } | undefined;
