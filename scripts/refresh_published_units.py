@@ -24,7 +24,10 @@ This writes the UPDATE statements that bring such units up to date:
 - a unit whose resolved style changed takes it in place too, reviewed or not: the style is the
   publication's (its document's, page's or own), and no review records it. Its production (how it
   was made, with the evidence and label shown for it) is assessed the same way and moves in place
-  with its `production` column.
+  with its `production` column;
+- a unit whose crop gained or changed its paper colour and image size (`tone`, `image_size`:
+  `glyph_atlas.tone`, what the site paints in the crop's place until its image arrives) takes them
+  in place, reviewed or not: they describe the published image, which no review changes.
 
 The file ends by stamping `metadata.units_refreshed_at`, which the Worker's cached listings are keyed by.
 
@@ -76,7 +79,7 @@ def quote(value) -> str:
 CROP_KEYS = ("box", "crop_box", "image", "image_sha256")
 # What a publication owns: set on the live row without a new revision, reviewed or not.
 IN_PLACE_KEYS = ("context_image", "context_box", "repair", "page_number",
-                 "production", "production_evidence", "production_label")
+                 "production", "production_evidence", "production_label", "tone", "image_size")
 
 
 def same_crop(new_data: str, live_data: str) -> bool:

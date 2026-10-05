@@ -254,3 +254,25 @@ def test_a_reviewed_crop_whose_box_was_redrawn_on_the_site_takes_its_new_cut():
 def test_a_reviewed_crop_whose_pending_box_is_not_the_new_cut_is_still_held():
     old = live(reviewed=True, box={"x": 12, "y": 22, "w": 26, "h": 36}, box_pending=True)
     assert refresh.plan(unit(box={"x": 1, "y": 2, "w": 3, "h": 4}, image="/atlas/media/b.webp"), old) == ("hold", None)
+
+
+@pytest.mark.parametrize("reviewed", [False, True])
+def test_a_crop_tone_is_set_in_place_reviewed_or_not(reviewed):
+    import sqlite3
+    old = live(revision=1000001, reviewed=reviewed)
+    new = with_data(unit(revision=1000001), tone="#d8cfbf", image_size=[47, 51])
+    action, sql = refresh.plan(new, old)
+    assert action == "in-place"
+    assert sql == ("UPDATE units SET data=json_set(data, '$.tone', json('\"#d8cfbf\"'), '$.image_size', json('[47,51]')) "
+                   "WHERE id='hk:1' AND revision=1000001;")
+    db = sqlite3.connect(":memory:")
+    db.execute("CREATE TABLE units (id TEXT, revision INTEGER, quiz INTEGER, data TEXT)")
+    db.execute("INSERT INTO units VALUES ('hk:1', 1000001, 1, ?)", (old["data"],))
+    db.execute(sql)
+    stored = json.loads(db.execute("SELECT data FROM units").fetchone()[0])
+    assert stored["tone"] == "#d8cfbf" and stored["image_size"] == [47, 51]
+
+
+def test_a_crop_tone_that_did_not_change_is_left_alone():
+    old = with_data(live(revision=1000001), tone="#d8cfbf", image_size=[47, 51])
+    assert refresh.plan(with_data(unit(revision=1000001), tone="#d8cfbf", image_size=[47, 51]), old) == ("skip", None)
