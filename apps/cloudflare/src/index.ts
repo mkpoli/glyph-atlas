@@ -731,10 +731,11 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
     const crops = records[r];
     if (!crops) return [];
     const dated = row.document ? dating.get(row.document) : undefined;
-    // A crop transcribed on みんなで翻刻 links to its page there, as its inspector does.
-    const honkoku = honkokuPage(crops[0], row.document ?? crops[0].source?.document_id ?? null);
-    return { crops: crops.map(c => ({ ...listing(c), crop_box: c.crop_box ?? null, dating: dated ?? {}, ...(honkoku ? { honkoku_url: honkoku } : {}) })),
-      vertical: Boolean(row.vertical), page: runPage(crops) };
+    // An occurrence transcribed on みんなで翻刻 links to its page there, as a crop's inspector does: the
+    // first of its crops that names one.
+    const honkoku = crops.map(c => honkokuPage(c, row.document ?? c.source?.document_id ?? null)).find(Boolean) ?? null;
+    return { crops: crops.map(c => ({ ...listing(c), crop_box: c.crop_box ?? null, dating: dated ?? {} })),
+      vertical: Boolean(row.vertical), page: runPage(crops), honkoku_url: honkoku };
   });
   const counted = count?.results[0] as { n: number; vertical: number | null } | undefined;
   const works = rest.length ? await runWorks(env, rest.pop()!.results as { document: string; n: number; sample: string }[]) : null;

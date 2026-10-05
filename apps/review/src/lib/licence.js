@@ -18,3 +18,13 @@ export function licenceName(id) {
 
 /** A holder as a reader sees it: the source's name, without the parenthetical note a statement's label carries. */
 export const holderName = text => (text ?? '').replace(/\s*[(（][^()（）]*[)）]\s*$/, '').trim() || null
+
+/** The records a crop's source line links to: its source record (a corpus glyph's record in its
+ *  dataset, a crop's rights record) and, for a crop transcribed on みんなで翻刻, its page there. */
+export function sourceLinks(item, corpus = item.origin === 'corpus') {
+  const record = corpus
+    ? (/^https?:\/\//i.test(item.record_url ?? '') ? { href: item.record_url, label: t('corpus.sourceRecord') } : null)
+    : (item.rights_url ? { href: item.rights_url, label: t('character.sourceRights') } : null)
+  const honkoku = /^https:\/\/app\.honkoku\.org\//.test(item.honkoku_url ?? '') ? { href: item.honkoku_url, label: t('character.sourceHonkoku') } : null
+  return { record, honkoku }
+}

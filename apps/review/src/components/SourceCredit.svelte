@@ -2,7 +2,7 @@
   // Where a crop's image comes from and on what terms, in one quiet line: the work, its holder and
   // licence, when its copy was made, who gave the label, and the record that states the rights.
   import { t } from '../lib/i18n.svelte.js'
-  import { licenceName, holderName } from '../lib/licence.js'
+  import { licenceName, holderName, sourceLinks } from '../lib/licence.js'
   import DateMark from './DateMark.svelte'
   // `omit` is a link the view offers on its own, which the line then leaves out.
   let { item, corpus = false, omit = null } = $props()
@@ -12,11 +12,8 @@
     ? [item.source?.title, holderName(item.attribution || item.source?.holder), licenceName(item.licence)]
     : [item.source, holderName(item.attribution || item.holder), licenceName(item.licence)]).filter(Boolean))
   const credit = $derived(corpus && item.text_attribution ? t('corpus.labelCredit', { credit: item.text_attribution }) : null)
-  const record = $derived(corpus
-    ? (/^https?:\/\//i.test(item.record_url ?? '') ? { href: item.record_url, label: t('corpus.sourceRecord') } : null)
-    : (item.rights_url ? { href: item.rights_url, label: t('character.sourceRights') } : null))
-  const honkoku = $derived(/^https:\/\/app\.honkoku\.org\//.test(item.honkoku_url ?? '') ? { href: item.honkoku_url, label: t('character.sourceHonkoku') } : null)
-  const links = $derived([record, honkoku].filter(link => link && link.href !== omit))
+  const linked = $derived(sourceLinks(item, corpus))
+  const links = $derived([linked.record, linked.honkoku].filter(link => link && link.href !== omit))
 </script>
 
 {#if shown.length || item.dating || credit || links.length}

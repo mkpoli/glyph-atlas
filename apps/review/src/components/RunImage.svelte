@@ -45,7 +45,7 @@
     {:else}{#each crops as crop, i (i)}<rect class="run-paper" style={cropTone(crop)} {...paper(crop, cells[i])} /><image href={crop.image} {...cut(cells[i])} />{/each}{/if}
   </svg>
   {#if oninspect}{#each crops as crop, i (i)}
-    <rect class="run-hit" class:marked={context} x={cells[i].x} y={cells[i].y} width={cells[i].w} height={cells[i].h} role="button" tabindex="0" data-unit={crop.id}
+    <rect class="run-hit" class:marked={context && whole} x={cells[i].x} y={cells[i].y} width={cells[i].w} height={cells[i].h} role="button" tabindex="0" data-unit={crop.id}
           aria-label={t('explore.tile.inspect', { label: crop.label })} onclick={() => oninspect(crop.id)} onkeydown={event => pressed(event, crop)} />
   {/each}{/if}
 </svg>

@@ -1097,6 +1097,26 @@ try {
     const glyphRun = await runOf('申上候')
     assert.deepEqual([glyphRun.total, glyphRun.items.map(o => o.crops.map(c => c.id))], [1, [['hl:run:0', 'hl:run:1', 'hl:run:2']]], 'a corpus run is listed')
     assert.equal(glyphRun.items[0].crops[1].source.title, 'A corpus book', 'its glyphs carry their published records')
+    assert.equal(glyphRun.items[0].honkoku_url, null, 'a book that is no みんなで翻刻 entry has no page there')
+    // An occurrence from a みんなで翻刻 entry links to its page: the first glyph to name one, here by its
+    // 0-based page id, as honkoku-lines numbers them.
+    {
+      const entry = '0123456789abcdef0123456789abcdef'
+      let entryPack = ''
+      for (const [id, character, y, page] of [['hl:hk:0', '申', 0, null], ['hl:hk:1', '上', 12, `hl:${entry}:4`]]) {
+        const raw = JSON.stringify({ id, origin: 'corpus', label: character, written_character: character, proxyable: true, state: 'pending', revision: 0,
+          image: `/atlas/media/${id}.webp`, crop_box: { x: 10, y, w: 10, h: 10 }, source: { corpus: 'honkoku-lines', title: 'An entry', ...(page ? { page_id: page } : {}) } })
+        await db.prepare(`INSERT INTO corpus_units(${CORPUS_COLUMNS},document) VALUES(?,?,?,?,?,?,?,?,?,?,?)`).bind(id, character, null, null, 5, 'pack-entry',
+          new TextEncoder().encode(entryPack).length, new TextEncoder().encode(raw).length, 'unknown', 0, `hl:${entry}`).run()
+        entryPack += raw
+      }
+      await bucket.put('pack-entry', entryPack)
+      await db.prepare(`INSERT INTO unit_ngrams(first,size,second,third,text,document) VALUES('hl:hk:0',2,'hl:hk:1',NULL,'申上','hl:${entry}')`).run()
+      await refreshed('entry-runs')
+      const entryRun = await runOf('申上', `&document=hl%3A${entry}`)
+      assert.deepEqual([entryRun.total, entryRun.items[0].honkoku_url], [1, `https://app.honkoku.org/transcription/${entry}/5`], 'an occurrence links to its みんなで翻刻 page')
+      await db.batch([db.prepare("DELETE FROM unit_ngrams WHERE first='hl:hk:0'"), db.prepare("DELETE FROM corpus_units WHERE id LIKE 'hl:hk:%'")])
+    }
     assert.equal(glyphRun.document, null)
     assert.equal((await runOf('申上', '&document=hl%3Abook')).total, 1, 'a corpus book holds its runs')
     // A corpus run takes its first glyph's group and shuffle, and follows its published row's production and style.
