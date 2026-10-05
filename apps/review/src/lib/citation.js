@@ -5,23 +5,25 @@ import { licenceName } from './licence.js'
 export const today = (now = new Date()) => [now.getFullYear(), now.getMonth() + 1, now.getDate()]
 
 /**
- * A citation in the reader's language: what the entry is, the site, its address and the day it was
- * read, then for a crop where its image comes from, on what terms, and who transcribed it. The parts
- * are the record's own words; a part the record lacks is left out.
+ * A citation in the reader's language, the way a reader writes one: what it shows and the document it
+ * comes from, then the site, the day it was read and its address. For a crop the image's credit and
+ * terms, and who transcribed it, follow as `credit`. The parts are the record's own words; a part the
+ * record lacks is left out.
  */
 export function citeText(entry, origin, now = new Date()) {
   const list = parts => parts.filter(Boolean).join(t('cite.list'))
-  const what = entry.kind === 'crop'
-    ? list([entry.label && t('cite.quote', { text: entry.label }), t('cite.crop', { id: entry.id }), entry.token && t('cite.version', { version: entry.token })])
-    : list([entry.label ? t('cite.character', { char: entry.label, codePoint: entry.codePoint }) : entry.codePoint, entry.kind === 'grapheme' ? t('cite.grapheme') : t('cite.form')])
   const source = entry.source ?? {}
-  const sentences = [t('cite.sentence', { entry: what, site: t('cite.site'), url: origin + entry.path, date: formatDate(now) })]
-  const where = list([source.title, source.page && t('tile.page', { page: source.page }), source.holder, source.shelfmark])
-  if (where) sentences.push(t('cite.source', { source: where }))
-  const image = list([source.attribution, licenceName(source.licence) ?? source.licence])
-  if (image) sentences.push(t('cite.image', { credit: image }))
-  const transcription = list([source.transcription, source.transcriptionPage])
-  if (transcription) sentences.push(t('cite.transcription', { credit: transcription }))
-  return sentences.join(t('cite.space'))
+  const label = entry.kind === 'crop'
+    ? (entry.label ? (entry.form ? t('cite.label.cropForm', { char: entry.label, form: entry.form }) : t('cite.label.crop', { char: entry.label })) : t('cite.label.cropUnnamed'))
+    : entry.kind === 'grapheme' ? t('cite.label.grapheme', { char: entry.label, codePoint: entry.codePoint })
+    : t('cite.label.form', { char: entry.label, codePoint: entry.codePoint })
+  // Page numbers are written as the source numbers them, without grouping.
+  const page = source.page ? String(source.page) : null
+  const work = source.title ? (page ? t('cite.workPage', { title: source.title, page }) : t('cite.work', { title: source.title }))
+    : page ? t('cite.page', { page }) : null
+  const what = list([label, work, source.holder && t('cite.holder', { holder: source.holder }), source.shelfmark]) + t('cite.end')
+  const where = list([t('cite.site'), t('cite.accessed', { date: formatDate(now) }), origin + entry.path])
+  const credits = [list([source.attribution, licenceName(source.licence) ?? source.licence]) || null, list([source.transcription, source.transcriptionPage]) || null]
+  const credit = [credits[0] && t('cite.image', { credit: credits[0] }), credits[1] && t('cite.transcription', { credit: credits[1] })].filter(Boolean).join(t('cite.space'))
+  return { citation: what + t('cite.space') + where, credit }
 }
-

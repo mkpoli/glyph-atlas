@@ -112,7 +112,7 @@ await step('a crop page and a character page state their citation as JSON-LD', a
   const crop = linked(await (await fetch(`${service.base}/en/crop/${encodeURIComponent(unitId)}`)).text())
   assert(crop, 'the crop page carries no JSON-LD')
   equal([crop.identifier, crop.isPartOf?.name], [unitId, 'Glyph Atlas'], 'the crop page names its crop and the site')
-  assert(crop.url.startsWith(`${service.base}/crop/${encodeURIComponent(unitId)}`), `the crop page cites ${crop.url}`)
+  assert(crop.url.startsWith(`${service.base}/crop/${unitId}?v=`), `the crop page cites ${crop.url}`)
   const { payload } = await request(`/atlas/characters/${encodeURIComponent(unitId)}`)
   const codePoint = 'U+' + payload.label.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')
   const character = linked(await (await fetch(`${service.base}/en/character/${codePoint}?scope=exact`)).text())
