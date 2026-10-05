@@ -1010,7 +1010,17 @@ try {
   // a margin of a fifth of the largest crop that stays inside the render.
   const placed = (x, y, context) => ({ crop_box: { x, y, w: 10, h: 10 }, context_image: `/atlas/media/${x}-${y}.webp`, context_box: context })
   assert.deepEqual(worker.runPage([placed(50, 50, { x: 0, y: 0, w: 200, h: 200 }), placed(50, 62, { x: 20, y: 20, w: 100, h: 100 })]),
-    { image: '/atlas/media/50-62.webp', box: { x: 20, y: 20, w: 100, h: 100 }, region: { x: 48, y: 48, w: 14, h: 26 } })
+    { image: '/atlas/media/50-62.webp', box: { x: 20, y: 20, w: 100, h: 100 }, region: { x: 48, y: 48, w: 14, h: 26 }, cut: null })
+  // A render its page's IIIF service cut can be cut again to the run alone, by width, no larger than the
+  // region or 660 × 600; one the service did not cut, or a page with no service, has no cut.
+  const service = 'https://codh.rois.ac.jp/char-shape/iiif/1/1_00005_1.tif', render = service + '/1536,1295,856,1691/900,/0/default.jpg'
+  assert.equal(worker.runCut(service, render, { x: 2000, y: 2080, w: 157, h: 251 }), service + '/2000,2080,157,251/157,/0/default.jpg')
+  assert.equal(worker.runCut(service, render, { x: 0, y: 0, w: 300, h: 1600 }).split('/').at(-3), '113,', 'a tall region is cut no taller than 600 px')
+  assert.equal(worker.runCut(service, render, { x: 0, y: 0, w: 1600, h: 220 }).split('/').at(-3), '660,', 'a wide region is cut no wider than 660 px')
+  assert.equal(worker.runCut(null, '/atlas/media/50-62.webp', { x: 0, y: 0, w: 1, h: 1 }), null, 'a render of the site\'s own has no service to cut it')
+  assert.equal(worker.runCut(service, 'https://elsewhere.example/a.jpg', { x: 0, y: 0, w: 1, h: 1 }), null, 'a render the service did not cut is not cut by it')
+  const onService = (x, y) => ({ ...placed(x, y, { x: 0, y: 0, w: 200, h: 200 }), context_image: render, source: { image_service: service } })
+  assert.equal(worker.runPage([onService(50, 50), onService(50, 62)]).cut, service + '/48,48,14,26/14,/0/default.jpg', 'a run on a served page carries its cut')
   assert.deepEqual(worker.runPage([placed(21, 21, { x: 20, y: 20, w: 100, h: 100 }), placed(21, 33, { x: 20, y: 20, w: 100, h: 100 })]).region,
     { x: 20, y: 20, w: 13, h: 25 }, 'the margin stays inside the render')
   assert.equal(worker.runPage([placed(50, 50, { x: 45, y: 45, w: 20, h: 20 }), placed(50, 70, { x: 45, y: 65, w: 20, h: 20 })]), null, 'no render holds both crops')

@@ -621,7 +621,17 @@ async function ngrams(env: Env, ctx: ExecutionContext, url: URL, size: number) {
 // around its own crop, so it nearly always holds the whole run; the smallest that does is the sharpest.
 // Null when a crop has no box or no render holds them all: the run's crops are then laid out apart.
 type Rect = { x: number; y: number; w: number; h: number };
-export function runPage(crops: Json[]): { image: string; box: Rect; region: Rect } | null {
+// A context render cut by its page's IIIF image service (`source.image_service`, a CODH page) is in that
+// service's pixels, so the service can cut a run's region alone: a card then loads its run rather than the
+// whole render, a tenth or less of it. The cut is asked for by width, as the published renders are, and no
+// larger than CUT_WIDTH × CUT_HEIGHT or the region itself, as a service need not enlarge.
+const CUT_WIDTH = 660, CUT_HEIGHT = 600;
+export function runCut(service: string | null | undefined, render: string, region: Rect): string | null {
+  if (!service || !/^https?:\/\//i.test(service) || !render.startsWith(service + '/')) return null;
+  const scale = Math.min(1, CUT_WIDTH / region.w, CUT_HEIGHT / region.h);
+  return `${service}/${region.x},${region.y},${region.w},${region.h}/${Math.max(1, Math.round(region.w * scale))},/0/default.jpg`;
+}
+export function runPage(crops: Json[]): { image: string; box: Rect; region: Rect; cut: string | null } | null {
   const boxes = crops.map(c => c.crop_box as Rect | null);
   if (boxes.some(b => !b)) return null;
   const left = Math.min(...boxes.map(b => b!.x)), top = Math.min(...boxes.map(b => b!.y));
@@ -632,8 +642,10 @@ export function runPage(crops: Json[]): { image: string; box: Rect; region: Rect
   if (!render) return null;
   const box = render.context_box as Rect, margin = Math.max(...boxes.flatMap(b => [b!.w, b!.h])) / 5;
   const x = Math.max(box.x, left - margin), y = Math.max(box.y, top - margin);
-  return { image: render.context_image, box,
-    region: { x, y, w: Math.min(box.x + box.w, right + margin) - x, h: Math.min(box.y + box.h, bottom + margin) - y } };
+  // Whole pixels, so the region cut, the region drawn and the view onto it are one rectangle.
+  const rx = Math.floor(x), ry = Math.floor(y);
+  const region = { x: rx, y: ry, w: Math.ceil(Math.min(box.x + box.w, right + margin)) - rx, h: Math.ceil(Math.min(box.y + box.h, bottom + margin)) - ry };
+  return { image: render.context_image, box, region, cut: runCut(render.source?.image_service, render.context_image, region) };
 }
 // One run's occurrences: every place its characters follow each other on a line, as their crops in
 // reading order, each with its box on the page, whether their line is written down the page, and the page
