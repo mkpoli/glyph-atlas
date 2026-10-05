@@ -23,6 +23,11 @@ _spec.loader.exec_module(refresh)
 
 @pytest.fixture
 def store(tmp_path, monkeypatch):
+    return make_store(tmp_path, monkeypatch)
+
+
+def make_store(tmp_path, monkeypatch):
+    """A dataset of one page and one unit `u` of 手, whose page image is in the cache."""
     root = tmp_path / "dataset"
     root.mkdir()
     cache = tmp_path / "cache"
