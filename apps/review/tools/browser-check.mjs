@@ -15,7 +15,13 @@ try {
   const errors = []
   browser.listeners.push(m => { if (m.method === 'Runtime.exceptionThrown') errors.push(m.params.exceptionDetails?.text) })
   // Deterministic OCR suggestions for synthetic glyphs; real model smoke is a separate read-only check.
-  await browser.send('Fetch.enable', { patterns: [{ urlPattern: '*\/suggestions?*' }] })
+  // The corpus counts as the site has them: thousands of graphemes, which the browse panel must not draw
+  // all at once (the local review service serves none).
+  const corpusCharacters = { items: Array.from({ length: 5000 }, (_, i) => {
+    const char = String.fromCodePoint(0x4E00 + i)
+    return [char, 'U+' + (0x4E00 + i).toString(16).toUpperCase(), 1]
+  }) }
+  await browser.send('Fetch.enable', { patterns: [{ urlPattern: '*\/suggestions?*' }, { urlPattern: '*\/atlas\/corpus\/characters*' }] })
   const suggested = { status: 'ready', candidates: [
     { text: 'シヨロ', engine: 'NDLkotenOCR', score: .9 },
     { text: 'カ', engine: 'fixture classifier', score: .7 },
@@ -24,7 +30,7 @@ try {
   browser.listeners.push(m => { if (m.method === 'Fetch.requestPaused') browser.send('Fetch.fulfillRequest', {
     requestId: m.params.requestId, responseCode: 200,
     responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
-    body: Buffer.from(JSON.stringify(suggested)).toString('base64'),
+    body: Buffer.from(JSON.stringify(m.params.request.url.includes('/atlas/corpus/characters') ? corpusCharacters : suggested)).toString('base64'),
   }) })
   async function click(selector) {
     await browser.evaluate(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'center'})`)
@@ -42,6 +48,19 @@ try {
   await click('.shuffle')
   await browser.waitFor(`document.querySelector('.glyph-grid img')?.src !== ${JSON.stringify(before)}`)
   console.log('PASS crop grid and shuffle')
+
+  // The browse panel opens on focus with the collection's and the corpus's graphemes, thousands of them:
+  // it draws a slice and the next as the grid is scrolled to its end, so opening it stays quick.
+  await click('.collection-toolbar .character-search input')
+  await browser.waitFor('document.querySelectorAll(".browse-panel .grapheme-tile").length > 100')
+  await browser.waitFor('document.querySelector(".browse-panel .grapheme-tile small") !== null')
+  const drawnAtFirst = await browser.evaluate('document.querySelectorAll(".browse-panel .grapheme-tile").length')
+  assert(drawnAtFirst <= 300, `the browse panel drew ${drawnAtFirst} grapheme tiles at once`)
+  await browser.evaluate('(() => { const tiles = document.querySelectorAll(".browse-panel .grapheme-tile"); tiles[tiles.length - 1].scrollIntoView({ block: "end" }) })()')
+  await browser.waitFor(`document.querySelectorAll(".browse-panel .grapheme-tile").length > ${drawnAtFirst}`)
+  await browser.evaluate('document.activeElement?.blur()')
+  await browser.waitFor('document.querySelector(".browse-panel") === null')
+  console.log(`PASS browse panel draws ${drawnAtFirst} graphemes, then more on scroll`)
 
   // A crop not already written カ, so the correction to カ below changes it.
   const gridOrder = await browser.evaluate('Array.from(document.querySelectorAll(".glyph-grid [data-unit]")).map(i=>i.dataset.unit)')

@@ -7,13 +7,21 @@
   // The popover follows the tile's focus as well as the pointer, and sits after its tile in the
   // document, so Tab from a tile walks into its forms. On a touch screen the first tap on a tile with
   // forms to list opens the popover, whose "All forms" chooses the family.
+  //
+  // The collection and the corpus together hold some fifteen thousand graphemes, so the tiles are drawn a
+  // slice at a time (`lib/slices.js`), more as the panel is scrolled near their end; a new list of
+  // groups (another order) starts again from the first slice.
   import { tick } from 'svelte'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import GraphemeCard from './GraphemeCard.svelte'
   import { number } from '../lib/client.js'
+  import { SLICE, nearing } from '../lib/slices.js'
   import { t } from '../lib/i18n.svelte.js'
 
   let { groups = [], value = '', onchoose = () => {}, onform = () => {} } = $props()
+  let drawn = $state(SLICE)
+  $effect.pre(() => { groups; drawn = SLICE })
+  const visible = $derived(groups.slice(0, drawn))
   let shown = $state(null), place = $state({ left: 0, top: 0 }), card = $state(null), timer, touched = false, opened = false, quiet = false
   // A tile of one form that is its own grapheme has nothing more to show.
   const listed = group => group.members.length > 1 || group.members[0]?.label !== group.char
@@ -48,7 +56,7 @@
 <svelte:window onscrollcapture={e => { if (!card?.contains(e.target)) close() }} onresize={close} />
 
 <div class="category-options grapheme-grid">
-  {#each groups as group (group.key)}
+  {#each visible as group (group.key)}
     <div class="grapheme-cell" onfocusout={left}
          onkeydown={e => { if (e.key === 'Escape' && shown === group.key) { e.preventDefault(); e.stopPropagation(); close(); quiet = true; e.currentTarget.querySelector('.grapheme-tile')?.focus(); quiet = false } }}>
       <button type="button" class="grapheme-tile" class:chosen={value === group.key}
@@ -70,11 +78,14 @@
       {/if}
     </div>
   {/each}
+  <!-- Inside the grid, which scrolls; a new element each slice, so one still in reach asks again. -->
+  {#if drawn < groups.length}{#key drawn}<div class="grid-more" aria-hidden="true" {@attach nearing(() => { drawn += SLICE })}></div>{/key}{/if}
 </div>
 
 <style>
   .grapheme-cell{display:contents}
   .grapheme-tile{position:relative}
   .form-count{position:absolute;top:4px;right:5px;font-style:normal;font-size:9px;line-height:1;color:var(--muted)}
+  .grid-more{grid-column:1/-1;height:1px}
   .grapheme-popover{position:fixed;z-index:60;width:240px;padding:10px;border:1px solid var(--line);border-radius:9px;background:var(--surface);box-shadow:0 14px 40px var(--shadow);font-size:12px}
 </style>
