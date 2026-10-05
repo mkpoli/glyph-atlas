@@ -16,12 +16,13 @@ def unit(seq, y=None, line="L1", **fields):
 
 
 def catalogue():
-    """`units` and `corpus_units` with the columns the ngram migrations' triggers read."""
+    """`units`, `corpus_units` and `characters` with the columns the ngram migrations' triggers read."""
     db = sqlite3.connect(":memory:")
     columns = ("character TEXT, document TEXT, production TEXT NOT NULL DEFAULT 'unknown', style TEXT NOT NULL DEFAULT 'unassessed', "
                "style_order INTEGER NOT NULL DEFAULT 1, shuffle INTEGER NOT NULL DEFAULT 0")
     db.execute(f"CREATE TABLE units (id TEXT PRIMARY KEY, origin TEXT, {columns})")
     db.execute(f"CREATE TABLE corpus_units (id TEXT PRIMARY KEY, {columns})")
+    db.execute("CREATE TABLE characters (code_point TEXT PRIMARY KEY, character TEXT UNIQUE, data TEXT)")
     return db
 
 
@@ -158,3 +159,15 @@ def test_a_block_of_columns_runs_only_down_one_column():
     assert ids(adjacent_ngrams([tall, glyph(2, 400, 250)], blocks={"B1"})) == [("B1:C1", "B1:C2")]
     # A line of one column is left to the distance test, which these boxes pass.
     assert ("B1:C17", "B1:C18") in ids(adjacent_ngrams(column))
+
+
+def test_a_run_is_folded_to_its_members_graphemes():
+    db = site([("a", "local", "ん", "book"), ("b", "local", "𛁅", "book"), ("c", "local", "ネ", "book")])
+    db.executemany("INSERT INTO characters VALUES(?,?,?)", [("U+3057", "し", '{"grapheme":{"code_point":"U+3057"}}'),
+                                                           ("U+1B045", "𛁅", '{"grapheme":{"code_point":"U+3057"}}')])
+    for statement in ngram_statements(["a", "b"], [Run(("a", "b"), True), Run(("b", "c"), True)]):
+        db.execute(statement)
+    # 𛁅 folds to し; ん and ネ, which the table does not hold, stand for themselves.
+    assert db.execute("SELECT first,text,graphemes FROM unit_ngrams ORDER BY first").fetchall() == [("a", "ん𛁅", "んし"), ("b", "𛁅ネ", "しネ")]
+    db.execute("UPDATE units SET character='し' WHERE id='b'")
+    assert db.execute("SELECT text,graphemes FROM unit_ngrams WHERE first='a'").fetchone() == ("んし", "んし")
