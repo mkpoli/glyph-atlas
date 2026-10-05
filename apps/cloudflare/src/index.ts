@@ -164,11 +164,10 @@ async function corpusRecords(env: Env, pointers: RecordPointer[]): Promise<Map<s
     .bind(JSON.stringify(ids)).all<UnitForm>()).results.map(row => [row.id, row] as const) : []);
   return new Map([...raw].map(([key, record]) => [key, formed(record, forms.get(record.id) ?? null, formTools)]));
 }
-// A record `corpusRecords` read, or the error `corpusData` gives for one it could not.
-function recordOf(read: Map<string, Json>, row: RecordPointer): Json {
-  const record = read.get(recordKey(row));
-  if (!record) throw new Problem(503, row.size > 128 * 1024 ? 'Invalid published record.' : 'The corpus publication is incomplete.');
-  return record;
+// A record `corpusRecords` read, or else the record read alone (`corpusData`), so one it could not read
+// fails as it always did: a lost connection reaches the retries, a missing record is a 503.
+async function recordOf(env: Env, read: Map<string, Json>, row: CorpusRow): Promise<Json> {
+  return read.get(recordKey(row)) ?? await corpusData(env, row);
 }
 // Listing items for crops by id: rows the site holds, then corpus glyphs from their published records.
 // An id it does not hold, or a retired crop, is left out.
@@ -185,8 +184,12 @@ async function itemsFor(env: Env, ids: string[]): Promise<Map<string, Json>> {
   if (rest.length) {
     const pointers = await env.DB.prepare(`SELECT * FROM corpus_units WHERE id IN (${marks(rest.length)})`)
       .bind(...rest).all<CorpusRow>();
-    const read = await corpusRecords(env, pointers.results);
-    for (const p of pointers.results) { const record = read.get(recordKey(p)); if (record) found.set(p.id, { ...listing(record), origin: 'corpus' }) }
+    // A record that cannot be read, or a batch that fails whole, leaves out only the glyphs it holds.
+    const read = await corpusRecords(env, pointers.results).catch(() => new Map<string, Json>());
+    for (const p of pointers.results) {
+      const record = read.get(recordKey(p)) ?? await corpusData(env, p).catch(() => null);
+      if (record) found.set(p.id, { ...listing(record), origin: 'corpus' });
+    }
   }
   const dating = await datingOf(env, [...found.values()].map(documentOf));
   for (const [id, item] of found) found.set(id, { ...item, dating: dating.get(documentOf(item) ?? '') ?? {} });
@@ -1051,7 +1054,7 @@ async function corpusRound(env: Env, characters: string[], production: string, s
   const read = rows.slice(offset), items: Json[] = [];
   const records = await corpusRecords(env, read);
   for (const row of read) {
-    const data = recordOf(records, row);
+    const data = await recordOf(env, records, row);
     // The record decides: a glyph whose image this site may not serve, or whose record disagrees
     // with its published row about the character or the material, is not dealt.
     if (dealable('corpus', data) && data.label === row.character && inMaterial(production, productionOf(data)))
@@ -1573,7 +1576,7 @@ async function chronology(env: Env, ctx: ExecutionContext, url: URL) {
   rows.sort((a, b) => order.get(a.id)! - order.get(b.id)!);
   const read = await corpusRecords(env, rows.filter(row => !row.overlay));
   for (const row of rows) {
-    const item = { ...(row.overlay ? parse(row.overlay) : recordOf(read, row)), style: row.style, ...(row.overlay_form ? { written_form: row.overlay_form } : {}) };
+    const item = { ...(row.overlay ? parse(row.overlay) : await recordOf(env, read, row)), style: row.style, ...(row.overlay_form ? { written_form: row.overlay_form } : {}) };
     bucketOf(decadeOf.get(row.id) ?? null).items.push({ ...listing(item), origin: 'corpus' });
   }
   // A decade shows `per` crops, the collection's first, as many as it has, then the corpus's.
@@ -1623,7 +1626,7 @@ async function corpusOccurrences(env:Env,data:Json,q:URLSearchParams){
   const items=[];
   // A page of up to 200 records is read in a few ranges and its form decisions in one query.
   const pageRows=rows.results as (CorpusRow&{overlay:string|null})[],read=await corpusRecords(env,pageRows.filter(row=>!row.overlay));
-  for(const row of pageRows)items.push({...(row.overlay?parse(row.overlay):recordOf(read,row)),style:row.style});
+  for(const row of pageRows)items.push({...(row.overlay?parse(row.overlay):await recordOf(env,read,row)),style:row.style});
   const formed=await withForms(env,items);
   const info=await known(env,data.char),familyCode=data.grapheme?.code_point||data.code_point;
   const familyCounts=await env.DB.prepare(`SELECT count(*) AS total,sum(written IS NULL) AS unassigned FROM (
