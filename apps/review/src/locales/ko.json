@@ -167,6 +167,7 @@
   "explore.trigrams.none": "아직 집계된 세 글자 묶음이 없습니다.",
   "explore.trigrams.failed": "세 글자 묶음의 집계 결과를 불러오지 못했습니다.",
   "explore.runs.heading": "자주 나오는 글자열",
+  "explore.runs.with": "‘{char}’ 포함 글자열",
   "explore.runs.more": "더 보기",
   "explore.reviewGrapheme": "{grapheme} 검토 ↗",
   "explore.samplesUnavailable": "추가 예시를 불러올 수 없음",

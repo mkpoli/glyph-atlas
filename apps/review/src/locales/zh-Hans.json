@@ -170,6 +170,7 @@
   "explore.trigrams.none": "尚未统计三字组。",
   "explore.trigrams.failed": "无法加载三字组统计结果。",
   "explore.runs.heading": "常见字串",
+  "explore.runs.with": "含“{char}”的字串",
   "explore.runs.more": "显示更多",
   "explore.reviewGrapheme": "审阅{grapheme} ↗",
   "explore.samplesUnavailable": "无法加载更多样本",

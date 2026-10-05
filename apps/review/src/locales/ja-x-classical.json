@@ -166,6 +166,7 @@
   "explore.trigrams.none": "三字組ハ未ダ數ヘズ",
   "explore.trigrams.failed": "三字組ノ數ヲ讀込ム能ハズ",
   "explore.runs.heading": "頻出ノ文字列",
+  "explore.runs.with": "{char}ヲ含ム文字列",
   "explore.runs.more": "更ニ示ス",
   "explore.reviewGrapheme": "{grapheme}ヲ校閱ス ↗",
   "explore.samplesUnavailable": "此上ノ見本ヲ開クコト能ハズ",

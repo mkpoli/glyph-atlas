@@ -24,7 +24,7 @@
   import { runText } from '../lib/runs.js'
   import RunCandidate from '../components/RunCandidate.svelte'
   import RunStrip from '../components/RunStrip.svelte'
-  import { KEPT, frequent } from '../lib/frequentRuns.js'
+  import { KEPT, frequent, runsWith } from '../lib/frequentRuns.js'
   import SiteLinks from '../components/SiteLinks.svelte'
   import { catalogue, character, request, randomSeed, number, formatSerial, stored, remember } from '../lib/client.js'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery, decades } from '../lib/layers.js'
@@ -387,7 +387,8 @@
   }
 
   // Runs are shown with the gallery without being asked for: the collection's most frequent pairs or
-  // trigrams on the bare collection page. The server renders the pairs; trigrams are read when chosen.
+  // trigrams on the bare collection page, and those a picked character is part of on its gallery. The
+  // server renders the first list of each; another is read when the view moves to it.
   const bare = $derived(!flagged && !picked && !choosing && !query.trim() && !grapheme && !work && filter === 'all')
   let runKind = $state('pair'), homeRuns = $state(asked?.runs ? { kind: 'pair', items: asked.runs } : null), homeRunsFailed = $state(false)
   async function loadHomeRuns(kind) {
@@ -396,6 +397,13 @@
     catch { if (!closed && runKind === kind) homeRunsFailed = true }
   }
   $effect(() => { if (bare && homeRuns?.kind !== runKind) untrack(() => loadHomeRuns(runKind)) })
+  let charRuns = $state(opened?.runs ? { char: opened.picked.char, items: opened.runs } : null), charRunsFailed = $state(false)
+  async function loadCharRuns(char) {
+    charRunsFailed = false
+    try { const items = await runsWith(char); if (!closed && picked?.char === char) charRuns = { char, items } }
+    catch { if (!closed && picked?.char === char) charRunsFailed = true }
+  }
+  $effect(() => { const char = picked?.char; if (char && charRuns?.char !== char) untrack(() => { charRuns = null; loadCharRuns(char) }) })
   const runWords = { pair: () => t('explore.pairs'), trigram: () => t('explore.trigrams') }
   const runFailed = kind => kind === 'trigram' ? t('explore.trigrams.failed') : t('explore.pairs.failed')
 
@@ -745,6 +753,8 @@
   {#if error}<div class="error-message" role="alert">{error}<button onclick={() => load()}>{t('common.retry')}</button></div>{/if}
   {#if picked}
     <CharacterChips card={picked} bind:expand onselect={item => pick({ code_point: item }, 'exact')} />
+    {#if charRuns?.char === picked.char ? charRuns.items.length : !charRunsFailed}<RunStrip runs={charRuns?.char === picked.char ? charRuns.items : null} heading={t('explore.runs.with', { char: picked.char })}
+      failed={charRunsFailed ? runFailed('pair') : ''} onretry={() => loadCharRuns(picked.char)} />{/if}
     {#if styled || style}<StyleFilter counts={styles} value={style} onchange={value => { style = value; load() }} />{/if}
     {#if picked && expand !== 'variants'}<PeriodFilter counts={decadeCounts} value={yearRange} order={dateOrder} onchange={value => { yearRange = value; load() }} onorder={value => { dateOrder = value; load() }} />{/if}
     {#if expand === 'grapheme'}<VisualGroups {analysis} count={familyTotal} unassigned={unassignedCount} value={visual} onchange={value => { visual = value; load() }} />{/if}

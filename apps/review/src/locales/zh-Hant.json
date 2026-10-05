@@ -170,6 +170,7 @@
   "explore.trigrams.none": "尚未統計三字組。",
   "explore.trigrams.failed": "無法載入三字組統計結果。",
   "explore.runs.heading": "常見字串",
+  "explore.runs.with": "含「{char}」的字串",
   "explore.runs.more": "顯示更多",
   "explore.reviewGrapheme": "審閱{grapheme} ↗",
   "explore.samplesUnavailable": "無法載入更多範例",
