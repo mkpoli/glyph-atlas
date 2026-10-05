@@ -27,10 +27,18 @@ def imported_without_recut(store):
     first, after = remote(publication, issue="crop", character=None, current=False)
     second, after = redrawn(publication, BOX, before=after)
     bridge.ingest_cloudflare(store, payload(first, second), apply=True)
+    forget_recuts(store)
+    return publication, after
+
+
+def forget_recuts(store):
+    """Take the recuts out of the journal, and the revisions the imports recorded with them."""
     with sqlite3.connect(store.directory / "review.sqlite") as db:
         db.execute("DELETE FROM events WHERE field='recut'")
     Store(store.directory, rebuilding=True).rebuild()
-    return publication, after["revision"]
+    with sqlite3.connect(store.directory / "review.sqlite") as db:
+        db.execute("UPDATE cloudflare_imports SET local_revision=? WHERE rowid=(SELECT max(rowid) FROM cloudflare_imports)",
+                   (Store(store.directory).revision("u"),))
 
 
 def run(store, tmp_path, monkeypatch, capsys, live, *args):
@@ -42,7 +50,8 @@ def run(store, tmp_path, monkeypatch, capsys, live, *args):
 
 
 def test_a_pending_recut_is_recorded_past_the_live_revision_once(store, tmp_path, monkeypatch, capsys):
-    publication, live = imported_without_recut(store)
+    publication, after = imported_without_recut(store)
+    live = after["revision"]
     assert Store(store.directory).revision("u") == live, "the collision the refresh refused"
     row = site_row(publication, revision=live, box=BOX)
     preview = run(store, tmp_path, monkeypatch, capsys, row)
@@ -55,7 +64,20 @@ def test_a_pending_recut_is_recorded_past_the_live_revision_once(store, tmp_path
 
 
 def test_a_live_box_other_than_the_stores_is_left_alone(store, tmp_path, monkeypatch, capsys):
-    publication, live = imported_without_recut(store)
+    publication, after = imported_without_recut(store)
+    live = after["revision"]
     row = site_row(publication, revision=live, box={**BOX, "x": 13})
     assert run(store, tmp_path, monkeypatch, capsys, row, "--apply")["counts"] == {"other-box": 1}
     assert Store(store.directory).revision("u") == live
+
+
+def test_a_redraw_followed_by_another_imported_review_is_still_due(store, tmp_path, monkeypatch, capsys):
+    publication, after = imported_without_recut(store)
+    # A review on the old cut, imported after the redraw: the last import brought no box back.
+    record, after = remote(publication, before=after, issue="crop", character=None)
+    _, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
+    assert report["counts"] == {"imported": 1}, report
+    forget_recuts(store)
+    live = after["revision"]
+    applied = run(store, tmp_path, monkeypatch, capsys, site_row(publication, revision=live, box=BOX), "--apply")
+    assert applied["counts"] == {"recorded": 1} and applied["items"][0]["revision"] > live

@@ -3,8 +3,8 @@
     uv run scripts/record_pending_recuts.py DATASET [--live LIVE.jsonl] [--apply]
 
 A crop qualifies when the site still shows its old cut under a redrawn box (`box_pending` on the live
-row), that box is the one the store holds, and the store's last import of the crop brought the box
-back without a recut. Each gets the event the import now records (`store.RECUT`): it changes no
+row), that box is the one the store holds and an import of the crop brought it back, and no recut of
+that cut moves past the live revision yet. Each gets the event the import now records (`store.RECUT`): it changes no
 record and moves the crop's revision past the live one, so the next publication cuts the crop at a
 revision no open page holds, and the review made on it after imports on top of it.
 
@@ -40,15 +40,22 @@ def plan(conn, store, row) -> dict:
     unit = store._unit_row(conn, row["id"])
     if last is None or unit is None or not unit.active:
         return {**item, "status": "not-imported"}
-    if not conn.execute("SELECT 1 FROM events WHERE id=?", (last["remote_id"] + ":box",)).fetchone():
-        return {**item, "status": "no-box"}
-    if conn.execute("SELECT 1 FROM events WHERE id=?", (last["remote_id"] + ":" + RECUT,)).fetchone():
-        return {**item, "status": "recorded"}
     if unit.box is None or unit.box.model_dump() != box:
         return {**item, "status": "other-box"}
+    # Any import of the crop may have brought the box back; later imports on the old cut carry no box.
+    brought = [json.loads(new) for new, in conn.execute(
+        "SELECT e.new FROM events e JOIN cloudflare_imports c ON e.id = c.remote_id || ':box' WHERE c.target_id=?",
+        (row["id"],))]
+    if box not in brought:
+        return {**item, "status": "no-box"}
     # The import read these pixels to bring the box back; without them the crop version is unknown.
     if (version := crop_version(unit.id, _source_digest(store, unit), box)) is None:
         return {**item, "status": "no-pixels"}
+    asked = conn.execute("SELECT new FROM events WHERE target_id=? AND field=? ORDER BY seq DESC LIMIT 1",
+                         (row["id"], RECUT)).fetchone()
+    if asked and (recorded := json.loads(asked["new"]))["crop_version"] == version \
+            and recorded["published_revision"] >= int(row["revision"]):
+        return {**item, "status": "recorded"}
     recut = {"box": box, "crop_version": version, "published_revision": int(row["revision"])}
     return {**item, "status": "due", "source_event_id": last["remote_id"], "recut": recut}
 
