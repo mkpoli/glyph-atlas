@@ -38,6 +38,7 @@ describe('a missing address', () => {
   it('offers nothing for words, broken escapes or the page already tried', () => {
     for (const path of ['/', '/nope', '/about/team', '/%E0%A4%A', '/U+110000']) expect(suggestion(path)).toBe(null)
     expect(suggestion('/character/U+5B57', 'character')).toBe(null)
+    expect(suggestion('/character/u+5b57', 'character')).toEqual({ kind: 'character', path: '/character/U+5B57', text: '字' })
     expect(suggestion('/crop/ar:x:1', 'crop')).toBe(null)
   })
 })

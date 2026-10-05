@@ -61,7 +61,7 @@ export function suggestion(path, kind = 'notFound') {
   if (/^u\+[0-9a-f]{4,6}(-u\+[0-9a-f]{4,6})*$/i.test(last)) {
     const point = last.toUpperCase(), values = point.split('-').map(p => parseInt(p.slice(2), 16))
     if (values.some(value => value > 0x10ffff)) return null
-    return kind === 'character' ? null : { kind: 'character', path: '/character/' + point, text: String.fromCodePoint(...values) }
+    return kind === 'character' && point === last ? null : { kind: 'character', path: '/character/' + point, text: String.fromCodePoint(...values) }
   }
   if (/^[^\s\x00-\x7f]+$/u.test(last) && [...graphemes.segment(last)].length === 1) return { kind: 'character', path: '/character/' + pointOf(last), text: last }
   if (runText(last)) return { kind: 'sequence', path: '/sequence/' + encodeURIComponent(last), text: last }
