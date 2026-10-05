@@ -164,6 +164,12 @@ async function corpusRecords(env: Env, pointers: RecordPointer[]): Promise<Map<s
     .bind(JSON.stringify(ids)).all<UnitForm>()).results.map(row => [row.id, row] as const) : []);
   return new Map([...raw].map(([key, record]) => [key, formed(record, forms.get(record.id) ?? null, formTools)]));
 }
+// A record `corpusRecords` read, or the error `corpusData` gives for one it could not.
+function recordOf(read: Map<string, Json>, row: RecordPointer): Json {
+  const record = read.get(recordKey(row));
+  if (!record) throw new Problem(503, row.size > 128 * 1024 ? 'Invalid published record.' : 'The corpus publication is incomplete.');
+  return record;
+}
 // Listing items for crops by id: rows the site holds, then corpus glyphs from their published records.
 // An id it does not hold, or a retired crop, is left out.
 async function itemsFor(env: Env, ids: string[]): Promise<Map<string, Json>> {
@@ -179,8 +185,8 @@ async function itemsFor(env: Env, ids: string[]): Promise<Map<string, Json>> {
   if (rest.length) {
     const pointers = await env.DB.prepare(`SELECT * FROM corpus_units WHERE id IN (${marks(rest.length)})`)
       .bind(...rest).all<CorpusRow>();
-    const records = await Promise.all(pointers.results.map(p => corpusData(env, p).then(d => [p.id, d] as const, () => null)));
-    for (const record of records) if (record) found.set(record[0], { ...listing(record[1]), origin: 'corpus' });
+    const read = await corpusRecords(env, pointers.results);
+    for (const p of pointers.results) { const record = read.get(recordKey(p)); if (record) found.set(p.id, { ...listing(record), origin: 'corpus' }) }
   }
   const dating = await datingOf(env, [...found.values()].map(documentOf));
   for (const [id, item] of found) found.set(id, { ...item, dating: dating.get(documentOf(item) ?? '') ?? {} });
@@ -1043,15 +1049,13 @@ async function corpusRound(env: Env, characters: string[], production: string, s
   const rows = await page('>=', wanted);
   if (rows.length < wanted) rows.push(...await page('<', wanted - rows.length));
   const read = rows.slice(offset), items: Json[] = [];
-  // Bound simultaneous R2 streams, as for a corpus search page.
-  for (const batch of chunks(read, 8)) {
-    const records = await Promise.all(batch.map(row => corpusData(env, row)));
-    for (const [i, data] of records.entries()) {
-      // The record decides: a glyph whose image this site may not serve, or whose record disagrees
-      // with its published row about the character or the material, is not dealt.
-      if (dealable('corpus', data) && data.label === batch[i].character && inMaterial(production, productionOf(data)))
-        items.push({ ...listing(data), origin: 'corpus', state: 'pending', shape_order: null, suspect: null });
-    }
+  const records = await corpusRecords(env, read);
+  for (const row of read) {
+    const data = recordOf(records, row);
+    // The record decides: a glyph whose image this site may not serve, or whose record disagrees
+    // with its published row about the character or the material, is not dealt.
+    if (dealable('corpus', data) && data.label === row.character && inMaterial(production, productionOf(data)))
+      items.push({ ...listing(data), origin: 'corpus', state: 'pending', shape_order: null, suspect: null });
   }
   if (items.length) {
     const marks = await env.DB.prepare('SELECT id,p,reads_as,label,box FROM unit_suspects WHERE id IN (SELECT value FROM json_each(?))')
@@ -1567,11 +1571,10 @@ async function chronology(env: Env, ctx: ExecutionContext, url: URL) {
   }
   const order = new Map(kept.map((row, i) => [row.id, i]));
   rows.sort((a, b) => order.get(a.id)! - order.get(b.id)!);
-  // Bound simultaneous R2 streams, as a corpus gallery page does.
-  for (let i = 0; i < rows.length; i += 8) {
-    const records = await Promise.all(rows.slice(i, i + 8).map(async row => ({ row,
-      item: { ...(row.overlay ? parse(row.overlay) : await corpusData(env, row)), style: row.style, ...(row.overlay_form ? { written_form: row.overlay_form } : {}) } })));
-    for (const { row, item } of records) bucketOf(decadeOf.get(row.id) ?? null).items.push({ ...listing(item), origin: 'corpus' });
+  const read = await corpusRecords(env, rows.filter(row => !row.overlay));
+  for (const row of rows) {
+    const item = { ...(row.overlay ? parse(row.overlay) : recordOf(read, row)), style: row.style, ...(row.overlay_form ? { written_form: row.overlay_form } : {}) };
+    bucketOf(decadeOf.get(row.id) ?? null).items.push({ ...listing(item), origin: 'corpus' });
   }
   // A decade shows `per` crops, the collection's first, as many as it has, then the corpus's.
   const all = [...buckets.values()];
@@ -1618,11 +1621,9 @@ async function corpusOccurrences(env:Env,data:Json,q:URLSearchParams){
   const grouped=widened?null:styleCounts(count.results as {s:number;n:number}[],group);
   const counted=grouped?grouped.total:(count.results[0] as {n:number}).n;
   const items=[];
-  // Bound simultaneous R2 streams; a corpus page may contain 200 records.
-  for(let i=0;i<rows.results.length;i+=8){
-    items.push(...await Promise.all((rows.results.slice(i,i+8) as (CorpusRow&{overlay:string|null})[])
-      .map(async row=>({...(row.overlay?parse(row.overlay):await corpusData(env,row)),style:row.style}))));
-  }
+  // A page of up to 200 records is read in a few ranges and its form decisions in one query.
+  const pageRows=rows.results as (CorpusRow&{overlay:string|null})[],read=await corpusRecords(env,pageRows.filter(row=>!row.overlay));
+  for(const row of pageRows)items.push({...(row.overlay?parse(row.overlay):recordOf(read,row)),style:row.style});
   const formed=await withForms(env,items);
   const info=await known(env,data.char),familyCode=data.grapheme?.code_point||data.code_point;
   const familyCounts=await env.DB.prepare(`SELECT count(*) AS total,sum(written IS NULL) AS unassigned FROM (

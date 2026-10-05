@@ -1381,6 +1381,8 @@ try {
   assert.deepEqual([record.written_character, record.identity_basis], ['假', 'form_glyph'], 'a glyph decision overrides its cluster')
   const shown = (await call('/layers/gallery')).items.find(item => item.id === 'codh:plain')
   assert.deepEqual([shown.written_character, shown.identity_basis, shown.form_cluster], ['假', 'form_glyph', { id: 'U+4EEE:c1' }], 'the gallery shows the form decision')
+  const occurring = (await call('/layers/candidates?code_point=U%2B5047')).items.find(item => item.id === 'codh:plain')
+  assert.deepEqual([occurring.written_character, occurring.identity_basis], ['假', 'form_glyph'], 'a corpus occurrences page shows the form decision')
   const members = await call('/atlas/forms/clusters/U%2B4EEE%3Ac1')
   assert.deepEqual(members.items.map(m => [m.id, m.form, m.basis]), [['codh:plain', '假', 'form_glyph'], ['codh:fixture', '仮', 'form_cluster']])
   await call('/atlas/forms/decisions', { kind: 'inherit', units: ['codh:plain'] })
