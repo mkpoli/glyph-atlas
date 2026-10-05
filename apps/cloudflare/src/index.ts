@@ -14,7 +14,7 @@ import { reviewers, submissions } from './admin';
 import { READ_BUDGET, RETRY_AFTER, described, retried, transient } from './busy';
 import { actOnClaim, claimsOf, ledgerPage, writeClaim, type LedgerTools } from './ledger';
 import { honkokuPage } from './honkoku';
-import { KINDS, characterEntry, citedVersion, cropEntry, csl, type Day, type Entry } from './citation';
+import { FORMATS, KINDS, bibtex, characterEntry, citedVersion, cropEntry, csl, hayagriva, type Day, type Entry, type Format } from './citation';
 import { YEAR_KEY, dateStats, datingJoin, datingOf, decadeColumn, documentDates, documentOf, withDating, yearCondition, yearOptions, yearOrder, type YearOptions } from './dating';
 import { FavouriteError, favouriteCrops, favouriteIds, setFavourite } from './favourites';
 export { leastTypicalQuery } from './forms';
@@ -173,20 +173,22 @@ async function cropVersions(env: Env, id: string) {
   const versions = (await env.DB.prepare(cropVersionsQuery()).bind(row.id).all<Json>()).results;
   return { id: row.id, current: record(row).crop_version, versions };
 }
-// A citation of a crop at one of its evidence versions (`?v=`, as `versionToken` writes it; the current
-// one without), a grapheme or a form, as CSL-JSON. It is read again once anything is reviewed or
-// published, and on each new day (in UTC), which is the date the citation was accessed.
+// A citation of a crop at one of its evidence versions (`?v=`, as `versionToken` names it; the current
+// one without), a grapheme or a form, as CSL-JSON, BibTeX or Hayagriva (`?format=`). It is read again
+// once anything is reviewed or published, and on each new day (in UTC), the date it was accessed.
 const CITE_TTL = 3600;
 const CITABLE_CHARACTER = /^U\+[0-9A-Fa-f]{4,6}(-U\+[0-9A-Fa-f]{4,6})*$/;
+const CITE_TYPES: Record<Format, string> = { csl: 'application/vnd.citationstyles.csl+json; charset=utf-8',
+  bibtex: 'application/x-bibtex; charset=utf-8', hayagriva: 'application/yaml; charset=utf-8' };
 async function cite(env: Env, ctx: ExecutionContext, url: URL, kind: string, raw: string): Promise<Response> {
   if (!(KINDS as readonly string[]).includes(kind)) throw new Problem(404, 'Unknown endpoint.');
   let id: string;
   try { id = decodeURIComponent(raw) } catch { throw new Problem(404, 'Nothing is published at this address.') }
-  const token = url.searchParams.get('v');
-  if (id.length > 512 || (token !== null && !/^[\w.-]{1,160}$/.test(token))) throw new Problem(422, 'Invalid citation address.');
+  const token = url.searchParams.get('v'), format = (url.searchParams.get('format') ?? 'csl') as Format;
+  if (id.length > 512 || (token !== null && !/^[0-9a-z]{6}$/.test(token)) || !FORMATS.includes(format)) throw new Problem(422, 'Invalid citation address.');
   if (kind !== 'crop' && !CITABLE_CHARACTER.test(id)) throw new Problem(404, 'Character not found.');
   const now = new Date(), day: Day = [now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate()];
-  const key = new Request(`${url.origin}/atlas/cite/${kind}/${encodeURIComponent(id)}?v=${encodeURIComponent(token ?? '')}&d=${day.join('-')}&c=${encodeURIComponent(await catalogueVersion(env))}`);
+  const key = new Request(`${url.origin}/atlas/cite/${kind}/${encodeURIComponent(id)}?v=${token ?? ''}&f=${format}&d=${day.join('-')}&c=${encodeURIComponent(await catalogueVersion(env))}`);
   const cached = await caches.default.match(key);
   if (cached) return new Response(cached.body, { headers: { ...Object.fromEntries(cached.headers), 'cache-control': 'no-cache' } });
   let entry: Entry;
@@ -201,9 +203,10 @@ async function cite(env: Env, ctx: ExecutionContext, url: URL, kind: string, raw
     }
     entry = cropEntry({ ...data, ...(honkoku ? { honkoku_url: honkoku } : {}) }, row.origin === 'corpus' ? 'corpus' : 'collection', version);
   } else entry = characterEntry(kind as 'grapheme' | 'form', (await known(env, id.split('-').join(' '))).detail);
-  const body = JSON.stringify([csl(entry, url.origin, day)], null, 2);
+  const body = format === 'bibtex' ? bibtex(entry, url.origin, day) + '\n' : format === 'hayagriva' ? hayagriva(entry, url.origin, day)
+    : JSON.stringify([csl(entry, url.origin, day)], null, 2);
   // The edge keeps a copy for the day it is dated; a browser asks again, so a citation is never dated a day late.
-  const headers = { 'content-type': 'application/vnd.citationstyles.csl+json; charset=utf-8', 'x-content-type-options': 'nosniff', ...OPEN };
+  const headers = { 'content-type': CITE_TYPES[format], 'x-content-type-options': 'nosniff', ...OPEN };
   ctx.waitUntil(caches.default.put(key, new Response(body, { headers: { ...headers, 'cache-control': `public, max-age=${CITE_TTL}` } })));
   return new Response(body, { headers: { ...headers, 'cache-control': 'no-cache' } });
 }
