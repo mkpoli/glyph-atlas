@@ -218,8 +218,12 @@ def statements() -> list[list[str]]:
             *ranged_parts("han_ids", "char", IDS_COLUMNS, ids_rows(), DERIVED_PART_BYTES)]
 
 
-def fill(db: sqlite3.Connection) -> None:
-    """The same rows in a local catalogue built from the migrations."""
+def fill(db: sqlite3.Connection, *, derived: bool = True) -> None:
+    """The same rows in a local catalogue built from the migrations.
+
+    `derived=False` leaves out the derived forms and the descriptions: deriving them runs over every
+    character and takes more memory than a collection export has, and a collection publication never
+    reads them, since this script publishes them to the site itself."""
     db.execute("DELETE FROM character_variants")
     db.executemany(f"INSERT OR REPLACE INTO character_variants({','.join(COLUMNS)}) VALUES ({','.join('?' * len(COLUMNS))})",
                    [tuple(int(edge[c]) if c in ("written", "widens") else edge[c] for c in COLUMNS)
@@ -227,11 +231,12 @@ def fill(db: sqlite3.Connection) -> None:
     db.execute("DELETE FROM component_variants")
     db.executemany(f"INSERT OR REPLACE INTO component_variants({','.join(SUBSTITUTION_COLUMNS)}) VALUES (?,?,?,?)",
                    substitution_rows())
-    db.execute("DELETE FROM character_derived")
-    db.executemany(f"INSERT OR REPLACE INTO character_derived({','.join(DERIVED_COLUMNS)}) VALUES (?,?)",
-                   derived_rows())
-    db.execute("DELETE FROM han_ids")
-    db.executemany("INSERT INTO han_ids(char,sequences) VALUES (?,?)", ids_rows())
+    if derived:
+        db.execute("DELETE FROM character_derived")
+        db.executemany(f"INSERT OR REPLACE INTO character_derived({','.join(DERIVED_COLUMNS)}) VALUES (?,?)",
+                       derived_rows())
+        db.execute("DELETE FROM han_ids")
+        db.executemany("INSERT INTO han_ids(char,sequences) VALUES (?,?)", ids_rows())
     db.execute("INSERT OR REPLACE INTO metadata(key,value) VALUES('variant_sources',?)", (citations(),))
     db.execute("DELETE FROM words")
     db.executemany(f"INSERT INTO words({','.join(WORD_COLUMNS)}) VALUES ({','.join('?' * len(WORD_COLUMNS))})", word_rows())
