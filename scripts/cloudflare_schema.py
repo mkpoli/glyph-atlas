@@ -11,21 +11,31 @@ MIGRATIONS = Path(__file__).resolve().parents[1] / "apps/cloudflare/migrations"
 # A decided glyph's corpus character is its form or the character it or its cluster was reported as, or, with none decided, the character it had before
 # any decision covered it (the Worker applies one decision the same way). A rewritten corpus row
 # carries the source's character, so the forms are applied to it again, and the glyphs the Worker had
-# still to move (`corpus_follow`) have been moved with the rest.
+# still to move (`corpus_follow`) have been moved with the rest. A glyph already right is not written:
+# D1 bills every row and index entry an UPDATE writes, changed or not.
 FORMS_REAPPLY = """INSERT OR IGNORE INTO form_bases(id,character,family) SELECT c.id,c.character,c.family FROM corpus_units c JOIN form_units f ON f.id=c.id
   WHERE f.glyph_set=1 OR f.cluster_form IS NOT NULL OR f.cluster_issue IS NOT NULL;
 UPDATE corpus_units SET character=CASE WHEN f.glyph_set=1 OR f.form IS NOT NULL OR f.issue IS NOT NULL THEN coalesce(f.issue_character,f.form) ELSE b.character END,
   family=coalesce(f.written_family,b.family)
-  FROM form_units f JOIN form_bases b ON b.id=f.id WHERE f.id=corpus_units.id AND corpus_units.named=0;
+  FROM form_units f JOIN form_bases b ON b.id=f.id WHERE f.id=corpus_units.id AND corpus_units.named=0
+  AND (corpus_units.character IS NOT CASE WHEN f.glyph_set=1 OR f.form IS NOT NULL OR f.issue IS NOT NULL THEN coalesce(f.issue_character,f.form) ELSE b.character END
+    OR corpus_units.family IS NOT coalesce(f.written_family,b.family));
 DELETE FROM corpus_follow;"""
 
 # Reapplies the forms, marks the corpus glyphs that have a `units` row as named, then counts assigned
-# glyphs per character and material, with the statements the migration runs. Every publication that
-# rewrites `corpus_units` runs them after it, since a rewritten row starts unnamed.
-CORPUS_REFRESH = FORMS_REAPPLY + "\n" + "\n".join(re.findall(
-    r"UPDATE corpus_units SET named=1 WHERE id IN [\s\S]*?;|DELETE FROM corpus_characters;|INSERT INTO corpus_characters [\s\S]*?;",
-    (MIGRATIONS / "0006_corpus_rounds.sql").read_text()))
-assert CORPUS_REFRESH.count(";") == 6, "0006 no longer restores and counts corpus_characters"
+# glyphs per character and material (0006). Every publication that rewrites `corpus_units` runs them
+# after it. A count is written only where it changed and a material no glyph has any more is removed,
+# so a publication that moves a few glyphs rewrites a few counts. A named glyph then takes its published
+# row's style, which `corpus_style` (0035) gave it whenever the upsert rewrote that row.
+CORPUS_REFRESH = FORMS_REAPPLY + "\n" + re.search(
+    r"UPDATE corpus_units SET named=1 WHERE id IN [\s\S]*?;", (MIGRATIONS / "0006_corpus_rounds.sql").read_text()).group(0) + """
+INSERT INTO corpus_characters SELECT character,production,count(*),sum(named) FROM corpus_units
+ WHERE character IS NOT NULL GROUP BY character,production
+ ON CONFLICT(character,production) DO UPDATE SET n=excluded.n,named=excluded.named
+ WHERE corpus_characters.n IS NOT excluded.n OR corpus_characters.named IS NOT excluded.named;
+DELETE FROM corpus_characters WHERE NOT EXISTS (SELECT 1 FROM corpus_units c
+ WHERE c.character=corpus_characters.character AND c.production=corpus_characters.production);
+UPDATE units SET style=c.style FROM corpus_units c WHERE units.origin='corpus' AND c.id=units.id AND units.style IS NOT c.style;"""
 # The Worker caches the grapheme browser's corpus counts on this stamp; it is written with the recount,
 # in the same part, so no request between them caches the old counts under a new key.
 CORPUS_REFRESH += ("\nINSERT OR REPLACE INTO metadata(key,value) "
@@ -60,13 +70,23 @@ def corpus_upsert(values) -> str:
     A rewrite updates every column but `named`, which records that a round or review reached the glyph
     and is D1's own: a publication that reset it would deal a named glyph twice until its last part ran.
     A row with no `document`, from an export made before 0053, keeps the one D1 holds.
+
+    A row D1 already holds as published is left alone, and so is a glyph whose only difference is the
+    form `FORMS_REAPPLY` would put back on it: its base (`form_bases`) is the published character and
+    family, and it is unnamed. Rewriting either would bill the row, its indexes and its triggers again
+    for the value it already has.
     """
     quoted = ("NULL" if v is None else str(v) if isinstance(v, int) else "'" + str(v).replace("'", "''") + "'"
               for v in values)
     updates = ",".join("document=coalesce(excluded.document,corpus_units.document)" if c == "document"
                        else f"{c}=excluded.{c}" for c in CORPUS_COLUMNS[1:])
+    same = " AND ".join("corpus_units.document IS coalesce(excluded.document,corpus_units.document)" if c == "document"
+                        else f"corpus_units.{c} IS excluded.{c}" for c in CORPUS_COLUMNS[3:])
     return (f"INSERT INTO corpus_units({','.join(CORPUS_COLUMNS)}) VALUES({','.join(quoted)}) "
-            f"ON CONFLICT(id) DO UPDATE SET {updates};")
+            f"ON CONFLICT(id) DO UPDATE SET {updates} WHERE NOT ({same} AND ("
+            "corpus_units.character IS excluded.character AND corpus_units.family IS excluded.family"
+            " OR corpus_units.named=0 AND EXISTS (SELECT 1 FROM form_bases b JOIN form_units f ON f.id=b.id"
+            " WHERE b.id=excluded.id AND b.character IS excluded.character AND b.family IS excluded.family)));")
 
 
 def document_count_statements(db) -> list[str]:
