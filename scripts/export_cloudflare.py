@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import re
 import shutil
@@ -19,7 +20,7 @@ import export_character_variants
 from cloudflare_schema import schema
 from PIL import Image
 
-from glyph_atlas import ngrams, refs, style, withdrawn
+from glyph_atlas import ngrams, refs, style, tone, withdrawn
 from glyph_atlas.corpus.api import PROXYABLE, CorpusAPI
 from glyph_atlas.review import atlas, characters, collection, corpus_source, ledger
 from glyph_atlas.review.context_suggestions import context_guesses
@@ -33,8 +34,10 @@ UNIT_COLUMNS = ("id,origin,character,family,visual_group,production,category,sta
 
 
 #: What a crop's record holds about its cut: kept from an earlier run of a resumed export while the
-#: crop's image is the same, since the images they describe are already packed.
-CUT_KEYS = ("context_image", "context", "context_box", "line", "source_scale", "crop_editable", "crop_box")
+#: crop's image is the same, since the images they describe are already packed. `tone` and `image_size`
+#: (`glyph_atlas.tone`) are what the site paints in the crop's place until its image arrives.
+CUT_KEYS = ("context_image", "context", "context_box", "line", "source_scale", "crop_editable", "crop_box",
+            "tone", "image_size")
 
 
 def encoded(value):
@@ -72,9 +75,30 @@ class Packs:
         with path.open("rb") as source:
             shutil.copyfileobj(source, self.file, 1024 * 1024)
 
+    def read(self, key):
+        """The bytes of a packed image, or None when its pack is no longer in the export."""
+        row = self.db.execute("SELECT object,offset,size FROM media WHERE key=?", (key,)).fetchone()
+        path = self.output / row[0] if row else None
+        if path is None or not path.exists():
+            return None
+        if self.file and not self.file.closed:
+            self.file.flush()
+        with path.open("rb") as handle:
+            handle.seek(row[1])
+            data = handle.read(row[2])
+        return data if len(data) == row[2] else None
+
     def close(self):
         if self.file:
             self.file.close()
+
+
+def image_tone(packs, media, url):
+    """The crop's `tone` and `image_size` (`glyph_atlas.tone`), read from the image as the export packed
+    it, or cut again when its pack has gone."""
+    key = url.rsplit("/", 1)[-1].removesuffix(".webp")
+    packed = packs.read(key)
+    return tone.crop_tone(io.BytesIO(packed) if packed is not None else media.materialize(key))
 
 
 def read_crops(db, media):
@@ -224,6 +248,8 @@ def export(dataset: Path, output: Path, *, resume=False):
                 for url in {item["image"], cut["context_image"]}:
                     key = url.rsplit("/", 1)[-1].removesuffix(".webp")
                     packs.add(key, media.materialize(key))
+            if "tone" not in cut:
+                cut.update(image_tone(packs, media, item["image"]))
             detail = {**item, "source": doc.title if doc else "", "text": line.text if line else "",
                       "page_number": page_fields(page)["page_number"], **cut}
             detail["licence"] = str(doc.image_rights.licence) if doc and doc.image_rights else None
