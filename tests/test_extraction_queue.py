@@ -309,6 +309,17 @@ def test_prioritize_scores_each_page_from_the_dataset_it_was_seeded_from(tmp_pat
     assert queue.claim("w")["id"] == "b"
 
 
+def test_prioritize_reads_a_sharded_lines_table_beside_its_manifest(tmp_path, monkeypatch):
+    monkeypatch.setattr("glyph_atlas.images.index_path", lambda: tmp_path / "missing")
+    queue = Queue(tmp_path / "queue")
+    source = tmp_path / "sharded"
+    (source / "lines").mkdir(parents=True)
+    tables.write(source / "lines" / "00.parquet", [Line(id="l1", page_id="a", seq=0, text_raw="ヿ", text="ヿ")], Line)
+    (source / "lines" / "MANIFEST.json").write_text('{"tables": {"lines": 1}}')
+    seeded(queue, [("a", source, 0)])
+    assert queue.prioritize({}) == 1
+
+
 def test_prioritize_refuses_a_source_without_lines(tmp_path, monkeypatch):
     import pytest
 
