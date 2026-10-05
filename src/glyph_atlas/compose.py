@@ -66,6 +66,8 @@ INSIDE = {"⿴": (0.2, 0.15, 0.8, 0.8), "⿵": (0.2, 0.0, 0.8, 0.8), "⿶": (0.2
           "⿺": (0.3, 0.25, 1.0, 1.0)}
 #: Least likeness of a cut piece to its operand's own glyph.
 LIKENESS = 0.45
+#: Likeness at which an enclosing part is taken as certain, whatever its enclosed part looks like.
+SURE = 0.9
 #: Most a cut piece's outline length for its size may differ from its operand's glyph's.
 DENSER = 1.7
 #: Characters whose median box is the box a full ideograph fills.
@@ -269,12 +271,17 @@ class Font:
 
 # ------------------------------------------------------------------ cutting hosts
 def _units(contours: list[Contour]) -> list[list[Contour]]:
-    """Contours grouped with those inside them: a counter goes with the smallest contour whose box holds it."""
+    """Contours grouped with those inside them: a counter goes with the smallest contour winding the
+    other way whose box holds it. A stroke that only lies within another's box (the strokes inside
+    the 冂 of 図) winds the same way and is a shape of its own, as is one inside a counter (回)."""
     order = {id(c): k for k, c in enumerate(contours)}
     area = lambda c: (c.box[2] - c.box[0]) * (c.box[3] - c.box[1])
+    winding = {id(c): np.sign(_signed_area(c.light)) for c in contours}
 
     def inside(a: Contour, b: Contour) -> bool:
         # Of two contours with the same box, the earlier holds the later, so no two hold each other.
+        if winding[id(a)] == winding[id(b)]:
+            return False
         held = a.box[0] >= b.box[0] and a.box[1] >= b.box[1] and a.box[2] <= b.box[2] and a.box[3] <= b.box[3]
         return held and (area(a) < area(b) or (area(a) == area(b) and order[id(b)] < order[id(a)]))
 
@@ -284,15 +291,25 @@ def _units(contours: list[Contour]) -> list[list[Contour]]:
         if holders:
             owner[id(c)] = min(holders, key=lambda d: (d.box[2] - d.box[0]) * (d.box[3] - d.box[1]))
 
-    def root(c: Contour) -> Contour:
+    def depth(c: Contour) -> int:
+        n = 0
         while id(c) in owner:
-            c = owner[id(c)]
-        return c
+            c, n = owner[id(c)], n + 1
+        return n
+
+    def root(c: Contour) -> Contour:
+        # A counter (odd depth) goes with the outline holding it; an outline, however deep, is its own.
+        return owner[id(c)] if depth(c) % 2 else c
 
     groups: dict[int, list[Contour]] = {}
     for c in contours:
         groups.setdefault(id(root(c)), []).append(c)
     return list(groups.values())
+
+
+def _signed_area(points: np.ndarray) -> float:
+    x, y = points[:, 0], points[:, 1]
+    return float(np.dot(x, np.roll(y, -1)) - np.dot(np.roll(x, -1), y)) / 2
 
 
 def _span(unit: list[Contour], axis: int) -> tuple[float, float]:
@@ -662,7 +679,16 @@ class Composer:
             for outer, inner in enclosures(part, node[0]):
                 if strict and not (self._counted(outer, node[0], 0, node[1]) and self._counted(inner, node[0], 1, node[2])):
                     continue
+                # A piece with under half its operand's own strokes is a stroke or two of something
+                # else (one stroke of 鬼 taken for 厶); a positional form keeps most of them (忄, 氵).
+                if any(isinstance(n, str) and 2 * len(p.contours) < self._outlines(n) for p, n in ((outer, node[1]), (inner, node[2]))):
+                    continue
                 a, b = self.likeness(outer, node[1]), self.likeness(inner, node[2])
+                if a >= SURE and isinstance(node[2], tuple) and len(inner.contours) == self._outlines(node[2]):
+                    # The enclosing part is unmistakable and what it holds has the inner sequence's
+                    # strokes: a sketch of that sequence (⺀ stacked on 㐅) cannot show how a
+                    # designer interlocked them (図).
+                    b = max(b, LIKENESS)
                 if a >= LIKENESS and b >= LIKENESS and (best is None or a + b > best[0]):
                     best = (a + b, [outer, inner])
             return None if best is None else (best[1], 0.0)

@@ -55,6 +55,20 @@ def test_contours_with_the_same_box_are_one_unit() -> None:
     assert [len(p.contours) for p in pieces] == [2, 1]
 
 
+def test_a_stroke_inside_another_strokes_box_is_a_shape_of_its_own() -> None:
+    # The strokes inside 図's 冂 wind as 冂 does: they lie in its box without being its counter.
+    frame, stroke = square(0, 0, 900, 900), square(300, 300, 600, 600)
+    assert sorted(len(u) for u in compose._units([frame, stroke])) == [1, 1]
+
+
+def test_an_outline_inside_a_counter_is_a_shape_of_its_own() -> None:
+    # 回: the inner 口 sits in the outer one's counter and keeps its own counter.
+    outer, hole = square(0, 0, 900, 900), square(100, 100, 800, 800, clockwise=True)
+    inner, inner_hole = square(300, 300, 600, 600), square(350, 350, 550, 550, clockwise=True)
+    units = compose._units([outer, hole, inner, inner_hole])
+    assert sorted(sorted(map(id, u)) for u in units) == sorted([sorted([id(outer), id(hole)]), sorted([id(inner), id(inner_hole)])])
+
+
 def test_a_region_tag_of_any_form_is_read_off_a_sequence() -> None:
     for tagged in ("⿻臼丨(G[B])", "⿰亻可(GHTJKPV)", "⿱艹化(UTC2003)"):
         assert compose.REGIONS.match(tagged).group(1) == tagged.split("(")[0]
@@ -198,3 +212,11 @@ def test_a_character_unicode_lacks_is_drawn_from_its_parts(composer: compose.Com
     assert "⿻乙口" not in composer.by_sequence
     with pytest.raises(LookupError):
         composer.compose("⿻乙口")
+
+
+def test_an_enclosure_is_cut_from_a_character_drawing_its_inner_part_interlocked(composer: compose.Composer) -> None:
+    # 図 draws ⺀ in the arms of 㐅; a stacked sketch of ⿱⺀㐅 looks unlike it, but 囗 is unmistakable.
+    tree = compose.parse("⿴囗⿱⺀㐅")
+    host = composer._host_node("図", tree, ())
+    assert host is not None
+    assert len(host.pieces[1].contours) == composer._outlines(tree[2])
