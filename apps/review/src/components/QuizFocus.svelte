@@ -64,9 +64,9 @@
   .focus-strip{display:flex;gap:8px;overflow-x:auto;padding:3px;flex:1;justify-content:center}
   .focus-thumb{padding:6px;border:1px solid var(--line);border-radius:7px;background:var(--surface);cursor:pointer;line-height:0}
   .focus-thumb.skipped{border-style:dashed;background:var(--surface-skipped)}
-  .focus-thumb.skipped :global(img){opacity:.45}
+  .focus-thumb.skipped :global(.crop-paint){opacity:.45}
   .focus-thumb.current{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-light)}
-  .focus-thumb :global(img){width:44px;height:44px;object-fit:contain}
+  .focus-thumb :global(.crop-paint){width:44px;height:44px}
   @media(max-width:760px){
     .quiz-focus{grid-template-columns:1fr;gap:16px;padding-bottom:24px}
     .focus-body :global(.issue-card){min-height:92px}
