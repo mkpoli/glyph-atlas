@@ -1340,8 +1340,9 @@ async function suggest(env: Env, q: URLSearchParams) {
   return { query: term, items: rows.results.slice(0,limit).map(r => ({...parse(r.data), rank:r.rank})),
     total: rows.results.length, more: Math.max(0,rows.results.length-limit), status:'ok',corpus:{ready:true} };
 }
-async function occurrences(env: Env, code: string, q: URLSearchParams) {
-  const { data } = await known(env, code), origin = 'local';
+// A caller that has already looked the character up passes its card, so a request reads it once.
+async function occurrences(env: Env, code: string, q: URLSearchParams, card?: Awaited<ReturnType<typeof known>>) {
+  const { data } = card ?? await known(env, code), origin = 'local';
   const limit = integer(q,'limit',24,200), offset=integer(q,'offset',0), group = styleGroup(q);
   // The filters other than style: the style counts are taken over them, so each group says what it holds.
   const filters: string[] = [], extra: (string | number)[] = [];
@@ -2209,7 +2210,7 @@ const routes = {
       if(path==='/layers/structure')return json(await structureOf(env,ctx,url.origin,q.get('c')||''));
       if(path==='/layers/search'){const found=await suggest(env,q);return json({...found,results:found.items,match:found.items[0]||null})}
       const layer=path.match(/^\/layers\/characters\/([^/]+)$/);
-      if(layer){const value=decodeURIComponent(layer[1]),{detail}=await known(env,value);const found=await occurrences(env,value,q);
+      if(layer){const value=decodeURIComponent(layer[1]),card=await known(env,value),{detail}=card;const found=await occurrences(env,value,q,card);
         const version=await catalogueVersion(env),[variants,words]=await Promise.all([variantsOf(env,ctx,url.origin,detail.char,version),wordsOf(env,ctx,url.origin,detail.char,version)]);
         return json({...detail,variants,words,query:detail.code_point,samples:found.items,occurrences:{...found.counts,filtered:found.total}})}
       if(path==='/layers/occurrences')return json(await occurrences(env,q.get('code_point')||'',q));

@@ -62,11 +62,12 @@ def test_a_records_only_export_seals_into_packs_and_ordered_sql(scripts, tmp_pat
         "object=excluded.object,offset=excluded.offset,size=excluded.size,production=excluded.production,style=excluded.style," \
         "document=coalesce(excluded.document,corpus_units.document)"
     columns = "id,character,family,visual_group,shuffle,object,offset,size,production,style,document"
-    assert lines[:2] == [
+    # Each upsert then names the rows it leaves unwritten (`corpus_upsert`).
+    assert [line.partition(" WHERE NOT ")[0] for line in lines[:2]] == [
         (f"INSERT INTO corpus_units({columns}) VALUES('codh:1','𛂥','U+306F',NULL,1,'{key}',0,{len(records[0])},'printed/woodblock','cursive',NULL) "
-         f"ON CONFLICT(id) DO UPDATE SET {updates};"),
+         f"ON CONFLICT(id) DO UPDATE SET {updates}"),
         (f"INSERT INTO corpus_units({columns}) VALUES('codh:2',NULL,'U+306F',NULL,2,'{key}',{len(records[0])},{len(records[1])},'unknown','unassessed',NULL) "
-         f"ON CONFLICT(id) DO UPDATE SET {updates};")]
+         f"ON CONFLICT(id) DO UPDATE SET {updates}")]
     # A part applied before the last one leaves a named glyph named and the counts as they were.
     partial = sqlite3.connect(":memory:")
     partial.executescript(SCHEMA)
