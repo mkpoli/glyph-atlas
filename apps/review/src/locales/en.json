@@ -396,6 +396,8 @@
   "run.occurrences.other": "{count} occurrences",
   "run.occurrences.more": "{count}+ occurrences",
   "run.empty": "No occurrence of this sequence here.",
+  "run.detail.open": "Open {run}",
+  "run.detail.close": "Close",
   "run.order.label": "Order",
   "run.order.hand": "Handwritten first",
   "run.order.source": "By work",

@@ -378,6 +378,8 @@
   "run.occurrences.other": "{count}例",
   "run.occurrences.more": "{count}例以上",
   "run.empty": "此ノ文字列ノ例無之",
+  "run.detail.open": "{run}ノ例ヲ開ク",
+  "run.detail.close": "閉ヅ",
   "run.order.label": "次第",
   "run.order.hand": "手書ヲ先トス",
   "run.order.source": "典籍ノ順",

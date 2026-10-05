@@ -384,6 +384,8 @@
   "run.occurrences.other": "{count}見",
   "run.occurrences.more": "逾{count}見",
   "run.empty": "此列無例",
+  "run.detail.open": "啓{run}之例",
+  "run.detail.close": "闔",
   "run.order.label": "序",
   "run.order.hand": "寫先",
   "run.order.source": "依書",
