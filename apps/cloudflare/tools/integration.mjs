@@ -274,6 +274,11 @@ try {
   assert.deepEqual(await counts(), [1, 0], 'the copy stands while the catalogue does')
   await db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at','counted')").run()
   assert.deepEqual(await counts(), [2, 1], 'a new catalogue version counts again')
+  // A form decision moves corpus glyphs without a new catalogue version; its drain stamps the recount.
+  await db.prepare("UPDATE corpus_units SET character='𪜈' WHERE id='codh:counted'").run()
+  assert.deepEqual(await counts(), [2, 1], 'the copy stands until the recount is stamped')
+  await db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('corpus_counts_at','counted-named')").run()
+  assert.deepEqual(await counts(), [2, 0], 'a corpus recount counts again')
   await db.prepare("DELETE FROM corpus_units WHERE id='codh:counted'").run()
   await db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at','counted-gone')").run()
   assert.deepEqual(await counts(), [1, 0])

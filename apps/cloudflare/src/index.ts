@@ -1559,10 +1559,12 @@ export const characterCropsQuery = (extra = '') => `SELECT * FROM units WHERE or
 export const graphemeCropsQuery = (extra = '') => `SELECT * FROM units WHERE origin=? AND family=?${extra}
   UNION ALL SELECT * FROM units WHERE origin=? AND character=? AND family IS NOT ?${extra} ORDER BY style_order,id LIMIT ? OFFSET ?`;
 // A family's corpus glyphs and how many have no written character yet. The answer depends only on the
-// family and the catalogue, so the edge keeps one copy per family and version rather than counting on
-// every page and filter.
+// family, the catalogue and the corpus glyphs' characters, so the edge keeps one copy per family,
+// catalogue version and corpus recount (`corpus_counts_at`, which a form decision's drain stamps) rather
+// than counting on every page and filter.
 async function familyCounts(env:Env,ctx:ExecutionContext,url:URL,family:string){
-  const key=new Request(`${url.origin}/layers/family-counts?family=${encodeURIComponent(family)}&v=${encodeURIComponent(await catalogueVersion(env))}`);
+  const [catalogue,corpus]=await Promise.all([catalogueVersion(env),corpusVersion(env)]);
+  const key=new Request(`${url.origin}/layers/family-counts?family=${encodeURIComponent(family)}&v=${encodeURIComponent(catalogue)}&c=${encodeURIComponent(corpus)}`);
   const cached=await caches.default.match(key);
   if(cached)return await cached.json() as {total:number;unassigned:number};
   const row=await env.DB.prepare(`SELECT count(*) AS total,sum(written IS NULL) AS unassigned FROM (
