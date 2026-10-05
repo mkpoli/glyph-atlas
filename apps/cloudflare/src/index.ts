@@ -116,21 +116,27 @@ function materialise(env:Env,row:UnitRow&{fresh:CorpusRow}){
     .bind(row.id,'corpus',d.written_character||null,d.grapheme||(d.written_character?cp(d.written_character):null),d.visual_group?.id||null,row.fresh.production,
       row.category||categoryOf(d.label),d.state,d.revision,row.quiz,1,row.fresh.shuffle,row.data,row.snapshot,row.context,row.visual,null,row.fresh.style);
 }
+// A published record is a few kilobytes; one larger than this is not a record.
+const RECORD_MAX = 128 * 1024;
 async function corpusData(env:Env,row:CorpusRow):Promise<Json>{
-  if(row.size>128*1024)throw new Problem(503,'Invalid published record.');
+  if(row.size>RECORD_MAX)throw new Problem(503,'Invalid published record.');
   const object=await env.MEDIA.get(row.object,{range:{offset:row.offset,length:row.size}});
   if(!object)throw new Problem(503,'The corpus publication is incomplete.');
   return withForm(env,await object.json<Json>(),formTools);
 }
 // Many corpus glyphs' published records at once: the records of one pack that lie near each other are read
-// in one range (RECORD_SPAN, gaps of up to RECORD_GAP read through), every range at once, and their form
-// decisions in one query. A page of a run's occurrences sits in a few packs, glyph after glyph, so it reads a
-// handful of ranges rather than a record and a query per glyph. A record that cannot be read is left out.
-const RECORD_SPAN = 1024 * 1024, RECORD_GAP = 64 * 1024;
+// in one range, RECORD_STREAMS ranges at a time (a Worker holds six connections open and queues the rest),
+// and their form decisions in one query. A page of a run's occurrences sits in a few packs, glyph after
+// glyph, so it reads a handful of ranges rather than a record and a query per glyph. A record is a few
+// kilobytes, so reading through a gap of up to RECORD_GAP (a dozen or so other glyphs) costs less than another
+// range; RECORD_SPAN bounds what one range holds in memory. A record that cannot be read, or one over
+// RECORD_MAX, is left out; a form query that fails fails the page, which is not shown with labels a
+// decision has overturned.
+const RECORD_SPAN = 1024 * 1024, RECORD_GAP = 64 * 1024, RECORD_STREAMS = 6;
 type RecordPointer = { object: string; offset: number; size: number };
 export function recordRanges(pointers: RecordPointer[]): { object: string; offset: number; end: number; members: RecordPointer[] }[] {
   const ranges: { object: string; offset: number; end: number; members: RecordPointer[] }[] = [];
-  const sorted = [...pointers].filter(p => p.size <= 128 * 1024)
+  const sorted = [...pointers].filter(p => p.size <= RECORD_MAX)
     .sort((a, b) => a.object < b.object ? -1 : a.object > b.object ? 1 : a.offset - b.offset);
   for (const p of sorted) {
     const last = ranges[ranges.length - 1];
@@ -143,14 +149,16 @@ export function recordRanges(pointers: RecordPointer[]): { object: string; offse
 const recordKey = (p: RecordPointer) => `${p.object}:${p.offset}:${p.size}`;
 async function corpusRecords(env: Env, pointers: RecordPointer[]): Promise<Map<string, Json>> {
   const raw = new Map<string, Json>(), decoder = new TextDecoder();
-  await Promise.all(recordRanges(pointers).map(async range => {
-    const object = await env.MEDIA.get(range.object, { range: { offset: range.offset, length: range.end - range.offset } }).catch(() => null);
-    if (!object) return;
-    const bytes = new Uint8Array(await object.arrayBuffer());
-    for (const p of range.members) {
-      try { raw.set(recordKey(p), JSON.parse(decoder.decode(bytes.subarray(p.offset - range.offset, p.offset - range.offset + p.size)))) } catch { /* left out */ }
-    }
-  }));
+  const ranges = recordRanges(pointers);
+  for (let start = 0; start < ranges.length; start += RECORD_STREAMS)
+    await Promise.all(ranges.slice(start, start + RECORD_STREAMS).map(async range => {
+      const object = await env.MEDIA.get(range.object, { range: { offset: range.offset, length: range.end - range.offset } }).catch(() => null);
+      if (!object) return;
+      const bytes = new Uint8Array(await object.arrayBuffer());
+      for (const p of range.members) {
+        try { raw.set(recordKey(p), JSON.parse(decoder.decode(bytes.subarray(p.offset - range.offset, p.offset - range.offset + p.size)))) } catch { /* left out */ }
+      }
+    }));
   const ids = [...new Set([...raw.values()].map(r => r.id).filter(Boolean))];
   const forms = new Map(ids.length ? (await env.DB.prepare(`SELECT ${FORM_COLUMNS} FROM form_units WHERE id IN (SELECT value FROM json_each(?))`)
     .bind(JSON.stringify(ids)).all<UnitForm>()).results.map(row => [row.id, row] as const) : []);
@@ -753,8 +761,11 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
   ];
   const [page, count, ...rest] = await env.DB.batch([occurrences, ...first]) as D1Result<any>[];
   const found = page.results as RunRow[];
-  // The crops of one run stand on one page, so they share their document's dates.
-  const [dating, records] = await Promise.all([datingOf(env, found.map(row => row.document)), runRecords(env, found, size)]);
+  // The crops of one run stand on one page, so they share their document's dates. The books' titles are
+  // read beside the page's records rather than after them.
+  const books = rest.length ? rest[rest.length - 1].results as { document: string; n: number; sample: string }[] : null;
+  const [dating, records, works] = await Promise.all([datingOf(env, found.map(row => row.document)), runRecords(env, found, size),
+    books ? runWorks(env, books) : null]);
   const items = found.flatMap((row, r) => {
     const crops = records[r];
     if (!crops) return [];
@@ -766,7 +777,6 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
       vertical: Boolean(row.vertical), page: runPage(crops), honkoku_url: honkoku };
   });
   const counted = count?.results[0] as { n: number; vertical: number | null } | undefined;
-  const works = rest.length ? await runWorks(env, rest.pop()!.results as { document: string; n: number; sample: string }[]) : null;
   const body = { text: value, size, document, hand: group === null ? 'all' : HAND_NAMES[group], sort, next_offset: offset + found.length, items,
     ...(counted && { total: Math.min(counted.n, RUN_COUNT_MAX), more: counted.n > RUN_COUNT_MAX, vertical: 2 * (counted.vertical ?? 0) >= counted.n,
       hands: Object.fromEntries(HAND_NAMES.map((name, i) => [name, Math.min((rest[i].results[0] as { n: number }).n, RUN_COUNT_MAX)])), hand_groups: HAND_NAMES, works }) };

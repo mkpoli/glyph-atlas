@@ -1101,6 +1101,12 @@ try {
     assert.deepEqual(worker.recordRanges([{ object: 'p', offset: 300, size: 100 }, { object: 'p', offset: 0, size: 100 }, { object: 'q', offset: 0, size: 10 },
       { object: 'p', offset: 1000000, size: 100 }, { object: 'p', offset: 150, size: 100 }]).map(r => [r.object, r.offset, r.end, r.members.length]),
       [['p', 0, 400, 3], ['p', 1000000, 1000100, 1], ['q', 0, 10, 1]], 'records near each other in a pack share a range')
+    const KB = 1024
+    assert.equal(worker.recordRanges([{ object: 'p', offset: 0, size: 100 }, { object: 'p', offset: 100 + 64 * KB, size: 100 }]).length, 1, 'a gap of 64 KB is read through')
+    assert.equal(worker.recordRanges([{ object: 'p', offset: 0, size: 100 }, { object: 'p', offset: 101 + 64 * KB, size: 100 }]).length, 2, 'a wider gap starts another range')
+    const chain = Array.from({ length: 40 }, (_, i) => ({ object: 'p', offset: i * 30 * KB, size: 30 * KB }))
+    assert.deepEqual(worker.recordRanges(chain).map(r => r.end - r.offset <= 1024 * KB), [true, true], 'a range holds at most 1 MB')
+    assert.deepEqual(worker.recordRanges([{ object: 'p', offset: 0, size: 129 * KB }]), [], 'a pointer past the record size is left out')
     await db.prepare(`INSERT INTO form_units(id,family,cluster,rank,similarity,split,form) VALUES('hl:run:1','U+4E0A','c',0,1,'test','丄')`).run()
     await refreshed('corpus-runs-formed')
     assert.equal((await runOf('申上候')).items[0].crops[1].label, '丄', 'a form decision shows on a run page')
