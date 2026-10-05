@@ -381,6 +381,7 @@
   "nav.quickReview": "빠른 검토",
   "run.occurrences.other": "용례 {count}건",
   "run.occurrences.more": "용례 {count}건 이상",
+  "run.forms.other": "표기 {count}가지",
   "run.empty": "이 글자열의 용례가 없습니다.",
   "run.detail.open": "{run} 용례 열기",
   "run.detail.close": "닫기",

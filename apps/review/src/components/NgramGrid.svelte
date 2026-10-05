@@ -1,7 +1,8 @@
 <script>
-  // Pair or trigram frequencies: runs of crops that follow each other on a line, counted by the text
-  // their labels make, most frequent first, each written the way most of its occurrences are: down
-  // the page or across it. `runs` is `[{ text, n, vertical }]`, or null while it loads. They are drawn a
+  // Pair or trigram frequencies: runs of crops that follow each other on a line, counted by their
+  // graphemes, most frequent first, each written the way most of its occurrences are: down the page or
+  // across it, and with how many written forms it gathers where it gathers more than one. `runs` is
+  // `[{ text, n, vertical, forms }]`, or null while it loads. They are drawn a
   // slice at a time (`lib/slices.js`), more as the panel is scrolled near their end.
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import { number } from '../lib/client.js'
@@ -25,7 +26,7 @@
 {:else}
   <ul class="category-options ngram-grid">
     {#each visible as run (run.text)}
-      <li><a href={localize(runAddress(run.text, { work }))} aria-label={`${run.text} ${t('run.occurrences', { count: run.n })}`}><span class="ngram-text" class:vertical={run.vertical}><ReferenceGlyph char={run.text} size="md" /></span><small>{number(run.n)}</small></a></li>
+      <li><a href={localize(runAddress(run.text, { work }))} aria-label={[run.text, t('run.occurrences', { count: run.n }), run.forms > 1 ? t('run.forms', { count: run.forms }) : ''].filter(Boolean).join(' ')}><span class="ngram-text" class:vertical={run.vertical}><ReferenceGlyph char={run.text} size="md" /></span><small>{number(run.n) + (run.forms > 1 ? ' · ' + t('run.forms', { count: run.forms }) : '')}</small></a></li>
     {/each}
     <!-- After the drawn entries, inside the list; a new element each slice, so one still in reach asks again. -->
     {#if drawn < runs.length}{#key drawn}<li class="grid-more" aria-hidden="true" {@attach nearing(() => { drawn += SLICE })}></li>{/key}{/if}
@@ -37,5 +38,6 @@
   .ngram-grid li{background:var(--surface-subtle)}
   .ngram-grid a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:54px;padding:8px 4px;color:inherit;text-decoration:none}
   .ngram-grid a:hover,.ngram-grid a:focus-visible{background:var(--surface-selected)}
+  .ngram-grid small{text-align:center}
   .ngram-text.vertical{writing-mode:vertical-rl;text-orientation:upright}
 </style>

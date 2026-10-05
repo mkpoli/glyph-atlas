@@ -377,6 +377,7 @@
   "nav.quickReview": "クイックレビュー",
   "run.occurrences.other": "{count}例",
   "run.occurrences.more": "{count}例以上",
+  "run.forms.other": "{count}表記",
   "run.empty": "この文字列の用例はありません。",
   "run.detail.open": "{run}の用例を開く",
   "run.detail.close": "閉じる",

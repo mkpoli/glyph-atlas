@@ -395,6 +395,8 @@
   "run.occurrences.one": "{count} occurrence",
   "run.occurrences.other": "{count} occurrences",
   "run.occurrences.more": "{count}+ occurrences",
+  "run.forms.one": "{count} form",
+  "run.forms.other": "{count} forms",
   "run.empty": "No occurrence of this sequence here.",
   "run.detail.open": "Open {run}",
   "run.detail.close": "Close",
