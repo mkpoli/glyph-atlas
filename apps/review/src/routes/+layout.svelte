@@ -46,6 +46,8 @@
   // the old revision and have its next save refused; the dialog then reads the crop itself.
   let written = $state({})
   const initial = $derived(routed && shown?.id === routed.id && !written[routed.id] ? page.data.record : null)
+  // The cut a crop page's address cites, for the crop that page shows.
+  const cited = $derived(routed && shown?.id === routed.id ? page.data.cited ?? null : null)
   // The list's own row for the crop on show, drawn while its record loads.
   const preview = $derived(index >= 0 && inspector.queue[index]?.image ? inspector.queue[index] : null)
   // The crops either side are read ahead once this one is on show, so stepping finds them ready.
@@ -121,7 +123,7 @@
     · <a href={localize('/privacy')}>{t('footer.privacy')}</a>
     · <ChatLinks /></p>
 </footer>
-{#if shown}{#if shown.origin === 'corpus'}<CorpusDialog id={shown.id} {preview} {changed} {close} {saved} {previous} {next} {position} {initial} />{:else}<CharacterDialog id={shown.id} {preview} {changed} {close} onVerdict={inspector.onVerdict} {saved} {previous} {next} {position} {initial} />{/if}{/if}
+{#if shown}{#if shown.origin === 'corpus'}<CorpusDialog id={shown.id} {preview} {changed} {close} {saved} {previous} {next} {position} {initial} {cited} />{:else}<CharacterDialog id={shown.id} {preview} {changed} {close} onVerdict={inspector.onVerdict} {saved} {previous} {next} {position} {initial} {cited} />{/if}{/if}
 {#if savedNotice}<div class="save-toast" role="status">✓ {savedNotice}</div>{/if}
 <DatabaseStatus />
 {#if exporting}<ExportReviews close={() => { exporting = false; menuButton?.focus() }} />{/if}

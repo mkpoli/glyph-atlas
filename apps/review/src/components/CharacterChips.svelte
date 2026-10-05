@@ -2,6 +2,8 @@
   import ScriptLegend from './ScriptLegend.svelte'
   import { chronologyAddress } from '../lib/chronology.js'
   import ZiLink from './ZiLink.svelte'
+  import Cite from './Cite.svelte'
+  import { characterEntry } from '$worker/citation.ts'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import ScriptText from './ScriptText.svelte'
   import OriginText from './OriginText.svelte'
@@ -13,6 +15,9 @@
   import { originTitle } from '../lib/origin.js'
   let { card = null, expand = $bindable('none'), onselect = () => {}, onreview = null } = $props()
   const members = $derived(card?.grapheme?.members ?? [{code_point: card?.code_point, char: card?.char}])
+  // What the gallery shows, cited: the grapheme family when it is widened to it, else the one form. A
+  // widening to variants has no address of its own to cite.
+  const entry = $derived(card?.code_point && expand !== 'variants' ? characterEntry(expand === 'grapheme' ? 'grapheme' : 'form', card) : null)
   // The Forms family this character is clustered in, by its grapheme or its own code point; none, no link.
   const formsFamily = $derived([card?.grapheme?.code_point, card?.code_point].find(code => code && page.data.forms?.includes(code)))
   // The 異体字 graph: the variants a gallery widens to, characters related otherwise, and the
@@ -133,6 +138,7 @@
       <span>{#if expand === 'grapheme'}{t('chips.allForms')}{:else}<ScriptText text={card.char} script={card.script} />{/if}</span>
       {#if formsFamily}<a class="forms-link" href={localize('/forms/' + formsFamily)}>{t('nav.forms')} →</a>{/if}
       {#if card.code_point}<a class="forms-link" href={localize(chronologyAddress(card.code_point, { scope: expand === 'grapheme' ? 'grapheme' : '' }))}>{t('nav.chronology')} →</a>{/if}
+      {#if entry}<Cite {entry} class="cite-link" />{/if}
       {#if expand !== 'grapheme' && card.candidates?.known && countsLabel(card.candidates)}<small>{countsLabel(card.candidates)}</small>{/if}
     </div>
     {#if card.ligature || card.jibo?.length || card.origin?.length || card.derived?.length || card.expansions?.some(o => o.key !== 'grapheme') || onreview}
@@ -164,6 +170,7 @@
   .forms-row{font-size:12px;color:var(--muted)}
   .forms-row small{margin-left:auto}
   .forms-link{color:var(--accent);text-decoration:none}.forms-link:hover{text-decoration:underline}
+  .forms-row :global(.cite-link){border:0;background:none;padding:0;font-size:inherit;color:var(--accent)}.forms-row :global(.cite-link:hover){text-decoration:underline}
   .layer-chips{margin:0}
   .variant-chips{display:flex;flex-wrap:wrap;gap:6px;flex:1}
   .variant{display:inline-flex;align-items:baseline;gap:6px;padding:4px 10px;border:1px solid var(--line);border-radius:7px;color:var(--ink);text-decoration:none;font-size:22px;line-height:1.2}

@@ -107,6 +107,19 @@ await step('GET / renders the collection on the server', async () => {
 })
 
 
+await step('a crop page and a character page state their citation as JSON-LD', async () => {
+  const linked = text => JSON.parse(/<script type="application\/ld\+json">(.*?)<\/script>/s.exec(text)?.[1] ?? 'null')
+  const crop = linked(await (await fetch(`${service.base}/en/crop/${encodeURIComponent(unitId)}`)).text())
+  assert(crop, 'the crop page carries no JSON-LD')
+  equal([crop.identifier, crop.isPartOf?.name], [unitId, 'Glyph Atlas'], 'the crop page names its crop and the site')
+  assert(crop.url.startsWith(`${service.base}/crop/${unitId}?v=`), `the crop page cites ${crop.url}`)
+  const { payload } = await request(`/atlas/characters/${encodeURIComponent(unitId)}`)
+  const codePoint = 'U+' + payload.label.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')
+  const character = linked(await (await fetch(`${service.base}/en/character/${codePoint}?scope=exact`)).text())
+  equal([character?.['@type'], character?.termCode, character?.url], ['DefinedTerm', codePoint, `${service.base}/character/${codePoint}?scope=exact`], 'the character page')
+  return `${crop.url}; ${character.url}`
+})
+
 await step('every page has a language prefix, and an address without one goes to the reader\'s language', async () => {
   const cases = [
     ['/', '/en'], ['/history?mine=1', '/en/history?mine=1'], ['/fr/history', '/en/history'], ['/JA/history', '/ja/history'],

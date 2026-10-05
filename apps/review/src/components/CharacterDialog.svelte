@@ -8,6 +8,9 @@
   import { setForm } from '../lib/cropForms.js'
   import ZiLink from './ZiLink.svelte'
   import CopyId from './CopyId.svelte'
+  import Cite from './Cite.svelte'
+  import CitedCut from './CitedCut.svelte'
+  import { cropEntry } from '$worker/citation.ts'
   import FavouriteButton from './FavouriteButton.svelte'
   import { onMount, untrack, tick } from 'svelte'
   import { character, request, suggestionsFor } from '../lib/client.js'
@@ -28,9 +31,10 @@
   // closes, or does something else. Without the prop a skip goes where a save would: the next
   // occurrence when the reader goes through the list in a row and there is one, otherwise close.
   // `initial` is the record the server rendered the page with, so the first load needs no request.
-  // `preview` is the list's own row for the crop, drawn while the record loads.
+  // `preview` is the list's own row for the crop, drawn while the record loads. `cited` is the cut the
+  // page's address cites (`citedCut`), noted over the crop when it is not the one shown.
   let { id, close, saved, changed = null, onVerdict = null, onskip = null,
-        previous = null, next = null, position = '', initial = null, preview = null } = $props()
+        previous = null, next = null, position = '', initial = null, preview = null, cited = null } = $props()
   const first = untrack(() => initial)
   const session = useSession(), inspector = useInspector()
   // Going on to the next crop disables the focused save button while it loads, which drops its focus;
@@ -312,9 +316,11 @@
 <svelte:window onkeydown={stepKey} />
 <dialog class="character-dialog" bind:this={dialog} open oncancel={close} onclick={e => { if (e.target === dialog) close() }} aria-label={t('character.dialog.label')}>
   <div class="inspector">
-    <header class="inspector-header">{#if data}<CopyId id={data.id} />{/if}<div class="inspector-navigation">{#if data}<FavouriteButton id={data.id} />{/if}<span>{position}</span><button class="icon-button previous-character" aria-label={t('common.previousCharacter')} disabled={busy || !previous} onclick={() => previous?.()}>←</button><button class="icon-button next-character" aria-label={t('common.nextCharacter')} disabled={busy || !next} onclick={() => next?.()}>→</button><button class="icon-button close-inspector" aria-label={t('common.closeReviewer')} onclick={close}>×</button></div></header>
-    {#if replaced}<p class="replaced-note" role="status">{t('character.replaced')}</p>{/if}
-    {#if error}<div class="error-message" role="alert">{error}<button disabled={busy} onclick={() => load(id)}>{t('character.reload')}</button></div>{/if}
+    <header class="inspector-header">{#if data}<CopyId id={data.id}>{#if fresh}<Cite entry={cropEntry(data, 'collection')} />{/if}</CopyId>{/if}<div class="inspector-navigation">{#if data}<FavouriteButton id={data.id} />{/if}<span>{position}</span><button class="icon-button previous-character" aria-label={t('common.previousCharacter')} disabled={busy || !previous} onclick={() => previous?.()}>←</button><button class="icon-button next-character" aria-label={t('common.nextCharacter')} disabled={busy || !next} onclick={() => next?.()}>→</button><button class="icon-button close-inspector" aria-label={t('common.closeReviewer')} onclick={close}>×</button></div></header>
+    <!-- What the page has to say before the crop: a replacement, a cited earlier cut, a failed load. -->
+    <div class="inspector-notices">{#if replaced}<p class="replaced-note" role="status">{t('character.replaced')}</p>{/if}
+      {#if cited && !cited.current && cited.id === data?.id}<CitedCut {cited} />{/if}
+      {#if error}<div class="error-message" role="alert">{error}<button disabled={busy} onclick={() => load(id)}>{t('character.reload')}</button></div>{/if}</div>
     {#if data}
       <!-- The crop alone, in a box of one size for every crop, then the page around it further down. -->
       <div class="inspector-page">

@@ -177,6 +177,17 @@ export function formatDateTime(value, { date = true } = {}) {
   return dateFormats[key].format(at)
 }
 
+/** A day in the current language: 5 October 2026, 2026年10月5日, 二〇二六年十月五日. Throws on an invalid date. */
+export function formatDate(value) {
+  const at = new Date(value)
+  if (Number.isNaN(at.getTime())) throw new RangeError(`Invalid time value: ${value}`)
+  if (hanzi()) return `${formatYear(at.getFullYear())}年${hanziNumber(at.getMonth() + 1)}月${hanziNumber(at.getDate())}日`
+  const key = `${base()} day`
+  // English is written the British way, the day before the month.
+  dateFormats[key] ??= new Intl.DateTimeFormat(base() === 'en' ? 'en-GB' : base(), { dateStyle: 'long' })
+  return dateFormats[key].format(at)
+}
+
 /**
  * A message split around one of its placeholders, for text that sets that part apart (a bold reading,
  * a glyph): the words before it and after it, in the order the language puts them.
