@@ -171,3 +171,21 @@ def test_a_run_is_folded_to_its_members_graphemes():
     assert db.execute("SELECT first,text,graphemes FROM unit_ngrams ORDER BY first").fetchall() == [("a", "ん𛁅", "んし"), ("b", "𛁅ネ", "しネ")]
     db.execute("UPDATE units SET character='し' WHERE id='b'")
     assert db.execute("SELECT text,graphemes FROM unit_ngrams WHERE first='a'").fetchone() == ("んし", "んし")
+
+
+def test_a_republication_leaves_the_runs_it_already_holds_unwritten():
+    db = site([(i, "local", c, "book") for i, c in zip("abcd", "申候也之")])
+    runs = [Run(("a", "b"), True), Run(("a", "b", "c"), True), Run(("b", "c"), True), Run(("c", "d"), False)]
+    for statement in ngram_statements("abcd", runs):
+        db.execute(statement)
+    held = db.execute("SELECT * FROM unit_ngrams ORDER BY first,size").fetchall()
+    before = db.total_changes
+    for statement in ngram_statements("abcd", runs):
+        db.execute(statement)
+    assert db.total_changes == before, "D1 bills every row, index entry and trigger write"
+    # c's run turns across the page: that run alone is written again.
+    for statement in ngram_statements("abcd", [*runs[:3], Run(("c", "d"), True)]):
+        db.execute(statement)
+    assert db.execute("SELECT * FROM unit_ngrams ORDER BY first,size").fetchall()[:3] == held[:3]
+    assert db.execute("SELECT first,vertical FROM unit_ngrams ORDER BY first,size").fetchall() == [
+        ("a", 1), ("a", 1), ("b", 1), ("c", 1)]
