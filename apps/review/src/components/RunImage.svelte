@@ -3,8 +3,9 @@
   // run (`page`, worked out by the Worker's `runPage`). Where no render holds the whole run, or the
   // render cannot be loaded, each crop is drawn at its own place on the page, all at one scale; a crop
   // without a place takes the next cell along the line, down it or across. Every character opens its
-  // crop in the inspector.
+  // crop in the inspector. Until an image arrives its place shows the crop's paper (`cropTone`).
   import { t } from '../lib/i18n.svelte.js'
+  import { cropTone } from '../lib/cropPaint.js'
 
   let { crops, page = null, vertical = true, oninspect } = $props()
   let broken = $state(false)
@@ -30,8 +31,9 @@
 <svg class="run-image" viewBox="{view.x} {view.y} {view.w} {view.h}" preserveAspectRatio="xMidYMid meet" role="group" aria-label={crops.map(crop => crop.label).join('')}>
   <!-- The element is wider or taller than the run; the inner viewport keeps the page outside it unseen. -->
   <svg x={view.x} y={view.y} width={view.w} height={view.h} viewBox="{view.x} {view.y} {view.w} {view.h}">
-    {#if whole}<image href={page.image} x={page.box.x} y={page.box.y} width={page.box.w} height={page.box.h} preserveAspectRatio="none" onerror={() => { broken = true }} />
-    {:else}{#each crops as crop, i (i)}<image href={crop.image} {...cut(cells[i])} />{/each}{/if}
+    {#if whole}<rect class="run-paper" style={cropTone(crops.find(crop => cropTone(crop)))} x={page.box.x} y={page.box.y} width={page.box.w} height={page.box.h} />
+      <image href={page.image} x={page.box.x} y={page.box.y} width={page.box.w} height={page.box.h} preserveAspectRatio="none" onerror={() => { broken = true }} />
+    {:else}{#each crops as crop, i (i)}<rect class="run-paper" style={cropTone(crop)} {...cut(cells[i])} /><image href={crop.image} {...cut(cells[i])} />{/each}{/if}
   </svg>
   {#each crops as crop, i (i)}
     <rect class="run-hit" x={cells[i].x} y={cells[i].y} width={cells[i].w} height={cells[i].h} role="button" tabindex="0" data-unit={crop.id}
@@ -41,6 +43,7 @@
 
 <style>
   .run-image{display:block;width:100%;height:100%}
+  .run-paper{fill:var(--tone,var(--crop-paper))}
   .run-hit{fill:transparent;stroke:transparent;stroke-width:2px;vector-effect:non-scaling-stroke;cursor:pointer;outline:none}
   .run-hit:hover,.run-hit:focus-visible{stroke:var(--accent)}
 </style>
