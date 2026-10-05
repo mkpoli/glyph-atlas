@@ -81,3 +81,10 @@ def test_a_redraw_followed_by_another_imported_review_is_still_due(store, tmp_pa
     live = after["revision"]
     applied = run(store, tmp_path, monkeypatch, capsys, site_row(publication, revision=live, box=BOX), "--apply")
     assert applied["counts"] == {"recorded": 1} and applied["items"][0]["revision"] > live
+
+
+def test_a_crop_with_reviews_not_yet_imported_waits_for_them(store, tmp_path, monkeypatch, capsys):
+    publication, after = imported_without_recut(store)
+    row = site_row(publication, revision=after["revision"] + 1, box=BOX)
+    assert run(store, tmp_path, monkeypatch, capsys, row, "--apply")["counts"] == {"import-first": 1}
+    assert Store(store.directory).revision("u") == after["revision"]

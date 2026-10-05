@@ -3,8 +3,10 @@
     uv run scripts/record_pending_recuts.py DATASET [--live LIVE.jsonl] [--apply]
 
 A crop qualifies when the site still shows its old cut under a redrawn box (`box_pending` on the live
-row), that box is the one the store holds and an import of the crop brought it back, and no recut of
-that cut moves past the live revision yet. Each gets the event the import now records (`store.RECUT`): it changes no
+row), that box is the one the store holds and an import of the crop brought it back, the store's last
+import of the crop reached the live revision, and no recut of that cut moves past it yet. A crop with
+reviews saved on the site since its last import is reported as `import-first`: import them, and the
+import records the recut. Each gets the event the import now records (`store.RECUT`): it changes no
 record and moves the crop's revision past the live one, so the next publication cuts the crop at a
 revision no open page holds, and the review made on it after imports on top of it.
 
@@ -35,11 +37,14 @@ def plan(conn, store, row) -> dict:
     """What to record for one live row: the report item, with the recut as `recut` when it is due."""
     item = {"unit_id": row["id"], "live_revision": int(row["revision"])}
     box = json.loads(row["data"]).get("box")
-    last = conn.execute("SELECT remote_id FROM cloudflare_imports WHERE target_id=? ORDER BY local_revision DESC LIMIT 1",
-                        (row["id"],)).fetchone()
+    last = conn.execute("SELECT remote_id, remote_revision FROM cloudflare_imports WHERE target_id=? "
+                        "ORDER BY local_revision DESC LIMIT 1", (row["id"],)).fetchone()
     unit = store._unit_row(conn, row["id"])
     if last is None or unit is None or not unit.active:
         return {**item, "status": "not-imported"}
+    # A review saved on the site since the last import is not in the store: the cut would drop it.
+    if last["remote_revision"] != int(row["revision"]):
+        return {**item, "status": "import-first"}
     if unit.box is None or unit.box.model_dump() != box:
         return {**item, "status": "other-box"}
     # Any import of the crop may have brought the box back; later imports on the old cut carry no box.
