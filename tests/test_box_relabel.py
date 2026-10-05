@@ -308,3 +308,16 @@ def test_a_unit_sent_to_review_takes_its_place_in_the_line():
     old = stale_units()
     repaired, _ = repair(old, forms={old[1].id: "U+56DB"})
     assert sorted(unit.seq for unit in repaired) == [1, 2, 3, 4]
+
+
+
+def test_a_unit_of_a_decided_form_whose_box_left_its_line_is_unplaced_not_sent_to_review(monkeypatch):
+    old = stale_units()
+    new = [unit(index + 1, char, BOXES[index]).model_copy(update={"id": f"n{index}"})
+           for index, char in enumerate(TEXT[:3])]
+    forms = {unit.id: "U+5343" for unit in old}
+    kept = {record["status"] for record in box_relabel.relabel(old, new, forms=forms) if record["after"] is None}
+    assert kept == {"review"}
+    monkeypatch.setattr(box_relabel, "unplaced_reason", lambda *args, **kwargs: "other-line")
+    left = {record["status"] for record in box_relabel.relabel(old, new, forms=forms) if record["after"] is None}
+    assert left == {"unplaced"}

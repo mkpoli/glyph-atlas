@@ -61,6 +61,8 @@ CONFIRMED = frozenset({ReviewState.REVIEWED, ReviewState.DOUBLE_REVIEWED, Review
 #: What a person's latest review of a unit said: the label is right, the character is another one the
 #: person wrote, or the label is wrong.
 MATCH, CORRECTION, WRONG = "match", "correction", "wrong"
+#: Why a box is unplaced when it left its line for another line's record.
+LEFT_LINE = frozenset({"other-line", "duplicate-line", "held"})
 #: The verdicts that keep a unit's label.
 HOLDING = frozenset({MATCH, CORRECTION})
 #: Kinds that name no written character: a gap of unknown length and an unreadable character.
@@ -356,7 +358,10 @@ def relabel(old: Sequence[Unit], new: Sequence[Unit], verdicts: Mapping[str, str
         else:
             record["status"] = "relabelled"
         decided = forms.get(unit.id)
+        # A box that left the line (`unplaced_reason`) is another record's crop: keeping this unit's
+        # label there would put two labels on it.
         if (decided and record["status"] in ("relabelled", "unplaced")
+                and record.get("reason") not in LEFT_LINE
                 and (record["after"] is None or family(record["after"]) != family(decided))):
             record["status"] = "review"
             record["form"] = decided
