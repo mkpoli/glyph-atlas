@@ -288,3 +288,23 @@ def test_a_gap_fill_never_takes_a_box_another_line_holds():
     assert (lost["status"], lost["reason"]) == ("unplaced", "other-line")
     labelled = [(unit.page_id, unit.line_id, unit.box) for unit in repaired if unit.box is not None and unit.text_source]
     assert box_relabel.shared_lines(labelled) == set()
+
+
+def test_a_reviewed_unit_keeps_its_box_and_the_line_the_page_gave_it_to_yields():
+    right = Line(id="hl:item_0_000", page_id="hl:item:0", seq=0, box=Box(x=150, y=0, w=110, h=200), vertical=True,
+                 text_raw="一二三四", text="一二三四")
+    left = line().model_copy(update={"box": Box(x=90, y=0, w=90, h=200)})
+    right_boxes = [Box(x=150, y=y, w=30, h=28) for y in (10, 50, 90, 130)]
+    old_right = [Unit(id=f"hl:item_0_000:old:{index + 1}", page_id="hl:item:0", line_id=right.id, seq=index + 1,
+                      box=box, kind=UnitKind.CHAR, text_source=char, method="detect-align")
+                 for index, (char, box) in enumerate(zip("一二三四", right_boxes, strict=True))]
+    old_left = [unit(index + 1, char, box) for index, (char, box) in enumerate(zip(TEXT, [*BOXES[:3], right_boxes[3]],
+                                                                                    strict=True))]
+    old_left[3] = old_left[3].model_copy(update={"review": ReviewState.REVIEWED})
+    repaired, records = box_relabel.repair(old_right + old_left, [right, left], {"hl:item:0": [*BOXES, *right_boxes]},
+                                           run=run(), classifier=None, crop_of=None)
+    by_id = {record["unit_id"]: record for record in records}
+    assert by_id[old_left[3].id]["status"] == "protected"
+    assert (by_id[old_right[3].id]["status"], by_id[old_right[3].id]["reason"]) == ("unplaced", "held")
+    labelled = [(unit.page_id, unit.line_id, unit.box) for unit in repaired if unit.box is not None and unit.text_source]
+    assert box_relabel.shared_lines(labelled) == set()

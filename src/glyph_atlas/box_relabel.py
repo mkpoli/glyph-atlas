@@ -356,7 +356,9 @@ def repair(old_units: Sequence[Unit], lines: Sequence[Line], detections: dict[st
     pages = sorted({line.page_id for line in lines if line.id in wanted and line.vertical}, key=str)
     records: list[dict[str, Any]] = []
     changed: dict[str, Unit] = {}
+    by_id = {unit.id: unit for units in by_line.values() for unit in units}
     for page in pages:
+        page_records: list[dict[str, Any]] = []
         page_lines = [line for line in lines if line.page_id == page]
         new_by_line = realign(page_lines, detections, run=run, classifier=classifier, crop_of=crop_of)
         duplicates = line_assignment.duplicates_of(page_lines)
@@ -375,8 +377,7 @@ def repair(old_units: Sequence[Unit], lines: Sequence[Line], detections: dict[st
                         record = {"unit_id": unit.id, "line_id": line.id, "box": box_key(unit.box),
                                   "before": label_of(unit), "after": None, "seq": None, "review": None,
                                   "status": "unplaced", "reason": "other-line"}
-                        changed[unit.id] = applied(unit, record)
-                        records.append(record)
+                        page_records.append(record)
                 continue
             new = new_by_line[line.id]
             placed = placements(new)
@@ -387,9 +388,19 @@ def repair(old_units: Sequence[Unit], lines: Sequence[Line], detections: dict[st
                 unit = own[record["unit_id"]]
                 if record["status"] == "relabelled":
                     record["fields"] = fields_of(placed[record["box"]])
-                changed[unit.id] = applied(unit, record)
+                page_records.append(record)
+        # A unit a person reviewed keeps its label even on a box the page gave another line; that
+        # line's unit on the box then yields it, so one crop carries one label.
+        held = {record["box"]: record["line_id"] for record in page_records
+                if record["status"] == "protected" and record["box"] not in owned.get(record["line_id"], set())}
+        for record in page_records:
+            if (record["box"] in held and held[record["box"]] != record["line_id"]
+                    and record["status"] in ("relabelled", "unchanged")):
+                record.update(status="unplaced", reason="held", after=None, seq=None)
                 record.pop("fields", None)
-                records.append(record)
+            changed[record["unit_id"]] = applied(by_id[record["unit_id"]], record)
+            record.pop("fields", None)
+            records.append(record)
         align.clear_crop_cache()
     return [changed.get(unit.id, unit) for unit in old_units], records
 
