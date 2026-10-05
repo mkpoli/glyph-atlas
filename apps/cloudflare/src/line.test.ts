@@ -42,7 +42,7 @@ describe('a crop\'s line', () => {
     const db = migrated();
     line(db, [...'あい']);
     expect(lineItems(db.query(lineQuery()).all('x0') as any)[1]).toEqual({ id: 'x1', offset: 1, label: 'い', image: '/img/x1.webp',
-      revision: 0, image_sha256: hash, state: 'pending', issue: null });
+      revision: 0, image_sha256: hash, state: 'pending', issue: null, tone: null, image_size: null });
     db.close();
   });
   it('is served by keys: no table scan and no sort, and fails once the backward index is gone', () => {

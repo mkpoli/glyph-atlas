@@ -12,7 +12,7 @@ import pyarrow.dataset as ds
 from cloudflare_schema import CORPUS_REFRESH, schema
 from export_cloudflare import Packs, encoded
 
-from glyph_atlas import box_relabel, style, withdrawn
+from glyph_atlas import box_relabel, style, tone, withdrawn
 from glyph_atlas.corpus import sources
 from glyph_atlas.corpus.api import PROXYABLE, CorpusAPI
 from glyph_atlas.corpus.details import DetailResolver, _iiif_region, _viewport
@@ -256,6 +256,9 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
                 page = context.page(joined.get("page_id") or "")
                 context_box, context_image = holder_context(joined, box, page)
                 image = joined["thumbnail"].get("iiif_url")
+                # What the site paints in the crop's place until it loads (`glyph_atlas.tone`), read from a
+                # crop packed here; a holder's own image is not fetched for it.
+                painted = {}
                 holder = holder_image(joined, box, holder_images)
                 if holder:
                     image = holder
@@ -266,7 +269,9 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
                         continue
                     key = image.rsplit("/", 1)[-1].removesuffix(".webp")
                     try:
-                        packs.add(key, media.materialize(key))
+                        crop = media.materialize(key)
+                        packs.add(key, crop)
+                        painted = tone.crop_tone(crop)
                     except (OSError, ValueError):
                         counts["unavailable"] += 1
                         continue
@@ -306,7 +311,8 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
                         "render_available": True, "attribution": attribution(joined),
                         "text_attribution": text_attribution(joined),
                         **{k: joined.get(k) for k in ("production", "production_label", "production_evidence")}})
-                detail.update(origin="corpus", state="pending", revision=0, suggestions=[], located=True, grid_safe=True)
+                detail.update(origin="corpus", state="pending", revision=0, suggestions=[], located=True, grid_safe=True,
+                              **painted)
                 if record_file is None or record_file.tell() >= 32 * 1024**2:
                     if record_file:
                         record_file.close()

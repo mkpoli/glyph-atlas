@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
-import { FOLLOW_BATCH, followCorpus, formed, formsRoute, leastTypicalQuery } from './forms';
+import { FOLLOW_BATCH, followCorpus, formed, formsRoute, leastTypicalQuery, member, membersQuery } from './forms';
 
 describe('form decisions outside cluster membership', () => {
   it('keeps the corrected identity without linking to a removed cluster', () => {
@@ -130,6 +130,22 @@ describe('a decision’s corpus glyphs', () => {
     await followCorpus(env);
     expect(db.query('SELECT (SELECT count(*) FROM corpus_follow) AS listed,(SELECT count(*) FROM corpus_follow_drain) AS held').get())
       .toEqual({ listed: 0, held: 0 });
+    db.close();
+  });
+});
+
+describe('a cluster\'s members', () => {
+  it('carry what is painted in a local crop\'s place until it loads, and nothing for a glyph with no row', () => {
+    const db = new Database(':memory:');
+    const migrations = new URL('../migrations/', import.meta.url);
+    for (const file of readdirSync(migrations).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL(file, migrations), 'utf8'));
+    db.prepare(`INSERT INTO units(id,origin,character,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual)
+      VALUES('a','local','あ','handwritten','kana','pending',0,1,1,0,?,'{}','{}','{}')`).run(JSON.stringify({ tone: '#d8cfbf', image_size: [47, 51] }));
+    const row = db.prepare("INSERT INTO form_units(id,family,cluster,rank,similarity,image,split) VALUES(?,'U+3042','c',?,1,?,'0000000')");
+    row.run('a', 0, '/atlas/media/a.webp');
+    row.run('codh:1', 1, '/atlas/media/b.webp');
+    const members = (db.query(membersQuery('typical')).all('c', 10, 0) as any[]).map(member);
+    expect(members.map(m => [m.id, m.tone, m.image_size])).toEqual([['a', '#d8cfbf', [47, 51]], ['codh:1', null, null]]);
     db.close();
   });
 });
