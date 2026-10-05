@@ -18,9 +18,9 @@ export const ngramWords = kind => WORDS[kind]
 /** A run's order: by how its letterforms were made (the default, shaped by hand first) or by work. */
 export const sortParam = value => value === 'source' ? 'source' : ''
 
-/** The address of a run's page, within a work, a group and an order when they are chosen. */
-export function runAddress(text, { work = '', hand = '', sort = '' } = {}) {
-  const query = new URLSearchParams(Object.entries({ work, hand: handParam(hand), sort: sortParam(sort) }).filter(([, value]) => value))
+/** The address of a run's page, within a work, a written form, a group and an order when they are chosen. */
+export function runAddress(text, { work = '', form = '', hand = '', sort = '' } = {}) {
+  const query = new URLSearchParams(Object.entries({ work, form, hand: handParam(hand), sort: sortParam(sort) }).filter(([, value]) => value))
   return '/sequence/' + encodeURIComponent(text) + (query.size ? '?' + query : '')
 }
 
@@ -31,10 +31,12 @@ export function ngramCounts(kind, work = '', options = {}) {
 
 /** One page of a run's occurrences: `{ text, size, next_offset, items: [{ crops }] }`, and on the first
  *  page `total`, `more` (the count stopped at `total`), `vertical`, the crops of each group
- *  (`hands`) and the run's `works` (`{ id, title, count }`). Without a `limit` the page is as long as
- *  the run allows. */
-export function runOccurrences(text, { work = '', hand = '', sort = '', offset = 0, limit } = {}, options = {}) {
+ *  (`hands`), the run's `works` (`{ id, title, count }`) and, for a run of two or three, the written
+ *  forms its graphemes gather (`forms`, `[{ text, n }]`), which `form` narrows it to. Without a `limit`
+ *  the page is as long as the run allows. */
+export function runOccurrences(text, { work = '', form = '', hand = '', sort = '', offset = 0, limit } = {}, options = {}) {
   const query = new URLSearchParams({ text, offset: String(offset), ...(limit ? { limit: String(limit) } : {}), ...(work ? { document: work } : {}),
+    ...(form ? { form } : {}),
     ...(handParam(hand) ? { hand } : {}), ...(sortParam(sort) ? { sort } : {}) })
   return request('/atlas/runs?' + query, undefined, options)
 }

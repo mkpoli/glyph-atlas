@@ -391,6 +391,7 @@
   "run.occurrences.other": "{count}處",
   "run.occurrences.more": "{count}處以上",
   "run.forms.other": "{count}種寫法",
+  "run.forms.label": "寫法",
   "run.empty": "尚無此字串的用例。",
   "run.detail.open": "打開{run}的用例",
   "run.detail.close": "關閉",

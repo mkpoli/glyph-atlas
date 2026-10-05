@@ -388,6 +388,7 @@
   "run.occurrences.other": "用例 {count}件",
   "run.occurrences.more": "用例 {count}件 以上",
   "run.forms.other": "表記 {count}가지",
+  "run.forms.label": "表記",
   "run.empty": "이 文字列의 用例가 없습니다.",
   "run.detail.open": "{run} 用例 열기",
   "run.detail.close": "닫기",

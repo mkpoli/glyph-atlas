@@ -4,8 +4,9 @@
   // the way most of its occurrences are: down the page or across it. Pages arrive as the reader nears the
   // end, and while more are to come the grid shows whole rows only. A run of many characters gets a
   // taller cell, so its crops stay legible down a column. A card opens the occurrence (`RunOccurrence`):
-  // its page, its characters and its source. The run can be narrowed to a group of how its
-  // letterforms were made or to a work, and placed by that group or by work, and the sequences near it are one link away.
+  // its page, its characters and its source. The run can be narrowed to one of the written forms its
+  // graphemes gather (`FormFilter`), to a group of how its letterforms were made or to a work, and placed
+  // by that group or by work, and the sequences near it are one link away.
   import { tick, untrack } from 'svelte'
   import { replaceState } from '$app/navigation'
   import RunImage from './RunImage.svelte'
@@ -13,6 +14,7 @@
   import ScriptText from './ScriptText.svelte'
   import SiteLinks from './SiteLinks.svelte'
   import HandFilter from './HandFilter.svelte'
+  import FormFilter from './FormFilter.svelte'
   import WorkFilter from './WorkFilter.svelte'
   import { runAddress, runOccurrences } from '../lib/ngrams.js'
   import { tileDate } from '../lib/dating.js'
@@ -21,10 +23,10 @@
   import { sourceTitle } from '../lib/seo.js'
   import { t, localize } from '../lib/i18n.svelte.js'
 
-  let { text, work: given = '', hand: handed = '', sort: ordered = '', first = null, related = null, inspect } = $props()
+  let { text, work: given = '', form: written = '', hand: handed = '', sort: ordered = '', first = null, related = null, inspect } = $props()
   const opened = untrack(() => first)
-  let work = $state(untrack(() => given)), hand = $state(untrack(() => handed)), sort = $state(untrack(() => ordered))
-  let hands = $state(opened?.hands ?? null), works = $state(opened?.works ?? [])
+  let work = $state(untrack(() => given)), form = $state(untrack(() => written)), hand = $state(untrack(() => handed)), sort = $state(untrack(() => ordered))
+  let hands = $state(opened?.hands ?? null), works = $state(opened?.works ?? []), forms = $state(opened?.forms ?? null)
   let items = $state(opened?.items ?? []), total = $state(opened?.total ?? null), more = $state(opened?.more ?? false)
   let offset = $state(opened?.next_offset ?? 0), vertical = $state(opened?.vertical ?? true), size = $state(opened?.size ?? 2)
   let loading = $state(!opened), error = $state(''), ended = $state(false), requestId = 0
@@ -37,11 +39,11 @@
     const id = ++requestId
     loading = true; error = ''
     try {
-      const page = await runOccurrences(text, { work, hand, sort, offset: append ? offset : 0 })
+      const page = await runOccurrences(text, { work, form, hand, sort, offset: append ? offset : 0 })
       if (id !== requestId) return
       items = append ? [...items, ...page.items] : page.items
       // Only the first page carries the count.
-      if (!append) { total = page.total; more = page.more; vertical = page.vertical; hands = page.hands; works = page.works; ended = false }
+      if (!append) { total = page.total; more = page.more; vertical = page.vertical; hands = page.hands; works = page.works; forms = page.forms; ended = false }
       // A page that reads no further ends the list, so a run whose rows went since its count stops asking.
       if (append && page.next_offset <= offset) ended = true
       offset = page.next_offset; size = page.size
@@ -51,8 +53,8 @@
   $effect(() => { if (!opened) untrack(() => load()) })
   // A choice reloads the page from its start and is kept in the address, so a copy of it shows the same.
   function choose(change) {
-    work = change.work ?? work; hand = change.hand ?? hand; sort = change.sort ?? sort; detail = null
-    replaceState(localize(runAddress(text, { work, hand, sort })), {})
+    work = change.work ?? work; form = change.form ?? form; hand = change.hand ?? hand; sort = change.sort ?? sort; detail = null
+    replaceState(localize(runAddress(text, { work, form, hand, sort })), {})
     load()
   }
   const near = $derived([
@@ -97,6 +99,7 @@
     <p><b class:vertical><ScriptText {text} /></b>{#if total !== null}<span>{more ? t('run.occurrences.more', { count: total }) : t('run.occurrences', { count: total })}</span>{/if}</p>
   </header>
   <div class="run-controls">
+    {#if forms && (forms.length > 1 || form)}<FormFilter {forms} value={form} onchange={value => choose({ form: value })} />{/if}
     {#if hands}<HandFilter counts={hands} value={hand} onchange={value => choose({ hand: value })} />{/if}
     <div class="run-order">
       <nav class="orders" aria-label={t('run.order.label')}>
