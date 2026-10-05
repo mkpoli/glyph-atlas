@@ -214,6 +214,11 @@ def gap_fills(old: Sequence[Unit], new: Sequence[Unit], placed: dict[tuple[int, 
     return fills
 
 
+def fillable(old: Sequence[Unit], owned: Collection[tuple[int, int, int, int]] | None) -> list[Unit]:
+    """The old units whose boxes a gap fill may use: all of them, or those on a box in `owned`."""
+    return list(old) if owned is None else [unit for unit in old if box_key(unit.box) in owned]
+
+
 def unplaced_reason(box: tuple[int, int, int, int], new: Sequence[Unit],
                     elsewhere: Collection[tuple[int, int, int, int]] = (), duplicate: bool = False) -> str:
     """Why the new alignment names no single character for `box`: `elsewhere` holds the boxes the
@@ -234,17 +239,20 @@ def unplaced_reason(box: tuple[int, int, int, int], new: Sequence[Unit],
 
 
 def relabel(old: Sequence[Unit], new: Sequence[Unit], protected: Collection[str] = (), *,
-            elsewhere: Collection[tuple[int, int, int, int]] = (), duplicate: bool = False) -> list[dict[str, Any]]:
+            elsewhere: Collection[tuple[int, int, int, int]] = (), duplicate: bool = False,
+            owned: Collection[tuple[int, int, int, int]] | None = None) -> list[dict[str, Any]]:
     """One record per boxed old unit of a line: the label the new alignment gives its box.
 
     `status` is `unchanged` when the label stands, `relabelled` when the box holds another character
     of the line, `unplaced` when the new alignment names no single character for the box
     (`placements`, `gap_fills`), and `protected` when a person reviewed the unit or it is in
     `protected`. A label that comes from a gap fill is marked `fill: gap`. `elsewhere` and `duplicate`
-    say why a box left the line (`unplaced_reason`).
+    say why a box left the line (`unplaced_reason`). `owned` holds the boxes the page's assignment gave
+    the line; only those are gap-filled, since a box another line holds, or that no line took, is not
+    one of the line's characters.
     """
     placed = placements(new)
-    fills = gap_fills(old, new, placed)
+    fills = gap_fills(fillable(old, owned), new, placed)
     placed = {**placed, **fills}
     records = []
     for unit in old:
@@ -352,17 +360,18 @@ def repair(old_units: Sequence[Unit], lines: Sequence[Line], detections: dict[st
         page_lines = [line for line in lines if line.page_id == page]
         new_by_line = realign(page_lines, detections, run=run, classifier=classifier, crop_of=crop_of)
         duplicates = line_assignment.duplicates_of(page_lines)
-        taken = {line_id: {box_key(unit.box) for unit in new if unit.box is not None}
-                 for line_id, new in new_by_line.items()}
+        page_boxes = [align.Detection(box=box, score=1.0) for box in detections.get(page, [])]
+        owned = {line_id: {box_key(found.box) for found in held}
+                 for line_id, held in align.assign_page(page_lines, page_boxes).items()}
         for line in page_lines:
             if line.id not in by_line:
                 continue
-            elsewhere = set().union(*(boxes for line_id, boxes in taken.items() if line_id != line.id))
+            elsewhere = set().union(*(boxes for line_id, boxes in owned.items() if line_id != line.id))
             if not line.vertical:
                 # A horizontal line was read left to right all along; it only gives up the boxes the
                 # page's assignment gave to another line.
                 for unit in by_line[line.id]:
-                    if box_key(unit.box) in elsewhere - taken[line.id]:
+                    if box_key(unit.box) in elsewhere:
                         record = {"unit_id": unit.id, "line_id": line.id, "box": box_key(unit.box),
                                   "before": label_of(unit), "after": None, "seq": None, "review": None,
                                   "status": "unplaced", "reason": "other-line"}
@@ -371,10 +380,10 @@ def repair(old_units: Sequence[Unit], lines: Sequence[Line], detections: dict[st
                 continue
             new = new_by_line[line.id]
             placed = placements(new)
-            placed.update(gap_fills(by_line[line.id], new, placed))
+            placed.update(gap_fills(fillable(by_line[line.id], owned[line.id]), new, placed))
             own = {unit.id: unit for unit in by_line[line.id]}
             for record in relabel(by_line[line.id], new, protected, elsewhere=elsewhere,
-                                  duplicate=line.id in duplicates):
+                                  duplicate=line.id in duplicates, owned=owned[line.id]):
                 unit = own[record["unit_id"]]
                 if record["status"] == "relabelled":
                     record["fields"] = fields_of(placed[record["box"]])
