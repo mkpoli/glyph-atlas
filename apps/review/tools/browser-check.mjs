@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { mkdirSync, readdirSync } from 'node:fs'
 import Browser from './browser.mjs'
 import { boot, options, events, units } from './harness.mjs'
+import { SLICE } from '../src/lib/slices.js'
 const config = options(), service = await boot(config)
 const screenshots = '/tmp/atlas-character-shots'
 mkdirSync(screenshots, { recursive: true })
@@ -17,7 +18,7 @@ try {
   // Deterministic OCR suggestions for synthetic glyphs; real model smoke is a separate read-only check.
   // The corpus counts as the site has them: thousands of graphemes, which the browse panel must not draw
   // all at once (the local review service serves none).
-  const corpusCharacters = { items: Array.from({ length: 5000 }, (_, i) => {
+  const corpusCharacters = { items: Array.from({ length: 15000 }, (_, i) => {
     const char = String.fromCodePoint(0x4E00 + i)
     return [char, 'U+' + (0x4E00 + i).toString(16).toUpperCase(), 1]
   }) }
@@ -49,18 +50,23 @@ try {
   await browser.waitFor(`document.querySelector('.glyph-grid img')?.src !== ${JSON.stringify(before)}`)
   console.log('PASS crop grid and shuffle')
 
-  // The browse panel opens on focus with the collection's and the corpus's graphemes, thousands of them:
-  // it draws a slice and the next as the grid is scrolled to its end, so opening it stays quick.
+  // The browse panel opens on focus with the collection's and the corpus's graphemes, some fifteen
+  // thousand: it draws a slice and the next as it is scrolled toward the end, so a slow computer (the CPU
+  // slowed sixfold) opens it in a few seconds rather than freezing for half a minute.
+  await browser.send('Emulation.setCPUThrottlingRate', { rate: 6 })
+  const opening = Date.now()
   await click('.collection-toolbar .character-search input')
-  await browser.waitFor('document.querySelectorAll(".browse-panel .grapheme-tile").length > 100')
-  await browser.waitFor('document.querySelector(".browse-panel .grapheme-tile small") !== null')
+  await browser.waitFor(`document.querySelectorAll(".browse-panel .grapheme-tile").length >= ${SLICE}`)
+  const opened = Date.now() - opening
+  await browser.send('Emulation.setCPUThrottlingRate', { rate: 1 })
+  assert(opened < 5000, `the browse panel took ${opened} ms to open on a slow computer`)
   const drawnAtFirst = await browser.evaluate('document.querySelectorAll(".browse-panel .grapheme-tile").length')
-  assert(drawnAtFirst <= 300, `the browse panel drew ${drawnAtFirst} grapheme tiles at once`)
+  assert(drawnAtFirst <= SLICE * 1.5, `the browse panel drew ${drawnAtFirst} grapheme tiles at once`)
   await browser.evaluate('(() => { const tiles = document.querySelectorAll(".browse-panel .grapheme-tile"); tiles[tiles.length - 1].scrollIntoView({ block: "end" }) })()')
   await browser.waitFor(`document.querySelectorAll(".browse-panel .grapheme-tile").length > ${drawnAtFirst}`)
   await browser.evaluate('document.activeElement?.blur()')
   await browser.waitFor('document.querySelector(".browse-panel") === null')
-  console.log(`PASS browse panel draws ${drawnAtFirst} graphemes, then more on scroll`)
+  console.log(`PASS browse panel opens in ${opened} ms at 6× CPU, draws ${drawnAtFirst} graphemes, then more on scroll`)
 
   // A crop not already written カ, so the correction to カ below changes it.
   const gridOrder = await browser.evaluate('Array.from(document.querySelectorAll(".glyph-grid [data-unit]")).map(i=>i.dataset.unit)')

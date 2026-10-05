@@ -705,9 +705,10 @@
       {#if !counting}<div class="browse-unit" role="group" aria-label={t('explore.browseOrder')}>
         {#each [['most', () => t('explore.order.most')], ['fewest', () => t('explore.order.fewest')]] as [value, text]}<button type="button" aria-pressed={order === value} onclick={() => orderBy(value)}>{text()}</button>{/each}
       </div>{/if}
-      {#if counting}<NgramGrid kind={unit} {runs} failed={runsFailed} onretry={loadRuns} {work} />
-      {:else}<GraphemeGrid groups={graphemes} value={grapheme} onchoose={key => { close(); openGrapheme(key) }}
-                    onform={form => { close(); pick({ code_point: codesOf(form), char: form }, 'exact') }} />{/if}
+      <!-- A grid draws a slice at a time; another order or kind starts it again from the first. -->
+      {#if counting}{#key unit + '|' + work}<NgramGrid kind={unit} {runs} failed={runsFailed} onretry={loadRuns} {work} />{/key}
+      {:else}{#key order}<GraphemeGrid groups={graphemes} value={grapheme} onchoose={key => { close(); openGrapheme(key) }}
+                    onform={form => { close(); pick({ code_point: codesOf(form), char: form }, 'exact') }} />{/key}{/if}
     {/snippet}
     {#snippet runLead()}{#key run}<RunCandidate text={run} />{/key}{/snippet}
     <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} {groupOf} onchoosegroup={chooseGrapheme} lead={run ? runLead : null}
