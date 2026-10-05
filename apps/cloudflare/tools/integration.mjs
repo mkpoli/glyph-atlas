@@ -797,10 +797,38 @@ try {
     assert.ok(graphemePlan.some(d => /SEARCH units USING INDEX unit_family_style \(origin=\? AND family=\?/.test(d)), graphemePlan.join('; '))
     assert.ok(graphemePlan.some(d => /SEARCH units USING INDEX unit_character_style \(origin=\? AND character=\?/.test(d)), graphemePlan.join('; '))
   }
-  // A grapheme's counts by style read its two ranges by index and each crop by its id, never the table.
-  const graphemeCountPlan = await plan({ sql: worker.graphemeCountsQuery(), values: [] }, ['local', 'U+4EEE', 'local', '仮'])
-  assert.ok(!graphemeCountPlan.some(d => /^SCAN units\b/.test(d) && !/USING (COVERING )?INDEX/.test(d)), graphemeCountPlan.join('; '))
-  assert.ok(graphemeCountPlan.some(d => /SEARCH units USING (COVERING )?INDEX unit_family/.test(d)), graphemeCountPlan.join('; '))
+  // A grapheme's counts by style read each branch along its own index: the family's from the index
+  // alone when no filter narrows it, the character's with only its own crops read for their family. They equal the one-subquery
+  // counts they replace, whatever the filter and for a crop with no family.
+  const oldCounts = extra => `SELECT style_order AS s,count(*) AS n FROM units
+    WHERE id IN (SELECT id FROM units WHERE origin=? AND family=? UNION SELECT id FROM units WHERE origin=? AND character=?)${extra} GROUP BY 1 ORDER BY 1`
+  // A crop of 仮 with no family, one filed under another, and one under this grapheme, of other styles and states.
+  for (const [id, family, style, state, group] of [['count-null', null, 'cursive', 'flagged', 'g'], ['count-other', 'U+3042', 'regular', 'pending', null], ['count-own', 'U+4EEE', 'regular', 'flagged', 'g']]) {
+    const crop = { ...variantCrop, id, label: '仮' }
+    await db.prepare(`INSERT INTO units(${CROP_COLUMNS},style) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, 'local', '仮', family, group,
+      'handwritten', 'kanji', state, 0, 0, 1, 1, JSON.stringify(crop), JSON.stringify({ character: crop }), '{}', '{}', null, style).run()
+  }
+  const styleCountsOf = async (sql, bound) => (await db.prepare(sql).bind(...bound).all()).results.map(r => [r.s, r.n])
+  for (const [extra, bound] of [['', []], [' AND state=?', ['pending']], [' AND visual_group IS NULL', []], [' AND visual_group=? AND state=?', ['g', 'flagged']]]) {
+    const graphemeCountPlan = await plan({ sql: worker.graphemeCountsQuery(extra), values: [] }, ['local', 'U+4EEE', ...bound, 'local', '仮', 'U+4EEE', ...bound])
+    assert.ok(!graphemeCountPlan.some(d => /^SCAN units\b/.test(d)), graphemeCountPlan.join('; '))
+    assert.ok(graphemeCountPlan.some(d => /SEARCH units USING (COVERING )?INDEX unit_family_style \(origin=\? AND family=\?/.test(d)), graphemeCountPlan.join('; '))
+    assert.ok(graphemeCountPlan.some(d => /SEARCH units USING (COVERING )?INDEX unit_character_style \(origin=\? AND character=\?/.test(d)), graphemeCountPlan.join('; '))
+    // `style_order` is generated, so the plan never reads `COVERING`, but the index holds its value and no crop is fetched by its id.
+    assert.ok(!graphemeCountPlan.some(d => /PRIMARY KEY/.test(d)), graphemeCountPlan.join('; '))
+    for (const [family, character] of [['U+4EEE', '仮'], ['U+4EEE', 'ア'], ['U+3042', '仮'], ['U+9999', '仮'], ['U+4EEE', '𠀀']]) {
+      assert.deepEqual(await styleCountsOf(`SELECT s,n FROM (${worker.graphemeCountsQuery(extra)}) ORDER BY s`, ['local', family, ...bound, 'local', character, family, ...bound]),
+        await styleCountsOf(oldCounts(extra), ['local', family, 'local', character, ...bound]), `${family} ${character} ${extra}`)
+    }
+  }
+  // Placed by date, the grapheme's counts take the same crops and styles as the undated ones.
+  for (const filter of ['', '&state=flagged', '&visual_group=g']) {
+    const undated = await call(`/layers/occurrences?code_point=U%2B4EEE&scope=grapheme&limit=1${filter}`)
+    const placed = await call(`/layers/occurrences?code_point=U%2B4EEE&scope=grapheme&order=year&limit=1${filter}`)
+    assert.ok(undated.total >= 1, filter)
+    assert.deepEqual([placed.total, placed.styles], [undated.total, undated.styles], filter)
+  }
+  await db.prepare("DELETE FROM units WHERE id IN ('count-null','count-other','count-own')").run()
   await db.prepare("DELETE FROM units WHERE id='apart-crop'").run()
   await db.prepare("DELETE FROM units WHERE id='variant-crop'").run()
   const corpusCountPlan = await plan({ sql: worker.variantCorpusCountsQuery(2), values: [] }, ['假', '反'])
