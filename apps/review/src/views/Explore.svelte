@@ -397,13 +397,14 @@
     catch { if (!closed && runKind === kind) homeRunsFailed = true }
   }
   $effect(() => { if (bare && homeRuns?.kind !== runKind) untrack(() => loadHomeRuns(runKind)) })
-  let charRuns = $state(opened?.runs ? { char: opened.picked.char, items: opened.runs } : null), charRunsFailed = $state(false)
+  // A character's runs show once they are here, and not at all when it has none among the counted
+  // ones or they cannot be read: the strip is extra to the gallery, which loads below it meanwhile.
+  let charRuns = $state(opened?.runs ? { char: opened.picked.char, items: opened.runs } : null), charRunsFor = untrack(() => charRuns?.char ?? '')
   async function loadCharRuns(char) {
-    charRunsFailed = false
     try { const items = await runsWith(char); if (!closed && picked?.char === char) charRuns = { char, items } }
-    catch { if (!closed && picked?.char === char) charRunsFailed = true }
+    catch { /* no strip for this character */ }
   }
-  $effect(() => { const char = picked?.char; if (char && charRuns?.char !== char) untrack(() => { charRuns = null; loadCharRuns(char) }) })
+  $effect(() => { const char = picked?.char; if (char && char !== charRunsFor) { charRunsFor = char; untrack(() => loadCharRuns(char)) } })
   const runWords = { pair: () => t('explore.pairs'), trigram: () => t('explore.trigrams') }
   const runFailed = kind => kind === 'trigram' ? t('explore.trigrams.failed') : t('explore.pairs.failed')
 
@@ -753,8 +754,7 @@
   {#if error}<div class="error-message" role="alert">{error}<button onclick={() => load()}>{t('common.retry')}</button></div>{/if}
   {#if picked}
     <CharacterChips card={picked} bind:expand onselect={item => pick({ code_point: item }, 'exact')} />
-    {#if charRuns?.char === picked.char ? charRuns.items.length : !charRunsFailed}<RunStrip runs={charRuns?.char === picked.char ? charRuns.items : null} heading={t('explore.runs.with', { char: picked.char })}
-      failed={charRunsFailed ? runFailed('pair') : ''} onretry={() => loadCharRuns(picked.char)} />{/if}
+    {#if charRuns?.char === picked.char && charRuns.items.length}<RunStrip runs={charRuns.items} heading={t('explore.runs.with', { char: picked.char })} />{/if}
     {#if styled || style}<StyleFilter counts={styles} value={style} onchange={value => { style = value; load() }} />{/if}
     {#if picked && expand !== 'variants'}<PeriodFilter counts={decadeCounts} value={yearRange} order={dateOrder} onchange={value => { yearRange = value; load() }} onorder={value => { dateOrder = value; load() }} />{/if}
     {#if expand === 'grapheme'}<VisualGroups {analysis} count={familyTotal} unassigned={unassignedCount} value={visual} onchange={value => { visual = value; load() }} />{/if}
@@ -767,7 +767,7 @@
     </p>
   {/if}
   {#if bare}<RunStrip runs={homeRuns?.kind === runKind ? homeRuns.items : null} heading={t('explore.runs.heading')} failed={homeRunsFailed ? runFailed(runKind) : ''} onretry={() => loadHomeRuns(runKind)}
-    tabs={{ value: runKind, options: Object.entries(runWords), onchange: value => { runKind = value } }} />{/if}
+    tabs={{ value: runKind, options: Object.entries(runWords), onchange: value => { runKind = value; homeRunsFailed = false } }} />{/if}
   {#if picked}
   {:else if !query && (items.length || homeCorpus.length || sampleFault)}
     <p class="find-count" role="status">{#if items.length}{t('explore.count.here', { count: items.length })}{/if}{#if homeCorpus.length}{#if items.length}<span class="separator">·</span> {/if}{t('explore.count.fromCorpus', { count: homeCorpus.length })}{/if}{#if sampleFault}{#if items.length || homeCorpus.length}<span class="separator">·</span> {/if}<span class="corpus-fault" role="status">{sampleFault === 'error' ? t('explore.corpus.error') : t('explore.corpus.notLoaded')}</span>{/if}{#if loading}<span class="find-pending"> …</span>{/if}</p>

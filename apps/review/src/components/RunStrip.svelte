@@ -1,23 +1,38 @@
+<script module>
+  import { runOccurrences } from '../lib/ngrams.js'
+  // One occurrence of each run, read once a visit and kept for every strip that shows the run. It is the
+  // run's second (`offset: 1`): the first page of a run also counts all its occurrences, which the
+  // strip has no use for, and the runs it shows have thousands. A run with one occurrence shows its text.
+  const occurrences = new Map()
+  function occurrence(text) {
+    if (!occurrences.has(text)) occurrences.set(text, runOccurrences(text, { offset: 1, limit: 1 })
+      .then(page => page.items?.[0] ?? null, () => { occurrences.delete(text); return null }))
+    return occurrences.get(text)
+  }
+</script>
+
 <script>
   // Frequent runs, shown with the gallery: the first few as one of their occurrences on the page (the
   // crops in place, `RunImage`), the rest as their text, each opening its run's page. `runs` is
   // `[{ text, n, vertical }]`, most frequent first, or null while it loads. An occurrence is read only
   // once the strip comes near the screen; until then, and for a run whose occurrence cannot be read,
   // its card keeps its size and shows the run's text in place of the crops. The list shows `STEP` runs
-  // more at a time.
+  // more at a time, and starts short again for another list.
   import RunImage from './RunImage.svelte'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import { number } from '../lib/client.js'
   import { t, localize } from '../lib/i18n.svelte.js'
-  import { runAddress, runOccurrences } from '../lib/ngrams.js'
+  import { runAddress } from '../lib/ngrams.js'
 
   let { runs = null, heading = '', tabs = null, failed = '', onretry = () => {} } = $props()
+  const id = $props.id()
   /** How many runs are drawn with their crops, and how many more as text, at first and per "More". */
   const PICTURED = 6, STEP = 12
   let more = $state(0), strip = $state(), near = $state(false), seen = $state({})
   const pictured = $derived((runs ?? []).slice(0, PICTURED))
   const listed = $derived((runs ?? []).slice(PICTURED, PICTURED + STEP * (more + 1)))
   const rest = $derived(Math.max(0, (runs?.length ?? 0) - PICTURED - listed.length))
+  $effect.pre(() => { void runs; more = 0 })
 
   $effect(() => {
     if (!strip || near) return
@@ -25,31 +40,24 @@
     observer.observe(strip)
     return () => observer.disconnect()
   })
-  // Each occurrence is asked for once; leaving the page drops what is still on its way.
-  const asked = new Set(), controller = new AbortController()
-  $effect(() => () => controller.abort())
+  let closed = false
+  $effect(() => () => { closed = true })
   $effect(() => {
     if (!near) return
-    for (const { text } of pictured) {
-      if (asked.has(text)) continue
-      asked.add(text)
-      runOccurrences(text, { limit: 1 }, { signal: controller.signal })
-        .then(page => { seen[text] = page.items?.[0] ?? null })
-        .catch(() => { if (!controller.signal.aborted) seen[text] = null })
-    }
+    for (const { text } of pictured) occurrence(text).then(found => { if (!closed) seen[text] = found })
   })
 </script>
 
-<section class="run-strip" bind:this={strip} aria-label={heading}>
+<section class="run-strip" bind:this={strip} aria-labelledby="{id}-heading">
   <header>
-    <h2>{heading}</h2>
+    <h2 id="{id}-heading">{heading}</h2>
     {#if tabs}<div class="run-tabs" role="group" aria-label={t('explore.browseUnit')}>
       {#each tabs.options as [value, text]}<button type="button" aria-pressed={tabs.value === value} onclick={() => tabs.onchange(value)}>{text()}</button>{/each}
     </div>{/if}
   </header>
   {#if failed}<p class="run-status" role="alert">{failed} <button type="button" class="quiet-link" onclick={onretry}>{t('common.tryAgain')}</button></p>
   {:else}
-    <ul class="run-cards">
+    <ul class="run-cards" aria-busy={!runs}>
       {#each runs ? pictured : Array(PICTURED).fill(null) as run, i (run?.text ?? i)}
         <li>{#if run}<a href={localize(runAddress(run.text))} aria-label={`${run.text} ${t('run.occurrences', { count: run.n })}`}>
           <span class="run-card-image" aria-hidden="true">{#if seen[run.text]}<RunImage crops={seen[run.text].crops} page={seen[run.text].page} vertical={seen[run.text].vertical} />{:else}<span class="run-card-text" class:vertical={run.vertical}>{run.text}</span>{/if}</span>
