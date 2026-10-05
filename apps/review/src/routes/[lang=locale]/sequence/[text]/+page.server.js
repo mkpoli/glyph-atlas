@@ -5,11 +5,12 @@ import { handParam } from '$lib/hand.js'
 // read leaves the view to load and report it itself.
 export async function load({ fetch, params, url }) {
   const work = url.searchParams.get('work') ?? ''
+  const form = url.searchParams.get('form') ?? ''
   const hand = handParam(url.searchParams.get('hand') ?? '')
   const sort = sortParam(url.searchParams.get('sort') ?? '')
   const [first, related] = await Promise.all([
-    runOccurrences(params.text, { work, hand, sort }, { fetch }).catch(() => null),
+    runOccurrences(params.text, { work, form, hand, sort }, { fetch }).catch(() => null),
     runRelated(params.text, { fetch }).catch(() => null),
   ])
-  return { text: params.text, work, hand, sort, first, related }
+  return { text: params.text, work, form, hand, sort, first, related }
 }

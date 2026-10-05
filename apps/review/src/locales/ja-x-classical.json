@@ -384,6 +384,7 @@
   "run.occurrences.other": "{count}例",
   "run.occurrences.more": "{count}例以上",
   "run.forms.other": "{count}樣",
+  "run.forms.label": "表記",
   "run.empty": "此ノ文字列ノ例無之",
   "run.detail.open": "{run}ノ例ヲ開ク",
   "run.detail.close": "閉ヅ",

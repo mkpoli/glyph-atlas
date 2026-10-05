@@ -390,6 +390,7 @@
   "run.occurrences.other": "{count}見",
   "run.occurrences.more": "逾{count}見",
   "run.forms.other": "{count}體",
+  "run.forms.label": "體",
   "run.empty": "此列無例",
   "run.detail.open": "啓{run}之例",
   "run.detail.close": "闔",

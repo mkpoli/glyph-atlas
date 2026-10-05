@@ -976,6 +976,25 @@ try {
     await assert.rejects(async () => occurrenceServed(await plan({ ...shape, sql: shape.sql + ' ' }, bound), 'unit_ngram_graphemes_source'), 'the check on unit_ngram_graphemes_source fails without it')
     await db.prepare(create).run()
   }
+  // A written form narrows a run of two or three along the index of its graphemes, in either order and
+  // in a group, and in one book along the book's, the form tested on each row read. The site's forms are
+  // one key range; a book's are grouped from a capped read of the book's index.
+  for (const size of [2, 3]) for (const style of [false, true]) {
+    const bound = [size, 'ナリ', 'ナリ', ...(style ? [0] : [])]
+    for (const [shape, args, index] of [
+      [{ sql: worker.runOccurrencesQuery(size, 0, false, style, 'hand', true), values: [] }, [...bound, 48, 0], 'unit_ngram_graphemes'],
+      [{ sql: worker.runCountQuery(size, 0, false, style, true), values: [] }, bound, '(?:unit_ngram_graphemes|unit_ngram_graphemes_source)'],
+      [{ sql: worker.runOccurrencesQuery(size, 0, false, style, 'source', true), values: [] }, [...bound, 48, 0], 'unit_ngram_graphemes_source'],
+      [{ sql: worker.runOccurrencesQuery(size, 0, true, style, 'hand', true), values: [] }, ['hk:doc', ...bound, 48, 0], 'unit_ngram_graphemes_work'],
+      [{ sql: worker.runCountQuery(size, 0, true, style, true), values: [] }, ['hk:doc', ...bound], '(?:unit_ngram_graphemes_work|unit_ngram_graphemes_source)'],
+    ]) occurrenceServed(await plan(shape, args), index)
+  }
+  const formsPlan = await plan({ sql: worker.runFormsQuery(false), values: [] }, [2, 'ナリ'])
+  assert.ok(formsPlan.some(d => /^SEARCH ngram_forms USING COVERING INDEX ngram_form_rank \(size=\? AND graphemes=\?\)$/.test(d)) && !formsPlan.some(d => /TEMP B-TREE|^SCAN /.test(d)), formsPlan.join('; '))
+  const bookForms = await plan({ sql: worker.runFormsQuery(true), values: [] }, ['hk:doc', 2, 'ナリ'])
+  // Either book index holds the three terms; the grouping sorts the capped read only.
+  assert.ok(bookForms.some(d => /^SEARCH unit_ngrams USING (COVERING )?INDEX unit_ngram_graphemes_(work|source) \(/.test(d) && ['document=?', 'size=?', 'graphemes=?'].every(t => d.includes(t)))
+    && !bookForms.some(d => /^SCAN unit_ngrams/.test(d)), bookForms.join('; '))
   // The books of a run are grouped from a capped read of it, and the runs near it from one range of the index.
   const nearServed = (details, index) => {
     assert.ok(details.some(d => new RegExp(`SEARCH \\w+ USING (COVERING )?INDEX ${index}\\b`).test(d)), `${index}: ${details.join('; ')}`)
@@ -1272,6 +1291,21 @@ try {
   assert.deepEqual((await countsOf('2?document=hk%3Afold')), [{ text: 'んし', n: 1, vertical: false, forms: null }], 'a book counts its graphemes, and no forms')
   assert.deepEqual((await near('ん𛁅')).longer.map(r => r.text), ['んして'], 'a written run finds the trigrams its graphemes begin')
   assert.deepEqual((await near('ん𛁅て')).inside, ['んし', 'して'], 'and the pairs its graphemes hold')
+  // A run's page lists the forms its graphemes gather and narrows to one of them.
+  const formOf = async (text, query) => (await (await mf.dispatchFetch(base + '/atlas/runs?' + new URLSearchParams({ text, ...query }))).json())
+  const gathered = await formOf('んし', {})
+  assert.deepEqual([gathered.form, gathered.forms], [null, [{ text: 'んし', n: 1 }, { text: 'ん𛁅', n: 1 }]], 'a run lists its written forms, most frequent first')
+  const oneForm = await formOf('んし', { form: 'ん𛁅' })
+  assert.deepEqual([oneForm.form, oneForm.total, oneForm.items.map(o => o.crops.map(c => c.id)), oneForm.forms.length], ['ん𛁅', 1, [['fold-1', 'fold-2']], 2],
+    'a form narrows the occurrences and still lists every form')
+  assert.deepEqual((await formOf('ん𛁅', { form: 'んし', sort: 'source' })).items.map(o => o.crops[0].id), ['fold-5'], 'by book too')
+  assert.deepEqual((await formOf('んし', { form: 'んし', document: 'hk:fold' })).items.map(o => o.crops[0].id), ['fold-5'], 'and in a book')
+  assert.deepEqual([(await formOf('んし', { form: 'ん𛁅', document: 'hk:fold' })).total, (await formOf('んし', { document: 'hk:fold' })).forms], [0, [{ text: 'んし', n: 1 }]],
+    'a book lists its own forms')
+  assert.equal((await formOf('んし', { form: 'ん𛁅', hand: 'unknown' })).total, 1, 'a form and a group together')
+  for (const query of [{ text: 'んし', form: 'ん' }, { text: 'んしてし', form: 'んしてし' }])
+    assert.equal((await mf.dispatchFetch(base + '/atlas/runs?' + new URLSearchParams(query))).status, 422, 'a form is a run of two or three, as long as the run')
+  assert.equal((await formOf('んしてし', {})).forms, null, 'a longer run lists no forms')
   await db.prepare("UPDATE units SET character='𛁈' WHERE id='fold-6'").run()
   assert.deepEqual((await db.prepare("SELECT text,n FROM ngram_forms WHERE size=2 AND graphemes='んし' ORDER BY text").all()).results,
     [{ text: 'ん𛁅', n: 1 }], 'a form relabelled away from its graphemes takes its count along')
