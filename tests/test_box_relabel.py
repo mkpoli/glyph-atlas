@@ -230,3 +230,26 @@ def test_a_unit_another_method_placed_on_the_line_is_not_relabelled():
     repaired, records = repair([*stale_units(), imported])
     assert repaired[-1] == imported
     assert "ar:record:0" not in {record["unit_id"] for record in records}
+
+
+def test_two_lines_holding_one_box_are_stale_and_the_repair_leaves_the_box_to_one():
+    right = Line(id="hl:item_0_000", page_id="hl:item:0", seq=0, box=Box(x=150, y=0, w=110, h=200), vertical=True,
+                 text_raw="一二三四", text="一二三四")
+    # The left line's box reaches past the centre of the right column, at 165.
+    left = line().model_copy(update={"box": Box(x=90, y=0, w=90, h=200)})
+    right_boxes = [Box(x=150, y=y, w=30, h=28) for y in (10, 50, 90, 130)]
+    old_right = [Unit(id=f"hl:item_0_000:old:{index + 1}", page_id="hl:item:0", line_id=right.id, seq=index + 1,
+                      box=box, kind=UnitKind.CHAR, text_source=char, method="detect-align")
+                 for index, (char, box) in enumerate(zip("一二三四", right_boxes, strict=True))]
+    # The left line was aligned over its own column and the right column's last box.
+    old_left = [unit(index + 1, char, box) for index, (char, box) in enumerate(zip(TEXT, [*BOXES[:3], right_boxes[3]],
+                                                                                    strict=True))]
+    old = old_right + old_left
+    assert box_relabel.stale_lines(old) == {right.id, left.id}
+    detections = {"hl:item:0": [*BOXES, *right_boxes]}
+    repaired, records = box_relabel.repair(old, [right, left], detections, run=run(), classifier=None, crop_of=None)
+    lost = next(record for record in records if record["unit_id"] == old_left[3].id)
+    assert lost["status"] == "unplaced" and lost["reason"] == "other-line"
+    placed = [(unit.page_id, unit.line_id, unit.box) for unit in repaired if unit.box is not None and unit.seq is not None]
+    assert box_relabel.shared_lines(placed) == set()
+    assert not box_relabel.stale_lines(repaired)

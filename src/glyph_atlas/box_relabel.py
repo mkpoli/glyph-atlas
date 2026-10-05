@@ -20,9 +20,16 @@ The classifier has to read the crops: without the page image every match costs t
 floor and the alignment places by position alone, so a page whose image is not cached is left as
 it is.
 
-`descents` is the test for a stale line. In a line aligned in reading order the boxes advance down
-the column with the units' sequence; in one aligned in the old order about half of the steps go back
-up. A unit a person reviewed, or one named in `protect`, is never relabelled.
+A page is realigned as a whole (`align.align_page`): until 2026-10-06 a line took every detection
+whose centre lay inside its box, and a Honkoku-Lines box is wide enough to hold most of each
+neighbouring column, so about 1,700 published boxes stood under two lines with two labels. Each
+detection now belongs to one line, and the box of a unit whose line lost it is unplaced.
+
+`descents` and `shared_lines` are the tests for a stale line. In a line aligned in reading order the
+boxes advance down the column with the units' sequence; in one aligned in the old order about half of
+the steps go back up. A line that holds a box another line of its page also holds was aligned before
+detections were given to one line. A unit a person reviewed, or one named in `protect`, is never
+relabelled.
 """
 
 from __future__ import annotations
@@ -35,7 +42,7 @@ from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
-from . import align
+from . import align, line_assignment
 from .schema import Box, Line, ReviewState, Unit
 
 METHOD = "box-relabel-v1"
@@ -51,6 +58,8 @@ HUMAN = frozenset({ReviewState.REVIEWED, ReviewState.DOUBLE_REVIEWED, ReviewStat
                    ReviewState.DISPUTED})
 #: Kinds that name no written character: a gap of unknown length and an unreadable character.
 NO_TEXT = frozenset({"gap", "unreadable"})
+#: Two units hold one detection when this share of the smaller box lies inside the other.
+SHARED_SHARE = 0.5
 
 
 def box_key(box: Box | None) -> tuple[int, int, int, int] | None:
@@ -91,6 +100,34 @@ def stale(placed: Sequence[tuple[int, Box]], share: float = STALE_SHARE, vertica
     return steps + 1 >= MIN_UNITS and back > share * steps
 
 
+def shared_lines(placed: Iterable[tuple[str | None, str, Box]]) -> set[str]:
+    """The lines that hold a box another line of their page holds, from each placed unit's
+    (page id, line id, box).
+
+    A detection belongs to one line (`align.assign_page`); two lines holding it carry two labels for
+    one crop. A box counts as the other's when `SHARED_SHARE` of the smaller lies inside the larger,
+    so a box formed as the union of two detections is caught as well as an identical one.
+    """
+    by_page: dict[str | None, list[tuple[str, Box]]] = defaultdict(list)
+    for page, line, box in placed:
+        by_page[page].append((line, box))
+    found: set[str] = set()
+    for held in by_page.values():
+        held.sort(key=lambda item: item[1].x)
+        for index, (line, box) in enumerate(held):
+            for other, there in held[index + 1:]:
+                if there.x >= box.x + box.w:
+                    break
+                if other == line:
+                    continue
+                width = min(box.x + box.w, there.x + there.w) - max(box.x, there.x)
+                height = min(box.y + box.h, there.y + there.h) - max(box.y, there.y)
+                if width > 0 and height > 0 and width * height >= SHARED_SHARE * min(box.w * box.h,
+                                                                                    there.w * there.h):
+                    found.update((line, other))
+    return found
+
+
 def placed_of(units: Iterable[Unit]) -> list[tuple[int, Box]]:
     """The (seq, box) of every boxed unit with a place in its line."""
     return [(unit.seq, unit.box) for unit in units if unit.box is not None and unit.seq is not None]
@@ -98,14 +135,16 @@ def placed_of(units: Iterable[Unit]) -> list[tuple[int, Box]]:
 
 def stale_lines(units: Iterable[Unit], share: float = STALE_SHARE,
                 vertical: Mapping[str, bool] | None = None) -> set[str]:
-    """The ids of the lines whose detect-align units were aligned in the old order; `vertical` gives
-    each line's orientation where it is known."""
+    """The ids of the lines whose detect-align units were aligned in the old order, or that hold a box
+    another line of their page holds; `vertical` gives each line's orientation where it is known."""
     by_line: dict[str, list[Unit]] = defaultdict(list)
     for unit in units:
         if unit.line_id and unit.method == "detect-align":
             by_line[unit.line_id].append(unit)
     known = vertical or {}
-    return {line for line, found in by_line.items() if stale(placed_of(found), share, known.get(line))}
+    crossed = shared_lines((unit.page_id, line, unit.box) for line, found in by_line.items() for unit in found
+                           if unit.box is not None and unit.seq is not None)
+    return crossed | {line for line, found in by_line.items() if stale(placed_of(found), share, known.get(line))}
 
 
 def label_of(unit: Unit) -> str | None:
@@ -175,11 +214,15 @@ def gap_fills(old: Sequence[Unit], new: Sequence[Unit], placed: dict[tuple[int, 
     return fills
 
 
-def unplaced_reason(box: tuple[int, int, int, int], new: Sequence[Unit]) -> str:
-    """Why the new alignment names no single character for `box`."""
+def unplaced_reason(box: tuple[int, int, int, int], new: Sequence[Unit],
+                    elsewhere: Collection[tuple[int, int, int, int]] = (), duplicate: bool = False) -> str:
+    """Why the new alignment names no single character for `box`: `elsewhere` holds the boxes the
+    page's other lines took, and `duplicate` says the line repeats another record of its page."""
     holders = [unit for unit in new if box_key(unit.box) == box]
     if not holders:
-        return "no-unit"
+        if duplicate:
+            return "duplicate-line"
+        return "other-line" if box in elsewhere else "no-unit"
     if len(holders) > 1:
         return "shared"
     unit = holders[0]
@@ -190,13 +233,15 @@ def unplaced_reason(box: tuple[int, int, int, int], new: Sequence[Unit]) -> str:
     return "several-characters"
 
 
-def relabel(old: Sequence[Unit], new: Sequence[Unit], protected: Collection[str] = ()) -> list[dict[str, Any]]:
+def relabel(old: Sequence[Unit], new: Sequence[Unit], protected: Collection[str] = (), *,
+            elsewhere: Collection[tuple[int, int, int, int]] = (), duplicate: bool = False) -> list[dict[str, Any]]:
     """One record per boxed old unit of a line: the label the new alignment gives its box.
 
     `status` is `unchanged` when the label stands, `relabelled` when the box holds another character
     of the line, `unplaced` when the new alignment names no single character for the box
     (`placements`, `gap_fills`), and `protected` when a person reviewed the unit or it is in
-    `protected`. A label that comes from a gap fill is marked `fill: gap`.
+    `protected`. A label that comes from a gap fill is marked `fill: gap`. `elsewhere` and `duplicate`
+    say why a box left the line (`unplaced_reason`).
     """
     placed = placements(new)
     fills = gap_fills(old, new, placed)
@@ -213,7 +258,7 @@ def relabel(old: Sequence[Unit], new: Sequence[Unit], protected: Collection[str]
             record["status"] = "protected"
         elif found is None:
             record["status"] = "unplaced"
-            record["reason"] = unplaced_reason(record["box"], new)
+            record["reason"] = unplaced_reason(record["box"], new, elsewhere, duplicate)
         elif record["after"] == record["before"]:
             record["status"] = "unchanged"
         else:
@@ -226,12 +271,17 @@ def relabel(old: Sequence[Unit], new: Sequence[Unit], protected: Collection[str]
 
 def realign(lines: Sequence[Line], detections: dict[str, list[Box]], *, run: align.Run, classifier: Any,
             crop_of: Any) -> dict[str, list[Unit]]:
-    """The current aligner's units of each line, over the detections cached for its page."""
-    out: dict[str, list[Unit]] = {}
+    """The current aligner's units of each line, its page aligned as a whole over the detections cached
+    for it, so that each detection goes to one line."""
+    by_page: dict[str | None, list[Line]] = defaultdict(list)
     for line in lines:
-        found = [align.Detection(box=box, score=1.0) for box in detections.get(line.page_id, [])]
-        units, _ = align.align_line(line, found, run=run, classifier=classifier, crop_of=crop_of)
-        out[line.id] = units
+        by_page[line.page_id].append(line)
+    out: dict[str, list[Unit]] = {}
+    for page, found in by_page.items():
+        boxes = [align.Detection(box=box, score=1.0) for box in detections.get(page, [])]
+        for line_id, (units, _) in align.align_page(found, boxes, run=run, classifier=classifier,
+                                                    crop_of=crop_of).items():
+            out[line_id] = units
     return out
 
 
@@ -274,8 +324,13 @@ def aligned_lines(units: Iterable[Unit]) -> set[str]:
 def repair(old_units: Sequence[Unit], lines: Sequence[Line], detections: dict[str, list[Box]], *, run: align.Run,
            classifier: Any, crop_of: Any, protected: Collection[str] = (),
            every: bool = False) -> tuple[list[Unit], list[dict[str, Any]]]:
-    """Relabel the units of every stale line in `lines`, or with `every` of every aligned line in it, and
-    return all of `old_units` with the records.
+    """Relabel the units of every page in `lines` that holds a stale line, or with `every` of every
+    page holding an aligned line, and return all of `old_units` with the records.
+
+    A page is realigned as a whole, every line of it in `lines` competing for its detections, and every
+    vertical line of it holding detect-align units is relabelled: a line that is not stale itself can
+    still hold a box the realignment gives a neighbour. `lines` should therefore hold every line of
+    the pages, those without units included, since their ink is theirs.
 
     `every` is for a dataset known to be aligned in the old order throughout: a line whose boxes
     happen to run down the column in sequence passes the stale test, and its labels may still sit
@@ -289,21 +344,31 @@ def repair(old_units: Sequence[Unit], lines: Sequence[Line], detections: dict[st
             by_line[unit.line_id].append(unit)
     wanted = aligned_lines(old_units) if every else stale_lines(old_units, vertical={line.id: line.vertical
                                                                                     for line in lines})
-    chosen = [line for line in lines if line.id in wanted and line.vertical]
+    pages = sorted({line.page_id for line in lines if line.id in wanted and line.vertical}, key=str)
     records: list[dict[str, Any]] = []
     changed: dict[str, Unit] = {}
-    for line in chosen:
-        new = realign([line], detections, run=run, classifier=classifier, crop_of=crop_of)[line.id]
-        placed = placements(new)
-        placed.update(gap_fills(by_line[line.id], new, placed))
-        own = {unit.id: unit for unit in by_line[line.id]}
-        for record in relabel(by_line[line.id], new, protected):
-            unit = own[record["unit_id"]]
-            if record["status"] == "relabelled":
-                record["fields"] = fields_of(placed[record["box"]])
-            changed[unit.id] = applied(unit, record)
-            record.pop("fields", None)
-            records.append(record)
+    for page in pages:
+        page_lines = [line for line in lines if line.page_id == page]
+        new_by_line = realign(page_lines, detections, run=run, classifier=classifier, crop_of=crop_of)
+        duplicates = line_assignment.duplicates_of(page_lines)
+        taken = {line_id: {box_key(unit.box) for unit in new if unit.box is not None}
+                 for line_id, new in new_by_line.items()}
+        for line in page_lines:
+            if not line.vertical or line.id not in by_line:
+                continue
+            new = new_by_line[line.id]
+            placed = placements(new)
+            placed.update(gap_fills(by_line[line.id], new, placed))
+            own = {unit.id: unit for unit in by_line[line.id]}
+            elsewhere = set().union(*(boxes for line_id, boxes in taken.items() if line_id != line.id))
+            for record in relabel(by_line[line.id], new, protected, elsewhere=elsewhere,
+                                  duplicate=line.id in duplicates):
+                unit = own[record["unit_id"]]
+                if record["status"] == "relabelled":
+                    record["fields"] = fields_of(placed[record["box"]])
+                changed[unit.id] = applied(unit, record)
+                record.pop("fields", None)
+                records.append(record)
         align.clear_crop_cache()
     return [changed.get(unit.id, unit) for unit in old_units], records
 
@@ -324,8 +389,8 @@ def write_records(path: Path, records: Iterable[dict[str, Any]]) -> int:
 
 def relabel_directory(directory: Path, out: Path, *, run: align.Run, classifier: Any, detections: Path,
                       protect: Collection[str] = (), every: bool = False) -> dict[str, int]:
-    """Relabel the stale lines of `directory`, or with `every` all its aligned lines, and write the
-    result to `out`, never to `directory`.
+    """Relabel the pages of `directory` that hold a stale line, or with `every` all its aligned lines,
+    and write the result to `out`, never to `directory`.
 
     `out` gets the source's other tables, `units.parquet`, every unit of the source with the stale
     lines relabelled, and `relabels.jsonl`, one record per boxed unit of a relabelled line.
@@ -345,15 +410,14 @@ def relabel_directory(directory: Path, out: Path, *, run: align.Run, classifier:
     units = tables.read(directory / "units.parquet", Unit)
     human = alignment_repair.human_state(directory)
     candidates = aligned_lines(units)
+    # Every line of a page competes for its detections, a line no unit was cut from included.
     found = [line for batch in dataset.scan("lines", keep=tables.In("page_id", {unit.page_id for unit in units
                                                                                if unit.line_id in candidates}))
-             for line in batch if line.id in candidates]
-    orientation = {line.id: line.vertical for line in found}
+             for line in batch]
+    orientation = {line.id: line.vertical for line in found if line.id in candidates}
     wanted = candidates if every else stale_lines(units, vertical=orientation)
     horizontal = {line for line in wanted if orientation.get(line) is False}
-    pages = {unit.page_id for unit in units if unit.line_id in wanted and unit.page_id}
-    lines = sorted((line for line in found if line.id in wanted and line.box is not None and line.vertical),
-                   key=lambda line: (line.page_id, line.seq))
+    pages = {line.page_id for line in found if line.id in wanted and line.vertical and line.box is not None}
     page_records = {page.id: page for batch in dataset.scan("pages", keep=tables.In("id", pages)) for page in batch}
     # Without its page image the classifier scores every crop at the floor and the alignment places by
     # position alone, which is the guess this repair exists to replace: such a line is left as it is.
@@ -361,7 +425,9 @@ def relabel_directory(directory: Path, out: Path, *, run: align.Run, classifier:
     found_boxes = ainu.read_detections(Path(detections))
     # A page the cache holds no detections for would be aligned against nothing.
     undetected = {page for page in page_records if not found_boxes.get(page)}
-    lines = [line for line in lines if line.page_id not in unread | undetected]
+    pages -= unread | undetected
+    lines = sorted((line for line in found if line.page_id in pages and line.box is not None),
+                   key=lambda line: (line.page_id, line.seq if line.seq is not None else -1, line.id))
     repaired, records = repair(units, lines, found_boxes, run=run, classifier=classifier,
                                crop_of=align._crop_reader(dataset, page_records),
                                protected=set(protect) | set(human.units), every=every)
@@ -378,6 +444,8 @@ def relabel_directory(directory: Path, out: Path, *, run: align.Run, classifier:
             shutil.copy2(path, target)
     tables.write(out / "units.parquet", repaired, Unit)
     write_records(out / "relabels.jsonl", records)
-    return {"units": len(units), "chosen_lines": len(wanted), "lines": len(lines), "horizontal_lines": len(horizontal),
+    relabelled_lines = {line.id for line in lines if line.vertical and line.id in candidates}
+    return {"units": len(units), "chosen_lines": len(wanted), "pages": len(pages), "lines": len(relabelled_lines),
+            "horizontal_lines": len(horizontal),
             "pages_without_image": len(unread),
             "pages_without_detections": len(undetected), "store_protected": len(human.units), **counts(records)}
