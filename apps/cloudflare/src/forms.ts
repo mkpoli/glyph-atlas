@@ -78,7 +78,7 @@ async function family(env: Env, codePoint: string, q: URLSearchParams, tools: Fo
     }) };
 }
 
-// A local crop's row names what is painted in its place until it loads; a corpus glyph's is in its record.
+// What is painted in a member's place until it loads, from its `units` row; a glyph with no row has none here.
 export const member = (r: Json) => ({ id: r.id, image: r.image, form: r.form, basis: basis(r as any),
   reported: r.issue, character: r.issue_character, tone: r.tone ?? null, image_size: r.image_size ? JSON.parse(r.image_size) : null });
 
