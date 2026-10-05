@@ -1375,7 +1375,12 @@ async function occurrences(env: Env, code: string, q: URLSearchParams, card?: Aw
     const from = `FROM units u${datingJoin('u.document', dated.axis)} WHERE ${grapheme
       ? 'u.id IN (SELECT id FROM units WHERE origin=? AND family=? UNION SELECT id FROM units WHERE origin=? AND character=?)' : 'u.origin=? AND u.character=?'}`;
     const keys = grapheme ? [origin, family, origin, data.char] : [origin, data.char];
-    counted = env.DB.prepare(`SELECT u.style_order AS s,count(*) AS n ${from}${tail}${cond} GROUP BY 1`).bind(...keys, ...extra, ...years);
+    // The counts take a grapheme's two disjoint branches apart, each along its own index, as `graphemeCountsQuery` does.
+    const arm = (where: string) => `SELECT u.style_order AS s,count(*) AS n FROM units u${datingJoin('u.document', dated.axis)} WHERE ${where}${tail}${cond} GROUP BY 1`;
+    counted = grapheme
+      ? env.DB.prepare(`SELECT s,sum(n) AS n FROM (${arm('u.origin=? AND u.family=?')} UNION ALL ${arm('u.origin=? AND u.character=? AND u.family IS NOT ?')}) GROUP BY 1`)
+        .bind(origin, family, ...extra, ...years, origin, data.char, family, ...extra, ...years)
+      : env.DB.prepare(arm('u.origin=? AND u.character=?')).bind(...keys, ...extra, ...years);
     // The page is found by row and sort key alone, and only its own rows are read whole: a crop's
     // JSON is kilobytes, and sorting it with every crop of the character costs more the further it pages.
     listed = env.DB.prepare(datedCropsQuery(from, styled + cond, dated.order)).bind(...keys, ...styledExtra, ...years, limit, offset);
@@ -1384,7 +1389,7 @@ async function occurrences(env: Env, code: string, q: URLSearchParams, card?: Aw
     // (`unit_family_style`, `unit_character_style`), and the page merges the two in style and id order;
     // an OR across the two columns would read every crop of the origin instead.
     const family = data.grapheme?.code_point || data.code_point;
-    counted = env.DB.prepare(graphemeCountsQuery(tail)).bind(origin, family, origin, data.char, ...extra);
+    counted = env.DB.prepare(graphemeCountsQuery(tail)).bind(origin, family, ...extra, origin, data.char, family, ...extra);
     listed = env.DB.prepare(graphemeCropsQuery(styled)).bind(origin, family, ...styledExtra, origin, data.char, family, ...styledExtra, limit, offset);
   } else {
     counted = env.DB.prepare(`SELECT style_order AS s,count(*) AS n FROM units WHERE origin=? AND character=?${tail} GROUP BY 1`)
@@ -1549,9 +1554,11 @@ async function chronology(env: Env, ctx: ExecutionContext, url: URL) {
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': 'public, max-age=3600' } })));
   return body;
 }
-// A grapheme's crops counted by style group, each branch read along its own index.
-export const graphemeCountsQuery = (extra = '') => `SELECT style_order AS s,count(*) AS n FROM units
-  WHERE id IN (SELECT id FROM units WHERE origin=? AND family=? UNION SELECT id FROM units WHERE origin=? AND character=?)${extra} GROUP BY 1`;
+// A grapheme's crops counted by style group, as `graphemeCropsQuery` finds them: each of the two
+// disjoint branches along its own index, the counts summed by style group.
+export const graphemeCountsQuery = (extra = '') => `SELECT s,sum(n) AS n FROM (
+  SELECT style_order AS s,count(*) AS n FROM units WHERE origin=? AND family=?${extra} GROUP BY 1
+  UNION ALL SELECT style_order AS s,count(*) AS n FROM units WHERE origin=? AND character=? AND family IS NOT ?${extra} GROUP BY 1) GROUP BY 1`;
 // A character's crops, and a grapheme's, in style order (`STYLE_ORDER`) then id; `extra` is further
 // conditions on the crop.
 export const characterCropsQuery = (extra = '') => `SELECT * FROM units WHERE origin=? AND character=?${extra} ORDER BY style_order,id LIMIT ? OFFSET ?`;
