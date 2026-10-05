@@ -66,7 +66,7 @@ def units_tables(root: Path) -> list[Path]:
 
 def needs_migration(path: Path) -> bool:
     """Whether a units table still has the `reading` column."""
-    return any(RETIRED in pq.read_schema(file).names for file in tables._table_files(path))
+    return any(RETIRED in pq.read_schema(file).names for file in tables.table_files(path))
 
 
 def _character(unicode: str | None) -> str | None:
@@ -88,7 +88,7 @@ def telling(row: dict) -> bool:
 def archive_table(path: Path, archive: Path) -> int:
     """Write the telling readings of one table to `archive`; return how many there were."""
     rows = []
-    for file in tables._table_files(path):
+    for file in tables.table_files(path):
         columns = [name for name in ("id", RETIRED, "text_source", "unicode") if name in pq.read_schema(file).names]
         rows += [row for row in pq.read_table(file, columns=columns).to_pylist() if telling(row)]
     if rows:
@@ -102,7 +102,7 @@ def archive_table(path: Path, archive: Path) -> int:
 def read_v6(path: Path) -> list[Unit]:
     """Every row of one table as a v6 unit; raises when a row does not validate as one."""
     return [tables._row_to_model({key: value for key, value in row.items() if key != RETIRED}, Unit)
-            for file in tables._table_files(path) for row in pq.read_table(file).to_pylist()]
+            for file in tables.table_files(path) for row in pq.read_table(file).to_pylist()]
 
 
 def migrate_table(path: Path, archive: Path) -> tuple[int, int]:

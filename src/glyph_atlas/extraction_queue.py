@@ -106,7 +106,7 @@ def located_pages(source: Path) -> set[str]:
         lines_path = source / "lines.parquet"
     if not lines_path.exists():
         return set()
-    table = ds.dataset(lines_path, format="parquet").to_table(
+    table = ds.dataset([str(file) for file in tables.table_files(lines_path)], format="parquet").to_table(
         columns=["page_id", "meta"], filter=pc.is_valid(pc.field("box")))
     found = set()
     for page_id, meta in zip(table.column("page_id").to_pylist(), table.column("meta").to_pylist(), strict=True):
@@ -367,7 +367,7 @@ class Queue:
             if not lines_path.exists():
                 # A moved or misnamed dataset would otherwise leave all its pages at 0 unnoticed.
                 raise FileNotFoundError(f"{source}: queued pages name a dataset with no lines table")
-            scanner = ds.dataset(lines_path, format="parquet").scanner(columns=["page_id", "text"])
+            scanner = ds.dataset([str(file) for file in tables.table_files(lines_path)], format="parquet").scanner(columns=["page_id", "text"])
             for batch in scanner.to_batches():
                 for page_id, text in zip(batch.column("page_id").to_pylist(),
                                          batch.column("text").to_pylist(), strict=True):

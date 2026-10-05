@@ -54,7 +54,7 @@ def units_tables(root: Path) -> list[Path]:
 
 def needs_migration(path: Path) -> bool:
     """Whether a units table still has the `jibo` column or the `kanji` script label."""
-    for file in tables._table_files(path):
+    for file in tables.table_files(path):
         schema = pq.read_schema(file)
         if "jibo" in schema.names:
             return True
@@ -77,7 +77,7 @@ def migrate_row(row: dict) -> Unit:
 def migrate_table(path: Path) -> int:
     """Rewrite one units table as v2 under its lock; return its number of rows."""
     with tables.locked(path):
-        units = [migrate_row(row) for file in tables._table_files(path) for row in pq.read_table(file).to_pylist()]
+        units = [migrate_row(row) for file in tables.table_files(path) for row in pq.read_table(file).to_pylist()]
         return tables._write_unlocked(path, units, Unit, shard=path.is_dir(), command="scripts/migrate_schema_v2.py")
 
 

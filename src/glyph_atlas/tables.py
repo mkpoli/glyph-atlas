@@ -432,7 +432,7 @@ def scan(
         # Python object first cost 19 s for two lines of a 1.17M-row table.
         import pyarrow.dataset as ds
 
-        for file in _table_files(Path(path)):
+        for file in table_files(Path(path)):
             known = _known_columns(file, model)
             scanner = ds.dataset(file, format="parquet").scanner(
                 columns=columns if columns is not None else known, filter=pc.field(keep.column).isin(list(keep.values)), batch_size=batch_size
@@ -442,7 +442,7 @@ def scan(
                 if rows:
                     yield [_row_to_model(row, model) for row in rows]
         return
-    for file in _table_files(Path(path)):
+    for file in table_files(Path(path)):
         known = _known_columns(file, model)
         read = columns if columns is not None else known
         for batch in pq.ParquetFile(file).iter_batches(batch_size=batch_size, columns=read):
@@ -586,7 +586,7 @@ def _shards(table: pa.Table) -> dict[str, pa.Table]:
     return {f"{code:02x}": table.filter(pc.equal(code_column, code)) for code in sorted(set(codes.values()))}
 
 
-def _table_files(path: Path) -> list[Path]:
+def table_files(path: Path) -> list[Path]:
     """The Parquet files of a table: the file itself, or every shard of a directory."""
     if path.is_dir():
         return sorted(entry for entry in path.glob("*.parquet") if entry.is_file())
@@ -598,7 +598,7 @@ def _table_files(path: Path) -> list[Path]:
 def _raw_batches(path: Path) -> Iterator[tuple[str | None, list[dict[str, Any]]]]:
     """Unvalidated rows of a table by batch, with the shard they came from."""
     directory = path.is_dir()
-    for file in _table_files(path):
+    for file in table_files(path):
         label = file.name if directory else None
         for batch in pq.ParquetFile(file).iter_batches(batch_size=BATCH_SIZE):
             rows = batch.to_pylist()
