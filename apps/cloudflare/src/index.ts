@@ -542,24 +542,25 @@ export function moved(stored: Facet[], moves: Facet[]): Facet[] {
   return [...rows.values()].filter(row => row.n > 0);
 }
 // The pair and trigram frequencies Explore's grid shows: runs of crops and of corpus glyphs that follow
-// each other on a line (`unit_ngrams`), counted by the text their characters make, most frequent first.
-// The whole site's count and a book's are each the first page of the counts the triggers keep
-// (`ngram_counts`, 0060). The edge keeps one copy per catalogue version, length and book. A run is
-// shown down the page where most of its occurrences are written that way.
+// each other on a line (`unit_ngrams`), counted by their graphemes (0071), most frequent first, so ん𛁅 and
+// ん𛁈 are counted together as んし, with how many written forms each gathers. The whole site's count and a
+// book's are each the first page of the counts the triggers keep (`ngram_counts`, 0074). The edge keeps
+// one copy per catalogue version, length and book. A run is shown down the page where most of its
+// occurrences are written that way.
 const NGRAMS_MAX = 480, NGRAM_SIZES = new Set(['2', '3']);
 function ngramSize(value: string) {
   if (!NGRAM_SIZES.has(value)) throw new Problem(404, 'Runs of two or three characters are counted.');
   return Number(value);
 }
 export function ngramsQuery() {
-  return `SELECT text,n,2*down>=n AS vertical FROM ngram_counts WHERE scope=? AND size=? ORDER BY n DESC,text LIMIT ${NGRAMS_MAX}`;
+  return `SELECT graphemes AS text,n,2*down>=n AS vertical,forms FROM ngram_counts WHERE scope=? AND size=? ORDER BY n DESC,graphemes LIMIT ${NGRAMS_MAX}`;
 }
 async function ngrams(env: Env, ctx: ExecutionContext, url: URL, size: number) {
   const document = text(url.searchParams.get('document'), 256, 'document');
   const key = new Request(`${url.origin}/atlas/ngrams/${size}?document=${encodeURIComponent(document ?? '')}&v=${encodeURIComponent(await catalogueVersion(env))}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json() as Json;
-  const rows = await env.DB.prepare(ngramsQuery()).bind(document ?? '', size).all<{ text: string; n: number; vertical: number }>();
+  const rows = await env.DB.prepare(ngramsQuery()).bind(document ?? '', size).all<{ text: string; n: number; vertical: number; forms: number }>();
   const body = { items: rows.results.map(row => ({ ...row, vertical: Boolean(row.vertical) })), limit: NGRAMS_MAX };
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return body;
@@ -766,12 +767,13 @@ async function runWorks(env: Env, rows: { document: string; n: number; sample: s
 }
 // The runs near one, to move between them: the shorter runs a trigram or four holds, the trigrams a pair
 // begins, and the runs of the same length that begin with the same characters (a pair's first, a
-// trigram's first two), most frequent first. A prefix is one key range of the site's counts (`ngram_counts`,
-// 0060), a row per text rather than one per occurrence, and the answer is kept at the edge per catalogue
-// version like the counts.
-export const runRangeQuery = () => `SELECT text,n,2*down>=n AS vertical FROM ngram_counts
-  WHERE scope='' AND size=? AND text>=? AND text<? AND text<>? ORDER BY n DESC,text LIMIT ${RUN_NEAR_MAX}`;
-export const runHasQuery = () => "SELECT text FROM ngram_counts WHERE scope='' AND size=? AND text=?";
+// trigram's first two), most frequent first. The run is folded to its graphemes as its occurrences are
+// (`runGraphemes`), and a prefix is one key range of the site's counts by graphemes (`ngram_counts`,
+// 0074), a row per grapheme sequence rather than one per occurrence; the answer is kept at the edge per
+// catalogue version like the counts.
+export const runRangeQuery = () => `SELECT graphemes AS text,n,2*down>=n AS vertical,forms FROM ngram_counts
+  WHERE scope='' AND size=? AND graphemes>=? AND graphemes<? AND graphemes<>? ORDER BY n DESC,graphemes LIMIT ${RUN_NEAR_MAX}`;
+export const runHasQuery = () => "SELECT graphemes AS text FROM ngram_counts WHERE scope='' AND size=? AND graphemes=?";
 async function runRelated(env: Env, ctx: ExecutionContext, url: URL) {
   const value = text(url.searchParams.get('text'), 96, 'text', true)!;
   const parts = runCharacters(value);
@@ -779,14 +781,15 @@ async function runRelated(env: Env, ctx: ExecutionContext, url: URL) {
   const key = new Request(`${url.origin}/atlas/runs/related?${new URLSearchParams({ text: value, v: await catalogueVersion(env) })}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json() as Json;
-  const size = parts.length, join = (from: number, to: number) => parts.slice(from, to).join('');
+  const size = parts.length, folded = await runGraphemes(env, parts), join = (from: number, to: number) => folded.slice(from, to).join('');
   const beyond = (prefix: string) => prefix + '\u{10FFFF}';
   const near = (length: number, prefix: string, except = '') => env.DB.prepare(runRangeQuery()).bind(length, prefix, beyond(prefix), except);
+  const whole = join(0, size);
   const lead = size === 2 ? join(0, 1) : join(0, 2);
   const inside = size === 3 || size === 4 ? [join(0, size - 1), join(1, size)] : [];
   const [longer, siblings, ...held] = await env.DB.batch([
-    size === 2 ? near(3, value) : env.DB.prepare('SELECT 1 WHERE 0'),
-    size === 2 || size === 3 ? near(size, lead, value) : env.DB.prepare('SELECT 1 WHERE 0'),
+    size === 2 ? near(3, whole) : env.DB.prepare('SELECT 1 WHERE 0'),
+    size === 2 || size === 3 ? near(size, lead, whole) : env.DB.prepare('SELECT 1 WHERE 0'),
     ...inside.map(part => env.DB.prepare(runHasQuery()).bind(size - 1, part)),
   ]) as D1Result<any>[];
   const shown = (rows: Json[]) => rows.map(row => ({ ...row, vertical: Boolean(row.vertical) }));
