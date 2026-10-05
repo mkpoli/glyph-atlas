@@ -13,11 +13,11 @@ and the best parts any host offers 0.81: layout is the larger remaining loss, st
 
 | Measure | Set | Now | Target |
 |---|---|---|---|
-| Ink overlap with the real glyph (intersection over union, 96 px), mean | 1,981 compound jōyō kanji | 0.697 | 0.75 |
-| Ink overlap, tenth percentile | same | 0.466 | 0.55 |
-| Outline length within 15% of the real glyph's (no stroke missing or added) | same | 93.7% | 99.5% |
-| Drawn at all | same | 1,967 of 1,981 | all |
-| Stroke width against the real glyph, median, across x and across y | same | 0.997, 1.000 | within 0.97–1.03 |
+| Ink overlap with the real glyph (intersection over union, 96 px), mean | 1,981 compound jōyō kanji | 0.700 | 0.75 |
+| Ink overlap, tenth percentile | same | 0.476 | 0.55 |
+| Outline length within 15% of the real glyph's (no stroke missing or added) | same | 93.8% | 99.5% |
+| Drawn at all | same | 1,968 of 1,981 | all |
+| Stroke width against the real glyph, median, across x and across y | same | 0.998, 1.001 | within 0.97–1.03 |
 | Facing gap between neighbouring parts within the 5–95% range of drawn characters | same | not yet measured | 99% |
 | Drawn at all | distinct HDIC headword sequences: KRM 3,029, TSJ 356, KTB 9 | 2,997, 355, 9 (all failures ⿻) | all |
 | Preferred over zi.tools by a reviewer, side by side | 96 KRM headwords | not yet judged | 80% |
