@@ -1007,5 +1007,6 @@
   "error.search.label": "Tìm chữ",
   "error.search.submit": "Tìm",
   "error.back": "Quay lại",
-  "error.crops.caption": "Vùng cắt từ các dãy chữ {runs}"
+  "error.crops.caption.other": "Vùng cắt từ các dãy chữ {runs}",
+  "error.crops.caption.one": "Vùng cắt từ dãy chữ {runs}"
 }

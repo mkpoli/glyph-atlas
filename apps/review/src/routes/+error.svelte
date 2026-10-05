@@ -13,7 +13,7 @@
   import { runAddress } from '$lib/ngrams.js'
   import { cropTone } from '$lib/cropPaint.js'
 
-  let online = $state(true), canGoBack = $state(false)
+  let online = $state(true)
   const status = $derived(page.status)
   const kind = $derived(errorCase({ status, code: page.error?.code, message: page.error?.message ?? '', routeId: page.route?.id ?? '', online }))
   const path = $derived(delocalize(page.url.pathname).path)
@@ -34,14 +34,15 @@
   $effect(() => { const lit = code.lit; untrack(() => { if (pool.length) { dealt = Array.from({ length: lit }, (_, slot) => deal(pool[(next + slot) % pool.length], slot)); next += lit } }) })
   onMount(() => {
     online = navigator.onLine
-    canGoBack = history.length > 1
     // Back online, the page is asked for again.
-    const reconnect = () => { if (kind === 'offline') location.reload() }
-    addEventListener('online', reconnect)
+    const reconnect = () => { if (kind === 'offline') location.reload(); online = true }
+    const disconnect = () => { online = false }
+    addEventListener('online', reconnect); addEventListener('offline', disconnect)
     const controller = new AbortController()
     let timer = 0
     const stop = setTimeout(() => controller.abort(), 8000)
-    if (online) sampleCrops({ signal: controller.signal }).then(found => {
+    // A busy database is left alone: the crops are only for the eye.
+    if (online && kind !== 'busy') sampleCrops({ signal: controller.signal }).then(found => {
       if (!found.crops.length) return
       pool = found.crops; runs = found.runs
       dealt = Array.from({ length: code.lit }, (_, slot) => deal(pool[slot % pool.length], slot))
@@ -54,7 +55,7 @@
         dealt[slot] = deal(pool[next++ % pool.length], slot, true)
       }, 2600)
     }, () => {}).finally(() => clearTimeout(stop))
-    return () => { removeEventListener('online', reconnect); controller.abort(); clearTimeout(stop); clearInterval(timer) }
+    return () => { removeEventListener('online', reconnect); removeEventListener('offline', disconnect); controller.abort(); clearTimeout(stop); clearInterval(timer) }
   })
 </script>
 
@@ -79,7 +80,7 @@
       {#if retry}<button class="lead" type="button" onclick={() => location.reload()}>{t('common.tryAgain')}</button>{/if}
       <a class:lead={!retry} href={localize('/')}>{t('nav.explore')}</a>
       {#if kind === 'forms'}<a href={localize('/forms')}>{t('nav.forms')}</a>{/if}
-      {#if canGoBack}<button type="button" onclick={() => history.back()}>{t('error.back')}</button>{/if}
+      <button type="button" onclick={() => history.back()}>{t('error.back')}</button>
     </div>
   </div>
   <div class="code">
@@ -97,7 +98,7 @@
         </div>
       {/each}
     </div>
-    <p class="caption">{#if runs.length}{around('error.crops.caption', 'runs')[0]}{#each runs as run (run)}<a href={localize(runAddress(run))}>{run}</a>{/each}{around('error.crops.caption', 'runs')[1]}{/if}</p>
+    <p class="caption">{#if runs.length}{around('error.crops.caption', 'runs', { count: runs.length })[0]}{#each runs as run (run)}<a href={localize(runAddress(run))}>{run}</a>{/each}{around('error.crops.caption', 'runs', { count: runs.length })[1]}{/if}</p>
   </div>
 </section>
 
@@ -120,7 +121,7 @@
   @keyframes settle{from{transform:translate(calc(var(--dx) * 100%),calc(var(--dy) * 100%)) rotate(var(--r)) scale(.55);opacity:0}
     35%{opacity:1}to{transform:none;opacity:1}}
   @keyframes arrive{from{transform:scale(.4) rotate(calc(var(--r) / 3));opacity:0}to{transform:none;opacity:1}}
-  .caption{min-height:1.7em;margin-top:14px;font-size:12px;line-height:1.7;color:var(--muted)}
+  .caption{min-height:28px;margin-top:14px;font-size:12px;line-height:1.7;color:var(--muted)}
   .caption a{display:inline-block;margin:0 3px;padding:0 7px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);
     font-family:"Klee One","LXGW WenKai TC","LXGW WenKai","GenZui Sans",serif;font-size:14px;line-height:1.6}
   .caption a:hover{border-color:var(--line-strong)}

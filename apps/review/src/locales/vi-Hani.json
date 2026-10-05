@@ -1008,5 +1008,6 @@
   "error.search.label": "尋𡨸",
   "error.search.submit": "尋",
   "error.back": "乖吏",
-  "error.crops.caption": "塳割自各圮𡨸{runs}"
+  "error.crops.caption.other": "塳割自各圮𡨸{runs}",
+  "error.crops.caption.one": "塳割自圮𡨸{runs}"
 }

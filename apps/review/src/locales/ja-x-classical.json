@@ -1023,5 +1023,5 @@
   "error.search.label": "字ヲ索ム",
   "error.search.submit": "索ム",
   "error.back": "戾ル",
-  "error.crops.caption": "文字列{runs}ノ截片"
+  "error.crops.caption.other": "文字列{runs}ノ截片"
 }

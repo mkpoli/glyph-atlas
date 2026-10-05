@@ -1025,5 +1025,5 @@
   "error.search.label": "尋字",
   "error.search.submit": "尋",
   "error.back": "返",
-  "error.crops.caption": "{runs}之截"
+  "error.crops.caption.other": "{runs}之截"
 }

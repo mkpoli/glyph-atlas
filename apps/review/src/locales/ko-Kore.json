@@ -1007,5 +1007,6 @@
   "error.search.label": "文字 檢索",
   "error.search.submit": "檢索",
   "error.back": "뒤로",
-  "error.crops.caption": "文字列 {runs}에서 가져온 크롭"
+  "error.crops.caption.other": "文字列 {runs}에서 가져온 크롭",
+  "error.crops.caption.one": "文字列 {runs}에서 가져온 크롭"
 }

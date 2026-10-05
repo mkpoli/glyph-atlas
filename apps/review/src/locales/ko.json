@@ -1007,5 +1007,6 @@
   "error.search.label": "글자 찾기",
   "error.search.submit": "찾기",
   "error.back": "뒤로",
-  "error.crops.caption": "글자열 {runs}에서 가져온 크롭"
+  "error.crops.caption.other": "글자열 {runs}에서 가져온 크롭",
+  "error.crops.caption.one": "글자열 {runs}에서 가져온 크롭"
 }

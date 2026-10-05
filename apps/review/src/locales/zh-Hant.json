@@ -1020,11 +1020,11 @@
   "error.offline.body": "網路恢復後，此頁面會自動重新載入。",
   "error.other.title": "無法顯示此頁面",
   "error.other.body": "本站無法回應此網址的請求。",
-  "error.suggest.character": "字頁面",
+  "error.suggest.character": "單字頁面",
   "error.suggest.sequence": "字串頁面",
   "error.suggest.crop": "裁切頁面",
   "error.search.label": "查找字",
   "error.search.submit": "查找",
   "error.back": "返回",
-  "error.crops.caption": "來自字串{runs}的裁切"
+  "error.crops.caption.other": "來自字串{runs}的裁切"
 }

@@ -1023,5 +1023,5 @@
   "error.search.label": "文字を検索",
   "error.search.submit": "検索",
   "error.back": "戻る",
-  "error.crops.caption": "文字列{runs}の切り出し"
+  "error.crops.caption.other": "文字列{runs}の切り出し"
 }

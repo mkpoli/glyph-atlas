@@ -1051,12 +1051,13 @@
   "error.offline.title": "You are offline",
   "error.offline.body": "This page loads again once your connection is back.",
   "error.other.title": "This page cannot be shown",
-  "error.other.body": "The address asks for something the site does not answer.",
+  "error.other.body": "The site cannot answer this address.",
   "error.suggest.character": "Character page",
   "error.suggest.sequence": "Sequence page",
   "error.suggest.crop": "Crop page",
   "error.search.label": "Search for a character",
   "error.search.submit": "Search",
   "error.back": "Go back",
-  "error.crops.caption": "Crops from the sequences {runs}"
+  "error.crops.caption.other": "Crops from the sequences {runs}",
+  "error.crops.caption.one": "Crops from the sequence {runs}"
 }
