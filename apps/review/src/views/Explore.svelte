@@ -30,6 +30,7 @@
   import { characterAddress, collectionAddress, corpusScope, expandFor, scopeFor, styleCounts, unslug } from '../lib/gallery.js'
   import { useSession } from '../lib/session.svelte.js'
   import { roundAddress } from '../lib/reviewRounds.js'
+  import { isSingle, pointOf } from '../lib/issues.js'
   import BulkBar from '../components/BulkBar.svelte'
   // `initial` is the collection page the server rendered: the seed it shuffled with, the filters in the
   // address, the collection's rows, the corpus sample and the progress line; without rows the view loads
@@ -403,7 +404,7 @@
     clearTimeout(searchTimer)
     // Readings such as トモ ask the candidate index first. Scanning the crop catalogue for every
     // intermediate spelling only competes with the list the reader is trying to choose from.
-    choosing = [...value.trim()].length > 1 && !/^(U\+[0-9a-f]{4,6})(\s+U\+[0-9a-f]{4,6})*$/i.test(value.trim())
+    choosing = Boolean(value.trim()) && !isSingle(value.trim()) && !/^(U\+[0-9a-f]{4,6})(\s+U\+[0-9a-f]{4,6})*$/i.test(value.trim())
     // The character that was on show is gone as soon as typing starts, and the address says so.
     showInAddress()
     if (choosing) { loading = false; return }
@@ -413,8 +414,8 @@
   }
   function submitQuery(value = query) {
     const term = value.trim()
-    if (/^U\+[0-9a-f]{4,6}$/i.test(term)) return pick({ code_point: term.toUpperCase(), char: term })
-    if ([...term].length === 1) return pick({ code_point: 'U+' + term.codePointAt(0).toString(16).toUpperCase().padStart(4, '0'), char: term })
+    if (/^U\+[0-9a-f]{4,6}(\s+U\+[0-9a-f]{4,6})*$/i.test(term)) return pick({ code_point: term.toUpperCase(), char: term })
+    if (isSingle(term)) return pick({ code_point: pointOf(term), char: term })
     load()
   }
   function clearQuery() {

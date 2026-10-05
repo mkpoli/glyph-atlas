@@ -2,11 +2,12 @@
   // The character a crop is written as, in its script's colour, and the script named beside it.
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import { scriptInfo } from '../lib/identity.js'
+  import { isSingle } from '../lib/issues.js'
   import { t } from '../lib/i18n.svelte.js'
   let { char = '', script = '', size = 'lg' } = $props()
   // The script is the character's own, by its code point; the record's statement is used only for a
   // character the code point does not place. A hentaigana is coloured as hiragana and named for itself.
-  const point = $derived([...char].length === 1 ? char.codePointAt(0) : 0)
+  const point = $derived(isSingle(char) ? [...char][0]?.codePointAt(0) ?? 0 : 0)
   const hentaigana = $derived(point >= 0x1B002 && point <= 0x1B11E)
   const own = $derived(scriptInfo(char).key)
   const KNOWN = ['hiragana', 'katakana', 'kanji', 'hangul', 'gugyeol', 'symbol', 'mixed', 'unknown']

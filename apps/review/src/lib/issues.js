@@ -19,6 +19,8 @@ export const issueTitle = id => issues.some(i => i.id === id) ? t(`issue.${id}.t
 export const issueHint = id => t(`issue.${id}.hint`)
 export const decision = issue => ({ verdict: 'wrong', issue, correction: null })
 export const isSingle = text => [...new Intl.Segmenter('ja', { granularity: 'grapheme' }).segment(text)].length === 1
+/** The code point key of a character, `U+1112 U+119E` for one spelt with conjoining jamo. */
+export const pointOf = char => [...char].map(c => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')).join(' ')
 
 /** What the controls call the action that is not a decision. */
 export const skipLabel = () => t('common.skip')

@@ -1,4 +1,5 @@
 import { arity, descriptionEnd, isDescription } from './ids.js'
+import { graphemeText } from './reviewRounds.js'
 
 /** A transcription bucket cannot identify the character written in its image. */
 export const isUnassigned = item => item?.identity_status === 'unassigned'
@@ -8,8 +9,7 @@ export const isUnassigned = item => item?.identity_status === 'unassigned'
  * A crop can know its grapheme while its written form is still unassigned. */
 export function graphemeChar(item) {
   const point = item?.grapheme?.code_point ?? item?.grapheme
-  const match = typeof point === 'string' && /^U\+([0-9A-F]{4,6})$/i.exec(point)
-  return match ? String.fromCodePoint(parseInt(match[1], 16)) : null
+  return typeof point === 'string' && /^U\+[0-9A-F]{4,6}( U\+[0-9A-F]{4,6})*$/i.test(point) ? graphemeText(point) : null
 }
 export const writtenLabel = item => isUnassigned(item) ? 'Unassigned'
   : item?.written_character ?? item?.label ?? item?.char ?? ''
