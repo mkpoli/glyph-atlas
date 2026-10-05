@@ -280,3 +280,26 @@ def test_review_events_are_read_from_json_lines_a_list_or_a_d1_query(tmp_path):
     (tmp_path / "d1.json").write_text(json.dumps([{"results": [event], "success": True}]))
     for name in ("lines.jsonl", "list.json", "d1.json"):
         assert box_relabel.read_reviews(tmp_path / name) == [event]
+
+
+def test_a_pipeline_edit_an_unsure_answer_or_an_undone_review_decides_nothing():
+    def event(target, field, new, evidence=None, role="reviewer", **extra):
+        return {"id": f"{target}:{field}:{new}", "target_type": "unit", "target_id": target, "field": field,
+                "new": new, "role": role, "evidence": json.dumps(evidence) if evidence else None, **extra}
+    events = [event("a", "review", "disputed", {"verdict": "wrong", "issue": "crop"}, at="2026-09-28T10:00:00Z"),
+              event("a", "meta", "{}", role="model", at="2026-09-28T11:00:00+00:00"),
+              event("b", "review", "disputed", {"verdict": "unsure"}),
+              {"target": "c", "undone": 1, "event": json.dumps(event("c", "review", "reviewed", {"verdict": "match"}))},
+              event("d", "review", '"reviewed"'),
+              event("e", "note", "a note")]
+    assert box_relabel.verdicts_of(events) == {"a": "wrong", "d": "match"}
+
+
+def test_review_events_count_once_in_the_order_they_were_made():
+    later = {"id": "cf:1", "target_type": "unit", "target_id": "a", "field": "review", "new": "reviewed",
+             "role": "reviewer", "at": "2026-09-29T00:00:00Z",
+             "evidence": json.dumps({"verdict": "wrong", "suggested_character": "U+9AD8"})}
+    earlier = {"id": "cf:0", "target_type": "unit", "target_id": "a", "field": "review", "new": "disputed",
+               "role": "reviewer", "at": "2026-09-28T00:00:00+00:00", "evidence": json.dumps({"verdict": "wrong"})}
+    assert box_relabel.verdicts_of([later, earlier, {"target": "a", "event": json.dumps(later)}]) == {"a": "correction"}
+

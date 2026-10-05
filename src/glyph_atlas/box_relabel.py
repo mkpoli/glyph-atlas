@@ -38,6 +38,7 @@ import json
 import unicodedata
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
+from datetime import UTC, datetime
 from itertools import pairwise
 from pathlib import Path
 from typing import Any
@@ -86,13 +87,16 @@ def verdict_of(event: Mapping[str, Any]) -> str | None:
     """What one review event says about its unit: `MATCH`, `CORRECTION`, `WRONG`, or None.
 
     `event` is a row of a review store's journal or of the site's event export: a review (`field`
-    `review`) carries its verdict and any character the reviewer wrote in its evidence, and an edit of
-    another field of the unit is a person's correction. A round of the visual quiz that let a crop
-    pass confirms nothing, and a crop shown and left alone decides nothing.
+    `review`) carries its verdict and any character the reviewer wrote in its evidence, and a person's
+    edit of another field of the unit is a correction. A pass of the pipeline (`role` `model`), a
+    field that records no decision (`review.store.STATELESS`, a crop shown and left alone among
+    them), an `unsure` answer and a round of the visual quiz that let a crop pass decide nothing.
+    The review state an event sets stands in for its verdict only when its evidence names none.
     """
-    from .review.store import SEEN
+    from .review.store import STATELESS
 
-    if event.get("target_type", "unit") != "unit" or event.get("field") == SEEN:
+    if (event.get("target_type", "unit") != "unit" or event.get("field") in STATELESS
+            or event.get("role") == "model"):
         return None
     if event.get("field") != "review":
         return CORRECTION
@@ -106,7 +110,12 @@ def verdict_of(event: Mapping[str, Any]) -> str | None:
         return CORRECTION if character else WRONG
     if verdict == "match":
         return None if evidence.get("kind") == "visual-quiz" else MATCH
+    if verdict is not None:
+        return None
     state = event.get("new")
+    if isinstance(state, str) and state.startswith('"'):
+        # The review store keeps a value JSON-encoded.
+        state = json.loads(state)
     if state in {str(review) for review in CONFIRMED}:
         return MATCH
     if state == str(ReviewState.DISPUTED):
@@ -114,19 +123,36 @@ def verdict_of(event: Mapping[str, Any]) -> str | None:
     return None
 
 
-def verdicts_of(events: Iterable[Mapping[str, Any]]) -> dict[str, str]:
-    """Each reviewed unit's latest verdict (`verdict_of`), by unit id, from events in the order made.
+def _when(event: Mapping[str, Any]) -> datetime:
+    at = event.get("at")
+    if not at:
+        return datetime.min.replace(tzinfo=UTC)
+    when = datetime.fromisoformat(str(at))
+    return when if when.tzinfo else when.replace(tzinfo=UTC)
 
-    A row of the site's export holds the event as JSON under `event`.
+
+def verdicts_of(events: Iterable[Mapping[str, Any]]) -> dict[str, str]:
+    """Each reviewed unit's latest verdict (`verdict_of`), by unit id.
+
+    A row of the site's export holds the event as JSON under `event`, and one marked `undone` was
+    withdrawn or rejected and says nothing. The events are taken in the order they were made: an
+    event the store imported from the site appears in both under one id and counts once, and events
+    without a time keep their place before the timed ones.
     """
-    found: dict[str, str] = {}
-    for row in events:
+    found: dict[str, Mapping[str, Any]] = {}
+    for position, row in enumerate(events):
+        if row.get("undone"):
+            continue
         event = _mapping(row.get("event")) or dict(row)
-        target = event.get("target_id") or row.get("target")
+        event = {**event, "target_id": event.get("target_id") or row.get("target"),
+                 "at": event.get("at") or row.get("at")}
+        found.setdefault(event.get("id") or f"#{position}", event)
+    verdicts: dict[str, str] = {}
+    for event in sorted(found.values(), key=_when):
         verdict = verdict_of(event)
-        if target and verdict is not None:
-            found[target] = verdict
-    return found
+        if event["target_id"] and verdict is not None:
+            verdicts[event["target_id"]] = verdict
+    return verdicts
 
 
 def read_reviews(path: Path) -> list[dict[str, Any]]:
