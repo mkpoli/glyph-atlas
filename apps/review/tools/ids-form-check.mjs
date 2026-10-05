@@ -67,6 +67,11 @@ try {
   })()`)
   assert(renamed === 200, `the crop could not be named 疑: ${renamed}`)
   assert(units(config.directory)[id].unicode === 'U+7591', 'the crop is not named 疑')
+  // The local service derives a character's forms on its first card read, which reads every
+  // description first (10–30 s on a busy machine), and the picker gives a card read 15 s. The site
+  // reads the stored rows, so the check pays that once here, before the page asks.
+  const card = await fetch(`${service.base}/layers/characters/U%2B7591?expand=none`)
+  assert(card.ok, `疑's card could not be read: ${card.status}`)
   await browser.goto(`${service.base}/en/crop/${encodeURIComponent(id)}`, { waitFor: ready, timeout: 90000 })
 
   await browser.evaluate('document.querySelector("dialog[open] .form-add").click()')
