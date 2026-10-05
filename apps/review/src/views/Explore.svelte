@@ -249,7 +249,7 @@
   const headings = $derived(display.some(headed))
   // The next page arrives as the reader nears the end of the gallery. While there is one to come, the
   // grid of squares shows whole rows only: the crops of a part-filled last row wait for the page that
-  // fills it. The collage has no rows to fill, and its gallery reads as one column (`columns`).
+  // fills it. The collage has no rows to fill (`columns` is 0).
   let grid = $state(), sentinel = $state(), columns = $state(0), nearEnd = $state(false)
   // While the first page loads, the collage holds placeholders of crops' usual proportions.
   const skeleton = collage(Array.from({ length: 32 }, (_, i) => [1, 1.25, 0.85, 1.1, 1.4, 0.95, 1.2, 0.8][i % 8]))
@@ -257,7 +257,8 @@
     : Boolean(data) && items.length < data.total))
   const whole = $derived(hasMore && columns && !headings ? Math.floor(display.length / columns) * columns : display.length)
   // Tiles join the page a slice at a time, each slice in a task of its own, so a page of crops
-  // arriving never holds a slow machine up; the tiles the server rendered are there at once.
+  // arriving never holds a slow machine up; the tiles the server rendered are there at once. The
+  // collage is placed for every tile to come, so its blocks hold their height while the slices fill in.
   const SLICE = 12
   let reach = $state(untrack(() => display.length))
   const target = $derived(whole || display.length)
@@ -279,14 +280,14 @@
   // gallery is one block. A tile's number counts through the whole gallery.
   const sections = $derived.by(() => {
     const parts = []
-    tiles.forEach((item, i) => {
+    display.slice(0, target).forEach((item, i) => {
       const group = headed(item) ? visualGroup(item) : null, key = group?.id ?? ''
       if (!parts.length || parts.at(-1).key !== key) parts.push({ key, heading: group ? groupLabel(group) : '', items: [] })
       parts.at(-1).items.push([item, i])
     })
     return parts.map(part => {
       const placed = collage(part.items.map(([item]) => tileAspect(item)))
-      return { key: part.key || 'all', heading: part.heading, block: placed.block, tiles: part.items.map(([item, i], at) => [item, i, placed.tiles[at]]) }
+      return { key: part.key || 'all', heading: part.heading, block: placed.block, start: part.items[0][1], tiles: part.items.map(([item, i], at) => [item, i, placed.tiles[at]]) }
     })
   })
   function more() {
@@ -298,7 +299,8 @@
   $effect(() => {
     if (!grid) return
     void layout
-    const measure = () => { columns = getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length }
+    // The collage has no rows to fill; a grid's columns are counted from its template.
+    const measure = () => { columns = document.documentElement.dataset.gallery === 'grid' ? getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length : 0 }
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(grid)
@@ -323,7 +325,7 @@
     catalogueRequest?.abort()
     // A further page goes before the corpus glyphs shown after the collection's own crops, so the tiles
     // from the end of those crops on are drawn again, a slice at a time.
-    if (!append) { showInAddress(); clearSelection(); reach = 0 } else reach = Math.min(reach, picked ? local.length : items.length)
+    if (!append) { showInAddress(); clearSelection() }
     const id = ++requestId; loading = true; error = ''
     try {
       if (picked) {
@@ -333,6 +335,9 @@
         const found = await occurrences(picked.code_point, { expand, limit: 60, offset: append ? local.length : 0, style: style || undefined, ...dateParams() })
         if (closed || id !== requestId) return
         const rows = found.items.map(item => ({ ...item, origin: 'collection' }))
+        // A new list is drawn from its start; a further page goes before the corpus glyphs shown after
+        // the collection's own crops, so the tiles from the end of those crops on are drawn again.
+        reach = append ? Math.min(reach, local.length) : 0
         local = append ? [...local, ...rows] : rows
         localStyles = found.styles ?? null; styled = Boolean(found.style_groups)
         data = { ...(data ?? {}), query: picked.char, total: found.counts.total, available: found.counts.exact_total,
@@ -372,6 +377,7 @@
       // A further page keeps the counts by character and work it came with: they answer the same filters,
       // and replacing them redraws the work menu and regathers thousands of graphemes for every page.
       data = append && data ? { ...result, categories: data.categories, documents: data.documents } : result
+      reach = append ? Math.min(reach, items.length) : 0
       items = append ? [...items, ...result.items] : result.items
       if (!append) await showSample(id, sampled, result.items)
     } catch (e) { if (!closed && id === requestId && e.name !== 'AbortError') error = e.message }
@@ -797,7 +803,7 @@
   {/if}
   <div class="glyph-grid collage" class:selecting={selected.size > 0} bind:this={grid} aria-label={flagged ? t('explore.heading.flagged') : t('explore.grid.collection')} aria-busy={loading}>
     {#if loading && !display.length}<div class="collage-block" style={skeleton.block}>{#each skeleton.tiles as style}<div class="glyph-skeleton collage-cell" {style}></div>{/each}</div>
-    {:else}{#each sections as section (section.key)}{#if section.heading}<div class="visual-grid-heading">{section.heading}</div>{/if}<div class="collage-block" style={section.block}>{#each section.tiles as [item, i, style] (item.id)}{@render tile(item, i, style)}{/each}</div>{/each}{/if}
+    {:else}{#each sections as section (section.key)}{#if section.heading}<div class="visual-grid-heading">{section.heading}</div>{/if}<div class="collage-block" style={section.block}>{#each section.tiles.slice(0, Math.max(0, reach - section.start)) as [item, i, style] (item.id)}{@render tile(item, i, style)}{/each}</div>{/each}{/if}
   </div>
   {#if !choosing && !loading && !display.length}<div class="empty"><span class="empty-mark">{picked || (settled && settled.total === 0) ? '∅' : flagged ? '✓' : '∅'}</span><h2>{#if picked}<ScriptLine line={withText(corpusFault ? 'explore.empty.samplesFailed' : 'explore.empty.noOccurrenceOf', 'char', { char: picked.char })} />{:else if settled && settled.total === 0}{around('explore.empty.noOccurrenceOfTerm', 'term')[0]}{@render term()}{around('explore.empty.noOccurrenceOfTerm', 'term')[1]}{:else}{flagged ? t('explore.empty.nothingFlagged') : t('explore.empty.noCharacters')}{/if}</h2>{#if query}<button class="primary" onclick={clearQuery}>{t('explore.clearSearch')}</button>{:else}<a href={localize('/review')} class="primary">{t('explore.startRound')}</a>{/if}</div>{/if}
   {#if selected.size || bulkDone || bulkError}<BulkBar count={selected.size} bind:target={bulkTarget} busy={bulkBusy} error={bulkError} done={bulkDone}
