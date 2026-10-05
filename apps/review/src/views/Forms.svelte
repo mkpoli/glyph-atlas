@@ -4,12 +4,13 @@
   import SiteLinks from '../components/SiteLinks.svelte'
   import { replaceState } from '$app/navigation'
   import { page } from '$app/state'
+  import Glyph from '../components/Glyph.svelte'
   import ReferenceGlyph from '../components/ReferenceGlyph.svelte'
   import ScriptText from '../components/ScriptText.svelte'
   import OriginText from '../components/OriginText.svelte'
   import FormReview from '../components/FormReview.svelte'
   import GlyphContext from '../components/GlyphContext.svelte'
-  import { settle } from '../lib/settle.js'
+  import { fromAction } from 'svelte/attachments'
   import { showsContext, clearContext } from '../lib/glyphContext.svelte.js'
   import { families as loadFamilies, family as loadFamily, members as loadMembers, split as loadSplit } from '../lib/forms.js'
   import { history, step, undo, redo } from '../lib/formHistory.svelte.js'
@@ -410,7 +411,7 @@
                     {#each group.items as glyph (glyph.id)}
                       <button class="member" class:selected={chosen.has(glyph.id)} class:own={glyph.basis === 'form_glyph'}
                               aria-pressed={chosen.has(glyph.id)} onclick={() => toggleId(glyph.id)} use:showsContext={{ id: glyph.id }}>
-                        {#if glyph.image}<img class="glyph-image" src={glyph.image} alt="" loading="lazy" use:settle />{/if}
+                        {#if glyph.image}<Glyph item={glyph} alt="" />{/if}
                         {#if glyph.reported}<span class="member-flag" title={t('forms.reported', { reason: glyph.reported })}>{glyph.character ?? '⚠'}</span>
                         {:else if glyph.basis === 'form_glyph'}<span class="member-form">{glyph.form ?? '×'}</span>{/if}
                       </button>
@@ -425,7 +426,7 @@
               {#each glyphs as glyph, i (glyph.id)}
                 <button class="member" class:selected={chosen.has(glyph.id)} class:own={glyph.basis === 'form_glyph'}
                         aria-pressed={chosen.has(glyph.id)} onclick={event => toggle(i, event)} use:showsContext={{ id: glyph.id }}>
-                  {#if glyph.image}<img class="glyph-image" src={glyph.image} alt="" loading="lazy" use:settle />{/if}
+                  {#if glyph.image}<Glyph item={glyph} alt="" />{/if}
                   {#if glyph.reported}<span class="member-flag" title={t('forms.reported', { reason: glyph.reported })}>{glyph.character ?? '⚠'}</span>
                   {:else if glyph.basis === 'form_glyph'}<span class="member-form">{glyph.form ?? '×'}</span>{/if}
                   {#if tileDate(glyph)}<span class="member-year">{tileDate(glyph)}</span>{/if}
@@ -456,12 +457,12 @@
                     {:else if c.assigned}<span class="cluster-open">{around('forms.haveForm', 'glyph', { count: c.assigned })[0]}<span class="inline-glyph"><ScriptText text={c.majority} /></span>{around('forms.haveForm', 'glyph', { count: c.assigned })[1]}</span>
                     {:else}<span class="cluster-open">{t('corpus.unassigned')}</span>{/if}
                   </span>
-                  <span class="cluster-samples">{#each c.representatives as r (r.id)}{#if r.image}<img class="glyph-image" src={r.image} alt="" loading="lazy" use:settle use:showsContext={{ id: r.id, pin: false }} />{/if}{/each}</span>
+                  <span class="cluster-samples">{#each c.representatives as r (r.id)}{#if r.image}<Glyph item={r} alt="" class="glyph-image cluster-crop" {@attach fromAction(showsContext, () => ({ id: r.id, pin: false }))} />{/if}{/each}</span>
                 </button>
                 {#if c.unusual.length}
                   <div class="cluster-outliers">
                     <small>{t('forms.leastTypical')}</small>
-                    <span class="cluster-samples">{#each c.unusual as g (g.id)}{#if g.image}<img class="glyph-image" src={g.image} alt="" loading="lazy" use:settle use:showsContext={{ id: g.id, pin: false }} />{/if}{/each}</span>
+                    <span class="cluster-samples">{#each c.unusual as g (g.id)}{#if g.image}<Glyph item={g} alt="" class="glyph-image cluster-crop" {@attach fromAction(showsContext, () => ({ id: g.id, pin: false }))} />{/if}{/each}</span>
                   </div>
                 {/if}
                 <span class="cluster-foot">
@@ -524,7 +525,7 @@
   .cluster-issue{margin-left:auto;font-size:11px;color:var(--uncertain);background:var(--uncertain-light);border-radius:14px;padding:3px 10px}
   .cluster-issue.reported{color:var(--wrong);background:var(--wrong-light)}
   .cluster-samples{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px}
-  .cluster-samples img{aspect-ratio:1;border-radius:3px;padding:3px}
+  .cluster-samples :global(.cluster-crop){aspect-ratio:1;height:auto}
   .cluster-outliers{padding:2px 12px 10px}.cluster-outliers small{display:block;font-size:10px;color:var(--muted);margin-bottom:6px}
   .cluster-foot{display:flex;align-items:center;justify-content:space-between;padding:0 12px 10px;font-size:10px;color:var(--muted)}
   .cluster-foot .quiet-link{margin-left:auto;font-size:11px}
@@ -537,7 +538,6 @@
   .palette-skeleton{display:flex;gap:6px;padding:14px 0;border-bottom:1px solid var(--line)}.palette-skeleton span{width:66px;height:82px;border-radius:7px}
   .cluster-skeleton{padding:12px 12px 16px}.cluster-skeleton .line-skeleton{width:120px;margin-bottom:10px}.cluster-skeleton .cluster-samples span{aspect-ratio:1;border-radius:3px}
   span.member{display:block}
-  .cluster-samples img:not(.pending){background:var(--scan-surface)}
   .member{position:relative;aspect-ratio:1;padding:6px;border:1.5px solid transparent;border-radius:5px;background:var(--surface-sunken)}
   .member.selected{border-color:var(--accent);background:light-dark(#e7e3ff, rgb(156 146 255 / 20%))}
   .member.own{border-style:dashed;border-color:light-dark(#b3acd9, #8c80bb)}

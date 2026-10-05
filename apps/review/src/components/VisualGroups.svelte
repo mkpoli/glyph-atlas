@@ -1,4 +1,5 @@
 <script>
+  import Glyph from './Glyph.svelte'
   import ScriptText from './ScriptText.svelte'
   import { t, formatNumber } from '../lib/i18n.svelte.js'
   let { analysis = null, count = null, unassigned = null, value = '', onchange = () => {} } = $props()
@@ -14,7 +15,7 @@
       <button class="shape-group" class:active={value === group.id} aria-pressed={value === group.id}
               data-visual-group={group.id} onclick={() => onchange(group.id)}>
         <span class="group-examples">{#each (group.representatives ?? []).filter(sample => sample.image).slice(0, 3) as sample (sample.id)}
-          <img src={sample.image} alt="" loading="lazy" />
+          <Glyph item={sample} alt="" class="group-example" />
         {/each}</span>
         <span>{group.label}{#if group.written_character}<small> ≈ <ScriptText text={group.written_character} /></small>{/if}</span><small>{formatNumber(group.count)}</small>
       </button>
@@ -31,5 +32,5 @@
   small{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
   .active{border-color:var(--accent);background:var(--accent-light);color:var(--accent)}
   .group-examples{display:flex;gap:3px}.group-examples:empty{display:none}
-  .group-examples img{width:30px;height:38px;object-fit:contain;border-radius:2px}
+  .group-examples :global(.group-example){width:30px;height:38px}
 </style>

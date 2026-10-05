@@ -2,6 +2,7 @@
   // The crops that look most like this one, and those among them filed under another character,
   // as `atlas similar neighbours` lists them. Loaded once the section comes near the screen.
   import { similar } from '../lib/client.js'
+  import Glyph from './Glyph.svelte'
   import { t, localize } from '../lib/i18n.svelte.js'
   import { isUnassigned } from '../lib/identity.js'
 
@@ -67,7 +68,7 @@
       <ul class="similar-grid" bind:clientWidth={width}>
         {#each visible as item (item.id)}
           <li><a href={href(item)} target="_blank" rel="noreferrer" aria-label={t('similar.open', { label: shown(item) })}>
-            {#if item.image && (item.origin !== 'corpus' || item.proxyable)}<img src={item.image} alt="" loading="lazy" decoding="async" />{:else}<span class="similar-missing" lang="ja">{shown(item)}</span>{/if}
+            {#if item.image && (item.origin !== 'corpus' || item.proxyable)}<Glyph {item} alt="" class="similar-crop" />{:else}<span class="similar-missing" lang="ja">{shown(item)}</span>{/if}
             <span class="similar-label" lang={isUnassigned(item) ? undefined : 'ja'}>{shown(item)}</span><small>{item.score.toFixed(2)}</small>
           </a></li>
         {/each}
@@ -89,7 +90,7 @@
   .similar-grid li{flex:0 0 72px}
   .similar-grid a:focus-visible{outline-offset:-3px}
   .similar-grid a{display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px;border:1px solid var(--line);border-radius:6px;color:inherit;text-decoration:none}
-  .similar-grid img,.similar-missing{width:60px;height:60px;object-fit:contain;display:grid;place-items:center;font-size:28px}
-  .similar-grid img{background:#fff}
+  .similar-grid :global(.similar-crop),.similar-missing{width:60px;height:60px;flex:none}
+  .similar-missing{display:grid;place-items:center;font-size:28px}
   .similar-label{font-size:14px}.similar-grid small{color:var(--muted);font-size:11px}
 </style>
