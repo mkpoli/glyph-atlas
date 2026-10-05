@@ -1357,6 +1357,10 @@ try {
   const leastTypical = (await db.prepare('EXPLAIN QUERY PLAN ' + worker.leastTypicalQuery()).bind('U+4EEE').all()).results.map(r => r.detail)
   assert.ok(leastTypical.some(d => /SEARCH form_units USING INDEX form_unit_cluster \(cluster=\? AND rank>\?\)/.test(d)), leastTypical.join('; '))
   assert.ok(!leastTypical.some(d => /^SCAN|TEMP B-TREE/.test(d)), leastTypical.join('; '))
+  // The family list is read in order from form_family_order, without a sort or a table row.
+  const familyList = (await db.prepare('EXPLAIN QUERY PLAN ' + worker.familiesQuery()).all()).results.map(r => r.detail)
+  assert.ok(familyList.some(d => /SCAN form_families USING COVERING INDEX form_family_order/.test(d)), familyList.join('; '))
+  assert.ok(!familyList.some(d => /TEMP B-TREE/.test(d)), familyList.join('; '))
   assert.equal((await db.prepare("SELECT character FROM corpus_units WHERE id='codh:plain'").first()).character, '仮')
   await counted()
   assert.equal((await call('/atlas/corpus/character?id=codh%3Aplain')).identity_basis, 'form_cluster')

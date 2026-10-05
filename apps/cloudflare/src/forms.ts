@@ -33,9 +33,11 @@ const SETTLE = `form=CASE WHEN glyph_set=1 THEN glyph_form ELSE cluster_form END
   issue_character=CASE WHEN glyph_set=1 THEN glyph_character ELSE cluster_character END,
   written_family=CASE WHEN glyph_set=1 THEN glyph_family ELSE cluster_family END`;
 
+// Read along form_family_order: in order, from the index alone.
+export const familiesQuery = () => 'SELECT code_point,char,label,count,cluster_count,assigned,rejected,revision FROM form_families ORDER BY count DESC,code_point';
+
 async function families(env: Env) {
-  const rows = await env.DB.prepare('SELECT code_point,char,label,count,cluster_count,assigned,rejected,revision FROM form_families ORDER BY count DESC,code_point')
-    .all<Json>();
+  const rows = await env.DB.prepare(familiesQuery()).all<Json>();
   if (!rows.results.length) return null;
   return { revision: rows.results[0].revision, items: rows.results.map(r => ({ code_point: r.code_point, char: r.char,
     label: r.label, count: r.count, clusters: r.cluster_count, assigned: r.assigned, rejected: r.rejected })) };

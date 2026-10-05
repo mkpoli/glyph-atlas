@@ -17,7 +17,7 @@ import { honkokuPage } from './honkoku';
 import { FORMATS, KINDS, bibtex, characterEntry, citedVersion, cropEntry, csl, hayagriva, type Day, type Entry, type Format } from './citation';
 import { YEAR_KEY, dateStats, datingJoin, datingOf, decadeColumn, documentDates, documentOf, withDating, yearCondition, yearOptions, yearOrder, type YearOptions } from './dating';
 import { FavouriteError, favouriteCrops, favouriteIds, setFavourite } from './favourites';
-export { leastTypicalQuery } from './forms';
+export { leastTypicalQuery, familiesQuery } from './forms';
 export { componentMatchQuery } from './components';
 export { dateClaimsQuery, dateStatsQuery, datingQuery, tallyDates } from './dating';
 export { claimHistoryQuery, currentClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery, resolveWriteQuery } from './ledger';
