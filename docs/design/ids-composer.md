@@ -29,7 +29,13 @@ and the best parts any host offers 0.81: layout is the larger remaining loss, st
 - A part comes from a character that draws it in the same place, in the positional form Japanese
   characters write there (𤣩 for 王 on the left), with the stroke count that operand usually has
   there; a nested sequence a character draws whole is taken whole.
-- An enclosed part fills the room the enclosing part leaves, found in its own outline.
+- A host is cut along its outlines: a counter goes with the outline around it, while a stroke
+  that only lies inside another's box (the strokes inside 図's 冂) is a shape of its own. An
+  unmistakable enclosing part is cut away even when what it holds looks unlike a sketch of its
+  sequence (⺀ interlocked with 㐅 in 図).
+- An enclosed part fills the room the enclosing part leaves, found in its own outline. One laid
+  out by the network keeps its box while that box lies in the opening; otherwise it takes 85% of
+  the opening.
 - Parts facing each other closer than 95% of drawn characters keep them are moved apart.
 - Every stroke is brought to the width a real character of the result's density has.
 - Three operands with no teacher sharing one of them share the axis as the font's own ⿳ and ⿲
