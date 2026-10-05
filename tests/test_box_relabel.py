@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from glyph_atlas import align, box_relabel, koji
@@ -31,10 +33,10 @@ def run() -> align.Run:
     return align.Run(name="test", accept=0.5, margin=0.0)
 
 
-def repair(units, protected=()):
+def repair(units, verdicts=None):
     detections = {"hl:item:0": BOXES}
     return box_relabel.repair(units, [line()], detections, run=run(), classifier=None, crop_of=None,
-                              protected=protected)
+                              verdicts=verdicts)
 
 
 def test_a_line_whose_boxes_step_back_up_the_column_is_stale():
@@ -74,14 +76,40 @@ def test_the_repaired_line_reads_in_order():
     assert not box_relabel.stale(box_relabel.placed_of(repaired))
 
 
-def test_a_unit_a_person_reviewed_keeps_its_label():
+def test_a_unit_a_person_confirmed_or_corrected_keeps_its_label():
     old = stale_units()
     old[0] = old[0].model_copy(update={"review": ReviewState.REVIEWED})
-    repaired, records = repair(old, protected={old[1].id})
+    repaired, records = repair(old, verdicts={old[1].id: box_relabel.MATCH, old[2].id: box_relabel.CORRECTION})
     by_id = {unit.id: unit for unit in repaired}
-    assert by_id[old[0].id].text_source == "高"
-    assert by_id[old[1].id].text_source == "八"
-    assert [record["status"] for record in records].count("protected") == 2
+    assert [by_id[unit.id].text_source for unit in old[:3]] == ["高", "八", "百"]
+    assert [record["status"] for record in records].count("protected") == 3
+
+
+def test_a_unit_a_review_only_called_wrong_takes_the_realigned_label_and_keeps_its_history():
+    old = stale_units()
+    old[0] = old[0].model_copy(update={"review": ReviewState.DISPUTED})
+    old[1] = old[1].model_copy(update={"review": ReviewState.REVIEWED})
+    repaired, records = repair(old, verdicts={old[1].id: box_relabel.WRONG})
+    by_id = {unit.id: unit for unit in repaired}
+    assert by_id[old[0].id].text_source == TEXT[BOXES.index(old[0].box)]
+    assert by_id[old[1].id].text_source == TEXT[BOXES.index(old[1].box)]
+    assert box_relabel.counts(records) == {"relabelled": 4}
+    assert by_id[old[1].id].meta["box_relabel"]["review"] == {"state": "reviewed", "verdict": "wrong"}
+    assert "review" not in by_id[old[0].id].meta["box_relabel"]
+
+
+def test_the_latest_review_of_a_unit_decides_its_verdict():
+    def site(target, verdict, **extra):
+        evidence = json.dumps({"kind": "character-review", "verdict": verdict, **extra})
+        return {"target": target, "event": json.dumps({"target_type": "unit", "target_id": target, "field": "review",
+                                                       "new": "disputed", "evidence": evidence})}
+    events = [site("a", "wrong", issue="reading"), site("a", "wrong", issue="character", suggested_character="U+9650"),
+              site("b", "match"), site("b", "wrong", issue="crop"),
+              site("c", "match", kind="visual-quiz"),
+              {"target_type": "unit", "target_id": "d", "field": "text_source", "new": "高", "evidence": None},
+              {"target_type": "unit", "target_id": "e", "field": "seen", "new": True, "evidence": None},
+              {"target_type": "unit", "target_id": "f", "field": "review", "new": "reviewed", "evidence": None}]
+    assert box_relabel.verdicts_of(events) == {"a": "correction", "b": "wrong", "d": "correction", "f": "match"}
 
 
 def test_a_box_the_new_alignment_leaves_empty_loses_its_label():
@@ -164,7 +192,7 @@ def test_a_gap_whose_boxes_and_characters_do_not_match_stays_unplaced():
 
 def test_a_protected_unit_takes_its_place_so_its_line_is_not_stale_after_the_repair():
     old = stale_units()
-    repaired, _ = repair(old, protected={old[0].id})
+    repaired, _ = repair(old, verdicts={old[0].id: box_relabel.MATCH})
     assert repaired[0].text_source == "高"
     assert not box_relabel.stale(box_relabel.placed_of(repaired))
 
@@ -230,3 +258,12 @@ def test_a_unit_another_method_placed_on_the_line_is_not_relabelled():
     repaired, records = repair([*stale_units(), imported])
     assert repaired[-1] == imported
     assert "ar:record:0" not in {record["unit_id"] for record in records}
+
+
+def test_review_events_are_read_from_json_lines_a_list_or_a_d1_query(tmp_path):
+    event = {"target_type": "unit", "target_id": "a", "field": "review", "new": "reviewed", "evidence": None}
+    (tmp_path / "lines.jsonl").write_text(json.dumps(event) + "\n")
+    (tmp_path / "list.json").write_text(json.dumps([event]))
+    (tmp_path / "d1.json").write_text(json.dumps([{"results": [event], "success": True}]))
+    for name in ("lines.jsonl", "list.json", "d1.json"):
+        assert box_relabel.read_reviews(tmp_path / name) == [event]

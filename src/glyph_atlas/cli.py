@@ -1081,11 +1081,12 @@ def repair_relabel(
     detections: Annotated[Path, typer.Option(help="the detections the units were cut from, by page")],
     run: Annotated[str, typer.Option(help="run configuration under models/align/runs/<name>.yaml")] = "collection-v2",
     classifier: Annotated[Path | None, typer.Option(help="the run's classifier export, if not at its path")] = None,
-    protect: Annotated[Path | None, typer.Option(help="unit ids, one a line, whose labels stay")] = None,
+    reviews: Annotated[Path | None, typer.Option(help="review events made elsewhere, such as the site's, as JSON or JSON lines")] = None,
     every: Annotated[bool, typer.Option("--every-line", help="realign every aligned line, not only stale ones")] = False,
 ) -> None:
     """Give every box of a line aligned in the old detection order the character the current aligner
-    places on it, keeping each unit id on its box. The source is never written to."""
+    places on it, keeping each unit id on its box. A unit a person confirmed or corrected keeps its
+    label; one a review only called wrong takes the realigned label. The source is never written to."""
     from . import align as align_module
     from . import box_relabel
     from .classify import Classifier
@@ -1094,9 +1095,9 @@ def repair_relabel(
     if classifier is not None:
         config = config.model_copy(update={"classifier": str(classifier)})
     align_module.check_classifier(config)
-    ids = protect.read_text(encoding="utf-8").split() if protect else []
+    events = box_relabel.read_reviews(reviews) if reviews else []
     result = box_relabel.relabel_directory(directory, out, run=config, classifier=Classifier(config.classifier),
-                                           detections=detections, protect=ids, every=every)
+                                           detections=detections, reviews=events, every=every)
     for name, value in result.items():
         typer.echo(f"{name:<14} {value:>10}")
 
