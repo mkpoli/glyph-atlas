@@ -7,12 +7,14 @@
   import Glyph from '../components/Glyph.svelte'
   import ReferenceGlyph from '../components/ReferenceGlyph.svelte'
   import ScriptText from '../components/ScriptText.svelte'
+  import FormText from '../components/FormText.svelte'
+  import IdsComposer from '../components/IdsComposer.svelte'
   import OriginText from '../components/OriginText.svelte'
   import FormReview from '../components/FormReview.svelte'
   import GlyphContext from '../components/GlyphContext.svelte'
   import { fromAction } from 'svelte/attachments'
   import { showsContext, clearContext } from '../lib/glyphContext.svelte.js'
-  import { families as loadFamilies, family as loadFamily, members as loadMembers, split as loadSplit } from '../lib/forms.js'
+  import { families as loadFamilies, family as loadFamily, members as loadMembers, paletteOf, split as loadSplit } from '../lib/forms.js'
   import { history, step, undo, redo } from '../lib/formHistory.svelte.js'
   import { number, stored, remember } from '../lib/client.js'
   import { t, around, localize } from '../lib/i18n.svelte.js'
@@ -36,12 +38,16 @@
   let loadingFamily = $state(''), loadingMembers = $state(false), loadingSplit = $state(false)
   // Cluster by cluster review of every glyph, entered from the cluster grid.
   let reviewing = $state(false)
+  // The description editor, for a form Unicode lacks; it starts from the family character's structure.
+  let composing = $state(false)
   // A cluster is done once it is named or marked, or every glyph has a form or was reported as not belonging.
   const isOpen = c => !c.form && !c.issue && c.assigned + c.rejected < c.count
   const cluster = $derived(current?.items[active] ?? null)
   const shown = $derived(list.filter(f => !filter.trim() || f.char.includes(filter.trim()) || f.label.includes(filter.trim())
     || f.code_point.toLowerCase().includes(filter.trim().toLowerCase())))
   const byForm = $derived(new Map((current?.forms ?? []).map(f => [f.char, f])))
+  // The forms a key or a click assigns: the encoded ones, then the descriptions already in use.
+  const palette = $derived(paletteOf(current))
   const pickedClusters = $derived((current?.items ?? []).filter(c => picked.has(c.id)))
   const target = $derived(chosen.size ? t('forms.target.selectedGlyphs', { count: chosen.size })
     : pickedClusters.length > 1 ? t('forms.target.clusters', { clusters: pickedClusters.length, glyphs: number(pickedClusters.reduce((n, c) => n + c.count, 0)) })
@@ -68,7 +74,7 @@
     if (code !== codePoint) return
     current = arranged(loaded)
     if (keepId) active = Math.max(0, current.items.findIndex(c => c.id === keepId))
-    if (!keep) { picked = new Set(); pickAnchor = null; reviewing = false; active = Math.max(0, current.items.findIndex(isOpen)); close() }
+    if (!keep) { picked = new Set(); pickAnchor = null; reviewing = false; composing = false; active = Math.max(0, current.items.findIndex(isOpen)); close() }
   }
   async function show(index) {
     active = index; open = current.items[index].id; chosen = new Set(); anchor = null
@@ -244,9 +250,9 @@
   function leaveReview(index) { reviewing = false; active = Math.min(index, current.items.length - 1); scrollActive() }
   function keydown(event) {
     if (historyKeys(event) || reviewing) return
-    if (!current || event.target.closest?.('input, textarea') || event.metaKey || event.ctrlKey || event.altKey) return
+    if (!current || event.target.closest?.('input, textarea, .ids-composer') || event.metaKey || event.ctrlKey || event.altKey) return
     const keys = '1234567890'
-    if (keys.includes(event.key) && current.forms[keys.indexOf(event.key)]) { event.preventDefault(); apply(current.forms[keys.indexOf(event.key)].char) }
+    if (keys.includes(event.key) && palette[keys.indexOf(event.key)]) { event.preventDefault(); apply(palette[keys.indexOf(event.key)].char) }
     else if (!open && (event.key === 'j' || event.key === 'ArrowDown')) { event.preventDefault(); active = Math.min(active + 1, current.items.length - 1); scrollActive() }
     else if (!open && (event.key === 'k' || event.key === 'ArrowUp')) { event.preventDefault(); active = Math.max(active - 1, 0); scrollActive() }
     else if (event.key === 'Enter' && !open) { event.preventDefault(); show(active) }
@@ -347,14 +353,22 @@
         <div class="form-palette" aria-label={t('forms.palette.label')}>
           <p class="palette-target">{#if target}{t('forms.appliesTo')} <strong>{target}</strong>{:else}{t('forms.chooseCluster')}{/if}</p>
           <div class="palette-forms">
-            {#each current.forms as form, i (form.char)}
-              <button class="form-choice" disabled={busy || !target} onclick={() => apply(form.char)} title={form.name ?? form.code_point}>
-                <ReferenceGlyph char={form.char} code_point={form.code_point} size="lg" script={form.script} />
-                {#if form.jibo}<span class="form-source"><ScriptText text={form.jibo} /></span>{:else if form.origin}<span class="form-source" title={originTitle(form.origin)}><OriginText origin={form.origin} titled={false} /></span>{:else}<span class="form-source"></span>{/if}
-                <small>{form.code_point}</small>
-                {#if i < 10}<kbd>{'1234567890'[i]}</kbd>{/if}
-              </button>
+            {#each palette as form, i (form.char)}
+              {#if form.described}
+                <button class="form-choice described" disabled={busy || !target} onclick={() => apply(form.char)} title={t('form.ids.named', { ids: form.char })}>
+                  <span class="form-description"><FormText text={form.char} /></span>
+                  {#if i < 10}<kbd>{'1234567890'[i]}</kbd>{/if}
+                </button>
+              {:else}
+                <button class="form-choice" disabled={busy || !target} onclick={() => apply(form.char)} title={form.name ?? form.code_point}>
+                  <ReferenceGlyph char={form.char} code_point={form.code_point} size="lg" script={form.script} />
+                  {#if form.jibo}<span class="form-source"><ScriptText text={form.jibo} /></span>{:else if form.origin}<span class="form-source" title={originTitle(form.origin)}><OriginText origin={form.origin} titled={false} /></span>{:else}<span class="form-source"></span>{/if}
+                  <small>{form.code_point}</small>
+                  {#if i < 10}<kbd>{'1234567890'[i]}</kbd>{/if}
+                </button>
+              {/if}
             {/each}
+            <button class="form-choice form-compose" disabled={busy} aria-expanded={composing} onclick={() => composing = !composing}>{t('form.ids.compose')}</button>
             <div class="palette-other">
               {#if chosen.size}
                 <button disabled={busy} onclick={() => apply(null)}>{t('forms.notThisForm')}</button>
@@ -380,6 +394,11 @@
               {/if}
             </div>
           </div>
+          {#if composing}
+            <div class="palette-composer">
+              <IdsComposer disabled={busy || !target} char={current.char} onuse={form => { composing = false; apply(form) }} />
+            </div>
+          {/if}
         </div>
 
         {#if open}
@@ -396,7 +415,7 @@
                 <button class:active={order === 'typical'} aria-pressed={order === 'typical'} onclick={() => reorder('typical')}>{t('forms.order.typical')}</button>
                 <button class:active={order === 'unusual'} aria-pressed={order === 'unusual'} onclick={() => reorder('unusual')}>{t('forms.order.unusual')}</button>
               </div>{/if}
-              {#if cluster.form}<span class="cluster-form"><ScriptText text={cluster.form} /> <small>{@render source(cluster.form)}</small></span>
+              {#if cluster.form}<span class="cluster-form"><FormText text={cluster.form} /> <small>{@render source(cluster.form)}</small></span>
               {:else if cluster.issue}<span class="cluster-issue" class:reported={cluster.issue !== 'mixed'}>{clusterIssue(cluster.issue)}</span>{/if}
               {#if chosen.size}<button class="quiet-link" onclick={() => chosen = new Set()}>{t('forms.clearSelection')}</button>{/if}
             </div>
@@ -452,9 +471,9 @@
                 <button class="cluster-select" onclick={event => choose(i, event)} ondblclick={() => show(i)} aria-pressed={i === active || picked.has(c.id)}>
                   <span class="cluster-head">
                     <strong lang="ja">{c.label}</strong><span>{number(c.count)}</span>
-                    {#if c.form}<span class="cluster-form"><span class="inline-glyph"><ScriptText text={c.form} /></span> {@render source(c.form)}</span>
+                    {#if c.form}<span class="cluster-form"><span class="inline-glyph"><FormText text={c.form} /></span> {@render source(c.form)}</span>
                     {:else if c.issue}<span class="cluster-issue" class:reported={c.issue !== 'mixed'}>{clusterIssue(c.issue)}</span>
-                    {:else if c.assigned}<span class="cluster-open">{around('forms.haveForm', 'glyph', { count: c.assigned })[0]}<span class="inline-glyph"><ScriptText text={c.majority} /></span>{around('forms.haveForm', 'glyph', { count: c.assigned })[1]}</span>
+                    {:else if c.assigned}<span class="cluster-open">{around('forms.haveForm', 'glyph', { count: c.assigned })[0]}<span class="inline-glyph"><FormText text={c.majority} /></span>{around('forms.haveForm', 'glyph', { count: c.assigned })[1]}</span>
                     {:else}<span class="cluster-open">{t('corpus.unassigned')}</span>{/if}
                   </span>
                   <span class="cluster-samples">{#each c.representatives as r (r.id)}{#if r.image}<Glyph item={r} alt="" class="glyph-image cluster-crop" {@attach fromAction(showsContext, () => ({ id: r.id, pin: false }))} />{/if}{/each}</span>
@@ -506,6 +525,10 @@
   .form-source{font-size:12px;min-height:16px;font-family:"Noto Sans CJK JP","Yu Gothic","GenZui Sans",sans-serif}
   .form-choice small{font-size:8px;color:var(--muted);font-family:"GenZui Sans",ui-monospace,monospace}
   .form-choice kbd{position:absolute;top:4px;right:5px;font-size:8px;color:var(--faint);font-family:"GenZui Sans",ui-monospace,monospace}
+  .form-choice.described{justify-content:center;font-size:22px;line-height:1.2;padding:8px 12px;font-family:"Kureedo Kata","Klee One","LXGW WenKai TC","LXGW WenKai","GenZui Sans",serif}
+  .form-choice.form-compose{justify-content:center;font-size:12px;color:var(--muted);border-style:dashed}
+  .form-choice.form-compose[aria-expanded="true"]{color:var(--accent);border-color:var(--accent)}
+  .palette-composer{margin-top:12px;max-width:560px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
   .palette-other{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto;align-content:flex-start;max-width:260px}.palette-other button{font-size:11px;padding:8px 11px}
   .palette-other kbd{font-size:9px;color:var(--muted)}
   .palette-other .accept-majority{color:var(--accent);border-color:light-dark(#cfc9f7, #756ab9);background:var(--accent-light)}
