@@ -51,14 +51,30 @@ export const leastTypicalQuery = () => `SELECT u.cluster,u.id,u.image,u.rank FRO
 /** Whether a form is written as a well-formed ideographic description sequence. */
 export const isDescription = (value: string) => isSequence(value) && formProblem(value) === null;
 
+// The descriptions a crop of the family is named with in the crop dialog, with how many crops each
+// names. Read from the description side: a description starts with an operator (U+2FF0–U+2FFF,
+// U+303E or U+31EF), so three ranges of `representation_value` find every one, and each leads to its
+// form's claims by `current_claim_object` and to the crop's family by `form_units`' key. CROSS JOIN
+// keeps that order: left to choose, SQLite starts from every crop's form claim. The read grows with the
+// crops named with a description, not with the family. A claim counts while it holds on the crop's
+// current cut, as `cropFormsQuery` reads it.
+export const describedClaimsQuery = () => `SELECT r.value AS form,count(*) AS n FROM
+  (SELECT id,value FROM representations WHERE value>='⿰' AND value<'　' AND scheme='ids'
+   UNION ALL SELECT id,value FROM representations WHERE value>='〾' AND value<'〿' AND scheme='ids'
+   UNION ALL SELECT id,value FROM representations WHERE value>='㇯' AND value<'ㇰ' AND scheme='ids') r
+  CROSS JOIN forms f ON f.anchor=r.id CROSS JOIN current_claims c ON c.predicate='has_form' AND c.object=f.id
+  CROSS JOIN form_units u ON u.id=c.subject CROSS JOIN units k ON k.id=c.subject
+  WHERE u.family=? AND u.clustered=1 AND c.status<>'rejected' AND c.crop_version IS k.crop_version GROUP BY r.value`;
+
 async function family(env: Env, codePoint: string, q: URLSearchParams, tools: FormTools) {
   const found = await env.DB.prepare('SELECT * FROM form_families WHERE code_point=?').bind(codePoint).first<Json>();
   if (!found) tools.fail(404, 'This family was not clustered.');
   const order = q.get('order') === 'size' ? 'size' : 'shape';
-  const [clusters, tallies, unusual] = await env.DB.batch([
+  const [clusters, tallies, unusual, claimed] = await env.DB.batch([
     env.DB.prepare(`SELECT * FROM form_clusters WHERE family=? ORDER BY ${order === 'size' ? 'size_position' : 'shape_position'}`).bind(codePoint),
     env.DB.prepare('SELECT cluster,form,count(*) AS n,sum(glyph_set) AS own,count(issue) AS rejected FROM form_units WHERE family=? AND clustered=1 GROUP BY cluster,form').bind(codePoint),
     env.DB.prepare(leastTypicalQuery()).bind(codePoint),
+    env.DB.prepare(describedClaimsQuery()).bind(codePoint),
   ]);
   const leastTypical = new Map<string, Json[]>();
   for (const u of (unusual.results as Json[]).sort((a, b) => b.rank - a.rank))
@@ -70,9 +86,15 @@ async function family(env: Env, codePoint: string, q: URLSearchParams, tools: Fo
     if (t.form) { entry.assigned += t.n; entry.forms.set(t.form, (entry.forms.get(t.form) ?? 0) + t.n) }
     byCluster.set(t.cluster, entry);
   }
+  // The descriptions already named in the family, by Forms decisions or in the crop dialog, most used
+  // first: the palette offers them after the encoded forms.
+  const described = new Map<string, number>();
+  for (const t of tallies.results as Json[]) if (t.form && isDescription(t.form)) described.set(t.form, (described.get(t.form) ?? 0) + t.n);
+  for (const c of claimed.results as Json[]) if (isDescription(c.form)) described.set(c.form, (described.get(c.form) ?? 0) + c.n);
   return { revision: found!.revision, code_point: found!.code_point, char: found!.char, label: found!.label,
     count: found!.count, clusters: found!.cluster_count, assigned: found!.assigned, rejected: found!.rejected, order,
     forms: JSON.parse(found!.forms),
+    described: [...described].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([char, count]) => ({ char, count })),
     items: (clusters.results as Json[]).map(c => {
       const t = byCluster.get(c.id);
       const [majority, majorityCount] = (t ? [...t.forms].sort((a, b) => b[1] - a[1])[0] : null) ?? [null, 0];
@@ -303,7 +325,7 @@ function decoded(segment: string, tools: FormTools) {
 // and latest decision; FORMS_TTL bounds a copy's life.
 const FORMS_TTL = 3600;
 // The shape of what `family` and `families` answer; a change to it leaves the older copies behind.
-const FORMS_SHAPE = 2;
+const FORMS_SHAPE = 3;
 type FormsState = { loading: number; loaded: string | null; revision: string | null; decision: number | null; following: number };
 async function cached(url: URL, state: FormsState, key: string, read: () => Promise<Json | null>, ctx: ExecutionContext) {
   const request = new Request(`${url.origin}/atlas/forms/cached/${key}?v=${encodeURIComponent(`${FORMS_SHAPE}:${state.loaded}:${state.revision}:${state.decision ?? 0}`)}`);
