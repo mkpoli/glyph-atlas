@@ -158,26 +158,31 @@ def line_orientation(corpus) -> dict[str, bool]:
 
 
 def stale_units(dataset, vertical=None) -> set[str]:
-    """The ids of the units on lines whose detect-align units were aligned in the old detection order.
+    """The ids of the units on lines whose detect-align units were aligned in the old detection order,
+    or that hold a box another line of their page holds.
 
     Their labels sit on the wrong boxes (`glyph_atlas.box_relabel`), so a publication leaves them out
-    until `atlas repair relabel` has given each box its character. `vertical` gives each line's
-    orientation where it is known.
+    until `atlas repair relabel` has given each box its character and each detection one line.
+    `vertical` gives each line's orientation where it is known.
     """
     from glyph_atlas.schema import Box
 
-    if not {"id", "line_id", "seq", "box", "method"} <= set(dataset.schema.names):
+    if not {"id", "page_id", "line_id", "seq", "box", "method"} <= set(dataset.schema.names):
         return set()
-    lines, ids = {}, {}
-    table = dataset.to_table(columns=["id", "line_id", "seq", "box"], filter=ds.field("method") == "detect-align")
+    lines, ids, held = {}, {}, []
+    table = dataset.to_table(columns=["id", "page_id", "line_id", "seq", "box"],
+                             filter=ds.field("method") == "detect-align")
     for row in table.to_pylist():
         if row["line_id"]:
             ids.setdefault(row["line_id"], []).append(row["id"])
             if row["seq"] is not None and row["box"]:
-                lines.setdefault(row["line_id"], []).append((row["seq"], Box(**row["box"])))
+                box = Box(**row["box"])
+                lines.setdefault(row["line_id"], []).append((row["seq"], box))
+                held.append((row["page_id"], row["line_id"], box))
     known = vertical or {}
-    return {unit for line, placed in lines.items() if box_relabel.stale(placed, vertical=known.get(line))
-            for unit in ids[line]}
+    stale = box_relabel.shared_lines(held)
+    stale |= {line for line, placed in lines.items() if box_relabel.stale(placed, vertical=known.get(line))}
+    return {unit for line in stale for unit in ids[line]}
 
 
 def drop_stale(db, ids) -> int:
