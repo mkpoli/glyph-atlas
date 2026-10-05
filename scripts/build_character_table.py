@@ -431,7 +431,7 @@ def overrides(path: Path) -> dict[str, Any]:
     # the broader equivalence policies used for aligning transcriptions.
     assigned: dict[str, str] = {}
     for head, family in document.get("families", {}).items():
-        if not re.fullmatch(r"U\+[0-9A-F]{4,6}", head):
+        if not re.fullmatch(r"U\+[0-9A-F]{4,6}( U\+[0-9A-F]{4,6})*", head):
             raise ValueError(f"invalid family representative: {head}")
         members = family.get("members", [])
         if len(members) < 2 or any(not isinstance(c, str) or len(c) != 1 for c in members):

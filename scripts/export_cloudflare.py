@@ -265,7 +265,7 @@ def export(dataset: Path, output: Path, *, resume=False):
             context = context_guesses(unit, line, neighbors.get(unit.line_id, []))
             # Filled by read_crops below, which also reads a kept crop again when its models changed.
             visual = visual or {"status": "unavailable", "candidates": []}
-            cp = refs.to_code_point(item["label"]) if len(item["label"]) == 1 else None
+            cp = refs.to_code_point(item["label"])
             counts[cp] += 1
             # A label with no family is its own grapheme, so every named crop is one `family` lookup.
             family = atlas.grapheme_of(item["label"])
@@ -309,7 +309,12 @@ def export(dataset: Path, output: Path, *, resume=False):
         export_character_variants.fill(db, derived=False)
         db.execute("DELETE FROM characters")
         db.execute("DELETE FROM aliases")
-        for row in refs.characters():
+        exported = {row.code_point for row in refs.characters()}
+        rows = refs.characters() + [
+            row for code_point in sorted(counts, key=refs._point_order)
+            if code_point not in exported and (row := refs.character(code_point)) is not None
+        ]
+        for row in rows:
             info = characters._row(row, counts)
             info["origin"] = refs.origin_of(row.code_point)
             info["candidates"] = characters.candidate_summary(row.char, live=live_counts.get(row.char),

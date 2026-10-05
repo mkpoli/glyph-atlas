@@ -15,6 +15,7 @@ from glyph_atlas.corpus.occurrence import (
     codepoint_of_occurrence_id,
     deduplicate,
     find_occurrences,
+    normalise_occurrence_id,
     occurrence_id,
 )
 
@@ -90,6 +91,11 @@ class TestIdentity:
     def test_the_occurrence_id_carries_the_code_point(self):
         ident = occurrence_id(source(), TOMO, 3, "literal_text")
         assert codepoint_of_occurrence_id(ident) == "U+2A708"
+
+    def test_the_occurrence_id_carries_a_sequence_code_point(self):
+        ident = occurrence_id(source(), "ᄃᆞᆯ", 3, "literal_text")
+        assert codepoint_of_occurrence_id(ident) == "U+1103 U+119E U+11AF"
+        assert normalise_occurrence_id(ident.replace("+", " ")) == ident
 
 
 class TestGeometry:

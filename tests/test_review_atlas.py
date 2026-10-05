@@ -25,6 +25,15 @@ PAGE = "hk:entry:with:separators:9"
 LINE = PAGE + ":L3"
 
 
+def test_single_character_uses_old_hangul_clusters():
+    assert atlas_module.single_character("ᄒᆞ")
+    assert atlas_module.one_character("ᄃᆞᆯ") == "ᄃᆞᆯ"
+    assert atlas_module.single_character("가")
+    assert atlas_module.single_character("𛂞゙")
+    assert not atlas_module.single_character("가나")
+    assert atlas_module.script_of_identity("ᄒᆞ") == "hangul"
+
+
 @pytest.fixture
 def dataset(tmp_path: Path, monkeypatch):
     root = tmp_path / "dataset"

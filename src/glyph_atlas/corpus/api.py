@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
+from ..clusters import is_one_character
 from . import crops as crops_module
 from . import index as index_module
 from . import sources as corpus_sources
@@ -589,7 +590,7 @@ class CorpusAPI:
         """A count row with this character's isolated glyph rectangles folded in."""
         from .identity import NORMALIZED_CORPORA, family_of
         result = _count_row(char, summary, len(self.index.glyphs.for_char(char)))
-        family = family_of(codepoint(char)) if len(char) == 1 else None
+        family = family_of(codepoint(char)) if is_one_character(char) else None
         ambiguous = bool(family and family["character_count"] > 1 and any(
             set(_count_row(member["char"], self.index.summary(member["char"]), 0).get("corpora") or []) & NORMALIZED_CORPORA
             for member in family["members"]
@@ -1006,10 +1007,10 @@ def _resolve(raw: str) -> str | None:
     if not raw:
         return None
     text = raw.strip()
-    m = re.fullmatch(r"[Uu][+ ]([0-9A-Fa-f]{4,6})", text)
+    m = re.fullmatch(r"[Uu][+ ]([0-9A-Fa-f]{4,6})(?:[ -]+[Uu][+ ]([0-9A-Fa-f]{4,6}))*", text)
     if m:
         try:
-            return chr(int(m.group(1), 16))
+            return "".join(chr(int(point, 16)) for point in re.findall(r"[Uu][+ ]([0-9A-Fa-f]{4,6})", text))
         except ValueError:
             return None
     if re.fullmatch(r"[0-9A-Fa-f]{4,6}", text) and len(text) >= 4 and not text.isdigit():
@@ -1017,7 +1018,7 @@ def _resolve(raw: str) -> str | None:
             return chr(int(text, 16))
         except ValueError:
             return None
-    if len(text) == 1:
+    if is_one_character(text):
         return text
     return None
 

@@ -401,6 +401,22 @@ class TestLocatedUnitsScan:
         assert total == 1
         assert [r["unit_id"] for r in rows] == ["codh-full:u1"]
 
+    def test_old_hangul_jamo_unit_reaches_the_character_summary(self, tmp_path):
+        root = tmp_path / "shared-work"
+        root.mkdir()
+        unit = self.unit("kokatsuji", 1).model_copy(
+            update={"text_source": "ᄒᆞ", "unicode": "U+1112 U+119E"}
+        )
+        self.corpus(root, "kokatsuji", [unit])
+        directory = tmp_path / "index"
+        build_chars(root, directory)
+        index = CorpusIndex(directory, root)
+        row = index.summary_by_codepoint("U+1112 U+119E")
+        assert row is not None
+        assert row["char"] == "ᄒᆞ"
+        assert row["n_units"] == 1
+        assert index.summary("ᄒ") is None
+
     def test_paging_is_global_across_corpora(self, two_corpora):
         """Page two must continue, not restart each corpus."""
         root, _ = two_corpora

@@ -20,7 +20,7 @@ IDENTITY_FIELDS = (
 @lru_cache(maxsize=8192)
 def family_of(code_point: str | None) -> dict[str, Any] | None:
     """The grapheme family of one code point; a sequence such as ツ + U+309A has none of its own."""
-    return refs.grapheme_info(code_point) if code_point and len(code_point.split()) == 1 else None
+    return refs.grapheme_info(code_point) if code_point else None
 
 
 def identity_fields(

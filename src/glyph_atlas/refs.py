@@ -43,6 +43,7 @@ from typing import Any
 import yaml
 
 from . import han_component_variants, han_components
+from .clusters import is_conjoining_jamo_syllable, is_one_character
 from .schema import Character, Ligature, Script, VariantRef
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -680,6 +681,7 @@ def clear_cache() -> None:
         _definition,
         _hentaigana_rows,
         _characters,
+        _synthesised_character,
         _ordered_characters,
         graphemes,
         _source_record,
@@ -854,7 +856,27 @@ def character(code_point: str) -> Character | None:
     `refs.character("U+1B127")` is 𛄧: `KATAKANA LETTER ALTERNATE NE`, script katakana, 字母 子,
     reading ね, a form of the grapheme U+306D, confusable with U+5B50.
     """
-    return _characters().get(_normalise(code_point))
+    key = _normalise(code_point)
+    return _characters().get(key) or _synthesised_character(key)
+
+
+@cache
+def _synthesised_character(code_point: str) -> Character | None:
+    """A generated row for old-Hangul syllables the static table cannot enumerate."""
+    try:
+        char = to_char(code_point)
+    except (ValueError, OverflowError):
+        return None
+    if not is_conjoining_jamo_syllable(char):
+        return None
+    return Character(
+        code_point=code_point,
+        char=char,
+        script=Script.HANGUL,
+        category="Lo",
+        block="Hangul Jamo",
+        grapheme=code_point,
+    )
 
 
 def grapheme(code_point: str) -> str | None:
@@ -951,7 +973,7 @@ def _grapheme_info(head: str) -> dict:
     row = character(head)
     stated = _grapheme_families().get(head) or _voicing().get(head)
     points = (stated["members"] if stated else
-              [head] + [point for point in graphemes()[head] if point != head])
+              [head] + [point for point in graphemes().get(head, []) if point != head])
     members = [{"code_point": point, "char": to_char(point)} for point in points]
     return {
         "code_point": head, "char": row.char, "name": row.name, "script": str(row.script),
@@ -983,7 +1005,7 @@ def script_of(char: str) -> Script:
     - answer `symbol`, which is how this project labels the characters that belong to no one
     script. A character the table does not hold answers `unknown`.
     """
-    row = character(to_code_point(char)) if len(char) == 1 else None
+    row = character(to_code_point(char)) if is_one_character(char) else None
     return row.script if row else Script.UNKNOWN
 
 
@@ -1153,6 +1175,8 @@ def origin_of(unicode: str | None) -> list[dict[str, Any]]:
 
 def _normalise(code_point: str) -> str:
     if len(code_point) == 1 and not code_point.isascii():
+        return to_code_point(code_point)
+    if not code_point.startswith(("U+", "u+")) and not re.fullmatch(r"[0-9A-Fa-f]{4,6}", code_point):
         return to_code_point(code_point)
     return "U+" + code_point.removeprefix("U+").removeprefix("u+").upper().zfill(4)
 

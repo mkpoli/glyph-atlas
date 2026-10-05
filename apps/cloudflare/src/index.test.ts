@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { canonical, samePixels, literal, hira, single, validRound, categoryOf, describedCard,
+import { canonical, samePixels, literal, hira, single, validRound, categoryOf, describedCard, jamoCard,
   encodeCursor, decodeCursor, historyItem, historyQuery, moved, substitutionKey } from './index';
 import { ROUND_MAX } from './rounds';
 import { componentTerm, rankMatches } from './components';
@@ -9,6 +9,14 @@ describe('historical character identities', () => {
     expect(literal('U+2A708')).toBe('𪜈');
     expect(single('𪜈')).toBe(true);
     expect(single('トモ')).toBe(false);
+  });
+  it('treats old Hangul jamo syllables as one character', () => {
+    expect(literal('U+1112-U+119E')).toBe('ᄒᆞ');
+    expect(single('ᄒᆞ')).toBe(true);
+    expect(single('ᄃᆞᆯ')).toBe(true);
+    expect(single('가')).toBe(true);
+    expect(single('𛂞゙')).toBe(true);
+    expect(single('가나')).toBe(false);
   });
   it('normalizes combining kana without rewriting written forms', () => {
     expect(literal('か\u3099')).toBe('が');
@@ -195,6 +203,14 @@ describe('a character Unicode lacks, written as an ideographic description seque
     expect(data.grapheme.members).toEqual([{ code_point: 'U+2FF0 U+4EBB U+80C3', char: '⿰亻胃' }]);
     expect(detail.characters).toEqual([data]);
     expect(detail.visual_analysis.family).toBe('U+2FF0 U+4EBB U+80C3');
+  });
+  it('synthesizes an old Hangul jamo card', () => {
+    const { data, detail } = jamoCard('ᄒᆞ');
+    expect(data.code_point).toBe('U+1112 U+119E');
+    expect(data.script).toBe('hangul');
+    expect(data.kind).toBe('hangul');
+    expect(data.grapheme.members).toEqual([{ code_point: 'U+1112 U+119E', char: 'ᄒᆞ' }]);
+    expect(detail.category).toBe('Lo');
   });
 });
 

@@ -347,7 +347,7 @@ class Character(BaseModel):
 
     """
 
-    code_point: str = Field(description="U+XXXX, four to six hex digits and uppercase")
+    code_point: str = Field(description="U+XXXX, or a space-separated sequence of such code points")
     char: str = Field(description="the character itself")
     name: str | None = Field(default=None, description="the Unicode name, as UnicodeData.txt states it")
     alias: str | None = Field(default=None, description="a second name for the same code point, such as an MJ figure name")

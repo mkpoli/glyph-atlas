@@ -46,6 +46,28 @@ const isGugyeol=(value:string)=>{const c=value.codePointAt(0)??-1;return c>=0xF6
 const idsCharacter = (value: string) => isSequence(value) && formProblem(value) === null;
 export const categoryOf=(value:string)=>{const first=[...value][0]??'';if(idsCharacter(value))return 'kanji';return /[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(first)?'kana':/\p{Script=Han}/u.test(first)?'kanji':/\p{Script=Hangul}/u.test(first)?'hangul':isGugyeol(first)?'gugyeol':'other'};
 const cp = (value: string) => [...value].map(c => 'U+' + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')).join(' ');
+const toneMark = (char: string) => [0x302E, 0x302F].includes(char.codePointAt(0)!);
+const choseong = (char: string) => {
+  const n = char.codePointAt(0)!; return (n >= 0x1100 && n <= 0x115F) || (n >= 0xA960 && n <= 0xA97F);
+};
+const jungseong = (char: string) => {
+  const n = char.codePointAt(0)!; return (n >= 0x1160 && n <= 0x11A7) || (n >= 0xD7B0 && n <= 0xD7C6);
+};
+const jongseong = (char: string) => {
+  const n = char.codePointAt(0)!; return (n >= 0x11A8 && n <= 0x11FF) || (n >= 0xD7CB && n <= 0xD7FF);
+};
+const jamoSyllable = (value: string) => {
+  if (!single(value)) return false;
+  const chars = [...value]; let i = 0;
+  while (i < chars.length && choseong(chars[i])) i++;
+  if (!i) return false;
+  const vowels = i;
+  while (i < chars.length && jungseong(chars[i])) i++;
+  if (i === vowels) return false;
+  while (i < chars.length && jongseong(chars[i])) i++;
+  if (i < chars.length && toneMark(chars[i])) i++;
+  return i === chars.length;
+};
 // NFC composes a voiced kana, but it also maps each CJK compatibility ideograph to its unified twin,
 // and those are characters of their own here; they are kept as written.
 const COMPATIBILITY = /[\uF900-\uFAFF\u{2F800}-\u{2FA1F}]/u;
@@ -56,8 +78,9 @@ export function compose(value: string): string {
 }
 export function literal(value: string): string {
   const trimmed = value.trim();
-  if (/^(U\+[0-9a-f]{4,6})(\s+U\+[0-9a-f]{4,6})*$/i.test(trimmed)) {
-    try { return compose(trimmed.split(/\s+/).map(v => String.fromCodePoint(parseInt(v.slice(2), 16))).join('')) }
+  // A key is written with spaces in the API and with hyphens in a page address.
+  if (/^(U\+[0-9a-f]{4,6})([\s-]+U\+[0-9a-f]{4,6})*$/i.test(trimmed)) {
+    try { return compose(trimmed.split(/[\s-]+/).map(v => String.fromCodePoint(parseInt(v.slice(2), 16))).join('')) }
     catch { throw new Problem(422, 'Invalid code point.') }
   }
   return compose(trimmed);
@@ -1366,11 +1389,28 @@ async function structureOf(env: Env, ctx: ExecutionContext, origin: string, char
   return found;
 }
 async function known(env: Env, value: string) {
-  const key = cp(literal(value));
+  const text = literal(value);
+  const key = cp(text);
   const row = await env.DB.prepare('SELECT data,detail FROM characters WHERE code_point=?').bind(key).first<{data:string;detail:string}>();
   if (row) return { data: parse(row.data), detail: parse(row.detail) };
-  if (idsCharacter(literal(value))) return describedCard(literal(value));
+  if (idsCharacter(text)) return describedCard(text);
+  if (jamoSyllable(text)) return jamoCard(text);
   throw new Problem(404, 'Character not found.');
+}
+
+export function jamoCard(value: string) {
+  const code_point = cp(value), url = '/layers/characters/' + code_point;
+  const self = { code_point, char: value, name: null, script: 'hangul' };
+  const grapheme = { ...self, label: value, members: [{ code_point, char: value }], character_count: 1, relation: 'self',
+    evidence: [], url: '/layers/graphemes/' + code_point, is_self: true, occurrence_count: 0 };
+  const data = { ...self, age: null, block: 'Hangul Jamo', readings: [], reading: null, jibo: [], ligature: null, occurrence_count: 0,
+    url, grapheme, default_scope: 'character', kind: 'hangul',
+    candidates: { status: 'ok', known: false, glyphs: 0, lines: 0, pages: 0, total: 0, sources: [],
+      counts_kind: 'source_transcription_classes', requires_family_scope: false, source_glyphs: 0, family_glyphs: 0, imported: 0 } };
+  const detail = { ...data, alias: null, category: 'Lo', confusables: [], characters: [data], derived: [], expansions: [],
+    visual_analysis: { status: 'not_analyzed', family: code_point, model_revision: null, sample_count: 0, assigned_count: 0,
+      unassigned_count: 0, groups: [] } };
+  return { data, detail };
 }
 
 /** The card of a character Unicode lacks, written as an ideographic description sequence: it has no

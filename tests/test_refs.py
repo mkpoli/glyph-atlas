@@ -213,6 +213,18 @@ def test_code_points_round_trip():
     assert refs.from_code_points(refs.to_code_points("𛄟")) == "𛄟"
 
 
+def test_old_hangul_jamo_syllable_gets_a_synthesised_character_row():
+    row = refs.character("ᄃᆞᆯ")
+    assert row is not None
+    assert row.code_point == "U+1103 U+119E U+11AF"
+    assert row.char == "ᄃᆞᆯ"
+    assert row.script == Script.HANGUL
+    assert row.block == "Hangul Jamo"
+    assert row.category == "Lo"
+    assert row.name is None  # a jamo sequence has no Unicode name
+    assert refs.character("가나") is None
+
+
 def test_equivalence_table_kinds_and_sources():
     rows = rows_of(EQUIVALENTS)
     kinds = {row["kind"] for row in rows}
