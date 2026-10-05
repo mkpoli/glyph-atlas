@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Count the runs written before migration 0074 by their graphemes: each written text under its graphemes
 # (`ngram_forms`) and their sums (`ngram_counts`), on the whole site and in each book, as the migration's
-# triggers count every run past it. Run it after applying 0074 and before deploying the Worker that reads
-# them; until it is done, Explore's counts hold only the runs it has reached.
+# triggers count every run past it. Apply 0074, deploy the Worker that reads the new counts, then run it:
+# the old Worker reads columns 0074 removes, and until the script is done Explore's counts hold only the
+# runs it has reached.
 #
 #   scripts/backfill_ngram_counts.sh        run from anywhere; it works in apps/cloudflare
 #
@@ -35,8 +36,13 @@ ask() {
 if [ "${RESUME:-0}" != 1 ]; then
   ask "UPDATE ngram_counts_backfill SET after=''; SELECT after FROM ngram_counts_backfill" >/dev/null
   # A form deleted takes its share of its graphemes' count with it (0074), and the last one the row.
-  while [ "$(ask "DELETE FROM ngram_forms WHERE (scope,size,graphemes,text) IN (SELECT scope,size,graphemes,text FROM ngram_forms LIMIT $slice);
-    SELECT EXISTS(SELECT 1 FROM ngram_forms) AS more" | jq -r .more)" = 1 ]; do echo "emptying the counts"; done
+  # A plain assignment, so a step that gives up stops the script rather than ending the loop.
+  while :; do
+    left="$(ask "DELETE FROM ngram_forms WHERE (scope,size,graphemes,text) IN (SELECT scope,size,graphemes,text FROM ngram_forms LIMIT $slice);
+      SELECT EXISTS(SELECT 1 FROM ngram_forms) AS more")"
+    [ "$(jq -r .more <<< "$left")" = 1 ] || break
+    echo "emptying the counts"
+  done
 fi
 last="(SELECT max(first) FROM (SELECT first FROM unit_ngrams WHERE first>(SELECT after FROM ngram_counts_backfill) ORDER BY first LIMIT $slice))"
 count() { echo "INSERT INTO ngram_forms(scope,size,graphemes,text,n,down)
@@ -50,7 +56,8 @@ UPDATE ngram_counts_backfill SET after=coalesce($last,after);
 SELECT after FROM ngram_counts_backfill;"
 previous="__start__"
 while :; do
-  after="$(ask "$step" | jq -r .after)"
+  row="$(ask "$step")"
+  after="$(jq -r .after <<< "$row")"
   [ "$after" = "$previous" ] && break
   echo "counted through ${after:-(start)}"
   previous="$after"
