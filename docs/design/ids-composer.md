@@ -53,7 +53,8 @@ The shortlist already holds a better part about as often as not, but nothing mea
 drawing tells which: a learned ranker over box fit, proportions, outline count and ink-grid
 distance picked as well as the current order (0.835 against 0.834 per part, held-out), and a warp
 predicted from the same knowledge scored below none (0.720 against 0.724 on 299 two-part kanji),
-as did a glyph-image network used to steer part choice and placement (+0.004). The learned
+as did a glyph-image network used to steer part choice and placement (+0.004) or to steer
+that warp (0.730 against 0.724). The learned
 layout's boxes lose a further 0.04–0.10 to these. Reusing drawn parts therefore tops out near
 0.72 overall; the 0.75 target needs parts reshaped to their new company, which the font does not
 show how to do.
