@@ -329,7 +329,8 @@ def repair(old_units: Sequence[Unit], lines: Sequence[Line], detections: dict[st
 
     A page is realigned as a whole, every line of it in `lines` competing for its detections, and every
     vertical line of it holding detect-align units is relabelled: a line that is not stale itself can
-    still hold a box the realignment gives a neighbour. `lines` should therefore hold every line of
+    still hold a box the realignment gives a neighbour. A horizontal line keeps its labels and loses
+    only the boxes another line took. `lines` should therefore hold every line of
     the pages, those without units included, since their ink is theirs.
 
     `every` is for a dataset known to be aligned in the old order throughout: a line whose boxes
@@ -354,13 +355,24 @@ def repair(old_units: Sequence[Unit], lines: Sequence[Line], detections: dict[st
         taken = {line_id: {box_key(unit.box) for unit in new if unit.box is not None}
                  for line_id, new in new_by_line.items()}
         for line in page_lines:
-            if not line.vertical or line.id not in by_line:
+            if line.id not in by_line:
+                continue
+            elsewhere = set().union(*(boxes for line_id, boxes in taken.items() if line_id != line.id))
+            if not line.vertical:
+                # A horizontal line was read left to right all along; it only gives up the boxes the
+                # page's assignment gave to another line.
+                for unit in by_line[line.id]:
+                    if box_key(unit.box) in elsewhere - taken[line.id]:
+                        record = {"unit_id": unit.id, "line_id": line.id, "box": box_key(unit.box),
+                                  "before": label_of(unit), "after": None, "seq": None, "review": None,
+                                  "status": "unplaced", "reason": "other-line"}
+                        changed[unit.id] = applied(unit, record)
+                        records.append(record)
                 continue
             new = new_by_line[line.id]
             placed = placements(new)
             placed.update(gap_fills(by_line[line.id], new, placed))
             own = {unit.id: unit for unit in by_line[line.id]}
-            elsewhere = set().union(*(boxes for line_id, boxes in taken.items() if line_id != line.id))
             for record in relabel(by_line[line.id], new, protected, elsewhere=elsewhere,
                                   duplicate=line.id in duplicates):
                 unit = own[record["unit_id"]]

@@ -253,3 +253,18 @@ def test_two_lines_holding_one_box_are_stale_and_the_repair_leaves_the_box_to_on
     placed = [(unit.page_id, unit.line_id, unit.box) for unit in repaired if unit.box is not None and unit.seq is not None]
     assert box_relabel.shared_lines(placed) == set()
     assert not box_relabel.stale_lines(repaired)
+
+
+def test_a_horizontal_line_gives_up_a_box_the_page_gave_a_vertical_line():
+    across = Line(id="hl:item_0_009", page_id="hl:item:0", seq=9, box=Box(x=0, y=0, w=300, h=60), vertical=False,
+                  text_raw="甲乙", text="甲乙")
+    old = [unit(index + 1, char, BOXES[index]) for index, char in enumerate(TEXT)]
+    old.append(Unit(id="hl:item_0_009:old:1", page_id="hl:item:0", line_id=across.id, seq=1, box=BOXES[0],
+                    kind=UnitKind.CHAR, text_source="甲", method="detect-align"))
+    orientation = {line().id: True, across.id: False}
+    assert box_relabel.stale_lines(old, vertical=orientation) == {line().id, across.id}
+    repaired, records = box_relabel.repair(old, [line(), across], {"hl:item:0": BOXES}, run=run(), classifier=None,
+                                           crop_of=None)
+    assert box_relabel.stale_lines(repaired, vertical=orientation) == set()
+    lost = next(record for record in records if record["unit_id"] == "hl:item_0_009:old:1")
+    assert (lost["status"], lost["reason"]) == ("unplaced", "other-line")
