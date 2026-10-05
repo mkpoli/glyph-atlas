@@ -6,7 +6,7 @@
   // taller cell, so its crops stay legible down a column. A card opens the occurrence (`RunOccurrence`):
   // its page, its characters and its source. The run can be narrowed to a group of how its
   // letterforms were made or to a work, and placed by that group or by work, and the sequences near it are one link away.
-  import { untrack } from 'svelte'
+  import { tick, untrack } from 'svelte'
   import { replaceState } from '$app/navigation'
   import RunImage from './RunImage.svelte'
   import RunOccurrence from './RunOccurrence.svelte'
@@ -30,7 +30,8 @@
   let loading = $state(!opened), error = $state(''), ended = $state(false), requestId = 0
   // The occurrence open in its dialog, and the card it was opened from, which takes the focus back.
   let detail = $state(null), opener = null
-  function closeDetail() { detail = null; opener?.focus(); opener = null }
+  // The page behind an open modal is inert, so the card takes the focus once the dialog has gone.
+  async function closeDetail() { const card = opener; detail = null; opener = null; await tick(); card?.focus() }
 
   async function load(append = false) {
     const id = ++requestId

@@ -8,6 +8,7 @@
   import ScriptText from './ScriptText.svelte'
   import SourceCredit from './SourceCredit.svelte'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
+  import Glyph from './Glyph.svelte'
   import { sourceLinks } from '../lib/licence.js'
   import { t } from '../lib/i18n.svelte.js'
 
@@ -33,7 +34,7 @@
   <ul class="occurrence-crops">
     {#each occurrence.crops as crop (crop.id)}
       <li><button onclick={() => open(crop)} aria-label={t('explore.tile.inspect', { label: crop.label })}>
-        {#if crop.image}<img src={crop.image} alt="" />{/if}<ReferenceGlyph char={crop.label} code_point={crop.code_point ?? ''} script={crop.script} size="sm" />
+        {#if crop.image}<Glyph item={crop} alt="" class="occurrence-crop" />{/if}<ReferenceGlyph char={crop.label} code_point={crop.code_point ?? ''} script={crop.script} size="sm" />
       </button></li>
     {/each}
   </ul>
@@ -52,7 +53,7 @@
   .occurrence-crops{display:flex;flex-wrap:wrap;gap:8px;list-style:none;margin:0 0 12px;padding:0}
   .occurrence-crops button{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:8px;background:transparent;padding:4px 10px 4px 4px;color:inherit}
   .occurrence-crops button:hover,.occurrence-crops button:focus-visible{background:var(--surface-selected)}
-  .occurrence-crops img{width:40px;height:40px;object-fit:contain;background:var(--surface-tile);border-radius:6px}
+  .occurrence-crops :global(.occurrence-crop){width:40px;height:40px}
   .occurrence-where{margin:0 0 4px;font-size:13px}
   .occurrence-source{display:inline-block;margin-top:14px;font-size:13px;padding:10px 16px;text-decoration:none}
 </style>
