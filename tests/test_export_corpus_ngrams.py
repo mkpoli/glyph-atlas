@@ -237,3 +237,34 @@ def test_a_range_removed_in_slices_keeps_no_stale_run(monkeypatch):
     apply(db, statements)
     assert db.execute("SELECT first,second,vertical FROM unit_ngrams ORDER BY first").fetchall() == [
         (r.units[0], r.units[1], 0) for r in again]
+
+
+def test_a_kept_run_takes_its_order_and_spelling_as_they_now_are():
+    db = site()
+    publish(db, [("c:0", "ん"), ("c:1", "𛁅")])
+    runs = [Run(("c:0", "c:1"), True)]
+    apply(db, corpus_ngram_statements(id_ranges(["c:0", "c:1"], 2), runs))
+    assert db.execute("SELECT graphemes,shuffle FROM unit_ngrams").fetchone() == ("ん𛁅", 0)
+    # Since then a round named c:0 with its own shuffle, and the table filed 𛁅 under し.
+    db.execute("INSERT INTO units(id,origin,character,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual)"
+               " VALUES('c:0','corpus','ん','unknown','kana','pending',0,0,1,99,'{}','{}','{}','{}')")
+    db.executemany("INSERT INTO characters(code_point,character,name,data,detail) VALUES(?,?,'',?,'{}')",
+                   [("U+3057", "し", "{}"), ("U+1B045", "𛁅", '{"grapheme":{"code_point":"U+3057"}}')])
+    apply(db, corpus_ngram_statements(id_ranges(["c:0", "c:1"], 2), runs))
+    fresh = site()
+    publish(fresh, [("c:0", "ん"), ("c:1", "𛁅")])
+    fresh.execute("INSERT INTO units(id,origin,character,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual)"
+                  " VALUES('c:0','corpus','ん','unknown','kana','pending',0,0,1,99,'{}','{}','{}','{}')")
+    fresh.executemany("INSERT INTO characters(code_point,character,name,data,detail) VALUES(?,?,'',?,'{}')",
+                      [("U+3057", "し", "{}"), ("U+1B045", "𛁅", '{"grapheme":{"code_point":"U+3057"}}')])
+    apply(fresh, corpus_ngram_statements(id_ranges(["c:0", "c:1"], 2), runs))
+    columns = "first,size,second,third,text,document,vertical,graphemes,hand_order,shuffle"
+    assert db.execute(f"SELECT {columns} FROM unit_ngrams").fetchall() == fresh.execute(f"SELECT {columns} FROM unit_ngrams").fetchall()
+    assert db.execute("SELECT graphemes,shuffle FROM unit_ngrams").fetchone() == ("んし", 99)
+
+
+def test_a_removal_stays_under_d1s_statement_limit_in_bytes():
+    ids = ["字" * 50 + f":{i:03}" for i in range(172)]
+    runs = [Run((a, b), True) for a, b in zip(ids, ids[1:])] + [Run(tuple(ids[i:i + 3]), True) for i in range(170)]
+    statements = corpus_ngram_statements(id_ranges(ids, 5000), runs)
+    assert max(len(s.encode()) for s in statements if s.startswith("DELETE")) < 95 * 1024

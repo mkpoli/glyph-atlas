@@ -126,7 +126,7 @@ def _groups(firsts: list[str], starting: Mapping[str, list[Run]], quote, most: i
     """`firsts` in order, cut where the next would take a removal past `most` ids or `KEPT_BYTES`."""
     group, size = [], 0
     for first in firsts:
-        cost = len(quote(first)) + sum(len(_row(run, quote)) for run in starting.get(first, ()))
+        cost = len(quote(first).encode()) + sum(len(_row(run, quote).encode()) for run in starting.get(first, ()))
         if group and (len(group) == most or size + cost > KEPT_BYTES):
             yield group
             group, size = [], 0
@@ -134,6 +134,31 @@ def _groups(firsts: list[str], starting: Mapping[str, list[Run]], quote, most: i
         size += cost
     if group:
         yield group
+
+
+#: A run's order and grapheme spelling as the triggers that record it work them out (`unit_ngram_placed`,
+#: 0062, and `unit_ngram_fold`, 0071). A naming, a restyling or a character-table change since a run was
+#: recorded can leave a kept run's behind, which recording it anew used to put right.
+def _fold(column: str) -> str:
+    return (f"(SELECT coalesce(h.character,m.ch) FROM (SELECT coalesce(iif(EXISTS(SELECT 1 FROM units WHERE id=unit_ngrams.{column}),"
+            f"(SELECT character FROM units WHERE id=unit_ngrams.{column}),(SELECT character FROM corpus_units WHERE id=unit_ngrams.{column})),"
+            f"(SELECT label FROM corpus_units WHERE id=unit_ngrams.{column})) AS ch) m LEFT JOIN characters c ON c.character=m.ch"
+            " LEFT JOIN characters h ON h.code_point=json_extract(c.data,'$.grapheme.code_point'))")
+
+
+DERIVED = {
+    "hand_order": "coalesce((SELECT hand_order FROM units WHERE id=unit_ngrams.first),"
+                  "(SELECT hand_order FROM corpus_units WHERE id=unit_ngrams.first),1)",
+    "shuffle": "coalesce((SELECT shuffle FROM units WHERE id=unit_ngrams.first),"
+               "(SELECT shuffle FROM corpus_units WHERE id=unit_ngrams.first),0)",
+    "graphemes": f"coalesce({_fold('first')}||{_fold('second')}||iif(third IS NULL,'',{_fold('third')}),text)",
+}
+
+
+def _rederived(where: str) -> str:
+    """Puts right the order and spelling of the runs `where` names, writing only those that are behind."""
+    return (f"UPDATE unit_ngrams SET {','.join(f'{c}={e}' for c, e in DERIVED.items())} WHERE {where}"
+            f" AND ({' OR '.join(f'{c} IS NOT {e}' for c, e in DERIVED.items())});")
 
 
 def ngram_statements(units: Iterable[str], ngrams: list[Run], batch: int = 200) -> list[str]:
@@ -152,10 +177,11 @@ def ngram_statements(units: Iterable[str], ngrams: list[Run], batch: int = 200) 
     for run in ngrams:
         starting[run.units[0]].append(run)
     local = "(SELECT count(*) FROM units WHERE origin='local' AND id IN (k.column1,k.column3,k.column4))"
+    groups = list(_groups(sorted(set(units)), starting, quote, batch))
     statements = [
         "DELETE FROM unit_ngrams WHERE first IN (" + ",".join(map(quote, part)) + ")"
         f" AND NOT {_kept([run for i in part for run in starting.get(i, ())], local, quote)};"
-        for part in _groups(sorted(set(units)), starting, quote, batch)
+        for part in groups
     ]
     for size in SIZES:
         runs = [run for run in ngrams if len(run.units) == size]
@@ -169,6 +195,7 @@ def ngram_statements(units: Iterable[str], ngrams: list[Run], batch: int = 200) 
             + ") AS p" + joins + ";"
             for start in range(0, len(runs), batch)
         ]
+    statements += [_rederived("first IN (" + ",".join(map(quote, part)) + ")") for part in groups]
     return statements
 
 
@@ -220,6 +247,7 @@ def corpus_ngram_statements(ranges: Iterable[tuple[str, str]], ngrams: list[Run]
     holds them and its document its first glyph's.
     """
     quote = lambda value: "'" + value.replace("'", "''") + "'"
+    ranges = list(ranges)
     published = "(SELECT count(*) FROM corpus_units WHERE id IN (k.column1,k.column3,k.column4))"
     starting = defaultdict(list)
     for run in ngrams:
@@ -256,6 +284,7 @@ def corpus_ngram_statements(ranges: Iterable[tuple[str, str]], ngrams: list[Run]
             + ") AS p" + joins + ";"
             for start in range(0, len(runs), batch)
         ]
+    statements += [_rederived(f"first>={quote(low)} AND first<={quote(high)}") for low, high in ranges]
     return statements
 
 
