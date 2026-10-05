@@ -1236,6 +1236,12 @@ def plan_directory(
     }
     documents: set[str] = set()
     inspected = 0
+    # Every line of a page with detections competes for them, so a page's lines are gathered first.
+    page_lines: dict[str, list[Line]] = {}
+    for line in dataset.read("lines"):
+        if found.get(line.page_id or "") and (wanted is None or line.page_id in wanted):
+            page_lines.setdefault(line.page_id or "", []).append(line)
+    owned: dict[str, dict[str, list[Detection]]] = {}
     for line in dataset.read("lines"):
         counts["lines"] += 1
         if wanted is not None and line.page_id not in wanted:
@@ -1250,8 +1256,14 @@ def plan_directory(
         if not boxes:
             counts["skipped-no-detection"] += 1
             continue
+        page = line.page_id or ""
+        if page not in owned:
+            # A line is viewed over its own detections: a box wide enough to hold a neighbouring
+            # column would otherwise hold that column's ink too (`align.assign_page`). One page's
+            # assignment is held at a time.
+            owned = {page: align.assign_page(page_lines[page], [Detection(box=box, score=0.0) for box in boxes])}
         try:
-            views = view_line(line, [Detection(box=box, score=0.0) for box in boxes], run=run,
+            views = view_line(line, owned[page][line.id], run=run,
                               classifier=classifier, crop_of=crop_of, units=units, scores=store,
                               min_phase_margin=min_phase_margin)
         except RepairError:
