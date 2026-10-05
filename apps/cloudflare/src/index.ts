@@ -129,9 +129,10 @@ async function corpusData(env:Env,row:CorpusRow):Promise<Json>{
 // and their form decisions in one query. A page of a run's occurrences sits in a few packs, glyph after
 // glyph, so it reads a handful of ranges rather than a record and a query per glyph. A record is a few
 // kilobytes, so reading through a gap of up to RECORD_GAP (a dozen or so other glyphs) costs less than another
-// range; RECORD_SPAN bounds what one range holds in memory. A record that cannot be read, or one over
-// RECORD_MAX, is left out; a form query that fails fails the page, which is not shown with labels a
-// decision has overturned.
+// range; RECORD_SPAN bounds what one range holds in memory. A record missing from its pack, one that does
+// not parse, or one over RECORD_MAX is left out. A storage error and a failed form query fail the call: the
+// answer is kept at the edge, and one quietly short of occurrences, or showing labels a decision has
+// overturned, would be served until the cache let it go.
 const RECORD_SPAN = 1024 * 1024, RECORD_GAP = 64 * 1024, RECORD_STREAMS = 6;
 type RecordPointer = { object: string; offset: number; size: number };
 export function recordRanges(pointers: RecordPointer[]): { object: string; offset: number; end: number; members: RecordPointer[] }[] {
@@ -152,7 +153,7 @@ async function corpusRecords(env: Env, pointers: RecordPointer[]): Promise<Map<s
   const ranges = recordRanges(pointers);
   for (let start = 0; start < ranges.length; start += RECORD_STREAMS)
     await Promise.all(ranges.slice(start, start + RECORD_STREAMS).map(async range => {
-      const object = await env.MEDIA.get(range.object, { range: { offset: range.offset, length: range.end - range.offset } }).catch(() => null);
+      const object = await env.MEDIA.get(range.object, { range: { offset: range.offset, length: range.end - range.offset } });
       if (!object) return;
       const bytes = new Uint8Array(await object.arrayBuffer());
       for (const p of range.members) {
