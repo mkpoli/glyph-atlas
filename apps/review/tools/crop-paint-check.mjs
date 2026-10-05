@@ -18,6 +18,8 @@ import { boot, options } from './harness.mjs'
 const config = options()
 const argv = process.argv.slice(2)
 const pages = argv.includes('--pages') ? argv[argv.indexOf('--pages') + 1].split(',') : ['/en', '/en/review']
+// With --reduced-motion the page is asked for no motion: the boxes paint as before, with no fade.
+const reduced = argv.includes('--reduced-motion')
 const HOLD = Number(argv.includes('--hold') ? argv[argv.indexOf('--hold') + 1] : 6000)
 const service = await boot(config)
 let browser, failures = 0
@@ -41,15 +43,20 @@ const probe = `(() => {
     const r = el.getBoundingClientRect()
     if (r.bottom < 0 || r.top > innerHeight || r.width === 0 && r.height === 0 && !el.matches('.crop-paint')) return []
     if (!el.dataset.paintCheck) el.dataset.paintCheck = String(Math.random()).slice(2)
-    const base = { key: el.dataset.paintCheck, what: el.className.baseVal ?? el.className ?? el.tagName, w: r.width, h: r.height }
+    const base = { key: el.dataset.paintCheck, what: (el.className.baseVal ?? el.className ?? el.tagName), w: r.width, h: r.height }
     if (el.matches('svg image')) {
       const paper = el.previousElementSibling?.matches('.run-paper') ? el.previousElementSibling : null
       return [{ ...base, what: 'run image', paint: paper ? getComputedStyle(paper).fill : 'transparent',
         tone: paper?.style.getPropertyValue('--tone').trim() || null, loaded: fetched(el.getAttribute('href')) }]
     }
-    const image = el.matches('img') ? el : el.querySelector('img')
-    return [{ ...base, paint: getComputedStyle(el).backgroundColor, tone: el.style.getPropertyValue('--tone').trim() || null,
-      loaded: Boolean(image?.complete && image.naturalWidth) }]
+    const image = el.matches('img') ? el : el.querySelector('img'), style = getComputedStyle(el), shown = image && getComputedStyle(image)
+    return [{ ...base, paint: style.backgroundColor, tone: el.style.getPropertyValue('--tone').trim() || null,
+      loaded: Boolean(image?.complete && image.naturalWidth),
+      // A crop box draws its tone through a mask in the crop's shape, unless it is placed on the crop's
+      // own rectangle; once the page is live, an image still on its way is hidden and fades in.
+      box: el.matches('.crop-paint'), marked: el.matches('.loaded'), masked: el.matches('.placed') || (style.maskImage ?? style.webkitMaskImage ?? 'none') !== 'none',
+      hidden: shown?.opacity === '0', fades: Boolean(shown) && shown.transitionProperty.includes('opacity') && shown.transitionDuration !== '0s',
+      hydrated: document.documentElement.dataset.hydrated !== undefined }]
   })
 })()`
 
@@ -68,6 +75,7 @@ async function hold(page) {
 async function check(path, scheme) {
   browser = await Browser.launch({ width: 1280, height: 900 })
   await browser.setColorScheme(scheme)
+  if (reduced) await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }, { name: 'prefers-reduced-motion', value: 'reduce' }] })
   await hold(browser)
   browser.send('Page.navigate', { url: service.base + path }).catch(() => {})
   const seen = new Map(), problems = []
@@ -80,10 +88,14 @@ async function check(path, scheme) {
       if (!first) seen.set(box.key, { ...box, waited: !box.loaded })
       else {
         if (!box.loaded) first.waited = true
+        else if (first.waited && box.box && box.marked && box.hydrated && !box.fades && !reduced) problems.push(`a crop box (${box.what}) showed its image with no fade`)
         if (Math.abs(box.w - first.w) > 1 || Math.abs(box.h - first.h) > 1)
           problems.push(`a crop box changed size from ${Math.round(first.w)}×${Math.round(first.h)} to ${Math.round(box.w)}×${Math.round(box.h)}${box.loaded ? ' when its image came' : ''}`)
       }
       if (!box.loaded) {
+        if (box.box && (box.w < 1 || box.h < 1)) problems.push(`a crop box (${box.what}) had no size before its image came`)
+        if (box.box && !box.masked) problems.push(`a crop box (${box.what}) painted its tone without the crop's shape`)
+        if (box.box && box.hydrated && !box.hidden) problems.push(`a crop box (${box.what}) showed its image before it came, so it pops in`)
         if (transparent(box.paint)) problems.push(`a crop box (${box.what}) painted nothing before its image came`)
         else if (white(box.paint) && box.tone?.toLowerCase() !== '#ffffff') problems.push('a crop box painted white before its image came')
       }
