@@ -89,9 +89,9 @@
           {/each}
           {#each variants.derived as v (v.code_point ?? v.char)}
             {#if v.code_point}
-              <a class="variant" href={localize(characterAddress(v.code_point))} title={derivedTitle(v)}><span lang="zh">{v.char}</span><sup class="derived-mark" aria-hidden="true">*</sup><span class="visually-hidden">{t('chips.derived')}</span>{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if crops(v)}<small>{formatNumber(crops(v))}</small>{/if}</a>
+              <a class="variant" href={localize(characterAddress(v.code_point))} title={derivedTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} /><sup class="derived-mark" aria-hidden="true">*</sup><span class="visually-hidden">{t('chips.derived')}</span>{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if crops(v)}<small>{formatNumber(crops(v))}</small>{/if}</a>
             {:else}
-              <span class="variant unencoded" title={derivedTitle(v)}><span lang="zh">{v.char}</span><sup class="derived-mark" aria-hidden="true">*</sup><span class="visually-hidden">{t('chips.derived')}</span></span>
+              <span class="variant unencoded" title={derivedTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} /><sup class="derived-mark" aria-hidden="true">*</sup><span class="visually-hidden">{t('chips.derived')}</span></span>
             {/if}
           {/each}
         </div>
@@ -178,7 +178,7 @@
   /* A derived chip is a prediction: a small mark after the character says so; a form no character
      has is set smaller, as its sequence is longer than a character. */
   .derived-mark{font-size:11px;color:var(--muted);margin-left:-4px;align-self:flex-start}
-  .variant.unencoded span[lang="zh"]{font-size:15px}
+  .variant.unencoded :global(.script-text){font-size:15px}
   .variant.unencoded:hover{border-color:var(--accent)}
   .variant small{font-size:11px;color:var(--muted)}
   .word-reading{font-size:15px;align-self:center;margin-right:4px}

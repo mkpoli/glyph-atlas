@@ -1,8 +1,8 @@
 <script>
   // A form as the picker and the form bar show it: a character in its script's colour, or a shape
-  // Unicode lacks as its ideographic description sequence, marked as one. The sequence is the form's
-  // name; a drawing of it is stored under `drawingKey(text)` (ids/<sha256 of NFC>.svg) and takes the
-  // text's place once one exists for it.
+  // Unicode lacks as its ideographic description sequence, in the colour of Han and marked as one.
+  // The sequence is the form's name; a drawing of it is stored under `drawingKey(text)`
+  // (ids/<sha256 of NFC>.svg) and takes the text's place once one exists for it.
   import ScriptText from './ScriptText.svelte'
   import { isDescription } from '../lib/ids.js'
   import { t } from '../lib/i18n.svelte.js'
@@ -11,7 +11,7 @@
 </script>
 
 {#if described}
-  <span class="ids-form" title={t('form.ids.named', { ids: text })}><span class="ids-text" lang="ja">{text}</span><small class="ids-tag">{t('form.ids.tag')}</small></span>
+  <span class="ids-form" title={t('form.ids.named', { ids: text })}><span class="ids-text"><ScriptText {text} script="han" titled={false} /></span><small class="ids-tag">{t('form.ids.tag')}</small></span>
 {:else}
   <ScriptText {text} {script} />
 {/if}
