@@ -116,6 +116,8 @@
 .find:focus-within{border-color:var(--line-strong)}
 .find-token{flex-shrink:0;display:flex;align-items:center;gap:6px;border:0;border-radius:4px;background:var(--accent-light);color:var(--accent);padding:3px 8px;font-size:13px;white-space:nowrap}
 .browse-panel .category-options{max-height:none;padding:0 6px 6px}
+/* The element after a list's drawn slice that asks for the next (`lib/slices.js`). */
+.category-options .grid-more{grid-column:1/-1;height:1px;background:none}
 .find-clear{border:0;background:transparent;padding:0 2px;font-size:19px;line-height:1;color:var(--muted)}
 .find-clear:hover{color:var(--ink)}
 .find-count{font-size:12px;color:var(--muted);padding-bottom:14px}
