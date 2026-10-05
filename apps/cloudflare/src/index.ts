@@ -122,6 +122,40 @@ async function corpusData(env:Env,row:CorpusRow):Promise<Json>{
   if(!object)throw new Problem(503,'The corpus publication is incomplete.');
   return withForm(env,await object.json<Json>(),formTools);
 }
+// Many corpus glyphs' published records at once: the records of one pack that lie near each other are read
+// in one range (RECORD_SPAN, gaps of up to RECORD_GAP read through), every range at once, and their form
+// decisions in one query. A page of a run's occurrences sits in a few packs, glyph after glyph, so it reads a
+// handful of ranges rather than a record and a query per glyph. A record that cannot be read is left out.
+const RECORD_SPAN = 1024 * 1024, RECORD_GAP = 64 * 1024;
+type RecordPointer = { object: string; offset: number; size: number };
+export function recordRanges(pointers: RecordPointer[]): { object: string; offset: number; end: number; members: RecordPointer[] }[] {
+  const ranges: { object: string; offset: number; end: number; members: RecordPointer[] }[] = [];
+  const sorted = [...pointers].filter(p => p.size <= 128 * 1024)
+    .sort((a, b) => a.object < b.object ? -1 : a.object > b.object ? 1 : a.offset - b.offset);
+  for (const p of sorted) {
+    const last = ranges[ranges.length - 1];
+    if (last && last.object === p.object && p.offset - last.end <= RECORD_GAP && p.offset + p.size - last.offset <= RECORD_SPAN) {
+      last.end = Math.max(last.end, p.offset + p.size); last.members.push(p);
+    } else ranges.push({ object: p.object, offset: p.offset, end: p.offset + p.size, members: [p] });
+  }
+  return ranges;
+}
+const recordKey = (p: RecordPointer) => `${p.object}:${p.offset}:${p.size}`;
+async function corpusRecords(env: Env, pointers: RecordPointer[]): Promise<Map<string, Json>> {
+  const raw = new Map<string, Json>(), decoder = new TextDecoder();
+  await Promise.all(recordRanges(pointers).map(async range => {
+    const object = await env.MEDIA.get(range.object, { range: { offset: range.offset, length: range.end - range.offset } }).catch(() => null);
+    if (!object) return;
+    const bytes = new Uint8Array(await object.arrayBuffer());
+    for (const p of range.members) {
+      try { raw.set(recordKey(p), JSON.parse(decoder.decode(bytes.subarray(p.offset - range.offset, p.offset - range.offset + p.size)))) } catch { /* left out */ }
+    }
+  }));
+  const ids = [...new Set([...raw.values()].map(r => r.id).filter(Boolean))];
+  const forms = new Map(ids.length ? (await env.DB.prepare(`SELECT ${FORM_COLUMNS} FROM form_units WHERE id IN (SELECT value FROM json_each(?))`)
+    .bind(JSON.stringify(ids)).all<UnitForm>()).results.map(row => [row.id, row] as const) : []);
+  return new Map([...raw].map(([key, record]) => [key, formed(record, forms.get(record.id) ?? null, formTools)]));
+}
 // Listing items for crops by id: rows the site holds, then corpus glyphs from their published records.
 // An id it does not hold, or a retired crop, is left out.
 async function itemsFor(env: Env, ids: string[]): Promise<Map<string, Json>> {
@@ -656,22 +690,16 @@ export function runWorksQuery(size: number, anchor: number) {
     WHERE ${runWhere(false, size)} AND a.document IS NOT NULL LIMIT ${RUN_COUNT_MAX + 1}) GROUP BY d ORDER BY n DESC,d LIMIT ${RUN_WORKS_MAX}`;
 }
 // The records of a page's occurrences: each member's row where it has one, else its published record,
-// read from the packs a few at a time, as a corpus gallery reads them. An occurrence with a record that
-// cannot be read is left off the page, as a listing leaves out a glyph whose record it cannot read.
+// read with the page's other records (`corpusRecords`). An occurrence with a record that cannot be read
+// is left off the page, as a listing leaves out a glyph whose record it cannot read.
 type RunRow = { document: string | null; vertical: number } & Record<`c${number}`, string | null> & Record<`o${number}`, string | null>
   & Record<`f${number}` | `s${number}`, number | null>;
 async function runRecords(env: Env, rows: RunRow[], size: number): Promise<(Json[] | null)[]> {
-  const wanted = rows.flatMap((row, r) => Array.from({ length: size }, (_, i) => ({ r, i }))
-    .filter(({ i }) => row[`c${i}`] === null && row[`o${i}`] !== null));
-  const read = new Map<string, Json>();
-  for (let start = 0; start < wanted.length; start += 8)
-    await Promise.all(wanted.slice(start, start + 8).map(async ({ r, i }) => {
-      const row = rows[r];
-      const record = await corpusData(env, { object: row[`o${i}`], offset: row[`f${i}`], size: row[`s${i}`] } as CorpusRow).catch(() => null);
-      if (record) read.set(`${r}:${i}`, record);
-    }));
-  return rows.map((row, r) => {
-    const members = Array.from({ length: size }, (_, i) => row[`c${i}`] !== null ? parse(row[`c${i}`]!) : read.get(`${r}:${i}`));
+  const pointer = (row: RunRow, i: number) => ({ object: row[`o${i}`]!, offset: row[`f${i}`]!, size: row[`s${i}`]! });
+  const read = await corpusRecords(env, rows.flatMap(row => Array.from({ length: size }, (_, i) => i)
+    .filter(i => row[`c${i}`] === null && row[`o${i}`] !== null).map(i => pointer(row, i))));
+  return rows.map(row => {
+    const members = Array.from({ length: size }, (_, i) => row[`c${i}`] !== null ? parse(row[`c${i}`]!) : row[`o${i}`] !== null ? read.get(recordKey(pointer(row, i))) : undefined);
     return members.every(Boolean) ? members as Json[] : null;
   });
 }
@@ -746,7 +774,7 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
   return body;
 }
 // A book's name is its crops' source title, read from one of its crops by key: a crop's row, or a corpus
-// glyph's published record (`source.title`), a few at a time.
+// glyph's published record (`source.title`, read with the others by `corpusRecords`).
 async function runWorks(env: Env, rows: { document: string; n: number; sample: string }[]) {
   if (!rows.length) return [];
   const marks = rows.map(() => '?').join(',');
@@ -756,11 +784,8 @@ async function runWorks(env: Env, rows: { document: string; n: number; sample: s
   const unnamed = rows.filter(row => !named.has(row.sample)).map(row => row.sample);
   if (unnamed.length) {
     const pointers = (await env.DB.prepare(`SELECT * FROM corpus_units WHERE id IN (${unnamed.map(() => '?').join(',')})`).bind(...unnamed).all<CorpusRow>()).results;
-    for (let i = 0; i < pointers.length; i += 8)
-      await Promise.all(pointers.slice(i, i + 8).map(async pointer => {
-        const record = await corpusData(env, pointer).catch(() => null);
-        named.set(pointer.id, record?.source?.title ?? null);
-      }));
+    const records = await corpusRecords(env, pointers);
+    for (const pointer of pointers) named.set(pointer.id, records.get(recordKey(pointer))?.source?.title ?? null);
   }
   return rows.map(row => ({ id: row.document, title: named.get(row.sample) ?? null, count: row.n }));
 }
