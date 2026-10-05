@@ -7,7 +7,7 @@ from glyph_atlas.rare_chars import is_han
 
 TIERS = {"attested", "observed"}
 WORD_BY = {"source", "reading"}
-BASES = {"", "shape-confusion"}
+BASES = {"", "shape-confusion", "interchange"}
 
 
 def test_every_word_cites_its_source():
