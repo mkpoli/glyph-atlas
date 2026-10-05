@@ -181,8 +181,10 @@ def _char_of(code_point: Any) -> str | None:
     if not isinstance(code_point, str) or not code_point.startswith("U+"):
         return None
     try:
-        return chr(int(code_point.removeprefix("U+"), 16))
-    except (ValueError, IndexError):
+        from .. import refs
+
+        return refs.to_char(code_point)
+    except (ValueError, IndexError, OverflowError):
         return None
 
 

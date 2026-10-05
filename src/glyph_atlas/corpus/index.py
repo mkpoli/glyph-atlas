@@ -26,7 +26,7 @@ import json
 import re
 import time
 import unicodedata
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -36,6 +36,7 @@ from typing import Any
 
 import numpy as np
 
+from ..clusters import clusters, is_one_character
 from ..unit_scope import unit_scope
 from . import sources as corpus_sources
 from .occurrence import (
@@ -294,14 +295,14 @@ class CorpusIndex:
         text = value.strip()
         if text in self._load_chars():
             return self._load_chars()[text]
-        if len(text) == 1:
+        if is_one_character(text):
             return self._load_chars().get(text)
         import re as _re
 
-        m = _re.fullmatch(r"[Uu]\+([0-9A-Fa-f]{4,6})", text)
+        m = _re.fullmatch(r"[Uu]\+[0-9A-Fa-f]{4,6}(?: [Uu]\+[0-9A-Fa-f]{4,6})*", text)
         if m:
             try:
-                return self._load_chars().get(chr(int(m.group(1), 16)))
+                return self._load_chars().get(_char_of_codepoint(text.upper()))
             except ValueError:
                 return None
         return None
@@ -556,14 +557,12 @@ def build_chars(
             annotated_here = _annotated_chars(text)
             has_rect = bool(row.get("box")) and bool(_json(row.get("meta")).get("iiif_region_url"))
             is_unit = table == "units"
-            for ch in set(text):
-                if ch in ("\n", "\r", "\t", " "):
-                    continue
+            cluster_counts = Counter(ch for ch in clusters(text) if ch not in ("\n", "\r", "\t", " "))
+            for ch, n in cluster_counts.items():
                 i = slot(ch)
-                n = text.count(ch)
                 counts[i] += n
                 seen_chars += 1
-                if is_unit and len(text) == 1:
+                if is_unit and is_one_character(text):
                     # Counted only if the row is renderable; the authoritative count is
                     # reconciled against the units tables after the scan.
                     unit_rows[i] += 1
@@ -1026,9 +1025,15 @@ def _json(value: Any) -> dict[str, Any]:
 
 
 def _name(char: str) -> str:
+    if is_one_character(char):
+        from .. import refs
+
+        row = refs.character(codepoint(char))
+        if row and row.name:
+            return row.name
     try:
         return unicodedata.name(char)
-    except ValueError:
+    except (TypeError, ValueError):
         return ""
 
 
@@ -1060,6 +1065,12 @@ def _blocks() -> dict[str, str]:
 
 
 def _block(char: str) -> str:
+    if is_one_character(char):
+        from .. import refs
+
+        row = refs.character(codepoint(char))
+        if row and row.block:
+            return row.block
     return _blocks().get(codepoint(char), "")
 
 
@@ -1483,7 +1494,7 @@ def located_units(
                 if index < offset or len(rows) >= limit:
                     continue
                 shown = identity["written_character"] or _char_of_codepoint(identity["source_code_point"]) or identity["source_label"] if identity else char
-                result = _unit_row(corpus, context, row, shown, codepoint(shown) if shown and len(shown) == 1 else cp)
+                result = _unit_row(corpus, context, row, shown, codepoint(shown) if shown and is_one_character(shown) else cp)
                 if identity:
                     result.update(identity)
                 rows.append(result)

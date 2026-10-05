@@ -33,6 +33,8 @@ from itertools import pairwise
 
 import numpy as np
 
+from .clusters import clusters
+
 #: Cells per column for each number of columns the book is printed in.
 LAYOUTS: dict[int, tuple[int, ...]] = {7: (11,), 8: (13, 14)}
 
@@ -60,17 +62,7 @@ def characters(wikitext: str) -> list[str]:
     text = _PRINTED.sub(r"\1", wikitext)
     for pattern in _MARKUP:
         text = pattern.sub("", text)
-    out: list[str] = []
-    for c in text:
-        if c in ADDED_PUNCTUATION:
-            continue
-        cp = ord(c)
-        joins = unicodedata.category(c) in ("Mn", "Mc") or 0x1160 <= cp <= 0x11FF or 0xD7B0 <= cp <= 0xD7FF
-        if joins and out:
-            out[-1] += c
-        else:
-            out.append(c)
-    return out
+    return clusters("".join(c for c in text if c not in ADDED_PUNCTUATION))
 
 
 def is_han(label: str) -> bool:

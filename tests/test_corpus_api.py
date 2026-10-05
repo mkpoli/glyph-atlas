@@ -123,8 +123,15 @@ class TestCodePointParsing:
         assert status == 200
         assert payload["codepoint"] == "U+2A708"
 
+    @pytest.mark.parametrize("spelling", ["U%2B1112%20U%2B119E", "U%2B1112-U%2B119E", "%E1%84%92%E1%86%9E"])
+    def test_old_hangul_jamo_sequence_is_one_query_character(self, api, spelling):
+        status, payload = get(api, f"/api/corpus/find?char={spelling}&limit=1")
+        assert status == 200
+        assert payload["char"] == "ᄒᆞ"
+        assert payload["codepoint"] == "U+1112 U+119E"
+
     def test_a_multi_character_query_is_rejected(self, api):
-        status, payload = get(api, "/api/corpus/find?char=abc")
+        status, payload = get(api, "/api/corpus/find?char=%EA%B0%80%EB%82%98")
         assert status == 400
         assert "given" in payload
 

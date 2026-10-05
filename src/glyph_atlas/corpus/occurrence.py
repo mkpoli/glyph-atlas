@@ -428,7 +428,7 @@ def occurrence_id(source: Source, char: str, span_start: int, char_class: str) -
 
 #: ``occ:U+2A708:<digest>``. The plus is part of the id, and a query string turns it
 #: into a space, so the id is normalised before use rather than trusted as received.
-_OCCURRENCE_ID = re.compile(r"^(occ):([Uu])[+ ]([0-9A-Fa-f]{4,6}):")
+_OCCURRENCE_ID = re.compile(r"^(occ):((?:[Uu][+ ][0-9A-Fa-f]{4,6})(?: (?:[Uu][+ ][0-9A-Fa-f]{4,6}))*):")
 
 
 def normalise_occurrence_id(occurrence_id: str) -> str:
@@ -438,13 +438,16 @@ def normalise_occurrence_id(occurrence_id: str) -> str:
     ``occ:U 2A708:ab``. Restoring it here means a caller does not have to know which
     decoder its transport used.
     """
-    return _OCCURRENCE_ID.sub(lambda m: f"{m.group(1)}:U+{m.group(3)}:", occurrence_id)
+    return _OCCURRENCE_ID.sub(
+        lambda m: f"{m.group(1)}:{' '.join('U+' + point.upper() for point in re.findall(r'[Uu][+ ]([0-9A-Fa-f]{4,6})', m.group(2)))}:",
+        occurrence_id,
+    )
 
 
 def codepoint_of_occurrence_id(occurrence_id: str) -> str | None:
     """The code point embedded in an occurrence id, when it has one."""
     match = _OCCURRENCE_ID.match(occurrence_id)
-    return f"U+{match.group(3).upper()}" if match else None
+    return " ".join("U+" + point.upper() for point in re.findall(r"[Uu][+ ]([0-9A-Fa-f]{4,6})", match.group(2))) if match else None
 
 
 def name_of(char: str) -> str:

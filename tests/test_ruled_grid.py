@@ -38,6 +38,7 @@ def test_characters_drop_markup_and_added_punctuation():
 
 def test_characters_keep_a_syllable_with_its_tone_mark_in_one_cell():
     assert ruled_grid.characters("如믈〮為ᄆᆡ〮") == ["如", "믈〮", "為", "ᄆᆡ〮"]
+    assert ruled_grid.characters("ᄒᆞᄃᆞᆯ가나𛂞゙") == ["ᄒᆞ", "ᄃᆞᆯ", "가", "나", "𛂞゙"]
 
 
 def test_a_full_page_is_cut_into_its_characters_in_reading_order():

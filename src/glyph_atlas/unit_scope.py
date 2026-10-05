@@ -5,6 +5,7 @@ from __future__ import annotations
 import unicodedata
 from typing import Any
 
+from .clusters import clusters
 from .representation import described
 
 
@@ -32,14 +33,7 @@ def character_count(text: str | None) -> int:
     text = unicodedata.normalize("NFC", text)
     if described(text.strip()):
         return 1
-    count = 0
-    for char in text:
-        cp = ord(char)
-        if unicodedata.combining(char) or 0xFE00 <= cp <= 0xFE0F or 0xE0100 <= cp <= 0xE01EF:
-            continue
-        if not char.isspace():
-            count += 1
-    return count
+    return sum(1 for char in clusters(text) if not char.isspace())
 
 
 def unit_scope(row: dict[str, Any]) -> dict[str, Any]:

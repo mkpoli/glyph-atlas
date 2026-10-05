@@ -17,6 +17,17 @@ def test_combining_voicing_and_ivs_remain_one_character():
         assert not unit_scope({"unicode": value})["needs_segmentation"]
 
 
+def test_old_hangul_jamo_syllables_are_one_character():
+    from glyph_atlas.unit_scope import character_count
+
+    assert character_count("ᄒᆞ") == 1
+    assert character_count("ᄃᆞᆯ") == 1
+    assert character_count("가") == 1
+    assert character_count("𛂞゙") == 1
+    assert character_count("가나") == 2
+    assert not unit_scope({"unicode": "U+1112 U+119E", "text_source": "ᄒᆞ"})["needs_segmentation"]
+
+
 def test_explicit_sequence_is_not_admitted_by_one_character_label():
     assert unit_scope({"unicode": "U+4E00", "granularity": "sequence"})["needs_segmentation"]
     assert unit_scope({"unicode": "U+4E00", "granularity": "block"})["needs_segmentation"]

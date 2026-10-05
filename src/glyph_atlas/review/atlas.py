@@ -27,6 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .. import evidence, images, recorded_terms, refs
 from .. import production as production_metadata
 from .. import style as style_module
+from ..clusters import is_one_character
 from ..context import CONTEXT_REACH, reach
 from ..production import production_info
 from ..schema import Box, ReviewState, Script, Unit
@@ -166,9 +167,7 @@ def grapheme_members(key: str) -> list[str]:
 
 
 def single_character(text: str) -> bool:
-    bases = [c for c in text if not unicodedata.combining(c)
-             and not 0xFE00 <= ord(c) <= 0xFE0F and not 0xE0100 <= ord(c) <= 0xE01EF]
-    return len(bases) == 1
+    return is_one_character(text)
 
 
 def review_priority(unit: Unit) -> int:
@@ -320,13 +319,7 @@ def one_character(text: str) -> str:
     with two code points, so counting code points would refuse it while counting が as one, and the
     two are the same character. The bases are counted, as `single_character` counts them.
     """
-    if not text:
-        return ""
-    bases = [character for character in text
-             if not unicodedata.combining(character)
-             and not 0xFE00 <= ord(character) <= 0xFE0F
-             and not 0xE0100 <= ord(character) <= 0xE01EF]
-    return text if len(bases) == 1 else ""
+    return text if is_one_character(text) else ""
 
 
 def canonical_identity(value: str) -> str:
@@ -376,6 +369,10 @@ def kana_of(identity: str) -> str | None:
 
 def script_of_identity(text: str) -> str:
     """The script of a written identity: that of its base character, whatever marks it carries."""
+    if is_one_character(text):
+        script = refs.script_of(text)
+        if script != Script.UNKNOWN:
+            return str(script)
     base = "".join(char for char in text if not unicodedata.combining(char))
     return str(refs.script_of(base)) if len(base) == 1 else "unknown"
 
