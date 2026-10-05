@@ -126,3 +126,28 @@ def test_a_page_aligned_as_a_whole_places_no_box_in_two_lines():
                       for unit in {unit.box.model_dump_json(): unit for unit in aligned[line.id][0]
                                    if unit.box is not None}.values())
     assert holders and max(holders.values()) == 1
+
+
+def test_an_upper_line_does_not_stack_under_a_lower_line_of_the_next_column():
+    # Boxes 230 px wide, columns 100 px apart: an upper line and the lower line one column to its right
+    # overlap by more than half a box, yet stand in different columns.
+    def wide(line_id, cx, y, h, n, seq):
+        return vertical(line_id, cx - 115, y, 230, h, "一" * n, seq)
+
+    upper, lower = tuple(range(20, 380, 50)), tuple(range(520, 880, 50))
+    lines = [wide("L1", 1000, 500, 400, 8, 0), wide("U2", 900, 0, 400, 8, 1), wide("L2", 900, 500, 400, 8, 2),
+             wide("U3", 800, 0, 400, 8, 3), wide("L3", 800, 500, 400, 8, 4), wide("T", 700, 0, 900, 16, 5)]
+    boxes = (column(980, lower) + column(880, upper) + column(880, lower) + column(780, upper) + column(780, lower)
+             + column(680, upper + lower))
+    assert [[line.id for line in slot] for slot in line_assignment.slots_of(lines)] == [
+        ["L1"], ["U2", "L2"], ["U3", "L3"], ["T"]]
+    found = line_assignment.assign(lines, boxes).lines
+    assert {line: {boxes[index].x for index in held} for line, held in found.items()} == {
+        "L1": {980}, "U2": {880}, "L2": {880}, "U3": {780}, "L3": {780}, "T": {680}}
+    assert all(boxes[index].y < 400 for index in found["U2"] + found["U3"])
+
+
+def test_a_line_alone_in_its_tier_keeps_ink_off_its_box_centre():
+    lone = vertical("lone", 875, 0, 250, 400, "一二三四五六七")
+    boxes = column(1090, tuple(range(20, 370, 50)))
+    assert line_assignment.assign([lone], boxes).lines["lone"] == list(range(7))

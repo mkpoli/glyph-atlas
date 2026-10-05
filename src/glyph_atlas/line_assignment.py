@@ -30,7 +30,6 @@ A horizontal line keeps the detections inside its box that no vertical line took
 
 from __future__ import annotations
 
-import itertools
 import math
 import statistics
 import unicodedata
@@ -43,9 +42,10 @@ from .schema import Box, Line
 #: Two lines stand side by side when their boxes overlap vertically by more than this share of the
 #: shorter one; less, and one stands above the other.
 SIDE_OVERLAP = 0.3
-#: Lines that stand one above the other share a slot when their boxes overlap horizontally by at
-#: least this share of the narrower one.
-STACK_OVERLAP = 0.3
+#: Lines that stand one above the other share a slot when their box centres stand less than this
+#: share of the tier's line pitch apart. A Honkoku-Lines box is two to three pitches wide, so the
+#: boxes of an upper line and of a lower line in the next column overlap by more than half.
+STACK_SHARE = 0.5
 #: Two records with the same text are one line when the smaller box lies this much inside the other.
 DUPLICATE_SHARE = 0.8
 #: A slot may take at most this many neighbouring columns, when its ink splits where it leans.
@@ -86,10 +86,24 @@ def side_by_side(a: Box, b: Box) -> bool:
     return _overlap(a.y, a.y + a.h, b.y, b.y + b.h) > SIDE_OVERLAP * min(a.h, b.h)
 
 
-def stacked(a: Box, b: Box) -> bool:
-    """Whether two line boxes stand one above the other in one column."""
-    return (not side_by_side(a, b)
-            and _overlap(a.x, a.x + a.w, b.x, b.x + b.w) >= STACK_OVERLAP * min(a.w, b.w))
+def stacked(a: Box, b: Box, pitch: float) -> bool:
+    """Whether two line boxes stand one above the other in one column of a page whose lines stand
+    `pitch` apart."""
+    return not side_by_side(a, b) and abs(centre(a)[0] - centre(b)[0]) < STACK_SHARE * pitch
+
+
+def line_pitch(lines: Sequence[Line]) -> float:
+    """How far apart the columns of `lines` stand: the median distance from a line's box centre to the
+    nearest line standing beside it. Without such a pair, half the median box width, since a box is
+    two to three columns wide."""
+    steps = []
+    for line in lines:
+        beside = [abs(centre(line.box)[0] - centre(other.box)[0]) for other in lines
+                  if other is not line and side_by_side(line.box, other.box)]
+        beside = [step for step in beside if step > 0]
+        if beside:
+            steps.append(min(beside))
+    return statistics.median(steps) if steps else statistics.median(line.box.w for line in lines) / 2
 
 
 def _text(line: Line) -> str:
@@ -145,19 +159,17 @@ def _axis(lines: Sequence[Line]) -> float:
     return statistics.mean(centre(line.box)[0] for line in lines)
 
 
-def _shared_width(a: Box, b: Box) -> float:
-    return _overlap(a.x, a.x + a.w, b.x, b.x + b.w) / min(a.w, b.w)
-
-
 def slots_of(tier: Sequence[Line]) -> list[list[Line]]:
     """A tier's lines grouped into slots, right to left: lines one above another in a column share one.
 
-    A line joins the slot it overlaps most among those whose every line stands above or below it.
+    A line joins the slot whose box centre is nearest among those whose every line stands above or
+    below it in its column.
     """
+    pitch = line_pitch(tier)
     slots: list[list[Line]] = []
     for line in sorted(tier, key=lambda line: (-centre(line.box)[0], line.box.y)):
-        homes = [slot for slot in slots if all(stacked(line.box, other.box) for other in slot)]
-        home = max(homes, key=lambda slot: max(_shared_width(line.box, other.box) for other in slot), default=None)
+        homes = [slot for slot in slots if all(stacked(line.box, other.box, pitch) for other in slot)]
+        home = min(homes, key=lambda slot: abs(_axis(slot) - centre(line.box)[0]), default=None)
         if home is None:
             slots.append([line])
         else:
@@ -196,16 +208,14 @@ def split_chained(columns: list[list[int]], boxes: Sequence[Box], slots: Sequenc
     return sorted(out, key=lambda column: -_median_x(boxes, column))
 
 
-def _pair(slots: Sequence[Sequence[Line]], columns: Sequence[Sequence[int]], boxes: Sequence[Box]
-          ) -> list[list[int]]:
+def _pair(slots: Sequence[Sequence[Line]], columns: Sequence[Sequence[int]], boxes: Sequence[Box],
+          pitch: float) -> list[list[int]]:
     """The columns each slot takes, as indices into `columns`, at the least cost; both read right to left."""
     held = [[[index for index in column if any(inside(line.box, centre(boxes[index])) for line in slot)]
              for column in columns] for slot in slots]
     wanted = [max(1, sum(ainu.characters_of(line) for line in slot)) for slot in slots]
     median = statistics.median(wanted)
     axes = [_axis(slot) for slot in slots]
-    steps = [a - b for a, b in itertools.pairwise(axes) if a - b > 0]
-    pitch = statistics.median(steps) if steps else statistics.median(box.w for box in boxes)
     skip = [SKIP_COST * (0.25 + min(1.0, len(column) / median)) for column in columns]
 
     def extent(s: int, k: int) -> tuple[int, int]:
@@ -290,9 +300,10 @@ def assign(lines: Sequence[Line], boxes: Sequence[Box]) -> Assignment:
         if not indices:
             continue
         slots = slots_of(tier)
+        pitch = line_pitch(tier)
         local = ainu.columns_of([boxes[index] for index in indices])
         columns = split_chained([[indices[i] for i in column] for column in local], boxes, slots)
-        for slot, span in zip(slots, _pair(slots, columns, boxes), strict=True):
+        for slot, span in zip(slots, _pair(slots, columns, boxes, pitch), strict=True):
             for k in span:
                 for index in columns[k]:
                     point = centre(boxes[index])
