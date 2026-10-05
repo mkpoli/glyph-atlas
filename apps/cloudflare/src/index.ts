@@ -667,7 +667,8 @@ export function runPage(crops: Json[]): { image: string; box: Rect; region: Rect
 // pages, and the first page alone counts. A page holds up to RUN_PAGE_CROPS crops, so a longer run comes
 // in fewer occurrences at a time. RUN_MAX keeps a run inside one context render: a render reaches five
 // character sizes along a column (`CONTEXT_REACH`), so its middle crop's holds about eleven, and
-// `runPage` finds the run in it.
+// `runPage` finds the run in it. A run of two or three narrows to one of the written forms its graphemes
+// gather (`form`), which its first page lists (`runFormsQuery`).
 // How a run's letterforms were made, as `hand_order` (0062) numbers its first member: shaped by hand
 // (handwritten, inscribed, cut or drawn for the page, or written in a running or cursive hand), not
 // known, and set from type. A run's page lists them in this order and narrows to one (`hand`).
@@ -679,7 +680,7 @@ function handGroup(q: URLSearchParams): number | null {
   if (!Object.hasOwn(HAND_ORDER, value)) throw new Problem(422, 'Invalid group.');
   return HAND_ORDER[value];
 }
-const RUN_MAX = 8, RUN_PAGE_CROPS = 192, RUN_COUNT_MAX = 2000, RUN_PROBE_MAX = 5000, RUN_WORKS_MAX = 60, RUN_NEAR_MAX = 12;
+const RUN_FORMS_MAX = 24, RUN_MAX = 8, RUN_PAGE_CROPS = 192, RUN_COUNT_MAX = 2000, RUN_PROBE_MAX = 5000, RUN_WORKS_MAX = 60, RUN_NEAR_MAX = 12;
 const NGRAM_COLUMNS = ['first', 'second', 'third'];
 const graphemes = new Intl.Segmenter('ja', { granularity: 'grapheme' });
 /** The characters of a run, one crop each. */
@@ -700,25 +701,29 @@ export function runFrom(size: number, anchor: number) {
   const units = crops.map((crop, i) => `LEFT JOIN units u${i} ON u${i}.id=${crop} LEFT JOIN corpus_units k${i} ON k${i}.id=${crop}`);
   return { from: ['FROM unit_ngrams a', ...joins, ...units].join(' '), links };
 }
-const runWhere = (document: boolean, size: number, hand = false) => `${document ? 'a.document=? AND ' : ''}a.size=? AND a.graphemes=?${hand ? ' AND a.hand_order=?' : ''}`
+// A written form (`form`) narrows a run of two or three to the rows of that text, tested on each row the
+// run's graphemes index reads: an index led by the text as well would cost a write and about 80 bytes
+// for every run, to save reads on a rare form's page, which the edge then keeps.
+const runWhere = (document: boolean, size: number, hand = false, form = false) => `${document ? 'a.document=? AND ' : ''}a.size=? AND a.graphemes=?`
+  + `${form ? ' AND a.text=?' : ''}${hand ? ' AND a.hand_order=?' : ''}`
   + Array.from({ length: size }, (_, i) => ` AND (u${i}.origin='local' OR k${i}.id IS NOT NULL)`).join('');
 // A group of how the letterforms were made (`hand`, the first row's `hand_order`, 0062) and a book
 // (`document`) narrow the run through the index that leads with what they name; `sort=source` lists a
 // run by book (0059) instead.
-export function runOccurrencesQuery(size: number, anchor: number, document: boolean, hand = false, sort: 'hand' | 'source' = 'hand') {
+export function runOccurrencesQuery(size: number, anchor: number, document: boolean, hand = false, sort: 'hand' | 'source' = 'hand', form = false) {
   const members = Array.from({ length: size }, (_, i) => `u${i}.data AS c${i},k${i}.object AS o${i},k${i}.offset AS f${i},k${i}.size AS s${i}`);
   return `SELECT ${members.join(',')}, a.document AS document, a.vertical
-    ${runFrom(size, anchor).from} WHERE ${runWhere(document, size, hand)}
+    ${runFrom(size, anchor).from} WHERE ${runWhere(document, size, hand, form)}
     ORDER BY ${sort === 'source' && !document ? 'a.document,a.first' : 'a.hand_order,a.shuffle,a.first'} LIMIT ? OFFSET ?`;
 }
-export function runCountQuery(size: number, anchor: number, document: boolean, hand = false) {
+export function runCountQuery(size: number, anchor: number, document: boolean, hand = false, form = false) {
   return `SELECT count(*) AS n, sum(v) AS vertical FROM (SELECT a.vertical AS v ${runFrom(size, anchor).from}
-    WHERE ${runWhere(document, size, hand)} LIMIT ${RUN_COUNT_MAX + 1})`;
+    WHERE ${runWhere(document, size, hand, form)} LIMIT ${RUN_COUNT_MAX + 1})`;
 }
 /** The books a run is in, with their occurrences (counted among the first RUN_COUNT_MAX) and one crop of each to name them by. */
-export function runWorksQuery(size: number, anchor: number) {
+export function runWorksQuery(size: number, anchor: number, form = false) {
   return `SELECT d AS document, count(*) AS n, min(f) AS sample FROM (SELECT a.document AS d, a.first AS f ${runFrom(size, anchor).from}
-    WHERE ${runWhere(false, size)} AND a.document IS NOT NULL LIMIT ${RUN_COUNT_MAX + 1}) GROUP BY d ORDER BY n DESC,d LIMIT ${RUN_WORKS_MAX}`;
+    WHERE ${runWhere(false, size, false, form)} AND a.document IS NOT NULL LIMIT ${RUN_COUNT_MAX + 1}) GROUP BY d ORDER BY n DESC,d LIMIT ${RUN_WORKS_MAX}`;
 }
 // The records of a page's occurrences: each member's row where it has one, else its published record,
 // read with the page's other records (`corpusRecords`). An occurrence with a record that cannot be read
@@ -743,6 +748,13 @@ async function runGraphemes(env: Env, parts: string[]): Promise<string[]> {
     .results.map(row => [row.character, row.head]));
   return parts.map(part => heads.get(part) ?? part);
 }
+// The written forms a run of two or three gathers, each with its count, most frequent first: the site's
+// are one key range of `ngram_forms` (0074) in the order of `ngram_form_rank`; a book's are grouped from
+// a capped read of the book's runs of those graphemes, as its books are (`runWorksQuery`).
+export const runFormsQuery = (document: boolean) => document
+  ? `SELECT text, count(*) AS n FROM (SELECT text FROM unit_ngrams WHERE document=? AND size=? AND graphemes=? LIMIT ${RUN_COUNT_MAX + 1})
+    GROUP BY text ORDER BY n DESC,text LIMIT ${RUN_FORMS_MAX}`
+  : `SELECT text,n FROM ngram_forms WHERE size=? AND graphemes=? ORDER BY n DESC,text LIMIT ${RUN_FORMS_MAX}`;
 /** How many rows of a trigram there are, counting no further than RUN_PROBE_MAX. */
 export function runProbeQuery(document: boolean) {
   return `SELECT count(*) AS n FROM (SELECT 1 FROM unit_ngrams WHERE ${document ? 'document=? AND ' : ''}size=3 AND graphemes=? LIMIT ${RUN_PROBE_MAX})`;
@@ -757,10 +769,13 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
   const offset = integer(q, 'offset', 0), group = handGroup(q);
   const sort = q.get('sort') === 'source' ? 'source' : q.get('sort') && q.get('sort') !== 'hand' ? null : 'hand';
   if (!sort) throw new Problem(422, 'Invalid sort.');
+  // A written form of the run: as many characters, and a run of two or three, whose rows hold its text.
+  const form = text(q.get('form'), 96, 'form');
+  if (form && (parts.length > 3 || runCharacters(form).length !== parts.length)) throw new Problem(422, 'Invalid form.');
   // A page ends where the count does.
   if (offset >= RUN_COUNT_MAX) throw new Problem(404, 'A run does not page this far.');
   const limit = Math.min(integer(q, 'limit', Math.min(48, most), most), RUN_COUNT_MAX - offset);
-  const key = new Request(`${url.origin}/atlas/runs?${new URLSearchParams({ text: value, document: document ?? '', hand: String(group ?? ''), sort, limit: String(limit), offset: String(offset), v: await catalogueVersion(env) })}`);
+  const key = new Request(`${url.origin}/atlas/runs?${new URLSearchParams({ text: value, document: document ?? '', form: form ?? '', hand: String(group ?? ''), sort, limit: String(limit), offset: String(offset), v: await catalogueVersion(env) })}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json() as Json;
   const size = parts.length, scope = document ? [document] : [], folded = await runGraphemes(env, parts);
@@ -773,20 +788,25 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
     anchor = counts.indexOf(Math.min(...counts));
   }
   const { links } = runFrom(size, anchor);
-  const bound = [...links.map(i => span(i, 2)), ...scope, Math.min(size, 3), span(anchor, Math.min(size, 3))];
+  const written = form ? [form] : [];
+  const bound = [...links.map(i => span(i, 2)), ...scope, Math.min(size, 3), span(anchor, Math.min(size, 3)), ...written];
   const styled = (n: number) => [...bound, n];
-  const occurrences = env.DB.prepare(runOccurrencesQuery(size, anchor, Boolean(document), group !== null, sort)).bind(...(group === null ? bound : styled(group)), limit, offset);
-  // The first page also counts the run, as a whole or in its group, and each group, and names its books.
+  const occurrences = env.DB.prepare(runOccurrencesQuery(size, anchor, Boolean(document), group !== null, sort, Boolean(form))).bind(...(group === null ? bound : styled(group)), limit, offset);
+  // The first page also counts the run, as a whole or in its group, and each group, names its books, and
+  // lists the written forms a run of two or three gathers, whichever form is chosen.
   const first = offset ? [] : [
-    env.DB.prepare(runCountQuery(size, anchor, Boolean(document), group !== null)).bind(...(group === null ? bound : styled(group))),
-    ...HAND_NAMES.map(name => env.DB.prepare(runCountQuery(size, anchor, Boolean(document), true)).bind(...styled(HAND_ORDER[name]))),
-    env.DB.prepare(runWorksQuery(size, anchor)).bind(...links.map(i => span(i, 2)), Math.min(size, 3), span(anchor, Math.min(size, 3))),
+    env.DB.prepare(runCountQuery(size, anchor, Boolean(document), group !== null, Boolean(form))).bind(...(group === null ? bound : styled(group))),
+    ...HAND_NAMES.map(name => env.DB.prepare(runCountQuery(size, anchor, Boolean(document), true, Boolean(form))).bind(...styled(HAND_ORDER[name]))),
+    env.DB.prepare(runWorksQuery(size, anchor, Boolean(form))).bind(...links.map(i => span(i, 2)), Math.min(size, 3), span(anchor, Math.min(size, 3)), ...written),
+    size <= 3 ? env.DB.prepare(runFormsQuery(Boolean(document))).bind(...scope, size, span(0, size)) : env.DB.prepare('SELECT 1 WHERE 0'),
   ];
   const [page, count, ...rest] = await env.DB.batch([occurrences, ...first]) as D1Result<any>[];
   const found = page.results as RunRow[];
   // The crops of one run stand on one page, so they share their document's dates. The books' titles are
   // read beside the page's records rather than after them.
-  const books = rest.length ? rest[rest.length - 1].results as { document: string; n: number; sample: string }[] : null;
+  // The forms are the batch's last statement and the books the one before it.
+  const listed = rest.length ? rest.pop()!.results as { text: string; n: number }[] : null, forms = size <= 3 ? listed : null;
+  const books = rest.length ? rest.pop()!.results as { document: string; n: number; sample: string }[] : null;
   const [dating, records, works] = await Promise.all([datingOf(env, found.map(row => row.document)), runRecords(env, found, size),
     books ? runWorks(env, books) : null]);
   const items = found.flatMap((row, r) => {
@@ -800,9 +820,9 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
       vertical: Boolean(row.vertical), page: runPage(crops), honkoku_url: honkoku };
   });
   const counted = count?.results[0] as { n: number; vertical: number | null } | undefined;
-  const body = { text: value, size, document, hand: group === null ? 'all' : HAND_NAMES[group], sort, next_offset: offset + found.length, items,
+  const body = { text: value, size, document, form, hand: group === null ? 'all' : HAND_NAMES[group], sort, next_offset: offset + found.length, items,
     ...(counted && { total: Math.min(counted.n, RUN_COUNT_MAX), more: counted.n > RUN_COUNT_MAX, vertical: 2 * (counted.vertical ?? 0) >= counted.n,
-      hands: Object.fromEntries(HAND_NAMES.map((name, i) => [name, Math.min((rest[i].results[0] as { n: number }).n, RUN_COUNT_MAX)])), hand_groups: HAND_NAMES, works }) };
+      hands: Object.fromEntries(HAND_NAMES.map((name, i) => [name, Math.min((rest[i].results[0] as { n: number }).n, RUN_COUNT_MAX)])), hand_groups: HAND_NAMES, works, forms }) };
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return body;
 }
