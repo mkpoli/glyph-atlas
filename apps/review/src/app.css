@@ -133,9 +133,9 @@
 html[data-ink="bw"] .glyph-image,
 html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 
-.ink-toggle{display:flex;gap:2px;border:1px solid var(--line);border-radius:6px;padding:2px;background:var(--surface)}
-.ink-toggle button{border:0;background:transparent;font-size:11px;padding:6px 9px;border-radius:4px;color:var(--muted)}
-.ink-toggle button.active{background:var(--surface-selected);color:var(--ink)}
+.ink-toggle,.layout-toggle{display:flex;gap:2px;border:1px solid var(--line);border-radius:6px;padding:2px;background:var(--surface)}
+.ink-toggle button,.layout-toggle button{border:0;background:transparent;font-size:11px;padding:6px 9px;border-radius:4px;color:var(--muted)}
+.ink-toggle button.active,.layout-toggle button.active{background:var(--surface-selected);color:var(--ink)}
 
 /* The crop and the strokes around it, side by side: the character first, its surroundings beside
    it, both from one source at one revision. On a narrow screen they stack. */
@@ -250,3 +250,28 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 @keyframes atlas-cell{from{opacity:0;transform:scale(.55)}}
 @keyframes atlas-outline{from{stroke-dasharray:1 1;stroke-dashoffset:1}to{stroke-dasharray:1 1;stroke-dashoffset:0}}
 @media(prefers-reduced-motion:reduce){.atlas-symbol .cell,.atlas-symbol .open-cell{animation:none}}
+
+/* The collage (`lib/collage.js`): tiles in columns of one width, each as tall as its crop, at the place
+   worked out for the number of columns the gallery's width takes. A tile's place is its column (`--cell-c`),
+   the height of the crops above it as a share of their width (`--cell-y`) and how many tiles stand above it
+   (`--cell-n`); a block is as tall as its tallest column (`--collage-h`). The grid of squares (`data-gallery="grid"`)
+   lays the same tiles out as before. */
+.glyph-grid.collage{container-type:inline-size}
+/* A tile's place is its own: the numbers are not passed down to what it holds. */
+@property --cell-a{syntax:"<number>";inherits:false;initial-value:0}@property --cell-c{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n{syntax:"<number>";inherits:false;initial-value:0}@property --cell-c2{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y2{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n2{syntax:"<number>";inherits:false;initial-value:0}@property --cell-c3{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y3{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n3{syntax:"<number>";inherits:false;initial-value:0}@property --cell-c4{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y4{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n4{syntax:"<number>";inherits:false;initial-value:0}@property --cell-c5{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y5{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n5{syntax:"<number>";inherits:false;initial-value:0}@property --cell-c6{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y6{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n6{syntax:"<number>";inherits:false;initial-value:0}@property --cell-c7{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y7{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n7{syntax:"<number>";inherits:false;initial-value:0}@property --cell-c8{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y8{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n8{syntax:"<number>";inherits:false;initial-value:0}@property --collage-h2{syntax:"*";inherits:false}@property --collage-h3{syntax:"*";inherits:false}@property --collage-h4{syntax:"*";inherits:false}@property --collage-h5{syntax:"*";inherits:false}@property --collage-h6{syntax:"*";inherits:false}@property --collage-h7{syntax:"*";inherits:false}@property --collage-h8{syntax:"*";inherits:false}@property --collage-h{syntax:"*";inherits:false}
+.collage-block{--collage-cols:2;--collage-gap:6px;--collage-pad-t:26px;--collage-pad-x:8px;--collage-pad-b:24px;--collage-h:var(--collage-h2);--collage-colw:calc((100cqw - (var(--collage-cols) - 1) * var(--collage-gap)) / var(--collage-cols));--collage-iw:calc(var(--collage-colw) - 2 * var(--collage-pad-x));--collage-chrome:calc(var(--collage-pad-t) + var(--collage-pad-b));--collage-step:calc(var(--collage-chrome) + var(--collage-gap))}
+.collage-cell{--cell-c:var(--cell-c2);--cell-y:var(--cell-y2);--cell-n:var(--cell-n2)}
+@container (min-width:480px){.collage-block{--collage-cols:3;--collage-gap:10px;--collage-pad-t:30px;--collage-pad-x:12px;--collage-pad-b:26px;--collage-h:var(--collage-h3)}.collage-cell{--cell-c:var(--cell-c3);--cell-y:var(--cell-y3);--cell-n:var(--cell-n3)}}
+@container (min-width:680px){.collage-block{--collage-cols:4;--collage-h:var(--collage-h4)}.collage-cell{--cell-c:var(--cell-c4);--cell-y:var(--cell-y4);--cell-n:var(--cell-n4)}}
+@container (min-width:880px){.collage-block{--collage-cols:5;--collage-h:var(--collage-h5)}.collage-cell{--cell-c:var(--cell-c5);--cell-y:var(--cell-y5);--cell-n:var(--cell-n5)}}
+@container (min-width:1080px){.collage-block{--collage-cols:6;--collage-h:var(--collage-h6)}.collage-cell{--cell-c:var(--cell-c6);--cell-y:var(--cell-y6);--cell-n:var(--cell-n6)}}
+@container (min-width:1280px){.collage-block{--collage-cols:7;--collage-h:var(--collage-h7)}.collage-cell{--cell-c:var(--cell-c7);--cell-y:var(--cell-y7);--cell-n:var(--cell-n7)}}
+@container (min-width:1500px){.collage-block{--collage-cols:8;--collage-h:var(--collage-h8)}.collage-cell{--cell-c:var(--cell-c8);--cell-y:var(--cell-y8);--cell-n:var(--cell-n8)}}
+:root:not([data-gallery="grid"]) .glyph-grid.collage{display:block;background:none;border:0}
+:root:not([data-gallery="grid"]) .collage-block{position:relative;height:var(--collage-h)}
+:root:not([data-gallery="grid"]) .collage-cell{position:absolute;left:calc(var(--cell-c) * (var(--collage-colw) + var(--collage-gap)));top:calc(var(--cell-y) * var(--collage-iw) + var(--cell-n) * var(--collage-step));width:var(--collage-colw);height:calc(var(--cell-a) * var(--collage-iw) + var(--collage-chrome));min-height:0;padding:var(--collage-pad-t) var(--collage-pad-x) var(--collage-pad-b);border-radius:8px}
+:root:not([data-gallery="grid"]) .collage-cell::after{border-radius:inherit}
+:root:not([data-gallery="grid"]) .glyph-grid.collage .visual-grid-heading{background:none}
+:root[data-gallery="grid"] .collage-block{display:contents}
+/* A tile out of view is not laid out or painted until it nears the viewport; its box is set either way. */
+.collage-cell{content-visibility:auto;contain-intrinsic-size:auto 160px}

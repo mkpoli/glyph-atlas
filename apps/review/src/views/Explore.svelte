@@ -22,6 +22,7 @@
   import NgramGrid from '../components/NgramGrid.svelte'
   import { NGRAM_KINDS, ngramCounts } from '../lib/ngrams.js'
   import { runText } from '../lib/runs.js'
+  import { collage, tileAspect, LAYOUT_KEY, storedLayout } from '../lib/collage.js'
   import RunCandidate from '../components/RunCandidate.svelte'
   import SiteLinks from '../components/SiteLinks.svelte'
   import { catalogue, character, request, randomSeed, number, formatSerial, stored, remember } from '../lib/client.js'
@@ -141,7 +142,9 @@
     const direction = order === 'fewest' ? -1 : 1
     return [...groups.values()].sort((a, b) => direction * (b.count - a.count) || a.key.localeCompare(b.key))
   })
-  const chosenGrapheme = $derived(graphemes.find(group => group.key === grapheme))
+  // Read only with a grapheme chosen: gathering the graphemes sorts thousands of them, and every page of
+  // the collection brings their counts again.
+  const chosenGrapheme = $derived(grapheme ? graphemes.find(group => group.key === grapheme) : undefined)
   // The browse panel counts single graphemes, pairs or trigrams; the choice is remembered. Runs are
   // counted for the work chosen, or the whole collection, and read when the panel first shows them.
   // A save can relabel part of a run, so it drops the counts and the panel reads them again.
@@ -244,22 +247,60 @@
   // The grapheme view puts a heading over each shape group; crops in no group have none.
   const headed = item => picked && expand === 'grapheme' && visualGroup(item).id !== 'ungrouped'
   const headings = $derived(display.some(headed))
-  // The next page arrives as the reader nears the end of the grid. While there is one to come, the
-  // grid shows whole rows only: the crops of a part-filled last row wait for the page that fills it.
+  // The next page arrives as the reader nears the end of the gallery. While there is one to come, the
+  // grid of squares shows whole rows only: the crops of a part-filled last row wait for the page that
+  // fills it. The collage has no rows to fill (`columns` is 0).
   let grid = $state(), sentinel = $state(), columns = $state(0), nearEnd = $state(false)
+  // While the first page loads, the collage holds placeholders of crops' usual proportions.
+  const skeleton = collage(Array.from({ length: 32 }, (_, i) => [1, 1.25, 0.85, 1.1, 1.4, 0.95, 1.2, 0.8][i % 8]))
   const hasMore = $derived(!choosing && (picked ? (!visual && local.length < (data?.total ?? 0)) || corpusOffset < corpusTotal
     : Boolean(data) && items.length < data.total))
   const whole = $derived(hasMore && columns && !headings ? Math.floor(display.length / columns) * columns : display.length)
-  const tiles = $derived(whole ? display.slice(0, whole) : display)
+  // Tiles join the page a slice at a time, each slice in a task of its own, so a page of crops
+  // arriving never holds a slow machine up; the tiles the server rendered are there at once. The
+  // collage is placed for every tile to come, so its blocks hold their height while the slices fill in.
+  const SLICE = 12
+  let reach = $state(untrack(() => display.length))
+  const target = $derived(whole || display.length)
+  $effect(() => {
+    if (reach >= target) return
+    const timer = setTimeout(() => { reach = Math.min(target, reach + SLICE) }, 0)
+    return () => clearTimeout(timer)
+  })
+  const tiles = $derived(display.slice(0, Math.min(target, reach)))
+  // The gallery is a collage by default (`lib/collage.js`), or a grid of squares; the choice is the
+  // reader's, remembered, and set on the document before the first paint (`app.html`), so the page
+  // the server rendered, which holds both, opens in it.
+  let layout = $state('collage')
+  function layOut(value) {
+    layout = value; remember(LAYOUT_KEY, value)
+    document.documentElement.dataset.gallery = value
+  }
+  // Each shape group of the grapheme view is a block of its own under its heading; any other
+  // gallery is one block. A tile's number counts through the whole gallery.
+  const sections = $derived.by(() => {
+    const parts = []
+    display.slice(0, target).forEach((item, i) => {
+      const group = headed(item) ? visualGroup(item) : null, key = group?.id ?? ''
+      if (!parts.length || parts.at(-1).key !== key) parts.push({ key, heading: group ? groupLabel(group) : '', items: [] })
+      parts.at(-1).items.push([item, i])
+    })
+    return parts.map(part => {
+      const placed = collage(part.items.map(([item]) => tileAspect(item)))
+      return { key: part.key || 'all', heading: part.heading, block: placed.block, start: part.items[0][1], tiles: part.items.map(([item, i], at) => [item, i, placed.tiles[at]]) }
+    })
+  })
   function more() {
     // The list whose next page goes first; with a style group chosen, the collection's own crops first.
     if (picked) { if (!localDone && (byYear ? corpusDone || localNextYear <= corpusNextYear : !merged || localNext < corpusNext)) load(true); else moreCorpus() }
     else { offset = items.length; load(true) }
   }
-  $effect(() => { if (nearEnd && hasMore && !loading && !error) untrack(more) })
+  $effect(() => { if (nearEnd && hasMore && !loading && !error && reach >= target) untrack(more) })
   $effect(() => {
     if (!grid) return
-    const measure = () => { columns = getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length }
+    void layout
+    // The collage has no rows to fill; a grid's columns are counted from its template.
+    const measure = () => { columns = document.documentElement.dataset.gallery === 'grid' ? getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length : 0 }
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(grid)
@@ -282,6 +323,8 @@
   async function load(append = false) {
     choosing = false
     catalogueRequest?.abort()
+    // A further page goes before the corpus glyphs shown after the collection's own crops, so the tiles
+    // from the end of those crops on are drawn again, a slice at a time.
     if (!append) { showInAddress(); clearSelection() }
     const id = ++requestId; loading = true; error = ''
     try {
@@ -292,6 +335,9 @@
         const found = await occurrences(picked.code_point, { expand, limit: 60, offset: append ? local.length : 0, style: style || undefined, ...dateParams() })
         if (closed || id !== requestId) return
         const rows = found.items.map(item => ({ ...item, origin: 'collection' }))
+        // A new list is drawn from its start; a further page goes before the corpus glyphs shown after
+        // the collection's own crops, so the tiles from the end of those crops on are drawn again.
+        reach = append ? Math.min(reach, local.length) : 0
         local = append ? [...local, ...rows] : rows
         localStyles = found.styles ?? null; styled = Boolean(found.style_groups)
         data = { ...(data ?? {}), query: picked.char, total: found.counts.total, available: found.counts.exact_total,
@@ -328,7 +374,11 @@
         reported: flagged ? (showReported ? 'show' : 'hide') : null, seed, offset, limit: 60 }, { signal: catalogueRequest.signal, priority: 'low' })
       if (closed || id !== requestId) return
       if (!append && openEmptyGrapheme(result)) return
-      data = result; items = append ? [...items, ...result.items] : result.items
+      // A further page keeps the counts by character and work it came with: they answer the same filters,
+      // and replacing them redraws the work menu and regathers thousands of graphemes for every page.
+      data = append && data ? { ...result, categories: data.categories, documents: data.documents } : result
+      reach = append ? Math.min(reach, items.length) : 0
+      items = append ? [...items, ...result.items] : result.items
       if (!append) await showSample(id, sampled, result.items)
     } catch (e) { if (!closed && id === requestId && e.name !== 'AbortError') error = e.message }
     finally { if (!closed && id === requestId) loading = false }
@@ -673,6 +723,7 @@
       query = q; grapheme = g; work = w; filter = group; load()
     }
   }
+  onMount(() => { layout = storedLayout() })
   onMount(() => { const redirected = first ? openEmptyGrapheme(first.result) : false; if (!collection) readCollection(); if (!first && !opened) load(); if (addressed && !redirected) followAddress(); const timer = setInterval(readCollection, 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
   // Widening is the reader's choice and only it reloads the gallery; picking a character resets the
   // widening itself and loads once through `pick`.
@@ -685,6 +736,8 @@
 
 <!-- A crop's label in its script's colour; an unassigned crop says so instead. -->
 {#snippet tileLabel(item)}{#if isUnassigned(item)}{shownLabel(item)}{:else}<ScriptText text={item.label} />{/if}{/snippet}
+<!-- One crop of the gallery, placed in the collage by `style` (`lib/collage.js`). -->
+{#snippet tile(item, i, style)}{#if item.origin === 'corpus'}<button class="glyph-tile corpus collage-cell" {style} data-corpus={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} onclick={event => tileClick(event, item, i, () => inspect(item.id, null, display, updateItem, 'corpus'))} aria-label={t('explore.tile.inspectCorpus', { label: shownLabel(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if selectable(item)}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-label"><span class="tile-glyph" class:unassigned={isUnassigned(item)}>{@render tileLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" title={t('chips.grapheme')}><ScriptText text={shownGrapheme(item)} titled={false} /></span>{/if}</span><span class="tile-details">{#each cropDetails(item) as line}<span><ScriptLine {line} /></span>{/each}<span class="tile-id">{item.id}</span></span>{#if item.proxyable && item.image}<Glyph {item} alt={t('explore.tile.located', { label: shownLabel(item) })} eager={i < 24} />{:else}<span class="corpus-open"><b>{@render tileLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}<span class="tile-footer">{#if tileState(item) === 'plain' || tileState(item) === 'withheld'}<span class="status-dot" class:withheld={tileState(item) === 'withheld'}></span>{/if}{#if tileDate(item)}<span class="tile-year">{tileDate(item)}</span>{/if}{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{formatSerial(i + 1)}</span><span class="tile-arrow">↗</span></span></button>{:else}<button class="glyph-tile collage-cell" {style} data-unit={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} onclick={event => tileClick(event, item, i, () => inspect(item.id, null, display, updateItem))} aria-label={t('explore.tile.inspect', { label: shownLabel(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}><span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span><span class="tile-label"><span class="tile-glyph" class:unassigned={isUnassigned(item)}>{@render tileLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" title={t('chips.grapheme')}><ScriptText text={shownGrapheme(item)} titled={false} /></span>{/if}</span><span class="tile-details">{#each cropDetails(item) as line}<span><ScriptLine {line} /></span>{/each}<span class="tile-id">{item.id}</span></span><Glyph {item} eager={i < 24} />{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}<span class="tile-footer">{#if tileState(item) === 'plain' || tileState(item) === 'withheld'}<span class="status-dot" class:withheld={tileState(item) === 'withheld'}></span>{/if}{#if tileDate(item)}<span class="tile-year">{tileDate(item)}</span>{/if}{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{formatSerial(i + 1)}</span><span class="tile-arrow">↗</span></span></button>{/if}{/snippet}
 <!-- The search term in its scripts' colours, and the code points `readable` adds to it. -->
 {#snippet term()}<ScriptText text={query} />{readable.slice(query.length)}{/snippet}
 
@@ -721,6 +774,9 @@
     <WorkFilter {works} value={work} onchange={value => { work = value; if (picked || query) clearQuery(); else { offset = 0; load() } }} />
     <span class="toolbar-space"></span>
     <ImageStyleToggle {ink} onchange={onink} />
+    <div class="layout-toggle" role="group" aria-label={t('explore.layout.label')}>
+      {#each [['collage', () => t('explore.layout.collage')], ['grid', () => t('explore.layout.grid')]] as [value, text]}<button class:active={layout === value} aria-pressed={layout === value} onclick={() => layOut(value)}>{text()}</button>{/each}
+    </div>
     <!-- A round asks about one written character, so it is offered only for a grapheme of one form. -->
     {#if chosenGrapheme && !flagged}<a class="quiet-link" href={localize(roundAddress(chosenGrapheme.key))}><ScriptLine line={withText('explore.reviewGrapheme', 'grapheme', { grapheme: chosenGrapheme.char })} /></a>{/if}
     {#if flagged && data?.reported_count}<button class="quiet-link" onclick={toggleReported}>{showReported ? t('explore.flagged.hideReported') : t('explore.flagged.showReported', { count: data.reported_count })}</button>{/if}
@@ -745,9 +801,9 @@
   {:else if query && settled}
     <p class="find-count" role="status">{around('explore.occurrencesOf', 'character', { count: settled.total })[0]}<b>{@render term()}</b>{around('explore.occurrencesOf', 'character', { count: settled.total })[1]}{#if loading}<span class="find-pending"> …</span>{/if}</p>
   {/if}
-  <div class="glyph-grid" bind:this={grid} aria-label={flagged ? t('explore.heading.flagged') : t('explore.grid.collection')} aria-busy={loading}>
-    {#if loading && !display.length}{#each Array(32) as _}<div class="glyph-skeleton"></div>{/each}
-    {:else}{#each tiles as item, i (item.id)}{#if headed(item) && (i === 0 || visualGroup(display[i - 1]).id !== visualGroup(item).id)}<div class="visual-grid-heading">{groupLabel(visualGroup(item))}</div>{/if}{#if item.origin === 'corpus'}<button class="glyph-tile corpus" data-corpus={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} onclick={event => tileClick(event, item, i, () => inspect(item.id, null, display, updateItem, 'corpus'))} aria-label={t('explore.tile.inspectCorpus', { label: shownLabel(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if selectable(item)}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-label"><span class="tile-glyph" class:unassigned={isUnassigned(item)}>{@render tileLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" title={t('chips.grapheme')}><ScriptText text={shownGrapheme(item)} titled={false} /></span>{/if}</span><span class="tile-details">{#each cropDetails(item) as line}<span><ScriptLine {line} /></span>{/each}<span class="tile-id">{item.id}</span></span>{#if item.proxyable && item.image}<Glyph {item} alt={t('explore.tile.located', { label: shownLabel(item) })} eager={i < 24} />{:else}<span class="corpus-open"><b>{@render tileLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}<span class="tile-footer">{#if tileState(item) === 'plain' || tileState(item) === 'withheld'}<span class="status-dot" class:withheld={tileState(item) === 'withheld'}></span>{/if}{#if tileDate(item)}<span class="tile-year">{tileDate(item)}</span>{/if}{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{formatSerial(i + 1)}</span><span class="tile-arrow">↗</span></span></button>{:else}<button class="glyph-tile" data-unit={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} onclick={event => tileClick(event, item, i, () => inspect(item.id, null, display, updateItem))} aria-label={t('explore.tile.inspect', { label: shownLabel(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}><span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span><span class="tile-label"><span class="tile-glyph" class:unassigned={isUnassigned(item)}>{@render tileLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" title={t('chips.grapheme')}><ScriptText text={shownGrapheme(item)} titled={false} /></span>{/if}</span><span class="tile-details">{#each cropDetails(item) as line}<span><ScriptLine {line} /></span>{/each}<span class="tile-id">{item.id}</span></span><Glyph {item} eager={i < 24} />{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}<span class="tile-footer">{#if tileState(item) === 'plain' || tileState(item) === 'withheld'}<span class="status-dot" class:withheld={tileState(item) === 'withheld'}></span>{/if}{#if tileDate(item)}<span class="tile-year">{tileDate(item)}</span>{/if}{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}<span class="tile-number">{formatSerial(i + 1)}</span><span class="tile-arrow">↗</span></span></button>{/if}{/each}{/if}
+  <div class="glyph-grid collage" class:selecting={selected.size > 0} bind:this={grid} aria-label={flagged ? t('explore.heading.flagged') : t('explore.grid.collection')} aria-busy={loading}>
+    {#if loading && !display.length}<div class="collage-block" style={skeleton.block}>{#each skeleton.tiles as style}<div class="glyph-skeleton collage-cell" {style}></div>{/each}</div>
+    {:else}{#each sections as section (section.key)}{#if section.heading}<div class="visual-grid-heading">{section.heading}</div>{/if}<div class="collage-block" style={section.block}>{#each section.tiles.slice(0, Math.max(0, reach - section.start)) as [item, i, style] (item.id)}{@render tile(item, i, style)}{/each}</div>{/each}{/if}
   </div>
   {#if !choosing && !loading && !display.length}<div class="empty"><span class="empty-mark">{picked || (settled && settled.total === 0) ? '∅' : flagged ? '✓' : '∅'}</span><h2>{#if picked}<ScriptLine line={withText(corpusFault ? 'explore.empty.samplesFailed' : 'explore.empty.noOccurrenceOf', 'char', { char: picked.char })} />{:else if settled && settled.total === 0}{around('explore.empty.noOccurrenceOfTerm', 'term')[0]}{@render term()}{around('explore.empty.noOccurrenceOfTerm', 'term')[1]}{:else}{flagged ? t('explore.empty.nothingFlagged') : t('explore.empty.noCharacters')}{/if}</h2>{#if query}<button class="primary" onclick={clearQuery}>{t('explore.clearSearch')}</button>{:else}<a href={localize('/review')} class="primary">{t('explore.startRound')}</a>{/if}</div>{/if}
   {#if selected.size || bulkDone || bulkError}<BulkBar count={selected.size} bind:target={bulkTarget} busy={bulkBusy} error={bulkError} done={bulkDone}
@@ -760,9 +816,10 @@
   .browse-unit{display:flex;gap:2px;padding:8px 8px 6px}
   .browse-unit button{border:0;border-radius:5px;background:transparent;padding:5px 10px;font-size:12px;color:var(--muted)}
   .browse-unit button[aria-pressed="true"]{background:var(--surface-selected);color:var(--ink)}
-  /* The box that selects a tile shows on hover or focus, and on every tile once one is selected or on a touch screen. */
+  /* The box that selects a tile shows on hover or focus, and on every tile once one is selected or on a touch screen.
+     A class on the gallery says one is selected: a `:has()` there restyled every tile each time tiles were added. */
   .tile-select{position:absolute;top:8px;right:8px;z-index:4;display:flex;align-items:center;justify-content:center;width:20px;height:20px;border:1.5px solid var(--muted);border-radius:5px;background:var(--surface);color:var(--on-color);font:600 12px/1 system-ui,sans-serif;opacity:0;transition:opacity .12s}
-  :global(.glyph-tile):hover .tile-select,:global(.glyph-tile):focus-visible .tile-select,:global(.glyph-grid:has(.glyph-tile.selected)) .tile-select{opacity:1}
+  :global(.glyph-tile):hover .tile-select,:global(.glyph-tile):focus-visible .tile-select,.selecting .tile-select{opacity:1}
   @media(hover:none){.tile-select{opacity:.85}}
   .decided-checked .tile-select,.decided-flagged .tile-select{right:36px}
   :global(.glyph-tile.selected){outline:2px solid var(--accent);outline-offset:-2px;background:var(--accent-light)}
