@@ -1,7 +1,9 @@
 """Hosted feedback is anchored to local pixels and never overwrites newer local decisions."""
 import hashlib
+import importlib.util
 import json
 from copy import deepcopy
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -11,8 +13,12 @@ from glyph_atlas import evidence, tables
 from glyph_atlas.review import cloudflare_import as bridge
 from glyph_atlas.review.receipts import FeedbackReceipts, complete_batch, fingerprint
 from glyph_atlas.review.refine import refine_feedback
-from glyph_atlas.review.store import ReviewRequest, Store
+from glyph_atlas.review.store import RECUT, BadRequest, ReviewRequest, Store
 from glyph_atlas.schema import Box, Document, Line, Page, Unit
+
+_spec = importlib.util.spec_from_file_location("refresh", Path(__file__).parents[1] / "scripts" / "refresh_published_units.py")
+refresh = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(refresh)
 
 
 @pytest.fixture
@@ -463,8 +469,8 @@ def test_a_box_redrawn_on_the_site_imports_as_the_crops_new_box(store):
     assert report["counts"] == {"imported": 1}, report
     unit = store.unit("u")
     assert unit.box.model_dump() == box and unit.review == "reviewed" and unit.unicode == "U+624B"
-    fields = [event.field for event in store.events()[-2:]]
-    assert fields == ["box", "review"]
+    fields = [event.field for event in store.events()[-3:]]
+    assert fields == ["box", "recut", "review"]
 
 
 @pytest.mark.parametrize("box", [{"x": 190, "y": 10, "w": 30, "h": 40}, {"x": 10, "y": 10, "w": 1, "h": 40},
@@ -495,6 +501,62 @@ def test_a_review_after_a_redrawn_box_imports_on_the_new_box(store):
     assert report["counts"] == {"imported": 1}, report
     unit = store.unit("u")
     assert unit.box.model_dump() == box and unit.unicode == "U+3092"
+
+
+def catalogue_row(store):
+    """The row an export writes for `u` as the store holds it: cut from its box, at its revision."""
+    unit, revision = store.unit_snapshot("u")[0]
+    box = unit.box.model_dump()
+    data = {"image_sha256": bridge._source_digest(store, unit), "box": box, "crop_box": box,
+            "image": "/atlas/media/new.webp", "revision": revision}
+    return {"id": "u", "origin": "local", "character": "手", "family": None, "visual_group": None,
+            "production": "unknown", "category": "手", "state": "checked", "quiz": 0, "priority": 0, "shuffle": 5,
+            "revision": revision, "data": json.dumps(data), "snapshot": "{}", "context": "{}", "visual": "{}",
+            "style": "unassessed"}
+
+
+def site_row(publication, *, revision, box):
+    """The row the Worker holds after a redrawn box: the new box pending, the old cut still shown."""
+    shown = publication["character"]
+    data = {"image_sha256": shown["image_sha256"], "box": box, "crop_box": shown["box"],
+            "image": "/atlas/media/old.webp", "revision": revision, "box_pending": True}
+    return {"revision": revision, "quiz": 0, "data": json.dumps(data), "style": "unassessed", "reviewed": True}
+
+
+def test_a_redrawn_box_cut_again_is_published_past_the_site(store):
+    box = {"x": 12, "y": 11, "w": 26, "h": 38}
+    publication = baseline(store)
+    # Two steps on the site, as the crops waiting in the Ainu publication took: a report, then the redraw.
+    first, after = remote(publication, issue="crop", character=None, current=False)
+    second, after = redrawn(publication, box, before=after)
+    _, report = bridge.ingest_cloudflare(store, payload(first, second), apply=True)
+    assert report["counts"] == {"imported": 1}, report
+    live = after["revision"]
+    action, sql = refresh.plan(catalogue_row(store), site_row(publication, revision=live, box=box))
+    revision = store.revision("u")
+    assert action == "replace" and revision > live
+    assert f"revision={revision} WHERE id='u' AND revision={live};" in sql
+    # The revision is the journal's: a store rebuilt from its events has the same one.
+    Store(store.directory, rebuilding=True).rebuild()
+    assert Store(store.directory).revision("u") == revision
+
+
+def test_a_review_on_the_old_cut_after_a_redrawn_box_still_imports(store):
+    box = {"x": 12, "y": 11, "w": 26, "h": 38}
+    publication = baseline(store)
+    first, after = redrawn(publication, box)
+    bridge.ingest_cloudflare(store, payload(first), apply=True)
+    first["current"] = False
+    second, _ = remote(publication, before=after, character="を")
+    _, report = bridge.ingest_cloudflare(store, payload(first, second), apply=True)
+    assert report["counts"] == {"imported": 1}, report
+    assert store.unit("u").unicode == "U+3092"
+
+
+def test_a_client_cannot_record_a_recut(store):
+    with pytest.raises(BadRequest):
+        store.record(ReviewRequest(target_id="u", field=RECUT, new={"published_revision": 10**6}, client_id="local"))
+    assert store.revision("u") == 0
 
 
 #: A site user's id (anonymised), as the Worker records the actor of a signed-in write.

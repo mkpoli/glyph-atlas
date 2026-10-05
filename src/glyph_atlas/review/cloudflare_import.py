@@ -8,12 +8,13 @@ from collections import Counter, defaultdict
 from copy import deepcopy
 
 from .. import evidence, recorded_terms, refs
+from ..evidence import crop_version
 from ..schema import Review
 from ..unit_scope import character_count
 from .atlas import identity_text, script_of_identity, single_character
 from .characters import _source_digest, written_identity
 from .receipts import fingerprint
-from .store import UNREVISED, _change
+from .store import RECUT, _change, _review, advanced
 
 REMOTE_ID = re.compile(r"cf:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$", re.IGNORECASE)
 #: A site user's id, which the Worker records as the actor of every write since accounts.
@@ -144,9 +145,9 @@ def _step(record, before):
     return after
 
 
-def _append(store, conn, remote, field, value, evidence, event_id):
+def _append(store, conn, remote, field, value, evidence, event_id, *, role="reviewer", actor=None):
     event = Review(id=event_id, target_type="unit", target_id=remote["target_id"], field=field,
-                   new=value, role="reviewer", actor=remote["actor"], evidence=evidence, at=remote["at"])
+                   new=value, role=role, actor=actor or remote["actor"], evidence=evidence, at=remote["at"])
     state = store._state_for(conn, event)
     change = _change(state, event, guard=False)
     event = change.event.model_copy(update={"id": event_id})
@@ -156,10 +157,7 @@ def _append(store, conn, remote, field, value, evidence, event_id):
                  (event.id, event.target_type, event.target_id, event.field, _json(event.old), _json(event.new),
                   event.role, event.actor, event.evidence, event.at.isoformat(), event.actor, event_id))
     store._persist(conn, state, change)
-    # A seen crop records without changing the target, so it does not move the revision the journal
-    # counts out (as `Store.record` holds it back the same way).
-    if field not in UNREVISED:
-        store._bump(conn, event.target_id)
+    store._advance(conn, event)
     result = store._build_result(conn, event, change, state)
     conn.execute("UPDATE events SET result=? WHERE id=?", (_json(result), event.id))
     store._set_meta(conn, "state_seq", str(store._last_seq(conn)))
@@ -232,7 +230,10 @@ def ingest_cloudflare(store, payload: dict, *, apply=False) -> tuple[dict, dict]
                             raise Rejected("the imported journal was reset")
                         events = conn.execute("SELECT * FROM events WHERE target_id=? AND seq>(SELECT seq FROM events WHERE id=?)",
                                               (target, previous["remote_id"])).fetchall()
-                        if store._revision(conn, target) != previous["local_revision"] + len(events):
+                        expected = previous["local_revision"]
+                        for event in events:
+                            expected = advanced(expected, _review(event))
+                        if store._revision(conn, target) != expected:
                             raise Rejected("local revision history changed after import")
                         for event in events:
                             evidence = json.loads(event["evidence"] or "{}")
@@ -289,6 +290,14 @@ def ingest_cloudflare(store, payload: dict, *, apply=False) -> tuple[dict, dict]
                     for field, value in values.items():
                         if field == "box" or getattr(unit, field) != value:
                             _append(store, conn, remote, field, value, encoded, remote["id"] + ":" + field)
+                        if field == "box":
+                            # The site still shows the old cut, at the revision the chain reached; the next
+                            # publication cuts the crop from this box and must go past that revision.
+                            recut = {"box": value, "crop_version": crop_version(unit.id, actual["image_sha256"], value),
+                                     "published_revision": before["revision"]}
+                            _append(store, conn, remote, RECUT, recut,
+                                    _json({"policy": POLICY, "source_event_id": remote["id"]}),
+                                    remote["id"] + ":" + RECUT, role="model", actor=POLICY)
                     local_event = _append(store, conn, remote, "review", remote["new"], encoded, remote["id"])
                     revision = store._revision(conn, target)
                     bound = {**deepcopy(record), "event": local_event, "current_revision": revision}
