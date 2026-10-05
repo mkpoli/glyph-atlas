@@ -1082,6 +1082,7 @@ def repair_relabel(
     run: Annotated[str, typer.Option(help="run configuration under models/align/runs/<name>.yaml")] = "collection-v2",
     classifier: Annotated[Path | None, typer.Option(help="the run's classifier export, if not at its path")] = None,
     reviews: Annotated[Path | None, typer.Option(help="review events made elsewhere, such as the site's, as JSON or JSON lines")] = None,
+    forms: Annotated[Path | None, typer.Option(help="JSON object of unit id to the form a person decided for its cluster")] = None,
     every: Annotated[bool, typer.Option("--every-line", help="realign every aligned line, not only stale ones")] = False,
 ) -> None:
     """Give every box of a line aligned in the old detection order the character the current aligner
@@ -1096,8 +1097,9 @@ def repair_relabel(
         config = config.model_copy(update={"classifier": str(classifier)})
     align_module.check_classifier(config)
     events = box_relabel.read_reviews(reviews) if reviews else []
+    decided = json.loads(forms.read_text(encoding="utf-8")) if forms else {}
     result = box_relabel.relabel_directory(directory, out, run=config, classifier=Classifier(config.classifier),
-                                           detections=detections, reviews=events, every=every)
+                                           detections=detections, reviews=events, forms=decided, every=every)
     for name, value in result.items():
         typer.echo(f"{name:<14} {value:>10}")
 

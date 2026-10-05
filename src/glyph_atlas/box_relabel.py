@@ -27,7 +27,9 @@ up.
 A person's review decides whether a unit keeps its label (`verdicts_of`). A unit a reviewer
 confirmed, or whose character a person wrote, keeps it. A review that only said the label is wrong
 does not: the label it rejected came from the scrambled pairing, so the unit takes the realigned
-label like any other and keeps its review history in `meta["box_relabel"]`.
+label like any other and keeps its review history in `meta["box_relabel"]`. A unit in a cluster
+whose form a person decided takes the realigned label when it is of the decided form's family, and
+otherwise keeps its label and is marked for review, its crop kept.
 """
 
 from __future__ import annotations
@@ -40,7 +42,7 @@ from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
-from . import align
+from . import align, refs
 from .schema import Box, Line, ReviewState, Unit
 
 METHOD = "box-relabel-v1"
@@ -144,6 +146,17 @@ def holds(unit: Unit, verdicts: Mapping[str, str]) -> bool:
     if verdict is not None:
         return verdict in HOLDING
     return unit.review in CONFIRMED
+
+
+def family(text: str | None) -> str | None:
+    """The grapheme family's code point of one character, or of a code point written `U+XXXX`."""
+    from .corpus.identity import family_of
+
+    if not text:
+        return None
+    code_points = text.split() if text.startswith("U+") else refs.to_code_points(unicodedata.normalize("NFC", text))
+    found = family_of(" ".join(code_points))
+    return found["code_point"] if found else " ".join(code_points)
 
 
 def descents(placed: Sequence[tuple[int, Box]], vertical: bool | None = None) -> tuple[int, int]:
@@ -279,16 +292,21 @@ def unplaced_reason(box: tuple[int, int, int, int], new: Sequence[Unit]) -> str:
     return "several-characters"
 
 
-def relabel(old: Sequence[Unit], new: Sequence[Unit], verdicts: Mapping[str, str] | None = None
-            ) -> list[dict[str, Any]]:
+def relabel(old: Sequence[Unit], new: Sequence[Unit], verdicts: Mapping[str, str] | None = None,
+            forms: Mapping[str, str] | None = None) -> list[dict[str, Any]]:
     """One record per boxed old unit of a line: the label the new alignment gives its box.
 
     `status` is `unchanged` when the label stands, `relabelled` when the box holds another character
     of the line, `unplaced` when the new alignment names no single character for the box
     (`placements`, `gap_fills`), and `protected` when a person's review keeps the label (`holds`,
     over `verdicts`). A label that comes from a gap fill is marked `fill: gap`.
+
+    `forms` names, by unit id, the form a person decided for the unit's cluster, as a character or a
+    family's code point. Such a unit takes a new label of that form's family; one the realignment
+    gives another character, or none, is `review`: it keeps its label and goes to a reviewer, who
+    sees the realigned label beside it.
     """
-    verdicts = verdicts or {}
+    verdicts, forms = verdicts or {}, forms or {}
     placed = placements(new)
     fills = gap_fills(old, new, placed)
     placed = {**placed, **fills}
@@ -311,6 +329,11 @@ def relabel(old: Sequence[Unit], new: Sequence[Unit], verdicts: Mapping[str, str
             record["status"] = "unchanged"
         else:
             record["status"] = "relabelled"
+        decided = forms.get(unit.id)
+        if (decided and record["status"] in ("relabelled", "unplaced")
+                and (record["after"] is None or family(record["after"]) != family(decided))):
+            record["status"] = "review"
+            record["form"] = decided
         if found is not None and record["box"] in fills:
             record["fill"] = "gap"
         records.append(record)
@@ -333,7 +356,8 @@ def applied(unit: Unit, record: dict[str, Any]) -> Unit:
 
     An unchanged or protected unit takes only its place in the reading order, so the line no longer
     reads as stale; an unplaced one has no place in it and leaves any group it was cut into.
-    The id and the box stay. The evidence goes into `meta["box_relabel"]`, with the label
+    A unit sent to review keeps its label and its place, and carries the realigned label for the
+    reviewer. The id and the box stay. The evidence goes into `meta["box_relabel"]`, with the label
     before and, for a unit a person reviewed, the review state and verdict it had.
     """
     status = record["status"]
@@ -341,11 +365,14 @@ def applied(unit: Unit, record: dict[str, Any]) -> Unit:
         # A protected unit keeps its label, and takes its place in the reading order like the rest, so
         # its line is not read as stale; a box the new alignment leaves empty has no place in it.
         return unit.model_copy(update={"seq": record["seq"]})
-    if status not in ("relabelled", "unplaced"):
+    if status not in ("relabelled", "unplaced", "review"):
         return unit
     note = {"method": METHOD, "status": status, "before": record["before"], "after": record["after"]}
     if record.get("verdict"):
         note["review"] = {"state": str(unit.review), "verdict": record["verdict"]}
+    if status == "review":
+        note["form"] = record["form"]
+        return unit.model_copy(update={"meta": {**(unit.meta or {}), "box_relabel": note}})
     meta = {**(unit.meta or {}), "box_relabel": note}
     if status == "unplaced":
         return unit.model_copy(update={"seq": None, "text_source": None, "unicode": None,
@@ -369,7 +396,7 @@ def aligned_lines(units: Iterable[Unit]) -> set[str]:
 
 def repair(old_units: Sequence[Unit], lines: Sequence[Line], detections: dict[str, list[Box]], *, run: align.Run,
            classifier: Any, crop_of: Any, verdicts: Mapping[str, str] | None = None,
-           every: bool = False) -> tuple[list[Unit], list[dict[str, Any]]]:
+           forms: Mapping[str, str] | None = None, every: bool = False) -> tuple[list[Unit], list[dict[str, Any]]]:
     """Relabel the units of every stale line in `lines`, or with `every` of every aligned line in it, and
     return all of `old_units` with the records.
 
@@ -393,7 +420,7 @@ def repair(old_units: Sequence[Unit], lines: Sequence[Line], detections: dict[st
         placed = placements(new)
         placed.update(gap_fills(by_line[line.id], new, placed))
         own = {unit.id: unit for unit in by_line[line.id]}
-        for record in relabel(by_line[line.id], new, verdicts):
+        for record in relabel(by_line[line.id], new, verdicts, forms):
             unit = own[record["unit_id"]]
             if record["status"] == "relabelled":
                 record["fields"] = fields_of(placed[record["box"]])
@@ -419,7 +446,8 @@ def write_records(path: Path, records: Iterable[dict[str, Any]]) -> int:
 
 
 def relabel_directory(directory: Path, out: Path, *, run: align.Run, classifier: Any, detections: Path,
-                      reviews: Iterable[Mapping[str, Any]] = (), every: bool = False) -> dict[str, int]:
+                      reviews: Iterable[Mapping[str, Any]] = (), forms: Mapping[str, str] | None = None,
+                      every: bool = False) -> dict[str, int]:
     """Relabel the stale lines of `directory`, or with `every` all its aligned lines, and write the
     result to `out`, never to `directory`.
 
@@ -427,8 +455,9 @@ def relabel_directory(directory: Path, out: Path, *, run: align.Run, classifier:
     lines relabelled, and `relabels.jsonl`, one record per boxed unit of a relabelled line.
     `detections` is the cache of the boxes the units were cut from, keyed by page. `reviews` are review
     events made elsewhere, such as the site's, read after the journal of the review store beside the
-    source; together they decide which units keep their labels (`verdicts_of`). A horizontal line is
-    not relabelled: the old order read one left to right already.
+    source; together they decide which units keep their labels (`verdicts_of`). `forms` names the
+    forms people decided (`relabel`). A horizontal line is not relabelled: the old order read one left
+    to right already.
     """
     import shutil
 
@@ -462,7 +491,7 @@ def relabel_directory(directory: Path, out: Path, *, run: align.Run, classifier:
     verdicts = verdicts_of([*human.rows, *reviews])
     repaired, records = repair(units, lines, found_boxes, run=run, classifier=classifier,
                                crop_of=align._crop_reader(dataset, page_records),
-                               verdicts=verdicts, every=every)
+                               verdicts=verdicts, forms=forms, every=every)
     out.mkdir(parents=True, exist_ok=True)
     for name in alignment_repair.COPIED_TABLES:
         path = dataset.tables.get(name)

@@ -33,10 +33,10 @@ def run() -> align.Run:
     return align.Run(name="test", accept=0.5, margin=0.0)
 
 
-def repair(units, verdicts=None):
+def repair(units, verdicts=None, forms=None):
     detections = {"hl:item:0": BOXES}
     return box_relabel.repair(units, [line()], detections, run=run(), classifier=None, crop_of=None,
-                              verdicts=verdicts)
+                              verdicts=verdicts, forms=forms)
 
 
 def test_a_line_whose_boxes_step_back_up_the_column_is_stale():
@@ -96,6 +96,19 @@ def test_a_unit_a_review_only_called_wrong_takes_the_realigned_label_and_keeps_i
     assert box_relabel.counts(records) == {"relabelled": 4}
     assert by_id[old[1].id].meta["box_relabel"]["review"] == {"state": "reviewed", "verdict": "wrong"}
     assert "review" not in by_id[old[0].id].meta["box_relabel"]
+
+
+def test_a_unit_of_a_decided_form_takes_a_realigned_label_of_its_family_only():
+    old = stale_units()  # 高 on the box of 百, 八 on the box of 高, 百 on the box of 四
+    forms = {old[0].id: "百", old[1].id: "U+56DB", old[2].id: "U+56DB"}
+    repaired, records = repair(old, forms=forms)
+    by_id = {unit.id: unit for unit in repaired}
+    statuses = {record["unit_id"]: record["status"] for record in records}
+    assert statuses[old[0].id] == "relabelled" and by_id[old[0].id].text_source == "百"
+    assert statuses[old[2].id] == "relabelled" and by_id[old[2].id].text_source == "四"
+    assert statuses[old[1].id] == "review" and by_id[old[1].id].text_source == "八"
+    assert by_id[old[1].id].meta["box_relabel"] == {"method": box_relabel.METHOD, "status": "review",
+                                                    "before": "八", "after": "高", "form": "U+56DB"}
 
 
 def test_the_latest_review_of_a_unit_decides_its_verdict():
