@@ -25,7 +25,8 @@ DELETE FROM corpus_follow;"""
 # Reapplies the forms, marks the corpus glyphs that have a `units` row as named, then counts assigned
 # glyphs per character and material (0006). Every publication that rewrites `corpus_units` runs them
 # after it. A count is written only where it changed and a material no glyph has any more is removed,
-# so a publication that moves a few glyphs rewrites a few counts.
+# so a publication that moves a few glyphs rewrites a few counts. A named glyph then takes its published
+# row's style, which `corpus_style` (0035) gave it whenever the upsert rewrote that row.
 CORPUS_REFRESH = FORMS_REAPPLY + "\n" + re.search(
     r"UPDATE corpus_units SET named=1 WHERE id IN [\s\S]*?;", (MIGRATIONS / "0006_corpus_rounds.sql").read_text()).group(0) + """
 INSERT INTO corpus_characters SELECT character,production,count(*),sum(named) FROM corpus_units
@@ -33,7 +34,8 @@ INSERT INTO corpus_characters SELECT character,production,count(*),sum(named) FR
  ON CONFLICT(character,production) DO UPDATE SET n=excluded.n,named=excluded.named
  WHERE corpus_characters.n IS NOT excluded.n OR corpus_characters.named IS NOT excluded.named;
 DELETE FROM corpus_characters WHERE NOT EXISTS (SELECT 1 FROM corpus_units c
- WHERE c.character=corpus_characters.character AND c.production=corpus_characters.production);"""
+ WHERE c.character=corpus_characters.character AND c.production=corpus_characters.production);
+UPDATE units SET style=c.style FROM corpus_units c WHERE units.origin='corpus' AND c.id=units.id AND units.style IS NOT c.style;"""
 # The Worker caches the grapheme browser's corpus counts on this stamp; it is written with the recount,
 # in the same part, so no request between them caches the old counts under a new key.
 CORPUS_REFRESH += ("\nINSERT OR REPLACE INTO metadata(key,value) "

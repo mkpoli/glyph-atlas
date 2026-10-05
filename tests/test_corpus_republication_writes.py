@@ -75,3 +75,10 @@ def test_a_new_source_character_reaches_an_undecided_glyph():
     db = site()
     publish(db, [(*SOURCE[PLAIN][:1], "ば", *SOURCE[PLAIN][2:])])
     assert db.execute("SELECT character FROM corpus_units WHERE id=?", (PLAIN,)).fetchone() == ("ば",)
+
+
+def test_a_named_glyph_takes_its_published_style_though_its_row_is_unchanged():
+    db = site()
+    db.execute("UPDATE units SET style='unassessed' WHERE id=?", (NAMED,))
+    publish(db, SOURCE.values())
+    assert db.execute("SELECT style,style_order FROM units WHERE id=?", (NAMED,)).fetchone() == ("formal", 2)
