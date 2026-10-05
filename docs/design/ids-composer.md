@@ -14,7 +14,7 @@ and the best parts any host offers 0.81: layout is the larger remaining loss, st
 | Measure | Set | Now | Target |
 |---|---|---|---|
 | Ink overlap with the real glyph (intersection over union, 96 px), mean | 1,981 compound jōyō kanji | 0.697 | 0.75 |
-| Ink overlap, tenth percentile | same | 0.463 | 0.55 |
+| Ink overlap, tenth percentile | same | 0.466 | 0.55 |
 | Outline length within 15% of the real glyph's (no stroke missing or added) | same | 93.5% | 99.5% |
 | Drawn at all | same | 1,967 of 1,981 | all |
 | Stroke width against the real glyph, median, across x and across y | same | 0.997, 1.000 | within 0.97–1.03 |

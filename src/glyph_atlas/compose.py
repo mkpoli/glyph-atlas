@@ -921,8 +921,9 @@ class Composer:
         instance = self._instance(node, region)
         if instance is not None:
             return [instance]
-        if at_root and self.hosted and self.layout is not None and op in self.layout.ops and len(children) == 2:
-            return self._learned(op, children)
+        if self.hosted and self.layout is not None and len(children) == 2 and (
+                op in self.layout.ops if at_root else op in ("⿰", "⿱")):
+            return self._learned(op, children, None if at_root else region)
         if at_root and op in AXIS and self.hosted:
             transplanted = self._transplant(op, children)
             if transplanted is not None:
@@ -971,16 +972,20 @@ class Composer:
             _fit_inside(groups[0], groups[1], region, self.font.stem[0][0])
         return [p for group in groups for p in group]
 
-    def _learned(self, op: str, children: list[Node]) -> list[Placed]:
-        """A whole character's two operands in the boxes the learned layout gives them, each cut from
-        the host that fits its box best, or drawn into it. An enclosed one stays in its predicted
+    def _learned(self, op: str, children: list[Node], region: Box | None = None) -> list[Placed]:
+        """Two operands in the boxes the learned layout gives them, each cut from the host that fits
+        its box best, or drawn into it. A whole character's boxes stand in the em; a nested node's
+        are those of a whole character laid out alike, carried into its region. An enclosed one stays in its predicted
         box: fitting it into the opening afterwards scored worse (0.562 against 0.601 on 238 jōyō
         enclosures)."""
         tested = next(iter(self.exclude)) if len(self.exclude) == 1 else None
         boxes = self.layout.predict(self, op, [key(c) for c in children], tested)
+        if region is not None:
+            frame = (min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes))
+            boxes = [mapped(b, frame, region) for b in boxes]
         groups = []
         for i, (child, box) in enumerate(zip(children, boxes)):
-            part = self._host(op, i, child, children[:i] + children[i + 1:], box, placed=True)
+            part = self._host(op, i, child, children[:i] + children[i + 1:], box, placed=region is None)
             if part is None:
                 groups.append(self._node(child, box))
                 continue
