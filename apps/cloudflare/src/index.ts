@@ -1340,9 +1340,8 @@ async function suggest(env: Env, q: URLSearchParams) {
   return { query: term, items: rows.results.slice(0,limit).map(r => ({...parse(r.data), rank:r.rank})),
     total: rows.results.length, more: Math.max(0,rows.results.length-limit), status:'ok',corpus:{ready:true} };
 }
-async function occurrences(env: Env, code: string, q: URLSearchParams, origin = 'local') {
-  const { data } = await known(env, code);
-  if(origin==='corpus')return corpusOccurrences(env,data,q);
+async function occurrences(env: Env, code: string, q: URLSearchParams) {
+  const { data } = await known(env, code), origin = 'local';
   const limit = integer(q,'limit',24,200), offset=integer(q,'offset',0), group = styleGroup(q);
   // The filters other than style: the style counts are taken over them, so each group says what it holds.
   const filters: string[] = [], extra: (string | number)[] = [];
@@ -1559,7 +1558,24 @@ export const characterCropsQuery = (extra = '') => `SELECT * FROM units WHERE or
 // two branches share no crop, so they merge without comparing whole rows.
 export const graphemeCropsQuery = (extra = '') => `SELECT * FROM units WHERE origin=? AND family=?${extra}
   UNION ALL SELECT * FROM units WHERE origin=? AND character=? AND family IS NOT ?${extra} ORDER BY style_order,id LIMIT ? OFFSET ?`;
-async function corpusOccurrences(env:Env,data:Json,q:URLSearchParams){
+// A family's corpus glyphs and how many have no written character yet. The answer depends only on the
+// family and the catalogue, so the edge keeps one copy per family and version rather than counting on
+// every page and filter.
+async function familyCounts(env:Env,ctx:ExecutionContext,url:URL,family:string){
+  const key=new Request(`${url.origin}/layers/family-counts?family=${encodeURIComponent(family)}&v=${encodeURIComponent(await catalogueVersion(env))}`);
+  const cached=await caches.default.match(key);
+  if(cached)return await cached.json() as {total:number;unassigned:number};
+  const row=await env.DB.prepare(`SELECT count(*) AS total,sum(written IS NULL) AS unassigned FROM (
+    SELECT CASE WHEN u.id IS NULL THEN c.character ELSE u.character END AS written
+      FROM corpus_units c LEFT JOIN units u ON c.id=u.id WHERE c.family=? AND (u.id IS NULL OR u.family=c.family)
+    UNION ALL SELECT u.character AS written FROM units u JOIN corpus_units c ON c.id=u.id
+      WHERE u.origin='corpus' AND u.family=? AND c.family IS NOT u.family
+    )`).bind(family,family).first<{total:number;unassigned:number}>();
+  const counts={total:row?.total||0,unassigned:row?.unassigned||0};
+  ctx.waitUntil(caches.default.put(key,Response.json(counts,{headers:{'cache-control':`public, max-age=${FACETS_TTL}`}})));
+  return counts;
+}
+async function corpusOccurrences(env:Env,ctx:ExecutionContext,url:URL,{data,detail}:{data:Json;detail:Json},q:URLSearchParams){
   const limit=integer(q,'limit',24,200),offset=integer(q,'offset',0),group=styleGroup(q);
   const family=q.get('scope')==='grapheme',widened=q.get('scope')==='variants',field=family?'family':'character';
   if(widened)widenedPage(offset);
@@ -1589,16 +1605,10 @@ async function corpusOccurrences(env:Env,data:Json,q:URLSearchParams){
       .map(async row=>({...(row.overlay?parse(row.overlay):await corpusData(env,row)),style:row.style}))));
   }
   const formed=await withForms(env,items);
-  const info=await known(env,data.char),familyCode=data.grapheme?.code_point||data.code_point;
-  const familyCounts=await env.DB.prepare(`SELECT count(*) AS total,sum(written IS NULL) AS unassigned FROM (
-    SELECT CASE WHEN u.id IS NULL THEN c.character ELSE u.character END AS written
-      FROM corpus_units c LEFT JOIN units u ON c.id=u.id WHERE c.family=? AND (u.id IS NULL OR u.family=c.family)
-    UNION ALL SELECT u.character AS written FROM units u JOIN corpus_units c ON c.id=u.id
-      WHERE u.origin='corpus' AND u.family=? AND c.family IS NOT u.family
-    )`).bind(familyCode,familyCode).first<{total:number;unassigned:number}>();
+  const counts=await familyCounts(env,ctx,url,data.grapheme?.code_point||data.code_point);
   return {...data.candidates,code_point:data.code_point,total:widened?Math.min(counted,WIDENED_CAP):counted,capped:widened&&counted>WIDENED_CAP,
     available:formed.length,items:await withDating(env,formed),...(grouped?{styles:grouped.styles}:{}),scope:family?'grapheme':widened?'variants':'character',status:'ok',
-    visual_analysis:info.detail.visual_analysis,family_total:familyCounts?.total||0,unassigned_count:familyCounts?.unassigned||0,
+    visual_analysis:detail.visual_analysis,family_total:counts.total,unassigned_count:counts.unassigned,
     ...(dated?{order:dated.order,axis:dated.axis,years:dated.years}:{})};
 }
 // A document's characters in source order. The primary key serves the filter and the order, and each
@@ -2201,7 +2211,7 @@ const routes = {
         const version=await catalogueVersion(env),[variants,words]=await Promise.all([variantsOf(env,ctx,url.origin,detail.char,version),wordsOf(env,ctx,url.origin,detail.char,version)]);
         return json({...detail,variants,words,query:detail.code_point,samples:found.items,occurrences:{...found.counts,filtered:found.total}})}
       if(path==='/layers/occurrences')return json(await occurrences(env,q.get('code_point')||'',q));
-      if(path==='/layers/candidates'){const found=await occurrences(env,q.get('code_point')||'',q,'corpus');
+      if(path==='/layers/candidates'){const found=await corpusOccurrences(env,ctx,url,await known(env,q.get('code_point')||''),q);
         return json({...found,glyphs:found.total,glyph_items:found.items,retry:false})}
       if(path==='/layers/gallery')return json(await gallery(env,q));
       if(path==='/layers/decades')return json(await decades(env,ctx,url));
