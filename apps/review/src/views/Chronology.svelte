@@ -7,6 +7,7 @@
   import { untrack } from 'svelte'
   import { replaceState } from '$app/navigation'
   import ScriptText from '../components/ScriptText.svelte'
+  import Glyph from '../components/Glyph.svelte'
   import SiteLinks from '../components/SiteLinks.svelte'
   import { t, localize, formatNumber, formatYear } from '../lib/i18n.svelte.js'
   import { chronology, chronologyAddress, PRODUCTIONS } from '../lib/chronology.js'
@@ -99,7 +100,7 @@
 
 {#snippet crop(item)}
   <button class="crop" title={title(item)} aria-label={title(item).replaceAll('\n', ', ')} onclick={() => open(item)}>
-    {#if item.image && item.proxyable !== false}<img src={item.image} alt="" loading="lazy" decoding="async" />{:else}<span class="crop-missing"><ScriptText text={item.label} titled={false} /></span>{/if}
+    {#if item.image && item.proxyable !== false}<Glyph {item} alt="" class="crop-image" />{:else}<span class="crop-missing"><ScriptText text={item.label} titled={false} /></span>{/if}
     {#if item.written_form && item.written_form !== item.label}<span class="crop-form"><ScriptText text={item.written_form} titled={false} /></span>{/if}
   </button>
 {/snippet}
@@ -224,7 +225,7 @@
   .decade-count:hover{color:var(--accent)}
   .crop{position:relative;flex:0 0 auto;width:56px;height:56px;padding:3px;border:1px solid transparent;border-radius:6px;background:var(--surface-tile)}
   .crop:hover,.crop:focus-visible{border-color:var(--accent)}
-  .crop img{width:100%;height:100%;object-fit:contain;display:block}
+  .crop :global(.crop-image){width:100%;height:100%}
   .crop-missing{display:flex;width:100%;height:100%;align-items:center;justify-content:center;font-size:20px;color:var(--muted)}
   .crop-form{position:absolute;right:2px;bottom:1px;font-size:10px;line-height:1;color:var(--accent)}
   .decade-more{font-size:10px;color:var(--muted);text-decoration:none;font-variant-numeric:tabular-nums}

@@ -1,5 +1,6 @@
 <script>
   import { request } from '../lib/client.js'
+  import Glyph from './Glyph.svelte'
   import BoxEditor, { nudged } from './BoxEditor.svelte'
   import { t } from '../lib/i18n.svelte.js'
   import { toSource } from '../lib/cropBox.js'
@@ -178,8 +179,8 @@
        onlostpointercapture={() => { pointer = null; dragging = false }} onkeydown={keydown}>
     <!-- One crop image from the first paint: where the page will put it once the record is in, and by
          the same rule before then, so neither the record nor the page around it moves it. -->
-    {#if !ready && item.image && !cropFailed}<img class="crop-early" class:placed={known} src={item.image} alt={contextual ? '' : t('character.glyph.alt', { label: item.label })}
-      draggable="false" fetchpriority="high" style={early} onload={() => cropReady = true} onerror={() => cropFailed = true} />{/if}
+    {#if !ready && item.image && !cropFailed}<Glyph {item} class={known ? 'crop-early placed' : 'crop-early'} frame={early} eager
+      alt={contextual ? '' : t('character.glyph.alt', { label: item.label })} draggable="false" onload={() => cropReady = true} onerror={() => cropFailed = true} />{/if}
     {#if contextual}
       <div class="crop-plane" style={`transform:${transform}`} aria-hidden="true">
         {#if !fullReady && !contextFailed}<img class="context-photo" src={data.context_image} alt="" draggable="false"
@@ -220,8 +221,10 @@
   .context-shade{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;fill:light-dark(rgb(24 20 17 / 42%), rgb(24 20 17 / 42%))}
   .crop-mask{position:absolute;pointer-events:none;box-shadow:0 0 12px 3px light-dark(rgb(24 20 17 / 24%), rgb(24 20 17 / 24%))}
   /* The framing rule: centred, its longer side 34% of the view's shorter one. */
-  .crop-early{position:absolute;left:50%;top:50%;width:min(34cqw,34cqh);height:min(34cqw,34cqh);translate:-50% -50%;display:block;max-width:none;max-height:none;object-fit:contain;filter:none;pointer-events:none}
-  .crop-early.placed{object-fit:fill}
+  .crop-viewport :global(.crop-early){position:absolute;left:50%;top:50%;width:min(34cqw,34cqh);height:min(34cqw,34cqh);translate:-50% -50%;max-width:none;max-height:none;filter:none;pointer-events:none}
+  /* Placed, the crop's box is its rectangle on the page, which the image is drawn to fill. */
+  .crop-viewport :global(.crop-early.placed){-webkit-mask:none;mask:none}
+  .crop-viewport :global(.crop-early.placed img){object-fit:fill}
   .crop-tools{position:absolute;right:12px;bottom:12px;display:flex;gap:2px;background:light-dark(rgb(255 255 255 / 94%), rgb(27 27 31 / 94%));padding:3px;border-radius:8px;box-shadow:0 2px 12px light-dark(rgb(0 0 0 / 12%), rgb(0 0 0 / 40%));cursor:default}
   .crop-tools button{display:flex;align-items:center;justify-content:center;width:32px;height:32px;padding:0;border:0;border-radius:5px;background:transparent;font-size:22px;color:var(--ink);cursor:pointer}
   .crop-tools button:hover:enabled{background:var(--accent-light)}

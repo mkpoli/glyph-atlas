@@ -49,7 +49,7 @@ try {
     ] })).toString('base64'),
   }) })
 
-  await browser.goto(`${service.base}/en`, { waitFor: `document.querySelector('.glyph-tile .glyph-image')?.naturalWidth > 0` })
+  await browser.goto(`${service.base}/en`, { waitFor: `document.querySelector('.glyph-tile .glyph-image img')?.naturalWidth > 0` })
 
   // 1. Original colour by default, and actually coloured.
   assert(await browser.evaluate(`document.documentElement.dataset.ink`) === 'original', 'Original is the default mode')

@@ -7,6 +7,7 @@
   // in this browser; a newer one the site publishes is offered, never fetched by itself.
   import { onMount, untrack } from 'svelte'
   import BoxEditor, { nudged } from './BoxEditor.svelte'
+  import Glyph from './Glyph.svelte'
   import ScriptText from './ScriptText.svelte'
   import ScriptLine from './ScriptLine.svelte'
   import ScriptLegend from './ScriptLegend.svelte'
@@ -306,7 +307,7 @@
           {#each shown as item, i (item.id)}
             <li><button type="button" class="result-tile" onclick={() => openCrop(item)} aria-label={t('similar.open', { label: label(item) })}>
               <span class="result-label">{#if isUnassigned(item)}{label(item)}{:else}<ScriptText text={item.label} />{/if}</span>
-              {#if item.image && (item.origin !== 'corpus' || item.proxyable)}<img src={item.image} alt="" loading={i < 12 ? 'eager' : 'lazy'} decoding="async" />{:else}<span class="result-missing">{label(item)}</span>{/if}
+              {#if item.image && (item.origin !== 'corpus' || item.proxyable)}<Glyph {item} alt="" class="result-crop" eager={i < 12} />{:else}<span class="result-missing">{label(item)}</span>{/if}
               <span class="result-details">{#each sourceLines(item) as line}<span><ScriptLine {line} /></span>{/each}</span>
               <small class="result-score">{#if tileDate(item)}<span class="result-year">{tileDate(item)}</span>{/if}{item.score.toFixed(2)}</small>
             </button></li>
@@ -358,7 +359,7 @@
   .result-grid{list-style:none;margin:14px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:6px}
   .result-tile{position:relative;width:100%;height:150px;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:8px;padding:26px 14px 34px;background:var(--surface-tile);overflow:hidden}
   .result-tile:hover{background:var(--accent-tile)}
-  .result-tile img{display:block;width:100%;height:100%;object-fit:contain}
+  .result-tile :global(.result-crop){width:100%;height:100%}
   .result-label{position:absolute;top:8px;left:10px;font-size:15px;line-height:1}
   .result-missing{font-size:34px;color:var(--muted)}
   .result-details{position:absolute;left:10px;right:44px;bottom:7px;display:flex;flex-direction:column;font-size:9px;line-height:1.3;color:var(--muted);text-align:left}

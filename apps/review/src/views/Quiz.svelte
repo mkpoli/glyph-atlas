@@ -886,7 +886,6 @@
   .reference-tile { display:flex; flex-direction:column; align-items:center; gap:4px; width:68px; padding:6px 4px; background:var(--surface-sunken); border:1px solid transparent; border-radius:7px; }
   .reference-tile:hover { border-color:var(--line-hover); }
   .reference-glyph { display:block; width:52px; height:52px; }
-  .reference-glyph :global(img) { width:100%; height:100%; object-fit:contain; }
   .reference-tag { display:flex; align-items:center; gap:4px; font-size:8px; color:var(--muted); white-space:nowrap; }
   .status-dot.seen { background:light-dark(#8d8d95, #9d9da6); }
   /* Above the sticky save bar, which would otherwise sit behind it. */

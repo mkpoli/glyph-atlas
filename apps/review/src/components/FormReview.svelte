@@ -4,7 +4,7 @@
   // then save and move on. A form key also names the rest of the cluster before moving on, and M
   // marks a cluster that holds more than one form.
   import { onMount } from 'svelte'
-  import { settle } from '../lib/settle.js'
+  import Glyph from './Glyph.svelte'
   import { showsContext } from '../lib/glyphContext.svelte.js'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import ScriptLine from './ScriptLine.svelte'
@@ -142,7 +142,7 @@
       {#each glyphs as glyph, i (glyph.id)}
         <button class="review-glyph" class:marked={marked.has(glyph.id)} class:reported={glyph.reported}
                 aria-pressed={marked.has(glyph.id)} onclick={event => toggle(i, event)} use:showsContext={{ id: glyph.id }}>
-          {#if glyph.image}<img class="glyph-image" src={glyph.image} alt="" loading="lazy" use:settle />{/if}
+          {#if glyph.image}<Glyph item={glyph} alt="" />{/if}
           {#if glyph.reported}<span class="review-flag">{glyph.character ?? '⚠'}</span>
           {:else if glyph.form}<span class="review-form-mark">{glyph.form}</span>{/if}
         </button>

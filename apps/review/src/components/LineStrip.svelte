@@ -9,6 +9,8 @@
   import { readCrop } from '../lib/cropCache.js'
   import { fromEdit, redrawable, toSource } from '../lib/cropBox.js'
   import CropContext from './CropContext.svelte'
+  import Glyph from './Glyph.svelte'
+  import { cropTone } from '../lib/cropPaint.js'
   import { t } from '../lib/i18n.svelte.js'
   import { moveOffset, planShift, shiftBody } from '../lib/lineShift.js'
   import ScriptText from './ScriptText.svelte'
@@ -108,9 +110,9 @@
     {@const c = record.context_box}
     {@const b = toSource(record, shift.boxes[item.offset])}
     {@const r = b.w / b.h}
-    <span class="line-thumb"><span class="line-clip" style:width="{r >= 1 ? 100 : 100 * r}%" style:aspect-ratio={r}><img src={record.context_image} alt=""
+    <span class="line-thumb"><span class="line-clip" style={cropTone(record)} style:width="{r >= 1 ? 100 : 100 * r}%" style:aspect-ratio={r}><img src={record.context_image} alt=""
       style:width="{100 * c.w / b.w}%" style:left="{-100 * (b.x - c.x) / b.w}%" style:top="{-100 * (b.y - c.y) / b.h}%" /></span></span>
-  {:else if item.image}<img src={item.image} alt="" loading="lazy" decoding="async" />{:else}<span class="line-missing">—</span>{/if}
+  {:else if item.image}<Glyph {item} alt="" class="line-crop" />{:else}<span class="line-missing">—</span>{/if}
   <span class="line-label" class:changing={steps.has(item.offset) && !steps.get(item.offset).kept}>{#if item.label}<ScriptText text={item.label} titled={false} />{:else}·{/if}</span>
   {#if shift}
     {@const step = steps.get(item.offset)}
@@ -175,8 +177,8 @@
   .line-boxes li{min-width:0}
   .line-boxes li>*{display:flex;flex-direction:column;align-items:center;gap:2px;width:100%;padding:3px 2px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:inherit;font:inherit}
   .line-boxes button:not(:disabled):hover{border-color:var(--line-strong)}
-  .line-boxes img,.line-missing{width:100%;aspect-ratio:1;object-fit:contain;display:grid;place-items:center;color:var(--muted)}
-  .line-boxes img{background:#fff;border-radius:3px}
+  .line-boxes :global(.line-crop),.line-missing{width:100%;aspect-ratio:1}
+  .line-missing{display:grid;place-items:center;color:var(--muted)}
   .line-label,.line-next{display:block;font-size:15px;line-height:22px;height:22px;max-width:100%;overflow:hidden;white-space:nowrap}
   .line-label.changing{color:var(--muted);text-decoration:line-through;text-decoration-thickness:1px}
   .line-next{color:var(--accent);font-weight:600}.line-next.kept{color:var(--muted);font-weight:400;font-size:12px}
@@ -186,8 +188,8 @@
   li.blank>*{border-color:var(--wrong)}li.blank .line-next{color:var(--wrong)}
   li.marked>*{background:var(--wrong-light)}
   .line-thumb{width:100%;aspect-ratio:1;display:grid;place-items:center}
-  .line-clip{position:relative;display:block;overflow:hidden;background:#fff;border-radius:3px}
-  .line-boxes .line-clip img{position:absolute;max-width:none;aspect-ratio:auto;object-fit:fill;background:none;border-radius:0}
+  .line-clip{position:relative;display:block;overflow:hidden;background:var(--tone,var(--crop-paper));border-radius:3px}
+  .line-clip img{position:absolute;max-width:none}
   li.redrawn>*{border-color:var(--accent);border-style:dashed}
   li.editing>*{outline:2px solid var(--accent);outline-offset:1px}
   .line-editor{margin-top:12px}.line-editor :global(.crop-viewport){height:280px}

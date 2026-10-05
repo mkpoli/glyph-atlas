@@ -29,7 +29,7 @@ const probe = `(() => {
   const v = document.querySelector('dialog[open] .crop-viewport') ?? document.querySelector('.crop-viewport')
   if (!v) return null
   const vr = v.getBoundingClientRect()
-  const el = v.querySelector('.crop-mask, .box-editor') ?? v.querySelector('.crop-early') ?? v.querySelector('img:not(.context-photo):not(.page-photo)')
+  const el = v.querySelector('.crop-mask, .box-editor') ?? v.querySelector('.crop-early img') ?? v.querySelector('img:not(.context-photo):not(.page-photo)')
   if (!el || (el.tagName === 'IMG' && !el.naturalWidth)) return { view: [vr.width, vr.height], ready: v.dataset.ready === 'true', crop: null }
   let r = el.getBoundingClientRect(), x = r.x, y = r.y, w = r.width, h = r.height
   if (el.tagName === 'IMG' && getComputedStyle(el).objectFit === 'contain') {
