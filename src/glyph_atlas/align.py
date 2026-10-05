@@ -190,9 +190,9 @@ class Run(BaseModel):
         beside the units it produced.
         """
         payload = self.model_dump(mode="json")
-        # Geometry and whitespace handling change placements even with the same models.
-        # Keep their new crops distinct from the pilot's ids and saved review evidence.
-        payload["algorithm"] = "reading-order-ink-tokens-v2"
+        # Geometry, whitespace handling and which line holds a detection change placements even with
+        # the same models. Keep their new crops distinct from the pilot's ids and saved review evidence.
+        payload["algorithm"] = "page-exclusive-lines-v3"
         payload.pop("name", None)
         payload.pop("score", None)
         payload.pop("classifier_sha256", None)
@@ -301,7 +301,8 @@ def containers_of(line: Line, detections: Sequence[Detection], policy: str = "al
 
     A 割書 line splits into columns by the token's column and the detection's x; a line without one is
     a single container. A detection whose centre falls outside the line box and outside every column
-    is not part of the line.
+    is not part of the line. `detections` are the line's own (`assign_page`): a box wide enough to
+    hold a neighbouring column holds that column's ink too.
 
     A vertical line's detections are walked in `reading_order`, because the alignment is monotone in
     the order it is given and that is the order the line is read in. A horizontal line keeps the
@@ -376,6 +377,33 @@ def _column_x(group: Container, tokens: Sequence[Token]) -> float:
 
 def _inside(box: Box, point: tuple[float, float]) -> bool:
     return box.x <= point[0] <= box.x + box.w and box.y <= point[1] <= box.y + box.h
+
+
+def assign_page(lines: Sequence[Line], detections: Sequence[Detection]) -> dict[str, list[Detection]]:
+    """Each line's own detections: every detection of the page goes to one line at most.
+
+    `line_assignment.assign` pairs the page's ink columns with its lines. A line that repeats another
+    record of the page gets no detections, and neither does one whose column the pairing gave to a
+    neighbour or found no ink for.
+    """
+    from . import line_assignment
+
+    found = line_assignment.assign(lines, [detection.box for detection in detections])
+    return {line.id: [detections[index] for index in found.lines.get(line.id, [])] for line in lines}
+
+
+def align_page(
+    lines: Sequence[Line],
+    detections: Sequence[Detection],
+    *,
+    run: Run,
+    classifier: Classifier | None = None,
+    crop_of: Any = None,
+) -> dict[str, tuple[list[Unit], list[Group]]]:
+    """Align every line of one page over its own detections (`assign_page`), by line id."""
+    own = assign_page(lines, detections)
+    return {line.id: align_line(line, own[line.id], run=run, classifier=classifier, crop_of=crop_of)
+            for line in lines}
 
 
 def align_line(
@@ -960,8 +988,8 @@ def run_directory(
             counts["failed"] += len(found)
             continue
         counts["pages"] += 1
-        for line in found:
-            units, page_groups = align_line(line, detections, run=run, classifier=classifier, crop_of=crop_of)
+        for units, page_groups in align_page(found, detections, run=run, classifier=classifier,
+                                             crop_of=crop_of).values():
             written.extend(units)
             groups.extend(page_groups)
             counts["lines"] += 1

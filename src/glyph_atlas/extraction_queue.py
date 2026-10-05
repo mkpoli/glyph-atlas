@@ -771,9 +771,9 @@ class Engine:
         examined = 0
         detections = [align.Detection(box=box, score=score) for box,score in self.detector.boxes(image)]
         classes = set(self.classifier.classes)
+        aligned = align.align_page(lines, detections, run=self.run, classifier=self.classifier, crop_of=crop_of)
         for line in lines:
-            found, _ = align.align_line(line, detections, run=self.run, classifier=self.classifier,
-                                        crop_of=crop_of)
+            found, _ = aligned[line.id]
             for position, unit in enumerate(found):
                 examined += 1
                 gate = CONSENSUS
