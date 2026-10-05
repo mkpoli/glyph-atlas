@@ -1,6 +1,7 @@
 import json
 import sqlite3
 import sys
+from itertools import pairwise
 from pathlib import Path
 
 from glyph_atlas import tables, withdrawn
@@ -229,7 +230,7 @@ def test_a_range_removed_in_slices_keeps_no_stale_run(monkeypatch):
     db = site()
     ids = [f"c:{i}" for i in range(10)]
     publish(db, [(i, "申") for i in ids])
-    apply(db, corpus_ngram_statements(id_ranges(ids, 10), [Run((a, b), True) for a, b in zip(ids, ids[1:])]))
+    apply(db, corpus_ngram_statements(id_ranges(ids, 10), [Run((a, b), True) for a, b in pairwise(ids)]))
     # Cut anew: every other glyph now starts a run, across the page.
     again = [Run((a, b), False) for a, b in zip(ids[::2], ids[1::2])]
     statements = corpus_ngram_statements(id_ranges(ids, 10), again)
@@ -265,6 +266,6 @@ def test_a_kept_run_takes_its_order_and_spelling_as_they_now_are():
 
 def test_a_removal_stays_under_d1s_statement_limit_in_bytes():
     ids = ["字" * 50 + f":{i:03}" for i in range(172)]
-    runs = [Run((a, b), True) for a, b in zip(ids, ids[1:])] + [Run(tuple(ids[i:i + 3]), True) for i in range(170)]
+    runs = [Run((a, b), True) for a, b in pairwise(ids)] + [Run(tuple(ids[i:i + 3]), True) for i in range(170)]
     statements = corpus_ngram_statements(id_ranges(ids, 5000), runs)
     assert max(len(s.encode()) for s in statements if s.startswith("DELETE")) < 95 * 1024
