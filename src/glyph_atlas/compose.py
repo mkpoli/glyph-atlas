@@ -66,6 +66,13 @@ INSIDE = {"⿴": (0.2, 0.15, 0.8, 0.8), "⿵": (0.2, 0.0, 0.8, 0.8), "⿶": (0.2
           "⿺": (0.3, 0.25, 1.0, 1.0)}
 #: Least likeness of a cut piece to its operand's own glyph.
 LIKENESS = 0.45
+#: The share of its opening an enclosed part drawn there takes: designers leave it room (the inner
+#: 口 of 回 spans 57% of its opening, the 玉 of 国 75%).
+OPENING_SHARE = 0.85
+#: The least share of the em a learned enclosing part's box may cover at the root.
+ENCLOSING_LEAST = 0.5
+#: An enclosed part's learned box is kept when at least this share of it lies in the opening.
+ROOM_TRUST = 0.5
 #: Likeness at which an enclosing part is taken as certain, whatever its enclosed part looks like.
 SURE = 0.9
 #: Most a cut piece's outline length for its size may differ from its operand's glyph's.
@@ -1001,22 +1008,53 @@ class Composer:
     def _learned(self, op: str, children: list[Node], region: Box | None = None) -> list[Placed]:
         """Two operands in the boxes the learned layout gives them, each cut from the host that fits
         its box best, or drawn into it. A whole character's boxes stand in the em; a nested node's
-        are those of a whole character laid out alike, carried into its region. An enclosed one stays in its predicted
-        box: fitting it into the opening afterwards scored worse (0.562 against 0.601 on 238 jōyō
-        enclosures)."""
+        are those of a whole character laid out alike, carried into its region. An enclosed part cut
+        from a host stays in its predicted box: fitting it into the opening afterwards scored worse
+        (0.562 against 0.601 on 238 jōyō enclosures). One drawn on its own is drawn into the room
+        its enclosing part leaves and fitted there, since nothing placed it beside that part."""
         tested = next(iter(self.exclude)) if len(self.exclude) == 1 else None
         boxes = self.layout.predict(self, op, [key(c) for c in children], tested)
         if region is not None:
             frame = (min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes))
             boxes = [mapped(b, frame, region) for b in boxes]
+        if op in ENCLOSE and region is None and _area(boxes[0]) < ENCLOSING_LEAST * _area(self.face):
+            # An enclosing part spans most of a character; a smaller box is the network guessing at
+            # a shape it was never shown (⿷ around ⿱甶儿 in 鬼).
+            boxes[0] = self.face
         groups = []
         for i, (child, box) in enumerate(zip(children, boxes)):
             part = self._host(op, i, child, children[:i] + children[i + 1:], box, placed=region is None)
             if part is None:
-                groups.append(self._node(child, box))
+                if op in ENCLOSE and i == 1:
+                    room = self._room(op, groups[0], region or self.face)
+                    room = room and _shrunk(room, OPENING_SHARE)
+                    if room is None or _within(box, room) >= ROOM_TRUST:
+                        groups.append(self._node(child, box))
+                    else:
+                        groups.append(self._node(child, room))
+                        _fit_inside(groups[0], groups[1], region or self.face, self.font.stem[0][0], room=room)
+                else:
+                    groups.append(self._node(child, box))
                 continue
             drawn, k = part
             source = drawn.pieces[k]
+            if op in ENCLOSE and i == 1:
+                room = self._room(op, groups[0], region or self.face)
+                room = room and _shrunk(room, OPENING_SHARE)
+                if room is not None and (_within(box, room) < ROOM_TRUST or self._stretch(source.box, box) > STRETCH):
+                    # The box reaches well into the enclosing part's ink, or would pull the part out
+                    # of shape, as for an operator seldom cut (⿴口口): the part goes into the
+                    # opening, from the host that best fits the opening, its proportions kept
+                    # within `STRETCH`.
+                    drawn, k = self._host(op, i, child, children[:1], room) or (drawn, k)
+                    source = drawn.pieces[k]
+                    if self._stretch(source.box, room) > STRETCH:
+                        # No host draws it in a shape the opening takes (a flat 口 for 回's square one).
+                        groups.append(self._node(child, room))
+                    else:
+                        groups.append([self._place(source, room, self.ink(drawn.char), f"learned {drawn.char}")])
+                    _fit_inside(groups[0], groups[1], region or self.face, self.font.stem[0][0], room=room)
+                    continue
             groups.append([Placed(source, source.box, box, native=self.ink(drawn.char), origin=f"learned {drawn.char}")])
         if op in AXIS:
             self._space(AXIS[op], groups)
@@ -1221,11 +1259,30 @@ class Composer:
         return [p for group in groups for p in group]
 
 
-def _fit_inside(outer: list[Placed], inner: list[Placed], region: Box, stem: float, size: int = 64) -> None:
+def _shrunk(box: Box, share: float) -> Box:
+    """`box` scaled by `share` about its centre."""
+    cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+    hw, hh = (box[2] - box[0]) * share / 2, (box[3] - box[1]) * share / 2
+    return (cx - hw, cy - hh, cx + hw, cy + hh)
+
+
+def _area(box: Box) -> float:
+    return max(box[2] - box[0], 0) * max(box[3] - box[1], 0)
+
+
+def _within(box: Box, room: Box) -> float:
+    """The share of `box` lying inside `room`."""
+    w = max(0.0, min(box[2], room[2]) - max(box[0], room[0]))
+    h = max(0.0, min(box[3], room[3]) - max(box[1], room[1]))
+    return w * h / max((box[2] - box[0]) * (box[3] - box[1]), 1)
+
+
+def _fit_inside(outer: list[Placed], inner: list[Placed], region: Box, stem: float, size: int = 64,
+                room: Box | None = None) -> None:
     """The enclosed parts moved and scaled, together and in proportion, to the largest size at which
     their ink fits the enclosing part's opening, clear of its ink by `ROOM_MARGIN` stems, at the
     place nearest where they stand. Their own outline is fitted, not their box, so a part may tuck
-    under a roof or into a corner its box would overlap."""
+    under a roof or into a corner its box would overlap. Given a `room`, they grow no larger than it."""
     w = (region[2] - region[0]) / size
     h = (region[3] - region[1]) / size
     ink = fill([r for p in outer for r in _rings(p.part.contours, p.contours())], size, region)
@@ -1243,7 +1300,8 @@ def _fit_inside(outer: list[Placed], inner: list[Placed], region: Box, stem: flo
     y1 = max(p.target[3] for p in inner)
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
     blocked = np.fft.rfft2(ink.astype(float), s=(2 * size, 2 * size))
-    for scale in np.arange(1.6, 0.45, -0.05):
+    top = 1.6 if room is None else min(1.6, (room[2] - room[0]) / max(x1 - x0, 1), (room[3] - room[1]) / max(y1 - y0, 1))
+    for scale in np.arange(top, 0.45, -0.05):
         hw, hh = (x1 - x0) * scale / 2, (y1 - y0) * scale / 2
         box = (cx - hw, cy - hh, cx + hw, cy + hh)
         # The inner ink, scaled about its centre, rasterised in the region's grid.
