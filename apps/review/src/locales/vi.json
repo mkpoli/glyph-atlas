@@ -376,6 +376,7 @@
   "nav.quickReview": "Duyệt nhanh",
   "run.occurrences.other": "{count} lần",
   "run.occurrences.more": "Hơn {count} lần",
+  "run.forms.other": "{count} cách viết",
   "run.empty": "Chưa có lần nào của dãy chữ này.",
   "run.detail.open": "Mở {run}",
   "run.detail.close": "Đóng",
