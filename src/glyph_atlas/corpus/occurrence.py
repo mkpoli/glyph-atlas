@@ -35,6 +35,8 @@ from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
+from ..clusters import clusters
+
 #: The トモ ligature. A single character that writes two kana.
 TOMO = "\U0002a708"
 
@@ -283,11 +285,17 @@ def classify(text: str, index: int, char: str) -> OccurrenceClass:
 def find_occurrences(
     text: str, char: str, *, context: int = 14
 ) -> list[tuple[int, int, OccurrenceClass, str]]:
-    """Every occurrence of `char` in `text`, with its class and a context window."""
+    """Every occurrence of `char` in `text`, with its class and a context window.
+
+    A match is an occurrence only where a written character ends with it: ᄒᆞ in ᄒᆞᆯ, or 葛 with a
+    variation selector after it, is part of another character.
+    """
     found: list[tuple[int, int, OccurrenceClass, str]] = []
     if not text:
         return found
     for m in re.finditer(re.escape(char), text):
+        if m.end() < len(text) and len(clusters(text[m.start():m.end() + 1])) == 1:
+            continue
         i = m.start()
         found.append((i, m.end(), classify(text, i, char), text[max(0, i - context) : m.end() + context]))
     return found

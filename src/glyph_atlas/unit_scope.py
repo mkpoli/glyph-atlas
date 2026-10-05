@@ -5,7 +5,7 @@ from __future__ import annotations
 import unicodedata
 from typing import Any
 
-from .clusters import clusters
+from .clusters import clusters, is_mark_only
 from .representation import described
 
 
@@ -33,7 +33,7 @@ def character_count(text: str | None) -> int:
     text = unicodedata.normalize("NFC", text)
     if described(text.strip()):
         return 1
-    return sum(1 for char in clusters(text) if not char.isspace())
+    return sum(1 for char in clusters(text) if not char.isspace() and not is_mark_only(char))
 
 
 def unit_scope(row: dict[str, Any]) -> dict[str, Any]:

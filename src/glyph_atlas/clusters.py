@@ -1,10 +1,17 @@
-"""User-perceived character clusters used by the atlas."""
+"""Written characters: a text split where one character ends and the next begins.
+
+A combining mark joins the character before it, and a medial or final jamo joins the Hangul before
+it, so a syllable spelt with conjoining jamo, ᄒᆞ (U+1112 U+119E), is one character. A mark with no
+character before it, as a transcription sometimes starts (゚リ), joins the character after it.
+"""
 
 from __future__ import annotations
 
 import unicodedata
 
 HANGUL_TONE_MARKS = frozenset({0x302E, 0x302F})
+#: The fillers that stand for a missing initial or vowel; a syllable of fillers alone is no syllable.
+HANGUL_FILLERS = frozenset({0x115F, 0x1160})
 
 
 def is_hangul_choseong(char: str) -> bool:
@@ -22,39 +29,57 @@ def is_hangul_jongseong(char: str) -> bool:
     return 0x11A8 <= cp <= 0x11FF or 0xD7CB <= cp <= 0xD7FF
 
 
-def joins_previous(char: str) -> bool:
-    """Whether this code point belongs to the previous written character."""
+def _is_mark(char: str) -> bool:
+    return unicodedata.category(char) in ("Mn", "Mc") or ord(char) in HANGUL_TONE_MARKS
+
+
+def _is_hangul(char: str) -> bool:
     cp = ord(char)
-    return (
-        unicodedata.category(char) in ("Mn", "Mc")
-        or 0x1160 <= cp <= 0x11FF
-        or 0xD7B0 <= cp <= 0xD7FF
-        or cp in HANGUL_TONE_MARKS
-    )
+    return is_hangul_choseong(char) or is_hangul_jungseong(char) or is_hangul_jongseong(char) or 0xAC00 <= cp <= 0xD7A3
 
 
 def clusters(text: str) -> list[str]:
-    """Split text into the atlas's written characters."""
+    """The written characters of `text`, in order."""
     out: list[str] = []
+    leading = ""
     for char in text:
-        if joins_previous(char) and out:
+        jamo = is_hangul_jungseong(char) or is_hangul_jongseong(char)
+        joins = _is_mark(char) or (jamo and bool(out) and _is_hangul(out[-1][-1]))
+        if joins and out:
             out[-1] += char
+        elif _is_mark(char):
+            leading += char
         else:
-            out.append(char)
+            out.append(leading + char)
+            leading = ""
+    if leading:
+        out.append(leading)
     return out
 
 
+def is_mark_only(text: str) -> bool:
+    """Whether `text` is marks with no character to carry them, which counts as no character."""
+    return bool(text) and all(_is_mark(char) for char in text)
+
+
 def is_one_character(text: str | None) -> bool:
-    """Whether `text` is exactly one atlas character."""
+    """Whether `text` is exactly one written character."""
     return bool(text) and len(clusters(text)) == 1
 
 
 def is_conjoining_jamo_syllable(text: str) -> bool:
-    """A well-formed old-Hangul syllable spelt with conjoining jamo."""
-    if not text or not is_one_character(text):
+    """Whether `text` is an old-Hangul syllable Unicode has no precomposed code point for.
+
+    The syllable is checked in NFD, so 셰 + ᇰ (U+C170 U+11F0), the NFC spelling of
+    U+1109 U+1168 U+11F0, is one; text NFC would change is refused, so each syllable has one key.
+    A modern syllable with no tone mark has its own code point and is refused too.
+    """
+    if not text or unicodedata.normalize("NFC", text) != text or len(text) == 1:
+        return False
+    chars = list(unicodedata.normalize("NFD", text))
+    if all(ord(c) in HANGUL_FILLERS for c in chars):
         return False
     index = 0
-    chars = list(text)
     while index < len(chars) and is_hangul_choseong(chars[index]):
         index += 1
     if index == 0:

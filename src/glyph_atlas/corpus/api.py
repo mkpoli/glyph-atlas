@@ -1010,9 +1010,10 @@ def _resolve(raw: str) -> str | None:
     m = re.fullmatch(r"[Uu][+ ]([0-9A-Fa-f]{4,6})(?:[ -]+[Uu][+ ]([0-9A-Fa-f]{4,6}))*", text)
     if m:
         try:
-            return "".join(chr(int(point, 16)) for point in re.findall(r"[Uu][+ ]([0-9A-Fa-f]{4,6})", text))
+            decoded = "".join(chr(int(point, 16)) for point in re.findall(r"[Uu][+ ]([0-9A-Fa-f]{4,6})", text))
         except ValueError:
             return None
+        return decoded if is_one_character(decoded) else None
     if re.fullmatch(r"[0-9A-Fa-f]{4,6}", text) and len(text) >= 4 and not text.isdigit():
         try:
             return chr(int(text, 16))

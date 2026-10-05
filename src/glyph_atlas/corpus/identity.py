@@ -6,6 +6,7 @@ from functools import lru_cache
 from typing import Any
 
 from .. import refs
+from ..clusters import is_conjoining_jamo_syllable
 
 NORMALIZED_CORPORA = frozenset({"codh", "codh-full"})
 NORMALIZATION_EVIDENCE = "https://codh.rois.ac.jp/char-shape/#version"
@@ -19,8 +20,15 @@ IDENTITY_FIELDS = (
 
 @lru_cache(maxsize=8192)
 def family_of(code_point: str | None) -> dict[str, Any] | None:
-    """The grapheme family of one code point; a sequence such as ツ + U+309A has none of its own."""
-    return refs.grapheme_info(code_point) if code_point else None
+    """The grapheme family of one code point; a sequence such as ツ + U+309A has none of its own.
+
+    An old-Hangul syllable spelt with conjoining jamo is one character, and is its own family.
+    """
+    if not code_point:
+        return None
+    if len(code_point.split()) == 1 or is_conjoining_jamo_syllable(refs.to_char(code_point)):
+        return refs.grapheme_info(code_point)
+    return None
 
 
 def identity_fields(

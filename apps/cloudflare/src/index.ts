@@ -56,9 +56,13 @@ const jungseong = (char: string) => {
 const jongseong = (char: string) => {
   const n = char.codePointAt(0)!; return (n >= 0x11A8 && n <= 0x11FF) || (n >= 0xD7CB && n <= 0xD7FF);
 };
-const jamoSyllable = (value: string) => {
-  if (!single(value)) return false;
-  const chars = [...value]; let i = 0;
+const FILLERS = [0x115F, 0x1160];
+/** An old-Hangul syllable Unicode has no precomposed code point for, checked in NFD so that the NFC
+ * spelling 셰 + ᇰ of U+1109 U+1168 U+11F0 is one; text NFC would change has another key. */
+export const jamoSyllable = (value: string) => {
+  if (!single(value) || [...value].length < 2 || value.normalize('NFC') !== value) return false;
+  const chars = [...value.normalize('NFD')]; let i = 0;
+  if (chars.every(c => FILLERS.includes(c.codePointAt(0)!))) return false;
   while (i < chars.length && choseong(chars[i])) i++;
   if (!i) return false;
   const vowels = i;

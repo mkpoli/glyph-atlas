@@ -1,7 +1,7 @@
 import { HREFLANG, LOCALES, localize } from './i18n.svelte.js'
 import { familyCodes } from './forms.js'
 import { catalogue } from './client.js'
-import { isSingle, pointOf } from './issues.js'
+import { hasCharacterPage, pointOf } from './issues.js'
 
 const escape = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;')
 const xml = body => new Response(`<?xml version="1.0" encoding="UTF-8"?>\n${body}\n`, {
@@ -40,6 +40,6 @@ export async function pagePaths(fetch) {
 /** A page for every single character the collection holds crops of. */
 export async function characterPaths(fetch) {
   const { categories } = await catalogue({ limit: 1 }, { fetch })
-  return categories.filter(category => category.total > 0 && isSingle(category.label))
+  return categories.filter(category => category.total > 0 && hasCharacterPage(category.label))
     .map(category => '/character/' + pointOf(category.label).split(' ').join('-'))
 }
