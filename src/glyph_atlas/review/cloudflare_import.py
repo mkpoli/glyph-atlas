@@ -8,7 +8,7 @@ from collections import Counter, defaultdict
 from copy import deepcopy
 
 from .. import evidence, recorded_terms, refs
-from ..evidence import crop_version
+from ..evidence import crop_version, record_version
 from ..schema import Review
 from ..unit_scope import character_count
 from .atlas import identity_text, script_of_identity, single_character
@@ -222,8 +222,14 @@ def ingest_cloudflare(store, payload: dict, *, apply=False) -> tuple[dict, dict]
                         raise Rejected("local occurrence is absent or retired")
                     previous = conn.execute("SELECT * FROM cloudflare_imports WHERE target_id=? ORDER BY local_revision DESC LIMIT 1",
                                             (target,)).fetchone()
-                    # A crop published again since the last import (a recut) starts its lineage anew from
-                    # that publication, which was made from this store at the revision it names.
+                    # A crop published again since the last import starts its lineage anew from that
+                    # publication, when it is the cut the store's last recut asked for (and was made from this
+                    # store at the revision it names, checked below as for a first publication).
+                    if previous and previous["publication"] != publication_key:
+                        asked = conn.execute("SELECT new FROM events WHERE target_id=? AND field=? ORDER BY seq DESC LIMIT 1",
+                                             (target, RECUT)).fetchone()
+                        if not asked or json.loads(asked["new"]).get("crop_version") != record_version(publication["character"]):
+                            raise Rejected("publication changed after the last import")
                     if previous and previous["publication"] == publication_key:
                         before = json.loads(previous["remote_state"])
                         if not conn.execute("SELECT 1 FROM events WHERE id=?", (previous["remote_id"],)).fetchone():

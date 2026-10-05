@@ -555,6 +555,16 @@ def test_a_redrawn_box_cut_again_is_published_past_the_site_and_the_next_review_
     assert (unit.unicode, unit.box.model_dump()) == ("U+3092", box) and store.revision("u") > revision
 
 
+def test_a_new_publication_the_store_did_not_ask_for_is_refused(store):
+    first, _ = remote(baseline(store), character="ナ")
+    bridge.ingest_cloudflare(store, payload(first), apply=True)
+    # Published again at the store's revision, with no recut behind it.
+    second, _ = remote(baseline(store), character="を")
+    _, report = bridge.ingest_cloudflare(store, payload(second), apply=True)
+    assert report["items"][0]["reason"] == "publication changed after the last import"
+    assert store.unit("u").unicode == "U+30CA"
+
+
 def test_a_review_on_the_old_cut_after_a_redrawn_box_still_imports(store):
     box = {"x": 12, "y": 11, "w": 26, "h": 38}
     publication = baseline(store)
