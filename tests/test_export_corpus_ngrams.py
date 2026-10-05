@@ -176,11 +176,11 @@ def test_a_glyph_with_no_written_form_runs_under_the_label_it_is_shown_with():
     apply(db, corpus_ngram_statements(id_ranges(["c:0", "c:1", "c:2"], 2), runs, labels=labels))
     assert db.execute("SELECT first,size,text FROM unit_ngrams ORDER BY first,size").fetchall() == [
         ("c:0", 2, "んケ"), ("c:0", 3, "んケ候"), ("c:1", 2, "ケ候")]
-    assert db.execute("SELECT n FROM ngram_forms WHERE scope='' AND size=2 AND text='んケ'").fetchone() == (1,)
+    assert db.execute("SELECT n FROM ngram_forms WHERE size=2 AND text='んケ'").fetchone() == (1,)
     # A form decision gives c:1 its written character: the runs move to it, and the counts with them.
     db.execute("UPDATE corpus_units SET character='介' WHERE id='c:1'")
     assert db.execute("SELECT text FROM unit_ngrams ORDER BY first,size").fetchall() == [("ん介",), ("ん介候",), ("介候",)]
-    assert db.execute("SELECT text,n FROM ngram_forms WHERE scope='' AND size=2 ORDER BY text").fetchall() == [("ん介", 1), ("介候", 1)]
+    assert db.execute("SELECT text,n FROM ngram_forms WHERE size=2 ORDER BY text").fetchall() == [("ん介", 1), ("介候", 1)]
     # A round names c:0 without a written form: its `units` row has no character, and the label stands.
     db.execute("INSERT INTO units(id,origin,character,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual)"
                " VALUES('c:0','corpus',NULL,'unknown','kana','pending',0,0,1,0,'{}','{}','{}','{}')")

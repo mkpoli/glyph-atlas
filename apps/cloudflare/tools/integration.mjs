@@ -878,7 +878,7 @@ try {
   const countsOf = async query => (await (await mf.dispatchFetch(base + '/atlas/ngrams/' + query)).json()).items
   assert.deepEqual(await countsOf('2'), [{ text: '申候', n: 2, vertical: true, forms: 1 }, { text: '候也', n: 1, vertical: false, forms: 1 }],
     'pairs are counted by graphemes, most frequent first, and written down the page where half or more of them are')
-  assert.deepEqual(await countsOf('2?document=hk%3Aother'), [{ text: '申候', n: 1, vertical: false, forms: 1 }], 'a book counts its own pairs')
+  assert.deepEqual(await countsOf('2?document=hk%3Aother'), [{ text: '申候', n: 1, vertical: false, forms: null }], 'a book counts its own pairs, and no forms')
   assert.deepEqual(await countsOf('3'), [{ text: '申候也', n: 1, vertical: true, forms: 1 }], 'trigrams are counted apart from pairs')
   assert.equal((await mf.dispatchFetch(base + '/atlas/ngrams/4')).status, 404, 'only pairs and trigrams are counted')
   // A review that relabels a crop moves the runs it is part of.
@@ -889,7 +889,7 @@ try {
   assert.equal((await db.prepare("SELECT text FROM unit_ngrams WHERE first='one'").first()).text, firstLabel + secondLabel)
   await db.prepare("UPDATE units SET character='ヰ' WHERE id='two'").run()
   assert.equal((await db.prepare("SELECT text FROM unit_ngrams WHERE first='one'").first()).text, firstLabel + 'ヰ')
-  assert.deepEqual((await db.prepare("SELECT text,n FROM ngram_forms WHERE scope='' AND size=2 AND text IN (?,?) ORDER BY text").bind(firstLabel + secondLabel, firstLabel + 'ヰ').all()).results,
+  assert.deepEqual((await db.prepare("SELECT text,n FROM ngram_forms WHERE size=2 AND text IN (?,?) ORDER BY text").bind(firstLabel + secondLabel, firstLabel + 'ヰ').all()).results,
     [{ text: firstLabel + 'ヰ', n: 1 }], 'the counts follow a relabelled run')
   await db.prepare("UPDATE units SET character=? WHERE id='two'").bind(secondLabel).run()
   // One run's occurrences: read along the first row's index in its key order, every other row and each
@@ -1089,7 +1089,7 @@ try {
     }
     await bucket.put('pack-runs', pack)
     const textOf = async (first, size = 2) => (await db.prepare('SELECT text FROM unit_ngrams WHERE first=? AND size=?').bind(first, size).first())?.text ?? null
-    const countOf = async (text, size = 2) => (await db.prepare("SELECT n FROM ngram_forms WHERE scope='' AND size=? AND text=?").bind(size, text).first())?.n ?? 0
+    const countOf = async (text, size = 2) => (await db.prepare("SELECT n FROM ngram_forms WHERE size=? AND text=?").bind(size, text).first())?.n ?? 0
     const refreshed = stamp => db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at',?)").bind(stamp).run()
     await db.batch([db.prepare(`INSERT INTO unit_ngrams(first,size,second,third,text,document) VALUES('hl:run:0',2,'hl:run:1',NULL,'申上','hl:book'),
       ('hl:run:1',2,'hl:run:2',NULL,'上候','hl:book'),('hl:run:0',3,'hl:run:1','hl:run:2','申上候','hl:book')`)])
@@ -1140,7 +1140,7 @@ try {
     const unread = await runOf('申上')
     assert.deepEqual([unread.total, unread.items.map(o => o.crops[0].id), unread.next_offset], [2, ['hl:run:0'], 2])
     await db.prepare("DELETE FROM corpus_units WHERE id LIKE 'hl:gone:%'").run()
-    assert.deepEqual(await countsOf('3?document=hl%3Abook'), [{ text: '申上候', n: 1, vertical: true, forms: 1 }], 'and counts them')
+    assert.deepEqual(await countsOf('3?document=hl%3Abook'), [{ text: '申上候', n: 1, vertical: true, forms: null }], 'and counts them')
     // A publication files a glyph under another book: its runs and their counts follow.
     await db.prepare("UPDATE corpus_units SET document='hl:other' WHERE id='hl:run:0'").run()
     assert.deepEqual(await db.prepare("SELECT scope,n FROM ngram_counts WHERE size=3 AND graphemes='申上候' ORDER BY scope").all().then(r => r.results),
@@ -1199,13 +1199,13 @@ try {
   await db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at','fold-counts')").run()
   assert.deepEqual((await countsOf('2')).find(row => row.text === 'んし'), { text: 'んし', n: 2, vertical: true, forms: 2 }, 'two forms of んし are one entry')
   assert.equal((await countsOf('2')).some(row => row.text === 'ん𛁅'), false, 'a written form is no entry of its own')
-  assert.deepEqual((await db.prepare("SELECT text,n FROM ngram_forms WHERE scope='' AND size=2 AND graphemes='んし' ORDER BY text").all()).results,
+  assert.deepEqual((await db.prepare("SELECT text,n FROM ngram_forms WHERE size=2 AND graphemes='んし' ORDER BY text").all()).results,
     [{ text: 'んし', n: 1 }, { text: 'ん𛁅', n: 1 }], 'each form is counted under its graphemes')
-  assert.deepEqual((await countsOf('2?document=hk%3Afold')), [{ text: 'んし', n: 1, vertical: false, forms: 1 }], 'a book counts its own forms')
+  assert.deepEqual((await countsOf('2?document=hk%3Afold')), [{ text: 'んし', n: 1, vertical: false, forms: null }], 'a book counts its graphemes, and no forms')
   assert.deepEqual((await near('ん𛁅')).longer.map(r => r.text), ['んして'], 'a written run finds the trigrams its graphemes begin')
   assert.deepEqual((await near('ん𛁅て')).inside, ['んし', 'して'], 'and the pairs its graphemes hold')
   await db.prepare("UPDATE units SET character='𛁈' WHERE id='fold-6'").run()
-  assert.deepEqual((await db.prepare("SELECT text,n FROM ngram_forms WHERE scope='' AND size=2 AND graphemes='んし' ORDER BY text").all()).results,
+  assert.deepEqual((await db.prepare("SELECT text,n FROM ngram_forms WHERE size=2 AND graphemes='んし' ORDER BY text").all()).results,
     [{ text: 'ん𛁅', n: 1 }], 'a form relabelled away from its graphemes takes its count along')
   assert.deepEqual((await db.prepare("SELECT n,forms FROM ngram_counts WHERE scope='' AND size=2 AND graphemes='んし'").first()), { n: 1, forms: 1 })
   assert.equal((await db.prepare("SELECT n FROM ngram_counts WHERE scope='hk:fold' AND size=2 AND graphemes='んし'").first()), null, 'a book\'s count goes with its last form')

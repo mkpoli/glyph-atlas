@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Count the runs written before migration 0074 by their graphemes: each written text under its graphemes
-# (`ngram_forms`) and their sums (`ngram_counts`), on the whole site and in each book, as the migration's
-# triggers count every run past it. Apply 0074, deploy the Worker that reads the new counts, then run it:
+# on the whole site (`ngram_forms`, whose triggers sum them into the site's `ngram_counts`), and each
+# book's count of them (`ngram_counts`), as the migration's triggers count every run past it. Apply 0074, deploy the Worker that reads the new counts, then run it:
 # the old Worker reads columns 0074 removes, and until the script is done Explore's counts hold only the
 # runs it has reached.
 #
@@ -35,23 +35,29 @@ ask() {
 }
 if [ "${RESUME:-0}" != 1 ]; then
   ask "UPDATE ngram_counts_backfill SET after=''; SELECT after FROM ngram_counts_backfill" >/dev/null
-  # A form deleted takes its share of its graphemes' count with it (0074), and the last one the row.
-  # A plain assignment, so a step that gives up stops the script rather than ending the loop.
+  # A form deleted takes its share of the site's count with it (0074), and the last one the row; a book's
+  # rows are deleted outright. A plain assignment, so a step that gives up stops the script rather than
+  # ending the loop.
   while :; do
-    left="$(ask "DELETE FROM ngram_forms WHERE (scope,size,graphemes,text) IN (SELECT scope,size,graphemes,text FROM ngram_forms LIMIT $slice);
-      SELECT EXISTS(SELECT 1 FROM ngram_forms) AS more")"
+    left="$(ask "DELETE FROM ngram_forms WHERE (size,graphemes,text) IN (SELECT size,graphemes,text FROM ngram_forms LIMIT $slice);
+      DELETE FROM ngram_counts WHERE (scope,size,graphemes) IN (SELECT scope,size,graphemes FROM ngram_counts WHERE scope<>'' LIMIT $slice);
+      SELECT EXISTS(SELECT 1 FROM ngram_counts) AS more")"
     [ "$(jq -r .more <<< "$left")" = 1 ] || break
     echo "emptying the counts"
   done
 fi
 last="(SELECT max(first) FROM (SELECT first FROM unit_ngrams WHERE first>(SELECT after FROM ngram_counts_backfill) ORDER BY first LIMIT $slice))"
-count() { echo "INSERT INTO ngram_forms(scope,size,graphemes,text,n,down)
-  SELECT s.value,g.size,g.graphemes,g.text,count(*),sum(g.vertical) FROM unit_ngrams g, json_each(json_array('',nullif(g.document,''))) s
-  WHERE g.first>(SELECT after FROM ngram_counts_backfill) $1
-    AND g.text IS NOT NULL AND g.graphemes IS NOT NULL AND s.value IS NOT NULL
-  GROUP BY s.value,g.size,g.graphemes,g.text
-  ON CONFLICT(scope,size,graphemes,text) DO UPDATE SET n=n+excluded.n,down=down+excluded.down;"; }
-step="$(count "AND g.first<=$last")
+count() { echo "INSERT INTO ngram_forms(size,graphemes,text,n,down)
+  SELECT size,graphemes,text,count(*),sum(vertical) FROM unit_ngrams
+  WHERE first>(SELECT after FROM ngram_counts_backfill) $1 AND text IS NOT NULL AND graphemes IS NOT NULL
+  GROUP BY size,graphemes,text
+  ON CONFLICT(size,graphemes,text) DO UPDATE SET n=n+excluded.n,down=down+excluded.down;
+INSERT INTO ngram_counts(scope,size,graphemes,n,down)
+  SELECT document,size,graphemes,count(*),sum(vertical) FROM unit_ngrams
+  WHERE first>(SELECT after FROM ngram_counts_backfill) $1 AND text IS NOT NULL AND graphemes IS NOT NULL AND document<>''
+  GROUP BY document,size,graphemes
+  ON CONFLICT(scope,size,graphemes) DO UPDATE SET n=n+excluded.n,down=down+excluded.down;"; }
+step="$(count "AND first<=$last")
 UPDATE ngram_counts_backfill SET after=coalesce($last,after);
 SELECT after FROM ngram_counts_backfill;"
 previous="__start__"
