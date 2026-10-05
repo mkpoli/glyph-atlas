@@ -5,7 +5,7 @@
   // without a place takes the next cell along the line, down it or across. Every character opens its
   // crop in the inspector. Until an image arrives its place shows the crop's paper (`cropTone`).
   import { t } from '../lib/i18n.svelte.js'
-  import { cropTone } from '../lib/cropPaint.js'
+  import { cropShape, cropTone } from '../lib/cropPaint.js'
 
   let { crops, page = null, vertical = true, oninspect } = $props()
   let broken = $state(false)
@@ -21,6 +21,14 @@
   // A crop's image is cut with a margin of 8% of its longer side around its box (`atlas.crop_bounds`);
   // a crop without a box fills its cell.
   const cut = box => { const pad = placed ? Math.max(box.w, box.h) * 0.08 : 0; return { x: box.x - pad, y: box.y - pad, width: box.w + 2 * pad, height: box.h + 2 * pad } }
+  // The paper under a crop: its image's own rectangle, which an image with no place is contained and
+  // centred in its square cell by, as the image itself is.
+  function paper(crop, cell) {
+    const area = cut(cell), shape = placed ? null : cropShape(crop)
+    if (!shape) return area
+    const k = Math.min(area.width / shape[0], area.height / shape[1]), width = shape[0] * k, height = shape[1] * k
+    return { x: area.x + (area.width - width) / 2, y: area.y + (area.height - height) / 2, width, height }
+  }
   function pressed(event, crop) {
     if (event.key !== 'Enter' && event.key !== ' ') return
     event.preventDefault()
@@ -33,7 +41,7 @@
   <svg x={view.x} y={view.y} width={view.w} height={view.h} viewBox="{view.x} {view.y} {view.w} {view.h}">
     {#if whole}<rect class="run-paper" style={cropTone(crops.find(crop => cropTone(crop)))} x={page.box.x} y={page.box.y} width={page.box.w} height={page.box.h} />
       <image href={page.image} x={page.box.x} y={page.box.y} width={page.box.w} height={page.box.h} preserveAspectRatio="none" onerror={() => { broken = true }} />
-    {:else}{#each crops as crop, i (i)}<rect class="run-paper" style={cropTone(crop)} {...cut(cells[i])} /><image href={crop.image} {...cut(cells[i])} />{/each}{/if}
+    {:else}{#each crops as crop, i (i)}<rect class="run-paper" style={cropTone(crop)} {...paper(crop, cells[i])} /><image href={crop.image} {...cut(cells[i])} />{/each}{/if}
   </svg>
   {#each crops as crop, i (i)}
     <rect class="run-hit" x={cells[i].x} y={cells[i].y} width={cells[i].w} height={cells[i].h} role="button" tabindex="0" data-unit={crop.id}
