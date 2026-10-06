@@ -9,6 +9,7 @@
 - the metadata of the holder's IIIF manifest (`iiif-manifests.yaml`), for corpora that carry no dating
   of their own, and みんなで翻刻's copy of it where the manifest is not cached (`honkoku-data.yaml`);
 - the curated dates of the Ainu records (`ainu-records.yaml`): the work's date and a witness's copying.
+- linked holder catalogues, the publication-year field in Honkoku's v1 index, and Wikisource scan-index years.
 
 A Commons file's `date` field is left out: on the scanned books it is mostly the upload or scan date
 (2017-05-01 on every 四部叢刊 volume), and nothing in the field tells the two apart.
@@ -20,6 +21,7 @@ the missing 国書 records and manifests are read through `net`, and HuTime answ
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import re
@@ -28,6 +30,7 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from . import dates, net, withdrawn
 from .schema import DateClaim
@@ -71,6 +74,17 @@ _NOTE_DATE = re.compile(r"[\u3400-\u9fff]{2}(?:元|\d+|[０-９]+|[〇一二三�
 #: Manifest metadata labels that date the item, each with the kind it names when its value says no more.
 #: A label paired with a fuller one (W3CDTF beside the written date) is read only when that one is absent.
 LABELS: tuple[tuple[str, str, str | None], ...] = (
+    ("年代", "produced", None),
+    ("年代記述", "produced", None),
+    ("製作年", "produced", None),
+    ("作成年", "produced", None),
+    ("刊年", "printed", None),
+    ("出版年", "printed", None),
+    ("出版・刊行年", "printed", None),
+    ("刊行年", "printed", None),
+    ("日付", "produced", None),
+    ("年月日(Date)", "produced", None),
+    ("dcterms:issued", "printed", "dcterms:date"),
     ("Publication Date", "produced", None),
     ("Publication Date (W3CDTF fortmat)", "produced", "Publication Date"),
     ("作成年代始（和暦)", "produced", None),
@@ -116,6 +130,7 @@ class Statement:
     years: tuple[int | None, int | None] | None = None
     #: The kind is the field's own; words in the text do not override it.
     fixed: bool = False
+    uncertain: bool | None = None
 
 
 def _json(value: Any) -> Any:
@@ -243,8 +258,9 @@ def events(text: str) -> list[str]:
 
 def metadata_statements(entries: Iterable[tuple[str, str]], *, source: str, locator: str) -> Iterator[Statement]:
     """Dates in IIIF metadata (label, value) pairs, by `LABELS`."""
-    present = {label.strip(): value for label, value in entries}
-    for label, value in present.items():
+    pairs = list(dict.fromkeys((label.strip(), value) for label, value in entries))
+    present = dict(pairs)
+    for label, value in pairs:
         if label not in _LABEL:
             continue
         kind, fuller = _LABEL[label]
@@ -254,16 +270,60 @@ def metadata_statements(entries: Iterable[tuple[str, str]], *, source: str, loca
         # A value given in several languages or forms is joined by " / " (平安時代・12世紀 / Heian period/12th
         # century; 1777(序) / 1777-01-01): the first states it as the holder wrote it.
         value = value.split(" / ")[0].strip()
-        if not value or value.strip("0") == "" or re.fullmatch(r"\d", value) or not _DATE_LIKE.search(value):
+        if not value or value.strip("0") == "" or re.fullmatch(r"\d", value) or (
+                not _DATE_LIKE.search(value) and not dates.era_candidates(value)):
             continue
+        if urlsplit(locator).hostname == "shimuchi.lib.u-ryukyu.ac.jp":
+            if match := re.fullmatch(r"\[(\d{4}-\d{4})\](\[\d{4}\]\[写\])", value):
+                # 冠船 records list historical content first, then the supplied copying year.
+                yield Statement(text=match[1], kind="other", scope="witness", tier="derived", source=source,
+                                locator=f"{locator}#metadata={label}", note=f"Content dates; catalogue field: {value}",
+                                fixed=True)
+                yield Statement(text=match[2], kind="copied", scope="witness", tier="derived", source=source,
+                                locator=f"{locator}#metadata={label}", note=f"Supplied copying date; catalogue field: {value}",
+                                fixed=True, uncertain=True)
+                continue
+            if "[版刷][写]" in value:
+                # This catalogue's descriptions identify these as printed editions despite the extra 写 tag.
+                yield Statement(text=value, kind="printed", scope="witness", tier="attested", source=source,
+                                locator=f"{locator}#metadata={label}", fixed=True)
+                continue
         yield Statement(text=value, kind=kind, scope="witness", tier="attested", source=source,
                         locator=f"{locator}#metadata={label}", note=None if label.startswith(("Publication", "Date")) else label)
+    # AMANE's Ina catalogues flatten columns into ラベル. The token before the Western sort year
+    # contains the written date. Sort years include placeholders (近世 → 1867) and errors
+    # (元治二年 → 1862), so only that written token is read; later 原資料年代 dates the exemplar.
+    if urlsplit(locator).hostname == "ourarchives.amane-project.jp":
+        for label, value in pairs:
+            if label == "ラベル" and (m := re.search(r"\s([^\s]+)\s+[0-9０-９]{3,4}\s", value)):
+                text = m[1]
+                if dates.era_candidates(text):
+                    yield Statement(text=text, kind="produced", scope="witness", tier="derived", source=source,
+                                    locator=f"{locator}#metadata={label}", note="Written date in catalogue label",
+                                    fixed=True)
+            # Kadomi's structured fields are sometimes filed under the misleading label 'manifest URI'.
+            fields = dict(re.findall(r"\[([^\]]+)\]:\s*([^\[]*)", value))
+            era, western = fields.get("年（年号）", "").strip(), fields.get("年（西暦）", "").strip()
+            if era or western:
+                text = era if dates.era_candidates(era) else western
+                if text:
+                    yield Statement(text=text, kind="produced", scope="witness", tier="derived", source=source,
+                                    locator=f"{locator}#metadata={label}/年", fixed=True)
 
 
 def manifest_entries(manifest: Any) -> list[tuple[str, str]]:
     if not isinstance(manifest, dict):
         return []
-    found = [(_text(e.get("label")), _text(e.get("value"))) for e in manifest.get("metadata") or [] if isinstance(e, dict)]
+    found = []
+    for entry in manifest.get("metadata") or []:
+        if not isinstance(entry, dict):
+            continue
+        label = entry.get("label")
+        labels = [_text(label)]
+        if isinstance(label, dict):
+            labels += [_text(v) for v in label.values()]
+        chosen = next((v for v in labels if v.strip() in _LABEL), labels[0])
+        found.append((chosen, _text(entry.get("value"))))
     if not any(_LABEL.get(label.strip()) for label, _ in found) and manifest.get("navDate"):
         found.append(("date", str(manifest["navDate"])[:10]))
     return found
@@ -306,13 +366,36 @@ def statements(row: dict[str, Any], corpus: str, cache: Path, *, fetch: bool = F
         manifest = _load(path)
         if manifest is not None:
             found += metadata_statements(manifest_entries(manifest), source="iiif-manifests", locator=url)
-        else:
-            meta = _json(row.get("meta")) or {}
-            copied = meta.get("metadata") if isinstance(meta.get("metadata"), dict) else None
-            refs = _json(row.get("source_refs")) or {}
-            if copied and (entry := refs.get("honkoku-entry")):
-                found += metadata_statements([(k, _text(v)) for k, v in copied.items()], source="honkoku-data",
-                                             locator=entry)
+        from .date_catalogues import catalogue_entries
+        for record_url, entries in catalogue_entries(url, cache, fetch=fetch):
+            found += metadata_statements(entries, source="holder-catalogues", locator=record_url)
+    # A holder may have removed metadata since Honkoku copied it. Keep both attributed statements.
+    meta = _json(row.get("meta")) or {}
+    copied = meta.get("metadata") if isinstance(meta.get("metadata"), dict) else None
+    refs = _json(row.get("source_refs")) or {}
+    if copied and (entry := refs.get("honkoku-entry")):
+        entries = []
+        for k, v in copied.items():
+            # Older importers stringified IIIF v3 language-map labels as Python dicts.
+            if k.startswith("{"):
+                import ast
+                try:
+                    label = ast.literal_eval(k)
+                    k = next((s for s in (_text(v) for v in label.values()) if s in _LABEL), _text(label))
+                except (ValueError, SyntaxError, AttributeError):
+                    pass
+            entries.append((k, _text(v)))
+        found += metadata_statements(entries, source="honkoku-data", locator=entry)
+        if (url := manifest_of(row)) and urlsplit(url).hostname == "ourarchives.amane-project.jp":
+            # Apply the holder-specific field layout, retaining the actual copied source as evidence.
+            found += [Statement(**{**s.__dict__, "locator": s.locator.replace(url, entry, 1)})
+                      for s in metadata_statements(entries, source="honkoku-data", locator=url)
+                      if s.tier == "derived"]
+    # The Wikisource index dates the scanned edition. Commons' file/scan date remains excluded.
+    index = meta.get("index") or {}
+    if isinstance(index, dict) and index.get("year") and (url := refs.get("wikisource-index")):
+        found.append(Statement(text=str(index["year"]), kind="produced", scope="witness", tier="attested",
+                               source="wikisource", locator=f"{url}#year", fixed=True))
     return found
 
 
@@ -340,9 +423,50 @@ def build(root: Path, cache: Path, *, fetch: bool = False, convert: bool = False
     its cache lacks.
     """
     gathered: dict[str, tuple[dict[str, Any], str, list[Statement]]] = {}
+    shared: dict[tuple[str, str], list[Statement]] = {}
+    identities: dict[str, set[tuple[str, str]]] = {}
+    # The NDL training corpus names the original Honkoku v1 records, but its importer did not carry
+    # their publication dates. Read that exact identifier from the cached upstream catalogue.
+    v1_path = cache / "honkoku-data" / "v1" / "entries.csv"
+    v1_attempted = v1_path.exists()
+    v1 = {}
+    if v1_path.exists():
+        with v1_path.open(encoding="utf-8-sig", newline="") as handle:
+            v1 = {r["暫定ID"]: r for r in csv.DictReader(handle)}
     for corpus, row in documents(root, corpora):
         mine = fetch and (site is None or row["id"] in site)
         found = statements(row, corpus, cache, fetch=mine)
+        refs = _json(row.get("source_refs")) or {}
+        if str(refs.get("ndl-minhon-ocr", "")).startswith("v1/"):
+            if mine and not v1_attempted:
+                v1_attempted = True
+                try:
+                    net.download("https://raw.githubusercontent.com/yuta1984/honkoku-data/master/v1/entries.csv",
+                                 v1_path, expected="text")
+                except net.DownloadError:
+                    pass
+                if v1_path.exists():
+                    with v1_path.open(encoding="utf-8-sig", newline="") as handle:
+                        v1 = {r["暫定ID"]: r for r in csv.DictReader(handle)}
+            key = refs["ndl-minhon-ocr"].removeprefix("v1/")
+            if value := v1.get(key, {}).get("出版年（西暦年月日）", "").strip():
+                locator = ("https://github.com/yuta1984/honkoku-data/blob/master/v1/entries.csv"
+                           f"#{key}/出版年（西暦年月日）")
+                if m := re.fullmatch(r"(\d{4})[（(](\d{4}写)[）)]", value):
+                    found += [Statement(text=text, kind=kind, scope="witness", tier="derived", source="honkoku-data",
+                                        locator=locator, note=f"Publication field: {value}", fixed=True)
+                              for text, kind in ((m[1], "exemplar"), (m[2], "copied"))]
+                else:
+                    # A leading dash has an unspecified endpoint; do not turn it into an exact year.
+                    found.append(Statement(text=value, kind="other" if value.startswith("-") else "produced",
+                                           scope="witness", tier="attested", source="honkoku-data", locator=locator,
+                                           fixed=value.startswith("-")))
+        keys = {("honkoku", str(refs["honkoku-data"]).lower())} if refs.get("honkoku-data") else set()
+        if corpus not in OWN_DATING and (url := manifest_of(row)):
+            keys.add(("manifest", url))
+        identities.setdefault(row["id"], set()).update(keys)
+        for key in keys:
+            shared.setdefault(key, []).extend(found)
         if row["id"] not in gathered:
             gathered[row["id"]] = (row, corpus, found)
             continue
@@ -352,6 +476,9 @@ def build(root: Path, cache: Path, *, fetch: bool = False, convert: bool = False
         known = {k: row.get(k) for k in ("production", "origin")
                  if first.get(k) in (None, "unknown") and row.get(k) not in (None, "unknown")}
         gathered[row["id"]] = ({**first, **known}, named, held + [s for s in found if s not in held])
+    for document, (row, corpus, found) in gathered.items():
+        for key in identities[document]:
+            found.extend(s for s in shared[key] if s not in found)
     calendar = dates.HuTime(cache / "hutime", offline=not convert)
     japanese = [s.text for row, _, found in gathered.values() if row.get("origin") in JAPANESE_ORIGINS for s in found]
     candidates = set().union(*(dates.era_candidates(t) for t in japanese)) if japanese else set()
@@ -374,7 +501,7 @@ def build(root: Path, cache: Path, *, fetch: bool = False, convert: bool = False
             kind = s.kind if s.fixed else dates.kind_of(s.text, s.kind)
             scope = "work" if kind == "composed" else s.scope
             c = dates.claim(row["id"], s.text, kind=kind, scope=scope, tier=s.tier, source=s.source,
-                            locator=s.locator, calendar=uses, note=s.note, years=s.years)
+                            locator=s.locator, calendar=uses, note=s.note, years=s.years, uncertain=s.uncertain)
             if c is None:
                 counts["statements without a date"] += 1
                 continue

@@ -41,9 +41,9 @@ WITNESS_ORDER = {
 #: Tiers in the order a disagreement is settled.
 TIER_ORDER = ("attested", "derived")
 #: Sources in the order a disagreement within one tier is settled: a holder's own catalogue first.
-SOURCE_ORDER = ("iiif-manifests", "kokusho", "ndl-minhon", "honkoku-data", "ainu-records")
+SOURCE_ORDER = ("iiif-manifests", "holder-catalogues", "kokusho", "ndl-minhon", "honkoku-data", "ainu-records")
 #: The version of `resolve`, published with each resolved date.
-RESOLVER = "dates-1"
+RESOLVER = "dates-2"
 
 _KANJI_DIGITS = {"〇": 0, "零": 0, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
 _NUMBER = r"(?:元|\d+|[〇零一二三四五六七八九十]+)"
@@ -59,7 +59,7 @@ _CJK = re.compile(r"[\u3400-\u9fff々]")
 #: NDL's abbreviated modern eras: 明17.6, 昭11.
 _ABBREVIATED = {"明": "明治", "大": "大正", "昭": "昭和", "平": "平成"}
 _ABBREVIATED_YEAR = re.compile(r"(?<![㐀-鿿])(?P<era>[明大昭平])(?P<year>\d{1,2})(?:\.(?P<month>\d{1,2}))?(?!\d)")
-_ERA_SPAN = re.compile(r"(?P<eras>[㐀-鿿]{2,4}(?:[・、][㐀-鿿]{2,4})*)(?:年間|中)")
+_ERA_SPAN = re.compile(r"(?P<eras>[㐀-鿿]{2,4}(?:[・、][㐀-鿿]{2,4})*)(?:年間|時代|中)")
 _STATED_YEAR = re.compile(r"[(\[（［]\s*(?:C\.?E\.?\s*)?(?P<year>\d{3,4})\s*[)\]）］]")
 _ISO_DAY = re.compile(r"(?<!\d)(?P<y>\d{4})-(?P<m>\d{2})-(?P<d>\d{2})(?!\d)")
 _ISO_MONTH = re.compile(r"(?<!\d)(?P<y>\d{4})[-.](?P<m>\d{1,2})(?![\d-])")
@@ -74,7 +74,7 @@ _CENTURY = re.compile(rf"(?<!\d)(?P<a>\d{{1,2}})(?:\s*(?:世紀|세기|th|st|nd|
 _PERIOD = re.compile(r"[㐀-鿿]{1,4}(?:時代|前期|中期|後期|末期|初期|中頃|中葉)")
 
 _CIRCA = re.compile(r"頃|ごろ|\bca\.|(?<![a-z])c\.\s*\d|\bcirca\b|경$|약\s", re.IGNORECASE)
-_UNCERTAIN = re.compile(r"\?|？|推定|추정|カ\]|か\]")
+_UNCERTAIN = re.compile(r"\?|？|推定|추정|カ\]|か\]|(?<=[年月日])(?:か|カ)\s*$")
 #: 以後 and 以前 qualify a date they follow at the end of the text (嘉元元以後), not a word inside it
 #: (明治検定以前の教科書).
 _AFTER = re.compile(r"(?:以後|以降|以來|以来|이후)\s*[)\]）］]?\s*$|^\s*after\b", re.IGNORECASE)
@@ -95,6 +95,9 @@ KIND_WORDS = (
 
 def kind_of(text: str, default: str) -> str:
     """The kind of date `text` names by its own wording, or `default`."""
+    # A work's establishment date followed by the manuscript's format: 1769[成立][写].
+    if re.search(r"[\[（(]成立[\]）)]", normalise(text)):
+        return "composed"
     for kind, words in KIND_WORDS:
         if words.search(text):
             return kind
@@ -115,7 +118,11 @@ def number(value: str) -> int:
 
 def normalise(text: str) -> str:
     """`text` with full-width digits and brackets made ASCII, so one set of patterns reads them all."""
-    return unicodedata.normalize("NFKC", text).replace("〔", "[").replace("〕", "]")
+    value = unicodedata.normalize("NFKC", text).replace("〔", "[").replace("〕", "]")
+    # The sexagenary cycle repeats the year; it does not interrupt the era-year number.
+    value = re.sub(r"(?<=[元0-9〇一二三四五六七八九十])[甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥]年", "年", value)
+    value = re.sub(r"(?<=年)[甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥]", "", value)
+    return value.replace("正月", "1月")
 
 
 class Calendar(Protocol):
@@ -202,8 +209,8 @@ def _era_at(text: str, i: int, calendar: Calendar) -> tuple[str, re.Match] | Non
     """The era name starting at `i` and the year after it, the longest name first."""
     for n in (4, 3, 2):
         name = text[i:i + n]
-        if len(name) == n and could_be_era(name) and calendar.era(name) \
-                and (found := _AFTER_ERA.match(text, i + n)):
+        if len(name) == n and could_be_era(name) and (found := _AFTER_ERA.match(text, i + n)) \
+                and calendar.era(name):
             return name, found
     return None
 
@@ -258,11 +265,16 @@ def _eras_in(text: str, calendar: Calendar | None) -> tuple[list[EraDate], str]:
 def read(text: str, calendar: Calendar | None = None) -> Reading:
     """What `text` states as a date. `calendar` recognises Japanese era names; without one, none are read."""
     value = normalise(text)
-    qualifier = "after" if _AFTER.search(value) else "before" if _BEFORE.search(value) else \
+    qualifier = "after" if _AFTER.search(value) or re.search(r"[〜～~]\s*(?:年月日未詳)?\s*$", value) else \
+        "before" if _BEFORE.search(value) or re.match(r"\s*[〜～~]", value) else \
         "circa" if _CIRCA.search(value) else None
     uncertain = bool(_UNCERTAIN.search(value))
     spans = []
     if calendar is not None:
+        bare = value.strip("[]() ")
+        if 2 <= len(bare) <= 4 and could_be_era(bare) and calendar.era(bare):
+            spans.append(bare)
+            value = ""
         for match in _ERA_SPAN.finditer(value):
             names = re.split(r"[・、]", match.group("eras"))
             # The run before the first name may hold other words: 巻末寛永中 names 寛永.
@@ -489,6 +501,9 @@ def era_candidates(text: str) -> set[str]:
     of two to four CJK characters followed by a year, and each named before 年間 or 中."""
     value = normalise(text)
     found: set[str] = set()
+    bare = value.strip("[]() ")
+    if 2 <= len(bare) <= 4 and could_be_era(bare):
+        found.add(bare)
     for i in range(len(value)):
         for n in (2, 3, 4):
             name = value[i:i + n]
@@ -524,7 +539,7 @@ def claim_id(document: str, source: str, locator: str, kind: str, value: dict[st
 
 def claim(document: str, text: str, *, kind: str, scope: str, tier: str, source: str, locator: str,
           calendar: Calendar | None = None, note: str | None = None, years: tuple[int | None, int | None] | None = None,
-          precision: str | None = None) -> DateClaim | None:
+          precision: str | None = None, uncertain: bool | None = None) -> DateClaim | None:
     """A claim that `document`'s `kind` event is dated by `text`, read and converted here.
 
     `years` and `precision` stand for a reading made elsewhere (an importer's interval) when this module
@@ -548,6 +563,8 @@ def claim(document: str, text: str, *, kind: str, scope: str, tier: str, source:
         found = Interval(None, None, "period", note="not converted")
     if found is None:
         return None
+    if uncertain is not None:
+        found = replace(found, uncertain=uncertain)
     value = {"scope": scope, "text": text, "start": found.start, "end": found.end, "precision": found.precision,
              "qualifier": found.qualifier, "uncertain": found.uncertain, "day": found.day, "calendar": found.calendar,
              "conversion": found.conversion, "tier": tier,

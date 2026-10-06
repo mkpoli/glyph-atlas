@@ -1,0 +1,11 @@
+id: holder-catalogues
+name: Holding institutions' item catalogues
+publisher: University of Tokyo, University of the Ryukyus, Kyoto University
+kind: reference-table
+url: https://da.dl.itc.u-tokyo.ac.jp/portal/
+licence: PD
+attribution: The holding institution identified by each date claim's catalogue URL
+notes:
+  - Reads explicit item date fields in catalogue records corresponding to the document's IIIF manifest.
+  - Each date claim identifies the individual catalogue URL and field. No images or descriptive prose are redistributed.
+  - Digitization dates and catalogue maintenance timestamps are excluded.
