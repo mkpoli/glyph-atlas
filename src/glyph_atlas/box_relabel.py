@@ -33,9 +33,9 @@ detections were given to one line.
 A person's review decides whether a unit keeps its label (`verdicts_of`). A unit a reviewer
 confirmed, or whose character a person wrote, keeps it. A review that only said the label is wrong
 does not: the label it rejected came from the scrambled pairing, so the unit takes the realigned
-label like any other and keeps its review history in `meta["box_relabel"]`. A unit in a cluster
-whose form a person decided takes the realigned label when it is of the decided form's family, and
-otherwise keeps its label and is marked for review, its crop kept.
+label like any other and keeps its review history in `meta["box_relabel"]`. A relabelled or unplaced
+unit in a cluster whose form a person decided takes the realigned label when it is of the decided
+form's family, and otherwise keeps its label and is marked for review, its crop kept.
 """
 
 from __future__ import annotations
