@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from glyph_atlas import align, box_relabel, koji
@@ -31,10 +33,10 @@ def run() -> align.Run:
     return align.Run(name="test", accept=0.5, margin=0.0)
 
 
-def repair(units, protected=()):
+def repair(units, verdicts=None, forms=None):
     detections = {"hl:item:0": BOXES}
     return box_relabel.repair(units, [line()], detections, run=run(), classifier=None, crop_of=None,
-                              protected=protected)
+                              verdicts=verdicts, forms=forms)
 
 
 def test_a_line_whose_boxes_step_back_up_the_column_is_stale():
@@ -74,14 +76,53 @@ def test_the_repaired_line_reads_in_order():
     assert not box_relabel.stale(box_relabel.placed_of(repaired))
 
 
-def test_a_unit_a_person_reviewed_keeps_its_label():
+def test_a_unit_a_person_confirmed_or_corrected_keeps_its_label():
     old = stale_units()
     old[0] = old[0].model_copy(update={"review": ReviewState.REVIEWED})
-    repaired, records = repair(old, protected={old[1].id})
+    repaired, records = repair(old, verdicts={old[1].id: box_relabel.MATCH, old[2].id: box_relabel.CORRECTION})
     by_id = {unit.id: unit for unit in repaired}
-    assert by_id[old[0].id].text_source == "高"
-    assert by_id[old[1].id].text_source == "八"
-    assert [record["status"] for record in records].count("protected") == 2
+    assert [by_id[unit.id].text_source for unit in old[:3]] == ["高", "八", "百"]
+    assert [record["status"] for record in records].count("protected") == 3
+
+
+def test_a_unit_a_review_only_called_wrong_takes_the_realigned_label_and_keeps_its_history():
+    old = stale_units()
+    old[0] = old[0].model_copy(update={"review": ReviewState.DISPUTED})
+    old[1] = old[1].model_copy(update={"review": ReviewState.REVIEWED})
+    repaired, records = repair(old, verdicts={old[1].id: box_relabel.WRONG})
+    by_id = {unit.id: unit for unit in repaired}
+    assert by_id[old[0].id].text_source == TEXT[BOXES.index(old[0].box)]
+    assert by_id[old[1].id].text_source == TEXT[BOXES.index(old[1].box)]
+    assert box_relabel.counts(records) == {"relabelled": 4}
+    assert by_id[old[1].id].meta["box_relabel"]["review"] == {"state": "reviewed", "verdict": "wrong"}
+    assert "review" not in by_id[old[0].id].meta["box_relabel"]
+
+
+def test_a_unit_of_a_decided_form_takes_a_realigned_label_of_its_family_only():
+    old = stale_units()  # 高 on the box of 百, 八 on the box of 高, 百 on the box of 四
+    forms = {old[0].id: "百", old[1].id: "U+56DB", old[2].id: "U+56DB"}
+    repaired, records = repair(old, forms=forms)
+    by_id = {unit.id: unit for unit in repaired}
+    statuses = {record["unit_id"]: record["status"] for record in records}
+    assert statuses[old[0].id] == "relabelled" and by_id[old[0].id].text_source == "百"
+    assert statuses[old[2].id] == "relabelled" and by_id[old[2].id].text_source == "四"
+    assert statuses[old[1].id] == "review" and by_id[old[1].id].text_source == "八"
+    assert by_id[old[1].id].meta["box_relabel"] == {"method": box_relabel.METHOD, "status": "review",
+                                                    "before": "八", "after": "高", "form": "U+56DB"}
+
+
+def test_the_latest_review_of_a_unit_decides_its_verdict():
+    def site(target, verdict, **extra):
+        evidence = json.dumps({"kind": "character-review", "verdict": verdict, **extra})
+        return {"target": target, "event": json.dumps({"target_type": "unit", "target_id": target, "field": "review",
+                                                       "new": "disputed", "evidence": evidence})}
+    events = [site("a", "wrong", issue="reading"), site("a", "wrong", issue="character", suggested_character="U+9650"),
+              site("b", "match"), site("b", "wrong", issue="crop"),
+              site("c", "match", kind="visual-quiz"),
+              {"target_type": "unit", "target_id": "d", "field": "text_source", "new": "高", "evidence": None},
+              {"target_type": "unit", "target_id": "e", "field": "seen", "new": True, "evidence": None},
+              {"target_type": "unit", "target_id": "f", "field": "review", "new": "reviewed", "evidence": None}]
+    assert box_relabel.verdicts_of(events) == {"a": "correction", "b": "wrong", "d": "correction", "f": "match"}
 
 
 def test_a_box_the_new_alignment_leaves_empty_loses_its_label():
@@ -164,7 +205,7 @@ def test_a_gap_whose_boxes_and_characters_do_not_match_stays_unplaced():
 
 def test_a_protected_unit_takes_its_place_so_its_line_is_not_stale_after_the_repair():
     old = stale_units()
-    repaired, _ = repair(old, protected={old[0].id})
+    repaired, _ = repair(old, verdicts={old[0].id: box_relabel.MATCH})
     assert repaired[0].text_source == "高"
     assert not box_relabel.stale(box_relabel.placed_of(repaired))
 
@@ -230,6 +271,56 @@ def test_a_unit_another_method_placed_on_the_line_is_not_relabelled():
     repaired, records = repair([*stale_units(), imported])
     assert repaired[-1] == imported
     assert "ar:record:0" not in {record["unit_id"] for record in records}
+
+
+def test_review_events_are_read_from_json_lines_a_list_or_a_d1_query(tmp_path):
+    event = {"target_type": "unit", "target_id": "a", "field": "review", "new": "reviewed", "evidence": None}
+    (tmp_path / "lines.jsonl").write_text(json.dumps(event) + "\n")
+    (tmp_path / "list.json").write_text(json.dumps([event]))
+    (tmp_path / "d1.json").write_text(json.dumps([{"results": [event], "success": True}]))
+    for name in ("lines.jsonl", "list.json", "d1.json"):
+        assert box_relabel.read_reviews(tmp_path / name) == [event]
+
+
+def test_a_pipeline_edit_an_unsure_answer_or_an_undone_review_decides_nothing():
+    def event(target, field, new, evidence=None, role="reviewer", **extra):
+        return {"id": f"{target}:{field}:{new}", "target_type": "unit", "target_id": target, "field": field,
+                "new": new, "role": role, "evidence": json.dumps(evidence) if evidence else None, **extra}
+    events = [event("a", "review", "disputed", {"verdict": "wrong", "issue": "crop"}, at="2026-09-28T10:00:00Z"),
+              event("a", "meta", "{}", role="model", at="2026-09-28T11:00:00+00:00"),
+              event("b", "review", "disputed", {"verdict": "unsure"}),
+              {"target": "c", "undone": 1, "event": json.dumps(event("c", "review", "reviewed", {"verdict": "match"}))},
+              event("d", "review", '"reviewed"'),
+              event("e", "note", "a note")]
+    assert box_relabel.verdicts_of(events) == {"a": "wrong", "d": "match"}
+
+
+def test_review_events_count_once_in_the_order_they_were_made():
+    later = {"id": "cf:1", "target_type": "unit", "target_id": "a", "field": "review", "new": "reviewed",
+             "role": "reviewer", "at": "2026-09-29T00:00:00Z",
+             "evidence": json.dumps({"verdict": "wrong", "suggested_character": "U+9AD8"})}
+    earlier = {"id": "cf:0", "target_type": "unit", "target_id": "a", "field": "review", "new": "disputed",
+               "role": "reviewer", "at": "2026-09-28T00:00:00+00:00", "evidence": json.dumps({"verdict": "wrong"})}
+    assert box_relabel.verdicts_of([later, earlier, {"target": "a", "event": json.dumps(later)}]) == {"a": "correction"}
+
+
+def test_a_unit_sent_to_review_takes_its_place_in_the_line():
+    old = stale_units()
+    repaired, _ = repair(old, forms={old[1].id: "U+56DB"})
+    assert sorted(unit.seq for unit in repaired) == [1, 2, 3, 4]
+
+
+
+def test_a_unit_of_a_decided_form_whose_box_left_its_line_is_unplaced_not_sent_to_review(monkeypatch):
+    old = stale_units()
+    new = [unit(index + 1, char, BOXES[index]).model_copy(update={"id": f"n{index}"})
+           for index, char in enumerate(TEXT[:3])]
+    forms = {unit.id: "U+5343" for unit in old}
+    kept = {record["status"] for record in box_relabel.relabel(old, new, forms=forms) if record["after"] is None}
+    assert kept == {"review"}
+    monkeypatch.setattr(box_relabel, "unplaced_reason", lambda *args, **kwargs: "other-line")
+    left = {record["status"] for record in box_relabel.relabel(old, new, forms=forms) if record["after"] is None}
+    assert left == {"unplaced"}
 
 
 def test_two_lines_holding_one_box_are_stale_and_the_repair_leaves_the_box_to_one():
@@ -303,6 +394,29 @@ def test_a_reviewed_unit_keeps_its_box_and_the_line_the_page_gave_it_to_yields()
     old_left[3] = old_left[3].model_copy(update={"review": ReviewState.REVIEWED})
     repaired, records = box_relabel.repair(old_right + old_left, [right, left], {"hl:item:0": [*BOXES, *right_boxes]},
                                            run=run(), classifier=None, crop_of=None)
+    by_id = {record["unit_id"]: record for record in records}
+    assert by_id[old_left[3].id]["status"] == "protected"
+    assert (by_id[old_right[3].id]["status"], by_id[old_right[3].id]["reason"]) == ("unplaced", "held")
+    labelled = [(unit.page_id, unit.line_id, unit.box) for unit in repaired if unit.box is not None and unit.text_source]
+    assert box_relabel.shared_lines(labelled) == set()
+
+
+def test_a_unit_sent_to_review_yields_the_box_a_reviewed_unit_of_another_line_holds():
+    right = Line(id="hl:item_0_000", page_id="hl:item:0", seq=0, box=Box(x=150, y=0, w=110, h=200), vertical=True,
+                 text_raw="一二三四", text="一二三四")
+    left = line().model_copy(update={"box": Box(x=90, y=0, w=90, h=200)})
+    right_boxes = [Box(x=150, y=y, w=30, h=28) for y in (10, 50, 90, 130)]
+    # The right line's fourth unit is labelled 三 where 四 is written, and a person decided another
+    # form for its cluster, so it would be sent to review on the box the left line's reviewed unit holds.
+    old_right = [Unit(id=f"hl:item_0_000:old:{index + 1}", page_id="hl:item:0", line_id=right.id, seq=index + 1,
+                      box=box, kind=UnitKind.CHAR, text_source=char, method="detect-align")
+                 for index, (char, box) in enumerate(zip("一二三三", right_boxes, strict=True))]
+    old_left = [unit(index + 1, char, box) for index, (char, box) in enumerate(zip(TEXT, [*BOXES[:3], right_boxes[3]],
+                                                                                    strict=True))]
+    old_left[3] = old_left[3].model_copy(update={"review": ReviewState.REVIEWED})
+    repaired, records = box_relabel.repair(old_right + old_left, [right, left], {"hl:item:0": [*BOXES, *right_boxes]},
+                                           run=run(), classifier=None, crop_of=None,
+                                           forms={old_right[3].id: "U+5343"})
     by_id = {record["unit_id"]: record for record in records}
     assert by_id[old_left[3].id]["status"] == "protected"
     assert (by_id[old_right[3].id]["status"], by_id[old_right[3].id]["reason"]) == ("unplaced", "held")
