@@ -234,6 +234,14 @@ subject the document, predicate `date_<kind>`, the fields below but its id, kind
 value, asserted by `source:<id>` with an evidence row naming the source and the locator. What each
 document shows is `document_dating` (migration 0052).
 
+`--fetch` also reads linked Tokyo, Ryukyu and Kyoto catalogue date fields, cached in
+`cache/date-catalogues/`, and the Honkoku v1 publication-year index for NDL training records.
+Copied Honkoku metadata and Wikisource scan-index years retain their own source locators.
+Records sharing an exact Honkoku entry identifier or IIIF manifest reuse those statements;
+titles alone never establish identity. AMANE's embedded date fields are read as derived claims,
+excluding its Western sort years. Mixed catalogue fields keep content, composition and copying
+dates separate, with supplied copying dates marked uncertain.
+
 | Field | Meaning |
 | --- | --- |
 | `id`, `document` | the claim's id, from its document, source, locator, text and kind |

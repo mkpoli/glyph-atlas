@@ -105,6 +105,42 @@ def test_without_a_calendar_no_era_is_read():
     assert dates.interval(dates.read("寛政三年")) is None
 
 
+def test_cycle_names_do_not_hide_era_years(calendar):
+    assert reading("寛政三辛亥年", calendar) == (1791, 1791, "year", None)
+    assert dates.year_questions("元禄十五年壬午閏八月一日", calendar)["date"] == {"元禄15年閏8月1日"}
+    assert dates.read("寛政三年正月", calendar).eras[0].month == 1
+
+
+def test_named_calendar_eras_have_hutime_bounds(calendar):
+    assert reading("明治時代", calendar) == (1868, 1912, "years", None)
+    assert reading("（明治）", calendar) == (1868, 1912, "years", None)
+    assert dates.era_candidates("（明治）") == {"明治"}
+
+
+def test_catalogue_open_ended_dates(calendar):
+    assert reading("寛政三年～", calendar) == (1791, None, "year", "after")
+    assert reading("～1855", calendar) == (None, 1855, "year", "before")
+    assert reading("1854年(安政1)～年月日未詳", calendar) == (1854, None, "year", "after")
+
+
+def test_catalogue_dates_keep_composition_exemplar_and_doubt_separate(calendar):
+    assert dates.kind_of("1769[成立][写]", "produced") == "composed"
+    assert dates.read("昭和43年か", calendar).uncertain
+
+
+def test_era_recognition_never_queries_ordinary_prose(tmp_path):
+    asked = []
+
+    def fetcher(url, dest, **kwargs):
+        asked.extend(kwargs["data"]["ival"].split("\r\n"))
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text('[null, null]')
+
+    calendar = dates.HuTime(tmp_path, fetcher=fetcher)
+    dates.read("東京大学図書館所蔵", calendar)
+    assert asked == []
+
+
 @pytest.mark.parametrize(("start", "end", "precision", "qualifier", "uncertain", "expected"), [
     (1791, 1791, "year", None, False, "1791"),
     (1800, 1800, "year", "circa", False, "c. 1800"),
