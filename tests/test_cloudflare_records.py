@@ -371,12 +371,12 @@ def test_an_export_finds_and_drops_the_glyphs_of_lines_aligned_in_the_old_detect
 
     export = importlib.import_module("export_cloudflare_corpus")
     rows = []
-    for line, ys in (("stale", (90, 10, 130, 50)), ("read", (10, 50, 90, 130))):
+    for line, page, ys in (("stale", "p:0", (90, 10, 130, 50)), ("read", "p:1", (10, 50, 90, 130))):
         for seq, y in enumerate(ys, start=1):
-            rows.append({"id": f"{line}:{seq}", "line_id": line, "seq": seq, "box": {"x": 100, "y": y, "w": 30, "h": 28},
-                         "method": "detect-align", "kind": "char"})
-    rows.append({"id": "imported:1", "line_id": "imported", "seq": 1, "box": {"x": 0, "y": 0, "w": 1, "h": 1},
-                 "method": "import", "kind": "char"})
+            rows.append({"id": f"{line}:{seq}", "page_id": page, "line_id": line, "seq": seq,
+                         "box": {"x": 100, "y": y, "w": 30, "h": 28}, "method": "detect-align", "kind": "char"})
+    rows.append({"id": "imported:1", "page_id": "p:0", "line_id": "imported", "seq": 1,
+                 "box": {"x": 0, "y": 0, "w": 1, "h": 1}, "method": "import", "kind": "char"})
     pq.write_table(pa.Table.from_pylist(rows), tmp_path / "units.parquet")
     stale = export.stale_units(ds.dataset(tmp_path / "units.parquet"), {"stale": True, "read": True})
     assert stale == {f"stale:{seq}" for seq in range(1, 5)}
@@ -387,3 +387,22 @@ def test_an_export_finds_and_drops_the_glyphs_of_lines_aligned_in_the_old_detect
                        "VALUES(?,'a','U+0061',1,'o',0,1)", (unit,))
         assert export.drop_stale(db, stale) == 1
         assert [r[0] for r in db.execute("SELECT id FROM corpus_units")] == ["read:1"]
+
+
+def test_an_export_drops_the_glyphs_of_two_lines_that_hold_one_box(scripts, tmp_path):
+    import pyarrow as pa
+    import pyarrow.dataset as ds
+    import pyarrow.parquet as pq
+
+    export = importlib.import_module("export_cloudflare_corpus")
+    rows = []
+    for line, x, ys in (("right", 200, (10, 50, 90)), ("left", 100, (10, 50, 90)), ("apart", 0, (10, 50, 90))):
+        for seq, y in enumerate(ys, start=1):
+            rows.append({"id": f"{line}:{seq}", "page_id": "p:0", "line_id": line, "seq": seq,
+                         "box": {"x": x, "y": y, "w": 30, "h": 28}, "method": "detect-align", "kind": "char"})
+    # The left line's box was wide enough to take the right line's last character too.
+    rows.append({"id": "left:4", "page_id": "p:0", "line_id": "left", "seq": 4,
+                 "box": {"x": 200, "y": 90, "w": 30, "h": 28}, "method": "detect-align", "kind": "char"})
+    pq.write_table(pa.Table.from_pylist(rows), tmp_path / "units.parquet")
+    stale = export.stale_units(ds.dataset(tmp_path / "units.parquet"), {"right": True, "left": True, "apart": True})
+    assert stale == {f"right:{seq}" for seq in range(1, 4)} | {f"left:{seq}" for seq in range(1, 5)}
