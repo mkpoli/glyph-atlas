@@ -4,7 +4,8 @@
  *
  * Selecting crops in a round opens a bar with the forms of the round's grapheme. A form key or a chip
  * marks every selected crop as that form at once; undo takes the marking back. A crop marked this way
- * is decided: moving on does not record it as seen.
+ * is decided: moving on does not record it as seen. Every write is a signed-in reader's, and the
+ * fixture has no account service, so the page writes as a disposable reviewer.
  *
  * Run through devrun:
  *   devrun bun apps/review/tools/form-bar-check.mjs
@@ -25,6 +26,7 @@ const seenIds = () => events(config.directory).filter(e => e.field === 'seen' &&
 
 try {
   browser = await Browser.launch({ width: 1280, height: 1000 })
+  await browser.writeAs('form-bar-check')
   await browser.goto(`${service.base}/en/review`)
   await browser.waitFor(loadedTiles, 60000)
   const ids = await browser.evaluate(tileIds)
