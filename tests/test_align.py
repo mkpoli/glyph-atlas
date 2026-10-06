@@ -205,7 +205,7 @@ def test_run_directory_writes_only_its_own_units(tmp_path, monkeypatch):
 
     class Stub:
         def boxes(self, image):
-            return [(Box(x=40, y=10, w=18, h=18), 0.9), (Box(x=10, y=10, w=18, h=18), 0.9)]
+            return [(Box(x=40, y=50, w=18, h=18), 0.9), (Box(x=40, y=10, w=18, h=18), 0.9)]
 
         def score_set(self, crop, code_points):
             return 0.5
@@ -219,7 +219,7 @@ def test_run_directory_writes_only_its_own_units(tmp_path, monkeypatch):
     written = tables.read(tmp_path / "units.parquet", Unit)
     assert len(written) == 2
     assert all(unit.document_id == "d1" for unit in written), "the runner fills document_id from the page"
-    assert [unit.box.x for unit in written] == [40, 10], "reading order is right to left on a vertical line"
+    assert [unit.box.y for unit in written] == [10, 50], "a vertical line is read down its column"
     assert all(run.fingerprint() in unit.id for unit in written)
 
     # Three things are decided here. A reviewed unit survives a rerun. This run's own units on the
