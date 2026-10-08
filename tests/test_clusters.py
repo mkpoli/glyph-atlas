@@ -1,5 +1,5 @@
 from glyph_atlas import refs
-from glyph_atlas.clusters import clusters, is_conjoining_jamo_syllable, is_one_character
+from glyph_atlas.clusters import clusters, is_conjoining_jamo_syllable, is_one_character, shape_key
 from glyph_atlas.corpus.api import _resolve
 from glyph_atlas.corpus.identity import family_of
 from glyph_atlas.corpus.occurrence import find_occurrences
@@ -51,3 +51,17 @@ def test_an_occurrence_is_a_whole_written_character():
 def test_a_code_point_query_names_one_character():
     assert _resolve("U+1112 U+119E") == "ᄒᆞ"
     assert _resolve("U+3042 U+3044") is None
+
+
+def test_one_printed_shape_has_one_classifier_key():
+    assert shape_key("ㅣ") == shape_key("ᅵ") == shape_key("ᅟᅵ") == "ᅵ"
+    assert shape_key("ㅅ") == shape_key("ᄉ") == shape_key("ᄉᅠ") == "ᄉ"
+    assert shape_key("ㆍ") == "ᆞ"
+    assert shape_key("ᆨ") == "ᄀ"  # a lone final is printed as the consonant
+
+
+def test_a_syllable_keeps_its_own_key():
+    assert shape_key("가") == "가"
+    assert shape_key("ᄒᆞᆯ") == "ᄒᆞᆯ"
+    assert shape_key("ᅟᅵᆫ") == "ᅵᆫ"  # printed with no initial
+    assert shape_key("ᅟᅠ") == "ᅟᅠ"
