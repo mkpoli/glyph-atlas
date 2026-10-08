@@ -184,3 +184,24 @@ def test_build_combined_extra_merges_spaced_jamo_classes(tmp_path, monkeypatch, 
 
     assert "extra" not in no_extra_summary
     assert json.loads(no_extra_classes.read_text())["classes"] == ["U+AC00", "other"]
+
+
+def test_printed_templates_keep_their_text_and_others_are_dropped():
+    text = "가{{작게|나}}{{분주|다|라}}{{SIC|마|바}}{{이체자|子}}[[분류:책]][[사|사]]"
+    assert build_hangul.strip_wiki_markup(text) == "가나다라마사"
+
+
+def test_only_printing_hangul_is_a_class():
+    assert build_hangul.is_hangul_cluster("ᄒᆞ〮")
+    assert not build_hangul.is_hangul_cluster("中〮")
+    assert not build_hangul.is_hangul_cluster("ㅤ")
+    assert not build_hangul.is_hangul_cluster("ᅟᅠ")
+    assert build_hangul.is_hangul_cluster("ퟄ")
+
+
+def test_a_fetched_answer_that_is_not_the_pinned_revision_is_refused():
+    error = {"error": {"code": "maxlag"}}
+    other = {"query": {"pages": [{"revisions": [{"revid": 1, "slots": {"main": {"content": "x"}}}]}]}}
+    for payload in (error, other):
+        with pytest.raises(ValueError):
+            build_hangul.nogeoldae_content(payload)

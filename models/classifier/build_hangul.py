@@ -45,7 +45,14 @@ from fontTools.ttLib import TTFont
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, features
 
 from glyph_atlas import net, refs, tables
-from glyph_atlas.clusters import HANGUL_TONE_MARKS, clusters, is_hangul_jungseong, shape_key
+from glyph_atlas.clusters import (
+    HANGUL_TONE_MARKS,
+    clusters,
+    is_hangul_choseong,
+    is_hangul_jongseong,
+    is_hangul_jungseong,
+    shape_key,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUT = ROOT / "work" / "classifier-hangul"
@@ -56,16 +63,15 @@ NOGEOLDAE_URL = ("https://ko.wikisource.org/w/api.php?action=query&prop=revision
                  "&rvprop=content|ids&rvslots=main&format=json&formatversion=2")
 WORKERS = min(8, os.cpu_count() or 1)
 
-TEMPLATE = re.compile(r"\{\{[^{}]*\}\}")
+TEMPLATE = re.compile(r"\{\{([^{}]*)\}\}")
 TAG = re.compile(r"<[^>]*>")
 LINK = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
-
-HANGUL_RANGES = (
-    (0x1100, 0x11FF),
-    (0xA960, 0xA97F),
-    (0xAC00, 0xD7A3),
-    (0x3131, 0x318E),
-)
+#: Templates that set printed text smaller, beside or under the line: their arguments are printed.
+PRINTED_TEMPLATES = frozenset({"작게", "더작게", "더 작게", "더더작게", "크게", "더크게", "분주", "아랫주", "du", "u"})
+#: `{{SIC|as printed|corrected}}`: only the first argument is on the page.
+FIRST_ARGUMENT_TEMPLATES = frozenset({"SIC", "sic"})
+#: The Hangul fillers, which stand for a missing letter and print nothing.
+FILLERS = frozenset({"\u115f", "\u1160", "\u3164"})
 
 SPLIT_BY_FAMILY = {
     "Noto Sans CJK KR": "train",
@@ -130,25 +136,47 @@ FONT_SPECS = [
 ]
 
 
+def _template_text(match: re.Match[str]) -> str:
+    name, *arguments = (part.strip() for part in match.group(1).split("|"))
+    positional = [argument for argument in arguments if "=" not in argument]
+    if name in PRINTED_TEMPLATES:
+        return "".join(positional)
+    if name in FIRST_ARGUMENT_TEMPLATES:
+        return positional[0] if positional else ""
+    return ""
+
+
+def _link_text(match: re.Match[str]) -> str:
+    target, shown = match.group(1), match.group(2)
+    if shown is None and ":" in target:
+        return ""  # a category or another namespace, not text on the page
+    return shown if shown is not None else target
+
+
 def strip_wiki_markup(text: str) -> str:
-    """Remove the subset of wiki markup used by the inventory build."""
+    """The printed text of a page: templates that set printed text keep it, other templates, tags and
+    namespace links are dropped, and a link keeps the text it shows."""
     previous = None
     while previous != text:
         previous = text
-        text = TEMPLATE.sub("", text)
+        text = TEMPLATE.sub(_template_text, text)
     text = TAG.sub("", text)
-    return LINK.sub(lambda match: match.group(2) if match.group(2) is not None else match.group(1), text)
+    return LINK.sub(_link_text, text)
 
 
 def is_hangul_cluster(cluster: str) -> bool:
-    """Whether any code point in a written-character cluster is in the requested Hangul ranges."""
-    for char in cluster:
-        cp = ord(char)
-        if cp in HANGUL_TONE_MARKS:
-            return True
-        if any(start <= cp <= end for start, end in HANGUL_RANGES):
-            return True
-    return False
+    """Whether a written character is Hangul that prints: jamo or a syllable, not only fillers.
+
+    Tone marks attach to whatever precedes them, so they do not decide it.
+    """
+    letters = [char for char in cluster if ord(char) not in HANGUL_TONE_MARKS]
+    if not letters or all(char in FILLERS for char in letters):
+        return False
+    return all(
+        is_hangul_choseong(char) or is_hangul_jungseong(char) or is_hangul_jongseong(char)
+        or 0xAC00 <= ord(char) <= 0xD7A3 or 0x3131 <= ord(char) <= 0x318E
+        for char in letters
+    )
 
 
 def class_key(cluster: str) -> str:
@@ -179,13 +207,33 @@ def inventory_with_merge_groups(texts: Iterable[str]) -> InventoryCounts:
     return InventoryCounts(counts, dict(merge_groups))
 
 
+def nogeoldae_content(payload: dict) -> str:
+    """The wikitext of the pinned revision, or ValueError when the answer is not that revision."""
+    try:
+        revision = payload["query"]["pages"][0]["revisions"][0]
+        content = revision["slots"]["main"]["content"]
+    except (KeyError, IndexError, TypeError) as error:
+        raise ValueError(f"not a revision of 노걸대언해: {str(payload)[:200]}") from error
+    if revision.get("revid") != 431023 or not isinstance(content, str) or not content.strip():
+        raise ValueError(f"expected revision 431023 with text, got {revision.get('revid')}")
+    return content
+
+
+def fetch_nogeoldae(path: Path) -> None:
+    """Fetch the pinned revision and keep it only once it is that revision: the API answers an error,
+    such as maxlag, with status 200, and a cached error would fail every later run."""
+    part = path.with_name(path.name + ".fetch")
+    net.download(NOGEOLDAE_URL, part, expected="json", refresh=True)
+    nogeoldae_content(json.loads(part.read_text(encoding="utf-8")))
+    os.replace(part, path)
+
+
 def read_inventory(page_texts: Path = WIKISOURCE_TEXTS, nogeoldae: Path = NOGEOLDAE) -> InventoryCounts:
     """Read both inventory sources and count Hangul class keys."""
     texts = pq.read_table(page_texts, columns=["text_raw"]).column("text_raw").to_pylist()
     if not nogeoldae.exists():
-        net.download(NOGEOLDAE_URL, nogeoldae)
-    payload = json.loads(nogeoldae.read_text(encoding="utf-8"))
-    content = payload["query"]["pages"][0]["revisions"][0]["slots"]["main"]["content"]
+        fetch_nogeoldae(nogeoldae)
+    content = nogeoldae_content(json.loads(nogeoldae.read_text(encoding="utf-8")))
     return inventory_with_merge_groups([*(text or "" for text in texts), content])
 
 
@@ -430,6 +478,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--manifest-only", action="store_true")
     args = parser.parse_args(argv)
+    # Anchored to the working directory but not resolved, so a symlinked output keeps its repo path.
+    args.out = args.out.absolute()
     if args.samples < 1:
         raise SystemExit("--samples must be at least 1")
     if args.min_uses < 1:

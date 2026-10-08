@@ -42,8 +42,9 @@ out. Each syllable is drawn three times in each of 18 faces with a little blur a
 split is by font, as CODH's is by book: Noto Sans and Serif CJK KR and Malgun Gothic train, Gulim
 validates, Batang tests. A face that cannot draw a syllable as one block is not used for it, so
 validation and test hold fewer classes than training. The output is
-`work/classifier-hangul/{train,val,test}.parquet`; `build_combined.py --extra work/classifier-hangul`
-adds it to the combined manifests.
+`work/classifier-hangul/{train,val,test}.parquet`. `build_combined.py --extra work/classifier-hangul`
+adds it to the combined manifests; it also writes the class list, so give it `--out` and `--classes`
+outside the served ones until a retrain is meant to take hangul (`retrain.py` passes no `--extra`).
 
 Measured on 41 hangul crops of 老乞大諺解 read by eye, a model trained four epochs on these renders
 alone reads 30 at top-1 and 34 in the top five. Kept apart, one class per spelling read 25 and 31,
