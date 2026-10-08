@@ -6,19 +6,24 @@
 
 HI Lab crops are split by `models/benchmark/bench.py`, whose `hilab-test` set is the held-out
 tenth; only the rest is trained on. CODH's val and test books are kept as they are; HI Lab adds its
-held-out tenth to test only.
+held-out tenth to test only. `--extra` may name another directory with matching train, val and test
+manifests, such as the rendered Hangul crops; absent split files contribute no rows.
 
-A class is a code point with at least `--min-crops` training crops across both sources; every other
-crop is `other`, as in the baseline.
+A class is a code point with at least `--min-crops` training crops across all included sources; every
+other crop is `other`, as in the baseline. Class keys are plain strings and may be spaced jamo
+sequences.
 
     python models/classifier/build_combined.py --min-crops 5
+    python models/classifier/build_combined.py --extra work/classifier-hangul
 """
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import sys
 from collections import Counter
+from collections.abc import Sequence
 from pathlib import Path
 
 import pyarrow as pa
@@ -27,22 +32,49 @@ import pyarrow.parquet as pq
 ROOT = Path(__file__).resolve().parents[2]
 CODH = ROOT / "work/classifier"
 sys.path.insert(0, str(ROOT / "models/benchmark"))
-from bench import hilab_rows
+hilab_rows = importlib.import_module("bench").hilab_rows
 
 
-def main():
+SPLIT_NAMES = ("train", "val", "test")
+
+
+def read_extra(extra: Path | None, schema: pa.Schema) -> tuple[dict[str, list[dict]], int]:
+    if extra is None:
+        return {name: [] for name in SPLIT_NAMES}, 0
+    if not extra.is_dir():
+        raise SystemExit(f"{extra} is missing: --extra must name a directory")
+    rows: dict[str, list[dict]] = {name: [] for name in SPLIT_NAMES}
+    total = 0
+    expected = schema.remove_metadata()
+    for name in SPLIT_NAMES:
+        path = extra / f"{name}.parquet"
+        if not path.exists():
+            continue
+        table = pq.read_table(path)
+        if not table.schema.remove_metadata().equals(expected):
+            raise SystemExit(f"{path} columns do not match {CODH / f'{name}.parquet'}")
+        rows[name] = table.to_pylist()
+        total += table.num_rows
+    return rows, total
+
+
+def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--min-crops", type=int, default=5)
     parser.add_argument("--out", type=Path, default=ROOT / "work/classifier-combined")
     parser.add_argument("--classes", type=Path, default=ROOT / "models/classifier/classes.json")
-    args = parser.parse_args()
+    parser.add_argument("--extra", type=Path, default=None)
+    args = parser.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
-    codh = {name: pq.read_table(CODH / f"{name}.parquet") for name in ("train", "val", "test")}
+    codh = {name: pq.read_table(CODH / f"{name}.parquet") for name in SPLIT_NAMES}
     schema = codh["train"].schema
-    extra = hilab_rows()
-    splits = {"train": codh["train"].to_pylist() + [r for r in extra if r["split"] == "train"],
-              "val": codh["val"].to_pylist(),
-              "test": codh["test"].to_pylist() + [r for r in extra if r["split"] == "test"]}
+    hilab = hilab_rows()
+    extra, extra_count = read_extra(args.extra, schema)
+    splits = {
+        "train": codh["train"].to_pylist() + [r for r in hilab if r["split"] == "train"] + extra["train"],
+        "val": codh["val"].to_pylist() + extra["val"],
+        "test": codh["test"].to_pylist() + [r for r in hilab if r["split"] == "test"] + extra["test"],
+    }
     counts = Counter(r["code_point"] for r in splits["train"])
     classes = [cp for cp, n in sorted(counts.items(), key=lambda item: (-item[1], item[0])) if n >= args.min_crops]
     known = set(classes)
@@ -51,7 +83,10 @@ def main():
             row["label"] = row["code_point"] if row["code_point"] in known else "other"
         pq.write_table(pa.Table.from_pylist(rows, schema=schema), args.out / f"{name}.parquet")
     args.classes.write_text(json.dumps({"classes": [*classes, "other"]}, indent=1) + "\n")
-    print(json.dumps({"hilab": len(extra), **{n: len(r) for n, r in splits.items()}, "classes": len(classes)}))
+    summary = {"hilab": len(hilab), **{name: len(rows) for name, rows in splits.items()}, "classes": len(classes)}
+    if args.extra is not None:
+        summary["extra"] = extra_count
+    print(json.dumps(summary))
 
 
 if __name__ == "__main__":
