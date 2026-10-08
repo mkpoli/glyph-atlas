@@ -105,8 +105,7 @@
   }
   const categories = $derived((data?.categories ?? []).filter(c => !flagged || c.flagged || c.hard))
   /** A grapheme key (`U+4EEE`, or a label's own code points) as the text it names. */
-  const charOf = key => /^U\+[0-9A-F]{4,6}( U\+[0-9A-F]{4,6})*$/i.test(key)
-    ? key.split(' ').map(point => String.fromCodePoint(parseInt(point.slice(2), 16))).join('') : key
+  const charOf = key => keyText(key) ?? key
   // Whether the graphemes are listed from the most crops or from the fewest; the choice is remembered.
   let order = $state(stored('atlas.browseOrder', 'most') === 'fewest' ? 'fewest' : 'most')
   function orderBy(value) { order = value; remember('atlas.browseOrder', value) }
