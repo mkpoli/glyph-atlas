@@ -47,10 +47,11 @@ adds it to the combined manifests; it also writes the class list, so give it `--
 outside the served ones until a retrain is meant to take hangul (`retrain.py` passes no `--extra`).
 
 Measured on 41 hangul crops of 老乞大諺解 read by eye, a model trained four epochs on these renders
-alone reads 30 at top-1 and 34 in the top five. Kept apart, one class per spelling read 25 and 31,
-and adding ruled lines, clipping, ink wear and JPEG noise to the renders lowered it to 22 and 26.
-Its job is checking a transcription's label, where it does better: restricted to the syllables of
-the right phrase, it picks the printed one in 14 of 16 cases.
+alone reads 26 at top-1 and 31 in the top five; restricted to the syllables of the right phrase, which
+is how the 老乞大諺解 cutter uses it, it picks the printed one in 15 of 16 cases. The set is small: a
+run on a slightly earlier inventory read 30 and 34. One class per spelling read 25 and 31, and adding
+ruled lines, clipping, ink wear and JPEG noise to the renders read 22 and 26, so those effects are
+not used.
 
 ## Classes
 
