@@ -65,3 +65,17 @@ def test_a_syllable_keeps_its_own_key():
     assert shape_key("ᄒᆞᆯ") == "ᄒᆞᆯ"
     assert shape_key("ᅟᅵᆫ") == "ᅵᆫ"  # printed with no initial
     assert shape_key("ᅟᅠ") == "ᅟᅠ"
+    assert shape_key("ᄉᅠᆨ") == "ᄉᅠᆨ"  # a vowel filler inside a syllable stays
+    assert shape_key("ᅟᅠ〮") == "ᅟᅠ〮"
+
+
+def test_a_lone_final_has_one_key_however_it_is_spelt():
+    assert shape_key("ᅟᅠᆨ") == shape_key("ᆨ") == shape_key("ㄱ") == "ᄀ"
+    assert shape_key("ᆯ〮") == "ᄅ〮"
+    assert shape_key("ᅟힰ") == shape_key("ힰ") == "ힰ"
+
+
+def test_text_with_no_jamo_is_left_as_written():
+    assert shape_key("\uf900") == "\uf900"  # a compatibility ideograph is a character of its own
+    assert shape_key("e\u0301") == "e\u0301"
+    assert shape_key("") == ""

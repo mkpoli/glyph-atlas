@@ -73,28 +73,35 @@ def _compatibility_jamo_shape(char: str) -> str:
     return mapped
 
 
+def _is_jamo(char: str) -> bool:
+    return (is_hangul_choseong(char) or is_hangul_jungseong(char) or is_hangul_jongseong(char)
+            or 0x3131 <= ord(char) <= 0x318E)
+
+
 def shape_key(cluster: str) -> str:
     """One key per printed Hangul shape, for the classifier: never a rewrite of a label.
 
     Transcribers spell one printed shape several ways: the particle ᅵ as ㅣ (U+3163), ᅵ (U+1175) or
     a filler and ᅵ (U+115F U+1175). Compatibility jamo become the conjoining jamo of the same shape
-    (an initial for a consonant, a vowel for a vowel), and a lone final becomes its initial when
-    Unicode has one. A filler before a vowel, or a vowel filler after an initial, is dropped; the bare
-    filler pair stays as it is.
+    (an initial for a consonant, a vowel for a vowel), and a lone final, bare or between fillers,
+    becomes its initial when Unicode has one. A filler before a vowel, or a vowel filler ending an
+    initial, is dropped; the bare filler pair stays. Tone marks are kept as they are. Text with no
+    jamo is returned unchanged. The argument is one written character from `clusters()`.
     """
+    if not any(_is_jamo(char) for char in cluster):
+        return cluster
     mapped = "".join(_compatibility_jamo_shape(char) for char in cluster)
-    if (
-        len(mapped) >= 2
-        and mapped[0] == "\u115f"
-        and 0x1160 <= ord(mapped[1]) <= 0x11A7
-        and not (len(mapped) == 2 and mapped[1] == "\u1160")
-    ):
-        mapped = mapped[1:]
-    if len(mapped) >= 2 and mapped[0] != "\u115f" and is_hangul_choseong(mapped[0]) and mapped[1] == "\u1160":
-        mapped = mapped[0] + mapped[2:]
-    if len(mapped) == 1 and is_hangul_jongseong(mapped):
-        mapped = JONGSEONG_TO_CHOSEONG.get(mapped, mapped)
-    return unicodedata.normalize("NFC", mapped)
+    body = mapped.rstrip("".join(map(chr, HANGUL_TONE_MARKS)))
+    tones = mapped[len(body):]
+    if len(body) == 3 and body[:2] == "\u115f\u1160" and is_hangul_jongseong(body[2]):
+        body = body[2]
+    elif len(body) >= 2 and body[0] == "\u115f" and is_hangul_jungseong(body[1]) and body[1] != "\u1160":
+        body = body[1:]
+    elif len(body) == 2 and body[0] != "\u115f" and is_hangul_choseong(body[0]) and body[1] == "\u1160":
+        body = body[0]
+    if len(body) == 1 and is_hangul_jongseong(body):
+        body = JONGSEONG_TO_CHOSEONG.get(body, body)
+    return unicodedata.normalize("NFC", body + tones)
 
 
 def _is_mark(char: str) -> bool:
