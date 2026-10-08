@@ -31,6 +31,26 @@ resizes is `glyph_atlas.classify`, called by the training loader and the export 
 By script, the training crops are 641,768 hiragana, 528,034 kanji, 18,929 katakana, 16,232
 symbols and one Latin character, over 6,245 code points.
 
+### Hangul
+
+The collection has almost no labelled hangul crops, so `build_hangul.py` renders them from fonts.
+The syllables are those of the Korean Wikisource scan transcriptions and of 노걸대언해 (revision
+431023), split into written characters with `glyph_atlas.clusters.clusters`. One printed shape is
+one class: `glyph_atlas.clusters.shape_key` folds the spellings a transcriber may use for it (ㅣ, ᅵ
+and a filler before ᅵ are one class), and a syllable used fewer than `--min-uses` times (3) is left
+out. Each syllable is drawn three times in each of 18 faces with a little blur and ±5% scale; the
+split is by font, as CODH's is by book: Noto Sans and Serif CJK KR and Malgun Gothic train, Gulim
+validates, Batang tests. A face that cannot draw a syllable as one block is not used for it, so
+validation and test hold fewer classes than training. The output is
+`work/classifier-hangul/{train,val,test}.parquet`; `build_combined.py --extra work/classifier-hangul`
+adds it to the combined manifests.
+
+Measured on 41 hangul crops of 老乞大諺解 read by eye, a model trained four epochs on these renders
+alone reads 30 at top-1 and 34 in the top five. Kept apart, one class per spelling read 25 and 31,
+and adding ruled lines, clipping, ink wear and JPEG noise to the renders lowered it to 22 and 26.
+Its job is checking a transcription's label, where it does better: restricted to the syllables of
+the right phrase, it picks the printed one in 14 of 16 cases.
+
 ## Classes
 
 A class is a code point with at least 5 crops in `train`; everything below that line, and every code
