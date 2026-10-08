@@ -287,14 +287,18 @@ def find_occurrences(
 ) -> list[tuple[int, int, OccurrenceClass, str]]:
     """Every occurrence of `char` in `text`, with its class and a context window.
 
-    A match is an occurrence only where a written character ends with it: ᄒᆞ in ᄒᆞᆯ, or 葛 with a
-    variation selector after it, is part of another character.
+    A match is an occurrence only where it starts and ends with written characters: ᄒᆞ in ᄒᆞᆯ, 葛
+    with a variation selector after it, and リ after a leading mark (゚リ) are parts of other characters.
     """
     found: list[tuple[int, int, OccurrenceClass, str]] = []
     if not text:
         return found
+    boundaries, offset = {0}, 0
+    for written in clusters(text):
+        offset += len(written)
+        boundaries.add(offset)
     for m in re.finditer(re.escape(char), text):
-        if m.end() < len(text) and len(clusters(text[m.start():m.end() + 1])) == 1:
+        if m.start() not in boundaries or m.end() not in boundaries:
             continue
         i = m.start()
         found.append((i, m.end(), classify(text, i, char), text[max(0, i - context) : m.end() + context]))
