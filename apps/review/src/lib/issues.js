@@ -19,6 +19,25 @@ export const issueTitle = id => issues.some(i => i.id === id) ? t(`issue.${id}.t
 export const issueHint = id => t(`issue.${id}.hint`)
 export const decision = issue => ({ verdict: 'wrong', issue, correction: null })
 export const isSingle = text => [...new Intl.Segmenter('ja', { granularity: 'grapheme' }).segment(text)].length === 1
+const inRange = (c, ...ranges) => ranges.some(([lo, hi]) => c >= lo && c <= hi)
+/** An old-Hangul syllable Unicode has no precomposed code point for, checked in NFD so that 셰 + ᇰ
+ * (the NFC spelling of U+1109 U+1168 U+11F0) is one. */
+export function isJamoSyllable(text) {
+  if (!text || !isSingle(text) || [...text].length < 2 || text.normalize('NFC') !== text) return false
+  const points = [...text.normalize('NFD')].map(c => c.codePointAt(0))
+  if (points.every(c => c === 0x115F || c === 0x1160)) return false
+  let i = 0
+  while (i < points.length && inRange(points[i], [0x1100, 0x115F], [0xA960, 0xA97F])) i++
+  if (!i) return false
+  const vowels = i
+  while (i < points.length && inRange(points[i], [0x1160, 0x11A7], [0xD7B0, 0xD7C6])) i++
+  if (i === vowels) return false
+  while (i < points.length && inRange(points[i], [0x11A8, 0x11FF], [0xD7CB, 0xD7FF])) i++
+  if (i < points.length && (points[i] === 0x302E || points[i] === 0x302F)) i++
+  return i === points.length
+}
+/** Whether a character has a page of its own: one code point, or an old-Hangul syllable. */
+export const hasCharacterPage = text => [...(text ?? '')].length === 1 || isJamoSyllable(text)
 /** The code point key of a character, `U+1112 U+119E` for one spelt with conjoining jamo. */
 export const pointOf = char => [...char].map(c => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')).join(' ')
 

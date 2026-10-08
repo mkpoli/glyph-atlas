@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { canonical, samePixels, literal, hira, single, validRound, categoryOf, describedCard, jamoCard,
+import { canonical, samePixels, literal, hira, single, validRound, categoryOf, describedCard, jamoCard, jamoSyllable,
   encodeCursor, decodeCursor, historyItem, historyQuery, moved, substitutionKey } from './index';
 import { ROUND_MAX } from './rounds';
 import { componentTerm, rankMatches } from './components';
@@ -211,6 +211,12 @@ describe('a character Unicode lacks, written as an ideographic description seque
     expect(data.kind).toBe('hangul');
     expect(data.grapheme.members).toEqual([{ code_point: 'U+1112 U+119E', char: 'ᄒᆞ' }]);
     expect(detail.category).toBe('Lo');
+  });
+  it('knows an old syllable by its NFC spelling and refuses one NFC would change', () => {
+    expect(jamoSyllable(literal('U+1109-U+1168-U+11F0'))).toBe(true);
+    expect(jamoSyllable('\u1100\u1161')).toBe(false);
+    expect(jamoSyllable('가')).toBe(false);
+    expect(jamoSyllable('ツ゚')).toBe(false);
   });
 });
 
