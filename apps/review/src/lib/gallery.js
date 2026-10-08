@@ -1,6 +1,7 @@
 import { character as layerCharacter, occurrences, candidates as layerCandidates } from './layers.js'
 import { writtenLabel } from './identity.js'
 import { STYLE_GROUPS, styleParam } from './style.js'
+import { keyText } from './codePoints.js'
 
 // A character's gallery: the occurrences this collection holds and the located glyphs the corpus index
 // knows about. The page server renders it and the collection view loads it the same way.
@@ -8,7 +9,8 @@ import { STYLE_GROUPS, styleParam } from './style.js'
 /** A code point or a sequence (`U+304B U+309A`) as it reads in an address: `U+304B-U+309A`. */
 export const slug = codePoint => codePoint.trim().split(/\s+/).join('-')
 /** An address's code points, or null when the address names none. */
-export const unslug = value => /^U\+[0-9A-F]{4,6}(-U\+[0-9A-F]{4,6})*$/.test(value) ? value.split('-').join(' ') : null
+export const unslug = value => /^U\+[0-9A-F]{4,6}(-U\+[0-9A-F]{4,6})*$/.test(value) && keyText(value.split('-').join(' ')) !== null
+  ? value.split('-').join(' ') : null
 
 /** Whether a character opens on its whole family: the card says so, or its crops only exist there. */
 export const widensByDefault = card => card.default_scope === 'grapheme' || Boolean(card.candidates?.requires_family_scope)

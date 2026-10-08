@@ -31,6 +31,7 @@
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery, decades } from '../lib/layers.js'
   import { t, around, withText, localName, locale, localize, delocalize } from '../lib/i18n.svelte.js'
   import { characterAddress, collectionAddress, corpusScope, expandFor, scopeFor, styleCounts, unslug } from '../lib/gallery.js'
+  import { keyText } from '../lib/codePoints.js'
   import { useSession } from '../lib/session.svelte.js'
   import { roundAddress } from '../lib/reviewRounds.js'
   import { hasCharacterPage, pointOf } from '../lib/issues.js'
@@ -488,7 +489,7 @@
   }
   function submitQuery(value = query) {
     const term = value.trim()
-    const written = /^U\+[0-9a-f]{4,6}(\s+U\+[0-9a-f]{4,6})*$/i.test(term) ? term.split(/\s+/).map(v => String.fromCodePoint(parseInt(v.slice(2), 16))).join('') : term
+    const written = keyText(term) ?? term
     if (hasCharacterPage(written)) return pick({ code_point: pointOf(written), char: written })
     load()
   }
