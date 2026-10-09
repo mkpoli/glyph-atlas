@@ -131,6 +131,7 @@
   "explore.empty.noCharacters": "此處ニ字無之",
   "explore.empty.noOccurrenceOf": "此處ニ{char}ノ例無之",
   "explore.empty.noOccurrenceOfTerm": "{term}ノ例無之",
+  "explore.byCharacter": "一字毎",
   "explore.empty.nothingFlagged": "正スベキモノ無之",
   "explore.empty.samplesFailed": "{char}ノ見本ヲ開クコト能ハズ",
   "explore.filter.all": "總テ",
