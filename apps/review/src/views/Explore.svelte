@@ -78,6 +78,9 @@
   let localStyles = $state(opened?.localStyles ?? null), corpusStyles = $state(opened?.corpusStyles ?? null)
   // Whether the corpus has answered this gallery's first page; a page the server rendered has it.
   let corpusAnswered = $state(Boolean(opened))
+  // A run the collection holds no crop of, read one character at a time: its characters are tabs, and
+  // the gallery on show is the chosen one's.
+  let split = $state(null), splitting = false
   $effect(() => { shown = picked?.code_point ? { char: picked.char, code_point: picked.code_point } : null })
   /**
    * The address says what is on show, so it can be shared and reloaded: a character's page with its
@@ -376,7 +379,7 @@
       const result = await catalogue({ grapheme, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
         reported: flagged ? (showReported ? 'show' : 'hide') : null, seed, offset, limit: 60 }, { signal: catalogueRequest.signal, priority: 'low' })
       if (closed || id !== requestId) return
-      if (!append && openEmptyGrapheme(result)) return
+      if (!append && (openEmptyGrapheme(result) || openSplit(result))) return
       // A further page keeps the counts by character and work it came with: they answer the same filters,
       // and replacing them redraws the work menu and regathers thousands of graphemes for every page.
       data = append && data ? { ...result, categories: data.categories, documents: data.documents } : result
@@ -464,7 +467,7 @@
 
   let searchTimer
   function seek(value) {
-    query = value; visual = ''; analysis = null; familyTotal = null; unassignedCount = null
+    query = value; visual = ''; analysis = null; familyTotal = null; unassignedCount = null; split = null
     // Typing is leaving the character that was chosen: its gallery, its widening and any answer still
     // on its way belong to the query that is being replaced.
     pickId += 1; requestId += 1
@@ -495,7 +498,7 @@
   function clearQuery() {
     choosing = false
     clearTimeout(searchTimer); pickId += 1
-    visual = ''; analysis = null; familyTotal = null; unassignedCount = null
+    visual = ''; analysis = null; familyTotal = null; unassignedCount = null; split = null
     query = ''; picked = null; expand = 'none'; local = []; corpus = []; corpusTotal = 0; corpusOffset = 0; offset = 0; load()
   }
   /** The next page of corpus leads, kept on its own offset: it is paged by another service. */
@@ -523,6 +526,9 @@
   // `scope` is an address's: `exact`, `family` or `variants`; without one the card's default applies.
   async function pick(item, scope = null) {
     let expansionWillLoad = false
+    // Any choice but one of the run's tabs leaves the run.
+    if (!splitting) split = null
+    splitting = false
     choosing = false
     clearTimeout(searchTimer)
     requestId += 1
@@ -698,7 +704,7 @@
     } catch (e) { bulkError = e.message }
     finally { bulkBusy = false }
   }
-  function select(value) { grapheme = value; offset = 0; load() }
+  function select(value) { split = null; grapheme = value; offset = 0; load() }
   // A tile that counts corpus glyphs, which the collection's own listing leaves out, opens its
   // grapheme's gallery, which lists both; any other narrows the listing, keeping its filters.
   function openGrapheme(key) {
@@ -711,6 +717,20 @@
     if (!grapheme || work || flagged || query || filter !== 'all' || result.total > 0) return false
     pick({ code_point: grapheme, char: charOf(grapheme) }, 'family')
     return true
+  }
+  // A run with no crop opens its first character, and the others stay a tab away.
+  function openSplit(result) {
+    const term = run && runText(query)
+    if (!term || grapheme || work || filter !== 'all' || result.total > 0) return false
+    const parts = [...new Set([...new Intl.Segmenter('ja', { granularity: 'grapheme' }).segment(term)].map(part => part.segment))]
+    split = { term, parts, active: '' }
+    openPart(parts[0])
+    return true
+  }
+  function openPart(part) {
+    if (split.active === part) return
+    split.active = part; splitting = true
+    pick({ code_point: codesOf(part), char: part })
   }
   // The graphemes the browser lists, by key: a query's candidate shows in its grapheme's card when the
   // collection holds that very character, as the browser's card lists it.
@@ -745,11 +765,11 @@
       clearTimeout(searchTimer); pickId += 1; choosing = false
       visual = ''; analysis = null; familyTotal = null; unassignedCount = null
       picked = null; expand = 'none'; local = []; corpus = []; corpusTotal = 0; corpusOffset = 0; offset = 0
-      query = q; grapheme = g; work = w; filter = group; load()
+      split = null; query = q; grapheme = g; work = w; filter = group; load()
     }
   }
   onMount(() => { layout = storedLayout() })
-  onMount(() => { const redirected = first ? openEmptyGrapheme(first.result) : false; if (!collection) readCollection(); if (!first && !opened) load(); if (addressed && !redirected) followAddress(); const timer = setInterval(readCollection, 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
+  onMount(() => { const redirected = first ? openEmptyGrapheme(first.result) || openSplit(first.result) : false; if (!collection) readCollection(); if (!first && !opened) load(); if (addressed && !redirected) followAddress(); const timer = setInterval(readCollection, 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
   // Widening is the reader's choice and only it reloads the gallery; picking a character resets the
   // widening itself and loads once through `pick`.
   // The first run is the widening the page opened with, already loaded.
@@ -809,6 +829,8 @@
   </div>
   {#if imaging}<ImageSearch given={imaging} onclose={() => imaging = null} {inspect} />{/if}
   {#if error}<div class="error-message" role="alert">{error}<button onclick={() => load()}>{t('common.retry')}</button></div>{/if}
+  {#if split}<div class="split-term"><span>{around('explore.empty.noOccurrenceOfTerm', 'term')[0]}<ScriptText text={split.term} />{around('explore.empty.noOccurrenceOfTerm', 'term')[1]}</span>
+    <div class="split-tabs" role="group" aria-label={t('explore.byCharacter')}>{#each split.parts as part}<button type="button" aria-pressed={split.active === part} onclick={() => openPart(part)}><ScriptText text={part} /></button>{/each}</div></div>{/if}
   {#if picked}
     <CharacterChips card={picked} bind:expand onselect={item => pick({ code_point: item }, 'exact')} />
     {#if charRuns?.char === picked.char && charRuns.items.length}<RunStrip runs={charRuns.items} heading={t('explore.runs.with', { char: picked.char })} />{/if}
@@ -843,6 +865,10 @@
 </section>
 
 <style>
+  .split-term{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:4px 0 10px;font-size:13px;color:var(--muted)}
+  .split-tabs{display:flex;gap:2px;border-bottom:1px solid var(--line)}
+  .split-tabs button{border:0;border-bottom:2px solid transparent;margin-bottom:-1px;background:transparent;padding:4px 14px 6px;font-size:22px;line-height:1.2;color:var(--muted)}
+  .split-tabs button[aria-pressed="true"]{border-bottom-color:var(--ink);color:var(--ink)}
   .browse-unit{display:flex;gap:2px;padding:8px 8px 6px}
   .browse-unit button{border:0;border-radius:5px;background:transparent;padding:5px 10px;font-size:12px;color:var(--muted)}
   .browse-unit button[aria-pressed="true"]{background:var(--surface-selected);color:var(--ink)}

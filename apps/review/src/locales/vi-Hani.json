@@ -133,6 +133,7 @@
   "explore.empty.noCharacters": "空𣎏𡨸𱜢於低。",
   "explore.empty.noOccurrenceOf": "空𣎏吝出現𱜢𧵑{char}於低。",
   "explore.empty.noOccurrenceOfTerm": "空𣎏吝出現𱜢𧵑{term}。",
+  "explore.byCharacter": "曾𡨸",
   "explore.empty.nothingFlagged": "空𣎏𡨸𱜢勤𢯢。",
   "explore.empty.samplesFailed": "空載特母𧵑{char}。",
   "explore.filter.all": "悉哿",
