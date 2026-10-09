@@ -60,9 +60,12 @@
   /** A family as the grid shows it: clusters with glyphs still to name first, in their own order; then
    *  finished ones by form, the most used form first, and the reported ones last. */
   function arranged(loaded) {
-    const rank = new Map([...(loaded.usage ?? []).map(u => u.char), ...ISSUE_GROUPS].map((key, i) => [key, i]))
-    const at = c => rank.get(groupOf(c)) ?? rank.size
-    loaded.items = [...loaded.items.filter(isOpen), ...loaded.items.filter(c => !isOpen(c)).sort((a, b) => at(a) - at(b))]
+    // A form no glyph has any more (each was named otherwise one by one) follows the used ones, so a
+    // group's clusters stay together and the keys move through the grid as it is drawn.
+    const finished = loaded.items.filter(c => !isOpen(c))
+    const keys = new Set([...(loaded.usage ?? []).map(u => u.char), ...finished.map(groupOf).filter(key => !ISSUE_GROUPS.includes(key)), ...ISSUE_GROUPS])
+    const rank = new Map([...keys].map((key, i) => [key, i]))
+    loaded.items = [...loaded.items.filter(isOpen), ...finished.sort((a, b) => rank.get(groupOf(a)) - rank.get(groupOf(b)))]
     return loaded
   }
   // The grid's sections: the open clusters, then a group a form. Each cluster keeps its index in `items`.
