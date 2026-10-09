@@ -16,7 +16,7 @@
   import { showsContext, clearContext } from '../lib/glyphContext.svelte.js'
   import { families as loadFamilies, family as loadFamily, members as loadMembers, paletteOf, split as loadSplit } from '../lib/forms.js'
   import { history, step, undo, redo } from '../lib/formHistory.svelte.js'
-  import { number, stored, remember } from '../lib/client.js'
+  import { number } from '../lib/client.js'
   import { t, around, localize } from '../lib/i18n.svelte.js'
   import { characterAddress } from '../lib/gallery.js'
   import { originTitle } from '../lib/origin.js'
@@ -32,8 +32,6 @@
   let picked = $state(new Set()), pickAnchor = null, arrange = $state('shape')
   // A cluster divided by shape on request; groups are a way to select glyphs, not a stored result.
   let splitK = $state(0), groups = $state([])
-  // Clusters with glyphs still to name come first; finished ones keep their order below them.
-  let openFirst = $state(stored('atlas.forms.unassignedFirst', true) !== false)
   // What is on its way: a family being switched to, an opened cluster's glyphs, a split.
   let loadingFamily = $state(''), loadingMembers = $state(false), loadingSplit = $state(false)
   // Cluster by cluster review of every glyph, entered from the cluster grid.
@@ -55,11 +53,31 @@
     : cluster ? t('forms.target.clusterGlyphs', { label: cluster.label, count: cluster.count }) : '')
 
   async function refreshList() { list = (await loadFamilies()).items }
-  /** A family as the grid shows it: with open clusters first when the reader asks for that. */
+  // A finished cluster is shown with the others of its form, or of its report. One whose glyphs were
+  // named one by one goes with the form most of them have.
+  const groupOf = c => c.form ?? c.issue ?? c.majority ?? 'reported'
+  const ISSUE_GROUPS = ['mixed', 'character', 'crop', 'reported']
+  /** A family as the grid shows it: clusters with glyphs still to name first, in their own order; then
+   *  finished ones by form, the most used form first, and the reported ones last. */
   function arranged(loaded) {
-    if (openFirst) loaded.items = [...loaded.items.filter(isOpen), ...loaded.items.filter(c => !isOpen(c))]
+    // A form no glyph has any more (each was named otherwise one by one) follows the used ones, so a
+    // group's clusters stay together and the keys move through the grid as it is drawn.
+    const finished = loaded.items.filter(c => !isOpen(c))
+    const keys = new Set([...(loaded.usage ?? []).map(u => u.char), ...finished.map(groupOf).filter(key => !ISSUE_GROUPS.includes(key)), ...ISSUE_GROUPS])
+    const rank = new Map([...keys].map((key, i) => [key, i]))
+    loaded.items = [...loaded.items.filter(isOpen), ...finished.sort((a, b) => rank.get(groupOf(a)) - rank.get(groupOf(b)))]
     return loaded
   }
+  // The grid's sections: the open clusters, then a group a form. Each cluster keeps its index in `items`.
+  const sections = $derived.by(() => {
+    const open = [], groups = new Map()
+    ;(current?.items ?? []).forEach((c, i) => {
+      if (isOpen(c)) { open.push({ c, i }); return }
+      const key = groupOf(c), group = groups.get(key) ?? { key, items: [], glyphs: 0 }
+      group.items.push({ c, i }); group.glyphs += c.count; groups.set(key, group)
+    })
+    return { open, groups: [...groups.values()] }
+  })
   // How many of the family's glyphs each form names, against the whole family.
   const usage = $derived((current?.usage ?? []).map(u => ({ ...u, share: current.count ? u.count / current.count : 0 })))
   const percent = share => share >= 0.01 || !share ? number(Math.round(100 * share)) : '<' + number(1)
@@ -152,8 +170,8 @@
       await pick(code, true)
       await refreshList()
       if (wasOpen) { const page = await loadMembers(wasOpen, 0, Math.min(500, Math.max(240, glyphs.length)), order); glyphs = page.items; chosen = new Set(); if (splitK) groups = (await loadSplit(wasOpen, splitK)).groups }
-      // With open clusters first, the one just named moved below, and the next took its place.
-      else if (!units.length) active = nextOpen(openFirst ? Math.max(-1, index - targets.length) : index)
+      // The one just named moved down to its form, and the next open cluster took its place.
+      else if (!units.length) active = nextOpen(Math.max(-1, index - targets.length))
     } catch (e) { error = e.message } finally { busy = false }
   }
   // A cluster marked mixed holds more than one form; one reported as a whole reports every glyph that
@@ -176,7 +194,7 @@
       await refreshList()
       // An opened cluster stays on show with its marks; from the grid, the next open cluster takes its place.
       if (wasOpen) { const page = await loadMembers(wasOpen, 0, Math.min(500, Math.max(240, glyphs.length)), order); glyphs = page.items; chosen = new Set(); if (splitK) groups = (await loadSplit(wasOpen, splitK)).groups }
-      else active = nextOpen(openFirst ? Math.max(-1, index - targets.length) : index)
+      else active = nextOpen(Math.max(-1, index - targets.length))
     } catch (e) { error = e.message } finally { busy = false }
   }
   const issueName = issue => issue === 'crop' ? t('forms.reportIssue.crop') : t('forms.reportIssue.character')
@@ -289,13 +307,11 @@
     next.has(id) ? next.delete(id) : next.add(id)
     picked = next; pickAnchor = id
   }
-  async function toggleOpenFirst() { openFirst = !openFirst; remember('atlas.forms.unassignedFirst', openFirst); await pick(code, true) }
   async function rearrange(value) { arrange = value; const id = cluster?.id; await pick(code, true); active = Math.max(0, current.items.findIndex(c => c.id === id)) }
   onDestroy(clearContext)
   function scrollActive() { requestAnimationFrame(() => document.querySelector('.form-cluster.active')?.scrollIntoView({ block: 'nearest' })) }
   onMount(async () => {
-    // The server arranged the family with open clusters first; a reader who turned that off gets theirs.
-    if (first?.family) { if (!openFirst) await pick(code, true); return }
+    if (first?.family) return
     try {
       await refreshList()
       await pick(initialFamily || list[0]?.code_point)
@@ -307,6 +323,32 @@
 
 <!-- Where a form of the family comes from: its 字母, else its 字源. -->
 {#snippet source(char)}{#if byForm.get(char)?.jibo}<ScriptText text={byForm.get(char).jibo} />{:else}<OriginText origin={byForm.get(char)?.origin} />{/if}{/snippet}
+
+<!-- A cluster on the grid. A finished one sits in its form's panel, so it shows less: one row of its
+     most typical glyphs, and no form of its own. -->
+{#snippet clusterCard(c, i, compact = false)}
+  <li class="form-cluster" class:active={i === active} class:picked={picked.has(c.id)} class:assigned={c.form || c.issue}>
+    <button class="cluster-select" onclick={event => choose(i, event)} ondblclick={() => show(i)} aria-pressed={i === active || picked.has(c.id)}>
+      <span class="cluster-head">
+        <strong lang="ja">{c.label}</strong><span>{number(c.count)}</span>
+        {#if compact}
+        {:else if c.assigned}<span class="cluster-open">{around('forms.haveForm', 'glyph', { count: c.assigned })[0]}<span class="inline-glyph"><FormText text={c.majority} /></span>{around('forms.haveForm', 'glyph', { count: c.assigned })[1]}</span>
+        {:else}<span class="cluster-open">{t('corpus.unassigned')}</span>{/if}
+      </span>
+      <span class="cluster-samples">{#each compact ? c.representatives.slice(0, 6) : c.representatives as r (r.id)}{#if r.image}<Glyph item={r} alt="" class="glyph-image cluster-crop" {@attach fromAction(showsContext, () => ({ id: r.id, pin: false }))} />{/if}{/each}</span>
+    </button>
+    {#if !compact && c.unusual.length}
+      <div class="cluster-outliers">
+        <small>{t('forms.leastTypical')}</small>
+        <span class="cluster-samples">{#each c.unusual as g (g.id)}{#if g.image}<Glyph item={g} alt="" class="glyph-image cluster-crop" {@attach fromAction(showsContext, () => ({ id: g.id, pin: false }))} />{/if}{/each}</span>
+      </div>
+    {/if}
+    <span class="cluster-foot">
+      {#if c.exceptions}<small>{t('forms.setIndividually', { count: c.exceptions })}</small>{/if}
+      <button class="quiet-link" onclick={() => show(i)}>{t('forms.open', { count: c.count })}</button>
+    </span>
+  </li>
+{/snippet}
 
 <section class="forms">
   <div class="page-status">
@@ -478,35 +520,25 @@
             <div class="filter-tabs" role="group" aria-label={t('forms.clusterOrder.label')}>
               <button class:active={arrange === 'shape'} aria-pressed={arrange === 'shape'} onclick={() => rearrange('shape')}>{t('forms.arrange.shape')}</button>
               <button class:active={arrange === 'size'} aria-pressed={arrange === 'size'} onclick={() => rearrange('size')}>{t('forms.arrange.size')}</button>
-              <button class:active={openFirst} aria-pressed={openFirst} onclick={toggleOpenFirst}>{t('forms.unassignedFirst')}</button>
             </div>
           </div>
-          <ol class="cluster-grid">
-            {#each current.items as c, i (c.id)}
-              <li class="form-cluster" class:active={i === active} class:picked={picked.has(c.id)} class:assigned={c.form || c.issue}>
-                <button class="cluster-select" onclick={event => choose(i, event)} ondblclick={() => show(i)} aria-pressed={i === active || picked.has(c.id)}>
-                  <span class="cluster-head">
-                    <strong lang="ja">{c.label}</strong><span>{number(c.count)}</span>
-                    {#if c.form}<span class="cluster-form"><span class="inline-glyph"><FormText text={c.form} /></span> {@render source(c.form)}</span>
-                    {:else if c.issue}<span class="cluster-issue" class:reported={c.issue !== 'mixed'}>{clusterIssue(c.issue)}</span>
-                    {:else if c.assigned}<span class="cluster-open">{around('forms.haveForm', 'glyph', { count: c.assigned })[0]}<span class="inline-glyph"><FormText text={c.majority} /></span>{around('forms.haveForm', 'glyph', { count: c.assigned })[1]}</span>
-                    {:else}<span class="cluster-open">{t('corpus.unassigned')}</span>{/if}
-                  </span>
-                  <span class="cluster-samples">{#each c.representatives as r (r.id)}{#if r.image}<Glyph item={r} alt="" class="glyph-image cluster-crop" {@attach fromAction(showsContext, () => ({ id: r.id, pin: false }))} />{/if}{/each}</span>
-                </button>
-                {#if c.unusual.length}
-                  <div class="cluster-outliers">
-                    <small>{t('forms.leastTypical')}</small>
-                    <span class="cluster-samples">{#each c.unusual as g (g.id)}{#if g.image}<Glyph item={g} alt="" class="glyph-image cluster-crop" {@attach fromAction(showsContext, () => ({ id: g.id, pin: false }))} />{/if}{/each}</span>
-                  </div>
-                {/if}
-                <span class="cluster-foot">
-                  {#if c.exceptions}<small>{t('forms.setIndividually', { count: c.exceptions })}</small>{/if}
-                  <button class="quiet-link" onclick={() => show(i)}>{t('forms.open', { count: c.count })}</button>
-                </span>
-              </li>
-            {/each}
-          </ol>
+          {#if sections.open.length}
+            <ol class="cluster-grid">
+              {#each sections.open as { c, i } (c.id)}{@render clusterCard(c, i)}{/each}
+            </ol>
+          {/if}
+          {#each sections.groups as group (group.key)}
+            <section class="form-group">
+              <header>
+                {#if ISSUE_GROUPS.includes(group.key)}<span class="cluster-issue" class:reported={group.key !== 'mixed'}>{group.key === 'reported' ? t('forms.group.reported') : clusterIssue(group.key)}</span>
+                {:else}<span class="group-form"><FormText text={group.key} /></span><span class="group-source">{@render source(group.key)}</span>{/if}
+                <span class="group-meta">{t('forms.clusters.count', { count: group.items.length })} · {t('forms.glyphs.count', { count: group.glyphs })}</span>
+              </header>
+              <ol class="cluster-grid compact">
+                {#each group.items as { c, i } (c.id)}{@render clusterCard(c, i, true)}{/each}
+              </ol>
+            </section>
+          {/each}
         {/if}
         {/if}
       </div>
@@ -556,6 +588,17 @@
   .usage-form{font-size:20px;line-height:1.2;text-align:center;font-family:"Kureedo Kata","Noto Sans CJK JP","GenZui Sans",sans-serif}
   .usage-bar{height:8px;background:light-dark(#ececef, #2e2e35);border-radius:2px;overflow:hidden}.usage-bar i{display:block;height:100%;background:var(--accent);border-radius:0 4px 4px 0}
   .usage-count{color:var(--ink)}.usage-share{color:var(--muted);text-align:right}
+  .form-group{margin-top:22px}
+  .form-group header{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .group-form{font-size:26px;line-height:1.2;color:var(--accent);font-family:"Kureedo Kata","Noto Sans CJK JP","GenZui Sans",sans-serif}
+  .group-source{font-size:13px;color:var(--muted)}.group-meta{font-size:11px;color:var(--muted);margin-left:auto}
+  .form-group .cluster-issue{margin-left:0}
+  .cluster-grid.compact{grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:0;border:1px solid var(--line);border-radius:9px;background:var(--surface);overflow:hidden}
+  .compact .form-cluster,.compact .form-cluster.assigned{border:0;border-radius:0;background:transparent;box-shadow:inset -1px 0 var(--line)}
+  .compact .form-cluster.active{box-shadow:inset 0 0 0 2px var(--accent)}
+  .compact .form-cluster.picked{background:light-dark(#f3f1ff, rgb(156 146 255 / 10%))}
+  .compact .cluster-select{padding:8px 8px 4px}.compact .cluster-head{margin-bottom:5px;font-size:11px}
+  .compact .cluster-samples{gap:2px}.compact .cluster-foot{padding:0 8px 6px}
   .cluster-grid{list-style:none;margin:0;padding:0;display:grid;align-items:start;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px}
   .form-cluster{border:1.5px solid var(--line);border-radius:9px;background:var(--surface);overflow:hidden}
   .form-cluster.active{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-wash)}
