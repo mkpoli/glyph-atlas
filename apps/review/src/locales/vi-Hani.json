@@ -280,6 +280,7 @@
   "forms.target.clusters": "{clusters}佔（{glyphs}字形）",
   "forms.target.selectedGlyphs.other": "{count}字形㐌𫾗",
   "forms.unassignedFirst": "𣗓檊𠓀",
+  "forms.usage.label": "字樣㐌用",
   "forms.wrongCharacter": "差𡨸…",
   "forms.undo": "還作",
   "forms.redo": "𫜵吏",

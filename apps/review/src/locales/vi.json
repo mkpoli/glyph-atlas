@@ -279,6 +279,7 @@
   "forms.target.clusters": "{clusters} nhóm ({glyphs} tự hình)",
   "forms.target.selectedGlyphs.other": "{count} tự hình đã chọn",
   "forms.unassignedFirst": "Chưa gán trước",
+  "forms.usage.label": "Tự dạng đã dùng",
   "forms.wrongCharacter": "Sai chữ…",
   "forms.undo": "Hoàn tác",
   "forms.redo": "Làm lại",

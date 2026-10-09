@@ -199,6 +199,8 @@ describe('a form written as a description', () => {
     // The palette offers it after the encoded forms, with the description a crop of the family is named
     // with in the crop dialog; one named elsewhere, on a replaced cut, or an encoded form is not offered.
     expect((await family()).described).toEqual([{ char: '⿱日𤴓', count: 2 }, { char: '⿱臼𤴓', count: 1 }]);
+    // The family counts its glyphs by form; a description is counted with the encoded forms.
+    expect((await family()).usage).toEqual([{ char: '⿱日𤴓', count: 2 }]);
     db.close();
   });
 

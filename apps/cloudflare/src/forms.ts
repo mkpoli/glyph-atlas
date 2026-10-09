@@ -66,6 +66,9 @@ export const describedClaimsQuery = () => `SELECT r.value AS form,count(*) AS n 
   CROSS JOIN form_units u ON u.id=c.subject CROSS JOIN units k ON k.id=c.subject
   WHERE u.family=? AND u.clustered=1 AND c.status<>'rejected' AND c.crop_version IS k.crop_version GROUP BY r.value`;
 
+const mostUsed = (counts: Map<string, number>) =>
+  [...counts].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([char, count]) => ({ char, count }));
+
 async function family(env: Env, codePoint: string, q: URLSearchParams, tools: FormTools) {
   const found = await env.DB.prepare('SELECT * FROM form_families WHERE code_point=?').bind(codePoint).first<Json>();
   if (!found) tools.fail(404, 'This family was not clustered.');
@@ -91,10 +94,14 @@ async function family(env: Env, codePoint: string, q: URLSearchParams, tools: Fo
   const described = new Map<string, number>();
   for (const t of tallies.results as Json[]) if (t.form && isDescription(t.form)) described.set(t.form, (described.get(t.form) ?? 0) + t.n);
   for (const c of claimed.results as Json[]) if (isDescription(c.form)) described.set(c.form, (described.get(c.form) ?? 0) + c.n);
+  // How many of the family's glyphs each form names, most used first.
+  const usage = new Map<string, number>();
+  for (const t of tallies.results as Json[]) if (t.form) usage.set(t.form, (usage.get(t.form) ?? 0) + t.n);
   return { revision: found!.revision, code_point: found!.code_point, char: found!.char, label: found!.label,
     count: found!.count, clusters: found!.cluster_count, assigned: found!.assigned, rejected: found!.rejected, order,
     forms: JSON.parse(found!.forms),
-    described: [...described].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([char, count]) => ({ char, count })),
+    described: mostUsed(described),
+    usage: mostUsed(usage),
     items: (clusters.results as Json[]).map(c => {
       const t = byCluster.get(c.id);
       const [majority, majorityCount] = (t ? [...t.forms].sort((a, b) => b[1] - a[1])[0] : null) ?? [null, 0];

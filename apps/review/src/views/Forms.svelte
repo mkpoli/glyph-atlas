@@ -60,6 +60,9 @@
     if (openFirst) loaded.items = [...loaded.items.filter(isOpen), ...loaded.items.filter(c => !isOpen(c))]
     return loaded
   }
+  // How many of the family's glyphs each form names, against the whole family.
+  const usage = $derived((current?.usage ?? []).map(u => ({ ...u, share: current.count ? u.count / current.count : 0 })))
+  const percent = share => share >= 0.01 || !share ? number(Math.round(100 * share)) : '<' + number(1)
   if (first?.family) { const shown = arranged(first.family); current = shown; active = Math.max(0, shown.items.findIndex(isOpen)) }
   async function pick(codePoint, keep = false) {
     error = ''
@@ -346,6 +349,19 @@
           </span>
         </div>
 
+        {#if usage.length}
+          <ol class="form-usage" aria-label={t('forms.usage.label')}>
+            {#each usage as u (u.char)}
+              <li title={`${u.char} · ${t('forms.glyphs.count', { count: u.count })} · ${percent(u.share)}%`}>
+                <span class="usage-form"><FormText text={u.char} /></span>
+                <span class="usage-bar"><i style={`width:${100 * u.count / usage[0].count}%`}></i></span>
+                <span class="usage-count">{number(u.count)}</span>
+                <span class="usage-share">{percent(u.share)}%</span>
+              </li>
+            {/each}
+          </ol>
+        {/if}
+
         {#if reviewing}
           {#key reviewRound}<FormReview family={current} start={active} {isOpen} onsaved={reviewed} onexit={leaveReview} />{/key}
         {:else}
@@ -535,6 +551,11 @@
   .forms-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:10px 0 12px}.forms-keys{margin:0}
   .review-start{margin-left:auto;font-size:12px;padding:8px 13px;background:var(--action-surface);color:var(--on-color);border-color:var(--action-surface)}.review-start kbd{font-size:9px;opacity:.7}
   .form-cluster.picked{border-color:var(--accent);background:light-dark(#f3f1ff, rgb(156 146 255 / 10%))}
+  .form-usage{list-style:none;margin:0;padding:12px 0;border-bottom:1px solid var(--line);display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:4px 28px}
+  .form-usage li{display:grid;grid-template-columns:30px minmax(0,1fr) auto 3.2em;align-items:center;gap:10px;font-size:12px;font-variant-numeric:tabular-nums}
+  .usage-form{font-size:20px;line-height:1.2;text-align:center;font-family:"Kureedo Kata","Noto Sans CJK JP","GenZui Sans",sans-serif}
+  .usage-bar{height:8px;background:light-dark(#ececef, #2e2e35);border-radius:2px;overflow:hidden}.usage-bar i{display:block;height:100%;background:var(--accent);border-radius:0 4px 4px 0}
+  .usage-count{color:var(--ink)}.usage-share{color:var(--muted);text-align:right}
   .cluster-grid{list-style:none;margin:0;padding:0;display:grid;align-items:start;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px}
   .form-cluster{border:1.5px solid var(--line);border-radius:9px;background:var(--surface);overflow:hidden}
   .form-cluster.active{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-wash)}

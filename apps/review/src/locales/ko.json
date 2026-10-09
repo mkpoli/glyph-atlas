@@ -287,6 +287,7 @@
   "forms.target.selectedGlyphs.one": "선택한 글리프 {count}개",
   "forms.target.selectedGlyphs.other": "선택한 글리프 {count}개",
   "forms.unassignedFirst": "미지정 먼저",
+  "forms.usage.label": "쓰인 자형",
   "forms.wrongCharacter": "잘못된 글자…",
   "forms.undo": "실행 취소",
   "forms.redo": "다시 실행",
