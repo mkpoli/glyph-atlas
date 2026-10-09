@@ -94,6 +94,20 @@ def test_text_parsers_keep_old_hangul_clusters_and_printed_templates() -> None:
     assert "".join(eonhae.zh_stream(zh)) == "大哥著漢兒言語"
 
 
+def test_ko_circle_starts_a_new_phrase_instead_of_becoming_a_character() -> None:
+    ko = source(
+        """
+== 老乞大諺解上 ==
+# 團攛湯이오 ○ 製法未詳
+"""
+    )
+
+    phrases = eonhae.ko_phrases(ko, "sang")
+
+    assert [phrase.text for phrase in phrases] == ["團攛湯이오", "製法未詳"]
+    assert all("○" not in phrase.chars for phrase in phrases)
+
+
 def top(label: str) -> list[str]:
     return [label]
 
@@ -298,6 +312,26 @@ def test_a_search_of_the_whole_volume_does_not_go_back_past_the_last_phrase() ->
     assert not ahead.accepted
 
 
+def test_cursor_min_index_is_the_next_unconsumed_phrase() -> None:
+    index = shape_index(JAMO_CLASSES)
+    phrases = [phrase(3, "ᄀᄂ"), phrase(50, "ᄃᄃ")]
+    rows = [reads("ᄀ", "ᄅ", "ᄆ", "ᄇ", "ᄉ"), reads("ᄂ", "ᄅ", "ᄆ", "ᄇ", "ᄉ")]
+    state = eonhae.EonhaeCursorState().accept(3)
+
+    assigned = eonhae.assign_eonhae_run(
+        rows,
+        phrases,
+        state.center,
+        index,
+        global_search=True,
+        min_index=state.anchor,
+        min_evidence=2,
+    )
+
+    assert not assigned.accepted
+    assert assigned.phrase is None or assigned.phrase.index >= state.anchor
+
+
 def test_eonhae_classifier_assignment_refuses_when_argmax_agreement_is_low() -> None:
     index = shape_index(JAMO_CLASSES)
     phrases = [phrase(0, "ᄀᄂᄃ")]
@@ -379,6 +413,32 @@ def test_eonhae_restricted_distribution_ignores_classes_outside_candidate_union(
     assert distribution == pytest.approx({"ᄂ": 0.75, "ᄀ": 0.25})
 
 
+def test_open_top_five_counts_other_before_mapping_to_shape_keys() -> None:
+    index = shape_index(["U+1100", "U+1102", "U+1103", "U+1105", "other", "U+1106"])
+
+    assert eonhae.open_top_keys([0.9, 0.8, 0.7, 0.6, 0.5, 0.4], index) == {
+        eonhae.clusters.shape_key(char) for char in "ᄀᄂᄃᄅ"
+    }
+    assert eonhae.top_class_labels(
+        [0.9, 0.8, 0.7, 0.6, 0.5, 0.4],
+        ["U+1100", "U+1102", "U+1103", "U+1105", "other", "U+1106"],
+    ) == ("U+1100", "U+1102", "U+1103", "U+1105", "other")
+
+
+def test_phrase_scoring_treats_hanja_positions_as_neutral_not_free() -> None:
+    index = shape_index(["U+1100", "U+1102", "other"])
+    phrases = [phrase(0, "ᄀ天"), phrase(1, "ᄀᄂ")]
+    rows = [
+        [0.90, 0.05, 0.05],
+        [0.05, 0.90, 0.05],
+    ]
+
+    assigned = eonhae.assign_eonhae_run(rows, phrases, 0, index, margin=0.0, min_evidence=1)
+
+    assert assigned.accepted
+    assert assigned.phrase == phrases[1]
+
+
 def run_event(box: Box, *, column: int = 0, half: int = 0) -> tuple[str, eonhae.LayoutEvent]:
     return ("p", eonhae.LayoutEvent("eonhae", box, ("h",), column, half))
 
@@ -432,10 +492,12 @@ def test_hanja_alignment_searches_near_the_cursor_and_refuses_bad_pages() -> Non
     events = (
         eonhae.LayoutEvent("hanja", Box(x=0, y=0, w=50, h=50), ("U+5929",), 0),
         eonhae.LayoutEvent("hanja", Box(x=0, y=60, w=50, h=50), ("U+5730",), 0),
+        eonhae.LayoutEvent("hanja", Box(x=0, y=120, w=50, h=50), ("U+65E5",), 0),
     )
-    aligned = eonhae.align_hanja(events, list("月天地日"), 0, {"U+5929", "U+5730"}, window=4)
-    assert aligned.accepted and aligned.offset == 1 and aligned.chars == ("天", "地")
-    assert aligned.matched == (True, True)
+    aligned = eonhae.align_hanja(events, list("月天地日"), 0, {"U+5929", "U+5730", "U+65E5"}, window=4)
+    assert aligned.accepted and aligned.offset == 1
+    assert aligned.chars == ("天", "地", "日")
+    assert aligned.matched == (True, True, True)
 
     refused = eonhae.align_hanja(
         events,
@@ -465,6 +527,100 @@ def test_hanja_alignment_leaves_spurious_events_unmatched() -> None:
     assert aligned.chars == ("天", None, "地", "日")
     assert aligned.matched == (True, False, True, True)
     assert aligned.refused == 0
+
+
+def test_hanja_alignment_refuses_one_agreeing_match_without_real_page_evidence() -> None:
+    events = (
+        eonhae.LayoutEvent("hanja", Box(x=0, y=0, w=50, h=50), ("U+5929",), 0),
+    )
+
+    aligned = eonhae.align_hanja(events, list("龘"), 0, {"U+5929"}, window=1)
+
+    assert not aligned.accepted
+    assert "agreeing" in aligned.reason
+
+
+def test_hanja_alignment_refuses_pages_whose_matches_are_all_unjudged() -> None:
+    events = (
+        eonhae.LayoutEvent("hanja", Box(x=0, y=0, w=50, h=50), ("other",), 0),
+        eonhae.LayoutEvent("hanja", Box(x=0, y=60, w=50, h=50), ("other",), 0),
+        eonhae.LayoutEvent("hanja", Box(x=0, y=120, w=50, h=50), ("other",), 0),
+    )
+
+    aligned = eonhae.align_hanja(events, list("天地日"), 0, set(), window=1)
+
+    assert not aligned.accepted
+    assert aligned.verdicts == (None, None, None)
+
+
+def test_unjudged_hanja_are_dropped_when_anchors_have_a_stream_skip() -> None:
+    events = (
+        eonhae.LayoutEvent("hanja", Box(x=0, y=0, w=50, h=50), ("U+7532",), 0),
+        eonhae.LayoutEvent("hanja", Box(x=0, y=60, w=50, h=50), ("U+4E19",), 1),
+        eonhae.LayoutEvent("hanja", Box(x=0, y=120, w=50, h=50), ("U+4E01",), 2),
+        eonhae.LayoutEvent("hanja", Box(x=0, y=180, w=50, h=50), ("U+4E59",), 3),
+        eonhae.LayoutEvent("hanja", Box(x=0, y=240, w=50, h=50), ("U+5DF1",), 4),
+    )
+    known = {"U+7532", "U+4E59", "U+5DF1"}
+
+    aligned = eonhae.align_hanja(events, list("甲丙丁戊乙己"), 0, known, window=4)
+    decisions = eonhae.hanja_unit_decisions(events, aligned)
+
+    assert aligned.accepted
+    assert aligned.safe_unjudged == (True, False, False, True, True)
+    assert [decision.emitted for decision in decisions] == [True, False, False, True, True]
+
+
+def test_page_local_line_segments_split_a_continued_phrase_at_page_breaks() -> None:
+    pending = [
+        eonhae.PendingUnit("p1", Box(x=10, y=10, w=20, h=30), "甲", ("U+7532",), True, 0),
+        eonhae.PendingUnit("p1", Box(x=10, y=50, w=20, h=30), "乙", ("U+4E59",), True, 0),
+        eonhae.PendingUnit("p2", Box(x=90, y=10, w=20, h=30), "丙", ("U+4E19",), True, 0),
+    ]
+
+    segments = eonhae.page_local_line_segments(
+        pending,
+        role="text",
+        phrase_key="zh:10-13",
+        text_raw="甲乙丙",
+        meta={"role": "text"},
+    )
+
+    assert [segment.page_id for segment in segments] == ["p1", "p2"]
+    assert [segment.text for segment in segments] == ["甲乙", "丙"]
+    assert segments[0].meta["continues_to"] == segments[1].line_id
+    assert segments[1].meta["continued_from"] == segments[0].line_id
+    assert eonhae.line_id("p1", "text", "zh:10-13") == segments[0].line_id
+
+
+def test_stable_unit_ids_use_page_role_and_box_not_line_sequence() -> None:
+    box = Box(x=10, y=20, w=30, h=40)
+
+    assert eonhae.unit_id("p1", "text", box) == eonhae.unit_id("p1", "text", box)
+    assert eonhae.unit_id("p1", "text", box) != eonhae.unit_id("p1", "eonhae", box)
+    assert eonhae.unit_id("p1", "text", box) != eonhae.unit_id("p1", "text", Box(x=10, y=21, w=30, h=40))
+
+
+def test_skip_page_decision_ends_pending_run_and_counts_skipped_circles_as_drops() -> None:
+    state = eonhae.EonhaeCursorState().accept(4)
+    active_run = eonhae.PendingRun(
+        events=[("p1", eonhae.LayoutEvent("eonhae", Box(x=0, y=0, w=10, h=10), ("h",), 0, 0), ())]
+    )
+
+    skipped = eonhae.skip_page_decision(state, active_run=active_run, circle_count=2)
+
+    assert skipped.ko_cursor.anchor == 5
+    assert skipped.ko_cursor.dropped_since_accept == 3
+    assert skipped.dropped_eonhae_units == 1
+    assert skipped.dropped_circles == 2
+    assert not skipped.in_eonhae
+
+
+def test_cutter_flushes_pending_chinese_at_selection_end() -> None:
+    script = Path("scripts/cut_eonhae.py").read_text(encoding="utf-8")
+
+    assert "if active_run is not None:\n            flush_eonhae" in script
+    assert "if active_chinese:\n            flush_chinese()" in script
 
 
 def test_hanja_alignment_prefers_upper_neighbour_for_weak_reading_row_match() -> None:

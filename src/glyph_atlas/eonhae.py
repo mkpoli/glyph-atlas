@@ -7,17 +7,22 @@ The readings under hanja are never cut.
 
 The column grid is fitted from large-hanja x-centres. Detector boxes are classed by their size,
 shape and classifier top label as large hanja, circle or small text; small text under a large hanja
-is its reading, and small text after a circle is ordered as 언해 by half-column. Large hanja are aligned to
-the pinned Chinese Wikisource stream near a cursor and checked by the atlas classifier.
+is its reading, and small text after a circle is ordered as 언해 by half-column. Large hanja are
+aligned to the pinned Chinese Wikisource stream near a cursor and checked by the atlas classifier. A
+Chinese page is accepted only when enough matched hanja are actually judged by the classifier and
+agree; an unjudged hanja is emitted only inside a no-gap run bracketed by agreeing matched anchors.
 
-Each 언해 run is the ordered boxes after one circle up to the next large hanja or circle, even across
-page boundaries. A Hangul classifier chooses among Korean candidate phrases whose character count
-matches the run. Its scoring is restricted to the candidates' Hangul shape keys, then gated by
-margin, agreement, an evidence floor, and geometry. A box agrees with a phrase when the phrase's
-character is among the model's five best readings over all its classes, so that a lone candidate
-cannot agree with itself; a hangul unit is kept on the same test. The Korean cursor advances after an accepted
-run, advances by one expected phrase after a dropped run, and searches the whole volume after
-`--reacquire` consecutive drops.
+Each 언해 run is the ordered boxes after one circle up to the next large hanja or circle. Runs may be
+assigned across a page break, but output lines never span pages: a continued phrase is split into
+page-local lines with shared phrase metadata. A skipped page ends pending Chinese and Korean state.
+A Hangul classifier chooses among Korean candidate phrases whose character count matches the run.
+Its scoring is restricted to the candidates' Hangul shape keys, then gated by margin, agreement, an
+evidence floor, and geometry. Unknown Hangul and non-Hangul phrase positions carry the same neutral
+score. A box agrees with a phrase when the phrase's character is among the model's five best class
+slots, counted before dropping `other`, so that a lone candidate cannot agree with itself. The
+Korean cursor advances after an accepted run, advances by one expected phrase after a dropped run,
+and searches the whole volume after `--reacquire` consecutive drops without going behind the last
+accepted phrase.
 
 Geometry gates refuse overlapping boxes within one half-column, boxes too small for the page's small
 text and half-column scale, and gaps too large for one half-column run. A unit is kept only when the
@@ -52,10 +57,10 @@ SEGMENTATION = (
 )
 #: Least accepted Chinese alignment agreement among atlas-classifier-judged matched hanja.
 ZH_MIN_AGREEMENT = 0.70
+#: Least number of classifier-agreeing large hanja required before a Chinese page is trusted.
+ZH_MIN_AGREEING_MATCHES = 3
 #: Chinese stream positions searched on each side of the current cursor before global voting.
 ZH_WINDOW = 60
-#: Default Korean phrase window on each side of the current 언해 cursor.
-KO_WINDOW = 24
 #: Greatest vertical overlap allowed within one 언해 half-column, as a share of the smaller box.
 EONHAE_OVERLAP_SMALLER_SHARE = 0.25
 #: Least 언해 box height, as a share of the page's median small-box height.
@@ -203,6 +208,8 @@ class HanjaAlignment:
     accepted: bool
     reason: str
     consumed: int = 0
+    stream_indices: tuple[int | None, ...] = ()
+    safe_unjudged: tuple[bool, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -212,6 +219,7 @@ class HanjaUnitDecision:
     verdict: bool | None
     matched: bool
     emitted: bool
+    stream_index: int | None = None
 
 
 @dataclass
@@ -230,6 +238,25 @@ class PendingRun:
     events: list[tuple[str, LayoutEvent, tuple[float, ...]]] = field(default_factory=list)
     pages: set[str] = field(default_factory=set)
     circle_ordinal: int | None = None
+
+
+@dataclass(frozen=True)
+class PageLocalLineSegment:
+    page_id: str
+    line_id: str
+    units: tuple[PendingUnit, ...]
+    text: str
+    text_raw: str
+    meta: dict[str, object]
+
+
+@dataclass(frozen=True)
+class PageSkipDecision:
+    ko_cursor: EonhaeCursorState
+    dropped_eonhae_units: int
+    dropped_chinese_units: int
+    dropped_circles: int
+    in_eonhae: bool = False
 
 
 @dataclass(frozen=True)
@@ -300,8 +327,18 @@ class EonhaeHangulUnitDecision:
     label_key: str | None
 
 
-def unit_id(page_id: str, role: str, line_seq: int, seq: int) -> str:
-    return "eo:" + hashlib.sha1(f"{page_id}|{role}|{line_seq}|{seq}".encode()).hexdigest()[:20]
+def box_key(box: Box) -> str:
+    return f"{box.x},{box.y},{box.w},{box.h}"
+
+
+def unit_id(page_id: str, role: str, box: Box) -> str:
+    """Stable unit id from the page, role and final page-space box."""
+    return "eo:" + hashlib.sha1(f"{page_id}|{role}|{box_key(box)}".encode()).hexdigest()[:20]
+
+
+def line_id(page_id: str, role: str, phrase_key: str) -> str:
+    """Stable line id from the page and phrase/chunk key."""
+    return "eo:l:" + hashlib.sha1(f"{page_id}|{role}|{phrase_key}".encode()).hexdigest()[:20]
 
 
 def load_source(path: Path, url: str) -> WikiSource:
@@ -391,7 +428,7 @@ def characters(text: str) -> list[str]:
     out: list[str] = []
     for char in _plain_wikitext(text):
         category = unicodedata.category(char)
-        if char == "/" or category[0] in "PZ" or category == "Cc":
+        if char == "/" or codepoints(char) in CIRCLES or category[0] in "PZ" or category == "Cc":
             continue
         code = ord(char)
         joins = category in ("Mn", "Mc") or 0x1160 <= code <= 0x11FF or 0xD7B0 <= code <= 0xD7FF
@@ -428,7 +465,8 @@ def ko_lines(source: WikiSource, volume: Volume) -> list[KoLine]:
 def ko_phrases(source: WikiSource, volume: Volume) -> list[KoPhrase]:
     phrases: list[KoPhrase] = []
     for line in ko_lines(source, volume):
-        for phrase_index, raw in enumerate(line.raw.split("/")):
+        pieces = re.split(r"[/○〇]", line.raw)
+        for phrase_index, raw in enumerate(pieces):
             raw = raw.strip()
             chars = tuple(characters(raw))
             if not chars:
@@ -781,6 +819,73 @@ def names_a_character(char: str) -> bool:
     return bool(char) and not any(unicodedata.category(c) == "Co" for c in char)
 
 
+def page_local_line_segments(
+    pending: Sequence[PendingUnit],
+    *,
+    role: str,
+    phrase_key: str,
+    text_raw: str | None = None,
+    meta: Mapping[str, object] | None = None,
+) -> tuple[PageLocalLineSegment, ...]:
+    """Split one logical phrase/chunk into page-local line segments.
+
+    The input order is preserved. Segment metadata records character offsets inside the logical
+    phrase and links adjacent page-local pieces with ``continued_from`` / ``continues_to``.
+    """
+    by_page: list[tuple[str, list[PendingUnit]]] = []
+    for unit in pending:
+        if not by_page or by_page[-1][0] != unit.page_id:
+            by_page.append((unit.page_id, []))
+        by_page[-1][1].append(unit)
+    ids = [line_id(page_id, role, phrase_key) for page_id, _units in by_page]
+    segments: list[PageLocalLineSegment] = []
+    offset = 0
+    for index, (page_id, units) in enumerate(by_page):
+        text = "".join(unit.char for unit in units)
+        end = offset + len(units)
+        segment_meta = {
+            **(dict(meta) if meta else {}),
+            "phrase_key": phrase_key,
+            "phrase_start": offset,
+            "phrase_end": end,
+        }
+        if index:
+            segment_meta["continued_from"] = ids[index - 1]
+        if index + 1 < len(ids):
+            segment_meta["continues_to"] = ids[index + 1]
+        segments.append(PageLocalLineSegment(
+            page_id=page_id,
+            line_id=ids[index],
+            units=tuple(units),
+            text=text,
+            text_raw=text_raw if text_raw is not None else text,
+            meta=segment_meta,
+        ))
+        offset = end
+    return tuple(segments)
+
+
+def skip_page_decision(
+    ko_cursor: EonhaeCursorState,
+    *,
+    active_run: PendingRun | None = None,
+    active_chinese: Sequence[PendingUnit] = (),
+    circle_count: int = 0,
+) -> PageSkipDecision:
+    """State transition when a page is skipped by selection, image/grid failure or refusal."""
+    next_cursor = ko_cursor
+    if active_run is not None:
+        next_cursor = next_cursor.drop()
+    for _ in range(max(0, circle_count)):
+        next_cursor = next_cursor.drop()
+    return PageSkipDecision(
+        ko_cursor=next_cursor,
+        dropped_eonhae_units=len(active_run.events) if active_run else 0,
+        dropped_chinese_units=len(active_chinese),
+        dropped_circles=max(0, circle_count),
+    )
+
+
 def emits_unit(verdict: bool | None) -> bool:
     """Whether a matched classifier verdict is written as a dataset unit."""
     return verdict is not False
@@ -796,14 +901,54 @@ def hanja_unit_decisions(
         matched = index < len(alignment.matched) and alignment.matched[index]
         char = alignment.chars[index] if index < len(alignment.chars) else None
         verdict = alignment.verdicts[index] if index < len(alignment.verdicts) else None
+        stream_index = alignment.stream_indices[index] if index < len(alignment.stream_indices) else None
+        safe_unjudged = alignment.safe_unjudged[index] if index < len(alignment.safe_unjudged) else False
+        emitted = alignment.accepted and matched and (emits_unit(verdict) if verdict is not None else safe_unjudged)
         decisions.append(HanjaUnitDecision(
             event=event,
             char=char,
             verdict=verdict,
             matched=matched,
-            emitted=alignment.accepted and matched and emits_unit(verdict),
+            emitted=emitted,
+            stream_index=stream_index,
         ))
     return tuple(decisions)
+
+
+def _safe_unjudged_hanja(
+    verdicts: Sequence[bool | None],
+    matched: Sequence[bool],
+    stream_indices: Sequence[int | None],
+) -> tuple[bool, ...]:
+    safe = [verdict is not None for verdict in verdicts]
+    index = 0
+    while index < len(verdicts):
+        if not matched[index] or verdicts[index] is not None:
+            index += 1
+            continue
+        start = index
+        while index < len(verdicts) and matched[index] and verdicts[index] is None:
+            index += 1
+        end = index
+        before = start - 1
+        after = end
+        if before < 0 or after >= len(verdicts):
+            continue
+        before_stream = stream_indices[before]
+        after_stream = stream_indices[after]
+        anchored = (
+            matched[before]
+            and matched[after]
+            and verdicts[before] is True
+            and verdicts[after] is True
+            and before_stream is not None
+            and after_stream is not None
+            and after_stream == before_stream + (end - start) + 1
+        )
+        if anchored:
+            for place in range(start, end):
+                safe[place] = True
+    return tuple(safe)
 
 
 def align_hanja(
@@ -814,6 +959,7 @@ def align_hanja(
     *,
     window: int = ZH_WINDOW,
     min_agreement: float = ZH_MIN_AGREEMENT,
+    min_agreeing: int = ZH_MIN_AGREEING_MATCHES,
 ) -> HanjaAlignment:
     """Align one page's large-hanja events to the Chinese stream near the cursor.
 
@@ -915,6 +1061,7 @@ def align_hanja(
         tuple[str | None, ...],
         tuple[bool | None, ...],
         tuple[bool, ...],
+        tuple[int | None, ...],
     ] | None = None
 
     def evaluate(offsets: Sequence[int]) -> None:
@@ -961,6 +1108,7 @@ def align_hanja(
             chars_rev: list[str | None] = []
             verdicts_rev: list[bool | None] = []
             matched_rev: list[bool] = []
+            stream_indices_rev: list[int | None] = []
             while i > 0 or j > 0:
                 step = back[i][j]
                 if step is None:
@@ -971,16 +1119,19 @@ def align_hanja(
                     chars_rev.append(char)
                     verdicts_rev.append(verdict_at(i - 1, char))
                     matched_rev.append(True)
+                    stream_indices_rev.append(offset + j - 1)
                 elif op == "event":
                     chars_rev.append(None)
                     verdicts_rev.append(None)
                     matched_rev.append(False)
+                    stream_indices_rev.append(None)
                 i, j = pi, pj
             if len(chars_rev) != n:
                 continue
             chars = tuple(reversed(chars_rev))
             verdicts = tuple(reversed(verdicts_rev))
             matched = tuple(reversed(matched_rev))
+            stream_indices = tuple(reversed(stream_indices_rev))
             matched_count = matched.count(True)
             judged = [v for v, is_matched in zip(verdicts, matched, strict=True) if is_matched and v is not None]
             agreement = judged.count(True) / len(judged) if judged else 1.0
@@ -997,7 +1148,7 @@ def align_hanja(
                 - abs(consumed - matched_count) * 0.05
             )
             if best is None or score > best[0]:
-                best = (score, agreement, matched_count, offset, refused, chars, verdicts, matched)
+                best = (score, agreement, matched_count, offset, refused, chars, verdicts, matched, stream_indices)
 
     evaluate(candidate_offsets(include_global=False))
     if best is None or best[1] < min_agreement or best[2] < int(n * 0.7):
@@ -1005,7 +1156,7 @@ def align_hanja(
 
     if best is None:
         return HanjaAlignment(None, (), (), (), 0.0, 0, False, "no stream window", 0)
-    _, agreement, matched_count, offset, refused, chars, verdicts, matched = best
+    _, agreement, matched_count, offset, refused, chars, verdicts, matched, stream_indices = best
     consumed = 0
     last_stream_index = -1
     for char in chars:
@@ -1018,18 +1169,37 @@ def align_hanja(
     if last_stream_index >= offset:
         consumed = last_stream_index - offset + 1
     refused_share = refused / matched_count if matched_count else 1.0
+    judged_count = sum(1 for verdict, is_matched in zip(verdicts, matched, strict=True) if is_matched and verdict is not None)
+    agreeing = sum(1 for verdict, is_matched in zip(verdicts, matched, strict=True) if is_matched and verdict is True)
     accepted = (
         agreement >= min_agreement
         and matched_count >= n * 0.70
+        and judged_count > 0
+        and agreeing >= min_agreeing
+        and agreeing >= math.ceil(judged_count / 2)
         and refused_share <= glossary.REFUSED_SHARE
     )
+    safe_unjudged = _safe_unjudged_hanja(verdicts, matched, stream_indices)
     reason = (
         f"zh offset {offset}, consumed {consumed}, agreement {agreement:.2f}, "
-        f"matched {matched_count} of {n}, refused {refused} of {matched_count}"
+        f"matched {matched_count} of {n}, judged {judged_count}, agreeing {agreeing}, "
+        f"refused {refused} of {matched_count}"
     )
     if not accepted:
         reason += "; page left out as misaligned"
-    return HanjaAlignment(offset, chars, verdicts, matched, agreement, refused, accepted, reason, consumed)
+    return HanjaAlignment(
+        offset,
+        chars,
+        verdicts,
+        matched,
+        agreement,
+        refused,
+        accepted,
+        reason,
+        consumed,
+        stream_indices,
+        safe_unjudged,
+    )
 
 
 def _class_label_text(label: str) -> str | None:
@@ -1088,13 +1258,16 @@ OPEN_TOP_K = 5
 def open_top_keys(row: Sequence[float], index: HangulShapeIndex, k: int = OPEN_TOP_K) -> set[str]:
     """The shape keys of the model's `k` best readings of one box, over all its classes."""
     keys: list[str] = []
-    for class_index in sorted(range(len(row)), key=lambda i: -float(row[i])):
+    for class_index in sorted(range(len(row)), key=lambda i: -float(row[i]))[:k]:
         key = index.class_keys[class_index] if class_index < len(index.class_keys) else None
         if key is not None and key not in keys:
             keys.append(key)
-            if len(keys) == k:
-                break
     return set(keys)
+
+
+def top_class_labels(row: Sequence[float], classes_: Sequence[str], k: int = OPEN_TOP_K) -> tuple[str, ...]:
+    """The model's top class labels, with `other` kept if it is one of the top slots."""
+    return tuple(classes_[class_index] for class_index in sorted(range(len(row)), key=lambda i: -float(row[i]))[:k])
 
 
 def restricted_hangul_distribution(
@@ -1136,6 +1309,8 @@ def _score_eonhae_phrase(
     for char, row in zip(phrase.chars, rows, strict=True):
         key = _hangul_key(char)
         if key is None:
+            total += neutral
+            unknown += 1
             continue
         if key not in index.key_indices:
             total += neutral

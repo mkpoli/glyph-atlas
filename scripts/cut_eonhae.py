@@ -29,7 +29,7 @@ from glyph_atlas import align, eonhae, images, tables
 from glyph_atlas.classify import Classifier
 from glyph_atlas.detect import Detector
 from glyph_atlas.review.suggestions import classifier_path
-from glyph_atlas.schema import Box, Document, Line, Page, Unit
+from glyph_atlas.schema import Box, Document, Line, LineRole, Page, Unit
 
 RUN = Path("models/align/runs/pilot-v1.yaml")
 DROP_REASON_ORDER = ("overlap", "small box", "gap")
@@ -171,10 +171,12 @@ def main() -> int:
     ) -> int:
         kept = 0
         for seq, item in enumerate(pending):
+            if item.meta.get("emit") is False:
+                continue
             if not eonhae.emits_unit(item.verdict) or not eonhae.names_a_character(item.char):
                 continue
             units.append(Unit(
-                id=eonhae.unit_id(item.page_id, role, line_seq, seq),
+                id=eonhae.unit_id(item.page_id, role, item.box),
                 document_id=document_id,
                 page_id=item.page_id,
                 line_id=line_id,
@@ -187,7 +189,7 @@ def main() -> int:
                 upstream=source.upstream,
                 meta={
                     "segmentation": eonhae.SEGMENTATION,
-                    "classifier_top5": list(item.top5),
+                    "atlas_top5": list(item.top5),
                     "classifier_agrees": item.verdict,
                     "role": role,
                     "volume": volume,
@@ -227,7 +229,6 @@ def main() -> int:
         dropped_units_disagree = 0
 
         def flush_chinese(
-            page: Page,
             *,
             document: Document = document,
             volume: eonhae.Volume = volume,
@@ -237,21 +238,33 @@ def main() -> int:
             if not active_chinese:
                 return
             text = "".join(unit.char for unit in active_chinese)
-            line_id = f"{page.id}:Z{line_seq}"
-            lines.append(Line(
-                id=line_id,
-                page_id=active_chinese[0].page_id,
-                seq=line_seq,
-                vertical=True,
-                box=line_box(active_chinese),
+            offsets = [unit.meta.get("zh_index") for unit in active_chinese if isinstance(unit.meta.get("zh_index"), int)]
+            if offsets:
+                phrase_key = f"zh:{min(offsets)}-{max(offsets) + 1}"
+            else:
+                phrase_key = "zh:" + eonhae.box_key(active_chinese[0].box)
+            segments = eonhae.page_local_line_segments(
+                active_chinese,
+                role="text",
+                phrase_key=phrase_key,
                 text_raw=text,
-                text=text,
-                match_method="eonhae-sentences",
                 meta={"source": "cut_eonhae", "role": "text", "volume": volume},
-            ))
-            add_units(document.id, line_id, "text", active_chinese, zh_source)
+            )
+            for segment in segments:
+                lines.append(Line(
+                    id=segment.line_id,
+                    page_id=segment.page_id,
+                    seq=line_seq,
+                    vertical=True,
+                    box=line_box(list(segment.units)),
+                    text_raw=segment.text_raw,
+                    text=segment.text,
+                    match_method="eonhae-sentences",
+                    meta=segment.meta,
+                ))
+                add_units(document.id, segment.line_id, "text", list(segment.units), zh_source)
+                line_seq += 1
             active_chinese = []
-            line_seq += 1
 
         def flush_eonhae(
             reason_page: str,
@@ -284,7 +297,7 @@ def main() -> int:
                 min_agree=args.min_agree,
                 min_evidence=args.min_evidence,
                 global_search=global_search,
-                min_index=ko_cursor.anchor - 2,
+                min_index=ko_cursor.anchor,
             )
             phrase = assignment.phrase
             report_ko_index = phrase.index if phrase is not None else None
@@ -319,7 +332,6 @@ def main() -> int:
                     "ko_text_start": phrase.text[:16],
                     "raw": phrase.raw,
                     "characters": len(phrase.chars),
-                    "box_char_diff": box_count - len(phrase.chars),
                 })
             if not assignment.accepted:
                 report[key] = {
@@ -361,20 +373,22 @@ def main() -> int:
             refused_hanja = 0
             run_dropped_units_disagree = 0
             hangul_decisions = eonhae.eonhae_hangul_unit_decisions(phrase, rows, hangul_index)
-            for (event_page, event, _row), char, hangul_decision in zip(
+            for offset, ((event_page, event, row), char, hangul_decision) in enumerate(zip(
                 active_run.events,
                 phrase.chars,
                 hangul_decisions,
                 strict=True,
-            ):
+            )):
                 meta: dict[str, object] = {
                     "phrase_score": assignment.score,
                     "phrase_margin": assignment.margin,
                     "hangul_model": hangul_index.model_name,
+                    "phrase_offset": offset,
                 }
                 if eonhae.script_of(char) == "hangul":
                     verdict = hangul_decision.classifier_agrees
                     meta["hangul_p"] = hangul_decision.hangul_p
+                    meta["hangul_top5"] = list(eonhae.top_class_labels(row, hangul_classifier.classes))
                     if verdict is False:
                         dropped_units_disagree += 1
                         run_dropped_units_disagree += 1
@@ -384,17 +398,8 @@ def main() -> int:
                 else:
                     verdict = None
                 pending.append(eonhae.PendingUnit(event_page, event.box, char, event.top5, verdict, event.column, meta))
-            line_id = f"{first_page}:E{line_seq}"
-            lines.append(Line(
-                id=line_id,
-                page_id=first_page,
-                seq=line_seq,
-                vertical=True,
-                box=line_box(pending),
-                text_raw=phrase.raw,
-                text=phrase.text,
-                match_method="eonhae-sentences",
-                meta={
+            phrase_key = f"ko:{phrase.index}"
+            base_meta = {
                     "source": "cut_eonhae",
                     "role": "eonhae",
                     "volume": volume,
@@ -402,9 +407,29 @@ def main() -> int:
                     "ko_line": phrase.line_index,
                     "ko_phrase": phrase.phrase_index,
                     "ko_text": phrase.text,
-                },
-            ))
-            add_units(document.id, line_id, "eonhae", pending, ko_source)
+            }
+            segments = eonhae.page_local_line_segments(
+                pending,
+                role="eonhae",
+                phrase_key=phrase_key,
+                text_raw=phrase.raw,
+                meta=base_meta,
+            )
+            for segment in segments:
+                lines.append(Line(
+                    id=segment.line_id,
+                    page_id=segment.page_id,
+                    seq=line_seq,
+                    vertical=True,
+                    role=LineRole.WARIGAKI,
+                    box=line_box(list(segment.units)),
+                    text_raw=segment.text_raw,
+                    text=segment.text,
+                    match_method="eonhae-sentences",
+                    meta=segment.meta,
+                ))
+                add_units(document.id, segment.line_id, "eonhae", list(segment.units), ko_source)
+                line_seq += 1
             report[key] = {
                 **base_report,
                 "outcome": "kept eonhae run",
@@ -413,15 +438,59 @@ def main() -> int:
             }
             active_run = None
             ko_cursor = ko_cursor.accept(phrase.index)
-            line_seq += 1
 
+        skipped_page_eonhae_units = 0
+        skipped_page_chinese_units = 0
+        skipped_page_circles = 0
+
+        def skip_pending_page(
+            reason_page: str,
+            *,
+            circle_count: int = 0,
+            volume: eonhae.Volume = volume,
+        ) -> None:
+            nonlocal active_run, active_chinese, in_eonhae, ko_cursor
+            nonlocal skipped_page_eonhae_units, skipped_page_chinese_units, skipped_page_circles
+            if active_chinese:
+                flush_chinese()
+            decision = eonhae.skip_page_decision(
+                ko_cursor,
+                active_run=active_run,
+                active_chinese=(),
+                circle_count=circle_count,
+            )
+            ko_cursor = decision.ko_cursor
+            skipped_page_eonhae_units += decision.dropped_eonhae_units
+            skipped_page_chinese_units += decision.dropped_chinese_units
+            skipped_page_circles += decision.dropped_circles
+            if active_run is not None:
+                ordinal = active_run.circle_ordinal or 0
+                key = f"{reason_page}:circle-{ordinal:03d}:ko-{ko_cursor.center}"
+                report[key] = {
+                    "volume": volume,
+                    "run_page": active_run.events[0][0] if active_run.events else reason_page,
+                    "pages": sorted(active_run.pages),
+                    "circle_ordinal": ordinal,
+                    "box_count": len(active_run.events),
+                    "outcome": "dropped eonhae run",
+                    "reason": "page skipped",
+                }
+            active_run = None
+            active_chinese = []
+            in_eonhae = False
+
+        previous_page_seq: int | None = None
         for page in pages:
+            if previous_page_seq is not None and page.seq > previous_page_seq + 1:
+                skip_pending_page(page.id)
+            previous_page_seq = page.seq
             page_report: dict[str, object] = {"volume": volume, "seq": page.seq + 1}
             out_pages[page.id] = page
             image_path = page_image_path(page)
             if image_path is None:
                 page_report["outcome"] = "image not in cache"
                 report[page.id] = page_report
+                skip_pending_page(page.id)
                 continue
             image = Image.open(image_path).convert("RGB")
             boxes = [box for box, _ in detector.boxes(image)]
@@ -435,6 +504,7 @@ def main() -> int:
             if grid is None:
                 page_report["outcome"] = "no column grid"
                 report[page.id] = page_report
+                skip_pending_page(page.id, circle_count=sum(1 for labels in ranked if labels and labels[0] in eonhae.CIRCLES))
                 continue
             layout = eonhae.page_layout(boxes, ranked, grid, in_eonhae=in_eonhae)
             eonhae_crops = [
@@ -461,15 +531,14 @@ def main() -> int:
                 "zh": alignment.reason,
             })
             if alignment.offset is not None:
-                zh_cursor = alignment.offset + alignment.consumed
-            in_eonhae = layout.end_in_eonhae
+                next_zh_cursor = alignment.offset + alignment.consumed
             if not alignment.accepted:
                 page_report["outcome"] = "left out"
                 report[page.id] = page_report
-                if active_run is not None:
-                    flush_eonhae(page.id)
-                active_chinese = []
+                skip_pending_page(page.id, circle_count=sum(event.kind == "circle" for event in layout.events))
                 continue
+            zh_cursor = next_zh_cursor if alignment.offset is not None else zh_cursor
+            in_eonhae = layout.end_in_eonhae
 
             sx = page.width / source_width if page.width else 1.0
             sy = page.height / source_height if page.height else 1.0
@@ -481,22 +550,31 @@ def main() -> int:
             hanja_index = 0
             eonhae_index = 0
             hanja_decisions = eonhae.hanja_unit_decisions(hanja_events, alignment)
+            dropped_unjudged_hanja = 0
             for event in layout.events:
                 scaled = scale_box(event.box, sx, sy)
                 if event.kind == "hanja":
                     flush_eonhae(page.id)
                     decision = hanja_decisions[hanja_index]
-                    if decision.matched:
+                    if decision.emitted:
                         char = decision.char
                         verdict = decision.verdict
                         assert char is not None
                         active_chinese.append(eonhae.PendingUnit(
-                            page.id, scaled, char, event.top5, verdict, event.column
+                            page.id,
+                            scaled,
+                            char,
+                            event.top5,
+                            verdict,
+                            event.column,
+                            {"zh_index": decision.stream_index} if decision.stream_index is not None else {},
                         ))
+                    elif decision.matched and decision.verdict is None:
+                        dropped_unjudged_hanja += 1
                     hanja_index += 1
                 elif event.kind == "circle":
                     flush_eonhae(page.id)
-                    flush_chinese(page)
+                    flush_chinese()
                     circle_ordinal += 1
                     ko_circles_consumed += 1
                     active_run = eonhae.PendingRun(circle_ordinal=circle_ordinal)
@@ -510,9 +588,13 @@ def main() -> int:
                         ), row))
                         active_run.pages.add(page.id)
             page_report["outcome"] = "cut"
+            if dropped_unjudged_hanja:
+                page_report["dropped_unjudged_hanja"] = dropped_unjudged_hanja
             report[page.id] = page_report
         if active_run is not None:
             flush_eonhae(pages[-1].id if pages else document.id)
+        if active_chinese:
+            flush_chinese()
         volume_reports[volume] = {
             "document_id": document.id,
             "ko_lines": len(ko_lines),
@@ -530,6 +612,9 @@ def main() -> int:
             "ko_assignment_accepted_runs": ko_assignment_accepted,
             "ko_mean_jump": sum(ko_jumps) / len(ko_jumps) if ko_jumps else None,
             "dropped_units_disagree": dropped_units_disagree,
+            "skipped_page_eonhae_units": skipped_page_eonhae_units,
+            "skipped_page_chinese_units": skipped_page_chinese_units,
+            "skipped_page_circles": skipped_page_circles,
         }
 
     page_reports = [value for value in report.values() if isinstance(value, dict) and "seq" in value]
@@ -558,10 +643,6 @@ def main() -> int:
             str(value.get("reason", "unknown")) for value in line_reports
             if value.get("outcome") == "dropped eonhae run" and value.get("volume") == volume
         )
-        dropped_diffs = Counter(
-            int(value.get("box_char_diff", 0)) for value in line_reports
-            if value.get("outcome") == "dropped eonhae run" and value.get("volume") == volume
-        )
         volume_reports[volume].update({
             "pages": len(pages_for_volume),
             "pages_cut": outcomes.get("cut", 0),
@@ -576,7 +657,6 @@ def main() -> int:
             "kept_eonhae_runs": kept_runs,
             "dropped_eonhae_runs": dropped_runs,
             "dropped_eonhae_reasons": dict(dropped_reasons),
-            "dropped_eonhae_box_char_diff": dict(sorted(dropped_diffs.items())),
         })
     report["_summary"] = volume_reports
 
