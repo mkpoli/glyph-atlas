@@ -286,6 +286,7 @@
   "forms.target.selectedGlyphs.one": "選ビタル字形{count}",
   "forms.target.selectedGlyphs.other": "選ビタル字形{count}",
   "forms.unassignedFirst": "未定ヲ先ニス",
+  "forms.usage.label": "用ヰラルル字體",
   "forms.wrongCharacter": "字ノ誤…",
   "forms.undo": "取消",
   "forms.redo": "復為",

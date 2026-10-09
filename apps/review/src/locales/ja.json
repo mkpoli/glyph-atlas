@@ -286,6 +286,7 @@
   "forms.target.selectedGlyphs.one": "選択した字形{count}件",
   "forms.target.selectedGlyphs.other": "選択した字形{count}件",
   "forms.unassignedFirst": "未割り当てを先に",
+  "forms.usage.label": "使われている字体",
   "forms.wrongCharacter": "文字違い…",
   "forms.undo": "元に戻す",
   "forms.redo": "やり直す",

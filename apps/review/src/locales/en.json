@@ -305,6 +305,7 @@
   "forms.target.selectedGlyphs.one": "{count} selected glyph",
   "forms.target.selectedGlyphs.other": "{count} selected glyphs",
   "forms.unassignedFirst": "Unassigned first",
+  "forms.usage.label": "Forms in use",
   "forms.wrongCharacter": "Wrong character…",
   "forms.undo": "Undo",
   "forms.redo": "Redo",

@@ -290,6 +290,7 @@
   "forms.target.selectedGlyphs.one": "已选{count}个字形",
   "forms.target.selectedGlyphs.other": "已选{count}个字形",
   "forms.unassignedFirst": "未指定的在前",
+  "forms.usage.label": "使用中的字样",
   "forms.wrongCharacter": "错字…",
   "forms.undo": "撤销",
   "forms.redo": "重做",

@@ -289,6 +289,7 @@
   "forms.target.selectedGlyphs.one": "所擇字形{count}",
   "forms.target.selectedGlyphs.other": "所擇字形{count}",
   "forms.unassignedFirst": "未定者先",
+  "forms.usage.label": "所用諸體",
   "forms.wrongCharacter": "字誤…",
   "forms.undo": "撤",
   "forms.redo": "復",
