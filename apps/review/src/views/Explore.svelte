@@ -80,7 +80,7 @@
   let corpusAnswered = $state(Boolean(opened))
   // A run the collection holds no crop of, read one character at a time: its characters are tabs, and
   // the gallery on show is the chosen one's.
-  let split = $state(null)
+  let split = $state(null), splitting = false
   $effect(() => { shown = picked?.code_point ? { char: picked.char, code_point: picked.code_point } : null })
   /**
    * The address says what is on show, so it can be shared and reloaded: a character's page with its
@@ -526,6 +526,9 @@
   // `scope` is an address's: `exact`, `family` or `variants`; without one the card's default applies.
   async function pick(item, scope = null) {
     let expansionWillLoad = false
+    // Any choice but one of the run's tabs leaves the run.
+    if (!splitting) split = null
+    splitting = false
     choosing = false
     clearTimeout(searchTimer)
     requestId += 1
@@ -701,7 +704,7 @@
     } catch (e) { bulkError = e.message }
     finally { bulkBusy = false }
   }
-  function select(value) { grapheme = value; offset = 0; load() }
+  function select(value) { split = null; grapheme = value; offset = 0; load() }
   // A tile that counts corpus glyphs, which the collection's own listing leaves out, opens its
   // grapheme's gallery, which lists both; any other narrows the listing, keeping its filters.
   function openGrapheme(key) {
@@ -719,12 +722,16 @@
   function openSplit(result) {
     const term = run && runText(query)
     if (!term || grapheme || work || filter !== 'all' || result.total > 0) return false
-    split = { term, parts: [...new Intl.Segmenter('ja', { granularity: 'grapheme' }).segment(term)].map(part => part.segment) }
-    pick({ code_point: codesOf(split.parts[0]), char: split.parts[0] })
+    const parts = [...new Set([...new Intl.Segmenter('ja', { granularity: 'grapheme' }).segment(term)].map(part => part.segment))]
+    split = { term, parts, active: '' }
+    openPart(parts[0])
     return true
   }
-  // The tabs show while the character on show is one of the run's.
-  const splitShown = $derived(split && picked && split.parts.includes(picked.char) ? split : null)
+  function openPart(part) {
+    if (split.active === part) return
+    split.active = part; splitting = true
+    pick({ code_point: codesOf(part), char: part })
+  }
   // The graphemes the browser lists, by key: a query's candidate shows in its grapheme's card when the
   // collection holds that very character, as the browser's card lists it.
   const graphemeByKey = $derived(new Map(graphemes.map(group => [group.key, group])))
@@ -822,8 +829,8 @@
   </div>
   {#if imaging}<ImageSearch given={imaging} onclose={() => imaging = null} {inspect} />{/if}
   {#if error}<div class="error-message" role="alert">{error}<button onclick={() => load()}>{t('common.retry')}</button></div>{/if}
-  {#if splitShown}<div class="split-term"><span>{around('explore.empty.noOccurrenceOfTerm', 'term')[0]}<ScriptText text={splitShown.term} />{around('explore.empty.noOccurrenceOfTerm', 'term')[1]}</span>
-    <div class="split-tabs" role="tablist" aria-label={t('explore.byCharacter')}>{#each splitShown.parts as part}<button type="button" role="tab" aria-selected={picked.char === part} onclick={() => { if (picked.char !== part) pick({ code_point: codesOf(part), char: part }) }}><ScriptText text={part} /></button>{/each}</div></div>{/if}
+  {#if split}<div class="split-term"><span>{around('explore.empty.noOccurrenceOfTerm', 'term')[0]}<ScriptText text={split.term} />{around('explore.empty.noOccurrenceOfTerm', 'term')[1]}</span>
+    <div class="split-tabs" role="group" aria-label={t('explore.byCharacter')}>{#each split.parts as part}<button type="button" aria-pressed={split.active === part} onclick={() => openPart(part)}><ScriptText text={part} /></button>{/each}</div></div>{/if}
   {#if picked}
     <CharacterChips card={picked} bind:expand onselect={item => pick({ code_point: item }, 'exact')} />
     {#if charRuns?.char === picked.char && charRuns.items.length}<RunStrip runs={charRuns.items} heading={t('explore.runs.with', { char: picked.char })} />{/if}
@@ -861,7 +868,7 @@
   .split-term{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:4px 0 10px;font-size:13px;color:var(--muted)}
   .split-tabs{display:flex;gap:2px;border-bottom:1px solid var(--line)}
   .split-tabs button{border:0;border-bottom:2px solid transparent;margin-bottom:-1px;background:transparent;padding:4px 14px 6px;font-size:22px;line-height:1.2;color:var(--muted)}
-  .split-tabs button[aria-selected="true"]{border-bottom-color:var(--ink);color:var(--ink)}
+  .split-tabs button[aria-pressed="true"]{border-bottom-color:var(--ink);color:var(--ink)}
   .browse-unit{display:flex;gap:2px;padding:8px 8px 6px}
   .browse-unit button{border:0;border-radius:5px;background:transparent;padding:5px 10px;font-size:12px;color:var(--muted)}
   .browse-unit button[aria-pressed="true"]{background:var(--surface-selected);color:var(--ink)}
