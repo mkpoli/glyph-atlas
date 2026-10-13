@@ -64,12 +64,19 @@
   let query = $state('')
   const run = $derived(runText(query))
   // A run the site holds no occurrence of goes to the collection's search, which still has its characters.
+  // A count that answers after the reader has chosen something else, or left the page, is dropped.
+  let searchId = 0
+  $effect(() => () => { searchId += 1 })
   async function search(value) {
-    const term = value.trim()
+    const term = value.trim(), id = ++searchId
     if (!term) return
+    // The run on show searched again is the run without its filters.
+    if (term === text) { query = ''; choose({ work: '', form: '', hand: '', sort: '' }); return }
     const found = runText(term) ? await runOccurrences(term, { limit: 1 }).catch(() => null) : null
+    if (id !== searchId) return
     goto(localize(found?.total ? runAddress(term) : collectionAddress({ q: term })))
   }
+  function openCharacter(item) { searchId += 1; goto(localize(characterAddress(item.code_point))) }
   const near = $derived([
     [() => t('run.near.inside'), related?.inside?.map(run => ({ text: run })) ?? []],
     [() => t('run.near.longer'), related?.longer ?? []],
@@ -111,7 +118,7 @@
     <div class="run-top">
       <a class="quiet-link" href={localize(collectionAddress({ work }))}>← {t('nav.explore')}</a>
       {#snippet runLead()}{#key run}<RunCandidate text={run} />{/key}{/snippet}
-      <CharacterSearch bind:value={query} onselect={item => goto(localize(characterAddress(item.code_point)))} onsubmit={search} lead={run ? runLead : null} />
+      <CharacterSearch bind:value={query} onselect={openCharacter} onsubmit={search} runs lead={run ? runLead : null} />
     </div>
     <p><b class:vertical><ScriptText {text} /></b>{#if total !== null}<span>{more ? t('run.occurrences.more', { count: total }) : t('run.occurrences', { count: total })}</span>{/if}</p>
   </header>
