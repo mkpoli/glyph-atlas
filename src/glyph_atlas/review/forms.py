@@ -71,6 +71,10 @@ def shape_runs(near: dict, clusters: list[dict]) -> list[str]:
     return ordered
 
 
+def _most_used(counts: Counter[str]) -> list[dict[str, Any]]:
+    return [{"char": char, "count": n} for char, n in sorted(counts.items(), key=lambda item: (-item[1], item[0]))]
+
+
 def _form_entry(char: str) -> dict[str, Any]:
     code_point = refs.to_code_points(char)[0]
     row = refs.character(code_point)
@@ -164,13 +168,15 @@ def router(media, corpus_root: Path) -> APIRouter:
                              "unusual": [{"id": identity, "image": image(identity)} for identity in
                                          islice((identity for identity in reversed(members[12:])
                                                  if not (decided.get(identity) or {}).get("issue")), 12)]})
-        # The descriptions the family's glyphs are named with, most used first, which the palette
-        # offers after the encoded forms.
-        described = Counter(decided[identity]["form"] for cluster in found["clusters"] for identity in data["members"][cluster["id"]]
-                            if representation.described((decided.get(identity) or {}).get("form") or ""))
+        # How many of the family's glyphs each form names; the descriptions among them, which the
+        # palette offers after the encoded forms. Both most used first.
+        usage = Counter(form for cluster in found["clusters"] for identity in data["members"][cluster["id"]]
+                        if (form := (decided.get(identity) or {}).get("form")))
+        described = Counter({form: n for form, n in usage.items() if representation.described(form)})
         return {"revision": data["revision"], **summary(found, decided), "order": order,
                 "forms": [_form_entry(char) for char in forms.family_members(code_point)],
-                "described": [{"char": char, "count": n} for char, n in sorted(described.items(), key=lambda item: (-item[1], item[0]))],
+                "described": _most_used(described),
+                "usage": _most_used(usage),
                 "items": clusters}
 
     @api.get("/atlas/forms/split/{cluster_id:path}")
