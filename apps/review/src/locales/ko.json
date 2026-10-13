@@ -161,6 +161,7 @@
   "explore.occurrencesOf.other": "{character}의 용례 {count}개",
   "explore.grapheme.forms.other": "자형 {count}개",
   "explore.graphemes": "자소",
+  "explore.graphemes.failed": "자소의 집계 결과를 불러오지 못했습니다.",
   "explore.order.fewest": "적은 순",
   "explore.order.most": "많은 순",
   "explore.pairs": "글자 쌍",

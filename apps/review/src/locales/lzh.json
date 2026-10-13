@@ -162,6 +162,7 @@
   "explore.occurrencesOf.other": "「{character}」凡{count}見",
   "explore.grapheme.forms.other": "{count}體",
   "explore.graphemes": "字種",
+  "explore.graphemes.failed": "字種之數不能載",
   "explore.order.fewest": "少者先",
   "explore.order.most": "多者先",
   "explore.pairs": "字對",

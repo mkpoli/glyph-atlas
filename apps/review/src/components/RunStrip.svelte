@@ -1,13 +1,13 @@
 <script>
-  // Frequent runs, shown with the gallery as their text and count, most frequent first, each opening its
-  // run's page. `runs` is `[{ text, n }]`, or null while it loads.
+  // Frequent characters or runs, shown with the gallery as their text and count, most frequent first, each
+  // opening its gallery or its run's page (`address`). `runs` is `[{ text, n }]`, or null while it loads.
   // The list shows `STEP` entries at a time, and starts short again for another list.
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import { number } from '../lib/client.js'
   import { t, localize } from '../lib/i18n.svelte.js'
   import { runAddress } from '../lib/ngrams.js'
 
-  let { runs = null, heading = '', tabs = null, failed = '', onretry = () => {} } = $props()
+  let { runs = null, heading = '', tabs = null, failed = '', onretry = () => {}, address = run => runAddress(run.text) } = $props()
   const id = $props.id()
   const STEP = 24
   let more = $state(0)
@@ -27,7 +27,7 @@
   {:else}
     <ul class="run-chips" aria-busy={!runs}>
       {#if runs}
-        {#each listed as run (run.text)}<li><a href={localize(runAddress(run.text))} aria-label={`${run.text} ${t('run.occurrences', { count: run.n })}`}><ReferenceGlyph char={run.text} size="sm" /><small>{number(run.n)}</small></a></li>{/each}
+        {#each listed as run (run.text)}<li><a href={localize(address(run))} aria-label={`${run.text} ${t('run.occurrences', { count: run.n })}`}><ReferenceGlyph char={run.text} size="sm" /><small>{number(run.n)}</small></a></li>{/each}
         {#if rest}<li><button type="button" class="run-more" onclick={() => more += 1}>{t('explore.runs.more')}</button></li>{/if}
       {:else}
         {#each Array(12) as _, i (i)}<li><span class="run-placeholder"></span></li>{/each}

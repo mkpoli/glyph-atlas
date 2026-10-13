@@ -158,6 +158,7 @@
   "explore.occurrencesOf.other": "{count} lần xuất hiện của {character}",
   "explore.grapheme.forms.other": "{count} tự dạng",
   "explore.graphemes": "Tự vị",
+  "explore.graphemes.failed": "Không thể tải số liệu thống kê tự vị.",
   "explore.order.fewest": "Ít trước",
   "explore.order.most": "Nhiều trước",
   "explore.pairs": "Cặp chữ",

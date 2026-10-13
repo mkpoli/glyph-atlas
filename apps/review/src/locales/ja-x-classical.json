@@ -160,6 +160,7 @@
   "explore.occurrencesOf.other": "「{character}」ノ用例{count}件",
   "explore.grapheme.forms.other": "字體{count}種",
   "explore.graphemes": "字種",
+  "explore.graphemes.failed": "字種ノ數ヲ讀込ム能ハズ",
   "explore.order.fewest": "少ナキ順",
   "explore.order.most": "多キ順",
   "explore.pairs": "二字組",

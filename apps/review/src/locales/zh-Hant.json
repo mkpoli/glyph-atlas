@@ -164,6 +164,7 @@
   "explore.occurrencesOf.other": "「{character}」共有{count}個用例",
   "explore.grapheme.forms.other": "{count}種字樣",
   "explore.graphemes": "字種",
+  "explore.graphemes.failed": "無法載入字種統計結果。",
   "explore.order.fewest": "由少到多",
   "explore.order.most": "由多到少",
   "explore.pairs": "字對",
