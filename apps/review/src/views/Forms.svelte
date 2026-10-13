@@ -327,7 +327,7 @@
 {#snippet source(char)}{#if byForm.get(char)?.jibo}<ScriptText text={byForm.get(char).jibo} />{:else}<OriginText origin={byForm.get(char)?.origin} />{/if}{/snippet}
 
 <!-- A cluster on the grid. A finished one sits in its form's panel without a frame of its own; the
-     panel header names its form. -->
+     panel header names its form or report. -->
 {#snippet clusterCard(c, i, compact = false)}
   <li class="form-cluster" class:active={i === active} class:picked={picked.has(c.id)} class:assigned={c.form || c.issue}>
     <button class="cluster-select" onclick={event => choose(i, event)} ondblclick={() => show(i)} aria-pressed={i === active || picked.has(c.id)}>
@@ -595,7 +595,7 @@
   .group-form{font-size:26px;line-height:1.2;color:var(--accent);font-family:"Kureedo Kata","Noto Sans CJK JP","GenZui Sans",sans-serif}
   .group-source{font-size:13px;color:var(--muted)}.group-meta{font-size:11px;color:var(--muted);margin-left:auto}
   .form-group .cluster-issue{margin-left:0}
-  .cluster-grid.compact{grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:0;border:1px solid var(--line);border-radius:9px;background:var(--surface);overflow:hidden}
+  .cluster-grid.compact{grid-template-columns:repeat(auto-fill,minmax(min(330px,100%),1fr));gap:0;border:1px solid var(--line);border-radius:9px;background:var(--surface);overflow:hidden}
   .compact .form-cluster,.compact .form-cluster.assigned{border:0;border-radius:0;background:transparent}
   .compact .form-cluster.active{box-shadow:inset 0 0 0 2px var(--accent)}
   .compact .form-cluster.picked{background:light-dark(#f3f1ff, rgb(156 146 255 / 10%))}
