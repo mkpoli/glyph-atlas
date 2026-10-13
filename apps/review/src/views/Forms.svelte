@@ -326,8 +326,8 @@
 <!-- Where a form of the family comes from: its 字母, else its 字源. -->
 {#snippet source(char)}{#if byForm.get(char)?.jibo}<ScriptText text={byForm.get(char).jibo} />{:else}<OriginText origin={byForm.get(char)?.origin} />{/if}{/snippet}
 
-<!-- A cluster on the grid. A finished one sits in its form's panel, so it shows less: one row of its
-     most typical glyphs, and no form of its own. -->
+<!-- A cluster on the grid. A finished one sits in its form's panel without a frame of its own; the
+     panel header names its form. -->
 {#snippet clusterCard(c, i, compact = false)}
   <li class="form-cluster" class:active={i === active} class:picked={picked.has(c.id)} class:assigned={c.form || c.issue}>
     <button class="cluster-select" onclick={event => choose(i, event)} ondblclick={() => show(i)} aria-pressed={i === active || picked.has(c.id)}>
@@ -337,9 +337,9 @@
         {:else if c.assigned}<span class="cluster-open">{around('forms.haveForm', 'glyph', { count: c.assigned })[0]}<span class="inline-glyph"><FormText text={c.majority} /></span>{around('forms.haveForm', 'glyph', { count: c.assigned })[1]}</span>
         {:else}<span class="cluster-open">{t('corpus.unassigned')}</span>{/if}
       </span>
-      <span class="cluster-samples">{#each compact ? c.representatives.slice(0, 6) : c.representatives as r (r.id)}{#if r.image}<Glyph item={r} alt="" class="glyph-image cluster-crop" {@attach fromAction(showsContext, () => ({ id: r.id, pin: false }))} />{/if}{/each}</span>
+      <span class="cluster-samples">{#each c.representatives as r (r.id)}{#if r.image}<Glyph item={r} alt="" class="glyph-image cluster-crop" {@attach fromAction(showsContext, () => ({ id: r.id, pin: false }))} />{/if}{/each}</span>
     </button>
-    {#if !compact && c.unusual.length}
+    {#if c.unusual.length}
       <div class="cluster-outliers">
         <small>{t('forms.leastTypical')}</small>
         <span class="cluster-samples">{#each c.unusual as g (g.id)}{#if g.image}<Glyph item={g} alt="" class="glyph-image cluster-crop" {@attach fromAction(showsContext, () => ({ id: g.id, pin: false }))} />{/if}{/each}</span>
@@ -595,12 +595,12 @@
   .group-form{font-size:26px;line-height:1.2;color:var(--accent);font-family:"Kureedo Kata","Noto Sans CJK JP","GenZui Sans",sans-serif}
   .group-source{font-size:13px;color:var(--muted)}.group-meta{font-size:11px;color:var(--muted);margin-left:auto}
   .form-group .cluster-issue{margin-left:0}
-  .cluster-grid.compact{grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:0;border:1px solid var(--line);border-radius:9px;background:var(--surface);overflow:hidden}
-  .compact .form-cluster,.compact .form-cluster.assigned{border:0;border-radius:0;background:transparent;box-shadow:inset -1px 0 var(--line)}
+  .cluster-grid.compact{grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:0;border:1px solid var(--line);border-radius:9px;background:var(--surface);overflow:hidden}
+  .compact .form-cluster,.compact .form-cluster.assigned{border:0;border-radius:0;background:transparent}
   .compact .form-cluster.active{box-shadow:inset 0 0 0 2px var(--accent)}
   .compact .form-cluster.picked{background:light-dark(#f3f1ff, rgb(156 146 255 / 10%))}
-  .compact .cluster-select{padding:8px 8px 4px}.compact .cluster-head{margin-bottom:5px;font-size:11px}
-  .compact .cluster-samples{gap:2px}.compact .cluster-foot{padding:0 8px 6px}
+  .compact .cluster-head{font-size:11px;color:var(--muted)}
+  .compact .cluster-samples{grid-template-columns:repeat(auto-fill,minmax(38px,1fr));gap:3px}
   .cluster-grid{list-style:none;margin:0;padding:0;display:grid;align-items:start;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px}
   .form-cluster{border:1.5px solid var(--line);border-radius:9px;background:var(--surface);overflow:hidden}
   .form-cluster.active{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-wash)}
