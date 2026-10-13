@@ -27,7 +27,7 @@
   {:else}
     <ul class="run-chips" aria-busy={!runs}>
       {#if runs}
-        {#each listed as run (run.text)}<li><a href={localize(address(run))} aria-label={`${run.text} ${t('run.occurrences', { count: run.n })}`}><ReferenceGlyph char={run.text} size="sm" /><small>{number(run.n)}</small></a></li>{/each}
+        {#each listed as run (run.key ?? run.text)}<li><a href={localize(address(run))} aria-label={`${run.text} ${t('run.occurrences', { count: run.n })}`}><ReferenceGlyph char={run.text} size="sm" /><small>{number(run.n)}</small></a></li>{/each}
         {#if rest}<li><button type="button" class="run-more" onclick={() => more += 1}>{t('explore.runs.more')}</button></li>{/if}
       {:else}
         {#each Array(12) as _, i (i)}<li><span class="run-placeholder"></span></li>{/each}

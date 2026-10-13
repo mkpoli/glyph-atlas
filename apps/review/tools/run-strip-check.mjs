@@ -2,7 +2,8 @@
 /**
  * The frequent sequences above Explore's collection and beside a character's gallery: the page renders
  * them with its first byte as text and counts, twenty-four at a time, and reads no run's occurrences
- * (`/atlas/runs`) to draw them, so nothing below them moves once the page is up.
+ * (`/atlas/runs`) to draw them, so nothing below them moves once the page is up. Its Graphemes tab
+ * lists the most frequent graphemes the same way, and a further page of the gallery leaves it as it is.
  *
  * Against a running page server, such as `vite preview` with ATLAS_REVIEW_API=https://glyphatlas.org:
  *   bun apps/review/tools/run-strip-check.mjs --server http://127.0.0.1:4173 [--character /en/character/U+3082]
@@ -40,6 +41,18 @@ try {
         await browser.evaluate('document.querySelector(".run-more").click()')
         await browser.waitFor('document.querySelectorAll(".run-chips li a").length > 24')
         check(await chips() === 48, `${name}: "Show more" adds twenty-four (${await chips()})`)
+        // The graphemes wait for the corpus's counts, and keep what "Show more" opened as the gallery below
+        // brings its next page.
+        await browser.evaluate(`[...document.querySelectorAll('.run-tabs button')].find(b => b.textContent.trim() === 'Graphemes').click()`)
+        await browser.waitFor('document.querySelectorAll(".run-chips li a").length === 24', 60000)
+        check(await browser.evaluate('[...document.querySelectorAll(".run-chips li a")].every(a => !a.getAttribute("href").includes("/sequence/"))'), `${name}: the Graphemes tab lists twenty-four graphemes`)
+        await browser.evaluate('document.querySelector(".run-more").click()')
+        await browser.waitFor('document.querySelectorAll(".run-chips li a").length === 48')
+        const tiles = await browser.evaluate('document.querySelectorAll(".glyph-tile").length')
+        await browser.evaluate('scrollTo(0, document.documentElement.scrollHeight)')
+        const grew = await browser.waitFor(`document.querySelectorAll(".glyph-tile").length > ${tiles}`, 30000).then(() => true, () => false)
+        await new Promise(r => setTimeout(r, 500))
+        check(grew && await chips() === 48, `${name}: forty-eight graphemes stay open as the gallery grows (${tiles} tiles${grew ? ' and more' : ', no more came'}, ${await chips()} chips)`)
       }
     }
   }

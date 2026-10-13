@@ -159,6 +159,7 @@
   "explore.occurrencesOf.other": "{count}吝出現𧵑{character}",
   "explore.grapheme.forms.other": "{count}字樣",
   "explore.graphemes": "字位",
+  "explore.graphemes.failed": "空體載數料統計字位。",
   "explore.order.fewest": "𠃣𠓀",
   "explore.order.most": "𡗉𠓀",
   "explore.pairs": "及𡨸",
