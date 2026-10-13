@@ -6,9 +6,12 @@
   // taller cell, so its crops stay legible down a column. A card opens the occurrence (`RunOccurrence`):
   // its page, its characters and its source. The run can be narrowed to one of the written forms its
   // graphemes gather (`FormFilter`), to a group of how its letterforms were made or to a work, and placed
-  // by that group or by work, and the sequences near it are one link away.
+  // by that group or by work, and the sequences near it are one link away. The search box above it
+  // goes on to the next search: a run found on a line opens its own page, anything else the collection's search.
   import { tick, untrack } from 'svelte'
-  import { replaceState } from '$app/navigation'
+  import { goto, replaceState } from '$app/navigation'
+  import CharacterSearch from './CharacterSearch.svelte'
+  import RunCandidate from './RunCandidate.svelte'
   import RunImage from './RunImage.svelte'
   import RunOccurrence from './RunOccurrence.svelte'
   import ScriptText from './ScriptText.svelte'
@@ -18,7 +21,8 @@
   import WorkFilter from './WorkFilter.svelte'
   import { runAddress, runOccurrences } from '../lib/ngrams.js'
   import { tileDate } from '../lib/dating.js'
-  import { collectionAddress } from '../lib/gallery.js'
+  import { characterAddress, collectionAddress } from '../lib/gallery.js'
+  import { runText } from '../lib/runs.js'
   import { number } from '../lib/client.js'
   import { sourceTitle } from '../lib/seo.js'
   import { t, localize } from '../lib/i18n.svelte.js'
@@ -56,6 +60,15 @@
     work = change.work ?? work; form = change.form ?? form; hand = change.hand ?? hand; sort = change.sort ?? sort; detail = null
     replaceState(localize(runAddress(text, { work, form, hand, sort })), {})
     load()
+  }
+  let query = $state('')
+  const run = $derived(runText(query))
+  // A run the site holds no occurrence of goes to the collection's search, which still has its characters.
+  async function search(value) {
+    const term = value.trim()
+    if (!term) return
+    const found = runText(term) ? await runOccurrences(term, { limit: 1 }).catch(() => null) : null
+    goto(localize(found?.total ? runAddress(term) : collectionAddress({ q: term })))
   }
   const near = $derived([
     [() => t('run.near.inside'), related?.inside?.map(run => ({ text: run })) ?? []],
@@ -95,7 +108,11 @@
     <SiteLinks />
   </div>
   <header class="run-heading">
-    <a class="quiet-link" href={localize(collectionAddress({ work }))}>← {t('nav.explore')}</a>
+    <div class="run-top">
+      <a class="quiet-link" href={localize(collectionAddress({ work }))}>← {t('nav.explore')}</a>
+      {#snippet runLead()}{#key run}<RunCandidate text={run} />{/key}{/snippet}
+      <CharacterSearch bind:value={query} onselect={item => goto(localize(characterAddress(item.code_point)))} onsubmit={search} lead={run ? runLead : null} />
+    </div>
     <p><b class:vertical><ScriptText {text} /></b>{#if total !== null}<span>{more ? t('run.occurrences.more', { count: total }) : t('run.occurrences', { count: total })}</span>{/if}</p>
   </header>
   <div class="run-controls">
@@ -140,6 +157,8 @@
 
 <style>
   .run-heading{display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding:18px 0}
+  .run-top{display:flex;flex-wrap:wrap;align-items:center;gap:12px 28px}
+  .run-top :global(.character-search){flex:1 1 200px;min-width:200px;max-width:420px}
   .run-heading p{display:flex;align-items:baseline;gap:14px;margin:0}
   .run-heading b{font-size:40px;font-weight:500;line-height:1.1}
   .run-heading b.vertical{writing-mode:vertical-rl;text-orientation:upright}
