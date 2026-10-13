@@ -166,12 +166,13 @@
       notice = form ? t('forms.notice.assigned', { form, count: result.count })
         : kind === 'inherit' ? t('forms.notice.inherited', { count: result.count }) : t('forms.notice.cleared', { count: result.count })
       setTimeout(() => notice = '', 2200)
-      const wasOpen = open, index = active
+      const wasOpen = open, index = active, unfinished = isOpen(cluster ?? {})
       await pick(code, true)
       await refreshList()
       if (wasOpen) { const page = await loadMembers(wasOpen, 0, Math.min(500, Math.max(240, glyphs.length)), order); glyphs = page.items; chosen = new Set(); if (splitK) groups = (await loadSplit(wasOpen, splitK)).groups }
-      // The one just named moved down to its form, and the next open cluster took its place.
-      else if (!units.length) active = nextOpen(Math.max(-1, index - targets.length))
+      // An open cluster just named moved down to its form, and the next open cluster took its place;
+      // a finished one renamed stays selected in its new group.
+      else if (!units.length && unfinished) active = nextOpen(Math.max(-1, index - targets.length))
     } catch (e) { error = e.message } finally { busy = false }
   }
   // A cluster marked mixed holds more than one form; one reported as a whole reports every glyph that
@@ -180,7 +181,7 @@
     if (busy || history.busy || !cluster) return
     busy = true; error = ''
     try {
-      const targets = pickedClusters.length ? pickedClusters.map(c => c.id) : [cluster.id], index = active
+      const targets = pickedClusters.length ? pickedClusters.map(c => c.id) : [cluster.id], index = active, unfinished = isOpen(cluster)
       const wrong = issue === 'character' && correction.trim() ? { character: correction.trim() } : {}
       let count = 0
       await step({ family: code, cluster: targets[0] }, async send => {
@@ -192,9 +193,10 @@
       const wasOpen = open
       await pick(code, true)
       await refreshList()
-      // An opened cluster stays on show with its marks; from the grid, the next open cluster takes its place.
+      // An opened cluster stays on show with its marks; from the grid, the next open cluster takes the place
+      // of an open one, and a finished one stays selected in its new group.
       if (wasOpen) { const page = await loadMembers(wasOpen, 0, Math.min(500, Math.max(240, glyphs.length)), order); glyphs = page.items; chosen = new Set(); if (splitK) groups = (await loadSplit(wasOpen, splitK)).groups }
-      else active = nextOpen(Math.max(-1, index - targets.length))
+      else if (unfinished) active = nextOpen(Math.max(-1, index - targets.length))
     } catch (e) { error = e.message } finally { busy = false }
   }
   const issueName = issue => issue === 'crop' ? t('forms.reportIssue.crop') : t('forms.reportIssue.character')
