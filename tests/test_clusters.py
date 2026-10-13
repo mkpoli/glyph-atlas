@@ -46,6 +46,8 @@ def test_a_kana_sequence_keeps_no_family_while_a_jamo_syllable_is_its_own():
 def test_an_occurrence_is_a_whole_written_character():
     assert [start for start, *_ in find_occurrences("ᄒᆞᆯᄒᆞ", "ᄒᆞ")] == [3]
     assert [start for start, *_ in find_occurrences("葛\U000E0100葛", "葛")] == [2]
+    assert find_occurrences("゚リ", "リ") == []
+    assert [start for start, *_ in find_occurrences("゚リリ", "リ")] == [2]
 
 
 def test_a_code_point_query_names_one_character():
