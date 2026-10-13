@@ -133,6 +133,7 @@
   "explore.empty.noCharacters": "此無字",
   "explore.empty.noOccurrenceOf": "此無{char}",
   "explore.empty.noOccurrenceOfTerm": "無{term}",
+  "explore.byCharacter": "逐字",
   "explore.empty.nothingFlagged": "無待正者",
   "explore.empty.samplesFailed": "{char}樣不能載",
   "explore.filter.all": "皆",

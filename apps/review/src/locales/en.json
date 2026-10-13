@@ -139,6 +139,7 @@
   "explore.empty.noCharacters": "No characters here.",
   "explore.empty.noOccurrenceOf": "No occurrence of {char} here.",
   "explore.empty.noOccurrenceOfTerm": "No occurrence of {term}.",
+  "explore.byCharacter": "By character",
   "explore.empty.nothingFlagged": "Nothing needs fixing.",
   "explore.empty.samplesFailed": "Samples of {char} could not load.",
   "explore.filter.all": "All",

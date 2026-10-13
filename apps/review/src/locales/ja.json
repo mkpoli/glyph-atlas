@@ -131,6 +131,7 @@
   "explore.empty.noCharacters": "ここに文字はありません。",
   "explore.empty.noOccurrenceOf": "ここに{char}の用例はありません。",
   "explore.empty.noOccurrenceOfTerm": "{term}の用例はありません。",
+  "explore.byCharacter": "一字ずつ",
   "explore.empty.nothingFlagged": "修正が必要な文字はありません。",
   "explore.empty.samplesFailed": "{char}のサンプルを読み込めませんでした。",
   "explore.filter.all": "すべて",

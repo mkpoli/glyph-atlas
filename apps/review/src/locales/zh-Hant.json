@@ -135,6 +135,7 @@
   "explore.empty.noCharacters": "這裡沒有字。",
   "explore.empty.noOccurrenceOf": "這裡沒有{char}的用例。",
   "explore.empty.noOccurrenceOfTerm": "沒有{term}的用例。",
+  "explore.byCharacter": "逐字",
   "explore.empty.nothingFlagged": "沒有待修正的字。",
   "explore.empty.samplesFailed": "{char}的範例無法載入。",
   "explore.filter.all": "全部",

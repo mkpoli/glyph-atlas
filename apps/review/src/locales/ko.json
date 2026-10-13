@@ -132,6 +132,7 @@
   "explore.empty.noCharacters": "여기에 글자가 없습니다.",
   "explore.empty.noOccurrenceOf": "여기에 {char}의 용례가 없습니다.",
   "explore.empty.noOccurrenceOfTerm": "{term}의 용례가 없습니다.",
+  "explore.byCharacter": "글자별",
   "explore.empty.nothingFlagged": "수정할 글자가 없습니다.",
   "explore.empty.samplesFailed": "{char}의 예시를 불러올 수 없습니다.",
   "explore.filter.all": "전체",

@@ -132,6 +132,7 @@
   "explore.empty.noCharacters": "Không có chữ nào ở đây.",
   "explore.empty.noOccurrenceOf": "Không có lần xuất hiện nào của {char} ở đây.",
   "explore.empty.noOccurrenceOfTerm": "Không có lần xuất hiện nào của {term}.",
+  "explore.byCharacter": "Từng chữ",
   "explore.empty.nothingFlagged": "Không có chữ nào cần sửa.",
   "explore.empty.samplesFailed": "Không tải được mẫu của {char}.",
   "explore.filter.all": "Tất cả",
