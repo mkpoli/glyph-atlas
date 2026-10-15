@@ -39,8 +39,11 @@ def page_meta(page: Page) -> dict:
     return json.loads(meta) if isinstance(meta, str) else dict(meta or {})
 
 
-def scale_box(box: Box, sx: float, sy: float) -> Box:
-    return Box(x=round(box.x * sx), y=round(box.y * sy), w=max(1, round(box.w * sx)), h=max(1, round(box.h * sy)))
+def scale_box(box: Box, sx: float, sy: float, width: int, height: int) -> Box:
+    """`box` in page space: its corners scaled and kept inside the page."""
+    left, top = min(width - 1, round(box.x * sx)), min(height - 1, round(box.y * sy))
+    right, bottom = min(width, round((box.x + box.w) * sx)), min(height, round((box.y + box.h) * sy))
+    return Box(x=left, y=top, w=max(1, right - left), h=max(1, bottom - top))
 
 
 def union(boxes: list[Box]) -> Box:
@@ -132,8 +135,8 @@ def main() -> int:
             outcomes[entry["outcome"]] += 1
             continue
 
-        sx = page.width / image.width if page.width else 1.0
-        sy = page.height / image.height if page.height else 1.0
+        page_width, page_height = page.width or image.width, page.height or image.height
+        sx, sy = page_width / image.width, page_height / image.height
         by_column: dict[int, list[ko_scans.Match]] = {}
         for match in found:
             by_column.setdefault(column_of[match.box], []).append(match)
@@ -148,7 +151,7 @@ def main() -> int:
                 id=ko_scans.line_id(page.id, column),
                 page_id=page.id,
                 seq=line_seq,
-                box=scale_box(union([boxes[m.box] for m in members]), sx, sy),
+                box=scale_box(union([boxes[m.box] for m in members]), sx, sy, page_width, page_height),
                 vertical=True,
                 text_raw="".join(tokens[first:last + 1]),
                 text="".join(tokens[first:last + 1]),
@@ -159,7 +162,7 @@ def main() -> int:
             lines.append(line)
             for match in emitted:
                 char = tokens[match.token]
-                box = scale_box(boxes[match.box], sx, sy)
+                box = scale_box(boxes[match.box], sx, sy, page_width, page_height)
                 top_key = "hangul_top5" if match.model == "hangul" else "atlas_top5"
                 units.append(Unit(
                     id=ko_scans.unit_id(page.id, box),
@@ -170,7 +173,7 @@ def main() -> int:
                     box=box,
                     text_source=char,
                     unicode=eonhae.codepoints(char),
-                    script=eonhae.script_of(char),
+                    script=eonhae.script_of(ko_scans.bare(char)),
                     method="detect-align",
                     upstream={key: str(value) for key, value in {
                         "source": "wikisource", "url": page_meta(page).get("wikisource_url"),

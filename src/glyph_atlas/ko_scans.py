@@ -18,6 +18,7 @@ judged matches agree less than `MIN_AGREEMENT` of the time is left out whole.
 from __future__ import annotations
 
 import hashlib
+import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
@@ -39,8 +40,11 @@ UNMODELLED = 2.5
 #: Lowest probability a match is scored at, so that one confident miss does not wreck a path.
 FLOOR = 1e-4
 #: A box starts a new column when its centre lies further than this many median box widths from the
-#: column's centre.
+#: column's mean centre.
 COLUMN_GAP = 0.6
+#: A box whose centre lies further than this share of the column's glyph width from the column's axis
+#: stands in one half of a two-line note.
+HALF_OFFSET = 0.18
 
 Move = Literal["match", "skip_token", "skip_box"]
 
@@ -65,28 +69,94 @@ class Match:
     model: Literal["atlas", "hangul", "none"]
 
 
+def bare(token: str) -> str:
+    """`token` without its tone marks (方點), which neither classifier reads."""
+    stripped = "".join(c for c in token if ord(c) not in clusters.HANGUL_TONE_MARKS)
+    return stripped or token
+
+
 def page_tokens(text: str) -> list[str]:
-    """The printed characters of a page's wikitext, in reading order, with old hangul clusters."""
-    return [char for char in eonhae.characters(text) if eonhae.names_a_character(char)]
+    """The printed characters of a page's wikitext, in reading order, with old hangul clusters.
+
+    A vowel standing alone after a hanja, such as the particle ᅵ, is its own character.
+    """
+    return [written for written in clusters.clusters(eonhae._plain_wikitext(text))
+            if _printed(written) and eonhae.names_a_character(written)]
+
+
+def _printed(written: str) -> bool:
+    first = written[0]
+    category = unicodedata.category(first)
+    return not (first == "/" or eonhae.codepoints(written) in eonhae.CIRCLES or category[0] in "PZ"
+                or category == "Cc")
 
 
 def reading_order(boxes: Sequence[Box]) -> list[list[int]]:
-    """Box indices grouped into columns, right to left, each top to bottom."""
+    """Box indices grouped into columns, right to left, each read top to bottom.
+
+    Boxes join a column while their centre lies within `COLUMN_GAP` median widths of the column's
+    mean centre, taken right to left. A column that lies wholly inside the span of the one to its
+    right is the left half of a two-line note (雙行) and joins it; inside a column, a stretch of boxes
+    set off to either side of its axis is read right half first.
+    """
     if not boxes:
         return []
     width = float(np.median([box.w for box in boxes]))
     columns: list[list[int]] = []
     centres: list[float] = []
-    for index in sorted(range(len(boxes)), key=lambda i: -(boxes[i].x + boxes[i].w / 2)):
-        centre = boxes[index].x + boxes[index].w / 2
+    for index in sorted(range(len(boxes)), key=lambda i: -_centre(boxes[i])):
+        centre = _centre(boxes[index])
         if centres and abs(centres[-1] - centre) <= COLUMN_GAP * width:
             columns[-1].append(index)
-            members = columns[-1]
-            centres[-1] = sum(boxes[i].x + boxes[i].w / 2 for i in members) / len(members)
+            centres[-1] = sum(_centre(boxes[i]) for i in columns[-1]) / len(columns[-1])
         else:
             columns.append([index])
             centres.append(centre)
-    return [sorted(column, key=lambda i: boxes[i].y) for column in columns]
+    merged: list[list[int]] = []
+    for column in columns:
+        if merged and _inside(column, merged[-1], boxes):
+            merged[-1] += column
+        else:
+            merged.append(column)
+    return [_column_order(column, boxes) for column in merged]
+
+
+def _inside(column: list[int], right: list[int], boxes: Sequence[Box]) -> bool:
+    """Whether every box of `column` lies within the horizontal span of `right`."""
+    left_edge = min(boxes[i].x for i in right)
+    right_edge = max(boxes[i].x + boxes[i].w for i in right)
+    return all(left_edge <= boxes[i].x and boxes[i].x + boxes[i].w <= right_edge for i in column)
+
+
+def _centre(box: Box) -> float:
+    return box.x + box.w / 2
+
+
+def _column_order(column: list[int], boxes: Sequence[Box]) -> list[int]:
+    """One column's boxes top to bottom, with each two-line note's right half before its left."""
+    widths = sorted(boxes[i].w for i in column)
+    main = [i for i in column if boxes[i].w >= widths[len(widths) * 3 // 4]]
+    axis = float(np.median([_centre(boxes[i]) for i in main]))
+    offset = HALF_OFFSET * float(np.median([boxes[i].w for i in main]))
+
+    def side(index: int) -> int:
+        shift = _centre(boxes[index]) - axis
+        return 1 if shift > offset else -1 if shift < -offset else 0
+
+    out: list[int] = []
+    note: list[int] = []
+    for index in sorted(column, key=lambda i: boxes[i].y):
+        if side(index):
+            note.append(index)
+            continue
+        out += _note_order(note, side)
+        note = []
+        out.append(index)
+    return out + _note_order(note, side)
+
+
+def _note_order(note: list[int], side) -> list[int]:
+    return [i for i in note if side(i) > 0] + [i for i in note if side(i) < 0]
 
 
 def align(costs: np.ndarray) -> list[Step]:
@@ -146,6 +216,7 @@ class Models:
         self.hangul_classes = list(hangul_classes)
 
     def model_of(self, token: str) -> Literal["atlas", "hangul", "none"]:
+        token = bare(token)
         script = eonhae.script_of(token)
         if script == "hangul" and clusters.shape_key(token) in self.hangul_index.key_indices:
             return "hangul"
@@ -156,6 +227,7 @@ class Models:
     def probabilities(self, token: str, boxes: Sequence[int]) -> np.ndarray | None:
         """The probability of `token` on each of `boxes` under its own model, or None for no model."""
         model = self.model_of(token)
+        token = bare(token)
         rows = list(boxes)
         if model == "hangul":
             columns = list(self.hangul_index.key_indices[clusters.shape_key(token)])
@@ -175,6 +247,7 @@ class Models:
 
     def verdict(self, token: str, box: int) -> tuple[bool | None, tuple[str, ...], str]:
         model = self.model_of(token)
+        token = bare(token)
         if model == "hangul":
             row = self.hangul[box]
             agrees = clusters.shape_key(token) in eonhae.open_top_keys(row, self.hangul_index)

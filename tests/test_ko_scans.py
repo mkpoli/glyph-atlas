@@ -22,6 +22,10 @@ def test_page_tokens_keep_hanja_readings_and_old_hangul_in_print_order() -> None
     assert ko_scans.page_tokens(text) == ["右", "우", "第", "뎨", "六", "륙", "章", "쟝", "子", "ᄌᆞ", "ㅣ", "曰", "왈"]
 
 
+def test_page_tokens_keep_a_lone_vowel_apart_from_the_hanja_before_it() -> None:
+    assert ko_scans.page_tokens("天大\u1175地") == ["天", "大", "\u1175", "地"]
+
+
 def test_page_tokens_drop_private_use_characters() -> None:
     assert ko_scans.page_tokens("大대") == ["大", "대"]
 
@@ -103,3 +107,34 @@ def test_unit_ids_are_stable_and_prefixed() -> None:
     first = ko_scans.unit_id("ws:ko:scan:x:1", box(1, 2, 3, 4))
     assert first == ko_scans.unit_id("ws:ko:scan:x:1", box(1, 2, 3, 4))
     assert first.startswith("ks:") and first != ko_scans.unit_id("ws:ko:scan:x:2", box(1, 2, 3, 4))
+
+
+def test_a_scaled_box_stays_inside_the_page() -> None:
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location("cut_ko_scans", Path("scripts/cut_ko_scans.py"))
+    script = importlib.util.module_from_spec(spec)
+    sys.modules["cut_ko_scans"] = script
+    spec.loader.exec_module(script)
+    scaled = script.scale_box(box(901, 100, 101, 60), 1.5, 1.5, 1503, 1500)
+    assert scaled.x + scaled.w <= 1503 and scaled.y + scaled.h <= 1500
+
+
+def test_a_toned_syllable_is_judged_by_its_shape_without_the_tone_mark() -> None:
+    found = models(atlas_rows=[[0.5, 0.5]], hangul_rows=[[0.9, 0.1]],
+                   atlas_classes=["U+5927", "other"], hangul_classes=["U+AC00", "other"])
+    assert ko_scans.page_tokens("가〮나") == ["가〮", "나"]
+    assert found.model_of("가〮") == "hangul"
+    assert found.verdict("가〮", 0)[0] is True
+    assert np.allclose(found.costs(["가〮"], [0]), -np.log(0.9))
+    assert eonhae.script_of(ko_scans.bare("가〮")) == "hangul"
+
+
+def test_a_two_line_note_reads_its_right_half_before_its_left() -> None:
+    # main glyphs 40 wide on axis x=100, a note of two half columns, then main text again
+    boxes = [box(80, 0), box(80, 45),
+             box(101, 90, 18, 18), box(101, 112, 18, 18), box(81, 90, 18, 18), box(81, 112, 18, 18),
+             box(80, 135), box(20, 0)]
+    assert ko_scans.reading_order(boxes) == [[0, 1, 2, 3, 4, 5, 6], [7]]
