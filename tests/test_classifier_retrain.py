@@ -97,3 +97,14 @@ def test_a_candidate_without_its_class_list_is_refused(tmp_path):
     (candidate / "best.pt").write_text("x")
     with pytest.raises(SystemExit, match="classes.json"):
         retrain.install(candidate, artifacts, "old")
+
+
+def test_extra_reaches_build_combined(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(retrain, "ROOT", tmp_path)
+    monkeypatch.setattr(retrain, "step", lambda *arguments, log=None: calls.append(arguments))
+    monkeypatch.setattr(retrain.shutil, "copy2", lambda *_: None)
+    retrain.train("stamp", skip_manifests=False, epochs=None, extra=Path("work/classifier-hangul"))
+    assert calls[0] == ("models/classifier/build_combined.py", "--extra", Path("work/classifier-hangul"))
+    retrain.train("stamp", skip_manifests=False, epochs=None)
+    assert calls[3] == ("models/classifier/build_combined.py",)
