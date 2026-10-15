@@ -164,8 +164,8 @@ def main() -> None:
     parser.add_argument("--install", action="store_true", help="install the candidate when the gate passes")
     args = parser.parse_args()
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    if args.extra and args.skip_manifests:
-        parser.error("--extra builds the manifests, so it cannot be used with --skip-manifests")
+    if args.extra and (args.skip_manifests or args.candidate):
+        parser.error("--extra builds the manifests, so it cannot be used with --skip-manifests or --candidate")
     candidate = args.candidate or train(stamp, skip_manifests=args.skip_manifests, epochs=args.epochs,
                                         extra=args.extra)
     if not (candidate / "classes.json").exists():
