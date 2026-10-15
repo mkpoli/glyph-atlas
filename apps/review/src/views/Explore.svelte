@@ -107,7 +107,8 @@
   async function readCollection() {
     try { collection = await request('/atlas/collection/status') } catch { /* retry on the next interval */ }
   }
-  const categories = $derived((data?.categories ?? []).filter(c => !flagged || c.flagged || c.hard))
+  // Unfiltered, the catalogue's own list: a further page keeps it, and so leaves everything gathered from it alone.
+  const categories = $derived(flagged ? (data?.categories ?? []).filter(c => c.flagged || c.hard) : data?.categories ?? [])
   /** A grapheme key (`U+4EEE`, or a label's own code points) as the text it names. */
   const charOf = key => keyText(key) ?? key
   // Whether the graphemes are listed from the most crops or from the fewest; the choice is remembered.
@@ -116,12 +117,13 @@
   // The corpus glyphs of every character, as [label, grapheme, glyphs], read once when the search box is
   // first focused; the Flagged view has no use for them. A service without them (the local review
   // service has none) or a failed read leaves the tiles counting crops for the rest of the visit.
-  let corpusCounts = $state(null), corpusCountsAsked = false
+  // The frequent graphemes above the collection need them too, and offer to read them again after a failure.
+  let corpusCounts = $state(null), corpusCountsAsked = false, corpusCountsFailed = $state(false)
   async function loadCorpusCounts() {
     if (flagged || corpusCountsAsked) return
-    corpusCountsAsked = true
+    corpusCountsAsked = true; corpusCountsFailed = false
     try { const found = await request('/atlas/corpus/characters'); if (!closed) corpusCounts = found.items }
-    catch { /* no corpus counts this visit */ }
+    catch { if (!closed) corpusCountsFailed = true }
   }
   // Tiles count corpus glyphs only while choosing one opens its gallery: with a work or a script group
   // chosen, a tile narrows the collection's listing instead, and corpus glyphs belong to neither.
@@ -450,9 +452,12 @@
       .map(row => ({ ...row, label: writtenLabel(row), origin: 'corpus' }))
   }
 
-  // Runs are shown with the gallery without being asked for: the collection's most frequent pairs or
-  // trigrams on the bare collection page, and those a picked character is part of on its gallery. The
-  // server renders the first list of each; another is read when the view moves to it.
+  // Runs are shown with the gallery without being asked for: the collection's most frequent graphemes,
+  // pairs or trigrams on the bare collection page, and the runs a picked character is part of on its
+  // gallery. The server renders the first list of each; another is read when the view moves to it. The
+  // graphemes are those the grapheme browser counts, crops and corpus glyphs under their grapheme, so they
+  // wait for the corpus's counts; a list with the same counts as the one shown is kept, which keeps what
+  // "More" has opened.
   const bare = $derived(!flagged && !picked && !choosing && !query.trim() && !grapheme && !work && filter === 'all')
   let runKind = $state('pair'), homeRuns = $state(asked?.runs ? { kind: 'pair', items: asked.runs } : null), homeRunsFailed = $state(false)
   async function loadHomeRuns(kind) {
@@ -460,7 +465,21 @@
     try { const items = (await frequent(kind)).slice(0, KEPT); if (!closed && runKind === kind) homeRuns = { kind, items } }
     catch { if (!closed && runKind === kind) homeRunsFailed = true }
   }
-  $effect(() => { if (bare && homeRuns?.kind !== runKind) untrack(() => loadHomeRuns(runKind)) })
+  $effect(() => {
+    if (!bare) return
+    if (runKind === 'grapheme') untrack(loadCorpusCounts)
+    else if (homeRuns?.kind !== runKind) untrack(() => loadHomeRuns(runKind))
+  })
+  let shownGraphemes = null
+  const frequentGraphemes = $derived.by(() => {
+    if (runKind !== 'grapheme' || !corpusCounts) return null
+    const next = graphemes.filter(group => group.count > 0).sort((a, b) => b.count - a.count || a.key.localeCompare(b.key)).slice(0, KEPT)
+      .map(group => ({ text: group.char, n: group.count, key: group.key }))
+    const same = shownGraphemes?.length === next.length && next.every((group, i) => group.key === shownGraphemes[i].key && group.n === shownGraphemes[i].n)
+    return same ? shownGraphemes : (shownGraphemes = next)
+  })
+  // A grapheme of more than one character has no page of its own; its chip narrows the collection to it.
+  const graphemeAddress = group => hasCharacterPage(group.text) ? characterAddress(group.key, { scope: 'family' }) : collectionAddress({ grapheme: group.key })
   // A few pairs and trigrams scattered through the homepage's first page of crops, each as one place it
   // was written, drawn from the frequent ones by the gallery's seed, so a shuffle deals others. Their
   // places and their tiles' shape come from the seed alone: the page the server renders holds them
@@ -507,7 +526,7 @@
     catch { /* no strip for this character */ }
   }
   $effect(() => { const char = picked?.char; if (char && char !== charRunsFor) { charRunsFor = char; untrack(() => loadCharRuns(char)) } })
-  const runWords = { pair: () => t('explore.pairs'), trigram: () => t('explore.trigrams') }
+  const runWords = { grapheme: () => t('explore.graphemes'), pair: () => t('explore.pairs'), trigram: () => t('explore.trigrams') }
   const runFailed = kind => kind === 'trigram' ? t('explore.trigrams.failed') : t('explore.pairs.failed')
 
   // A query of two to eight characters is also a run, which the candidate list offers (`RunCandidate`).
@@ -893,8 +912,10 @@
       {#if loading}<span class="find-pending"> …</span>{/if}
     </p>
   {/if}
-  {#if bare}<RunStrip runs={homeRuns?.kind === runKind ? homeRuns.items : null} heading={t('explore.runs.heading')} failed={homeRunsFailed ? runFailed(runKind) : ''} onretry={() => loadHomeRuns(runKind)}
-    tabs={{ value: runKind, options: Object.entries(runWords), onchange: value => { runKind = value; homeRunsFailed = false } }} />{/if}
+  {#if bare}{#if runKind === 'grapheme'}<RunStrip runs={frequentGraphemes} heading={t('explore.runs.heading')} failed={corpusCountsFailed ? t('explore.graphemes.failed') : ''} onretry={() => { corpusCountsAsked = false; loadCorpusCounts() }}
+      address={graphemeAddress} tabs={{ value: runKind, options: Object.entries(runWords), onchange: value => { runKind = value } }} />
+    {:else}<RunStrip runs={homeRuns?.kind === runKind ? homeRuns.items : null} heading={t('explore.runs.heading')} failed={homeRunsFailed ? runFailed(runKind) : ''} onretry={() => loadHomeRuns(runKind)}
+      tabs={{ value: runKind, options: Object.entries(runWords), onchange: value => { runKind = value; homeRunsFailed = false } }} />{/if}{/if}
   {#if picked}
   {:else if !query && (items.length || homeCorpus.length || sampleFault)}
     <p class="find-count" role="status">{#if items.length}{t('explore.count.here', { count: items.length })}{/if}{#if homeCorpus.length}{#if items.length}<span class="separator">·</span> {/if}{t('explore.count.fromCorpus', { count: homeCorpus.length })}{/if}{#if sampleFault}{#if items.length || homeCorpus.length}<span class="separator">·</span> {/if}<span class="corpus-fault" role="status">{sampleFault === 'error' ? t('explore.corpus.error') : t('explore.corpus.notLoaded')}</span>{/if}{#if loading}<span class="find-pending"> …</span>{/if}</p>

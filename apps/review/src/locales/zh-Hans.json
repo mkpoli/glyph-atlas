@@ -164,6 +164,7 @@
   "explore.occurrencesOf.other": "“{character}”共出现{count}次",
   "explore.grapheme.forms.other": "{count}种字样",
   "explore.graphemes": "字种",
+  "explore.graphemes.failed": "无法加载字种统计结果。",
   "explore.order.fewest": "从少到多",
   "explore.order.most": "从多到少",
   "explore.pairs": "字对",
