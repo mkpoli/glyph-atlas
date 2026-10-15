@@ -27,6 +27,9 @@ export function repairOf(item) {
   return null
 }
 
+/** The work a crop was cut from, by its title. */
+export const workTitle = item => typeof item.source === 'string' ? item.source : (item.source?.title ?? item.title)
+
 /** What a crop's details list: the written form, the material, how far the record
  * has been checked, where it comes from, the work and page, when the copy and its text were made, and the holder. A line that names a character is
  * `{ before, text, after }`, for `ScriptLine` to draw the character in its script's colour; the others are text. */
@@ -37,7 +40,7 @@ export function cropDetails(item) {
     : repair?.label === 'unconfirmed' ? t('tile.notYetConfirmed') : repair?.label === 'no-class' ? t('tile.noClass')
     : repair ? t('tile.machineAligned') : null
   const origin = item.origin === 'corpus' ? ((item.source?.corpus ?? item.corpus) === 'codh-full' ? t('tile.origin.codh') : t('tile.origin.corpus')) : null
-  const work = typeof item.source === 'string' ? item.source : (item.source?.title ?? item.title)
+  const work = workTitle(item)
   const page = item.page_number ? t('tile.page', { page: item.page_number }) : null
   // The form the site holds for the crop, when it is other than the label: the shape the letterforms
   // take, the crop still filed under its label. Competing forms are named together.
