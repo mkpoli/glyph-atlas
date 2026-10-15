@@ -12,9 +12,11 @@
 </script>
 
 {#if run.text}<a class="glyph-tile run-tile collage-cell" {style} href={localize(runAddress(run.text))} aria-label={`${run.text} · ${t('run.occurrences', { count: run.n })}`}>
-  <span class="tile-label"><span class="tile-glyph"><ScriptText text={run.text} titled={false} /></span></span>
   <span class="run-tile-image" aria-hidden="true">{#if run.crops}<RunImage crops={run.crops} page={run.page} vertical={run.vertical} />{:else}<span class="run-tile-text">{run.text}</span>{/if}</span>
-  <span class="tile-footer"><span>{t('run.occurrences', { count: run.n })}</span><span class="tile-arrow">↗</span></span>
+  <span class="tile-caption">
+    <span class="tile-label"><span class="tile-glyph"><ScriptText text={run.text} titled={false} /></span></span>
+    <span class="tile-footer"><span>{t('run.occurrences', { count: run.n })}</span><span class="tile-arrow">↗</span></span>
+  </span>
 </a>
 {:else}<div class="glyph-skeleton collage-cell" {style} aria-hidden="true"></div>{/if}
 
