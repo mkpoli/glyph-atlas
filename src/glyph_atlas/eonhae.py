@@ -117,6 +117,7 @@ def text_rights(volume: Volume) -> Rights:
         evidence=WIKISOURCE_TERMS,
     )
 
+
 #: Wikitext comments, which do not carry printed text.
 _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 #: Wikitext or HTML tags that do not carry printed text here.
