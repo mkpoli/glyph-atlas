@@ -37,6 +37,14 @@ def test_an_aligned_line_is_read_by_its_boxes_not_its_numbers():
     assert sorted(run.units for run in adjacent_ngrams(placed)) == [("L:b", "L:c"), ("L:b", "L:c", "L:a"), ("L:c", "L:a")]
 
 
+def test_a_line_numbered_in_box_order_keeps_its_gaps():
+    # 大, its reading rejected (no unit at 1), then 小: the gap at 1 keeps them from making a run.
+    gapped = [glyph("a", 0, 0), glyph("c", 2, 50)]
+    placed = in_reading_order(gapped)
+    assert sorted((g.id, g.seq) for g in placed) == [("L:a", 0), ("L:c", 2)]
+    assert adjacent_ngrams(placed) == []
+
+
 def test_glyphs_sharing_a_box_share_its_place_and_a_glyph_without_one_has_none():
     shared = [glyph("a", 0, 0), glyph("b", 1, 40), glyph("c", 2, 40), glyph("d", 3, 80),
               Glyph("L:e", "L", 4, "char", "char", None, True)]

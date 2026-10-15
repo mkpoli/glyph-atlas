@@ -5,6 +5,7 @@ from __future__ import annotations
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from collections.abc import Container, Iterable, Iterator, Mapping
+from itertools import pairwise
 from typing import Any, NamedTuple
 
 from .schema import Unit, UnitKind
@@ -204,7 +205,9 @@ def in_reading_order(glyphs: Iterable[Glyph], horizontal: Container[str] = froze
 
     A detect-align dataset written before 2026-09-24 numbered a vertical line's units in an order
     close to random down the column (`glyph_atlas.box_relabel`); its repair keeps every id on its
-    box, so the boxes, not the numbers, say which glyphs follow each other. A vertical line is read
+    box, so the boxes, not the numbers, say which glyphs follow each other. A line whose numbers
+    already follow its boxes, one glyph to a box, keeps them, gaps included: a gap is a character the
+    transcription has and no unit holds. A vertical line is read
     as `align.reading_order` reads one, a horizontal one left to right. Glyphs sharing a box share
     its place, which no run passes through, and a glyph without a box has no place.
     """
@@ -222,7 +225,12 @@ def in_reading_order(glyphs: Iterable[Glyph], horizontal: Container[str] = froze
         ordered = (sorted(detections, key=lambda d: d.centre) if line in horizontal
                    else align.reading_order(detections))
         rank = {Place(d.box.x, d.box.y, d.box.w, d.box.h): i for i, d in enumerate(ordered)}
-        placed += [glyph._replace(seq=rank[glyph.box]) for glyph in found]
+        by_seq = sorted(found, key=lambda glyph: (glyph.seq is None, glyph.seq or 0))
+        if all(g.seq is not None for g in found) and all(
+                rank[a.box] < rank[b.box] and a.seq < b.seq for a, b in pairwise(by_seq)):
+            placed += found
+        else:
+            placed += [glyph._replace(seq=rank[glyph.box]) for glyph in found]
     return placed
 
 
