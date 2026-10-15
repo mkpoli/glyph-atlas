@@ -1083,8 +1083,10 @@ try {
     const timed = () => mf.dispatchFetch(base + '/atlas/runs?' + new URLSearchParams({ text: pairText, limit: '37' })).then(r => r.headers.get('server-timing') ?? '')
     const steps = header => header.split(', ').map(part => part.split(';')[0])
     const miss = await timed()
-    assert.deepEqual(steps(miss).filter(s => ['version', 'cache-miss', 'graphemes', 'rows', 'records', 'reads', 'total'].includes(s)),
-      ['version', 'cache-miss', 'graphemes', 'rows', 'records', 'reads', 'total'], `a run read afresh times its steps: ${miss}`)
+    // The reads that run side by side end in any order.
+    const read = steps(miss), side = read.slice(4, 7)
+    assert.deepEqual([...read.slice(0, 4), ...read.slice(7)], ['version', 'cache-miss', 'graphemes', 'rows', 'reads', 'total'], `a run read afresh times its steps: ${miss}`)
+    assert.deepEqual(side.sort(), ['dating', 'records', 'works'], `a first page times its parallel reads: ${miss}`)
     assert.ok(/^(\w[\w-]*;dur=\d+)(, \w[\w-]*;dur=\d+)*$/.test(miss), `the timings are a Server-Timing header: ${miss}`)
     let hit = ''
     for (let i = 0; i < 20 && !hit.includes('cache-hit'); i++) { await new Promise(r => setTimeout(r, 50)); hit = await timed() }
