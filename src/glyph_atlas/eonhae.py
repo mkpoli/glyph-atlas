@@ -44,7 +44,7 @@ from pathlib import Path
 from typing import Literal
 
 from . import clusters, glossary, net, wikitext
-from .schema import Box
+from .schema import Box, Licence, Rights
 
 Volume = Literal["sang", "ha"]
 
@@ -100,6 +100,22 @@ KO_HOST = "ko.wikisource.org"
 KO_REVID = "431023"
 #: Public Korean source URL kept in unit upstream metadata.
 KO_URL = "https://ko.wikisource.org/wiki/노걸대언해?oldid=431023"
+#: Page that states the licence of Wikisource text.
+WIKISOURCE_TERMS = "https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use"
+
+
+def text_rights(volume: Volume) -> Rights:
+    """The labels' rights: hanja from zh.wikisource's 老乞大, 언해 from ko.wikisource's 노걸대언해."""
+    spec = VOLUMES[volume]
+    return Rights(
+        licence=Licence.CC_BY_SA_4,
+        holder="Wikisource contributors",
+        attribution=(
+            f"Wikisource contributors: 老乞大/卷{spec['label']} (zh.wikisource, oldid {spec['zh_revid']}) and "
+            f"노걸대언해 (ko.wikisource, oldid {KO_REVID}), CC BY-SA 4.0"
+        ),
+        evidence=WIKISOURCE_TERMS,
+    )
 
 #: Wikitext comments, which do not carry printed text.
 _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
