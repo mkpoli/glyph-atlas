@@ -14,8 +14,8 @@ import { cropShape } from './cropPaint.js'
 export const COLUMNS = [2, 3, 4, 5, 6, 7, 8]
 /** How far a crop's height may run from its width: a very flat or very tall crop is shown in a tile at this limit. */
 const FLATTEST = 0.55, TALLEST = 1.9
-/** The caption and gap as a share of a typical column's width, for choosing the shortest column. */
-const CHROME = 0.2
+/** The card's inset, caption and gap as a share of a typical column's width, for choosing the shortest column. */
+const CHROME = 0.22
 
 const round = n => Math.round(n * 1000) / 1000
 
