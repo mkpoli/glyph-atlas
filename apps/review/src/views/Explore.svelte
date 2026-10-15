@@ -262,7 +262,13 @@
   const skeleton = collage(Array.from({ length: 32 }, (_, i) => [1, 1.25, 0.85, 1.1, 1.4, 0.95, 1.2, 0.8][i % 8]))
   const hasMore = $derived(!choosing && (picked ? (!visual && local.length < (data?.total ?? 0)) || corpusOffset < corpusTotal
     : Boolean(data) && items.length < data.total))
-  const whole = $derived(hasMore && columns && !headings ? Math.floor(display.length / columns) * columns : display.length)
+  // The homepage's runs stand among the crops (`runTiles`), so the rows are counted with those before the cut.
+  const whole = $derived.by(() => {
+    if (!(hasMore && columns && !headings)) return display.length
+    let shown = display.length
+    while (shown > 0 && (shown + runTiles.filter(run => run.at < shown).length) % columns) shown -= 1
+    return shown
+  })
   // Tiles join the page a slice at a time, each slice in a task of its own, so a page of crops
   // arriving never holds a slow machine up; the tiles the server rendered are there at once. The
   // collage is placed for every tile to come, so its blocks hold their height while the slices fill in.
@@ -289,7 +295,7 @@
     const parts = [], shown = display.slice(0, target).map((item, i) => [item, i])
     // The homepage's runs stand among its crops, each before the crop at its place; placed from the
     // last, the places before it still count crops alone.
-    if (bare) for (const run of scattered.toSorted((a, b) => b.at - a.at)) if (run.at < shown.length) shown.splice(run.at, 0, [run, run.at])
+    for (const run of runTiles.toSorted((a, b) => b.at - a.at)) if (run.at < shown.length) shown.splice(run.at, 0, [run, run.at])
     shown.forEach(([item, i]) => {
       const group = headed(item) ? visualGroup(item) : null, key = group?.id ?? ''
       if (!parts.length || parts.at(-1).key !== key) parts.push({ key, heading: group ? groupLabel(group) : '', items: [] })
@@ -456,25 +462,41 @@
   }
   $effect(() => { if (bare && homeRuns?.kind !== runKind) untrack(() => loadHomeRuns(runKind)) })
   // A few pairs and trigrams scattered through the homepage's first page of crops, each as one place it
-  // was written, drawn from the frequent ones by the gallery's seed, so a shuffle deals others. Each reads
-  // one occurrence past the first, as the first page of a run also counts it (`runOccurrences`).
-  const RUN_TILES = 6, RUN_DEPTH = 40
-  let scattered = $state([]), scatteredFor = null
-  async function scatter(key) {
-    scatteredFor = key
+  // was written, drawn from the frequent ones by the gallery's seed, so a shuffle deals others. Their
+  // places and their tiles' shape come from the seed alone: the page the server renders holds them
+  // already, and a run fills its place when it arrives without moving a crop. Each run reads one
+  // occurrence past the first, as the first page of a run also counts it (`runOccurrences`).
+  const RUN_TILES = 6, RUN_DEPTH = 40, RUN_ASPECT = 1.6
+  function seeded(key) {
     let state = key >>> 0 || 1
-    const random = () => { state ^= state << 13; state ^= state >>> 17; state ^= state << 5; return (state >>> 0) / 4294967296 }
+    return () => { state ^= state << 13; state ^= state >>> 17; state ^= state << 5; return (state >>> 0) / 4294967296 }
+  }
+  const slots = $derived.by(() => {
+    const random = seeded(seed)
+    return Array.from({ length: RUN_TILES }, (_, k) => ({ id: 'run:' + k, origin: 'run', at: Math.floor(random() * 60), aspect: RUN_ASPECT }))
+  })
+  // Each slot's run once read; `undefined` while it is on its way, `null` where no run could be chosen.
+  let scattered = $state([]), scatteredFor = null
+  const runTiles = $derived(bare ? slots.flatMap((slot, k) => scattered[k] === null ? [] : [{ ...scattered[k], ...slot }]) : [])
+  async function scatter(key) {
+    scatteredFor = key; scattered = []
+    const random = seeded(key ^ 0x5bd1e995)
     try {
       const pool = (await Promise.all(['pair', 'trigram'].map(kind => frequent(kind)))).flatMap(items => items.slice(0, KEPT))
       const chosen = Array.from({ length: Math.min(RUN_TILES, pool.length) }, () => pool.splice(Math.floor(random() * pool.length), 1)[0])
-      const found = await Promise.all(chosen.map(run => {
-        const at = Math.floor(random() * 60), offset = run.n > 1 ? 1 + Math.floor(random() * Math.min(RUN_DEPTH, run.n - 1)) : 0
-        return runOccurrences(run.text, { offset, limit: 1 }).then(page => page.items[0] && { ...page.items[0], text: run.text, n: run.n, at }, () => null)
+      const found = await Promise.all(Array.from({ length: RUN_TILES }, (_, k) => {
+        const run = chosen[k]
+        if (!run) return null
+        const offset = run.n > 1 ? 1 + Math.floor(random() * Math.min(RUN_DEPTH, run.n - 1)) : 0
+        // A run whose occurrence cannot be read keeps its place as its text.
+        const named = { text: run.text, n: run.n }
+        return runOccurrences(run.text, { offset, limit: 1 }).then(page => ({ ...page?.items?.[0], ...named }), () => named)
       }))
-      if (closed || scatteredFor !== key) return
-      scattered = found.filter(Boolean).map(run => ({ ...run, id: 'run:' + run.text, origin: 'run',
-        aspect: run.page ? run.page.region.h / run.page.region.w : run.vertical ? run.crops.length : 1 / run.crops.length }))
-    } catch { if (scatteredFor === key) scattered = [] }
+      if (!closed && scatteredFor === key) scattered = found
+    } catch {
+      // The lists could not be read: the places go, and the next visit to the homepage asks again.
+      if (scatteredFor === key) { scattered = slots.map(() => null); scatteredFor = null }
+    }
   }
   $effect(() => { const key = seed; if (bare && key !== scatteredFor) untrack(() => scatter(key)) })
   // A character's runs show once they are here, and not at all when it has none among the counted
