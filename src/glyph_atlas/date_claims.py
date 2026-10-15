@@ -43,7 +43,7 @@ CORPORA = {
     "hilab": "hi-lab-kuzushiji", "hng": "hng-basic-data", "hng-kiridashi": "hng-kiridashi-data",
     "hdic-krm": "hdic-krm", "hdic-ktb": "hdic-ktb", "hdic-tsj": "hdic-tsj", "khs": "khs",
     "hangeul-museum": "hangeul-museum", "nlk-sayeogwon": "nlk", "glossary-headwords": "nlk",
-    "wikisource-zh-scans": "wikisource", "wikisource-ko-scans": "wikisource", "hunminjeongeum": "wikisource",
+    "wikisource-zh-scans": "wikisource", "wikisource-ko-scans": "wikisource", "wikisource-ko-glyphs": "wikisource", "hunminjeongeum": "wikisource",
     "hunminjeongeum-hanja": "wikisource", "hunminjeongeum-cells": "wikisource", "ndl-1014828": "ndl-1014828",
     "ndl-minhon": "ndl-minhon-ocr",
 }
