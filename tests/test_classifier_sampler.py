@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+pytest.importorskip("torch")
 sys.path.insert(0, str(Path("models/classifier").resolve()))
 train = importlib.import_module("train")
 
@@ -65,3 +66,9 @@ def test_a_manifest_marks_crops_rendered_from_fonts(tmp_path):
     path = tmp_path / "train.parquet"
     tables.write(path, [crop("scan", "codh:200003076"), crop("font", "syn:hangul:Batang")], Crop)
     assert train.read_manifest(path, ["c0"]).rendered.tolist() == [False, True]
+
+
+def test_a_share_outside_zero_and_one_is_refused():
+    split = data([0, 1], [False, True])
+    with pytest.raises(ValueError):
+        train.balanced_sampler(split, seed=0, rendered_share=1.5)

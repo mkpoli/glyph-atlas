@@ -252,6 +252,8 @@ def balanced_sampler(data: Data, *, seed: int, rendered_share: float | None = No
     labels = data.labels
     weights = np.zeros(len(labels), dtype=np.float64)
     rendered = data.rendered if len(data.rendered) == len(labels) else np.zeros(len(labels), dtype=bool)
+    if rendered_share is not None and not 0.0 < rendered_share < 1.0:
+        raise ValueError(f"rendered_share must lie between 0 and 1, not {rendered_share}")
     if rendered_share is not None and rendered.any() and (~rendered).any():
         groups = [(~rendered, 1.0 - rendered_share), (rendered, rendered_share)]
     else:
